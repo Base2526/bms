@@ -1942,6 +1942,14 @@ export async function adjustStock(
     );
 
     await assertNoQualityHold(client,tenantId,locationId,sku,sizeUp);
+    const trackedLots = await client.query(
+      `SELECT 1 FROM bms_inventory_lots
+        WHERE tenant_id=$1 AND location_id=$2 AND product_sku=$3 AND size=$4 LIMIT 1`,
+      [tenantId, locationId, sku, sizeUp],
+    );
+    if (trackedLots.rowCount) {
+      throw new Error("สินค้านี้มีล็อตอยู่แล้ว ปรับยอดรวมไม่ได้ กรุณาใช้การรับสินค้าระบุล็อตหรือตัดของเสียตามล็อต");
+    }
     let row: VariantRow;
     if (cur.rowCount === 0) {
       if (delta < 0) {

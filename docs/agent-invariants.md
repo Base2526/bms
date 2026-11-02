@@ -684,6 +684,10 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   land at the receiving branch, while source-lot provenance and the original tax document continue
   to point at the sale. This is not `TRANSFER_IN`; a later movement back to the sale branch uses the
   normal two-step transfer. Bundle returns expand through `bms_order_stock_lines`.
+- **A POS return preserves lot reconciliation before refunding.** Check receiving summary versus
+  existing lots and source returnable allocations inside the same transaction. Reject unknown lot
+  identity or conflicting expiry with `STOCK_REVIEW_REQUIRED`; no-receipt returns cannot replenish
+  lot/expiry products or existing lots, even after tracking flags are disabled.
 - **Tax documents are immutable snapshots.** Rate and amounts are stored on the document row at
   issue time; changing tax settings (`tax.setting.manage`) only affects bills issued afterward.
   Cash rounding (`7.95`) applies only to fully-cash bills, is its own receipt line, and never
@@ -1842,10 +1846,11 @@ an operator note, and the audit preserves those per-line facts. Never add damage
 - **A count applies a delta, never an absolute.** Each line keeps its first-entry snapshot; apply adds
   `counted_qty - snapshot_qty` to current stock so sales during the count survive. The whole apply is
   refused if any result would fall below reserved stock.
-- **Aggregate stock work must not erase identity.** The current transfer/count documents carry only
-  integer `SKU + size` quantities. Lot/expiry-tracked, serial-tracked, bundle, recipe and non-stock
-  products remain read-visible but fail closed in these mutations until a dedicated workflow carries
-  their identity/provenance through movement, audit and receipt evidence.
+- **Aggregate stock work must not erase identity.** Counts still carry only integer `SKU + size`
+  quantities and therefore refuse lot/expiry-tracked stock. Since `10.107`, transfers allocate usable
+  source lots FEFO, snapshot their provenance, and recreate the received good quantity as the same lot
+  at the destination; unreconciled lot totals fail closed. Serial-tracked, bundle, recipe and non-stock
+  products remain read-visible but fail closed in both workflows.
 - **Counting and accepting variance are separate jobs.** `inventory.count` may create/edit/cancel a
   draft; `inventory.count.apply` signs the stock change. Transfers use `inventory.transfer`. The REST
   routes derive tenant and actor from the signed admin session and drill-down cookie, never the body.

@@ -7,6 +7,10 @@ import { inspectSalesEvidence } from "../apps/web/lib/bms/salesEvidenceMath.ts";
 import { MIGRATIONS } from "./schemaReadiness.mts";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
+const lotService: any = {};
+new Function("require", "exports", ts.transpileModule(read("apps/web/lib/bms/lots.ts"), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText)(() => ({}), lotService);
 const source = { payable: "329.75", shipping: "20.00", rounding: "-0.25", extras: "10.00", extraTaxable: "10.00",
   taxable: "330.00", exempt: "0.00", vat: "21.59" };
 const line = (amount = "100.00", patch: any = {}) => ({ orderItemId: "1", amount, vatCategory: "V", ...patch });
@@ -142,8 +146,8 @@ test("migration is additive, immutable, rerunnable, no backfill; readiness cover
 // Execute the actual exported processPosReturn body, with strict SQL/dependency doubles.
 // This proves orchestration/rollback requests, not PostgreSQL locking or RLS.
 function harness() {
-  const controls = { fail: "", exact: true, online: false, method: "CARD", noPayments: false, returnBranch: "branch-a", drawer: 1000 };
-  let state: any = { returns: [], items: [], allocations: [], audits: [], movements: [] }, backup: any = null;
+  const controls = { fail: "", exact: true, online: false, method: "CARD", noPayments: false, returnBranch: "branch-a", drawer: 1000, sourceLots: [] as any[] };
+  let state: any = { returns: [], items: [], allocations: [], audits: [], movements: [], stock: 0, lots: [], returnedLots: [], inheritedHolds: [] }, backup: any = null;
   const calls: string[] = []; let releases = 0, credits = 0;
   const result = (rows: any[] = []) => ({ rows, rowCount: rows.length });
   const input: any = { tenantId: "tenant-a", orderId: "order-a", deviceId: "device-a", shiftId: "shift-a", actorUserId: "user-a",
@@ -183,8 +187,21 @@ function harness() {
     if (sql.includes("SELECT order_item_id, pack_qty, refund_amount FROM bms_pos_return_items")) return result(state.items.filter((r: any) => r.pos_return_id === p[1]));
     if (sql.includes("FROM bms_pos_refund_allocations") && !sql.includes("FROM bms_payments")) return result(state.allocations.filter((r: any) => r.pos_return_id === p[1]));
     if (sql.includes("FROM bms_order_stock_lines")) return result([{ product_sku: "INGREDIENT", size: "BASE", qty: 3 }]);
-    if (sql.includes("INSERT INTO bms_inventory") || sql.includes("UPDATE bms_inventory SET reserved_stock")) return result([{ ok: true }]);
-    if (sql.includes("FROM bms_order_item_lots")) return result();
+    if (sql.includes("FROM bms_order_item_lots")) return result(controls.sourceLots);
+    if (sql.includes("FROM bms_inventory_lots")) return result(state.lots);
+    if (sql.includes("FROM bms_inventory")) return result([{ current_stock: state.stock }]);
+    if (sql.includes("INSERT INTO bms_inventory_lots")) {
+      const lot = state.lots.find((l: any) => l.lot_no === p[4]);
+      if (lot) lot.qty += p[9];
+      else state.lots.push({ id: "destination-lot", lot_no: p[4], expiry_date: p[5], qty: p[9] });
+      return result([{ id: lot?.id ?? "destination-lot" }]);
+    }
+    if (sql.includes("UPDATE bms_inventory_lots")) {
+      state.lots.find((l: any) => l.id === p[1]).qty += p[2]; return result();
+    }
+    if (sql.includes("INSERT INTO bms_inventory")) { state.stock += p[4]; return result([{ ok: true }]); }
+    if (sql.includes("UPDATE bms_inventory SET reserved_stock")) return result([{ ok: true }]);
+    if (sql.includes("INSERT INTO bms_pos_return_item_lots")) { state.returnedLots.push(p); return result(); }
     if (sql.includes("FROM bms_payments p")) return result(controls.noPayments ? [] : [{ id: "payment-a", method: controls.method, amount: "329.75", allocated: String(state.allocations.reduce((a: number, r: any) => a + Number(r.amount), 0)) }]);
     if (sql.includes("INSERT INTO bms_pos_refund_allocations")) {
       const r = { id: `allocation-${state.allocations.length + 1}`, pos_return_id: p[1], payment_id: p[2], method: p[3], amount: p[4], status: p[5], external_ref: null };
@@ -212,6 +229,8 @@ function harness() {
     orderRefundPaymentsForAllocation: (rows: any[]) => rows, mapRefundAllocation: (r: any) => r,
     drawerExpectedInTx: async () => controls.drawer, getVatSettings: async () => ({ blindClose: true }),
     recordMovement: async (_c: any, movement: any) => { assert.ok(backup); state.movements.push(movement); },
+    validateTransferLotReceiptInTx: lotService.validateTransferLotReceiptInTx,
+    inheritQualityHold: async (_c: any, ...args: any[]) => { assert.ok(backup); state.inheritedHolds.push(args); },
     reversePointsForReturnInTx: async () => ({ earnedReversed: 0, redeemedReturned: 0 }), reverseCreditForReturnInTx: async () => {}, reduceArForReturnInTx: async () => {},
     cancelKitchenTicketsForOrderInTx: async () => {}, cancelKitchenTicketsForOrderItemsInTx: async () => {},
     RESTAURANT_CANCELLATION_CAUSES: ["CUSTOMER_CHANGED_MIND"],
@@ -317,6 +336,51 @@ test("cross-branch return keeps sale and receiving branches, requires distinct a
 test("replay conflicts cannot replace persisted evidence", async () => {
   const h = harness(); await h.run(); const before = structuredClone(h.state());
   assert.equal((await h.run({ orderId: "foreign-order" })).status, "IDEMPOTENCY_CONFLICT");
+  assert.deepEqual(h.state(), before);
+});
+
+const sourceLot = (patch: any = {}) => ({ lot_id: "source-lot", lot_no: "LOT-A", expiry_date: "2027-01-01",
+  received_at: "2026-01-01", supplier_id: null, unit_cost: "10.00", note: null, available_to_return: 3, ...patch });
+
+for (const scenario of ["untracked into tracked", "tracked into untracked", "unreconciled lots", "expiry conflict", "depleted allocation"]) {
+  test(`cross-branch return rolls back stock, money and return evidence: ${scenario}`, async () => {
+    const h = harness(); h.controls.returnBranch = "branch-b";
+    h.state().stock = 5;
+    h.state().lots = [{ id: "destination-lot", lot_no: "LOT-A", expiry_date: "2027-01-01", qty: 5 }];
+    h.controls.sourceLots = [sourceLot()];
+    if (scenario === "untracked into tracked") h.controls.sourceLots = [];
+    if (scenario === "tracked into untracked") h.state().lots = [];
+    if (scenario === "unreconciled lots") h.state().lots[0].qty = 4;
+    if (scenario === "expiry conflict") h.state().lots[0].expiry_date = null;
+    if (scenario === "depleted allocation") h.controls.sourceLots[0].available_to_return = 2;
+    const before = structuredClone(h.state());
+    const r = await h.run({ mode: "FULL", lines: [], approvedByUserId: "manager-b" });
+    assert.equal(r.status, "STOCK_REVIEW_REQUIRED"); assert.ok(r.reason);
+    assert.deepEqual(h.state(), before); assert.equal(h.calls.at(-2), "ROLLBACK");
+    assert.equal(h.counts().credits, 0);
+  });
+}
+
+for (const crossBranch of [false, true]) test(`reconciled ${crossBranch ? "cross" : "same"}-branch lot return conserves stock and provenance on replay`, async () => {
+  const h = harness(); h.controls.sourceLots = [sourceLot()];
+  h.controls.returnBranch = crossBranch ? "branch-b" : "branch-a";
+  h.state().stock = 5;
+  h.state().lots = [{ id: crossBranch ? "destination-lot" : "source-lot", lot_no: "LOT-A", expiry_date: "2027-01-01", qty: 5 }];
+  const patch = crossBranch ? { mode: "FULL", lines: [], approvedByUserId: "manager-b" } : {};
+  assert.equal((await h.run(patch)).status, "PARTIAL_RETURNED");
+  assert.equal(h.state().stock, crossBranch ? 8 : 6);
+  assert.equal(h.state().lots[0].qty, h.state().stock);
+  assert.equal(h.state().returnedLots[0][2], "source-lot");
+  assert.equal(h.state().returnedLots[0][3], crossBranch ? "destination-lot" : "source-lot");
+  assert.equal(h.state().inheritedHolds.length, 1);
+  const before = structuredClone(h.state());
+  assert.equal((await h.run(patch)).replayed, true); assert.deepEqual(h.state(), before);
+});
+
+test("same-branch void refuses unreconciled stock and rolls back before refund", async () => {
+  const h = harness(); h.controls.sourceLots = [sourceLot()]; h.state().stock = 5;
+  const before = structuredClone(h.state());
+  assert.equal((await h.run({ mode: "FULL", lines: [], isVoid: true, voidReason: "mistake" })).status, "STOCK_REVIEW_REQUIRED");
   assert.deepEqual(h.state(), before);
 });
 

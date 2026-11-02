@@ -39,6 +39,13 @@ test("lookup preserves base quantities, bounds pages, and reports unsupported id
   assert.equal(result.items[1].transferSupported, true);
   assert.equal(result.items[1].countSupported, false);
   assert.equal(result.items[2].countSupported, false);
+  for (const policy of ["BUNDLE", "RECIPE", "NON_STOCK"]) {
+    rows[3].stock_policy = policy;
+    rows[3].lot_tracked = true;
+    const mixed = await exported.searchBranchStock({ tenantId: "tenant-a", locationId: "branch-a" });
+    assert.equal(mixed.items[3].transferSupported, false, `${policy} cannot transfer even with lots`);
+    assert.equal(mixed.items[3].countSupported, false);
+  }
   rows.length = 0;
   const empty = await exported.searchBranchStock({ tenantId: "tenant-a", locationId: "branch-a" });
   assert.deepEqual(empty, { items: [], nextOffset: null });

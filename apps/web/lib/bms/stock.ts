@@ -170,7 +170,8 @@ function stockOperationSupport(row: {
       reason: "สินค้านี้ติดตาม Serial และต้องใช้ workflow เฉพาะ",
     };
   }
-  if (row.lot_tracked || row.expiry_tracked) {
+  if ((row.lot_tracked || row.expiry_tracked) && !row.is_bundle &&
+      !["BUNDLE", "RECIPE", "NON_STOCK"].includes(row.stock_policy)) {
     // 10.107: transfers carry lots (FEFO out, same lot in). Counts still adjust totals
     // only, so counting a lot product would break SUM(lots) = current_stock.
     return {

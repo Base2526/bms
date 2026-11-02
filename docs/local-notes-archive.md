@@ -1793,3 +1793,7749 @@ Customer 360 pending items ที่เหลือ (ดู "Pending improvement
 · apply migration `7.33` เข้า docker/production จริง + รัน `BMS_EVAL_MODE=natural` กับ live model
 · apply migration `7.52` เข้า docker/production จริง + ทดสอบ Follow-up Automation end-to-end ·
 Follow-up Automation's Workflow Engine, Scoring model, Analytics dashboard (ดู § Follow-up Automation)
+
+---
+
+## ชุดที่ 2 — ย้ายมาจาก CLAUDE.local.md เมื่อ 2026-11-02
+
+บันทึกงานรายรอบช่วง 2026-08-17 → 2026-10-23 (ลำดับตามที่อยู่ในไฟล์เดิม ไม่ได้เรียงวันที่) — ย้ายมาทั้งดุ้น
+หัวข้อถูกลดระดับลงหนึ่งชั้นเท่านั้น เนื้อความไม่ถูกแก้ · ตัวเลขเทส/สถานะ "ยังไม่ได้ทำ" เป็น snapshot ณ วันที่เขียน
+
+### Board-game analytics recheck — 2026-10-23
+
+#### Second owner recheck
+
+- Red-first regression tests reproduced: a departed player counted in a destination area;
+  heatmap losing recognized revenue outside configured hours; reservation wait starting at booking
+  creation instead of check-in; and the unsupported-purchase guard blocking library setup guidance.
+- Fixed the report projections only: actual participant/area/time overlap capped at observation,
+  union capacity/revenue heatmap buckets, check-in-based reservation wait with invalid/missing
+  evidence excluded and `WAIT_TIME_INCOMPLETE`, and precise purchase/future/annual intent boundaries.
+  `CURRENT_CAPACITY_BASIS` discloses the existing current-table/seat assumption; no historical
+  availability ledger was invented. POS, payment, stock and entitlement writes are unchanged.
+- Added whole-cohort `expiringPassesIn30Days` independently of paging and minute balances; includes
+  unlimited contracts. Missing aggregates fail rather than becoming zero. ACTIVE may start later,
+  so outstanding balances do not establish current redemption eligibility.
+- Final focused analytics 50/50, owner reads 6/6 and assistant retrieval 46/46 passed. DB runner
+  still refuses without POSTGRES_HOST/POSTGRES_DB; real SQL/RLS/migrations/live-provider remain
+  unverified. No route/layout/CSS changed in this recheck; prior authenticated-browser limitation
+  still applies. No commit/push/deploy or business-data writes.
+- Final gate exit 0: typecheck, pure **3,070 passed / 3,072 total (2 skipped)** and production
+  build. Log: `.test-output/owner-recheck-final-gate.log`; TAP:
+  `.test-output/owner-recheck-final/pure.tap`. Final focused checks cover the last basis-copy and
+  capacity-warning assertions. `git diff --check` passed (existing schema line-ending warning only).
+
+#### Owner-question coverage follow-up
+
+- Added four staff-only tools: historical SUMMARY/HEATMAP/OFFERS/PROFIT, current floor/queue,
+  pass balances/expiry, and paginated library COPIES/ATTENTION/UNPLAYED/USAGE. Preserve existing
+  report/session/library permissions and actor branch scope; product profit requires both product
+  and tax-document permissions. All projections omit customer identities and condition notes.
+- Table/library/offer reads support paging; OFFERS can rank uses separately from discount and
+  opts into full bounded-source aggregation. Existing UI/XLSX still uses top 20 discounts.
+  `generate_report`/`email_report` accept board-game branch/area filters only; email stays propose-only.
+- Recheck corrected expiring-pass units (minutes, not contracts), and current occupancy reads
+  now use an additive seating-backed `occupied` floor field instead of inferring vacancy from
+  missing OPEN/CLOSING sessions. No POS/payment/inventory mutation path was changed in this follow-up.
+- Added deterministic unsupported-intent responses for recognized board-game net-profit/box ROI/
+  causal lift/price effects/future attendance/staffing/purchase quantities/session churn requests.
+  General policy forbids guesses and generic SKU substitutes; this intent guard is not exhaustive
+  natural-language classification. Missing facts, source limits and partial pages must be disclosed.
+- Focused analytics/tool suites 46/46, owner-read transport suite 6/6, bilingual assistant suites
+  46/46 passed. Added DB smoke for new owner SQL; runner refused without POSTGRES_HOST/POSTGRES_DB.
+  DB SQL/RLS/migration execution and live-model end-to-end remain unverified. No production writes.
+- Final gate exit 0: typecheck, pure **3,066 passed / 3,068 total (2 skipped)**, production build.
+  Log: `.test-output/board-game-owner-final-gate.log`; isolated TAP:
+  `apps/web/.test-output/board-game-owner-final/pure.tap`. Earlier recheck failures were repaired
+  before this run (knowledge IDs/coverage and offer-basis assertion). `git diff --check` passed.
+- Production-built `/admin/manual` was opened at 1280px and 390px; both redirect to login, so
+  authenticated manual layout/content remains unverified. Browser viewport reset and tab closed.
+  Task-owned loopback test server on port 3107 was stopped after the check.
+  No commit/push/deploy; migration `10.89` from the earlier change still needs DB verification/rollout.
+
+#### Staff AI follow-up (screenshot gaps)
+
+- Added staff-only `get_board_game_top_games`, `get_board_game_table_revenue`, and
+  `list_board_game_report_branches`. Reuse the analytics service with costs withheld; authenticate
+  actor, recheck `report.view`, enforce existing tenant/archetype/branch rules, and bound all lists.
+  Generic sales/top-product implementations, POS/payment/stock writes and customer toolsets unchanged.
+- Loan rankings count recorded overlapping loans, not players/completed games. Table money is
+  attributed revenue, not cash receipts or net profit. Dates/scope require clarification; no all-time
+  default. Branch discovery supplies report-local current date and only permitted branches.
+- Updated staff routing, bilingual guide/manual, corpus and tool/API/business documentation.
+- Final focused analytics 37/37 and assistant 46/46 passed. Full gate exit 0: typecheck,
+  pure 3,049 passed / 3,051 total (2 skipped), production build. Two final tool tests and a null-limit
+  validator assertion ran in the later 37/37 focused check. Production build includes that validator.
+  Full log: `.test-output/board-game-ai-tools-gate.log`; expected synthetic provider/service failures
+  in test logs are negative-path fixtures, not live failures.
+- DB runner still refused because POSTGRES_HOST/POSTGRES_DB are unset. No DB/live-provider E2E or
+  migration verification is claimed. `/admin/manual` opened at 1280px and 390px on the production
+  build and redirected to login; authenticated manual content was not exercised. Temporary browser
+  viewport reset and tab closed. No commit/push/deploy or live business data writes.
+
+#### Earlier analytics verification
+
+- branch `codex/board-game-profit-utilization`; no commit/push/deploy or live data writes.
+- Migration `10.89` adds physical occupancy, per-session membership and effective branch hours.
+  Apply it before deploying code: existing board-game open/move/close transactions now need it.
+- Recheck fixed open intervals past database observation time, overlapping overnight schedules/DST,
+  area allocation over full visit paths, older-period returns, merchandise/play return separation,
+  ex-VAT product gross profit, early-paying groups' seat-minutes and terminal sessions reopening on moves.
+- Fixed required GraphQL hours `effectiveFrom`, typed validation results, HH:mm round trips,
+  all-branch selection, stale-filter exports and areaId forwarding. Library cost follows cost RBAC.
+- Analytics pure suites: 25/25 (including resolver RBAC/status); five actual compiled-service mutations rejected. SQL transport is
+  mocked in service tests; do not describe these as PostgreSQL integration tests.
+- Browser fixture uses the real React component/CSS at 390px and 1280px. Verified whole-page width,
+  all-branch selection, stale-export disable, areaId in export and HH:mm saves. No backend writes.
+  Reproduce with `node scripts/board-game-analytics-browser-preview.mjs` (loopback port 3108).
+  Production-built `/admin/board-game` was opened at both widths and redirected to login as expected;
+  authenticated content was not exercised. Both task-owned servers (3107/3108) were stopped afterwards.
+- DB suite attempted but runner refused: POSTGRES_HOST/POSTGRES_DB are unset; no local PostgreSQL
+  container. Migration/RLS/grants/rollback on a restored throwaway database and authenticated end-to-end
+  flows remain unverified. Do not apply to production as a substitute for those checks.
+- Full gate exit 0: typecheck, pure 3,037 passed / 3,039 total (2 skipped), production build.
+  Two final targeted tests were added after the full suite loaded; the final analytics 25/25 run
+  includes both. Build reports localhost:5432 ECONNREFUSED in unrelated static preloads, but completes.
+  Full log: `.test-output/board-game-recheck-gate.log`.
+
+
+### Desktop POS แท็บ คืน/รับของ/มัดจำ/กะ/ตั้งค่า — 2026-10-16
+
+- branch `codex/fix-pos-return-empty-state` (push แล้ว ยังไม่เปิด PR) · ไม่มี migration · ไม่มี permission ใหม่
+- ต้นเหตุหน้าคืนว่าง (Codex): `ReceiptPrinterStatus` ใช้ `flex: 1 0 100%` แล้วถูกวางตรงใต้ `.pos-body` (flex column)
+  → กินความสูงทั้งแผง ดันเนื้อหาแท็บไปใต้ overflow · วัดจริง: แบบเดิม grid สูง 0px แบบใหม่ 564px ที่ 1280x800
+- recheck เพิ่ม: กล่อง (i) "วันรับของ" แท็บมัดจำถูกตัดขอบขวาที่จอ 1024px → `PosHelp` วัดแล้วสลับฝั่งเอง ·
+  คำตอบ desktop-update ที่ไม่มี `releases` เคยทำให้ทั้งจอ POS ล้ม (error boundary) → ตรวจก่อนอ่าน
+- เปิดดูจริงด้วย dev 3100 + iframe harness ที่ mock fetch/`window.bmsDesktop` (ไม่แตะ DB) ทั้ง 5 แท็บที่ 1280x800 และ 1024x600
+- gate ผ่าน: pure 2,912/2,914 (skip 2) + build · mutation 4/4 แดงถูกตัว
+- ยังไม่ได้ verify: Electron จริงกับเครื่องพิมพ์จริง · แบนเนอร์ซ้อนหลายอันที่ 1024x600 เหลือพื้นที่แท็บ 148px (ปิดได้ทุกอัน ยังไม่แก้)
+
+
+### Platform master data phase 1 — 2026-10-16
+
+- branch `feat/master-data-phase-1` จาก `develop` · ไม่ commit/push/deploy
+- migration `10.76__bms_master_data_foundation.sql` ต้อง apply ก่อน deploy; สร้างตาราง global
+  ธนาคาร/หน่วย/จังหวัด/อำเภอ/ตำบล, revision, SELECT-only grant และคอลัมน์ snapshot nullable
+- pure เฉพาะเฟส 6/6 ผ่าน · schema-readiness 5/5 · Work Assistant knowledge 18/18 · corpus
+  11/11 · i18n 2/2 · typecheck ผ่าน · schema export แล้ว · mutation 6/6 แดงตามคาดและคืนไฟล์ครบ
+- final Web gate ผ่าน: pure 2,879/2,879 (skip 2) และ production build ผ่าน; build พบ Postgres
+  `ECONNREFUSED` ระหว่าง static generation ตาม environment ที่ไม่มี local DB แต่สร้าง 135 pages สำเร็จ
+- DB contract ยังไม่ได้รัน: runner ปฏิเสธเพราะไม่มี `POSTGRES_HOST` + `POSTGRES_DB`
+- เปิด `/admin/master-data` ใน browser จริงแล้ว แต่ middleware ส่งไป `/admin/login` เพราะไม่มี
+  authenticated platform-admin session; จึงยังไม่ได้ตรวจเนื้อหาหน้าใหม่หรือ desktop/mobile layout
+- ก่อน production: backup ตาราง store profile/product packs/customer addresses/order items,
+  apply ด้วย `psql -1`, import ชุดที่อยู่ที่ตรวจ licence แล้วแบบ dry-run ก่อน `--apply`, จากนั้นตรวจ
+  grants/RLS, จำนวน hierarchy, orphan codes และ `pack_unit_code` ของบิลใหม่
+
+
+### ใบกำกับเต็มรูป/ใบลดหนี้ ปิดช่องที่เหลือ — 2026-10-14
+
+- branch `feat/full-credit-note-print` จาก `develop` · commit แล้ว ยังไม่ push · **ไม่มี migration · ไม่มี permission ใหม่**
+- ใบลดหนี้เต็มรูปพิมพ์ได้ที่ `/admin/tax-documents` → ปุ่ม "ดูใบลดหนี้" (มาตรา 86/10 ครบ + บรรทัดปรับยอดเมื่อยอดคืนไม่เท่าผลรวมรายการ)
+- ผู้ซื้อ: เลข/สาขาบังคับเฉพาะ `COMPANY` หรือไม่ระบุประเภท (พฤติกรรมเดิม) · บุคคลธรรมดา/ต่างชาติไม่ต้องมีเลข และ **ไม่เก็บ/ไม่พิมพ์สาขา**
+  ทั้งฟอร์มหลังบ้าน, ฟอร์ม QR ลูกค้า (`normalizeTaxRequestBuyer`) และ validator e-Tax · ข้อมูลเก่าที่เก็บ `00000` ให้บุคคลธรรมดายังพิมพ์ "สำนักงานใหญ่"
+- ออกใบเต็มได้ตั้งแต่ `PAID` (`FULL_INVOICE_ORDER_STATUSES`) + ปุ่มออกใบเต็มในรายการ "ต้องตรวจสอบ" ของบิลที่ชำระแล้วไม่มีเอกสาร
+  · ยกเลิก/คืนทั้งบิลจากหลังบ้านหลังมีใบเต็ม = `creditOutstandingSalesDocumentInTx` ออกใบลดหนี้ยอดคงเหลือในทรานแซกชันเดียวกัน
+  (หลัง UPDATE สถานะสำเร็จ) · ใบย่อยังปฏิเสธให้คืนผ่าน POS · guard คืนเงิน/ข้อยกเว้นรายงานไม่นับใบที่ลดหนี้ครบแล้ว
+- คืนบางส่วนแล้วออกใบเต็มได้ (ถ้าทุกการคืนมีใบลดหนี้) → ใบลดหนี้เดิมถูกยกเลิก + ออกใหม่อ้างใบเต็ม (`replaces_document_id`)
+  · รายงานภาษีขาย: ใบเดิมคงยอดในงวดเดิม ใบใหม่เป็นแถวอ้างอิงยอดศูนย์ (กติกาเดียวกับใบเต็มแทนใบย่อ)
+- พิมพ์: ป้ายต้นฉบับ/สำเนาเลือกตอนพิมพ์ (ไม่นับจำนวนครั้ง) · วันที่ตาม `calendar_era` ทั้งหน้าพิมพ์ สำเนาลูกค้า และ PDF (`taxDocumentText.ts`)
+- recheck เจอเพิ่ม: `bmsIssueFullTaxInvoice` ไม่เคยตรวจขอบเขตสาขา → แก้แล้ว (`allowedLocationIds`)
+- gate ผ่าน: typecheck + pure **2,617/2,619 skip 2 fail 0** + build 134/134 · mutation **ใบลดหนี้ 6/6 + รอบนี้ 17/17 แดง**
+  (ตัวที่ 17 รอดรอบแรกเพราะ regex จับชื่อฟังก์ชันในกิ่ง `if (false)` — แก้ให้ต้องเป็นคำสั่งที่รันจริง)
+- **ยังไม่ได้รันเทส DB** (5432 ปิด) — เพิ่ม 6 เคสใน `tax-sales-report-db-contract` · **ยังไม่เคยเปิดดูในเบราว์เซอร์**
+- คงไว้ตามที่ผู้ใช้เลือก: วันที่ใบเต็ม = วันที่ออกใบ · ไม่ทำใบเพิ่มหนี้ (รอนักบัญชียืนยัน) · QR self-service ยังไม่รับบิลที่มีการคืน
+- ⚠️ `git checkout -- <file>` หลัง mutation ลบงานที่ยังไม่ commit ทิ้ง (เจอซ้ำรอบนี้กับ corpus) — กู้จาก backup ที่ทำก่อน mutate
+
+
+### `MAIL_PROVIDER=smtp` (Resend/SES/Postmark) + reply-to ร้าน — `10.59`, 2026-10-13
+
+- branch `feat/mail-generic-smtp` จาก `develop` · ยังไม่ commit · ไม่มี permission ใหม่
+- `mailer.ts` เพิ่ม SMTP relay ทั่วไป (`SMTP_HOST/PORT/USER/PASS`, `MAIL_FROM`) · พอร์ต 465/2465 = SSL,
+  พอร์ตอื่นบังคับ STARTTLS (`requireTLS`) · SendGrid อ่าน `SENDGRID_API_KEY` ก่อนแล้ว fallback ชื่อเดิม
+  `NEXT_PUBLIC_SENDGRID_*` (production ยังไม่ต้องเปลี่ยนชื่อ)
+- `replyTo` ผ่าน `normalizeReplyTo()` (อีเมลเดี่ยวเท่านั้น ค่าผิดถูกทิ้ง ไม่ทำให้ส่งล้ม) · ต่อแล้วที่ใบเสร็จ +
+  แจ้งสถานะออร์เดอร์ (`bms_store_profile.contact_email`) · **คำขอใบกำกับ/digest ยังไม่ต่อ**
+- **`10.59` ขยาย CHECK `bms_mail_log.provider` ให้รับ `smtp`** — ไม่ apply = อีเมลส่งได้แต่ mail log
+  กลืน CHECK violation เงียบ ๆ · จงใจไม่ใส่ schemaReadiness (ไม่ทำโค้ดพัง) · **ยังไม่ได้ apply/รันกับ DB**
+  (Docker ไม่รัน, 5432 ปิด)
+- gate ผ่าน: typecheck + pure **2,606/2,608 skip 2 fail 0** + build 134/134 · `mailer-smtp-contract`
+  7 เทส · mutation **5/5 แดง** (รอบแรกตัว header-injection เขียวเพราะ regex อีเมลกันอยู่แล้ว ยกเว้น
+  `a,b@x.com` — เพิ่มเคสนั้นแล้วแดง)
+- ยังไม่ได้ทดสอบส่งจริงกับ Resend · ยังไม่มี bounce/complaint webhook
+
+
+### คำขอจองโต๊ะจากแชท `10.48` — 2026-10-07
+
+- ต่อบน `codex/pharmacy-deterministic-guards`; ไม่ commit/push/deploy และไม่แก้ข้อมูลร้านจริง
+- เพิ่ม CHAT ใน waitlist เดิม + composite customer FK (hard-delete CASCADE), retry hashes/index,
+  CHECK แยก PUBLIC/CHAT; ไม่มีตารางหรือ permission ใหม่ ประกาศ readiness และ regenerate SQL แล้ว
+- ครั้งแรกเป็น preview ไม่มี reservation write; pipeline เก็บ fingerprint อายุ 15 นาทีและแสดง
+  สรุป server ก่อนรับคำตอบตกลง ต้องตรงสรุปล่าสุด; เปลี่ยนรายละเอียด/มีข้อความอื่นคั่น/บันทึก
+  consent ไม่สำเร็จจะไม่สร้างคำขอ สร้างได้เฉพาะ REQUESTED ไม่มีโต๊ะหรือ confirmed_at
+- สาขาต้อง active + booking enabled + deposit NONE ไม่ขึ้นกับ public_visible; lock ลูกค้า
+  กันเกิน 3 pending ต่อร้าน และ request/audit อยู่ transaction เดียว; CRM merge ย้ายประวัติ CHAT ตาม identity
+- Staff review ใช้ PIN/table lock/overlap checks เดิม ตรวจ deposit ซ้ำ; CHAT ไม่เข้าคิวอีเมลหรือ
+  decision notification; status อ่าน tenant+customer เท่านั้นและตอบโดย server
+- POS/RN เพิ่มป้าย CHAT/ชื่อ/เบอร์; Admin เดิมไม่มีคิว review/PIN จึงเพิ่มการ์ดอ่านและลิงก์ไป
+  POS ไม่สร้างทางยืนยันที่ข้าม PIN; i18n th/en และ assistant guide/corpus อัปเดตแล้ว
+- RED ก่อนแก้: phase-zero customer policy 86/87 (หลุดคำว่าโต๊ะของคุณพร้อมแล้ว), capability 21/22
+  (ร้านเปิดจองไม่เก็บมัดจำยัง canSubmitViaChat=false); หลักฐาน `.test-output/bg-booking-red/`
+  และ `.test-output/bg-booking-capability-red/`
+- Gate: typecheck ผ่าน, pure **2385 ผ่าน / 2387 ทั้งหมด / skip 2 / fail 0**, build **132/132**,
+  exit 0; log `.test-output/bg-booking-gate-final.log` มี ECONNREFUSED จากหน้าที่อ่าน DB ตอน build
+  เพราะไม่มี Postgres ไม่ใช่หลักฐานว่า DB ใช้ได้; mobile typecheck ผ่าน
+- Focused board-game **290/291, skip 1, fail 0**; customer policy **87/87**; guard **109/109**;
+  waitlist **18/18**; assistant question corpus **11/11**; shared restaurant/CRM **16/16**
+- POS typed refusal เพิ่ม RED **17/18** ก่อนแก้: class มี `code` จึงถูกเข้าใจว่าเป็น SQLSTATE;
+  adapter กลางรองรับ class แล้ว โดย SQLSTATE จริงยังเป็น 500 ไม่กลบเป็น business rejection
+- Mutation **6/6 killed**: bypass consent, insert CONFIRMED, remove cap, cross-customer status,
+  fake confirmed claim, stale summary. สำรอง stash `a2d6dc30c597b9f07589cb2115447d816b76956a`
+  ก่อน mutate คืน Buffer และตรวจ SHA-256 byte-exact ทุกครั้ง; ผล `.test-output/bg-booking-mutations/summary.json`
+- เคยสงสัย deterministic tool registry ไม่รวมทูลบอร์ดเกม แต่ mutation พิสูจน์ว่าไม่จริง:
+  `customerTools()` แบบ undefined รวม customer tools ทั้งหมดโดยตั้งใจ เอาการแก้ส่วนนี้ออกแล้ว
+  และเก็บเทส pipeline จริงเพื่อพิสูจน์การเรียกทูลโดยไม่ใช้ provider
+- **ยังไม่ apply 10.48 และไม่รัน DB:** guarded runner ปฏิเสธก่อนเริ่มเพราะไม่มี POSTGRES_HOST/DB
+  ขยาย DB suite ไว้แล้ว: constraints, scoped insert/audit, typed refusals, concurrent cap, replay/conflict,
+  staff overlap, TTL, reminders, customer/tenant isolation, merge/cascade และ cleanup; ยังห้ามอ้างว่าผ่าน
+- SDL source เป็น String อยู่แล้ว ไม่ต้องเปลี่ยน SDL สำหรับ CHAT; ตรวจ `graphql:check` เพิ่มแล้ว
+  พบ baseline drift: SDL/operations ไม่ต่างจาก HEAD แต่ generated RN ขาด emergency/pharmacy types
+  116 บรรทัดจากงานก่อน จึง regenerate ให้ตรง SDL ปัจจุบัน; คำสั่ง check exit 1 เพราะตรวจเทียบ git HEAD
+  (ไฟล์แก้แล้วยังไม่ commit) ไม่ใช่ generation ล้ม รัน codegen ซ้ำ hash คงเดิม
+  `0591e5b6c041011014eaefc8f8dd7b3feffbfc326663fb4d5f2d82dc9dd9bc02`, mobile typecheck ผ่าน
+- ไม่ได้เปิด authenticated browser, provider หรือแชทจริง และยังไม่ทำ auto decision message,
+  chat deposit, chat reschedule/cancel
+- รายงาน flow ไทย/อังกฤษ, source decision matrix ทุกเส้นทาง และ deploy/rollback:
+  `docs/business/board-game-cafe.md` § Chat reservation requests; ก่อน deploy ต้องพิสูจน์ DB บน
+  isolated restored database แล้วสำรองฐาน/apply migration/readiness ก่อนปล่อยโค้ด
+
+
+### แยกตัวอ่านแชทบอร์ดเกมจากรายชื่อสาธารณะ — 2026-10-07
+
+- ต่อบน `codex/pharmacy-deterministic-guards`; ไม่แตะ guard/system prompt/งานร้านยาเดิม
+  (ตรวจ SHA-256 ตรงก่อนเริ่ม) ไม่เพิ่ม migration/permission/flag และไม่ commit/push/deploy
+- RED ก่อนแก้: customer contract 16/20 ผ่าน, 4 fail; default reader กับ client จำลองร้านซ่อน
+  คืน `NOT_PUBLISHED` แทน `OK`; อีก 3 จุดคือ library visibility, reader ใหม่ และการแยก entry point
+- เพิ่ม `listBoardGameChatBranches` บังคับ UUID tenant + SQL tenant ตรง ๆ; share SELECT/subqueries/mapper
+  กับ public reader แต่ public WHERE เดิมไม่เปลี่ยน (normalized SQL SHA-256
+  `adf1572c06fe9081f3e7ff2cc30a553e7ff02ec55d62690f549bda8eeeb9217a`)
+- gate ผ่าน: typecheck + pure **2,365/2,367, skip 2, fail 0** + build exit 0
+  (build มี ECONNREFUSED จาก DB local ที่ไม่ได้เปิด ไม่ใช่หลักฐานว่า runtime/DB ผ่าน)
+  เพิ่ม public mapping/distance regression อีก 1 เทสหลัง gate เริ่มโหลดชุด pure;
+  focused หลัง mutation **273/274, skip 1, fail 0**, รวม customer **21/21** และ guard ai-eval เดิม
+- mutation **4/4 killed** ด้วย intended witnesses; คืน source แบบ Buffer byte-exact SHA-256
+  `38b99bcf772441596b20fe9029514d1fe8c07782e9959f90529fed0aad444a13`;
+  backup stash `8f2b062ccedb3df19323c73f0a7f344c5e848d56` apply กลับแล้วและเก็บไว้
+  รันซ้ำ: `node scripts/testing/board-game-chat-readers-mutations.mjs <current-backup-stash-sha>`
+- ขยาย `board-game-seating-db-contract` ด้วย fixture 2 ร้าน rollback-only (4 เรต/6 public games/
+  hidden title/LOST copy/blocked+occupied tables/cross-tenant/flags/inactive/no-profile)
+  แต่ **ยังไม่ได้รัน DB**: runner ปฏิเสธเพราะไม่มี POSTGRES_HOST/POSTGRES_DB; syntax diagnostics 0
+  Docker เปิดอยู่แต่ไม่มี BMS/Postgres และไม่มี config ฐานทดสอบใน session; ไม่แตะร้าน TESTING-DEV จริง
+- browser ผ่าน skill computer-use: เปิด route `/admin/board-game` จาก build local แล้ว redirect ไป login;
+  จึงยังไม่ verify ฟอร์ม desktop/mobile, provider หรือแชทจริง; ปิดแท็บและ server ทดสอบหลังตรวจ
+- [สวิตช์แยกตามช่องทาง + release note ไทย + impact count SQL](docs/business/board-game-cafe.md#directory-visibility-versus-shop-chat)
+  ต้องแจ้งร้านว่า publish_rates/publish_availability default TRUE ตั้งแต่ 9.83;
+  ตรวจ assistantKnowledge แล้วข้อความ nearby discovery ถูกต้อง ไม่ต้องแก้ corpus/guide
+
+
+### ด่านบอร์ดเกม deterministic และคำอ้างทำรายการ — 2026-10-07
+
+- ต่อใน `codex/pharmacy-deterministic-guards` โดยรักษางานร้านยาเดิม; A–D ผ่าน gate ตามลำดับ
+  ไม่เพิ่ม chat write, migration, permission หรือ flag และยังไม่ commit/push/deploy
+- คำอ้างจับได้ 1/21 → 21/21; guard goldens ใหม่ 0/65 → 65/65; FAQ ห้ามจับ 33 ข้อยัง null/false
+  เพิ่ม urgent shop-neutral ก่อน profile หลัง pharmacy fast path เดิม; context ล้ม 5 จุดไม่เข้า model/tools/orders
+- ปิดช่อง checkout fallback คืนข้อความโมเดลที่อ้างจอง/รับเงิน; ไม่เปลี่ยน ACTION_CLAIM_PATTERN กลาง
+  scorer ต้องมีขอบคำอังกฤษ: `have notified` ไม่ใช่ `have not`; normalize ก่อนแยก contrast แต่เก็บ newline
+- gate สุดท้าย typecheck + pure **2,359/2,361, skip 2, fail 0** + build **132/132**;
+  หลัง mutation: board-game **266/267, skip 1**, customer-policy **86/86**, emergency **110/110**, pharmacy **366/366**
+- mutation **19/19 killed**, คืน 3 source files byte-exact; backup stash
+  `981ca84914cadb8014d0a2e11f658987daca4645` apply กลับแล้วและเก็บไว้ ไม่ใช้ checkout/reset
+- [รายงาน 127 ประโยคและข้อความใหม่](docs/ai/board-game-guards-recheck.md): safety/booking copy ยังไม่มีคนตรวจ;
+  E1 รออนุญาตฟิลด์ลิงก์ และ `/board-game` ยังไม่อ่าน slug จาก URL; E2 คงข้อความเภสัชกรเดิม เสนอ 3 ทางเลือกไว้
+  ยังไม่ได้ verify DB/provider/แชทจริง และไม่อ้างว่าครอบทุกถ้อยคำ
+
+
+### ด่านร้านยา deterministic ตามชุดคำถามที่หลุด — 2026-10-07
+
+- branch `codex/pharmacy-deterministic-guards` จาก `develop` (`91b3cc74`); แก้ A → B → C → D
+  โดยผ่าน gate ก่อนเปลี่ยนเฟส ไม่เพิ่ม migration/permission ไม่เปิด flag/protocol/approval และไม่ commit/push
+- เพิ่ม emergency, implicit dosage, สลับยา, บด/หักเม็ด, อาการสั้น และ human handoff aliases;
+  classifier ใช้ normalizer จาก `emergency.ts` leaf ตัวเดียว และใช้ animal-medication predicate
+  ร่วมกับ handoff ผู้ใช้ยืนยันสัตว์กัด/ข่วน → MEDICAL เดิม ไม่ใช่สัตวแพทย์
+- เทสอยู่ในไฟล์ pure เดิมทั้งหมด ตรึงข้อความตอบ/ร่าง/footers ด้วย SHA-256 และเพิ่ม negative
+  ขนาดบรรจุ/หน่วย mg/เวลา เพื่อไม่ให้คำถามซื้อของกลายเป็นคลินิก
+- [รายงานพร้อมตารางก่อน–หลังและผลตรวจ D4](docs/ai/pharmacy-guards-recheck.md);
+  DB, provider, แชทจริงและการตรวจทางคลินิกยังไม่ได้ verify ไม่มีการ deploy
+- gate A/B/C/D ผ่านตามลำดับ; รอบสุดท้าย typecheck + pure **2,214/2,216, skip 2, fail 0**
+  + build **132 pages**; หลังคืน mutation emergency **110/110**, customer **211/211**,
+  guidance **48/48**, pharmacy ทั้งชุด **366/366** ผ่าน
+- mutation **23/23 killed**, คืนโค้ดทั้ง 4 ไฟล์ SHA-256 ตรงก่อน/หลัง; สำรอง stash
+  `58e85cb573f9cd496d2d5386efb873757e145ecd` (apply กลับแล้วและเก็บ backup ไว้)
+  ตัวขับ `scripts/testing/pharmacy-guards-mutations.mjs` ต้องรับ backup stash SHA ก่อนทำงาน
+
+
+### Recheck รอบถัดมา: คำถามสั้นและ context outage — 2026-10-07
+
+- ต่อใน `codex/pharmacy-guidance-recheck` / Draft PR #304; ไม่เพิ่ม migration ไม่เปิด flag/protocol
+  และคงการอนุมัติแม่แบบแยกแต่ละร้าน
+- เพิ่ม regression 21 ประโยค: suitability/safety/หยุด-เริ่มยา/ยืนยันขนาด/แอลกอฮอล์/คำถามปนเลขเคส
+  และรายงานกินยาผิด/หายใจลำบาก; เทสแดงกับโค้ดเดิมก่อนแก้ shared guard
+- แยกโหลด profile ออกจาก optional identity/history/state/protocol context เพื่อไม่ให้ context
+  ล้มแล้วทิ้ง archetype ร้านยา; profile อ่านไม่ได้ให้ fixed unavailable ก่อน model/tools/orders
+  ด่านฉุกเฉินยังอยู่ก่อนการอ่าน profile ทุกกรณี
+- runtime จำลอง DB/cache/provider ทดสอบ context ล้ม 5 จุด, pipeline, active intake และ Lab;
+  ตรึงคำถามคูปอง/บัตรเครดิต/เจลแอลกอฮอล์/เพิ่มสินค้าให้ยังไม่ถูกเข้าใจเป็นคำถามคลินิก
+- focused customer assistance **106/106**, pharmacy ทั้งชุด **236/236** ผ่าน; `npm run gate` ผ่าน:
+  typecheck + pure **2,020 ผ่าน / 2,022 ข้อ / skip 2 / fail 0** + production build 132 pages
+  (build มี ECONNREFUSED จากหน้าที่อ่าน DB เช่นเดิม ไม่ใช่ผลทดสอบ DB)
+- ยังไม่ได้ทดสอบ DB/live provider/แชทจริง และไม่ได้ตรวจทางคลินิก; guard เป็น conservative matching
+  ไม่ใช่หลักฐานว่าครอบทุกถ้อยคำ ไม่มี deploy หรืออนุมัติข้อความ
+
+
+### Recheck แม่แบบคำแนะนำและการอนุมัติ `10.47` — 2026-10-07
+
+- branch `codex/pharmacy-guidance-recheck` ต่อจาก `codex/emergency-facilities`; ผู้ใช้ยืนยันให้คง
+  การอนุมัติแยกแต่ละร้าน ไม่มีแม่แบบกลางที่อนุมัติครั้งเดียวใช้ข้ามร้าน
+- ตรวจใบอนุญาตและ snapshot ใน transaction เดียวกับ approval/audit ผ่าน helper `10.47`
+  ที่ตรวจ tenant GUC และล็อก user row จน commit; ไม่มี Administrator bypass หรือ grant แก้ users เพิ่ม
+- ตัด placeholder ผิดรูปแบบ/ข้ามบรรทัด/ค่าร้านที่มี placeholder; เตือนชื่อยาจากรายการตัวอย่าง
+  (ไม่ใช่พจนานุกรมยาครบทุกตัว) และตัดคำสั่งหยุด/ใช้/ชดเชยยาออกจากร่างตั้งต้น
+- ไม่แก้แม่แบบที่ร้านบันทึกไว้ ไม่อนุมัติข้อความ ไม่เปิด flag/protocol; พรีวิวใช้ข้อมูลร้านจริง
+  ปุ่มอนุมัติแสดงเฉพาะผู้มีสิทธิ์และ license hint แต่ server ตรวจซ้ำเสมอ
+- gate ผ่าน: typecheck + production build; หลังเพิ่ม editor-context test สุดท้าย รัน full pure ซ้ำ
+  **1,998 ผ่าน / 2,000 ข้อ / skip 2 / fail 0**; focused **23/23**
+- guidance mutation **7/7 killed**: DRAFT customer read, licence bypass, raw placeholder, approved seed,
+  medicine-stop draft, tenant guard และ fabricated preview; คืนไฟล์ byte-exact และ baseline ผ่าน
+- เฟส 1 mutation ทดสอบซ้ำ **5/5 killed**, คืนไฟล์ byte-exact และ baseline emergency **46/46**
+- Browser เปิด `/admin/pharmacy-guidance` แล้ว redirect ไป login; ยังไม่ได้ตรวจ authenticated
+  form/desktop-mobile CRUD; ปิด server และแท็บทดสอบชั่วคราวแล้ว
+- DB runner ทั้งสองเฟสหยุดที่ env guard (ไม่มี POSTGRES_HOST/POSTGRES_DB): **ยังไม่ได้รัน SQL/DB tests**
+  หรือ apply `10.45`/`10.46`/`10.47`; ต้อง apply `10.47` ก่อนอนุมัติแม่แบบใหม่
+- ยังไม่ได้ทดสอบกับ AI provider/แชทจริง และข้อความยังไม่ได้รับการตรวจทางคลินิกโดยเภสัชกร
+
+
+### Recheck คำถามหลุดจากด่านร้านยา — 2026-10-07
+
+- ต่อบน `codex/emergency-facilities` / draft PR #303; ไม่เปลี่ยน flag, protocol, migration หรือ approval
+- พบเทส guidance เดิมกรองเฉพาะคำถามที่ guard จับได้ก่อน assertion จึงซ่อนช่องหลุด;
+  เปลี่ยนให้ทุกตัวอย่างคลินิกต้องผ่านด่านจริง (ชื่อสินค้าควบคุมยังยึด SKU policy ไม่เหมารวม)
+- เพิ่ม guard คำถามผลข้างเคียง/ลืมยา/ไม่ดีขึ้น/เทียบยาหมอสั่ง/สัตว์เลี้ยง และไม่ให้สถานะเคสกลบคำถามคลินิก
+- safety view รองรับอักขระแฝง/Markdown/เว้นวรรคไทย/เลขไทย และรูปประโยค overdose/swelling ภาษาอังกฤษ;
+  ไม่แก้ข้อความหลักฐานหรือ input สินค้า และไม่เปลี่ยนข้อความฉุกเฉินที่ตรวจร่างไว้เดิม
+- เทสเรียก pipeline, active intake และ Lab โดยจำลอง DB/cache/provider; คำบอกข้อมูลผู้ป่วยเฉย ๆ
+  ยังตอบ intake ได้ แต่เมื่อไม่มี intake จะส่งต่อ ไม่ให้เข้า commerce
+- `npm run gate` ผ่าน: **1,987 ผ่าน / 1,989 ข้อ / skip 2 / fail 0**, typecheck + production build ผ่าน
+  (build ยังมี ECONNREFUSED ของหน้าที่อ่าน DB เช่นเดิม ไม่ใช่ผลทดสอบฐานข้อมูล)
+- focused: customer assistance **84/84**, guidance **12/12**, emergency **46/46**
+- ยังไม่ได้ทดสอบ DB/live provider/แชทจริง และข้อความยังต้องให้เภสัชกรตรวจ; ไม่อ้างว่าครอบทุกถ้อยคำ
+
+
+### ต่อจาก Claude: emergency directory `10.46` — 2026-10-07
+
+branch `codex/emergency-facilities` ต่อจาก `feat/pharmacy-guidance-templates` · ไม่เปิด flag/ไม่อนุมัติข้อความทางคลินิก
+
+- เพิ่ม MEDICAL/POISONING/SELF_HARM, 1669 บรรทัดแรก, 1367/1323 ตามเหตุ และ 1155 ท้ายภาษาอังกฤษ
+- เพิ่ม directory ใน Settings ผ่าน service/GraphQL/RLS/revision/audit; ไม่เก็บตำแหน่งลูกค้า
+- ฉุกเฉินตรวจข้อความดิบก่อน context DB; directory รอรวมไม่เกิน 500 ms, SQL statement 400 ms
+- แชทไม่ทราบสาขาใช้เฉพาะรายการทุกสาขา; active + 24h ไม่เกิน 3 แห่ง; Lab ใช้ข้อความมาตรฐานไม่แนบรายชื่อ
+- fallback ตรงกับ `pharmacyEmergencyReply` รุ่นใหม่ทุกตัวอักษร ไม่ได้อ้างว่าข้อความเหมือนก่อนเพิ่มเบอร์/จัดบรรทัด
+- แก้เฟส 2 ให้ timeout ครอบ placeholder/profile และ cleanup DB test เฉพาะ UUID ของรอบนั้น
+- แก้เทส Windows 3 จุด (fileURLToPath / CRLF) ไม่แตะ runtime POS
+- `npm run gate` ผ่าน: **1,956 ผ่าน / 1,958 ข้อ / skip 2 / fail 0**, typecheck และ build ผ่าน
+  (ระหว่าง build มี ECONNREFUSED จากหน้าอื่นที่อ่าน DB; ไม่ใช่ผลทดสอบ DB)
+- mutation **5/5 killed**: เลื่อน 1669 ลง, ลบ 1367, แสดง non-24h, เอา timeout ออก, rethrow DB error;
+  คืนไฟล์ byte-exact และ baseline emergency suite **35/35 ผ่าน** หลังคืนแล้ว
+- เปิด browser `/admin/pharmacy-guidance` และ `/admin/settings` แล้ว redirect ไป login;
+  **ยังไม่ได้ตรวจฟอร์มหลังล็อกอิน/desktop-mobile CRUD** เพราะไม่มี session และฐานทดสอบ
+- DB runner ของทั้ง `pharmacy-guidance` และ `emergency-facilities` หยุดที่ env guard:
+  ไม่มี POSTGRES_HOST/POSTGRES_DB และ Docker daemon ไม่ทำงาน; **ไม่ได้รัน DB tests และไม่ได้ apply 10.45/10.46**
+- Draft PR เดิม: #301 (`10.43/10.44` -> develop), #302 (`10.45` -> branch #301)
+- ข้อความทั้งหมดที่เป็นร่างยัง **ไม่ได้ตรวจโดยเภสัชกรผู้มีใบอนุญาต**; ไม่พร้อมอ้าง production verification
+
+
+### `10.45` คำแนะนำที่เภสัชกรอนุมัติ สำหรับคำถามทางคลินิกของลูกค้า — 2026-10-07
+
+branch `feat/pharmacy-guidance-templates` (ต่อจาก `feat/customer-assistance-restaurant-pharmacy`
+ซึ่งเป็นงาน `10.43`/`10.44` ของ session อื่นที่ผู้ใช้สั่งให้ commit+push แทน) · **ไม่มี permission ใหม่** ·
+**`10.45` ยังไม่ได้ apply ที่ไหนเลย** · typecheck ผ่าน · pure **1,917/1,922** (แดง 3 ตัวเดิมชุดเดียวกับ
+develop: `desktop-checkout-benefits` · `desktop-sale-retry` · `pos-receipt-details`) · build ผ่าน 132/132 ·
+**mutation 11 แบบ แดงถูกตัวทุกครั้ง** · **เทส DB เขียนแล้วแต่ยังไม่ได้รัน** (เครื่องนี้ไม่มี Postgres/Docker)
+· **ยังไม่เคยเปิดดูหน้า `/admin/pharmacy-guidance` ในเบราว์เซอร์**
+
+- คำถามทางคลินิก 11 ชนิด จัดชนิดแบบ deterministic → ถ้าร้านมีข้อความที่เภสัชกรอนุมัติของชนิด+ภาษานั้น
+  ลูกค้าได้ข้อความนั้น ไม่งั้นได้ข้อความส่งต่อเดิมทุกตัวอักษร · ข้อความฉุกเฉินยังทำงานก่อนเสมอ
+- **ออกแบบต่างจาก prompt ที่ร่างไว้ 1 จุด: ไม่มีแม่แบบกลางระดับแพลตฟอร์มในฐาน (`tenant_id NULL`)**
+  เพราะ RLS policy ของ repo ตัด `tenant_id IS NULL` ทิ้ง และการอนุมัติควรเป็นของเภสัชกรของร้านเอง ·
+  ร่างตั้งต้นอยู่ในโค้ดแล้วร้านกด "สร้างร่าง" คัดลอกเป็นแถว DRAFT ของตัวเอง
+- **ไม่มี `{{pharmacist_hours}}`** — `get_pharmacy_service_status` ของ `10.44` เป็นหลักฐานกะย้อนหลัง
+  ไม่ใช่การยืนยันว่าเภสัชกรอยู่ จึงใช้แค่เบอร์/เวลาทำการ/ที่อยู่ของร้าน
+- **เทสเดิม 1 ตัวต้องเล็งใหม่:** `pharmacy-customer-assistance-contract` ตรึงว่า advice detour ใน intake
+  "ไม่มี DB call เลย" · ตอนนี้อนุญาตเฉพาะ query อ่าน `bms_pharmacy_guidance_templates` ที่ `status='APPROVED'`
+  ของ tenant นั้น และยังบังคับว่าไม่มีแถว = ข้อความเดิมทุกตัวอักษร
+- เติม `bms_pharmacy_guidance_templates` เข้า `CONFIGURATION` ของ `realtime-domain-coverage-contract`
+  และเติมหน้าใหม่ใน sidebar map ของ `/admin/manual`
+- **ก่อน deploy:** apply `10.45` (ไม่ apply ก็ไม่พัง — อ่านแบบ fail-safe จึงไม่อยู่ใน schemaReadiness) ·
+  รัน `node scripts/run-contract-tests.mjs db pharmacy-guidance` กับฐาน dev · ข้อความตั้งต้นต้องให้
+  เภสัชกรผู้มีใบอนุญาตตรวจ — **ยังไม่ได้รับการตรวจทางคลินิก**
+
+
+### อัปเดตเอกสารรวมให้ตรง `10.5`–`10.36` — 2026-10-02
+
+**เอกสารอย่างเดียว ไม่แตะโค้ด/migration/permission** · แก้ `CLAUDE.md` (สารบัญเอกสาร + สถานะ `10.5`–`10.36`
++ กฎ licensing fail-open) · `AGENTS.md` (repo map, POS/tax, Retail Local licensing/registry/reports,
+Social Login, sample-data ledger, ตารางเทส, CI ของ Retail Local) · `architecture/{system,api,database}.md`
+· `scripts/README.md` · `ai/work-assistant-coverage.md` · `feature-inventory.md` · `agent-invariants.md`
+· ลิงก์ relative ทุกตัวตรวจแล้วไม่เสีย
+
+- **⚠️ pure แดง 1 ตัวบน `develop` ตั้งแต่ก่อนแก้ (ของโค้ด ไม่ใช่ของเอกสาร):** `realtime-domain-coverage-contract`
+  → `bms_restaurant_checks:DELETE` ไม่มี trigger/เหตุผล · ต้นเหตุ `DELETE FROM bms_restaurant_checks` ใน
+  `lib/bms/platform.ts:175` (ลบร้าน) จากคอมมิต `3554faed` · **ยังไม่ได้แก้** — ทางที่น่าจะถูกคือประกาศเหตุผลใน
+  ลิสต์ของเทส (การลบทั้งร้านไม่ใช่ event ที่จอไหนต้องรู้) ไม่ใช่เพิ่ม trigger
+- ผลรัน pure: 1,612/1,613 ก่อนแก้ → 1,613/1,614 หลังแก้ (+1 มาจากอีก session ที่แก้ `deploy/retail-local/*` และ
+  `retail-local-installation-registry.test.mts` พร้อมกันใน working tree เดียวกัน — **ไม่ใช่ของรอบนี้ ไม่ได้แตะ**)
+- **ข้อสังเกตที่จดลง `database.md`:** `10.23` สร้าง CHECK `report_type` ใหม่โดย **ไม่มี** `EXPENSES`/`WHT`/
+  `ACCOUNTING_PACK` ที่ `10.11` เพิ่ม — วันนี้ไม่พังเพราะ `REPORT_TYPES` ไม่ใช้ แต่ถ้าจะเก็บรายงานชนิดนั้นต้องขยาย CHECK ก่อน
+- **drift ที่แก้แล้ว:** `api.md`/`agent-invariants.md` เคยเขียนว่า `onboarding/sample-data` gate ด้วย role — ของจริงคือ
+  `authorizeAdminRoute("product.edit")` ตั้งแต่ `10.26`
+- นับแคตตาล็อกผู้ช่วยใหม่: 51 capability · **119 guide** (จาก 117) · 20 FAQ · 24 กลุ่ม/139 กฎต่อภาษา · corpus 229 (จริง 99)
+
+
+### Mobile POS: Bluetooth/USB HID scanner mode — 2026-09-29
+
+branch `fix/mobile-hid-scanner-mode` · **ไม่มี migration · ไม่มี permission ใหม่ · ไม่แตะ server/GraphQL/
+schema/codegen** · เพิ่มโหมดเครื่องสแกนใน `BarcodeScannerModal` และจำ `camera`/`hardware` บนเครื่องด้วย
+`react-native-keychain` service แยก; อ่านไม่ได้ตกกลับกล้อง · HID ยิงต่อเนื่องแล้ว modal ค้าง ล้างช่อง คืน focus
+และบอกชื่อสินค้าที่เพิ่ม; รหัสไม่พบค้างและ select all · ref กัน CR+LF/submit ซ้ำระหว่าง loading · รหัสที่มี
+อักษรไทยหยุดก่อน resolve และแนะนำให้เปลี่ยน Hardware Keyboard เป็น English (US) โดยไม่เดาแปลงรหัส ·
+สินค้าที่มี modifier/หลาย pack ยังผ่าน `ProductOptionsModal` เดิมก่อนยืนยันว่าเพิ่มแล้ว
+
+- mobile `typecheck` + `lint` ผ่าน; Jest **30/30 suites, 181/181 tests** ผ่าน
+- focused scanner contract **9/9** ผ่าน และอยู่ในไฟล์เดิม `mobile-camera-scanner-contract.test.mts`
+  (ตัดคอมเมนต์ก่อนสแกน source; ไม่เพิ่ม pure-test file)
+- **mutation test 7/7 แดงถูกตัว**: 4 กฎเดิม + read preference ก่อน write จบ · ไม่ล้าง synchronous code ref ·
+  ข้าม product options; recheck พบ regex เดิมจับ `codeRef` คนละ block แล้วเขียวลอย จึงจำกัด source block และ
+  rerun mutation เดิมจนแดง จากนั้นคืน source ครบ
+- `apps/web npm run gate` รันจริงแต่จบ **1,567/1,568** เพราะ baseline ที่อยู่นอก diff:
+  `admin-navigation-contract` พบ alert ปิดไม่ได้ที่ `retail-local-releases/page.tsx:450`; scanner contracts ใน TAP ผ่าน
+  ทั้งหมด · รัน `npm run build` แยกแล้วผ่าน **125/125 pages** (มี warning เดิมว่า local PostgreSQL 5432
+  `ECONNREFUSED` ระหว่าง static generation)
+- **ยังไม่ได้ verify:** iPad + เครื่องยิง Bluetooth/USB HID จริง, CR+LF จริงจากรุ่นเครื่องยิง, native camera/HID
+  สลับโหมดบน binary จริง และ Android hardware
+
+
+### ⚠️ เดสก์ท็อปร้านทั่วไป: พิมพ์ใบเสร็จได้กระดาษเปล่า + ขายเมนูสูตร/สินค้าชุดไม่ได้ — 2026-09-23
+
+branch `recheck/retail-desktop-pos` (ต่อจาก `recheck/pharmacy-desktop-pos` เพราะแก้ไฟล์เดียวกัน) ·
+**ไม่มี migration · ไม่มี permission ใหม่** · GraphQL เพิ่ม field เดียว `BmsPosScanResult.stockTracked`
+(`schema.graphql` + RN `generated.ts` regenerate แล้ว) · typecheck ผ่าน · build ผ่าน · pure 1,403/1,408
+(แดง 5 ตัวเดิมเท่านั้น) · **มิวเทชัน 8 แบบ แดงถูกตัว** · **เปิดดูจริงในเบราว์เซอร์แล้ว** (dev 3100 + mock
+`/api/graphql` ที่ฝั่ง client · ไม่แตะฐานข้อมูล) · ไม่ได้รันเทส DB และไม่ได้เปิดในแอป Electron จริง
+
+#### 1. ⚠️ "พิมพ์ใบเสร็จ" ได้กระดาษเปล่า
+
+การ์ดสำเร็จของ `/pos/app` เรียก `window.print()` ตรง ๆ · `globals.css` ซ่อน `body *` ตอนพิมพ์ และเปิดให้เห็น
+เฉพาะ `#pos-receipt` เมื่อ body มี `data-pos-print-target="receipt"` — การ์ดไม่มีทั้งคู่ = **หน้าว่าง** ·
+และต่อให้พิมพ์ออก การ์ดมีแค่ยอด/เงินทอน ไม่มีรายการ ส่วนลด เลขใบกำกับ หรือ VAT
+- แก้: หลัง `SOLD` ดึง `bmsPosLastSale` (ต้อง `orderId` ตรงกับบิลที่เพิ่งขาย ไม่งั้นไม่พิมพ์) แล้วแปลงด้วย
+  `lib/pos/posSaleReceipt.ts` (pure · ตามกิ่ง "ใบขาย" ของ `receiptPayloadOf()` ใน `/pos`) → `<ReceiptPaper/>`
+  ตัวเดียวกับหน้าอื่น · ปุ่มพิมพ์ตั้ง marker + rAF/timeout แบบเดียวกับ `/pos` · โหลดไม่ได้ = บอกตรง ๆ + ปุ่มลองใหม่
+- **ยังพิมพ์ผ่าน print dialog เท่านั้น** (ESC/POS ของเดสก์ท็อปยังเป็นหลักไมล์แยก)
+
+#### 2. ⚠️ เมนูสูตร/ไม่คุมสต็อก/สินค้าชุด ขายบนหน้าย่อไม่ได้
+
+`bmsPosScan.available` อ่านแถว `bms_inventory` ของตัวสินค้าเอง ซึ่ง RECIPE/NON_STOCK/bundle เป็น 0 ตามดีไซน์
+หน้าย่อจึงขึ้น "ไม่มีสต็อกพร้อมขาย" และการ์ดในแคตตาล็อกถูก disable ด้วย `availableTotal <= 0` —
+ร้าน `food_beverage` (คาเฟ่ที่ใช้สูตร) **ขายเมนูจากเดสก์ท็อปไม่ได้เลย** · `/pos` เดิมไม่ติดเพราะไม่บล็อกฝั่ง client
+- แก้: `isPosVariantStockTracked()` (server) → `stockTracked` บนผล scan · หน้าย่อบล็อกเฉพาะตอน tracked ·
+  การ์ดใช้ `availability` ที่ server ตัดสิน (`isMenuSellable`) และขึ้น "พร้อมขาย" · SKU ที่ไม่รู้จักตอบ `true`
+- **ยังไม่ได้แก้ (คนละชั้น):** แคตตาล็อก (`listSellableProducts`) ยังรายงาน**สินค้าชุด**เป็น `OUT_OF_STOCK`
+  (`isMenuSellable` ไม่รู้จัก bundle) การ์ดชุดจึงยังกดไม่ได้ ต้องยิงบาร์โค้ดแทน · แก้ที่นั่นกระทบ AI/หน้าร้านด้วย
+
+#### จุดเล็ก
+
+- ปุ่ม + บนบรรทัดไม่เคยเช็คสต็อก (ไปล้มตอนจ่ายด้วย OUT_OF_STOCK) และปุ่มเพิ่มซ้ำเงียบเมื่อชนเพดาน → บอกแล้ว
+- ปุ่ม "เปิดหน้าขายแบบเต็ม" เคยโผล่กับ**ทุก** notice (รวม "ราคาเปลี่ยน" และ "รีเฟรชถูกเลื่อน") ทั้งที่ตะกร้าไม่ย้ายตามไป
+  → เหลือเฉพาะ notice ของสินค้า serial/น้ำหนัก/ตัวเลือก · ข้อความเดิมยังบอกว่า "จึงเปิด" ทั้งที่ไม่ได้เปิดให้
+- ข้อความ error ของขั้นตะกร้าค้างไปโผล่ในแผงรับเงิน → ล้างตอนกด "ไปชำระเงิน"
+
+#### ⚠️ กับดักที่เจอรอบนี้
+
+- **`await import()` ระดับบนสุดในไฟล์เทส = เทสที่อยู่ข้างล่างไม่ถูกนับเลย และรายงานว่าผ่าน** (18 → 18 ทั้งที่
+  เพิ่ม 6) · `--test-force-exit` จบก่อน import resolve · โมดูลใต้ `apps/web` ใช้ static import ได้ (ESM)
+- heredoc ยุบ `\u0000` เป็น NUL → anchor หาไม่เจอ (สคริปต์ล้มก่อนเขียน ไม่เสียหาย) · เขียนสคริปต์ด้วย Write tool
+- HMR หลังแก้ CSS remount จอเดสก์ท็อป (state หาย แต่ mock `fetch` ยังอยู่)
+
+#### ที่ตรวจแล้วว่าไม่ใช่บั๊ก
+
+- **บังคับเลขอ้างอิง QR/บัตร/วอลเล็ท** เข้มกว่า server และ `/pos` แต่ RN มีเทสตรึงไว้ชัด
+  (`paymentMath.test.ts`) = นโยบายที่ตั้งใจ ไม่ได้แตะ
+- วิธีชำระทุกตัวที่หน้าย่อส่ง (CASH/QR/CARD/WALLET/BANK_TRANSFER) อยู่ใน `PAYMENT_METHODS` ของ server
+- หน้าย่อไม่มีสมาชิก/คูปอง/ส่วนลดมือ — เป็นการตัดสินใจเดิม (ใช้หน้าขายเต็ม) ไม่ใช่บั๊ก
+
+
+### ⚠️ ร้านยาบนเดสก์ท็อปขายยาที่ต้องให้เภสัชกรดูไม่ได้เลย — 2026-09-23
+
+branch `recheck/pharmacy-desktop-pos` · **ไม่มี migration · ไม่มี permission ใหม่ · ไม่แตะ service/route/GraphQL**
+(แก้ `DesktopPosRenderer.tsx` + README ของเดสก์ท็อป) · typecheck ผ่าน · production build ผ่าน (117 หน้า) ·
+pure 1,397/1,402 — **แดง 5 ตัวที่เหลือเป็นของเดิม** (stash แล้วรันบน `develop` ได้ชุดเดียวกัน: offline-tender 1 ·
+sales-layout 2 · restaurant-i18n 1 · work-assistant 1) · **มิวเทชัน 5 แบบ แดงถูกตัว** ·
+**ไม่ได้รันเทส DB และยังไม่ได้เปิดดูในแอปเดสก์ท็อปจริง** (เครื่องนี้ Docker ไม่ได้รัน ไม่มี Postgres)
+
+#### ต้นเหตุ
+
+ปุ่ม "ขาย" ของ `/pos/app` คือหน้าขายแบบย่อ (`mobile_sell`) ซึ่ง `buildSalePayload()` **ส่งฟิลด์ร้านยาเป็น
+`null` ตายตัวทุกตัว** (`pharmacyReviewAssessmentId` · `pharmacistAuthorizerUserId/Pin` …) และไม่มี UI
+ส่งเข้าคิวเภสัชกร / กด PIN เภสัชกร / แนบหลักฐาน · ร้านยาจึงขายยาที่ติด `PHARMACY_*` ไม่ได้ — server ปฏิเสธ
+แล้วจอขึ้นแค่ข้อความ reason โดยไม่มีปุ่มไปต่อ · ของทั้งหมดนั้นมีอยู่แล้วใน `/pos` แท็บขาย (9.29) และ server
+ก็รองรับครบทั้ง REST และ GraphQL (RN ส่ง pharmacist PIN ได้แล้ว) — **ขาดแค่ที่หน้าย่อของเดสก์ท็อป**
+
+#### แก้
+
+- ร้าน archetype `pharmacy` แมป `mobile_sell` → แท็บ `sell` ของ workspace เต็มที่ฝังอยู่ (ผ่าน `shownModule`
+  ตัวเดียว ทุกจุดเดิมที่เขียน `setActiveModule("mobile_sell")` จึงไม่ต้องแก้) · login รอโหลด chunk ของ `/pos`
+  แทน catalog ย่อ · รูปเดียวกับที่ร้านอาหารถูกส่งไป `/pos/restaurant`
+- **จอลูกค้าตามหน้าที่กำลังขายจริง** — เดิม workspace ที่ฝังอยู่ถูก `suppressCustomerDisplay: true` เสมอ
+  ร้านยาที่ขายในแท็บ `sell` จึงได้จอลูกค้าว่าง · ตอนนี้แท็บ `sell` เป็นเจ้าของจอ ส่วนตัวส่งของเดสก์ท็อป
+  (ทั้ง post และคำตอบ `hello`) หยุดเมื่อไม่ใช่เจ้าของ ไม่งั้นตะกร้าว่างของเดสก์ท็อปทับบิลที่ลูกค้ากำลังจ่าย
+  · ผลพลอยได้: ร้านค้าปลีกที่เข้าแท็บ `sell` เต็มผ่านปุ่ม "เปิดหน้าขายแบบเต็ม" ก็ได้จอลูกค้าแล้ว
+
+#### เทส
+
+`pos-client-core-contract` +5 · `board-game-register-contract` เล็งใหม่ 1 ตัว (ชื่อตัวแปร `activeModule` →
+`shownModule` การันตีเดิมไม่เปลี่ยนเพราะการแมปแตะแค่ `mobile_sell`)
+
+#### ⚠️ ตัวรันเทส pure เหลือที่ว่างแค่ ~14 ตัวอักษรก่อนชนเพดานคำสั่งของ Windows
+
+`run-contract-tests.mjs` ปฏิเสธเมื่อความยาวคำสั่ง > 7,500 (cmd.exe รับได้ 8,191) · 133 ไฟล์ตอนนี้ยาว ~7,486
+**ไฟล์เทส pure ไฟล์ใหม่ไฟล์เดียวจะทำให้ `npm run gate` ล้มบน Windows ทันที** (รอบนี้เจอจริง จึงย้ายเทสเข้าไฟล์เดิม)
+· ทางแก้ที่ถูกคือให้ตัวรันแบ่งเป็นหลายรอบ/ใช้ glob ไม่ใช่ย้ายเทสไปมา — ยังไม่ได้ทำ
+
+#### ยังไม่ได้ทำ
+
+- หน้าขายย่อของเดสก์ท็อปยังไม่มีด่านร้านยาเลย (ตั้งใจ — ร้านยาไม่ได้ใช้มันแล้ว) · ถ้าวันหนึ่งจะให้ร้านยาใช้
+  ต้องยกทั้งคิวเภสัชกร/PIN/หลักฐานมาด้วย ไม่ใช่แค่เติมฟิลด์
+- ลิงก์ `/admin/pharmacy-queue` จากเครื่องขายบนเดสก์ท็อปเปิดในเบราว์เซอร์ของระบบ (guard `will-navigate`
+  ยอมแค่ path `/pos*`) — ตั้งใจ แต่เภสัชกรต้องล็อกอินหลังบ้านในเบราว์เซอร์นั้นเอง
+
+
+### ⚠️ การ์ดการจองบอร์ดเกมวัดจาก "ความกว้างจอ" ทั้งที่อยู่ในแผง 64% — ปุ่มเช็กอินหาย — 2026-09-22
+
+branch `fix/board-game-reservation-container-queries` · **ไม่มี migration · ไม่มี permission ใหม่ ·
+ไม่แตะ service/route/GraphQL สักบรรทัด** (แก้ `pos.css` + คลาสเดียวใน `BoardGamePanel.tsx`) ·
+typecheck ผ่าน · production build ผ่าน · **มิวเทชัน 7 แบบ แดงถูกตัวทุกครั้ง** และคืนไฟล์ตรงทุกไบต์ ·
+**วัดจริงในเบราว์เซอร์ที่ 320 / 390 / 520 / 768 / 820 / 1024 / 1240 / 1600** ·
+**ไม่ได้รันเทส DB สักตัว** (รอบนี้ไม่แตะเส้นข้อมูลเลย)
+
+#### ต้นเหตุ: `@media` วัดจอ แต่การ์ดอยู่ในแผงที่กว้าง ~62% ของจอ
+
+`.pos-bg-reservation-card` มี breakpoint เป็น `@media (max-width: 920px/520px)` แต่ตัวการ์ดอยู่ใน
+`.pos-bg-master-pane` ซึ่งเป็น `64fr` ของ master/detail · **จอกว้างไม่ได้แปลว่าแผงกว้าง**
+
+- **วัดจริงก่อนแก้ที่หน้าต่าง 1240px** (ขนาดในภาพที่ผู้ใช้ส่งมา): แผง 773 → การ์ด 728 แต่กฎฐาน
+  6 คอลัมน์ต้องการ **818** → `scrollWidth 816` เทียบ `clientWidth 726` แล้ว `overflow: hidden`
+  **กลืน 90px ทิ้งเงียบ ๆ** · ปุ่ม **"เช็กอิน" เหลือให้เห็น 31 จาก 121px** และ
+  `document.scrollWidth === 1240` = **ไม่มี scroller แนวนอนให้เลื่อนไปหา**
+- **ที่ 1024px แย่กว่ามาก**: ล้น **251px** และปุ่มทั้งสามใบ (แก้ไข/เลื่อน · เช็กอิน · ยกเลิก)
+  เห็น **0px ทั้งแถว** = การจองที่ยืนยันแล้วทำอะไรไม่ได้เลยสักอย่าง
+- **⚠️ ความจริงกลับหัว**: แผงยุบเป็นคอลัมน์เดียวที่จอ ≤920 → **จอ 820 ให้แผงกว้าง 770 แต่จอ 1024
+  ให้แค่ 567** · breakpoint ที่เรียงตามความกว้างจอจึงให้เลย์เอาต์กว้างกับกล่องที่แคบกว่าพอดี
+- รูปเดียวกับ "ปุ่มคืนแบบมีปัญหาหลุดออกนอกจอ" (2026-09-16) — **ปุ่มที่กดไม่ถึงเท่ากับไม่มีปุ่ม**
+  และ "เช็กอิน" เป็นทางเดียวที่เปลี่ยนการจองเป็นคิวจริง
+
+#### แก้ด้วย container query — คอนเทนเนอร์ตัวแรกของรีโปนี้
+
+`.pos-bg-reservation-section` (คลาสใหม่บน `<details>` ของการจอง) ประกาศ
+`container-type: inline-size; container-name: pos-bg-reservation` แล้วชั้นทั้งหมดย้ายจาก `@media`
+เป็น `@container` · **ขอบเขตแคบโดยตั้งใจ** — ไม่ไปใส่ที่ `.pos-bg-master-pane` เพราะ
+`container-type` สร้าง containment ที่เปลี่ยน containing block ของลูกที่ absolute ทั้งแผง
+
+- **ฐานเป็นชั้นแคบสุด (2 คอลัมน์) แล้วค่อยกางด้วย `min-width`** — ไม่ใช่กว้างสุดแล้วหดด้วย
+  `max-width` · เบราว์เซอร์/คอนเทนเนอร์ที่ไม่แมตช์จะตกมาที่กฎฐาน ซึ่งต้องเป็นของที่ **ลง 320px ได้**
+  ไม่ใช่ 6 คอลัมน์ที่ล้นอยู่แล้ว
+- เกณฑ์มาจากผลรวมคอลัมน์จริง: 5 คอลัมน์ = 520 + gap 40 + padding/border 26 = 586 → เปิดที่ **600** ·
+  6 คอลัมน์ = 742 + 50 + 26 = 818 → เปิดที่ **840**
+- แถวปุ่มเปลี่ยนจาก `repeat(2, minmax(0,1fr))` (เลขที่ตั้งไว้ล่วงหน้า) เป็น
+  `repeat(auto-fit, minmax(min(116px, 100%), 1fr))` — `.pos-ret-btn` เป็น `white-space: nowrap`
+  ปุ่มที่ถูกบีบจึงไม่หดตาม ตัวหนังสือจะพ้นกรอบไปทับของข้าง ๆ · **`min(<px>, 100%)` ต้องคงไว้เสมอ**
+  ตามกฎเดิมของรีโป
+- **ยืนยันว่า `@container` รอดจาก production build** (`grep` ใน `.next/static/css/*.css` เจอทั้ง
+  สองชั้นและ `container-type:inline-size`) — ถ้า postcss กินทิ้ง ฟีเจอร์จะตายเฉพาะบน production
+- Electron 43 (Chromium สมัยใหม่) รองรับเต็ม · รีโปไม่มี browserslist บังคับ
+
+#### ผลหลังแก้ (วัดจริงทุกช่วง)
+
+`overflow = 0` · ไม่มีปุ่มถูกตัด · ไม่มี horizontal scroll ของหน้า · ไม่มีปุ่มแคบกว่าป้ายตัวเอง
+ที่ **ทุก** ความกว้าง: 320 (คอนเทนเนอร์ 278 · 2 คอลัมน์) → 1600 (959 · 6 คอลัมน์)
+
+#### เทส
+
+`board-game-register-contract` เป็น **22 เทส** (จาก 19) — ตรึง **กฎ ไม่ใช่พิกเซล** เพราะชุด pure
+ไม่มีเบราว์เซอร์:
+
+1. ห้ามมีกฎของการ์ดตัวไหนอยู่ใต้ `@media` ที่วัดความกว้างอีก
+2. คอนเทนเนอร์ต้องถูกประกาศจริง **และชื่อใน `@container` ต้องตรงกับที่ประกาศ** — ชื่อที่พิมพ์ผิด
+   จะไม่แมตช์เงียบ ๆ แล้วตกกลับไปกฎฐาน = อาการเดิมทุกประการ
+3. **ตัวที่กันการถอยกลับจริง**: เทส **คำนวณความกว้างที่แต่ละชั้นต้องใช้จากคอลัมน์ของชั้นนั้นเอง**
+   (parse `minmax()` + gap + padding จาก CSS) แล้วบังคับว่าเกณฑ์ต้อง ≥ ค่านั้น — ใครเพิ่มคอลัมน์
+   แล้วไม่ขยับเกณฑ์จะแดงทันที · และกฎฐานต้องใช้ ≤ 300px
+4. แถวปุ่มต้องเป็น `auto-fit` + `min(<px>, 100%)`
+
+#### ⚠️ กับดักของเครื่องมือที่เจอซ้ำรอบนี้ (ของเดิมที่จดไว้แล้วทั้งสามข้อ)
+
+1. **anchor ของมิวเทชันต้องแปลงเป็น CRLF ก่อน** — รอบแรก 2 ใน 7 ตัวรายงาน `ANCHOR-MISSING`
+   ซึ่ง **อ่านผิดเป็น "มิวเทชันไม่แดง"** ได้ง่ายมาก · ไฟล์ในรีโปเป็น CRLF ส่วน anchor หลายบรรทัด
+   ที่เขียนเป็น LF จะหาไม่เจอ
+2. **heredoc ของ bash ยุบ `\\` เป็น `\`** — สคริปต์ Python ที่เขียนผ่าน heredoc แล้วมี `'\\r\\n'`
+   กลายเป็นขึ้นบรรทัดจริง → `SyntaxError` · ใช้ `chr(13)+chr(10)` หรือเขียนไฟล์ด้วย Write tool
+3. **heredoc ที่แทรกโค้ดเป็น LF ลงไฟล์ CRLF** — ต้องนับ lone LF หลังแก้ทุกครั้ง (รอบนี้เจอ 141 บรรทัด
+   ในไฟล์เทส normalize แล้ว)
+4. **`subprocess` บน Windows ต้องระบุ `encoding='utf-8'`** ไม่งั้น output ภาษาไทยทำให้ cp1252 crash
+   แล้ว `r.stdout` เป็น `None`
+
+#### ⚠️ กับดักของหน้าเช็ค CSS (ของใหม่ — จดไว้กันเสียเวลาซ้ำ)
+
+หน้าเช็คที่เสิร์ฟจาก `public/_bgcheck/` **ต้องมี `<meta name="viewport" content="width=device-width">`**
+ไม่งั้น Chrome ตั้ง layout viewport เป็น **980px** เวลาจำลองมือถือ → `resize_window(320)` ได้
+`innerWidth === 980` แล้วเลข "ที่ 320px" ทั้งชุดเป็นของปลอม · Next.js ใส่ meta นี้ให้เองโดยปริยาย
+(ยืนยันด้วย `curl /pos | grep viewport`) หน้าเช็คที่ยกมาเองจึงต้องยกมาด้วย — เหมือนกฎเดิมที่ว่า
+ต้องยก `antd/dist/reset.css` (`box-sizing`) มาด้วย
+
+#### ที่ตรวจแล้วว่าไม่ใช่ปัญหา (จดไว้กันไล่ซ้ำ)
+
+- **ผังโต๊ะ/กริดอื่นไม่เป็นแบบเดียวกัน** — พวกนั้นใช้ `auto-fill` + `min(<px>, 100%)` ซึ่งหดตาม
+  กล่องอยู่แล้ว ปัญหาอยู่เฉพาะกริดที่ประกาศคอลัมน์ตายตัว
+- **`overflow: hidden` บนการ์ดเก็บไว้ตามเดิม** — มันมีไว้ตัดแถบสีซ้าย (`::before`) ให้เข้ามุมโค้ง ·
+  ตัวที่กันการล้นคือชั้น container query ไม่ใช่การถอด overflow
+
+#### ยังไม่ได้ทำ
+
+- **ยังไม่ได้เปิดดูบนแอปเดสก์ท็อปจริง** — ที่วัดคือ `pos.css` ตัวจริง + DOM ชุดเดียวกับที่ panel
+  เรนเดอร์ ผ่าน dev server · ยังไม่ได้เดินเส้นจริงที่มีข้อมูลจากฐาน
+- **ไม่ได้ไล่ `pos-bg-*` ตัวอื่นที่อาจมีอาการเดียวกัน** — `@media (max-width: 520px)` ที่เหลือยัง
+  วัดจากจอทั้งหมด (เช่น `.pos-bg-floor`, `.pos-bg-quick-actions`) · พวกนั้นยังไม่ล้นวันนี้เพราะเป็น
+  `auto-fill`/flex แต่ **กฎที่วัดผิดแกนก็ยังวัดผิดแกนอยู่ดี** — ควรเป็นรอบของตัวเอง
+- **ชุด pure มีตัวแดงค้างอยู่ 5 ตัวตั้งแต่ก่อนเริ่ม** (ยืนยันด้วยการ stash แล้วรันบน `develop`
+  ได้ชื่อชุดเดียวกันเป๊ะ): `pos-sales-layout-contract` 2 · `work-assistant` 1 · `desktop` 1 ·
+  i18n 1 — **ไม่ใช่ของรอบนี้ และยังไม่ได้แก้**
+
+
+### recheck แท็บ "โต๊ะ/เวลา" ของเครื่องขาย + ทำให้ใช้บนโทรศัพท์ได้จริง — 2026-09-16
+
+branch `recheck/board-game-pos-responsive` · **ไม่มี migration · ไม่มี permission ใหม่ · ไม่แตะ
+service/route/GraphQL สักบรรทัด** (แก้เฉพาะ `components/pos/BoardGamePanel.tsx` กับ `pos.css`) ·
+typecheck web+ws ผ่าน · **pure 1,279/1,279** (จาก 1,271) · production build ผ่าน (115 หน้า) ·
+**มิวเทชัน 18 แบบ แดงถูกตัวทุกครั้ง** และคืนไฟล์ตรงทุกไบต์ · **ไม่ได้รันเทส DB สักตัว**
+(เครื่องนี้ 5432 ปิด · docker มีแต่ container ของโปรเจกต์อื่น) ·
+**เปิดดูจริงในเบราว์เซอร์ที่ 320 / 375 / 414 / 1280 แล้ว** (dev server + React tree จริง +
+แพตช์ `window.fetch` — **ไม่แตะฐานข้อมูล ไม่ยืม token ของเครื่องจริง**)
+
+#### ⚠️ 1. ปุ่ม "คืนแบบมีปัญหา" หลุดออกนอกจอแล้วกดไม่ถึงที่ 320px
+
+วัดจริง: แถว "เกมที่ยืม" กว้าง 240 จบที่ x=280 แต่กลุ่มปุ่มของมันกว้าง 181 ไปจบที่ **x=327 =
+พ้นจอ 7px** โดยที่หน้าไม่มี scroller แนวนอนให้เลื่อนไปหา (`document.scrollWidth === 320`)
+
+- ต้นเหตุสามชั้นซ้อนกัน: แถวเป็น `justify-content: space-between` ที่**ไม่มี `flex-wrap`** ·
+  คอลัมน์ข้อความไม่มี `min-width: 0` จึงหดต่ำกว่า min-content ไม่ได้ · และ `.pos-ret-btn`
+  เป็น `white-space: nowrap` ปุ่มจึงหดไม่ได้เช่นกัน
+- **ที่ 375px แถวเดียวกันได้ 106 + 8 + 181 = 295 เท่าความกว้างพอดีเป๊ะ** (ที่ว่างเหลือ 0) ชื่อเกม
+  ที่ยาวกว่าตัวอย่างอีกนิดเดียวก็ล้นบนไอโฟนเหมือนกัน
+- **ปุ่มที่หลุดคือทางเดียวที่ร้านบันทึกว่ากล่องเกมหาย/พัง** — ปุ่มที่กดไม่ถึงเท่ากับไม่มีปุ่ม ·
+  รูปเดียวกับ "ปุ่มปฏิเสธออร์เดอร์ QR อยู่ที่ left: −28px" ที่เคยเจอเมื่อ 2026-09-10
+- แก้ด้วยคลาสชุด `.pos-bg-row` / `-main` / `-actions`: แถวตกบรรทัดได้ · ข้อความหดได้ ·
+  กลุ่มปุ่มตกลงมาบรรทัดของตัวเองแทนที่จะดันออกนอกกรอบ · **หลังแก้วัดได้ actsRight = 221**
+  (อยู่ในแถวที่จบที่ 280 และในจอที่กว้าง 320)
+
+#### ⚠️ 2. ผังโต๊ะเป็นคอลัมน์เดียวบนโทรศัพท์ทุกรุ่น = ไม่ใช่ผัง มันคือลิสต์
+
+ราง `minmax(min(168px,100%),1fr)` ทำให้ `auto-fill` ได้ **คอลัมน์เดียวทั้งที่ 320 และ 375**
+(พื้นที่จริงของแผงคือ 270px และ ~295px) · ผังที่แสดงโต๊ะละแถวเสียสิ่งเดียวที่มันมีไว้แทน
+
+- ราง 132px **ยังไม่พอ** เพราะ 132×2 + gap 8 = 272 > 270 — พลาดไป 2px · ตั้ง **124px** แล้ววัดได้
+  2 คอลัมน์ที่ทั้ง 320 (131px) · 375 (158.5px) · 414 (178px) และเดสก์ท็อป 1280 ยังเป็น 3 คอลัมน์เท่าเดิม
+- **`min(<px>, 100%)` ต้องคงไว้เสมอ** ตามกฎเดิมของรีโป — `minmax(<px>, 1fr)` เปล่า ๆ ยืนกราน
+  ความกว้างขั้นต่ำแม้กล่องจะแคบกว่านั้น แล้วล้นออกข้าง
+
+#### ⚠️ 3. โต๊ะที่เล่นมาสองชั่วโมงขึ้นว่า ฿0.00
+
+`bms_board_game_billing_groups.amount_due` คือ **ค่าเล่นที่แช่ไว้ตอนปิดบิล** (`9.89` — เส้นเดียวที่
+เขียนคอลัมน์นี้คือ `closeOpenBillingGroupInTx`) กลุ่มที่ยังเล่นอยู่จึงเป็น 0 เสมอ: 0 ที่แปลว่า
+"ยังไม่ถูกแช่" ไม่ใช่ "ไม่ติดเงิน"
+
+- **`/admin/board-game` แสดงยอดเฉพาะตอน `status === 'CLOSING'`** (page.tsx:631) และ **แอป RN
+  ทำแบบเดียวกัน** (BoardGameScreen.tsx:756) — จอนี้เป็นที่เดียวที่พิมพ์ทุกสถานะ ทั้งบนการ์ดโต๊ะ
+  และบนหัวการ์ดที่เขียนกำกับว่า "ยอดถึงตอนนี้ · ค่าเล่น + ของที่สั่ง"
+- แก้: การ์ดโต๊ะขึ้นยอดต่อเมื่อ `awaitingPaymentCount > 0` (มีบิลที่ปิดเวลาแล้วรอเก็บจริง)
+  ไม่งั้นขึ้นว่า "ยังไม่ปิดเวลา" · หัวการ์ดแยกสองก้อนด้วย `moneySoFar()`:
+  **ยอดที่ปิดแล้วรอเก็บเงิน** กับ **ของที่สั่งของกลุ่มที่ยังเล่น** และบอกตรง ๆ ว่าค่าเล่นของกลุ่ม
+  ที่ยังเล่นอยู่จะคิดตอนปิดเวลา · ยอดของบน tab ต่อกลุ่มเห็นได้เสมอแล้ว (เดิมโผล่เฉพาะโต๊ะที่แยกบิล)
+
+#### ⚠️ 4. ยกเลิกโต๊ะแล้วการ์ดเด้งกลับขึ้นมาพร้อมป้าย "กำลังเล่น"
+
+`run()` ถูกประกาศใหม่ทุก render จึงปิดทับ `selectedId` **ของ render นั้น** · callback `after`
+ของการยกเลิกล้างการเลือกไปแล้ว แต่บรรทัดถัดไปของ `run` ยังอ่านค่าเก่าแล้ว `loadSession(id เดิม)`
+กลับมา · `tableStateLabel()` ไม่มีกิ่งของ `CANCELLED`/`PAID` จึงตกไป `alertLabel()` = "กำลังเล่น"
+และฟอร์มยกเลิกกลับมาอีกรอบ (`session.status !== 'PAID'`)
+
+- **พิสูจน์ในเบราว์เซอร์ทั้งสองทาง**: ย้อนบรรทัดเดียวกลับไปอ่าน state → หลังยกเลิกยิง `session`
+  ซ้ำ การ์ดกลับมา ข้อความว่า "เล่นมาแล้ว" ยังอยู่ · ใส่กลับ → เหลือ `cancel` + `workspace` เท่านั้น
+- แก้: `selectedIdRef` เป็นความจริงของ "กำลังดูโต๊ะไหน" ส่วน state มีไว้ให้ React วาด ·
+  `selectTable()` เป็น **ผู้เขียนคนเดียว** (เทสตรึงว่า `setSelectedId` ถูกเรียกได้ที่เดียว) ·
+  โต๊ะที่จบแล้วได้การ์ดของตัวเองที่บอกว่าเกิดอะไรขึ้น + ปุ่มกลับไปที่ผัง แทนการ์ดเต็มที่มีแต่
+  ปุ่มที่กดแล้วล้ม
+
+#### ⚠️ 5. ยิงบาร์โค้ดเข้าช่องสั่งของแล้วไม่มีอะไรเกิดขึ้น
+
+แท็บนี้ปิดตัวจับบาร์โค้ดรวมของเครื่องขายไว้โดยตั้งใจ (`resolveScanContext` คืน `DISABLED`)
+เครื่องสแกนจึงพิมพ์รหัสลงช่องตรง ๆ แล้วจบด้วย Enter · **ช่องไม่ได้อยู่ใน `<form>`** Enter จึง
+ไม่ไปไหน ทั้งที่ placeholder เขียนว่า "ยิงบาร์โค้ดหรือพิมพ์รหัส"
+
+- แก้ด้วย `addTabItem()` ตัวเดียวที่ทั้งปุ่มและ Enter เรียก (สองทางที่ตัดสินเองจะ drift) ·
+  **พิสูจน์แล้ว**: ยิง Enter ลงช่อง → `tab.add` ออกไปพร้อม sku/จำนวน/กลุ่มที่ถูก
+
+#### ⚠️ 6. จอไม่เคยบอกว่ามันหยุดได้ข้อมูลใหม่ไปแล้ว
+
+`useLiveRefresh` คืน `lastOkAt`/`lastErrorAt` ให้อยู่แล้ว แต่แผงนี้ทิ้งทั้งคู่ · จอครัวและ
+`/pos/restaurant` แสดง `feedHealth()` มาตลอด — **จอที่ค้างเงียบ ๆ อ่านไม่ต่างจากจอที่ข้อมูลถูกต้อง**
+
+- เพิ่มป้ายข้าง ๆ ปุ่ม "โหลดใหม่" ที่อ่านจาก **เวลาที่โหลดสำเร็จครั้งล่าสุด** ไม่ใช่นาฬิกาของเครื่อง
+  (ซึ่งเดินสวยตลอดแม้เน็ตตายไปแล้ว) · **พิสูจน์แล้ว**: ตัดสายข้อมูลทิ้งแล้วป้ายเปลี่ยนเป็น
+  `pos-bg-feed--stale` + "ยังไม่ได้ข้อมูลใหม่ — ตัวเลขบนจอนี้อาจไม่ตรงกับหน้าร้าน"
+
+#### จุดเล็กที่แก้ไปด้วย
+
+- เปิดโต๊ะเสร็จแล้ว **ไปยืนที่โต๊ะนั้นทันที** — ขั้นถัดไปของคนหน้าเคาน์เตอร์คือยื่นกล่องเกมและรับบัตร
+  ซึ่งทำได้จากการ์ดของโต๊ะนั้นเท่านั้น (เดิมต้องแตะโต๊ะซ้ำอีกที เพราะ `run` เห็น selection เป็นค่าว่าง)
+- ฟอร์มทุกอันเปลี่ยนจาก `width: 120/90/140` + `minWidth: 170/160` ตายตัว เป็น `.pos-bg-field`
+  ที่ยืด/หดตามที่เหลือ · ช่องตัวเลขใช้ `.pos-bg-field--num` ซึ่งยัง **หดได้** ไม่ได้ตรึงพิกเซล
+- ปุ่มที่กินเต็มแถว (`.pos-bg-action`) ตัดบรรทัดได้ · `.pos-ret-btn` เป็น nowrap ซึ่งถูกสำหรับปุ่ม
+  ในแถว แต่ปุ่มที่ถูกยืดเต็มคอลัมน์ไม่โตตามป้าย **วัดแล้ว: พอป้ายยาวพ้นราว 214px ตัวหนังสือ
+  จะพ้นกรอบปุ่มไปวาดทับของข้าง ๆ** (textRight 314 บนปุ่มที่จบที่ 280) — ป้ายวันนี้ยังไม่ถึง
+  แต่เลขกลุ่มสองหลัก/ยอดหกหลักจะไปถึง
+
+#### เทส
+
+`scripts/board-game-register-contract.test.mts` (**8 เทส pure**) — ตรึง **กฎ ไม่ใช่ตัวเลขพิกเซล**
+เพราะชุด pure ไม่มีเบราว์เซอร์: รางของโทรศัพท์ต้องแคบกว่ารางฐาน **และต้องใส่สองคอลัมน์ลงในกล่อง
+270px ที่วัดมาได้จริง** · แถวต้องตกบรรทัดได้/ข้อความต้องหดได้ · ปุ่มเต็มแถวต้องตัดบรรทัดได้ ·
+ห้ามเรนเดอร์ `session.amountDue` ดิบ · `run()` ห้ามอ่าน selection จาก state · โต๊ะที่จบแล้วต้อง
+ไม่ได้การ์ดเต็ม · ช่องบาร์โค้ดต้องรับ Enter · ป้ายสายข้อมูลต้องมาจาก `lastOkAt`
+
+- **⚠️ เทสรอบแรกอ่อน 2 ตัว จับได้ด้วยมิวเทชัน ไม่ใช่ด้วยตา** — ทั้งคู่เป็นกับดัก "อย่างน้อย N":
+  1. `enters.length >= 1` เขียวแม้ถอด Enter ออกจาก**ช่องบาร์โค้ด** เพราะช่องจำนวนก็มี handler ·
+     ต้องเล็งที่ช่องที่ placeholder สัญญาไว้ โดยอ่าน **ทั้งแท็ก** ด้วยตัวนับปีกกา (prop ของ JSX
+     มี `{...}` ซ้อนได้ regex สั้น ๆ จะตัดกลางแท็ก)
+  2. `pos-bg-action >= 4 ปุ่ม` เขียวแม้ปุ่มหนึ่งหลุด · เปลี่ยนเป็นกฎจริง: **ทุกปุ่มที่อยู่ใน
+     `.pos-bg-actions-stack`** (ซึ่งยืดเต็มความกว้างโดยโครงสร้าง) ต้องตัดบรรทัดได้
+- ตัวอ่าน CSS ในเทสรวม body ของ **ทุกกฎ** ที่เล็ง selector เดียวกัน และแยก media ออกจากกฎฐาน —
+  selector หนึ่งถูกประกาศได้หลายที่ (กับดักที่เคยทำให้เทสของ `/pos/restaurant` แดงด้วยเหตุผลผิด)
+- ทุก assertion อ่านซอร์สที่ **ตัดคอมเมนต์ออกแล้ว** — คอมเมนต์ในไฟล์ที่ถูกตรึงอธิบายกฎพวกนี้
+  ด้วยคำเดียวกัน
+
+#### ที่ตรวจแล้วว่าไม่ใช่ปัญหา (จดไว้กันไล่ซ้ำ)
+
+- **`session.tableId` เป็นโต๊ะของ *ที่นั่ง* ไม่ใช่ `sessions.table_id` ที่เป็นประวัติ** —
+  `getBoardGameSession` join `bms_board_game_seatings st ON st.id = s.seating_id` แล้ว select
+  `st.table_id` · กับดักของ `9.91` ไม่ได้อยู่ที่นี่
+- **`identity.hold` ไม่ต้องมีด่านสาขาของ `loanId` ที่ชั้น POS** — `takeBoardGameIdentityHold`
+  ตรวจเองว่ากล่องนั้นเป็นของ session นี้และยัง `CHECKED_OUT`
+- **"+30 นาที" ถูกต้อง** — `expected_end_at = started_at + duration` และ `plannedMinutes()`
+  ก็ถอดกลับด้วยสูตรเดียวกันเป๊ะ
+- **คีย์กันรายการซ้ำปลอดภัย** — ทิ้งเมื่อ server ตัดสินแล้ว (4xx รวม 409) เก็บไว้เฉพาะตอนไม่รู้ผล
+- **การแยกไฟล์ใหม่ไม่กระทบด่านเดิม** — `board-game-pos-parity-contract` ซึ่งอ่านชื่อคำสั่งจาก
+  `run(ชื่องาน, คำสั่ง, payload)` ของจอ ยังเขียวครบ (รูปของ `run` ไม่ถูกเปลี่ยน)
+
+#### ยังไม่ได้ทำ
+
+- **ยังไม่ได้รันเทส DB สักตัว** และ **ยังไม่เคยเดินกับฐานจริง** — ที่ยืนยันแล้วคือ typecheck +
+  pure + build + การเดินจอจริงกับ backend จำลอง · **payload ที่จอส่งไม่ได้ถูกแตะเลยในรอบนี้**
+  (ไม่มีการเปลี่ยน action/field สักตัว) แต่ก็ยังไม่ได้พิสูจน์กับ service
+- **โต๊ะที่อยู่ในโซนที่ถูกปิดใช้งานหายไปจากผัง** ทั้งที่ session ยังเดินอยู่ —
+  `listBoardGameFloor` กรองโซนด้วย `active` แต่กรองโต๊ะด้วย `t.active` เท่านั้น แล้วทั้งจอนี้และ
+  `/admin/board-game` เรนเดอร์โต๊ะด้วยการไล่โซน · **จงใจไม่แก้ที่นี่** เพราะแก้ข้างเดียวจะทำให้
+  เครื่องขายกับหลังบ้านไม่ตรงกัน · ที่ถูกคือกันที่ `upsertBoardGameArea` (ห้ามปิดโซนที่ยังมีโต๊ะเปิดอยู่)
+- **`GET /api/pos/board-game/session` ยังใช้แค่ device token** (ไม่มี PIN ไม่มี permission) —
+  ของเดิมตั้งแต่ `9.79` และเป็นปลายทางของลิงก์ handoff จาก `/admin/board-game` ซึ่งโหลดก่อน
+  แคชเชียร์กรอก PIN · ปิดช่องนี้ต้องตัดสินใจเรื่อง flow นั้นพร้อมกัน · route นั้นยังกลืน error
+  ทุกชนิดเป็น 404 ด้วย (ฐานขาด migration จะอ่านว่า "ไม่พบบิล")
+- **"โต๊ะที่ต้องดู" ยังไม่รวมโต๊ะที่ปิดเวลาแล้วรอเก็บเงิน** (`alertStatus` คิดจาก session ที่ OPEN
+  เท่านั้น) — เป็นการตัดสินใจเชิงผลิตภัณฑ์ ไม่ใช่บั๊ก จึงไม่แตะ
+- ปุ่มของแท็บนี้สูง 38px ตาม `.pos-ret-btn` ซึ่ง **ต่ำกว่ากฎ 44px ที่หัว `pos.css` เขียนไว้เอง** —
+  เป็นค่าที่แท็บคืนสินค้าตั้งไว้และใช้ร่วมกันทั้งจอ การขยับต้องเป็นรอบของตัวเอง
+
+
+### apply `9.89`–`9.93` เข้า production แล้ว — 2026-09-16
+
+**ผู้ใช้แจ้งว่า apply ครบทั้งห้าไฟล์เรียงเลขแล้ว** · **ยังไม่ได้ verify จากเครื่องนี้** — เครื่องนี้ไม่มีทั้ง
+Docker, `psql` และไฟล์ `.env*` จึงต่อฐาน production ไม่ได้เลย · บรรทัด "ยังไม่ได้ apply เข้า production"
+ในหัวข้อของ `9.89`–`9.93` ข้างล่าง **เป็นบันทึกของเซสชันนั้น ไม่ใช่สถานะวันนี้**
+
+- **สิทธิ์ใหม่สองตัว seed มากับ migration เอง** — `board_game.pass.manage` (`9.92`) และ
+  `board_game.identity.reveal` (`9.93`) INSERT เข้า `bms_role_permissions` ให้ role **Manager** ของทุกร้าน
+  ที่มีอยู่ ณ เวลาที่ apply · `Administrator` ได้ทุกสิทธิ์โดยปริยายอยู่แล้ว · **ร้านที่สมัครหลังจากนี้ไม่ได้มาจาก
+  migration** ต้องมาจากเส้นทาง seed ของการสร้างร้าน
+- **ยังต้อง deploy โค้ดตามไปด้วย** — apply อย่างเดียวไม่เปิดฟีเจอร์ ฐานมีตารางแต่ยังไม่มีใครเรียก
+- ตรวจซ้ำแบบ read-only บนเซิร์ฟเวอร์ได้ (เครื่องนั้นไม่มี Node):
+  `psql ... -f - < db/checks/schema-readiness.sql` ต้องขึ้น ✅ ครบทุกไฟล์ รวม `9.80` และ `9.89`–`9.93`
+  ซึ่งถูกเพิ่มเข้าลิสต์ตอน recheck 2026-09-16
+- **ย้อนกลับยากแล้ว**: ทิ้ง `bms_board_game_identity_holds` ได้ก็ต่อเมื่อ
+  `SELECT count(*) FROM bms_board_game_identity_holds WHERE status='HELD'` = 0
+
+
+### recheck งาน tab บอร์ดเกมบน RN + บิล ฿0 ของ codex แล้วปิดให้จบ — 2026-09-16
+
+branch `codex/audit-board-game-hardening` (ต่อจาก PR #210 ที่ merge แล้ว) · **ไม่มี migration ใหม่ ·
+ไม่มี permission ใหม่ · ไม่แตะ money path ของ service เลย** (แก้เฉพาะขอบของ adapter กับจอ) ·
+typecheck web+ws+mobile ผ่าน · lint mobile ผ่าน · **Jest 143/143** · **pure 1,271/1,271** (จาก
+1,269 ที่ **แดง 3**) · production build ผ่าน · `schema.graphql` + RN codegen รันซ้ำแล้วได้ sha256 เดิม ·
+**มิวเทชัน 20 แบบ แดงถูกตัวทุกครั้ง** และคืนไฟล์ตรงทุกไบต์ · **ไม่ได้รันเทส DB สักตัว**
+(เครื่องนี้ 5432 ปิด · docker มีแต่ container ของโปรเจกต์อื่น) · **ยังไม่เคยเปิดดูบนเครื่องจริง**
+
+#### ⚠️ สถานะที่รับช่วงมา: gate แดง 3 ตัวตั้งแต่ก่อนเริ่ม
+
+codex เพิ่ม mutation ใหม่สองตัว (`bmsPosAddBoardGameTabItem` / `bmsPosRemoveBoardGameTabItem`)
+แต่ไม่ได้ขยับตัวเลขที่ contract ตรึงไว้ 3 ที่: input-bearing 81 → 83 · typed output 126 → 128 ·
+แถว `Typed (126)` ใน `react-native-graphql-client.md` · **รูปเดียวกับ `9.91` เป๊ะ ๆ**
+(เขียวเฉพาะสิ่งที่ไม่มีใครรัน) — คนที่ merge ต่อจะเจอ CI แดงโดยไม่รู้ว่ามาจากอะไร
+
+- แก้ตัวเลขครบแล้ว และ **ถอนเลขที่ซ้ำกันออก**: เอกสารเดียวกันเขียน `Typed (126)` กับ
+  "All 122 operations" ห่างกันสามบรรทัด (ทั้งคู่ผิด) · `mobile-graphql-ws-realtime.md` และ
+  `CLAUDE.md` ก็ถือเลข 122 ค้างอยู่ · ตอนนี้เหลือเลขเดียวคือแถวที่เทสตรึง ที่เหลือเขียนเป็นคำ
+
+#### ⚠️ 1. ด่าน parity มีทางเดียว — `tab.add`/`tab.remove` จึงหายจากแอปตั้งแต่ `9.90` โดยไม่มีอะไรฟ้อง
+
+`board-game-pos-parity-contract` บังคับว่า **เบราว์เซอร์** ต้องเอื้อมถึงทุกคำสั่งที่เขียนข้อมูล
+(อ่านลิสต์จาก dispatcher จริง ไม่ใช่จากที่เทสพิมพ์เอง) แต่ **ไม่มีด่านทางกลับ** · ผลคือคำสั่ง
+สั่งของเข้าบิลอยู่ในตารางตั้งแต่ `9.90` (2026-09-15) โดยที่ SDL ไม่มี mutation ให้แอปเรียก —
+แอปแสดงรายการบน tab ได้แต่เพิ่ม/เอาออกไม่ได้ ต้องเดินไปหาเบราว์เซอร์ และไม่มีเทสไหนแดง
+
+- เพิ่มเทส **"the native register reaches every board-game command that writes"** ที่อ่านชื่อคำสั่ง
+  จาก `boardGamePosAccess(ctx, args.input, "…")` ของ resolver จริง แล้วเทียบกับ `writeActions()`
+  ตัวเดียวกับด่านของเบราว์เซอร์ · มิวเทชัน (สลับ action ของ `tab.add`/`tab.remove` เป็นตัวอื่น)
+  แดงถูกตัวทั้งคู่
+- **เทสของ codex อ่อนกว่ามาตรฐานที่ไฟล์นั้นเขียนไว้เอง** — `assert.match(boardGame,
+  /MobilePosAddBoardGameTabItemDocument/)` เขียวได้ด้วย **บรรทัด import อย่างเดียว** ซึ่งเป็นกับดัก
+  ที่ไฟล์นั้นมีคอมเมนต์เตือนไว้แล้วจาก `9.91` · ย้ายเอกสารสองตัวเข้าลูป `useMutation(` ที่มีอยู่แล้ว
+
+#### ⚠️ 2. บิล ฿0 ของแพ็กเกจสมาชิก: ด่านต้องคลายที่ **ทุกขอบ** ไม่ใช่ที่ service อย่างเดียว
+
+`recordPosSale()` ยกเว้นด่าน "ต้องระบุการชำระเงิน" ให้บิลบอร์ดเกมมาตั้งแต่ `9.92` แต่ **ตัวแยก
+payload ของแต่ละ adapter ปฏิเสธก่อนถึง service** · เบราว์เซอร์ส่ง `payments: []` เมื่อยอดเป็นศูนย์
+(`paymentSummary.normalized.filter(numericAmount > 0)`) แล้วโดน 400 ที่ route ตัวเอง — แปลว่า
+**ร้านที่ขายแพ็กเกจไม่อั้นเก็บบิลไม่ได้เลยสักใบจากเบราว์เซอร์** ตั้งแต่ `9.92` ถึงวันนี้
+(เทส DB ของ `9.92` เรียก service ตรง ๆ จึงไม่เคยเดินผ่าน route)
+
+- codex แก้ถูกทางแล้ว (เติม `allowEmpty` ที่ทั้งสอง adapter) แต่ **เทสที่เขียนคุมแค่ฝั่ง GraphQL**
+  ซึ่งเป็นฝั่งที่ยังไม่มีร้านไหนใช้ · ตัวที่พังจริงคือ REST
+- เทสใหม่ **"a board-game bill with nothing left to pay can be settled from both registers"** ตรึง
+  ทั้งสอง adapter พร้อมกัน + **เดิน `apps/web` ทั้งโฟลเดอร์ (722 ไฟล์)** บังคับว่า `allowEmpty`
+  ทุกจุดต้องเป็น `Boolean(boardGameBillingGroupId)` และมีได้ **2 จุดเท่านั้น** — ผู้เรียกรายที่สาม
+  ที่เปิดแบบไม่มีเงื่อนไขคือทางที่บิลค้าปลีกซึ่งไม่มีใครจ่ายจะผ่านด่านเดียวที่กันเรื่องนี้ไว้
+- เติมด่าน uuid ให้ `boardGameBillingGroupId` ที่ REST (GraphQL มี `optionalUuidInput` อยู่แล้ว) —
+  id เพี้ยนเคยตกด่าน "ต้องระบุการชำระเงิน" ไปก่อน พอบิล ฿0 ผ่านได้ มันจะเดินไปถึง `WHERE id = $2`
+  แล้วได้ `22P02` เป็น 500 ที่ `errorResponse()` ลบข้อความจริงทิ้งบน production
+
+#### ⚠️ 3. จอบอกว่า "แพ็กเกจสมาชิกครอบคลุมยอดทั้งหมด" โดยไม่มีข้อมูลรองรับ
+
+ข้อความที่ codex เขียนผูกกับเงื่อนไข `paymentTarget === 0` ล้วน · **ยอดศูนย์เกิดได้โดยไม่มีแพ็กเกจเลย**
+— โต๊ะที่มีแต่ผู้ชมที่ไม่คิดเงิน (`billable: false`) หรือเวลาที่ยังไม่พ้น grace ก็เป็น ฿0 ทั้งคู่
+(กฎ "บรรทัดที่ไม่มีค่าใช้จ่ายห้ามกินโควตา" ของ `9.92` เขียนไว้เอง) → จอที่หันออกทางลูกค้าบอก
+สิ่งที่ไม่จริง
+
+- `passCoveredAmount` มีอยู่ที่ service ตั้งแต่ `9.92` และ **เบราว์เซอร์แสดงมาตลอด** แต่
+  `BmsPosBoardGameCheckout` ของ GraphQL ไม่เคยประกาศ field นี้ (ของค้างที่ `9.92` จดไว้เองว่า
+  "แอป RN ยังไม่รู้จักแพ็กเกจ") · เพิ่ม field + select ในเอกสารของ RN แล้ว
+- ข้อความเปลี่ยนเป็น: มี `passCoveredAmount > 0` → "แพ็กเกจสมาชิกจ่ายค่าเล่นให้แล้ว ฿X · ไม่มียอด
+  ต้องชำระ" · ไม่มี → "บิลนี้ไม่มียอดต้องชำระ" · ธงเปลี่ยนชื่อเป็น `zeroDueBoardGameBill`
+  (ชื่อเดิม `passCoveredBoardGameBill` เป็นคำโกหกในตัวมันเอง)
+- เทสตรึงเป็น **กฎ ไม่ใช่ชื่อตัวแปร**: ทุกที่ที่ข้อความมีคำว่า "แพ็กเกจสมาชิก" ต้องมี
+  `passCoveredAmount` อยู่ในรัศมี 200 ตัวอักษร · และธงต้องอ่านจาก `paymentTarget`
+
+#### 4. สองจุดที่จอขัดกันเอง (เจอตอนไล่ต่อ ไม่ได้อยู่ในงานของ codex)
+
+1. **หน้ายืนยันการขายแสดง `payments` ของฟอร์ม ไม่ใช่ชุดที่จะถูกส่ง** — บิล ฿0 จึงขึ้นว่า
+   "ไม่มียอดต้องชำระ" ที่จอหนึ่ง แล้ว "ชำระ 1: เงินสด ฿0.00 · เงินทอน ฿0.00" ที่หน้ายืนยัน ·
+   ยุบเหลือ `settlementPayments` ตัวเดียวที่ทั้ง `completeSale` และ modal ใช้ · เทสตรึงว่า
+   **ชื่อที่ส่งกับชื่อที่แสดงต้องเป็นตัวเดียวกัน**
+2. **ยอดบิลบอร์ดเกมบน RN เป็นก้อนเดียว** ทั้งที่ service คอมเมนต์ไว้เองว่า "เครื่องขายต้องเห็นทั้ง
+   ค่าเล่นและของที่สั่งแยกกัน ไม่งั้นแคชเชียร์อธิบายยอดรวมให้ลูกค้าไม่ได้" · `tabAmount`/
+   `tabItemCount`/`chargeLineCount` ถูก query มาแล้วแต่ไม่มีใครแสดง — **และเพิ่งมีความหมายจริง
+   รอบนี้ เพราะแอปเพิ่งสั่งของเข้าบิลได้** · เพิ่มบรรทัดใต้ชื่อบิลให้ตรงกับเบราว์เซอร์
+
+#### 5. โค้ดตายของ codex: effect ที่ดัก `bmsPosBoardGameSession === null`
+
+`sessionAtScope()` โยน `NOT_FOUND` ไม่เคยคืน `null` และ Apollo ของแอปใช้ `errorPolicy` ปริยาย
+(`none`) → `data` เป็น `undefined` ไม่ใช่ `{ bmsPosBoardGameSession: null }` · เงื่อนไขนั้นจึงเป็นจริง
+ไม่ได้เลย · ที่แย่กว่าคือมันทำให้คนอ่านเชื่อว่าเคสนั้นถูกจัดการแล้ว ทั้งที่การ์ด "เปิดรายละเอียดโต๊ะ
+ไม่สำเร็จ" + ปุ่ม "กลับผัง" รับเคสนั้นอยู่ก่อนแล้ว · ลบทิ้งและเขียนเหตุผลไว้ข้าง effect ที่เหลือ
+
+- **effect อีกตัวถูกต้องและเก็บไว้** — session ที่กลายเป็น terminal (อีกเครื่องเก็บเงิน/ยกเลิก)
+  ต้องเด้งกลับผัง · ตรวจแล้วว่าไม่วนลูป: `skip` ทำให้ `data` เป็น `undefined` ใน Apollo 3.14
+
+#### ที่ตรวจแล้วว่าไม่ใช่ปัญหา (จดไว้กันไล่ซ้ำ)
+
+- **`allowEmpty` ไม่ได้เปิดช่องขายฟรี** — `recordPosSale()` ล็อกกลุ่มบิลในสาขาของกะ อ่านยอดที่แช่ไว้
+  แล้วเทียบกับผลรวมที่ส่งมา · ส่งศูนย์มากับบิลที่ยังค้างเงิน = `PAYMENT_MISMATCH` (ไล่ถึงบรรทัดจริง)
+- **ปัดเศษเงินสดกับ payment list ว่างไม่ชนกัน** — `cashOnly` ของอาร์เรย์ว่างเป็น `true` แต่
+  `cashRoundingDelta(0, mode)` = 0 ทุกโหมด · ฝั่งจอ `cashRoundingForPayments` ก็ตัดที่ `<= 0`
+- **คีย์กันรายการซ้ำของ tab ปลอดภัยแม้คีย์ผูกกับ "กลุ่ม" ไม่ใช่ "รายการ"** — `run()` ลบคีย์ทั้งตอน
+  สำเร็จและตอนถูกปฏิเสธแบบตัดสินแล้ว · ชนคีย์เดิมด้วย input คนละชุด = `CONFLICT` → ทิ้งคีย์ + refetch
+- **ลำดับ/เลขของชิป "ชุดลูกค้า" เชื่อถือได้** — `array_agg(s.id ORDER BY s.started_at, s.id)`
+  และข้อความตรงกับเบราว์เซอร์ทุกตัวอักษร
+- **ฟอร์มสั่งของบน RN เข้มกว่าเบราว์เซอร์เล็กน้อย** (บังคับจำนวนเต็ม 1–9,999) ซึ่งตรงกับที่ service
+  ตรวจ · เบราว์เซอร์ปล่อยทศนิยมแล้ว `Math.round` — ทั้งคู่ปลอดภัย
+- **ตัวเลือก/ไซซ์/pack ไม่มีในฟอร์มทั้งสองฝั่ง** เหมือนกัน (ของค้างเดิมที่ `9.90` จดไว้)
+
+#### ⚠️ กับดักของเครื่องมือที่เสียเวลารอบนี้ (ของเดิมที่จดไว้แล้ว เจอซ้ำทั้งสองข้อ)
+
+1. **บล็อกที่ codex แทรกเป็น LF ในไฟล์ CRLF** → patch anchor ที่คร่อมรอยต่อ "หาไม่เจอ" ทั้งที่
+   ทุกบรรทัดมีอยู่จริง (เสียเวลาไปหนึ่งรอบกว่าจะ dump bytes ออกมาดู) · **normalize EOL ของไฟล์ที่
+   จะแก้ให้เป็นชุดเดียวก่อนเริ่มเสมอ** แล้วเทียบ `git diff --stat` ก่อน/หลังว่าไม่ขยับ (index ของ
+   repo นี้เป็น LF อยู่แล้ว การ normalize จึงไม่โผล่ใน diff)
+2. **heredoc ของ bash ยุบ `\\` เป็น `\`** → `new RegExp(\`...\\s*...\`)` ที่เขียนผ่าน heredoc
+   กลายเป็น `s*` และ `[^,\\n}]` กลายเป็นขึ้นบรรทัดจริง · **เลี่ยง `new RegExp` ที่มี `\\`**
+   ใช้ regex literal หรือ `indexOf`/`slice` แทน และแก้ไฟล์ด้วย Edit tool เมื่อมี backslash
+3. **`assert.match(ซอร์สทั้งไฟล์, …)` พิมพ์ทั้งไฟล์ลงรายงานตอนแดง** (เจอซ้ำ) — ใช้
+   `assert.ok(re.test(...), ข้อความ)` และ slice ให้แคบ
+
+#### ⚠️ บทเรียนของเทสที่ผมเขียนเอง: มิวเทชัน M11 ไม่แดงรอบแรก
+
+`assert.match(checkout, /boardGameBill\.tabItemCount/)` เขียวแม้เปลี่ยนเงื่อนไขที่วาดบรรทัดนั้นเป็น
+`{false` — เพราะชื่อฟิลด์ยังอยู่ใน template literal ของกิ่งที่ตายแล้ว · **กับดักเดิมของรีโปนี้ที่จดไว้
+หลายรอบ** · แก้เป็นตรึง **เงื่อนไขที่ตัดสิน** (`item.sku === '__BOARD_GAME_TIME__' && boardGameBill ?`
+และ `boardGameBill.tabItemCount > 0`) ในรัศมีรอบจุดที่เรนเดอร์จริง
+
+#### ยังไม่ได้ทำ
+
+- **ยังไม่ได้รันเทส DB สักตัว** — เคสที่ควรตรึงเมื่อมีฐาน: ปิดกลุ่มที่แพ็กเกจไม่อั้นครอบเต็มจำนวน
+  แล้ว settle ผ่าน **route จริง** ด้วย `payments: []` (เทส DB ของ `9.92` เรียก service ตรง ๆ
+  จึงไม่เคยเดินผ่านด่านที่พัง) · `tab.add`/`tab.remove` ผ่าน GraphQL adapter (วันนี้มีแต่ผ่าน REST)
+- **ยังไม่เคยเปิดดูบนเครื่องจริง** — บล็อก "ของที่สั่งเข้าบิล" ชิป "ชุดลูกค้า" บรรทัดแยกยอดบนจอ
+  เก็บเงิน และข้อความบิล ฿0 ผ่านแค่ typecheck + lint + Jest + เทสสแกนซอร์ส
+- **RN ยังไม่มีตัวเลือก (modifier)/ไซซ์/หน่วยขาย ในฟอร์มสั่งของ** และไม่มีการค้นด้วยชื่อ
+  (เท่ากับเบราว์เซอร์ — ของค้างเดิมของ `9.90`)
+- **`passCoveredAmount` ยังไม่มีในจอ RN ฝั่งบอร์ดเกม** (มีเฉพาะจอเก็บเงิน) — แท็บโต๊ะยังไม่บอกว่า
+  ใครถือแพ็กเกจอยู่ ซึ่งเป็นคนละคำถามกับ "ใครจ่ายแทนบิลใบนี้"
+#### ⚠️ ของค้างที่ไม่ใช่ของรอบนี้แต่ต้องรู้: `9.94` ไม่มีบันทึกในไฟล์นี้เลย
+
+PR #210 เพิ่ม `db/migrations/9.94__bms_board_game_branch_scope_and_identity_hardening.sql` แต่
+**ไม่ได้เขียนหัวข้อของตัวเองใน CLAUDE.local.md** และหัวข้อบนสุดยังบอกว่า apply ถึง `9.93` เท่านั้น —
+คนที่มาอ่านไฟล์นี้เพื่อตอบคำถาม "ฐาน production ขาดอะไร" จะตอบผิด
+
+- ที่ยืนยันได้จากรีโป: **ไม่มี permission ใหม่** · ประกาศไว้ใน `scripts/schemaReadiness.mts` แล้ว
+  (`bms_board_game_member_passes.location_id`) จึงขึ้นใน `db/checks/schema-readiness.sql` ซึ่งเป็น
+  ตัวตรวจเดียวที่รันบนเซิร์ฟเวอร์ได้
+- ที่ยืนยัน **ไม่ได้** จากเครื่องนี้: apply เข้า dev/production แล้วหรือยัง และเคย verify กับ DB จริง
+  ไหม · **ต้อง apply ก่อน deploy** ไม่งั้นร้านบอร์ดเกมปิดบิลไม่ได้ (เส้นปิดบิลอ่านคอลัมน์นี้ทุกครั้ง)
+
+
+### recheck ทั้ง branch `feat/board-game-checkin-billing` — เจอของหลุด 3 จุด — 2026-09-16
+
+branch `recheck/board-game-checkin-billing` · **ไม่มี migration ใหม่** · **ไม่มี permission ใหม่** ·
+typecheck web+ws ผ่าน · **pure 1,266/1,266** (จาก 1,262) · production build ผ่าน ·
+**มิวเทชัน 7 แบบ แดงถูกตัวทุกครั้ง** (6 ที่ไฟล์ใหม่ + 1 ที่ `schema-readiness-contract` เดิม)
+
+#### ⚠️ 1. ตัวตรวจก่อน deploy โกหก — `9.80` และ `9.91`–`9.93` ไม่เคยอยู่ใน `schemaReadiness`
+
+`db/checks/schema-readiness.sql` เป็น**เครื่องมือเดียวที่รันบนเซิร์ฟเวอร์ production ได้** (ที่นั่น
+ไม่มี Node) · เหตุผลที่เคยจดไว้ว่า "จงใจไม่ใส่เพราะกั้นด้วย `requireBoardGameCafeTenant` แล้ว"
+**ขัดกับ `9.90` ที่อยู่ในลิสต์ด้วยรัศมีเดียวกันเป๊ะ** และขัดกับกฎใน CLAUDE.md เองที่ว่า
+"ลิสต์ที่ขาดไฟล์ตอบว่าพร้อม และแย่กว่าไม่มีตัวตรวจเลย"
+
+- ยืนยันด้วยการอ่านตัวฟังก์ชันจริง ไม่ใช่เดา: `openBoardGameSession` เขียน `seating_id` ทุกครั้ง ·
+  `closeOpenBillingGroupInTx` ล็อกและอ่านตารางแพ็กเกจก่อนคิดยอด**เสมอ** ไม่ว่าสมาชิกจะถือ
+  แพ็กเกจหรือไม่ · ด่านคืนบัตรอ่านตาราง `9.93` ที่ทางออกทั้งสามของโต๊ะ และ `getBoardGameSession`
+  อ่านทุกครั้งที่เปิดการ์ดโต๊ะ
+- เคสที่เกิดจริงคือ **apply ไม่ครบ** (หยุดที่ `9.90` เพราะลิสต์เก่าพูดถึงแค่นั้น) แล้วร้านเปิด/ปิด
+  โต๊ะไม่ได้สักโต๊ะ โดยที่ตัวตรวจขึ้น ✅
+- ประกาศ `9.80` เข้าไปด้วย — ฐานที่มี `9.89`+ แต่ขาด `9.80` เป็นไปไม่ได้ในทางปฏิบัติ (FK ชี้มาที่
+  session) แต่ลิสต์นี้ตอบคำถาม "ฐานนี้รันโค้ดปัจจุบันได้ไหม" การประกาศให้ครบไม่มีต้นทุน
+- รันตัวตรวจกับ dev DB แล้วขึ้น ✅ ครบทุกไฟล์
+
+#### ⚠️ 2. `bms_board_game_pass_plans.location_id` เป็นกฎที่ไม่มีอะไรบังคับ
+
+คอมเมนต์ที่คอลัมน์เขียนไว้เองว่า "มีค่า = แพ็กเกจของสาขานั้นสาขาเดียว" · ของจริง:
+`issueBoardGameMemberPass` **ไม่เคย SELECT คอลัมน์นี้** และ route ของแพ็กเกจเป็น route เดียวใน
+สิบเอ็ดตัวที่ไม่มี `canAccessBoardGameLocation` เลย · **คอลัมน์ที่ประกาศกฎแล้วไม่มีใครตรวจแย่กว่า
+ไม่มีคอลัมน์ เพราะคนอ่านเชื่อว่ามีการกันอยู่**
+
+- ด่านอยู่ **ทั้งที่ service และที่ route** — ผู้เรียกที่ไม่ผ่าน route (เทส งานภายใน เส้นทางใหม่)
+  จะขายข้ามสาขาได้เงียบ ๆ ถ้าด่านอยู่ข้างนอกอย่างเดียว
+- สาขาที่ส่งเข้า service มาจาก **ตัวแพ็กเกจ** ไม่ใช่จาก body — ผู้เรียกเลือกสาขาเองไม่ได้
+- แก้แพ็กเกจเดิมต้องแตะ**สาขาเดิม**ได้ด้วย ไม่ใช่เฉพาะสาขาใหม่ที่ส่งมา ไม่งั้นย้ายแพ็กเกจของสาขาอื่น
+  มาเป็นของตัวเองได้ด้วยคำขอเดียว
+- แคตตาล็อกที่ GET ส่งให้จอถูกกรองตามสาขาที่บัญชีนั้นดูแล (แพ็กเกจระดับร้าน `NULL` ยังเห็นได้ทุกคน)
+  — จอที่ยื่นตัวเลือกที่กดแล้วโดน 403 คือจอที่หลอกคนใช้
+- **ฟอร์มแพ็กเกจไม่เคยมีช่องสาขาเลย** จึงเพิ่มให้ พร้อมคอลัมน์ "สาขาที่ขายได้" ในตาราง — ไม่งั้น
+  เป็นกฎที่ถูกบังคับแล้วแต่ไม่มีใครตั้งได้
+
+#### ⚠️ 3. ยอดนาทีประกาศว่าเป็น cache ของ ledger แต่ไม่มีตัวตรวจ drift
+
+`9.92` เขียนกฎนี้ไว้ที่ migration เอง ("ตัวนับที่บางเส้นทางลืมอัปเดตจะเพี้ยนเงียบ ๆ แล้วไม่มีใครรู้
+ว่าเริ่มเมื่อไร") แต่แต้ม (`7.96`) และเครดิตร้าน (`8.9`) ต่างมี `balanceMismatchCount` ของตัวเอง
+ส่วนแพ็กเกจไม่มีอะไรเลย — กฎที่วัดไม่ได้คือกฎที่เพี้ยนเงียบ ๆ
+
+- `boardGamePassOutstanding()` คิดยอดใหม่จาก ledger ทุกใบแล้วรายงานจำนวนใบที่ไม่ตรง ·
+  แพ็กเกจไม่อั้นไม่มียอดให้เทียบ จึงรายงานเป็น**จำนวนใบ** ไม่ใช่ยัดเป็น 0 นาที
+- การ์ด "เวลาที่ร้านติดค้างสมาชิก" ที่แท็บแพ็กเกจ + Alert สีแดงเมื่อ `balanceMismatchCount > 0`
+- **⚠️ ตัวจับ drift ตัวนี้จับของจริงได้ทันทีที่เปิดใช้**: เทสเดิมปั้นใบที่ใช้หมดแล้วด้วยการ
+  `UPDATE remaining_minutes = 0` เฉย ๆ โดยไม่มีแถว ledger ซึ่งเป็น **สถานะที่ระบบจริงไปถึงไม่ได้**
+  · แก้ fixture ให้เขียน ledger คู่กัน — fixture ที่โกหกทำให้ด่านจริงเลิกมีความหมาย
+
+#### ที่ตรวจแล้วว่าไม่ใช่ปัญหา (จดไว้กันไล่ซ้ำ)
+
+- **ไม่มี SQL ของตารางบอร์ดเกมตัวไหนขาด `tenant_id`** (สแกนทุก template literal ใน `apps/web`)
+- **ลบร้านได้ครบ** — ไล่ FK แบบ NO ACTION ทั้ง 25 เส้นเทียบกับลำดับของ `deleteTenantRows()` แล้ว
+  ทุกเส้นถูกปลดก่อนตารางปลายทางถูกลบ (บัตรอาศัย cascade ของ session · แพ็กเกจมีบรรทัดของตัวเอง)
+- **ไม่มี export ตายในโมดูลใหม่ทั้งสามไฟล์** (`boardGameIdentity` · `boardGamePassCoverage` ·
+  `boardGameSessionStatus`)
+- **คีย์ i18n ที่ประกอบตอนรันครบทุกค่า** — ไล่ค่าที่เป็นไปได้จริงจาก CHECK ของฐาน/enum ของ service
+  ทั้ง 9 prefix × 2 ภาษา · ตัวเดียวที่ไม่มีคือ `alert_normal` ซึ่ง **เข้าไม่ถึง** (ทั้งสองจุดเรียก
+  กรอง `NORMAL` ออกก่อน)
+- **route อีกสามตัวที่ไม่มีด่านสาขาถูกต้องแล้ว**: `locations` (คืน `listLocationsForUser` ซึ่ง
+  scope มาแล้ว) · `members` (CRM เป็นระดับร้าน) · `rates` (ตารางไม่มี `location_id`)
+- **ยอดปัดเศษ/บิล ฿0/ขอบเขตการยกเว้น** ของ `9.92` ตรวจแล้วแคบถูกต้อง (ยกเว้นเฉพาะเมื่อมี
+  `boardGameBillingGroupId` แล้วให้ด่าน "ยอดชำระต้องเท่ายอดที่ต้องจ่าย" ตัดสินต่อ)
+
+#### ยังไม่ได้ทำ
+
+- **`EXPIRE` และ `ADJUST` ใน CHECK ของ ledger ยังไม่มีใครเขียน** — แพ็กเกจที่หมดอายุไม่ถูกบันทึกว่า
+  หมดอายุ และไม่มีเครื่องมือปรับยอดด้วยมือ · ยกเลิกแพ็กเกจก็ไม่ลง ledger (เปลี่ยนแค่ `status`)
+  ซึ่งถูกต้องวันนี้เพราะยอดไม่ถูกแตะ แต่ถ้าวันหนึ่งการยกเลิกต้องคืน/ริบนาที ต้องลง ledger ด้วย
+- **ยังไม่ได้ทดสอบฟอร์มสาขาของแพ็กเกจด้วยตา** — เซสชันนี้ไม่มี browser (รีโปไม่มี Playwright)
+  ที่ยืนยันแล้วคือเส้นทาง service + route ผ่านเทส DB ที่สร้างสาขาที่สองจริง
+- ~~ยังไม่ได้ apply `9.89`–`9.93` เข้า production~~ — **apply แล้ว 2026-09-16** (ดูหัวข้อบนสุด)
+
+
+### `9.93` บัตรที่รับไว้ค้ำกล่องเกม — เฟส 6 (รายการถัดไปของ roadmap) — 2026-09-16
+
+branch `feat/board-game-checkin-billing` · **apply `9.93` เข้า dev DB แล้วและ verify กับ DB จริงแล้ว**
+(RLS + FORCE RLS + GRANT 4 ตัว + ดัชนี 5 + CHECK 7 + FK 7 + revision trigger + seed สิทธิ์ 20 ร้าน
+อ่านจาก `pg_class`/`pg_indexes`/`pg_constraint`/`information_schema` จริง) ·
+**ยังไม่ได้ apply เข้า production** · **permission ใหม่ 1 ตัว `board_game.identity.reveal`** (Manager) ·
+typecheck web+ws+mobile ผ่าน · lint mobile ผ่าน · **Jest 143/143** · **pure 1,262/1,262** ·
+**DB 484/484 เขียวทั้งชุด 43 ไฟล์** · production build ผ่าน (115 หน้า) · codegen ของ RN รันซ้ำแล้วได้
+sha256 เดิม · **มิวเทชัน 21 แบบ (pure 14 · DB 7) แดงถูกตัวทุกครั้ง** และคืนไฟล์ตรงทุกไบต์ ·
+**เดินเส้นจริงครบวงทั้ง REST และ GraphQL กับ dev DB แล้ว** (ดูหัวข้อ "เดินเส้นจริง" ข้างล่าง)
+
+#### ทำไมเป็นตัวนี้
+
+roadmap ที่เหลือของบอร์ดเกมใน `system.md` เรียงไว้: ต่ออายุแพ็กเกจอัตโนมัติ (**บล็อกอยู่** — ต้องมี
+payment token ที่แพลตฟอร์มนี้ไม่มี) · **เก็บเอกสารยืนยันตัวตนแบบเข้ารหัส** · จองโต๊ะ/คิว ·
+รายงานการใช้พื้นที่/กำไร · ตัวที่ทำได้จริงตัวถัดไปคือตัวที่สอง
+
+#### โครงที่เลือก: บัตรเป็นของ "การมาเล่นครั้งนี้" ไม่ใช่ของสมาชิก
+
+คำถามที่ตารางนี้ตอบคือ **"ตอนนี้เราถือบัตรของใครอยู่ในลิ้นชัก"** ซึ่งเป็นเรื่องของวัตถุที่เคาน์เตอร์
+ไม่ใช่เรื่องของแถว CRM · `customer_id` จึงเป็นแค่ลิงก์อำนวยความสะดวกและเป็น **`ON DELETE SET NULL`**
+โดยตั้งใจ — ลบลูกค้าต้องไม่ถูกบล็อกด้วยบัตรที่คืนไปแล้ว (บทเรียนจาก `9.92` ข้างล่าง)
+
+- **เลขบัตรไม่บังคับ** — ร้านที่เก็บบัตรจริงไว้โดยไม่พิมพ์เลขก็ยังได้ด่านตอนปิดบิล · บังคับพิมพ์
+  เมื่อไร ร้านที่ไม่อยากเก็บเลขจะเลิกใช้แล้วกลับไปใช้กระดาษ ซึ่งแย่กว่าทุกทาง
+- เลขที่พิมพ์เดินผ่าน `encryptSecret()` ก่อนแตะฐานเสมอ (ซองเดียวกับ token ของช่องทาง) ·
+  **production ปฏิเสธการเข้ารหัสเมื่อไม่มี `BMS_SECRET_KEY`** ซึ่งเป็นคำตอบที่ถูกสำหรับเลขบัตร
+- **`document_number_tail` (4 ตัวท้าย) เก็บเป็น plaintext แยกไว้** — ไม่งั้นการหาบัตรใบที่ถูก
+  ในลิ้นชักต้องถอดรหัสวันละสี่สิบครั้ง แล้วการถอดรหัสก็เลิกเป็นการกระทำที่พิเศษ
+
+#### ⚠️ กฎที่เป็นแกนของทั้งเฟส: **คืนบัตร = ล้างข้อมูลส่วนบุคคลในทรานแซกชันเดียวกัน**
+
+เลขมีไว้ตอบคำถามเดียวคือ "ใครถือของร้านออกไป" · บัตรกลับถึงมือเจ้าของแล้วคำถามนั้นหมดไป
+การเก็บเลขต่อเป็นความรับผิดล้วน ๆ · `releaseBoardGameIdentityHold()` จึงล้าง `holder_name`,
+`document_number_encrypted`, `document_number_tail` แล้วประทับ `purged_at` ในคำสั่งเดียว
+
+- **แถวยังอยู่เป็น tombstone** (ชนิดเอกสาร · เวลา · คนรับ/คนคืน) เพราะคำถาม "คืนไปแล้วหรือยัง
+  ใครเป็นคนยื่นให้" ต้องตอบได้เมื่อลูกค้ากลับมาทวง · ลบทั้งแถวจะตอบไม่ได้เลย (บทเรียนของ `9.28`)
+- **ใบที่ยัง `HELD` ตั้งใจเก็บเลขไว้** — นั่นคือเรื่องที่ยังไม่จบ ซึ่งเป็นเหตุผลที่จดเลขไว้ตั้งแต่แรก
+- CHECK สองตัวที่ฐานบังคับไว้ด้วย: purge ได้เฉพาะหลัง `RETURNED` · และ purge ต้องล้าง **ครบทั้งสามช่อง**
+  (เหลือช่องเดียวก็คือยังเก็บอยู่) — มิวเทชัน M6 ที่ถอด `holder_name` ออกจาก CHECK แดงถูกตัว
+- **ไม่เก็บรูปถ่ายบัตร** โดยตั้งใจ — เก็บรูปคือความรับผิดคนละระดับ และการถือบัตรจริงคือวิธีที่ร้านทำอยู่แล้ว
+  (ถ้าวันหนึ่งจะเก็บรูป ต้องเดินเส้น `files` + `9.25`/`9.26`/`9.27` ทั้งชุด ไม่ใช่เติมคอลัมน์)
+
+#### ⚠️ ด่าน "คืนบัตรก่อนจบโต๊ะ" ต้องอยู่ครบทั้งสามทางออก ไม่งั้นมีทางเลี่ยง
+
+ความล้มเหลวที่เกิดจริงไม่ใช่ "หาบัตรไม่เจอ" แต่คือ **ลูกค้าจ่ายเงินแล้วเดินออกไปโดยที่บัตรยังอยู่
+ในลิ้นชัก** · โต๊ะมีทางออกสามทาง: ปิดกลุ่มสุดท้าย · ปิดทั้งโต๊ะ · ยกเลิกโต๊ะ — ขาดทางเดียวคือ
+ด่านอีกสองทางไร้ความหมาย (ยกเลิกโต๊ะจะกลายเป็นทางเลี่ยง)
+
+- วางไว้**ติดกับด่านกล่องเกมเดิมทั้งสามจุด** เพราะเป็นกฎชนิดเดียวกันเป๊ะ
+- **เฉพาะกลุ่มสุดท้าย** — กลุ่มที่จ่ายก่อนแล้วกลับบ้านต้องปิดได้ตามปกติแม้โต๊ะยังถือบัตรอยู่
+  (รูปเดียวกับกล่องเกมใน Phase 3) · มิวเทชัน D2 ที่ย้ายด่านไปครอบทุกกลุ่มแดงถูกตัว
+- **รับเกมคืนไม่ได้แปลว่าบัตรถูกคืน** — ระบบบันทึกการกระทำทางกายภาพ ไม่ได้ทำแทนคน · มีเทส DB
+  ที่เดินเคสนี้ตรง ๆ (คืนกล่องแล้วยังปิดบิลไม่ได้)
+
+#### การอ่านเลขกลับออกมาเป็นการกระทำคนละอย่างกับการรับบัตร
+
+- **รับ/คืนบัตรใช้ `board_game.session.manage`** ที่คนหน้าเคาน์เตอร์มีอยู่แล้ว — สิทธิ์ใหม่ที่ทุกคน
+  ต้องมีอยู่ดีเพิ่มความปลอดภัยเป็นศูนย์ แต่เพิ่มโอกาสที่ร้านจะเลิกใช้
+- **อ่านเลขใช้ `board_game.identity.reveal`** (seed ให้ Manager) + ลง audit ทุกครั้ง
+- **⚠️ ไม่มีที่เครื่องขายเลย** — จอเครื่องขายแชร์กันทั้งกะและหันออกทางลูกค้า การวาง "เปิดดูเลขบัตร"
+  ไว้ห่างหนึ่งแตะบนจอนั้นคือการวางผิดที่ · เทสตรึงสองชั้น: ตารางคำสั่งต้องไม่มีคำสั่งที่ชื่อมี
+  `reveal` **และ** โมดูลคำสั่ง/route ของเครื่องขายต้องไม่เอ่ยถึงตัวถอดรหัสเลย (ชั้นที่สองจับ
+  มิวเทชันที่ตั้งชื่อคำสั่งเป็นอย่างอื่นได้ ชั้นแรกจับไม่ได้)
+
+#### ⚠️ เจอบั๊กของ `9.92` ระหว่างทาง: ร้านที่เคยขายแพ็กเกจ **ลบทิ้งไม่ได้เลย**
+
+`bms_board_game_member_passes.customer_id` และ `issued_by` เป็น RESTRICT และ **ไม่มี cascade ตัวไหน
+ปลดมันก่อน `bms_customers`/`users` ถูกลบ** · พิสูจน์กับ dev DB แล้ว (สร้างร้าน + แพ็กเกจ แล้วเดิน
+ลำดับของ `deleteTenantRows()` → `violates foreign key constraint
+bms_board_game_member_passes_customer_id_fkey`)
+
+- **ที่ซ่อนอยู่ได้เพราะ seeder ไม่เคยสร้างแพ็กเกจ** → `test-shop-lifecycle-db-contract` ไม่เคยเดินผ่าน
+  วงรอบนี้ · ตอนนี้เทสนั้นปั้นทั้งแพ็กเกจและบัตรขึ้นมาเองก่อนลบ (แบบเดียวกับที่ `9.82`/`9.89` เคยต้องทำ)
+- แก้ด้วยการเติมบรรทัดลบ `bms_board_game_member_passes` ก่อน `bms_customers`/`users`
+- **บัตรไม่ต้องมีบรรทัดของตัวเอง** — cascade จาก session ที่ถูกลบก่อนหน้าอยู่แล้ว (ตรวจแล้ว ไม่ได้เดา)
+
+#### เทส
+
+- **`scripts/board-game-identity-contract.test.mts` (7 เทส pure)** — รูปของ `9.93` · purge ครบทั้งสามช่อง
+  และเฉพาะหลังคืนบัตร · **เลขมีทางออกทางเดียวและทางนั้นมี audit** (ไล่ทุก occurrence ของคอลัมน์
+  เทียบกับขอบเขตของฟังก์ชัน reveal ไม่ใช่ allowlist รายบรรทัด) · สิทธิ์ของ reveal + ไม่มีที่เครื่องขาย ·
+  ด่านครบสามทางออก · `normalizeIdentityNumber`/`identityNumberTail` เรียกของจริง · ลบร้านที่ขายแพ็กเกจได้
+- **`scripts/board-game-identity-db-contract.test.mts` (9 เทส DB)** — สร้างร้านของตัวเองแล้วลบทิ้ง:
+  เลขลงฐานเป็นซอง `enc:` และเส้นอ่านของโต๊ะไม่มีเลขเต็ม · reveal ถอดกลับได้ + ลง audit · คืนบัตรล้าง
+  ครบและเหลือ tombstone · ปิดบิล/ยกเลิกไม่ได้ขณะถือบัตร · กลุ่มแรกปิดได้แต่กลุ่มสุดท้ายไม่ได้ ·
+  คืนกล่องเกมแล้วยังปิดไม่ได้ · replay/CONFLICT · โต๊ะที่จ่ายแล้วรับบัตรใหม่ไม่ได้
+- **⚠️ บทเรียนตอนเขียนเทส 3 ข้อ**:
+  1. **มิวเทชันที่แก้แค่ union type ของ TS เป็น no-op** — เพิ่ม `| "identity.reveal"` ลงชนิดโดยไม่
+     เพิ่มแถวใน `BOARD_GAME_POS_ACTIONS` ไม่เปลี่ยนพฤติกรรมอะไรเลย (type ถูกลบตอนคอมไพล์) ·
+     ไม่แดง **ไม่ได้แปลว่าเทสอ่อน** ต้องมิวเทชันที่ตารางจริง (M4a) ถึงจะวัดได้
+  2. **`assert.doesNotMatch(ซอร์สทั้งไฟล์, …)` พิมพ์ทั้งไฟล์ลงรายงานตอนแดง** จนอ่านไม่ออก
+     (กับดักเดิมของรีโปที่จดไว้แล้ว เจอซ้ำ) · ใช้ `has()`/`lacks()` ที่ห่อ `assert.ok(re.test(...))` แทน
+  3. **เทส DB ต้องใช้โต๊ะคนละใบต่อเทส** — ใช้ซ้ำจะแดงด้วย "โต๊ะนี้มีลูกค้าอยู่แล้ว" ซึ่งไม่ใช่กฎที่กำลังตรึง
+- แคตตาล็อกผู้ช่วย: กลุ่มกฎใหม่ `limits.board-game-identity` (10 ข้อ th/en) ผูกกับ `board-game.run-cafe`
+  และ `pos.board-game-table` + ปักคำถาม 5 ข้อ (corpus 94 → 99)
+  · **⚠️ คำถามไทยต้อง *มี alias เป็นสตริงย่อย* ถึงจะแมตช์** — ไทยไม่มีเว้นวรรค คะแนนจึงมาจาก
+    alias containment ล้วน · "รับบัตรลูกค้าไว้" ไม่แมตช์ alias "รับบัตรไว้" (ไม่ใช่สตริงย่อย)
+    ต้องเปลี่ยนคำถามหรือเติม alias — เจอสองรอบกับ "ดูเลขบัตรที่เก็บไว้" ด้วย
+
+#### ⚠️ เดินเส้นจริงแล้วเจอบั๊กของเดิม: การปฏิเสธตามกติกาของบอร์ดเกมออกไปเป็น 500 ทาง GraphQL
+
+เซสชันนี้ไม่มี browser tool (และรีโปไม่มี Playwright) จึงเดินเส้นจริงผ่าน **HTTP ด้วย payload ชุด
+เดียวกับที่ปุ่มบนจอส่ง** ทั้งสองทาง — และนั่นคือสิ่งที่ทำให้เจอบั๊กที่เทสมองไม่เห็น
+
+- `ensureBmsGraphqlErrorCode` ถือกฎ "รหัสที่ adapter ระบุมาเองต้องชนะ" โดยเช็คว่า
+  `extensions.code` มีค่าไหม · **แต่ Apollo เติม `INTERNAL_SERVER_ERROR` ลงช่องนั้นให้ตั้งแต่ก่อน
+  `formatError` ทำงาน** → `declared` เป็นจริงเสมอ แล้วตัวจัดประเภทข้างล่าง **ไม่มีวันได้ทำงานใน
+  เส้นทางจริงเลย**
+- ผลคือ **การปฏิเสธตามกติกาของบอร์ดเกมทุกตัว** (ไม่ใช่แค่ของ `9.93`) ออกไปหาแอปเป็น
+  `INTERNAL_SERVER_ERROR` ซึ่งเอกสารสัญญาของไคลเอนต์สั่งให้ **ยิงซ้ำด้วยคีย์เดิม** = วนล้มแบบเดิม
+  ตลอดไป · ยืนยันด้วยของเดิมที่ไม่เกี่ยวกับ `9.93` ("ต้องระบุผู้เล่นอย่างน้อย 1 คน") ก็ได้ 500 เหมือนกัน
+- **เทสเดิมเขียวเพราะป้อน error ที่ยังไม่มี code เข้ามา** ซึ่งไม่ใช่รูปที่ Apollo ส่งให้จริง —
+  เทสที่เขียวขณะที่สิ่งที่มันปกป้องพังอยู่ · แก้ให้ "ระบุมาเอง" หมายถึง **รหัสในชุดของไคลเอนต์ 5 ตัว
+  เท่านั้น** แล้วเพิ่มเทสที่ป้อนรูปแบบของ Apollo จริง
+- วัดหลังแก้กับเซิร์ฟเวอร์จริง: กติกาปฏิเสธ → `CONFLICT` + `reason: BOARD_GAME_REJECTED` ·
+  คีย์ซ้ำเนื้อในเปลี่ยน → `CONFLICT` + `IDEMPOTENCY_CONFLICT` · `TypeError` → ยังเป็น 500 ตามเดิม
+
+#### เดินเส้นจริง (dev DB, ร้านทดสอบที่สร้างเองแล้วลบทิ้ง)
+
+สร้าง tenant `board_game_cafe` ของตัวเองพร้อม device token/PIN ที่ตั้งเอง (**ไม่ยืมของร้านจริง** —
+ต่างจากรอบก่อน ๆ ที่ต้องสำรอง `token_hash` แล้วคืน) แล้วเดินทั้งสองเส้นทาง:
+
+| ขั้น | REST (`/api/pos/board-game`) | GraphQL (Bearer, `x-scope: pos`) |
+| --- | --- | --- |
+| เปิดโต๊ะ | ✅ | ✅ |
+| รับบัตร | ✅ tail `0123`, `hasNumber true` | ✅ tail `8877` |
+| อ่านโต๊ะกลับมา | ✅ **เลขเต็มไม่อยู่ใน response** | ✅ เหมือนกัน |
+| ปิดเวลาขณะถือบัตร | ✅ `REJECTED` + ข้อความจริง | ✅ `CONFLICT` (หลังแก้ formatter) |
+| คืนบัตร | ✅ ชื่อ/เลข/tail เป็น null, `purgedAt` ติด | ✅ เหมือนกัน |
+| ปิดเวลาอีกครั้ง | ✅ ฿60 | ✅ ฿60 |
+
+ยืนยันหลังจบ: ลบร้านทดสอบครบ (`bms_board_game_identity_holds` เหลือ 0 แถวทั้งฐาน) และร้าน
+`fake-%` ที่เหลือ 10 แถวเป็นของเก่า 2026-09-07/09-11 ไม่ใช่ของรอบนี้
+
+#### แอป RN บันทึกบัตรได้แล้ว
+
+- SDL เพิ่ม `BmsPosBoardGameIdentityHold` + input สองตัว + mutation สองตัว ·
+  `BmsPosBoardGameSession.identityHolds` · `schema.graphql` regenerate แล้ว
+  (operation 79 → 81 · typed output 124 → 126)
+- `BoardGameScreen` มีบล็อก "บัตรที่รับไว้" ถัดจากกล่องเกม — **เรียก** เอกสารทั้งสองจริง
+  ไม่ใช่แค่ import (บทเรียนของ `9.91` · เทสบังคับไว้แล้ว และมิวเทชัน N3 แดงถูกตัว)
+- **reveal ไม่มีทั้งใน SDL ของเครื่องขายและบนจอ RN** — เทสห้ามคำว่า `reveal` ในไฟล์จอ
+
+#### ยังไม่ได้ทำ
+
+- **ยังไม่ได้ apply `9.93` เข้า production** — ต้อง apply **ก่อน** deploy ไม่งั้นร้านบอร์ดเกม
+  **ปิดบิลไม่ได้ทุกโต๊ะ** (ด่านปิดบิลอ่านตารางนี้ทุกครั้ง) และ seed `board_game.identity.reveal`
+  ไม่งั้นปุ่มดูเลขโดน 403 · `9.89`–`9.92` ก็ยังไม่ได้ apply เหมือนกัน — apply เรียงเลข
+  · **ผมไม่ apply ให้เอง**: เป็นการแก้ฐานที่ใช้งานอยู่และย้อนยาก ต้องมีคนสั่งพร้อมสำรองฐานก่อน
+    (5432 ของ production ตอบจาก LAN นี้จริง แต่นั่นไม่ใช่เหตุผลให้ทำ) · ขั้นตอนที่เตรียมไว้:
+
+  ```bash
+  # 1) สำรองก่อนเสมอ — ต้องไม่ใช่ไฟล์ 0 ไบต์
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres \
+    pg_dump -U app -d bms -Fc > ~/bms-before-9.93-$(date +%F-%H%M).dump
+  # 2) ตรวจฐานก่อน (read-only)
+  docker compose ... exec -T postgres psql -U app -d bms -f - < db/checks/schema-readiness.sql
+  # 3) apply ในทรานแซกชันเดียว — ล้มกลางทางแล้วไม่เหลือตารางครึ่งใบ
+  docker compose ... exec -T postgres psql -U app -d bms -v ON_ERROR_STOP=1 -1 -f - \
+    < db/migrations/9.93__bms_board_game_identity_holds.sql
+  # 4) verify กับฐานจริง (rls true/true · grants 4 ตัว · indexes 5 · checks 7 · perm > 0)
+  # 5) แล้วค่อย deploy โค้ด
+  ```
+
+  ย้อนได้ก็ต่อเมื่อ `SELECT count(*) FROM bms_board_game_identity_holds WHERE status='HELD'` = 0 —
+  ทิ้งตารางขณะที่ลิ้นชักยังมีบัตรคือการทำลายหลักฐานเดียวว่าบัตรเป็นของใคร
+- **ยังไม่เคยเห็นพิกเซลจริง** — เซสชันนี้ไม่มี browser tool และรีโปไม่มี Playwright · ที่ยืนยันแล้ว
+  คือ **เส้นทางฝั่ง server ครบวงทั้งสอง adapter ด้วย payload ชุดเดียวกับที่ปุ่มส่ง** (ตารางข้างบน)
+  และ route ใหม่ตอบ `401` เมื่อไม่ได้ล็อกอิน · สิ่งที่ยังไม่ถูกตรวจคือการจัดวางบนจอเท่านั้น
+  (ตำแหน่งบล็อก ความกว้างที่ 390px ปุ่มถูกตัดหรือเปล่า)
+- **บัตรที่ลูกค้าไม่มารับคืนค้างตลอดไปพร้อมเลข** — ตั้งใจ (เป็นเรื่องที่ยังไม่จบ) แต่ยังไม่มีตัวกวาด
+  หรือรายงานว่ามีบัตรค้างเกิน N วัน
+- **`9.93` จงใจไม่อยู่ใน `schemaReadiness`** — เหตุผลเดียวกับ `9.79`–`9.83`/`9.91`/`9.92`: ทุกเส้นทาง
+  ที่แตะตารางนี้ถูกกั้นด้วย `requireBoardGameCafeTenant` หรืออยู่ในเส้นบอร์ดเกมอยู่แล้ว ·
+  `createOrderInTx` ไม่เขียนคอลัมน์ใหม่สักตัว
+- **ยกเลิกแพ็กเกจ/คืนเงินของบัตร** ไม่เกี่ยวกัน — บัตรไม่ใช่เงิน ไม่มีเส้นคืนเงินให้ทำ
+
+
+### `9.92` แพ็กเกจสมาชิกร้านบอร์ดเกม — เฟส 5 (รายการแรกของ roadmap ที่เหลือ) — 2026-09-15
+
+branch `feat/board-game-checkin-billing` · **apply `9.92` เข้า dev DB แล้วและ verify กับ DB จริงแล้ว**
+(3 ตาราง + RLS/FORCE RLS ครบทั้งสาม + GRANT 4 ตัวต่อตาราง + GRANT ของ sequence + revision trigger 2 ตัว
++ ดัชนี 13 ตัว + seed สิทธิ์ 20 ร้าน อ่านจาก `pg_class`/`pg_indexes`/`information_schema` จริง) ·
+**ยังไม่ได้ apply เข้า production** · **permission ใหม่ 1 ตัว `board_game.pass.manage`** (Manager) ·
+typecheck web+ws ผ่าน · **pure 1,255/1,255** · **DB 475/475 เขียวทั้งชุด 42 ไฟล์** · production build ผ่าน ·
+**มิวเทชัน 13 แบบ (pure 10 · DB 3) แดงถูกตัวทุกครั้ง** และคืนไฟล์ตรงทุกไบต์
+
+#### ทำไมเป็นตัวนี้
+
+roadmap ที่เหลือของบอร์ดเกมเขียนลำดับไว้ทั้งใน `system.md` และ `business/board-game-cafe.md` โดยมี
+"สัญญาสมาชิกรายเดือน/รายปี" เป็นรายการแรก · เฟส 1–4 (บิลเป็นของกลุ่ม · สั่งของเข้า tab · ปิดบิลทีละกลุ่ม ·
+ย้าย/รวมโต๊ะ) ปิดครบแล้ว
+
+#### โครงที่เลือก: เอนทิตี้ของสิทธิ์ ไม่ใช่สินค้า
+
+- **แพ็กเกจไม่ใช่ Product** — ไม่มี SKU ไม่ตัดสต็อก เหมือนค่าเวลาเล่นเอง · การออกแพ็กเกจเป็นคำสั่งที่มี
+  สิทธิ์ของตัวเอง **รูปเดียวกับบัตรของขวัญ (`8.9`)** ไม่ใช่บรรทัดในตะกร้า · การรับเงินยังเดินทางขายเดิม
+- **ยอดนาทีคงเหลือเป็น cache ของ ledger** (กฎเดียวกับเครดิตร้านและแต้ม) · แพ็กเกจไม่อั้นก็ลง CONSUME
+  ไว้ด้วย ทั้งที่ไม่มีโควตาให้หัก เพราะคำถาม "แพ็กเกจใบนี้ช่วยลูกค้าไปเท่าไร" จะย้อนสร้างทีหลังไม่ได้
+- **`remaining_minutes` เป็น NULL สำหรับแบบไม่อั้น** ไม่ใช่ 0 (ซึ่งอ่านว่า "ใช้หมดแล้ว") และไม่ใช่เลขใหญ่ ๆ
+  (ซึ่งเป็นคำโกหกที่วันหนึ่งจะหมดจริง)
+- **snapshot ราคา/ชนิด/นาที ลงบนสัญญาตอนขาย** — ร้านขึ้นราคาแล้วต้องไม่เขียนสัญญาที่ขายไปแล้วใหม่
+  (กฎเดียวกับ rate snapshot ของผู้เล่นใน `9.80`)
+
+#### ⚠️ จุดที่หักโควตา: ตอน "ปิดบิลของกลุ่ม" เท่านั้น
+
+ปิดบิลคือจังหวะเดียวที่กลุ่มอ้างสิทธิ์เก็บเงินแบบผูกขาด (แช่ snapshot + คีย์ปิดบิล) ·
+`closeOpenBillingGroupInTx` จึง **ล็อกแพ็กเกจก่อนคิดยอด** แล้วหักหลังจาก snapshot ถูกเขียนแล้ว
+ทั้งหมดในทรานแซกชันเดียว — บิลจะลดราคาโดยที่นาทีไม่ขยับ หรือกลับกัน ไม่ได้
+
+- **พรีวิวไม่หักอะไรเลย** (`calculateBoardGameGroupCharges` อ่านแพ็กเกจแบบไม่ล็อกเมื่อผู้เรียกไม่ส่ง
+  ชุดที่ล็อกแล้วมา) · หักตอนพรีวิวเมื่อไร สองโต๊ะที่เปิดพร้อมกันจะถูกเสนอชั่วโมงสุดท้ายใบเดียวกันทั้งคู่
+- ยกเลิกโต๊ะที่ปิดบิลไปแล้ว **คืนนาที** (`REVERSE`) เพราะไม่มีใครจ่ายเงิน · กลุ่มที่ `PAID` ยกเลิกไม่ได้อยู่แล้ว
+- ledger unique ต่อ (ใบ, บิล, คน) แยกขาใช้/ขาคืน — ก้อนเดียวใช้ไม่ได้เพราะ CONSUME กับ REVERSE
+  ของคู่เดียวกันต้องอยู่ร่วมกันได้
+
+#### ⚠️ บิล ฿0 เดิมปิดไม่ได้ — เป็นทางตันที่ฟีเจอร์นี้สร้างขึ้น ถ้าไม่แก้
+
+สมาชิกไม่อั้นทำให้ค่าเล่นเป็น ฿0 แต่ `recordPosSale` ปฏิเสธบิลที่ไม่มีวิธีชำระเลย
+(`"ต้องระบุการชำระเงิน"`) → โต๊ะจะค้าง `CLOSING` ตลอดไปและเปิดใหม่ทับไม่ได้ · ยืนยันด้วยการรันจริง
+ก่อนแก้ ไม่ใช่เดาจากการอ่านโค้ด
+
+- แก้แบบแคบที่สุด: ยกเว้นด่านนั้น **เฉพาะเมื่อมี `boardGameBillingGroupId`** แล้วปล่อยให้ด่าน
+  "ยอดชำระต้องเท่ายอดที่ต้องจ่าย" ตัดสินแทน — ส่งศูนย์มากับบิลที่ยังมียอดค้างจะตกเป็น
+  `PAYMENT_MISMATCH` ตามความจริง ไม่ใช่ผ่านไปเงียบ ๆ
+- **ข้อจำกัดนี้มีอยู่ทั้งแพลตฟอร์มมาก่อนแล้ว** (คูปองลด 100% ก็เจอแบบเดียวกัน) แค่ไม่มีใครเดินไปถึง ·
+  ยกเว้นให้กว้างกว่านี้เมื่อไร = บิลค้าปลีกที่ไม่มีใครจ่ายก็ผ่านได้ จึงมีเทส pure ตรึงขอบเขตไว้
+- ชุด DB ทั้ง 475 ตัวเขียวหลังแก้ — ตัวที่พิสูจน์ว่าไม่ลามคือเส้นทาง POS ทั้งหมดในชุดนั้น
+
+#### ⚠️ เทสที่ผมเขียนเองรอบแรกอ่อน 1 ตัว — มิวเทชัน P1 ไม่แดง
+
+assert "แพ็กเกจไม่อั้นต้องเหลือ 0 พอดี" เขียวแม้เปลี่ยนวิธีคิดกลับไปคำนวณใหม่จากนาที · เพราะเมื่อครอบ
+**เต็มบรรทัด** สองสูตรให้ผลเท่ากันเสมอโดยนิยาม — มิวเทชันตัวนั้นจึงเป็น no-op ไม่ใช่เทสที่อ่อน แต่
+**คอมเมนต์ในโค้ดอ้างเหตุผลที่ไม่จริง** และกิ่ง `? grossAmount :` ที่เขียนไว้พิสูจน์แล้วว่าไม่มีทางต่าง
+
+- ของจริงที่ต้องตรึงคือ **`amount + coveredAmount = grossAmount` เสมอ** ซึ่งต่างกันจริงตอนครอบ
+  **บางส่วน** แล้วการปัดของสองก้อนไม่ลงตัวพร้อมกัน: 10 นาที ฿70/ชม. ครอบ 5 นาที →
+  ยอดเต็ม 11.67 · แพ็กเกจจ่าย 5.83 · ลูกค้าจ่าย **5.84** (คิดใหม่จากนาทีที่เหลือได้ 5.83 แล้วขาดไปหนึ่งสตางค์)
+- ถอดกิ่งที่ตายแล้วออก แก้คอมเมนต์ให้ตรง และเพิ่มเทสที่ใช้เลขคู่นี้ · มิวเทชันตัวใหม่แดงถูกตัว
+- **บทเรียน: มิวเทชันที่ไม่แดงอาจแปลว่าโค้ดสองทางเท่ากันจริง ไม่ใช่เทสอ่อนเสมอไป — ต้องพิสูจน์
+  ว่าอันไหนก่อนจะไปแก้เทส**
+
+#### จุดที่เกือบพลาด
+
+- **ลูกค้าถือแพ็กเกจได้หลายใบ** — เรียงด้วย id เฉย ๆ จะไปเจอใบที่ใช้หมดแล้ว แล้วบอกสมาชิกว่า
+  แพ็กเกจที่เพิ่งจ่ายเงินไปช่วยอะไรไม่ได้ · เรียงเป็น ไม่อั้น > ใบที่ยังมีโควตา > ใกล้หมดอายุที่สุด
+  (เจอตอนเทส DB แดง ไม่ใช่ตอนเขียน)
+- **บรรทัดที่ไม่มีค่าใช้จ่ายห้ามกินโควตา** — ผู้ชมที่ไม่คิดเงินหรืออัตรา 0 จะเผานาทีของสมาชิกทิ้ง
+- **โควตาต้องเดินข้ามบรรทัด** — คนเดิมกลับเข้าโต๊ะรอบสองเป็นผู้เล่นอีกแถวได้ สองแถวต้องแบ่งใบเดียวกัน
+- **`isoRequired()`** สำหรับคอลัมน์ NOT NULL — `iso()` คืน `string | null` การยัด `?? ""` ลงไปคือการ
+  ส่งสตริงว่างไปโผล่บนจอแทนที่จะล้มตรงที่ query เลือกคอลัมน์ผิด
+
+#### กับดักของเครื่องมือที่เสียเวลา (ของเดิมที่จดไว้แล้ว เจอซ้ำ)
+
+1. **backtick ในคอมเมนต์ SQL ปิด template literal** — เขียน `` -- `9.92`: ... `` ใน SQL ที่อยู่ใน
+   template literal แล้วได้ `TS1005` ที่ชี้บรรทัดถัดไป (ไฟล์นี้จดกับดักนี้ไว้แล้วสำหรับ `typeDefs.ts`)
+2. **`repr().replace("'", '"')` ของ Python พังกับข้อความที่มี apostrophe** — `"member's contract"`
+   กลายเป็น `"member"s contract"` ใน `en.ts` · ใช้ `json.dumps` เสมอ
+3. **`\n` ในสตริง Python ที่ heredoc กลายเป็นขึ้นบรรทัดจริง** ทำให้ regex ในไฟล์เทสขาดกลาง (จดไว้แล้ว)
+
+#### เทส
+
+- **`scripts/board-game-pass-contract.test.mts` (13 เทส pure)** — เลขทุกตัวเรียกฟังก์ชันจริง
+  ไม่ใช่สแกนซอร์ส: ไม่มีแพ็กเกจ · ไม่อั้นเหลือ 0 · ครอบบางส่วนแล้วบวกกลับเป็นยอดเต็ม · ครอบพอดี ·
+  โควตาหมดไม่ติดลบ · แบ่งโควตาข้ามบรรทัด · บรรทัดฟรีไม่กินโควตา · ต่างคนต่างใบ · วันหมดอายุ ·
+  รูปของ `9.92` · **หักโควตาตอนแช่ยอดเท่านั้นและล็อกก่อนคิด** · ขอบเขตของการยกเว้นบิล ฿0
+- **`scripts/board-game-pass-db-contract.test.mts` (10 เทส DB)** — สร้างร้านของตัวเองแล้วลบทิ้ง:
+  แคตตาล็อกปฏิเสธรูปที่อธิบายไม่ได้ · ไม่อั้นทำให้บิลเป็น 0 แล้วเก็บเงิน ฿0 ได้จริง · แพ็กชั่วโมงถูกหัก
+  แล้วส่วนเกินยังเก็บเงิน · ออกซ้ำด้วยคีย์เดิมได้ใบเดิม / เปลี่ยนแพ็กเกจเป็น CONFLICT · ปิดบิลซ้ำไม่กิน
+  โควตาสองรอบ · ยกเลิกโต๊ะคืนนาที · แพ็กเกจที่ยกเลิก/หมดอายุไม่ช่วยจ่าย · ถือหลายใบต้องใช้ใบที่ช่วยได้
+
+#### ยังไม่ได้ทำ
+
+- **ยังไม่ได้ apply `9.92` เข้า production** — ต้อง apply ก่อน deploy ไม่งั้นร้านบอร์ดเกม **ปิดบิลไม่ได้
+  ทุกโต๊ะ** (เส้นทางปิดบิลอ่านตารางแพ็กเกจทุกครั้ง) · และต้อง seed `board_game.pass.manage`
+  ไม่งั้นแท็บแพ็กเกจกดบันทึกอะไรไม่ได้
+- **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** — แท็บ "แพ็กเกจสมาชิก" ที่ `/admin/board-game` (แคตตาล็อก/ขาย/
+  ยกเลิก) และบรรทัด "แพ็กเกจสมาชิกจ่ายค่าเล่นให้แล้ว" ที่จอเก็บเงิน ผ่านแค่ typecheck + build + เทส
+- **ต่ออายุอัตโนมัติยังไม่มี** — ต้องมีเครื่องมือเก็บเงินซ้ำ (payment token) ซึ่งแพลตฟอร์มนี้ไม่มี ·
+  วันนี้ขายใบใหม่ด้วยมือ · ย้ายออกจาก roadmap เป็น "automatic pass renewal" แล้ว
+- **แอป RN ยังไม่รู้จักแพ็กเกจ** — ไม่มี GraphQL operation และจอ RN ไม่แสดงว่าแพ็กเกจช่วยจ่ายเท่าไร
+  (เบราว์เซอร์แสดงแล้ว) · เส้น GraphQL ของบอร์ดเกมยังไม่มี query ของแพ็กเกจเลย
+- **`9.92` จงใจไม่อยู่ใน `schemaReadiness`** — เหตุผลเดียวกับ `9.79`–`9.83`/`9.91`: ทุกเส้นทางที่แตะ
+  ตารางแพ็กเกจถูกกั้นด้วย `requireBoardGameCafeTenant` และ `boardGameBillingGroupId` อยู่แล้ว ·
+  `createOrderInTx` ไม่เขียนคอลัมน์ใหม่สักตัว
+- **ขายแพ็กเกจที่เครื่องขายยังไม่ได้** — ต้องไปหลังบ้าน · ตั้งใจให้เหมือนบัตรของขวัญ (`8.9`) ซึ่งก็ออกจาก
+  หลังบ้านเท่านั้น แต่ร้านที่มีแคชเชียร์คนเดียวจะรู้สึกว่าอ้อม
+- **ยกเลิกแพ็กเกจไม่คืนเงินให้เอง** และไม่มีการคืนตามสัดส่วนที่ใช้ไป — การคืนเงินเดินทางคืนเงินของ POS
+- **void บิลที่จ่ายแล้วไม่คืนนาที** — เส้นทาง void ของ POS ไม่เคยย้อนสถานะกลุ่มบอร์ดเกมอยู่แล้ว
+  (ของเดิมตั้งแต่ `9.89`) แพ็กเกจจึงถูกหักไปตามบิลที่ถูก void · ยังไม่ได้แก้เพราะเป็นของเดิมคนละชั้น
+
+
+### `9.91` ย้าย/รวมโต๊ะบอร์ดเกมโดยไม่แตะบิล — เฟส 4 (recheck งานของ codex แล้วปิดให้จบ) — 2026-09-15
+
+branch `feat/board-game-checkin-billing` · **apply `9.91` เข้า dev DB แล้วและ verify กับ DB จริงแล้ว**
+(ตาราง + RLS/FORCE RLS + GRANT 4 ตัว + ดัชนี 6 ตัว + `seating_id` NOT NULL + FK composite ที่ validated
+แล้ว + ดัชนีเก่าถูกดรอป อ่านจาก `pg_class`/`pg_indexes`/`information_schema` จริง) ·
+**ยังไม่ได้ apply เข้า production** · **ไม่มี permission ใหม่** (ใช้ `board_game.session.manage`) ·
+typecheck web+ws ผ่าน · **pure 1,242/1,242** · **DB 465/465 เขียวทั้งชุด 41 ไฟล์** · production build ผ่าน ·
+mobile typecheck/lint ผ่าน · **Jest 143/143** · codegen รันซ้ำแล้วได้ sha256 เดิม ·
+**มิวเทชัน 19 แบบ (pure 13 · DB 6) แดงถูกตัวทุกครั้ง** และคืนไฟล์ตรงทุกไบต์
+
+#### ⚠️ สถานะที่รับช่วงมาจาก codex: เขียวเฉพาะสิ่งที่ไม่มีใครรัน
+
+ของที่ codex ทำไว้ (migration + service + REST/GraphQL + จอเว็บ + i18n) **ไม่ผ่านแม้แต่ typecheck**
+และชุด pure แดงอยู่ **8 ตัว** ตั้งแต่ก่อนเริ่ม · ที่ต้องแก้เพื่อให้ "เสร็จ" แปลว่าเสร็จจริง:
+
+1. **`tsc` แดง** ที่ `/admin/board-game` (`t()` รับ `number | undefined`)
+2. **ไม่ได้รัน codegen ของ RN** — `generated.ts` ไม่มีเอกสารสองตัวที่จอ import เข้ามา แอปจึงคอมไพล์ไม่ผ่าน
+3. **⚠️ จอ RN import mutation ไว้แต่ไม่เคยเรียก** — `moveSeating`/`mergeSeating`/`selectedSeating`/
+   `relocateTargets`/`relocateTargetId` เป็นตัวแปรที่ไม่มีใครใช้ (lint แดง 6 จุด) แปลว่า
+   **แอปเนทีฟย้าย/รวมโต๊ะไม่ได้เลย** ทั้งที่ SDL/resolver/สิทธิ์พร้อมหมด — รอบนี้ต่อ UI ให้ครบ
+4. **เทสเดิม 4 ไฟล์ต้องเล็งใหม่ ไม่ใช่แค่แดงเพราะเลขไม่ตรง** (ดูหัวข้อถัดไป)
+5. **ไม่มีเทส DB ของเฟส 4 เลยสักตัว** — เขียนใหม่ 10 เทส
+6. **teardown ของชุด DB เดิมจะพังทั้งชุด** เพราะ `bms_board_game_seatings` ถือ FK ไปที่
+   `bms_board_game_tables` แล้วลิสต์ลบไม่มีมัน → ลบโต๊ะไม่ได้ → **ทิ้งร้านทดสอบไว้ในฐานทุกรอบ**
+   (กับดักเดียวกับที่ `pharmacy-counter-authorization` เคยทำ)
+
+#### กติกาของเฟส 4
+
+- **ที่นั่ง (`bms_board_game_seatings`) เป็นเจ้าของโต๊ะ · session เป็นเจ้าของ visit** — หนึ่งที่นั่ง
+  ACTIVE ต่อหนึ่งโต๊ะ (partial unique index) และหลาย session แชร์ที่นั่งเดียวกันได้หลังรวมโต๊ะ
+- **`bms_board_game_sessions.table_id` กลายเป็นประวัติ** = โต๊ะที่ visit นี้ "เปิด" ไว้ · ทุกคำถามว่า
+  "ตอนนี้อยู่โต๊ะไหน" ต้องอ่านจากที่นั่ง ไม่งั้นจะโชว์โต๊ะที่ลูกค้าย้ายออกไปตั้งแต่ชั่วโมงก่อน
+- **ที่นั่งว่างเมื่อทุก session ที่ผูกอยู่จบแล้ว** — สูตรอยู่ที่ `refreshBoardGameSeatingInTx()`
+  ตัวเดียว และ `refreshSessionFromGroupsInTx()` เรียกต่อให้เอง ผู้เรียกทุกทาง (รวม `pos.ts`) จึงได้ฟรี
+- **ย้าย/รวมไม่แตะ session, กลุ่มบิล, tab หรือ order เลย** — คอลัมน์เดียวของ session ที่ถูกเขียนคือ
+  `seating_id` (มีเทส pure ตรึงว่าต้องเป็นตัวเดียวเท่านั้น)
+- **⚠️ `move` แยกเฉพาะชุดที่เลือกเมื่อโต๊ะถูกรวมไว้** (ของเดิมย้ายทั้งที่นั่ง) — ไม่งั้นกดย้ายจาก
+  การ์ดของชุดหนึ่งจะลากอีกชุดไปด้วยโดยไม่มีอะไรบนจอบอก **และการรวมโต๊ะจะกลายเป็นประตูทางเดียว**
+  · โต๊ะที่มีชุดเดียวยังย้ายทั้งที่นั่ง (คง id/เวลาเปิด) · ที่นั่งที่แยกออกมาปล่อย `origin_session_id`
+  เป็น NULL เพราะ session นั้นเป็นต้นทางของที่นั่งเดิมไปแล้ว และคอลัมน์นั้น unique ต่อร้าน
+- **สองคำสั่งปฏิเสธงานของกันและกัน** — ย้ายไปทับโต๊ะที่มีคน และรวมกับโต๊ะว่าง เป็นการปฏิเสธทั้งคู่
+  ไม่ใช่เดาให้ · การเดาแทนคนกดคือการย้ายลูกค้าที่เขาไม่ได้เลือก
+- **ลำดับล็อก: advisory ของคีย์ → advisory ของผังทั้งร้าน → แถวโต๊ะปลายทาง → sessions → seatings**
+  · ลำดับ sessions ก่อน seatings ตรงกับเส้นทางรับเงิน · `openBoardGameSession` ล็อกแถวโต๊ะด้วย
+  `FOR UPDATE` อยู่แล้ว การย้ายจึงแทรกระหว่าง "ตรวจว่าว่าง" กับ "เขียน" ไม่ได้
+
+#### ⚠️ เทสเดิม 4 ไฟล์ที่ต้องเล็งใหม่ — สองตัวเป็นด่านที่ตาบอดอยู่ก่อนแล้ว
+
+1. **`writeActions()` ของ parity test มองไม่เห็น `case` ที่ fall-through** — มันจับ
+   `case "x": {` ที่ต้องมี `{` ติดกัน ส่วน `case "seating.move":` ที่ตกลงไปใช้ body ของ
+   `case "seating.merge": {` **ไม่เคยถูกนับเป็นคำสั่งที่เขียนข้อมูลเลย** → คำสั่งใหม่ที่ใช้ body
+   ร่วมกันจะไม่ถูกบังคับว่า "เบราว์เซอร์ต้องเอื้อมถึง" · `boardGameDelegatedBody()` ของ
+   `mobile-graphql-contract` มีบั๊กเดียวกัน
+2. **ตัวสแกนปุ่มบนจอมองไม่เห็น ternary** — `run('seating-relocate', merging ? 'seating.merge' : …)`
+   ทำให้ regex ที่ยึด `run('ชื่อ', 'คำสั่ง'` ไม่แมตช์ · เปลี่ยนไป **อ่านอาร์กิวเมนต์ที่สองทั้งก้อน**
+   ด้วยตัวนับวงเล็บ แล้วดึง literal ในนั้น — ปุ่มเดียวเลือกคำสั่งด้วยเงื่อนไขได้เป็นเรื่องปกติ
+3. `board-game-cafe-contract` ตรึง `session.status IN ('OPEN','CLOSING')` ของ public discovery ไว้
+   ตรงตัว = **ตรึงรูปเก่าไว้** · ย้ายไปเล็งที่กฎ (ต้องกันด้วย seating ACTIVE และห้ามกลับไปนับ session)
+4. `mobile-graphql-contract`/`react-native-graphql-doc-contract` ตัวเลข operation ค้างที่ 77/122
+   ทั้งที่ของจริง 79/124 (codex บวกให้เฉพาะ mutation ของเฟส 3)
+
+#### ⚠️ เทสที่ผมเขียนเองรอบแรกอ่อน 2 ตัว — จับได้ด้วยมิวเทชัน ไม่ใช่ด้วยตา
+
+1. **`functionBody()` หยิบ `{` ตัวแรกหลังชื่อฟังก์ชัน ซึ่งคือ `{ idempotencyKey: string }` ของ
+   พารามิเตอร์ ไม่ใช่ตัวฟังก์ชัน** → เทส 4 ตัวอ่าน "ตัวฟังก์ชัน" ที่ยาว 27 ตัวอักษร · ต้องข้าม
+   ลิสต์พารามิเตอร์ด้วยการนับวงเล็บก่อน · **เทสแบบนี้เขียวได้โดยไม่เคยเห็นโค้ดที่กำลังตรึงอยู่เลย**
+2. **มิวเทชัน M6 (ถอด `if (occupied.rowCount) throw`) ไม่แดงรอบแรก** เพราะ assert แค่ว่ามี query
+   ที่อ่านที่นั่ง ACTIVE อยู่ในฟังก์ชัน — query นั้นยังอยู่ แค่ไม่มีใครใช้คำตอบ · ต้องตรึง
+   **เงื่อนไขที่ตัดสิน** ด้วย (กับดักเดิมของรีโปนี้ที่จดไว้หลายรอบ)
+
+#### เทส
+
+- **`scripts/board-game-seating-db-contract.test.mts` (10 เทส DB ใหม่ · ~0.9 วิ)** — สร้างร้านของ
+  ตัวเอง 4 โต๊ะ + สาขาที่สอง แล้วเดินของจริง: ย้ายแล้วโต๊ะเดิม **เปิดใหม่ทับได้ทันที** (ไม่ใช่แค่
+  การ์ดว่าง) · ย้ายแล้ว bill/tab/ใบจอง/ผู้เล่นเป็นชุดเดิมทุก id · move กับ merge ปฏิเสธงานของกันและกัน
+  และโต๊ะของอีกสาขาเป็น "ไม่พบโต๊ะปลายทาง" · รวมโต๊ะแล้วได้สองบิลแยก จ่ายใบเดียวโต๊ะยังไม่ว่าง ·
+  แยกโต๊ะที่รวมไว้ออกมาได้ (ชุดอื่นอยู่โต๊ะเดิม) · บิลที่จ่ายไปแล้วไม่ถูกแตะจากการย้าย · replay/CONFLICT ·
+  ยกเลิกชุดหนึ่งบนที่นั่งที่แชร์กันไม่ปล่อยโต๊ะ
+- **`board-game-cafe-contract` เพิ่ม 6 เทส pure** — ชุด DB พิสูจน์พฤติกรรม แต่ **`gate.yml` รันเฉพาะ
+  pure** ตัวเหล่านี้จึงเป็นด่านเดียวที่ยิงทุก PR: รูปของ `9.91` (RLS/GRANT/ดัชนี/FK/ดรอปดัชนีเก่า) ·
+  โต๊ะว่างตัดสินจากที่นั่งและคำตอบต้องเป็นตัวปฏิเสธจริง · ย้าย/รวมห้ามแตะตารางเงิน (ไล่จาก
+  `UPDATE bms_board_game_sessions SET <col>` ว่ามีได้แค่ `seating_id`) · สองคำสั่งปฏิเสธกัน ·
+  การแยกชุดออกจากที่นั่งที่รวมไว้ · สูตรสถานะที่นั่งมีชุดเดียว (สแกนว่ามี `SET status` ของที่นั่ง
+  ได้ค่าเดียวคือ `'MERGED'`)
+- `mobile-graphql-contract` เพิ่มด่านว่า **จอ RN ต้อง *เรียก* เอกสารทั้งสองตัว** ไม่ใช่แค่ import
+  (บั๊กข้อ 3 ข้างบนจะแดงทันทีถ้าเกิดซ้ำ — lint จับได้ก็จริง แต่ lint ของ mobile ไม่มีใน CI)
+- แคตตาล็อกผู้ช่วย: เพิ่มขั้นตอน/คำเตือน/alias ของการย้าย-รวมโต๊ะให้ทั้ง `pos.board-game-table`
+  และ `board-game.run-cafe` + ปักคำถาม 5 ข้อ (corpus 85 → 90)
+  · **⚠️ alias `"merge two tables"` ไปแย่งคำถามที่ปักไว้ของร้านอาหาร** ("merge two tables into one
+    bill" → `pos.restaurant-split-merge`) ด้วยคะแนน 62 ต่อ 55 · ต้องเป็น `"merge two board game
+    tables"` — รวม **โต๊ะ** กับรวม **บิล** เป็นคนละเรื่องและอยู่คนละจอ
+
+#### ที่ตรวจแล้วว่าไม่ใช่ปัญหา (จดไว้กันไล่ซ้ำ)
+
+- **ลบร้านได้ปกติ** — `deleteTenantRows()` ไม่ต้องเติมบรรทัดของที่นั่ง เพราะ `tenant_id` เป็น
+  `ON DELETE CASCADE` และ FK ไปที่โต๊ะเป็น NO ACTION ซึ่งถูกตรวจท้าย statement เดียวกัน ·
+  ยืนยันด้วย `test-shop-lifecycle-db-contract` ที่ seed ของจริงแล้วลบทิ้ง (เพิ่มตารางนี้เข้าลิสต์
+  "ต้องไม่มีแถวค้าง" แล้ว) · **ต่างจาก teardown ของชุดเทสที่ลบทีละตารางเอง ซึ่งต้องเติม**
+- **`9.91` จงใจไม่อยู่ใน `schemaReadiness`** — เหตุผลเดียวกับ `9.79`–`9.83`: ทุกเส้นทางที่แตะ
+  ที่นั่งถูกกั้นด้วยบอร์ดเกมอยู่แล้ว (`pos.ts` เรียก refresh เฉพาะตอนมี `boardGameBillingGroupId`)
+  · `createOrderInTx` ไม่เขียนคอลัมน์ใหม่สักตัว
+- **`computedAlertStatus()` ไม่ใช่โค้ดตาย** — ผังโต๊ะคิดสถานะเตือนใน SQL แล้ว แต่ `mapSessionRow()`
+  ยังใช้อยู่
+- **replay ของ relocate ปลอดภัย** — `replayActionInTx()` ขอ advisory lock ของคีย์เป็นอย่างแรก
+  คำขอที่ยิงซ้ำพร้อมกันจึงเข้าคิวแล้วได้คำตอบเดิม ไม่ใช่ไปตกด่าน "โต๊ะปลายทางเป็นโต๊ะเดิม"
+
+#### ยังไม่ได้ทำ
+
+- **ยังไม่ได้ apply `9.91` เข้า production** — ต้อง apply **ก่อน** deploy ไม่งั้นร้านบอร์ดเกม
+  เปิดโต๊ะไม่ได้เลย (`openBoardGameSession` เขียน `seating_id` ทุกครั้ง)
+- **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์และบนแอป** — ช่อง "ย้าย / รวมโต๊ะ" ที่แท็บโต๊ะ/เวลา, การ์ด
+  ที่บอกว่า "รวมจาก N โต๊ะ", ชิปเลือกชุดลูกค้า, หน้า `/admin/board-game` และแถบโต๊ะปลายทางบน RN
+  ผ่านแค่ typecheck + lint + build + เทส
+- **`move` ของโต๊ะที่รวมไว้ย้ายได้ทีละชุดเท่านั้น** — ยังไม่มีทาง "แยกทุกชุดออกจากกันรวดเดียว"
+  และยังไม่มีปุ่มรวมมากกว่าสองโต๊ะในคราวเดียว (ต้องรวมทีละใบ ซึ่งได้ผลเดียวกัน)
+- **ที่นั่งไม่มี retention** — หนึ่งแถวต่อหนึ่ง visit เหมือน session · ยังไม่มีตัวกวาด
+- **`/api/pos/board-game/session` (GET) ยังใช้แค่ device token** (ของค้างเดิมตั้งแต่ `9.79`)
+- ไม่ได้แตะ `docs/architecture/database.md` — ไฟล์นั้นไม่เคยมีหัวข้อบอร์ดเกมเลยตั้งแต่ `9.79`
+
+
+### ร้านบอร์ดเกมเปิดโต๊ะจากเครื่องขายบนเบราว์เซอร์ได้แล้ว — เว็บกับ RN ตัดสินด้วยโค้ดชุดเดียว — 2026-09-15
+
+branch `feat/board-game-web-register` · **ไม่มี migration · ไม่มี permission ใหม่ · ไม่แตะ money path**
+· gate ผ่าน (typecheck · **pure 1,234/1,234** จาก 1,226 · production build) · mobile typecheck/lint ผ่าน
+· Jest **143/143** · `schema.graphql` ไม่ขยับ (SDL เท่าเดิมทุกไบต์)
+· **มิวเทชัน 14 แบบ แดงถูกตัวทุกครั้ง** และคืนไฟล์ตรงทุกไบต์ (เทียบ sha256)
+· **เดินจริงในเบราว์เซอร์ครบวง** ด้วย backend จำลอง (เครื่องนี้ไม่มี Postgres — ดู "ยังไม่ได้ทำ")
+
+#### อาการ: งานที่ร้านทำบ่อยที่สุด เป็นงานที่เครื่องขายทำไม่ได้
+
+เปิด/ปิดโต๊ะบอร์ดเกมมีทางเดียวคือ `/admin/board-game` แล้วส่งบิลมาที่ `/pos?boardGameSessionId=`
+· บัญชี `pos_only` **ถูกปฏิเสธตั้งแต่ตอน login ของหลังบ้าน** จึงเปิดโต๊ะไม่ได้เลย ขณะที่แอป RN
+มีแท็บ `โต๊ะ/เวลา` ครบมาตั้งแต่ `9.79`–`9.83` — เว็บกับ RN ทำงานคนละชุด
+
+#### สิ่งที่ต้องเหมือนกันเสมอ ย้ายไป `lib/bms/boardGamePosOperations.ts`
+
+เดิม resolver ของ `bmsPosDevice.ts` ถือไว้เองสามอย่าง: **สิทธิ์ของแต่ละคำสั่ง** · **ด่านว่า
+session/loan อยู่สาขาของเครื่องนี้** · **การแปลง input** · การก๊อปสามอย่างนั้นไปไว้ใน REST route
+= ตัวตัดสินสองชุด วันที่กติกาเปลี่ยน อีกฝั่งจะยังอนุญาตของเดิมโดยไม่มีอะไรฟ้อง
+
+- `BOARD_GAME_POS_ACTIONS` เป็น **ที่เดียว** ที่ประกาศว่าคำสั่งไหนใช้สิทธิ์อะไร ต้องมีกะเปิดไหม
+  และสิทธิ์เพิ่มเติมที่ขึ้นกับ input (คืนกล่องเกมเป็น "หาย/เสียหาย" ต้องมี `board_game.library.manage`)
+- ที่ยังเป็นของ adapter มีแค่สองอย่าง: **ยืนยันตัวตนยังไง** (device token + PIN ใน body ของ REST
+  vs. device Bearer + credentials input ของ GraphQL) และ **error หน้าตาไหน** (HTTP status vs.
+  `extensions.code`)
+- **ต้องมีกะเปิด = `open` กับ `close` เท่านั้น** (เทสตรึงเป็นเซ็ตตรงตัว) — เปิดโต๊ะประทับเครื่อง/กะ
+  ลง session ส่วนปิดเวลาคือการออกยอดให้กะนั้นเก็บ · ถ้าบังคับกะกับคำสั่งที่เหลือ = แก้โต๊ะข้ามกะไม่ได้
+
+#### ⚠️ การปฏิเสธตามกติกาเคยออกไปเป็น 500 ที่ข้อความถูกลบทิ้ง
+
+`boardGameCafe.ts` ปฏิเสธด้วย `throw new Error(...)` 63 จุด · ปล่อยไว้ REST ตอบ 500 ที่
+`errorResponse()` ลบข้อความจริงทิ้งบน production (เหลือ "เซิร์ฟเวอร์ผิดพลาด") ส่วน GraphQL ติด
+`INTERNAL_SERVER_ERROR` ซึ่ง **เอกสารสัญญาของไคลเอนต์สั่งให้ยิงซ้ำด้วยคีย์เดิม** → คำขอที่ผิดกติกา
+วนล้มแบบเดิมตลอดไป (กับดักเดียวกับ `IdempotencyConflictError` ของ `9.88`)
+
+- `BoardGamePosError` (`BAD_INPUT` / `REJECTED` / `NOT_FOUND`) → REST 400/404/409 ·
+  GraphQL `BAD_USER_INPUT`/`NOT_FOUND`/`CONFLICT` โดย `formatError` กลางเป็นคนจัดประเภทที่เดียว
+- **`boardGameRejectionFrom()` ต้องคืน `null` ให้ของที่พังจริง** — `TypeError`/`RangeError`/
+  `ReferenceError`/`SyntaxError` · error ของ pg (มี `code` เป็น SQLSTATE) · ข้อความว่าง ·
+  และ `IdempotencyConflictError` ที่มีรหัสของตัวเองอยู่แล้ว
+  **500 ที่มี stack ใน `system_logs` มีค่ากว่า 409 ที่อ่านว่า "คนหน้าเครื่องทำผิด"**
+- **CONFLICT ปลอดภัยกับคีย์กันรายการซ้ำ** เพราะทุกคำสั่งของ `boardGameCafe.ts` อยู่ในทรานแซกชันเดียว
+  และคีย์ถูกเก็บ **บนแถวเดียวกับข้อมูล** (`open_idempotency_key`) — throw = rollback ทั้งก้อน
+  คำขอที่ถูกปฏิเสธจึงไม่เคยเขียนอะไรค้าง · RN (`isDecidedRejection`) ทิ้งคีย์ตอน CONFLICT ถูกแล้ว
+
+#### ฝั่งเบราว์เซอร์
+
+- `/api/pos/board-game` เป็น **POST ทุก action รวมทั้งการอ่าน** — การอ่านผังโต๊ะต้องใช้ PIN เท่ากับ
+  GraphQL (ผังมีชื่อลูกค้า/สมาชิก) และ PIN ห้ามไปโผล่ใน query string ของ access log
+- แท็บ `โต๊ะ/เวลา` ขึ้นเฉพาะ archetype `board_game_cafe` · **`visiblePosTabs` เปลี่ยนเป็นตัวกรอง
+  กฎละแท็บ** แทน ternary เดิมของร้านอาหาร แล้ว effect ที่เตะกลับแท็บขายอ่านจากลิสต์เดียวกัน
+  (สองลิสต์ = วันหนึ่งแท็บถูกซ่อนแต่ยังค้างเป็นแท็บที่เปิดอยู่)
+- **`ScanContextInput.tab` เป็นลิสต์แท็บชุดที่สองใน `scanManager.ts`** — ต้องเติมด้วย ไม่งั้น tsc แดง
+  · แท็บนี้ได้ `DISABLED` ซึ่งถูกแล้ว (ไม่มีอะไรให้ยิงบาร์โค้ด ปล่อยติดอาวุธไว้ = ของไปเข้าตะกร้าแท็บอื่น)
+- ปุ่มเวลา (`timing`) เพิ่มให้ครบ — RN มี "เพิ่มเวลา 30 นาที" อยู่แล้ว ถ้าเว็บไม่มี คำสั่งนี้จะ
+  เอื้อมไม่ถึงจากเบราว์เซอร์ทั้งที่ route เปิดทางไว้ · **ฟอร์มเวลา seed จากค่าที่ server ตอบ โดยมี
+  deps เป็น "ค่า" ไม่ใช่ object** — รอบ poll ที่ได้ค่าเดิมจะได้ไม่ลบตัวเลขที่คนกำลังพิมพ์ทิ้ง
+
+#### เจอเพิ่มตอนเปิดดูจริง (เทสจับไม่ได้)
+
+**โต๊ะที่ปิดเวลาแล้วยังขึ้นว่า "กำลังเล่น"** บนผังและบนชิป "โต๊ะที่ต้องดู" — สถานะ `CLOSING` แปลว่า
+รอเก็บเงิน ไม่ใช่กำลังเล่น · พนักงานจะเดินไปถามลูกค้าผิดเรื่อง · เพิ่ม `tableStateLabel()` ที่อ่าน
+`status` ก่อน `alertStatus` แล้วขึ้น "รอเก็บเงิน"
+
+#### เทส
+
+- **`scripts/board-game-pos-parity-contract.test.mts` (8 เทส pure)** — สิทธิ์ต้องมาจากตารางเดียว
+  (ทั้งสอง adapter ห้ามเอ่ยชื่อ permission เอง และห้าม import `boardGameCafe` ตรง ๆ) · เซ็ตของคำสั่งที่
+  ต้องมีกะเปิด · สิทธิ์เพิ่มของ `copy.return` (เรียกของจริง ไม่ได้สแกนซอร์ส) · `boardGameRejectionFrom`
+  ทั้งทางที่ปฏิเสธและทางที่ต้องปล่อยผ่าน · formatter ของ GraphQL · การแปลงเป็น HTTP ของ REST ·
+  **เบราว์เซอร์ต้องเอื้อมถึงทุกคำสั่งที่เขียนข้อมูล** โดยอ่าน "คำสั่งที่เขียน" จาก `case` ของ dispatcher
+  จริง ไม่ใช่ลิสต์ที่เทสพิมพ์เอง (คำสั่งใหม่ที่ไม่มี UI บนเว็บ = แดงทันที) · แท็บถูกกั้นด้วย archetype
+  และสแกนเนอร์ต้องปิดบนแท็บนี้ (เรียก `resolveScanContext` ของจริง)
+- **⚠️ `mobile-graphql-contract` เทสหนึ่งตัวต้องเล็งใหม่** — มันสแกน `input.<field>` ใน body ของ
+  resolver เทียบกับ SDL สองทิศ · พอการอ่าน input ย้ายไป lib มันรายงานว่า "ไม่มีใครอ่าน field ไหนเลย"
+  ซึ่ง **เขียวได้ทั้งตอน SDL ประกาศ field ที่ไม่มีใครใช้ และตอนโค้ดอ่าน field ที่ไม่มีใน SDL** ·
+  เขียนตัวเดินตาม delegation: ยก body ของ `boardGamePosAccess` + แถวของ action ใน
+  `BOARD_GAME_POS_ACTIONS` + ส่วนหัวก่อน `switch` + บล็อก `case` ของ action นั้น + ตัว
+  `participantDraft` (แปลง `row.` เป็น `input.`) มาสแกนแทน
+  · **ได้การันตีใหม่มาด้วย: resolver ต้อง execute action เดียวกับที่มันขออนุญาต** (อนุญาตด้วยสิทธิ์
+    ของคำสั่งหนึ่งแล้วไปทำอีกคำสั่ง = ด่านสิทธิ์ที่ไม่ได้กันอะไรเลย) — มิวเทชันจับได้จริง
+- **`restaurant-online-order-contract` ตรึง ternary เดิมของ `visiblePosTabs` ไว้ตรงตัว** จึงแดงทั้งที่
+  การันตี (แท็บออร์เดอร์เข้าเป็นของร้านอาหารเท่านั้น) ยังจริง — ย้ายไปเล็งที่ **กฎ** แล้วพิสูจน์ด้วย
+  มิวเทชันว่ายังจับ "เปิดแท็บให้ทุกร้าน" ได้
+- แคตตาล็อกผู้ช่วย: guide `pos.board-game-table` (`pageId: "pos"`) + ปักคำถาม 3 ข้อ (corpus 79 → 82)
+  · **ก่อนหน้านี้คำตอบเดียวที่มีคือ `board-game.run-cafe` ซึ่ง route คือ `/admin/board-game`** ที่
+  บัญชี `pos_only` เปิดไม่ได้ — ตรงกับกฎ "ผู้ช่วยที่เครื่องขายต้องอยู่ในเครื่องขาย" พอดี
+
+#### ⚠️ กับดักของเครื่องมือที่เสียเวลาไปสองรอบ
+
+1. **heredoc ของ Bash ในเครื่องนี้ยุบ `\\` เป็น `\`** — สคริปต์ Python ที่เขียนผ่าน `cat <<'PY'`
+   แล้วมี `'\\n'` ในสตริง จะกลายเป็น **ขึ้นบรรทัดจริง** ตอนเขียนไฟล์ · regex `/\n}\n/` ที่ตั้งใจเขียน
+   ลงไฟล์เทสจึงกลายเป็น literal ที่ขาดกลาง (เห็นเป็น `/.exec(tail);` ลอยอยู่บรรทัดเดียว)
+   · **ทางที่ปลอดภัยคือเขียนโค้ดที่จะแทรกลงไฟล์ด้วย Write tool แล้วให้ Python อ่านไฟล์นั้นมาแปะ**
+2. **สตริงที่ต่อกันแบบ implicit ใน Python แล้วต่อท้ายด้วย `.replace()`** — `'a\r\n' 'b\n'.replace("\n","\r\n")`
+   ทำ replace กับ **ทั้งก้อน** → ได้ `\r\r\n` ปนในไฟล์ CRLF · จับได้ตอนอ่าน dump ของเทสที่แดง
+   **ทุกครั้งที่แก้ไฟล์ด้วยสคริปต์ ต้องนับ `\r\r` / lone LF ของไฟล์นั้นหลังแก้**
+
+#### ยังไม่ได้ทำ
+
+- **ยังไม่เคยเดินกับฐานข้อมูลจริงสักครั้ง** — เครื่องนี้ Docker daemon ไม่ได้รันและ 5432 ปิด ·
+  ที่ยืนยันแล้วคือ typecheck + pure + build + เทสที่เรียกของจริง และ **การเดินจอจริงในเบราว์เซอร์กับ
+  backend จำลอง** (เปิดโต๊ะ 2 คน → ยืมกล่องเกม → +30 นาที (90→120) → ปิดเวลา → เด้งไปแท็บขายพร้อม
+  บรรทัด "ค่าเล่นบอร์ดเกม · โต๊ะ 1 ฿120.00" · ทดสอบการปฏิเสธตามกติกาแล้วข้อความจริงขึ้นบนจอ ·
+  390px ไม่มี horizontal overflow) · **payload ที่จอส่งจริงถูกบันทึกไว้เทียบกับที่ shared module รับ**
+  แต่ **ยังไม่มีอะไรพิสูจน์ว่าฝั่ง service เขียนฐานถูก** — ต้องเปิดร้าน `board_game_cafe` จริง
+  แล้วเดินซ้ำก่อนเชื่อว่าใช้ได้ที่หน้าร้าน
+- **ไม่มีเทส DB ของเส้นนี้** (ทั้งของ REST และของ GraphQL) — เคสที่ควรตรึงเมื่อมีฐาน: session/loan
+  ของอีกสาขาต้องเป็น `NOT_FOUND` ทั้งสอง adapter · ยิงซ้ำด้วยคีย์เดิมต้องได้ผลเดิม · คีย์เดิมกับ
+  input คนละชุดต้องเป็น CONFLICT ไม่ใช่ 500
+- **`/api/pos/board-game/session` (GET, ของเดิมตั้งแต่ `9.79`) ยังใช้แค่ device token** ขณะที่
+  `bmsPosBoardGameCheckout` ของ GraphQL บังคับ PIN + `pos.sell` · เป็นประตูที่อ่อนกว่าไปยังข้อมูลเดียวกัน
+  — ไม่ได้แก้ในรอบนี้เพราะมันคือปลายทางของลิงก์ handoff จาก `/admin/board-game` ซึ่งโหลดก่อนแคชเชียร์
+  กรอก PIN · ถ้าจะปิดช่องนี้ต้องตัดสินใจเรื่อง flow นั้นพร้อมกัน
+- **อ่านผังโต๊ะทุก 10 วินาที = bcrypt ทุก 10 วินาทีต่อเครื่อง** (RN poll 5 วินาทีอยู่แล้ว จึงไม่ใช่
+  ต้นทุนชนิดใหม่) — ถ้าจะลด ต้องแก้สัญญา credentials ของ GraphQL ด้วย ไม่ใช่แก้ฝั่งเว็บอย่างเดียว
+- ไม่ได้ทำ: เลือกสมาชิกตอน **เพิ่มผู้เล่นระหว่างเล่น** (ค้นสมาชิกมีเฉพาะตอนเปิดโต๊ะ) ·
+  ไม่มีปุ่มแยกบิลของโต๊ะบอร์ดเกมบนเว็บ (กลุ่มบิลตั้งได้ตอนเพิ่มคนเท่านั้น)
+
+
+### ปิดบิลบอร์ดเกมทีละกลุ่มขณะที่คนอื่นเล่นต่อ — เฟส 3 — 2026-09-15
+
+**ไม่มี migration · ไม่มี permission ใหม่** · ใช้ `board_game.session.manage` + กะเปิดเหมือนปิด
+ทั้งโต๊ะ · web/mobile typecheck ผ่าน · schema export + RN codegen ผ่าน · production build ผ่าน ·
+pure **1,236/1,236** · DB **455/455** (รวม `board-game-billing-group-db-contract` **23/23**)
+
+#### รูปธุรกรรม
+
+- `closeBoardGameBillingGroupForBilling()` รับ **billing group id** แล้วแช่เฉพาะ `ended_at`,
+  `charge_snapshot`, `amount_due` และ settlement key ของกลุ่มนั้น · กลุ่มอื่นยัง `OPEN`, เวลา/tab
+  ยังเดิน และรับคนเพิ่มได้
+- ล็อกตามลำดับ **session → ทุก group** เหมือน `closeBoardGameSessionForBilling()` เพื่อไม่ให้
+  สองแคชเชียร์ปิดคนละระดับแล้ว deadlock · คีย์กันซ้ำอยู่บนกลุ่มและยิงซ้ำคืน snapshot เดิม
+- จ่ายกลุ่มแรกแล้ว session ยัง `OPEN`; `refreshSessionFromGroupsInTx()` นับ guest เฉพาะคนในกลุ่ม
+  ที่เปิดอยู่ จึงไม่ปล่อยโต๊ะและไม่แสดงคนที่จ่ายแล้วว่ายังเล่น
+- เกมยืมเป็นของ session ไม่ใช่บิล: กลุ่มแรกกลับได้ทั้งที่เกมยังใช้ต่อ แต่ **กลุ่มสุดท้ายปิดไม่ได้**
+  จนกว่าจะรับคืนครบ
+- replay ของคำสั่งปิดทั้งโต๊ะถูกแก้ให้คืนเฉพาะกลุ่มที่คำขอนั้นปิดจริง ไม่รวมกลุ่มที่ถูกปิดก่อนหน้า
+  ด้วยคำสั่งรายกลุ่ม มิฉะนั้น first response กับ replay response จะคนละชุด
+
+#### จอและสัญญา client
+
+- เบราว์เซอร์ POS, หน้า Admin และแอป RN มีปุ่มปิด/เก็บเงินต่อกลุ่ม พร้อมปุ่ม “ปิดทุกกลุ่ม” แยกกัน
+- GraphQL เพิ่ม `BmsPosBoardGameBillingGroupActionInput` และ
+  `bmsPosCloseBoardGameBillingGroup`; mobile เปลี่ยน handoff/checkout/sale จาก session id เป็น
+  `boardGameBillingGroupId` และอ่าน `billingGroups[]`/`totalDue` จาก generated types จริง
+- **ห้ามใช้ `currentOrderId IS NULL` หาใบที่รอเก็บเงิน** — ตั้งแต่ `9.90` กลุ่มที่มีของบน tab
+  มี PENDING reservation order อยู่แล้วก่อนปิดเวลา · ตัวจริงคือ `status = 'CLOSING'` (แก้ทั้ง
+  browser และ Admin แล้ว)
+- คนในกลุ่มที่ปิดแล้วกด “ออก” ซ้ำไม่ได้ทั้ง UI และ service; snapshot ที่แช่ไว้ต้องไม่ถูกเปลี่ยนย้อนหลัง
+
+#### ยังไม่ได้ทำ
+
+- ยังไม่ได้เปิดดู flow ใหม่นี้จริงใน browser/simulator; ผ่าน typecheck, contract และ DB transaction
+  เท่านั้น
+- ยังไม่ได้ apply `9.89`/`9.90` เข้า production; เฟส 3 ไม่มี migration ใหม่ แต่ deploy โค้ดนี้ก่อน
+  สอง migration นั้นไม่ได้
+- **เฟส 4 ยังไม่ทำ**: ย้าย/รวมโต๊ะโดยไม่กระทบบิล
+
+
+### `9.90` สั่งของเข้าบิลบอร์ดเกมระหว่างเล่นได้ — เฟส 2 — 2026-09-15
+
+branch `feat/board-game-checkin-billing` · **apply `9.90` เข้า dev DB แล้วและ verify แล้ว**
+(RLS/FORCE RLS + GRANT 4 ตัว + `tab_amount` อ่านจาก `information_schema` จริง) ·
+**ยังไม่ได้ apply เข้า production** · **ไม่มี permission ใหม่** (ใช้ `pos.sell`) ·
+typecheck web+ws ผ่าน · **pure 1,236/1,236** · **DB 452/452 เขียวทั้งชุด** · build ผ่าน ·
+**มิวเทชัน 9 แบบ แดงถูกตัวทุกครั้ง** และคืนไฟล์ตรงทุกไบต์
+
+#### โครงที่เลือก: ยืมรูปของบิลโต๊ะร้านอาหาร ไม่ได้คิดใหม่
+
+`bms_board_game_group_items` = **แหล่งความจริงของ tab** · ใบ PENDING ของกลุ่มเป็น **ใบจองที่
+สร้างจากรายการนั้น** และถูกสร้างใหม่ทุกครั้งที่รายการเปลี่ยน — รูปเดียวกับที่บิลโต๊ะสร้าง
+ใบจองใหม่ทุกรอบที่ส่งครัว
+
+- **`createOrderInTx` เป็นที่เดียวที่ประกอบบิลบอร์ดเกม** — ทั้งใบจองของ tab (กลุ่ม OPEN) และ
+  บิลจริง (กลุ่ม CLOSING → บวกบรรทัดค่าเล่น) · สองที่ประกอบแปลว่าวันหนึ่งสองทางคิดคนละยอด
+- **ปล่อยใบจองเก่า *ในทรานแซกชันเดียวกับ* การจองใหม่** — ปล่อยก่อนหน้านั้นเมื่อไร จะมีช่วงที่
+  เครื่องอื่นขายของที่ลูกค้าถืออยู่ในมือไปได้
+- **อ่าน "ใบที่ถือสิทธิ์อยู่จริง" จากตาราง order ไม่ใช่จาก `current_order_id`** — การรับชำระที่ล้ม
+  กลางทางทิ้งใบ PENDING ไว้โดยที่กลุ่มเลิกชี้ไปหามันแล้ว ใบนั้นยังชน
+  `uq_bms_orders_active_board_game_group` อยู่ ถ้าไม่ปล่อยจะได้ 23505 ที่อ่านไม่ออก
+
+#### ⚠️ จุดที่เกือบพลาด
+
+- **`tab_amount` ต้องแยกจาก `amount_due`** — `9.89` นิยาม `amount_due` ว่าเป็นค่าเล่นที่แช่ไว้
+  ยัดสองความหมายลงคอลัมน์เดียวแปลว่าตอนปิดโต๊ะ ยอดขนมถูกเขียนทับด้วยค่าเล่นเงียบ ๆ
+- **จอต้องคิดยอดด้วย `totalDue` (ค่าเล่น + ของ)** — server รวมให้เสมอ จอที่บวกแค่ค่าเล่นจะส่ง
+  ยอดขาดแล้ว `recordPosSale` ทิ้งบิลทั้งใบด้วย `PAYMENT_MISMATCH` ต่อหน้าลูกค้า
+  · **มิวเทชันตัวนี้เขียวรอบแรก** เพราะไม่มีเทสตรึงไว้เลย ต้องเขียนเทสเพิ่มถึงจับได้
+- **`cancelBoardGameSession` ห้ามใช้ `current_order_id` ตัดสินว่า "ออกบิลแล้ว"** — ตั้งแต่ `9.90`
+  ใบที่กลุ่มถืออยู่ระหว่างเล่นคือ **ใบจองของ tab** ซึ่งเป็นสิ่งที่การยกเลิกต้องปล่อยคืน
+  ไม่ใช่เหตุผลห้ามยกเลิก · เงื่อนไขที่ถูกคือ `status = 'PAID'` เท่านั้น
+- **ของที่ต้องบันทึกเลขเครื่อง (`8.3`) ห้ามขึ้น tab** — เลขเครื่องถูกตรวจจากตะกร้าที่เครื่องขาย
+  บรรทัดบน tab ไม่เคยผ่านด่านนั้น จึงจะถูกขายโดยไม่มีเลขเครื่องบันทึกไว้
+- **⚠️ import วนกัน**: `boardGameCafe` ต้องใช้ `resolvePosScan` จาก `pos.ts` ขณะที่ `pos.ts`
+  ใช้สูตรสถานะโต๊ะจาก `boardGameCafe` · ย้ายสูตรไปไฟล์ leaf `boardGameSessionStatus.ts`
+  ที่ไม่ import อะไรเลยนอกจาก type ของ pg — **ห้ามย้ายกลับ** ไม่งั้นวนใหม่
+
+#### บทเรียนตอนแก้ SDL
+
+**คำอธิบายแบบ `"""` ซ้อนกันสองอันคือ syntax error ที่ `tsc` ไม่เห็น** — เห็นตอน
+`npm run schema:export` เท่านั้น · และ `rindex('  """')` หาเจอ **ตัวปิด** ไม่ใช่ตัวเปิด
+การแทรกชนิดใหม่ก่อนคำอธิบายของชนิดเดิมด้วยสคริปต์จึงพังสองรอบติด — เสียเวลาไปหนึ่งรอบ
+
+#### เทส
+
+`board-game-billing-group-db-contract` เป็น **20 เทส** (จาก 15) เพิ่ม 5 ตัวของเฟส 2:
+สั่งของแล้วจองทันที · เอาออกแล้วปล่อยคืนและแถวยังอยู่เป็นประวัติ · ปิดโต๊ะแล้วบิลรวมของ+ค่าเล่น
+เป็นใบเดียวโดยไม่มีช่วงที่ของหลุดการจอง · บิลที่ปิดแล้วรับของเพิ่มไม่ได้ + ของที่ต้องมีเลขเครื่อง
+ไม่ขึ้น tab · ยกเลิกโต๊ะแล้วของที่จองไว้กลับมาขายได้ครบ
+· `board-game-cafe-contract` เพิ่มเทส "จอต้องคิดยอดเท่าที่ server จะคิด"
+
+#### ยังไม่ได้ทำ
+
+- **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** — ช่องสั่งของบนการ์ดโต๊ะ ปุ่มเอาออก และแถบสรุปที่
+  แท็บขาย ผ่านแค่ typecheck + build + เทส
+- **ยังไม่ได้ apply `9.90` เข้า production** — ต้อง apply **ก่อน** deploy ไม่งั้นร้านบอร์ดเกม
+  เก็บเงินไม่ได้ทุกโต๊ะ (readiness ประกาศไว้แล้ว)
+- **ราคาของบน tab ถูกคิดใหม่ตอนเก็บเงิน** — ถ้าราคา/โปรเปลี่ยนระหว่างที่โต๊ะยังเล่นอยู่
+  ยอดที่จอโชว์ (จากการจองรอบล่าสุด) จะไม่ตรงกับที่ server คิด แล้วได้ `PAYMENT_MISMATCH`
+  ที่บอกยอดใหม่ให้ · ทางแก้ที่ควรทำคือให้จอ re-fetch checkout ก่อนกดรับเงิน (แบบเดียวกับ
+  `refreshCartPricingBeforePay` ของจอค้าปลีก) — **ยังไม่ได้ทำ**
+- **ช่องสั่งของรับแต่รหัส/บาร์โค้ด ยังไม่มีตัวเลือก (modifier) และยังไม่มีการค้นด้วยชื่อ** —
+  service รองรับ `modifierCodes` แล้ว แต่จอยังไม่มี UI ให้เลือก
+- **เฟส 3 ทำต่อแล้วในหัวข้อด้านบน; เฟส 4 ยังไม่ทำ**: ย้าย/รวมโต๊ะโดยไม่กระทบบิล
+
+
+### `9.89` บิลบอร์ดเกมเป็นของ "กลุ่ม" ไม่ใช่ของ "โต๊ะ" — เฟส 1 ของการย้ายหน่วยบิล — 2026-09-15
+
+branch `feat/board-game-checkin-billing` · **apply `9.89` เข้า dev DB แล้วและ verify กับ DB จริงแล้ว**
+(ตาราง + RLS/FORCE RLS + GRANT 4 ตัว + ย้าย unique index ของ order อ่านจาก `pg_class`/`pg_indexes` จริง)
+· **ยังไม่ได้ apply เข้า production** · **ไม่มี permission ใหม่** · typecheck web+ws ผ่าน ·
+**pure 1,235/1,235** จาก 1,234 · **DB 447/447 เขียวทั้งชุด** · production build ผ่าน ·
+**มิวเทชัน 14 แบบ แดงถูกตัวทุกครั้ง** และคืนไฟล์ตรงทุกไบต์
+
+#### ต้นเหตุ: `9.80` วางเงินไว้บน session ของโต๊ะ
+
+session ถือคีย์ปิดบิล · `charge_snapshot` · `amount_due` · `current_order_id` ใบเดียว และ `9.82`
+ผูก unique index ของ order ไว้กับ session → **โต๊ะที่แยกกลุ่มออกบิลได้ใบเดียว** ทั้งที่
+`billing_group_no` มีอยู่บนผู้เล่นและไหลไปถึงบรรทัดค่าเล่นแล้ว · "กลุ่มนี้จ่ายแล้วกลับก่อน"
+จึงไม่มีที่ให้บันทึก
+
+**สิ่งที่พบว่าไม่ต้องทำ**: เวลาเล่นถูกคิด**ต่อคน**อยู่แล้ว (`joined_at`/`left_at` + rate snapshot
+ต่อคน) ตั้งแต่ `9.80` — เฟส 1 จึงเป็นการแยก *tab* ออกจาก session อย่างเดียว ไม่ต้องรื้อการคิดเวลา
+
+#### กติกาที่ตั้งไว้
+
+- **`bms_board_game_billing_groups` เป็นเจ้าของเงิน · session เป็นเจ้าของที่นั่งกับเวลา**
+- เปิดโต๊ะสร้างหนึ่งกลุ่มต่อหนึ่งหมายเลขที่พนักงานพิมพ์ → **โต๊ะที่ไม่ได้แยกได้บิลใบเดียวเหมือนเดิมเป๊ะ**
+- ปิดโต๊ะ = ปิดทุกกลุ่มที่ยังเปิด ได้**บิลใบละกลุ่ม** แต่ละใบคิดเฉพาะคนของกลุ่มตัวเอง
+- **สถานะโต๊ะเป็นผลรวมของกลุ่ม** — จ่ายใบเดียวแล้วโต๊ะยังไม่ว่างถ้ายังมีกลุ่มเล่นอยู่/ยังไม่จ่าย
+  · สูตรมีชุดเดียวที่ `refreshSessionFromGroupsInTx()` และ **`pos.ts` เรียกใช้ ไม่เขียน UPDATE เอง**
+- **ทุกคำสั่งที่อ้างถึง "บิล" รับ id ของกลุ่ม** — id ของโต๊ะกำกวมทันทีที่โต๊ะถูกแยก
+- กลุ่มที่ปิดแล้วรับคนเพิ่มไม่ได้ (บรรทัดค่าเล่นถูกแช่ไปแล้ว เวลาของคนที่มาทีหลังจะไม่มีทางถูกคิด)
+- order เก็บทั้ง `board_game_billing_group_id` (สิ่งที่จ่าย) และ `board_game_session_id` (โต๊ะที่มา)
+  · **unique claim ย้ายไปที่กลุ่ม** — ปล่อยไว้ที่ session คือเหตุที่กลุ่มที่สองเก็บเงินไม่ได้
+- **คอลัมน์เงินบน session เป็นประวัติ ไม่มีใครเขียนอีกแล้ว** (มีเทส DB ตรึงว่าต้องเป็น 0/NULL ทั้งร้าน)
+  — คอลัมน์ที่ยังมีโค้ด *บางส่วน* เขียนคือจุดเริ่มของสองแหล่งความจริง
+
+#### ⚠️ จุดที่เกือบพลาด / ต้องรู้
+
+- **คีย์ปิดบิลต่อกลุ่มแตกด้วย `sha256(key:bg-group:N)`** ไม่ใช่ต่อท้ายเป็นข้อความ — คีย์ยาว 199
+  ตัวอักษรจะทะลุเพดาน 200 · แฮชให้ทั้งความยาวคงที่และ deterministic ที่ retry ต้องการ
+- **ปิดโต๊ะแตะเฉพาะกลุ่มที่ยัง OPEN** · กลุ่มที่ปิดไปก่อนด้วยคำขออื่นถูกรายงานกลับตามสภาพ
+  ไม่ใช่ให้คำขอนี้อ้างเป็นผลงานตัวเอง (เผื่อ "ปิดทีละกลุ่ม" ของเฟส 3)
+- **`deleteTenantRows()` ต้องปลด `board_game_billing_group_id` ด้วย** — `9.89` เพิ่มวงรอบ FK ชุดที่สอง
+  (order → กลุ่ม, กลุ่ม → order) แบบเดียวกับที่ `9.82` เคยทำ · ปลดแค่ฝั่ง session แล้วลบร้านยังติด
+- **`devSeed` ต้องสร้างกลุ่มให้ผู้เล่น** (`billing_group_id` NOT NULL) — เส้นเดียวกับปุ่ม
+  **"สร้างข้อมูลตัวอย่าง" ของร้านจริง** ลืมแล้วปุ่มนั้นตายที่ขั้น sessions (กับดักเดียวกับ `9.22`)
+- **`schemaReadiness` ต้องประกาศ `bms_orders.board_game_billing_group_id`** — `createOrderInTx`
+  เขียนคอลัมน์นี้ **ทุกบิลทุกช่องทางของทุกร้าน** ฐานที่ขาด = ขายไม่ได้ทั้งระบบ (รันตัวตรวจกับ
+  dev DB แล้วขึ้น ✅ ครบทุกไฟล์)
+
+#### ⚠️ บทเรียนจากเทสที่อ่อน 2 ตัว (จับได้ด้วยมิวเทชัน ไม่ใช่ด้วยตา)
+
+1. **"กลุ่มที่ปิดแล้วรับคนเพิ่มไม่ได้" เขียวทั้งที่ถอดด่านของกลุ่มออก** — เพราะ session ที่ปิดหมด
+   ทุกกลุ่มจะกลายเป็น CLOSING แล้วด่านของ *session* ปฏิเสธไปก่อน เทสจึงไม่เคยแตะด่านที่กำลังตรึง
+   · ต้องสร้างสถานะ **session OPEN + กลุ่มหนึ่ง CLOSING** (รูปของเฟส 3) ถึงจะแยกสองด่านออกจากกัน
+   · **และยอดกับ snapshot ของกลุ่มที่ป้อนมือต้องตรงกัน** ไม่งั้นกลุ่มนั้นจ่ายไม่ได้ โต๊ะค้าง
+     แล้วเทส **ทุกตัวหลังจากนั้น** พังด้วย `uq_bms_board_game_sessions_open_table`
+2. **"ลบร้านได้" เขียวทั้งที่ถอดการปลด FK ของกลุ่ม** — seeder ไม่เคยผูก order เข้ากับกลุ่ม
+   วงรอบจึงไม่ถูกเดิน · ต้องผูกทั้งสองทิศด้วยมือใน `test-shop-lifecycle-db-contract` เหมือนที่
+   `9.82` เคยต้องทำ
+
+#### เทส
+
+- `scripts/board-game-billing-group-db-contract.test.mts` (**15 เทส DB ใหม่**) — เดินของจริง:
+  เปิด/ปิด/จ่ายทีละกลุ่ม · โต๊ะไม่ว่างจนกว่าจะจ่ายครบ · เปิดโต๊ะทับไม่ได้ · replay/conflict ของคีย์ ·
+  checkout คีย์ด้วยกลุ่ม · ผังโต๊ะบอกว่าแยกกี่บิล/ค้างกี่ใบ · ยกเลิกโต๊ะที่จ่ายแล้วไม่ได้
+- `board-game-cafe-contract` เล็งใหม่ + เพิ่มเทส "จ่ายใบเดียวต้องไม่ปล่อยโต๊ะ" ·
+  `board-game-pos-parity-contract` เล็งใหม่ที่ `setBoardGameCheckoutId(billingGroupId)` ·
+  `test-shop-lifecycle-db-contract` ครอบวงรอบ FK ของ `9.89`
+- **`recordPosSale` คืน `status: "SOLD"` ไม่ใช่ `"OK"`** (เสียเวลาไปหนึ่งรอบ)
+
+#### ยังไม่ได้ทำ
+
+- **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** — แท็บโต๊ะ/เวลา, ปุ่มเก็บเงินทีละใบ, การ์ดโต๊ะที่บอกว่า
+  "แยก N บิล", และหน้า `/admin/board-game` ผ่านแค่ typecheck + build + เทส
+- **ยังไม่ได้ apply เข้า production** — ต้อง apply **ก่อน** deploy โค้ดชุดนี้เสมอ
+- **เฟส 2-4 ยังไม่ทำ**: เปิด tab ให้สั่งขนมเข้าบิลระหว่างเล่น · ปิดบิลแยกทีละคนขณะที่คนอื่นเล่นต่อ ·
+  ย้าย/รวมโต๊ะโดยไม่กระทบบิล (กลุ่มยังผูกกับ session ด้วย `session_id NOT NULL` — เฟส 4 ต้องแยก
+  "ที่นั่ง" ออกมาเป็นตารางของตัวเอง)
+- แอป RN ยังเลือก `currentOrderId` ของ session อยู่ (ตอนนี้เป็น `@deprecated` และคืน null เสมอ)
+  — ต้องย้ายไปอ่าน `billingGroups[].currentOrderId` แล้วรัน codegen ใหม่
+
+
+### ⚠️ ปุ่ม "สร้างร้านทดสอบ" ล้มทุกครั้ง — และปุ่ม "สร้างข้อมูลตัวอย่าง" ของร้านจริงค้างตลอดไป — 2026-09-15
+
+branch `audit/realtime-production-architecture` · **ไม่มี migration · ไม่มี permission ใหม่** ·
+typecheck ผ่าน · **pure 1,226/1,226** จาก 1,222 · production build ผ่าน ·
+**เดินเส้นทางจริงกับ dev DB แล้ว** (provision → seed 800 บิล → ลบร้านทิ้ง เหลือ 0 แถว) ·
+**มิวเทชัน 7 แบบ แดงถูกตัวทุกครั้ง** และคืนไฟล์ตรงทุกไบต์
+
+#### 1. `9.22` เพิ่ม `receipt_unit_price` NOT NULL แต่ไม่มีใครไปเติมให้ seeder
+
+`createOrderInTx()` ถูกแก้ให้เขียนคอลัมน์นี้ แต่ `devSeed.ts` เขียน `bms_order_items` เองอีกทาง
+(`bulkInsert`) แล้วลิสต์คอลัมน์ไม่มีตัวนี้ → `23502` ทุกครั้ง
+
+- **รัศมีไม่ใช่แค่เครื่องมือ dev**: `onboardingSampleData.ts` เรียก `seedFakeOrders()` ตัวเดียวกัน
+  = ปุ่ม **"สร้างข้อมูลตัวอย่าง" ของร้านที่เพิ่งสมัครจริง** ทำ products/customers สำเร็จ แล้วตาย
+  ที่ขั้น orders · ขั้นที่ผ่านแล้วถูกบันทึกไว้ รอบถัดไปจึง **มาตายที่เดิมตลอดไป**
+- ฝั่งร้านทดสอบ route ลบร้านที่ seed ไม่จบทิ้ง ผู้ใช้จึงเห็นแค่ "สร้างไม่สำเร็จ + ร้านถูกลบแล้ว"
+- อีกจุดที่พังเหมือนกันคือ `seedFakeRestockSubscriptions()` (บิลกู้ยอดจากลูกค้าที่รอของ)
+- **ค่าที่ใส่คือ `v.price` เท่ากับ `unit_price`** — แถว seed ไม่ได้เดินผ่าน `createOrderInTx`
+  จึงไม่มีกฎราคาส่ง/โปรมาลดราคา ราคาป้ายกับราคาที่คิดจริงเท่ากันเสมอ (มีเทสตรึงว่าต้องเท่ากัน)
+
+#### 2. เจอระหว่าง verify: ลบร้านบอร์ดเกมไม่ได้เลย (วงรอบ RESTRICT)
+
+พอ seed ผ่านแล้ว ร้าน `board_game_cafe` **ลบทิ้งไม่ได้** ซึ่งเป็นสิ่งที่หน้าจอบอกให้ทำต่อ
+
+- `bms_board_game_session_participants` → `bms_customers` เป็น RESTRICT และ `deleteTenantRows()`
+  ลบ `bms_customers` ก่อน · `bms_board_game_titles` → `bms_products` ก็เหมือนกัน
+- **และ `9.82` ทำให้ `bms_orders.board_game_session_id` ชี้กลับมาที่ session** ขณะที่ session
+  ชี้ไปที่บิล → ลบข้างไหนก่อนก็ติดอีกข้าง · ต้อง **ปลด `board_game_session_id` เป็น NULL ก่อน**
+  แล้วค่อยลบ session (participants/session_games cascade ตาม · copies cascade จาก titles)
+- เป็นกับดักเดียวกับที่ `9.66` เคยเจอ (`bms_restaurant_order_requests`) ซึ่งมีบรรทัดแก้อยู่แล้ว
+  ในไฟล์เดียวกัน — ของใหม่ที่ถือหลักฐานด้วย FK แบบ RESTRICT ต้องมาเติมตรงนี้ทุกครั้ง
+
+#### เทส
+
+- **`scripts/insert-required-columns-contract.test.mts` (4 เทส pure)** — ชั้นถัดไปของ
+  `sql-table-reference-contract` (ชื่อตารางถูก แต่ลิสต์คอลัมน์ขาด) · อ่าน "คอลัมน์ที่ห้ามว่าง"
+  จาก `db/migrations` (NOT NULL + ไม่มี DEFAULT + ไม่ใช่ serial) แล้วเทียบกับทุก
+  `INSERT INTO t (...)` และทุก `bulkInsert(client, "t", [...])` ใน `apps/web`/`packages`
+  · **เทียบกับ `information_schema` ของ dev DB แล้ว: false positive 0 ตัวในทุกตารางที่ seeder แตะ**
+    และทั้งสคีมาเหลือ 3 ตัว ซึ่งเป็นตารางยุคก่อน BMS ที่ migration สองไฟล์นิยามขัดกันเอง
+    (`roles`, `scam_phones_summary`) จึงยกเว้นไว้ **แบบต้องตรงเป๊ะ** ไม่ใช่ allowlist
+  · ที่ยอมรับไว้: คอลัมน์ที่เพิ่มด้วย `DO $$ ... EXECUTE format()` (tenant_id/location_id ยุค 4.0)
+    อ่านไม่ออก → ตกเป็น "ไม่บังคับ" (มองข้าม ไม่ใช่รายงานผิด)
+- **`scripts/test-shop-lifecycle-db-contract.test.mts` (1 เทส DB, ~1.4 วิ)** — เดิน provision →
+  seed → ลบจริง · **เทสสแกนซอร์สจับบั๊กทั้งสองตัวนี้ไม่ได้** เพราะ SQL อยู่ใน template literal
+  · ผูกบิลกับ session ทั้งสองทิศด้วยมือก่อนลบ เพราะ seeder ไม่สร้างเคสที่ทำให้วงรอบ RESTRICT ชนกัน
+
+#### ยังไม่ได้ทำ
+
+- **ยังไม่ได้ apply/ทดสอบกับ production** — แก้แล้วต้อง deploy ก่อนปุ่มถึงจะใช้ได้
+  · ร้านจริงที่เคยกด "สร้างข้อมูลตัวอย่าง" แล้วค้าง จะมีแถว `bms_onboarding_seed_runs`
+    สถานะ `FAILED` ค้างอยู่ — กดใหม่หลัง deploy จะเดินต่อจากขั้น orders เองโดยไม่ต้องล้างอะไร
+- **ยังไม่ได้เปิดดูจริงในเบราว์เซอร์** — ยืนยันด้วยการเรียก service จริงกับ dev DB เท่านั้น
+- `deleteTenantRows()` ยังเป็นลิสต์ที่เขียนด้วยมือ — ตารางใหม่ที่ถือหลักฐานด้วย FK แบบ RESTRICT
+  จะพังอีกแบบเดิม · ตัวที่กันได้จริงคือเทสที่ **ลบร้านของตัวเองจริง** (ไฟล์ใหม่ทำแล้วเฉพาะ
+  archetype บอร์ดเกม ยังไม่ครอบร้านอาหาร/ร้านยา)
+- ชุด DB ไม่มี job ใน `gate.yml` ตามเดิม — ด่านที่ CI รันจริงคือตัว pure เท่านั้น
+
+
+
+### ⚠️ RN คิดยอดตะกร้าเอง — ร้านที่ตั้งราคาส่ง/โปร/ปัดเศษ ขายจากมือถือไม่ได้เลย — 2026-09-15
+
+branch `audit/realtime-production-architecture` · **ไม่มี migration · ไม่มี permission ใหม่ ·
+ไม่แตะฝั่ง server เลย** · web gate ผ่าน (typecheck · **pure 1,222/1,222** จาก 1,185 · production build)
+· mobile typecheck/lint ผ่าน · Jest **143/143** จาก 124 · codegen รันซ้ำแล้วได้ sha256 เดิม
+· **มิวเทชัน 22 แบบ แดงถูก subtest ทุกครั้ง** และคืนไฟล์ตรงทุกไบต์
+· **รอบนี้แก้ฝั่งเว็บด้วย** (จอ `/pos` และจอร้านอาหาร) — ดูหัวข้อ "รอบสอง"
+
+#### ต้นเหตุ: ตะกร้าคิด `qty × unitPrice` ล้วน — สูตรเดียวของเงินถูกแยกเป็นสองชุด
+
+`recordPosSale()` เทียบผลรวมเงินที่เครื่องส่งมากับยอดที่ตัวเองคิด ต่างกันเกิน 1 สตางค์ = **ยกเลิกบิลทิ้งทั้งใบ**
+(`PAYMENT_MISMATCH`) · หัวไฟล์ `apps/web/lib/bms/pricing.ts` เขียนกฎข้อนี้ไว้เอง แต่ RN ไม่เคยทำตาม
+
+- **ราคาส่งตามจำนวน (8.1) และโปรโมชัน (8.7) ถูกทิ้งทั้งคู่** — `MobilePosScan` ไม่ได้ขอ
+  `priceTiers`/`promotion` มาด้วยซ้ำ · ร้านที่ตั้งราคาส่งหรือมีโปร **ขายจากมือถือไม่ได้เลยสักบิล**
+- **ปัดเศษเงินสด (7.95) ไม่มีที่ไหนใน RN เลย** — `vat.cashRounding` ถูก query มาแล้วแต่ไม่มีใครอ่าน
+  · กระทบทุกเส้นทาง (ค้าปลีก · บิลโต๊ะ · บอร์ดเกม) เพราะ `settleRestaurantCheck` ก็เรียก `recordPosSale` ตัวเดียว
+- **แต้มที่ส่งเป็นตัวเลขที่แคชเชียร์พิมพ์** — `composeDiscounts` ปัดเศษแต้มลงเป็นก้าวละหน่วยแลก
+  แล้ว `createOrderInTx` ปฏิเสธ**ทั้งบิล** เมื่อหักได้ไม่เท่าที่ขอ (`POINTS_INVALID`) · เว็บส่ง
+  `memberPreview.pointsUsed` มาตลอด · RN ส่งค่าที่พิมพ์
+
+#### แก้ยังไง
+
+`apps/mobile/src/lib/cartPricing.ts` (pure ไม่ import อะไรเลย) — สำเนาของ `pricing.ts` +
+`cashRounding.ts` ฝั่งเว็บ · **ต้องคัดลอกเพราะ Metro ของ apps/mobile มี projectRoot เป็นโฟลเดอร์
+ตัวเอง (ไม่มี watchFolders) import ข้ามแอปไม่ได้**
+
+- `cartProductSubtotal()` เดินลำดับเดียวกับ `createOrderInTx()`: ราคาส่งคิดจากหน่วยฐานรวมทั้งบิล
+  (ต่อ SKU+ไซซ์ และต่อ SKU สำหรับขั้นแบบ%) → โปรคิด **ครั้งเดียวต่อ SKU+ไซซ์** →
+  หน่วยขายที่ตั้งราคาเองอยู่นอกทั้งสองกลไก แต่จำนวนยังนับเข้าขั้นราคาส่ง → ตัวเลือกบวกท้ายสุด
+- **ราคาต้องแยกสามตัวบนบรรทัด** (`basePrice` ต่อหน่วยฐาน · `packBasePrice` ต่อหน่วยขาย ·
+  `modifierUnitPrice`) — ยุบเป็นราคาเดียวเมื่อไร ตัวเลือกจะถูกลดตามโปรไปด้วย ซึ่ง server ไม่ได้ทำ
+- **บรรทัดชั่งขายที่ไม่มี `basePrice` ต้องหารกลับจากราคาทั้งถุง** — ใช้ราคาทั้งถุงตรง ๆ
+  จะกลายเป็น (ราคาถุง × จำนวนกรัม) ซึ่งเกินความจริงหลายร้อยเท่า (มิวเทชัน M10)
+- **สแกนรอบใหม่ซิงก์ snapshot ให้ทุกไซซ์ของ SKU นั้น** (รูปเดียวกับ `syncSkuPricingSnapshot`
+  ของเว็บ) — ขั้นราคาส่ง/โปรเป็นของระดับ SKU ไม่ใช่ SKU+ไซซ์
+- **บิลพักที่เรียกกลับต้องสแกนใหม่ทุกบรรทัด** — payload ของ parked cart ไม่มีช่องเก็บ
+  ขั้นราคาส่ง/โปร/ชื่อตัวเลือก · ผลพลอยได้: ป้ายรุ่นของบรรทัดกลับมาครบ (เดิมหายหมดหลังเรียกบิลกลับ)
+
+#### จุดอื่นที่เจอและแก้ไปด้วย
+
+- **⚠️ สรุปกะขึ้น "เงินที่ควรมีในลิ้นชัก ฿0.00" ตอนเปิดโหมดนับปิดตา** — server คืน
+  `expectedCash: null` โดยตั้งใจ (8.0) แต่ RN เขียน `?? 0` · ตอนนี้อ่าน `expectedCashHidden`
+  แล้วบอกตรง ๆ ว่าซ่อนไว้ · การ์ด "ปิดกะแล้ว" ก็ขึ้นต่อเมื่อมีเลขครบทั้งสามตัว
+- **สรุปกะ/ใบเสร็จไม่มีบรรทัดปัดเศษ** — `roundingTotal`/`roundingAmount` ถูก query มาแล้วแต่ไม่มีใครอ่าน
+  → รายการบนกระดาษบวกแล้วไม่เท่ายอดสุทธิโดยไม่มีอะไรอธิบาย · ใบเสร็จเพิ่มบรรทัด "ค่าบริการ/อื่น ๆ"
+  ที่หาส่วนต่างจากยอดสุทธิ (BmsPosReceipt ไม่มีฟิลด์ extraLines ให้)
+- **ใบเสร็จคีย์ด้วย `sku`** — บิลที่มีสินค้าตัวเดียวหลายไซซ์จะชนกัน (บทเรียนเดียวกับ
+  ตะกร้าเมื่อ 2026-09-15) → เปลี่ยนเป็น `orderItemId`
+- **ยอดรวมใช้ `netTotal` ของพรีวิวตรง ๆ** — Apollo คืนผลรอบก่อนระหว่างโหลดรอบใหม่
+  กดเพิ่มของแล้วกดรับเงินทันทีจึงเก็บเงินตามยอดตะกร้าใบก่อน · ตอนนี้หักส่วนลดจาก subtotal ปัจจุบัน
+  และปุ่มยืนยันกดไม่ได้ระหว่างคำนวณส่วนลดใหม่
+
+#### ที่ตรวจแล้วว่าไม่ใช่บั๊ก (จดไว้กันไล่ซ้ำ)
+
+- **ส่วนเพิ่มของตัวเลือกถูกคิดอยู่แล้ว** — `ProductOptionsModal` บวก `priceDelta` เข้าราคา
+  ตั้งแต่แรก (เว็บ `/pos` กลับไม่คิด: `ScanHit.modifiers` ฝั่งเว็บไม่มี `priceDelta` เลย)
+- **ยอดคืนของ (`refundAmount`) มาจาก server เสมอ** · ตัวเลขบนจอเขียนว่า "ประมาณการ"
+- **ค่าบริการบวกหลังหักส่วนลด ถูกแล้ว** — `createOrderInTx` คิด `max(0, subtotal − discount) + extraTotal`
+  เหมือนกัน (คอมเมนต์เก่าใน 8.6 ที่เขียนว่า "บวกก่อนส่วนลด" ไม่ตรงกับโค้ดจริง)
+- **`checkoutMath.ts` ทั้งไฟล์ไม่มีจอไหนเรียกเลย** (มีแต่เทส) · `allocateMockRefundToOriginalPayments`
+  ก็ไม่มีผู้เรียก — ยังไม่ได้ลบ (นอกขอบเขตรอบนี้) แต่เป็นโค้ดตายที่เทสค้ำไว้
+
+#### เทส
+
+`scripts/mobile-cart-pricing-contract.test.mts` (**17 เทส pure ซึ่งเป็นชุดที่ CI รันจริง**) +
+`apps/mobile/__tests__/cartPricing.test.ts` (16 เทส Jest)
+
+- **ตัวสำคัญคือการป้อนอินพุตชุดเดียวกันเข้าทั้งสองฝั่งแล้วเทียบผล** — import `apps/web/lib/bms/pricing.ts`
+  กับ `cashRounding.ts` มาตรง ๆ แล้วไล่เมทริกซ์รวม >600 เคส · **ไม่ใช่การสแกนว่า "มีคำนี้อยู่ในไฟล์"**
+- **⚠️ รอบแรกมิวเทชัน M4 (สลับกติกาตัดสินขั้นราคาที่เสมอกัน) ไม่แดง** — ชุดอินพุตที่เขียนไว้
+  ไม่มีเคสที่มีสองขั้นที่ minQty เท่ากันเลย · เพิ่ม TIER_SETS อีก 3 ชุดถึงจับได้ — **เทสที่เทียบสองสำเนา
+  จะเขียวเสมอถ้าอินพุตไม่มีเคสที่แยกสองสำเนาออกจากกัน**
+- **⚠️ ตัวรันมิวเทชันต้องแปลง anchor เป็น CRLF ก่อน** — `CheckoutScreen.tsx`/`operations.graphql` เป็น CRLF
+  ส่วน `cartPricing.ts`/`CartContext.tsx` เป็น LF · anchor หลายบรรทัดที่ไม่แปลงจะหาไม่เจอแล้ว
+  รายงานว่า "ไม่มี anchor" ซึ่งอ่านผิดเป็น "มิวเทชันไม่แดง"
+- มิวเทชันที่แดงถูกตัว 10 แบบ: ตะกร้ากลับไป `qty × unitPrice` · ถอดการปัดเศษที่หน้าชำระเงิน ·
+  โปรนับชุดผิด · กติกาตัดสินขั้นราคาสลับทาง · ส่งแต้มที่พิมพ์แทนที่หักจริง · `expectedCash ?? 0` ·
+  scan ไม่ขอ priceTiers · โปรคิดซ้ำต่อบรรทัด · ตัวเลือกหายจากยอด · บรรทัดชั่งใช้ราคาทั้งถุงเป็นราคาต่อกรัม
+
+#### รอบสอง: ปิดของค้างทั้งสามข้อ (ผู้ใช้สั่ง "แก้ให้จบ")
+
+- **RN ตรวจราคาซ้ำก่อนรับเงินแล้ว** (`cart.refreshPricing()`) — รูปเดียวกับ
+  `refreshCartPricingBeforePay()` ของจอเว็บ: ยิงสแกนทุกบรรทัด เทียบลายนิ้วมือของกติกาที่ตัดสินราคา
+  ถ้าขยับ = อัปเดตยอดแล้ว**หยุดรอบนั้น** · ตัวเลือกที่ร้านปิดไปแล้วบอกให้ลบรายการ
+  · **ด่านนี้อยู่ก่อนออกคีย์กันบิลซ้ำ** ไม่งั้นคีย์ถูกเผาทิ้งทุกครั้งที่ราคาขยับ
+- **เว็บ `/pos` คิดส่วนเพิ่มของตัวเลือกแล้ว** — `ScanHit.modifiers` ได้ `priceDelta` และ
+  `cartLineCharge()` บวก `priceDelta × จำนวนหน่วยขาย` · **กิ่งที่เข้าโปรก็บวก** เพราะ
+  `createOrderInTx` บวก `modifierTotal` ทุกบรรทัดไม่ว่าจะเข้าโปรหรือไม่
+  · และลายนิ้วมือราคาของเว็บรวม `modifiers` แล้ว — แก้ราคาตัวเลือกกลางบิลนับเป็น "ราคาเปลี่ยน"
+- **การปัดเศษมีสูตรเดียวทั้งสามจอ** — `cashRoundingForPayments()` ใน `lib/pos/cashRounding.ts`
+  · จอร้านอาหารเดิมเขียน `payments.length === 1` ขณะที่ server ใช้ `every(CASH)` →
+  บิลที่แบ่งจ่ายเงินสดสองช่องทางจอไม่ปัดแต่ server ปัด แล้วบิลถูกทิ้งทั้งใบ
+- **ย้าย `cartLineCharge()` ออกจาก `page.tsx` ไป `lib/pos/cartCharge.ts`** — เป็นเลขที่คนจ่ายจริง
+  แต่ฝังอยู่ในไฟล์จอ 9,800 บรรทัดจึงเทสของจริงไม่ได้ — **มิวเทชัน N4 รอบแรกเขียวด้วยเหตุนี้พอดี**
+  (`0 * modifierUnitPriceOf(line)` ยังมีชื่อฟังก์ชันอยู่ในบรรทัดที่ตายแล้ว — กับดักเดิมของรีโปนี้)
+
+#### เทสรอบสอง
+
+`scripts/pos-checkout-pricing-contract.test.mts` (**16 เทส pure**) — เรียก
+`cartLineCharge`/`cashRoundingForPayments` ของจริง ไม่ใช่สแกนซอร์ส · บวกด่านว่าทุกจอเรียกกฎกลาง
+และห้ามเขียนเงื่อนไขเอง · pure รวม **1,222/1,222** · Jest **143/143**
+
+- **⚠️ รอบแรกมีมิวเทชันรอดไป 4 จาก 10** — ทั้งสี่เป็นกับดักเดียว: assert ที่หาแค่
+  "ชื่ออยู่ในไฟล์" เขียวได้แม้ชื่อนั้นจะอยู่ในกิ่งที่ตายแล้ว (`if (false && closed)`) · ต้องตรึง
+  **เงื่อนไขที่ตัดสิน** ตรงตัว หรือดีกว่าคือย้ายสูตรออกมาเป็น lib แล้วเรียกของจริง
+- มิวเทชันรอบสอง **12 แบบ แดงถูกตัวทุกครั้ง** (รวมสองรอบ **22 แบบ**)
+
+#### ยังไม่ได้ทำ
+
+- **ยังไม่เคยเปิดดูจริงบนเครื่อง** — เข้าแอปต้องมี PIN ของบัญชีจริงซึ่งไม่มี ·
+  **ต้องขายบิลจริงที่มีขั้นราคาส่ง/โปร/ปัดเศษ/ตัวเลือกมีราคา ด้วยตาก่อนเชื่อว่าหายจริง** —
+  ที่ยืนยันแล้วคือสูตรตรงกันทุกอินพุต ไม่ใช่การเดินเส้นจริงกับฐาน
+- **โหมดนับปิดตายังโชว์ส่วนประกอบของลิ้นชัก** (เงินตั้งต้น/ขายสด/เข้า-ออก) ซึ่งบวกลบเองได้
+  — เหมือน X report ของเว็บเป๊ะ จึงทำตามเว็บไว้ก่อน ถ้าจะปิดจริงต้องตัดสินทั้งสองฝั่งพร้อมกัน
+- **รหัสตัวเลือกที่เป็นตัวพิมพ์เล็กยังไม่ได้จัดการ** — `createOrderInTx` จับคู่ด้วย `upper(modifier.code)`
+  ขณะที่ `resolvePosScan` คืนรหัสดิบ · วันนี้ไม่พังเพราะ `upsertProductModifier` แปลงเป็นตัวพิมพ์ใหญ่
+  ตอนเขียนอยู่แล้ว · แต่แถวที่ถูก seed ด้วย SQL ตรง ๆ เป็นตัวเล็กได้ → RN ส่งรหัสดิบ
+  ไปแล้ว server หาไม่เจอ → `MODIFIER_NOT_FOUND` ปฏิเสธทั้งบิล · ทางที่ถูกคือ normalize
+  เป็นตัวพิมพ์ใหญ่ทั้ง RN และเว็บ (เว็บทำแล้วตอน add แต่ตอนเทียบ `allowedModifiers` กลับเทียบรหัสดิบ)
+- **ใบเสร็จบน RN ไม่มีบรรทัดค่าบริการของตัวเอง** — `BmsPosReceipt` ไม่มีฟิลด์ `extraLines`
+  จึงหาส่วนต่างจากยอดสุทธิแทน · ถ้าจะให้แม่นต้องเพิ่มฟิลด์ที่ schema
+
+
+### ⚠️ ผังโต๊ะบน RN ถูกบีบครึ่งจอ — ScrollView แนวนอนของ RN มี `flexGrow: 1` มาให้เอง — 2026-09-15
+
+branch `audit/realtime-production-architecture` · **ไม่มี migration · ไม่มี permission ใหม่ ·
+ไม่แตะฝั่ง server เลย** · web gate ผ่าน (typecheck · **pure 1,173/1,173** · production build) ·
+mobile typecheck/lint ผ่าน · Jest 124/124 · **มิวเทชัน 7 แบบ แดงถูกตัวทุกครั้ง** และคืนไฟล์ตรงทุกไบต์
+
+#### อาการ
+
+บนไอแพด จอผังโต๊ะ: **บิลกลับบ้านใบเดียว** กินครึ่งจอบน การ์ดถูกยืดเป็นเสาสูงเต็มแถบ ส่วนผังโต๊ะ
+(ซึ่งเป็นงานหลักของจอ) ถูกบีบลงครึ่งล่างและถูกย่อสเกลตามไปด้วย
+
+- **ต้นเหตุ: `ScrollView`/`FlatList` ของ RN ตั้ง `flexGrow: 1, flexShrink: 1` ให้เองทั้งแนวตั้ง
+  และแนวนอน** (`Libraries/Components/ScrollView/ScrollView.js` → `baseHorizontal`) · แถบแนวนอน
+  ที่วางในคอลัมน์ซึ่ง **มีความสูงแน่นอน** จึงเป็น flexGrow: 1 เท่ากับผังโต๊ะที่เป็น `flex: 1`
+  → แบ่งพื้นที่กันคนละครึ่ง · ร้านที่มีหลายโซนจะโดนหนักกว่าเพราะกลายเป็นสามตัวแบ่งกันคนละสามส่วน
+- **ผลต่อเนื่องที่ไม่ชัด: สเกลของผังผิดไปด้วย** — `viewportHeight` มาจาก `onLayout` ของกล่องผัง
+  ซึ่งเหลือครึ่งเดียว โต๊ะจึงถูกย่อเล็กกว่าที่ควร
+- **การ์ดที่เป็นเสาสูงเป็นอาการเดียวกัน ไม่ใช่คนละบั๊ก** — content container แนวนอนของ RN ตั้ง
+  `alignItems: stretch` พอแถบสูงเกินจริง การ์ดก็ยืดตาม
+- **ไม่มี error ไม่มี warning** — เห็นได้ต่อเมื่อมีคนเปิดดูจริง
+
+#### แก้ยังไง
+
+`style={{ flexGrow: 0 }}` ให้แถบบิลกลับบ้านและแถบเลือกโซน · `flexGrow: 1` ให้ตัวเลื่อนผังซึ่ง
+**ควร** กินพื้นที่ที่เหลือ · รูปเดียวกับที่ `KitchenBoardScreen` แก้ไว้แล้วก่อนหน้านี้ (เคยโดนมาแล้วครั้งหนึ่ง
+แต่ไม่ได้ถูกยกเป็นกฎ จึงเกิดซ้ำที่จออื่น)
+
+- **กฎที่ตั้งไว้กันเกิดซ้ำ: แถบแนวนอนทุกตัวต้อง *ประกาศ* `flexGrow` เอง** — 0 สำหรับแถบชิป/แถบการ์ด,
+  1 สำหรับตัวเลื่อนที่ตั้งใจให้กินพื้นที่ · จึงเติมให้ชิปหมวดหมู่ของ `MenuGrid` และแถบเกมของ
+  `BoardGameScreen` ด้วย **ทั้งที่วันนี้ยังไม่มีอาการ** (พ่อของทั้งสองสูงตามเนื้อหา จึงไม่มีที่ให้ขยาย)
+  — การรอดเพราะพ่อบังเอิญไม่มีความสูงแน่นอนไม่ใช่เจตนา และจะพังเงียบวันที่มีคนใส่ `flex: 1` ให้พ่อ
+
+#### เทส
+
+`scripts/mobile-horizontal-scroller-contract.test.mts` (2 เทส pure) — สแกน `apps/mobile/src`
+ทั้งโฟลเดอร์หา `<ScrollView horizontal>` / `<FlatList horizontal>` แล้วบังคับให้ประกาศ `flexGrow` ·
+บวกเทสเฉพาะจอผังโต๊ะที่ตรึงว่ามีแถบ 3 ตัว (0 · 0 · 1) และกล่องผังต้องยังเป็น `flex: 1` + รายงาน
+ความสูงผ่าน `onLayout`
+
+- **⚠️ ตัวสแกนต้องตัดคอมเมนต์ออกจากแท็บก่อนเทียบ** — รอบแรกแดงด้วยเหตุผลผิด เพราะคอมเมนต์ที่ผม
+  เพิ่งเขียนอธิบายกฎเอง ("RN ตั้ง `flexGrow: 1` มาให้") ถูกนับเป็นสไตล์จริง แถบที่เป็น 0 จึงถูกนับเป็น 1
+  ทั้งสามตัว · **กับดักเดิมของเทสสแกนซอร์สในรีโปนี้ เจอซ้ำอีกครั้ง**
+- ตัวอ่านแท็กต้องนับ `{}` เอง เพราะ prop ของ JSX มีปีกกาซ้อนได้ (`style={{ ... }}`)
+- **มีเทสที่ตรวจตัวสแกนเอง** (`checked > 0`) — ตัวสแกนที่หาไม่เจอสักตัวจะเขียวโดยไม่ได้ตรวจอะไร
+  · มิวเทชัน L7 (ทำให้ตัวกรองตกทุกตัว) แดงจริง
+- มิวเทชันที่แดงถูกตัว 7 แบบ: สองแถบกลับไปพึ่งค่าปริยาย (แยกทีละแถบ) · ตัวเลื่อนผังกลายเป็น 0 ·
+  กล่องผังเลิกเป็น `flex: 1` · ชิปของกริดเมนู · แถบของบอร์ดเกมคาเฟ่ · ตัวสแกนพัง
+
+#### ยังไม่ได้ทำ
+
+- **ยังไม่เคยเปิดดูจริงบนเครื่อง** — เข้าแอปต้องมี PIN ของบัญชีจริงซึ่งไม่มี · เทสที่มีตรึงได้แค่ว่า
+  "สไตล์ถูกประกาศไว้" ไม่ได้วัดพิกเซลจริง (ไม่มี harness ที่รัน Yoga ในรีโปนี้) ·
+  **ต้องเปิดจอผังโต๊ะดูด้วยตาก่อนเชื่อว่าผังกลับมาเต็มจอและโต๊ะใหญ่ขึ้น**
+- ไม่ได้ไล่ `flexGrow` ของ ScrollView **แนวตั้ง** ซึ่งมีค่าปริยายเดียวกัน — แนวตั้งในคอลัมน์มักเป็น
+  สิ่งที่ตั้งใจให้ขยายอยู่แล้ว แต่ยังไม่ได้ตรวจทีละตัว
+
+
+### ⚠️ ตะกร้า POS มือถือระบุบรรทัดด้วย sku — สินค้าหลายไซซ์พังทั้งจอ — 2026-09-15
+
+branch `audit/realtime-production-architecture` · **ไม่มี migration · ไม่มี permission ใหม่ ·
+ไม่แตะฝั่ง server เลย** · web gate ผ่าน (typecheck · **pure 1,171/1,171** จาก 1,162 · production build)
+· mobile typecheck/lint ผ่าน · Jest **124/124** จาก 115 · **มิวเทชัน 13 แบบ แดงถูก subtest ทุกครั้ง**
+และคืนไฟล์ตรงทุกไบต์ (เทียบ sha256 ก่อน/หลัง)
+
+#### อาการที่ผู้ใช้ส่งมาจากไอแพด — สี่อย่าง ต้นเหตุเดียว
+
+สั่ง `Fake Product 1` สามไซซ์ (S/M/L) แล้วได้: React เตือน
+`two children with the same key, .$FAKE-2edd1b4e71dc` · การ์ดสินค้าเขียน **1** ขณะที่ตะกร้ามี 3 ·
+ตะกร้าเขียน `Fake Product 1` เหมือนกันสามบรรทัด ไม่บอกว่าไซซ์ไหน
+
+- **ต้นเหตุ: `sku` ถูกใช้เป็นตัวระบุบรรทัด ทั้งที่การ์ดใบเดียวแทนทุกไซซ์** — `CartContext` มีฟิลด์
+  `line.key` (`sku:size:packCode`) อยู่แล้วตั้งแต่ต้น แต่ **ไม่มีจอไหนใช้มันเลย**:
+  `keyExtractor={l => l.sku}` · `qtyBySku[l.sku] = l.qty` (เขียนทับ ไม่ใช่บวกสะสม) ·
+  `decrementItem(item.sku)`
+- **⚠️ ตัวที่แรงที่สุดมองไม่เห็นในภาพ: กด − หนึ่งครั้งลบทิ้งทั้งสามบรรทัด** —
+  `decrementItem` เขียน `line.key === key || line.sku === key` แล้ว `flatMap` ทั้งลิสต์ →
+  ส่ง sku เข้าไป = **แมตช์ทุกบรรทัดของสินค้านั้น** ทุกบรรทัดถูกลด/ถูกลบพร้อมกัน ·
+  เป็นการทำลายตะกร้าต่อหน้าลูกค้าโดยที่จอไม่บอกอะไร
+- **บั๊กที่ยังไม่มีใครเจอแต่อยู่ในคีย์เดียวกัน: ตัวเลือก (modifier) ไม่ได้อยู่ในคีย์** —
+  ชาเย็นหวานน้อยกับหวานปกติยุบเป็นบรรทัดเดียว บรรทัดที่เหลือถือตัวเลือกของคนที่สั่งก่อนไปทั้งคู่
+  ทั้งที่ `price_delta` ต่างกัน
+
+#### แก้ยังไง
+
+- **`lib/cartLine.ts` (pure ไม่ import อะไรเลย)** — `cartLineKey()` (sku + ไซซ์ + หน่วยขาย +
+  **ตัวเลือกที่เรียงแล้ว**) กับ `cartLineVariantLabel()` · **ต้องมีชุดเดียวทั้งแอป**: จอไหนคิดคีย์เอง
+  วันหนึ่งจอนั้นจะยุบสองรุ่นเป็นบรรทัดเดียว (เก็บเงินผิดรุ่น) หรือแยกบรรทัดที่ควรรวมจนตะกร้ารก
+- `decrementItem(key)` เทียบ `line.key` **อย่างเดียว** · เพิ่ม `decrementSku(sku)` สำหรับการ์ดในกริด
+  ซึ่งรู้แค่ sku — ลดที่ **บรรทัดล่าสุด** ของ sku นั้นบรรทัดเดียว (บรรทัดที่เพิ่งถูกเพิ่ม = สิ่งที่คนกดกำลังแก้)
+- `qtyBySku` บวกสะสม · `keyExtractor` ใช้ `l.key` ทั้งจอเมนูและจอจ่ายเงิน
+- **ทุกบรรทัดขึ้นป้ายรุ่นใต้ชื่อ** (`ขนาด L · กล่อง · หวานน้อย`) · เก็บ `modifierNames` ลงบรรทัดตอนเพิ่ม
+  เพราะบรรทัดในตะกร้าย้อนไปถาม catalog ไม่ได้อีก · **ป้ายเงียบเมื่อไม่มีอะไรให้แยก** — ไซซ์ที่เป็นแค่
+  ค่าแทนว่าง (`''`/`-`/`BASE`/`DEFAULT`) ห้ามขึ้นเป็นป้าย ของที่ดูเหมือนข้อมูลแต่ไม่บอกอะไรแย่กว่าไม่มีป้าย
+- ปุ่ม **+** บนบรรทัดส่ง `selectedModifierCodes` เดิมกลับไป ไม่งั้นคีย์ไม่ตรงแล้วได้บรรทัดที่สอง
+- **บิลโต๊ะร้านอาหาร (`CheckDetailScreen`) เป็นอาการเดียวกันคนละจอ** — `size` กับ `modifierNames`
+  ถูก query มาให้อยู่แล้วตั้งแต่แรกแต่ **ไม่เคยถูกเขียนลงจอ** · บิลที่มี `ชาเย็น × 1` สองบรรทัดโดยไม่บอก
+  ว่าหวานน้อย/หวานปกติ ตอบไม่ได้ว่าครัวทำถูกไหม และเป็นบรรทัดที่พนักงานต้องเลือกว่าจะลบอันไหน
+  · จอนี้ `keyExtractor` ใช้ `item.id` ของ server อยู่แล้ว จึงไม่มีอาการคีย์ซ้ำ/ลบยกชุด
+
+#### ที่ตรวจแล้วว่าไม่ใช่บั๊ก (จดไว้กันไล่ซ้ำ)
+
+- **ยอด ฿615 ถูกแล้ว** (3 × 205) · สิ่งที่ผิดคือการ์ดเขียน 1 ขณะที่ตะกร้ามี 3 ซึ่งอ่านว่ายอดผิด
+- **ทุกไซซ์ราคา ฿205 เท่ากันเป็นข้อมูลของ seeder ไม่ใช่บั๊กราคา** — `seedFakeProducts` เขียน
+  `bms_product_packs.price = NULL` ทุกไซซ์ พร้อมคอมเมนต์ว่า "price NULL = ใช้ราคาสินค้าเดิม" และ
+  `listSellableProducts` คิด `COALESCE(sized.price, shared.price, p.price)` → ตกมาที่ราคาสินค้าตัวเดียวกันหมด
+  · ร้านที่ตั้งราคาต่อไซซ์จริงจะเห็นคนละราคา
+
+#### เทส
+
+`apps/mobile/__tests__/cartLine.test.ts` (9 เทส Jest) + `scripts/mobile-cart-line-contract.test.mts`
+(**9 เทส pure ซึ่งเป็นชุดที่ CI รันจริง** — Jest ของ mobile ไม่มี job ใน `gate.yml`)
+
+- **⚠️ เทสใน `scripts/` ต้อง `await import()` ไม่ใช่ static named import สำหรับโมดูลใต้ `apps/mobile`**
+  — `apps/mobile/package.json` ไม่ได้ประกาศ `"type": "module"` ไฟล์จึงถูก tsx แปลงเป็น CJS แล้ว
+  static import ล้มตอน link (`does not provide an export named 'cartLineKey'`) · dynamic import
+  ผ่าน interop ได้ปกติ · ต่างจาก `apps/web` ที่เป็น ESM จึง import ตรงได้ (เช่น `pos-exchange-contract`)
+- **⚠️ ห้ามใช้ `assert.match(ซอร์สทั้งไฟล์, …)`** — ตอนแดง node พิมพ์ `actual` คือทั้งไฟล์ลงรายงาน
+  จนอ่านอะไรไม่ออก (เจอตอน mutation test: TAP กลายเป็นไฟล์ binary) · เปลี่ยนเป็น
+  `assert.ok(re.test(src), ข้อความ)` แล้วตอนแดงเหลือแค่ประโยคที่อธิบายกฎ
+- **⚠️ เทสรอบแรกอ่อน 2 ตัว จับได้ด้วยมิวเทชัน ไม่ใช่ด้วยตา**:
+  1. `assert.match(src, /cartLineVariantLabel\(/)` เขียวแม้เปลี่ยนเงื่อนไขเป็น `false ? (`
+     เพราะชื่อฟังก์ชันยังอยู่ในบรรทัดที่ตายแล้ว → ต้องตรึงทั้ง **เงื่อนไขที่ตัดสิน** และ **ตัวที่เรนเดอร์**
+  2. `assert.match(keyBody, /modifierCodes/)` เขียวแม้ถอดตัวเลือกออกจากคีย์ เพราะชื่อนั้นอยู่ใน
+     พารามิเตอร์อยู่แล้ว → เปลี่ยนไป **เรียกของจริงแล้วเทียบคีย์สองใบ**
+- มิวเทชันที่แดงถูกตัว 13 แบบ: คีย์กลับไปใช้ sku · `decrementItem` ยอมรับ sku อีกครั้ง ·
+  `qtyBySku` เขียนทับ · ไม่บอกรุ่นทั้งสามจอ (แยกทีละจอ) · `decrementSku` กวาดทุกบรรทัด ·
+  คีย์ไม่นับตัวเลือก/หน่วยขาย · ไม่เรียงรหัสตัวเลือก · ปุ่ม + ไม่ส่งตัวเลือกเดิม (แยกสองจอ) ·
+  ป้ายโชว์ `BASE` ให้คนอ่าน
+
+#### ยังไม่ได้ทำ
+
+- **ยังไม่เคยเปิดดูจริงบนเครื่อง** — เข้าแอปต้องมี PIN ของบัญชีจริงซึ่งไม่มี · ที่ยืนยันแล้วคือ
+  typecheck/lint/Jest/เทสที่เรียกของจริง + เทสที่อ่านโครงจากซอร์ส · **ต้องลองสั่งสินค้าหลายไซซ์
+  แล้วกด − ทีละบรรทัดด้วยตาก่อนเชื่อว่าหายจริง**
+- ไม่ได้ให้กริดแยกการ์ดตามไซซ์ — การ์ดยังเป็นใบเดียวต่อ sku แล้วเลือกไซซ์ในกล่อง (ถูกแล้วสำหรับ
+  ร้านที่มีสินค้าหลายพันตัว) · แปลว่าเลขบนการ์ดเป็นผลรวม และปุ่ม − บนการ์ดลดบรรทัดล่าสุด
+  ซึ่งเป็นกติกาที่ต้องจำ ไม่ใช่สิ่งที่จอบอกเอง
+- **บิลโต๊ะยังไม่มีป้ายรุ่นบนจอครัว/ตั๋วครัว** — รอบนี้แตะเฉพาะแผงบิล
+
+
+### ปิดช่องที่ทำให้ deploy ws ขึ้น production แล้วพัง — 2026-09-14
+
+branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (typecheck web+ws ·
+**pure 1,160/1,160** จาก 1,151 · production build 113 หน้า) · **ไม่มี migration ใหม่ ·
+ไม่มี permission ใหม่** · **เทส DB ไม่ได้รันสักตัว** (Docker daemon ไม่ได้รัน) ·
+**มิวเทชัน 17 แบบ แดงถูก subtest ทุกครั้ง**
+
+#### พิสูจน์ด้วยการรันจริง ไม่ใช่อ่านโค้ด
+
+บูต `apps/ws` ด้วย env แบบ production แล้วยิง handshake เข้าไปจริง · และเขียน RESP server
+ขนาดเล็กแทน Redis (Docker ไม่ได้รัน) เพื่อเดินเส้นทางความสุขให้ครบ:
+
+- **`{ x-scope: "admin" }` ของ client เดิม → ปิด 4403 Forbidden** · ไม่ส่ง params เลยก็ 4403 ·
+  origin ไม่ตรง → **HTTP 401 ตั้งแต่ upgrade**
+- **ticket ถูก + Redis ล่ม → เดิมแขวน 9 วินาทีไม่มีทั้ง ack ไม่มี close** · หลังแก้ปิดใน 2.0 วิ
+- **`/readyz` เดิมไม่ตอบเลย** (curl timeout ที่ 5 วิ) · หลังแก้ตอบ 503 ใน 2.02 วิ
+- **เส้นทางความสุขครบวง**: ticket → `connection_ack` → subscribe → publish เข้า Redis →
+  `canReceiveRealtimeEvent` → `next` ถึง client · `eventsDelivered: 1`
+- **ยิง 3 event บนหัวข้อเดียวกัน ได้ 1 ใบ**: ของร้านตัวเองผ่าน · **ของร้านอื่นไม่ผ่าน** ·
+  โดเมนที่ธงปิดอยู่ไม่ผ่าน
+
+#### ⚠️ 1. `WS_ALLOWED_ORIGINS` ไม่ได้ตั้ง = คอนเทนเนอร์ crash-loop และไม่มีเอกสารไหนบอก
+
+`parseAllowedOrigins()` throw ที่ **ระดับโมดูล** (`ws.ts:42` เป็น top-level const) และ
+`docker-compose.prod.yml` เขียน `${WS_ALLOWED_ORIGINS}` เปล่า ๆ ไม่มี default ·
+`grep -rn "WS_ALLOWED_ORIGINS" docs *.md` ได้ **ผลว่าง** และรีโปไม่มี `.env.example`
+
+- fail-closed ถูกแล้ว **แต่ปล่อยให้ไปตายในคอนเทนเนอร์คือ crash-loop ที่ต้องไปขุดใน log** ·
+  เปลี่ยนเป็น `${WS_ALLOWED_ORIGINS:?...}` → `docker compose up` หยุดตั้งแต่ยังไม่สร้าง
+  คอนเทนเนอร์ พร้อมบอกว่าต้องตั้งอะไร
+- **ตั้งเป็น localhost บนเซิร์ฟเวอร์จริงอันตรายกว่าไม่ตั้ง** — บูตผ่าน แต่ `verifyClient` ตอบ 401
+  ให้ทุกเบราว์เซอร์ ซึ่งอ่านจากข้างนอกไม่ต่างจาก "realtime พัง" · `preflight-deploy.mts`
+  บล็อกทั้งสองกรณี + บล็อก `JWT_SECRET` ที่สั้นกว่า 12 ตัวอักษร (`hmacKey()` throw ทั้งตอน
+  mint และ verify) + เตือนเมื่อ `WS_TRUST_PROXY` ไม่ใช่ `1`
+
+#### ⚠️ 2. ws กับ web แยก deploy ไม่ได้ — และ client เดิมจะ reconnect วนตลอดไป
+
+`ticketFromParams()` รับ **คีย์เดียวชื่อ `ticket`** เท่านั้น ส่วน `develop` ส่ง
+`connectionParams: () => ({ "x-scope": scope })` · และ `graphql-ws@6` **จงใจไม่ใส่ 4403 ใน
+ลิสต์ fatal** (คอมเมนต์ในซอร์สเขียนว่า "might grant access out after retry") คู่กับ
+`retryAttempts: Infinity` → ทุกเบราว์เซอร์ reconnect ทุก ≤30 วิ ตลอดไป ขณะที่ realtime ตาย
+
+#### ⚠️ 3. `9.82`/`9.87` ไม่อยู่ใน schemaReadiness = ด่านตรวจบอกว่า "พร้อม" แล้วขายไม่ได้สักบิล
+
+`createOrderInTx()` INSERT `restaurant_service_mode` (`9.87`) กับ `board_game_session_id`
+(`9.82`) ใน **ทุกบิลทุกช่องทางของทุกร้าน** และ `finalizePosSale()` SELECT ตัวหลังกลับมาทุกการขาย
+· ทั้งสองไฟล์ **ไม่มีชื่ออยู่ในลิสต์เลย** → `db/checks/schema-readiness.sql` ที่รันบนเซิร์ฟเวอร์
+(ทางเดียวที่ใช้ได้ เพราะเครื่องนั้นไม่มี Node) จะรายงานว่าฐานพร้อม
+
+- เติมทั้งสองเข้าลิสต์ + regenerate ไฟล์ `.sql`
+- **`9.79`–`9.83` จงใจไม่ใส่** — ทุก query ของโมดูลบอร์ดเกมถูกกั้นด้วย `boardGameSessionId`
+  ตัวที่ไม่มีเงื่อนไขคือ *คอลัมน์* ไม่ใช่ตาราง
+- **ด่านใหม่ `schema-readiness-coverage-contract` (3 เทส)** เดินกลับทางจากคอลัมน์ที่
+  `INSERT INTO bms_orders` เขียนจริง แล้วบังคับว่าตัวที่มาจาก migration **ในช่วงที่ลิสต์ครอบ**
+  ต้องถูกประกาศ · **เส้นแบ่งอ่านจากลิสต์เอง ไม่ได้ฝังเลขไว้** (ลิสต์ประกาศตัวเองว่าครอบเฉพาะ
+  ของใหม่ ของเก่ากว่านั้นขาดแล้วเห็นเองตั้งแต่หน้าแรก) · บวกด่านว่าไฟล์ที่อ้างต้องมีจริง
+  และของที่ประกาศต้องถูกสร้างโดยไฟล์นั้นจริง (ผูก column กับ table ไม่ใช่หาคำว่า ADD COLUMN ลอย ๆ)
+
+#### ⚠️ 4. Redis ล่ม = แขวน ไม่ใช่ล้ม
+
+`pubsub.ts` มีแต่ `maxRetriesPerRequest: null` ซึ่งแปลว่า "คิวคำสั่งไว้ตลอดกาล" ไม่ใช่ "ทนทาน"
+
+- เพิ่ม `commandTimeout` (`REALTIME_REDIS_COMMAND_TIMEOUT_MS` ปริยาย 2000) ·
+  **อ่านค่าแบบ clamp ไม่ throw** เพราะโมดูลนี้ถูก import โดยทั้ง web และ ws ค่าที่พิมพ์ผิด
+  ต้องไม่ทำให้ทั้งสอง service ตายตั้งแต่ boot
+- `commandTimeout` ของ subscriber จับเฉพาะ **คำสั่ง** (subscribe/ping) ไม่จับการรอรับข้อความ
+  สายที่เงียบอยู่จึงไม่ถูกตัดทิ้ง
+- **ผู้ฟัง `error` ของทั้งสองสาย** — ไม่มีแล้ว ioredis พ่น "Unhandled error event" พร้อม stack
+  ทุกครั้งที่ retry (หลายพันบรรทัด/นาที กลบ error จริง) · ยุบเหลือบรรทัดเดียวต่อสายต่อ 30 วิ
+  พร้อม `errorCode: REALTIME_REDIS_UNAVAILABLE`
+- ฝั่งเบราว์เซอร์เพิ่ม `connectionAckWaitTimeout: 15_000` — ค่าปริยายของ graphql-ws คือ
+  **รอ ack ตลอดกาล** จอจึงค้างที่ "กำลังเชื่อมต่อ" โดยไม่เข้า `retryWait` ที่เขียนไว้แล้ว
+- **และเพราะ timeout ทำให้ความล้มเกิดเร็วขึ้นมาก จึงต้องทำให้ hint ไม่ลากงานธุรกิจล้มตาม** —
+  `pubsub.publish()` ของยุคเดิม 19 จุดเกิด **หลัง** แถวถูก commit แล้ว (แชท/คอมเมนต์/บุ๊กมาร์ก/
+  แจ้งเตือน/กล่องข้อความ) · ก่อนหน้านี้ Redis ล่ม = mutation ล้มทั้งที่ข้อความถูกบันทึกไปแล้ว
+  · ย้ายไป `publishRealtimeHint()` ซึ่ง **ยัง `await` เหมือนเดิม** (ลำดับโค้ดไม่เปลี่ยน) แค่กลืน
+  ความล้มแล้ว log · **ห้ามใช้กับ `publishRealtimeEvent()` ของ dispatcher** ที่นั่นต้อง throw
+  เพื่อให้ nack แล้ว retry (มีเทสห้ามสองทิศ)
+
+#### ⚠️ 5. เพดานต่อ IP กลายเป็นเพดานรวมของทั้งแพลตฟอร์ม
+
+`WS_TRUST_PROXY` **ไม่ได้ตั้งที่ไหนเลย** (มีแค่ในซอร์ส) → หลัง Caddy ทุก socket เห็นเป็น IP
+เดียว แล้ว `WS_MAX_CONNECTIONS_PER_IP` (ปริยาย 100) กลายเป็นเพดานรวม · ใส่ `:-1` ทั้งสาม compose
+
+- **ปลอม `X-Forwarded-For` มีขอบเขต** — lease ถูกขอ **หลัง** verify ticket จึงยังชนเพดาน
+  ต่อผู้ใช้ (10) และต่อร้าน (1000) อยู่ดี
+
+#### ⚠️ 6. subscription 5 ตัวถูกปิดบน production ทั้งที่แก้ auth แล้ว
+
+`PRODUCTION_DISABLED_SUBSCRIPTIONS` เป็นของ **ใหม่ในรอบนี้** (`git show develop:apps/ws/src/security.ts`
+= ไม่มีไฟล์) ปิด `messageAdded`/`messageDeleted`/`commentAdded`/`commentUpdated`/`commentDeleted`
+ซึ่ง **มีผู้เรียกจริงอยู่** (`chat/page.tsx:932`, `CommentsSection.tsx:336`) = ข้อความใหม่กับ
+คอมเมนต์ใหม่ไม่ขึ้นเองอีกต่อไป
+
+- เหลือ `time` ตัวเดียว (ตัวจับเวลาดีบั๊ก ไม่มีจอไหนใช้ และยิงทุกวินาทีเข้าทุก connection)
+- **เปิดกลับได้เพราะแก้แล้วเท่านั้น** — เติม `requireRealtimeUserId(ctx)` ให้ comment ทั้งสามตัว
+  (เดิมไม่มีเลย) และเพิ่ม `messageAddedAudience` ฝั่ง publisher
+- **`fullMessage.to_user_ids` ตัดตัวผู้ส่งออกไปแล้ว** (`resolvers.ts:4750`) ใช้มันเป็นผู้รับ =
+  แท็บที่สองของคนส่งเองไม่เคยเห็นข้อความที่ตัวเองเพิ่งส่ง · `messageAddedAudience` รวมผู้ส่ง
+- เทสตรึงสองทิศ: ลิสต์ที่ปิดต้องเท่ากับ `["time"]` เป๊ะ **และ** ทุกตัวที่เสิร์ฟต้องเรียก
+  `requireRealtimeUserId` ในบล็อกของตัวเอง
+
+#### ⚠️ 7. metric ที่โกหกตอนเกิดเหตุ
+
+Redis ล่มทำให้ `onConnect` ปฏิเสธเหมือน ticket ปลอม แล้วนับรวมเข้า `authFailures` →
+หน้า `/metrics` อ่านว่า "มีคนพยายามปลอม ticket เป็นพัน" ตอนที่ของจริงคือ dependency ล่ม
+· แยกเป็น `dependencyFailures` + `kind: "auth" | "dependency"` ใน log ·
+**วัดจริงแล้ว**: ticket ปลอม + client เดิม = `auth 2` · Redis ล่ม = `dependency 1`
+
+#### ที่ตรวจแล้วว่าไม่ใช่ปัญหา (จดไว้กันไล่ซ้ำ)
+
+- **build ของ ws ไม่มีปัญหา** — lockfile ทั้ง 3 prefix sync กับ package.json ·
+  `.dockerignore` ตัด `**/dist` แต่ ws import `packages/*/src/*.js` ตรง ๆ (tsx resolve เป็น .ts)
+  จึงไม่ต้องใช้ dist · `npx tsc --noEmit` ที่ `apps/ws` exit 0
+- **`REALTIME_SUBSCRIPTIONS_ENABLED` ปริยาย `0` จริง** → 18 named subscription ไม่ส่งอะไรเลย
+- **outbox pump ไม่ทำ web ล้ม** — catch + backoff สูงสุด 30 วิ (migration ขาด = log รก ไม่ใช่แอปตาย)
+- **grant ของ `bms_realtime_dispatcher` ครบ** — `9.85` อ่าน `bms_orders(id,tenant_id,location_id,
+  pos_device_id)` / `bms_pos_devices(id,tenant_id,location_id)` / `bms_pos_blind_returns` ·
+  granted ครบทุกคอลัมน์จาก `9.71`/`9.72`/`9.85`
+- **20 ตารางของ `9.85` มี `tenant_id NOT NULL` ครบทุกตัว** (ไล่ทีละตัว) → ไม่มีเคส NULL ชน
+  NOT NULL ของ outbox แล้ว rollback การเขียนธุรกิจ · `9.86` handle `TG_OP = 'DELETE'` ถูก
+- **subscription ต่อ connection สูงสุด 16** (POS) < เพดาน 20
+- Caddy: `/graphql` + upgrade → `ws:8080` ไม่เปลี่ยน · **`apps/web/Caddyfile` ไม่อยู่ใน git**
+  (มีแต่ `.local`/`.server`) เซิร์ฟเวอร์ถือสำเนาของตัวเอง — แก้ `Caddyfile.server` ในรีโป
+  ไม่ถึง production เอง
+
+#### ยังไม่ได้ทำ
+
+- **ยังไม่ได้ `docker build` ภาพจริง และยังไม่ได้รันชุดเทส DB 38 ไฟล์** — Docker daemon ไม่ได้รัน
+  (`npipe:////./pipe/dockerDesktopLinuxEngine` ต่อไม่ได้) · trigger 27 ตัวยังไม่เคยยิงกับฐานจริง
+- **ยังไม่ได้ทดสอบกับ Redis ตัวจริง** — เส้นทางความสุขพิสูจน์ผ่าน RESP server ที่เขียนเอง
+  (รองรับ info/ping/get/eval/pexpire/subscribe/publish) ซึ่งพอสำหรับ ioredis +
+  graphql-redis-subscriptions แต่ไม่ใช่ Redis จริง
+- **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** — การ์ดแชท/คอมเมนต์ที่เปิดกลับมา ผ่านแค่เทส + build
+- `apps/ws` ยังไม่มี `restart:` policy · healthcheck ขึ้น unhealthy ได้แต่ไม่มีอะไรรีสตาร์ทให้
+
+
+### แถบแท็บล่างของ RN: 6 แท็บ → 5 (ตัวเลือก A) — 2026-09-14
+
+ผู้ใช้บอกว่า "menu แน่นมาก" แล้วเลือกแบบ A จาก mockup ที่เทียบสามทางที่ความกว้างจริง 402pt ·
+`npm run test:pure` **1,162/1,162** · mobile typecheck/lint ผ่าน · Jest **115/115** ·
+**ไม่มี migration · ไม่มี permission ใหม่ · ไม่แตะฝั่ง server เลย** ·
+**มิวเทชัน 10 แบบ แดงถูกตัวทุกครั้ง**
+
+#### สิ่งที่เปลี่ยน (โหมดร้านอาหารเท่านั้น)
+
+`ผังโต๊ะ · เมนู · งานเข้า · ครัว · เพิ่มเติม` — **80pt ต่อแท็บ** จาก 67pt
+
+- **"งานเข้า" ยุบ 2 แท็บเป็น 1** — `ออร์เดอร์เข้า` กับ `คิว/QR` เป็นงานชนิดเดียวกันในสายตา
+  คนหน้าร้าน ("มีคนรอเราตอบ") · badge เดียว = `pendingCount + restaurantPendingCount`
+- **⚠️ ต้นเหตุจริงที่ทำให้แถบอ่านไม่ออก ไม่ใช่แค่จำนวนแท็บ**: สองแท็บนั้นใช้ `OrdersIcon`
+  **ตัวเดียวกัน** และมี badge ทั้งคู่ — บนราง 67pt ที่ป้ายถูกบีบ จึงแยกด้วยตาไม่ออก
+  · เจอตอนอ่านโค้ดเพื่อทำ mockup ไม่ใช่จากภาพหน้าจอ
+- กะ (วันละ 2 ครั้ง) ย้ายไปเป็นปุ่มใต้ "เพิ่มเติม" · `เพิ่มเติม` ได้ `MoreIcon` ของตัวเอง
+- `OperationsScreen` ถูกใช้สองแท็บด้วย **props** (`section` + `locked`) ไม่ใช่ route params
+  เพราะอยู่คนละสแตก · `useNavigation` จึงผูกกับสแตก "เพิ่มเติม" ตัวเดียว และปุ่มที่ใช้มัน
+  (สต็อกสาขา/กะ) ถูกซ่อนตอน `locked`
+
+#### ⚠️ ทำพังเอง 3 จุด ผู้ใช้จับได้จากไอแพด — แก้แล้ว
+
+รอบแรกผมถอด `ShiftTab` ออก **ทุกโหมด** ทั้งที่ A เป็นเรื่องของแถบร้านอาหารที่แน่น
+
+1. **โหมดค้าปลีกเหลือ 2 แท็บ** (`ขาย` · `งาน`) ลอยอยู่บนแถบกว้าง 1024pt ของไอแพด —
+   โหมดนั้นมี 3 แท็บอยู่แล้วและไม่เคยแน่น การยุบจึงไม่ได้แก้อะไร มีแต่ทำให้ดูพัง
+   · คืน `ShiftTab` ให้ `mode !== 'restaurant'`
+2. **badge ที่กดเข้าไปไม่ถึง** — ผมติด badge `pendingCount` บนแท็บ "งาน" ของโหมดที่ไม่ใช่
+   ร้านอาหาร ทั้งที่สแตกนั้น **ไม่มีจอออร์เดอร์เข้าอยู่เลย** (OrdersTab เรนเดอร์เฉพาะร้านอาหาร)
+   = ส่งคนไปหาของที่กดเข้าไปไม่เจอ · ถอดออก
+3. **ชื่อจอไม่ตรงป้ายบนแท็บ** — แท็บเขียน "งาน" แต่หัวจอเขียน "เพิ่มเติม"
+
+#### เทส — เล็งที่กติกา ไม่ใช่ที่รูปทรง
+
+เทสเดิม 2 บรรทัดตรึงรูปเก่าไว้ (`'คิว/QR' : 'งาน'` และ `tabBarBadge: … restaurantPendingCount`)
+— **การันตีไม่ได้หาย แค่ย้ายบ้าน** จึงเล็งใหม่ที่ "badge ต้องเป็นผลรวมจริง" และ
+"คิว/QR ต้องอยู่สแตกเดียวกับออร์เดอร์เข้า"
+
+- **⚠️ เทสที่ผมเขียนรอบแรกนับ `<Tab.Screen>` ทั้งไฟล์ ซึ่งเป็นตัวแทนที่ผิด** — แท็บถูกกรอง
+  ตอนรันด้วย `mode` การนับทั้งไฟล์จึงแดงทันทีที่คืน `ShiftTab` ให้โหมดอื่น ทั้งที่ไม่มีโหมดไหน
+  เกิน 5 · เขียนใหม่ให้ **อ่านโครงจากซอร์สว่าแท็บไหนโผล่ในโหมดไหน** (ไล่ guard `{mode === …}` /
+  `{mode !== …}` ทีละบรรทัด) แล้วบังคับต่อโหมด: ≤ 5 แท็บ · ไอคอนห้ามซ้ำ · ร้านอาหารต้องไม่มี
+  `ShiftTab` แต่โหมดอื่นต้องมี · แท็บงานหลังร้านต้องไม่ติด badge
+- มิวเทชันที่แดงถูกตัว: badge นับไม่ครบ · ไอคอนซ้ำกลับมา · คิว/QR หลุดจากงานเข้า ·
+  ถอดแท็บกะทุกโหมด (= บั๊กที่ผู้ใช้เจอ) · badge ที่กดไม่ถึงกลับมา · ร้านอาหารกลับไป 6 แท็บ
+
+#### แท็บเล็ตเปลี่ยนเป็นรางด้านซ้าย (ผู้ใช้เลือก หลังเห็นของจริงบนไอแพด)
+
+แถบล่างเต็มความกว้างบนไอแพด 13" ยืดแท็บละ **~340pt** จนไอคอนเล็ก ๆ ลอยอยู่กลางช่องว่าง —
+อ่านออกมาเป็น "แอปมือถือที่ถูกยืดใส่จอใหญ่" ซึ่งเป็นคำที่ `useResponsive.ts` จดไว้เองว่าโดนทัก
+มาแล้วสองรอบตอนถอด `ConstrainedPane` ออก
+
+- **ไม่ใช่ผลจากการยุบแท็บรอบนี้** — โหมดค้าปลีกมี `ขาย · งาน · กะ` 3 แท็บเท่าเดิมทั้งก่อนและหลัง
+  · สิ่งที่ผิดคือการวางแถบบนจอกว้าง ไม่ใช่จำนวนแท็บ
+- **React Navigation v7 รองรับเอง ไม่ต้องเขียน tabBar เองทั้งตัว**:
+  `tabBarPosition: isTablet ? 'left' : 'bottom'` + `tabBarVariant: 'material'`
+  (รางแนวตั้งต้องไม่ยืดเป็นช่องเท่า ๆ กันแบบ `uikit`)
+- **ตัดสินจากความกว้างจริงของจอ ไม่ใช่ชนิดอุปกรณ์** (`useResponsive` เกณฑ์ 700pt) — ไอแพดที่ถูก
+  ย่อลงใน Split View จึงกลับไปใช้แถบล่างเองโดยไม่ต้องมีเงื่อนไขเพิ่ม
+- เส้นคั่นเปลี่ยนจาก `borderTop` เป็น `borderRight` ตามทิศของแถบ
+
+#### ⚠️ รางรับชุดแท็บของมือถือมาทั้งดุ้น — ซึ่งเป็นชุดที่ถูกยุบเพราะข้อจำกัดที่รางไม่มี
+
+ผู้ใช้ถามตรง ๆ ว่า "ถ้าเมนูอยู่ซ้าย แล้วทำไมไม่แสดงเมนูทั้งหมด" · ถูกแล้ว: `เพิ่มเติม` มีอยู่เพราะ
+แถบล่างมี **5 ช่อง** ส่วนรางสูงเต็มจอ 1366pt มีที่ ~20 รายการ · การซ่อนต่อบนรางคือการคิด
+ค่าผ่านทางเป็นจำนวนแตะ โดยไม่ได้ประหยัดพื้นที่อะไรเลย
+
+- แท็บเล็ตกางออกเป็นปลายทางจริง: `สต็อก` · `เคาน์เตอร์` · `กะ` · `สถานะ` ขึ้นราง และ
+  **`เพิ่มเติม` หายไปทั้งแท็บ** เพราะไม่เหลืออะไรให้ถือ · มือถือไม่เปลี่ยนเลย
+- ใช้กลไก `section` + `locked` ที่ทำไว้ตอนแยก "งานเข้า" ซ้ำ — `CounterNavigator` กับ
+  `SupportNavigator` คือ `OperationsScreen` ที่ล็อกคนละส่วน ไม่ได้ก็อปจอ
+- **ชื่อจอต้องมาจาก `section` ไม่ใช่จาก `locked`** — พอจอเดียวรับสามบทบาท การเขียน
+  `locked ? 'งานเข้า' : …` ทำให้แท็บ "เคาน์เตอร์" ขึ้นหัวว่า "งานเข้า" (`LOCKED_TITLE`)
+- `InventoryScreen` รับ `asTabRoot` เพื่อ **ซ่อนปุ่มย้อนกลับ** ตอนเป็นปลายทางของราง —
+  ปุ่มที่กดแล้วไม่เกิดอะไรคือปุ่มที่สอนให้คนเลิกเชื่อปุ่มอื่นบนจอเดียวกัน
+- ไอคอนใหม่ 3 ตัว (`InventoryIcon` · `CounterIcon` · `SupportIcon`) เพราะด่านห้ามไอคอนซ้ำ
+
+#### ⚠️ เทสที่นับแท็บต้องรู้จัก guard ทั้งสองแกน ไม่งั้นนับข้ามเงียบ ๆ
+
+ตัวอ่านโครงเดิมรู้จักแค่ `mode` พอเพิ่ม `isTablet` เข้ามาก็เอาแท็บของแท็บเล็ตไปนับใส่งบของมือถือ
+
+- เขียนตัวประเมิน guard เล็ก ๆ ที่เข้าใจ `mode === 'x'` · `mode !== 'x'` · `isTablet` ·
+  `!isTablet` · และ `||` ระหว่างสองตัว — **รูปที่ไม่รู้จักต้อง `assert.fail` ไม่ใช่ถูกข้าม**
+  (guard ใหม่ที่เทสอ่านไม่ออกแล้วเงียบ คือด่านที่เขียวโดยไม่ได้ตรวจอะไร)
+- งบแยกตามรูปทรง: แถบล่าง ≤ 5 · ราง ≤ 10 · และไอคอนห้ามซ้ำ "ต่อโหมดต่อรูปทรง"
+- มิวเทชันที่แดงถูกตัว: รางไม่มีสต็อก · `เพิ่มเติม` ค้างบนราง · ไอคอนซ้ำบนราง
+
+#### ยังไม่ได้ทำ
+
+- **ยังไม่เคยเห็นแถบใหม่ด้วยตา ทั้งแถบ 5 แท็บบนมือถือและรางบนไอแพด** — แอปเด้งกลับหน้าล็อกอิน
+  ทุกครั้งที่รีสตาร์ทเพื่อโหลดบันเดิลใหม่ และไม่กรอก PIN ของบัญชีจริงให้ · ที่ยืนยันแล้วคือ
+  typecheck/lint/Jest/เทสที่อ่านโครงจากซอร์ส
+- ไม่ได้แตะเลย์เอาต์ของแถบบนแท็บเล็ต — React Navigation สลับไป `beside-icon` เองเมื่อแถบกว้าง
+  · 5 แท็บบนไอแพด 13" ได้ ~205pt ต่อแท็บ ยังไม่ได้ดูว่าหน้าตาเป็นยังไง
+- ไม่ได้แยก `OperationsScreen` (1,703 บรรทัด) ออกเป็นสองไฟล์ — ใช้ props แยกบทบาทแทน
+  ถ้าวันหนึ่งสองบทบาทเริ่มต้องการ state คนละชุด นั่นคือสัญญาณว่าต้องแยกจริง
+
+
+### recheck งาน native POS สต็อกสาขา/บอร์ดเกม ของ codex แล้วปิดให้จบ — 2026-09-14
+
+branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (typecheck · **pure 1,161/1,161**
+จาก 1,155 · production build) · **DB 431/431 ผ่านทั้งชุด** · mobile typecheck/lint ผ่าน และ Jest
+**115/115** จาก 109 · `apps/ws` typecheck ผ่าน · **apply `9.88` เข้า dev DB แล้วและ verify กับ DB
+จริงแล้ว** (ตาราง + RLS/FORCE RLS + GRANT ของ `bms_app` อ่านจาก `pg_class`/`information_schema` จริง)
+· **ยังไม่ได้ apply เข้า production** · **ไม่มี migration ใหม่ · ไม่มี permission ใหม่** ·
+**มิวเทชัน 13 แบบ แดงถูกตัวทุกครั้ง** (DB 4 · pure 6 · RN 3) และคืนไฟล์ตรงทุกไบต์
+
+#### สถานะของงาน codex ก่อนเริ่ม — เขียวหมดแต่ยังไม่จบ
+
+ไล่ของ codex ทั้งชุดแล้ว (`9.88` + 21 operation ใหม่ใน `bmsPosDevice.ts` + จอ RN สองจอ 2,013 บรรทัด
++ เอกสาร 7 ไฟล์): typecheck/pure/build/DB/lint/Jest **เขียวหมดตั้งแต่ก่อนแตะ** · `schema.graphql`
+กับ RN codegen รันซ้ำแล้วไม่ขยับ (ตรวจจาก mtime ไม่ใช่จาก exit code ของ `graphql:check` ซึ่ง diff
+กับ HEAD เสมอเมื่อ working tree ยังไม่ commit) · ด่านสิทธิ์ถูกทุกตัวที่สุ่มตรวจ — `inventory.count.apply`
+แยกจาก `inventory.count` จริง และทุก mutation derive สาขาจากเครื่อง
+
+ที่ยังขาดคือของที่ gate เขียวแล้วมองไม่เห็น 4 อย่าง แก้ครบในรอบนี้
+
+#### ⚠️ 1. `9.88` ไม่อยู่ใน schemaReadiness — โอน/นับสต็อกจากมือถือล้ม 100% แบบไล่ไม่เจอ
+
+`replayInventoryResult()` ยิง `SELECT ... FROM bms_inventory_operation_idempotency` เป็น **คำสั่งแรก
+ของทุก mutation** โดยไม่มีธงและไม่ได้ห่อ try/catch และ SDL บังคับ `idempotencyKey: String!` ทุกตัว
+→ ฐานที่ยังไม่ apply ได้ `42P01` แล้ว rollback ทั้งก้อนทุกครั้ง
+
+- **รัศมีแคบกว่า `9.70`/`9.51` โดยโครงสร้าง**: REST ของหลังบ้านไม่ส่งคีย์เลย (`inventoryIdempotency()`
+  คืน `null` เมื่อไม่มีคีย์) จึงไม่แตะตารางนี้ — เส้น `/admin/stock-transfers` ยังทำงานปกติ
+- เพิ่มเข้า `scripts/schemaReadiness.mts` + regenerate `db/checks/schema-readiness.sql` แล้ว
+  (ไฟล์นั้นห้ามแก้มือ มีเทสเทียบกับตัวเรนเดอร์) · **รันตัวตรวจกับ dev DB จริงแล้วขึ้น ✅ ครบทุกไฟล์**
+- **ด่านกันย้อนกลับเดินจากซอร์สไปหาลิสต์ ไม่ใช่จากชื่อที่เทสพิมพ์เอง** — เทสใหม่ใน
+  `schema-readiness-contract` อ่านชื่อตารางจาก `FROM`/`INSERT INTO` ใน `inventoryIdempotency.ts`
+  แล้วบังคับว่าต้องมีใน `MIGRATIONS` · มิวเทชัน "ถอด `9.88` ออกจากลิสต์" แดง 2 เทส
+
+#### ⚠️ 2. คีย์ซ้ำที่เนื้อในเปลี่ยน ตอบ 500 ซึ่งเอกสารสั่งให้ "ยิงซ้ำด้วยคีย์เดิม" = วนไม่มีทางออก
+
+`replayInventoryResult()` (และ `boardGameCafe.ts` อีก 4 จุด) ปฏิเสธด้วย `throw new Error(...)`
+→ `formatError` เติม `INTERNAL_SERVER_ERROR` ให้ · แต่ตาราง error code ใน
+`react-native-graphql-client.md` เขียนไว้ตรงตัวว่า `INTERNAL_SERVER_ERROR` ให้
+**"retry only ... using the exact same idempotency key"**
+
+- **เส้นทางที่เกิดจริงและออกไม่ได้**: เน็ตร้านหลุดตอนกดสร้างใบโอน (ไม่รู้ผล → จอเก็บคีย์ไว้ถูกแล้ว)
+  → พนักงานแก้รายการในร่างแล้วกดใหม่ → hash ไม่ตรง → 500 → จอ **ไม่ทิ้งคีย์** เพราะ 500 แปลว่า
+  "ไม่รู้ผล" → กดกี่ครั้งก็ล้มแบบเดิมจนกว่าจะปิดแอป และข้อความที่เห็นคือคำว่า `idempotencyKey`
+  ซึ่งคนหน้าเคาน์เตอร์ทำอะไรกับมันไม่ได้
+- แก้ด้วยคลาส leaf `lib/bms/idempotencyErrors.ts` (`IdempotencyConflictError`) แล้วให้
+  **`formatError` จัดประเภทให้ที่เดียว** → `CONFLICT` + `extensions.reason = IDEMPOTENCY_CONFLICT`
+  · **จงใจไม่ห่อทีละ resolver**: มี 16 mutation ที่ถือคีย์ ลิสต์แบบนั้นคือของที่รอวันลืม
+  (กับดักเดิมของรีโปนี้ที่จดไว้หลายรอบ) · `CONFLICT` ตรงกับความจริงพอดี — คำขอ **เก่า** สำเร็จไปแล้ว
+  สิ่งที่ต้องทำคือดึงของจริงมาดู ไม่ใช่ยิงซ้ำ
+- **⚠️ `rootCause()` ต้อง duck-type ที่ฟิลด์ `originalError` ห้ามใช้ `instanceof GraphQLError`** —
+  เทสใน `scripts/` import แพ็กเกจ `graphql` ตรง ๆ ไม่ได้ (ลงไว้ที่ `apps/web/node_modules` เท่านั้น)
+  และ `graphql` สองสำเนาในกระบวนการเดียวทำให้ instanceof พังเงียบ ๆ · เขียนแบบ instanceof ไปรอบแรก
+  แล้วเทสตายที่ `ERR_MODULE_NOT_FOUND`
+- **รหัสที่ adapter ระบุมาเองต้องชนะเสมอ** (มีเทส) — ตัวนี้เป็นด่านท้าย ไม่ใช่ตัวเขียนทับ
+
+#### ⚠️ 3. จอ RN เก็บคีย์ไว้แม้เซิร์ฟเวอร์ตัดสินไปแล้ว — ทางตันเดียวกันแต่มาจากอีกฝั่ง
+
+`BoardGameScreen` ไม่ทิ้งคีย์เลยในบล็อก catch ส่วน `InventoryScreen` ทิ้งเฉพาะตอนธุรกิจปฏิเสธ
+
+- **กติกาที่ถูกคือ "เก็บคีย์เฉพาะตอนยังไม่รู้ผล"** — รหัส client-facing ทุกตัว
+  (`BAD_USER_INPUT`/`FORBIDDEN`/`NOT_FOUND`/`UNAUTHENTICATED`/`CONFLICT`) ถูกโยนจากด่าน
+  **ก่อน** เรียก service ทั้งหมด (ไล่ครบแล้ว รวม `mobileGraphqlError(..., "CONFLICT")` ทั้ง 6 จุด)
+  จึงไม่มีอะไรถูกเขียน ครั้งหน้าคือเจตนาใหม่ ต้องออกคีย์ใหม่ · เหลือ `INTERNAL_SERVER_ERROR`
+  กับเน็ตล้มเท่านั้นที่ต้องเก็บคีย์ ซึ่งคือเคสที่ `9.88` มีไว้ให้จริง ๆ
+- helper อยู่ที่ `apps/mobile/src/lib/operation.ts` (`graphqlErrorCode` · `isStaleOperationConflict`
+  · `isDecidedRejection`) ใช้ร่วมกันสองจอ + **CONFLICT สั่งให้ดึงข้อมูลใหม่ก่อนเสมอ** ไม่งั้นคนหน้า
+  เครื่องตัดสินใจจากจอที่ล้าสมัย
+- เทส Jest ใหม่ `__tests__/operation.test.ts` (4 เทส) + เทส pure ที่สแกนสองจอ ·
+  มิวเทชัน "ทิ้งคีย์ทุกกรณี" และ "CONFLICT แล้วไม่ refetch" แดงถูกตัว
+
+#### ⚠️ 4. เทส DB ของ `9.88` ไม่มีเลย — เขียนแล้วรันจริงรอบนี้ (Postgres ติดอยู่)
+
+เครื่องนี้ **มี Postgres รันอยู่** รอบนี้ (ต่างจากหลายรอบก่อน) จึง apply `9.88` แล้วเดินของจริงได้
+
+- เพิ่ม 4 เทสใน `inventory-multilocation-db-contract` (รวม 15) + teardown ลบตารางใหม่ด้วย
+- **สิ่งที่พิสูจน์ต่างกันสองชั้น และต้องแยกให้ออก**:
+  `create` **ไม่มี state machine กัน** — ยิงซ้ำได้ใบที่สองจริง นี่คือการซ้ำที่เสียหาย ·
+  ส่วน `send`/`apply` มี state machine กันการขยับสต็อกซ้ำอยู่แล้ว สิ่งที่ replay ให้คือ
+  **คำตอบที่ถูก** แทน `WRONG_STATE` ซึ่งอ่านว่า "ทำไม่สำเร็จ" ทั้งที่ของออกจากชั้นไปแล้ว
+- มิวเทชัน 4 แบบ (ปิด replay ของ create/send/apply ทีละตัว · ถอดการตรวจ hash) แดงถูกตัวทุกครั้ง
+- **ตรวจแล้วว่าไม่มีข้อมูลค้าง**: `bms_inventory_operation_idempotency` เหลือ 0 แถว ·
+  SKU/สาขาของเทสเหลือ 0 · tenant `fake-%` 10 แถวที่เหลือเป็นของเก่า **2026-09-07/09-11 ไม่ใช่ของรอบนี้**
+  (ตรวจ `created_at` ก่อน ไม่ลบของคนอื่น)
+
+#### จุดเล็กที่แก้ไปด้วย
+
+- **ยกเลิก session บอร์ดเกมโดยไม่ส่งเหตุผลตอบ 500** — SDL เขียน `reason: String` (ไม่บังคับ)
+  แต่ service เรียก `requiredText()` แล้ว throw · ปุ่มบนจอ disable ไว้จึงยังไม่มีใครเจอ แต่ด่านของ
+  input เป็นงานของ resolver ในโมดูลนี้มาตลอด → `badPosInput` แทน (เปลี่ยน SDL เป็น `String!` ไม่ได้
+  เพราะ input ก้อนนี้ใช้ร่วมกับการปิดบิลซึ่ง `reason` เป็นโน้ตที่ไม่บังคับ)
+- **`api.md` เขียนว่า "Actual counter selling never goes through GraphQL"** ซึ่งไม่จริงแล้ว และ
+  ไม่มีแถวของ `bmsPosDevice.ts`/`bmsMobileOperations.ts` เลยทั้งที่เป็นสอง module ที่มือถือใช้ทั้งหมด
+
+#### ที่ตรวจแล้วว่าไม่ใช่บั๊ก (จดไว้กันไล่ซ้ำ)
+
+- **`getStockTransfer`/`getStockCount` ที่ codex เขียนใหม่แก้บั๊กเก่าไปด้วย** — ของเดิมดึง 200 ใบ
+  ล่าสุดแล้ว `.find()` ใบที่เก่ากว่านั้นจึงคืน `null` เงียบ ๆ · ตอนนี้กรองด้วย id ใน SQL
+- **ลำดับล็อกไม่ขัดกัน** — advisory lock ของคีย์ถูกขอเป็นอย่างแรกของทรานแซกชันเสมอ ก่อนแถว
+  `bms_inventory`/เลขที่เอกสาร และไม่มีเส้นทางอื่นขอคีย์นี้
+- **`storeInventoryResult` ถูกเรียกเฉพาะทางที่สำเร็จ** — ทางที่ `INVALID`/`INSUFFICIENT` rollback
+  ก่อน จึงไม่มีการ "จำคำตอบที่ล้ม" แล้ว replay ความล้มให้คนที่แก้ข้อมูลมาถูกแล้ว
+- **`recordCountItem` เป็น upsert อยู่แล้ว** คีย์จึงเป็นเรื่องของคำตอบ ไม่ใช่กันซ้ำ
+- `realtime-domain-coverage-contract` จัดตารางใหม่เป็น ops/telemetry ถูกแล้ว (ไม่ใช่ live surface)
+
+#### ⚠️ 5. ปุ่ม "ทดสอบการเชื่อมต่อ" บนไอแพด — กดแล้วไม่มีอะไรเกิดขึ้น (รายงานจากหน้าร้าน)
+
+ปุ่ม **ทำงานปกติ** · `verifyTarget()` flip เป็น `CHECKING` แล้วกลับเป็น `OK` พร้อมข้อมูลชุดเดิม
+— บนเน็ตที่เร็ว ช่วง "กำลังถามเซิร์ฟเวอร์…" ผ่านไปในเสี้ยววินาที สิ่งที่เหลือคือการ์ดใบเดิม
+**เหมือนกันทุกตัวอักษร** ไม่มีเวลา ไม่มี toast · ผลตรวจที่ผ่านจึงแยกไม่ออกจากปุ่มที่ตายแล้ว
+
+- **ปัญหาที่ลึกกว่าคือเรื่องเดียวกัน**: การ์ดนี้แสดงคำตอบจากตอนเปิดแอปเมื่อหลายชั่วโมงก่อนได้
+  โดยหน้าตาเหมือนคำตอบสด — ขณะที่ token อาจถูก "ออกใหม่" ไปแล้วระหว่างนั้น
+- แก้ด้วย `lastCheckedAt` ใน `DeviceContext` (ประทับเมื่อ **คำตอบกลับมาถึงเครื่อง** ไม่ใช่ตอนกด)
+  แล้วจอขึ้น `ตรวจล่าสุด HH:MM:SS น.` · ระหว่างถามใหม่ขึ้น "กำลังถามใหม่ · คำตอบก่อนหน้าเมื่อ …"
+  เพื่อไม่ให้จอว่างระหว่างรอ
+- **ประทับทุกทางออกที่ได้คำตอบ ไม่ใช่เฉพาะทางที่ผ่าน** (`settle()` ครอบ 5 จุด + กิ่ง 401 อีก 2)
+  — กดแล้วล้มด้วยข้อความเดิมซ้ำก็อ่านไม่ออกเหมือนกันว่าเพิ่งถามไปหรือค้างมาจากรอบก่อน
+- **แสดงถึงวินาที** โดยตั้งใจ: กดสองครั้งในนาทีเดียวต้องเห็นตัวเลขขยับ ไม่งั้นแก้แล้วเหมือนไม่ได้แก้
+- `unpair()` ล้างเวลาด้วย ไม่งั้นเครื่องที่เลิกจับคู่แล้วยังโชว์ว่า "เพิ่งตรวจผ่าน"
+- **⚠️ กับดักตอนเขียนเทส**: `mockResolvedValue(new Response(...))` คืนอ็อบเจ็กต์ **ตัวเดิม** และ
+  body ของ `Response` อ่านได้ครั้งเดียว → การยิงรอบสองได้ `SERVER_ERROR` ปลอม ๆ ที่ดูเหมือนบั๊กของแอป
+  · ต้อง `mockImplementation(() => Promise.resolve(สร้างใหม่))`
+- เทส: `DeviceContext.test.tsx` **5 เทส** (จาก 3) + เทส pure ที่ตรึงว่าจอยังเรนเดอร์เวลาอยู่ ·
+  มิวเทชัน 3 แบบ (settle ไม่ประทับเวลา · unpair ไม่ล้าง · ถอดบรรทัดเวลาออกจากจอ) แดงถูกตัว
+
+#### ⚠️ 6. แถบสถานะบนหน้าล็อกอินทิ้งเหตุผลทิ้ง — และนั่นคือเหตุที่ไล่ "iPhone ต่อไม่ได้" ไม่จบ
+
+`DeviceStrip` ใน `LoginScreen.tsx` มีกิ่ง `else` เดียวครอบ **OFFLINE / SERVER_ERROR / IDLE**
+แล้วเขียนว่า "ยังตรวจกับเซิร์ฟเวอร์ไม่ได้" · `verify.message` ที่ถือเหตุผลจริงถูกโยนทิ้ง
+
+- **สามสถานะนี้พาไปทำคนละทิศ**: ต่อไม่ถึง (เน็ต/DNS/TLS) · ต่อถึงแต่ตอบพัง (HTTP 5xx / ตอบ HTML
+  เพราะ URL ผิดตัว) · ยังไม่เคยถามเลย (ไม่ใช่ความล้ม) — เหมารวมแล้วคนหน้าเครื่องทำอะไรต่อไม่ได้
+- เพิ่ม `cause` (คำตอบดิบสั้น ๆ: `HTTP 502` · `Network request failed` · `TIMEOUT 10s` ·
+  `extensions.code` ของ GraphQL) แยกจาก `message` (ประโยคเต็มสำหรับหน้าตั้งค่าที่มีที่ให้อ่าน)
+  · **แยกกันเพราะแถบตัดเหลือสองบรรทัด** ยัดประโยคยาวลงไปแล้วส่วนที่ถูกตัดคือส่วนที่บอกว่าพังเพราะอะไร
+- เทส pure ตรึงว่า OFFLINE/SERVER_ERROR ต้องมีกิ่งของตัวเองและต้องแสดง `cause` · มิวเทชัน
+  "เหมารวมกลับมา" แดงถูกตัว
+
+#### ⚠️ ต้นเหตุจริงของ "iPad ใช้ได้ iPhone ไม่ได้ ทั้งที่ URL เดียวกัน" — mkcert + TrustStore ต่อเครื่อง
+
+ไล่จากหลักฐาน ไม่ใช่เดา:
+
+| ตรวจอะไร | ผล |
+| --- | --- |
+| `/etc/hosts` ของ Mac | `192.168.1.35   jachoei.com` |
+| public DNS | `129.212.225.127` (production จริง) |
+| cert ที่ 192.168.1.35 เสิร์ฟ | issuer = **mkcert development CA** (ของเครื่องนี้เอง) |
+| TrustStore ของทั้งสอง simulator | **ไม่มีไฟล์เลย** = ไม่เคยติดตั้ง root CA สักเครื่อง |
+| curl ในทั้งสอง simulator | ต่อไป `192.168.1.35` แล้ว `unable to get local issuer certificate` |
+
+- **`jachoei.com` บนเครื่องนี้ไม่ใช่ production** — `/etc/hosts` พาไปเครื่อง LAN ที่เสิร์ฟ cert
+  ของ mkcert · Mac เชื่อถือเพราะ mkcert ติดตั้ง root ไว้ใน keychain ของ Mac แต่
+  **simulator มี TrustStore ของตัวเองแยกทุกเครื่อง** → TLS handshake ล้ม → iOS ส่งต่อให้ RN เป็น
+  `Network request failed` ซึ่ง **ไม่มีทางบอกได้จาก JS ว่าเป็นเรื่อง TLS**
+- ทางแก้มีอยู่ในรีโปแล้ว: `npm run ios:trust-local-ca` (`simctl keychain … add-root-cert`)
+  · **⚠️ สคริปต์ใช้คำว่า `booted`** ซึ่งกำกวมเมื่อบูตหลายเครื่องพร้อมกัน — ต้องระบุ UDID เอง
+- **รันจริงแล้วและหายจริง** (2026-09-14 19:51 · ผู้ใช้สั่งให้รัน):
+  `xcrun simctl keychain <UDID> add-root-cert "$(mkcert -CAROOT)/rootCA.pem"` แล้ว terminate/launch
+  แอป → แถบบนหน้าล็อกอินเป็นเขียว `ร้านทั่วไป · ร้านทดสอบพี่หมี · เครื่อง POS-01 · jachoei.com`
+  และดึงสาขา/ผู้ปฏิบัติงานมาครบ
+- **⚠️ `add-root-cert` ไม่สร้าง `TrustStore.sqlite3` บน Xcode รุ่นนี้** (exit 0 แต่ไฟล์ไม่โผล่และ
+  keychain db ไม่ถูกแตะตามเวลาที่รัน) — **อย่าใช้การมี/ไม่มีไฟล์นั้นตัดสินว่าติดตั้งสำเร็จไหม**
+  ตัวชี้ขาดคือแอปต่อได้หรือไม่
+- **"iPad ใช้ได้" พิสูจน์ไม่ได้ว่าตอนนี้ยังต่อได้** — การ์ดเขียวบนไอแพดคือคำตอบที่ค้างจอจากรอบที่
+  เคยผ่าน ซึ่งคือบั๊กข้อ 5 พอดี · หลังใส่เวลากำกับแล้วเรื่องนี้อ่านออกทันทีโดยไม่ต้องมาไล่
+
+#### ยังไม่ได้ทำ
+
+- **จอ RN สองจอใหม่ (สต็อกสาขา/บอร์ดเกม) ยังไม่เคยเปิดดูจริง** — ผ่านแค่ typecheck/lint/Jest/
+  เทสสแกนซอร์ส · เส้นทาง CONFLICT ที่เพิ่มรอบนี้ก็ยังไม่เคยเห็นด้วยตาบนเครื่องจริง
+  · **ที่เปิดดูจริงบน iPhone 17 simulator แล้วมีสองจอ**: หน้าล็อกอิน (แถบสถานะ) และหน้าตั้งค่าเครื่อง
+  — กด "ทดสอบการเชื่อมต่อ" แล้วเวลาขยับจาก `19:51:37` เป็น `19:52:22` จริง = ปุ่มที่เคยอ่านว่า
+  "ไม่มีอะไรเกิดขึ้น" ตอบอะไรกลับมาแล้ว
+- **ยังไม่ได้ติดตั้ง CA ให้ iPad simulator** — ถ้าการ์ดบนไอแพดยังเขียวอยู่ ให้กดปุ่มทดสอบแล้วดู
+  บรรทัดเวลา ถ้าเวลาไม่ขยับ/กลายเป็น OFFLINE แปลว่าที่เห็นคือคำตอบค้างจอ ต้องรันคำสั่งเดียวกัน
+- **`9.88` ยังไม่ได้ apply เข้า production** — ต้อง apply **ก่อน** ปล่อยไคลเอนต์ Q6B ไม่งั้นโอน/นับ
+  จากมือถือล้มทุกครั้ง (readiness บอกชื่อไฟล์ให้แล้ว)
+- ตารางคีย์ไม่มี retention — แถวโตตามจำนวนคำสั่งสต็อกจากมือถือ ยังไม่มีตัวกวาดเหมือน outbox
+- เทส parity REST ↔ GraphQL ยังไม่มี (ของค้างเดิม) · board-game ยังใช้ bounded polling ไม่มี event
+
+
+
+### ตรวจ working tree และปิดงาน mobile POS/realtime — 2026-09-14
+
+branch `audit/realtime-production-architecture` · web production build ผ่าน · web pure **1,150/1,150**
+และ DB **427/427** ผ่าน · mobile typecheck/lint และ Jest **109/109** ผ่าน · `apps/ws` กับ
+`packages/realtime` build ผ่าน · GraphQL codegen รันซ้ำแล้วได้ผลเหมือนเดิม
+
+- migration ที่ยังไม่เคย commit ถูกเลื่อนจากเลข `9.75`–`9.78` เป็น `9.84`–`9.87` เพราะ remote
+  มี board-game migrations `9.79`–`9.83` แล้ว การใช้เลขต่ำต่อจะเสี่ยงถูก environment ที่เดินหน้าไปแล้วข้าม
+- `9.84`–`9.86` ปิด heartbeat noise, business-event coverage และ parked-sale delete;
+  `9.87` เพิ่ม restaurant dine-in/takeaway snapshot
+- isolated realtime migration runbook ยังต้องมี baseline dump ก่อนจึงจะรันครบแบบ production-like ได้;
+  รอบนี้พิสูจน์บนฐาน local และ contract suites แล้ว
+
+
+### recheck realtime + GraphQL client readiness แล้วซิงก์เอกสาร — 2026-09-11
+
+branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (typecheck web+ws ·
+**pure 1110/1110** จาก 1108/1110 ตอนเริ่ม · production build) · **ไม่มี migration ใหม่ ·
+ไม่มี permission ใหม่ · ไม่แตะ service/resolver สักบรรทัด** · **เทส DB ไม่ได้รันสักตัว**
+(Docker ไม่ได้รัน · 5432/5433/6379 ปิด) · **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์**
+
+#### ✅ แก้แล้วใน `9.74`: trigger ที่เคยอ้างคอลัมน์ซึ่งไม่มีบนตารางของตัวเอง
+
+`bms_realtime_pos_scope_trigger()` (`9.71:518`) ถูกผูกกับ **สองตาราง** แล้วอ้างฟิลด์ข้าม `CASE`:
+
+| ผูกกับ | อ้าง | ตารางนั้นมีจริงไหม |
+| --- | --- | --- |
+| `bms_pos_devices` | `NEW.status`, `NEW.device_id` | **ไม่มีทั้งคู่** (มี `active`) |
+| `bms_pos_shifts` | `NEW.active` | **ไม่มี** (มี `status`, `device_id`) |
+
+- **PL/pgSQL resolve `NEW.<field>` กับ row type จริง** · `CASE` จะทำให้กิ่งที่ไม่ถูกเลือก
+  "ไม่ถูก resolve" จริงไหม **อ่านโค้ดแล้วตอบไม่ได้** (ขึ้นกับว่า recfield param ถูก jump ข้าม
+  ตอน eval หรือถูก resolve ตอน prepare plan)
+- ถ้า resolve ตอน prepare → `record "new" has no field "status"` → **rollback** · trigger เป็น
+  `AFTER INSERT OR UPDATE` **ทุกคอลัมน์** จึงโดน `last_seen_at` ที่ `authenticatePosDevice`
+  เขียน (heartbeat ต่อเครื่อง) และ **ทุกการแตะแถวกะ** = เครื่องขาย authenticate ไม่ได้และขายไม่ได้
+- **ไล่ `NEW./OLD.` ของอีก 24 trigger เทียบกับ schema ทั้ง `db/migrations` แล้ว เหลือตัวนี้ตัวเดียว**
+  (`bms_realtime_floor_trigger` ผูกสองตารางเหมือนกันแต่ใช้แค่ `tenant_id/location_id/id` ซึ่งมีครบ)
+  · ตัวที่ดูเหมือนขาด (`bms_orders.location_id`, `bms_inventory.tenant_id`, …) เป็น false positive
+  ของตัวสแกน — คอลัมน์พวกนั้นมาจาก `DO … EXECUTE format('ALTER TABLE %I ADD COLUMN …')` ของ `4.x`/`7.84`
+- `9.73` ใส่ branch ตาม `TG_TABLE_NAME` เป็น hotfix และ `9.74` ปิดความเสี่ยงถาวรด้วยการแยกเป็น
+  `bms_realtime_pos_device_trigger()` กับ `bms_realtime_pos_shift_trigger()` พร้อมย้าย trigger
+  แต่ละตารางไปยังฟังก์ชันของตัวเองและลบ shared function เดิม · DB contract มีเคส insert ทั้ง
+  device/shift และตรวจ payload ตรงตัว แต่ยังต้องรันบนฐานทดสอบที่เปิดใช้งานจริง
+- `9.84` จำกัด device trigger ให้ข้าม `last_seen_at`/`receipt_seq`/`updated_at` bookkeeping ซึ่ง
+  ก่อนหน้านี้ทำให้ request จาก RN สร้าง `device.session.changed` แล้ววนกลับไป verify/refetch GraphQL
+  โดยไม่มี session/config change จริง
+
+#### ⚠️ ธง `REALTIME_*_ENABLED` ไม่ได้ปิด realtime — ปิดแค่ "ขาส่ง"
+
+`isRealtimeEventEnabled` มีผู้อ่านที่เดียวคือ `canReceiveRealtimeEvent()` (ฝั่ง ws) · trigger
+ไม่เช็คอะไรเลย และ dispatcher ก็ไม่เช็ค → apply แล้ว **event เกิดทุก write และ publish เข้า Redis
+ต่อให้ธงปิดหมด** · ปิด `REALTIME_OUTBOX_DISPATCH_ENABLED` แทนก็ไม่มีใคร drain แล้ว
+`bms_cleanup_realtime_outbox` ลบแค่ `PUBLISHED`/`FAILED` → แถว `PENDING` โตไม่มีเพดาน
+· **ทางปิดที่ต้นทางวันนี้มีทางเดียวคือ DROP trigger** ซึ่ง `9.70`/`9.71` **ไม่มีบล็อก `ROLLBACK`
+เขียนไว้** (มีแต่ `9.72`) · แก้คำที่ `agent-invariants` เคยเขียนว่าเป็น "query-only kill switch
+และไม่ต้อง rollback" แล้ว เพราะไม่จริงทั้งสองท่อน
+
+#### ⚠️ คอมเมนต์สองที่โฆษณาด่านที่ไม่มีอยู่ — เขียนความจริงแทนแล้ว
+
+1. `9.70:97` เขียนว่า "Enforced by `scripts/realtime-dispatcher-grants-contract.test.mts`" ·
+   **ไฟล์นั้นไม่มีในรีโป** · เปลี่ยนเป็นบอกตรง ๆ ว่าจับคู่ grant กับ read ด้วยมือ และพิสูจน์ได้ทาง
+   runbook เท่านั้น + เตือนว่า `CREATE ROLE … BYPASSRLS` ต้องใช้ superuser
+2. `realtimeInvalidation.ts` เขียนว่า "Both directions are pinned in `realtime-client-contract`" ·
+   ไฟล์นั้นตรวจแค่ `field.startsWith(prefix)` **ไม่มี assertion ไหนเทียบ key กับ event union**
+   · ไล่มือแล้วว่าปัจจุบันครบ 17 โดเมนพอดี แต่ไม่มีอะไรกันโดเมนที่ 18 หายเงียบแบบที่ `kitchen` โดน
+
+**ที่ยังไม่มีเทส (จดไว้เป็นของค้าง)**: coverage ของ `DOMAIN_FIELDS` เทียบ event union ·
+grant ของ dispatcher เทียบ read ของ trigger · `onNext` ของ ws ที่นับ event จาก named subscription ·
+device topic ใน `realtimeTopics()` · `preflight-deploy.mts` (ยังไม่มีเทสเลยตั้งแต่เขียน)
+
+#### เทสเดิม 2 ตัวต้องเล็งใหม่ (ต้นเหตุที่ gate แดงตอนเริ่ม)
+
+ทั้งคู่ตรึง **ชื่อ** `dispatchRealtimeOutboxBatch` ไว้ตรงตัว ขณะที่ working tree เปลี่ยน call site
+เป็น `runRealtimeOutboxMaintenance` (dispatch + retention) — การันตีไม่ได้หาย แค่ย้ายบ้าน
+
+- เล็งใหม่ที่ **กติกา** ไม่ใช่ชื่อ: pump และ route กู้คืน **ต้องไม่** เอ่ย
+  `dispatchRealtimeOutboxBatch` (= ทางที่ drain แต่ไม่กวาด) · ต้องไม่แตะ repository ตรง ๆ ·
+  และตัวกลางต้องทำทั้ง dispatch และ cleanup
+- **ยืนยันด้วย mutation 2 แบบ** (ย้อน pump และย้อน route กลับไปเรียก `dispatchRealtimeOutboxBatch`)
+  แดงถูกตัวทั้งสองครั้ง
+
+#### เอกสารที่ซิงก์ในรอบนี้
+
+- **CLAUDE.md** — เพิ่ม `graphql-client-readiness-brief.md`, `realtime-test-database.md` และ
+  `schema.graphql` เข้าตารางเอกสาร (ก่อนหน้านี้ **ไม่มีทั้งสองไฟล์ในสารบัญ** ทั้งที่ไฟล์นี้ประกาศ
+  ตัวเองเป็น navigation index) · เพิ่มย่อหน้าสถานะของ `9.70`–`9.72` และของ surface ที่ typed แล้ว
+  (CLAUDE.md **ไม่เคยเอ่ยถึง `9.70`–`9.72` เลย**) · เพิ่มกฎ non-negotiable 2 ข้อ (ขอบเขต outbox
+  กับ `schema.graphql` เป็นสัญญาของ client)
+- **AGENTS.md** — เพิ่ม short-form invariant 2 ข้อ (realtime · typed GraphQL) · แยก
+  `packages/realtime` และ `schema.graphql` เป็นแถวของตัวเองใน repository map · เพิ่มกฎ trigger
+  ทั้งชุดใน § Database and migration rules (คอลัมน์ข้ามตาราง · definer ≠ grant · superuser ·
+  retention/`PENDING` · ต้องพิสูจน์บนฐานทดสอบ) · เพิ่ม 8 แถวของชุดเทส realtime/GraphQL ที่ตาราง
+  ไม่มีเลย · เขียนว่า `gate.yml` ไม่รันโหมด DB ("pure เขียว" ไม่เท่ากับเส้นฐานถูกเดิน)
+- **docs/agent-invariants.md** — แก้คำเรื่อง kill switch · เพิ่มกฎ trigger/grant/superuser ·
+  เพิ่มข้อว่า 18 named subscription ยังไม่มีผู้เรียกและห้ามลบ REST/polling เพราะมันมีอยู่ ·
+  เพิ่ม § Typed GraphQL surface ทั้งหัวข้อ (artifact เป็นซอร์ส · scope derive เท่านั้น ·
+  idempotency · `@deprecated` ไม่ลบ · error code vs business status · ยังไม่มีเทส parity)
+- **scripts/README.md** — ตัวเลขเก่า (120 ไฟล์ = pure 84/931 + DB 36) → **144 = pure 106/1,110 +
+  DB 38** พร้อมคำสั่งนับใหม่ · เพิ่มหัวข้อ `npm run schema:export` และ `preflight-deploy.mts`
+  (ซึ่งค้างไม่ได้เขียนมาตั้งแต่ 2026-09-07) · ลิงก์ runbook ของฐานทดสอบ realtime
+- **mobile-graphql-ws-realtime.md** — หัวเอกสารเตือนว่า migration ยังไม่ apply ที่ไหน ·
+  เพิ่มแถว "8. Typed client contract" ในตารางสถานะ · เขียนในแถว 7 ว่า named subscription
+  ไม่มีผู้เรียก
+
+#### ที่ตรวจแล้วว่าไม่ใช่ปัญหา (จดไว้กันไล่ซ้ำ)
+
+- **GRANT ของ dispatcher ครบแล้ว** — สแกน `FROM/JOIN public.<table>` ในตัว trigger ทั้งหมดได้ 6
+  ตาราง (`bms_orders`, `bms_pos_devices`, `bms_pos_returns`, `bms_restaurant_checks`, `users`,
+  outbox) และถูก grant ครบทั้งหก · FK check ไม่ต้องมี SELECT บน `bms_tenants` (RI ข้าม ACL)
+- **`onNext` ของ ws ที่แก้เป็น `Object.values(data)[0]` ถูกต้อง** — `inspectSubscriptionOperation`
+  บังคับ root field เดียวจริง (`ONE_SUBSCRIPTION_FIELD_REQUIRED`) จึงมีค่าเดียวให้อ่านเสมอ
+- **`bms_realtime_outbox_metrics()` ไม่ใช่ฟังก์ชันตาย** — `systemHealth.ts:112` เรียกอยู่
+- **`enqueueRealtimeEventInTx` มีผู้เรียกที่เดียว** (`purchase.ts:587`) → ไม่มี event ซ้ำกับ trigger
+- **`packages/*/dist` เก่าค้าง** (event union ยังเป็น 50 ตัว) แต่ gitignored และ `apps/ws` import
+  จาก `src/*.js` ตรง ๆ → ไม่กระทบ runtime **แต่ทำให้ grep หลอกคนอ่าน**
+- `WS_MAX_SUBSCRIPTIONS_PER_CONNECTION` = 20 ขณะที่ named subscription มี 18 → client ที่ subscribe
+  ครบทุกจอ + inbox + notification ชนเพดานพอดีที่ตัวที่ 21
+
+#### ยังไม่ได้ทำ (เรียงตามความแรง)
+
+1. รัน runbook ของฐานทดสอบให้ครบ 9 ขั้นเพื่อพิสูจน์ `9.70`–`9.74` และ `9.84`–`9.86` บน PostgreSQL จริง
+2. เขียน `ROLLBACK` ให้ `9.70`/`9.71` · ใส่เงื่อนไขปิดที่ต้นทาง (GUC) ถ้าจะให้ธงหมายความว่าปิดจริง
+3. เทสที่ยังไม่มี 5 ตัวในหัวข้อข้างบน
+4. เทส parity REST ↔ GraphQL (ตัวที่บล็อกการย้าย caller อยู่)
+5. แตก `bmsPosDeposit`/`bmsPosExpense`/`bmsPosPark`/`bmsPosShift` แล้วบังคับ `idempotencyKey`
+6. `KNOWN_GAPS` 20 ตารางที่ควรมี event · เปิด/ปิด subscription เก่า 5 ตัวบน production
+7. cron entry ของ `/api/bms/realtime/dispatch` (ตอนนี้ `/admin/operations-schedule` ขึ้น
+   "Ready but unscheduled" ตลอดไป ขณะที่ compose ตั้ง `REALTIME_OUTBOX_DISPATCH_ENABLED:-1`
+   ให้ pump เดินเอง — สองที่พูดไม่ตรงกัน)
+
+
+### ปิดช่องว่างที่ทำได้โดยไม่ต้องมี DB (Phase 4/8/9/10/11) — 2026-09-11
+
+branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (typecheck web+ws ·
+**pure 1094** จาก 1083 · production build) · **ไม่มี migration ใหม่** · **ไม่มี permission ใหม่** ·
+**เทส DB ไม่ได้รันสักตัว** · **มิวเทชัน 8 แบบ แดงถูกตัวทุกครั้ง**
+
+#### ⚠️ แก้ความรุนแรงที่ผมรายงานเกินจริงไปรอบก่อน
+
+ผมบอกว่า `messageAdded(chat_id)` เป็น "ช่องรั่วจริงที่อ่านแชทห้องอื่นได้" · **บน production
+อ่านไม่ได้** เพราะ `PRODUCTION_DISABLED_SUBSCRIPTIONS` ใน `apps/ws/src/security.ts` ปิด
+subscription ทั้ง 5 ตัวไว้แล้ว (`time`, `messageAdded`, `messageDeleted`, `commentAdded`,
+`commentUpdated`, `commentDeleted`) → ของจริงคือ **รั่วเฉพาะ non-production** · ผมไม่ได้เช็ค
+denylist ก่อนสรุป · การแก้ยังคุ้มเพราะมันคือเงื่อนไขที่ทำให้ **เปิดกลับมาได้**
+
+#### subscription เก่าตัดสินจากข้อมูลที่ publisher ส่งมา ไม่ใช่จาก id ที่ client พิมพ์
+
+`apps/ws` ต่อ DB ไม่ได้ (invariant + เทสบังคับ) จึงเช็ค membership เองไม่ได้ · ทางที่ใช้คือ
+**ให้ publisher ซึ่งมี DB พก routing data มากับ event**
+
+- `messageAdded` — กรองด้วย `to_user_ids`/`sender_id` ที่ติดมากับข้อความอยู่แล้ว
+  (รูปเดียวกับ `incomingMessage` ที่แก้ถูกไว้ก่อนหน้า)
+- `messageDeleted` — payload เดิมเป็น **id ล้วน** ไม่มีอะไรให้กรอง · publisher
+  (`apps/web/graphql/resolvers.ts`) query `chat_members` แล้วส่ง `messageDeletedAudience` มาด้วย
+  · **`resolve` คืนเฉพาะ id** SDL จึงยังเป็น `ID!` เท่าเดิม ลิสต์ผู้รับไม่เคยถึง client
+- `commentDeleted` — filter เดิมคืน `true` = ยิงการลบของ **ทุกโพสต์** ให้ทุกคน · เพิ่ม
+  `commentDeletedPostId` แล้วกรอง · โพสต์เป็นเนื้อหาสาธารณะ (ไม่มีคอลัมน์ visibility และ
+  query `posts` เป็น optional auth) จึงไม่ใช่การรั่วของความลับ แต่เป็น event ผิดโพสต์
+- **ไม่มี routing data = ปฏิเสธ ไม่ใช่ปล่อยผ่าน** — เป็นกฎที่เขียนไว้ใน agent-invariants แล้ว
+
+#### ⚠️ ตัวตัดสินสิทธิ์ย้ายออกจาก resolver เพื่อให้ทดสอบพฤติกรรมได้
+
+`canReceiveRealtimeEvent()` เป็นด่านเดียวที่กันข้ามร้านบนสาย WS แต่เดิมเป็นฟังก์ชัน **ภายใน**
+ของ `packages/graphql-core/src/resolvers.ts` จึง import ไปเทสไม่ได้ · เทสที่มีอยู่ตรวจได้แค่
+"มีข้อความ `rule.permissions.every` อยู่ในไฟล์" ซึ่ง **เขียวได้แม้ฟังก์ชันจะคืน true เสมอ**
+
+- ย้ายไป `packages/realtime/src/subscriptionAuth.ts` (ไม่พึ่ง graphql เลย) พร้อม
+  `realtimeTopics()` · รับ `env` เป็นพารามิเตอร์ได้ เทสจะได้คุมธง rollout เอง
+- เทสใหม่ป้อนเคสจริง: ข้ามร้าน · ข้ามสาขา · `allLocations` · event ที่ลืม `locationId` ·
+  เครื่องอื่น · ticket ที่ไม่ใช่ POS สวมเป็นเครื่อง · ไม่มี permission · ไม่เปิดธง
+- **เทสเดิม 1 ตัวต้องเล็งใหม่** (`realtime-client-contract`) — มัน assert ว่าสตริงอยู่ใน
+  `resolvers.ts` การันตีไม่ได้หาย แค่ย้ายบ้าน · ตอนนี้บังคับกลับทางด้วยว่า resolver **ต้องไม่**
+  มี `rule.permissions.every` = ห้ามมีตัวตัดสินชุดที่สอง
+
+#### ⚠️ เทสรอบแรกอ่อน 1 ตัว — จับได้ด้วยมิวเทชัน
+
+`messageDeleted` ที่ถูกแทนด้วย `return true; //` ยังเขียว เพราะ assertion แค่หาคำว่า
+`messageDeletedAudience` ซึ่ง **ยังเหลืออยู่ในบรรทัดถัดไปที่ตายแล้ว** · เปลี่ยนไปบังคับ
+`.map(String).includes(userId)` + ห้าม `return true;` ในบล็อก แล้วแดงทั้งสองรูป
+
+#### schemaReadiness เติม 6 ไฟล์ (`9.60`–`9.69`)
+
+เดิมค้างที่ `9.57` · ที่สำคัญที่สุดคือสองตัวที่กระทบ **ทุกร้าน**:
+`bms_product_promotions.location_id` (`9.61`) และ `bms_product_price_tiers.location_id` (`9.65`)
+ถูก `SELECT` ใน `createOrderInTx()` **แบบไม่มีเงื่อนไข** → ฐานที่ขาด **ขายไม่ได้ทั้งระบบ**
+· อีกสี่ตัวเป็นของร้านอาหาร (`9.60` QR · `9.63` split_group_no · `9.64` waitlist ·
+`9.69` service calls) ซึ่ง service อ่านตรง ๆ อยู่แล้ว
+
+#### เอกสาร
+
+- `react-native-graphql-client.md` — เพิ่ม **token/ticket refresh** (แยกอายุของ device token
+  กับ ticket · 4403 = ปกติให้ reconnect · 401 ตอน mint = หยุด อย่า retry) และ **offline queue**
+  (คิวได้เฉพาะ mutation ที่มี `idempotencyKey` · **ห้ามคิว PIN เด็ดขาด** เพราะจะกลายเป็น
+  credential ที่เก็บไว้ · flush ทีละใบ ไม่ขนาน เพราะสองบิลชนแถวกะเดียวกันแล้ว deadlock)
+- `agent-invariants.md` — อัปเดตช่วง migration เป็น `9.70`–`9.72` + บันทึกว่ายังไม่ apply ที่ไหน ·
+  กฎของ subscription เก่า · กฎ 18 named subscriptions ใช้ authorizer ตัวเดียว · กฎ coverage
+- `restaurant-chat-delivery.md` — เพิ่ม § 8.5 ตารางแมป "เกิดอะไร → ตาราง → event → subscription"
+  ของเส้นทางนี้ + ย้ำว่า polling ยังเป็นทางหลักจนกว่าจะเปิดธงบน production
+
+#### ยังทำไม่ได้เพราะไม่มี DB / ไม่มี client
+
+- **apply `9.70`/`9.71`/`9.72` และรันเทส DB ทั้ง 38 ไฟล์** — trigger 27 ตัวยังไม่เคยยิง
+- **วัด write amplification** ของ trigger บน `bms_inventory`
+- **เคสที่อ่านโค้ดแล้วตอบไม่ได้**: เขียน `bms_orders`/`bms_inventory` นอก `beginTenantTx`
+  แล้ว trigger ต้องยังเขียน outbox ได้ (ขึ้นกับ owner จริงหลัง apply)
+- **event ของ 20 ตารางใน `KNOWN_GAPS`** — เขียน trigger เพิ่มได้ แต่ verify ไม่ได้ จึงยังไม่ทำ
+- **ย้าย caller ฝั่งเบราว์เซอร์ไป GraphQL** และ **แอป RN** — ไม่มีในรีโปนี้
+- **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์**
+
+
+### recheck Phase 1-11 ของงาน mobile GraphQL/realtime — เสร็จจริง 4 เฟส (2026-09-11)
+
+branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (typecheck · **pure 1083**
+จาก 1075 · production build) · **migration ใหม่ `9.72` ยังไม่ได้ apply ที่ไหนเลย** ·
+**ไม่มี permission ใหม่** · **เทส DB ไม่ได้รันสักตัว** (Docker ไม่ได้รัน · 5432 ปิด) ·
+**ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** · **มิวเทชัน 8 แบบ แดงถูกตัวทุกครั้ง**
+
+#### ⚠️ Phase 6 ขาด 16 จาก 17 subscription — codex ทำสตรีมรวมตัวเดียวแทน
+
+มีแค่ `bmsInboxChanged` (ของเดิม) · ที่เหลือถูกแทนด้วย `realtimeEvent` ตัวเดียวแบบ generic
+ซึ่งเป็นดีไซน์ที่ป้องกันได้ แต่แปลว่า **client เลือกรับเฉพาะโดเมนที่ตัวเองเรนเดอร์ไม่ได้**
+ทุกเครื่องรับทุก event ใน topic scope แล้วไปกรองเอง — แท็บเล็ตหน้าร้านจึงตื่นทุกครั้งที่สต็อก
+สาขาขยับ
+
+- ทำครบ 17 ตัวแล้ว แต่ **ไม่ได้เขียน resolver 17 ชุด** — ทุกตัวเป็น "วิวที่กรองแล้ว" ของสตรีม
+  เดียวกัน ผ่าน `NAMED_REALTIME_SUBSCRIPTIONS` · **17 ชุด auth คือ 17 โอกาสที่ตัวหนึ่งจะหลุด**
+  จึงให้ทุกตัวเดินผ่าน `realtimeTopics()` + `canReceiveRealtimeEvent()` ชุดเดียว (มีเทสบังคับ)
+- **ตารางการแมปอยู่ที่ `packages/realtime/src/namedSubscriptions.ts` ไม่ใช่ใน resolvers**
+  เพราะมันเป็นข้อมูลของสัญญา ไม่ใช่ตรรกะของ resolver · **และเพราะเทสใน `scripts/` import
+  `packages/graphql-core/src/resolvers.ts` ไม่ได้** — ไฟล์นั้น import `graphql` ซึ่ง resolve
+  จาก `scripts/` ไม่ได้ (แพ็กเกจอยู่ที่ `apps/web/node_modules` เท่านั้น) · กับดักเดิมของรอบก่อน
+- **เพิ่ม `bmsServiceCallChanged` เป็นตัวที่ 18** (`restaurant.table_call.*`) ตามที่ผู้ใช้สั่ง —
+  brief ระบุไว้ 17 ตัวและไม่มีตัวนี้ แต่ "เรียกพนักงาน" เป็นจอจริงของ POS
+  (`bmsPosRestaurantServiceCalls`) ถ้าไม่มี RN จะเข้าถึงได้ทาง `realtimeEvent` เท่านั้น
+  · **แยกจาก `bmsWaitlistChanged` โดยตั้งใจ**: การเรียกพนักงานเป็นงานของโต๊ะที่นั่งอยู่แล้ว
+  ส่วนคิวคือคนที่ยังไม่ได้โต๊ะ — คนละจอและคนละคนที่ต้องตอบสนอง
+  · สิทธิ์ใช้ `order.view` เท่ากับ event ของร้านอาหารอีก 13 ตัว ไม่ได้ตั้งใหม่
+
+#### ⚠️ Phase 7 ขาด event 2 โดเมนที่อยู่ในลิสต์ — `9.72`
+
+`9.71` ครอบ 25 ตาราง แต่ตกสองตัวที่ brief เขียนไว้ตรงตัว:
+
+- **`bms_pos_cash_movements`** ("cash movement") — เขียนจริง 3 จุด (`pos.ts` ×2, `ar.ts` ×1)
+  เงินเข้า-ออกลิ้นชักเปลี่ยน "เงินที่ควรมี" ของกะ แต่ไม่มี event เลย
+- **`bms_kitchen_tickets`** — คิวครัวของร้าน **ค้าปลีก** จาก `9.40` (คนละตัวกับ
+  `bms_restaurant_kitchen_tickets`) · `listKitchenTickets()` UNION ทั้งสอง การครอบครึ่งเดียว
+  = ร้าน `food_beverage` ที่เปิด `KITCHEN_WORKFLOW` ได้กระดานที่ไม่อัปเดตตัวเอง
+
+`9.72` เพิ่ม trigger ให้ทั้งคู่ตามรูปของ `9.71` เป๊ะ (AFTER + enqueue อย่างเดียว +
+`OWNER TO bms_realtime_dispatcher` ซึ่งเป็น BYPASSRLS — **ลืมบรรทัดนี้แล้วทุก write ที่ trigger
+ครอบจะ rollback** เพราะ outbox เป็น FORCE RLS)
+
+- สองตารางนี้ **ไม่มี `location_id`** ต้อง derive: cash movement จาก `bms_pos_devices`,
+  ตั๋วครัวจาก `bms_orders` · rule ของทั้งคู่เป็น `audience: "location"` ซึ่ง validator บังคับว่า
+  ต้องมี scope ไม่งั้น event ตกตั้งแต่ validate
+- payload ของ cash movement ใส่แค่ `direction` **ไม่ใส่จำนวนเงิน** — ยอดเป็นรายละเอียดลิ้นชัก
+  ที่ต้องอ่านจาก query ที่มีสิทธิ์คุม ไม่ใช่ของที่ fan-out ออกไป
+- **`9.72` จงใจไม่ใส่ใน schemaReadiness** — trigger ที่ขาดแปลว่า "ไม่มี event" (realtime เงียบ)
+  ไม่ใช่โค้ดพัง ต่างจาก `9.70` ที่ตารางขาดแล้วทรานแซกชัน rollback
+
+#### ⚠️ ต้นเหตุที่ทำให้สองโดเมนนั้นหายไปเงียบ ๆ — ลิสต์ที่เทสเขียนเอง
+
+`realtime-domain-contract` เทียบ event กับ `required` ที่ codex พิมพ์เอง → **มันไม่มีทางรู้ว่า
+ลืมทั้งโดเมน** เพราะแค่ไม่ใส่ชื่อนั้นลงไป · เพิ่ม
+`scripts/realtime-domain-coverage-contract.test.mts` ที่เดินกลับทาง: ไล่จาก **ตารางที่
+`lib/bms` เขียนจริง** (สแกน INSERT/UPDATE ได้ 143 ตาราง) แล้วบังคับว่าทุกตารางต้องมี trigger
+หรือถูกจัดประเภทพร้อมเหตุผล · **ตารางใหม่ที่ไม่มีใครจัดประเภท = แดงทันที**
+
+- สี่ประเภท: แถวลูกของ aggregate ที่ยิงอยู่แล้ว · ops/telemetry · ค่าตั้งค่า ·
+  **`KNOWN_GAPS` 20 ตารางที่ควรมี event แต่ยังไม่มี** (คืนของ/มัดจำ/บัตรของขวัญ/ลูกหนี้/
+  ใบกำกับ/แต้ม/PO/ของเสีย) — ใส่ไว้เพื่อให้ "ยังไม่ได้ทำ" เป็นของที่อ่านเจอ ไม่ใช่ของที่หายเงียบ
+- อีกสองด่าน: ชนิดที่ยิงต้องถูกประกาศ **และ** ชนิดที่ประกาศต้องมีคนยิง (สัญญาที่ตายแล้ว = แดง)
+- **⚠️ ตัวกรอง "ชื่อที่มีจุด" ต้องเอาโดเมนจากลิสต์กลาง ไม่ใช่เดา** — รอบแรกไปจับ
+  `app.editor_id` กับ `bms_pos_devices` เป็น event type
+
+#### ที่ตรวจแล้วว่าดีจริง (จดไว้กันไล่ซ้ำ)
+
+- **Phase 4 hardening แน่นมาก**: ticket แทน Bearer บน WS (android รองรับผ่าน
+  `verifyUserFromRequest` ที่ ticket route), recheck revocation ทุก 15 วิ, ticket หมดอายุ →
+  ปิด 4403, allowed origins, lease ต่อ IP/user/tenant, เพดาน byte ของ message/query/variables/
+  buffer, max subscriptions ต่อ connection, ping/idle, `/healthz`, SIGTERM/SIGINT,
+  และ **`apps/ws` ไม่แตะ DB เลย**
+- **Phase 3 ครบ**: `9.70` คอลัมน์ครบตาม brief · RLS/grants · `FOR UPDATE SKIP LOCKED` ·
+  retry/backoff/cleanup · เทสครอบ multi-instance claim + rollback + tenant isolation
+- **Phase 9 มี rollout flag 11 ตัว แยกตาม domain แบบ fail-closed** และ client ฝั่งเบราว์เซอร์
+  mount จริงแล้ว (`RealtimeProvider` ใน `SessionLayer` + `PosRealtimeProvider`)
+- **event type ทั้ง 52 ตัวถูกยิงจริงทุกตัว** (ไม่มีสัญญาที่ตายแล้ว) — ยืนยันด้วยสคริปต์
+
+#### ⚠️ ยังไม่ได้ทำ — subscription เก่าที่รับ id จาก client แล้วไม่ตรวจอะไรเลย
+
+**Phase 4 ข้อ 2 ยังค้างอยู่** (ผู้ใช้เลือกไม่ให้แก้ในรอบนี้) — `packages/graphql-core/src/resolvers.ts`:
+
+- `messageAdded(chat_id)` · `messageDeleted(chat_id)` — **ไม่เรียก `requireRealtimeUserId` ด้วยซ้ำ**
+  ส่ง chat_id อะไรมาก็ได้รับข้อความห้องนั้น
+- `commentAdded(post_id)` · `commentUpdated(post_id)` — ไม่ตรวจ
+- `commentDeleted` — filter คืน `true` = ยิงให้ทุกคนที่ subscribe
+
+ที่แก้ถูกแล้ว: `userMessageAdded`, `incomingMessage`, `notificationCreated`, `my*`,
+`bmsInboxChanged`, `realtimeEvent` และ 17 ตัวใหม่ · เป็นฟีเจอร์ชุมชนยุคก่อน BMS แต่
+**เป็นช่องรั่วจริงที่อ่านแชทห้องอื่นได้**
+
+#### ยังไม่ได้ทำ (อื่น ๆ)
+
+- **`9.72` ยังไม่ได้ apply** และ trigger ทั้ง 27 ตัวยังไม่เคยยิงกับฐานจริง
+- **Phase 8**: RN doc ยังไม่มี token refresh strategy กับ offline queue
+- **Phase 10**: ไม่มีเทส android Bearer auth และไม่มีเทส "REST legacy ยังใช้ได้"
+- **Phase 11**: ยังไม่ได้แตะ `docs/business/restaurant-chat-delivery.md` และ
+  `docs/agent-invariants.md` ทั้งที่ brief ระบุไว้
+- **write amplification ของ trigger ยังไม่ได้วัด** — `AFTER INSERT OR UPDATE ON bms_inventory`
+  ยิงทุกการขยับสต็อก บิลหนึ่งใบแตะหลายแถว การ import แตะหลายพันแถว
+- **ยังไม่มี RN client** — เส้น GraphQL/subscription ใหม่ยังไม่มีผู้เรียกจากมือถือสักราย
+
+
+### recheck งาน mobile GraphQL/realtime ของ codex — เจอด่านที่ไม่ได้กันอะไรเลย (2026-09-11)
+
+branch `audit/realtime-production-architecture` · `npm run gate` ผ่าน (typecheck · **pure 1075**
+จาก 1071 · production build) · **ไม่มี migration ใหม่ · ไม่มี permission ใหม่** ·
+**เทส DB ไม่ได้รันสักตัว** (เครื่องนี้ Docker ไม่ได้รัน — `docker ps` ต่อ daemon ไม่ได้ · 5432 ปิด)
+· **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** · **มิวเทชัน 9 แบบ แดงถูกตัวทุกครั้ง**
+
+#### ⚠️ 1. เทสของ codex เขียวทั้งที่ลบ operation ทิ้งทั้งตัว และทั้งที่ resolver รับ tenantId จากผู้เรียก
+
+`scripts/mobile-graphql-contract.test.mts` เดิมเช็คชื่อ operation ด้วย
+`assert.match(posSchema, new RegExp(word-boundary + name))` ซึ่งสแกน **ซอร์สทั้งไฟล์
+ไม่ใช่ SDL** · พิสูจน์แล้วด้วยมิวเทชัน: เปลี่ยนชื่อ `bmsPosVoid` ทั้ง SDL และ resolver
+แล้วเหลือคำนั้นไว้ใน **คอมเมนต์บรรทัดเดียว** → **เทสทั้ง 6 ตัวยังเขียว** ทั้งที่การยกเลิกบิล
+จากมือถือหายไปจากสคีมาแล้ว (กับดัก substring เดิมของรีโปนี้ที่จดไว้หลายรอบ)
+
+- **ด่านความปลอดภัยเป็นด่านที่ว่างเปล่า**: `assert.doesNotMatch()` ที่หา `tenantId:` ใน SDL
+  ตั้งใจกัน "ผู้เรียกส่ง tenant มาเอง" แต่ SDL ทั้งไฟล์เป็น
+  `input: JSON!` / `JSON!` ล้วน **จึงไม่มีฟิลด์ให้ชนตั้งแต่แรก** — assertion นี้เป็นจริงเสมอ
+  ไม่ว่าโค้ดจะทำอะไร · มิวเทชันที่ทำให้ resolver อ่าน `input.tenantId` ตรง ๆ (= ข้ามร้านได้
+  ซึ่งเป็นบั๊กที่แรงที่สุดที่ระบบนี้มีได้) **ก็ยังเขียวทั้ง 6 ตัว**
+- **ของจริงไม่ได้พัง** — ไล่แล้วทั้งไฟล์: POS อ่าน authority จาก `device.tenantId` (108 จุด)
+  และ `device.locationId` (48 จุด) **เท่านั้น ไม่มีตัวไหนมาจากผู้เรียก** · ฝั่งหลังบ้านอ่าน
+  tenant จาก `getTenantId(ctx)` และรับ `input.locationId` 2 จุด ซึ่ง **ตรงกับ REST เดิมเป๊ะ**
+  (`/api/bms/inventory/transfers` กับ `/restaurant-requests` ก็ไม่เคยตรวจ
+  `bms_user_allowed_locations`) จึงเป็น parity ไม่ใช่รูรั่วใหม่
+- เขียนเทสใหม่เป็น **10 เทส** เล็งที่ของจริงแทน: parse SDL แล้วเทียบ field จริง ·
+  จับคู่ SDL ↔ resolver **ทั้งสองทิศ** · ประกอบสคีมารวมจริงหนึ่งครั้ง · และกฎ authority
+  เล็งที่ **"อ่านมาจากอะไร"** ไม่ใช่ชื่อตัวแปร (`inputRecord(args.input).tenantId`
+  ต้องแดงเท่ากับ `input.tenantId` — รอบแรกเขียนแบบผูกชื่อตัวแปรแล้วมิวเทชัน M5 รอดไปได้)
+
+#### ⚠️ 2. ไม่มีอะไรตรวจว่า "สคีมารวมยังประกอบได้" ทั้งที่ SDL พังทำให้ `/api/graphql` ตายทั้งเส้น
+
+`route.ts` เรียก `makeExecutableSchema()` **ที่ระดับโมดูล** — SDL ที่พิมพ์ผิดหรือ resolver
+ที่ไม่ตรง type ทำให้ route throw ตั้งแต่ import = **ทุก operation ของทุกคนตาย ไม่ใช่แค่ของ POS**
+· `tsc` มองไม่เห็นเพราะ SDL เป็นสตริง
+
+- แยกการประกอบออกเป็น `apps/web/graphql/schema.ts` (`buildBmsGraphqlSchema()`) แล้ว **route
+  กับเทสใช้ตัวเดียวกัน** — ไม่ใช่สำเนาที่สอง และเทสไม่ต้องไปอ้าง path ลึกใน `node_modules`
+- **⚠️ เทสใน `scripts/` import แพ็กเกจ `graphql` ตรง ๆ ไม่ได้** (ลงไว้ที่ `apps/web/node_modules`
+  เท่านั้น) แต่ import **โมดูลใต้ `apps/web`** ได้ปกติ เพราะ tsx resolve จากที่อยู่ของไฟล์นั้น
+  · นี่คือเหตุผลที่ต้องมี `schema.ts` ไม่ใช่เรียก `makeExecutableSchema` ในเทสเอง
+
+#### ⚠️ 3. `9.70` ไม่ได้อยู่ใน schemaReadiness ทั้งที่ตารางขาดแล้ว "รับของเข้าคลังไม่ได้"
+
+`enqueueRealtimeEventInTx()` **ไม่มีธงและไม่ได้ห่อ try/catch** และถูกเรียกใน
+`receivePurchaseOrder()` (`purchase.ts:587`) **ในทรานแซกชันเดียวกับการรับของ ก่อน COMMIT** →
+ฐานที่ยังไม่ apply `9.70` จะ `42P01` แล้ว **rollback ทั้งก้อน = รับของเข้าคลังไม่ได้เลย**
+ทั้งจากหลังบ้านและจากเครื่องขาย (`9.6`)
+
+- เติม `9.70` เข้า `scripts/schemaReadiness.mts` + regenerate `db/checks/schema-readiness.sql`
+  (ไฟล์นั้นห้ามแก้มือ มีเทสเทียบกับตัวเรนเดอร์อยู่)
+- **`9.71` จงใจไม่ใส่** — trigger ที่ขาดแปลว่า "ไม่มี event" ซึ่งคือ realtime เงียบ ไม่ใช่โค้ดพัง
+  ตามกฎของ readiness เอง (กันฐานที่โค้ด **พัง** ไม่ใช่ฐานที่ช้า)
+- **ยังไม่ได้ไล่ `9.58`–`9.69` ว่าตัวไหนควรอยู่ใน readiness ด้วย** — readiness ค้างอยู่ที่ `9.57`
+  ซึ่งเป็นของก่อนงานรอบนี้ ไม่ใช่ของ codex
+
+#### ที่ตรวจแล้วว่าไม่ใช่บั๊ก (จดไว้กันไล่ซ้ำ)
+
+- **RLS ของ outbox ไม่บล็อก trigger** — `bms_realtime_outbox` เป็น `FORCE ROW LEVEL SECURITY`
+  และ policy **ไม่มีทาง fail-open** (ต่างจากเทมเพลต `4.2` ที่ `COALESCE(..., tenant_id)`)
+  ดูเผิน ๆ เหมือนทุก INSERT ที่ไม่ได้ตั้ง `bms.tenant_id` จะถูกปฏิเสธ · **แต่ `9.71` ตั้ง
+  `OWNER TO bms_realtime_dispatcher` ให้ trigger function ครบทั้ง 23 ตัว + ตัว emit** และ role
+  นั้นเป็น `BYPASSRLS` (สร้างใน `9.70`) → SECURITY DEFINER จึงข้าม RLS ได้จริง · tenant ยังถูก
+  บังคับด้วย `p_tenant_id` ที่แต่ละ trigger ส่งเข้ามา
+- **pump ไม่ทำให้ boot พัง** — `startRealtimeOutboxPump()` ถูกเรียกตอน import
+  `instrumentation.node.ts` ก็จริง แต่ออกทันทีเมื่อ `REALTIME_OUTBOX_DISPATCH_ENABLED !== "1"`
+  และ error ของแต่ละรอบถูก catch + backoff
+- **money path ไม่ถูกแตะ** — diff ของ `lib/bms/pos.ts` มีแค่ helper อ่านล้วน 2 ตัว
+  (`getPosVariantAvailable`, `isPosOrderOwnedByDevice`) ไม่มีการเขียน outbox ในเส้นทางขาย
+- **`bmsPosShiftReport` รับ `shiftId` จากผู้เรียกได้อย่างปลอดภัย** — ส่ง `device.id` เข้า
+  `getPosShiftReport()` เป็นตัว scope และ `getArShiftSummary()` (ซึ่งไม่ scope ด้วย device)
+  อยู่ **หลัง** ด่าน `if (!report)` จึงเข้าถึงกะของเครื่องอื่นไม่ได้
+- **resolver ครบทุก field** — ประกอบสคีมารวมจริงแล้วได้ 254 query / 280 mutation ·
+  field ที่ไม่มี resolver มี 3 ตัว (`_ok`, `globalSearchUnified`, `send`) ซึ่งเป็นของ
+  `coreTypeDefs` ที่ resolver อยู่ฝั่ง WS ตามดีไซน์เดิม **ไม่ใช่ของงานรอบนี้**
+
+#### ยังไม่ได้ทำ
+
+- **เทส DB ของ `9.70`/`9.71` ยังไม่เคยรัน** และ trigger 25 ตัวของ `9.71` ยังไม่เคยยิงกับฐานจริง
+  · เคสที่ควรตรึงเมื่อมีฐาน: เขียน `bms_orders`/`bms_inventory` **นอก** `beginTenantTx`
+  (ไม่ได้ตั้ง `bms.tenant_id`) แล้ว trigger ต้องยังเขียน outbox ได้ — เป็นข้อที่พิสูจน์
+  ด้วยการอ่านอย่างเดียวไม่ได้ เพราะขึ้นกับ owner จริงของ function หลัง apply
+- **write amplification ของ `9.71` ยังไม่ได้วัด** — `AFTER INSERT OR UPDATE ON bms_inventory`
+  ยิงทุกการขยับสต็อก (บิลหนึ่งใบแตะหลายแถว · import แตะหลายพันแถว) ยังไม่รู้ต้นทุนจริง
+- **ยังไม่มี client** — เบราว์เซอร์ POS ยังใช้ REST + polling เหมือนเดิม และไม่มีแอป
+  React Native ในรีโปนี้ · เส้น GraphQL ใหม่จึง **ยังไม่มีผู้เรียกสักราย** (เพิ่มสคีมาอย่างเดียว
+  ไม่เปลี่ยนพฤติกรรมของของเดิม)
+
+
+### recheck responsive layout ของ `/pos/restaurant` ทั้งเส้น — เจอของจริง 8 จุด (2026-09-10)
+
+branch `recheck/pos-restaurant-responsive` (ตัดจาก `develop` ที่ merge #203 แล้ว) ·
+`npm run gate` ผ่าน (typecheck · **pure 1028/1028** จาก 1022 · production build) ·
+**ไม่มี migration · ไม่มี permission ใหม่ · ไม่แตะ page.tsx เลย** (แก้ CSS ไฟล์เดียว) ·
+**เทส DB ไม่ได้รันสักตัว** (เครื่องนี้ Docker ไม่ได้รัน — `docker ps` ต่อ daemon ไม่ได้ · 5432 ปิด)
+· **มิวเทชัน 16 แบบ แดงถูกตัวทุกครั้ง** (13 ของเทสใหม่ + 3 ของเทสเดิมที่เล็งใหม่)
+
+#### วิธีวัด — เปิดของจริงในเบราว์เซอร์ ไม่ใช่หน้าเช็คที่ยกสไตล์มาวาด
+
+รอบก่อน ๆ ใช้ `public/_csscheck` / `_footercheck` (ยก inline style มาวาดใหม่) ซึ่ง **วัดโหมด
+responsive ไม่ได้** เพราะไม่มี antd จริง ไม่มี `pos.css` จริง และไม่มี media query ของหน้าจริง
+· รอบนี้เปิด `next dev` (พอร์ต 3300) แล้ว **แพตช์ `window.fetch` ป้อน response จำลองครบทุก
+endpoint ของ `/api/pos/*`** → ได้ react tree จริง · CSS module จริง · CSS-in-JS ของ antd จริง
+**โดยไม่ต้องมีฐานข้อมูลเลย** (Docker ไม่ได้รันก็ทำได้)
+
+- **ไม่แตะฐานข้อมูล ไม่ยืม token ของเครื่องจริง** — ตั้ง `localStorage["bms.pos.deviceToken"]`
+  เป็นค่ามั่ว ๆ แล้วให้ mock ตอบ `/api/pos/session` เอง (ต่างจากรอบก่อนที่ยืม `token_hash`
+  ของ POS-01 มาแล้วต้องคืน)
+- ตัววัดสแกน DOM ทั้งหน้าแล้วรายงานสามอย่าง: กล่องที่ยื่นพ้นจอ · กล่องที่เนื้อในกว้างกว่าตัวเอง
+  ทั้งที่ `overflow-x` เลื่อนไม่ได้ · เป้าแตะที่เล็กกว่า 32×28px
+- ไล่ **12 ความกว้าง** (320 · 360 · 390 · 460 · 461 · 640 · 768 · 900 · 960 · 1024 · 1180 · 1440)
+  × **8 จอ** (สั่ง/โต๊ะ/คิว/QR/เรียก/ครัว/บิล/กะ) + โมดัลทุกใบที่เปิดได้
+- **⚠️ `window.innerWidth` เป็น 0 เมื่อ browser pane ถูกซ่อน** — ต้อง `resize_window` ตั้งขนาด
+  ชัดเจนก่อนวัดทุกครั้ง ไม่งั้นเลย์เอาต์เป็นศูนย์และเลขที่ได้ไม่มีความหมาย
+- **⚠️ โมดัล antd ปิดไม่ลงเมื่อ pane ถูกซ่อน** — แอนิเมชันปิดพึ่ง rAF ซึ่งไม่เดินในแท็บที่ซ่อน
+  `.ant-modal-wrap` จึงค้าง `display: block` · **อย่าอ่านว่าเป็นบั๊กของแอป** (เสียเวลาไปหนึ่งรอบ)
+  · เปิด pane ให้เห็น (สั่ง screenshot หนึ่งครั้ง) แล้วมันปิดเอง
+- **⚠️ โมดัลซ้อนกันได้หลายใบ** แล้ว `querySelector('.ant-modal')` คืนใบแรกเสมอ — การวัด
+  "โมดัลที่เพิ่งเปิด" ด้วย selector นั้นจะไปวัดใบเก่าทุกครั้ง (รอบแรกรายงานผ่านหมดโดยวัดใบเดียว)
+
+#### ⚠️ 1. คอลัมน์ชื่อเมนูบนแผงบิลเหลือ 54px และแถวสูง 387px ต่อรายการ
+
+`.item { grid-template-columns: 28px minmax(0, 1fr) auto }` — คอลัมน์ที่สาม (`.itemSide` =
+ราคา + ปุ่มสั่งใหม่/ลบ) กินตาม min-content **ซึ่งหดไม่ได้** (ปุ่มมี `min-width: 62px` โดยตั้งใจ)
+ส่วนชื่อเป็น `minmax(0, 1fr)` จึงยุบให้หมด · วัดจริงที่ 320px: `28px | 54px | 122px`
+→ ชื่อไทยตกบรรทัดละ 1-2 ตัวอักษรเป็นเสาสูง 126px และแถวทั้งแถวสูง **387px ต่อหนึ่งรายการ**
+= แผงที่ตอบว่า "ลูกค้าสั่งอะไร" อ่านไม่ได้เลย ซึ่งเป็นเนื้อหาหลักของจอนี้
+
+- แก้ด้วยบล็อกใหม่ `@media (max-width: 460px)`: `.item` เหลือสองคอลัมน์ · `.itemSide` ลงไป
+  กินแถวของตัวเองเต็มความกว้าง (รูปเดียวกับที่ `.queueActions` ทำที่ 640px)
+- **หลังแก้ (วัดจริง): `28px | 185px` แถวสูง 198px** — ชื่อได้ที่คืนมา 3.4 เท่า
+- **460px มาจากการวัด ไม่ได้เดา**: ที่ความกว้างนี้คอลัมน์ชื่อได้ ~196px ซึ่งยังพออ่านจบ
+  บรรทัดเดียว · กว้างกว่านี้จึงคงแถวเดียวไว้ เพราะการซ้อนสองแถวกิน ~38px ต่อรายการ
+  และบิลหนึ่งใบมี 5-15 รายการ
+- **⚠️ บล็อกใหม่ต้องอยู่ท้ายไฟล์ หลังบล็อก 640px** — specificity เท่ากัน ลำดับเป็นตัวตัดสิน
+  (เทสบังคับว่า `@media` ต้องเรียงกว้าง→แคบ)
+
+#### ⚠️ 2. ปุ่ม "ปฏิเสธ" ของออร์เดอร์ QR อยู่ที่ `left: -28px` = เลื่อนไปกดไม่ได้เลย
+
+`.qrActions` เป็น `space-between` + **ไม่มี `flex-wrap`** และ `.qrActions .btn` ตั้ง
+`min-width: 150px` · ที่ 320px กล่องกว้าง 196px แต่เนื้อในต้องการ 312px → `space-between`
+ดันปุ่มซ้าย **ออกไปทางซ้ายของกล่อง** (วัดได้ left −28) ไม่ใช่ล้นทางขวา
+
+- **เลื่อนซ้ายพ้นจุดศูนย์ไม่ได้ → ปุ่มนั้นเข้าถึงไม่ได้ถาวร** ไม่ใช่แค่ต้องเลื่อนหา ·
+  เป็นปุ่มตัดสินใจของออร์เดอร์ที่ลูกค้าสั่งมาจากโต๊ะ
+- **⚠️ ตัววัดรอบแรกมองไม่เห็น** เพราะ `scrollWidth == clientWidth` (ล้นทางซ้ายไม่ทำให้
+  scrollWidth โต) และ `.qrScreen` มี `overflow-y: auto` → computed `overflow-x: auto`
+  จึงถูกตีว่า "มี scroller อธิบายแล้ว" · ต้องเพิ่มกฎ **`left < 0` เป็นความผิดเสมอ ไม่สนว่ามี
+  scroller ไหม** ถึงจะจับได้
+- แก้เป็น `flex-wrap: wrap` + `flex: 1 1 150px; min-width: 0` (รูปเดียวกับ `.enrollActions .btn`)
+
+#### ⚠️ 3. `input` ที่ซ่อนไว้ในกล่องเลือกตัวเลือกเรนเดอร์ 374×44 แทน 1×1 — กล่องปัดออกนอกจอได้จริง
+
+`.modifierChipInput { position: absolute; width: 1px; height: 1px; ... }` เป็น (0,1,0) แต่
+**`.modalGrid input` ในไฟล์เดียวกัน** เป็น (0,1,1) และตั้ง `width: 100%` → ชนะ ·
+radio/checkbox ที่ควรเป็น 1×1 จึงกลายเป็นกล่อง absolute กว้างเท่า `.ant-modal-content`
+(ไม่มี ancestor ไหน positioned) และสูง 44px จาก `min-height` ของ `.pos-root input`
+
+- **ผลที่วัดได้**: `.ant-modal-content` มี scrollWidth เกินตัวเอง 195px · `.ant-modal-wrap`
+  **เลื่อนข้างได้จริง 187px** → ปัดนิ้วในกล่อง "เพิ่มเมนู" แล้วกล่องไถลออกนอกจอ ขณะที่
+  แคชเชียร์กำลังเลือกระดับความเผ็ด · เกิดทุกความกว้าง (ที่ 1440 ยังไถลได้ ~38px)
+- **มองด้วยตาไม่เห็นเลย** เพราะ input พวกนั้น `opacity: 0; pointer-events: none` — สิ่งที่เห็น
+  คือ "กล่องเลื่อนได้" ซึ่งไม่มีใครโยงกลับมาที่ input ที่มองไม่เห็น
+- **⚠️ กับดักตอนไล่: เป็นกฎในไฟล์ตัวเอง ไม่ใช่ `pos.css`** — ไฟล์นี้มีคอมเมนต์เตือนเรื่อง
+  `:where(.pos-root) button` ไว้สามที่แล้ว แต่ฝั่ง `input` ไม่มีใครเตือน และตัวที่ชนะจริง
+  คือ `.modalGrid input` ของตัวเอง · ยืนยันด้วยการ **ปิด stylesheet ทีละใบ** (`sheet.disabled`)
+  แล้วดูว่าความกว้างเปลี่ยนตอนปิดใบไหน — เดาจาก specificity ด้วยตาพลาดไปสองรอบ
+- แก้เป็น `.page .modifierChipInput` (0,2,0) + ระบุ `min-height: 0; padding: 0; border: 0`
+  · **`min-height` ต้องระบุด้วยเสมอ** เพราะ min-height ชนะ height ไม่ว่า specificity เป็นอย่างไร
+
+#### ⚠️ 4. ตั๋วจอครัวล้นกล่องในช่วง 901–1180px
+
+`.lanes { repeat(4, minmax(210px, 1fr)) }` — ที่ 960px เลนถูกบีบเหลือ ~212px แล้ววัดได้
+ชื่อเมนูล้น 29px · แถวปุ่มล้น 5px · หัวตั๋วล้น 4px · ที่ ≤900px กลับปกติเพราะกฎที่นั่นตั้ง
+`repeat(4, 260px)` ตายตัวไปแล้ว **จึงเป็นบั๊กของช่วงกลางที่ไม่มีใครเปิดดู** (จอ 13" คือช่วงนี้พอดี)
+
+- แก้รางขั้นต่ำ 210px → **260px** · กระดานยอมให้เลื่อนข้างอยู่แล้ว (`overflow-x: auto`)
+  การเลื่อนข้างจึงถูกกว่าการบีบตั๋วจนอ่านไม่ออก — และเป็นทางที่กฎ ≤900px เลือกไว้แล้ว
+- ที่ ≥1180px ไม่มีอะไรเปลี่ยน (`1fr` ชนะ · วัดแล้วได้ 332px ต่อเลนเหมือนเดิม)
+- **วัด min-content ของชื่อเมนูไทยจริงก่อนตั้งเลข**: Chrome ตัดคำไทยด้วยพจนานุกรม ตัวที่แย่สุด
+  ในชุดทดสอบคือ 88px ที่ฟอนต์ 17px → ราง 260px ให้คอลัมน์ชื่อ 124px ซึ่งเหลือ ๆ
+  **จึงไม่ต้องใส่ `overflow-wrap: anywhere`** (เคยคิดว่าต้องใส่ แต่ตัวเลขบอกว่าไม่จำเป็น)
+
+#### 5. ปุ่มไอคอนหดเหลือ 28px · 6-8. กริด auto-fill ยืนกรานรางที่กว้างกว่ากล่อง
+
+- **`.page .btnIcon` ไม่มี `flex: none`** — เป็น flex item ปริยายจึง shrink ได้ · ที่ 320px
+  ปุ่ม ⋯ ของแผงบิล (ซึ่งถือ "ย้ายโต๊ะ / แยกบิล / รวมบิล / ยกเลิกบิล") วัดได้ **28×40** ·
+  ปุ่มในแถบบนรอดเพราะบล็อก 640px เคยเติม `flex: 0 0 40px` ให้เฉพาะ `.topbar .btnIcon`
+  = เคยเจอปัญหานี้แล้วแต่แก้เฉพาะจุด
+- **`repeat(auto-fill, minmax(<px>, 1fr))` ยืนกราน `<px>` แม้กล่องแคบกว่านั้น** → ล้นออกข้าง
+  · วัดที่ 320px (กล่อง 232px): `.receiptGrid` ล้น 8px · `.serviceCallGrid` ล้น 28px
+  · แก้เป็น `minmax(min(<px>, 100%), 1fr)` ทั้งสาม (รวม `.dishGrid` ที่ยังไม่ล้นวันนี้ —
+  เทสบังคับเป็นกฎทั่วไป ไม่ใช่ allowlist ที่รอวันเน่า)
+- **`.queueActions` สามปุ่มต้องการ 235px ในกล่อง 208px** ที่ 320px แล้ว "ยกเลิก" พ้นการ์ด
+  → `flex-wrap: wrap` (`flex: 1 1 0` หดต่ำกว่า min-content ไม่ได้ จึงต้องให้ตกบรรทัด)
+
+#### ⚠️ เทสเดิม 1 ไฟล์ต้องเล็งใหม่ — `indexOf` คืน −1 เพราะ anchor เป็น declaration ทั้งบรรทัด
+
+`menu-card-legibility-contract` (ของ PR #202 วันเดียวกัน) หา "บล็อกจอมือถือ" ด้วย
+`css.indexOf(".dishGrid { grid-template-columns: repeat(auto-fill, minmax(124px")` ตรงตัว
+· พอรางกลายเป็น `minmax(min(124px, 100%)` → `indexOf` = −1 แล้วเทสสองตัวแดง **ทั้งที่การันตี
+ของมัน (ราคาใหญ่กว่าชื่อ · ความสูงชื่อเป็น em) ยังจริงทุกข้อ**
+
+- ย้าย anchor ไปที่ `@media (max-width: 640px)` ผ่าน helper `mobileBlock()` ที่มีด่าน −1
+  ในตัว — anchor ควรเป็น "ขอบเขต" ไม่ใช่ค่าที่กฎข้างในถืออยู่
+- **ยืนยันว่าการเล็งใหม่ไม่ได้ทำให้อ่อนลง** ด้วยมิวเทชัน 3 แบบ (ราคาเล็กกว่าชื่อในบล็อกมือถือ ·
+  ความสูงชื่อเป็น px ในบล็อกมือถือ · ในบล็อกฐาน) แดงถูกตัวทุกครั้ง
+- **ตรวจว่าเป็น regression ของรอบนี้จริง** ด้วยการเอา CSS ของ `develop` มาวางแล้วรันเทียบ
+  (เขียว) — ไม่ได้เดาจากชื่อเทส
+
+#### เทส
+
+`scripts/restaurant-responsive-contract.test.mts` (**6 เทส pure**) — ตรึง "กติกาที่ทำให้เรขาคณิต
+ถูก" ไม่ใช่ตัวเลขพิกเซล เพราะชุด pure ไม่มีเบราว์เซอร์: ปุ่มไอคอนต้อง `flex: none` · รางเลน
+ครัวต้อง ≥260px และยังเลื่อนข้างได้ · กฎของ `.modifierChipInput` ต้องมีคลาส ≥2 ตัวและล้าง
+`min-height` · แถวปุ่มที่มีหลายปุ่มต้องตกบรรทัดได้และห้ามมี `min-width` เป็น px ·
+**ทุก `repeat(auto-fill, minmax(<px>,…))` ต้องห่อด้วย `min(<px>, 100%)`** · บล็อก 460px
+ต้องมีอยู่ ต้องอยู่หลัง 640px และต้องยก `.itemSide` ลงแถวของตัวเอง
+
+- **⚠️ ตัวช่วยอ่านกฎต้องรวม body ของทุกกฎที่เล็ง selector เดียวกัน** — `.qrActions` ถูกประกาศ
+  สองที่ (`.qrDetailHead, .qrTotal, .qrActions` ตั้ง display แล้วอีกกฎเติม `flex-wrap`)
+  เทสที่อ่านแค่กฎแรกแดงด้วยเหตุผลผิด (เจอตอนรันรอบแรก)
+- **⚠️ ต้องตัดคอมเมนต์ก่อนสแกน** — คอมเมนต์ที่ผมเพิ่งเขียนอธิบายรูปแบบเก่าเอง
+  (`minmax(260px, 1fr)`, `width: 100%`) ซึ่งเป็นรูปที่เทสห้ามไว้ · และไฟล์เป็น CRLF
+  จึงต้อง split ด้วย `/\r?\n/`
+- **มิวเทชัน 13 แบบของเทสใหม่ แดงถูก subtest ทุกตัว** — ทดสอบ **แยกทีละแบบ** รวมถึงคู่ที่
+  แยกครึ่งได้ (`.page` หาย / `min-height` หาย · `.queueActions` / `.qrActions` / `.qrActions .btn`
+  · `.receiptGrid` / `.serviceCallGrid` / `.dishGrid` · ลบบล็อก 460px / ไม่ยก `.itemSide` /
+  ย้ายบล็อกไปไว้ก่อน 640px) เพราะเทสที่จับได้แค่ตอนถอดพร้อมกันคือเทสที่อ่อน
+- **กฎ: commit ก่อน mutate ทุกครั้ง** แล้วตรวจ `git status` + เทียบไบต์ของไฟล์หลังชุดจบ
+  (ยืนยันแล้วว่าคืนตรงทุกไบต์ทั้งสองชุด)
+
+#### ที่ตรวจแล้วว่าไม่ใช่บั๊ก (จดไว้กันไล่ซ้ำ)
+
+- **ผังโต๊ะเลื่อนข้างได้โดยตั้งใจ** — ตำแหน่ง/รูปทรงมาจาก `/admin/restaurant-floor` และต้องตรง
+  กับพื้นที่จริง `.floorViewport` จึงมี `overflow: auto` ของตัวเอง (ที่ ≤900px `.panelScroll`
+  กลายเป็น `overflow: visible` แต่ viewport ยังคุมของตัวเองอยู่)
+- **เก้าอี้/จุดสถานะ/ป้ายจำนวนบิลยื่นพ้นการ์ดโต๊ะโดยตั้งใจ** (คอมเมนต์ในไฟล์อธิบายไว้แล้ว) —
+  ตัววัดต้องมีลิสต์ยกเว้น ไม่งั้นรายงาน 6 รายการปลอมทุกความกว้าง
+- **โมดัลของ antd ไม่ล้นจอ** — antd v5 ตั้ง `max-width: calc(100vw - 16px)` ให้เอง ·
+  ไล่แล้วทุกใบที่เปิดได้ (ผู้ปฏิบัติงาน · เพิ่มเมนู · จัดการบิล · ใบเสร็จ · แยกบิล · รวมบิล)
+  สะอาดที่ 320px หลังแก้ข้อ 3
+- **ช่องค้นหาสูง 44px ไม่ใช่ 40px ตามที่เขียน** — `min-height` ของ `pos.css` ชนะ `height`
+  ซึ่งเป็นพฤติกรรมของ min-height ไม่ใช่ specificity และ 44px เป็นเป้าแตะที่ดีกว่า **ไม่ต้องแก้**
+- **กริดเมนูเหลือคอลัมน์เดียวที่ 320px** (ราง 124px × 2 + gap = 256 > พื้นที่ 212px) —
+  คอมเมนต์ของบล็อก 640px ตั้งเป้าไว้ที่ 375px ซึ่งได้สองคอลัมน์จริง
+- **คอลัมน์ชื่อบนแผงบิลได้ 131px ที่ 1440px** เพราะแผงขวากว้าง 360px ตายตัว — ชื่อยาวตกสองบรรทัด
+  ซึ่งเป็นดีไซน์เดิม ไม่ใช่อาการเดียวกับข้อ 1
+
+#### ยังไม่ได้ทำ
+
+- **ยังไม่ได้ทดสอบโหมดมืดที่จอแคบ** — วัดทั้งหมดในโหมดสว่าง · โหมดมืดต่างกันแค่ค่าตัวแปรสี
+  (ไล่มาแล้วเมื่อ 2026-09-05) แต่ไม่ได้ยืนยันซ้ำในรอบนี้
+- **ยังไม่ได้แตะจอค้าปลีก `/pos`** — ไฟล์เดียว 9,800+ บรรทัดและ `pos.css` มีสีดิบ/ขนาดดิบ
+  จำนวนมาก ควรเป็นรอบของตัวเอง · แต่ **กับดักสองอย่างที่เจอรอบนี้น่าจะมีที่นั่นด้วย**:
+  ปุ่มไอคอนที่ไม่มี `flex: none` และกฎที่ตั้งขนาดให้ `input` ด้วยคลาสเดี่ยว
+- **ยังไม่มี harness วัดเรขาคณิตใน CI** — เทสที่เพิ่มเป็นการสแกนซอร์ส ซึ่งจับ "กติกาหาย" ได้
+  แต่จับ "เลย์เอาต์ใหม่ที่ล้นด้วยเหตุอื่น" ไม่ได้ · ถ้าจะทำ ทางที่สั้นที่สุดคือเก็บสคริปต์วัด
+  (fetch mock + ตัวสแกน DOM) ไว้เป็นไฟล์ในรีโปแล้วรันด้วย Playwright ที่มีอยู่แล้ว
+- **ไม่ได้ทดสอบแนวนอนบนมือถือจริง** (จอ 640–930 ซึ่งเข้าบล็อก ≤900 แต่ไม่เข้า ≤640) —
+  วัดที่ 768 และ 900 แล้วสะอาด แต่ความสูงจริงของมือถือแนวนอน (~390px) ยังไม่ได้ลอง
+
+
+### เสียงเตือนออร์เดอร์เข้า + ทำไม "ส่งครัวแล้วรอ 3-5 นาที" — 2026-09-08
+
+branch `feat/order-alert-sound-and-realtime` (ตัดจาก `develop` ที่ merge #193 แล้ว) ·
+`npm run gate` ผ่าน (typecheck · **pure 968** จาก 944 · production build) ·
+**ไม่มี migration · ไม่มี permission ใหม่** · **เทส DB ไม่ได้รันสักตัว** (เครื่องนี้ Docker
+ไม่ได้รัน — `docker ps` ต่อ daemon ไม่ได้ · 5432 ปิด) · **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** ·
+**มิวเทชัน 44 แบบ แดงถูก subtest ทุกครั้ง**
+
+#### ⚠️ ฝั่ง server ไม่ผิดเลย — เวลาที่หายไป 3-5 นาทีอยู่ที่จอทั้งหมด
+
+ไล่แล้ว: ตั๋วครัวถูก `INSERT` ในทรานแซกชันเดียวกับการส่งครัวแล้ว commit ทันที
+(`restaurantPos.ts` · `enqueueKitchenTicketsInTx`) · route เป็น `force-dynamic` ·
+client ยิงด้วย `cache: "no-store"` → **latency ของข้อมูล ≈ 0 วินาที**
+
+สาเหตุที่จอ **6 อย่าง** แก้ครบแล้ว · **ห้าข้อแรกเป็นบั๊กจริงแต่ไม่ใช่ตัวที่ร้านเจอ** —
+ผู้ใช้ยืนยันว่าจอครัวเปิดค้างที่แท็บครัวและจอไม่ดับ ตัวที่ทำให้เขาช้าคือข้อ 6 (ดูหัวข้อถัดไป):
+
+
+1. **ตั๋วครัว poll เฉพาะตอนเปิดแท็บครัวอยู่** (`screen !== "KITCHEN" return`) → ป้ายเลขข้างเมนู
+   "ครัว" คำนวณจาก `tickets` ที่ไม่เคยถูกโหลด **จึงไม่มีวันขยับตอนพนักงานยืนหน้าผังโต๊ะ** ·
+   และ `loadFloor()` อยู่ใน effect เดียวกัน = **ผังโต๊ะเองก็ไม่ refresh** เครื่อง A เปิดโต๊ะ
+   เครื่อง B ที่ยืนหน้าผังไม่เห็นจนกว่าจะกดอะไร
+   · **เป็นกับดักเดียวกับที่โค้ดนี้เขียนคอมเมนต์เตือนไว้เองแล้วสำหรับป้าย QR และป้ายคิว
+   แต่ไม่ได้แก้ให้ตั๋วครัว**
+2. **ไม่มี `visibilitychange` handler เลยทั้งไฟล์** (มีแต่ `afterprint`) — Chrome หรี่ timer
+   ของแท็บที่ถูกซ่อน และเมื่อซ่อนครบ ~5 นาทีเข้า intensive throttling = เดินราว 1 ครั้ง/นาที ·
+   Android freeze ทั้งหน้าเมื่อจอดับ · **ตัวเลข "5 นาที" ของ Chrome ตรงกับอาการพอดี**
+3. **คิวคำขอจากแชท/AI ไม่ poll เลย** — `RestaurantRequestQueue` โหลดครั้งเดียวตอน mount และ
+   ฝั่งเครื่องขายต้องกดปุ่มเอง ไม่มีป้ายนับ ไม่มีเสียง = **รอได้ไม่จำกัด ไม่ใช่แค่ช้า**
+4. **ป้าย "อัปเดตอัตโนมัติ" อ่านจาก `boardNow` ซึ่งเป็นนาฬิกาที่เดินทุกวินาที** จึงเดินสวย
+   ตลอดแม้เน็ตตายไปแล้วสิบนาที — จอครัวที่ค้างเงียบ ๆ อ่านไม่ต่างจากจอครัวที่ไม่มีออร์เดอร์
+5. **`/pos` ค้าปลีก แท็บ "ออร์เดอร์เข้า" ก็ผูกกับแท็บเหมือนกัน** (`tab !== "incoming" return`)
+   และไม่มีป้ายนับบนแถบซ้าย
+
+#### ⚠️ สาเหตุที่หก — ที่ร้านเจอจริง: ต้นทุน query ของจอครัวโตตามอายุร้าน (`9.68`)
+
+**ผู้ใช้ยืนยันรอบสอง: จอครัวคือ `/pos/restaurant` แท็บครัว และ "จอสว่างค้างไว้"** →
+ตัดข้อ 1 กับข้อ 2 ข้างบนทิ้งสำหรับเคสนี้ (จอที่เปิดค้างและไม่ดับไม่โดนหรี่ timer)
+**ห้ามอ่านหัวข้อข้างบนว่าเป็นคำอธิบายของอาการที่รายงานมา** — สองข้อนั้นเป็นบั๊กจริงและ
+ทำให้ป้ายบนแถบซ้ายตาย แต่ไม่ใช่ตัวที่ทำให้จอครัวที่เปิดค้างอยู่ช้าเป็นนาที
+
+**ต้นเหตุจริงมีสองชั้นซ้อนกัน:**
+
+1. **`listKitchenTickets()` กรองสถานะ *ข้างนอก* UNION** แล้วดัชนีที่มีอยู่สองตัว
+   (`idx_bms_kitchen_tickets_queue`, `idx_bms_restaurant_kitchen_queue`) ขึ้นต้นด้วย
+   **`station`** ซึ่ง query นี้ไม่ได้กรองเลย → Postgres อ่านตั๋ว **ทั้งประวัติของร้าน**
+   join กับ order items / checks / tables เรียงทั้งกอง แล้วค่อยตัดเหลือ 200 ใบ
+   · **ต้นทุนโตทุกวันที่ร้านเปิด** ร้านที่ขายมาสามเดือนอ่านตั๋วหลายหมื่นใบทุก 5 วินาที
+   · อาการจึงเป็น "ตอนเปิดร้านใหม่ ๆ เร็ว แล้วค่อย ๆ ช้าลงจนคนเริ่มบ่น" ซึ่งไม่มีใครโยง
+     กลับไปหาโค้ดได้เพราะไม่มีอะไรเปลี่ยน
+2. **รอบ poll เดิมยิงทุก 5 วินาทีโดยไม่สนว่ารอบก่อนตอบหรือยัง** พอคำตอบช้ากว่า 5 วินาที
+   คำขอกองสะสม ชน **เพดาน 6 connection ต่อโดเมนของเบราว์เซอร์** แล้วคำตอบใหม่สุดต้องรอ
+   คิวที่ยาวขึ้นเรื่อย ๆ จนกลายเป็นหลายนาที · และเดิมยิง **สองคำขอต่อรอบ**
+   (`Promise.all([loadTickets(), loadFloor()])`) จึงชนเพดานเร็วเป็นสองเท่า
+
+#### แก้ยังไง
+
+- **ย้ายตัวกรองเข้าไปในทั้งสองกิ่งของ UNION** + `9.68` เพิ่ม **partial index 4 ตัว**:
+  ตั๋วที่ยังไม่จบเรียง `created_at` (ไม่มีขอบเวลา เพราะกระดานเห็นเสมอ) · ตั๋วที่เสิร์ฟแล้ว
+  เรียง `updated_at` (ตัวกรองคือ 12 ชม.ล่าสุดวัดจากเวลาที่กดเสิร์ฟ ไม่ใช่เวลาที่สั่ง)
+  · **partial โดยตั้งใจ**: ตั๋วที่ยังไม่จบมีไม่กี่สิบใบเสมอไม่ว่าร้านเปิดมากี่ปี ดัชนีจึงเล็กคงที่
+  และการอ่านกระดานมีต้นทุนเท่ากับ "ครัวยุ่งแค่ไหนตอนนี้"
+- **⚠️ รายการสถานะต้องเป็น literal ใน SQL ไม่ใช่ `= ANY($n::text[])`** — planner พิสูจน์ไม่ได้ว่า
+  พารามิเตอร์ตรงกับ predicate ของ partial index เพราะค่าเพิ่งรู้ตอนรัน → ดัชนีถูกสร้างทิ้งไว้
+  โดยไม่มีใครใช้ และไม่มีอะไรฟ้องเลย · `KITCHEN_OPEN_STATUS_SQL` ประกอบจากค่าคงที่ในไฟล์
+  (ไม่ได้มาจากผู้เรียก) และมีเทสตรึงว่าตรงกับ predicate ในไฟล์ migration เป๊ะ ๆ
+- **ด่านกันรอบซ้อน + `AbortController` + timeout 10 วินาที** ใน `useLiveRefresh`
+  · **⚠️ ด่านที่ไม่มี timeout อันตรายกว่าไม่มีด่าน**: `fetch` ไม่มี timeout ในตัวเลย คำขอที่
+  ค้างครึ่งทาง (เน็ตร้านหลุด) จะทำให้ `inFlight` ค้าง `true` ตลอดกาล = **จอหยุดอัปเดตถาวร**
+  · ต้อง `Promise.race` ไม่ใช่แค่ `abort()` เพราะผู้เรียกที่ไม่ได้ส่ง signal ต่อให้ `fetch`
+  (เช่น Apollo `refetch()` ที่หลังบ้าน) จะยังค้างอยู่ดี
+- **ผังโต๊ะแยกรอบออกจากตั๋วครัว** — จอครัวไม่ต้องการผังใหม่ทุก 5 วินาที
+- **route คิวครัวส่ง `Cache-Control: no-store`** — `force-dynamic` คุมแค่แคชของ Next เอง
+  ไม่ได้ประกาศอะไรกับ reverse proxy หน้าแอป (รีโปนี้มี Caddy) · และคืน `generatedAt`
+  ไว้ยืนยันว่า "คำตอบนี้เป็นของรอบไหน" ตอนไล่ปัญหาจากหน้าร้าน
+
+#### ⚠️ ต้อง apply `9.68` ก่อนถึงจะหายจริง
+
+โค้ดที่แก้แล้ว **ทำงานถูกต้องโดยไม่มีดัชนี** (แค่ยังช้า) จึงไม่ได้ใส่ใน `schemaReadiness`
+โดยตั้งใจ — ด่าน readiness มีไว้กันฐานที่โค้ด **พัง** ไม่ใช่ฐานที่ช้า · แต่แปลว่า deploy
+โค้ดอย่างเดียวแล้วร้านจะยังบ่นเหมือนเดิม **ต้องรัน `9.68` ด้วย**
+· `CREATE INDEX` ล็อกเขียนของตารางตั๋วสั้น ๆ — รันตอนไม่มีใครส่งครัวอยู่
+· ยืนยันว่าดัชนีถูกใช้จริงด้วย `EXPLAIN (ANALYZE, BUFFERS)` ของ `listKitchenTickets` บนฐานจริง
+**ห้ามเชื่อว่าเร็วขึ้นเพราะสร้างดัชนีแล้ว** — ถ้า predicate ไม่ตรงกัน planner จะข้ามไปเงียบ ๆ
+
+#### เทสของรอบนี้
+
+`order-alert-sound-contract` เป็น **30 เทส** (จาก 24) · **มิวเทชันรวมทั้งงาน 35 แบบ แดงถูกตัวทุกครั้ง**
+
+- ตัวใหม่ตรึง: ตัวกรองต้องอยู่ครบทั้งสองกิ่ง (ขาดกิ่งเดียว = กิ่งนั้นยังอ่านทั้งประวัติ) ·
+  literal ต้องตรงกับ predicate ของ migration · ด่านต้องปลดใน `finally` · ทุกจอต้องส่ง signal ·
+  ผังโต๊ะต้องมีรอบของตัวเอง · route ต้องห้ามแคช
+- **⚠️ เทสห้าม `= ANY($n)` ต้องเล็งเฉพาะ SQL ของกระดาน** — `kitchen.ts` มีการใช้รูปนี้อย่าง
+  ถูกต้องในฟังก์ชันอื่น (ยกเลิกตั๋วของบิล) การห้ามทั้งไฟล์จะแดงด้วยเหตุผลผิด
+- **เทสเดิม 2 ตัวใน `restaurant-pos-contract` ต้องเล็งใหม่รอบที่สอง** ตาม signature ที่รับ signal
+
+#### ที่ยังไม่ได้ตัดออก (ถ้า apply `9.68` แล้วยังช้า ให้ไล่ต่อจากนี้)
+
+- **`/api/pos/restaurant/floor`** ยังไม่ได้วัด — มันนับรายการต่อบิลด้วย `LEFT JOIN` +
+  `GROUP BY` ทุกครั้ง ถ้าโต๊ะเยอะและบิลเปิดค้างเยอะ อาจเป็นตัวถัดไป
+- **ยังไม่มี server timing ที่ไหนเลย** — `withRouteErrorLog` เก็บเฉพาะตอน error ·
+  ถ้าจะไล่ต่อควรบันทึก duration ของ route นี้ก่อน แล้วค่อยเดา
+- **`pg_stat_statements` ยังไม่ได้เปิดบน production** (จดไว้ตั้งแต่ § System Health) ซึ่งเป็น
+  เครื่องมือที่ตอบคำถามนี้ได้ตรงที่สุด
+
+#### ⚠️ เสียงมีที่เดียวในทั้งระบบ และปิดไว้เป็นค่าปริยาย
+
+`playKitchenChime` ของ `9.53` อยู่ที่ `/pos/restaurant` แท็บครัวเท่านั้น ·
+`/admin/kitchen` **ไม่มีเสียงเลย** ทั้งที่ทำงานเดียวกัน · QR/แชทไม่มีเสียง
+
+- **บั๊กที่ไม่มีใครเจอ**: `AudioContext` ถูกสร้างครั้งแรกจากใน `setInterval` ซึ่งไม่ใช่ user
+  gesture → เบราว์เซอร์ให้ context สถานะ `suspended` และ `resume()` จากที่นั่นไม่ผ่าน ·
+  **หลังรีเฟรชหน้า/แท็บเล็ตรีบูต ปุ่มโชว์ว่า "เปิดเสียงอยู่" แต่เงียบสนิท โดยไม่มีอะไรบอก**
+- ค่าปริยาย `useState(false)` = แท็บเล็ตเครื่องใหม่ทุกเครื่องเริ่มต้นแบบเงียบ ซึ่งอ่านไม่ต่างจาก
+  "ระบบไม่มีเสียงเตือน" · เปลี่ยนเป็น **เปิด** แล้ว และเสียงที่ถูกบล็อกขึ้นแถบเตือนบนจอแทน
+  (ร้านที่เคยกดปิดไว้ยังถูกเคารพผ่านคีย์เดิม `bms.pos.kitchenChime`)
+
+#### ทางที่เลือก: polling ที่รู้ว่าตัวเองถูกมองอยู่ไหม ไม่ใช่ SSE/WebSocket
+
+**รีโปมี ws gateway (`apps/ws`, graphql-ws) + Redis pub/sub ใช้งานจริงอยู่แล้ว**
+(`bmsInboxChanged` push เข้า `/admin/inbox` ได้) แต่ **ไม่ได้ใช้กับจอ POS โดยตั้งใจ**:
+
+- ws ยืนยันตัวตนด้วย cookie/JWT ของ user เท่านั้น — จอ POS ใช้ device token จึง subscribe ไม่ได้
+  (ต้องเปิดทาง auth ใหม่ที่ gateway)
+- `app/(pos)/pos/layout.tsx` ไม่มี Apollo provider เลย — การเติมเข้าไปคือ bundle ที่ layout นั้น
+  จงใจเลี่ยง (คอมเมนต์ในไฟล์เขียนไว้เองว่าแท็บเล็ตหน้าร้านมักเป็นเครื่องเก่า)
+- **และที่สำคัญที่สุด: การหรี่ timer ตอนจอดับเป็นปัญหาของ "จอ" ไม่ใช่ของ "ทรานสปอร์ต"** —
+  WebSocket ในแท็บที่ถูก freeze ก็ไม่ส่งอะไรเข้ามาเหมือนกัน · แก้ visibility + wake lock
+  ได้ผลก่อน แล้วค่อยลงทุน push เมื่อมีเหตุผลจริง (KDS ระดับกลางในตลาดส่วนใหญ่ก็ poll 3-10 วิ)
+
+#### ของใหม่
+
+- **`lib/pos/orderAlertSound.ts` (pure ไม่ import อะไรเลย)** — เสียง 6 แบบ + "ไม่มีเสียง" ·
+  `normalizeOrderAlertSettings` · `newAlertIds` · `evaluateAlertRepeat` · `feedHealth` ·
+  `describeAgo` · `alertPollIntervalMs`
+- **`lib/pos/orderAlertPlayer.ts`** — WebAudio · **`play()` คืน `false` เมื่อ context ยัง
+  suspended** (การรายงานว่าดังแล้วทั้งที่เงียบคือสิ่งที่ทำให้บั๊กเดิมอยู่ได้นาน)
+- **`app/hooks/useLiveRefresh.ts`** — interval + `visibilitychange`/`online`/`focus` →
+  โหลดทันทีตอนกลับมามองเห็น · กันรอบซ้อน · คืน `lastOkAt` ให้ป้ายสถานะ
+- **`app/hooks/useWakeLock.ts`** — ขอเฉพาะตอนอยู่จอครัว (จอที่ไม่ดับไม่เคยเข้าโหมด throttle)
+- **`app/hooks/useOrderAlerts.ts`** + **`components/pos/OrderAlertSettingsModal.tsx`** —
+  หน้าตั้งค่าใช้ร่วมกัน 4 จอ รับ `kinds` มาแสดงเฉพาะเหตุการณ์ที่จอนั้นเห็นจริง
+
+**การตั้งค่าเก็บที่ `localStorage` ต่ออุปกรณ์ ไม่ใช่ DB — จงใจ** เพราะความดังที่เหมาะกับจอครัว
+เหนือเตากับแท็บเล็ตแคชเชียร์ไม่เท่ากัน และคนที่ปรับคือคนที่ยืนอยู่หน้าเครื่องนั้น ·
+**ผลที่ยอมรับไว้**: ล้าง site data แล้วกลับเป็นค่าปริยาย (ซึ่ง "เปิดเสียง" จึงไม่ใช่การเงียบ) และ
+ผู้จัดการยังตรวจจากหลังบ้านไม่ได้ว่าจอครัวสาขาไหนปิดเสียงอยู่ · ถ้าจะย้ายไป DB ให้แก้แค่จุดที่
+อ่าน/เขียน localStorage ใน `useOrderAlerts` จุดเรียกทั้งหมดไม่ต้องแก้
+
+#### เทส
+
+`scripts/order-alert-sound-contract.test.mts` **24 เทส** (pure) · **มิวเทชัน 25 แบบ แดงถูกตัว**
+
+- **⚠️ รอบแรกมี 2 ตัวเขียวทั้งที่ควรแดง** (กับดัก substring เดิมของรีโปนี้):
+  1. `alerts\.blocked` ไปแมตช์คีย์ i18n **`pos_alerts.blocked_banner`** → ถอดแถบเตือนออก
+     ทั้งอันแล้วยังเขียว · ต้องใส่ `\b` ครอบ
+  2. `return false` ของตัวเล่นเสียงไปแมตช์ `return false` ของบล็อก **catch ท้ายเมธอด** →
+     มิวเทชันที่ทำให้กิ่ง suspended รายงานว่าดังสำเร็จรอดไปได้ · ต้องเล็งเข้าไปในกิ่งนั้น
+  3. เพิ่มอีกข้อ: assert ว่า "มีคำว่า notify อยู่ในไฟล์" **ไม่พอ** — ถอดเสียงตัวใดตัวหนึ่งจากสี่ตัว
+     ออกยังเขียวเพราะตัวอื่นยังอยู่ · ต้องผูกแต่ละเสียงกับ `ref` ของตัวเองและนับจุดที่ย้ำ
+- **เทสเดิม 2 ตัวต้องเล็งใหม่** ใน `restaurant-pos-contract` — ตัวหนึ่ง assert รูปทรง
+  `setInterval(... loadTickets() ... 5000)` ตรงตัว ซึ่ง **ตรึงบั๊กไว้เอง** (รอบนั้นวิ่งเฉพาะตอน
+  เปิดแท็บครัว) · อีกตัวตรึงรูป `screen === "QR" ? 5000 : N`
+- **เทสเดิม 1 ตัวแดงเพราะกฎของ `/admin`**: `admin-navigation-contract` บังคับว่า Alert ทุกตัว
+  ต้อง `closable` — Alert ใหม่สองตัวไม่มี
+
+#### แคตตาล็อกผู้ช่วย
+
+กลุ่ม `limits.order-alerts` (8 ข้อ th/en) ผูกกับ `kitchen.board` · `pos.restaurant-kitchen-round`
+· `orders.restaurant-requests` + ปักคำถาม 4 ข้อ
+
+- **⚠️ เจอกับดัก substring ของตัวให้คะแนนอีกที่**: `alias.includes(token)` ไม่ใช่ขอบเขตคำ →
+  alias `"sound settings"` มี **`set`** และ `"board not updating"` มี **`up`** ทั้งคู่เติม +4
+  ให้ `kitchen.board` จนแซง `inventory.stock-models` ในคำถามที่ปักไว้อยู่แล้วว่า
+  *"how do I set up several kitchen stations in one branch"* · เปลี่ยนเป็น
+  `"alert volume"` / `"not refreshing"`
+- **⚠️ คำถามไทยที่ไม่มีเว้นวรรคเสมอกันทั้งสามไกด์เสมอ** — ไทยไม่มีขอบเขตคำ คะแนนจึงมาจาก
+  alias containment อย่างเดียวซึ่งให้เท่ากันหมด แล้วชนะกันด้วยลำดับในไฟล์ · ต้องปักคำถามที่
+  **แยกได้ด้วยคะแนนจริง** (มีเว้นวรรค เช่น `กระดานครัว ไม่มีเสียงเตือน` → 28 ต่อ 19)
+
+#### recheck ของงานรอบนี้เอง — เจอที่ตัวเองทำพัง 5 จุด (แก้ครบแล้ว)
+
+1. **⚠️ รอบรีเฟรชที่ล้มไปเขียนทับข้อความว่า "รับออร์เดอร์แล้ว" เป็น "ทำรายการไม่สำเร็จ"**
+   ผมเติม `throw error;` ใน `refreshIncomingOrders` เพื่อให้ hook รู้ว่ารอบนั้นล้ม แต่
+   `mutateIncomingOrder` เรียกตัวนี้ต่อท้าย **ในบล็อก try ของมันเอง** หลังจากรับออร์เดอร์
+   สำเร็จไปแล้ว → แคชเชียร์เห็น "ทำรายการไม่สำเร็จ" ทั้งที่ออร์เดอร์เข้าครัวไปแล้ว
+   แล้วจะกดซ้ำกับงานที่ทำไปแล้ว · แก้เป็นโยนต่อเฉพาะรอบอัตโนมัติ (`silent`)
+2. **⚠️ hook ถูก mount สองตัวในหน้าเดียว แล้วการตั้งค่าเขียนทับกันด้วยค่าที่ค้าง**
+   `/pos` เรียก `useOrderAlerts()` เอง แล้วยังเรนเดอร์ `RestaurantRequestQueue` ซึ่งเรียกอีกตัว
+   · ผลสองอย่าง: **AudioContext สองตัวต่อหน้า** (เป็นทรัพยากรของเครื่องเสียง ไม่ใช่ตัวแปร)
+   และ **ปรับความดังที่แผงหนึ่ง แล้วกดปิดเสียงที่อีกแผง → ความดังเด้งกลับ** เพราะแผงที่สอง
+   merge patch เข้ากับ settings ชุดเก่าที่มันถืออยู่
+   · แก้เป็น state ระดับโมดูล + `useSyncExternalStore` = ทั้งหน้ามีชุดเดียวและตัวเล่นเสียงตัวเดียว
+3. **⚠️ ป้าย "ขาดการเชื่อมต่อ" ขึ้นสีแดงตอนเพิ่งเปิดจอ** — `lastOkAt` เริ่มเป็น `null` ซึ่ง
+   `feedHealth` ตีเป็น STALE **โดยตั้งใจ** (ตรวจไม่ได้ ≠ ไม่มีปัญหา) แต่กระดานมีข้อมูลอยู่แล้ว
+   จากการโหลดครั้งแรกของหน้า → จอขึ้นแดงคู่กับตั๋วที่แสดงอยู่เต็มจอ = **จอเดียวกันขัดกันเอง**
+   ซึ่งเป็นอาการที่ทำให้คนเลิกเชื่อตัวเลขทั้งจอ (บทเรียนเดิมของ "ทั้งหมด 2 vs เลนบวกได้ 7")
+   · แก้ด้วยการยิงรอบแรกทันทีตอน feed เริ่ม
+4. **⚠️ แต่การยิงทุกครั้งที่ effect เริ่มก็ผิดอีกทาง** — `intervalMs` เปลี่ยนตามจอที่เปิดอยู่
+   และตาม visibility ทุกครั้งที่เปลี่ยน `setInterval` ถูกตั้งใหม่ตั้งแต่ศูนย์ · **สลับแท็บถี่กว่า
+   รอบ = ไม่มีรอบไหนได้ยิงเลยสักครั้ง** (starvation ที่โค้ดเดิมก็มี) และถ้ายิงทุกครั้งที่
+   effect เริ่ม สลับแท็บหนึ่งครั้งจะยิงพร้อมกันทั้งสี่ feed · แก้ด้วย `lastRunAt` — ยิงต่อเมื่อ
+   รอบก่อนห่างพอแล้วจริง ๆ (แก้ทั้ง starvation และการยิงรัวด้วยเงื่อนไขเดียว)
+5. **จอค้าปลีกของร้านที่ไม่ใช่ร้านอาหารไปสร้าง AudioContext ทิ้งไว้** — ไม่มีเหตุการณ์ไหน
+   ให้ดังเลยบนจอนั้น · `useOrderAlerts(active)` เปิดใช้เฉพาะร้านอาหาร และคิวคำขอเปิดต่อเมื่อ
+   รู้แล้วว่าร้านนี้เปิดรับคำขอจริง (`/admin/orders` เรนเดอร์คิวให้ทุกร้านแล้วค่อยคืน null
+   ทีหลัง — hook ทำงานไปแล้ว)
+
+#### ของเดิมที่รอบนี้ทำให้แย่ลง แล้วแก้ไปด้วย
+
+- **`authenticatePosDevice` เขียน `last_seen_at` ทุกคำขอ** (ของเดิม) — รอบนี้เพิ่มจำนวน poll
+  ต่อจอ การเขียนแถวเดิมซ้ำ ๆ สร้าง dead tuple ให้ autovacuum ตามเก็บโดยไม่ได้อะไรเพิ่ม
+  · เติมเงื่อนไข `last_seen_at < now() - interval '1 minute'` — heartbeat ที่ละเอียดกว่า
+  หนึ่งนาทีไม่มีใครใช้ (หน้าเครื่องขายแสดงแค่ "เห็นล่าสุดเมื่อไร")
+- **แถบเลื่อนความดังเขียน localStorage ทุกก้าวที่ลาก** — ลากหนึ่งครั้งยิง `onChange` หลายสิบครั้ง
+  = เขียนดิสก์หลายสิบรอบบนแท็บเล็ตเก่าเพื่อค่าเดียวที่คนตั้งใจตั้ง · เปลี่ยนเป็น `defaultValue`
+  + บันทึกตอนปล่อยนิ้ว (โมดัล `destroyOnClose` จึง remount พร้อมค่าล่าสุดทุกครั้งที่เปิด)
+
+#### ที่ตรวจแล้วว่าไม่ใช่บั๊ก (จดไว้กันไล่ซ้ำ)
+
+- **SQL ใหม่รักษาพฤติกรรมที่เทส DB เดิมตรึงไว้ครบ** — `multi-store-stock-db-contract` บังคับ
+  สามข้อ: เพดานต้องทิ้งตั๋วเก่าไม่ใช่ตั๋วใหม่ · ตั๋วที่เสิร์ฟเมื่อสองวันก่อนไม่อยู่บนกระดาน ·
+  กรองด้วย `status` ตรง ๆ ยังเข้าถึงของเก่าได้ · ทั้งสามยังจริงเพราะย้ายตัวกรองชุดเดิมเข้าไป
+  ในกิ่ง ไม่ได้เปลี่ยนเงื่อนไข (พิมพ์ SQL ที่ interpolate แล้วออกมาดูจริง)
+- **พารามิเตอร์ของ SQL เรียงใหม่ถูกต้อง** — `$1..$5` ครบและตรงกับอาร์เรย์ที่ส่ง (ตรวจด้วยสคริปต์
+  ไม่ใช่ด้วยตา เพราะการลบ `$4` เดิมออกทำให้ทุกตัวหลังจากนั้นเลื่อน)
+- **`supportActivity` มีเพดานอยู่แล้ว** (`slice(-MAX_LOCAL_EVENTS)`) — poll ที่ล้มซ้ำ ๆ จึงไม่
+  ทำให้ที่เก็บบนเครื่องบวม
+- **`activeConsumers` ปลอดภัยกับ StrictMode ของ dev** — effect +1 / cleanup -1 / effect +1
+  สุทธิเป็น 1 และ `activate()` มีด่าน `if (player) return`
+- **`refreshParked` ที่ `/pos` ยังเป็น `setInterval` เปล่า** — เป็นเส้นของร้านยา (โผล่เฉพาะตอนมี
+  บิลพักที่รออนุมัติ) **จงใจไม่แตะ** เพราะอยู่คนละโดเมนกับงานนี้และยังไม่ได้ไล่ · เป็นบั๊กคลาส
+  เดียวกัน ถ้าจะแก้ควรเป็นรอบของตัวเอง
+
+#### เทสของรอบ recheck
+
+`order-alert-sound-contract` เป็น **35 เทส** (จาก 30) · **มิวเทชันรวมทั้งงาน 44 แบบ แดงถูกตัวทุกครั้ง**
+
+#### ยังไม่ได้ทำ
+
+- **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์สักจอ** — ทั้งเสียง หน้าตั้งค่า แถบเตือนตอนถูกบล็อก
+  ป้ายสถานะสายข้อมูล และ wake lock ผ่านแค่ typecheck + build + เทสสแกนซอร์ส
+  · **เสียงเป็นของที่เทสยืนยันแทนหูไม่ได้** ต้องลองจริงก่อนเชื่อว่าแยกออกจากกัน
+- **ไม่มี server push** — ถ้าจะทำ ทางที่สั้นที่สุดคือ SSE endpoint (`/api/pos/stream`) ที่ auth
+  ด้วย device token เดิม แล้ว publish ต่อจาก Redis pub/sub ที่มีอยู่ · **ต้องอ่านด้วย `fetch`
+  + ReadableStream ไม่ใช่ `EventSource`** เพราะ EventSource ตั้ง header เองไม่ได้ และการเอา
+  token ไปใส่ query string จะทำให้มันไปโผล่ใน access log
+- **ไม่มี escalation ฝั่ง server** — ออร์เดอร์ที่ไม่มีใครรับทราบเกิน X นาทีควรแจ้ง LINE ผู้จัดการ
+  ซึ่งเป็นชั้นเดียวที่รอดเมื่อแท็บเล็ตดับ/แบตหมด/เน็ตหลุด (เบราว์เซอร์แก้ไม่ได้)
+- **ไม่ได้ให้เครื่องพิมพ์ครัวส่งเสียง** — ESC/POS มีคำสั่ง buzzer และ `printerClient` มีอยู่แล้ว
+  แต่เส้นทางนั้นยัง "เขียนแล้วไม่เคยยิงกับฮาร์ดแวร์จริง" การต่อ routing บนสายที่ verify ไม่ได้
+  ก็ verify ไม่ได้เหมือนกัน
+- **ไม่ได้ทำ quiet hours / ปิดเสียงชั่วคราวแบบมีเวลาหมดอายุ** — วันนี้ปิดแล้วปิดถาวรจนกว่าจะเปิดเอง
+
+
+### recheck POS ร้านอาหารทั้งเส้น — แก้ 4 จุด (2026-09-08)
+
+branch `recheck/pos-restaurant-2026-09-08` (ตัดจาก `develop` ที่ merge #192 แล้ว) ·
+`npm run gate` ผ่าน (typecheck · **pure 937/937** จาก 932 · production build) ·
+**ไม่มี migration · ไม่มี permission ใหม่** · **เทส DB ไม่ได้รันสักตัว** (เครื่องนี้ไม่มี Postgres
+ของ BMS — `docker ps` มีแต่ container ของโปรเจกต์อื่น · 5432 ปิด) ·
+**ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** · **มิวเทชัน 9 แบบ แดงถูก subtest ทุกครั้ง**
+
+#### ⚠️ คิดเงินบิลโต๊ะที่ยังมีของไม่ได้ส่งครัวได้ — ด่านฝั่ง server ถูกข้าม เหลือแต่ปุ่มบนจอ
+
+ด่านเดียวที่ server ใช้กันเรื่องนี้คือบรรทัดเดียวใน `settleRestaurantCheck`:
+`!current_order_id || reserved_version !== version` · แต่ **สองเส้นทางที่คิดยอดใหม่ให้บิล
+ย้าย/เก็บ "ทุกบรรทัดที่ยังไม่ถูกยกเลิก" ไม่ใช่เฉพาะที่ส่งครัวแล้ว** แล้วประกาศว่า
+`reserved_version` ตามทันเสมอ → ด่านผ่านทั้งที่บิลยังมีบรรทัด `NEW`
+
+- `repriceCheckAfterItemMoveInTx` (แยกบิล/รวมบิล `9.63`) — `reserved_version = nextVersion`
+  เมื่อสร้างใบจองได้ โดยไม่ดูว่าในใบจองนั้นมีบรรทัด NEW ปนอยู่ไหม
+- `dropKitchenCancelledLineInTx` (ครัวยกเลิกบางรายการ) — เขียน `reserved_version = $3` **ตายตัว**
+  แม้ตอนที่ไม่เหลือใบจองเลย (`orderId` เป็น NULL)
+- **เส้นที่สองเข้าถึงง่ายกว่ามาก ไม่ต้องแยกบิลเลย**: โต๊ะมี [ส่งครัวแล้ว A, B · ยังไม่ส่ง C]
+  แล้วครัวกดยกเลิก A — เป็นเหตุการณ์ปกติของร้านอาหาร ไม่ใช่เคสมุม
+
+**รัศมีที่ไล่จนจบแล้ว** (ไม่ได้หยุดที่ "ด่านผ่าน"): `recordPosSale` ชนคีย์กันบิลซ้ำของใบจอง →
+เข้ากิ่ง replay ที่ `findPosOrderByIdempotencyKey` แล้ว **`finalizePosSale(pending.orderId,
+pending.amountDue)`** — `lines` ที่ settle ส่งไป (กรอง `status='SENT'`) **ถูกละทิ้งทั้งชุด**
+· ผลคือเก็บเงินและตัดสต็อกตามใบจองซึ่งรวมบรรทัด C ไว้ด้วย ขณะที่ครัว **ไม่เคยมีตั๋วของ C**
+(ตั๋วออกเฉพาะบรรทัดที่เปลี่ยน NEW→SENT) = ลูกค้าจ่ายค่าอาหารที่ไม่มีใครสั่งให้ทำ
+
+- **วันนี้ยังไม่หลุดถึงลูกค้า เพราะปุ่มคิดเงินบนจอ disable ด้วย `hasUnsent`** (ตรวจแล้วว่าจอ
+  ไม่ได้ใช้ `reservedVersion` ตัดสินอะไรเลย — ใช้ `items.some(status === "NEW")` ล้วน) ·
+  แต่นั่นคือฝั่ง client ไม่ใช่ด่าน · **ห้ามอ่านว่า "ไม่เป็นไร"** — กฎของ repo เองคือจอเป็น UX
+  ส่วน server เป็นด่าน และ route นี้ยิงตรงได้ (แท็บค้าง/retry/ไคลเอนต์อื่น)
+- **แก้แบบตีวงแคบที่สุด**: `reserved_version` เป็น NULL เมื่อยังเหลือบรรทัด NEW (และเมื่อไม่มี
+  ใบจอง) · **ไม่แตะการจองสต็อกและไม่แตะยอดเงิน** จึงไม่เปลี่ยนพฤติกรรมของเส้นทางปกติเลย
+  (แยก/รวมบิลที่ทุกบรรทัดส่งครัวแล้ว → `reserved_version = nextVersion` เหมือนเดิมเป๊ะ)
+- **ผลพลอยได้ที่ตั้งใจ**: ข้อความที่แคชเชียร์ได้เปลี่ยนจาก "บิลนี้ไม่มีรายการที่ส่งครัวแล้ว"
+  (ตัน อ่านแล้วไม่รู้ต้องทำอะไร) เป็น **"มีรายการที่ยังไม่ส่งครัว กรุณาส่งครัวก่อนคิดเงิน"**
+  ซึ่งพาไปทำสิ่งที่ถูก — เพราะตอนนี้ตกด่านแรกแทนที่จะไปตายที่ `items.rows.length === 0`
+- คอลัมน์รองรับอยู่แล้ว: `9.44` ประกาศ `reserved_version INTEGER CHECK (IS NULL OR >= 0)`
+  · ยืนยันแล้วว่า **ทั้ง repo มีที่เดียวที่เขียนคอลัมน์นี้คือ `restaurantPos.ts`**
+
+#### เทส
+
+`restaurant-pos-contract` **60 เทส** (จาก 56) · `restaurant-qr-ordering-contract` **12** (จาก 11)
+
+ตัวของด่าน `reserved_version` เดินทั้งสองฟังก์ชันแล้วบังคับสามข้อ:
+ค่าที่เขียนลง `reserved_version` ต้องขึ้นกับ "ยังเหลือบรรทัด NEW ไหม" · ไม่มีใบจองต้องเป็น NULL ·
+และต้องเป็นค่าที่มีเงื่อนไข ไม่ใช่ค่าคงที่
+
+- **เทสหา guard แบบไม่ผูกกับชื่อตัวแปร** — จับ `const X = ....rows.some(row => row.status === "NEW")`
+  แล้วเช็คว่า `X` ถูกใช้ในพารามิเตอร์จริง · ถ้าไม่มี const ก็ยอมรับรูป inline · ทำแบบนี้เพราะ
+  สองฟังก์ชันเขียนคนละรูป และเทสที่ผูกกับชื่อตัวแปรจะแดงตอน refactor ที่ไม่ได้ทำอะไรผิด
+- **มิวเทชัน 3 แบบ แดงถูกตัวทุกครั้ง**: ถอด guard ของ reprice · ถอดของ dropKitchen (ทดสอบ
+  **แยกครึ่ง** เพราะเทสที่จับได้แค่ตอนถอดพร้อมกันคือเทสที่อ่อน) · และเคสที่สำคัญที่สุด
+  **"ประกาศ guard ไว้แต่ไม่ได้ต่อสายเข้ากับค่าที่เขียนจริง"** ซึ่งเป็นรูปที่เทสสแกนซอร์สปกติเขียว
+- **รวมทั้งรอบมิวเทชัน 9 แบบ แดงถูกตัวทุกครั้ง** — อีก 6: ถอด prologue ของตัวเลื่อนหลายใบ ·
+  ถอด `.sort()` ของ ids · สลับลำดับขอบิลก่อนกะ · เลขบิลกลับไป MAX+1 · คีย์ล็อกโผล่สองที่ ·
+  เพดาน QR เหลือถัง session ถังเดียว
+- **⚠️ มิวเทชัน "สลับลำดับกะ/บิล" รอบแรกไม่แดง** — assertion เทียบ `indexOf` ของทั้งไฟล์
+  แต่สองชื่อนั้นถูก *ประกาศ* ไว้ก่อนหน้าอยู่แล้ว ลำดับจึงไม่เปลี่ยนไม่ว่าข้างในจะสลับหรือไม่ ·
+  ต้องเทียบลำดับ **ในตัวฟังก์ชันที่ล็อกจริง** ถึงจะจับได้ (กับดักเดิมของเทสสแกนซอร์สในไฟล์นี้)
+
+#### ที่ตรวจแล้วว่าไม่ใช่บั๊ก (จดไว้กันไล่ซ้ำ)
+
+- **SQL ของร้านอาหาร/ครัวทุก statement มี `tenant_id` ครบ** (สแกน 8 ไฟล์) · JOIN ที่ไม่มี
+  `tenant_id` ใน ON มีตัวเดียว (`bms_pos_returns` ใน `restaurantOrdering.ts`) ซึ่งถูกมัดด้วย
+  `pri.tenant_id = oi.tenant_id` + `pr.order_id = oi.order_id` แล้ว
+- **route ของร้านอาหารทั้งหมด derive tenant/location จาก device token เท่านั้น** ไม่มีตัวไหน
+  รับจาก body (สแกนแล้ว) · QR สาธารณะ 4 route มี rate limit ครบ
+- **`restaurant.check.cancel` เป็น OR กับ `pos.sell` โดยตั้งใจ** (commit `266fafda`) — ด่านจริง
+  ของการยกเลิกบิลที่ส่งครัวแล้วคือผู้อนุมัติคนที่สองที่ถือ `pos.void` ซึ่ง route ตรวจ PIN +
+  permission + ต้องคนละคน และ service ตรวจ `requires_void_approval` ซ้ำใต้ row lock
+- **trigger หมดอายุ QR ของ `9.63` ครอบ `MERGED` แล้ว** (`PAID/CANCELLED/MERGED`) และ QR
+  ลงบิลหลักด้วย `ORDER BY split_group_no, opened_at`
+- **`bmsSaveRestaurantFloorLayout` ตรวจว่าโต๊ะทุกตัวใน payload อยู่ในสาขานั้นจริง** ก่อนเขียน
+  (ไม่ใช่แค่ตรวจ locationId ที่ส่งมา) · floor admin ทั้ง 12 resolver มีด่านสาขาครบ
+- **`cashTendered < amount` ถูกกันฝั่ง server สองชั้น** (`parsePosPayments` และ `recordPosSale`)
+  ไม่ได้พึ่ง `checkoutBlockReason` บนจอ
+- **การอนุมัติส่วนต่างที่ร้านรับ (`9.57`) ตรวจ permission ซ้ำในทรานแซกชัน** และเทียบกับเพดาน
+  ของร้านจริง
+- **ตัวกวาดคอมเมนต์ของเทสร้านอาหารทุกไฟล์ใช้ `/gm` หรือ split ด้วย `\r?\n`** = ปลอดภัยกับ CRLF
+  (บั๊กของรอบ 2026-09-08 ไม่ได้ลามมาที่นี่) · และ **anchor ของ `indexOf()` ทั้ง 105 ตัว
+  resolve ได้จริงทุกตัว** (ไล่เช็คด้วยสคริปต์) = ไม่มี slice ว่างที่ทำให้เทสเขียวลอย ๆ
+
+#### ⚠️ deadlock `40P01` ระหว่าง "ครัวยกเลิกจาน" กับ "ยกเลิกทั้งบิล" — แก้ด้วย lock ordering
+
+`updateKitchenTicketStatusInTx` ล็อกแถวตั๋ว (`FOR UPDATE OF rt`) **ก่อน** แล้วค่อยขอกะ +
+advisory lock ของบิล (ผ่าน `dropKitchenCancelledLineInTx` ที่ต้องตัดบรรทัดออกจากยอด) ·
+ส่วน `cancelRestaurantCheck` ขอ advisory lock ของบิลก่อน แล้วค่อย `UPDATE
+bms_restaurant_kitchen_tickets` ของทั้งบิล → A ถือ rt รอ advisory · B ถือ advisory รอ rt = วน
+· ผลคือ 500 "เซิร์ฟเวอร์ผิดพลาด" ที่จอครัวหรือเครื่องขาย (rollback สะอาด กดใหม่ผ่าน)
+
+- **แก้แบบมาตรฐาน: ให้ทุกเส้นทางไล่ล็อกลำดับเดียวกัน (กะ → บิล → ตั๋ว)** ไม่ใช่ให้ฝั่งบิลไป
+  ขอตั๋วก่อน (ซึ่งจะไปกลับหัวกับการส่งครัวแทน) · ฝั่งตั๋วจึง "อ่านแบบไม่ล็อกเพื่อรู้ว่าต้องล็อก
+  อะไร → ขอกะ+บิลให้ครบ → ค่อยแตะแถวตั๋ว" ซึ่งเป็นรูปที่ `dropKitchenCancelledLineInTx`
+  ใช้อยู่แล้ว แค่ยกขึ้นมาไว้ต้นทรานแซกชัน
+- **หัวใจคือ advisory lock ของบิลกลายเป็น mutex ของงานทุกอย่างที่ scope บิลนั้น** — พอทั้ง
+  A และ B ขอใบเดียวกันเป็นอันดับแรก ทุกอย่างหลังจากนั้นถูก serialize ลำดับ rt/แถวบิลที่ยัง
+  ต่างกันจึงไม่มีผล · ตรวจแล้วว่าเส้นที่แตะตั๋วของบิลมีครบ 4 เส้น (ยกเลิกตั๋ว · ยกเลิกบิล ·
+  ส่งครัว · ย้ายบรรทัดตอนแยก/รวมบิล) และทุกเส้นถือ advisory ของบิลนั้นก่อนแตะตั๋ว
+- **ขอเฉพาะตอนยกเลิกโดยตั้งใจ** — สถานะอื่น (เริ่มทำ/พร้อมเสิร์ฟ/เสิร์ฟแล้ว) แตะแค่แถวตั๋ว
+  จึงไม่มีทางเกิดวงรอ · ถ้าขอทุกครั้ง ทุกปุ่มบนจอครัวจะต้องรอการส่งครัวรอบที่กำลังจองสต็อก
+  อยู่ให้เสร็จก่อน = จอครัวหน่วงโดยไม่จำเป็น
+- **คีย์ล็อกบิลย้ายไปอยู่ที่เดียว** `lib/bms/restaurantCheckLock.ts` (leaf ไม่ import อะไร
+  นอกจาก type ของ pg) — `kitchen.ts` กับ `restaurantPos.ts` ต้องขอ **ล็อกใบเดียวกันจริง ๆ**
+  ถึงจะกันกันได้ · คีย์คนละรูปคือล็อกคนละตัว ซึ่งอ่านว่า "ล็อกแล้ว" ทั้งที่ไม่ได้กันใครเลย ·
+  `restaurantPos.ts` import กลับมาใช้ชื่อเดิม (`as lockCheckInTx`) จุดเรียกทั้ง 12 จุดจึงไม่ต้องแก้
+  · **`restaurant-floor:` เป็นคนละทรัพยากร** มีบ้านของตัวเองตามเดิม (เทสเล็งเฉพาะคีย์ของบิล)
+- **เลื่อนตั๋วหลายใบเรียง id ก่อน** — สองคำขอที่ถือชุดเดียวกันคนละลำดับจะล็อกแถวสวนทางกัน
+  · และตัวขอ scope ก็เรียงกะ/บิลก่อนล็อกเช่นกัน (คำขอเดียวครอบได้หลายบิล)
+- **⚠️ เศษที่เหลือ ยอมรับไว้โดยรู้ตัว**: การอ่านหา scope เป็นการอ่านแบบไม่ล็อก ถ้ามีการแยก/
+  รวมบิล **ย้ายตั๋วข้ามบิล** ในช่องแคบ ๆ ระหว่างอ่านกับล็อก ทรานแซกชันนั้นจะถือ advisory ของ
+  บิลเก่าแล้วไปขอของบิลใหม่ตามหลัง (ไม่ตรงลำดับ id) · ต้องบังเอิญพร้อมกันสามอย่างถึงจะวน
+  (ย้ายตั๋วพอดี + มีคำขอที่ครอบสองบิลเดียวกันพร้อมกัน + ลำดับ id ไม่เป็นใจ) และ Postgres
+  ตรวจเจอแล้ว abort สะอาด · เลือกไม่สร้างกลไกเพิ่มเพราะแพงกว่าปัญหาที่กันได้
+
+#### ⚠️ เพดานของหน้า QR ผูกกับ "รูปทรงคุกกี้" = ไม่มีเพดานสำหรับคนที่ตั้งใจเลี่ยง
+
+เดิมแยกถังตาม session **แทน** ถัง IP เมื่อคุกกี้มีรูปทรงถูก (`/^[A-Za-z0-9_-]{32,128}$/`) ·
+แต่คุกกี้เป็นของที่ผู้เรียกถืออยู่เอง และรูปที่ผ่านเดาได้จาก regex โดยไม่ต้องมี session จริง →
+หมุนคุกกี้ใหม่ทุกคำขอ = ได้ถังใหม่ทุกครั้งไม่จำกัด
+
+- **แก้เป็นเพดานสองชั้นแบบที่ใช้กันทั่วไป**: ต่อ session (ความยุติธรรมของแต่ละโต๊ะ — ทั้งร้าน
+  ออกเน็ต IP เดียวกัน ถ้านับรวมถังเดียวโต๊ะที่สั่งอยู่จะกินโควตาโต๊ะอื่น) **และ** ต่อ IP
+  (ขอบเขตจริง) ต้องผ่านครบทุกใบ · ชั้น IP กว้างกว่า `QR_IP_BURST_FACTOR = 20` เท่า เพื่อไม่ให้
+  ร้านเต็มร้านชนเพดานตัวเอง แต่ทำให้การยิงรัวจาก IP เดียว **มีขอบเขต** แทนที่จะไม่มีเลย
+- **แยกกติกาออกมาเป็น pure module** `lib/bms/restaurantQrRateLimit.ts` — เทสคุณสมบัติได้ตรง ๆ
+  (หมุนคุกกี้แล้วต้องตกถัง IP ใบเดิม · ถัง session ยังแยกกัน · คีย์เก็บ digest ไม่ใช่ token)
+  แทนที่จะสแกนซอร์สว่า "มีคำว่า rateLimit ไหม" ซึ่งเป็นสิ่งที่เทสเดิมทำ
+- ความรุนแรงเดิมจำกัดอยู่แล้ว: การสร้างคำขอจริงต้องใช้ session token ตัวจริงซึ่งคงที่ (ถังเดียว)
+  และมีเพดาน `MAX_PENDING_SUBMISSIONS_PER_CHECK` — สิ่งที่รั่วคือ query ของฐาน ไม่ใช่กล่องขาเข้า
+
+#### เลขบิลของโต๊ะใช้ช่องว่างที่น้อยที่สุด แทน MAX+1
+
+`split_group_no` เป็น "ช่อง" 1..20 ที่ CHECK ของตารางบังคับไว้ · `MAX+1` เดินหน้าอย่างเดียว
+โต๊ะที่ปิดใบเลขน้อยแล้วแยกจากใบเลขมากซ้ำ ๆ จึงไต่ชนเพดานทั้งที่เปิดอยู่ใบเดียว แล้วขึ้น
+"ครบเพดาน 20 ใบ" ซึ่งไม่จริง — **ข้อความที่โกหกคือข้อความที่คนเลิกอ่าน**
+
+- เปลี่ยนเป็น `generate_series(1, 20)` + `NOT EXISTS` แล้วเพดานมาจาก "ไม่มีช่องเหลือ" จริง ๆ
+- ลำดับเวลายังไล่ได้จาก `split_from_check_id` และ `opened_at` ไม่ได้พึ่งเลขช่อง การใช้ช่องซ้ำ
+  จึงไม่ทำให้ประวัติกำกวม
+
+#### จอเสนอเฉพาะสิ่งที่ server รับ (แยก/รวมบิล)
+
+`mergeRestaurantChecks` รับเฉพาะบิลที่ **ยัง `OPEN` ทั้งสองใบ** แต่จอกรองด้วย
+`isOpenCheckStatus` ซึ่งรวม `CLOSING` (บิลที่อีกเครื่องกดคิดเงินไปแล้ว) · ปุ่มแยก/รวมบิลก็ไม่ได้
+ดูสถานะของบิลที่ยืนอยู่เลย · เป็นสถานะชั่วคราวและ error อ่านรู้เรื่อง แต่เป็นสิ่งที่จอรู้ล่วงหน้าได้
+
+#### ยังไม่ได้ทำ
+
+- **เทส DB ของรอบนี้ยังไม่มีและยังไม่ได้รัน** — เคสที่ควรตรึงเมื่อมีฐาน: บิลที่มีทั้ง SENT และ
+  NEW แล้วครัวยกเลิก SENT หนึ่งจาน ต้อง **คิดเงินไม่ผ่าน** และต้องผ่านหลังกดส่งครัวอีกครั้ง
+  · และเคสแยกบิลจนเต็ม 20 ช่อง → ปิดช่องกลาง → แยกใหม่ต้องได้ช่องที่ปิดไป ไม่ใช่ 21
+- **deadlock พิสูจน์ด้วยเทสไม่ได้** — ต้องให้สองทรานแซกชันชนกันพอดี จึงตรึงที่
+  "ลำดับในซอร์ส" แทน · เมื่อมีฐานควรทดสอบด้วยมือ: เปิดสอง session แล้วสั่งยกเลิกตั๋ว/ยกเลิกบิลพร้อมกัน
+- ยังไม่ได้ไล่ `page.tsx` ของ `/pos/restaurant` (2,588 บรรทัด) แบบบรรทัดต่อบรรทัด — รอบนี้
+  ดูเฉพาะจุดที่ผูกกับด่านฝั่ง server (`hasUnsent`, ปุ่มคิดเงิน, mergeTargets)
+
+
+### recheck POS ทั้งเส้นรอบละเอียด — เจอของจริง 2 จุด (2026-09-08)
+
+branch `recheck/pos-deep-2026-09-08` (ตัดจาก `develop` ที่ merge #191 แล้ว) ·
+`npm run gate` ผ่านครบ (typecheck · **pure 932/932** · production build) ·
+**ไม่มี migration · ไม่มี permission ใหม่** · **เทส DB ไม่ได้รันสักตัว** (เครื่องนี้ไม่มี Postgres
+ของ BMS — `docker ps` มีแต่ container ของโปรเจกต์อื่น · 5432 ปิด) ·
+**ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** · **มิวเทชัน 3 แบบ แดงถูก subtest ทุกครั้ง**
+
+#### ⚠️ ชุด pure แดงอยู่ 1 ตัวบน `develop` ก่อนเริ่ม — ตัวกวาดคอมเมนต์พังกับไฟล์ CRLF
+
+`ai-usage-contract` เทส "a bound parameter whose only type source is a bare number" แดงบน
+`develop` (gate แดงสำหรับทุกคน) โดยที่ **โค้ดถูกอยู่แล้ว** — `aiUsage.ts:969` เขียน
+`COALESCE($3::numeric, 0)` ถูกต้อง ตัวที่ถูกจับคือ **คอมเมนต์บรรทัด 962** ที่อธิบายบั๊กเองด้วย
+ข้อความ `COALESCE($3, 0)`
+
+- **ต้นเหตุที่ไม่ใช่ "ลืมตัดคอมเมนต์"** — `withoutComments()` ตัดคอมเมนต์อยู่แล้ว แต่เขียนว่า
+  `.split('\n')` แล้ว `.replace(/(^|\s)\/\/.*$/, '$1')` · ไฟล์ในรีโปนี้เป็น **CRLF ทั้งไฟล์**
+  จึงเหลือ `\r` ติดท้ายทุกบรรทัด · ใน JS **`.` ไม่แมตช์ `\r`** (เป็น line terminator) และ `# CLAUDE.local.md — โน้ตเฉพาะเครื่อง (ไม่ใช่สเปกกลาง)
+
+เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
+กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
+
+
+  แบบไม่มีแฟลก `m` อยู่ **หลัง** `\r` → regex ไม่แมตช์เลย = **ไม่ตัดคอมเมนต์สักบรรทัด**
+- พิสูจน์แล้วตรง ๆ: `'  // x'` → ตัดได้ · `'  // x\r'` → คืนของเดิมทั้งบรรทัด
+- **ไล่ตัวกวาดทั้ง 9 ไฟล์ที่มี** — พังแค่ 2 ตัวที่ใช้รูป `split('\n')` + `# CLAUDE.local.md — โน้ตเฉพาะเครื่อง (ไม่ใช่สเปกกลาง)
+
+เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
+กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
+
+ ไม่มี `m`
+  (`ai-usage-contract`, `promotion-branch-scope-contract`) · อีก 7 ไฟล์ใช้ `/gm` ซึ่ง **ปลอดภัย**
+  เพราะ `# CLAUDE.local.md — โน้ตเฉพาะเครื่อง (ไม่ใช่สเปกกลาง)
+
+เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
+กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
+
+ ในโหมด `m` แมตช์ก่อน `\r` ได้ · แก้เป็น `.split(/\r?\n/)` ทั้งสองตัว (บรรทัดละไฟล์)
+- **ตรวจทิศที่อันตรายกว่าแล้วว่าไม่มี**: assertion แบบ "ต้องมีของนี้" ที่อาจ **เขียวเพราะคอมเมนต์**
+  — รันทั้งสองไฟล์ด้วยตัวกวาดที่ถูกต้องแล้วเทียบผล ได้เหมือนกันทุกข้อ (การันตีของ
+  `promotion-branch-scope` เรื่องโปรแยกสาขายังจริงทั้งหมด ไม่ได้เขียวลอย ๆ)
+- ⚠️ **ทิศที่พังคือ false positive (แดงทั้งที่โค้ดถูก)** ซึ่งตามกฎของรีโปเองคือ
+  "เทสที่แดงเสมอ = เทสที่เลิกมีคนอ่าน" และมันบล็อก gate อยู่จริง
+
+#### ⚠️ หน้าภาพรวมกะหลังบ้านนับเงินสดของบิลที่ถูกยกเลิกเป็นเงินในลิ้นชัก
+
+`listPosShiftOverview` เขียน query ของตัวเอง (lateral ต่อแถว) ไม่ได้ใช้ `POS_SHIFT_CASH_SQL`
+— ของที่รอบ 2026-09-07 จดไว้ว่า "จงใจไม่ยุบ เพราะคีย์ตรงกันแล้ว" · **แต่คีย์ตรงไม่ได้แปลว่า
+ตัวกรองตรง**: subquery ของ `cash_sales` **ไม่มี `voided_at IS NULL`** ขณะที่สูตรกลางมี
+
+- **ทำไมมันไม่หักล้างกันเอง**: void เดินผ่าน `processPosReturn(isVoid: true)` ซึ่งพลิก
+  `bms_payments.status` เป็น `REFUNDED` — และตัวนับใช้ `IN ('CONFIRMED','REFUNDED')`
+  จึง **ยังนับอยู่** · ส่วนขา "คืนเงิน" ตัดใบ void ออกด้วย `pr.is_void = FALSE` ทั้งสองที่
+  → บิลเงินสดที่ถูก void จึงมีแต่ขาเข้า ไม่มีขาออกมาหักล้าง
+- ผลที่วัดได้: **กะที่ยังเปิดอยู่** หน้า `/admin` แสดง `cashSales` และ "เงินสดที่ควรมี" สูงกว่า
+  X report ของเครื่องเท่ายอดบิลที่ยกเลิกพอดี → ผู้จัดการไปตามหาเงินที่ไม่เคยหาย ·
+  กะที่ปิดแล้วไม่กระทบ (อ่าน `expected_cash` ที่ประทับไว้ตอนปิดด้วยสูตรที่ถูก)
+- **แก้สองชั้น**: เติม `AND po.voided_at IS NULL` · และให้ตัวห่อ `expected()` เรียก
+  **`drawerExpectedFrom()`** แทนการเขียนเลขคณิตชุดที่สองด้วยมือ (ไฟล์นั้นเขียนกฎของตัวเองไว้แล้วว่า
+  "ผู้เรียกทุกตัวต้องผ่านทางนี้ ห้ามคิดเอง") · `drawerExpectedFrom` เป็น function declaration
+  จึง hoist ขึ้นมาใช้ก่อนจุดประกาศได้
+- **ผลพลอยได้**: `cash_sales` ของหน้านี้กับ `byMethod` (CASH) ของ X/Z report ตรงกันแล้ว
+  ทั้งคู่ไม่กรอง `status` เหมือนกัน (มัดจำที่บิลค้าง PENDING เป็นเงินในลิ้นชักจริง ต้องนับ)
+
+#### เทส
+
+`pos-cash-formula-contract` **6 เทส** (จาก 5) — ตัวใหม่บังคับสองข้อ: subquery ของ `cash_sales`
+บนหน้าภาพรวมกะต้องกรอง `voided_at` · และตัวห่อต้องคิดเงินด้วย `drawerExpectedFrom` ไม่ใช่สูตรที่สอง
+
+- **⚠️ เล็งด้วยชื่อ alias ไม่ได้** — คอลัมน์ชั้นนอกก็ชื่อ `AS cash_sales` เหมือนกัน
+  (`COALESCE(o.cash_sales, 0) AS cash_sales`) และอยู่ **ก่อน** subquery · `indexOf("AS cash_sales")`
+  จึงได้ตัวชั้นนอกที่ไม่มี WHERE เลย แล้วเทสแดงด้วยเหตุผลผิด (เจอตอนรันรอบแรก) ·
+  ต้องเล็งจาก `FROM bms_payments` ลงมา + มี assert ว่าช่วงที่เล็งมี `pay.method = 'CASH'` จริง
+- **มิวเทชัน 3 แบบ แดงถูกตัวทุกครั้ง**: ถอดทั้งสองส่วน · ถอด **เฉพาะ** `voided_at` ·
+  ถอด **เฉพาะ** `drawerExpectedFrom` (ทดสอบแยกครึ่ง เพราะเทสที่จับได้แค่ตอนถอดพร้อมกันคือเทสที่อ่อน)
+
+#### ที่ตรวจแล้วว่าไม่ใช่บั๊ก (จดไว้กันไล่ซ้ำ)
+
+- **ยอดปัดเศษในเส้นทางคืนของถูกแล้ว** — `orderAmount` ใน `processPosReturn` บวก
+  `order.rounding_amount` เข้าไปด้วย (บรรทัด ~4520) ฐานการคืนจึงเป็นเงินที่ลูกค้าจ่ายจริง
+  · ผมเข้าใจผิดรอบแรกเพราะ grep คำว่า `rounding_amount` แล้วอ่านช่วงบรรทัดพลาด
+- **`refund-settlement` ไม่มี idempotency key แต่ปลอดภัย** — `FOR UPDATE` บนแถว allocation
+  แล้ว `status === 'COMPLETED'` ตอบ replay · state machine ทำหน้าที่แทนคีย์
+- **`/api/pos/store-credit` เป็น GET อ่านล้วน** การหักยอดบัตรเกิดในทรานแซกชันของการขาย
+- **`expectedCash ?? 0` ทั้ง 3 จุดบนจอเข้าไม่ถึง** — `expectedCash` เป็น null เฉพาะตอน
+  กะยังเปิด + โหมดนับปิดตา · จุดที่ `/pos` มีบล็อก `expectedCashHidden ?` ครอบอยู่ก่อน
+  และอีกจุดอยู่ใน Z report ของกะที่ปิดแล้ว (ไม่มีทาง hidden) · จอร้านอาหารก็ guard ถูก
+- **route ของ POS ทั้ง 41 ตัวมีด่านครบ** — ที่ดูเหมือนไม่มี device auth 8 ตัวคือ
+  `restaurant/*` ซึ่งผ่าน `authenticateRestaurantMutation` (device + PIN + permission + กะเปิด)
+  · ที่ไม่ต้องมี PIN เป็น GET อ่านล้วน/ไม่แตะเงิน ตามลิสต์ยกเว้นเดิม
+- **ไม่มี statement ไหนแตะตารางเงินของ POS 13 ตารางโดยไม่มี `tenant_id`** (สแกนทั้ง `lib/bms`)
+- **จุดขยับสต็อกในเส้นทาง POS อ่าน `bms_order_stock_lines` ครบ** ทั้งขาขายและขาคืน ·
+  การคืนตรวจว่าจำนวนส่วนประกอบลงตัวก่อนแตะ `reserved_stock` (ซึ่งเป็น INTEGER)
+- **`closePosShift` / `blindReturnPosSale` ถูกทั้งคู่** — `FOR UPDATE` บนกะ · บล็อกเมื่อมีเงินคืน/
+  ค่าใช้จ่ายค้าง · เพดานเงินในลิ้นชักจากสูตรกลาง · **audit เขียนในทรานแซกชันเดียวกันก่อน COMMIT**
+- **`getPosShiftReport` scope ด้วย device** ทั้งที่ route และที่ตัวฟังก์ชัน
+
+#### ข้อสังเกตที่ยังไม่ตัดสิน (ไม่ได้แก้)
+
+- **`byMethod` ไม่กรอง `status` แต่ `salesTotal` กรอง** → กะที่รับมัดจำจะมี "ยอดขายสุทธิ"
+  ไม่เท่าผลรวมวิธีชำระ **อีกก้อนหนึ่ง** นอกจากยอดปัดเศษที่มีบรรทัดอธิบายแล้ว · ทั้งสองเลข
+  ถูกตามหน้าที่ของมัน (เงินสดต้องนับมัดจำ · ยอดขายต้องไม่นับ) แต่กระดาษใบเดียวไม่มีอะไรอธิบายส่วนต่าง
+  · แก้ = เพิ่มบรรทัด "รับมัดจำ" บนสรุปกะ ไม่ใช่ไปแตะสูตรเงินสด
+- **`no-sale` ไม่มี idempotency key** — กดซ้ำเพราะเน็ตช้าทำให้ตัวนับ "เปิดลิ้นชักโดยไม่ขาย"
+  พองเกินจริง ซึ่งเป็น **สัญญาณจับทุจริต** ที่ `8.0` ตั้งใจให้ดู · ไม่ใช่เงิน แต่เป็นสัญญาณที่เฟ้อได้
+- ยังไม่ได้ยุบ `listPosShiftOverview` ให้ใช้ `POS_SHIFT_CASH_SQL` (ต้องรื้อ query lateral ทั้งก้อน)
+  — ตอนนี้กันด้วยเทสสองด่านแทน
+
+
+### ⚠️ token/ค่าใช้ AI ไม่ถูกบันทึกเลย — `finalizeAiUsageEvent` ล้ม 100% (2026-09-08)
+
+branch `fix/ai-usage-token-accounting` (ตัดจาก `develop` ที่ merge #190 แล้ว) ·
+`npm run gate` ผ่าน (typecheck · **pure 925** · production build) ·
+**DB 415/424** — แดง 9 ตัว **พิสูจน์แล้วว่าเป็นของเดิม** (รันชุดเดียวกันบน `develop` แล้ว diff
+ชื่อเทสที่แดง: ฝั่ง regression ว่าง · baseline แดง 10 ตัว ตัวที่หายคือ
+`a concurrent first real order cannot race past the database lock` ซึ่ง **flaky ไม่เกี่ยวกับงานนี้**) ·
+**ไม่มี migration · ไม่มี permission ใหม่** · **มิวเทชัน 7 แบบ แดงถูก subtest ทุกครั้ง**
+
+#### ต้นเหตุ: Postgres infer พารามิเตอร์เป็น integer จาก literal `0`
+
+`aiUsage.ts` คำสั่งอัปเดตสรุปรายเดือนเขียน `COALESCE($3, 0)` โดย `$3` รับ `actualCostUsd` (ทศนิยม)
+· literal `0` ไม่ระบุชนิด → COALESCE resolve `$3` เป็น **integer** → ค่าอย่าง `0.00014537` throw
+`invalid input syntax for type integer` แล้ว **ทรานแซกชัน rollback ทั้งก้อน**
+
+- **พิสูจน์กับฐานจริงด้วย `pg_prepared_statements` ไม่ใช่ด้วยตา**: ก่อนแก้
+  `{uuid,text,integer,integer}` · หลังใส่ `$3::numeric` ได้ `{uuid,text,numeric,integer}`
+- **คำสั่งอื่นในไฟล์ infer ถูกหมด** — คำสั่งที่เขียน event ใช้ `COALESCE($5, estimated_cost)`
+  ซึ่งอีกฝั่งเป็น numeric · ledger เป็น integer ล้วนซึ่งถูก · pattern `COALESCE($n, 0)`
+  มีที่นี่ **ที่เดียวในทั้ง `lib/bms`**
+- **หลักฐานว่าเส้นทางนี้ไม่เคยสำเร็จเลย** (ฐาน dev): แถวที่ insert ด้วยโค้ดปัจจุบัน
+  (`meta ? 'credit_policy'`) มี 13 แถว **แดงทั้ง 13** โดยมี `stale_usage_finalization: true`
+  = มาจากตัวกวาด ไม่ใช่จาก finalize · และมี incident `ai.usage_finalize_failed` 13 ใบตรงกันเป๊ะ
+  · 208 แถวที่ดู "สวย" คือแถว legacy ที่ migration `7.82` backfill ให้ (`cost_status` ว่าง)
+- ความเสียหายที่วัดได้: **31 provider call ที่เกิดขึ้นจริงและเสียเงินจริง บันทึกเป็น token 0 · cost 0**
+
+#### ⚠️ `provider_calls = 0` มีสองความหมาย และตัวกวาดเคยเหมารวม
+
+`reconcileStaleAiReservations` คืน credit ให้แถวที่ `provider_calls = 0` โดยตีความว่า
+"ยังไม่ได้เรียก provider" · แต่ `recordAiProviderAttempt` เดิม catch แล้ว `console.error` เฉย ๆ
+→ **เรียก provider ไปแล้วจริงแต่เขียนไม่ลง = ถูกคืนโควตาให้ฟรี** และตัวนับเดินถอยหลัง
+
+- แก้: `recordAiProviderAttempt` เปิด incident `ai.provider_attempt_unrecorded` (tier B) ทั้งกรณี
+  throw และกรณี **UPDATE ได้ 0 แถวแบบไม่มี error** (ซึ่งเป็นรูปของการล้มเงียบ ๆ)
+- ตัวกวาดแยก **สามสถานะ** แล้ว: abort จริง (คืน · `provider_not_started_timeout`) ·
+  บันทึก attempt พลาด (**ไม่คืน** · `provider_attempt_unrecorded`) · finalize ล้ม
+  (**ไม่คืน** · `usage_finalization_timeout`)
+- **incident เป็นสิ่งเดียวที่แยกสองกรณีแรกออกจากกัน** — ตัวแถวเองหน้าตาเหมือนกันเป๊ะ ·
+  ค้น incident โดย bound `created_at` ด้วยแถวที่เก่าสุด เพื่อวิ่งบน
+  `idx_bms_failure_incidents_cooldown (tenant_id, code, created_at DESC)`
+- ⚠️ **ห้ามกลับไปตัดสินด้วย `provider_calls = 0` ตรง ๆ ใน SQL** — นั่นคือเงื่อนไขที่รวมกรณีที่สอง
+  เข้ามาด้วย (SQL รับ `refundableIds` ที่คำนวณมาแล้วเป็น `$2`)
+
+#### หน่วยของ `limit 1000` คือ "ครั้ง" ไม่ใช่ token — และหน้าจอไม่เคยบอกโทเคนเลย
+
+- `tryConsumeAiQuota` หัก **1 credit ต่อ 1 logical request** ไม่ว่ากินโทเคนเท่าไร · วัดจากฐาน dev:
+  `customer_tool_loop` **~20,637 โทเคนต่อ 1 credit** และ `staff_assistant` ยิงโมเดล
+  **59 รอบต่อ 41 credit** → เดือน 2026-07 ใช้โทเคน 3.66 ล้าน แต่ตัวนับขยับแค่ 179/1000
+  · **นี่คือตัวนับทำงานตามดีไซน์ ไม่ใช่การนับผิด**
+- แต่ **ไม่มีที่ไหนแสดงโทเคนให้เจ้าของร้านเลย**: `getAiUsage` ไม่คืนโทเคน · `/admin/billing`
+  ไม่ขอมา · ที่แสดงจริงมีที่เดียวคือ `/admin/env` (platform) ซึ่งเขียน
+  `{(record.inputTokens ?? 0)} in · ...` → **แถวที่ finalize ล้มขึ้นเป็น `0 in · 0 out`**
+  ซึ่งอ่านเหมือน "เรียกแล้วไม่ใช้โทเคน" (เป็นไปไม่ได้)
+- แก้: `getAiUsage` คืน `inputTokens`/`outputTokens` (SUM จาก events **ไม่ต้องเพิ่มคอลัมน์**) ·
+  การ์ด "โทเคนที่ใช้เดือนนี้" ที่ `/admin/billing` (3 การ์ด → 4 การ์ด `md={12} lg={6}`)
+  **พร้อมข้อความกำกับว่าไม่ได้นับในโควตา** · `/admin/env` ใช้ `formatTokens()` ที่คืน
+  `Unavailable`/`—` แบบเดียวกับ `formatMoney(null)` ที่มีอยู่แล้ว
+- ⚠️ **`?? 0` ห้ามกลับมา** — การโกหกที่อ่านไม่ออกว่าโกหกคือเหตุที่บั๊กนี้อยู่ได้เป็นเดือน (มีคอมเมนต์คุมไว้)
+
+#### เทส: `scripts/ai-usage-db-contract.test.mts` (10 เทส) — ไฟล์แรกของ `aiUsage.ts`
+
+**`lib/bms/aiUsage.ts` ไม่เคยมีเทสสักตัวทั้ง pure และ DB** และตัวที่ดูเหมือนครอบ
+(`scripts/ai-eval/runtime-contract.test.mts`) **ฉีด `deps.finalizeUsage` ปลอม** แล้ว assert แค่
+*payload ที่ caller ประกอบ* — SQL ตัวจริงไม่เคยถูกรัน จึงผ่าน gate มาตลอดทั้งที่ล้ม 100%
+
+- ⚠️ **provider ในเทสต้องเป็นชื่อที่ `isTrackedAiProvider` ไม่รู้จัก** (`fake-test-provider`)
+  ไม่งั้น finalize ไปเขียน `bms_ai_provider_health` ซึ่งเป็นตาราง **ระดับแพลตฟอร์ม ไม่มี tenant_id**
+  = เทสทับสถานะ provider ของจริง · rate card ยังใช้ได้เพราะ `priceForModel` ตัดสินจาก **model**
+  เมื่อ provider ไม่ใช่ deepseek/qwen
+- ⚠️ **teardown ต้องลบ `notifications` ด้วย** — `reportBmsFailure` สร้าง notification ให้
+  platform admin **ตัวจริง** (ลบด้วย `entity_type='bms_failure_incident' AND entity_id=ANY(tenants)`)
+  ไม่งั้นเทสไปขึ้นกระดิ่งแจ้งเตือนของผู้ใช้จริงบนฐาน dev
+- ⚠️ **golden ของค่าใช้ต้องเป็นทศนิยม** — 12,345 × $1/M + 678 × $5/M = **0.015735**
+  (คำนวณมือ) · ถ้าใช้ 0 หรือจำนวนเต็ม **เทสจะเขียวทั้งที่บั๊กอยู่ตรงหน้า**
+- **ลำดับ subtest มีความหมาย**: เทส invariant (`SUM(billable_credits) = credits_consumed`) ต้องอยู่
+  **หลัง** ทุกเส้นทางปกติ และ **ก่อน** เทสโควตาหมด ซึ่งแก้ตัวนับด้วยมือ (เร็วกว่ายิง 1,000 ครั้ง)
+- ⚠️ **subtest "provider attempt ... leaves a trace" ใช้เวลา ~5 วินาที ไม่ใช่ค้าง** —
+  `reportBmsFailure` แจ้ง platform admin จริงแล้วชน `NOTIFY_TIMEOUT_MS` เพราะเครื่องนี้
+  **docker ไม่ได้ publish 6379 → Redis เข้าไม่ถึงจาก host** · การที่ทั้งเส้นยังจบได้ทั้งที่ช่องทาง
+  แจ้งเตือนพัง **คือการันตีที่ subtest นั้นมีไว้ตรึง ห้ามถอด assert ทิ้ง**
+- **มิวเทชัน 7 แบบ แดงถูก subtest ทุกตัว**: ถอด `::numeric` (แดง 2 ตัว — ตัวหลัก + ตัวที่พึ่งพา
+  แถวที่ถูกปิด ซึ่งแสดงรัศมีของบั๊ก) · ตัวกวาดคืน credit ให้แถวที่บันทึกพลาด · attempt
+  ไม่สนใจว่าเขียนลงไหม · finalize ไม่ one-shot · unknown rate เก็บ 0 แทน NULL ·
+  เงื่อนไขโควตาหลุด · `getAiUsage` คืน `inputTokens: 0` คงที่
+
+#### ด่านที่ CI รันจริง + ตัวตรวจที่ใช้บน production ได้
+
+- **⚠️ `gate.yml` รันแค่ typecheck + `test:pure` + build — ชุด DB ไม่มี job ใน CI**
+  ดังนั้น `ai-usage-db-contract` ซึ่งเป็นตัวที่พิสูจน์พฤติกรรมจริง **ไม่เคยถูกรันอัตโนมัติ** ·
+  เพิ่ม `scripts/ai-usage-contract.test.mts` (**6 เทส pure**) ให้บั๊กคลาสนี้มีด่านทุก PR:
+  พารามิเตอร์ที่ติดกับ literal ตัวเลขต้องระบุชนิด (กฎกว้าง ครอบ `apps/web/lib` ทั้งหมด) ·
+  ยอดต้นทุนรายเดือนต้องเป็น numeric · ตัวกวาดต้องตัดสินจากชุด id ไม่ใช่ `provider_calls` ใน SQL ·
+  code ของ incident ทั้งสองต้องมีใน `FAILURE_CATALOG` (**ไม่มี = `reportBmsFailure` ทิ้งเงียบ ๆ
+  เพราะขึ้นต้นด้วย `if (!entry) return;`**) · ค่าโทเคนที่ nullable ต้องไม่ถูกแสดงเป็น 0 ·
+  ตัวตรวจ production ต้อง read-only · **ผ่าน mutation 7 แบบ แดงถูกตัวทุกครั้ง**
+- `pos.ts` มี `COALESCE($11, 80)` รูปเดียวกัน · **วันนี้ปลอดภัย** เพราะ `scannerMaxGapMs` ถูก
+  validate เป็น `Number.isInteger` 20–1000 อยู่ก่อนแล้ว แต่ใส่ `::int` ให้เจตนาชัด และเทสจึงไม่ต้องมี
+  allowlist ที่รอวันเน่า
+- **`db/checks/ai-usage-consistency.sql` (ใหม่, read-only, เขียนด้วยมือ)** — เฟส 0 บน production
+  ต้องเป็น `.sql` เพราะเซิร์ฟเวอร์**ไม่มี Node** (`npx: command not found`) · 4 ด่าน:
+  เส้นทาง finalize สำเร็จกี่ครั้ง · incident ที่ยืนยันสาเหตุ · drift ของตัวนับรายเดือน ·
+  สัดส่วน provider call ที่ไม่มี token · **รันกับฐาน dev แล้วได้ตัวเลขจริง**: finalize สำเร็จ 0/13 ·
+  incident 13 ใบ (`invalid input syntax for type integer: "0.00232065"`) ·
+  **2026-08 มี 44.6% ของ provider call ที่ไม่มี token บันทึกไว้**
+- **⚠️ drift ของเดือนที่ `events = 0` เป็นเรื่องปกติ ไม่ใช่สัญญาณ** — เจอ 394 ที่ tenant
+  `c29f7b22` เดือน 07 ซึ่งมี **0 แถวใน `bms_ai_usage_events`** (แถวเก่าสุดของทั้งตารางคือ 2026-07-27
+  และ `7.27` ยกคอลัมน์ `count` ยุคก่อนขึ้นมาเป็น `credits_consumed`) · ตัวตรวจจึงคืนคอลัมน์ `events`
+  มาให้อ่านก่อน `credit_drift` เสมอ — ด่านที่รายงาน noise คือด่านที่คนเรียนรู้ที่จะเมิน
+- **โทเคนแยกตามฟีเจอร์** เข้า `listAiUsageBreakdown` + การ์ด "Usage split" แล้ว (ยอดรวมตอบว่า
+  ใช้ไปเท่าไร แต่ตอบไม่ได้ว่าฟีเจอร์ไหนกิน ซึ่งเป็นคำถามถัดไปเสมอ)
+
+#### ⚠️ กับดักสี่อย่างที่เจอตอนทำ (จดไว้กันเสียเวลาซ้ำ)
+
+1. **`typeDefs.ts` เป็น template literal — backtick ในคอมเมนต์ปิด literal กลางคัน**
+   ผมเขียน `` `limit` `` ใน SDL comment แล้วได้ `TS1005: ',' expected` ที่ชี้บรรทัดถัดไป ·
+   **กับดักเดียวกับที่ไฟล์นี้จดไว้แล้วสำหรับคอมเมนต์ SQL** แค่ย้ายไฟล์
+2. **⚠️ ตัวรัน mutation ที่คืนด้วย `git checkout` เชื่อถือไม่ได้ถ้าไฟล์ยังไม่ commit — เจอสองครั้ง**
+   (ก) `git checkout -- scripts` **ลบ subtest ที่ยังไม่ commit ทิ้ง** ผมเพิ่ม subtest ของ
+   `getAiUsage` หลังคอมมิตแล้วรัน mutation รอบถัดไป มันหายไปเงียบ ๆ แล้ว **M7 รายงานว่า "ไม่แดง"
+   ทั้งที่รันกับเทสที่ไม่มีอยู่** (จับได้จากยอด `tests 9` ที่ควรเป็น 10)
+   (ข) `git checkout -- db/checks` **คืนไฟล์ที่ยัง untracked ไม่ได้เลย** mutation ที่ใส่คำสั่ง
+   `UPDATE` ลงตัวตรวจ production จึงค้างอยู่ในไฟล์ และไปโผล่เป็น `gate` แดงตอนรันรอบสุดท้าย
+   · **กฎ: commit ไฟล์ก่อน mutate ทุกครั้ง แล้วตรวจ `git status` หลังชุด mutation จบ** ·
+   คืนเฉพาะไฟล์ที่ถูก mutate ไม่ใช่ทั้งโฟลเดอร์
+3. **ยอดไฟล์เทสใน `scripts/README.md` ค้างอยู่ที่ pure 80 ไฟล์** ทั้งที่ของจริง 83 (แก้เป็น
+   120 ไฟล์ = pure 84 + DB 36 แล้ว) · `34 จาก 36 ไฟล์ของชุด DB ไม่มีด่าน host ของตัวเอง`
+   ยังจริงอยู่ เพราะไฟล์ใหม่นี้มีด่านของตัวเอง (เป็นไฟล์ที่สองที่มี)
+4. **⚠️ เทสสแกนซอร์สที่ใช้ substring แดงผิดตัวได้ง่ายมาก** — ด่าน read-only ของ
+   `db/checks/*.sql` รอบแรกแดงสองครั้งเพราะ (ก) คำว่า `insert` ในข้อความไทยของ `\echo`
+   (ข) `CREATE` ที่ไปแมตช์ **substring ของ `created_at`** · ต้องตัด `\echo` ออกด้วย และเล็งด้วย
+   word boundary + คำที่ตามมาจริง (`INSERT\s+INTO`, `CREATE\s+[A-Za-z]`) ไม่ใช่ `.includes()`
+   · **กับดักเดียวกับที่ผมเจอด้วย grep ตอนตามหา `COALESCE($n, 0)` แล้วไปแมตช์คอมเมนต์ของตัวเอง**
+
+#### ยังไม่ได้ทำ (ตามลำดับที่ตกลงไว้)
+
+- **เฟส 0 บน production ยังไม่ได้รัน** — ต่อฐาน production จากเครื่องนี้ไม่ได้
+  (`POSTGRES_HOST=postgres` = ชื่อ service ใน docker network ของเซิร์ฟเวอร์) · ตอนนี้เป็นคำสั่งเดียว:
+  `docker compose ... exec -T postgres psql -U <user> -d <db> -f - < db/checks/ai-usage-consistency.sql`
+- **⚠️ หลัง deploy ตัวเลขจะกระโดด** — cost จาก $0.0000 เป็นเลขจริง · `unpricedProviderCalls`
+  ตกลงมาเยอะ · token เริ่มไม่เป็น 0 · **เป็นสัญญาณว่าแก้สำเร็จ ไม่ใช่บั๊กใหม่** จดวันที่ deploy ไว้
+- **แถวที่ล้มไปแล้วกู้ไม่ได้** — response ของ provider ไม่มีเก็บไว้ที่ไหน ห้าม backfill ด้วยการเดา
+  (ต่างจาก `9.22` ที่มีหลักฐานทางอ้อมให้ยึด) · ปล่อยให้นับใน `unpricedProviderCalls` ตามที่มันมีไว้
+- **เฟส 3 (หน่วยของเพดาน) ยังไม่ตัดสิน** — เก็บ "ครั้ง" ไว้ + เพิ่มเพดาน $/เดือน เป็นด่านที่สอง
+  คือทางที่แนะนำ แต่ **ต้องรอข้อมูล cost จริงครบ 1 เดือนหลัง deploy ก่อนตั้งเลข** ไม่งั้นเป็นการเดา
+- **เฟส 4 ที่ยังค้าง**: ① `credits_consumed` drift จาก `SUM(billable_credits)` — เทสใหม่บังคับ
+  invariant นี้แล้วสำหรับ tenant ของตัวเอง และ `db/checks/ai-usage-consistency.sql` รายงานให้แล้ว
+  แต่ **ยังไม่มี `balanceMismatchCount` บนหน้า Billing** แบบที่ loyalty/store credit/AR มี ② รางโควตาบนแถบเมนู
+  คิด `count/limit` ขณะที่ `remaining` คิดจาก `granted+bonus+adjusted−consumed` → ร้านที่เคยเติม
+  เครดิต (dev: `adjusted = 6000`) เห็น "ใช้ไป 39%" คู่กับคงเหลือ 6,606 ③ `currentYearMonth()`
+  ใช้ UTC ขณะที่รายงานอื่นใช้ `Asia/Bangkok` → การใช้งานวันที่ 1 ช่วง 00:00–07:00 ไทยตกถังเดือนก่อน
+  · **แก้ลอย ๆ ไม่ได้** เพราะ `year_month` เป็นคีย์ของสามตาราง (รวม unique index ของ monthly grant)
+  ④ ตัวกวาดยังรันตอนมีคนเปิดหน้าจอ (`getAiUsage` เรียกก่อนอ่านค่า) ไม่ใช่ cron → ตัวเลขขึ้นกับว่า
+  ใครเปิดหน้าไหนเมื่อไร
+- **เฟส 5**: `transaction()` ใน `aiUsage.ts` ใช้ `BEGIN` เปล่า ไม่ผ่าน `beginTenantTx` → write
+  ทั้งโมดูลไม่มี RLS คุม (ขัดข้อ 2 ของ checklist ใน `CLAUDE.md`) ไม่พังวันนี้เพราะ policy เป็นแบบ
+  "ผ่านหมดเมื่อไม่ได้ตั้งค่า" แต่ `WHERE` พลาดครั้งเดียวจะข้ามร้านได้
+- **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** — การ์ดโทเคนที่ `/admin/billing` และ `/admin/env`
+  ผ่านแค่ typecheck + build + เทส (`NEXT_PUBLIC_GRAPHQL_HTTP` ของ container dev ยังชี้ production
+  ปัญหาที่จดไว้ตั้งแต่ `9.44`)
+- **ฐาน dev มี tenant `fake-request-*` ค้าง 6 แถว** จาก `restaurant-request-db-contract` ที่แดงอยู่
+  ก่อนแล้ว (`bms_restaurant_order_requests` ไม่มีในฐานนี้ = `9.66` ยังไม่ apply) มันล้มก่อนถึง
+  teardown จึงงอกเพิ่มทุกรอบ · **ไม่ใช่ของงานนี้ ยังไม่ลบ**
+
+
+### ท้าย sidebar แอดมิน 191px → 90px + ธีมเริ่มต้นของบัญชีใหม่ (`9.67`) — 2026-09-08
+
+branch `feat/sidebar-footer-and-light-default` (ตัดจาก `develop` ที่ merge #188 แล้ว) ·
+`npm run gate` ผ่าน (typecheck · **pure 925** · production build) · **ไม่มี permission ใหม่** ·
+`9.67` **apply เข้า dev DB แล้วและ verify กับ DB จริงแล้ว** · **ยังไม่ได้ apply เข้า production**
+
+**DB 405/414** — แดง 9 ตัว **แต่พิสูจน์แล้วว่าเป็นของเดิม ไม่ใช่ regression**: `git stash push -u`
+เฉพาะไฟล์ของงานนี้แล้วรันซ้ำ ได้ชื่อเทสที่แดง**ชุดเดียวกันเป๊ะ** (diff ว่าง) · ต้นเหตุอย่างน้อย
+หนึ่งตัวคือ **`9.66` ยังไม่ได้ apply เข้า dev DB ของเครื่องนี้** (`bms_restaurant_order_requests`
+does not exist) ที่เหลือเป็น restaurant/kitchen drift ที่มีอยู่ก่อน
+
+#### ท้ายแถบ: B ตอนขยาย · ยุบเป็น A ตอนย่อ (ไม่มี migration)
+
+- **ต้นเหตุที่วัดได้**: ท้ายแถบเป็น **5 บล็อกใน 3 container** ที่มีเส้นคั่นและ padding ของตัวเอง
+  ครบชุด → **191px ตอนขยาย และ 223px ตอนย่อ** · ตอนย่อกินที่ *มากกว่า* ตอนขยาย เพราะทุกแถวได้
+  padding ใหญ่ขึ้นเพื่อแยกไอคอน = กดย่อแถบเพื่อประหยัดที่แล้วท้ายแถบแย่ลง
+- **ปุ่ม Logout เป็นของที่ดังที่สุดบนแถบทั้งแถบ** (danger primary เต็มความกว้าง) ทั้งที่กดน้อยที่สุด
+  — ดังกว่าเมนูของหน้าที่เปิดอยู่จริง · ตอนนี้เป็นรายการ `danger: true` ในเมนู ⋯ ของแถวตัวตน
+- **โควตา AI ยุบเข้าแถวผู้ช่วย** — เดิมเป็นสองบล็อกที่ตอบคำถามเดียวกันแล้วลิงก์ไปคนละหน้า
+  (`/admin/settings` กับ `/admin/assistant`) · **⚠️ ปลายทางเปลี่ยนตามข้อความบนแถว**: ปกติไป
+  `/admin/assistant` · **เฉพาะตอนโควตาหมด**ไป `/admin/settings` เพราะเป็นสถานะเดียวที่ข้อความ
+  บอกให้ไปใส่ AI Key — คลิกปกติแล้วเด้งไปหน้าตั้งค่าคือการโกหกป้าย
+- **รางโควตา 3px `aria-hidden` ห้ามทำให้กดได้** — 3px ไม่ใช่เป้าแตะของนิ้ว · ตัวเลขบนแถวเป็นตัวที่
+  กดได้จริง (มีเทสห้าม `href|Tooltip|onClick` ในบล็อกราง)
+- **ไม่มี "สลับธีม" ในเมนู ⋯ โดยตั้งใจ** — `ThemeToggle` อยู่บน `HeaderBar` ทุกหน้าแล้ว การมีสอง
+  ที่ทำเรื่องเดียวกันคือสิ่งที่งานนี้ทำมาเพื่อเลิก (มีเทสกันไว้ทั้งสองฝั่ง)
+- **แถวตัวตนเป็นสองเป้าแยกกัน** (แก้ตามผู้ใช้สั่ง หลังเห็นรอบแรกที่ทั้งแถวเปิดเมนู): แถวที่เขียน
+  ชื่อตัวเอง → `/admin/profile` · ปุ่ม ⋮ → เมนู · ทั้งคู่โฟกัสด้วยคีย์บอร์ดได้ (Link + button)
+  และมีชื่อของตัวเองคนละชื่อ · เหตุผลที่ยอมแลก: ทั้งแถวเป็นเมนู = เป้าแตะใหญ่กว่า แต่ทำให้
+  **โปรไฟล์ ซึ่งเป็นสิ่งที่แถวนั้นแสดงอยู่ ต้องกดสองที**
+- **แถวผู้ช่วยเปลี่ยนจากไอคอนเปล่า+เลขชิดขอบ เป็นวงแหวนโควตารอบไอคอน** (แก้ตามผู้ใช้สั่ง
+  หลังทำ mockup 3 ทางเลือกให้เลือก — เลือกแบบวงแหวน) · ต้นเหตุ: ข้อมูลจริง ("ใช้ไปแล้ว
+  0/1000 ครั้งเดือนนี้") อยู่ใน tooltip เท่านั้น ซึ่ง hover ไม่ได้บนจอสัมผัส (เห็นจากภาพหน้าจอจริง
+  ที่ผู้ใช้ส่งมา) · วงแหวน 24px ใช้ `r=15.9155` (เส้นรอบวง ≈ 100 พอดี) `strokeDasharray` จึงรับ
+  `aiQuotaPct` ตรง ๆ ไม่ต้องคูณ 2πr เอง — ตัวแปรนี้มีอยู่แล้วจากตอนทำรางเดิม ไม่ต้องคำนวณซ้ำ
+  · **`aiTone` ครอบทั้งสามสถานะอยู่แล้ว** (ปกติ/ใกล้หมด/หมด) จึงใช้เป็นสีขีดของวงแหวนตรง ๆ
+  ไม่ต้องมีสีสำรอง · ไม่วาดวงเลยเมื่อ `aiShouldShow=false` (ร้านมี AI Key เอง — ไม่มีโควตาให้บอก)
+- **⚠️ รางเต็มความกว้างใต้แถวถูกถอดออก** — ข้อมูลย้ายเข้าวงแหวนหมดแล้ว เหลือไว้กรณีเดียว: **ตอนย่อ
+  และไม่ได้โควตาหมด** ซึ่งไม่มีทั้งแถวและวงแหวนให้เห็นเลย (แถวผู้ช่วยพับเข้าเมนู ⋯ ตอนนั้น)
+  แถบ 3px ที่ขอบล่างจึงเป็นสัญญาณเดียวที่เหลือให้เห็นบนราง 64px
+- **แถวสูงขึ้น 30→32px** เพื่อให้วงแหวนมีที่หายใจ — ยืนยันจริงในเบราว์เซอร์ทั้ง 4 สถานะยังคง 32px
+  เท่ากัน ไม่มีป้ายไหนถูกตัด
+- **⚠️ ตอนย่อ avatar ต้องเป็นตัวเปิดเมนู ห้ามเป็นลิงก์ไปโปรไฟล์** — รางกว้าง 64px มีที่ให้เป้าเดียว
+  ถ้าเป้านั้นพาไปโปรไฟล์ **ทางออกจากระบบหายไปทั้งโหมด** และบัญชี `pos_only` เปิด `/admin` หา
+  ทางอื่นไม่ได้ด้วย (มีเทสคุมตรงตัว)
+- **เมนู ⋮ ถือเฉพาะสิ่งที่แถบ *ในโหมดนั้น* ไม่มีเป้าของตัวเองให้** (แก้ตามผู้ใช้สั่งอีกรอบ) —
+  ตอนขยายเหลือ **คู่มือ / ออกจากระบบ** เพราะทั้งผู้ช่วยและโปรไฟล์มีแถวของตัวเองอยู่แล้ว
+  การใส่ซ้ำคือสองทางไปที่เดียวกันห่างกัน 40px (เหตุผลเดียวกับที่ไม่ใส่ "สลับธีม") ·
+  ตอนย่อเมนูรับทั้งสองไว้แทน เพราะรางกว้าง 64px ไม่มีที่ให้แถวไหนเลย ·
+  **เทสตรึงไว้สองทิศ**: ใส่ซ้ำตอนขยาย = แดง · ถอดออกจนตอนย่อเข้าไม่ถึง = แดง
+- **`admin.account_menu` เลิกไล่ชื่อรายการในเมนู** — เนื้อในต่างกันสองโหมดแล้ว ป้ายที่ไล่ชื่อจะผิด
+  ในโหมดหนึ่งเสมอ · เปลี่ยนเป็นชื่อของตัวควบคุม ("เมนูบัญชีของฉัน" / "Account menu")
+- **ปุ่ม ⋮ กว้าง 40px ไม่ใช่ 32px** — วัดแล้วว่าชื่อยาวสุดที่พบจริง (`dettol@local.me`) กิน 93px
+  จากกล่อง 122px การกว้างขึ้น 8px จึงไม่ทำให้ชื่อไหนถูกตัดเพิ่ม (กล่องเหลือ 114px) แต่เป็นเป้าแตะ
+  ที่ถือปุ่มออกจากระบบอยู่ · **สูงยังถูกจำกัดที่ 34px** ตามความสูงของแถว ซึ่งเป็นข้อจำกัดจริงของ
+  เป้าแตะ ไม่ใช่ความกว้าง
+- **สถานะโควตาหมดยังดังเท่าเดิม** — พื้น `aiBg` + จุดแจ้งเตือน + ข้อความ `aiStripText` · และ
+  **ตอนย่อ แถวผู้ช่วยกลับมาเฉพาะสถานะนี้** (สถานะเดียวที่มีอะไรให้ทำ) ท้ายแถบจึงโตเป็น 96px เฉพาะตอนนั้น
+- **antd `Dropdown` portal ไป `document.body`** จึงไม่ถูก `overflow: hidden` ของ `<Sider>` ตัด
+  (ตรวจแล้วว่าไม่มี `getPopupContainer` ระดับ global ที่ไหนเลย)
+
+#### `9.67` บัญชีใหม่เริ่มที่ธีมสว่าง แทนที่จะตามระบบ
+
+- **ตามรูปแบบของ `7.81` เป๊ะ ๆ**: เปลี่ยน **column DEFAULT** ไม่ใช่ไปเติมค่าใน INSERT —
+  `7.50` ตั้ง `theme_preference` DEFAULT `'system'` และ **ไม่มี create path ไหนตั้งค่าเอง**
+  (สมัครร้านใหม่ · แอดมินเพิ่มพนักงาน · register/OAuth ของฟีเจอร์ชุมชน) จึงครอบทุกเส้นทาง
+  ด้วยบรรทัดเดียว และไม่มี INSERT ไหนลืมได้ในอนาคต
+- **เหตุผลที่ `'system'` ผิดสำหรับสินค้านี้**: `/pos` และ `/pos/display` เป็นโหมดสว่างอย่างเดียว
+  (`pos.css` มีสีดิบ ไม่ได้อ่าน token ของธีมมืด) ขณะที่ `/admin` และ `/pos/restaurant` ตามธีม →
+  ร้านที่พนักงานใช้ OS ธีมมืดได้หลังบ้านมืดคู่กับเครื่องขายสว่าง บนสองจอที่แคชเชียร์จ้องทั้งวัน
+- **แถวเดิมไม่ถูกแตะโดยตั้งใจ** — แยก "เลือก System เอง" กับ "ไม่เคยแตะ" ย้อนหลังไม่ได้ ·
+  verify กับ DB จริงแล้ว: default เป็น `light` · แถวเดิมยังเป็น `system 23 / light 2` เท่าเดิม ·
+  insert ทดสอบใน transaction ได้ `light / th` แล้ว ROLLBACK (เหลือ 0 แถว)
+- **⚠️ หน้า login ยังเป็นธีมตามคุกกี้** — บัญชีใหม่ที่ OS เป็นธีมมืดจะเห็นหน้า login มืดแล้ว
+  พลิกเป็นสว่างหลัง `/api/auth/me` ตอบ (`SessionLayer` sync ค่าจาก DB) · ยังไม่ได้แก้เพราะก่อน
+  ล็อกอินไม่มีสัญญาณไหนบอกได้ว่าเป็นใคร
+
+#### เทส
+
+- ใหม่ 2 ไฟล์: `scripts/admin-sidebar-footer-contract.test.mts` (**11 เทส**) +
+  `scripts/new-account-defaults-contract.test.mts` (**4 เทส**) · ทั้งคู่ pure
+- **ผ่าน mutation test 21 แบบ แดงถูกตัวทุกครั้ง** (ท้ายแถบ 12 · วงแหวนโควตา 4 · ค่าปริยาย 5) — รวมเคส
+  "ย้าย anchor ของ slice" ที่ต้องแดง 5 เทส ไม่ใช่เขียวแบบว่างเปล่า และเคส
+  "ตอนย่อ avatar กลายเป็นลิงก์ไปโปรไฟล์" ซึ่งทำให้ออกจากระบบไม่ได้ทั้งโหมด
+- **⚠️ เทสเดิม 2 ตัวต้องเล็งใหม่** ใน `admin-navigation-contract`:
+  1. ตรึง **สตริง padding ของบล็อกที่เพิ่งถูกยุบ** ตรงตัวทั้งสามบล็อก = ตรึงเลย์เอาต์เก่าไว้
+     · ย้ายไปตรึงว่า "ท้ายแถบมีเส้นคั่นเส้นเดียว" + padding ชุดใหม่
+  2. `sidebar.slice(indexOf("ผู้ช่วย AI + คู่มือ"), ...)` — คอมเมนต์นั้นหายไปแล้ว `indexOf`
+     คืน `-1` แล้ว slice กลายเป็น `""` · เพิ่ม `assert.ok(slice.length > 0)` ทั้งสองปลายกันไว้แล้ว
+     (กับดักเดิมของไฟล์นี้ที่จดไว้ตั้งแต่กลุ่ม 3)
+- `new-account-defaults-contract` **เรียง migration ด้วยตัวเลข ไม่ใช่ lexical** — `9.7` ต้องมาก่อน
+  `9.67` ไม่งั้น "ใครเขียนทีหลังชนะ" ตอบผิด · และ **ตัดคอมเมนต์ออกก่อนสแกน** เพราะ `9.67`
+  อ้างคำว่า `'system'` ทั้งในเหตุผลและในบรรทัด ROLLBACK
+
+#### เปิดดูจริงในเบราว์เซอร์ (เฉพาะเรขาคณิต)
+
+- **⚠️ `/admin` เปิดดูใน container dev นี้ไม่ได้** — `NEXT_PUBLIC_GRAPHQL_HTTP` ชี้ไป
+  `https://jachoei.com/api/graphql` (production) หน้าแอดมินจึงยิงข้ามไปโดน CORS แล้ว permission ว่าง
+  (ปัญหาที่มีมาก่อน จดไว้ตั้งแต่ `9.44`) · **แถบเมนูจริงกับ Dropdown ยังไม่เคยถูกเปิดดู**
+- วิธีที่ใช้แทน (แบบเดียวกับ `_csscheck` ของ 2026-09-04): เสิร์ฟหน้าเช็คจาก
+  `public/_footercheck/` ที่ถอด inline style ชุดเดียวกับคอมโพเนนต์มาวาด แล้ว **ลบโฟลเดอร์ทิ้งทันที**
+  (ยืนยันแล้วว่าไม่ค้างใน git status) — **browser pane สั่งงาน `file://` ไม่ได้ ต้องเสิร์ฟผ่าน dev server**
+- **วัดจริงในเบราว์เซอร์**: ขยาย **90px** (ปกติ/ใกล้หมด/หมด) · **87px** เมื่อร้านมี AI Key เอง
+  (ไม่มีราง) · ย่อ **60px** · ย่อตอนโควตาหมด **96px** · ไม่มี horizontal overflow สักเคส ·
+  ลิงก์โปรไฟล์ 164×34 · ปุ่ม ⋮ 40×34 · ไม่ทับกัน · อีเมลยาวถูก ellipsis ในกล่อง 114px ไม่ดันเลย์เอาต์
+  · **หลังเปลี่ยนไอคอนเป็นวงแหวน**: ยกโค้ดจริงมาวางในหน้าเช็คทุกตัวอักษร (ไม่ใช่ประมาณ) ยืนยันทั้ง
+  4 สถานะ (ปกติ 12% / ใกล้หมด 82% / หมด 100%+จุด / มี Key เอง ไม่มีวง) — แถวยังคง **32px** เท่ากัน
+  ทุกสถานะ, `stroke-dasharray` ตรงกับเปอร์เซ็นต์จริง, ป้ายไม่ถูกตัดสักสถานะ
+- **⚠️ บทเรียนของตัวหน้าเช็คเอง**: helper ที่เติม `px` ให้ทุกค่าที่เป็นตัวเลขทำให้
+  `lineHeight: 1.2` กลายเป็น **`line-height: 1.2px`** แล้วชื่อกับ role ทับกันเป็นบรรทัดเดียว —
+  **เป็นบั๊กของฮาร์เนส ไม่ใช่ของคอมโพเนนต์** (React ปล่อย `lineHeight`/`flexShrink`/`opacity`/
+  `zIndex`/`fontWeight` เป็น unitless) · ถ้าเชื่อภาพหน้าจอรอบแรกจะไล่แก้ผิดที่
+- **⚠️ `document.body` เป็น `null`** ถ้า `<title>/<meta>/<style>` อยู่ก่อน `<script>` — parser
+  ยังอยู่ใน `<head>` · ต้องมี `<body>` ชัด ๆ
+- **⚠️ กับดักเดียวกันรอบที่สอง: หน้าเช็คขาด `*{box-sizing:border-box}`** ที่แอปได้จาก
+  `antd/dist/reset.css` (import ที่ `app/layout.tsx` บรรทัดแรก) → `<a>` ที่มี `height:34` + `padding:4`
+  วัดได้ **42px** แทน 34 แล้วท้ายแถบรายงานเป็น 98px ทั้งที่ของจริง 90px · **หน้าเช็คต้องยก
+  reset ของแอปมาด้วยเสมอ ไม่ใช่แค่ inline style** ไม่งั้นวัดตัวเองไม่ได้วัดของจริง
+
+#### ยังไม่ได้ทำ (จงใจ)
+
+- ยังไม่เปิดดูแถบจริงในเบราว์เซอร์ (ดูเหตุผลข้างบน) — Dropdown, ตำแหน่งเมนู, และ hover ของแถว
+  ยืนยันได้แค่ระดับซอร์ส + เรขาคณิต
+- ไม่แตะ `/pos` และ `/pos/display` ให้รองรับธีมมืด — `9.67` เลือกทางกลับกันคือให้ทุกจอสว่างเหมือนกัน
+- ไม่ได้ backfill แถวเดิมที่เป็น `system` (ดูเหตุผลข้างบน)
+
+
+### ผลการรันเทสออกสองทาง + preflight ก่อน deploy — 2026-09-07 (ค้างอยู่)
+
+`npm run gate` ผ่าน (typecheck · **pure 908** จาก 904 · production build) ·
+**A เสร็จแล้ว · B เขียนเสร็จและเดินได้จริงแต่ยังไม่มีเทส**
+
+#### A. ตัวรันเทสเขียนผลลงไฟล์ (เสร็จ)
+
+จอเดิมพิมพ์ TAP ทั้งก้อน = **5,445 บรรทัด / 249 KB** ต่อรอบที่ผ่าน ซึ่ง **66% เป็นบล็อก YAML
+ของเทสที่ผ่าน** · ตอนแดงต้อง grep เอง และ scrollback อาจไม่พอ · แต่ถ้าเขียนลงไฟล์แล้วจอเงียบ
+รอบที่ใช้ 30 วิ (โหมด DB นานกว่า) จะแยกไม่ออกว่าค้างหรือกำลังทำงาน → **ต้องสองทาง**
+
+- จอ = reporter `spec` (~940 บรรทัด ลด 83% · มี `ℹ tests/pass/fail` + section `✖ failing tests:`)
+- ไฟล์ = `.test-output/<mode>.tap` (TAP เต็ม ไม่มีรหัสสี grep/diff ได้)
+- `.test-output/<mode>.run.txt` เขียนโดยตัวรันเอง: mode · filter · files · commit ·
+  **database** · started · รายชื่อไฟล์ · แล้วปิดท้าย finished/duration/`exit=N`
+- **ไม่ใช้ `tee`** เพราะ exit code ต้องพึ่ง PIPESTATUS แล้วหลุดง่ายบน shell ผสมของ Windows ·
+  reporter destination ของ node ไม่มีปัญหานั้น (ยืนยันแล้วทั้ง exit 0 และ 1)
+- `BMS_TEST_OUTPUT_DIR` เปลี่ยนที่เก็บได้ (CI ใช้เป็น artifact / เทสใช้ temp dir)
+- `.test-output/` เข้า `.gitignore` แล้ว
+
+**สองอย่างที่ไฟล์ TAP ตอบแทนไม่ได้ จึงต้องมี `.run.txt`**:
+
+1. **ฐานไหน** — ไฟล์ผลที่ไม่รู้ว่าเป็นของฐานไหนตอบอะไรไม่ได้ (โหมด DB)
+2. **⚠️ ไม่มีบรรทัด `exit=` = รอบนั้นยังไม่จบ ห้ามอ่านว่าเขียว** — process ที่ถูกฆ่ากลางทาง
+   ทิ้งไฟล์ TAP ครึ่งเดียวที่ไม่มี `not ok` อยู่ในนั้นเลย ซึ่งอ่านเหมือนผ่าน · บรรทัดนั้นถูกเขียน
+   *หลัง* ลูกจบเท่านั้น
+
+**⚠️ กับดักที่เจอตอนเขียนเทส: `NODE_TEST_CONTEXT` สืบทอดเข้าไปในรอบซ้อน** แล้ว node
+เปลี่ยนรูปแบบ output **ทิ้ง reporter destination ไปเงียบ ๆ** — อาการคือไฟล์ `.tap` ไม่ถูกสร้างเลย
+ทั้งที่ exit code เป็น 0 · เทสต้องตัด `NODE_TEST_CONTEXT`/`NODE_OPTIONS` ออกจาก env ของลูก
+
+**⚠️ ห้าม mutation ที่ทำให้ตัวกรองตกกลับไปรันทั้งชุด** ใน `contract-runner-contract` —
+เทสในไฟล์นั้นเรียกตัวรันซ้อน รอบซ้อนจะหยิบไฟล์เดิมมารันอีก = recursion จนหมดเวลา
+(เจอมาแล้ว ต้องกู้ไฟล์เอง) · mutation ที่ตรงกับการันตีข้อนั้นคือ "ทางที่ไม่ตรงเขียนไฟล์สรุป
+ทิ้งไว้" ซึ่งยัง exit 2 เหมือนเดิม
+
+เทส: `contract-runner-contract.test.mts` **8 เทส** (จาก 4) · **mutation 7 แบบ แดงถูกตัว**
+
+#### B. `scripts/preflight-deploy.mts` (เขียนเสร็จ เดินได้จริง — **ยังไม่มีเทส**)
+
+read-only ทั้งหมด · ไม่พิมพ์ค่าความลับ · **ไม่ apply migration ให้เอง** (รีโปนี้ apply มือ
+ด้วยเหตุผล: บางไฟล์ล็อกตาราง ต้องรันตอนไม่มีคนขาย)
+
+**ผลลัพธ์ 3 แบบ** — `0` deploy ได้ · `1` บล็อก · **`2` ตรวจไม่ได้ = ห้าม deploy เหมือนกัน
+แต่ทางแก้คนละเรื่อง** (ไปรัน migration อย่างหนึ่ง ต่อฐานให้ได้ก่อนอีกอย่าง) · การนับ
+"ตรวจไม่ได้" เป็นผ่านคือความผิดพลาดที่ `check-bms-secret-key` เคยทำมาแล้ว
+
+**ด่านที่บล็อก (ชั้น A)** — 5 ข้อ:
+
+1. `check-schema-readiness.mts` เทียบกับฐานเป้าหมาย (ตัวสำคัญที่สุด: โค้ดอ้างคอลัมน์ใหม่
+   แบบไม่มีเงื่อนไข และไม่มี schema probe ที่ไหนในแอป)
+2. `JWT_SECRET` / `BMS_SECRET_KEY` (hex 64) — production **throw** ถ้าไม่มี = แอปไม่ขึ้น
+3. `check-bms-secret-key.mts` — คีย์ถอดข้อมูลที่เก็บไว้จริงได้ครบ
+4. GRANT ของ `bms_app` — **เรียกไฟล์เทสตัวเดิม ไม่ก็อป SELECT มา** เพราะคำสั่งพวกนั้น
+   *คือ* ตัวการันตี · ไฟล์นั้นประกาศตัวเองว่า read-only ปลอดภัยกับทุกฐาน และ preflight
+   **ตรวจซ้ำว่าบรรทัดประกาศนั้นยังอยู่ก่อนเรียก**
+5. `NODE_ENV=production` ต้องไม่มี `BMS_ALLOW_FAKE_SEED=1`
+
+**เตือนไม่บล็อก**: ไม่มีหลักฐานว่ารัน gate กับคอมมิตนี้ (อ่านจาก `.test-output/pure.run.txt`
+— รวมกรณี "ไม่มี `exit=`" และ "เป็นของคอมมิตอื่น") · `BMS_CHECKOUT_SECRET` ไม่ได้ตั้ง ·
+cron secret ไม่ได้ตั้ง
+
+**รายการที่คนต้องยืนยันเอง (เครื่องตอบไม่ได้)**: เทส DB 35 ไฟล์ผ่านกับฐานทดสอบของคอมมิตนี้ ·
+เปิดดูในเบราว์เซอร์แล้ว · migration ที่ยังไม่ apply สำรองฐานและเลือกเวลาแล้ว · permission ใหม่
+seed ครบทุกร้าน
+· **จงใจไม่ทำสามข้อนี้เป็นด่านที่บล็อก** ตามกฎที่ `gate.yml` เขียนไว้เอง: อย่าเพิ่มด่านที่รู้อยู่แล้ว
+ว่าแดง เพราะจะกลายเป็นด่านที่ทุกคนเรียนรู้ที่จะข้าม แล้วด่านที่มีค่าจริงจะถูกข้ามไปพร้อมกัน
+
+**ของใหม่ที่แตะของเดิม: `scripts/dbEnv.mts`** — การหาว่า "ฐานเป้าหมายคือฐานไหน" ย้ายมาอยู่
+ที่เดียว แล้ว `check-schema-readiness.mts` ใช้ตัวนี้ · เหตุผล: เดิมตรรกะอยู่ในไฟล์นั้นตัวเดียว
+ส่วน `check-bms-secret-key.mts` พึ่ง env ที่แอปเห็น → **รันสองตัวจากเครื่องเดียวกันอาจตรวจ
+ฐานคนละฐานโดยไม่มีอะไรบอก** (ตัวหนึ่งอ่าน `.env` อีกตัวตกไปที่ค่าปริยาย `appdb`) ·
+preflight resolve ครั้งเดียวแล้ว **ส่ง env ที่ resolve แล้วต่อให้ลูกทุกตัวแบบระบุชัด**
+· ยืนยันว่า `check-schema-readiness` ทั้งสองโหมดยังทำงานเหมือนเดิม และเทส
+`schema-readiness-contract` ยังเขียว
+
+**ยืนยันด้วยการรันจริงบนเครื่องนี้แล้ว 2 เส้นทาง**: ไม่มีความลับ + ไม่มีฐาน → exit 1
+(บล็อก 1 ด่าน + ตรวจไม่ได้ 3) · ตั้งความลับครบแต่ไม่มีฐาน → **exit 2**
+
+#### ยังไม่ได้ทำของ B (ทำต่อจากนี้)
+
+- **เทสของ preflight ยังไม่มีเลย** — ควรตรึง: exit 0/1/2 แยกกันจริง · "ตรวจไม่ได้"
+  ไม่ถูกนับเป็นผ่าน · ส่ง env ฐานเดียวกันให้ลูกทุกตัว · ตรวจ marker read-only ก่อนเรียกไฟล์เทส ·
+  รายการที่คนต้องยืนยันต้องไม่กลายเป็นด่านที่บล็อก · แล้ว mutation test ให้ครบ
+- ยังไม่ได้เขียนหัวข้อของ preflight ใน `scripts/README.md`
+- ยังไม่ได้รันกับฐานจริง (เครื่องนี้ไม่มี Postgres ของโปรเจกต์) จึงยังไม่เคยเห็นเส้นทาง exit 0
+- ยังไม่ได้ต่อเข้า CI (ไม่มี deploy workflow ในรีโปนี้เลย — deploy เป็นงานมือบนเซิร์ฟเวอร์)
+
+
+### recheck `9.66` รอบสอง — เจอของจริงอีก 9 จุด แก้ครบแล้ว (2026-09-07)
+
+branch `codex/restaurant-order-intake` · `npm run gate` ผ่าน (typecheck · **pure 900** จาก 887
+ตอนเริ่ม · production build) · **ไม่มี migration ใหม่ ไม่มี permission ใหม่** ·
+**มิวเทชันรวมสองรอบ 28 แบบ แดงถูกตัวทุกครั้ง** · **เทส DB ยังไม่ได้รันสักตัว** (เครื่องนี้ไม่มี
+`pgdata` ของโปรเจกต์แล้ว — ดูหัวข้อรอบแรก)
+
+#### 1. `reorder` เป็นประตูที่สองสู่เส้นเขียน — บิลเกิดจริงจากแชทได้
+
+รอบของ codex ปิดแค่ `create_order` (ไปเข้าคิว) กับ `submit_payment` (บล็อก) แต่ทูล `reorder`
+บน surface customer ยังเรียก `reorderFromOrder()` ตรง ๆ **สร้างบิลและจองสต็อกจากบิลเดิม
+โดยไม่มีใครตรวจ และไม่ให้ลูกค้าเห็นรายการซ้ำ** · ซ้ำร้ายเส้น deterministic `isReorderRequest`
+ถูกปิดให้ร้านอาหารไปแล้ว "สั่งเหมือนเดิม" จึงตกเข้า AI loop ที่ `whenToUse` ของทูลเขียนไว้ตรงตัว
+ว่าให้ใช้กับประโยคนี้ — **โมเดลเรียกแน่**
+
+- แก้สองชั้น: `customerTools("restaurant")` **ไม่ยื่นทูลนี้ให้โมเดลเลย** (กลไกเดียวกับที่ใช้กับ
+  `list_restaurant_order_locations` อยู่แล้ว · `byName` ของลูปสร้างจากลิสต์ที่ยื่น การเรียกชื่อที่
+  ไม่ได้ยื่นจึงตอบ "ไม่รู้จักทูล") **และ** `reorderTool.execute` ปฏิเสธการเรียกตรงอีกชั้น
+- **`customerTools()` ที่ไม่ส่ง archetype ต้องยังคืนทุกทูลเหมือนเดิม** — ผู้เรียกสองที่ใช้มันเอาแค่
+  "ชื่อ" (`CUSTOMER_PROGRESS_TOOLS`, `CUSTOMER_TOOL_BY_NAME`) เปลี่ยนแล้วตัวนับความคืบหน้าและ
+  เส้น deterministic จะเพี้ยนเงียบ ๆ (มีเทสตรึง)
+- **หมายเหตุแยกเรื่อง (ของเดิมทุก archetype ไม่ใช่ของ 9.66): `reorder` ไม่มีด่านยืนยันรายการกับ
+  ลูกค้าเลย** ไม่เคยดู `customerConfirmedQuote` ซึ่งขัดกฎ "ห้ามสร้างบิลก่อนลูกค้าเห็นทุกบรรทัดและ
+  ตอบตกลง" ใน CLAUDE.md — **ยังไม่ได้แก้ ต้องตัดสินแยก**
+
+#### 2. ลูกค้าที่โอนเงินแล้วถูกไล่ให้สั่งใหม่
+
+บล็อก `submit_payment` ของร้านอาหารวางไว้ก่อนทุกอย่างแบบไม่มีเงื่อนไข ทั้งที่ทูลนี้
+**ไม่เคยสร้างออร์เดอร์** — มันแนบใบแจ้งโอนเข้ากับบิล `PENDING` ที่มีอยู่แล้วผ่าน
+`findCustomerPayableOrder()` ซึ่งในร้านอาหารมีได้เพราะพนักงานยืนยันคำขอไปแล้ว · ลูกค้าพิมพ์
+"โอนแล้วค่ะ" จึงได้ข้อความที่เขียนไว้สำหรับ *โมเดล* = **เงินออกไปแล้วแต่ร้านไม่มีบันทึกว่ามีสลิป
+เข้ามา และลูกค้าถูกชวนให้สั่งซ้ำ** · ถ้ายังไม่มีบิล ทูลตอบ `ORDER_NOT_FOUND` อยู่แล้วซึ่งเป็น
+คำตอบที่ถูก → **ถอดบล็อกออก**
+
+#### 3. เส้น deterministic 4 เส้นถูกปิดเหมาให้ร้านอาหาร
+
+`isOrderStatusQuestion` · `isPaymentSubmission` · `isPaymentInfoQuestion` · การถามจำนวนที่หายไป
+ถูกเติม `&& businessArchetype !== "restaurant"` ทั้งชุด · ผลคือร้านอาหาร **ไม่มี AI provider
+= ไม่มีคำตอบเลย** และมี provider ก็เสียค่าโมเดลกับคำถามที่ตอบแบบ deterministic ได้
+
+- **ตัวที่ปิดถูกจริงมีตัวเดียว: order status** เพราะข้อความเดิมพูดถึงแต่ `orders` ลูกค้าที่มีคำขอ
+  รออยู่ในคิวจะได้ "ยังไม่พบออร์เดอร์ของบัญชีนี้ค่ะ" = อ่านว่าร้านทำคำขอหาย · **แต่ปิดแล้วไม่มีอะไร
+  มาแทน** จึงเปิดกลับแล้วให้ข้อความรู้จักคำขอที่รออยู่ผ่าน `restaurantRequestStatusLine()` (pure)
+  · `getOrderStatus` คืน `requests` มาให้แล้วตั้งแต่รอบ codex และ **คืนลิสต์ว่างให้ archetype อื่น
+  ทุกตัว จึงไม่ต้องมีเงื่อนไข archetype เลย — ข้อมูลเป็นตัวตัดสิน** คำตอบของร้านที่ไม่มีคำขอจึง
+  เหมือนเดิมทุกตัวอักษร (มีเทสห้ามคำว่า `businessArchetype` ในบล็อกนั้น)
+- อีกสามตัวไม่มีอะไรผิดสำหรับร้านอาหาร: แจ้งชำระผูกกับบิลที่พนักงานยืนยันแล้ว · ถามเลขบัญชีเป็น
+  การอ่านล้วน · **การถามจำนวนที่หายไปยิ่งจำเป็นกับร้านอาหาร** เพราะออร์เดอร์อาหารมาเป็นลิสต์ยาว
+  ("ข้าวผัด ชาไทย บราวนี่ 3 ชิ้น") และมันคือด่านที่กันโมเดลถามรายการเดียวแล้วลืมที่เหลือ
+
+#### 4. คำขอที่ยืนยันไม่ผ่านไม่บอกเหตุผล ทั้งที่ server รู้อยู่แล้ว
+
+ตะกร้าถูก resolve ไปแล้วในเทิร์นที่สรุปให้ลูกค้าดู สิ่งที่ล้มตอนกด "ยืนยัน" จริง ๆ จึงเป็น
+**สถานะของร้านที่เปลี่ยนไประหว่างนั้น** (กดหยุดรับ / เลยเวลารับออร์เดอร์) แต่ branch ตอบว่า
+"ยังรับคำขอไม่สำเร็จ กรุณาให้ร้านตรวจรายการ" ซึ่งลูกค้าทำอะไรต่อไม่ได้
+
+- แก้ตามรูปที่ repo ใช้อยู่: **`receiveRestaurantRequest` ตอบสถานะชุดเดียวกับ `createOrderInTx`**
+  (`ORDERING_PAUSED` · `ORDERING_CLOSED` · `LOCATION_REQUIRED` พร้อมชื่อสาขา ·
+  `FULFILLMENT_REQUIRED`) แทนการ throw แล้ว `orderReply()` ใน pipeline **แปลทั้งสี่เป็นประโยค
+  ลูกค้าอยู่แล้ว** ไม่ต้องมีข้อความชุดที่สอง และโมเดลก็รู้จักสถานะชุดนี้จาก create_order มาตลอด
+- ปัญหา "ของในตะกร้า" (ไม่พบสินค้า/หน่วยขาย/ตัวเลือกไม่ครบ) ยังเป็น `RestaurantRequestRejection`
+  โดยตั้งใจ — ข้อความมันเอ่ย SKU และชื่อกลุ่มตัวเลือก เป็นคำแนะนำให้โมเดล ไม่ใช่ประโยคที่อ่านให้
+  ลูกค้าฟัง
+- **`refuse()` ต้อง ROLLBACK ก่อน return** ไม่งั้นทรานแซกชันค้างเปิดจนกว่า client จะถูกปล่อย (มีเทส)
+- เทสบังคับว่า **ทุกสถานะในชุดต้องมี `case` ใน `orderReply`** ไม่งั้นมันตกไป default
+  "ไม่แน่ใจว่าต้องการสั่งอะไร" เงียบ ๆ
+
+#### 5. EOL ปนกันใน 8 ไฟล์ที่ codex แก้ — กับดักที่ไฟล์นี้จดไว้เองแล้ว
+
+บล็อกที่ codex แทรกเป็น **LF ในไฟล์ที่เป็น CRLF ทั้งไฟล์** (`pipeline.ts` 69 บรรทัด ·
+`catalog.ts` 39 · อีก 6 ไฟล์รวม 35) ทำให้ `git diff --stat` อ่านผิด และ **patch/grep ที่ยึด
+หลายบรรทัดไม่ตรงเงียบ ๆ** (เจอตอนแก้รอบนี้สองครั้ง กว่าจะรู้ว่าไม่ใช่ข้อความผิด) · normalize
+เป็น CRLF ทั้งหมดแล้ว · **ยืนยันว่า diffstat เท่าเดิมเป๊ะก่อน/หลัง** (290 insertions) เพราะ index
+เก็บเป็น LF อยู่แล้ว เปลี่ยนแค่ working copy ให้ตรงกับที่ git จะ checkout ออกมา ·
+**กฎ: หลังแก้ด้วยสคริปต์ ให้ตรวจ EOL ของบล็อกที่แทรก ไม่ใช่แค่ `git diff --stat`**
+
+#### 6. ประวัติการโทรหายทุกครั้งที่บันทึกครั้งถัดไป
+
+`review_note` เป็นช่องเดียวและถูกเขียนทับทุกครั้งที่กด "บันทึกผลติดต่อ" คิวที่มีไว้เพื่อ
+"โทรคุยแล้วจดว่าตกลงอะไร" จึงเก็บได้แค่ครั้งล่าสุด · audit meta เดิมมีแค่ orderId กับ status
+จึงเติม `note` + `agreedQuantities` ลง meta (รูปเดียวกับที่ `actionCenter.ts` เก็บ reason)
+ประวัติแต่ละครั้งจะไล่ได้จาก audit ตามกฎ "audit คือแหล่งของ who/when/action"
+
+#### 7. กฎของ `9.66` อยู่ที่ `/admin/manual` ที่เดียว = สำเนาที่สองที่ผู้ช่วยอ่านไม่ได้
+
+codex เขียนกฎทั้งชุดเป็น Alert บนหน้า Manual ซึ่งเป็น**ความผิดพลาดเดียวกับที่ `9.51` เคยทำและ
+ถูกย้ายออกไปแล้วเมื่อ 2026-08-28** — ผู้ช่วยตอบ "ทำไมยืนยันคำขอไม่ได้" ไม่ได้เลยเพราะแคตตาล็อก
+ไม่รู้จักฟีเจอร์นี้ · ย้ายเป็นกลุ่ม `limits.restaurant-requests` (10 ข้อ th/en) ซึ่งหน้า Manual
+เรนเดอร์จาก `SYSTEM_LIMITS` อยู่แล้ว **ถอด Alert ออกแล้ว diff ของหน้านั้นกลับเป็นศูนย์** ·
+ของใหม่ในแคตตาล็อก: capability `restaurant.chat-requests` (CONDITIONAL) + guide
+`orders.restaurant-requests` (pageId orders) + `pos.restaurant-requests` (pageId pos เพื่อให้
+แคชเชียร์ค้นเจอที่เครื่องขาย) + **ปักคำถาม 7 ข้อในคอร์ปัส**
+
+- **ต้องเติม alias ให้ไกด์ฝั่งหลังบ้าน** เพราะ *ชื่อ* ของไกด์ฝั่งเครื่องขายมีประโยค
+  "Review restaurant chat requests" ครบทั้งประโยค มันจึงชนะคำถาม "where do I review restaurant
+  chat requests" ของหลังบ้าน (37 ต่อ 32) — เจอเพราะเทสคอร์ปัสบังคับว่า **ต้องเป็นอันดับหนึ่ง**
+  ไม่ใช่แค่ติดอยู่ในผล
+
+#### 8. เทสเดิม 1 ตัวตรึงรูปเดิมของ `customerTools` ไว้
+
+`restaurant-online-order-contract` assert regex ของเงื่อนไข
+`tool.name !== "list_restaurant_order_locations"` ตรงตัว จึงแดงหลังเขียน filter ใหม่ ทั้งที่
+การันตี (ร้านที่ไม่ใช่ร้านอาหารไม่ได้ทูลสาขา) ยังอยู่ครบ · **เล็งใหม่ที่พฤติกรรม**: เรียก
+`customerTools()` จริงแล้วเช็คผล 3 กรณี แข็งแรงกว่าและครอบกฎใหม่ของ `reorder` ไปด้วย
+
+- **เทส pure เรียกโมดูลฝั่ง server ได้** เพราะ `run-contract-tests.mjs` โหลด
+  `scripts/testing/next-runtime-shim.mjs` ให้ · รันไฟล์เดียวด้วยมือต้องใส่ `--import` เอง
+  ไม่งั้นได้ `Cannot find package server-only`
+
+#### 9. จุดที่จอ (การ์ดคิว)
+
+- **กติกา "ยืนยันได้ไหม" ใช้ฟังก์ชันเดียวกับ server** — จอ import `agreedRestaurantQuantities`
+  ตัวเดิมมาตัดสินว่าปุ่มกดได้ไหม (ใส่ 0 ทุกบรรทัด / เกินจำนวนที่ขอ) แทนการเขียนกฎชุดที่สอง
+  ตามบทเรียนของกล่องตัวเลือกเมนู · โมดูล policy เป็น pure (`orderQuote.ts` ไม่ import อะไรเลย)
+  จึงเอาเข้า client bundle ได้
+- **ลิงก์ชำระเงินต้องบอกว่าเป็นของคำขอใบไหน และต้องหายก่อนลองครั้งถัดไป** — เดิมค้างบนแถบเมื่อ
+  การยืนยันครั้งต่อไปล้ม = **ลิงก์จ่ายเงินของลูกค้าคนก่อน** รออยู่ให้พนักงานส่งผิดคน
+- **`aria-label` ของช่องจำนวนต้องบอกชื่อเมนู** — มันแทนที่ข้อความที่มองเห็น คนใช้ screen reader
+  เดิมได้ยินแค่ "จำนวนที่ตกลง 1" (บทเรียนเดียวกับที่เคยแก้ที่ `/pos/restaurant`)
+
+#### ที่ตรวจแล้วว่าไม่ใช่บั๊ก (รอบสอง)
+
+- **cache ของลูป (`completedCalls` คีย์ด้วยชื่อทูล + args) ปลอดภัย** — ยิง `create_order` ซ้ำด้วย
+  args เดิมในลูปเดียวได้ผลเดิมโดยไม่เรียก execute ซ้ำ (ไม่เขียนซ้ำ) และ args ต่างหลังรับคำขอสำเร็จ
+  ชน `assertSingleCustomerOrderWrite` ซึ่ง codex เติม `restaurantRequestId` ไว้ถูกแล้ว
+- **เส้น deterministic ordering (`classifiedIntent === "ordering"`) ปิดให้ร้านอาหารถูกต้อง** —
+  มันสรุปตะกร้าด้วย `composeOrderQuoteSummary` ซึ่ง **มีราคา** ผิดกับสรุปคำขอที่ตั้งใจไม่มีราคา ·
+  ผลคือร้านอาหารสั่งผ่าน AI loop เท่านั้น (เสียค่าโมเดล) เปิดได้ถ้าจะแยกสาขาของสรุป
+- **`listRestaurantRequests` LIMIT 50 เรียง pending ก่อน** ประวัติที่ปิดแล้วจึงดันคำขอที่รอตรวจ
+  ตกจอไม่ได้
+- ขนาด `fingerprint` (JSON ของไม่เกิน 20 รายการ) และ `ai_state` ไม่มีเพดานแยก แต่ถูกจำกัดโดยตัว
+  normalize (sku/size ไม่เกิน 120 ตัวอักษร ตัวเลือกไม่เกิน 20x64) worst case ~30KB ต่อแถว รับได้
+
+#### ยังไม่ได้ทำ (จงใจ)
+
+- **เทส DB ทั้งไฟล์ยังไม่เคยรัน** และ **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** (เหมือนรอบแรก)
+- `reorder` ไม่มีด่านยืนยันรายการกับลูกค้า **ทุก archetype** (ข้อ 1) ของเดิม ต้องตัดสินแยก
+- `promised_at` ยังมาจากเวลาที่ลูกค้าอยากได้ โดยไม่มีช่องให้พนักงานแก้
+- คิวที่เครื่องขายยังต้องกดโหลดเอง (อ่านต้องมี PIN + กะเปิด) และไม่มีป้ายนับบนแถบ
+
+
+### recheck `9.66` รับคำขอร้านอาหารก่อนจองสต็อก (งานของ codex) — 2026-09-07
+
+branch `codex/restaurant-order-intake` · `npm run gate` ผ่าน (typecheck · **pure 893** · production build)
+· **ไม่มี permission ใหม่** (`order.view`/`order.create` ที่หลังบ้าน · `pos.sell` ที่เครื่องขาย)
+· **ยังไม่ได้ apply migration ที่ไหนเลย** · **มิวเทชัน 8 แบบ แดงถูกตัวทุกครั้ง**
+
+#### ⚠️ เครื่องนี้ไม่มีฐาน dev แล้ว — เทส DB ไม่ได้รันสักตัว
+
+`docker volume ls` ไม่มี `pgdata` ของโปรเจกต์นี้ (มีแต่ container ของโปรเจกต์อื่นรันอยู่) และ
+`db/migrations` **สร้างฐานใหม่ตามลำดับเลขไม่ได้** (`1.24` vs `001` ตามที่จดไว้ใน § ประตูก่อน merge)
+· `scripts/restaurant-request-db-contract.test.mts` จึงเป็นของที่ **เขียนแล้วแต่ยังไม่เคยรัน** ทั้งไฟล์
+ต้อง apply `9.66` เข้า dev DB แล้วรันให้ผ่านก่อนเชื่อว่าเส้นทางนี้ใช้ได้จริง
+· ที่ยืนยันได้รอบนี้คือ typecheck + เทส pure (สแกนซอร์ส/ตรรกะ pure) + production build เท่านั้น
+
+#### ⚠️ ชุด pure แดงอยู่ 1 ตัวตั้งแต่ก่อนเริ่ม — `db/checks/schema-readiness.sql` ถูกแก้ด้วยมือ
+
+หัวไฟล์เขียนว่า "อย่าแก้ไฟล์นี้ด้วยมือ" แต่ของที่ commit ไว้มีแค่แถว **table** ของ `9.66`
+ขณะที่ `scripts/schemaReadiness.mts` ประกาศ **table + column** → เทส "ไฟล์ SQL ต้องตรงกับตัวเรนเดอร์" แดง
+· ผลที่แย่กว่าเทสแดง: ตัวตรวจที่รันด้วย psql บนเซิร์ฟเวอร์ (ทางเดียวที่ใช้ได้ เพราะเครื่อง production
+ไม่มี Node) **จะไม่เห็นว่าคอลัมน์ `bms_orders.restaurant_request_instructions` ขาด** ซึ่งเป็น
+คอลัมน์ที่ `listKitchenTickets()` อ่านกับตั๋วออร์เดอร์ **ทุกใบของทุกร้าน** → ฐานที่ตกไฟล์นี้
+"ผ่าน readiness" แต่จอครัวตายทั้งหน้า · regenerate แล้ว + เพิ่มเทสตรึงว่าแถว column ต้องอยู่
+· **แก้ EOL ปนกันในไฟล์เดียวด้วย** — บล็อกที่ codex เพิ่มใน `schemaReadiness.mts` เป็น LF
+ในไฟล์ที่เป็น CRLF ทั้งไฟล์ (มิวเทชันแรกที่เขียนไว้จึงไม่ยิงตรง จับได้ตอน mutation test)
+
+#### ⚠️ ทุกการปฏิเสธของ intake เปิด incident + ซ่อนข้อความที่โมเดลต้องใช้
+
+`receiveRestaurantRequest`/`normalizeRestaurantRequestItems` ปฏิเสธด้วย `throw new Error(...)` 19 จุด
+แต่ intake รันเป็น **AI tool**: `runtime.ts` แปลง error ที่ไม่ใช่ `ToolArgError` เป็น
+"ดึงข้อมูลไม่สำเร็จ" **และเปิด `ai.tool_failed`** · ข้อความที่เขียนไว้เป็นคำสั่งให้โมเดลแก้เองทั้งนั้น
+("กรุณาเลือกสาขาจาก `list_restaurant_order_locations`", "กรุณาถามรับเอง PICKUP หรือจัดส่ง DELIVERY",
+"กรุณาเลือก <กลุ่ม> ให้ครบ") → โมเดลไม่เคยได้เห็น แล้ววนถามซ้ำ
+· ที่หนักกว่า: "ร้านพักรับคำขอชั่วคราว" / "อยู่นอกเวลารับคำขอ" คือ **สถานะปกติของร้าน**
+ร้านที่ปิดตอนกลางคืนจะได้ incident **หนึ่งใบต่อข้อความลูกค้าหนึ่งข้อความ**
+· แก้เป็น `RestaurantRequestRejection` (คลาสใหม่ใน `restaurantRequestPolicy.ts` ที่ยัง pure)
+แล้ว catalog แปลงเป็น `{ok:false,error}` — เส้นทางเดียวกับที่ `createOrderInTx` ตอบเป็น status code
+มาตลอด และเหตุผลเดียวกับ `RestaurantCheckError` ของ `9.62`
+· **คลาสนี้จงใจไม่มีฟิลด์ `code`** — route ทั้งสองตัว rethrow ทุก error ที่มี `code` (เพื่อให้ error
+ของ pg เก็บ SQLSTATE ไว้และเป็น 500) ถ้าใส่ `code` การปฏิเสธตามกฎจะกลายเป็น 500 ที่ข้อความถูก
+`errorResponse()` ลบทิ้งบน production ทันที
+
+#### ⚠️ กด "หยุดรับชั่วคราว" แล้วเคลียร์คิวที่ค้างไม่ได้
+
+`reviewRestaurantRequest` ยืนยันคำขอผ่าน `createOrderInTx` ด้วย `channel` เดิม (`line`) จึงเข้ากิ่ง
+`restaurantOnlineOrder` แล้วชนด่าน `if (!ordering.accepting) return ORDERING_PAUSED/CLOSED`
+· ปุ่ม "หยุดรับชั่วคราว" มีไว้เพื่อ **หยุดของใหม่ตอนครัวตามงานไม่ทัน** — พอมันบล็อกการยืนยันด้วย
+มันก็บล็อก "งานที่ค้างเพราะกดปุ่มนั้น" ไปพร้อมกัน · และคำขอที่เข้ามาก่อนปิดร้านไม่กี่นาที
+(ช่วงที่คำขอเยอะที่สุด) **ยืนยันไม่ได้เลยตลอดไป** จนกว่าจะไปแก้เวลารับออร์เดอร์ของร้าน
+· แก้ด้วย `acceptedRestaurantRequestId` บน `CreateOrderInput` (server-derived เท่านั้น) ที่
+**ข้ามด่านหน้าต่างเวลาอย่างเดียว** — สาขา/วิธีรับ/หมดวันนี้/สต็อก/คูปอง/ราคา ยังตัดสินเหมือนเดิม
+(เทสตรึงว่าชื่อนี้โผล่ใน `orders.ts` **แค่ 2 ที่**: ประกาศ input กับด่านนั้น) · เหตุผลเดียวกับ
+`restaurantCheckId` ที่ข้ามหน้าต่างเวลาเพราะโต๊ะที่นั่งอยู่ไม่ใช่ออร์เดอร์ออนไลน์ใบใหม่
+
+#### ⚠️ ไม่มี AI provider แล้วร้านอาหารตอบคำถามอะไรไม่ได้เลย
+
+การ์ดกันเส้นทางขายเก่าถูกวางเป็น early-return **หน้ากิ่งที่เหลือทั้งหมด** → ลูกค้าถาม
+"ข้าวผัดมีไหม" / "ราคาเท่าไร" ได้คำตอบว่า "ผู้ช่วยรับคำขอไม่พร้อมใช้งาน" แทนคำตอบจริง
+ทั้งที่กิ่ง `CHECK_STOCK`/`GREETING` **อ่านล้วน ไม่สร้างอะไร** · สิ่งที่ต้องกันคือ `CONFIRM_ORDER`
+ตัวเดียว (มันสร้างบิล + จองสต็อกตรง ๆ = สิ่งที่ `9.66` มีไว้เลิก) · ย้ายการ์ดเข้าไปในกิ่งนั้น
+
+#### จุดเล็กที่แก้ไปด้วย
+
+- **คิวตรวจคำขอโชว์รหัสดิบเวลาบิลสร้างไม่ผ่าน** — 409 ตอบ `reason` เป็น `CreateOrderResult`
+  แล้วจอเขียน `data.reason?.status` ลงหน้าจอ (ยกเว้น INSUFFICIENT ที่แต่งเอง) → พนักงานอ่านว่า
+  `SOLD_OUT_TODAY` / `INVALID_PACK` / `COUPON_INVALID` แล้วทำอะไรต่อไม่ได้ · เปลี่ยนไปใช้
+  `describePosFailure()` ตัวเดียวกับสองหน้าขาย (**ห้ามเขียนชุดที่สอง** ตามคอมเมนต์ในไฟล์นั้นเอง)
+  · ข้อความยังเป็นไทยแม้แอดมินตั้งภาษาอังกฤษ — จงใจ ดีกว่ามีสองชุดแล้ว drift
+- **FK ของตารางใหม่ทำให้ลบร้านทดสอบไม่ได้** — `tenant_id` ไม่มี `ON DELETE CASCADE` (ต่างจาก
+  ทุกตารางตั้งแต่ `5.1`) และ `order_id`/`customer_id`/`reviewed_by` เป็น RESTRICT →
+  `deleteTenantRows()` ล้มที่ `DELETE FROM bms_orders` แล้วลบร้านไม่จบ · ใส่ CASCADE ให้ `tenant_id`
+  และเพิ่มบรรทัดลบตารางนี้ก่อน orders/customers/users ตามรูปที่ไฟล์นั้นใช้กับตาราง RESTRICT อยู่แล้ว
+  · **ห้ามเปลี่ยนสามตัวที่เหลือเป็น SET NULL**: `order_id` จะพัง
+  `CHECK ((status='CONFIRMED') = (order_id IS NOT NULL))` และ `reviewed_by` จะไปปลุก trigger
+  immutability ทำให้ **ลบ user ไม่ได้ทุกครั้งที่มีคำขอที่ปิดแล้ว** (กับดักเดิมของ `9.25`→`9.28`)
+
+#### ที่ตรวจแล้วว่า "ไม่ใช่บั๊ก" (จดไว้กันไล่ซ้ำ)
+
+- **พาเนลคิวที่ `/pos` แท็บ "ออร์เดอร์เข้า" ไม่โผล่ในร้านค้าปลีก** — แท็บนั้นถูกกรองด้วย
+  `session.businessArchetype === "restaurant"` อยู่แล้ว (และ effect เตะกลับแท็บ sell) ·
+  ฝั่ง `/admin/orders` ซ่อนด้วย `enabled` จาก GET · ไม่ต้องแก้
+- `packQty`/`base_qty` ที่ review คูณเองไม่ double-apply — `revalidateOrderPacksInTx` คิด
+  `qty = packQty × base_qty` ใหม่และเขียน `packUnitPrice` ทับเสมอ (ราคายังเป็นของ server)
+- `resolveLines` บังคับทั้ง `CUSTOMER_AI` **และ** `ONLINE_ORDER` ตรงกับ `listSellableProducts`
+  ที่ค้นให้ลูกค้า และเข้มกว่า `createOrderInTx` (ONLINE_ORDER) → ไม่มีคำขอที่รับแล้วยืนยันไม่ได้
+  เพราะช่องทางขาย
+- `validateOrderItems` ไม่ปฏิเสธฟิลด์เกิน และ `mergeItems` ประกอบแถวใหม่จากฟิลด์ที่รู้จัก →
+  การส่ง line ที่ติด `name`/`unitName`/`modifierNames` เข้า `createOrderInTx` ไม่พัง
+- ยิงยืนยันซ้ำสองครั้งพร้อมกันปลอดภัย: `FOR UPDATE` + READ COMMITTED ทำให้ตัวที่สองอ่านแถวที่
+  commit แล้วเห็น `review_key` ตรงและ replay ผลเดิม (ไม่ใช่ REPEATABLE READ จึงไม่ได้ serialization error)
+- `FORCE ROW LEVEL SECURITY` เป็นรูปเดียวกับอีก 74 ไฟล์ ไม่ใช่ของแปลก
+
+#### ยังไม่ได้ทำ (จงใจ)
+
+- **เทส DB ทั้งไฟล์ยังไม่เคยรัน** (ดูหัวข้อแรก) — เพิ่มเคส "ร้าน paused แล้วยังยืนยันได้" ไว้แล้ว
+  แต่ก็ยังไม่ได้รันเหมือนกัน
+- **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** ทั้งการ์ดคิวที่ `/admin/orders` และที่แท็บออร์เดอร์เข้าของ `/pos`
+- **`promised_at` ของบิลมาจาก "เวลาที่ลูกค้าอยากได้" ตรง ๆ** — prompt บอกโมเดลชัดว่ายังไม่ใช่เวลาที่
+  ร้านรับรอง แต่ตอนยืนยันไม่มีช่องให้พนักงานแก้เวลา มันกลายเป็นเวลาที่ร้านสัญญาไปเลย
+- **คิวที่เครื่องขายต้องกด "โหลดคำขอ" เอง** และต้องมีกะเปิด + PIN แม้แค่จะอ่าน
+  (`authenticateRestaurantMutation` บังคับทั้งคู่) → poll เองไม่ได้ และไม่มีป้ายนับบนแถบ
+- ตารางใหม่ไม่มี revision trigger (ใช้ immutability trigger + audit แทน)
+
+
+### กลุ่ม 3 ของแผนงาน: แยกบิล/รวมบิล · บัตรคิว/จองโต๊ะ · ราคาส่งแยกสาขา — 2026-09-07
+
+branch `feat/restaurant-split-merge-reservations` (ตัดจาก `develop` ที่ merge #185 แล้ว) ·
+`npm run gate` ผ่าน (typecheck · **pure 870** จาก 867 baseline · production build) ·
+**DB 413 ผ่านทั้งหมด** (baseline 402 เขียวครบ — ไม่มี regression) · **migration ใหม่ 3 ตัว
+`9.63`–`9.65` apply เข้า dev DB แล้วและ verify กับ DB จริงแล้ว** · **ยังไม่ได้ apply เข้า production** ·
+**ไม่มี permission ใหม่สักตัว** · ผ่าน mutation test รวม **10 แบบ** แดงถูกตัวทุกครั้ง
+
+#### `9.63` แยกบิล / รวมบิล ของโต๊ะ
+
+- `9.44` บังคับ "หนึ่งโต๊ะ = หนึ่งบิล" ผ่าน partial unique index → ปิดสองงานที่ร้านอาหารไทย
+  ทำทุกวัน (โต๊ะเดียวขอจ่ายแยก · สองโต๊ะขอจ่ายใบเดียว) · ทางเดียวที่ทำได้คือ void แล้วสั่งใหม่
+  ซึ่งต้องมีผู้อนุมัติ `pos.void` คนที่สอง ทิ้งประวัติครัว และเหลือบิล void ที่อธิบายไม่ได้
+- **`split_group_no` แทนธง `is_primary`** — บิลหลักคือ "เลขน้อยสุดที่ยังเปิดอยู่" จึงไม่มีธง
+  ให้ต้องดูแล และเมื่อบิลหลักถูกคิดเงิน ใบถัดไปเลื่อนขึ้นมาเป็นหลักเอง
+- **สถานะ `MERGED` เป็นสถานะปลายทางตัวที่สาม ไม่ใช้ `CANCELLED`** — การรวมบิลไม่มีอาหารถูกทิ้ง
+  และทุกบรรทัดยังถูกเก็บเงินที่ใบปลายทาง · ถ้าใช้ CANCELLED ตัวเลข "บิลที่ถูกยกเลิก" จะพองตาม
+  จำนวนครั้งที่ร้านรวมบิล และการรวมบิลจะต้องตามหัวหน้ามากด PIN ทุกครั้ง (= ร้านเลิกใช้)
+- **⚠️ trigger ของ `9.62` ต้องรู้จัก MERGED ด้วย** ไม่งั้นโทรศัพท์ของลูกค้าที่โต๊ะต้นทางยังยิง
+  คำขอเข้าบิลที่ปิดไปแล้วได้ตลอดไป — อาการเดียวกับที่ `9.62` เพิ่งปิดไป
+- **ยอดถูกคิดใหม่ผ่าน `createOrderInTx()` เส้นเดิมเสมอ ห้ามบวก/ลบ `amount_due` เอง**
+  (กฎเดียวกับ `dropKitchenCancelledLineInTx`) · `releaseCheckReservationInTx` ตอนนี้มีผู้เรียก
+  **4 จุด** (เทสเดิมตรึงไว้ที่ 3 ต้องอัปเดตเลข)
+- **⚠️ คืนใบจองของต้นทาง *ก่อน* ให้ปลายทางจอง** — ไม่งั้นเมนูที่เหลือชิ้นสุดท้ายแยกบิลไม่ได้
+  (`OUT_OF_STOCK` ทั้งที่ของอยู่บนโต๊ะแล้ว) · **mutation แรกที่เขียนไม่แดง** เพราะเทสใช้สต็อก
+  100 ชิ้น ต้องเพิ่มเทสที่ใช้เมนูซึ่งเหลือ 1 ชิ้นถึงจะจับได้
+- ตั๋วครัวย้ายตามบรรทัด (`check_id` เป็นทางเดียวที่ตั๋วรู้ว่าอยู่โต๊ะไหน) · เลขรอบเรียงใหม่ด้วย
+  `DENSE_RANK` (รักษาลำดับรอบเดิม ไม่ยุบเป็นรอบเดียว)
+- **QR โต๊ะลงบิลหลักเสมอ** — `ORDER BY opened_at DESC` เดิมจะพาลูกค้าไปลงบิลที่เพิ่งแยกออกมา
+  ซึ่งเป็นบิลของคนอื่น · **เทสเดิม 1 ตัวตรึง `ORDER BY opened_at DESC LIMIT 1` ไว้ตรงตัว = ตรึงบั๊ก**
+  ย้ายไปเล็งที่ `split_group_no, opened_at` แล้วห้ามรูปเดิมกลับมา
+
+#### `9.64` บัตรคิวหน้าร้าน + จองโต๊ะล่วงหน้า
+
+- **ตารางเดียว ไม่ใช่คิวกับจองแยกกัน** — ทั้งสองคือ "ปาร์ตี้ที่ยังไม่มีโต๊ะ" ต่างกันแค่รู้ล่วงหน้า
+  หรือไม่ ส่วนสิ่งที่เกิดตอนได้โต๊ะเหมือนกันทุกประการ **และนั่นคือส่วนที่แตะบิลจริง** ·
+  แยกสองตาราง = มีเส้นทาง "พาไปนั่ง" สองชุดที่ต้อง drift กัน · ความต่างจริงคือสองคอลัมน์
+  (`queue_no` / `reserved_for`) ซึ่ง CHECK บังคับรูปทรงไว้แล้ว
+- **พาไปนั่ง = เปิดบิลด้วย `openRestaurantCheckInTx()` ในทรานแซกชันเดียวกับการปิดคิว** ·
+  แยก `openRestaurantCheck` ออกมาเป็นตัวใน-tx เพื่อไม่ให้มีทางเปิดบิลชุดที่สอง
+- **⚠️ mutation "เปิดบิลคนละทรานแซกชัน" เทส DB จับไม่ได้** — บั๊กโผล่เฉพาะตอนครึ่งหลังล้ม
+  *หลัง* ครึ่งแรก commit ซึ่งจำลองแบบ deterministic ไม่ได้ · ต้องใช้เทส pure สแกนซอร์ส
+  (ห้าม `await openRestaurantCheck(` ในฟังก์ชันนั้น) ถึงจะแดง
+- **`service_date` ประทับฝั่ง server จากเขตเวลาร้าน + เวลาเริ่มวันบริการเดียวกับ `9.55`** —
+  ร้านที่เปิดถึงตี 2 ได้เลขคิวเดินต่อ ไม่กลับไปเป็นคิว 1 ตอนเที่ยงคืนต่อหน้าคนที่รออยู่ ·
+  ร้านเดียวที่มีเส้นแบ่งวันสองเส้น = ร้านที่ตอบไม่ได้ว่า "วันนี้" คือช่วงไหน
+- **"เรียกแล้วไม่มา" แยกจาก "ยกเลิก"** — ยุบเป็นค่าเดียวแล้วคำถาม "คิวยาวเกินไปไหม" ตอบไม่ได้อีกเลย
+- เลขคิวคำนวณจาก MAX+1 แล้วพึ่ง unique index เป็นด่านจริง + retry 4 ครั้ง (สองคนกดพร้อมกันได้)
+
+#### `9.65` ราคาส่งตามจำนวนแยกสาขา
+
+- ของค้างที่ `9.61` จดไว้เอง · โครงเดียวกับ `9.61` ทุกประการ ยกเว้นกติกาใครชนะ
+- **⚠️ บันไดของสาขา *แทนที่* บันไดของส่วนกลางทั้งชุด ไม่ใช่ผสมขั้นกัน** — ต่างจากโปรตรงที่
+  สินค้าหนึ่งตัวมีขั้นราคาได้หลายขั้น ผสมสองชุดแล้วได้บันไดที่ไม่มีใครตั้ง (สาขาตั้งขั้น 10
+  แล้วขั้น 5 ของส่วนกลางแทรกกลาง) ซึ่งอธิบายที่เคาน์เตอร์ไม่ได้
+- **คีย์ unique ต้องรวมสาขา** — `COALESCE(location_id, '000...0'::uuid)` เพราะ NULL ไม่ชนกับ
+  NULL · ไม่รวม = สาขาตั้งขั้นที่จำนวนเดียวกับส่วนกลางไม่ได้เลย ซึ่งเป็นเคสที่พบบ่อยที่สุด
+- **⚠️ `upsertProduct` ต้องลบขั้นราคาแบบกรอง `location_id IS NULL`** — ไม่กรอง = ทุกครั้งที่
+  มีคนกดบันทึกสินค้า บันไดของทุกสาขาถูกล้างทิ้งเงียบ ๆ
+- **⚠️ mutation ของข้อข้างบน "ไม่แดง" รอบแรก** เพราะเทสส่งฟิลด์ชื่อ `priceTiers` ขณะที่
+  `upsertProduct` อ่าน **`price_tiers`** (snake_case) — บล็อกราคาส่งถูกข้ามทั้งก้อนเงียบ ๆ
+  แล้วเทสเขียวโดยไม่เคยเรียกเส้นทางที่กำลังตรึง · **เทสที่ผ่าน mutation ไม่ได้ = เทสที่ยังไม่จริง**
+- ทำสำเนาสินค้า (`productConfiguration.ts`) ยกบันไดรายสาขามาด้วย
+- UI: การ์ด "ราคาส่งแยกสาขา" บนหน้า `/admin/promotions` เดิม (คำถามเดียวกัน: "สาขานี้ขาย
+  ต่างจากส่วนกลางตรงไหน") · **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** เพราะหน้านี้อยู่หลัง login
+  ของแอดมิน และ `NEXT_PUBLIC_*` ของ container dev ยังชี้ GraphQL ไป production (ปัญหาที่มีมาก่อน
+  จดไว้ตั้งแต่ `9.44`)
+
+#### เปิดดูจริงในเบราว์เซอร์แล้ว (เฉพาะ `/pos/restaurant`)
+
+ยืม `token_hash` ของ POS-01 ของ shop-b ชั่วคราวแล้วคืน (verify ว่าคืนตรง) + แพตช์
+`window.fetch` ป้อน response จำลอง — **ไม่แตะฐานข้อมูลเลย** (ยืนยันหลังจบ: waitlist 0 แถว ·
+ไม่มี MERGED/split check · ไม่มี tenant `fake-%` · ตั๋วครัวและ audit ของ shop-b วันนี้เป็น 0)
+
+เจอของจริงจากการเปิดดู **3 อย่างที่เทสจับไม่ได้**:
+
+1. แผงบิลเขียน "บิลที่เปิดอยู่ · 1" ขณะที่การ์ดโต๊ะข้าง ๆ เขียน "2 บิล" บนจอเดียวกัน และบิล
+   ใบที่สองกดเข้าจากแผงนั้นไม่ได้เลย (`openChecks` นับต่อโต๊ะ ไม่ใช่ต่อบิล)
+2. การ์ดการจองเขียน "รอมา 179 นาที" นับจากตอนรับจอง — การจองที่รับไว้เมื่อวานจะขึ้น
+   "รอมา 1,400 นาที" ซึ่งไม่ใช่ความจริงของใครเลย
+3. การ์ดคิวที่จอ 375px ปุ่มสุดท้ายถูกตัดหายนอกจอ (การ์ดกว้าง 336 แต่ขอบขวาอยู่ที่ 406)
+   · ปุ่มที่กดไม่ถึงเท่ากับไม่มีปุ่ม
+
+**⚠️ กับดักตอน verify: `.ant-modal-wrap` ยัง `display: block` หลังโมดัลปิด** — ต้องเช็ค
+`getClientRects().length` ของ `.ant-modal` ข้างใน ไม่งั้นอ่านผิดว่ามีสองโมดัลเปิดพร้อมกัน
+
+#### เทส
+
+- pure ใหม่: `restaurant-pos-contract` **+4** · `promotion-branch-scope-contract` **+3** ·
+  corpus **+12 คำถาม** (77 → 79 real questions) · **เทสเดิม 3 ตัวต้องเล็งใหม่**
+  (`ORDER BY opened_at DESC` ของ QR · จำนวนผู้เรียก `releaseCheckReservationInTx` 3 → 4 ·
+  การตัดช่วง `chooseTable` ที่ตอนนี้ไปตรงกับ `openCheckById` ซึ่งอยู่ก่อนหน้า = ได้ช่วงว่าง
+  แล้วเทสเขียวโดยไม่ตรวจอะไร — เพิ่ม `assert.ok(slice.length > 0)` กันไว้แล้ว)
+- DB ใหม่: `restaurant-pos-db-contract` **+13** (48 ตัว) · `price-tiers-db-contract` **+5** (17 ตัว)
+- แคตตาล็อกผู้ช่วย: guide ใหม่ 2 (`pos.restaurant-split-merge`, `pos.restaurant-waitlist`) +
+  capability ใหม่ 1 (`restaurant.waitlist`) → **48 capability · 106 guide** ·
+  **แก้คำเตือนที่กลายเป็นเท็จ 3 จุด** ("โต๊ะหนึ่งมีบิลเปิดได้ใบเดียว" · "ยังไม่รองรับการแยกบิล/
+  รวมบิล" · "โปรเป็นระดับ SKU ทั้งร้าน")
+
+#### ยังไม่ได้ทำในกลุ่ม 3 (จงใจ — เหตุผลอยู่ที่ท้ายรอบนี้)
+
+- **การคืนสินค้าที่ `/pos/restaurant`** — เหตุผลเดิมยังจริงทุกข้อ: เส้นทางคืนของค้าปลีกครอบ
+  คืนบางส่วน · แบ่งจ่ายคืน · คืนแบบยังไม่ยืนยัน · ผู้อนุมัติคนที่สอง · serial · ข้ามสาขา ·
+  ประวัติที่แก้ไม่ได้และการพิมพ์ · ย้ายมาบางส่วน = money path สองชุดที่พฤติกรรมไม่เท่ากัน
+  และวันนี้มีทางไปแล้ว (ปุ่มโหมดค้าปลีก)
+- **printer routing แยกสถานีครัว** — บล็อกที่ฮาร์ดแวร์: ESC/POS ยังไม่เคยยิงกับเครื่องพิมพ์จริง
+  สร้าง routing บนสายส่งที่ยัง verify ไม่ได้ = verify ไม่ได้เช่นกัน (คอลัมน์
+  `printer_profile_id` มีอยู่แล้วพร้อมคอมเมนต์ว่าไม่มีใครอ่าน)
+- **ราคาป้าย/ราคาแพ็ก และส่วนลดตามชั้นสมาชิก แยกสาขา** — ยังเป็นระดับร้าน · `bms_product_packs`
+  ถูกอ้างเกือบทุกเส้นทาง การเติมสาขาต้องมี migration + รอบ recheck ของตัวเอง
+- **Q4 profit/growth simulation** — เป็นเฟสของ roadmap ที่ต้องมีคนตัดสินว่าจะจำลองอะไร
+- **`/pos` ค้าปลีก i18n** — refactor เชิงกลไก 9,800+ บรรทัด ความเสี่ยง regression สูง
+  ไม่ควรปนมากับ branch ฟีเจอร์
+
+
+### recheck POS ค้าปลีกทั้งเส้น (`/pos`, `/api/pos/*`, `lib/bms/pos.ts`) — 2026-09-07
+
+branch `recheck/pos-retail-deep` — ตัดจาก `develop` **ก่อน** ที่ `recheck/restaurant-pos-deep` (#184)
+จะถูก merge เข้าไป ตัวเลขเทสด้านล่างจึงเป็นของ baseline นั้น ไม่ใช่ของ develop หลัง merge ·
+`npm run gate` ผ่าน (typecheck · **pure 857** จาก 846 · production build) ·
+**DB 392 ผ่านทั้งหมด** (baseline 386 เขียวครบ — ไม่มี regression) · **ไม่มี migration** ·
+**ไม่มี permission ใหม่** · **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์**
+(บรรทัดปัดเศษบนสรุปกะผ่านแค่ tsc + build + เทส)
+
+**ทั้ง 6 mutation ผ่านแล้ว** (2 pure + 3 DB + 1 เทสเดิมที่เล็งใหม่) แดงถูกตัวทุกครั้ง
+
+#### 1. ⚠️ เงินสดที่จ่ายคืนออกไปจริง ไม่ถูกหักออกจาก "เงินที่ควรมีในลิ้นชัก"
+
+- "เงินสดที่ควรมี" ถูกคิดที่ **ห้าที่**: ด่านกันจ่ายเกินลิ้นชัก (`drawerExpectedInTx`), ปิดกะ
+  (`closePosShift` เขียน SELECT ของตัวเอง), สรุปกะ X/Z, หน้าภาพรวมกะหลังบ้าน, และไฟล์ XLSX
+- สองที่แรกคีย์การคืนด้วย `COALESCE(pr.shift_id, o.pos_shift_id)` ส่วนอีกสองที่ใช้
+  `COALESCE(a.completed_shift_id, pr.shift_id, o.pos_shift_id)` = **กะที่จ่ายเงินออกจริง**
+  · `docs/business/pos.md` เขียนกฎของ `9.32` ไว้แล้วว่า "reports **and close checks** prefer those
+  fields" — โค้ดฝั่ง close ไม่เคยทำตาม
+- **เส้นทางที่ทำให้ต่างกันจริง**: การตัดรายการออร์เดอร์ออนไลน์ (`9.57`) สร้าง allocation เป็น
+  `PENDING` **เสมอแม้วิธีจ่ายเป็นเงินสด** (`allocationCompleted = onlineCancellation ? false : …`)
+  แล้วมีคนมากดยืนยันจ่ายที่เครื่องทีหลัง · ใบคืนนั้นไม่มีเครื่อง (`pr.shift_id` NULL) และบิลออนไลน์
+  ไม่มีกะ (`o.pos_shift_id` NULL) → เงินออกจากลิ้นชักจริงแต่สูตรที่ตัดสินไม่เห็นเลย
+- ผล: ปิดกะแล้ว **เงินขาดเท่ายอดคืนพอดีโดยไม่มีอะไรอธิบาย** · X report กับ Z ไม่ตรงกัน ·
+  แผ่น "ตรวจสอบยอด" ในไฟล์ XLSX บวกลงมาแล้วไม่เท่ายอดรวมที่พิมพ์ไว้บรรทัดล่าง ·
+  และ `posExpenses` ใช้ `drawerExpectedInTx` เป็นเพดาน จึงยอมให้เบิกเกินเงินที่มีจริง
+- แก้: ยุบเหลือ `POS_SHIFT_CASH_SQL` + `drawerCashComponentsInTx()` + `drawerExpectedFrom()` ตัวเดียว
+  · `closePosShift` เลิกเขียน SELECT ของตัวเอง · ไฟล์ XLSX เพิ่ม `OR a.completed_shift_id = $2`
+  ให้แถวรายละเอียดมีของที่จ่ายจากกะนี้ด้วย
+- **บิลที่ถูก void ตัดออกทั้งสองขา** (`o.voided_at IS NULL` + `pr.is_void = FALSE`) แทนการนับทั้งคู่
+  แล้วหักล้างกัน — ผลลัพธ์วันนี้เท่ากัน แต่เป็นรูปเดียวกับที่รายงานสองตัวใช้อยู่แล้ว
+- **allocation ที่ยัง `PENDING` ยังคีย์แบบเดิมโดยตั้งใจ** — ยังไม่มีใครจ่ายมันออกจากลิ้นชักไหน
+
+#### 2. สรุปกะไม่มีบรรทัดปัดเศษเงินสด → ยอดขายกับผลรวมวิธีชำระบนกระดาษใบเดียวกันไม่มีทางเท่ากัน
+
+- `bms_orders.total_amount` **ไม่รวม** ยอดปัดเศษโดยตั้งใจ (คอมเมนต์ใน `pos.ts` เขียนไว้) แต่
+  `bms_payments.amount` รวม · ร้านที่เปิด `cash_rounding` จะได้ X/Z ที่ "ยอดขายสุทธิ" กับ
+  `byMethod` ต่างกันเท่ายอดปัดเศษสะสม โดยไม่มีบรรทัดไหนอธิบาย
+- เพิ่ม `roundingTotal` ใน `PosShiftReport` + แสดงบนแผงสรุปกะและในไฟล์ XLSX
+- **ยังเป็นบั๊กแฝง**: dev ทั้ง 5 ร้านตั้ง `cash_rounding = 'NONE'` และยังไม่มีบิล POS ที่มียอดปัดเศษ
+
+#### 3. ไม่เคยมีเทสสแกนด่านของ `/api/pos/**` เลย
+
+- `inventory-tenant-scope-contract` สแกน `/api/bms` อย่างเดียว ทั้งที่ `/api/pos` 38 route
+  ขยับเงิน สต็อก ลิ้นชัก และเอกสารภาษี และยืนยันตัวตนด้วย device token + PIN (ไม่ใช่ session)
+- **ตรวจแล้วว่าวันนี้ยังไม่มีรูรั่ว** — เทสใหม่จึงเขียวตั้งแต่แรก หน้าที่ของมันคือกันของใหม่
+  · `park` (ไม่แตะเงิน/สต็อก/เอกสาร) และ `member/preview` (อ่านล้วน) อยู่ในลิสต์ยกเว้นพร้อมเหตุผล
+  · `refund-settlement` ดูเหมือนไม่ตรวจสิทธิ์ที่ route แต่ `completePosRefundAllocation` ตรวจ
+    `payment.refund` **ในทรานแซกชัน** ซึ่งแข็งแรงกว่า — ไม่ใช่รูรั่ว
+
+#### เทส
+
+- pure ใหม่ 2 ไฟล์: `pos-cash-formula-contract` (5 เทส) · `pos-route-guard-contract` (6 เทส)
+- DB ใหม่ 1 ไฟล์: `pos-cash-formula-db-contract` (6 เทส · สร้างร้านทดสอบของตัวเองแล้วลบทิ้ง
+  ยืนยัน `fake-%` เหลือ 0 · **เขียนจริงลงฐาน ห้ามรันกับ production**)
+- **⚠️ เทสเดิม 1 ตัวต้องเล็งใหม่**: `ar-contract` → "สูตรเงินที่ควรมีในลิ้นชักนับเฉพาะ CASH"
+  slice จาก `drawerExpectedInTx` ถึง `VoidPosSaleResult` · SQL ย้ายออกไปอยู่เหนือฟังก์ชันแล้ว
+  เทสจึงแดงทั้งที่การันตีไม่ได้หาย · ย้ายไปเล็งที่ `POS_SHIFT_CASH_SQL` และบังคับให้ช่วงที่สแกน
+  ครอบตัวห่อด้วย (กันสูตรที่สองแอบเกิดในตัวห่อ) · ยืนยันด้วย mutation ว่ายังจับ CREDIT ได้
+- **⚠️ ตัวสร้างเคสในเทส DB เป็น SQL ตรง ๆ โดยตั้งใจ** — เดินเส้นทางร้านอาหารออนไลน์ทั้งเส้น
+  ต้องมี archetype restaurant + ออร์เดอร์เดลิเวอรี + ผังโต๊ะ · สิ่งที่ตรึงคือ **สิ่งที่เกิดกับลิ้นชัก
+  หลังมีแถวหน้าตาแบบนั้นแล้ว** ซึ่งเดินผ่าน `completePosRefundAllocation()` และสูตรจริงทั้งคู่
+
+#### ที่ตรวจแล้วว่า "ไม่ใช่บั๊ก" (จดไว้กันไล่ซ้ำ)
+
+- `closePosShift` ไม่ปัดเศษ `expected` ก่อนเขียน — `expected_cash` เป็น `NUMERIC(12,2)` Postgres
+  ปัดให้เอง และ `cash_variance` เป็น generated column จากค่าที่ปัดแล้ว
+- SQL ที่ไม่มี `tenant_id` 3 จุด (`orders.ts` cron, `posExpenses` SELECT prefix) — ทั้งหมดทำงานกับ
+  id ที่คัดมาแบบ tenant-scoped แล้ว หรือมี WHERE ต่อท้ายจากผู้เรียก
+- `previewMemberDiscount` scope ด้วย tenant · `/api/pos/scan` และ `/api/pos/search` ส่ง
+  `device.locationId` เสมอ (สำคัญหลัง `9.61` ที่โปรแยกสาขา)
+- ค่าใช้จ่ายหน้าร้าน: `DRAWER` เขียน `bms_pos_cash_movements` ส่วน `PERSONAL`/`PETTY_CASH`
+  ไม่แตะลิ้นชักโดยตั้งใจ · โหมดนับปิดตาถูกเคารพครบทุกจุดที่อาจทำเลขหลุด
+
+#### ยังไม่ได้แก้ (จงใจ)
+
+- หน้าภาพรวมกะหลังบ้าน (`listPosShiftOverview`) ยังเขียน SQL ของตัวเอง ไม่ได้ใช้
+  `POS_SHIFT_CASH_SQL` — คีย์ตรงกันแล้ว (เทสบังคับ) แต่รูปแบบ query ต่างกัน (lateral ต่อแถว)
+  การยุบต้องรื้อ query ใหญ่ทั้งก้อน
+- `/pos` page ยังเป็น 9,831 บรรทัดในไฟล์เดียวและไม่มี `t()` (ภาษาไทย hardcode ทั้งหน้า
+  เหมือน `/pos/restaurant`) — คนละเรื่องกับ recheck นี้
+- ยังไม่ได้ไล่ `recordPosSale`/`processPosReturn` แบบบรรทัดต่อบรรทัด (อ่านเฉพาะด่านสำคัญ:
+  idempotency, precheck ก่อนตัดสต็อก, cross-branch, การจัดสรรเงินคืน)
+
+
+### recheck POS ร้านอาหารทั้งเส้น (`9.44`–`9.62`) — 2026-09-06
+
+branch `recheck/restaurant-pos-deep` · `npm run gate` ผ่าน (typecheck · **pure 852** จาก 846 ·
+production build) · **DB 389 เทสผ่านทั้งหมด** (baseline ก่อนเริ่มคือ 386 เขียวครบ — ไม่มี regression)
+· `9.62` **apply เข้า dev DB แล้วและ verify กับ DB จริงแล้ว** · **ยังไม่ได้ apply เข้า production** ·
+**ไม่มี permission ใหม่** · **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** (แท็บ QR ที่เครื่องขาย, ปุ่ม QR ที่
+`/admin/restaurant-floor` และหน้า `/q/<token>` ผ่านแค่ tsc + build + เทส)
+
+**ทั้ง 12 mutation ผ่านแล้ว** (8 pure + 4 DB) แดงถูกตัวทุกครั้ง
+
+#### 1. ⚠️ กดคิดเงินพลาดหนึ่งครั้ง = ออร์เดอร์ QR ของลูกค้าหายถาวร (`9.62`, migration ใหม่)
+
+- trigger ของ `9.60` เขียนว่า `OLD.status = 'OPEN' AND NEW.status <> 'OPEN'` = "ปิดบิล" แต่
+  `bms_restaurant_checks.status` มี **สี่** ค่า และ `CLOSING` (`9.48`) คือ "แคชเชียร์เพิ่งกดคิดเงิน"
+  ซึ่ง `reopenClosingCheck()` คืนกลับเป็น OPEN ทุกครั้งที่รับเงินไม่สำเร็จ
+- **พิสูจน์กับฐาน dev แล้ว** (รันใน transaction แล้ว ROLLBACK): `OPEN→CLOSING` ทำให้ submission
+  เป็น `EXPIRED` + session ถูก revoke · `CLOSING→OPEN` trigger ไม่ทำงาน (OLD ไม่ใช่ OPEN แล้ว)
+  ของที่หายจึงไม่กลับมา
+- **หายแบบมองไม่เห็น**: กล่องขาเข้าอ่านเฉพาะ `PENDING/ACCEPTED/REJECTED` พนักงานจึงไม่รู้ว่าเคยมี
+  ส่วนลูกค้าเห็นบนจอตัวเองว่า "หมดอายุ" ทั้งที่ไม่มีใครทำอะไรผิด
+- แก้เป็น `NEW.status IN ('PAID','CANCELLED') AND OLD.status IS DISTINCT FROM NEW.status`
+  (สองค่านี้ = สถานะที่ CHECK ของตารางบังคับว่าต้องมี `closed_at`) · verify ทั้ง CLOSING/reopen/PAID
+- **แถวที่ถูก EXPIRED ไปแล้วก่อน apply จงใจไม่กู้** — แยกไม่ออกว่าอันไหนหมดอายุเพราะบิลปิดจริง
+
+#### 2. ⚠️ ตั้งเมนู "หมดวันนี้" หลังอาหารถูกเสิร์ฟ = โต๊ะนั้นจ่ายเงินไม่ได้เลย
+
+- `createOrderInTx()` กรอง `bms_product_menu_unavailability` แบบไม่มีเงื่อนไขช่องทาง แต่บิลโต๊ะ
+  **ส่งทุกบรรทัดบนบิลกลับเข้าไปใหม่ทุกครั้งที่คิดยอด** (ส่งครัวรอบถัดไป / ครัวยกเลิกรายการ)
+- ผล: ผัดไทยจานสุดท้ายเสิร์ฟไปแล้ว ครัวกดว่าหมด → ลูกค้าสั่งน้ำเพิ่ม → ส่งครัวรอบ 2 ได้
+  `SOLD_OUT_TODAY` → `reserved_version` ไม่เท่า `version` → **คิดเงินไม่ได้** และบรรทัดที่ส่งครัว
+  ไปแล้วลบไม่ได้ (`removeRestaurantCheckItem` รับเฉพาะ `NEW`) → ทางออกเดียวคือ void บิลที่ลูกค้ากินไปแล้ว
+- แก้: ด่านย้ายไปที่ **จุดที่บรรทัดเข้าบิล** (`resolveRestaurantCheckItemRequest`) ซึ่งครอบทั้ง
+  พนักงานกดเพิ่ม การส่งคำขอ QR และการกดรับคำขอ · `createOrderInTx` ข้ามด่านเมื่อมี `restaurantCheckId`
+  · ช่องทางอื่น (ออนไลน์/แชท/ค้าปลีก) ไม่ถูกแตะ
+- `describePosFailure()` ไม่มี case `SOLD_OUT_TODAY` → เครื่องค้าปลีกขึ้น "ขายไม่สำเร็จ
+  (SOLD_OUT_TODAY)" ซึ่งเป็นอาการที่ไฟล์นั้นมีไว้กัน · เพิ่มแล้ว
+
+#### 3. ⚠️ พนักงานที่ถูกจำกัดสาขาหมุน QR ของโต๊ะสาขาอื่นได้
+
+- `bmsRestaurantFloorAdmin.ts` ตรวจแค่ `restaurant.floor.manage` ไม่เคยดู `bms_user_allowed_locations`
+  (9.37) ทั้งที่ promotions/coupons/orders/customers ตรวจกันหมดแล้ว
+- แรงสุดคือ `bmsIssueRestaurantTableQr(tableId)` — รับมาแค่ tableId **หมุนแล้วสติกเกอร์ที่ติดบนโต๊ะ
+  จริงของอีกสาขาใช้ไม่ได้ทันที และลูกค้าที่นั่งอยู่ถูกตัด session**
+- mutation ครึ่งหนึ่งรับมาแค่ `areaId`/`tableId` จึงต้องมี `locationOfRestaurantArea/Table()`
+  แปลงกลับเป็นสาขาก่อนตรวจ ไม่งั้นด่านครอบได้แค่ครึ่งเดียว = เท่ากับไม่มี
+- ดรอปดาวน์สาขาที่หน้าจอเปลี่ยนจาก `bmsLocations` (ทุกสาขา) เป็น `bmsRestaurantFloorLocations`
+  (`listLocationsForUser`) ไม่งั้นเลือกได้แล้วเจอ FORBIDDEN
+- `floorMutation()` เดิมห่อ **ทุก** error เป็น `BAD_USER_INPUT` → ตอนนี้ปล่อย `GraphQLError` ผ่าน
+  ไม่งั้นด่านสิทธิ์กลายเป็น "กรอกผิด"
+
+#### 4. ป้ายออร์เดอร์ QR รอรับไม่เคยขึ้นตอนพนักงานยืนหน้าผังโต๊ะ
+
+- ป้ายอยู่บนแถบซ้าย (เห็นทุกจอ) แต่ `loadQrSubmissions` poll เฉพาะตอน `screen === "QR"` →
+  ยืนหน้าผังโต๊ะ (ที่ยืนจริง) ป้ายไม่มีวันขึ้น ลูกค้ารอจนกว่าจะมีคนเผลอกดเข้าแท็บนั้น
+- แก้: เปิดแท็บอยู่ 5 วิ · จออื่น 20 วิ
+
+#### 5. คำขอ QR ที่ยังไม่ได้ตรวจไม่มีเพดานสะสม
+
+- เพดาน 10/นาที ที่ route กันการยิงรัว แต่ session อยู่ได้ 12 ชม. และกล่องขาเข้าตัดที่ 100 แถว
+  → โทรศัพท์เครื่องเดียวดันคำขอจริงของโต๊ะอื่นหลุดออกจากหน้าจอได้ · เพิ่มเพดาน **20 คำขอ PENDING
+  ต่อบิลโต๊ะ** (นับต่อบิล ไม่ใช่ต่อ session เพราะโต๊ะหนึ่งมีลูกค้าหลายเครื่อง)
+
+#### 6. จอลูกค้ากด "เพิ่มลงตะกร้า" ได้ทั้งที่ยังไม่เลือกกลุ่มที่บังคับ
+
+- อาการเดียวกับเคสจริงบน production 2026-09-05 (ส้มตำ "เผ็ดกี่เม็ด" `min_select = 1` ไม่มีค่าปริยาย)
+  ที่แก้ไปแล้วที่หน้าเครื่องขาย แต่จอลูกค้าเป็นคนละ component จึงยังกดได้แล้วค่อยขึ้น error ·
+  คนที่เจอคราวนี้คือลูกค้าซึ่งไม่มีพนักงานยืนอธิบายให้
+- ใช้ `unmetModifierGroups()` ตัวเดียวกับหน้าเครื่องขาย (pure, `lib/pos/modifierSelection.ts`)
+  **ห้ามเขียนสำเนาที่สอง** — วันที่กฎเปลี่ยน อีกจอจะเริ่มโกหกเงียบ ๆ
+
+#### เทส
+
+- pure: `restaurant-pos-contract` **52** (จาก 50) · `restaurant-qr-ordering-contract` **11** (จาก 7)
+  · corpus เพิ่ม 4 คำถาม
+- **⚠️ เทสเดิม 1 ตัวต้องเล็งใหม่**: `restaurant-qr-ordering-contract` assert
+  `/OLD\.status = 'OPEN' AND NEW\.status <> 'OPEN'/` ตรง ๆ = **ตรึงบั๊กไว้** · ย้ายไปเล็งที่ `9.62`
+  แล้วห้าม `NEW.status <> 'OPEN'` กลับมา
+- DB: `restaurant-pos-db-contract` **35** (จาก 32) — เมนูที่หมดหลังเสิร์ฟ / คิดเงินพลาดต้องไม่ทำลาย
+  คำขอ QR (เดินเส้นจริงถึง PAID แล้วเช็คว่ารอบที่ค้างกลายเป็น EXPIRED ตามเจตนาเดิม) / รับคำขอของ
+  เมนูที่หมดไม่ได้
+- **⚠️ teardown ต้องลบตาราง QR ก่อน `bms_restaurant_check_items` และ `bms_products`** —
+  `accepted_check_item_id` กับ `product_sku` เป็น FK ธรรมดา (ไม่ CASCADE) teardown ที่ลบผิดลำดับจะ
+  throw แล้วทิ้งร้านทดสอบไว้ในฐาน
+- **⚠️ `settleRestaurantCheck` ยอดไม่ตรง = คืน `PAYMENT_MISMATCH` ไม่ใช่ throw** —
+  `assert.rejects()` จึงใช้ไม่ได้กับเส้นนี้ (เจอตอนเขียนเทส)
+- ยืนยันหลังรัน: ไม่มี tenant `fake-%` ค้าง และแถว QR/หมดวันนี้ของผู้ใช้ (shop-b, สร้างช่วง 12:26–13:12
+  ของวันนั้น) ไม่ถูกแตะ — **เช็ค `bms_audit_log`/timestamp ก่อนลบอะไรในฐาน dev เสมอ**
+
+#### เอกสารที่แก้ตามไปด้วย
+
+- `docs/architecture/api.md` — เดิม**ไม่มีแถวของ** `/api/pos/restaurant/{menu,incoming,qr-orders}`,
+  `/api/bms/restaurant-qr/*` ทั้ง 4 ตัว และโมดูล GraphQL `bmsRestaurantFloorAdmin.ts` เลย
+- `docs/business/pos.md`, `docs/agent-invariants.md`, `CLAUDE.md` (จำนวนแคตตาล็อกเป็น 47/104)
+- แคตตาล็อกผู้ช่วย: guide `pos.restaurant-qr-orders` + capability `restaurant.qr-ordering` +
+  เติมขั้นตอน/คำเตือนเรื่อง QR ให้ `restaurant.floor-management` (เดิมหน้านั้นมีปุ่ม QR แต่ไกด์ไม่พูดถึงเลย)
+
+#### ยังไม่ได้แก้ (จงใจ)
+
+- `estimatedUnitPrice` ในกล่องขาเข้าเป็นสูตรที่สองของราคา (SQL ตรง ๆ ไม่ผ่าน `resolvePosScan`)
+  — ตรวจกับข้อมูล dev แล้วว่าให้เลขถูกสำหรับรูปทรงราคาที่มีจริง (ราคาบนสินค้า หรือ per-size pack)
+  และหน้าจอเขียนว่า "ยอดประมาณการ" · การเรียก resolver จริงต่อรายการทุก 5 วิหนักเกินไป
+- กล่องขาเข้าเรียงเก่าก่อน (FIFO ถูกแล้ว) แต่ ACCEPTED/REJECTED ปนอยู่ในลิสต์เดียวกัน
+- ผังโต๊ะไม่บอกว่าโต๊ะไหนมีคำขอ QR รออยู่ (มีแต่ป้ายรวมบนแถบซ้าย)
+- `crypto.randomUUID()` ที่หน้า `/q/<token>` ใช้ได้เฉพาะ secure context (HTTPS/localhost)
+
+
+### `9.61` โปรโมชันแยกสาขา — 2026-09-06
+
+`npm run gate` ผ่าน (typecheck · **pure 841** · production build) · **apply เข้า dev DB แล้วและ
+verify กับ DB จริงแล้ว** (คอลัมน์/ดัชนีบางส่วน 2 ตัว/FK composite/GRANT ตรวจจาก `pg_indexes` +
+`pg_constraint` จริง) · **ยังไม่ได้ apply เข้า production** · **ไม่มี permission ใหม่**
+(ใช้ `product.view`/`product.edit` เดิมตามเหตุผลของ `8.7`) · **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์**
+
+- **ต้นเหตุ**: `8.7` ทำโปรไว้ระดับ tenant ล้วน และ `uq_bms_promotions_active_sku (tenant_id,
+  product_sku) WHERE active` บังคับว่าสินค้าหนึ่งตัวมีโปร active ได้ **หนึ่งแบบทั้งร้าน** → เชนที่มี
+  หลายสาขาทำสิ่งที่ร้านค้าปลีกไทยทำทุกวันไม่ได้เลย (สาขาหนึ่งระบายของด้วย "3 ชิ้น 100" อีกสาขาขายราคาปกติ)
+- **⚠️ เจอระหว่างทาง: `8.7` ไม่เคยมีเส้นทางเขียนในแอปเลย** — มีแค่ 2 จุดที่อ่าน (`orders.ts`,
+  `pos.ts`) กับเทสที่ INSERT ตรง ๆ ลงฐาน แปลว่าไม่มีร้านไหนตั้งโปรได้จริงถ้าไม่เปิด psql ·
+  งานนี้จึงต้องสร้าง service + GraphQL + หน้าจอขึ้นมาด้วย ไม่ใช่แค่เติมคอลัมน์
+- **ทางที่ไม่เลือก: ตารางเชื่อมแบบ `bms_coupon_locations` (9.37)** — คูปองใช้ตารางเชื่อมเพราะคำถามคือ
+  "โค้ดนี้ใช้ได้ที่สาขาไหนบ้าง" (โปรตัวเดียว หลายสาขา) · โจทย์นี้คือ "แต่ละสาขามีโปร **คนละแบบ**"
+  ซึ่งตารางเชื่อมตอบไม่ได้เพราะแถวโปรยังมีแถวเดียวต่อ SKU · จึงเก็บ `location_id` บนแถวโปรเอง
+- **กติกา: โปรของสาขาทับโปรทั้งร้าน** · **ห้ามเปลี่ยนเป็น "เลือกอันที่ถูกกว่า"** — อันไหนถูกกว่า
+  ขึ้นกับจำนวนที่ลูกค้าหยิบ (ซื้อ 2 แถม 1 กับ 3 ชิ้น 100 สลับกันชนะตามจำนวน) ผลคือบิลเดียวกันคิดคนละโปร
+  ตามขนาดตะกร้า ซึ่งอธิบายที่เคาน์เตอร์ไม่ได้ · การเทียบกับ "ราคาปกติ" ยังอยู่ที่ `applyPromotion` เหมือนเดิม
+- **สูตรตัดสินมีชุดเดียว `pickPromotionForLocation()` ใน `pricing.ts`** (pure ไม่ import อะไร) —
+  ทั้ง `resolvePosScan` (จอพรีวิว) และ `createOrder` (ตอน commit) เรียกตัวนี้ · สองสูตรจะ drift
+  แล้วจอกับ server คิดต่างกันแม้สตางค์เดียว = `PAYMENT_MISMATCH` บิลถูกทิ้งทั้งใบหน้าลูกค้า
+- **⚠️ `LIMIT 1` เดิมใน `pos.ts` ต้องเอาออก** — ตอนนี้ SKU เดียวมีได้สองแถว (ทั้งร้าน + สาขานี้)
+  ปล่อย `LIMIT 1` ไว้ = แถวที่ได้ขึ้นกับลำดับที่ Postgres บังเอิญคืนมา (โปรสลับกันเองแบบสุ่ม)
+- **เส้นทางที่ไม่รู้สาขาได้แค่โปรทั้งร้าน** (เช่น `listRecentPosSales` ที่ resolve SKU จากคำค้น) —
+  เดาสาขาแล้วคิดเงินผิดแย่กว่าไม่ลดให้ · ตรวจแล้วว่าผู้เรียก `resolvePosScan` ทั้ง 3 ทางที่ตัดสินราคา
+  (device / บิลโต๊ะ / QR session) ส่งสาขาจริงมาเสมอ และ `createOrder` resolve สาขาเสมอ จึงไม่มีเคส
+  ที่พรีวิวกับ commit เห็นสาขาต่างกัน
+- **แถวเดิมทุกแถวได้ `location_id = NULL`** → apply แล้วไม่เปลี่ยนราคาของบิลไหนเลยจนกว่าจะมีคนตั้ง
+  โปรรายสาขา · ROLLBACK เขียนไว้ในหัวไฟล์ migration แล้ว
+- **`uq_bms_locations_tenant_id` (9.37) ต้องมีก่อน** ไม่งั้น FK composite สร้างไม่ได้ (ตรวจแล้วว่ามีจริงบน dev)
+- ของใหม่: `lib/bms/productPromotions.ts` (list/upsert/deactivate + audit ในทรานแซกชันเดียวกับการเขียน) ·
+  `graphql/bmsProductPromotions.ts` · หน้า `/admin/promotions` + เมนูข้างคูปอง · guide
+  `products.branch-promotions` + คำถามในคอร์ปัส 2 ข้อ (th/en) · แก้คำเตือนของ guide
+  `products.pricing-promotions` ที่เขียนว่าโปรเป็น "ระดับ SKU" ซึ่งไม่จริงแล้ว
+- **หยุดโปร = ปิด ไม่ใช่ลบ** — แถวที่ปิดแล้วคือคำตอบของ "สาขาไหนจัดโปรอะไรช่วงไหน" ซึ่งเป็นคำถามแรก
+  เวลามาไล่ว่าทำไมกำไรเดือนนั้นเป็นแบบนั้น
+- **พนักงานที่ถูกจำกัดสาขา (`bms_user_allowed_locations`) ตั้งโปรทั้งร้านไม่ได้** — โปรทั้งร้านมีผลกับ
+  สาขาที่เขาไม่ได้ดูแลด้วย ซึ่งกว้างกว่าขอบเขตที่ร้านตั้งใจให้
+- **เทส 2 ชุด — รันทั้งคู่ก่อน merge ทุกครั้งที่แตะโปรโมชัน**:
+  `scripts/promotion-branch-scope-contract.test.mts` (8 เทส pure) +
+  `scripts/promotions-db-contract.test.mts` (**17 เทส** จาก 8 · สร้างสาขาที่สองของตัวเองแล้วลบทิ้ง
+  ยืนยันว่าเหลือ 0 · **เขียนจริงลงฐาน ห้ามรันกับ production**)
+  · **ผ่าน mutation test แล้ว 6 แบบ** (สาขาไม่ชนะ · `orders.ts` ไม่กรองสาขา · เอา `LIMIT 1` กลับมา ·
+  migration ไม่ทิ้งดัชนีเดิม · ทั้งสองแบบซ้ำที่ระดับ DB) แดงถูกตัวทุกครั้ง
+- **ยังไม่ได้ทำ (จงใจ)**: ราคาส่งตามจำนวน (`8.1`), ราคาป้าย/ราคาแพ็ก และส่วนลดตามชั้นสมาชิก
+  ยังเป็นระดับร้านทั้งหมด — แยกสาขาได้แต่เป็นการตัดสินใจคนละเรื่องและต้องมี migration ของตัวเอง ·
+  ยังไม่มีปุ่มคัดลอกโปรข้ามสาขา (ตั้งทีละสาขา) · **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์**
+
+
+### Restaurant chat delivery — 2026-09-04
+
+- งานเฟส 1–5 ลงครบแล้ว; สถานะ migration และสิ่งที่ยัง verify ไม่ได้ดูหัวข้อ
+  “Restaurant chat delivery rollout” ด้านล่าง (อย่าตีความว่า apply DB แล้ว)
+
+**ประวัติงานเก่าทั้งหมด (ทุก § ที่เคยอยู่ในไฟล์นี้) ย้ายไป
+[docs/local-notes-archive.md](docs/local-notes-archive.md)** — ยกไปครบไม่ได้ลบ ก่อนแก้ฟีเจอร์ไหนให้
+เปิดหัวข้อนั้นก่อน (Channel Health, AI Provider Health, Failure Incidents, AI tool-calling, Coupons,
+Follow-up Automation, Redis, Live Dashboard ฯลฯ)
+
+
+### ยืนยันรายการก่อนสร้างบิล (customer surface) — 2026-08-19
+
+ไม่มี migration (ใช้ `ai_state` JSONB ที่มีอยู่) · verify กับ DB จริงแล้ว 5 เทส
+
+- **`create_order` ครั้งแรกของตะกร้าไม่เขียนอะไรเลย** คืน `CONFIRMATION_REQUIRED` + รายการที่
+  resolve แล้ว → pipeline ประกอบสรุป **ฝั่ง server** (`composeOrderQuoteSummary`) ไม่ใช่ให้โมเดลเขียน
+  · เหตุผลที่ไม่ให้โมเดลเขียน: โมเดลตัดรายการทิ้งไม่ได้ **และ** output สั้นลง ถ้าให้โมเดลเขียนลิสต์เอง
+  บิลยิ่งใหญ่ยิ่งชนเพดาน `max_tokens` = กลับหัวกับที่ควรเป็น
+- **ธงยืนยันเป็น server-only ใน `ExecCtx`** (`customerConfirmedQuote`) ตั้งจาก pipeline เท่านั้น
+  โดยดู `orderMemory.confirmed` (คำว่า ยืนยัน/สั่งเลย/ตกลง ในข้อความลูกค้า) คู่กับ
+  `pendingQuoteFingerprint` ใน `ai_state` — โมเดลส่งค่านี้เองไม่ได้
+- **ลายนิ้วมือครอบจำนวน + หน่วยขาย** (`orderQuoteFingerprint`, ไม่ขึ้นกับลำดับบรรทัด) เปลี่ยนจำนวน
+  หรือแอบเพิ่มรายการหลังลูกค้ายืนยัน = ไม่ตรง → วนกลับไปถามใหม่ (มีเทสคุม)
+- **ไม่มีออร์เดอร์ไหนหายจากกฎนี้** ครั้งแรกกลายเป็นคำถามยืนยัน ครั้งที่สองเดินเส้นทางเขียนเดิม
+  · **staff surface ไม่ถูกแตะ** (แอดมินเห็นหน้าจอที่ตัวเองกรอกอยู่แล้ว)
+- **สรุปไม่คิดยอดสุทธิ** แสดงราคาป้าย × จำนวน + กำกับว่า "ยังไม่รวมค่าส่ง/ส่วนลด/แต้ม" ยอดจริงยังมาจาก
+  `orderCheckoutChatReply` หลังบิลถูกสร้าง — ห้ามคิดส่วนลด/โปร/แต้มซ้ำที่นี่ เพราะจะเป็นสูตรที่สองของเงิน
+  แล้ว drift (กฎเดียวกับ `unitPriceForQty` ของ `8.1`)
+- **ตัวอย่างที่บอทสอนลูกค้าเป็นสตริงคงที่** (`multiItemOrderExample`) ห้ามให้โมเดลแต่งสด — เคสจริง
+  2026-08-19: โมเดลแต่งตัวอย่างที่ตัวเองรับไม่ได้ (ครอบ `**`, ไม่มีคำกริยา) ลูกค้าก็อปตามแล้วถูกปฏิเสธ
+  · มีเทสป้อนตัวอย่างกลับเข้า `looksLikeRequestedItemList` เพื่อกันสองฝั่ง drift กันอีก
+- **`stripMarkdownEmphasis` ตั้งใจไม่แตะ `*` ที่อยู่ระหว่างอักขระไม่ใช่ช่องว่าง** — "ผ้าก๊อซ 3*3 นิ้ว"
+  คือขนาดสินค้า ตัดทิ้ง = เปลี่ยนสินค้าที่ลูกค้าขอ (มีเทสคุม ห้ามมาแก้ให้ strip ทั้งหมด)
+- เทส: `scripts/order-confirmation-db-contract.test.mts` (5 เทส · เขียนจริงลงฐาน **ห้ามรันกับ
+  production** · ลบข้อมูลตัวเองครบ) + `scripts/ai-eval/order-confirmation-contract.test.mts` (11 เทส
+  ไม่ต้องมี DB) · ต้องลบ `bms_stock_movements` ก่อน `bms_products` ตอน teardown (FK composite)
+
+
+### ก่อน production (สำคัญ)
+
+- **migration ที่ยังไม่ได้ apply เข้า production (ณ 2026-08-13)**: `7.33` (product discovery
+  indexes), `7.52` (follow-up automation), `7.54` (`report.email`), `7.55` (`bms_job_runs`),
+  `7.56` (`users.language` CHECK), `7.78` (user management perms), `7.81` (default ภาษา = th),
+  `7.82` (AI usage accounting) — **ตรวจกับ DB จริงก่อนเชื่อรายการนี้** · และ `5.6`/`5.7` ต้องมีก่อน
+  (platform admin + operational perms; seed platform admin ชุดแรก = Administrator ของร้าน default)
+- **`7.96__bms_membership_and_loyalty.sql` (สมาชิก + tier + แต้มสะสม + `bms_order_discounts`)
+  apply เข้า dev DB แล้วและ verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production ·
+  seed permission ใหม่ 4 ตัว (`member.view`, `member.manage`, `loyalty.adjust`, `loyalty.settings`)
+  ให้ Manager/Sales/Cashier ถ้าไม่ apply หน้า `/admin/loyalty` จะโดน 403 เงียบ ๆ
+  · cron: `.github/workflows/bms-cron.yml` ยิงให้แล้ว (frequent ทุก 15 นาที / daily 20:00 UTC)
+    **แต่ต้องตั้ง secret `BMS_APP_BASE_URL` + `BMS_CRON_SECRET` ใน GitHub ก่อน** ไม่ตั้ง = ทุก job
+    ข้ามตัวเองเงียบ ๆ (workflow ไม่แดง) แล้วแต้มไม่หมดอายุเหมือนเดิม · ดูว่ายิงจริงหรือยังที่
+    `/admin/operations-schedule` (อ่านจาก `bms_job_runs`)
+  · **เทส 2 ชุด — รันทั้งคู่ก่อน merge ทุกครั้งที่แตะ loyalty**
+
+    ```bash
+    # 1) เลขคณิตส่วนลด (13 เทส, ไม่ต้องมี DB — loyaltyMath.ts ตั้งใจไม่ import อะไรเลย)
+    node --experimental-strip-types --test scripts/loyalty-contract.test.mts
+
+    # 2) ledger + POS ครบ flow กับ Postgres จริง (22 + 10 เทส) — รันจาก apps/web เพราะ tsx อยู่ที่นั่น
+    #    POSTGRES_HOST=localhost เพราะ .env.dev ชี้ host `postgres` (ชื่อใน docker network)
+    #    --import shim: lib/mailer.ts มี `import "server-only"` ซึ่งมีแค่ตอน Next build
+    #    --test-concurrency=1 บังคับ: สองชุดใช้ร้านแรกร่วมกัน รันขนานกันแล้วเหยียบกันเอง
+    cd apps/web && POSTGRES_HOST=localhost POSTGRES_DB=bms POSTGRES_USER=app \
+      POSTGRES_PASSWORD="$(grep -E '^POSTGRES_PASSWORD=' ../../.env.dev | cut -d= -f2-)" \
+      REDIS_URL=redis://127.0.0.1:6379 \
+      npx tsx --import ../../scripts/testing/next-runtime-shim.mjs \
+        --test --test-concurrency=1 --test-force-exit \
+        ../../scripts/loyalty-db-contract.test.mts \
+        ../../scripts/pos-loyalty-db-contract.test.mts
+    ```
+
+    ชุดที่ 2 สร้าง/ลบข้อมูลของตัวเองครบ (รันซ้ำได้ ยืนยันแล้ว) แต่ **เขียนจริงลงฐาน — ห้ามรันกับ
+    production** · มันตั้ง `bms_loyalty_settings` ของร้านแรกเป็นค่าที่เทสต้องใช้ (เปิดโปรแกรม,
+    100 แต้ม = 10 บาท) แล้วไม่คืนค่าเดิม
+  · **แต้มค้างเป็นหนี้สินทางบัญชี** — ก่อนปิดงบต้องส่งตัวเลขจาก `bmsLoyaltyOutstanding`
+    (การ์ด "มูลค่าแต้มค้าง" ที่ `/admin/loyalty`) ให้บัญชี · `balanceMismatchCount` ต้องเป็น 0 เสมอ
+  · fake data: กด **Customers → Orders → BMS Members + Points** ตามลำดับที่ `/admin/dev/fake`
+    (ปุ่มสมาชิกยกลูกค้าปลอมที่มีอยู่ขึ้นเป็นสมาชิก ไม่สร้างใหม่ — ไม่มีลูกค้าปลอม = ไม่มีอะไรเกิด)
+  · กับดักที่เจอตอน verify: `upsertMembershipTier` แปลง `code` เป็นตัวพิมพ์ใหญ่เสมอ ถ้าสคริปต์ไหน
+    ลบชั้นทดสอบด้วย `LIKE 'ตัวเล็ก-%'` จะลบไม่โดน แล้วชั้นทดสอบที่ค้างอยู่จะไป **เปลี่ยนชั้นของ
+    สมาชิกจริง** ในรอบทบทวนถัดไป (เจอมาแล้ว — สมาชิก 6 คนย้ายไปชั้นทดสอบ)
+- **`7.97__bms_pos_park_cash_void.sql` (พักบิล + เงินเข้า-ออกลิ้นชัก + ยกเลิกบิล) apply เข้า dev DB
+  แล้วและ verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · seed permission
+  ใหม่ 3 ตัว (`pos.void`, `pos.cash.movement` → Manager · `pos.shift.report` → Manager/Sales/Cashier)
+  ไม่ apply = ปุ่มใหม่ที่หน้า POS โดน 403 เงียบ ๆ
+  · เทสชุดที่ 3 (13 เทส) รันแบบเดียวกับสองชุดเดิม เพิ่มไฟล์ท้ายคำสั่ง:
+    `../../scripts/pos-shift-ops-db-contract.test.mts` — รวมสามชุด 45 เทส ผ่านทั้งหมด
+  · **ส่วนลดมือ ยกเลิกบิล และเงินออกจากลิ้นชัก ต้องกด PIN คนที่สองทุกครั้ง** แม้คนขายจะมีสิทธิ์เอง
+    (ตั้งใจ — การมีสิทธิ์กับการใช้สิทธิ์ต้องเป็นคนละการกระทำในหลักฐาน)
+- **`7.98__bms_stock_transfers_and_counts.sql` (โอนย้ายระหว่างสาขา + นับสต็อก) apply เข้า dev DB
+  แล้วและ verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · seed permission
+  ใหม่ 3 ตัว (`inventory.transfer`, `inventory.count` → Manager/Warehouse ·
+  `inventory.count.apply` → Manager เท่านั้น)
+  · **apply ด้วย `psql -1`** — รอบแรกล้มกลางไฟล์เพราะ FK ผิด แล้วตารางค้างครึ่งเดียวใน DB
+    (ต้อง DROP มือ) · `bms_products` มี PK `(tenant_id, sku)` FK จึงต้องเป็น composite
+  · **`bms_locations.branch_code` default `'00000'` + unique `(tenant_id, branch_code)`** — สร้าง
+    สาขาใหม่โดยไม่ตั้ง branch_code = ชนกับสำนักงานใหญ่ทันที (เจอตอนเขียนเทส) · **คอลัมน์นี้มาจาก
+    `7.84__bms_locations.sql` ไม่ใช่ `7.98`** (เคยจดไว้ผิดที่ — แก้ 2026-08-18) กับดักมาโผล่ตอน
+    ทำ `7.98` เพราะเพิ่งมีคนสร้างสาขาที่สองเป็นครั้งแรก
+  · `7.98` แก้ตารางเดิมด้วย: drop/recreate `bms_stock_movements_type_check` เพื่อเพิ่ม
+    `TRANSFER_IN`/`TRANSFER_OUT`/`COUNT_ADJUST`
+  · เทสชุดที่ 4 (10 เทส): `../../scripts/inventory-multilocation-db-contract.test.mts`
+    — รวมสี่ชุด 55 เทส ผ่านทั้งหมด
+  · **หน้า UI: `/admin/stock-transfers` + `/admin/stock-counts`** (เมนูอยู่กลุ่มร้านค้า ถัดจาก
+    Purchase (PO)) — ยังไม่เคยเปิดดูจริงในเบราว์เซอร์ ผ่านแค่ `tsc` · ทั้งสองหน้าเรียก REST
+    ไม่ใช่ GraphQL (ตั้งใจ — เหตุผลอยู่ใน [docs/business/inventory.md](docs/business/inventory.md)
+    § Why this module is REST) แปลว่า **AI tool catalogue มองไม่เห็นสองโมดูลนี้**
+  · checklist ก่อน go-live ของ 7.98 อยู่ใน
+    [docs/business/inventory.md § Go-live checklist (multi-branch, 7.98)](docs/business/inventory.md#go-live-checklist-multi-branch-798)
+    (ไม่ได้อยู่ใน pos.md — ของ pos.md ครอบคลุมถึง `7.97` แล้วลิงก์ต่อมาที่นี่)
+- **`vat_category` เขียนได้แล้ว (ไม่ต้อง migration — คอลัมน์มีตั้งแต่ `7.88`)** — ก่อนหน้านี้ไม่มีที่ไหน
+  เขียนเลย ร้านที่จด VAT จึงติด blocker ที่ `/admin/pos-readiness` ตลอดโดยไม่มีปุ่มแก้ · ตอนนี้แก้รายตัวที่
+  `/admin/products` และตั้งทีเดียวทั้งร้านที่ `/admin/pos-readiness` (mutation
+  `bmsSetVatCategoryForUnknown` ใช้สิทธิ์ `tax.setting.manage`)
+  · **กับดัก: ไม่ส่ง `vat_category` มาต้องคงค่าเดิม** — upsert ใช้ `COALESCE($14, bms_products.vat_category)`
+    ห้ามเปลี่ยนไปใช้ `EXCLUDED` เด็ดขาด ไม่งั้น bulk import ล้างประเภทภาษีทั้งร้านเงียบ ๆ (มีเทสคุมไว้)
+  · เทสชุดที่ 5 (7 เทส): `../../scripts/product-vat-category-db-contract.test.mts`
+    — รวมห้าชุด 62 เทส ผ่านทั้งหมด · **ชุดนี้แก้สินค้าจริงของร้านแรกตอนทดสอบปุ่ม bulk แล้วคืนค่าให้ตอน
+    teardown** (ปุ่มแก้ทั้งร้านตามดีไซน์) — ถ้า teardown ไม่ทำงาน สินค้าจริงจะค้างเป็น `V`
+- **`7.99__bms_product_barcode_per_tenant.sql` (barcode unique ต่อร้าน ไม่ใช่ทั้งแพลตฟอร์ม) apply เข้า
+  dev DB แล้วและ verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · ไม่มี
+  permission ใหม่
+  · **ต้นเหตุ**: `3.4` สร้าง `uq_bms_products_barcode` เป็น `UNIQUE (barcode)` เฉย ๆ (ยุคร้านเดียว)
+    → สองร้านที่ขายสินค้าตัวเดียวกันบันทึก EAN-13 จริงได้แค่ร้านเดียว ร้านที่มาทีหลังเจอ duplicate key
+    ของค่าที่มองไม่เห็น · `bms_product_packs` (`7.86`) ทำถูกอยู่แล้วที่ `(tenant_id, barcode)`
+  · migration นี้ล้มไม่ได้ (index เดิมบังคับ unique ทั้งฐาน จึงไม่มีทางมีซ้ำค้าง) แต่ **ล็อกตาราง
+    `bms_products` สั้น ๆ ตอน DROP/CREATE INDEX** — รันตอนไม่มีคนขายถ้าฐาน production ใหญ่
+  · **ปุ่มสร้างบาร์โค้ด** = EAN-13 ช่วง 20–29 (GS1 กันไว้ให้ร้านใช้ภายใน) + check digit ถูก ·
+    เดินลำดับ ไม่สุ่ม · **ปุ่มไม่เขียนฐาน** คืนเลขให้ฟอร์มแล้วผู้ใช้กดบันทึกเอง
+  · **ยังไม่มีหน้าพิมพ์สติกเกอร์บาร์โค้ด** — เลขที่สร้างมาต้องมีทางพิมพ์แปะเองก่อนจะใช้จริง
+  · เทส 2 ชุดใหม่: `scripts/barcode-contract.test.mts` (7 เทส ไม่ต้องมี DB) +
+    `scripts/product-barcode-db-contract.test.mts` (7 เทส) — รวม pure 22 · DB 69 ผ่านทั้งหมด
+- **`8.0__bms_pos_blind_close_and_no_sale.sql` (นับเงินปิดตา + เปิดลิ้นชักโดยไม่ขาย) apply เข้า dev DB
+  แล้วและ verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · seed permission
+  ใหม่ 1 ตัว (`pos.nosale` → Manager/Sales/Cashier)
+  · **`pos_blind_close` DEFAULT TRUE = เปลี่ยนพฤติกรรมร้านที่มีอยู่ทันทีที่ apply** — ยอดเงินที่ควรมี
+    จะหายไปจากสรุปกะระหว่างกะเปิด ร้านที่ไม่ต้องการปิดเองที่ `/admin/pos-readiness`
+  · **กับดักตอนเขียนเทส**: เทสชุด `pos-shift-ops` ตรวจ "ยอดที่ควรมี" ตรง ๆ หลายตัว พอ default
+    เป็น TRUE เลยพังทันที 5 ตัว — setup ต้องตั้ง `pos_blind_close = FALSE` เอง (แบบเดียวกับที่ตั้ง
+    `cash_rounding = 'NONE'`) และเทสที่ตรวจตัวโหมดเองเปิด-ปิดเองในเทสนั้น
+  · **เทสที่เพิ่มต้องอยู่ก่อนเทสปิดกะ** — ชุดนี้ปิดกะจริงที่เทสท้าย ๆ ถ้าแทรกทีหลังจะได้
+    `SHIFT_NOT_OPEN` ทั้งหมด
+  · ช่องรั่วที่ปิดไปด้วย: `recordCashMovement` เคยคืน `drawerAfter` = ยอดที่ควรมีตรง ๆ (นำเงินเข้า
+    ฿1 แล้วอ่านคำตอบได้) · และปุ่ม "เปิดลิ้นชัก" เปล่า ๆ ที่แท็บตั้งค่าของหน้า POS
+  · เทสชุดที่ 3 เพิ่มเป็น 15 เทส — รวม pure 27 · DB 71 ผ่านทั้งหมด
+- **`8.1__bms_product_price_tiers.sql` (ราคาส่งตามจำนวน) apply เข้า dev DB แล้วและ verify กับ DB
+  จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · ไม่มี permission ใหม่ (ใช้ `product.edit`)
+  · **จำนวนนับรวมทั้งบิลต่อ SKU ไม่ใช่ต่อบรรทัด** — 60ml 5 ขวด + 150ml 5 ขวด = 10 ชิ้น
+  · **บรรทัดที่ขายเป็น pack ไม่ถูกแตะ** ราคา pack ชนะเสมอ (แต่จำนวนยังนับรวม)
+  · **`unitPriceForQty` ต้องเป็นตัวเดียวกันทั้งจอและ server** — `resolvePosScan` ส่งขั้นราคาไปให้จอ
+    ถ้าสองฝั่งคิดต่างกันแม้สตางค์เดียว = `PAYMENT_MISMATCH` บิลถูกทิ้งหน้าลูกค้า
+  · `price_tiers` ใน `upsertProduct`: ส่ง = แทนที่ทั้งชุด · ไม่ส่ง = ไม่แตะ (กฎเดียวกับ `vat_category`)
+  · เทส 2 ชุดใหม่: `scripts/pricing-contract.test.mts` (8 เทส ไม่ต้องมี DB) +
+    `scripts/price-tiers-db-contract.test.mts` (8 เทส) — รวม pure 35 · DB 79 ผ่านทั้งหมด
+- **`8.2__bms_pos_blind_returns.sql` (คืนสินค้าไม่มีใบเสร็จ) apply เข้า dev DB แล้วและ verify กับ DB
+  จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · seed permission ใหม่ 1 ตัว
+  (`pos.return.noreceipt` → **Manager เท่านั้น**)
+  · **เงินที่จ่ายคืนลงตาราง `bms_pos_cash_movements`** ไม่ใช่แหล่งเงินออกที่สอง — ยอดเงินที่ควรมี
+    ตอนปิดกะมีสูตรเดียว ถ้าไม่เข้าสูตรนี้ ปิดกะจะเงินขาดเท่ายอดคืนทุกครั้งโดยอธิบายไม่ได้
+  · เพดานราคาคืน = ราคาป้ายวันนี้ (ไม่มีบิลต้นทางให้ยึด) · เงินในลิ้นชักไม่พอ = ปฏิเสธ
+  · **ไม่ออกใบลดหนี้** เพราะไม่มีใบกำกับต้นทางให้อ้าง — เป็นหลักฐานภายในให้บัญชี
+  · รายงาน `pos-return-audit` นับแยกจากการคืนปกติ และเตือนทันทีที่มีแม้รายการเดียว
+  · เทสชุดใหม่: `scripts/pos-blind-return-db-contract.test.mts` (8 เทส) — รวม DB 87 ผ่านทั้งหมด
+- **`8.3__bms_product_serials.sql` (เลขเครื่อง/IMEI) + `8.4__grant_bms_app_read_users_roles.sql`
+  apply เข้า dev DB แล้วและ verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production
+- **⚠️ `8.4` คือการแก้บั๊ก production ของโค้ดที่ปล่อยไปแล้วตั้งแต่ `7.91` — apply ก่อนใครเพื่อนได้เลย**
+  · `beginTenantTx` ทำ `SET LOCAL ROLE bms_app` ทุกครั้ง แต่ **`bms_app` ไม่มีสิทธิ์บน `users`
+    และ `roles` เลย** (`(none)` ทั้งคู่)
+  · `processPosReturn` → `cashierHasPermissionInTx` อ่าน `users JOIN roles` เมื่อยอดคืนถึงเกณฑ์
+    ต้องมีผู้อนุมัติ (**ตั้งแต่ ฿500**) → `permission denied for table users` กลางการคืนของ
+  · **แปลว่าการคืนสินค้ายอดตั้งแต่ ฿500 ล้มทุกครั้ง** ยอดต่ำกว่านั้นผ่านเพราะไม่เข้าเงื่อนไข
+    — ไม่มีใครเจอเพราะเทสเก่าใช้บิลเล็กทั้งหมด (เจอตอนเขียนเทส `8.3` ด้วยบิล ฿2,000)
+  · แก้ด้วย **GRANT ระดับคอลัมน์** บน `users` (ไม่รวม `password_hash`) + `GRANT SELECT ON roles`
+  · เทสกันย้อนกลับ: `scripts/db-role-grants-db-contract.test.mts` (3 เทส · read-only รันกับ
+    production ได้) — ตรวจทั้ง "อ่านคอลัมน์ที่ต้องใช้ได้", "`password_hash` ยังอ่านไม่ได้",
+    "เขียน `users` ไม่ได้"
+  · serial: เก็บตอนขาย ไม่ใช่ตอนรับเข้า · บังคับเฉพาะ POS (ออนไลน์บังคับไม่ได้ ตอนสั่งไม่มีใครรู้ว่า
+    จะหยิบเครื่องไหน) · คืนทั้งบิลปลด serial ได้ · **คืนบางส่วนปลดไม่ได้** เพราะไม่รู้ว่าคืนเครื่องไหน
+  · เทสชุดใหม่: `scripts/pos-serial-db-contract.test.mts` (9 เทส) — รวม DB 99 ผ่านทั้งหมด
+- **`8.5__bms_commission_rules.sql` (ค่าคอมพนักงาน) apply เข้า dev DB แล้วและ verify กับ DB จริงแล้ว
+  2026-08-18** — ยังไม่ได้ apply เข้า production · seed permission ใหม่ 2 ตัว
+  (`commission.view`, `commission.manage` → Manager)
+  · **อัตราคอมมี `effective_from` เสมอ** — รายงานใช้กฎที่มีผล ณ วันที่ของบิล ไม่ใช่อัตราปัจจุบัน
+    ถ้าใช้อัตราปัจจุบัน วันที่ร้านขึ้นอัตรา ยอดคอมของเดือนที่จ่ายไปแล้วจะเปลี่ยนย้อนหลังทั้งหมด
+  · แก้อัตรา = เพิ่มแถวใหม่ ไม่ใช่ทับแถวเดิม (ทับได้เฉพาะกรณีวันเริ่มใช้เดียวกัน)
+  · ลำดับความเจาะจง: `PRODUCT` > `CATEGORY` > `DEFAULT`
+  · **ของที่ถูกคืนต้องหักคอมออก** และบิลที่ void ไม่นับเลย — ไม่ทำ = ขายแล้วให้ลูกค้าคืนวันถัดไป
+    กลายเป็นวิธีปั๊มคอมฟรี · ส่วนลดทั้งบิลถูกเกลี่ยตามสัดส่วนรายการ
+  · **กับดักที่เจอ (คนละตัวกับที่จดไว้ข้อ 1)**: `pg` คืน `DATE` เป็น `Date` ที่เที่ยงคืน "เวลาท้องถิ่น"
+    → `.toISOString().slice(0,10)` **ถอยไป 1 วันในโซนไทย** · แก้ด้วยการ cast `::text` ใน SQL
+    แล้วไม่ให้ค่าผ่าน JS `Date` เลย (มีเทสคุม) — อัตราที่เริ่มวันที่ 1 จะถูกใช้ตั้งแต่สิ้นเดือนก่อน
+  · เทสชุดใหม่: `scripts/commission-db-contract.test.mts` (10 เทส) — รวม DB 109 ผ่านทั้งหมด
+  · หน้า `/admin/commission` (เมนูใต้ Reports) — ยังไม่เคยเปิดดูจริงในเบราว์เซอร์
+- **จอลูกค้า + ส่งใบเสร็จอีเมล/LINE (ไม่มี migration — ใช้ของที่มีอยู่แล้วทั้งหมด) verify กับ DB จริงแล้ว
+  2026-08-18**
+  · **จอลูกค้า `/pos/display` ใช้ `BroadcastChannel` ไม่ใช่ WebSocket** — จอที่สองคือหน้าต่างของ
+    เบราว์เซอร์เดียวกันบนเครื่องเดียวกัน (ต่อ HDMI) ข้อความไม่วิ่งผ่านเซิร์ฟเวอร์ → เน็ตร้านหลุด
+    ยอดบนจอลูกค้าไม่ค้าง · **ต้องเป็นเบราว์เซอร์เดียวกัน ใช้เครื่องอื่นไม่ได้**
+  · **`bms_customers` ไม่มีคอลัมน์ `line_user_id`** — LINE id อยู่ที่ `bms_customer_identities`
+    (`channel='line'`, `external_ref`) ตั้งแต่ `7.74` · ผมเขียนผิดรอบแรกแล้วเทสจับได้
+    (เขียนผิดที่ = ลูกค้าที่ผูก LINE ไว้แล้วถูกบอกว่าไม่ได้ผูก)
+  · ใบเสร็จอ่านตัวเลขจาก `bms_tax_documents` ที่ออกไปแล้วเท่านั้น ห้ามคิด `total × 7/107` ใหม่
+    (บิลที่มีสินค้ายกเว้น VAT ปนจะได้เลขไม่ตรงกับที่ยื่นสรรพากร)
+  · อีเมลที่พนักงานพิมพ์หน้าเคาน์เตอร์ **ไม่ถูกบันทึกกลับเข้าโปรไฟล์ลูกค้า** โดยตั้งใจ
+  · เทสชุดใหม่: `scripts/receipt-delivery-db-contract.test.mts` (7 เทส) — **ไม่ทดสอบการส่งจริง**
+    (ไม่มี mail provider/LINE token ในเทส) ตรวจการประกอบใบเสร็จ + การหาผู้รับ + การปฏิเสธที่อ่านรู้เรื่อง
+    — รวม DB 116 ผ่านทั้งหมด
+- **`8.6__bms_order_extra_lines.sql` (ค่าถุง/ค่าบริการ ที่ไม่ใช่สินค้าในคลัง) apply เข้า dev DB แล้วและ
+  verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · ไม่มี permission ใหม่
+  (ใช้ `pos.sell`)
+  · **ตารางแยก ไม่ได้แตะ `bms_order_items`** — ตารางนั้นมี `UNIQUE (order_id, product_sku, size)`
+    + FK ไป `bms_products` + FK ไป `bms_inventory` ซึ่งขัดกับรายการแบบนี้ทั้งสามข้อ · การคลายทั้งสาม
+    คือทำให้ตารางที่ทุกช่องทางใช้ร่วมกันหลวมลงเพื่อรองรับของที่ไม่ใช่สินค้า ไม่คุ้มความเสี่ยง
+  · **⚠️ ค่าบริการอยู่ในฐาน VAT** — `loadOrderLinesInTx` ใน `taxDocuments.ts` ต้อง UNION ตารางนี้เข้ามา
+    ถ้าลืม ใบกำกับจะแสดงฐานน้อยกว่าเงินที่รับจริง = ยื่นภาษีต่ำกว่าความจริงเท่าค่าบริการทั้งหมด
+    ที่เคยเก็บ (มีเทสคุม)
+  · บวกเข้ายอด **ก่อน** คิดส่วนลด เพราะส่วนลด % คิดบนยอดที่ลูกค้าจ่ายจริง
+  · เทสชุดใหม่: `scripts/order-extra-lines-db-contract.test.mts` (7 เทส) — รวม DB 123 ผ่านทั้งหมด
+- **`8.7__bms_product_promotions.sql` (ซื้อ X แถม Y / N ชิ้นราคาเดียว) apply เข้า dev DB แล้วและ
+  verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · ไม่มี permission ใหม่
+  · **โปรไม่ใช่ส่วนลดชั้นที่ 5** — เป็นกลไกราคาต่อบรรทัดแบบเดียวกับ `8.1` จึง **ไม่อยู่ใต้เพดาน
+    `max_discount_pct`** · ถ้าทำเป็นชั้นส่วนลด โปรที่ร้านประกาศไว้จะถูกตัดเมื่อบิลชนเพดาน
+    = ร้านผิดคำพูดกับลูกค้าเพราะกฎภายในตัวเอง อธิบายที่เคาน์เตอร์ไม่ได้
+  · **คิดครั้งเดียวต่อ SKU ต่อบิล** จากจำนวนรวมทุกไซซ์ — คิดต่อบรรทัดจะพลาดโปร (สองบรรทัดละ 2 ชิ้น
+    ไม่ครบชุด) หรือเก็บเงินซ้ำสองเท่า (มีเทสคุมทั้งสองแบบ)
+  · **โปรที่แพงกว่าซื้อแยกไม่ถูกบังคับใช้** — ร้านลดราคาปกติลงต่ำกว่าราคาชุด หรือมีโปรค้าง
+    เป็นเรื่องเกิดจริง · เลือกยอดที่ต่ำกว่าเสมอ
+  · `uq_bms_promotions_active_sku` (partial unique) = สินค้าหนึ่งตัวมีโปร active ได้ทีละหนึ่ง
+  · **ยังไม่รองรับ "ซื้อ A แถม B" ข้ามสินค้า**
+  · เทสชุดใหม่: `scripts/promotions-db-contract.test.mts` (8 เทส) + เพิ่มใน
+    `pricing-contract.test.mts` (5 เทส) — รวม pure 40 · DB 131 ผ่านทั้งหมด
+- **`8.8__bms_product_bundles.sql` (สินค้าชุด + view `bms_order_stock_lines`) apply เข้า dev DB แล้วและ
+  verify กับ DB จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · ไม่มี permission ใหม่
+  · **⚠️ ทุกที่ที่ขยับสต็อกต้องอ่านจาก view `bms_order_stock_lines` ไม่ใช่ `bms_order_items`** —
+    มี 4 จุด (ตัดสต็อกตอนจบบิล · คืนของ · ปล่อย reserved · ตัดล็อต FEFO) ถ้าเพิ่มจุดใหม่ต้องใช้ view
+  · เซ็ตมีแถว `bms_inventory` ของตัวเองค้างที่ **0 ตลอด** (FK ของ order_items บังคับ) และ
+    `createOrder` สร้างให้เองตอนขายครั้งแรก · การอ่านตารางตรง ๆ จะลดสต็อกเซ็ตให้ติดลบแล้วชน
+    `CHECK (current_stock >= 0)` กลางการปิดบิล
+  · view มี `order_item_id` เพราะการตัดล็อต FEFO ต้องผูกล็อตกลับไปที่บรรทัดที่ขาย
+  · **`CREATE OR REPLACE VIEW` เปลี่ยน "ชื่อ" คอลัมน์ไม่ได้** ต้อง `DROP VIEW` ก่อน (เจอตอน apply)
+  · เซ็ตที่ไม่มีส่วนประกอบ = `BUNDLE_INCOMPLETE` ขายไม่ได้ · ส่วนประกอบขาด = error บอกชื่อ
+    **ส่วนประกอบ** ไม่ใช่ "เซ็ตหมด"
+  · **บาร์โค้ดเครื่องชั่ง: แกะได้แล้ว (`parseScaleBarcode`) แต่ยังไม่ต่อเข้าเส้นทางขาย** — การขาย
+    ของชั่งต้องให้ server คิดราคาจากบาร์โค้ดใหม่ตอน commit ไม่ใช่เชื่อราคาจากจอ (ขัด invariant
+    ของ POS ทั้งระบบ) · prefix: `20` = เลขที่ร้านสร้าง · `21` = ฝังราคา(สตางค์) · `22` = ฝังน้ำหนัก(กรัม)
+  · เทสชุดใหม่: `scripts/bundles-db-contract.test.mts` (7 เทส · รันซ้ำได้ ยืนยัน 2 รอบ) +
+    เพิ่มใน `barcode-contract.test.mts` (5 เทส) — รวม pure 45 · DB 138 ผ่านทั้งหมด
+- **`8.9__bms_store_credit.sql` (บัตรของขวัญ + เครดิตร้าน) apply เข้า dev DB แล้วและ verify กับ DB
+  จริงแล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · seed permission ใหม่ 3 ตัว
+  (`storecredit.issue`, `storecredit.adjust` → Manager · `storecredit.redeem` → Manager/Sales/Cashier)
+  · **เพิ่ม `STORE_CREDIT` ใน CHECK ของ `bms_payments.method` และ
+    `bms_pos_refund_allocations.method` ทั้งสองที่** — ลืมที่สองคือคืนเป็นเครดิตไม่ได้
+  · **เครดิตติดลบไม่ได้** (ต่างจากแต้มที่ยอมให้ติดลบโดยตั้งใจ) — บังคับด้วย CHECK ที่ตาราง
+  · **`STORE_CREDIT` ไม่ใช่เงินสด** ต้องไม่เข้าสูตรเงินในลิ้นชัก/ปิดกะ (ร้านรับเงินไปแล้วตอนขายบัตร)
+  · หักเครดิตอยู่ในทรานแซกชันที่ปิดการขาย + `FOR UPDATE` บนแถวบัตร (บัตรใบเดียวยิงสองเครื่อง
+    พร้อมกันได้) · ตรวจบัตรก่อนเรียก `createOrder` เพื่อให้ล้มก่อนตัดสต็อก
+  · **กับดักที่เทสจับได้ 2 อย่าง**:
+    1. การคืนของทาง POS ใช้ `processPosReturn` **ไม่ผ่าน `cancelOrder`** — ต้องมี hook ของตัวเอง
+       ไม่งั้นลูกค้าที่จ่ายด้วยบัตรแล้วคืนของ เสียเงินบนบัตรไปเปล่า ๆ
+    2. `UNIQUE (tenant_id, credit_id, order_id, kind)` ก้อนเดียว **ผิด** — คืนบางส่วนเกิดหลายครั้ง
+       ต่อบิล ก้อนเดียวยอมให้คืนได้ครั้งแรกเท่านั้น · แยกเป็น partial unique 3 ตัว
+       (REDEEM keyed by order · REVERSE-cancel keyed by order · REVERSE-return keyed by pos_return_id)
+  · **`ON CONFLICT ON CONSTRAINT` ใช้กับ unique *index* ไม่ได้** ต้องใช้ `ON CONFLICT (cols) WHERE ...`
+  · โค้ดบัตรสุ่มจาก `crypto.getRandomValues` ไม่ใช่ running number (บัตรเรียงเลข = ซื้อใบเดียวเดาใบอื่นได้)
+    · ตัด `I O 0 1` ออกให้อ่านทางโทรศัพท์ได้
+  · **ยอดเครดิตค้าง = หนี้สินในงบดุล** ส่งตัวเลขจาก `getStoreCreditOutstanding()` ให้บัญชีก่อนปิดงบ
+    · `balanceMismatchCount` ต้องเป็น 0 เสมอ
+  · เทสชุดใหม่: `scripts/store-credit-db-contract.test.mts` (11 เทส)
+- **`9.0__bms_pos_deposits.sql` (มัดจำ/ค้างชำระ) apply เข้า dev DB แล้วและ verify กับ DB จริงแล้ว
+  2026-08-18** — ยังไม่ได้ apply เข้า production · seed permission ใหม่ 2 ตัว
+  (`pos.deposit.take` → Manager/Sales/Cashier · `pos.deposit.cancel` → Manager)
+  · **กฎ "ยอดชำระต้องตรงเป๊ะ" ของ POS ไม่ได้ถูกคลาย** — มัดจำเป็นบิลอีกชนิด: ของถูกจอง
+    (reserved) บิลค้างที่ `PENDING` แล้วตอนลูกค้ามารับของจึงเดินเส้นทางปิดการขายเดิมทั้งเส้น
+  · **ใบกำกับออกตอนรับของ ไม่ใช่ตอนวางมัดจำ** (ตรงกับจุดที่กรรมสิทธิ์โอน)
+  · **การขายเป็นของกะที่รับของ** — `settleDepositSale` ประทับ `pos_device_id/pos_shift_id/
+    cashier_user_id` ใหม่ ยอดขายและค่าคอมจึงไปที่คนส่งของจริง
+  · **กับดัก 3 อย่างที่เจอตอนต่อกับ `finalizePosSale`**:
+    1. ล็อกบิลด้วย เครื่อง/กะ/คนขาย → บิลมัดจำที่สร้างไว้ตอนอื่นไม่ผ่าน (แก้ด้วยการประทับใหม่)
+    2. ตรวจ `total_amount` เทียบกับ `amountDue` → ต้องส่ง **ยอดเต็ม** ไม่ใช่ยอดคงเหลือ
+    3. ปฏิเสธบิลค้างที่มี payment เดิม → เปลี่ยนเป็นรับ `alreadyPaid` แล้วตรวจว่า "ต้องมีเท่านี้พอดี"
+       (ยังจับรายการที่เกินมาได้เหมือนเดิม) · และ `FOR UPDATE` อยู่กับ aggregate ไม่ได้
+  · **ปิดมัดจำไม่คืนเงินให้เอง** — คืนหรือยึดเป็นข้อตกลงร้านกับลูกค้า ระบบบันทึกการตัดสินใจ
+  · ของที่จองค้างมีวันครบกำหนด + ธง `overdue` — ไม่มีสองอย่างนี้ ร้านจะมีสต็อกที่ "มีอยู่แต่ขายไม่ได้"
+    เพิ่มขึ้นเรื่อย ๆ
+  · เทสชุดใหม่: `scripts/deposits-db-contract.test.mts` (9 เทส) — **รวมทั้งหมด pure 45 · DB 158**
+- **`9.1__bms_location_manage_permission.sql` (สิทธิ์ `location.manage` — สร้าง/แก้สาขาจากแอปได้แล้ว)
+  apply เข้า dev DB แล้ว 2026-08-18** — ยังไม่ได้ apply เข้า production · ไม่มี schema เปลี่ยน
+  (ตาราง `bms_locations` มีมาตั้งแต่ `7.84`) แค่เพิ่ม permission ใหม่ 1 ตัวให้ Manager
+  · **ก่อนหน้านี้ตาราง `bms_locations` มีมาตั้งแต่ 7.84 แต่ไม่มีทาง "สร้างสาขาใหม่" จากแอปเลยสักจุด**
+    มีแต่ query อ่าน (`bmsLocations`) ไปประกอบ dropdown ที่อื่น หน้า `/admin/locations` (เมนูใหม่ในกลุ่ม
+    ร้านค้า ก่อน Stock Transfers) + mutation `bmsUpsertLocation` คือทางแรกที่ทำได้จริง
+  · **สาขาที่สร้างผ่านหน้านี้ตั้งเป็น `is_head_office = FALSE` เสมอ ห้ามแก้** — คอลัมน์นี้ default
+    เป็น `TRUE` ในตาราง (ออกแบบไว้ตอนร้านมีสาขาเดียว) ถ้าไม่บังคับ FALSE ในโค้ด สาขาที่สองจะกลายเป็น
+    สำนักงานใหญ่คู่ขนานไปด้วยเงียบ ๆ — สำนักงานใหญ่จริงมีอยู่แล้วจาก seed ตอน 7.84 หน้านี้ไม่มีทาง
+    เปลี่ยนธงนั้นได้เลย (ต้องแก้ตรง DB เท่านั้น)
+  · **`branch_code = '00000'` สงวนไว้ให้สำนักงานใหญ่** — `upsertLocation` ปฏิเสธค่านี้ตอนสร้างใหม่
+    ก่อนถึงชั้น DB (กับดักเดิมที่จดไว้ใน `7.98` ข้างบน ตอนนี้กันไว้ที่ชั้นแอปแล้วไม่ต้องพึ่ง unique
+    index อย่างเดียว)
+  · รหัสสาขา (`code`) แก้ไม่ได้หลังสร้าง เหมือน `bmsUpsertPosDevice` — ฟอร์ม disable ช่องนี้ตอนแก้ไข
+    เพราะ mutation ใช้ `ON CONFLICT (tenant_id, code)` จับคู่แถวเดิม เปลี่ยน code กลางทาง = สร้างแถวใหม่
+  · **สาขาใหม่เริ่มด้วยสต็อกว่าง** — ต้องโอนย้ายเข้าไปเองผ่าน `/admin/stock-transfers` (7.98) การตัดสต็อก
+    ข้ามสาขาต่อเข้ากับของจริงแล้วตั้งแต่ 7.98 ไม่ต้องแก้อะไรเพิ่มฝั่งนั้น — ดู checklist ที่
+    [docs/business/inventory.md § Go-live checklist (multi-branch, 7.98)](docs/business/inventory.md#go-live-checklist-multi-branch-798)
+    ก่อนเปิดสาขาที่สองของร้านไหนก็ตาม
+  · verify แล้ว: สร้าง/แก้/reject รหัสซ้ำ/reject `00000`/permission gate (Manager ผ่าน, Sales ไม่ผ่าน)/
+    audit log เขียนถูกต้อง — ยังไม่ได้เขียนเป็นเทสอัตโนมัติ (verify มือผ่าน service function ตรง ๆ)
+- **`9.5__bms_pos_cash_movement_idempotency.sql` (idempotency key ให้เงินเข้า/ออกลิ้นชักแบบเดี่ยว)
+  เขียนแล้วบน branch `codex/fix-pos-recheck-findings` (2026-08-20) — ⚠️ **ยังไม่ได้ apply เข้า dev DB
+  หรือรันเทสจริงในรอบนี้** (เครื่องที่แก้ไม่มี Postgres/`.env.dev` ต่ออยู่) ต้อง apply +
+  รัน `scripts/pos-shift-ops-db-contract.test.mts` ให้ผ่านก่อนเชื่อว่าใช้ได้จริง ก่อน apply เข้า
+  production ตามปกติ
+  · **ต้นเหตุ**: `recordCashMovement()` ไม่มี idempotency key เลย ต่างจากการขาย/คืน/มัดจำที่มีมาตั้งแต่
+    ต้น — กดปุ่มซ้ำเพราะเน็ตช้าบันทึกเงินเข้า/ออกซ้ำสองรอบ สูตร "ยอดที่ควรมีในลิ้นชัก" จึงผิดโดยไม่มีใคร
+    รู้จนนับปิดกะไม่ตรง · แก้ด้วยคอลัมน์ `idempotency_key` + unique index ต่อร้าน (คู่กับ path เดิมที่มี
+    `bms_pos_deposits`/`bms_pos_blind_returns` ทำไว้แล้ว) แคชเชียร์ฝั่ง POS UI (`app/(pos)/pos/page.tsx`)
+    สร้าง UUID ใหม่ต่อการกดหนึ่งครั้ง ไม่ใช่ต่อ signature ของคำขอ
+  · **แก้ร่วมในคอมมิตเดียวกัน (recheck findings อื่นที่ไม่ต้อง migration ใหม่)**:
+    1. เลขเครื่อง (`8.3`) เดิมตรวจซ้ำแค่ในบรรทัดเดียว ตอนนี้ตรวจซ้ำทั้งบิล (สอง SKU/บรรทัดยิง serial
+       เดียวกันจับได้) และจำนวนที่ต้องมีอ่านจาก pack/base_qty ในฐานข้อมูลเสมอ ไม่เชื่อ `baseQty` ที่
+       browser ส่งมา (ปลอมเป็น 1 เพื่อข้าม `SERIAL_REQUIRED` ได้เดิม)
+    2. เขียน serial `SOLD` ในทรานแซกชันขายเปลี่ยนจาก `ON CONFLICT DO UPDATE` เฉย ๆ เป็นมีเงื่อนไข
+       `WHERE status = 'RETURNED'` — สอง request ที่แข่งกันขาย serial เดียวกันพร้อมกันเคยผ่านทั้งคู่
+       ได้ (precheck เห็นว่าง) ตอนนี้ผู้แพ้ได้ `SERIAL_ALREADY_SOLD` แล้ว `recordPosSale` ยกเลิกบิลที่จอง
+       สต็อกไว้แทนทิ้งค้าง
+    3. `settleDepositSale` (บิลมัดจำ) ไม่เคยตรวจ serial เลย — ปิดมัดจำสินค้าบังคับเลขเครื่องได้โดยไม่มี
+       serial บันทึก ตอนนี้อ่านจำนวนที่ต้องมีจาก order item ของบิลจองเองก่อนอนุญาตให้ settle
+    4. รายงานกะ (`getPosShiftReport`) 3 บั๊ก: (ก) ไม่ scope ตาม device — เครื่องอื่นที่รู้ shift UUID
+       อ่านรายงานเครื่องอื่นในร้านเดียวกันได้ (ข) ยอดขาย/จำนวนบิลรวมทุก status แล้วหักลบ void ทีหลัง
+       ทำให้บิล `PENDING`/`CANCELLED` ที่ผูก shift เดียวกันหลุดเข้ายอดขาย (ค) การคืนที่ refund แบบ
+       split (เงินสด+บัตร) ถูกนับซ้ำตามจำนวนแถว allocation เพราะ JOIN ตรงเข้ากับ aggregate
+    5. `parsePosExtraLines`/`createOrder` extra line (`8.6`) เดิม clamp qty เพี้ยน (`0`, ลบ, ทศนิยม)
+       ขึ้นเป็น 1 เงียบ ๆ ตอนนี้ทิ้งแถวนั้นแทนเหมือนแถวไม่มี label/amount
+    6. `setCashierPin`/`clearCashierPin`/`setCashierAccountMode` ย้าย audit log จาก GraphQL resolver
+       (หลัง commit) เข้าไปเขียนในทรานแซกชันเดียวกับการเขียน `users` ตรงกับกฎ "audit ต้องอยู่ใน
+       transaction เดียวกับการเขียนที่สำคัญ" ใน [CLAUDE.md](CLAUDE.md)
+  · เทสที่แก้/เพิ่มคู่กัน: `scripts/pos-contract.test.mts`, `scripts/pos-serial-db-contract.test.mts`,
+    `scripts/pos-shift-ops-db-contract.test.mts`, `scripts/pos-blind-return-db-contract.test.mts` —
+    **ยังไม่ได้รันจริงในรอบนี้ ต้องรันตามคำสั่งชุดเดียวกับ loyalty/pos ข้างบนก่อน merge**
+- **`9.6__bms_pos_scan_manager_and_purchase_receipts.sql` (คีย์ครุภัณฑ์สแกนเนอร์ไร้สาย +
+  รับของ PO จากหน้าเคาน์เตอร์แบบ retry-safe) เขียนแล้วบน branch `codex/pos-scan-manager`
+  (2026-08-20) — เทส pure (`scripts/pos-scan-manager-contract.test.mts`, 6 เทส) รันผ่านแล้ว
+  แต่ **⚠️ เทส DB (`scripts/pos-scan-manager-db-contract.test.mts`, 7 เทส) ยังไม่ได้รันจริงในรอบนี้**
+  (เครื่องที่แก้ไม่มี Postgres/`.env.dev` ต่ออยู่) ต้อง apply migration เข้า dev DB + รันเทสชุดนี้ให้ผ่าน
+  ก่อนเชื่อว่าใช้ได้จริง ก่อน apply เข้า production ตามปกติ
+  · **ต้นเหตุ**: เครื่องสแกน Bluetooth HID เป็นคีย์บอร์ดสำหรับเบราว์เซอร์ หน้า POS เดิมเดา
+    "นี่คือการสแกน" จาก field ที่ focus อยู่/ความเร็วในการพิมพ์ ซึ่งไม่ใช่หลักฐานจริง (โฟกัสหลุดหรือ
+    scanner พิมพ์ช้าเท่าคนพิมพ์ก็เดาผิดได้) — เพิ่มโหมด `PREFIX` ที่ต้องโปรแกรมสแกนเนอร์จริงให้ส่งคีย์
+    ฟังก์ชัน (`F1`–`F24`, ปกติ `F9`) นำหน้าก่อน payload แล้วเบราว์เซอร์ถึงจะ capture คีย์ทั้งหมดแบบ
+    global ไปจนถึง suffix (`Enter`/`Tab`) ปฏิเสธ prefix ที่เป็นตัวอักษรพิมพ์ได้เพื่อกันการพิมพ์ปกติ
+    มาติดอาวุธโหมด global โดยไม่ตั้งใจ · โหมด `FOCUS` (default) คงพฤติกรรมเดิมไว้ให้ร้านที่ยังไม่ตั้งค่า
+    สแกนเนอร์
+  · **scan context เป็นตัวกำหนดเส้นทาง ไม่ใช่ DOM focus** — คิว payload เดียวกันจากกล้อง/สแกนเนอร์/พิมพ์มือ
+    ถูก route ตามสถานะหน้าจอที่ระบุชัดเจน (Sell เติมตะกร้า, ค้นสินค้าอ่านอย่างเดียวไม่เติม, Returns ค้นบิล/
+    เติมรายการคืนแบบไม่มีใบเสร็จเฉพาะตอนเปิดโหมดนั้น, Receive เติม draft ของ PO ที่เลือกอยู่) · Shift/
+    Settings/overlay ที่มีความอ่อนไหว/กำลังเขียนอยู่/บิลที่ยังไม่จบ ปิดการสแกนทั้งหมด
+  · **รับของ PO จากเคาน์เตอร์เป็นชั้นบาง ๆ ทับ service เดิม ไม่ใช่เส้นทางใหม่** — สแกนสร้างแค่ draft
+    ไม่ขยับสต็อกจนกว่าจะกดยืนยันชัดเจนหนึ่งครั้ง ตอนยืนยัน route ตรวจ PIN + `purchase.receive` ซ้ำ
+    (device token ไม่ใช่ user) ดึง tenant/location จากอุปกรณ์ที่ authenticate ไว้เท่านั้น (**ห้ามรับค่า
+    location จาก client**) แล้วเรียก `receivePurchaseOrder()` ตัวเดียวกับที่ admin ใช้ — inventory, lot,
+    movement, สถานะ PO, audit, และแถว `bms_pos_purchase_receipts.result` (retry ledger) อยู่ใน
+    ทรานแซกชันเดียวกันทั้งหมด · คีย์เดิมกับ input ที่ normalize แล้วตรงกัน = replay ผลเดิม, คีย์เดิมกับ
+    input ต่างกัน = `409` (กันเอา key เก่ามาสวมรับของอย่างอื่น)
+  · เทส: `scripts/pos-scan-manager-contract.test.mts` (6 เทส, pure) + จุด DB ที่ยังไม่ verify:
+    device-scoped listing, PIN/permission re-check, idempotency replay vs conflict, และ
+    tenant/location isolation ของ `bms_pos_purchase_receipts`
+- **ใครจองของอยู่ (drill-down ที่คอลัมน์ จอง ของ `/admin/products`) — ไม่มี migration verify กับ DB จริงแล้ว
+  2026-08-24** · query ใหม่ `bmsVariantReservations` gate ด้วย **`order.view` ไม่ใช่ `product.view`**
+  (คำตอบมีเลขบิล ชื่อ+เบอร์ลูกค้า) — role ที่ดูแลแค่แคตาล็อกจะไม่เห็นปุ่ม ไม่ต้อง seed permission ใหม่
+  · **ต้องอ่านจาก view `bms_order_stock_lines` เท่านั้น** เพราะเซ็ตจองที่ส่วนประกอบ (8.8) ถ้าเผลอไปอ่าน
+    `bms_order_items` บิลที่ซื้อเซ็ตจะหายไปจากรายการของส่วนประกอบทั้งที่ยังถือของอยู่ (มีเทสคุม)
+  · **ยอด "อธิบายไม่ได้" (`unattributed`) ต้องแสดงเสมอ ห้ามปัดทิ้ง** — `/api/bms/reserve` จองได้โดยไม่ผูกบิล
+    และ **route นั้นไม่กรอง `tenant_id` เลย** (`reserveStock()` ใน `lib/bms/stock.ts` ยิงข้ามร้านได้ถ้ารู้
+    SKU+size) ยังไม่ได้แก้ — ตัวเลขนี้คือทางเดียวที่ร้านจะเห็นว่ามีของถูกล็อกโดยไม่มีเจ้าของ
+  · ยอดรวมคิดจากทุกบิล แต่รายการตัดที่ 200 บิล (`RESERVATION_LIST_LIMIT`) และหน้าจอบอกเมื่อตัด
+  · **`viaBundleSkus` เป็นลิสต์ไม่ใช่ค่าเดียว** — บิลเดียวถือส่วนประกอบตัวเดียวกันผ่านสองเซ็ตได้
+    (ร้านจัดกระเช้าหลายแบบจากของชิ้นเดิม) บอกเซ็ตแรกเซ็ตเดียว = พนักงานหาของไม่เจออีกครึ่ง
+  · **query นี้พึ่ง migration `8.8`/`9.3` (view), `7.84` (`bms_locations`) และ `9.0` (`bms_pos_deposits`)**
+    — ฐานที่ยังไม่ apply จะได้ error ที่หน้าจอ (ตั้งใจ ไม่กลืน) ตามสไตล์ repo นี้ที่ไม่มี schema probe
+    ที่ไหนเลย · ถ้าลูกค้ารายไหนยังไม่มี POS ให้ apply ชุดนั้นก่อนเปิดใช้ปุ่มนี้
+  · **index ที่ query ใช้มีอยู่แล้ว ไม่ต้องเพิ่ม** — ยืนยันด้วย `EXPLAIN`:
+    `idx_bms_order_items_tenant_sku_order` ใช้ทั้งสองสาขาของ view (สาขาเซ็ตวิ่งจาก
+    `idx_bms_bundle_items_component` เข้า order_items ด้วย bundle_sku)
+  · เทสชุดใหม่: `scripts/variant-reservations-db-contract.test.mts` (12 เทส · รันซ้ำได้ ยืนยัน 2 รอบ ·
+    เขียนจริงลงฐาน **ห้ามรันกับ production**) — teardown ต้องลบที่อยู่ปลอม (`label = 'FAKE resv-test'`)
+    ด้วย เพราะเทส `shipOrder` ต้องมีที่อยู่จัดส่งไม่งั้น shipOrder คืน false เงียบ ๆ
+- **⚠️ `/api/bms/reserve` + `reserveStock()` เคยจองสต็อกข้ามร้านได้โดยไม่ต้องล็อกอิน — แก้แล้ว
+  2026-08-24 (ไม่มี migration)**
+  · **ต้นเหตุ 3 ชั้นซ้อนกัน**: (ก) `reserveStock()` กรองแค่ `product_sku` + `size` **ไม่มี `tenant_id`
+    และไม่มี `location_id`** → `UPDATE` โดนทุกแถวที่ตรง = ทุกร้าน/ทุกสาขาที่ขาย SKU นั้น
+    (ยืนยันกับ dev DB: `NIKE-AIR/XL` มีอยู่ 2 ร้าน) (ข) `middleware.ts` กันแค่ `/admin/**` — `/api/**`
+    ที่ไม่ใช่ /admin ผ่านฟรี route นี้จึงเปิดโล่ง (ค) ไม่เคยเขียน `bms_stock_movements` เลย ผิดกฎ
+    ของโมดูลเองที่ว่า "ทุกการขยับสต็อกต้องมี movement" → ของที่ขายไม่ได้ไม่มีร่องรอยว่าใครกันไว้
+  · **แก้เป็น**: `reserveStock({tenantId, sku, size, qty, locationId?, note?, actor?})` ทำใน
+    `beginTenantTx` + เขียน movement `RESERVE` ในทรานแซกชันเดียวกัน · route เรียก
+    `authorizeAdminRoute("stock.adjust")` และ **tenant มาจาก session/คุกกี้ drill-down เท่านั้น
+    ห้ามรับจาก body** (สาขารับจาก body ได้ ถ้าเป็นสาขาคนละร้านจะได้ `NOT_FOUND` เพราะไม่มีแถว)
+  · ยืนยันจริง: ยิงแบบไม่ล็อกอินได้ `401` และ `reserved_stock` ของทั้งสองร้านยังเป็น 0
+  · เทส 2 ชุดใหม่:
+    - `scripts/inventory-tenant-scope-contract.test.mts` (2 เทส ไม่ต้องมี DB) — สแกนทุก statement ที่
+      แตะ `bms_inventory`/`bms_product_price_tiers`/`bms_product_packs` ว่ามี `tenant_id` ครบ
+      (ก่อนแก้: 16 statement มี 1 ตัวที่ไม่มี = ตัวนี้) + เช็คว่า route ไม่รับ tenant จาก body ·
+      ยืนยันแล้วว่า **แดงจริง** เมื่อใส่ statement ที่ลืม tenant กลับเข้าไป
+    - `scripts/reserve-stock-db-contract.test.mts` (9 เทส · สร้างสาขาที่สองของตัวเองแล้วลบทิ้ง
+      **ห้ามรันกับ production**) — ครอบข้ามร้าน/ข้ามสาขา/ยืม location ของร้านอื่น/ledger/ROLLBACK
+  · **แก้ต่อจนจบแล้ว 2026-08-24** — ดูหัวข้อถัดไป
+- **⚠️ REST route ยุคร้านเดียว 22 ตัวไม่ยืนยันตัวตนเลย — แก้แล้ว 2026-08-24 (ไม่มี migration)**
+  · **ต้นเหตุร่วม**: `middleware.ts` กันแค่ `/admin/**` (ดูเงื่อนไข `!pathname.startsWith("/admin")`
+    → `NextResponse.next()`) ทุกอย่างใต้ `/api/**` ที่ไม่ใช่หน้า admin **ผ่านฟรี** · route ชุดนี้เขียน
+    ตอนระบบมีร้านเดียว จึงไม่เช็คอะไรและอ่าน tenant จาก `DEFAULT_TENANT_ID` ตายตัว
+  · **ผลจริงก่อนแก้**: ใครก็ยิงได้ว่า `order/[id]/pay` (ปิดบิลว่าจ่ายแล้ว), `purchase/[id]/receive`
+    (รับของเข้าคลัง = สต็อกเพิ่มลอย ๆ), `payment/[id]/verify`, `shipment/[id]/status`,
+    `inbox/[id]/reply` (ส่งข้อความออกในนามร้าน), `reports/{sales,inventory,top-products}`
+    (อ่านยอดขายทั้งร้าน) — ทั้งหมดบนร้าน default
+  · **แก้เป็น** `authorizeAdminRoute(<permission>)` ทุกตัว โดยใช้ permission **ตัวเดียวกับ resolver
+    GraphQL ที่ทำงานเดียวกัน** (`order.pay`, `order.ship`, `order.cancel`, `order.return`,
+    `order.create`, `payment.view/submit/confirm`, `purchase.view/edit/receive/cancel`,
+    `shipping.view/create/update`, `report.view`, `inbox.view/reply`) และ tenant มาจาก session/คุกกี้
+    drill-down · ยืนยันจริงด้วย curl: ทั้ง 22 endpoint คืน `401` ตอนไม่ล็อกอิน
+  · **webhook mock ยุคร้านเดียว 2 ตัว** (`line/webhook`, `tiktok/webhook` — ตัวที่ไม่มี `[tenantId]`)
+    แก้ด้วย session ไม่ได้ (webhook ไม่มี cookie) และมันเรียก `runPipeline` = **จ่ายค่า AI ให้คนที่ยิง
+    ฟรี** + เขียนแชทปลอมเข้ากล่องข้อความร้าน default → ตอนนี้คืน `404` เมื่อ `NODE_ENV=production`
+    (dev ยังใช้ curl ได้เหมือนเดิม) ทางจริงคือ webhook ต่อร้านที่ verify ลายเซ็นแบบ fail-closed
+  · **`/api/bms/demo-chat` เปิดสาธารณะโดยตั้งใจ (เดโมหน้าขายของ) แต่ไม่มีเพดานเลย** — เติม
+    `rateLimit(demo-chat:<ip>, 20, 60_000)` แบบเดียวกับ web widget webhook (ซึ่งมี 120/นาที อยู่แล้ว)
+    ยืนยันแล้ว: ยิง 22 ครั้ง → 20 ผ่าน 2 ตัวท้ายได้ 429
+  · **ที่ไม่แตะ (มีการ์ดอยู่แล้ว)**: `payment/[id]/{confirm,refund,reject}`, `chat`, `reports/{generate,
+    download,pos-returns,pos-return-audit}`, `onboarding/sample-data` ใช้ `verifyAdminSession` +
+    `requirePermission` เขียนมือ (pattern เดียวกับที่ `adminRouteAuth` ถูกแยกออกมา — ยัง refactor ให้ใช้
+    helper ได้ถ้าจะลดโค้ดซ้ำ) · `products/upload`, `inbox/upload` ใช้ `requireAdminOrInternal`
+    (ล็อกอินแล้วแต่ **ยังไม่เช็ค permission** — ความเสี่ยงต่ำเพราะแค่เก็บไฟล์) · webhook ต่อร้าน
+    ทุกช่องทาง verify ลายเซ็น fail-closed · job/cron ใช้ `CRON_SECRET`/`BMS_JOB_TOKEN` ·
+    `checkout/*` ใช้ token ที่เซ็นไว้ (ลูกค้าเปิดเอง ไม่มี session)
+  · **ตามเก็บต่อจนหมด 2026-08-24 (รอบเดียวกัน)**:
+    - `products/upload`, `inbox/upload` เดิม gate ด้วย `requireAdminOrInternal()` = "ล็อกอินแล้วผ่าน"
+      ไม่ดูสิทธิ์เลย → เปลี่ยนเป็น `product.edit` / `inbox.reply` ให้ตรงกับขั้นที่เอาไฟล์ไปใช้จริง
+      · **`requireAdminOrInternal` ไม่มี route ไหนใช้แล้ว** และถูกถอดออกจาก allowlist ของเทสด้วย
+      (ยังเหลืออยู่ใน `lib/dev-guards.ts` + README ของ fake seeder เท่านั้น)
+    - route ที่เขียน `verifyAdminSession` + acting-tenant + `requirePermission` ด้วยมือ 8 ตัว
+      (`payment/[id]/{confirm,refund,reject}`, `reports/{generate,download,pos-returns,
+      pos-return-audit}`, `chat`) ย้ายมาใช้ `authorizeAdminRoute()` แล้ว — ลดโค้ดซ้ำ ~79 บรรทัด
+      และตัดโอกาสที่บางตัวจะลืมส่วน acting-tenant ตอนแก้ครั้งถัดไป
+    - **`authorizeAdminRoute()` คืน `admin` + `ctx` เพิ่ม** (`ctx` = รูปเดียวกับที่ resolver ส่งให้
+      `requirePermission()`/`audit()`) เพราะ `generateReport()` รับ ctx · และรับ `permission = null`
+      ได้สำหรับ route ที่ต้องการแค่ "ล็อกอินแล้ว" (playground `chat` — ไม่มีสิทธิ์ตรงตัวใน catalog)
+    - **`onboarding/sample-data` จงใจไม่แตะ** — มัน gate ด้วย *role* (`Administrator`/`Manager`
+      อ่านจาก DB) ไม่ใช่ permission ย้ายมาใช้ helper = เปลี่ยนความหมายการอนุญาต
+  · **กันย้อนกลับ**: `scripts/inventory-tenant-scope-contract.test.mts` เพิ่มเทสที่ 2 — สแกน route ทุกตัว
+    ใต้ `app/api/bms` ว่ามีการ์ดอย่างน้อยหนึ่งอย่างจาก allowlist และ route ที่ "เปิดสาธารณะโดยตั้งใจ"
+    ต้องมี `rateLimit()` · route ใหม่ที่ลืมการ์ดจะทำให้เทสแดงทันที (ก่อนหน้านี้ 26 ไฟล์หลุดพร้อมกัน
+    โดยไม่มีอะไรฟ้อง)
+- **key i18n วางผิด section = โชว์ชื่อ key ดิบบนหน้าจอร้าน (เจอ 2 ครั้งใน 2 คอมมิต)** — `getMessage()`
+  คืน key ตัวเองเมื่อหาไม่เจอ จึงไม่พังตอน build และ `tsc` ไม่จับ · `9.20` วางคีย์ราคาแยกไซซ์ 4 ตัวไว้ใน
+  `admin_restock` (th) และ `admin_dashboard` (en) — ย้ายเข้า `admin_products` แล้ว
+  · กันย้อนกลับ: `scripts/i18n-keys-contract.test.mts` (2 เทส ไม่ต้องมี DB — ตรวจ literal `t("...")`
+    ทุกตัวในแอปว่า resolve ได้ทั้ง th/en + คีย์ทุก section ต้องมีครบทั้งสองภาษา) · ยืนยันแล้วว่าเทสนี้
+    **แดงจริง** เมื่อจงใจย้ายคีย์ออก · คีย์ที่ประกอบตอนรัน (template string) ตรวจไม่ได้ ต้องระวังเอง
+
+    ```bash
+    cd apps/web && npx tsx --test ../../scripts/i18n-keys-contract.test.mts
+    ```
+- **`9.22__bms_order_item_receipt_price_snapshot.sql` (ราคาบนใบเสร็จเป็น snapshot แยกจากราคาที่ใช้คิดยอด)
+  apply เข้า dev DB แล้วและ verify กับ DB จริงแล้ว 2026-08-26** — ยังไม่ได้ apply เข้า production ·
+  ไม่มี permission ใหม่
+  · **อาการที่เจอจากหน้าร้านจริง (bms.jachoei.com, บิล `06908250024`)** — สินค้ามีราคาส่ง "ซื้อครบ 5
+    ลด 10%" ตะกร้า S1+M1+XL3: จอแสดง 540/720/900 (ราคาส่ง) แต่ใบเสร็จที่พิมพ์ทันทีแสดง 600/800/3000
+    (ราคาป้าย) แล้วผลรวมรายการบนกระดาษ 4,400 ไม่เท่ายอดสุทธิ 3,960 · พอกด "ดู/พิมพ์" ใบเดิมซ้ำ กลับได้
+    720/540/2700 ซึ่ง **คนละชุดกับใบแรกของบิลเดียวกัน**
+  · **ต้นเหตุ**: `bms_order_items` มีแต่ `unit_price` = ราคาที่คิดจริง (ผ่านราคาส่งแล้ว) ตอนพิมพ์ซ้ำจึง
+    อ่านค่านั้นมาโชว์ = เหมือนราคาสินค้าเปลี่ยนย้อนหลัง ส่วนใบแรกประกอบจาก `cart` ฝั่งจอซึ่งถือราคาป้าย
+    → **บิลเดียวพิมพ์สองครั้งได้เลขคนละชุด**
+  · **ทางที่เลือก**: เพิ่มคอลัมน์ `receipt_unit_price` เป็น snapshot ของ **ราคาป้ายก่อนหักราคาส่ง/โปร
+    และก่อนส่วนลดระดับบิล** (ไม่ใช่ราคาที่คิดจริง) แล้วให้ส่วนต่างไปโชว์เป็นบรรทัด "ส่วนลดราคาส่ง/
+    โปรโมชั่น" จาก `loadPosReceiptDiscountLines()` — ผลรวมรายการบนกระดาษจึงบวกลงตัวกับยอดสุทธิ และ
+    ลูกค้าเห็นว่าตัวเองได้ส่วนลดเท่าไร (ถ้าเก็บราคาที่คิดจริงลงไปแทน ส่วนลดจะหายไปจากกระดาษทั้งก้อน)
+  · **ห้ามเปลี่ยนไปเก็บราคาที่คิดจริง** — เคยแก้ผิดทางมาแล้วรอบหนึ่ง (2026-08-26) เพราะดูจากภาพหน้าจอ
+    แล้วเข้าใจว่า "ใบเสร็จโชว์ราคาป้าย = บั๊ก" ทั้งที่เป็นดีไซน์ · comment ในไฟล์ migration อธิบายไว้แล้ว
+    ให้อ่านก่อนแก้
+  · **backfill แถวเก่าเดาจากหลักฐานที่ดีที่สุด ณ เวลา migrate** (pack_unit_price → per-size base pack →
+    shared base pack → `bms_products.price` → `unit_price`) แล้วบังคับ `NOT NULL` — แถวเก่าจึงไม่แม่น
+    100% แต่ไม่มีทางแม่นกว่านี้ได้ เพราะราคาป้ายตอนขายไม่เคยถูกเก็บไว้เลย
+  · **การคืนของไม่ลดเลขบนใบขายเดิม โดยตั้งใจ** — เป็นใบกำกับภาษีอย่างย่อที่ออกไปแล้ว การคืนออกใบลดหนี้
+    แยก · แต่ก่อนหน้านี้ใบเสร็จเงียบสนิทเรื่องการคืน คนพิมพ์ซ้ำจึงคิดว่าการคืนไม่ถูกบันทึก ตอนนี้เพิ่ม:
+    การ์ดเตือนเหนือสลิปในหน้าจอ (`ใบนี้คือใบขายเดิม ยอดสุทธิบนกระดาษยังเป็นยอดตอนขายจริง` + คืนแล้ว/
+    คงเหลือ), ปุ่มเปลี่ยนชื่อเป็น **"ดูใบขายเดิม"** เมื่อบิลมีการคืน, และ `BillHistoryPanel` ไล่ไทม์ไลน์
+    ขาย→คืนทีละรายการ
+  · เทส: `scripts/pos-loyalty-db-contract.test.mts` + `scripts/pos-shift-ops-db-contract.test.mts`
+    (34 เทส รวมเทสใหม่ `bill history follows a non-cash refund from pending to completed` และ
+    `split-payment return is counted once…`) · รันคู่กับ `price-tiers`/`receipt-delivery`/
+    `pos-blind-return` (28 เทส) ผ่านทั้งหมด 2026-08-26
+- **`9.23__bms_pos_return_pricing_snapshot.sql` (คืนบางรายการแล้วประเมินราคาตามจำนวนใหม่)
+  apply เข้า dev DB และ verify แล้ว 2026-08-26** — ยังไม่ได้ apply production · บิลเดิม/ใบกำกับเดิม
+  ไม่ถูกแก้ แต่ `pricing_snapshot` บน order item เก็บราคาส่ง+โปรตอนขายไว้ เมื่อของคงเหลือต่ำกว่า
+  threshold ยอดคืนจะเป็นยอดที่จ่ายเดิมลบมูลค่าของคงเหลือที่ประเมินใหม่ เช่น 5×90=450 คืน 1 แล้ว
+  เหลือ 4×100=400 จึงคืน 50 ไม่ใช่ 90 · ทำเฉพาะ snapshot ที่สร้างพร้อมบิลใหม่ (`source: SALE`)
+  ส่วนบิล legacy ยังคงคืนตามสัดส่วนเดิม ไม่ใช้กฎปัจจุบันเดาย้อนหลัง · เพิ่ม `9.24` บังคับ provenance
+  นี้ใน DB · ผ่าน pure pricing 25 + POS parser 12 และ DB POS loyalty 12 + blind return 9 + shift ops 23,
+  `tsc --noEmit` และ production build (Redis hostname ใน host test ใช้ไม่ได้ แต่ cache fail-open ตาม design)
+- **ความลับห้าม fallback ไปค่าในซอร์สเมื่อรัน production — แก้แล้ว 2026-08-27 (ไม่มี migration)**
+  · **ต้นเหตุ**: `export const JWT_SECRET = process.env.JWT_SECRET || "changeme_secret"` อยู่ 2 ที่
+    (`lib/auth/token.ts`, `lib/auth/jwt.ts`) + `apps/ws/src/ws.ts` อีกตัว และ `lib/bms/crypto.ts`
+    fallback ไปคีย์ที่ derive จากสตริง `"bms-dev-secret-key"` · instance ที่ลืมตั้ง env จึงเซ็น session
+    (และเข้ารหัส token ของร้านใน DB) ด้วยค่าที่ใครอ่าน repo ก็คำนวณได้
+  · **ยืนยันว่าเกิดจริง ไม่ใช่ทฤษฎี**: container dev รันโดยไม่มี `JWT_SECRET` — ผมปั้น token แอดมิน
+    ของร้าน `11111111...` เองแล้วยิงผ่าน (ใช้ทดสอบ cross-tenant ของ `9.27`)
+  · **แก้เป็นฟังก์ชัน ไม่ใช่ const โดยตั้งใจ** — `const` ถูก evaluate ตอน import ถ้า throw ที่นั่น
+    `next build` จะล้มบนเครื่องที่ยังไม่มี runtime env · ต้องล้มตอน "มีคนใช้จริง" ไม่ใช่ตอนคอมไพล์
+    · และ **เลิก export ค่าความลับตรง ๆ** (เดิม `JWT_SECRET` export ออกไป ผู้เรียกได้ค่า fallback
+    โดยไม่ผ่านการตรวจ) → ผู้เรียกใน `graphql/resolvers.ts` 5 จุดเปลี่ยนเป็น `jwtSecret()`
+  · **`BMS_SECRET_KEY` ที่ตั้งมาผิดรูป (ไม่ใช่ hex 64) ก็ throw** — อันตรายกว่าไม่ตั้งเลย เพราะดู
+    เหมือนตั้งแล้วแต่จริง ๆ ใช้คีย์ dev
+  · verify พฤติกรรมจริง 4 กรณี: dev+ไม่มี env → ผ่าน · prod+ไม่มี env → throw · prod+คีย์ผิดรูป →
+    throw · prod+env ครบ → ผ่าน · และ container dev ยังใช้งานได้ปกติ (หน้าแรก/ไฟล์/session → 200)
+  · เทสชุดใหม่: `scripts/secret-fallback-contract.test.mts` (7 เทส ไม่ต้องมี DB) — สแกนทั้ง `apps/`
+    ห้ามมี `const X = process.env.SECRET || "literal"` ที่ระดับโมดูลอีก
+  · **⚠️ ยังเหลือให้คนทำ: ตั้ง `JWT_SECRET` + `BMS_SECRET_KEY` บน production ให้ครบ**
+    ก่อนหน้านี้ไม่ตั้งก็รันได้ (เงียบ ๆ ไม่ปลอดภัย) ตอนนี้ไม่ตั้ง = แอปล้ม ซึ่งคือเจตนา
+    · `POSTGRES_PASSWORD` ใน `lib/db.ts` ยังมี fallback `"app"` — ยังไม่แตะ เพราะการล้มตอนต่อ DB
+      ทำให้ dev ที่ใช้ค่า default พังทันที ต้องดูให้แน่ก่อนว่าไม่มีใครพึ่งค่านั้น
+- **`9.27__bms_files_tenant_ownership.sql` (ไฟล์ private เป็นของร้านเดียว) apply เข้า dev DB และ
+  **apply เข้า production แล้ว 2026-08-26** (ผู้ใช้ยืนยัน) · verify กับ HTTP จริงแล้ว · ไม่มี permission ใหม่
+  · **ต้นเหตุที่ `9.26` ยังไม่ปิด**: ตาราง `files` ไม่มี `tenant_id` เลย → ล็อกอินร้าน A แล้วเดา id
+    เปิดไฟล์ private ของร้าน B ได้
+  · **เจ้าของเป็นค่าที่ derive ไม่ใช่ประกาศ** — 4 ตาราง BMS ที่อ้างถึงไฟล์มี `tenant_id` อยู่แล้ว
+    (`bms_product_images`, `bms_generated_reports`, `bms_pharmacy_clinical_evidence`,
+    `bms_payments.slip_url`) จึงยกมาใช้ · **3 ตารางของฟีเจอร์ชุมชนเดิมไม่มี tenant เลย**
+    (`message_images`, `messages.audio_file_id`, `post_images`) ไฟล์พวกนี้เป็น `NULL` = "ไม่มีร้านเป็นเจ้าของ"
+    แล้ว route ขอแค่ "ล็อกอินแล้ว" เท่าเดิม · บังคับ NOT NULL = ต้องกุเจ้าของให้ข้อมูลยุคก่อน BMS
+  · **ร้านไม่ตรงตอบ `404` ไม่ใช่ `403`** — 403 เท่ากับยืนยันให้คนนอกร้านรู้ว่า id นั้นมีไฟล์อยู่จริง
+  · acting tenant มาจาก `authorizeAdminRoute(null)` ไม่ใช่ `admin.tenant_id` ตรง ๆ เพื่อให้คุกกี้
+    drill-down ที่เซ็นแล้วใช้งานได้ (platform admin เข้าไปดูร้านลูกค้า)
+  · ทุกจุดที่อัปโหลดผูกเจ้าของจากแหล่งที่เชื่อได้: session / เครื่องที่ authenticate แล้ว /
+    token checkout ที่เซ็นไว้ — **ไม่เคยรับ tenant จาก body**
+  · verify ด้วย curl จริง: ไม่มี session → `401` · ไฟล์ร้านตัวเอง → `200` · ไฟล์ร้านอื่น → `404`
+  · เทสเดิม `scripts/file-visibility-contract.test.mts` ขยายเป็น 7 เทส (เพิ่มการตรวจ tenant + การผูกเจ้าของ)
+  · **⚠️ เจอตอน verify: container `bms-web-1` รันโดยไม่มี `JWT_SECRET` ตั้งไว้** →
+    fallback ไปใช้ `"changeme_secret"` ที่ hardcode · **แก้แล้ว 2026-08-27 ให้ production throw**
+    (ดูหัวข้อ "ความลับห้าม fallback" ด้านล่าง) แต่ **ยังต้องไปตั้ง env บนเซิร์ฟเวอร์จริงเอง**
+    เพราะตอนนี้ถ้าไม่ตั้ง production จะล้มดัง ๆ แทนที่จะเงียบ (agent แก้ `.env*` ไม่ได้):
+    `docker compose ... exec web printenv JWT_SECRET BMS_SECRET_KEY`
+- **`9.26__bms_files_visibility.sql` (ไฟล์อ่อนไหวไม่ถูกเสิร์ฟให้คนที่ไม่ได้ล็อกอิน) apply เข้า dev DB และ
+  **apply เข้า production แล้ว 2026-08-26** (ผู้ใช้ยืนยัน) · verify กับ HTTP จริงแล้ว · ไม่มี permission ใหม่
+  · **ต้นเหตุ**: `/api/files/[id]` ไม่ตรวจอะไรเลย และ `files.id` เป็น integer เรียงลำดับ = ไล่นับขึ้นไป
+    โหลดไฟล์ของใครก็ได้ · ที่หนักคือ **สลิปโอนเงิน** (มีชื่อ+เลขบัญชีผู้โอน) และ **ไฟล์แนบ Inbox**
+    · ซ้ำร้าย `GET /api/files` คืนรายชื่อไฟล์ทั้งระบบพร้อม `relpath` และ `POST /api/files` อัปโหลดได้
+      **โดยไม่ต้องล็อกอินทั้งคู่** (สองตัวนี้เสิร์ฟ Files panel ที่ `/settings` ซึ่งเมนูถูกคอมเมนต์ปิดไปแล้ว
+      = UI ตาย แต่ route ยังเปิด)
+  · **แถวเก่าทั้ง 7,532 ถูก backfill เป็น `public` โดยตั้งใจ** — ไม่มีคอลัมน์ไหนบอกได้ว่าอันไหนอ่อนไหว
+    ถ้าเหมาเป็น private ทีเดียว รูปสินค้า/avatar/รูปโพสต์เดิมพังหมดโดยกู้ไม่ถูก · แล้วค่อยดึงกลับเป็น
+    private เฉพาะกลุ่มที่ระบุตัวได้: สลิป (`bms_payments.slip_url`), รายงาน (`bms_generated_reports`),
+    รูปใบสั่งยา (`bms_pharmacy_clinical_evidence`)
+  · **ค่าปริยายของคอลัมน์คือ `private`** — โค้ดใหม่ที่ลืมระบุจะได้ของที่ปลอดภัยกว่า ไม่ใช่หลุด ·
+    `persistWebFile`/`persistBuffer` ปริยาย private · **`persistUploadStream` ปริยาย public โดยตั้งใจ**
+    (GraphQL upload ของฟีเจอร์ชุมชนเดิม: avatar/รูปโพสต์/ไฟล์แชท ซึ่งหน้าเว็บโหลดตรงโดยไม่มี session)
+  · verify ด้วย curl จริงบน dev: public ที่มีอยู่ → `200` · private → `401` · `GET/POST /api/files` → `401`
+  · เทสชุดใหม่: `scripts/file-visibility-contract.test.mts` (5 เทส ไม่ต้องมี DB — อ่านซอร์ส) ·
+    **ยืนยันแล้วว่าแดงจริง** เมื่อจงใจเปลี่ยน fail-closed เป็น fail-open
+  · ช่อง cross-tenant ที่เคยจดว่า "ยังเหลือ" **แก้แล้วที่ `9.27`** (ดูหัวข้อถัดไป)
+- **`/admin/env` เคยซ่อน env ที่สำคัญที่สุดทั้งหมด — แก้แล้ว 2026-08-27**
+  · `pickEnv()` กรองด้วย **allowlist ของ prefix** (`NODE_ NEXT_ DATABASE_ REDIS_ … BMS_AI_ BMS_SLIP_`)
+    ผลคือ **ไม่มีตัวไหนใน 11 ตัวนี้โผล่เลย**: `BMS_SECRET_KEY`, `BMS_JOB_TOKEN`, `BMS_CRON_SECRET`,
+    `JWT_SECRET`, `BMS_CHECKOUT_SECRET`, `ADMIN_TOKEN`, `POSTGRES_*` (allowlist มีแค่ `DATABASE_`
+    แต่แอปใช้ `POSTGRES_*`), `BMS_ALLOW_FAKE_SEED`, `ETAX_ENABLED`, `PHARMACY_*_ENABLED`
+  · **อาการที่เจอ**: เปิดหน้านี้เพื่อเช็คว่าตั้ง `BMS_SECRET_KEY` แล้วยัง → ไม่เห็นเลย → เข้าใจว่า
+    "ยังไม่ตั้ง" ทั้งที่ตั้งไว้ใน `.env` แล้ว · **หน้าที่บอกไม่ครบแต่ดูเหมือนครบ แย่กว่าไม่มีหน้านี้**
+  · แก้เป็น: **ถอด allowlist ทิ้งทั้งหมด แสดง env ทุกตัวที่โปรเซสเห็น** (74 แถวจาก 69 ตัวใน
+    container + `allowExact` ที่ยังไม่ได้ตั้ง) · `allowExact` คงไว้สำหรับตัวที่ต้องขึ้น**แม้ค่าจะว่าง**
+    ("ไม่ได้ตั้ง" คือคำตอบที่คนมาหา ไม่ใช่ซ่อนแถวทิ้ง)
+  · **ปิดบังจาก "ค่า" ด้วย ไม่ใช่แค่ "ชื่อ"** (`valueLooksSensitive`) — DSN แบบ
+    `scheme://user:pass@host` ถูก mask แม้ชื่อจะไม่มีคำว่า SECRET/KEY · เคสจริงที่รออยู่คือ
+    `REDIS_URL` ซึ่งวันนี้ไม่มีรหัส แต่โน้ตข้อ Redis ระบุว่าต้องใส่ password ก่อน production
+    ถ้าดูแต่ชื่อ วันนั้นรหัสจะโผล่บนหน้านี้
+  · **ความลับสำคัญแสดงแค่ "ตั้งไว้ · N ตัว" ไม่โชว์เสี้ยวไหนของค่า** (`PRESENCE_ONLY`) —
+    `maskValue()` เดิมโชว์ 3 ตัวแรก+3 ตัวท้าย ซึ่งพอรับได้กับ API key แต่ไม่มีเหตุผลกับคีย์ที่เซ็น
+    session/เข้ารหัสความลับทุกร้าน · `BMS_SECRET_KEY` ตรวจรูปแบบให้ด้วย (hex 64 → เตือนถ้าผิดรูป)
+  · สตริงทั้งหมดผ่าน `t()` (หน้านี้ใช้ `t()` 28 ครั้งอยู่แล้ว) เพิ่มคีย์ 4 ตัวใน `admin_env` ทั้ง th/en
+  · verify: เรนเดอร์หน้าจริงด้วย platform admin → `200` และเห็น `BMS_SECRET_KEY` · ทดสอบ `pickEnv`
+    กับค่าจริงทั้งกรณีถูกรูป/ผิดรูป/ไม่ได้ตั้ง
+- **⚠️ POS ร้านยา — recheck 2026-08-27 (branch `fix/pharmacy-pos-approval-gaps`, ไม่มี migration,
+  ไม่มี permission ใหม่)** เจอ 3 จุดในด่าน "ใบอนุมัติของเภสัชกร" · **แก้แล้วและ `tsc --noEmit` ผ่าน
+  แต่เทส DB ยังไม่ได้รันในรอบนี้ (เครื่องนี้ไม่มี Postgres/docker ของ BMS รันอยู่)** ต้องรัน
+  `scripts/pharmacy-approval-reuse-db-contract.test.mts` (เพิ่มเทสใหม่ 2 ตัว) ให้ผ่านก่อนเชื่อว่าใช้ได้จริง
+  1. **จำนวนที่อนุมัติเคยเป็นเพดานต่อบรรทัด ไม่ใช่ต่อบิล → จ่ายยาเกินใบอนุมัติได้** ตั้งแต่ `9.21`
+     บิลใบเดียวถือ SKU+ไซซ์เดียวกันได้สองหน่วยขาย ("1 กล่อง + 3 เม็ด") โค้ดเดิมเทียบแต่ละบรรทัดกับ
+     draft item ตัวแรกที่เจอ → อนุมัติ 10 เม็ด แต่บิลที่มี 10 + 10 ผ่านทั้งสองบรรทัด (พิสูจน์ด้วยการ
+     รันอัลกอริทึมเดิมซ้ำ = ผ่านจริง) · แก้ด้วยฟังก์ชัน pure `approvedSkusFromCheckoutDraft()`
+     ใน `productPolicyDecision.ts` ที่รวมจำนวนต่อ (sku, size) ทั้งสองฝั่งก่อนเทียบ ·
+     เทส `pharmacy-policy-decision-contract.test.mts` เพิ่ม 8 ตัว (รวม 22) **รันผ่านแล้ว**
+  2. **`approveAssessment()` ลบ `checkout_order_draft` ทิ้งเมื่อผู้เรียกไม่ส่ง draft มา** เคสจาก
+     เคาน์เตอร์เกิดมาพร้อมตะกร้าที่แคชเชียร์สแกนอยู่ใน draft และ draft นั้นคือสิ่งเดียวที่ปลดบิลที่พักไว้ได้
+     → เคสกลายเป็น APPROVED แต่บิลจบไม่ได้ และ **ย้อนไม่ได้** (เคสที่ APPROVED แล้ว approve ซ้ำไม่ได้)
+     · แก้เป็น "ไม่ส่ง draft = คง draft เดิมที่ยัง `AWAITING_CUSTOMER_CONFIRMATION`" · ส่ง draft มา
+     ยังชนะเหมือนเดิม (เภสัชกรตัดรายการได้) · UI เดิมส่ง draft เดิมกลับมาให้อยู่แล้ว จึงพังเฉพาะทาง
+     service/ผู้เรียกอื่น — แต่ service คือด่านจริง ไม่ควรพึ่ง UI
+     · ผลพลอยได้ที่ต้องแก้คู่กัน: `checkPharmacistDraftPolicyInTx()` รับ `channel` แล้ว และ approve
+       ส่ง `"counter"` เมื่อ `complaint.sourceMeta.source === 'pos'` ไม่งั้นสินค้า `ONLINE_SALE_PROHIBITED`
+       ที่ส่งตรวจจากหน้าร้านจะ **อนุมัติไม่ได้เลย** (ถูกตัดสินด้วยกฎของช่องทางออนไลน์)
+  3. **ใบอนุมัติที่ระบุตัวคนไข้ ใช้กับคนไข้อื่นได้** ถ้าตะกร้าเหมือนกัน — การซักถามของเภสัชกรเป็นเรื่องของคน
+     ไม่ใช่ของตะกร้า · แก้: `checkPharmacySaleInTx()` รับ `saleCustomerId` (POS ส่งให้อยู่แล้วผ่าน
+     `createOrder`) และปฏิเสธเมื่อ **ทั้งสองฝั่งมีลูกค้าแล้วไม่ตรงกัน** · บิลที่ไม่ผูกลูกค้า (walk-in)
+     ไม่ถือว่าไม่ตรง — ไม่งั้นจะไปปิดการขายที่ถูกต้องของหน้าร้าน · ทางออนไลน์ไม่กระทบ (pipeline ส่งแต่
+     `customerRef` ไม่ส่ง `customerId`)
+  · **ยังค้าง ต้องให้คนตัดสิน (ไม่ได้แก้ในรอบนี้)**:
+    - **ยาที่ต้องมีใบสั่งแพทย์ (`PRESCRIPTION_REQUIRED`) ขายหน้าร้านไม่ได้เลย** — ไม่ใช่แค่บล็อก:
+      `requestPosPharmacyReview()` ไม่ยอมเปิดเคสให้ด้วย และหน้าคิวก็เลือกสินค้ากลุ่มนี้เข้า draft ไม่ได้
+      (`pharmacy-queue/[caseId]/page.tsx`) · `9.25` มีที่เก็บรูป/เลขใบสั่งยาแล้ว ชิ้นที่ขาดคือ "ใบสั่งยา +
+      เภสัชกรอนุมัติ = ปลดล็อกที่เคาน์เตอร์" ซึ่งเป็นการตัดสินใจเชิงข้อกำกับ ไม่ใช่บั๊ก
+    - **ไม่มีที่ไหนบังคับว่าต้องมีเภสัชกรอยู่หน้าร้านตอนจ่ายยา** — `bms_pos_shifts.pharmacist_user_id`
+      ถูกบันทึกเฉพาะเมื่อคนเปิดกะเป็นเภสัชกรเอง (`app/api/pos/shift/route.ts`) และ **ไม่มีเส้นทางขายไหน
+      อ่านค่านี้เลย**
+    - **การคืนยาเข้าสต็อกไม่มีด่านของร้านยา** — `processPosReturn`/คืนแบบไม่มีใบเสร็จ คืนของขึ้นชั้นขายได้ทันที
+    - เคสจากเคาน์เตอร์หมดอายุใน 60 นาที (`PHARMACY_ASSESSMENT_TTL_MINUTES`) — คิวยาวกว่านั้น บิลที่พักไว้
+      ต้องเริ่มใหม่
+    - เภสัชกรตัดรายการออกจาก draft แล้ว หน้าเคาน์เตอร์เห็นแค่ `PHARMACY_REVIEW_REQUIRED` ไม่รู้ว่าตัดตัวไหน
+- **`9.29__bms_pos_pharmacist_counter_authorization.sql` (เภสัชกรกด PIN อนุมัติจ่ายยาที่เครื่องขาย —
+  แบบร้านยาทั่วไป) เขียนแล้วบน branch `fix/pharmacy-pos-approval-gaps` (2026-08-27) · **⚠️ ยังไม่ได้
+  apply เข้า dev DB และยังไม่ได้รันเทส DB** (เครื่องนี้ไม่มี Postgres ของ BMS รันอยู่) ต้อง apply +
+  รัน `scripts/pharmacy-counter-authorization-db-contract.test.mts` ให้ผ่านก่อนเชื่อว่าใช้ได้จริง
+  · seed permission ใหม่: **ไม่มี** (ใช้ `pharmacy.policy.review` สำหรับสวิตช์ตั้งค่า และใช้
+    **ข้อเท็จจริงเรื่องใบอนุญาต** `is_licensed_pharmacist` เป็นด่านของการอนุมัติ ไม่ใช่ permission)
+  · **ต้นเหตุ**: โมดูลร้านยาทั้งชุดออกแบบจาก flow ออนไลน์ (ซักประวัติเป็นข้อความ → เภสัชกรอนุมัติ
+    ในคิวทีหลัง) ซึ่งไม่ใช่วิธีทำงานของร้านยาหน้าร้าน ผลคือมี **ทางตัน 2 จุดที่ขายไม่ได้เลย**:
+    (ก) `PRESCRIPTION_REQUIRED` ไม่มีเส้นทางไหนจ่ายได้ (คิวก็เปิดเคสให้ไม่ได้)
+    (ข) `PHARMACY_POLICY_UNKNOWN` — SKU ที่ยังไม่มีใครรีวิว ขายไม่ได้กลางคิวลูกค้า ซึ่งร้านที่มีของ
+        หลายพันตัวเจอทุกวัน · และ `assertPharmacyPolicyReadyToOpenShift()` บล็อกการ **เปิดกะ** ทั้งร้าน
+  · **สิ่งที่เพิ่ม**: `/api/pos/sale` รับ `pharmacistAuthorizerUserId` + `...Pin` (+ note) ตรวจแบบ
+    เดียวกับผู้อนุมัติส่วนลด แล้ว `evaluatePharmacySale()` รับชุด SKU ที่เภสัชกรอนุมัติเป็นพารามิเตอร์
+    ที่ 5 (มีผล **เฉพาะ** `channel === "counter"`)
+  · **ต่างจากผู้อนุมัติส่วนลด 2 ข้อโดยตั้งใจ**:
+    1. **ผู้อนุมัติเป็นคนขายเองได้** — ร้านยาเล็กมีเภสัชกรคนเดียวที่ยืนขายเอง บังคับสองคน = บังคับให้
+       ร้านหาทางเลี่ยงระบบตัวเอง (ถ้าเป็นคนเดียวกัน ใช้ PIN ที่ตรวจไปแล้ว ไม่ต้องพิมพ์ซ้ำ)
+    2. **ด่านคือใบอนุญาต ไม่ใช่ permission** — Administrator ไม่ได้มาฟรีเหมือน permission อื่น
+       (`bms_is_licensed_pharmacist` ตรวจซ้ำ **ในทรานแซกชันที่ขยับสต็อก** ไม่ใช่แค่ที่ route)
+  · **ปลดอะไรได้**: policy ที่ยังไม่ APPROVED, `SHORT_SAFETY_CHECK`, `PHARMACIST_APPROVAL`,
+    `ONLINE_SALE_PROHIBITED`, `PRESCRIPTION_REQUIRED` · **ปลดไม่ได้**:
+    `PHARMACY_QUANTITY_LIMIT_EXCEEDED` (เพดานเป็นค่าที่ร้านตั้งเอง ขายเกิน = ไปแก้ policy ไม่ใช่กด PIN)
+  · **หลักฐาน**: `bms_pos_pharmacist_authorizations` 1 แถวต่อ (บิล, sku, ไซซ์) เก็บจำนวน + เภสัชกร +
+    note + **snapshot ของ policy ที่ถูกปลด** (แก้ policy ทีหลังต้องไม่เปลี่ยนความหมายของหลักฐานเดิม)
+    · เขียนในทรานแซกชันเดียวกับบิล พร้อม audit `pharmacy.counter_authorization`
+    · `checkPharmacySaleInTx()` ประเมิน **รอบแรกโดยไม่มีการอนุมัติ** เพื่อรู้ว่ารายการไหนต้องใช้จริง →
+      ตะกร้าที่ผ่านอยู่แล้วไม่มีแถวหลักฐานงอกมา
+    · ประทับ `bms_pos_shifts.pharmacist_user_id` ให้ด้วยเมื่อยังว่าง (กะที่แคชเชียร์เปิดเดิมไม่มีใครบันทึก)
+  · **สองสวิตช์ระดับร้าน** ที่ `/admin/pos-readiness` (สิทธิ์ `pharmacy.policy.review`):
+    `pharmacy_counter_authorization` (ค่าปริยาย **เปิด**) · `pharmacy_block_shift_on_unreviewed_policy`
+    (ค่าปริยาย **ปิด** = **เปลี่ยนพฤติกรรมเดิมของร้านนำร่อง** ที่เคยบล็อกการเปิดกะเสมอ — ร้านที่อยาก
+    ได้พฤติกรรมเดิมต้องไปเปิดสวิตช์นี้เอง)
+  · เทส pure `scripts/pharmacy-policy-decision-contract.test.mts` เพิ่ม 8 ตัว (รวม **30 ตัว รันผ่านแล้ว**)
+  · **แก้เทสที่แดงเสมอบน Windows ไปด้วย** — `inventory-tenant-scope-contract` เทียบ path ที่ได้จาก
+    `path.relative()` (ใช้ `\`) กับ allowlist ที่เขียนด้วย `/` → แดงทุกครั้งบนเครื่องนี้ทั้งที่ route
+    ถูกต้อง (เทสที่แดงเสมอ = เทสที่เลิกมีคนอ่าน) ตอนนี้ผ่าน 4/4
+  · **ยังไม่ได้ทำ (จงใจ)**: การคืนยาเข้าสต็อกยังไม่มีด่านของร้านยา · ไม่มีการบังคับว่าต้องมีเภสัชกร
+    อยู่เวรสำหรับยาสามัญ (ประทับว่าใครอยู่ ไม่ได้บังคับ)
+- **ยาที่ต้องมีใบสั่งแพทย์ผ่านคิวเภสัชกรได้แล้ว (ไม่มี migration, ไม่มี permission ใหม่) — 2026-08-27
+  commit เดียวกับ branch `fix/pharmacy-pos-approval-gaps`** · `tsc` + production build + เทส pure ผ่าน
+  · **เทส DB ยังไม่ได้รัน** (เครื่องนี้ไม่มี Postgres ของ BMS) — มีเทสใหม่รออยู่ใน
+    `pharmacy-approval-reuse-db-contract.test.mts` ("ยาที่ต้องมีใบสั่ง: ... ขายออนไลน์ได้")
+  · **ต้นเหตุที่หายากกว่าที่คิด**: `evaluatePharmacySale()` ยอมให้เคสที่ approve แล้วปลดได้อยู่แล้ว
+    ถ้าเราเพิ่มสถานะนี้เข้าไป **แต่ไม่มีใครเปิดเคสให้ตั้งแต่แรก** เพราะ 3 จุด (`pipeline.ts`,
+    `tools/catalog.ts`, `pos.ts`) เขียนรายการ "สถานะที่ส่งเข้าคิวได้" ของตัวเองแยกกันคนละชุด
+    → ด่านเข้าถึงได้ แต่ทางแก้เข้าไม่ถึง
+  · **แก้เป็น**: `PHARMACIST_REVIEWABLE_BLOCK_STATUSES` + `isPharmacistReviewableBasket()` ใน
+    `productPolicyDecision.ts` เป็นชุดเดียวของทั้งระบบ (REVIEW_REQUIRED · SAFETY_CHECK ·
+    **PRESCRIPTION_REQUIRED**) และทั้ง 3 จุดเรียกตัวนี้ · เกณฑ์เป็น **all-or-nothing**: ตะกร้าที่มี
+    ตัวที่เภสัชกรตัดสินไม่ได้ปนอยู่ ต้องไม่เปิดเคส ไม่งั้นได้ใบอนุมัติที่ใช้จริงไม่ได้
+  · **ไม่อยู่ในชุดโดยตั้งใจ**: `PHARMACY_POLICY_UNKNOWN` (ยังไม่มีใครจัดประเภทสินค้า จึงไม่มีอะไรให้
+    เคสตัดสิน — แก้ที่การรีวิว policy หรือ PIN หน้าร้าน) · `PHARMACY_ONLINE_SALE_PROHIBITED` ฝั่ง
+    ออนไลน์ (ป้ายนี้พูดถึง *ช่องทาง* ไม่ใช่ว่าใครรับรอง) · เพดานจำนวน
+  · หน้าคิว: เลือกยาที่ต้องมีใบสั่งเข้า draft ได้ · มีป้าย "ต้องมีใบสั่งแพทย์" ในตัวเลือก ·
+    **เตือนแบบไม่บล็อก** เมื่อเคสยังไม่มีรูป/เลขใบสั่งแนบไว้ (9.25) — "หลักฐานพอหรือยัง" เป็น
+    วิจารณญาณของเภสัชกร ไม่ใช่กฎที่โค้ดตัดสินแทน · `ONLINE_SALE_PROHIBITED` เลือกได้เฉพาะเคสที่มาจาก
+    เครื่องขาย (`complaint.sourceMeta.source === 'pos'`)
+  · เทส pure `pharmacy-policy-decision-contract.test.mts` เพิ่มอีก 6 ตัว (รวม **36 ตัว รันผ่านแล้ว**)
+- **recheck ผลข้างเคียงของ 9.29 เอง — เจอ 5 จุด แก้แล้วในคอมมิตเดียวกัน (2026-08-27)**
+  1. **⚠️ รัศมีความเสียหายก่อน apply migration**: `checkPharmacySaleInTx()` เดิม (ที่ผมเพิ่งเขียน)
+     อ่าน `pharmacy_counter_authorization` ในคำสั่ง SELECT ตัวเดียวกับ `business_archetype` ซึ่ง
+     **รันกับทุกบิลของทุกร้าน** → ฐานที่ยังไม่ apply `9.29` จะทำให้ **ร้านที่ไม่ใช่ร้านยาขายไม่ได้
+     ทั้งหมด** (เหมือนกันที่ `getPharmacyPolicyReadiness`) · แยกเป็นสองคำสั่งแล้ว: อ่าน archetype
+     ก่อน แล้วอ่านคอลัมน์ใหม่เฉพาะร้านยา/เฉพาะตอนมีคนใช้การอนุมัติจริง — ร้านยาจะยัง error ดัง ๆ
+     ถ้าไม่ apply (ถูกต้อง เพราะเป็นฟีเจอร์ของมันเอง) แต่ร้านอื่นไม่โดนลูกหลง
+  2. **การอนุมัติค้างข้ามตะกร้า**: เภสัชกรกด PIN แล้วเดินไป แคชเชียร์เพิ่มยาอีกตัว → server อนุมัติ
+     ทุก SKU ที่ติดกฎในบิลที่ยิงมา = หลักฐานจะบันทึกชื่อเภสัชกรกับยาที่เขาไม่เคยเห็น · ตอนนี้
+     **ตะกร้าเปลี่ยน = การอนุมัติหมดอายุ** (ใช้ cart key เดียวกับที่ล้าง `pharmacyReviewOffer`)
+     พร้อมข้อความบอกให้กด PIN ใหม่
+  3. **บิลที่ส่งเข้าคิวไปแล้วกดจ่ายไม่ได้** แม้เภสัชกรจะเดินมาอนุมัติที่เครื่อง เพราะ
+     `payBlockedReason` (และเงื่อนไขของบิลมัดจำ) บล็อกเมื่อมีเคสที่ยังไม่ APPROVED · ยกเว้นให้เมื่อมี
+     การอนุมัติที่เครื่องแล้ว
+  4. **เคสในคิวค้างหลังขายด้วย PIN** — ถ้ามีคนไปกดอนุมัติเคสนั้นทีหลัง จะได้ใบอนุมัติที่ใช้ขายได้
+     **อีกใบ** ของตะกร้าที่ของออกไปแล้ว · `recordPosSale` ปิดเคสให้ (best-effort หลังบิล commit,
+     reason `dispensed_at_counter_with_pharmacist_authorization`) เมื่อขายด้วยการอนุมัติที่เคาน์เตอร์
+  5. **บิลค้าง (recovery) ส่ง id เภสัชกรคนเดิมคู่ PIN ใหม่** → 403 ที่อ่านไม่รู้เรื่องถ้าคนมาอนุมัติ
+     ซ้ำเป็นคนละคน · ตอนนี้ผู้อนุมัติรอบล่าสุดชนะทั้ง id/PIN/บันทึก
+  · ตรวจแล้วว่า**ไม่มีปัญหา**: `bms_app` มี INSERT บน `bms_audit_log` (5.1) · `bmsCreateOrder`
+    (GraphQL) ระบุฟิลด์ทีละตัวไม่ spread จึงฉีด `pharmacistCounterAuthorization` เข้ามาไม่ได้ และ
+    channel ของมันไม่เคยเป็น `pos` · `clearBillCustomerState()` ล้างการอนุมัติหลังขายจบทุกบิล ·
+    `bms_store_profile` ไม่มีคอลัมน์ NOT NULL ที่ไม่มี default (INSERT ของ `setPharmacyCounterSettings`
+    ปลอดภัย) · เทสที่ assert "บิลที่ถูกปฏิเสธไม่ทิ้งหลักฐาน" ยังถูก เพราะทั้งทรานแซกชัน rollback
+  · **ยังไม่ได้เปิดดูหน้าจอจริงในเบราว์เซอร์** (เครื่องนี้ไม่มี DB/dev server ของ BMS รันอยู่) —
+    การ์ด PIN ที่หน้า POS, สวิตช์ที่ `/admin/pos-readiness`, ป้าย/คำเตือนที่หน้าคิว ผ่านแค่ `tsc`+build
+- **recheck รอบสองของ 9.29 — เจอ 7 จุด แก้ครบแล้ว (2026-08-27, ไม่มี migration ใหม่,
+  ไม่มี permission ใหม่)** · `tsc --noEmit` ผ่าน · เทส pure 133 ตัวจาก 9 ชุดผ่านทั้งหมด ·
+  **เทส DB ยังไม่ได้รันในรอบนี้** (เครื่องนี้ไม่มี Postgres ของ BMS) — type-check ผ่านแล้วเท่านั้น
+  1. **⚠️ บิลมัดจำค้างที่มีการอนุมัติของเภสัชกร กดซ้ำไม่ได้ และคีย์กันบิลซ้ำหายไป = เสี่ยงรับเงินสองรอบ**
+     · เส้นทางกู้บิลของ **มัดจำ** (`createDepositFromCart`) ไม่มีการ์ดที่เส้นทางขายมี · body ที่เซฟไว้
+       เก็บ `pharmacistAuthorizerUserId` แต่ถอด `...Pin` (ตั้งใจ) → ยิงซ้ำได้ `400 ต้องกด PIN` ซึ่งไม่มี
+       ฟิลด์ `status` → เข้าเงื่อนไข `data?.status !== "SERVER_ERROR"` แล้ว **ลบ `PENDING_DEPOSIT_SALE_KEY`**
+       → กดครั้งถัดไปสร้าง `idempotencyKey` ใหม่ ถ้ารอบแรก commit ไปแล้ว = บิล+เงินมัดจำซ้ำ
+     · แก้: ยกการ์ด + การทับค่าผู้อนุมัติจากเส้นทางขายมาใส่ (คนที่มาอนุมัติซ้ำเป็นคนละคนได้)
+  2. **ลำดับการล็อกกลับหัวกับ `finalizePosSale` (deadlock 40P01)** — `createOrder` ประทับ
+     `bms_pos_shifts.pharmacist_user_id` **หลัง** ล็อกแถว `bms_inventory` แต่ `finalizePosSale`
+     ล็อกกะก่อนแล้วค่อยตัดสต็อก · ย้ายการประทับกะ **และการปิดเคสที่ถูกแทนที่** ขึ้นไปก่อนแตะสต็อก
+     (`checkPharmacySaleInTx` ก็ล็อกแถวเคสก่อนสต็อกอยู่แล้ว → ลำดับเดียวกันทุกเส้นทาง)
+     · ผลข้างเคียงที่ต้องรู้: แถว event `assessment.closed` **ไม่มี `orderId`** เพราะตอนนั้นบิลยัง
+       ไม่ถูกสร้าง — ทางไล่กลับอยู่ที่ audit `pharmacy.counter_authorization` ของบิล
+       (`meta.supersededAssessmentId`)
+  3. **ยาที่ต้องมีใบสั่งแพทย์ = เรื่องของเคาน์เตอร์เท่านั้น (กลับทิศจาก commit `b817d401`)**
+     · `sale_policy` มีค่าเดียวต่อสินค้า พอ `PRESCRIPTION_REQUIRED` ถูกปลดด้วยใบอนุมัติจากคิว
+       **ทั้งสองช่องทาง** ร้านจึงเขียน "ต้องมีใบสั่ง **และ** ห้ามออนไลน์" ไม่ได้เลย — และร้านขายยาจริง
+       ไม่ได้อนุมัติใบสั่งจากห้องแชทแล้วส่งของออกไป
+     · แก้เป็น: `PHARMACIST_REVIEWABLE_BLOCK_STATUSES_BY_CHANNEL` (online = 2 สถานะ ·
+       counter = +`PHARMACY_PRESCRIPTION_REQUIRED`) และ `evaluatePharmacySale` ปลดด้วยใบอนุมัติ
+       เฉพาะ `channel === "counter"` · **ค่าปริยายของทั้งสองฟังก์ชันคือ online (เข้มกว่า)** ผู้เรียก
+       ที่ยังไม่รู้เรื่องช่องทางจะไม่ได้สิทธิ์ของเคาน์เตอร์มาฟรี
+     · ฝั่งออนไลน์จึง **ไม่เปิดเคสให้ยากลุ่มนี้ตั้งแต่แรก** = ไม่มีใบอนุมัติที่อนุมัติแล้วใช้ไม่ได้ค้างในระบบ
+     · หน้าคิว: ยาใบสั่ง + `ONLINE_SALE_PROHIBITED` เลือกเข้า draft ได้เฉพาะเคสที่มาจากเครื่องขาย
+  4. **หน้า POS ไม่เคยยื่นปุ่ม "ส่งเข้าคิว" ให้ยาใบสั่ง แต่ข้อความบอกว่าทำได้** — `notePharmacyBlock`
+     เขียนรายการสถานะเองแค่ 2 ตัว · ตอนนี้เรียก `isPharmacistReviewableBlock(status, "counter")`
+     ตัวเดียวกับ server → เภสัชกรไม่อยู่หน้าร้านก็ยังส่งเข้าคิวได้ ไม่ใช่ทางตัน
+  5. **ตารางหลักฐานเป็น write-only** — ไม่มีที่ไหนในแอปอ่าน `bms_pos_pharmacist_authorizations`
+     เลย (มีแต่เทส) ทั้งที่เหตุผลของตารางคือตอบว่า "ใครจ่ายยาอะไรให้บิลไหน"
+     · เพิ่ม `lib/bms/pharmacy/counterAuthorizations.ts` (อ่านอย่างเดียว) + query
+       `bmsPharmacistCounterAuthorizations` สิทธิ์ **`pharmacy.audit.read`** (Pharmacist + Manager
+       มีอยู่แล้วตั้งแต่ `7.57` — ไม่ต้อง seed อะไรใหม่) + การ์ด "บันทึกการจ่ายยาที่เคาน์เตอร์"
+       ท้ายหน้า `/admin/pharmacy-queue` ใช้ตัวกรองเวลาเดียวกับคิว
+     · เลขใบกำกับอ่านด้วย **subquery ไม่ใช่ JOIN** — JOIN ที่ได้เอกสารมากกว่าหนึ่งใบต่อบิลจะคูณแถว
+       แล้ว `COUNT(*) OVER()` เพี้ยนไปด้วย
+  6. **ช่องแข่งของการปิดเคส: คิวอนุมัติคาบเกี่ยวกับการขาย → ใบอนุมัติค้างที่ยังใช้ขายได้อีกใบ**
+     · เดิม `recordPosSale` ยิง `closeAssessment()` แบบ best-effort **หลัง commit** และฟังก์ชันนั้น
+       **ไม่รับสถานะ `APPROVED`** → ถ้าคิวเพิ่งกดอนุมัติไปพร้อมกัน จะปิดไม่ได้แล้วเงียบ
+     · แก้: `closeAssessmentSupersededByCounterInTx()` ใน `assessments.ts` ปิด **ในทรานแซกชันของบิล**
+       และรับ `APPROVED` ด้วย · ไม่ปิดใบที่ถูกใช้สร้างบิลไปแล้ว (`ORDER_CREATED`) เพราะนั่นเป็นหลักฐาน
+       ของบิลอื่น
+  7. **`pharmacyReviewAssessmentId` เชื่อจาก body ตรง ๆ** — มี PIN เภสัชกรที่ถูกต้องหนึ่งใบ = ปิดเคส
+     ที่ยังเปิดอยู่ **ตัวไหนก็ได้ในร้าน** (เคสของลูกค้าคนอื่นบนกะเดียวกันคือเคสที่เกิดจริง)
+     · ตอนนี้ตรวจ 3 ชั้นก่อนแตะแถว: (ก) `channel_id = 'pos'` (ข) `complaint.sourceMeta.shiftId`
+       ตรงกับกะที่กำลังขาย (ค) ทุกบรรทัดใน draft ของเคสต้องอยู่ในตะกร้าใบนี้ครบ (ต่อ sku+ไซซ์)
+     · ผลที่ไม่ใช่ `CLOSED` แค่ log ไม่ล้มบิล — ของถูกจ่ายตามการตัดสินของเภสัชกรไปแล้ว
+  · **จุดเล็กที่แก้ไปด้วย**:
+    - `pharmacistAuthOffer` ไม่ถูกล้างตอนตะกร้าเปลี่ยน (การ์ด PIN ค้างพูดถึงของในตะกร้าใบก่อน)
+    - `setPharmacyCounterSettings` ย้ายไปเขียนใน `beginTenantTx` + **audit ในทรานแซกชันเดียวกัน**
+      (เดิม `audit()` ยิงต่อท้ายที่ resolver) และ **ปฏิเสธร้านที่ `business_archetype` ไม่ใช่
+      `pharmacy`** · เป็น UPDATE ล้วนแล้ว (ร้านยาต้องมีแถวโปรไฟล์อยู่แล้ว) จึงไม่ต้องพึ่ง
+      `ON CONFLICT` ที่เคยยอมสร้างแถวให้ร้านที่ไม่ใช่ร้านยา
+    - **การตัดสินช่องทางของเคสอ่านจาก `channel_id` ไม่ใช่ `complaint.sourceMeta.source` แล้ว**
+      (ทั้ง `approveAssessment` และหน้าคิว) — `updateAnswers()` เขียนทับคอลัมน์ `complaint`
+      **ทั้งก้อน** (full-replace ตามดีไซน์) วันไหนมีคนส่ง `complaintPatch` เคสหน้าร้านจะกลายเป็น
+      เคสออนไลน์เงียบ ๆ แล้วอนุมัติรายการของตัวเองไม่ได้ · วันนี้ยังไม่มีผู้เรียกไหนส่ง แต่เป็นกับดัก
+      ที่ไม่ควรพึ่ง
+    - คอมเมนต์ในไฟล์ `9.29` อธิบายว่าทำไม `order_id` เป็น `ON DELETE CASCADE` (**ห้ามเปลี่ยนเป็น
+      SET NULL** — หลักฐานที่ไม่รู้ว่าเป็นของบิลไหนตอบอะไรไม่ได้) และว่ายาใบสั่งเป็นเรื่องของเคาน์เตอร์
+  · **เทสที่แก้/เพิ่ม**:
+    - `pharmacy-policy-decision-contract.test.mts` → **38 เทส (รันผ่านแล้ว)** เพิ่ม/แก้เรื่องช่องทาง:
+      ออนไลน์บล็อกยาใบสั่งแม้มีใบอนุมัติ · ค่าปริยายเป็นชุดออนไลน์ · ช่องทางที่ไม่รู้จักตกไปที่ชุดเข้ม
+    - `pharmacy-counter-authorization-db-contract.test.mts` → **16 เทส** (จาก 11) เพิ่มเครื่อง+กะจริง
+      ในเทส แล้วคุม: ปิดเคสในทรานแซกชันเดียวกับบิล · เคส `APPROVED` (ช่องแข่ง) ก็ถูกปิด · เคสของกะอื่น
+      ปิดไม่ได้ · เคสของตะกร้าอื่นปิดไม่ได้ · การประทับเภสัชกรประจำกะไม่ทับคนแรก · เส้นทางอ่านบันทึก
+    - `pharmacy-approval-reuse-db-contract.test.mts` → เทสยาใบสั่งเปลี่ยนทิศ: ออนไลน์บล็อกแม้มี
+      ใบอนุมัติ · เคาน์เตอร์จ่ายได้ด้วยใบอนุมัติเดียวกัน · ใบเดียวใช้ครั้งเดียวยังคุมอยู่
+  · **ยังไม่ได้ทำ (จงใจ)**: การคืนยาเข้าสต็อกยังไม่มีด่านของร้านยา · ไม่มีการบังคับว่าต้องมีเภสัชกร
+    อยู่เวรสำหรับยาสามัญ (ประทับว่าใครอยู่ ไม่ได้บังคับ) · เส้นทางกู้บิลของหน้า POS ไม่มีเทสอัตโนมัติ
+    (repo นี้ไม่มี harness ทดสอบ React component) — ต้องลองด้วยมือที่หน้าจอ
+- **"ใครอนุมัติได้" ที่หน้า POS (2026-08-31, ไม่มี migration, ไม่มี permission ใหม่)**
+  · `tsc` ผ่าน · pure 571 · build ผ่าน · **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์**
+  · **ต้นเหตุ**: กล่องเลือกผู้อนุมัติทั้ง 8 จุดกรองแค่ `hasPin` (บางจุดไม่ตัดตัวเองออกด้วยซ้ำ)
+    **ไม่เคยกรองว่าคนนั้นอนุมัติงานนี้ได้จริงไหม** → แคชเชียร์เลือกชื่อ → เดินไปตาม → หัวหน้ามากด
+    PIN ต่อหน้าลูกค้า → เพิ่งรู้ว่าไม่มีสิทธิ์ → เดินไปตามคนใหม่ · ระบบรู้คำตอบตั้งแต่ก่อนเลือกอยู่แล้ว
+  · **`approvers` เป็นคนละชุดกับ `cashiers` โดยตั้งใจ** — `listPosCashiers()` คัดเฉพาะคนที่มี
+    `pos.sell` ซึ่งถูกสำหรับ "ใครกำลังขาย" แต่ผิดสำหรับผู้อนุมัติ: **ผู้จัดการที่ไม่เคยยืนขายเอง
+    ไม่มี `pos.sell` แล้วหายจากลิสต์ทั้งที่เป็นคนเดียวในร้านที่อนุมัติได้**
+  · คนที่มีสิทธิ์แต่ยังไม่ตั้ง PIN **ยังขึ้นในลิสต์แบบเลือกไม่ได้พร้อมบอกเหตุผล** (กฎเดียวกับ
+    dropdown คนขาย) — หายไปเฉย ๆ แล้วให้เดาว่าทำไมคนที่ควรอนุมัติได้ไม่อยู่ในลิสต์ แย่กว่า
+  · **สิทธิ์ที่ใช้จริงไม่ตรงกับที่เดา 1 จุด**: การคืนตั้งแต่ ฿500 ใช้ **`payment.refund`**
+    (`approvalRuleForRefundAmount`) ไม่ใช่ `order.return` — dropdown เดิมยื่นพนักงานขายทุกคนให้เลือก
+  · ข้อความ 403 ทั้ง **25 จุด** ผ่าน `posPermissionDeniedMessage()` แล้ว: บอกชื่องานภาษาคน +
+    **role ที่ทำได้ในร้านนี้จริง** + ทางไปต่อ (ให้คนมากด PIN / ไปเพิ่มสิทธิ์ที่ `/admin/permissions`)
+    · **ไม่โชว์ชื่อ permission ดิบ** เพราะ `pos.return.noreceipt` ไม่มีความหมายกับคนหน้าเคาน์เตอร์
+  · **⚠️ กฎที่พลาดง่ายสุด: `Administrator` ได้ทุกสิทธิ์โดยปริยายและ *ไม่มีแถวใน*
+    `bms_role_permissions`** — ลืมใส่ชื่อเข้าไปเอง เจ้าของร้านหายจากคำตอบทั้งที่อนุมัติได้
+    (มีเทส DB คุม · ยืนยันแดงจริงด้วยการถอดเงื่อนไขออก)
+  · **ด่านของเภสัชกรเป็นใบอนุญาต ไม่ใช่ permission** จึงไม่อยู่ในชุดนี้และข้อความแยกต่างหาก —
+    เขียนรวมจะกลายเป็นบอกความจริงผิดว่า "ขอสิทธิ์แล้วจ่ายยาได้"
+  · **รายการที่กรองแล้วเป็น UX ไม่ใช่ด่าน** — ทุก route ยังตรวจสิทธิ์ผู้อนุมัติซ้ำฝั่ง server เหมือนเดิม
+  · เทสใหม่ 2 ชุด: `scripts/pos-approvals-contract.test.mts` (4 เทส pure — กันไม่ให้ dropdown ไหน
+    กลับไปกรองแค่ PIN, สิทธิ์ที่จอกรองต้องเป็นตัวที่เคาน์เตอร์ตรวจจริง, และไม่มีข้อความ 403 ตัวไหน
+    บอกแค่ว่าล้มเหลว) + `scripts/pos-approvals-db-contract.test.mts` (5 เทส DB)
+  · **⚠️ บทเรียนตอนแก้: อย่าใช้ regex ที่มี `.*?` ข้ามบรรทัดแก้ JSX** — รอบแรกใช้ `re.subn` แล้ว
+    group ที่ไม่ผูกปลายทางไปกลืน `<option>` ของคอมโพเนนต์ตัวเองและกล่อง "เลือกประเภทเหตุผล"
+    ที่ไม่เกี่ยวกันเลย · ต้องแทนที่ด้วยสตริงตรง ๆ ทีละจุด แล้วให้ `tsc` เป็นตัวจับ (จับได้ครบทั้ง 5 จุด)
+
+- **รอบหก — เก็บของค้างให้จบ (2026-08-31, ไม่มี migration ใหม่)** · `tsc` ผ่าน · pure 567 ·
+  build ผ่าน · **DB สีเขียวทั้งชุดเป็นครั้งแรก** (เดิมแดง 2 ตัวมาตั้งแต่ก่อนเริ่มงานนี้)
+  1. **⚠️ สองบิลที่ขายพร้อมกันบนกะเดียวกัน deadlock (`40P01`) — บั๊กจริงของเส้นทางขาย ไม่ใช่เทสเปราะ**
+     · ต้นเหตุคือ **ลำดับล็อกกลับหัวกันระหว่างสองทรานแซกชัน**:
+       `finalizePosSale()` ล็อกแถวกะด้วย `FOR UPDATE` เป็นคำสั่งแรก แล้วค่อยตัดสต็อก ·
+       `createOrder()` จองสต็อกก่อน แล้วเพิ่งแตะแถวกะตอน `INSERT bms_orders` ซึ่ง **FK
+       `pos_shift_id` บังคับ `FOR KEY SHARE` ให้เอง** → บิล B ถือสต็อกรอ KEY SHARE ของกะ
+       ที่บิล A ถือ FOR UPDATE อยู่ ส่วน A รอสต็อกที่ B ถือ = วน
+     · **เกิดจริงทุกครั้งที่เครื่องเดียวยิงสองคำขอพร้อมกัน** (retry ซ้อนคำขอเดิม) ไม่ใช่แค่ในเทส
+     · แก้ด้วยการขอล็อกกะ **โหมดเดียวกับที่ FK จะขอ** (`FOR KEY SHARE`) ตั้งแต่ต้นทรานแซกชันของ
+       `createOrder` เมื่อมี `posShiftId` → ทั้งสองเส้นทางเรียงเหมือนกัน: กะ → สต็อก
+     · ไม่ตรวจ `status` ตรงนั้นโดยตั้งใจ — การตัดสินว่ากะเปิดอยู่ไหมยังเป็นหน้าที่ของ
+       `finalizePosSale` ตามเดิม ที่เพิ่มคือลำดับล็อกอย่างเดียว
+     · ยืนยัน: เทส `two simultaneous bills cannot both claim the same serial` จาก **แดง (1022ms
+       = รอจน deadlock detector ตัด)** เป็น **เขียว 92ms**
+  2. **teardown ของ `pharmacy-counter-authorization-db-contract` ลบ `bms_pos_shifts` ก่อน
+     `bms_orders`** ซึ่ง FK เป็น NO ACTION → แดงทุกครั้งและ **ทิ้งข้อมูลทดสอบค้างในฐาน dev ทุกรอบ**
+     · สลับลำดับแล้ว · ยืนยัน `bms_tenants WHERE slug LIKE 'fake-%'` เหลือ 0
+  3. **⚠️ cron `orders/release-expired` เป็นทรานแซกชันเดียวครอบทุก tenant** → บิลใบเดียวที่ปล่อยไม่ได้
+     ทำให้ **ไม่มีร้านไหนถูกปล่อยเลย และเป็นแบบนั้นตลอดไป** (รอบถัดไปเจอใบเดิมอีก) · endpoint ตอบ
+     500 เงียบ ๆ ไม่มีใครรู้ว่ามันหยุดทำงาน — ฐาน dev มีบิลค้าง 21 ใบและ job นี้ throw ทุกครั้ง
+     · แก้เป็น **ทรานแซกชันต่อบิล**: ใบที่ล้ม rollback เฉพาะใบนั้นและถูกรายงานใน `failed`
+       (route spread ผลลัพธ์อยู่แล้ว ตัวเลขจึงโผล่ใน response เอง) ใบที่เหลือปล่อยตามปกติ
+     · เพิ่มพารามิเตอร์ `tenantId` (ไม่บังคับ) — cron ยังกวาดทั้งแพลตฟอร์มเหมือนเดิม แต่เทส/งานซ่อม
+       รายร้านทำได้โดยไม่แตะบิลของร้านอื่นในฐานเดียวกัน **(นี่คือเหตุผลที่เทสรอบก่อนทำเรื่องนี้ไม่ได้)**
+     · เทสใหม่ใน `multi-store-stock-db-contract`: บิลดี 1 + บิลที่ reserved drift 1 → ปล่อยใบดีสำเร็จ
+       ใบเสียอยู่ใน `failed` และ **ยังเป็น PENDING รอคนมาดู** ไม่ถูกยกเลิกทิ้ง
+  4. ข้อความตอนความสามารถยังไม่เปิด บอกที่ไปเปิดแล้ว (`— เปิดที่ /admin/stock-models`) ทั้ง 4 จุด
+  · **แก้โน้ตที่ผมเขียนไว้เกินจริงรอบก่อน**: การ "แลกเปลี่ยนสินค้า" ของของชั่งขาย **ไม่ได้พัง** —
+    ตัวสร้างตะกร้าจากบิลเดิมคำนวณ `baseQty = qty / packQty` ซึ่งของชั่งได้ 1 และ `packQty` เป็นกรัม
+    บรรทัดจึงกลับมาเป็น "750 หน่วยฐาน × ราคาต่อกรัม" ซึ่งถูกต้อง · เสียแค่ป้ายกำกับว่าเป็นบรรทัดชั่ง
+- **recheck รอบเจ็ด — เจอของจริง 4 จุด แก้ครบแล้ว (2026-08-31, ไม่มี migration ใหม่, ไม่มี permission ใหม่)**
+  · `tsc` ผ่าน · **pure 573** · production build ผ่าน · **DB 311 เทส เขียวทั้งหมด**
+  · ทั้งสี่จุดผ่าน mutation test แล้ว (ย้อนโค้ดกลับทีละจุด → แดงถูกตัวทุกครั้ง)
+  1. **⚠️ กระดานครัวตาบอดถาวรหลังมีตั๋วครบเพดาน** — `listKitchenTickets()` เรียง `created_at` **ขึ้น**
+     แล้ว LIMIT และหน้าจอถามแบบไม่กรองสถานะ (`limit: 200`) → ร้านอาหารที่ผ่านตั๋วเกิน 200 ใบ
+     (ไม่กี่วัน) จะได้ตั๋ว 200 ใบ **แรกของร้าน** ซึ่งเสิร์ฟไปหมดแล้วตลอดไป **ตั๋วใหม่ไม่มีวันขึ้น
+     กระดานอีกเลย** ครัวอ่านว่า "เครื่องขายไม่ส่งออร์เดอร์มา" ทั้งที่ขายอยู่
+     · แก้เป็น: ตั๋วที่ยังไม่จบ (NEW/PREPARING/READY) เห็นเสมอ · ตั๋วที่เสิร์ฟแล้วเห็นเฉพาะ 12 ชม.
+       ล่าสุด · **ตั๋วที่ถูกยกเลิกไม่ขึ้นกระดานเลย** (กระดานไม่มีช่องให้มัน การให้กินโควตาเพดาน
+       คือการเบียดงานจริงออก) · ตัดด้วยใหม่สุดก่อนแล้วเรียงกลับเป็นเก่าก่อนสำหรับลำดับทำอาหาร
+       — เพดานจึงทิ้งของเก่า ไม่ใช่ทิ้งของใหม่ · การกรองด้วย `status` ตรง ๆ ยังเข้าถึงของเก่าได้เหมือนเดิม
+  2. **⚠️ ยกเลิก/void บิลแล้วตั๋วครัวค้างเปิด** — void เดินผ่าน `processPosReturn` และ `cancelOrder`
+     ไม่เคยแตะ `bms_kitchen_tickets` เลย (FK เป็น CASCADE แต่บิลไม่ได้ถูกลบ) → เงินคืนไปแล้วแต่ครัว
+     ยังทำอาหารต่อแล้วทิ้ง โดยกระดานไม่บอกเหตุผล · เพิ่ม `cancelKitchenTicketsForOrderInTx()` แล้วเรียก
+     **ในทรานแซกชันเดียวกัน** ทั้งที่ตราประทับ void (`pos.ts`) และ `cancelOrderInTx()` (`orders.ts`)
+     · ตั๋วที่เสิร์ฟไปแล้วไม่ถูกย้อน (อาหารออกจากครัวจริง) · ยิงซ้ำได้ (รอบสองคืน 0)
+  3. **⚠️ ตัดของเสียทำ invariant ของล็อตพัง** — `recordInventoryWastage()` ลด `bms_inventory`
+     อย่างเดียว ไม่แตะ `bms_inventory_lots` ทั้งที่ `lots.ts` ประกาศไว้เองว่า
+     `SUM(lots.qty) = current_stock` และบังคับได้ด้วย "ทุก write ต้องผ่านไฟล์นี้" เท่านั้น ·
+     **ของเสียคือทางหลักที่ของหมดอายุออกจากชั้น** → ล็อตที่เพิ่งทิ้งยังถือจำนวนอยู่ FEFO หยิบไปจ่าย
+     รอบถัดไป (หรือชน "lot ที่ขายได้ไม่พอ" กลางบิลลูกค้า) และ `reconcileLotTotals()` ขึ้นแดงโดยหา
+     ต้นเหตุไม่เจอ · เพิ่ม `consumeLotsForWastageInTx()` ใน `lots.ts` (ให้ทุก write ยังอยู่ไฟล์เดียว)
+     · **ตัดล็อตที่หมดอายุก่อนและไม่ข้ามของหมดอายุ — กลับทางกับเส้นทางขายโดยตั้งใจ** เพราะของที่ทิ้ง
+       คือของหมดอายุ ถ้าข้ามไปตัดล็อตดี ของหมดอายุจะอยู่ในระบบตลอดไป · สินค้าที่ไม่ได้ตามล็อตผ่านไปเฉย ๆ
+     · ล็อตน้อยกว่ายอดรวม (drift ที่มีอยู่ก่อน) = **ปฏิเสธทั้งรายการและ rollback ยอดรวมด้วย**
+       ไม่ใช่ทำครึ่งเดียวแล้วทำให้ drift ลึกลง (มีเทสคุม)
+  4. **⚠️ สวิตช์ความสามารถของร้านไม่มีด่านสิทธิ์ที่ server** — `bmsUpsertStoreCapability`/
+     `bmsResetStoreCapability` ตรวจแค่ "เป็น admin scope" ทั้งที่หน้าจอซ่อนปุ่มไว้หลัง `product.edit`
+     และ mutation อื่นทุกตัวในโมดูลเดียวกันเรียก `requirePermission` · **การซ่อนปุ่มฝั่ง client ไม่ใช่ด่าน**
+     — สวิตช์พวกนี้เปลี่ยนพฤติกรรมการขายทั้งร้าน (ปิดชั่งขาย/เปิดสูตร/เปิดคิวครัว) · ใส่ `product.edit`
+     ให้ทั้งสองตัว และ `product.view` ให้ query `bmsStoreCapabilities` (ผู้เรียกมีที่เดียวคือหน้า
+     `/admin/stock-models` ซึ่ง gate ด้วย `product.view` อยู่แล้ว · sidebar ใช้
+     `bmsKitchenBoardEnabled` คนละตัว จึงไม่กระทบ)
+  · เทสที่เพิ่ม: `multi-store-stock-db-contract` เป็น 12 เทส (ของเสียตัดล็อตหมดอายุก่อน + ยอดล็อต
+    ยังเท่ายอดรวม · ล็อตไม่พอต้อง rollback ยอดรวม · เพดานกระดานต้องทิ้งตั๋วเก่าไม่ใช่ตั๋วใหม่ ·
+    ตั๋วเสิร์ฟเมื่อ 2 วันก่อนไม่อยู่บนกระดานแต่กรองด้วย status ยังเจอ · void/ยกเลิกปิดตั๋วที่เปิดอยู่)
+    · `store-capability-gates-contract` เป็น 4 เทส (สแกนซอร์ส: ทุก mutation ในโมดูลต้องเรียก
+    `requirePermission` · `cancelOrderInTx` และบล็อก void ต้องปิดตั๋วครัว)
+  · **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** เหมือนเดิม (ยืนยันได้แค่ระดับ service/GraphQL + เทส)
+  · **ยังไม่ได้แก้ (คนละเรื่อง มีมาก่อน 9.40)**: การปรับยอดจากการนับสต็อก (`COUNT_ADJUST`, 7.98)
+    ก็ไม่แตะ `bms_inventory_lots` เหมือนกัน — ร้านที่ตามล็อตแล้วนับสต็อกจะได้ drift แบบเดียวกับ
+    ที่ของเสียเพิ่งแก้ไป ต้องตัดสินใจว่าจะให้คนนับระบุล็อตหรือให้ระบบเฉลี่ยตาม FEFO
+
+- **`9.44__bms_restaurant_pos.sql` (POS ร้านอาหาร: ผังโต๊ะ + บิลเปิด + รอบครัว) — งานของ codex บน
+  branch `codex/restaurant-pos-split` แล้ว recheck/แก้ต่อ 2026-09-01** · **apply เข้า dev DB แล้ว
+  (ยืนยัน 5 ตาราง + 4 revision trigger + RLS/GRANT + `bms_orders.restaurant_check_id` ด้วย
+  `to_regclass`/`pg_constraint` จริง)** — ยังไม่ได้ apply เข้า production · **ไม่มี permission ใหม่**
+  (`pos.sell` สำหรับทุก action ของบิลโต๊ะ · `pos.device.manage` สำหรับปุ่มสร้างผังเริ่มต้น ·
+  `order.ship` สำหรับเดินสถานะตั๋วครัว)
+  · ผลรันจริงรอบนี้: `tsc` ผ่าน · **pure 587 เทสผ่าน** · production build ผ่าน ·
+    **DB 326 เทสผ่านทั้งหมด** (รวมชุดใหม่ `scripts/restaurant-pos-db-contract.test.mts` 13 เทส
+    ที่สร้าง tenant ร้านอาหารของตัวเองแล้วลบทิ้ง — รันซ้ำได้ ยืนยัน 2 รอบ ไม่มีข้อมูลค้าง)
+  · **เปิดดูจริงในเบราว์เซอร์แล้ว 2026-09-01** (dev บน localhost:3000 · สร้างร้านทดสอบ
+    `fake-browser-check-*` + เครื่อง + กะ แล้วลบทิ้งครบ) — เดินครบเส้น: สร้างผังเริ่มต้น 12 โต๊ะ ·
+    เปิดโต๊ะ · ค้นเมนู · เพิ่มรายการพร้อมโน้ตถึงครัว · ส่งครัว (ยอดขึ้นเป็น ฿240 · รอบ 1 · ส่งแล้ว) ·
+    จอครัวขึ้นตั๋ว "โต๊ะ 11 · รอบ 1" แล้วกด "เริ่มทำ" ผ่าน · คิดเงิน → toast "ปิดบิลแล้ว ฿240.00"
+    · ยืนยันในฐานหลังจบ: order `COMPLETED` ผูก `restaurant_check_id`, บิลโต๊ะ `PAID`,
+    สต็อก 200→198, `reserved_stock` = 0, **`bms_kitchen_tickets` = 0 แถว** (ไม่มีตั๋วซ้ำตอนปิดการขาย)
+    · ไม่มีใบกำกับเพราะร้านทดสอบไม่ได้จด VAT (ถูกต้อง ไม่ใช่บั๊ก)
+  · **⚠️ `/admin/kitchen` เปิดดูใน dev container นี้ไม่ได้ และไม่ใช่เพราะโค้ดชุดนี้** —
+    `NEXT_PUBLIC_*` ของ container ชี้ไป **`https://jachoei.com/api/graphql` (production)**
+    หน้า admin ทุกหน้าในเครื่องนี้จึงยิง GraphQL ข้ามไปโปรดักชันแล้วโดน CORS บล็อก →
+    `myBmsPermissions` ว่าง → ขึ้น "บทบาทของคุณดูออร์เดอร์ไม่ได้" · **เป็นปัญหาการตั้งค่า dev
+    ที่มีอยู่ก่อน และควรแก้แยกต่างหาก** (เบราว์เซอร์ dev ไม่ควรคุยกับ production)
+    · แทนที่จะข้ามการตรวจ ยิง **เอกสาร query ตัวเดียวกับที่หน้านั้นใช้** ไปที่ API ในเครื่อง
+      แล้วได้ `orderId: null` + `tableCode/tableName/roundNo/kitchenNote` ครบโดยไม่มี
+      non-null error — ซึ่งคือจุดที่กระดานเคยพังพอดี
+  · **สถาปัตยกรรม**: ส่งครัว = สร้าง/รีเฟรช order `PENDING` หนึ่งใบต่อบิลโต๊ะ (จองวัตถุดิบก่อนครัวเริ่มทำ)
+    · คิดเงิน = ปิด order ใบเดิมผ่าน `recordPosSale()` (เจอ 23505 ของคีย์เดิมแล้วเดินเส้นทาง replay)
+    ดังนั้นเงิน/สต็อก/FEFO/ลิ้นชัก/ใบกำกับยังมีสูตรเดียวเหมือนบิลค้าปลีก
+  · **บั๊กที่เจอตอน recheck และแก้แล้ว (เรียงตามความแรง)**:
+    1. **⚠️ `withCheckLock` ยึด client ของ pool ไว้ระหว่างรอ** — ใช้ `pg_advisory_lock()` แบบ session
+       ซึ่งต้องยืม connection มาถือตลอดงาน แล้วงานข้างในยืมอีกใบเพื่อเปิดทรานแซกชัน · `POSTGRES_POOL_MAX`
+       ค่าปริยาย 10 → **5 โต๊ะกดพร้อมกันทำให้ทุก query ของทั้ง instance ล้มด้วย connection timeout**
+       ไม่ใช่แค่ร้านอาหาร · เปลี่ยนเป็น mutex ในโปรเซส (เรียงคำขอของบิลเดียวกัน) + `pg_advisory_xact_lock()`
+       **ในทรานแซกชันของงานเอง** (ข้าม instance โดยไม่ยืม connection เพิ่ม) · ความถูกต้องข้าม instance
+       ไม่ได้พึ่ง mutex: `status='OPEN'`+`FOR UPDATE`, `version = $n` ตอนผูกออร์เดอร์, unique index
+       โต๊ะที่เปิดอยู่, และคีย์กันบิลซ้ำต่อ (บิล, version)
+    2. **⚠️ บิลโต๊ะถูกล่ามไว้กับเครื่อง/กะ/คนที่เปิดโต๊ะ** — `finalizePosSale()` ล็อกบิลด้วย
+       `cashier_user_id` ด้วย · ผลจริง: **เด็กเสิร์ฟเปิดโต๊ะ แคชเชียร์คิดเงิน = "บิลไม่ตรงกับเครื่อง กะ
+       หรือพนักงานผู้ขาย" ต่อหน้าลูกค้า** และโต๊ะที่นั่งคาบเกี่ยวการเปลี่ยนกะ **คิดเงินไม่ได้ตลอดไป
+       พร้อมสต็อกที่จองค้าง** · ตอนนี้เงื่อนไขเหลือ "สาขาเดียวกัน" (มาจากตัวเครื่อง) แล้วประทับ
+       เครื่อง/กะ/คนขายใหม่ทั้งบน order และบนบิลโต๊ะ — ยอดขายเป็นของกะที่รับเงิน (กฎเดียวกับมัดจำ 9.0)
+    3. **⚠️ `orderId` ของ `BmsKitchenTicket` เป็น `ID!`** ขณะที่ตั๋วบิลโต๊ะเกิด **ก่อน** มีออร์เดอร์
+       → GraphQL non-null violation + `ticket.orderId.slice()` ที่ `/admin/kitchen`
+       = **กระดานครัวพังทั้งหน้าทันทีที่ร้านอาหารส่งครัวใบแรก** (พังกับร้านที่ฟีเจอร์นี้ทำมาให้พอดี)
+       · แก้เป็น nullable + เพิ่ม `source/checkId/tableCode/tableName/roundNo/kitchenNote`
+       แล้วกระดานแสดง "โต๊ะ · รอบ N" แทนเลขบิล (คีย์ i18n ใหม่ `dine_in`/`round`/`note` ทั้ง th/en)
+    4. **⚠️ `cancelRestaurantCheck()` ล้มทุกครั้ง 100%** — `concat_ws(E'\n', note, $4)` ทำให้ Postgres
+       เดาชนิดของ `$4` ไม่ได้ (`42P18`) · **ปุ่มยกเลิกบิลไม่เคยทำงานเลย** · เจอเพราะเทส DB ชุดใหม่
+       เป็นตัวแรกที่เรียกเส้นทางนี้ (เทสของ codex เป็น source-scan ทั้งชุด) · แก้ด้วย `$4::text`
+    5. **คีย์กันบิลซ้ำค้างแล้วเก็บเงินสองรอบ** — settle เดิมอ่าน `settlement_idempotency_key` ที่เก็บไว้
+       ก่อน · ถ้ากดคิดเงินล้มไปครั้งหนึ่ง (ยอดไม่ตรง) แล้วลูกค้าสั่งเพิ่ม → version ขยับ → ส่งครัวใหม่
+       = ออร์เดอร์จองใบใหม่คีย์ใหม่ · คีย์เก่าไม่ชนอะไรแล้ว `recordPosSale` จึง **สร้างออร์เดอร์ใบที่สอง
+       จองสต็อกซ้ำ และใบจองเดิมค้าง PENDING ตลอดไป** · ตอนนี้อ่านคีย์จากแถวออร์เดอร์จองตรง ๆ
+       (`RETURNING idempotency_key`) จึง drift ไม่ได้โดยโครงสร้าง
+    6. **ออร์เดอร์จองที่ถูกทิ้งยังถือคีย์เดิม** → ส่งครัวซ้ำที่ version เดิมชน `uq_bms_orders_idempotency`
+       เป็น error ดิบของ Postgres (createOrder ไม่ดัก 23505) และ **โต๊ะนั้นส่งครัวไม่ได้อีกจนกว่าจะมีคน
+       เพิ่ม/ลบรายการ** · `releaseReservationOrder()` ยกเลิกแล้วล้างคีย์ (unique index ไม่นับ NULL)
+    7. **บิลค้างที่ `CLOSING` เป็นทางตัน** — แก้รายการไม่ได้ ยกเลิกไม่ได้ · การเก็บเงินที่ throw ไม่เคย
+       คืนสถานะ = **โต๊ะหายไปทั้งคืน** · ตอนนี้คืนเป็น `OPEN` ทุกทางออกที่ไม่ใช่ SOLD (รวมกรณี throw)
+       และยกเลิกได้จาก `CLOSING` ด้วย แต่ห้ามยกเลิกบิลที่มีออร์เดอร์สถานะอื่นนอกจาก PENDING/CANCELLED
+    8. **ตั๋วครัวขึ้นเฉพาะเมนูที่ผูกสูตร (`stock_policy='RECIPE'`) และไม่ดูความสามารถของร้าน** —
+       ร้านที่ยังไม่ได้ผูกสูตรให้เมนูไหนเลย (สภาพจริงของร้านที่เพิ่งเริ่ม) เห็น **จอครัวว่างทั้งที่
+       ออร์เดอร์วิ่งอยู่** และน้ำ/ของหวานไม่มีวันขึ้นจอ · บิลโต๊ะทุกบรรทัดคือของที่ต้องมีคนยกไปเสิร์ฟ
+       จึงออกตั๋วทุกบรรทัดที่ส่ง โดย gate ด้วย `KITCHEN_WORKFLOW` (เส้นทาง retail ยังกรอง RECIPE ตามเดิม
+       เพราะบิลค้าปลีกมี SKU ที่ไม่ใช่อาหารปนอยู่)
+    9. **ร้านอาหารเข้าหน้าค้าปลีกไม่ได้เลย** — `/pos` redirect ทิ้งแบบไม่มีทางกลับ ทั้งที่ **คืนสินค้า /
+       รับของเข้าคลัง / มัดจำ / บัตรของขวัญ / ขายเชื่อ อยู่ที่หน้านั้นเท่านั้น** · เพิ่ม `?surface=retail`
+       เป็นทางกลับ + ปุ่ม "โหมดค้าปลีก" ที่หน้าโต๊ะ
+   11. **คำเตือน "มีรายการที่ยังไม่ส่งครัว" ขึ้นตั้งแต่โต๊ะยังว่างเปล่า และป้ายยอดเงินโกหก** (เจอตอน
+       เปิดดูจริง) — จอเทียบ `version !== reservedVersion` ตรง ๆ แต่บิลที่เพิ่งเปิดมี version 0 กับ
+       reservedVersion `null` เสมอ · และป้าย "ยอดบิลปัจจุบัน ฿0.00" ขณะที่มีอาหารรออยู่ในบิลแล้ว
+       (`amount_due` ขยับตอนส่งครัวเท่านั้น) · ตอนนี้ใช้เกณฑ์เดียวคือ "มีบรรทัดสถานะ NEW ไหม"
+       (`hasUnsent`) ทั้งคำเตือน ปุ่มส่งครัว ปุ่มคิดเงิน และป้ายที่สลับเป็น "ยอดที่ส่งครัวแล้ว"
+       · **ยอดที่แสดงยังมาจาก server เสมอ ห้ามรวมเองที่จอ** (จะกลายเป็นสูตรเงินชุดที่สอง — มีเทสคุม)
+   10. **จอครัวและการเดินสถานะตั๋วไม่กรองสาขา** — ครัวสาขา A เห็นและกด "เสิร์ฟแล้ว" ให้อาหารของสาขา B ได้
+       · `listKitchenTickets()` และ `updateKitchenTicketStatus()` รับ location (เครื่องส่งของตัวเองเสมอ)
+       · กระดานหลังบ้านยังดูทั้งร้านตามเดิม · `removeRestaurantCheckItem`/`cancelRestaurantCheck`
+       ก็ไม่เคยกรองสาขา แก้แล้วเช่นกัน
+  · **แก้เทสที่แดงตามเวลาของวัน (คนละโมดูล เจอตอนรันชุด DB)** — `commission-db-contract` คำนวณ "วันนี้"
+    จาก `toISOString()` (UTC) ขณะที่ `getCommissionReport()` ตัดช่วงวันด้วย `AT TIME ZONE 'Asia/Bangkok'`
+    → **แดง 6 ตัวทุกคืนระหว่าง 00:00–07:00 เวลาไทย** โดยที่โค้ดไม่ผิด (เจอตอนรัน 01:06 +07) ·
+    เปลี่ยนไปใช้ `Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" })`
+  · **แคตตาล็อกผู้ช่วย**: เพิ่ม capability `restaurant.dine-in` + guide 3 ตัว (เปิดโต๊ะ · ส่งครัว/จอครัว ·
+    ย้ายโต๊ะ/ยกเลิก/เก็บเงิน) → **46 capability · 97 guide** และปักคำถาม 8 ข้อในคอร์ปัส (รวม 59)
+    · `/pos/restaurant` อยู่ใต้ `app/(pos)/pos/layout.tsx` จึงได้ `PosGuideAssistant` มาแล้วโดยไม่ต้องแก้
+    · **ย้ายคำถาม "ระบบรองรับร้านอาหารไหม" จาก `inventory.stock-model` มาที่ `restaurant.dine-in`**
+      (ก่อน 9.44 stock-model เป็นคำตอบจริงข้อเดียว ตอนนี้คนที่ถามหมายถึงบริการหน้าร้าน) แล้วให้
+      stock-model ถือคำถามของตัวเองแทน — สองรายการปักคำถามข้อความเดียวกันคนละคำตอบไม่ได้
+    · **เพดานผลค้นของ `searchAssistantKnowledge` ขยับ 20 → 32** เพราะหน้าเครื่องขายแตะ **21 ไกด์**
+      แล้วเทส "current-page retrieval returns the complete declared guide set" แดง (ตัวที่หลุดคือ
+      `pos.void-return`) · ผู้เรียกจริงสองตัวใน `tools/catalog.ts` ขยับ 20 → 24 ให้ครอบหน้าที่ใหญ่สุด
+  · **หน้า `/pos/restaurant` เป็นภาษาไทย hardcode ทั้งหน้า — ตั้งใจ ไม่ใช่ของค้าง** เพราะ
+    `/pos/page.tsx` (9,800 บรรทัด) ก็ไม่ได้ใช้ `t()` เลย จอเครื่องขายทั้งสองหน้าจึงเป็นไทยเหมือนกัน
+    (`i18n-keys-contract` จับ hardcode ไม่ได้ ต้องดูด้วยตา — ของ `/admin/kitchen` ที่เพิ่มรอบนี้ผ่าน `t()` ครบ)
+  · **เทส 2 ชุด — รันทั้งคู่ก่อน merge ทุกครั้งที่แตะร้านอาหาร**: `scripts/restaurant-pos-contract.test.mts`
+    (13 เทส pure · **เขียนใหม่ทั้งไฟล์** เพราะของเดิม `assert.match(src, /pg_advisory_lock/)` เขียวจาก
+    **คอมเมนต์** ที่ผมเขียนอธิบายรูปแบบเก่า — ทุก assertion ตอนนี้อ่านซอร์สที่ตัดคอมเมนต์ออกแล้ว) +
+    `scripts/restaurant-pos-db-contract.test.mts` (13 เทส DB) · **ทั้งสองชุดผ่าน mutation test แล้ว
+    14 แบบ** (8 pure + 6 DB) แดงถูกตัวทุกครั้ง
+  · **ยังไม่ได้ทำ (จงใจ)**: แยกบิล/รวมบิลข้ามโต๊ะ · ลูกค้าสั่งเองผ่าน QR · จองโต๊ะ/บัตรคิว ·
+    printer routing แยกสถานี · offline-first · ยกเลิกตั๋วบนจอครัว **ไม่** ลบรายการออกจากบิลและไม่คืนสต็อก
+    (เป็นการแก้บิล ต้อง void) · ถ้าจองสต็อกใหม่ไม่สำเร็จตอนส่งรอบถัดไป (เครื่องอื่นแย่งของไประหว่างนั้น)
+    รายการที่ครัวทำอยู่จะไม่มีสต็อกจองและคิดเงินไม่ได้จนกว่าจะส่งครัวสำเร็จ — จึง `console.error` ไว้
+    ไม่ใช่คืนเป็นรหัสสถานะเงียบ ๆ
+
+- **`9.51__bms_product_catalog_foundation.sql` (แคตตาล็อกสินค้า: ตัวเลือกแยกจากสต็อก + ช่องทางขาย
+  ที่ต้องประกาศ + กลุ่ม Modifier) — งานของ codex บน branch `codex/product-catalog-foundation`
+  แล้ว recheck/แก้ต่อ 2026-09-02** · **⚠️ ยังไม่ได้ apply เข้า dev DB และยังไม่ได้รันเทส DB ในรอบนี้**
+  (เครื่องนี้ Docker ไม่ได้รัน — `docker ps` ต่อ daemon ไม่ได้เลย) ต้อง apply แล้วรันชุด DB ที่แตะ
+  แคตตาล็อก/POS/ร้านอาหารให้ผ่านก่อนเชื่อว่าใช้ได้จริง · ไม่มี permission ใหม่
+  · **⚠️ createOrder / resolvePosScan / recordPosSale / listSellableProducts / หน้าร้านออนไลน์
+    อ่าน `bms_product_sales_surfaces` กับทุกบิลของทุกร้าน** — ฐานที่ยังไม่ apply `9.51`
+    **ขายไม่ได้ทั้งระบบ** (กฎเดียวกับ `9.40`) ต้อง apply migration ก่อน deploy โค้ดชุดนี้เสมอ
+  · ผลรันจริงรอบนี้: `npm run gate` ผ่านทั้งชุด — `tsc --noEmit` · **pure 629 เทส** (จาก 623) ·
+    production build
+  · **บั๊กที่เจอตอน recheck และแก้แล้ว (เรียงตามความแรง)**:
+    1. **⚠️ บิลโต๊ะเก็บเงินไม่ได้ทั้งใบ ถ้าเมนูไม่ได้เปิด Retail POS** — `canonicalizePosSaleLines()`
+       ตรึงเงื่อนไขไว้ที่ `surface = 'RETAIL_POS'` แต่การเก็บเงินบิลโต๊ะเดินผ่าน `recordPosSale()`
+       ตัวเดียวกับบิลค้าปลีก · เทมเพลต **PREPARED_MENU** (ค่าปริยายของปุ่มเพิ่มสินค้าในร้านอาหาร)
+       ตั้งช่องทางขายเป็น `RESTAURANT_POS` **ตัวเดียว** → สั่งได้ ครัวทำเสร็จ แล้ว
+       **คิดเงินไม่ได้** โดยขึ้นเป็น `INVALID_PACK` ที่ไม่ได้พูดถึงช่องทางขายเลย = ล้มกลางโต๊ะ
+       หลังอาหารออกไปแล้ว · แก้ให้รับ surface ของบิลใบนั้น (`restaurantCheckId` → RESTAURANT_POS)
+       ส่วนเส้นทางพักบิลค้าปลีกยังเป็น RETAIL_POS ตามเดิม
+    2. **⚠️ ข้อมูลตัวอย่างกลายเป็นสินค้าที่มองไม่เห็นและขายไม่ได้ทุกช่องทาง** —
+       `seedFakeProducts()` เขียน `bms_products` ด้วย INSERT ตรง (ไม่ผ่าน `upsertProduct`) จึงไม่มี
+       ใครใส่แถว `bms_product_sales_surfaces` ให้ · เส้นทางนี้**ไม่ใช่แค่เครื่องมือ dev**:
+       `createOnboardingSampleData()` (ปุ่ม "สร้างข้อมูลตัวอย่าง" ของร้านใหม่) เรียกตัวเดียวกัน →
+       ร้านที่เพิ่งสมัครกดปุ่มนี้จะได้สินค้าที่ดู active ในหน้าแคตตาล็อกแต่ยิงที่ POS ไม่เจอ
+       หน้าร้านออนไลน์ว่าง และ AI หาไม่เจอ · แก้ให้ seeder ใส่ช่องทางขายเอง
+       (ร้าน archetype `restaurant` ได้ `RESTAURANT_POS` เพิ่ม) · ลบสินค้าแล้วแถวหายเองด้วย
+       FK `ON DELETE CASCADE` จึงไม่ต้องแก้ cleanup
+    3. **⚠️ เปิดสินค้าเดิมมากดบันทึกเฉย ๆ ก็ล้ม หรือได้ตัวเลือกงอกใบที่สอง** —
+       `normalizeProductVariantCode()` บังคับ `A-Z0-9` + uppercase + แปลงช่องว่างเป็น `_`
+       แต่รหัสตัวเลือกอยู่ใน namespace เดียวกับ `bms_inventory.size` ที่เป็น free text มาตลอด
+       และไมเกรชันก็ยกค่าเดิมมาแบบตรงตัว · seed ของ repo เองมีทั้ง `"60ml"`, `"100 ml"`,
+       `"10 เม็ด"`, `"1 ชุด"` → ฟอร์มสินค้าเติม `variantCodes` จากค่าเดิมกลับมาตอนบันทึก
+       ไซซ์ไทยถูก **ปฏิเสธทั้งก้อน** ส่วน `"60ml"` กลายเป็น `"60ML"` = ตัวเลือกใบใหม่ที่ไม่มี pack
+       ผูกไว้ (readiness join ด้วย code ตรงตัว) แล้วติด blocker ของตัวเอง · แก้ให้เก็บสะกด
+       ตามที่ร้านพิมพ์ (trim + ยุบช่องว่าง, กันอักขระควบคุม, ยาวไม่เกิน 64) และเพิ่ม
+       `resolveStoredVariantCodeInTx()` ให้ code ที่ต่างกันแค่ตัวพิมพ์ลงแถวเดิม ไม่งอกซ้ำ
+    4. **⚠️ backfill ถอดช่องทางขายของเมนูที่ตั้งราคาผ่าน base pack** — เงื่อนไขเดิมเทียบแต่
+       `p.price > 0` ทั้งที่ราคาหน่วยฐานอยู่ที่ `bms_product_packs.price` ได้ (`8.1`/`9.22`)
+       และ `bms_products.price` ค้างที่ 0 ได้ตามดีไซน์ → ร้านอาหารที่ทำแบบนั้นจะเสีย
+       `RESTAURANT_POS` + ช่องทางลูกค้าทั้งชุดตอน migrate · แก้ให้ทดสอบ "ราคาที่ใช้ขายจริง"
+       (product price **หรือ** base pack price ที่ active) ทั้งสองบล็อก
+    5. **⚠️ ตัวเลือกยาของเภสัชกรตามช่องทางของเคสไม่ได้** — `bmsPharmacyCatalog` (หน้า
+       `/admin/pharmacy-queue`, สิทธิ์ `pharmacy.assessment.review`) และการค้นยาใน
+       `bmsGenerateMedicationSuggestions` ตกลงค่าปริยาย `CUSTOMER_AI` + บังคับ `ONLINE_ORDER`
+       → ยาที่ร้านขายเฉพาะหน้าร้าน **หายจากตัวเลือกของเคสที่มาจากเครื่องขาย** (เคาน์เตอร์จ่ายยา
+       ที่เพิ่งซักถามไปแล้วไม่ได้) และเคสออนไลน์ก็เสี่ยงได้ใบอนุมัติที่ `createOrder` ปฏิเสธทีหลัง
+       · แก้ให้เลือก surface จาก **`channel_id`** ของเคส (`pos` → RETAIL_POS ไม่ใช่ CUSTOMER_AI)
+       ตามกฎเดียวกับ `approveAssessment` และหน้าคิวส่ง `assessmentId` มาให้
+    6. **คอลัมน์ "เปิดขาย" ในไฟล์นำเข้ากลายเป็นคอลัมน์ที่กรอกแล้วไม่มีผล** — `upsertProduct`
+       ไม่สนใจค่า `active` ที่ส่งมาแล้ว (ของใหม่ = ฉบับร่างเสมอ, ของเดิม = คงค่าเดิม) แต่เทมเพลต
+       ยังมีคอลัมน์นี้ให้กรอกพร้อม TRUE/FALSE parser · ถอดคอลัมน์ออกจากเทมเพลต/HEADER_MAP
+       แล้วบอกในหน้านำเข้าตรง ๆ ว่ารายการใหม่เป็นฉบับร่างต้องไปกดเปิดขายเอง
+       (คีย์ `admin_product_import.draft_only_desc` ทั้ง th/en)
+    7. `bmsSetProductActive` ไม่ได้ห่อ `publishProduct` ด้วย `toGqlError` → readiness ที่ไม่ผ่าน
+       ออกเป็น 500 และ **ไม่มีบรรทัด log ที่มี SQLSTATE** ซึ่งเป็นสิ่งที่คอมเมนต์ของ helper ตัวนั้น
+       บอกเองว่าจำเป็นตอนฐานยังไม่ apply migration (42P01)
+  · **กฎชุดใหม่เข้าแคตตาล็อกผู้ช่วยแล้ว** — 9.51 เขียนกฎ (ฉบับร่าง/ช่องทางขาย/ตัวเลือก/สำเนา)
+    ไว้ใน `admin/manual/page.tsx` เท่านั้น ซึ่งกลับไปเป็น "สองสำเนา" แบบที่ย้ายออกไปแล้วเมื่อ
+    2026-08-28 และผู้ช่วยตอบคำถาม "เพิ่มสินค้าแล้วขายไม่ได้" ไม่ได้ · ย้ายเป็นกลุ่ม
+    `limits.product-catalog` (7 ข้อ th/en) ผูกกับไกด์ `products.create` ·
+    `inventory.stock-sale-blockers` · `inventory.stock-models` · `pos.restaurant-open-check`
+    แล้วปักคำถาม 2 ข้อในคอร์ปัส (**61 ข้อ** จาก 59) — ปักไว้ที่ `inventory.stock-sale-blockers`
+    เพราะการค้นจริงพามาที่นั่นก่อน และนั่นคือคำตอบที่ถูกสำหรับ "ทำไมขายไม่ได้"
+    (`products.create` อยู่ใน `expectAlso`)
+  · เทส: `scripts/product-catalog-foundation-contract.test.mts` **13 เทส** (จาก 7 · pure) ·
+    **ทั้ง 6 จุดผ่าน mutation test แล้ว** (ย้อนโค้ดกลับทีละจุด → แดงถูกตัวทุกครั้ง) · เทสสแกนซอร์ส
+    ตัดคอมเมนต์ก่อนเทียบ (`withoutComments`) เพราะรอบแรกคอมเมนต์ที่ผมเขียนอธิบายกฎเก่าเอง
+    ทำให้ assertion แดงผิดตัว — กับดักเดิมของเทสแบบสแกนซอร์สในไฟล์นี้
+  · **ยังไม่ได้แก้ / ต้องรู้ก่อนใช้จริง**:
+    - **readiness ถูกตรวจตอน "บันทึก" ของสินค้าที่เปิดขายอยู่ ไม่ใช่แค่ตอนเปิดขาย** —
+      `upsertProduct`/`upsertProductStockPolicy`/`upsertProductRecipe` throw ถ้าสินค้า active
+      แล้ว readiness ไม่ผ่าน · ร้านที่จด VAT แล้วมีสินค้า `vat_category = 'UNKNOWN'` จะแก้ชื่อ
+      สินค้าไม่ได้จนตั้งประเภท VAT (แก้ได้ในฟอร์มเดียวกัน) แต่ blocker ที่แก้จากฟอร์มไม่ได้
+      (เช่นยังไม่มีสูตรของบางไซซ์) จะล็อกการแก้ข้อมูลอื่นไว้ทั้งหมด — ยังไม่ตัดสินใจว่าจะผ่อนไหม
+      · ผลข้างเคียงที่ตามมาด้วย: อนุมัติ synonym ของ AI (`aiSynonyms.reviewSynonymCandidate`)
+      เรียก `upsertProduct` จึงล้มด้วย blocker ที่ไม่เกี่ยวกับ synonym
+    - **นำเข้า 500 แถวที่เป็นสินค้า active เดิม = readiness 500 รอบ** (~10 query ต่อแถว) ยังไม่วัด
+      เวลาจริง
+    - **ยังไม่มีปุ่มเปิดขายแบบหลายรายการ** — นำเข้าเมนู 200 รายการแล้วต้องกดสวิตช์ทีละตัว
+      · `bmsPublishProduct` มี resolver แล้วแต่ **ไม่มีผู้เรียกใน UI** (หน้า Products ใช้สวิตช์
+      `bmsSetProductActive` ซึ่งวิ่งเข้า `publishProduct` อยู่แล้ว)
+    - **กลุ่ม Modifier ถูกเขียนทับผ่าน modifier ทีละตัว** — `upsertProductModifier` upsert แถวกลุ่ม
+      ด้วยค่าที่ส่งมาพร้อม modifier นั้น ตัวสุดท้ายที่บันทึกชนะทั้งกลุ่ม
+    - **กลุ่มที่ `min_select >= 1` ทำให้สั่งจากช่องทางที่ไม่มี UI เลือกตัวเลือกไม่ได้เลย**
+      (AI/ออนไลน์/ค้าปลีก) → `INVALID_ITEM MODIFIER_GROUP_MIN` ยังไม่มีทางออกนอกจากไม่ตั้งขั้นต่ำ
+    - **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** ทั้งฟอร์มสินค้าใหม่ (template/variant/surface),
+      การ์ด readiness, ปุ่มทำสำเนา และหน้า `/admin/stock-models` ที่เพิ่ม quick-create วัตถุดิบ
+- **`9.52__bms_product_non_stock_policy.sql` (stock policy `NON_STOCK` — เมนูขายเร็วที่ไม่คุมวัตถุดิบ)
+  บน branch `feat/non-stock-policy` (2026-09-02) · **apply เข้า dev DB แล้วและ verify กับ DB จริงแล้ว**
+  — ยังไม่ได้ apply เข้า production · ไม่มี permission/capability/ตารางใหม่
+  · **ต้นเหตุ**: เมนูร้านอาหารต้องเป็น `RECIPE` ซึ่งบังคับสร้างวัตถุดิบทีละตัว + กรอกสูตรทุกไซซ์ก่อน
+    publish (`RECIPE_REQUIRED`) ร้านเล็กจึงเปิดขายเมนูแรกไม่ได้ · `NON_STOCK` ขายได้ทันที ไม่ตัดสต็อก
+    ต้นทุนต่อจานอ่านจาก `bms_products.cost_price` (รายงานกำไรขั้นต้นใน `reports.ts` ใช้ค่านี้อยู่แล้ว)
+    · เลื่อนขึ้นเป็น `RECIPE` ทีหลังได้ที่ `/admin/stock-models` (มีเทสคุม)
+  · **⚠️ ต้อง apply migration ก่อน deploy โค้ดชุดนี้เสมอ** — `resolveStockConsumptionInTx`
+    อ่าน `stock_policy` กับทุกบิลของทุกร้าน (กฎเดียวกับ `9.40`/`9.51`)
+  · **หัวใจของ migration คือ view ไม่ใช่ CHECK** — `NON_STOCK` คืน `lines: []` จึงไม่มีแถว snapshot
+    เลย ถ้าไม่ตัดมันออกจากกิ่ง legacy ของ `bms_order_stock_lines` view จะอ่าน "ไม่มี snapshot" ว่าเป็น
+    บิลยุคก่อน `9.40` แล้วแปลเมนูเป็น "กินสต็อกตัวเอง 1 หน่วย" ทั้งที่แถวสต็อกค้างที่ 0 →
+    **ขายไม่ได้เลยสักบิล** · มีเทส DB ที่ **สลับ view เป็นตัวที่ไม่มีเงื่อนไขนี้แล้วพิสูจน์ว่าพัง**
+    จริงในเทสเดียว (คืน view เดิมใน `finally`)
+  · **กับดักที่เจอตอนทำ (ทั้งสามเป็นบั๊กจริง ไม่ใช่เรื่องสไตล์)**:
+    1. **`DROP VIEW` ทิ้ง GRANT ไปด้วย** — ลืม `GRANT SELECT ON bms_order_stock_lines TO bms_app`
+       แล้วทุกเส้นทางที่เขียนของภายใต้ `SET LOCAL ROLE bms_app` ล้มด้วย `42501` (`8.8`/`9.3`/`9.40`
+       ต่างก็ re-grant ทุกครั้ง — **ทุกครั้งที่ DROP/CREATE view นี้ต้อง GRANT ใหม่**)
+    2. **การหาชื่อ CHECK ด้วย `pg_constraint` ต้องแคบพอ** — `bms_product_stock_policies` มี CHECK
+       อีกตัว (`scale_mapping_check`) ที่อ้าง `stock_policy` ด้วย · ถ้า `LIMIT 1` เฉย ๆ จะ DROP ตัวผิด
+       เงียบ ๆ · ต้องกรอง `array_length(conkey,1) = 1` + ตรวจว่า def มีค่าในลิสต์
+    3. **`canonicalizePosSaleLines` ปฏิเสธเมนูที่ยังไม่เคยขาย** — เงื่อนไขเดิมคือ "มีแถว
+       `bms_inventory` **หรือ** เป็นเซ็ต **หรือ** เป็น RECIPE" แต่แถวศูนย์ของ `NON_STOCK`
+       เพิ่งถูกสร้างตอน `createOrder` ครั้งแรก → **บิลแรกของทุกเมนูใหม่ล้มด้วย `INVALID_PACK`**
+       ทั้งที่หน้าจอไม่ได้บอกว่าเกี่ยวกับช่องทางขาย · แก้เป็น `IN ('RECIPE','NON_STOCK')`
+  · **`resolvePosScan` แกะไซซ์จาก `bms_inventory`/pack เท่านั้น** สินค้าที่ยังไม่มีแถวสต็อกจึงได้
+    `size = NULL` = สแกนแล้วเพิ่มลงบิลไม่ได้ · เพิ่มกิ่งที่ 4 ให้ตกไปอ่าน `bms_product_variants`
+    (ความจริงของไซซ์ตาม `9.51`) — **กิ่งนี้ทำงานเฉพาะตอนสามกิ่งบนได้ NULL ซึ่งวันนี้แปลว่าพังอยู่แล้ว
+    จึงไม่มีทาง regress** · ผลพลอยได้: เมนู `RECIPE` ที่ยังไม่เคยขายก็สแกนได้ด้วย
+  · **ช่องทางขายเริ่มต้นจำกัดที่ `RESTAURANT_POS` ตามที่ตกลง แต่เหตุผลเดิมไม่จริงแล้ว** —
+    ตอนตั้งโจทย์เชื่อว่า `createShipment()`/`releaseExpiredOrders()` ยังอ่าน `bms_order_items` ตรง ๆ
+    · ตรวจแล้วทั้งคู่อ่าน view (แก้ไปตั้งแต่ recheck รอบสองของ `9.40`) ที่เหลืออ่าน order_items
+    จริงมีแค่ **น้ำหนักค่าส่ง + รายการบนใบปะหน้า** ซึ่งต้องเป็นของที่ลูกค้าซื้อ ไม่ใช่สต็อก ·
+    แปลว่า **เปิดช่องทางออนไลน์ให้ `NON_STOCK` ได้อย่างปลอดภัยเมื่อไหร่ก็ได้** ถ้าตัดสินใจใหม่
+  · **Modifier ยังบล็อก `NON_STOCK`** เหมือน DIRECT/PACK (ตั้งใจ — modifier คือส่วนต่างวัตถุดิบของสูตร)
+  · เทส: `scripts/non-stock-policy-contract.test.mts` (11 เทส pure · mutation test แล้ว) +
+    7 เทสใน `multi-store-stock-db-contract` · **ชุด DB นั้นกลับมาเขียวครบ 18/18**
+  · **⚠️ ของค้างที่ไม่ได้แก้ (คนละเรื่อง มีมาก่อน 9.52): `9.51` ไม่เคย verify กับ DB จริง แล้วทำให้
+    ชุดเทส DB พังครึ่งชุด** — `9.51` บังคับว่าต้องมีแถว `bms_product_sales_surfaces` ถึงจะขายได้ แต่
+    fixture ของเทสเขียน `bms_products` ตรง ๆ จึงไม่มีใครประกาศช่องทางให้ → `NOT_FOUND`/`INVALID_PACK`
+    · baseline บน `d99bac86` = **176 ผ่าน / 159 แดง** · แก้ fixture ให้ 5 ชุดที่อยู่ในรัศมีของงานนี้แล้ว
+    (multi-store-stock, restaurant-pos, bundles, promotions, price-tiers) → **209 ผ่าน / 127 แดง**
+    และ **ยืนยันด้วยการ diff ชื่อเทสที่แดงว่าไม่มี regression สักตัว** · **ยังเหลืออีก 17 ชุด**
+    (ar, commission, deposits, order-extra-lines, pharmacy-*, pos-loyalty, pos-serial, pos-shift-ops,
+    product-barcode, product-vat-category, receipt-delivery, shop-archetype, store-credit,
+    variant-reservations, loyalty, order-confirmation, pos-cross-branch-return) ที่เป็นสาเหตุเดียวกัน
+
+- **`9.53__bms_kitchen_station_sla.sql` (เกณฑ์เวลาจอครัวแยกตามสถานี) + เสียงเตือน + ปุ่มย้อนสถานะ +
+  ยก `/admin/kitchen` มาใช้โมดูลเดียวกัน — 2026-09-02** · **apply เข้า dev DB แล้ว** (ยืนยัน RLS +
+  GRANT `bms_app` จริง) ยังไม่ได้ apply เข้า production · **ไม่มี permission ใหม่**
+  (อ่านใช้ `product.view` แก้ใช้ `product.edit` = สิทธิ์เดียวกับหน้า `/admin/stock-models`)
+  · `tsc` ผ่าน · pure **660** · build ผ่าน · DB ชุดร้านอาหาร+multi-store **37/37**
+  · **เกณฑ์ 5/10 เดียวทั้งร้านใช้ไม่ได้จริง** — บาร์ชงชาเย็นเสร็จใน 2 นาที ครัวร้อนผัด 8-12 นาที
+    เป็นปกติ · เกณฑ์เดียวจึงทำให้ครัวร้อนแดงตลอดเวลา (สีเลิกมีความหมาย) หรือบาร์ไม่เคยเตือนเลย
+    · ยืนยันบนจอจริง: ตั๋วสามใบรอเท่ากัน 5:20 ได้ **คนละสี** ตามสถานี (บาร์แดง · ครัวร้อนปกติ ·
+    ครัวเย็นเหลืองด้วยค่าปริยาย)
+  · **สถานีเป็นข้อความอิสระบน `bms_product_stock_policies.kitchen_station` ไม่มีตารางของตัวเอง**
+    ตาราง SLA จึง key ด้วยชื่อสถานี แถวของสถานีที่เลิกใช้ก็แค่ไม่มีใครอ่าน (ไม่ต้องตามลบ) ·
+    หน้าตั้งค่าแสดงสถานีที่ **ยังไม่เคยตั้ง** ด้วย ไม่งั้นร้านต้องเดาว่าต้องพิมพ์ชื่อให้ตรงเป๊ะเอง
+  · **ค่าที่ใช้ไม่ได้ต้องตกกลับค่าปริยาย ไม่ใช่ทำให้ทุกใบสีเดียว** (`slaForStation` ตรวจ
+    เหลือง<แดง และตัวเลขที่อ่านไม่ออก) · ชั้นแอปตรวจซ้ำก่อนถึง CHECK ของฐาน เพราะข้อความ
+    ของ Postgres อ่านไม่รู้เรื่องสำหรับคนตั้งค่าหน้าร้าน
+  · **ปุ่มย้อนสถานะ: ถอยได้ทีละขั้น (`PREPARING→NEW`, `READY→PREPARING`, `SERVED→READY`)**
+    เพราะกดผิดที่จอครัวเกิดจริงและบ่อย · **`CANCELLED` เป็นปลายทางถาวร ห้ามเพิ่มทางกลับ** —
+    การยกเลิกตัดบรรทัดออกจากบิลไปแล้วในทรานแซกชันเดียวกัน การย้อนคือการ *แก้บิล* ต้องเอาบรรทัด
+    กลับเข้าบิลพร้อมจองสต็อกใหม่ (ทางที่ถูกคือสั่งรอบใหม่) · มีเทส DB คุมทั้งสองทิศ
+  · **`PREVIOUS_KITCHEN_STATUS` อยู่ใน `kitchenBoard.ts` ไม่ใช่ `kitchen.ts`** — หน้าจอเป็น client
+    component ถ้าประกาศไว้ใน `kitchen.ts` (ซึ่ง import ตัวต่อฐานข้อมูล) การ import จากจอจะลาก `pg`
+    เข้า bundle ของเบราว์เซอร์
+  · **เสียงเตือนสังเคราะห์เอง (WebAudio) ไม่โหลดไฟล์** — จอครัวออฟไลน์ได้และไม่ต้องเปิด CSP ให้
+    ไฟล์เสียงจากที่อื่น · **ต้องให้คนกดเปิดเอง** (เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ และครัว
+    บางร้านเปิดเพลงอยู่แล้ว) · จำค่าไว้ใน `localStorage` · ดังเฉพาะตั๋วที่ **เพิ่งโผล่เทียบกับรอบก่อน**
+    ไม่ใช่ทุกใบที่สถานะ NEW ไม่งั้นจะดังทุก 5 วินาทีตราบใดที่ยังมีงานค้าง · รอบแรกหลังเปิดจอถือเป็น
+    การตั้งต้น · ยืนยันบนจอจริงด้วยการนับ oscillator: เงียบเมื่อไม่มีอะไรใหม่ · ดังเมื่อมีตั๋วใหม่ ·
+    ไม่ดังซ้ำตอน poll รอบถัดไป
+  · **`/admin/kitchen` ใช้ `kitchenBoard.ts` ตัวเดียวกับเครื่องขายแล้ว** (รวมใบ + ตัวนับ + เกณฑ์ตาม
+    สถานี + ปุ่มย้อนกลับ) และเรียก mutation ใหม่ `bmsUpdateKitchenTicketsStatus(ids, status)` ซึ่ง
+    วิ่งเข้า service เดียวกับ REST ของเครื่องขาย — ทรานแซกชันเดียว ทั้งหมดหรือไม่เลื่อนเลย
+    · **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** เพราะ `NEXT_PUBLIC_*` ของ container dev ชี้ GraphQL ไป
+      production (ปัญหาที่มีมาก่อน จดไว้ตั้งแต่ `9.44`) — ผ่าน `tsc` + build + เทสสแกนซอร์สเท่านั้น
+  · **เทสสแกนซอร์สสองตัวใน `restaurant-pos-contract` ถูกเล็งใหม่** เพราะการรับตั๋วที่ไม่มี `orderId`
+    ย้ายจากหน้าจอไปอยู่ใน `kitchenGroupLabel()` — assertion เดิม (`ticket.orderId ? …`) เขียวไม่ได้อีก
+    และถ้าปล่อยไว้จะกลายเป็นเทสที่บังคับให้โค้ดกลับไปทำแบบเดิม
+  · เทส: `kitchen-board-contract` **16 เทส** (จาก 13) + 2 เทสใหม่ใน `restaurant-pos-db-contract`
+    (ย้อนสถานะ · SLA เก็บ/ลบ/ปฏิเสธค่าผิด)
+  · **ยังไม่ได้ทำ (จงใจ)**: แยกจอตามสถานีจริง (ใช้ตัวกรอง) · เสียงต่างกันตามความเร่ง ·
+    ให้ร้านตั้งเกณฑ์ต่อ "เมนู" ไม่ใช่แค่ต่อสถานี
+
+- **จอครัวใหม่ (`/pos/restaurant` แท็บครัว) — ไม่มี migration, ไม่มี permission ใหม่ (2026-09-02)**
+  · `tsc` ผ่าน · pure **657** · build ผ่าน · **เปิดดูจริงในเบราว์เซอร์แล้ว** (ป้อนตั๋วปลอมผ่าน
+    `window.fetch` แล้วให้ React เรนเดอร์เอง — ยืนยันการรวมใบ ตัวนับ ตัวกรอง เมนู ⋯ และการเลื่อนในเลน)
+  · **1 ใบ = (โต๊ะ/บิล + รอบ + สถานี) ไม่ใช่ 1 รายการ** — ตรรกะอยู่ใน `lib/bms/kitchenBoard.ts`
+    ซึ่ง **ตั้งใจไม่ import อะไรเลย** (เทสได้โดยไม่ต้องมี DB แบบ `loyaltyMath.ts`) · ฐานข้อมูลยังเก็บ
+    1 แถวต่อรายการเหมือนเดิม การรวมเกิดที่จอเท่านั้น
+    - **ตัวเลือกต่างกันห้ามยุบรวม** ("หวานน้อย" กับแก้วธรรมดาชงคนละแบบ) โน้ตถึงครัวก็เช่นกัน
+    - **สถานีอยู่ในคีย์การจัดกลุ่ม** — ครัวร้อนกับบาร์เป็นคนละคน ถ้ารวมข้ามสถานี ปุ่มของคนหนึ่ง
+      จะไปขยับงานของอีกคน
+  · **⚠️ ป้ายบนหัวเลนและข้างชื่อสถานีนับ "จาน" ไม่ใช่จำนวนใบ** — ถ้านับใบ ชามะนาว 3 แก้วที่ยุบ
+    เป็นใบเดียวจะขึ้นเป็น 1 แล้วครัวประเมินงานผิด ซึ่งกลับหัวกับเหตุผลที่รวมใบตั้งแต่แรก
+    (เจอตอนเปิดดูจริง: ป้ายขึ้น 4 ทั้งที่มีอาหารค้าง 8 จาน) · ข้อความ toast ใช้เกณฑ์เดียวกัน
+  · **ตัวนับเวลาของเลน "พร้อมเสิร์ฟ" นับจาก `updated_at` ไม่ใช่ `created_at`** — คำถามของช่องนั้น
+    คือ "อาหารวางรอนานแค่ไหน" ไม่ใช่ "สั่งมานานเท่าไร" · ถ้านับจากตอนสั่ง ทุกใบจะแดงค้างตลอดเวลา
+    แล้วสีเลิกมีความหมาย · เกณฑ์ 5/10 นาทีเป็นค่าคงที่ชุดเดียว **ยังไม่แยกตามสถานี** (บาร์ควรเร็ว
+    กว่าครัวร้อน — ต้องมีที่ให้ร้านตั้งค่าก่อน)
+  · **`updateKitchenTicketsStatus` เลื่อนทั้งใบในทรานแซกชันเดียว "ทั้งหมดหรือไม่เลื่อนเลย"**
+    (route ใหม่ `POST /api/pos/kitchen/tickets/status` · auth เหมือน route ทีละใบทุกประการ ·
+    เพดาน `KITCHEN_BULK_LIMIT = 50`) · **แกนของการเลื่อนถูกแยกเป็น
+    `updateKitchenTicketStatusInTx()` แล้วทั้งทางเดี่ยวและทางกลุ่มเรียกตัวเดียวกัน** — สองสูตรจะ
+    drift แล้วการตัดบรรทัดออกจากบิลตอนยกเลิก (กับ audit ในทรานแซกชันเดียวกัน) จะหลุดไปทางใดทางหนึ่ง
+    · ยิงทีละใบจากเบราว์เซอร์ทำไม่ได้: ใบที่ล้มกลางชุดทิ้งงานเดียวกันคาไว้สองช่องบนกระดาน
+  · "ยกเลิก" ย้ายไปหลังปุ่ม ⋯ (ของเดิมปุ่มทำลายอยู่ติดปุ่มที่กดบ่อยสุดด้วยขนาดเท่ากัน) · เมนูนั้น
+    ถือ **การเลื่อน/ยกเลิกทีละรายการ** ไว้ด้วย สำหรับรอบที่ครัวทำเสร็จไม่พร้อมกัน
+  · หัวจอเดิม (ชื่อ + คำอธิบาย + ปุ่มรีเฟรชเต็มขนาด ~72px) เปลี่ยนเป็นแถวเดียว 34px ที่เป็น
+    **ตัวกรองสถานี** + สถานะอัปเดตอัตโนมัติ · สถานีที่เลือกไว้หมดงานแล้วจะรีเซ็ตตัวกรองให้เอง
+    ไม่ให้ค้างอยู่กับช่องว่างจนครัวอ่านว่าไม่มีออร์เดอร์
+  · เทส: `scripts/kitchen-board-contract.test.mts` (13 เทส pure) + เทสใหม่ใน
+    `restaurant-pos-db-contract` (**ผ่าน mutation test แล้ว**: เปลี่ยนลูปให้ commit ทีละใบ → แดงถูกตัว)
+  · **ยังไม่ได้ทำ (จงใจ)**: เสียงเตือนตั๋วใหม่ · ปุ่มย้อนสถานะกลับ · แยกจอตามสถานีจริง (ใช้ตัวกรอง
+    แทน) · **หน้า `/admin/kitchen` ยังเป็นของเดิม** (คนละหน้า ใช้ `t()` i18n ครบ) — ถ้าจะให้เหมือนกัน
+    ต้องยกโมดูล `kitchenBoard.ts` ไปใช้ที่นั่นด้วย
+
+- **`9.54__bms_kitchen_station_master.sql` (สถานีครัวเป็น entity: ทะเบียน + ผูกสาขา + เปิด/ปิด +
+  ลำดับ) เขียนแล้วบน branch `feat/kitchen-station-master` (2026-09-03)** · `tsc --noEmit` ผ่าน ·
+  **pure 724 เทสผ่านทั้งหมด** · production build ผ่าน · **⚠️ ยังไม่ได้ apply เข้า dev DB และยังไม่ได้
+  รันเทส DB ในรอบนี้** (เครื่องนี้ Docker ไม่ได้รัน — `docker ps` ต่อ daemon ไม่ได้เลย) ต้อง apply
+  แล้วรัน `scripts/kitchen-station-db-contract.test.mts` (18 เทส) + ชุดร้านอาหาร/multi-store ให้ผ่าน
+  ก่อนเชื่อว่าใช้ได้จริง · ไม่มี permission ใหม่ (อ่าน `product.view` · จัดการ `product.edit`)
+  · **⚠️ ต้อง apply migration ก่อน deploy โค้ดชุดนี้เสมอ** (กฎเดียวกับ `9.40`/`9.51`) — แต่รัศมี
+    ไม่เท่ากับสองตัวนั้น ไล่แล้วได้ดังนี้:
+    - **กว้างสุดคือ readiness ของสินค้า**: `getProductReadinessInTx()` LEFT JOIN ตารางใหม่ และถูก
+      เรียกทุกครั้งที่บันทึกสินค้าที่เปิดขายอยู่ **ของทุกร้าน ไม่ใช่แค่ร้านอาหาร** → ฐานที่ยังไม่
+      apply จะบันทึกสินค้าไม่ได้ทั้งระบบ
+    - **เส้นทางครัวแตะเฉพาะร้านที่เปิดคิวครัว**: `enqueueKitchenTicketsInTx()` ออกก่อนด้วย
+      `isCapabilityEnabledInTx(KITCHEN_WORKFLOW)` และ `sendRestaurantKitchenRound()`/
+      `listRestaurantMenu()` เป็นของร้านอาหารเท่านั้น → **การขายของร้านทั่วไปไม่ถูกกระทบ**
+    - **จอครัวของเครื่องขายไม่ดับ**: `/api/pos/kitchen/tickets` กลืน error ของทะเบียนสถานีแล้ว
+      ตกกลับไปใช้ปุ่มกรองจากตั๋วจริง (= พฤติกรรมก่อน 9.54)
+  · **ต้นเหตุ**: สถานีครัวมีอยู่แค่เป็นสตริงบน `bms_product_stock_policies.kitchen_station` ทุกอย่าง
+    ที่อ้างถึงสถานีจึงอ้างด้วย "ชื่อที่พิมพ์ตรงกันเป๊ะ" — เกณฑ์เวลา (`9.53`) คีย์ด้วยชื่อ · ตั๋วเก็บชื่อ ·
+    ตัวกรองบนจอครัวสร้างจากชื่อที่บังเอิญมีงานค้างอยู่ · พิมพ์เกินมาหนึ่งช่องว่าง = สถานีใหม่ทั้งสถานี
+    และ **เปลี่ยนชื่อสถานีไม่ได้เลย** เพราะชื่อคือ identity
+  · **สามข้อที่เป็นแกนของงานนี้**:
+    1. **สถานีไม่ใช่สาขา และไม่แยกสต็อก** — สต็อกยังตัดตาม `location_id` ของบิลเหมือนเดิม
+       มีเทสสแกน `9.54` ว่าไม่แตะ `bms_inventory`/`bms_orders`/`bms_payments`/`bms_order_items` เลย
+    2. **`location_id NULL` = ใช้ได้ทุกสาขา** · มีค่า = สาขานั้นสาขาเดียว และบิลของสาขาอื่นได้
+       `station_id = NULL` → ตั๋วไปช่อง "ไม่ระบุสถานี" ซึ่งยังเห็นและยังกดได้ · ทางเลือกอื่นคือส่งตั๋ว
+       ไปครัวที่สาขานั้นไม่มีอยู่จริง = อาหารไม่มีใครทำโดยไม่มีใครรู้
+    3. **ตั๋วเก็บทั้ง `station_id` และชื่อ (snapshot)** — เปลี่ยนชื่อวันนี้ต้องไม่เขียนประวัติเมื่อวานใหม่
+       · จอ/เกณฑ์เวลาจึงจับคู่ด้วย id ก่อน ชื่อทีหลัง (`slaForStationRef`, `ticketMatchesStation`)
+  · **นิพจน์เลือกสถานีมีชุดเดียว** `kitchenStationColumnsSql()` — ผู้เรียก 3 ที่ (คิวครัวบิลค้าปลีก ·
+    รอบครัวบิลโต๊ะ · **จอสั่งอาหาร**) · สองสูตรจะ drift แล้ววันหนึ่งเส้นทางหนึ่งยอมส่งตั๋วข้ามสาขา
+    · เจอตอน recheck: จอสั่งอาหารเคยกรองสาขาที่ `ON` ของ JOIN แล้ว `COALESCE` ไปหาชื่อเดิม →
+    เมนูที่ผูกกับสถานีของ **อีกสาขา** โผล่เป็นหมวดหมู่บนจอสาขานี้ แต่พอกดส่งครัวจริง ตั๋วไปช่อง
+    "ไม่ระบุสถานี" (จอบอกอย่าง ครัวได้อีกอย่าง)
+  · **การเขียนสถานีลงสินค้าก็มีชุดเดียว** `resolveKitchenStationForProductInTx()` — ฟอร์มสินค้ากับ
+    หน้ารูปแบบสต็อกเคยถือสำเนาของกฎ "id ชนะชื่อ + ยกชื่อขึ้นเป็นแถวหลัก + id ต้องเป็นของร้านนี้"
+    คนละชุด (รอบแรกเขียนไว้สองที่จริง ๆ) · ตอนนี้เหลือที่เดียวและมีเทสห้ามผู้เรียกหาชื่อสถานีเอง
+  · **ชื่อสถานีต้องไม่ซ้ำทั้งร้าน (ข้ามสาขา ข้ามสถานะ)** เพราะเกณฑ์เวลายังคีย์ด้วยชื่อ — สองสถานีชื่อ
+    "บาร์" = ตั๋วใบเดียวมีเกณฑ์สองชุด · เปลี่ยนชื่อสถานีจึงย้ายคีย์ของแถวเกณฑ์เวลาให้ในทรานแซกชัน
+    เดียวกัน (ลบแถวกำพร้าที่ถือชื่อใหม่อยู่ก่อน ไม่งั้น UPDATE ชนคีย์หลัก)
+  · **`UNIQUE (tenant_id, location_id, code)` เฉย ๆ ใช้ไม่ได้** — NULL ไม่ชนกับ NULL สถานีระดับร้าน
+    จึงซ้ำได้ไม่จำกัด · ต้องเป็นดัชนีบางส่วนสองตัว (`WHERE location_id IS NULL` / `IS NOT NULL`)
+  · **ชื่อล้วนที่มาทางเส้นทางเก่าถูกยกขึ้นเป็นแถวหลักอัตโนมัติ** (`ensureKitchenStationByNameInTx`)
+    — ผู้เรียกทางนี้คือฟอร์มสินค้าและ `devSeed` · **ไฟล์นำเข้าสินค้ายังไม่มีคอลัมน์สถานีเลย**
+    (ตรวจ HEADER_MAP ใน `ImportModal.tsx` ก่อนเชื่อคอมเมนต์ไหนที่อ้างถึงมัน — ถ้าจะเพิ่มคอลัมน์
+    ต้องตัดสินใจแยกเพราะมันคือ "สัญญารูปแบบไฟล์") · ไม่ยกขึ้นเป็นแถวหลัก = สถานีกำพร้างอกขึ้น
+    เรื่อย ๆ ซึ่งเปิด/ปิดไม่ได้ เรียงไม่ได้ และตั้งเกณฑ์เวลาให้ได้ต่อเมื่อพิมพ์ชื่อตรงเป๊ะ
+    (= อาการที่งานนี้ทำมาเพื่อเลิก)
+  · **สถานีที่ปิดใช้งานแล้วยังรับตั๋วโดยตั้งใจ** — ทำให้อาหารหายจากกระดานเพราะการตั้งค่า แย่กว่ามีตั๋ว
+    บนสถานีที่กำลังจะเลิกใช้ · readiness เตือน `KITCHEN_STATION_INACTIVE` /
+    `KITCHEN_STATION_BRANCH_SCOPED` **เป็น warning ไม่ใช่ blocker** (บล็อก = ร้านขายไม่ได้เพราะการ
+    ตั้งค่าที่แก้ทีหลังได้) · ปิดสถานีที่ยังมีเมนูเปิดขายผูกอยู่ต้องยืนยัน (`force`) ก่อน
+  · **⚠️ กับดักที่เทสจับได้ (ไม่ใช่ตา): `\p{L}` ไม่ครอบสระ/วรรณยุกต์ไทย** — "ครัวร้อน" กลายเป็น
+    "คร_วร_อน" เพราะ ั และ ้ เป็น `\p{Mn}` · ต้องใส่ `\p{M}` ด้วย · ฝั่ง SQL `[[:alnum:]]` จะนับ
+    อักขระพวกนี้หรือไม่ **ขึ้นกับ locale ของเซิร์ฟเวอร์** จึงระบุช่วง `ก-๙` ตรง ๆ ในไมเกรชัน
+    · รหัสสองฝั่งไม่จำเป็นต้องตรงกันแบบไบต์ต่อไบต์ (จับคู่สถานีใช้ "ชื่อ") แต่ต้องผ่าน CHECK เดียวกัน
+  · **`printer_profile_id` เป็นช่องว่างเผื่ออนาคต ไม่มีตาราง ไม่มีผู้อ่าน ไม่มีผู้เขียน** — ห้ามเดา
+    การต่อเครื่องพิมพ์จากคอลัมน์นี้ · per-station printer routing **ยังไม่ได้ทำ**
+  · UI: การ์ด "สถานีครัว" ที่ `/admin/stock-models` (สร้าง/แก้/ปิด/ลำดับ/ขอบเขต/จำนวนเมนูที่ผูก) ·
+    ช่อง Kitchen station ในฟอร์มรูปแบบสต็อกเปลี่ยนเป็น Select จากทะเบียน (ส่ง `kitchenStationId`) ·
+    ฟอร์มสินค้ายังเป็น AutoComplete แต่ตัวเลือกมาจากทะเบียน · ตัวกรองบน `/admin/kitchen` และแท็บครัว
+    ของ `/pos/restaurant` มาจากทะเบียน + สถานีที่มีตั๋วจริง เรียงตาม `sort_order`
+    · **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** (ผ่านแค่ `tsc` + build + เทส)
+  · i18n: เพิ่ม `admin_stock.*` 27 คีย์ทั้ง th/en (`i18n-keys-contract` ผ่าน)
+  · แคตตาล็อกผู้ช่วย: กลุ่มกฎใหม่ `limits.kitchen-stations` (7 ข้อ th/en) ผูกกับ
+    `inventory.stock-models` · `kitchen.board` · `pos.restaurant-kitchen-round` + ปักคำถาม 2 ข้อ
+    ("หลายครัวในสาขาเดียวตั้งยังไง" / อังกฤษ) ที่ `inventory.stock-models`
+  · **สิ่งที่เจอเพิ่มตอน recheck รอบสอง (แก้ครบแล้ว)**:
+    1. **ตั๋วยุคก่อน `9.54` (มีชื่อ ไม่มี id) หลุดจากปุ่มของครัวตัวเอง** — `ticketMatchesStation`
+       เทียบ id อย่างเดียว · ตั๋วที่โค้ดรุ่นเก่าเขียนไว้ระหว่าง deploy จึงไปกองที่ปุ่มตกค้าง
+       ทั้งที่เป็นครัวเดียวกัน · ตอนนี้ตั๋วที่ไม่มี id จับคู่ด้วยชื่อได้ และ
+       `kitchenBoardStationFilters` ไม่งอกปุ่มที่สองที่เขียนชื่อซ้ำกับสถานีในทะเบียน
+    2. **`resolveKitchenStationForProductInTx` เป็นโค้ดที่ไม่มีใครเรียก** ขณะที่ผู้เขียนจริงสองที่
+       ถือสำเนาของกฎเดียวกันคนละชุด — ยุบเหลือชุดเดียวแล้ว (ดูด้านบน)
+    3. **จอสั่งอาหารตอบไม่ตรงกับตั๋ว** เรื่องสถานีเฉพาะสาขา (ดูด้านบน)
+    4. **`normalizeKitchenStationCode` สร้างรหัสที่ตัวตรวจของตัวเองปฏิเสธ** เมื่อชื่อขึ้นต้นด้วย
+       สระ/วรรณยุกต์ลอย — ผู้ใช้ที่พิมพ์แต่ "ชื่อ" เจอ error เรื่องรูปแบบ "รหัส" ที่ไม่เคยกรอก
+    5. `/api/pos/kitchen/tickets` เคยล้มทั้งจอถ้าทะเบียนสถานีอ่านไม่ได้ → กลืน error แล้วตกกลับไป
+       ใช้ปุ่มกรองจากตั๋วจริง
+    6. หน้า Stock models อ่านค่าฟอร์มระหว่าง render (`policyForm.getFieldValue`) ซึ่ง antd เตือน
+       ว่าฟอร์มยังไม่ผูก — เปลี่ยนไปอ่านจากผลของ query
+    7. `storeCapabilities` ตรวจ `KITCHEN_WORKFLOW` จาก `kitchen_station` อย่างเดียว → เพิ่ม
+       `kitchen_station_id` ด้วย เพราะ id คือความจริงตั้งแต่ `9.54`
+  · เทส: `scripts/kitchen-station-contract.test.mts` (15 เทส pure) + 6 เทสใหม่ใน
+    `kitchen-board-contract` (รวม 22) + `scripts/kitchen-station-db-contract.test.mts` (18 เทส DB
+    **ยังไม่ได้รัน**) · **ผ่าน mutation test แล้ว 5 แบบ** (ถอดการกรองสาขา · จับคู่ด้วยชื่ออย่างเดียว ·
+    ลดสิทธิ์ mutation เป็น product.view · เลิกยกชื่อขึ้นเป็นแถวหลัก · จัดกลุ่มด้วยชื่อแทน id) แดงถูกตัว
+    ทุกครั้ง · และ mutation ที่คอร์ปัสผู้ช่วย (ย้าย expectTop ไป `kitchen.board`) ก็แดงจริง
+  · **⚠️ บทเรียนตอนแก้: `io.open(path,'w')` ของ Python บน Windows แปลง `\n` เป็น CRLF** — ไฟล์ในรีโป
+    นี้บางไฟล์เป็น LF (เช่น `kitchenBoard.ts` ที่มีไบต์ NUL อยู่ในสตริง จึงถูก git มองว่า binary และ
+    ไม่โดน autocrlf) การแก้ด้วยสคริปต์จึงทำให้ diff บวมจาก 96 เป็น 598 บรรทัดโดยไม่มีการเปลี่ยนเนื้อหา
+    · ตรวจด้วย `git diff --stat` ทุกครั้งหลังแก้ด้วยสคริปต์ แล้วคืน EOL ให้ตรงกับ `git show HEAD:<path>`
+
+- **`9.30__bms_ar_credit_sales.sql` (ขายเชื่อ + ลูกหนี้การค้า) เขียนแล้วบน branch `feat/ar-credit-sales`
+  (2026-08-27)** — `tsc --noEmit` ผ่าน · production build ผ่าน · เทส pure **268 ตัวผ่านทั้งหมด**
+  (ชุด `scripts/ar-contract.test.mts` ตอนนี้ 19 ตัว) · **⚠️ ยังไม่ได้ apply migration เข้า dev DB และ
+  ยังไม่ได้รันเทส DB** (`scripts/ar-db-contract.test.mts` ตอนนี้ 25 ตัว) เพราะเครื่องนี้ไม่มี Postgres ของ BMS
+  รันอยู่ — ต้อง apply + รันชุดนั้นให้ผ่านก่อนเชื่อว่าใช้ได้จริง แล้วค่อย apply เข้า production
+  · seed permission ใหม่ 5 ตัว: `ar.view`/`ar.collect` (Manager/Sales/Cashier) · `ar.sell`
+    (Manager/Sales) · `ar.manage`/`ar.writeoff` (Manager) — ไม่ apply = เมนู "ลูกหนี้การค้า" ไม่ขึ้น
+    และปุ่มขายเชื่อที่หน้า POS ไม่โผล่ (เงียบ ๆ ตามดีไซน์ ไม่ใช่ 403)
+  · **ต้นเหตุ**: `bms_payments.method` มี 7 ค่าแต่ไม่มีค่าไหนแปลว่า "ยังไม่ได้เงิน" ร้านค้าส่ง/ร้านที่มี
+    ลูกค้าประจำเปิดบิลเชื่อจึงใช้ POS ตัวนี้ไม่ได้เลย (ไม่ใช่ไม่สะดวก — ทำไม่ได้)
+  · **ขายเชื่อกลับด้านกับมัดจำ (9.0) คนละเรื่อง อย่าเอามาแทนกัน**: มัดจำ = ได้เงินบางส่วน ของยังอยู่
+    กับร้าน บิลค้าง `PENDING` · ขายเชื่อ = ของออกไปแล้ว บิลปิดครบเส้น (ตัดสต็อก ออกใบกำกับ ให้แต้ม)
+    แต่เงินยังไม่เข้า → เกิด **ลูกหนี้ซึ่งเป็นสินทรัพย์** ไม่ใช่บิลค้าง
+  · **ทำเป็น "วิธีชำระเงิน" (`method = 'CREDIT'`) ไม่ใช่บิลที่ยังไม่จ่าย** เพื่อให้เส้นทางเดิมใช้ได้ทั้งเส้น
+    โดยเฉพาะ **เส้นทางคืนของ** ซึ่งจัดสรรยอดคืนกลับไปที่ "แถวชำระเงินที่จ่ายมา" อยู่แล้ว → คืนของบิลเชื่อ
+    จึงไปลดหนี้เองโดยไม่ต้องเขียนกฎใหม่ · ทำเป็นบิลค้างแทน = ต้องเขียนเส้นทางคืน/void/ใบกำกับใหม่ทั้งชุด
+    · ผลพลอยได้ที่ได้มาฟรี: **จ่ายสดบางส่วน ค้างบางส่วน** ในบิลเดียว
+  · **⚠️ สองตัวเลขที่ห้ามปนกัน**:
+    1. `CREDIT` **ไม่ใช่เงินสด** — `drawerExpectedInTx()` กรอง `method = 'CASH'` อยู่แล้วจึงปลอดภัย
+       โดยโครงสร้าง (กฎเดียวกับ `STORE_CREDIT` ที่ 8.9) · **มีเทส pure อ่านซอร์สคุมไว้** เพราะถ้าวันหนึ่ง
+       มีคนแก้ให้รวมทุกวิธีชำระ ทุกร้านที่ขายเชื่อจะนับปิดกะเกินจริงเท่ายอดเชื่อทุกวันโดยที่บิลก็ถูก เงินก็ถูก
+    2. **เงินที่เก็บได้ทีหลังเข้าลิ้นชักของกะที่รับ ไม่ใช่กะที่ขาย** — ลงเป็น `bms_pos_cash_movements`
+       (IN) ในทรานแซกชันเดียวกับใบรับเงิน · ถ้าลง `bms_payments` ของบิลเดิม เงินจะไปโผล่ในกะที่ปิดไปแล้ว
+  · **วงเงินถูกตรวจสองครั้งด้วยฟังก์ชันตัวเดียว** (`evaluateArCharge` ใน `lib/bms/arCredit.ts` ซึ่ง
+    **ตั้งใจไม่ import อะไรเลย** แบบ `loyaltyMath.ts` เพื่อให้เทสได้โดยไม่ต้องมี DB): ก่อนสร้างบิล
+    (ล้มแล้วไม่มีสต็อกถูกจอง) และในทรานแซกชันที่ตัดสต็อกพร้อม `FOR UPDATE` (สองเครื่องขายให้ลูกค้า
+    คนเดียวกันพร้อมกันได้) · สองสูตรที่ตัดสินเรื่องเดียวกันจะ drift แล้วจอจะบอกว่าขายได้ทั้งที่ server ปฏิเสธ
+  · **`round2` ในการเทียบวงเงินไม่ใช่การจัดหน้าตัวเลข มันคือด่าน** — 259.30 + 55.29 =
+    314.59000000000003 ในเลขทศนิยมของ JS ทั้งที่ทั้งสองก้อนเป็นสตางค์ลงตัว ถ้าเทียบตรง ๆ บิลที่พอดีเป๊ะ
+    จะถูกตีตกแบบสุ่มตามคู่ตัวเลข (มีเทสใช้เลขคู่นี้เป็น golden · ยืนยันด้วย mutation test 4 แบบ:
+    ถอด round2 / ปฏิเสธที่ขอบวงเงิน / แถมวงเงิน 5 สตางค์ / ไม่นับยอดค้างเดิม — แดงถูกตัวทั้งหมด)
+  · **`ar.sell` ไม่ให้ Cashier แต่แคชเชียร์ยังขายเชื่อได้ด้วย PIN ของคนที่มีสิทธิ์** และ **ผู้อนุมัติ
+    เป็นคนขายเองได้** (แบบ 9.29 ไม่ใช่แบบส่วนลดมือ) — ร้านค้าส่งที่เปิดบิลเชื่อสิบใบต่อวันถ้าต้องตาม
+    คนที่สองทุกใบจะเลิกใช้ระบบแล้วกลับไปจดสมุด
+  · **ยอดบัญชีติดลบได้โดยตั้งใจ** (ต่างจากเครดิตร้าน 8.9 ที่ห้าม) = ร้านค้างลูกค้าจากการคืนของหลังจ่ายครบ
+    · ใส่ `CHECK (balance >= 0)` = การคืนของที่ถูกต้องจะล้มกลางเคาน์เตอร์ ซึ่งแย่กว่ายอดติดลบ ·
+    ยอดติดลบถูกย้ายใน ledger ไปหักใบค้างเก่าสุด/บิลเชื่อถัดไปภายใต้ account lock; ไม่เช่นนั้น account
+    จะบอกว่าร้านค้างลูกค้าแต่ aging ยังบอกให้ไปตามหนี้จากลูกค้าคนเดียวกันพร้อมกัน
+  · **รับเกินยอดค้างถูกปฏิเสธ ไม่ใช่เก็บเป็นเงินล่วงหน้าเงียบ ๆ** — เงินที่จ่ายเกินที่เคาน์เตอร์เกือบทั้งหมด
+    คือพิมพ์ผิด · คนที่ตั้งใจจ่ายล่วงหน้าจริงให้ลงมัดจำ (9.0) หรือซื้อเครดิตร้าน (8.9)
+  · **receipt idempotency ผูกกับ payload แล้ว** — ล็อกคีย์ tenant-wide ก่อนแตะ account/shift และเก็บ
+    `request_hash`; retry คำขอเดิม replay แต่คีย์เดิมกับยอด/บัญชี/วิธีคนละก้อนตอบ
+    `IDEMPOTENCY_CONFLICT` แทนการคืนใบรับเงินเก่าให้รายการใหม่หรือชน unique constraint เป็น 500
+  · **ตัดใบเก่าก่อน (FIFO ตามวันครบกำหนด)** ไม่ใช่หักยอดรวม — อายุหนี้คือเครื่องมือเดียวที่บอกว่าหนี้
+    ก้อนไหนค้างนาน หักยอดรวมเฉย ๆ จะทำให้ทุกใบดูค้างเท่ากันตลอดไป
+  · **cache ทุกตัวคำนวณใหม่จาก ledger ไม่ใช่ `+=`** (`balance`, `settled_amount`, `credited_amount`)
+    · `balanceMismatchCount` ต้องเป็น 0 เสมอ — ไม่ 0 คือมีทางเขียนที่ลืมคำนวณใหม่ **ห้ามปิดงบ**
+  · **ยอดลูกหนี้คงค้างเป็นสินทรัพย์** (กลับข้างกับแต้ม/เครดิตร้านที่เป็นหนี้สิน) ส่งตัวเลขจาก
+    `getArOutstanding()` ให้บัญชีก่อนปิดงบ
+  · **หน้า UI: `/admin/receivables`** (เมนูกลุ่มร้านค้า ถัดจากการชำระเงิน) + การ์ดเครดิตลูกค้า/ปุ่ม
+    "ขายเชื่อ"/ฟอร์มรับชำระที่หน้า POS — **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์ ผ่านแค่ `tsc` + build**
+  · **ยังไม่ได้ทำ (จงใจ)**: ใบแจ้งหนี้/ใบวางบิลส่งลูกค้า · ดอกเบี้ย/ค่าปรับล่าช้า · ตารางผ่อนชำระ
+    (มีวันครบกำหนดใบละหนึ่งวัน) · workflow ขออนุมัติวงเงิน (ผู้จัดการตั้งตัวเลขเอง)
+
+- **`9.40__bms_multi_store_stock_capabilities.sql` + `9.41__bms_weighted_product_scale_mapping.sql`
+  (ความสามารถสต็อกตามประเภทร้าน + สูตร/ตัวเลือก/คิวครัว/ของเสีย + บาร์โค้ดเครื่องชั่ง)
+  **apply เข้า dev DB แล้ว ยืนยันด้วย `to_regclass` และคอลัมน์จริงแล้ว 2026-08-31** — ยังไม่ได้ apply
+  เข้า production · **ไม่มี permission ใหม่** (อ่านใช้ `product.view`/`order.view` · แก้รูปแบบสต็อกใช้
+  `product.edit` · เลื่อนรายการครัวใช้ `order.ship` · ตัดของเสียใช้ `stock.adjust`)
+  · **⚠️ createOrder / resolvePosScan / recordPosSale อ่านตารางของ 9.40 กับทุกบิลของทุกร้าน**
+    (`bms_product_stock_policies`, `bms_store_capabilities`) — ฐานที่ยังไม่ apply **ขายไม่ได้ทั้งระบบ
+    ไม่ใช่แค่ร้านอาหาร** · repo นี้ไม่มี schema probe ที่ไหนเลยจึงไม่ได้เพิ่ม แต่แปลว่า
+    **ต้อง apply migration ก่อน deploy โค้ดชุดนี้เสมอ** (บทเรียนเดียวกับ 9.29 ข้อ 1)
+  · **แก้ต่อจากงาน codex 2026-08-31 (รอบนี้)** — ของที่ codex ทำค้างไว้แล้วทำให้ gate แดง/ฟีเจอร์เข้าไม่ถึง:
+    1. **หน้าใหม่ 3 หน้าไม่มีคีย์ i18n สักตัว** (`admin_stock` 84 คีย์ · `admin_wastage` 22 ·
+       `admin_kitchen` 17 รวมคีย์ที่ประกอบตอนรัน `status_*`/`move_*`) → `getMessage()` คืนชื่อ key ดิบ
+       ทั้งหน้า และ `i18n-keys-contract` แดง 180 รายการ · เติมครบทั้ง th/en แล้ว
+    2. **`CAPABILITY_COPY` ในหน้า stock-models เป็นภาษาไทย hardcode 13 ตัว** (คำอธิบายความสามารถ)
+       เทส i18n จับไม่ได้เพราะไม่ได้ผ่าน `t()` → ผู้ใช้ที่ตั้งภาษาอังกฤษเห็นไทยล้วน · ย้ายเข้า
+       `admin_stock.cap_<code>_title/_desc` แล้ว (เช่นเดียวกับ fallback `"ทำรายการไม่สำเร็จ"`)
+    3. **สามหน้าใหม่ไม่มีเมนูใน sidebar เลย** — เข้าได้ทาง URL อย่างเดียว · เพิ่มแล้ว:
+       Stock Models + Wastage อยู่ในกลุ่มร้านค้าต่อจาก Stock Counts (gate `product.view`) ·
+       **กระดานครัวขึ้นเฉพาะร้านที่ `business_archetype = 'restaurant'`** (แบบเดียวกับ `isPharmacyShop`)
+       เพราะ preset ของร้านอาหารเป็นประเภทเดียวที่เปิด `KITCHEN_WORKFLOW` · **ร้านประเภทอื่นที่ไปเปิด
+       ความสามารถนี้เองยังไม่มีเมนู** (จงใจ — bootstrap query ของ sidebar อ่าน `bmsStoreCapabilities`
+       ไม่ได้โดยไม่บังคับสิทธิ์ `product.view` ให้ทุกคน และ query นั้นแตะตารางของ 9.40 ซึ่งจะทำให้
+       sidebar ของฐานที่ยังไม่ apply พังทั้งอัน)
+    4. **แคตตาล็อกผู้ช่วยไม่รู้จักหน้าใหม่** → `work-assistant-knowledge-contract` แดงที่
+       "Admin page has no guide: /admin/kitchen" · เพิ่ม guide 3 (`inventory.stock-models`,
+       `inventory.wastage`, `kitchen.board`) + capability 3 (`inventory.stock-model`,
+       `inventory.wastage-ledger`, `kitchen.workflow`) + **ปักคำถาม 9 ข้อในคอร์ปัส** (ไทย/อังกฤษ
+       อย่างละชุด + คำถามแบบ "ระบบมี…ไหม") · แคตตาล็อกขึ้นเป็น **45 capability · 94 guide**
+       (แก้ตัวเลขใน CLAUDE.md และ `docs/ai/work-assistant-coverage.md` ให้ตรงแล้ว)
+    5. `docs/architecture/api.md` ไม่มีแถวของ `bmsStockCapabilities.ts` — เพิ่มแล้ว
+  · **ผลรันจริงรอบนี้ (2026-08-31)**: `tsc --noEmit` ผ่าน · **pure 557 เทสผ่านทั้งหมด** (จาก 503) ·
+    production build ผ่าน · **DB 291 เทส ผ่าน 289**
+  · **⚠️ เทส DB ที่แดง 2 ตัวเป็นของเดิมบน `main` ไม่ใช่ของงานชุดนี้** — ยืนยันด้วยการ `git stash` แล้ว
+    รันบน HEAD ได้ผลแดงเหมือนกันเป๊ะ · **ยังไม่ได้แก้ (คนละเรื่องกับงานนี้)**:
+    1. `pos-serial-db-contract` → *two simultaneous bills cannot both claim the same serial* ล้มด้วย
+       **deadlock `40P01` ที่ `bms_pos_shifts`** (FK KEY SHARE ตอน INSERT `bms_orders`) — สองบิลที่แข่งกัน
+       ล็อกสต็อกคนละลำดับแล้วมาชนกันที่แถวกะ · เป็นบั๊กจริงของเส้นทางขายพร้อมกัน ไม่ใช่เทสเปราะ
+    2. `pharmacy-counter-authorization-db-contract` → teardown ลบ `bms_pos_shifts` ไม่ได้เพราะ
+       `bms_orders_pos_shift_id_fkey` ยังอ้างอยู่ (ลำดับลบใน teardown ผิด) → **ทิ้งข้อมูลทดสอบค้างใน
+       dev DB ทุกรอบ**
+  · **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** — ยืนยันได้แค่ว่าทั้งสามหน้าตอบ `307` ไป `/admin/login`
+    (route มีจริงและ middleware กันถูก) แต่ตัวหน้าไม่เคยเรนเดอร์ให้คนดู เพราะเข้าระบบไม่ได้จากที่นี่
+  · **recheck รอบสอง (2026-08-31, คำสั่งเดียวกัน) — เจอของจริงอีก 3 จุด แก้ครบแล้ว**:
+    1. **⚠️ `9.42__bms_stock_movement_wastage_type.sql` — การตัดของเสียล้มทุกครั้ง 100%**
+       `movements.ts` เพิ่ม `WASTAGE` เข้า `MovementType` แต่ **ไม่มีใครขยาย
+       `bms_stock_movements_type_check`** ซึ่งยังเป็น 11 ค่าจาก `7.98` → `recordInventoryWastage()`
+       ล้มที่บรรทัดเขียน movement ทุกครั้ง (`23514`) = ทั้งหน้า `/admin/wastage` เขียนอะไรไม่ได้เลย
+       · **apply เข้า dev DB แล้วและ reproduce ยืนยันทั้งก่อน/หลังแก้** · ยังไม่ได้ apply production
+       · เหตุที่หลุด: เทส DB ของ `9.40` **ไม่เคยเรียกเส้นทางเขียนของเสียเลยสักครั้ง**
+       · กันย้อนกลับ: เทียบ `MovementType` กับ CHECK จริงในฐานได้ด้วย
+         `select pg_get_constraintdef(oid) from pg_constraint where conname='bms_stock_movements_type_check'`
+         — **เพิ่มชนิด movement ใหม่เมื่อไหร่ต้องมี migration คู่เสมอ**
+    2. **⚠️ `createShipment()` ตัดสต็อกจาก `bms_order_items` ตรง ๆ ไม่ใช่จาก view** — เป็น
+       "จุดที่ห้า" ที่ขยับสต็อก ซึ่งเอกสารนับไว้แค่สี่ · บิลที่มีสินค้าชุด (8.8) หรือเมนูที่มีสูตร (9.40)
+       จะไปลด `current_stock` ของ SKU แม่ที่คาอยู่ที่ 0 → ชน `CHECK (current_stock >= 0)`
+       = **ส่งของบิลนั้นไม่ได้เลย** และส่วนประกอบที่จองไว้จริงไม่เคยถูกตัด · **บั๊กนี้มีมาตั้งแต่ `8.8`**
+       ไม่ใช่ของใหม่ แต่ `9.40` ทำให้โดนทุกบิลของร้านอาหาร
+    3. **⚠️ `releaseExpiredOrders()` (cron `orders/release-expired`) ปล่อยของจาก `bms_order_items`
+       ตรง ๆ เหมือนกัน** — และร้ายกว่า เพราะมันทำ **ทุก tenant ในทรานแซกชันเดียว**: บิลที่มีเซ็ต/เมนู
+       ใบเดียวในชุด ทำให้ `reserved_stock` ของ SKU แม่ติดลบ → ชน `CHECK (reserved_stock >= 0)` →
+       **ทั้ง batch rollback = ไม่มีบิลหมดอายุของร้านไหนถูกปล่อยเลย เงียบ ๆ**
+       · ตอนเขียนเทสพบว่า **dev DB มีบิล PENDING ค้างเกิน 30 นาทีอยู่ 21 ใบ** และการเรียก
+         `releaseExpiredOrders()` บนฐานนี้ยัง throw อยู่ (`ADIDAS-RUN/M` reserved จะติดลบ) —
+         **นั่นคือ data drift ของ dev เอง ไม่ใช่ผลจากงานชุดนี้** แต่แปลว่า cron ตัวนี้พังอยู่บนฐานนี้
+         และ **ยังไม่ได้แก้**: ออกแบบให้ทั้ง batch อยู่ใน transaction เดียว ร้านเดียวข้อมูลเพี้ยน
+         จึงบล็อกทุกร้านตลอดไป (ควรแยกต่อบิล/ต่อร้าน — เป็นการตัดสินใจเชิงออกแบบ ไม่ใช่บั๊กบรรทัดเดียว)
+    · **กันย้อนกลับด้วยเทส pure ตัวใหม่ `scripts/order-stock-lines-contract.test.mts` (2 เทส)** —
+      สแกนทุก statement ใน `lib/bms` ที่เขียน `bms_inventory` แล้วเอ่ยถึง `bms_order_items`
+      (ตัดคอมเมนต์ `--` ออกก่อน ไม่งั้นคอมเมนต์ที่อธิบายกฎถูกจับเป็นของจริง — กับดักเดิมกับตอนทำ
+      เทส cron fail-open) + ตรวจฝั่งกลับว่า 4 ไฟล์ที่ขยับสต็อกต้องยังเอ่ยถึง view จริง ·
+      **ยืนยันว่าแดงจริง** ด้วยการย้อนทั้งสองแพตช์กลับไป (แดงถูก 2 เทส ชี้ `orders.ts` + `shipping.ts`)
+    · **เทส DB ของ `9.40` ขยายเป็น 9 เทส** เพิ่ม: ตัดของเสียจริง (สต็อกลด + movement + audit +
+      ประวัติ) · ตัดของเสียเกินของที่ไม่ถูกจองต้องถูกปฏิเสธและไม่แตะการจอง · คิวครัวสร้างซ้ำไม่ได้
+      และเลื่อนสถานะข้ามขั้นไม่ได้ · **ส่งของบิลเมนูต้องตัดวัตถุดิบ ไม่ใช่แถว 0 ของเมนู**
+    · **ตรวจแล้วว่าไม่มีปัญหา**: `business_archetype` CHECK ครอบ 3 ประเภทใหม่แล้วใน `9.40` ·
+      `normalizeShopArchetype` อ่านจากลิสต์เดียวกับ dropdown · เอกสาร GraphQL 13 ตัวใหม่มี resolver
+      ครบทุกตัว · เอกสาร gql ทั้ง 13 ชุดในหน้าใหม่+POS validate ผ่าน schema จริง · RLS/GRANT ของ
+      ตารางใหม่ครบใน `9.40` · เส้นทางคืนของ POS อ่าน view อยู่แล้ว
+    · `MOVE_COLOR` ที่ `/admin/products` เพิ่ม `WASTAGE` (ของเดิมไม่มีสีก็แค่ tag สีเทา ไม่ใช่บั๊ก)
+  · **recheck รอบสาม — เจาะเฉพาะหน้า POS (2026-08-31) เจอของจริงอีก 4 จุด แก้ครบแล้ว**:
+    1. **⚠️ `parsePosSaleLines()` ทิ้ง `modifierCodes` และ `scaleBarcode` ทั้งคู่** — ตัวแยกนี้เป็น
+       **allowlist** ฟิลด์ที่ไม่ได้เขียนไว้จะหายเงียบระหว่างจอกับ `recordPosSale` · ผลจริง 2 อย่าง:
+       (ก) **เมนูที่ลูกค้าสั่งพร้อมตัวเลือกถูกตัดวัตถุดิบตามสูตรเปล่า เงียบสนิท** และคิวครัวไม่มีตัวเลือก
+       (ข) **สินค้าชั่งขายถูกคิดเป็น 1 หน่วยฐานแทนน้ำหนักจริง** (`qty = packQty × base_qty` = 1)
+       แล้วยอดไม่ตรงกับที่จอคิด → `PAYMENT_MISMATCH` **บิลถูกทิ้งทั้งใบหน้าลูกค้า** = ขายของชั่งไม่ได้เลย
+       · **เหตุที่หลุด: เทส DB ของ 9.40 เรียก `createOrder()` ตรง ๆ ไม่เคยผ่าน route จริง**
+       · เทสใหม่ 2 ตัวใน `scripts/pos-contract.test.mts` ปักไว้แล้ว (normalize + เพดาน 20 ตัวเลือก)
+    2. **⚠️ `resolvePosScan()` กลืนบาร์โค้ดที่ขึ้นต้น 21/22 ทุกตัวแล้วคืน null** — `checkBarcode()`
+       ตั้งใจ "เตือน ไม่บล็อก" ร้านจึงมีสินค้าที่บาร์โค้ดขึ้นต้นด้วยเลขพวกนี้ได้จริง และปุ่มสร้างเลขของร้าน
+       ก็ครอบ 20–29 ทั้งช่วง → **สินค้าพวกนั้นยิงไม่ขึ้นที่เคาน์เตอร์** โดยขึ้นแค่ "ไม่พบสินค้า"
+       · แก้เป็น: ป้ายที่แกะแล้ว **map ไม่ได้ ตกลงไปค้นแบบบาร์โค้ดปกติ** (ไม่ใช่คืน null) ·
+         **การันตีเดิมยังอยู่**: มีแต่กิ่ง prefix 22 ที่ map สำเร็จเท่านั้นที่ตั้ง `embeddedBaseQty`
+         ป้ายราคา (21) จึงไม่มีทางกลายเป็นน้ำหนักได้เหมือนเดิม (เทส pure ตรวจลำดับกิ่งนี้ไว้แล้ว)
+    3. **`inStoreBarcode()` ออกเลข prefix 21/22 ได้** ซึ่งชนกับป้ายเครื่องชั่ง — เลข 5 หลักกลาง
+       อาจไปตรงกับรหัสสินค้าบนเครื่องชั่ง แล้วสินค้าชิ้นถูกอ่านเป็นของชั่งขายพร้อมน้ำหนักจากบาร์โค้ด
+       ของตัวเอง · ตอนนี้ปฏิเสธสอง prefix นี้ที่ต้นทาง (เทสใน `barcode-contract` คุมไว้)
+    4. **จอบอกคนละเลขกันเองสำหรับของชั่งขาย** — ยอดรวมบิลคิดเต็มน้ำหนัก แต่บรรทัดคำอธิบายเขียนว่า
+       `฿ราคา × 1 กรัม` และ **ยอดท้ายบรรทัด (กับจอลูกค้า) คิด `ราคาต่อกรัม × 1`** เมื่อสินค้านั้นติด
+       ราคาส่ง → ป้าย 750 กรัมโชว์ ฿0.05 ท้ายบรรทัดขณะยอดรวมเป็น ฿37.50
+       · รวมกฎไว้ที่ `cartLineCharge()` ตัวเดียว แล้วให้ยอดรวม/บรรทัด/ท้ายบรรทัด/จอลูกค้าอ่านจากที่นั่น
+  · **ตรวจแล้วว่าไม่มีปัญหาในหน้า POS**: ฝั่งจอคิดจำนวนขั้นราคาส่ง/โปรเป็น **หน่วยฐาน**
+    (`packQty × baseQty`) ตรงกับ `createOrder` ที่ใช้ `it.qty` แล้ว — ของเดิมก่อน 9.40 นับ pack เป็น
+    1 ชิ้นซึ่ง **ไม่ตรงกับ server อยู่ก่อนแล้ว** งานชุดนี้แก้ให้ตรงไปด้วย · ป้ายเครื่องชั่งถูก server
+    แกะใหม่ตอน `canonicalizePosSaleLines` ไม่เชื่อ `baseQty` จาก browser · กล่องเลือกตัวเลือกเรนเดอร์จริง
+    และปิดการสแกนระหว่างเปิด (`blockingOverlayOpen`) · พักบิล/กู้บิลเก็บทั้ง `modifierCodes` และ
+    `scaleBarcode` เพราะ snapshot เก็บ CartLine ทั้งก้อน · `refreshCartPricing` ยิงป้ายเดิมซ้ำ
+    (`line.scaleBarcode ?? line.sku`) และปฏิเสธเมื่อ modifier ถูกปิดไปแล้ว
+  · **รอบสี่ — ตามผลวิเคราะห์ "ร้านคนละประเภท POS เหมือนกันไหม" (2026-08-31) แก้ 3 เรื่อง**:
+    1. **⚠️ สวิตช์ความสามารถ 13 ตัว มีผลจริงแค่ 5** — ไล่ `isCapabilityEnabledInTx` ทั้ง repo เจอ
+       แค่ `RECIPE` `MODIFIER` `WEIGHTED_PRODUCT` `WASTAGE` (+`KITCHEN_WORKFLOW` ที่เพิ่งเพิ่ม) ·
+       อีก 8 ตัวไม่มีใครอ่านเลย เพราะของจริงตัดสินจาก **การมีข้อมูล**: มีแถวใน
+       `bms_product_packs` → ยิงแพ็กได้ · มีแถวใน `bms_inventory_lots` → กันของหมดอายุ + FEFO ·
+       `bms_products.serial_tracked` → บังคับเลขเครื่อง · `business_archetype='pharmacy'` → ด่านยา
+       · **สวิตช์ที่กดแล้วไม่เกิดอะไรแย่กว่าไม่มีสวิตช์** เพราะคนอ่านว่า "ปิดไปแล้ว" ทั้งที่ยังทำงานอยู่
+       (ร้านปิด `LOT_TRACKING` แล้วยังขายล็อตหมดอายุไม่ได้อยู่ดี)
+       · แก้เป็น: `GATING_CAPABILITIES` เป็นลิสต์เดียวที่ UI แสดงเป็นสวิตช์และที่
+         `upsertStoreCapability()` ยอมเขียน · ที่เหลือแสดงเป็น **"ระบบตรวจพบจากข้อมูล"** อ่านอย่างเดียว
+         และเขียนไม่ได้ (override ที่ไม่มีความหมายคือคำโกหกชั้นเดียวกัน แค่ลึกกว่า)
+       · **จงใจไม่ทำให้เป็นสวิตช์จริง**: ปิด `LOT_TRACKING`/`EXPIRY_TRACKING`/`FEFO` = ปุ่มขายของ
+         หมดอายุ · ปิด `PACK` = ร้านอาหารยิงแพ็กไม่ได้ทันที (preset ของร้านอาหารไม่มี `PACK` เลย
+         แต่สินค้ายังตั้งแพ็กไว้ได้)
+       · กันย้อนกลับ: `scripts/store-capability-gates-contract.test.mts` (2 เทส) บังคับให้ลิสต์สวิตช์
+         **เท่ากันเป๊ะ** กับชุดที่ซอร์สเรียก `isCapabilityEnabledInTx` จริง ทั้งสองทิศ (สวิตช์ที่ไม่มีคนอ่าน
+         = แดง · gate ที่ไม่มีสวิตช์ = แดง) · **ยืนยันแดงจริง** ด้วยการใส่ `FEFO` เข้าลิสต์
+    2. **ตั๋วครัวงอกในร้านที่ไม่มีครัว** — `enqueueKitchenTicketsInTx` ดูแค่ `stock_policy='RECIPE'`
+       ไม่ดูความสามารถ · preset ของ `food_beverage` มี `RECIPE` แต่**ไม่มี** `KITCHEN_WORKFLOW`
+       ร้านที่ใช้สูตรเพื่อตัดวัตถุดิบอย่างเดียวจึงมีตั๋วสะสมทุกบิลโดยไม่มีหน้าจอไหนแสดงและไม่มีใครปิดได้
+       · ตอนนี้ gate ด้วย `KITCHEN_WORKFLOW` · **station ยังเป็น NULL ได้ตามเดิม** (กระดานมีช่อง
+       "ไม่ระบุ station" อยู่แล้ว — กระดานว่างอ่านได้ว่าระบบพัง แย่กว่าตั๋วที่ยังไม่ระบุ station)
+       · **เมนู sidebar เปลี่ยนไปตามความสามารถ ไม่ใช่ตามประเภทร้าน** ผ่าน query เบา ๆ ตัวใหม่
+         `bmsKitchenBoardEnabled` (gate = admin scope ไม่ใช่ permission · **ล้มแล้วตอบ false ไม่ throw**
+         เพราะ sidebar พังทั้งอันแปลว่าเปิดหลังบ้านไม่ได้เลยสักหน้า) — เมนูกับตั๋วจึงมาพร้อมกันเสมอ
+    3. **หน้าขายไม่เคยบอกว่าออร์เดอร์เข้าครัวแล้ว** (ไม่มีคำว่า kitchen ในหน้านั้นสักที่) แคชเชียร์
+       ร้านอาหารต้องเดินไปถามครัวเอง · `fulfilPosOrderInTx` คืนจำนวนตั๋วขึ้นมาถึงผลการขาย →
+       ขึ้นทั้งใน toast และการ์ด "ขายสำเร็จ" · บิลที่ยิงซ้ำ (replay) ไม่ส่งค่านี้กลับมา
+       (`?? 0`) เพราะครัวรับไปตั้งแต่รอบแรกแล้ว
+  · **แก้ความเข้าใจผิดของผมเองในรอบวิเคราะห์**: preset ของ `building_materials` **มี**
+    `WEIGHTED_PRODUCT` อยู่แล้ว (ผมอ่านตกไปหนึ่งคอลัมน์) — ตัวที่ไม่มีจริง ๆ คือ preset ของ
+    `restaurant` ซึ่งไม่มี `WEIGHTED_PRODUCT` ร้านอาหารที่ขายของชั่งด้วยต้องไปเปิดเอง (ตั้งใจ)
+  · **รอบห้า — recheck ประเภทร้านใหม่ 3 ตัว + พิสูจน์ว่าไม่กระทบร้านเก่า (2026-08-31)**
+    · **ไล่ทุกจุดที่อ่าน archetype แล้ว** (25 ไฟล์): CHECK ทั้งสองตาราง (`bms_store_profile`,
+      `bms_pending_shop_signups`) ครอบ 3 ค่าใหม่แล้ว ยืนยันกับ DB จริง · dropdown ทั้งหน้าสมัคร
+      และหน้า Settings อ่านจาก `SHOP_ARCHETYPE_OPTIONS` ตัวเดียว จึงขึ้นเองอัตโนมัติ ·
+      `normalizeShopArchetype`/`isValidShopArchetype` อ่านจากลิสต์เดียวกัน ·
+      `archetypeToBusinessType` map ครบ (restaurant→food · building_materials→home ·
+      pet_supply→general) · `devSeed` ตกลง default "General" ซึ่งใช้ได้ (เครื่องมือ dev เท่านั้น)
+    · **เจอ 3 จุดที่ประเภทใหม่ "อยู่ในลิสต์แต่ยังไม่ถูกต่อสาย" — แก้แล้ว**:
+      1. `buildBusinessArchetypeExamples()` ใน `pipeline.ts` ไม่มี case ของทั้ง 3 ตัว → default
+         คืน `[]` = AI ไม่ได้ตัวอย่างเฉพาะทางเลย (ไม่ error แค่เงียบ) · เพิ่มครบแล้ว
+      2. `onboardingChecklistKeysForArchetype()` ไม่มี case ของทั้ง 3 ตัว → ร้านใหม่ได้ checklist
+         กลาง ๆ ทั้งที่เหตุผลที่ประเภทพวกนี้มีอยู่คือรูปแบบสต็อกที่ต่าง · เพิ่ม 3 ชุด × 4 ข้อ × 2 ภาษา
+      3. **ของเดิมที่พังอยู่ก่อนแล้ว 2 อย่าง เจอตอนเขียนเทส**: `b2b_wholesale` **มีข้อความ
+         checklist ครบ 4 ข้อทั้งสองภาษาแต่ฟังก์ชันไม่มี case ให้** → ไม่มีใครเคยเห็นข้อความชุดนั้นเลย
+         · และ `pharmacy` ซึ่งเป็นประเภทที่เฉพาะทางที่สุดในระบบ **ไม่มี checklist ของตัวเอง**
+         ได้ของกลาง ๆ มาตลอด · เพิ่มทั้งสองแล้ว
+    · **เทสใหม่ 2 ชุด**:
+      - `scripts/shop-archetype-coverage-contract.test.mts` (4 เทส · pure) เดินจาก dropdown เอง
+        บังคับว่าทุกประเภทต้องมี checklist ที่ resolve ได้ **ทั้ง th และ en** (คีย์พวกนี้ประกอบตอนรัน
+        `t(\`admin_getting_started.${key}\`)` ซึ่ง `i18n-keys-contract` เขียนไว้เองว่าตรวจไม่ได้)
+        + ต้องไม่มี copy ที่เขียนแล้วไม่มีใครเรียก + ต้องไม่ตกลง default เงียบ ๆ
+        · **ยืนยันแดงจริง** ด้วยการปิด case ของ restaurant (แดง 2 เทส)
+      - `scripts/shop-archetype-db-contract.test.mts` (8 เทส · DB) สร้างร้าน 2 ร้านของตัวเองแล้วลบทิ้ง:
+        ร้านยุคก่อน 9.40 (archetype เก่า **ไม่มีแถว policy/capability เลย**) กับร้านที่ไม่เคยเลือกประเภท
+        · พิสูจน์ว่า: ขายปกติได้ · snapshot ออกมาเป็น `DIRECT` หนึ่งบรรทัด · view คืนบรรทัดเดียว ·
+        ยกเลิกแล้วคืนของครบ · **แพ็ก 1 กล่อง = 12 หน่วยฐาน แม้ไม่มีใครเปิดธง PACK** ·
+        ร้านที่ไม่มี archetype ทุก gate ปิดหมดแต่ยังขายได้ · **เปลี่ยนประเภทร้านไม่แตะ policy/สต็อก
+        และไม่ทำให้สินค้าเดิมถูกตีความใหม่** · ร้านธรรมดาไม่มีตั๋วครัวงอก
+    · **ห้ามยืมร้านจริงมาสลับ `business_archetype` ในเทส** — โน้ตข้อ "บทเรียนตอนเขียนเทส" ข้างบน
+      บันทึกไว้แล้วว่าเคยทำร้านจริงค้างเป็นร้านยาจนชุดเทส POS แดง 10 ตัว
+    · **ตรวจแล้วว่าไม่กระทบของเดิม**: preset ของ archetype เก่าเปิดเฉพาะธงที่ **ไม่มีใครอ่าน**
+      (PACK/MULTI_BARCODE/LOT/EXPIRY/FEFO/SERIAL/PHARMACY_POLICY) ยกเว้น `food_beverage` ที่ได้
+      `RECIPE`+`MODIFIER`+`WASTAGE` — ซึ่งไม่เปลี่ยนอะไรจนกว่าจะมีสินค้าตั้ง `stock_policy='RECIPE'`
+      จริง · ผลข้างเคียงเดียวที่วัดได้คือ `resolvePosScan` ยิง query ตัวเลือกเพิ่ม 1 ครั้งต่อการสแกน
+      ในร้านที่ `MODIFIER` เปิด (index ตรง ๆ ไม่ใช่ query หนัก)
+    · **จุดที่เปลี่ยนพฤติกรรมของเดิมจริง 1 อย่าง (ยอมรับได้)**: สินค้าที่ถูกปิดการขาย (`active=false`)
+      เดิมได้ `NOT_FOUND` ตอนนี้ได้ `INVALID_ITEM` พร้อมข้อความ "ไม่พบสินค้าที่ขายได้: <sku>"
+      ซึ่งอ่านรู้เรื่องกว่า · เส้นทาง POS ไม่กระทบเพราะ `canonicalizePosSaleLines` กรอง `p.active`
+      ไปก่อนอยู่แล้ว
+  · **ยังไม่ได้ทำ (จงใจ)**: ร้านที่ archetype เป็น `other`/ยังไม่เลือก ได้ preset ว่าง → ตั้งสินค้าเป็น
+    `RECIPE` แล้วขายไม่ได้จนกว่าจะไปเปิดความสามารถเอง (ข้อความบอกชัดแล้ว แต่ยังต้องรู้ว่าไปเปิดที่ไหน)
+  · **ยังไม่ได้ทำ (จงใจ)**: การ "แลกเปลี่ยนสินค้า" (สร้างตะกร้าจากบิลเดิม) ไม่ยก `scaleBarcode` มาด้วย
+    ของชั่งขายจึงกลับเข้าตะกร้าเป็นบรรทัดธรรมดา — ยังไม่มีร้านไหนใช้ทั้งสองฟีเจอร์พร้อมกัน ·
+    และ **ยังไม่มีเทส DB ที่เดินผ่าน `recordPosSale` จริงสำหรับของชั่งขาย/ตัวเลือก** (ต้องตั้งเครื่อง+กะ
+    ในเทส) — ตัวที่ปักไว้ตอนนี้คือเทส pure ที่ระดับ route parser ซึ่งเป็นจุดที่บั๊กเกิดจริง
+
+- **Global AI Work Assistant — recheck ของงาน codex (2026-08-28, branch
+  `codex/global-work-assistant-foundation`, ไม่มี migration, ไม่มี permission ใหม่)** ·
+  `tsc --noEmit` ผ่าน · production build ผ่าน · **`npm run test:pure` = 39 ไฟล์ 493 เทส ผ่านทั้งหมด**
+  · **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** (เครื่องนี้ไม่มี Postgres/dev server ของ BMS รันอยู่) —
+  Drawer ที่ทุกหน้าหลังบ้าน, การ์ด PIN/ข้อเสนอ, และผู้ช่วยคู่มือที่หน้า POS ผ่านแค่ `tsc` + build
+  · **⚠️ เทสสองชุดของฟีเจอร์นี้อยู่ใน `scripts/ai-eval/` ซึ่ง gate เดินไม่ถึง** — `run-contract-tests.mjs`
+    อ่านเฉพาะชั้นบนสุดของ `scripts/` ทั้งโฟลเดอร์ ai-eval (13 ไฟล์ 215 เทส) จึงไม่เคยถูกรันใน CI เลย
+    และ README ของมันบอกให้ "รันมือทีละไฟล์" = ไม่มีใครรัน · แก้ให้เดินเข้า `ai-eval` ในโหมด pure แล้ว
+    (ยืนยันก่อนว่าเขียวทั้งชุดและใช้เวลา ~6 วิ) → pure ขึ้นจาก 22 ไฟล์/226 เทส เป็น 39/493
+  · **บั๊กที่เจอและแก้ (เรียงตามความแรง)**:
+    1. **ปุ่มยืนยันใน Drawer โชว์แต่ข้อความที่โมเดลแต่ง ไม่โชว์ว่าอะไรจะถูกสั่งจริง** — หน้าเต็ม
+       `/admin/assistant` โชว์ `mutation(args…)` และมีช่องแก้อีเมลผู้รับ + คำเตือน "ไม่เคยรับรายงาน
+       ของร้านนี้" + ตรวจรูปแบบอีเมลก่อนปล่อยให้กดส่ง · Drawer ไม่มีสักอย่าง = กดคืนเงิน/ปรับสต็อก/
+       ส่งรายงานออกไปยังอีเมลที่โมเดลเลือกโดยไม่เห็นค่าอะไรเลย ตอนนี้ยกทั้งชุดมาที่ Drawer
+    2. **บริบทหน้าปัจจุบันสร้าง "คำตอบ" ขึ้นมาเอง** — โบนัส +10 (currentPath) และ +10 (pageId) มากกว่า
+       เพดานความเกี่ยวข้องของ resolver (`score >= 4`) แปลว่า **ทุกไกด์ของหน้าที่ยืนอยู่ ตอบทุกคำถาม**
+       · ผลจริง 2 อย่าง: กิ่ง "ไม่พบคู่มือที่ยืนยันได้" ที่หน้า POS **ไม่มีทางถูกเรียกเลย** (พิมพ์ "xyzzy"
+       ก็ได้คู่มือขายของมาเต็มหน้า) และทุกข้อความได้ citation ของหน้านั้นติดมาด้วยแม้พิมพ์ว่า "สวัสดี"
+       · แก้ด้วยธง `matchedQuery` (textScore > 0) — proximity ใช้จัดอันดับ ห้ามสร้าง match ·
+       citation/link ใช้เฉพาะตัวที่ match จริง · ฝั่ง fallback ตอนไม่มี AI ยังโชว์คู่มือของหน้าได้
+       แต่เปลี่ยนหัวข้อเป็น "คู่มือของหน้าที่คุณเปิดอยู่" ไม่ใช่ "คำตอบ"
+    3. **ผู้ช่วยที่หน้า POS ยื่นคู่มือหลังบ้านให้แคชเชียร์** — กรองด้วย `id.startsWith("pos.")` ซึ่งกิน
+       `pos.configure-devices` (`/admin/pos-devices`) และ `pos.review-readiness` (`/admin/pos-readiness`)
+       เข้ามาด้วย · ถาม "PIN" ที่เครื่องขายแล้วได้ขั้นตอน "เปิด POS Devices" ซึ่งบัญชี `pos_only`
+       เข้า `/admin` ไม่ได้ตั้งแต่ระดับ login · ตอนนี้กรองด้วย `pageId === "pos"` (= ทำที่เครื่องขาย)
+    4. **ตอบเป็นภาษาไทยเสมอไม่ว่าผู้ใช้ตั้งภาษาอะไร** — `ctx.admin.language` เป็น `undefined` เสมอ
+       เพราะ `language` **ไม่ได้ถูกเซ็นลง JWT โดยตั้งใจ** (คอมเมนต์ใน `lib/auth/token.ts` เขียนไว้ว่า
+       อ่านสดที่ `/api/auth/me` เท่านั้น) · เพิ่ม `locale` ใน input ให้ client ส่ง (เป็น presentation
+       ไม่ใช่ authorization) · และถอด `sectionId` ที่ประกาศไว้ใน schema + type + เอกสาร แต่ไม่มีใครเขียน
+       ไม่มีใครอ่าน ทิ้งไป
+    5. **`get_my_access` ตอบฟิลด์ที่ไม่เคยอ่าน** — `displayName` มาจาก `ctx.admin.name/username`
+       และ `posOnly` มาจาก `ctx.admin.pos_only` ซึ่ง**ไม่มีอยู่ใน session ทั้งคู่** → ได้ `null`/`false`
+       เสมอ แล้วโมเดลเอาไปพูดต่อ · ตอนนี้อ่านจาก `users` (`getAssistantSelfProfile`)
+    6. **`platform.edit-post` ลิงก์ไป `/admin/post` ซึ่ง 404** — โฟลเดอร์นั้นมีแต่ `[id]`/`new` ไม่มี
+       `page.tsx` · เทสเดิมเช็คแค่ว่า "โฟลเดอร์มีอยู่" จึงมองไม่เห็น · เปลี่ยนเป็นเช็ค `page.tsx`
+       และ guide ที่ครอบ subtree ที่ลิงก์ไม่ได้ต้องประกาศ `coversRoutePrefixes`
+    7. **สถานะความสามารถบอกไม่ตรงของจริง** — `shipping.fulfillment` เป็น `MOCK` ทั้งก้อนทั้งที่โมดูล
+       จัดส่งใช้งานจริงอยู่ (แค่ adapter ของ Flash/Kerry ที่ยังไม่ live) → แยกเป็น `AVAILABLE` +
+       `shipping.carrier-integrations` (MOCK) · และ**ไม่มี capability ไหนเป็น `BETA` เลยสักตัว**
+       ทั้งที่ type กับเอกสารมีสถานะนี้ → e-Tax, Shopee/Lazada, และการพิมพ์ ESC/POS (เขียนแล้วแต่
+       ไม่เคยยิงกับของจริง ตามตารางสถานะใน CLAUDE.md) เป็น `BETA` แล้ว
+    8. **งานหน้าเคาน์เตอร์ 4 อย่างที่มี route `/api/pos/*` จริงแต่ไม่มีคู่มือเลย** — ขายเชื่อ/เก็บเงิน
+       ลูกหนี้ (9.30), คืนของไม่มีใบเสร็จ (8.2), บัตรของขวัญ/เครดิตร้าน (8.9), และการให้เภสัชกรกด PIN
+       อนุมัติที่เครื่องขาย (9.29) · ก่อนแก้ ถาม "ขายเชื่อ" แล้วได้คู่มือขายของทั่วไปมาเป็นคำตอบ
+       (เพราะบั๊กข้อ 2) · เพิ่มคู่มือ 4 ตัว + ขยาย alias ของคู่มือเดิมให้ครอบ serial/ใบกำกับภาษี/
+       no-sale/ราคาส่ง/โปร/เซ็ต/ค่าบริการ/สแกนบาร์โค้ด/ส่งใบเสร็จอีเมล
+    9. จุดเล็ก: `searchTenantStaffUsers` ไม่ escape `%`/`_` ของ LIKE (ถาม "%" = ได้รายชื่อพนักงานทั้งร้าน)
+       · `getTenantStaffUserAccess` ส่ง id ที่โมเดลแต่งเข้า `WHERE id = $1` ของคอลัมน์ uuid → `22P02`
+       กลางทูล แล้วขึ้นเป็น `bms_failure_incidents` ทั้งที่เป็นแค่โมเดลเดาผิด · `username` เป็น NULL ได้
+       (มาจาก `1.13`) แต่ type ประกาศเป็น `string`
+  · **ปุ่มตัวเลือกที่หน้า POS ย้ายมาอยู่ใน `POS_REGISTER_SUGGESTIONS`** (export จาก knowledge module)
+    เพราะมีเทสคุมว่าทุกปุ่มต้อง resolve เป็นคู่มือของเครื่องขายได้ทั้งไทยและอังกฤษ — ปุ่มที่กดแล้วได้
+    "ไม่พบคู่มือ" แย่กว่าไม่มีปุ่ม เพราะแคชเชียร์อ่านว่า "ระบบทำเรื่องนี้ไม่ได้"
+  · เทสที่ทำ mutation test แล้วว่า**แดงจริง**: `matchedQuery` (ทำให้เป็น `true` เสมอ → เทส 14 แดง)
+    และ route ที่ลิงก์ไม่ได้ (เอา `/admin/post` กลับมา → เทส 2 แดง)
+  · **ยังไม่ได้ทำ (จงใจ)**: `bmsWorkAssistant` ไม่มี rate limit ของตัวเอง (ใช้ quota เดิมของ AI) ·
+    Drawer เก็บประวัติแชตลง `localStorage` ต่อ (tenant, user) ซึ่งรวมข้อความที่มีตัวเลขของร้าน ·
+    citation ยังมาจากการค้นคำถาม ไม่ใช่จากสิ่งที่โมเดลอ่านจริงในลูป
+
+- **ปักคำตอบของคำถามทั้ง 51 ข้อ + ย้าย FAQ จาก Manual เข้าแคตตาล็อก (2026-08-28, ไม่มี migration,
+  ไม่มี permission ใหม่)** · `tsc --noEmit` ผ่าน · `npm run gate` ผ่าน (pure **40 ไฟล์ 499 เทส**) ·
+  production build ผ่าน · **ยังไม่ได้เปิดดูจริงในเบราว์เซอร์** (เครื่องนี้ไม่มี Postgres/Redis ของ BMS
+  รันอยู่ — `docker ps` มีแต่ container ของโปรเจกต์อื่น) หน้า `/admin/manual` และ Drawer ผ่านแค่ tsc+build
+  · **ต้นเหตุที่ต้องปัก**: เทสเดิมเขียนว่า `assert.ok(results.some(r => r.id === X))` = "เจอที่ไหนก็ผ่าน"
+    ไกด์ที่ถูกต้องตกไปอันดับ 6 ใต้ของไม่เกี่ยว 5 ตัวก็ยังเขียว ซึ่งเป็นวิธีที่คุณภาพการค้นเสื่อมโดยไม่มีใครเห็น
+    · ตอนนี้ `scripts/ai-eval/work-assistant-question-corpus.mts` ปักคำถาม **51 ข้อ + guard 2 ข้อ**
+      (คำถามที่ต้องตอบว่าไม่รู้) ว่าต้องได้ entry ไหน **มาเป็นอันดับหนึ่ง** และคำถามที่ตอบได้เฉพาะจาก
+      ข้อมูลจริง 11 ข้อ ปักชื่อทูล + สิทธิ์ที่คุมทูลนั้น (ทูลถูกเปลี่ยน gate = เทสแดง)
+    · **ลิสต์คำถามอยู่ที่เดียว** — ย้ายลิสต์เดิม 5 ชุดออกจาก `work-assistant-knowledge-contract`
+      (ไฟล์นั้นเหลือหน้าที่ตรวจรูปทรงแคตตาล็อก/ความครอบคลุมของหน้า) ไม่งั้นมีสองลิสต์ให้ drift
+    · **ปุ่มตัวอย่างที่ UI ต้องเป็นคำถามที่ปักไว้** — เพิ่มปุ่มใหม่แล้วไม่ปักคำตอบ = แดงทันที
+  · **บั๊กที่เจอระหว่างทาง (แก้แล้ว)**:
+    1. **ปุ่มตัวอย่างของ Drawer เอง 2 ปุ่มไม่มีคำตอบ** — "บัญชีฉันทำอะไรได้บ้าง" / "What can my account
+       access?" ค้นแล้ว **ไม่ match อะไรเลย** (ภาษาอังกฤษได้ `account.update-profile` มาเป็นอันดับหนึ่ง
+       ซึ่งผิดคน) เพราะไกด์เรื่องสิทธิ์มีแต่ "ตั้ง role" (แอดมินเท่านั้น) กับ "ทำไมปุ่มกดไม่ได้" ·
+       เพิ่มไกด์ `permissions.my-access` (route `/admin/assistant`, ไม่ต้องมีสิทธิ์อะไร) ให้ตรงกับทูล
+       `get_my_access` ที่มีอยู่แล้ว
+    2. **คำถามที่มีแต่คำเชื่อมไป match ของมั่ว** — "What can I do on this page?" ได้
+       `pos.device-settings` เป็น "คำตอบ" เพราะ token ทุกตัว ("what/can/do/on/this/page") ไปเจอใน body
+       ของไกด์สักตัว · เพิ่ม STOPWORDS (เฉพาะอังกฤษ — ไทยไม่มีช่องว่างจึงมาเป็น token เดียวและ match
+       ด้วย alias containment อยู่แล้ว) ตอนนี้ตกไปกิ่ง "ไม่พบข้อมูลที่ยืนยันได้" หรือกิ่ง "คู่มือของหน้าที่เปิดอยู่"
+       ตามที่ควรเป็น
+    3. **สองคำถามเสมอกันที่ 12 คะแนนแล้วตัดสินด้วยลำดับตัวอักษร** ("ระบบมีสะสมแต้มไหม" /
+       "ตอนนี้มีคูปองอะไรใช้ได้บ้าง") — คำตอบที่ถูกจึงขึ้นอยู่กับชื่อ id โดยบังเอิญ · ใส่ alias ตรงตัวให้ฝั่งที่
+       ควรนำ (capability สำหรับคำถาม "ระบบมี…ไหม" · guide สำหรับคูปองเพราะคำตอบคือการแยกคูปองร้าน
+       ออกจากสิทธิ์ของลูกค้าคนหนึ่ง)
+  · **FAQ ย้ายบ้าน**: `lib/bms/assistantKnowledge/faq.ts` (20 ข้อ ไทย/อังกฤษ) แต่ละข้อผูกกับไกด์เจ้าของ
+    · `/admin/manual` เรนเดอร์จากอาร์เรย์เดียวกันนี้ (เดิมเป็นสองอาร์เรย์ในหน้านั้น ผู้ช่วยจึงตอบ FAQ ไม่ได้เลย
+      — ถาม "กดจัดส่งไม่ได้ ขึ้นว่าไม่มีที่อยู่" ได้ไกด์กว้าง ๆ ทั้งที่คำตอบตรงตัวอยู่ในหน้าที่ไม่มีใครเปิด)
+    · **คำถาม + alias ของ FAQ ถูกพับเข้า alias pool ของไกด์ แต่ "คำตอบ" ไม่ถูกให้คะแนน** — คำตอบเป็น
+      ข้อความยาว ถ้าให้คะแนนด้วย ทุกคำตอบจะกลายเป็น match อ่อน ๆ ของทุกคำถาม (= อาการเดิมที่กำลังแก้)
+    · `search_system_guides` คืน `faqs` ให้โมเดลยกคำตอบที่ยืนยันแล้วไปใช้ · ตอนไม่มี AI provider
+      คำตอบ FAQ ที่ match ขึ้นนำในคำตอบ deterministic
+    · **หน้าขายไม่ถูกแตะ** — FAQ ทั้ง 20 ข้อเป็นของไกด์หลังบ้าน ถ้าปล่อยเข้าหน้าขายจะเป็นการยื่นงาน
+      หลังบ้านให้แคชเชียร์ที่เข้า `/admin` ไม่ได้
+    · alias เขียนด้วยคำที่คนพิมพ์จริง ("ปุ่มหาย", "เครดิตหมด", "แชทไม่เด้ง") ไม่ใช่ชื่อฟีเจอร์ ·
+      มีเทสว่า **ทุก alias ต้องพาไปที่ FAQ ของตัวเอง** (alias ที่ไปตอบคำถามอื่นแย่กว่าไม่มี alias)
+  · **mutation test ยืนยันว่าแดงจริง 4 แบบ**: ถอดการพับ FAQ เข้า alias (FAQ 20 ข้อหาไกด์ตัวเองไม่เจอ) ·
+    ถอด STOPWORDS (คำถามกว้างกลับมา match มั่ว) · เปลี่ยน gate ของ `get_variant_reservations` เป็น
+    `product.view` (ทูลตอบคำถามเดิมให้คนผิดกลุ่ม) · ย้าย alias "ขายเชื่อ" ไปไกด์ขายทั่วไป
+    (**ไกด์ที่ถูกยังอยู่ในผลอันดับ 2 — เทสแบบเดิมจะเขียว เทสใหม่แดง** ซึ่งคือทั้งหมดของงานรอบนี้)
+  · **รอบที่สอง (2026-08-28, คอมมิตถัดมา) — ปิดช่องที่เหลือ**: ปักคำถามให้ **ทุก entry ในแคตตาล็อก**
+    (corpus 133 ข้อ = 51 เดิม + 80 coverage + 2 guard) และ **ย้ายกฎ/กับดัก 19 กลุ่ม 97 ข้อ**
+    (`LIMIT_GROUPS` เดิมในหน้า Manual) เข้า `lib/bms/assistantKnowledge/limits.ts`
+    · **เทสใหม่บังคับว่าไกด์และ capability ทุกตัวต้องมีคำถามอย่างน้อยหนึ่งข้อ** — เพิ่มหน้าใหม่แล้วไม่เขียน
+      คำถามที่ควรพามาเจอ = แดงทันที (entry ที่ไม่มีใครถามถึง = ข้อความผิดอยู่ได้ตลอดโดยไม่มีอะไรค้าน)
+    · **กว่าจะเขียวต้องแก้ของจริง 33 จุด** — พอเขียนคำถามแบบที่คนพิมพ์จริง ปรากฏว่าไกด์จำนวนมาก
+      (โดยเฉพาะกลุ่ม platform ที่ generate จากตารางย่อ) **มี alias แค่ชื่อหน้าตัวเอง** เช่นถาม
+      "อีเมลส่งออกไม่ถึงต้องดูที่ไหน" ไม่เจอ Mail log เพราะต้องพิมพ์คำว่า "mail log" เท่านั้น ·
+      เติม alias จริงให้ 15 ไกด์ + 12 capability และเพิ่ม 2 คอลัมน์ alias เข้าไปในตารางของกลุ่ม platform
+    · **แก้กติกาการให้คะแนน 2 ข้อ (ต้นเหตุของ tie ที่ตัดสินด้วยลำดับตัวอักษร)**:
+      (ก) alias ที่ยาวกว่าและอยู่ในคำถามจริงได้แต้มบวกแบบมีเพดาน (+12 → +12..20) — "ระบบโอนสต็อกข้าม
+      สาขาได้ไหม" เคยเสมอกันระหว่าง `inventory.branch` (จับคำว่า "โอนสาขา") กับ `inventory.transfers`
+      (จับ "โอนสต็อกข้ามสาขา") แล้วชนะกันด้วยชื่อ id · ไทยไม่มีช่องว่าง ความยาวจึงเป็นสัญญาณหลัก
+      (ข) **คำถามที่อยู่ "ข้างใน" alias นับเป็น match ต่อเมื่อยาวอย่างน้อยครึ่งหนึ่งของ alias** —
+      ไม่งั้น "ทำยังไง" ไป match "คิวเภสัชกรทำยังไง" (เจอตอนเทสเก่าแดง ซึ่งเป็นเทสที่คุมกิ่ง
+      "ไม่พบข้อมูลที่ยืนยันได้" อยู่พอดี)
+    · เทส corpus จำลอง **การกรองของหน้าขาย** (`pageId === "pos"` → เหลือเฉพาะไกด์ที่ทำที่เครื่องขาย)
+      ให้ตรงกับ `PosGuideAssistant` ไม่งั้นคำถาม "รับชำระ" จะไปแพ้ให้ไกด์ลูกหนี้ที่แคชเชียร์เปิดไม่ได้
+    · **limits ส่งให้โมเดลเฉพาะ 2 ไกด์อันดับแรก** — 97 ข้อทั้งชุดจะกลบคำตอบที่มันมีไว้ปกป้อง
+    · mutation test เพิ่มอีก 3: ถอดการพับ alias ของ limits · ลบกฎภาษาอังกฤษของกลุ่มหนึ่ง ·
+      เพิ่มไกด์ใหม่ที่ไม่มีคำถามปัก — แดงถูกตัวทั้งหมด
+    · gate: pure **40 ไฟล์ 503 เทส** + typecheck + production build ผ่าน
+  · **ยังไม่ได้ทำ (จงใจ)**: POS ยังไม่มี FAQ ของตัวเอง (20 ข้อเป็นของหลังบ้านทั้งหมด) ·
+    citation ยังมาจากการค้นคำถามเหมือนเดิม · `bmsWorkAssistant` ยังไม่มี rate limit ของตัวเอง ·
+    ยังไม่เคยเปิดดูจริงในเบราว์เซอร์
+
+- **ตรวจว่า `BMS_SECRET_KEY` ทำงานจริงไหม: `scripts/check-bms-secret-key.mts`** (read-only ไม่เขียนอะไร
+  ไม่พิมพ์ค่าความลับ · exit code 1 เมื่อยังมีเรื่องต้องจัดการ ใช้ใน CI ได้)
+  · ตรวจ 4 ชั้น: (1) คีย์ถูกส่งถึงโปรเซสไหมและรูปแบบถูกไหม (2) เป็นคีย์ dev ที่คำนวณจากซอร์สได้ไหม
+    (3) เส้นทาง encrypt→decrypt ในโค้ดจริงใช้งานได้ไหม (4) ข้อมูลที่เก็บไว้จริงถอดด้วยคีย์นี้ได้กี่ค่า
+  · **รันในคอนเทนเนอร์เพื่อดูของที่แอปเห็นจริง** (ไม่ต้องส่ง env เอง):
+    `docker compose ... exec web npx tsx scripts/check-bms-secret-key.mts`
+  · **"ใช้งานได้" ไม่เท่ากับ "ปลอดภัย"** — สรุปแยก 4 แบบ: ใช้งานไม่ได้ / ใช้งานได้บางส่วน (มีข้อมูล
+    ที่ถอดไม่ออก = ช่องทางตายเงียบ) / ตรวจข้อมูลจริงไม่สำเร็จ / ใช้ได้และเป็นคีย์ของเราเอง
+  · กับดักที่เจอตอนเขียน: เวอร์ชันแรกรายงาน "ไม่มีค่าที่เข้ารหัสไว้เลย" ตอนที่ **ต่อฐานข้อมูลไม่ได้**
+    ซึ่งอ่านแล้วเข้าใจว่าปลอดภัย · แยก "ตรวจไม่ได้" ออกจาก "ไม่มีปัญหา" แล้ว
+  · ทดสอบครบ 4 สถานการณ์: คีย์ถูก / ไม่ตั้ง / รูปแบบผิด / ถูกรูปแต่ข้อมูลเข้ารหัสด้วยคีย์อื่น
+- **⚠️ ถ้า production เคยรันโดยไม่ตั้ง `BMS_SECRET_KEY` — ต้องหมุนคีย์ก่อน ไม่ใช่ตั้งแล้วจบ**
+  · ค่าที่ขึ้นต้น `enc:` ที่ถูกเข้ารหัสตอนยังไม่มี env ใช้คีย์ `sha256("bms-dev-secret-key")`
+    พอตั้งคีย์จริงแล้ว **ถอดไม่ออก** → `decryptSecret()` คืน `null` → ช่องทางของร้านดูเหมือน
+    "ไม่มี token" แล้วตายเงียบ ๆ (webhook verify ไม่ผ่าน / ส่งข้อความไม่ได้)
+  · **ข้อมูลไม่หาย** เพราะคีย์ dev เดิมคำนวณได้ · ใช้ `scripts/rotate-bms-secret-key.mts`
+    (ค่าปริยายเป็น dry-run ไม่เขียนอะไร · เติม `--apply` เพื่อเขียนจริง · รันซ้ำได้)
+    ครอบ `bms_tenant_channels.{access_token,channel_secret}` และ
+    `bms_tenant_ai_config.api_key_encrypted` — **มีที่เก็บ `enc:` ใหม่ต้องเพิ่มใน TARGETS**
+  · **แก้ที่ทำให้ปัญหานี้เงียบด้วย**: `getKey()` เคยถูกเรียก *ใน* try ของ `decryptSecret`
+    ตั้งค่าผิดจึงกลายเป็น `null` เงียบ ๆ แทนที่จะ throw · ย้ายออกมานอก try แล้ว → ตั้งค่าผิด =
+    throw ดัง ๆ · ถอดค่าที่คีย์ไม่ตรงไม่ได้ = `null` ตามเดิม (แยกสองกรณีออกจากกัน)
+  · ทดสอบสคริปต์กับข้อมูลจริงใน dev แล้ว: dry-run → apply → รันซ้ำ (บอกว่าย้ายแล้ว) → ยืนยันว่า
+    `decryptSecret()` อ่านได้ด้วยคีย์ใหม่ → **คืนค่า dev กลับเป็นคีย์ dev เดิม** เพราะ container dev
+    ไม่ตั้ง env (ถ้าลืมคืน dev จะใช้ช่องทางนั้นไม่ได้)
+- **การ์ดของ cron/job ที่ "ข้ามได้เมื่อไม่ตั้ง env" — แก้แล้ว 2026-08-27 (ไม่มี migration)**
+  · **ต้นเหตุ**: ทุก route เขียน `if (secret && req.headers.get("x-cron-secret") !== secret)` ซึ่ง
+    `secret &&` = **ไม่ตั้ง env ก็ไม่ตรวจอะไรเลย** และโน้ตในไฟล์นี้เองบันทึกว่า `BMS_CRON_SECRET`
+    ยังไม่ได้ตั้ง → endpoint 9 ตัวเปิดให้ใครก็ยิงได้: `reports/send-digest` (**ส่งอีเมลออกจริง**),
+    `followups/run` (**ส่งข้อความถึงลูกค้า**), `ai/check-health` + `channels/check-health`
+    (**จ่ายค่า AI / ยิง provider**), `orders/release-expired` (ปล่อยสต็อกที่จองไว้),
+    `loyalty/maintenance` (ทำแต้มหมดอายุ), `pharmacy/assessments/expire-stale`,
+    `shipping/sync-carriers`, `jobs/report-run` · `admin/queue/db` ก็รูปแบบเดียวกัน (`ADMIN_TOKEN`)
+  · **`jobs/etax` ไม่ได้เป็นแบบนี้** — มันเขียน `if (!expected || ...)` fail-closed อยู่แล้ว
+    (ผมเข้าใจผิดตอนสแกนรอบแรกเพราะเห็นแค่บรรทัดประกาศตัวแปร)
+  · **helper กลางใหม่ `lib/bms/cronRouteAuth.ts`** (แบบเดียวกับที่ repo แยก `adminRouteAuth.ts`):
+    ไม่ตั้ง env → **503** (เป็นการตั้งค่าที่ยังไม่เสร็จ ไม่ใช่ผู้เรียกผิด) · header ผิด → **401**
+    · เทียบด้วย `timingSafeEqual`
+  · **ผลข้างเคียงที่ตั้งใจ**: ถ้ายังไม่ตั้ง `BMS_CRON_SECRET` งานตั้งเวลาจะ **ไม่ทำงานและเห็นชัดว่าไม่ทำงาน**
+    ดีกว่าเปิดให้ใครก็ยิงได้เงียบ ๆ · ต้องตั้ง secret พร้อม deploy ไม่งั้น job ทั้งชุดหยุด
+  · verify จริง: ยิงตอนไม่มี env → `503` พร้อมข้อความบอกสาเหตุ · ทดสอบ helper 6 กรณี
+    (ไม่ตั้ง/ตั้งแล้วไม่มี header/ผิด/ถูก/ยาวกว่า) ถูกครบ
+  · **อุดช่องโหว่ในเทสตัวเองด้วย** — `inventory-tenant-scope-contract` เดิมนับว่า "มีคำว่า
+    CRON_SECRET ในไฟล์" = มีการ์ด จึงมองไม่เห็น fail-open · เพิ่มเทสที่สแกน `if (<secretVar> &&`
+    ทั่ว `app/api` (ตัดคอมเมนต์ออกก่อน ไม่งั้นเอกสารที่อธิบายรูปแบบเก่าถูกจับเป็นของจริง — เจอมาแล้ว)
+    · ยืนยันว่าแดงจริงเมื่อเอา fail-open กลับมาที่ `reports/send-digest`
+- **`9.28__bms_pharmacy_evidence_erased_file.sql` (แก้ constraint ของ `9.25` ที่ขัดกันเอง + ถอน GRANT
+  ที่ไม่จำเป็น) apply เข้า dev DB และ verify แล้ว 2026-08-27** — ยังไม่ได้ apply เข้า production
+  · **บั๊กที่ `9.25` ทิ้งไว้ (ผมเขียนเอง เจอตอน recheck)**: FK เป็น `ON DELETE SET NULL` แต่ CHECK
+    บังคับว่าแถว `PRESCRIPTION_IMAGE` ต้องมี `file_id` → **ลบแถวใน `files` ไม่ได้เลย** error ออกมาเป็น
+    `shape_check` ที่อ่านไม่รู้เรื่องเพราะพูดถึง `UPDATE` ที่ไม่มีใครสั่ง · ผลจริง: storage sweep,
+    `deleteFile` เดิม และ **คำขอลบข้อมูลตาม PDPA** ทำไม่ได้ทั้งหมด
+  · **แก้ CHECK ไม่ใช่แก้ FK** เพราะ SET NULL คือพฤติกรรมที่ต้องการ — ลบตัวไฟล์ได้ แต่ไม่ลบร่องรอยว่า
+    เคยมีหลักฐานและใครแนบ · `kind='PRESCRIPTION_IMAGE' AND file_id IS NULL` = tombstone "ไฟล์ถูกลบแล้ว"
+    · สตรีมจะได้ 404 เองเพราะ `getEvidenceFileForStreaming` join กับ `file_id`
+  · **ถอน `GRANT SELECT ON files TO bms_app` ที่ `9.25` ใส่ไว้เกินจำเป็น** — โค้ดในโมดูลนี้อ่าน `files`
+    ผ่าน `query()` (role `app`) ไม่ใช่ใน `beginTenantTx` (ที่ `SET LOCAL ROLE bms_app`) จึงไม่เคยต้องใช้
+    · `files` ปิด RLS อยู่ ดังนั้น GRANT นั้นทำให้ role ที่ตั้งใจให้ถูก RLS คุมอ่านไฟล์ได้ทุกร้าน
+  · เทสเพิ่ม 2 ตัวใน `scripts/pharmacy-clinical-evidence-db-contract.test.mts` (เป็น 10 เทส):
+    ลบไฟล์แล้วเหลือ tombstone · CHECK ที่คลายแล้วยังกันรูปแบบผิดครบ 3 แบบ
+- **`9.25__bms_pharmacy_clinical_evidence.sql` (หลักฐานทางคลินิกของเคสหน้าร้าน) apply เข้า dev DB และ
+  **apply เข้า production แล้ว 2026-08-26** (ผู้ใช้ยืนยัน) · seed permission ใหม่ 2 ตัว
+  (`pharmacy.evidence.read`, `pharmacy.evidence.manage` → **Pharmacist เท่านั้น**)
+  · เก็บ 3 อย่างต่อเคส: รูปใบสั่งยา / เลขอ้างอิงใบสั่งยา / บันทึกคำแนะนำ · **เก็บจนกว่าจะลบเอง ไม่มีตัวหมดอายุ**
+    (ตกลงกับผู้ใช้) · ลบเป็น soft delete เพื่อให้ยังตรวจได้ว่าใครลบหลักฐานอะไรออกไป
+  · **ไม่บังคับแนบ** — เภสัชกรเป็นคนตัดสิน ไม่มี policy ไหนบล็อกบิลเพราะไม่มีหลักฐาน
+  · **ไม่ seed ให้ Manager โดยตั้งใจ** — Administrator ได้อัตโนมัติเพราะเป็น super role ผลคือผู้ชม =
+    admin + เภสัชกร ตรงตามที่ตกลง · Manager อ่านเคสได้แต่เปิดรูปใบสั่งยาไม่ได้
+  · **⚠️ กับดักที่เจอตอนทำ: `/api/files/[id]` ไม่มี auth เลย และ id เป็น integer เรียงลำดับ**
+    ใครก็ไล่เดาโหลดไฟล์ของคนอื่นได้ · รูปใบสั่งยาจึงต้องออกทาง
+    `/api/bms/pharmacy/evidence/[id]/file` ที่ตรวจ session + `pharmacy.evidence.read` + tenant ของแถว
+    และตั้ง `Cache-Control: private, no-store` · **`file_id` ไม่เคยถูกส่งออกไปฝั่ง client เลย** (มีเทสคุม)
+    · ถ้าจะเก็บไฟล์อ่อนไหวอย่างอื่นในอนาคต ห้ามใช้ `/api/files/:id` ซ้ำ
+  · เคาน์เตอร์ **เขียนได้ อ่านไม่ได้** — `/api/pos/pharmacy-evidence` ใช้ device token + PIN + `pos.sell`
+    คืนแค่ id ไม่คืนตัวหลักฐาน (แคชเชียร์ถ่ายใบสั่งยาเข้าระบบได้ แต่เปิดดูของคนอื่นไม่ได้)
+  · รับไฟล์เฉพาะ PNG/JPEG/WebP/GIF/PDF ไม่เกิน 10MB — **ไม่รับ SVG** เพราะแสดง inline แล้วรัน script
+    ในโดเมนเราได้
+  · ร่องรอย (`assessment.clinical_evidence_added/_deleted`) เขียนในทรานแซกชันเดียวกับแถว และ
+    **เก็บแต่ metadata ไม่เก็บเนื้อความ/เลขใบสั่งยา** (มีเทสคุมว่าไม่มีเนื้อความหลุดลง event)
+  · UI: การ์ด "หลักฐานทางคลินิก" ที่ `/admin/pharmacy-queue/[caseId]` (ก่อน Audit Timeline) +
+    แถบแนบหลักฐานใต้กล่องเคสเภสัชที่หน้า POS — **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์ ผ่านแค่ `tsc`**
+  · เทสชุดใหม่: `scripts/pharmacy-clinical-evidence-db-contract.test.mts` (8 เทส · สร้าง tenant
+    ของตัวเอง 2 ร้านแล้วลบทิ้ง ไม่ยืมร้านจริง)
+- **⚠️ บทเรียนตอนเขียนเทสที่ต้องตั้ง `business_archetype = 'pharmacy'`** — เทสที่ยืมร้านแรกแล้ว
+  "จำค่าเดิมไว้คืนตอน teardown" **อันตราย**: รอบที่ teardown ล้ม ร้านจริงค้างเป็นร้านยา แล้วรอบถัดไป
+  จับ `pharmacy` เป็น "ค่าเดิม" จนติดถาวร → ชุดเทส POS แดง 10 ตัวด้วย `POLICY_NOT_READY`
+  (เกิดจริง 2026-08-26 แก้ด้วยการ `UPDATE bms_store_profile SET business_archetype = NULL`)
+  · **เทสที่ต้องสลับ archetype ให้สร้าง tenant ของตัวเองเสมอ** — คอลัมน์นี้เปลี่ยนการกันบิลของ
+    **ทุกสินค้า** ในร้านนั้น ไม่ใช่แค่ของที่เทสสร้าง
+- **รายการข้างบนหยุดที่ `7.82` — ยังไม่เคยเช็ค `7.84`–`7.96` (ฟีเจอร์ POS/tax ทั้งชุด: location/lot/pack,
+  POS device/shift, cashier PIN, return/refund settlement, cashier-only accounts, per-size pack,
+  e-Tax queue, credit note/cash rounding) กับ production เลย** — ต้อง `ls db/migrations` เทียบกับ DB
+  จริงก่อน go-live ของ POS ทุกครั้ง ดู checklist เต็มใน
+  [docs/business/pos.md § Go-live checklist](docs/business/pos.md#go-live-checklist)
+- **`7.83` = ไฟล์เดิมที่เคยชื่อ `7.74__bms_pharmacy_seed_protocol_safety_fields.sql`** (renumber
+  2026-08-13 เพราะเลข `7.74` ถูกใช้ซ้ำกับ `7.74__bms_shared_customer_identity_backfill.sql`) — เป็น
+  `UPDATE ... WHERE NOT EXISTS` รันซ้ำได้ปลอดภัย **environment ที่ apply ไปแล้วตอนยังเป็น `7.74`
+  ไม่ต้องทำอะไรเพิ่ม** ส่วนที่ยังไม่เคย apply ให้รันเป็น `7.83` ตามลำดับปกติ
+- env ที่ต้องตั้ง: `BMS_SECRET_KEY` (hex 64 — ไม่งั้นใช้ dev key เข้ารหัส token) · `JWT_SECRET`
+  (เซ็นทั้ง session token + cookie `BMS_ACT_TENANT`) · `BMS_CHECKOUT_SECRET` (ไม่ตั้งจะ fallback ไป
+  `JWT_SECRET`; ไม่มีทั้งคู่ production จะ throw — **หมุนค่านี้เมื่อไหร่ ลิงก์ checkout ที่ส่งลูกค้าไป
+  แล้วใช้ไม่ได้ทันทีทั้งหมด**) · `NEXT_PUBLIC_BASE_URL` ให้ตรงโดเมนจริง (`createCheckoutUrl()` ใช้ค่านี้
+  ประกอบลิงก์ที่ส่งหาลูกค้า, default hardcode `https://bms.jachoei.com`) · `META_GRAPH_VERSION`
+  (default v21.0) สำหรับ FB/IG send
+- ให้ app ต่อ DB ด้วย role **non-superuser** เพื่อให้ RLS มีผลกับ read
+- เพิ่ม password/TLS ให้ Redis — ตอนนี้เก็บ session id, rate-limit counter และ (ชั่วคราว) เลขบัญชี
+  รับเงินของร้านผ่าน cache · ตั้ง `REDIS_PASSWORD` แล้ว `REDIS_URL` ต้องพ่วง credential ด้วย · ข้าม
+  host เมื่อไหร่ใช้ `rediss://`
+- Lazada/Shopee webhook signature ต้อง verify กับเอกสาร Open Platform ตัวจริงก่อนใช้จริง (ตอนนี้
+  HMAC-SHA256 แบบ TikTok เป็น placeholder — ดู [docs/integrations/lazada.md](docs/integrations/lazada.md))
+- **fake seeder ต้องปิดใน production** — `.env.prod`/`.env`/`.env.dev` ในเครื่องนี้ตั้ง
+  `BMS_ALLOW_FAKE_SEED=1` ทั้ง 3 ไฟล์ ต้องไปเช็ค/ปิดบนเซิร์ฟเวอร์จริงเอง (agent แก้ `.env*` ไม่ได้):
+  `docker compose ... exec web printenv BMS_ALLOW_FAKE_SEED NODE_ENV`
+- หน้าระดับแพลตฟอร์ม (ENV/Logs/Posts/Files/Architecture) gate ด้วย `layout.tsx` →
+  `requirePlatformAdminPage()` (server-side กัน shop user เข้าตรงผ่าน URL)
+
+
+### ⚠️ cron ปล่อยบิลหมดอายุยกเลิกใบจองของโต๊ะที่ยังนั่งอยู่ — 2026-09-05 (ไม่มี migration)
+
+`tsc` ผ่าน · **pure 798 เทสผ่าน** · build ผ่าน · **DB ชุดร้านอาหาร 21/21 ผ่าน** ·
+**ยังไม่ได้เปิดดูจริงในเบราว์เซอร์** (จอนี้ต้องมี device token + กะเปิดอยู่)
+
+- **อาการที่ผู้ใช้ส่งมาจาก production**: โต๊ะเปิดบิล 877 นาที กดแล้วขึ้น
+  `เซิร์ฟเวอร์ผิดพลาด (เซิร์ฟเวอร์ผิดพลาด) — กดชำระเงินอีกครั้ง` ซึ่งกดกี่ครั้งก็ไม่ผ่าน
+- **ต้นเหตุ**: `releaseExpiredOrders()` กวาดทุก order ที่ `status='PENDING'` เก่ากว่า 30 นาที
+  **โดยไม่ยกเว้นใบจองของบิลโต๊ะ** (cron ยิงด้วย `?minutes=30` ทุกรอบ) · ใบจองของโต๊ะถูกสร้าง
+  เป็น PENDING ตอนส่งครัวรอบแรกแล้วค้างไว้จนคิดเงิน → **โต๊ะที่นั่งเกินครึ่งชั่วโมงถูกยกเลิก
+  ใบจอง + คืน reserved stock ของอาหารที่ออกไปแล้ว** จากนั้นทั้งส่งครัว (`cancelOrderInTx`
+  คืน false) และคิดเงิน (`บิลจองของโต๊ะนี้อยู่สถานะ CANCELLED`) ล้มถาวร = แก้ได้ที่ฐานอย่างเดียว
+  · **ใบจองของบิลโต๊ะไม่หมดอายุตามเวลา** มันจบเมื่อคิดเงินหรือยกเลิกบิล การไปเพิ่ม `minutes`
+  คือการผิดช้าลง ไม่ใช่ถูกขึ้น
+- **ทำไมไม่มีใครเห็นเหตุผล**: `restaurantPos.ts` ปฏิเสธด้วย `throw new Error()` ทั้ง 36 จุด
+  แล้วตกไปที่ `withRouteErrorLog` → `errorResponse()` ซึ่ง **redact ข้อความจริงทิ้งบน
+  production** เหลือ `"เซิร์ฟเวอร์ผิดพลาด"` · เส้นทางค้าปลีกมี `describePosFailure()` แปล
+  สถานะให้มาตลอด บิลโต๊ะจึงเป็นหน้าเดียวที่เสียการันตีนี้ไปทั้งเส้น
+- **แก้สี่ชั้น (ต้องมีครบ ชั้นเดียวไม่พอ)**:
+  1. cron เพิ่ม `AND restaurant_check_id IS NULL` — ไม่ให้พังตั้งแต่แรก
+  2. `sendRestaurantKitchenRound` อ่าน **สถานะ** ใบจอง (`reservationAlive = PENDING`)
+     ใบที่ตายแล้วสร้างใหม่แทน throw · **กิ่ง early-return ต้องแก้คู่กัน** ไม่งั้นโต๊ะที่ทุก
+     บรรทัดเป็น SENT (เคสในภาพ) จะตอบ SENT เฉย ๆ โดยไม่จองใหม่ แล้วไปล้มตอนคิดเงินเหมือนเดิม
+     · ใบที่เป็น COMPLETED ยัง throw โดยตั้งใจ (บิลถูกเก็บเงินแล้วแต่โต๊ะยัง OPEN = ต้องมีคนดู)
+  3. `getRestaurantCheck` คืน `reservationStatus`/`reservationLost` — เดิมคืนแค่
+     `hasCurrentOrder` ซึ่งเป็นคนละคำถาม จอจึง **ไม่มีทางรู้ก่อนกด** ว่าปุ่มนี้จะล้ม
+  4. `RestaurantCheckError` (ไฟล์ใหม่ `lib/bms/restaurantPosErrors.ts`) + `withRouteErrorLog`
+     ตอบ **409 พร้อมข้อความจริง** และ **ไม่เขียน log ระดับ error** เพราะกฎธุรกิจปกติที่ไหลลง
+     `system_logs` จะกลบ error จริง · รหัส `RESERVATION_LOST` แยกไว้ตัวเดียวเพราะเป็นเคสที่
+     จอต้องพาไปทำอย่างอื่นต่อ (กดส่งครัวเพื่อกู้) ไม่ใช่แค่บอกว่าล้ม
+- **จอ**: ใบจองหาย → การ์ดเตือน + **ปุ่มคิดเงินกดไม่ได้** (ยังไงก็ล้ม) แต่ **ปุ่มส่งครัวกดได้
+  แม้ไม่มีรายการใหม่** เพราะนั่นคือทางกู้ · ครัวไม่ได้ตั๋วซ้ำ (มีเทสคุม)
+- **`scripts/check-schema-readiness.mts` (ใหม่, read-only)** — ตรวจว่าฐานเป้าหมาย apply
+  migration ครบพอที่โค้ดชุดนี้จะทำงานไหม พร้อมบอกว่า "ถ้าไม่รันไฟล์นี้จะพังยังไง"
+  · เขียนเพราะสมมติฐานที่สองของอาการนี้คือ production ตกไฟล์ไป: `createOrderInTx` INSERT
+  `fulfillment_type/promised_at` (คอลัมน์ของ `9.56`) **ทุกบิลของทุกร้าน** ฐานที่ไม่มีคอลัมน์นี้
+  จะ 500 ทุกการขาย โดยข้อความถูก redact เหมือนกันเป๊ะ — แยกสองสาเหตุนี้ด้วยตาไม่ได้
+  · **ฐาน dev เครื่องนี้ครบทุกไฟล์** (ยืนยันแล้ว) ยังไม่ได้รันกับ production
+- **เทส**: `restaurant-pos-contract` +4 (รวม **45**) · `restaurant-pos-db-contract` +2 (รวม
+  **21**) — cron ต้องไม่แตะใบจองของโต๊ะ **แต่ยังปล่อยบิลออนไลน์ตามเดิม** (กันการ "แก้" ด้วยการ
+  ปิด job ทั้งตัว) · ใบจองที่หายกู้ได้แล้วคิดเงินได้จริง
+  · **ผ่าน mutation test 5 แบบที่ระดับ pure + 2 แบบที่ระดับ DB** แดงถูกตัวทุกครั้ง
+- **⚠️ เทสเดิม 1 ตัวต้องเล็งใหม่**: `the order taker must leave a cancellation note…` assert
+  `throw new Error` ตรงตัว — การันตีเดิมย้ายไปอยู่ในคลาส ไม่ได้หายไป (กับดักเดิมของเทสสแกนซอร์ส)
+- **⚠️ เทส DB ที่แดงอยู่ก่อนแล้วบน `develop` 4 ตัว ไม่ใช่ของงานนี้** (ยืนยันด้วย `git stash`
+  แล้วรันบน HEAD ได้ผลเดียวกัน) — **ยังไม่ได้แก้**:
+  `multi-store-stock-db-contract`: บิลช่องทาง web ของร้าน archetype restaurant ได้
+  `FULFILLMENT_REQUIRED` แทน `CREATED` (2 ตัว: sweep + shipping menu bill) ·
+  `kitchen-station-db-contract`: ชื่อ/รหัสสถานีซ้ำ และการยกชื่อขึ้นเป็นแถวหลัก (2 ตัว)
+- **⚠️ บทเรียนตอนแก้: `git checkout <file>` เพื่อคืน mutation ลบงานที่ยังไม่ commit ทิ้งทั้งไฟล์**
+  (ไฟล์นั้นถูกแก้ด้วยแพตช์ของรอบนี้เอง) — ต้องสำรองไฟล์ก่อน หรือใช้ `git stash push -u`
+
+#### recheck รอบสอง (branch `fix/restaurant-reservation-not-expired`) — เจอทางตันอีก 2 จุด
+
+**ทั้งสามเส้นทางที่ต้องแทนใบจองแปล `cancelOrderInTx() === false` เป็น throw เหมือนกันหมด**
+ทั้งที่ `false` มีสองความหมาย: "ยกเลิกไปแล้ว" (ไม่มีอะไรต้องทำต่อ) กับ "อยู่สถานะที่ยกเลิกไม่ได้"
+(ต้องมีคนดู) · ผลคือโต๊ะที่ใบจองหายไป **ยกเลิกบิลก็ไม่ได้** และ **ครัวกดยกเลิกจานก็ไม่ได้**
+— ร้ายกว่าอาการเดิมด้วยซ้ำ เพราะโต๊ะจะค้างบนผังตลอดไปและเปิดบิลใหม่ทับไม่ได้
+(`uq_bms_restaurant_checks_open_table` กันโต๊ะละหนึ่งบิลที่เปิดอยู่)
+
+- ยุบเป็น `releaseCheckReservationInTx()` ตัวเดียว คืน `RELEASED | ALREADY_GONE | BLOCKED`
+  · ผู้เรียกทั้งสามใช้ตัวนี้ · `BLOCKED` = COMPLETED (บิลเก็บเงินแล้ว) ซึ่งต้องหยุดให้คนดู
+  ไม่ใช่ให้รอบใหม่เขียนทับยอดที่ออกใบกำกับไปแล้ว
+- `afterOrderCancellationCommitted` (แจ้งลูกค้าว่ายกเลิก) ยิงเฉพาะใบที่ **รอบนี้เป็นคนยกเลิกเอง**
+  ไม่ใช่ใบที่ตายมาก่อนแล้ว
+- **ไล่หาที่อื่นที่ยกเลิกบิลได้แล้ว**: มีแค่ 2 จุดในทั้ง repo ที่เขียน `bms_orders.status='CANCELLED'`
+  (`cancelOrderInTx` กับ `releaseExpiredOrders`) — ไม่มี sweeper ตัวที่สาม
+  · เส้นทาง `recordPosSale` ที่ `cancelOrder()` ตอนยอดไม่ตรง/serial ชน **ไม่แตะใบจองของโต๊ะ**
+    เพราะการคิดเงินบิลโต๊ะเดินกิ่ง replay (คีย์ชนกับใบจองเดิม 23505) ซึ่ง `return` เฉย ๆ
+  · **ยังไม่ได้กัน**: แอดมินยกเลิกออร์เดอร์จากหลังบ้าน (`bmsCancelOrder` /
+    `/api/bms/order/[id]/cancel`) ยังยกเลิกใบจองของโต๊ะที่นั่งอยู่ได้ = ปล่อยของคืนขณะครัวทำอยู่
+    · ตอนนี้กู้ได้แล้ว (ส่งครัวใหม่) จึงไม่ใช่ทางตัน แต่เป็นการ void บิลโต๊ะที่ข้ามด่าน
+    PIN คนที่สองของ `pos.void` — **ต้องตัดสินใจว่าจะบล็อกไหม**
+- **ยังไม่ได้ทำ (จงใจ)**: ผังโต๊ะ (`listRestaurantFloor`) ไม่บอกว่าโต๊ะไหนใบจองหาย — พนักงานเห็น
+  ตอนเปิดบิลซึ่งมีการ์ดเตือน + ปิดปุ่มคิดเงินให้แล้ว และหลังแก้ cron เคสนี้จะเหลือน้อยมาก
+- **⚠️ เทสรวมสองเรื่องในตัวเดียวไม่แดง**: การยกเลิกรายการของครัวสร้างใบจองใบใหม่ทันที
+  เส้นทาง "ยกเลิกบิล" จึงไม่มีวันเจอใบจองที่ตายแล้วถ้าเขียนรวมเป็นเทสเดียว (mutation ไม่แดง)
+  — ต้องแยกเป็นสองเทสถึงจะจับได้ · เคส `COMPLETED` ก็ต้องผ่าตัดข้อมูลให้ไม่สอดคล้องถึงจะทดสอบได้
+  (`closed_at` ต้องหลุดไปด้วย ไม่งั้นชน CHECK ของ `9.44`)
+- เทสรวมรอบนี้: pure **46** (`restaurant-pos-contract`) · DB **24** (`restaurant-pos-db-contract`)
+  · **mutation test 9 แบบ แดงถูกตัวทุกครั้ง**
+- **ไม่มี regression**: เทียบ `develop` กับหลังแก้บนสามชุด DB ที่อยู่ในรัศมี (multi-store ·
+  kitchen-station · pos-shift-ops) ได้ **เทสที่แดงชุดเดียวกันเป๊ะ 12 ตัว** ซึ่งเป็นของเดิมทั้งหมด
+
+#### รอบสาม — เก็บของค้างให้จบ: **เทส DB เขียวครบ 361/361 เป็นครั้งแรก**
+
+**⚠️ แอดมินยกเลิกใบจองของโต๊ะจากหลังบ้านไม่ได้แล้ว** — `cancelOrder()` (ใช้โดย
+`bmsCancelOrder` + `/api/bms/order/[id]/cancel`) ปฏิเสธเมื่อบิลนั้นเป็นใบจองของ check ที่ยัง
+`OPEN`/`CLOSING` · เดิมทำได้ = ปล่อยของคืนขณะครัวทำอยู่ และเป็นการ void บิลโต๊ะที่ **ข้ามด่าน
+PIN ผู้อนุมัติคนที่สอง** ที่หน้าร้านอาหารบังคับไว้ · ตรวจก่อนแตะสถานะบิล และบอกทางที่ถูกในข้อความ
+· `cancelOrderInTx` ไม่ถูกแตะ (cron/เส้นทางภายในยังใช้ได้ตามเดิม)
+
+**เทส DB ที่แดงค้างมาตั้งแต่ `9.51` แก้หมดแล้ว (119 → 0)** — ต้นเหตุมี 5 อย่าง ไม่ใช่อย่างเดียว:
+
+1. **ช่องทางขายไม่ถูกประกาศ (17 ชุด, ~110 ตัว)** — fixture ที่ `INSERT INTO bms_products`
+   ตรง ๆ ไม่ผ่าน `upsertProduct` จึงไม่มีแถว `bms_product_sales_surfaces` = สินค้าเป็น
+   **ฉบับร่าง** ขายไม่ได้ (`INVALID_PACK` ที่เคาน์เตอร์ · `NOT_FOUND` ทางออนไลน์) แล้วลามทั้งชุด
+   เพราะเทสถัดไปได้ `orderId` เป็นสตริงว่าง · แก้ด้วย `scripts/testing/salesSurfaces.mts`
+   (SQL ก้อนเดียว ประกาศ 4 ช่องทางให้ **เฉพาะ SKU `FAKE-%`/`TEST-%`**) — จำกัด prefix โดยตั้งใจ
+   เพราะหลายชุดใช้ร้านจริงของฐาน dev ร่วมกัน การเปิดช่องทางขายให้สินค้าทุกตัวคือการแก้ข้อมูลจริง
+2. **เทสเก่ากว่า `9.56` (3 ตัว)** — ร้าน archetype `restaurant` สั่งออนไลน์ต้องระบุ
+   `fulfillmentType` ไม่งั้น `FULFILLMENT_REQUIRED` · เติมให้ที่ multi-store (2) และ
+   shop-archetype (1)
+3. **เทสเก่ากว่า `9.51` (1 ตัว)** — สินค้าใหม่เป็นฉบับร่างเสมอ ฟิลด์ `active` ที่ส่งเข้า
+   `upsertProduct` ไม่มีผลอีกแล้ว · `product-vat-category` ต้องกด `setProductActive()` เอง
+   ไม่งั้นตัว bulk (activeOnly) ข้ามไปแล้วเทสกลายเป็นการยืนยันว่า "ไม่แตะอะไรเลย"
+4. **`ON CONFLICT` ที่ไม่ตรงดัชนีจริง (commission)** — `bms_product_packs` มีดัชนี **partial**
+   สองตัว (`…, size, pack_code) WHERE size IS NOT NULL` กับ `…, pack_code) WHERE size IS NULL`)
+   · fixture ใช้ arbiter ที่ละ `size` ออกไปทั้งที่ส่ง size มาด้วย → `no unique or exclusion
+   constraint matching` ตั้งแต่ setup
+5. **⚠️ teardown ที่ลบไม่ครบทำให้ *ชุดอื่น* ล้ม** — commission ลืมลบ `SKU_PACK` ทิ้งไว้ 1 แถว
+   · ร้านจริงของฐาน dev อยู่แพ็กเกจ **Free (สินค้าสูงสุด 5)** และมีของจริง 2 ตัว เหลือ 3 ช่อง
+   → สินค้าค้างหนึ่งตัวทำให้ `product-barcode`/`product-vat-category` ล้มด้วย "เกินโควตาแพ็กเกจ"
+   ซึ่งอ่านแล้วไม่มีทางเดาว่าเป็นเศษของเทสตัวก่อน · **เทสที่ใช้ร้านจริงร่วมกันต้องลบของตัวเองให้ครบ**
+
+- เทสรวมรอบนี้: pure **800** (`npm run gate` เขียว) · **DB 361/361 เขียวทั้งหมด** ·
+  ชุดร้านอาหาร DB **25 ตัว** · mutation test รวม **10 แบบ แดงถูกตัวทุกครั้ง**
+- **เปิดดูจริงในเบราว์เซอร์แล้ว 2026-09-05** (dev localhost:3000 · สร้างร้านทดสอบ
+  `fake-browser-check-*` + เครื่อง + กะ + โต๊ะ แล้วลบทิ้งครบ ยืนยัน `fake-%` เหลือ 0) —
+  โต๊ะที่ใบจองถูกยกเลิกจากทางอื่นแสดง **การ์ดเตือนสีเหลือง** พร้อมวิธีกู้ · ปุ่ม **คิดเงินเทา
+  กดไม่ได้** · ปุ่ม **ส่งครัวยังเขียวกดได้** · กดส่งครัวหนึ่งครั้งแล้วการ์ดหาย ปุ่มสลับกัน
+  (ส่งครัวเทา คิดเงินกดได้) · ตรวจฐานหลังกู้: order เดิม `CANCELLED` + ใบใหม่ `PENDING` ·
+  `reserved_stock` กลับมาเป็น 2 · **ตั๋วครัวยังมีใบเดียว** (ครัวไม่ได้รายการซ้ำ)
+  · วิธีเข้า: ตั้ง `localStorage["bms.pos.deviceToken"]` เป็น token ของเครื่องที่สร้างไว้
+    แล้วเปิด `/pos/restaurant` — และ **ผู้ปฏิบัติงานจะไม่ขึ้นในดรอปดาวน์ถ้า role ไม่มี
+    `pos.sell`** (ร้านที่สร้างด้วย SQL ล้วนยังไม่มีแถว `bms_role_permissions` ใช้
+    `Administrator` ซึ่งได้ทุกสิทธิ์โดยปริยาย)
+#### ⚠️ ต้นเหตุจริงของ 500 ในภาพ **ไม่ใช่ cron** — คือกฎตัวเลือกเมนูที่จอไม่บังคับ (2026-09-05)
+
+**อ่านจาก `system_logs` ของ production** (ที่ที่ควรดูเป็นที่แรก ไม่ใช่ที่หลัง — `withRouteErrorLog`
+เก็บข้อความจริง + SQLSTATE ไว้ก่อน redact ตอนตอบหน้าจอ):
+
+```
+POST /api/pos/restaurant/checks/[id] | "ต้องเลือก เผ็ดกี่เม็ด อย่างน้อย 1 รายการ"  x4 ครั้ง 18:18-18:28
+```
+
+- ส้มตำมีกลุ่ม `min_select = 1` และ **ไม่มีตัวเลือกไหนตั้ง `default_selected`** · จอโชว์กติกาไว้
+  แต่ปุ่ม "เพิ่มในบิล" ยังกดได้ → server ปฏิเสธ → ตอนนั้นการปฏิเสธตามกฎยังตกไปเป็น **500 ที่
+  ข้อความถูกลบทิ้งบน production** พนักงานจึงเห็น "เซิร์ฟเวอร์ผิดพลาด (เซิร์ฟเวอร์ผิดพลาด) —
+  กดชำระเงินอีกครั้ง" แล้วกดซ้ำ 4 ครั้งโดยไม่มีทางรู้ว่าต้องแตะชิปก่อน
+- แก้ที่จอ: `lib/pos/modifierSelection.ts` (pure) + ปุ่มถูก disable + ป้ายแดง "ยังไม่ได้เลือก"
+  ที่ตัวกลุ่ม + บรรทัด "ยังต้องเลือก: <ชื่อกลุ่ม>" แทนราคาชั่วคราว
+- **เปิดดูจริงในเบราว์เซอร์แล้ว**: ยังไม่เลือก → ปุ่มเทากดไม่ได้ · แตะ "1 เม็ด" → ป้ายแดงหาย
+  บรรทัดกลับเป็น `79.00 x 1 / ชิ้น` ปุ่มกดได้ · ยิง API ตรง ๆ โดยไม่ส่ง modifier ได้
+  **`HTTP 409 {"status":"CHECK_REJECTED","error":"ต้องเลือก เผ็ดกี่เม็ด อย่างน้อย 1 รายการ"}`**
+  (เดิมคือ 500 ที่ข้อความถูกลบ) — สองชั้นทำงานร่วมกันตามที่ออกแบบ
+- **ตรวจแล้วว่า cron ไม่เกี่ยว**: `bms_job_runs` ว่างเปล่า (ไม่เคยถูกยิง เพราะยังไม่ได้ตั้ง secret) ·
+  ไม่มี RELEASE ของใบจองโต๊ะเลย · ไม่มี check ไหนมีใบจอง CANCELLED · โต๊ะ T01 ในภาพยัง
+  `OPEN` ใบจอง `PENDING` (v=5 / v_จอง=4 = มีรายการที่ยังไม่ส่งครัว ตรงกับที่จอเขียน)
+  · **บั๊ก cron เป็นของจริงแต่ยังไม่เคยระเบิดที่ร้านนี้** — ปิดไว้ก่อนถูกต้องแล้ว เพราะวันที่ตั้ง
+  secret คือวันที่มันจะเริ่มยกเลิกใบจองของโต๊ะที่นั่งอยู่
+- **schema production ครบทุกไฟล์** (ยืนยันด้วย `db/checks/schema-readiness.sql` ผ่าน psql
+  บนเซิร์ฟเวอร์ เพราะเครื่องนั้นไม่มี Node — `npx: command not found`)
+- **บทเรียน**: ผมไล่จาก "อะไรพังได้บ้าง" (สมมติฐาน) แทนที่จะเปิด `system_logs` ก่อน (หลักฐาน)
+  — เสียเวลาไปหนึ่งรอบเต็ม · ครั้งหน้าที่เจอ 500 บน production ให้ query `system_logs` ที่
+  `action = 'api.route.unhandled'` เป็นขั้นแรกเสมอ
+- **กับดักตอนตั้งข้อมูลทดสอบ**: `bms_product_modifier_groups`/`bms_product_modifiers` มีคอลัมน์
+  `size` เป็น NOT NULL และ `resolvePosScan` จับคู่ตัวเลือก **ตามไซซ์** — ใส่ `size='-'` ให้สินค้าที่
+  ไซซ์จริงเป็น `BASE` = ตัวเลือกไม่โผล่ที่จอเลยโดยไม่มี error
+- เทสใหม่: `scripts/modifier-selection-contract.test.mts` (5 เทส pure)
+
+- **ยังเหลือให้คนทำ**: รัน `scripts/check-schema-readiness.mts` กับฐาน production เพื่อตัด
+  สาเหตุ "migration ขาด" ออก (ผมเข้าเครื่องนั้นไม่ได้)
+
+
+### ถอดสีประจำโหมดออกทั้งหมด — สวิตช์กลับเป็นแบบปกติ 2026-09-04
+
+`tsc` ผ่าน · **pure 794 เทสผ่าน** · build ผ่าน · ผู้ใช้สั่งกลับหลังเห็นทั้งสองเวอร์ชันจริง
+
+- **ลองสีมาสองรอบแล้วไม่ผ่านทั้งคู่**: ม่วงทึบ (`#722ed1`) ดังเกินและตีกับน้ำเงินของแอป ·
+  ม่วงอ่อนก็ยัง "แปลก" ในสายตาผู้ใช้ · **สรุป: แถบนี้ไม่มีสีประจำโหมด** โหมดแพลตฟอร์ม
+  หน้าตาเหมือนโหมดร้านทุกอย่าง ต่างกันแค่รายการเมนูข้างใน
+- **บทเรียนที่เก็บไว้**: แอปนี้ใช้สีน้ำเงินเป็นภาษาเดียวทั้งระบบ (เมนูที่เลือก/หัวข้อกลุ่ม/ปุ่มหลัก)
+  การเติมฮิวใหม่เข้าไปบนคอมโพเนนต์ที่ใช้นาน ๆ ครั้ง ทำให้มันเด่นกว่าเมนูที่ใช้ทุกวัน —
+  ถ้าจะบอกโหมดอีกครั้ง ให้ใช้ทางที่ไม่ใช่สี (ไอคอน/ตัวหนา/คำ) · คอมเมนต์กำกับไว้ใน CSS แล้ว
+- **สิ่งที่เก็บไว้จากงานชุดนี้** (ยังแก้ปัญหาจริงและไม่เกี่ยวกับสี): ป้ายสั้น "ร้าน"/"แพลตฟอร์ม"
+  ที่อ่านจบ · ความหมายเต็มอยู่ที่ tooltip/aria ทั้งสองโหมด · ไม่มีไอคอนในโหมดเต็มเพื่อให้ป้ายพอดี
+  · `padding-inline` ของป้ายที่ลดลง
+- **เทสเปลี่ยนทิศ**: จากที่เคยบังคับว่า "ต้องมีสีประจำโหมด" ตอนนี้บังคับว่า
+  **`bms-workspace-platform` / `bms-admin-sidebar-menu-platform` ต้องไม่กลับมาทั้งใน CSS และ
+  component** · ส่วนด่านโครงสร้าง (กฎของสวิตช์ต้องไม่มี selector อื่นปน + กฎ `height: auto`
+  ต้องยังครอบ `.ant-menu-item`) เก็บไว้เพราะมันกันบั๊กที่พัง production ไปแล้วจริง
+  · ผ่าน mutation test 3 แบบ (ใส่สีกลับใน CSS · ผูกคลาสกลับใน component · แทรกกลาง selector list)
+
+
+### สีโหมดแพลตฟอร์ม: ม่วงทึบ → ม่วงอ่อน — 2026-09-04 (ไม่มี migration)
+
+`tsc` ผ่าน · **pure 794 เทสผ่าน** · build ผ่าน · **ดูสีจริงในเบราว์เซอร์แล้ว** (วิธีดูอยู่ข้างล่าง)
+
+- ผู้ใช้บอกว่า "สีม่วงแปลก ๆ" หลัง deploy — ถูก: พื้นม่วงทึบ (`#722ed1`) เต็มช่องของ Segmented
+  **ตีกับสีน้ำเงินที่แอปใช้ทั้งระบบ** (เมนูที่เลือก/หัวข้อกลุ่มเป็นน้ำเงิน) และทำให้สวิตช์ที่กด
+  วันละไม่กี่ครั้งกลายเป็นสิ่งที่ตาไปเกาะที่สุดบนแถบ
+- เปลี่ยนเป็น **พื้นม่วงอ่อน + ตัวหนังสือม่วง + เส้นขอบบาง** (`inset box-shadow`) แบบเดียวกับ
+  แถวเมนูที่เลือกในโหมดนั้น — เป็น "สัญญาณ" ไม่ใช่ "ป้ายไฟ" · โหมดมืดใช้คู่ `#2b1d47`/`#d3adf7`
+- **วิธีดู CSS ของหน้าที่เข้าไม่ได้ (อยู่หลัง login)**: ดึงบล็อก CSS จริงจาก `globals.css`
+  ใส่หน้า HTML เล็ก ๆ ที่จำลอง markup ของ antd (`.ant-segmented-item-selected`,
+  `.ant-menu-item-selected`) แล้ววางไว้ที่ `apps/web/public/_csscheck/index.html` ชั่วคราว
+  → เปิด `http://localhost:3000/_csscheck/index.html` ในเบราว์เซอร์ → **ลบโฟลเดอร์ทิ้งทันที**
+  (ยืนยันแล้วว่าไม่ค้างใน git status) · ได้เห็นสามแบบเทียบกัน: โหมดร้าน / ม่วงอ่อนใหม่ / ม่วงทึบเดิม
+  · ⚠️ ต้องห่อ CSS ด้วย `<style>` เอง — รอบแรกลืมแล้ว CSS ถูกพิมพ์เป็นข้อความบนหน้าจอทั้งบล็อก
+- **ยังไม่ได้เห็นในหน้าจริง** (แถบเมนูอยู่หลัง login) — วิธีนี้ยืนยันได้แค่ "สีและน้ำหนักของ
+  คอมโพเนนต์" ไม่ใช่ทั้งหน้า
+
+
+### ⚠️ แทรก CSS กลาง selector list แล้วเมนูทั้งแถบกลายเป็นพื้นม่วงบน production — 2026-09-04
+
+**เกิดจริงบน `jachoei.com` หลัง deploy คอมมิตก่อนหน้า** (ผู้ใช้ส่งภาพมา) · แก้แล้วในคอมมิตถัดมา ·
+`tsc` ผ่าน · **pure 794 เทสผ่าน** · build ผ่าน
+
+- **ต้นเหตุ**: `globals.css` มีกฎ layout ของแถบเมนูที่เขียนเป็น selector list สองบรรทัด
+
+  ```css
+  .bms-admin-sidebar-menu:not(.ant-menu-inline-collapsed) .ant-menu-item,
+  .bms-admin-sidebar-menu:not(.ant-menu-inline-collapsed) .ant-menu-submenu-title {
+    height: auto; ...
+  }
+  ```
+
+  ผม anchor การแทรกบล็อกใหม่ไว้ที่ **บรรทัดที่สอง** ของ list นี้ → บรรทัดแรก
+  (`.ant-menu-item,`) ไปเกาะกฎใหม่ของผมแทน ผลคือ **ทุกแถวเมนูได้
+  `background: var(--purple-6)` + `color: #fff`** = พื้นม่วงทั้งแถบ · และกฎ layout เดิม
+  ก็เสีย `.ant-menu-item` ไปด้วย (แถวเมนูสูงผิดตอนแถบขยาย)
+- **CSS ไม่มี error ให้เห็นเลย** — `tsc`/build/เทสทั้งหมดเขียว เพราะไม่มีอะไรผิดไวยากรณ์
+  · จับได้ก็ต่อเมื่อมีคนเปิดดูจริง ซึ่งรอบนั้นผมทำไม่ได้ (แถบเมนูอยู่หลัง login ของแอดมิน)
+- **กฎที่ได้: ก่อน anchor การแทรก CSS ต้องดูว่าบรรทัดก่อนหน้าลงท้ายด้วย `,` หรือไม่** —
+  ถ้าใช่ แปลว่ากำลังจะแทรกกลาง selector list · วางบล็อกใหม่ท้ายกลุ่มเสมอ ไม่ใช่ก่อนบรรทัดที่
+  "ดูเหมือนเป็นจุดเริ่มของกฎ"
+- **เทสกันย้อนกลับ** ใน `admin-navigation-contract` (รวม 25): แยกกฎทั้งไฟล์ (ตัดคอมเมนต์ก่อน)
+  แล้วบังคับสองข้อ — ① ทุกกฎที่พูดถึงโหมดแพลตฟอร์มต้องมีแต่ selector ของโหมดนั้น ไม่ปนของอื่น
+  ② กฎ `height: auto` ของแถบต้องยังครอบ `.ant-menu-item` อยู่ · **ยืนยันด้วย mutation ที่จำลอง
+  การแทรกผิดแบบเดิมเป๊ะ ๆ → แดงถูกตัว**
+- **แก้การตัดคำเพิ่มด้วย** — ป้าย "แพลตฟอร์ม" ยังถูกตัดเป็น "แพลตฟ…" แม้ย่อคำแล้ว เพราะ
+  `Segmented block` แบ่งครึ่งเท่ากันและมีไอคอน + `padding-inline: 11px` ของ antd กินที่
+  · ถอดไอคอนออกเฉพาะโหมดเต็ม (โหมดย่อยังเป็นไอคอนล้วน) + ลด padding/ขนาดฟอนต์ของป้าย
+- **ยังไม่ได้เปิดดูจริงในเบราว์เซอร์เหมือนเดิม** (เข้าหลัง login ไม่ได้) — ต้องให้ผู้ใช้ยืนยัน
+  ว่าพื้นม่วงหายแล้วและป้ายอ่านจบทั้งสองปุ่ม
+
+
+### สวิตช์ "ดูแลร้าน / ดูแลแพลตฟอร์ม" บนแถบเมนูแอดมิน — 2026-09-04 (ไม่มี migration)
+
+`tsc` ผ่าน · **pure 793 เทสผ่าน** · build ผ่าน ·
+**⚠️ ยังไม่ได้เปิดดูจริงในเบราว์เซอร์** — แถบนี้อยู่หลังหน้า login ของแอดมินซึ่งผมเข้าไม่ได้
+(กรอกรหัสผ่านแทนผู้ใช้ไม่ได้) และ `NEXT_PUBLIC_*` ของ container dev ยังชี้ GraphQL ไป
+production อยู่ (ปัญหาที่จดไว้ตั้งแต่ `9.44`) · ยืนยันได้แค่ระดับ typecheck + build + เทสสแกนซอร์ส
+
+- **สวิตช์นี้เลือก "ชุดเครื่องมือ" ไม่ใช่ "ร้านที่กำลังดู"** — เห็นเฉพาะคนที่
+  `hasPlatformWorkspace()` เป็นจริง ซึ่งวันนี้เท่ากับ `users.is_platform_admin` เพราะเมนูฝั่ง
+  PLATFORM ทั้ง 11 รายการ gate ด้วย `ctx.isPlatformAdmin` เหมือนกันหมด · เจ้าของร้านธรรมดา
+  (แม้เป็น Administrator) ไม่เห็นแถบนี้เลยและถูกบังคับเป็น `'SHOP'`
+- **ปัญหาที่ผู้ใช้ถามมา ("ทำไมมี 2 tab") มีต้นเหตุที่หน้าตา ไม่ใช่ที่แนวคิด**:
+  1. ป้าย "ดูแลแพลตฟอร์ม" ยาวเกินครึ่งของแถบ 264px จึงถูกตัดเป็น **"ดูแลแพ…"** — ปุ่มที่อ่านไม่จบ
+  2. สองปุ่มน้ำหนักเท่ากัน ตัวที่เลือกต่างแค่พื้นขาว/เทา (ตระกูลเดียวกับตัวกรองสถานีบนจอครัว)
+  3. อยู่ตำแหน่งเด่นสุดใต้ช่องค้นหา ทั้งที่กดวันละไม่กี่ครั้ง
+  4. จึงอ่านเหมือน "สลับร้าน/สลับบัญชี" ซึ่งเป็นคนละเรื่องกับ drill-down ที่มีแถบสีส้มของตัวเอง
+- **แก้แบบเล็กที่สุด (ไม่แตะ state/logic เลย)**: ป้ายสั้นเป็น **"ร้าน" / "แพลตฟอร์ม"**
+  (`Shop` / `Platform`) · ความหมายเต็มย้ายไป `workspace_shop_full`/`workspace_platform_full`
+  ที่ tooltip + aria **ทั้งสองโหมด** ไม่ใช่เฉพาะตอนแถบย่อ · เพิ่ม **สีม่วงประจำโหมดแพลตฟอร์ม**
+  ที่ทั้งตัวสวิตช์และแถวเมนูที่เลือก (`bms-workspace-platform`, `bms-admin-sidebar-menu-platform`
+  ใน `globals.css`) — รู้จากหางตาว่าอยู่โหมดไหนโดยไม่ต้องอ่านป้าย
+- **สีม่วง = "โหมดของเครื่องมือ" ห้ามสับสนกับสีส้ม = "ร้านที่ drill-down เข้าไป"** — สองสถานะนี้
+  ตั้งฉากกัน (ดูร้าน A ด้วยเครื่องมือแพลตฟอร์มก็ได้) คอมเมนต์ใน CSS เขียนกำกับไว้แล้ว
+- เทส `admin-navigation-contract` +1 (รวม 24): ป้ายต้องไม่ยาวเกิน 12 ตัวอักษรทั้ง th/en ·
+  ต้องมีคีย์ `_full` · tooltip ต้องมีทั้งสองโหมด (นับ 2 ครั้งต่อคีย์) · สีประจำโหมดต้องลามถึงเมนู
+  · **ผ่าน mutation test 3 แบบ** — และรอบแรก **มี 1 ตัวไม่แดง** เพราะ assert จับบล็อก
+  `[data-theme="dark"]` ที่ยังเหลืออยู่ ต้องบังคับให้ตรงกฎของโหมดสว่างด้วย `^...$/m`
+- **ยังไม่ได้ทำ (จงใจ)**: ไม่ย้ายสวิตช์ไปท้ายแถบ และไม่ยุบเป็นเมนูเดียว — สองทางนั้นต้องแก้
+  `adminNavigation.ts`/ลำดับข้อมูล ไม่ใช่แค่ชั้นเรนเดอร์ · mockup ที่เทียบทั้งสี่แบบ:
+  https://claude.ai/code/artifact/d775c45f-70b3-4ea2-a947-e5118d321165
+
+
+### กล่องเพิ่มเมนูลงบิล + `9.58` ชื่อกลุ่มตัวเลือกเป็นไทย — 2026-09-04
+
+`tsc` ผ่าน · **pure 792 เทสผ่าน** · build ผ่าน · **เปิดดูจริงในเบราว์เซอร์แล้ว** ·
+`9.58__bms_modifier_group_default_name_th.sql` **apply เข้า dev DB แล้ว** (ยังไม่ได้ apply production)
+
+- **⚠️ บั๊กจริงข้อ 1 — ปุ่ม "Cancel" ภาษาอังกฤษทุก Modal ทั้งแอป** ไม่ใช่ข้อความที่ใครพิมพ์
+  แต่เป็นค่าปริยายของ antd เพราะ `ConfigProvider` ใน `AntdThemeProvider.tsx` **ตั้งแต่ธีม
+  ไม่เคยตั้ง `locale`** · แก้ให้ผูกกับ `lang` (`th_TH`/`en_US`) และ **ต้องสลับลำดับ provider**
+  ให้ `I18nProvider` ห่อ `AntdThemeProvider` ใน `ClientProviders.tsx` ไม่งั้น `useI18n()`
+  คืนค่า default ของ context (`"th"`) แทนภาษาที่ผู้ใช้เลือกจริง — คนที่ตั้งอังกฤษจะได้ปุ่มไทย
+- **⚠️ บั๊กจริงข้อ 2 — หัวข้อ "Options" มาจากข้อมูล ไม่ใช่โค้ด** · `9.51` backfill modifier
+  ยุคก่อนเข้ากลุ่มโดยตั้งชื่อว่า `'Options'` (บรรทัด `INSERT ... SELECT DISTINCT ... 'OPTIONS',
+  'Options'`) · `9.58` เปลี่ยนเป็น "ตัวเลือก" **เฉพาะแถวที่ยังเป็นค่า backfill เป๊ะ ๆ**
+  (`code='OPTIONS' AND name='Options'`) ร้านที่เปลี่ยนชื่อเองไปแล้วไม่ถูกแตะ ·
+  และ `productRecipes.ts` เปลี่ยนค่าปริยายของกลุ่มที่สร้างใหม่เป็น "ตัวเลือก"
+  · หมายเหตุ: seeder ร้านอาหารรุ่นใหม่ (`restaurantCatalogSeed.ts`) ตั้งชื่อไทยถูกอยู่แล้ว
+    ("ระดับความเผ็ด"/"เพิ่มไข่") — ปัญหาอยู่ที่ backfill ของ 9.51 เท่านั้น
+- **กล่องเพิ่มเมนูเปลี่ยนเป็นจอสัมผัส**: จำนวนเป็น **stepper 48px** + ชิป 1/2/3/5 (เดิมเป็น
+  `type="number"` ซึ่งเรียกคีย์บอร์ดขึ้นมาบังครึ่งจอเพื่อพิมพ์เลขตัวเดียว) · ตัวเลือกเป็น **ชิป
+  สูง 40px ที่ตัดบรรทัดเอง** (เดิมกล่องเต็มแถวสูง ~56px ต่อหนึ่งตัวเลือก) · **ส่วนต่างราคาอยู่บน
+  ชิป** (`+฿15.00`) ไม่ใช่ในวงเล็บท้ายชื่อ · ชิปโน้ตด่วน 4 คำ + textarea เหลือ 2 บรรทัด ·
+  **ยอดรวมอยู่บนปุ่ม** ("เพิ่มในบิล · ฿270.00") และมีบรรทัดบอกที่มา ("฿135.00 × 2 (รวมตัวเลือก)")
+- **ชิปยังเป็น `radio`/`checkbox` จริงข้างใน** (input ซ่อนด้วย opacity+ขนาด 1px ไม่ใช่
+  `display:none`) จึงยังคุมด้วยคีย์บอร์ดและอ่านด้วย screen reader ได้ · `:focus-within`
+  บนชิปเป็นตัวแทน focus ring
+- **กติกากลุ่มบอกครบแล้ว** — เดิมโชว์แค่ `minSelect` · ตอนนี้ "เลือกได้ 1" / "เลือกได้ไม่เกิน N" /
+  "ต้องเลือกอย่างน้อย N" · (ข้อมูลของ shop-b เป็น `MULTIPLE` ไม่มีเพดาน เผ็ดน้อย+เผ็ดมากจึงติ๊ก
+  พร้อมกันได้ — เป็นการตั้งค่าของร้าน ไม่ใช่บั๊ก)
+- **สูตรราคาต่อหน่วยเหลือที่เดียว** (`menuHitUnitPrice`) เดิมเขียนซ้ำสองรอบในข้อความ Alert
+  บรรทัดเดียว · มีเทสนับจำนวนครั้งที่สูตรปรากฏ
+- เทส `restaurant-pos-contract` +3 (รวม 41) · **ผ่าน mutation test 5 แบบ** (กลับไปใช้ช่องพิมพ์ ·
+  ยอดหายจากปุ่ม · ไม่บอกกติกาสูงสุด · ถอด locale · สลับลำดับ provider กลับ)
+- **⚠️ บทเรียนสำคัญของรอบนี้ — ผมลบข้อมูลของผู้ใช้โดยเข้าใจผิดว่าเป็นเศษของตัวเอง**
+  ระหว่างวันมีแถว `bms_product_menu_unavailability` และบรรทัด NEW ในบิลเดโมโผล่ขึ้นมาเรื่อย ๆ
+  ผมเดาว่าเป็นผลจากการคลิกทดสอบของตัวเองแล้วลบทิ้ง · **audit log บอกว่าไม่ใช่**: แถวที่ผมสร้าง
+  จากสคริปต์ actor เป็น `ABC` (คนแรกของร้านที่ `LIMIT 1` เจอ) ส่วนแถว `MENU-PADTHAI-SHRIMP`
+  ที่ 15:36 และ 15:50 actor เป็น **`A`** = ผู้ใช้กำลังกดทดสอบบนเครื่อง dev คู่ขนานไปกับผม
+  · **กฎที่ได้: ก่อนลบอะไรในฐาน dev ให้ดู `bms_audit_log` ว่าใครเป็นคนทำก่อนเสมอ** —
+  ตอนนี้เหลือแถวของผู้ใช้ไว้ 1 แถวโดยไม่แตะ และคืนเฉพาะสิ่งที่ผมแก้เอง (กลุ่ม SOMTAM กลับเป็น
+  MULTIPLE/ไม่มีเพดาน, `SPICE_MORE` price_delta กลับเป็น 0, token เครื่อง POS-01)
+- mockup ที่ใช้ตัดสินใจ: https://claude.ai/code/artifact/82e1482c-770d-4f03-b2aa-50b2757780c6
+
+
+### การ์ดเมนูที่ปิดขายเปลี่ยนเป็น "การ์ดเงียบ · แตะเพื่อเปิดขาย" — 2026-09-04 (ไม่มี migration)
+
+`tsc` ผ่าน · **pure 789 เทสผ่าน** · build ผ่าน · **วัดจริงในเบราว์เซอร์**
+· กลับคำจากดีไซน์ที่ผมทำเองเมื่อเช้า (แถบแดง + ปุ่มเต็มความกว้าง) หลังเห็นในกริดจริง
+
+- **ต้นเหตุ**: แถบแดงทึบ + ปุ่มเขียวเต็มความกว้างทำให้ **ของที่ขายไม่ได้ ดังกว่าของที่ขายได้**
+  ซึ่งกลับหัวกับงานของกริดนี้ (มีไว้สั่งอาหาร) · แถบยังทับรูปอาหารซึ่งเป็นตัวช่วยจำเมนูของ
+  พนักงาน และปุ่มด้านล่างทำให้การ์ดสูงกว่าเพื่อนในแถวเดียวกัน
+- **ดีไซน์ใหม่**: รูปขาวดำ + พื้น `--panel-2` + ชื่อ/ราคาเทา · ชิปแดงเล็ก "หมดวันนี้" **แทนป้าย
+  สถานี** (ตอนสั่งไม่ได้ สถานีไม่ใช่ข้อมูลที่ต้องรู้) · เหตุผล + เวลาเปิดเองเป็นบรรทัดเล็กใต้ชื่อ
+- **"แตะการ์ด = เปิดแผ่นเปิดขาย"** — การ์ดนี้สั่งอาหารไม่ได้อยู่แล้ว การแตะจึงว่าง ใช้ให้เป็น
+  ประโยชน์แทนการเพิ่มปุ่มและความสูง · ปุ่ม ⋯ เปิดแผ่นเดียวกัน = มีทางเดียวให้จำ
+  · **ของที่สต็อกหมดจริงยังกดไม่ได้** เพราะไม่มีอะไรให้ "เปิด"
+- **แผ่นเดียวใช้สองทิศ**: ปิดอยู่ → ปุ่มเขียว "เปิดขายเดี๋ยวนี้" + บรรทัดบอกว่าปิดเพราะอะไร/เปิดเองกี่โมง
+  · ยังขายอยู่ → สามปุ่มเลือกสาเหตุเหมือนเดิม
+- **การ์ดสูงเท่ากันเป๊ะ** — บรรทัดสถานะกินที่ของบรรทัดที่สองของชื่อ (`-webkit-line-clamp: 1`
+  เฉพาะการ์ดที่ปิดขาย) · วัดจริง: การ์ดปกติ 184px (ชื่อ 36 + ไม่มีโน้ต) การ์ดปิดขาย 184px
+  (ชื่อ 18 + โน้ต 14) — **ก่อนแก้บรรทัดนี้ การ์ดปิดขายสูง 203px แล้วดันทั้งแถว**
+- เทสใหม่ใน `menu-availability-contract` (รวม 12): ห้าม `dishRibbon`/`dishReopen` กลับมา
+  ทั้งใน JSX และ CSS · ต้องมี `dishOutChip`/`dishOutNote` · การ์ดที่ปิดขายต้องกดได้
+  (`disabled={!item.sellable && !soldOutToday}`) และแตะแล้วเปิดแผ่น · แผ่นต้องมีทางเปิดขาย ·
+  รูปต้องจางด้วย `grayscale` ไม่ใช่เอาอะไรไปทับ · **ผ่าน mutation test 4 แบบ**
+- **⚠️ ระหว่าง verify มีข้อมูลทดสอบค้าง 3 รายการ ลบครบแล้ว**: แถว `bms_product_menu_unavailability`
+  2 แถว (PADTHAI + SOMTAM) และบรรทัด NEW ในบิลเดโม 1 บรรทัด · ยืนยันหลังลบ: 0 แถว ·
+  บิล 4 บรรทัด `amount_due` 200.00 OPEN · token เครื่องคืนแล้ว
+- **ตรวจแล้วว่าด่าน PIN ไม่รั่ว** — กด "ปิดขายวันนี้" ตอนยังไม่เลือกผู้ปฏิบัติงาน ได้
+  "เลือกผู้ปฏิบัติงานและกรอก PIN ก่อน" และไม่มีอะไรถูกเขียน (ทดสอบสด)
+- mockup ที่ใช้ตัดสินใจ (4 แบบ + วัดความสูงการ์ด):
+  https://claude.ai/code/artifact/ff97e88f-4454-4914-9367-7b835fbe8d20
+
+
+### ปุ่มลบบรรทัดที่ยังไม่ส่งครัวเป็นข้อความ + คอลัมน์กว้างเท่ากัน — 2026-09-04 (ไม่มี migration)
+
+`tsc` ผ่าน · **pure 788 เทสผ่าน** · build ผ่าน · **วัดจริงในเบราว์เซอร์**
+
+- **ต้นเหตุ**: หลังเปลี่ยนปุ่มสั่งซ้ำเป็นข้อความ คอลัมน์ขวาของบิลมี **สองภาษาปนกัน** —
+  สี่บรรทัดบนเป็นคำ บรรทัดที่ยังไม่ส่งครัวยังเป็นไอคอน `⊗` · ตำแหน่งเดียวกัน หน้าที่เดียวกัน
+  แต่ตาต้องสลับวิธีอ่านกลางคอลัมน์ และ `⊗` อ่านได้ทั้ง "ลบบรรทัด" และ "ยกเลิกบิล"
+- **สีบอกทิศทางของคอลัมน์**: เขียว = เพิ่มของ (สั่งซ้ำ/สั่งใหม่) · แดง = เอาออก (ลบ)
+- **`min-width: 62px` ทั้งสองปุ่ม** — "ลบ" สั้นกว่า "สั่งใหม่" ~18px ถ้าไม่บังคับ ขอบซ้ายของปุ่ม
+  จะเยื้องกันทุกบรรทัด แล้วนิ้วต้องเล็งใหม่ทีละครั้ง · วัดจริงหลังแก้: ทั้ง 5 ปุ่ม **62×30 px
+  และขอบซ้ายตรงกันหมด (left = 1195)**
+- **`aria-label` ต้องบอกชื่อเมนู** (`ลบ <ชื่อ> ออกจากบิล`) ไม่ใช่ "ลบรายการ" เฉย ๆ —
+  บิลใบเดียวมีเมนูซ้ำกันได้สามบรรทัด (เคสจริงของโต๊ะ 1: ชามะนาวเย็น 3 บรรทัด)
+- **ไม่ถามยืนยันโดยตั้งใจ** — บรรทัด `NEW` ยังไม่มีตั๋วครัว ไม่มีการจองวัตถุดิบ ไม่มีเงินขยับ
+  และเผลอลบแล้วแตะการ์ดเมนูใบเดิมก็กลับมา · ต่างจาก "ยกเลิกบิล" ที่อยู่หลังปุ่ม ⋯ พร้อมเหตุผล
+  + PIN ผู้อนุมัติ และต่างจากบรรทัดที่ส่งครัวแล้วซึ่งลบไม่ได้เลย (ต้องให้ครัวยกเลิกจากจอครัว)
+- เทส: `restaurant-pos-contract` (38) ขยายเทสปุ่มสั่งซ้ำให้ครอบปุ่มลบด้วย — ห้ามเป็นไอคอนเปล่า ·
+  `aria-label` ต้องมีชื่อเมนู · ทั้งสองปุ่มต้องมี `min-width` เท่ากัน · **ผ่าน mutation test 3 แบบ**
+- **วิธี verify บรรทัด NEW โดยไม่มี PIN**: `insert` แถว `bms_restaurant_check_items` สถานะ NEW
+  ตรง ๆ (id คงที่ `ffffffff-…ffff`) แล้วลบทิ้งหลังดูเสร็จ — บรรทัด NEW ไม่เคยส่งครัวจึงไม่มีตั๋ว
+  ไม่มีออร์เดอร์ ไม่มีสต็อกจอง · ยืนยันหลังลบ: 4 บรรทัด `amount_due` 200.00 OPEN เท่าเดิม
+  · mockup ที่ใช้ตัดสินใจ: https://claude.ai/code/artifact/88c3bc87-3a7f-45e2-a13d-2c7b6860c499
+
+
+### ⚠️ ปุ่มไอคอนถูก `min-height: 44px` ของ pos.css ยืดเป็นสี่เหลี่ยมผืนผ้า — 2026-09-04
+
+`tsc` ผ่าน · **pure 788 เทสผ่าน** · build ผ่าน · **วัดจริงในเบราว์เซอร์** (ผู้ใช้รายงาน:
+"icon ให้อยู่ตรงกลาง")
+
+- **ต้นเหตุคนละกลไกกับสองรอบก่อน ไม่ใช่ specificity** — `pos.css` ตั้ง
+  `.pos-root button { min-height: 44px; padding: 10px 14px }` · คุณสมบัติที่กฎของเรา
+  **"ไม่ได้ประกาศ"** จะตกมาจากตรงนั้นเสมอ ไม่ว่าคลาสจะเจาะจงแค่ไหน · ปุ่ม ⋯ ของการ์ดเมนู
+  เขียน `width: 34px; height: 34px` แต่ไม่เขียน `min-height` → กล่องจริง **34×44**
+  (สูงกว่ากว้าง) ไอคอนเลยดูไม่อยู่กลางมุมการ์ด
+- **วัดก่อนแก้ (ไม่ได้เดาจากตา)**: `dishKebab` 34×44 · `itemRemove` 30×44 · `btnIcon` 40×44 ·
+  `dishSwitch` (สวิตช์ในโหมดแจ้งของหมด) 40×23 ที่ประกาศไว้ก็จะโดนยืดเช่นกัน
+  · หลังแก้: 34×34 / 30×30 / 40×40 / 40×23 และไอคอนใน ⋯ ห่างขอบ **9px เท่ากันทั้งสี่ด้าน**
+- **ปุ่มที่ "ของจริงคือ 44px อยู่แล้ว" ไม่หดตามเลขที่เขียนไว้** — `.btn` (เขียน 40),
+  `.areaButton` (เขียน 36), `.ticketGo` (44) ทั้งหมดเรนเดอร์ 44 มาตลอดเพราะ min-height
+  · 44px เป็นเป้าแตะที่ดีบนจอสัมผัส จึง **แก้ตัวเลขที่เขียนให้ตรงกับของจริง** (44 + min-height 44)
+  ไม่ใช่หดจอให้เท่าเลขเดิมที่ไม่เคยมีผล — ไม่มีพิกเซลไหนขยับ
+- เทสด่านที่สามใน `restaurant-pos-contract`: **ปุ่มที่ตั้ง `height` ต้องตั้ง `min-height` ด้วย**
+  · ผ่าน mutation test (ถอด `min-height` ของ `dishKebab` → แดงถูกตัว)
+- **สรุปกฎครบสามข้อของไฟล์นี้ (เทสบังคับทั้งหมดแล้ว)**: ทุกกฎที่แต่งปุ่มต้อง ① มี `.page` นำหน้า
+  ② ถ้าพื้นทึบ+ตัวหนังสือสีอ่อน ต้องมี `:hover` ของตัวเอง ③ ถ้าตั้ง `height` ต้องตั้ง `min-height`
+- **⚠️ ระหว่าง verify มีรายการ NEW งอกในบิลเดโม (`MENU-LIME-TEA` 1 บรรทัด)** จากการคลิกทดสอบ ·
+  ลบออกด้วย SQL แล้ว (บรรทัด NEW ไม่เคยส่งครัว = ไม่มีออร์เดอร์/สต็อกจอง) · ยืนยันหลังลบ:
+  4 บรรทัดเท่าเดิม `amount_due` ยัง 200.00 สถานะ OPEN · `version` ของบิลขยับขึ้นซึ่งไม่มีผล
+  (ใช้กันชนกันเท่านั้น) · **บทเรียน: การ verify ด้วยการคลิกบนบิลจริงต้องเช็ครายการก่อน-หลังทุกครั้ง**
+
+
+### ปุ่มสั่งซ้ำบนบิลโต๊ะเป็นข้อความ ไม่ใช่ไอคอน — 2026-09-04 (ไม่มี migration)
+
+`tsc` ผ่าน · **pure 788 เทสผ่าน** · build ผ่าน · **เปิดดูจริงในเบราว์เซอร์แล้ว** (บิลโต๊ะ 1
+ของ shop-b ที่มีทั้งบรรทัดปกติและบรรทัดที่ครัวยกเลิก)
+
+- **ต้นเหตุ**: ปุ่มเป็นไอคอน `⟳` 30×30 อยู่ในช่องเดียวกับราคา · `⟳` อ่านได้หลายอย่าง
+  (รีเฟรช/ย้อนกลับ/กำลังโหลด) และ **บนจอเดียวกันนี้ `⟳` ที่หัวจอคือปุ่มรีเฟรชจริง ๆ อยู่แล้ว**
+  · tooltip ที่เขียนไว้ครบช่วยไม่ได้เลยเพราะจอสัมผัสไม่มี hover ให้อ่าน
+- **คำบนปุ่มเปลี่ยนตามสถานะบรรทัด ไม่ใช่คำเดียวทุกกรณี** — บรรทัดที่ครัวยกเลิก (`dropped`
+  หรือ `stillCharged`) อาหารไม่เคยถึงลูกค้า สิ่งที่คนกดกำลังทำคือ **"สั่งใหม่"** ไม่ใช่
+  **"สั่งซ้ำ"** (เอาเพิ่มอีกที่) · ไอคอนตัวเดียวพูดสองเรื่องนี้ไม่ได้ ซึ่งเป็นเหตุผลที่แท้จริง
+  ที่ต้องเปลี่ยน ไม่ใช่แค่ "ไอคอนไม่สวย"
+- `aria-label`/`title` ยังเป็นประโยคเต็ม ("สั่ง <ชื่อ> ใหม่/ซ้ำพร้อมตัวเลือกเดิม") — คำบนปุ่มสั้น
+  เพื่อไม่กินที่ ส่วนคนที่ใช้ screen reader ต้องได้ความหมายครบเหมือนเดิม
+- **ที่กว้างขึ้น ~34px มาจากคอลัมน์ชื่อเมนู ไม่ใช่ราคา** (ราคาไม่ยอมหด) · วัดจริงบนจอ:
+  ปุ่ม 59×30 px และชื่อเมนูทั้งสี่บรรทัดยังอยู่บรรทัดเดียว · แผงบิลแคบสุดบนแท็บเล็ตแนวตั้ง
+  ~320px ชื่อยาว ๆ จะขึ้นสองบรรทัด (แบบไอคอนก็ขึ้นอยู่แล้ว แต่ช้ากว่า)
+- CSS ตามกฎที่โดนมาสามรอบ: `.page` นำหน้า + `:hover:not(:disabled)` ของตัวเอง
+  (เดิม `.page .itemAgain:hover` ไม่มี `:not(:disabled)` จึงทับปุ่มที่กดไม่ได้ด้วย)
+- เทส: `restaurant-pos-contract` (รวม 38) — ห้ามกลับไปเป็นไอคอนเปล่า · คำต้องเปลี่ยนตามสถานะ ·
+  `aria-label` ต้องยังเป็นประโยคเต็ม · **ผ่าน mutation test 2 แบบ**
+- mockup ที่ใช้ตัดสินใจ (4 แบบ + ทดสอบความกว้าง 320/360/420):
+  https://claude.ai/code/artifact/78fb3f8f-7020-47d9-9bd7-4dea1f9823e9
+
+
+### ⚠️ แท็บที่เปิดอยู่บนแถบซ้ายหายไปตอน hover — 2026-09-04 (ไม่มี migration)
+
+`tsc` ผ่าน · **pure 787 เทสผ่าน** · build ผ่าน · **เปิดดูจริงในเบราว์เซอร์แล้ว**
+(ผู้ใช้รายงานจาก production: "เมนู เวลา hover font ไม่มองไม่เห็น")
+
+- **ต้นเหตุ**: `.page .railBtn:hover:not(.railBtnActive)` เขียน `:not()` ไว้เพื่อกัน **กฎของเราเอง**
+  ไม่ให้ทาทับแท็บที่เลือกอยู่ — แต่ไม่ได้กัน `.pos-root button:hover:not(:disabled)` ของ `pos.css`
+  (0,3,1) ซึ่งเปลี่ยนพื้นเป็น `--pos-sunken` ขณะที่ `color: white` ของ `.railBtnActive` ยังอยู่
+  → **แท็บที่เปิดอยู่กลายเป็นปุ่มว่างเปล่า** · บนจอสัมผัส `:hover` ค้างกับปุ่มที่แตะล่าสุด
+  แปลว่าที่หน้าร้านเห็นแบบนี้เป็นปกติหลังกดสลับแท็บทุกครั้ง ไม่ใช่แค่ตอนเอาเมาส์ไปชี้
+- แก้ด้วย `.page .railBtnActive:hover:not(:disabled)` (0,4,0) ทาพื้น accent กลับ + `brightness(1.12)`
+  · แท็บที่ไม่ได้เลือกยังได้ hover สีอ่อนเหมือนเดิม (ยืนยันแล้ว: `--panel-2` + ตัวอักษรสีเข้ม)
+- **เทสรอบก่อนจับตัวนี้ไม่ได้** เพราะมันตรวจแค่ "มี `.page` นำหน้าไหม" ซึ่งกฎนี้มีอยู่แล้ว ·
+  เพิ่มด่านที่สองใน `restaurant-pos-contract`: **ปุ่มที่ทาพื้นทึบแล้วใช้ตัวหนังสือสีอ่อน
+  (`color: white/#fff/var(--panel)`) ต้องมีกฎ `:hover` ของตัวเองที่ทาพื้นด้วย** ·
+  ผ่าน mutation test 2 แบบ (ลบ hover ของ `.railBtnActive` และของ `.btnPrimary`)
+- **⚠️ กับดักตอนเขียนเทส (รอบที่สองแล้วที่เจอแนวนี้)**: ตัวตรวจ "กฎนี้เป็นของปุ่มไหน" ต้อง
+  **ตัด `:not(...)` ออกก่อน** ไม่งั้น `.railBtn:hover:not(.railBtnActive)` ถูกนับว่าเป็นกฎ hover
+  *ของ* `railBtnActive` ทั้งที่มันเอ่ยถึงเพื่อ **ยกเว้น** → เทสเขียวทั้งที่บั๊กอยู่ตรงหน้า
+- **สรุปกฎของไฟล์นี้ (โดนมาสามรอบแล้ว)**: ทุกกฎที่ทาสีปุ่มต้อง (1) มี `.page` นำหน้า และ
+  (2) ถ้าพื้นทึบ+ตัวหนังสือสีอ่อน ต้องประกาศ `:hover` ของตัวเองด้วย · เทสสองด่านนี้บังคับให้แล้ว
+
+
+### ปุ่มล้างคำค้นในช่องกรองเมนู (`/pos/restaurant`) — 2026-09-04 (ไม่มี migration)
+
+`tsc` ผ่าน · **pure 787 เทสผ่าน** · build ผ่าน · **เปิดดูจริงในเบราว์เซอร์แล้ว**
+
+- คนหน้าร้านพิมพ์ด้วยนิ้วบนแท็บเล็ต การลบทีละตัวช้ากว่าแตะครั้งเดียวมาก และคำค้นที่ค้างอยู่
+  ทำให้กริดเมนูดู "ของหาย" ทั้งที่แค่ยังกรองอยู่ (เจอจากหน้าจอจริง)
+- **ปุ่มขึ้นเฉพาะตอนมีข้อความ** — ปุ่มที่ลอยอยู่ตลอดแม้ช่องว่างคือปุ่มที่กดแล้วไม่เกิดอะไร
+  ซึ่งสอนให้คนเลิกเชื่อปุ่มบนแถบนั้น · **คืนโฟกัสให้ช่องหลังล้าง** ไม่งั้นต้องแตะช่องอีกครั้ง
+  ก่อนพิมพ์คำใหม่ · **Escape ล้างได้ด้วย** สำหรับเครื่องที่ต่อคีย์บอร์ด/สแกนเนอร์
+- ขนาด 36×34 px วางทับมุมขวาของช่อง และช่องเพิ่ม `padding-inline-end: 42px` เฉพาะตอนมีปุ่ม
+  (ตัวหนังสือจะได้ไม่ลอดใต้ปุ่ม)
+- `.page .searchClear` มี `.page` นำหน้าตามกฎที่เพิ่งโดนไปสองรอบ — และเทสตัวสแกนปุ่มก็บังคับอยู่แล้ว
+- เทส: `restaurant-pos-contract` (รวม 37) · ผ่าน mutation test 2 แบบ (ปุ่มขึ้นตลอดเวลา · ไม่คืนโฟกัส)
+- verify จริง: พิมพ์ "ต้ม" → เหลือเมนูเดียว · กด ✕ → ข้อความหาย เมนูกลับมา 5 ใบ **โฟกัสอยู่ในช่อง**
+  ปุ่มหายไปเอง · กด Escape ก็ล้างได้เหมือนกัน
+
+
+### ⚠️ ตัวกรองสถานีบนจอครัวไม่เคยแสดงว่า "เลือกอยู่" เลย — 2026-09-04 (ไม่มี migration)
+
+branch `feat/menu-availability-ux` · `tsc` ผ่าน · **pure 786 เทสผ่าน** · build ผ่าน ·
+**เปิดดูจริงในเบราว์เซอร์แล้ว** (ผู้ใช้รายงานจากหน้าจอจริง: "เลือกแล้วไม่รู้ว่าเลือกอะไร")
+
+- **ต้นเหตุคือกับดักเดิมอีกครั้ง แต่คราวนี้ที่ *สถานะปกติ* ไม่ใช่แค่ `:hover`** —
+  `pos.css` ตั้ง `.pos-root button { background; color; border; font; padding }` = **(0,1,1)**
+  ซึ่ง **เจาะจงกว่าคลาสเดี่ยว ๆ ของ CSS module (0,1,0)** · `.kitchenFilterOn` เขียนไว้แบบไม่มี
+  `.page` นำหน้า → **ไม่เคยมีผลเลยสักครั้งตั้งแต่เขียนมา** ตัวกรองที่เลือกอยู่จึงหน้าตาเหมือน
+  ตัวที่ไม่ได้เลือก · ที่เห็นเขียวบ้างคือตอนเอาเมาส์ไปชี้ เพราะกฎ `:hover` ที่ผมเพิ่งเพิ่มเมื่อวาน
+  บังเอิญมี `.page` นำหน้า — **อาการ "เขียวตอนชี้ ไม่เขียวตอนเลือก" คือลายเซ็นของบั๊กชนิดนี้**
+- **แก้แล้ว 4 กฎ**: `.kitchenFilter` (ความสูง/padding/เส้นขอบก็แพ้ไปด้วย ปุ่มจึงสูงตาม pos.css
+  ไม่ใช่ 34px ตามที่ตั้งใจ) · `.kitchenFilter:hover` · `.kitchenFilterOn` ·
+  `.kitchenChimeOn` (ปุ่มเสียงเตือน "เปิดอยู่" ก็ไม่เคยขึ้นสีเหมือนกัน) ·
+  **และ `.ticketGo`** (ปุ่ม "เริ่มทำ/เสิร์ฟแล้ว" ที่ใหญ่ที่สุดบนจอครัว — `font-size: 15px`
+  แพ้ `font: inherit` ของ pos.css มาตลอด ตัวหนังสือเล็กกว่าที่ออกแบบไว้)
+- **`.ticketGo` เจอเพราะเทส ไม่ใช่เพราะตา** — ตอนเขียนเทสกันย้อนกลับ มันชี้ตัวนี้ขึ้นมาเอง
+- **สถานะ "เลือกอยู่" ไม่ควรต่างกันแค่เฉดสี** — เพิ่มตัวหนา + วงแหวน 3px (`--green-bg`) รอบปุ่ม
+  เพราะสีเขียวเข้มอย่างเดียวยังแยกจาก focus ring สีน้ำเงินของเบราว์เซอร์ไม่ออกตอนเพิ่งกดเสร็จ
+  (ภาพที่ผู้ใช้ส่งมาคือเคสนี้พอดี) · เพิ่ม `aria-pressed` ให้ปุ่มกรองทั้ง 3 แบบด้วย
+- **เทสกันย้อนกลับ (ตัวสำคัญของรอบนี้)**:
+  `scripts/restaurant-pos-contract.test.mts` (รวม 36) สแกน **ทุกกฎใน `restaurant.module.css`
+  ที่ทาสี/ตีกรอบ/ตั้งขนาด แล้วเทียบกับรายชื่อคลาสที่อยู่บน `<button>` จริงในหน้า** —
+  ถ้ากฎไหนไม่มี `.page` นำหน้า = แดง · เดินตัวอักษรหาปลาย tag เอง (นับ `{}`) เพราะ
+  `className` เป็น template literal ที่มี `${...}` ซ้อน regex สั้น ๆ ตัดกลางทางแล้วมองไม่เห็นคลาส
+  · **ผ่าน mutation test 2 แบบ** (ถอด `.page` ออกจาก `.kitchenFilterOn` · เพิ่มกฎปุ่มใหม่ที่ลืม `.page`)
+- **⚠️ บทเรียนเรื่องเทสเอง**: รอบแรกเทสนี้ **เขียวทั้งที่ควรแดง** เพราะ destructure ผลของ
+  `matchAll` ผิดช่อง (`[, selector, body]` ได้กลุ่ม `(^|\n)` มาเป็น selector) — เทสสแกนซอร์ส
+  ที่ "ไม่เคยเห็นของจริง" จะเขียวเสมอโดยไม่มีใครรู้ · **ทุกเทสแนวนี้ต้องพิสูจน์ด้วย mutation
+  ก่อนเชื่อ** ไม่ใช่ดูว่าเขียวแล้วผ่าน
+- **ยังไม่ได้ทำ**: ไม่ได้ไล่ไฟล์ CSS ของหน้าอื่นในกลุ่ม `(pos)` ด้วยกฎเดียวกัน — เทสตัวนี้ครอบ
+  เฉพาะ `restaurant.module.css` ถ้าจะขยายให้ครอบทุกหน้าใต้ `.pos-root` ต้องทำเป็นงานแยก
+
+
+### จำจอ/โต๊ะที่เปิดอยู่ข้ามการรีเฟรช (`/pos/restaurant`) — 2026-09-04 (ไม่มี migration)
+
+branch `feat/menu-availability-ux` · `tsc` ผ่าน · **pure 785 เทสผ่าน** · build ผ่าน ·
+**เปิดดูจริงในเบราว์เซอร์แล้ว** (dev shop-b · ยืนยัน 6 กรณี รวมเคสขอบ)
+
+- **ต้นเหตุที่ไม่ใช่แค่ความสะดวก**: interval 5 วินาทีของจอครัวอยู่ใต้เงื่อนไข
+  `screen !== "KITCHEN" → return` และ `playKitchenChime()` ถูกเรียกจาก `loadTickets()` ของ
+  interval นั้น → แท็บเล็ตติดผนังที่หลับแล้วตื่นมารีโหลด (หรือถูกเบราว์เซอร์ดีดจาก memory —
+  หน้าค้าปลีกจดไว้เองว่า "พบบ่อยบนแท็บเล็ตหน้าร้าน") เด้งกลับจอสั่งอาหารแล้ว **หยุดดึงตั๋ว
+  และหยุดส่งเสียงทั้งกะ** โดยไม่มีอะไรบนจอบอก · `pos_only` เปิด `/admin/kitchen` แทนไม่ได้
+- **ยกรูปแบบจากหน้าค้าปลีกมาทั้งชุด ไม่ได้คิดใหม่** — `bms.pos.localTab.<token>` มีอยู่แล้ว
+  ที่ `/pos` · ของใหม่คือ `bms.pos.restaurantScreen.<token>` + `bms.pos.restaurantCheck.<token>`
+  (ผูกกับ device token เครื่องอื่นที่ใช้เบราว์เซอร์เดียวกันไม่เห็นของกัน)
+- **จำแค่ "ยืนอยู่ไหน" ไม่จำ "กรองอะไรไว้" และไม่จำ "ใครทำงาน"** — โหมดแจ้งของหมด/ตัวกรอง
+  หมดวันนี้/หมวดหมู่/สถานีบนจอครัว **ห้ามจำ** เพราะตัวกรองที่ค้างข้ามรีเฟรชคือการซ่อนงานจริง
+  และกลับมาอยู่ในโหมดแจ้งของหมด = แตะการ์ดแล้วปิดเมนูแทนสั่งอาหาร · PIN/ผู้ปฏิบัติงานไม่จำ
+  ตามกฎเดิมของ repo
+- **บิลที่ทำอยู่**: เก็บแค่ `{id, savedAt}` (ยอดเงินมาจาก server เสมอ) · TTL 8 ชม. นับจาก
+  **การแตะครั้งล่าสุด** (เท่ากับ `LOCAL_CART_DRAFT_MAX_AGE_MS`) · คืนค่าแล้ว **ยืนยันกับ
+  server ทุกครั้ง** และรับเฉพาะสถานะ `OPEN`/`CLOSING`
+- **`?screen=kitchen` ปักหมุดจอครัวได้** (รับ order/floor/kitchen/kds/…) ชนะค่าที่จำไว้ →
+  จอครัวติดผนังเปิดลิงก์เดียวจบ แม้ล้าง site data หรือใช้โหมดส่วนตัว
+- **⚠️ บั๊กที่ตัวเองสร้างแล้วจับได้เพราะเปิดดูจริง (เทส+tsc เขียวสนิท)**: รอบแรกทำ
+  `replaceState` เขียนจอที่เปิดอยู่กลับลง URL ("กด F5 แล้วอยู่จอเดิมแม้ localStorage ใช้ไม่ได้")
+  ผลคือ **ทุกการโหลดถัดไปกลายเป็น "ลิงก์ที่คนตั้งใจปักหมุด"** แล้วโค้ดที่ `return` ทิ้งหลัง
+  อ่าน URL ก็ **ข้ามการคืนบิลไปเงียบ ๆ** — อาการคือแท็บจำได้แต่โต๊ะไม่กลับมา และไม่มี error
+  ที่ไหนเลย · **กฎที่ได้: พารามิเตอร์ที่แปลว่า "คนตั้งใจสั่ง" ห้ามให้โปรแกรมเขียนเอง**
+  (มีเทสห้าม `searchParams.set("screen")` / `history.replaceState` แล้ว)
+- **กับดักที่สอง (async restore)**: ธง "คืนค่าเสร็จแล้ว" ต้องเป็น **state ไม่ใช่ ref** และปัก
+  ใน `.finally()` — การคืนบิลเป็น async ถ้า effect ที่เขียนดูแค่ "เริ่มคืนค่าแล้ว" มันจะวิ่งไป
+  ลบคีย์ตั้งแต่ตอน `check` ยัง null · และ **`viewRestored` ต้องอยู่ใน deps ด้วย** ไม่ใช่แค่ใน
+  เงื่อนไข ไม่งั้นคีย์ของบิลที่คืนไม่สำเร็จค้างตลอดไปและเสีย GET ทิ้งทุกครั้งที่เปิดจอ
+- **แก้ของเดิมไปด้วย 1 จุด**: `refresh()` เคยรับบิลกลับมาโดยไม่ดูสถานะ → บิลที่ถูกเก็บเงิน/
+  ยกเลิกที่เครื่องอื่นค้างบนจอให้กดต่อแล้วไปล้มที่ server ตอนนี้หลุดจากจอทันที
+- **verify จริงในเบราว์เซอร์ 6 กรณี**: อยู่จอครัว→รีเฟรช→ยังอยู่จอครัวและ **poll เดินต่อ**
+  (นับได้ 10 request) · เปิดโต๊ะ→รีเฟรช→บิลกลับมาครบ (โต๊ะ 1 · ฿200) · `?screen=kitchen`
+  ชนะค่าที่จำไว้ **และยังคืนบิลให้ด้วย** · บิลที่ `CANCELLED` ไม่ถูกคืนและคีย์ถูกล้าง ·
+  บิลที่ค้างเกิน 8 ชม. ไม่ถูกคืน · URL ไม่ถูกเขียนเอง
+- **เทส**: `scripts/restaurant-pos-contract.test.mts` +3 (รวม 35) — จำจอ/URL ชนะ/ห้ามเขียน URL ·
+  บิลต้องมี TTL + ยืนยันกับ server · **ตัวห้าม**: สแกนว่ามีคีย์ localStorage ได้แค่ 4 ตัวใน
+  allowlist และ PIN/โหมด/ตัวกรองต้องไม่ถูกเก็บ · **ผ่าน mutation test 6 แบบ** — และรอบแรก
+  **มี 1 เทสที่ไม่แดง** (assert guard แบบทั้งไฟล์ เขียวได้ด้วย guard ของ effect อื่น) แก้เป็น
+  ตรวจทีละจุดเขียนแล้วถึงแดงจริง
+- **ยังไม่ได้ทำ (จงใจ)**: ไม่จำโซนที่เลือกบนผังโต๊ะ (`activeArea` เป็นตัวกรอง) · ไม่ล้างคีย์
+  ตอนเลิก pair ที่ `/pos` (คีย์ผูกกับ token ที่ตายแล้ว เข้าถึงไม่ได้อีก) · หน้า `/pos` (ค้าปลีก)
+  ไม่ถูกแตะ
+
+
+### ปุ่ม "หมดวันนี้" ที่จอสั่งอาหาร — 2026-09-04 (ไม่มี migration, ไม่มี permission ใหม่)
+
+branch `feat/menu-availability-ux` · `tsc` ผ่าน · **pure 782 เทสผ่าน** · production build ผ่าน ·
+**เปิดดูจริงในเบราว์เซอร์แล้ว** (dev localhost:3000 ร้าน shop-b เดินครบทั้ง 5 สถานะ)
+
+- **ต้นเหตุ (รายงานจากหน้าร้านจริง)**: แถบแดงเต็มความกว้างใต้ *ทุก* การ์ดเขียนว่า "หมดวันนี้" ซึ่งเป็น
+  **ปุ่มสั่งงาน** แต่อ่านเป็น **ป้ายสถานะ** → พนักงานเข้าใจว่าเมนูปิดอยู่ทั้งที่ยังขายได้ (ยืนยันด้วย
+  `bms_product_menu_unavailability` = 0 แถวทั้งฐาน) · ซ้ำร้ายปุ่มที่ย้อนคืนยากไปนั่งติดปุ่มที่กดบ่อยสุด
+  ของจอด้วยขนาดเท่ากัน และสถานะจริงกลับเบากว่า (การ์ดจาง `opacity:.52` + ป้ายเล็ก)
+- **แก้เป็น**: การ์ดปกติเหลือปุ่มเดียว (แตะ = สั่ง) + ปุ่ม ⋯ 34px มุมขวาบนเปิดแผ่นยืนยันที่ให้เลือก
+  **สาเหตุจริง** (`MENU_SOLD_OUT_REASONS`: วัตถุดิบหมด / เตา-เครื่องไม่พร้อม / งดขายรอบนี้) ·
+  การ์ดที่ปิดอยู่ได้ริบบิ้นแดงพาดหน้าการ์ด + **เวลาที่จะกลับมาขายเอง** และปุ่มเต็มความกว้างเปลี่ยนเป็น
+  **เปิดขาย** สีเขียว (ตอนนั้นคือสิ่งที่คนอยากทำจริง) · กติกาเดียวกับที่ `.sheetActions` ยุบงานทั้งบิล
+  (ย้ายโต๊ะ/ยกเลิก) ไป Modal เมื่อ `9.44`
+- **โหมด "แจ้งของหมด"** บนแถบเครื่องมือ (ครัวเดินมาบอกทีเดียว 5 อย่าง) → ทุกการ์ดกลายเป็นสวิตช์
+  กดเสร็จแล้วการ์ดกลับมาสะอาด · **ตัวนับ "หมดวันนี้ N"** สีน้ำตาลกดกรองได้ และ **ปลดตัวกรองเอง**
+  เมื่อเปิดขายครบ (กติกาเดียวกับตัวกรองสถานีบนจอครัว — ตัวกรองค้างกับกริดว่างอ่านว่า "ระบบพัง")
+- **เวลาที่เมนูจะกลับมาขายเองมาจาก server เท่านั้น** — `listRestaurantMenu` เปลี่ยนจาก
+  `EXISTS(...)` เป็น LEFT JOIN แล้วคืน `unavailableResetsAt` + `unavailableReason` (คอลัมน์มีอยู่แล้ว
+  ตั้งแต่ `9.55` ไม่ต้อง migration) · จอห้าม hardcode 04:00 เพราะเวลารีเซ็ตวันบริการตั้งได้รายร้าน
+  (`menu_availability_reset_time` + timezone) — เลขที่ผิดคือเลขที่พนักงานเอาไปบอกลูกค้า
+- **⚠️ บั๊กที่เจอเฉพาะตอนเปิดดูจริง (เทส/tsc จับไม่ได้เลย)**: `pos.css` มี
+  `.pos-root button:hover:not(:disabled) { background: var(--pos-sunken) }` ซึ่ง **เจาะจงกว่า
+  `.page .<class>` ของ CSS module** → ปุ่มที่ทาสีเองทุกตัวกลายเป็น **สีขาวพร้อมตัวหนังสือสีขาว
+  = อ่านไม่ออก** ตอน hover · และ **บนจอสัมผัส `:hover` ค้างอยู่กับปุ่มที่แตะล่าสุดจนไปแตะที่อื่น**
+  แปลว่าที่เคาน์เตอร์จะเห็นปุ่มว่างเปล่าเป็นปกติ ไม่ใช่แค่ตอนเอาเมาส์ไปชี้
+  · `.btnPrimary` เคยเจอและแก้ไว้แล้วด้วย `:hover:not(:disabled)` — **ปุ่มใหม่ทุกตัวต้องประกาศ
+  hover ของตัวเองเสมอ** · แก้ให้ของใหม่ทั้งชุด และ **ของเดิมที่มีบั๊กเดียวกันอยู่ก่อน 3 ตัว**:
+  ชิปหมวดหมู่ที่เลือกอยู่ (`.catCardActive`) · ตัวกรองสถานีบนจอครัว (`.kitchenFilterOn`) ·
+  แท็บโซนบนผังโต๊ะ (`.areaButtonActive`) — สามตัวนี้คือปุ่มที่แตะบ่อยที่สุดของสองจอ
+- **กับดักเล็กที่แก้คู่กัน**: ตัวเลขจำนวนในบิล (`.dishQty`) กับปุ่ม ⋯ อยู่มุมขวาบนเดียวกัน →
+  เพิ่มคลาส `.dishCardKebab` เลื่อนตัวเลขไป `right: 44px` เฉพาะการ์ดที่มีปุ่ม ⋯ จริง
+- **เทส**: `scripts/menu-availability-contract.test.mts` เพิ่ม 2 ตัว (รวม 11) — ห้ามคืนแถบปิดขาย
+  เต็มความกว้างใต้การ์ดที่ยังขายได้ · ปุ่ม ⋯ ต้องเปิดแผ่นยืนยันก่อน ไม่ใช่ปิดทันที · เวลาเปิดอีกครั้ง
+  ต้องมาจาก server · **ผ่าน mutation test แล้ว 3 แบบ** (กดปุ่มแล้วปิดทันที · จอ hardcode 04:00 ·
+  service คืน `unavailableResetsAt: null`) แดงถูกตัวทุกครั้ง
+- **verify กับ DB จริง**: เรียก `setMenuTemporarilyUnavailable` + `listRestaurantMenu` ตรง ๆ บน dev DB
+  → ปิด: `SOLD_OUT_TODAY` + เหตุผล + `resetsAt` = 04:00 กรุงเทพของวันถัดไป · เปิด: กลับเป็น
+  `AVAILABLE` ทุกฟิลด์เป็น null · ตารางเหลือ 0 แถว ไม่มีข้อมูลค้าง
+  · **ตอน verify ต้องยืมเครื่อง POS-01 ของ shop-b ชั่วคราว** (สำรอง `token_hash` เดิม → ตั้งของตัวเอง
+  → คืนค่าเดิมหลังเสร็จ ยืนยันแล้วว่าคืนตรง) เพราะ token เก็บเป็น sha256 กู้ค่าเดิมจากแฮชไม่ได้ —
+  **ห้ามทับ token ทิ้งโดยไม่สำรอง** ไม่งั้นเครื่องที่ pair ไว้ต้อง pair ใหม่
+- **ยังไม่ได้ทำ (จงใจ)**: การ์ดที่ปิดขายอยู่สูงกว่าเพื่อนในแถวเดียวกันเล็กน้อย (มีปุ่มเปิดขายเพิ่ม) ·
+  ยังไม่มีปุ่ม "ปิดหลายเมนูรวดเดียว" ในโหมดแจ้งของหมด (สลับทีละตัว ยิง API ต่อครั้ง) ·
+  ยังไม่ได้ยกดีไซน์นี้ไปหน้า `/admin/kitchen` (คนละหน้า ใช้ `t()` ครบ)
+
+
+### Restaurant chat delivery rollout (2026-09-04)
+
+- `9.55` เพิ่มสถานะหมดชั่วคราวรายเมนู/สาขา และใช้ availability policy เดียวกันทุกช่องทาง
+- `9.56` เพิ่มสาขา ประเภทรับของ เวลาสัญญา เวลารับออร์เดอร์ และ human-accept ก่อนยิงตั๋วครัว
+- `9.57` ใช้ POS return engine เดิมเพื่อตัดเมนูออนไลน์รายรายการ, เก็บต้นเหตุถาวร, คืนเงินเข้าคิว และบันทึกส่วนต่างที่ร้านรับ
+- เฟส 5 ใช้ค่าส่ง `flat`, prepaid-only, carrier `OTHER`; เปลี่ยน checklist/seed default เป็นเมนูไม่บังคับสูตร และเพิ่มไกด์ผู้ช่วย 3 เรื่องพร้อมคอร์ปัส
+- cron หลักยิงรีเซ็ตเมนูทุก 15 นาทีเพื่อเคารพ `resets_at` ของแต่ละ timezone/เวลาที่ร้านตั้ง ไม่ผูกกับ 04:00 กรุงเทพอย่างเดียว
+- ผ่าน typecheck และ pure contract ของเฟส 1–5; migration/DB contract และ browser QA ยังไม่ได้รันเพราะเครื่องนี้ไม่มี local DB/server
+
+#### recheck ต่อจาก codex — เจอของจริง 10 จุด แก้ครบแล้ว (2026-09-04)
+
+`tsc --noEmit` ผ่าน · **pure 785 เทสผ่านทั้งหมด** (ก่อน recheck **แดง 2 ตัว**) · production build ผ่าน
+· **เทส DB ยังไม่ได้รันในรอบนี้** (เครื่องนี้ไม่มี Postgres ของ BMS — `docker ps` มีแต่ container
+ของโปรเจกต์อื่น) ต้อง apply `9.55`–`9.57` เข้า dev DB แล้วรันชุด DB ให้ผ่านก่อนเชื่อว่าใช้ได้จริง
+· **ทั้ง 10 จุดผ่าน mutation test แล้ว** (ย้อนโค้ดกลับทีละจุด → แดงถูกตัวทุกครั้ง)
+
+1. **⚠️ `bms_locations` ไม่มีคอลัมน์ `is_default` — ออร์เดอร์ร้านอาหารออนไลน์สร้างไม่ได้เลยสักใบ**
+   · `createOrderInTx()` และ `listRestaurantOrderLocations()` ทั้งคู่ `ORDER BY is_default DESC, name`
+   · ตาราง `bms_locations` (7.84) มีแค่ `code` / `is_head_office` — `is_default` เป็นคอลัมน์ของ
+   `bms_customer_addresses` (3.6) → ทุกการเรียกล้มด้วย **42703** แปลว่าเส้นทางสั่งอาหารทางแชท
+   **พังทั้งเส้น** และทูล `list_restaurant_order_locations` ล้มทุกครั้งที่ลูกค้าถามเรื่องสาขา
+   · แก้เป็นลำดับเดียวกับ `resolveDefaultLocationIdInTx()` (`(code = 'MAIN') DESC,
+   is_head_office DESC, created_at`) เพื่อให้ fallback ของร้านสาขาเดียวได้สาขาเดียวกับที่เส้นสต็อก
+   ทั้งระบบเรียกว่า default · **กันย้อนกลับด้วยเทสที่สแกน template literal ทุกก้อนที่เอ่ยถึง
+   `bms_locations` แล้วห้ามมีคำว่า `is_default`** (ไม่ใช่แค่จับสองบรรทัดที่เจอ)
+2. **⚠️ `9.57` DROP CHECK ผิดตัวได้ 50%** — `bms_order_discounts` (7.96) มี check ที่เอ่ยคำว่า
+   `source` **สองตัว**: ลิสต์ค่าที่ต้องขยาย และ `CHECK (points_used = 0 OR source = 'POINTS')`
+   · เดิมหาด้วย `pg_get_constraintdef(oid) LIKE '%source%'` + `SELECT INTO` ซึ่งได้ตัวไหนก็ได้
+   → ถ้าได้ตัว points_used: ลิสต์ 4 ค่าเดิมยังอยู่ **ทุก insert `MERCHANT_ABSORBED` ล้มด้วย
+   check violation** และการ์ด points_used หายเงียบ ๆ · เป็นกับดักตัวเดียวกับที่ `9.52` จดไว้แล้ว
+   ("ต้องกรอง `array_length(conkey,1) = 1`") · แก้เป็น FOR loop ที่กรอง single-column check บน
+   คอลัมน์ `source` ที่ def มีคำว่า `TIER`
+3. **⚠️ เปิดกะล้างธง "หมดวันนี้" ทั้งสาขา** — `resetMenuAvailabilityForLocationInTx()` ลบทุกแถวของ
+   สาขา · กะเป็นของ **เครื่อง x คนขาย** ไม่ใช่ของ **วันบริการ**: ร้านสองเครื่อง หรือร้านที่เปลี่ยนกะ
+   กลางวัน เปิดกะหลายรอบต่อวัน → เครื่องที่สองเปิดกะตอน 11:00 เอาเมนูที่ครัวเพิ่งบอกว่าหมดตอน 10:30
+   **กลับขึ้นเมนูทันที** โดยไม่มีอะไรบนจอบอกว่าใครยกเลิกการตัดสินใจนั้น
+   · นี่คือความเสียหายเดียวกับที่เหตุผลของ "รีเซ็ต 04:00 ไม่ใช่เที่ยงคืน" กันไว้ แค่มาจากการเปิดกะ
+   แทนเที่ยงคืน · แก้เป็นล้างแค่แถวที่ `resets_at <= now()` — **เจตนาเดิม (เปิดร้านแล้วเมนูของเมื่อวาน
+   กลับมาขายเองแม้ยังไม่ได้ตั้ง cron) ยังอยู่ครบ** เปลี่ยนแค่ขอบเขต
+4. **⚠️ `restaurantOrderingStateInTx()` อ่านคอลัมน์ของ `9.56` ในคำสั่งเดียวกับ `business_archetype`**
+   — ฟังก์ชันนี้รันกับ **ทุกออร์เดอร์ที่ไม่ใช่ POS ของทุกร้าน** ฐานที่ยังไม่ apply `9.56` จึง
+   **ขายไม่ได้ทั้งแพลตฟอร์ม ไม่ใช่แค่ร้านอาหาร** · กับดักเดียวกับ recheck ข้อ 1 ของ `9.29`
+   · แยกเป็นสองคำสั่ง: อ่าน archetype ก่อน แล้วอ่านคอลัมน์ใหม่เฉพาะร้านอาหาร
+   · **ยังเหลือรัศมีกว้างที่ไม่ได้แก้ (จงใจ)**: `listSellableProducts()`/`checkStock()` อ่าน
+   `bms_product_menu_unavailability` (9.55) ให้ทุกร้าน → **ต้อง apply `9.55` ก่อน deploy โค้ดชุดนี้เสมอ**
+   (repo นี้ไม่มี schema probe ที่ไหนเลย — กฎเดียวกับ `9.40`/`9.51`/`9.52`)
+5. **การ์ดออร์เดอร์เข้าโชว์รายการที่ตัดไปแล้ว และส่งจำนวนผิดหน่วยให้ปุ่มตัดรายการ** —
+   `listIncomingRestaurantOrders()` คืน `oi.qty` ตรง ๆ · ผลสองอย่าง: (ก) เมนูที่ตัดไปแล้ว
+   (ตั๋วครัวยกเลิกแล้ว เงินเข้าคิวคืนแล้ว) ยังอยู่บนการ์ดให้ครัวทำต่อ (ข) `cancelRestaurantOrderLines()`
+   อ่าน `packQty` เป็น **จำนวน pack** (`pack_qty`) ไม่ใช่หน่วยฐาน → บรรทัดที่ขายเป็นแพ็ก
+   **ตัดไม่ได้เลย ตอบ `RETURN_QTY_EXCEEDED` ทุกครั้ง** · แก้ให้คืน "จำนวนที่ยังเหลือจริง" ในหน่วยเดียวกับ
+   ที่ปุ่มตัดต้องใช้ + ซ่อนบรรทัดที่ตัดครบแล้ว (นิพจน์ returned เดียวกับเส้นทางคืนของใน `pos.ts`)
+6. **`cancel_lines` ตัดบางบรรทัดเงียบ ๆ เมื่อ payload บางบรรทัดผิดรูป** — route ใช้ `.filter()`
+   แล้วเดินต่อ · ตัดอาหารออกจากบิลลูกค้าและคืนเงินคนละยอดกับที่เครื่องสั่ง โดยไม่มีที่ไหนบอกว่ามีบรรทัดหาย
+   · แก้เป็นปฏิเสธทั้งคำขอ 400 (กฎเดียวกับที่ `9.5` ทำกับ `parsePosExtraLines`)
+7. **cron รีเซ็ตเมนู throw ออกจากลูป** — ร้านเดียวที่ล้มทำให้ร้านที่เหลือ **ไม่ถูกกวาดเลย** และรอบถัดไป
+   เจอแถวเดิมแล้วหยุดอีก = เมนูปิดค้างตลอดไป (รูปเดียวกับบั๊ก `orders/release-expired`)
+   · แก้เป็นเก็บ `failed[]` แล้วเดินต่อ + คืน `failedCount` ออกไปที่คำตอบของ endpoint
+8. **`checkStock()` throw `Error` เปล่าเมื่อ locationId ไม่ใช่สาขาจริง** → โมเดลได้ข้อความ
+   "ดึงข้อมูลไม่สำเร็จ" **พร้อมเปิด incident `ai.tool_failed`** ทั้งที่เป็นแค่โมเดลเดา UUID ผิด
+   · ห่อด้วย `checkStockForBranch()` ใน catalog ให้เป็น `ToolArgError` ที่บอกให้เรียก
+   `list_restaurant_order_locations` ก่อน (โมเดลแก้เองได้ ไม่กินโควตา incident)
+9. **⚠️ `checkStock()` อ่านไซซ์เมนูจาก `bms_inventory` แต่ความจริงของไซซ์อยู่ที่
+   `bms_product_variants` (9.51)** — `9.51` ประกาศไว้เองว่า "A recipe menu may have a variant while
+   its own inventory remains zero" และติด trigger ให้การเขียน inventory/pack/recipe **ซิงก์เข้า**
+   ตาราง variant **ทางเดียว** · `upsertProduct()` เขียนแถว variant แต่ **ไม่เคยสร้างแถว
+   `bms_inventory`** → เมนูที่ร้านเพิ่งพิมพ์เข้าไปเองได้ `MENU_SIZE_REQUIRED` พร้อม `sizes: []`
+   และ `create_order` บังคับ `size` **โมเดลจึงไปต่อไม่ได้เลย** = อาการเดียวกับที่เฟส 2 ทำมาเพื่อแก้
+   แค่ย้ายไปโผล่ช้าลงหนึ่งขั้น
+   · **ร้ายที่สุดคือมันดูเหมือนใช้ได้**: seeder เขียน `bms_inventory` ให้ (จึงผ่านตอนกดข้อมูลตัวอย่าง)
+   และ backfill ของ `9.51` ยกไซซ์เดิมของร้านที่มีอยู่แล้วมาให้ → **เขียวใน demo, พังกับเมนูใหม่ของ
+   ร้านจริง** · แก้ให้กิ่ง NON_STOCK/RECIPE อ่านจาก `bms_product_variants` เหมือน
+   `listRestaurantMenu()` (9.44) และ `resolvePosScan()` (9.52) — สามจอตอบคำถามเดียวกันด้วยแหล่งเดียว
+   · กิ่ง DIRECT/PACK ยังอ่าน inventory ตามเดิมโดยตั้งใจ (ของนับได้ที่ไม่มีแถวสาขา = ไม่มีของจริง)
+10. **ปล่อย reserved ตอนตัดรายการไม่ตรวจว่าลงตัว** — `bms_inventory.reserved_stock` เป็น `INTEGER`
+   (3.2) เศษทศนิยมจะถูก Postgres ปัดเงียบ ๆ แล้วเหลือ drift ที่ไล่ต้นเหตุไม่ได้ · กิ่งคืนของหน้าเคาน์เตอร์
+   ในฟังก์ชันเดียวกันตรวจอยู่แล้ว กิ่งตัดรายการออนไลน์ไม่ตรวจ · ทุก policy หารลงตัวโดยโครงสร้าง
+   ดังนั้นเศษ = snapshot เพี้ยน → ปฏิเสธการตัดรายการ ตรงกับที่กิ่งข้างล่างทำ
+
+**ยังไม่ได้แก้ (ตั้งใจ — เสี่ยง regression เกินขอบเขต recheck)**:
+`listSellableProducts()` (`search_products`) ยังคืน `availableSizes` จาก `bms_inventory` ล้วน เมนูใหม่
+จึงโผล่ในผลค้นหาโดยไม่มีไซซ์ · เส้นทางที่บังคับคือ `check_stock` ซึ่งแก้แล้ว แต่ถ้าโมเดลข้ามไป
+`create_order` ตรง ๆ จะได้ `INVALID_ITEM` แล้ววนถาม · การเปลี่ยนแหล่งของ `availableSizes` กระทบ
+หน้าร้านออนไลน์/แอดมิน/AI พร้อมกัน 5 จุด และ `availableTotal`/`inStockOnly` ผูกกับตัวเลขเดียวกัน —
+ควรทำเป็นงานแยกที่มีเทสของตัวเอง
+
+**เทสที่แดงอยู่ก่อน recheck 2 ตัว (แก้แล้ว — เป็นเทสค้าง ไม่ใช่โค้ดผิด)**:
+`restaurant-delivery-readiness` ยัง assert `status = 'PAID' RETURNING id … enqueueKitchenTicketsInTx`
+ซึ่ง **บังคับให้ `packOrder()` กลับไปยิงตั๋วครัวให้บิลค้าปลีกทุกใบ** ที่สินค้าบังเอิญมีสถานี ·
+`restaurant-online-order` assert ternary ของแท็บ POS แบบต้องอยู่บรรทัดเดียว
+
+**ยังไม่ได้แก้ / ต้องรู้ก่อนใช้จริง**:
+- **ยอด `amountDue` บนการ์ดออร์เดอร์เข้ายังเป็นยอดตอนสั่ง** ไม่หักยอดที่คืนไปแล้ว (ตั้งใจ — บิล/ใบกำกับ
+  ที่ออกไปแล้วไม่ถูกเขียนใหม่ ตามกฎเดียวกับ `9.22`) ยอดคืนอยู่ในคิวคืนเงินแยก
+- `restaurantCancellationLossReport()` เกลี่ย `merchant_absorbed_amount` ตามมูลค่าของ **ทุกบรรทัด**
+  ที่ถูกตัดในใบนั้น ไม่ได้แยกว่าบรรทัดไหนเป็น `MERCHANT_OUT_OF_STOCK`
+- การเลือกผู้จัดการยืนยันส่วนต่างที่หน้า POS ใช้ `window.prompt` (ไม่มี harness ทดสอบ React
+  component ใน repo นี้) — ต้องลองด้วยมือที่หน้าจอ
+- **ยังไม่เคยเปิดดูจริงในเบราว์เซอร์** ทั้งแท็บ "รับออร์เดอร์", คิวคืนเงิน, ปุ่มปิดเมนูหมดวันนี้
+
+> `loginAdmin` ตรวจรหัสผ่านจริงทุก environment แล้ว (`passwordMatches()`, ยืนยัน 2026-08-13) — โน้ตเก่า
+> ที่เขียนว่า "dev ยังไม่ตรวจ" ไม่ตรงกับโค้ดปัจจุบัน
+
+
+### Restaurant register complete — รอบ 1–2 (2026-09-05)
+
+Branch `feat/restaurant-register-complete` ทำให้ `/pos/restaurant` ปิดงานบนเครื่องเดียวได้สำหรับ
+การรับเงินและงานหน้าเคาน์เตอร์หลัก โดยไม่เปลี่ยน money path และไม่มี migration:
+
+- หลัง settle เก็บ snapshot ของ check + ผลจาก server ก่อนล้าง state แล้วแสดงใบเสร็จทันที
+  (ยอดรับ/ทอน/VAT/ส่วนลด/แต้ม/จำนวนตั๋ว/replay) พิมพ์ผ่าน printer helper เดิม เปิดลิ้นชักเงินสด
+  และส่งใบเสร็จด้วย `orderId` ที่ได้จากผล settle เท่านั้น
+- เพิ่มจอ `BILLS` สำหรับประวัติของ device ปัจจุบัน, เปิดรายละเอียด, พิมพ์ซ้ำและส่งซ้ำ และเพิ่มจอ
+  `SHIFT` สำหรับ cash in/out, no-sale, X report และปิดกะ
+- checkout ค้น/เลือกสมาชิกผ่าน `/api/pos/member`; backend ตรวจสมาชิกด้วย `tenant_id`, stamp
+  `bms_orders.customer_id` ใน transaction เดียวกับ settlement ก่อนคำนวณแต้ม และยังรองรับลูกค้าที่ไม่เป็นสมาชิก
+- ส่ง check ปัจจุบันและผล settlement ไป customer display ผ่าน `BroadcastChannel("bms-pos-display")`;
+  mobile 390px ไม่มี horizontal overflow
+- คู่มือแอดมินและ `docs/business/pos.md` อัปเดตตาม workflow จริง; `/pos` เดิมไม่ถูกแก้
+
+การยืนยัน: `npm run gate` ผ่าน (typecheck, pure contracts 809/809, production build), restaurant DB
+28/28 และ full DB 365/365 ผ่าน; mutation checks 5 แบบแดงตามจุดที่ตั้งใจจับ (screen contract,
+server receipt total, customer pass-through, cross-tenant customer rejection, no-member compatibility)
+แล้วคืน source ทุกครั้ง. Browser ทดสอบเปิดโต๊ะ → ส่งครัว → เลือกสมาชิก → เงินสด → ใบเสร็จ/ทอน/แต้ม
+→ no-printer error → no-recipient error → Bills → X report ทั้ง desktop และ 390x844. Fixture `fake-*`
+ถูกล้างและ count หลังทดสอบเป็น 0.
+
+#### ⚠️ กล่องเพิ่มเมนู: ความเผ็ดเปลี่ยนไม่ได้ + ไซซ์ไม่มีให้เลือก (2026-09-05)
+
+branch `fix/menu-modal-size-and-single-select` (ตัดจาก `develop` ที่ merge #177 แล้ว) ·
+`tsc` ผ่าน · **pure 819/819** · build ผ่าน · **DB 368/368** ·
+**reproduce + verify ในเบราว์เซอร์แล้ว** · mutation test 4 แบบแดงถูกตัว
+
+- **อาการจากภาพที่ผู้ใช้ส่งมา** (กล่องเพิ่มเมนู ต้มยำกุ้งน้ำข้น): ① เลือกระดับความเผ็ดไม่ได้
+  ② ไม่มีไซซ์ให้เลือกเลย (หัวกล่องตายตัวว่า "ถ้วยเล็ก") — **คนละต้นเหตุกัน**
+- **⚠️ ① เพดานจำนวนถูกเอาไปใช้กับ radio ด้วย** — `MenuModifierGroups` คิด
+  `atLimit = maxSelect != null && selectedInGroup.length >= maxSelect` แล้วส่งเข้า
+  `disabled={!checked && atLimit}` · กลุ่ม **SINGLE ที่ตั้ง `max_select = 1`** (ค่าปกติของกลุ่ม
+  อย่าง "ระดับความเผ็ด" — ป้าย "เลือกได้ 1" บนจอมาจากค่านี้) พอมีตัวถูกเลือกอยู่ ไม่ว่าจะจาก
+  `default_selected` หรือจากการแตะครั้งแรก **ตัวที่เหลือถูก disabled ทั้งหมด แล้วเปลี่ยนใจไม่ได้เลย**
+  · การแตะตัวอื่นใน radio คือการ **แทนที่** ไม่ใช่ **เพิ่ม** จึงเกินเพดานไม่ได้อยู่แล้ว ·
+    โค้ดใน `onChange` เขียนการแทนที่ไว้ถูกแล้ว แต่ไม่มีวันถูกเรียกเพราะ input ถูกปิดก่อน
+  · reproduce แล้วอ่านจาก DOM จริง: ไม่เผ็ด/เผ็ดน้อย/เผ็ดมาก `disabled: true` ทั้งสามตัว
+  · **รัศมี: ทุกกลุ่ม SINGLE ที่ตั้ง `max_select` ในทุกเมนู** ไม่ใช่แค่ความเผ็ด
+- **⚠️ ② `chooseMenu()` เลือกไซซ์ให้เองเงียบ ๆ แล้วโยนที่เหลือทิ้ง** — กล่องรับมาแค่ `ScanHit`
+  ของไซซ์เดียว **จึงไม่มีทางสั่งถ้วยใหญ่จากจอนี้เลย** ทั้งที่ `listRestaurantMenu` ส่ง
+  `availableSizes` มาครบอยู่แล้ว · เพิ่มชิป "ขนาด" เหนือจำนวน + `pickMenuSize()` ที่ re-scan
+  · **⚠️ ห้ามคัดไซซ์ด้วยสต็อก** — เมนู `RECIPE`/`NON_STOCK` มีสต็อกของตัวเองเป็น **0 ตามดีไซน์**
+    (9.51/9.52) กรองด้วยสต็อกแล้วอาหารเกือบทุกจานจะไม่มีไซซ์ให้เลือกสักอัน · ด่านว่าขายได้ไหม
+    คือ `item.sellable` ที่ระดับการ์ด (มีเทสห้ามชิปไซซ์อ่าน `variant.available` และห้ามมี `disabled`)
+  · **เปลี่ยนไซซ์ต้อง re-scan แล้วรีเซ็ตตัวเลือกเป็นค่าปริยายของไซซ์ใหม่** — ตัวเลือกผูกกับ
+    (sku, ไซซ์) (`resolvePosScan` query ด้วย `modifier.size`) ยกของเดิมมาใช้ต่อ = ส่งรหัสที่
+    ไซซ์ใหม่ไม่รู้จักไปให้ server ปฏิเสธ · จำนวนกับโน้ตถึงครัวคงไว้ (คนกรอกไปแล้ว)
+- **verify ในเบราว์เซอร์**: เผ็ดปกติ → **เผ็ดมาก สลับได้** (เดิมกดไม่ได้) · ถ้วยเล็ก → ถ้วยใหญ่
+  หัวกล่องและปุ่มเปลี่ยน **฿149.00 → ฿299.00** และตัวเลือกรีเซ็ตเป็นค่าปริยายของไซซ์ใหม่ ·
+  ชิปไซซ์ทั้งสองกดได้ทั้งที่ `available: 0` (พิสูจน์ว่าไม่ได้กรองด้วยสต็อก)
+  · แพตช์ `window.fetch` ทั้ง `/menu` `/scan` `/floor` `/checks` — **ไม่แตะฐานข้อมูล**
+    (ยืนยันหลังจบ: บิลโต๊ะที่เปิดอยู่ = 0) · ยืม `token_hash` ของ POS-01 แล้วคืน
+- **ยังไม่ได้ทำ (จงใจ)**: ชิปไซซ์ยังไม่โชว์ราคาของแต่ละไซซ์ เพราะ `listRestaurantMenu` ไม่ได้ส่ง
+  `price` มากับ `availableSizes` (มีแต่ `size`/`available`) — ราคาที่เชื่อได้มาจากการ re-scan
+  เท่านั้น จึงเห็นราคาหลังแตะ · ถ้าจะให้เทียบราคาก่อนแตะ ต้องเพิ่มราคาต่อไซซ์ใน query ก่อน
+
+##### recheck — ปุ่มเลือกไซซ์เป็นปุ่มหลอกกับเมนูที่ร้านเพิ่งพิมพ์เอง (2026-09-05, ไม่มี migration)
+
+`npm run gate` ผ่าน (typecheck · **pure 819** · build) · **DB 369/369 ผ่านทั้งชุด** ·
+ผ่าน mutation test แล้ว (แดงถูกตัวทั้ง pure และ DB)
+
+- **ต้นเหตุอยู่ที่ server ไม่ใช่ที่จอ** — `resolvePosScan` หาไซซ์ด้วย COALESCE ที่กิ่งแรก
+  (ไซซ์ที่ผู้เรียกระบุ) อ่านจาก **`bms_inventory` อย่างเดียว** · แต่ `upsertProduct` เขียน
+  `bms_product_variants` โดย **ไม่เคยสร้างแถว `bms_inventory`** (แถวศูนย์เกิดตอน `createOrder`
+  ครั้งแรก) → เมนูที่ร้านเพิ่งพิมพ์เข้าไปเองมีไซซ์ในแคตตาล็อกแต่ไม่มีแถวสต็อกสักไซซ์ →
+  กิ่งแรกพลาด แล้วตกไปกิ่ง 4 ซึ่งคืน **`min(variant.code)`** = ไซซ์อื่นแบบเงียบ ๆ
+- **ผลจริง**: กดชิป "ถ้วยใหญ่" แล้วกล่องเด้งกลับเป็นถ้วยเล็ก และ `add_item` (ซึ่ง resolve ใหม่
+  ด้วยเส้นทางเดียวกัน) ก็บันทึกไซซ์เดิม = **ร้านขายไซซ์ที่ไม่ใช่ `min(code)` จากเครื่องขาย
+  ไม่ได้เลย** ทั้งที่ชิปยื่นให้เลือก · พิสูจน์กับ dev DB แล้ว (ขอ `L` ได้ `S`)
+- **ทำไมรอบก่อนไม่เจอ**: การ verify ในเบราว์เซอร์แพตช์ `window.fetch` ของ `/scan` ด้วย
+  **เส้นทางหาไซซ์จริงจึงไม่เคยถูกเรียกสักครั้ง** · และเมนูทุกตัวใน dev มีไซซ์เดียว
+  (`S`) ที่มีแถวสต็อกครบ ชิปจึงไม่ขึ้นให้เห็นปัญหา
+- **แก้เป็น**: เพิ่มกิ่ง `1b` ใน COALESCE — ไซซ์ที่ผู้เรียกระบุที่ตรงกับ **variant ที่ active**
+  (เทียบแบบไม่สนตัวพิมพ์ คืนสะกดตามที่เก็บไว้ ตามกฎเดิมของไฟล์ที่ห้าม `toUpperCase()`)
+  · **เป็นการเพิ่มล้วน**: ยิงเมื่อกิ่งแรกพลาด **และ** ผู้เรียกส่งไซซ์มา **และ** ไซซ์นั้นมีใน
+  แคตตาล็อก — สามเงื่อนไขนี้เดิมคือ "คืนไซซ์ผิดเงียบ ๆ" อยู่แล้ว · ยืนยันเคสขอบกับ dev DB:
+  ไซซ์ที่มีแถวสต็อกยังมาจากกิ่งเดิม · ตัวพิมพ์เล็กคืนสะกดจริง · ไซซ์ที่ไม่มีในร้านยังตกไป
+  กิ่งเดิม · ไม่ส่งไซซ์มายังเหมือนเดิมทุกประการ
+  · ผู้เรียกที่ส่งไซซ์มามีแค่ `/api/pos/scan` (จอค้าปลีก+ร้านอาหาร) และ `addRestaurantCheckItem`
+    — ฝั่งค้าปลีกส่งไซซ์ที่มาจาก `bms_inventory` เสมอ จึงไม่มีทางเปลี่ยนพฤติกรรม
+- **เทส 2 ชั้น**: `restaurant-pos-db-contract` +1 (**32 เทส**) สร้างเมนู `NON_STOCK` สองไซซ์
+  ที่ไม่มีแถวสต็อกเลย แล้วไล่ `listRestaurantMenu` → `resolvePosScan` → `addRestaurantCheckItem`
+  · `restaurant-pos-contract` เพิ่ม assert ที่สแกน COALESCE ของ `pos.ts` (ชุด pure คือชุดที่ CI รัน)
+- **⚠️ บทเรียนตอนเขียนเทส 2 ข้อ**:
+  1. **เทสรอบแรกเขียวทั้งที่ถอดกิ่งที่กำลังตรึงออกไปแล้ว** — ใช้ไซซ์ `S`/`L` แล้วขอ `L`
+     ซึ่ง ASCII `L` < `S` จึงเป็น `min(code)` พอดี = เขียวด้วยกิ่งที่ผิด · ไซซ์ที่เทสขอ
+     **ต้องไม่ใช่ `min(code)`** (เปลี่ยนเป็น `S`/`XL` แล้วขอ `XL`)
+  2. **ห้ามใส่ backtick ในคอมเมนต์ SQL** — SQL ในไฟล์นี้เป็น template literal
+     backtick ปิด literal กลางคัน แล้วได้ `TransformError` ที่ชี้บรรทัดผิดที่
+- **ยังไม่ได้ทำ (จงใจ)**: ชิปไซซ์ยังไม่บอกว่าไซซ์ไหนสต็อกหมด — เมนู `DIRECT`/`PACK`
+  หลายไซซ์จึงเลือกไซซ์ที่ของหมดได้ แล้วไปล้มตอน **ส่งครัว** (ทั้งรอบ) · การอ่านสต็อกที่ชิป
+  ถูกเทสห้ามไว้ด้วยเหตุผลที่ยังจริง (RECIPE/NON_STOCK มีสต็อกของตัวเองเป็น 0) ทางที่ถูกคือ
+  ให้ `listRestaurantMenu` ส่ง `stockPolicy` มาด้วยแล้วค่อยตัดสินที่จอ — เป็นงานแยก
+- **ยังไม่ได้เปิดดูจริงในเบราว์เซอร์กับข้อมูลจริง** — dev ไม่มีเมนูหลายไซซ์ให้ดู และการสร้าง
+  ให้ดูต้องแก้ข้อมูลของผู้ใช้ · ที่ยืนยันได้คือเส้นทาง server ครบเส้นผ่านเทส DB
+
+##### `/pos/restaurant` รองรับโหมดมืด (2026-09-05, ไม่มี migration, ไม่มี permission ใหม่)
+
+`npm run gate` ผ่าน (typecheck · **pure 825** · build) · **เปิดดูจริงในเบราว์เซอร์ทั้งสองโหมด**
+(ผังโต๊ะ · จอสั่งอาหาร · กล่องเพิ่มเมนู · จอครัว · บิลล่าสุด · กะและลิ้นชัก · แผ่นผู้ช่วยคู่มือ ·
+มือถือ 390px) · ผ่าน mutation test 6 แบบ แดงถูกตัวทุกครั้ง
+
+- **ธีมของแอปคือ `html.dark`** ที่ `app/layout.tsx` ใส่ให้ก่อน paint ด้วยสคริปต์ inline
+  (คุกกี้ `theme` = light/dark/system · system ตามระบบและตามสดเมื่อผู้ใช้สลับ) — **ไม่ใช่
+  `@media (prefers-color-scheme)`** เพราะผู้ใช้เลือกเองได้และค่านั้นต้องชนะค่าของระบบ
+  · antd สลับ `darkAlgorithm` ให้อยู่แล้วที่ `AntdThemeProvider`
+- **หน้านี้มีตัวแปรสีครบอยู่แล้วตั้งแต่แรก** งานจึงเป็นการ "เติมค่าชุดที่สอง" ไม่ใช่ทาสีใหม่ ·
+  ที่ต้องแก้จริงคือ 26 จุดที่ยัง hardcode และ **การแยกบทบาทของตัวแปรที่โหมดสว่างบังเอิญใช้
+  ค่าเดียวกันได้**
+- **สามเรื่องที่โหมดมืดบังคับให้ต้องแยกตัวแปร** (ไม่ใช่เรื่องสไตล์ — ใช้ค่าเดียวกันแล้วผิด):
+  1. **`--panel-2` (hover) กับ `--quiet` (พื้นที่ถอยหลัง)** — โหมดสว่างเทาอ่อนทั้งคู่ แต่โหมดมืด
+     hover ต้อง *สว่างขึ้น* ส่วนพื้นที่ถอยหลังต้อง *มืดลง* · ใช้ตัวเดียวกัน = **โต๊ะว่างสว่างกว่า
+     โต๊ะที่มีลูกค้า** ลำดับความสำคัญกลับหัวบนจอที่ต้องอ่านเร็ว (ย้าย 12 จุดเป็น `--quiet`)
+  2. **`--on-solid`** — สีสถานะถูกใช้ทั้งเป็นตัวหนังสือบน panel และเป็นพื้นของป้าย/ปุ่ม โดย
+     `tableState()` คืน **ค่าเดียว** ไปทั้งสองทาง · สีเดียวผ่าน WCAG AA พร้อมกันไม่ได้ในโหมดมืด
+     (ตัวหนังสือบนพื้นมืดต้อง L ≥ .233 · พื้นที่ใช้ตัวหนังสือขาวต้อง L ≤ .183) → แก้ด้วยการ
+     **สลับสีตัวหนังสือบนพื้นสี** แทนการแตกตัวแปรเป็นสองตัว (ไม่งั้นต้องแก้ `tableState` ให้คืนสองสี)
+  3. **`--tint-1..4` (สีการ์ดเมนูตามสถานี) แยกจาก `--*-bg` (พื้นกล่องเตือน)** — พื้นเตือนต้อง
+     อ่านออกว่า "แดง/เหลือง" ส่วนการ์ดเมนูคือสิ่งที่ตากวาดผ่าน 40 ใบต่อจอ · **เห็นตอนเปิดดูจริง**
+     ว่ากริดเมนูกลายเป็นแถบสีทั้งจอ แล้วจึงแยก (วัดให้ห่างจาก `--panel` เท่าโหมดสว่าง 1.08–1.16 เท่า)
+- **⚠️ ต้อง override `--pos-*` ของ pos.css ด้วย** — `.pos-root button/input/select` เป็น (0,1,1)
+  ซึ่งเจาะจงกว่าคลาสเดี่ยวของ CSS module ปุ่ม/ช่องกรอกที่หน้านี้ไม่ได้ทาสีเองจึงขาวโพลนบนพื้นมืด
+  · **ตั้งที่ `.page` ไม่ใช่ `.pos-root`** โดยตั้งใจ — จอค้าปลีก `/pos` ยังไม่ได้ทำโหมดมืด
+    (pos.css มีสีดิบ 40 จุด + `page.tsx` 575KB) การไปแก้ pos.css จะได้หน้ามืดครึ่งเดียว
+    ซึ่งแย่กว่าสว่างทั้งหน้า · `placeholder` ของ pos.css เป็นค่าคงที่ ตัวแปรเอื้อมไม่ถึง ต้องเขียนกฎเอง
+- **⚠️ globals.css มี `html.dark .ant-modal-content` (0,2,1) ซึ่งชนะ `.page .ant-modal-content`
+  (0,2,0)** — วัดจริงก่อนแก้: พื้นโมดัลออกมา `#111827` (เทาอมน้ำเงินของธีมรวม) บนหน้าที่เป็น
+  `#1a1f1c` (เขียวอมเทา) = กล่องที่ดูเหมือนมาจากอีกแอป · แก้ด้วยการเติม `html.dark` นำหน้า
+- **บั๊กเงียบที่เจอระหว่างทาง (มีมาก่อน ไม่ใช่ของโหมดมืด)**: `.counterScreen` ใช้ `var(--bg)` และ
+  `.fieldNeeded` ใช้ `var(--red-6, #cf1322)` — **ตัวแปรทั้งสองไม่มีใครประกาศ** ตัวแรกทำให้พื้น
+  หน้าบิล/กะกลายเป็น transparent ตัวหลังใช้แดงคนละเฉดกับทั้งหน้า · แก้เป็น `--ground`/`--red`
+- **สีเลนจอครัวเปลี่ยนไปใช้ชุดสีสถานะเดียวกับผังโต๊ะ** (`--red/--amber/--green/--grey`) แทนเฉด
+  ของตัวเอง 4 ค่า — จำเป็นเพราะ `.ticketQty` ใช้สีเลนเป็น **ตัวหนังสือ** · ผลข้างเคียงที่ดีในโหมด
+  สว่าง: อำพัน `#e7a335` เดิมมี contrast **2.17** (ต่ำกว่าเกณฑ์ตัวหนังสือใหญ่) ขึ้นเป็น 4.11
+  · **นี่คือจุดเดียวที่โหมดสว่างเปลี่ยนหน้าตา** (เข้มขึ้นเล็กน้อย) — ตัวแปรอื่นตรงค่าเดิมเป๊ะทั้ง 22 ตัว
+    (ยืนยันด้วยการอ่าน computed value จากเบราว์เซอร์)
+- **แผ่นผู้ช่วยคู่มือใช้ `var(--panel, #fff)` / `var(--ink, #1f1f1f)`** — มันเรนเดอร์อยู่ใน react tree
+  ของหน้านี้ (ไม่ portal) จึงรับตัวแปรของโมดูลได้ · **ค่าสำรองคือค่าเดิมเป๊ะ ๆ** สำหรับจอค้าปลีก
+  ที่ไม่มีตัวแปรพวกนี้ = ไม่มีพิกเซลไหนขยับที่ `/pos`
+- **วัด contrast จริงทั้งสองโหมด ไม่ได้ดูด้วยตา**: พาเลตต์มืดผ่าน **46/47 คู่** · คู่ที่ไม่ผ่านคือ
+  เส้นขอบต่อพื้น 1.64 ซึ่งโหมดสว่างก็ 1.58 อยู่แล้ว (เป็นภาษาของดีไซน์ ไม่ใช่การถดถอย)
+  · สแกน DOM จริงบนจอผังโต๊ะ: **โหมดมืดตกเกณฑ์ 4 จุด · โหมดสว่างตก 30 จุด** — ทั้ง 4 ของโหมดมืด
+    คือขีดคั่น `│` ซึ่งเป็นของประดับ และโหมดสว่างแย่กว่า (1.45 vs 1.77)
+- **ไม่ได้แก้โหมดสว่างที่ตกเกณฑ์อยู่เดิม** (`--ink-3` บนพื้นเทา 4.08 · `livePill` 4.18 · `subtitle`
+  4.47 · อำพัน 4.11) — เป็น redesign คนละงาน ต้องให้คนตัดสิน ไม่ใช่ผลพลอยได้ของการทำโหมดมืด
+- เทสใหม่ `scripts/restaurant-theme-contract.test.mts` (6 เทส pure): ห้ามมีสีดิบหลงเหลือ ·
+  พาเลตต์สองชุดต้องประกาศตัวแปรชุดเดียวกัน + ต้อง override `--pos-*` · **คำนวณ WCAG จากพาเลตต์
+  จริงทุกคู่ที่คนต้องอ่าน** โดยยอมให้คู่ที่โหมดสว่างตกอยู่แล้วผ่านได้ถ้า "ไม่แย่ลง" · กฎ antd ต้องมี
+  `html.dark` นำหน้า · `LANES`/`MENU_CARD_TINTS` ต้องเป็นตัวแปร · แผ่นผู้ช่วยต้องมีค่าสำรอง
+- **ยังไม่ได้ทำ (จงใจ)**: จอค้าปลีก `/pos` และจอลูกค้า `/pos/display` ยังเป็นโหมดสว่างอย่างเดียว ·
+  ปุ่ม OK ของ antd Modal ยังเป็นน้ำเงินของ antd ไม่ใช่เขียวของหน้านี้ (เป็นแบบนี้มาก่อนทั้งสองโหมด)
+- **วิธี verify ที่ใช้**: ยืม `token_hash` ของ POS-01 (สำรอง → ตั้งของตัวเอง → คืนและตรวจว่าคืนตรง)
+  + แพตช์ `window.fetch` เฉพาะ response ที่ใช้วาดจอสั่งอาหาร · **ไม่แตะฐานข้อมูล** — ยืนยันหลังจบ:
+  บิลที่เปิดอยู่ 0 · ตั๋วครัว 23 เท่าเดิม · ไม่มี tenant `fake-%` · แถวปิดเมนูของผู้ใช้ยังอยู่ 1 แถว
+
+#### ⚠️ ปุ่มในกล่องรับชำระอ่านไม่ออก + ปุ่มยืนยันกดได้ทั้งที่ยอดไม่ตรง (2026-09-05)
+
+branch `fix/pos-checkout-contrast-guard` · `tsc` ผ่าน · **pure 822/822** · build ผ่าน ·
+**DB 368/368** · **วัด contrast จริงในเบราว์เซอร์ธีมมืด** · mutation test 4 แบบแดงถูกตัว
+
+- **อาการจากภาพที่ผู้ใช้ส่งมา** (`/pos/restaurant` กล่องรับชำระ ธีมมืด): ปุ่ม "ลบช่องทาง 1/2"
+  เป็นแถบทึบที่มองไม่เห็นตัวหนังสือ · และปุ่ม "ยืนยันรับเงิน" กดได้ทั้งที่แถบสรุปเขียนว่า
+  "รวม ฿902.00 · เกิน ฿201.00"
+- **⚠️ ต้นเหตุของปุ่มที่อ่านไม่ออก: `pos.css` ทาปุ่มของ antd แค่ "ครึ่งเดียว"** —
+  `.pos-root button` (0,1,1) ตั้ง `background`+`color` ของธีมสว่าง แล้วชนกับ antd ที่ตั้งของ
+  ตัวเองด้วย specificity ต่างกันไปในแต่ละ variant · **วัดจริงได้สองแบบที่กลับข้างกันพอดี**:
+  1. `<Button danger>` — antd ชนะเรื่องพื้น (โปร่งใสทับพื้นมืดของ modal) pos.css ชนะเรื่อง
+     สีตัวอักษร (`rgb(27,29,33)` ของธีมสว่าง) → **contrast 1.09** (เกณฑ์ 4.5)
+  2. ปุ่ม primary ที่ถูก disable — antd ให้สีตัวอักษรธีมมืด (`rgba(255,255,255,.25)`)
+     pos.css ให้พื้นขาว → **contrast 1** (ขาวบนขาว)
+  · แก้ที่ต้นเหตุ: `:where(.pos-root) button:not(.ant-btn)` — ปล่อยให้ antd แต่งปุ่มของตัวเอง
+    ทั้งใบ ทั้งใบจึงมาจากธีมเดียวกันเสมอ
+  · **⚠️ กับดักที่ผมเดินเข้าไปเองระหว่างแก้**: ใส่แค่ `:not(.ant-btn)` ทำให้ specificity ขึ้นเป็น
+    (0,2,1) แล้วไป **ทับสีปุ่มของ CSS module ทั้งหน้า** (`.page .btnDanger` = (0,2,0)) —
+    เห็นตอนวัดซ้ำ: ปุ่มลบเปลี่ยนจากแดงเป็นดำ · ต้องห่อ `.pos-root` ด้วย `:where()` (นับเป็น 0)
+    ให้ผลรวมเท่าเดิมเป๊ะ (0,1,1) เปลี่ยนแค่ว่าปุ่ม antd ไม่โดน
+  · กล่องรับชำระเปลี่ยนไปใช้ปุ่มของหน้าจอเอง (`styles.btn`/`styles.btnDanger`) แทน
+    `<Button danger>`/`<Button type="dashed"`) — ให้ทั้งกล่องมีระบบสไตล์เดียว
+- **ปุ่มยืนยันต้องกันสิ่งที่จอรู้อยู่แล้วว่า server จะปฏิเสธ** (กฎเดียวกับที่จอกันตัวเลือกที่บังคับ
+  ของเมนู) · `checkoutBlockReason()` (pure ใน `lib/pos/paymentDraft.ts`) เป็นตัวตัดสิน **ตัวเดียว**
+  ที่ทั้งปุ่ม แถบสรุป และ `settle()` ใช้ร่วมกัน — สามที่ตัดสินเองจะ drift แล้ววันหนึ่งปุ่มกดได้
+  แต่ settle ปฏิเสธ
+  · ครอบสองด่านที่ server ตรวจอยู่แล้ว: ยอดรวมต้องเท่ายอดที่ต้องชำระเป๊ะ · **เงินสดที่รับมา
+    ต้องไม่น้อยกว่ายอดของช่องทางเงินสดนั้น** (`recordPosSale` → `PAYMENT_FAILED`) ซึ่งในภาพ
+    ก็ผิดอยู่ด้วย (เงินสด 701 แต่รับมา 500) และจอเดิมไม่เตือนเลย
+  · ปล่อยให้กดแล้วล้ม = บิลโต๊ะถูก claim เป็น `CLOSING` แล้วต้องคืนสถานะ ต่อหน้าลูกค้าที่ยืนรอ
+- **ผลวัดหลังแก้ (ธีมมืด)**: ลบช่องทาง **1.09 → 4.90** (แดง `rgb(196,71,42)` บนขาว) ·
+  ยืนยันรับเงินตอน disable **1 → 5.19** (ขาวบนน้ำเงิน) · ยกเลิก 16.88 → 18.42 (กลายเป็นปุ่ม
+  ธีมมืดของ antd ซึ่งเข้ากับ modal มืด) · ปุ่มบนแถบซ้ายยังได้สีของ CSS module เหมือนเดิม
+- **วิธี verify**: กล่องนี้ต้องมีบิลเปิดอยู่ + PIN แคชเชียร์ · ใช้การแพตช์ `window.fetch` ให้
+  `/floor` รายงาน T05 เป็น OCCUPIED และ `/checks` คืนบิลจำลอง → หน้าจอเรนเดอร์เอง
+  **ไม่มีบิล/ออร์เดอร์/ตั๋วครัวเกิดขึ้นจริงสักรายการ** (ยืนยันหลังจบ: บิลโต๊ะที่เปิดอยู่ = 0)
+  · ยืม `token_hash` ของ POS-01 ชั่วคราวแล้วคืน (verify ว่าคืนตรง)
+- **เงินทอนต้องเห็นตอนถือเงินลูกค้าอยู่ในมือ** — คำถามที่ตามมาจากภาพเดียวกัน: กล่องนี้เคยมี
+  ช่อง "เงินสดที่รับมา" แต่ **ไม่เคยบอกเงินทอนเลย** เงินทอนโผล่ครั้งแรกในแผงใบเสร็จซึ่งขึ้น
+  *หลัง* เก็บเงินไปแล้ว = แคชเชียร์ต้องคิดเลขเองตอนลูกค้ายืนรอ · หน้าค้าปลีกแสดง
+  "เงินทอนรายการนี้" ระหว่างกรอกมาตลอด (`app/(pos)/pos/page.tsx`) หน้านี้ไม่มี
+  · เพิ่ม `cashChangeOf()` แสดงใต้ช่องที่กรอก **ต่อช่องทาง** ไม่ใช่ต่อบิล (บิลแบ่งจ่ายมีเงินสด
+    แค่บางส่วน) · ขึ้นเฉพาะช่องทางเงินสดที่กรอกแล้วและไม่ต่ำกว่ายอด — ทอนติดลบไม่มีอยู่จริง
+  · วัดจริง 4 เคสบนบิล ฿701: รับมา 500 → ไม่โชว์ทอน + ปุ่มยืนยันถูก disable พร้อมเหตุผล ·
+    701 → ฿0.00 · 1000 → **฿299.00** · เว้นว่าง → ไม่โชว์ (server ถือว่ารับมาพอดี)
+- **ยังไม่ได้ทำ (จงใจ)**: หน้าค้าปลีกไม่มี `<Button>` ของ antd เลย (ใช้ `<button>` ล้วน) และ
+  ไม่มี `<Modal>` ของ antd จึงไม่ได้รับผลจากการแก้นี้ · เทสตรึงเฉพาะกฎ "เหมาทุกปุ่มใต้
+  `.pos-root`" ไม่ได้ตรึงกฎที่เจาะจง widget · ยังไม่มีปุ่มลัดจำนวนเงิน (พอดี/+100/+500/+1000)
+  แบบหน้าค้าปลีก — แคชเชียร์ยังพิมพ์ยอดที่รับมาเอง
+
+#### ⚠️ จอครัวขัดกันเอง: ปุ่ม "ทั้งหมด 2" คู่กับเลนที่บวกได้ 7 (2026-09-05)
+
+branch `fix/kitchen-board-counts` (แยกจาก PR ใบเสร็จ · ตัดจาก `f01bfa5e`) · `tsc` ผ่าน ·
+**pure 811/811** · build ผ่าน · **DB 368/368** · **เปิดดูจริงในเบราว์เซอร์แล้ว** ·
+mutation test 3 แบบแดงถูกตัว
+
+- **อาการที่ผู้ใช้ส่งมาจาก production** (`/pos/restaurant` แท็บครัว): แถบปุ่มเขียน
+  `ทั้งหมด 2 · ครัวต้ม 0 · ครัวเย็น 0 · ครัวร้อน 0 · บาร์เครื่องดื่ม 2`
+  ขณะที่เลนบวกกันได้ 7 (`เข้าใหม่ 2` + `เสิร์ฟแล้ว 5`)
+- **ต้นเหตุ**: ปุ่มกรองนับ `tickets.filter(openTicket)` (NEW/PREPARING/READY) แต่กระดานมีเลน
+  **"เสิร์ฟแล้ว"** ซึ่งเป็นแถบประวัติ 12 ชม. อยู่ด้วย · ปุ่มพวกนี้คือ **ตัวกรอง** เลขข้างปุ่ม
+  จึงต้องบอกว่ากดแล้วจะเห็นอะไร ไม่ใช่ตอบคำถามคนละข้อกับที่จอแสดงอยู่
+  · **`/admin/kitchen` นับจากทุกแถวมาตลอด** (`rows.reduce(...)`) — สองกระดานที่ใช้
+    `kitchenBoard.ts` ตัวเดียวกันตอบไม่ตรงกันเอง
+  · ลิสต์ปุ่มก็สร้างจากตั๋วที่ยังไม่จบด้วย → **สถานีที่มีแต่ของที่เสิร์ฟไปแล้วจะไม่มีปุ่มของตัวเอง**
+    ทั้งที่ตั๋วยังอยู่บนกระดาน = กรองไปหาไม่ได้
+- **แก้เป็น**: ปุ่ม (ทั้งเลขและลิสต์) นับประชากรเดียวกับที่กระดานเรนเดอร์ · สัญญาณ "งานค้าง"
+  ไม่ได้หายไปไหน มันมีที่ของตัวเองอยู่แล้ว: badge ข้างเมนู **ครัว** และแถบสรุปหน้าผังโต๊ะ
+  (`kitchenCooking` / `kitchenReady`) ซึ่งยังนับเฉพาะที่ยังไม่จบ
+- **⚠️ เจอจุดที่สองระหว่างทาง: ตั๋วที่เสิร์ฟแล้วนับเวลาจาก `created_at`** — ตั๋วที่สั่งเมื่อวาน
+  แล้วเพิ่งกดเสิร์ฟ ขึ้นเป็น **"65 ชม. 32 น." สีแดง** บนกระดาน (เห็นในภาพที่ผู้ใช้ส่งมา)
+  · `pickReferenceAt` เขียนกฎนี้ไว้เองแล้วสำหรับ `READY` ("ถ้านับจากตอนสั่ง ทุกใบจะแดงค้าง
+    ตลอดเวลาแล้วเลิกมีความหมาย") แต่ไม่เคยขยายไปถึง `SERVED` ซึ่งเหตุผลเดียวกันทุกประการ
+  · แก้เป็น `KITCHEN_ELAPSED_FROM_UPDATED = {READY, SERVED}` · ตั๋วที่ไม่มี `updated_at`
+    (ยุคก่อน) ยังตกกลับไปใช้ `created_at` ตามเดิม
+- **verify ในเบราว์เซอร์**: `ทั้งหมด 7` = 2 + 0 + 0 + 5 ✓ · `ครัวร้อน 1 + บาร์เครื่องดื่ม 6 = 7` ✓
+  · กด `บาร์เครื่องดื่ม 6` แล้วเลนบวกได้ 6 พอดี (ปุ่มทำนายสิ่งที่เห็นจริง) ✓ ·
+  badge ข้างเมนูครัวยังเป็น **2** = งานค้างจริง ✓ · ตั๋วที่เสิร์ฟแล้วเปลี่ยนจาก 65 ชม.
+  เป็น **6 ชม. 41 น.** ตรงกับ `now() - updated_at` ✓
+  · ยืม `token_hash` ของ POS-01 ชั่วคราวแล้วคืน (verify ว่าคืนตรง) — ตั๋วครัวของ shop-b
+    ยังเป็น NEW 2 / SERVED 11 / CANCELLED 10 เท่าเดิม
+- **ยังไม่ได้ทำ (จงใจ)**: `/admin/kitchen` ไม่ต้องแก้เรื่องปุ่ม (นับถูกอยู่แล้ว) และได้ตัวนับเวลา
+  ของ SERVED ที่ถูกต้องไปด้วยเพราะใช้ `pickReferenceAt` ร่วมกัน · **ยังไม่มีเทสที่บังคับว่า
+  สองกระดานต้องนับแบบเดียวกัน** — ตอนนี้เทสตรึงฝั่งร้านอาหารไว้ฝั่งเดียว
+#### รวมใบเสร็จของเครื่องขายสองหน้าเป็นตัวเดียว (2026-09-05)
+
+`tsc` ผ่าน · **pure 816/816** · build ผ่าน · **DB 368/368** · **เปิดดูจริงในเบราว์เซอร์ทั้งสองหน้า**
+· mutation test 7 แบบแดงถูกตัว
+
+- หน้าค้าปลีกประกอบใบเสร็จบนจอเป็น JSX inline **~12,800 ตัวอักษร** แยกจาก payload ของ
+  เครื่องพิมพ์ · ตอนนี้ทั้งสองหน้าเรนเดอร์ผ่าน `components/pos/ReceiptPaper.tsx` ที่กิน
+  `ReceiptPayload` ก้อนเดียวกับ `buildReceipt` (แยก `receiptPayloadOf()` ออกจากตัวพิมพ์)
+- **การรวมทำให้เห็นสี่จุดที่จอกับกระดาษไม่ตรงกันจริง** — เห็นได้ต่อเมื่อมีคนเอากระดาษไปเทียบกับจอ
+  ซึ่งไม่มีใครทำ:
+  1. **บิลแบ่งจ่าย** จอบอกทีละช่องทาง กระดาษพิมพ์แค่ "จ่ายหลายวิธี" กับยอดรับ/ทอนคู่เดียว
+  2. **ใบรับคืน** จอบอกว่าเงินกลับไปทางไหนและยังรอยืนยันไหม **กระดาษเงียบสนิท** — สลิปคืน
+     ที่ไม่บอกเรื่องนี้ตอบลูกค้าที่ถามว่า "แล้วเงินจะเข้าเมื่อไร" ไม่ได้เลย
+  3. **ปัดเศษเงินสดอยู่ในบล็อก VAT** → ร้านที่ยังไม่จด VAT ไม่เคยมีบรรทัดนี้บนกระดาษทั้งที่
+     ปัดเศษจริง (ร้านอาหารส่วนใหญ่เข้าเคสนี้ — ยืนยันกับ shop-b แล้ว)
+  4. **บาร์โค้ดเลขบิล** จอสแกน `billNo ?? receiptNo ?? docNo` กระดาษสแกน `docNo` · วันนี้
+     สามค่าถูกตั้งเท่ากันตอนปิดการขายจึงยังไม่เคยต่าง แต่สองกฎแปลว่าวันไหนแยกกันเมื่อไร
+     สแกนจากกระดาษกับจากจอจะไปเจอคนละบิล
+- **ป้ายวิธีชำระย้ายเข้า `lib/pos/receiptI18n.ts`** — เดิมอยู่ในไฟล์หน้าค้าปลีกไฟล์เดียว
+  ถ้าก็อปไปอีกชุด วันที่ใครเพิ่มวิธีชำระใหม่ อีกหน้าจะพิมพ์ `STORE_CREDIT` ให้ลูกค้าอ่าน
+- หน้าร้านอาหารพิมพ์รายวิธีชำระ + บรรทัดปัดเศษได้แล้ว (รองรับแบ่งจ่ายมาตั้งแต่ `9.44` แต่ใบเสร็จ
+  เคยบอกแค่ยอดรับ/ทอนรวม) · **ใช้รายการที่ server รับไว้จริง ไม่ได้คิดใหม่ที่จอ** — server
+  ปฏิเสธบิลถ้าผลรวมไม่ตรงยอด รายการจึงเป็นชุดเดียวกับที่เขียนลง `bms_payments`
+- **แก้ rAF ที่หน้าค้าปลีกด้วย** (บั๊กเดียวกับที่แก้ที่หน้าร้านอาหารในคอมมิตก่อน)
+- **⚠️ สิ่งที่หายไปจากจอค้าปลีกโดยตั้งใจ**: บรรทัด "(ไม่มีเลขใบกำกับ)" เมื่อ `docNo` เป็น null
+  — กระดาษไม่เคยพิมพ์ และมันคือข้อความสำหรับคนตั้งค่าร้าน ไม่ใช่สำหรับลูกค้าที่ถือใบเสร็จ ·
+  ลำดับบล็อก "สมาชิก/แต้ม" ย้ายไปท้ายใบตามกระดาษ (เดิมจออยู่ก่อนวิธีชำระ)
+- **เทสใหม่ `scripts/receipt-renderer-contract.test.mts` (7 เทส) ตรวจสองชั้น**: สแกนซอร์สว่า
+  ทั้งสอง renderer อ่านฟิลด์เดียวกันครบทุกตัว **และ assert ที่ไบต์จริงของ `buildReceipt`** ว่า
+  ใบรับคืน/บิลแบ่งจ่าย/บรรทัดปัดเศษพิมพ์ออกมาจริง — การสแกนซอร์สบอกได้แค่ว่า "มีโค้ดอยู่"
+  ไม่ได้บอกว่าออกมาบนกระดาษ (บทเรียนเดิมของเทสแบบสแกนซอร์สในรีโปนี้)
+- **verify ในเบราว์เซอร์**: ค้าปลีกเปิดใบเสร็จจากแท็บคืน (ดู/พิมพ์) เรนเดอร์ครบและยอดตรง ·
+  ร้านอาหารเห็น "ชำระโดย QR 360.00" จากข้อมูลจริง · แพตช์ `window.fetch` ทดสอบแบ่งจ่าย
+  (เงินสด 200 + เครดิตร้าน 160 พร้อมเลขอ้างอิง) และปัดเศษ −0.25 → ขึ้นครบทุกบรรทัด
+  · **ใบรับคืนตรวจที่ไบต์แทนเบราว์เซอร์** เพราะฐาน dev ไม่มีบิลที่ถูกคืนบนเครื่องนี้
+- **⚠️ กับดักตอน verify**: แพตช์ `window.fetch` แล้วยิงคำขอผ่านหน้าค้าปลีกทำให้หน้าค้าง
+  (พาเนลของ automation รายงาน `visibilityState: hidden` และ rAF ไม่เดิน) — ต้อง navigate ใหม่
+  เพื่อกู้ · สคริปต์ที่ยาวเกินไปใน pane ที่ซ่อนอยู่ time out ที่ 45 วินาที ให้แบ่งเป็นก้อนสั้น ๆ
+
+#### ใบเสร็จบนจอ + ทางพิมพ์สำรอง · ถอดส่งอีเมล/LINE ออกจากเครื่องขาย (2026-09-05)
+
+branch `feat/restaurant-receipt-preview` · `tsc` ผ่าน · **pure 809/809** · build ผ่าน ·
+**DB 368/368** · **เปิดดูจริงในเบราว์เซอร์แล้ว** · mutation test 6 แบบแดงถูกตัวทุกครั้ง
+
+- **ถอดปุ่ม "ส่งอีเมล"/"ส่ง LINE" ออกจาก `/pos/restaurant` ทั้งสองกล่อง** (ผู้ใช้สั่ง) พร้อม
+  `receiptTo`, `sendSettlementReceipt`, `sendSelectedReceipt` และกิ่งแปล error เฉพาะของ
+  `/api/pos/send-receipt` ใน `json()` · **route ยังอยู่ หน้าค้าปลีกยังใช้** ไม่ใช่โค้ดตาย
+- **`<ReceiptPaper/>` (`components/pos/ReceiptPaper.tsx`) = renderer ตัวที่สองของ
+  `ReceiptPayload` ก้อนเดียวกับที่ส่งเข้าเครื่องพิมพ์** — `receiptPayload()` ถูกแยกออกจาก
+  `receiptBytes()` แล้วทั้งกระดาษบนจอและไบต์ ESC/POS อ่านจากตัวเดียวกัน · **ห้ามคิดเลขในไฟล์
+  กระดาษ** (มีเทสสแกนห้าม `Number(`/`reduce(`/`+=`)
+  · **บั๊กที่ปิดไปด้วย**: กล่อง "รายละเอียดบิล" เคยโชว์แต่รายการ ไม่โชว์ส่วนลด/VAT ทั้งที่
+    response มีให้แล้ว · `lineTotal` คือ **ราคาป้ายก่อนหักราคาส่ง/โปร** (9.22) บิลที่ติดโปรจึง
+    แสดงรายการที่บวกแล้ว **ไม่เท่ายอดรวม** โดยไม่มีอะไรอธิบาย = อาการเดิมของ 9.22 ที่หน้าใหม่
+  · กล่อง "ปิดบิลสำเร็จ" ก็กลับกัน: มีส่วนลด/VAT แต่ไม่มีรายการสินค้าเลย
+  · แถบสรุปเหลือเฉพาะสิ่งที่กระดาษไม่ได้ตอบ (เงินทอน · ตั๋วครัว · สถานะ) — เลขเดียวกันสองที่
+    คือจุดที่เริ่ม drift
+- **ทางพิมพ์สำรองผ่าน print dialog** — เดิมหน้านี้มีทางพิมพ์ **ทางเดียว** คือ WebUSB ESC/POS
+  ซึ่งใช้ได้เฉพาะ Chrome/Edge + HTTPS + ต้อง pair ก่อน (macOS อาจต้องถอน driver) และสถานะของ
+  เส้นนั้นยังเป็น "เขียนแล้ว ไม่เคยยิงกับฮาร์ดแวร์จริง" · หน้าค้าปลีกตกไป dialog ได้มาตลอด
+  (`printBrowserTarget`) หน้าร้านอาหารไม่ได้ = เครื่องพิมพ์ไม่ติดแล้วลูกค้าไม่ได้ใบเสร็จเลย
+  · ใช้กฎ `@media print` ที่เล็ง `#pos-receipt` ใน `globals.css` ตัวเดิม → กล่องใบเสร็จทั้งสอง
+    ต้อง `destroyOnClose` ไม่งั้นมี `#pos-receipt` ค้างสองใบแล้ว dialog ไม่รู้จะพิมพ์ใบไหน
+  · **print dialog เปิดลิ้นชักไม่ได้** — ตกมาทางนี้แล้ว toast บอกให้ไปใช้ปุ่มที่แท็บกะ
+- **⚠️ บั๊กจริงที่เจอเพราะเรนเดอร์กระดาษขึ้นจอเป็นครั้งแรก: วันที่บนใบเสร็จเป็น ISO ดิบ UTC**
+  `buildReceipt` พิมพ์ `payload.at` ตรง ๆ และหน้านี้ส่ง ISO เข้าไป → กระดาษพิมพ์
+  `2026-09-05T03:17:15.933Z` **ซึ่งเพี้ยนจากเวลาขายจริง 7 ชั่วโมง** (การ์ดข้าง ๆ ในจอเดียวกัน
+  เขียน 10:17) บนเอกสารที่ยื่นให้ลูกค้า · หน้าค้าปลีกแปลงด้วย `receiptAt()` มาตลอด
+  · แก้ด้วย `localReceiptTime()` (pure, ค่าที่แปลงไม่ได้คืนของเดิม ไม่พิมพ์ "Invalid Date")
+- **⚠️ `requestAnimationFrame` ไม่ทำงานเลยเมื่อแท็บถูกซ่อน** — เจอตอน verify (pane ของ
+  automation รายงาน `visibilityState: hidden` แล้ว `window.print()` ไม่ถูกเรียกสักครั้ง) ·
+  แท็บเล็ตหน้าร้านสลับแอปได้ตลอด ถ้าพึ่ง rAF ตัวเดียว **กดพิมพ์แล้วเงียบไปเลยทั้งที่ toast บอกว่า
+  กำลังพิมพ์** · ตอนนี้ rAF คู่กับ `setTimeout(fire, 120)` ใครถึงก่อนชนะ แต่ยิงครั้งเดียว
+  (ธง `printed`) ไม่งั้นได้ dialog ซ้อนสองใบ
+  · **หน้าค้าปลีกยังเป็นรูปแบบเดิม (rAF ตัวเดียว)** — ไม่แตะในรอบนี้ คนละเส้นทางและไม่ได้ verify
+- **verify ในเบราว์เซอร์**: กระดาษเรนเดอร์จากข้อมูลจริง (240+120 = 360 = ยอดสุทธิ) ·
+  ยัด `discountLines`+`vat` ผ่านการแพตช์ `window.fetch` แล้วกระดาษบวกลงตัว
+  (240+120 −40 = 320 และ 299.07+20.93 = 320) · เส้นทางสำรองยิง `window.print()` ครั้งเดียว
+  โดยมี marker ถูกและมี `#pos-receipt` ใบเดียวใน DOM · **ยืม `token_hash` ของ POS-01 ชั่วคราว
+  แล้วคืน (verify ว่าคืนตรง) ไม่แตะข้อมูลของผู้ใช้**
+- **ยังไม่ได้ทำ (จงใจ)**: หน้าค้าปลีกยังใช้ใบเสร็จ DOM ของตัวเอง (~230 บรรทัด JSX inline ผูกกับ
+  `receiptType: sale/return/exchange` + refunds) — ย้ายมาใช้ `<ReceiptPaper/>` ได้ แต่ต้องขยาย
+  payload ให้ครอบใบรับคืน/ใบเตรียมเปลี่ยนก่อน ควรเป็นงานแยกที่มีเทสของตัวเอง
+
+#### recheck ต่อจาก codex — เจอของจริง 4 จุด แก้ครบแล้ว (2026-09-05)
+
+`tsc` ผ่าน · **pure 809/809** · build ผ่าน · **DB 368/368 ผ่านทั้งชุด** ·
+**เปิดดูจริงในเบราว์เซอร์แล้ว** (แท็บบิลของ shop-b) · ทุกจุดผ่าน mutation test แล้ว
+(pure 4 แบบ · DB 2 แบบ) แดงถูกตัวทุกครั้ง
+
+1. **⚠️ ชุด pure แดงอยู่ 1 ตัวตั้งแต่ก่อนเริ่มรอบนี้ — โน้ตของ codex ที่เขียนว่า "pure 809/809"
+   ไม่ตรงกับของจริง** · `restaurant-pos-contract` assert ว่า service ต้องมี
+   `receipt_unit_price * COALESCE(oi.pack_qty, oi.qty)` แต่ SQL จริงเขียน
+   `receipt_unit_price * ci.pack_qty` (ค้างจากร่างก่อนหน้า) · **SQL ถูก assertion ผิด**:
+   `createOrderInTx` รวม check line ที่ sku/size/pack/modifier เดียวกันเป็น order line เดียว
+   ตัวคูณจึงต้องเป็นจำนวนของ **บรรทัดนั้น** ไม่ใช่ของ order line ที่รวมแล้ว
+   · เล็งเทสใหม่ให้ตรึง invariant จริงทั้งสองฝั่ง (ฝั่ง check ต้องคูณ `ci.pack_qty` ·
+     ฝั่ง `receipt_gross` ของ `loadPosReceiptDiscountLines` ต้องยังคูณ `COALESCE(oi.pack_qty, oi.qty)`)
+     เพราะสองสูตรนี้ต้องบวกลงตัวกัน ไม่งั้นบรรทัดบนกระดาษไม่เท่ายอดสุทธิ (อาการเดิมของ `9.22`)
+   · เทส DB ใหม่: โต๊ะสั่งชาเย็นรอบแรก 1 แก้ว แล้วสั่งเพิ่มอีก 2 แก้ว → order line เดียว
+     `pack_qty = 3` · บรรทัดบนใบเสร็จต้องเป็น 15 กับ 30 ไม่ใช่ 45 + 45 = 90
+2. **⚠️ พิมพ์ซ้ำจากแท็บบิลเปิดลิ้นชักได้โดยไม่ต้องใช้ PIN ไม่มีเหตุผล และไม่มีใครนับ** —
+   `printReceipt()` ยิง `buildDrawerKick()` ทุกครั้ง ทั้งบิลที่เพิ่งขายและบิลเก่าที่เปิดจากแท็บบิล
+   · แท็บบิลไม่ต้องใช้ PIN เลย (`loadRecentReceipts` ใช้แค่ device token) → ใครที่หยิบแท็บเล็ตได้
+     กด "พิมพ์ซ้ำ" กี่ครั้งก็เปิดลิ้นชักได้เท่านั้นครั้ง โดยไม่เหลือร่องรอย
+   · **นี่คือช่องเดียวกับที่ `8.0` ปิดไปแล้ว** (ปุ่มเปิดลิ้นชักเปล่า ๆ ที่แท็บตั้งค่าของหน้าค้าปลีก)
+     แล้วบังคับให้การเปิดลิ้นชักที่ไม่ได้มาจากการขายต้องผ่าน `pos.nosale` + เหตุผล + นับในสรุปกะ
+   · หน้าค้าปลีกแยกไว้ถูกแล้วตั้งแต่ต้น: `printReceipt(true)` เฉพาะการ์ด "ขายสำเร็จ" ·
+     `printReceipt(false)` ทุกจุดที่พิมพ์ซ้ำ · และมีปุ่ม "ลิ้นชัก" แยกต่างหาก
+   · แก้เป็น `printReceipt(receipt, openDrawer = false)` · การ์ดปิดบิลสำเร็จส่ง
+     `cashTendered != null` (บิลที่จ่ายบัตร/QR ล้วนก็ไม่ต้องเปิด ไม่มีเงินสดให้ทอน) ·
+     แท็บบิลไม่ส่งเลย · ทางที่ถูกสำหรับ "ขอเปิดลิ้นชัก" คือปุ่มที่แท็บกะซึ่งบันทึกว่าใครเปิดเพราะอะไร
+3. **⚠️ "ตั๋วครัว N" บนใบเสร็จเป็นตัวเลขที่ตรวจสอบไม่ได้ในร้านที่ปิดคิวครัว** —
+   `settleRestaurantCheck` รายงาน `kitchenTickets: items.rows.length` (จำนวนบรรทัดที่ส่งครัว)
+   แต่ `sendRestaurantKitchenRound` ออกตั๋วเฉพาะร้านที่เปิด `KITCHEN_WORKFLOW` · ร้านอาหารที่
+   ยังรับออร์เดอร์ด้วยกระดาษจึงไม่มีตั๋วสักใบ แล้วใบเสร็จบอกว่ามี N — ตัวเลขที่โกหกคือสิ่งที่ทำให้
+   คนเลิกเชื่อทั้งหน้าจอ (กฎเดียวกับที่ห้าม capability status พูดเกินจริง)
+   · แก้เป็นนับตั๋วจริงจาก `bms_restaurant_kitchen_tickets` (join กับบรรทัดที่ยัง `SENT`)
+     ในทรานแซกชัน prepare เดียวกับที่อ่านรายการ
+   · เทส DB ใหม่: ปิด `KITCHEN_WORKFLOW` ของร้านทดสอบ → บิลยังมีบรรทัดที่ส่งครัวแล้ว 1 บรรทัด
+     แต่ `kitchenTickets` ต้องเป็น 0
+4. **⚠️ แท็บบิลพิมพ์ซ้ำบิลที่ถูกยกเลิก/คืนของ โดยไม่บอกอะไรเลย** — `listRecentPosSales` ดึงทั้ง
+   `COMPLETED` และ `RETURNED` และคืน `voidedAt` มาให้อยู่แล้ว แต่จอไม่ได้รับ `voidedAt` เข้า type
+   และไม่เคยเรนเดอร์ `orderStatus` · **นี่คือปัญหาเดียวกับที่ `9.22` แก้ไปแล้วที่หน้าค้าปลีก**
+   ("ใบเสร็จเงียบสนิทเรื่องการคืน คนพิมพ์ซ้ำจึงคิดว่าการคืนไม่ถูกบันทึก") แค่ย้ายมาโผล่ที่หน้าใหม่
+   · แก้: `billHistoryNote()` (pure) → ป้ายบนการ์ด + Alert เหนือรายการ + ปุ่มเปลี่ยนชื่อเป็น
+     **"พิมพ์ใบขายเดิม"** · **ไม่แสดงยอดคงเหลือหลังคืนที่นี่โดยตั้งใจ** — เลขนั้นต้องมาจาก
+     ไทม์ไลน์การคืนของโหมดค้าปลีก ไม่ใช่การคำนวณใหม่ที่จอ (สูตรเงินชุดที่สอง)
+
+**วิธี verify ในเบราว์เซอร์ที่ใช้รอบนี้ (ไม่แตะข้อมูลของผู้ใช้เลย)** — ยืม `token_hash` ของ POS-01
+ของ shop-b ชั่วคราว (สำรอง → ตั้งของตัวเอง → **คืนค่าเดิมและ verify ว่าคืนตรง**) แล้วป้าย
+"ถูกยกเลิกแล้ว/มีการคืนสินค้า" ทดสอบด้วยการ **แพตช์ `window.fetch` ให้เติมสองธงลงใน response**
+ของ `/api/pos/recent-sales` (รูปแบบเดียวกับที่เคยใช้ป้อนตั๋วปลอมให้จอครัว) — ฐานข้อมูลไม่ถูกแตะ
+ยืนยันหลังจบ: `voided_at` ของ shop-b ยังเป็น 0 ทุกแถว และไม่มี tenant `fake-%` ค้าง
+· **กับดักตอน verify: คลิกด้วยพิกัดจาก accessibility tree ไม่โดนปุ่ม** เพราะ overlay ของ Modal
+  ที่เพิ่งปิดยังคาอยู่ — ดูออกได้จาก "กดแล้วไม่มี network request สักตัว" ต้องสั่ง `.click()`
+  บน element ตรง ๆ
+
+**ยังไม่ได้แก้ (จงใจ)**: `RestaurantCheckError` ที่ `finalizePosSale` โยนตอนผูกสมาชิกไม่สำเร็จ
+ถูก catch กลางของฟังก์ชันนั้นแปลงเป็น `PAYMENT_FAILED` เสมอ จึงไม่มีทางออกเป็น 409 แบบที่ชื่อคลาส
+สื่อ — แต่ `describePosFailure` โชว์ `reason` ต่อให้ ข้อความจึงถึงแคชเชียร์ครบ ไม่ใช่บั๊กที่เห็นได้
+· **ส่วนลดตามชั้นสมาชิกยังไม่ถูกใช้กับบิลโต๊ะ** (คิดตอน `createOrderInTx` ซึ่งเกิดตอนส่งครัว
+ก่อนรู้ว่าใครจ่าย) สมาชิกได้แค่แต้มสะสม — ตรงกับที่เอกสารเขียนไว้ แต่ต้องรู้ก่อนเปิดใช้จริง
+
+**ตั้งใจยังไม่ย้าย return flow เข้าหน้าร้านอาหาร:** flow เดิมครอบคลุม partial quantity, split refund,
+pending non-cash, second approver, serial, cross-branch และ immutable history/printing; การย้ายเพียงบางส่วน
+จะสร้าง money path ที่พฤติกรรมไม่เท่ากัน จึงคงลิงก์ไปโหมดค้าปลีกและควรทำเป็นรอบแยกพร้อม DB/browser tests.
+
+#### GraphQL client readiness — Phase 1: committed SDL + drift gate (2026-09-11)
+
+- เพิ่ม canonical renderer `renderBmsGraphqlSdl()` จาก `buildBmsGraphqlSchema()` และคำสั่ง
+  `cd apps/web && npm run schema:export` ซึ่งเขียน `schema.graphql` จาก executable schema จริง
+  (เรียงแบบ lexicographic เพื่อไม่ให้ลำดับ import สร้าง diff หลอก) · artifact ปัจจุบัน 4,909 บรรทัด
+- เพิ่ม `graphql-schema-artifact-contract.test.mts` เข้า pure runner: เทียบ artifact กับ renderer
+  โดย normalize เฉพาะ CRLF/LF แบบเดียวกับ schema-readiness gate · endpoint production ยังปิด
+  introspection เหมือนเดิม และ client ใช้ไฟล์ที่ commit แทน
+- **กับดักที่เจอ:** ชื่อโฟลเดอร์ `apps/web/graphql` ชนกับชื่อ package `graphql` ภายใต้
+  `baseUrl="."`; import จาก `"graphql"`/`"graphql/index.js"` ถูก `tsx` resolve กลับเข้าไฟล์ local
+  และไม่มี `printSchema` · ต้อง import package subpath `graphql/utilities/index.js` · รัน test file
+  ตรง ๆ โดยไม่มี `scripts/testing/next-runtime-shim.mjs` ก็ล้มที่ `server-only`, จึงต้องผ่าน runner กลาง
+- **mutation test ผ่าน:** เปลี่ยน `BankEntityDetail` ใน artifact เป็น
+  `BankEntityDetailMutated` ชั่วคราว → แดงเฉพาะ subtest
+  `committed schema.graphql matches the executable BMS GraphQL schema` พร้อม diff ที่ชื่อ type;
+  คืนแล้ว SHA-256 ตรงก่อน mutate ทุกไบต์
+  (`7C42268635E9CC32ED7F422B072BC4DF4B7C56E2BE3336407F539450C7CADB33`) และ focused test กลับเขียว
+- **verify บน clean worktree ของ commit `6387530b`:** Web gate ผ่าน — typecheck,
+  pure **1,095/1,095**, production build 113 routes/pages (exit 0) · `apps/ws npx tsc --noEmit`
+  ผ่าน · main worktree รอบแรกแดง 2 เทสเพราะ realtime diff ที่ค้างจากก่อน Phase 1 เปลี่ยนชื่อ
+  dispatcher โดยยังไม่เปลี่ยนเทส; ไม่ใช่ Phase 1 และไม่ได้แตะ/รวม diff ชุดนั้น
+- **warning ที่ไม่ใช่ failure:** build ยังเห็น Edge trace ของ `jsonwebtoken`, Browserslist เก่า,
+  SendGrid placeholder และ Postgres `ECONNREFUSED` ระหว่าง static generation แต่ build จบ exit 0
+- **ไม่ได้ทำ/ยังไม่ได้ verify:** Phase 2 typed inputs, Phase 3 typed outputs, client codegen จริง และ
+  production deployment ยังไม่เริ่ม · ไม่รัน DB test เพราะเฟสนี้ไม่อ่าน/เขียน DB · ไม่มี migration,
+  permission, REST, subscription หรือ realtime change ใน commit นี้
+
+#### GraphQL client readiness — Phase 2: typed mobile inputs (2026-09-11)
+
+- แปลง argument `input` ของ mobile/POS surface ครบ **33/33 operations** จาก `JSON!` เป็น
+  input object ที่มีชื่อ รวม nested lines/payments/returns/receiving/restaurant lines; output ยังเป็น
+  JSON **67 operations** ตามขอบเขต Phase 2
+- SDL ไม่รับ authority ของ tenant/device/shift จาก client; `locationId` เหลือเฉพาะ 2 staff workflow
+  ที่มีอยู่เดิม (`BmsStockCountInput`, `BmsReviewRestaurantRequestInput`) และ resolver ตรวจ tenant
+  ฝั่ง server · idempotency key เป็น required ใน mutation ที่ service ใช้จริง และเป็น optional
+  เฉพาะ action multiplexer ที่แต่ละ action ใช้ไม่เหมือนกัน (รอแตก field ใน Phase 4)
+- ขยาย `mobile-graphql-contract`: ตรวจ 33 typed inputs, authority denylist, idempotency nullability และ
+  ชื่อ field สองทิศระหว่าง SDL กับ `input.foo` ที่ resolver อ่านจริง (รวม credentials ที่ helper อ่าน;
+  ตัด legacy `shiftId` ซึ่ง typed client ส่งไม่ได้)
+- **mutation test ผ่าน 4 ด่าน:** คืน `bmsPosSale` เป็น `JSON!`, เติม `deviceId`, ทำ
+  `idempotencyKey` nullable และลบ `couponCode` ทีละกรณี — แดงเฉพาะ subtest ที่เป็นเจ้าของกฎ;
+  กรณีแรกเผยว่า downstream assertions พยายาม introspect JSON จนแดงพ่วง จึงแก้ให้แต่ละด่านเป็นอิสระ
+  แล้วรัน mutation ซ้ำ · คืนไฟล์ตรงทุกไบต์ SHA-256
+  `E3E88B0E0AF96E44B1791E051851A2C11FD0E395960DF32125F9E1FE2EA3C3CA`
+- **verify บน clean worktree ของ commit `27eaaf78`:** Web gate ผ่าน — typecheck,
+  pure **1,099/1,099**, production build **113/113** pages (exit 0) ·
+  `apps/ws npx tsc --noEmit` ผ่าน · warning เดิมระหว่าง build คือ SendGrid placeholder และ
+  Postgres `ECONNREFUSED` ตอน static generation แต่ไม่ทำให้ build ล้ม
+- main worktree ยังไม่สะอาดเฉพาะ realtime/outbox diff 9 ไฟล์ที่มีอยู่ก่อนงานนี้และจงใจไม่แตะ;
+  Phase 2 commit ไม่มี DB/migration/permission/REST/subscription/realtime change
+- **ยังไม่ได้ verify:** DB integration (เฟสนี้ไม่ใช้ DB), React Native codegen/compile จริง,
+  production deployment และ output typing ของ Phase 3
+
+#### GraphQL client readiness — Phase 3a: first 10 typed outputs (2026-09-11)
+
+- แปลง 10 operations ที่เป็นจอหลัก RN ตาม brief เป็น typed output ครบ:
+  session, scan, catalog search, restaurant menu/floor/check, kitchen tickets, sale,
+  restaurant open-check และ shift · JSON output countdown จาก **67 เหลือ 57**
+- สร้าง type จากค่าที่ resolver/service คืนจริง; field ที่ขึ้นกับ status หรือแถว legacy เป็น nullable
+  (รวม `BmsKitchenTicket.orderId/checkId` และ restaurant line amount) · เงินคงเป็น `Float`,
+  วันที่คงเป็น ISO `String` และไม่ได้เปลี่ยน business logic
+- `stationSlas` เดิมเป็น dynamic-key object จึงแปลงเฉพาะ GraphQL adapter เป็น typed
+  `{ stationRef, warnMinutes, lateMinutes }[]`; REST response/service map เดิมไม่เปลี่ยน และ 10 roots
+  ไม่มี nested `JSON` เหลือให้ codegen
+- ขยาย contract ให้ตรึงรายชื่อ+ชนิดของ 10 roots, countdown 57, recursive no-JSON และ nullability
+  ที่เคยทำ query ล้มได้
+- **mutation test ผ่าน:** (1) คืน `bmsPosSession` เป็น JSON, (2) ซ่อน JSON ที่
+  `BmsPosScanResult.modifiers`, (3) บังคับ nullable `lineAmount` เป็น `Float!` — แต่ละกรณีแดง
+  เฉพาะ subtest เจ้าของกฎ · คืนไฟล์ตรง SHA-256
+  `2B288211A9882BAC2574ABD6E8DEEAB9A7062AACD16DAB8B467DAC336E0995DA`
+  และ test file `D56B20A7161BBCA46E0256E1696205AB5A466411500F9ECC412120B3C2F8D5A1`
+- **verify บน clean worktree ของ commit `855be896`:** Web gate ผ่าน — typecheck,
+  pure **1,101/1,101**, production build **113/113** pages (exit 0) ·
+  `apps/ws npx tsc --noEmit` ผ่าน · schema artifact drift test ผ่าน
+- warning เดิม: Edge trace ของ `jsonwebtoken`, Browserslist เก่า, SendGrid placeholder และ
+  Postgres `ECONNREFUSED` ตอน static generation; build ยังจบสำเร็จ
+- ไม่มี DB/migration/permission/REST/subscription/realtime change ใน commit นี้ · main worktree
+  ยังมี realtime/outbox diff 9 ไฟล์เดิมที่ไม่เกี่ยวข้อง จึงพิสูจน์ความสะอาดเฉพาะ phase commit
+- **ยังไม่ได้ verify:** query ค่า live จาก DB, React Native codegen/compile จริง, production deployment,
+  error-contract/client-doc phases และ output อีก 57 operations
+
+#### GraphQL client readiness — Phase 5: stable error contract (2026-09-11)
+
+- รวม client-facing GraphQL errors ไว้ที่ `mobileErrorContract.ts`: adapter ระบุ code จากชุด
+  `UNAUTHENTICATED` / `FORBIDDEN` / `BAD_USER_INPUT` / `NOT_FOUND` / `CONFLICT` และ final
+  `formatError` เติม `INTERNAL_SERVER_ERROR` ให้ exception ที่ service ยังไม่ได้ classify ทำให้
+  `errors[].extensions.code` ไม่ว่างทุกกรณี โดยยังเก็บ extension เช่น `reason`, `permission`,
+  `scanCode` และ HTTP hint เดิม
+- business rejection ไม่ถูกย้ายเป็น GraphQL error: `PAYMENT_MISMATCH`, `SHIFT_NOT_OPEN`,
+  `OUT_OF_STOCK`/`INSUFFICIENT`, `SOLD_OUT_TODAY`, `IDEMPOTENCY_CONFLICT` และ pharmacy policy
+  status ยังคืนใน `data.<operation>.status`; เอกสาร RN แยก retry/re-auth/refetch/operator action ชัดเจน
+- เพิ่ม pure contract ตรวจ formatter ทั้ง code ที่มีอยู่/หาย/ว่าง, ห้าม adapter สร้าง
+  `GraphQLError` กระจัดกระจาย, ตรึง code table ในเอกสาร และตรึงว่า business statuses ยังมาจาก service
+- **mutation test ผ่าน 2 ด่าน:** เปลี่ยน fallback จาก `INTERNAL_SERVER_ERROR` เป็น `UNKNOWN` → แดง
+  เฉพาะ formatter subtest; เอา `formatError` ออกจาก Apollo route → แดงเฉพาะ wiring subtest;
+  คืน helper SHA-256 `6A75E53C4D993EBC4AE934015A3E9D7CF6A20FEF0614FB276A447465F67B2B91`
+  และ route `4B8982E485ADE9A3DD9964D182535E1F33A4C64CF30AC7A202D479FCA5EEC3A7`
+- **verify บน clean worktree ของ commit `588c0c7e`:** focused contracts **18/18**, Web gate ผ่าน —
+  typecheck, pure **1,103/1,103**, production build **113/113** pages (exit 0) ·
+  `apps/ws npx tsc --noEmit` ผ่าน · warning เดิมคือ Edge `jsonwebtoken`, Browserslist,
+  SendGrid placeholder และ Postgres `ECONNREFUSED` ตอน static generation
+- ไม่มี DB/migration/permission/REST/subscription/realtime change ใน commit นี้; main worktree ยังมี
+  realtime/outbox diff 9 ไฟล์เดิมซึ่งไม่รวมใน commit
+- **ยังไม่ได้ verify:** live authenticated HTTP response ทุก code, React Native client behavior,
+  production deployment, เอกสาร operation examples ของ Phase 6 และ output อีก 57 operations
+
+#### GraphQL client readiness — Phase 6: React Native operation guide (2026-09-11)
+
+- ขยาย `react-native-graphql-client.md` ด้วย query/mutation ที่ copy ใช้ได้จริงสำหรับทุกจอใน
+  typed batch: bootstrap, search/scan, restaurant floor/menu/check, kitchen, sale, open check และ shift
+  พร้อม field selection ที่แนะนำและกติกา nullable/idempotency/reconciliation
+- ตาราง coverage อ่านจาก schema จริง: typed output **10 operations**, JSON compatibility
+  **57 operations** (input ของทั้ง 67 typed แล้ว) และบอกชัดว่า JSON output ต้อง validate ที่ client
+  boundary จนกว่าจะย้ายมา typed; codegen ใช้ committed root `schema.graphql` ไม่เปิด production
+  introspection
+- เพิ่ม `validateBmsGraphqlDocument()` ใต้ schema module เพราะ pure test ใน `scripts/` import package
+  `graphql` ตรง ๆ ไม่ได้ตามข้อจำกัดของ repo; เอกสารทุก fenced GraphQL block จึง parse+validate กับ
+  executable HTTP schema จริง และ coverage table เทียบ root field ของ resolver ทั้งสอง module
+- **mutation test ผ่าน 3 ด่าน:** (1) เปลี่ยน selection เป็น field ที่ไม่มี → แดงเฉพาะ document
+  validation, (2) เอา `bmsPosShift` ออกจากตัวอย่างโดยเหลือ mutation ที่ valid → แดงเฉพาะ example
+  coverage, (3) โกหก typed row ว่า `bmsPosLastSale` typed → แดงเฉพาะ table/schema contract;
+  คืนไฟล์ตรง SHA-256: guide
+  `71FB3E117106B8623FC29B90264A318209971781DF1A599E8D1ECBCA9B544FA5`, schema helper
+  `D43290B9D351F879B857092ED1C12A50179B12F21AE103EEAC03C8D9AE1EB32B`, test
+  `58CA3A9B4863001617A15B818CAA9B00EACDE0E048F31B807B318CB11B83AB9E`
+- **verify บน clean worktree ของ commit `187da680`:** focused contracts **20/20**, Web gate ผ่าน —
+  typecheck, pure **1,106/1,106**, production build **113/113** pages (exit 0) ·
+  `apps/ws npx tsc --noEmit` ผ่าน · warning เดิมคือ Edge `jsonwebtoken`, Browserslist,
+  SendGrid placeholder และ Postgres `ECONNREFUSED` ตอน static generation
+- ไม่มี DB/migration/permission/REST/subscription/realtime change ใน commit นี้
+- **ยังไม่ได้ verify:** generated React Native project compile, query ด้วยข้อมูล/credential จริง,
+  production deployment, Phase 4 named actions และ typed output อีก 57 operations
+
+#### GraphQL client readiness — Phase 4: named action mutations (2026-09-11)
+
+- แตก action multiplexers 8 กลุ่มเป็น named mutations **32 fields**: restaurant check 9,
+  incoming 3, QR 2, request decision 3, service call 2, waitlist 5, stock transfer 4 และ stock count 4
+  · input แต่ละ action ไม่มี `action` discriminator และ `cancelOrderLines.idempotencyKey` เป็น required
+- compatibility fields เดิมทั้ง 8 ยังอยู่และติด `@deprecated`; named resolver inject action คงที่แล้ว
+  delegate เข้า compatibility resolver ตัวเดิม จึงผ่าน PIN/RBAC/open-shift/second-person/idempotency/
+  service/audit/transaction path ชุดเดียว ไม่มี business logic copy และไม่ย้าย browser REST caller
+- schema artifact regenerate แล้ว; client guide ระบุชื่อใหม่และสถานะชั่วคราวว่า 10 typed output +
+  89 JSON compatibility outputs (57 เดิม + 32 aliases) ขณะที่ argument ของ 99 operations typed
+- เพิ่ม contract อ่าน executable schema ตรวจ alias/deprecation/action-free input และอ่าน method body
+  ตรวจ fixed action + compatibility delegation + ห้ามเรียก service ซ้ำใน wrapper
+- **mutation test ผ่าน 3 ด่าน:** ถอน `@deprecated` → แดงเฉพาะ compatibility subtest; สลับ
+  `add_item` เป็น `remove_item` → แดงเฉพาะ mapping subtest; เติม `action` ลง named input → แดง
+  เฉพาะ discriminator subtest · คืน SHA-256 ตรงเดิม: POS
+  `2EE70D3FC6C78DF93C0FB2E49FF534FC5B6BAA489A46394E35DC006BA4E634EE`, mobile
+  `7A84191AE4D81DD04C589E82F94C17178B6FA82FD6562ADB86D8FEF4391A0220`, test
+  `C6D1B44F174BC28593C09389D4039081E15E2993E450D2E2FFB947158539EF83`
+- **verify บน clean worktree ของ commit `00b16f9b`:** focused contracts **23/23**, Web gate ผ่าน —
+  typecheck, pure **1,109/1,109**, production build **113/113** pages (exit 0) ·
+  `apps/ws npx tsc --noEmit` ผ่าน · warning เดิมคือ Edge `jsonwebtoken`, Browserslist,
+  SendGrid placeholder และ Postgres `ECONNREFUSED` ตอน static generation
+- ไม่มี DB/migration/permission/REST/subscription/realtime change ใน commit นี้
+- **ยังไม่ได้ verify:** execute aliases ด้วย live DB/credentials, caller migration, generated RN compile,
+  production deployment และ typed output ของ 89 compatibility fields
+
+#### GraphQL client readiness — Phase 3b: complete typed outputs (2026-09-11)
+
+- แปลง output ที่เหลือทั้งหมดหลัง Phase 4 จนครบ **99/99 mobile/POS operations** เป็น named
+  object/list trees; executable schema ไม่มี root หรือ nested output ที่เป็น `JSON` เหลือแล้ว · `JSON`
+  สองตำแหน่งใน `bmsPosDevice.ts` เป็น input payload ของ cart/parked cart เดิม ไม่ใช่ response
+- ชนิดข้อมูลยึดจากค่าที่ resolver และ shared service คืนจริง: เงินยังเป็น `Float`, วันเวลาเป็น ISO
+  `String`, branch ที่ขึ้นกับ status/legacy row เป็น nullable และ named action aliases ใช้ result type
+  เดียวกับ compatibility resolver ที่ delegate อยู่ จึงไม่สร้าง business path ใหม่
+- เพิ่ม GraphQL-only compatibility formatting สองจุด: parked cart แบบ legacy array ถูกห่อเป็น
+  `{ version: 2, lines }`; restaurant request ที่ service คืน failure object ผ่าน `reason` ถูกแยกเป็น
+  typed `failure` เพื่อไม่ส่ง object เข้า `String` scalar · ไม่เปลี่ยน service หรือ REST response
+- ขยาย contract ให้ enumerate surface ครบ 99 operations แล้วเดิน output graph แบบ recursive เพื่อห้าม
+  `JSON` ที่ซ่อนอยู่; guide/table เปลี่ยนเป็น **Typed (99)** / **JSON compatibility (0)** และยัง validate
+  ตัวอย่าง 10 core screen flows กับ executable schema
+- **mutation test ผ่าน 4 ด่าน:** (1) คืน `bmsPosLastSale` เป็น root `JSON`, (2) ซ่อน `JSON` ที่
+  `BmsPosReceipt.payments`, (3) เปลี่ยน coverage doc เป็น `Typed (98)`, (4) เปลี่ยน legacy parked-cart
+  version จาก 2 เป็น 3 — แต่ละกรณีแดงที่ contract เจ้าของกฎและคืนกลับแล้ว · SHA-256 หลัง restore:
+  mobile `C456E04E3284DA751F01DBDD2042852C143EAF82F2C18D1230F78791B12C9D33`, POS
+  `A19F1EFE64A4A0215FF8C4368B5C0FC09A8F2C08DDAFEFC35F79FCDFB4571094`, guide
+  `9D3FAC8B7AE5375F8F6E8E5FDD562E616119EBFBD321D62CC20140947CBD7DE1`, artifact
+  `366405ECA7CD08C545A8FAA3FF991C477DB2250E1917D76272C924745155D2DF`, output contract
+  `12DDEB977D00FFC95643FB03ABC2D8B13429A9A0791C9904F85F8D19247FA9CD`, doc contract
+  `3BE9B605FD704C2AE5C65BAAD60E8535AC264AC0F1B806EE5C6454E21A6915DF`
+- **verify บน clean worktree ของ commit `0b19503c`:** focused contracts **23/23**, Web gate ผ่าน —
+  typecheck, pure **1,110/1,110**, production build **113/113** pages (exit 0) ·
+  `apps/ws npx tsc --noEmit` ผ่าน · clean worktree ต้อง junction dependency ของ
+  `packages/realtime` และ `packages/graphql-core`; รอบก่อนเชื่อมแดงเฉพาะ module resolution ไม่ได้แก้
+  source เพื่อกลบ error
+- warning เดิมระหว่าง build: Edge trace ของ `jsonwebtoken`, Browserslist เก่า, SendGrid placeholder
+  และ Postgres `ECONNREFUSED` ตอน static generation; build จบสำเร็จและเฟสนี้ไม่ใช้ DB
+- commit นี้ไม่มี DB/migration/permission/REST/subscription/realtime change; main worktree ยังมี
+  realtime/outbox diff 9 ไฟล์เดิมซึ่งไม่รวมใน phase commit
+- **ยังไม่ได้ verify:** execute ทั้ง 99 branches ด้วย live authenticated DB data, generated React Native
+  codegen/compile, production deployment และ behavior บนอุปกรณ์จริง · ยังไม่ได้ย้าย/ลบ REST callers
+  และไม่ได้เปลี่ยนระบบเป็น WebSocket 100%; subscription/realtime transport อยู่นอก client-readiness brief นี้
+
+#### Tax leak guards — Phase 1 (2026-09-24)
+
+- เพิ่ม migration `10.13`: เก็บ `bms_order_items.line_amount` เป็นยอดเงินจริงของแต่ละบรรทัด,
+  backfill หลักฐานเดิม, บังคับ non-negative/not-null และเปลี่ยน unique invoice ของภาษีซื้อเป็นเลขเอกสาร/
+  สาขาที่ normalize แล้ว โดย migration หยุดก่อนเปลี่ยน schema ถ้าพบข้อมูลซ้ำเดิม; backfill เปิด
+  `app.skip_revision` แบบ transaction-local เฉพาะ UPDATE แล้วคืนค่าทันทีเพื่อไม่ขยาย revision table
+- order creation กระจายยอดโปรราย SKU+size เป็นสตางค์ (เศษลงบรรทัดสุดท้าย) และทุกเส้นทางยอดขาย/
+  ภาษี/รายงานใช้ `line_amount`; `unit_price` เหลือเป็นราคาเฉลี่ยเพื่อแสดงผลและ
+  `receipt_unit_price` ยังเป็นราคาป้ายตามสัญญาเดิม
+- ใบกำกับภาษีเต็มออกได้เฉพาะบิล `COMPLETED` ที่ไม่ void/ไม่เคยคืน, audit อยู่ transaction เดียวกัน;
+  back-office return/cancel/refund ปฏิเสธบิลที่มีเอกสารภาษี active และชี้ให้คืนผ่าน POS เพื่อออกใบลดหนี้
+- ปิดการตั้งราคาไม่รวม VAT ทั้ง UI/service/readiness; ภาษีซื้อตรวจ checksum เลขผู้เสียภาษีไทย,
+  สาขา 5 หลัก, ร้านจด VAT, วันที่/เดือนขอเครดิต และ VAT 7% ภายใน tolerance 0.05 บาท;
+  document counter ใช้ atomic upsert แยก global/device scope
+- ปรับ Windows contract runner ให้เรียก local `tsx` ผ่าน Node โดยไม่ผ่าน `cmd.exe` เพื่อให้ full suite
+  ที่ยาวเกิน 8,191 ตัวอักษรรันได้; มี contract ตรึงพฤติกรรมนี้
+- **verify ก่อน mutation:** typecheck ผ่าน, focused pure contracts ผ่าน, schema export ผ่าน,
+  production build ผ่าน **120/120 pages**; pure suite ทั้งชุด **1,469/1,474** โดย 5 failures
+  เหมือน `develop` และอยู่นอก diff (assistant guide 2, board-game workspace, order alert pattern,
+  delivery SQL relation scanner)
+- **mutation test:** ทำให้เสียทีละจุดแล้ว contract แดงครบ **11 gates** — promo allocation,
+  tax reader ที่ต้องอ่าน `line_amount`, สถานะ/partial-return ของใบเต็ม, back-office document type,
+  VAT-exclusive setter, counter partial-index arbiter, cancelled-order exception report, checksum ภาษีซื้อ,
+  migration revision bypass และ Windows runner; mutation back-office รอบแรกหลุด จึงเพิ่ม assertion ให้ตรึง
+  ทั้ง `ABBREVIATED`/`FULL` แล้วทดสอบซ้ำจนแดง จากนั้น restore service files ตรง SHA-256 เดิม
+- **verify หลัง restore:** tax-leak **7/7**, expense-documents **12/12**, contract-runner **16/16**
+  และ typecheck ผ่าน; final pure suite **1,470/1,475** โดยยังแดงเฉพาะ 5 baseline cases ชุดเดิม
+- **DB ยังไม่ได้ verify:** local PostgreSQL `127.0.0.1:5432` ตอบ `ECONNREFUSED` และ Docker daemon
+  ไม่ทำงาน จึงยังไม่ได้ apply/rollback migration, รัน DB contracts หรือ SELECT ตรวจข้อมูลจริง;
+  read-only preflight สำหรับร้าน `price_includes_vat=false` และ invoice ซ้ำก็ยังอ่านไม่ได้
+- **ความเสี่ยง deploy:** `line_amount` ของ order เก่าถูก backfill จากหลักฐานเดิม จึงกู้ส่วนลดโปรรายบรรทัด
+  ที่ไม่เคย persist ไม่ได้; ก่อน deploy ต้องตรวจ/จัดการ PENDING promo orders เดิม และต้องสำรอง/ตรวจ duplicate
+  invoice ก่อน migration แม้ migration จะ fail closed อยู่แล้ว
+
+#### Delivery platform hardening (`10.14`, 2026-09-24)
+
+- Foodpanda เปลี่ยน authority เป็น OAuth2 client credentials: token อายุสั้น cache แบบเข้ารหัสใน shared
+  Redis, มี TTL margin/refresh lock และ invalidate + retry provider operation เดิมหนึ่งครั้งเมื่อ 401;
+  static encrypted access token เดิมยังใช้ได้เฉพาะ compatibility
+- webhook ใช้ logical id (order/status/provider timestamp) แยกจาก canonical payload hash; id เดิม hash
+  ต่างกัน commit เป็น `WEBHOOK_PAYLOAD_CONFLICT` และ worker เก็บ initial event + latest fetch แยกกัน
+- worker re-lock integration หลัง fetch แล้วตรวจ active/rollout/health/credential/config version, ยืนยัน
+  order/store identity, currency ร้าน, mapping price snapshot และ typed transport ก่อนสร้าง order/payment/
+  reservation ใน transaction เดียว
+- Foodpanda logistics queue `READY_FOR_PICKUP` ตอน local ready; vendor delivery ไม่ส่ง ready และ queue
+  `DISPATCHED` เฉพาะ transaction handoff ที่ตัด stock สำเร็จ; network call ยังออกหลัง commit จาก command outbox
+- เพิ่ม DB contract ครอบ currency rollback/matching order+payment+reservation, advanced latest-state history,
+  kill switch ระหว่าง fetch และ payload conflict; เพิ่ม pure behavioral contract ครอบ OAuth/cache/401/dedup/
+  transport/redaction
+- **verify รอบนี้:** typecheck ผ่าน; focused pure **19/19** ผ่าน; production build ผ่าน **120/120** pages;
+  full pure **1,478/1,483** โดยแดง 5 baseline cases ชุดเดียวกับก่อนงาน (assistant guide 2,
+  board-game workspace, order alert pattern, delivery SQL relation scanner); focused DB runner
+  compile/เริ่มรันได้แต่ PostgreSQL `localhost:5432` ตอบ `ECONNREFUSED` จึงยังไม่ได้ apply/rollback
+  migration หรือยืนยัน DB behavior
+- production rollout ยังปิด: GrabFood/LINE MAN contract-blocked และ Foodpanda production ยังต้องผ่าน partner
+  webhook/onboarding, sandbox + shadow, tax approval และ settlement cycle จริง
+
+#### Master data — Phase 2 (`10.77`, 2026-10-16)
+
+- branch `feat/master-data-phase-2`; เพิ่ม structured Thai address hierarchy + frozen Thai display
+  snapshots ให้ customer delivery, signed checkout/AI chat, tax requests/full invoices, store profile
+  และ branch locations โดย legacy free-text rows และ saved legacy checkout addresses ยังใช้ต่อได้
+- full tax invoice พิมพ์จาก snapshot ที่บันทึกตอนออกเอกสารเท่านั้น; ไม่มีการ join master data ตอนพิมพ์
+  และคำขอใบกำกับเก่ายังใช้จังหวัดแบบเดิมได้ ระหว่างรอการตัดสินใจว่าจะบังคับ code สำหรับ COMPANY ใหม่หรือไม่
+- เพิ่ม `scripts/match-th-addresses.mts` ซึ่ง dry-run/rollback เป็นค่าเริ่มต้น; apply ต้องมี tenant UUID,
+  actor UUID, revision context และ audit และเขียนเฉพาะแถวที่จับคู่ได้หนึ่งคำตอบเท่านั้น
+- verify: focused Phase 2 **7/7**, tax-request buyer **8/8**, customer policy **87/87**,
+  schema artifact/readiness, i18n และ typecheck ผ่าน; mutation test แดงครบ **6/6** แล้ว restore;
+  full gate ผ่าน pure **2,886/2,888** (skip 2, fail 0) และ production build **135/135** pages
+- DB contract ยังไม่รัน: runner ปฏิเสธเพราะไม่มี `POSTGRES_HOST`/`POSTGRES_DB`; browser smoke เปิด
+  `/admin/locations` ที่ 1440x900 และ 390x844 ได้แต่ redirect ไป login ตาม guard จึงยังไม่เห็นฟอร์มหลัง auth;
+  public address endpoint compile ได้แต่ตอบ 500 เพราะ local PostgreSQL/Redis ไม่พร้อม
+- rollout: backup `bms_customer_addresses`, `bms_store_profile`, `bms_locations`, `bms_tax_documents`;
+  apply `10.76` ก่อน `10.77` ด้วย transaction, ตรวจ nullable columns/FKs แล้วรัน matcher แบบ dry-run
+  แยก tenant ก่อน apply; rollback app ก่อนและเก็บ snapshot columns ไว้จน export/review เสร็จ
+
+#### Master data — Phase 7 (`10.82`, 2026-10-17)
+
+- branch `feat/master-data-phase-7`; เพิ่ม global `bms_master_drugs` แบบ effective-dated พร้อม source/version,
+  pharmacist-review provenance, Phase 6 approved-barcode link และ revision history; ไม่มี tenant/RLS และ
+  `bms_app` ได้ table `SELECT` เท่านั้น การเขียนผ่าน narrow `SECURITY DEFINER` functions หลัง application RBAC
+- ร้านเห็นคำแนะนำอัตโนมัติจาก product/pack barcode หรือเลือก master เอง; ปุ่มใช้คำแนะนำต้องมี
+  `pharmacy.policy.review`, คัดลอก snapshot ลง Product Policy เป็น `DRAFT`, ล้าง approval เดิม และ audit
+  ใน tenant transaction เดียวกัน; sale decision เดิมไม่อ่าน master data
+- ไม่มี seed ยาจริงเพราะยังไม่มีชื่อเภสัชกรผู้รับผิดชอบชุดข้อมูล มีเพียง `SAMPLE-DO-NOT-USE` ที่ inactive
+  และติดป้ายว่าไม่ผ่าน clinical review
+- verify: focused Phase 7 **9/9**, pharmacy-policy-decision **38/38**, Phase 6 **5/5**,
+  assistant corpus **11/11**, realtime coverage **7/7**, schema artifact/readiness, i18n และ typecheck ผ่าน;
+  deliberate mutation scenarios 6 ชุดเดิม + security-definer boundary แดงตามคาดและ restore แล้ว
+- full gate รอบสุดท้ายผ่าน: pure **2,914/2,920** (skip 6, fail 0) และ production build สำเร็จ;
+  browser guard smoke เปิด `/admin/master-data` ที่ 1440x900 และ 390x844 ได้ แต่ redirect ไป login
+  ตาม guard จึงยังไม่ได้ตรวจ master-drug form หลัง authenticated session
+- DB contract ยังไม่รัน: runner exit 2 เพราะไม่มี `POSTGRES_HOST`/`POSTGRES_DB`; ห้ามอ้างว่า migration/function
+  ผ่าน PostgreSQL จริงจนกว่าจะรัน `node scripts/run-contract-tests.mjs db master-data-phase7` บน local throwaway DB
+- rollout: backup `bms_master_barcodes` และ `bms_pharmacy_product_policies`; apply `10.81` ก่อน `10.82`,
+  ตรวจ direct table write ของ `bms_app` ถูกปฏิเสธแต่สอง function execute ได้, sample ยัง inactive และไม่มี active
+  real-drug rows; rollback app ก่อนและเก็บ policy snapshot columns จน export/review เสร็จ เพราะการ drop จะทำลาย provenance
+
+#### Master data — Phase 1–8 audit and Phase 8 corrections (`10.84`–`10.85`, 2026-10-17)
+
+- audit prompt/migrations/services/GraphQL/UI/contracts ของ Phase 1–8 พบและแก้ 3 production gaps:
+  country authority ใช้ `UK` แทน ISO `GB`, report centre/service-day บางเส้นทางยังล็อก Bangkok/อ่าน legacy
+  timezone ก่อน code, และ future AI rates อาจมีช่วง effective ซ้อนถ้าเพิ่มไม่เรียงเวลา
+- เพิ่ม corrective migrations `10.84`–`10.85`: ย้าย profile `UK` ไป `GB` โดยเก็บ `UK` inactive, เปลี่ยน
+  sync trigger, รักษา unknown-reference ledger หลัง backfill, normalize ช่วง rate เดิมโดยไม่แตะ finalized
+  usage event และ serialize provider/model timeline ก่อนเพิ่ม rate ใหม่
+- report centre ทั้งโมดูลและ restaurant ordering/menu reset/waitlist/customer reservation/pharmacy lot date
+  อ่าน validated `timezone_code` ก่อน โดย fallback legacy timezone แล้วจึง `Asia/Bangkok`; Thai golden ไม่เปลี่ยน
+- เพิ่ม Phase 8 DB contract และแก้ DB test harness Phase 1–4 ให้ resolve `pg` จาก workspace จริง รวมถึง teardown
+  Phase 6–7 ให้ลบ product fixtures ก่อน tenant; ล้าง FAKE rows จากรอบแดงแล้วและตรวจเหลือ 0 tenant
+- verify: `10.84`–`10.85` apply และ rerun ผ่านบน local dev; focused pure Phase 8 **7/7**, DB Phase 1–8 **25/25**,
+  full gate ผ่าน (pure **2,924/2,930**, skip 6, fail 0 + production build) และ `git diff --check` ผ่าน;
+  browser authenticated desktop/mobile ยังไม่ได้ตรวจเพราะ active Comet session
+  ถูกผู้ใช้สลับระหว่างรอบตรวจ
+- rollout: backup `bms_master_countries`, `bms_store_profile`, `bms_master_ai_rates`, `bms_plans`; apply ตามลำดับ
+  `10.76` → … → `10.83` → `10.84` → `10.85`; หลัง apply ตรวจ active country เป็น `TH/AU/GB`, `UK` inactive,
+  ไม่มี profile อ้าง `UK`, AI rate แต่ละ provider/model ไม่มีช่วงซ้อน และห้าม import AU/UK locality จนผ่าน
+  residency/licence review. Rollback app ก่อนเสมอ; อย่าลบ `GB`, profile codes, rate history หรือ finalized AI cost.
+
+#### Master data — repeat audit Phase 1–8 (`10.86`, 2026-10-17)
+
+- แก้ Phase 1/3 writer ที่ใช้ direct INSERT บน global master: เปลี่ยน service ให้ลดสิทธิ์เป็น `bms_app`,
+  ตั้ง audit tenant GUC และเรียก narrow functions ใน `10.86`; function ตรวจ platform-admin จาก editor ID อีกชั้น
+  โดยคง SELECT-only grants บนตารางและ revision. ทดสอบ service จริงทั้ง insert/update/audit และ ordinary-admin denial;
+  audit ล้มเหลวแล้วทั้ง master update และ revision rollback จริง
+- แก้ SQL timezone ใน reports/menu/order/waitlist/customer/pharmacy lot paths: ตรวจชื่อกับ `pg_timezone_names`
+  และ trim ก่อนใช้ จึง fallback ได้เมื่อค่า legacy ไม่ถูกต้อง; ไม่แก้เวลาที่เก็บไว้หรือ snapshot เก่า
+- แก้ store-profile partial locale update ให้ตรวจเฉพาะ field ที่ส่งมา การแก้ currency ไม่บังคับให้แก้ unknown
+  country/timezone พร้อมกัน และ unresolved ledger ยังเก็บข้อที่เหลือ
+- DB master-data **29/29** ผ่าน local; เพิ่ม 6 SQL-writer mutation checks (เปลี่ยนเป็น SECURITY INVOKER ภายใน
+  savepoint แล้วต้องโดน 42501) และคืน function/role ทุกครั้ง; narrow pure master-data **52/52** ผ่าน
+- full gate รอบสุดท้ายผ่าน: typecheck, pure **2,924/2,930** (skip 6, fail 0), production build;
+  `git diff --check` ผ่าน; ยืนยัน function ทั้ง 7 กลับเป็น SECURITY DEFINER และ fixture tenant/user เหลือ 0
+- `10.86` apply + rerun บน local dev สำเร็จ ไม่มี data rewrite; deploy ต้อง apply หลัง `10.85` ก่อน web code
+  backup function definitions/grants; rollback app ก่อนแล้ว revoke new EXECUTE grants หากต้องถอน เก็บ data/history ไว้
+- browser เปิด `/admin/master-data` ผ่านแท็บ IAB แยกแล้ว redirect ไป `/admin/login` ตาม guard; ยังไม่ได้ยืนยัน
+  ฟอร์มหลัง authenticated session หรือ layout desktop/mobile. ไม่ commit/push/deploy หรือ apply production
+
+#### Master data — authenticated UI follow-up (2026-10-17)
+
+- ใช้ temporary platform admin + tenant บน host dev port 3002/Redis แยก เพราะ Docker UI port 3001
+  มี GraphQL public URL ข้าม origin; ไม่แก้ local env หรือ Docker config ที่ผู้ใช้ใช้อยู่
+- เปิด Master Data ครบ 10 แท็บ; save inactive test bank สำเร็จผ่าน UI และพบ audit row 1 แถว;
+  package impact preview แสดง confirm gate แล้ว cancel โดยไม่เปลี่ยนแผน/rates; drug SAMPLE ยัง inactive
+- ตรวจ desktop 1440×1000 และ mobile 390×844: แก้ table overflow, search width และ form wrapping;
+  mobile document width เท่ากับ viewport 390px. แสดงสถานะ UK inactive และแปล plan name/limit labels th↔en
+- เพิ่ม pure regression guard สำหรับ table scroll/form wrapping/country status. Focused Phase 8 ผ่าน 8/8
+  ก่อนแก้ label; full gate หลังแก้ทั้งหมดบันทึกในผลตรวจท้ายรายการนี้
+- ล้าง fixture bank/user/tenant แล้วตรวจเหลือ 0 ทั้งสามชนิด; หยุด isolated dev server และ temporary Redis
+  (ข้อมูลทดสอบไม่มี backup และไม่ได้แตะข้อมูลร้านจริง). รูปหลักฐานอยู่ใน task visualization directory
+- ขอบเขต browser คือ Master Data เท่านั้น; consumer forms/tenant drug draft apply ไม่ได้ browser smoke ครบ
+  และไม่แทนที่ dataset licence/residency/pharmacist ownership review. ไม่ commit/push/deploy
+- gate หลัง UI corrections ผ่านครบ: typecheck + pure **2,917/2,923** (skip 6, fail 0, 248 files)
+  + production build; `git diff --check` ผ่าน. จำนวน test ใช้ผลรันรอบนี้ ไม่อ้างยอดจากรอบก่อน

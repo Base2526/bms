@@ -505,6 +505,17 @@ export async function applyStockCount(input: {
       const delta = item.counted_qty - item.snapshot_qty;
       if (delta === 0) continue;
       await assertNoQualityHold(client,input.tenantId,c.location_id,item.product_sku,item.size);
+      // Actual lot rows are authoritative even when policy flags were never enabled.
+      // assertNoQualityHold has already locked the summary row against lot writers.
+      const trackedLots = await client.query(
+        `SELECT 1 FROM bms_inventory_lots
+          WHERE tenant_id=$1 AND location_id=$2 AND product_sku=$3 AND size=$4 LIMIT 1`,
+        [input.tenantId, c.location_id, item.product_sku, item.size],
+      );
+      if (trackedLots.rowCount) {
+        await client.query("ROLLBACK");
+        return { status: "INVALID", reason: `${item.product_sku} มีล็อตอยู่แล้ว ไม่รองรับการนับแบบยอดรวม` };
+      }
 
       const inv = await client.query<{
         current_stock: number;

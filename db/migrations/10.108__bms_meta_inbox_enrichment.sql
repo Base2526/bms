@@ -1,4 +1,4 @@
--- 10.106 — Preserve bounded Meta Messenger context needed by the BMS Inbox.
+-- 10.108 — Preserve bounded Meta Messenger context needed by the BMS Inbox.
 --
 -- This is deliberately provider metadata, not customer CRM authority. It stores only
 -- reply/quick-reply/referral identifiers selected by the verified webhook parser.

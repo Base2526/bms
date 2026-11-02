@@ -6199,7 +6199,7 @@ export default function PosPage() {
         : data?.status === "SHIFT_NOT_OPEN" ? "ต้องเปิดกะของเครื่องนี้ก่อนรับคืนสินค้า"
         : data?.status === "WOULD_OVERDRAW" ? `เงินสดในลิ้นชักไม่พอคืนลูกค้า${data.available == null ? "" : ` · มีตามระบบ ฿${baht(Number(data.available))}`}`
         : data?.status === "REFUND_METHOD_UNAVAILABLE" ? `คืนผ่าน ${posPaymentMethodLabel(data.method)} ไม่ได้: ยอดช่องทางนี้ถูกคืนครบแล้ว กรุณาโหลดบิลใหม่`
-        : data?.error ?? `คืนบิลไม่สำเร็จ (${data?.status ?? `HTTP ${res.status}`})`;
+        : data?.reason ?? data?.error ?? `คืนบิลไม่สำเร็จ (${data?.status ?? `HTTP ${res.status}`})`;
       setNotice({ type: "error", text: message });
     } catch (e: any) {
       setNotice({
@@ -6319,7 +6319,7 @@ export default function PosPage() {
         : data?.status === "SHIFT_NOT_OPEN" ? "ต้องเปิดกะของเครื่องนี้ก่อนรับคืนสินค้า"
         : data?.status === "WOULD_OVERDRAW" ? `เงินสดในลิ้นชักไม่พอคืนลูกค้า${data.available == null ? "" : ` · มีตามระบบ ฿${baht(Number(data.available))}`}`
         : data?.status === "REFUND_METHOD_UNAVAILABLE" ? `คืนผ่าน ${posPaymentMethodLabel(data.method)} ไม่ได้: ยอดช่องทางนี้ถูกคืนครบแล้ว กรุณาโหลดบิลใหม่`
-        : data?.error ?? `คืนบางรายการไม่สำเร็จ (${data?.status ?? `HTTP ${res.status}`})`;
+        : data?.reason ?? data?.error ?? `คืนบางรายการไม่สำเร็จ (${data?.status ?? `HTTP ${res.status}`})`;
       setNotice({ type: "error", text: message });
     } catch (e: any) {
       setNotice({
@@ -6461,7 +6461,7 @@ export default function PosPage() {
           : data?.status === "SHIFT_NOT_OPEN" ? "ต้องเปิดกะของเครื่องนี้ก่อนรับคืนเพื่อเริ่มบิลเปลี่ยนสินค้า"
           : data?.status === "WOULD_OVERDRAW" ? `เงินสดในลิ้นชักไม่พอคืนก่อนเริ่มบิลเปลี่ยน${data.available == null ? "" : ` · มีตามระบบ ฿${baht(Number(data.available))}`}`
           : data?.status === "REFUND_METHOD_UNAVAILABLE" ? `คืนผ่าน ${posPaymentMethodLabel(data.method)} ไม่ได้: ยอดช่องทางนี้ถูกคืนครบแล้ว กรุณาโหลดบิลใหม่`
-          : data?.error ?? `เริ่มบิลเปลี่ยนสินค้าไม่สำเร็จ (${data?.status ?? `HTTP ${res.status}`})`;
+          : data?.reason ?? data?.error ?? `เริ่มบิลเปลี่ยนสินค้าไม่สำเร็จ (${data?.status ?? `HTTP ${res.status}`})`;
         setNotice({ type: "error", text: message });
         return;
       }

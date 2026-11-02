@@ -251,7 +251,9 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
           },
         });
         const result = response.data?.bmsPosReturn;
-        if (result?.status !== 'RETURNED') {
+        const successStatus =
+          action === 'RETURN_FULL' ? 'RETURNED' : 'PARTIAL_RETURNED';
+        if (result?.status !== successStatus) {
           returnKey.current = null;
           throw new Error(
             result?.reason ?? result?.status ?? 'คืนสินค้าไม่สำเร็จ',
@@ -381,7 +383,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
           },
         });
         const result = response.data?.bmsPosVoid;
-        if (result?.status !== 'RETURNED') {
+        if (result?.status !== 'VOIDED') {
           voidKey.current = null;
           throw new Error(result?.reason ?? result?.status ?? 'Void ไม่สำเร็จ');
         }

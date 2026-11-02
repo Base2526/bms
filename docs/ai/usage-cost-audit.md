@@ -1,12 +1,20 @@
-# AI points policy — 2026-10-16 (`10.56`, `10.73`)
+# AI points policy — updated 2026-11-02 (`10.56`, `10.73`, `10.101`, `10.102`)
 
-Current entitlement replaces the historical USD budget described below:
+Current entitlement replaces the historical USD budget described below. The catalogue lives in the
+`bms_plans` rows (seeded by `10.101`/`10.102`) and platform admins can edit it at runtime through
+`/admin/master-data` → Plans, so a deployed database may differ — read `bmsPlanCatalog` or
+`SELECT code, price_monthly, price_yearly, ai_credits_monthly FROM bms_plans` before quoting it:
 
-| Plan | THB/month | AI points/month |
-| --- | ---: | ---: |
-| Free | 0 | 100 |
-| Pro | 599 | 1,000 |
-| Business | 1,990 | 5,000 after scheduled transition |
+| Plan | THB/month | THB/year (quote only) | AI points/month |
+| --- | ---: | ---: | ---: |
+| Free | 0 | 0 | 100 |
+| Pro | 990 | 9,900 | 1,000 |
+| Growth | 1,990 | 19,900 | 2,500 |
+| Business | 4,900 | 49,000 | 5,000 (after the `10.73` scheduled transition) |
+| Enterprise (`enterprise`, sales-led) | 29,900 | 329,000 | 10,000 |
+
+The `10.73` rollout prices (Pro 599 / Business 1,990) are superseded. Prices are catalogue/quote
+evidence only — there is no recurring billing and `changePlan` takes effect immediately.
 
 `10.73` records the old Business allowance and the first instant of the next Bangkok month.
 All Business shops, including newly assigned ones, keep that old allowance until the recorded

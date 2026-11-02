@@ -1,5 +1,11 @@
 # scripts/ — ชุดเทสและเครื่องมือตรวจของ repo นี้
 
+- `node scripts/pos-stock-rejection-browser-smoke.mjs`: local web at `BMS_SMOKE_URL` (default
+  port 3100), intercepted API fixtures only. Checks the Desktop POS return workflow displays
+  `STOCK_REVIEW_REQUIRED` reasons without a successful return receipt, and opens the updated manual
+  at desktop/mobile widths. Supports `BMS_PLAYWRIGHT_MODULE`; captures under
+  `.test-output/pos-stock-rejection/`. No real money or stock mutation is submitted.
+
 ## Public restaurant guide
 
 - [Restaurant UAT data and 62 cases](../docs/testing/restaurant-uat-guide-th.md) covers the 11 public
