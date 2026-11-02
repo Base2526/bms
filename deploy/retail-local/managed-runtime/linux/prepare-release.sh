@@ -63,6 +63,16 @@ postgres_ref="bms/retail-local-postgres:16-alpine-$version"
 redis_ref="bms/retail-local-redis:7-alpine-$version"
 commit=$(git -C "$repo_root" rev-parse HEAD)
 [[ $commit =~ ^[a-f0-9]{40}$ ]] || { echo "Failed to read the source commit" >&2; exit 1; }
+schema_version=$(
+  find "$repo_root/db/migrations" -maxdepth 1 -type f -printf '%f\n' |
+    sed -nE 's/^([0-9]+(\.[0-9]+)?)__.*/\1/p' |
+    sort -V |
+    tail -n 1
+)
+[[ $schema_version =~ ^[0-9]+\.[0-9]+$ ]] || {
+  echo "Failed to determine the latest database schema version" >&2
+  exit 1
+}
 
 docker buildx build --platform linux/amd64 --provenance=false --load \
   --build-arg BMS_SOURCE_COMMIT="$commit" \
@@ -112,12 +122,12 @@ ws_digest=$(docker image inspect --format '{{.Id}}' "$ws_ref")
 postgres_digest=$(docker image inspect --format '{{.Id}}' "$postgres_ref")
 redis_digest=$(docker image inspect --format '{{.Id}}' "$redis_ref")
 
-node --input-type=module - "$output_dir" "$base_url" "$version" "$key_id" "$commit" "$created_at" \
+node --input-type=module - "$output_dir" "$base_url" "$version" "$key_id" "$commit" "$created_at" "$schema_version" \
   "$web_ref" "$web_digest" "$ws_ref" "$ws_digest" "$postgres_ref" "$postgres_digest" \
   "$redis_ref" "$redis_digest" <<'EOF'
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-const [output, baseUrl, version, keyId, sourceCommit, createdAt,
+const [output, baseUrl, version, keyId, sourceCommit, createdAt, schemaVersion,
   webRef, webDigest, wsRef, wsDigest, postgresRef, postgresDigest, redisRef, redisDigest] = process.argv.slice(2);
 const component = (name, kind, extra = {}) => ({
   name, kind, path: join(output, `${name}.artifact`), url: `${baseUrl}/${name}.artifact`, ...extra,
@@ -127,7 +137,7 @@ const descriptor = {
   channel: "pilot",
   platformTarget: "ubuntu-24.04-lts-x64",
   minimumAgentVersion: "0.5.6",
-  schemaVersion: "10.36",
+  schemaVersion,
   rollbackSafe: false,
   createdAt,
   sourceCommit,
