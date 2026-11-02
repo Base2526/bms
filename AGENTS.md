@@ -116,6 +116,9 @@ before changing that domain.
   idempotency key. Manual discount, void and drawer cash-out need a second person's PIN.
 - A void reuses the return machinery inside its own transaction; serial checks span the bill; shift
   reports answer only the owning device; refund allocations split cash (now) from non-cash (pending).
+- A return reconciles lot identity before refunding in the same transaction. Unknown source lots,
+  mixed tracked/untracked stock, conflicting expiry, or a no-receipt return into existing/tracked
+  lots fails closed with `STOCK_REVIEW_REQUIRED`; no stock/refund/return evidence may partially land.
 - Money authority is `bms_order_items.line_amount` (`10.13`), never `unit_price × qty`. Tax documents
   are immutable; a full invoice issues only for a completed, never-voided/returned bill; back office
   refuses cancel/return/refund with an active tax document.
@@ -147,7 +150,11 @@ before changing that domain.
   previews without writing, writes after the latest-summary affirmative, `CONFIRMED` only with
   `chat_auto_confirm` on a no-deposit branch, ≤3 active CHAT bookings per customer.
 - Branch inventory (`7.98`): transfers are send then receive; counts apply `counted − snapshot`;
-  native ops use the `9.88` idempotency record.
+  native ops use the `9.88` idempotency record. Counts refuse lot/expiry identity they cannot carry.
+  `10.107` transfer-lot support remains WIP until merged and DB-verified; do not claim it available.
+- Store operations (`10.91`–`10.98`): checklists/rosters are evidence, not payroll/presence proof;
+  production moves stock only on explicit post; material plans never move stock; quality holds
+  restrict usable lots without changing physical or valuation balances.
 - Delivery platforms (`10.12`–`10.21`): capability-gated, never guessed; verified mappings only;
   provider calls run after commit from the outbox; GrabFood/LINE MAN contract-blocked.
 - Retail Local is a deployment profile, not a fork; licensing is evidence-only and fail-open; never
@@ -205,8 +212,11 @@ before changing that domain.
 
 ## Database and migration rules
 
-- Add a new numbered migration; never rewrite one that may already have been applied. Migrations must
-  be safe to re-run (guarded/idempotent style already in `db/migrations/`).
+- Add a new numbered migration; never rewrite one that may already have been applied. Before choosing
+  the number, inspect all migration filenames numerically and search for cross-branch collisions.
+  A migration number/name is deployment identity: if an unapplied collision is renumbered, update
+  every code/test/doc reference in the same change and document handling for environments that ran
+  the old name. Migrations must be safe to re-run (guarded/idempotent style in `db/migrations/`).
 - Every new tenant-owned `bms_*` table needs `tenant_id`, an RLS policy, and `bms_app` grants — follow
   `4.2__bms_rls.sql` and `4.3__bms_rls_role.sql`.
 - Use `beginTenantTx()` for tenant writes; keep multi-step stock/order/payment changes atomic. Pass
@@ -328,8 +338,8 @@ cd apps/web && npm run gate   # typecheck → every DB-free contract suite → p
 - `npm run test:pure` (no DB) · `npm run test:db` (`-db-contract`, local host only, writes data —
   never production). The runner walks `scripts/` and `scripts/ai-eval/` (`*.test.mts` only);
   `gate.yml` runs typecheck + pure + build, never DB mode, so "pure green" ≠ DB path exercised.
-- One file: `node scripts/run-contract-tests.mjs <pure|db> <name-filter>` (a filter matching
-  nothing exits 2).
+- One file from `apps/web`: `node ../../scripts/run-contract-tests.mjs <pure|db> <name-filter>`
+  (a filter matching nothing exits 2). From the repository root, omit the leading `../../`.
 - Never claim a check passed unless it ran. Cover what you touched: schema (ordering, idempotency,
   RLS, grants, isolation) · API (auth, denial, bad input, success) · money/stock (transitions,
   rollback, duplicates) · AI (verified/missing facts, malformed output, provider failure).

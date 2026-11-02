@@ -1,5 +1,6 @@
 import { readBranchPrice, branchPrice } from "./branchPrices";
 import { usableLotSql, usableStockSql, inheritQualityHold } from "./lotQuality";
+import { validateTransferLotReceiptInTx } from "./lots";
 // =============================================================
 // BMS POS — ขายหน้าร้าน (channel = "pos")
 // -------------------------------------------------------------
@@ -5356,6 +5357,7 @@ export async function listRecentPosSales(
 
 export type PosReturnResult =
   | { status: "GIFT_RETURN_REQUIRED"; reason: string }
+  | { status: "STOCK_REVIEW_REQUIRED"; reason: string }
   | {
       status: "RETURNED";
       /** เลขใบลดหนี้ที่ออกให้การคืนครั้งนี้ — null เมื่อร้านไม่ได้จด VAT */
@@ -5406,6 +5408,7 @@ export type PosRefundAllocation = {
 
 export type PosPartialReturnResult =
   | { status: "GIFT_RETURN_REQUIRED"; reason: string }
+  | { status: "STOCK_REVIEW_REQUIRED"; reason: string }
   | {
       status: "PARTIAL_RETURNED";
       /** เลขใบลดหนี้ที่ออกให้การคืนครั้งนี้ — null เมื่อร้านไม่ได้จด VAT */
@@ -6394,6 +6397,22 @@ export async function processPosReturn(input: {
             ORDER BY oil.id FOR UPDATE OF lot`,
           [input.tenantId, item.id, stockLine.product_sku, stockLine.size]
         );
+        const returnableLots = lotsRes.rows
+          .filter(lot => Number(lot.available_to_return) > 0)
+          .map(lot => ({ ...lot, qty: Number(lot.available_to_return) }));
+        if (lotsRes.rowCount && returnableLots.reduce((sum, lot) => sum + lot.qty, 0) < exactQty) {
+          await client.query("ROLLBACK");
+          return { status: "STOCK_REVIEW_REQUIRED", reason: `จำนวน lot ต้นทางของ ${stockLine.product_sku}/${stockLine.size} ไม่พอสำหรับรับคืน` };
+        }
+        const lotReceiptError = await validateTransferLotReceiptInTx(client, {
+          tenantId: input.tenantId, locationId: returnLocationId,
+          productSku: stockLine.product_sku, size: stockLine.size,
+          receivedQty: exactQty, lots: returnableLots,
+        });
+        if (lotReceiptError) {
+          await client.query("ROLLBACK");
+          return { status: "STOCK_REVIEW_REQUIRED", reason: lotReceiptError };
+        }
         for (const lot of lotsRes.rows) {
           if (remainingBase <= 0) break;
           const giveBack = Math.min(remainingBase, Math.max(0, lot.available_to_return));
@@ -7769,7 +7788,7 @@ export async function voidPosSale(input: {
     voidShiftId: input.shiftId,
   });
   if (result.status !== "PARTIAL_RETURNED") {
-    return { status: "NOT_VOIDABLE", reason: `ยกเลิกไม่สำเร็จ (${result.status})` };
+    return { status: "NOT_VOIDABLE", reason: "reason" in result ? result.reason : `ยกเลิกไม่สำเร็จ (${result.status})` };
   }
 
   return { status: "VOIDED", orderId: input.orderId, refundAmount: result.refundAmount };
@@ -8476,6 +8495,15 @@ export async function blindReturnPosSale(input: {
         await client.query("ROLLBACK");
         return { status: "INVALID", reason: `ไม่พบสินค้า ${line.sku} ขนาด ${line.size} ที่เปิดขายอยู่ในสาขานี้` };
       }
+      const policy = await client.query<{ lot_tracking: boolean; expiry_tracking: boolean }>(
+        `SELECT lot_tracking, expiry_tracking FROM bms_product_stock_policies
+          WHERE tenant_id=$1 AND product_sku=$2`,
+        [input.tenantId, line.sku],
+      );
+      if (policy.rows[0]?.lot_tracking || policy.rows[0]?.expiry_tracking) {
+        await client.query("ROLLBACK");
+        return { status: "INVALID", reason: "สินค้าติดตามล็อต/วันหมดอายุต้องรับคืนผ่านบิลต้นทางเพื่อระบุล็อต" };
+      }
       if (line.unitRefund > maxUnitRefund + 0.001) {
         await client.query("ROLLBACK");
         return { status: "PRICE_TOO_HIGH", sku: line.sku, maxUnitRefund, requested: line.unitRefund };
@@ -8511,8 +8539,8 @@ export async function blindReturnPosSale(input: {
          VALUES ($1,$2,$3,$4,$5,$6)`,
         [input.tenantId, blindReturnId, line.sku, line.size, line.qty, line.unitRefund]
       );
-      // ของกลับเข้าสต็อกที่สาขาของเครื่องนี้ · ไม่คืนล็อตเพราะไม่รู้ว่าของมาจากล็อตไหน
-      // (ไม่มีบิลต้นทาง) — ลงเป็นของเข้าใหม่ที่ไม่ผูกล็อต ซึ่งตรงกับความจริง
+      // No receipt means no authoritative lot identity. Only an untracked destination
+      // can accept these units, including when tracking flags were switched off later.
       await client.query(
         `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
          VALUES ($1,$2,$3,$4,$5,0)
@@ -8520,6 +8548,14 @@ export async function blindReturnPosSale(input: {
            DO UPDATE SET current_stock = bms_inventory.current_stock + EXCLUDED.current_stock, updated_at = now()`,
         [input.tenantId, locationId, line.sku, line.size, line.qty]
       );
+      const lotReceiptError = await validateTransferLotReceiptInTx(client, {
+        tenantId: input.tenantId, locationId, productSku: line.sku, size: line.size,
+        receivedQty: line.qty, lots: [],
+      });
+      if (lotReceiptError) {
+        await client.query("ROLLBACK");
+        return { status: "INVALID", reason: lotReceiptError };
+      }
       await recordMovement(client, {
         tenantId: input.tenantId, locationId, sku: line.sku, size: line.size,
         type: "RETURN", qty: line.qty,

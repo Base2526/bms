@@ -26,7 +26,7 @@ full per-domain rules: [docs/agent-invariants.md](docs/agent-invariants.md) · p
 | Thai manuals: [inbox](docs/manual/inbox.md) · [restaurant POS](docs/restaurant-pos-guide.md) · [ร้านอาหาร](docs/คู่มือร้านอาหาร.md) · [ร้านยา](docs/คู่มือร้านขายยา.md) · [product examples](docs/shop-product-examples.md) | Operator guides |
 | [Public learning center](docs/ui/learning-center.md) | `/learn`: bilingual public board-game/restaurant learning paths, searchable lessons and reading checklists |
 
-## Current status (2026-10)
+## Current status (2026-11)
 
 **Not production-ready (🧪):** Shopee/Lazada (signatures unverified) · Flash/Kerry (await merchant
 contract) · AI Pharmacy Intake (flag off) · e-Tax submission (no verified provider) · ESC/POS and
@@ -36,7 +36,8 @@ GrabFood/LINE MAN contract-blocked) · Retail Local (technical pilot) · tax-inv
 SMTP relay (not sent through a real provider) · automated AI plan billing (none) · Q4
 profit/growth simulation (planned). Pharmacy guidance texts are not clinically reviewed.
 
-Everything else is built. Area index (narrative per entry in [status-log.md](docs/status-log.md)):
+Everything else is built unless the row below is explicitly marked WIP/pilot. Area index (narrative
+per entry in [status-log.md](docs/status-log.md)):
 
 | Area | Migrations | Doc |
 | --- | --- | --- |
@@ -58,6 +59,12 @@ Everything else is built. Area index (narrative per entry in [status-log.md](doc
 | Pharmacist-approved guidance, emergency directory | `10.45`–`10.47` | [pharmacy README](apps/web/lib/bms/pharmacy/README.md) |
 | AI monthly points (cost = reporting) | `10.54`–`10.56` | [usage-cost-audit.md](docs/ai/usage-cost-audit.md) |
 | Homepage app links · SMTP mail provider | `10.57` · `10.59` | [app-downloads.md](docs/business/app-downloads.md) |
+| Costing, valuation, branch pricing, promotions | `10.60`–`10.72` | [database.md](docs/architecture/database.md) · [inventory.md](docs/business/inventory.md) |
+| SaaS packages, feature/capacity policy, platform master data | `10.73`–`10.86`, `10.101`–`10.102` | [system.md](docs/architecture/system.md) · [database.md](docs/architecture/database.md) |
+| Branch requisitions, operations, production, materials, quality | `10.87`–`10.98` | [agent-invariants.md](docs/agent-invariants.md) · [system.md](docs/architecture/system.md) |
+| Branch inventory intelligence · purchase landed cost | `10.99`–`10.100`, `10.103` | [inventory.md](docs/business/inventory.md) |
+| Meta inbound hardening/enrichment · Retail Local consented leads/erasure | `10.104`–`10.106`, `10.108` | [database.md](docs/architecture/database.md) · [facebook-messenger.md](docs/integrations/facebook-messenger.md) |
+| Lot identity through branch transfers | `10.107` — **WIP; not merged/DB-verified, do not claim available** | [system.md](docs/architecture/system.md) · [inventory.md](docs/business/inventory.md) |
 | Reviewed customer merges, signed web-chat sessions, Work Assistant, desktop shell, native printing | no migration | [crm.md](docs/business/crm.md) · [work-assistant-coverage.md](docs/ai/work-assistant-coverage.md) |
 
 Migrations not yet applied to production: [CLAUDE.local.md](CLAUDE.local.md) § ก่อน production —

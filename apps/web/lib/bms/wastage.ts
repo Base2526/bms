@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import { beginTenantTx } from "./tenant";
 import { recordMovement } from "./movements";
 import { consumeLotsForWastageInTx } from "./lots";
+import { qualityStock } from "./lotQuality";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
 
 export type InventoryWastage = {
@@ -118,6 +119,10 @@ export async function recordInventoryWastageInTx(
     throw new Error(
       "ร้านยังไม่ได้เปิดความสามารถ Wastage — เปิดที่ /admin/stock-models ก่อนตัดของเสีย",
     );
+  }
+  const balance = await qualityStock(client, input.tenantId, input.locationId, input.productSku, input.size);
+  if (!balance.reconciled) {
+    throw new Error("ยอดล็อตไม่ตรงกับสต็อก กรุณาตรวจสอบก่อนบันทึกของเสีย");
   }
   const adjusted = await client.query(
     `UPDATE bms_inventory

@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { summarizeTapFailures } from './testing/tapFailures.mjs';
 
@@ -181,7 +182,7 @@ test('the Windows runner bypasses cmd.exe so the full suite is not capped at 8,1
 
 const BLOCKING_STDIO = path.join(SCRIPTS, 'testing', 'blocking-stdio.mjs');
 const runChild = (code: string, preload = true) => spawnSync(process.execPath, [
-  ...(preload ? ['--import', BLOCKING_STDIO] : []),
+  ...(preload ? ['--import', pathToFileURL(BLOCKING_STDIO).href] : []),
   '--input-type=module', '-e', code,
 ], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, NODE_OPTIONS: '' } });
 

@@ -13,7 +13,7 @@ import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { assertNoQualityHold, LotQualityHoldError, type QualityHoldRejection } from "./lotQuality";
 import { recordMovement } from "./movements";
-import { allocateLotsForTransferInTx, receiveLotInTx, splitTransferReceiptAcrossLots } from "./lots";
+import { allocateLotsForTransferInTx, receiveLotInTx, splitTransferReceiptAcrossLots, validateTransferLotReceiptInTx } from "./lots";
 import { insertWithDailyDocNo } from "./dailyDocNo";
 import { notifyBranchRequisitionCommitted } from "./branchRequisitionNotify";
 import {
@@ -518,7 +518,7 @@ export async function sendStockTransfer(input: {
       qty: number;
     }>(
       `SELECT id, product_sku, size, qty FROM bms_stock_transfer_items
-        WHERE tenant_id = $1 AND transfer_id = $2 ORDER BY id`,
+        WHERE tenant_id = $1 AND transfer_id = $2 ORDER BY product_sku, size, id`,
       [input.tenantId, input.transferId],
     );
 
@@ -740,7 +740,7 @@ export async function receiveStockTransfer(input: {
       qty: number;
     }>(
       `SELECT id, product_sku, size, qty FROM bms_stock_transfer_items
-        WHERE tenant_id = $1 AND transfer_id = $2 ORDER BY id`,
+        WHERE tenant_id = $1 AND transfer_id = $2 ORDER BY product_sku, size, id`,
       [input.tenantId, input.transferId],
     );
 
@@ -765,17 +765,11 @@ export async function receiveStockTransfer(input: {
 
     for (const item of items.rows) {
       const override = overrides.get(Number(item.id));
-      const receivedQty = Math.max(
-        0,
-        Math.trunc(Number(override?.qty ?? item.qty)),
-      );
-      const damagedQty = Math.max(
-        0,
-        Math.trunc(Number(override?.damagedQty ?? 0)),
-      );
+      const receivedQty = Number(override?.qty ?? item.qty);
+      const damagedQty = Number(override?.damagedQty ?? 0);
       if (
-        !Number.isFinite(receivedQty) ||
-        !Number.isFinite(damagedQty) ||
+        !Number.isSafeInteger(receivedQty) || receivedQty < 0 ||
+        !Number.isSafeInteger(damagedQty) || damagedQty < 0 ||
         receivedQty + damagedQty > item.qty
       ) {
         await client.query("ROLLBACK");
@@ -805,6 +799,16 @@ export async function receiveStockTransfer(input: {
       totalDamaged += damagedQty;
 
       if (receivedQty > 0 || damagedQty > 0) {
+        // Receive checks both branches (source quality and destination stock).
+        // Lock their summaries in one consistent order before locking any lots,
+        // including reciprocal A -> B / B -> A transfers received concurrently.
+        await client.query(
+          `SELECT location_id FROM bms_inventory
+            WHERE tenant_id=$1 AND location_id=ANY($2::uuid[])
+              AND product_sku=$3 AND size=$4
+            ORDER BY location_id FOR UPDATE`,
+          [input.tenantId, [t.from_location, t.to_location], item.product_sku, item.size],
+        );
         await assertNoQualityHold(client,input.tenantId,t.to_location,item.product_sku,item.size);
         await client.query(
           `INSERT INTO bms_inventory
@@ -838,6 +842,25 @@ export async function receiveStockTransfer(input: {
           ORDER BY l.id FOR UPDATE OF l`,
         [input.tenantId, item.id],
       );
+      if (sentLots.rows.length && sentLots.rows.reduce((sum, lot) => sum + Number(lot.qty), 0) !== item.qty) {
+        await client.query("ROLLBACK");
+        return { status: "INVALID", reason: "จำนวนล็อตที่ส่งไม่ตรงกับใบโอน กรุณาตรวจสอบหลักฐานการส่ง" };
+      }
+      // A hold can be placed after SEND, including on an emptied source lot.
+      // Lock and recheck source quality before recreating any sellable destination lot.
+      // The shared guard serializes against quality decisions through the inventory row;
+      // its rejection rolls back the destination summary increment above as well.
+      if (receivedQty > 0 && sentLots.rows.length) {
+        await assertNoQualityHold(client, input.tenantId, t.from_location, item.product_sku, item.size);
+      }
+      const lotReceiptError = await validateTransferLotReceiptInTx(client, {
+        tenantId: input.tenantId, locationId: t.to_location,
+        productSku: item.product_sku, size: item.size, receivedQty, lots: sentLots.rows,
+      });
+      if (lotReceiptError) {
+        await client.query("ROLLBACK");
+        return { status: "INVALID", reason: lotReceiptError };
+      }
       if (sentLots.rowCount) {
         const split = splitTransferReceiptAcrossLots(sentLots.rows, receivedQty, damagedQty);
         for (const [index, lot] of sentLots.rows.entries()) {

@@ -521,8 +521,10 @@ tenant RLS, separate from the audit log; its PARTIAL/FAILED/NOT_CAPTURED states 
 not a factual verdict, and a capture failure never retries a business action. See
 [ai/quality.md](ai/quality.md).
 
-**AI access is monthly points; cost is reporting (`10.54`–`10.56`, updated by `10.73`).** Free 100 /
-Pro 1,000 (THB 599) / Business 5,000 (THB 1,990) points after the rollout-month transition, reset
+**AI access is monthly points; cost is reporting (`10.54`–`10.56`, updated by `10.73`, `10.101`,
+`10.102`).** Free 100 / Pro 1,000 / Growth 2,500 / Business 5,000 / Enterprise 10,000 points (the
+Business figure after the rollout-month transition; prices moved from the `10.73` THB 599/1,990 to
+the `10.101`/`10.102` catalogue — see the package entry below), reset
 at 00:00 Asia/Bangkok on the first, one
 point per logical shared-provider request (retries/tool rounds/fallback share it), no rollover.
 The briefly introduced per-shop USD cap is removed: unknown or missing cost never blocks a valid

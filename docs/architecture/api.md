@@ -927,7 +927,8 @@ otherwise self-issue points or an unlimited plan.
 Gates as implemented: `bmsAiConfig`, `bmsAiUsage`, `bmsAiUsageBreakdown`, `bmsAiCreditLedger` and the
 key mutations need an authenticated `admin`-scope session of the tenant; `bmsAiUsageEvents` needs
 `ai_quality.view`; provider health needs platform admin. Credits are presented as **AI points**
-(`10.73`: Free 100/month, Pro 1,000, Business 5,000 after rollout-month grace; the month resets
+(`10.73`/`10.101`/`10.102`: Free 100/month, Pro 1,000, Growth 2,500, Business 5,000 after rollout-month
+grace, Enterprise 10,000; the catalogue is editable data in `bms_plans`; the month resets
 at 00:00 Asia/Bangkok on the first). `BmsPlan.ai_credits_monthly` and `max_ai_messages_month`
 remain the effective allowance. Nullable `ai_credits_next_monthly` and `ai_credits_change_at`
 announce the pending change and ISO timestamp, then become null when it takes effect. Old clients

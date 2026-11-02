@@ -14,7 +14,7 @@ import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { recordMovement } from "./movements";
 import { resolveDefaultLocationIdInTx } from "./locations";
-import { receiveLotInTx } from "./lots";
+import { receiveLotInTx, validateTransferLotReceiptInTx } from "./lots";
 import { beginTenantTx } from "./tenant";
 import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 import { enqueueRealtimeEventInTx, realtimeEvent } from "./realtimeOutbox";
@@ -632,6 +632,12 @@ export async function receivePurchaseOrderInTx(
       );
 
       // lot: บันทึกในทรานแซกชันเดียวกับที่บวก current_stock — invariant ต้องไม่หลุด
+      // The same locked receipt invariant applies to PO and transfer stock receipts.
+      const lotError = await validateTransferLotReceiptInTx(client, {
+        tenantId, locationId, productSku: ln.sku, size: ln.size, receivedQty: ln.qty,
+        lots: ln.lotNo ? [{ lot_no: ln.lotNo, expiry_date: ln.expiryDate ?? null, qty: ln.qty }] : [],
+      });
+      if (lotError) return { status: "INVALID_INPUT" };
       let lotId: string | null = null;
       if (ln.lotNo) {
         lotId = await receiveLotInTx(client, {

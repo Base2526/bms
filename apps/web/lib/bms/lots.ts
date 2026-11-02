@@ -55,6 +55,161 @@ function mapLot(r: any): InventoryLot {
   };
 }
 
+export type TransferLotAllocationResult =
+  | { status: "UNTRACKED" }
+  | { status: "UNRECONCILED"; lotTotal: number; stock: number }
+  | { status: "INSUFFICIENT"; available: number }
+  | {
+      status: "ALLOCATED";
+      allocations: Array<{
+        lotId: string;
+        lotNo: string;
+        expiryDate: string | null;
+        unitCost: number | null;
+        supplierId: string | null;
+        qty: number;
+      }>;
+    };
+
+/**
+ * Allocate and deduct transferable lots FEFO while the inventory summary row is locked.
+ * The caller must lower bms_inventory.current_stock in the same transaction.
+ */
+export async function allocateLotsForTransferInTx(
+  client: PoolClient,
+  input: {
+    tenantId: string;
+    locationId: string;
+    productSku: string;
+    size: string;
+    qty: number;
+    currentStock: number;
+    reservedStock: number;
+  },
+): Promise<TransferLotAllocationResult> {
+  const lots = await client.query<{
+    id: string;
+    lot_no: string;
+    expiry_date: string | null;
+    unit_cost: string | number | null;
+    supplier_id: string | null;
+    qty: number;
+    transferable: boolean;
+  }>(
+    `SELECT l.id, l.lot_no, l.expiry_date::text AS expiry_date, l.unit_cost,
+            l.supplier_id, l.qty,
+            (${usableLotSql("l")} AND
+             (l.expiry_date IS NULL OR l.expiry_date >=
+               (now() AT TIME ZONE 'Asia/Bangkok')::date)) AS transferable
+       FROM bms_inventory_lots l
+      WHERE l.tenant_id = $1 AND l.location_id = $2
+        AND l.product_sku = $3 AND l.size = $4
+      ORDER BY l.expiry_date NULLS LAST, l.received_at, l.id
+      FOR UPDATE OF l`,
+    [input.tenantId, input.locationId, input.productSku, input.size],
+  );
+  if (!lots.rowCount) return { status: "UNTRACKED" };
+
+  const lotTotal = lots.rows.reduce((sum, lot) => sum + Number(lot.qty), 0);
+  if (lotTotal !== input.currentStock) {
+    return { status: "UNRECONCILED", lotTotal, stock: input.currentStock };
+  }
+  const transferable = lots.rows.filter((lot) => lot.transferable && Number(lot.qty) > 0);
+  const usableTotal = transferable.reduce((sum, lot) => sum + Number(lot.qty), 0);
+  const available = Math.max(0, usableTotal - input.reservedStock);
+  if (available < input.qty) return { status: "INSUFFICIENT", available };
+
+  let remaining = input.qty;
+  const allocations: Extract<TransferLotAllocationResult, { status: "ALLOCATED" }>["allocations"] = [];
+  for (const lot of transferable) {
+    if (remaining === 0) break;
+    const take = Math.min(remaining, Number(lot.qty));
+    const updated = await client.query(
+      `UPDATE bms_inventory_lots
+          SET qty = qty - $3, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND qty >= $3`,
+      [input.tenantId, lot.id, take],
+    );
+    if (updated.rowCount !== 1) throw new Error("TRANSFER_LOT_ALLOCATION_RACE");
+    allocations.push({
+      lotId: lot.id,
+      lotNo: lot.lot_no,
+      expiryDate: toDate(lot.expiry_date),
+      unitCost: lot.unit_cost == null ? null : Number(lot.unit_cost),
+      supplierId: lot.supplier_id ?? null,
+      qty: take,
+    });
+    remaining -= take;
+  }
+  if (remaining !== 0) throw new Error("TRANSFER_LOT_ALLOCATION_INCOMPLETE");
+  return { status: "ALLOCATED", allocations };
+}
+
+/** Allocate good units first and damaged units second across the sent FEFO lots. */
+export function splitTransferReceiptAcrossLots(
+  lots: ReadonlyArray<{ qty: number }>,
+  receivedQty: number,
+  damagedQty: number,
+): Array<{ received: number; damaged: number; missing: number }> {
+  if (lots.some((lot) => !Number.isSafeInteger(lot.qty) || lot.qty <= 0)) {
+    throw new Error("INVALID_TRANSFER_LOT_RECEIPT");
+  }
+  const sent = lots.reduce((sum, lot) => sum + lot.qty, 0);
+  if (
+    !Number.isInteger(receivedQty) || receivedQty < 0 ||
+    !Number.isInteger(damagedQty) || damagedQty < 0 ||
+    receivedQty + damagedQty > sent
+  ) {
+    throw new Error("INVALID_TRANSFER_LOT_RECEIPT");
+  }
+  let goodRemaining = receivedQty;
+  let damagedRemaining = damagedQty;
+  return lots.map((lot) => {
+    const qty = Number(lot.qty);
+    const received = Math.min(qty, goodRemaining);
+    goodRemaining -= received;
+    const damaged = Math.min(qty - received, damagedRemaining);
+    damagedRemaining -= damaged;
+    return { received, damaged, missing: qty - received - damaged };
+  });
+}
+
+/** Called after the destination summary increment, under its row lock, before lot writes.
+ * Shared by transfer, purchase and POS return receipts.
+ * Returning a reason requires the caller to roll back the entire receipt transaction.
+ */
+export async function validateTransferLotReceiptInTx(
+  client: PoolClient,
+  input: { tenantId: string; locationId: string; productSku: string; size: string;
+    receivedQty: number; lots: ReadonlyArray<{ lot_no: string; expiry_date: string | null; qty: number }> },
+): Promise<string | null> {
+  if (input.receivedQty === 0) return null;
+  const key = [input.tenantId, input.locationId, input.productSku, input.size];
+  const inventory = await client.query<{ current_stock: number }>(
+    `SELECT current_stock FROM bms_inventory
+      WHERE tenant_id=$1 AND location_id=$2 AND product_sku=$3 AND size=$4 FOR UPDATE`, key);
+  const existing = await client.query<{ lot_no: string; expiry_date: string | null; qty: number }>(
+    `SELECT lot_no, expiry_date::text AS expiry_date, qty FROM bms_inventory_lots
+      WHERE tenant_id=$1 AND location_id=$2 AND product_sku=$3 AND size=$4
+      ORDER BY id FOR UPDATE`, key);
+  const before = Number(inventory.rows[0]?.current_stock) - input.receivedQty;
+  const total = existing.rows.reduce((sum, lot) => sum + Number(lot.qty), 0);
+  if ((input.lots.length || existing.rows.length) &&
+      (total !== before || !input.lots.length)) {
+    return "ยอดล็อตปลายทางไม่ตรงกับสต็อก หรือสินค้าที่รับไม่มีข้อมูลล็อต กรุณาตรวจสอบก่อนรับสินค้า";
+  }
+  if (!input.lots.length) return null;
+  const shares = splitTransferReceiptAcrossLots(input.lots, input.receivedQty, 0);
+  for (const [index, lot] of input.lots.entries()) {
+    if (!shares[index].received) continue;
+    const target = existing.rows.find((row) => row.lot_no === lot.lot_no);
+    if (target && toDate(target.expiry_date) !== toDate(lot.expiry_date)) {
+      return "เลขล็อตเดียวกันมีวันหมดอายุต่างกันที่สาขาปลายทาง กรุณาตรวจสอบก่อนรับสินค้า";
+    }
+  }
+  return null;
+}
+
 /**
  * รับของเข้า lot — lot_no เดิมของสินค้าเดียวกันในสาขาเดียวกันจะบวกจำนวนเข้าไป
  * ต้องเรียกในทรานแซกชันเดียวกับที่บวก bms_inventory.current_stock เสมอ

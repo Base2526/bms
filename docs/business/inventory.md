@@ -498,6 +498,12 @@ serial, bundle, recipe and non-stock products only.
 
 ### Lot transfers (`10.107`)
 
+Actual lot rows, including empty lots, also block aggregate stock adjustment and count application
+even if product tracking flags are off. PO receipts use the same destination reconciliation and
+expiry checks as transfers: tracked stock requires lot identity, and introducing a first lot over
+existing untracked quantity is refused. Wastage locks and checks lot totals before deducting stock;
+an existing discrepancy must be investigated rather than carried through a new stock write.
+
 Transfers carry lot identity, so a central kitchen can ship what it produced (`10.94` output lots)
 and branches can move PO lots with expiry. The rule applies whenever the source has lot rows for the
 SKU/size, whatever the product's stock policy says.
@@ -516,6 +522,24 @@ SKU/size, whatever the product's stock policy says.
   latest-expiry lot; this is a deterministic estimate, not evidence of which physical lot was lost.
 - Recall can walk `source_lot_id → destination_lot_id`. Lines without source lots still move as
   totals with no lot rows.
+- Receiving refuses inconsistent sent-lot totals, unreconciled destination stock, mixing untracked
+  units into tracked stock, and the same destination lot number with a different expiry (including
+  unknown versus known). The entire receipt rolls back and remains in transit for correction.
+- Before receiving sellable lot units, source quality is checked again under the stock lock.
+  A hold placed after sending (even on a zero-quantity source lot) blocks receipt, rolls back all
+  receipt changes, and leaves the transfer in transit until the quality restriction is resolved.
+  The existing conservative SKU/size quality guard applies; damaged-only/missing receipt does not
+  recreate sellable lots.
+- SEND processes SKU/size in a stable order; RECEIVE locks both branch summaries in branch order
+  before either branch's lots. Reciprocal receipts therefore use the same stock-lock order.
+- POS returns (including partial returns, exchanges and voids) use the same destination lot
+  reconciliation check as transfer/PO receipts. Missing source allocation, mixed tracked/untracked
+  stock or a conflicting expiry returns `STOCK_REVIEW_REQUIRED` and rolls back stock, refund and
+  return evidence together. No-receipt returns reject lot/expiry policies and any existing lot rows,
+  even zero-quantity rows with tracking flags disabled; find the original bill to preserve provenance.
+  Native POS handles the service's distinct success statuses: `RETURNED` for full return,
+  `PARTIAL_RETURNED` for partial return/exchange, and `VOIDED` for void; a committed mutation must
+  not be shown as a failed return or prevent the exchange basket from opening.
 - Branch requisitions and material plans (G) no longer refuse lot products; requisition availability
   uses the same usable-lot rule as SEND. Native stock search marks lot items transferable but not
   countable.

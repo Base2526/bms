@@ -71,7 +71,7 @@ test("Facebook route durably enqueues before running the AI worker", () => {
 
 test("Meta credentials, Page binding and queue are represented in the migration", () => {
   const migration = readFileSync(path.join(repo, "db/migrations/10.104__bms_meta_messenger_hardening.sql"), "utf8");
-  const enrichment = readFileSync(path.join(repo, "db/migrations/10.106__bms_meta_inbox_enrichment.sql"), "utf8");
+  const enrichment = readFileSync(path.join(repo, "db/migrations/10.108__bms_meta_inbox_enrichment.sql"), "utf8");
   assert.match(migration, /webhook_verify_token TEXT/);
   assert.match(migration, /external_account_id TEXT/);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS bms_channel_inbound_jobs/);

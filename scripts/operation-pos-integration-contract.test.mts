@@ -105,6 +105,7 @@ for (const action of ["sendStockTransfer", "receiveStockTransfer", "applyStockCo
           return rows();
         }
         if (sql.includes("AS day")) return rows([{ day: "2026-10-26" }]);
+        if (sql.includes("SELECT 1 FROM bms_inventory_lots")) return rows();
         if (sql.includes("FROM bms_inventory_lots")) return rows([{ qty: 10, expiry_date: null, usable: params?.[2] !== "held" }]);
         if (sql.includes("FROM bms_inventory")) {
           if (fault && params?.[2] === "held") throw new Error("database unavailable");
@@ -126,6 +127,7 @@ for (const action of ["sendStockTransfer", "receiveStockTransfer", "applyStockCo
         "./lots": {
           allocateLotsForTransferInTx: async () => ({ status: "UNTRACKED" }),
           splitTransferReceiptAcrossLots: () => [],
+          validateTransferLotReceiptInTx: async () => null,
           receiveLotInTx: async () => assert.fail("fixture lines carry no lots"),
         },
       });

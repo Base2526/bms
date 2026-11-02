@@ -90,8 +90,8 @@ account-scoped channel model rather than overwriting this row.
 
 ## Rollout and Instagram compatibility
 
-Apply migrations 10.104 and 10.106 before deploying: the shared channel service reads the Meta
-account columns and the durable worker reads bounded `event_meta` context. The 10.106 application
+Apply migrations 10.104 and 10.108 before deploying: the shared channel service reads the Meta
+account columns and the durable worker reads bounded `event_meta` context. The 10.108 application
 code must not be deployed before that additive column exists. The shared 10.104 channel columns affect LINE
 and other channels too. Existing Meta configurations require a separate Verify Token and account ID;
 plan this configuration change alongside deployment. LINE credentials and identity routing are unchanged.
