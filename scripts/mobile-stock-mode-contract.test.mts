@@ -35,7 +35,9 @@ test("lookup preserves base quantities, bounds pages, and reports unsupported id
   assert.equal(result.items[0].available, 1300);
   assert.equal(result.items[0].baseUnit, "GRAM");
   assert.equal(result.items[0].transferSupported, true);
-  assert.equal(result.items[1].transferSupported, false);
+  // 10.107: a lot-tracked item can be transferred (lots move with it) but still not counted.
+  assert.equal(result.items[1].transferSupported, true);
+  assert.equal(result.items[1].countSupported, false);
   assert.equal(result.items[2].countSupported, false);
   rows.length = 0;
   const empty = await exported.searchBranchStock({ tenantId: "tenant-a", locationId: "branch-a" });
@@ -104,19 +106,29 @@ test("stock lookup keeps sellable, reserved, quarantine, incoming, and operation
   );
 });
 
-test("aggregate transfer and count fail closed for identity-tracked or derived stock", async () => {
-  const [transfers, counts] = await Promise.all([
+test("aggregate transfer and count fail closed for serial or derived stock; counts also for lots", async () => {
+  const [transfers, counts, stock] = await Promise.all([
     read("apps/web/lib/bms/stockTransfers.ts"),
     read("apps/web/lib/bms/stockCounts.ts"),
+    read("apps/web/lib/bms/stock.ts"),
   ]);
   for (const source of [transfers, counts]) {
     assert.match(source, /serial_tracked/);
-    assert.match(source, /lot_tracking/);
-    assert.match(source, /expiry_tracking/);
     assert.match(source, /"SERIALIZED", "BUNDLE", "RECIPE", "NON_STOCK"/);
   }
-  assert.match(transfers, /ยังไม่รองรับการโอนแบบยอดรวม/);
+  // Counts still adjust totals only, so lot products must stay out of them.
+  assert.match(counts, /lot_tracking/);
+  assert.match(counts, /expiry_tracking/);
   assert.match(counts, /ไม่รองรับการนับแบบยอดรวม/);
+  // 10.107: transfers move lots instead of refusing them — SEND allocates, RECEIVE recreates.
+  assert.match(transfers, /allocateLotsForTransferInTx\(/);
+  assert.match(transfers, /receiveLotInTx\(/);
+  assert.match(transfers, /INSERT INTO bms_stock_transfer_item_lots/);
+  assert.match(transfers, /ยังไม่รองรับการโอนแบบยอดรวม/);
+  // The native stock search must let lot products into a transfer but not into a count.
+  assert.match(stock, /transferSupported: true/);
+  assert.match(stock, /transferSupported: support\.transferSupported \?\? support\.supported/);
+  assert.match(stock, /countSupported: support\.supported/);
 });
 
 test("sending an older draft rejects unsupported stock before inventory writes and rolls back", async () => {
@@ -130,10 +142,10 @@ test("sending an older draft rejects unsupported stock before inventory writes a
     query: async (sql: string, params: unknown[]) => {
       statements.push(sql);
       if (sql.includes("FROM bms_stock_transfers")) return { rowCount: 1, rows: [{ id: "draft", status: "DRAFT", from_location: "source" }] };
-      if (sql.includes("FROM bms_stock_transfer_items")) return { rows: [{ id: "line", product_sku: "LOT", size: "BASE", qty: 2 }] };
+      if (sql.includes("FROM bms_stock_transfer_items")) return { rows: [{ id: "line", product_sku: "SERIAL", size: "BASE", qty: 2 }] };
       if (sql.includes("FROM bms_products")) {
-        assert.deepEqual(params, ["tenant-a", ["LOT"]]);
-        return { rows: [{ sku: "LOT" }] };
+        assert.deepEqual(params, ["tenant-a", ["SERIAL"]]);
+        return { rows: [{ sku: "SERIAL" }] };
       }
       if (sql === "ROLLBACK") return { rows: [] };
       throw new Error(`Unexpected write/read: ${sql}`);
@@ -151,7 +163,7 @@ test("sending an older draft rejects unsupported stock before inventory writes a
   }, exported);
   const result = await exported.sendStockTransfer({ tenantId: "tenant-a", transferId: "draft", actorUserId: "staff" });
   assert.equal(result.status, "INVALID");
-  assert.match(result.reason, /LOT/);
+  assert.match(result.reason, /SERIAL/);
   assert.equal(statements.at(-1), "ROLLBACK");
   assert.equal(statements.some(sql => /^\s*(UPDATE|INSERT|DELETE)\b/.test(sql)), false);
   assert.equal(released, true);

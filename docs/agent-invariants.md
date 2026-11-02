@@ -1554,7 +1554,8 @@ zero"`, verbatim from the migration comment); reading `bms_inventory` to answer 
   lot/date/unit and atomically calls `receivePurchaseOrderInTx`, preserving valuation, movement,
   exact provenance, audit and idempotency. This primitive never commits; caller rolls back failures.
   Rejected quantity moves no stock. G and branch-request procurement cannot share a PO allocation.
-- Nonlot branch requests reuse approved/send/receive evidence; lot transfers remain unsupported.
+- Branch requests reuse approved/send/receive evidence. Since `10.107` transfers carry lots (FEFO
+  out, same lot in); counts still refuse lot products. See [lot transfers](business/inventory.md#lot-transfers-10107).
   Canonical tasks retain their lifecycle and My Work/review/escalation. Details:
   [production/material workflow](business/operation-production.md#release-g--materials-replenishment-and-inspected-receiving).
 

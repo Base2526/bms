@@ -27,8 +27,8 @@ where the original proposal describes a broader feature.
   blocks cancellation. Closing unmet demand requires a reason. A partially received cancelled
   PO keeps its linked allocation for the purchasing cap: cumulative PO receipts cannot identify
   which request received those units, so the service must not silently release that evidence.
-- Existing transfers cannot move lot/serial identity correctly through this workflow: creation
-  refuses serial/bundle/recipe/lot-controlled or non-canonical-size items instead of corrupting
+- Since `10.107` transfers carry lot identity (FEFO out, same lot in), so lot-controlled items are
+  accepted. Creation still refuses serial/bundle/recipe or non-canonical-size items instead of corrupting
   their stock evidence. This is not a central-kitchen production/BOM execution module.
 - The menu is RBAC-controlled, not hidden by branch count. Users with fewer than two accessible
   active branches see an explanation. Shared navigation currently has no branch-count context.

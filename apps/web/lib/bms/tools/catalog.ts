@@ -142,6 +142,15 @@ import {
   searchAssistantKnowledge,
 } from "../assistantKnowledge";
 import {
+  consolidateBranchRequisitions,
+  listBranchRequisitions,
+  requisitionMetrics,
+  RequisitionFilterError,
+} from "../branchRequisitions";
+import { productionWorkspace } from "../operationProductionReads";
+import { ChecklistError } from "../operationChecklistPolicy";
+import { loadPermissions } from "../permissions";
+import {
   BMS_PRESALES_KNOWLEDGE,
   composeBmsPlanReply,
   composePresalesKnowledgeReply,
@@ -3431,6 +3440,109 @@ const explainInventoryRiskTool: BmsTool = {
   },
 };
 
+// =============================================================
+// Central kitchen reads (staff, read-only) — requests and production batches
+// -------------------------------------------------------------
+// Both reuse the services behind /admin/branch-requisitions and /admin/operations so
+// branch scope (bms_user_allowed_locations) and RBAC are the same as the screens.
+// Neither tool creates, approves, transfers, produces or posts anything.
+// =============================================================
+
+function staffActorId(ec: ExecCtx): string {
+  const actorId = ec.ctx?.admin?.id ? String(ec.ctx.admin.id) : null;
+  if (!actorId || ec.surface !== "staff") throw new ToolArgError("ต้องมีบัญชีพนักงานเพื่ออ่านข้อมูลนี้");
+  return actorId;
+}
+
+const getBranchRequisitionsTool: BmsTool = {
+  name: "get_branch_requisitions",
+  description:
+    "Read branch stock requests (central kitchen / warehouse replenishment) for the branches this staff member may see. " +
+    "view=LIST: requests with requested, approved, in-transit, received and remaining quantities per line. " +
+    "view=DEMAND: outstanding approved demand consolidated by product across branches. " +
+    "view=METRICS: fulfilment rate, overdue requests, discrepancies and median review/delivery hours (null = not enough evidence, never zero). " +
+    "Read-only: it never creates, approves, transfers, purchases or closes a request.",
+  surfaces: ["staff"],
+  permission: "inventory.requisition.view",
+  inputSchema: {
+    type: "object",
+    properties: {
+      view: { type: "string", enum: ["LIST", "DEMAND", "METRICS"] },
+      status: { type: "string", enum: ["DRAFT", "SUBMITTED", "APPROVED", "REJECTED", "CLOSED", "CANCELLED"] },
+      locationId: { type: "string", description: "Exact requesting-branch UUID; omit for all permitted branches." },
+      search: { type: "string", description: "Request number or SKU text." },
+      limit: { type: "integer" },
+      offset: { type: "integer" },
+    },
+    additionalProperties: false,
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const scope = { tenantId: ec.tenantId, actorId: staffActorId(ec) };
+    const view = enumVal(args, "view", ["LIST", "DEMAND", "METRICS"] as const, false) ?? "LIST";
+    const perms = await loadPermissions(ec.ctx);
+    // Same pairing as the GraphQL resolvers: consolidated demand and metrics are reviewer views.
+    if (view !== "LIST" && !perms.has("inventory.requisition.review"))
+      throw new ToolArgError("ต้องมีสิทธิ์ตรวจคำขอเติมของ (inventory.requisition.review) จึงดูยอดรวมหรือตัวชี้วัดได้");
+    if (view === "METRICS") return { ok: true, data: { view, metrics: await requisitionMetrics(scope) } };
+    if (view === "DEMAND") {
+      const demand = await consolidateBranchRequisitions(scope, optString(args, "search") ?? "", optInt(args, "offset", 0, 100000) ?? 0);
+      return { ok: true, data: { view, total: demand.total, rows: demand.rows } };
+    }
+    try {
+      const list = await listBranchRequisitions(scope, {
+        status: optString(args, "status"),
+        locationId: optString(args, "locationId"),
+        search: optString(args, "search"),
+        limit: optInt(args, "limit", 1, 50) ?? 20,
+        offset: optInt(args, "offset", 0, 100000) ?? 0,
+      }, perms.has("purchase.view"));
+      return { ok: true, data: { view, total: list.total, rows: list.rows } };
+    } catch (error) {
+      if (error instanceof RequisitionFilterError) throw new ToolArgError(error.message);
+      throw error;
+    }
+  },
+};
+
+const getProductionBatchesTool: BmsTool = {
+  name: "get_production_batches",
+  description:
+    "Read central-kitchen / preparation production batches for permitted branches: output SKU, planned and actual yield, status (DRAFT, READY, POSTED, CANCELLED), due time and expiry date. " +
+    "Read-only: it never creates, posts, cancels or disposes a batch, and it does not plan production from demand.",
+  surfaces: ["staff"],
+  permission: "operations.checklist.view",
+  inputSchema: {
+    type: "object",
+    properties: {
+      locationId: { type: "string", description: "Exact branch UUID; omit for all permitted branches." },
+      status: { type: "string", enum: ["DRAFT", "READY", "POSTED", "CANCELLED"] },
+      from: { type: "string", description: "Due date from, YYYY-MM-DD (Bangkok)." },
+      to: { type: "string", description: "Due date to, YYYY-MM-DD (Bangkok)." },
+      search: { type: "string", description: "Output SKU or batch id text." },
+      offset: { type: "integer" },
+    },
+    additionalProperties: false,
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const scope = { tenantId: ec.tenantId, actorId: staffActorId(ec), permissions: await loadPermissions(ec.ctx) };
+    try {
+      const result = await productionWorkspace(scope, {
+        locationId: optString(args, "locationId") ?? undefined,
+        status: optString(args, "status") ?? "",
+        from: optString(args, "from") ?? undefined,
+        to: optString(args, "to") ?? undefined,
+        search: optString(args, "search") ?? "",
+        offset: optInt(args, "offset", 0, 100000) ?? 0,
+      });
+      // Catalog option lists are form helpers for the screen, not facts about production.
+      return { ok: true, data: { total: result.total, pageSize: 25, rows: result.rows } };
+    } catch (error) {
+      if (error instanceof ChecklistError) throw new ToolArgError(`อ่านงานผลิตไม่ได้: ${error.status}`);
+      throw error;
+    }
+  },
+};
+
 const getInventoryAnomaliesTool: BmsTool = {
   name:"get_inventory_anomalies",
   description:"Read deterministic inventory integrity warnings for permitted branches: reservation attribution, lot reconciliation, stale transfers/POs, repeated adjustments, wastage/loss and missing branch policy. It only recommends what to inspect and never fixes stock.",
@@ -3804,6 +3916,8 @@ export const ALL_TOOLS: BmsTool[] = [
   generateQuotationTool,
   // B3 — forecast
   getInventoryIntelligenceTool,
+  getBranchRequisitionsTool,
+  getProductionBatchesTool,
   explainInventoryRiskTool,
   getInventoryAnomaliesTool,
   findInventoryTransfersTool,

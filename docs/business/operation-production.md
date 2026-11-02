@@ -88,8 +88,8 @@ This is implementation/test readiness, not production rollout or food-safety cer
    may therefore show less stock than they could individually consume. No hourly shelf-life model.
 3. Create a PO for one ingredient/variant with explicit supplier/cost, link a compatible open PO
    line, or link a same-branch APPROVED request for its exact approved quantity. Existing services
-   remain authoritative. PO and branch-request procurement cannot claim the same PO line. G refuses
-   lot-tracked branch-request transfers; use the existing supported nonlot send/receive workflow.
+   remain authoritative. PO and branch-request procurement cannot claim the same PO line. Since
+   `10.107` branch-request transfers carry lots, so lot-tracked ingredients and E output lots qualify.
 4. Create a receiving inspection with frozen accepted/rejected quantities, lot/expiry, note,
    assignee, due time and separate-review checklist. A–D own photos, thresholds, FAIL/corrective work,
    My Work and escalation. Approval alone **does not receive stock**. Correct by cancel/recreate;
@@ -134,7 +134,7 @@ after writes; inbox polls. F weekly snapshots include bounded plan/receiving evi
 no mixed-unit total), authorized by summary.review + report.view, never PO prices. Actual FAIL actions
 can feed F issues; rejecting a quantity does not invent a FAIL.
 
-Not included: auto-ordering/AI writes, forecasts, reservations, lot transfers, supplier returns,
+Not included: auto-ordering/AI writes, forecasts, reservations, supplier returns,
 credit notes, quarantine/recall, certification or deployment. Store UAT using actual units, lot
 policy and receiving checklists remains required.
 

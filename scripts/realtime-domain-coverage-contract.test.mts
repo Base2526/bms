@@ -158,6 +158,7 @@ const CHILD_OF_AGGREGATE = [
   "bms_product_recipe_items", "bms_purchase_order_items", "bms_report_deliveries",
   "bms_restaurant_qr_submission_items", "bms_restock_deliveries",
   "bms_shipment_tracking_events", "bms_stock_count_items", "bms_stock_transfer_items",
+  "bms_stock_transfer_item_lots",
   "bms_support_events", "bms_order_discounts", "bms_order_extra_lines",
   "bms_order_item_stock_consumption", "bms_stock_movements",
   "bms_board_game_reservation_deposit_applications", "bms_board_game_pass_renewal_runs",

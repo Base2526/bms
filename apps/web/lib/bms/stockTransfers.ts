@@ -13,6 +13,7 @@ import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { assertNoQualityHold, LotQualityHoldError, type QualityHoldRejection } from "./lotQuality";
 import { recordMovement } from "./movements";
+import { allocateLotsForTransferInTx, receiveLotInTx, splitTransferReceiptAcrossLots } from "./lots";
 import { insertWithDailyDocNo } from "./dailyDocNo";
 import { notifyBranchRequisitionCommitted } from "./branchRequisitionNotify";
 import {
@@ -35,6 +36,16 @@ export type StockTransferItem = {
   missingQty: number | null;
   discrepancyReason: string | null;
   discrepancyNote: string | null;
+  /** 10.107: lots that left the source for this line (empty for untracked products). */
+  lots: StockTransferItemLot[];
+};
+
+export type StockTransferItemLot = {
+  lotNo: string;
+  expiryDate: string | null;
+  qty: number;
+  receivedQty: number | null;
+  damagedQty: number | null;
 };
 
 export type StockTransfer = {
@@ -152,6 +163,27 @@ export async function listStockTransfers(
       ORDER BY i.id`,
     [tenantId, ids],
   );
+  const lotRows = await query<any>(
+    `SELECT l.transfer_item_id, l.lot_no, l.expiry_date::text AS expiry_date, l.qty, l.received_qty, l.damaged_qty
+       FROM bms_stock_transfer_item_lots l
+       JOIN bms_stock_transfer_items i ON i.tenant_id = l.tenant_id AND i.id = l.transfer_item_id
+      WHERE l.tenant_id = $1 AND i.transfer_id = ANY($2::uuid[])
+      ORDER BY l.id`,
+    [tenantId, ids],
+  );
+  const lotsByItem = new Map<number, StockTransferItemLot[]>();
+  for (const row of lotRows.rows as any[]) {
+    const key = Number(row.transfer_item_id);
+    const list = lotsByItem.get(key) ?? [];
+    list.push({
+      lotNo: row.lot_no,
+      expiryDate: row.expiry_date ? String(row.expiry_date).slice(0, 10) : null,
+      qty: Number(row.qty),
+      receivedQty: row.received_qty == null ? null : Number(row.received_qty),
+      damagedQty: row.damaged_qty == null ? null : Number(row.damaged_qty),
+    });
+    lotsByItem.set(key, list);
+  }
   const byTransfer = new Map<string, StockTransferItem[]>();
   for (const row of items.rows as any[]) {
     const list = byTransfer.get(row.transfer_id) ?? [];
@@ -174,6 +206,7 @@ export async function listStockTransfers(
             ),
       discrepancyReason: row.discrepancy_reason ?? null,
       discrepancyNote: row.discrepancy_note ?? null,
+      lots: lotsByItem.get(Number(row.id)) ?? [],
     });
     byTransfer.set(row.transfer_id, list);
   }
@@ -328,12 +361,13 @@ export async function createStockTransferInTx(
       reason: `ไม่พบสินค้า: ${missing.join(", ")}`,
     };
   }
+  // 10.107: lot/expiry-tracked products are supported — SEND allocates source lots (FEFO)
+  // and RECEIVE recreates them at the destination. Serial, bundle and virtual stock still
+  // need their own workflows.
   const unsupported = known.rows.find(
     (row) =>
       row.serial_tracked ||
       row.is_bundle ||
-      row.lot_tracking ||
-      row.expiry_tracking ||
       ["SERIALIZED", "BUNDLE", "RECIPE", "NON_STOCK"].includes(
         row.stock_policy,
       ),
@@ -342,11 +376,9 @@ export async function createStockTransferInTx(
     const reason =
       unsupported.serial_tracked || unsupported.stock_policy === "SERIALIZED"
         ? "ติดตาม Serial"
-        : unsupported.lot_tracking || unsupported.expiry_tracking
-          ? "ติดตามล็อต/วันหมดอายุ"
-          : unsupported.is_bundle || unsupported.stock_policy === "BUNDLE"
-            ? "เป็นสินค้าชุดที่ตัดจากส่วนประกอบ"
-            : "ไม่ได้ถือสต็อกโดยตรง";
+        : unsupported.is_bundle || unsupported.stock_policy === "BUNDLE"
+          ? "เป็นสินค้าชุดที่ตัดจากส่วนประกอบ"
+          : "ไม่ได้ถือสต็อกโดยตรง";
     return {
       status: "INVALID",
       reason: `${unsupported.sku} ${reason} จึงยังไม่รองรับการโอนแบบยอดรวม`,
@@ -498,8 +530,6 @@ export async function sendStockTransfer(input: {
            ON policy.tenant_id = p.tenant_id AND policy.product_sku = p.sku
         WHERE p.tenant_id = $1 AND p.sku = ANY($2::text[])
           AND (p.serial_tracked OR p.is_bundle
-            OR COALESCE(policy.lot_tracking, false)
-            OR COALESCE(policy.expiry_tracking, false)
             OR policy.stock_policy IN ('SERIALIZED', 'BUNDLE', 'RECIPE', 'NON_STOCK'))
         LIMIT 1`,
       [input.tenantId, items.rows.map((item) => item.product_sku)],
@@ -522,9 +552,31 @@ export async function sendStockTransfer(input: {
         [input.tenantId, t.from_location, item.product_sku, item.size],
       );
       await assertNoQualityHold(client,input.tenantId,t.from_location,item.product_sku,item.size);
-      const available = inv.rowCount
+      let available = inv.rowCount
         ? inv.rows[0].current_stock - inv.rows[0].reserved_stock
         : 0;
+      let lotAllocations: Awaited<ReturnType<typeof allocateLotsForTransferInTx>> = { status: "UNTRACKED" };
+      if (inv.rowCount && available >= item.qty) {
+        // Lots must leave with the units or SUM(lots) = current_stock breaks at both ends.
+        lotAllocations = await allocateLotsForTransferInTx(client, {
+          tenantId: input.tenantId,
+          locationId: t.from_location,
+          productSku: item.product_sku,
+          size: item.size,
+          qty: item.qty,
+          currentStock: inv.rows[0].current_stock,
+          reservedStock: inv.rows[0].reserved_stock,
+        });
+        if (lotAllocations.status === "UNRECONCILED") {
+          await client.query("ROLLBACK");
+          return {
+            status: "INVALID",
+            reason: `${item.product_sku}/${item.size}: ยอดล็อต (${lotAllocations.lotTotal}) ไม่ตรงกับสต็อก (${lotAllocations.stock}) ต้องนับสต็อกก่อนโอน`,
+          };
+        }
+        // Expired or held lots are not sellable stock at the destination.
+        if (lotAllocations.status === "INSUFFICIENT") available = lotAllocations.available;
+      }
       if (available < item.qty) {
         await client.query("ROLLBACK");
         return {
@@ -557,6 +609,16 @@ export async function sendStockTransfer(input: {
         note: `โอนออก ${t.transfer_no}`,
         actor: input.actorUserId,
       });
+      if (lotAllocations.status === "ALLOCATED") {
+        for (const lot of lotAllocations.allocations) {
+          await client.query(
+            `INSERT INTO bms_stock_transfer_item_lots
+               (tenant_id, transfer_item_id, source_lot_id, lot_no, expiry_date, unit_cost, supplier_id, qty)
+             VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8)`,
+            [input.tenantId, item.id, lot.lotId, lot.lotNo, lot.expiryDate, lot.unitCost, lot.supplierId, lot.qty],
+          );
+        }
+      }
     }
 
     await client.query(
@@ -761,6 +823,48 @@ export async function receiveStockTransfer(input: {
             damagedQty,
           ],
         );
+      }
+      const sentLots = await client.query<{
+        id: string; source_lot_id: string; lot_no: string; expiry_date: string | null;
+        unit_cost: string | null; supplier_id: string | null; qty: number;
+      }>(
+        // Supplier comes from the live source lot: its FK is SET NULL when a supplier is
+        // deleted, whereas the snapshot could point at a row that no longer exists.
+        `SELECT l.id, l.source_lot_id, l.lot_no, l.expiry_date::text AS expiry_date, l.unit_cost,
+                src.supplier_id, l.qty
+           FROM bms_stock_transfer_item_lots l
+           LEFT JOIN bms_inventory_lots src ON src.tenant_id = l.tenant_id AND src.id = l.source_lot_id
+          WHERE l.tenant_id = $1 AND l.transfer_item_id = $2
+          ORDER BY l.id FOR UPDATE OF l`,
+        [input.tenantId, item.id],
+      );
+      if (sentLots.rowCount) {
+        const split = splitTransferReceiptAcrossLots(sentLots.rows, receivedQty, damagedQty);
+        for (const [index, lot] of sentLots.rows.entries()) {
+          const share = split[index];
+          // Good units become a destination lot in the same transaction that adds them to
+          // current_stock. Damaged units go to quarantine_stock, which lots do not cover.
+          const destinationLotId = share.received > 0
+            ? await receiveLotInTx(client, {
+                tenantId: input.tenantId,
+                locationId: t.to_location,
+                productSku: item.product_sku,
+                size: item.size,
+                lotNo: lot.lot_no,
+                qty: share.received,
+                expiryDate: lot.expiry_date ? String(lot.expiry_date).slice(0, 10) : null,
+                supplierId: lot.supplier_id ?? null,
+                unitCost: lot.unit_cost == null ? null : Number(lot.unit_cost),
+                note: `รับโอน ${t.transfer_no}`,
+              })
+            : null;
+          await client.query(
+            `UPDATE bms_stock_transfer_item_lots
+                SET received_qty = $3, damaged_qty = $4, destination_lot_id = $5
+              WHERE tenant_id = $1 AND id = $2`,
+            [input.tenantId, lot.id, share.received, share.damaged, destinationLotId],
+          );
+        }
       }
       if (receivedQty > 0) {
         await recordMovement(client, {

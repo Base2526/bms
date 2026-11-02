@@ -24,6 +24,7 @@ export type Migration = {
 // ครอบเฉพาะไฟล์ที่ "โค้ดปัจจุบันอ้างถึงแบบไม่มีเงื่อนไข" — ของเก่ากว่านี้ถ้าขาด ระบบจะพัง
 // ตั้งแต่หน้าแรกจนเห็นเองอยู่แล้ว
 export const MIGRATIONS: Migration[] = [
+  {file:'10.107__bms_stock_transfer_lots.sql',impact:'Every stock transfer list and receipt reads lot rows: transfers (admin, mobile, branch requests) fail without the table',needs:[{kind:'table',name:'bms_stock_transfer_item_lots'}]},
   {file:'10.106__bms_retail_local_lead_erasure.sql',impact:'The Retail Local leads tab and lead updates read erased_at; PDPA erasure needs the function and frozen-lead trigger',needs:[{kind:'column',table:'bms_retail_local_leads',name:'erased_at'},{kind:'column',table:'bms_retail_local_leads',name:'erased_by'}]},
   {file:'10.105__bms_retail_local_leads.sql',impact:'The public Retail Local contact form and the leads tab fail without the consented lead tables',needs:[...['bms_retail_local_leads','bms_retail_local_leads_revisions','bms_retail_local_lead_events'].map(name=>({kind:'table' as const,name}))]},
   {file:'10.98__bms_operation_quality.sql',impact:'Quality cases and mandatory lot restrictions require H before any stock writer deploys',needs:[...['bms_operation_quality_cases','bms_operation_lot_holds','bms_operation_quality_decisions','bms_operation_quality_events'].map(name=>({kind:'table' as const,name})),{kind:'constraint',table:'bms_operation_team_notices',name:'bms_operation_team_notices_entity_kind_check',contains:'QUALITY'}]},

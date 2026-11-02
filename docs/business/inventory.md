@@ -51,7 +51,8 @@ Approved quantities may be fulfilled by several transfers. Draft/in-transit quan
 allocation; cancelled drafts release it. Good received units fulfil demand, damaged/missing units do
 not. Linked PO quantities are procurement evidence only, never proof of delivery to the branch.
 Creating a linked transfer or PO and recording its allocation share one transaction and audit.
-Lot/serial/bundle/recipe items unsupported by the existing transfer engine are refused at this boundary.
+Serial/bundle/recipe items are refused at this boundary; lot items transfer with their lots since
+`10.107` (see [lot transfers](#lot-transfers-10107)).
 The operations follow-up (`10.88`) adds a review queue, server-side priority/date filters,
 paginated branch drilldown, exact linked-document navigation and derived send/receive/discrepancy
 history. The operational summary computes rates/lead times from authoritative events and receipts;
@@ -491,13 +492,33 @@ quantities separate. The device location is server-derived; the query accepts no
 from the client. Transfer and count permissions remain independent, so read access never grants a
 stock mutation.
 
-The transfer/count engine records aggregate integer `SKU + size` quantities. It does not carry lot
-or serial identities and must fail closed for lot/expiry-tracked, serial-tracked, bundle, recipe, and
-non-stock products. Those rows remain visible in lookup with a limitation reason, but cannot be
-silently moved or reconciled through the aggregate workflow. PO receiving remains the supported path
-that records lot number and expiry evidence. A future lot/serial transfer must extend the service,
-movement provenance, receipt UI, audit, and DB tests together; hiding an unsupported row only in the
-client is not sufficient.
+The count engine records aggregate integer `SKU + size` quantities and must fail closed for
+lot/expiry-tracked, serial-tracked, bundle, recipe and non-stock products. Transfers fail closed for
+serial, bundle, recipe and non-stock products only.
+
+### Lot transfers (`10.107`)
+
+Transfers carry lot identity, so a central kitchen can ship what it produced (`10.94` output lots)
+and branches can move PO lots with expiry. The rule applies whenever the source has lot rows for the
+SKU/size, whatever the product's stock policy says.
+
+- **SEND** allocates source lots inside the same transaction that lowers `current_stock`: unexpired,
+  not quality-held, FEFO (`expiry_date NULLS LAST, received_at, id`). Customer reservations keep
+  enough usable lots: `available = usable lots − reserved_stock`. Expired stock is wastage, not
+  something to ship. If the source lots do not add up to `current_stock`, SEND is refused with the
+  two totals; count or correct first instead of widening the gap.
+- `bms_stock_transfer_item_lots` stores one row per (line, source lot) with a lot number / expiry /
+  cost snapshot, then the receipt split and the destination lot.
+- **RECEIVE** recreates good units as the same lot number and expiry at the destination
+  (`receiveLotInTx`, cost carried over). Damaged units go to `quarantine_stock`, which lots do not
+  cover. The receiver counts per line, not per lot: good units fill lots in FEFO order, then damaged,
+  and the remainder is missing. On a multi-lot line the shortfall therefore lands on the
+  latest-expiry lot; this is a deterministic estimate, not evidence of which physical lot was lost.
+- Recall can walk `source_lot_id → destination_lot_id`. Lines without source lots still move as
+  totals with no lot rows.
+- Branch requisitions and material plans (G) no longer refuse lot products; requisition availability
+  uses the same usable-lot rule as SEND. Native stock search marks lot items transferable but not
+  countable.
 
 ### Admin REST and mobile GraphQL
 

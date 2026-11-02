@@ -163,7 +163,7 @@ function stockOperationSupport(row: {
   expiry_tracked: boolean;
   serial_tracked: boolean;
   is_bundle: boolean;
-}): { supported: boolean; reason: string | null } {
+}): { supported: boolean; transferSupported?: boolean; reason: string | null } {
   if (row.serial_tracked || row.stock_policy === "SERIALIZED") {
     return {
       supported: false,
@@ -171,10 +171,13 @@ function stockOperationSupport(row: {
     };
   }
   if (row.lot_tracked || row.expiry_tracked) {
+    // 10.107: transfers carry lots (FEFO out, same lot in). Counts still adjust totals
+    // only, so counting a lot product would break SUM(lots) = current_stock.
     return {
       supported: false,
+      transferSupported: true,
       reason:
-        "สินค้านี้ติดตามล็อต/วันหมดอายุ และยังไม่รองรับการโอนหรือนับแบบยอดรวม",
+        "สินค้านี้ติดตามล็อต/วันหมดอายุ โอนได้แต่ยังนับแบบยอดรวมไม่ได้",
     };
   }
   if (row.is_bundle || row.stock_policy === "BUNDLE") {
@@ -349,7 +352,7 @@ export async function searchBranchStock(input: {
         expiryTracked: Boolean(row.expiry_tracked),
         serialTracked: Boolean(row.serial_tracked),
         bundle: Boolean(row.is_bundle),
-        transferSupported: support.supported,
+        transferSupported: support.transferSupported ?? support.supported,
         countSupported: support.supported,
         operationBlockReason: support.reason,
       };

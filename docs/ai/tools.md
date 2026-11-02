@@ -163,6 +163,8 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `list_purchase_orders`, `get_purchase_order`, `list_suppliers`, `get_supplier_intelligence` | A1 | no | `purchase.view` | bounded evidence-backed read; supplier metrics do not invent an SLA |
 | `generate_invoice`, `generate_quotation` | A1 | no | `order.view` | ephemeral document data |
 | `get_inventory_intelligence`, `explain_inventory_risk`, `get_inventory_anomalies`, `find_inventory_transfer_opportunities`, `get_inventory_forecast_accuracy`, `forecast_demand`, `predict_stockout`, `suggest_purchase_order` | A1 | no | `report.view` | branch-aware deterministic/heuristic reads; never move stock |
+| `get_branch_requisitions` | A1 | no | `inventory.requisition.view` (+`inventory.requisition.review` for DEMAND/METRICS; purchases only with `purchase.view`) | branch-scoped request list, consolidated demand and fulfilment metrics; never creates, approves or transfers |
+| `get_production_batches` | A1 | no | `operations.checklist.view` (+`product.view`) | branch-scoped central-kitchen batches (planned/actual yield, status, expiry); never creates, posts or disposes |
 | `summarize_conversation` | A1 | no | `inbox.view` | read |
 | `classify_intent` | helper | no | — | deterministic |
 | `create_order`, `reorder` | A2 | own identity; customer `reorder` defaults to latest own order; pharmacy SKU must pass approved backend Product Policy | `order.create` | execute + domain audit + deterministic signed checkout link |

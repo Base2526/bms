@@ -112,6 +112,8 @@ for (const action of ["sendStockTransfer", "receiveStockTransfer", "applyStockCo
         }
         if (sql.includes("UPDATE bms_inventory") || sql.includes("INSERT INTO bms_inventory")) { changed++; return rows(); }
         if (sql.includes("UPDATE bms_stock_transfer_items")) return rows();
+        // 10.107 lot rows: these fixture lines were sent without lots.
+        if (sql.includes("FROM bms_stock_transfer_item_lots")) return rows();
         throw new Error(`Unexpected SQL: ${sql}`);
       } };
       const originalQuery = client.query;
@@ -121,6 +123,11 @@ for (const action of ["sendStockTransfer", "receiveStockTransfer", "applyStockCo
         "@/lib/db": { getClient: async () => client }, "./tenant": { beginTenantTx: async () => {} },
         "./inventoryIdempotency": { inventoryIdempotency: () => null, replayInventoryResult: async () => null, storeInventoryResult: async () => assert.fail("must not save a successful result") },
         "./movements": { recordMovement: async () => { movements++; } },
+        "./lots": {
+          allocateLotsForTransferInTx: async () => ({ status: "UNTRACKED" }),
+          splitTransferReceiptAcrossLots: () => [],
+          receiveLotInTx: async () => assert.fail("fixture lines carry no lots"),
+        },
       });
       const run = () => service[action]({ tenantId: "tenant", transferId: "transfer", countId: "count", actorUserId: "actor" });
       if (fault) await assert.rejects(run, /database unavailable/);

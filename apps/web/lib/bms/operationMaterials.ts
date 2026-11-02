@@ -279,15 +279,7 @@ async function execute(
           r.approved_qty !== x.qty
         )
           reject("INVALID_SOURCE");
-        if (
-          (
-            await c.query(
-              `SELECT 1 FROM bms_inventory_lots WHERE tenant_id=$1 AND product_sku=$2 AND size=$3 LIMIT 1`,
-              [s.tenantId, x.sku, x.size],
-            )
-          ).rowCount
-        )
-          reject("LOT_TRANSFER_UNSUPPORTED");
+        // Lot products are accepted since 10.107: transfers carry source lots to this branch.
         requestItem = String(r.id);
       } else {
         checklistPermission(s, "purchase.view");

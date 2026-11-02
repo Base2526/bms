@@ -2,6 +2,7 @@
 -- บนเซิร์ฟเวอร์:  docker compose ... exec -T postgres psql -U <user> -d <db> < readiness.sql
 CREATE TEMP TABLE bms_schema_readiness AS
 WITH required(migration, kind, tbl, col, impact, expected) AS (VALUES
+    ('10.107__bms_stock_transfer_lots.sql', 'table', 'bms_stock_transfer_item_lots', NULL, 'Every stock transfer list and receipt reads lot rows: transfers (admin, mobile, branch requests) fail without the table', NULL),
     ('10.106__bms_retail_local_lead_erasure.sql', 'column', 'bms_retail_local_leads', 'erased_at', 'The Retail Local leads tab and lead updates read erased_at; PDPA erasure needs the function and frozen-lead trigger', NULL),
     ('10.106__bms_retail_local_lead_erasure.sql', 'column', 'bms_retail_local_leads', 'erased_by', 'The Retail Local leads tab and lead updates read erased_at; PDPA erasure needs the function and frozen-lead trigger', NULL),
     ('10.105__bms_retail_local_leads.sql', 'table', 'bms_retail_local_leads', NULL, 'The public Retail Local contact form and the leads tab fail without the consented lead tables', NULL),

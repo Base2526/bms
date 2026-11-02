@@ -9,6 +9,7 @@ import {
 } from "./inventoryIdempotency";
 import { isIdempotencyConflictError } from "./idempotencyErrors";
 import { createStockTransferInTx } from "./stockTransfers";
+import { usableStockSql } from "./lotQuality";
 import { createPurchaseOrderInTx } from "./purchase";
 import { notifyBranchRequisitionCommitted } from "./branchRequisitionNotify";
 import {
@@ -692,23 +693,24 @@ export async function commandBranchRequisition(
             const original = stored.find((l) => key(l) === key(line));
             if (!original || line.qty > original.remaining)
               reject("OVER_ALLOCATED");
-            // The existing transfer engine moves integer stock, not lot/serial identities or recipes.
+            // The transfer engine moves lots since 10.107 (central-kitchen output, PO lots with
+            // expiry). Serial identities, bundles and recipe/virtual stock still cannot move.
             const policy = await c.query(
               `SELECT 1 FROM bms_products p
               LEFT JOIN bms_product_stock_policies sp ON sp.tenant_id=p.tenant_id AND sp.product_sku=p.sku
               WHERE p.tenant_id=$1 AND p.sku=$2 AND NOT p.serial_tracked AND NOT p.is_bundle
-              AND COALESCE(sp.stock_policy,'DIRECT') IN ('DIRECT','PACK','WEIGHTED') AND NOT COALESCE(sp.lot_tracking,false)
-              AND NOT EXISTS (SELECT 1 FROM bms_inventory_lots lot WHERE lot.tenant_id=p.tenant_id AND lot.product_sku=p.sku AND lot.size=$3 AND lot.qty>0)`,
-              [scope.tenantId, line.sku, line.size],
+              AND COALESCE(sp.stock_policy,'DIRECT') IN ('DIRECT','PACK','WEIGHTED')`,
+              [scope.tenantId, line.sku],
             );
             if (
               !policy.rowCount ||
               line.size !== line.size.trim().toUpperCase()
             )
               reject("UNSUPPORTED_TRANSFER");
+            // Lot-managed stock: expired or quality-held lots are not shippable (same rule SEND applies).
             const inv = await c.query(
-              `SELECT current_stock-reserved_stock AS available FROM bms_inventory
-              WHERE tenant_id=$1 AND location_id=$2 AND product_sku=$3 AND size=$4 FOR UPDATE`,
+              `SELECT ${usableStockSql("i")} AS available FROM bms_inventory i
+              WHERE i.tenant_id=$1 AND i.location_id=$2 AND i.product_sku=$3 AND i.size=$4 FOR UPDATE OF i`,
               [scope.tenantId, input.sourceId, line.sku, line.size],
             );
             if (Number(inv.rows[0]?.available ?? 0) < line.qty)
