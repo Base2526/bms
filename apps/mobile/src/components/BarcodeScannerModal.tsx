@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from './Button';
 import { containsThaiCharacters } from '../lib/scannerInput';
+import { parsePairingInput } from '../lib/pairing';
 import {
   loadScannerInputMode,
   saveScannerInputMode,
@@ -113,7 +114,21 @@ export function BarcodeScannerModal<T extends ScannerResolvedItem>({
       source: ScannerInputMode,
     ) => {
       const normalized = rawCode.trim();
-      if (!normalized) return;
+      if (!normalized || !visibleRef.current || attempt !== attemptRef.current) return;
+      // A pairing QR scanned on the sale/stock screen must never become a SKU request or history.
+      if (
+        /^bmspos:\/\//i.test(normalized) ||
+        /^pos_[A-Za-z0-9_-]{43}$/.test(normalized) ||
+        (/^https?:\/\//i.test(normalized) && parsePairingInput(normalized).ok)
+      ) {
+        codeRef.current = '';
+        manualInputRef.current?.clear();
+        setCode('');
+        setSelection(undefined);
+        setView('manual');
+        setError('นี่คือ QR หรือ token จับคู่เครื่อง กรุณาไปที่ตั้งค่าเครื่อง → สแกน QR เพื่อจับคู่');
+        return;
+      }
       if (source === 'hardware' && containsThaiCharacters(normalized)) {
         if (!visibleRef.current || attempt !== attemptRef.current) return;
         codeRef.current = normalized;

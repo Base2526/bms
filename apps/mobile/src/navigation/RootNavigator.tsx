@@ -32,9 +32,11 @@ const linking: LinkingOptions<RootStackParamList> = {
 
 export function RootNavigator() {
   const { scheme, colors } = useTheme();
-  const { verify } = useDevice();
+  const { verify, target } = useDevice();
   const { signOut } = useSession();
-  const authenticationRejected = verify.kind === 'REJECTED';
+  // A rejected first-pair candidate has no authenticated register to sign out.
+  // Keep Settings mounted so the scan error is shown and the operator can retry.
+  const authenticationRejected = target !== null && verify.kind === 'REJECTED';
 
   useEffect(() => {
     if (authenticationRejected) signOut();

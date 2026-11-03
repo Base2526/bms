@@ -144,16 +144,38 @@ function hashToken(token: string): string {
  */
 export async function issuePosDeviceToken(
   tenantId: string,
-  deviceId: string
+  deviceId: string,
+  writeContext?: { editorId?: string | number | null; auditActor?: string | null }
 ): Promise<{ token: string } | null> {
   const token = `pos_${crypto.randomBytes(32).toString("base64url")}`;
-  const res = await query(
-    `UPDATE bms_pos_devices
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: writeContext?.editorId });
+    const res = await client.query(
+      `UPDATE bms_pos_devices
         SET token_hash = $3, token_issued_at = now(), updated_at = now()
       WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, deviceId, hashToken(token)]
-  );
-  return res.rowCount ? { token } : null;
+      [tenantId, deviceId, hashToken(token)]
+    );
+    if (!res.rowCount) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    // Rotating a device credential and recording who did it are one sensitive mutation.
+    // An audit failure must leave the old token usable; never include either token in metadata.
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'pos.device.token.issue', $3, '{}'::jsonb)`,
+      [tenantId, writeContext?.auditActor ?? String(writeContext?.editorId ?? "system"), deviceId]
+    );
+    await client.query("COMMIT");
+    return { token };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /**

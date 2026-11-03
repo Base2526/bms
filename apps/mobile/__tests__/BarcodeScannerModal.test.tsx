@@ -98,3 +98,24 @@ test('sale callers retain their existing scan action', async () => {
   expect(h.onScanned).toHaveBeenCalledTimes(1);
   await h.unmount();
 });
+
+test.each([
+  ['ios', 'sale'], ['ios', 'lookup'], ['android', 'sale'], ['android', 'lookup'],
+] as const)('%s %s rejects pairing credentials before product resolution and clears the input', async (os, purpose) => {
+  Platform.OS = os;
+  const token = `pos_${'a'.repeat(43)}`;
+  const h = await mount(purpose);
+  for (const code of [token, `bmspos://pair?t=${token}&h=https%3A%2F%2Fshop.example.test`, `bmspos://pair?t=${token}`, `https://shop.example.test/pos?t=${token}`]) {
+    await h.submit(code);
+    expect(h.resolveCode).not.toHaveBeenCalled();
+    expect(h.onScanned).not.toHaveBeenCalled();
+    const rendered = JSON.stringify(h.renderer.toJSON());
+    expect(rendered).toContain('ตั้งค่าเครื่อง');
+    expect(rendered).not.toContain(token);
+  }
+  await h.submit('FAKE-003');
+  expect(h.resolveCode).toHaveBeenCalledWith('FAKE-003');
+  await h.submit('pos_ordinary_product');
+  expect(h.resolveCode).toHaveBeenCalledWith('pos_ordinary_product');
+  await h.unmount();
+});

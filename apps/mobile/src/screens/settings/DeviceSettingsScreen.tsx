@@ -12,6 +12,7 @@ import { ScreenContainer } from '../../components/ScreenContainer';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
+import { PairingScannerButton } from '../../components/PairingScannerButton';
 import { StatusPill } from '../../components/StatusPill';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
@@ -68,6 +69,7 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
   const [input, setInput] = useState('');
   const [serverInput, setServerInput] = useState('');
   const [saving, setSaving] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   // ลิงก์ `bmspos://pair?t=...` ที่เปิดแอปขึ้นมา — react-navigation แกะ query ให้เป็น route params
   // **เติมลงช่องให้เฉย ๆ ไม่บันทึกเอง** โดยตั้งใจ: ลิงก์ที่ใครส่งมาก็ได้สามารถชี้เครื่องนี้ไป
@@ -76,7 +78,9 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
     const t = route.params?.t;
     if (!t) return;
     const h = route.params?.h;
-    setInput(`bmspos://pair?t=${t}${h ? `&h=${h}` : ''}`);
+    setInput(
+      `bmspos://pair?t=${encodeURIComponent(t)}${h ? `&h=${encodeURIComponent(h)}` : ''}`,
+    );
   }, [route.params?.t, route.params?.h]);
 
   const parsed = useMemo(
@@ -89,7 +93,7 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
   const canSave = Boolean(parsed?.ok && effectiveServer);
 
   async function onSave() {
-    if (!parsed?.ok || !effectiveServer) return;
+    if (scanning || saving || !parsed?.ok || !effectiveServer) return;
     setSaving(true);
     try {
       await pair({ serverUrl: effectiveServer, token: parsed.token });
@@ -105,6 +109,7 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
   }
 
   async function onUnpair() {
+    if (scanning || saving) return;
     try {
       // Keychain survives app upgrades/re-pairing. Any accepted-cash row on this physical device
       // must block unpair, including a legacy row from a previous target that the current UI cannot
@@ -373,9 +378,15 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
               label="ทดสอบการเชื่อมต่อ"
               variant="secondary"
               loading={verify.kind === 'CHECKING'}
+              disabled={scanning || saving}
               onPress={runVerify}
             />
-            <Button label="เลิกจับคู่" variant="danger" onPress={onUnpair} />
+            <Button
+              label="เลิกจับคู่"
+              variant="danger"
+              disabled={scanning || saving}
+              onPress={onUnpair}
+            />
           </View>
         </Card>
       )}
@@ -396,8 +407,21 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
           ]}
         >
           เอามาจากระบบหลังบ้าน → เครื่องขาย (POS) → ปุ่ม “ออก token”
-          แล้วคัดลอกลิงก์
+          แล้วสแกน QR เพื่อเพิ่ม token อัตโนมัติ หรือคัดลอกลิงก์มาวาง
         </Text>
+
+        <View style={{ marginTop: spacing.md }}>
+          <PairingScannerButton
+            target={target}
+            disabled={saving || status === 'LOADING' || status === 'UNAVAILABLE'}
+            pair={pair}
+            onBusyChange={setScanning}
+            onPaired={() => {
+              setInput('');
+              setServerInput('');
+            }}
+          />
+        </View>
 
         <TextInput
           value={input}
@@ -484,7 +508,7 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
         <Button
           label={target ? 'บันทึกและใช้ token ใหม่นี้' : 'จับคู่เครื่อง'}
           fullWidth
-          disabled={!canSave}
+          disabled={!canSave || scanning}
           loading={saving}
           style={{ marginTop: spacing.lg }}
           onPress={onSave}
@@ -501,7 +525,7 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
           ข้อควรรู้
         </Text>
         <Bullet>
-          1 ไอแพด = 1 เครื่องขายในระบบ · ห้ามใช้ token เดียวกันหลายเครื่อง
+          1 อุปกรณ์ = 1 เครื่องขายในระบบ · ห้ามใช้ token เดียวกันหลายเครื่อง
           เลขใบเสร็จรันต่อเครื่อง และเปิดกะค้างได้เครื่องละกะเดียว
         </Bullet>
         <Bullet>
@@ -523,7 +547,7 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
     <ScreenContainer>
       <ScreenHeader
         title="ตั้งค่าเครื่อง"
-        subtitle="ผูกไอแพดเครื่องนี้เข้ากับร้าน/สาขาในระบบ"
+        subtitle="ผูกอุปกรณ์เครื่องนี้เข้ากับร้าน/สาขาในระบบ"
         onBack={navigation.canGoBack() ? () => navigation.goBack() : undefined}
       />
       {isTablet ? (

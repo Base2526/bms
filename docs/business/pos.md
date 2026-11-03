@@ -73,6 +73,22 @@ GraphQL WS carries named invalidations only; Apollo refetches the authoritative 
 The app accepts a full POS link, a bare `pos_...` token plus server, or a
 `bmspos://pair?t=...&h=...` deep link. The long-lived device token lives in
 `react-native-keychain`, is masked on screen, and authenticates both GraphQL and ticket minting.
+Admin POS Devices also displays a locally generated pairing QR immediately after token issuance.
+The QR uses the shared `packages/pos-client-core/src/pairingQr.ts` contract and contains both the
+device credential and a complete HTTPS origin; HTTP/loopback origins are not advertised to phones.
+Device Settings' dedicated QR scan verifies and saves automatically through the existing provider.
+Replacing an existing credential requires confirmation, and pending offline cash still blocks an
+incompatible replacement. Product lookup never receives the scanned credential. External deep links
+remain prefill-only. QR display is not a one-use ticket: closing it does not revoke the token, the
+backend cannot redisplay the raw credential, and reissuing invalidates the old token immediately.
+Issuance updates the hash and appends `pos.device.token.issue` in the same `beginTenantTx`
+transaction; audit failure rolls back rotation. The actor comes from the authenticated Admin
+context. The Admin page blocks overlapping issuance requests and fetches only fields allowed by
+the operator's permissions; it retains the credential only in the one-time modal, not Apollo cache.
+Mobile rejects malformed bootstrap identities before secure-storage writes, redacts credentials in
+error/status/diagnostic text (including restored diagnostic queues), and preserves Settings after a
+rejected first-pair candidate. Sale/stock scanners reject pairing QRs and issued-format device tokens
+before SKU resolution, clear their input and direct the operator to Settings.
 Tenant, branch, device, shift and store archetype are always server-derived. Cashier and
 second-person PINs live only in React memory and are rechecked with action-specific RBAC on every
 sensitive mutation. Manual discount, void and cash-out selectors filter the server approver list by

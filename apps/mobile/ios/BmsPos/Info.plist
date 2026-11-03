@@ -50,7 +50,7 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
 	<key>NSCameraUsageDescription</key>
-	<string>ใช้กล้องเพื่อสแกนบาร์โค้ดสินค้าในเครื่องขาย</string>
+	<string>ใช้กล้องเพื่อสแกนบาร์โค้ดสินค้าและ QR จับคู่เครื่องขายจากระบบหลังบ้าน</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>เชื่อมต่อเครื่องพิมพ์ใบเสร็จในเครือข่ายร้านเพื่อตรวจสถานะและส่งงานพิมพ์</string>
 	<key>RCTNewArchEnabled</key>

@@ -123,9 +123,14 @@ test("pair replacement and repeated outage sales preserve the accepted-cash scop
     "utf8"
   );
 
-  assert.match(device, /const queued = await loadOfflineSales\(\)/);
+  const initialQueue = device.indexOf("assertCompatibleQueue(await loadOfflineSales());");
+  const verification = device.indexOf("verifyTarget(next");
+  const checkedQueue = device.indexOf("assertCompatibleQueue(await loadOfflineSales(), checked.info.deviceId);");
+  const save = device.indexOf("savePairing(next");
+  assert.ok(initialQueue >= 0 && verification > initialQueue);
+  assert.ok(checkedQueue > verification && save > checkedQueue, "cash accepted during verification must be rechecked before persisting");
   assert.match(device, /record\.serverUrl !== next\.serverUrl/);
-  assert.match(device, /record\.deviceId !== checked\.info\.deviceId/);
+  assert.match(device, /record\.deviceId !== deviceId/);
   assert.ok(
     device.indexOf("verifyTarget(next") < device.indexOf("savePairing(next")
   );

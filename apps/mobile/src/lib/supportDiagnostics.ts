@@ -1,5 +1,5 @@
 import * as Keychain from 'react-native-keychain';
-import type { PairingTarget } from './pairing';
+import { redactDeviceToken, type PairingTarget } from './pairing';
 
 type DiagnosticStatus = 'success' | 'error' | 'warning' | 'info';
 
@@ -66,12 +66,38 @@ function targetFingerprint(target: PairingTarget): string {
   return `target-${first.toString(36)}-${second.toString(36)}`;
 }
 
+function redactEvent(
+  target: PairingTarget,
+  event: DiagnosticEvent,
+): DiagnosticEvent {
+  return {
+    ...event,
+    message:
+      typeof event.message === 'string'
+        ? redactDeviceToken(event.message, target.token).slice(0, MAX_MESSAGE)
+        : undefined,
+    context: event.context
+      ? Object.fromEntries(
+          Object.entries(event.context).map(([key, value]) => [
+            key,
+            typeof value === 'string'
+              ? redactDeviceToken(value, target.token)
+              : value,
+          ]),
+        )
+      : undefined,
+  };
+}
+
 async function readQueue(target: PairingTarget): Promise<DiagnosticEvent[]> {
   const stored = await Keychain.getGenericPassword({ service: QUEUE_SERVICE });
   if (!stored || stored.username !== targetFingerprint(target)) return [];
   try {
     const parsed = JSON.parse(stored.password);
-    return Array.isArray(parsed) ? parsed.slice(-MAX_QUEUE_EVENTS) : [];
+    // Older app versions may have queued an error that echoed a token. Redact before retry too.
+    return Array.isArray(parsed)
+      ? parsed.slice(-MAX_QUEUE_EVENTS).map(event => redactEvent(target, event))
+      : [];
   } catch {
     return [];
   }
@@ -171,15 +197,15 @@ export function recordPosDiagnosticEvent(
   event: Omit<DiagnosticEvent, 'eventId' | 'occurredAt'>,
 ): void {
   if (!target) return;
-  const payload: DiagnosticEvent = {
+  const payload = redactEvent(target, {
     eventId: uuidV4(),
     occurredAt: new Date().toISOString(),
     category: event.category,
     action: event.action,
     status: event.status,
-    message: event.message?.slice(0, MAX_MESSAGE),
+    message: event.message,
     context: event.context,
-  };
+  });
   if (retryTimer) {
     clearTimeout(retryTimer);
     retryTimer = null;

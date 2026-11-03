@@ -152,3 +152,9 @@ export function maskToken(token: string): string {
 export function displayHost(serverUrl: string): string {
   return serverUrl.replace(/^https?:\/\//i, '');
 }
+
+/** Errors and diagnostics may echo request headers. Redact before truncating or displaying them. */
+export function redactDeviceToken(value: string, token?: string): string {
+  const withoutKnownToken = token ? value.split(token).join('[token]') : value;
+  return withoutKnownToken.replace(/pos_[A-Za-z0-9_-]+/g, '[token]');
+}
