@@ -38,6 +38,94 @@ describe('DeviceProvider', () => {
     jest.restoreAllMocks();
   });
 
+  test.each([undefined, null, '', ' ', {}, []])('rejects a bootstrap device without a usable ID: %j', async id => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ data: { bmsPosSession: { device: { id }, cashiers: [] } } }),
+    } as Response);
+    let device!: ReturnType<typeof useDevice>;
+    function Probe() { device = useDevice(); return null; }
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => { tree = ReactTestRenderer.create(<DeviceProvider><Probe /></DeviceProvider>); });
+    await act(async () => { await expect(device.pair(TARGET)).rejects.toThrow(); });
+    expect(pairingWriteCount()).toBe(0);
+    expect(device.target).toBeNull();
+    expect(device.verify.kind).toBe('SERVER_ERROR');
+    await act(async () => tree.unmount());
+  });
+
+  test.each(['graphql', 'network'])('redacts credentials from %s errors before UI and diagnostics', async source => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockImplementation(async url => {
+      if (!String(url).endsWith('/api/graphql')) return { ok: true, status: 200 } as Response;
+      if (source === 'network') throw new Error(`Unable to connect with ${TARGET.token}`);
+      return { ok: true, status: 200, json: async () => ({ errors: [{ message: `Invalid ${TARGET.token}`, extensions: { code: TARGET.token } }] }) } as Response;
+    });
+    let device!: ReturnType<typeof useDevice>;
+    function Probe() { device = useDevice(); return null; }
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => { tree = ReactTestRenderer.create(<DeviceProvider><Probe /></DeviceProvider>); });
+    await act(async () => {
+      await expect(device.pair(TARGET)).rejects.not.toThrow(TARGET.token);
+    });
+    expect(JSON.stringify(device.verify)).not.toContain(TARGET.token);
+    const savedDiagnostics = (Keychain.setGenericPassword as jest.Mock).mock.calls.filter(([, , options]) => options.service === 'com.bms.pos.diagnostics').map(([, body]) => body);
+    const sentDiagnostics = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/diagnostics/events')).map(([, init]) => init?.body);
+    expect(savedDiagnostics.length + sentDiagnostics.length).toBeGreaterThan(0);
+    expect(JSON.stringify([...savedDiagnostics, ...sentDiagnostics])).not.toContain(TARGET.token);
+    expect(pairingWriteCount()).toBe(0);
+    await act(async () => tree.unmount());
+  });
+
+  test.each([
+    { errors: 'invalid' }, { errors: [null] }, { errors: [{ message: {}, extensions: { code: [] } }] },
+    { data: { bmsPosSession: { device: { id: 'device-1' }, cashiers: null } } },
+  ])('malformed server payload is a server error, not offline or a valid pairing: %j', async body => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => body } as Response);
+    let device!: ReturnType<typeof useDevice>;
+    function Probe() { device = useDevice(); return null; }
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => { tree = ReactTestRenderer.create(<DeviceProvider><Probe /></DeviceProvider>); });
+    await act(async () => { await expect(device.pair(TARGET)).rejects.toThrow(); });
+    expect(device.verify.kind).toBe('SERVER_ERROR');
+    expect(pairingWriteCount()).toBe(0);
+    await act(async () => tree.unmount());
+  });
+
+  test.each([401, 403, 503])('HTTP %s never persists a new pairing and only 401 means rejected auth', async status => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status } as Response);
+    let device!: ReturnType<typeof useDevice>;
+    function Probe() { device = useDevice(); return null; }
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => { tree = ReactTestRenderer.create(<DeviceProvider><Probe /></DeviceProvider>); });
+    await act(async () => { await expect(device.pair(TARGET)).rejects.toThrow(); });
+    expect(device.verify.kind).toBe(status === 401 ? 'REJECTED' : 'SERVER_ERROR');
+    expect(pairingWriteCount()).toBe(0);
+    await act(async () => tree.unmount());
+  });
+
+  test.each(['401', '403', 'network', 'storage'])('failed replacement preserves the previous pairing and verification: %s', async failure => {
+    const next = { ...TARGET, token: `pos_${'b'.repeat(43)}` };
+    (Keychain.getGenericPassword as jest.Mock).mockImplementation(async options => options.service === 'com.bms.pos.device' ? { username: TARGET.serverUrl, password: TARGET.token } : false);
+    (Keychain.setGenericPassword as jest.Mock).mockImplementation(async (_user, _value, options) => options.service !== 'com.bms.pos.device' || failure !== 'storage');
+    jest.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      const candidate = String(url).endsWith('/api/graphql') && (init?.headers as Record<string, string>)?.['x-pos-device-token'] === next.token;
+      if (candidate && failure === 'network') throw new Error('Network unavailable');
+      const status = candidate && (failure === '401' || failure === '403') ? Number(failure) : 200;
+      return { ok: status === 200, status, json: async () => ({ data: { bmsPosSession: { device: { id: 'device-1' }, cashiers: [] } } }) } as Response;
+    });
+    let device!: ReturnType<typeof useDevice>;
+    function Probe() { device = useDevice(); return null; }
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => { tree = ReactTestRenderer.create(<DeviceProvider><Probe /></DeviceProvider>); });
+    const previousVerification = device.verify;
+    expect(previousVerification.kind).toBe('OK');
+    await act(async () => { await expect(device.pair(next)).rejects.toThrow(); });
+    expect(device.target).toEqual(TARGET);
+    expect(device.status).toBe('PAIRED');
+    expect(device.verify).toEqual(previousVerification);
+    expect(pairingWriteCount()).toBe(failure === 'storage' ? 1 : 0);
+    await act(async () => tree.unmount());
+  });
+
   test('restores the original token after secure storage is unlocked and the app returns to foreground', async () => {
     const listener = jest.spyOn(AppState, 'addEventListener');
     (Keychain.getGenericPassword as jest.Mock).mockRejectedValueOnce(new Error('locked'));

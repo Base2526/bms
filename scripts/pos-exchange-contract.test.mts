@@ -176,7 +176,9 @@ test("mobile exchange commits the return before replacing the cart and navigates
   const operations = readFileSync(mobileOperationsPath, "utf8");
   const cartSource = readFileSync(mobileCartPath, "utf8");
   const returnCall = source.indexOf("await returnMutation({");
-  const successGuard = source.indexOf("result?.status !== 'RETURNED'");
+  const successGuard = source.indexOf("result?.status !== successStatus");
+  assert.match(source, /action === 'RETURN_FULL' \? 'RETURNED' : 'PARTIAL_RETURNED'/);
+  assert.match(source, /if \(!result\?\.status\)/, "missing server decisions retain the original operation for retry");
   const serverSeed = source.indexOf("result.returnedItems ?? []");
   const cartWrite = source.indexOf(
     "cart.replaceForExchange(replacementLines, replacementMember)"

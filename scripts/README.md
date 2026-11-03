@@ -1537,6 +1537,27 @@ The browser also asserts exact due-time preservation on findings-only edits and 
   query scope, committed SDL compatibility and horizontal overflow. Set `BMS_SMOKE_URL` and, when
   necessary, `BMS_PLAYWRIGHT_MODULE`. Screenshots use `.test-output/inventory-intelligence-browser/`.
 
+## Mobile pairing QR verification
+
+- From `apps/mobile`, `npx jest --runInBand pairingQr PairingScannerButton` covers the shared
+  Admin/native payload contract, automatic pairing, replacement confirmation, cancellation, stale
+  scanner results and unavailable-camera/manual fallback. The full Mobile suite also covers secure
+  storage and the existing offline-cash pairing guards.
+- `PairingQrIntegration`, `RootNavigatorPairing`, `DeviceContext`, `supportDiagnostics`, and
+  `BarcodeScannerModal` tests also cover the real provider/storage path, first-pair navigation,
+  malformed/rejected bootstrap responses, token redaction and accidental product scans.
+- `node scripts/run-contract-tests.mjs pure pos-device-token-contract` executes the real token
+  service, tenant helper and GraphQL adapter with simulated SQL transport: tenant/actor scoping,
+  hash-only storage, same-transaction audit, rollback and permission denial. It does not prove
+  actual PostgreSQL RLS/grants/triggers; use the disposable database for that verification.
+- `node scripts/pos-pairing-qr-browser-smoke.mjs` renders Admin at 1440/390 px with fixture-only
+  auth and GraphQL, decodes the actual QR screenshot (also 320 px), checks field-level permissions,
+  HTTP origin, duplicate issuance, explicit retry after failure, clipboard failure/success and
+  modal cleanup. It requires installed Web/Mobile dependencies, Chrome and Playwright
+  (`BMS_PLAYWRIGHT_MODULE` may override its import). `BMS_SMOKE_URL` must be a local dev server
+  (default `http://127.0.0.1:3000`). Screenshots contain fake credentials only and are written under
+  `.test-output/pos-pairing-qr/`. This is not physical-camera or live backend verification.
+
 ## Retail Local commercial integration
 
 - [Local database/browser runbook](../docs/architecture/retail-local-commercial-test.md): snapshot a

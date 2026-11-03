@@ -6,17 +6,18 @@
 //
 // token กับ PIN แสดงค่าจริงได้ครั้งเดียวตอนสร้างเท่านั้น — ฐานข้อมูลเก็บแต่ hash
 // จึงไม่มีปุ่ม "ดูอีกครั้ง" ให้กด หายแล้วออกใหม่อย่างเดียว
-import { gql, useMutation, useQuery } from "@apollo/client";
+import { gql, useApolloClient, useMutation, useQuery } from "@apollo/client";
 import {
-  Alert, Button, Card, Descriptions, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag,
+  Alert, Button, Card, Descriptions, Empty, Form, Input, InputNumber, Modal, Popconfirm, QRCode, Select, Space, Switch, Table, Tag,
   Typography, message,
 } from "antd";
 import { ReadOutlined } from "@ant-design/icons";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { LocalExtraDeviceNotice } from "@/components/retail-local/LocalCommercial";
+import { buildPairingQr } from "@pos-core/pairingQr";
 import {
   isPosPinValid,
   normalizePosPinInput,
@@ -24,13 +25,13 @@ import {
 } from "@pos-core/posPin";
 
 const Q = gql`
-  query PosSetup($includeDiagnostics: Boolean!, $diagnosticDeviceId: ID) {
-    bmsLocations { id name branchCode isHeadOffice }
-    bmsPosDevices {
+  query PosSetup($includeDevices: Boolean!, $includeLocations: Boolean!, $includeStaff: Boolean!, $includeDiagnostics: Boolean!, $diagnosticDeviceId: ID) {
+    bmsLocations @include(if: $includeLocations) { id name branchCode isHeadOffice }
+    bmsPosDevices @include(if: $includeDevices) {
       id locationId code name registeredPosNo receiptPrefix
       scannerMode scannerPrefixKey scannerSuffixKey scannerMaxGapMs active lastSeenAt
     }
-    bmsPosStaff { id name email role isPharmacist hasPin posOnly }
+    bmsPosStaff @include(if: $includeStaff) { id name email role isPharmacist hasPin posOnly }
     bmsPosDeviceDiagnostics(deviceId: $diagnosticDeviceId, limit: 50) @include(if: $includeDiagnostics) {
       id occurredAt receivedAt correlationId actorKind actorLabel actorRole deviceId locationId category action status message context
     }
@@ -96,28 +97,40 @@ const SCANNER_PREFIX_OPTIONS = ["F9", ...Array.from({ length: 24 }, (_, index) =
   .filter((key) => key !== "F9")].map((value) => ({ value, label: value }));
 
 export default function PosDevicesPage() {
+  const apollo = useApolloClient();
   const { can, loading: permsLoading } = useBmsPermissions();
   const canDevices = can("pos.device.manage");
   const canPins = can("pos.pin.manage");
   const canStaff = can("pos.staff.manage");
   const canDiagnostics = can("support.logs.view");
+  const canLocations = can("product.view");
   const [diagnosticDeviceId, setDiagnosticDeviceId] = useState<string | null>(null);
   const [diagnosticStatus, setDiagnosticStatus] = useState("all");
   const { data, loading, refetch } = useQuery(Q, {
     fetchPolicy: "cache-and-network",
-    variables: { includeDiagnostics: canDiagnostics, diagnosticDeviceId },
+    variables: { includeDevices: canDevices, includeLocations: canLocations, includeStaff: canStaff, includeDiagnostics: canDiagnostics, diagnosticDeviceId },
     skip: !canDevices && !canPins && !canStaff,
   });
 
   const [deviceForm] = Form.useForm();
   const [editing, setEditing] = useState<Device | null>(null);
   const [deviceOpen, setDeviceOpen] = useState(false);
-  const [issuedToken, setIssuedToken] = useState<string | null>(null);
+  const [issued, setIssued] = useState<{ token: string; device: Device } | null>(null);
+  const [issuing, setIssuing] = useState(false);
+  const issueInFlight = useRef(false);
+  const mounted = useRef(true);
+  const canIssue = useRef(canDevices);
+  canIssue.current = canDevices;
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  useEffect(() => { if (!canDevices) setIssued(null); }, [canDevices]);
+  const issuedToken = issued?.token ?? null;
   const [pinFor, setPinFor] = useState<{ id: string; label: string } | null>(null);
   const [pinValue, setPinValue] = useState("");
 
   const [upsert, { loading: saving }] = useMutation(M_UPSERT);
-  const [issueToken, { loading: issuing }] = useMutation(M_TOKEN);
   const [setPin, { loading: pinSaving }] = useMutation(M_PIN);
   const [setMode] = useMutation(M_MODE);
 
@@ -142,6 +155,9 @@ export default function PosDevicesPage() {
   const pairUrl = issuedToken
     ? `${typeof window === "undefined" ? "" : window.location.origin}/pos?t=${encodeURIComponent(issuedToken)}`
     : "";
+  const pairingQr = issuedToken && typeof window !== "undefined"
+    ? buildPairingQr({ serverUrl: window.location.origin, token: issuedToken })
+    : null;
 
   async function saveDevice() {
     try {
@@ -159,11 +175,32 @@ export default function PosDevicesPage() {
   }
 
   async function handleIssueToken(device: Device) {
+    if (issueInFlight.current || !canIssue.current) return;
+    issueInFlight.current = true;
+    setIssuing(true);
     try {
-      const res = await issueToken({ variables: { deviceId: device.id } });
-      setIssuedToken(res.data?.bmsIssuePosDeviceToken?.token ?? null);
-    } catch (e: any) {
-      message.error(e?.message ?? "ออก token ไม่สำเร็จ");
+      // Do not retain the raw credential in Apollo cache or a useMutation result state.
+      const res = await apollo.mutate({ mutation: M_TOKEN, fetchPolicy: "no-cache", variables: { deviceId: device.id } });
+      const token = res.data?.bmsIssuePosDeviceToken?.token;
+      if (typeof token !== "string" || !/^pos_[A-Za-z0-9_-]{43}$/.test(token)) {
+        throw new Error("Invalid device credential response");
+      }
+      if (mounted.current && canIssue.current) setIssued({ token, device });
+    } catch {
+      if (mounted.current) message.error("ยังไม่ได้รับ token ที่ใช้ได้ ตรวจการเชื่อมต่อก่อนลองใหม่ การออกซ้ำจะยกเลิก token ก่อนหน้า");
+    } finally {
+      issueInFlight.current = false;
+      if (mounted.current) setIssuing(false);
+    }
+  }
+
+  async function copyPairingValue(value: string, success: string) {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(value);
+      if (mounted.current) message.success(success);
+    } catch {
+      if (mounted.current) message.warning("คัดลอกไม่ได้ กรุณาเลือกข้อความแล้วคัดลอกเอง");
     }
   }
 
@@ -619,28 +656,46 @@ export default function PosDevicesPage() {
 
       <Modal
         open={Boolean(issuedToken)}
-        title="token ของเครื่องนี้"
-        onCancel={() => setIssuedToken(null)}
-        footer={<Button onClick={() => setIssuedToken(null)}>ปิด</Button>}
+        title={`จับคู่เครื่อง — ${issued?.device.code ?? ""}`}
+        onCancel={() => setIssued(null)}
+        destroyOnClose
+        footer={<Button onClick={() => setIssued(null)}>ปิด</Button>}
       >
         <Alert closable
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
           message="แสดงครั้งเดียวเท่านั้น"
-          description="ฐานข้อมูลเก็บแค่ hash — ปิดหน้านี้แล้วดูซ้ำไม่ได้ ถ้าหายต้องออกใหม่"
+          description="QR และ token เป็นความลับสำหรับจับคู่เครื่อง อย่าส่งต่อหรือถ่ายภาพเก็บไว้ ฐานข้อมูลเก็บแค่ hash — ปิดแล้วดูซ้ำไม่ได้ การปิดหน้าต่างไม่ได้ยกเลิก token และออกใหม่จะทำให้ตัวเก่าใช้ไม่ได้ทันที"
         />
+        {issued && <>
+          <Typography.Paragraph strong style={{ marginBottom: 4 }}>
+            Android / iOS — สแกนเพื่อเพิ่ม token อัตโนมัติ
+          </Typography.Paragraph>
+          <Typography.Paragraph>
+            {issued.device.name || issued.device.code} · สาขา {locationName(issued.device.locationId)}
+          </Typography.Paragraph>
+          {pairingQr ? <>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+              <QRCode value={pairingQr} size={256} type="svg" bgColor="#ffffff" color="#000000" bordered={false} style={{ padding: 24 }} />
+            </div>
+            <Typography.Paragraph>
+              เปิดแอป → ตั้งค่าเครื่อง → สแกน QR เพื่อจับคู่ แอปจะตรวจและบันทึก token ให้อัตโนมัติ
+              ถ้ามีการจับคู่เดิมจะให้ยืนยันก่อนเปลี่ยน จากนั้นใช้ PIN พนักงานเพื่อเริ่มขาย
+            </Typography.Paragraph>
+          </> : <Alert closable type="warning" showIcon style={{ marginBottom: 12 }}
+            message="ยังสร้าง QR สำหรับมือถือไม่ได้"
+            description="เปิดหน้าหลังบ้านผ่าน HTTPS ที่มือถือเข้าถึงได้ แล้วออก token เมื่อพร้อมจับคู่ localhost และ HTTP ใช้กับ QR นี้ไม่ได้" />}
+        </>}
         <Typography.Paragraph strong style={{ marginBottom: 4 }}>
-          วิธีที่ง่ายที่สุด — เปิดลิงก์นี้บนเครื่องขาย
+          หรือเปิดลิงก์นี้บนเครื่องขาย / คัดลอกไปวางในแอป
         </Typography.Paragraph>
-        <Input.TextArea value={pairUrl} readOnly autoSize />
+        {/* Fixed rows avoid rc-textarea's shared autosize measurement element retaining a secret after close. */}
+        <Input.TextArea value={pairUrl} readOnly rows={3} />
         <Button
           type="primary"
           style={{ marginTop: 8 }}
-          onClick={() => {
-            void navigator.clipboard?.writeText(pairUrl);
-            message.success("คัดลอกลิงก์แล้ว — เปิดลิงก์นี้บนเครื่องขาย");
-          }}
+          onClick={() => void copyPairingValue(pairUrl, "คัดลอกลิงก์แล้ว — เปิดลิงก์นี้บนเครื่องขาย")}
         >
           คัดลอกลิงก์จับคู่
         </Button>
@@ -648,13 +703,10 @@ export default function PosDevicesPage() {
         <Typography.Paragraph strong style={{ marginTop: 20, marginBottom: 4 }}>
           หรือคัดลอกเฉพาะ token ไปวางในช่องบนหน้าจอขาย
         </Typography.Paragraph>
-        <Input.TextArea value={issuedToken ?? ""} readOnly autoSize />
+        <Input.TextArea value={issuedToken ?? ""} readOnly rows={2} />
         <Button
           style={{ marginTop: 8 }}
-          onClick={() => {
-            void navigator.clipboard?.writeText(issuedToken ?? "");
-            message.success("คัดลอกแล้ว");
-          }}
+          onClick={() => void copyPairingValue(issuedToken ?? "", "คัดลอกแล้ว")}
         >
           คัดลอก token
         </Button>

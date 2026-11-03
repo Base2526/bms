@@ -4,6 +4,67 @@ Bare React Native POS client (`react-native@0.87.1`, no Expo). The app uses HTTP
 authoritative reads and commands and GraphQL WS only for scoped invalidation. The database and BMS
 services remain the source of truth.
 
+## Pairing by Admin QR (Android / iOS)
+
+Open Admin **POS Devices** through a device-reachable HTTPS origin, select the register and confirm
+**Issue token**. The one-time display now includes a locally generated QR containing the HTTPS
+origin and the issued device credential (`bmspos://pair?t=...&h=...`). No external QR service is used.
+In the mobile app, open **Device Settings > Scan QR to pair**. A valid scan calls the existing
+server verification and secure-storage flow automatically; a different existing credential requires
+confirmation first. Cashier PIN/RBAC and unresolved offline-cash guards still apply.
+
+QRs are bearer credentials, not one-use tickets: closing the modal removes the displayed QR but
+does not revoke its token. Do not share screenshots. Only the token hash is retained by the backend;
+an existing token cannot be redisplayed. Issuing another token invalidates the old one immediately.
+HTTP/loopback Admin origins do not offer a mobile QR. Both devices must reach the advertised HTTPS
+origin and trust its certificate. Manual link/token entry remains available; externally opened deep
+links still only prefill Settings and require Save.
+
+The QR action uses the existing native QR scanner separately from product lookup. Invalid QR,
+cancelled scans and late results after leaving Settings do not change pairing. The native scanner
+requires a supported iOS device with camera access (iOS 16+) or Android Google Code Scanner/Google
+Play services availability; unavailable scanners fall back to manual entry. Validate camera access,
+first pairing, replacement/cancellation, offline cash and relaunch on physical Android/iOS devices
+before release. Windows cannot verify an iOS native build.
+
+Detailed recheck on `codex/mobile-qr-pairing` (2026-11-03) also covers:
+
+- Admin double-issue prevention, cache-free credential handling and truthful clipboard failure;
+- field-level query permissions, including a device-manager role without staff/product read access;
+- transactional token rotation and audit with server-derived tenant/editor/actor;
+- malformed bootstrap identities/errors, HTTP 401 versus 403/5xx, failed secure-storage writes and
+  incompatible pending cash; only a verified, stored token reports success;
+- credential redaction before status display, diagnostic persistence and restored-queue delivery;
+- navigation remaining on Settings after a rejected first-pair candidate, while a revoked saved
+  credential still clears the cashier and resets navigation;
+- rejecting pairing QR/token inputs on product/stock scanners before calling a SKU resolver.
+
+The three previously failing source-text contracts were updated to verify the current safeguards:
+queue validation both before and after verification, full versus partial return statuses, and the
+release script's dynamically selected schema version. No product behavior was weakened to satisfy
+the old assertions. These checks do not certify physical cameras or a native iOS build. Docker's
+engine was unavailable during this recheck, so token transaction tests use the real compiled service
+and tenant helper with a simulated database transport; actual PostgreSQL RLS/grants/trigger execution
+still require the disposable-database runbook before release.
+
+Final automated results for this recheck: Mobile TypeScript and **386 tests / 48 suites** passed;
+Desktop **91 tests** passed. Web `npm run gate` passed TypeScript, **3,343 pure tests** (2 existing
+opt-in tests skipped, 0 failures), and the production build. The production Admin browser smoke
+passed **9 scenarios** at 1440/390/320 px, including device-only permission, denied permission,
+HTTP origin, failed/empty/malformed issuance, explicit retry, duplicate clicks, clipboard behavior,
+QR screenshot decoding and modal cleanup. Android `:app:assembleDebug` and production-mode Metro
+bundles for both Android/iOS passed. `adb devices` found no connected device. No deployment,
+physical-camera certification or native iOS build is implied by these results.
+
+A second lifecycle recheck on the same date fixes pending replacement confirmations when Settings
+loses focus, rejects stale camera results even when the pairing target or availability changes and
+then returns to its original value, and releases the parent's busy state when a responsive layout
+unmounts the scanner. Late callbacks from an old confirmation or scanner cannot complete a new
+attempt or clear its busy state. Four additional regression tests reproduce these cases. Fresh
+validation passed Mobile TypeScript, **390 tests / 48 suites**, targeted scanner ESLint, and
+production-mode Android/iOS Metro bundles. The native/device/PostgreSQL limitations above remain;
+Web gate, Desktop tests and Android native build results refer to the preceding recheck.
+
 ## Product Positioning
 
 BMS Cloud and BMS Hybrid POS are one product, not separate editions or databases. Cloud is the

@@ -217,12 +217,15 @@ export const bmsPosResolvers = {
     /** คืนค่า token จริงครั้งเดียว — ฐานข้อมูลเก็บแต่ hash */
     async bmsIssuePosDeviceToken(_p: unknown, args: { deviceId: string }, ctx: any) {
       await requirePermission(ctx, "pos.device.manage");
-      const issued = await issuePosDeviceToken(getTenantId(ctx), args.deviceId);
+      const auth = requireAuth(ctx);
+      const issued = await issuePosDeviceToken(getTenantId(ctx), args.deviceId, {
+        editorId: auth.author_id,
+        auditActor: String(ctx?.admin?.email ?? ctx?.admin?.id ?? auth.author_id),
+      });
       if (!issued) {
         throw new GraphQLError("ไม่พบเครื่องขายนี้", { extensions: { code: "NOT_FOUND" } });
       }
-      // ไม่บันทึกค่า token ลง audit — บันทึกแค่ว่าออกให้เครื่องไหน เมื่อไหร่
-      await audit(ctx, "pos.device.token.issue", args.deviceId);
+      // The service commits the token hash and credential-free audit in the same tenant transaction.
       return issued;
     },
 

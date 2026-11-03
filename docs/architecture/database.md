@@ -1,5 +1,14 @@
 # Database
 
+## POS device credential issuance (existing tables)
+
+`issuePosDeviceToken()` updates `bms_pos_devices.token_hash/token_issued_at` and inserts the
+`pos.device.token.issue` row in `bms_audit_log` on the same client inside `beginTenantTx()`.
+The authenticated Admin supplies editor/audit attribution; device lookup is constrained by both
+tenant and device ID. A missing device writes nothing, and audit/update failure rolls back rotation.
+Only the SHA-256 hash is stored; raw tokens and QR contents never enter audit metadata. The QR
+workflow introduces no new table or migration and does not change token lifetime.
+
 ## Operations quality and lot holds (`10.98`)
 
 Four FORCE-RLS tables with strict missing-GUC denial, composite tenant FKs, bms_app SELECT/INSERT

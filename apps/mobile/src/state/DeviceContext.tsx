@@ -15,7 +15,7 @@ import {
   PosBootstrapDocument,
   type PosBootstrapQuery,
 } from '../graphql/generated';
-import type { PairingTarget } from '../lib/pairing';
+import { redactDeviceToken, type PairingTarget } from '../lib/pairing';
 import { graphqlHttpUrl } from '../lib/realtime';
 import { recordPosDiagnosticEvent } from '../lib/supportDiagnostics';
 
@@ -197,6 +197,12 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       // ด้วยข้อความเดิมก็อ่านไม่ออกเหมือนกันว่าเพิ่งถามไปหรือค้างมาจากรอบก่อน
       const settle = (next: VerifyState): VerifyState => {
         if (seq !== verifySeq.current) return { kind: 'IDLE' };
+        if ('message' in next) {
+          next = { ...next, message: redactDeviceToken(next.message, candidate.token) };
+        }
+        if ('cause' in next) {
+          next = { ...next, cause: redactDeviceToken(next.cause, candidate.token) };
+        }
         if (options.publish) {
           setVerify(next);
           setLastCheckedAt(Date.now());
@@ -267,9 +273,12 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         // Headers can arrive before a newer verification, unpair, or authoritative
         // auth rejection. The JSON body is another asynchronous boundary.
         if (seq !== verifySeq.current) return { kind: 'IDLE' };
+        if (body?.errors != null && !Array.isArray(body.errors)) {
+          return settle({ kind: 'SERVER_ERROR', message: 'เซิร์ฟเวอร์ตอบข้อมูลผิดรูปแบบ กรุณาให้ผู้ดูแลตรวจสอบ', cause: 'INVALID_GRAPHQL_RESPONSE' });
+        }
         if (
           body?.errors?.some(
-            error => error.extensions?.code === 'UNAUTHENTICATED',
+            error => error?.extensions?.code === 'UNAUTHENTICATED',
           )
         ) {
           recordPosDiagnosticEvent(candidate, {
@@ -289,27 +298,34 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           });
         }
         if (body?.errors?.length) {
+          const errorMessage = typeof body.errors[0]?.message === 'string'
+            ? body.errors[0].message : 'เซิร์ฟเวอร์อ่านข้อมูลเครื่องไม่ได้';
+          const errorCode = typeof body.errors[0]?.extensions?.code === 'string'
+            ? body.errors[0].extensions.code : 'GRAPHQL_ERROR';
           recordPosDiagnosticEvent(candidate, {
             category: 'pos',
             action: 'pos.device.verify',
             status: 'error',
-            message:
-              body.errors[0]?.message ?? 'เซิร์ฟเวอร์อ่านข้อมูลเครื่องไม่ได้',
+            message: errorMessage,
             context: {
               route: 'DeviceProvider.verifyTarget',
               durationMs: Date.now() - startedAt,
-              errorCode: body.errors[0]?.extensions?.code ?? 'GRAPHQL_ERROR',
+              errorCode,
             },
           });
           return settle({
             kind: 'SERVER_ERROR',
-            message:
-              body.errors[0]?.message ?? 'เซิร์ฟเวอร์อ่านข้อมูลเครื่องไม่ได้',
-            cause: body.errors[0]?.extensions?.code ?? 'GRAPHQL_ERROR',
+            message: errorMessage,
+            cause: errorCode,
           });
         }
         const session = body?.data?.bmsPosSession;
-        if (!session?.device) {
+        if (
+          !session?.device ||
+          typeof session.device.id !== 'string' ||
+          !session.device.id.trim() ||
+          !Array.isArray(session.cashiers)
+        ) {
           recordPosDiagnosticEvent(candidate, {
             category: 'pos',
             action: 'pos.device.verify',
