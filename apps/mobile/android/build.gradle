@@ -19,3 +19,18 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+// SDK CMake 3.22.1 ships Ninja 1.10.2, whose Windows path handling can report an
+// existing Nitro prefab config as missing when its unnormalized path exceeds 260
+// characters, causing endless CMake regeneration. Keep scanner staging out of the
+// deep node_modules path; this is build metadata only, not a dependency-source patch.
+if (System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT).contains("windows")) {
+    subprojects { subproject ->
+        if (subproject.name == "react-native-data-scanner") {
+            subproject.plugins.withId("com.android.library") {
+                subproject.android.externalNativeBuild.cmake.buildStagingDirectory =
+                    rootProject.file(".cxx/scanner")
+            }
+        }
+    }
+}

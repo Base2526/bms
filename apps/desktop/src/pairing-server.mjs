@@ -13,13 +13,13 @@ export function assertPairingServerResponse(response) {
   if (status === 401) {
     throw new PairingServerResponseError(
       status,
-      "Device Token ไม่ถูกต้อง ถูกยกเลิก หรือหมดอายุ กรุณาเปลี่ยนเซิร์ฟเวอร์หรือจับคู่เครื่องใหม่",
+      "Server ไม่รับ Device Token (HTTP 401) กรุณาให้ผู้ดูแลตรวจ URL สถานะเครื่อง และการออก token ใหม่ให้เครื่องเดิมก่อนจับคู่เครื่องใหม่",
     );
   }
   if (status === 403) {
     throw new PairingServerResponseError(
       status,
-      "เครื่องนี้ไม่มีสิทธิ์เข้าใช้งาน Server กรุณาติดต่อผู้ดูแลร้านหรือจับคู่เครื่องใหม่",
+      "เครื่องนี้ไม่มีสิทธิ์เข้าใช้งาน Server (HTTP 403) กรุณาติดต่อผู้ดูแลร้านเพื่อตรวจสิทธิ์",
     );
   }
   if (status >= 500) {

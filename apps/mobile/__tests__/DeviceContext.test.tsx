@@ -1,4 +1,5 @@
 import React from 'react';
+import { AppState } from 'react-native';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 import * as Keychain from 'react-native-keychain';
 import { DeviceProvider, useDevice } from '../src/state/DeviceContext';
@@ -28,11 +29,208 @@ const pairingWriteCount = () =>
 describe('DeviceProvider', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (Keychain.getGenericPassword as jest.Mock).mockResolvedValue(false);
+    (Keychain.setGenericPassword as jest.Mock).mockResolvedValue(true);
     (loadOfflineSales as jest.Mock).mockResolvedValue([]);
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  test('restores the original token after secure storage is unlocked and the app returns to foreground', async () => {
+    const listener = jest.spyOn(AppState, 'addEventListener');
+    (Keychain.getGenericPassword as jest.Mock).mockRejectedValueOnce(new Error('locked'));
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ data: { bmsPosSession: {
+        device: { id: 'device-1', code: 'POS-01' }, cashiers: [],
+      } } }),
+    } as Response);
+    let device!: ReturnType<typeof useDevice>;
+    function Probe() { device = useDevice(); return null; }
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => { tree = ReactTestRenderer.create(<DeviceProvider><Probe /></DeviceProvider>); });
+    expect(device.status).toBe('UNAVAILABLE');
+    (Keychain.getGenericPassword as jest.Mock).mockResolvedValue({ username: TARGET.serverUrl, password: TARGET.token });
+    await act(async () => { listener.mock.calls[0][1]('active'); });
+    expect(device.status).toBe('PAIRED');
+    expect(device.target).toEqual(TARGET);
+    expect(device.storeError).toBeNull();
+    expect(device.verify.kind).toBe('OK');
+    expect(pairingWriteCount()).toBe(0);
+    await act(async () => tree.unmount());
+  });
+
+  test('a delayed secure-storage retry cannot restore an explicitly removed pairing', async () => {
+    const listener = jest.spyOn(AppState, 'addEventListener');
+    (Keychain.getGenericPassword as jest.Mock).mockRejectedValueOnce(new Error('locked'));
+    let device!: ReturnType<typeof useDevice>;
+    function Probe() { device = useDevice(); return null; }
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => { tree = ReactTestRenderer.create(<DeviceProvider><Probe /></DeviceProvider>); });
+    let finishRead!: (value: unknown) => void;
+    (Keychain.getGenericPassword as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finishRead = resolve; }));
+    await act(async () => { listener.mock.calls[0][1]('active'); });
+    await act(async () => { await device.unpair(); });
+    await act(async () => { finishRead({ username: TARGET.serverUrl, password: TARGET.token }); });
+    expect(device.status).toBe('UNPAIRED');
+    expect(device.target).toBeNull();
+    expect(device.verify.kind).toBe('IDLE');
+    await act(async () => tree.unmount());
+  });
+
+  test('a delayed bootstrap body cannot undo an authoritative auth rejection', async () => {
+    let resolveBody!: (body: unknown) => void;
+    const body = new Promise(resolve => { resolveBody = resolve; });
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true, status: 200, json: () => body,
+    } as Response);
+    let device!: ReturnType<typeof useDevice>;
+    function Probe() { device = useDevice(); return null; }
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => {
+      tree = ReactTestRenderer.create(<DeviceProvider><Probe /></DeviceProvider>);
+    });
+    let pending!: Promise<void>;
+    await act(async () => { pending = device.pair(TARGET); });
+    await act(async () => { device.markAuthenticationRejected(); });
+    await act(async () => {
+      resolveBody({ data: { bmsPosSession: {
+        device: { id: 'device-1', code: 'POS-01' }, cashiers: [],
+      } } });
+      await expect(pending).rejects.toThrow('ถูกยกเลิก');
+    });
+    expect(device.verify.kind).toBe('REJECTED');
+    expect(pairingWriteCount()).toBe(0);
+    await act(async () => tree.unmount());
+  });
+
+  test.each(['different-device', 'different-server', 'legacy', 'read-error'])(
+    'pairing rechecks cash queued during verification: %s', async scenario => {
+      (loadOfflineSales as jest.Mock).mockResolvedValueOnce([]);
+      if (scenario === 'read-error') {
+        (loadOfflineSales as jest.Mock).mockRejectedValueOnce(new Error('queue unavailable'));
+      } else {
+        (loadOfflineSales as jest.Mock).mockResolvedValueOnce([{
+          serverUrl: scenario === 'different-server' ? 'https://other.example.com' : TARGET.serverUrl,
+          deviceId: scenario === 'legacy' ? null : scenario === 'different-device' ? 'device-2' : 'device-1',
+        }]);
+      }
+      jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true, status: 200, json: async () => ({ data: { bmsPosSession: {
+          device: { id: 'device-1', code: 'POS-01' }, cashiers: [],
+        } } }),
+      } as Response);
+      let device!: ReturnType<typeof useDevice>;
+      function Probe() { device = useDevice(); return null; }
+      let tree!: ReactTestRenderer.ReactTestRenderer;
+      await act(async () => { tree = ReactTestRenderer.create(<DeviceProvider><Probe /></DeviceProvider>); });
+      await act(async () => { await expect(device.pair(TARGET)).rejects.toThrow(); });
+      expect(pairingWriteCount()).toBe(0);
+      expect(device.status).toBe('UNPAIRED');
+      await act(async () => tree.unmount());
+    },
+  );
+
+  test('unpair rechecks unresolved cash and fails closed when the queue cannot be read', async () => {
+    let device!: ReturnType<typeof useDevice>;
+    function Probe() { device = useDevice(); return null; }
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => {
+      tree = ReactTestRenderer.create(<DeviceProvider><Probe /></DeviceProvider>);
+    });
+    (loadOfflineSales as jest.Mock).mockResolvedValueOnce([{ id: 'accepted-cash' }]);
+    await expect(device.unpair()).rejects.toThrow('ออฟไลน์ค้าง');
+    (loadOfflineSales as jest.Mock).mockRejectedValueOnce(new Error('Keychain unavailable'));
+    await expect(device.unpair()).rejects.toThrow('Keychain unavailable');
+    expect(Keychain.resetGenericPassword).not.toHaveBeenCalled();
+    await act(async () => tree.unmount());
+  });
+
+  test('a delayed queue recheck cannot persist a pairing after authentication rejection', async () => {
+    let finishRead!: (value: unknown) => void;
+    (loadOfflineSales as jest.Mock).mockResolvedValueOnce([]).mockImplementationOnce(
+      () => new Promise(resolve => { finishRead = resolve; }),
+    );
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ data: { bmsPosSession: {
+        device: { id: 'device-1', code: 'POS-01' }, cashiers: [],
+      } } }),
+    } as Response);
+    let device!: ReturnType<typeof useDevice>;
+    function Probe() { device = useDevice(); return null; }
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => { tree = ReactTestRenderer.create(<DeviceProvider><Probe /></DeviceProvider>); });
+    let pending!: Promise<void>;
+    await act(async () => { pending = device.pair(TARGET); });
+    await act(async () => { device.markAuthenticationRejected(); });
+    await act(async () => {
+      finishRead([]);
+      await expect(pending).rejects.toThrow('ถูกยกเลิก');
+    });
+    expect(pairingWriteCount()).toBe(0);
+    expect(device.verify.kind).toBe('REJECTED');
+    await act(async () => tree.unmount());
+  });
+
+  test('pair and unpair cannot race an unfinished secure-storage write', async () => {
+    let finishWrite!: (value: boolean) => void;
+    (Keychain.setGenericPassword as jest.Mock).mockImplementation((_, __, options) =>
+      options.service === 'com.bms.pos.device'
+        ? new Promise(resolve => { finishWrite = resolve; }) : Promise.resolve(true),
+    );
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ data: { bmsPosSession: {
+        device: { id: 'device-1', code: 'POS-01' }, cashiers: [],
+      } } }),
+    } as Response);
+    let device!: ReturnType<typeof useDevice>;
+    function Probe() { device = useDevice(); return null; }
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => { tree = ReactTestRenderer.create(<DeviceProvider><Probe /></DeviceProvider>); });
+    let pending!: Promise<void>;
+    await act(async () => { pending = device.pair(TARGET); });
+    await expect(device.unpair()).rejects.toThrow('กำลังเปลี่ยนข้อมูลจับคู่');
+    await expect(device.pair(TARGET)).rejects.toThrow('กำลังเปลี่ยนข้อมูลจับคู่');
+    expect((Keychain.resetGenericPassword as jest.Mock).mock.calls.filter(
+      ([options]) => options.service === 'com.bms.pos.device',
+    )).toHaveLength(0);
+    await act(async () => { finishWrite(true); await pending; });
+    expect(device.target).toEqual(TARGET);
+    (Keychain.setGenericPassword as jest.Mock).mockResolvedValue(true);
+    await act(async () => { await device.unpair(); });
+    expect(device.status).toBe('UNPAIRED');
+    await act(async () => tree.unmount());
+  });
+
+  test('a rejection during a secure-storage write is rechecked instead of overwritten by old success', async () => {
+    let finishWrite!: (value: boolean) => void;
+    (Keychain.setGenericPassword as jest.Mock).mockImplementation((_, __, options) =>
+      options.service === 'com.bms.pos.device'
+        ? new Promise(resolve => { finishWrite = resolve; }) : Promise.resolve(true),
+    );
+    let revoked = false;
+    jest.spyOn(globalThis, 'fetch').mockImplementation(async () => ({
+      ok: !revoked, status: revoked ? 401 : 200,
+      json: async () => ({ data: { bmsPosSession: {
+        device: { id: 'device-1', code: 'POS-01' }, cashiers: [],
+      } } }),
+    } as Response));
+    let device!: ReturnType<typeof useDevice>;
+    function Probe() { device = useDevice(); return null; }
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => { tree = ReactTestRenderer.create(<DeviceProvider><Probe /></DeviceProvider>); });
+    let pending!: Promise<void>;
+    await act(async () => { pending = device.pair(TARGET); });
+    await act(async () => { revoked = true; device.markAuthenticationRejected(); });
+    await act(async () => {
+      finishWrite(true);
+      await expect(pending).rejects.toThrow('เซิร์ฟเวอร์ไม่รับ token');
+    });
+    expect(device.verify.kind).toBe('REJECTED');
+    expect(device.target).toEqual(TARGET);
+    expect(pairingWriteCount()).toBe(1);
+    await act(async () => tree.unmount());
   });
 
   test('verifies the newly paired target instead of the previous React state', async () => {

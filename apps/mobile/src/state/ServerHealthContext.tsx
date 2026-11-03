@@ -33,20 +33,27 @@ export function ServerHealthProvider({
   const {
     status: pairingStatus,
     target,
+    verify,
     markAuthenticationRejected,
   } = useDevice();
   const [status, setStatus] = useState<ServerHealthStatus>('checking');
   const [lastOnlineAt, setLastOnlineAt] = useState<number | null>(null);
   const activeProbe = useRef<Promise<boolean> | null>(null);
+  const probeController = useRef<AbortController | null>(null);
+  const probeGeneration = useRef(0);
+  const authenticationRejected = verify.kind === 'REJECTED';
 
   const checkNow = useCallback(async () => {
     if (activeProbe.current) return activeProbe.current;
-    if (pairingStatus !== 'PAIRED' || !target) {
+    if (pairingStatus !== 'PAIRED' || !target || authenticationRejected) {
       setStatus('offline');
       return false;
     }
+    const generation = probeGeneration.current;
+    const isCurrent = () => generation === probeGeneration.current;
     const probe = (async () => {
       const controller = new AbortController();
+      probeController.current = controller;
       const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
       try {
         const response = await fetch(graphqlHttpUrl(target.serverUrl), {
@@ -60,6 +67,7 @@ export function ServerHealthProvider({
           body: JSON.stringify({ query: print(PosBootstrapDocument) }),
           signal: controller.signal,
         });
+        if (!isCurrent()) return false;
         if (response.status === 401) {
           markAuthenticationRejected();
           setStatus('offline');
@@ -73,6 +81,7 @@ export function ServerHealthProvider({
           data?: { bmsPosSession?: unknown };
           errors?: Array<{ extensions?: { code?: string } }>;
         } | null;
+        if (!isCurrent()) return false;
         if (
           body?.errors?.some(
             error => error.extensions?.code === 'UNAUTHENTICATED',
@@ -90,24 +99,32 @@ export function ServerHealthProvider({
         setLastOnlineAt(Date.now());
         return true;
       } catch {
-        setStatus('offline');
+        if (isCurrent()) setStatus('offline');
         return false;
       } finally {
         clearTimeout(timer);
-        activeProbe.current = null;
+        if (isCurrent()) {
+          activeProbe.current = null;
+          probeController.current = null;
+        }
       }
     })();
     activeProbe.current = probe;
     return probe;
-  }, [markAuthenticationRejected, pairingStatus, target]);
+  }, [authenticationRejected, markAuthenticationRejected, pairingStatus, target]);
 
   useEffect(() => {
     setStatus('checking');
+    setLastOnlineAt(null);
     checkNow().catch(() => undefined);
     const appState = AppState.addEventListener('change', next => {
       if (next === 'active') checkNow().catch(() => undefined);
     });
     return () => {
+      probeGeneration.current += 1;
+      probeController.current?.abort();
+      probeController.current = null;
+      activeProbe.current = null;
       appState.remove();
     };
   }, [checkNow]);

@@ -57,7 +57,7 @@ import {
   type MobilePosExpensesQuery,
   type MobilePosPurchaseOrdersQuery,
 } from '../../graphql/generated';
-import { createIdempotencyKey } from '../../lib/operation';
+import { createIdempotencyKey, isDecidedRejection } from '../../lib/operation';
 import { useSession } from '../../state/SessionContext';
 import { useStoreMode } from '../../state/StoreModeContext';
 import { useRestaurantOperations } from '../../state/RestaurantOperationsContext';
@@ -143,6 +143,7 @@ export default function OperationsScreen({
   const [tableCount, setTableCount] = useState('12');
   const [evidenceRef, setEvidenceRef] = useState('');
   const operationKeys = useRef<Record<string, string>>({});
+  const operationInFlight = useRef(false);
   const {
     qrSubmissions,
     serviceCalls,
@@ -272,7 +273,10 @@ export default function OperationsScreen({
       | undefined,
     successStatuses?: string[],
   ) => {
-    if (!result) throw new Error('ไม่ได้รับผลยืนยันจากเซิร์ฟเวอร์');
+    if (!result || typeof result.status !== 'string' || !result.status.trim()) {
+      // An incomplete result is unknown, not an authoritative rejection. Keep the retry key.
+      throw new Error('ไม่ได้รับผลยืนยันจากเซิร์ฟเวอร์');
+    }
     if (
       result.reason ||
       (successStatuses && !successStatuses.includes(result.status ?? '')) ||
@@ -291,7 +295,8 @@ export default function OperationsScreen({
     refresh?: () => Promise<unknown>,
     idempotencyPrefix?: string,
   ) => {
-    if (!credentials || working) return;
+    if (!credentials || operationInFlight.current) return;
+    operationInFlight.current = true;
     const idempotencyKey = idempotencyPrefix
       ? (operationKeys.current[key] ??= createIdempotencyKey(idempotencyPrefix))
       : undefined;
@@ -299,9 +304,13 @@ export default function OperationsScreen({
     try {
       await action(idempotencyKey);
       if (idempotencyPrefix) delete operationKeys.current[key];
-      if (refresh) await refresh();
+      // The command has committed; a failed read must not invite another cash/stock action.
+      if (refresh) await refresh().catch(() => undefined);
     } catch (cause) {
-      if (idempotencyPrefix && cause instanceof BusinessResultError) {
+      if (
+        idempotencyPrefix &&
+        (cause instanceof BusinessResultError || isDecidedRejection(cause))
+      ) {
         delete operationKeys.current[key];
       }
       Alert.alert(
@@ -309,6 +318,7 @@ export default function OperationsScreen({
         cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
       );
     } finally {
+      operationInFlight.current = false;
       setWorking('');
     }
   };

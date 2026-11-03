@@ -11,6 +11,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
   var reactNativeFactory: RCTReactNativeFactory?
 
   func application(
+    _ app: UIApplication,
+    open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    return RCTLinkingManager.application(app, open: url, options: options)
+  }
+
+  func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
@@ -41,7 +49,6 @@ class ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {
   override func bundleURL() -> URL? {
 #if DEBUG
     let provider = RCTBundleURLProvider.sharedSettings()
-    provider.jsLocation = "localhost:8082"
     return provider.jsBundleURL(forBundleRoot: "index")
 #else
     Bundle.main.url(forResource: "main", withExtension: "jsbundle")

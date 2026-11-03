@@ -12,6 +12,7 @@ import {
   selectCustomerDisplay,
 } from "./display-policy.mjs";
 import { parsePairingHandoff, parsePairingInput } from "./pairing.mjs";
+import { createPairingWriter, readSavedPairing } from "./pairing-store.mjs";
 import {
   adminUrlForServer,
   cloudAdminUrl,
@@ -52,10 +53,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SETUP_FILE = path.join(__dirname, "../renderer/setup.html");
 const STARTUP_FILE = path.join(__dirname, "../renderer/startup.html");
 const PRELOAD_FILE = path.join(__dirname, "preload.cjs");
-const CONFIG_VERSION = 1;
 
 let mainWindow = null;
 let activePairing = null;
+let pairingRestoreError = null;
+let pairingWriter = null;
 let customerDisplayWindow = null;
 let customerDisplayWindowDisplayId = null;
 let customerDisplayWindowKind = null;
@@ -158,39 +160,31 @@ function decryptedToken(value) {
 
 async function readPairing() {
   try {
-    const raw = JSON.parse(await readFile(configPath(), "utf8"));
-    if (raw?.version !== CONFIG_VERSION || typeof raw.serverUrl !== "string" || typeof raw.token !== "string") return null;
-    const token = decryptedToken(raw.token);
-    const parsed = token ? parsePairingInput({ serverUrl: raw.serverUrl, pairingInput: token }) : null;
-    return parsed?.ok ? {
-      serverUrl: parsed.serverUrl,
-      token: parsed.token,
-      posEntryPath: cachedPosEntryPath(raw.posEntryPath),
-    } : null;
+    const pairing = await readSavedPairing(configPath(), decryptedToken);
+    pairingRestoreError = null;
+    return pairing;
   } catch (error) {
-    if (error?.code !== "ENOENT") console.error("Unable to read desktop pairing configuration");
+    pairingRestoreError = error;
+    console.error("Unable to read desktop pairing configuration");
     return null;
   }
 }
 
-async function writePairing(pairing) {
-  const target = configPath();
-  const temporary = `${target}.tmp`;
-  const payload = JSON.stringify({
-    version: CONFIG_VERSION,
-    serverUrl: pairing.serverUrl,
-    token: encryptedToken(pairing.token),
-    posEntryPath: cachedPosEntryPath(pairing.posEntryPath),
-  });
-  await writeFile(temporary, payload, { encoding: "utf8", mode: 0o600 });
-  await rename(temporary, target);
+function pairingPersistence() {
+  pairingWriter ??= createPairingWriter(configPath(), encryptedToken);
+  return pairingWriter;
+}
+
+function writePairing(pairing) {
+  return pairingPersistence().write(pairing);
 }
 
 async function removePairing() {
   activePairing = null;
+  pairingRestoreError = null;
   installApplicationMenu();
   closeCustomerDisplayWindow();
-  await rm(configPath(), { force: true });
+  await pairingPersistence().remove();
 }
 
 function pairingHandoffArgument() {
@@ -886,6 +880,19 @@ function startPosNavigation() {
   return wrappedOperation;
 }
 
+async function restoreSavedPairing() {
+  activePairing = await readPairing();
+  if (pairingRestoreError) {
+    await showStartup("storage-error", pairingRestoreError.userMessage);
+    return;
+  }
+  // A handoff may initialize an absent pairing, never overwrite an unreadable one.
+  if (!activePairing) activePairing = await consumePairingHandoff();
+  installApplicationMenu();
+  if (activePairing) void startPosNavigation();
+  else await showSetup();
+}
+
 async function verifyPairing(pairing) {
   let response;
   try {
@@ -1066,8 +1073,9 @@ function registerIpc() {
   });
 
   ipcMain.handle("bms-pos:retry-startup", async (event) => {
-    if (!isStartupFrame(event) || !activePairing) return { ok: false };
-    void startPosNavigation();
+    if (!isStartupFrame(event)) return { ok: false };
+    if (activePairing) void startPosNavigation();
+    else await restoreSavedPairing();
     return { ok: true };
   });
 
@@ -1185,17 +1193,12 @@ if (!singleInstance) {
     } catch (error) {
       if (error?.code !== "ENOENT") console.error("Unable to read receipt printer configuration");
     }
-    activePairing = await readPairing();
-    if (!activePairing) activePairing = await consumePairingHandoff();
     launchAtLoginEnabled = await launchAtLogin.initialize().catch((error) => {
       console.error("Unable to apply launch-at-login default", error?.message ?? error);
       return false;
     });
     installApplicationMenu();
-    if (activePairing) {
-      void startPosNavigation();
-    }
-    else await showSetup();
+    await restoreSavedPairing();
     screen.on("display-added", scheduleCustomerDisplayReconcile);
     screen.on("display-removed", scheduleCustomerDisplayReconcile);
     screen.on("display-metrics-changed", scheduleCustomerDisplayReconcile);
@@ -1204,7 +1207,7 @@ if (!singleInstance) {
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createMainWindow();
-      void (activePairing ? startPosNavigation() : showSetup());
+      void (activePairing ? startPosNavigation() : restoreSavedPairing());
     }
   });
 

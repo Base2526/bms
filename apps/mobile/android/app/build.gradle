@@ -111,7 +111,10 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            signingConfig uploadKeystorePropertiesFile.exists() ? signingConfigs.releaseUpload : signingConfigs.debug
+            // Missing upload credentials produce an unsigned artifact, never a debug-signed release.
+            if (uploadKeystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.releaseUpload
+            }
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }

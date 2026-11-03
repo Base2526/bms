@@ -28,16 +28,7 @@
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
       <Testables>
-         <TestableReference
-            skipped = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "00E356ED1AD99517003FC87E"
-               BuildableName = "BmsPosTests.xctest"
-               BlueprintName = "BmsPosTests"
-               ReferencedContainer = "container:BmsPos.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
+         <!-- This project currently has no XCTest target. JavaScript tests run through Jest. -->
       </Testables>
    </TestAction>
    <LaunchAction

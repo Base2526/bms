@@ -82,6 +82,38 @@ Generic transfer/count commands return a reviewable quality-hold result after fu
 
 ### Operator-initiated update notification
 
+An ordinary application update does not expire or rotate the POS device token. The backend checks
+the active device and stored token hash, with no expiry or app-version condition. Issuing another
+token for the same device replaces that hash immediately. A different/restored server database can
+also reject an otherwise unchanged local token; do not infer expiry from a red banner alone.
+
+The shell restores `pairing.json` from Electron's stable user-data directory using the OS keystore.
+Keep the same application identity, OS account and secure-storage backend across upgrades. Only a
+missing file means first-run setup. An unreadable, malformed, unsupported or undecryptable existing
+file now opens the local recovery screen, retains the original file, and offers **Retry** to read it
+again after the store is unlocked. The installer handoff cannot replace that unreadable pairing.
+The existing explicit **Change server** action removes pairing; it is not the first step for a
+temporary storage or network failure.
+
+Pairing-file writes and removal share one ordered queue. A background route-cache write must finish
+before an explicit unpair removes the file, so it cannot restore the old token afterward. Concurrent
+writes cannot overwrite each other's temporary file. A failed write reports failure to its caller
+without blocking a later removal or retry; tests cover delayed writes and rename failure.
+
+Server rejection text identifies HTTP 401 without claiming expiry; HTTP 403 asks for permission
+review without recommending re-pairing. Neither response automatically removes the saved token.
+Record the exact message/status, old/new versions, server host, OS and whether installation was in
+place when investigating an upgrade. Never include the token, encrypted record or cashier PIN.
+
+The 2026-11-03 audit passed desktop syntax checks, all 91 Node tests after the second review, and the Windows Electron setup/
+startup smoke including storage-recovery text at 1100x760 and 700x900. The 50 desktop pure-contract
+tests and Web typecheck also passed. `/admin/manual` was opened in Chrome at 1440px and 390px in
+Thai and English with browser-only API fixtures; the new guidance rendered without page errors.
+Saved-record/decryption tests
+use fixtures; they are not certification of an installer upgrade or a macOS/Linux keystore. Native
+upgrade testing must confirm the same device remains paired under the same OS account before and
+after installation, and cover locked-store recovery and revoked tokens separately.
+
 The `/pos/app`, `/pos/restaurant` and standalone `/pos` headers have a download icon in Desktop
 only. Pharmacy uses the full sell workspace embedded in `/pos/app`; embedded workspaces do not
 mount a second update menu. Restaurant keeps the menu across floor, kitchen and settings screens,

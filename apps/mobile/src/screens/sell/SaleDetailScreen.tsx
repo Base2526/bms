@@ -26,7 +26,7 @@ import {
   MobilePosVoidDocument,
   PosBootstrapDocument,
 } from '../../graphql/generated';
-import { createIdempotencyKey } from '../../lib/operation';
+import { createIdempotencyKey, isDecidedRejection } from '../../lib/operation';
 import { paymentMethodLabel } from '../../lib/paymentMath';
 import { exchangeSeedLines, refundPaymentOptions } from '../../lib/returnMath';
 import { useCart } from '../../state/CartContext';
@@ -102,6 +102,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
   const [approverId, setApproverId] = useState('');
   const [approverPin, setApproverPin] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const submissionInFlight = useRef(false);
   const [refundRefs, setRefundRefs] = useState<Record<string, string>>({});
   const [secondaryAction, setSecondaryAction] = useState('');
   const returnKey = useRef<string | null>(null);
@@ -169,7 +170,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
     setApproverPin('');
   };
 
-  const submit = async () => {
+  const performSubmit = async () => {
     if (!session || !action || submitting) return;
     const isReturnAction = action !== 'VOID';
     const isPartialReturn = action === 'RETURN' || action === 'EXCHANGE';
@@ -251,6 +252,9 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
           },
         });
         const result = response.data?.bmsPosReturn;
+        if (!result?.status) {
+          throw new Error('ยังไม่ได้รับผลยืนยันการคืนสินค้า กรุณาลองอีกครั้งด้วยรายการเดิม');
+        }
         const successStatus =
           action === 'RETURN_FULL' ? 'RETURNED' : 'PARTIAL_RETURNED';
         if (result?.status !== successStatus) {
@@ -383,6 +387,9 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
           },
         });
         const result = response.data?.bmsPosVoid;
+        if (!result?.status) {
+          throw new Error('ยังไม่ได้รับผลยืนยัน Void กรุณาลองอีกครั้งด้วยรายการเดิม');
+        }
         if (result?.status !== 'VOIDED') {
           voidKey.current = null;
           throw new Error(result?.reason ?? result?.status ?? 'Void ไม่สำเร็จ');
@@ -393,9 +400,13 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
           `ยอดคืน ฿${(result.refundAmount ?? 0).toFixed(2)}`,
         );
       }
-      await refresh();
+      await refresh().catch(() => undefined);
       close();
     } catch (error) {
+      if (isDecidedRejection(error)) {
+        if (isReturnAction) returnKey.current = null;
+        else voidKey.current = null;
+      }
       Alert.alert(
         action === 'VOID'
           ? 'Void ไม่สำเร็จ'
@@ -406,6 +417,17 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
       );
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const submit = async () => {
+    // Lock before any confirmation await: React state alone cannot stop same-frame taps.
+    if (submissionInFlight.current) return;
+    submissionInFlight.current = true;
+    try {
+      await performSubmit();
+    } finally {
+      submissionInFlight.current = false;
     }
   };
 

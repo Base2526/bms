@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { platformClientLabel, platformSecurityNote } from "../src/secure-storage.mjs";
+import { PairingRestoreError } from "../src/pairing-store.mjs";
 
 const { app, BrowserWindow, ipcMain } = electronMain;
 
@@ -27,7 +28,7 @@ async function run() {
   const window = new BrowserWindow({
     width: 1100,
     height: 760,
-    show: true,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, "smoke-preload.cjs"),
       contextIsolation: true,
@@ -185,6 +186,29 @@ async function run() {
     );
     const startupImage = await window.webContents.capturePage();
     await writeFile(startupScreenshotPath, startupImage.toPNG());
+
+    // Recovery text must remain readable at both desktop and compact window sizes.
+    const recoveryMessage = new PairingRestoreError().userMessage;
+    for (const [width, height] of [[1100, 760], [700, 900]]) {
+      window.setContentSize(width, height);
+      await window.loadFile(path.join(__dirname, "../renderer/startup.html"), {
+        query: { state: "storage-error", message: recoveryMessage },
+      });
+      const recovery = await window.webContents.executeJavaScript(`({
+        heading: document.querySelector('#error-heading')?.textContent,
+        message: document.querySelector('#error-message')?.textContent,
+        errorHidden: document.querySelector('#error-state')?.hidden,
+        retryDisabled: document.querySelector('#retry-button')?.disabled,
+        overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        overflowY: document.documentElement.scrollHeight > document.documentElement.clientHeight
+      })`);
+      if (recovery.heading !== "ยังอ่านข้อมูลจับคู่เดิมไม่ได้"
+        || recovery.message !== recoveryMessage || recovery.errorHidden || recovery.retryDisabled
+        || recovery.overflowX || recovery.overflowY) {
+        throw new Error(`Invalid pairing recovery layout: ${JSON.stringify(recovery)}`);
+      }
+      await writeFile(path.join(outputDir, `pairing-recovery-${width}.png`), (await window.webContents.capturePage()).toPNG());
+    }
     console.log(JSON.stringify({ ok: true, platform: process.platform, version, screenshotPath, compactScreenshotPath, startupScreenshotPath, state, compactState, loadingState, localRuntimeState, startupState }));
   } finally {
     window.destroy();
