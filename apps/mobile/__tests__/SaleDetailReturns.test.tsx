@@ -62,6 +62,21 @@ async function openAction(label: string) {
   }
 }
 
+test('two taps before rendering send only one return request', async () => {
+  let finish!: (value: unknown) => void;
+  mockReturn.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  await openAction('คืนบางรายการ');
+  const press = button('ยืนยัน').props.onPress;
+  let first!: Promise<void>;
+  let second!: Promise<void>;
+  await act(async () => { first = press(); second = press(); });
+  expect(mockReturn).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    finish({ data: { bmsPosReturn: { status: 'PARTIAL_RETURNED', refundAmount: 50 } } });
+    await Promise.all([first, second]);
+  });
+});
+
 test.each([
   ['คืนทั้งบิล', 'FULL', 'RETURNED'],
   ['คืนบางรายการ', 'PARTIAL', 'PARTIAL_RETURNED'],
@@ -101,4 +116,46 @@ test('stock rejection keeps the return form open and displays the server reason'
   expect(mockRefresh).not.toHaveBeenCalled();
   expect(mockReplace).not.toHaveBeenCalled();
   expect(renderer.root.findByType(Modal).props.visible).toBe(true);
+});
+
+test('a failed refresh cannot turn a committed partial return into a retryable failure', async () => {
+  mockReturn.mockResolvedValue({ data: { bmsPosReturn: { status: 'PARTIAL_RETURNED', refundAmount: 50 } } });
+  mockRefresh.mockRejectedValue(new Error('read network failure'));
+  await openAction('คืนบางรายการ');
+  await act(async () => { await button('ยืนยัน').props.onPress(); });
+  expect(mockReturn).toHaveBeenCalledTimes(1);
+  expect(renderer.root.findByType(Modal).props.visible).toBe(false);
+  expect(Alert.alert).not.toHaveBeenCalledWith('คืนสินค้าไม่สำเร็จ', expect.anything());
+});
+
+test.each(['CONFLICT', 'FORBIDDEN', 'INTERNAL_SERVER_ERROR', 'NETWORK'])(
+  'return retry rotates a decided %s key but preserves an unknown result', async code => {
+    const error = code === 'NETWORK' ? new Error('connection lost') : {
+      graphQLErrors: [{ extensions: { code } }],
+    };
+    mockReturn.mockRejectedValue(error);
+    await openAction('คืนบางรายการ');
+    await act(async () => { await button('ยืนยัน').props.onPress(); });
+    await act(async () => { await button('ยืนยัน').props.onPress(); });
+    const keys = mockReturn.mock.calls.map(([args]) => args.variables.input.idempotencyKey);
+    expect(keys).toHaveLength(2);
+    if (code === 'CONFLICT' || code === 'FORBIDDEN') expect(keys[1]).not.toBe(keys[0]);
+    else expect(keys[1]).toBe(keys[0]);
+  },
+);
+
+test.each(['คืนบางรายการ', 'Void ทั้งบิล'])('%s retains its key when the response has no business result', async label => {
+  const mutation = label === 'Void ทั้งบิล' ? mockVoid : mockReturn;
+  mutation.mockResolvedValue({ data: {} });
+  await openAction(label);
+  if (label === 'Void ทั้งบิล') {
+    await act(() => button('Manager').props.onPress());
+    await act(() => input('PIN ผู้อนุมัติ').props.onChangeText('5678'));
+  }
+  await act(async () => { await button('ยืนยัน').props.onPress(); });
+  await act(async () => { await button('ยืนยัน').props.onPress(); });
+  const keys = mutation.mock.calls.map(([args]) => args.variables.input.idempotencyKey);
+  expect(keys).toHaveLength(2);
+  expect(keys[1]).toBe(keys[0]);
+  expect(mockRefresh).not.toHaveBeenCalled();
 });

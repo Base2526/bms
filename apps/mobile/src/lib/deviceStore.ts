@@ -5,7 +5,7 @@ import type { PairingTarget } from './pairing';
 //
 // เหตุผลที่ต้องเป็น secure storage ไม่ใช่ที่เก็บธรรมดา:
 //   • device token ไม่มีวันหมดอายุ (ตั้งใจ — เครื่องหน้าร้านเปิดค้างทั้งวัน ไม่มี session ของคน)
-//     ใครได้ค่านี้ไปคือขายของ/เปิดลิ้นชัก/อ่านยอดของร้านนั้นได้จนกว่าจะมีคนไปออก token ใหม่
+//     ผู้ถือ token อ่านข้อมูลที่เครื่องมีสิทธิ์ได้; การขาย/เปิดลิ้นชักยังต้องตรวจ PIN + permission ฝั่ง server
 //   • ไอแพดพกออกนอกร้านได้ ต่างจากแท็บเล็ตติดผนังที่เว็บ POS ออกแบบไว้ตอนแรก
 //   • AsyncStorage เขียนไฟล์ธรรมดาใน sandbox ของแอป — backup/เครื่อง jailbreak อ่านได้
 //
@@ -27,7 +27,9 @@ export async function loadPairing(): Promise<LoadResult> {
     // username = serverUrl · password = token (Keychain เก็บได้แค่คู่นี้ ไม่ใช่ JSON ก้อนใหญ่)
     const serverUrl = creds.username ?? '';
     const token = creds.password ?? '';
-    if (!serverUrl || !token) return { status: 'UNPAIRED' };
+    if (!serverUrl || !token) {
+      return { status: 'UNAVAILABLE', error: 'พบข้อมูลจับคู่เดิมแต่ข้อมูลไม่ครบ กรุณาตรวจที่เก็บข้อมูลปลอดภัย ข้อมูลเดิมยังไม่ถูกลบ' };
+    }
     return { status: 'PAIRED', target: { serverUrl, token } };
   } catch (e: any) {
     return { status: 'UNAVAILABLE', error: String(e?.message ?? e) };
@@ -40,8 +42,8 @@ export async function savePairing(target: PairingTarget): Promise<void> {
     target.token,
     {
       service: SERVICE,
-      // เข้าถึงได้หลังปลดล็อกเครื่องครั้งแรกหลังบูต — จอ POS ต้องกลับมาทำงานเองได้หลังไฟดับ
-      // โดยไม่ต้องมีคนมาปลดล็อกก่อน (`WHEN_UNLOCKED` จะทำให้แอปที่รีสตาร์ทเองอ่านไม่ได้)
+      // หลังบูตต้องปลดล็อกเครื่องครั้งแรกก่อน จากนั้นอ่านได้แม้หน้าจอล็อกอีกครั้ง
+      // หากเปิดก่อนปลดล็อก DeviceProvider จะลองอ่านซ้ำเมื่อแอปกลับมา foreground
       accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK,
     },
   );

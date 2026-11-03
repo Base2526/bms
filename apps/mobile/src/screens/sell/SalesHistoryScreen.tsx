@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Svg, { Line, Path, Rect } from 'react-native-svg';
@@ -104,25 +104,14 @@ function TotalMetricIcon({ color }: { color: string }) {
 export default function SalesHistoryScreen({ navigation }: Props) {
   const { colors, spacing, typography, radius } = useTheme();
   const { isTablet } = useResponsive();
-  const { sales, loading, error, refresh } = useSales();
-  const [query, setQuery] = useState('');
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return sales;
-    return sales.filter(sale => {
-      const haystack = [
-        sale.receiptNo,
-        sale.member?.name,
-        sale.member?.memberNo,
-        sale.tableCode,
-        ...sale.lines.flatMap(line => [line.sku, line.name]),
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(q);
-    });
-  }, [query, sales]);
+  const {
+    sales: filtered,
+    search: query,
+    setSearch: setQuery,
+    loading,
+    error,
+    refresh,
+  } = useSales();
 
   const todayTotal = useMemo(
     () => filtered.reduce((sum, sale) => sum + sale.total, 0),
@@ -138,7 +127,7 @@ export default function SalesHistoryScreen({ navigation }: Props) {
       <View style={{ flex: 1, padding: spacing.lg }}>
         <ScreenHeader
           title="ประวัติการขาย"
-          subtitle="ใบเสร็จล่าสุดจากเซิร์ฟเวอร์"
+          subtitle="ใบเสร็จจากเซิร์ฟเวอร์ · แสดงไม่เกิน 50 รายการต่อการค้นหา"
           onBack={() => navigation.goBack()}
           roundBackButton={!isTablet}
         />

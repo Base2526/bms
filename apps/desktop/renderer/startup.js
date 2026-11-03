@@ -11,9 +11,12 @@ if (params.get("state") === "starting") {
   loadingHeading.textContent = "กำลังเริ่ม Retail Local Server";
   loadingMessage.textContent = params.get("message")
     || "พบ Server ในเครื่องนี้ กำลังเริ่มบริการ กรุณารอสักครู่";
-} else if (params.get("state") === "error") {
+} else if (["error", "storage-error"].includes(params.get("state"))) {
   loadingState.hidden = true;
   errorState.hidden = false;
+  if (params.get("state") === "storage-error") {
+    document.querySelector("#error-heading").textContent = "ยังอ่านข้อมูลจับคู่เดิมไม่ได้";
+  }
   errorMessage.textContent = params.get("message") || "กรุณาตรวจอินเทอร์เน็ตหรือเซิร์ฟเวอร์แล้วลองใหม่";
 }
 

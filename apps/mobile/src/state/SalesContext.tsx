@@ -1,4 +1,10 @@
-import React, { createContext, useCallback, useContext, useMemo } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from 'react';
 import { useQuery } from '@apollo/client';
 import { MobilePosSalesDocument } from '../graphql/generated';
 import type { MockPaymentInput } from '../lib/paymentMath';
@@ -50,6 +56,8 @@ export interface SaleSnapshot {
 
 interface SalesContextValue {
   sales: SaleSnapshot[];
+  search: string;
+  setSearch: (value: string) => void;
   loading: boolean;
   error: string | null;
   findSale: (saleId: string) => SaleSnapshot | undefined;
@@ -75,8 +83,9 @@ function paymentMethod(value: string): MockPaymentInput['method'] {
 
 export function SalesProvider({ children }: { children: React.ReactNode }) {
   const { session } = useSession();
+  const [search, setSearch] = useState('');
   const query = useQuery(MobilePosSalesDocument, {
-    variables: { q: null, limit: 50 },
+    variables: { q: search.trim() || null, limit: 50 },
     skip: !session,
     notifyOnNetworkStatusChange: true,
   });
@@ -199,12 +208,14 @@ export function SalesProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<SalesContextValue>(
     () => ({
       sales,
+      search,
+      setSearch,
       loading: query.loading,
       error: query.error?.message ?? null,
       findSale,
       refresh,
     }),
-    [findSale, query.error?.message, query.loading, refresh, sales],
+    [findSale, query.error?.message, query.loading, refresh, sales, search],
   );
 
   return (

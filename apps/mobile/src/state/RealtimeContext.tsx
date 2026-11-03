@@ -223,7 +223,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (
       !enabled ||
-      (effectiveStatus !== 'offline' && effectiveStatus !== 'degraded')
+      (effectiveStatus === 'connected' ||
+        effectiveStatus === 'authentication_required')
     ) {
       return;
     }

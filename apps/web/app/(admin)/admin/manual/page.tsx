@@ -559,6 +559,7 @@ const MENU_CARDS_TH: MenuCard[] = [
     desc: "เตรียมเครื่องหน้าร้าน, PIN, หน่วยขาย, สติกเกอร์ และเช็กความพร้อมก่อนเปิดขาย",
     bullets: [
       "POS Devices ใช้เพิ่มเครื่องขาย, ออก token จับคู่, ตั้งสาขา, และจัดการ PIN พนักงานหน้าร้าน",
+      "อัปเดต Desktop/Mobile ไม่ทำให้ device token หมดอายุ: การออก token ใหม่ให้เครื่องเดิมทำให้ตัวเก่าใช้ไม่ได้ หากอ่านข้อมูลจับคู่ไม่ได้ ให้ใช้บัญชีระบบเดิม ปลดล็อกที่เก็บข้อมูล แล้วกดลองใหม่บน Desktop หรือกลับเข้าแอป Mobile; อย่าลบแอปหรือจับคู่ใหม่เพียงเพราะแถบแดง ตรวจข้อความและ HTTP status ก่อน โดย 403 ให้ผู้ดูแลตรวจสิทธิ์ และหากมีเงินสดออฟไลน์ค้างต้องซิงก์หรือตรวจสอบให้เสร็จก่อนเลิกจับคู่",
       "POS Readiness ใช้เช็ก blocker ก่อนเปิดขาย เช่น VAT, สต็อก, refund ค้าง, และสินค้าที่ยังไม่พร้อม",
       "Product packs ใช้เพิ่มหน่วยขาย + barcode ของ pack หรือหลายหน่วย",
       "Product labels ใช้พิมพ์สติกเกอร์บาร์โค้ดจากข้อมูลสินค้า/pack ที่ตั้งไว้แล้ว",
@@ -1862,6 +1863,7 @@ const MENU_CARDS_EN: MenuCard[] = [
     desc: "Prepare registers, PINs, extra selling units, barcode labels, and readiness checks before the counter goes live",
     bullets: [
       "POS Devices adds registers, issues pairing tokens, assigns branches, and manages cashier PINs",
+      "Updating Desktop/Mobile does not expire the device token; issuing a new token for the same register invalidates the previous one. If saved pairing cannot be read, use the same OS account, unlock secure storage, then retry on Desktop or return to the Mobile app. Do not uninstall or re-pair based only on a red banner: check the message and HTTP status first. Ask an administrator to review permissions for 403. Resolve pending offline cash before unpairing.",
       "POS Readiness checks blockers such as VAT setup, stock readiness, pending refunds, and pharmacy-only prerequisites",
       "Product packs adds extra units and barcodes for packs or alternate selling units",
       "Product labels prints barcode stickers from the product and pack data you already configured",

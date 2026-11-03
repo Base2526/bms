@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import { print } from 'graphql';
+import { AppState } from 'react-native';
 import { clearPairing, loadPairing, savePairing } from '../lib/deviceStore';
 import { loadOfflineSales } from '../lib/offlineSales';
 import {
@@ -100,16 +101,38 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
   // แยกจาก status เพราะการเปลี่ยน token ขณะที่ status ยังเป็น PAIRED
   // ก็ต้องตรวจ token ใหม่ โดยไม่รอ effect นี้ยิงซ้ำ
   const verifiedOnce = useRef(false);
+  const pairingRevision = useRef(0);
+  const pairingChangeInFlight = useRef(false);
+  const changePairing = useCallback(async (change: () => Promise<void>) => {
+    if (pairingChangeInFlight.current) {
+      throw new Error('กำลังเปลี่ยนข้อมูลจับคู่ กรุณารอให้เสร็จก่อนลองใหม่');
+    }
+    pairingChangeInFlight.current = true;
+    try {
+      await change();
+    } finally {
+      pairingChangeInFlight.current = false;
+    }
+  }, []);
 
   useEffect(() => {
     let alive = true;
+    const revision = pairingRevision.current;
+    let unavailable = false;
+    let restoring = false;
     async function restorePairing() {
+      if (restoring || revision !== pairingRevision.current) return;
+      restoring = true;
       const res = await loadPairing();
-      if (!alive) return;
+      restoring = false;
+      if (!alive || revision !== pairingRevision.current) return;
+      unavailable = res.status === 'UNAVAILABLE';
       if (res.status === 'PAIRED') {
+        setStoreError(null);
         setTarget(res.target);
         setStatus('PAIRED');
       } else if (res.status === 'UNPAIRED') {
+        setStoreError(null);
         setStatus('UNPAIRED');
       } else {
         setStoreError(res.error);
@@ -117,21 +140,40 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       }
     }
     restorePairing().catch(() => undefined);
+    // A locked Keychain/Keystore at launch is not a missing or expired device token.
+    // Retry the same service after the operator unlocks it and returns to the app.
+    const subscription = AppState.addEventListener('change', next => {
+      if (next === 'active' && unavailable)
+        restorePairing().catch(() => undefined);
+    });
     return () => {
       alive = false;
+      subscription.remove();
     };
   }, []);
 
-  const unpair = useCallback(async () => {
-    await clearPairing();
-    // ถ้ามีคำขอ verify ค้างอยู่ ผลของมันต้องหมดสิทธิ์ทันทีที่เลิกจับคู่
-    verifySeq.current += 1;
-    setTarget(null);
-    setStatus('UNPAIRED');
-    setStoreError(null);
-    setVerify({ kind: 'IDLE' });
-    setLastCheckedAt(null);
-  }, []);
+  const unpair = useCallback(
+    () =>
+      changePairing(async () => {
+        // Recheck at the mutation boundary: a confirmation dialog may have stayed open
+        // while an accepted-cash row was added. A failed queue read must also block removal.
+        if ((await loadOfflineSales()).length > 0) {
+          throw new Error(
+            'ยังมีรายการรับเงินออฟไลน์ค้าง กรุณาซิงก์หรือตรวจสอบให้เสร็จก่อนเลิกจับคู่',
+          );
+        }
+        await clearPairing();
+        pairingRevision.current += 1;
+        // ถ้ามีคำขอ verify ค้างอยู่ ผลของมันต้องหมดสิทธิ์ทันทีที่เลิกจับคู่
+        verifySeq.current += 1;
+        setTarget(null);
+        setStatus('UNPAIRED');
+        setStoreError(null);
+        setVerify({ kind: 'IDLE' });
+        setLastCheckedAt(null);
+      }),
+    [changePairing],
+  );
 
   const markAuthenticationRejected = useCallback(() => {
     // GraphQL/WS already received an authoritative 401. Verifying the same
@@ -154,6 +196,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       // ทุกทางออกที่ "ได้คำตอบแล้ว" ต้องประทับเวลา ไม่ใช่เฉพาะทางที่ผ่าน — คำตอบที่ล้มซ้ำ
       // ด้วยข้อความเดิมก็อ่านไม่ออกเหมือนกันว่าเพิ่งถามไปหรือค้างมาจากรอบก่อน
       const settle = (next: VerifyState): VerifyState => {
+        if (seq !== verifySeq.current) return { kind: 'IDLE' };
         if (options.publish) {
           setVerify(next);
           setLastCheckedAt(Date.now());
@@ -221,6 +264,9 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           data?: PosBootstrapQuery;
           errors?: Array<{ message?: string; extensions?: { code?: string } }>;
         } | null;
+        // Headers can arrive before a newer verification, unpair, or authoritative
+        // auth rejection. The JSON body is another asynchronous boundary.
+        if (seq !== verifySeq.current) return { kind: 'IDLE' };
         if (
           body?.errors?.some(
             error => error.extensions?.code === 'UNAUTHENTICATED',
@@ -352,54 +398,82 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
   }, [target, verifyTarget]);
 
   const pair = useCallback(
-    async (next: PairingTarget) => {
-      const queued = await loadOfflineSales();
-      if (queued.some(record => record.serverUrl !== next.serverUrl)) {
-        throw new Error(
-          'ยังมีเงินสดออฟไลน์ค้างจากเซิร์ฟเวอร์เดิม ห้ามเปลี่ยนเซิร์ฟเวอร์จนกว่าจะซิงก์หรือตรวจสอบเสร็จ',
-        );
-      }
-      if (
-        queued.some(record => !record.deviceId) &&
-        (!target ||
-          target.serverUrl !== next.serverUrl ||
-          target.token !== next.token)
-      ) {
-        throw new Error(
-          'คิวออฟไลน์รุ่นเก่ายังไม่ผูกกับรหัสเครื่อง ห้ามเปลี่ยน token จนกว่าจะซิงก์หรือตรวจสอบโดยผู้ดูแลเสร็จ',
-        );
-      }
-      const checked = await verifyTarget(next, { publish: target == null });
-      if (checked.kind !== 'OK') {
-        const reason =
-          checked.kind === 'IDLE'
-            ? 'การตรวจ token ถูกยกเลิก กรุณาลองใหม่'
-            : checked.kind === 'CHECKING'
-            ? 'ยังตรวจ token ไม่เสร็จ'
-            : checked.message;
-        throw new Error(reason);
-      }
-      if (
-        queued.some(
-          record =>
-            record.deviceId && record.deviceId !== checked.info.deviceId,
-        )
-      ) {
-        throw new Error(
-          'token นี้เป็นคนละเครื่องกับคิวเงินสดออฟไลน์เดิม กรุณาใช้ token ใหม่ของเครื่องเดิม',
-        );
-      }
-      await savePairing(next);
-      // Set this before React can flush the PAIRED render; otherwise the startup effect can race
-      // pair() and send the same bootstrap verification twice.
-      verifiedOnce.current = true;
-      setTarget(next);
-      setStatus('PAIRED');
-      setStoreError(null);
-      setVerify(checked);
-      setLastCheckedAt(Date.now());
-    },
-    [target, verifyTarget],
+    (next: PairingTarget) =>
+      changePairing(async () => {
+        const assertCompatibleQueue = (
+          queued: Awaited<ReturnType<typeof loadOfflineSales>>,
+          deviceId?: string,
+        ) => {
+          if (queued.some(record => record.serverUrl !== next.serverUrl)) {
+            throw new Error(
+              'ยังมีเงินสดออฟไลน์ค้างจากเซิร์ฟเวอร์เดิม ห้ามเปลี่ยนเซิร์ฟเวอร์จนกว่าจะซิงก์หรือตรวจสอบเสร็จ',
+            );
+          }
+          if (
+            queued.some(record => !record.deviceId) &&
+            (!target ||
+              target.serverUrl !== next.serverUrl ||
+              target.token !== next.token)
+          ) {
+            throw new Error(
+              'คิวออฟไลน์รุ่นเก่ายังไม่ผูกกับรหัสเครื่อง ห้ามเปลี่ยน token จนกว่าจะซิงก์หรือตรวจสอบโดยผู้ดูแลเสร็จ',
+            );
+          }
+          if (
+            deviceId &&
+            queued.some(
+              record => record.deviceId && record.deviceId !== deviceId,
+            )
+          ) {
+            throw new Error(
+              'token นี้เป็นคนละเครื่องกับคิวเงินสดออฟไลน์เดิม กรุณาใช้ token ใหม่ของเครื่องเดิม',
+            );
+          }
+        };
+        assertCompatibleQueue(await loadOfflineSales());
+        const checked = await verifyTarget(next, { publish: target == null });
+        if (checked.kind !== 'OK') {
+          const reason =
+            checked.kind === 'IDLE'
+              ? 'การตรวจ token ถูกยกเลิก กรุณาลองใหม่'
+              : checked.kind === 'CHECKING'
+              ? 'ยังตรวจ token ไม่เสร็จ'
+              : checked.message;
+          throw new Error(reason);
+        }
+        // Verification can take seconds; accepted cash may have appeared while it was in flight.
+        const checkedSequence = verifySeq.current;
+        assertCompatibleQueue(await loadOfflineSales(), checked.info.deviceId);
+        if (checkedSequence !== verifySeq.current) {
+          throw new Error('การตรวจ token ถูกยกเลิก กรุณาลองใหม่');
+        }
+        await savePairing(next);
+        pairingRevision.current += 1;
+        // Set this before React can flush the PAIRED render; otherwise the startup effect can race
+        // pair() and send the same bootstrap verification twice.
+        verifiedOnce.current = true;
+        setTarget(next);
+        setStatus('PAIRED');
+        setStoreError(null);
+        if (checkedSequence === verifySeq.current) {
+          setVerify(checked);
+          setLastCheckedAt(Date.now());
+        } else {
+          // Storage is asynchronous too. Keep the saved credential but do not overwrite
+          // a newer rejection with the pre-write success; check the persisted target again.
+          const latest = await verifyTarget(next);
+          if (latest.kind !== 'OK') {
+            throw new Error(
+              latest.kind === 'REJECTED' ||
+              latest.kind === 'SERVER_ERROR' ||
+              latest.kind === 'OFFLINE'
+                ? latest.message
+                : 'บันทึกข้อมูลจับคู่แล้ว แต่ยังตรวจ token ไม่สำเร็จ กรุณาลองใหม่',
+            );
+          }
+        }
+      }),
+    [changePairing, target, verifyTarget],
   );
 
   // ถามเซิร์ฟเวอร์หนึ่งครั้งตอนเปิดแอปถ้าเครื่องจับคู่ไว้แล้ว — หน้า Login จะได้บอกได้ว่า

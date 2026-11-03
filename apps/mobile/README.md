@@ -23,6 +23,8 @@ The in-repository RN workflows are connected to the generated GraphQL contract:
   discount preview;
 - sale/deposit, split cash/QR/card/bank/wallet/store-credit/credit payment, receipt delivery,
   sale history, partial/full return, exchange cart, refund completion, void, and parked bills;
+- server-backed sale-history search (receipt, customer/member, SKU and barcode), returning at most
+  50 matching receipts rather than searching only the 50 most recently loaded receipts;
 - full receipt preview after checkout and from sale detail on Android/iOS, with server-returned
   line amounts, extra charges, discounts, VAT, split tender, cash change, return/void status,
   and the eligible full-tax-invoice request QR; email/linked-member LINE delivery requires a
@@ -57,7 +59,7 @@ The in-repository RN workflows are connected to the generated GraphQL contract:
   the same server-backed callback without moving stock or adding sale items during lookup;
 - kitchen ticket board, station SLA, bulk status updates, and fallback refresh;
 - named GraphQL subscriptions, bounded event deduplication, batched active-query refetch,
-  foreground/reconnect recovery, and degraded polling.
+  foreground/reconnect recovery, and fallback polling while connecting, reconnecting or degraded.
 - separate HTTP/server reachability status plus a bounded encrypted recovery queue for eligible
   retail cash sales; the queue excludes PINs, syncs serially with the original idempotency key,
   recovers a committed result before retrying, normalizes interrupted writes after process restart,
@@ -144,11 +146,161 @@ npm run ios
 npm run android
 ```
 
+The `start`, `ios` and `android` scripts default to Metro port **8082** because the Docker WS service
+uses 8081. iOS uses React Native's host discovery and configured Metro port instead of forcing
+`localhost`; a physical iPhone must be able to reach the development computer. For a custom Metro
+port, pass the same `--port` to both the start and platform commands.
+
 The `Mobile contracts` workflow (`.github/workflows/mobile-contracts.yml`) runs on every PR and
 push to `main`/`develop`, including backend-only changes. It checks generated GraphQL types,
 TypeScript, lint, and Jest; it does not build Android/iOS binaries or exercise real devices.
 After updating `schema.graphql`, run `npm run graphql:codegen` here and include the generated diff
 in the same change. CI runs `npm run graphql:check` to reject stale committed output.
+
+Android release builds use the upload signing configuration only when the existing external
+`secure/bms-pos-upload-key.properties` file is available. Without it the release artifact is
+**unsigned**, never silently signed with the committed debug key. Debug builds retain debug signing.
+Store credentials and signing keys outside source control; an unsigned artifact is not a distributable
+release. Signed release, Play upload and TestFlight/archive verification remain separate checks.
+
+## iOS and Android audit 2026-11-03
+
+Branch: `codex/mobile-ios-android-audit`. This review covers native configuration, pairing and
+authentication state, GraphQL contracts, catalog/scanner, checkout/returns, offline recovery,
+realtime, history search and existing restaurant/board-game/inventory contracts. It is a code and
+automated-test audit, not real-device certification or proof of every backend database transition.
+
+### Corrections
+
+| Finding | Correction | Regression evidence |
+| --- | --- | --- |
+| iOS registered the pairing scheme but did not forward links received while the app was running | Forward `application(_:open:options:)` to `RCTLinkingManager` | Native code follows the [React Native linking contract](https://reactnative.dev/docs/linking); device smoke still required |
+| The shared iOS scheme referenced a `BmsPosTests` target that does not exist in the project | Remove the dangling test-target reference | XML/project-reference inspection; this project still has no XCTest/UI-test target |
+| iOS forced `localhost:8082` while default npm scripts started Metro on 8081; loopback also prevents host discovery on physical phones | Default all three scripts to 8082 and let React Native resolve the development host | CLI option/configuration inspection; physical-device debug launch still required |
+| Android release silently used debug signing when upload credentials were absent | Leave release unsigned until upload credentials are supplied | Gradle configuration reviewed; signed release verification still required |
+| A bootstrap response could pass the sequence check at headers, then finish JSON parsing after a newer rejection/unpair | Recheck the sequence after body parsing and before publishing verification | Delayed body cannot clear a rejection or persist a superseded pairing |
+| An old health request could reject the newly paired device or publish stale online state | Abort and invalidate the old probe; isolate cleanup by generation; clear last-online evidence when pairing changes | Delayed header/body rejection, concurrent probe completion and rejected-token tests |
+| Unpair checked pending offline cash only before the confirmation dialog | Recheck in `DeviceProvider.unpair()` immediately before removing credentials; storage-read failure also blocks removal | Pending cash and unavailable secure-storage tests |
+| A socket stuck connecting/reconnecting did not receive HTTP fallback refreshes | Reconcile active reads every 30 seconds in these states as well as offline/degraded | Fake-timer tests for all connection states and cleanup |
+| Counter actions and returns retained spent keys after decided GraphQL rejections; return/void also dropped keys on missing results | Clear keys on decided errors; preserve them for network/internal-server uncertainty and absent business results | Deposit, return and void tests covering decided errors, unknown failures and missing results |
+| A successful counter action/return could be reported as failed when its follow-up read failed | Keep the committed outcome; do not reopen a completed return as a retryable failure | Successful deposit and partial-return tests with a rejected refresh |
+| Sale-history search only filtered the latest 50 locally and could discard barcode matches | Send the search through the existing branch-scoped GraphQL service; retain its matches and 50-row bound | Search query, old receipt, barcode and clear-search tests |
+| Secure storage unavailable at launch stayed unavailable after unlocking; incomplete saved credentials looked unpaired | Retry the same Keychain service on foreground, distinguish corrupt records from absent records, and ignore a late restore after explicit pairing changes | Locked/unlocked, corrupt/absent, unchanged token and late-restore tests |
+| Same-frame taps could send duplicate counter/return commands before React disabled the button | Acquire a synchronous in-flight lock, including before exchange confirmations | Two-tap deposit and return tests failed before the fix and pass after it |
+| An object with missing/null/empty operation status was treated as a decided rejection and released its key | Treat incomplete status as unknown and retain the original retry key | Three malformed deposit-result regressions |
+| Pairing used the cash queue from before the network verification and could overlap unpair/storage writes | Re-read the queue before saving, reject overlapping pairing changes, cancel superseded checks and reverify when rejection arrives during the write | Late queue rows/read failure, concurrent pair/unpair, delayed queue rejection and delayed write rejection |
+
+### Automated verification
+
+| Check | Result |
+| --- | --- |
+| `npm run graphql:check` | Passed; generated output matches the committed schema |
+| `npm run typecheck` | Passed |
+| `npm run lint` | Passed |
+| `npm test -- --runInBand` | 43 suites, 307 tests passed after the second review (baseline: 39 suites, 266 tests) |
+| `node scripts/run-contract-tests.mjs pure mobile` from repo root | 97 tests passed |
+| `node scripts/run-contract-tests.mjs pure react-native` | 9 tests passed |
+| `node scripts/run-contract-tests.mjs pure offline` | 9 tests passed |
+| Metro production JavaScript bundles for iOS and Android | Passed; this does not compile Swift/Kotlin/C++ or produce a signed app |
+| Android `:app:assembleDebug` | Passed after the scanner staging fix and passed again on a second Gradle invocation; Debug APK contains scanner libraries for all four configured ABIs |
+| Scanner `externalNativeBuildDebug` / `externalNativeBuildRelease` | Both passed for all four ABIs; Release here is the native scanner library, not a full release APK/AAB |
+| Android APK checks | `apksigner verify --verbose` and `zipalign -c -P 16 4` passed; this is a debug-signed development APK |
+| iOS native build/archive | Not run: Windows host has no Xcode |
+
+Metro reports a dependency importing React Native's private feature-flag path and falls back to file
+resolution; bundling succeeds. Do not equate the warning with native hardware compatibility.
+
+On this Windows host, Android Studio's bundled OpenJDK 25.0.3 initially failed to establish the
+Gradle loopback pipe. A short existing directory supplied through `-Djdk.net.unixdomain.tmpdir`
+resolved it. The native dependency build also needed `--enable-native-access=ALL-UNNAMED` to avoid
+a restricted-method warning interrupting the CMake/Prefab step. These were process-local build
+options, not changes to machine settings or the application's runtime permissions. With `JAVA_HOME`
+and `ANDROID_HOME` pointing at the installed JDK/SDK, the equivalent invocation from repository root is:
+
+```powershell
+New-Item -ItemType Directory -Force .test-output/java-tmp | Out-Null
+$mobileJavaTemp = (Resolve-Path .test-output/java-tmp).Path
+$env:JAVA_TOOL_OPTIONS = "-Djdk.net.unixdomain.tmpdir=$mobileJavaTemp --enable-native-access=ALL-UNNAMED"
+Set-Location apps/mobile/android
+./gradlew.bat :app:assembleDebug --no-daemon --console=plain -PreactNativeDevServerPort=8082
+```
+
+The scanner failure was traced to Windows path handling in SDK CMake 3.22.1's Ninja 1.10.2.
+`ninja -d explain -n NitroDataScanner` reported the Nitro prefab config missing even though it
+existed. In this checkout its unnormalized path (including `arm64-v8a/../prefab`) was 263 characters,
+while the normalized path was 250. Root `android/build.gradle` now sets the scanner's
+`externalNativeBuild.cmake.buildStagingDirectory` to `android/.cxx/scanner` on Windows. The same
+dependency path becomes 232 characters, and the fresh scanner Debug native build passed for
+`arm64-v8a`, `armeabi-v7a`, `x86` and `x86_64`; the full application then assembled successfully.
+The second Gradle invocation also completed `:app:assembleDebug` and the scanner's
+`:react-native-data-scanner:externalNativeBuildRelease` across all four ABIs. A direct Debug
+`ninja -d explain -n NitroDataScanner` then reported `no work to do`, rather than regenerating CMake.
+This uses the supported [AGP staging-directory setting](https://developer.android.com/reference/tools/gradle-api/9.0/com/android/build/api/dsl/Cmake#buildStagingDirectory(kotlin.Any))
+outside temporary `build/` output. Background: [Ninja Windows long-path issue](https://github.com/ninja-build/ninja/issues/1900).
+No generated Ninja file or scanner dependency source needs a manual edit, and non-Windows builds
+retain their existing staging location. Very deep checkout roots can still require shorter paths.
+
+The development artifact is `android/app/build/outputs/apk/debug/app-debug.apk`. It requires Metro
+on port 8082 and is not the upload-signed release package. Do not uninstall an existing shop app to
+work around a debug/release signing mismatch. Native scanner operation, camera permissions,
+Google scanner UI availability and pairing retention still require a real-device upgrade test.
+
+Build logs are retained locally in `.test-output/mobile-scanner-short-path.log`,
+`.test-output/mobile-android-fixed-build.log` and `.test-output/mobile-android-recheck.log` at repository
+root. Existing non-fatal AGP opt-out deprecations, dependency manifest/legacy API warnings, SDK
+XML-version mismatch and DateTimePicker CMake object-path warnings remain visible in the logs.
+
+### Pairing after an application update
+
+`authenticatePosDevice()` checks the stored SHA-256 token hash and active device flag; device tokens
+have no expiry and are not tied to an app version. Issuing a new token for the **same device** replaces
+the hash and invalidates the old token. Updating the server against a different/restored database can
+also change which token is recognized. These are distinct from an application update.
+
+Mobile keeps the same `com.bms.pos.device` Keychain service. An update must preserve the application
+identity/signing configuration and installed data; uninstalling/clearing data is not an upgrade test.
+Do not remove the app to work around a signing mismatch, especially with accepted offline cash.
+An unavailable Keychain/Keystore is shown as a storage problem; after unlocking and returning to the
+app, restoration retries without deleting or reissuing the credential. Incomplete saved records also
+remain intact for recovery. A late restore cannot undo explicit unpairing.
+
+A red banner alone cannot identify the cause: record its text, HTTP status, app version, platform,
+server host and whether the app was updated in place. Do not include tokens or PINs in diagnostics.
+Check the existing pairing/connection status first; 401 needs device/URL/token investigation, 403
+needs permission review, and network/5xx failures need connection/server recovery. Pending offline
+cash must be resolved before removing pairing. See the Desktop README for OS-keystore recovery.
+
+### Device and deployment checks still required
+
+The audit host is Windows, has no Xcode, no Android emulator package, and `adb devices` returned no
+attached device. Visual navigation, keyboard behaviour and native OS callbacks could not be exercised
+here. Use a development tenant and complete the following on both a phone and a tablet where applicable:
+
+1. Open pairing links from a terminated, backgrounded and foregrounded app. Confirm the expected
+   host is displayed and pairing only occurs after the operator saves. Revoke/rotate the token;
+   confirm denial is distinguished from a temporary outage and an ordinary permission denial.
+2. Select a cashier, enter valid/invalid PINs, switch cashier and reopen the app. Check phone keyboard,
+   tablet rotation, safe areas, Android Back, iOS gestures and receipt/checkout modal dismissal.
+3. Scan with the camera and focused HID input; test denied camera permission, cancellation, CR+LF,
+   pack/variant selection and unsupported devices. Android's scanner dependency uses Google's scanner
+   UI; availability must be checked on the target device, including devices without Google services.
+4. Run cash and split tender, rounding, discount second-person approval, park/resume, deposit, partial
+   return, void and refund completion. Interrupt a request after sending; verify one server transaction
+   and the original retry identity. Verify actual stock movements, payment and audit rows in a local DB.
+5. Queue eligible retail cash while offline, restart, recover and sync; test wrong cashier/shift,
+   corrupted or unavailable secure storage, shift-close and unpair denial. Restaurant/pharmacy/member
+   and non-cash sales must not acquire offline eligibility. Never accept the same cash twice.
+6. Drop WS while HTTP remains available, background/foreground the app, and restore connectivity.
+   Check restaurant QR/service-call badges, kitchen tickets, board-game sessions and branch inventory.
+7. Print Thai text and scan the receipt QR on real 58/80 mm printers. Test local-network denial on iOS,
+   paper-out, cover-open, unplugged network and a partial write. No automatic reprint or cash-drawer kick.
+8. Build/archive and verify release signatures, installation/upgrades and platform store submission
+   separately. No production DB tests or store publication were performed by this audit.
+
+Features still explicitly outside current delivery: Bluetooth/USB/AirPrint/IPP printing, global HID
+capture outside the scanner modal, cash-drawer hardware, suspended/terminated-app FCM/APNs push,
+offline PIN login/full offline catalog and pharmacy evidence capture/upload. These are product gaps,
+not capabilities proven by a green Jest run. Native Wi-Fi printing remains a hardware pilot.
 
 Use a URL reachable from the simulator/device when pairing. `localhost` inside Android does not
 refer to the development Mac; use the emulator host alias or a LAN address as appropriate.

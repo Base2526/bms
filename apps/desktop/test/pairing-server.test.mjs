@@ -27,11 +27,15 @@ test("pairing server probe accepts only successful HTTP responses", () => {
 test("pairing server probe gives actionable authentication errors", () => {
   assert.throws(
     () => assertPairingServerResponse({ ok: false, status: 401 }),
-    (error) => error.userMessage.includes("จับคู่เครื่องใหม่"),
+    (error) => error.userMessage.includes("HTTP 401")
+      && error.userMessage.includes("ออก token ใหม่")
+      && !error.userMessage.includes("หมดอายุ"),
   );
   assert.throws(
     () => assertPairingServerResponse({ ok: false, status: 403 }),
-    (error) => error.userMessage.includes("ไม่มีสิทธิ์"),
+    (error) => error.userMessage.includes("ไม่มีสิทธิ์")
+      && error.userMessage.includes("HTTP 403")
+      && !error.userMessage.includes("จับคู่เครื่องใหม่"),
   );
 });
 
