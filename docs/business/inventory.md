@@ -71,7 +71,8 @@ Recheck on 2026-11-05: the final application code passed `npm run gate` (3,370 p
 and `staff-stock-transfer-route` (2). The last suite used its required `bms_requisition_test`
 database on the same isolated cluster; the others used `bms_realtime_test`. The clone was restored
 from the local test database, with `10.107` applied only to the clone. This is verification evidence,
-not a production deployment or a claim that `10.107` has merged. DB test typechecking passed.
+not a production deployment or evidence that target databases have `10.107`. The code and migration
+are committed, but rollout remains WIP. DB test typechecking passed.
 The production-build Purchase/manual browser smoke passed Thai/English at 1440/390px with mocked
 APIs, including lot/date submission and clearing the previous receipt's form fields.
 

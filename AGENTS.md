@@ -151,7 +151,8 @@ before changing that domain.
   `chat_auto_confirm` on a no-deposit branch, ≤3 active CHAT bookings per customer.
 - Branch inventory (`7.98`): transfers are send then receive; counts apply `counted − snapshot`;
   native ops use the `9.88` idempotency record. Counts refuse lot/expiry identity they cannot carry.
-  `10.107` transfer-lot support remains WIP until merged and DB-verified; do not claim it available.
+  `10.107` transfer-lot code and migration are committed, but remain WIP for rollout; clone DB
+  verification is not production deployment. Do not claim the feature available in production.
 - Store operations (`10.91`–`10.98`): checklists/rosters are evidence, not payroll/presence proof;
   production moves stock only on explicit post; material plans never move stock; quality holds
   restrict usable lots without changing physical or valuation balances.
