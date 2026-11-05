@@ -2,6 +2,7 @@ import electronMain from "electron/main";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import vm from "node:vm";
 import { platformClientLabel, platformSecurityNote } from "../src/secure-storage.mjs";
 import { PairingRestoreError } from "../src/pairing-store.mjs";
 
@@ -187,6 +188,22 @@ async function run() {
     const startupImage = await window.webContents.capturePage();
     await writeFile(startupScreenshotPath, startupImage.toPNG());
 
+    for (const [selector, message] of [
+      ["#change-server-button", "ลบข้อมูลจับคู่ไม่สำเร็จ ข้อมูลเดิมยังอยู่"],
+      ["#retry-button", "เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่"],
+    ]) {
+      const failedAction = await window.webContents.executeJavaScript(`(async () => {
+        document.querySelector(${JSON.stringify(selector)}).click();
+        await new Promise((resolve) => { const tick = () => document.querySelector('#retry-button').disabled ? setTimeout(tick, 20) : resolve(); tick(); });
+        return { message: document.querySelector('#error-message').textContent,
+          retryDisabled: document.querySelector('#retry-button').disabled,
+          changeDisabled: document.querySelector('#change-server-button').disabled };
+      })()`);
+      if (failedAction.message !== message || failedAction.retryDisabled || failedAction.changeDisabled) {
+        throw new Error(`Recovery action failure was not usable: ${JSON.stringify(failedAction)}`);
+      }
+    }
+
     // Recovery text must remain readable at both desktop and compact window sizes.
     const recoveryMessage = new PairingRestoreError().userMessage;
     for (const [width, height] of [[1100, 760], [700, 900]]) {
@@ -209,7 +226,66 @@ async function run() {
       }
       await writeFile(path.join(outputDir, `pairing-recovery-${width}.png`), (await window.webContents.capturePage()).toPNG());
     }
-    console.log(JSON.stringify({ ok: true, platform: process.platform, version, screenshotPath, compactScreenshotPath, startupScreenshotPath, state, compactState, loadingState, localRuntimeState, startupState }));
+    // Exercise the real reopen function with native windows, leaving a utility window alive.
+    const mainSource = (await readFile(path.join(__dirname, "../src/main.mjs"), "utf8")).replace(/\r\n/g, "\n");
+    const start = mainSource.indexOf("function reopenMainWindow(");
+    const reopenSource = mainSource.slice(start, mainSource.indexOf("\n}\n", start) + 3);
+    const oldCashier = new BrowserWindow({show:false});
+    oldCashier.destroy();
+    let reopened;
+    let opened = 0;
+    try {
+      vm.runInNewContext(`${reopenSource};reopenMainWindow();`, {
+        app, mainWindow:oldCashier, activePairing:{},
+        createMainWindow:()=>{reopened=new BrowserWindow({show:false});return reopened;},
+        startPosNavigation:()=>{opened++;},
+      });
+      if (!reopened || reopened.isDestroyed() || opened !== 1 || window.isDestroyed()) {
+        throw new Error("Could not reopen the native cashier with a utility window still open");
+      }
+    } finally { if (reopened && !reopened.isDestroyed()) reopened.destroy(); }
+    // Production preload + native IPC must let the renderer clear its draft before navigation.
+    const pairedWindow = new BrowserWindow({ show: false, webPreferences: {
+      preload: path.join(__dirname, "../src/preload.cjs"), contextIsolation: true,
+      nodeIntegration: false, sandbox: true,
+    } });
+    const registered = [];
+    let removed = false, navigatedResolve;
+    const navigated = new Promise(resolve => { navigatedResolve = resolve; });
+    const extract = name => {
+      const from = mainSource.indexOf(`function ${name}(`);
+      return from < 0 ? "" : mainSource.slice(from, mainSource.indexOf("\n}\n", from) + 3);
+    };
+    const unpairContext = vm.createContext({
+      mainWindow: pairedWindow, activePairing: {}, pendingUnpair: null, setTimeout, clearTimeout, console,
+      ipcMain: {
+        handle: (name, handler) => { registered.push(name); ipcMain.handle(name, handler); },
+        on: () => {},
+      },
+      isPairedPosFrame: () => true,
+      removePairing: async () => { removed = true; unpairContext.activePairing = null; return { ok: true }; },
+      showSetup: async target => {
+        const outcome = { removed, title: target.webContents.getTitle() };
+        await target.loadURL("about:blank");
+        navigatedResolve(outcome);
+      },
+    });
+    try {
+      vm.runInContext(`${extract("finishUnpairNavigation")};${extract("registerIpc")};registerIpc();`, unpairContext);
+      await pairedWindow.loadURL("about:blank");
+      void pairedWindow.webContents.executeJavaScript(`window.bmsDesktop.unpair(() => {
+        document.title = 'draft-cleared-before-navigation';
+      })`).catch(() => {}); // Navigating destroys the caller after its cleanup has completed.
+      const result = await navigated;
+      if (!result.removed || result.title !== "draft-cleared-before-navigation") {
+        throw new Error(`Unpair navigation ran before renderer cleanup: ${JSON.stringify(result)}`);
+      }
+    } finally {
+      if (unpairContext.pendingUnpair) clearTimeout(unpairContext.pendingUnpair.timer);
+      for (const name of registered) ipcMain.removeHandler(name);
+      if (!pairedWindow.isDestroyed()) pairedWindow.destroy();
+    }
+    console.log(JSON.stringify({ ok: true, platform: process.platform, version, cashierReopened:true, screenshotPath, compactScreenshotPath, startupScreenshotPath, state, compactState, loadingState, localRuntimeState, startupState }));
   } finally {
     window.destroy();
     ipcMain.removeHandler("smoke:app-info");

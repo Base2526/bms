@@ -19,6 +19,7 @@
     "product-vat-category-db-contract.test.mts",
     "recipe-versioning-db-contract.test.mts",
     "stock-ledger-db-contract.test.mts",
+    "stock-integrity-db-contract.test.mts",
     "tax-sales-report-db-contract.test.mts",
     "restaurant-costing-db-contract.test.mts",
     "restaurant-costing-migrations-db-contract.test.mts",

@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { usableLotSql, inheritQualityHold } from "./lotQuality";
+import { validateTransferLotReceiptInTx } from "./lots";
 /** Called after the order's stock update has locked inventory; throws => caller rolls back all. */
 export async function consumeOrderLotsInTx(
   c: PoolClient,
@@ -54,17 +55,62 @@ export async function restoreOrderLotsInTx(
   tenant: string,
   order: string,
 ) {
-  await c.query(
-    `UPDATE bms_inventory_lots l SET qty=l.qty+x.qty,updated_at=now() FROM (SELECT oil.lot_id,sum(oil.qty)::int qty FROM bms_order_item_lots oil WHERE oil.tenant_id=$1 AND EXISTS(SELECT 1 FROM bms_order_stock_lines sl WHERE sl.tenant_id=oil.tenant_id AND sl.order_item_id=oil.order_item_id AND sl.order_id=$2) GROUP BY oil.lot_id) x WHERE l.tenant_id=$1 AND l.id=x.lot_id`,
+  // The caller has incremented and locked inventory in this transaction. Validate every
+  // component against its original allocations before restoring any lot. Historical sales
+  // without lot evidence must not silently add untracked units to a now-tracked branch.
+  const stockLines = await c.query<{
+    location_id: string; product_sku: string; size: string; qty: number;
+    lot_tracking: boolean; expiry_tracking: boolean;
+  }>(
+    `SELECT sl.location_id, sl.product_sku, sl.size, SUM(sl.qty)::integer AS qty,
+            COALESCE(policy.lot_tracking, false) AS lot_tracking,
+            COALESCE(policy.expiry_tracking, false) AS expiry_tracking
+       FROM bms_order_stock_lines sl
+       LEFT JOIN bms_product_stock_policies policy
+         ON policy.tenant_id = sl.tenant_id AND policy.product_sku = sl.product_sku
+      WHERE sl.tenant_id = $1 AND sl.order_id = $2
+      GROUP BY sl.location_id, sl.product_sku, sl.size, policy.lot_tracking, policy.expiry_tracking
+      ORDER BY sl.location_id, sl.product_sku, sl.size`,
     [tenant, order],
   );
-  const restored = (
+  const restored: Array<{ lot_id: string; qty: number }> = [];
+  for (const line of stockLines.rows) {
+    const allocations = await c.query<{
+      lot_id: string; lot_no: string; expiry_date: string | null; qty: number;
+    }>(
+      `SELECT oil.lot_id, lot.lot_no, lot.expiry_date::text AS expiry_date,
+              SUM(oil.qty)::integer AS qty
+         FROM bms_order_item_lots oil
+         JOIN bms_inventory_lots lot ON lot.tenant_id = oil.tenant_id AND lot.id = oil.lot_id
+        WHERE oil.tenant_id = $1 AND lot.location_id = $3
+          AND lot.product_sku = $4 AND lot.size = $5
+          AND EXISTS (
+            SELECT 1 FROM bms_order_stock_lines sl
+             WHERE sl.tenant_id = oil.tenant_id AND sl.order_id = $2
+               AND sl.order_item_id = oil.order_item_id AND sl.location_id = lot.location_id
+               AND sl.product_sku = lot.product_sku AND sl.size = lot.size
+          )
+        GROUP BY oil.lot_id, lot.lot_no, lot.expiry_date
+        ORDER BY oil.lot_id`,
+      [tenant, order, line.location_id, line.product_sku, line.size],
+    );
+    const allocated = allocations.rows.reduce((sum, lot) => sum + Number(lot.qty), 0);
+    if ((allocations.rows.length || line.lot_tracking || line.expiry_tracking) && allocated !== Number(line.qty)) {
+      throw new Error(`STOCK_REVIEW_REQUIRED: ${line.product_sku}/${line.size} ข้อมูลล็อตตอนขายไม่ครบสำหรับรับคืน`);
+    }
+    const reason = await validateTransferLotReceiptInTx(c, {
+      tenantId: tenant, locationId: line.location_id, productSku: line.product_sku,
+      size: line.size, receivedQty: Number(line.qty), lots: allocations.rows,
+    });
+    if (reason) throw new Error(`STOCK_REVIEW_REQUIRED: ${reason}`);
+    restored.push(...allocations.rows);
+  }
+  for (const x of restored) {
     await c.query(
-      `SELECT DISTINCT oil.lot_id FROM bms_order_item_lots oil JOIN bms_order_items oi ON oi.tenant_id=oil.tenant_id AND oi.id=oil.order_item_id WHERE oil.tenant_id=$1 AND oi.order_id=$2`,
-      [tenant, order],
-    )
-  ).rows;
-  for (const x of restored)
+      `UPDATE bms_inventory_lots SET qty = qty + $3, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2`,
+      [tenant, x.lot_id, x.qty],
+    );
     await inheritQualityHold(
       c,
       tenant,
@@ -72,4 +118,5 @@ export async function restoreOrderLotsInTx(
       x.lot_id,
       "system:order-return",
     );
+  }
 }

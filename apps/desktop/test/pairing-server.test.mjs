@@ -6,6 +6,7 @@ import {
   assertPairingServerResponse,
   canRecoverByStartingManagedLocalRuntime,
   PairingServerResponseError,
+  fetchPairingSession,
 } from "../src/pairing-server.mjs";
 
 test("admin URL follows the paired server origin without carrying POS credentials", () => {
@@ -53,4 +54,35 @@ test("managed local runtime retries transport and server failures, not rejected 
 
 test("POS-only setup sends people to the cloud BMS login", () => {
   assert.equal(cloudAdminUrl(), "https://bms.jachoei.com/admin/login");
+});
+
+const pairing = {serverUrl:"https://shop.example.com",token:"FAKE-device-token"};
+test("pairing checks the authenticated session body without following a redirect", async () => {
+  const session={device:{id:"device",code:"POS-01"}};
+  assert.deepEqual(await fetchPairingSession(pairing,async(url,options)=>{
+    assert.equal(url.toString(),"https://shop.example.com/api/pos/session");
+    assert.equal(options.headers["x-pos-device-token"],pairing.token);
+    assert.equal(options.redirect,"manual");
+    return {ok:true,status:200,json:async()=>session};
+  }),session);
+});
+for(const body of [null,{}, {device:{id:"device"}}, {device:{id:"",code:"POS-01"}}]) {
+  test(`HTTP 200 with an invalid session is not successful pairing: ${JSON.stringify(body)}`,async()=>{
+    await assert.rejects(fetchPairingSession(pairing,async()=>({ok:true,status:200,json:async()=>body})),
+      error=>error instanceof PairingServerResponseError && !canRecoverByStartingManagedLocalRuntime(error));
+  });
+}
+test("HTML and redirected sign-in pages cannot be saved as pairing",async()=>{
+  await assert.rejects(fetchPairingSession(pairing,async()=>({ok:true,status:200,json:async()=>{throw Error('HTML');}})),/HTTP 200/);
+  await assert.rejects(fetchPairingSession(pairing,async()=>({ok:false,status:302})),/HTTP 302/);
+});
+for(const phase of ['headers','body']) test(`pairing times out and aborts a hanging ${phase} read`,async()=>{
+  let signal;
+  const result=fetchPairingSession(pairing,async(_url,options)=>{
+    signal=options.signal;
+    if(phase==='headers')return new Promise(()=>{});
+    return {ok:true,status:200,json:()=>new Promise(()=>{})};
+  },10);
+  await assert.rejects(result,error=>error.userMessage.includes('ไม่ตอบภายในเวลาที่กำหนด'));
+  assert.equal(signal.aborted,true);
 });

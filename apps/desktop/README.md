@@ -95,15 +95,44 @@ again after the store is unlocked. The installer handoff cannot replace that unr
 The existing explicit **Change server** action removes pairing; it is not the first step for a
 temporary storage or network failure.
 
-Pairing-file writes and removal share one ordered queue. A background route-cache write must finish
+Pairing-file reads, writes and removal share one ordered queue. A background route-cache write must finish
 before an explicit unpair removes the file, so it cannot restore the old token afterward. Concurrent
 writes cannot overwrite each other's temporary file. A failed write reports failure to its caller
-without blocking a later removal or retry; tests cover delayed writes and rename failure.
+without blocking a later removal or retry; tests cover delayed writes and rename failure. A reopened
+window waits for pending removal before restoring credentials. Overlapping restores share the
+one-use installer handoff, and an old read cannot replace a newer pairing or storage-recovery state.
+If removal fails, the shell restores the live credential and customer display, reports a readable
+error, and all three POS surfaces preserve the operator and draft. Startup recovery buttons remain
+usable after a denied or failed action; they never report removal success on failure.
+Successful unpairing acknowledges removal before invoking the renderer's cleanup callback, then
+accepts navigation completion only from that same cashier frame. This prevents unloading the
+renderer before it clears the operator and drafts. A five-second fallback opens setup if the
+renderer stops responding; older clients retain the original immediate setup flow.
 
 Server rejection text identifies HTTP 401 without claiming expiry; HTTP 403 asks for permission
 review without recommending re-pairing. Neither response automatically removes the saved token.
 Record the exact message/status, old/new versions, server host, OS and whether installation was in
 place when investigating an upgrade. Never include the token, encrypted record or cashier PIN.
+
+First-run pairing and startup now share a five-second timeout covering response headers and the
+session body. An HTTP 200 proxy/login page or a response without a device id/code is not a verified
+pairing. Concurrent pairing attempts are bounded, and a verification that outlives its setup frame
+cannot save a credential. Closing/changing the cashier window invalidates old startup work; a late
+probe cannot replace the new setup/recovery screen. Dock activation on macOS and second launch on
+all platforms reopen the cashier even if a manual/utility window is still open. A stale macOS
+local-server probe cannot start recovery after unpairing. Display hotplug while the cashier is
+closed cannot reopen the customer display by itself.
+
+The 2026-11-05 recheck passed 116 desktop Node tests, syntax checks, and 3,378 DB-free web tests
+(two skipped). The Windows Electron smoke covers setup/recovery, reopening the cashier while a
+utility window survives, failed recovery actions, and real IPC cleanup before unpair navigation.
+A Windows x64 unpacked build passed the packaged-source check. Linux
+and macOS behavior is covered by platform cases in the tests; native keystore/installer checks
+still require their own OS runners. No installer was published by this recheck.
+Web typecheck and production build passed. The browser smoke covers 14 cases at 1440px/390px:
+failed unpair and retry on retail, compact Desktop and restaurant settings, missing-token recovery
+on both retail surfaces, and the Thai/English manual. These browser checks use isolated API/bridge
+fixtures and verify visible errors plus retained state; they do not contact a real shop.
 
 The 2026-11-03 audit passed desktop syntax checks, all 91 Node tests after the second review, and the Windows Electron setup/
 startup smoke including storage-recovery text at 1100x760 and 700x900. The 50 desktop pure-contract

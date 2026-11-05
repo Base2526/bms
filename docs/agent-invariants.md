@@ -539,7 +539,18 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   discovery plus an operator-clicked installer download, not auto-update. It uses public,
   non-internal, latest POS-only releases on the paired server and semantic Desktop versions;
   unknown CPU architecture requires a choice instead of a guessed download. It never installs,
-  restarts, changes server runtime/schema or blocks sales. Direct ESC/POS printing, cash-drawer
+  restarts, changes server runtime/schema or blocks sales. Pairing/startup probes bound both headers
+  and session-body reads to five seconds; HTTP 200 without a device id/code is not a verified
+  pairing. A closed/replaced setup frame cannot finish pairing, and late startup work cannot
+  replace a newer window or pairing. Reopen the cashier by its own window identity, not the count
+  of all Electron windows (a manual/print window may survive). Serialize pairing reads with writes
+  and removal; apply restore results only to the current pairing revision/window, and share a
+  pending one-use installer handoff across reopened windows. Failed removal preserves live pairing,
+  cashier state and drafts, with a visible error on each POS surface. Successful removal must acknowledge renderer cleanup before
+  unloading the register; only the initiating cashier frame may complete that navigation, with a
+  bounded fallback for a crashed renderer. A stale local-server probe
+  cannot start recovery after unpair; display hotplug cannot reopen a customer window without a
+  cashier window. Direct ESC/POS printing, cash-drawer
   control and offline
   tender are not in the shell. OS-driver receipt printing is supported: a cashier-main-frame-only
   IPC snapshots the existing server-backed receipt into an isolated, no-preload print window and
@@ -609,6 +620,10 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   PIN plus `purchase.receive`; tenant/location come from the authenticated device. Inventory, lot,
   movement, PO status, audit, and `bms_pos_purchase_receipts.result` commit together. Reusing one
   device key with different normalized input is a conflict, never a second receipt.
+  Mobile keeps an immutable pending receipt in OS secure storage, scoped to server/device and
+  bound to the original branch/cashier, never a PIN/token. Unknown/auth failures retain it across
+  screen/app restart. Receipt success survives a failed refresh; new receipts wait for a fresh PO
+  read. An unreadable journal blocks receiving instead of becoming an empty queue.
 - **A petty-cash expense (`9.7`) is not a generic drawer `OUT`.** Direct supplier payments and
   advances create `bms_pos_expenses` while bank drops and register transfers remain movements only.
   Create/settle writes the expense, physical drawer delta, and audits atomically and retry-safely.

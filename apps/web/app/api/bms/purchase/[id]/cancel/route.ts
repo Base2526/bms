@@ -13,7 +13,7 @@ async function handlePOST(_req: NextRequest, { params }: { params: { id: string 
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
   const poId = params.id?.trim();
   if (!poId) return NextResponse.json({ error: "po id required" }, { status: 400 });
-  const ok = await cancelPurchaseOrder(auth.tenantId, poId);
+  const ok = await cancelPurchaseOrder(auth.tenantId, poId, auth.adminId);
   if (!ok) return NextResponse.json({ status: "INVALID_TRANSITION", poId }, { status: 409 });
   return NextResponse.json({ ok: true, poId });
 }

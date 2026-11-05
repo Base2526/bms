@@ -465,7 +465,7 @@ test("a write-off consumes the expiring lot first and keeps the lot total on the
       tenantId, locationId, productSku: FLOUR, size: SIZE,
       qty: 50, reason: `FAKE ${TAG} drift`, actorUserId,
     }),
-    /lot/
+    /lot|ยอดล็อตไม่ตรงกับสต็อก/
   );
   assert.equal(await onHand(FLOUR), beforeFailure, "a rejected write-off must not move the summary row");
 });

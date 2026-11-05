@@ -85,7 +85,7 @@ declare global {
       onRefreshRequested?(listener: () => void): () => void;
       /** Generic OS-level attention only; accepts no order/customer payload by design. */
       requestOperationalAttention?(): Promise<{ ok: boolean; throttled?: boolean; focused?: boolean }>;
-      unpair(): Promise<{ ok: boolean }>;
+      unpair(afterRemoval?: () => void): Promise<{ ok: boolean; error?: string }>;
     };
   }
 }
@@ -111,13 +111,26 @@ export function writeBrowserPosDeviceToken(token: string): boolean {
   return true;
 }
 
-export async function clearPosDeviceToken(): Promise<void> {
+export async function clearPosDeviceToken(afterRemoval?: () => void): Promise<void> {
   if (typeof window === "undefined") return;
   if (window.bmsDesktop) {
-    await window.bmsDesktop.unpair();
+    let removalConfirmed = false;
+    const cleanup = () => {
+      if (removalConfirmed) return;
+      removalConfirmed = true;
+      afterRemoval?.();
+    };
+    let result;
+    try { result = await window.bmsDesktop.unpair(cleanup); }
+    catch { throw new Error(removalConfirmed
+      ? "เลิกจับคู่แล้ว แต่ล้างข้อมูลหน้าขายไม่สำเร็จ กรุณาปิดแอปแล้วเปิดใหม่"
+      : "เลิกจับคู่เครื่องไม่สำเร็จ กรุณาลองใหม่ ข้อมูลหน้าขายยังอยู่"); }
+    if (!result?.ok) throw new Error(result?.error || "เลิกจับคู่เครื่องไม่สำเร็จ กรุณาลองใหม่ ข้อมูลหน้าขายยังอยู่");
+    cleanup(); // Older preload clients do not support the pre-navigation callback.
     return;
   }
   window.localStorage.removeItem(POS_DEVICE_TOKEN_KEY);
+  afterRemoval?.();
   window.dispatchEvent(new Event("bms-pos-device-token-changed"));
 }
 

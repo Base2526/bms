@@ -33,7 +33,6 @@ import {
   MobilePosNoSalesDocument,
   MobilePosMembersDocument,
   MobilePosPurchaseOrdersDocument,
-  MobilePosReceivePurchaseDocument,
   MobilePosStoreCreditDocument,
   MobileRestaurantAcceptQrSubmissionDocument,
   MobileRestaurantAcknowledgeServiceCallDocument,
@@ -65,6 +64,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { supportsTabletLayout } from '../../theme/useResponsive';
 import type { OperationsStackParamList } from '../../navigation/types';
 import { getAppNavigation } from '../../navigation/parentNavigation';
+import { PurchaseReceiving } from './PurchaseReceiving';
 
 type Section = 'OVERVIEW' | 'REGISTER' | 'RESTAURANT' | 'SUPPORT';
 type RestaurantView = 'OVERVIEW' | 'QUEUE' | 'QR' | 'CALLS' | 'REQUESTS';
@@ -201,7 +201,6 @@ export default function OperationsScreen({
   const [blindReturn] = useMutation(MobilePosBlindReturnDocument);
   const [depositAction] = useMutation(MobilePosDepositDocument);
   const [expenseAction] = useMutation(MobilePosExpenseDocument);
-  const [receivePurchase] = useMutation(MobilePosReceivePurchaseDocument);
   const [collectAr] = useMutation(MobilePosCollectArDocument);
   const [acceptQr] = useMutation(MobileRestaurantAcceptQrSubmissionDocument);
   const [rejectQr] = useMutation(MobileRestaurantRejectQrSubmissionDocument);
@@ -1066,67 +1065,10 @@ export default function OperationsScreen({
               display: registerView === 'PURCHASES' ? 'flex' : 'none',
             }}
           >
-            <Heading text="รับสินค้า PO" />
-            {(purchaseOrders.data?.bmsPosPurchaseOrders.orders ?? []).map(
-              order => (
-                <View key={order.id} style={styles.block}>
-                  <Info
-                    title={
-                      (order.supplier?.name ?? 'Supplier') +
-                      ' · ' +
-                      order.status
-                    }
-                    detail={
-                      order.qtyReceived +
-                      '/' +
-                      order.qtyOrdered +
-                      ' · ฿' +
-                      order.total.toFixed(2)
-                    }
-                  />
-                  <Button
-                    label="รับจำนวนคงเหลือทั้งหมด"
-                    onPress={() =>
-                      run(
-                        'po-' + order.id,
-                        async idempotencyKey => {
-                          const response = await receivePurchase({
-                            variables: {
-                              input: {
-                                ...inputCredentials,
-                                poId: order.id,
-                                idempotencyKey: idempotencyKey!,
-                                items: order.items.flatMap(item => {
-                                  const remaining =
-                                    item.qtyOrdered - item.qtyReceived;
-                                  return remaining > 0
-                                    ? [
-                                        {
-                                          sku: item.sku,
-                                          size: item.size,
-                                          qty: remaining,
-                                          lotNo: null,
-                                          expiryDate: null,
-                                        },
-                                      ]
-                                    : [];
-                                }),
-                              },
-                            },
-                          });
-                          ensure(response.data?.bmsPosReceivePurchase, [
-                            'RECEIVED',
-                            'PARTIAL',
-                          ]);
-                        },
-                        () => purchaseOrders.refetch(),
-                        'po-receive',
-                      )
-                    }
-                  />
-                </View>
-              ),
-            )}
+            {registerView === 'PURCHASES' && session && <PurchaseReceiving
+              session={session} orders={purchaseOrders.data?.bmsPosPurchaseOrders.orders ?? []}
+              refresh={() => purchaseOrders.refetch()} loading={purchaseOrders.loading} error={purchaseOrders.error}
+            />}
           </Card>
         </>
       ) : null}

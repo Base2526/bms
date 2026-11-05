@@ -12,11 +12,11 @@ import {
   selectCustomerDisplay,
 } from "./display-policy.mjs";
 import { parsePairingHandoff, parsePairingInput } from "./pairing.mjs";
-import { createPairingWriter, readSavedPairing } from "./pairing-store.mjs";
+import { createPairingWriter } from "./pairing-store.mjs";
 import {
   adminUrlForServer,
   cloudAdminUrl,
-  assertPairingServerResponse,
+  fetchPairingSession,
   canRecoverByStartingManagedLocalRuntime,
 } from "./pairing-server.mjs";
 import {
@@ -58,6 +58,11 @@ let mainWindow = null;
 let activePairing = null;
 let pairingRestoreError = null;
 let pairingWriter = null;
+let pairingInProgress = false;
+let pairingRevision = 0;
+let pairingRestoreRequest = 0;
+let pairingRestoreTask = null;
+let pendingUnpair = null;
 let customerDisplayWindow = null;
 let customerDisplayWindowDisplayId = null;
 let customerDisplayWindowKind = null;
@@ -160,13 +165,10 @@ function decryptedToken(value) {
 
 async function readPairing() {
   try {
-    const pairing = await readSavedPairing(configPath(), decryptedToken);
-    pairingRestoreError = null;
-    return pairing;
+    return { pairing: await pairingPersistence().read(decryptedToken), error: null };
   } catch (error) {
-    pairingRestoreError = error;
     console.error("Unable to read desktop pairing configuration");
-    return null;
+    return { pairing: null, error };
   }
 }
 
@@ -180,11 +182,29 @@ function writePairing(pairing) {
 }
 
 async function removePairing() {
+  if (pairingInProgress) return { ok: false, error: "กำลังเปลี่ยนข้อมูลจับคู่ กรุณารอสักครู่แล้วลองใหม่" };
+  pairingInProgress = true;
+  pairingRevision++;
+  pairingRestoreRequest++;
+  const previous = activePairing;
+  const previousError = pairingRestoreError;
   activePairing = null;
+  startupNavigation = null;
+  if (pendingRefreshRequest) clearTimeout(pendingRefreshRequest.timer);
+  pendingRefreshRequest = null;
   pairingRestoreError = null;
   installApplicationMenu();
   closeCustomerDisplayWindow();
-  await pairingPersistence().remove();
+  try {
+    await pairingPersistence().remove();
+    return { ok: true };
+  } catch {
+    activePairing = previous;
+    pairingRestoreError = previousError;
+    installApplicationMenu();
+    scheduleCustomerDisplayReconcile();
+    return { ok: false, error: "ลบข้อมูลจับคู่ไม่สำเร็จ ข้อมูลเดิมยังอยู่ กรุณาตรวจสิทธิ์เข้าถึงไฟล์ของบัญชีระบบปฏิบัติการแล้วลองใหม่" };
+  } finally { pairingInProgress = false; }
 }
 
 function pairingHandoffArgument() {
@@ -193,7 +213,7 @@ function pairingHandoffArgument() {
   return value && path.isAbsolute(value) ? value : null;
 }
 
-async function consumePairingHandoff() {
+async function consumePairingHandoff(isCurrent = () => true) {
   const handoffPath = pairingHandoffArgument();
   if (!handoffPath) return null;
   try {
@@ -209,6 +229,7 @@ async function consumePairingHandoff() {
       }
     }
     const handoffBytes = await readFile(handoffPath, "utf8");
+    if (!isCurrent()) return null;
     // The handoff contains a bearer credential. Consume it before any network operation so a
     // parse or verification failure cannot leave a reusable token on disk.
     await rm(handoffPath, { force: true });
@@ -217,7 +238,7 @@ async function consumePairingHandoff() {
       return null;
     }
     const verified = await verifyPairing(parsed);
-    if (!verified.ok) return null;
+    if (!verified.ok || !isCurrent()) return null;
     await writePairing(parsed);
     return { serverUrl: parsed.serverUrl, token: parsed.token, posEntryPath: null };
   } catch (error) {
@@ -245,6 +266,8 @@ async function writeCustomerDisplayConfig(config) {
 }
 
 function isSetupFrame(event) {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents
+    || event.senderFrame !== event.sender.mainFrame) return false;
   try {
     return fileURLToPath(event.senderFrame.url) === SETUP_FILE;
   } catch {
@@ -253,6 +276,8 @@ function isSetupFrame(event) {
 }
 
 function isStartupFrame(event) {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents
+    || event.senderFrame !== event.sender.mainFrame) return false;
   try {
     return fileURLToPath(event.senderFrame.url) === STARTUP_FILE;
   } catch {
@@ -531,7 +556,7 @@ function createCustomerDisplayWindow(targetDisplay, kind = "managed") {
 
 function reconcileCustomerDisplay() {
   void offerCustomerDisplaySetup();
-  if (!activePairing) {
+  if (!activePairing || !mainWindow || mainWindow.isDestroyed()) {
     closeCustomerDisplayWindow();
     broadcastCustomerDisplayState();
     return;
@@ -633,6 +658,12 @@ function createMainWindow() {
   window.on("focus", () => window.flashFrame(false));
   window.on("closed", () => {
     if (mainWindow === window) {
+      if (pendingRefreshRequest) clearTimeout(pendingRefreshRequest.timer);
+      pendingRefreshRequest = null;
+      if (pendingUnpair?.window === window) {
+        clearTimeout(pendingUnpair.timer);
+        pendingUnpair = null;
+      }
       mainWindow = null;
       startupNavigation = null;
     }
@@ -723,10 +754,10 @@ function refreshMainWindowData() {
   mainWindow.webContents.send("bms-pos:refresh-data", requestId);
 }
 
-async function showSetup() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  await mainWindow.loadFile(SETUP_FILE);
-  mainWindow.show();
+async function showSetup(targetWindow = mainWindow) {
+  if (!targetWindow || targetWindow.isDestroyed()) return;
+  await targetWindow.loadFile(SETUP_FILE);
+  if (!targetWindow.isDestroyed()) targetWindow.show();
 }
 
 async function showStartup(state = "loading", message = "", targetWindow = mainWindow) {
@@ -737,7 +768,7 @@ async function showStartup(state = "loading", message = "", targetWindow = mainW
       message,
     },
   });
-  targetWindow.show();
+  if (!targetWindow.isDestroyed()) targetWindow.show();
 }
 
 async function loadPosUrl(url, targetWindow = mainWindow) {
@@ -757,27 +788,19 @@ async function loadPosUrl(url, targetWindow = mainWindow) {
 }
 
 async function probePairingServer(pairing, timeoutMs = 5_000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await net.fetch(new URL("/api/pos/session", pairing.serverUrl), {
-      method: "GET",
-      cache: "no-store",
-      redirect: "manual",
-      signal: controller.signal,
-      headers: { "x-pos-device-token": pairing.token },
-    });
-    assertPairingServerResponse(response);
-  } finally {
-    clearTimeout(timer);
-  }
+  return fetchPairingSession(pairing, (...args) => net.fetch(...args), timeoutMs);
 }
 
 async function ensurePairingServerAvailable(pairing, targetWindow = mainWindow) {
+  const revision = pairingRevision;
+  const current = () => pairingRevision === revision && activePairing === pairing
+    && targetWindow && mainWindow === targetWindow && !targetWindow.isDestroyed();
+  if (!current()) return;
   try {
     await probePairingServer(pairing);
     return;
   } catch (networkError) {
+    if (!current()) return;
     if (!isManagedLocalServerUrl(pairing.serverUrl) || process.platform !== "darwin") {
       throw networkError;
     }
@@ -789,13 +812,18 @@ async function ensurePairingServerAvailable(pairing, targetWindow = mainWindow) 
     "พบ Retail Local Server ในเครื่องนี้ กำลังเริ่มบริการและตรวจสอบฐานข้อมูล กรุณารอสักครู่",
     targetWindow,
   );
+  if (!current()) return;
   await startManagedLocalRuntime();
+  if (!current()) return;
   await probePairingServer(pairing);
 }
 
 async function showPos(targetWindow = mainWindow) {
   if (!targetWindow || targetWindow.isDestroyed() || !activePairing) return;
   const pairing = activePairing;
+  const revision = pairingRevision;
+  const current = () => pairingRevision === revision && activePairing === pairing
+    && mainWindow === targetWindow && !targetWindow.isDestroyed();
   const probeEntryPath = () => resolvePosEntryPath(async (signal) => {
     const response = await net.fetch(new URL(MOBILE_POS_PATH, pairing.serverUrl), {
       // Compatibility needs one status code, not a second rendered copy of the application.
@@ -812,10 +840,11 @@ async function showPos(targetWindow = mainWindow) {
   });
   const cachedEntryPath = cachedPosEntryPath(pairing.posEntryPath);
   const entryPath = cachedEntryPath ?? await probeEntryPath();
+  if (!current()) return;
   await loadPosUrl(new URL(entryPath, pairing.serverUrl).toString(), targetWindow);
 
   if (!cachedEntryPath) {
-    if (activePairing === pairing) {
+    if (current()) {
       activePairing = { ...pairing, posEntryPath: entryPath };
       void writePairing(activePairing).catch(() => {
         console.error("Unable to cache desktop POS entry path");
@@ -827,7 +856,7 @@ async function showPos(targetWindow = mainWindow) {
   // Known servers open immediately. Refresh compatibility only for the next launch so an upgrade
   // from the legacy route never tears down a cashier's active screen in the middle of a sale.
   void probeEntryPath().then(async (freshEntryPath) => {
-    if (freshEntryPath === cachedEntryPath || activePairing !== pairing) return;
+    if (freshEntryPath === cachedEntryPath || !current()) return;
     const refreshedPairing = { ...pairing, posEntryPath: freshEntryPath };
     activePairing = refreshedPairing;
     await writePairing(refreshedPairing);
@@ -836,7 +865,8 @@ async function showPos(targetWindow = mainWindow) {
     // is different: an exact 404 proves the cached mobile page cannot be a working register, so
     // recover that invalid page immediately instead of making the cashier restart the app.
     if (cachedEntryPath === MOBILE_POS_PATH && freshEntryPath === "/pos"
-      && !targetWindow.isDestroyed() && activePairing === refreshedPairing) {
+      && !targetWindow.isDestroyed() && mainWindow === targetWindow
+      && pairingRevision === revision && activePairing === refreshedPairing) {
       let current;
       try { current = new URL(targetWindow.webContents.getURL()); } catch { return; }
       if (current.origin === pairing.serverUrl && current.pathname === MOBILE_POS_PATH) {
@@ -852,14 +882,21 @@ function startPosNavigation() {
   if (!activePairing || !mainWindow || mainWindow.isDestroyed()) return Promise.resolve();
   if (startupNavigation) return startupNavigation;
   const targetWindow = mainWindow;
+  const pairing = activePairing;
+  const revision = pairingRevision;
+  const current = () => pairingRevision === revision && activePairing === pairing
+    && mainWindow === targetWindow && !targetWindow.isDestroyed();
   const operation = (async () => {
     try {
       await showStartup("loading", "", targetWindow);
-      await ensurePairingServerAvailable(activePairing, targetWindow);
+      if (!current()) return;
+      await ensurePairingServerAvailable(pairing, targetWindow);
+      if (!current()) return;
       await showPos(targetWindow);
       if (targetWindow.isDestroyed()) return;
       reconcileCustomerDisplay();
     } catch (error) {
+      if (!current()) return;
       console.error("Unable to open desktop POS", error);
       try {
         await showStartup(
@@ -881,33 +918,51 @@ function startPosNavigation() {
 }
 
 async function restoreSavedPairing() {
-  activePairing = await readPairing();
+  const targetWindow = mainWindow;
+  if (!targetWindow || targetWindow.isDestroyed()) return;
+  const revision = pairingRevision;
+  const request = ++pairingRestoreRequest;
+  if (!pairingRestoreTask || pairingRestoreTask.revision !== revision) {
+    const task = { revision, promise: null };
+    task.promise = (async () => {
+      const result = await readPairing();
+      if (pairingRevision !== revision || result.error || result.pairing) return result;
+      // Share the one-use installer handoff across windows reopened during verification.
+      return { pairing: await consumePairingHandoff(() => pairingRevision === revision), error: null };
+    })().finally(() => {
+      if (pairingRestoreTask === task) pairingRestoreTask = null;
+    });
+    pairingRestoreTask = task;
+  }
+  const result = await pairingRestoreTask.promise;
+  if (pairingRevision !== revision || request !== pairingRestoreRequest
+    || targetWindow !== mainWindow || targetWindow.isDestroyed()) return;
+  activePairing = result.pairing;
+  pairingRestoreError = result.error;
   if (pairingRestoreError) {
-    await showStartup("storage-error", pairingRestoreError.userMessage);
+    await showStartup("storage-error", pairingRestoreError.userMessage, targetWindow);
     return;
   }
-  // A handoff may initialize an absent pairing, never overwrite an unreadable one.
-  if (!activePairing) activePairing = await consumePairingHandoff();
   installApplicationMenu();
   if (activePairing) void startPosNavigation();
-  else await showSetup();
+  else await showSetup(targetWindow);
 }
 
 async function verifyPairing(pairing) {
-  let response;
   try {
-    response = await net.fetch(new URL("/api/pos/session", pairing.serverUrl), {
-      method: "GET",
-      cache: "no-store",
-      redirect: "manual",
-      headers: { "x-pos-device-token": pairing.token },
-    });
-  } catch {
-    return { ok: false, error: "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจ URL อินเทอร์เน็ต และใบรับรอง HTTPS" };
+    await probePairingServer(pairing);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error?.userMessage ?? "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจ URL อินเทอร์เน็ต และใบรับรอง HTTPS" };
   }
-  if (response.status === 401) return { ok: false, error: "token ไม่ถูกต้อง ถูกยกเลิก หรือมีการออก token ใหม่แล้ว" };
-  if (!response.ok) return { ok: false, error: `เซิร์ฟเวอร์ตอบกลับ HTTP ${response.status}` };
-  return { ok: true };
+}
+
+function finishUnpairNavigation(request = pendingUnpair) {
+  if (!request || pendingUnpair !== request) return;
+  clearTimeout(request.timer);
+  pendingUnpair = null;
+  if (request.window !== mainWindow || request.window.isDestroyed() || activePairing) return;
+  void showSetup(request.window).catch(() => console.error("Unable to open setup after unpairing"));
 }
 
 function registerIpc() {
@@ -1019,13 +1074,18 @@ function registerIpc() {
   });
   ipcMain.handle("bms-pos:pair", async (event, input) => {
     if (!isSetupFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์จับคู่เครื่อง" };
+    if (pairingInProgress) return { ok: false, error: "กำลังตรวจการจับคู่ กรุณารอสักครู่" };
     const storage = currentSecureStorageStatus();
     if (!storage.ok) return { ok: false, error: storage.error };
     const parsed = parsePairingInput({ serverUrl: input?.serverUrl, pairingInput: input?.pairingInput });
     if (!parsed.ok) return parsed;
-    const verified = await verifyPairing(parsed);
-    if (!verified.ok) return verified;
+    pairingInProgress = true;
+    pairingRevision++;
+    pairingRestoreRequest++;
     try {
+      const verified = await verifyPairing(parsed);
+      if (!verified.ok) return verified;
+      if (!isSetupFrame(event)) return { ok: false, error: "หน้าจอจับคู่เปลี่ยนแล้ว กรุณาลองใหม่" };
       await writePairing(parsed);
       activePairing = { serverUrl: parsed.serverUrl, token: parsed.token, posEntryPath: null };
       installApplicationMenu();
@@ -1033,7 +1093,7 @@ function registerIpc() {
       return { ok: true };
     } catch {
       return { ok: false, error: "บันทึกการจับคู่แบบเข้ารหัสไม่สำเร็จ" };
-    }
+    } finally { pairingInProgress = false; }
   });
 
   ipcMain.handle("bms-pos:get-device-token", async (event) => {
@@ -1081,9 +1141,10 @@ function registerIpc() {
 
   ipcMain.handle("bms-pos:change-server", async (event) => {
     if (!isStartupFrame(event)) return { ok: false };
-    await removePairing();
-    await showSetup();
-    return { ok: true };
+    const targetWindow = mainWindow;
+    const result = await removePairing();
+    if (result.ok && targetWindow === mainWindow) await showSetup(targetWindow);
+    return result;
   });
 
   ipcMain.handle("bms-pos:get-storage-namespace", async (event) => {
@@ -1091,10 +1152,26 @@ function registerIpc() {
     return createHash("sha256").update(activePairing.token).digest("hex").slice(0, 16);
   });
 
-  ipcMain.handle("bms-pos:unpair", async (event) => {
+  ipcMain.handle("bms-pos:unpair", async (event, options) => {
     if (!isPairedPosFrame(event)) return { ok: false };
-    await removePairing();
-    await showSetup();
+    const targetWindow = mainWindow;
+    const result = await removePairing();
+    if (result.ok && targetWindow === mainWindow) {
+      if (options?.deferSetup === true) {
+        // Acknowledge durable removal first so the renderer can clear operator/drafts before unload.
+        const request = { window: targetWindow, frame: event.senderFrame, timer: null };
+        pendingUnpair = request;
+        request.timer = setTimeout(() => finishUnpairNavigation(request), 5_000);
+      } else await showSetup(targetWindow); // Compatibility with older web/preload clients.
+    }
+    return result;
+  });
+
+  ipcMain.handle("bms-pos:complete-unpair", async (event) => {
+    const request = pendingUnpair;
+    if (!request || request.window !== mainWindow || request.window.isDestroyed()
+      || event.sender !== request.window.webContents || event.senderFrame !== request.frame) return { ok: false };
+    finishUnpairNavigation(request);
     return { ok: true };
   });
 
@@ -1169,16 +1246,24 @@ function registerIpc() {
   });
 }
 
+function reopenMainWindow() {
+  if (!app.isReady()) return;
+  // A manual/print window may remain after the cashier closes. It is not the register.
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = createMainWindow();
+    void (activePairing ? startPosNavigation() : restoreSavedPairing());
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
 const singleInstance = app.requestSingleInstanceLock();
 if (!singleInstance) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
-  });
+  app.on("second-instance", reopenMainWindow);
 
   app.whenReady().then(async () => {
     app.setAppUserModelId("com.bms.pos.desktop");
@@ -1204,12 +1289,7 @@ if (!singleInstance) {
     screen.on("display-metrics-changed", scheduleCustomerDisplayReconcile);
   });
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      mainWindow = createMainWindow();
-      void (activePairing ? startPosNavigation() : restoreSavedPairing());
-    }
-  });
+  app.on("activate", reopenMainWindow);
 
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();

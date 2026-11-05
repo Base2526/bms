@@ -37,6 +37,44 @@ when usable stock exists; sending rechecks current stock even if the notice was 
 Every stock change **must** generate a Stock Movement record. Never update inventory without
 logging movement.
 
+Receipt and count validation also applies at the service boundary:
+
+- PO receipts enforce `lot_tracking` / `expiry_tracking` even on the first receipt into an empty
+  branch. A required lot number or expiry date cannot be omitted. Admin Purchase, staff GraphQL
+  and REST carry the same lot fields to the shared service; the admin modal supports one lot per
+  item per receipt, so multiple lots use separate partial receipts.
+  Manual aggregate adjustments also refuse lot/expiry policies before the first lot exists;
+  use a receipt with lot evidence or the existing lot-aware wastage workflow.
+- Back-office full-order returns reconcile each component's original lot allocation and the
+  receiving summary before restoring lots. Missing/partial source evidence, missing inventory,
+  mixed tracked/untracked quantities or pre-existing lot drift raises `STOCK_REVIEW_REQUIRED`
+  and rolls back the order transition, stock and financial reversals. Plain untracked returns
+  remain supported. POS continues to use its existing structured rejection result.
+- Counts require an explicit non-negative integer within the database integer range. Missing
+  quantities are not zero and fractions are not truncated. Applying a negative variance against
+  a missing inventory row rejects the entire count rather than silently marking it applied.
+
+Regression coverage: `scripts/stock-integrity-contract.test.mts` exercises these service and adapter
+boundaries with transaction doubles. `scripts/stock-integrity-db-contract.test.mts` proves receipt
+rollback, exact once-only lot returns, count deltas, deposit/board-game expiry exclusions and tenant
+RLS against the restored disposable PostgreSQL instance; it refuses other database targets.
+
+Automatic expiry releases only ordinary unpaid orders. Restaurant checks, board-game sessions /
+billing groups and orders with POS deposit evidence retain their reservations until their owning
+workflow settles or cancels them. The worker rechecks eligibility under the order lock, reads
+deposit evidence again after acquiring that lock, and runs each write in its own tenant transaction.
+
+Recheck on 2026-11-05: the final application code passed `npm run gate` (3,370 pure tests passed,
+2 skipped, production build completed). Eight PostgreSQL suites passed 81/81 tests:
+`stock-integrity` (8), `multi-store-stock` (18), `inventory-multilocation` (15),
+`pos-cross-branch-return` (4), `reserve-stock` (9), `stock-ledger` (8), `operation-quality` (17),
+and `staff-stock-transfer-route` (2). The last suite used its required `bms_requisition_test`
+database on the same isolated cluster; the others used `bms_realtime_test`. The clone was restored
+from the local test database, with `10.107` applied only to the clone. This is verification evidence,
+not a production deployment or a claim that `10.107` has merged. DB test typechecking passed.
+The production-build Purchase/manual browser smoke passed Thai/English at 1440/390px with mocked
+APIs, including lot/date submission and clearing the previous receipt's form fields.
+
 ## Movement types (`bms_stock_movements.type`)
 
 ### Branch requisitions (`10.87`)
@@ -306,6 +344,12 @@ to `PARTIAL` or `RECEIVED` depending on how much of the ordered quantity has arr
 cannot receive further — and cancelling never claws back stock already received (standard inventory
 accounting: what's received stays received).
 
+The Purchase and POS receipt screens present these states as awaiting receipt, partially received,
+and fully received. A tracked product requires its lot number (and expiry date when expiry tracking
+is enabled) before either screen confirms a receipt. A conflict identifies the affected SKU/size;
+the receipt transaction rolls back, so neither stock nor PO progress changes. The desktop PO flow
+uses the same server POS route and shows the same receipt outcome.
+
 Permissions: `purchase.view` / `purchase.edit` / `purchase.receive` / `purchase.cancel`.
 
 Since `9.18`, `bms_supplier_products` maps the supplier's SKU, product name, and barcode to the
@@ -327,6 +371,28 @@ authenticated POS device and passes it into the shared purchase service. The inv
 `STOCK_IN` movement, PO progress, `purchase.receive` audit row, and retry receipt all use that same
 location and transaction. A stable per-device idempotency key prevents a lost response from adding
 the same delivery twice.
+
+Staff receipts also accept `idempotencyKey` and use the existing `9.88` inventory operation ledger
+under action `purchase.receive`, binding the payload to its authenticated actor. The admin form
+retains the submitted request in session storage; POS retains it in device-scoped local storage,
+without a PIN or device token. An unknown response freezes receipt edits and retries the same key,
+including after reload. POS asks for the receiver PIN again after reload. A replay describes the
+original saved receipt, not the current PO state; the screen separately reloads current progress.
+A failed refresh after a committed receipt preserves the success message and blocks further receipt
+until a successful read. Purchase cancellation records its audit in the cancellation transaction.
+Committed receipt retries are resolved before checking whether the branch is still active (or
+resolving today's default branch for staff). Authentication and current permission still apply;
+new receipts into an inactive branch remain rejected. Receipt quantities must be JSON numbers
+representing positive 32-bit integers: booleans, arrays and numeric strings are rejected rather
+than converted into physical units. Lot/date evidence must be strings or null.
+
+Native Mobile PO receiving uses the same backend and now accepts per-line quantities, lot numbers
+and expiry dates. Its single pending receipt is kept in OS secure storage, scoped to server/device
+and bound to the original branch/cashier, without a PIN or token. Reopening the screen/app restores
+that immutable payload even if the PO is no longer in the pending list. Transport/auth failures
+retain it for same-key retry; a committed receipt followed by a read failure stays successful and
+blocks a new receipt until current PO progress can be loaded. A corrupt/unavailable journal blocks
+new receipts instead of treating it as empty.
 
 ## Customer restock follow-up
 

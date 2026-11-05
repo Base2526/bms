@@ -70,11 +70,8 @@ test("admin receive also opts into the in-transaction purchase audit", async () 
   assert.doesNotMatch(resolver, /await audit\(ctx, "purchase\.receive"/);
 });
 
-test("AI purchase receive relies on the service transaction instead of a duplicate post-commit audit", async () => {
+test("AI catalog does not expose the retired direct purchase receive tool", async () => {
   const catalog = await read("apps/web/lib/bms/tools/catalog.ts");
-  const start = catalog.indexOf("const receivePurchaseOrderTool");
-  const end = catalog.indexOf("const upsertCustomerTool", start);
-  const block = catalog.slice(start, end);
-  assert.match(block, /receivePurchaseOrder\([\s\S]*ec\.ctx\?\.admin\?\.id \?\? null,[\s\S]*surface: `ai:\$\{ec\.surface\}`/);
-  assert.doesNotMatch(block, /auditWrite\(/);
+  assert.doesNotMatch(catalog, /name:\s*["']receive_purchase_order["']|receivePurchaseOrder\(/);
+  assert.match(catalog, /name:\s*["']get_purchase_order["']/);
 });

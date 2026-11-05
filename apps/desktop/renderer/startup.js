@@ -31,6 +31,7 @@ retryButton.addEventListener("click", async () => {
     result = null;
   }
   if (!result?.ok) {
+    errorMessage.textContent = result?.error || "ลองเชื่อมต่อใหม่ไม่สำเร็จ กรุณาลองอีกครั้ง";
     retryButton.disabled = false;
     changeServerButton.disabled = false;
     retryButton.textContent = "ลองใหม่";
@@ -41,9 +42,12 @@ changeServerButton.addEventListener("click", async () => {
   retryButton.disabled = true;
   changeServerButton.disabled = true;
   try {
-    await window.bmsDesktop.changeServer();
+    const result = await window.bmsDesktop.changeServer();
+    if (result?.ok) return;
+    errorMessage.textContent = result?.error || "เปลี่ยนเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองใหม่";
   } catch {
-    retryButton.disabled = false;
-    changeServerButton.disabled = false;
+    errorMessage.textContent = "เปลี่ยนเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองใหม่";
   }
+  retryButton.disabled = false;
+  changeServerButton.disabled = false;
 });

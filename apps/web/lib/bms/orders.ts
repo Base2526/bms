@@ -2260,16 +2260,22 @@ export async function releaseExpiredOrders(
   tenantId?: string | null
 ): Promise<{ released: number; orderIds: string[]; failed: Array<{ orderId: string; reason: string }> }> {
   const mins = Number.isFinite(minutes) && minutes > 0 ? Math.floor(minutes) : 30;
-  const candidates = await query<{ id: string }>(
+  const candidates = await query<{ id: string; tenant_id: string }>(
     // ⚠️ `restaurant_check_id IS NULL` ไม่ใช่การปรับจูน — ใบจองของบิลโต๊ะ **ไม่หมดอายุตามเวลา**
     // มันจบเมื่อคิดเงินหรือยกเลิกบิลเท่านั้น · ใบจองถูกสร้างเป็น PENDING ตอนส่งครัวรอบแรก
     // แล้วค้างไว้จนลูกค้ากินเสร็จ ซึ่งเกินกี่นาทีก็ได้ · ก่อนมีเงื่อนไขนี้ cron ยกเลิกใบจอง
     // ของโต๊ะที่ยังนั่งอยู่ + คืน reserved stock ของอาหารที่ออกไปแล้ว แล้วโต๊ะนั้นทั้ง
     // ส่งครัวและคิดเงินไม่ได้อีกเลย (ทางตันที่ต้องแก้ที่ฐาน) · การไปเพิ่ม `minutes` แทน
     // คือการผิดช้าลง ไม่ใช่ถูกขึ้น
-    `SELECT id FROM bms_orders
+    `SELECT id, tenant_id FROM bms_orders
       WHERE status = 'PENDING'
         AND restaurant_check_id IS NULL
+        AND board_game_session_id IS NULL
+        AND board_game_billing_group_id IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM bms_pos_deposits d
+           WHERE d.tenant_id = bms_orders.tenant_id AND d.order_id = bms_orders.id
+        )
         AND created_at < now() - make_interval(mins => $1)
         AND ($2::uuid IS NULL OR tenant_id = $2)`,
     [mins, tenantId ?? null]
@@ -2280,16 +2286,30 @@ export async function releaseExpiredOrders(
   for (const row of candidates.rows) {
     const client = await getClient();
     try {
-      await client.query("BEGIN");
+      await beginTenantTx(client, row.tenant_id);
       // ล็อกใบนี้ใบเดียว · SKIP LOCKED = อีก worker กำลังจัดการอยู่ ไม่ใช่ความผิดพลาด
       // และตรวจสถานะซ้ำในล็อก เพราะบิลอาจถูกจ่ายเงินไประหว่างที่รอคิว
       const locked = await client.query<{ id: string }>(
         `SELECT id FROM bms_orders
-          WHERE id = $1 AND status = 'PENDING'
+          WHERE id = $1 AND tenant_id = $2 AND status = 'PENDING'
+            AND restaurant_check_id IS NULL
+            AND board_game_session_id IS NULL
+            AND board_game_billing_group_id IS NULL
+            AND created_at < now() - make_interval(mins => $3)
           FOR UPDATE SKIP LOCKED`,
-        [row.id]
+        [row.id, row.tenant_id, mins]
       );
       if (!locked.rowCount) {
+        await client.query("ROLLBACK");
+        continue;
+      }
+      // Deposit creation locks the same order. Re-read after acquiring that lock so a
+      // deposit committed since candidate selection cannot lose its reservation.
+      const deposit = await client.query(
+        `SELECT 1 FROM bms_pos_deposits WHERE tenant_id = $1 AND order_id = $2 LIMIT 1`,
+        [row.tenant_id, row.id],
+      );
+      if (deposit.rowCount) {
         await client.query("ROLLBACK");
         continue;
       }
@@ -2301,14 +2321,14 @@ export async function releaseExpiredOrders(
            FROM (
              -- view ไม่ใช่ตารางตรง ๆ (8.8 / 9.40) — เซ็ตและเมนูจองที่ส่วนประกอบ
              SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
-               FROM bms_order_stock_lines WHERE order_id = ANY($1::uuid[])
+               FROM bms_order_stock_lines WHERE tenant_id = $2 AND order_id = ANY($1::uuid[])
               GROUP BY tenant_id, location_id, product_sku, size
            ) oi
           WHERE inv.tenant_id = oi.tenant_id
             AND inv.location_id = oi.location_id
             AND inv.product_sku = oi.product_sku
             AND inv.size = oi.size`,
-        [ids]
+        [ids, row.tenant_id]
       );
 
       await recordOrderMovements(client, ids, "RELEASE", "system:auto-release");
@@ -2318,8 +2338,8 @@ export async function releaseExpiredOrders(
 
       await client.query(
         `UPDATE bms_orders SET status = 'CANCELLED', cancelled_at = COALESCE(cancelled_at, now()), updated_at = now()
-          WHERE id = ANY($1::uuid[])`,
-        [ids]
+          WHERE tenant_id = $2 AND id = ANY($1::uuid[])`,
+        [ids, row.tenant_id]
       );
 
       await client.query("COMMIT");

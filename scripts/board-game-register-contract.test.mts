@@ -302,8 +302,8 @@ test("an open table is a scannable workspace instead of one long form", () => {
   }
   assert.match(
     page,
-    /session\s*&&\s*!canSell\s*&&\s*tab\s*!==\s*["']boardgame["']/,
-    "the sales-only readiness card must not consume the board-game workspace",
+    /session\s*&&\s*!canSell\s*&&\s*tab\s*===\s*["']sell["']/,
+    "the sales-only readiness card belongs to selling, excluding board-game and receiving workspaces",
   );
 });
 

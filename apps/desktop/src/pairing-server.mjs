@@ -36,6 +36,38 @@ export function assertPairingServerResponse(response) {
   );
 }
 
+/** Bound both headers and body reads. A proxy login page is not a verified POS session. */
+export async function fetchPairingSession(pairing, fetcher, timeoutMs = 5_000) {
+  const controller = new AbortController();
+  let timer;
+  try {
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        const error = new Error("Pairing server request timed out");
+        error.userMessage = "เซิร์ฟเวอร์ไม่ตอบภายในเวลาที่กำหนด กรุณาตรวจเครือข่ายหรือเซิร์ฟเวอร์แล้วลองใหม่";
+        reject(error);
+      }, timeoutMs);
+    });
+    return await Promise.race([(async () => {
+      const response = await fetcher(new URL("/api/pos/session", pairing.serverUrl), {
+        method: "GET", cache: "no-store", redirect: "manual", signal: controller.signal,
+        headers: { "x-pos-device-token": pairing.token },
+      });
+      assertPairingServerResponse(response);
+      let session;
+      try { session = await response.json(); } catch {
+        throw new PairingServerResponseError(response.status, "เซิร์ฟเวอร์ตอบข้อมูลที่ไม่ใช่ BMS POS กรุณาตรวจ URL และการเชื่อมต่อ");
+      }
+      if (typeof session?.device?.id !== "string" || !session.device.id.trim()
+        || typeof session?.device?.code !== "string" || !session.device.code.trim()) {
+        throw new PairingServerResponseError(response.status, "เซิร์ฟเวอร์ไม่ส่งข้อมูลเครื่อง BMS POS กรุณาตรวจ URL แล้วลองใหม่");
+      }
+      return session;
+    })(), timeout]);
+  } finally { clearTimeout(timer); }
+}
+
 export function canRecoverByStartingManagedLocalRuntime(error) {
   return !(error instanceof PairingServerResponseError) || error.status >= 500;
 }

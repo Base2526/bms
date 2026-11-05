@@ -19,6 +19,7 @@ import { beginTenantTx } from "./tenant";
 import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 import { enqueueRealtimeEventInTx, realtimeEvent } from "./realtimeOutbox";
 import { IDEMPOTENCY_CONFLICT_MESSAGE, IdempotencyConflictError } from "./idempotencyErrors";
+import { inventoryIdempotency, replayInventoryResult, storeInventoryResult } from "./inventoryIdempotency";
 
 // ---- types ---------------------------------------------------
 export type PoItemInput = {
@@ -102,7 +103,7 @@ export type ReceivePOResult =
   | { status: "RECEIVED" | "PARTIAL"; poId: string; items: PoLine[]; replayed?: boolean }
   | { status: "PO_NOT_FOUND" }
   | { status: "LOCATION_NOT_FOUND" }
-  | { status: "INVALID_INPUT" }
+  | { status: "INVALID_INPUT"; reason?: string; reasonCode?: "LOT_REQUIRED" | "EXPIRY_REQUIRED" | "LOT_REVIEW_REQUIRED"; sku?: string; size?: string }
   | { status: "INVALID_STATE"; current: string }
   | { status: "LINE_NOT_FOUND"; sku: string; size: string }
   | { status: "OVER_RECEIVE"; sku: string; size: string; remaining: number; requested: number }
@@ -116,6 +117,8 @@ export type ReceivePurchaseOptions = {
   locationId?: string | null;
   /** Stable POS retry key. The ledger row is written in this same transaction. */
   idempotency?: { deviceId: string; actorUserId: string; key: string } | null;
+  /** Staff receipt retries use the existing tenant inventory ledger, bound to the actor. */
+  staffIdempotency?: { actorUserId: string; key: string } | null;
   /** Sensitive stock mutations must audit in the same transaction as the inventory write. */
   audit?: { actor: string; action?: string; meta?: Record<string, unknown> } | null;
 };
@@ -502,6 +505,11 @@ export async function receivePurchaseOrderInTx(
 ): Promise<ReceivePOResult> {
   if (!Array.isArray(received) || received.length === 0) return { status: "EMPTY" };
   if (received.length > 200) return { status: "INVALID_INPUT" };
+  // JSON coercion must never turn true/[1] into one received unit or discard bad lot evidence.
+  if (received.some(it => typeof it?.sku !== "string" || typeof it?.size !== "string"
+    || typeof it?.qty !== "number" || it.qty > 2147483647
+    || (it.lotNo != null && typeof it.lotNo !== "string")
+    || (it.expiryDate != null && typeof it.expiryDate !== "string"))) return { status: "INVALID_INPUT" };
   const normalized = received.map((it) => ({
     sku: String(it?.sku ?? "").trim(),
     size: String(it?.size ?? "").trim(),
@@ -527,20 +535,9 @@ export async function receivePurchaseOrderInTx(
     lotExpiry.set(key, expiry);
   }
   const lines = mergeItems(normalized);
-
-    let locationId: string;
-    if (options.locationId) {
-      const location = await client.query<{ id: string }>(
-        `SELECT id FROM bms_locations WHERE tenant_id = $1 AND id = $2 AND active`,
-        [tenantId, options.locationId]
-      );
-      if (!location.rowCount) {
-        return { status: "LOCATION_NOT_FOUND" };
-      }
-      locationId = location.rows[0].id;
-    } else {
-      locationId = await resolveDefaultLocationIdInTx(client, tenantId);
-    }
+  const staffRequest = options.staffIdempotency ? inventoryIdempotency("purchase.receive", options.staffIdempotency.key, {
+    poId, locationId: options.locationId ?? null, actorUserId: options.staffIdempotency.actorUserId, lines,
+  }) : null;
 
     // Lock before checking the retry ledger: a completed replay sees the stored result
     // even though the PO is now RECEIVED and no longer accepts a new receipt.
@@ -552,7 +549,18 @@ export async function receivePurchaseOrderInTx(
     if (po.rowCount === 0) {
       return { status: "PO_NOT_FOUND" };
     }
+    try {
+      const prior = staffRequest ? await replayInventoryResult<ReceivePOResult>(client, tenantId, staffRequest) : null;
+      if (prior) return { ...prior, replayed: true } as ReceivePOResult;
+    } catch (error) {
+      if (error instanceof IdempotencyConflictError) return { status: "IDEMPOTENCY_CONFLICT" };
+      throw error;
+    }
 
+    // A committed retry is historical evidence. Resolving today's default branch or
+    // requiring it to remain active must not turn a saved receipt into a failure.
+    // POS adapters supply the authenticated device branch, still included in the hash.
+    const locationId = options.locationId || await resolveDefaultLocationIdInTx(client, tenantId);
     let receiptId: string | null = null;
     if (options.idempotency) {
       const stableKey = options.idempotency.key.trim();
@@ -600,6 +608,12 @@ export async function receivePurchaseOrderInTx(
       receiptId = claimed.rows[0].id;
     }
 
+    const location = await client.query<{ id: string }>(
+      `SELECT id FROM bms_locations WHERE tenant_id = $1 AND id = $2 AND active`,
+      [tenantId, locationId],
+    );
+    if (!location.rowCount) return { status: "LOCATION_NOT_FOUND" };
+
     const cur = po.rows[0].status;
     const supplierId = po.rows[0].supplier_id ?? null;
     if (cur !== "OPEN" && cur !== "PARTIAL") {
@@ -622,6 +636,21 @@ export async function receivePurchaseOrderInTx(
         return { status: "OVER_RECEIVE", sku: ln.sku, size: ln.size, remaining, requested: ln.qty };
       }
 
+      // Existing lot rows cannot enforce the first receipt's tracking requirements.
+      // Read the product policy before adding physical stock, including expiry-only policies.
+      const policy = await client.query<{ lot_tracking: boolean; expiry_tracking: boolean }>(
+        `SELECT lot_tracking, expiry_tracking FROM bms_product_stock_policies
+          WHERE tenant_id = $1 AND product_sku = $2`,
+        [tenantId, ln.sku],
+      );
+      const tracking = policy.rows[0];
+      if ((tracking?.lot_tracking || tracking?.expiry_tracking) && !ln.lotNo) {
+        return { status: "INVALID_INPUT", reasonCode: "LOT_REQUIRED", sku: ln.sku, size: ln.size, reason: `${ln.sku}/${ln.size}: ต้องระบุเลขล็อตก่อนรับสินค้า` };
+      }
+      if (tracking?.expiry_tracking && !ln.expiryDate) {
+        return { status: "INVALID_INPUT", reasonCode: "EXPIRY_REQUIRED", sku: ln.sku, size: ln.size, reason: `${ln.sku}/${ln.size}: ต้องระบุวันหมดอายุก่อนรับสินค้า` };
+      }
+
       // สต็อกเข้า: upsert inventory row (สร้างไซซ์ใหม่ได้)
       await client.query(
         `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
@@ -637,7 +666,7 @@ export async function receivePurchaseOrderInTx(
         tenantId, locationId, productSku: ln.sku, size: ln.size, receivedQty: ln.qty,
         lots: ln.lotNo ? [{ lot_no: ln.lotNo, expiry_date: ln.expiryDate ?? null, qty: ln.qty }] : [],
       });
-      if (lotError) return { status: "INVALID_INPUT" };
+      if (lotError) return { status: "INVALID_INPUT", reasonCode: "LOT_REVIEW_REQUIRED", sku: ln.sku, size: ln.size, reason: `${ln.sku}/${ln.size}: ${lotError}` };
       let lotId: string | null = null;
       if (ln.lotNo) {
         lotId = await receiveLotInTx(client, {
@@ -734,6 +763,7 @@ export async function receivePurchaseOrderInTx(
         [receiptId, JSON.stringify(result)]
       );
     }
+    if (staffRequest) await storeInventoryResult(client, tenantId, staffRequest, result);
 
     await enqueueRealtimeEventInTx(client, realtimeEvent({
       eventId: crypto.randomUUID(),
@@ -771,6 +801,11 @@ export async function cancelPurchaseOrder(
       `UPDATE bms_purchase_orders SET status = 'CANCELLED', updated_at = now()
         WHERE tenant_id = $1 AND id = $2 AND status IN ('OPEN','PARTIAL')`,
       [tenantId, poId]
+    );
+    if (res.rowCount) await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1,$2,'purchase.cancel',$3,'{}'::jsonb)`,
+      [tenantId, String(editorId ?? "admin"), poId],
     );
     await client.query("COMMIT");
     return (res.rowCount ?? 0) > 0;
@@ -865,25 +900,23 @@ export async function listReceivablePurchaseOrders(tenantId: string, limit = 50)
 }
 
 export async function getPurchaseOrder(tenantId: string, poId: string) {
+  // Read header and progress in one snapshot: a concurrent receipt must not produce
+  // an OPEN header alongside fully received lines from a later statement.
   const head = await query(
     `SELECT po.id, po.status, po.total_amount, po.note, po.created_at, po.updated_at,
             s.id AS supplier_id, s.name AS supplier_name,
             (SELECT COALESCE(SUM(i.qty_ordered * (i.unit_cost + i.additional_unit_cost)), 0)
                FROM bms_purchase_order_items i
-              WHERE i.tenant_id = po.tenant_id AND i.po_id = po.id) AS landed_total
+              WHERE i.tenant_id = po.tenant_id AND i.po_id = po.id) AS landed_total,
+            (SELECT COALESCE(jsonb_agg(to_jsonb(i) ORDER BY i.product_sku, i.size), '[]'::jsonb)
+               FROM bms_purchase_order_items i
+              WHERE i.tenant_id = po.tenant_id AND i.po_id = po.id) AS items
        FROM bms_purchase_orders po
-       LEFT JOIN bms_suppliers s ON s.id = po.supplier_id
+       LEFT JOIN bms_suppliers s ON s.tenant_id = po.tenant_id AND s.id = po.supplier_id
       WHERE po.tenant_id = $1 AND po.id = $2`,
     [tenantId, poId]
   );
   if (head.rowCount === 0) return null;
-  const items = await query(
-    `SELECT product_sku, size, supplier_sku, supplier_product_name,
-            qty_ordered, qty_received, unit_cost, additional_unit_cost, additional_cost_note
-       FROM bms_purchase_order_items WHERE tenant_id = $1 AND po_id = $2
-      ORDER BY product_sku, size`,
-    [tenantId, poId]
-  );
   const h: any = head.rows[0];
   return {
     id: h.id,
@@ -894,7 +927,7 @@ export async function getPurchaseOrder(tenantId: string, poId: string) {
     supplier: h.supplier_id ? { id: h.supplier_id, name: h.supplier_name } : null,
     createdAt: h.created_at,
     updatedAt: h.updated_at,
-    items: items.rows.map((r: any) => ({
+    items: (h.items as any[]).map((r: any) => ({
       sku: r.product_sku, size: r.size,
       supplierSku: r.supplier_sku,
       supplierProductName: r.supplier_product_name,
