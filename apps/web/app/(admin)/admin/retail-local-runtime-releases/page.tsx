@@ -24,6 +24,7 @@ import type { UploadFile } from "antd/es/upload/interface";
 import {
   CloudUploadOutlined,
   DownloadOutlined,
+  DeleteOutlined,
   InboxOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
@@ -94,6 +95,7 @@ export default function RetailLocalRuntimeReleasesPage() {
   const [readiness, setReadiness] = useState<ReleaseReadiness | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [form] = Form.useForm();
@@ -152,6 +154,36 @@ export default function RetailLocalRuntimeReleasesPage() {
           message.error(error instanceof Error ? error.message : String(error), 8);
         } finally {
           setUploading(false);
+        }
+      },
+    });
+  };
+
+  const deleteRelease = (row: ReleaseSummary) => {
+    const key = `${row.releaseVersion}:${row.platformTarget}`;
+    Modal.confirm({
+      title: `ลบ ${row.releaseVersion} / ${row.platformTarget}?`,
+      content: `จะลบ manifest และไฟล์ component ทั้งชุด (${formatBytes(row.totalBytes)}) ออกจาก release host ผู้ใช้ที่กำลังดาวน์โหลด release นี้อาจได้รับผลกระทบ`,
+      okText: "ลบ release และไฟล์ทั้งหมด",
+      okType: "danger",
+      cancelText: "ยกเลิก",
+      onOk: async () => {
+        setDeleting(key);
+        try {
+          const response = await fetch("/api/admin/retail-local/runtime-releases", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ releaseVersion: row.releaseVersion, platformTarget: row.platformTarget }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+          message.success(`ลบ ${row.releaseVersion} / ${row.platformTarget} และไฟล์แล้ว`);
+          await load();
+        } catch (error) {
+          message.error(error instanceof Error ? error.message : String(error), 8);
+          throw error;
+        } finally {
+          setDeleting(null);
         }
       },
     });
@@ -271,7 +303,13 @@ export default function RetailLocalRuntimeReleasesPage() {
               { title: "Size", dataIndex: "totalBytes", width: 120, render: formatBytes },
               { title: "Managed", dataIndex: "managed", width: 150, render: (value) => value ? <Tag color="green">Verified at publish</Tag> : <Tag color="orange">Existing folder</Tag> },
               { title: "Published", dataIndex: "publishedAt", width: 180, render: (value) => value ? new Date(value).toLocaleString() : "-" },
-              { title: "Manifest", dataIndex: "manifestUrl", width: 120, fixed: "right", render: (value) => <Button size="small" href={value} target="_blank">เปิด</Button> },
+              { title: "Actions", key: "actions", width: 155, fixed: "right", render: (_, row) => <Space>
+                <Button size="small" href={row.manifestUrl} target="_blank">เปิด</Button>
+                <Button size="small" danger icon={<DeleteOutlined />}
+                  loading={deleting === `${row.releaseVersion}:${row.platformTarget}`}
+                  disabled={uploading || deleting !== null}
+                  onClick={() => deleteRelease(row)}>ลบ</Button>
+              </Space> },
             ]}
           />
         </Card>
