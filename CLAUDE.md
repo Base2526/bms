@@ -64,7 +64,7 @@ per entry in [status-log.md](docs/status-log.md)):
 | Branch requisitions, operations, production, materials, quality | `10.87`–`10.98` | [agent-invariants.md](docs/agent-invariants.md) · [system.md](docs/architecture/system.md) |
 | Branch inventory intelligence · purchase landed cost | `10.99`–`10.100`, `10.103` | [inventory.md](docs/business/inventory.md) |
 | Meta inbound hardening/enrichment · Retail Local consented leads/erasure | `10.104`–`10.106`, `10.108` | [database.md](docs/architecture/database.md) · [facebook-messenger.md](docs/integrations/facebook-messenger.md) |
-| Lot identity through branch transfers | `10.107` — **WIP; not merged/DB-verified, do not claim available** | [system.md](docs/architecture/system.md) · [inventory.md](docs/business/inventory.md) |
+| Lot identity through branch transfers | `10.107` — **WIP for rollout; committed and clone-DB verified, production deployment unverified** | [system.md](docs/architecture/system.md) · [inventory.md](docs/business/inventory.md) |
 | Reviewed customer merges, signed web-chat sessions, Work Assistant, desktop shell, native printing | no migration | [crm.md](docs/business/crm.md) · [work-assistant-coverage.md](docs/ai/work-assistant-coverage.md) |
 
 Migrations not yet applied to production: [CLAUDE.local.md](CLAUDE.local.md) § ก่อน production —

@@ -2,6 +2,9 @@ import OperationsScheduleClient from "./OperationsScheduleClient";
 import { listOperationSchedules } from "@/lib/bms/operationsSchedule";
 import { listJobRuns, type JobRunRow } from "@/lib/bms/jobRuns";
 
+// Execution history comes from PostgreSQL and must be read per request, not at build time.
+export const dynamic = "force-dynamic";
+
 export default async function OperationsSchedulePage() {
   const rows = await listOperationSchedules();
 
