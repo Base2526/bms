@@ -1878,10 +1878,16 @@ export default function PosPage() {
   const stockDraftRef = useRef<StockReceiveDraft>({});
   const [stockScanCode, setStockScanCode] = useState("");
   const [stockLoading, setStockLoading] = useState(false);
+  const [stockReadFailed, setStockReadFailed] = useState(false);
   const [stockReceiving, setStockReceiving] = useState(false);
+  const [stockReceiveUncertain, setStockReceiveUncertain] = useState(false);
+  const stockReceiveInFlight = useRef(false);
+  const stockReadVersion = useRef(0);
   const [stockReceiverId, setStockReceiverId] = useState("");
   const [stockReceiverPin, setStockReceiverPin] = useState("");
   const stockReceiveRequestRef = useRef<{ signature: string; key: string } | null>(null);
+  const stockPendingStorageKey = deviceStorageNamespace ? `bms.pos.pendingPurchase:${deviceStorageNamespace}` : "";
+  const stockPendingRestored = useRef("");
   const [recentSalesQuery, setRecentSalesQuery] = useState("");
   const [recentReceipts, setRecentReceipts] = useState<Receipt[]>([]);
   const [returnReceiptFilter, setReturnReceiptFilter] = useState<ReturnReceiptFilter>("all");
@@ -2094,20 +2100,51 @@ export default function PosPage() {
       headers: { ...authHeaders, "content-type": "application/json" },
       cache: "no-store",
       body: JSON.stringify({ ...payload, cashierUserId: stockReceiverId, pin: stockReceiverPin }),
+      signal: AbortSignal.timeout(20_000),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.error ?? data?.status ?? `HTTP ${res.status}`);
+    if (!res.ok) {
+      const statusMessages: Record<string, string> = {
+        INVALID_INPUT: "ข้อมูลรับสินค้าไม่ถูกต้อง ตรวจจำนวน เลขล็อต และวันหมดอายุ",
+        EMPTY: "ยังไม่ได้ระบุสินค้าที่จะรับ",
+        PO_NOT_FOUND: "ไม่พบใบสั่งซื้อนี้ กรุณาโหลดรายการใหม่",
+        LOCATION_NOT_FOUND: "ไม่พบสาขาของเครื่องนี้ กรุณาตรวจสอบการตั้งค่าเครื่อง",
+        INVALID_STATE: "ใบสั่งซื้อนี้รับสินค้าเพิ่มไม่ได้แล้ว กรุณาโหลดรายการใหม่",
+        LINE_NOT_FOUND: "ไม่พบสินค้ารายการนี้ในใบสั่งซื้อ กรุณาโหลดรายการใหม่",
+        OVER_RECEIVE: "จำนวนรับมากกว่าที่ค้างในใบสั่งซื้อ กรุณาตรวจจำนวนอีกครั้ง",
+        IDEMPOTENCY_CONFLICT: "คำขอเดิมมีข้อมูลเปลี่ยนไป กรุณาตรวจรายการรับล่าสุดก่อนทำใหม่",
+      };
+      const lotMessages: Record<string, string> = {
+        LOT_REQUIRED: "ต้องกรอกเลขล็อตก่อนรับสินค้า",
+        EXPIRY_REQUIRED: "ต้องกรอกวันหมดอายุก่อนรับสินค้า",
+        LOT_REVIEW_REQUIRED: "ยอดล็อตหรือวันหมดอายุขัดกับสต็อกสาขานี้ กรุณาตรวจล็อตก่อนรับ",
+      };
+      const lotMessage = lotMessages[data?.reasonCode];
+      const item = data?.sku && data?.size ? `${data.sku}/${data.size}: ` : "";
+      throw Object.assign(new Error(lotMessage ? `${item}${lotMessage}` : data?.error ?? statusMessages[data?.status] ?? `เซิร์ฟเวอร์ตอบกลับ HTTP ${res.status}`), {
+        decided: [400, 401, 403, 404, 409].includes(res.status) && !!(data?.status || data?.error),
+        business: !!statusMessages[data?.status],
+      });
+    }
+    if (payload.action === "receive" && data?.status !== "RECEIVED" && data?.status !== "PARTIAL") {
+      throw new Error("เซิร์ฟเวอร์ตอบสถานะรับสินค้าไม่ถูกต้อง กรุณาตรวจรายการล่าสุดก่อนทำใหม่");
+    }
     return data;
   }
 
   async function loadReceivableOrders(preferPoId?: string | null) {
+    if (stockReceiveRequestRef.current) return false;
     if (!token || !stockReceiverId || !stockReceiverPin) {
       setNotice({ type: "error", text: "เลือกพนักงานและใส่ PIN ก่อนโหลดใบสั่งซื้อ" });
-      return;
+      return false;
     }
+    const version = ++stockReadVersion.current;
     setStockLoading(true);
     try {
       const data = await postPosPurchase({ action: "list" });
+      if (version !== stockReadVersion.current) return false;
+      if (!Array.isArray(data?.orders)) throw new Error("เซิร์ฟเวอร์ส่งรายการใบสั่งซื้อไม่ครบ กรุณาลองใหม่");
+      setStockReadFailed(false);
       const rows = Array.isArray(data?.orders) ? data.orders as PosPurchaseHeader[] : [];
       setReceivableOrders(rows);
       const target = preferPoId && rows.some((row) => row.id === preferPoId)
@@ -2115,37 +2152,51 @@ export default function PosPage() {
         : stockOrder && rows.some((row) => row.id === stockOrder.id)
           ? stockOrder.id
           : null;
-      if (target) await loadStockOrder(target, false);
+      if (target) return await loadStockOrder(target, false);
       else if (stockOrder && !rows.some((row) => row.id === stockOrder.id)) {
         setStockOrder(null);
         replaceStockDraft({});
       }
+      return true;
     } catch (e: any) {
+      if (version !== stockReadVersion.current) return false;
       setNotice({ type: "error", text: `โหลดใบสั่งซื้อไม่สำเร็จ: ${String(e?.message ?? e)}` });
+      setStockReadFailed(true);
+      return false;
     } finally {
-      setStockLoading(false);
+      if (version === stockReadVersion.current) setStockLoading(false);
     }
   }
 
   async function loadStockOrder(poId: string, clearDraft = true) {
+    if (stockReceiveRequestRef.current) return false;
+    const version = ++stockReadVersion.current;
     if (!poId) {
       setStockOrder(null);
       replaceStockDraft({});
-      return;
+      setStockLoading(false);
+      return true;
     }
     setStockLoading(true);
     try {
       const data = await postPosPurchase({ action: "detail", poId });
+      if (version !== stockReadVersion.current) return false;
+      if (!data?.order || data.order.id !== poId || !Array.isArray(data.order.items)) throw new Error("เซิร์ฟเวอร์ส่งรายละเอียดใบสั่งซื้อไม่ครบ");
+      setStockReadFailed(false);
       setStockOrder(data.order as PosPurchaseDetail);
       if (clearDraft) {
         replaceStockDraft({});
         stockReceiveRequestRef.current = null;
       }
-      setNotice(null);
+      if (clearDraft) setNotice(null);
+      return true;
     } catch (e: any) {
+      if (version !== stockReadVersion.current) return false;
       setNotice({ type: "error", text: `เปิดใบสั่งซื้อไม่สำเร็จ: ${String(e?.message ?? e)}` });
+      setStockReadFailed(true);
+      return false;
     } finally {
-      setStockLoading(false);
+      if (version === stockReadVersion.current) setStockLoading(false);
     }
   }
 
@@ -2203,19 +2254,28 @@ export default function PosPage() {
       await onUnpair();
       return;
     }
-    // เครื่องนี้เลิกจับคู่แล้ว — ดราฟต์ที่ผูกไว้กับ token เดิมไม่มีความหมายอีกต่อไป
-    if (token) {
-      const namespace = await posDeviceStorageNamespace(token);
-      window.localStorage.removeItem(LOCAL_TAB_KEY_PREFIX + namespace);
-      window.localStorage.removeItem(LOCAL_CART_DRAFT_KEY_PREFIX + namespace);
+    // Preserve the cashier and draft unless the browser/native store confirms removal.
+    let namespace = deviceStorageNamespace;
+    try {
+      if (!namespace && token) namespace = await posDeviceStorageNamespace(token);
+      await clearPosDeviceToken(() => {
+        if (namespace) {
+          try {
+            window.localStorage.removeItem(LOCAL_TAB_KEY_PREFIX + namespace);
+            window.localStorage.removeItem(LOCAL_CART_DRAFT_KEY_PREFIX + namespace);
+          } catch { /* Credential removal succeeded even if optional draft cleanup is unavailable. */ }
+        }
+        setToken("");
+        setDeviceStorageNamespace("");
+        setTokenInput("");
+        setSession(null);
+        setTokenRejected(false);
+        setSessionError("");
+      });
+    } catch (error: any) {
+      setNotice({ type: "error", text: error?.message || "เลิกจับคู่เครื่องไม่สำเร็จ กรุณาลองใหม่" });
+      return;
     }
-    setToken("");
-    setDeviceStorageNamespace("");
-    setTokenInput("");
-    setSession(null);
-    setTokenRejected(false);
-    setSessionError("");
-    await clearPosDeviceToken();
   }
 
   useEffect(() => {
@@ -2299,6 +2359,29 @@ export default function PosPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceStorageNamespace, embedded, initialTab, session]);
+
+  useEffect(() => {
+    if (!session || !stockPendingStorageKey || stockPendingRestored.current === stockPendingStorageKey) return;
+    stockPendingRestored.current = stockPendingStorageKey;
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(stockPendingStorageKey) ?? "null");
+      if (!saved) return;
+      if (!saved.order?.id || !Array.isArray(saved.order.items) || !saved.draft ||
+          typeof saved.receiverId !== "string" || typeof saved.request?.key !== "string" ||
+          typeof saved.request?.signature !== "string") throw new Error("invalid pending receipt");
+      stockReadVersion.current++;
+      stockReceiveRequestRef.current = saved.request;
+      setStockOrder(saved.order);
+      replaceStockDraft(saved.draft);
+      setStockReceiverId(saved.receiverId);
+      setStockReceiveUncertain(true);
+      setTab("stock");
+      setNotice({ type: "error", text: "มีรายการรับสินค้าที่ยังไม่ทราบผล ใส่ PIN ผู้รับสินค้าแล้วกดตรวจรายการเดิมอีกครั้ง" });
+    } catch {
+      setStockReadFailed(true);
+      setNotice({ type: "error", text: "อ่านรายการรับสินค้าที่ค้างไว้ไม่ได้ กรุณาตรวจประวัติรับสินค้าก่อนเริ่มใหม่" });
+    }
+  }, [session, stockPendingStorageKey]);
 
   useEffect(() => {
     if (!token) return;
@@ -2714,6 +2797,10 @@ export default function PosPage() {
   }
 
   function switchTab(nextTab: PosTab) {
+    if (stockReceiveRequestRef.current) {
+      setNotice({ type: "error", text: "กรุณาตรวจผลรายการรับสินค้าเดิมก่อนเปลี่ยนงาน" });
+      return;
+    }
     if (nextTab === tab) return;
     if (blindOpen && nextTab !== "returns") {
       const tabLabel = POS_TABS.find((item) => item.key === nextTab)?.label ?? nextTab;
@@ -4686,6 +4773,8 @@ export default function PosPage() {
   }
 
   async function handleStockScan(code: string) {
+    if (stockReceiveRequestRef.current || stockLoading || stockReadFailed) return;
+    const version = stockReadVersion.current;
     const order = stockOrder;
     if (!order) {
       setNotice({ type: "error", text: "เลือกใบสั่งซื้อก่อนยิงสินค้าเข้าสต็อก" });
@@ -4701,6 +4790,7 @@ export default function PosPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error ?? "ไม่พบสินค้าจากรหัสนี้");
       const hit = data as ScanHit;
+      if (stockReceiveRequestRef.current || version !== stockReadVersion.current) return;
       const pending = order.items.filter((line) => line.qtyReceived < line.qtyOrdered);
       const exact = pending.find((line) =>
         line.sku === hit.sku && line.size.localeCompare(hit.size, undefined, { sensitivity: "accent" }) === 0
@@ -4744,6 +4834,7 @@ export default function PosPage() {
     line: PosPurchaseDetail["items"][number],
     patch: Partial<{ qty: number; lotNo: string; expiryDate: string }>
   ) {
+    if (stockReceiveRequestRef.current || stockLoading || stockReadFailed) return;
     const key = stockLineKey(line.sku, line.size);
     const remaining = Math.max(0, line.qtyOrdered - line.qtyReceived);
     const currentDraft = stockDraftRef.current;
@@ -4757,7 +4848,7 @@ export default function PosPage() {
   }
 
   async function submitStockReceive() {
-    if (!stockOrder) return;
+    if (!stockOrder || stockReceiveInFlight.current || stockLoading || stockReadFailed) return;
     const items = stockOrder.items.flatMap((line) => {
       const draft = stockDraft[stockLineKey(line.sku, line.size)];
       return draft?.qty > 0 ? [{
@@ -4780,7 +4871,14 @@ export default function PosPage() {
       };
     }
     setStockReceiving(true);
+    stockReceiveInFlight.current = true;
     try {
+      if (!stockPendingStorageKey) throw Object.assign(new Error("ยังโหลดข้อมูลเครื่องไม่ครบ กรุณาลองใหม่"), { decided: true });
+      try {
+        window.localStorage.setItem(stockPendingStorageKey, JSON.stringify({
+          order: stockOrder, draft: stockDraft, receiverId: stockReceiverId, request: stockReceiveRequestRef.current,
+        }));
+      } catch { throw Object.assign(new Error("เก็บรายการเพื่อป้องกันรับซ้ำไม่ได้ กรุณาตรวจพื้นที่จัดเก็บของเครื่อง"), { decided: true }); }
       const data = await postPosPurchase({
         action: "receive",
         poId: stockOrder.id,
@@ -4788,17 +4886,27 @@ export default function PosPage() {
         idempotencyKey: stockReceiveRequestRef.current.key,
       });
       const receivedUnits = items.reduce((sum, line) => sum + line.qty, 0);
-      setNotice({
-        type: "ok",
-        text: `${data.replayed ? "ตรวจพบรายการเดิม — " : ""}รับสินค้า ${receivedUnits} หน่วยแล้ว (${data.status})`,
-      });
+      const receiptNotice = data.replayed ? "รายการรับเดิมบันทึกไว้แล้ว ไม่เพิ่มสต็อกซ้ำ" : `รับสินค้า ${receivedUnits} หน่วยแล้ว · ${data.status === "RECEIVED" ? "ครบตามใบสั่งซื้อ" : "ยังมีสินค้าค้างรับ"}`;
+      setNotice({ type: "ok", text: receiptNotice });
       replaceStockDraft({});
       stockReceiveRequestRef.current = null;
-      await loadReceivableOrders(data.status === "PARTIAL" ? stockOrder.id : null);
+      try { window.localStorage.removeItem(stockPendingStorageKey); } catch {}
+      setStockReceiveUncertain(false);
+      const refreshed = await loadReceivableOrders(data.status === "PARTIAL" ? stockOrder.id : null);
+      if (!refreshed) setNotice({ type: "ok", text: `${receiptNotice} · แต่โหลดข้อมูลล่าสุดไม่ได้ กรุณากดโหลด PO ค้างรับก่อนรับครั้งถัดไป` });
       if (data.status === "RECEIVED") setStockOrder(null);
     } catch (e: any) {
-      setNotice({ type: "error", text: `รับสินค้าไม่สำเร็จ: ${String(e?.message ?? e)}` });
+      if (e?.decided && (!stockReceiveUncertain || e?.business)) {
+        stockReceiveRequestRef.current = null;
+        try { window.localStorage.removeItem(stockPendingStorageKey); } catch {}
+        setStockReceiveUncertain(false);
+        setNotice({ type: "error", text: `รับสินค้าไม่สำเร็จ: ${String(e?.message ?? e)}` });
+      } else {
+        setStockReceiveUncertain(true);
+        setNotice({ type: "error", text: `${e?.decided ? `${e.message} · ` : ""}ยังยืนยันผลรับสินค้าไม่ได้ กดตรวจรายการเดิมอีกครั้ง ระบบจะใช้คำขอเดิมโดยไม่เพิ่มสต็อกซ้ำ` });
+      }
     } finally {
+      stockReceiveInFlight.current = false;
       setStockReceiving(false);
     }
   }
@@ -6574,6 +6682,12 @@ export default function PosPage() {
     return (
       <div style={{ maxWidth: 460, margin: "0 auto", padding: 32 }}>
         <h1 style={{ fontSize: 20, fontWeight: 500 }}>ตั้งค่าเครื่องขาย</h1>
+        {notice && (
+          <PosDismissibleAlert key={`${notice.type}:${notice.text}`} role="alert" onClose={() => setNotice(null)}
+            style={{ background: "var(--posx-danger-bg, #fdecea)", color: "var(--posx-danger-text, #611a15)", padding: 12, borderRadius: 8, margin: "12px 0" }}>
+            {notice.text}
+          </PosDismissibleAlert>
+        )}
         <div style={{ background: "var(--posx-info-bg, #e6f4ff)", color: "var(--posx-info-text, #003a8c)", padding: 12, borderRadius: 8, margin: "12px 0", fontSize: 14 }}>
           <b>ผู้จัดการทำครั้งเดียวตอนตั้งเครื่อง</b> — เหมือนต่อ Wi-Fi ให้แท็บเล็ต
           <br />
@@ -6920,7 +7034,7 @@ export default function PosPage() {
       {/* บอกให้ชัดว่าขาดอะไรถึงยังขายไม่ได้ — เดิมจอเงียบ คนหน้าร้านเดาเองไม่ถูก
           ช่องเลือกผู้ขาย/PIN อยู่ในนี้เลย เพราะรีเฟรชหน้าทีไร PIN หายจากหน่วยความจำ
           ถ้าให้ไปหาในแท็บตั้งค่าคือเพิ่มคลิกให้กับสิ่งที่ต้องทำบ่อยที่สุดหลังรีเฟรช */}
-      {session && !canSell && tab !== "boardgame" && (
+      {session && !canSell && tab === "sell" && (
         <PosDismissibleAlert style={{ background: "var(--posx-surface, #fff)", padding: 12, borderRadius: 8 }}>
           <div style={{ fontWeight: 500, marginBottom: 6 }}>ยังขายไม่ได้ — เหลืออีก:</div>
           <ol style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.9 }}>
@@ -7383,8 +7497,10 @@ export default function PosPage() {
             </div>
             <button
               type="button"
-              onClick={() => void loadReceivableOrders(stockOrder?.id)}
-              disabled={stockLoading || !stockReceiverId || !stockReceiverPin}
+              onClick={async () => {
+                if (await loadReceivableOrders(stockOrder?.id)) setNotice({ type: "ok", text: "โหลดใบสั่งซื้อล่าสุดแล้ว" });
+              }}
+              disabled={stockLoading || stockReceiving || stockReceiveUncertain || !stockReceiverId || !stockReceiverPin}
               style={{ padding: "8px 12px", fontSize: 13 }}
             >
               {stockLoading ? "กำลังโหลด…" : "โหลด PO ค้างรับ"}
@@ -7394,7 +7510,10 @@ export default function PosPage() {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <select
               value={stockReceiverId}
+              disabled={stockReceiving || stockReceiveUncertain}
               onChange={(event) => {
+                stockReadVersion.current++;
+                setStockLoading(false);
                 setStockReceiverId(event.target.value);
                 setStockReceiverPin("");
                 setReceivableOrders([]);
@@ -7416,13 +7535,14 @@ export default function PosPage() {
               type="password"
               inputMode="numeric"
               value={stockReceiverPin}
+              disabled={stockReceiving}
               onChange={(event) => setStockReceiverPin(event.target.value.replace(/[^0-9]/g, ""))}
               placeholder="PIN ผู้รับสินค้า"
               style={{ flex: "0 1 170px", minWidth: 130, padding: 10, fontSize: 13 }}
             />
           </div>
           {(!stockReceiverId || !stockReceiverPin) && (
-            <PosDismissibleAlert className="pos-note pos-note--err">เลือกผู้รับสินค้าและใส่ PIN — ระบบตรวจสิทธิ์ purchase.receive ทุกครั้ง</PosDismissibleAlert>
+            <PosDismissibleAlert className="pos-note pos-note--err">เลือกผู้รับสินค้าและใส่ PIN — ระบบตรวจสิทธิ์รับสินค้าทุกครั้ง</PosDismissibleAlert>
           )}
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12 }}>
@@ -7430,7 +7550,7 @@ export default function PosPage() {
             <select
               value={stockOrder?.id ?? ""}
               onChange={(event) => void loadStockOrder(event.target.value)}
-              disabled={stockLoading || receivableOrders.length === 0}
+              disabled={stockLoading || stockReceiving || stockReceiveUncertain || receivableOrders.length === 0}
               style={{ padding: 10, fontSize: 14 }}
             >
               <option value="">— เลือก PO —</option>
@@ -7443,7 +7563,7 @@ export default function PosPage() {
           </label>
           {!stockLoading && receivableOrders.length === 0 && stockReceiverId && stockReceiverPin && (
             <div style={{ fontSize: 12, color: "var(--pos-muted)" }}>
-              กด “โหลด PO ค้างรับ” — ถ้าไม่พบ แปลว่าไม่มี PO สถานะ OPEN/PARTIAL ที่รับต่อได้
+              กด “โหลด PO ค้างรับ” — ถ้าไม่พบ แปลว่าไม่มีใบสั่งซื้อที่รอรับของหรือรับไปบางส่วน
             </div>
           )}
 
@@ -7452,7 +7572,7 @@ export default function PosPage() {
             <input
               ref={stockScanRef}
               value={stockScanCode}
-              disabled={!stockOrder || stockReceiving}
+              disabled={!stockOrder || stockReceiving || stockReceiveUncertain || stockLoading || stockReadFailed}
               onChange={(event) => setStockScanCode(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
@@ -7474,7 +7594,7 @@ export default function PosPage() {
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", fontSize: 12 }}>
                   <strong>PO {stockOrder.id.slice(0, 8)} · {stockOrder.supplier?.name ?? "ไม่ระบุ supplier"}</strong>
-                  <span style={{ color: "var(--pos-muted)" }}>สถานะ {stockOrder.status}</span>
+                  <span style={{ color: "var(--pos-muted)" }}>สถานะ {stockOrder.status === "OPEN" ? "รอรับของ" : stockOrder.status === "PARTIAL" ? "รับบางส่วน" : stockOrder.status}</span>
                 </div>
                 {stockOrder.note && <div style={{ fontSize: 12, color: "var(--pos-muted)" }}>หมายเหตุ: {stockOrder.note}</div>}
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -7491,7 +7611,7 @@ export default function PosPage() {
                               สั่ง {line.qtyOrdered} · รับแล้ว {line.qtyReceived} · เหลือ {remaining}
                             </div>
                           </div>
-                          <div className="pos-qty">
+                          <fieldset className="pos-qty" disabled={stockReceiving || stockReceiveUncertain || stockLoading || stockReadFailed} style={{ border: 0, padding: 0, margin: 0 }}>
                             <button type="button" onClick={() => updateStockDraft(line, { qty: draft.qty - 1 })} disabled={draft.qty <= 0}>−</button>
                             <input
                               type="number"
@@ -7503,14 +7623,15 @@ export default function PosPage() {
                               style={{ width: 62, textAlign: "center", padding: 7 }}
                             />
                             <button type="button" onClick={() => updateStockDraft(line, { qty: draft.qty + 1 })} disabled={draft.qty >= remaining}>+</button>
-                          </div>
+                          </fieldset>
                         </div>
                         {draft.qty > 0 && (
                           <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(140px,1fr)", gap: 8, marginTop: 8 }}>
                             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, color: "var(--pos-muted)" }}>
-                              Lot ผู้ผลิต (ถ้ามี)
+                              เลขล็อตตามฉลาก (สินค้าที่ติดตามล็อตต้องกรอก)
                               <input
                                 value={draft.lotNo}
+                                disabled={stockReceiving || stockReceiveUncertain || stockLoading || stockReadFailed}
                                 maxLength={100}
                                 onChange={(event) => updateStockDraft(line, { lotNo: event.target.value })}
                                 placeholder="เช่น LOT-240830"
@@ -7527,6 +7648,7 @@ export default function PosPage() {
                               <input
                                 type="date"
                                 value={draft.expiryDate}
+                                disabled={stockReceiving || stockReceiveUncertain || stockLoading || stockReadFailed}
                                 onChange={(event) => updateStockDraft(line, { expiryDate: event.target.value })}
                                 aria-label={`วันหมดอายุ ${line.sku} ${line.size}`}
                                 style={{ padding: 8, fontSize: 12 }}
@@ -7540,7 +7662,7 @@ export default function PosPage() {
                 </div>
                 <button
                   type="button"
-                  disabled={draftUnits === 0 || stockReceiving || !stockReceiverId || !stockReceiverPin}
+                  disabled={draftUnits === 0 || stockReceiving || stockLoading || stockReadFailed || !stockReceiverId || !stockReceiverPin}
                   onClick={() => {
                     if (window.confirm(`ยืนยันรับสินค้า ${draftUnits} หน่วยเข้าสต็อกสาขานี้? รายการนี้ขยับสต็อกจริงและย้อนกลับจากหน้านี้ไม่ได้`)) {
                       void submitStockReceive();
@@ -7548,7 +7670,7 @@ export default function PosPage() {
                   }}
                   style={{ padding: "11px 14px", fontSize: 14, fontWeight: 600 }}
                 >
-                  {stockReceiving ? "กำลังบันทึก…" : `ยืนยันรับเข้า ${draftUnits} หน่วย`}
+                  {stockReceiving ? "กำลังบันทึก…" : stockReceiveUncertain ? "ตรวจรายการเดิมอีกครั้ง" : `ยืนยันรับเข้า ${draftUnits} หน่วย`}
                 </button>
               </>
             );

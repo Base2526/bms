@@ -7724,6 +7724,10 @@ type BmsPurchaseReport {
 type BmsPurchaseResult {
   message: String
   poId: ID
+  reasonCode: String
+  replayed: Boolean
+  size: String
+  sku: String
   status: String!
 }
 
@@ -7799,6 +7803,8 @@ input BmsQualityInput {
 }
 
 input BmsReceiveItemInput {
+  expiryDate: String
+  lotNo: String
   qty: Int!
   size: String!
   sku: String!
@@ -10193,7 +10199,7 @@ type Mutation {
   bmsPublishProduct(sku: String!): BmsProductReadiness!
   bmsQualityCommand(input: BmsQualityInput!): BmsChecklistCommandResult!
   bmsReadAiLimitNotification(id: ID!): Boolean!
-  bmsReceivePurchaseOrder(id: ID!, items: [BmsReceiveItemInput!]!): BmsPurchaseResult!
+  bmsReceivePurchaseOrder(id: ID!, idempotencyKey: String, items: [BmsReceiveItemInput!]!): BmsPurchaseResult!
   bmsReceiveStockTransfer(input: BmsReceiveStockTransferInput!): BmsMobileStockTransferActionResult!
 
   """

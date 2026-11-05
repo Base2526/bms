@@ -57,6 +57,17 @@ contextBridge.exposeInMainWorld("bmsDesktop", {
   // No renderer-supplied title/body: the native notification stays generic and can never leak
   // provider/customer/order data onto the operating-system lock screen.
   requestOperationalAttention: () => ipcRenderer.invoke("bms-pos:request-operational-attention"),
-  unpair: () => ipcRenderer.invoke("bms-pos:unpair"),
+  unpair: async (afterRemoval) => {
+    const deferSetup = typeof afterRemoval === "function";
+    const result = await ipcRenderer.invoke("bms-pos:unpair", { deferSetup });
+    if (result?.ok && deferSetup) {
+      try { await afterRemoval(); }
+      finally {
+        // Removal already succeeded; a navigation/renderer shutdown cannot turn it into failure.
+        await ipcRenderer.invoke("bms-pos:complete-unpair").catch(() => {});
+      }
+    }
+    return result;
+  },
   getAppInfo: () => ipcRenderer.invoke("bms-pos:app-info"),
 });

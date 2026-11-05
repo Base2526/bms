@@ -1699,7 +1699,7 @@ test("cron ปล่อยบิลหมดอายุต้องไม่ก
     src.indexOf("export async function releaseExpiredOrders"),
   );
   const candidates = statement.slice(
-    statement.indexOf("SELECT id FROM bms_orders"),
+    statement.indexOf("SELECT id, tenant_id FROM bms_orders"),
     statement.indexOf("const released"),
   );
   assert.match(
@@ -2498,6 +2498,8 @@ test("the restaurant register recovers from a revoked device token without a run
 
   const start = page.indexOf("async function unpairFromSettings()");
   const section = page.slice(start, page.indexOf("async function loadFloor", start));
-  assert.ok(section.indexOf('setToken("")') < section.indexOf("await clearPosDeviceToken()"),
-    "polling must stop before the native shell invalidates its credential");
+  assert.ok(section.indexOf("await clearPosDeviceToken(() => {") < section.indexOf('setToken("")'),
+    "local credential removal does not revoke the server token; preserve the session until removal succeeds");
+  assert.match(section, /catch \(error: any\) \{[\s\S]*?setError\([\s\S]*?return;/,
+    "failed removal must report an error without clearing the operator or draft");
 });

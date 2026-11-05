@@ -188,6 +188,9 @@ export async function validateTransferLotReceiptInTx(
   const inventory = await client.query<{ current_stock: number }>(
     `SELECT current_stock FROM bms_inventory
       WHERE tenant_id=$1 AND location_id=$2 AND product_sku=$3 AND size=$4 FOR UPDATE`, key);
+  if (!inventory.rows.length || Number(inventory.rows[0].current_stock) < input.receivedQty) {
+    return "ไม่พบยอดสต็อกที่รองรับสินค้ารับคืน กรุณาตรวจสอบสต็อกก่อนทำรายการ";
+  }
   const existing = await client.query<{ lot_no: string; expiry_date: string | null; qty: number }>(
     `SELECT lot_no, expiry_date::text AS expiry_date, qty FROM bms_inventory_lots
       WHERE tenant_id=$1 AND location_id=$2 AND product_sku=$3 AND size=$4

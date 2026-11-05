@@ -1235,23 +1235,28 @@ export default function RestaurantPosPage() {
     if (tab === "shift") setScreen("SHIFT");
   }, []);
   async function unpairFromSettings() {
-    if (deviceStorageNamespace) {
-      try {
-        window.localStorage.removeItem(LOCAL_SCREEN_KEY_PREFIX + deviceStorageNamespace);
-        window.localStorage.removeItem(LOCAL_CHECK_KEY_PREFIX + deviceStorageNamespace);
-      } catch { /* โหมดส่วนตัว */ }
+    try {
+      await clearPosDeviceToken(() => {
+        if (deviceStorageNamespace) {
+          try {
+            window.localStorage.removeItem(LOCAL_SCREEN_KEY_PREFIX + deviceStorageNamespace);
+            window.localStorage.removeItem(LOCAL_CHECK_KEY_PREFIX + deviceStorageNamespace);
+          } catch { /* โหมดส่วนตัว */ }
+        }
+        // Stop polling and discard operator state only after credential removal is confirmed.
+        setToken("");
+        setDeviceStorageNamespace("");
+        setTokenRejected(false);
+        setSession(null);
+        setError("");
+        clearOperator();
+        setActorUserId("");
+        setActorPin("");
+      });
+    } catch (error: any) {
+      setError(error?.message || t("pos_restaurant.unpair_failed"));
+      return;
     }
-    // Stop every poll before invalidating the credential. Otherwise a focus/realtime callback can
-    // race the native setup window and surface the expected 401 as a Next.js runtime overlay.
-    setToken("");
-    setDeviceStorageNamespace("");
-    setTokenRejected(false);
-    setSession(null);
-    setError("");
-    clearOperator();
-    setActorUserId("");
-    setActorPin("");
-    await clearPosDeviceToken();
     // Desktop shows its own setup window after unpair; a browser register returns to pairing.
     if (!window.bmsDesktop) router.replace("/pos");
   }

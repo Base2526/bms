@@ -4,8 +4,8 @@ import { cachedPosEntryPath } from "./renderer-route.mjs";
 
 export const PAIRING_CONFIG_VERSION = 1;
 
-/** Serialize writes and removal so a delayed route-cache write cannot resurrect an unpaired token. */
-export function createPairingWriter(file, encrypt, io = { writeFile, rename, rm }) {
+/** Serialize pairing IO so restores observe completed transitions and cache writes cannot resurrect tokens. */
+export function createPairingWriter(file, encrypt, io = { readFile, writeFile, rename, rm }) {
   let pending = Promise.resolve();
   const enqueue = (operation) => {
     const result = pending.then(operation);
@@ -14,6 +14,10 @@ export function createPairingWriter(file, encrypt, io = { writeFile, rename, rm 
     return result;
   };
   return {
+    read(decrypt) {
+      // A reopened window must observe preceding writes/removal, not a half-finished transition.
+      return enqueue(() => readSavedPairing(file, decrypt, io.readFile));
+    },
     write(pairing) {
       const snapshot = { ...pairing };
       return enqueue(async () => {

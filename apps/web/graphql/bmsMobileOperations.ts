@@ -541,7 +541,7 @@ export const bmsMobileOperationsResolvers = {
         countId,
         sku: String(input.sku ?? ""),
         size: String(input.size ?? ""),
-        countedQty: Number(input.countedQty ?? 0),
+        countedQty: typeof input.countedQty === "number" ? input.countedQty : Number.NaN,
         note: typeof input.note === "string" ? input.note : null,
         actorUserId: actingUserId,
       });

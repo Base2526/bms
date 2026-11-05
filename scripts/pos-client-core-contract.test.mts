@@ -200,7 +200,7 @@ test("desktop startup reuses its compatible route without rendering the app twic
   assert.doesNotMatch(showPos, /method: "GET"/);
   assert.match(
     showPos,
-    /const cachedEntryPath = cachedPosEntryPath\(pairing\.posEntryPath\);\s*const entryPath = cachedEntryPath \?\? await probeEntryPath\(\);\s*await loadPosUrl/,
+    /const cachedEntryPath = cachedPosEntryPath\(pairing\.posEntryPath\);\s*const entryPath = cachedEntryPath \?\? await probeEntryPath\(\);\s*if \(!current\(\)\) return;\s*await loadPosUrl/,
   );
   assert.match(showPos, /void probeEntryPath\(\)\.then/);
   assert.match(

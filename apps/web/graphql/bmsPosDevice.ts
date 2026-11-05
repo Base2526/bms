@@ -3959,7 +3959,7 @@ export const bmsPosDeviceResolvers = {
       if (!order) throw mobileGraphqlError("ไม่พบใบสั่งซื้อ", "NOT_FOUND");
       if (order.status !== "OPEN" && order.status !== "PARTIAL") {
         throw mobileGraphqlError(
-          `ใบสั่งซื้อนี้รับต่อไม่ได้ (สถานะ ${order.status})`,
+          "ใบสั่งซื้อนี้รับครบหรือถูกยกเลิกแล้ว กรุณาโหลดใบสั่งซื้อค้างรับใหม่",
           "CONFLICT",
           { reason: "INVALID_STATE" },
         );
@@ -4855,7 +4855,7 @@ export const bmsPosDeviceResolvers = {
       ) {
         return badPosInput("รายการรับสินค้าไม่ถูกต้อง");
       }
-      return receivePurchaseOrder(
+      const result = await receivePurchaseOrder(
         device.tenantId,
         poId,
         items,
@@ -4875,6 +4875,17 @@ export const bmsPosDeviceResolvers = {
           },
         },
       );
+      const messages: Record<string, string> = {
+        PO_NOT_FOUND: "ไม่พบใบสั่งซื้อ กรุณาโหลดรายการใหม่",
+        LOCATION_NOT_FOUND: "ไม่พบสาขาที่รับสินค้า",
+        INVALID_INPUT: "ตรวจจำนวนรับ เลขล็อต และวันหมดอายุอีกครั้ง",
+        INVALID_STATE: "ใบสั่งซื้อนี้รับสินค้าเพิ่มไม่ได้แล้ว กรุณาโหลดรายการใหม่",
+        LINE_NOT_FOUND: "ไม่พบสินค้ารายการนี้ในใบสั่งซื้อ",
+        OVER_RECEIVE: "จำนวนรับมากกว่าที่ค้างในใบสั่งซื้อ กรุณาโหลดรายการใหม่",
+        IDEMPOTENCY_CONFLICT: "ข้อมูลคำขอเปลี่ยน กรุณาตรวจรายการรับล่าสุดก่อนทำใหม่",
+        EMPTY: "ยังไม่มีรายการสินค้าที่จะรับ",
+      };
+      return { ...result, message: "reason" in result && result.reason ? result.reason : messages[result.status] ?? null };
     },
 
     async bmsPosSendReceipt(

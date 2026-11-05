@@ -16,7 +16,7 @@ import {
   Select,
   AutoComplete,
 } from "antd";
-import { useState, useMemo, useEffect, useDeferredValue } from "react";
+import { useState, useMemo, useEffect, useDeferredValue, useRef } from "react";
 import {
   ReloadOutlined,
   PlusOutlined,
@@ -110,8 +110,8 @@ const M_CREATE = gql`
   }
 `;
 const M_RECEIVE = gql`
-  mutation ($id: ID!, $items: [BmsReceiveItemInput!]!) {
-    bmsReceivePurchaseOrder(id: $id, items: $items) { status poId message }
+  mutation ($id: ID!, $items: [BmsReceiveItemInput!]!, $idempotencyKey: String) {
+    bmsReceivePurchaseOrder(id: $id, items: $items, idempotencyKey: $idempotencyKey) { status poId message reasonCode sku size replayed }
   }
 `;
 const M_CANCEL = gql`mutation ($id: ID!) { bmsCancelPurchaseOrder(id: $id) }`;
@@ -164,6 +164,13 @@ function PurchaseManagement() {
 
   const onErr = (e: any) => message.error(e?.message || t("admin_purchase.action_failed"));
   const pos: PO[] = data?.bmsPurchaseOrders || [];
+  useEffect(() => {
+    if (receivePO || !can("purchase.receive")) return;
+    try {
+      const pending = pos.find(order => window.sessionStorage.getItem(`bms.purchase.pending:${order.id}`));
+      if (pending) setReceivePO(pending);
+    } catch {}
+  }, [data?.bmsPurchaseOrders, receivePO, can]);
 
   const [cancel, { loading: canceling }] = useMutation(M_CANCEL, {
     onCompleted: (d: any) =>
@@ -207,7 +214,7 @@ function PurchaseManagement() {
       { title: t("admin_purchase.col_landed_value"), dataIndex: "landedTotal", key: "landedTotal", width: 140, align: "right" as const,
         render: (v: number) => <Typography.Text strong>{Number(v).toLocaleString()} ฿</Typography.Text> },
       { title: t("admin_purchase.col_status"), dataIndex: "status", key: "status", width: 140,
-        render: (s: POStatus) => <Tag color={STATUS_COLOR[s]}>{s} · {STATUS_LABEL[s]}</Tag> },
+        render: (s: POStatus) => <Tag color={STATUS_COLOR[s]}>{STATUS_LABEL[s] ?? s}</Tag> },
       { title: t("admin_purchase.col_created"), dataIndex: "createdAt", key: "createdAt", width: 160,
         render: (d: string) => new Date(d).toLocaleString() },
       { title: "Actions", key: "actions", width: 180,
@@ -527,49 +534,120 @@ function ReceivePOModal({
 }: { po: PO | null; onClose: () => void; onDone: () => void }) {
   const { t } = useI18n();
   const [form] = Form.useForm();
+  const [pendingReceipt, setPendingReceipt] = useState<{ id: string; items: any[]; idempotencyKey: string } | null>(null);
+  const submitting = useRef(false);
+  const pendingKey = po ? `bms.purchase.pending:${po.id}` : "";
+  useEffect(() => {
+    if (!po) return;
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem(pendingKey) ?? "null");
+      if (saved?.id === po.id && Array.isArray(saved.items) && typeof saved.idempotencyKey === "string") {
+        setPendingReceipt(saved);
+        const values: Record<string, unknown> = { lots: [] };
+        po.items.filter(item => item.qtyReceived < item.qtyOrdered).forEach((item, index) => {
+          const original = saved.items.find((line: any) => line.sku === item.sku && line.size === item.size);
+          values[`${item.sku}__${item.size}`] = original?.qty ?? 0;
+          (values.lots as any[])[index] = { lotNo: original?.lotNo, expiryDate: original?.expiryDate };
+        });
+        form.setFieldsValue(values);
+      }
+    } catch { message.error(t("admin_purchase.receive_unknown")); }
+  }, [po?.id, pendingKey, form]);
   const [receive, { loading }] = useMutation(M_RECEIVE, {
     onCompleted: (d: any) => {
       const res = d?.bmsReceivePurchaseOrder;
-      if (res?.status === "RECEIVED" || res?.status === "PARTIAL") { message.success(res.message || t("admin_purchase.receive_success")); onDone(); }
-      else message.error(res?.message || t("admin_purchase.receive_failed"));
+      if (!["RECEIVED", "PARTIAL", "PO_NOT_FOUND", "LOCATION_NOT_FOUND", "INVALID_INPUT", "INVALID_STATE", "LINE_NOT_FOUND", "OVER_RECEIVE", "IDEMPOTENCY_CONFLICT", "EMPTY"].includes(res?.status)) {
+        message.error(t("admin_purchase.receive_unknown")); return;
+      }
+      try { window.sessionStorage.removeItem(pendingKey); } catch {}
+      setPendingReceipt(null);
+      if (res?.status === "RECEIVED" || res?.status === "PARTIAL") {
+        message.success(t(res.replayed ? "admin_purchase.receive_replayed" : res.status === "RECEIVED" ? "admin_purchase.receive_complete" : "admin_purchase.receive_partial"));
+        onDone();
+      } else {
+        const correction: Record<string, string> = {
+          LOT_REQUIRED: "admin_purchase.receive_lot_required",
+          EXPIRY_REQUIRED: "admin_purchase.receive_expiry_required",
+          LOT_REVIEW_REQUIRED: "admin_purchase.receive_lot_review_required",
+        };
+        const failures: Record<string, string> = {
+          PO_NOT_FOUND: "admin_purchase.receive_po_not_found",
+          LOCATION_NOT_FOUND: "admin_purchase.receive_location_not_found",
+          INVALID_INPUT: "admin_purchase.receive_invalid_input",
+          INVALID_STATE: "admin_purchase.receive_invalid_state",
+          LINE_NOT_FOUND: "admin_purchase.receive_line_not_found",
+          OVER_RECEIVE: "admin_purchase.receive_over_receive",
+          IDEMPOTENCY_CONFLICT: "admin_purchase.receive_retry_conflict",
+          EMPTY: "admin_purchase.receive_qty_warning",
+        };
+        const item = res?.sku && res?.size ? `${res.sku}/${res.size}: ` : "";
+        const key = correction[res?.reasonCode] ?? failures[res?.status];
+        message.error(key ? `${item}${t(key)}` : t("admin_purchase.receive_failed"));
+      }
     },
-    onError: (e: any) => message.error(e?.message || t("admin_purchase.receive_failed")),
+    onError: () => message.error(t("admin_purchase.receive_unknown")),
   });
 
   const pending = (po?.items || []).filter((it) => it.qtyOrdered - it.qtyReceived > 0);
 
   const submit = async () => {
-    if (!po) return;
+    if (!po || submitting.current) return;
+    submitting.current = true;
+    try {
+    if (pendingReceipt) {
+      await receive({ variables: pendingReceipt, context: { fetchOptions: { signal: AbortSignal.timeout(20_000) } } });
+      return;
+    }
     const v = await form.validateFields();
     const items = pending
-      .map((it) => ({ sku: it.sku, size: it.size, qty: Number(v[`${it.sku}__${it.size}`] ?? 0) }))
+      .map((it, index) => ({
+        sku: it.sku, size: it.size, qty: Number(v[`${it.sku}__${it.size}`] ?? 0),
+        lotNo: v.lots?.[index]?.lotNo?.trim() || null,
+        expiryDate: v.lots?.[index]?.expiryDate || null,
+      }))
       .filter((it) => it.qty > 0);
     if (items.length === 0) { message.warning(t("admin_purchase.receive_qty_warning")); return; }
-    receive({ variables: { id: po.id, items } });
+    const variables = { id: po.id, items, idempotencyKey: crypto.randomUUID() };
+    window.sessionStorage.setItem(pendingKey, JSON.stringify(variables));
+    setPendingReceipt(variables);
+    await receive({ variables, context: { fetchOptions: { signal: AbortSignal.timeout(20_000) } } });
+    } catch (error: any) {
+      if (!error?.errorFields) message.error(t("admin_purchase.receive_unknown"));
+    } finally { submitting.current = false; }
   };
 
   return (
     <Modal
       title={t("admin_purchase.receive_modal_title", { id: po?.id.slice(0, 8) ?? "" })}
-      open={!!po} onCancel={onClose} onOk={submit}
-      confirmLoading={loading} okText={t("admin_purchase.receive_ok_text")} cancelText={t("admin_purchase.close_text")} destroyOnClose
+      open={!!po} onCancel={() => { if (!pendingReceipt && !submitting.current) onClose(); }} onOk={submit}
+      closable={!pendingReceipt} maskClosable={!pendingReceipt} keyboard={!pendingReceipt} cancelButtonProps={{ disabled: !!pendingReceipt }}
+      confirmLoading={loading} okText={t(pendingReceipt ? "admin_purchase.receive_retry" : "admin_purchase.receive_ok_text")} cancelText={t("admin_purchase.close_text")} destroyOnClose
     >
       <Alert closable type="info" showIcon style={{ marginBottom: 16 }}
         message={t("admin_purchase.receive_alert")} />
-      <Form form={form} layout="vertical">
+      {pendingReceipt && !loading && <Alert closable type="warning" showIcon message={t("admin_purchase.receive_unknown")}
+        description={pendingReceipt.items.map(item => `${item.sku}/${item.size}: ${item.qty}${item.lotNo ? ` · ${item.lotNo}` : ""}`).join(", ")} />}
+      <Form form={form} layout="vertical" preserve={false} disabled={!!pendingReceipt}>
         {pending.length === 0 && <Typography.Text type="secondary">{t("admin_purchase.no_pending_items")}</Typography.Text>}
-        {pending.map((it) => {
+        {pending.map((it, index) => {
           const rem = it.qtyOrdered - it.qtyReceived;
           return (
+            <div key={`${it.sku}-${it.size}`}>
             <Form.Item
-              key={`${it.sku}-${it.size}`}
               name={`${it.sku}__${it.size}`}
               label={t("admin_purchase.receive_item_label", { sku: it.sku, size: it.size, rem })}
               initialValue={rem}
               rules={[{ type: "number", min: 0, max: rem, message: t("admin_purchase.receive_item_max_error", { rem }) }]}
             >
-              <InputNumber min={0} max={rem} style={{ width: 160 }} />
+              <InputNumber min={0} max={rem} precision={0} style={{ width: 160 }} />
             </Form.Item>
+            <Form.Item name={["lots", index, "lotNo"]} label={t("admin_purchase.receive_lot_no")}>
+              <Input maxLength={100} />
+            </Form.Item>
+            <Form.Item name={["lots", index, "expiryDate"]} label={t("admin_purchase.receive_expiry_date")}>
+              <Input type="date" />
+            </Form.Item>
+            </div>
           );
         })}
       </Form>

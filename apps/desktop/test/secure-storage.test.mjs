@@ -114,6 +114,23 @@ test("a failed write preserves the previous pairing and does not block later rem
   assert.equal(stored, null);
 });
 
+for (const fail of [false, true]) test(`restore waits for removal and observes its actual outcome (failure=${fail})`, async () => {
+  const removing=deferred(),release=deferred();let stored=savedPairing,reads=0;
+  const writer=createPairingWriter('pairing.json',()=>"encrypted",{
+    readFile:async()=>{reads++;if(stored===null)throw {code:'ENOENT'};return stored;},
+    writeFile:async()=>{},rename:async()=>{},
+    rm:async()=>{removing.resolve();await release.promise;if(fail)throw Error('EACCES');stored=null;},
+  });
+  const operation=writer.remove();
+  const outcome=operation.catch(()=>undefined);
+  await removing.promise;
+  const restore=writer.read(()=>savedToken);
+  assert.equal(reads,0);
+  release.resolve();await outcome;
+  const restored=await restore;
+  assert.equal(restored?.token ?? null,fail?savedToken:null);
+});
+
 test("the saved pairing survives relaunch/app-version changes without reissuing a token", async () => {
   const read = async () => savedPairing;
   const decrypt = (value) => { assert.equal(value, "encrypted"); return savedToken; };

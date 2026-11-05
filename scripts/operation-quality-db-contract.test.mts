@@ -641,6 +641,11 @@ test("findings-only edits do not increment the active canonical task; reassignme
 
 test("cross-branch held return inherits restriction and invalidates prior review", () =>
   fixture(async (f) => {
+    // This fixture seeds 1,000 untracked units in both branches. A tracked return
+    // cannot invent lot identity for those destination units; receive into an empty
+    // branch so this test exercises hold inheritance rather than stock-drift refusal.
+    await query(`UPDATE bms_inventory SET current_stock=0
+      WHERE tenant_id=$1 AND location_id=$2 AND product_sku='FAKE-H'`, [f.tenant, f.locations[1]]);
     const sale = await f.sale("FAKE-H", 2);
     const id = await f.create({
       expectedQty: 598,

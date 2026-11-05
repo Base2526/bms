@@ -1905,6 +1905,8 @@ export const typeDefs = /* GraphQL */ `
     sku: String!
     size: String!
     qty: Int!
+    lotNo: String
+    expiryDate: String
   }
 
   # ผลลัพธ์ mutation แบบรวม (status: CREATED/RECEIVED/PARTIAL/NOT_FOUND/…)
@@ -1912,6 +1914,10 @@ export const typeDefs = /* GraphQL */ `
     status: String!
     poId: ID
     message: String
+    replayed: Boolean
+    reasonCode: String
+    sku: String
+    size: String
   }
 
   # ===== BMS payment =====
@@ -5609,7 +5615,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS purchase (admin) — PO lifecycle =====
     bmsCreatePurchaseOrder(requestId: String, supplierId: ID, supplierName: String, note: String, items: [BmsPurchaseItemInput!]!): BmsPurchaseResult!
-    bmsReceivePurchaseOrder(id: ID!, items: [BmsReceiveItemInput!]!): BmsPurchaseResult!  # OPEN/PARTIAL → PARTIAL/RECEIVED (STOCK_IN)
+    bmsReceivePurchaseOrder(id: ID!, items: [BmsReceiveItemInput!]!, idempotencyKey: String): BmsPurchaseResult!  # OPEN/PARTIAL → PARTIAL/RECEIVED (STOCK_IN)
     bmsCancelPurchaseOrder(id: ID!): Boolean!                                            # OPEN/PARTIAL → CANCELLED
 
     # ===== BMS payment (admin) =====

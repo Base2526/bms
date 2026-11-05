@@ -37,7 +37,7 @@ async function handlePOST(req: NextRequest) {
   const device = await authenticatePosDevice(req.headers.get("x-pos-device-token") ?? "");
   if (!device) return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
 
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = ((await req.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
   const action = typeof body.action === "string" ? body.action : "";
   const cashierUserId = typeof body.cashierUserId === "string" ? body.cashierUserId.trim() : "";
   const pin = typeof body.pin === "string" ? body.pin : "";
@@ -61,7 +61,7 @@ async function handlePOST(req: NextRequest) {
     const order = await getPurchaseOrder(device.tenantId, poId);
     if (!order) return NextResponse.json({ error: "ไม่พบใบสั่งซื้อ" }, { status: 404 });
     if (order.status !== "OPEN" && order.status !== "PARTIAL") {
-      return NextResponse.json({ error: `ใบสั่งซื้อนี้รับต่อไม่ได้ (สถานะ ${order.status})` }, { status: 409 });
+      return NextResponse.json({ status: "INVALID_STATE", error: "ใบสั่งซื้อนี้รับครบหรือถูกยกเลิกแล้ว กรุณาโหลดใบสั่งซื้อค้างรับใหม่" }, { status: 409 });
     }
     return NextResponse.json({ order });
   }
@@ -73,6 +73,12 @@ async function handlePOST(req: NextRequest) {
     return NextResponse.json({ error: "idempotencyKey จำเป็นและต้องไม่เกิน 200 ตัวอักษร" }, { status: 400 });
   }
   const rawItems = Array.isArray(body.items) ? body.items : [];
+  if (rawItems.some((raw: any) => typeof raw?.sku !== "string" || typeof raw?.size !== "string"
+    || typeof raw?.qty !== "number"
+    || (raw.lotNo != null && typeof raw.lotNo !== "string")
+    || (raw.expiryDate != null && typeof raw.expiryDate !== "string"))) {
+    return NextResponse.json({ status: "INVALID_INPUT", error: "จำนวนรับต้องเป็นตัวเลข เลขล็อตและวันหมดอายุต้องเป็นข้อความ" }, { status: 400 });
+  }
   if (rawItems.length > 200) return NextResponse.json({ error: "รับสินค้าได้ไม่เกิน 200 รายการต่อครั้ง" }, { status: 400 });
   if (rawItems.some((raw: any) =>
     (typeof raw?.sku === "string" && raw.sku.trim().length > 200)

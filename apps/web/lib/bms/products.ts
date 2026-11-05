@@ -1910,10 +1910,21 @@ export async function adjustStock(
   try {
     await beginTenantTx(client, tenantId, { editorId });
 
-    const prod = await client.query(`SELECT 1 FROM bms_products WHERE tenant_id = $1 AND sku = $2`, [tenantId, sku]);
+    const prod = await client.query<{ lot_tracking: boolean; expiry_tracking: boolean }>(
+      `SELECT COALESCE(policy.lot_tracking, false) AS lot_tracking,
+              COALESCE(policy.expiry_tracking, false) AS expiry_tracking
+         FROM bms_products p
+         LEFT JOIN bms_product_stock_policies policy
+           ON policy.tenant_id = p.tenant_id AND policy.product_sku = p.sku
+        WHERE p.tenant_id = $1 AND p.sku = $2`,
+      [tenantId, sku],
+    );
     if (prod.rowCount === 0) {
       await client.query("ROLLBACK");
       throw new Error(`ไม่พบสินค้า ${sku}`);
+    }
+    if (prod.rows[0].lot_tracking || prod.rows[0].expiry_tracking) {
+      throw new Error("สินค้านี้ติดตามล็อต/วันหมดอายุ ปรับยอดรวมไม่ได้ กรุณารับสินค้าระบุล็อตหรือตัดของเสียตามล็อต");
     }
 
     // สาขาที่ส่งมาต้องเป็นของร้านนี้จริง — ห้ามเชื่อ id จากผู้เรียกโดยไม่ตรวจ

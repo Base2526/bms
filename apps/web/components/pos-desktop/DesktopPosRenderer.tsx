@@ -1205,27 +1205,33 @@ function DesktopPosContent() {
 
   const unpair = useCallback(async () => {
     if (paymentNavigationBlocked()) return;
-    await clearPosDeviceToken();
-    clearOperator();
-    clearPreparedWorkspaces();
-    catalogRequestVersion.current += 1;
-    catalogRequestRef.current = null;
-    catalogPrimedRef.current = null;
-    catalogLoadErrorRef.current = "";
-    tokenRef.current = "";
-    setToken("");
-    setBootstrap(null);
-    setCashier(null);
-    setVerifiedLogin(null);
-    setLoginPhase("idle");
-    setPin("");
-    setCatalog([]);
-    setCatalogLoading(false);
-    setCatalogError("");
-    setBoardGameCheckout(null);
-    clearScannedProduct();
-    setServiceCalls([]);
-    sendFlow("UNPAIR");
+    try {
+      await clearPosDeviceToken(() => {
+        clearOperator();
+        clearPreparedWorkspaces();
+        catalogRequestVersion.current += 1;
+        catalogRequestRef.current = null;
+        catalogPrimedRef.current = null;
+        catalogLoadErrorRef.current = "";
+        tokenRef.current = "";
+        setToken("");
+        setBootstrap(null);
+        setCashier(null);
+        setVerifiedLogin(null);
+        setLoginPhase("idle");
+        setPin("");
+        setCatalog([]);
+        setCatalogLoading(false);
+        setCatalogError("");
+        setBoardGameCheckout(null);
+        clearScannedProduct();
+        setServiceCalls([]);
+        sendFlow("UNPAIR");
+      });
+    } catch (error: any) {
+      setError(error?.message || "เลิกจับคู่เครื่องไม่สำเร็จ กรุณาลองใหม่");
+      return;
+    }
   }, [clearOperator, clearPreparedWorkspaces, clearScannedProduct, paymentNavigationBlocked, sendFlow]);
 
   const followWorkspaceShift = useCallback((open: boolean) => {
@@ -1838,6 +1844,7 @@ function DesktopPosContent() {
           <div className={styles.brandMark}>B</div>
           <p className={styles.eyebrow}>BMS POS DESKTOP</p>
           <h1>ยังไม่ได้เลือกเซิร์ฟเวอร์</h1>
+          {error ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert> : null}
           <p>กลับไปหน้าตั้งค่า Electron เพื่อเลือกเซิร์ฟเวอร์และจับคู่เครื่องนี้ก่อน</p>
           <button className={styles.primaryButton} onClick={() => void unpair()}>
             เปิดหน้าจับคู่เครื่อง
@@ -2170,7 +2177,8 @@ function DesktopPosContent() {
         </header>
 
         {shownModule !== "mobile_sell" && shownModule !== "restaurant" ? (
-          <div className={`${styles.content} ${styles.moduleContent}`}>
+          <div className={`${styles.content} ${styles.moduleContent}${error ? ` ${styles.moduleContentError}` : ""}`}>
+            {error ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert> : null}
             <section
               className={`${styles.moduleHost}${shownModule === "boardgame" ? ` ${styles.boardGameModuleHost}` : ""}`}
             >

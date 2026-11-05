@@ -68,7 +68,7 @@ async function handlePOST(req: NextRequest) {
     const result = await recordCountItem({
       tenantId: auth.tenantId, countId,
       sku: String(body.sku ?? ""), size: String(body.size ?? ""),
-      countedQty: Number(body.countedQty ?? 0),
+      countedQty: typeof body.countedQty === "number" ? body.countedQty : Number.NaN,
       note: typeof body.note === "string" ? body.note : null,
       actorUserId,
     });

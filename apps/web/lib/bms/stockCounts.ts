@@ -264,8 +264,8 @@ export async function recordCountItem(input: {
   idempotencyKey?: string | null;
 }): Promise<CountItemResult> {
   const size = input.size.trim().toUpperCase();
-  const counted = Math.trunc(Number(input.countedQty));
-  if (!Number.isInteger(counted) || counted < 0)
+  const counted = input.countedQty;
+  if (!Number.isInteger(counted) || counted < 0 || counted > 2_147_483_647)
     return { status: "INVALID", reason: "จำนวนที่นับได้ไม่ถูกต้อง" };
   const idempotency = inventoryIdempotency("count.item", input.idempotencyKey, {
     countId: input.countId,
@@ -526,27 +526,27 @@ export async function applyStockCount(input: {
         [input.tenantId, c.location_id, item.product_sku, item.size],
       );
 
+      const current = Number(inv.rows[0]?.current_stock ?? 0);
+      const reserved = Number(inv.rows[0]?.reserved_stock ?? 0);
+      const wouldBe = current + delta;
+      // A missing summary is zero, not permission to silently skip a negative variance.
+      if (wouldBe < reserved) {
+        await client.query("ROLLBACK");
+        return {
+          status: "WOULD_BREAK_RESERVED",
+          sku: item.product_sku,
+          size: item.size,
+          reserved,
+          wouldBe,
+        };
+      }
       if (!inv.rowCount) {
-        if (delta < 0) continue; // ไม่มีแถวให้ลด — ข้าม
         await client.query(
           `INSERT INTO bms_inventory (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
            VALUES ($1,$2,$3,$4,$5,0)`,
           [input.tenantId, c.location_id, item.product_sku, item.size, delta],
         );
       } else {
-        const wouldBe = inv.rows[0].current_stock + delta;
-        // ของที่ลูกค้าจองไว้แล้วต้องไม่ถูกนับหายไป — ถ้าเลขที่นับได้ต่ำกว่าที่จองไว้
-        // แปลว่ามีปัญหาที่ต้องคนตัดสิน ไม่ใช่ให้ระบบเลือกข้างเงียบ ๆ
-        if (wouldBe < inv.rows[0].reserved_stock) {
-          await client.query("ROLLBACK");
-          return {
-            status: "WOULD_BREAK_RESERVED",
-            sku: item.product_sku,
-            size: item.size,
-            reserved: inv.rows[0].reserved_stock,
-            wouldBe,
-          };
-        }
         await client.query(
           `UPDATE bms_inventory SET current_stock = current_stock + $5, updated_at = now()
             WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,

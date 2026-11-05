@@ -115,7 +115,7 @@ export const bmsPurchaseResolvers = {
 
     async bmsReceivePurchaseOrder(
       _p: unknown,
-      args: { id: string; items: ReceiveInput[] },
+      args: { id: string; items: ReceiveInput[]; idempotencyKey?: string },
       ctx: any
     ) {
       await requirePermission(ctx, "purchase.receive");
@@ -127,6 +127,7 @@ export const bmsPurchaseResolvers = {
         `admin:${ctx?.admin?.email ?? ctx?.admin?.id ?? "?"}`,
         auth.author_id,
         {
+          staffIdempotency: args.idempotencyKey ? { actorUserId: String(auth.author_id), key: args.idempotencyKey } : null,
           audit: {
             actor: String(ctx?.admin?.email ?? ctx?.admin?.id ?? auth.author_id),
             action: "purchase.receive",
@@ -140,26 +141,29 @@ export const bmsPurchaseResolvers = {
           status: result.status,
           poId: result.poId,
           message: result.status === "RECEIVED" ? "รับของครบแล้ว" : "รับของบางส่วนแล้ว",
+          replayed: result.replayed ?? false,
         };
       }
       const msg: Record<string, string> = {
         PO_NOT_FOUND: "ไม่พบใบสั่งซื้อ",
         LOCATION_NOT_FOUND: "ไม่พบสาขาที่รับสินค้า",
-        INVALID_INPUT: "รายการรับสินค้าไม่ถูกต้อง",
+        INVALID_INPUT: result.status === "INVALID_INPUT" ? result.reason ?? "รายการรับสินค้าไม่ถูกต้อง" : "รายการรับสินค้าไม่ถูกต้อง",
         INVALID_STATE: "สถานะไม่อนุญาตให้รับของ",
         LINE_NOT_FOUND: "ไม่พบรายการสินค้าในใบสั่งซื้อ",
         OVER_RECEIVE: "รับเกินจำนวนที่สั่ง",
         IDEMPOTENCY_CONFLICT: "คีย์รายการซ้ำถูกใช้กับข้อมูลอื่น",
         EMPTY: "ไม่มีรายการรับของ",
       };
-      return { status: result.status, poId: args.id, message: msg[result.status] ?? "ทำรายการไม่ได้" };
+      return { status: result.status, poId: args.id, message: msg[result.status] ?? "ทำรายการไม่ได้",
+        reasonCode: result.status === "INVALID_INPUT" ? result.reasonCode ?? null : null,
+        sku: "sku" in result ? result.sku : null,
+        size: "size" in result ? result.size : null };
     },
 
     async bmsCancelPurchaseOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "purchase.cancel");
       const auth = requireAuth(ctx);
       const ok = await cancelPurchaseOrder(getTenantId(ctx), args.id, auth.author_id);
-      if (ok) await audit(ctx, "purchase.cancel", args.id);
       return ok;
     },
   },

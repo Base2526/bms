@@ -515,6 +515,10 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+.moduleContentError {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .moduleHost {
   min-width: 0;
   min-height: 0;

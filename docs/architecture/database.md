@@ -2294,3 +2294,14 @@ removes them before the session tree. The migration also extends the existing
 `bms_generated_reports.report_type` check with `BOARD_GAME_ANALYTICS`; no generated file is a money
 authority. The report reads current active/unblocked table configuration because table-state history
 does not yet exist, a limitation disclosed in the business documentation and UI.
+## Staff purchase receipt retry ledger
+
+Staff PO receipts reuse `bms_inventory_operation_idempotency` (migration `9.88`) with action
+`purchase.receive`. The hash binds PO, requested location, authenticated actor and normalized lines.
+The PO lock and ledger advisory lock serialize retries; the result commits with inventory, lots,
+movement, PO progress, audit and realtime evidence. POS retains its device-specific
+`bms_pos_purchase_receipts` ledger. No new table or migration is required. Purchase cancellation
+and its `purchase.cancel` audit also commit or roll back together.
+Receipt replay precedes mutable branch availability checks, including default-branch resolution
+for staff, so disabling a branch cannot misreport an already committed stock movement as failed.
+New receipts still require an active branch; the device branch and actor remain part of the POS hash.
