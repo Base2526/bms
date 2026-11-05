@@ -8,6 +8,7 @@ import test from "node:test";
 
 import {
   assertManagedRuntimeUploadFilename,
+  deleteManagedRuntimeRelease,
   listManagedRuntimeReleases,
   MANAGED_RUNTIME_TARGETS,
   managedRuntimeReleaseReadiness,
@@ -288,6 +289,40 @@ test("publishes a complete signed component set atomically and lists it", async 
     else process.env.BMS_RETAIL_LOCAL_RELEASE_BASE_URL = previous.base;
     if (previous.keys === undefined) delete process.env.BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON;
     else process.env.BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON = previous.keys;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("deletes only the selected release target and all of its files", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "bms-runtime-delete-"));
+  const previousRoot = process.env.BMS_RETAIL_LOCAL_RELEASE_ROOT;
+  const version = "0.2.14-pilot.6";
+  const target = "macos-15-x64";
+  const sibling = "macos-15-arm64";
+  try {
+    process.env.BMS_RETAIL_LOCAL_RELEASE_ROOT = root;
+    const targetRoot = path.join(root, "retail-local", version, target);
+    const siblingRoot = path.join(root, "retail-local", version, sibling);
+    await mkdir(targetRoot, { recursive: true });
+    await mkdir(siblingRoot, { recursive: true });
+    await writeFile(path.join(targetRoot, "release.jws.json"), "manifest");
+    await writeFile(path.join(targetRoot, "web.artifact"), "large artifact placeholder");
+    await writeFile(path.join(siblingRoot, "release.jws.json"), "keep");
+
+    await assert.rejects(deleteManagedRuntimeRelease("../escape", target), /version/);
+    await assert.rejects(deleteManagedRuntimeRelease(version, "../escape"), /target/);
+    const activeLock = `${targetRoot}.publishing`;
+    await mkdir(activeLock);
+    await assert.rejects(deleteManagedRuntimeRelease(version, target), /กำลัง publish อยู่/);
+    assert.equal(await readFile(path.join(targetRoot, "web.artifact"), "utf8"), "large artifact placeholder");
+    await rm(activeLock, { recursive: true });
+    await deleteManagedRuntimeRelease(version, target);
+    await assert.rejects(readFile(path.join(targetRoot, "web.artifact")), /ENOENT/);
+    assert.equal(await readFile(path.join(siblingRoot, "release.jws.json"), "utf8"), "keep");
+    await assert.rejects(deleteManagedRuntimeRelease(version, target), /ไม่พบ release นี้/);
+  } finally {
+    if (previousRoot === undefined) delete process.env.BMS_RETAIL_LOCAL_RELEASE_ROOT;
+    else process.env.BMS_RETAIL_LOCAL_RELEASE_ROOT = previousRoot;
     await rm(root, { recursive: true, force: true });
   }
 });

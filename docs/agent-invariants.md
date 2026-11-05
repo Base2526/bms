@@ -833,6 +833,9 @@ deployment profile. The operator contract and remaining release gates live in
   file count and size in an explicit confirmation first. Build-only descriptors and promotion
   evidence are not copied into the public tree. `/admin/retail-local-releases` remains the separate
   control plane for customer-facing `.exe`/`.deb`/`.pkg`/`.dmg` bootstrap installers.
+  A platform administrator can delete one version/target after explicit confirmation. The server
+  removes its entire public directory (manifest, checksums, and artifacts) under the publish lock;
+  other targets remain available. Existing downloads and installers pinned to that URL may fail.
 - **Local services are local by default.** PostgreSQL and Redis have no published host port; Web and
   WS publish only on `127.0.0.1`. All application and datastore secrets are generated locally and
   remain required—local mode is never permission to fall back to a literal key. Exposing the server

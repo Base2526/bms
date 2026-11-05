@@ -1,5 +1,5 @@
 import { createPublicKey, verify } from "crypto";
-import { chmod, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "fs/promises";
+import { chmod, lstat, mkdir, readFile, readdir, rename, rm, rmdir, stat, utimes, writeFile } from "fs/promises";
 import path from "path";
 
 import {
@@ -544,5 +544,50 @@ export async function listManagedRuntimeReleases(): Promise<ManagedRuntimeReleas
   }
   return result.sort((a, b) => b.releaseVersion.localeCompare(a.releaseVersion, undefined, { numeric: true })
     || a.platformTarget.localeCompare(b.platformTarget));
+}
+
+/** Remove one published target and all of its on-disk artifacts. */
+export async function deleteManagedRuntimeRelease(releaseVersionInput: string, platformTargetInput: string): Promise<void> {
+  const releaseVersion = assertManagedRuntimeVersion(releaseVersionInput);
+  const platformTarget = assertManagedRuntimeTarget(platformTargetInput);
+  const parent = path.join(managedRuntimeReleaseRoot(), "retail-local", releaseVersion);
+  const destination = path.join(parent, platformTarget);
+  const publishLock = `${destination}.publishing`;
+  const versionEntry = await lstat(parent).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") throw new ManagedRuntimeReleaseError("ไม่พบ release นี้", 404);
+    throw error;
+  });
+  if (!versionEntry.isDirectory() || versionEntry.isSymbolicLink()) {
+    throw new ManagedRuntimeReleaseError("release version path ไม่ใช่โฟลเดอร์", 409);
+  }
+  // The publish path uses this same lock, so a deletion cannot race its final rename.
+  await acquirePublishLock(publishLock);
+  // Recursive removal can outlast the publish lock's ten-minute stale window.
+  const refreshLock = setInterval(() => {
+    const now = new Date();
+    void utimes(publishLock, now, now).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") console.error("[retail-local] runtime delete lock refresh failed", error);
+    });
+  }, 60_000);
+  refreshLock.unref();
+  try {
+    const entry = await lstat(destination).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") throw new ManagedRuntimeReleaseError("ไม่พบ release นี้", 404);
+      throw error;
+    });
+    if (!entry.isDirectory() || entry.isSymbolicLink()) {
+      throw new ManagedRuntimeReleaseError("release path ไม่ใช่โฟลเดอร์ที่เผยแพร่", 409);
+    }
+    await rm(destination, { recursive: true });
+  } finally {
+    clearInterval(refreshLock);
+    await rm(publishLock, { recursive: true, force: true }).catch(() => undefined);
+  }
+  // Keep sibling targets in the same version; remove only an empty version folder.
+  await rmdir(parent).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOTEMPTY" && error.code !== "EEXIST" && error.code !== "ENOENT") {
+      console.error("[retail-local] empty runtime version cleanup failed", error);
+    }
+  });
 }
 

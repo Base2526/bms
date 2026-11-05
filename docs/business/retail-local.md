@@ -116,7 +116,13 @@ streaming Pages API. Publication fails closed unless the configured public keyri
 signature and every target, URL, size and checksum matches. A successful set is immutable under
 `BMS_RETAIL_LOCAL_RELEASE_ROOT/retail-local/<version>/<target>` and is served from
 `BMS_RETAIL_LOCAL_RELEASE_BASE_URL`; the static release host must map that URL to the same host
-directory and support ranged downloads. Configure production with:
+directory and support ranged downloads.
+
+The Managed Runtime Releases table can delete a selected version/target after confirmation. This
+removes its manifest, checksums and component artifacts from the release host to reclaim disk space;
+other targets are retained. Do not delete a set that current installers or downloads still need.
+
+Configure production with:
 
 ```env
 RETAIL_LOCAL_RELEASE_HOST_DIR=/mnt/volume_sgp1_01/releases
