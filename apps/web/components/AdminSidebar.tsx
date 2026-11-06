@@ -855,7 +855,7 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
                     color: 'var(--app-text)', font: 'inherit',
                   }}
                 >
-                  <Avatar size={26} src={admin.avatar || undefined} icon={<UserOutlined />} />
+                  <Avatar data-admin-sidebar-avatar size={26} src={admin.avatar || undefined} icon={<UserOutlined />} />
                 </button>
               </Dropdown>
             ) : (
@@ -871,7 +871,7 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
                     height: 34, padding: 4, borderRadius: 8, color: 'var(--app-text)',
                   }}
                 >
-                  <Avatar size={26} src={admin.avatar || undefined} icon={<UserOutlined />} />
+                  <Avatar data-admin-sidebar-avatar size={26} src={admin.avatar || undefined} icon={<UserOutlined />} />
                   <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
                     <span style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {admin.name || admin.username || admin.email}
@@ -943,7 +943,7 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
           )}
           {admin && (
             <Link href="/admin/profile" style={{ marginLeft: canViewInbox && alerts > 0 ? 0 : 'auto', display: 'flex' }}>
-              <Avatar size={28} src={admin.avatar || undefined} icon={<UserOutlined />} />
+              <Avatar data-admin-sidebar-avatar size={28} src={admin.avatar || undefined} icon={<UserOutlined />} />
             </Link>
           )}
         </div>

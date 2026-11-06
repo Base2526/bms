@@ -191,5 +191,9 @@ test("learning search respects role and track, handles unknown input and searche
   assert.equal(searchLessons("unmatched-example-987654321", "th").length, 0);
   assert.equal(searchLessons("<script>alert(1)</script>", "en").length, 0);
   assert.equal(searchLessons("", "en").length, lessons.length);
+  assert.equal(searchLessons("รองรับระบบอะไรบ้าง", "th").length, lessons.length);
+  assert.ok(searchLessons("รองรับร้านอาหารไหม", "th").some((lesson) => lesson.tracks.includes("restaurant")));
+  assert.ok(searchLessons("เพิ่มสินค้ายังไง", "th").length > 0);
+  assert.ok(searchLessons("How do I add a product?", "en").length > 0);
   assert.equal(isTrack("toString"), false);
 });

@@ -99,7 +99,7 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
     id: "inventory.branch", module: "inventory",
     title: both("สต็อกตามสาขา", "Branch inventory"),
     description: both("ดู นับ และโอนสต็อกระหว่างสาขา", "View, count, and transfer stock between branches."),
-    aliases: aliases(["สต็อก", "คลัง", "โอนสาขา", "นับสต็อก"], ["stock", "warehouse", "branch transfer", "stock count"]),
+    aliases: aliases(["สต็อก", "คลัง", "โอนสาขา", "นับสต็อก", "รองรับร้านค้าหลายสาขาไหม", "เช็กสต็อกคงเหลือที่ไหน"], ["stock", "warehouse", "branch transfer", "stock count", "does it support multiple branches", "where to check remaining stock"]),
     status: "CONDITIONAL", route: "/admin/locations", requiredPermissions: ["inventory.count"],
     configurationDependencies: ["Locations must be configured."],
     limitations: both("การโอนและการยืนยันผลนับใช้สิทธิ์แยกกัน", "Transfer and count approval use separate permissions."),
@@ -303,7 +303,7 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
     description: both("ผังโต๊ะ บิลเปิดข้ามหลายรอบครัว ย้ายโต๊ะ แยกบิล/รวมบิล และเก็บเงินผ่านเครื่องคิดเงินเดิม", "Floor plan, checks that stay open across kitchen rounds, table moves, bill splitting and merging, and checkout through the normal register."),
     aliases: aliases([
       "ร้านอาหาร", "โต๊ะ", "บิลโต๊ะ", "เปิดโต๊ะ", "ผังโต๊ะ", "ส่งครัว", "ย้ายโต๊ะ",
-      "ระบบรองรับร้านอาหารไหม", "แยกบิล", "รวมบิล",
+      "ระบบรองรับร้านอาหารไหม", "ใช้กับร้านอาหารได้ไหม", "แยกบิล", "รวมบิล",
     ], [
       "restaurant", "dine-in", "table", "open check", "floor plan", "send to kitchen", "move table",
       "does it support restaurants", "restaurant dine-in", "split bill", "merge bill",

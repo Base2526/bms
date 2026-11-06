@@ -100,9 +100,10 @@ test("every Admin page keeps an entry point for someone who is allowed to open i
   }).filter((route) => !route.includes("["));
 
   // Reached without a menu entry by design: the shell itself, the login screen, the profile card
-  // in the sidebar footer, an unreleased mockup, and detail pages under a listed parent.
+  // in the sidebar footer, the knowledge search mounted in the shared header, an unreleased
+  // mockup, and detail pages under a listed parent.
   const reachedWithoutMenu = new Set([
-    "/admin", "/admin/login", "/admin/profile", "/admin/pharmacy-review-mockup",
+    "/admin", "/admin/login", "/admin/profile", "/admin/search", "/admin/pharmacy-review-mockup",
   ]);
   const owned = new Set([
     ...ADMIN_NAV_ITEMS.flatMap((item) => [item.route, ...(item.ownsRoutePrefixes ?? [])]),

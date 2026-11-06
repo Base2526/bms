@@ -916,7 +916,9 @@ const th = {
     blocked: "รายการที่บล็อก",
 
     // 🔍 search-related
-    searchPlaceholder: "ค้นหาโพสต์, ผู้ใช้, หมายเลขโทรศัพท์...",
+    searchPlaceholder: "ค้นหาความสามารถ คู่มือ และเอกสาร BMS...",
+    searchClose: "ปิดการค้นหา",
+    searchRecent: "การค้นหาล่าสุด",
     searchClearHistory: "ล้างประวัติการค้นหา",
     searchHintPrefix: "กด",
     searchHintSuffix: "เพื่อค้นหาอย่างรวดเร็ว",
