@@ -10,6 +10,8 @@ import { BMS_LINE_OA_ID, isBmsLineOfficialAccount } from "../../apps/web/lib/bms
 import { customerTools } from "../../apps/web/lib/bms/tools/catalog.ts";
 import { __toolLoopTest } from "../../apps/web/lib/bms/tools/runtime.ts";
 import { PRESALES_QUESTIONS } from "./bms-presales-question-corpus.mts";
+import { searchPublicFeature } from "../../apps/web/lib/bms/publicFeatureSearch.ts";
+import { publicFeatureLead } from "../../apps/web/lib/bms/publicFeatureSearch.ts";
 
 test("250-question fallback corpus retrieves every required public topic", () => {
   assert.equal(PRESALES_QUESTIONS.length, 250);
@@ -32,6 +34,48 @@ test("common BMS prospect questions retrieve the intended verified topic", () =>
     ["มีระบบคิดค่าเล่นตามเวลาสำหรับร้านบอร์ดเกมไหม", "board-game"],
   ] as const) {
     assert.equal(searchBmsPresalesKnowledge(query, "th", 3)[0]?.id, expected, query);
+  }
+});
+
+test("public feature questions resolve their specific topic without inventing an unrelated feature", () => {
+  for (const [query, expected] of [
+    ["รับออร์เดอร์จาก LINE ได้ไหม", "ai-inbox"],
+    ["โอนสต็อกข้ามสาขาได้ไหม", "purchasing-transfers"],
+    ["ใช้ QR สั่งอาหารได้ไหม", "restaurant-operations"],
+  ] as const) {
+    assert.equal(searchBmsPresalesKnowledge(query, "th", 1)[0]?.id, expected, query);
+  }
+  assert.deepEqual(searchBmsPresalesKnowledge("มีระบบจองตั๋วเครื่องบินไหม", "th", 1), []);
+});
+
+test("public feature page does not treat partial matches or static plan copy as a complete answer", () => {
+  assert.deepEqual(searchPublicFeature("ราคา BMS เท่าไร", "th"), { kind: "price" });
+  assert.deepEqual(searchPublicFeature("แพ็กเกจ Pro ราคาเท่าไร", "th"), { kind: "price" });
+  assert.deepEqual(searchPublicFeature("Retail Local ราคาเท่าไร", "th"), { kind: "localPrice" });
+  assert.deepEqual(searchPublicFeature("ราคา pro เท่าไร", "th"), { kind: "price" });
+  assert.deepEqual(searchPublicFeature("มีระบบจองตั๋วเครื่องบินไหม", "th"), { kind: "unknown" });
+  assert.equal(searchPublicFeature("โอนสต็อกข้ามสาขาและทำบัญชีเงินเดือนได้ไหม", "th").kind, "partial");
+  assert.equal(searchPublicFeature("รับออร์เดอร์จาก LINE ได้ไหม", "th").kind, "answer");
+  assert.equal(searchPublicFeature("Can it take orders from LINE?", "en").kind, "answer");
+  assert.equal(searchPublicFeature("Can I transfer stock between branches?", "en").kind, "answer");
+  assert.equal(searchPublicFeature("Can restaurants take table QR orders?", "en").kind, "answer");
+  assert.equal(searchPublicFeature("มีสต็อกหลายสาขาไหม", "th").kind, "answer");
+  assert.equal(searchPublicFeature("คิดค่าเล่นบอร์ดเกมตามเวลาได้ไหม", "th").kind, "answer");
+  const marketplace = searchPublicFeature("AI ตอบลูกค้า Shopee ได้ไหม", "th");
+  assert.equal(marketplace.kind, "answer");
+  if (marketplace.kind === "answer") assert.equal(marketplace.entry.id, "channels");
+});
+
+test("storefront summaries keep critical limits visible before expanding details", () => {
+  for (const [query, required] of [
+    ["ทำ e-Tax ได้ไหม", /ยังไม่ใช่ e-Tax/],
+    ["เชื่อม GrabFood ได้ไหม", /ยังไม่พร้อมเปิดใช้จริงทั่วไป/],
+    ["ร้านอาหารใช้ QR สั่งอาหารได้ไหม", /ต้องผ่านขั้นตอนรับงาน/],
+    ["AI แนะนำยาได้ไหม", /เภสัชกรที่มีใบอนุญาต/],
+  ] as const) {
+    const found = searchPublicFeature(query, "th");
+    assert.equal(found.kind, "answer", query);
+    if (found.kind === "answer") assert.match(publicFeatureLead(found.entry, "th"), required, query);
   }
 });
 

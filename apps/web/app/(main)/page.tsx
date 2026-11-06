@@ -312,6 +312,14 @@ export default function HomePage() {
           <Paragraph className={styles.heroDescription}>
             {t("landing.heroDescription")}
           </Paragraph>
+          <form className={styles.featureSearch} action={localizedPublicPath("/features", lang)} method="get" role="search">
+            <label htmlFor="home-feature-question">{t("landing.featureSearchLabel")}</label>
+            <div className={styles.featureSearchRow}>
+              <input id="home-feature-question" name="q" type="search" maxLength={200}
+                placeholder={t("landing.featureSearchPlaceholder")} required />
+              <button type="submit">{t("landing.featureSearchButton")}</button>
+            </div>
+          </form>
           <Space size={12} wrap>
             {!admin && (
               <Link href={localizedPublicPath("/demo", lang)}>

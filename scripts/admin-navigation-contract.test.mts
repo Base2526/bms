@@ -607,8 +607,10 @@ test("assistantKnowledge is never statically imported by the sidebar or the sear
   assert.doesNotMatch(hookSource, /^import .*from ["']@\/lib\/bms\/assistantKnowledge["']/m);
   // Targets the runtime call site specifically — `typeof import(...)` (type-only, erased at
   // compile time) would satisfy a looser regex here without proving anything about the bundle.
-  assert.match(hookSource, /catalogPromise = import\("@\/lib\/bms\/assistantKnowledge"\);/,
+  assert.match(hookSource, /catalogPromise = import\("@\/lib\/bms\/assistantKnowledge"\)/,
     "the catalog must be loaded with a dynamic import, fetched only when the palette actually opens");
+  assert.match(hookSource, /catalogPromise = null;/,
+    "a failed catalog load must be retryable on the next palette open");
   assert.doesNotMatch(sidebarSourceForImportCheck(), /from ["']@\/lib\/bms\/assistantKnowledge["']/);
 });
 
