@@ -52,9 +52,28 @@ import { localeFromPublicPath, localizedPublicPath, stripPublicLocale } from "@/
 const { Header } = Layout;
 const { Text } = Typography;
 
-// ปิดไว้ก่อน — ค้นหา/ศูนย์ช่วยเหลือยังเป็นของ project เดิม (ไม่เกี่ยว BMS) เปิดใหม่เมื่อมีของจริงให้ผูก
-const SHOW_HEADER_SEARCH = false;
+// Admin ค้น catalog ตามสิทธิ์; ผู้ใช้ทั่วไปค้นเฉพาะบทเรียนสาธารณะที่ /learn
+const SHOW_HEADER_SEARCH = true;
 const SHOW_HEADER_HELP = false;
+const HEADER_SEARCH_HISTORY_KEY = "bmsKnowledgeSearchHistory";
+const PUBLIC_SEARCH_HISTORY_KEY = "bmsPublicLearningSearchHistory";
+const SEARCH_HISTORY_LIMIT = 10;
+
+function normalizeSearchHistory(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const term = item.trim();
+    if (!term || seen.has(term)) continue;
+    seen.add(term);
+    normalized.push(term);
+    if (normalized.length === SEARCH_HISTORY_LIMIT) break;
+  }
+  return normalized;
+}
 
 const labelOf: Record<Lang, string> = { th: "ไทย", en: "English" };
 const flagOf: Record<Lang, string> = { th: "🇹🇭", en: "🇺🇸" };
@@ -116,6 +135,11 @@ export default function HeaderBar({
   const { t, lang, setLang } = useI18n();
   const isAdminSession = Boolean(adminSession);
   const hasSession = Boolean(userSession || adminSession);
+  const showHeaderSearch = SHOW_HEADER_SEARCH && isAdminSession;
+  const showPublicLearningSearch = SHOW_HEADER_SEARCH && !isAdminSession;
+  const searchHistoryKey = isAdminSession
+    ? `${HEADER_SEARCH_HISTORY_KEY}:${adminSession?.id ?? "unknown-admin"}`
+    : PUBLIC_SEARCH_HISTORY_KEY;
 
   const [viewMode, setViewMode] = useState<ViewMode>(isMobile ? "mobile" : "desktop");
   const isMobileView = viewMode === "mobile";
@@ -156,11 +180,13 @@ export default function HeaderBar({
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [searchFocused, setSearchFocused] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [isMacKeyboard, setIsMacKeyboard] = useState(false);
 
   const searchInputRef = useRef<InputRef | null>(null);
   const mobileSearchInputRef = useRef<InputRef | null>(null);
 
   useEffect(() => {
+    setIsMacKeyboard(navigator.platform.toLowerCase().includes("mac"));
     const updateMode = () => {
       setViewMode(getViewMode(window.innerWidth));
     };
@@ -183,17 +209,20 @@ export default function HeaderBar({
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      const raw = window.localStorage.getItem("globalSearchHistory");
+      const raw = window.localStorage.getItem(searchHistoryKey);
+      setSearchHistory([]);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          setSearchHistory(parsed.filter((x) => typeof x === "string"));
+        const normalized = normalizeSearchHistory(parsed);
+        setSearchHistory(normalized);
+        if (JSON.stringify(parsed) !== JSON.stringify(normalized)) {
+          window.localStorage.setItem(searchHistoryKey, JSON.stringify(normalized));
         }
       }
     } catch (e) {
       console.warn("[Search] load history error", e);
     }
-  }, []);
+  }, [searchHistoryKey]);
 
   useEffect(() => {
     if (!isDesktopView) return;
@@ -203,13 +232,14 @@ export default function HeaderBar({
       const metaPressed = isMac ? e.metaKey : e.ctrlKey;
       if (metaPressed && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        searchInputRef.current?.focus?.();
+        if (showHeaderSearch) searchInputRef.current?.focus?.();
+        else if (showPublicLearningSearch) setMobileSearchOpen(true);
       }
     };
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [isDesktopView]);
+  }, [isDesktopView, showHeaderSearch, showPublicLearningSearch]);
 
   useEffect(() => {
     if (!mobileSearchOpen) return;
@@ -217,6 +247,21 @@ export default function HeaderBar({
       mobileSearchInputRef.current?.focus?.();
     }, 60);
     return () => window.clearTimeout(id);
+  }, [mobileSearchOpen]);
+
+  useEffect(() => {
+    if (!mobileSearchOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileSearchOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
   }, [mobileSearchOpen]);
 
   const changeLang = (nextLang: Lang) => {
@@ -261,14 +306,18 @@ export default function HeaderBar({
   const saveHistory = (list: string[]) => {
     setSearchHistory(list);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem("globalSearchHistory", JSON.stringify(list));
+      try {
+        window.localStorage.setItem(searchHistoryKey, JSON.stringify(list));
+      } catch (e) {
+        console.warn("[Search] save history error", e);
+      }
     }
   };
 
   const addToHistory = (term: string) => {
     const trimmed = term.trim();
     if (!trimmed) return;
-    const next = [trimmed, ...searchHistory.filter((x) => x !== trimmed)].slice(0, 10);
+    const next = normalizeSearchHistory([trimmed, ...searchHistory]);
     saveHistory(next);
   };
 
@@ -284,7 +333,10 @@ export default function HeaderBar({
     addToHistory(q);
     setSearchValue(q);
     setMobileSearchOpen(false);
-    router.push(`/search?q=${encodeURIComponent(q)}`, { scroll: false });
+    const destination = isAdminSession
+      ? "/admin/search"
+      : localizedPublicPath("/learn", currentLang);
+    router.push(`${destination}?q=${encodeURIComponent(q)}`, { scroll: false });
   };
 
   const handleSearchSelect = (value: string) => {
@@ -611,7 +663,7 @@ export default function HeaderBar({
             </Link>
           </div>
 
-          {!isMobileView && SHOW_HEADER_SEARCH && (
+          {!isMobileView && showHeaderSearch && (
             <div className="jachoei-header-center">
               <div className="jachoei-search-wrap">
                 <AutoComplete
@@ -666,7 +718,7 @@ export default function HeaderBar({
                               gap: 4,
                             }}
                           >
-                            <span className="jachoei-kbd">Ctrl</span>
+                            <span className="jachoei-kbd">{isMacKeyboard ? "⌘" : "Ctrl"}</span>
                             <span style={{ opacity: 0.7 }}>+</span>
                             <span className="jachoei-kbd">K</span>
                           </span>
@@ -710,7 +762,7 @@ export default function HeaderBar({
             </div>
           )}
 
-          {!isMobileView && !hasSession && !SHOW_HEADER_SEARCH && (
+          {!isMobileView && !hasSession && !showHeaderSearch && (
             <nav className="jachoei-product-nav" aria-label={t("header.productNavigation")}>
               <Link href={localizedPublicPath("/#workflow", currentLang)}>{t("header.workflow")}</Link>
               <Link href={localizedPublicPath("/demo", currentLang)}>{t("header.demo")}</Link>
@@ -722,7 +774,7 @@ export default function HeaderBar({
 
           <div className="jachoei-header-right">
             <Space size={isMobileView ? 4 : 6} align="center">
-              {isMobileView && SHOW_HEADER_SEARCH && (
+              {isMobileView && showHeaderSearch && (
                 <Tooltip title={t("header.searchPlaceholder")}>
                   <Button
                     type="text"
@@ -771,6 +823,19 @@ export default function HeaderBar({
                     />
                   </Tooltip>
                 </>
+              )}
+
+              {showPublicLearningSearch && (
+                <Tooltip title={t("header.searchPlaceholder")}>
+                  <Button
+                    type="text"
+                    data-public-learning-search-trigger
+                    style={iconButtonStyle}
+                    onClick={() => setMobileSearchOpen(true)}
+                    icon={<SearchOutlined style={{ fontSize: 18 }} />}
+                    aria-label={t("header.searchPlaceholder")}
+                  />
+                </Tooltip>
               )}
 
               <ThemeToggle />
@@ -881,8 +946,9 @@ export default function HeaderBar({
                     arrow
                   >
                     <Avatar
+                      data-header-profile-avatar
                       size={isMobileView ? 34 : 38}
-                      src={isAdminSession ? undefined : me?.avatar}
+                      src={(isAdminSession ? adminSession?.avatar : me?.avatar) || undefined}
                       style={{
                         background: "linear-gradient(135deg, #64748b 0%, #334155 100%)",
                         cursor: "pointer",
@@ -921,16 +987,17 @@ export default function HeaderBar({
         </div>
       </Header>
 
-      {isMobileView && SHOW_HEADER_SEARCH && mobileSearchOpen && (
+      {(showPublicLearningSearch || (isMobileView && showHeaderSearch)) && mobileSearchOpen && (
         <div className="jachoei-mobile-search-backdrop" onClick={() => setMobileSearchOpen(false)}>
           <div
             className="jachoei-mobile-search-card"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
+            aria-modal="true"
             aria-label={t("common.search")}
           >
             <div className="jachoei-mobile-search-top">
-              <Text style={{ fontWeight: 700, color: "var(--app-text)" }}>
+              <Text className="jachoei-mobile-search-title">
                 {t("header.searchPlaceholder")}
               </Text>
 
@@ -938,6 +1005,7 @@ export default function HeaderBar({
                 type="text"
                 onClick={() => setMobileSearchOpen(false)}
                 icon={<CloseCircleFilled style={{ color: "var(--app-muted)" }} />}
+                aria-label={t("header.searchClose")}
               />
             </div>
 
@@ -947,6 +1015,8 @@ export default function HeaderBar({
               onSelect={handleSearchSelect}
               options={searchOptions}
               popupMatchSelectWidth
+              className="jachoei-mobile-search-autocomplete"
+              style={{ width: "100%" }}
             >
               <Input
                 ref={mobileSearchInputRef}
@@ -978,6 +1048,39 @@ export default function HeaderBar({
                 onPressEnter={() => handleSearchSubmit()}
               />
             </AutoComplete>
+
+            {searchHistory.length > 0 && (
+              <section className="jachoei-search-history" data-search-history>
+                <div className="jachoei-search-history-header">
+                  <Text className="jachoei-search-history-title">
+                    <HistoryOutlined aria-hidden="true" />
+                    {t("header.searchRecent")}
+                  </Text>
+                  <Button
+                    type="text"
+                    size="small"
+                    className="jachoei-search-history-clear"
+                    onClick={clearHistory}
+                  >
+                    {t("header.searchClearHistory")}
+                  </Button>
+                </div>
+                <div className="jachoei-search-history-list">
+                  {searchHistory.map((term) => (
+                    <button
+                      type="button"
+                      key={term}
+                      className="jachoei-search-history-item"
+                      data-search-history-item={term}
+                      onClick={() => handleSearchSelect(term)}
+                    >
+                      <HistoryOutlined aria-hidden="true" />
+                      <span>{term}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         </div>
       )}
@@ -988,10 +1091,8 @@ export default function HeaderBar({
           margin: 0 auto;
           height: 100%;
           display: grid;
-          /* คอลัมน์กลางต้อง min เป็น 0 เสมอ — ตอน login แล้วมันว่างเปล่า (search ปิดด้วย
-             SHOW_HEADER_SEARCH, product nav โชว์เฉพาะตอนยังไม่ login) ถ้าตั้ง min เป็น 500px
-             ค้างไว้ พื้นที่นั้นจะถูกจองทั้งที่ไม่มีอะไรอยู่ แล้วดันคอลัมน์ขวา (ปุ่ม Live
-             Dashboard/Inbox/Dashboard) ล้นออกนอกจอ ทำให้ทั้งหน้าเลื่อนแนวนอน */
+          /* คอลัมน์กลางต้อง min เป็น 0 เสมอ เพื่อให้ search ยุบได้เมื่อปุ่มฝั่งขวามีหลายรายการ;
+             ถ้าตั้ง hard minimum ไว้ พื้นที่นั้นจะดัน Live Dashboard/Inbox/Dashboard ล้นจอ */
           grid-template-columns: minmax(240px, 360px) minmax(0, 1fr) auto;
           align-items: center;
           gap: 18px;
@@ -1303,11 +1404,11 @@ export default function HeaderBar({
 
         .jachoei-mobile-search-card {
           width: 100%;
-          max-width: 640px;
+          max-width: 760px;
           background: rgba(var(--app-surface-rgb),0.98);
           border: 1px solid var(--app-border);
-          border-radius: 20px;
-          padding: 12px;
+          border-radius: 28px;
+          padding: 24px;
           box-shadow: 0 20px 50px rgba(var(--app-shadow-rgb),0.18);
         }
 
@@ -1326,7 +1427,93 @@ export default function HeaderBar({
           display: flex;
           align-items: center;
           justify-content: space-between;
+          gap: 16px;
+          margin-bottom: 18px;
+        }
+
+        .jachoei-mobile-search-title {
+          min-width: 0;
+          color: var(--app-text) !important;
+          font-size: 20px;
+          font-weight: 750;
+          line-height: 1.35;
+        }
+
+        .jachoei-mobile-search-autocomplete {
+          display: block;
+          width: 100%;
+        }
+
+        .jachoei-mobile-search-autocomplete .ant-input-affix-wrapper {
+          width: 100%;
+          min-height: 52px;
+          padding-inline: 16px;
+        }
+
+        .jachoei-search-history {
+          margin-top: 20px;
+          padding-top: 16px;
+          border-top: 1px solid var(--app-border);
+        }
+
+        .jachoei-search-history-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
           margin-bottom: 10px;
+        }
+
+        .jachoei-search-history-title {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          color: var(--app-text) !important;
+          font-size: 14px;
+          font-weight: 700;
+        }
+
+        .jachoei-search-history-clear {
+          color: var(--app-muted) !important;
+          font-size: 12px;
+        }
+
+        .jachoei-search-history-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .jachoei-search-history-item {
+          min-width: 0;
+          max-width: 100%;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 12px;
+          border: 1px solid var(--app-border);
+          border-radius: 999px;
+          background: rgba(var(--app-text-rgb),0.035);
+          color: var(--app-text);
+          font: inherit;
+          font-size: 13px;
+          line-height: 1.25;
+          cursor: pointer;
+          transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+        }
+
+        .jachoei-search-history-item span {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .jachoei-search-history-item:hover,
+        .jachoei-search-history-item:focus-visible {
+          border-color: var(--app-primary);
+          background: rgba(var(--app-primary-rgb),0.08);
+          color: var(--app-primary);
+          outline: none;
         }
 
         @media (max-width: 1399px) {
@@ -1376,6 +1563,28 @@ export default function HeaderBar({
         }
 
         @media (max-width: 767px) {
+          .jachoei-mobile-search-backdrop {
+            padding: 62px 10px 10px;
+          }
+
+          .jachoei-mobile-search-card {
+            border-radius: 20px;
+            padding: 16px;
+          }
+
+          .jachoei-mobile-search-title {
+            font-size: 17px;
+          }
+
+          .jachoei-search-history-list {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+          }
+
+          .jachoei-search-history-item {
+            width: 100%;
+          }
+
           .jachoei-header-shell {
             grid-template-columns: minmax(0, 1fr) auto;
             gap: 8px;

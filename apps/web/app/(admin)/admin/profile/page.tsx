@@ -8,6 +8,7 @@ import { useTheme } from "@/lib/useTheme";
 import type { ThemeMode } from "@/lib/theme";
 import { getLangCookie, setLangCookie, isLang } from "@/lib/lang";
 import { useI18n } from "@/lib/i18nContext";
+import { useSessionCtx } from "@/lib/session-context";
 
 const Q = gql`
   query {
@@ -52,6 +53,7 @@ export default function Page() {
   const [updateMe, { loading: saving }] = useMutation(M_UPDATE_ME);
   const [avatarUrl, setAvatarUrl] = useState<string>("");
   const { setTheme } = useTheme();
+  const { refreshSession } = useSessionCtx();
   const router = useRouter();
 
   const me = data?.bmsMe;
@@ -79,8 +81,9 @@ export default function Page() {
       const url = data?.uploadAvatar;
       if (url) {
         setAvatarUrl(url);
+        await refetch();
+        await refreshSession();
         message.success(t("admin_profile.avatar_upload_success"));
-        refetch();
       } else {
         message.error(t("admin_profile.avatar_upload_error"));
       }
@@ -116,7 +119,8 @@ export default function Page() {
           router.refresh();
         }
         message.success(t("admin_profile.save_success"));
-        refetch();
+        await refetch();
+        await refreshSession();
       } else {
         message.error(t("admin_profile.save_error"));
       }
@@ -140,7 +144,13 @@ export default function Page() {
           <Col xs={24} md={8}>
             <Card>
               <Space direction="vertical" align="center" style={{ width: "100%" }} size={12}>
-                <Avatar size={88} src={avatarUrl || undefined} icon={<UserOutlined />} />
+                <Avatar
+                  key={avatarUrl || "no-avatar"}
+                  data-admin-profile-avatar
+                  size={88}
+                  src={avatarUrl || undefined}
+                  icon={<UserOutlined />}
+                />
                 <Upload accept="image/*" showUploadList={false} beforeUpload={handleUpload}>
                   <Button icon={<UploadOutlined />} loading={uploadingAvatar}>
                     {t("admin_profile.change_avatar")}

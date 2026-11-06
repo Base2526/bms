@@ -7,7 +7,14 @@ export {
   isComprehensiveCurrentPageHelpRequest,
   isCurrentPageHelpRequest,
 } from "./pageIntent";
-export { normalizeAssistantQuery, searchAssistantFaqs, searchAssistantKnowledge } from "./search";
+export {
+  capabilityStatusFilterForQuery,
+  isBroadCapabilityQuery,
+  listAssistantCapabilities,
+  normalizeAssistantQuery,
+  searchAssistantFaqs,
+  searchAssistantKnowledge,
+} from "./search";
 export { groupPermissionDescriptions } from "./permissions";
 export type { SystemFaq } from "./faq";
 export type { SystemLimitGroup } from "./limits";

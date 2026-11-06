@@ -17,6 +17,11 @@ export interface JWTPayload {
   // withUserPreferences there) so a language change on one device/session shows up on others
   // without waiting for token expiry, same reasoning as themePreference above.
   language?: "th" | "en";
+  // Display-only identity is never trusted from the signed token. Admin requests rehydrate
+  // these fields from Postgres in refreshAdminIdentity() so profile changes reach every shell.
+  name?: string | null;
+  username?: string | null;
+  avatar?: string | null;
   exp?: number;
   iat?: number;
 }

@@ -916,7 +916,9 @@ const en = {
     blocked: "Blocked",
 
     // 🔍 search-related
-    searchPlaceholder: "Search posts, users, phone numbers...",
+    searchPlaceholder: "Search BMS capabilities, guides, and documentation...",
+    searchClose: "Close search",
+    searchRecent: "Recent searches",
     searchClearHistory: "Clear search history",
     searchHintPrefix: "Press",
     searchHintSuffix: "to search quickly",

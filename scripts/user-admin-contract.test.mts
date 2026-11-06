@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import {
   canManageUserTarget,
@@ -15,6 +17,8 @@ import {
 
 const T1 = "11111111-1111-1111-1111-111111111111";
 const T2 = "22222222-2222-2222-2222-222222222222";
+const root = path.resolve(import.meta.dirname, "..");
+const src = (file: string) => readFileSync(path.join(root, file), "utf8");
 
 const actor = (overrides: Partial<UserAdminPolicyActor>): UserAdminPolicyActor => ({
   platform: false,
@@ -80,4 +84,30 @@ test("password reset tokens are hashed and reset URLs fail closed in production"
   );
   assert.throws(() => buildPasswordResetUrl(raw, "", "production"), /NEXT_PUBLIC_BASE_URL/);
   assert.throws(() => buildPasswordResetUrl(raw, "javascript:alert(1)", "production"), /HTTP\(S\)/);
+});
+
+test("admin display identity is refreshed from Postgres instead of trusted from the JWT", () => {
+  const identity = src("apps/web/lib/auth/adminIdentity.ts");
+  assert.match(identity, /u\.name, u\.username, u\.avatar/);
+  assert.match(identity, /name: row\.name/);
+  assert.match(identity, /username: row\.username/);
+  assert.match(identity, /avatar: row\.avatar/);
+
+  const meRoute = src("apps/web/app/api/auth/me/route.ts");
+  assert.match(meRoute, /refreshAdminIdentity\(adminToken\)/);
+});
+
+test("uploading my avatar refreshes the profile, sidebar, and public index header", () => {
+  const profile = src("apps/web/app/(admin)/admin/profile/page.tsx");
+  assert.match(profile, /const \{ refreshSession \} = useSessionCtx\(\)/);
+  assert.match(profile, /setAvatarUrl\(url\);\s*await refetch\(\);\s*await refreshSession\(\)/);
+  assert.match(profile, /data-admin-profile-avatar/);
+
+  const sidebar = src("apps/web/components/AdminSidebar.tsx");
+  assert.match(sidebar, /src=\{admin\.avatar \|\| undefined\}/);
+  assert.match(sidebar, /data-admin-sidebar-avatar/);
+
+  const header = src("apps/web/components/HeaderBar.tsx");
+  assert.match(header, /isAdminSession \? adminSession\?\.avatar : me\?\.avatar/);
+  assert.match(header, /data-header-profile-avatar/);
 });

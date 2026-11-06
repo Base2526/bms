@@ -1307,8 +1307,28 @@ export function lessonSupportsTrackFormat(lesson: Lesson, track: TrackId, format
   if (track === "retail" && isRetailFormat(format)) return lessonSupportsRetailFormat(lesson, format);
   return false;
 }
+
+const learningSearchStopwords = new Set([
+  "a", "an", "and", "are", "can", "do", "does", "how", "i", "is", "it", "of", "on", "the", "to", "what", "where", "with",
+]);
+
+function learningSearchWords(query: string, lang: "th" | "en") {
+  let value = query.trim().toLocaleLowerCase().replace(/[?？]/g, "");
+  if (lang === "th") {
+    const broad = ["รองรับระบบอะไรบ้าง", "ระบบรองรับอะไรบ้าง", "bms ทำอะไรได้บ้าง", "มีฟีเจอร์อะไรบ้าง"];
+    if (broad.includes(value)) return [];
+    // Thai questions often have no spaces. Remove only question framing while preserving the
+    // user's actual topic, so “รองรับร้านอาหารไหม” searches for “ร้านอาหาร”.
+    value = value
+      .replace(/^(?:bms\s*)?(?:ระบบ)?รองรับ/u, "")
+      .replace(/(?:ได้ไหม|ไหม|ยังไง|อย่างไร|ที่ไหน|อะไรบ้าง|บ้าง)$/u, "")
+      .trim();
+  }
+  return value.normalize("NFKC").split(/\s+/).filter((word) => word && !learningSearchStopwords.has(word)).slice(0, 20);
+}
+
 export function searchLessons(query: string, lang: "th" | "en", track?: TrackId, role?: Role) {
-  const words = query.normalize("NFKC").toLocaleLowerCase().trim().split(/\s+/).filter(Boolean).slice(0, 20);
+  const words = learningSearchWords(query, lang);
   return lessons.filter((lesson) => (!track || lesson.tracks.includes(track)) && (!role || lesson.roles.includes(role)))
     .map((lesson) => {
       const title = localize(lesson.title, lang).toLocaleLowerCase();

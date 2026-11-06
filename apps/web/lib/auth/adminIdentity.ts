@@ -8,6 +8,9 @@ type AdminIdentityRow = {
   id: string;
   email: string;
   role: string;
+  name: string | null;
+  username: string | null;
+  avatar: string | null;
   tenant_id: string | null;
   is_platform_admin: boolean;
   admin_session_version: string | number;
@@ -25,7 +28,8 @@ export async function refreshAdminIdentity(session: JWTPayload | null): Promise<
   if (!session?.id) return null;
 
   const res = await query<AdminIdentityRow>(
-    `SELECT u.id, u.email, u.role, u.tenant_id, u.is_platform_admin,
+    `SELECT u.id, u.email, u.role, u.name, u.username, u.avatar,
+            u.tenant_id, u.is_platform_admin,
             u.admin_session_version, t.active AS tenant_active
        FROM users u
        LEFT JOIN bms_tenants t ON t.id = u.tenant_id
@@ -45,6 +49,9 @@ export async function refreshAdminIdentity(session: JWTPayload | null): Promise<
     id: row.id,
     email: row.email,
     role: row.role,
+    name: row.name,
+    username: row.username,
+    avatar: row.avatar,
     tenant_id: row.tenant_id ?? undefined,
     is_platform_admin: row.is_platform_admin,
     session_version: currentVersion,

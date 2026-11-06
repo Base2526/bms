@@ -88,7 +88,13 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     id: "reports.create-export", module: "reports", pageId: "reports", route: "/admin/reports",
     title: both("สร้างและส่งออกรายงาน", "Create and export a report"),
     summary: both("เลือกรายงาน ช่วงเวลา และรูปแบบ XLSX, CSV หรือ PDF", "Choose a report, date range, and XLSX, CSV, or PDF format."),
-    aliases: aliases(["export excel", "ออก pdf", "ดาวน์โหลดรายงาน"], ["export excel", "create pdf", "download report"]),
+    aliases: aliases([
+      "export excel", "ออก pdf", "ดาวน์โหลดรายงาน", "ดูรายงานยอดขายที่ไหน",
+      "ดูกำไรขาดทุนได้ไหม", "ส่งออกรายงาน Excel ได้ไหม",
+    ], [
+      "export excel", "create pdf", "download report", "where is the sales report",
+      "can I see profit and loss", "export reports to Excel",
+    ]),
     requiredPermissions: ["report.view"],
     prerequisites: lists(["กำหนดช่วงเวลาที่ต้องการ"], ["Choose the required date range."]),
     steps: lists(["เปิดหน้ารายงาน", "เลือกประเภทรายงานและช่วงเวลา", "เลือกรูปแบบไฟล์", "สร้างและดาวน์โหลดไฟล์"], ["Open Reports.", "Choose report type and date range.", "Choose a file format.", "Generate and download the file."]),
@@ -160,7 +166,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     id: "pos.shift", module: "pos", pageId: "pos", route: "/admin/pos-manual",
     title: both("เปิดและปิดกะ POS", "Open and close a POS shift"),
     summary: both("ตรวจเครื่อง สาขา PIN และยอดเงินก่อนเริ่มหรือปิดกะ", "Check device, branch, PIN, and cash totals before opening or closing a shift."),
-    aliases: aliases(["เปิดกะ", "ปิดกะ", "ปิดยอด"], ["open shift", "close shift", "cash up"]),
+    aliases: aliases(["เปิดกะ", "ปิดกะ", "ปิดยอด", "เปิดกะและปิดกะยังไง"], ["open shift", "close shift", "cash up", "how to open and close a shift"]),
     requiredPermissions: ["pos.shift.open"],
     prerequisites: lists(["เครื่อง POS ผูกสาขาแล้ว", "พนักงานมี PIN"], ["The POS device is assigned to a branch.", "The cashier has a PIN."]),
     steps: lists(["เลือกเครื่องและยืนยันพนักงาน", "กรอกเงินเปิดกะ", "ขายตามปกติ", "ตรวจรายการค้างและปิดยอดก่อนปิดกะ"], ["Select the device and authenticate the cashier.", "Enter opening cash.", "Operate sales.", "Resolve pending items and reconcile before closing."]),
@@ -170,7 +176,13 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     id: "dashboard.daily-review", module: "dashboard", pageId: "dashboard", route: "/admin/dashboard",
     title: both("ตรวจภาพรวมร้านประจำวัน", "Review the daily store overview"),
     summary: both("ใช้ Dashboard เพื่อดูยอดขาย งานค้าง และสัญญาณที่ต้องจัดการต่อ", "Use Dashboard to review sales, pending work, and operational signals."),
-    aliases: aliases(["เปิดร้านมาต้องดูอะไรก่อน", "งานวันนี้ต้องทำอะไร", "เริ่มวันทำงาน", "dashboard ใช้ยังไง", "ดูภาพรวมร้าน", "เช็กงานวันนี้"], ["what to check first each day", "daily review", "how to use dashboard", "store overview", "today's work"]), requiredPermissions: ["report.view"],
+    aliases: aliases([
+      "เปิดร้านมาต้องดูอะไรก่อน", "งานวันนี้ต้องทำอะไร", "เริ่มวันทำงาน", "dashboard ใช้ยังไง",
+      "ดูภาพรวมร้าน", "เช็กงานวันนี้", "ดูยอดขายวันนี้", "สินค้าอะไรขายดีที่สุด", "สินค้าอะไรใกล้หมด",
+    ], [
+      "what to check first each day", "daily review", "how to use dashboard", "store overview",
+      "today's work", "today's sales", "best selling products", "low stock products",
+    ]), requiredPermissions: ["report.view"],
     prerequisites: lists(["บัญชีต้องมี report.view เพื่ออ่าน Dashboard", "การรับทำ ปิด หรือยกเลิก Action ต้องมี action.manage เพิ่ม"], ["The account needs report.view to read Dashboard.", "Accepting, completing, or dismissing an Action additionally requires action.manage."]),
     steps: lists(
       [
@@ -211,7 +223,13 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     id: "products.create", module: "products", pageId: "products", route: "/admin/products",
     title: both("เพิ่มและแก้ไขสินค้า", "Create and edit a product"),
     summary: both("กำหนด SKU ชื่อ ราคา ตัวเลือก รูปภาพ และสถานะขาย", "Configure SKU, name, price, variants, images, and selling status."),
-    aliases: aliases(["เพิ่มสินค้า", "แก้สินค้า", "ตั้งราคา", "เพิ่ม SKU"], ["add product", "edit product", "set price", "add SKU"]), requiredPermissions: ["product.view"],
+    aliases: aliases([
+      "เพิ่มสินค้า", "แก้สินค้า", "ตั้งราคา", "เพิ่ม SKU", "เพิ่มสินค้ายังไง", "รูปสินค้าไม่แสดง",
+      "ตั้งค่าราคาขายหลายขนาดยังไง",
+    ], [
+      "add product", "edit product", "set price", "add SKU", "how to add a product", "how do i add a product",
+      "product image is missing", "configure prices for multiple sizes",
+    ]), requiredPermissions: ["product.view"],
     prerequisites: lists(["การบันทึกต้องมี product.edit", "SKU ต้องไม่ซ้ำในร้าน"], ["Saving requires product.edit.", "SKU must be unique in the shop."]),
     steps: lists(["เปิดหน้าสินค้า", "กดเพิ่มหรือเลือกสินค้าเดิม", "กรอกข้อมูลและตัวเลือก", "ตรวจ validation แล้วบันทึก"], ["Open Products.", "Add a product or select an existing one.", "Enter details and variants.", "Resolve validation and save."]),
     warnings: lists(["Business validation ต้องผ่าน service เดียวกับ import"], ["Business validation must use the same service as imports."]), relatedCapabilityIds: ["catalog.products"],
@@ -285,7 +303,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     id: "products.branch-promotions", module: "products", pageId: "promotions", route: "/admin/promotions",
     title: both("ตั้งโปรโมชันและราคาส่งแยกสาขา", "Branch promotions and branch quantity pricing"),
     summary: both("ตั้งซื้อ X แถม Y ของสินค้าเดียวกัน หรือ N ชิ้นราคาเดียว ให้ทั้งร้านหรือเฉพาะสาขา ไม่รองรับซื้อ A แถม B คนละ SKU — โปรของสาขาทับโปรทั้งร้านของสินค้าตัวเดียวกัน", "Set same-product buy-X-get-Y or N-for-a-price store-wide or for one branch. Cross-SKU buy-A-get-B is not supported. A branch deal overrides the store-wide deal for the same product."),
-    aliases: aliases(["สาขาจัดโปรของตัวเอง", "โปรแยกสาขา", "โปรเฉพาะสาขา", "สาขาลดราคาเองได้ไหม", "ตั้งโปรโมชัน", "ซื้อ 3 แถม 1", "3 ชิ้น 100", "ราคาส่งแยกสาขา", "ราคาส่งตามจำนวน", "ซื้อเยอะลดราคา", "สาขาตั้งราคาส่งของตัวเอง"], ["branch promotion", "promotion per branch", "store level promotion", "can a branch run its own promotion", "buy 3 get 1", "3 for 100", "branch quantity pricing", "wholesale price per branch", "bulk discount by branch"]),
+    aliases: aliases(["สาขาจัดโปรของตัวเอง", "โปรแยกสาขา", "โปรเฉพาะสาขา", "สาขาลดราคาเองได้ไหม", "ตั้งโปรโมชัน", "ตั้งค่าโปรโมชั่นยังไง", "ซื้อ 3 แถม 1", "3 ชิ้น 100", "ราคาส่งแยกสาขา", "ราคาส่งตามจำนวน", "ซื้อเยอะลดราคา", "สาขาตั้งราคาส่งของตัวเอง"], ["branch promotion", "promotion per branch", "store level promotion", "can a branch run its own promotion", "how to configure a promotion", "buy 3 get 1", "3 for 100", "branch quantity pricing", "wholesale price per branch", "bulk discount by branch"]),
     requiredPermissions: ["product.view"],
     prerequisites: lists(["การบันทึกต้องมี product.edit", "ต้องมีสาขาในระบบก่อนถ้าจะตั้งโปรเฉพาะสาขา"], ["Saving requires product.edit.", "A branch must exist before a branch-only deal can be set."]),
     steps: lists(["เปิดโปรโมชัน แล้วค้นและเลือกสินค้า", "เลือกว่าใช้กับทุกสาขาหรือสาขาเดียว", "เลือกชนิดโปรและกรอกจำนวน/ราคาชุด", "ตั้งช่วงเวลาถ้าต้องการ แล้วบันทึก", "ราคาส่งตามจำนวน: ใช้การ์ดราคาส่งแยกสาขาบนหน้าเดียวกัน เลือกสินค้าและขอบเขต แล้วกรอกขั้นราคา", "ทดลองจัดตะกร้าที่เครื่องขายของสาขานั้นก่อนเปิดขายจริง"], ["Open Promotions, then search and select the product.", "Choose every branch or a single branch.", "Pick the deal type and enter quantities or the bundle price.", "Set an optional time window and save.", "For quantity pricing, use the branch pricing card on the same page: pick the product and scope, then enter the rungs.", "Test a cart on that branch's register before going live."]),
@@ -335,7 +353,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     id: "inventory.transfer", module: "inventory", pageId: "stock-transfers", route: "/admin/stock-transfers",
     title: both("โอนสต็อกระหว่างสาขา", "Transfer stock between branches"),
     summary: both("ส่งออกจากต้นทางก่อน แล้วจึงรับเข้าที่ปลายทาง", "Send from the source first, then receive at the destination."),
-    aliases: aliases(["โอนของไปสาขาอื่น", "ส่งของไปอีกสาขา", "รับของที่โอนมา", "โอนสต็อก", "ย้ายของสาขา", "ของระหว่างทาง"], ["send stock to another branch", "receive a transfer", "transfer stock", "move branch inventory", "in transit"]), requiredPermissions: ["inventory.transfer"],
+    aliases: aliases(["โอนของไปสาขาอื่น", "ส่งของไปอีกสาขา", "รับของที่โอนมา", "โอนสต็อก", "ย้ายของสาขา", "ของระหว่างทาง", "โอนสต็อกข้ามสาขายังไง"], ["send stock to another branch", "receive a transfer", "transfer stock", "move branch inventory", "in transit", "how to transfer stock between branches"]), requiredPermissions: ["inventory.transfer"],
     prerequisites: lists(["มีสาขาต้นทางและปลายทาง", "สต็อกที่ส่งต้องไม่ใช่ของจอง"], ["Source and destination branches exist.", "Reserved stock cannot be sent."]),
     steps: lists(["สร้างใบโอน", "ตรวจจำนวนและส่งจากต้นทาง", "ปลายทางตรวจของจริง", "รับเข้าและบันทึกของขาดถ้ามี"], ["Create a transfer.", "Verify and send from the source.", "Inspect at destination.", "Receive and record any shortage."]),
     warnings: lists(["ของระหว่างทางไม่เป็นสต็อกของสาขาใด", "รับขาดต้องลงเป็นสูญหายระหว่างทาง"], ["In-transit goods belong to no branch.", "Short receipt records loss in transit."]), relatedCapabilityIds: ["inventory.branch"],
@@ -356,11 +374,11 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     aliases: aliases([
       "รูปแบบสต็อก", "สูตรอาหาร", "ตั้งสูตร", "ตัดวัตถุดิบ", "ตัวเลือกเมนู", "modifier", "หวานน้อย",
       "ขายตามน้ำหนัก", "สินค้าชั่งขาย", "บาร์โค้ดเครื่องชั่ง", "หน่วยฐาน", "ความสามารถของร้าน",
-      "เปิดความสามารถ", "ตั้ง station ครัว", "สถานีครัว", "หลายครัวในสาขาเดียว", "เพิ่มสถานีครัว",
+      "เปิดความสามารถ", "ตั้ง station ครัว", "สถานีครัว", "หลายครัวในสาขาเดียว", "เพิ่มสถานีครัว", "ทำไมสต็อกไม่ลด",
     ], [
       "stock model", "recipe", "set a recipe", "ingredient deduction", "menu modifier", "modifier",
       "sell by weight", "weighed product", "scale barcode", "base unit", "shop capabilities",
-      "enable capability", "kitchen station", "kitchen stations", "several kitchens in one branch", "add a kitchen station",
+      "enable capability", "kitchen station", "kitchen stations", "several kitchens in one branch", "add a kitchen station", "why did stock not decrease",
     ]), requiredPermissions: ["product.view"],
     prerequisites: lists(["สินค้ามีอยู่ในแคตตาล็อกแล้ว", "แก้ไขต้องมีสิทธิ์ product.edit"], ["The product already exists in the catalog.", "Editing needs the product.edit permission."]),
     steps: lists([
@@ -530,10 +548,10 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     summary: both("ดูรายการที่เครื่องขายส่งเข้าครัวแยกตาม station แล้วเลื่อนสถานะจนเสิร์ฟ", "See what the register sent to the kitchen by station, and move each ticket through to served."),
     aliases: aliases([
       "กระดานครัว", "คิวครัว", "รายการเข้าครัว", "ออเดอร์ครัว", "station ครัว", "ทำอาหาร",
-      "พร้อมเสิร์ฟ", "เสิร์ฟแล้ว", "ร้านอาหาร",
+      "พร้อมเสิร์ฟ", "เสิร์ฟแล้ว", "ร้านอาหาร", "ทำไมออเดอร์ไม่เข้าครัว",
     ], [
       "kitchen board", "kitchen queue", "kitchen tickets", "kitchen orders", "kitchen station",
-      "preparing", "ready to serve", "served", "restaurant",
+      "preparing", "ready to serve", "served", "restaurant", "why did the order not reach the kitchen",
     ]), requiredPermissions: ["order.view"],
     prerequisites: lists(["ร้านเปิดความสามารถคิวครัว", "สินค้าที่ต้องเข้าครัวตั้ง station ไว้แล้วที่รูปแบบสต็อก"], ["The shop has the kitchen workflow capability on.", "Products that go to the kitchen have a station set in their stock model."]),
     steps: lists([
@@ -561,7 +579,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     id: "orders.follow-lifecycle", module: "orders", pageId: "orders", route: "/admin/orders",
     title: both("ติดตามสถานะออร์เดอร์", "Follow an order lifecycle"),
     summary: both("ตรวจรายการ ราคา การชำระ แพ็ก และจัดส่งจากออร์เดอร์เดียว", "Review lines, price, payment, packing, and shipping from one order."),
-    aliases: aliases(["สถานะออร์เดอร์", "ออร์เดอร์ค้าง", "แพ็กของ"], ["order status", "pending order", "packing"]), requiredPermissions: ["order.view"],
+    aliases: aliases(["สถานะออร์เดอร์", "ออร์เดอร์ค้าง", "แพ็กของ", "เปิดบิลขายยังไง"], ["order status", "pending order", "packing", "how to open a sales order"]), requiredPermissions: ["order.view"],
     prerequisites: lists(["เลือกออร์เดอร์ที่ถูกต้อง"], ["Select the correct order."]),
     steps: lists(["ค้นหาออร์เดอร์", "ตรวจสถานะและข้อมูลลูกค้า", "ทำขั้นตอนถัดไปตามสถานะ", "ตรวจ audit เมื่อผลไม่ตรงคาด"], ["Find the order.", "Review status and customer completeness.", "Perform the allowed next step.", "Review audit history when unexpected."]),
     warnings: lists(["ออร์เดอร์ช่องทางแชทต้องมีที่อยู่ก่อนจัดส่ง", "ยกเลิกและคืนสินค้าเป็นคนละ workflow"], ["Chat-channel orders need an address before shipping.", "Cancel and return are separate workflows."]), relatedCapabilityIds: ["orders.lifecycle"],
@@ -646,7 +664,11 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     id: "inbox.handle-conversation", module: "inbox", pageId: "inbox", route: "/admin/inbox",
     title: both("จัดการบทสนทนาใน Inbox", "Handle an Inbox conversation"),
     summary: both("อ่านบริบท มอบหมาย ติดแท็ก เพิ่มโน้ต และตอบผ่านช่องทางจริง", "Read context, assign, tag, note, and reply over the real channel."),
-    aliases: aliases(["ตอบแชท", "มอบหมายแชท", "ปิดบทสนทนา"], ["reply to chat", "assign conversation", "close conversation"]), requiredPermissions: ["inbox.view"],
+    aliases: aliases([
+      "ตอบแชท", "มอบหมายแชท", "ปิดบทสนทนา", "ส่งข้อความหาลูกค้าได้ไหม",
+    ], [
+      "reply to chat", "assign conversation", "close conversation", "can I message a customer",
+    ]), requiredPermissions: ["inbox.view"],
     prerequisites: lists(["การตอบต้องมี inbox.reply", "ช่องทางต้องพร้อมส่ง"], ["Replying requires inbox.reply.", "The channel must support outbound messaging."]),
     steps: lists(["เปิดบทสนทนา", "อ่านประวัติแบบ bounded", "มอบหมายหรือเพิ่มโน้ต", "ตรวจข้อความและส่ง"], ["Open the conversation.", "Read bounded history.", "Assign or add a note.", "Review and send the reply."]),
     warnings: lists(["ส่งได้ body และ attachment เดียว", "ห้ามส่งลิงก์ /admin ให้ลูกค้า"], ["Replies support body plus one attachment.", "Never send /admin links to customers."]), relatedCapabilityIds: ["inbox.omnichannel"],
@@ -673,7 +695,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     id: "pos.void-return", module: "pos", pageId: "pos", route: "/admin/pos-manual",
     title: both("แยก Void ออกจาก Return", "Distinguish Void from Return"),
     summary: both("Void คือย้อนบิลที่กดผิด ส่วน Return คือรับสินค้าคืนหลังการขาย", "Void reverses an erroneous bill; Return accepts goods back after sale."),
-    aliases: aliases(["void ต่างจาก return", "ยกเลิกบิล POS", "คืนสินค้า POS"], ["void versus return", "cancel POS bill", "POS return"]), requiredPermissions: ["order.return"],
+    aliases: aliases(["void ต่างจาก return", "ยกเลิกบิล POS", "คืนสินค้า POS", "คืนสินค้ายังไง"], ["void versus return", "cancel POS bill", "POS return", "how to return a product"]), requiredPermissions: ["order.return"],
     prerequisites: lists(["ต้องอ้างบิลและตรวจสิทธิ์ของ action"], ["Reference the sale and check the action permission."]),
     steps: lists(["ค้นบิล", "เลือก Void หรือ Return ให้ตรงเหตุผล", "ตรวจจำนวนและวิธีคืนเงิน", "ให้ผู้อนุมัติที่จำเป็นกรอก PIN"], ["Find the sale.", "Choose Void or Return for the actual reason.", "Review quantities and refund method.", "Obtain required second-person approval."]),
     warnings: lists(["Void stamp เอกสารภาษี และ audit ต้องอยู่ transaction เดียวกับ reversal"], ["Void stamp, tax cancellation, and audit belong in the reversal transaction."]), relatedCapabilityIds: ["pos.operations"],
@@ -690,7 +712,13 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
     id: "pos.build-sale", module: "pos", pageId: "pos", route: "/admin/pos-manual",
     title: ["ขายสินค้าและจัดตะกร้า POS", "Build a POS sale"], summary: ["เลือกผู้ขาย ยิงหรือค้นสินค้า ตรวจจำนวน ราคา pack และ serial ก่อนรับเงิน", "Identify the cashier, scan or find items, and verify quantity, pack pricing, and serials before payment."],
-    aliases: [["เมนูขาย", "ยิงสินค้า", "ตะกร้า POS", "สแกนบาร์โค้ด", "เลขเครื่อง", "serial", "imei", "ราคาส่ง", "โปรโมชั่น", "สินค้าชุด", "ค่าถุง", "ค่าบริการ"], ["sale tab", "scan product", "POS cart", "scan barcode", "serial number", "imei", "tier price", "promotion", "bundle", "bag fee", "service charge"]], requiredPermissions: ["pos.sell"],
+    aliases: [[
+      "เมนูขาย", "ยิงสินค้า", "ตะกร้า POS", "สแกนบาร์โค้ด", "เลขเครื่อง", "serial", "imei",
+      "ราคาส่ง", "โปรโมชั่น", "สินค้าชุด", "ค่าถุง", "ค่าบริการ", "รองรับเครื่องสแกนบาร์โค้ดไหม",
+    ], [
+      "sale tab", "scan product", "POS cart", "scan barcode", "serial number", "imei", "tier price",
+      "promotion", "bundle", "bag fee", "service charge", "does it support barcode scanners",
+    ]], requiredPermissions: ["pos.sell"],
     prerequisites: [["เครื่องจับคู่และผูกสาขาแล้ว", "เปิดกะและยืนยัน PIN ผู้ขาย"], ["The register is paired and assigned to a branch.", "A shift is open and the cashier PIN is verified."]],
     steps: [["เลือกผู้ขายและใส่ PIN", "ยิงบาร์โค้ดหรือค้นสินค้า", "ตรวจไซซ์ pack จำนวน ราคาและ stock", "ระบุ serial ถ้าสินค้าบังคับ", "ไปขั้นรับชำระ"], ["Select the cashier and enter the PIN.", "Scan a barcode or search.", "Review size, pack, quantity, price, and stock.", "Enter required serials.", "Continue to payment."]],
     warnings: [["ก่อนรับเงิน backend จะตรวจราคา promotion pack และ stock ใหม่", "บาร์โค้ด scanner ใช้ prefix ที่ตั้งค่า ไม่ใช้ timing/focus เป็นหลักฐาน"], ["The backend rechecks pricing, promotions, packs, and stock before payment.", "Scanner capture requires a configured prefix; timing/focus is not proof."]], relatedCapabilityIds: ["pos.operations"],
@@ -698,7 +726,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
     id: "pos.take-payment", module: "pos", pageId: "pos", route: "/admin/pos-manual",
     title: ["รับชำระและจ่ายผสม", "Take payment and split tender"], summary: ["เลือกรูปแบบรับเงิน ตรวจยอดรับ/เงินทอน และยืนยันการขายหนึ่งครั้ง", "Choose tender, verify received cash/change, and settle the sale once."],
-    aliases: [["รับเงิน", "เงินสด QR บัตร", "จ่ายผสม"], ["take payment", "cash QR card", "split tender"]], requiredPermissions: ["pos.sell"],
+    aliases: [["รับเงิน", "เงินสด QR บัตร", "จ่ายผสม", "เชื่อมระบบชำระเงินอะไรได้บ้าง"], ["take payment", "cash QR card", "split tender", "which payment methods can be configured"]], requiredPermissions: ["pos.sell"],
     prerequisites: [["มีสินค้าในบิลและเปิดกะแล้ว"], ["The cart has items and the shift is open."]], steps: [["เลือกเงินสด QR บัตร วอลเล็ท หรือจ่ายผสม", "กรอกยอดแต่ละช่องทาง", "ตรวจยอดรับและเงินทอน", "ยืนยันขายและรอผลเดิมก่อนลองซ้ำ"], ["Choose cash, QR, card, wallet, or split tender.", "Enter each tender amount.", "Review received amount and change.", "Confirm once and wait for the original result before retrying."]],
     warnings: [["ช่องทางรับเงินต้องมาจาก config ร้าน", "idempotency key ป้องกันการขายซ้ำเมื่อ response หาย"], ["Payment methods must come from shop configuration.", "The idempotency key prevents duplicate sales after a lost response."]], relatedCapabilityIds: ["pos.operations"],
   }),
@@ -946,7 +974,13 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     id: "delivery-platforms.review", module: "delivery-platforms", pageId: "delivery-platforms", route: "/admin/delivery-platforms",
     title: ["ตรวจการเชื่อมต่อแพลตฟอร์มเดลิเวอรี", "Review delivery-platform integrations"],
     summary: ["ตรวจ integration, mapping, งานที่ต้องแก้ และ settlement โดยยึดเฉพาะ capability ที่ยืนยันจากสัญญา provider", "Review integrations, mappings, actionable operations, and settlements using only provider capabilities verified from official contracts."],
-    aliases: [["แพลตฟอร์มเดลิเวอรี", "เชื่อม foodpanda", "จับคู่เมนูเดลิเวอรี", "ออร์เดอร์ provider ค้าง", "กระทบยอดเดลิเวอรี"], ["delivery platforms", "connect foodpanda", "map delivery menu", "stuck provider order", "delivery settlement reconciliation"]],
+    aliases: [[
+      "แพลตฟอร์มเดลิเวอรี", "เชื่อม foodpanda", "จับคู่เมนูเดลิเวอรี", "ออร์เดอร์ provider ค้าง",
+      "กระทบยอดเดลิเวอรี", "รองรับ GrabFood หรือ LINE MAN ไหม",
+    ], [
+      "delivery platforms", "connect foodpanda", "map delivery menu", "stuck provider order",
+      "delivery settlement reconciliation", "does BMS support GrabFood or LINE MAN",
+    ]],
     requiredPermissions: ["delivery.integration.view"],
     prerequisites: [["ร้านต้องเป็นประเภทร้านอาหาร", "การแก้ integration, mapping และ settlement ต้องมีสิทธิ์เฉพาะของแต่ละงาน", "Provider ต้องมี official contract และ credential ที่ผ่าน sandbox ก่อนเปิด rollout"], ["The shop must use the restaurant archetype.", "Changing integrations, mappings, and settlements requires each operation's specific permission.", "A provider needs a reviewed official contract and sandbox-qualified credentials before rollout."]],
     steps: [["เปิดแท็บการเชื่อมต่อเพื่อตรวจ environment, rollout, health และ capability matrix", "จับคู่ provider store กับสาขา แล้วจับคู่ item, variant และ modifier ให้เป็น VERIFIED", "เปิดแท็บปฏิบัติการเพื่อตรวจ event หรือ command ที่ล้ม และ retry เฉพาะงานที่ระบบอนุญาต", "ผู้มีสิทธิ์การเงินนำเข้า statement แล้วตรวจ mismatch, adjustment และ dispute โดยไม่แก้ยอดขายย้อนหลัง"], ["Open Integrations to review environment, rollout, health, and the capability matrix.", "Map each provider store to a branch, then verify item, variant, and modifier mappings.", "Use Operations to inspect failed events or commands and retry only supported work.", "An authorized finance user imports statements and reviews mismatches, adjustments, and disputes without rewriting historical sales."]],
@@ -986,8 +1020,8 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
       "Pick the month and establishment, clear the items to check, then export XLSX for the accountant."
     ),
     aliases: aliases(
-      ["รายงานภาษีขายอยู่ไหน", "ดูภาษีขายรายเดือน", "ส่งออกรายงานภาษี", "ใบกำกับที่ออกเดือนนี้", "หาใบกำกับภาษี", "ค้นเลขใบกำกับ", "ภ.พ.30", "รายงานสินค้าและวัตถุดิบ", "รายงานสินค้าคงเหลือรายสาขา", "พิมพ์ใบลดหนี้", "ใบลดหนี้เต็มรูป", "ออกใบกำกับภาษีเต็มรูป", "ใบกำกับเต็มรูปบุคคลธรรมดา", "ไม่มีเลขผู้เสียภาษีขอใบกำกับ", "ต้นฉบับสำเนาใบกำกับ"],
-      ["where is the sales tax report", "monthly output VAT", "export tax report", "tax invoices this month", "find a tax invoice", "search invoice number", "PP30", "goods and materials report", "stock report per branch for tax", "print credit note", "full credit note", "issue full tax invoice", "full tax invoice for an individual", "tax invoice without buyer tax id", "original and copy tax invoice"]
+      ["รายงานภาษีขายอยู่ไหน", "ดูภาษีขายรายเดือน", "ส่งออกรายงานภาษี", "ใบกำกับที่ออกเดือนนี้", "หาใบกำกับภาษี", "ค้นเลขใบกำกับ", "ภ.พ.30", "รายงานสินค้าและวัตถุดิบ", "รายงานสินค้าคงเหลือรายสาขา", "พิมพ์ใบลดหนี้", "ใบลดหนี้เต็มรูป", "ออกใบกำกับภาษีเต็มรูป", "ใบกำกับเต็มรูปบุคคลธรรมดา", "ไม่มีเลขผู้เสียภาษีขอใบกำกับ", "ต้นฉบับสำเนาใบกำกับ", "ออกใบกำกับภาษียังไง", "มีรายงานภาษีอะไรบ้าง"],
+      ["where is the sales tax report", "monthly output VAT", "export tax report", "tax invoices this month", "find a tax invoice", "search invoice number", "PP30", "goods and materials report", "stock report per branch for tax", "print credit note", "full credit note", "issue full tax invoice", "full tax invoice for an individual", "tax invoice without buyer tax id", "original and copy tax invoice", "how to issue a tax invoice", "which tax reports are available"]
     ),
     requiredPermissions: ["tax.document.view"],
     prerequisites: lists(
@@ -1042,16 +1076,28 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   {
     id: "settings.configure-shop", module: "settings", pageId: "settings", route: "/admin/settings",
     title: both("ตั้งค่าร้านและช่องทาง", "Configure the shop and channels"), summary: both("ตั้งข้อมูลร้าน การรับเงิน ช่องทาง รายงาน และ AI จากหน้า Settings", "Configure store, payments, channels, reports, and AI from Settings."),
-    aliases: aliases(["ตั้งค่าร้าน", "เชื่อมช่องทาง", "ตั้ง AI", "โรงพยาบาลฉุกเฉินใกล้ร้าน"], ["configure store", "connect channel", "configure AI", "emergency departments near the shop"]), requiredPermissions: [],
+    aliases: aliases([
+      "ตั้งค่าร้าน", "เชื่อมช่องทาง", "ตั้ง AI", "โรงพยาบาลฉุกเฉินใกล้ร้าน", "เชื่อม LINE ยังไง",
+      "เชื่อม Facebook ได้ไหม", "ตั้งค่าภาษีมูลค่าเพิ่มที่ไหน", "LINE ไม่ได้รับข้อความ",
+    ], [
+      "configure store", "connect channel", "configure AI", "emergency departments near the shop",
+      "how to connect LINE", "can I connect Facebook", "where to configure VAT", "LINE messages are not arriving",
+    ]), requiredPermissions: [],
     prerequisites: lists(["มี credential ของบริการที่จะเชื่อม"], ["Have credentials for the service being connected."]), steps: lists(["เปิด Settings", "เลือกหมวด", "กรอกค่าจากผู้ให้บริการ", "บันทึกและตรวจ observed status"], ["Open Settings.", "Choose a section.", "Enter provider-issued values.", "Save and verify observed status."]),
     warnings: lists(["ห้ามใส่ secret ใน NEXT_PUBLIC_*", "active ไม่เท่ากับเชื่อมต่อปกติ", "แท็บข้อมูลร้านมีรายชื่อโรงพยาบาลฉุกเฉินใกล้ร้าน: ตรวจเบอร์และลิงก์ แล้วเลือก 24 ชม. จึงแสดงให้ลูกค้า (สูงสุด 3 แห่ง) แชทไม่ทราบสาขาใช้เฉพาะรายการทุกสาขา ไม่ใช่ตำแหน่งลูกค้า ปิดใช้งานต้องยืนยัน"], ["Never put secrets in NEXT_PUBLIC_*.", "active does not mean healthy.", "The store tab maintains nearby emergency departments: verify phone/map and mark 24-hour emergency service before customer display (max 3). A chat without a verified branch uses only all-branch entries, never customer location. Deactivation requires confirmation."]), relatedCapabilityIds: ["settings.channels"],
   },
   {
     id: "billing.read-usage", module: "billing", pageId: "billing", route: "/admin/billing",
-    title: both("อ่านโควตาและค่าใช้ AI", "Read AI quota and usage"), summary: both("แยก point ที่คิด ผู้ให้บริการที่เรียก และต้นทุน USD", "Separate billed points, provider attempts, and attributed USD cost."),
-    aliases: aliases(["AI เหลือกี่เครดิต", "ค่า AI", "provider calls"], ["AI credits left", "AI cost", "provider calls"]), requiredPermissions: [],
-    prerequisites: lists([], []), steps: lists(["เปิด Billing", "ตรวจ plan และ remaining", "ดู provider calls", "อ่าน unknown/unpriced cost แยกจากศูนย์"], ["Open Billing.", "Review plan and remaining quota.", "Review provider calls.", "Distinguish unknown/unpriced cost from zero."]),
-    warnings: lists(["ต้นทุน attributed ไม่ใช่ invoice ผู้ให้บริการ"], ["Attributed cost is not a provider invoice."]), relatedCapabilityIds: ["billing.plan"],
+    title: both("อ่านแพ็กเกจ โควตา และการใช้ AI", "Read plan limits and AI usage"),
+    summary: both("ตรวจแพ็กเกจและโควตาสาขา เครื่อง POS ผู้ใช้ สินค้า ช่องทาง และ AI โดยอ่านค่าปัจจุบันจากหน้า Billing", "Review the current plan and its branch, POS device, user, product, channel, and AI limits on Billing."),
+    aliases: aliases([
+      "AI เหลือกี่เครดิต", "ค่า AI", "provider calls", "ต้องใช้แพ็กเกจอะไร", "รองรับกี่สาขา", "รองรับกี่เครื่อง POS",
+    ], [
+      "AI credits left", "AI cost", "provider calls", "which plan do I need", "how many branches are supported",
+      "how many POS devices are supported",
+    ]), requiredPermissions: [],
+    prerequisites: lists([], []), steps: lists(["เปิด Billing", "ตรวจ plan และโควตาแต่ละประเภท", "เทียบจำนวนที่ร้านใช้อยู่กับ remaining", "ดู provider calls และแยกต้นทุนที่ยังไม่ทราบออกจากศูนย์"], ["Open Billing.", "Review the plan and each capacity limit.", "Compare current usage with remaining capacity.", "Review provider calls and distinguish unknown cost from zero."]),
+    warnings: lists(["จำนวนที่รองรับต้องอ่านจากแพ็กเกจปัจจุบัน ห้ามเดาตัวเลขจากชื่อแพ็กเกจ", "ต้นทุน attributed ไม่ใช่ invoice ผู้ให้บริการ"], ["Read supported counts from the current plan; never infer them from the plan name.", "Attributed cost is not a provider invoice."]), relatedCapabilityIds: ["billing.plan"],
   },
   {
     id: "ai-quality.review", module: "ai-quality", pageId: "ai-quality", route: "/admin/ai-quality",
@@ -1070,7 +1116,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   {
     id: "permissions.explain", module: "permissions", pageId: "permissions", route: "/admin/permissions",
     title: both("อ่านและตั้งสิทธิ์ตามบทบาท", "Read and configure role access"), summary: both("แยกสิทธิ์เปิดหน้าออกจาก role rank ที่กำหนดว่าแตะใครได้", "Separate page permission from role rank governing which accounts can be managed."),
-    aliases: aliases(["ตั้งสิทธิ์", "role ทำอะไรได้", "ทำไมแก้ user ไม่ได้"], ["configure permissions", "role access", "cannot edit user"]), requiredPermissions: [],
+    aliases: aliases(["ตั้งสิทธิ์", "role ทำอะไรได้", "ทำไมแก้ user ไม่ได้", "ตั้งค่าสิทธิ์แคชเชียร์ยังไง"], ["configure permissions", "role access", "cannot edit user", "how to configure cashier permissions"]), requiredPermissions: [],
     accessRequirement: "tenant_administrator",
     prerequisites: lists(["ต้องผ่าน server super guard"], ["The server super guard must pass."]), steps: lists(["เปิด Permissions", "เลือกบทบาท", "ตรวจสิทธิ์แต่ละหมวด", "บันทึกแล้วทดสอบด้วยบัญชีบทบาทนั้น"], ["Open Permissions.", "Choose a role.", "Review each permission group.", "Save and test with that role."]),
     warnings: lists(["การมี user.manage ยังแตะ role ที่สูงกว่าหรือเท่ากันไม่ได้", "ซ่อนเมนูไม่ใช่ authorization"], ["user.manage still cannot manage equal/higher roles.", "Menu hiding is not authorization."]), relatedCapabilityIds: ["access.matrix", "users.access"],
@@ -1078,7 +1124,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
     id: "permissions.action-unavailable", module: "permissions", route: "/admin/permissions",
     title: ["ตรวจเหตุผลที่ปุ่มหรือเมนูใช้ไม่ได้", "Troubleshoot an unavailable action"], summary: ["แยกการขาดสิทธิ์ออกจากสถานะรายการ ข้อมูลที่ยังไม่ครบ และ dependency ของหน้า", "Separate missing access from record state, incomplete input, and page dependencies."],
-    aliases: [["ทำไมกดปุ่มนี้ไม่ได้", "ทำไมไม่เห็นเมนู", "ปุ่ม disabled"], ["why is this button disabled", "why is the menu missing", "action unavailable"]],
+    aliases: [["ทำไมกดปุ่มนี้ไม่ได้", "ทำไมไม่เห็นเมนู", "ปุ่ม disabled", "ทำไมเข้าเมนูนี้ไม่ได้"], ["why is this button disabled", "why is the menu missing", "action unavailable", "why can I not open this menu"]],
     steps: [["ระบุชื่อหน้า ปุ่ม และรายการที่กำลังทำ", "ตรวจสิทธิ์บัญชีด้วย My Access", "ตรวจสถานะรายการและช่องข้อมูลที่บังคับ", "อ่านคำเตือนบนหน้าและ dependency", "ถ้ายังไม่ชัดให้เปิด audit หรือแจ้ง error ที่เห็นโดยไม่ทดลอง mutation สำคัญ"], ["Identify the page, action, and target record.", "Check the account with My Access.", "Review record state and required fields.", "Read page warnings and dependencies.", "If still unclear, inspect audit or report the visible error without testing a sensitive mutation."]],
     warnings: [["Assistant มองไม่เห็น form state ทุกช่อง จึงต้องขอชื่อปุ่มหรือข้อความ error", "403 ไม่ใช่เหตุผลให้ logout"], ["The Assistant cannot see every form field, so it may need the action name or visible error.", "A 403 is not a reason to log out."]], relatedCapabilityIds: ["access.matrix"],
   }),
@@ -1096,7 +1142,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     id: "permissions.my-access", module: "permissions", route: "/admin/assistant", pageId: "assistant",
     title: ["ดูว่าบัญชีของคุณทำอะไรได้บ้าง", "See what your own account can do"],
     summary: ["อ่านบทบาทและสิทธิ์จริงของบัญชีที่ล็อกอินอยู่จากเซิร์ฟเวอร์ ไม่ใช่เดาจากเมนูที่มองเห็น", "Read the signed-in account's server-derived role and effective permissions instead of inferring them from visible menus."],
-    aliases: [["บัญชีฉันทำอะไรได้บ้าง", "ฉันมีสิทธิ์อะไรบ้าง", "ดูสิทธิ์ตัวเอง", "role ฉันคืออะไร"], ["what can my account access", "what are my permissions", "check my own access", "what is my role"]],
+    aliases: [["บัญชีฉันทำอะไรได้บ้าง", "ฉันมีสิทธิ์อะไรบ้าง", "ดูสิทธิ์ตัวเอง", "role ฉันคืออะไร", "บัญชีของฉันมีสิทธิ์ใช้งานหรือเปล่า"], ["what can my account access", "what are my permissions", "check my own access", "what is my role", "does my account have access"]],
     steps: [["เปิดผู้ช่วยการทำงานแล้วถามว่าบัญชีนี้มีสิทธิ์อะไรบ้าง", "อ่านบทบาทและรายการสิทธิ์ที่ได้จากทูล get_my_access", "ถ้าสิทธิ์ที่ต้องใช้ยังไม่มี ให้ผู้ดูแลร้านเพิ่มให้ที่หน้า Permissions"], ["Open the work assistant and ask what this account may do.", "Read the role and effective permission list returned by get_my_access.", "If a needed permission is missing, ask a shop administrator to grant it on Permissions."]],
     warnings: [["เมนูที่มองเห็นไม่ใช่สิทธิ์ — การซ่อนเมนูไม่ใช่ authorization", "สิทธิ์ของ *คนอื่น* เป็นคนละคำถามและต้องมี user.view"], ["Visible menus are not access — hiding a menu is not authorization.", "Someone *else's* access is a different question and requires user.view."]],
     relatedCapabilityIds: ["access.matrix", "users.access"],
@@ -1124,9 +1170,9 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
     id: "locations.manage-branches", module: "locations", route: "/admin/locations",
     title: ["จัดการสาขา", "Manage locations"], summary: ["เพิ่มหรือแก้สาขาที่ใช้กับสต็อก POS และการโอนของ", "Add or edit branches used by inventory, POS, and transfers."],
-    aliases: [["เพิ่มสาขา", "สร้างสาขาใหม่", "รหัสสาขา"], ["add a branch", "branch code"]],
+    aliases: [["เพิ่มสาขา", "สร้างสาขาใหม่", "รหัสสาขา", "เพิ่มสาขายังไง", "เพิ่มคลังสินค้ายังไง"], ["add a branch", "branch code", "how to add a branch", "how to add a warehouse"]],
     requiredPermissions: ["location.manage"], steps: [["เปิด Locations", "เพิ่มหรือแก้ชื่อและข้อมูลสาขา", "ผูกเครื่อง POS หรือใช้สาขากับงานคลัง"], ["Open Locations.", "Add or edit branch details.", "Assign POS devices or use the branch in inventory workflows."]],
-    warnings: [["สต็อกและของจองเป็นข้อมูลระดับสาขา"], ["Stock and reservations are branch facts."]], relatedCapabilityIds: ["inventory.branch"],
+    warnings: [["สต็อกและของจองเป็นข้อมูลระดับสาขา", "BMS ใช้สาขา/location เป็นขอบเขตคลัง ไม่ควรสร้างคลังสมมติโดยไม่กำหนด workflow จริง"], ["Stock and reservations are branch facts.", "BMS scopes inventory by branch/location; do not invent a warehouse without defining the real workflow."]], relatedCapabilityIds: ["inventory.branch"],
   }),
   menuGuide({
     id: "pharmacy.try-intake-lab", module: "pharmacy", route: "/admin/pharmacy-intake-lab",
@@ -1166,15 +1212,25 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     warnings: [["Assistant ห้ามเดาหรือรับรองสถานะใบอนุญาต"], ["The assistant must never infer or certify a license."]], relatedCapabilityIds: ["pharmacy.workflow"],
   }),
   menuGuide({
+    id: "pos.client-and-offline-support", module: "pos", pageId: "pos", route: "/admin/pos-manual",
+    title: ["ตรวจการรองรับอุปกรณ์และโหมดออฟไลน์ของ POS", "Check POS client and offline support"],
+    summary: ["BMS มี Web POS, Mobile POS และ Desktop shell; Emergency Offline บนมือถือรองรับเฉพาะคิวขายปลีกเงินสดพื้นฐานและต้องให้ server ตรวจเมื่อกลับมาออนไลน์", "BMS has Web POS, Mobile POS, and a Desktop shell. Mobile Emergency Offline is limited to a basic retail cash-sale queue that the server revalidates after reconnection."],
+    aliases: [["ใช้งานบนมือถือได้ไหม", "ใช้ตอนอินเทอร์เน็ตล่มได้ไหม", "เครื่อง POS ออฟไลน์ต้องทำอย่างไร", "POS ใช้บนมือถือ", "POS ออฟไลน์"], ["can I use BMS on mobile", "can I use it during an internet outage", "what to do when POS is offline", "mobile POS", "offline POS"]],
+    steps: [["ตรวจว่าใช้ Web, Mobile หรือ Desktop", "ถ้าเป็น Mobile และขาดการเชื่อมต่อ ให้ใช้ Emergency Offline เฉพาะรายการที่หน้าจอยืนยันว่ารองรับ", "เก็บเงินสดและรักษาคิวไว้จนกลับมาออนไลน์", "ให้ server replay ด้วย idempotency key เดิมและตรวจใบเสร็จจริงหลัง sync"], ["Identify whether the client is Web, Mobile, or Desktop.", "On Mobile during an outage, use Emergency Offline only for transactions explicitly shown as eligible.", "Keep the cash-sale queue until connectivity returns.", "Replay with the original idempotency key and verify the server-backed receipt after sync."]],
+    warnings: [["ไม่ใช่ full offline POS", "ไม่รองรับ offline สำหรับร้านอาหาร ร้านยา หรือร้านบอร์ดเกม", "Desktop shell ต้องเชื่อม server และ Retail Local ยังเป็น technical pilot ไม่ใช่ GA"], ["This is not a full offline POS.", "Offline tender does not cover restaurants, pharmacies, or board-game cafes.", "The Desktop shell requires the server, and Retail Local remains a technical pilot rather than GA."]],
+    relatedCapabilityIds: ["pos.operations"],
+  }),
+  menuGuide({
     id: "pos.configure-devices", module: "pos", route: "/admin/pos-devices",
     title: ["ตั้งเครื่องและ PIN สำหรับ POS", "Configure POS devices and PINs"], summary: ["เพิ่มเครื่อง ผูกสาขา ออก token จับคู่ และดูแล PIN พนักงาน", "Add registers, assign branches, issue pairing tokens, and manage cashier PINs."],
+    aliases: [["ตั้งเครื่อง POS", "จัดการ PIN", "ลืม PIN ต้องทำอย่างไร"], ["configure POS device", "manage cashier PIN", "what to do if I forgot my PIN"]],
     anyOfPermissions: ["pos.device.manage", "pos.pin.manage"], steps: [["เปิด POS Devices", "เพิ่มหรือเลือกเครื่อง", "ผูกสาขาและตั้ง scanner", "ออก token หรือจัดการ PIN ตามสิทธิ์"], ["Open POS Devices.", "Add or select a register.", "Assign its branch and scanner mode.", "Issue a pairing token or manage PINs according to access."]],
     warnings: [["device token ระบุเครื่อง ไม่ใช่ตัวผู้ขาย", "PIN ต้องตรวจสิทธิ์ server-side ทุก action"], ["A device token identifies a register, not a cashier.", "Every action rechecks the PIN and permission server-side."]], relatedCapabilityIds: ["pos.operations"],
   }),
   menuGuide({
     id: "pos.shift-overview", module: "pos", route: "/admin/pos-shifts",
     title: ["ตรวจภาพรวมกะ POS", "Review POS shift overview"], summary: ["ดูทุกลิ้นชักตามวันที่เปิดกะ พร้อมยอดขาย คนเกี่ยวข้อง เงินขาด/เกิน และสัญญาณค้างปิดกะ", "Review every drawer by shift-open date, including totals, people, variance, and close blockers."],
-    aliases: [["ภาพรวมกะ", "กะทั้งหมด", "ยอดกะทุกเครื่อง", "เงินขาดเกิน POS"], ["all POS shifts", "shift overview", "drawer variance", "all tills"]],
+    aliases: [["ภาพรวมกะ", "กะทั้งหมด", "ยอดกะทุกเครื่อง", "เงินขาดเกิน POS", "ยอดขายกับเงินในลิ้นชักไม่ตรง"], ["all POS shifts", "shift overview", "drawer variance", "all tills", "sales do not match drawer cash"]],
     requiredPermissions: ["pos.shift.report.all"],
     steps: [["เปิด POS Shift Overview", "เลือกวันที่เปิดกะ สาขา เครื่อง คน หรือสัญญาณ", "ตรวจยอดขาย คืนสินค้า void no-sale และเงินขาด/เกิน", "เปิดรายละเอียดหรือดาวน์โหลด Excel รายกะเมื่อต้องไล่ยอด"], ["Open POS Shift Overview.", "Filter by shift-open date, location, till, person, or signal.", "Review sales, returns, voids, no-sales, and cash variance.", "Open the detail drawer or download the per-shift Excel workbook when reconciling."]],
     warnings: [["วันที่คือวันที่เปิดกะตาม Asia/Bangkok ไม่ใช่ยอดขายรายวัน", "กะยังเปิดและ blind close จะซ่อน expected cash และยังดาวน์โหลด Excel ไม่ได้", "หน้านี้ read-only และไม่แทนการปิดกะด้วย PIN ที่เครื่อง POS"], ["Dates mean shift-open date in Asia/Bangkok, not calendar-day sales.", "Open shifts with blind close hide expected cash and cannot be exported yet.", "This page is read-only and does not replace PIN-based close shift at the register."]],
@@ -1218,12 +1274,14 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
     id: "access.review-audit", module: "audit", route: "/admin/audit",
     title: ["ตรวจ Audit log", "Review the audit log"], summary: ["ค้นว่าใครทำ action สำคัญกับ record ใดและเมื่อไร", "Find who performed an important action on which record and when."],
+    aliases: [["ดูว่าใครยกเลิกบิลได้ที่ไหน", "ใครยกเลิกบิล", "ประวัติ action"], ["who cancelled a bill", "where to see who voided a bill", "action history"]],
     accessRequirement: "tenant_administrator", steps: [["เปิด Audit log", "กรอง action/actor/เวลา", "เปิด record ที่เกี่ยวข้องเพื่อยืนยันบริบท"], ["Open Audit log.", "Filter by action, actor, or time.", "Open the related record to confirm context."]],
     warnings: [["Audit เก็บหลักฐานการตัดสินใจ ไม่เก็บ raw AI args หรือข้อมูลสุขภาพ"], ["Audit stores decision evidence, not raw AI arguments or health data."]], relatedCapabilityIds: ["audit.revisions"],
   }),
   menuGuide({
     id: "access.review-revisions", module: "audit", route: "/admin/revisions",
     title: ["ตรวจ Revision History", "Review revision history"], summary: ["ดู snapshot ก่อนแก้และเปรียบเทียบเวอร์ชันของข้อมูลสำคัญ", "Inspect pre-edit snapshots and compare versions of important records."],
+    aliases: [["ดูประวัติการแก้ไขข้อมูลได้ไหม", "ประวัติการแก้ไขข้อมูล", "ดูค่าก่อนแก้"], ["can I view edit history", "data revision history", "see values before editing"]],
     accessRequirement: "tenant_administrator", steps: [["เปิด Revision History", "ค้น SKU หรือ record id", "เลือก revision", "เปรียบเทียบค่าก่อนและหลัง"], ["Open Revision History.", "Search by SKU or record id.", "Choose a revision.", "Compare before and after values."]],
     warnings: [["Revision ไม่ใช่ปุ่ม rollback อัตโนมัติ"], ["Revision history is not an automatic rollback button."]], relatedCapabilityIds: ["audit.revisions"],
   }),
@@ -1236,9 +1294,17 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
     id: "onboarding.getting-started", module: "onboarding", route: "/admin/getting-started",
     title: ["เริ่มตั้งค่าร้าน", "Complete Getting Started"], summary: ["ใช้ checklist ตรวจข้อมูลร้าน สินค้า ช่องทาง และ POS ที่ยังขาด", "Use the checklist to find missing shop, product, channel, and POS setup."],
-    aliases: [["เพิ่งเปิดร้านใหม่", "ตั้งค่าอะไรก่อน", "เริ่มใช้ระบบ"], ["just opened the shop", "first setup steps"]],
+    aliases: [["เพิ่งเปิดร้านใหม่", "ตั้งค่าอะไรก่อน", "เริ่มใช้ระบบ", "เริ่มต้นตั้งร้านยังไง", "ต้องตั้งค่าอะไรก่อนขาย", "รองรับร้านประเภทไหนบ้าง"], ["just opened the shop", "first setup steps", "how to set up a new shop", "what must be configured before selling", "which shop types are supported"]],
     steps: [["เปิด Getting Started", "เลือกงานที่ยังไม่ครบ", "ทำในหน้าที่ลิงก์ไป", "กลับมาตรวจ checklist"], ["Open Getting Started.", "Choose an incomplete item.", "Complete it on the linked page.", "Return and recheck the list."]],
     warnings: [["การข้าม checklist ไม่ได้ทำให้ dependency พร้อมใช้งาน"], ["Skipping a checklist item does not configure its dependency."]],
+  }),
+  menuGuide({
+    id: "knowledge.search", module: "manual", route: "/admin/search",
+    title: ["ค้นหาความสามารถและคู่มือ BMS", "Search BMS capabilities and guides"],
+    summary: ["ค้น capability คู่มือ ขั้นตอนตั้งค่า และข้อจำกัดจาก catalog ที่ตรวจสอบแล้ว", "Search the verified catalog for capabilities, setup guidance, instructions, and limitations."],
+    aliases: [["ค้นเอกสาร", "ค้นความสามารถ", "รองรับระบบอะไรบ้าง", "ค้นคู่มือ BMS", "ฟีเจอร์นี้พร้อมใช้หรือยัง", "ฟีเจอร์ไหนยังเป็น Beta", "ฟีเจอร์นี้ต้องเปิดตั้งค่าก่อนไหม"], ["search documentation", "search capabilities", "what does BMS support", "search BMS guides", "is this feature ready", "which features are beta", "does this feature require configuration"]],
+    steps: [["เปิด Search จาก Header", "พิมพ์งานหรือคำถาม", "ตรวจสถานะและข้อจำกัด", "เปิดหน้าที่เกี่ยวข้องเมื่อบัญชีมีสิทธิ์"], ["Open Search from the header.", "Enter a task or question.", "Review status and limitations.", "Open the related page when the account has access."]],
+    warnings: [["รายการ capability ไม่ได้ยืนยันว่าร้านปัจจุบันเปิดหรือตั้งค่าไว้แล้ว และผลค้นหาไม่อ่านข้อมูลธุรกิจของร้าน"], ["A capability result does not prove the current shop enabled or configured it, and search does not read live shop data."]],
   }),
   menuGuide({
     id: "manual.find-instructions", module: "manual", route: "/admin/manual",

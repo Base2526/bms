@@ -155,6 +155,87 @@ function guideResult(
   };
 }
 
+/**
+ * Questions that ask for the product inventory as a whole, rather than one capability.
+ * Keep this deterministic and deliberately narrow: a specific question containing "รองรับ"
+ * must still go through normal relevance ranking instead of expanding into the full catalog.
+ */
+export function isBroadCapabilityQuery(query: string, locale: AssistantLocale): boolean {
+  const normalized = normalizeAssistantQuery(query).replace(/[?？]/g, "").trim();
+  if (!normalized) return false;
+  const phrases = locale === "th"
+    ? [
+      "รองรับระบบอะไรบ้าง",
+      "ระบบรองรับอะไรบ้าง",
+      "มีระบบอะไรบ้าง",
+      "มีฟีเจอร์อะไรบ้าง",
+      "มีความสามารถอะไรบ้าง",
+      "bms ทำอะไรได้บ้าง",
+      "bms รองรับอะไรบ้าง",
+      "ฟีเจอร์นี้พร้อมใช้หรือยัง",
+      "ฟีเจอร์ไหนยังเป็น beta",
+      "ฟีเจอร์นี้ต้องเปิดตั้งค่าก่อนไหม",
+    ]
+    : [
+      "what does bms support",
+      "what systems does bms support",
+      "what features are supported",
+      "what features does bms have",
+      "what can bms do",
+      "bms capabilities",
+      "is this feature ready",
+      "which features are beta",
+      "does this feature require configuration",
+    ];
+  // Normalize the verified phrases too: NFKC decomposes Thai SARA AM (ำ), so comparing a
+  // normalized query with an unnormalized literal silently missed “BMS ทำอะไรได้บ้าง”.
+  return phrases.some((phrase) => normalizeAssistantQuery(phrase) === normalized);
+}
+
+/** Optional status slice for an inventory-style capability question. */
+export function capabilityStatusFilterForQuery(
+  query: string,
+  locale: AssistantLocale
+): "BETA" | "CONDITIONAL" | null {
+  const normalized = normalizeAssistantQuery(query).replace(/[?？]/g, "").trim();
+  const beta = locale === "th" ? ["ฟีเจอร์ไหนยังเป็น beta"] : ["which features are beta"];
+  if (beta.some((phrase) => normalizeAssistantQuery(phrase) === normalized)) return "BETA";
+  const conditional = locale === "th"
+    ? ["ฟีเจอร์นี้ต้องเปิดตั้งค่าก่อนไหม"]
+    : ["does this feature require configuration"];
+  if (conditional.some((phrase) => normalizeAssistantQuery(phrase) === normalized)) return "CONDITIONAL";
+  return null;
+}
+
+/** List the verified product capability inventory while preserving the same RBAC annotations. */
+export function listAssistantCapabilities(
+  context: Omit<AssistantKnowledgeContext, "kind" | "limit" | "currentPath" | "pageId">
+): AssistantKnowledgeResult[] {
+  return SYSTEM_CAPABILITIES.map((entry) => {
+    const access = permissionState(
+      entry.requiredPermissions,
+      entry.anyOfPermissions,
+      context,
+      entry.accessRequirement
+    );
+    return {
+      kind: "capability" as const,
+      id: entry.id,
+      title: entry.title[context.locale],
+      summary: entry.description[context.locale],
+      route: entry.route,
+      score: 0,
+      requiredPermissions: entry.requiredPermissions,
+      missingPermissions: access.missing,
+      accessible: access.accessible,
+      accessRequirement: access.accessRequirement,
+      accessNote: access.accessNote,
+      matchedQuery: false,
+      capabilityStatus: entry.status,
+    };
+  }).sort((a, b) => a.title.localeCompare(b.title, context.locale));
+}
+
 export function searchAssistantKnowledge(
   query: string,
   context: AssistantKnowledgeContext
