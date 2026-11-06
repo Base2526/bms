@@ -1432,10 +1432,10 @@ function ProductsManagement() {
           )}
 
           <Space.Compact block>
-            <Form.Item label={editing?.variants.length ? t("admin_products.label_base_price") : t("admin_products.label_price")} name="price" rules={[{ required: true, message: t("admin_products.rule_price") }]} style={{ flex: 1, marginInlineEnd: 8 }}>
+            <Form.Item label={editing?.variants.length ? t("admin_products.label_base_price") : t("admin_products.label_price")} name="price" rules={[{ required: true, message: t("admin_products.rule_price") }]} style={{ flex: 1, marginInlineEnd: 8 }} extra={stockPolicyDraft === "WEIGHTED" ? t("admin_products.weighted_price_per_gram_hint") : undefined}>
               <InputNumber min={0} style={{ width: "100%" }} />
             </Form.Item>
-            <Form.Item label={t("admin_products.label_cost")} name="costPrice" style={{ flex: 1, marginInlineEnd: 8 }}>
+            <Form.Item label={t("admin_products.label_cost")} name="costPrice" style={{ flex: 1, marginInlineEnd: 8 }} extra={stockPolicyDraft === "WEIGHTED" ? t("admin_products.weighted_cost_per_gram_hint") : undefined}>
               <InputNumber min={0} style={{ width: "100%" }} placeholder={t("admin_products.placeholder_cost")} />
             </Form.Item>
             {productFieldVisibility.shippingWeight && <Form.Item

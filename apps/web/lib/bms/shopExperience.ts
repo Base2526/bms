@@ -172,7 +172,7 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
   pet_supply: {
     archetype: "pet_supply",
     recommendedTemplates: GENERAL_TEMPLATE,
-    recommendedCapabilities: ["PACK", "MULTI_BARCODE", "LOT_TRACKING", "EXPIRY_TRACKING", "WEIGHTED_PRODUCT"],
+    recommendedCapabilities: ["PACK", "MULTI_BARCODE", "LOT_TRACKING", "EXPIRY_TRACKING", "FEFO", "WEIGHTED_PRODUCT"],
     primarySalesSurfaces: RETAIL_SURFACES,
     recommendedStockSections: ["LOT_EXPIRY", "SCALE"],
     restockEmphasis: true,
@@ -180,7 +180,7 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     specialMode: "NONE",
     descriptionKey: "shop_archetypes.description_pet_supply",
     importExamples: [
-      ["PET-CAT-FOOD", inStoreBarcode(9), "อาหารแมว", "อาหารสัตว์หลายขนาด ควรตั้ง lot และวันหมดอายุ", "220", "145", "อาหารสัตว์", "แบรนด์ตัวอย่าง", "อาหารแมว|cat food", "GENERAL", "DIRECT", "PIECE", "1KG|3KG", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+      ["PET-CAT-FOOD", inStoreBarcode(9), "อาหารแมว 1 กก.", "ขนาด 1 กก. ควรตั้งล็อตและวันหมดอายุ; ขนาดอื่นต้องกำหนดราคาแยก", "220", "145", "อาหารสัตว์", "แบรนด์ตัวอย่าง", "อาหารแมว|cat food", "GENERAL", "DIRECT", "PIECE", "1KG", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
     ],
   },
   building_materials: {

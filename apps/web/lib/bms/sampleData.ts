@@ -85,10 +85,10 @@ const STARTER_CATALOGS: Record<ShopArchetype, StarterProduct[]> = {
     { code: "THERMOMETER", name: "เทอร์โมมิเตอร์ (ตัวอย่าง)", category: "อุปกรณ์สุขภาพ", price: 290, cost: 160, stockPolicy: "SERIALIZED", description: "ข้อมูลตัวอย่าง ต้องให้ผู้รับผิดชอบตรวจสอบก่อนขาย" },
   ],
   pet_supply: [
-    { code: "CAT-FOOD", name: "อาหารแมว (ตัวอย่าง)", category: "อาหารสัตว์", price: 220, cost: 145, variants: ["1KG", "3KG"], description: "ตัวอย่างอาหารสัตว์ที่ควรตั้ง lot/expiry" },
+    { code: "CAT-FOOD", name: "อาหารแมว 1 กก. (ตัวอย่าง)", category: "อาหารสัตว์", price: 220, cost: 145, variants: ["1KG"], description: "ราคาสำหรับขนาด 1 กก. เท่านั้น ควรตั้งล็อตและวันหมดอายุ" },
     { code: "DOG-TREAT", name: "ขนมสุนัข (ตัวอย่าง)", category: "ขนมสัตว์เลี้ยง", price: 95, cost: 52, description: "ตัวอย่างสินค้าที่ควรตั้ง expiry" },
-    { code: "CAT-LITTER", name: "ทรายแมว (ตัวอย่าง)", category: "ทรายและสุขอนามัย", price: 180, cost: 110, variants: ["5L", "10L"], description: "ตัวอย่างสินค้าหลายขนาด" },
-    { code: "PET-FOOD-WEIGHT", name: "อาหารสัตว์แบ่งขาย (ตัวอย่าง)", category: "อาหารสัตว์", price: 85, cost: 48, stockPolicy: "WEIGHTED", baseUnit: "GRAM", description: "ตัวอย่างสินค้าชั่งขาย" },
+    { code: "CAT-LITTER", name: "ทรายแมว 5 ลิตร (ตัวอย่าง)", category: "ทรายและสุขอนามัย", price: 180, cost: 110, variants: ["5L"], description: "ราคาสำหรับขนาด 5 ลิตรเท่านั้น ขนาดอื่นต้องกำหนดราคาแยก" },
+    { code: "PET-FOOD-WEIGHT", name: "อาหารสัตว์แบ่งขาย (ตัวอย่าง)", category: "อาหารสัตว์", price: 0.08, cost: 0.05, stockPolicy: "WEIGHTED", baseUnit: "GRAM", description: "ราคา 0.08 บาทต่อกรัม (80 บาทต่อกิโลกรัม) ต้องตั้งเครื่องชั่งก่อนเปิดขาย" },
   ],
   building_materials: [
     { code: "CEMENT", name: "ปูนซีเมนต์ 50 กก. (ตัวอย่าง)", category: "ปูนและวัสดุก่อ", price: 145, cost: 118, baseUnit: "BAG", description: "ตัวอย่างสินค้าขายเป็นถุง" },
@@ -158,7 +158,8 @@ function productBaseline(
   imageUrl: string | null,
   variants: string[],
   surfaces: SalesSurface[],
-  stockPolicy: StockPolicy
+  stockPolicy: StockPolicy,
+  packs: string[]
 ) {
   const stockBacked = !["NON_STOCK", "RECIPE", "BUNDLE"].includes(stockPolicy);
   return {
@@ -181,9 +182,7 @@ function productBaseline(
     variants: variants.map((variant) => `${variant}:${variant}:true`).sort(),
     surfaces: surfaces.map((surface) => `${surface}:true`).sort(),
     inventory: stockBacked ? variants.map((variant) => `${variant}:0:0:0`).sort() : [],
-    packs: stockBacked
-      ? variants.map((variant) => `${variant}:BASE:${item.baseUnit ?? "ชิ้น"}:1::true:true`).sort()
-      : [],
+    packs: stockBacked ? packs.slice().sort() : [],
   };
 }
 
@@ -445,6 +444,7 @@ export async function createStarterCatalog(
       const variants = item.variants?.length ? item.variants : ["STD"];
       const surfaces = item.surfaces ?? (archetype === "restaurant" ? restaurant : retail);
       const policy = item.stockPolicy ?? "DIRECT";
+      const packBaselines: string[] = [];
       const inserted = await client.query(
         `INSERT INTO bms_products
            (tenant_id, sku, name, active, price, keywords, image_url, description, cost_price, category, brand, vat_category)
@@ -489,12 +489,14 @@ export async function createStarterCatalog(
                 `SELECT code,name_th AS name FROM bms_master_units WHERE code=$1 AND active`, [explicitCode],
               )).rows[0] ?? archetypeUnit
             : archetypeUnit;
+          const packUnitName = packUnit?.name ?? item.baseUnit ?? "ชิ้น";
           await client.query(
             `INSERT INTO bms_product_packs
                (tenant_id, product_sku, size, pack_code, unit_name, unit_code, base_qty, price, is_base, active)
              VALUES ($1,$2,$3,'BASE',$4,$5,1,NULL,TRUE,TRUE)`,
-            [tenantId, sku, variant, packUnit?.name ?? item.baseUnit ?? "ชิ้น", packUnit?.code ?? null]
+            [tenantId, sku, variant, packUnitName, packUnit?.code ?? null]
           );
+          packBaselines.push(`${variant}:BASE:${packUnitName}:1::true:true`);
         }
       }
       for (const surface of surfaces) {
@@ -508,7 +510,7 @@ export async function createStarterCatalog(
         `INSERT INTO bms_sample_records
            (sample_run_id, tenant_id, entity_type, entity_key, baseline)
          VALUES ($1,$2,'PRODUCT',$3,$4::jsonb)`,
-        [runId, tenantId, sku, JSON.stringify(productBaseline(item, archetype, imageUrl, variants, surfaces, policy))]
+        [runId, tenantId, sku, JSON.stringify(productBaseline(item, archetype, imageUrl, variants, surfaces, policy, packBaselines))]
       );
     }
 
