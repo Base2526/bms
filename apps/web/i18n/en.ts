@@ -935,6 +935,9 @@ const en = {
     productNavigation: "BMS product navigation",
   },
   landing: {
+    featureSearchLabel: "What would you like BMS to help with?",
+    featureSearchPlaceholder: "For example, can it take orders from LINE?",
+    featureSearchButton: "Ask",
     appDownloadsTitle: "BMS on your phone and tablet",
     appDownloadsDescription: "BMS POS for Android and iPhone / iPad",
     downloadApp: "Download for",

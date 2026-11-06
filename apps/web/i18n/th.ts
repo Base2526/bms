@@ -935,6 +935,9 @@ const th = {
     productNavigation: "เมนูผลิตภัณฑ์ BMS",
   },
   landing: {
+    featureSearchLabel: "ร้านคุณอยากให้ BMS ช่วยเรื่องอะไร?",
+    featureSearchPlaceholder: "เช่น รับออร์เดอร์จาก LINE ได้ไหม",
+    featureSearchButton: "ถาม",
     appDownloadsTitle: "ใช้ BMS บนมือถือและแท็บเล็ต",
     appDownloadsDescription: "แอป BMS POS สำหรับ Android และ iPhone / iPad",
     downloadApp: "ดาวน์โหลดสำหรับ",

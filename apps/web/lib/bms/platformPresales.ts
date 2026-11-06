@@ -132,7 +132,7 @@ export const BMS_PRESALES_KNOWLEDGE: readonly PresalesKnowledgeEntry[] = [
     id: "board-game",
     title: both("ร้านบอร์ดเกม", "Board-game cafes"),
     aliases: aliases(
-      ["ร้านบอร์ดเกม", "คิดค่าเล่นตามเวลา", "คลังเกม", "สมาชิกบอร์ดเกม", "จองโต๊ะบอร์ดเกม"],
+      ["ร้านบอร์ดเกม", "คิดค่าเล่นตามเวลา", "คิดค่าเล่นบอร์ดเกมตามเวลา", "คลังเกม", "สมาชิกบอร์ดเกม", "จองโต๊ะบอร์ดเกม"],
       ["board game cafe", "timed play", "game library", "board game membership", "table booking"]
     ),
     answer: both(
@@ -256,6 +256,8 @@ function normalize(value: string): string {
 
 // Short intent phrases for provider-free retrieval, never test sentences or business facts.
 const PRESALES_QUERY_HINTS: Record<string, readonly string[]> = {
+  "ai-inbox": ["รับออร์เดอร์จาก line", "สั่งซื้อผ่าน line", "ออร์เดอร์จาก line", "take orders from line", "orders via line"],
+  "restaurant-operations": ["qr สั่งอาหาร", "สแกน qr สั่งอาหาร", "สั่งอาหารผ่าน qr", "table qr orders", "order by table qr"],
   "ai-points": ["รวม ai", "ซื้อ ai แยก", "แต้มคือ"],
   "ai-behavior": ["ตอบลูกค้าแทน", "พนักงานรับช่วง", "กำหนดคำพูด", "ตั้งน้ำเสียง"],
   "ai-grounding": ["สต็อกล่าสุด", "ของหมด", "ราคาล่าสุด"],
@@ -263,7 +265,7 @@ const PRESALES_QUERY_HINTS: Record<string, readonly string[]> = {
   inventory: ["เครื่องขายพร้อมกัน", "สาขาไหนมี", "ระหว่างนับสต็อก", "สต็อกไม่ตรง"],
   "privacy-operations": ["ดูต้นทุน", "ไม่ให้ลดราคา", "ปิดสิทธิ์"],
   "mobile-stock": ["เช็กสต็อกด้วยมือถือ", "เช็คสต็อกด้วยมือถือ", "เห็นของเหลือ", "สแกนดูยอด"],
-  "purchasing-transfers": ["ล็อต", "serial", "รับของไม่ครบ", "สินค้าเสียหาย"],
+  "purchasing-transfers": ["โอนสต็อกข้ามสาขา", "โอนสินค้าข้ามสาขา", "ย้ายสต็อกระหว่างสาขา", "transfer stock between branches", "stock transfer between branches", "ล็อต", "serial", "รับของไม่ครบ", "สินค้าเสียหาย"],
   onboarding: ["เดโม", "ลองก่อนจ่าย"],
   reports: ["ให้บัญชี", "ดาวน์โหลด excel"],
   "commercial-terms": ["ลดให้", "อีกแชท", "ส่วนลดพิเศษ"],
