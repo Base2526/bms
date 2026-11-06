@@ -138,6 +138,13 @@ test("regulated and specialised archetypes keep their domain boundaries", () => 
   const boardGame = __sampleDataTest.catalogs.board_game_cafe;
   assert.ok(boardGame.every((product) => !/TIME|SESSION|MEMBER|GAME-COPY/.test(product.code)));
 
+  const petProducts = __sampleDataTest.catalogs.pet_supply;
+  assert.deepEqual(petProducts.find((product) => product.code === "CAT-FOOD")?.variants, ["1KG"]);
+  assert.deepEqual(petProducts.find((product) => product.code === "CAT-LITTER")?.variants, ["5L"]);
+  const petFoodByGram = petProducts.find((product) => product.code === "PET-FOOD-WEIGHT");
+  assert.equal(petFoodByGram?.baseUnit, "GRAM");
+  assert.equal(petFoodByGram?.price, 0.08);
+
   const restaurant = __sampleDataTest.catalogs.restaurant;
   assert.ok(restaurant.some((product) => product.stockPolicy === "RECIPE"));
   assert.ok(restaurant.some((product) => product.surfaces?.length === 0));

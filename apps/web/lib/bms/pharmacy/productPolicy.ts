@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
-import { query } from "@/lib/db";
+import { getClient, query } from "@/lib/db";
 import { applyMasterDrugSuggestionToPolicy as applyMasterDrugSuggestionInTx } from "../masterDrugs";
+import { beginTenantTx } from "../tenant";
 import {
   PHARMACY_PRODUCT_TYPES,
   PHARMACY_SALE_POLICIES,
@@ -391,70 +392,119 @@ export function validatePharmacyProductPolicyInput(input: UpsertPharmacyProductP
   };
 }
 
-export async function upsertPharmacyProductPolicyDraft(
+async function writePolicyInTx<T>(
   tenantId: string,
-  input: UpsertPharmacyProductPolicyInput
-): Promise<PharmacyProductPolicy> {
-  const value = validatePharmacyProductPolicyInput(input);
-  const res = await query(
-    `INSERT INTO bms_pharmacy_product_policies
-       (tenant_id, product_sku, product_type, regulatory_framework, regulatory_class,
-        regulatory_evidence_source, regulatory_evidence_ref, sale_policy,
-        registration_no, max_quantity, safety_rule_key, status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'DRAFT')
-     ON CONFLICT (tenant_id, product_sku) DO UPDATE
-       SET product_type = EXCLUDED.product_type,
-           regulatory_class = EXCLUDED.regulatory_class,
-           regulatory_framework = EXCLUDED.regulatory_framework,
-           regulatory_evidence_source = EXCLUDED.regulatory_evidence_source,
-           regulatory_evidence_ref = EXCLUDED.regulatory_evidence_ref,
-           sale_policy = EXCLUDED.sale_policy,
-           registration_no = EXCLUDED.registration_no,
-           max_quantity = EXCLUDED.max_quantity,
-           safety_rule_key = EXCLUDED.safety_rule_key,
-           status = 'DRAFT', reviewed_by = NULL, reviewed_at = NULL, updated_at = now()
-     WHERE bms_pharmacy_product_policies.status IN ('DRAFT','APPROVED','RETIRED')
-     RETURNING *`,
-    [tenantId, value.productSku, value.productType, value.regulatoryFramework, value.regulatoryClass,
-      value.regulatoryEvidenceSource, value.regulatoryEvidenceRef, value.salePolicy,
-      value.registrationNo, value.maxQuantity, value.safetyRuleKey]
-  );
-  if (!res.rowCount) throw new Error("Product Policy ที่รอตรวจอยู่ยังแก้ไขไม่ได้");
-  return mapRow(res.rows[0]);
+  actorId: string,
+  write: (client: PoolClient) => Promise<T>
+): Promise<T> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorId });
+    const result = await write(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
-export async function submitPharmacyProductPolicyForReview(tenantId: string, productSku: string) {
-  const current = await query(
-    `SELECT * FROM bms_pharmacy_product_policies
-      WHERE tenant_id = $1 AND product_sku = $2 AND status = 'DRAFT'`,
-    [tenantId, productSku]
+async function auditPolicyInTx(
+  client: PoolClient,
+  tenantId: string,
+  actorId: string,
+  action: string,
+  productSku: string,
+  meta: Record<string, unknown> = {}
+): Promise<void> {
+  await client.query(
+    `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+     VALUES ($1,$2,$3,$4,$5)`,
+    [tenantId, actorId, action, productSku, JSON.stringify(meta)]
   );
-  if (!current.rowCount) throw new Error("ส่งตรวจได้เฉพาะ Product Policy สถานะ DRAFT");
-  const policy = mapRow(current.rows[0]);
-  if (policy.regulatoryFramework === "UNKNOWN" || policy.regulatoryClass === "UNKNOWN") {
-    throw new Error("ต้องยืนยันประเภทตามข้อกำกับก่อนส่งให้เภสัชกรตรวจ");
-  }
-  if (policy.regulatoryEvidenceSource === "UNKNOWN") {
-    throw new Error("ต้องระบุแหล่งอ้างอิงของประเภทตามข้อกำกับก่อนส่งตรวจ");
-  }
-  if (policy.regulatoryEvidenceSource === "FDA_REGISTRATION" && !policy.registrationNo) {
-    throw new Error("แหล่งอ้างอิง FDA_REGISTRATION ต้องระบุเลขทะเบียน/เลขใบรับแจ้ง");
-  }
-  if (
-    ["FDA_ANNOUNCEMENT", "SUPPLIER_DOCUMENT", "PHARMACIST_REVIEW"].includes(policy.regulatoryEvidenceSource) &&
-    !policy.regulatoryEvidenceRef
-  ) {
-    throw new Error("แหล่งอ้างอิงที่เลือกต้องระบุรายละเอียด/เลขอ้างอิง");
-  }
-  const res = await query(
-    `UPDATE bms_pharmacy_product_policies
-        SET status = 'PENDING_REVIEW', updated_at = now()
-      WHERE tenant_id = $1 AND product_sku = $2 AND status = 'DRAFT'
-      RETURNING *`,
-    [tenantId, productSku]
-  );
-  if (!res.rowCount) throw new Error("ส่งตรวจได้เฉพาะ Product Policy สถานะ DRAFT");
-  return mapRow(res.rows[0]);
+}
+
+export async function upsertPharmacyProductPolicyDraft(
+  tenantId: string,
+  input: UpsertPharmacyProductPolicyInput,
+  actorId: string
+): Promise<PharmacyProductPolicy> {
+  const value = validatePharmacyProductPolicyInput(input);
+  return writePolicyInTx(tenantId, actorId, async (client) => {
+    const res = await client.query(
+      `INSERT INTO bms_pharmacy_product_policies
+         (tenant_id, product_sku, product_type, regulatory_framework, regulatory_class,
+          regulatory_evidence_source, regulatory_evidence_ref, sale_policy,
+          registration_no, max_quantity, safety_rule_key, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'DRAFT')
+       ON CONFLICT (tenant_id, product_sku) DO UPDATE
+         SET product_type = EXCLUDED.product_type,
+             regulatory_class = EXCLUDED.regulatory_class,
+             regulatory_framework = EXCLUDED.regulatory_framework,
+             regulatory_evidence_source = EXCLUDED.regulatory_evidence_source,
+             regulatory_evidence_ref = EXCLUDED.regulatory_evidence_ref,
+             sale_policy = EXCLUDED.sale_policy,
+             registration_no = EXCLUDED.registration_no,
+             max_quantity = EXCLUDED.max_quantity,
+             safety_rule_key = EXCLUDED.safety_rule_key,
+             status = 'DRAFT', reviewed_by = NULL, reviewed_at = NULL, updated_at = now()
+       WHERE bms_pharmacy_product_policies.status IN ('DRAFT','APPROVED','RETIRED')
+       RETURNING *`,
+      [tenantId, value.productSku, value.productType, value.regulatoryFramework, value.regulatoryClass,
+        value.regulatoryEvidenceSource, value.regulatoryEvidenceRef, value.salePolicy,
+        value.registrationNo, value.maxQuantity, value.safetyRuleKey]
+    );
+    if (!res.rowCount) throw new Error("Product Policy ที่รอตรวจอยู่ยังแก้ไขไม่ได้");
+    const policy = mapRow(res.rows[0]);
+    await auditPolicyInTx(client, tenantId, actorId, "pharmacy.product_policy.draft_saved", policy.productSku, {
+      productType: policy.productType,
+      regulatoryFramework: policy.regulatoryFramework,
+      regulatoryClass: policy.regulatoryClass,
+      regulatoryEvidenceSource: policy.regulatoryEvidenceSource,
+      salePolicy: policy.salePolicy,
+    });
+    return policy;
+  });
+}
+
+export async function submitPharmacyProductPolicyForReview(tenantId: string, productSku: string, actorId: string) {
+  return writePolicyInTx(tenantId, actorId, async (client) => {
+    const current = await client.query(
+      `SELECT * FROM bms_pharmacy_product_policies
+        WHERE tenant_id = $1 AND product_sku = $2 AND status = 'DRAFT' FOR UPDATE`,
+      [tenantId, productSku]
+    );
+    if (!current.rowCount) throw new Error("ส่งตรวจได้เฉพาะ Product Policy สถานะ DRAFT");
+    const policy = mapRow(current.rows[0]);
+    if (policy.regulatoryFramework === "UNKNOWN" || policy.regulatoryClass === "UNKNOWN") {
+      throw new Error("ต้องยืนยันประเภทตามข้อกำกับก่อนส่งให้เภสัชกรตรวจ");
+    }
+    if (policy.regulatoryEvidenceSource === "UNKNOWN") {
+      throw new Error("ต้องระบุแหล่งอ้างอิงของประเภทตามข้อกำกับก่อนส่งตรวจ");
+    }
+    if (policy.regulatoryEvidenceSource === "FDA_REGISTRATION" && !policy.registrationNo) {
+      throw new Error("แหล่งอ้างอิง FDA_REGISTRATION ต้องระบุเลขทะเบียน/เลขใบรับแจ้ง");
+    }
+    if (
+      ["FDA_ANNOUNCEMENT", "SUPPLIER_DOCUMENT", "PHARMACIST_REVIEW"].includes(policy.regulatoryEvidenceSource) &&
+      !policy.regulatoryEvidenceRef
+    ) {
+      throw new Error("แหล่งอ้างอิงที่เลือกต้องระบุรายละเอียด/เลขอ้างอิง");
+    }
+    const res = await client.query(
+      `UPDATE bms_pharmacy_product_policies
+          SET status = 'PENDING_REVIEW', updated_at = now()
+        WHERE tenant_id = $1 AND product_sku = $2 AND status = 'DRAFT'
+        RETURNING *`,
+      [tenantId, productSku]
+    );
+    if (!res.rowCount) throw new Error("ส่งตรวจได้เฉพาะ Product Policy สถานะ DRAFT");
+    const submitted = mapRow(res.rows[0]);
+    await auditPolicyInTx(client, tenantId, actorId, "pharmacy.product_policy.submitted", submitted.productSku);
+    return submitted;
+  });
 }
 
 export async function reviewPharmacyProductPolicy(
@@ -463,33 +513,38 @@ export async function reviewPharmacyProductPolicy(
   reviewerId: string,
   decision: "APPROVE" | "REJECT"
 ) {
-  const licensed = await query<{ ok: boolean }>(
-    `SELECT public.bms_is_licensed_pharmacist($1, $2) AS ok`,
-    [tenantId, reviewerId]
-  );
-  if (licensed.rows[0]?.ok !== true) throw new Error("ผู้อนุมัติต้องเป็นเภสัชกรที่มีใบประกอบวิชาชีพ");
-  const approved = decision === "APPROVE";
-  const res = await query(
-    `UPDATE bms_pharmacy_product_policies
-        SET status = $4, reviewed_by = $3, reviewed_at = now(), updated_at = now()
-      WHERE tenant_id = $1 AND product_sku = $2 AND status = 'PENDING_REVIEW'
-        AND (
-          $4 <> 'APPROVED' OR (
-            regulatory_framework <> 'UNKNOWN'
-            AND regulatory_class <> 'UNKNOWN'
-            AND regulatory_evidence_source <> 'UNKNOWN'
-            AND (regulatory_evidence_source <> 'FDA_REGISTRATION' OR registration_no IS NOT NULL)
-            AND (
-              regulatory_evidence_source NOT IN ('FDA_ANNOUNCEMENT','SUPPLIER_DOCUMENT','PHARMACIST_REVIEW')
-              OR regulatory_evidence_ref IS NOT NULL
+  return writePolicyInTx(tenantId, reviewerId, async (client) => {
+    // 10.47 holds the licence row through the policy update and audit commit.
+    const licensed = await client.query<{ ok: boolean }>(
+      `SELECT ok FROM public.bms_lock_guidance_pharmacist_license($1, $2)`,
+      [tenantId, reviewerId]
+    );
+    if (licensed.rows[0]?.ok !== true) throw new Error("ผู้อนุมัติต้องเป็นเภสัชกรที่มีใบประกอบวิชาชีพ");
+    const approved = decision === "APPROVE";
+    const res = await client.query(
+      `UPDATE bms_pharmacy_product_policies
+          SET status = $4, reviewed_by = $3, reviewed_at = now(), updated_at = now()
+        WHERE tenant_id = $1 AND product_sku = $2 AND status = 'PENDING_REVIEW'
+          AND (
+            $4 <> 'APPROVED' OR (
+              regulatory_framework <> 'UNKNOWN'
+              AND regulatory_class <> 'UNKNOWN'
+              AND regulatory_evidence_source <> 'UNKNOWN'
+              AND (regulatory_evidence_source <> 'FDA_REGISTRATION' OR registration_no IS NOT NULL)
+              AND (
+                regulatory_evidence_source NOT IN ('FDA_ANNOUNCEMENT','SUPPLIER_DOCUMENT','PHARMACIST_REVIEW')
+                OR regulatory_evidence_ref IS NOT NULL
+              )
             )
           )
-        )
-      RETURNING *`,
-    [tenantId, productSku, reviewerId, approved ? "APPROVED" : "DRAFT"]
-  );
-  if (!res.rowCount) throw new Error("อนุมัติได้เฉพาะ Policy ที่รอตรวจและมีข้อมูลข้อกำกับพร้อมหลักฐานครบ");
-  return mapRow(res.rows[0]);
+        RETURNING *`,
+      [tenantId, productSku, reviewerId, approved ? "APPROVED" : "DRAFT"]
+    );
+    if (!res.rowCount) throw new Error("อนุมัติได้เฉพาะ Policy ที่รอตรวจและมีข้อมูลข้อกำกับพร้อมหลักฐานครบ");
+    const policy = mapRow(res.rows[0]);
+    await auditPolicyInTx(client, tenantId, reviewerId, "pharmacy.product_policy.reviewed", policy.productSku, { decision });
+    return policy;
+  });
 }
 
 export async function checkPharmacySaleInTx(

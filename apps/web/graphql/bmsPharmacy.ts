@@ -406,15 +406,7 @@ export const bmsPharmacyResolvers = {
     ) {
       await requirePermission(ctx, "pharmacy.protocol.manage");
       try {
-        const policy = await upsertPharmacyProductPolicyDraft(getTenantId(ctx), args.input);
-        await audit(ctx, "pharmacy.product_policy.draft_saved", policy.productSku, {
-          productType: policy.productType,
-          regulatoryFramework: policy.regulatoryFramework,
-          regulatoryClass: policy.regulatoryClass,
-          regulatoryEvidenceSource: policy.regulatoryEvidenceSource,
-          salePolicy: policy.salePolicy,
-        });
-        return policy;
+        return await upsertPharmacyProductPolicyDraft(getTenantId(ctx), args.input, actorId(ctx));
       } catch (error: any) {
         throw new GraphQLError(error?.message || "บันทึก Product Policy ไม่สำเร็จ", {
           extensions: { code: "BAD_USER_INPUT" },
@@ -428,9 +420,7 @@ export const bmsPharmacyResolvers = {
     ) {
       await requirePermission(ctx, "pharmacy.protocol.manage");
       try {
-        const policy = await submitPharmacyProductPolicyForReview(getTenantId(ctx), args.productSku);
-        await audit(ctx, "pharmacy.product_policy.submitted", policy.productSku);
-        return policy;
+        return await submitPharmacyProductPolicyForReview(getTenantId(ctx), args.productSku, actorId(ctx));
       } catch (error: any) {
         throw new GraphQLError(error?.message || "ส่งตรวจ Product Policy ไม่สำเร็จ", {
           extensions: { code: "BAD_USER_INPUT" },
@@ -450,14 +440,12 @@ export const bmsPharmacyResolvers = {
         });
       }
       try {
-        const policy = await reviewPharmacyProductPolicy(
+        return await reviewPharmacyProductPolicy(
           getTenantId(ctx),
           args.productSku,
           actorId(ctx),
           decision
         );
-        await audit(ctx, "pharmacy.product_policy.reviewed", policy.productSku, { decision });
-        return policy;
       } catch (error: any) {
         throw new GraphQLError(error?.message || "ตรวจ Product Policy ไม่สำเร็จ", {
           extensions: { code: "BAD_USER_INPUT" },

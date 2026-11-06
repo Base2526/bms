@@ -788,6 +788,10 @@ question type and language, with a text **its own licensed pharmacist approved**
   `bms_lock_guidance_pharmacist_license` helper checks the transaction tenant, locks that user's
   licence row through commit and calls the existing licence check. The check, snapshot, template
   update and audit now share one tenant transaction; no general user-column grants are added.
+- **Product Policy writes** (draft, submit, review) also set tenant RLS and commit their audit
+  in the same transaction. Review uses the `10.47` licence-row lock before changing policy;
+  apply that migration before reviewing a Product Policy. A failed audit or revoked licence
+  rolls back the policy change.
 - **Editing approved text returns it to `DRAFT`** in the service and in a DB trigger, so an
   approved text cannot change under a pharmacist's name.
 - **Rendering** fills `{{shop_phone}}`, `{{business_hours}}`, `{{shop_address}}` from the store

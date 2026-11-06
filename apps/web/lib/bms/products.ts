@@ -1424,6 +1424,10 @@ export function validateProductFields(input: UpsertProductInput): NormalizedProd
   if (!sku) throw new Error("คอลัมน์ SKU ห้ามว่าง — กรอกรหัสสินค้าที่ไม่ซ้ำกันในไฟล์");
   if (!name) throw new Error("คอลัมน์ ชื่อสินค้า ห้ามว่าง");
   if (!Number.isFinite(price) || price < 0) throw new Error("คอลัมน์ ราคาขาย ต้องเป็นตัวเลข 0 ขึ้นไป และไม่ใส่สัญลักษณ์เงินตรา");
+  // bms_products.price is NUMERIC(12,2). Reject sub-satang values before Postgres rounds them.
+  if (Math.abs(price * 100 - Math.round(price * 100)) > 1e-8) {
+    throw new Error("คอลัมน์ ราคาขาย รองรับทศนิยมไม่เกิน 2 ตำแหน่ง (สตางค์)");
+  }
 
   const keywords = (input.keywords ?? []).map((k) => k.trim().toLowerCase()).filter(Boolean);
   // Omitted active is resolved inside the upsert: new products are safe drafts,
@@ -1446,6 +1450,9 @@ export function validateProductFields(input: UpsertProductInput): NormalizedProd
   if (input.cost_price != null && input.cost_price !== ("" as any)) {
     costPrice = Number(input.cost_price);
     if (!Number.isFinite(costPrice) || costPrice < 0) throw new Error("คอลัมน์ ต้นทุน ต้องเป็นตัวเลข 0 ขึ้นไป หรือเว้นว่าง");
+    if (Math.abs(costPrice * 100 - Math.round(costPrice * 100)) > 1e-8) {
+      throw new Error("คอลัมน์ ต้นทุน รองรับทศนิยมไม่เกิน 2 ตำแหน่ง (สตางค์)");
+    }
   }
 
   // น้ำหนัก (กรัม) — ไม่บังคับ; null = ยังไม่ได้กรอก (ต่างจาก 0) → ค่าส่งตามน้ำหนัก

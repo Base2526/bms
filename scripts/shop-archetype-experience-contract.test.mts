@@ -96,7 +96,10 @@ test("import examples model the archetype-specific product structure", () => {
   assert.deepEqual(input("b2b_wholesale").variant_codes, ["70GSM", "80GSM"]);
   assert.equal(input("b2b_wholesale").base_unit, "REAM");
   assert.equal(input("gifts_seasonal").stock_policy, "BUNDLE");
-  assert.deepEqual(input("pet_supply").variant_codes, ["1KG", "3KG"]);
+  assert.deepEqual(input("pet_supply").variant_codes, ["1KG"]);
+  assert.equal(input("pet_supply").name, "อาหารแมว 1 กก.");
+  assert.throws(() => validateProductFields({ ...input("pet_supply"), price: 0.035 }), /ราคาขาย.*2 ตำแหน่ง/);
+  assert.throws(() => validateProductFields({ ...input("pet_supply"), cost_price: 0.035 }), /ต้นทุน.*2 ตำแหน่ง/);
   assert.equal(input("building_materials").base_unit, "BAG");
   assert.deepEqual(input("board_game_cafe").variant_codes, ["STANDARD", "JAPANESE"]);
 
