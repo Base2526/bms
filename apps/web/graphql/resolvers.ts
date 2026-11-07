@@ -157,26 +157,6 @@ async function requirePlatformOnly(ctx: any): Promise<void> {
   }
 }
 
-/**
- * Legacy/community files may have no tenant owner. Keep those rows available to
- * authenticated users as before, but a tenant-bound session must never enumerate
- * or mutate rows owned by another tenant.
- */
-function fileTenantId(ctx: any): string | null {
-  const value = ctx?.admin?.tenant_id ?? ctx?.user?.tenant_id ?? ctx?.tenant_id;
-  return value ? String(value) : null;
-}
-
-function fileTenantPredicate(
-  alias: string,
-  tenantId: string | null,
-  params: any[]
-): string {
-  if (!tenantId) return `${alias}tenant_id IS NULL`;
-  params.push(tenantId);
-  return `(${alias}tenant_id IS NULL OR ${alias}tenant_id = $${params.length})`;
-}
-
 import { normalizeAccountNo } from "@/lib/phone";
 import {
   topicMyBankBlockStatusChanged,
@@ -199,11 +179,37 @@ const isDev = process.env.NODE_ENV !== "production";
 const useSecureCookie = process.env.COOKIE_SECURE === "true";
 
 type GraphQLUploadFile = {
-  filename: string;
+  filename?: string | null;
+  fileName?: string | null;
   mimetype?: string | null;
+  mimeType?: string | null;
+  fileSize?: number | null;
   encoding?: string | null;
   createReadStream: () => NodeJS.ReadableStream;
 };
+
+const SAFE_IMAGE_UPLOAD_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/avif",
+  "image/bmp",
+  "image/tiff",
+  "image/heic",
+  "image/heif",
+] as const;
+
+const SAFE_AUDIO_UPLOAD_MIME_TYPES = [
+  "audio/webm",
+  "audio/ogg",
+  "audio/mpeg",
+  "audio/wav",
+  "audio/mp4",
+  "audio/aac",
+] as const;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // setInterval(() => {
 //   const now = new Date().toISOString();
@@ -1308,24 +1314,58 @@ const rawResolvers = {
     },
     getOrCreateDm: async (_:any, { user_id }:{user_id:string}, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      console.log("[Query] getOrCreateDm :", ctx, author_id);
+      console.log("[Query] getOrCreateDm :", author_id);
 
       if (!author_id) throw new Error("No demo user found");
-      const { rows:exist } = await query(
-        `SELECT c.* FROM chats c
-         JOIN chat_members m1 ON m1.chat_id=c.id AND m1.user_id=$1
-         JOIN chat_members m2 ON m2.chat_id=c.id AND m2.user_id=$2
-         WHERE c.is_group=false LIMIT 1`, [author_id, user_id]
-      );
-      if (exist[0]) return exist[0];
-      const { rows:crows } = await query(
-        `INSERT INTO chats(is_group, created_by) VALUES(false, $1) RETURNING *`, [author_id]
-      );
-      const chat = crows[0];
+      const actorId = String(author_id);
+      const peerId = String(user_id || "");
+      if (!UUID_RE.test(peerId) || peerId === actorId) {
+        throw new GraphQLError("Invalid direct-message recipient", {
+          extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+        });
+      }
 
-      console.log("[getOrCreateDm]" , chat.id, author_id, user_id);
-      // await query(`INSERT INTO chat_members(chat_id, user_id) VALUES ($1,$2),($1,$3)`, [chat.id, meId, user_id]);
-      return chat;
+      // Serialize the unordered pair and create the room + both memberships in
+      // one transaction. Invalid peers and concurrent first messages cannot
+      // leave orphan/duplicate DM rows behind.
+      const pairKey = [actorId, peerId].sort().join(":");
+      const { result } = await runInTransaction(actorId, async (client) => {
+        await client.query(
+          `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+          [`community-dm:${pairKey}`]
+        );
+
+        const peer = await client.query(`SELECT 1 FROM users WHERE id = $1 LIMIT 1`, [peerId]);
+        if (!peer.rowCount) {
+          throw new GraphQLError("Direct-message recipient not found", {
+            extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+          });
+        }
+
+        const existing = await client.query(
+          `SELECT c.* FROM chats c
+           JOIN chat_members m1 ON m1.chat_id = c.id AND m1.user_id = $1
+           JOIN chat_members m2 ON m2.chat_id = c.id AND m2.user_id = $2
+           WHERE c.is_group = false
+           LIMIT 1`,
+          [actorId, peerId]
+        );
+        if (existing.rows[0]) return existing.rows[0];
+
+        const created = await client.query(
+          `INSERT INTO chats(is_group, created_by) VALUES(false, $1) RETURNING *`,
+          [actorId]
+        );
+        const chat = created.rows[0];
+        await client.query(
+          `INSERT INTO chat_members(chat_id, user_id)
+           VALUES ($1,$2),($1,$3)
+           ON CONFLICT DO NOTHING`,
+          [chat.id, actorId, peerId]
+        );
+        return chat;
+      });
+      return result;
     },
     myChats: async (_: any, { }: {}, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
@@ -1571,7 +1611,12 @@ const rawResolvers = {
 
         FROM messages m
         LEFT JOIN users u ON u.id = m.sender_id
-        WHERE m.chat_id = $1 ${filter}
+        WHERE m.chat_id = $1
+          AND EXISTS (
+            SELECT 1 FROM chat_members cm
+             WHERE cm.chat_id = m.chat_id AND cm.user_id = $2
+          )
+          ${filter}
         ORDER BY m.created_at DESC, m.id DESC
         LIMIT $3 OFFSET $4
         `,
@@ -1656,7 +1701,12 @@ const rawResolvers = {
 
         FROM messages m
         LEFT JOIN users u ON u.id = m.sender_id
-        WHERE m.chat_id = $1 ${filter}
+        WHERE m.chat_id = $1
+          AND EXISTS (
+            SELECT 1 FROM chat_members cm
+             WHERE cm.chat_id = m.chat_id AND cm.user_id = $2
+          )
+          ${filter}
         ${cursorSql}
         ORDER BY m.created_at DESC, m.id DESC
         LIMIT $3
@@ -2017,14 +2067,13 @@ const rawResolvers = {
     },
     filesPaged: async (_: any, { search, limit, offset }: any, ctx: any) => {
       const { author_id } = requireAuth(ctx);
+      await requirePlatformOnly(ctx);
       console.log("[Query] filesPaged :", author_id);
 
       const params: any[] = [];
-      const tenantId = fileTenantId(ctx);
       const conditions = [
         "f.deleted_at IS NULL",
         "f.filename NOT LIKE '%operation-evidence-%'",
-        fileTenantPredicate("f.", tenantId, params),
       ];
       if (search && search.trim()) {
         params.push(`%${search}%`);
@@ -3912,10 +3961,15 @@ const rawResolvers = {
 
           for (const pf of images) {
             const upload = await pf; // GraphQLUploadFile
-            const ext = path.extname(upload.filename || "");
+            const ext = path.extname(upload.filename || upload.fileName || "");
             const renameTo = `post-${postId}-${Date.now()}${ext || ""}`;
 
-            const row = await persistUploadStream(upload, renameTo);
+            const row = await persistUploadStream(upload, renameTo, {
+              visibility: "public",
+              ownerUserId: author_id,
+              maxBytes: 10 * 1024 * 1024,
+              allowedMimeTypes: SAFE_IMAGE_UPLOAD_MIME_TYPES,
+            });
             fileRows.push(row);
           }
 
@@ -4428,9 +4482,22 @@ const rawResolvers = {
       }
       const author_id = String(auth.author_id);
 
-      console.log("[Mutation] addMember :", ctx, author_id);
+      console.log("[Mutation] addMember :", author_id);
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
+        const membership = await client.query(
+          `SELECT c.is_group
+             FROM chats c
+             JOIN chat_members mine ON mine.chat_id = c.id AND mine.user_id = $2
+            WHERE c.id = $1
+            FOR UPDATE OF c`,
+          [chat_id, author_id]
+        );
+        if (!membership.rows[0]?.is_group) {
+          throw new GraphQLError("Chat membership required", {
+            extensions: { code: "FORBIDDEN", http: { status: 403 } },
+          });
+        }
         await client.query(
           `INSERT INTO chat_members (chat_id, user_id)
            VALUES ($1, $2)
@@ -4718,6 +4785,46 @@ const rawResolvers = {
 
       console.info("[sendMessage] =", author_id, chat_id, to_user_ids);
 
+      if (!UUID_RE.test(String(chat_id))) {
+        throw new GraphQLError("Invalid chat id", {
+          extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+        });
+      }
+
+      // The room, recipients and sender are server-authoritative. A logged-in
+      // user cannot send into an enumerated chat id or notify arbitrary users.
+      const rawTo = (to_user_ids || [])
+        .filter(Boolean)
+        .map((id) => String(id));
+      if (
+        rawTo.some((id) => !UUID_RE.test(id)) ||
+        (reply_to_id && !UUID_RE.test(String(reply_to_id)))
+      ) {
+        throw new GraphQLError("Invalid message reference", {
+          extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+        });
+      }
+      const cleanTo = Array.from(
+        new Set(
+          rawTo.filter((id) => id !== author_id)
+        )
+      );
+      const memberRows = await query<{ user_id: string }>(
+        `SELECT user_id FROM chat_members WHERE chat_id = $1`,
+        [chat_id]
+      );
+      const memberIds = new Set(memberRows.rows.map((row) => String(row.user_id)));
+      if (!memberIds.has(author_id)) {
+        throw new GraphQLError("Chat membership required", {
+          extensions: { code: "FORBIDDEN", http: { status: 403 } },
+        });
+      }
+      if (cleanTo.some((id) => !memberIds.has(id))) {
+        throw new GraphQLError("Message recipients must be chat members", {
+          extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+        });
+      }
+
       if (normalizedClientMessageId) {
         const existingRes = await query(
           `
@@ -4737,15 +4844,6 @@ const rawResolvers = {
           if (existingMessage) return existingMessage;
         }
       }
-
-      // กรอง to_user_ids ให้ไม่ซ้ำ + ไม่รวมตัวเอง
-      const cleanTo = Array.from(
-        new Set(
-          (to_user_ids || [])
-            .filter(Boolean)
-            .filter((id) => id !== author_id)
-        )
-      );
 
       // ===== Step 1: Pre-upload images (no transaction) =====
       let uploadedFiles: {
@@ -4771,7 +4869,12 @@ const rawResolvers = {
 
             const uploadName = upload?.filename || upload?.fileName || "image";
             const renameTo = `chat_${chat_id}_${Date.now()}_${uploadName}`;
-            const fileRow = await persistUploadStream(upload, renameTo);
+            const fileRow = await persistUploadStream(upload, renameTo, {
+              visibility: "private",
+              ownerUserId: author_id,
+              maxBytes: 10 * 1024 * 1024,
+              allowedMimeTypes: SAFE_IMAGE_UPLOAD_MIME_TYPES,
+            });
 
             return {
               id: fileRow.id,
@@ -4838,7 +4941,12 @@ const rawResolvers = {
 
         const uploadName = upload?.filename || upload?.fileName || "voice";
         const renameTo = `voice_${chat_id}_${Date.now()}_${uploadName}`;
-        const fileRow = await persistUploadStream(upload, renameTo);
+        const fileRow = await persistUploadStream(upload, renameTo, {
+          visibility: "private",
+          ownerUserId: author_id,
+          maxBytes: 25 * 1024 * 1024,
+          allowedMimeTypes: SAFE_AUDIO_UPLOAD_MIME_TYPES,
+        });
         uploadedAudio = {
           id: fileRow.id,
           relpath: fileRow.relpath,
@@ -4868,6 +4976,34 @@ const rawResolvers = {
         existingId: string | null;
         fullMessage: SendMessagePayload | null;
       }>(author_id, async (client, ctx) => {
+        const requiredMembers = [author_id, ...cleanTo];
+        const lockedMembers = await client.query<{ user_id: string }>(
+          `SELECT user_id
+             FROM chat_members
+            WHERE chat_id = $1 AND user_id = ANY($2::uuid[])
+            FOR SHARE`,
+          [chat_id, requiredMembers]
+        );
+        const lockedMemberIds = new Set(
+          lockedMembers.rows.map((row) => String(row.user_id))
+        );
+        if (requiredMembers.some((id) => !lockedMemberIds.has(id))) {
+          throw new GraphQLError("Chat membership changed", {
+            extensions: { code: "FORBIDDEN", http: { status: 403 } },
+          });
+        }
+        if (reply_to_id) {
+          const reply = await client.query(
+            `SELECT 1 FROM messages WHERE id = $1 AND chat_id = $2 LIMIT 1`,
+            [reply_to_id, chat_id]
+          );
+          if (!reply.rowCount) {
+            throw new GraphQLError("Reply message is not in this chat", {
+              extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+            });
+          }
+        }
+
         // 1) Insert message (เพิ่ม reply_to_id เข้าไป)
         const msgRes = await client.query(
           `
@@ -5483,10 +5619,16 @@ const rawResolvers = {
         const f = await file; // { filename, mimetype, encoding, createReadStream }
 
         // สร้างชื่อใหม่ เช่น avatar-<user_id>.ext
-        const ext = path.extname(f.filename || "");
+        const ext = path.extname(f.filename || f.fileName || "");
         const renameTo = `avatar-${user_id}${ext || ""}`;
 
-        const row = await persistUploadStream(f, renameTo); // 👈 ใช้ stream
+        const row = await persistUploadStream(f, renameTo, {
+          visibility: "public",
+          tenantId: platform ? null : tenantId,
+          ownerUserId: String(user_id),
+          maxBytes: 5 * 1024 * 1024,
+          allowedMimeTypes: SAFE_IMAGE_UPLOAD_MIME_TYPES,
+        });
 
         const avatarUrl = buildFileUrlById(row.id);
 
@@ -5651,10 +5793,22 @@ const rawResolvers = {
       console.log('[Mutation] renameChat :', chat_id, name, author_id);
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
-        await client.query(
-          `UPDATE chats SET name=$1 WHERE id=$2`,
-          [name || null, chat_id]
+        const renamed = await client.query(
+          `UPDATE chats c
+              SET name = $1
+            WHERE c.id = $2
+              AND EXISTS (
+                SELECT 1 FROM chat_members cm
+                 WHERE cm.chat_id = c.id AND cm.user_id = $3
+              )
+          RETURNING c.id`,
+          [name || null, chat_id, author_id]
         );
+        if (!renamed.rowCount) {
+          throw new GraphQLError("Chat membership required", {
+            extensions: { code: "FORBIDDEN", http: { status: 403 } },
+          });
+        }
 
         await addLog('info', 'chat-rename', 'Chat renamed', {
           chatId: chat_id,
@@ -5677,8 +5831,17 @@ const rawResolvers = {
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         const { rows: [chat] } = await client.query(
-          `SELECT is_undeletable FROM chats WHERE id = $1`, [chat_id]
+          `SELECT is_undeletable
+             FROM chats
+            WHERE id = $1 AND created_by = $2
+            FOR UPDATE`,
+          [chat_id, author_id]
         );
+        if (!chat) {
+          throw new GraphQLError("Only the chat creator can delete this chat", {
+            extensions: { code: "FORBIDDEN", http: { status: 403 } },
+          });
+        }
         if (chat?.is_undeletable) {
           throw new Error("ไม่สามารถลบ chat นี้ได้");
         }
@@ -5825,20 +5988,20 @@ const rawResolvers = {
         throw new Error("Unauthenticated");
       }
       const author_id = String(auth.author_id);
-      console.log("[Mutation] deleteMessage :", ctx, author_id);
+      console.log("[Mutation] deleteMessage :", author_id);
 
       let deletedChatId: string | null = null;
       const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
         const { rows } = await client.query(
-          `SELECT id, chat_id, sender_id, deleted_at FROM messages WHERE id=$1 LIMIT 1`,
-          [message_id]
+          `SELECT id, chat_id, sender_id, deleted_at
+             FROM messages
+            WHERE id = $1 AND sender_id = $2
+            LIMIT 1
+            FOR UPDATE`,
+          [message_id, author_id]
         );
         const msg = rows[0];
         if (!msg) return false;
-
-        // 2️⃣ ตรวจสิทธิ์ (optional)
-        // const canDelete = (msg.sender_id === author_id) || ctx?.admin?.role === 'Administrator';
-        // if (!canDelete) throw new GraphQLError('FORBIDDEN', { extensions: { code: 'FORBIDDEN' } });
 
         // 3️⃣ ลบ (soft delete)
         const { rowCount } = await client.query(
@@ -5889,17 +6052,19 @@ const rawResolvers = {
       if (!auth.isAuthenticated || !auth.author_id) {
         throw new Error("Unauthenticated");
       }
+      await requirePlatformOnly(ctx);
       const author_id = String(auth.author_id);
-      const tenantId = fileTenantId(ctx);
+      const fileId = Number.parseInt(String(id), 10);
+      if (!Number.isSafeInteger(fileId) || fileId <= 0) return false;
 
       console.log("[Mutation] deleteFile :", { id, author_id });
 
       const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
-        const params: any[] = [id];
-        const tenantWhere = fileTenantPredicate("", tenantId, params);
         const res = await client.query(
-          `DELETE FROM files WHERE id = $1 AND ${tenantWhere}`,
-          params
+          `UPDATE files
+              SET deleted_at = NOW(), updated_at = NOW()
+            WHERE id = $1 AND deleted_at IS NULL`,
+          [fileId]
         );
 
         if (res.rowCount === 1) {
@@ -5925,8 +6090,8 @@ const rawResolvers = {
       if (!auth.isAuthenticated || !auth.author_id) {
         throw new Error("Unauthenticated");
       }
+      await requirePlatformOnly(ctx);
       const author_id = String(auth.author_id);
-      const tenantId = fileTenantId(ctx);
 
       console.log("[Mutation] deleteFiles :", ids, "by", author_id);
 
@@ -5934,16 +6099,16 @@ const rawResolvers = {
 
       const intIds = ids
         .map((n) => parseInt(String(n), 10))
-        .filter((n) => !isNaN(n));
+        .filter((n) => Number.isSafeInteger(n) && n > 0);
 
       if (!intIds.length) return false;
 
       const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
-        const params: any[] = [intIds];
-        const tenantWhere = fileTenantPredicate("", tenantId, params);
         const res = await client.query(
-          `DELETE FROM files WHERE id = ANY($1::int[]) AND ${tenantWhere}`,
-          params
+          `UPDATE files
+              SET deleted_at = NOW(), updated_at = NOW()
+            WHERE id = ANY($1::int[]) AND deleted_at IS NULL`,
+          [intIds]
         );
 
         // rowCount: number | null → ใช้ ?? 0 ป้องกัน null
@@ -5971,19 +6136,26 @@ const rawResolvers = {
       if (!auth.isAuthenticated || !auth.author_id) {
         throw new Error("Unauthenticated");
       }
+      await requirePlatformOnly(ctx);
       const author_id = String(auth.author_id);
-      const tenantId = fileTenantId(ctx);
+      const fileId = Number.parseInt(String(id), 10);
+      const safeName = String(name || "").normalize("NFKC").trim();
+      if (
+        !Number.isSafeInteger(fileId) ||
+        fileId <= 0 ||
+        !safeName ||
+        safeName.length > 180 ||
+        /[\u0000-\u001f\u007f]/.test(safeName)
+      ) return false;
       console.log("[Mutation] renameFile by:", author_id);
 
       // ✅ ใช้ transaction helper
       const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
-        const params: any[] = [name, id];
-        const tenantWhere = fileTenantPredicate("", tenantId, params);
         const res = await client.query(
           `UPDATE files 
              SET original_name = $1, updated_at = NOW()
-           WHERE id = $2 AND ${tenantWhere}`,
-          params
+           WHERE id = $2 AND deleted_at IS NULL`,
+          [safeName, fileId]
         );
 
         return res.rowCount === 1;
@@ -5995,7 +6167,7 @@ const rawResolvers = {
           'info',
           'file-rename',
           'User renamed a file',
-          { author_id, fileId: id, newName: name }
+          { author_id, fileId, newName: safeName }
         );
       }
 

@@ -4,47 +4,83 @@ import { query } from "@/lib/db";
 import { persistWebFile } from "@/lib/storage";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 import { verifyAdminSession, verifyUserSession } from "@/lib/auth/server";
-import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
+import { authorizePlatformAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { rateLimit } from "@/lib/bms/rateLimit";
 
 /** ทั้งสองเมธอดเสิร์ฟ Files panel เดิมที่ /settings และ /admin/files
- *  จึงคงรองรับไฟล์ legacy ที่ tenant_id เป็น null แต่ไฟล์ที่มีเจ้าของต้องถูกจำกัด
- *  ตาม tenant จาก session และ upload ใหม่ต้องผูก tenant เมื่อระบุได้ */
-type FileScope = {
-  tenantId: string | null;
-  rateKey: string;
+ *  Platform admin ดู inventory ทั้งระบบ ส่วนผู้ใช้เว็บเห็นเฉพาะไฟล์ที่ session
+ *  ของตนเป็นเจ้าของ — tenant เดียวกันอย่างเดียวไม่ใช่สิทธิ์ดูไฟล์ส่วนตัว */
+type FileScope =
+  | {
+      kind: "platform";
+      actorId: string;
+      tenantId: null;
+      rateKey: string;
+    }
+  | {
+      kind: "user";
+      actorId: string;
+      tenantId: string | null;
+      rateKey: string;
+    };
+
+type FileScopeResult = {
+  scope: FileScope | null;
+  status: 401 | 403;
 };
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_REQUEST_BYTES = MAX_FILE_BYTES + 1024 * 1024;
 
-async function requireSession(): Promise<FileScope | null> {
-  // Admin uploads/listing must use the same acting-tenant authority as every
-  // other admin REST route. Keep tenant-less user files working for the legacy
-  // Settings panel, but never let that session enumerate another shop's rows.
+async function requireSession(): Promise<FileScopeResult> {
+  // `/admin/files` is a platform operational surface.  Its GraphQL side uses
+  // the same boundary; a shop Administrator must not enumerate global files.
   if (verifyAdminSession()) {
-    const auth = await authorizeAdminRoute(null);
-    if (!auth.ok) return null;
-    return { tenantId: auth.tenantId, rateKey: `admin:${auth.adminId}` };
+    const auth = await authorizePlatformAdminRoute();
+    if (auth.ok) {
+      return {
+        scope: {
+          kind: "platform",
+          actorId: String(auth.adminId),
+          tenantId: null,
+          rateKey: `admin:${auth.adminId}`,
+        },
+        status: 401,
+      };
+    }
+
+    // A browser may hold both cookies. Falling back to the strictly owner-
+    // scoped web session is safe and keeps `/settings` usable.
+    const fallbackUser = verifyUserSession();
+    if (!fallbackUser) return { scope: null, status: auth.status };
   }
 
   const user = verifyUserSession();
-  if (!user) return null;
+  if (!user) return { scope: null, status: 401 };
   return {
-    tenantId: user.tenant_id ? String(user.tenant_id) : null,
-    rateKey: `user:${String(user.id)}`,
+    scope: {
+      kind: "user",
+      actorId: String(user.id),
+      tenantId: user.tenant_id ? String(user.tenant_id) : null,
+      rateKey: `user:${String(user.id)}`,
+    },
+    status: 401,
   };
 }
 
-function unauthorized() {
-  return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+function authError(status: 401 | 403) {
+  return NextResponse.json(
+    { error: status === 401 ? "unauthorized" : "forbidden" },
+    { status }
+  );
 }
 
 export const dynamic = "force-dynamic";
 
 async function handleGET(req: NextRequest) {
-  const scope = await requireSession();
-  if (!scope) return unauthorized();
+  const auth = await requireSession();
+  if (!auth.scope) return authError(auth.status);
+  const scope = auth.scope;
   const { searchParams } = new URL(req.url);
   const q = (searchParams.get("q") || "").trim();
   const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
@@ -57,13 +93,17 @@ async function handleGET(req: NextRequest) {
   ];
   const filterArgs: any[] = [];
 
-  if (scope.tenantId) {
-    filterArgs.push(scope.tenantId);
-    // tenant_id IS NULL preserves the legacy Files panel rows that predate
-    // tenant ownership. Rows owned by another tenant are never returned.
-    conditions.push(`(tenant_id IS NULL OR tenant_id = $${filterArgs.length})`);
-  } else {
-    conditions.push("tenant_id IS NULL");
+  if (scope.kind === "user") {
+    filterArgs.push(scope.actorId);
+    conditions.push(`owner_user_id = $${filterArgs.length}::uuid`);
+    // Settings is a personal scratch-file panel, not an alternate editor for
+    // posts, chat history or avatars. Those features own their referenced rows.
+    conditions.push("NOT EXISTS (SELECT 1 FROM post_images pi WHERE pi.file_id = files.id)");
+    conditions.push("NOT EXISTS (SELECT 1 FROM message_images mi WHERE mi.file_id = files.id)");
+    conditions.push("NOT EXISTS (SELECT 1 FROM messages m WHERE m.audio_file_id = files.id)");
+    conditions.push(
+      "NOT EXISTS (SELECT 1 FROM users u WHERE u.avatar = '/api/files/' || files.id::text OR u.avatar LIKE '/api/files/' || files.id::text || '?%')"
+    );
   }
 
   if (q) {
@@ -97,8 +137,9 @@ async function handleGET(req: NextRequest) {
 
 // POST multipart upload
 async function handlePOST(req: NextRequest) {
-  const scope = await requireSession();
-  if (!scope) return unauthorized();
+  const auth = await requireSession();
+  if (!auth.scope) return authError(auth.status);
+  const scope = auth.scope;
 
   const limited = await rateLimit(`files-upload:${scope.rateKey}`, 20, 60_000);
   if (!limited.ok) {
@@ -124,7 +165,13 @@ async function handlePOST(req: NextRequest) {
     return NextResponse.json({ error: "file too large (max 25 MB)" }, { status: 413 });
   }
 
-  const row = await persistWebFile(file, renameTo, "private", scope.tenantId);
+  const row = await persistWebFile(
+    file,
+    renameTo,
+    "private",
+    scope.tenantId,
+    scope.actorId
+  );
   const { relpath: _storageKey, ...safeRow } = row;
   return NextResponse.json(safeRow, { status: 201 });
 }

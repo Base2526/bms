@@ -27,7 +27,7 @@ test("route ที่เสิร์ฟไฟล์ต้องเช็ค visi
   assert.match(src, /visibility/, "ต้องอ่านคอลัมน์ visibility");
   assert.match(
     src,
-    /SELECT[^`]*visibility[^`]*FROM files/s,
+    /SELECT[^`]*visibility[^`]*FROM files f/s,
     "query ต้องดึง visibility มาด้วย ไม่ใช่เดา"
   );
   assert.match(
@@ -50,20 +50,22 @@ test("ไล่รายชื่อไฟล์และอัปโหลด�
   for (const handler of handlers) {
     assert.match(
       handler,
-      /const scope = await requireSession\(\);[\s\S]*?if \(!scope\) return unauthorized\(\);/,
+      /const auth = await requireSession\(\);[\s\S]*?if \(!auth\.scope\) return authError\(auth\.status\);/,
       "ทุก handler ต้องเช็ค session เป็นบรรทัดแรก"
     );
   }
 });
 
-test("รายการไฟล์ต้อง scope ร้าน และ upload ต้องมีเพดานกับ rate limit", () => {
+test("รายการไฟล์แยก platform inventory จาก personal owner และ upload ต้องมีเพดาน", () => {
   const src = read("app/api/files/route.ts");
-  assert.match(src, /tenant_id IS NULL OR tenant_id = \$\$\{filterArgs\.length\}/,
-    "admin ต้องไม่เห็นไฟล์ของ tenant อื่น");
-  assert.match(src, /conditions\.push\("tenant_id IS NULL"\)/,
-    "user legacy ที่ไม่มี tenant ต้องไม่เห็นไฟล์ของร้าน");
-  assert.match(src, /persistWebFile\(file, renameTo, "private", scope\.tenantId\)/,
-    "ไฟล์ใหม่ต้องผูก tenant จาก session");
+  assert.match(src, /authorizePlatformAdminRoute\(\)/,
+    "global file inventory ต้องเป็น platform admin เท่านั้น");
+  assert.match(src, /owner_user_id = \$\$\{filterArgs\.length\}::uuid/,
+    "ผู้ใช้เว็บต้องเห็นเฉพาะไฟล์ที่ตนเป็นเจ้าของ");
+  assert.match(src, /scope\.tenantId,[\s\S]*scope\.actorId/,
+    "ไฟล์ใหม่ต้องผูกทั้ง tenant และ user จาก session");
+  assert.doesNotMatch(src, /tenant_id IS NULL OR tenant_id =/,
+    "tenant เดียวกันไม่ใช่สิทธิ์อ่านไฟล์ส่วนตัวของผู้ใช้อื่น");
   assert.match(src, /MAX_FILE_BYTES = 25 \* 1024 \* 1024/,
     "generic upload ต้องมีเพดานที่ยังรองรับเอกสารใช้งานทั่วไป");
   assert.match(src, /rateLimit\(`files-upload:\$\{scope\.rateKey\}`/,
@@ -84,24 +86,23 @@ test("ไฟล์ที่เสิร์ฟต้องกัน MIME sniffing
     "browser ต้องไม่เดา content type ใหม่");
 });
 
-test("GraphQL files panel ต้อง scope ทั้ง list, rename และ delete ตาม tenant", () => {
+test("GraphQL files panel ต้องเป็น platform-only ทั้ง list, rename และ delete", () => {
   const src = read("graphql/resolvers.ts");
   const list = src.slice(src.indexOf("filesPaged:"), src.indexOf("myNotifications:"));
   const mutations = src.slice(src.indexOf("deleteFile:"), src.indexOf("toggleBookmark:"));
 
-  assert.match(list, /fileTenantPredicate\("f\."\s*,\s*tenantId, params\)/,
-    "GraphQL list ต้องจำกัด tenant เหมือน REST list");
+  assert.match(list, /await requirePlatformOnly\(ctx\)/,
+    "GraphQL global list ต้องเป็น platform admin เท่านั้น");
   assert.match(list, /f\.deleted_at IS NULL/,
     "GraphQL list ต้องไม่คืนไฟล์ที่ลบแล้ว");
   assert.doesNotMatch(list, /f\.\*/,
     "GraphQL list ห้าม SELECT storage metadata ทั้งแถว");
   assert.match(list, /relpath:\s*""/,
     "คง GraphQL shape เดิมแต่ห้ามเปิดเผย storage key");
-  assert.equal(
-    (mutations.match(/fileTenantPredicate\("", tenantId, params\)/g) ?? []).length,
-    3,
-    "delete, bulk delete และ rename ต้องตรวจ tenant ทุก mutation"
-  );
+  assert.equal((mutations.match(/await requirePlatformOnly\(ctx\)/g) ?? []).length, 3,
+    "delete, bulk delete และ rename ต้องตรวจ platform admin ทุก mutation");
+  assert.equal((mutations.match(/SET deleted_at = NOW\(\), updated_at = NOW\(\)/g) ?? []).length, 2,
+    "delete ต้อง soft-delete เพื่อไม่ทำ cascade ลบ reference ของ domain");
 });
 
 test("ทุกจุดที่บันทึกไฟล์ระบุ visibility ชัดเจน", () => {
@@ -144,23 +145,72 @@ test("ค่าปริยายของ persistWebFile/persistBuffer คื�
     /persistBuffer\([\s\S]{0,300}?visibility: FileVisibility = "private"/,
     "persistBuffer (ไฟล์รายงาน) ที่ลืมระบุต้องได้ private"
   );
-  // ทางเดียวที่ยังเป็น public ปริยายคือ GraphQL upload ของฟีเจอร์ชุมชนเดิม
-  // ซึ่งหน้าเว็บโหลดตรงโดยไม่มี session — เปลี่ยนแล้วของเดิมพัง
   assert.match(
     src,
-    /persistUploadStream\([\s\S]{0,400}?visibility: FileVisibility = "public"/,
-    "persistUploadStream คงเป็น public เพื่อไม่ให้ avatar/โพสต์เดิมพัง"
+    /visibility: options\.visibility \?\? "private"/,
+    "GraphQL upload ที่ caller ลืมเลือก visibility ต้อง fail closed เป็น private"
   );
+  assert.match(src, /limitUploadStream\(upload\.createReadStream\(\), maxBytes\)/,
+    "stream ต้องมี byte limit จริง ไม่เชื่อเฉพาะ metadata จาก client");
 });
 
-test("INSERT ลง files ต้องเขียน visibility และ tenant_id ทุกครั้ง", () => {
+test("INSERT ลง files ต้องเขียน visibility, tenant_id และ owner_user_id ทุกครั้ง", () => {
   const src = read("lib/storage.ts");
   const inserts = [...src.matchAll(/INSERT INTO files \(([^)]*)\)/g)];
   assert.ok(inserts.length > 0, "ต้องเจอ INSERT INTO files");
   for (const m of inserts) {
     assert.match(m[1], /visibility/, `INSERT ที่ไม่ระบุ visibility จะได้ค่าปริยายเงียบ ๆ: ${m[1]}`);
     assert.match(m[1], /tenant_id/, `INSERT ที่ไม่เขียน tenant_id ทำให้ไฟล์ใหม่ไม่มีเจ้าของ: ${m[1]}`);
+    assert.match(m[1], /owner_user_id/, `INSERT ที่ไม่เขียน owner_user_id ทำให้ไฟล์ส่วนตัวหลุดข้าม user: ${m[1]}`);
   }
+});
+
+test("chat media ต้อง private และเปิดได้เฉพาะสมาชิกห้อง", () => {
+  const route = read("app/api/files/[id]/route.ts");
+  const resolvers = read("graphql/resolvers.ts");
+  const migration = fs.readFileSync(
+    path.resolve(import.meta.dirname, "../db/migrations/10.109__files_user_ownership_and_private_chat.sql"),
+    "utf8"
+  );
+  assert.match(route, /canReadChatFile\(id, actorIds\)/,
+    "route ต้องตรวจ chat_members ก่อน stream ไฟล์แชท");
+  assert.match(route, /cm\.user_id::text = ANY\(\$2::text\[\]\)/,
+    "membership ต้องผูกกับ actor จาก session");
+  assert.equal((resolvers.match(/visibility: "private",[\s\S]{0,160}?ownerUserId: author_id/g) ?? []).length, 2,
+    "รูปและเสียงแชทใหม่ต้อง private พร้อม owner");
+  assert.match(migration, /SELECT file_id FROM message_images/);
+  assert.match(migration, /SELECT audio_file_id FROM messages/);
+  assert.match(migration, /SET visibility = 'private'/);
+});
+
+test("legacy artifact อันตรายต้องไม่ออกทาง generic sequential-id route", () => {
+  const route = read("app/api/files/[id]/route.ts");
+  const migration = fs.readFileSync(
+    path.resolve(import.meta.dirname, "../db/migrations/10.109__files_user_ownership_and_private_chat.sql"),
+    "utf8"
+  );
+  assert.match(route, /BLOCKED_GENERIC_EXTENSIONS/);
+  assert.match(route, /isBlockedGenericDownload\(row\)/);
+  assert.match(route, /row\.is_pharmacy_evidence/);
+  assert.match(route, /row\.is_support_bundle/);
+  assert.match(route, /row\.is_release_asset/);
+  assert.match(migration, /'%.keystore'/);
+  assert.match(migration, /'%.sql'/);
+  assert.match(migration, /LIKE '%\.\.\/\%'/);
+  assert.match(migration, /unnest\(ARRAY\[original_name, filename, relpath\]\)/,
+    "migration ต้องตรวจทุกชื่อและ storage path ไม่ใช่หยุดที่ค่า COALESCE ตัวแรก");
+  assert.match(migration, /replace\(candidate\.value, chr\(92\), '\/'\) LIKE '%\.\.\/\%'/,
+    "migration ต้อง normalize Windows traversal ก่อนจัดไฟล์เป็น private");
+});
+
+test("PATCH/DELETE personal file ต้องเป็น owner และห้ามแก้ domain reference", () => {
+  const src = read("app/api/files/[id]/route.ts");
+  assert.match(src, /export const PATCH = withRouteErrorLog/);
+  assert.match(src, /export const DELETE = withRouteErrorLog/);
+  assert.equal((src.match(/current\.is_community_reference/g) ?? []).length, 2);
+  assert.equal((src.match(/String\(current\.owner_user_id \|\| ""\) !== auth\.actorId/g) ?? []).length, 2);
+  assert.match(src, /authorizePlatformAdminRoute\(\)/,
+    "platform file manager ยังจัดการ global inventory ได้");
 });
 
 // ---------------------------------------------------------------

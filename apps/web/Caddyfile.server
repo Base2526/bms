@@ -16,6 +16,14 @@ bms.jachoei.com {
    @publicStatic path /favicon.ico /robots.txt /sitemap.xml /images/* /static/*
    header @publicStatic Cache-Control "public, max-age=86400"
 
+   @gqlUpload {
+     path /api/graphql
+     header Content-Type multipart/form-data*
+   }
+   request_body @gqlUpload {
+     max_size 64MB
+   }
+
    @ws {
      path /graphql
      header Connection *Upgrade*

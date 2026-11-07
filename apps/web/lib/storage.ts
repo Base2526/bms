@@ -9,7 +9,7 @@
 // is a copy of the existing tree into a bucket, not a data migration.
 // -------------------------------------------------------------
 import crypto from "crypto";
-import type { Readable } from "stream";
+import { Readable } from "stream";
 import { query } from "@/lib/db";
 import { getStorageDriver, toStorageKey } from "@/lib/storageDrivers";
 import type { ByteRange, StoredStat } from "@/lib/storageDrivers";
@@ -76,10 +76,12 @@ async function insertFileRow(params: {
   visibility: FileVisibility;
   /** ร้านเจ้าของไฟล์ (9.27) — null = ไม่ผูกร้าน (ไฟล์ของฟีเจอร์ชุมชนเดิม) */
   tenantId?: string | null;
+  /** ผู้ใช้อัปโหลด/เจ้าของ (10.109) — derive จาก session เท่านั้น */
+  ownerUserId?: string | null;
 }): Promise<StoredFileRow> {
   const { rows } = await query(
-    `INSERT INTO files (filename, original_name, mimetype, size, checksum, relpath, visibility, tenant_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+    `INSERT INTO files (filename, original_name, mimetype, size, checksum, relpath, visibility, tenant_id, owner_user_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
      RETURNING id, filename, original_name, mimetype, size, checksum, relpath, created_at, updated_at`,
     [
       params.storedName,
@@ -90,6 +92,7 @@ async function insertFileRow(params: {
       params.key,
       params.visibility,
       params.tenantId ?? null,
+      params.ownerUserId ?? null,
     ]
   );
   return rows[0] as StoredFileRow;
@@ -100,7 +103,8 @@ export async function persistWebFile(
   file: File,
   renameTo?: string,
   visibility: FileVisibility = "private",
-  tenantId?: string | null
+  tenantId?: string | null,
+  ownerUserId?: string | null
 ): Promise<StoredFileRow> {
   const buf = Buffer.from(await file.arrayBuffer());
   const checksum = crypto.createHash("sha256").update(buf).digest("hex");
@@ -117,7 +121,45 @@ export async function persistWebFile(
     key,
     visibility,
     tenantId,
+    ownerUserId,
   });
+}
+
+export type GraphQLUploadInput = {
+  /** graphql-upload and graphql-upload-nextjs use different field names. */
+  filename?: string | null;
+  fileName?: string | null;
+  mimetype?: string | null;
+  mimeType?: string | null;
+  fileSize?: number | null;
+  encoding?: string | null;
+  createReadStream: () => NodeJS.ReadableStream;
+};
+
+export type PersistUploadOptions = {
+  visibility?: FileVisibility;
+  tenantId?: string | null;
+  ownerUserId?: string | null;
+  maxBytes?: number;
+  allowedMimeTypes?: readonly string[];
+};
+
+function uploadLimitError(maxBytes: number): Error {
+  const error = new Error(`File is too large (maximum ${Math.floor(maxBytes / 1024 / 1024)} MB)`);
+  error.name = "FileUploadLimitError";
+  return error;
+}
+
+function limitUploadStream(stream: NodeJS.ReadableStream, maxBytes: number): Readable {
+  return Readable.from((async function* () {
+    let total = 0;
+    for await (const chunk of stream as AsyncIterable<Buffer | Uint8Array | string>) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      total += buf.length;
+      if (total > maxBytes) throw uploadLimitError(maxBytes);
+      yield buf;
+    }
+  })());
 }
 
 /**
@@ -125,22 +167,30 @@ export async function persistWebFile(
  * → เซฟผ่าน storage driver
  */
 export async function persistUploadStream(
-  upload: {
-    filename: string;
-    mimetype?: string | null;
-    encoding?: string | null;
-    createReadStream: () => NodeJS.ReadableStream;
-  },
+  upload: GraphQLUploadInput,
   renameTo?: string,
-  // เส้นทางนี้คือ GraphQL upload ของฟีเจอร์เดิม (avatar, รูปโพสต์, ไฟล์แชทชุมชน)
-  // ซึ่งหน้าเว็บโหลดตรงจาก /api/files โดยไม่มี session — คงเป็น public ไว้
-  // ผู้เรียกที่รับไฟล์อ่อนไหวต้องส่ง "private" มาเอง
-  visibility: FileVisibility = "public"
+  options: PersistUploadOptions = {}
 ): Promise<StoredFileRow> {
+  const filename = String(upload.filename || upload.fileName || "file.bin");
+  const mimetype = String(upload.mimetype || upload.mimeType || "")
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
+  const maxBytes = options.maxBytes ?? 25 * 1024 * 1024;
+  const declaredSize = Number(upload.fileSize ?? 0);
+
+  if (declaredSize > maxBytes) throw uploadLimitError(maxBytes);
+  if (
+    options.allowedMimeTypes?.length &&
+    !options.allowedMimeTypes.includes(mimetype)
+  ) {
+    throw new Error("File type is not allowed");
+  }
+
   const stored = await writeWebFileStream(
-    upload.createReadStream(),
-    upload.filename,
-    upload.mimetype,
+    limitUploadStream(upload.createReadStream(), maxBytes),
+    filename,
+    mimetype || null,
     renameTo
   );
 
@@ -151,7 +201,9 @@ export async function persistUploadStream(
     size: stored.size,
     checksum: stored.checksum,
     key: stored.relpath,
-    visibility,
+    visibility: options.visibility ?? "private",
+    tenantId: options.tenantId,
+    ownerUserId: options.ownerUserId,
   });
 }
 

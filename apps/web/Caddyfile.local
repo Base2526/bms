@@ -51,6 +51,14 @@
 jachoei.com {
    tls /certs/jachoei.com.pem /certs/jachoei.com-key.pem
 
+   @gqlUpload {
+     path /api/graphql
+     header Content-Type multipart/form-data*
+   }
+   request_body @gqlUpload {
+     max_size 64MB
+   }
+
    @ws {
      path /graphql
      header Connection *Upgrade*
@@ -69,6 +77,14 @@ jachoei.com {
 # origin contract while routing WebSocket upgrades to the database-free gateway.
 # docker-compose.dev.yml publishes this port on host loopback only.
 :3001 {
+   @gqlUpload {
+     path /api/graphql
+     header Content-Type multipart/form-data*
+   }
+   request_body @gqlUpload {
+     max_size 64MB
+   }
+
    @ws {
      path /graphql
      header Connection *Upgrade*
