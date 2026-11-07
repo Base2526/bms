@@ -15,7 +15,7 @@ const Q_FILES_PAGED = gql`
     filesPaged(search:$q, limit:$limit, offset:$offset){
       total
       items{
-        id filename original_name mimetype size relpath created_at updated_at
+        id filename original_name mimetype size created_at updated_at
         url thumb
       }
     }
@@ -33,7 +33,6 @@ type FileRow = {
   original_name: string | null;
   mimetype: string | null;
   size: number;
-  relpath: string;
   created_at: string;
   updated_at: string;
   url: string;

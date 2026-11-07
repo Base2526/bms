@@ -50,10 +50,58 @@ test("ไล่รายชื่อไฟล์และอัปโหลด�
   for (const handler of handlers) {
     assert.match(
       handler,
-      /if \(!requireSession\(\)\) return UNAUTHORIZED;/,
+      /const scope = await requireSession\(\);[\s\S]*?if \(!scope\) return unauthorized\(\);/,
       "ทุก handler ต้องเช็ค session เป็นบรรทัดแรก"
     );
   }
+});
+
+test("รายการไฟล์ต้อง scope ร้าน และ upload ต้องมีเพดานกับ rate limit", () => {
+  const src = read("app/api/files/route.ts");
+  assert.match(src, /tenant_id IS NULL OR tenant_id = \$\$\{filterArgs\.length\}/,
+    "admin ต้องไม่เห็นไฟล์ของ tenant อื่น");
+  assert.match(src, /conditions\.push\("tenant_id IS NULL"\)/,
+    "user legacy ที่ไม่มี tenant ต้องไม่เห็นไฟล์ของร้าน");
+  assert.match(src, /persistWebFile\(file, renameTo, "private", scope\.tenantId\)/,
+    "ไฟล์ใหม่ต้องผูก tenant จาก session");
+  assert.match(src, /MAX_FILE_BYTES = 25 \* 1024 \* 1024/,
+    "generic upload ต้องมีเพดานที่ยังรองรับเอกสารใช้งานทั่วไป");
+  assert.match(src, /rateLimit\(`files-upload:\$\{scope\.rateKey\}`/,
+    "upload ต้องจำกัดความถี่ต่อ principal");
+  assert.doesNotMatch(src, /SELECT id, filename, original_name, mimetype, size, checksum, relpath/,
+    "list API ต้องไม่เปิดเผย storage key ที่ UI ไม่ได้ใช้");
+  assert.match(src, /const \{ relpath: _storageKey, \.\.\.safeRow \} = row/,
+    "upload response ต้องไม่เปิดเผย storage key");
+});
+
+test("ไฟล์ที่เสิร์ฟต้องกัน MIME sniffing และไม่ inline SVG", () => {
+  const src = read("app/api/files/[id]/route.ts");
+  assert.match(src, /cleanMime !== "image\/svg\+xml"/,
+    "SVG ที่ผู้ใช้อัปโหลดต้องถูกบังคับดาวน์โหลดเพื่อกัน stored XSS");
+  assert.match(src, /mode === "inline" && inlineSafe/,
+    "query mode=inline ต้องข้ามข้อห้ามของ MIME อันตรายไม่ได้");
+  assert.match(src, /"X-Content-Type-Options": "nosniff"/,
+    "browser ต้องไม่เดา content type ใหม่");
+});
+
+test("GraphQL files panel ต้อง scope ทั้ง list, rename และ delete ตาม tenant", () => {
+  const src = read("graphql/resolvers.ts");
+  const list = src.slice(src.indexOf("filesPaged:"), src.indexOf("myNotifications:"));
+  const mutations = src.slice(src.indexOf("deleteFile:"), src.indexOf("toggleBookmark:"));
+
+  assert.match(list, /fileTenantPredicate\("f\."\s*,\s*tenantId, params\)/,
+    "GraphQL list ต้องจำกัด tenant เหมือน REST list");
+  assert.match(list, /f\.deleted_at IS NULL/,
+    "GraphQL list ต้องไม่คืนไฟล์ที่ลบแล้ว");
+  assert.doesNotMatch(list, /f\.\*/,
+    "GraphQL list ห้าม SELECT storage metadata ทั้งแถว");
+  assert.match(list, /relpath:\s*""/,
+    "คง GraphQL shape เดิมแต่ห้ามเปิดเผย storage key");
+  assert.equal(
+    (mutations.match(/fileTenantPredicate\("", tenantId, params\)/g) ?? []).length,
+    3,
+    "delete, bulk delete และ rename ต้องตรวจ tenant ทุก mutation"
+  );
 });
 
 test("ทุกจุดที่บันทึกไฟล์ระบุ visibility ชัดเจน", () => {

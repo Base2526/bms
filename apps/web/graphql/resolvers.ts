@@ -157,6 +157,26 @@ async function requirePlatformOnly(ctx: any): Promise<void> {
   }
 }
 
+/**
+ * Legacy/community files may have no tenant owner. Keep those rows available to
+ * authenticated users as before, but a tenant-bound session must never enumerate
+ * or mutate rows owned by another tenant.
+ */
+function fileTenantId(ctx: any): string | null {
+  const value = ctx?.admin?.tenant_id ?? ctx?.user?.tenant_id ?? ctx?.tenant_id;
+  return value ? String(value) : null;
+}
+
+function fileTenantPredicate(
+  alias: string,
+  tenantId: string | null,
+  params: any[]
+): string {
+  if (!tenantId) return `${alias}tenant_id IS NULL`;
+  params.push(tenantId);
+  return `(${alias}tenant_id IS NULL OR ${alias}tenant_id = $${params.length})`;
+}
+
 import { normalizeAccountNo } from "@/lib/phone";
 import {
   topicMyBankBlockStatusChanged,
@@ -1996,23 +2016,31 @@ const rawResolvers = {
       };
     },
     filesPaged: async (_: any, { search, limit, offset }: any, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      console.log("[Query] pending :", author_id);
+      const { author_id } = requireAuth(ctx);
+      console.log("[Query] filesPaged :", author_id);
 
       const params: any[] = [];
-      let where = "WHERE f.filename NOT LIKE '%operation-evidence-%'";
+      const tenantId = fileTenantId(ctx);
+      const conditions = [
+        "f.deleted_at IS NULL",
+        "f.filename NOT LIKE '%operation-evidence-%'",
+        fileTenantPredicate("f.", tenantId, params),
+      ];
       if (search && search.trim()) {
         params.push(`%${search}%`);
-        where += ` AND (f.original_name ILIKE $${params.length} OR f.filename ILIKE $${params.length})`;
+        conditions.push(`(f.original_name ILIKE $${params.length} OR f.filename ILIKE $${params.length})`);
       }
-      params.push(limit, offset);
+      const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20));
+      const safeOffset = Math.max(0, Number(offset) || 0);
+      params.push(safeLimit, safeOffset);
 
       const sql = `
         SELECT
           COUNT(*) OVER() AS total,
-          f.*
+          f.id, f.filename, f.original_name, f.mimetype, f.size,
+          f.created_at, f.updated_at
         FROM files f
-        ${where}
+        WHERE ${conditions.join(" AND ")}
         ORDER BY f.created_at DESC
         LIMIT $${params.length-1} OFFSET $${params.length}
       `;
@@ -2021,6 +2049,9 @@ const rawResolvers = {
 
       const items = rows.map((r: any) => ({
         ...r,
+        // Kept only for backwards-compatible GraphQL shape. Storage keys are
+        // server internals and must not be exposed to the browser.
+        relpath: "",
         url: buildFileUrlById(r.id),
         thumb: r.mimetype && r.mimetype.startsWith('image/')
           ? buildFileUrlById(r.id)
@@ -5859,11 +5890,17 @@ const rawResolvers = {
         throw new Error("Unauthenticated");
       }
       const author_id = String(auth.author_id);
+      const tenantId = fileTenantId(ctx);
 
       console.log("[Mutation] deleteFile :", { id, author_id });
 
       const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
-        const res = await client.query(`DELETE FROM files WHERE id = $1`, [id]);
+        const params: any[] = [id];
+        const tenantWhere = fileTenantPredicate("", tenantId, params);
+        const res = await client.query(
+          `DELETE FROM files WHERE id = $1 AND ${tenantWhere}`,
+          params
+        );
 
         if (res.rowCount === 1) {
           await addLog(
@@ -5889,6 +5926,7 @@ const rawResolvers = {
         throw new Error("Unauthenticated");
       }
       const author_id = String(auth.author_id);
+      const tenantId = fileTenantId(ctx);
 
       console.log("[Mutation] deleteFiles :", ids, "by", author_id);
 
@@ -5901,9 +5939,11 @@ const rawResolvers = {
       if (!intIds.length) return false;
 
       const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
+        const params: any[] = [intIds];
+        const tenantWhere = fileTenantPredicate("", tenantId, params);
         const res = await client.query(
-          `DELETE FROM files WHERE id = ANY($1::int[])`,
-          [intIds]
+          `DELETE FROM files WHERE id = ANY($1::int[]) AND ${tenantWhere}`,
+          params
         );
 
         // rowCount: number | null → ใช้ ?? 0 ป้องกัน null
@@ -5932,15 +5972,18 @@ const rawResolvers = {
         throw new Error("Unauthenticated");
       }
       const author_id = String(auth.author_id);
+      const tenantId = fileTenantId(ctx);
       console.log("[Mutation] renameFile by:", author_id);
 
       // ✅ ใช้ transaction helper
       const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
+        const params: any[] = [name, id];
+        const tenantWhere = fileTenantPredicate("", tenantId, params);
         const res = await client.query(
           `UPDATE files 
              SET original_name = $1, updated_at = NOW()
-           WHERE id = $2`,
-          [name, id]
+           WHERE id = $2 AND ${tenantWhere}`,
+          params
         );
 
         return res.rowCount === 1;

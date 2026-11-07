@@ -158,7 +158,7 @@ function shouldInline(mime: string): boolean {
   const cleanMime = (mime || "").split(";")[0].trim().toLowerCase();
 
   return (
-    cleanMime.startsWith("image/") ||
+    (cleanMime.startsWith("image/") && cleanMime !== "image/svg+xml") ||
     cleanMime === "application/pdf" ||
     cleanMime === "text/plain" ||
     cleanMime === "text/csv" ||
@@ -281,12 +281,13 @@ async function handleGET(
     const downloadName = buildDownloadName(row, id, mime);
 
     const mode = req.nextUrl.searchParams.get("mode");
+    const inlineSafe = shouldInline(mime);
     const dispositionType =
       mode === "download"
         ? "attachment"
-        : mode === "inline"
+        : mode === "inline" && inlineSafe
         ? "inline"
-        : shouldInline(mime)
+        : inlineSafe
         ? "inline"
         : "attachment";
 
@@ -302,6 +303,7 @@ async function handleGET(
         `${dispositionType}; filename="${downloadName}"; ` +
         `filename*=UTF-8''${encodeURIComponent(downloadName)}`,
       "Accept-Ranges": "bytes",
+      "X-Content-Type-Options": "nosniff",
     };
 
     if (range && /^bytes=\d*-\d*$/i.test(range)) {

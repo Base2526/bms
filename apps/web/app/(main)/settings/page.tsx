@@ -62,7 +62,6 @@ type FileRow = {
   mimetype: string | null;
   size: number;
   checksum: string;
-  relpath: string;
   created_at: string;
   updated_at: string;
 };

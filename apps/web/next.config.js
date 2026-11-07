@@ -10,6 +10,8 @@ const isProd = process.env.NODE_ENV === "production";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Do not advertise the framework/version family in every HTTP response.
+  poweredByHeader: false,
   experimental: {
     // appDir: true,
     optimizePackageImports: ['antd'],
