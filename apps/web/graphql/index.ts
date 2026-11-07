@@ -6,6 +6,7 @@ import { bmsPosDeviceTypeDefs } from "./bmsPosDevice";
 import { bmsMobileOperationsTypeDefs } from "./bmsMobileOperations";
 import { bmsTaxReportsTypeDefs } from "./bmsTaxReports";
 import { bmsExpenseDocumentsTypeDefs } from "./bmsExpenseDocuments";
+import { bmsBankReconciliationTypeDefs } from "./bmsBankReconciliation";
 import { bmsBranchRequisitionsTypeDefs } from "./bmsBranchRequisitions";
 import { bmsBoardGameAnalyticsTypeDefs } from "./bmsBoardGameAnalytics";
 import { bmsOperationChecklistsTypeDefs, bmsOperationChecklistsResolvers } from "./bmsOperationChecklists";
@@ -26,7 +27,7 @@ function mergeResolvers(base:any, extra:any){
 
 // ฝั่ง Web/HTTP เอาเฉพาะ coreTypeDefs เพื่อให้สคีมาครบ
 // ส่วน Subscription/Resolvers รันที่บริการ WS แยกอยู่แล้ว
-export const mergedTypeDefs = [coreTypeDefs, typeDefs, bmsPosDeviceTypeDefs, bmsMobileOperationsTypeDefs, bmsTaxReportsTypeDefs, bmsExpenseDocumentsTypeDefs, bmsBranchRequisitionsTypeDefs, bmsBoardGameAnalyticsTypeDefs];
+export const mergedTypeDefs = [coreTypeDefs, typeDefs, bmsPosDeviceTypeDefs, bmsMobileOperationsTypeDefs, bmsTaxReportsTypeDefs, bmsExpenseDocumentsTypeDefs, bmsBankReconciliationTypeDefs, bmsBranchRequisitionsTypeDefs, bmsBoardGameAnalyticsTypeDefs];
 mergedTypeDefs.push(bmsOperationChecklistsTypeDefs);
 mergedTypeDefs.push(bmsOperationTeamTypeDefs);
 mergedTypeDefs.push(bmsOperationProductionTypeDefs);

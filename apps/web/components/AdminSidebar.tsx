@@ -269,6 +269,7 @@ const NAV_ICONS: Record<string, React.ReactNode> = {
   'finance.receivables': <AuditOutlined />,
   'finance.tax-documents': <FileTextOutlined />,
   'finance.expenses': <AuditOutlined />,
+  'finance.bank-reconciliation': <BankOutlined />,
   'finance.commission': <PercentageOutlined />,
   'finance.reports': <BarChartOutlined />,
   'shopfloor.pharmacy-queue': <AlertOutlined />,

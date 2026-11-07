@@ -124,6 +124,9 @@ before changing that domain.
   refuses cancel/return/refund with an active tax document.
 - Expenses (`10.11`): input VAT only on a valid `TAX_INVOICE`; corrections are `VOID`. Supplier
   notes (`10.37`) store positive differences, claim in the month received, move no cash/stock.
+- Bank reconciliation (`10.110`) is a feature-flagged evidence sidecar: statement import and
+  human-confirmed links never update payment, AR, expense, refund, settlement, tax or ledger rows.
+  Generic file download must not bypass its dedicated tenant/RBAC route.
 - Receipt-QR invoice requests (`10.38`–`10.39`): tenant/order from the signature, hashed tracking
   secret, 3 submissions within 168 h, staff issue with `tax.document.issue` + branch + reviewed
   version. PDF email (`10.58`) is an outbox committed with the invoice; failure never undoes issuance;

@@ -91,6 +91,7 @@ export type AdminNavigation = {
 };
 
 const always = () => true;
+const bankReconciliationEnabled = process.env.NEXT_PUBLIC_BMS_BANK_RECONCILIATION_ENABLED === "true";
 
 /**
  * `followup-queue` renders for followup.view OR retention.view — the retention board is a separate
@@ -282,6 +283,11 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
   {
     id: "finance.expenses", route: "/admin/expenses", labelKey: "admin_nav.expenses",
     section: "finance", workspace: "SHOP", visible: (ctx) => ctx.can("expense.view"),
+  },
+  {
+    id: "finance.bank-reconciliation", route: "/admin/bank-reconciliation", labelKey: "admin_nav.bank_reconciliation",
+    section: "finance", workspace: "SHOP",
+    visible: (ctx) => bankReconciliationEnabled && ctx.can("bank_reconciliation.view"),
   },
   {
     id: "finance.commission", route: "/admin/commission", labelKey: "admin_nav.commission",

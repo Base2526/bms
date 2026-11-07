@@ -1473,6 +1473,7 @@ const en = {
     receivables: "Receivables",
     tax_documents: "Sales tax",
     expenses: "Expenses & input VAT",
+    bank_reconciliation: "Bank reconciliation",
     commission: "Sales commission",
     reports: "Reports",
     pharmacy_queue: "Pharmacy Intake Queue",

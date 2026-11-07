@@ -1475,6 +1475,7 @@ const th = {
     receivables: "ลูกหนี้การค้า",
     tax_documents: "ภาษีขาย",
     expenses: "รายจ่ายและภาษีซื้อ",
+    bank_reconciliation: "กระทบยอดธนาคาร",
     commission: "ค่าคอมพนักงาน",
     reports: "รายงาน",
     pharmacy_queue: "คิวรับยา",
