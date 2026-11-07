@@ -405,6 +405,8 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "เครื่อง POS ออฟไลน์ต้องทำอย่างไร", locale: "th", context: GUIDES, expect: "answer", expectTop: "pos.client-and-offline-support", origin: "coverage" },
   { q: "เชื่อม foodpanda และจับคู่เมนูยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "delivery-platforms.review", origin: "coverage" },
   { q: "ดูค่าคอมพนักงานยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "commission.review", origin: "coverage" },
+  { q: "นำเข้า statement แล้วกระทบยอดธนาคารยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "finance.reconcile-bank", origin: "coverage" },
+  { q: "how do I import a statement and reconcile bank transactions", locale: "en", context: GUIDES, expect: "answer", expectTop: "finance.reconcile-bank", origin: "coverage" },
   { q: "ดู audit log ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "access.review-audit", origin: "coverage" },
   { q: "เพิ่งเปิดร้านใหม่ต้องตั้งค่าอะไรก่อน", locale: "th", context: GUIDES, expect: "answer", expectTop: "onboarding.getting-started", origin: "coverage" },
   { q: "ค้นเอกสาร BMS ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "knowledge.search", origin: "coverage" },

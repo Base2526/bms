@@ -507,6 +507,123 @@ type BmsAuditEntry {
   target: String
 }
 
+type BmsBankAccount {
+  accountLast4: String!
+  bankCode: String!
+  createdAt: String
+  currency: String!
+  defaultLocationId: ID
+  displayName: String!
+  id: ID!
+  status: String!
+}
+
+input BmsBankEntryListInput {
+  accountId: ID
+  limit: Int
+  month: String
+  offset: Int
+  status: String
+}
+
+type BmsBankMatchCandidate {
+  amount: String!
+  confidence: Int!
+  label: String!
+  reference: String
+  ruleCode: String!
+  sourceDate: String!
+  sourceFingerprint: String!
+  sourceKey: String!
+  sourceType: String!
+}
+
+type BmsBankMutationResult {
+  id: ID!
+  replayed: Boolean
+  status: String!
+}
+
+type BmsBankPeriodMutationResult {
+  bankAccountId: ID!
+  periodMonth: String!
+  status: String!
+  version: Int!
+}
+
+type BmsBankReconciliationLink {
+  confidence: Int!
+  confirmedAt: String!
+  id: ID!
+  matchedAmount: String!
+  ruleCode: String!
+  sourceKey: String!
+  stale: Boolean!
+  status: String!
+  voidReason: String
+  voidedAt: String
+}
+
+type BmsBankReconciliationPeriod {
+  bankAccountId: ID!
+  closedAt: String
+  closingBalance: String
+  openingBalance: String
+  periodMonth: String!
+  reopenReason: String
+  reopenedAt: String
+  status: String!
+  version: Int!
+}
+
+type BmsBankReconciliationReadiness {
+  deterministicMatching: Boolean!
+  enabled: Boolean!
+  fileImport: Boolean!
+  humanConfirmationRequired: Boolean!
+  openBanking: String!
+  sourceMutation: Boolean!
+  supportedFormats: [String!]!
+}
+
+type BmsBankReconciliationSummary {
+  matchedAmount: String!
+  matchedCount: Int!
+  netMovement: String!
+  totalCount: Int!
+  unresolvedCount: Int!
+}
+
+type BmsBankStatementEntry {
+  amount: String!
+  balanceAfter: String
+  bankAccountId: ID!
+  counterpartyMasked: String
+  description: String!
+  direction: String!
+  id: ID!
+  importId: ID!
+  matchedAmount: String!
+  postedOn: String!
+  reference: String
+  status: String!
+}
+
+type BmsBankStatementImport {
+  accountLast4: String!
+  accountName: String!
+  bankAccountId: ID!
+  committedAt: String
+  createdAt: String!
+  id: ID!
+  originalFilename: String!
+  periodEnd: String!
+  periodStart: String!
+  rowCount: Int!
+  status: String!
+  voidReason: String
+}
+
 type BmsBilling {
   plan: BmsPlan!
   plans: [BmsPlan!]!
@@ -1173,6 +1290,13 @@ input BmsCommissionRuleInput {
   scope: String
 }
 
+input BmsConfirmBankMatchInput {
+  entryId: ID!
+  matchedAmount: String!
+  sourceFingerprint: String!
+  sourceKey: String!
+}
+
 type BmsControlReport {
   absoluteCashVariance: Float!
   cashIn: Float!
@@ -1388,6 +1512,14 @@ type BmsCouponSummary {
   discountThisMonth: Float!
   redemptionsThisMonth: Int!
   topCoupons: [BmsTopCoupon!]!
+}
+
+input BmsCreateBankAccountInput {
+  accountNumber: String!
+  bankCode: String!
+  currency: String
+  defaultLocationId: ID
+  displayName: String!
 }
 
 input BmsCreateExpenseDocumentInput {
@@ -10015,6 +10147,7 @@ type Mutation {
   Licensed pharmacist only (users.is_licensed_pharmacist); version pins the text that was read
   """
   bmsApprovePharmacyGuidance(id: ID!, version: Int!): BmsPharmacyGuidanceTemplate!
+  bmsArchiveBankAccount(id: ID!): BmsBankMutationResult!
 
   """ปิดใช้งาน ไม่ใช่ลบ — force = ปิดทั้งที่ยังมีสินค้าเปิดขายผูกอยู่"""
   bmsArchiveKitchenStation(force: Boolean = false, id: ID!): BmsKitchenStation!
@@ -10036,12 +10169,16 @@ type Mutation {
   bmsChecklistCommand(input: BmsChecklistCommandInput!): BmsChecklistCommandResult!
   bmsChecklistFollowup(input: BmsChecklistFollowupInput!): BmsChecklistCommandResult!
   bmsClearKitchenStationSla(station: String!): Boolean!
+  bmsCloseBankReconciliationPeriod(accountId: ID!, confirmed: Boolean!, month: String!): BmsBankPeriodMutationResult!
   bmsClosePosShift(countedCash: Float!, note: String, shiftId: ID!): BmsCloseShiftResult!
   bmsCommissionRule(input: BmsCommissionRuleInput!): BmsMobileCommissionRuleActionResult!
+  bmsCommitBankStatementImport(confirmed: Boolean!, id: ID!): BmsBankMutationResult!
   bmsCompleteOrder(id: ID!): Boolean!
+  bmsConfirmBankMatch(confirmed: Boolean!, input: BmsConfirmBankMatchInput!): BmsBankMutationResult!
   bmsConfirmInventoryValue(input: BmsInventoryOpeningInput!): BmsCostingActionResult!
   bmsConfirmMenuNetProfit(input: BmsMenuProfitInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
   bmsConfirmPayment(id: ID!): BmsPaymentResult!
+  bmsCreateBankAccount(input: BmsCreateBankAccountInput!): BmsBankAccount!
   bmsCreateExpenseDocument(input: BmsCreateExpenseDocumentInput!): BmsExpenseDocument!
   bmsCreateInboxDiagnosticMessage(body: String, channel: String!): BmsInboxDiagnosticMessageResult!
   bmsCreateKitchenStation(input: BmsKitchenStationInput!): BmsKitchenStation!
@@ -10080,6 +10217,7 @@ type Mutation {
   bmsGenerateInStoreBarcode: String!
   bmsGenerateMedicationSuggestions(assessmentId: ID!): BmsPharmacyAssessment!
   bmsGenerateReport(input: BmsGenerateReportInput!): BmsGenerateReportResult!
+  bmsIgnoreBankStatementEntry(confirmed: Boolean!, id: ID!, reason: String!): BmsBankMutationResult!
   bmsImportProducts(commit: Boolean = false, items: [BmsProductImportRowInput!]!): BmsProductImportResult!
   bmsImprovementCommand(input: BmsImprovementInput!): BmsChecklistCommandResult!
   bmsIssueFullTaxInvoice(buyer: BmsTaxInvoiceBuyerInput!, orderId: ID!): BmsIssueFullTaxInvoiceResult!
@@ -10220,6 +10358,7 @@ type Mutation {
   bmsRemoveConversationHelper(id: ID!, userId: ID!): Boolean!
   bmsRenameProductCategory(id: ID!, name: String!): BmsProductCategory!
   bmsRenameRestaurantArea(areaId: ID!, name: String!): BmsRestaurantArea!
+  bmsReopenBankReconciliationPeriod(accountId: ID!, confirmed: Boolean!, month: String!, reason: String!): BmsBankPeriodMutationResult!
   bmsReorderFromOrder(id: ID!): BmsReorderResult!
   bmsReorderRestaurantAreas(locationId: ID!, orderedAreaIds: [ID!]!): [BmsRestaurantArea!]!
   bmsReplaceProductPriceTiers(input: BmsReplacePriceTiersInput!): [BmsProductPriceTier!]!
@@ -10344,6 +10483,8 @@ type Mutation {
   bmsUpsertStoreProfile(input: BmsStoreProfileInput!): BmsStoreProfile!
   bmsVerifyPaymentSlip(id: ID!): BmsSlipVerification
   bmsVerifyShopSignup(token: String!): BmsVerifyShopSignupResult!
+  bmsVoidBankMatch(confirmed: Boolean!, id: ID!, reason: String!): BmsBankMutationResult!
+  bmsVoidBankStatementImport(confirmed: Boolean!, id: ID!, reason: String!): BmsBankMutationResult!
   bmsVoidExpenseDocument(id: ID!, reason: String!): BmsVoidExpenseDocumentResult!
   bmsWorkAssistant(input: BmsWorkAssistantInput!): BmsWorkAssistantResult!
   bmsWriteOffArInvoice(invoiceId: ID!, reason: String!): BmsArWriteOffResult!
@@ -10671,6 +10812,14 @@ type Query {
   bmsArOutstanding: BmsArOutstanding!
   bmsAssignableStaff: [BmsStaffRef!]!
   bmsAuditLog(limit: Int = 100): [BmsAuditEntry!]!
+  bmsBankAccounts(includeArchived: Boolean): [BmsBankAccount!]!
+  bmsBankMatchCandidates(entryId: ID!): [BmsBankMatchCandidate!]!
+  bmsBankReconciliationLinks(entryId: ID!): [BmsBankReconciliationLink!]!
+  bmsBankReconciliationPeriods(accountId: ID): [BmsBankReconciliationPeriod!]!
+  bmsBankReconciliationReadiness: BmsBankReconciliationReadiness!
+  bmsBankReconciliationSummary(accountId: ID, month: String): BmsBankReconciliationSummary!
+  bmsBankStatementEntries(input: BmsBankEntryListInput!): [BmsBankStatementEntry!]!
+  bmsBankStatementImports(accountId: ID, limit: Int): [BmsBankStatementImport!]!
   bmsBilling: BmsBilling!
   bmsBoardGameAnalytics(input: BmsBoardGameAnalyticsInput!): BmsBoardGameAnalyticsResult!
   bmsBoardGameBranchHours(locationId: ID!): BmsBoardGameBranchHoursResult!

@@ -1474,6 +1474,18 @@ it, how its stock is consumed) independently of how many units are on a shelf.
   prior snapshots/buckets stay unknown. Keep post-commit credit-note issuance separate and never
   change the financial refund/stock calculation to make reporting evidence look complete.
 
+- **Bank reconciliation (`10.110`) is an evidence sidecar, not a posting engine.** It is disabled
+  unless both server and public rollout flags are explicitly enabled. Statement files are private,
+  tenant-owned, size/row bounded, formula-free, hash-deduplicated and downloadable only through the
+  dedicated `bank_reconciliation.view` route; the generic sequential file route must fail closed.
+  Imported rows become reviewable only after explicit commit and are immutable thereafter. Candidate
+  matching is deterministic, bounded and propose-only; a reviewer with `bank_reconciliation.review`
+  confirms the exact source fingerprint and amount. Never mutate or infer authority over payment,
+  AR, expense, refund, delivery-settlement, tax, stock or accounting rows. Ignore, void, close and
+  reopen require a reason/confirmation where applicable and audit in the same tenant transaction.
+  Month close rejects unresolved/stale/partial rows and known balance differences. Open Banking
+  remains `NOT_CONFIGURED` until a real provider contract and credentials exist; do not simulate it.
+
 - **Operating-cost review (`10.64`) is not a ledger.** Require report.view + expense.view +
   delivery.settlement.view and unrestricted all-branch access; writes also require expense.manage,
   human confirmation and reason. Source-derived amounts, fingerprints, optimistic versions, exact

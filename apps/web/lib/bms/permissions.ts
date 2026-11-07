@@ -213,6 +213,12 @@ export const BMS_PERMISSIONS = [
   // เอกสารรายจ่าย: ภาษีซื้อ ค่าใช้จ่าย หัก ณ ที่จ่าย — seed ที่ 10.11 (Manager)
   "expense.view",
   "expense.manage",
+  // Bank reconciliation is evidence-only. Import/review/month-close are kept
+  // separate because each action has a different financial-control boundary.
+  "bank_reconciliation.view",
+  "bank_reconciliation.import",
+  "bank_reconciliation.review",
+  "bank_reconciliation.close",
 ] as const;
 export type BmsPermission = (typeof BMS_PERMISSIONS)[number];
 

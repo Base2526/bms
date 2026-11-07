@@ -270,11 +270,25 @@ const ARCHIVED_FINANCIAL_EVIDENCE = ["bms_tax_document_actions", "bms_tax_period
   "bms_menu_profit_allocations", // Confirmed report evidence; explicit refresh and stale fingerprint checks.
   "bms_cost_allocations", // Append-only management allocation; explicit report refresh, stale preview/version checks, no live money change.
 ];
+
+/**
+ * Operator-owned bank-reconciliation workflow. The page reads with cache-and-network on open,
+ * exposes a manual reload, and refetches after every mutation. These rows are financial evidence,
+ * not POS/accounting authorities, and deliberately have no cross-device realtime subscriber.
+ */
+const BANK_RECONCILIATION_EVIDENCE = [
+  "bms_bank_accounts",
+  "bms_bank_statement_imports",
+  "bms_bank_statement_entries",
+  "bms_bank_reconciliation_links",
+  "bms_bank_reconciliation_periods",
+];
 const CLASSIFIED = new Map<string, string>();
 for (const table of ["bms_branch_requisitions", "bms_branch_requisition_items", "bms_branch_requisition_events", "bms_branch_requisition_transfers", "bms_branch_requisition_purchases"]) {
   CLASSIFIED.set(table, "Requisition planning uses explicit/post-write refresh and optimistic versions; stock transfers retain their existing events. No realtime subscriber in this release.");
 }
 for (const [reason, tables] of [
+  ["bank-reconciliation evidence; cache-and-network on open plus manual/post-write refresh", BANK_RECONCILIATION_EVIDENCE],
   ["immutable financial archive; explicit read and post-write refresh", ARCHIVED_FINANCIAL_EVIDENCE],
   ["child of an aggregate that already emits", CHILD_OF_AGGREGATE],
   ["ops/telemetry, not a mobile-visible business state", OPS_TELEMETRY],
@@ -362,6 +376,16 @@ test("tax request email coverage is backed by authoritative polling and post-act
   assert.match(panel, /message\.success\([\s\S]*?await load\(\)/);
   assert.match(service, /FROM bms_tax_request_emails e WHERE e\.tenant_id=r\.tenant_id AND e\.request_id=r\.id/);
   assert.match(service, /ORDER BY e\.created_at DESC,e\.id DESC LIMIT 1/);
+});
+
+test("bank reconciliation coverage is backed by open/manual/post-write refresh", () => {
+  const page = read("apps/web/app/(admin)/admin/bank-reconciliation/page.tsx");
+  assert.match(page, /fetchPolicy: "cache-and-network"/);
+  assert.match(page, /const refresh = async \(\) => \{[\s\S]*boot\.refetch\(\)[\s\S]*entries\.refetch\(\)/);
+  assert.match(page, /<Button icon=\{<ReloadOutlined \/>\} onClick=\{\(\) => void refresh\(\)\} \/>/);
+  for (const table of BANK_RECONCILIATION_EVIDENCE) {
+    assert.equal(CLASSIFIED.get(table), "bank-reconciliation evidence; cache-and-network on open plus manual/post-write refresh");
+  }
 });
 
 test("a table that gained a trigger is removed from the exclusion lists", () => {

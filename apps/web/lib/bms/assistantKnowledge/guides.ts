@@ -1266,6 +1266,16 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     warnings: [["อย่าใช้ rule ปัจจุบันย้อนหลังแทน snapshot ตามช่วงมีผล"], ["Do not apply today's rule retroactively over effective-dated results."]], relatedCapabilityIds: ["commission.staff"],
   }),
   menuGuide({
+    id: "finance.reconcile-bank", module: "finance", route: "/admin/bank-reconciliation",
+    title: ["กระทบยอดรายการธนาคาร", "Reconcile bank statement entries"],
+    summary: ["นำเข้า statement ตรวจรายการ จับคู่กับเอกสารในระบบ และปิดยอดรายเดือนโดยมีหลักฐานตรวจสอบย้อนหลัง", "Import statements, review entries, match them to system records, and close monthly reconciliation with an audit trail."],
+    aliases: [["กระทบยอดธนาคาร", "นำเข้า statement", "จับคู่เงินเข้าออก", "ปิดยอดธนาคาร"], ["bank reconciliation", "import bank statement", "match bank transactions", "monthly bank close"]],
+    requiredPermissions: ["bank_reconciliation.view"],
+    prerequisites: [["ต้องเปิด feature flag ของระบบและรัน migration 10.110", "การนำเข้า ตรวจจับคู่ และปิดเดือนต้องมีสิทธิ์เฉพาะของแต่ละงาน"], ["The feature flags must be enabled and migration 10.110 applied.", "Importing, reviewing matches, and closing a month each require their corresponding permission."]],
+    steps: [["เพิ่มบัญชีโดยเก็บเฉพาะเลขท้ายและ fingerprint", "นำเข้า CSV/Excel แล้วตรวจตัวอย่างก่อนยืนยัน", "ตรวจและยืนยันรายการที่ระบบเสนอ หรือข้ามพร้อมเหตุผล", "ตรวจว่ายอดยกมาและยอดเคลื่อนไหวตรงกับยอดคงเหลือ แล้วปิดเดือนและส่งออกชุดบัญชี"], ["Add an account using only its last four digits and fingerprint.", "Import CSV/Excel and review the preview before committing.", "Review and confirm suggested matches, or ignore an entry with a reason.", "Verify opening balance plus movements equals closing balance, then close the month and export the accountant pack."]],
+    warnings: [["ปัจจุบันรองรับการจับคู่สกุล THB เท่านั้น", "รายการธนาคารเป็นหลักฐานประกอบและไม่แก้ยอดขาย รายจ่าย ภาษี ลูกหนี้ หรือเงินคืน", "ทุกคำแนะนำต้องให้คนยืนยัน ห้ามถือว่า Open Banking เชื่อมแล้วเมื่อสถานะเป็น NOT_CONFIGURED"], ["Matching currently supports THB only.", "Bank entries are supporting evidence and never modify sales, expenses, tax, receivables, or refunds.", "Every suggestion requires human confirmation; NOT_CONFIGURED does not mean Open Banking is connected."]],
+  }),
+  menuGuide({
     id: "inbox.run-realtime-diagnostics", module: "inbox", route: "/admin/inbox/realtime-diagnostics",
     title: ["ทดสอบ Realtime Inbox", "Run Inbox realtime diagnostics"], summary: ["ทดสอบ event และข้อความวินิจฉัยแบบ tenant-scoped โดยไม่ส่งหาลูกค้าจริง", "Test tenant-scoped events and diagnostic messages without contacting real customers."],
     accessRequirement: "tenant_administrator", steps: [["เปิด Realtime Diagnostics", "เลือก Emit เพื่อทดสอบ event หรือ Create Msg เพื่อสร้างข้อมูลวินิจฉัย", "ตรวจผลใน Inbox"], ["Open Realtime Diagnostics.", "Use Emit for an event or Create Msg for diagnostic rows.", "Verify the result in Inbox."]],

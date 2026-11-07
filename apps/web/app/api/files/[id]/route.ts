@@ -288,6 +288,7 @@ async function handleGET(
     // checks. The generic sequential-id route must never be an alternate path.
     if (
       row.filename?.includes("operation-evidence-") ||
+      row.filename?.includes("bank-statement-") ||
       row.is_pharmacy_evidence ||
       row.is_operation_evidence ||
       row.is_support_bundle ||
