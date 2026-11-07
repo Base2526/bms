@@ -38,7 +38,7 @@ test("inventory PostgreSQL SQL, RLS, partial receipts, migrations and exact fore
       CREATE TABLE bms_branch_requisitions(tenant_id uuid, id uuid, location_id uuid, status text);
       CREATE TABLE bms_branch_requisition_items(tenant_id uuid, id bigint, requisition_id uuid, product_sku text, size text);
       CREATE TABLE bms_branch_requisition_purchases(tenant_id uuid, item_id bigint, po_item_id bigint, qty int);
-      CREATE TABLE bms_stock_transfers(tenant_id uuid, id uuid, from_location_id uuid, to_location_id uuid, status text, sent_at timestamptz);
+      CREATE TABLE bms_stock_transfers(tenant_id uuid, id uuid, from_location uuid, to_location uuid, status text, sent_at timestamptz);
       CREATE TABLE bms_stock_movements(tenant_id uuid, location_id uuid, product_sku text, size text, type text, qty int, created_at timestamptz);
       CREATE TABLE bms_inventory_wastage(tenant_id uuid, location_id uuid, product_sku text, size text, qty int, created_at timestamptz);
       CREATE TABLE bms_suppliers(tenant_id uuid, id uuid, name text);

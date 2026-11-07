@@ -42,6 +42,9 @@ test("anomaly detection is review-only and checks the stock integrity boundaries
   for(const evidence of ["RESERVATION_UNATTRIBUTED","LOT_TOTAL_MISMATCH","STALE_TRANSFER","STALE_PURCHASE_ORDER","UNUSUAL_WASTAGE","MISSING_LOCATION_POLICY"]){
     assert.match(anomalies,new RegExp(evidence));
   }
+  assert.match(anomalies,/t\.from_location AS from_location_id/);
+  assert.match(anomalies,/t\.to_location AS to_location_id/);
+  assert.doesNotMatch(anomalies,/t\.from_location_id|t\.to_location_id/);
   assert.doesNotMatch(anomalies,/UPDATE bms_inventory|INSERT INTO bms_stock_movements/);
 });
 
