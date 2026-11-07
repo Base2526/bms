@@ -3,7 +3,7 @@ export const runtime = "nodejs";
 
 import { ApolloServer } from "@apollo/server";
 import { startServerAndCreateNextHandler } from "@as-integrations/next";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { buildBmsGraphqlSchema } from "@/graphql/schema";
 
@@ -25,13 +25,15 @@ import { uploadProcess } from "graphql-upload-nextjs";
 import { metricsPlugin } from "@/graphql/metricsPlugin";
 import { ensureBmsGraphqlErrorCode } from "@/graphql/mobileErrorContract";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { graphqlRequestLimitsRule } from "@/graphql/requestLimits";
 
 const schema = buildBmsGraphqlSchema();
 
 const server = new ApolloServer({
   schema,
   introspection: process.env.NODE_ENV !== "production",
-  csrfPrevention: false,
+  csrfPrevention: true,
+  validationRules: [graphqlRequestLimitsRule],
   formatError: ensureBmsGraphqlErrorCode,
   // latency/error rate ต่อ operation → /admin/system-health (fail-open, ไม่ throw)
   plugins: [metricsPlugin()],
@@ -141,12 +143,61 @@ const handler = startServerAndCreateNextHandler<NextRequest>(server, {
   context: createContext,
 });
 
+const MAX_GRAPHQL_JSON_BYTES = 1024 * 1024;
+const MAX_GRAPHQL_MULTIPART_BYTES = 64 * 1024 * 1024;
+const MAX_GRAPHQL_FILE_BYTES = 25 * 1024 * 1024;
+
+const SAFE_GRAPHQL_UPLOAD_TYPES = [
+  "image/jpeg", "image/png", "image/gif", "image/webp", "image/avif",
+  "image/bmp", "image/tiff", "image/heic", "image/heif",
+  "audio/webm", "audio/ogg", "audio/mpeg", "audio/wav", "audio/mp4", "audio/aac",
+  // MediaRecorder commonly labels audio containers as video before the
+  // resolver normalizes them to their audio MIME.
+  "video/webm", "video/mp4",
+];
+
+function requestLength(request: NextRequest): number | null {
+  const raw = request.headers.get("content-length");
+  if (!raw) return null;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function isSameOriginBrowserRequest(request: NextRequest): boolean {
+  const origin = request.headers.get("origin");
+  if (!origin) return true; // native/server clients do not send Origin
+  try {
+    const originHost = new URL(origin).host.toLowerCase();
+    const forwardedHost = request.headers.get("x-forwarded-host")?.split(",", 1)[0]?.trim();
+    const requestHost = (forwardedHost || request.headers.get("host") || request.nextUrl.host)
+      .toLowerCase();
+    return originHost === requestHost;
+  } catch {
+    return false;
+  }
+}
+
 const requestHandler = async (request: NextRequest) => {
   const contentType = request.headers.get("content-type") || "";
+  const length = requestLength(request);
+
+  if (request.method === "POST" && !isSameOriginBrowserRequest(request)) {
+    return NextResponse.json({ errors: [{ message: "Cross-origin request denied" }] }, { status: 403 });
+  }
 
   if (contentType.includes("multipart/form-data")) {
+    if (length !== null && length > MAX_GRAPHQL_MULTIPART_BYTES) {
+      return NextResponse.json({ errors: [{ message: "Upload request is too large" }] }, { status: 413 });
+    }
     const context = await createContext(request);
-    return uploadProcess(request, context, server as any);
+    return uploadProcess(request, context, server as any, {
+      allowedTypes: SAFE_GRAPHQL_UPLOAD_TYPES,
+      maxFileSize: MAX_GRAPHQL_FILE_BYTES,
+    });
+  }
+
+  if (length !== null && length > MAX_GRAPHQL_JSON_BYTES) {
+    return NextResponse.json({ errors: [{ message: "GraphQL request is too large" }] }, { status: 413 });
   }
 
   return handler(request);

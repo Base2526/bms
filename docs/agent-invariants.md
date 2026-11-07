@@ -822,7 +822,12 @@ deployment profile. The operator contract and remaining release gates live in
   writes through the storage driver's stream API, and derives size/SHA-256 on that path. Local
   storage cleans a failed partial write; S3 uses bounded multipart parts and aborts a failed upload.
   The private `files` row and release row commit together, and a validation/pre-commit failure
-  removes the unreferenced object.
+  removes the unreferenced object. Purging an installer is a separate irreversible platform-admin,
+  same-origin, explicitly confirmed action: the release must already be `hidden` and must not be
+  `latest`. Delete the object through the configured storage driver, verify it is absent, mark the
+  file deleted and audit the actor/version/platform/package/size/checksum in one transaction. Keep
+  the release/file rows as a small tombstone; never turn generic `/api/files/[id]` deletion into an
+  alternate release purge path.
 - **Managed Runtime components publish as one signed immutable set, not as installer rows.**
   `/admin/retail-local-runtime-releases` uploads `release.jws.json`, `SHA256SUMS` and the referenced
   `*.artifact` files through the raw Pages API

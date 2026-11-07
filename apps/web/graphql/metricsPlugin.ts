@@ -28,6 +28,17 @@ const EXPECTED_CODES = new Set([
   "PERSISTED_QUERY_NOT_FOUND",
 ]);
 
+// Apollo 4.13 tightened the listener error type to the formatted transport
+// shape even though runtime errors still carry these standard GraphQL fields.
+// Keep logging structural and read-only instead of coupling it to one Apollo
+// patch release's exported error type.
+type LoggedGraphqlError = {
+  extensions?: Record<string, unknown>;
+  message?: string;
+  stack?: string;
+  path?: readonly (string | number)[];
+};
+
 export function metricsPlugin<TContext extends BaseContext>(): ApolloServerPlugin<TContext> {
   return {
     async requestDidStart(): Promise<GraphQLRequestListener<TContext>> {
@@ -40,7 +51,7 @@ export function metricsPlugin<TContext extends BaseContext>(): ApolloServerPlugi
           hadError = true;
           // เก็บ code แรกพอ — 1 request ที่พังมักพังด้วยเหตุเดียว และ field นี้
           // ใช้จัดกลุ่มภาพรวม ไม่ใช่ debug รายเคส (รายเคสดูที่ system_logs เดิม)
-          const first = requestContext.errors?.[0];
+          const first = requestContext.errors?.[0] as LoggedGraphqlError | undefined;
           const code = first?.extensions?.code;
           errorCode = typeof code === "string" ? code : "INTERNAL_SERVER_ERROR";
 

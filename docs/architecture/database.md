@@ -202,6 +202,22 @@ adds canonical lowercase/trim checks and unique indexes for both email and usern
 historical case-insensitive duplicates exist rather than merging security principals automatically;
 operators must resolve those records before retrying the migration.
 
+### Stored-file ownership (`9.26`, `9.27`, `10.109`)
+
+`files.visibility` is the anonymous-read boundary and defaults to `private`; `tenant_id` identifies
+the owning shop for BMS artifacts. Migration `10.109` adds nullable `owner_user_id → users.id` for
+personal/community uploads because tenant equality alone does not authorize one user to list or
+change another user's file. The generic settings panel lists only the signed-in user's unreferenced
+files. Global file inventory and its rename/delete operations are platform-admin only.
+
+Chat image/audio rows are backfilled to private and their owner is recovered from the sending
+message where available. Streaming also checks current chat membership, so ownership alone does not
+grant a former/non-member access. Public storefront/post/avatar images remain public. Identifiable
+legacy key, database, config, script, installer and path-like artifacts are reclassified private and
+the generic sequential-id route denies them; supported release artifacts continue through the
+platform-admin release download route. Clinical, operation, support-bundle and release references
+likewise cannot use the generic route.
+
 ## Tables by module
 
 ### Mail log provider (`7.40`, `10.59`)

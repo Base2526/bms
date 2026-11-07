@@ -48,21 +48,22 @@ are in [agent-invariants.md](agent-invariants.md). Update this file when a rule 
   crash on a machine without runtime env, and any importer could read the unchecked value. Never
   write `process.env.X || "literal"` for a key, and never export the resolved secret. Enforced by
   `scripts/secret-fallback-contract.test.mts`.
-- **A private file belongs to one shop (9.27).** `files.tenant_id` is derived from whichever BMS
-  table references the file; `/api/files/[id]` compares it against the acting tenant from
-  `authorizeAdminRoute(null)` (so a signed drill-down cookie works) and answers **404, not 403**, on a
-  mismatch — 403 would confirm to an outsider that the id exists. `NULL` means "not owned by a shop"
-  (legacy community uploads) and still needs only a session. Every BMS upload path binds the owner
-  from a trusted source: the session, the authenticated device, or the signed checkout token — never
-  the request body.
-- **`files.visibility` decides who may read an upload (9.26).** `/api/files/[id]` serves a `public`
-  row with no session (storefront product images, the legacy community uploads) and demands one for
-  `private`; a missing or unknown value is treated as private, so the route fails closed. Listing and
-  uploading (`GET`/`POST /api/files`) always require a session — the listing returned every file's
-  `relpath` to anyone. `persistWebFile`/`persistBuffer` default to `private` and only
-  `persistUploadStream` stays `public`; a new upload path that forgets to choose gets the safe one.
-  Slips, Inbox attachments, generated reports and prescription images are `private`. Enforced by
-  `scripts/file-visibility-contract.test.mts`.
+- **A private file has an authoritative owner (9.27, 10.109).** `files.tenant_id` is derived from
+  whichever BMS table references the file; `/api/files/[id]` compares it against the acting tenant
+  from `authorizeAdminRoute(null)` (so a signed drill-down cookie works) and answers **404, not 403**,
+  on a mismatch. Personal uploads also bind `owner_user_id` from the authenticated session; users
+  list/rename/delete only their own unreferenced scratch files. Community chat images/audio are
+  private and stream only to a current `chat_members` row. Platform file inventory is platform-admin
+  only. No owner or tenant ever comes from request input.
+- **`files.visibility` decides who may read an upload (9.26, 10.109).** `/api/files/[id]` serves a
+  `public` row with no session only for content that must render publicly (storefront/post/avatar
+  images); a missing or unknown value is private. All storage helpers, including streamed GraphQL
+  uploads, default to private. Public callers must opt in and GraphQL media callers set explicit MIME
+  and byte limits. Chat, slips, Inbox attachments, generated reports and clinical evidence are
+  private; clinical/operations/support/release assets remain inaccessible through the generic
+  sequential-id route because their dedicated routes enforce narrower authority. Legacy database,
+  key, config, script, installer and path-like artifacts are reclassified private and denied by the
+  generic route. Enforced by `file-visibility-contract` and `graphql-request-security-contract`.
 - **Clinical evidence is health data.** Prescription images never go through
   `/api/files/[id]` (no auth, sequential ids); they stream from
   `/api/bms/pharmacy/evidence/[id]/file` behind a session, `pharmacy.evidence.read`, and a tenant

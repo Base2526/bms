@@ -41,7 +41,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD?missing}
       POSTGRES_DB: ${POSTGRES_DB?missing}
     ports:
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
+      # Host access is for local maintenance only. Binding every interface makes the
+      # database reachable from the LAN (and possibly the internet) and bypasses Caddy.
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     # pg_stat_statements: เก็บสถิติ query (total/mean exec time, calls) ไว้หา query ที่กินเวลา DB
     # รวมมากที่สุด — shared_preload_libraries ต้อง restart container ถึงมีผล (โหลดตอน process
     # เริ่มเท่านั้น) แค่ preload ยังไม่พอ ต้องรัน `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;`
@@ -62,7 +64,8 @@ services:
       PGADMIN_DEFAULT_EMAIL: admin@example.com
       PGADMIN_DEFAULT_PASSWORD: admin
     ports:
-      - "${PGADMIN_HOST_PORT:-5050}:80"
+      # Keep the existing localhost workflow without exposing pgAdmin to the network.
+      - "127.0.0.1:${PGADMIN_HOST_PORT:-5050}:80"
     depends_on:
       - postgres
 

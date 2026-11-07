@@ -10,6 +10,8 @@
 import { cookies } from "next/headers";
 import { query } from "@/lib/db";
 import { verifyAdminSession } from "@/lib/auth/server";
+import { refreshAdminIdentity } from "@/lib/auth/adminIdentity";
+import { isAdminSessionActive } from "@/lib/redisSession";
 import { ACT_TENANT_COOKIE, verifyActTenant, type JWTPayload } from "@/lib/auth/token";
 import { DEFAULT_TENANT_ID } from "./tenant";
 import { requirePermission, type BmsPermission } from "./permissions";
@@ -41,13 +43,29 @@ export type AdminRouteAuth =
  * ไปเรียก `verifyAdminSession()` เองแล้วลืมส่วน acting-tenant
  */
 export async function authorizeAdminRoute(permission: BmsPermission | null): Promise<AdminRouteAuth> {
-  const admin = verifyAdminSession();
+  const session = verifyAdminSession();
+  if (!session) return { ok: false, status: 401 };
+  if (!(await isAdminSessionActive(session.jti))) return { ok: false, status: 401 };
+
+  // JWT proves who signed in; current role, tenant, platform status and session
+  // version still come from Postgres on every sensitive REST request. This
+  // mirrors the GraphQL context and closes the window after logout/demotion.
+  const admin = await refreshAdminIdentity(session);
   if (!admin) return { ok: false, status: 401 };
 
   const acting = verifyActTenant(cookies().get(ACT_TENANT_COOKIE)?.value);
-  const tenantId = acting?.actTenantId && String(acting.by) === String(admin.id)
-    ? acting.actTenantId
-    : admin.tenant_id || DEFAULT_TENANT_ID;
+  let tenantId = admin.tenant_id || DEFAULT_TENANT_ID;
+  if (
+    acting?.actTenantId &&
+    String(acting.by) === String(admin.id) &&
+    admin.is_platform_admin === true
+  ) {
+    const tenant = await query<{ id: string }>(
+      `SELECT id FROM bms_tenants WHERE id = $1 LIMIT 1`,
+      [acting.actTenantId]
+    );
+    if (tenant.rows[0]) tenantId = tenant.rows[0].id;
+  }
 
   const ctx: AdminRouteCtx = { scope: "admin", admin: { ...admin, tenant_id: tenantId } };
 
