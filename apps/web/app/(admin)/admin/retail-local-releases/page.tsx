@@ -16,6 +16,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
   Typography,
   Upload,
   message,
@@ -23,6 +24,7 @@ import {
 import type { UploadFile } from "antd/es/upload/interface";
 import {
   CloudUploadOutlined,
+  DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
   InboxOutlined,
@@ -53,6 +55,7 @@ type ReleaseAsset = {
   release_notes: string;
   created_at: string;
   updated_at: string;
+  purged_at: string | null;
 };
 
 type InferredFileMeta = {
@@ -163,6 +166,8 @@ export default function RetailLocalReleasesPage() {
   const [uploading, setUploading] = useState(false);
   const [editing, setEditing] = useState<ReleaseAsset | null>(null);
   const [saving, setSaving] = useState(false);
+  const [purging, setPurging] = useState<ReleaseAsset | null>(null);
+  const [purgeLoading, setPurgeLoading] = useState(false);
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [inferredFile, setInferredFile] = useState<InferredFileMeta | null>(null);
   const [uploadForm] = Form.useForm();
@@ -201,6 +206,14 @@ export default function RetailLocalReleasesPage() {
     checksumPending: "คำนวณระหว่างอัปโหลด",
     saved: "บันทึกแล้ว",
     uploaded: "อัปโหลดแล้ว",
+    deleteFile: "ลบไฟล์",
+    filePurged: "ลบไฟล์แล้ว",
+    deleteTitle: "ลบไฟล์ตัวติดตั้งถาวร?",
+    deleteWarning: "การลบนี้ย้อนกลับไม่ได้ ลิงก์ดาวน์โหลดที่อ้าง release นี้จะใช้ไม่ได้ แต่ระบบจะเก็บ metadata และ audit ไว้ตรวจย้อนหลัง",
+    deleteSpace: "พื้นที่ที่คาดว่าจะคืน",
+    deleteConfirm: "ลบไฟล์และคืนพื้นที่",
+    deleted: "ลบไฟล์แล้ว คืนพื้นที่ประมาณ {size}",
+    hideBeforeDelete: "เปลี่ยนสถานะเป็น hidden และบันทึกก่อน จึงจะลบไฟล์ได้",
   } : {
     title: "Retail Local releases",
     subtitle: "Upload installers and manage the versions used by the public download page.",
@@ -231,6 +244,14 @@ export default function RetailLocalReleasesPage() {
     checksumPending: "calculated during upload",
     saved: "Saved",
     uploaded: "Uploaded",
+    deleteFile: "Delete file",
+    filePurged: "File deleted",
+    deleteTitle: "Permanently delete this installer file?",
+    deleteWarning: "This cannot be undone. Downloads pinned to this release will fail, while its metadata and audit history remain available.",
+    deleteSpace: "Estimated space reclaimed",
+    deleteConfirm: "Delete file and reclaim space",
+    deleted: "File deleted; approximately {size} reclaimed",
+    hideBeforeDelete: "Set the release to hidden and save it before deleting the file.",
   };
 
   const load = useCallback(async () => {
@@ -361,6 +382,27 @@ export default function RetailLocalReleasesPage() {
     }
   };
 
+  const purgeFile = async () => {
+    if (!purging) return;
+    setPurgeLoading(true);
+    try {
+      const result = await jsonRequest<{ freedBytes: number }>(`/api/admin/retail-local/releases/${purging.id}`, {
+        method: "DELETE",
+        body: JSON.stringify({
+          confirmation: "PURGE-RETAIL-LOCAL-RELEASE-FILE",
+          releaseId: purging.id,
+        }),
+      });
+      message.success(copy.deleted.replace("{size}", formatBytes(result.freedBytes)));
+      setPurging(null);
+      await load();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPurgeLoading(false);
+    }
+  };
+
   return (
     <main style={{ padding: "clamp(12px, 3vw, 24px)", minWidth: 0 }}>
       <Space direction="vertical" size={20} style={{ width: "100%" }}>
@@ -430,21 +472,52 @@ export default function RetailLocalReleasesPage() {
             { title: copy.access, dataIndex: "access_level", width: 130, render: (value: AccessLevel) => <Tag color={value === "trial" ? "purple" : "blue"}>{ACCESS_LABELS[value]}</Tag> },
             { title: copy.channel, dataIndex: "channel", width: 100 },
             { title: copy.file, dataIndex: "original_name", width: 260, ellipsis: true },
-            { title: copy.size, dataIndex: "size_bytes", width: 100, render: formatBytes },
+            {
+              title: copy.size,
+              dataIndex: "size_bytes",
+              width: 120,
+              render: (value: number, row: ReleaseAsset) => row.purged_at
+                ? <Typography.Text type="secondary" delete>{formatBytes(value)}</Typography.Text>
+                : formatBytes(value),
+            },
             { title: copy.checksum, dataIndex: "sha256", width: 220, render: (value: string) => <Typography.Text code copyable={{ text: value }}>{value.slice(0, 16)}...</Typography.Text> },
             { title: copy.minOs, dataIndex: "min_os", width: 220, ellipsis: true },
             { title: copy.created, dataIndex: "created_at", width: 170, render: (value: string) => new Date(value).toLocaleString() },
             {
               title: copy.actions,
-              width: 220,
+              width: 330,
               fixed: "right",
               render: (_, row) => (
                 <Space>
-                  <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)}>{copy.save}</Button>
+                  <Button
+                    size="small"
+                    icon={<EditOutlined />}
+                    disabled={Boolean(row.purged_at)}
+                    onClick={() => openEdit(row)}
+                  >
+                    {copy.save}
+                  </Button>
                   {row.status !== "hidden" && (
                     <Button size="small" icon={<DownloadOutlined />} href={`/api/retail-local/download/${row.id}`}>
                       {copy.download}
                     </Button>
+                  )}
+                  {row.purged_at ? (
+                    <Tag icon={<DeleteOutlined />}>{copy.filePurged}</Tag>
+                  ) : (
+                    <Tooltip title={row.status === "hidden" && !row.is_latest ? undefined : copy.hideBeforeDelete}>
+                      <span>
+                        <Button
+                          danger
+                          size="small"
+                          icon={<DeleteOutlined />}
+                          disabled={row.status !== "hidden" || row.is_latest}
+                          onClick={() => setPurging(row)}
+                        >
+                          {copy.deleteFile}
+                        </Button>
+                      </span>
+                    </Tooltip>
                   )}
                 </Space>
               ),
@@ -452,6 +525,31 @@ export default function RetailLocalReleasesPage() {
           ]}
         />
       </Space>
+
+      <Modal
+        title={copy.deleteTitle}
+        open={Boolean(purging)}
+        onCancel={() => { if (!purgeLoading) setPurging(null); }}
+        onOk={purgeFile}
+        okText={copy.deleteConfirm}
+        okButtonProps={{ danger: true }}
+        cancelButtonProps={{ disabled: purgeLoading }}
+        confirmLoading={purgeLoading}
+        destroyOnClose
+      >
+        {purging && (
+          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <Alert closable showIcon type="error" message={copy.deleteWarning} />
+            <Typography.Text strong>{purging.original_name}</Typography.Text>
+            <Typography.Text>
+              {purging.version} · {PLATFORM_LABELS[purging.platform]} · {PACKAGE_LABELS[purging.package_type]}
+            </Typography.Text>
+            <Typography.Text>
+              {copy.deleteSpace}: <Typography.Text strong>{formatBytes(purging.size_bytes)}</Typography.Text>
+            </Typography.Text>
+          </Space>
+        )}
+      </Modal>
 
       <Modal
         title={copy.upload}
