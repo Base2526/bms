@@ -46,7 +46,6 @@ const ROLE_COLOR: Record<string, string> = {
   Warehouse: "gold",
 };
 const roleTag = (v: string) => <Tag color={ROLE_COLOR[v] ?? "default"}>{v}</Tag>;
-
 // created_at เดิมมาเป็น epoch string (ดู bug note ใน CLAUDE.local.md) — parse ให้ทนทั้ง 2 แบบ
 function formatDate(d: string | null) {
   if (!d) return <span style={{ color: "var(--app-muted)" }}>—</span>;
@@ -133,6 +132,15 @@ function UsersList() {
   const { data: meData } = useQuery(Q_ME);
   const myId: string | undefined = meData?.bmsMe?.id;
   const myRole: string | undefined = meData?.bmsMe?.role;
+
+  // role ใน users เป็นแค่ role ของร้าน — platform admin (users.is_platform_admin) มีสิทธิ์เหนือทุกร้าน
+  // จึงแสดงป้าย Super Admin นำหน้า role ร้าน ไม่งั้นดูเหมือน Administrator ธรรมดา
+  const userRoleTags = (r: UserRow) => (
+    <Space size={4} wrap>
+      {r.is_platform_admin ? <Tag color="purple">{t("admin_users.platform_admin_tag")}</Tag> : null}
+      {roleTag(r.role)}
+    </Space>
+  );
 
   // สิทธิ์เขียน: platform admin / Administrator ผ่านเสมอ (server ก็ short-circuit ให้)
   // ส่วน role อื่นต้องมี `user.manage` — role ที่มีแค่ `user.view` จะเห็นรายชื่อแบบอ่านอย่างเดียว
@@ -257,7 +265,7 @@ function UsersList() {
       },
       { title: t("admin_users.col_email"), dataIndex: "email" },
       { title: t("admin_users.col_phone"), dataIndex: "phone", render: (v: string | null) => v || <span style={{ color: "var(--app-muted)" }}>—</span> },
-      { title: t("admin_users.col_role"), dataIndex: "role", render: roleTag },
+      { title: t("admin_users.col_role"), dataIndex: "role", render: (_: string, r: UserRow) => userRoleTags(r) },
       { title: t("admin_users.col_created"), dataIndex: "created_at", render: formatDate },
       { title: t("admin_users.col_last_login"), dataIndex: "lastLoginAt", render: (d: string | null) => d ? formatDate(d) : <span style={{ color: "var(--app-muted)" }}>{t("admin_users.never_logged_in")}</span> },
       {
@@ -329,7 +337,7 @@ function UsersList() {
                   </Space>
                 </Space>
               }
-              extra={roleTag(r.role)}
+              extra={userRoleTags(r)}
               fields={[
                 { label: t("admin_users.col_phone"), value: r.phone || "—" },
                 { label: t("admin_users.field_shop"), value: r.tenantName || "—", hidden: !r.tenantName },

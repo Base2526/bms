@@ -6615,6 +6615,7 @@ const th = {
     delete_confirm_title: "ลบผู้ใช้นี้?",
     cancel_text: "ยกเลิก",
     you_tag: "คุณ",
+    platform_admin_tag: "Super Admin",
     col_user: "ผู้ใช้",
     col_email: "อีเมล",
     col_phone: "เบอร์โทร",

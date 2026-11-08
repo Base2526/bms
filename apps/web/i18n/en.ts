@@ -6613,6 +6613,7 @@ const en = {
     delete_confirm_title: "Delete this user?",
     cancel_text: "Cancel",
     you_tag: "You",
+    platform_admin_tag: "Super Admin",
     col_user: "User",
     col_email: "Email",
     col_phone: "Phone",
