@@ -95,12 +95,7 @@ export default function QueueBoardPreferenceSettings() {
     }
   };
 
-  return <section data-queue-board-preference-settings style={{
-    padding: 12,
-    border: "1px solid var(--posx-line, #d9e2ef)",
-    borderRadius: 10,
-    background: "var(--posx-surface, #fff)",
-  }}>
+  return <section data-queue-board-preference-settings className="pos-queue-preference-settings">
     <div style={{ fontWeight: 700 }}>รูปแบบและเสียงจอเรียกคิว</div>
     <div style={{ marginTop: 3, color: "var(--posx-muted, #667085)", fontSize: 12 }}>
       ตั้งค่าเฉพาะเครื่องนี้ · ใช้ร่วมกันทั้งจอจริงและหน้าต่างทดสอบ โดยไม่ขึ้นกับการเลือกรูปแบบจอที่สอง

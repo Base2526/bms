@@ -67,7 +67,10 @@ CREATE TABLE IF NOT EXISTS bms_bank_statement_imports (
 -- Keep this named constraint outside CREATE TABLE so the migration also repairs
 -- databases that received an earlier draft of this additive migration. A voided
 -- import may legitimately have never been committed.
-DO $migration$
+-- Keep the anonymous dollar delimiter here. HeidiSQL's execute-script splitter may
+-- split a custom tagged block at the declaration semicolon and send PostgreSQL an
+-- unterminated statement.
+DO $$
 DECLARE
   constraint_name TEXT;
 BEGIN
@@ -86,7 +89,7 @@ BEGIN
     );
   END IF;
 END
-$migration$;
+$$;
 
 ALTER TABLE bms_bank_statement_imports
   DROP CONSTRAINT IF EXISTS bms_bank_statement_imports_commit_shape;
