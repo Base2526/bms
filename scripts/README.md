@@ -682,20 +682,20 @@ feature enabled with a test-only secret and HTTPS public origin. Both smokes blo
 These checks do not prove SQL execution: run `db tax-sales-report` and `db tax-backoffice-guards`
 against a restored disposable local database before deploying.
 
-ตอนนี้ (นับ 2026-10-13 ที่ `676a38a7`): **287 ไฟล์เทส** = pure **220 ไฟล์** (194 ใน `scripts/` +
-26 ใน `scripts/ai-eval/`) + DB **67 ไฟล์** (ทั้งหมดอยู่ชั้นบนสุดของ `scripts/`)
+ตอนนี้ (นับ 2026-11-09 ที่ `e989c0ab`): **420 ไฟล์ที่ตัวรันหยิบ** = pure **319 ไฟล์** (285 ชั้นบนสุดของ
+`scripts/` รวม `retail-local-migration-checksum.test.mjs` + 33 ใน `scripts/ai-eval/` + 1 ใน `scripts/infra/`)
++ DB **101 ไฟล์** (ทั้งหมดอยู่ชั้นบนสุดของ `scripts/`)
 
-ผลรัน `npm run test:pure` วันเดียวกัน: **2,609 เทส — 2,602 ผ่าน · 1 แดง · 6 ข้าม (skip)** ใช้เวลา ~51 วินาที
-· ตัวที่แดงคือ `ai-eval/restaurant-customer-assistance-contract` → *restaurant availability exposes only
-opt-in capacity groups, never table or guest identities* (บรรทัด 79): regex
-`/tableCode|tableName|checkId|occupant/` ไปเจอคำว่า `occupant` ใน **ข้อความ note ที่บอกโมเดลว่า "never
-identify a table or occupant"** ของ `return {...}` ใน service — ยังไม่ได้ตัดสินว่าแก้ที่เทสหรือที่ข้อความ
-**ห้ามอ่านว่าชุด pure เขียว** · จำนวนเทสของชุด DB ยังไม่ได้นับใหม่ (เครื่องที่นับไม่มี Postgres ให้รัน)
+ผลรัน `npm run test:pure` วันเดียวกัน: **3,480 เทส — 3,474 ผ่าน · 0 แดง · 6 ข้าม (skip)** · `exit=0` ·
+ใช้เวลา ~4 นาทีบนเครื่อง Windows ที่รัน (เครื่อง Linux/CI เร็วกว่า) · ตัวแดงของรอบ 2026-10-13
+(`ai-eval/restaurant-customer-assistance-contract`) ไม่แดงแล้ว · **ชุด DB ไม่ได้รันในรอบนี้** (เครื่องที่นับ
+ไม่มี Postgres) — จำนวนเทสของชุด DB ต้องนับจากรอบที่รันบนฐาน restore จริง
 
-ตัวรัน `scripts/run-contract-tests.mjs` เดินหาไฟล์เอง: ชั้นบนสุดของ `scripts/` + โฟลเดอร์ย่อย `ai-eval/`
-**โฟลเดอร์เดียว** (`scripts/infra/`, `scripts/testing/` ไม่ถูกเดิน) · ชื่อมี `-db-contract` = โหมด db
-ที่เหลือ = โหมด pure · ตัวรันพิมพ์จำนวนไฟล์ของโหมดเป็นบรรทัดแรก (`[gate] โหมด pure — 220 ไฟล์`) และ
-`run-contract-tests.mjs <mode> zzz-nope` บอกจำนวนไฟล์ของโหมดนั้นตอนกรองไม่ตรง
+ตัวรัน `scripts/run-contract-tests.mjs` เดินหาไฟล์เอง: `*.test.mts` ชั้นบนสุดของ `scripts/` +
+โฟลเดอร์ย่อย `ai-eval/` และ `infra/` + `retail-local-migration-checksum.test.mjs` (`scripts/testing/`
+ไม่ถูกเดิน) · ชื่อมี `-db-contract` = โหมด db ที่เหลือ = โหมด pure · ตัวรันพิมพ์จำนวนไฟล์ของโหมดเป็น
+บรรทัดแรก (`[gate] โหมด pure — 319 ไฟล์`) · `run-contract-tests.mjs <mode> --list` พิมพ์รายชื่อไฟล์ของ
+โหมดนั้นเป็น JSON และ `run-contract-tests.mjs <mode> zzz-nope` บอกจำนวนไฟล์ของโหมดนั้นตอนกรองไม่ตรง
 
 > **ตัวเลขนี้เก่าได้เร็ว** — นับใหม่ก่อนอ้าง (ตรงกับวิธีที่ตัวรันแยกโหมด):
 >
@@ -752,7 +752,7 @@ cd apps/web && npm run test:pure
 ### ผ่าน (สิ่งที่จะได้เห็นบนจอ)
 
 ตัวอย่างนี้มาจากรอบ 2026-09-07 ตอนชุดยังมี 80 ไฟล์ — **รูปแบบยังเหมือนเดิม แต่ตัวเลขปัจจุบันดูหัวไฟล์นี้**
-(รอบปัจจุบันใช้ราว 50 วินาที):
+(รอบ 2026-11-09 มี 319 ไฟล์ ใช้ราว 4 นาทีบนเครื่อง Windows):
 
 ```
 [gate] โหมด pure — 80 ไฟล์
@@ -1288,8 +1288,9 @@ workflow เดียวกันรัน `go test` ของ `apps/retail-loca
   ชั่วคราวแล้วดูว่าเทสที่ควรแดงแดงจริง จากนั้นคืนไบต์เดิม · **รันหลัง gate หยุดแล้วเท่านั้น** · บางตัวบังคับ
   ให้ส่ง SHA ของ backup stash ที่มีงานปัจจุบันครบเป็นอาร์กิวเมนต์ บางตัวปฏิเสธไฟล์เป้าหมายที่ยังไม่ commit ·
   ห้ามใช้ `git checkout`/`reset` คืนไฟล์ (อ่านหัวไฟล์ก่อนรันทุกครั้ง)
-- **`infra/multi-instance-contract.test.mts`** — ชื่อเป็น `.test.mts` แต่อยู่ใน `scripts/infra/` ซึ่งตัวรันกลาง
-  **ไม่เดิน** จึงไม่อยู่ในชุด pure · ต้องมี Redis + MinIO จริง ดู
+- **`infra/multi-instance-contract.test.mts`** — ตัวรันกลางเดิน `scripts/infra/` แล้ว (ตั้งแต่ `7fbcd619`)
+  จึงอยู่ในชุด pure · เคส local storage/pure logic รันเสมอ ส่วนเคส Redis และ S3 จะ **SKIP** (ไม่ผ่านลอย)
+  เมื่อไม่มี `REDIS_URL`/`S3_*` ที่ต่อได้ — จะพิสูจน์หลาย instance จริงต้องเปิด Redis + MinIO ก่อน ดู
   [docs/architecture/multi-instance-readiness.md](../docs/architecture/multi-instance-readiness.md)
 
 ## ตารางสรุป exit code

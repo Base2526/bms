@@ -576,8 +576,8 @@ cd apps/web && npm run gate
 `scripts/ai-eval/` and `scripts/infra/`, plus the Retail Local migration-checksum `.test.mjs`.
 `npm run regression:inventory` accounts for the other test/smoke files and fails on an unknown
 path or a mismatch with the contract runner. A suite that only
-runs by hand does not run. `.github/workflows/gate.yml` runs typecheck + pure + build on every
-PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own `npm run build`.)
+runs by hand does not run. `.github/workflows/gate.yml` runs the same steps as `npm run gate`
+(release features → regression inventory → typecheck → pure → build) on every PR, never DB mode. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own `npm run build`.)
 
 - Never claim a check passed unless it was run successfully.
 - Schema changes: migration ordering, idempotency, RLS, grants, tenant isolation.

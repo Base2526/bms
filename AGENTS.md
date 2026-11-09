@@ -99,7 +99,9 @@ before changing that domain.
 - Secrets resolve in a function that throws in production when missing; never `process.env.X ||
   "literal"`, never a module-level const, never exported.
 - Files: `files.tenant_id` mismatch answers 404; `visibility` missing = private; uploads bind the
-  owner from session/device/signed token only.
+  owner from session/device/signed token only. Personal uploads carry `owner_user_id` (`10.109`);
+  community-chat images/audio are private and stream only to members of the referencing chat (a
+  session alone is not enough); key/config/script-like artifacts are never generic public downloads.
 - Nothing touches `bms_inventory` without `tenant_id` (+ branch); every stock change writes a
   movement in the same transaction. Who holds reserved stock is derived from `bms_order_stock_lines`.
 - A manual "run now" of a fleet-wide job passes the caller's own tenant. Redis has five separate
@@ -336,13 +338,13 @@ dumps. Never commit `.env*`, tokens, customer data, or credentials.
 ## Testing and verification
 
 ```bash
-cd apps/web && npm run gate   # typecheck → every DB-free contract suite → production build
+cd apps/web && npm run gate   # release features → regression inventory → typecheck → every DB-free contract suite → production build
 ```
 
 - `npm run test:pure` (no DB) · `npm run test:db` (`-db-contract`, local host only, writes data —
   never production). The runner walks `scripts/`, `scripts/ai-eval/`, and `scripts/infra/`
   (`*.test.mts`, plus the Retail Local migration-checksum `.test.mjs`);
-  `gate.yml` runs typecheck + pure + build, never DB mode, so "pure green" ≠ DB path exercised.
+  `gate.yml` runs the same steps as `npm run gate`, never DB mode, so "pure green" ≠ DB path exercised.
 - One file from `apps/web`: `node ../../scripts/run-contract-tests.mjs <pure|db> <name-filter>`
   (a filter matching nothing exits 2). From the repository root, omit the leading `../../`.
 - Never claim a check passed unless it ran. Cover what you touched: schema (ordering, idempotency,
