@@ -52,6 +52,10 @@ jobs:
         working-directory: apps/web
         run: npm ci
 
+      - name: Check release feature registry
+        working-directory: apps/web
+        run: npm run release:features:check
+
       - name: Typecheck
         working-directory: apps/web
         run: npm run typecheck
@@ -67,3 +71,14 @@ jobs:
       - name: Build
         working-directory: apps/web
         run: npm run build
+
+      - name: Capture candidate release features
+        working-directory: apps/web
+        run: npx tsx ../../scripts/release-features.mts --version "${{ github.sha }}" --output ../../.test-output/release
+
+      - name: Upload candidate release features
+        uses: actions/upload-artifact@v4
+        with:
+          name: bms-release-features-${{ github.sha }}
+          path: .test-output/release/
+          if-no-files-found: error

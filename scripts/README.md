@@ -714,13 +714,21 @@ identify a table or occupant"** ของ `return {...}` ใน service — ย�
 
 ---
 
+## Release feature manifest
+
+`npm run release:features:check` (จาก `apps/web`) ตรวจ ID, source/test paths และเพดานรายการที่ยัง
+ไม่ผูกเทสระดับฟีเจอร์ โดย `npm run gate` เรียกด่านนี้ด้วย หลัง gate ผ่านบน clean commit ให้สร้าง
+JSON/Markdown สำหรับ release และเทียบ manifest รุ่นก่อนด้วย `--previous` ตาม
+[release-feature-control.md](../docs/release-feature-control.md). รายการนี้ยังเป็น baseline ที่ไม่ครบ
+ทุกฟีเจอร์ และไม่ได้ยืนยันว่า production/แต่ละร้านเปิดใช้แล้ว
+
 ## ประตูเดียวที่ต้องจำ: `npm run gate`
 
 ```bash
 cd apps/web && npm run gate
 ```
 
-`gate` = `typecheck` → `test:pure` → `build` (นิยามอยู่ใน `apps/web/package.json`)
+`gate` = `release:features:check` → `typecheck` → `test:pure` → `build` (นิยามอยู่ใน `apps/web/package.json`)
 **รันก่อน merge ทุกครั้ง** · CI (`.github/workflows/gate.yml`) รันชุดเดียวกันนี้ต่อ PR
 **ไม่มี job ของเทส DB ใน CI** เพราะสร้างฐานใหม่จาก `db/migrations` ไม่ได้ (ดู `CLAUDE.local.md`)
 
