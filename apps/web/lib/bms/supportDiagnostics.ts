@@ -79,6 +79,10 @@ function safeDiagnosticValue(value: unknown, depth = 0): unknown {
   if (value == null || typeof value === "boolean") return value;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (typeof value === "string") return value.replace(SECRET_TEXT, "[REDACTED]").slice(0, 500);
+  // node-postgres returns timestamptz columns as Date objects. Treating every object as a
+  // plain record turns a Date into `{}` because it has no enumerable properties, which removes
+  // the one field Support needs to order and correlate an outage timeline.
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.toISOString() : null;
   if (depth >= 4) return "[TRUNCATED]";
   if (Array.isArray(value)) return value.slice(0, 20).map((item) => safeDiagnosticValue(item, depth + 1));
   if (typeof value !== "object") return String(value).slice(0, 100);

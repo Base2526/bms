@@ -65,6 +65,7 @@ per entry in [status-log.md](docs/status-log.md)):
 | Branch requisitions, operations, production, materials, quality | `10.87`–`10.98` | [agent-invariants.md](docs/agent-invariants.md) · [system.md](docs/architecture/system.md) |
 | Branch inventory intelligence · purchase landed cost | `10.99`–`10.100`, `10.103` | [inventory.md](docs/business/inventory.md) |
 | Meta inbound hardening/enrichment · Retail Local consented leads/erasure | `10.104`–`10.106`, `10.108` | [database.md](docs/architecture/database.md) · [facebook-messenger.md](docs/integrations/facebook-messenger.md) |
+| Pickup queue numbers + call screen (`/pos/queue-board`) | `10.111` — **new; not yet applied to production** | [pos.md](docs/business/pos.md#pickup-queue-numbers-and-the-call-screen-10111) |
 | Lot identity through branch transfers | `10.107` — **WIP for rollout; committed and clone-DB verified, production deployment unverified** | [system.md](docs/architecture/system.md) · [inventory.md](docs/business/inventory.md) |
 | File ownership + private community-chat media (personal uploads bound to a user; chat media needs membership) | `10.109` | [database.md](docs/architecture/database.md) · [files API README](apps/web/app/api/files/README.md) |
 | Bank reconciliation (imported statements are evidence only; a match exists only after a reviewer confirms it) | `10.110` | [bank-reconciliation.md](docs/business/bank-reconciliation.md) |

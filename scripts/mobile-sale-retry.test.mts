@@ -25,6 +25,7 @@ function harness(responses: any[], options: { offlineEligible?: boolean; mode?: 
   };
   const deps: Record<string, any> = {
     saleAttemptRef: attempt, idempotencyRef: key, submittedRef: { current: false },
+    pickupQueueEnabled: false,
     canConfirmPayment: true, restaurantPaymentsValid: true, restaurantReady: true, boardGameReady: true,
     session: { credentials: { cashierUserId: "FAKE-cashier", pin: "1234" }, cashier: { id: "FAKE-cashier" } },
     setSubmitting: () => {}, setConfirmOpen: () => {}, setSaleRetryMessage: (value: string) => { message = value; },

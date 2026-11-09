@@ -3,7 +3,11 @@ import test from "node:test";
 import {
   customerDisplayPreviewBounds,
   DEFAULT_CUSTOMER_DISPLAY_CONFIG,
+  DEFAULT_QUEUE_DISPLAY_CONFIG,
   normalizeCustomerDisplayConfig,
+  normalizeQueueDisplayConfig,
+  queueDisplayPreviewBounds,
+  selectQueueDisplay,
   selectCustomerDisplay,
 } from "../src/display-policy.mjs";
 
@@ -50,4 +54,22 @@ test("one-screen preview stays windowed and inside the cashier work area", () =>
   assert.deepEqual(customerDisplayPreviewBounds({
     bounds: { x: 0, y: 0, width: 800, height: 600 },
   }), { x: 40, y: 40, width: 720, height: 520 });
+});
+
+test("queue preview is cascaded while remaining inside the cashier work area", () => {
+  assert.deepEqual(queueDisplayPreviewBounds({
+    workArea: { x: 100, y: 40, width: 1440, height: 900 },
+  }), { x: 364, y: 162, width: 1024, height: 768 });
+  assert.deepEqual(queueDisplayPreviewBounds({
+    bounds: { x: 0, y: 0, width: 800, height: 600 },
+  }), { x: 80, y: 80, width: 720, height: 520 });
+});
+
+test("queue display uses the same fail-closed config and never steals customer or cashier screens", () => {
+  assert.deepEqual(normalizeQueueDisplayConfig(null), DEFAULT_QUEUE_DISPLAY_CONFIG);
+  const config = normalizeQueueDisplayConfig({ mode: "selected", targetDisplayId: "30" });
+  assert.equal(selectQueueDisplay(displays, 10, 20, config)?.id, 30);
+  assert.equal(selectQueueDisplay(displays, 10, 30, config), null);
+  assert.equal(selectQueueDisplay(displays, 10, 20, { mode: "auto" })?.id, 30);
+  assert.equal(selectQueueDisplay([{ id: 10 }, { id: 20 }], 10, 20, { mode: "auto" }), null);
 });

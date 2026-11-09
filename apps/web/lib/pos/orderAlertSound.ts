@@ -16,10 +16,11 @@ export type AlertKind =
   | "QR_PENDING"     // ลูกค้าที่โต๊ะส่งคำขอผ่าน QR มารอให้พนักงานกดรับ
   | "CHAT_REQUEST"   // คำขอสั่งอาหารจากแชท/AI รอพนักงานตรวจ
   | "FOOD_READY"     // ครัวกดพร้อมเสิร์ฟ — เป็นสัญญาณของ "คนเสิร์ฟ" ไม่ใช่ของครัว
+  | "PICKUP_READY"   // ครัวทำครบแล้ว — เตือนแคชเชียร์ให้เรียก/ส่งมอบเลขคิว
   | "SLA_LATE";      // ตั๋วที่เลยเกณฑ์เวลาของสถานีตัวเอง
 
 export const ALERT_KINDS: readonly AlertKind[] = [
-  "ORDER_ACTION", "INBOX_MESSAGE", "ORDER_NEW", "QR_PENDING", "CHAT_REQUEST", "FOOD_READY", "SLA_LATE",
+  "ORDER_ACTION", "INBOX_MESSAGE", "ORDER_NEW", "QR_PENDING", "CHAT_REQUEST", "FOOD_READY", "PICKUP_READY", "SLA_LATE",
 ] as const;
 
 export type AlertToneId = "CHIME" | "BELL" | "DOUBLE_BEEP" | "MARIMBA" | "ALARM" | "SOFT_PING" | "NONE";
@@ -126,6 +127,7 @@ export function defaultOrderAlertSettings(): OrderAlertSettings {
       QR_PENDING: "MARIMBA",
       CHAT_REQUEST: "DOUBLE_BEEP",
       FOOD_READY: "SOFT_PING",
+      PICKUP_READY: "BELL",
       SLA_LATE: "ALARM",
     },
     repeatSeconds: 20,

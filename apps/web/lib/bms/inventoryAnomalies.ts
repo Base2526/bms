@@ -67,14 +67,14 @@ export async function getInventoryAnomalies(input: {
        HAVING i.current_stock<>COALESCE(SUM(lot.qty),0)
         ORDER BY ABS(i.current_stock-COALESCE(SUM(lot.qty),0)) DESC LIMIT 101`, params),
     client.query<any>(
-      `SELECT t.id,t.from_location_id,t.to_location_id,lf.name from_name,lt.name to_name,
+      `SELECT t.id,t.from_location,t.to_location,lf.name from_name,lt.name to_name,
               EXTRACT(EPOCH FROM (now()-t.sent_at))/3600 age_hours
          FROM bms_stock_transfers t
-         JOIN bms_locations lf ON lf.tenant_id=t.tenant_id AND lf.id=t.from_location_id
-         JOIN bms_locations lt ON lt.tenant_id=t.tenant_id AND lt.id=t.to_location_id
+         JOIN bms_locations lf ON lf.tenant_id=t.tenant_id AND lf.id=t.from_location
+         JOIN bms_locations lt ON lt.tenant_id=t.tenant_id AND lt.id=t.to_location
         WHERE t.tenant_id=$1 AND t.status='IN_TRANSIT' AND t.sent_at<now()-interval '48 hours'
-          AND ($2::uuid IS NULL OR t.from_location_id=$2 OR t.to_location_id=$2)
-          AND ($3::uuid[] IS NULL OR t.from_location_id=ANY($3) OR t.to_location_id=ANY($3))
+          AND ($2::uuid IS NULL OR t.from_location=$2 OR t.to_location=$2)
+          AND ($3::uuid[] IS NULL OR t.from_location=ANY($3) OR t.to_location=ANY($3))
         ORDER BY t.sent_at LIMIT 101`, params),
     includeTenantWide ? client.query<any>(
       `SELECT po.id,po.created_at,EXTRACT(EPOCH FROM (now()-po.created_at))/86400 age_days,
@@ -124,7 +124,7 @@ export async function getInventoryAnomalies(input: {
     observedValue:Number(row.lot_stock),expectedValue:Number(row.current_stock),threshold:"sum(lot.qty) must equal current_stock",
     evidence:{lotStock:Number(row.lot_stock),currentStock:Number(row.current_stock)},detectedAt,deepLink:`/admin/products?sku=${encodeURIComponent(row.sku)}`,
     recommendedReview:"หยุดใช้ตัวเลข expiry เพื่อสัญญาสต็อกจนกว่าจะ reconcile ล็อต"});
-  for (const row of transfers.rows) items.push({ code:"STALE_TRANSFER",severity:"HIGH",locationId:row.to_location_id,locationName:row.to_name,sku:null,size:null,
+  for (const row of transfers.rows) items.push({ code:"STALE_TRANSFER",severity:"HIGH",locationId:row.to_location,locationName:row.to_name,sku:null,size:null,
     observedValue:+Number(row.age_hours).toFixed(1),expectedValue:48,threshold:"in transit for more than 48 hours",evidence:{transferId:row.id,from:row.from_name,to:row.to_name},detectedAt,
     deepLink:"/admin/stock-transfers",recommendedReview:"ตรวจสถานะการขนส่งและรับของที่สาขาปลายทาง"});
   for (const row of purchaseOrders.rows) items.push({ code:"STALE_PURCHASE_ORDER",severity:"HIGH",locationId:null,locationName:null,sku:null,size:null,

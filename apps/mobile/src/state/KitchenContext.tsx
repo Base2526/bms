@@ -52,7 +52,10 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     () =>
       (query.data?.bmsPosKitchenTickets.tickets ?? []).map(ticket => ({
         id: ticket.id,
-        tableCode: ticket.tableCode ?? ticket.tableName ?? 'รับกลับ',
+        // เลขคิวรับของ (10.111) เป็นเลขที่ลูกค้าถือและหน้าร้านเรียก จึงขึ้นหัวใบแทนชื่อบิล
+        tableCode: ticket.pickupQueueLabel
+          ? `คิว ${ticket.pickupQueueLabel}`
+          : ticket.tableCode ?? ticket.tableName ?? 'รับกลับ',
         roundNo: ticket.roundNo ?? 1,
         station: ticket.station ?? 'ไม่ระบุสถานี',
         stationId: ticket.stationId ?? undefined,

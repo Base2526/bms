@@ -232,6 +232,8 @@ const CONFIGURATION = [
 
 /** Operational state whose owning surface performs bounded polling plus post-write refresh. */
 const POLLED_OPERATIONAL_SURFACE = [
+  // 10.111: the till strip and the call screen poll the device-token API every few seconds.
+  "bms_pickup_queue",
   // H evidence refreshes on demand; HOLD/RELEASE explicitly enqueue inventory.changed in their tenant tx.
   "bms_operation_quality_cases", "bms_operation_lot_holds", "bms_operation_quality_decisions", "bms_operation_quality_events",
   // Release G: explicit/refetch-on-write readiness; canonical task inbox polls. Receipt stock uses purchase events.

@@ -28,6 +28,19 @@ export type Migration = {
 // bms_set_pharmacist_license — เรียกเฉพาะตอน Administrator บันทึกใบอนุญาต และ fail closed) เพราะไม่ใช่
 // สิ่งที่โค้ดอ้างแบบไม่มีเงื่อนไข · ถ้าเปิด flag ของ 10.110 ต้องตรวจตารางของไฟล์นั้นบนฐานเป้าหมายเอง
 export const MIGRATIONS: Migration[] = [
+  {file:'10.113__bms_pickup_queue_experience.sql',impact:'Branch queue numbering/voice settings and idle customer-display promo slides require the experience columns before the settings, POS session and queue board can load',needs:[
+    {kind:'column',table:'bms_locations',name:'pickup_queue_prefix'},
+    {kind:'column',table:'bms_locations',name:'pickup_queue_start_no'},
+    {kind:'column',table:'bms_locations',name:'pickup_queue_spotlight_seconds'},
+    {kind:'column',table:'bms_locations',name:'pickup_queue_voice_mode'},
+    {kind:'column',table:'bms_locations',name:'pickup_queue_voice_language'},
+    {kind:'column',table:'bms_locations',name:'pickup_queue_voice_repeat'},
+    {kind:'column',table:'bms_locations',name:'pickup_queue_voice_volume'},
+    {kind:'column',table:'bms_pickup_queue',name:'queue_prefix'},
+    {kind:'column',table:'bms_store_profile',name:'customer_display_promo_slides'},
+    {kind:'column',table:'bms_store_profile',name:'customer_display_promo_interval_seconds'},
+  ]},
+  {file:'10.112__bms_pickup_queue.sql',impact:'Every kitchen ticket status change, every POS bill void and every receipt history/reprint reads or writes pickup queue numbers: the kitchen board, voids and receipt lists fail without the table',needs:[{kind:'table',name:'bms_pickup_queue'}]},
   {file:'10.109__files_user_ownership_and_private_chat.sql',impact:'Every upload inserts files.owner_user_id and every /api/files read selects it: uploads, product/post images and avatars fail without the column',needs:[{kind:'column',table:'files',name:'owner_user_id'}]},
   {file:'10.108__bms_meta_inbox_enrichment.sql',impact:'Every Facebook/Instagram inbound message is queued with event_meta: Meta webhook messages are not queued or answered without the column',needs:[{kind:'column',table:'bms_channel_inbound_jobs',name:'event_meta'}]},
   {file:'10.104__bms_meta_messenger_hardening.sql',impact:'getChannel() selects webhook_verify_token/external_account_id for every channel: LINE, TikTok and Meta webhooks and staff replies fail; Meta inbound queue and reply window read bms_channel_inbound_jobs',needs:[{kind:'column',table:'bms_tenant_channels',name:'webhook_verify_token'},{kind:'column',table:'bms_tenant_channels',name:'external_account_id'},{kind:'table',name:'bms_channel_inbound_jobs'}]},

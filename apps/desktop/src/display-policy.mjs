@@ -7,6 +7,10 @@ export const DEFAULT_CUSTOMER_DISPLAY_CONFIG = Object.freeze({
   configured: false,
 });
 
+// The pickup call screen follows the same persisted policy as the customer display, but keeps a
+// separate file/state so a three-screen counter can dedicate one monitor to each purpose.
+export const DEFAULT_QUEUE_DISPLAY_CONFIG = DEFAULT_CUSTOMER_DISPLAY_CONFIG;
+
 export function normalizeCustomerDisplayConfig(value) {
   if (!value || typeof value !== "object") return { ...DEFAULT_CUSTOMER_DISPLAY_CONFIG };
   if (!CUSTOMER_DISPLAY_MODES.has(value.mode)) return { ...DEFAULT_CUSTOMER_DISPLAY_CONFIG };
@@ -25,6 +29,8 @@ export function normalizeCustomerDisplayConfig(value) {
   };
 }
 
+export const normalizeQueueDisplayConfig = normalizeCustomerDisplayConfig;
+
 export function selectCustomerDisplay(displays, cashierDisplayId, config) {
   const normalized = normalizeCustomerDisplayConfig(config);
   if (normalized.mode === "off") return null;
@@ -36,6 +42,16 @@ export function selectCustomerDisplay(displays, cashierDisplayId, config) {
     )) ?? null;
   }
   return displays.find((display) => String(display.id) !== cashierId) ?? null;
+}
+
+/** Queue auto-selection also excludes a monitor already owned by the customer display. */
+export function selectQueueDisplay(displays, cashierDisplayId, customerDisplayId, config) {
+  const reserved = customerDisplayId == null ? null : String(customerDisplayId);
+  return selectCustomerDisplay(
+    displays.filter((display) => String(display.id) !== reserved),
+    cashierDisplayId,
+    config,
+  );
 }
 
 /**
@@ -54,4 +70,18 @@ export function customerDisplayPreviewBounds(display) {
     width,
     height,
   };
+}
+
+/**
+ * Keep the queue preview visibly separate when the customer preview is open too. The windows stay
+ * large enough to test the real layouts, but the second title bar remains reachable on one screen.
+ */
+export function queueDisplayPreviewBounds(display) {
+  const area = display?.workArea ?? display?.bounds;
+  if (!area) throw new Error("DISPLAY_BOUNDS_MISSING");
+  const bounds = customerDisplayPreviewBounds(display);
+  const horizontalRoom = Math.max(0, area.x + area.width - bounds.x - bounds.width);
+  const verticalRoom = Math.max(0, area.y + area.height - bounds.y - bounds.height);
+  const offset = Math.min(56, horizontalRoom, verticalRoom);
+  return { ...bounds, x: bounds.x + offset, y: bounds.y + offset };
 }

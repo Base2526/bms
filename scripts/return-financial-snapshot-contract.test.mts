@@ -233,6 +233,7 @@ function harness() {
     inheritQualityHold: async (_c: any, ...args: any[]) => { assert.ok(backup); state.inheritedHolds.push(args); },
     reversePointsForReturnInTx: async () => ({ earnedReversed: 0, redeemedReturned: 0 }), reverseCreditForReturnInTx: async () => {}, reduceArForReturnInTx: async () => {},
     cancelKitchenTicketsForOrderInTx: async () => {}, cancelKitchenTicketsForOrderItemsInTx: async () => {},
+    cancelPickupQueueForOrderInTx: async () => {},
     RESTAURANT_CANCELLATION_CAUSES: ["CUSTOMER_CHANGED_MIND"],
     ensurePosReturnCreditNote: async () => { assert.equal(backup, null); assert.equal(calls.at(-1), "RELEASE"); credits++; return null; },
     toISO: (v: any) => v,

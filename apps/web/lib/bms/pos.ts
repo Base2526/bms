@@ -32,6 +32,7 @@ import { refreshSessionFromGroupsInTx } from "./boardGameSessionStatus";
 import { createOrder, createOrderInTx, cancelOrder, type OrderItemInput } from "./orders";
 import { resolveStockConsumptionInTx } from "./stockConsumption";
 import { cancelKitchenTicketsForOrderInTx, cancelKitchenTicketsForOrderItemsInTx, enqueueKitchenTicketsInTx } from "./kitchen";
+import { cancelPickupQueueForOrderInTx, formatPickupQueueNo } from "./pickupQueue";
 import { parseScaleBarcode } from "./barcode";
 import { POS_APPROVAL_PERMISSIONS } from "./posApprovals";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
@@ -2687,6 +2688,8 @@ export type PosSaleResult =
   | { status: string; [k: string]: unknown };
 
 export type PosRecentReceipt = {
+  /** เลขคิวรับของ (10.111) · null = บิลนี้ไม่ได้ออกเลข */
+  pickupQueueLabel?: string | null;
   pointsEarned?: number | null;
   pointsBalance?: number | null;
   pointsExpiring?: number | null;
@@ -4913,6 +4916,8 @@ export async function listRecentPosSales(
     pos_shift_id: string | null;
     pos_offline_tendered_at: Date | string | null;
     pos_offline_synced_at: Date | string | null;
+    pickup_queue_no: number | null;
+    pickup_queue_prefix: string | null;
   }>(
     `SELECT o.id,
             o.channel,
@@ -4955,8 +4960,10 @@ export async function listRecentPosSales(
               WHERE l.tenant_id = o.tenant_id AND l.order_id = o.id AND l.kind = 'EARN') AS points_earned,
             expiry.points_expiring,
             expiry.points_expire_at,
-            bg.charge_snapshot AS board_game_charge_snapshot
+            bg.charge_snapshot AS board_game_charge_snapshot,
+            pq.queue_no AS pickup_queue_no, pq.queue_prefix AS pickup_queue_prefix
        FROM bms_orders o
+       LEFT JOIN bms_pickup_queue pq ON pq.tenant_id = o.tenant_id AND pq.order_id = o.id
        LEFT JOIN bms_pos_devices dev ON dev.tenant_id = o.tenant_id AND dev.id = o.pos_device_id
        LEFT JOIN bms_locations loc ON loc.tenant_id = o.tenant_id AND loc.id = o.location_id
        LEFT JOIN users u ON u.id = o.cashier_user_id AND u.tenant_id = o.tenant_id
@@ -5356,6 +5363,9 @@ export async function listRecentPosSales(
     memberNo: row.member_no ?? null,
     memberName: row.member_no ? (row.member_name ?? null) : null,
     memberPhone: row.member_phone ?? null,
+    // เลขคิวรับของ (10.111) — พิมพ์ซ้ำจากเซิร์ฟเวอร์ต้องได้เลขเดียวกับใบแรก
+    pickupQueueLabel: row.pickup_queue_no == null ? null
+      : formatPickupQueueNo(Number(row.pickup_queue_no), String(row.pickup_queue_prefix ?? "")),
     ...(shouldPrintMemberPoints({
       loyaltyEnabled: Boolean(row.loyalty_enabled),
       isMember: Boolean(row.member_no),
@@ -6773,6 +6783,8 @@ export async function processPosReturn(input: {
       // ครัวต้องหยุดทำอาหารของบิลที่ยกเลิกไปแล้ว — ตั๋วที่ค้างบนกระดานหลัง void
       // แปลว่าเงินคืนไปแล้วแต่ของยังถูกทำและถูกทิ้ง โดยไม่มีใครรู้ว่าทำไม
       await cancelKitchenTicketsForOrderInTx(client, input.tenantId, input.orderId);
+      // เลขคิวรับของ (10.111) ของบิลที่ยกเลิกต้องหายจากจอเรียกคิวในทรานแซกชันเดียวกัน
+      await cancelPickupQueueForOrderInTx(client, input.tenantId, input.orderId);
       // การลบยอดขายออกจากกะคือช่องทุจริตตรงที่สุดที่ POS มี — ต้องมีบรรทัดของตัวเอง
       // ใน audit log กลาง พร้อมชื่อผู้อนุมัติ ไม่ใช่แค่ voided_by บนบิล
       await client.query(

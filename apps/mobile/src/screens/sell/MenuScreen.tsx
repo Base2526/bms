@@ -20,6 +20,7 @@ import { MenuGrid } from '../../components/MenuGrid';
 import { QtyStepper } from '../../components/QtyStepper';
 import { BarcodeScannerModal } from '../../components/BarcodeScannerModal';
 import { OrderAlertBanner } from '../../components/OrderAlertBanner';
+import { PickupQueueStrip } from '../../components/PickupQueueStrip';
 import { ProductOptionsModal } from '../../components/ProductOptionsModal';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
@@ -243,6 +244,7 @@ export default function MenuScreen({ navigation }: Props) {
               getTabNavigation(navigation).navigate('OrdersTab')
             }
           />
+          <PickupQueueStrip />
           <View style={styles.menuHeader}>
             <View style={{ flex: 1 }}>
               <Text

@@ -1462,8 +1462,10 @@ Codes are unique per scope through two partial indexes — a plain `UNIQUE (tena
 code)` would not constrain the store-wide rows at all, since NULL never conflicts with NULL. The
 `9.54` backfill promotes every station name still present in stock policies, SLA rows and both ticket
 tables into a store-wide master row, and never drops the legacy text columns: readers that predate
-`9.54` keep working through a deploy. `printer_profile_id` is a placeholder with no table behind it,
-no reader and no writer — per-station printer routing is not built.
+`9.54` keep working through a deploy. `printer_profile_id` remains a placeholder with no table
+behind it, no reader and no writer. The Desktop pilot added later keeps station-to-OS-printer routes
+in that workstation's local configuration; it does not turn this column into authority and does not
+create cloud/browser/mobile printer routing.
 
 `9.45` adds non-negative `bms_product_modifiers.price_delta`. It is a surcharge per sold menu unit,
 resolved from active tenant catalog rows during order creation and copied into the order item's
@@ -2378,3 +2380,29 @@ and its `purchase.cancel` audit also commit or roll back together.
 Receipt replay precedes mutable branch availability checks, including default-branch resolution
 for staff, so disabling a branch cannot misreport an already committed stock movement as failed.
 New receipts still require an active branch; the device branch and actor remain part of the POS hash.
+
+## Pickup queue numbers and branch experience (`10.111`–`10.112`)
+
+`bms_pickup_queue` holds one pickup number per counter POS order (`UNIQUE (tenant_id, order_id)`),
+unique per branch per service day (`tenant_id, location_id, service_date, queue_no`). Status is
+`PREPARING → READY → COLLECTED`, or `CANCELLED`; `ready_source` (`KITCHEN`/`STAFF`) records who
+made it ready. Rows are tenant-isolated with forced RLS, cascade from their order and branch, and
+hold no customer identity or amounts. The row is written after the sale commits, never by
+`createOrderInTx()`; kitchen status changes and bill voids update it in their own transactions, so
+`bms_locations` holds the branch policy (`pickup_queue_enabled`, customer-board PREPARING
+visibility, READY auto-hide minutes and an optional 120-character board message). Auto-hide is a
+read-time customer-board filter; it never deletes the queue row or hides staff history.
+
+`10.112` adds the branch prefix/start number, spotlight duration and announcement preferences. Each
+queue row snapshots `queue_prefix`, so changing a branch from `A` to `B` never renames already-issued
+numbers or receipt history. The service still serializes issue under the branch/service-day lock and
+starts an empty day at `pickup_queue_start_no`; a start-number change never rewinds a day that already
+has rows. Voice mode/language/repeat/volume are presentation settings only. The call screen plays
+release-time AI Studio assets from the same origin and falls back to its local chime; it never sends
+customer or order data to a speech provider at runtime.
+
+The same migration adds `customer_display_promo_slides` (a bounded JSON array of tenant-owned public file API
+URLs) and `customer_display_promo_interval_seconds` to `bms_store_profile`. Slides run only while the
+display is idle; sale/payment state always wins. Therefore `10.112` is the deployment requirement
+declared in `scripts/schemaReadiness.mts`. See
+[business/pos.md](../business/pos.md#pickup-queue-numbers-and-the-call-screen-10111).

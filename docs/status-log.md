@@ -2,7 +2,7 @@
 
 Per-feature decision narrative moved out of [CLAUDE.md](../CLAUDE.md) on 2026-10-13 to keep the
 always-loaded agent context small. The moved text is unchanged; newest entries are at the end.
-Entries were brought up to date on 2026-11-09 (through migration `10.111`, PR #406 and the
+Entries were brought up to date on 2026-11-09 (through migration `10.113`, PR #406 and the
 release-manifest commits). The compact area index lives in CLAUDE.md § Current status; full
 per-domain rules live in [agent-invariants.md](agent-invariants.md).
 
@@ -577,6 +577,35 @@ the `DLE EOT` online/cover/paper checks pass; receipts, PINs and tokens are neve
 the printer. No Bluetooth/USB/AirPrint, no cash-drawer kick, and no certification on real hardware
 yet. See [apps/mobile/README.md](../apps/mobile/README.md).
 
+**Pickup queue numbers and the call screen (`10.112`).** A manager can turn on pickup numbers for a
+whole branch (with a device-local opt-in still available), choose the customer-board message,
+PREPARING visibility and READY auto-hide window. Counter sales then get a per-branch,
+per-service-day number issued
+after the sale commits (a queue failure never fails the sale), printed on the receipt and on
+reprints, called from the till/floor/mobile strip or automatically when the kitchen finishes every
+ticket, and shown on `/pos/queue-board`, a device-token call screen that sees numbers only (opens
+inside a managed Desktop second-display window with identify, preview and hot-plug recovery).
+Kitchen readiness also rings the till and the completed-sale customer display shows the issued
+number. Covers web, restaurant take-away checks and the native register (GraphQL
+`pickupQueue`, `bmsPosPickupQueue[Action]`); polling, not realtime push, by design. See
+[business/pos.md](business/pos.md#pickup-queue-numbers-and-the-call-screen-10111).
+
+**Queue experience, customer display and Desktop kitchen printing (`10.113`).** Branch queue policy
+now includes a snapshotted prefix, first number for an empty service day, spotlight duration and
+announcement settings. The call screen treats an AI Studio-generated static voice pack as primary
+and falls back to its local chime without making provider calls at runtime. Store Profile adds an
+idle-only bounded promotion slideshow, Settings can publish a fixed-payload Messenger greeting and
+conversation starters, and the Desktop pilot maps server kitchen stations to explicit OS printers.
+Kitchen jobs are journalled per server ticket; uncertain outcomes require a tray check and explicit
+retry. Central printer profiles and offline-first restaurant service remain out of scope.
+
+**Pickup queue migration renumbering.** The unmerged queue branch originally used `10.111` and
+`10.112`; after `develop` assigned `10.111` to the pharmacist licence write, the queue migrations
+became `10.112` and `10.113`. A pilot or test database that ran either old queue filename may safely
+re-run the corresponding idempotent file under its new name, then record the new filename in any
+external migration ledger. Do not mark the new names applied without first verifying the queue table
+and experience columns on that target database.
+
 **A tax correction is a new reviewed document, never an edit (`10.60`).** Tax documents and counters
 accept `DEBIT_NOTE`; newly issued full/credit/debit documents freeze a `print_snapshot` (lines,
 seller/buyer identity, amounts, calendar era) and record buyer VAT registration separately, without
@@ -878,4 +907,3 @@ live-model drivers), and the GitHub gate uploads a candidate manifest. The regis
 rather than production enablement, and `inventory.transfer-lots` stays WIP. Production availability
 still needs the deployed artifact, target schema, flags, configuration, entitlements and rollout
 evidence. See [release-feature-control.md](release-feature-control.md).
-

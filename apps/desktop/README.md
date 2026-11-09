@@ -213,11 +213,12 @@ a restart or an update:
 - Unpackaged `npm run dev` builds show the checkbox disabled, so a dev machine never registers the
   bare Electron binary at login.
 
-## Customer display
+## External displays
 
-Connect the customer monitor as an **extended** desktop, not a mirrored screen. In the register,
-open **Settings → Customer display**, enable **เปิดจอลูกค้าเมื่อเปิด POS**, and choose automatic
-or a specific connected display. On an unconfigured installation, the shell offers to enable the
+Connect customer-facing monitors as an **extended** desktop, not mirrored screens. In the register,
+open **Settings → External displays** and configure the customer display and pickup queue display
+from the same card. Each role can use automatic selection, one specific connected display, Off or a
+temporary same-screen preview. On an unconfigured installation, the shell offers to enable the
 customer display once after detecting a second monitor. Both acceptance and refusal are remembered;
 an existing explicit off setting is never overridden. Enabled displays reopen on app startup.
 "Identify displays" places a temporary number on every screen. The shell detects display
@@ -227,21 +228,34 @@ display** opens the same live customer view as a normal framed, resizable window
 temporary: it is not saved as a second-display choice and never reopens with the app. Closing it has
 no effect on the cashier window or the persisted automatic/selected display setting.
 
-One register supports one cashier display plus at most one read-only customer display. Kitchen,
-queue and menu-board screens are separate devices/surfaces rather than third and fourth windows of
-the register. On Linux Wayland the compositor may refuse application-directed positioning; the
-settings page reports that limitation so the operator can move the window manually.
+One register supports one cashier display plus one read-only window per external-display role.
+With one external monitor, enabling customer or queue atomically releases the other role and reuses
+that screen. With two external monitors, both roles may stay open; automatic selection keeps them on
+different screens. Identify, temporary preview, startup reopen and display hot-plug recovery follow
+the same policy for both roles. On Linux Wayland the compositor may refuse application-directed positioning;
+the settings page reports that limitation so the operator can move the window manually.
 
-The web renderer capability-checks these IPC methods. Older installed shells therefore keep the
-manual customer-display button instead of crashing when a newer server is deployed; automatic
-display selection appears after the desktop app itself is updated to 0.2.3 or newer.
+The queue-display card also has a workstation-local presentation selector: Spotlight, Three zones,
+Preparing ticker, Minimal TV, Queue list, or Split. The saved choice is shared by that till's managed
+queue display and temporary preview, updates an already-open window through origin storage events,
+and never changes queue status or branch policy. Dense layouts page visible numbers every eight
+seconds instead of shrinking them beyond across-the-room readability.
+The same card chooses AI Studio speech, AI Studio speech plus a counter bell, counter bell only,
+double beep, or soft ping, with a queue-001 preview button. A branch-wide `OFF` policy still wins;
+the workstation choice cannot silently re-enable announcements disabled by the owner for the branch.
+
+The web renderer capability-checks these IPC methods. Older installed shells keep the customer
+display control and show an update prompt for the managed queue display instead of asking the
+operator to open a credential-bearing URL manually.
 
 When the cashier selects QR payment, the display turns the verified, reusable amount-free PromptPay QR
 configured under **Admin → Settings → Receiving accounts** into a new Dynamic QR containing the
 amount assigned to that QR tender. A PromptPay ID by itself is display text, not authority to invent
 an EMV payload, so no QR is generated until the shop supplies the real base from its bank/provider.
 
-The web-owned display uses a branded welcome, recent items, payment and completed-sale layout.
+The web-owned display uses a branded welcome, recent items, payment and completed-sale layout. A
+completed sale with an issued pickup number shows that number prominently without exposing order or
+customer details.
 It clears completed bills after ten seconds and hides sensitive data after eight seconds without
 a valid cashier snapshot. No shell rebuild is needed for these web layouts. Run
 `npm run test:customer-display` for a sandboxed Electron check of all four states, responsive

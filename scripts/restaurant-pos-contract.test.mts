@@ -14,6 +14,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { describeTransportFailure } from "../apps/web/lib/pos/failureMessage.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (path: string) => readFile(new URL(path, root), "utf8");
@@ -92,6 +93,37 @@ test("takeaway uses the restaurant check pipeline without inventing a table", as
   assert.match(manual, /One \/pos\/restaurant device handles both DINE_IN and TAKEAWAY/);
   assert.match(manual, /A take-away check owns no table or QR/);
   assert.match(manual, /TAKEAWAY has no table\/QR and currently cannot be moved, split, or merged/);
+});
+
+test("the empty order screen chooses a service mode through the existing dine-in and take-away flows", async () => {
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const start = page.indexOf("styles.serviceModeEmpty");
+  assert.ok(start >= 0, "service-mode empty state must exist");
+  const emptyState = page.slice(start, start + 3500);
+  assert.match(emptyState, /styles\.serviceModeGrid/);
+  assert.match(emptyState, /onClick=\{\(\) => setScreen\("FLOOR"\)\}/);
+  assert.match(emptyState, /disabled=\{!session\?\.shift \|\| !operatorReady\}/);
+  assert.match(emptyState, /onClick=\{\(\) => void openTakeawayCheck\(\)\}/);
+  assert.match(emptyState, /pickupQueueActive/);
+});
+
+test("the restaurant header keeps status and operator controls compact without dropping their actions", async () => {
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  const start = page.indexOf("<header className={styles.topbar}>");
+  assert.ok(start >= 0, "restaurant topbar must exist");
+  const header = page.slice(start, start + 7000);
+  assert.match(header, /styles\.topStatusGroup[\s\S]*?<PosConnectionStatus apiStatus=\{incomingApiStatus\} \/>[\s\S]*?styles\.shiftStatus/);
+  assert.match(header, /pos_restaurant\.incoming_header_compact/);
+  assert.match(header, /onClick=\{\(\) => setScreen\("INCOMING"\)\}/);
+  assert.match(header, /onClick=\{\(\) => void refresh\(\)\}/);
+  assert.match(header, /onClick=\{\(\) => setSupportOpen\(true\)\}/);
+  assert.match(header, /className=\{styles\.accountCopy\}/);
+  assert.match(header, /title=\{operatorName \|\| t\("pos_restaurant\.operator"\)\}/);
+  assert.doesNotMatch(
+    header.slice(0, header.indexOf("<div className={styles.topActions}>")),
+    /operatorReady|operatorName|operator_none/,
+    "operator name must not be repeated in the store subtitle",
+  );
 });
 
 test("web and mobile classify savory menu art before generic drink words", async () => {
@@ -1088,6 +1120,54 @@ test("a rejected kitchen round tells staff what to do, not an HTTP code", async 
       `ไม่มีคำแปลของ ${status}`,
     );
   }
+});
+
+test("transport failures distinguish read refreshes from mutations with unknown outcomes", async () => {
+  const restaurant = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(restaurant, /describeTransportFailure\(response\.status, navigator\.onLine, method\)/);
+  assert.match(restaurant, /describeTransportFailure\(0, navigator\.onLine, method\)/);
+
+  const failedRead = describeTransportFailure(502, true, "GET");
+  assert.match(failedRead, /โหลดข้อมูลล่าสุดไม่ได้/);
+  assert.doesNotMatch(failedRead, /บันทึก|อย่ากดซ้ำ/);
+
+  const failedWrite = describeTransportFailure(502, true, "POST");
+  assert.match(failedWrite, /ยังไม่รู้ว่ารายการถูกบันทึกหรือไม่/);
+  assert.match(failedWrite, /อย่ากดซ้ำทันที/);
+
+  assert.match(describeTransportFailure(0, false, "GET"), /โหลดข้อมูลล่าสุดไม่ได้/);
+  assert.match(describeTransportFailure(0, false, "POST"), /รายการยังไม่ถูกส่ง/);
+  assert.match(describeTransportFailure(0, true, "GET"), /เชื่อมต่อเซิร์ฟเวอร์ไม่ได้/);
+  assert.match(describeTransportFailure(0, true, "POST"), /อย่ากดซ้ำทันที/);
+});
+
+test("incoming-order feed failures never masquerade as an empty online queue", async () => {
+  const context = code(await read("apps/web/components/pos/PosWorkspaceContext.tsx"));
+  const retail = code(await read("apps/web/app/(pos)/pos/page.tsx"));
+  const restaurant = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+
+  assert.match(context, /status: "CHECKING" \| "LIVE" \| "STALE"/);
+  assert.match(context, /onIncomingFeedHealthChange\?:/);
+
+  const refreshStart = retail.indexOf("async function refreshIncomingOrders");
+  assert.ok(refreshStart >= 0, "incoming refresh function must exist");
+  const refresh = retail.slice(refreshStart, refreshStart + 6500);
+  assert.match(refresh, /incomingHttpFailure\(res, data, "GET"\)/);
+  assert.match(refresh, /status: "STALE"/);
+  assert.match(refresh, /status: "LIVE"/);
+  assert.doesNotMatch(refresh, /`HTTP \$\{res\.status\}`/);
+
+  assert.match(retail, /onIncomingFeedHealthChange\?\.\(health\)/);
+  assert.match(retail, /incomingActionsDisabled = incomingLoading \|\| incomingFeedHealth\.status !== "LIVE"/);
+  assert.match(retail, /ตรวจสอบไม่ได้ — ข้อมูลเดิมอาจไม่ล่าสุด/);
+  assert.match(retail, /PosConnectionStatus apiStatus=\{incomingApiStatus\}/);
+
+  assert.match(restaurant, /incoming_intake_unknown/);
+  assert.match(restaurant, /incoming_bell_unavailable/);
+  assert.match(restaurant, /incomingBellHealthBadge/);
+  assert.match(restaurant, /PosConnectionStatus apiStatus=\{incomingApiStatus\}/);
+  assert.match(restaurant, /onIncomingFeedHealthChange: setIncomingFeedHealth/);
+  assert.match(restaurant, /loadIncomingOrders\(\)\.catch\(\(\) => \[\]\)/);
 });
 
 test("a kitchen cancellation drops the line from the bill instead of charging for it", async () => {

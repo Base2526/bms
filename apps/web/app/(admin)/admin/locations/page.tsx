@@ -29,6 +29,10 @@ const Q = gql`
       phone
       active
       parking { status published carSpaces motorcycleSpaces details mapUrl }
+      pickupQueue {
+        enabled autoHideMinutes showPreparing boardMessage prefix startNo spotlightSeconds
+        voiceMode voiceLanguage voiceRepeat voiceVolume
+      }
     }
   }
 `;
@@ -49,6 +53,12 @@ type Location = {
   phone: string | null;
   active: boolean;
   parking: LocationParking | null;
+  pickupQueue: {
+    enabled: boolean; autoHideMinutes: number; showPreparing: boolean; boardMessage: string | null;
+    prefix: string; startNo: number; spotlightSeconds: number;
+    voiceMode: "AI_STUDIO" | "VOICE_CHIME" | "CHIME" | "OFF";
+    voiceLanguage: "th" | "en"; voiceRepeat: number; voiceVolume: number;
+  };
 };
 
 export default function LocationsPage() {
@@ -82,6 +92,18 @@ export default function LocationsPage() {
         status: parking.status, published: parking.published,
         carSpaces: parking.carSpaces ?? null, motorcycleSpaces: parking.motorcycleSpaces ?? null,
         details: parking.details ?? null, mapUrl: parking.mapUrl ?? null,
+      }, pickupQueue: {
+        enabled: values.pickupQueue?.enabled === true,
+        autoHideMinutes: Number(values.pickupQueue?.autoHideMinutes ?? 30),
+        showPreparing: values.pickupQueue?.showPreparing !== false,
+        boardMessage: values.pickupQueue?.boardMessage?.trim() || null,
+        prefix: values.pickupQueue?.prefix?.trim().toUpperCase() || "",
+        startNo: Number(values.pickupQueue?.startNo ?? 1),
+        spotlightSeconds: Number(values.pickupQueue?.spotlightSeconds ?? 12),
+        voiceMode: values.pickupQueue?.voiceMode ?? "AI_STUDIO",
+        voiceLanguage: values.pickupQueue?.voiceLanguage ?? "th",
+        voiceRepeat: Number(values.pickupQueue?.voiceRepeat ?? 1),
+        voiceVolume: Number(values.pickupQueue?.voiceVolume ?? 80),
       } } } });
       message.success("บันทึกสาขาแล้ว");
       setOpen(false);
@@ -106,7 +128,11 @@ export default function LocationsPage() {
             onClick={() => {
               setEditing(null);
               form.resetFields();
-              form.setFieldsValue({ active: true, parking: emptyParking });
+              form.setFieldsValue({ active: true, parking: emptyParking, pickupQueue: {
+                enabled: false, autoHideMinutes: 30, showPreparing: true, boardMessage: null,
+                prefix: "", startNo: 1, spotlightSeconds: 12,
+                voiceMode: "AI_STUDIO", voiceLanguage: "th", voiceRepeat: 1, voiceVolume: 80,
+              } });
               setOpen(true);
             }}
           >
@@ -253,6 +279,63 @@ export default function LocationsPage() {
           <Form.Item name={["parking", "published"]} label={t("branch_parking.publish")} valuePropName="checked" extra={t("branch_parking.publish_help")}>
             <Switch aria-label={t("branch_parking.publish")} />
           </Form.Item>
+          <Typography.Title level={5}>เลขคิวรับของ</Typography.Title>
+          <Typography.Paragraph type="secondary">
+            ใช้กับเครื่องขายทุกเครื่องในสาขานี้ เลขที่เกินเวลาจะหายจากจอลูกค้าเท่านั้น
+            แต่ยังอยู่ในประวัติพนักงานและไม่ถูกลบ
+          </Typography.Paragraph>
+          <Form.Item name={["pickupQueue", "enabled"]} label="ออกเลขคิวทุกเครื่องในสาขานี้"
+            valuePropName="checked"
+            extra="บิลขายออนไลน์และบิลกลับบ้านที่ชำระแล้วจะได้เลข แม้เครื่องนั้นไม่ได้เปิดสวิตช์รายเครื่อง">
+            <Switch aria-label="ออกเลขคิวทุกเครื่องในสาขานี้" />
+          </Form.Item>
+          <Form.Item name={["pickupQueue", "autoHideMinutes"]} label="ซ่อนเลขพร้อมรับจากจอลูกค้าหลัง (นาที)"
+            extra="ใส่ 0 เพื่อให้ค้างจนพนักงานกด รับแล้ว · ช่วง 0-1440 นาที"
+            rules={[{ required: true, message: "ระบุจำนวนนาที" }]}>
+            <InputNumber min={0} max={1440} precision={0} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item name={["pickupQueue", "showPreparing"]} label="แสดงคิวกำลังเตรียมบนจอลูกค้า" valuePropName="checked">
+            <Switch aria-label="แสดงคิวกำลังเตรียมบนจอลูกค้า" />
+          </Form.Item>
+          <Form.Item name={["pickupQueue", "boardMessage"]} label="ข้อความบนจอเรียกคิว"
+            extra="เช่น กรุณารอรับสินค้าที่เคาน์เตอร์ · สูงสุด 120 ตัวอักษร">
+            <Input maxLength={120} showCount />
+          </Form.Item>
+          <Space.Compact block>
+            <Form.Item name={["pickupQueue", "prefix"]} label="คำนำหน้า" style={{ width: "35%" }}
+              normalize={(value) => String(value ?? "").trim().toUpperCase()}
+              rules={[{ pattern: /^[A-Z]?$/, message: "A-Z ได้ 1 ตัว" }]}
+              extra="เช่น A → A001">
+              <Input maxLength={1} placeholder="A" />
+            </Form.Item>
+            <Form.Item name={["pickupQueue", "startNo"]} label="เริ่มที่" style={{ width: "65%" }}
+              rules={[{ required: true, message: "ระบุเลขเริ่ม" }]} extra="มีผลกับวันบริการใหม่">
+              <InputNumber min={1} max={9999} precision={0} style={{ width: "100%" }} />
+            </Form.Item>
+          </Space.Compact>
+          <Form.Item name={["pickupQueue", "spotlightSeconds"]} label="ไฮไลต์เลขที่เรียก (วินาที)" rules={[{ required: true }]}>
+            <InputNumber min={5} max={60} precision={0} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item name={["pickupQueue", "voiceMode"]} label="เสียงเรียกคิว"
+            extra="AI Studio ใช้ไฟล์เสียงที่อนุมัติแล้ว; ถ้า voice-pack ยังไม่พร้อมจะใช้เสียงพูดของเครื่องก่อน และใช้กริ่งเมื่อเครื่องพูดไม่ได้">
+            <Select options={[
+              { value: "AI_STUDIO", label: "AI Studio (หลัก) + กริ่งสำรอง" },
+              { value: "VOICE_CHIME", label: "AI Studio แล้วกริ่ง" },
+              { value: "CHIME", label: "กริ่งอย่างเดียว" },
+              { value: "OFF", label: "ปิดเสียง" },
+            ]} />
+          </Form.Item>
+          <Space.Compact block>
+            <Form.Item name={["pickupQueue", "voiceLanguage"]} label="ภาษา" style={{ width: "34%" }}>
+              <Select options={[{ value: "th", label: "ไทย" }, { value: "en", label: "English" }]} />
+            </Form.Item>
+            <Form.Item name={["pickupQueue", "voiceRepeat"]} label="เรียกซ้ำ" style={{ width: "33%" }}>
+              <InputNumber min={1} max={3} precision={0} addonAfter="ครั้ง" style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item name={["pickupQueue", "voiceVolume"]} label="ระดับเสียง" style={{ width: "33%" }}>
+              <InputNumber min={0} max={100} precision={0} addonAfter="%" style={{ width: "100%" }} />
+            </Form.Item>
+          </Space.Compact>
           <Form.Item name="active" label="เปิดใช้งาน" valuePropName="checked">
             <Switch />
           </Form.Item>

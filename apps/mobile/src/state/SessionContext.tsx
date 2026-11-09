@@ -13,6 +13,7 @@ export interface PosSessionBranch {
   id: string;
   name: string;
   code: string;
+  pickupQueue?: { enabled: boolean; autoHideMinutes: number; showPreparing: boolean; boardMessage?: string | null };
 }
 
 export interface PosSessionCashier {

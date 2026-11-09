@@ -35,6 +35,32 @@ contextBridge.exposeInMainWorld("bmsDesktop", {
   printReceipt: () => ipcRenderer.invoke("bms-pos:print-receipt"),
   testReceiptPrinter: () => ipcRenderer.invoke("bms-pos:test-receipt-printer"),
   confirmPrinterTest: (printed) => ipcRenderer.invoke("bms-pos:confirm-printer-test", printed === true),
+  getKitchenPrinterState: () => ipcRenderer.invoke("bms-pos:get-kitchen-printer-state"),
+  setKitchenPrinterConfig: (input) => ipcRenderer.invoke("bms-pos:set-kitchen-printer-config", {
+    routes: Array.isArray(input?.routes) ? input.routes.slice(0, 32).map((route) => ({
+      stationKey: typeof route?.stationKey === "string" ? route.stationKey : "",
+      stationName: typeof route?.stationName === "string" ? route.stationName : "",
+      deviceName: typeof route?.deviceName === "string" ? route.deviceName : "",
+      paperWidth: route?.paperWidth,
+      autoPrint: route?.autoPrint === true,
+    })) : [],
+  }),
+  testKitchenPrinter: (stationKey) => ipcRenderer.invoke("bms-pos:test-kitchen-printer", typeof stationKey === "string" ? stationKey : ""),
+  printKitchenTicket: (job, options) => ipcRenderer.invoke("bms-pos:print-kitchen-ticket", {
+    jobId: typeof job?.jobId === "string" ? job.jobId : "",
+    stationId: typeof job?.stationId === "string" ? job.stationId : null,
+    stationName: typeof job?.stationName === "string" ? job.stationName : null,
+    label: typeof job?.label === "string" ? job.label : "",
+    roundNo: job?.roundNo,
+    createdAt: typeof job?.createdAt === "string" ? job.createdAt : "",
+    items: Array.isArray(job?.items) ? job.items.slice(0, 80).map((item) => ({
+      name: typeof item?.name === "string" ? item.name : "",
+      size: typeof item?.size === "string" ? item.size : "",
+      qty: item?.qty,
+      modifiers: Array.isArray(item?.modifiers) ? item.modifiers.slice(0, 20) : [],
+      note: typeof item?.note === "string" ? item.note : "",
+    })) : [],
+  }, { auto: options?.auto === true, retry: options?.retry === true }),
   getCustomerDisplayState: () => ipcRenderer.invoke("bms-pos:get-customer-display-state"),
   openCustomerDisplayPreview: () => ipcRenderer.invoke("bms-pos:open-customer-display-preview"),
   closeCustomerDisplayPreview: () => ipcRenderer.invoke("bms-pos:close-customer-display-preview"),
@@ -48,6 +74,24 @@ contextBridge.exposeInMainWorld("bmsDesktop", {
     const handler = (_event, state) => listener(state);
     ipcRenderer.on("bms-pos:customer-display-state-changed", handler);
     return () => ipcRenderer.removeListener("bms-pos:customer-display-state-changed", handler);
+  },
+  getQueueDisplayState: () => ipcRenderer.invoke("bms-pos:get-queue-display-state"),
+  openQueueDisplayPreview: () => ipcRenderer.invoke("bms-pos:open-queue-display-preview"),
+  closeQueueDisplayPreview: () => ipcRenderer.invoke("bms-pos:close-queue-display-preview"),
+  setQueueDisplayConfig: (input) => ipcRenderer.invoke("bms-pos:set-queue-display-config", {
+    mode: typeof input?.mode === "string" ? input.mode : "",
+    targetDisplayId: typeof input?.targetDisplayId === "string" ? input.targetDisplayId : null,
+  }),
+  setExternalDisplayRole: (input) => ipcRenderer.invoke("bms-pos:set-external-display-role", {
+    role: input?.role === "customer" || input?.role === "queue" ? input.role : "",
+    mode: typeof input?.mode === "string" ? input.mode : "",
+    targetDisplayId: typeof input?.targetDisplayId === "string" ? input.targetDisplayId : null,
+  }),
+  onQueueDisplayStateChanged: (listener) => {
+    if (typeof listener !== "function") return () => {};
+    const handler = (_event, state) => listener(state);
+    ipcRenderer.on("bms-pos:queue-display-state-changed", handler);
+    return () => ipcRenderer.removeListener("bms-pos:queue-display-state-changed", handler);
   },
   onRefreshRequested: (listener) => {
     if (typeof listener !== "function") return () => {};

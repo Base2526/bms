@@ -75,6 +75,13 @@ export default function ReceiptPaper({ payload }: { payload: ReceiptPayload }) {
         <div>{payload.docTitle}</div>
       </div>
 
+      {payload.pickupQueueLabel && (
+        <div className="pos-receipt-head" style={{ borderTop: "1px dashed currentColor", borderBottom: "1px dashed currentColor", padding: "4px 0", margin: "4px 0" }}>
+          <div>{label("คิวของคุณ", "Your number")}</div>
+          <div style={{ fontSize: "2em", fontWeight: 700, lineHeight: 1.1 }}>{payload.pickupQueueLabel}</div>
+        </div>
+      )}
+
       {payload.billNo && <Row left={label("เลขที่บิล", "Bill No")} right={payload.billNo} />}
       {payload.serviceModeLabel && <Row left={label("ประเภท", "Type")} right={payload.serviceModeLabel} />}
       {(payload.notes ?? []).map((note, index) => (

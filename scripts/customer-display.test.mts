@@ -134,6 +134,7 @@ test("brand uses shop name separately from branch and never invents public links
   assert.equal(displayBrand(null), null);
   assert.deepEqual(displayBrand({ store: { name: "FAKE shop", logoUrl: "/api/files/1" }, location: { name: "FAKE branch" } }), {
     name: "FAKE shop", branch: "FAKE branch", logoUrl: "/api/files/1", customerDisplayBackgroundUrl: null,
+    customerDisplayPromoSlides: [], customerDisplayPromoIntervalSeconds: 8,
     businessHours: null, website: null,
   });
 });

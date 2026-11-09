@@ -42,6 +42,7 @@ const Q_TICKETS = gql`
     bmsKitchenTickets(status: $status, limit: 200) {
       id source orderId checkId tableCode tableName roundNo kitchenNote
       stationId station status modifierCodes productSku productName size packQty qty createdAt updatedAt
+      pickupQueueLabel
     }
   }
 `;
@@ -60,7 +61,7 @@ const M_STATUS = gql`
     bmsUpdateKitchenTicketsStatus(ids: $ids, status: $status) { id status updatedAt }
   }
 `;
-type Ticket = { id: string; source: string; orderId: string | null; checkId: string | null; tableCode: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; stationId: string | null; station: string | null; status: string; modifierCodes: string[]; productSku: string; productName: string; size: string; packQty: number | null; qty: number; createdAt: string; updatedAt?: string | null };
+type Ticket = { id: string; source: string; orderId: string | null; checkId: string | null; tableCode: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; stationId: string | null; station: string | null; status: string; modifierCodes: string[]; productSku: string; productName: string; size: string; packQty: number | null; qty: number; createdAt: string; updatedAt?: string | null; pickupQueueLabel?: string | null };
 const LANES = [
   { status: "NEW", color: "#c65b35", next: "PREPARING" },
   { status: "PREPARING", color: "#d89b24", next: "READY" },

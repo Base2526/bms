@@ -167,3 +167,39 @@ test("แผงบิลที่จอแคบมากต้องคืน�
   assert.match(item!.body, /grid-template-columns:\s*28px\s+minmax\(0,\s*1fr\)/, ".item ต้องเหลือ 2 คอลัมน์");
   assert.match(side!.body, /grid-column:\s*1\s*\/\s*-1/, ".itemSide ต้องลงไปกินแถวของตัวเองเต็มความกว้าง");
 });
+
+test("ตัวเลือกโหมดบริการต้องเหลือหนึ่งคอลัมน์บนจอแคบมาก", () => {
+  assert.match(bodyFor(".serviceModeGrid"), /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+  const blocks = css.split(/@media\s*\(max-width:\s*(\d+)px\)/);
+  const idx = blocks.findIndex((part, i) => i % 2 === 1 && Number(part) === 460);
+  assert.ok(idx >= 0, "ต้องมีบล็อก 460px");
+  const mobile = rules(blocks[idx + 1]).find((rule) => rule.selector === ".serviceModeGrid");
+  assert.ok(mobile, "บล็อก 460px ต้องจัดโหมดบริการใหม่");
+  assert.match(mobile!.body, /grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+});
+
+test("แถบหัวกะทัดรัดต้องไม่ทำชื่อพนักงานซ้ำและยังตกบรรทัดได้บนจอแคบ", () => {
+  assert.match(bodyFor(".topbar"), /flex-wrap:\s*nowrap/);
+  assert.match(bodyFor(".topStatusGroup"), /display:\s*inline-flex/);
+  assert.match(bodyFor(".accountMenu > summary"), /width:\s*52px/);
+  assert.match(bodyFor(".accountMenu > summary"), /grid-template-columns:\s*32px\s+10px/);
+  assert.match(bodyFor(".accountCopy"), /display:\s*none/);
+  assert.match(bodyFor(".page .incomingBell"), /height:\s*40px/);
+
+  const blocks = css.split(/@media\s*\(max-width:\s*(\d+)px\)/);
+  const mediaRules = (width: number) => {
+    const idx = blocks.findIndex((part, i) => i % 2 === 1 && Number(part) === width);
+    assert.ok(idx >= 0, `ต้องมีบล็อก ${width}px`);
+    return rules(blocks[idx + 1]);
+  };
+  const at900 = mediaRules(900);
+  assert.match(at900.find((rule) => rule.selector === ".topbar")?.body ?? "", /flex-wrap:\s*wrap/);
+  assert.match(at900.find((rule) => rule.selector === ".topActions")?.body ?? "", /width:\s*100%/);
+
+  const at640 = mediaRules(640);
+  const mobileAccount = at640.find((rule) => rule.selector === ".accountMenu");
+  const mobileIncoming = at640.find((rule) => rule.selector === ".topbar .incomingBell");
+  assert.match(mobileAccount?.body ?? "", /flex:\s*0\s+0\s+52px/);
+  assert.match(mobileIncoming?.body ?? "", /flex:\s*1\s+1\s+auto/);
+  assert.ok(!at640.some((rule) => rule.selector === ".shiftStatus" && /display:\s*none/.test(rule.body)), "สถานะกะต้องยังมองเห็นบนจอแคบ");
+});

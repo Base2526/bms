@@ -33,6 +33,8 @@ export type KitchenBoardTicket = {
   qty?: number | null;
   createdAt: string;
   updatedAt?: string | null;
+  /** เลขคิวรับของ (10.111) — มีเฉพาะบิลหน้าร้าน/กลับบ้านที่ออกเลขแล้ว */
+  pickupQueueLabel?: string | null;
 };
 
 export type KitchenBoardItem = {
@@ -50,6 +52,8 @@ export type KitchenBoardGroup = {
   status: string;
   stationId: string | null;
   station: string | null;
+  /** เลขเดียวกับใบเสร็จ/จอเรียกคิว — แยกจาก tableLabel เพื่อทำแถบคิวข้ามสถานี */
+  pickupQueueLabel: string | null;
   tableLabel: string | null;
   roundNo: number | null;
   items: KitchenBoardItem[];
@@ -164,6 +168,10 @@ export function formatKitchenElapsed(elapsedSeconds: number): string {
  * ครัวไม่รู้ว่าอาหารจานนี้ของใคร
  */
 export function kitchenGroupLabel(ticket: KitchenBoardTicket): string | null {
+  // เลขคิวชนะทุกอย่าง: เป็นเลขเดียวกับที่ลูกค้าถือและที่หน้าร้านจะเรียก ครัวจึงวางอาหาร
+  // ตามเลขนั้นได้ทันที ("Take away #ab12cd34" ไม่มีใครข้างนอกครัวรู้จัก)
+  const pickup = clean(ticket.pickupQueueLabel);
+  if (pickup) return `คิว ${pickup}`;
   const table = clean(ticket.tableName) ?? clean(ticket.tableCode);
   if (table) return table;
   const order = clean(ticket.orderId);
@@ -205,6 +213,7 @@ export function groupKitchenTickets(tickets: KitchenBoardTicket[]): KitchenBoard
         status,
         stationId,
         station,
+        pickupQueueLabel: clean(ticket.pickupQueueLabel),
         tableLabel: kitchenGroupLabel(ticket),
         roundNo,
         items: [],
@@ -249,6 +258,58 @@ export function groupKitchenTickets(tickets: KitchenBoardTicket[]): KitchenBoard
     const right = Date.parse(b.referenceAt);
     if (left !== right) return left - right;
     return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+  });
+}
+
+export type KitchenPickupQueueSummary = {
+  label: string;
+  /** สถานะที่ช้าที่สุดของทุกสถานีในคิวนี้ — ห้ามบอกพร้อมรับถ้ายังมีอาหารกำลังทำ */
+  status: "NEW" | "PREPARING" | "READY";
+  referenceAt: string;
+  totalQty: number;
+};
+
+const PICKUP_QUEUE_STATUS_RANK: Record<KitchenPickupQueueSummary["status"], number> = {
+  NEW: 0,
+  PREPARING: 1,
+  READY: 2,
+};
+
+/**
+ * แถบคิวด่วนบน KDS รวมงานเลขเดียวกันที่แยกหลายสถานีให้เหลือหนึ่งชิป
+ *
+ * กลุ่มหนึ่งอาจอยู่ READY ที่บาร์ แต่อีกกลุ่มของคิวเดียวกันยัง PREPARING ที่ครัวร้อน
+ * จึงต้องแสดง PREPARING จนกว่าทุกสถานีจะพร้อม ไม่เช่นนั้นคนหน้าร้านจะเรียกลูกค้าก่อนอาหารครบ
+ * SERVED ไม่อยู่ในแถบนี้ เพราะเป็นประวัติที่จบแล้วและยังดูได้จากเลนเสิร์ฟแล้วตามเดิม
+ */
+export function summarizeKitchenPickupQueues(groups: KitchenBoardGroup[]): KitchenPickupQueueSummary[] {
+  const summaries = new Map<string, KitchenPickupQueueSummary>();
+  for (const group of groups) {
+    const label = clean(group.pickupQueueLabel);
+    const status = String(group.status ?? "").toUpperCase();
+    if (!label || !Object.prototype.hasOwnProperty.call(PICKUP_QUEUE_STATUS_RANK, status)) continue;
+    const typedStatus = status as KitchenPickupQueueSummary["status"];
+    const current = summaries.get(label);
+    if (!current) {
+      summaries.set(label, { label, status: typedStatus, referenceAt: group.referenceAt, totalQty: group.totalQty });
+      continue;
+    }
+    current.totalQty += group.totalQty;
+    const rank = PICKUP_QUEUE_STATUS_RANK[typedStatus];
+    const currentRank = PICKUP_QUEUE_STATUS_RANK[current.status];
+    if (rank < currentRank) {
+      current.status = typedStatus;
+      current.referenceAt = group.referenceAt;
+    } else if (rank === currentRank && Date.parse(group.referenceAt) < Date.parse(current.referenceAt)) {
+      current.referenceAt = group.referenceAt;
+    }
+  }
+  return [...summaries.values()].sort((a, b) => {
+    const status = PICKUP_QUEUE_STATUS_RANK[a.status] - PICKUP_QUEUE_STATUS_RANK[b.status];
+    if (status !== 0) return status;
+    const time = Date.parse(a.referenceAt) - Date.parse(b.referenceAt);
+    if (time !== 0) return time;
+    return a.label.localeCompare(b.label, "th", { numeric: true });
   });
 }
 

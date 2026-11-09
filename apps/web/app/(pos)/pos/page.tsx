@@ -20,6 +20,10 @@ import BoardGamePanel from "@/components/pos/BoardGamePanel";
 import GiftPromotionSummary from "@/components/pos/GiftPromotionSummary";
 import PosDismissibleAlert from "@/components/pos/PosDismissibleAlert";
 import CustomerDisplaySettings from "@/components/pos-desktop/CustomerDisplaySettings";
+import ManagedDisplaySettings from "@/components/pos-desktop/ManagedDisplaySettings";
+import QueueBoardPreferenceSettings from "@/components/pos-desktop/QueueBoardPreferenceSettings";
+import KitchenPrinterSettings from "@/components/pos-desktop/KitchenPrinterSettings";
+import { hasDesktopKitchenPrinterBridge } from "@/lib/pos/kitchenPrinterClient";
 import ReceiptPrinterSettings from "@/components/pos-desktop/ReceiptPrinterSettings";
 import ReceiptPrinterStatus from "@/components/pos-desktop/ReceiptPrinterStatus";
 import DesktopUpdateMenu from "@/components/pos-desktop/DesktopUpdateMenu";
@@ -54,6 +58,8 @@ import {
 } from "@/lib/pos/scanManager";
 import { buildDrawerKick, buildReceipt, type ReceiptLine, type ReceiptPayload } from "@/lib/pos/escpos";
 import ReceiptPaper from "@/components/pos/ReceiptPaper";
+import { PickupQueueSettings, PickupQueueStrip, readPickupQueueEnabled, writePickupQueueEnabled } from "@/components/pos/PickupQueuePanel";
+import { PickupQueueRetryButton } from "@/components/pos/PickupQueueManager";
 import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
 import {
   posPaymentMethodLabel,
@@ -65,7 +71,7 @@ import {
 import { selectedReturnLines, type ReturnDraft } from "@/lib/pos/returnDraft";
 import { appendSplitPaymentRow, rebalanceSplitPayments, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
 import { isEnrollablePhone } from "@/lib/pos/memberEnroll";
-import { describePosFailure as describeFailure } from "@/lib/pos/failureMessage";
+import { describePosFailure as describeFailure, describeTransportFailure } from "@/lib/pos/failureMessage";
 import {
   CUSTOMER_DISPLAY_CHANNEL,
   EMPTY_CUSTOMER_DISPLAY,
@@ -81,13 +87,14 @@ import {
 import {
   clearPosDeviceToken,
   hasDesktopCustomerDisplayBridge,
+  hasDesktopManagedDisplayBridge,
   hasDesktopPosBridge,
   posDeviceStorageNamespace,
   readPosDeviceToken,
   requestDesktopOperationalAttention,
   writeBrowserPosDeviceToken,
 } from "@/lib/pos/deviceTokenClient";
-import { PosWorkspaceContext, type PosTab } from "@/components/pos/PosWorkspaceContext";
+import { PosWorkspaceContext, type PosIncomingFeedHealth, type PosTab } from "@/components/pos/PosWorkspaceContext";
 import { PosConnectionStatus } from "@/components/realtime/RealtimeProvider";
 
 /**
@@ -99,7 +106,7 @@ import { PosConnectionStatus } from "@/components/realtime/RealtimeProvider";
  * ซ้อนกันได้: คนแรกยังจ่ายไม่จบ คนถัดไปยื่นบิลมาขอคืนของ
  */
 /** จอค้าปลีกเห็นเฉพาะออร์เดอร์ออนไลน์/แชทที่รอคนกดรับ — ไม่มีตั๋วครัวและไม่มีคิว QR ที่นี่ */
-const POS_ALERT_KINDS: readonly AlertKind[] = ["CHAT_REQUEST"] as const;
+const POS_ALERT_KINDS: readonly AlertKind[] = ["CHAT_REQUEST", "PICKUP_READY"] as const;
 const POS_TABS = [
   { key: "sell", label: "ขาย" },
   { key: "boardgame", label: "โต๊ะ" },
@@ -890,6 +897,8 @@ type Receipt = {
   vat: ReceiptVat | null;
   /** ปัดเศษเงินสดที่บวกอยู่ใน total แล้ว — ร้านที่ไม่ได้จด VAT ก็ปัดได้ */
   roundingAmount?: number | null;
+  /** เลขคิวรับของ (10.111) — มีเฉพาะบิลขายของเครื่องที่เปิดโหมดคิว */
+  pickupQueueLabel?: string | null;
   /** สมาชิก + แต้ม (7.96) — null ทั้งชุดเมื่อบิลนี้ไม่ผูกสมาชิก */
   memberName?: string | null;
   memberNo?: string | null;
@@ -1081,7 +1090,8 @@ type Session = {
     registeredPosNo: string | null;
     scanner: { mode: "FOCUS" | "PREFIX"; prefixKey: string; suffixKey: string; maxGapMs: number };
   };
-  location: { id: string; name: string; branchCode: string; pharmacistName: string | null } | null;
+  location: { id: string; name: string; branchCode: string; pharmacistName: string | null;
+    pickupQueue?: { enabled: boolean; autoHideMinutes: number; showPreparing: boolean; boardMessage: string | null } } | null;
   shift: { id: string; openedAt: string; openingFloat: number } | null;
   shiftReturnSummary: { returnCount: number; returnTotal: number; settledTotal: number; pendingTotal: number; pendingCount: number };
   cashiers: Array<{ id: string; name: string | null; email: string | null; isPharmacist: boolean; hasPin: boolean }>;
@@ -1104,6 +1114,8 @@ type Session = {
     phone?: string | null;
     logoUrl?: string | null;
     customerDisplayBackgroundUrl?: string | null;
+    customerDisplayPromoSlides?: string[];
+    customerDisplayPromoIntervalSeconds?: number;
     paymentQr?: { payload: string; accountName: string | null; promptpayId: string | null } | null;
   };
   surface?: "retail" | "restaurant";
@@ -1494,6 +1506,29 @@ type IncomingRestaurantOrder = {
 };
 type IncomingRefund = { id: string; orderId: string; amount: number; method: string; channel: string; customerRef: string | null; cancelledBy: string | null; createdAt: string };
 
+function incomingHttpFailure(response: Response, body: any, method: "GET" | "POST") {
+  if (typeof body?.status === "string") return describeFailure(body);
+  if (body?.error || body?.reason) return String(body.error ?? body.reason);
+  return describeTransportFailure(
+    response.status,
+    typeof navigator === "undefined" ? true : navigator.onLine,
+    method,
+  );
+}
+
+function incomingRequestFailure(error: unknown, method: "GET" | "POST") {
+  // Errors thrown after receiving a response have already been translated above. Browser network
+  // and abort errors have no trustworthy status/body, so do not leak "Failed to fetch"/AbortError.
+  if (error instanceof Error && error.name !== "TypeError" && error.name !== "AbortError" && error.message) {
+    return error.message;
+  }
+  return describeTransportFailure(
+    0,
+    typeof navigator === "undefined" ? true : navigator.onLine,
+    method,
+  );
+}
+
 export default function PosPage() {
   const receiptPrinter = useReceiptPrinter();
   const {
@@ -1510,6 +1545,7 @@ export default function PosPage() {
     onBoardGameCheckout,
     onServiceCallsChange,
     onIncomingOrdersChange,
+    onIncomingFeedHealthChange,
   } = useContext(PosWorkspaceContext);
   const [token, setToken] = useState<string>(initialToken);
   const [deviceStorageNamespace, setDeviceStorageNamespace] = useState<string>("");
@@ -1566,6 +1602,10 @@ export default function PosPage() {
   const [incomingOrders, setIncomingOrders] = useState<IncomingRestaurantOrder[]>([]);
   const [incomingRefunds, setIncomingRefunds] = useState<IncomingRefund[]>([]);
   const [incomingLoading, setIncomingLoading] = useState(false);
+  const [incomingFeedHealth, setIncomingFeedHealth] = useState<PosIncomingFeedHealth>({
+    status: "CHECKING",
+    error: null,
+  });
   const [restaurantOrdersPaused, setRestaurantOrdersPaused] = useState(false);
   const [deliveryPlatformsPaused, setDeliveryPlatformsPaused] = useState(false);
   const [deliveryIntakeState, setDeliveryIntakeState] = useState<"ACCEPTING" | "PARTIAL" | "PAUSED">("ACCEPTING");
@@ -1582,6 +1622,7 @@ export default function PosPage() {
   const incomingAppliedSequenceRef = useRef(0);
   const posPageVisible = usePageVisible();
   const incomingWaitingCount = incomingOrders.filter((row) => row.status === "PAID").length;
+  const incomingActionsDisabled = incomingLoading || incomingFeedHealth.status !== "LIVE";
   // แท็บที่เป็นของประเภทร้าน — ออเดอร์เข้ามีเฉพาะร้านอาหาร · โต๊ะ/เวลามีเฉพาะร้านบอร์ดเกม
   // แท็บที่กดแล้วไม่มีอะไรให้ทำคือแท็บที่สอนให้คนเลิกเชื่อแท็บที่เหลือ
   const visiblePosTabs = useMemo(() => {
@@ -1592,6 +1633,11 @@ export default function PosPage() {
       return true;
     });
   }, [session?.businessArchetype]);
+  const incomingApiStatus: "checking" | "online" | "offline" | undefined = session?.businessArchetype !== "restaurant"
+    ? undefined
+    : incomingFeedHealth.status === "LIVE"
+      ? "online"
+      : incomingFeedHealth.status === "STALE" ? "offline" : "checking";
 
   // Desktop renderer owns the persistent shell and authentication step. Keep this established
   // workspace in sync with that shell instead of making the operator select themselves twice.
@@ -1647,8 +1693,14 @@ export default function PosPage() {
   const [justSold, setJustSold] = useState<
     { docNo: string | null; change: number | null; total: number; kitchenTickets: number;
       id: string; completedAt: number; tendered: number | null; memberAttached: boolean; memberName: string | null;
-      pointsEarned: number | null; pointsBalance: number | null; taxRequestUrl: string | null } | null
+      pointsEarned: number | null; pointsBalance: number | null; taxRequestUrl: string | null;
+      pickupQueueLabel: string | null; pickupQueueError: string | null } | null
   >(null);
+  // เลขคิวรับของ (10.111) — สวิตช์ของเครื่องนี้ ไม่ใช่ของทั้งร้าน (เครื่องเคาน์เตอร์กาแฟออกเลข
+  // เครื่องขายของหน้าร้านข้าง ๆ ไม่ต้องออก) · refresh บังคับให้แผงคิวดึงเลขใหม่ทันทีหลังขาย
+  const [pickupQueueEnabled, setPickupQueueEnabled] = useState(false);
+  const pickupQueueActive = pickupQueueEnabled || session?.location?.pickupQueue?.enabled === true;
+  const [pickupQueueRefresh, setPickupQueueRefresh] = useState(0);
   // true = บิลนี้จ่ายเงินสดล้วนวิธีเดียว → ใช้ฟอร์มย่อ (ช่องเดียว + ปุ่มเงินด่วน)
   // ---- สมาชิก + แต้ม (7.96) ----
   const [member, setMember] = useState<PosMember | null>(null);
@@ -2318,6 +2370,11 @@ export default function PosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart, member, pointsToRedeem, couponCode, extraLines, deviceStorageNamespace, session?.shift?.id]);
 
+  useEffect(() => {
+    if (!deviceStorageNamespace) return;
+    setPickupQueueEnabled(readPickupQueueEnabled(deviceStorageNamespace));
+  }, [deviceStorageNamespace]);
+
   // คืนตะกร้า+แท็บที่ค้างไว้ — ครั้งเดียวหลัง session โหลดเสร็จ ไม่ใช่ทุกครั้งที่ตะกร้าว่าง
   // (ไม่งั้นเคลียร์ตะกร้าเองก็จะโดนดึงดราฟต์เก่ากลับมาซ้ำ)
   useEffect(() => {
@@ -2912,18 +2969,32 @@ export default function PosPage() {
    * `silent` = รอบอัตโนมัติเบื้องหลัง — ไม่หมุน spinner และไม่เขียนทับข้อความที่คนกำลังอ่าน
    * รอบเบื้องหลังที่ล้มแล้วขึ้น error ทุก 15 วินาทีคือเสียงรบกวนที่สอนให้คนเลิกอ่าน notice
    */
-  async function refreshIncomingOrders(silent = false, signal?: AbortSignal) {
-    if (!token) return;
+  function publishIncomingFeedHealth(health: PosIncomingFeedHealth) {
+    setIncomingFeedHealth(health);
+    onIncomingFeedHealthChange?.(health);
+  }
+
+  async function refreshIncomingOrders(
+    silent = false,
+    signal?: AbortSignal,
+    reportFailure = true,
+  ): Promise<boolean> {
+    if (!token) return false;
     const requestSequence = ++incomingRequestSequenceRef.current;
-    if (!silent) setIncomingLoading(true);
+    if (!silent) {
+      setIncomingLoading(true);
+      if (incomingFeedHealth.status !== "LIVE") {
+        publishIncomingFeedHealth({ status: "CHECKING", error: null });
+      }
+    }
     try {
       const res = await fetch("/api/pos/restaurant/incoming", { headers: authHeaders, cache: "no-store", signal });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+      if (!res.ok) throw new Error(incomingHttpFailure(res, data, "GET"));
       const orders: IncomingRestaurantOrder[] = Array.isArray(data.orders) ? data.orders : [];
       // Realtime, the manual reload button and the reconciliation poll can overlap. Never let an
       // older response that arrived late put a removed order/badge back on screen.
-      if (requestSequence < incomingAppliedSequenceRef.current) return;
+      if (requestSequence < incomingAppliedSequenceRef.current) return true;
       incomingAppliedSequenceRef.current = requestSequence;
       // ผูกเสียงกับ transition ที่ต้องมีคนทำ ไม่ใช่จำนวนออร์เดอร์ทั้งหมด: รอรับ, พร้อมส่งมอบ,
       // เลย deadline, provider ยกเลิก หรือคำสั่ง provider ล้มเหลวจะได้คีย์คนละตัว
@@ -2960,15 +3031,24 @@ export default function PosPage() {
         deliveryPauseControlledElsewhere: deliveryIntake.controlledElsewhere,
         deliveryPauseNeedsManualAction: deliveryIntake.needsManualAction,
       });
-    } catch (error: any) {
+      if (requestSequence === incomingRequestSequenceRef.current) {
+        publishIncomingFeedHealth({ status: "LIVE", error: null });
+      }
+      return true;
+    } catch (error: unknown) {
+      const failure = incomingRequestFailure(error, "GET");
+      // A late failure from an older overlapping request must not overwrite a newer success.
+      if (requestSequence === incomingRequestSequenceRef.current) {
+        publishIncomingFeedHealth({ status: "STALE", error: failure });
+      }
       if (!silent) {
-        setNotice({ type: "error", text: `โหลดออร์เดอร์เข้าไม่สำเร็จ: ${String(error?.message ?? error)}` });
-        return;
+        if (reportFailure) setNotice({ type: "error", text: failure });
+        return false;
       }
       // โยนต่อเฉพาะรอบอัตโนมัติ — hook ต้องรู้ว่ารอบนั้นล้มเพื่อขึ้นป้าย "ขาดการเชื่อมต่อ"
       // ⚠️ ห้ามโยนในรอบที่คนกด: `mutateIncomingOrder` เรียกตัวนี้ต่อท้ายในบล็อก try ของมัน
       // รอบรีเฟรชที่ล้มจะไปเขียนทับ "รับออร์เดอร์แล้ว" เป็น "ทำรายการไม่สำเร็จ" ทั้งที่สำเร็จไปแล้ว
-      throw error;
+      throw new Error(failure);
     } finally {
       if (!silent) setIncomingLoading(false);
     }
@@ -3006,7 +3086,7 @@ export default function PosPage() {
         if (!managerPin) throw new Error("ต้องใส่ PIN ผู้จัดการเพื่อยืนยันส่วนต่าง");
         return await mutateIncomingOrder({ ...body, managerUserId: manager.id, managerPin });
       }
-      if (!res.ok) throw new Error(data?.error ?? data?.reason ?? data?.status ?? `HTTP ${res.status}`);
+      if (!res.ok) throw new Error(incomingHttpFailure(res, data, "POST"));
       const successText = body.action === "accept"
         ? `รับออร์เดอร์แล้ว · ส่งเข้าครัว ${Number(data.ticketsCreated ?? 0)} ใบ`
         : body.action === "cancel_lines"
@@ -3014,11 +3094,16 @@ export default function PosPage() {
           : body.action === "delivery_ready" ? "บันทึกว่าอาหารพร้อมแล้ว"
             : body.action === "delivery_handoff" ? "บันทึกการส่งมอบให้ไรเดอร์และตัดสต็อกแล้ว"
               : body.paused ? "หยุดรับออร์เดอร์ออนไลน์ชั่วคราวแล้ว" : "เปิดรับออร์เดอร์ออนไลน์แล้ว";
-      setNotice({ type: "ok", text: successText });
-      await refreshIncomingOrders();
+      const refreshed = await refreshIncomingOrders(false, undefined, false);
+      setNotice({
+        type: "ok",
+        text: refreshed
+          ? successText
+          : `${successText} · แต่ยังโหลดสถานะล่าสุดไม่ได้ กด “โหลดใหม่” ก่อนทำรายการต่อ`,
+      });
       return data;
-    } catch (error: any) {
-      setNotice({ type: "error", text: `ทำรายการออร์เดอร์เข้าไม่สำเร็จ: ${String(error?.message ?? error)}` });
+    } catch (error: unknown) {
+      setNotice({ type: "error", text: incomingRequestFailure(error, "POST") });
       return null;
     } finally {
       setIncomingLoading(false);
@@ -4591,7 +4676,8 @@ export default function PosPage() {
       })(),
       // A stable sale ID keeps display heartbeats from restarting the thank-you timer.
       finished: completed
-        ? { id: completed.id, completedAt: completed.completedAt, total: completed.total, tendered: completed.tendered, change: completed.change, taxRequestUrl: completed.taxRequestUrl }
+        ? { id: completed.id, completedAt: completed.completedAt, total: completed.total, tendered: completed.tendered,
+            change: completed.change, taxRequestUrl: completed.taxRequestUrl, pickupQueueLabel: completed.pickupQueueLabel }
         : null,
     };
     displayPayload.current = payload;
@@ -4992,6 +5078,7 @@ export default function PosPage() {
         extraLines: Array.isArray(data.sale.extraLines) ? data.sale.extraLines : [],
         memberNo: data.sale.memberNo ?? null,
         memberName: data.sale.memberName ?? null,
+        pickupQueueLabel: typeof data.sale.pickupQueueLabel === "string" ? data.sale.pickupQueueLabel : null,
         pointsEarned: data.sale.pointsEarned ?? null,
         pointsBalance: data.sale.pointsBalance ?? null,
         pointsExpiring: data.sale.pointsExpiring ?? null,
@@ -5068,6 +5155,7 @@ export default function PosPage() {
           memberName: sale.memberName ?? null,
           memberNo: sale.memberNo ?? null,
           memberPhone: sale.memberPhone ?? null,
+          pickupQueueLabel: typeof sale.pickupQueueLabel === "string" ? sale.pickupQueueLabel : null,
           paymentLabel:
             Array.isArray(sale.payments) && sale.payments.length > 1 ? "จ่ายหลายวิธี" : sale.paymentMethod ?? "ไม่ระบุ",
           paymentRef: sale.paymentRef ?? null,
@@ -5544,6 +5632,7 @@ export default function PosPage() {
         change: payment.change,
       })),
       lines: [...lines, ...receiptExtraLines],
+      pickupQueueLabel: (!r.receiptType || r.receiptType === "sale") ? r.pickupQueueLabel ?? null : null,
       itemCount: r.lines.reduce((n, l) => n + l.packQty, 0)
         + receiptExtraLines.reduce((n, line) => n + line.qty, 0),
       total: r.refundTotal ?? r.total,
@@ -6009,6 +6098,8 @@ export default function PosPage() {
           ? pharmacyReviewLink?.assessmentId ?? null
           : null,
         boardGameBillingGroupId: boardGameCheckout?.id ?? null,
+        // เลขคิวรับของ (10.111) — server ออกเลขหลังบิล commit แล้วเท่านั้น
+        pickupQueue: pickupQueueActive,
         lines: cart.map((line) => ({
           sku: line.sku,
           size: line.size,
@@ -6114,6 +6205,7 @@ export default function PosPage() {
           extraLines: Array.isArray(data.extraLines) ? data.extraLines : [],
           promotionNotes: data.promotionNotes ?? [],
           boardGameTimeNotes: data.boardGameTimeNotes ?? [],
+          pickupQueueLabel: typeof data.pickupQueue?.label === "string" ? data.pickupQueue.label : null,
         };
         setReceipt(nextReceipt);
         setJustSold({
@@ -6130,7 +6222,10 @@ export default function PosPage() {
           total: soldTotal,
           // บิลที่ยิงซ้ำ (replayed) ไม่ส่งค่านี้กลับมา — ครัวรับไปตั้งแต่รอบแรกแล้ว
           kitchenTickets: Number(data.kitchenTickets ?? 0) || 0,
+          pickupQueueLabel: typeof data.pickupQueue?.label === "string" ? data.pickupQueue.label : null,
+          pickupQueueError: typeof data.pickupQueueError === "string" ? data.pickupQueueError : null,
         });
+        if (data.pickupQueue || data.pickupQueueError) setPickupQueueRefresh((n) => n + 1);
         window.localStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(nextReceipt));
         setNotice({
           type: "ok",
@@ -6139,7 +6234,9 @@ export default function PosPage() {
             data.cashChange != null && Number(data.cashChange) > 0
               ? ` · เงินทอน ฿${baht(Number(data.cashChange))}`
               : ` · รับ ฿${baht(soldTotal)}`
-          }${Number(data.kitchenTickets ?? 0) > 0 ? ` · เข้าครัว ${Number(data.kitchenTickets)} รายการ` : ""}${data.replayed ? " (บิลเดิม ไม่ได้ขายซ้ำ)" : ""}`,
+          }${Number(data.kitchenTickets ?? 0) > 0 ? ` · เข้าครัว ${Number(data.kitchenTickets)} รายการ` : ""}${
+            data.pickupQueue?.label ? ` · คิว ${data.pickupQueue.label}` : ""
+          }${data.replayed ? " (บิลเดิม ไม่ได้ขายซ้ำ)" : ""}`,
         });
         setCart([]);
         clearBoardGameCheckout();
@@ -6906,7 +7003,12 @@ export default function PosPage() {
           >
             <span className="pos-rail-icon" aria-hidden="true"><PosTabIcon tab={item.key} /></span>
             <span>{item.label}</span>
-            {item.key === "incoming" && incomingWaitingCount > 0 && (
+            {item.key === "incoming" && incomingFeedHealth.status === "STALE" && (
+              <span className="pos-rail-count pos-rail-count--pending" title="ตรวจสอบออร์เดอร์เข้าไม่ได้">
+                !
+              </span>
+            )}
+            {item.key === "incoming" && incomingFeedHealth.status !== "STALE" && incomingWaitingCount > 0 && (
               <span className="pos-rail-count pos-rail-count--pending">
                 {incomingWaitingCount}
               </span>
@@ -6962,7 +7064,7 @@ export default function PosPage() {
             แบบนั้น มันจะหายไปตั้งแต่พิมพ์ตัวแรก โฟกัสหลุด แล้ว PIN ที่ส่งไปเหลือ
             ตัวเดียว → server ตอบ "PIN ไม่ถูกต้อง" ทั้งที่พนักงานพิมพ์ถูก */}
         <div className="pos-header-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          {!embedded && <PosConnectionStatus />}
+          {!embedded && <PosConnectionStatus apiStatus={incomingApiStatus} />}
           {!embedded && <DesktopUpdateMenu />}
           {!embedded && session?.businessArchetype === "restaurant" && (
             <button
@@ -7061,7 +7163,7 @@ export default function PosPage() {
       )}
       {/* เสียงที่ถูกเบราว์เซอร์บล็อกต้องเห็นได้ — ไม่งั้นแคชเชียร์อ่านว่า "ไม่มีออร์เดอร์เข้า"
           ทั้งที่จริงคือ "มีแต่ไม่มีเสียง" · เกิดทุกครั้งที่รีเฟรชหน้าหรือแท็บเล็ตรีบูต */}
-      {alerts.blocked && session?.businessArchetype === "restaurant" && (
+      {alerts.blocked && (session?.businessArchetype === "restaurant" || pickupQueueActive) && (
         <PosDismissibleAlert className="pos-note pos-note--err" role="status">
           เสียงเตือนออร์เดอร์เข้าถูกบล็อกอยู่ · แตะที่หน้าจอหนึ่งครั้งเพื่อเปิดเสียง
         </PosDismissibleAlert>
@@ -7344,11 +7446,11 @@ export default function PosPage() {
                 <button type="button" className="pos-ret-btn" disabled={incomingLoading}
                   onClick={() => void refreshIncomingOrders()}>โหลดใหม่</button>
                 <button type="button" className={restaurantOrdersPaused ? "pos-ret-btn pos-ret-btn--solid" : "pos-ret-btn"}
-                  disabled={incomingLoading} onClick={() => void mutateIncomingOrder({ action: "pause", paused: !restaurantOrdersPaused })}>
+                  disabled={incomingActionsDisabled} onClick={() => void mutateIncomingOrder({ action: "pause", paused: !restaurantOrdersPaused })}>
                   {restaurantOrdersPaused ? "เปิดรับออร์เดอร์" : "หยุดรับชั่วคราว"}
                 </button>
                 <button type="button" className={deliveryPlatformsPaused ? "pos-ret-btn pos-ret-btn--solid" : "pos-ret-btn"}
-                  disabled={incomingLoading || deliveryPauseControlledElsewhere}
+                  disabled={incomingActionsDisabled || deliveryPauseControlledElsewhere}
                   title={deliveryPauseControlledElsewhere ? "สถานะนี้ถูกควบคุมจากส่วนกลาง ต้องเปิดจากหน้าจัดการ Delivery platforms" : undefined}
                   onClick={() => {
                     const reason = window.prompt("เหตุผลที่เปิด/หยุดรับออเดอร์ delivery platforms", "ภาระงานหน้าร้าน")?.trim();
@@ -7367,9 +7469,16 @@ export default function PosPage() {
               </div>
             </div>
             <div className="pos-block-hint" style={{ marginTop: 8 }}>
-              สถานะ Delivery platforms: {deliveryIntakeState === "PAUSED" ? "หยุดรับ"
-                : deliveryIntakeState === "PARTIAL" ? "หยุดรับบาง provider" : "กำลังรับออร์เดอร์"}
+              สถานะ Delivery platforms: {incomingFeedHealth.status === "STALE" ? "ตรวจสอบไม่ได้ — ข้อมูลเดิมอาจไม่ล่าสุด"
+                : incomingFeedHealth.status === "CHECKING" ? "กำลังตรวจสอบ…"
+                  : deliveryIntakeState === "PAUSED" ? "หยุดรับ"
+                    : deliveryIntakeState === "PARTIAL" ? "หยุดรับบาง provider" : "กำลังรับออร์เดอร์"}
             </div>
+            {incomingFeedHealth.status === "STALE" ? (
+              <div className="pos-block-hint" role="status" style={{ marginTop: 8, color: "var(--posx-danger-text, #b42318)" }}>
+                {incomingFeedHealth.error} · ปิดการเปลี่ยนสถานะชั่วคราวจนกว่าจะโหลดข้อมูลล่าสุดสำเร็จ
+              </div>
+            ) : null}
             {deliveryPauseNeedsManualAction ? (
               <div className="pos-block-hint" style={{ marginTop: 8, color: "var(--posx-warn-text, #b54708)" }}>
                 สถานะบาง provider ยังไม่ยืนยันหรือซิงก์ไม่สำเร็จ — ตรวจและทำรายการบน provider tablet ด้วย
@@ -7378,7 +7487,12 @@ export default function PosPage() {
           </div>
           {incomingOrders.length === 0 ? (
             <div className="pos-card" style={{ padding: 24, textAlign: "center" }}>
-              {incomingLoading ? "กำลังโหลด…" : "ยังไม่มีออร์เดอร์เข้าของสาขานี้"}
+              {incomingLoading ? "กำลังโหลด…"
+                : incomingFeedHealth.status === "STALE"
+                  ? "ยังยืนยันรายการล่าสุดไม่ได้ — กด “โหลดใหม่” เพื่อเชื่อมต่ออีกครั้ง"
+                  : incomingFeedHealth.status === "CHECKING"
+                    ? "กำลังตรวจสอบรายการล่าสุด…"
+                    : "ยังไม่มีออร์เดอร์เข้าของสาขานี้"}
             </div>
           ) : incomingOrders.map((order) => {
             const operationalState = incomingOrderOperationalState(order);
@@ -7424,7 +7538,7 @@ export default function PosPage() {
                   {item.name || item.sku} · {item.size} × {item.qty}{item.unitName ? ` ${item.unitName}` : ""}
                   {item.modifierCodes?.length ? ` (${item.modifierCodes.join(", ")})` : ""}
                   {operationalState !== "PROBLEM" ? (
-                    <button type="button" className="pos-ret-btn" style={{ marginLeft: 8 }} disabled={incomingLoading}
+                    <button type="button" className="pos-ret-btn" style={{ marginLeft: 8 }} disabled={incomingActionsDisabled}
                       onClick={() => void cancelIncomingLine(order, item)}>ตัดรายการ / คืนส่วนต่าง</button>
                   ) : null}
                 </li>)}
@@ -7434,26 +7548,26 @@ export default function PosPage() {
                   <span className="pos-chip pos-chip--warn">ต้องตรวจสอบก่อนดำเนินการต่อ</span>
                   <span className="pos-block-hint">{problemText}</span>
                   {order.items.length > 0 ? (
-                    <button type="button" className="pos-ret-btn" disabled={incomingLoading}
+                    <button type="button" className="pos-ret-btn" disabled={incomingActionsDisabled}
                       onClick={() => void rejectIncomingOrder(order)}>ยกเลิกยอดคงเหลือ / เปิดคืนเงิน</button>
                   ) : null}
                 </div>
               ) : operationalState === "ACCEPT" ? (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button type="button" className="pos-ret-btn pos-ret-btn--solid" disabled={incomingLoading}
+                  <button type="button" className="pos-ret-btn pos-ret-btn--solid" disabled={incomingActionsDisabled}
                     onClick={() => void mutateIncomingOrder({ action: "accept", orderId: order.id, idempotencyKey: crypto.randomUUID() })}>รับออร์เดอร์และส่งเข้าครัว</button>
-                  <button type="button" className="pos-ret-btn" disabled={incomingLoading}
+                  <button type="button" className="pos-ret-btn" disabled={incomingActionsDisabled}
                     onClick={() => void rejectIncomingOrder(order)}>ปฏิเสธทั้งออร์เดอร์</button>
                 </div>
               ) : (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   <span className="pos-chip pos-chip--ok">รับแล้ว · {operationalState === "HANDOFF" ? "พร้อมส่งมอบ" : "กำลังทำ"}</span>
                   {order.provider && operationalState === "PREPARING" && ["ACCEPTED", "PREPARING"].includes(order.deliveryStatus ?? "") ? (
-                    <button type="button" className="pos-ret-btn" disabled={incomingLoading}
+                    <button type="button" className="pos-ret-btn" disabled={incomingActionsDisabled}
                       onClick={() => void markIncomingDeliveryReady(order)}>อาหารพร้อมแล้ว</button>
                   ) : null}
                   {order.provider && operationalState === "HANDOFF" ? (
-                    <button type="button" className="pos-ret-btn pos-ret-btn--solid" disabled={incomingLoading}
+                    <button type="button" className="pos-ret-btn pos-ret-btn--solid" disabled={incomingActionsDisabled}
                       onClick={() => void handoffIncomingDelivery(order)}>ส่งมอบให้ไรเดอร์</button>
                   ) : null}
                 </div>
@@ -7471,7 +7585,7 @@ export default function PosPage() {
                   {refund.method === "PLATFORM_SETTLEMENT" ? (
                     <span className="pos-chip" style={{ marginLeft: 8 }}>รอ provider settlement</span>
                   ) : (
-                    <button type="button" className="pos-ret-btn" style={{ marginLeft: 8 }} disabled={incomingLoading}
+                    <button type="button" className="pos-ret-btn" style={{ marginLeft: 8 }} disabled={incomingActionsDisabled}
                       onClick={() => void settleIncomingRefund(refund)}>ปิดด้วยเลขโอน</button>
                   )}
                 </li>)}
@@ -8606,8 +8720,33 @@ export default function PosPage() {
 
       {tab === "settings" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {hasDesktopCustomerDisplayBridge() && <CustomerDisplaySettings />}
-          {session?.businessArchetype === "restaurant" && (
+          {hasDesktopManagedDisplayBridge()
+            ? <ManagedDisplaySettings />
+            : hasDesktopCustomerDisplayBridge() && <>
+              <CustomerDisplaySettings />
+              {hasDesktopPosBridge() && <div role="status" style={{
+                padding: "10px 12px",
+                border: "1px solid var(--posx-warn-line, #ffe58f)",
+                borderRadius: 8,
+                background: "var(--posx-warn-bg, #fffbe6)",
+                color: "var(--posx-warn-text, #ad6800)",
+                fontSize: 12,
+              }}>
+                จอเรียกคิวแบบจอที่สองต้องใช้ BMS POS Desktop รุ่นล่าสุด กรุณาอัปเดตแอปแล้วเปิดใหม่
+              </div>}
+            </>}
+          {!hasDesktopManagedDisplayBridge() && <QueueBoardPreferenceSettings />}
+          {hasDesktopKitchenPrinterBridge() && session?.businessArchetype === "restaurant" && <KitchenPrinterSettings />}
+          <PickupQueueSettings
+            enabled={pickupQueueEnabled}
+            branchEnabled={session?.location?.pickupQueue?.enabled === true}
+            managedDisplay={hasDesktopManagedDisplayBridge()}
+            onChange={(next) => {
+              setPickupQueueEnabled(next);
+              if (deviceStorageNamespace) writePickupQueueEnabled(deviceStorageNamespace, next);
+            }}
+          />
+          {(session?.businessArchetype === "restaurant" || pickupQueueActive) && (
             <div>
               <div style={{ fontWeight: 500, marginBottom: 8 }}>เสียงเตือนออร์เดอร์เข้า</div>
               <div style={{ fontSize: 13, color: "var(--posx-ink2, #555)", marginBottom: 8 }}>
@@ -8694,6 +8833,9 @@ export default function PosPage() {
       )}
 
       {tab === "sell" && (<>
+          {pickupQueueActive && token && (
+            <PickupQueueStrip token={token} cashierUserId={cashierId} cashierPin={pin} refreshKey={pickupQueueRefresh} />
+          )}
           {/* บิลที่พักไว้ (7.97) — โผล่เฉพาะตอนมีจริง ไม่กินที่ตอนไม่มี
               แถวเดียวต่อบิล กดที่ชื่อ = เรียกกลับ ปุ่ม ✕ = ทิ้ง */}
           {parked.length > 0 && (
@@ -10043,6 +10185,32 @@ export default function PosPage() {
               {justSold.kitchenTickets > 0 && (
                 <div className="pos-success-label" style={{ marginTop: 4 }}>
                   ส่งเข้าครัวแล้ว {justSold.kitchenTickets} รายการ
+                </div>
+              )}
+              {/* เลขคิวรับของ (10.111) — แคชเชียร์ต้องบอกลูกค้าทันที จึงใหญ่กว่าบรรทัดอื่น */}
+              {justSold.pickupQueueLabel && (
+                <div style={{ marginTop: 6 }}>
+                  <div className="pos-success-label">เลขคิวรับของ</div>
+                  <div className="pos-success-value">{justSold.pickupQueueLabel}</div>
+                </div>
+              )}
+              {justSold.pickupQueueError && (
+                <div className="pos-success-label" style={{ marginTop: 4, color: "var(--pos-danger, #b91c1c)" }}>
+                  ขายสำเร็จแล้ว แต่ออกเลขคิวไม่ได้: {justSold.pickupQueueError}
+                  {token && justSold.id && (
+                    <div style={{ marginTop: 6 }}>
+                      {/* บิล commit แล้ว — ขอเลขใหม่ให้บิลเดิม (server คืนเลขเดิมถ้าเคยออกไปแล้ว) */}
+                      <PickupQueueRetryButton token={token} cashierUserId={cashierId} cashierPin={pin}
+                        orderId={justSold.id}
+                        onIssued={(label) => {
+                          setJustSold((prev) => prev && prev.id === justSold.id
+                            ? { ...prev, pickupQueueLabel: label, pickupQueueError: null } : prev);
+                          setReceipt((prev) => prev && prev.orderId === justSold.id
+                            ? { ...prev, pickupQueueLabel: label } : prev);
+                          setPickupQueueRefresh((n) => n + 1);
+                        }} />
+                    </div>
+                  )}
                 </div>
               )}
 

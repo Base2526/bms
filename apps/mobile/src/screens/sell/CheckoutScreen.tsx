@@ -58,6 +58,7 @@ import {
 import { PosSaleResultError } from '../../../../../packages/pos-client-core/src/saleRetry';
 import type { OfflineSalePayload } from '../../lib/offlineSales';
 import { describeMobileSaleFailure } from '../../lib/saleFailureMessage';
+import { usePickupQueueEnabled } from '../../lib/pickupQueuePreference';
 import {
   calculateCashChange,
   paymentMethodLabel,
@@ -93,6 +94,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const cart = useCart();
   const { refresh: refreshSales } = useSales();
   const { session } = useSession();
+  // เลขคิวรับของ (10.111) — สวิตช์ของเครื่องนี้ · บิลโต๊ะทานที่ร้านไม่ขอเลข
+  const devicePickupQueueEnabled = usePickupQueueEnabled();
+  const pickupQueueEnabled = devicePickupQueueEnabled || session?.branch.pickupQueue?.enabled === true;
   const { isOpen: isShiftOpen, loading: shiftLoading } = useShift();
   const { mode: storeMode } = useStoreMode();
   const offlineSales = useOfflineSales();
@@ -827,6 +831,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     }
     let stagedRecovery = false;
     let requestSent = false;
+    let pickupQueueError: string | null = null;
     try {
       let orderId: string;
       if (source === 'restaurant') {
@@ -849,6 +854,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                 discountApproverPin:
                   restaurantManualDiscount?.approverPin ?? null,
                 payments: paymentInput,
+                pickupQueue:
+                  pickupQueueEnabled && check.serviceMode === 'TAKEAWAY',
               },
             },
           }),
@@ -860,6 +867,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           );
         }
         orderId = result.orderId;
+        pickupQueueError = result.pickupQueueError ?? null;
       } else {
         const saleKey = idempotencyRef.current ?? createIdempotencyKey('sale');
         idempotencyRef.current = saleKey;
@@ -926,6 +934,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
               pharmacistId && cart.pharmacyReview
                 ? cart.pharmacyReview.assessmentId
                 : null,
+            // มัดจำไม่ใช่การรับของ จึงไม่ออกเลขคิว (server ออกเฉพาะบิล SOLD อยู่แล้ว)
+            pickupQueue: pickupQueueEnabled && saleMode === 'SALE',
           };
           saleAttemptRef.current = {
             input: JSON.parse(JSON.stringify(input)),
@@ -1053,6 +1063,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           throw failure;
         }
         orderId = result.orderId;
+        pickupQueueError = result.pickupQueueError ?? null;
         if (stagedRecovery) {
           // Server SOLD is authoritative. A local Keychain cleanup failure must leave the row for
           // later recovery, not turn a completed sale into a misleading "ขายไม่สำเร็จ" result.
@@ -1068,7 +1079,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       idempotencyRef.current = null;
       setConfirmOpen(false);
       finishCheckout(() =>
-        navigation.replace('Receipt', { saleId: orderId, source }),
+        navigation.replace('Receipt', {
+          saleId: orderId,
+          source,
+          // หน้าใบเสร็จมีปุ่ม "ออกเลขคิวใหม่" — Alert ที่โผล่ตอนสลับหน้าจะถูกปิดทิ้งง่ายเกินไป
+          ...(pickupQueueError ? { pickupQueueError } : {}),
+        }),
       );
     } catch (error) {
       setConfirmOpen(false);

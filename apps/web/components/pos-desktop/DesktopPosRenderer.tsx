@@ -158,6 +158,8 @@ type SaleResult = {
   roundingAmount: number | null;
   pointsEarned: number | null;
   pointsBalance: number | null;
+  pickupQueue?: { id: string; queueNo: number; label: string } | null;
+  pickupQueueError?: string | null;
 };
 
 type SalePayload = Record<string, unknown>;
@@ -1475,6 +1477,7 @@ function DesktopPosContent() {
           total: receipt.total ?? total,
           tendered: receipt.cashTendered,
           change: receipt.cashChange,
+          pickupQueueLabel: receipt.pickupQueue?.label ?? receiptPaper?.pickupQueueLabel ?? null,
         }
       : null;
     const qrPaymentAmount = Math.round(payments

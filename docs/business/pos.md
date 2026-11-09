@@ -932,7 +932,9 @@ in a framed, resizable window centered inside the cashier display, so a develope
 exercise the full item/payment/Dynamic-QR flow without connecting another monitor. Preview state is
 process-local only: it does not change or persist the `off`/`auto`/`selected` display configuration,
 never reopens at startup, and yields to the configured non-cashier display when one becomes
-available. The real managed customer display remains restricted to a display other than the cashier.
+available. The customer and queue previews are independent and may remain open together for a
+one-screen comparison; the queue preview is cascaded so both native title bars remain reachable.
+The real managed customer display remains restricted to a display other than the cashier.
 
 When a QR tender is selected, the customer display creates a new Dynamic PromptPay QR containing the
 amount assigned to that tender. Its receiving authority still comes only from the exact static QR
@@ -1926,6 +1928,10 @@ a single due date per invoice, and no credit-limit approval workflow — a manag
 
 ## Failure and retry behavior
 
+- A read-only refresh (`GET`/`HEAD`) that receives a proxy/network failure reports that current data
+  could not be loaded and asks the operator to refresh. It must not claim that a bill may have been
+  written. A mutating request that loses a `502`/`503`/`504` response remains an unknown outcome:
+  refresh authoritative state first and never invite an immediate retry with a fresh key.
 - Every sale has a UUID idempotency key. A lost response or network interruption leaves a recovery
   record in browser storage; pressing Pay again reuses the same key and cannot create a second bill.
 - A `PENDING` or `PAID` sale can resume its settlement transaction. A completed key replays the
@@ -2085,6 +2091,106 @@ At the counter:
 - Customers still cannot take a walk-in queue number themselves and there is no SMS/LINE
   notification when a party is called; both remain staff screen actions.
 
+<a id="pickup-queue-numbers-and-the-call-screen-10111"></a>
+
+### Pickup queue numbers and the call screen (`10.112`–`10.113`)
+
+A cafe or food stall hands the customer a number at the counter and calls it on a screen when the
+order is ready. `9.64` numbers people waiting for a **table**; this is the separate number for people
+waiting for an **order**.
+
+- **Per branch, with a per-till override.** Locations → เลขคิวรับของ enables numbering for every
+  eligible online sale in that branch. The same branch form controls whether PREPARING numbers are
+  public, the board message and how many minutes a READY number remains on the customer board
+  (`0` keeps it until staff closes it). POS → ตั้งค่า → เลขคิวรับของ remains a device-local opt-in
+  for a cafe counter in a branch that is otherwise off (web/desktop uses `localStorage`, native uses
+  the Keychain). Dine-in checks keep their table number; **take-away checks** settled at the
+  restaurant register (web or mobile) get a pickup number at payment. Offline cash replay never
+  creates a number even when the branch policy is on: the customer has already left.
+- **Issued after the sale commits, never inside it.** Every adapter (`/api/pos/sale`, the
+  restaurant settle route, GraphQL `bmsPosSale` and `bmsPosRestaurantSettleCheck` with
+  `pickupQueue: true`) calls `issuePickupQueueAfterSale()` only after the sale returned `SOLD`, in
+  its own transaction. It never throws: a queue failure answers `SOLD` with `pickupQueueError`,
+  because the money is already in. One number per order (`UNIQUE (tenant_id, order_id)`), so a
+  replayed sale gets the same number. Mobile offline cash sales synced later never ask for one:
+  the customer already left with the goods.
+- **Numbers run per branch per service day**, using the same shop-timezone boundary as the table
+  queue. A branch can set a short prefix and the first number for a new empty service day; issued rows
+  snapshot that prefix and a later setting change never renames old receipts. Numbers keep at least
+  three digits (`A042`) at the top of the receipt in double size. Receipt history and reprints (web,
+  restaurant, mobile `BmsPosReceipt.pickupQueueLabel`) read the same stored label.
+- **Ready comes from the kitchen or the cashier.** When every live kitchen ticket of the order (or
+  of the take-away check) is `READY`/`SERVED`, the number moves to ready inside the kitchen ticket
+  transaction; a number issued after the kitchen already finished starts as ready. A kitchen undo
+  withdraws only readiness the kitchen set (`ready_source = 'KITCHEN'`); a number a cashier called by
+  hand stays called. Shops without a kitchen board call numbers from the strip on the sell tab, the
+  restaurant floor or the mobile menu screen (เรียกคิว / เรียกซ้ำ / รับแล้ว / ย้อน; GraphQL
+  `bmsPosPickupQueue` / `bmsPosPickupQueueAction`), which needs the cashier PIN and `pos.sell`.
+- **Staff queue manager.** The strip stays visible while the till numbers orders and opens
+  **จัดการคิว**: a number keypad ("42" finds `042`) to call or collect by number, filters for
+  open / preparing / ready / closed today, and per-row เรียกคิว / เรียกซ้ำ / รับแล้ว / ย้อน /
+  ยกเลิก. Cancel takes two taps (the first only arms a red confirmation), because it removes the
+  number from the customer screen for good. The list is the staff-only `?view=day` (today's numbers
+  including closed ones, with the bill reference); the public board view is unchanged. The mobile
+  strip has the same actions per tapped number, with a confirmation dialog for cancel.
+- **Retry a number that failed to issue.** Where a committed sale reported `pickupQueueError`
+  (web sell screen, restaurant settlement, mobile receipt screen) a **ออกเลขคิวใหม่** button asks
+  again for the same bill (REST `action: "issue"` with `orderId`; GraphQL `bmsPosPickupQueueAction`
+  with `action: "issue"`), and the server returns the existing number if one was issued meanwhile.
+- **The kitchen sees the number.** Kitchen tickets carry `pickupQueueLabel` (counter orders by
+  order, take-away checks through the order that settled the check), and the card header on
+  `/admin/kitchen`, the restaurant register's kitchen screen and the mobile kitchen board reads
+  `คิว 042` instead of the bill or "Take away #…" label, so the food on the pass matches the number
+  being called.
+- **Voiding a bill takes its number off the screen** in the void transaction.
+- **The call screen** is `/pos/queue-board`. A current Desktop shell configures it together with the
+  customer display under POS Settings → External displays, as Auto, a selected monitor or Off, using
+  the same identify/preview/hot-plug behavior. With one external monitor, choosing one role releases
+  the other before reopening the window; with two, both roles may stay open on different screens.
+  Temporary previews are different: both may stay open together on the cashier display for testing,
+  without changing either saved role.
+  Older shells show an update prompt instead of sending the operator to a manual URL. The screen uses the till's device token
+  (never a public link) and polls
+  `/api/pos/pickup-queue?view=board`, which returns numbers and status only: no order ids, names,
+  phones, items or amounts. The branch chooses the spotlight duration. A newly called number is
+  highlighted inside the ready panel, so the preparing and ready lists remain visible instead of
+  being pushed below a full-width overlay. Pressing **เรียกคิว** or **เรียกซ้ำ** at the till unlocks
+  Web Audio in that cashier click and announces the successful call from the configured Thai/English
+  release-time voice pack generated by Google AI Studio; the browser makes no Gemini/provider request.
+  Until that pack is installed, or if a segment cannot be decoded, the register speaks the same
+  full sentence with the OS Thai/English voice; only a missing speech engine falls back to the local
+  chime. Call-screen sound defaults on for a new till. POS Settings → External displays has a
+  per-device sound switch shared by the managed and preview queue windows; an explicit off is
+  persisted locally and wins over that default. Desktop permits this trusted managed screen to arm
+  Web Audio at startup. A browser that still blocks autoplay shows a tap-to-enable recovery button
+  without silently changing the saved preference. Only calls from the last 30 s on the server clock are announced, so a
+  screen that reconnects never chimes for numbers called minutes ago. The same card lets the owner
+  choose a workstation-local layout: เรียกเด่น, สามโซน, แถบเตรียม, มินิมอลทีวี, ป้ายรายการ or
+  แบ่งครึ่ง. The managed display and temporary preview share the selection and update while open;
+  it is presentation only and cannot change queue status. Dense layouts page numbers every eight
+  seconds instead of making them unreadably small, so a busy service never needs scrolling. The
+  workstation can also choose four distinct AI Studio voices (Kore polite female, Aoede bright
+  female, Puck friendly male and Charon male announcer), Kore speech plus a counter bell, counter bell, double beep or
+  soft ping and preview queue `001`. The release generator builds one immutable pack per profile;
+  until a profile pack is installed, the deterministic OS fallback varies voice selection, rate and
+  pitch to preserve a useful distinction between profiles. This local choice never overrides a
+  branch-wide `OFF`; missing speech support still falls back to the local chime. `npm run test:queue-board` in
+  `apps/desktop` renders it in Electron with the real desktop preload and saves screenshots. The desktop app opens it inside its own POS partition (so it can read the
+  paired token) but never treats it as a cashier frame: it cannot print or change display settings.
+  Opening the URL directly in Chrome is unsupported; a missing, expired or revoked device token is
+  replaced by instructions to reopen it from POS Settings and is never shown as a raw token error.
+- **The till and customer display share the hand-off.** A kitchen-sourced transition to READY plays
+  the device's configured `PICKUP_READY` sound and shows a short banner at the selling screen; the
+  first load is silent so old work does not chime again. After payment, the read-only customer
+  display shows the issued number prominently alongside the verified settlement result.
+- **Idle customer-display promotions never cover a sale.** Store Profile can hold up to eight
+  private file URLs plus a 4–30 second interval. The read-only display preloads and rotates them only
+  in its idle state; cart, payment, settlement and queue hand-off screens take precedence, and a
+  failed image falls back to the configured welcome background.
+- **Polling, not realtime push, by design.** The strip polls every 5 s and the screen every 3 s
+  through the device-token API. "Your order is ready" tolerates a few seconds, and a screen that lost
+  the shop's internet recovers on the next poll without a socket to re-authenticate.
+
 ### Splitting and merging bills (`9.63`)
 
 `9.44` allowed one open check per table, which is the right shape for a shop starting out and the
@@ -2178,7 +2284,12 @@ What matters at the counter:
 - **Deactivating is not deleting.** Old tickets and history stay, a deactivated station that still
   has food in the kitchen keeps its button on the board, and deactivating one that selling menu items
   still point at asks for confirmation first.
-- **Per-station printer routing is not built.** The schema reserves a column for it; nothing reads it.
+- **Desktop has a local station-printer pilot.** Each workstation explicitly maps a server station
+  id to an installed OS printer, 58/80 mm width and optional auto-print. The main process receives
+  bounded structured ticket data (never HTML/URL), prints one journalled job per server ticket and
+  suppresses successful duplicates. An unknown/timeout result requires the operator to inspect the
+  tray before confirming retry. Routes are not stored in `printer_profile_id`, not shared between
+  workstations and do not add browser-only/mobile printing.
 
 A dine-in check is settled by the same `recordPosSale()` engine as a retail bill, so the line
 re-validation inside that engine takes the **bill's own** sales surface: `RESTAURANT_POS` when a
@@ -2503,8 +2614,8 @@ does not.
 
 Known boundaries remain: delivery aggregators such as GrabFood require their official API/webhook
 contracts and credentials; no mock adapter is presented as live. Reservations/queue numbers,
-split/merge **checks** (payment split is supported), station-printer
-routing and offline-first sync are separate modules. Receipt and kitchen hardware remain browser/OS
+split/merge **checks** (payment split is supported), centrally managed station-printer profiles
+and offline-first sync are separate modules. Receipt and kitchen hardware remain browser/OS
 driven. If re-reserving fails while
 a later round is being sent, the replacement now rolls back as one transaction: the previous PENDING
 order, its idempotency key, the ingredient reservation and the already-sent kitchen lines remain

@@ -22,6 +22,7 @@ const Q = gql`
       channel active status status_detail
       last_error_at last_inbound_event_at last_outbound_success_at last_checked_at
     }
+    bmsMessengerProfile { greeting starterPayloads status publishedAt lastError }
     bmsAiConfig { has_key api_key_masked model provider }
     bmsAiUsage { billingMode count limit remaining unlimited planCode planName }
   }
@@ -34,6 +35,11 @@ const M = gql`
 const M_TEST = gql`
   mutation ($channel: String!) {
     bmsTestChannel(channel: $channel) { ok message }
+  }
+`;
+const M_PUBLISH_MESSENGER_PROFILE = gql`
+  mutation ($input: BmsMessengerProfileInput!) {
+    bmsPublishMessengerProfile(input: $input) { greeting starterPayloads status publishedAt lastError }
   }
 `;
 const M_SET_AI_KEY = gql`
@@ -269,6 +275,7 @@ export default function Page() {
                           tenantId={tenant?.id}
                           origin={origin}
                           focused={focused}
+                          messengerProfile={ch.key === "facebook" ? data?.bmsMessengerProfile : null}
                           onSaved={refetch}
                         />
                       ),
@@ -305,7 +312,7 @@ export default function Page() {
 
 // เนื้อหาฟอร์มของช่องทางเดียว — เดิมเป็นทั้ง <Card> (มี title/extra ของตัวเอง) ตอนนี้เหลือแค่ body
 // เพราะหัวแถว (dot/ชื่อ/สถานะ) ย้ายไปเรนเดอร์ที่ parent เป็น label ของ Collapse.Panel แทนแล้ว
-function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, onSaved }: any) {
+function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, messengerProfile, onSaved }: any) {
   const { t } = useI18n();
   const [form] = Form.useForm();
   const accessTokenInputRef = useRef<any>(null);
@@ -441,6 +448,12 @@ function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, o
         </Space>
       </Form>
 
+      {ch.key === "facebook" && <MessengerProfileSettings
+        profile={messengerProfile}
+        ready={Boolean(cfg?.has_token && cfg?.active)}
+        onSaved={onSaved}
+      />}
+
       <Divider style={{ margin: "16px 0 0" }} />
       <Text type="secondary" style={{ fontSize: 12 }}>
         {t("admin_settings.encrypted_note")}
@@ -457,6 +470,57 @@ function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, o
       )}
     </div>
   );
+}
+
+const MESSENGER_STARTERS = [
+  { value: "BMS_CHAT_PRICE", label: "ขอทราบราคา" },
+  { value: "BMS_CHAT_DETAILS", label: "ขอรายละเอียดสินค้าและบริการ" },
+  { value: "BMS_CHAT_INTERESTED", label: "สนใจซื้อ" },
+] as const;
+
+function MessengerProfileSettings({ profile, ready, onSaved }: any) {
+  const { t } = useI18n();
+  const [form] = Form.useForm();
+  const [publish, { loading }] = useMutation(M_PUBLISH_MESSENGER_PROFILE, {
+    onCompleted: () => { message.success(t("admin_settings.messenger_profile_publish_success")); onSaved(); },
+    onError: (error) => message.error(error?.message || t("admin_settings.messenger_profile_publish_failed")),
+  });
+  useEffect(() => {
+    form.setFieldsValue({
+      greeting: profile?.greeting ?? "สวัสดีค่ะ สนใจสินค้าหรือบริการด้านไหน เลือกหัวข้อด้านล่างได้เลยค่ะ",
+      starterPayloads: profile?.starterPayloads ?? MESSENGER_STARTERS.map((item) => item.value),
+    });
+  }, [form, profile?.greeting, JSON.stringify(profile?.starterPayloads)]);
+
+  const submit = async () => {
+    const values = await form.validateFields();
+    await publish({ variables: { input: values } });
+  };
+
+  return <>
+    <Divider />
+    <Space direction="vertical" size={4} style={{ width: "100%", marginBottom: 12 }}>
+      <Text strong><MessageOutlined /> {t("admin_settings.messenger_profile_title")}</Text>
+      <Text type="secondary">{t("admin_settings.messenger_profile_help")}</Text>
+      {profile?.status && <Space wrap>
+        <Tag color={profile.status === "PUBLISHED" ? "green" : profile.status === "FAILED" ? "red" : "gold"}>{profile.status}</Tag>
+        {profile.publishedAt && <Text type="secondary">{fmtDT(profile.publishedAt)}</Text>}
+      </Space>}
+    </Space>
+    {profile?.lastError && <Alert closable type="warning" showIcon message={profile.lastError} style={{ marginBottom: 12 }} />}
+    <Form form={form} layout="vertical">
+      <Form.Item name="greeting" label={t("admin_settings.messenger_profile_greeting")} rules={[{ required: true }, { max: 160 }]}>
+        <Input.TextArea rows={3} maxLength={160} showCount />
+      </Form.Item>
+      <Form.Item name="starterPayloads" label={t("admin_settings.messenger_profile_starters")} rules={[{ required: true, type: "array", min: 1 }]}>
+        <Select mode="multiple" maxCount={4} options={MESSENGER_STARTERS.map((item) => ({ ...item }))} />
+      </Form.Item>
+      {!ready && <Alert closable type="info" showIcon message={t("admin_settings.messenger_profile_requires_channel")} style={{ marginBottom: 12 }} />}
+      <Button type="primary" icon={<MessageOutlined />} loading={loading} disabled={!ready} onClick={submit}>
+        {t("admin_settings.messenger_profile_publish")}
+      </Button>
+    </Form>
+  </>;
 }
 
 function AiCard({ aiConfig, aiUsage, onSaved }: any) {

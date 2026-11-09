@@ -593,6 +593,32 @@ export const typeDefs = /* GraphQL */ `
     details: String
     mapUrl: String
   }
+  type BmsLocationPickupQueueSettings {
+    enabled: Boolean!
+    autoHideMinutes: Int!
+    showPreparing: Boolean!
+    boardMessage: String
+    prefix: String!
+    startNo: Int!
+    spotlightSeconds: Int!
+    voiceMode: String!
+    voiceLanguage: String!
+    voiceRepeat: Int!
+    voiceVolume: Int!
+  }
+  input BmsLocationPickupQueueSettingsInput {
+    enabled: Boolean!
+    autoHideMinutes: Int!
+    showPreparing: Boolean!
+    boardMessage: String
+    prefix: String!
+    startNo: Int!
+    spotlightSeconds: Int!
+    voiceMode: String!
+    voiceLanguage: String!
+    voiceRepeat: Int!
+    voiceVolume: Int!
+  }
   type BmsLocation {
     id: ID!
     code: String!
@@ -613,6 +639,7 @@ export const typeDefs = /* GraphQL */ `
     pharmacistName: String
     pharmacistLicenseNo: String
     parking: BmsLocationParking
+    pickupQueue: BmsLocationPickupQueueSettings!
     active: Boolean!
   }
 
@@ -678,6 +705,7 @@ export const typeDefs = /* GraphQL */ `
     phone: String
     active: Boolean
     parking: BmsLocationParkingInput
+    pickupQueue: BmsLocationPickupQueueSettingsInput
   }
 
   type BmsPosDevice {
@@ -1535,6 +1563,7 @@ export const typeDefs = /* GraphQL */ `
     bmsMyTenant: BmsTenantInfo!
     bmsChannels: [BmsChannelConfig!]!
     bmsChannelHealth: [BmsChannelHealth!]!
+    bmsMessengerProfile: BmsMessengerProfile!
     bmsChannelHealthCount: Int!   # จำนวนช่องทาง active ที่สถานะไม่ปกติ — badge sidebar (poll เหมือน bmsInboxUnreadCount)
     bmsReportSubscription: BmsReportSubscription!         # ค่าตั้งของร้านตัวเอง (default ถ้ายังไม่เคยตั้ง)
     bmsReportDeliveries(limit: Int): [BmsReportDelivery!]! # ประวัติส่งของร้านตัวเอง
@@ -3550,6 +3579,17 @@ export const typeDefs = /* GraphQL */ `
     last_outbound_success_at: String
     last_checked_at: String
   }
+  type BmsMessengerProfile {
+    greeting: String!
+    starterPayloads: [String!]!
+    status: String!
+    publishedAt: String
+    lastError: String
+  }
+  input BmsMessengerProfileInput {
+    greeting: String!
+    starterPayloads: [String!]!
+  }
 
   type BmsTestChannelResult { ok: Boolean!  message: String! }
 
@@ -4534,6 +4574,8 @@ export const typeDefs = /* GraphQL */ `
     website: String
     logoUrl: String
     customerDisplayBackgroundUrl: String
+    customerDisplayPromoSlides: [String!]!
+    customerDisplayPromoIntervalSeconds: Int!
     taxId: String
     timezone: String
     country: String
@@ -4999,6 +5041,8 @@ export const typeDefs = /* GraphQL */ `
     qty: Int!
     createdAt: String!
     updatedAt: String!
+    "Pickup queue number of a counter/take-away sale (10.111), e.g. 042; null when none was issued."
+    pickupQueueLabel: String
   }
   input BmsInventoryWastageInput {
     locationId: ID!
@@ -5042,6 +5086,8 @@ export const typeDefs = /* GraphQL */ `
     website: String
     logoUrl: String
     customerDisplayBackgroundUrl: String
+    customerDisplayPromoSlides: [String!]
+    customerDisplayPromoIntervalSeconds: Int
     taxId: String
     timezone: String
     country: String
@@ -5719,6 +5765,7 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS settings / channels (admin) =====
     bmsUpsertChannel(channel: String!, accessToken: String, channelSecret: String, webhookVerifyToken: String, externalAccountId: String, active: Boolean): Boolean!
     bmsTestChannel(channel: String!): BmsTestChannelResult!
+    bmsPublishMessengerProfile(input: BmsMessengerProfileInput!): BmsMessengerProfile!
     bmsUpsertReportSubscription(input: BmsUpsertReportSubscriptionInput!): BmsReportSubscription!
     bmsSendTestReportNow: BmsSendReportResult!
 

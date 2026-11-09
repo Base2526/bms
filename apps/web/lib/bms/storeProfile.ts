@@ -69,6 +69,8 @@ export type StoreProfile = {
   website: string | null;
   logoUrl: string | null;
   customerDisplayBackgroundUrl: string | null;
+  customerDisplayPromoSlides: string[];
+  customerDisplayPromoIntervalSeconds: number;
   taxId: string | null;
   timezone: string | null;
   country: string | null;   // TH / AU / GB (legacy text "UK" is normalized to GB)
@@ -115,7 +117,8 @@ const EMPTY: StoreProfile = {
   receiptLanguageMode: "th",
   about: null, address: null, provinceCode:null,districtCode:null,subdistrictCode:null,
   province:null,district:null,subdistrict:null,postcode:null, phone: null, contactEmail: null, website: null,
-  logoUrl: null, customerDisplayBackgroundUrl: null, taxId: null, timezone: null, country: null, currency: null,
+  logoUrl: null, customerDisplayBackgroundUrl: null, customerDisplayPromoSlides: [],
+  customerDisplayPromoIntervalSeconds: 8, taxId: null, timezone: null, country: null, currency: null,
   businessHours: null, shippingPolicy: null, returnPolicy: null,
   restaurantOrderHours: [], restaurantOrdersPaused: false, restaurantMerchantAbsorbLimit: 2000,
   paymentAccounts: [],
@@ -147,7 +150,8 @@ async function fetchStoreProfileWithClient(tenantId: string, client?: PoolClient
   const sql =
     `SELECT business_archetype, business_type, ai_language, ai_ordering_style, ai_required_fields,
             ai_interpret_short_replies, ai_handoff_after_failed_turns, receipt_language_mode,
-            about, address, phone, contact_email, website, logo_url, customer_display_background_url, tax_id,
+            about, address, phone, contact_email, website, logo_url, customer_display_background_url,
+            customer_display_promo_slides, customer_display_promo_interval_seconds, tax_id,
             COALESCE(to_jsonb(bms_store_profile)->>'timezone_code', timezone) AS timezone,
             COALESCE(to_jsonb(bms_store_profile)->>'country_code', country) AS country,
             COALESCE(to_jsonb(bms_store_profile)->>'currency_code', currency) AS currency,
@@ -181,6 +185,10 @@ async function fetchStoreProfileWithClient(tenantId: string, client?: PoolClient
     website: r.website ?? null,
     logoUrl: r.logo_url ?? null,
     customerDisplayBackgroundUrl: r.customer_display_background_url ?? null,
+    customerDisplayPromoSlides: Array.isArray(r.customer_display_promo_slides)
+      ? r.customer_display_promo_slides.filter((value: unknown): value is string => typeof value === "string")
+      : [],
+    customerDisplayPromoIntervalSeconds: Number(r.customer_display_promo_interval_seconds ?? 8),
     taxId: r.tax_id ?? null,
     timezone: r.timezone ?? null,
     country: r.country ?? null,
@@ -215,7 +223,7 @@ const NON_NULL_PROFILE_KEYS = [
   "aiHandoffAfterFailedTurns", "receiptLanguageMode", "restaurantOrderHours",
   "restaurantOrdersPaused", "restaurantMerchantAbsorbLimit", "paymentAccounts",
   "enabledCarriers", "shippingMode", "shippingZoneRates", "shippingWeightTiers",
-  "barcodeMasterContributionEnabled",
+  "barcodeMasterContributionEnabled", "customerDisplayPromoSlides", "customerDisplayPromoIntervalSeconds",
 ] as const satisfies ReadonlyArray<keyof StoreProfile>;
 
 /** GraphQL nullable fields may arrive as null, but these domain values map to NOT NULL columns. */
@@ -383,6 +391,20 @@ export async function upsertStoreProfile(
         throw new Error("รูปพื้นหลังจอลูกค้าต้องมาจากไฟล์ที่อัปโหลดในระบบ");
       }
     }
+    if (!Array.isArray(merged.customerDisplayPromoSlides)) throw new Error("สไลด์จอลูกค้าต้องเป็นรายการรูปภาพ");
+    if (merged.customerDisplayPromoSlides.length > 8) throw new Error("สไลด์จอลูกค้ามีได้สูงสุด 8 รูป");
+    merged.customerDisplayPromoSlides = Array.from(new Set(merged.customerDisplayPromoSlides.map((value) => String(value).trim())))
+      .filter(Boolean)
+      .slice(0, 8);
+    if (merged.customerDisplayPromoSlides.some((value) => !/^\/api\/files\/\d+$/.test(value))) {
+      throw new Error("สไลด์จอลูกค้าต้องมาจากไฟล์ที่อัปโหลดในระบบ");
+    }
+    merged.customerDisplayPromoIntervalSeconds = Math.trunc(Number(merged.customerDisplayPromoIntervalSeconds));
+    if (!Number.isFinite(merged.customerDisplayPromoIntervalSeconds)
+      || merged.customerDisplayPromoIntervalSeconds < 4
+      || merged.customerDisplayPromoIntervalSeconds > 30) {
+      throw new Error("เวลาเปลี่ยนสไลด์จอลูกค้าต้องอยู่ระหว่าง 4-30 วินาที");
+    }
     // payment_accounts is JSONB, so bound and normalize the values here rather
     // than allowing an admin form to persist an arbitrarily large QR payload.
     // 2 KB is comfortably above normal merchant-presented EMV payloads while
@@ -439,9 +461,10 @@ export async function upsertStoreProfile(
         shipping_mode, shipping_origin_province, shipping_origin_postcode,
         shipping_zone_rates, shipping_weight_tiers, restaurant_order_hours, restaurant_orders_paused, restaurant_merchant_absorb_limit,
         province_code,district_code,subdistrict_code,province,district,subdistrict,postcode,
-        barcode_master_contribution_enabled, customer_display_background_url
+        barcode_master_contribution_enabled, customer_display_background_url,
+        customer_display_promo_slides, customer_display_promo_interval_seconds
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::jsonb,$24,$25,$26,$27,$28,$29,$30,
-               $31,$32,$33,$34::jsonb,$35::jsonb,$36::jsonb,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47)
+               $31,$32,$33,$34::jsonb,$35::jsonb,$36::jsonb,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48::jsonb,$49)
      ON CONFLICT (tenant_id) DO UPDATE SET
         business_archetype = EXCLUDED.business_archetype,
         business_type = EXCLUDED.business_type,
@@ -477,6 +500,8 @@ export async function upsertStoreProfile(
         email_footer_text = EXCLUDED.email_footer_text,
         barcode_master_contribution_enabled = EXCLUDED.barcode_master_contribution_enabled,
         customer_display_background_url = EXCLUDED.customer_display_background_url,
+        customer_display_promo_slides = EXCLUDED.customer_display_promo_slides,
+        customer_display_promo_interval_seconds = EXCLUDED.customer_display_promo_interval_seconds,
         updated_at = now()`,
       [
         tenantId, merged.businessArchetype, merged.businessType, merged.aiLanguage, merged.aiOrderingStyle, merged.aiRequiredFields,
@@ -492,6 +517,7 @@ export async function upsertStoreProfile(
         JSON.stringify(merged.restaurantOrderHours ?? []), merged.restaurantOrdersPaused, merged.restaurantMerchantAbsorbLimit,
         merged.provinceCode,merged.districtCode,merged.subdistrictCode,merged.province,merged.district,merged.subdistrict,merged.postcode,
         merged.barcodeMasterContributionEnabled, merged.customerDisplayBackgroundUrl,
+        JSON.stringify(merged.customerDisplayPromoSlides), merged.customerDisplayPromoIntervalSeconds,
       ]
     );
     await client.query("COMMIT");

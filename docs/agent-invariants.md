@@ -1046,8 +1046,12 @@ own dine-in service. Operator detail:
   the board because of a settings change is worse than a ticket on a station being retired. Names
   arriving through the old free-text path (product form, file import, sample data) are promoted into
   master rows in the same transaction; an orphan name cannot be ordered, renamed or given SLA
-  thresholds. Reads use `product.view`, management uses `product.edit`. Per-station printer routing
-  is **not** built.
+  thresholds. Reads use `product.view`, management uses `product.edit`. The Desktop pilot may map
+  these server station ids to explicit OS printer names in workstation-local configuration. It
+  accepts structured ticket fields only, owns no menu/routing rule, and journals one job per server
+  ticket. A timeout/unknown print result is never retried automatically: staff must check the tray
+  and explicitly confirm a retry. The schema's `printer_profile_id` remains unused; there is still no
+  cloud, browser-only or mobile station-printer router.
 - **The kitchen display polls; it is not an event queue.** The register KDS refreshes its
   branch-scoped queue every five seconds while that screen is visible, and `/admin/kitchen` keeps its
   bounded ten-second poll. A failed poll shows stale data and never invents a state transition.
@@ -1094,9 +1098,10 @@ own dine-in service. Operator detail:
   scope; the branch picker reads the same scoped list so the UI cannot offer what the server refuses.
   Rotating another branch's QR invalidates the sticker physically on its table and cuts the guests
   seated at it, which is the widest blast radius on this surface.
-- **Not built, and not to be faked**: per-station printer routing and offline-first dine-in sync.
-  Split/merge and the queue/reservation board are implemented above; delivery-platform support is
-  governed separately by the provider-contract gates below.
+- **Not built, and not to be faked**: offline-first dine-in sync and central printer-profile
+  distribution. Split/merge, the queue/reservation board and the explicitly labelled Desktop-local
+  station-printer pilot are implemented above; delivery-platform support is governed separately by
+  the provider-contract gates below.
 
 ## Board game cafe
 

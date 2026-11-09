@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, BellOutlined, CheckCircleFilled, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, FullscreenExitOutlined, FullscreenOutlined, MergeCellsOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ScissorOutlined, SettingOutlined, ShopOutlined, SoundOutlined, SwapOutlined, TeamOutlined, UserAddOutlined, WalletOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, BellOutlined, CheckCircleFilled, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, FullscreenExitOutlined, FullscreenOutlined, MergeCellsOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ScissorOutlined, SettingOutlined, ShopOutlined, ShoppingOutlined, SoundOutlined, SwapOutlined, TeamOutlined, UserAddOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingForPayments, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, checkoutBlockReason, rebalanceSplitPayments, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
@@ -19,6 +19,8 @@ import { isEnrollablePhone, normalizeEnrollPhone } from "@/lib/pos/memberEnroll"
 import { buildDrawerKick, buildReceipt, type ReceiptLine, type ReceiptPayload } from "@/lib/pos/escpos";
 import { findRememberedPrinter, isWebUsbSupported, requestPrinter, sendToPrinter } from "@/lib/pos/printerClient";
 import { clearPosDeviceToken, posDeviceStorageNamespace, readPosDeviceToken, requestDesktopOperationalAttention } from "@/lib/pos/deviceTokenClient";
+import type { DesktopKitchenPrintJob } from "@/lib/pos/deviceTokenClient";
+import { hasDesktopKitchenPrinterBridge, printDesktopKitchenTicket } from "@/lib/pos/kitchenPrinterClient";
 import { incomingOrderAttentionKeys, incomingOrderNeedsAttention, incomingOrderOperationalState } from "@/lib/pos/incomingOrderAttention";
 import { summarizeDeliveryIntakeControls } from "@/lib/pos/deliveryIntakePresentation";
 import {
@@ -33,8 +35,10 @@ import {
 } from "@pos-core/posPin";
 import { usePosOperatorSession } from "@/components/pos/PosOperatorSession";
 import { usePosStartupPreparation } from "@/components/pos/PosStartupPreparation";
-import { PosWorkspaceContext, type PosIncomingOrderNotice, type PosTab } from "@/components/pos/PosWorkspaceContext";
+import { PosWorkspaceContext, type PosIncomingFeedHealth, type PosIncomingOrderNotice, type PosTab } from "@/components/pos/PosWorkspaceContext";
 import ReceiptPaper from "@/components/pos/ReceiptPaper";
+import { PickupQueueStrip, readPickupQueueEnabled } from "@/components/pos/PickupQueuePanel";
+import { PickupQueueRetryButton } from "@/components/pos/PickupQueueManager";
 import { printDesktopReceipt } from "@/lib/pos/desktopPrinterClient";
 import ReceiptPrinterStatus from "@/components/pos-desktop/ReceiptPrinterStatus";
 import { useReceiptPrinter } from "@/components/pos-desktop/useReceiptPrinter";
@@ -56,6 +60,7 @@ import {
   countKitchenDishes,
   kitchenUrgency,
   slaForStationRef,
+  summarizeKitchenPickupQueues,
   ticketMatchesStation,
   PREVIOUS_KITCHEN_STATUS,
   type KitchenBoardGroup,
@@ -89,7 +94,7 @@ const RetailPosWorkspace = dynamic(() => import("@/app/(pos)/pos/page"), {
 });
 
 /** เหตุการณ์ที่จอนี้เห็นจริง — หน้าตั้งค่าแสดงเฉพาะชุดนี้ ไม่ยื่นตัวเลือกที่ตั้งแล้วไม่มีผล */
-const RESTAURANT_ALERT_KINDS: readonly AlertKind[] = ["ORDER_ACTION", "ORDER_NEW", "QR_PENDING", "FOOD_READY", "SLA_LATE"] as const;
+const RESTAURANT_ALERT_KINDS: readonly AlertKind[] = ["ORDER_ACTION", "ORDER_NEW", "QR_PENDING", "FOOD_READY", "PICKUP_READY", "SLA_LATE"] as const;
 const INCOMING_ORDER_REALTIME_EVENTS = [
   "order.created", "order.paid", "order.status_changed", "order.cancelled", "order.fulfillment_changed",
 ] as const;
@@ -140,7 +145,7 @@ const queueStatusLabels = (t: Translate): Record<string, string> => ({
   NO_SHOW: t("pos_restaurant.queue_no_show"),
 });
 type Staff = { id: string; name: string | null; email: string | null; hasPin: boolean };
-type Session = { device: { id: string; code: string; name: string | null; registeredPosNo?: string | null }; location: { id: string; name: string; branchCode: string } | null; shift: { id: string; openedAt: string; openingFloat: number } | null; cashiers: Staff[]; approvers: Array<Staff & { approvals: string[] }>; kitchenOperators: Staff[]; businessArchetype?: string | null; store?: { name?: string | null; businessHours?: string | null; website?: string | null; taxId: string | null; receiptLanguageMode: ReceiptLanguageMode; address?: string | null; phone?: string | null; logoUrl?: string | null; customerDisplayBackgroundUrl?: string | null; paymentQr?: { payload: string; accountName: string | null; promptpayId: string | null } | null }; vat: { registered?: boolean; priceIncludesVat?: boolean; rate?: number; cashRounding?: CashRounding } };
+type Session = { device: { id: string; code: string; name: string | null; registeredPosNo?: string | null }; location: { id: string; name: string; branchCode: string; pickupQueue?: { enabled: boolean; autoHideMinutes: number; showPreparing: boolean; boardMessage: string | null } } | null; shift: { id: string; openedAt: string; openingFloat: number } | null; cashiers: Staff[]; approvers: Array<Staff & { approvals: string[] }>; kitchenOperators: Staff[]; businessArchetype?: string | null; store?: { name?: string | null; businessHours?: string | null; website?: string | null; taxId: string | null; receiptLanguageMode: ReceiptLanguageMode; address?: string | null; phone?: string | null; logoUrl?: string | null; customerDisplayBackgroundUrl?: string | null; customerDisplayPromoSlides?: string[]; customerDisplayPromoIntervalSeconds?: number; paymentQr?: { payload: string; accountName: string | null; promptpayId: string | null } | null }; vat: { registered?: boolean; priceIncludesVat?: boolean; rate?: number; cashRounding?: CashRounding } };
 type RestaurantServiceMode = "DINE_IN" | "TAKEAWAY";
 type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null; splitGroupNo: number;
   serviceMode?: RestaurantServiceMode;
@@ -244,6 +249,9 @@ type SettlementResult = {
   vat: { rate: number; vatAmount: number; netBeforeVat: number; exemptAmount?: number; roundingAmount?: number } | null;
   roundingAmount: number; discountLines: Array<{ source?: string; label: string; amount: number; pointsUsed?: number }>;
   pointsEarned: number | null; pointsBalance: number | null; kitchenTickets: number; replayed: boolean;
+  /** เลขคิวรับของ (10.111) — เฉพาะบิลกลับบ้านของเครื่องที่เปิดโหมดคิว */
+  pickupQueue?: { id: string; queueNo: number; label: string } | null;
+  pickupQueueError?: string | null;
 };
 type SettlementReceipt = {
   result: SettlementResult; check: RestaurantCheck; member: PosMember | null; at: string;
@@ -264,6 +272,8 @@ type RecentReceipt = {
   vat: SettlementResult["vat"]; roundingAmount: number;
   memberName: string | null; memberNo: string | null; pointsEarned?: number | null; pointsBalance?: number | null;
   discountLines: SettlementResult["discountLines"];
+  /** เลขคิวรับของ (10.111) — server ส่งมากับบิลที่เคยออกเลข */
+  pickupQueueLabel?: string | null;
   payments: Array<{ method: string; amount: number; ref: string | null; cashTendered: number | null; cashChange: number | null }>;
   lines: Array<{ receiptName: string; size: string; packQty: number; lineTotal: number; unitName: string }>;
 };
@@ -462,7 +472,7 @@ function MenuModifierGroups({ modifiers, selected, onChange }: {
     </fieldset>;
   })}</div>;
 }
-type KitchenTicket = { id: string; orderId: string | null; checkId: string | null; tableCode: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; stationId: string | null; station: string | null; status: string; modifierCodes: string[]; productName: string; size: string; packQty: number | null; qty: number; createdAt: string };
+type KitchenTicket = { id: string; orderId: string | null; checkId: string | null; tableCode: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; stationId: string | null; station: string | null; status: string; modifierCodes: string[]; productName: string; size: string; packQty: number | null; qty: number; createdAt: string; pickupQueueLabel?: string | null };
 
 // สีเลนอ้างตัวแปรของหน้า ไม่ใช่ค่าคงที่ — ค่าคงที่จะค้างสว่างในโหมดมืด และตัวเลขจำนวน
 // บนตั๋ว (.ticketQty) ใช้สีนี้เป็น "ตัวหนังสือ" ซึ่งต้องอ่านออกจากอีกฝั่งครัว
@@ -544,8 +554,15 @@ export default function RestaurantPosPage() {
   const [token, setToken] = useState("");
   const [tokenRejected, setTokenRejected] = useState(false);
   const [deviceStorageNamespace, setDeviceStorageNamespace] = useState("");
+  // เลขคิวรับของ (10.111) — สวิตช์เดียวกับหน้าขาย /pos (เก็บตามเครื่อง) ใช้กับบิลกลับบ้านเท่านั้น
+  const [pickupQueueEnabled, setPickupQueueEnabled] = useState(false);
+  const [pickupQueueRefresh, setPickupQueueRefresh] = useState(0);
+  useEffect(() => {
+    if (deviceStorageNamespace) setPickupQueueEnabled(readPickupQueueEnabled(deviceStorageNamespace));
+  }, [deviceStorageNamespace]);
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
+  const pickupQueueActive = pickupQueueEnabled || session?.location?.pickupQueue?.enabled === true;
   const [floor, setFloor] = useState<Floor>({ areas: [], tables: [] });
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
   // ตัวนับเวลาบนใบต้องเดินเอง ไม่ใช่ขยับตอน poll — ครัวมองจออยู่ตลอดและ 5 วินาทีของ
@@ -609,6 +626,10 @@ export default function RestaurantPosPage() {
   const [qrSubmissions, setQrSubmissions] = useState<QrSubmission[]>([]);
   const [serviceCalls, setServiceCalls] = useState<ServiceCall[]>([]);
   const [incomingOrders, setIncomingOrders] = useState<IncomingOrderNotice[]>([]);
+  const [incomingFeedHealth, setIncomingFeedHealth] = useState<PosIncomingFeedHealth>({
+    status: "CHECKING",
+    error: null,
+  });
   const [restaurantOrdersPaused, setRestaurantOrdersPaused] = useState(false);
   const [deliveryIntakeState, setDeliveryIntakeState] = useState<"ACCEPTING" | "PARTIAL" | "PAUSED">("ACCEPTING");
   const [deliveryPauseControlledElsewhere, setDeliveryPauseControlledElsewhere] = useState(false);
@@ -819,6 +840,7 @@ export default function RestaurantPosPage() {
           total: settlementReceipt.result.total,
           tendered: settlementReceipt.result.cashTendered,
           change: settlementReceipt.result.cashChange,
+          pickupQueueLabel: settlementReceipt.result.pickupQueue?.label ?? null,
         },
       });
       return;
@@ -1107,7 +1129,15 @@ export default function RestaurantPosPage() {
       const prepared = takeRestaurantStartupResponse(token, url);
       if (prepared !== undefined) return prepared;
     }
-    const response = await fetch(url, { ...init, headers: { "x-pos-device-token": token, ...(init?.body ? { "Content-Type": "application/json" } : {}), ...(init?.headers ?? {}) }, cache: "no-store" });
+    let response: Response;
+    try {
+      response = await fetch(url, { ...init, headers: { "x-pos-device-token": token, ...(init?.body ? { "Content-Type": "application/json" } : {}), ...(init?.headers ?? {}) }, cache: "no-store" });
+    } catch {
+      // fetch rejection has no response/status (network, DNS, TLS or timeout abort). Do not leak
+      // browser-specific "Failed to fetch"/AbortError strings onto an operator screen.
+      const transportMessage = describeTransportFailure(0, navigator.onLine, method);
+      throw new RestaurantApiError(transportMessage, 0);
+    }
     const body = await response.json().catch(() => ({}));
     if (method !== "GET" || !response.ok) {
       let requestedAction = method;
@@ -1135,7 +1165,7 @@ export default function RestaurantPosPage() {
     // ไม่มีทั้ง status และ error = ตอบมาไม่ใช่ JSON ของ service (proxy ตอบ HTML ตอน 502
     // หรือเน็ตหลุด) → ต้องแปลเป็นคำที่บอกได้ว่าให้ทำอะไรต่อ ไม่ใช่โชว์ "HTTP 502" ดิบ ๆ
     if (!response.ok && typeof body?.status !== "string" && !body?.error && !body?.reason) {
-      throw new RestaurantApiError(describeTransportFailure(response.status, navigator.onLine), response.status);
+      throw new RestaurantApiError(describeTransportFailure(response.status, navigator.onLine, method), response.status);
     }
     if (!response.ok) throw new RestaurantApiError(typeof body?.status === "string"
       ? describePosFailure(body)
@@ -1338,7 +1368,82 @@ export default function RestaurantPosPage() {
     ),
     [tickets, stationFilter, selectedStation]
   );
+  // หนึ่งเลขคิวอาจแยกเป็นหลายใบตามสถานี แถบด่วนจึงรวมจากทุกสถานีเสมอ แม้ผู้ใช้กำลัง
+  // กรองดูสถานีเดียว และถือสถานะที่ช้าที่สุดเพื่อไม่บอก “พร้อมรับ” ขณะที่ครัวอื่นยังทำอยู่
+  const kitchenPickupQueues = useMemo(
+    () => summarizeKitchenPickupQueues(groupKitchenTickets(tickets)),
+    [tickets]
+  );
   const unassignedOpen = tickets.filter((row) => !row.stationId && !row.station);
+  const kitchenAutoPrintBusy = useRef(false);
+  // หนึ่ง print job ต่อหนึ่ง server ticket เท่านั้น: ถ้ามีอาหารเพิ่มเข้ากลุ่มเดิมภายหลัง
+  // job ใหม่จะพิมพ์เฉพาะ ticket ใหม่ ไม่พิมพ์รายการเก่าซ้ำทั้งกลุ่ม
+  const kitchenPrintJob = (ticket: KitchenTicket): DesktopKitchenPrintJob => ({
+    jobId: `${session?.device.id ?? "unpaired"}:${ticket.id}`,
+    stationId: ticket.stationId,
+    stationName: ticket.station,
+    label: ticket.pickupQueueLabel
+      ? t("pos_restaurant.kitchen_print_queue_label", { number: ticket.pickupQueueLabel })
+      : ticket.tableName ?? ticket.tableCode ?? (ticket.orderId
+        ? t("pos_restaurant.kitchen_print_bill_label", { id: ticket.orderId.slice(0, 8) })
+        : t("pos_restaurant.no_table")),
+    roundNo: ticket.roundNo,
+    createdAt: ticket.createdAt,
+    items: [{
+      name: ticket.productName,
+      size: ticket.size,
+      qty: ticket.qty,
+      modifiers: ticket.modifierCodes,
+      note: ticket.kitchenNote,
+    }],
+  });
+  const printKitchenGroup = async (group: KitchenBoardGroup, retryTicketId?: string) => {
+    try {
+      const groupTickets = tickets.filter((ticket) => group.ticketIds.includes(ticket.id));
+      let printed = 0;
+      let duplicate = 0;
+      for (const ticket of groupTickets) {
+        const result = await printDesktopKitchenTicket(kitchenPrintJob(ticket), { retry: ticket.id === retryTicketId });
+        if (result.ok) {
+          if (result.duplicate) duplicate += 1;
+          else printed += 1;
+          continue;
+        }
+        if (result.uncertain && ticket.id !== retryTicketId) {
+          Modal.confirm({
+            title: t("pos_restaurant.kitchen_print_retry_title"),
+            content: result.error,
+            okText: t("pos_restaurant.kitchen_print_retry_ok"),
+            cancelText: t("pos_restaurant.kitchen_print_retry_cancel"),
+            onOk: () => printKitchenGroup(group, ticket.id),
+          });
+          return;
+        }
+        message.error(result.error || t("pos_restaurant.kitchen_print_failed"));
+        return;
+      }
+      message.success(printed > 0
+        ? t("pos_restaurant.kitchen_print_sent_count", { count: printed })
+        : duplicate > 0 ? t("pos_restaurant.kitchen_print_already_printed") : t("pos_restaurant.kitchen_print_nothing"));
+    } catch (cause) {
+      message.error(cause instanceof Error ? cause.message : t("pos_restaurant.kitchen_print_failed"));
+    }
+  };
+  useEffect(() => {
+    if (screen !== "KITCHEN" || !hasDesktopKitchenPrinterBridge()) return;
+    const runAutoPrint = async () => {
+      if (kitchenAutoPrintBusy.current) return;
+      kitchenAutoPrintBusy.current = true;
+      try {
+        for (const ticket of tickets.filter((entry) => entry.status === "NEW" && (entry.stationId || entry.station))) {
+          await printDesktopKitchenTicket(kitchenPrintJob(ticket), { auto: true, retry: false });
+        }
+      } finally { kitchenAutoPrintBusy.current = false; }
+    };
+    void runAutoPrint();
+    const timer = window.setInterval(() => void runAutoPrint(), 5_000);
+    return () => window.clearInterval(timer);
+  }, [tickets, screen, session?.device.id]);
   useEffect(() => {
     if (screen !== "KITCHEN") return;
     const timer = window.setInterval(() => setBoardNow(Date.now()), 1000);
@@ -1415,36 +1520,51 @@ export default function RestaurantPosPage() {
   }
   async function loadIncomingOrders(signal?: AbortSignal) {
     const requestSequence = ++incomingRequestSequenceRef.current;
-    const data = await json("/api/pos/restaurant/incoming", { signal });
-    const rows: IncomingOrderNotice[] = Array.isArray(data.orders) ? data.orders : [];
-    // Realtime hints and polling can finish out of order. Apply only the newest successful
-    // response so a late packet cannot resurrect an already accepted/cancelled order in the bell.
-    if (requestSequence < incomingAppliedSequenceRef.current) return rows;
-    incomingAppliedSequenceRef.current = requestSequence;
-    const actionKeys = incomingOrderAttentionKeys(rows);
-    const newlyActionable = newAlertIds(knownIncomingActionKeys.current, actionKeys);
-    if (newlyActionable.length > 0 && screenRef.current !== "INCOMING") {
-      alerts.notify("ORDER_ACTION");
-      void requestDesktopOperationalAttention();
+    try {
+      const data = await json("/api/pos/restaurant/incoming", { signal });
+      const rows: IncomingOrderNotice[] = Array.isArray(data.orders) ? data.orders : [];
+      // Realtime hints and polling can finish out of order. Apply only the newest successful
+      // response so a late packet cannot resurrect an already accepted/cancelled order in the bell.
+      if (requestSequence < incomingAppliedSequenceRef.current) return rows;
+      incomingAppliedSequenceRef.current = requestSequence;
+      const actionKeys = incomingOrderAttentionKeys(rows);
+      const newlyActionable = newAlertIds(knownIncomingActionKeys.current, actionKeys);
+      if (newlyActionable.length > 0 && screenRef.current !== "INCOMING") {
+        alerts.notify("ORDER_ACTION");
+        void requestDesktopOperationalAttention();
+      }
+      knownIncomingActionKeys.current = new Set(actionKeys);
+      const repeat = evaluateAlertRepeat(incomingOrderRepeatRef.current, {
+        pending: actionKeys.length > 0,
+        now: Date.now(),
+        repeatSeconds: alerts.settings.repeatSeconds,
+        maxRepeats: alerts.settings.maxRepeats,
+      });
+      incomingOrderRepeatRef.current = repeat.state;
+      if (repeat.play && screenRef.current !== "INCOMING") alerts.notify("ORDER_ACTION");
+      setIncomingOrders(rows);
+      setRestaurantOrdersPaused(data?.config?.paused === true);
+      const controls = Array.isArray(data?.config?.deliveryIntakeControls)
+        ? data.config.deliveryIntakeControls : [];
+      const deliveryIntake = summarizeDeliveryIntakeControls(controls);
+      setDeliveryIntakeState(deliveryIntake.state);
+      setDeliveryPauseControlledElsewhere(deliveryIntake.controlledElsewhere);
+      setDeliveryPauseNeedsManualAction(deliveryIntake.needsManualAction);
+      if (requestSequence === incomingRequestSequenceRef.current) {
+        setIncomingFeedHealth({ status: "LIVE", error: null });
+      }
+      return rows;
+    } catch (cause) {
+      // Only the newest request may downgrade health. An older request can fail after a newer
+      // successful refresh and must not turn a current green feed stale again.
+      if (requestSequence === incomingRequestSequenceRef.current) {
+        setIncomingFeedHealth({
+          status: "STALE",
+          error: cause instanceof Error ? cause.message : String(cause),
+        });
+      }
+      throw cause;
     }
-    knownIncomingActionKeys.current = new Set(actionKeys);
-    const repeat = evaluateAlertRepeat(incomingOrderRepeatRef.current, {
-      pending: actionKeys.length > 0,
-      now: Date.now(),
-      repeatSeconds: alerts.settings.repeatSeconds,
-      maxRepeats: alerts.settings.maxRepeats,
-    });
-    incomingOrderRepeatRef.current = repeat.state;
-    if (repeat.play && screenRef.current !== "INCOMING") alerts.notify("ORDER_ACTION");
-    setIncomingOrders(rows);
-    setRestaurantOrdersPaused(data?.config?.paused === true);
-    const controls = Array.isArray(data?.config?.deliveryIntakeControls)
-      ? data.config.deliveryIntakeControls : [];
-    const deliveryIntake = summarizeDeliveryIntakeControls(controls);
-    setDeliveryIntakeState(deliveryIntake.state);
-    setDeliveryPauseControlledElsewhere(deliveryIntake.controlledElsewhere);
-    setDeliveryPauseNeedsManualAction(deliveryIntake.needsManualAction);
-    return rows;
   }
   async function setMenuAvailability(item: MenuItem, unavailable: boolean, reason?: string | null) {
     await run(async () => {
@@ -1476,7 +1596,13 @@ export default function RestaurantPosPage() {
     else setLoading(true);
     try {
       if (!(await loadSession())) return;
-      await Promise.all([loadFloor(), loadTickets(), loadMenu(), loadQrSubmissions(), loadServiceCalls(), loadWaitlist(), loadIncomingOrders()]);
+      // Incoming orders have an independent health state and recovery button. A gateway failure on
+      // that one feed must not turn the whole floor/kitchen refresh into a generic page error or
+      // hide otherwise valid data; loadIncomingOrders() already marks the feed STALE visibly.
+      await Promise.all([
+        loadFloor(), loadTickets(), loadMenu(), loadQrSubmissions(), loadServiceCalls(), loadWaitlist(),
+        loadIncomingOrders().catch(() => []),
+      ]);
       if (check?.id) await loadCheck(check.id).then((row) => { if (!isOpenCheckStatus(row?.status)) setCheck(null); }).catch(() => setCheck(null));
       setError("");
     } catch (cause) {
@@ -2066,6 +2192,7 @@ export default function RestaurantPosPage() {
       docTitle: receiptDocumentTitle(mode, "sale", Boolean(session?.vat.registered)),
       docNo: result.docNo,
       orderId: result.orderId,
+      pickupQueueLabel: current ? receipt.result.pickupQueue?.label ?? null : receipt.pickupQueueLabel ?? null,
       serviceModeLabel: current
         ? serviceModeLabel({ serviceMode: receipt.check.serviceMode }, mode)
         : serviceModeLabel(
@@ -2290,6 +2417,7 @@ export default function RestaurantPosPage() {
         method: "POST",
         body: JSON.stringify(auth({
           action: "settle",
+          pickupQueue: pickupQueueActive && settledCheck.serviceMode === "TAKEAWAY",
           customerId: checkMember?.customerId ?? null,
           couponCode: couponCode.trim() || null,
           pointsToRedeem: latestPricing.pointsUsed,
@@ -2308,6 +2436,8 @@ export default function RestaurantPosPage() {
         })),
       });
       setSettlementReceiptExpanded(false);
+      if (result.pickupQueue || result.pickupQueueError) setPickupQueueRefresh((n) => n + 1);
+      if (result.pickupQueueError) message.warning(t("pos_restaurant.pickup_queue_not_issued", { reason: result.pickupQueueError }));
       setSettlementReceipt({
         result,
         payments: settledPayments,
@@ -2571,11 +2701,21 @@ export default function RestaurantPosPage() {
     .map((order) => order.acceptanceDeadlineAt)
     .filter((value): value is string => Boolean(value))
     .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0] ?? null;
-  const incomingIntakeLabel = restaurantOrdersPaused && deliveryIntakeState === "PAUSED"
-    ? t("pos_restaurant.incoming_intake_paused")
-    : restaurantOrdersPaused || deliveryIntakeState !== "ACCEPTING"
-      ? t("pos_restaurant.incoming_intake_partial")
-      : t("pos_restaurant.incoming_intake_accepting");
+  const incomingIntakeLabel = incomingFeedHealth.status === "STALE"
+    ? t("pos_restaurant.incoming_intake_unknown")
+    : incomingFeedHealth.status === "CHECKING"
+      ? t("pos_restaurant.incoming_intake_checking")
+      : restaurantOrdersPaused && deliveryIntakeState === "PAUSED"
+        ? t("pos_restaurant.incoming_intake_paused")
+        : restaurantOrdersPaused || deliveryIntakeState !== "ACCEPTING"
+          ? t("pos_restaurant.incoming_intake_partial")
+          : t("pos_restaurant.incoming_intake_accepting");
+  const incomingApiStatus = incomingFeedHealth.status === "LIVE"
+    ? "online" as const
+    : incomingFeedHealth.status === "STALE" ? "offline" as const : "checking" as const;
+  const incomingBellLabel = incomingFeedHealth.status === "STALE"
+    ? t("pos_restaurant.incoming_bell_unavailable")
+    : t("pos_restaurant.incoming_bell_label", { count: incomingActionOrders.length });
   const incomingAttentionDescription = [
     expiredAcceptanceCount > 0
       ? t("pos_restaurant.incoming_attention_expired", { count: expiredAcceptanceCount })
@@ -2644,29 +2784,34 @@ export default function RestaurantPosPage() {
     </nav>
     <div className={styles.shell}>
       <header className={styles.topbar}>
-        <div className={styles.brand}><div><h1 className={styles.title}>BMS Restaurant</h1><p className={styles.subtitle}>{session?.location?.name ?? "-"} · {session?.device.code} · {operatorReady ? (operatorName || t("pos_restaurant.operator")) : t("pos_restaurant.operator_none")}</p></div></div>
+        <div className={styles.brand}><div><h1 className={styles.title}>BMS Restaurant</h1><p className={styles.subtitle}>{session?.location?.name ?? "-"} · {session?.device.code}</p></div></div>
         <div className={styles.topActions}>
+          <div className={styles.topStatusGroup}>
+            <div className={styles.connectionStatus}><PosConnectionStatus apiStatus={incomingApiStatus} /></div>
+            <span className={`${styles.shiftStatus} ${session?.shift ? styles.shiftStatusOpen : ""}`}>
+              <i aria-hidden="true" />
+              {session?.shift ? t("pos_restaurant.shift_open_status") : t("pos_restaurant.shift_closed_status")}
+            </span>
+          </div>
           <button type="button"
-            className={`${styles.btn} ${styles.incomingBell} ${incomingActionOrders.length > 0 ? styles.incomingBellUrgent : ""}`}
-            aria-label={t("pos_restaurant.incoming_bell_label", { count: incomingActionOrders.length })}
-            title={t("pos_restaurant.incoming_bell_label", { count: incomingActionOrders.length })}
+            className={`${styles.btn} ${styles.incomingBell} ${incomingFeedHealth.status === "STALE" ? styles.incomingBellUnknown : incomingActionOrders.length > 0 ? styles.incomingBellUrgent : ""}`}
+            aria-label={incomingBellLabel}
+            title={incomingBellLabel}
             onClick={() => setScreen("INCOMING")}>
             <BellOutlined aria-hidden="true" />
-            <span>{t("pos_restaurant.rail_incoming")}</span>
-            {incomingActionOrders.length > 0 && <b className={styles.incomingBellBadge}>{incomingActionOrders.length}</b>}
+            <span>{t("pos_restaurant.incoming_header_compact")}</span>
+            {incomingFeedHealth.status === "STALE"
+              ? <b className={`${styles.incomingBellBadge} ${styles.incomingBellHealthBadge}`}>!</b>
+              : incomingActionOrders.length > 0 && <b className={styles.incomingBellBadge}>{incomingActionOrders.length}</b>}
           </button>
-          <PosConnectionStatus />
           <DesktopUpdateMenu className={styles.desktopUpdate} />
-          <span className={`${styles.shiftStatus} ${session?.shift ? styles.shiftStatusOpen : ""}`}>
-            <i aria-hidden="true" />
-            {session?.shift ? t("pos_restaurant.shift_open_status") : t("pos_restaurant.shift_closed_status")}
-          </span>
           <button type="button" className={`${styles.btn} ${styles.btnIcon}`} disabled={refreshing || working} onClick={() => void refresh()} title={t("pos_restaurant.refresh")} aria-label={t("pos_restaurant.refresh")}><ReloadOutlined /></button>
           <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => setSupportOpen(true)} title={`Support Log (${localSupportEventCount(supportScope)})`} aria-label={`Support Log (${localSupportEventCount(supportScope)})`}><CustomerServiceOutlined /></button>
           {!session?.shift && <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!operatorReady} title={operatorReady ? t("pos_restaurant.open_shift") : t("pos_restaurant.need_operator_pin")} onClick={() => setShiftModal("OPEN")}>{t("pos_restaurant.open_shift")}</button>}
           {operatorReady ? (
             <details ref={accountMenuRef} className={styles.accountMenu}>
-              <summary aria-label={t("pos_restaurant.operator_menu", { name: operatorName || t("pos_restaurant.operator") })}>
+              <summary aria-label={t("pos_restaurant.operator_menu", { name: operatorName || t("pos_restaurant.operator") })}
+                title={operatorName || t("pos_restaurant.operator")}>
                 <span className={styles.accountAvatar} aria-hidden="true">{(operatorName || t("pos_restaurant.operator")).slice(0, 1)}</span>
                 <span className={styles.accountCopy}>
                   <strong>{operatorName || t("pos_restaurant.operator")}</strong>
@@ -2722,7 +2867,11 @@ export default function RestaurantPosPage() {
             <h2>{t("pos_restaurant.incoming_workspace_title")}</h2>
             <p>{t("pos_restaurant.incoming_workspace_desc")}</p>
           </div>
-          <span className={`${styles.incomingIntakeStatus} ${restaurantOrdersPaused || deliveryIntakeState !== "ACCEPTING" ? styles.incomingIntakePaused : ""}`}>
+          <span className={`${styles.incomingIntakeStatus} ${incomingFeedHealth.status === "STALE"
+            ? styles.incomingIntakeUnknown
+            : incomingFeedHealth.status === "CHECKING"
+              ? styles.incomingIntakeChecking
+              : restaurantOrdersPaused || deliveryIntakeState !== "ACCEPTING" ? styles.incomingIntakePaused : ""}`}>
             {incomingIntakeLabel}
           </span>
         </div>
@@ -2760,6 +2909,7 @@ export default function RestaurantPosPage() {
               setDeliveryPauseControlledElsewhere(snapshot.deliveryPauseControlledElsewhere);
               setDeliveryPauseNeedsManualAction(snapshot.deliveryPauseNeedsManualAction);
             },
+            onIncomingFeedHealthChange: setIncomingFeedHealth,
           }}>
             <RetailPosWorkspace />
           </PosWorkspaceContext.Provider>
@@ -3000,7 +3150,23 @@ export default function RestaurantPosPage() {
       </section></Spin>}
 
       {screen === "ORDER" || screen === "FLOOR" ? <Spin spinning={working}><div className={styles.floorWrap}>
-        {screen === "FLOOR" && floor.tables.length > 0 && <section className={styles.strip} aria-label={t("pos_restaurant.floor_summary")}>
+        {screen === "FLOOR" && pickupQueueActive && token && <section className={styles.floorStatusDashboard}
+          aria-label={t("pos_restaurant.pickup_queue_strip")}>
+          <PickupQueueStrip token={token} cashierUserId={actorUserId} cashierPin={actorPin}
+            refreshKey={pickupQueueRefresh} variant="compact" />
+          {floor.tables.length > 0 && <div className={`${styles.strip} ${styles.floorStatusStrip}`} aria-label={t("pos_restaurant.floor_summary")}>
+            <span>{t("pos_restaurant.tables_in_use")} <b>{occupiedTables.length}</b> / {floor.tables.length}</span>
+            <span className={styles.stripSep} aria-hidden="true">│</span>
+            <span>{t("pos_restaurant.open_amount")} <b><span className={styles.baht}>฿</span>{money(openAmountTotal)}</b></span>
+            <span className={styles.stripSep} aria-hidden="true">│</span>
+            <span><span className={styles.stripDot} style={{ background: "var(--red)" }} aria-hidden="true" />{t("pos_restaurant.floor_unsent_summary", { items: unsentItemTotal, tables: unsentTableCount })}</span>
+            <span className={styles.stripSep} aria-hidden="true">│</span>
+            <span>{t("pos_restaurant.longest_seated")} {longestSeated ? <><b>{longestSeated.minutes}</b> {t("pos_restaurant.minutes_at_table", { table: longestSeated.code })}</> : <b>—</b>}</span>
+            <span className={styles.stripSep} aria-hidden="true">│</span>
+            <span><span className={styles.stripDot} style={{ background: "var(--amber)" }} aria-hidden="true" />{t("pos_restaurant.kitchen_queue_summary", { cooking: kitchenCooking, ready: kitchenReady })}</span>
+          </div>}
+        </section>}
+        {screen === "FLOOR" && !pickupQueueActive && floor.tables.length > 0 && <section className={styles.strip} aria-label={t("pos_restaurant.floor_summary")}>
           <span>{t("pos_restaurant.tables_in_use")} <b>{occupiedTables.length}</b> / {floor.tables.length}</span>
           <span className={styles.stripSep} aria-hidden="true">│</span>
           <span>{t("pos_restaurant.open_amount")} <b><span className={styles.baht}>฿</span>{money(openAmountTotal)}</b></span>
@@ -3017,7 +3183,7 @@ export default function RestaurantPosPage() {
               กริดอยู่ฝั่งกว้างโดยตั้งใจ ของเดิมอยู่ในแผงขวา 300px ซึ่งการ์ดเล็กจนต้องเพ่ง */}
           <div className={styles.panelHeader}>
             <div><h2>{t("pos_restaurant.rail_order")}</h2><small>{check ? `${check.tableName} · ${t("pos_restaurant.people_count", { count: check.guestCount })}` : t("pos_restaurant.pick_table_first")}</small></div>
-            <div className={styles.searchRow}>
+            {check && <div className={styles.searchRow}>
               {/* ปุ่มล้างคำค้น: คนหน้าร้านพิมพ์ด้วยนิ้วบนแท็บเล็ต การลบทีละตัวอักษรช้ากว่าการ
                   แตะครั้งเดียวมาก และคำค้นที่ค้างอยู่ทำให้กริดเมนูดู "ของหาย" ทั้งที่แค่ยังกรองอยู่
                   · ขึ้นเฉพาะตอนมีข้อความ ไม่งั้นเป็นปุ่มที่กดแล้วไม่เกิดอะไรลอยอยู่ตลอดเวลา */}
@@ -3030,7 +3196,7 @@ export default function RestaurantPosPage() {
                   title={t("pos_restaurant.clear_search")}
                   onClick={() => { setSearch(""); searchRef.current?.focus(); }}>✕</button>}
               </div>
-            </div>
+            </div>}
           </div>
 
           {openChecks.length > 0 && <div className={styles.billStrip} role="group" aria-label={t("pos_restaurant.open_checks")}>
@@ -3048,9 +3214,35 @@ export default function RestaurantPosPage() {
           </div>}
 
           {!check
-            ? <div className={styles.empty}><div><AppstoreOutlined style={{ fontSize: 36 }} /><h3>{t("pos_restaurant.no_table_selected")}</h3>
-                <p>{openChecks.length > 0 ? t("pos_restaurant.no_table_hint") : t("pos_restaurant.no_table_hint_empty")}</p>
-                <button type="button" className={styles.btn} onClick={() => setScreen("FLOOR")}><AppstoreOutlined /> {t("pos_restaurant.go_to_floor")}</button></div></div>
+            ? <section className={styles.serviceModeEmpty} aria-labelledby="restaurant-service-mode-title">
+                <div className={styles.serviceModeIntro}>
+                  <h3 id="restaurant-service-mode-title">{t("pos_restaurant.service_mode_title")}</h3>
+                  <p>{t("pos_restaurant.service_mode_subtitle")}</p>
+                </div>
+                <div className={styles.serviceModeGrid}>
+                  <button type="button" className={styles.serviceModeCard} onClick={() => setScreen("FLOOR")}>
+                    <span className={styles.serviceModeIcon}><ShopOutlined /></span>
+                    <strong>{t("pos_restaurant.service_mode_dine_in")}</strong>
+                    <span>{t("pos_restaurant.service_mode_dine_in_desc")}</span>
+                    <small>{t("pos_restaurant.service_mode_dine_in_next")}</small>
+                  </button>
+                  <button type="button" className={styles.serviceModeCard}
+                    disabled={!session?.shift || !operatorReady}
+                    onClick={() => void openTakeawayCheck()}>
+                    <span className={styles.serviceModeIcon}><ShoppingOutlined /></span>
+                    <strong>{t("pos_restaurant.service_mode_takeaway")}</strong>
+                    <span>{t("pos_restaurant.service_mode_takeaway_desc")}</span>
+                    <small>{pickupQueueActive
+                      ? t("pos_restaurant.service_mode_takeaway_queue_on")
+                      : t("pos_restaurant.service_mode_takeaway_queue_off")}</small>
+                  </button>
+                </div>
+                <p className={styles.serviceModeHelp}>{!session?.shift
+                  ? t("pos_restaurant.service_mode_shift_required")
+                  : !operatorReady
+                    ? t("pos_restaurant.need_operator_pin")
+                    : t("pos_restaurant.service_mode_ready_hint")}</p>
+              </section>
             : <>
               {menuStations.length > 0 && <div className={styles.catRow}>
                 <button type="button" className={`${styles.catCard} ${menuCategory === "" ? styles.catCardActive : ""}`} onClick={() => setMenuCategory("")}>
@@ -3374,6 +3566,21 @@ export default function RestaurantPosPage() {
               <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => void loadTickets()} title={t("pos_restaurant.queue_refresh")} aria-label={t("pos_restaurant.queue_refresh")}><ReloadOutlined /></button>
             </div>
           </div>
+          {kitchenPickupQueues.length > 0 && <section className={styles.kitchenPickupBar}
+            aria-label={t("pos_restaurant.kitchen_pickup_queue")}>
+            <strong className={styles.kitchenPickupTitle}>{t("pos_restaurant.kitchen_pickup_queue")}</strong>
+            <div className={styles.kitchenPickupList} role="list">
+              {kitchenPickupQueues.map((queue) => {
+                const lane = LANES.find((item) => item.status === queue.status);
+                const elapsed = formatKitchenElapsed(kitchenElapsedSeconds(queue.referenceAt, boardNow));
+                return <div className={`${styles.kitchenPickupItem} ${queue.status === "READY" ? styles.kitchenPickupReady : ""}`}
+                  role="listitem" key={queue.label}>
+                  <b>{queue.label}</b>
+                  <span>{lane?.label ?? queue.status} · {elapsed}</span>
+                </div>;
+              })}
+            </div>
+          </section>}
           <div className={styles.lanes}>{LANES.map((lane) => {
             const groups = kitchenGroups.filter((group) => group.status === lane.status);
             return <section className={styles.lane} style={{ "--lane-color": lane.color } as CSSProperties} key={lane.status}>
@@ -3385,7 +3592,12 @@ export default function RestaurantPosPage() {
                   const urgency = kitchenUrgency(elapsed, slaForStationRef(group, stationSlas));
                   return <article className={styles.ticket} key={group.key}>
                     <div className={styles.ticketHead}>
-                      <span className={styles.ticketTable}>{group.tableLabel ?? t("pos_restaurant.no_table")}{group.roundNo == null ? "" : t("pos_restaurant.round_suffix", { round: group.roundNo })}</span>
+                      <span className={styles.ticketTable}>{group.pickupQueueLabel
+                        ? t("pos_restaurant.takeaway_short")
+                        : group.tableLabel ?? t("pos_restaurant.no_table")}{group.roundNo == null ? "" : t("pos_restaurant.round_suffix", { round: group.roundNo })}</span>
+                      {group.pickupQueueLabel && <span className={styles.ticketQueueBadge}>
+                        {t("pos_restaurant.kitchen_pickup_queue_badge", { number: group.pickupQueueLabel })}
+                      </span>}
                       {group.station && <span className={styles.tag}>{group.station}</span>}
                       {/* ตัวนับเวลาที่รอ — ของเดิมบอกแค่เวลาที่สั่ง (21:42) แล้วให้ครัวคิดเลขเอง */}
                       <span className={`${styles.ticketAge} ${urgency === "late" ? styles.ticketAgeLate : urgency === "warn" ? styles.ticketAgeWarn : ""}`}>
@@ -3407,6 +3619,8 @@ export default function RestaurantPosPage() {
                         onClick={() => void ticketGroupStatus(group, lane.next!)}>
                         {group.ticketIds.length > 1 ? t("pos_restaurant.whole_ticket_action", { action: lane.nextLabel ?? "" }) : lane.nextLabel} <ArrowRightOutlined />
                       </button>}
+                      {hasDesktopKitchenPrinterBridge() && (group.stationId || group.station) && <button type="button" className={`${styles.btn} ${styles.btnIcon}`}
+                        onClick={() => void printKitchenGroup(group)} title={t("pos_restaurant.kitchen_print_action")} aria-label={t("pos_restaurant.kitchen_print_action")}><PrinterOutlined /></button>}
                       <button type="button" className={`${styles.btn} ${styles.btnIcon}`} onClick={() => setGroupMenu(group)}
                         title={t("pos_restaurant.manage_this")} aria-label={t("pos_restaurant.manage_this")}><MoreOutlined /></button>
                     </div>
@@ -3607,7 +3821,7 @@ export default function RestaurantPosPage() {
       {settlementReceipt && <div className={`${styles.settlementLayout} ${settlementReceiptExpanded ? styles.settlementLayoutExpanded : ""}`}>
         <div className={styles.settlementOverview}>
           <div className={styles.receiptHero}><span><b>{settlementReceipt.check.serviceMode === "TAKEAWAY" ? restaurantServiceLabel(lang, "TAKEAWAY") : settlementReceipt.check.tableName}</b><span> · Order #{settlementReceipt.result.orderId.slice(0, 8)} · {settlementReceipt.member?.name ?? t("pos_restaurant.walk_in_customer")}</span></span><strong>฿{money(settlementReceipt.result.total)}</strong></div>
-          <div className={`${styles.summaryGrid} ${styles.settlementSummary}`}><span>{t("pos_restaurant.change_due")}<b>{settlementReceipt.result.cashChange == null ? "—" : `฿${money(settlementReceipt.result.cashChange)}`}</b></span><span>{t("pos_restaurant.kitchen_tickets")}<b>{settlementReceipt.result.kitchenTickets}</b></span><span>{t("pos_restaurant.receipt_paid_by")}<b>{settlementReceipt.payments.map((payment) => posPaymentMethodLabel(payment.method, lang)).join(" + ")}</b></span></div>
+          <div className={`${styles.summaryGrid} ${styles.settlementSummary}`}><span>{t("pos_restaurant.change_due")}<b>{settlementReceipt.result.cashChange == null ? "—" : `฿${money(settlementReceipt.result.cashChange)}`}</b></span>{settlementReceipt.result.pickupQueue?.label && <span>{t("pos_restaurant.pickup_queue_number")}<b style={{ fontSize: "2em" }}>{settlementReceipt.result.pickupQueue.label}</b></span>}{!settlementReceipt.result.pickupQueue?.label && settlementReceipt.result.pickupQueueError && token && <span>{t("pos_restaurant.pickup_queue_not_issued", { reason: settlementReceipt.result.pickupQueueError })}<PickupQueueRetryButton token={token} cashierUserId={actorUserId} cashierPin={actorPin} orderId={settlementReceipt.result.orderId} onIssued={(label) => { setSettlementReceipt((prev) => prev ? { ...prev, result: { ...prev.result, pickupQueue: { id: "", queueNo: Number(label), label }, pickupQueueError: null } } : prev); setPickupQueueRefresh((n) => n + 1); }} /></span>}<span>{t("pos_restaurant.kitchen_tickets")}<b>{settlementReceipt.result.kitchenTickets}</b></span><span>{t("pos_restaurant.receipt_paid_by")}<b>{settlementReceipt.payments.map((payment) => posPaymentMethodLabel(payment.method, lang)).join(" + ")}</b></span></div>
         </div>
 
         <section className={styles.receiptPreviewPane} aria-label={t("pos_restaurant.receipt_preview")}>
