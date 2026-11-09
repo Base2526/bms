@@ -85,7 +85,8 @@ test("Inbox alerts only for unread inbound work outside the active chat", async 
   assert.match(schema, /messageId: ID/);
   assert.match(inbox, /"MESSAGES_CHANGED", "customer"/);
   assert.match(inbox, /"MESSAGES_CHANGED", "staff"/);
-  assert.equal((inbox.match(/"MESSAGES_CHANGED", "ai"/g) ?? []).length, 2);
+  assert.equal((inbox.match(/"MESSAGES_CHANGED", "ai"/g) ?? []).length, 3,
+    "AI reply delivery status updates also refresh Inbox without making an inbound alert");
   assert.match(component, /if \(ev\.messageSource !== "customer"\) return/);
   assert.doesNotMatch(component, /messageSource !== "diagnostic"/,
     "diagnostic messages must not ring every coworker's device");

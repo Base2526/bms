@@ -1,5 +1,190 @@
 # BMS feature log
 
+## Inbox AI reply delivery status and media handoff (no migration, 2026-11-09)
+
+- LINE/Meta AI replies are now saved `PENDING` and become `SENT` or `FAILED` only after the channel
+  call, so the Inbox never shows a delivery outcome before one exists. A later `DELIVERED`/`READ`
+  status is not downgraded when the send result is recorded.
+- "ส่งใหม่" (`bmsRetryMessage`, `inbox.reply`) is server-gated to `FAILED` push messages and holds the
+  row lock through the provider call; a second click or a stale screen gets `NOT_RETRYABLE` instead
+  of a duplicate resend.
+- Channel-health telemetry runs best-effort after the provider accepted the message. A health-table
+  failure can no longer relabel an accepted reply `FAILED` and invite staff to send it twice.
+- Meta messages carrying an attachment — even with a text caption — go to Inbox for staff without the
+  text-only AI pipeline, because the model cannot see the image/file and must not answer as if it had.
+- Evidence: `inbox-ai-reply-delivery-contract` plus updated webhook/worker contracts (pure). No live
+  channel run is recorded for this change.
+
+## Pharmacy protocol and licence hardening (`10.111`, 2026-11-09)
+
+- The Administrator licence form (`/admin/pharmacy-protocols/licenses`) previously issued a plain
+  `UPDATE users` and audited separately. It now calls the narrow `10.111` SECURITY DEFINER helper,
+  which re-checks the transaction tenant and a same-tenant Administrator actor in the database and
+  commits with the audit; `bms_app` still gets no general UPDATE on licence columns.
+- `bmsSetPharmacistLicense` requires `confirmed: true` and the page asks the operator to confirm the
+  exact person and new state, because granting a licence flag unlocks clinical approvals.
+- `bmsPharmacyLicenseCandidates(search)` is bounded (≤ 100-character search, ≤ 50 rows) instead of
+  returning every user of the shop.
+- Protocol draft/submit/review/enable writes audit in the same tenant transaction; review holds the
+  `10.47` licence-row lock through commit so a concurrent revocation cannot slip between check and
+  commit, and concurrent enables of two versions of one protocol are serialized.
+- The licence flag is shop-recorded evidence, not an external registry check. Evidence:
+  `pharmacy-protocol-write-contract` (pure); no DB contract for `10.111` yet.
+
+## Super Admin tag on admin users (no migration, 2026-11-08)
+
+- The role column showed only the shop role, so a platform administrator looked like an ordinary
+  Administrator. `/admin/users` now shows a purple "Super Admin" tag before the shop role when
+  `users.is_platform_admin` is true (desktop table and mobile cards). Display only; RBAC unchanged.
+
+## Bank reconciliation phases 1–6 (`10.110`, 2026-11-07)
+
+- Built as an evidence sidecar, not a ledger: five new tenant tables and no trigger or constraint on
+  existing payment/AR/expense/refund/delivery/tax/stock tables, so a reconciliation bug cannot move
+  money or rewrite a source document.
+- Imported dates, amounts, fingerprints, account identity and the source file are immutable to the
+  app role (UPDATE granted on workflow columns only). Bank tables and their revision tables deny
+  access when the tenant GUC is unset, stricter than the shared revision helper's default.
+- Candidates are deterministic (exact amount/date ranked highest) and only a reviewer with
+  `bank_reconciliation.review` creates a link, bound to the source fingerprint; a changed source
+  becomes stale instead of silently staying matched. No AI and no automatic confirmation.
+- Import, review and month close are separate permissions because each is a different
+  financial-control boundary; `10.110` seeds all four only to Manager.
+- Statement files are private and served only by the dedicated route; `/api/files/[id]` refuses
+  them so the generic sequential-id route cannot bypass `bank_reconciliation.view`.
+- Full account numbers are never stored (last four + HMAC fingerprint). Open Banking reports
+  `NOT_CONFIGURED` rather than simulating a provider. Defaults off behind server and public flags;
+  evidence is a pure contract only — no DB contract or pilot is recorded.
+
+## File, chat and GraphQL request hardening; Retail Local installer purge (`10.109`, 2026-11-07)
+
+- Tenant equality alone does not authorize one user to list or change another user's personal file,
+  so `10.109` adds `files.owner_user_id`; the settings panel lists only the caller's unreferenced
+  files and the global inventory (REST and GraphQL) is platform-admin only.
+- Chat image/audio is backfilled private and streaming checks current membership, so a former member
+  loses access even if they own the file. Chat send/list/manage resolvers check membership, reply
+  ownership and recipients; DM creation is serialized with an advisory lock.
+- Files that have dedicated routes (clinical/operation evidence, support bundles, release assets,
+  bank statements) and identifiable legacy key/config/script/installer artifacts always 404 on the
+  generic route, so it can never be an alternate path around narrower checks.
+- `/api/graphql` enables CSRF prevention, refuses cross-origin browser POSTs, bounds request bodies
+  and uploads, and rejects over-deep/over-wide/alias-heavy operations before resolvers run.
+  `authorizeAdminRoute()` now re-reads identity and revocation like the GraphQL context and honours
+  drill-down only for a database-verified platform admin.
+- Platform admins can purge the stored installer of a `hidden`, non-`latest` Retail Local release
+  (typed confirmation, same-origin, audited, tombstone kept). Purge is a separate action so that
+  generic file deletion never becomes a release-purge path. Evidence: pure contracts plus
+  `retail-local-release-purge-db-contract`; no DB contract for the `10.109` backfill.
+
+## Admin knowledge search and synced profile identity (no migration, 2026-11-06)
+
+- The header search now sends an admin session to `/admin/search`, a deterministic page over the
+  capability/guide catalog that never calls the AI assistant; other visitors go to `/learn`.
+  Browser search history is kept per admin account and bounded to ten terms.
+- Display name, username and avatar are re-read from Postgres on each admin request instead of being
+  trusted from the JWT, so a profile change reaches the sidebar/header without signing in again.
+- Evidence: `header-search-contract`, `user-admin-contract`, two browser smokes.
+
+## Pet-supply setup and Product Policy recheck (no migration, 2026-11-06)
+
+- Product price and cost now reject sub-satang values. `bms_products.price` is `NUMERIC(12,2)`, so
+  Postgres would otherwise round silently; for gram-priced weighed goods this means per-kilogram
+  prices move in 10-baht steps, which the guides now state.
+- Starter catalog pet food/litter ship as one size each, because the starter price is shared across
+  variants; FEFO comes from a real product policy, not the shop preset.
+- Product Policy draft/submit/review writes audit in the same tenant transaction and review uses the
+  `10.47` licence lock; a failed audit or revoked licence rolls the policy change back.
+
+## Public feature search (no migration, 2026-11-06)
+
+- `/features` lets a prospect describe a need and returns one reviewed presales answer with its
+  limits. No match says "no verified answer yet" rather than "not supported", and partially matched
+  multi-topic questions are not summarized as fully supported.
+- Pricing questions point to the current Cloud packages, and Retail Local pricing to the team,
+  instead of quoting stale knowledge-base prices. It searches product knowledge only, never shop
+  data, and the LINE button opens a conversation without creating a callback task.
+
+## Lot identity through branch transfers — rollout status (`10.107`, 2026-11-02 – 2026-11-05)
+
+- **WIP for rollout; committed and clone-DB verified, production deployment unverified.** Do not
+  describe lot transfers as available on a target database before confirming `10.107` there.
+- Transfers previously moved totals only, so a central kitchen's output lots or PO lots with expiry
+  lost their identity at the destination. SEND now allocates usable FEFO lots and RECEIVE recreates
+  the same lot number/expiry, keeping a recall path from source to destination lot.
+- Because the current transfer code reads `bms_stock_transfer_item_lots`, `10.107` is declared in
+  schema readiness: deploying the code without it breaks transfers.
+
+## Stock integrity for purchase receiving, counts and lots (no migration, 2026-11-05)
+
+- Staff PO receipts accept an `idempotencyKey` in the existing `9.88` ledger so an unknown network
+  result can be retried without receiving stock twice; a committed receipt replays before branch
+  availability is re-checked, so disabling a branch cannot misreport a receipt that already moved stock.
+- Tracked products require lot/expiry even on the first receipt into an empty branch, and quantities
+  must be JSON integers — booleans, arrays and numeric strings are refused rather than converted into
+  physical units.
+- Counts require an explicit non-negative integer: a missing quantity is not zero and fractions are
+  not truncated. Back-office full returns that cannot reconcile lot evidence roll back with
+  `STOCK_REVIEW_REQUIRED`.
+- Native Mobile gained PO receiving with one immutable pending receipt in secure storage; desktop
+  gained unpair and window-lifecycle handling. Evidence: `stock-integrity-contract`,
+  `stock-integrity-db-contract` and eight DB suites on a restored disposable database
+  ([inventory.md](business/inventory.md)); the desktop README records 116 Node tests and a Windows
+  Electron smoke for the 2026-11-05 recheck. No mobile device run is recorded.
+
+## Retail Local pilot rounds 6–7 (no migration, 2026-11-02 – 2026-11-05)
+
+- `0.2.14-pilot.6` / `pilot.7` release preparation. The Linux Managed Runtime release script now
+  derives `schemaVersion` from the newest migration file instead of a hard-coded `10.36`, so a
+  release cannot advertise a stale schema.
+- Platform admins can delete one published Managed Runtime version/target to reclaim disk; it takes
+  the publish lock, refuses non-directory/symlinked paths and keeps sibling targets. Installers
+  pinned to that URL may fail, so a set that current installers or downloads still need must not be
+  deleted. The commit records that the
+  admin page was not browser-checked. Retail Local remains a technical pilot, not GA.
+
+## Mobile QR pairing (no migration, 2026-11-03)
+
+- `/admin/pos-devices` shows the newly issued credential plus an HTTPS origin as a locally generated
+  QR; Device Settings scans, verifies and saves it. HTTP/loopback origins are not advertised to phones.
+- Token issuance now commits the hash and its credential-free audit in one transaction, so a failed
+  audit rolls the rotation back. Closing the QR does not revoke the token; reissuing does.
+- Sale/stock scanners refuse pairing QRs and device tokens before SKU lookup, and replacing an
+  existing credential needs confirmation while pending offline cash still blocks it.
+
+## Mobile iOS/Android audit and desktop pairing store (no migration, 2026-11-03)
+
+- A code and automated-test audit, not device certification: iOS link forwarding, Metro on port
+  8082, sequence/staleness fixes in pairing, health and realtime state, retry-key handling and
+  server-backed sale-history search. Android release builds stay unsigned without the external upload
+  key instead of silently using the debug key. No iOS native build was run (Windows host).
+- Desktop pairing persistence moved to a serialized pairing store; an unreadable record opens a
+  recovery screen instead of first-run setup.
+
+## Retail Local consented leads and PDPA erasure (`10.105`–`10.106`, 2026-10-30)
+
+- The `/retail-local` contact form is optional, consent-gated (unchecked by default) and rate-limited;
+  the public role can only call `bms_submit_retail_local_lead()`, which returns no id or PII.
+- Lead capture is Cloud-only: on a shop's own install the endpoint answers 404, because a lead stored
+  in the shop's database never reaches BMS while telling the visitor it was received.
+- Erasure needed its own migration because the trigger froze contact fields and every edit copied them
+  into revision snapshots. `10.106` clears contact fields and all snapshots, records actor/time and
+  freezes the row; re-running `10.105` alone would restore the old trigger, so re-apply `10.106`.
+- The linked privacy policy does not yet describe these leads; legal review is required before
+  collecting them in production.
+
+## Meta inbox enrichment and channel profile sync (`10.108`, 2026-10-30 – 2026-11-02)
+
+- Builds on the `10.104` durable Facebook/Instagram inbound queue (2026-10-29). `10.108` adds a
+  bounded `event_meta` for reply targets, quick replies and ad referrals; the raw signed payload is
+  never stored. It was renumbered from a duplicate `10.106` (the lead-erasure file kept that number);
+  the change is `ADD COLUMN IF NOT EXISTS`, so applying `10.108` where the old file already ran is
+  harmless.
+- Business Suite echoes become outbound timeline rows that never enter AI; delivery/read webhooks
+  advance outbound status to `DELIVERED`/`READ`.
+- Facebook and LINE display profiles are cached on the identity after the message is persisted and
+  refreshed by the `channel-profile-sync` cron (20 per channel per run). A profile failure never
+  rejects the webhook, hides the message or fails the reply, and Inbox never calls the provider.
+
 ## Customer-display branding and shop-owned payment QR (2026-10-25)
 
 - Store branding now includes an optional uploaded customer-display welcome background. The image

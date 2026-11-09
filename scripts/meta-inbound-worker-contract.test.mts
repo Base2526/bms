@@ -5,8 +5,9 @@ import { loadWithStubs } from "./testing/webhookHarness.mts";
 const job = { id: "job-1", tenantId: "tenant-1", channel: "facebook", eventId: "mid-1",
   externalAccountId: "123456", customerRef: "998877", messageText: "hello", attachments: [], attempts: 2 };
 
-function harness(options: { claimed?: number; active?: boolean; account?: string; expired?: boolean; mode?: string; profileThrows?: boolean } = {}) {
-  const calls = { pipeline: 0, pipelineArgs: [] as any[][], sends: 0, profiles: 0,
+function harness(options: { claimed?: number; active?: boolean; account?: string; expired?: boolean; mode?: string; profileThrows?: boolean; delivered?: boolean } = {}) {
+  const calls = { pipeline: 0, pipelineArgs: [] as any[][], sends: 0, profiles: 0, deliveryStatuses: [] as any[][],
+    inbound: [] as any[][],
     profileNotifications: [] as any[][], incidents: [] as any[], sql: [] as string[] };
   const client = { release() {}, query: async (sql: string, args: any[]) => {
     calls.sql.push(sql);
@@ -36,10 +37,11 @@ function harness(options: { claimed?: number; active?: boolean; account?: string
       return { ok: true, conversationIds: ["conversation-1"] };
     }, syncFacebookPageProfile: async () => ({ ok: true }) },
     "./pipeline": { runPipeline: async (...args: any[]) => { calls.pipeline++; calls.pipelineArgs.push(args); return { reply: "hello" }; } },
-    "./inbox": { logConversation: noop, logInboundMessage: noop,
+    "./inbox": { logConversation: async () => ({ outboundMessageId: "message-1" }),
+      logInboundMessage: async (...args: any[]) => { calls.inbound.push(args); },
       notifyInboxConversationChanged: (...args: any[]) => { calls.profileNotifications.push(args); },
-      recordProviderMessageIds: noop,
-      deliverToChannelTracked: async () => { calls.sends++; return { delivered: true, providerMessageIds: [] }; } },
+      recordAiReplyDelivery: async (...args: any[]) => { calls.deliveryStatuses.push(args); },
+      deliverToChannelTracked: async () => { calls.sends++; return { delivered: options.delivered ?? true, providerMessageIds: [] }; } },
     "./customerAnswerEvidence": { fallbackEvidenceQuality: () => ({}) },
     "./channelHealth": { recordInboundEvent: noop },
     "./failureAlert": { reportBmsFailure: async (incident: any) => { calls.incidents.push(incident); } },
@@ -69,6 +71,7 @@ test("valid lease processes one customer turn and reply", async () => {
   await worker.processMetaInboundJob(job);
   assert.equal(calls.pipeline, 1);
   assert.equal(calls.sends, 1);
+  assert.deepEqual(calls.deliveryStatuses, [[job.tenantId, "message-1", true, []]]);
   assert.equal(calls.profiles, 1);
   assert.deepEqual(calls.profileNotifications[0], [job.tenantId, "conversation-1", "CONVERSATION_CHANGED"]);
 });
@@ -80,6 +83,26 @@ test("Facebook profile enrichment failure never blocks the verified message or r
   assert.equal(calls.sends, 1);
   assert.equal(calls.profiles, 1);
   assert.equal(calls.incidents.length, 0);
+});
+
+test("Meta failed push records a failed AI message and alerts staff", async () => {
+  const { worker, calls } = harness({ delivered: false });
+  await assert.rejects(worker.processMetaInboundJob(job), /META_REPLY_DELIVERY_FAILED/);
+  assert.deepEqual(calls.deliveryStatuses, [[job.tenantId, "message-1", false, []]]);
+  assert.deepEqual(calls.incidents.map(incident => incident.code), ["channel.push_failed"]);
+});
+
+test("Meta text with an attachment reaches staff without asking AI to guess the media", async () => {
+  const { worker, calls } = harness();
+  await worker.processMetaInboundJob({ ...job, messageText: "รูปนี้คือสินค้าอะไร", attachments: [
+    { type: "image", url: "https://example.test/image.jpg" },
+  ] });
+  assert.equal(calls.pipeline, 0);
+  assert.equal(calls.sends, 0);
+  assert.equal(calls.inbound.length, 1);
+  assert.equal(calls.inbound[0][3].body, "รูปนี้คือสินค้าอะไร");
+  assert.equal(calls.inbound[0][3].meta.unsupportedForAi, true);
+  assert.equal(calls.inbound[0][3].attachment.url, "https://example.test/image.jpg");
 });
 
 test("the designated Facebook Page uses presales while shops and Instagram retain commerce", async () => {

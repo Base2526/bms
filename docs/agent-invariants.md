@@ -230,6 +230,10 @@ Guidance approval (`10.47`) must acquire the licence helper's user-row SHARE loc
 the editor's licence hint as approval authority or grant general user-update access to `bms_app`.
 Product Policy draft/submit/review writes likewise require tenant RLS and an audit in the same
 transaction. Review uses the same `10.47` licence-row lock before changing the policy.
+Clinical protocol draft/submit/review/enable writes have the same transaction and audit boundary;
+review holds the licence lock through commit. Licence flag writes use the narrow `10.111` helper,
+which rechecks the transaction tenant and Administrator actor without granting `bms_app` broad
+UPDATE access to `users`. The API requires an explicit confirmation argument.
 Preview uses recorded shop facts; malformed placeholders omit lines, never expose template tokens.
 Built-in drafts are not instructions to start/stop/compensate medicine and never overwrite a shop's
 approved text. Approval remains per tenant, not a platform-wide publication decision.
@@ -2098,6 +2102,12 @@ their provider independently:
   the error; a caller's `.catch()` cannot observe it. Failure after message insertion (for example,
   assignment) must not label the saved messages lost. Meta webhook replies also check the boolean
   from `deliverToChannel()` and report `channel.push_failed` when it is false.
+  LINE/Meta AI reply rows start `PENDING` and record `SENT`/`FAILED` after channel delivery; Inbox
+  retry is server-gated to `FAILED` push messages and locks the message row during the attempt.
+  Channel-health telemetry is best-effort after provider acceptance: a health DB failure cannot
+  relabel an accepted reply `FAILED` and invite a duplicate resend.
+  Meta messages with attachments, including text captions, enter Inbox for staff review without
+  running the text-only AI pipeline; the model must not guess unseen image/file contents.
   Three rules an agent must not get wrong:
   - **Never hook alerting off a tool's audit `outcome`.** `auditAttempt()` in `tools/runtime.ts` looks
     like the perfect choke point, but its `outcome === "error"` merges a genuine thrown exception, a

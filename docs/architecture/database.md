@@ -220,6 +220,53 @@ likewise cannot use the generic route.
 
 ## Tables by module
 
+### Bank reconciliation sidecar (`10.110`)
+
+Five tenant-owned tables, each `tenant_id NOT NULL → bms_tenants ON DELETE CASCADE` with composite
+`(tenant_id, …)` foreign keys between them: `bms_bank_accounts` (bank code, display name, last four
+digits and a tenant-scoped HMAC-SHA-256 `account_fingerprint` — never the full account number —
+unique per tenant; optional default branch; `ACTIVE`/`ARCHIVED`), `bms_bank_statement_imports`
+(account, private `files` row, file SHA-256, parser key/version, period, balances, 1–50,000 rows,
+`VALIDATED`/`COMMITTED`/`VOID`, tenant-unique `idempotency_key` + request hash, unique per account/file
+hash; a void needs a reason), `bms_bank_statement_entries` (dated `IN`/`OUT` positive
+`NUMERIC(18,2)` amounts, reference/description/masked counterparty, row fingerprint unique per
+account, `UNMATCHED`/`SUGGESTED`/`PARTIAL`/`MATCHED`/`IGNORED`/`STALE`; ignore needs a reason),
+`bms_bank_reconciliation_links` (human-confirmed `CONFIRMED`/`VOID` links from an entry to a
+polymorphic `source_key` — `PAYMENT`, `AR_RECEIPT`, `EXPENSE_DOCUMENT`, `REFUND`,
+`DELIVERY_SETTLEMENT` or `BANK_ENTRY` + UUID — with matched amount, source fingerprint, rule,
+confidence and version; one active link per entry/source) and `bms_bank_reconciliation_periods`
+(per account/month `OPEN`/`READY`/`CLOSED`/`REOPENED`, versioned; reopen needs a reason).
+
+All five use ENABLE + FORCE RLS with a strict policy: an unset `bms.tenant_id` matches nothing
+(no `COALESCE` fallback). `bms_app` gets SELECT/INSERT, UPDATE/DELETE is revoked, and UPDATE is
+re-granted only on workflow columns (status, commit/void/ignore/close/reopen actors and timestamps,
+period balances, version) — imported dates, amounts, fingerprints, account identity and the source
+file cannot be rewritten. `create_revision_trigger()` adds a `_revisions` table per table; those
+revision tables get the same strict tenant policy and are append-only for `bms_app`. The migration
+adds no trigger or constraint to existing sales/payment/AR/expense/refund/delivery/tax/stock tables
+and seeds the four `bank_reconciliation.*` permissions to Manager for every tenant. It is additive
+and idempotent (it also repairs an earlier draft's commit-shape CHECK). Rollback is operational —
+turn the flags off; do not drop evidence tables after links have been confirmed. Not declared in
+schema readiness: nothing on the order path reads it. `realtime-domain-coverage-contract` classifies
+the five tables as evidence with no realtime subscriber (the page refreshes on open, on manual
+reload and after each mutation). Verify with the `pg_class` RLS and
+`bms_role_permissions` queries at the end of the file. No DB contract exists yet. See
+[../business/bank-reconciliation.md](../business/bank-reconciliation.md).
+
+### Transfer-lot provenance (`10.107`) — WIP for rollout
+
+**Committed and clone-DB verified; production deployment unverified.** Do not describe lot
+transfers as available on a target database before confirming it has `10.107`.
+`bms_stock_transfer_item_lots` stores one row per (transfer line, source lot): composite FKs to
+`bms_stock_transfer_items`, source/destination `bms_inventory_lots` and optional supplier (the
+migration adds the `UNIQUE (tenant_id, id)` keys those FKs need), plus lot number, expiry, unit cost,
+sent quantity and the receipt split (`received_qty + damaged_qty <= qty`). RLS is enabled and forced
+with the older `COALESCE(current_setting('bms.tenant_id'), tenant_id)` policy shape, and `bms_app`
+holds SELECT/INSERT/UPDATE/DELETE plus the sequence. It is declared in `scripts/schemaReadiness.mts`:
+the current transfer list/receipt code reads this table, so deploying that code without `10.107`
+breaks stock transfers (admin, mobile and branch requests). Rollback is only possible before
+dependent transfers exist. Behaviour: [../business/inventory.md § Lot transfers](../business/inventory.md#lot-transfers-10107).
+
 ### Mail log provider (`7.40`, `10.59`)
 
 `bms_mail_log` (`7.40`) is the platform mail log written best-effort by `sendEmail()` in
@@ -320,6 +367,13 @@ execute it; only `bms_app` is granted EXECUTE, with no new users-table grants.
 Apply `10.47` before new approvals; a missing helper fails closed. Existing customer reads and
 checkout do not depend on it. SQL execution/idempotency/locking/RLS have **not been DB-verified**.
 
+`10.111` adds `bms_set_pharmacist_license(tenant,user,flag,number)`, a narrow SECURITY DEFINER
+helper for the Administrator licence form. It checks the transaction tenant and `app.editor_id`
+against a same-tenant Administrator and locks that actor row through commit, then updates only
+the target's licence columns. The service
+commits this call and its audit in one tenant transaction. No general licence-column UPDATE grant
+is added to `bms_app`; a missing helper fails closed.
+
 ### Optional emergency directory (`10.46`)
 
 `bms_emergency_facilities` stores tenant, optional shop branch, public name/phone/address/HTTPS map,
@@ -363,16 +417,19 @@ debit note increases it (`lib/bms/expenseAdjustments.ts`).
 | Payment | `bms_payments` | `5.3` |
 | POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_stock_transfer_item_lots`, `bms_product_packs`, `bms_product_price_tiers`, `bms_pos_devices`, `bms_pos_shifts`, `bms_pos_purchase_receipts`, `bms_pos_expenses`, `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_store_credits`, `bms_store_credit_ledger`, `bms_pos_deposits`, `bms_ar_accounts`, `bms_ar_invoices`, `bms_ar_receipts`, `bms_ar_ledger`, `bms_tax_documents`, `bms_expense_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions`, `bms_tax_invoice_requests`, `bms_tax_request_submissions`, `bms_tax_request_emails` (+ supplier credit/debit-note columns on expense documents; `users.pos_only`, per-size pack and wholesale-price columns, cross-size wholesale scope/percentage, credit-note/cash-rounding columns; scanner protocol columns on POS devices; deposit, drawer-movement, expense, and PO-receipt idempotency; `CREDIT` added to payment/refund methods; preferred split-refund method; return/refund event-shift attribution; sale/receiving branch and source/destination lot attribution for returns and transfers) | `7.84`–`10.11` (`9.4` repair), `10.37` (supplier VAT notes), `10.38`–`10.39` (receipt-QR tax-invoice requests), `10.58` (tax-request email outbox), `10.107` (transfer-lot provenance) |
 | Shipping | `bms_shipments`, `bms_shipment_tracking_events` | `5.4`, `7.76`, `7.77` |
-| Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes`, `bms_conversation_note_mentions` | `5.5`, `7.18`, `7.51` (read/search indexes) |
+| Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes`, `bms_conversation_note_mentions`, `bms_channel_inbound_jobs` (Facebook/Instagram durable inbound queue) | `5.5`, `7.18`, `7.51` (read/search indexes), `10.104` (inbound jobs + `bms_tenant_channels.webhook_verify_token`/`external_account_id`), `10.108` (bounded `event_meta`) |
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8`, `7.78` |
 | Channel Health | `bms_channel_health_log` (+ columns on `bms_tenant_channels`) | `6.4` |
 | Store profile / AI policy | `bms_store_profile`, `bms_store_capabilities` | `6.9`, `7.17`, `7.30`, `9.39` (receipt language), `9.40`, `9.43`, `10.90` (customer-display welcome background) |
 | Branch customer facts | `bms_locations.parking_info`, `bms_locations.publish_restaurant_table_details` | `10.51`, `10.52` |
 | Customer AI answer evidence | `bms_ai_turn_evidence`, `bms_ai_tool_evidence` | `10.53` |
-| Pharmacy guidance & emergency directory | `bms_pharmacy_guidance_templates`, `bms_emergency_facilities` (+ `bms_lock_guidance_pharmacist_license()`) | `10.45`–`10.47` |
+| Pharmacy guidance, licence and emergency directory | `bms_pharmacy_guidance_templates`, `bms_emergency_facilities` (+ `bms_lock_guidance_pharmacist_license()`, `bms_set_pharmacist_license()`) | `10.45`–`10.47`, `10.111` |
 | Product promotions | `bms_product_promotions` (per-branch scope; `BUY_A_GET_B` gift columns) | `8.7`, `9.61`, `10.41` |
 | Board game cafe | `bms_board_game_*` (floor, sessions, billing groups, library, passes, offers, waitlist/reservations, public locations) | `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`–`10.7`; `10.40` (time buy/get), `10.42` (title images), `10.48`–`10.49` (chat reservations/actions), `10.50` (public table details) |
+| Bank reconciliation | `bms_bank_accounts`, `bms_bank_statement_imports`, `bms_bank_statement_entries`, `bms_bank_reconciliation_links`, `bms_bank_reconciliation_periods` (+ `_revisions`; strict tenant RLS, workflow-column UPDATE only) | `10.110` |
+| Stored files / community chat | `files.owner_user_id`, `files.visibility` (chat media private) | `9.26`, `9.27`, `10.109` |
+| Retail Local leads (platform-global) | `bms_retail_local_leads`, `bms_retail_local_leads_revisions`, `bms_retail_local_lead_events` (+ `bms_submit_retail_local_lead()`, `bms_erase_retail_local_lead()`) | `10.105`, `10.106` |
 | Mail log | `bms_mail_log` (platform-wide, nullable `tenant_id`) | `7.40`, `10.59` (`smtp` provider) |
 | Homepage app downloads | `bms_app_download_settings` (platform-global singleton, no `tenant_id`) | `10.57` |
 | AI usage / credits | `bms_tenant_ai_config`, `bms_ai_usage_monthly`, `bms_ai_usage_events`, `bms_ai_credit_ledger`, `bms_ai_limit_notices` | `6.8`, `7.27`, `7.35`, `7.82` (billing/provider/cost split), `10.54` (shared cost reservations, historical since `10.56`), `10.55` (owner notices and refusal status), `10.56` (monthly AI point packages on `bms_plans`; no USD cap) |

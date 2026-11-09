@@ -1,5 +1,5 @@
 -- =============================================================
--- 10.111 — Pickup queue numbers for counter/takeaway sales
+-- 10.112 — Pickup queue numbers for counter/takeaway sales
 -- -------------------------------------------------------------
 -- A cafe or food stall hands the customer a number at the counter, then calls it on a screen
 -- when the order is ready. BMS already numbers people waiting for a TABLE (`9.64`); this is

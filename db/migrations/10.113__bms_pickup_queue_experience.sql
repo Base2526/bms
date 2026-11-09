@@ -1,5 +1,5 @@
 -- =============================================================
--- 10.112 — Pickup queue experience settings and customer-display promos
+-- 10.113 — Pickup queue experience settings and customer-display promos
 -- -------------------------------------------------------------
 -- Adds presentation policy only. Money, order, stock, kitchen and audit authority remain in the
 -- existing services. Queue prefix is snapshotted on each issued number so changing the branch

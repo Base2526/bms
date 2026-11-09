@@ -10527,7 +10527,7 @@ type Mutation {
   bmsSetCustomerTags(id: ID!, tags: [String!]!): Boolean!
   bmsSetDefaultCustomerAddress(addressId: ID!): BmsCustomerAddress!
   bmsSetMyAvailability(available: Boolean!): Boolean!
-  bmsSetPharmacistLicense(isLicensedPharmacist: Boolean!, licenseNo: String, userId: ID!): Boolean!
+  bmsSetPharmacistLicense(confirmed: Boolean!, isLicensedPharmacist: Boolean!, licenseNo: String, userId: ID!): Boolean!
 
   """
   ตั้งค่าการอนุมัติของเภสัชกรที่เคาน์เตอร์ (9.29) — ไม่ส่งฟิลด์ไหน = ไม่แตะฟิลด์นั้น
@@ -11105,7 +11105,7 @@ type Query {
   Pharmacist-approved guidance for clinical customer questions (10.45) — pharmacy.assessment.read
   """
   bmsPharmacyGuidanceTemplates: [BmsPharmacyGuidanceTemplate!]!
-  bmsPharmacyLicenseCandidates: [BmsPharmacyLicenseUser!]!
+  bmsPharmacyLicenseCandidates(search: String): [BmsPharmacyLicenseUser!]!
   bmsPharmacyPolicyReadiness: BmsPharmacyPolicyReadiness!
   bmsPharmacyProductPolicies(limit: Int = 20, offset: Int = 0, search: String): BmsPharmacyProductPolicyPage!
   bmsPharmacyProtocol(id: ID!): BmsPharmacyProtocol

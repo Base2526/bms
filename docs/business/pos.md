@@ -2093,7 +2093,7 @@ At the counter:
 
 <a id="pickup-queue-numbers-and-the-call-screen-10111"></a>
 
-### Pickup queue numbers and the call screen (`10.111`–`10.112`)
+### Pickup queue numbers and the call screen (`10.112`–`10.113`)
 
 A cafe or food stall hands the customer a number at the counter and calls it on a screen when the
 order is ready. `9.64` numbers people waiting for a **table**; this is the separate number for people

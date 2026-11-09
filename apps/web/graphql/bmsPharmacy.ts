@@ -20,6 +20,7 @@ import { query } from "@/lib/db";
 import { audit } from "@/lib/bms/audit";
 import { isPharmacyAiEnabled, isPharmacyIntakeEnabled } from "@/lib/bms/pharmacy/config";
 import { listPharmacistCounterAuthorizations } from "@/lib/bms/pharmacy/counterAuthorizations";
+import { setPharmacistLicense } from "@/lib/bms/pharmacy/pharmacistLicense";
 import { AnthropicCompatiblePharmacyIntakeAI, filterMedicationSuggestionsAgainstAllergies } from "@/lib/bms/pharmacy/ai";
 import {
   approveAssessment,
@@ -148,6 +149,7 @@ function actorId(ctx: any): string {
  * resolver at all — this is fully additive.
  */
 function requireAdministrator(ctx: any) {
+  requireAuth(ctx);
   if (ctx?.admin?.role !== "Administrator") {
     throw new GraphQLError("เฉพาะ Administrator เท่านั้นที่กำหนดสถานะเภสัชกรได้", {
       extensions: { code: "FORBIDDEN" },
@@ -341,12 +343,20 @@ export const bmsPharmacyResolvers = {
       await requirePermission(ctx, "pharmacy.protocol.manage");
       return getPharmacyProtocol(getTenantId(ctx), args.id);
     },
-    async bmsPharmacyLicenseCandidates(_p: unknown, _a: unknown, ctx: any) {
+    async bmsPharmacyLicenseCandidates(_p: unknown, args: { search?: string | null }, ctx: any) {
       requireAdministrator(ctx);
+      const search = String(args.search ?? "").trim();
+      if (search.length > 100) {
+        throw new GraphQLError("คำค้นยาวเกิน 100 ตัวอักษร", { extensions: { code: "BAD_USER_INPUT" } });
+      }
       const res = await query(
         `SELECT id, name, email, is_licensed_pharmacist, pharmacist_license_no
-           FROM users WHERE tenant_id = $1 ORDER BY name`,
-        [getTenantId(ctx)]
+           FROM users
+          WHERE tenant_id = $1
+            AND ($2 = '' OR strpos(lower(name), lower($2)) > 0
+                 OR strpos(lower(email), lower($2)) > 0)
+          ORDER BY name, id LIMIT 50`,
+        [getTenantId(ctx), search]
       );
       return res.rows.map((r: any) => ({
         id: r.id,
@@ -772,20 +782,21 @@ export const bmsPharmacyResolvers = {
     },
     async bmsSetPharmacistLicense(
       _p: unknown,
-      args: { userId: string; isLicensedPharmacist: boolean; licenseNo?: string },
+      args: { userId: string; isLicensedPharmacist: boolean; licenseNo?: string; confirmed: boolean },
       ctx: any
     ) {
       requireAdministrator(ctx);
-      const tenantId = getTenantId(ctx);
-      const res = await query(
-        `UPDATE users SET is_licensed_pharmacist = $3, pharmacist_license_no = $4
-          WHERE id = $1 AND tenant_id = $2`,
-        [args.userId, tenantId, args.isLicensedPharmacist, args.licenseNo ?? null]
-      );
-      if ((res.rowCount ?? 0) === 0) {
-        throw new GraphQLError("ไม่พบผู้ใช้นี้ในร้านนี้", { extensions: { code: "BAD_USER_INPUT" } });
+      try {
+        await setPharmacistLicense({
+          tenantId: getTenantId(ctx), actorId: actorId(ctx), userId: args.userId,
+          isLicensedPharmacist: args.isLicensedPharmacist,
+          licenseNo: args.licenseNo ?? null, confirmed: args.confirmed,
+        });
+      } catch (error: any) {
+        throw new GraphQLError(error?.message || "กำหนดสถานะเภสัชกรไม่สำเร็จ", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
       }
-      await audit(ctx, "pharmacy.pharmacist_license_set", args.userId, { isLicensedPharmacist: args.isLicensedPharmacist });
       return true;
     },
     async bmsSoftDeleteAssessment(_p: unknown, args: { assessmentId: string }, ctx: any) {
@@ -834,7 +845,7 @@ export const bmsPharmacyResolvers = {
     async bmsUpsertPharmacyProtocol(_p: unknown, args: { input: UpsertPharmacyProtocolInput }, ctx: any) {
       await requirePermission(ctx, "pharmacy.protocol.manage");
       try {
-        const protocol = await upsertPharmacyProtocol(getTenantId(ctx), args.input);
+        const protocol = await upsertPharmacyProtocol(getTenantId(ctx), args.input, actorId(ctx));
         return protocol;
       } catch (err: any) {
         throw new GraphQLError(err?.message || "บันทึกไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
@@ -843,7 +854,7 @@ export const bmsPharmacyResolvers = {
     async bmsSetPharmacyProtocolEnabled(_p: unknown, args: { id: string; enabled: boolean }, ctx: any) {
       await requirePermission(ctx, "pharmacy.protocol.manage");
       try {
-        return await setPharmacyProtocolEnabled(getTenantId(ctx), args.id, args.enabled);
+        return await setPharmacyProtocolEnabled(getTenantId(ctx), args.id, args.enabled, actorId(ctx));
       } catch (err: any) {
         throw new GraphQLError(err?.message || "ดำเนินการไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
       }
@@ -851,9 +862,7 @@ export const bmsPharmacyResolvers = {
     async bmsSubmitPharmacyProtocolForReview(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "pharmacy.protocol.manage");
       try {
-        const protocol = await submitPharmacyProtocolForReview(getTenantId(ctx), args.id);
-        await audit(ctx, "pharmacy.protocol.review_requested", `pharmacy_protocol:${args.id}`, {});
-        return protocol;
+        return await submitPharmacyProtocolForReview(getTenantId(ctx), args.id, actorId(ctx));
       } catch (err: any) {
         throw new GraphQLError(err?.message || "ส่งตรวจไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
       }
@@ -865,9 +874,7 @@ export const bmsPharmacyResolvers = {
         throw new GraphQLError("decision ต้องเป็น APPROVE หรือ REJECT", { extensions: { code: "BAD_USER_INPUT" } });
       }
       try {
-        const protocol = await reviewPharmacyProtocol(getTenantId(ctx), args.id, actorId(ctx), decision);
-        await audit(ctx, `pharmacy.protocol.${decision.toLowerCase()}`, `pharmacy_protocol:${args.id}`, {});
-        return protocol;
+        return await reviewPharmacyProtocol(getTenantId(ctx), args.id, actorId(ctx), decision);
       } catch (err: any) {
         throw new GraphQLError(err?.message || "ตรวจ protocol ไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
       }

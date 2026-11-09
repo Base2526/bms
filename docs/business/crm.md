@@ -200,10 +200,15 @@ create a `PENDING` order for the active identity through the shared order servic
 print an ephemeral invoice from an existing order. These actions do not move CRM or order business
 rules into the frontend.
 
-**Outbound message status (Phase 1):** capability-gated per channel. LINE/Facebook/Instagram can
-actually push and actually fail (`SENT`/`FAILED` + a "ส่งใหม่" retry button); Web/TikTok/Shopee/Lazada
-don't push at all yet, so they're just marked `SENT` once persisted (no fake failure state). Read
+**Outbound message status (Phase 1):** capability-gated per channel. LINE/Facebook/Instagram AI replies
+start `PENDING` when saved, then become `SENT` or `FAILED` after the channel call. `FAILED` shows a
+"ส่งใหม่" retry button; the server permits retry only while the message is still failed. Web/TikTok/
+Shopee/Lazada don't push at all yet, so they're marked `SENT` once persisted (no fake failure state). Read
 receipts are not implemented on channels that can't genuinely report them (LINE, TikTok).
+
+Meta messages that contain an attachment and a text caption are saved together as an inbound Inbox
+message for staff. The AI text pipeline does not inspect attachments, so it does not answer those
+messages as if it had seen the media.
 
 **Diagnostics:** `/admin/inbox/realtime-diagnostics` is not a customer channel. `Emit` proves only
 that realtime invalidation reaches the browser; it does not create a conversation. `Create Msg`

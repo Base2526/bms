@@ -33,8 +33,9 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
   lineBotExtra?: Record<string, unknown>;
   botSync?: Function;
   profileSync?: Function;
+  healthThrows?: boolean;
 } = {}) {
-  const calls = { claims: [] as any[][], pipeline: [] as any[][], logs: [] as any[][],
+  const calls = { claims: [] as any[][], pipeline: [] as any[][], logs: [] as any[][], deliveryStatuses: [] as any[][],
     deliveries: [] as any[][], incidents: [] as any[], health: [] as any[][], inbound: [] as any[][], profiles: 0, botSync: [] as any[][] };
   const verifiedExtra = { botBasicId: "@fake-shop", botInfoSyncedAt: new Date().toISOString(),
     botIdentityTokenHash: lineBotIdentity.lineBotTokenHash("FAKE-token") };
@@ -50,10 +51,10 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
     }, syncFacebookPageProfile: async () => ({ ok: true }) },
     "./pipeline": { runPipeline: async (...args: any[]) => { calls.pipeline.push(args); return options.pipeline ? options.pipeline(...args) : { reply: `reply:${args[0]}` }; } },
     "./inbox": {
-      logConversation: async (...args: any[]) => { calls.logs.push(args); },
+      logConversation: async (...args: any[]) => { calls.logs.push(args); return { outboundMessageId: `FAKE-out-${calls.logs.length}` }; },
       logInboundMessage: async (...args: any[]) => { calls.inbound.push(args); },
       notifyInboxConversationChanged() {},
-      recordProviderMessageIds() {},
+      recordAiReplyDelivery: async (...args: any[]) => { calls.deliveryStatuses.push(args); },
       deliverToChannelTracked: async (...args: any[]) => {
         calls.deliveries.push(args);
         return { delivered: options.deliver ? await options.deliver(...args) : true, providerMessageIds: [] };
@@ -89,14 +90,17 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
     "@/lib/bms/pipeline": { runPipeline: async (...args: any[]) => { calls.pipeline.push(args); return options.pipeline ? options.pipeline(...args) : { reply: `reply:${args[0]}` }; } },
     "@/lib/bms/customerAnswerEvidence": { fallbackEvidenceQuality: () => ({ outcome: "FAILURE", reasonCodes: ["PIPELINE_EXCEPTION"], successfulToolCalls: 0, failedToolCalls: 0 }) },
     "@/lib/bms/inbox": {
-      logConversation: async (...args: any[]) => { calls.logs.push(args); },
+      logConversation: async (...args: any[]) => { calls.logs.push(args); return { outboundMessageId: `FAKE-out-${calls.logs.length}` }; },
+      recordAiReplyDelivery: async (...args: any[]) => { calls.deliveryStatuses.push(args); },
       logInboundMessage: async (...args: any[]) => { calls.inbound.push(args); },
       notifyInboxConversationChanged() {},
       deliverToChannel: async (...args: any[]) => { calls.deliveries.push(args); return options.deliver ? options.deliver(...args) : true; },
     },
     "@/lib/bms/channelHealth": {
       recordInboundEvent: async (...args: any[]) => { calls.health.push(args); },
-      recordWebhookVerifyFailed: noop, recordOutboundSuccess: noop, recordOutboundError: noop,
+      recordWebhookVerifyFailed: noop,
+      recordOutboundSuccess: async () => { if (options.healthThrows) throw new Error("FAKE health write failed"); },
+      recordOutboundError: async () => { if (options.healthThrows) throw new Error("FAKE health write failed"); },
       formatOutboundErrorDetail: () => "FAKE-delivery-error",
     },
     "@/lib/bms/failureAlert": { reportBmsFailure: async (incident: any) => { calls.incidents.push(incident); } },

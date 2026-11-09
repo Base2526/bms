@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "scope": "baseline-in-progress",
+  "maxUnmappedTests": 55,
+  "notes": "The assistant capability catalog is included automatically. These entries cover additional workflows; this is not yet an exhaustive product inventory.",
+  "features": [
+    { "id": "pos.return-lot-reconciliation", "title": "POS return lot reconciliation", "status": "CONDITIONAL", "source": "apps/web/lib/bms/pos.ts", "tests": ["scripts/pos-cross-branch-return-db-contract.test.mts"], "requires": ["Original lot identity and an authorized return"] },
+    { "id": "inventory.transfer-lots", "title": "Lot identity across branch transfers", "status": "WIP", "source": "apps/web/lib/bms/stockTransfers.ts", "tests": ["scripts/stock-transfer-lots-contract.test.mts"], "requires": ["Migration 10.107", "Production rollout verification"] },
+    { "id": "finance.bank-reconciliation", "title": "Bank statement reconciliation evidence", "status": "PILOT", "source": "apps/web/lib/bms/bankReconciliationFeature.ts", "tests": ["scripts/bank-reconciliation-contract.test.mts"], "requires": ["Migration 10.110", "Feature flags and finance permissions"] },
+    { "id": "customer.merge-reviewed", "title": "Reviewed customer merges", "status": "CONDITIONAL", "source": "apps/web/lib/bms/customerMergeReview.ts", "tests": ["scripts/customer-merge-review-contract.test.mts"], "requires": ["Customer edit permission", "Signed preview and human confirmation"] },
+    { "id": "customer.web-chat-session", "title": "Tenant-bound signed web chat sessions", "status": "AVAILABLE", "source": "apps/web/lib/bms/webChatSession.ts", "tests": ["scripts/web-chat-session-contract.test.mts"], "requires": [] },
+    { "id": "retail-local.runtime", "title": "Retail Local managed runtime", "status": "PILOT", "source": "apps/retail-local-agent", "tests": ["scripts/retail-local-managed-runtime-contract.test.mts"], "requires": ["Supported installer target", "Pilot rollout verification"] },
+    { "id": "mobile.pos-register", "title": "Native mobile POS register", "status": "CONDITIONAL", "source": "apps/mobile", "tests": ["scripts/mobile-graphql-contract.test.mts"], "requires": ["Paired device and cashier PIN", "Mobile app tests outside Web gate"] },
+    { "id": "desktop.pos-shell", "title": "Electron POS shell", "status": "PILOT", "source": "apps/desktop", "tests": ["apps/desktop/test/pairing.test.mjs"], "requires": ["Paired device", "Desktop packaging and smoke tests"] }
+  ]
+}

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 /**
- * Pickup queue numbers (`10.111`) — source contract
+ * Pickup queue numbers (`10.112`–`10.113`) — source contract
  *
  * Guards the design decisions that are easy to undo by accident:
  *   1. the number is issued after the sale commits, never inside the money transaction;
@@ -35,7 +35,7 @@ function sliceFrom(source: string, anchor: string, length = 4000): string {
 }
 
 const SERVICE = code(read("apps/web/lib/bms/pickupQueue.ts"));
-const MIGRATION = sqlCode(read("db/migrations/10.111__bms_pickup_queue.sql"));
+const MIGRATION = sqlCode(read("db/migrations/10.112__bms_pickup_queue.sql"));
 const SALE_ROUTE = code(read("apps/web/app/api/pos/sale/route.ts"));
 const QUEUE_ROUTE = code(read("apps/web/app/api/pos/pickup-queue/route.ts"));
 const KITCHEN = code(read("apps/web/lib/bms/kitchen.ts"));
@@ -70,7 +70,7 @@ const MANAGED_DISPLAY_SETTINGS = code(read("apps/web/components/pos-desktop/Mana
 const QUEUE_BOARD_PREFERENCES = code(read("apps/web/components/pos-desktop/QueueBoardPreferenceSettings.tsx"));
 const DESKTOP_PRELOAD = code(read("apps/desktop/src/preload.cjs"));
 const CUSTOMER_DISPLAY = code(read("apps/web/components/pos/CustomerDisplayView.tsx"));
-const EXPERIENCE_MIGRATION = sqlCode(read("db/migrations/10.112__bms_pickup_queue_experience.sql"));
+const EXPERIENCE_MIGRATION = sqlCode(read("db/migrations/10.113__bms_pickup_queue_experience.sql"));
 const QUEUE_VOICE = code(read("apps/web/lib/pos/pickupQueueVoice.ts"));
 const ALERT_SETTINGS_MODAL = code(read("apps/web/components/pos/OrderAlertSettingsModal.tsx"));
 const VOICE_GENERATOR = code(read("scripts/generate-pickup-queue-voice-pack.mjs"));
@@ -394,7 +394,7 @@ test("kitchen tickets carry the pickup number for counter orders and take-away c
   assert.match(MOBILE_KITCHEN, /ticket\.pickupQueueLabel\s*\?\s*`คิว \$\{ticket\.pickupQueueLabel\}`/);
 });
 
-test("10.112 snapshots the prefix and keeps new branch presentation settings bounded", () => {
+test("10.113 snapshots the prefix and keeps new branch presentation settings bounded", () => {
   assert.match(EXPERIENCE_MIGRATION, /ADD COLUMN IF NOT EXISTS pickup_queue_prefix/);
   assert.match(EXPERIENCE_MIGRATION, /ADD COLUMN IF NOT EXISTS pickup_queue_start_no/);
   assert.match(EXPERIENCE_MIGRATION, /ADD COLUMN IF NOT EXISTS queue_prefix/);

@@ -185,6 +185,29 @@ test("every /api/bms route is guarded, or public by design with a rate limit", (
   );
 });
 
+// `/api/public/**`, `/api/retail-local/**` และ `/api/geocode/**` เปิดสาธารณะโดยตั้งใจทั้งโฟลเดอร์
+// (หน้าเว็บสาธารณะ, ตัวติดตั้ง, เดสก์ท็อปที่ไม่มี session, proxy ไป Nominatim) จึงไม่อยู่ในเทสข้างบน
+// — แต่ทุก route ต้องมีเพดานการใช้ (เจอ 2026-11-09: desktop-update, releases, download/[id] และ
+// geocode ทั้งสองตัวไม่มี rateLimit เลย) · `/api/pos/**` คุมโดย pos-route-guard-contract
+// ห้ามยอมรับชื่อการ์ดแทนเพดาน: download/[id] เรียก authorizePlatformAdminRoute แค่เพื่อเลือกว่าจะรวม
+// ตัวติดตั้งที่ล็อกไว้หรือไม่ คนไม่ล็อกอินก็ยังโหลดได้ — ถ้าเช็กแค่ชื่อการ์ด เทสจะเขียวลอย
+test("every /api/public, /api/retail-local and /api/geocode route calls rateLimit()", () => {
+  const routes = ["app/api/public", "app/api/retail-local", "app/api/geocode"]
+    .flatMap((dir) => walk(path.join(WEB, dir)))
+    .filter((f) => f.endsWith("route.ts"));
+  assert.ok(routes.length >= 9, `เจอ route แค่ ${routes.length} — การเดิน tree คงพลาด`);
+  // ตัดคอมเมนต์ก่อน — คอมเมนต์ที่พูดถึง rateLimit( ต้องไม่ทำให้เทสเขียว (กับดักข้อ 12 ใน CLAUDE.local.md)
+  const code = (file: string) => readFileSync(file, "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    // ทั้งบรรทัดคอมเมนต์และคอมเมนต์ท้ายบรรทัด (ยกเว้น `://` ของ URL ในสตริง)
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const unlimited = routes
+    .filter((file) => !/\brateLimit\(/.test(code(file)))
+    .map(relPosix)
+    .sort();
+  assert.deepEqual(unlimited, [], "route สาธารณะที่ไม่มีเพดานการใช้");
+});
+
 // การ์ดที่ "ข้ามได้เมื่อไม่ตั้ง env" ไม่ใช่การ์ด
 //
 // รูปแบบ `if (secret && header !== secret)` อ่านผ่าน ๆ เหมือนตรวจ แต่แปลว่า

@@ -14,11 +14,11 @@ full per-domain rules: [docs/agent-invariants.md](docs/agent-invariants.md) · p
 | [realtime-production-audit.md](docs/architecture/realtime-production-audit.md) · [ADR 001](docs/architecture/decisions/001-transactional-realtime-invalidation.md) · [realtime-test-database.md](docs/architecture/realtime-test-database.md) | Realtime outbox/invalidation audit, design, and the throwaway-DB runbook for `9.70`–`9.74`/`9.84`–`9.86` |
 | [mobile-graphql-ws-realtime.md](docs/architecture/mobile-graphql-ws-realtime.md) · [react-native-graphql-client.md](docs/architecture/react-native-graphql-client.md) · [graphql-client-readiness-brief.md](docs/architecture/graphql-client-readiness-brief.md) · [`schema.graphql`](schema.graphql) | Mobile GraphQL/WS, RN client contract, committed SDL (`npm run schema:export`) |
 | [multi-instance-readiness.md](docs/architecture/multi-instance-readiness.md) · [admin-scale-readiness.md](docs/architecture/admin-scale-readiness.md) · [scheduler.md](docs/architecture/scheduler.md) | >1 instance · admin load · opt-in Docker cron scheduler (one owner via `BMS_CRON_RUNNER`) |
-| [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [board-game-cafe.md](docs/business/board-game-cafe.md) · [crm.md](docs/business/crm.md) · [restaurant-chat-delivery.md](docs/business/restaurant-chat-delivery.md) | Domain specs |
+| [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [board-game-cafe.md](docs/business/board-game-cafe.md) · [crm.md](docs/business/crm.md) · [restaurant-chat-delivery.md](docs/business/restaurant-chat-delivery.md) · [bank-reconciliation.md](docs/business/bank-reconciliation.md) | Domain specs |
 | [cloud-hybrid-pos.md](docs/business/cloud-hybrid-pos.md) · [retail-local.md](docs/business/retail-local.md) · [install manual](docs/business/retail-local-install-manual.md) · [managed runtime](docs/business/retail-local-managed-runtime.md) · [GA readiness](docs/business/retail-local-ga-readiness.md) · [BUILD.md](deploy/retail-local/BUILD.md) | Emergency Offline boundary · Retail Local pilot (**not GA**) |
 | [integrations/](docs/integrations/) · [delivery-platforms.md](docs/integrations/delivery-platforms.md) · [ui/](docs/ui/) | LINE/TikTok/Lazada/carriers/delivery platforms · UI specs |
 | [support-diagnostics.md](docs/business/support-diagnostics.md) · [app-downloads.md](docs/business/app-downloads.md) · [product-barcode-autofill.md](docs/business/product-barcode-autofill.md) | Diagnostics to Support · homepage app links · barcode lookup |
-| [product-overview-th.md](docs/business/product-overview-th.md) · [feature-inventory.md](docs/feature-inventory.md) · [feature-log.md](docs/feature-log.md) | Thai sales overview + allowed claims · what is proven · why features work as they do |
+| [product-overview-th.md](docs/business/product-overview-th.md) · [feature-inventory.md](docs/feature-inventory.md) · [feature-log.md](docs/feature-log.md) · [release-feature-control.md](docs/release-feature-control.md) | Thai sales overview + allowed claims · what is proven · why features work as they do · commit-bound release inventory |
 | [AI_GUIDELINES.md](docs/AI_GUIDELINES.md) · [ai/](docs/ai/) ([workflow](docs/ai/workflow.md) · [tools](docs/ai/tools.md) · [prompts](docs/ai/prompts.md) · [quality](docs/ai/quality.md) · [usage-cost-audit](docs/ai/usage-cost-audit.md) · [work-assistant-coverage](docs/ai/work-assistant-coverage.md)) | AI rules, pipeline, tools, evidence, AI points, staff assistant catalog |
 | [pharmacy/README.md](apps/web/lib/bms/pharmacy/README.md) | Pharmacy intake, guidance (`10.45`/`10.47`), emergency directory (`10.46`) — read before touching `lib/bms/pharmacy/` |
 | [apps/mobile/README.md](apps/mobile/README.md) · [apps/desktop/README.md](apps/desktop/README.md) | Native RN POS (scanner, Wi-Fi printing) · Electron POS shell |
@@ -33,8 +33,9 @@ contract) · AI Pharmacy Intake (flag off) · e-Tax submission (no verified prov
 cash drawer, browser and native Wi-Fi printing (never certified on real hardware) · desktop POS
 (unsigned, no auto-update/offline tender) · delivery platforms (foodpanda sandbox only;
 GrabFood/LINE MAN contract-blocked) · Retail Local (technical pilot) · tax-invoice PDF email and
-SMTP relay (not sent through a real provider) · automated AI plan billing (none) · Q4
-profit/growth simulation (planned). Pharmacy guidance texts are not clinically reviewed.
+SMTP relay (not sent through a real provider) · automated AI plan billing (none) · bank
+reconciliation (`10.110`, flags off by default, controlled pilot) · Q4 profit/growth simulation
+(planned). Pharmacy guidance texts are not clinically reviewed.
 
 Everything else is built unless the row below is explicitly marked WIP/pilot. Area index (narrative
 per entry in [status-log.md](docs/status-log.md)):
@@ -56,7 +57,7 @@ per entry in [status-log.md](docs/status-log.md)):
 | Social Login · sample-data ledger | `10.22` · `10.26`, `10.30` | [agent-invariants](docs/agent-invariants.md) |
 | Cross-SKU buy-A-get-B gifts | `10.41` | [pos.md](docs/business/pos.md) |
 | Customer chat facts: restaurant/pharmacy assistance, table details, parking, answer evidence | `10.43`–`10.44`, `10.51`–`10.53` | [ai/quality.md](docs/ai/quality.md) |
-| Pharmacist-approved guidance, emergency directory | `10.45`–`10.47` | [pharmacy README](apps/web/lib/bms/pharmacy/README.md) |
+| Pharmacist-approved guidance, emergency directory, Administrator-only pharmacist licence write | `10.45`–`10.47`, `10.111` | [pharmacy README](apps/web/lib/bms/pharmacy/README.md) |
 | AI monthly points (cost = reporting) | `10.54`–`10.56` | [usage-cost-audit.md](docs/ai/usage-cost-audit.md) |
 | Homepage app links · SMTP mail provider | `10.57` · `10.59` | [app-downloads.md](docs/business/app-downloads.md) |
 | Costing, valuation, branch pricing, promotions | `10.60`–`10.72` | [database.md](docs/architecture/database.md) · [inventory.md](docs/business/inventory.md) |
@@ -66,7 +67,9 @@ per entry in [status-log.md](docs/status-log.md)):
 | Meta inbound hardening/enrichment · Retail Local consented leads/erasure | `10.104`–`10.106`, `10.108` | [database.md](docs/architecture/database.md) · [facebook-messenger.md](docs/integrations/facebook-messenger.md) |
 | Pickup queue numbers + call screen (`/pos/queue-board`) | `10.111` — **new; not yet applied to production** | [pos.md](docs/business/pos.md#pickup-queue-numbers-and-the-call-screen-10111) |
 | Lot identity through branch transfers | `10.107` — **WIP for rollout; committed and clone-DB verified, production deployment unverified** | [system.md](docs/architecture/system.md) · [inventory.md](docs/business/inventory.md) |
-| Reviewed customer merges, signed web-chat sessions, Work Assistant, desktop shell, native printing | no migration | [crm.md](docs/business/crm.md) · [work-assistant-coverage.md](docs/ai/work-assistant-coverage.md) |
+| File ownership + private community-chat media (personal uploads bound to a user; chat media needs membership) | `10.109` | [database.md](docs/architecture/database.md) · [files API README](apps/web/app/api/files/README.md) |
+| Bank reconciliation (imported statements are evidence only; a match exists only after a reviewer confirms it) | `10.110` | [bank-reconciliation.md](docs/business/bank-reconciliation.md) |
+| Reviewed customer merges, signed web-chat sessions, Work Assistant, desktop shell, native printing, mobile QR pairing, stock integrity (receiving/counts/lots), admin knowledge search + public feature search, Inbox AI reply delivery status, release feature manifest | no migration | [crm.md](docs/business/crm.md) · [work-assistant-coverage.md](docs/ai/work-assistant-coverage.md) · [pos.md](docs/business/pos.md) · [inventory.md](docs/business/inventory.md) · [release-feature-control.md](docs/release-feature-control.md) |
 
 Migrations not yet applied to production: [CLAUDE.local.md](CLAUDE.local.md) § ก่อน production —
 check the target DB; several features need their migration first.

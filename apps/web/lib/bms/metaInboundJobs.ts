@@ -9,7 +9,7 @@ import {
   logConversation,
   logInboundMessage,
   notifyInboxConversationChanged,
-  recordProviderMessageIds,
+  recordAiReplyDelivery,
   type Attachment,
 } from "./inbox";
 import { fallbackEvidenceQuality } from "./customerAnswerEvidence";
@@ -279,9 +279,9 @@ export async function processMetaInboundJob(job: MetaInboundJob): Promise<void> 
     effectsClient.release();
   }
   const attachment = firstAttachment(job);
-  if (!job.messageText) {
+  if (!job.messageText || job.attachments.length > 0) {
     await logInboundMessage(job.tenantId, job.channel, job.customerRef, {
-      body: "",
+      body: job.messageText ?? "",
       attachment,
       meta: {
         type: job.attachments[0]?.type ?? "attachment",
@@ -334,10 +334,10 @@ export async function processMetaInboundJob(job: MetaInboundJob): Promise<void> 
   // Start optional enrichment alongside delivery so a slow profile read does not add to reply latency.
   const profileSync = syncFacebookProfileBestEffort(job, cfg.access_token);
   const delivery = await deliverToChannelTracked(job.tenantId, job.channel, job.customerRef, result.reply);
-  await profileSync;
-  if (persisted?.outboundMessageId && delivery.providerMessageIds.length) {
-    await recordProviderMessageIds(job.tenantId, persisted.outboundMessageId, delivery.providerMessageIds);
+  if (persisted?.outboundMessageId) {
+    await recordAiReplyDelivery(job.tenantId, persisted.outboundMessageId, delivery.delivered, delivery.providerMessageIds);
   }
+  await profileSync;
   if (!delivery.delivered) {
     await reportBmsFailure({
       tenantId: job.tenantId,

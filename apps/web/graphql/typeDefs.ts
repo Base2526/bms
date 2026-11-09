@@ -1591,7 +1591,7 @@ export const typeDefs = /* GraphQL */ `
     bmsPharmacyGuidanceEditorContext: BmsPharmacyGuidanceEditorContext!
     bmsPharmacyProductPolicies(search: String, limit: Int = 20, offset: Int = 0): BmsPharmacyProductPolicyPage!
     bmsPharmacyProtocol(id: ID!): BmsPharmacyProtocol
-    bmsPharmacyLicenseCandidates: [BmsPharmacyLicenseUser!]!
+    bmsPharmacyLicenseCandidates(search: String): [BmsPharmacyLicenseUser!]!
     bmsAiConfig: BmsAiConfig!     # BYOK key ของร้าน (mask แล้ว)
     bmsAiUsage: BmsAiUsage!       # การใช้งาน AI ผ่าน shared key เดือนนี้ + quota
     bmsAiLimitNotifications: BmsAiLimitInbox!
@@ -2141,7 +2141,7 @@ export const typeDefs = /* GraphQL */ `
     sender: String          # customer | ai | staff:<email>
     createdAt: String!
     attachment: BmsMessageAttachment
-    status: String          # (OUT only) SENT | DELIVERED | READ | FAILED · null = ไม่มีสถานะ
+    status: String          # (OUT only) PENDING | SENT | DELIVERED | READ | FAILED · null = legacy ไม่มีสถานะ
     canReportDelivery: Boolean!   # ช่องนี้ push/รายงานผลได้ไหม (LINE/FB/IG=true · web/tiktok=false)
   }
 
@@ -5791,7 +5791,7 @@ export const typeDefs = /* GraphQL */ `
     bmsManualFillAssessmentFields(assessmentId: ID!, fields: JSON!): BmsPharmacyAssessment!
     bmsGenerateMedicationSuggestions(assessmentId: ID!): BmsPharmacyAssessment!
     bmsSoftDeleteAssessment(assessmentId: ID!): Boolean!
-    bmsSetPharmacistLicense(userId: ID!, isLicensedPharmacist: Boolean!, licenseNo: String): Boolean!
+    bmsSetPharmacistLicense(userId: ID!, isLicensedPharmacist: Boolean!, licenseNo: String, confirmed: Boolean!): Boolean!
     bmsRecordPharmacyConsent(assessmentId: ID!, status: String!, consentVersion: String!): BmsPharmacyAssessment!
     bmsUpsertPharmacyProtocol(input: BmsPharmacyProtocolInput!): BmsPharmacyProtocol!
     bmsSubmitPharmacyProtocolForReview(id: ID!): BmsPharmacyProtocol!

@@ -1,5 +1,12 @@
 # ทะเบียนฟีเจอร์ BMS
 
+> เพิ่ม 9 พ.ย. 2026 (ครอบ migration `10.104`–`10.111` + งานที่ไม่มี migration ที่ merge ถึง #406):
+> Facebook/Instagram รับข้อความแบบทนทาน + ชื่อ/รูปลูกค้า · สถานะส่งคำตอบ AI ใน Inbox · รับของ PO/นับสต็อกแบบกันพลาด ·
+> โอนสต็อกพร้อมล็อต (`10.107` WIP) · กระทบยอดบัญชีธนาคาร (`10.110`, ปิดไว้) · ไฟล์/แชทชุมชนและขีดจำกัด GraphQL (`10.109`) ·
+> ฟอร์มใบอนุญาตเภสัชกร (`10.111`) · Lead Retail Local + ลบข้อมูลตาม PDPA (`10.105`–`10.106`) · จับคู่เครื่องมือถือด้วย QR ·
+> ค้นหาความรู้หลังบ้าน `/admin/search` + ค้นหาฟีเจอร์สาธารณะ `/features` · ป้าย Super Admin
+> คอลัมน์ขวาบอกว่ามีเทสชนิดไหน (pure contract = ไม่แตะฐานจริง · DB contract = ฐานทดสอบแยก) **ไม่มีแถวไหนแปลว่า apply/deploy production แล้ว**
+
 > Release H: [คุณภาพและพักล็อต](business/operation-production.md#release-h--quality-cases-lot-holds-and-impact-evidence) — พักใช้จริงในเส้นทางตัดล็อต, เรื่องคุณภาพ/งานตรวจ, ตามรอยหลักฐาน, เสนอและอนุมัติแยกคนเพื่อปล่อยใช้หรือทิ้ง, รายงานและแจ้งเตือนภายใน ต้อง 10.98 ก่อน app ไม่ใช่การเรียกคืนลูกค้าอัตโนมัติหรือใบรับรองความปลอดภัย
 
 > Release G: [วัตถุดิบและตรวจรับ](business/operation-production.md#release-g--materials-replenishment-and-inspected-receiving) — แผน BOM/เติมของ/ตรวจรับแยกผู้ทบทวน/รับสต็อกพร้อมหลักฐาน/ความพร้อมผลิต/สรุปรายสัปดาห์ ไม่ใช่การจองหรือสั่งซื้ออัตโนมัติ
@@ -86,6 +93,8 @@ BMS **ไม่ใช่แชทบอท** — AI ไม่เคยเขี�
 | ฟีเจอร์ | สถานะ | migration · หน้าจอ |
 | --- | :---: | --- |
 | **กล่องข้อความรวมทุกช่องทาง** — LINE · Facebook · Instagram · TikTok · ช่องทางเว็บผ่าน public web-chat endpoint (widget/site เป็น client ที่เชื่อม endpoint; Shopee/Lazada ยังเบต้า) · มอบหมายงาน ติดแท็ก โน้ต ค้นหา ไฟล์แนบ · ความสามารถส่งออกขึ้นกับช่องทางที่ผูกไว้จริง | ⚙️ | `5.5` · `/admin/inbox` |
+| **Facebook/Instagram รับข้อความแบบทนทาน + ชื่อ/รูปลูกค้า** — webhook ที่ตรวจลายเซ็นแล้วเก็บงานไว้ก่อนเรียก AI/Graph API (กันซ้ำด้วย `message.mid`) · งานที่เริ่มเขียนผลแล้วไม่ถูกรันซ้ำ แต่เป็น `DEAD` ให้คนตรวจ · เก็บแค่ reply-target/quick-reply/ad-referral ไม่เก็บ payload ดิบ · ข้อความจาก Business Suite เป็นประวัติเท่านั้น ไม่เข้า AI · cron ดึงชื่อ/รูป Facebook + LINE ทีละ 20 รายต่อรอบเป็น cache แสดงผล ไม่ทับชื่อที่พนักงานตั้งใน CRM | ⚙️ | `10.104` `10.108` · `/admin/inbox` (ต้อง apply ทั้งสองไฟล์ก่อน deploy · โปรไฟล์ Facebook ของผู้ใช้ทั่วไปต้องได้ Advanced Access จาก Meta App Review · มี pure contract `facebook-messenger` `facebook-profile` `line-profile` `meta-inbox-signals` `meta-inbound-worker`) |
+| **สถานะส่งคำตอบ AI ใน Inbox** — LINE/Facebook/Instagram บันทึกเป็น `PENDING` ก่อน แล้วเป็น `SENT`/`FAILED` หลังเรียกช่องทาง · Meta อัปเดต `DELIVERED`/`READ` · ปุ่ม "ส่งใหม่" ใช้ได้เฉพาะข้อความที่ `FAILED` (ล็อกแถวระหว่างส่ง) · บันทึกสุขภาพช่องทางพังหลังผู้ให้บริการรับแล้ว ไม่ทำให้ข้อความกลายเป็น `FAILED` · ข้อความ Meta ที่มีไฟล์แนบ (แม้มีคำบรรยาย) ส่งให้พนักงาน AI ไม่เดาเนื้อหารูป/ไฟล์ | ⚙️ | ไม่มี migration · `/admin/inbox` (pure contract `inbox-ai-reply-delivery` `inbox-webhook-failure` `line-webhook-ack` `meta-inbound-worker` · ยังไม่มีบันทึกการยิงกับช่องทางจริงในรอบนี้) |
 | **AI ตอบลูกค้าและปิดการขายในแชท** — ตรวจเจตนา → เลือกเครื่องมือ → ตอบ · เรียกได้เฉพาะเครื่องมือที่ลงทะเบียน (86 เครื่องมือรวมทุก surface; customer surface ปกติเห็น 23 ร้านยา/ร้านอาหาร 26) · ห้ามแต่งเลขสต็อก ราคา หรือเลขบิลขึ้นมาเอง | ✅ | `lib/bms/pipeline.ts` |
 | **ยืนยันรายการก่อนสร้างบิลเสมอ** — สั่งครั้งแรกไม่เขียนอะไรลงฐานเลย คืน `CONFIRMATION_REQUIRED` แล้ว **เซิร์ฟเวอร์ประกอบสรุปเอง** (ไม่ให้โมเดลเขียน) · จำนวนเปลี่ยนหลังยืนยัน = ลายนิ้วมือไม่ตรง วนกลับไปถามใหม่ | ✅ | `ai_state` JSONB |
 | **ผู้ช่วยงานสำหรับพนักงาน** — Drawer ทุกหน้าหลังบ้าน · งานอ่อนไหวเป็น "เสนอ ไม่ทำเอง" ต้องกด Confirm · หน้าเครื่องขายได้คู่มือแบบออฟไลน์ ไม่เรียก AI | ✅ | `/admin/assistant` |
@@ -231,6 +240,7 @@ BMS **ไม่ใช่แชทบอท** — AI ไม่เคยเขี�
 | **ทะเบียนสาขา** — สร้าง/แก้สาขา · รหัสสาขาห้ามซ้ำ และ `00000` สงวนให้สำนักงานใหญ่ · สาขาที่สร้างจากหน้านี้ไม่มีวันกลายเป็นสำนักงานใหญ่คู่ขนาน · **สาขาใหม่เริ่มด้วยสต็อกว่าง** | ✅ | `9.1` (ตารางมาตั้งแต่ `7.84`) · `/admin/locations` |
 | **สต็อกแยกสาขา + โอนย้าย 2 ขั้น** — ส่งแล้วรับเป็นคนละขั้น ของระหว่างทางไม่เป็นของสาขาไหน · นับสต็อกปรับด้วย **ส่วนต่าง** ไม่ใช่ยัดยอดสัมบูรณ์ทับ | ✅ | `7.98` · `/admin/stock-transfers` `/admin/stock-counts` |
 | **ของกักกัน + ของหายระหว่างโอน** — ของเสียหายที่มาถึงปลายทางยังตามได้ แต่แยกออกจากยอดที่ POS ใช้ขาย · ของที่ปลายทางไม่พบแยกชนิดออกจากการปรับสต็อกทั่วไป | ✅ | `9.35` `9.36` |
+| **โอนสต็อกพร้อมล็อต/วันหมดอายุ** — ส่งตัดล็อตต้นทางแบบ FEFO (ไม่ส่งของหมดอายุหรือล็อตที่ถูกพักคุณภาพ) · รับสร้างล็อตเลขเดิม/วันหมดอายุเดิมที่ปลายทาง · ตามรอย recall ต้นทาง → ปลายทางได้ · ยอดล็อตไม่ตรงสต็อก = ปฏิเสธทั้งรายการ | 🧪 | `10.107` · `/admin/stock-transfers` (**WIP for rollout; committed and clone-DB verified, production deployment unverified** · มี `stock-transfer-lots-contract` · โค้ดปัจจุบันอ่านตารางนี้ทุกครั้งที่โอน จึงต้อง apply ก่อน deploy) |
 | **คืนสินค้าข้ามสาขา** — สาขาที่ขายกับสาขาที่รับคืนเป็นคนละข้อเท็จจริง · สิทธิ์ `pos.return.cross_branch` (**Manager เท่านั้น**) · เงินสดออกจากกะของสาขาที่รับคืน · ล็อตต้นทางห้ามถูกเขียนทับ | ✅ | `9.34` |
 | **โปรโมชันของแต่ละสาขา** — สาขาหนึ่งจัด "3 ชิ้น 100" ระบายของ อีกสาขาขายราคาปกติ · **โปรของสาขาทับโปรของส่วนกลาง** · หยุดโปร = ปิด ไม่ใช่ลบ | ✅ | `9.61` · `/admin/promotions` |
 | **คูปองเฉพาะสาขา** — ไม่ผูกสาขา = ใช้ได้ทุกสาขา · ตรวจทั้งตอนพรีวิวที่เครื่องขาย **และ** ตอนสร้างบิล | ✅ | `9.37` |
@@ -239,7 +249,9 @@ BMS **ไม่ใช่แชทบอท** — AI ไม่เคยเขี�
 | **ข้อมูลที่จอดรถรายสาขา** — ใช้ร่วมทุกประเภทร้าน · มี/ไม่มี/ไม่ระบุ + จำนวนช่อง ทางเข้า ค่าจอด เงื่อนไข ที่จอดใกล้เคียง ลิงก์แผนที่ HTTPS · AI อ่านได้เมื่อเปิดเผยแพร่เท่านั้น · ไม่ระบุ ≠ ไม่มีที่จอด และจำนวนช่องทั้งหมด ≠ ช่องว่างตอนนี้ | ⚙️ | `10.52` · `/admin/locations` |
 | **เครื่อง / กะ / บิล ผูกสาขา** — device → location, shift → device+location, บิลโต๊ะ → tuple เดียวกัน บังคับด้วย **FK composite** · X/Z report · ลิ้นชัก · ยอดขาย แยกตามสาขา/เครื่อง/กะ | ✅ | `9.47` `9.49` |
 
-> ⚠️ โมดูลโอนย้าย/นับสต็อกเป็น **REST-only ไม่มี GraphQL** → **AI tool catalogue มองไม่เห็นสองโมดูลนี้**
+> ⚠️ โมดูลโอนย้าย/นับสต็อก: หน้าแอดมินเรียก REST ส่วนแอป POS (native) เรียก GraphQL ผ่าน
+> `graphql/bmsMobileOperations.ts` (service ชุดเดียวกัน) · **ทั้งสองทางไม่ใช่ AI tool** — AI tool catalogue
+> (`lib/bms/tools/catalog.ts`) ยังไม่มีทูลโอนย้าย/นับสต็อก (ตรวจ 2026-11-09)
 >
 > ⚠️ **ราคาป้าย · ราคาแพ็ก · ราคาส่งตามจำนวน · ส่วนลดตามชั้นสมาชิก ยังเป็นระดับร้านทั้งหมด**
 > แยกรายสาขาได้เฉพาะ **โปรโมชัน** กับ **คูปอง**
@@ -260,6 +272,8 @@ BMS **ไม่ใช่แชทบอท** — AI ไม่เคยเขี�
 | นำเข้าสินค้า CSV / XLSX | ✅ | — |
 | **ใครกำลังจองสต็อกนี้อยู่** — กดที่คอลัมน์ "จอง" เห็นเลขบิลกับลูกค้า · ยอดที่อธิบายไม่ได้ต้องแสดงเสมอ | ✅ | `/admin/products` |
 | ใบสั่งซื้อผู้ขาย + รับของ | ✅ | `5.2` · `/admin/purchase` |
+| **รับของ PO / นับสต็อก แบบกันพลาด** — รับของหลังบ้านส่ง `idempotencyKey` ได้ (ส่งซ้ำ = คืนผลเดิม ไม่รับของซ้ำ · ข้อมูลเปลี่ยน = `IDEMPOTENCY_CONFLICT`) · สินค้าที่ติดตามล็อต/วันหมดอายุต้องกรอกแม้เป็นการรับครั้งแรกเข้าสาขา · จำนวนต้องเป็นตัวเลขจำนวนเต็มจริง (ไม่แปลงข้อความ/boolean) · นับสต็อกต้องใส่ตัวเลขเอง ช่องว่าง ≠ 0 และไม่ปัดทศนิยมทิ้ง · คืนบิลหลังบ้านที่ตามล็อตไม่ครบถูกย้อนทั้งรายการด้วย `STOCK_REVIEW_REQUIRED` · แอปมือถือรับของ PO ได้ เก็บคำขอค้างไว้ใน secure storage เพื่อส่งซ้ำด้วย key เดิม | ✅ | ไม่มี migration (ใช้ ledger `9.88`) · `/admin/purchase` · `/pos` · `apps/mobile` (pure `stock-integrity-contract` + DB `stock-integrity-db-contract` บนฐานทดสอบที่ restore แยก · ฝั่งมือถือมี Jest แต่ยังไม่มีบันทึกทดสอบบนเครื่องจริง) |
+| ราคาขาย/ต้นทุนรับทศนิยมไม่เกิน 2 ตำแหน่ง (สตางค์) — ปฏิเสธแทนการปัดเงียบในฐาน · สินค้าชั่งขายหน่วยกรัมจึงตั้งราคาต่อกิโลได้ทีละ 10 บาท | ✅ | ไม่มี migration · `/admin/products` (เทสใน `shop-archetype-experience-contract`) |
 | แจ้งลูกค้าเมื่อของเข้า (ต้องกดยินยอมเอง) | ✅ | `7.41` · `/admin/restock-subscriptions` |
 | แนะนำสั่งซื้อ · เตือนของจะหมด · ของช้า/ของตาย | ✅ | `9.12` `9.13` |
 
@@ -280,6 +294,7 @@ BMS **ไม่ใช่แชทบอท** — AI ไม่เคยเขี�
 | จัดส่ง + ติดตามพัสดุ + ประวัติสถานะ | ✅ | `5.4` `7.76` `7.77` · `/admin/shipment` |
 | ค่าส่งตามโซน/น้ำหนัก (เข้าฐาน VAT ต่อ) | ✅ | `7.47` |
 | จองพัสดุกับ Flash / Kerry | 🧪 | — |
+| **กระทบยอดบัญชีธนาคาร** — นำเข้า statement CSV/XLS/XLSX (≤ 10 MB / 50,000 แถว, ปฏิเสธสูตร, กันไฟล์ซ้ำด้วย SHA-256) แล้วกดยืนยันนำเข้า · ระบบเสนอคู่จากรับชำระที่ยืนยันแล้ว รับชำระลูกหนี้ เอกสารรายจ่ายที่จ่ายแล้ว คืนเงินที่สำเร็จ settlement เดลิเวอรี่ และรายการธนาคารฝั่งตรงข้าม · **คนกดยืนยันเท่านั้นจึงเป็นคู่** และไม่แก้รายการต้นทางใด ๆ · ปิด/เปิดงวดเดือนแบบมี version + ส่งออก XLSX/CSV ให้นักบัญชี · สิทธิ์ 4 ระดับ (ดู/นำเข้า/ตรวจ/ปิดงวด) seed ให้ Manager · เก็บแค่เลขบัญชี 4 ตัวท้าย + fingerprint · เทียบเฉพาะเงินบาท · Open Banking ยังไม่ต่อ (`NOT_CONFIGURED`) | 🧪 | `10.110` · `/admin/bank-reconciliation` (**ปิดโดยค่าเริ่มต้น** ต้องเปิด `BMS_BANK_RECONCILIATION_ENABLED` + `NEXT_PUBLIC_BMS_BANK_RECONCILIATION_ENABLED` หลัง apply · มีแค่ pure `bank-reconciliation-contract` ยังไม่มี DB contract · ยังไม่มีบันทึก pilot · [ขอบเขต](business/bank-reconciliation.md)) |
 
 > **โค้ดที่ถูกปฏิเสธต้องไม่นับ redemption** ไม่งั้นโค้ดจำกัด 100 ครั้งถูกเผาทิ้งโดยคนที่ยังไม่ได้ซื้ออะไร
 > · **ลำดับขั้นน้ำหนักคือเงิน** — ไม่เรียงลำดับ ของหนักจะได้ค่าส่งของขั้นเบา
@@ -330,6 +345,7 @@ AI ซักประวัติได้ แต่**การตัดสิ�
 | **สรุป intake ให้ลูกค้ายืนยัน** — แสดงข้อมูลเดิมที่นำกลับมาใช้และคำตอบใหม่ทั้งหมดก่อนเข้าคิวเภสัชกร; แก้ไขได้ และ red flag ตัดเข้า emergency path ทันที | 🧪 | `PENDING_CONFIRMATION` |
 | หลักฐานทางคลินิก — รูปใบสั่งยา · เลขอ้างอิง · บันทึกคำแนะนำ (เสิร์ฟผ่านเส้นทางที่ตรวจสิทธิ์เอง) | 🧪 | `9.25` |
 | **เภสัชกรกด PIN อนุมัติที่เครื่องขาย** — ด่านคือ **ใบอนุญาต** ไม่ใช่ permission (Administrator ไม่ได้มาฟรี) · ผู้อนุมัติเป็นคนขายเองได้ เพราะร้านเล็กมีเภสัชกรคนเดียวที่ยืนขายเอง | 🧪 | `9.29` |
+| **ฟอร์มบันทึกใบอนุญาตเภสัชกร (Administrator)** — ค้นหาผู้ใช้ในร้าน (≤ 50 คน) · บันทึกแล้วต้องยืนยันชื่อคนและสถานะใหม่อีกครั้ง · ฐานข้อมูลตรวจร้านและผู้ทำว่าเป็น Administrator ร้านเดียวกันก่อนเขียน แล้ว commit พร้อม audit · ไม่ให้สิทธิ์ `bms_app` แก้คอลัมน์ใบอนุญาตทั่วไป · เป็นข้อมูลที่ร้านบันทึก **ไม่ได้ตรวจกับทะเบียนใบอนุญาตภายนอก** · ร่าง/ส่งตรวจ/อนุมัติ/เปิดใช้ protocol และ Product Policy บันทึก audit ในทรานแซกชันเดียวกัน | 🧪 | `10.111` · `/admin/pharmacy-protocols/licenses` (ต้อง apply `10.47` + `10.111` · มี pure `pharmacy-protocol-write-contract` `pharmacy-product-policy-transaction-contract` · ยังไม่มี DB contract ของ `10.111`) |
 | ยาที่ต้องมีใบสั่งแพทย์ — **เคาน์เตอร์เท่านั้น** ออนไลน์บล็อกเสมอ | 🧪 | — |
 | จำนวนที่อนุมัติเป็น **เพดานต่อบิล** ไม่ใช่ต่อบรรทัด · ใบอนุญาตที่ระบุตัวคนไข้ ใช้กับคนไข้อื่นไม่ได้ | 🧪 | — |
 
@@ -348,7 +364,10 @@ AI ซักประวัติได้ แต่**การตัดสิ�
 | แพ็กเกจ / การเรียกเก็บเงิน | ✅ | `/admin/billing` |
 | บันทึกการกระทำ (audit) + ประวัติการแก้ไข (snapshot ก่อน UPDATE) | ✅ | `7.0`–`7.14` `7.22` · `/admin/revisions` |
 | สุขภาพระบบ — Postgres · Redis · ช่องทาง · ผู้ให้บริการ AI · ประวัติ cron | ⚙️ | `7.55` · `/admin/system-health` |
-| จัดการพนักงานโดยเจ้าของร้าน (ลำดับชั้นบทบาทตัดสินว่าใครแตะแถวไหนได้) | ✅ | `7.78` · `/admin/users` |
+| จัดการพนักงานโดยเจ้าของร้าน (ลำดับชั้นบทบาทตัดสินว่าใครแตะแถวไหนได้) · บัญชีผู้ดูแลแพลตฟอร์มมีป้าย "Super Admin" นำหน้าบทบาทร้าน (แสดงผลเท่านั้น ไม่เปลี่ยนสิทธิ์) | ✅ | `7.78` · `/admin/users` (ป้าย Super Admin ไม่มีเทสเฉพาะ) |
+| ชื่อ/รูปโปรไฟล์ที่แก้แล้วขึ้นทุกหน้าหลังบ้านทันที — อ่านชื่อ/username/avatar จากฐานทุกคำขอ ไม่เชื่อค่าใน JWT จึงไม่ต้องออกจากระบบแล้วเข้าใหม่ | ✅ | ไม่มี migration · `/admin/profile` (`user-admin-contract`) |
+| **ค้นหาความรู้หลังบ้าน + ค้นหาฟีเจอร์สาธารณะ** — ช่องค้นหาบน header: แอดมินไป `/admin/search` (จัดอันดับจากแคตตาล็อกความสามารถ/คู่มือแบบ deterministic **ไม่เรียก AI**) คนทั่วไปไป `/learn` · หน้า `/features` ตอบจากฐานความรู้ฝ่ายขายที่ตรวจแล้วหัวข้อเดียว แสดงข้อจำกัดของเรื่องที่เป็น pilot/มีเงื่อนไข ไม่เจอ = "ยังไม่มีคำตอบที่ยืนยัน" ไม่ใช่ "ไม่มีฟีเจอร์" · ราคา Cloud ชี้ไปแพ็กเกจปัจจุบัน ราคา Retail Local ให้ทีมยืนยัน | ✅ | ไม่มี migration · `/admin/search` · `/features` (`header-search-contract` · `ai-eval/bms-presales-contract` · browser smoke `admin-knowledge-search` `public-learning-header-search`) |
+| **ไฟล์ส่วนตัว แชทชุมชน และขีดจำกัด GraphQL** — `/api/files/:id` เปิดแบบไม่ล็อกอินได้เฉพาะไฟล์ `public` · ไฟล์แชทต้องเป็นสมาชิกห้อง ณ ตอนนั้น · ไฟล์อื่นต้องเป็นเจ้าของ แอดมินร้านเจ้าของ หรือผู้ดูแลแพลตฟอร์ม (ไฟล์เก่าไม่มีเจ้าของ) · ไฟล์ที่มี route เฉพาะ (หลักฐานคลินิก/ปฏิบัติการ, support bundle, ตัวติดตั้ง, statement ธนาคาร) ไม่ออกทางนี้ · คลังไฟล์รวมเป็นของผู้ดูแลแพลตฟอร์มเท่านั้น · แชทต้องเป็นสมาชิกถึงอ่าน/ส่ง/จัดการได้ · GraphQL เปิด CSRF prevention ปฏิเสธ POST ข้าม origin จำกัดขนาด body และความลึก/จำนวน field/alias | ✅ | `10.109` (ต้อง apply ก่อน deploy · pure `file-visibility-contract` `community-chat-security-contract` `graphql-request-security-contract` `web-security-hardening-contract` · ยังไม่มี DB contract ของ backfill `10.109`) |
 | สองภาษา ไทย/อังกฤษ + โหมดมืด (ตั้งได้รายคน บัญชีใหม่เริ่มที่ไทย) | ✅ | `7.50` `7.56` `7.81` |
 | แจ้งปัญหา + ส่งข้อมูลวินิจฉัยจากหน้าเครื่องขาย | ✅ | `9.46` · `/admin/support-tickets` |
 | สมัครร้านเอง + เลือกประเภทร้าน 14 แบบ + ข้อมูลตัวอย่าง | ✅ | `7.42`–`7.44` `9.43` · `/shop-signup` |
@@ -356,9 +375,11 @@ AI ซักประวัติได้ แต่**การตัดสิ�
 | Mobile Emergency Offline — คิวเข้ารหัสสำหรับบิลขายปลีกเงินสดธรรมดาในกะเดิม สินค้าต้องโหลดก่อนขาดการเชื่อมต่อ และสร้างบิล/เอกสารจริงหลัง Server ตรวจตอน sync | ⚙️ | `apps/mobile` · [ขอบเขต](business/cloud-hybrid-pos.md) |
 | Retail Local — backend/ฐานข้อมูลอยู่ในร้าน ใช้ workflow ภายในผ่าน Local Server ได้เมื่ออินเทอร์เน็ตภายนอกล่ม แต่ยังเป็น Technical Pilot ไม่ใช่ Commercial/GA | 🧪 | [สถานะ](business/retail-local-ga-readiness.md) |
 | Retail Local — ลงทะเบียนสิทธิ์ (Activation) เป็นขั้นตอนหลังติดตั้งที่เลือกได้ ตัวติดตั้งไม่ถามรหัส · หน้า `/admin/retail-local-license` ในร้าน · สถานะสิทธิ์/ทดลองใช้ **ไม่เคยหยุดการขายหรือข้อมูลของร้าน** · นับจำนวนเครื่องที่ติดตั้งด้วย UUID สุ่ม ไม่เก็บข้อมูลฮาร์ดแวร์ · รายงานปัญหาการติดตั้งแบบยินยอมก่อนส่ง | 🧪 | `10.16`–`10.18` `10.31` `10.35` `10.36` · [ขอบเขต](business/retail-local.md) |
+| Retail Local — ฟอร์มติดต่อกลับแบบยินยอม (lead) บนหน้า `/retail-local` · ไม่บังคับก่อนดาวน์โหลด · ต้องติ๊กยินยอม + เบอร์ไทยหรือ LINE ID · จำกัด 5 ครั้ง/IP/ชั่วโมง · Cloud เท่านั้น (เครื่องในร้านตอบ 404) · ผู้ดูแลแพลตฟอร์มดู/แก้สถานะในแท็บ Leads · **ลบข้อมูลตาม PDPA** ล้างชื่อ/เบอร์/LINE/โน้ตทุก snapshot ในทรานแซกชันเดียว เก็บหลักฐานความยินยอม แล้วล็อกแถว · lead ไม่ใช่สิทธิ์ใช้งาน | 🧪 | `10.105` `10.106` · `/admin/retail-local-licenses` (pure `retail-local-lead-contract` + DB `retail-local-lead-db-contract` บนฐานทดสอบ · **นโยบายความเป็นส่วนตัวยังไม่ได้อธิบาย lead และต้องผ่านการตรวจทางกฎหมายก่อนเก็บจริง** · re-run `10.105` แล้วต้อง apply `10.106` ซ้ำ) |
+| Retail Local — ผู้ดูแลแพลตฟอร์มลบไฟล์ตัวติดตั้งของ release ที่ซ่อนแล้วและไม่ใช่ `latest` (พิมพ์ยืนยัน · same-origin · audit · เก็บแถวไว้เป็น tombstone ดาวน์โหลด/กู้คืนไม่ได้) และลบ Managed Runtime รายเวอร์ชัน/แพลตฟอร์มทีละชุดใต้ publish lock · ตัวติดตั้งที่ผูก URL นั้นจะใช้ไม่ได้ | 🧪 | ไม่มี migration · `/admin/retail-local-releases` · `/admin/retail-local-runtime-releases` (pure + DB `retail-local-release-purge-*` · `managed-runtime-release-upload.test.mts` · commit ลบ runtime ระบุว่ายังไม่ได้ตรวจหน้า admin ในเบราว์เซอร์) |
 | Delivery Platforms — mapping/webhook/inbox-outbox/POS handoff foundation; foodpanda ตรวจ public contract แล้ว ส่วน GrabFood/LINE MAN ยัง contract-blocked | 🧪 | `10.12` `10.14` `10.21` · `/admin/delivery-platforms` |
 | **ลิงก์ดาวน์โหลดแอปบนหน้าแรก** — ผู้ดูแลแพลตฟอร์มตั้งลิงก์ Android / App Store (HTTPS เท่านั้น) · ไม่ตั้ง = ปุ่มไม่พาไปไหน · ไม่ได้รวมการ build/อัปโหลดแอปจริง | ⚙️ | `10.57` · `/admin/app-downloads` |
-| **ตัวจัดตารางงานกลาง (Docker scheduler)** — service แยกที่ยิง cron API เดิม 18 ตัวตาม `apps/web/scheduler/jobs.json` · ไม่มี credential ของฐาน/AI · ใช้ Redis ล็อกกันยิงซ้ำ · ต้องเลือกผู้ยิงทางเดียว (`BMS_CRON_RUNNER=docker` หรือ `github`) | ⚙️ | ไม่มี migration · [scheduler.md](architecture/scheduler.md) · `/admin/operations-schedule` |
+| **ตัวจัดตารางงานกลาง (Docker scheduler)** — service แยกที่ยิง cron API เดิม 22 ตัว (ทุก 15 นาที 16 · รายวัน 6) ตาม `apps/web/scheduler/jobs.json` · ไม่มี credential ของฐาน/AI · ใช้ Redis ล็อกกันยิงซ้ำ · ต้องเลือกผู้ยิงทางเดียว (`BMS_CRON_RUNNER=docker` หรือ `github`) | ⚙️ | ไม่มี migration · [scheduler.md](architecture/scheduler.md) · `/admin/operations-schedule` |
 | **ส่งอีเมลผ่าน SMTP relay ทั่วไป** (`MAIL_PROVIDER=smtp` — Resend/SES/Postmark ฯลฯ) + reply-to เป็นอีเมลร้านที่ใบเสร็จ/แจ้งสถานะออร์เดอร์ | 🧪 | `10.59` (**ยังไม่ได้ apply/รันกับฐานใด** · ไม่ apply = ส่งได้แต่ mail log บันทึกไม่ลง · ยังไม่เคยส่งจริงกับ Resend · ยังไม่มี bounce/complaint webhook) |
 | Fake data seeder (dev เท่านั้น) | ✅ | `/admin/dev/fake` |
 
@@ -376,10 +397,11 @@ AI ซักประวัติได้ แต่**การตัดสิ�
 | **ESC/POS พิมพ์ + เปิดลิ้นชัก** | 🧪 เขียนแล้ว **ไม่เคยยิงกับเครื่องพิมพ์จริง** (มีทางสำรองผ่านกล่องพิมพ์เบราว์เซอร์ ซึ่งเปิดลิ้นชักไม่ได้) |
 | **e-Tax ยื่นกรมสรรพากร** | 🧪 ปิดโดยค่าเริ่มต้น ยังไม่มี provider เซ็น/ยื่นตัวจริง · **ออกใบกำกับ ≠ ยื่นแล้ว** |
 | **AI Pharmacy Intake** | 🧪 ปิดโดยค่าเริ่มต้น ต้องเปิดธงก่อน |
+| **กระทบยอดบัญชีธนาคาร** | 🧪 `10.110` ปิดโดยค่าเริ่มต้น (ธง server + public) · มีแค่ pure contract ยังไม่มี DB contract หรือบันทึก pilot · Open Banking `NOT_CONFIGURED` · เป็นหลักฐานประกอบ ไม่ใช่สมุดบัญชีและไม่ลงรายการบัญชีให้ |
 | **TikTok ส่งข้อความออก** | 📋 รับเข้าได้แล้ว ยังไม่มีเส้นทางส่งออก |
 | **GrabFood / LINE MAN / foodpanda** | 🧪 `10.12` มี tenant/RLS foundation, encrypted setup, verified mapping, webhook/command inbox-outbox, shadow/live gate, Admin setup/mapping/operations, Action Center, manual settlement reconciliation, POS accept/ready/handoff, pause/timed resume, acceptance guard และ scheduled preparation แล้ว; foodpanda ใช้ public Partner API subset ส่วน GrabFood/LINE MAN ยัง contract-blocked และทั้งชุดยังห้ามอ้างว่า production-ready ก่อน sandbox/shadow/tax/settlement cycle · [รายละเอียด](integrations/delivery-platforms.md) |
-| **แอปเครื่องขายมือถือ (iOS/Android)** | 🧪 core workflow ใช้ GraphQL + device token/cashier PIN แล้ว; กล้องสแกนแบบ one-shot และโหมด Bluetooth/USB HID ที่รับรหัสใน modal โดยต้องโฟกัสทำแล้ว พร้อมจำโหมดบนเครื่อง สิ่งที่ยังขาดคือ global key capture นอก modal · ทดสอบเครื่องสแกนจริงหลายรุ่น/CR+LF บนเครื่องจริง · พิมพ์/เปิดลิ้นชัก · จอลูกค้าเครื่องที่สอง · push ตอนแอปพัก · หลักฐานเภสัช |
-| **Desktop POS** | 🧪 เป็น Electron shell ที่เชื่อม `/pos`; ไม่มี offline tender แพ็กเกจยังไม่ signed/notarized และไม่มี auto-update ที่ผ่าน release gate |
+| **แอปเครื่องขายมือถือ (iOS/Android)** | 🧪 core workflow ใช้ GraphQL + device token/cashier PIN แล้ว; กล้องสแกนแบบ one-shot และโหมด Bluetooth/USB HID ที่รับรหัสใน modal โดยต้องโฟกัสทำแล้ว พร้อมจำโหมดบนเครื่อง สิ่งที่ยังขาดคือ global key capture นอก modal · ทดสอบเครื่องสแกนจริงหลายรุ่น/CR+LF บนเครื่องจริง · พิมพ์/เปิดลิ้นชัก · จอลูกค้าเครื่องที่สอง · push ตอนแอปพัก · หลักฐานเภสัช · จับคู่เครื่องด้วย QR จาก `/admin/pos-devices` ทำแล้ว (QR สร้างบนหน้าแอดมิน ปิด QR ไม่ได้ยกเลิก token · ออก token ใหม่ = ของเก่าใช้ไม่ได้ทันที · มี `pos-device-token-contract` + Jest + browser smoke) · audit iOS/Android 3 พ.ย. 2026 เป็นการตรวจโค้ด + เทสอัตโนมัติ (Jest 307 เทส, Android debug build) **ไม่ใช่การรับรองบนเครื่องจริง** ยังไม่ได้ build iOS native และ release Android ไม่ sign ถ้าไม่มี upload key |
+| **Desktop POS** | 🧪 เป็น Electron shell ที่เชื่อม `/pos`; ไม่มี offline tender แพ็กเกจยังไม่ signed/notarized และไม่มี auto-update ที่ผ่าน release gate · ไฟล์จับคู่อ่านไม่ได้ตอนอัปเกรดจะเปิดหน้ากู้คืนแทนการตั้งค่าใหม่ และ unpair/หน้าต่างถูกจัดลำดับกันไม่ให้ข้อมูลจับคู่เก่ากลับมา (เทส Node + smoke บน Windows · ยังไม่ใช่การทดสอบอัปเกรดตัวติดตั้งจริง/keystore macOS-Linux) |
 | **Retail Local** | 🧪 ตัวระบบและ candidate installer/update/backup paths มีแล้ว แต่ยังไม่ Commercial/GA จนกว่าจะผ่าน signing, clean-machine, update/rollback, replacement restore, power-loss/disk-full, peripheral และ support gates |
 | **Insurance Sales Inbox** | 📋 แผน — ต้องผ่านการตรวจข้อกำกับ (คปภ.) ก่อน |
 | **แยกเครื่องพิมพ์ตามสถานีครัว** | 📋 `9.54` จองคอลัมน์ไว้แล้วแต่ยังไม่มีใครอ่าน — **อย่าเดาจากคอลัมน์นั้นว่าต่อได้แล้ว** |
