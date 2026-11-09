@@ -161,6 +161,15 @@ import {
   listRestaurantWaitlist,
   seatRestaurantWaitlistEntry,
 } from "@/lib/bms/restaurantWaitlist";
+import {
+  issuePickupQueueAfterSale,
+  issuePickupQueueNumber,
+  listPickupQueue,
+  PICKUP_QUEUE_ACTIONS,
+  PickupQueueError,
+  updatePickupQueueEntry,
+  type PickupQueueAction,
+} from "@/lib/bms/pickupQueue";
 import { setMenuTemporarilyUnavailable } from "@/lib/bms/menuAvailability";
 import { findStoreCredit } from "@/lib/bms/storeCredit";
 import { getStoreProfile } from "@/lib/bms/storeProfile";
@@ -298,6 +307,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     pharmacistAuthorizationNote: String
     pharmacyApprovedAssessmentId: ID
     pharmacyReviewAssessmentId: ID
+    "Ask for a pickup queue number (10.111) after the sale commits. Branch policy may also enable it."
+    pickupQueue: Boolean
   }
 
   input BmsPosSaleRecoveryInput {
@@ -534,6 +545,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     discountApproverUserId: ID
     discountApproverPin: String
     payments: [BmsPosPaymentInput!]
+    "Settle only: ask for a pickup number for a take-away check (10.111); branch policy may also enable it."
+    pickupQueue: Boolean
   }
 
   input BmsPosRestaurantIncomingActionInput {
@@ -652,6 +665,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     discountApproverUserId: ID
     discountApproverPin: String
     payments: [BmsPosPaymentInput!]!
+    "Ask for a pickup number for a take-away check (10.111); branch policy may also enable it and dine-in checks never get one."
+    pickupQueue: Boolean
   }
 
   input BmsPosRestaurantAcceptIncomingOrderInput {
@@ -760,6 +775,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     branchCode: String!
     vatCode: String
     pharmacistName: String
+    pickupQueue: BmsLocationPickupQueueSettings!
   }
 
   type BmsPosShiftReturnSummary {
@@ -791,6 +807,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     phone: String
     logoUrl: String
     customerDisplayBackgroundUrl: String
+    customerDisplayPromoSlides: [String!]!
+    customerDisplayPromoIntervalSeconds: Int!
     paymentQr: BmsPosPaymentQr
   }
 
@@ -1115,7 +1133,40 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     requested: Int
   }
 
+  "Pickup queue number issued after a committed sale (10.111)."
+  type BmsPosPickupQueueNumber {
+    id: ID!
+    queueNo: Int!
+    label: String!
+  }
+
+  "One open pickup number at this till's branch. Carries no customer identity."
+  type BmsPosPickupQueueEntry {
+    id: ID!
+    label: String!
+    status: String!
+    readySource: String
+    createdAt: String!
+    readyAt: String
+    calledAt: String
+  }
+
+  input BmsPosPickupQueueActionInput {
+    cashierUserId: ID!
+    pin: String!
+    "call | unready | collect | cancel — or issue (with orderId) to retry a number a committed sale did not get"
+    action: String!
+    "Required for call/unready/collect/cancel."
+    entryId: ID
+    "Required for issue: the committed sale of this till that should get a pickup number."
+    orderId: ID
+  }
+
   type BmsPosSaleResult {
+    "Present only when the sale asked for a pickup number and it was issued."
+    pickupQueue: BmsPosPickupQueueNumber
+    "The sale succeeded but the number could not be issued; staff can retry with bmsPosPickupQueueAction issue."
+    pickupQueueError: String
     status: String!
     orderId: ID
     saleLocationId: ID
@@ -1247,6 +1298,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
   }
 
   type BmsPosReceipt {
+    "Pickup queue number printed on the original receipt (10.111)."
+    pickupQueueLabel: String
     pointsEarned: Float
     pointsBalance: Float
     pointsExpiring: Float
@@ -1954,6 +2007,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
   }
 
   type BmsPosRestaurantCheckActionResult {
+    pickupQueue: BmsPosPickupQueueNumber
+    pickupQueueError: String
     status: String
     reason: String
     check: BmsPosRestaurantCheck
@@ -2892,6 +2947,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     bmsPosRestaurantQrOrders: BmsPosRestaurantQrOrdersResult!
     bmsPosRestaurantServiceCalls: BmsPosRestaurantServiceCallsResult!
     bmsPosRestaurantWaitlist: BmsPosRestaurantWaitlistResult!
+    "Open pickup numbers of today's service day at this till's branch (10.111)."
+    bmsPosPickupQueue: [BmsPosPickupQueueEntry!]!
     bmsPosMemberSearch(q: String, amount: Float): BmsPosMemberSearchResult!
 
     bmsPosShiftHistory(
@@ -3208,6 +3265,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
       input: BmsPosRestaurantServiceCallActionInput!
     ): BmsPosRestaurantServiceCallActionResult!
       @deprecated(reason: "Use the named service-call mutations")
+    bmsPosPickupQueueAction(input: BmsPosPickupQueueActionInput!): BmsPosPickupQueueEntry!
     bmsPosRestaurantWaitlistAction(
       input: BmsPosRestaurantWaitlistActionInput!
     ): BmsPosRestaurantWaitlistActionResult!
@@ -3452,6 +3510,7 @@ export const bmsPosDeviceResolvers = {
               branchCode: location.branchCode,
               vatCode: location.vatCode,
               pharmacistName: location.pharmacistName,
+              pickupQueue: location.pickupQueue,
             }
           : null,
         shift,
@@ -3470,6 +3529,8 @@ export const bmsPosDeviceResolvers = {
           phone: store.phone,
           logoUrl: store.logoUrl,
           customerDisplayBackgroundUrl: store.customerDisplayBackgroundUrl,
+          customerDisplayPromoSlides: store.customerDisplayPromoSlides,
+          customerDisplayPromoIntervalSeconds: store.customerDisplayPromoIntervalSeconds,
           paymentQr: configuredPosPaymentQr(store.paymentAccounts),
         },
         surface:
@@ -3813,6 +3874,11 @@ export const bmsPosDeviceResolvers = {
     async bmsPosRestaurantWaitlist(_parent: unknown, _args: unknown, ctx: any) {
       const device = requirePosDevice(ctx);
       return listRestaurantWaitlist(device.tenantId, device.locationId);
+    },
+
+    async bmsPosPickupQueue(_parent: unknown, _args: unknown, ctx: any) {
+      const device = requirePosDevice(ctx);
+      return listPickupQueue(device.tenantId, device.locationId);
     },
 
     async bmsPosMemberSearch(
@@ -4389,7 +4455,7 @@ export const bmsPosDeviceResolvers = {
       }
       const profile = await getStoreProfile(device.tenantId);
 
-      return recordPosSale({
+      const saleResult = await recordPosSale({
         tenantId: device.tenantId,
         deviceId: device.id,
         shiftId,
@@ -4428,6 +4494,22 @@ export const bmsPosDeviceResolvers = {
           "เคสร้านยาไม่ถูกต้อง",
         ),
       });
+      // เลขคิวรับของ (10.111) — ออกหลังบิล commit แล้ว ไม่ทำให้การขายล้มแม้ออกเลขไม่ได้
+      if (saleResult.status === "SOLD") {
+        return {
+          ...saleResult,
+          ...(await issuePickupQueueAfterSale({
+            tenantId: device.tenantId,
+            locationId: device.locationId,
+            deviceId: device.id,
+            orderId: String(saleResult.orderId),
+            actorUserId: actor.userId,
+            requested: input.pickupQueue === true,
+            allowBranchDefault: !textInput(input.offlineTenderedAt),
+          })),
+        };
+      }
+      return saleResult;
     },
 
     async bmsPosShift(_parent: unknown, args: { input: unknown }, ctx: any) {
@@ -6026,7 +6108,7 @@ export const bmsPosDeviceResolvers = {
           );
           manualApproval = { amount: requestedDiscount, userId: approver.userId, reason };
         }
-        return settleRestaurantCheck({
+        const settled = await settleRestaurantCheck({
           ...common,
           deviceId: device.id,
           shiftId: shift.id,
@@ -6040,6 +6122,22 @@ export const bmsPosDeviceResolvers = {
           discountReason: manualApproval?.reason ?? null,
           payments: parsed.payments,
         });
+        // เลขคิวรับของ (10.111) — service ปฏิเสธบิลทานที่ร้านเอง จึงได้เฉพาะบิลกลับบ้าน
+        if (settled.status === "SOLD") {
+          return {
+            ...settled,
+            ...(await issuePickupQueueAfterSale({
+              tenantId: device.tenantId,
+              locationId: device.locationId,
+              deviceId: device.id,
+              orderId: String(settled.orderId),
+              actorUserId: actor.userId,
+              requested: input.pickupQueue === true,
+              allowBranchDefault: true,
+            })),
+          };
+        }
+        return settled;
       }
       return badPosInput("action ไม่ถูกต้อง");
     },
@@ -6227,6 +6325,45 @@ export const bmsPosDeviceResolvers = {
         callId,
         action,
       });
+    },
+
+    async bmsPosPickupQueueAction(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashier(device, input, "pos.sell");
+      await requireOpenPosShift(device);
+      const requested = textInput(input.action).toLowerCase();
+      try {
+        // ออกเลขให้บิลที่ commit แล้วแต่ยังไม่ได้เลข — service ตรวจว่าเป็นบิลของเครื่อง/สาขานี้
+        // และคืนเลขเดิมถ้าเคยออกไปแล้ว (หนึ่งบิลหนึ่งเลข)
+        if (requested === "issue") {
+          return await issuePickupQueueNumber({
+            tenantId: device.tenantId,
+            locationId: device.locationId,
+            deviceId: device.id,
+            orderId: uuidInput(input.orderId, "บิลไม่ถูกต้อง"),
+            actorUserId: actor.userId,
+          });
+        }
+        const action = requested as PickupQueueAction;
+        if (!PICKUP_QUEUE_ACTIONS.includes(action)) return badPosInput("คำสั่งคิวไม่ถูกต้อง");
+        return await updatePickupQueueEntry({
+          tenantId: device.tenantId,
+          locationId: device.locationId,
+          entryId: uuidInput(input.entryId, "คิวไม่ถูกต้อง"),
+          action,
+          actorUserId: actor.userId,
+        });
+      } catch (error) {
+        if (error instanceof PickupQueueError) {
+          throw mobileGraphqlError(error.message, error.status === 404 ? "NOT_FOUND" : "CONFLICT");
+        }
+        throw error;
+      }
     },
 
     async bmsPosRestaurantWaitlistAction(

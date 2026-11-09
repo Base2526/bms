@@ -296,6 +296,9 @@ export function OfflineSalesProvider({
                   pharmacistAuthorizerUserId: null,
                   pharmacyApprovedAssessmentId: null,
                   pharmacyReviewAssessmentId: null,
+                  // ซิงก์บิลออฟไลน์ย้อนหลัง: ลูกค้ารับของไปตั้งแต่ตอนจ่ายแล้ว ออกเลขคิวตอนนี้
+                  // จะขึ้นจอเรียกคิวเลขที่ไม่มีใครรออยู่
+                  pickupQueue: false,
                 },
               },
             }),

@@ -58,7 +58,7 @@ export default function LoginScreen({ navigation }: Props) {
   const branch = useMemo<PosSessionBranch | null>(() => {
     const location = data?.bmsPosSession.location;
     return location
-      ? { id: location.id, name: location.name, code: location.branchCode }
+      ? { id: location.id, name: location.name, code: location.branchCode, pickupQueue: location.pickupQueue }
       : null;
   }, [data]);
   const cashiers = useMemo<PosSessionCashier[]>(

@@ -105,6 +105,12 @@ The in-repository RN workflows are connected to the generated GraphQL contract:
 - restaurant dine-in and takeaway checks, variants/modifiers, floor/check operations, kitchen rounds,
   settlement, incoming-order review, QR queue, service calls, waitlist, and menu availability; the
   QR/call/waitlist reads stay active across tabs and drive the `คิว/QR` badge and alerts;
+- pickup queue numbers for retail sales and restaurant takeaway: the branch policy or per-device
+  switch requests a number only after a successful online settlement, prints it on the receipt,
+  exposes PIN/RBAC-protected call/recall/collect/undo/cancel actions in the Sell screen, and offers a
+  same-order retry when a committed sale could not issue its number. A failed queue read is never
+  shown as an empty queue: stale actions pause until a successful refresh. Emergency Offline sales
+  deliberately do not issue a number until the server owns the completed sale;
 - board-game floor and timed sessions, fixed-duration alerts, member lookup, participant bill groups,
   one-group-at-a-time close while others keep playing, moving a party to a free table or merging two
   occupied tables without touching a bill, playable-copy checkout/return/issue handling,

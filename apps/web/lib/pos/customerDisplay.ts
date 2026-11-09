@@ -7,12 +7,14 @@ export type CustomerDisplayBrand = {
   branch: string | null;
   logoUrl: string | null;
   customerDisplayBackgroundUrl?: string | null;
+  customerDisplayPromoSlides?: string[];
+  customerDisplayPromoIntervalSeconds?: number;
   businessHours?: string | null;
   website?: string | null;
 };
 
 export function displayBrand(session: {
-  store?: { name?: string | null; logoUrl?: string | null; customerDisplayBackgroundUrl?: string | null; businessHours?: string | null; website?: string | null };
+  store?: { name?: string | null; logoUrl?: string | null; customerDisplayBackgroundUrl?: string | null; customerDisplayPromoSlides?: string[]; customerDisplayPromoIntervalSeconds?: number; businessHours?: string | null; website?: string | null };
   location: { name: string } | null;
 } | null): CustomerDisplayBrand | null {
   if (!session) return null;
@@ -21,6 +23,8 @@ export function displayBrand(session: {
     branch: session.location?.name ?? null,
     logoUrl: displayUrl(session.store?.logoUrl),
     customerDisplayBackgroundUrl: displayUrl(session.store?.customerDisplayBackgroundUrl),
+    customerDisplayPromoSlides: (session.store?.customerDisplayPromoSlides ?? []).map(displayUrl).filter((url): url is string => Boolean(url)).slice(0, 8),
+    customerDisplayPromoIntervalSeconds: Math.min(30, Math.max(4, Math.trunc(session.store?.customerDisplayPromoIntervalSeconds ?? 8))),
     businessHours: session.store?.businessHours ?? null,
     website: displayUrl(session.store?.website),
   };
@@ -73,7 +77,8 @@ export type CustomerDisplayPayload = {
     accountName: string | null;
     promptpayId: string | null;
   } | null;
-  finished: { id?: string; completedAt?: number; total: number; tendered: number | null; change: number | null; taxRequestUrl?: string | null } | null;
+  finished: { id?: string; completedAt?: number; total: number; tendered: number | null; change: number | null;
+    taxRequestUrl?: string | null; pickupQueueLabel?: string | null } | null;
 };
 
 export const EMPTY_CUSTOMER_DISPLAY: CustomerDisplayPayload = {
@@ -113,11 +118,18 @@ export function isDisplayPayload(value: unknown): value is CustomerDisplayPayloa
     && [v.itemCount, v.total, v.discountTotal, v.amountDue].every(money)
     && optionalText(v.memberName) && [v.pointsEarned, v.pointsBalance, v.pointsWillEarn].every(optionalNumber)
     && [v.checkout, v.pendingApproval, v.pendingPricing, v.memberAttached].every(b => b == null || typeof b === "boolean")
-    && (!v.brand || (typeof v.brand.name === "string" && [v.brand.branch, v.brand.logoUrl, v.brand.customerDisplayBackgroundUrl, v.brand.businessHours, v.brand.website].every(optionalText)))
+    && (!v.brand || (typeof v.brand.name === "string"
+      && [v.brand.branch, v.brand.logoUrl, v.brand.customerDisplayBackgroundUrl, v.brand.businessHours, v.brand.website].every(optionalText)
+      && (v.brand.customerDisplayPromoSlides == null || (Array.isArray(v.brand.customerDisplayPromoSlides)
+        && v.brand.customerDisplayPromoSlides.length <= 8 && v.brand.customerDisplayPromoSlides.every((value) => typeof value === "string")))
+      && (v.brand.customerDisplayPromoIntervalSeconds == null
+        || (Number.isInteger(v.brand.customerDisplayPromoIntervalSeconds)
+          && v.brand.customerDisplayPromoIntervalSeconds >= 4 && v.brand.customerDisplayPromoIntervalSeconds <= 30))))
     && (!v.paymentQr || (typeof v.paymentQr.payload === "string" && v.paymentQr.payload.length <= 2048
       && money(v.paymentQr.amount) && optionalText(v.paymentQr.accountName)))
     && (!v.finished || (money(v.finished.total) && optionalNumber(v.finished.tendered)
-      && optionalNumber(v.finished.change) && optionalNumber(v.finished.completedAt) && optionalText(v.finished.id) && optionalText(v.finished.taxRequestUrl)));
+      && optionalNumber(v.finished.change) && optionalNumber(v.finished.completedAt) && optionalText(v.finished.id)
+      && optionalText(v.finished.taxRequestUrl) && optionalText(v.finished.pickupQueueLabel)));
 }
 
 /** Heartbeats must not restart the thank-you timer or revive a dismissed receipt. */

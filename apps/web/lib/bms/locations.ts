@@ -38,6 +38,21 @@ export type BmsLocation = {
   pharmacistLicenseNo: string | null;
   active: boolean;
   parking: LocationParking;
+  pickupQueue: PickupQueueLocationSettings;
+};
+
+export type PickupQueueLocationSettings = {
+  enabled: boolean;
+  autoHideMinutes: number;
+  showPreparing: boolean;
+  boardMessage: string | null;
+  prefix: string;
+  startNo: number;
+  spotlightSeconds: number;
+  voiceMode: "AI_STUDIO" | "VOICE_CHIME" | "CHIME" | "OFF";
+  voiceLanguage: "th" | "en";
+  voiceRepeat: number;
+  voiceVolume: number;
 };
 
 function mapRow(r: any): BmsLocation {
@@ -57,6 +72,19 @@ function mapRow(r: any): BmsLocation {
     pharmacistLicenseNo: r.pharmacist_license_no ?? null,
     active: r.active,
     parking: readLocationParking(r.parking_info),
+    pickupQueue: {
+      enabled: r.pickup_queue_enabled === true,
+      autoHideMinutes: Number(r.pickup_queue_auto_hide_minutes ?? 30),
+      showPreparing: r.pickup_queue_show_preparing !== false,
+      boardMessage: r.pickup_queue_board_message ?? null,
+      prefix: String(r.pickup_queue_prefix ?? ""),
+      startNo: Number(r.pickup_queue_start_no ?? 1),
+      spotlightSeconds: Number(r.pickup_queue_spotlight_seconds ?? 12),
+      voiceMode: r.pickup_queue_voice_mode ?? "AI_STUDIO",
+      voiceLanguage: r.pickup_queue_voice_language ?? "th",
+      voiceRepeat: Number(r.pickup_queue_voice_repeat ?? 1),
+      voiceVolume: Number(r.pickup_queue_voice_volume ?? 80),
+    },
   };
 }
 
@@ -167,6 +195,7 @@ export type UpsertLocationInput = ThaiAddressCodes & {
   phone?: string | null;
   active?: boolean | null;
   parking?: LocationParking | null;
+  pickupQueue?: Partial<PickupQueueLocationSettings> | null;
 };
 
 const HEAD_OFFICE_BRANCH_CODE = "00000";
@@ -194,6 +223,33 @@ export async function upsertLocation(tenantId: string, input: UpsertLocationInpu
 
   if (!actorId) throw new Error("FORBIDDEN");
   const parking = input.parking == null ? null : normalizeLocationParking(input.parking);
+  const pickupQueue = input.pickupQueue;
+  const autoHideMinutes = Math.trunc(Number(pickupQueue?.autoHideMinutes ?? 30));
+  if (!Number.isFinite(autoHideMinutes) || autoHideMinutes < 0 || autoHideMinutes > 1440) {
+    throw new Error("เวลาล้างเลขคิวต้องอยู่ระหว่าง 0-1440 นาที");
+  }
+  const boardMessage = pickupQueue?.boardMessage == null
+    ? null
+    : String(pickupQueue.boardMessage).trim() || null;
+  if (boardMessage && boardMessage.length > 120) throw new Error("ข้อความบนจอคิวยาวเกิน 120 ตัวอักษร");
+  const prefix = String(pickupQueue?.prefix ?? "").trim().toUpperCase();
+  if (!/^[A-Z]?$/.test(prefix)) throw new Error("คำนำหน้าเลขคิวต้องเป็นอักษร A-Z ได้หนึ่งตัว");
+  const startNo = Math.trunc(Number(pickupQueue?.startNo ?? 1));
+  if (!Number.isFinite(startNo) || startNo < 1 || startNo > 9999) {
+    throw new Error("เลขคิวเริ่มต้องอยู่ระหว่าง 1-9999");
+  }
+  const spotlightSeconds = Math.trunc(Number(pickupQueue?.spotlightSeconds ?? 12));
+  if (!Number.isFinite(spotlightSeconds) || spotlightSeconds < 5 || spotlightSeconds > 60) {
+    throw new Error("เวลาไฮไลต์คิวต้องอยู่ระหว่าง 5-60 วินาที");
+  }
+  const voiceMode = String(pickupQueue?.voiceMode ?? "AI_STUDIO") as PickupQueueLocationSettings["voiceMode"];
+  if (!["AI_STUDIO", "VOICE_CHIME", "CHIME", "OFF"].includes(voiceMode)) throw new Error("โหมดเสียงเรียกคิวไม่ถูกต้อง");
+  const voiceLanguage = String(pickupQueue?.voiceLanguage ?? "th") as PickupQueueLocationSettings["voiceLanguage"];
+  if (!["th", "en"].includes(voiceLanguage)) throw new Error("ภาษาเสียงเรียกคิวไม่ถูกต้อง");
+  const voiceRepeat = Math.trunc(Number(pickupQueue?.voiceRepeat ?? 1));
+  if (!Number.isFinite(voiceRepeat) || voiceRepeat < 1 || voiceRepeat > 3) throw new Error("จำนวนครั้งที่เรียกต้องอยู่ระหว่าง 1-3");
+  const voiceVolume = Math.trunc(Number(pickupQueue?.voiceVolume ?? 80));
+  if (!Number.isFinite(voiceVolume) || voiceVolume < 0 || voiceVolume > 100) throw new Error("ระดับเสียงต้องอยู่ระหว่าง 0-100");
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId: actorId });
@@ -215,9 +271,15 @@ export async function upsertLocation(tenantId: string, input: UpsertLocationInpu
     const structuredAddress = await resolveThaiAddressCodesInTx(client, input);
     const res = await client.query<any>(
       `INSERT INTO bms_locations (id, tenant_id, code, name, branch_code, address, phone, active, is_head_office, parking_info,
-        province_code,district_code,subdistrict_code,province,district,subdistrict,postcode)
+        province_code,district_code,subdistrict_code,province,district,subdistrict,postcode,
+        pickup_queue_enabled,pickup_queue_auto_hide_minutes,pickup_queue_show_preparing,pickup_queue_board_message,
+        pickup_queue_prefix,pickup_queue_start_no,pickup_queue_spotlight_seconds,pickup_queue_voice_mode,
+        pickup_queue_voice_language,pickup_queue_voice_repeat,pickup_queue_voice_volume)
        VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, COALESCE($8, TRUE), FALSE,
-               COALESCE($9::jsonb, '{"status":"UNKNOWN","published":false}'::jsonb),$10,$11,$12,$13,$14,$15,$16)
+               COALESCE($9::jsonb, '{"status":"UNKNOWN","published":false}'::jsonb),$10,$11,$12,$13,$14,$15,$16,
+               COALESCE($17,FALSE),COALESCE($18::int,30),COALESCE($19,TRUE),$20,
+               COALESCE($21,''),COALESCE($22::int,1),COALESCE($23::int,12),COALESCE($24,'AI_STUDIO'),
+               COALESCE($25,'th'),COALESCE($26::int,1),COALESCE($27::int,80))
        ON CONFLICT (tenant_id, code)
        DO UPDATE SET name = EXCLUDED.name,
                      branch_code = EXCLUDED.branch_code,
@@ -228,13 +290,27 @@ export async function upsertLocation(tenantId: string, input: UpsertLocationInpu
                      province_code=EXCLUDED.province_code,district_code=EXCLUDED.district_code,
                      subdistrict_code=EXCLUDED.subdistrict_code,province=EXCLUDED.province,
                      district=EXCLUDED.district,subdistrict=EXCLUDED.subdistrict,postcode=EXCLUDED.postcode,
+                     pickup_queue_enabled=CASE WHEN $28 THEN EXCLUDED.pickup_queue_enabled ELSE bms_locations.pickup_queue_enabled END,
+                     pickup_queue_auto_hide_minutes=CASE WHEN $28 THEN EXCLUDED.pickup_queue_auto_hide_minutes ELSE bms_locations.pickup_queue_auto_hide_minutes END,
+                     pickup_queue_show_preparing=CASE WHEN $28 THEN EXCLUDED.pickup_queue_show_preparing ELSE bms_locations.pickup_queue_show_preparing END,
+                     pickup_queue_board_message=CASE WHEN $28 THEN EXCLUDED.pickup_queue_board_message ELSE bms_locations.pickup_queue_board_message END,
+                     pickup_queue_prefix=CASE WHEN $28 THEN EXCLUDED.pickup_queue_prefix ELSE bms_locations.pickup_queue_prefix END,
+                     pickup_queue_start_no=CASE WHEN $28 THEN EXCLUDED.pickup_queue_start_no ELSE bms_locations.pickup_queue_start_no END,
+                     pickup_queue_spotlight_seconds=CASE WHEN $28 THEN EXCLUDED.pickup_queue_spotlight_seconds ELSE bms_locations.pickup_queue_spotlight_seconds END,
+                     pickup_queue_voice_mode=CASE WHEN $28 THEN EXCLUDED.pickup_queue_voice_mode ELSE bms_locations.pickup_queue_voice_mode END,
+                     pickup_queue_voice_language=CASE WHEN $28 THEN EXCLUDED.pickup_queue_voice_language ELSE bms_locations.pickup_queue_voice_language END,
+                     pickup_queue_voice_repeat=CASE WHEN $28 THEN EXCLUDED.pickup_queue_voice_repeat ELSE bms_locations.pickup_queue_voice_repeat END,
+                     pickup_queue_voice_volume=CASE WHEN $28 THEN EXCLUDED.pickup_queue_voice_volume ELSE bms_locations.pickup_queue_voice_volume END,
                      updated_at = now()
        RETURNING *`,
       [input.id ?? null, tenantId, code, name, branchCode, input.address ?? null, input.phone ?? null, input.active ?? null,
         parking == null ? null : JSON.stringify(parking),structuredAddress?.provinceCode??null,
         structuredAddress?.districtCode??null,structuredAddress?.subdistrictCode??null,
         structuredAddress?.province??null,structuredAddress?.district??null,structuredAddress?.subdistrict??null,
-        structuredAddress?.postcode??input.postcode??null]
+        structuredAddress?.postcode??input.postcode??null,
+        pickupQueue?.enabled ?? false, autoHideMinutes, pickupQueue?.showPreparing ?? true, boardMessage,
+        prefix, startNo, spotlightSeconds, voiceMode, voiceLanguage, voiceRepeat, voiceVolume,
+        pickupQueue != null]
     );
     await client.query("COMMIT");
     return mapRow(res.rows[0]);

@@ -619,6 +619,7 @@ const MENU_CARDS_TH: MenuCard[] = [
     desc: "จัดการโครงสร้างสาขาและงานคลังระหว่างสาขา รวมถึงการนับชั้นวางแบบไม่ทับยอดขายระหว่างนับ",
     bullets: [
       "Locations ใช้เพิ่ม/แก้สาขาที่จะรับ stock, ใช้กับ POS, และเป็นปลายทางของงานโอน",
+      "ร้านที่ใช้เลขคิวรับของเปิดครั้งเดียวได้ที่ Locations → แก้ไขสาขา → เลขคิวรับของ เพื่อให้เครื่องขายออนไลน์ทุกเครื่องในสาขาออกเลขหลังขาย ตั้งคำนำหน้า เลขเริ่มต้นของวันใหม่ การโชว์คิวกำลังเตรียม ระยะเวลา spotlight กี่นาทีหลังเรียกแล้วจึงซ่อน (0 = รอพนักงานปิดเอง) ข้อความบนจอ และเสียงประกาศ AI Studio/เสียงสำรองได้; เมื่อกด เรียกคิว หรือ เรียกซ้ำ เครื่องขายจะพูดประโยคเต็มหลังเซิร์ฟเวอร์ยืนยันสำเร็จ โดยใช้ AI Studio ก่อน เสียงพูดภาษาไทยของเครื่องเมื่อยังไม่มี voice-pack และกริ่งเป็นทางเลือกสุดท้าย กด เสียงเตือน: ตั้งค่า → พูดคิว 001 เพื่อทดสอบลำโพงและความดังก่อนเปิดร้าน ส่วนจอคิวมีปุ่มเปิดเสียงเฉพาะจอเพิ่มเติม; การเปลี่ยนคำนำหน้าหรือเลขเริ่มต้นไม่เปลี่ยนคิวที่ออกแล้ว และการซ่อนอัตโนมัติไม่ลบประวัติพนักงาน",
       "หน้า Orders แสดงสาขาที่ขาย/จองของ พร้อม POS device และกะเมื่อเป็นบิลหน้าร้าน เพื่อแยกยอดขาย/คืนสินค้า/ตามบิลข้ามสาขาได้โดยไม่ต้องเดาจากเลขใบเสร็จ",
       "หน้า Products แสดงสต็อกเป็นสาขา × ไซซ์ พร้อมยอดรวมทุกสาขา ของระหว่างทาง ของกักกัน และยอดสูญหายจากใบโอนที่ต้องตามต่อ; การปรับยอดและจุดเตือนต้องระบุสาขาเสมอ",
       "ใบโอนทำสองขั้น: ส่งออกจากต้นทาง แล้วรับเข้าปลายทาง; ของระหว่างทางไม่อยู่ใน stock ของสาขาใด หากล็อตต้นทางถูกพักใช้หลังส่ง ต้องแก้สถานะงานคุณภาพก่อนรับเข้าสต็อกพร้อมขาย ใบโอนยังคงอยู่ระหว่างทางเมื่อรับไม่สำเร็จ",
@@ -985,7 +986,7 @@ const LINK_STEPS_TH: LinkStep[] = [
         และนำข้อความที่ตอบจาก Business Suite พร้อมสถานะส่งถึง/อ่านแล้วเข้า timeline โดยไม่เรียก AI · ถ้าต้องทดสอบ
         Inbox realtime ให้เปิด {L.realtimeDiagnostics} แล้วกด Create Msg · LINE OA จริงจะ sync ชื่อ/รูปจาก LINE profile cache หลังข้อความทุกชนิดเข้า
         และทยอย backfill โปรไฟล์เดิมรอบละ 20 รายการทุก 15 นาที
-        · โฆษณา Send message ต้องเลือกเพจเดียวกับที่เชื่อมร้าน และตั้งข้อความต้อนรับ/คำถามใน Meta Ads Manager
+        · ตั้งข้อความต้อนรับ/Get Started/คำถามเริ่มต้นระดับเพจได้จากการ์ด Messenger ใน BMS; โฆษณา Send message ยังต้องเลือกเพจเดียวกับที่เชื่อมร้านและตั้งเทมเพลตเฉพาะโฆษณาใน Meta Ads Manager
         · เพจร้านใช้ AI ขายสินค้าของร้าน ส่วนเพจขายระบบ BMS ต้องให้ผู้ดูแลแพลตฟอร์มระบุเพจและร้านฝ่ายขายก่อน
       </>
     ),
@@ -1005,7 +1006,7 @@ const LINK_STEPS_TH: LinkStep[] = [
       <>
         ในการ์ด <b>ข้อมูลร้าน</b> ที่ {L.settings} แก้ <b>ชื่อร้าน</b> ได้เอง
         (Administrator · slug เป็นตัวระบุภายใน ระบบกำหนดให้ แก้ไม่ได้) และกรอก <b>ประเภทร้าน</b>,
-        เวลาเปิด-ปิด, ที่อยู่, อีเมล/เว็บไซต์, โลโก้ และรูปพื้นหลังหน้าต้อนรับจอลูกค้า, บัญชีรับเงิน (ธนาคาร/พร้อมเพย์), ค่าส่ง
+        เวลาเปิด-ปิด, ที่อยู่, อีเมล/เว็บไซต์, โลโก้ รูปพื้นหลังและสไลด์โปรโมชันตอนจอลูกค้าว่าง, บัญชีรับเงิน (ธนาคาร/พร้อมเพย์), ค่าส่ง
         โดยถ้ายังไม่กรอกบัญชีรับเงิน AI จะไม่แนะนำช่องทางชำระเงินให้ลูกค้า,
         ประเทศ/สกุลเงิน — AI จะใช้ตอบลูกค้า เช่น “ร้านชื่ออะไร/เปิดกี่โมง” “โอนเข้าบัญชีไหน” “ค่าส่งเท่าไหร่” และจะยกตัวอย่าง/ถามต่อให้เข้ากับประเภทร้านจากข้อมูลจริง ไม่เดา
         · หน้า <b>/shop-signup</b> มีตัวเลือก <b>archetype ร้าน</b> แบบ optional เพื่อเตรียม
@@ -1415,14 +1416,19 @@ const TH: ManualContent = {
       warning: "ปุ่มขายปกติในจอปัจจุบันมี เงินสด/QR/บัตร/Wallet; โอนเงินมีในงานมัดจำ แต่ยังไม่มีปุ่มในบิลขายปกติ",
     },
     {
-      title: "ใบเสร็จ เครื่องพิมพ์ และจอลูกค้า",
+      title: "ใบเสร็จ เครื่องพิมพ์ และจอภายนอก",
       desc: "ตรวจผลหลังขายและส่งสำเนาโดยไม่ออกเอกสารใหม่",
       steps: [
         "หลังขาย ตรวจเลขเอกสาร ยอดรับ และเงินทอน แล้วกดพิมพ์หรือดูใบเสร็จ; Enter พิมพ์และ Esc ปิดหน้าต่าง",
         "ใบเสร็จแสดงราคาป้ายตามไซซ์และแยกส่วนลดราคาส่ง/โปรโมชันออกมาให้ยอดตรวจสอบได้ พร้อมค่าบริการ ส่วนลดระดับบิล VAT/ยกเว้น VAT ปัดเศษ วิธีจ่าย แคชเชียร์ สมาชิก และบาร์โค้ดเลขบิล; การพิมพ์ซ้ำใช้ snapshot ตอนขาย ไม่อ่านราคาสินค้าปัจจุบัน",
         "ตั้งเครื่องพิมพ์ WebUSB ในแท็บ ตั้งค่า; ถ้าเบราว์เซอร์ไม่รองรับ ระบบใช้ print dialog และเปิดลิ้นชักจาก dialog ไม่ได้",
-        "Desktop ที่มีจอเดียว: ไปที่ ตั้งค่า > จอลูกค้า แล้วกด เปิดหน้าต่างทดสอบบนจอนี้ หน้าต่างย่อจะแสดงข้อมูลจริงแต่ไม่บันทึกเป็นค่าจอที่สองและไม่เปิดเองครั้งถัดไป หากมีจอจริงให้เปิดจอลูกค้าแบบ Auto/เลือกจอ แล้วใช้เดสก์ท็อปแบบขยาย จอแสดง 8 รายการล่าสุด ยอด ส่วนลด และเงินทอนแบบ read-only",
-        "จอลูกค้าซ่อน QR ระหว่างตรวจสอบยอดส่วนลด/แต้มใหม่ หลังขายจะแสดงยอดรับ เงินทอน และสมาชิกแยกกัน แม้ชื่อสมาชิกต้องถูกซ่อนก็ยังแสดงแต้มได้ ส่วนบิลที่ไม่ได้ผูกสมาชิกจะแสดง ลูกค้าทั่วไป โดยไม่มีข้อมูลแต้ม",
+        "Desktop ตั้งจอลูกค้าและจอเรียกคิวรวมกันที่ ตั้งค่า > จอภายนอก เลือก Auto/จอที่ต้องการ ใช้ ระบุหมายเลขจอ หรือเปิดหน้าต่างทดสอบบนจอนี้โดยไม่บันทึกค่าหรือเปิดเองครั้งถัดไป หน้าต่างทดสอบจอลูกค้าและจอเรียกคิวเปิดพร้อมกันได้และวางเหลื่อมกันเพื่อทดสอบ จอลูกค้าแสดง 8 รายการล่าสุด ยอด ส่วนลด และเงินทอนแบบ read-only",
+        "ในกล่องจอเรียกคิว เลือกรูปแบบได้ 6 แบบ: เรียกเด่น, สามโซน, แถบเตรียม, มินิมอลทีวี, ป้ายรายการ และแบ่งครึ่ง และเลือกเสียงพูด AI Studio ได้ 4 เสียงจริง: ผู้หญิงสุภาพ (Kore), ผู้หญิงสดใส (Aoede), ผู้ชายเป็นกันเอง (Puck) และผู้ชายเสียงประกาศ (Charon) รวมทั้งเสียงผู้หญิงสุภาพ + กระดิ่ง, กระดิ่งเคาน์เตอร์, บี๊บสองครั้ง และเสียงนุ่ม พร้อมปุ่มทดลองคิว 001 ค่านี้บันทึกเฉพาะเครื่องขาย ใช้ร่วมกันทั้งจอจริงกับหน้าต่างทดสอบ และจอที่เปิดอยู่จะเปลี่ยนตามทันที; ถ้ายังไม่ได้ติดตั้ง voice-pack ระบบใช้เสียงพูดของเครื่องที่ใกล้เคียงและปรับจังหวะ/ระดับเสียงตามกลุ่มที่เลือก เมื่อคิวมาก ระบบสลับหน้าทุก 8 วินาทีโดยไม่ย่อเลขจนอ่านยาก การปิดเสียงระดับสาขายังมีผลสูงสุด",
+        "ถ้ามีจอภายนอกหนึ่งจอ การเปิดจอลูกค้าหรือจอเรียกคิวจะปิดหน้าที่เดิมก่อนแล้วสลับบทบาทให้อัตโนมัติ; ถ้ามีสองจอสามารถเปิดทั้งคู่พร้อมกันคนละจอ ระบบไม่ใช้จอแคชเชียร์และเปิดกลับเมื่อเสียบจอใหม่ ห้ามคัดลอก URL queue-board ไปเปิดใน Chrome ให้เปิดจากแอป BMS POS เท่านั้น",
+        "สไลด์โปรโมชันในข้อมูลร้านหมุนเฉพาะตอนจอลูกค้าว่าง; เมื่อมีตะกร้า ชำระเงิน ผลขาย หรือเลขคิว หน้าธุรกรรมจะแทนทันที และรูปที่โหลดไม่สำเร็จจะกลับไปใช้พื้นหลังต้อนรับ",
+        "Desktop ร้านอาหารตั้งค่า > เครื่องพิมพ์แยกตามสถานีครัว เพื่อผูกสถานีกับชื่อเครื่องพิมพ์ของ OS และเลือก 58/80 มม./พิมพ์อัตโนมัติ งานหนึ่ง ticket พิมพ์ครั้งเดียว; ถ้าผลไม่แน่ชัดต้องตรวจถาดก่อนกดยืนยันพิมพ์ซ้ำ",
+        "จอลูกค้าซ่อน QR ระหว่างตรวจสอบยอดส่วนลด/แต้มใหม่ หลังขายจะแสดงยอดรับ เงินทอน สมาชิก และเลขคิวรับของที่ออกจริงแยกกัน แม้ชื่อสมาชิกต้องถูกซ่อนก็ยังแสดงแต้มได้ ส่วนบิลที่ไม่ได้ผูกสมาชิกจะแสดง ลูกค้าทั่วไป โดยไม่มีข้อมูลแต้ม",
+        "เมื่อครัวทำออเดอร์เสร็จ เครื่องขายจะดังเสียง คิวพร้อม (ตั้งชนิดเสียงได้ใน การแจ้งเตือน) และแสดงแถบเลขคิวชั่วคราว รอบแรกหลังเปิดจอไม่ดังซ้ำกับคิวเก่า เสียงจอเรียกคิวเปิดเป็นค่าเริ่มต้นและเปิด/ปิดรายเครื่องได้ที่ ตั้งค่า > จอภายนอก; ถ้าระบบปฏิบัติการบล็อก autoplay ให้แตะปุ่มเปิดเสียงบนจอหนึ่งครั้ง",
         "ส่งสำเนาทางอีเมลได้โดยพิมพ์อีเมลเฉพาะครั้ง หรือเว้นว่างให้ใช้ข้อมูลสมาชิก; ส่ง LINE ได้เมื่อลูกค้าผูก LINE กับร้านแล้ว",
         "โหลดบิลล่าสุดจาก server ในแท็บ ตั้งค่าเมื่อต้องพิมพ์ซ้ำหลังรีเฟรช",
         "ปุ่มรีเฟรชข้อมูลบน Desktop แสดง ‘กำลังอัปเดตข้อมูล…’ ที่แถบบนเพียงจุดเดียว โดยคงสถานะการเชื่อมต่อเดิมจนทราบผล ไม่เปลี่ยนเป็น ‘กำลังเชื่อมต่อ’ เพียงเพราะกดรีเฟรช",
@@ -2266,7 +2272,7 @@ const LINK_STEPS_EN: LinkStep[] = [
   },
   {
     title: "Set up branches, transfers, and stock counts",
-    description: <>Open <Link href={ROUTES.locations}>Locations</Link>, <Link href={ROUTES.stockTransfers}>Stock Transfers</Link>, and <Link href={ROUTES.stockCounts}>Stock Counts</Link> when the shop works across more than one branch or needs a shelf-count workflow.</>,
+    description: <>Open <Link href={ROUTES.locations}>Locations</Link>, <Link href={ROUTES.stockTransfers}>Stock Transfers</Link>, and <Link href={ROUTES.stockCounts}>Stock Counts</Link> when the shop works across more than one branch or needs a shelf-count workflow. Pickup-queue branches can set a prefix, first number for a new day, preparing visibility, spotlight, auto-hide, board message, and AI Studio/fallback announcement policy; changing these settings never renames an issued queue.</>,
   },
   {
     title: "Connect your real sales channels",
@@ -2279,7 +2285,7 @@ const LINK_STEPS_EN: LinkStep[] = [
         profiles and records Business Suite echoes plus delivered/read status without invoking AI ·
         to test Inbox realtime, open {L.realtimeDiagnostics} and press Create Msg · a live LINE OA syncs the display name and picture from the LINE
         profile cache after any message type and backfills up to 20 stale profiles every 15 minutes
-        · Send message ads must use the connected shop Page; configure greetings and questions in Meta Ads Manager
+        · Publish the Page greeting/Get Started/ice breakers from the BMS Messenger card; Send message ads still use the connected shop Page and their ad-specific templates remain in Meta Ads Manager
         · Shop Pages use commerce AI; BMS's own sales Page requires the platform operator to designate its Page and sales tenant
       </>
     ),
@@ -2720,7 +2726,10 @@ const EN: ManualContent = {
         "After payment, verify document number, tender, and change, then print or preview. Enter prints and Esc closes the dialog.",
         "The receipt shows the snapshotted size/list price and a separate wholesale/promotion adjustment so the arithmetic is auditable, together with charges, order-level discounts, VAT/exempt VAT, rounding, payments, cashier, member, and the receipt barcode. Reprints never read today's product price.",
         "Pair a WebUSB printer in Settings. Unsupported browsers fall back to the print dialog, which cannot kick the drawer.",
-        "On a one-monitor Desktop, open Settings > Customer display and choose Open test window on this display. The resizable live preview is not saved as a second-display setting and will not reopen next time. With real customer hardware, enable Auto/a selected display and use an extended desktop. The read-only view shows the latest eight lines, total, discounts, and change.",
+        "On a one-monitor Desktop, open Settings > External displays and choose Open test window on this display. The customer and queue previews can stay open together and are cascaded for comparison. They are not saved as second-display settings and will not reopen next time. With real display hardware, enable Auto/a selected display and use an extended desktop. The read-only customer view shows the latest eight lines, total, discounts, and change.",
+        "Queue-display announcements default to on and can be muted per device under Settings > External displays. The same queue card offers six workstation-local layouts plus four distinct AI Studio voices: polite female (Kore), bright female (Aoede), friendly male (Puck), and male announcer (Charon), plus female speech + counter bell, counter bell, double beep, or soft ping, with a queue-001 preview. Until a profile pack is installed, the closest OS voice is selected and its rate/pitch adjusted for the chosen group. Managed and preview windows share the choices and update while open; busy lists page every eight seconds. Branch-wide sound Off still wins. If the operating system blocks autoplay, tap the sound recovery button once on the queue display.",
+        "Store Profile promotion slides rotate only while the customer display is idle. Cart, payment, settlement, and queue hand-off state take over immediately; a failed slide falls back to the welcome background.",
+        "On Desktop restaurant registers, Settings > Kitchen station printers maps each server station to an explicit installed OS printer, 58/80 mm paper and optional auto-print. A server ticket is journalled once; an uncertain result requires checking the tray before confirming a retry.",
         "Email a copy to a one-off address or leave it blank to use the member profile. LINE delivery requires the customer to have linked LINE to the shop.",
         "Use Load latest receipt from server to reprint after a page refresh.",
         "Desktop data refresh shows one updating-data message in the header and keeps the last observed connection status until the result is known; refreshing alone does not mean reconnecting.",

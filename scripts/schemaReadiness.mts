@@ -24,6 +24,19 @@ export type Migration = {
 // ครอบเฉพาะไฟล์ที่ "โค้ดปัจจุบันอ้างถึงแบบไม่มีเงื่อนไข" — ของเก่ากว่านี้ถ้าขาด ระบบจะพัง
 // ตั้งแต่หน้าแรกจนเห็นเองอยู่แล้ว
 export const MIGRATIONS: Migration[] = [
+  {file:'10.112__bms_pickup_queue_experience.sql',impact:'Branch queue numbering/voice settings and idle customer-display promo slides require the experience columns before the settings, POS session and queue board can load',needs:[
+    {kind:'column',table:'bms_locations',name:'pickup_queue_prefix'},
+    {kind:'column',table:'bms_locations',name:'pickup_queue_start_no'},
+    {kind:'column',table:'bms_locations',name:'pickup_queue_spotlight_seconds'},
+    {kind:'column',table:'bms_locations',name:'pickup_queue_voice_mode'},
+    {kind:'column',table:'bms_locations',name:'pickup_queue_voice_language'},
+    {kind:'column',table:'bms_locations',name:'pickup_queue_voice_repeat'},
+    {kind:'column',table:'bms_locations',name:'pickup_queue_voice_volume'},
+    {kind:'column',table:'bms_pickup_queue',name:'queue_prefix'},
+    {kind:'column',table:'bms_store_profile',name:'customer_display_promo_slides'},
+    {kind:'column',table:'bms_store_profile',name:'customer_display_promo_interval_seconds'},
+  ]},
+  {file:'10.111__bms_pickup_queue.sql',impact:'Every kitchen ticket status change, every POS bill void and every receipt history/reprint reads or writes pickup queue numbers: the kitchen board, voids and receipt lists fail without the table',needs:[{kind:'table',name:'bms_pickup_queue'}]},
   {file:'10.107__bms_stock_transfer_lots.sql',impact:'Every stock transfer list and receipt reads lot rows: transfers (admin, mobile, branch requests) fail without the table',needs:[{kind:'table',name:'bms_stock_transfer_item_lots'}]},
   {file:'10.106__bms_retail_local_lead_erasure.sql',impact:'The Retail Local leads tab and lead updates read erased_at; PDPA erasure needs the function and frozen-lead trigger',needs:[{kind:'column',table:'bms_retail_local_leads',name:'erased_at'},{kind:'column',table:'bms_retail_local_leads',name:'erased_by'}]},
   {file:'10.105__bms_retail_local_leads.sql',impact:'The public Retail Local contact form and the leads tab fail without the consented lead tables',needs:[...['bms_retail_local_leads','bms_retail_local_leads_revisions','bms_retail_local_lead_events'].map(name=>({kind:'table' as const,name}))]},

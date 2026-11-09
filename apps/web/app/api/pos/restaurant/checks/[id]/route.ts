@@ -14,6 +14,7 @@ import {
 import { cashierHasPermission, verifyCashierPin } from "@/lib/bms/pos";
 import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import { isDistinctPosApprover, parsePosPayments } from "@/lib/bms/posRouteHelpers";
+import { issuePickupQueueAfterSale } from "@/lib/bms/pickupQueue";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 import { authenticateRestaurantMutation, authenticateRestaurantRead } from "../../routeAuth";
 
@@ -202,6 +203,22 @@ async function handlePOST(req: NextRequest, { params }: RouteContext) {
       discountReason: manualApproval?.reason ?? null,
       payments: parsed.payments,
     });
+    // เลขคิวรับของ (10.111) — เฉพาะบิลกลับบ้าน และออกหลังรับเงิน commit แล้วเท่านั้น
+    // (service ปฏิเสธบิลทานที่ร้านเอง) · ออกเลขไม่ได้ยังตอบ SOLD เพราะเงินเข้าแล้ว
+    if (result.status === "SOLD") {
+      const queue = await issuePickupQueueAfterSale({
+        tenantId: auth.device.tenantId,
+        locationId: auth.device.locationId,
+        deviceId: auth.device.id,
+        orderId: String(result.orderId),
+        actorUserId: auth.actor.userId,
+        requested: body.pickupQueue === true,
+        allowBranchDefault: true,
+      });
+      if (queue.pickupQueue || queue.pickupQueueError) {
+        return NextResponse.json({ ...result, ...queue }, { status: 200 });
+      }
+    }
     return NextResponse.json(result, { status: result.status === "SOLD" ? 200 : 409 });
   }
   return NextResponse.json({ error: "action ไม่ถูกต้อง" }, { status: 400 });

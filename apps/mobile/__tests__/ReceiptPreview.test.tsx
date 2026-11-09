@@ -41,6 +41,7 @@ jest.mock('react-native-qrcode-svg', () => 'QRCode');
 
 const receipt: MobilePosReceiptFieldsFragment = {
   orderId: 'test-order',
+  pickupQueueLabel: null,
   receiptNo: 'TEST-0001',
   billNo: 'TEST-0001',
   taxRequestUrl: 'https://example.test/tax-request/test',
@@ -228,6 +229,14 @@ describe('Receipt paper', () => {
     expect(renderer.root.findByType(QRCode).props.value).toBe(
       receipt.taxRequestUrl,
     );
+  });
+
+  test('prints the pickup queue number only when the sale was issued one', async () => {
+    await render(<ReceiptPaper receipt={{ ...receipt, pickupQueueLabel: '042' }} />);
+    expect(text()).toContain('คิวของคุณ');
+    expect(text()).toContain('042');
+    await render(<ReceiptPaper receipt={receipt} />);
+    expect(text()).not.toContain('คิวของคุณ');
   });
 
   test('does not invent VAT, receipt numbers or a tax-request QR', async () => {

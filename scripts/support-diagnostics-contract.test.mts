@@ -64,6 +64,20 @@ test("ingestion allowlists context and never trusts a tenant from the body", asy
   assert.doesNotMatch(route, /tenantId:\s*body/);
 });
 
+test("diagnostic export preserves PostgreSQL timestamps as ISO strings", async () => {
+  const service = code(await read("apps/web/lib/bms/supportDiagnostics.ts"));
+  const sanitizer = service.slice(
+    service.indexOf("function safeDiagnosticValue"),
+    service.indexOf("function safeContext"),
+  );
+  assert.match(sanitizer, /value instanceof Date/);
+  assert.match(sanitizer, /value\.toISOString\(\)/);
+  assert.ok(
+    sanitizer.indexOf("value instanceof Date") < sanitizer.indexOf('typeof value !== "object"'),
+    "Date must be serialized before the generic object branch turns it into an empty object",
+  );
+});
+
 test("export and send are separately authorised, audited and consent gated", async () => {
   const service = code(await read("apps/web/lib/bms/supportDiagnostics.ts"));
   const exportRoute = code(await read("apps/web/app/api/bms/support-diagnostics/export/route.ts"));

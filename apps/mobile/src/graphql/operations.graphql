@@ -36,6 +36,7 @@ query PosBootstrap {
       branchCode
       vatCode
       pharmacistName
+      pickupQueue { enabled autoHideMinutes showPreparing boardMessage }
     }
     shift {
       id
@@ -120,6 +121,7 @@ mutation VerifyPosCashier($input: BmsPosCredentialsInput!) {
 
 fragment MobilePosReceiptFields on BmsPosReceipt {
   orderId
+  pickupQueueLabel
   taxRequestUrl
   receiptNo
   billNo
@@ -260,6 +262,7 @@ fragment MobileRestaurantCheckFields on BmsPosRestaurantCheck {
 
 fragment MobileKitchenTicketFields on BmsKitchenTicket {
   id
+  pickupQueueLabel
   checkId
   orderId
   orderItemId
@@ -766,6 +769,12 @@ mutation MobilePosSale($input: BmsPosSaleInput!) {
     serial
     roundingAmount
     replayed
+    pickupQueue {
+      id
+      queueNo
+      label
+    }
+    pickupQueueError
   }
 }
 
@@ -944,6 +953,12 @@ mutation MobileRestaurantSettleCheck(
   $input: BmsPosRestaurantSettleCheckInput!
 ) {
   bmsPosRestaurantSettleCheck(checkId: $checkId, input: $input) {
+    pickupQueue {
+      id
+      queueNo
+      label
+    }
+    pickupQueueError
     status
     reason
     orderId
@@ -2752,5 +2767,27 @@ subscription MobilePaymentChanged {
 subscription MobileOrderChanged {
   bmsOrderChanged {
     ...MobileRealtimeEventFields
+  }
+}
+
+fragment MobilePickupQueueEntryFields on BmsPosPickupQueueEntry {
+  id
+  label
+  status
+  readySource
+  createdAt
+  readyAt
+  calledAt
+}
+
+query MobilePosPickupQueue {
+  bmsPosPickupQueue {
+    ...MobilePickupQueueEntryFields
+  }
+}
+
+mutation MobilePosPickupQueueAction($input: BmsPosPickupQueueActionInput!) {
+  bmsPosPickupQueueAction(input: $input) {
+    ...MobilePickupQueueEntryFields
   }
 }

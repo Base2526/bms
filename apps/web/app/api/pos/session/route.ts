@@ -69,6 +69,7 @@ async function handleGET(req: NextRequest) {
           branchCode: location.branchCode,
           vatCode: location.vatCode,
           pharmacistName: location.pharmacistName,
+          pickupQueue: location.pickupQueue,
         }
       : null,
     shift,
@@ -88,6 +89,8 @@ async function handleGET(req: NextRequest) {
       phone: store.phone,
       logoUrl: store.logoUrl,
       customerDisplayBackgroundUrl: store.customerDisplayBackgroundUrl,
+      customerDisplayPromoSlides: store.customerDisplayPromoSlides,
+      customerDisplayPromoIntervalSeconds: store.customerDisplayPromoIntervalSeconds,
       paymentQr: configuredPosPaymentQr(store.paymentAccounts),
     },
     surface: store.businessArchetype === "restaurant" ? "restaurant" : "retail",

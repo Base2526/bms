@@ -2720,6 +2720,11 @@ type BmsKitchenTicket {
   orderId: ID
   orderItemId: ID!
   packQty: Int
+
+  """
+  Pickup queue number of a counter/take-away sale (10.111), e.g. 042; null when none was issued.
+  """
+  pickupQueueLabel: String
   productName: String!
   productSku: String!
   qty: Int!
@@ -2780,6 +2785,7 @@ type BmsLocation {
   pharmacistName: String
   pharmacyLicenseNo: String
   phone: String
+  pickupQueue: BmsLocationPickupQueueSettings!
   postcode: String
   province: String
   provinceCode: String
@@ -2798,6 +2804,7 @@ input BmsLocationInput {
   name: String!
   parking: BmsLocationParkingInput
   phone: String
+  pickupQueue: BmsLocationPickupQueueSettingsInput
   postcode: String
   provinceCode: String
   subdistrictCode: String
@@ -2819,6 +2826,34 @@ input BmsLocationParkingInput {
   motorcycleSpaces: Int
   published: Boolean!
   status: BmsParkingStatus!
+}
+
+type BmsLocationPickupQueueSettings {
+  autoHideMinutes: Int!
+  boardMessage: String
+  enabled: Boolean!
+  prefix: String!
+  showPreparing: Boolean!
+  spotlightSeconds: Int!
+  startNo: Int!
+  voiceLanguage: String!
+  voiceMode: String!
+  voiceRepeat: Int!
+  voiceVolume: Int!
+}
+
+input BmsLocationPickupQueueSettingsInput {
+  autoHideMinutes: Int!
+  boardMessage: String
+  enabled: Boolean!
+  prefix: String!
+  showPreparing: Boolean!
+  spotlightSeconds: Int!
+  startNo: Int!
+  voiceLanguage: String!
+  voiceMode: String!
+  voiceRepeat: Int!
+  voiceVolume: Int!
 }
 
 type BmsLotMismatch {
@@ -3436,6 +3471,19 @@ type BmsMessageAttachment {
   mimeType: String
   name: String
   url: String!
+}
+
+type BmsMessengerProfile {
+  greeting: String!
+  lastError: String
+  publishedAt: String
+  starterPayloads: [String!]!
+  status: String!
+}
+
+input BmsMessengerProfileInput {
+  greeting: String!
+  starterPayloads: [String!]!
 }
 
 type BmsMobileCommissionReport {
@@ -5776,6 +5824,7 @@ type BmsPosLocationSummary {
   id: ID!
   name: String!
   pharmacistName: String
+  pickupQueue: BmsLocationPickupQueueSettings!
   vatCode: String
 }
 
@@ -6068,6 +6117,43 @@ type BmsPosPharmacyReviewResult {
   status: String!
 }
 
+input BmsPosPickupQueueActionInput {
+  """
+  call | unready | collect | cancel — or issue (with orderId) to retry a number a committed sale did not get
+  """
+  action: String!
+  cashierUserId: ID!
+
+  """Required for call/unready/collect/cancel."""
+  entryId: ID
+
+  """
+  Required for issue: the committed sale of this till that should get a pickup number.
+  """
+  orderId: ID
+  pin: String!
+}
+
+"""
+One open pickup number at this till's branch. Carries no customer identity.
+"""
+type BmsPosPickupQueueEntry {
+  calledAt: String
+  createdAt: String!
+  id: ID!
+  label: String!
+  readyAt: String
+  readySource: String
+  status: String!
+}
+
+"""Pickup queue number issued after a committed sale (10.111)."""
+type BmsPosPickupQueueNumber {
+  id: ID!
+  label: String!
+  queueNo: Int!
+}
+
 type BmsPosPriceTier {
   discountPct: Float
   minQty: Int!
@@ -6114,6 +6200,9 @@ type BmsPosReceipt {
   paymentMethod: String
   paymentRef: String
   payments: [BmsPosReceiptPayment!]!
+
+  """Pickup queue number printed on the original receipt (10.111)."""
+  pickupQueueLabel: String
   pointsBalance: Float
   pointsEarned: Float
   pointsExpireAt: String
@@ -6376,6 +6465,11 @@ input BmsPosRestaurantCheckActionInput {
   packCode: String
   packQty: Int
   payments: [BmsPosPaymentInput!]
+
+  """
+  Settle only: ask for a pickup number for a take-away check (10.111); branch policy may also enable it.
+  """
+  pickupQueue: Boolean
   pin: String!
   pointsToRedeem: Float
   reason: String
@@ -6397,6 +6491,8 @@ type BmsPosRestaurantCheckActionResult {
   kitchenTickets: Int
   movedItems: Int
   orderId: ID
+  pickupQueue: BmsPosPickupQueueNumber
+  pickupQueueError: String
   pointsBalance: Float
   pointsEarned: Float
   reason: String
@@ -6784,6 +6880,11 @@ input BmsPosRestaurantSettleCheckInput {
   discountReason: String
   manualDiscount: Float
   payments: [BmsPosPaymentInput!]!
+
+  """
+  Ask for a pickup number for a take-away check (10.111); branch policy may also enable it and dine-in checks never get one.
+  """
+  pickupQueue: Boolean
   pin: String!
   pointsToRedeem: Float
 }
@@ -6970,6 +7071,11 @@ input BmsPosSaleInput {
   pharmacistAuthorizerUserId: ID
   pharmacyApprovedAssessmentId: ID
   pharmacyReviewAssessmentId: ID
+
+  """
+  Ask for a pickup queue number (10.111) after the sale commits. Branch policy may also enable it.
+  """
+  pickupQueue: Boolean
   pin: String!
   pointsToRedeem: Float
 }
@@ -7017,6 +7123,16 @@ type BmsPosSaleResult {
   maxQuantity: Int
   orderId: ID
   packCode: String
+
+  """
+  Present only when the sale asked for a pickup number and it was issued.
+  """
+  pickupQueue: BmsPosPickupQueueNumber
+
+  """
+  The sale succeeded but the number could not be issued; staff can retry with bmsPosPickupQueueAction issue.
+  """
+  pickupQueueError: String
   pointsBalance: Float
   pointsEarned: Float
   pointsUsed: Float
@@ -7295,6 +7411,8 @@ type BmsPosStoreReceiptSettings {
   address: String
   businessHours: String
   customerDisplayBackgroundUrl: String
+  customerDisplayPromoIntervalSeconds: Int!
+  customerDisplayPromoSlides: [String!]!
   logoUrl: String
   name: String
   paymentQr: BmsPosPaymentQr
@@ -9178,6 +9296,8 @@ type BmsStoreProfile {
   country: String
   currency: String
   customerDisplayBackgroundUrl: String
+  customerDisplayPromoIntervalSeconds: Int!
+  customerDisplayPromoSlides: [String!]!
   district: String
   districtCode: String
   emailFooterText: String
@@ -9228,6 +9348,8 @@ input BmsStoreProfileInput {
   country: String
   currency: String
   customerDisplayBackgroundUrl: String
+  customerDisplayPromoIntervalSeconds: Int
+  customerDisplayPromoSlides: [String!]
   districtCode: String
   emailFooterText: String
   emailThemeColor: String
@@ -10280,6 +10402,7 @@ type Mutation {
   bmsPosNoSale(input: BmsPosNoSaleInput!): BmsPosSimpleActionResult!
   bmsPosOpenBoardGameSession(input: BmsPosBoardGameOpenInput!): BmsPosBoardGameSessionSummary!
   bmsPosPark(input: BmsPosParkInput!): BmsPosParkActionResult!
+  bmsPosPickupQueueAction(input: BmsPosPickupQueueActionInput!): BmsPosPickupQueueEntry!
   bmsPosReceivePurchase(input: BmsPosReceivePurchaseInput!): BmsPurchaseResult!
   bmsPosReceiveStockTransfer(input: BmsPosStockTransferReceiveInput!): BmsMobileStockTransferActionResult!
   bmsPosRecordStockCountItem(input: BmsPosStockCountItemInput!): BmsMobileStockCountActionResult!
@@ -10333,6 +10456,7 @@ type Mutation {
   bmsPosVoid(input: BmsPosVoidInput!): BmsPosReturnActionResult!
   bmsProductionCommand(input: BmsProductionInput!): BmsChecklistCommandResult!
   bmsPublishMenuBundle(input: BmsMenuBundlePublicationInput!, review: BmsPricePublicationReview!): BmsPricePublicationResult!
+  bmsPublishMessengerProfile(input: BmsMessengerProfileInput!): BmsMessengerProfile!
   bmsPublishPricePlan(input: BmsPublishPriceInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
   bmsPublishProduct(sku: String!): BmsProductReadiness!
   bmsQualityCommand(input: BmsQualityInput!): BmsChecklistCommandResult!
@@ -10934,6 +11058,7 @@ type Query {
   bmsMembersExpiringPoints(days: Int, limit: Int): [BmsExpiringPointsRow!]!
   bmsMembershipTiers(activeOnly: Boolean): [BmsMembershipTier!]!
   bmsMenuNetProfit(locationId: ID, month: String!): BmsPricePublicationResult!
+  bmsMessengerProfile: BmsMessengerProfile!
   bmsMobileRestaurantRequests: BmsMobileRestaurantRequestsResult!
   bmsMyMentions(limit: Int, unreadOnly: Boolean): [BmsMention!]!
   bmsMyMentionsUnreadCount: Int!
@@ -11007,6 +11132,11 @@ type Query {
   bmsPosOpenShift(deviceId: ID!): BmsPosShift
   bmsPosOperationalReadiness: BmsPosOperationalReadiness!
   bmsPosParkedSales: BmsPosParkedSalesResult!
+
+  """
+  Open pickup numbers of today's service day at this till's branch (10.111).
+  """
+  bmsPosPickupQueue: [BmsPosPickupQueueEntry!]!
   bmsPosPurchaseOrder(credentials: BmsPosCredentialsInput!, poId: ID!): BmsPurchaseOrder
   bmsPosPurchaseOrders(credentials: BmsPosCredentialsInput!): BmsPosPurchaseOrdersResult!
   bmsPosRecentSales(deviceOnly: Boolean = false, limit: Int = 5, q: String): BmsPosRecentSalesResult!

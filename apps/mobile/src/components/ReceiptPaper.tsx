@@ -74,6 +74,14 @@ export function ReceiptPaper({ receipt }: { receipt: Receipt }) {
           สาขา {receipt.branchCode}
         </Text>
       ) : null}
+      {receipt.pickupQueueLabel ? (
+        <View style={[styles.section, { alignItems: 'center' }]} testID="receipt-pickup-queue">
+          <Text style={[styles.text, styles.center]}>คิวของคุณ</Text>
+          <Text style={[styles.heading, styles.center, styles.queueNumber]}>
+            {receipt.pickupQueueLabel}
+          </Text>
+        </View>
+      ) : null}
       <View style={styles.section}>
         <Text style={styles.text}>
           {receiptNumber
@@ -219,6 +227,7 @@ export function ReceiptPaper({ receipt }: { receipt: Receipt }) {
 }
 
 const styles = StyleSheet.create({
+  queueNumber: { fontSize: 40, lineHeight: 46 },
   paper: {
     width: '100%',
     maxWidth: 480,

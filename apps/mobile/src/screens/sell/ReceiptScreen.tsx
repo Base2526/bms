@@ -23,6 +23,7 @@ import { useResponsive } from '../../theme/useResponsive';
 import type { AppStackParamList } from '../../navigation/types';
 import { usePrinter } from '../../state/PrinterContext';
 import { captureReceipt } from '../../lib/captureReceipt';
+import { PickupQueueRetryBanner } from '../../components/PickupQueueStrip';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'Receipt'>;
 
@@ -135,6 +136,15 @@ export default function ReceiptScreen({ route, navigation }: Props) {
         ) : null}
       </View>
     );
+  // เลขคิวออกไม่สำเร็จหลังขาย (10.111): แสดงจนกว่าใบเสร็จจะมีเลขจริง ไม่ใช่แค่ครั้งเดียว
+  const pickupRetry =
+    receipt && !receipt.pickupQueueLabel && route.params.pickupQueueError ? (
+      <PickupQueueRetryBanner
+        orderId={receipt.orderId}
+        reason={route.params.pickupQueueError}
+        onIssued={() => { refetch().catch(() => undefined); }}
+      />
+    ) : null;
   const paidSummary =
     !unavailable && receipt ? (
       <View
@@ -343,12 +353,14 @@ export default function ReceiptScreen({ route, navigation }: Props) {
                   keyboardShouldPersistTaps="handled"
                   contentContainerStyle={styles.scroll}
                 >
+                  {pickupRetry}
                   {paidSummary}
                   {actions}
                 </ScrollView>
               </View>
             ) : (
               <>
+                {pickupRetry}
                 {paidSummary}
                 <ScrollView
                   ref={deliveryScroll}

@@ -18,6 +18,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
 import { useDevice } from '../../state/DeviceContext';
 import { useStoreMode } from '../../state/StoreModeContext';
+import { useSession } from '../../state/SessionContext';
 import {
   displayHost,
   maskToken,
@@ -25,6 +26,7 @@ import {
   parsePairingInput,
 } from '../../lib/pairing';
 import { loadOfflineSales } from '../../lib/offlineSales';
+import { savePickupQueueEnabled, usePickupQueueEnabled } from '../../lib/pickupQueuePreference';
 import type { RootStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
@@ -53,6 +55,9 @@ const STATUS_PANEL_WIDTH = 360;
 // ห้ามเพิ่มช่องให้เลือกร้าน/สาขาเองเด็ดขาด — เป็นกฎของทั้งระบบว่า tenant มาจาก token ฝั่ง server
 export default function DeviceSettingsScreen({ route, navigation }: Props) {
   const { colors, spacing, typography, radius, minTouchTarget } = useTheme();
+  const pickupQueueEnabled = usePickupQueueEnabled();
+  const { session } = useSession();
+  const branchPickupQueueEnabled = session?.branch.pickupQueue?.enabled === true;
   const { isTablet } = useResponsive();
   const {
     status,
@@ -175,6 +180,40 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
         fullWidth
         onPress={() => navigation.navigate('PrinterSettings')}
       />
+      <Card>
+        <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
+          เลขคิวรับของ
+        </Text>
+        <Text
+          style={[
+            typography.caption,
+            { color: colors.textSoft, marginTop: spacing.xs, marginBottom: spacing.sm },
+          ]}
+        >
+          {branchPickupQueueEnabled
+            ? 'สาขานี้เปิดออกเลขคิวทุกเครื่องจากหลังบ้านแล้ว จึงปิดจากโทรศัพท์เครื่องนี้ไม่ได้'
+            : 'ตั้งค่าเฉพาะเครื่องนี้ · บิลขายหน้าร้านและบิลกลับบ้านจะได้เลขคิว พิมพ์บนใบเสร็จ และขึ้นจอเรียกคิว'}
+          {' '}(เปิดจอเรียกคิวจากเครื่องขายบนเว็บหรือแอปเดสก์ท็อป)
+        </Text>
+        <Button
+          label={branchPickupQueueEnabled
+            ? 'ออกเลขคิว: เปิดทั้งสาขา'
+            : pickupQueueEnabled
+            ? 'ออกเลขคิวของเครื่องนี้: เปิด · กดเพื่อปิด'
+            : 'ออกเลขคิวของเครื่องนี้: ปิด · กดเพื่อเปิด'}
+          variant={branchPickupQueueEnabled || pickupQueueEnabled ? 'primary' : 'secondary'}
+          disabled={branchPickupQueueEnabled}
+          fullWidth
+          onPress={() => {
+            savePickupQueueEnabled(!pickupQueueEnabled).catch(error =>
+              Alert.alert(
+                'บันทึกไม่สำเร็จ',
+                error instanceof Error ? error.message : 'ลองใหม่อีกครั้ง',
+              ),
+            );
+          }}
+        />
+      </Card>
       <Card>
         <View style={styles.rowBetween}>
           <Text style={[typography.captionStrong, { color: colors.textMuted }]}>

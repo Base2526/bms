@@ -557,3 +557,24 @@ the `DLE EOT` online/cover/paper checks pass; receipts, PINs and tokens are neve
 the printer. No Bluetooth/USB/AirPrint, no cash-drawer kick, and no certification on real hardware
 yet. See [apps/mobile/README.md](../apps/mobile/README.md).
 
+**Pickup queue numbers and the call screen (`10.111`).** A manager can turn on pickup numbers for a
+whole branch (with a device-local opt-in still available), choose the customer-board message,
+PREPARING visibility and READY auto-hide window. Counter sales then get a per-branch,
+per-service-day number issued
+after the sale commits (a queue failure never fails the sale), printed on the receipt and on
+reprints, called from the till/floor/mobile strip or automatically when the kitchen finishes every
+ticket, and shown on `/pos/queue-board`, a device-token call screen that sees numbers only (opens
+inside a managed Desktop second-display window with identify, preview and hot-plug recovery).
+Kitchen readiness also rings the till and the completed-sale customer display shows the issued
+number. Covers web, restaurant take-away checks and the native register (GraphQL
+`pickupQueue`, `bmsPosPickupQueue[Action]`); polling, not realtime push, by design. See
+[business/pos.md](business/pos.md#pickup-queue-numbers-and-the-call-screen-10111).
+
+**Queue experience, customer display and Desktop kitchen printing (`10.112`).** Branch queue policy
+now includes a snapshotted prefix, first number for an empty service day, spotlight duration and
+announcement settings. The call screen treats an AI Studio-generated static voice pack as primary
+and falls back to its local chime without making provider calls at runtime. Store Profile adds an
+idle-only bounded promotion slideshow, Settings can publish a fixed-payload Messenger greeting and
+conversation starters, and the Desktop pilot maps server kitchen stations to explicit OS printers.
+Kitchen jobs are journalled per server ticket; uncertain outcomes require a tray check and explicit
+retry. Central printer profiles and offline-first restaurant service remain out of scope.

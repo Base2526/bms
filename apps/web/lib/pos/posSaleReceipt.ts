@@ -20,6 +20,8 @@ import {
 } from "./receiptI18n";
 
 export type PosSaleReceiptRow = {
+  /** เลขคิวรับของ (10.111) */
+  pickupQueueLabel?: string | null;
   extraLines?: Array<{ label: string; qty: number; amount: number }>;
   pointsEarned?: number | null;
   pointsBalance?: number | null;
@@ -129,6 +131,7 @@ export function receiptPayloadFromPosSale(
     docTitle: receiptDocumentTitle(mode, "sale", store.vatRegistered),
     docNo: row.docNo,
     orderId: row.orderId,
+    pickupQueueLabel: row.pickupQueueLabel ?? null,
     relatedDocNo: null,
     referenceDocNo: null,
     barcodeValue: row.billNo ?? row.receiptNo ?? row.docNo,

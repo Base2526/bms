@@ -19,13 +19,46 @@ function Logo({ url, large = false }: { url?: string | null; large?: boolean }) 
   </div>;
 }
 
-function WelcomeBackground({ url }: { url?: string | null }) {
-  const safeUrl = displayUrl(url);
-  const [failed, setFailed] = useState<string | null>(null);
-  if (!safeUrl || failed === safeUrl) return null;
+function WelcomeBackground({
+  url,
+  promos = [],
+  intervalSeconds = 8,
+}: {
+  url?: string | null;
+  promos?: string[];
+  intervalSeconds?: number;
+}) {
+  const fallback = displayUrl(url);
+  const safePromos = Array.from(new Set(promos.map(displayUrl).filter((value): value is string => Boolean(value)))).slice(0, 8);
+  const [failed, setFailed] = useState<string[]>([]);
+  const [index, setIndex] = useState(0);
+  const activePromos = safePromos.filter((value) => !failed.includes(value));
+  const safeUrl = activePromos.length > 0 ? activePromos[index % activePromos.length] : fallback;
+
+  useEffect(() => {
+    setIndex(0);
+    setFailed([]);
+  }, [promos.join("\n"), url]);
+
+  useEffect(() => {
+    if (activePromos.length < 2) return;
+    const next = activePromos[(index + 1) % activePromos.length];
+    const preload = new window.Image();
+    preload.src = next;
+    const timer = window.setTimeout(
+      () => setIndex((value) => (value + 1) % activePromos.length),
+      Math.min(30, Math.max(4, Math.trunc(intervalSeconds))) * 1000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [activePromos.join("\n"), index, intervalSeconds]);
+
+  if (!safeUrl || failed.includes(safeUrl)) return null;
   return <div className={styles.welcomeBackground} data-customer-display-background aria-hidden="true">
-    <img src={safeUrl} alt="" onError={() => setFailed(safeUrl)} />
+    <img key={safeUrl} src={safeUrl} alt="" onError={() => setFailed((values) => values.includes(safeUrl) ? values : [...values, safeUrl])} />
     <span />
+    {activePromos.length > 1 && <div className={styles.promoDots}>
+      {activePromos.map((value, dot) => <i key={value} data-active={dot === index % activePromos.length} />)}
+    </div>}
   </div>;
 }
 
@@ -89,7 +122,11 @@ export function CustomerDisplayView({ state, linked }: { state: CustomerDisplayP
   const name = brand?.name || "ยินดีต้อนรับ";
   const labels = { idle: "ยินดีต้อนรับ", cart: "รายการของคุณ", payment: "ชำระเงิน", finished: "ชำระเงินเรียบร้อย" };
   return <main className={styles.screen} data-phase={phase}>
-    {phase === "idle" && <WelcomeBackground url={brand?.customerDisplayBackgroundUrl} />}
+    {phase === "idle" && <WelcomeBackground
+      url={brand?.customerDisplayBackgroundUrl}
+      promos={brand?.customerDisplayPromoSlides}
+      intervalSeconds={brand?.customerDisplayPromoIntervalSeconds}
+    />}
     <header className={styles.header}>
       <div className={styles.brand}><Logo url={brand?.logoUrl} /><div><strong>{name}</strong>
         {brand?.branch && brand.branch !== name && <p>{brand.branch}</p>}</div></div>
@@ -139,11 +176,14 @@ export function CustomerDisplayView({ state, linked }: { state: CustomerDisplayP
       <section className={styles.thanks} data-finished-primary><span className={styles.checkBadge}><CheckOutlined aria-hidden /></span>
         <div className={styles.thanksCopy}><h1>ชำระเงินเรียบร้อย</h1><p>ขอบคุณที่อุดหนุน</p></div>
       </section>
-      <section className={`${styles.finishedSummary} ${state.finished.change == null ? styles.finishedSummaryNoChange : ""}`} data-finished-summary>
+      <section className={`${styles.finishedSummary} ${state.finished.change == null ? styles.finishedSummaryNoChange : ""} ${state.finished.pickupQueueLabel ? styles.finishedSummaryQueue : ""}`} data-finished-summary>
         <div className={styles.settlement} data-finished-settlement>
           <div className={`${styles.row} ${styles.totalRow}`}><span>ยอดชำระทั้งหมด</span><strong>฿{baht(state.finished.total)}</strong></div>
           {state.finished.tendered != null && <div className={styles.row}><span>รับเงินสด</span><strong>฿{baht(state.finished.tendered)}</strong></div>}
         </div>
+        {state.finished.pickupQueueLabel && <><span className={styles.finishedDivider} aria-hidden />
+          <div className={styles.pickupQueue}><p>เลขคิวรับของ</p><strong>{state.finished.pickupQueueLabel}</strong>
+            <small>กรุณารอเรียกที่เคาน์เตอร์</small></div></>}
         {state.finished.change != null && <><span className={styles.finishedDivider} aria-hidden /><div className={styles.change}><p>เงินทอน</p><strong className={styles.amount}>฿{baht(state.finished.change)}</strong></div></>}
         <span className={styles.finishedDivider} aria-hidden />
         <aside className={styles.finishAside}><Member state={state} showGuest />
