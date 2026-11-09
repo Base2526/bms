@@ -23,7 +23,18 @@ export type Migration = {
 
 // ครอบเฉพาะไฟล์ที่ "โค้ดปัจจุบันอ้างถึงแบบไม่มีเงื่อนไข" — ของเก่ากว่านี้ถ้าขาด ระบบจะพัง
 // ตั้งแต่หน้าแรกจนเห็นเองอยู่แล้ว
+// ไม่ใส่ `10.110` (bank reconciliation — ปิดด้วย BMS_BANK_RECONCILIATION_ENABLED เป็นค่าเริ่มต้น ทุก
+// เส้นทางเรียก requireBankReconciliationEnabled() ก่อนแตะตาราง) และ `10.111` (สร้างแค่ฟังก์ชัน
+// bms_set_pharmacist_license — เรียกเฉพาะตอน Administrator บันทึกใบอนุญาต และ fail closed) เพราะไม่ใช่
+// สิ่งที่โค้ดอ้างแบบไม่มีเงื่อนไข · ถ้าเปิด flag ของ 10.110 ต้องตรวจตารางของไฟล์นั้นบนฐานเป้าหมายเอง
 export const MIGRATIONS: Migration[] = [
+  {file:'10.109__files_user_ownership_and_private_chat.sql',impact:'Every upload inserts files.owner_user_id and every /api/files read selects it: uploads, product/post images and avatars fail without the column',needs:[{kind:'column',table:'files',name:'owner_user_id'}]},
+  {file:'10.108__bms_meta_inbox_enrichment.sql',impact:'Every Facebook/Instagram inbound message is queued with event_meta: Meta webhook messages are not queued or answered without the column',needs:[{kind:'column',table:'bms_channel_inbound_jobs',name:'event_meta'}]},
+  {file:'10.104__bms_meta_messenger_hardening.sql',impact:'getChannel() selects webhook_verify_token/external_account_id for every channel: LINE, TikTok and Meta webhooks and staff replies fail; Meta inbound queue and reply window read bms_channel_inbound_jobs',needs:[{kind:'column',table:'bms_tenant_channels',name:'webhook_verify_token'},{kind:'column',table:'bms_tenant_channels',name:'external_account_id'},{kind:'table',name:'bms_channel_inbound_jobs'}]},
+  // `10.100` เปลี่ยนแค่ FK, `10.101` แก้ข้อมูลแพ็กเกจ, `10.102` price_yearly ถูกอ่านผ่าน SELECT * พร้อม `?? 0`
+  // (ไม่มีอะไรพังถ้าขาด) — สามไฟล์นี้จึงไม่อยู่ในลิสต์
+  {file:'10.103__bms_purchase_landed_unit_cost.sql',impact:'Every purchase order create inserts and every receipt selects additional_unit_cost: creating or receiving a PO fails without the columns',needs:[{kind:'column',table:'bms_purchase_order_items',name:'additional_unit_cost'},{kind:'column',table:'bms_purchase_order_items',name:'additional_cost_note'}]},
+  {file:'10.99__bms_branch_inventory_intelligence.sql',impact:'Action Center and purchasing intelligence read branch demand and branch policies on every load; retried PO creates use the idempotency table',needs:[{kind:'column',table:'bms_inventory_demand_events',name:'location_id'},...['bms_inventory_location_policies','bms_inventory_forecast_runs','bms_inventory_forecast_items','bms_purchase_order_idempotency'].map(name=>({kind:'table' as const,name}))]},
   {file:'10.107__bms_stock_transfer_lots.sql',impact:'Every stock transfer list and receipt reads lot rows: transfers (admin, mobile, branch requests) fail without the table',needs:[{kind:'table',name:'bms_stock_transfer_item_lots'}]},
   {file:'10.106__bms_retail_local_lead_erasure.sql',impact:'The Retail Local leads tab and lead updates read erased_at; PDPA erasure needs the function and frozen-lead trigger',needs:[{kind:'column',table:'bms_retail_local_leads',name:'erased_at'},{kind:'column',table:'bms_retail_local_leads',name:'erased_by'}]},
   {file:'10.105__bms_retail_local_leads.sql',impact:'The public Retail Local contact form and the leads tab fail without the consented lead tables',needs:[...['bms_retail_local_leads','bms_retail_local_leads_revisions','bms_retail_local_lead_events'].map(name=>({kind:'table' as const,name}))]},

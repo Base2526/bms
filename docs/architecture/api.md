@@ -47,6 +47,22 @@ version)` and `bmsRetirePharmacyGuidance(id)` require `pharmacy.protocol.manage`
 additionally requires the actor to be a licensed pharmacist, re-checked in the service with no
 Administrator shortcut. Customers only ever receive an `APPROVED` row of their own shop.
 
+### Pharmacist licence records (`10.111`)
+
+`bmsPharmacyLicenseCandidates(search: String)` and `bmsSetPharmacistLicense(userId,
+isLicensedPharmacist, licenseNo, confirmed: Boolean!)` (page `/admin/pharmacy-protocols/licenses`)
+are gated by `requireAdministrator()` — an authenticated tenant `Administrator`, not a
+`BMS_PERMISSIONS` entry. The candidate read is tenant-scoped, accepts a search of at most 100
+characters and returns at most 50 users. The write requires `confirmed: true` and calls
+`setPharmacistLicense()`, which uses the narrow `10.111` SECURITY DEFINER helper (transaction tenant +
+same-tenant Administrator actor re-checked in the database) and commits the licence change with its
+audit in one tenant transaction; a missing helper fails closed. The flag and number are
+shop-recorded evidence, not a check against an external licence registry. In the same change,
+protocol draft/submit/review/enable writes — and, since the earlier pet-supply recheck, Product
+Policy draft/submit/review writes — moved their audit inside the service transaction (resolvers still
+require `pharmacy.protocol.manage`); reviews hold the `10.47` licence-row lock through commit. No new
+permission or AI tool.
+
 ### Emergency directory (`10.46`)
 
 `bmsEmergencyFacilities(locationId)` and `bmsEmergencyFacilityLocations` read the Settings
@@ -129,7 +145,7 @@ Details per channel: [../integrations/](../integrations/).
 Routes using `authorizeCronRequest()` require header `x-cron-secret` matching
 `BMS_CRON_SECRET`; an unset secret fails closed with 503 and a wrong header returns 401. Exactly
 one scheduler owner should call them: the opt-in Docker `scheduler` service (registry
-`apps/web/scheduler/jobs.json`, 18 jobs: 13 every 15 minutes, 5 daily) or the GitHub Action
+`apps/web/scheduler/jobs.json`, 22 jobs: 16 every 15 minutes, 6 daily) or the GitHub Action
 `.github/workflows/bms-cron.yml` with repository variable `BMS_CRON_RUNNER=github` — see
 [scheduler.md](scheduler.md). Other routes remain visible as ready-but-unscheduled on
 `/admin/operations-schedule`.
@@ -141,6 +157,17 @@ one scheduler owner should call them: the opt-in Docker `scheduler` service (reg
 - `POST /api/bms/menu-availability/reset` (`9.55`) — clears "sold out today" rows whose own
   `resets_at` has passed, recorded as `menu-availability-reset`. Scheduled every 15 minutes so each
   shop's own reset time and timezone are honoured.
+
+- `POST /api/bms/meta/inbound/process` (`10.104`) — crash-recovery pass over the durable
+  Facebook/Instagram `bms_channel_inbound_jobs` queue (`runMetaInboundBatch(50)`), recorded as
+  `meta-inbound-process`. New messages are processed immediately by the webhook; this job reclaims a
+  lease only before business effects start, and an uncertain job after `effects_started_at` becomes
+  `DEAD` for review rather than being replayed. Scheduled every 15 minutes.
+- `POST /api/bms/channels/sync-profiles` — refreshes bounded batches of cached Facebook and LINE
+  customer profiles (`runFacebookProfileBackfill(20)` + `runLineProfileBackfill(20)`), recorded as
+  `channel-profile-sync`. The cache on `bms_customer_identities` is display-only (the Facebook path
+  never overwrites a staff-maintained CRM customer name), a failed read is retried later, and Inbox
+  reads never call the provider. Scheduled every 15 minutes.
 
 - `POST /api/bms/realtime/dispatch` — recovery/manual trigger for the same dispatcher used by the
   continuous web-process pump. It claims committed rows with `FOR UPDATE SKIP LOCKED`, publishes to
@@ -229,6 +256,13 @@ abbreviated receipt, and each submission is an immutable buyer snapshot. Busines
 - `GET /api/public/app-downloads` — public, `rateLimit()` 120/min per IP, `no-store`; returns only
   the two URLs, never the actor or update metadata. See
   [../business/app-downloads.md](../business/app-downloads.md).
+- `GET /api/geocode/search?q=` · `GET /api/geocode/reverse?lat=&lng=` — public proxies to OpenStreetMap
+  Nominatim used by community-chat location sharing. Nominatim allows ~1 request/second and bans
+  abusive IPs, so both share `rateLimit()` keys: 30/min per IP and 60/min overall; a limited call
+  answers 429 with the same empty shape (`results: []` / `placeName: null`).
+- Every route under `/api/public`, `/api/retail-local` and `/api/geocode` must call `rateLimit()`
+  (`inventory-tenant-scope-contract`, since 2026-11-09); `/api/bms` public routes are listed in that
+  contract's `PUBLIC_BY_DESIGN`, and `/api/pos` is covered by `pos-route-guard-contract`.
 
 ## REST — POS device surface
 
@@ -283,7 +317,11 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   resolves tenant/location from the active device, re-verifies cashier PIN and `purchase.receive`,
   and never accepts a client location. Receive calls the shared purchase service, whose inventory,
   movement, PO status, audit, and retry-ledger writes are one transaction. A reused key with the
-  same normalized request replays; a key reused for different input returns `409`.
+  same normalized request replays; a key reused for different input returns `409`. Each line's
+  `qty` must be a JSON number and optional `lotNo`/`expiryDate` must be strings or null (`400
+  INVALID_INPUT` otherwise); the shared service requires lot/expiry evidence for a tracked product
+  even on its first receipt into a branch, and a PO that is no longer receivable answers
+  `409 INVALID_STATE`.
 - `POST /api/pos/void` (`7.97`) — cancel a mis-rung bill; deliberately not the return path. Requires
   `orderId`, a non-empty `reason`, `idempotencyKey`, the seller's `cashierUserId` + `pin`, and
   **always** `approverUserId` + `approverPin` from a second user holding `pos.void`. Results:
@@ -551,6 +589,35 @@ webhook already did.
   same realtime event, without sending anything to LINE/Meta/TikTok/Shopee/Lazada. See
   [../ui/inbox-diagnostics.md](../ui/inbox-diagnostics.md).
 
+## REST — stored files and community chat (`9.26`, `9.27`, `10.109`)
+
+- `GET /api/files/[id]` — anonymous only for `visibility = 'public'`; a missing or unknown visibility
+  is private. Chat image/audio requires **current** chat membership (401 without a session, 404 for
+  a non-member). Otherwise a private file opens for its exact `owner_user_id`, or for an admin of the
+  owning tenant through `authorizeAdminRoute(null)` (a foreign tenant gets 404); a generated-report
+  file additionally needs `report.view` and the report's own scope check. An ownerless private
+  legacy row opens only for a platform admin. Files that have dedicated routes — pharmacy clinical
+  evidence, operation evidence, support bundles, Retail Local release assets, bank statements — and
+  blocked legacy key/database/config/script/installer artifacts always answer 404 here.
+- `PATCH`/`DELETE /api/files/[id]` — platform admin, or the owning user for a personal file that no
+  post, chat message or avatar references.
+- `GET`/`POST /api/files` — a platform admin gets the global inventory; any other signed-in user sees
+  only unreferenced files they own. Uploads are private, ≤ 25 MB and rate-limited to 20 per minute
+  per actor; the storage key (`relpath`) is never returned.
+- GraphQL `filesPaged`, `deleteFile`, `deleteFiles` and `renameFile` require `requirePlatformOnly()`;
+  deletes are soft deletes and the list never exposes `relpath`.
+- Community chat resolvers (`graphql/resolvers.ts`) require current membership to list, send, add a
+  member (group chats only) or rename; recipients and reply targets must belong to the room; only the
+  creator deletes a chat and only the sender deletes a message. `getOrCreateDm` validates the peer,
+  takes a transaction advisory lock and creates the room and both memberships atomically.
+
+`POST /api/graphql` (same change): Apollo `csrfPrevention` is on, a browser POST whose `Origin`
+host differs from the request host is refused with 403 (native clients send no `Origin`), JSON bodies
+are capped at 1 MiB and multipart uploads at 64 MiB per request / 25 MiB per file with an image/audio
+MIME allowlist, and the `graphqlRequestLimitsRule` validation rule rejects operations deeper than 30,
+with more than 2,500 fields (fragment expansions counted) or more than 200 aliases before any
+resolver runs.
+
 ## REST — order/payment/purchase/shipment transition routes
 
 Thin per-action routes (`order/[id]/pay`, `/pack`, `/ship`, `/complete`, `/cancel`, `/return`;
@@ -559,13 +626,26 @@ Thin per-action routes (`order/[id]/pay`, `/pack`, `/ship`, `/complete`, `/cance
 same `lib/bms/*.ts` functions the GraphQL mutations use. `reports/*` and `inbox/*` similarly expose
 read/write REST equivalents of their GraphQL counterparts.
 
+Staff PO receiving (`POST /api/bms/purchase/[id]/receive`, `purchase.receive`, and GraphQL
+`bmsReceivePurchaseOrder(id, items, idempotencyKey)`) accepts an optional `idempotencyKey`
+(8–200 characters on REST) bound to the authenticated actor in the existing `9.88` inventory
+operation ledger (action `purchase.receive`), plus per-line `lotNo`/`expiryDate`. Quantities must be
+JSON numbers, lot/date values strings or null; a committed receipt replays (`replayed: true`) before
+branch-availability checks, a key reused with a different payload is `409 IDEMPOTENCY_CONFLICT`, and
+an inactive/missing branch is `404 LOCATION_NOT_FOUND`. The GraphQL result additionally carries
+`reasonCode`, `sku` and `size` for an `INVALID_INPUT` line. `POST .../cancel` (`purchase.cancel`)
+now writes its `purchase.cancel` audit inside the cancellation transaction. No new table or migration.
+
 ## REST — inventory transfers and stock counts (`7.98`)
 
 These routes remain REST compatibility adapters; the mobile equivalents are `bmsStockTransfers` /
 `bmsStockTransfer` and `bmsStockCounts` / `bmsStockCount`. Unlike `/api/pos/*`, the REST adapters use
 the admin session: both call `authorizeAdminRoute(permission)` (`lib/bms/adminRouteAuth.ts`), which runs
-`verifyAdminSession()` → resolves the acting tenant from the signed `BMS_ACT_TENANT` drill-down cookie
-(only when its `by` matches this admin, else the admin's own tenant) → `requirePermission()`. Failures
+`verifyAdminSession()` → checks the Redis session is still active → re-reads role, tenant,
+platform-admin status and session version from Postgres (`refreshAdminIdentity()`, the same refresh the
+GraphQL context performs) → resolves the acting tenant from the signed `BMS_ACT_TENANT` drill-down
+cookie (only when its `by` matches this admin, the admin is a database-verified platform admin and the
+tenant still exists; otherwise the admin's own tenant) → `requirePermission()`. Failures
 return `{ error: "unauthorized" }` with `401` (no session) or `{ error: "forbidden" }` with `403` (no
 permission). The actor recorded on every write is the admin id from that session, not a body field.
 
@@ -586,7 +666,9 @@ permission). The actor recorded on every write is the admin id from that session
   `note` → `OK` (200, with `snapshotQty`/`variance`), `NOT_FOUND` (404), `WRONG_STATE` (409),
   `INVALID` (400); `apply` → `APPLIED` (200, with `adjustedItems`/`varianceUnits`), `NOT_FOUND` (404),
   else 409 (`WRONG_STATE`, `WOULD_BREAK_RESERVED`); `cancel` → `OK` (200) / `NOT_FOUND` (404) / 409.
-  An unknown action, or a missing `countId`, is 400.
+  An unknown action, or a missing `countId`, is 400. `countedQty` must be an explicit JSON number
+  holding a non-negative integer: a missing value is no longer read as zero and a fraction is
+  rejected, not truncated (the GraphQL `bmsMobileOperations.ts` adapter applies the same rule).
 
 Both `GET`s deliberately return the tenant's `locations` alongside the main payload: the screens
 always need the branch picker, and fetching it through GraphQL `bmsLocations` would demand
@@ -616,14 +698,54 @@ inside the same transaction as the stock movement, with `actor` stored as a raw 
 | `POST /api/bms/delivery/{events/process,commands/process,intake/auto-resume,scheduled-preparation,acceptance-timeout}` | `authorizeCronRequest()` | Inbox worker, post-commit command outbox, intake auto-resume, scheduled prep and acceptance timeout |
 | `GET`/`POST /api/admin/delivery-providers` | `authorizePlatformAdminRoute()` | Platform partner contracts and encrypted credentials (`bms_delivery_provider_settings`); tenants never receive these secrets |
 
-## REST — Retail Local and installer reports (`10.15`–`10.36`)
+## Bank reconciliation (`10.110`)
+
+Feature-flagged evidence sidecar (`BMS_BANK_RECONCILIATION_ENABLED` server flag, default off; the UI
+also needs `NEXT_PUBLIC_BMS_BANK_RECONCILIATION_ENABLED`). Every service read/write in
+`lib/bms/bankReconciliation.ts` calls `requireBankReconciliationEnabled()`; the readiness
+projection (`bmsBankReconciliationReadiness`, gated by `bank_reconciliation.view`) is a static
+capability list whose `enabled` field reads the same server flag (`isBankReconciliationEnabled()`,
+fixed 2026-11-09 — it used to return `true` unconditionally).
+Nothing here updates payment, AR, expense, refund,
+delivery-settlement, tax, stock or ledger rows. Owner doc:
+[../business/bank-reconciliation.md](../business/bank-reconciliation.md).
 
 | Route | Guard | Purpose |
 | --- | --- | --- |
-| `GET /api/retail-local/releases` | public | Published release listing for the `/retail-local` download page |
-| `GET /api/retail-local/download/[id]` | public assets open; onboarding/trial assets need a platform admin | Installer download; downloading creates no licence or trial |
+| `POST /api/bms/bank-reconciliation/imports/preview` | `authorizeAdminRoute("bank_reconciliation.import")` + same-origin check; 404 when the flag is off; multipart body bounded (file ≤ 10 MB, 413 beyond) | Parses a CSV/XLS/XLSX statement (formulas rejected, ≤ 50,000 rows), stores the file as a private tenant-owned file and creates a `VALIDATED` import under an `idempotencyKey`; returns at most 20 preview rows. A replay discards the duplicate upload; a duplicate file/row is `409` |
+| `GET /api/bms/bank-reconciliation/imports/[id]/file` | `authorizeAdminRoute("bank_reconciliation.view")`; tenant-scoped import lookup; 404 when the flag is off or the row is foreign | Downloads the original statement as an attachment (`private, no-store`). `/api/files/[id]` deliberately refuses these files |
+| `GET /api/bms/bank-reconciliation/export?accountId=&month=YYYY-MM&format=xlsx\|csv` | `authorizeAdminRoute("bank_reconciliation.view")`; 404 when the flag is off | Accountant export of committed entries for one account/month with match status and confirmed source keys; money stays text, formula-like cells are escaped, and the export is audited (`bank_reconciliation.export`) |
+
+GraphQL (`graphql/bmsBankReconciliation.ts`, SDL in [`schema.graphql`](../../schema.graphql)); tenant
+and actor are server-derived. Reads: `bmsBankAccounts`, `bmsBankStatementImports`,
+`bmsBankStatementEntries`, `bmsBankReconciliationSummary`, `bmsBankReconciliationPeriods`,
+`bmsBankReconciliationReadiness` need `bank_reconciliation.view`; `bmsBankMatchCandidates` and
+`bmsBankReconciliationLinks` need `bank_reconciliation.review`. Mutations: `bmsCreateBankAccount`,
+`bmsArchiveBankAccount`, `bmsCommitBankStatementImport(confirmed)`,
+`bmsVoidBankStatementImport(reason, confirmed)` need `bank_reconciliation.import`;
+`bmsConfirmBankMatch(input, confirmed)`, `bmsVoidBankMatch(reason, confirmed)`,
+`bmsIgnoreBankStatementEntry(reason, confirmed)` need `bank_reconciliation.review`;
+`bmsCloseBankReconciliationPeriod(confirmed)` and `bmsReopenBankReconciliationPeriod(reason,
+confirmed)` need `bank_reconciliation.close`. Every mutation except account create/archive requires
+`confirmed: true`. Candidates are deterministic suggestions; only a confirm mutation creates a link.
+Readiness reports Open Banking as `NOT_CONFIGURED`. The four permissions are seeded to Manager by
+`10.110`; Administrator holds them implicitly. Not an AI tool.
+
+## REST — Retail Local and installer reports (`10.15`–`10.36`, `10.105`–`10.106`)
+
+| Route | Guard | Purpose |
+| --- | --- | --- |
+| `GET /api/retail-local/releases` | public, `rateLimit` 120/min per IP | Published release listing for the `/retail-local` download page |
+| `GET /api/retail-local/download/[id]` | public assets open (`rateLimit` 30 per 10 min per IP); onboarding/trial assets need a platform admin | Installer download; downloading creates no licence or trial |
+| `GET /api/retail-local/desktop-update?version=&platform=&arch=` | public, `rateLimit` 120/min per IP | Desktop shell update check (polled every 30 min by `DesktopUpdateMenu`); validates platform/arch, read-only |
 | `GET /api/admin/retail-local/releases` · `PATCH .../releases/[id]` | `authorizePlatformAdminRoute()` | Release asset listing/state (`POST` answers 410 — uploads go through the route below) |
+| `DELETE /api/admin/retail-local/releases/[id]` | `authorizePlatformAdminRoute()` + exact same-origin check + 1 KiB JSON body that must repeat the `releaseId` and the typed confirmation `PURGE-RETAIL-LOCAL-RELEASE-FILE` | Irreversibly purges the stored installer bytes of a release that is already `hidden` and not `latest`: deletes through the storage driver, verifies absence, sets `files.deleted_at` and writes one audit row in the same transaction (audited on the platform admin's home tenant). Release/file rows stay as a tombstone; a purged asset cannot be edited, restored or downloaded |
 | `POST /api/admin/retail-local/releases-upload` | Pages API, `bodyParser: false`, own platform-admin cookie guard, excluded from `middleware.ts` | Streams a multi-GB installer to storage with bounded memory; must never move to an App Route |
+| `GET`/`DELETE /api/admin/retail-local/runtime-releases` | `authorizePlatformAdminRoute()`; `DELETE` also requires an exact same-origin request with JSON `{ releaseVersion, platformTarget }` | Lists signed Managed Runtime releases and readiness; `DELETE` removes one published version/target directory (manifest, checksums, artifacts) under the same publish lock uploads use, refuses non-directory/symlinked paths and keeps sibling targets. Installers or downloads pinned to that URL may fail afterwards |
+| `POST /api/admin/retail-local/runtime-release-upload` | Pages API, `bodyParser: false`, same-origin check + `authorizePlatformAdminCookieHeader()` | Publishes a signed Managed Runtime release target |
+| `POST /api/public/retail-local/lead` (`10.105`) | **public**; Cloud only (404 in a Retail Local deployment); `rateLimit()` 5 per IP per hour; JSON body ≤ 4 KiB with allowlisted fields; `consent: true` and a Thai phone or LINE ID required | Optional sales contact from the `/retail-local` page. Calls only `bms_submit_retail_local_lead(...)` and returns no id or PII; downloading never requires it |
+| `GET /api/admin/retail-local/leads` · `PATCH`/`DELETE .../leads/[id]` (`10.105`, `10.106`) | `authorizePlatformAdminRoute()`; `PATCH`/`DELETE` also require `Origin` equal to the request origin | Leads tab of `/admin/retail-local-licenses`: filter, edit status/note/follow-up (contact and consent fields are immutable). `DELETE` is PDPA erasure through `bms_erase_retail_local_lead()` and returns no PII |
+| `GET /api/admin/retail-local/backup-status` | `retail_local.license.view`; 404 outside Retail Local mode | Allowlisted local backup status/time for the in-shop backup reminder; a read failure answers `503` with status `unknown`, never a lock |
 | `GET`/`POST /api/admin/retail-local/licenses` · `GET .../licenses/[id]` · `POST .../[id]/{activation,commercial,resolve,token}` · `POST .../[id]/follow-ups/[followUpId]/acknowledge` | `authorizePlatformAdminRoute()` | Licence control plane: activation codes, trial/paid lifecycle with actor/reason audit, evidence review, ingestion tokens, follow-ups |
 | `GET /api/admin/retail-local/installations` | `authorizePlatformAdminRoute()` | Installation registry (instances, never people or hardware) |
 | `GET`/`POST /api/admin/retail-local/local-license` | `retail_local.license.view` / `.manage`; 404 outside Retail Local mode | Shop-side licence page: reads status, queues an activation/transfer request into the host mailbox |
@@ -641,9 +763,10 @@ inside the same transaction as the stock movement, with `actor` stored as a raw 
 | `bmsProducts.ts` | products (`bmsProducts` list plus lazy `bmsProductBySku` configuration detail), categories, stock adjustments, bulk CSV/XLSX product/menu import (`bmsImportProducts`), catalog variants and sales surfaces, publish readiness (`bmsPublishProduct`), draft configuration cloning (`bmsDuplicateProduct`), shop-maintained customer facts on `BmsProduct` (`allergenCodes`, `allergenInformationProvided`, `dietaryTags`, `foodSafetyNote` from `10.43`; `medicineLabel` from `10.44`; written through the normal `product.edit` upsert, and an empty unreviewed declaration means unknown), and reservation drill-down (`bmsVariantReservations`, gated on `order.view` because the answer carries bill ids and customer contact) |
 | `bmsOrders.ts` | order lifecycle transitions, staff create/reorder, invoice projection, shipping-address eligibility |
 | `bmsCustomers.ts` | CRM: profile, addresses, tags, merge. `bmsCustomerOrderDetail(customerId, orderId)` (`customer.view`) returns one purchase's exact sale lines, totals and points. A merge is reviewed: `bmsCustomerMergePreview` (`customer.edit`) returns a ten-minute signed preview with server-counted impact, and `bmsMergeCustomers` requires its `review` input (preview token, reason, verification method, evidence reference, `confirmed`) — old callers without a review are refused. See [../business/crm.md](../business/crm.md) |
-| `bmsInbox.ts` | conversations, messages, notes, timeline, diagnostic Inbox message creation (`bmsCreateInboxDiagnosticMessage`) |
+| `bmsInbox.ts` | conversations, messages, notes, timeline, diagnostic Inbox message creation (`bmsCreateInboxDiagnosticMessage`). Outbound `status` is `PENDING`/`SENT`/`DELIVERED`/`READ`/`FAILED` (null = legacy row): LINE/Meta AI replies are saved `PENDING` and become `SENT`/`FAILED` after the channel call, and Meta delivery/read webhooks advance `SENT → DELIVERED → READ`. `bmsRetryMessage` (`inbox.reply`) retries only a `FAILED` push message and locks the row during the attempt |
 | `bmsChannels.ts` | per-tenant channel credentials (settings page) + Channel Health status/test (`bmsChannelHealth`, `bmsChannelHealthCount`, `bmsTestChannel`) + realtime signal probe (`bmsEmitInboxDiagnosticEvent`) |
-| `bmsPurchase.ts` | supplier purchase orders |
+| `bmsPurchase.ts` | supplier purchase orders; `bmsReceivePurchaseOrder(id, items, idempotencyKey)` (`purchase.receive`) — see § transition routes for the retry ledger and lot/expiry rules |
+| `bmsBankReconciliation.ts` | `10.110` bank accounts, statement imports/entries, match candidates/links, month periods — `bank_reconciliation.view`/`.import`/`.review`/`.close`, feature-flagged (see § Bank reconciliation) |
 | `bmsPayments.ts` | payment submission/confirmation/refund |
 | `bmsShipping.ts` | shipments, tracking, carrier sync (`bmsSyncShipmentLive`), labels |
 | `bmsCoupons.ts` | discount code CRUD + usage history (`bmsCoupons`, `bmsCouponRedemptions`) |
@@ -652,7 +775,7 @@ inside the same transaction as the stock movement, with `actor` stored as a raw 
 | `bmsAr.ts` | credit accounts, invoice aging, receivable ledger, non-cash collection and write-off (`9.30`). Selling on credit and collecting **cash** are absent by design — those live on `/api/pos/*`, because cash has to reach the drawer of the shift that is actually open |
 | `bmsRevisions.ts` | revision history list/detail/compare for products, orders, payments, shipments, and purchase orders (header + line items) |
 | `bmsReports.ts` / `bmsDashboard.ts` | analytics plus Phase 1 daily actions and advisory inventory intelligence (`bmsActions(limit, group, offset)` — `group` is `ALL`/`NEW`/`ACCEPTED`/`HISTORY`, `bmsActionMetrics`, `bmsInventoryActionCenter`) |
-| `bmsPharmacy.ts` | pharmacy intake/queue/protocols/policies, plus the `10.45` guidance-template lifecycle (see § Pharmacy guidance editor) |
+| `bmsPharmacy.ts` | pharmacy intake/queue/protocols/policies, plus the `10.45` guidance-template lifecycle (see § Pharmacy guidance editor) and the `10.111` Administrator licence form (see § Pharmacist licence records) |
 | `bmsStoreProfile.ts` | store profile and the `10.46` emergency directory (see § Emergency directory) |
 | `bmsAiQuality.ts` | AI quality review plus the `10.53` answer-evidence reads (see § Customer answer evidence) |
 | `bmsMailLog.ts` | read-only platform mail log (`bmsMailLog`, `bmsMailLogEntry`, `bmsMailLogStats`) — platform admin only; `provider` is `sendgrid`, `gmail` or `smtp` (`10.59`) |
@@ -663,7 +786,7 @@ inside the same transaction as the stock movement, with `actor` stored as a raw 
 | `bmsAiConfig.ts` | tenant BYOK key config + key tests (`bmsAiConfig`, `bmsSetAiKey`, `bmsRemoveAiKey`, `bmsTestAiKey`), AI usage/points reporting (`bmsAiUsage`, `bmsAiUsageBreakdown`, `bmsAiUsageEvents`, `bmsAiCreditLedger`), the per-recipient AI limit inbox (`bmsAiLimitNotifications`, `bmsReadAiLimitNotification`, `10.55`), platform-only point adjustment (`bmsAdjustAiCredits`), and platform-only provider health (`bmsAiProviderHealth`, `bmsAiProviderHealthCount`, `bmsCheckAllAiProviderHealth`, `bmsTestPlatformAiKey`) |
 | `bmsSaas.ts` | platform admin: tenants, plans, signup, drill-down. `bmsChangePlan` and `bmsSetTenantPlan` both require database-verified platform admin — shop access is not payment evidence |
 | `bmsAssistant.ts` | staff AI assistant (`bmsAssistant` + additive `bmsWorkAssistant`) — shared tool-calling runtime filtered by caller RBAC; the work surface adds bounded page context, citations and links; sensitive tools return proposals instead of executing |
-| `bmsPos.ts` | POS back-office: locations (`bmsUpsertLocation` re-checks the actor's branch scope, carries the `10.52` `parking` object; `bmsManageableLocations` lists the branches a `location.manage` holder may edit), devices/pairing tokens, cashier PIN/account-mode management, shift open/close, lot listing/reconciliation, VAT settings, tax document issuance, e-Tax queue status, product pack/barcode setup. Counter selling is **not** here — the browser register uses `/api/pos/*` and the native register uses `bmsPosDevice.ts` |
+| `bmsPos.ts` | POS back-office: locations (`bmsUpsertLocation` re-checks the actor's branch scope, carries the `10.52` `parking` object; `bmsManageableLocations` lists the branches a `location.manage` holder may edit), devices/pairing tokens (`bmsIssuePosDeviceToken`, `pos.device.manage`, commits the new token hash and a credential-free `pos.device.token.issue` audit in one tenant transaction; `/admin/pos-devices` renders the one-time credential plus an HTTPS origin as a locally generated pairing QR — no new operation, and closing the QR does not revoke the token), cashier PIN/account-mode management, shift open/close, lot listing/reconciliation, VAT settings, tax document issuance, e-Tax queue status, product pack/barcode setup. Counter selling is **not** here — the browser register uses `/api/pos/*` and the native register uses `bmsPosDevice.ts` |
 | `bmsTaxReports.ts` | Branch-scoped tax-document list and sales-tax summary (`tax.document.view`), including buyer tax identity and reconciliation exceptions; every read intersects `bms_user_allowed_locations` |
 | `bmsExpenseDocuments.ts` | Tenant-scoped expense evidence, input-VAT/withholding summaries, idempotent creation and reason-required voiding (`expense.view` / `expense.manage`). Since `10.37` the same mutation records `SUPPLIER_CREDIT_NOTE` / `SUPPLIER_DEBIT_NOTE` with `receivedDate`, `referenceDocumentNo` and `adjustmentReason`; the VAT claim month is the month received |
 | `bmsPosDevice.ts` | Device-scoped surface for the native register (`apps/mobile`), authenticated by a device Bearer token plus a cashier PIN re-checked on every mutation — not by an admin session. Covers selling, returns/void, shift and drawer, restaurant checks/kitchen, branch stock transfers and counts, and board-game sessions/library. Tenant, branch, device and shift are derived from the authenticated device and are never accepted as input; money/stock/document mutations require `idempotencyKey`, and a key already spent on a different request body is refused as `CONFLICT` (`reason: IDEMPOTENCY_CONFLICT`), never a 500. Every operation calls the same `lib/bms/*` service the REST route calls — one adapter never calls the other |
@@ -742,7 +865,8 @@ its own. Three rules there are load-bearing and must not be relaxed:
    unrecognized `users.role` text, so `upsertUser` writes `role_id` only and never raw role text.
 
 Tenant-scoped callers cannot list or open platform-admin identities, even when such a row carries
-their `tenant_id`. Mutations re-check and lock target rows, role rows, and the tenant quota inside
+their `tenant_id`. Where a caller may see such a row, `/admin/users` shows a "Super Admin" tag before
+the shop role from `is_platform_admin` (display only; no API or permission change). Mutations re-check and lock target rows, role rows, and the tenant quota inside
 the same transaction as the write; batch deletes lock targets in stable UUID order and never choose
 another member of the deletion batch as a conversation assignee. These checks close both cross-tenant
 visibility and role/quota time-of-check-to-time-of-use gaps.
@@ -1097,8 +1221,11 @@ client-side timer — an idle tab with no polling keeps showing stale UI until i
 in practice the admin sidebar's own polling (unread count/channel health every 15s, AI usage every
 60s) triggers the redirect within about a minute of real expiry.
 
-Every admin GraphQL request and `/api/auth/me` also refreshes role, tenant, platform-admin status,
-tenant activity, and `admin_session_version` from Postgres. Role/password changes increment that
+Every admin GraphQL request, `/api/auth/me` and (since the file-security hardening)
+`authorizeAdminRoute()` also refreshes role, tenant, platform-admin status, tenant activity, and
+`admin_session_version` from Postgres. The same refresh re-reads the display-only `name`,
+`username` and `avatar`, which are never trusted from the JWT, so a profile or avatar change reaches
+the admin sidebar/header without signing in again. Role/password changes increment that
 version, and deletion or tenant deactivation makes refresh fail, so stale JWT claims cannot retain
 permissions for the rest of their nominal lifetime. The Redis check remains an additional explicit
 logout mechanism rather than the source of role truth.

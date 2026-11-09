@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import * as XLSX from "../apps/web/node_modules/xlsx/xlsx.mjs";
 import { parseBankStatementBuffer } from "../apps/web/lib/bms/bankStatementFormat.ts";
+import { bankReconciliationReadiness } from "../apps/web/lib/bms/bankReconciliationFeature.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const source = (relative: string) =>
@@ -196,4 +197,24 @@ test("statement upload bounds chunked bodies before multipart parsing", () => {
 test("matching locks both the statement entry and its import status", () => {
   const service = source("apps/web/lib/bms/bankReconciliation.ts");
   assert.match(service, /FOR UPDATE OF e,i/);
+});
+
+test("readiness reports the real server flag, never a hard-coded enabled", () => {
+  const previous = process.env.BMS_BANK_RECONCILIATION_ENABLED;
+  try {
+    delete process.env.BMS_BANK_RECONCILIATION_ENABLED;
+    assert.equal(bankReconciliationReadiness().enabled, false);
+    process.env.BMS_BANK_RECONCILIATION_ENABLED = "false";
+    assert.equal(bankReconciliationReadiness().enabled, false);
+    process.env.BMS_BANK_RECONCILIATION_ENABLED = "true";
+    assert.equal(bankReconciliationReadiness().enabled, true);
+    assert.equal(bankReconciliationReadiness().sourceMutation, false);
+  } finally {
+    if (previous === undefined) delete process.env.BMS_BANK_RECONCILIATION_ENABLED;
+    else process.env.BMS_BANK_RECONCILIATION_ENABLED = previous;
+  }
+  // The service re-exports the flag-aware function instead of keeping its own copy.
+  const service = source("apps/web/lib/bms/bankReconciliation.ts");
+  assert.doesNotMatch(service, /function bankReconciliationReadiness/);
+  assert.match(service, /export \{ bankReconciliationReadiness \} from "\.\/bankReconciliationFeature"/);
 });

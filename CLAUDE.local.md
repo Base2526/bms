@@ -11,16 +11,19 @@
 > บันทึก 2026-08-17 → 2026-10-23) อยู่ใต้ "ชุดที่ 2" ของ archive — ค้นด้วยเลข migration เช่น
 > `grep -n "9.66" docs/local-notes-archive.md`
 
-## สถานะ working tree ล่าสุด (2026-11-02)
+## สถานะ working tree ล่าสุด (2026-11-09)
 
-- branch `codex/renumber-10-106-migrations` — `10.106` ถูกใช้ซ้ำสองไฟล์หลัง merge #387/#389:
-  `10.106__bms_retail_local_lead_erasure.sql` คงเลขเดิม ส่วน Meta inbox enrichment ย้ายเป็น
-  **`10.108`** (ไฟล์ rename ยังไม่ commit) · environment ที่ apply `10.106__bms_meta_inbox_enrichment`
-  ไปแล้วไม่ต้องรันซ้ำ (ADD COLUMN IF NOT EXISTS) ส่วนที่ยังไม่เคย apply ให้รัน `10.106` (lead erasure)
-  แล้วค่อย `10.107`/`10.108` ตามลำดับ
-- **`10.107__bms_stock_transfer_lots.sql` = WIP ยังไม่จบ** (commit `2ffa9437` "incomplete" + โค้ดใน
-  `lots.ts`/`stockTransfers.ts`/`purchase.ts`/`wastage.ts`/`stockCounts.ts` ที่ยังไม่ commit) — ห้ามอ้างว่าโอน
-  สต็อกแบบมีล็อตใช้ได้แล้ว และห้าม apply เข้า production จนกว่าจะผ่าน gate + DB contract
+- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `e3de7756` (#406) ·
+  branch `codex/feature-release-manifest` = `develop` + 3 commit ของ release feature manifest
+  (`c5552c9d` · `7fbcd619` · `e989c0ab`) + อัปเดตเอกสารรอบ 2026-11-09
+- **migration ล่าสุด `10.111`** (เลขว่างถัดไป `10.112` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
+  ตรวจเลขซ้ำ 2026-11-09 แล้วว่าง
+- renumber merge แล้ว (#391): `10.106` = Retail Local lead erasure · Meta inbox enrichment = **`10.108`** ·
+  environment ที่เคย apply ไฟล์เก่า `10.106__bms_meta_inbox_enrichment` ไปแล้ว รัน `10.108` ซ้ำได้โดยไม่เสียหาย
+  (`ADD COLUMN IF NOT EXISTS`)
+- **`10.107` (โอนสต็อกพร้อมล็อต) = commit แล้ว + verify บนฐาน clone แล้ว แต่ยังเป็น WIP ของการ rollout**
+  (#391/#398 · 8 ชุด DB 81/81 บนฐาน clone 2026-11-05) — ห้ามอ้างว่าใช้ได้บน production · รายละเอียด
+  [docs/business/inventory.md § Lot transfers](docs/business/inventory.md#lot-transfers-10107)
 
 ## รันในเครื่อง (dev)
 
@@ -33,7 +36,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile with-ca
 
 # หรือรัน web อย่างเดียว (ต่อ postgres/redis ใน docker)
 cd apps/web && npm install && npm run dev            # http://localhost:3000
-cd apps/web && npm run gate                          # ✅ typecheck → pure → build ก่อน merge ทุกครั้ง
+cd apps/web && npm run gate                          # ✅ ก่อน merge ทุกครั้ง (ขั้นตอนดู § ประตูก่อน merge/deploy)
 ```
 
 - **ห้ามใช้ `pnpm`** — repo ลงด้วย npm การรัน pnpm อาจย้าย package ไป `node_modules/.ignored` แล้ว
@@ -58,19 +61,21 @@ cd apps/web && npm run gate                          # ✅ typecheck → pure �
 [scripts/README.md](scripts/README.md)
 
 ```bash
-cd apps/web && npm run gate                              # typecheck → pure ทั้งหมด → production build
+cd apps/web && npm run gate                              # release:features:check → regression:inventory → typecheck → pure → build
 node scripts/run-contract-tests.mjs pure <name-filter>   # ไฟล์เดียว/กลุ่มเดียว (ไม่ตรงอะไรเลย = exit 2)
 node scripts/run-contract-tests.mjs db <name-filter>     # ต้องมี POSTGRES_HOST/POSTGRES_DB ของเครื่องท้องถิ่น
 ```
 
-- นับ 2026-11-02: **404 ไฟล์เทส** = pure **305** (272 ใน `scripts/` + 33 ใน `scripts/ai-eval/`) +
-  DB **99** (`-db-contract` ทั้งหมดอยู่ชั้นบนของ `scripts/`) · นับใหม่ด้วย
-  `ls scripts/*.test.mts scripts/ai-eval/*.test.mts | wc -l`
+- นับ 2026-11-09: **420 ไฟล์ที่ตัวรันหยิบ** = pure **319** (285 ชั้นบนของ `scripts/` รวม
+  `retail-local-migration-checksum.test.mjs` + 33 ใน `ai-eval/` + 1 ใน `infra/`) + DB **101**
+  (`-db-contract` ทั้งหมดอยู่ชั้นบนของ `scripts/`) · นับใหม่ด้วย
+  `node scripts/run-contract-tests.mjs pure --list` (และ `db --list`) — พิมพ์รายชื่อเป็น JSON
 - ผลรันจะถูกเขียนลง `.test-output/<mode>.tap` + `.test-output/<mode>.run.txt` — **ไฟล์ `.run.txt`
   ที่ไม่มีบรรทัด `exit=` = รอบนั้นยังไม่จบ ห้ามอ่านว่าเขียว**
 - **`test:db` ปฏิเสธ host ที่ไม่ใช่เครื่องท้องถิ่น** (`BMS_TEST_ALLOW_REMOTE_DB=1` ถ้าจงใจ) — ชุดนี้เขียนจริงลงฐาน
-- **CI** (`.github/workflows/gate.yml`) รัน typecheck + pure + build เท่านั้น **ไม่มีโหมด DB** —
-  "pure เขียว" ไม่เท่ากับเส้นทางฐานข้อมูลถูกเดิน
+- **CI** (`.github/workflows/gate.yml`) รันชุดเดียวกับ `npm run gate` (release features + regression
+  inventory + typecheck + pure + build) **ไม่มีโหมด DB** — "pure เขียว" ไม่เท่ากับเส้นทางฐานข้อมูลถูกเดิน
+  และ "อยู่ใน inventory/manifest" ไม่ได้แปลว่าเคยรันผ่านหรือเปิดใช้บน production
 - **⚠️ `db/migrations` สร้างฐานใหม่ตามลำดับเลขไม่ได้** — `1.24__roles.sql` กับ
   `001_normalize_roles_phase1.sql` นิยาม `roles` คนละแบบ (เช่นเดียวกับ `scam_phones_summary` 1.20/1.27)
   ฐานสร้างเสร็จโดยไม่มี error แต่หน้า users/roles พัง · DB test ต้องใช้ฐานที่ restore จาก dump
@@ -133,11 +138,53 @@ node scripts/run-contract-tests.mjs db <name-filter>     # ต้องมี PO
 6. REST routes (ถ้าต้องการ) + Admin page + เมนู + guide ใน `lib/bms/assistantKnowledge` + คำถามใน
    corpus + คู่มือ `/admin/manual` + เอกสาร (`CLAUDE.md` area index, `status-log.md`,
    `architecture/{system,database,api}.md`, business doc)
+7. workflow ใหม่ที่ไม่อยู่ใน capability catalog → เพิ่ม ID ใน `scripts/release-feature-registry.json`
+   ใน change เดียวกัน (ห้ามใช้ ID ซ้ำ) แล้วรัน `npm run release:features:check` ·
+   ไฟล์เทส/สโมคใหม่ต้องถูกจัดกลุ่มใน `npm run regression:inventory` ไม่งั้น gate ล้ม
 
 ## ค้างอยู่ / ยังไม่ verify (สรุป — รายละเอียดอยู่ใน archive ตามเลข migration)
 
-PLACEHOLDER_PENDING
+อัปเดต 2026-11-09 · บันทึกก่อน 2026-10-23 อยู่ใน [archive](docs/local-notes-archive.md) — หลายข้อแก้ไปแล้ว
+(เช่น AI usage `7.82` แก้ 2026-09-08, `/live-dashboard` ต่อข้อมูลจริงแล้ว) **ตรวจซ้ำก่อนอ้างทุกครั้ง**
+
+- **`10.107` โอนสต็อกพร้อมล็อต = WIP ของการ rollout** — ดู § สถานะ working tree ด้านบน
+- **ของที่ยังไม่พร้อม production** = รายการ 🧪 ใน [CLAUDE.md § Current status](CLAUDE.md) (ไม่คัดลอกมาซ้ำที่นี่)
+- **ราคา Retail Local ยังเป็นข้อเสนอ** (`retailLocalPricing.approved = false`) — หน้า `/retail-local` แสดง
+  "รอเจ้าของอนุมัติ" · ห้ามอ้างเป็นราคาขายจริงก่อนเจ้าของอนุมัติ
+- **release feature manifest = baseline ที่ยังไม่ครบ** (`scope: baseline-in-progress`, registry เพิ่มเติม 8 รายการ) —
+  ยังไม่ได้ reconcile กับทุกแถวของ `docs/feature-inventory.md` ([release-feature-control.md](docs/release-feature-control.md))
+- **`schema-readiness` ตรวจ `10.99`, `10.103`, `10.104`, `10.108`, `10.109` แล้ว (เพิ่ม 2026-11-09)** —
+  Action Center/ข่าวกรองการสั่งซื้อ, สร้าง/รับ PO, ช่องทางแชททุกช่อง (`getChannel()`), คิวข้อความ Meta และ
+  การอัปโหลด/อ่านไฟล์ใช้คอลัมน์/ตารางของไฟล์เหล่านี้ทุกครั้ง · ตั้งใจ **ไม่ใส่** `10.100` (FK), `10.101` (ข้อมูล),
+  `10.102` (อ่านแบบมีค่า fallback), `10.110` (ปิดด้วย flag) และ `10.111` (ฟังก์ชันของฟอร์มใบอนุญาต fail closed)
+  — ก่อนเปิด flag กระทบยอดธนาคารต้องตรวจตารางของ `10.110` บนฐานเป้าหมายเอง
+- **route สาธารณะใต้ `/api/public`, `/api/retail-local`, `/api/geocode` ต้องมี `rateLimit()` ทุกตัว** (เทสใน
+  `inventory-tenant-scope-contract` ตั้งแต่ 2026-11-09 — เจอ desktop-update, releases, download และ geocode
+  ไม่มีเพดาน) · ไล่ตรวจ `/api/*` ทั้งหมดแล้ว 2026-11-09: `/api/pos` คุมโดย `pos-route-guard-contract`,
+  ที่เหลือมีการ์ด · `/api/auth` เป็น NextAuth (social login) + logout ไม่มี `rateLimit` ที่ route — login ด้วย
+  รหัสผ่านไปทาง GraphQL `loginAdmin` ซึ่งมี `enforceAuthRateLimit` อยู่แล้ว
+- **ชุด DB ไม่อยู่ใน CI** — งานที่แตะ SQL ต้องรัน `db <filter>` บนฐานที่ restore จาก dump เองทุกครั้ง
+- **cron ผ่าน GitHub Actions** (`.github/workflows/bms-cron.yml`) ต้องมี secret `BMS_APP_BASE_URL` +
+  `BMS_CRON_SECRET` — ไม่มีบันทึกในรีโปว่าตั้งแล้ว ดูว่ายิงจริงไหมที่ `/admin/operations-schedule`
+  (ทางเลือก: Docker scheduler ที่ [docs/architecture/scheduler.md](docs/architecture/scheduler.md))
 
 ## ก่อน production (สรุป)
 
-PLACEHOLDER_PRODUCTION
+- **บันทึก production ล่าสุดที่อยู่ในรีโป: `9.89`–`9.93` apply แล้ว 2026-09-16** (ผู้ใช้แจ้ง · ไม่ได้ verify
+  จากเครื่องนี้) · **ตั้งแต่ `9.94` ขึ้นไปไม่มีบันทึกเลย** — ถือว่าไม่รู้ ตรวจฐานเป้าหมายก่อนทุกครั้งด้วย
+  `preflight-deploy.mts` + `schema-readiness.sql` (§ ประตูก่อน merge/deploy)
+- apply ทีละไฟล์เรียงเลขด้วย `psql -1` (ไฟล์ที่ล้มกลางทางจะไม่ค้างครึ่งเดียว) · deploy `apps/web` กับ
+  `apps/ws` พร้อมกันเสมอ · migration อย่างเดียวไม่เปิดฟีเจอร์ ต้อง deploy โค้ดตาม
+- ลำดับช่วงท้าย: `10.105` → `10.106` (lead erasure) → `10.107` → `10.108` → `10.109` → `10.110` → `10.111`
+- **`10.107` ผูกกับโค้ด `develop` แล้ว** — `stockTransfers.ts` อ่าน `bms_stock_transfer_item_lots` และ
+  readiness ระบุว่าการโอนทุกหน้าล้มถ้าไม่มีตาราง → deploy `develop` = ตัดสินใจ rollout `10.107` ไปด้วย
+  ต้องได้การยืนยันก่อน
+- **`10.106`** ลบข้อมูลติดต่อของ lead แบบย้อนไม่ได้ (PDPA) · **`10.109`** จัดไฟล์เก่าใหม่ (สื่อในแชทชุมชน
+  เป็นส่วนตัว, ไฟล์ที่ดูเป็น key/config ไม่เปิดสาธารณะ) — หลัง apply เปิดดูรูปหน้าร้าน/โพสต์/avatar ว่ายังขึ้น ·
+  rollback ได้หลังถอยโค้ดเท่านั้น
+- **`10.110`** seed สิทธิ์ `bank_reconciliation.{view,import,review,close}` ให้ **Manager เท่านั้น** — role อื่น
+  ต้องให้สิทธิ์เองที่หน้า permissions (ไม่งั้น 403 เงียบ ๆ) · statement เป็นหลักฐานล้วน ไม่ลงบัญชี/ไม่แก้ยอดขาย ·
+  ฟีเจอร์ปิดไว้โดย default (`BMS_BANK_RECONCILIATION_ENABLED` + `NEXT_PUBLIC_BMS_BANK_RECONCILIATION_ENABLED`
+  = false) — เปิดเป็น pilot ตามขั้นใน [bank-reconciliation.md](docs/business/bank-reconciliation.md) · rollback = ปิดทั้งสอง flag
+- **`10.111`** สร้างฟังก์ชัน `bms_set_pharmacist_license` — ต้องมี `7.57` และ `10.47` ก่อน · รันซ้ำได้
+- 500 บน production → query `system_logs` ก่อนเดา (§ เฉพาะเครื่อง/โปรเจกต์นี้)
