@@ -1109,14 +1109,4 @@ export async function reopenReconciliationPeriod(
   }
 }
 
-export function bankReconciliationReadiness() {
-  return {
-    enabled: true,
-    fileImport: true,
-    supportedFormats: ["CSV", "XLSX", "XLS"],
-    deterministicMatching: true,
-    humanConfirmationRequired: true,
-    openBanking: "NOT_CONFIGURED",
-    sourceMutation: false,
-  };
-}
+export { bankReconciliationReadiness } from "./bankReconciliationFeature";

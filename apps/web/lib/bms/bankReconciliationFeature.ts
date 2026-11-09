@@ -10,3 +10,20 @@ export function requireBankReconciliationEnabled(): void {
     throw error;
   }
 }
+
+/**
+ * Static capability description plus the real server flag. `enabled` must come from the same
+ * check that gates every read/write, so a client never sees "enabled" while the service refuses.
+ * Kept here (no DB imports) so it can be checked without a database.
+ */
+export function bankReconciliationReadiness() {
+  return {
+    enabled: isBankReconciliationEnabled(),
+    fileImport: true,
+    supportedFormats: ["CSV", "XLSX", "XLS"],
+    deterministicMatching: true,
+    humanConfirmationRequired: true,
+    openBanking: "NOT_CONFIGURED",
+    sourceMutation: false,
+  };
+}
