@@ -56,6 +56,10 @@ jobs:
         working-directory: apps/web
         run: npm run release:features:check
 
+      - name: Account for every regression file
+        working-directory: apps/web
+        run: npm run regression:inventory
+
       - name: Typecheck
         working-directory: apps/web
         run: npm run typecheck
@@ -74,7 +78,9 @@ jobs:
 
       - name: Capture candidate release features
         working-directory: apps/web
-        run: npx tsx ../../scripts/release-features.mts --version "${{ github.sha }}" --output ../../.test-output/release
+        run: |
+          npx tsx ../../scripts/release-features.mts --version "${{ github.sha }}" --output ../../.test-output/release
+          node ../../scripts/check-regression-inventory.mjs --output ../../.test-output/release/regression-inventory.json
 
       - name: Upload candidate release features
         uses: actions/upload-artifact@v4

@@ -668,8 +668,8 @@ Use `BMS_SMOKE_URL` for a local server and `BMS_PLAYWRIGHT_MODULE` for an extern
 | `*.test.mts` อื่น ๆ (รวม `ai-eval/`) | เทส pure — อ่านซอร์ส/ตรรกะ/fake provider | ไม่ต้อง |
 | `check-*.mts`, `rotate-*.mts` | เครื่องมือตรวจ/ซ่อมของจริง (อ่านอย่างเดียว ยกเว้น rotate) | แล้วแต่ตัว |
 | `preflight-deploy.mts`, `export-graphql-schema.mts` | เครื่องมือก่อน deploy · เรนเดอร์ SDL artifact | preflight ต้องมี · export ไม่ต้อง |
-| `retail-local-*.test.{mjs,sh,ps1}`, `installer-reports-browser-smoke.mjs` | เทสของตัวติดตั้ง Retail Local — **ตัวรันกลางไม่หยิบ** (หยิบเฉพาะ `*.test.mts`) ดู § 9 | ไม่ต้อง |
-| `*-browser-smoke.mjs`, `tax-invoice-pdf-smoke.mts`, `testing/*-mutations.mjs`, `testing/scheduler-smoke.mjs`, `infra/*.test.mts` | สโมคเบราว์เซอร์/คอนเทนเนอร์และตัวขับ mutation — **ตัวรันกลางไม่หยิบ** ดู § 10 | ไม่ต้อง (บางตัวต้องมี dev server/Docker) |
+| `retail-local-*.test.{mjs,sh,ps1}`, `installer-reports-browser-smoke.mjs` | เทสของตัวติดตั้ง Retail Local — ตัวรันกลางหยิบเฉพาะ `retail-local-migration-checksum.test.mjs`; ที่เหลือดู § 9 | ไม่ต้อง |
+| `*-browser-smoke.mjs`, `tax-invoice-pdf-smoke.mts`, `testing/*-mutations.mjs`, `testing/scheduler-smoke.mjs` | สโมคเบราว์เซอร์/คอนเทนเนอร์และตัวขับ mutation — ตัวรันกลางไม่หยิบ ดู § 10 | ไม่ต้อง (บางตัวต้องมี dev server/Docker) |
 
 Tax review checks (2026-10-14): `node scripts/run-contract-tests.mjs pure tax` includes
 `tax-invoice-eligibility-contract` (executes service guards with a fake query client, no database).
@@ -716,6 +716,12 @@ identify a table or occupant"** ของ `return {...}` ใน service — ย�
 
 ## Release feature manifest
 
+`npm run regression:inventory` ตรวจทุกไฟล์เทส/สโมคใน `scripts/`, `apps/` และ `packages/`
+แล้วเทียบรายชื่อ `web-pure`/`web-db` กับตัวรันจริง ถ้าไฟล์ใหม่ไม่ถูกจัดกลุ่มจะล้มทันที
+ผล JSON สร้างด้วย `node scripts/check-regression-inventory.mjs --output .test-output/regression-inventory.json`.
+กลุ่ม `browser-manual`, `desktop-manual` และ `special-manual` ยังต้องรันในสภาพแวดล้อมเฉพาะ;
+การถูกนับใน inventory **ไม่ได้แปลว่ารันผ่าน**
+
 `npm run release:features:check` (จาก `apps/web`) ตรวจ ID, source/test paths และเพดานรายการที่ยัง
 ไม่ผูกเทสระดับฟีเจอร์ โดย `npm run gate` เรียกด่านนี้ด้วย หลัง gate ผ่านบน clean commit ให้สร้าง
 JSON/Markdown สำหรับ release และเทียบ manifest รุ่นก่อนด้วย `--previous` ตาม
@@ -728,7 +734,7 @@ JSON/Markdown สำหรับ release และเทียบ manifest ร�
 cd apps/web && npm run gate
 ```
 
-`gate` = `release:features:check` → `typecheck` → `test:pure` → `build` (นิยามอยู่ใน `apps/web/package.json`)
+`gate` = `release:features:check` → `regression:inventory` → `typecheck` → `test:pure` → `build` (นิยามอยู่ใน `apps/web/package.json`)
 **รันก่อน merge ทุกครั้ง** · CI (`.github/workflows/gate.yml`) รันชุดเดียวกันนี้ต่อ PR
 **ไม่มี job ของเทส DB ใน CI** เพราะสร้างฐานใหม่จาก `db/migrations` ไม่ได้ (ดู `CLAUDE.local.md`)
 
@@ -1216,7 +1222,7 @@ seed permission ใหม่ครบทุกร้าน) **จงใจเป
 
 ## 9. เทสของตัวติดตั้ง Retail Local ที่อยู่นอกตัวรันกลาง
 
-`run-contract-tests.mjs` หยิบเฉพาะ `*.test.mts` ไฟล์พวกนี้จึง **ไม่อยู่ใน `npm run gate`**:
+`run-contract-tests.mjs` หยิบ `*.test.mts` ใน `scripts/`, `ai-eval/`, `infra/` และ `retail-local-migration-checksum.test.mjs` ไฟล์อื่นด้านล่างจึง **ไม่อยู่ใน `npm run gate`**:
 
 | ไฟล์ | รันที่ไหน |
 | --- | --- |
@@ -1225,7 +1231,7 @@ seed permission ใหม่ครบทุกร้าน) **จงใจเป
 | `retail-local-update-transaction.test.sh` | workflow เดียวกัน (Ubuntu) |
 | `retail-local-uninstall-container.test.sh` | workflow เดียวกัน — ใน container `ubuntu:24.04` |
 | `retail-local-license-container.test.mjs` | workflow เดียวกัน (job ของ licensing) — `node --test` · **ต้องมี Docker** (probe mailbox ใน container แยก ไม่แตะ stack ของร้าน) |
-| `retail-local-setup-diagnostics.test.ps1` · `retail-local-migration-checksum.test.mjs` · `installer-reports-browser-smoke.mjs` | **รันมือเท่านั้น** — ไม่มี workflow ไหนเรียก |
+| `retail-local-setup-diagnostics.test.ps1` · `installer-reports-browser-smoke.mjs` | **รันมือเท่านั้น** — ไม่มี workflow ไหนเรียก |
 
 workflow เดียวกันรัน `go test` ของ `apps/retail-local-agent` และสร้างตัวติดตั้งแบบ unsigned เพื่อตรวจ
 (smoke) — **ผลของ CI ไม่ใช่หลักฐานการติดตั้งจริงบนเครื่องสะอาด** ดู

@@ -24,7 +24,7 @@ not evidence that each business operation works.
 ## Before release
 
 1. Merge changes, then select the **exact clean commit** to release. `npm run gate` checks the
-   registry, Web types, all database-free contracts, and the Web production build. Mobile,
+   registry, regression-file inventory, Web types, all database-free contracts, and the Web production build. Mobile,
    desktop, DB, browser, and real-provider/hardware checks remain separate. Run the suites for
    the changed domains on isolated test infrastructure. DB suites write data and must never run
    on production.

@@ -75,7 +75,7 @@ test('the DB suite is refused on a host that is not this machine, filtered or no
   assert.match(noEnv.stderr, /POSTGRES_HOST \+ POSTGRES_DB/);
 });
 
-test('every test file lands in exactly one mode, and ai-eval is inside one of them', () => {
+test('every contract test lands in exactly one mode, including ai-eval and infra', () => {
   // ชื่อไฟล์คือสัญญา: -db-contract = ต้องมี Postgres · ที่เหลือรันที่ไหนก็ได้
   // ไฟล์ที่ตกทั้งสองโหมดคือไฟล์ที่ไม่มีใครรัน ซึ่งเคยเกิดจริงกับทั้งโฟลเดอร์ ai-eval
   //
@@ -96,12 +96,17 @@ test('every test file lands in exactly one mode, and ai-eval is inside one of th
   assert.ok(pure.count > 50 && db.count > 20, `${pure.count} + ${db.count}`);
   // ชุด ai-eval ต้องอยู่ในโหมด pure จริง ไม่ใช่แค่มีไฟล์อยู่บนดิสก์
   assert.match(pure.examples, /ai-eval\//);
+  const listed = run(['pure', '--list']);
+  assert.equal(listed.status, 0, listed.stderr);
+  const listedFiles = JSON.parse(listed.stdout) as string[];
+  assert.ok(listedFiles.includes('scripts/infra/multi-instance-contract.test.mts'));
+  assert.ok(listedFiles.includes('scripts/retail-local-migration-checksum.test.mjs'));
   // และจำนวนที่ตัวรันเห็นต้องตรงกับไฟล์ที่มีอยู่จริง
   const collect = (dir: string, prefix = ''): string[] =>
     readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
       entry.isDirectory()
-        ? entry.name === 'ai-eval' ? collect(path.join(dir, entry.name), `${entry.name}/`) : []
-        : entry.name.endsWith('.test.mts') ? [`${prefix}${entry.name}`] : []
+        ? ['ai-eval', 'infra'].includes(entry.name) ? collect(path.join(dir, entry.name), `${entry.name}/`) : []
+        : entry.name.endsWith('.test.mts') || (prefix === '' && entry.name === 'retail-local-migration-checksum.test.mjs') ? [`${prefix}${entry.name}`] : []
     );
   assert.equal(all.count, collect(SCRIPTS).length);
 });

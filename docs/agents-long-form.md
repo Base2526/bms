@@ -572,8 +572,10 @@ cd apps/web && npm run gate
 ```
 
 `npm run test:pure` runs only the suites (fast, no database); `npm run test:db` runs the
-`-db-contract` suites and refuses a non-local host. The runner walks `scripts/` **and**
-`scripts/ai-eval/`, so a contract test placed in either directory runs in CI — a suite that only
+`-db-contract` suites and refuses a non-local host. The runner walks `scripts/`,
+`scripts/ai-eval/` and `scripts/infra/`, plus the Retail Local migration-checksum `.test.mjs`.
+`npm run regression:inventory` accounts for the other test/smoke files and fails on an unknown
+path or a mismatch with the contract runner. A suite that only
 runs by hand does not run. `.github/workflows/gate.yml` runs typecheck + pure + build on every
 PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own `npm run build`.)
 
@@ -667,13 +669,13 @@ PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own
   and build that platform's packages on its own runner — NSIS on Windows, AppImage/DEB on Linux,
   the two DMGs on macOS — then upload a 14-day artifact. None signs, notarizes or publishes.
 
-  The contract runner only picks up `*.test.mts`. `.github/workflows/retail-local-managed-runtime.yml`
+  The contract runner picks up `*.test.mts` in its declared directories and
+  `retail-local-migration-checksum.test.mjs`. `.github/workflows/retail-local-managed-runtime.yml`
   runs the Go agent tests (`apps/retail-local-agent`) and the Retail Local shell/Node suites on
   Ubuntu, Windows and macOS runners: `retail-local-bootstrap-behavior.test.mjs`,
   `retail-local-unix-diagnostics.test.mjs`, `retail-local-update-transaction.test.sh` and
   `retail-local-uninstall-container.test.sh`. `retail-local-setup-diagnostics.test.ps1`,
-  `retail-local-migration-checksum.test.mjs` and `installer-reports-browser-smoke.mjs` run only by
-  hand.
+  and `installer-reports-browser-smoke.mjs` run only by hand.
 
   The **live-model** suite (`scripts/ai-eval/run.mjs`) writes real data — development/sandbox tenants
   only. See [scripts/ai-eval/README.md](../scripts/ai-eval/README.md).

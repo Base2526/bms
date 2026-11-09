@@ -340,7 +340,8 @@ cd apps/web && npm run gate   # typecheck → every DB-free contract suite → p
 ```
 
 - `npm run test:pure` (no DB) · `npm run test:db` (`-db-contract`, local host only, writes data —
-  never production). The runner walks `scripts/` and `scripts/ai-eval/` (`*.test.mts` only);
+  never production). The runner walks `scripts/`, `scripts/ai-eval/`, and `scripts/infra/`
+  (`*.test.mts`, plus the Retail Local migration-checksum `.test.mjs`);
   `gate.yml` runs typecheck + pure + build, never DB mode, so "pure green" ≠ DB path exercised.
 - One file from `apps/web`: `node ../../scripts/run-contract-tests.mjs <pure|db> <name-filter>`
   (a filter matching nothing exits 2). From the repository root, omit the leading `../../`.
