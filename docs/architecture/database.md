@@ -320,6 +320,13 @@ execute it; only `bms_app` is granted EXECUTE, with no new users-table grants.
 Apply `10.47` before new approvals; a missing helper fails closed. Existing customer reads and
 checkout do not depend on it. SQL execution/idempotency/locking/RLS have **not been DB-verified**.
 
+`10.111` adds `bms_set_pharmacist_license(tenant,user,flag,number)`, a narrow SECURITY DEFINER
+helper for the Administrator licence form. It checks the transaction tenant and `app.editor_id`
+against a same-tenant Administrator and locks that actor row through commit, then updates only
+the target's licence columns. The service
+commits this call and its audit in one tenant transaction. No general licence-column UPDATE grant
+is added to `bms_app`; a missing helper fails closed.
+
 ### Optional emergency directory (`10.46`)
 
 `bms_emergency_facilities` stores tenant, optional shop branch, public name/phone/address/HTTPS map,
@@ -370,7 +377,7 @@ debit note increases it (`lib/bms/expenseAdjustments.ts`).
 | Store profile / AI policy | `bms_store_profile`, `bms_store_capabilities` | `6.9`, `7.17`, `7.30`, `9.39` (receipt language), `9.40`, `9.43`, `10.90` (customer-display welcome background) |
 | Branch customer facts | `bms_locations.parking_info`, `bms_locations.publish_restaurant_table_details` | `10.51`, `10.52` |
 | Customer AI answer evidence | `bms_ai_turn_evidence`, `bms_ai_tool_evidence` | `10.53` |
-| Pharmacy guidance & emergency directory | `bms_pharmacy_guidance_templates`, `bms_emergency_facilities` (+ `bms_lock_guidance_pharmacist_license()`) | `10.45`–`10.47` |
+| Pharmacy guidance, licence and emergency directory | `bms_pharmacy_guidance_templates`, `bms_emergency_facilities` (+ `bms_lock_guidance_pharmacist_license()`, `bms_set_pharmacist_license()`) | `10.45`–`10.47`, `10.111` |
 | Product promotions | `bms_product_promotions` (per-branch scope; `BUY_A_GET_B` gift columns) | `8.7`, `9.61`, `10.41` |
 | Board game cafe | `bms_board_game_*` (floor, sessions, billing groups, library, passes, offers, waitlist/reservations, public locations) | `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`–`10.7`; `10.40` (time buy/get), `10.42` (title images), `10.48`–`10.49` (chat reservations/actions), `10.50` (public table details) |
 | Mail log | `bms_mail_log` (platform-wide, nullable `tenant_id`) | `7.40`, `10.59` (`smtp` provider) |

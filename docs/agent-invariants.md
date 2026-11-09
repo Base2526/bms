@@ -230,6 +230,10 @@ Guidance approval (`10.47`) must acquire the licence helper's user-row SHARE loc
 the editor's licence hint as approval authority or grant general user-update access to `bms_app`.
 Product Policy draft/submit/review writes likewise require tenant RLS and an audit in the same
 transaction. Review uses the same `10.47` licence-row lock before changing the policy.
+Clinical protocol draft/submit/review/enable writes have the same transaction and audit boundary;
+review holds the licence lock through commit. Licence flag writes use the narrow `10.111` helper,
+which rechecks the transaction tenant and Administrator actor without granting `bms_app` broad
+UPDATE access to `users`. The API requires an explicit confirmation argument.
 Preview uses recorded shop facts; malformed placeholders omit lines, never expose template tokens.
 Built-in drafts are not instructions to start/stop/compensate medicine and never overwrite a shop's
 approved text. Approval remains per tenant, not a platform-wide publication decision.

@@ -129,7 +129,7 @@ This is a deliberate deviation, decided with the user: platform ops controls mod
 quality for this feature end-to-end, not each shop's own key. It still consumes the
 tenant's monthly AI quota like any other shared-key call.
 Shared AI uses monthly plan points (`10.56`, `10.73`), resetting at 00:00 Asia/Bangkok on the first:
-Free 100, Pro 1,000, Business 5,000 after the scheduled transition. Business retains its old
+Free 100, Pro 1,000, Growth 2,500, Business 5,000 after the scheduled transition. Business retains its old
 allowance until the first Bangkok month boundary after `10.73`; the shared plan service resolves
 that date for accounting. There is no per-shop USD cap. Each retry still records
 its attempt before I/O without charging a second point; accounting failure uses the existing
@@ -165,6 +165,9 @@ pharmacist handoff. This never relaxes clinical validation or grants a sale appr
 - `10.82__bms_master_drugs.sql` — optional global drug-policy suggestions plus tenant snapshots.
   The only seed is an inactive shape example; no real drug content ships without a named licensed
   pharmacist owning and reviewing the dataset.
+- `10.111__bms_pharmacist_license_admin_write.sql` — narrow tenant-bound Administrator helper
+  for recording/revoking a pharmacist licence fact. Apply before using the new licence form;
+  it grants `bms_app` EXECUTE, never general UPDATE access to licence columns.
 
 ## Permissions
 
@@ -851,6 +854,14 @@ question type and language, with a text **its own licensed pharmacist approved**
   a draft can move to `PENDING_REVIEW`. Only a licensed pharmacist can move it to
   `APPROVED`, and approval does not enable it automatically. Runtime additionally
   requires `APPROVED + clinically_approved + enabled + PHARMACY_PROTOCOLS_ENABLED`.
+  Draft, submit, review and enable writes now commit their audit in one tenant transaction.
+  Review uses the `10.47` licence-row lock, so a concurrent revocation cannot pass between
+  the check and commit. Concurrent enables of two versions of one protocol are serialized.
+- **Pharmacist licences** are edited at `/admin/pharmacy-protocols/licenses`: change the
+  switch/number, press Save, then confirm the exact person and new state. The backend also
+  requires the confirmation argument and `10.111` checks the tenant and Administrator actor
+  inside the database before the change and audit commit together. The flag and number are
+  shop-recorded evidence; the software does not check an external licence registry.
 - Protocol discovery is data-driven through `display_label` and `trigger_terms`.
   LINE/customer intake and Pharmacy Intake Lab load the same active definitions;
   adding a protocol does not require another hardcoded starter or trigger regex.
@@ -911,7 +922,8 @@ question type and language, with a text **its own licensed pharmacist approved**
 
 ## Before relying on this in production
 
-1. Apply migrations `7.57`–`7.73` plus `7.83` and confirm they're idempotent (re-run once).
+1. Apply migrations `7.57`–`7.73` plus `7.83`, `10.47`, and `10.111`; confirm they're
+   idempotent (re-run once) on a throwaway database before rollout.
 2. Set `PHARMACY_INTAKE_ENABLED=true` and `PHARMACY_AI_ENABLED=true` for a dev/sandbox
    tenant only.
 3. As an Administrator, flip at least one real user's pharmacist license switch at
