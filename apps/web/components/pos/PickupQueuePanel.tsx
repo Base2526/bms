@@ -64,30 +64,34 @@ export function PickupQueueSettings({ enabled, branchEnabled = false, managedDis
   onChange: (next: boolean) => void;
 }) {
   return (
-    <div>
-      <div style={{ fontWeight: 500, marginBottom: 8 }}>เลขคิวรับของ</div>
-      <div style={{ fontSize: 13, color: "var(--posx-ink2, #555)", marginBottom: 8 }}>
-        {branchEnabled ? "สาขานี้เปิดออกเลขทุกเครื่องจากหลังบ้านแล้ว จึงปิดจากเครื่องนี้ไม่ได้" : "ตั้งค่าเฉพาะเครื่องนี้"}
-        {" — "}บิลขายหน้าร้านจะได้เลขคิว พิมพ์บนใบเสร็จ และขึ้นจอเรียกคิว
-        (บิลโต๊ะยังใช้เลขโต๊ะเหมือนเดิม)
+    <div className="pos-settings-row pos-settings-row--queue" data-pickup-queue-settings>
+      <div className="pos-settings-row-copy">
+        <div className="pos-settings-row-title">คิวรับสินค้า</div>
+        <div className="pos-settings-row-description">
+          แสดงเลขคิวบนใบเสร็จและจอเรียกคิว
+        </div>
+        <div className="pos-settings-row-note">
+          {branchEnabled
+            ? "สาขานี้เปิดออกเลขทุกเครื่องจากหลังบ้านแล้ว จึงปิดจากเครื่องนี้ไม่ได้"
+            : "ตั้งค่าเฉพาะเครื่องนี้ · บิลโต๊ะยังใช้เลขโต๊ะเหมือนเดิม"}
+        </div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <div className="pos-settings-row-actions">
         {branchEnabled
-          ? <span role="status" style={{ padding: "9px 12px", borderRadius: 8,
-            background: "var(--posx-ok-bg, #f6ffed)", color: "var(--posx-ok-text, #237804)", fontWeight: 600 }}>
-            ออกเลขคิวหลังขาย: เปิดทั้งสาขา
+          ? <span role="status" className="pos-settings-status" data-tone="ready">
+            เปิดทั้งสาขา
           </span>
-          : <button type="button" className="pos-btn" aria-pressed={enabled} onClick={() => onChange(!enabled)}
+          : <button type="button" className="pos-settings-switch" role="switch" aria-checked={enabled}
+            aria-pressed={enabled} onClick={() => onChange(!enabled)}
             title="เปิดหรือปิดการออกเลขคิวบนใบเสร็จของเครื่องขายนี้ ไม่ได้ใช้เปิดหน้าจอเรียกคิว">
-            {enabled
-              ? "ออกเลขคิวหลังขายของเครื่องนี้: เปิด · กดเพื่อปิด"
-              : "ออกเลขคิวหลังขายของเครื่องนี้: ปิด · กดเพื่อเปิด"}
+            <span className="pos-settings-switch-track" aria-hidden="true"><i /></span>
+            <span className="pos-settings-status" data-tone={enabled ? "ready" : "muted"}>{enabled ? "เปิดอยู่" : "ปิดอยู่"}</span>
           </button>}
         {!managedDisplay && <button type="button" className="pos-btn" onClick={openPickupQueueBoard}
           title="เปิดหน้าต่างจอเรียกคิว แล้วลากไปจอที่หันไปทางลูกค้า">
           เปิดจอคิวแบบหน้าต่าง
         </button>}
-        {managedDisplay && <span style={{ fontSize: 12, color: "var(--posx-muted, #667085)" }}>
+        {managedDisplay && <span className="pos-settings-row-action-note">
           เปิดจอจริงหรือหน้าต่างทดสอบได้จากหัวข้อ “จอภายนอก” ด้านบน
         </span>}
       </div>

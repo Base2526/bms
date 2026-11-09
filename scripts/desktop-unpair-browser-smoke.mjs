@@ -17,10 +17,29 @@ async function checkSurface(surface, width, missingToken = false) {
   await context.addCookies([{ name: "lang", value: "th", url: baseUrl }, { name: "theme", value: "light", url: baseUrl }]);
   await context.addInitScript(({ failure, missingToken }) => {
     window.unpairAttempts = 0;
+    const displays = [
+      { id: "FAKE-cashier-display", label: "จอแคชเชียร์", primary: true, cashier: true, width: 1440, height: 900, scaleFactor: 1, rotation: 0 },
+      { id: "FAKE-external-display", label: "จอที่ 2", primary: false, cashier: false, width: 1920, height: 1080, scaleFactor: 1, rotation: 0 },
+    ];
+    const customerDisplay = { mode: "off", targetDisplayId: null, activeDisplayId: null, open: false, preview: false,
+      cashierDisplayId: displays[0].id, displays, targetAvailable: true, positioningLimited: false, conflict: false };
+    const queueDisplay = { ...customerDisplay };
     window.bmsDesktop = {
       isDesktop: true,
       getDeviceToken: async () => missingToken ? null : "FAKE-token",
       getStorageNamespace: async () => "FAKE-unpair-smoke",
+      getCustomerDisplayState: async () => customerDisplay,
+      getQueueDisplayState: async () => queueDisplay,
+      setCustomerDisplayConfig: async () => ({ ok: true, state: customerDisplay }),
+      setQueueDisplayConfig: async () => ({ ok: true, state: queueDisplay }),
+      setExternalDisplayRole: async () => ({ ok: true, state: { customer: customerDisplay, queue: queueDisplay } }),
+      identifyDisplays: async () => ({ ok: true }),
+      openCustomerDisplayPreview: async () => ({ ok: true, state: customerDisplay }),
+      closeCustomerDisplayPreview: async () => ({ ok: true, state: customerDisplay }),
+      openQueueDisplayPreview: async () => ({ ok: true, state: queueDisplay }),
+      closeQueueDisplayPreview: async () => ({ ok: true, state: queueDisplay }),
+      onCustomerDisplayStateChanged: () => () => {},
+      onQueueDisplayStateChanged: () => () => {},
       unpair: async () => {
         window.unpairAttempts++;
         return { ok: false, error: failure };
@@ -68,6 +87,44 @@ async function checkSurface(surface, width, missingToken = false) {
       ? surface === "compact" ? "เปิดหน้าจับคู่เครื่อง" : "ตั้งค่าแอปใหม่"
       : "เลิกจับคู่เครื่องนี้", exact: true });
     await unpair.waitFor();
+    if (!missingToken) {
+      const managedDisplays = page.locator("[data-managed-display-settings]");
+      await managedDisplays.waitFor();
+      await page.getByRole("heading", { name: "จอภายนอก", exact: true }).scrollIntoViewIfNeeded();
+      const layout = await managedDisplays.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const cardRects = Array.from(element.querySelectorAll("[data-display-role]"), (card) => {
+          const cardRect = card.getBoundingClientRect();
+          return { top: cardRect.top, right: cardRect.right, bottom: cardRect.bottom, left: cardRect.left };
+        });
+        const controlGaps = Array.from(element.querySelectorAll("[data-display-role]"), (card) => {
+          const select = card.querySelector(".pos-display-select")?.getBoundingClientRect();
+          const button = card.querySelector(".pos-display-preview-button")?.getBoundingClientRect();
+          return select && button ? button.top - select.bottom : -1;
+        });
+        return { cards: element.querySelectorAll("[data-display-role]").length,
+          cardRects, controlGaps,
+          left: rect.left, right: rect.right, viewport: innerWidth,
+          scrollWidth: element.scrollWidth, clientWidth: element.clientWidth };
+      });
+      assert.equal(layout.cards, 2, `${surface}: customer and queue display cards stay visible`);
+      assert.ok(layout.controlGaps.every((gap) => gap >= 12),
+        `${surface}: display selector and test action keep breathing room`);
+      if (width >= 768) {
+        assert.ok(Math.abs(layout.cardRects[0].top - layout.cardRects[1].top) <= 1,
+          `${surface}: display cards align side by side on desktop`);
+        assert.ok(layout.cardRects[0].right < layout.cardRects[1].left,
+          `${surface}: desktop display cards keep a visible gutter`);
+      } else {
+        assert.ok(Math.abs(layout.cardRects[0].left - layout.cardRects[1].left) <= 1,
+          `${surface}: display cards align in one mobile column`);
+        assert.ok(layout.cardRects[0].bottom < layout.cardRects[1].top,
+          `${surface}: mobile display cards keep a visible gap`);
+      }
+      assert.ok(layout.left >= -1 && layout.right <= layout.viewport + 1, `${surface}: display settings fit the viewport`);
+      assert.ok(layout.scrollWidth <= layout.clientWidth + 1, `${surface}: display settings have no horizontal overflow`);
+      await page.screenshot({ path: `${output}/${surface}-settings-${width}.png`, fullPage: true });
+    }
     const storage = () => page.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([key]) => /bms\.pos\.local|operator/i.test(key))));
     const before = await storage();
     await unpair.click();

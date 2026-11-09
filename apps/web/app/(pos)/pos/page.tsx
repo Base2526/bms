@@ -6956,6 +6956,117 @@ export default function PosPage() {
           color: var(--posx-ink2, #595959);
           border: 1px solid var(--posx-line, #d9d9d9);
         }
+        .pos-device-settings {
+          width: 100%; max-width: 1280px; margin: 0 auto; padding: 2px 0 24px;
+          display: flex; flex-direction: column; gap: 28px;
+        }
+        .pos-settings-section { display: flex; flex-direction: column; gap: 12px; }
+        .pos-settings-section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+        .pos-settings-section-head h2 { margin: 0; color: var(--posx-ink, #1d2939); font-size: 20px; line-height: 1.25; }
+        .pos-settings-section-head p { margin: 4px 0 0; color: var(--posx-muted, #667085); font-size: 13px; }
+        .pos-settings-card,
+        .pos-display-overview,
+        .pos-display-role-card {
+          border: 1px solid var(--posx-line, #d9e2ef); border-radius: 12px;
+          background: var(--posx-surface, #fff); box-shadow: 0 1px 2px rgba(16, 24, 40, .035);
+        }
+        .pos-settings-card { padding: 16px; }
+        .pos-display-overview {
+          min-height: 70px; padding: 12px 16px; display: grid; align-items: center;
+          grid-template-columns: minmax(150px, 1.2fr) repeat(3, minmax(130px, 1fr)) auto; gap: 0;
+        }
+        .pos-display-overview-title,
+        .pos-display-metric { min-width: 0; display: flex; align-items: center; gap: 9px; padding: 4px 18px; }
+        .pos-display-overview-title { padding-left: 0; color: var(--posx-ink, #1d2939); font-size: 15px; }
+        .pos-display-overview-title svg { color: var(--pos-accent, #1677ff); font-size: 20px; }
+        .pos-display-metric { justify-content: space-between; border-left: 1px solid var(--posx-line, #e4e7ec); }
+        .pos-display-metric span { color: var(--posx-ink2, #475467); font-size: 13px; }
+        .pos-display-metric strong { color: var(--posx-ink, #1d2939); white-space: nowrap; font-size: 14px; }
+        .pos-display-identify { min-height: 42px; margin-left: 12px; }
+        .pos-settings-inline-warning {
+          padding: 9px 12px; border: 1px solid var(--posx-warn-line, #ffe58f); border-radius: 9px;
+          color: var(--posx-warn-text, #ad6800); background: var(--posx-warn-bg, #fffbe6); font-size: 12px;
+        }
+        .pos-display-role-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 16px; }
+        .pos-display-role-card { min-width: 0; padding: 22px; display: flex; flex-direction: column; }
+        .pos-display-role-head { min-height: 64px; display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+        .pos-display-role-head h3 { margin: 0; color: var(--posx-ink, #1d2939); font-size: 16px; }
+        .pos-display-role-head p { margin: 4px 0 0; color: var(--posx-muted, #667085); font-size: 12px; }
+        .pos-settings-status {
+          display: inline-flex; align-items: center; justify-content: center; min-height: 28px; padding: 4px 10px;
+          border-radius: 999px; font-size: 12px; font-weight: 650; white-space: nowrap;
+          color: var(--posx-muted, #667085); background: var(--posx-soft, #f2f4f7);
+        }
+        .pos-settings-status[data-tone="ready"] { color: var(--posx-ok-text, #237804); background: var(--posx-ok-bg, #f6ffed); }
+        .pos-settings-status[data-tone="warning"] { color: var(--posx-warn-text, #ad6800); background: var(--posx-warn-bg, #fffbe6); }
+        .pos-display-role-controls {
+          display: grid; grid-template-columns: minmax(0, 1fr);
+          align-items: end; row-gap: 16px; margin-top: 24px;
+        }
+        .pos-display-toggle-field,
+        .pos-display-select-field { min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+        .pos-settings-field-label { color: var(--posx-ink2, #475467); font-size: 12px; font-weight: 650; }
+        .pos-display-toggle-control { min-height: 44px; display: flex; align-items: center; gap: 9px; }
+        .pos-display-toggle-copy { color: var(--posx-ink2, #475467); font-size: 13px; }
+        .pos-display-select { width: 100%; }
+        .pos-display-select .ant-select-selector { min-height: 44px !important; align-items: center; }
+        .pos-display-preview-button { width: 100%; min-height: 44px; margin-top: 4px; }
+        .pos-display-role-foot {
+          min-height: 46px; margin-top: 14px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+          color: var(--posx-muted, #667085); font-size: 12px;
+        }
+        .pos-display-advanced { margin-top: auto; border: 1px solid var(--posx-line, #e4e7ec); border-radius: 9px; overflow: hidden; }
+        .pos-display-advanced > summary {
+          min-height: 52px; padding: 10px 14px; list-style: none; cursor: pointer;
+          display: flex; align-items: center; gap: 18px; background: var(--posx-soft, #f8fafc);
+        }
+        .pos-display-advanced > summary::-webkit-details-marker { display: none; }
+        .pos-display-advanced > summary::after { content: "⌄"; margin-left: auto; color: var(--posx-muted, #667085); font-size: 18px; }
+        .pos-display-advanced[open] > summary::after { transform: rotate(180deg); }
+        .pos-display-advanced > summary span { color: var(--posx-ink, #1d2939); font-size: 13px; font-weight: 700; }
+        .pos-display-advanced > summary small { color: var(--posx-muted, #667085); font-size: 12px; }
+        .pos-display-advanced-body { padding: 4px 14px 14px; border-top: 1px solid var(--posx-line, #e4e7ec); }
+        .pos-queue-preference-settings { padding: 10px 0 0; }
+        .pos-settings-info-note {
+          min-height: 42px; padding: 9px 12px; border: 1px solid var(--posx-info-line, #b5d4f4); border-radius: 9px;
+          display: flex; align-items: center; gap: 10px; color: var(--posx-info-text, #163b66);
+          background: var(--posx-info-bg, #e6f4ff); font-size: 12px;
+        }
+        .pos-settings-info-note svg { flex: none; color: var(--pos-accent, #1677ff); font-size: 17px; }
+        .pos-display-diagnostics { color: var(--posx-muted, #667085); font-size: 12px; }
+        .pos-display-diagnostics > summary { cursor: pointer; width: fit-content; }
+        .pos-display-chip-list { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+        .pos-display-chip-list > span { padding: 5px 8px; border: 1px solid var(--posx-line, #d9e2ef); border-radius: 8px; background: var(--posx-surface, #fff); }
+        .pos-settings-row-card { padding: 0 16px; }
+        .pos-settings-row {
+          min-height: 88px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px; align-items: center; padding: 14px 0;
+        }
+        .pos-settings-row + .pos-settings-row { border-top: 1px solid var(--posx-line, #e4e7ec); }
+        .pos-settings-row-copy { min-width: 0; }
+        .pos-settings-row-title { color: var(--posx-ink, #1d2939); font-size: 14px; font-weight: 700; }
+        .pos-settings-row-description { margin-top: 3px; color: var(--posx-ink2, #475467); font-size: 13px; }
+        .pos-settings-row-note,
+        .pos-settings-row-action-note { margin-top: 4px; color: var(--posx-muted, #667085); font-size: 11px; }
+        .pos-settings-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+        .pos-settings-row-action-note { max-width: 240px; margin-top: 0; text-align: right; }
+        .pos-settings-switch { padding: 0; border: 0; background: transparent; box-shadow: none; display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
+        .pos-settings-switch-track { position: relative; width: 44px; height: 24px; border-radius: 999px; background: #bfbfbf; transition: background .18s ease; }
+        .pos-settings-switch-track i { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--posx-surface, var(--app-surface)); box-shadow: 0 1px 3px rgba(0,0,0,.2); transition: transform .18s ease; }
+        .pos-settings-switch[aria-checked="true"] .pos-settings-switch-track { background: var(--pos-accent, #1677ff); }
+        .pos-settings-switch[aria-checked="true"] .pos-settings-switch-track i { transform: translateX(20px); }
+        .pos-settings-printer-card { display: flex; flex-direction: column; gap: 16px; }
+        .pos-settings-printer-card > section { margin-bottom: 0 !important; }
+        .pos-settings-tools { padding-top: 14px; border-top: 1px solid var(--posx-line, #e4e7ec); }
+        .pos-settings-tool-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+        .pos-settings-device-card { padding-bottom: 12px; }
+        .pos-settings-device-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; }
+        .pos-settings-device-grid > div { min-width: 0; padding: 4px 20px 10px 0; }
+        .pos-settings-device-grid > div + div { padding-left: 20px; border-left: 1px solid var(--posx-line, #e4e7ec); }
+        .pos-settings-device-value { margin-top: 7px; color: var(--posx-ink2, #475467); font-size: 13px; line-height: 1.7; }
+        .pos-settings-device-foot { margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--posx-line, #e4e7ec); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .pos-settings-device-foot .pos-settings-info-note { flex: 1; border: 0; background: transparent; padding-left: 0; }
+        .pos-settings-unpair { padding: 8px 10px; border: 0; background: transparent; box-shadow: none; color: var(--posx-danger-text, #cf1322); font-size: 13px; cursor: pointer; }
+        .pos-settings-unpair:hover { background: var(--posx-danger-bg, #fff1f0); }
         @media (max-width: 767px) {
           /* คงโครง app-shell เหมือนจอใหญ่ (height/overflow ตั้งไว้แล้วด้านบน) —
              สลับแค่ทิศ: แถบงานลงไปอยู่ล่างให้นิ้วโป้งถึง */
@@ -6990,6 +7101,28 @@ export default function PosPage() {
           .pos-rail-count { margin-top: 2px; }
           .pos-help-popover { position: fixed; top: 88px; left: 16px !important; right: 16px !important;
             width: auto; max-height: calc(100dvh - 176px); overflow: auto; }
+          .pos-device-settings { gap: 22px; padding-bottom: 18px; }
+          .pos-display-overview { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 12px; }
+          .pos-display-overview-title { grid-column: 1 / -1; padding: 0; }
+          .pos-display-metric { padding: 8px; border: 1px solid var(--posx-line, #e4e7ec); border-radius: 8px; flex-direction: column; align-items: flex-start; gap: 2px; }
+          .pos-display-identify { grid-column: 1 / -1; width: 100%; margin-left: 0; }
+          .pos-display-role-list { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+          .pos-display-role-card { padding: 18px; }
+          .pos-display-role-head { min-height: 0; }
+          .pos-display-role-controls { grid-template-columns: minmax(0, 1fr); row-gap: 12px; margin-top: 18px; }
+          .pos-display-preview-button { width: 100%; }
+          .pos-display-role-foot { align-items: flex-start; flex-direction: column; }
+          .pos-display-advanced > summary { position: relative; align-items: flex-start; flex-direction: column; gap: 3px; padding-right: 42px; }
+          .pos-display-advanced > summary::after { position: absolute; right: 16px; }
+          .pos-settings-row { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+          .pos-settings-row-actions { justify-content: flex-start; }
+          .pos-settings-row-action-note { max-width: none; width: 100%; text-align: left; }
+          .pos-settings-tool-actions > button { flex: 1 1 180px; }
+          .pos-settings-device-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+          .pos-settings-device-grid > div { padding: 0; }
+          .pos-settings-device-grid > div + div { padding: 14px 0 0; border-left: 0; border-top: 1px solid var(--posx-line, #e4e7ec); }
+          .pos-settings-device-foot { align-items: stretch; flex-direction: column; }
+          .pos-settings-unpair { min-height: 44px; width: 100%; }
         }
       `}</style>
 
@@ -8719,60 +8852,64 @@ export default function PosPage() {
       )}
 
       {tab === "settings" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div className="pos-device-settings">
           {hasDesktopManagedDisplayBridge()
             ? <ManagedDisplaySettings />
-            : hasDesktopCustomerDisplayBridge() && <>
-              <CustomerDisplaySettings />
-              {hasDesktopPosBridge() && <div role="status" style={{
-                padding: "10px 12px",
-                border: "1px solid var(--posx-warn-line, #ffe58f)",
-                borderRadius: 8,
-                background: "var(--posx-warn-bg, #fffbe6)",
-                color: "var(--posx-warn-text, #ad6800)",
-                fontSize: 12,
-              }}>
-                จอเรียกคิวแบบจอที่สองต้องใช้ BMS POS Desktop รุ่นล่าสุด กรุณาอัปเดตแอปแล้วเปิดใหม่
-              </div>}
-            </>}
-          {!hasDesktopManagedDisplayBridge() && <QueueBoardPreferenceSettings />}
-          {hasDesktopKitchenPrinterBridge() && session?.businessArchetype === "restaurant" && <KitchenPrinterSettings />}
-          <PickupQueueSettings
-            enabled={pickupQueueEnabled}
-            branchEnabled={session?.location?.pickupQueue?.enabled === true}
-            managedDisplay={hasDesktopManagedDisplayBridge()}
-            onChange={(next) => {
-              setPickupQueueEnabled(next);
-              if (deviceStorageNamespace) writePickupQueueEnabled(deviceStorageNamespace, next);
-            }}
-          />
-          {(session?.businessArchetype === "restaurant" || pickupQueueActive) && (
-            <div>
-              <div style={{ fontWeight: 500, marginBottom: 8 }}>เสียงเตือนออร์เดอร์เข้า</div>
-              <div style={{ fontSize: 13, color: "var(--posx-ink2, #555)", marginBottom: 8 }}>
-                ตั้งค่าเฉพาะเครื่องนี้ — เครื่องขายกับจอครัวตั้งคนละแบบได้
+            : <section className="pos-settings-section">
+              <header className="pos-settings-section-head">
+                <div><h2>จอภายนอก</h2><p>จัดการจอลูกค้าและเสียงของจอเรียกคิว</p></div>
+              </header>
+              <div className="pos-settings-card">
+                {hasDesktopCustomerDisplayBridge() && <CustomerDisplaySettings />}
+                {hasDesktopPosBridge() && <div role="status" className="pos-settings-inline-warning">
+                  จอเรียกคิวแบบจอที่สองต้องใช้ BMS POS Desktop รุ่นล่าสุด กรุณาอัปเดตแอปแล้วเปิดใหม่
+                </div>}
+                {!hasDesktopManagedDisplayBridge() && <QueueBoardPreferenceSettings />}
               </div>
-              <button type="button" className="pos-btn" onClick={() => setAlertSettingsOpen(true)}>
-                {alerts.settings.enabled ? "เสียงเตือน: เปิด · ตั้งค่า" : "เสียงเตือน: ปิด · ตั้งค่า"}
-              </button>
-            </div>
-          )}
-          <div>
-            <div style={{ fontWeight: 500, marginBottom: 8 }}>ผู้ขายที่เครื่องนี้</div>
-            {/* ช่องจริงอยู่แถบบนช่องเดียว — มีสองที่แล้วสับสนว่าต้องกรอกอันไหน */}
-            <div style={{ fontSize: 13, color: "var(--posx-ink2, #555)" }}>
-              {currentCashierName ? `กำลังขายในชื่อ ${currentCashierName}` : "ยังไม่ได้เลือกผู้ขาย"}
-              {currentCashierName && !pin ? " · ยังไม่ใส่ PIN" : ""}
-            </div>
-            <div style={{ fontSize: 12, color: "var(--posx-muted, #888)", marginTop: 6 }}>
-              เปลี่ยนผู้ขาย/ใส่ PIN ได้ที่แถบด้านบน · PIN เก็บในหน่วยความจำเท่านั้น รีเฟรชหน้าแล้วต้องใส่ใหม่
-            </div>
-          </div>
+            </section>}
 
-          <div>
-            {hasDesktopPrinterBridge() && <ReceiptPrinterSettings />}
-            <div style={{ fontWeight: 500, marginBottom: 8 }}>{hasDesktopPrinterBridge() ? "อุปกรณ์ USB และเครื่องมือ" : "เครื่องพิมพ์และลิ้นชัก"}</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <section className="pos-settings-section">
+            <header className="pos-settings-section-head">
+              <div><h2>คิวและการแจ้งเตือน</h2><p>เลือกสิ่งที่เครื่องนี้ต้องแสดงและส่งเสียง</p></div>
+            </header>
+            <div className="pos-settings-card pos-settings-row-card">
+              <PickupQueueSettings
+                enabled={pickupQueueEnabled}
+                branchEnabled={session?.location?.pickupQueue?.enabled === true}
+                managedDisplay={hasDesktopManagedDisplayBridge()}
+                onChange={(next) => {
+                  setPickupQueueEnabled(next);
+                  if (deviceStorageNamespace) writePickupQueueEnabled(deviceStorageNamespace, next);
+                }}
+              />
+              {(session?.businessArchetype === "restaurant" || pickupQueueActive) && (
+                <div className="pos-settings-row">
+                  <div className="pos-settings-row-copy">
+                    <div className="pos-settings-row-title">เสียงเตือนออร์เดอร์เข้า</div>
+                    <div className="pos-settings-row-description">แจ้งเมื่อมีออร์เดอร์ใหม่หรือคิวพร้อมรับ</div>
+                    <div className="pos-settings-row-note">ตั้งค่าเฉพาะเครื่องนี้ · เครื่องขายกับจอครัวตั้งคนละแบบได้</div>
+                  </div>
+                  <div className="pos-settings-row-actions">
+                    <span className="pos-settings-status" data-tone={alerts.settings.enabled ? "ready" : "muted"}>
+                      {alerts.settings.enabled ? "เปิดอยู่" : "ปิดอยู่"}
+                    </span>
+                    <button type="button" className="pos-btn" onClick={() => setAlertSettingsOpen(true)}>ตั้งค่าเสียง</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="pos-settings-section">
+            <header className="pos-settings-section-head">
+              <div><h2>เครื่องพิมพ์และเครื่องมือ</h2><p>ตั้งค่าอุปกรณ์ที่ใช้กับเครื่องขายนี้</p></div>
+            </header>
+            <div className="pos-settings-card pos-settings-printer-card">
+              {hasDesktopKitchenPrinterBridge() && session?.businessArchetype === "restaurant" && <KitchenPrinterSettings />}
+              {hasDesktopPrinterBridge() && <ReceiptPrinterSettings />}
+              <div className="pos-settings-tools">
+                <div className="pos-settings-row-title">{hasDesktopPrinterBridge() ? "อุปกรณ์ USB และเครื่องมือ" : "เครื่องพิมพ์และลิ้นชัก"}</div>
+                <div className="pos-settings-tool-actions">
               {isWebUsbSupported() ? (
                 <button onClick={() => void setupPrinter()} style={{ padding: "8px 14px", fontSize: 13 }}>
                   {hasDesktopPrinterBridge() ? "ตั้งค่าลิ้นชัก USB" : printerReady ? "เครื่องพิมพ์ ✓ — เปลี่ยนเครื่อง" : "ตั้งค่าเครื่องพิมพ์"}
@@ -8816,19 +8953,40 @@ export default function PosPage() {
                   ดูใบเสร็จล่าสุด
                 </button>
               )}
+                </div>
+              </div>
             </div>
-          </div>
+          </section>
 
-          <div>
-            <div style={{ fontWeight: 500, marginBottom: 8 }}>เครื่องขาย</div>
-            <div style={{ fontSize: 13, color: "var(--posx-ink2, #555)", lineHeight: 1.9 }}>
-              <div>{session?.location?.name ?? "—"} · สาขา {session?.location?.branchCode ?? "—"}</div>
-              <div>{session?.device.code}{session?.device.registeredPosNo ? ` · POS#${session.device.registeredPosNo}` : ""}</div>
+          <section className="pos-settings-section">
+            <header className="pos-settings-section-head">
+              <div><h2>เครื่องนี้</h2><p>ผู้ขาย สาขา และข้อมูลการจับคู่ของเครื่อง</p></div>
+            </header>
+            <div className="pos-settings-card pos-settings-device-card">
+              <div className="pos-settings-device-grid">
+                <div>
+                  <div className="pos-settings-row-title">ผู้ขายที่เครื่องนี้</div>
+                  {/* ช่องจริงอยู่แถบบนช่องเดียว — มีสองที่แล้วสับสนว่าต้องกรอกอันไหน */}
+                  <div className="pos-settings-device-value">
+                    {currentCashierName ? `กำลังขายในชื่อ ${currentCashierName}` : "ยังไม่ได้เลือกผู้ขาย"}
+                    {currentCashierName && !pin ? " · ยังไม่ใส่ PIN" : ""}
+                  </div>
+                  <div className="pos-settings-row-note">เปลี่ยนผู้ขายและใส่ PIN ได้ที่แถบด้านบน</div>
+                </div>
+                <div>
+                  <div className="pos-settings-row-title">ข้อมูลเครื่องขาย</div>
+                  <div className="pos-settings-device-value">
+                    <div>{session?.location?.name ?? "—"} · สาขา {session?.location?.branchCode ?? "—"}</div>
+                    <div>{session?.device.code}{session?.device.registeredPosNo ? ` · POS#${session.device.registeredPosNo}` : ""}</div>
+                  </div>
+                </div>
+              </div>
+              <div className="pos-settings-device-foot">
+                <div className="pos-settings-info-note"><InfoCircleOutlined /><span>PIN เก็บในหน่วยความจำเท่านั้น รีเฟรชหน้าแล้วต้องใส่ใหม่</span></div>
+                <button onClick={unpair} className="pos-settings-unpair">เลิกจับคู่เครื่องนี้</button>
+              </div>
             </div>
-            <button onClick={unpair} style={{ padding: "8px 14px", fontSize: 13, marginTop: 8 }}>
-              เลิกจับคู่เครื่องนี้
-            </button>
-          </div>
+          </section>
         </div>
       )}
 
