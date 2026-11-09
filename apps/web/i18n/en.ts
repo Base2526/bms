@@ -6303,6 +6303,7 @@ const en = {
     upload_failed: "Upload failed",
     attachment_added: "Attachment added to the draft message",
     send_failed_label: "Send failed",
+    send_pending_label: "Delivery pending",
     resend_button: "Resend",
     sent_label: "Sent",
     delivered_label: "Delivered",

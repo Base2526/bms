@@ -6305,6 +6305,7 @@ const th = {
     upload_failed: "อัปโหลดไม่สำเร็จ",
     attachment_added: "แนบไฟล์ในข้อความร่างแล้ว",
     send_failed_label: "ส่งไม่สำเร็จ",
+    send_pending_label: "รอผลการส่ง",
     resend_button: "ส่งใหม่",
     sent_label: "ส่งแล้ว",
     delivered_label: "ส่งถึงแล้ว",

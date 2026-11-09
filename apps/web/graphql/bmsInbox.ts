@@ -142,7 +142,8 @@ export const bmsInboxResolvers = {
           message: res.delivered ? "ส่งซ้ำสำเร็จ" : "ยังส่งไม่สำเร็จ (ลองใหม่อีกครั้ง)",
         };
       }
-      return { status: res.status, delivered: false, message: res.status === "NOT_FOUND" ? "ไม่พบข้อความ" : "ส่งซ้ำไม่ได้" };
+      return { status: res.status, delivered: false, message: res.status === "NOT_FOUND"
+        ? "ไม่พบข้อความ" : "ส่งซ้ำได้เฉพาะข้อความที่ส่งไม่สำเร็จ" };
     },
 
     async bmsCreateInboxDiagnosticMessage(_p: unknown, args: { channel: string; body?: string | null }, ctx: any) {
