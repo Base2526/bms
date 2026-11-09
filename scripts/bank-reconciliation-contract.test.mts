@@ -94,6 +94,12 @@ test("migration is additive, tenant isolated, and source tables remain untouched
   assert.match(migration, /REVOKE UPDATE, DELETE ON/);
   assert.doesNotMatch(
     migration,
+    /\bDO \$[A-Za-z_][A-Za-z0-9_]*\$/,
+    "HeidiSQL may split custom dollar-quoted DO blocks at an inner semicolon",
+  );
+  assert.match(migration, /\bDO \$\$/);
+  assert.doesNotMatch(
+    migration,
     /ALTER TABLE bms_(payments|ar_receipts|expense_documents|pos_refund_allocations|delivery_settlements)\b/,
   );
 });
