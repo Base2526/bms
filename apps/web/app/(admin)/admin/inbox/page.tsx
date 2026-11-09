@@ -1361,6 +1361,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   // OUT only: Meta webhooks can advance SENT → DELIVERED → READ.
   const statusNode = (m: Msg) => {
     if (m.direction !== "OUT" || !m.status) return null;
+    if (m.status === "PENDING") return <>{" · "}<span>{t("admin_inbox.send_pending_label")}</span></>;
     if (m.status === "FAILED") return (
       <>{" · "}<span style={{ color: "#ff4d4f" }}>✗ {t("admin_inbox.send_failed_label")}</span>{" "}
         <Button type="link" size="small" style={{ padding: 0, height: "auto", fontSize: 11 }}

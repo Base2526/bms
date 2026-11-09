@@ -5,14 +5,18 @@ import { loadWithStubs } from "./testing/webhookHarness.mts";
 function inboxHarness(failAt: number | null = null, newlyInserted = false) {
   const incidents: any[] = [];
   let queries = 0;
-  const databaseQuery = async (sql: string) => {
+  let outboundMeta: any = null;
+  const databaseQuery = async (sql: string, args: any[] = []) => {
       if (/^(BEGIN|COMMIT|ROLLBACK|SET |SELECT set_config)/.test(sql)) return { rows: [] };
       if (/UPDATE bms_messages SET meta/.test(sql)) return { rows: [] };
       queries++;
       if (queries === failAt) throw new Error("FAKE persistence failure");
       if (queries === 1) return { rows: [{ customer_id: "FAKE-customer-id" }] };
       if (queries === 2) return { rows: [{ id: "FAKE-conversation", inserted: newlyInserted }] };
-      if (queries === 3) return { rows: [{ id: "FAKE-in", direction: "IN" }, { id: "FAKE-out", direction: "OUT" }] };
+      if (queries === 3) {
+        outboundMeta = JSON.parse(args[4]);
+        return { rows: [{ id: "FAKE-in", direction: "IN" }, { id: "FAKE-out", direction: "OUT" }] };
+      }
       return { rows: [] };
   };
   const inbox = loadWithStubs("apps/web/lib/bms/inbox.ts", {
@@ -25,7 +29,8 @@ function inboxHarness(failAt: number | null = null, newlyInserted = false) {
     "./answerEvidenceStore": {},
     "./failureAlert": { reportBmsFailure: async (incident: any) => { incidents.push(incident); } },
   });
-  return { incidents, log: (...args: any[]) => inbox.logConversation(...args), queryCount: () => queries };
+  return { incidents, log: (...args: any[]) => inbox.logConversation(...args), queryCount: () => queries,
+    outboundMeta: () => outboundMeta };
 }
 
 test("Inbox reports failures at identity, conversation and message persistence without throwing", async () => {
@@ -54,4 +59,14 @@ test("Inbox success and intentional skips do not report failures", async () => {
   await h.log("FAKE-tenant", "test", "FAKE-ref", "FAKE incoming", "FAKE reply");
   assert.equal(h.queryCount(), 3);
   assert.equal(h.incidents.length, 0);
+});
+
+test("AI replies start pending on push channels and saved on non-push channels", async () => {
+  for (const [channel, status, delivered] of [["line", "PENDING", false], ["facebook", "PENDING", false],
+    ["web", "SENT", true]] as const) {
+    const h = inboxHarness();
+    await h.log("FAKE-tenant", channel, "FAKE-ref", "FAKE incoming", "FAKE reply");
+    assert.equal(h.outboundMeta().status, status);
+    assert.equal(h.outboundMeta().delivered, delivered);
+  }
 });

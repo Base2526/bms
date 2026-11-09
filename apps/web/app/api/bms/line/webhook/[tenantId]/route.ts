@@ -12,7 +12,7 @@ import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
 import { verifyLineSignature } from "@/lib/bms/crypto";
 import { rateLimit } from "@/lib/bms/rateLimit";
-import { logConversation, notifyInboxConversationChanged, logInboundMessage, type Attachment } from "@/lib/bms/inbox";
+import { logConversation, notifyInboxConversationChanged, logInboundMessage, recordAiReplyDelivery, type Attachment } from "@/lib/bms/inbox";
 import { fallbackEvidenceQuality } from "@/lib/bms/customerAnswerEvidence";
 import { persistBuffer, buildFileUrlById } from "@/lib/storage";
 import { syncLineBotInfo, syncLineUserProfile } from "@/lib/bms/lineProfile";
@@ -113,7 +113,7 @@ async function pushLineReply(
   replyToken: string,
   text: string,
   customerRef?: string | null
-) {
+): Promise<boolean> {
   try {
     const resp = await fetch("https://api.line.me/v2/bot/message/reply", {
       method: "POST",
@@ -121,10 +121,11 @@ async function pushLineReply(
       body: JSON.stringify({ replyToken, messages: [{ type: "text", text }] }),
     });
     if (resp.ok) {
-      await recordOutboundSuccess(tenantId, "line");
+      await recordLineHealthBestEffort(tenantId, () => recordOutboundSuccess(tenantId, "line"));
+      return true;
     } else {
       const detail = formatOutboundErrorDetail(resp, await resp.text().catch(() => ""));
-      await recordOutboundError(tenantId, "line", resp.status, detail);
+      await recordLineHealthBestEffort(tenantId, () => recordOutboundError(tenantId, "line", resp.status, detail));
       // channel health บอกได้แค่ว่า "ช่องทางส่งไม่ออก" — ต้องแจ้งร้านด้วยเพราะ
       // ลูกค้ารายนี้ไม่ได้รับคำตอบเลย และต้องมีคนตามส่งซ้ำให้
       await reportBmsFailure({
@@ -136,6 +137,7 @@ async function pushLineReply(
         customerRef: customerRef ?? null,
         meta: { httpStatus: resp.status },
       });
+      return false;
     }
   } catch (e) {
     const detail = e instanceof Error ? e.message : "LINE reply request failed";
@@ -149,6 +151,27 @@ async function pushLineReply(
       channel: "line",
       customerRef: customerRef ?? null,
     });
+    return false;
+  }
+}
+
+async function recordLineHealthBestEffort(tenantId: string, write: () => Promise<void>): Promise<void> {
+  try {
+    await write();
+  } catch (error) {
+    // Provider acceptance is authoritative; a failed health write must not offer a duplicate resend.
+    console.error("[BMS] LINE outbound health write failed:", { tenantId,
+      error: error instanceof Error ? error.message : "unknown error" });
+  }
+}
+
+async function recordLineReplyDelivery(tenantId: string, messageId: string | undefined, delivered: boolean): Promise<void> {
+  if (!messageId) return;
+  try {
+    await recordAiReplyDelivery(tenantId, messageId, delivered, []);
+  } catch (error) {
+    // A status write must never cause a second fallback reply after LINE accepted the first one.
+    console.error("[BMS] LINE reply delivery status write failed:", { tenantId, messageId, error });
   }
 }
 
@@ -221,11 +244,17 @@ async function processLineEvent(
     const result = await runPipeline(text, "line", tenantId, userId, { assistantMode });
 
     // บันทึกลง inbox (เข้า+ออก) — best-effort
-    await logConversation(tenantId, "line", userId, text, result.reply, result.quality);
+    const persisted = await logConversation(tenantId, "line", userId, text, result.reply, result.quality);
 
     // ตอบกลับด้วย token ของร้าน (ถ้ามี)
-    if (cfg.access_token && ev.replyToken) {
-      await pushLineReply(tenantId, cfg.access_token, ev.replyToken, result.reply, userId);
+    const delivered = cfg.access_token && ev.replyToken
+      ? await pushLineReply(tenantId, cfg.access_token, ev.replyToken, result.reply, userId)
+      : false;
+    await recordLineReplyDelivery(tenantId, persisted?.outboundMessageId, delivered);
+    if (!cfg.access_token || !ev.replyToken) {
+      await reportBmsFailure({ tenantId, code: "channel.push_failed", error: "LINE_REPLY_CREDENTIAL_OR_TOKEN_UNAVAILABLE",
+        surface: "customer", channel: "line", customerRef: userId,
+        meta: { messageId: ev.message.id ?? null } });
     }
 
     // Best-effort LINE profile cache. This is intentionally after the
@@ -250,10 +279,11 @@ async function processLineEvent(
       customerRef: userId,
       meta: { messageId: ev.message?.id ?? null },
     });
-    await logConversation(tenantId, "line", userId, text, fallbackReply, fallbackEvidenceQuality(error, fallbackReply));
-    if (cfg.access_token && ev.replyToken) {
-      await pushLineReply(tenantId, cfg.access_token, ev.replyToken, fallbackReply, userId);
-    }
+    const persisted = await logConversation(tenantId, "line", userId, text, fallbackReply, fallbackEvidenceQuality(error, fallbackReply));
+    const delivered = cfg.access_token && ev.replyToken
+      ? await pushLineReply(tenantId, cfg.access_token, ev.replyToken, fallbackReply, userId)
+      : false;
+    await recordLineReplyDelivery(tenantId, persisted?.outboundMessageId, delivered);
     return {
       replyToken: ev.replyToken,
       reply: fallbackReply,
