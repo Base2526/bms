@@ -719,7 +719,8 @@ identify a table or occupant"** ของ `return {...}` ใน service — ย�
 `npm run regression:inventory` ตรวจทุกไฟล์เทส/สโมคใน `scripts/`, `apps/` และ `packages/`
 แล้วเทียบรายชื่อ `web-pure`/`web-db` กับตัวรันจริง ถ้าไฟล์ใหม่ไม่ถูกจัดกลุ่มจะล้มทันที
 ผล JSON สร้างด้วย `node scripts/check-regression-inventory.mjs --output .test-output/regression-inventory.json`.
-กลุ่ม `browser-manual`, `desktop-manual` และ `special-manual` ยังต้องรันในสภาพแวดล้อมเฉพาะ;
+กลุ่ม `browser-manual`, `desktop-manual`, `special-manual`, `mutation-manual` และ
+`live-model-manual` ยังต้องรันในสภาพแวดล้อมเฉพาะ;
 การถูกนับใน inventory **ไม่ได้แปลว่ารันผ่าน**
 
 `npm run release:features:check` (จาก `apps/web`) ตรวจ ID, source/test paths และเพดานรายการที่ยัง

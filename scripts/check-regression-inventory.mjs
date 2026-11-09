@@ -14,7 +14,8 @@ function walk(dir) {
   });
 }
 const candidates = ["scripts", "apps", "packages"].flatMap(walk).filter(file =>
-  /(?:\.test\.(?:mts|mjs|ts|tsx|sh|ps1)|_test\.go|-browser-smoke\.mjs|-smoke\.(?:mts|mjs)|smoke-main\.mjs)$/.test(file)
+  /(?:\.test\.(?:mts|mjs|ts|tsx|sh|ps1)|_test\.go|-browser-smoke\.mjs|-smoke\.(?:mts|mjs)|smoke-main\.mjs|-mutations\.mjs)$/.test(file)
+  || file === "scripts/ai-eval/run.mjs"
 ).sort();
 const manualSpecial = new Set([
   "scripts/retail-local-setup-diagnostics.test.ps1",
@@ -37,6 +38,8 @@ function classify(file) {
   if (/^scripts\/[^/]+-browser-smoke\.mjs$/.test(file)) return "browser-manual";
   if (ciSpecial.has(file)) return "retail-local-ci";
   if (manualSpecial.has(file)) return "special-manual";
+  if (/^scripts\/testing\/[^/]+-mutations\.mjs$/.test(file)) return "mutation-manual";
+  if (file === "scripts/ai-eval/run.mjs") return "live-model-manual";
   if (/^apps\/mobile\/.+\.test\.tsx?$/.test(file)) return "mobile-ci";
   if (/^apps\/desktop\/test\/.+\.test\.mjs$/.test(file)) return "desktop-ci";
   if (file === "apps/desktop/test/smoke-main.mjs") return "desktop-ci";
