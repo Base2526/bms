@@ -15,6 +15,7 @@ import {
   CodeOutlined,
   CustomerServiceOutlined,
   DesktopOutlined,
+  FacebookFilled,
   FileTextOutlined,
   LockOutlined,
   MessageOutlined,
@@ -23,10 +24,14 @@ import {
   SafetyCertificateOutlined,
   SettingOutlined,
   ShopOutlined,
+  YoutubeFilled,
 } from "@ant-design/icons";
 
 import { readAnalyticsConsent, writeAnalyticsConsent, syncAnalyticsConsent, ANALYTICS_CONSENT_EVENT, type ConsentValue } from "@/lib/analyticsConsent";
 type Lang = "th" | "en";
+
+const BMS_FACEBOOK_PAGE_URL = "https://www.facebook.com/bmsaipos";
+const BMS_YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@bmspos-ai";
 
 const COPY = {
   th: {
@@ -35,6 +40,9 @@ const COPY = {
     lineAdd: "เพิ่มเพื่อน LINE",
     lineNote: "สอบถาม/แจ้งปัญหา",
     lineQrAria: "QR code เพิ่มเพื่อน LINE ของ BMS",
+    follow: "ติดตาม BMS",
+    facebookAria: "ติดตาม BMS บน Facebook",
+    youtubeAria: "ดูวิดีโอ BMS บน YouTube",
     product: "ผลิตภัณฑ์",
     about: "BMS คืออะไร",
     aiSystem: "AI ใน BMS ทำงานอย่างไร",
@@ -80,6 +88,9 @@ const COPY = {
     lineAdd: "Add us on LINE",
     lineNote: "Questions and support",
     lineQrAria: "QR code to add BMS on LINE",
+    follow: "Follow BMS",
+    facebookAria: "Follow BMS on Facebook",
+    youtubeAria: "Watch BMS on YouTube",
     product: "Product",
     about: "What is BMS?",
     aiSystem: "How AI works in BMS",
@@ -212,6 +223,19 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
                   <small>{BMS_LINE_OA_ID} · {t.lineNote}</small>
                 </span>
               </div>
+              <div className="bms-footer-social">
+                <span className="bms-footer-social-label">{t.follow}</span>
+                <div className="bms-footer-social-links">
+                  <a href={BMS_FACEBOOK_PAGE_URL} target="_blank" rel="noopener noreferrer"
+                    className="bms-footer-social-link bms-footer-social-link--facebook" aria-label={t.facebookAria}>
+                    <FacebookFilled />Facebook Page
+                  </a>
+                  <a href={BMS_YOUTUBE_CHANNEL_URL} target="_blank" rel="noopener noreferrer"
+                    className="bms-footer-social-link bms-footer-social-link--youtube" aria-label={t.youtubeAria}>
+                    <YoutubeFilled />YouTube
+                  </a>
+                </div>
+              </div>
             </div>
 
             <div className="bms-footer-columns">
@@ -328,6 +352,33 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
         }
         .bms-footer-line-btn:hover { background: #057a34; color: #fff; }
 
+        .bms-footer-social { display: grid; gap: 7px; }
+        .bms-footer-social-label { color: var(--app-text); font-size: 13px; font-weight: 600; }
+        .bms-footer-social-links { display: flex; flex-wrap: wrap; gap: 8px; }
+
+        .bms-footer-social-link {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          min-height: 34px;
+          border: 1px solid var(--app-border);
+          border-radius: 9px;
+          padding: 6px 11px;
+          background: var(--app-surface);
+          color: var(--app-text);
+          text-decoration: none;
+          font-size: 13px;
+          font-weight: 500;
+          transition: background .16s ease, border-color .16s ease;
+        }
+
+        .bms-footer-social-link:hover { color: var(--app-text); }
+        .bms-footer-social-link--facebook :where(.anticon) { color: #1877f2; }
+        .bms-footer-social-link--facebook:hover { border-color: rgba(24, 119, 242, .45); background: rgba(24, 119, 242, .06); }
+        .bms-footer-social-link--youtube :where(.anticon) { color: #f00; }
+        .bms-footer-social-link--youtube:hover { border-color: rgba(255, 0, 0, .38); background: rgba(255, 0, 0, .05); }
+
         .bms-footer-column { display: grid; align-content: start; gap: 11px; }
         .bms-footer-column h2 { margin: 0 0 4px; color: var(--app-text); font-size: 14px; }
 
@@ -436,6 +487,8 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           .bms-footer-line, .bms-footer-line-copy, .bms-footer-line-btn { width: 100%; }
           .bms-footer-line-btn { justify-content: center; padding: 10px 15px; }
           .bms-footer-line-copy { justify-items: center; }
+          .bms-footer-social-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+          .bms-footer-social-link { min-width: 0; padding-inline: 8px; }
 
           /* Collapse the 3 link columns into a tighter 2-up grid so the footer
              doesn't run into one long stack of rows on narrow screens. */
