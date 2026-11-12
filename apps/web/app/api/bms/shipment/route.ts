@@ -46,12 +46,13 @@ async function handlePOST(req: NextRequest) {
     carrier,
     trackingNo: typeof body.trackingNo === "string" ? body.trackingNo : null,
     note: typeof body.note === "string" ? body.note : null,
+    actor: String(auth.adminId),
   });
 
   const httpStatus =
     result.status === "CREATED" ? 201
       : result.status === "ORDER_NOT_FOUND" ? 404
-      : result.status === "INVALID_STATE" ? 409
+      : result.status === "INVALID_STATE" || result.status === "PICKUP_ORDER" ? 409
       : 400; // BAD_CARRIER
   return NextResponse.json(result, { status: httpStatus });
 }

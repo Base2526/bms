@@ -99,7 +99,7 @@ export function describeTransportFailure(status: number, online = true, method =
   const readOnly = method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD";
   if (!online) return readOnly
     ? "เน็ตหลุด — โหลดข้อมูลล่าสุดไม่ได้ ต่อเน็ตแล้วกดรีเฟรชอีกครั้ง"
-    : "เน็ตหลุด — รายการยังไม่ถูกส่ง ต่อเน็ตแล้วกดอีกครั้ง";
+    : "เน็ตหลุด — ยังไม่รู้ว่ารายการถูกบันทึกหรือไม่ ต่อเน็ตแล้วตรวจประวัติหรือสถานะจริงก่อน อย่ากดซ้ำหรือรับเงินซ้ำ";
   switch (status) {
     // fetch() ใช้ status 0 ในชั้น UI เมื่อไม่มี HTTP response เลย (DNS/TLS/socket/abort)
     // ต่างจาก 502 ที่ proxy ยังตอบกลับมาได้ แต่สำหรับพนักงานทั้งคู่คือยังยืนยันผลไม่ได้

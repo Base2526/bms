@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BMS · ต้นแบบจอคิวพร้อมภาพโปรโมต</title>
+  <style>
+    :root { font-family: "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif; color: #17251e; background: #f1f4f0; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    button { font: inherit; cursor: pointer; }
+    .shell { max-width: 1560px; margin: auto; padding: 26px clamp(16px, 3vw, 42px) 48px; }
+    .intro { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 22px; }
+    .eyebrow { color: #197a4b; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; font-size: 12px; }
+    h1 { font-size: clamp(26px, 3vw, 42px); margin: 4px 0 4px; line-height: 1.2; }
+    .intro p { color: #5f6d66; margin: 0; }
+    .prototype { background: white; border: 1px solid #dce5db; border-radius: 24px; padding: 14px; box-shadow: 0 22px 60px #1b38201a; }
+    .toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 3px 4px 16px; }
+    .tabs, .segments { display: flex; flex-wrap: wrap; gap: 5px; padding: 4px; border-radius: 13px; background: #edf2ec; }
+    .tabs button, .segments button { border: 0; background: transparent; border-radius: 10px; color: #53625a; padding: 9px 13px; font-weight: 700; }
+    .tabs button[aria-pressed="true"], .segments button[aria-pressed="true"] { background: white; color: #0f5d36; box-shadow: 0 2px 7px #20382720; }
+    .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+    .controls label { color: #607067; font-size: 13px; font-weight: 700; }
+    .settings { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 0 4px 14px; color: #42564a; font-size: 13px; }
+    .settings label { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; }
+    .settings select { border: 1px solid #cad8c9; border-radius: 8px; background: white; color: #243b2c; padding: 5px 8px; font: inherit; }
+    .settings input { accent-color: #168754; }
+    .settings .hint { color: #697b6e; font-weight: 400; }
+    .screen-wrap { background: #dce5de; border-radius: 17px; padding: 9px; }
+    .screen { aspect-ratio: 16/9; min-height: 510px; color: #fff; border-radius: 11px; padding: clamp(18px, 2.2vw, 34px); background: radial-gradient(circle at 80% 0%, #1c3657, #0d182a 63%); display: flex; flex-direction: column; gap: clamp(13px, 1.4vw, 22px); overflow: hidden; }
+    .board-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex: 0 0 auto; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .mark { background: #168754; border-radius: 12px; width: 42px; height: 42px; display: grid; place-items: center; font-weight: 900; font-size: 23px; }
+    .brand strong { display: block; font-size: clamp(19px, 2.1vw, 30px); line-height: 1.1; }
+    .brand small { display: block; color: #aabbd0; font-size: 13px; margin-top: 3px; }
+    .head-note { color: #a6b9c9; font-size: clamp(12px, 1.1vw, 16px); text-align: right; }
+    .board { flex: 1; min-height: 0; display: grid; gap: clamp(12px, 1.25vw, 19px); }
+    .panel, .call, .promo { min-width: 0; min-height: 0; border-radius: 18px; overflow: hidden; }
+    .panel { padding: clamp(15px, 1.6vw, 25px); background: #18283e; border: 1px solid #30445e; }
+    .panel.ready { background: #123c2d; border-color: #28704b; }
+    .panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 18px; }
+    .panel-head b { font-size: clamp(18px, 1.8vw, 29px); }
+    .panel-head span { color: #9bb2aa; font-size: 13px; }
+    .numbers { display: flex; flex-wrap: wrap; align-content: start; gap: clamp(8px, .8vw, 13px); }
+    .number { border-radius: 11px; padding: .16em .31em; background: #2c405b; border: 1px solid #465c79; font-weight: 850; font-size: clamp(23px, 3vw, 49px); line-height: 1.05; }
+    .ready .number { background: #17643f; border-color: #3a9964; font-size: clamp(30px, 4vw, 65px); }
+    .ready .number.live { background: #28cf72; color: #052712; border-color: #9bf9ba; }
+    .call { padding: clamp(17px, 2.3vw, 34px); background: linear-gradient(115deg, #176b42, #1cbc66); border: 1px solid #5ce99a; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+    .call .kicker { font-weight: 800; font-size: clamp(13px, 1.3vw, 19px); color: #baf6cf; letter-spacing: .04em; }
+    .call .title { font-size: clamp(20px, 2.3vw, 37px); font-weight: 800; line-height: 1.17; margin-top: 5px; }
+    .call .big { font-size: clamp(72px, 10vw, 165px); font-weight: 900; line-height: .9; letter-spacing: -.06em; white-space: nowrap; }
+    .promo { position: relative; background: #263b31; border: 1px solid #d5b77566; isolation: isolate; }
+    .promo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .promo:not(.vertical) { background: linear-gradient(105deg, #162b21, #38583c); }
+    .promo:not(.vertical) img { width: 28%; margin-left: auto; object-fit: contain; background: #f8f6f0; }
+    .promo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, #08180edb 0%, #08180e8a 48%, transparent 100%); z-index: 0; }
+    .promo-copy { position: absolute; left: 7%; top: 50%; transform: translateY(-50%); z-index: 1; max-width: 75%; }
+    .promo-copy small { display: block; width: max-content; max-width: 100%; background: #f0c66d; border-radius: 5px; padding: 3px 8px; color: #283021; font-size: clamp(9px, .8vw, 12px); font-weight: 850; }
+    .promo-copy strong { display: block; margin-top: 8px; font-size: clamp(16px, 2vw, 32px); line-height: 1.12; text-shadow: 0 2px 8px #0008; }
+    .promo-copy span { display: block; color: #e4eee3; font-size: clamp(11px, 1vw, 16px); margin-top: 5px; }
+    .promo.vertical::after { background: linear-gradient(0deg, #08180ef2, #08180e33 85%); }
+    .promo.vertical .promo-copy { left: 8%; right: 8%; top: auto; bottom: 8%; transform: none; max-width: none; }
+    .promo.vertical .promo-copy strong { font-size: clamp(17px, 1.7vw, 29px); }
+    .promo.fade img, .promo.fade .promo-copy { animation: promo-fade .55s ease-out; }
+    .promo.slide img, .promo.slide .promo-copy { animation: promo-slide .55s ease-out; }
+    .promo.slide .promo-copy { animation: promo-fade .55s ease-out; }
+    @keyframes promo-fade { from { opacity: .1; } to { opacity: 1; } }
+    @keyframes promo-slide { from { opacity: .2; transform: translateX(16px); } to { opacity: 1; transform: translateX(0); } }
+    @media (prefers-reduced-motion: reduce) { .promo.fade img, .promo.fade .promo-copy, .promo.slide img, .promo.slide .promo-copy { animation: none; } }
+    .board.spotlight { grid-template-rows: 35% minmax(0, 1fr) 21%; grid-template-columns: 43% 57%; }
+    .spotlight .call { grid-column: 1 / -1; }
+    .spotlight .promo { grid-column: 1 / -1; }
+    .board.three { grid-template-columns: .86fr 1.28fr 1fr; grid-template-rows: minmax(0, 1fr) 22%; }
+    .three .call { flex-direction: column; justify-content: center; text-align: center; }
+    .three .call .big { font-size: clamp(77px, 10vw, 157px); }
+    .three .promo { grid-column: 1 / -1; }
+    .board.ticker { grid-template-columns: 1.34fr .87fr; grid-template-rows: minmax(0, 1fr) 18% 22%; }
+    .ticker .panel.preparing, .ticker .promo { grid-column: 1 / -1; }
+    .ticker .panel.preparing { padding: 10px 19px; display: flex; align-items: center; gap: 26px; }
+    .ticker .panel.preparing .panel-head { margin: 0; white-space: nowrap; }
+    .ticker .panel.preparing .numbers { flex-wrap: nowrap; }
+    .ticker .panel.preparing .number { font-size: clamp(20px, 2.2vw, 32px); }
+    .board.minimal { grid-template-columns: minmax(0, 1fr) 25%; grid-template-rows: minmax(0, 1fr) 16%; }
+    .minimal .call { grid-column: 1 / -1; justify-content: center; flex-direction: column; text-align: center; }
+    .minimal .call .big { font-size: clamp(120px, 18vw, 300px); }
+    .minimal .ready-rail { display: flex; align-items: center; gap: 16px; padding: 10px 19px; }
+    .minimal .ready-rail .panel-head { margin: 0; white-space: nowrap; }
+    .minimal .ready-rail .number { font-size: clamp(23px, 2.5vw, 38px); }
+    .minimal .promo-copy strong { font-size: clamp(14px, 1.4vw, 21px); }
+    .minimal .promo-copy span { display: none; }
+    .board.airport { grid-template-columns: minmax(0, 1fr) 27%; grid-template-rows: minmax(0, 1fr); }
+    .airport-list { background: #17263a; border: 1px solid #30445e; border-radius: 18px; overflow: hidden; }
+    .airport-row { display: grid; grid-template-columns: .65fr 1fr 1.4fr; align-items: center; gap: 12px; padding: 10px 19px; min-height: 13%; border-bottom: 1px solid #30445e; color: #d7e5ef; }
+    .airport-row.head { background: #24364d; color: #a9b9ca; font-size: 12px; min-height: 9%; }
+    .airport-row.current { background: #176d43; color: white; }
+    .airport-row .no { font-size: clamp(25px, 2.5vw, 40px); font-weight: 900; }
+    .airport-row .status { font-size: clamp(16px, 1.7vw, 26px); font-weight: 800; }
+    .airport-row .hint { color: #a7bcce; font-size: clamp(12px, 1.1vw, 17px); }
+    .airport .promo::after { background: linear-gradient(0deg, #08180ef0, transparent); }
+    .board.split { grid-template-columns: .84fr 1.16fr; grid-template-rows: minmax(0, 1fr) 22%; }
+    .split .promo { grid-column: 1 / -1; }
+    .split .call-inline { background: #1dbb61; border: 1px solid #6af7a3; border-radius: 12px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 13px; }
+    .split .call-inline strong { font-size: clamp(30px, 4vw, 62px); line-height: 1; }
+    .caption { margin: 14px 4px 4px; display: flex; justify-content: space-between; gap: 12px; color: #53645a; font-size: 14px; }
+    .caption strong { color: #1e382a; }
+    .ideas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 22px; }
+    .idea { background: white; border: 1px solid #dae4da; padding: 19px; border-radius: 16px; }
+    .idea b { display: block; font-size: 18px; }
+    .idea p { color: #5c6b61; line-height: 1.6; margin: 6px 0 0; font-size: 14px; }
+    .foot { margin-top: 16px; color: #68786d; font-size: 13px; }
+    @media (max-width: 900px) { .intro, .caption { display: block; } .toolbar { display: block; } .controls { margin-top: 10px; } .screen-wrap { overflow-x: auto; } .screen { width: 900px; min-height: 506px; } .ideas { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="intro"><div><div class="eyebrow">BMS / Concept preview</div><h1>จอเรียกคิว + ภาพโปรโมต</h1><p>ต้นแบบให้ดูครบ 6 รูปแบบของจอคิวจริง · ตัวเลขและภาพสินค้าเป็นข้อมูลตัวอย่าง</p></div></div>
+    <div class="prototype">
+      <div class="toolbar">
+        <div class="tabs" id="layouts" aria-label="รูปแบบจอคิว"></div>
+        <div class="controls"><label>ภาพตัวอย่าง</label><div class="segments" id="promos" aria-label="ภาพโปรโมต"></div></div>
+      </div>
+      <div class="settings">
+        <label><input id="has-promos" type="checkbox" checked> เปิดชุดภาพโปรโมต</label>
+        <label><input id="auto-rotate" type="checkbox" checked> สลับอัตโนมัติ</label>
+        <label>ทุก <select id="interval"><option value="4">4 วินาที</option><option value="8" selected>8 วินาที</option><option value="12">12 วินาที</option><option value="20">20 วินาที</option><option value="30">30 วินาที</option></select></label>
+        <label>เอฟเฟกต์ <select id="effect"><option value="fade" selected>ค่อย ๆ ปรากฏ</option><option value="slide">เลื่อนสั้น ๆ</option><option value="cut">เปลี่ยนทันที</option></select></label>
+        <span class="hint">ปิดชุดโปรเพื่อดูภาพเริ่มต้นเมื่อไม่มีโปรโมต</span>
+      </div>
+      <div class="screen-wrap"><div class="screen" id="screen"><div class="board-head"><div class="brand"><div class="mark">B</div><div><strong>คิวรับของ</strong><small>สาขาตัวอย่าง · กรุณาดูเลขบนใบเสร็จ</small></div></div><div class="head-note">พร้อมรับแล้ว เชิญที่เคาน์เตอร์<br>ตัวอย่างหน้าจอ 16:9</div></div><div class="board" id="board"></div></div></div>
+      <div class="caption"><div><strong id="layout-name"></strong> <span id="layout-note"></span></div><div>พื้นที่โปรโมตอยู่รองจากเลขคิว · ไม่มีราคา/ข้อเสนอที่ยังไม่ได้ยืนยัน</div></div>
+    </div>
+    <div class="ideas">
+      <div class="idea"><b>01 · เมนูแนะนำ</b><p>ภาพสินค้าเดี่ยวที่ถ่ายชัด ฉากหลังเรียบ พร้อมชื่อสั้น ๆ เหมาะกับร้านอาหารและเครื่องดื่ม</p></div>
+      <div class="idea"><b>02 · ชุดที่ร้านจัดจริง</b><p>ภาพสินค้าสองอย่างในเฟรมเดียว ใช้คำว่า “ชุดแนะนำ” ก่อน แล้วใส่ราคาเฉพาะเมื่อผูกกับโปรโมชันที่ตรวจสอบแล้ว</p></div>
+      <div class="idea"><b>03 · ภาพเริ่มต้น</b><p>ตั้งรูปประจำร้านแยกจากชุดโปรโมต เมื่อไม่มีรูปโปรหรือโหลดรูปไม่ได้ให้กลับมาแสดงรูปนี้</p></div>
+    </div>
+    <div class="foot">ข้อเสนอ: ใช้ภาพแนวนอนอัตราส่วนประมาณ 3:1 สำหรับแถบโปรโมต และภาพแนวตั้งประมาณ 3:4 สำหรับป้ายรายการ / มินิมอลทีวี ภาพควรมีจุดเด่นด้านขวาเพื่อเหลือพื้นที่อ่านข้อความด้านซ้าย</div>
+  </div>
+  <script>
+    const layouts = [
+      ['spotlight', 'เรียกเด่น', 'เลขที่เรียกล่าสุดใหญ่เต็มแถว พร้อมคิวสองฝั่ง'],
+      ['three', 'สามโซน', 'กำลังเตรียม · กำลังเรียก · พร้อมรับ'],
+      ['ticker', 'แถบเตรียม', 'เลขเรียกและพร้อมรับด้านบน แถบเตรียมด้านล่าง'],
+      ['minimal', 'มินิมอลทีวี', 'เลขเรียกใหญ่ที่สุดสำหรับจอที่มองจากไกล'],
+      ['airport', 'ป้ายรายการ', 'เหมาะกับร้านที่มีคิวหนาแน่น'],
+      ['split', 'แบ่งครึ่ง', 'กำลังเตรียมและพร้อมรับอยู่คู่กัน'],
+    ];
+    const promos = [
+      ['drink', 'เมนูแนะนำ', '../../apps/web/public/sample/starter/food_beverage/04.jpg', 'เมนูแนะนำวันนี้', 'เลือกเมนูโปรดระหว่างรอ'],
+      ['meal', 'ชุดแนะนำ', '../../apps/web/public/sample/restaurant/kaprao-seafood.jpg', 'อร่อยครบในจานเดียว', 'สอบถามรายการที่เคาน์เตอร์'],
+      ['shop', 'ของว่าง', '../../apps/web/public/sample/starter/food_beverage/01.jpg', 'ของว่างระหว่างรอ', 'สอบถามรายการที่เคาน์เตอร์'],
+    ];
+    const defaultImage = ['default', 'ภาพเริ่มต้น', '../../apps/web/public/sample/starter/food_beverage/03.jpg', 'ขอบคุณที่แวะมา', 'กรุณาดูเลขคิวบนหน้าจอ'];
+    const params = new URLSearchParams(location.search);
+    let currentLayout = layouts.some(x => x[0] === params.get('layout')) ? params.get('layout') : 'spotlight';
+    let currentPromo = promos.some(x => x[0] === params.get('promo')) ? params.get('promo') : 'drink';
+    let hasPromos = params.get('empty') !== '1';
+    let autoRotate = true;
+    let intervalSeconds = 8;
+    let effect = 'fade';
+    let rotationTimer;
+    const panel = (kind, nums, count) => `<section class="panel ${kind}"><div class="panel-head"><b>${kind === 'ready' ? 'พร้อมรับ' : 'กำลังเตรียม'}</b><span>${count} คิว</span></div><div class="numbers">${nums.map((n, i) => `<span class="number${kind === 'ready' && i === 0 ? ' live' : ''}">${n}</span>`).join('')}</div></section>`;
+    const ready = () => panel('ready', ['A042', 'A038', 'A035'], 3);
+    const preparing = () => panel('preparing', ['A043', 'A044', 'A045', 'A046', 'A047'], 5);
+    const call = () => `<section class="call"><div><div class="kicker">กำลังเรียกตอนนี้</div><div class="title">เชิญรับที่เคาน์เตอร์</div></div><div class="big">A042</div></section>`;
+    function promo(vertical = false) {
+      const p = hasPromos ? promos.find(x => x[0] === currentPromo) : defaultImage;
+      return `<aside class="promo${vertical ? ' vertical' : ''} ${effect}" aria-label="${hasPromos ? 'ภาพโปรโมต' : 'ภาพเริ่มต้น'}ตัวอย่าง"><img src="${p[2]}" alt="ภาพตัวอย่าง ${p[1]}"><div class="promo-copy"><small>ภาพตัวอย่าง · ${p[1]}</small><strong>${p[3]}</strong><span>${p[4]}</span></div></aside>`;
+    }
+    function airport() {
+      const rows = [['A042','กำลังเรียก','เชิญรับที่เคาน์เตอร์'],['A038','พร้อมรับ','เชิญรับที่เคาน์เตอร์'],['A035','พร้อมรับ','เชิญรับที่เคาน์เตอร์'],['A043','กำลังเตรียม','กรุณารอสักครู่'],['A044','กำลังเตรียม','กรุณารอสักครู่'],['A045','กำลังเตรียม','กรุณารอสักครู่']];
+      return `<div class="airport-list"><div class="airport-row head"><span>หมายเลขคิว</span><span>สถานะ</span><span>จุดรับอาหาร</span></div>${rows.map((r,i) => `<div class="airport-row${i === 0 ? ' current' : ''}"><span class="no">${r[0]}</span><span class="status">${r[1]}</span><span class="hint">${r[2]}</span></div>`).join('')}</div>${promo(true)}`;
+    }
+    function draw() {
+      document.getElementById('layouts').innerHTML = layouts.map(l => `<button type="button" data-layout="${l[0]}" aria-pressed="${currentLayout === l[0]}">${l[1]}</button>`).join('');
+      document.getElementById('promos').innerHTML = promos.map(p => `<button type="button" data-promo="${p[0]}" aria-pressed="${currentPromo === p[0]}" ${hasPromos ? '' : 'disabled'}>${p[1]}</button>`).join('');
+      document.getElementById('has-promos').checked = hasPromos;
+      document.getElementById('auto-rotate').checked = autoRotate;
+      document.getElementById('interval').value = String(intervalSeconds);
+      document.getElementById('effect').value = effect;
+      const board = document.getElementById('board');
+      board.className = 'board ' + currentLayout;
+      board.innerHTML = currentLayout === 'spotlight' ? call() + preparing() + ready() + promo()
+        : currentLayout === 'three' ? preparing() + call() + ready() + promo()
+        : currentLayout === 'ticker' ? call() + ready() + preparing() + promo()
+        : currentLayout === 'minimal' ? call() + `<section class="panel ready ready-rail"><div class="panel-head"><b>พร้อมรับ</b></div><div class="numbers"><span class="number">A038</span><span class="number">A035</span><span class="number">A031</span></div></section>` + promo(true)
+        : currentLayout === 'airport' ? airport()
+        : preparing() + `<section class="panel ready"><div class="call-inline"><span>กำลังเรียก · เชิญรับที่เคาน์เตอร์</span><strong>A042</strong></div><div class="panel-head"><b>พร้อมรับ</b><span>3 คิว</span></div><div class="numbers"><span class="number live">A042</span><span class="number">A038</span><span class="number">A035</span></div></section>` + promo();
+      const selected = layouts.find(l => l[0] === currentLayout);
+      document.getElementById('layout-name').textContent = selected[1] + ' · ';
+      document.getElementById('layout-note').textContent = selected[2];
+    }
+    function scheduleRotation() {
+      clearTimeout(rotationTimer);
+      if (!hasPromos || !autoRotate) return;
+      rotationTimer = setTimeout(() => {
+        const current = promos.findIndex(p => p[0] === currentPromo);
+        currentPromo = promos[(current + 1) % promos.length][0];
+        draw();
+        scheduleRotation();
+      }, intervalSeconds * 1000);
+    }
+    document.addEventListener('click', event => {
+      const layout = event.target.closest('[data-layout]');
+      const promoButton = event.target.closest('[data-promo]');
+      if (layout) currentLayout = layout.dataset.layout;
+      if (promoButton) currentPromo = promoButton.dataset.promo;
+      if (layout || promoButton) { draw(); scheduleRotation(); }
+    });
+    document.getElementById('has-promos').addEventListener('change', event => { hasPromos = event.target.checked; draw(); scheduleRotation(); });
+    document.getElementById('auto-rotate').addEventListener('change', event => { autoRotate = event.target.checked; scheduleRotation(); });
+    document.getElementById('interval').addEventListener('change', event => { intervalSeconds = Number(event.target.value); scheduleRotation(); });
+    document.getElementById('effect').addEventListener('change', event => { effect = event.target.value; draw(); });
+    draw();
+    scheduleRotation();
+  </script>
+</body>
+</html>

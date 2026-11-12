@@ -11,6 +11,7 @@ import {
   type PickupQueueAction,
 } from "@/lib/bms/pickupQueue";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { EMPTY_QUEUE_BOARD_MEDIA, getQueueBoardMedia } from "@/lib/bms/queueBoardMedia";
 import { authenticateRestaurantMutation, authenticateRestaurantRead } from "../restaurant/routeAuth";
 
 export const runtime = "nodejs";
@@ -35,8 +36,12 @@ async function handleGET(req: NextRequest) {
     return NextResponse.json({ entries: day, settings, serverTime: new Date().toISOString() }, { headers });
   }
   if (req.nextUrl.searchParams.get("view") === "board") {
-    const board = await listPickupQueueBoard(auth.device.tenantId, auth.device.locationId);
-    return NextResponse.json({ ...board, serverTime: new Date().toISOString() }, { headers });
+    const [board, media] = await Promise.all([
+      listPickupQueueBoard(auth.device.tenantId, auth.device.locationId),
+      // A missing/failed presentation migration must never take the queue off screen.
+      getQueueBoardMedia(auth.device.tenantId, auth.device.locationId).catch(() => EMPTY_QUEUE_BOARD_MEDIA),
+    ]);
+    return NextResponse.json({ ...board, media, serverTime: new Date().toISOString() }, { headers });
   }
   const [entries, settings] = await Promise.all([
     listPickupQueue(auth.device.tenantId, auth.device.locationId),

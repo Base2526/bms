@@ -160,5 +160,8 @@ export default function QueueBoardPreferenceSettings() {
     <div style={{ color: "var(--posx-muted, #667085)", fontSize: 12 }}>
       เปิดเป็นค่าเริ่มต้น · ปิดได้เมื่อต้องการให้จอแสดงเลขคิวโดยไม่ออกเสียง
     </div>
+    <div style={{ marginTop: 10, color: "var(--posx-muted, #667085)", fontSize: 12 }}>
+      รูปโปรโมตและรูปเริ่มต้นตั้งแยกตามสาขาในระบบหลังบ้าน → สาขา → สื่อจอคิว
+    </div>
   </section>;
 }

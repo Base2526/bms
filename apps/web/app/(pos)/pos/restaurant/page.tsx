@@ -8,6 +8,7 @@ import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } 
 import { cashRoundingForPayments, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, checkoutBlockReason, rebalanceSplitPayments, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
 import { describePosFailure, describeTransportFailure } from "@/lib/pos/failureMessage";
+import { readPosJson } from "@/lib/pos/response";
 import {
   CUSTOMER_DISPLAY_CHANNEL,
   EMPTY_CUSTOMER_DISPLAY,
@@ -564,6 +565,7 @@ export default function RestaurantPosPage() {
   const [session, setSession] = useState<Session | null>(null);
   const pickupQueueActive = pickupQueueEnabled || session?.location?.pickupQueue?.enabled === true;
   const [floor, setFloor] = useState<Floor>({ areas: [], tables: [] });
+  const [floorLoaded, setFloorLoaded] = useState(false);
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
   // ตัวนับเวลาบนใบต้องเดินเอง ไม่ใช่ขยับตอน poll — ครัวมองจออยู่ตลอดและ 5 วินาทีของ
   // poll ทำให้ตัวเลขกระตุก · เก็บเป็น "เวลาที่จอเชื่อ" ก้อนเดียวเพื่อให้ทุกใบนับตรงกัน
@@ -1122,7 +1124,7 @@ export default function RestaurantPosPage() {
     person.hasPin && person.id !== actorUserId && person.approvals.includes("pos.discount.approve")
   );
 
-  async function json(url: string, init?: RequestInit) {
+  async function json(url: string, init?: RequestInit): Promise<any> {
     const startedAt = Date.now();
     const method = String(init?.method ?? "GET").toUpperCase();
     if (method === "GET" && !init?.body) {
@@ -1130,15 +1132,15 @@ export default function RestaurantPosPage() {
       if (prepared !== undefined) return prepared;
     }
     let response: Response;
+    let body: Record<string, any>;
     try {
-      response = await fetch(url, { ...init, headers: { "x-pos-device-token": token, ...(init?.body ? { "Content-Type": "application/json" } : {}), ...(init?.headers ?? {}) }, cache: "no-store" });
-    } catch {
+      ({ response, body } = await readPosJson(url, { ...init, headers: { "x-pos-device-token": token, ...(init?.body ? { "Content-Type": "application/json" } : {}), ...(init?.headers ?? {}) }, cache: "no-store" }));
+    } catch (cause) {
       // fetch rejection has no response/status (network, DNS, TLS or timeout abort). Do not leak
       // browser-specific "Failed to fetch"/AbortError strings onto an operator screen.
-      const transportMessage = describeTransportFailure(0, navigator.onLine, method);
+      const transportMessage = cause instanceof Error ? cause.message : describeTransportFailure(0, navigator.onLine, method);
       throw new RestaurantApiError(transportMessage, 0);
     }
-    const body = await response.json().catch(() => ({}));
     if (method !== "GET" || !response.ok) {
       let requestedAction = method;
       try {
@@ -1164,7 +1166,8 @@ export default function RestaurantPosPage() {
     // เดียวกับหน้าค้าปลีก เพราะสองหน้านี้เรียก service เดียวกัน
     // ไม่มีทั้ง status และ error = ตอบมาไม่ใช่ JSON ของ service (proxy ตอบ HTML ตอน 502
     // หรือเน็ตหลุด) → ต้องแปลเป็นคำที่บอกได้ว่าให้ทำอะไรต่อ ไม่ใช่โชว์ "HTTP 502" ดิบ ๆ
-    if (!response.ok && typeof body?.status !== "string" && !body?.error && !body?.reason) {
+    if (response.status >= 500 || response.status === 408
+      || (!response.ok && typeof body?.status !== "string" && !body?.error && !body?.reason)) {
       throw new RestaurantApiError(describeTransportFailure(response.status, navigator.onLine, method), response.status);
     }
     if (!response.ok) throw new RestaurantApiError(typeof body?.status === "string"
@@ -1290,7 +1293,7 @@ export default function RestaurantPosPage() {
     // Desktop shows its own setup window after unpair; a browser register returns to pairing.
     if (!window.bmsDesktop) router.replace("/pos");
   }
-  async function loadFloor(signal?: AbortSignal) { const data: Floor = await json("/api/pos/restaurant/floor", { signal }); setFloor(data); setActiveArea((current) => current && data.areas.some((area) => area.id === current) ? current : data.areas[0]?.id ?? ""); return data; }
+  async function loadFloor(signal?: AbortSignal) { const data: Floor = await json("/api/pos/restaurant/floor", { signal }); setFloor(data); setFloorLoaded(true); setActiveArea((current) => current && data.areas.some((area) => area.id === current) ? current : data.areas[0]?.id ?? ""); return data; }
   async function loadWaitlist(signal?: AbortSignal) { setWaitlist(await json("/api/pos/restaurant/waitlist", { signal })); }
   /** ทุก action ของคิวคืนกระดานใหม่ให้เสมอ เพื่อไม่ให้จอถือสถานะที่ server ปฏิเสธไปแล้ว */
   async function waitlistAction(action: string, extra: Record<string, unknown> = {}) {
@@ -3325,7 +3328,8 @@ export default function RestaurantPosPage() {
                     </div>;
                   })}</div>}</div>
             </>}
-        </> : floor.areas.length === 0 ? <div className={styles.setup}><div><div className={styles.setupIcon}><ShopOutlined /></div><h2>{t("pos_restaurant.floor_empty")}</h2><p>{t("pos_restaurant.floor_seed_hint")}</p><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!session?.shift} onClick={() => void run(async () => { const data = await json("/api/pos/restaurant/floor", { method: "POST", body: JSON.stringify(auth({ tableCount: 12 })) }); setFloor(data); setActiveArea(data.areas[0]?.id ?? ""); })}>{t("pos_restaurant.floor_seed")}</button></div></div> : <>
+        </> : !floorLoaded ? <div className={styles.setup}><div><h2>{t("pos_restaurant.floor_unavailable")}</h2><p>{t("pos_restaurant.floor_unavailable_hint")}</p></div></div>
+        : floor.areas.length === 0 ? <div className={styles.setup}><div><div className={styles.setupIcon}><ShopOutlined /></div><h2>{t("pos_restaurant.floor_empty")}</h2><p>{t("pos_restaurant.floor_seed_hint")}</p><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!session?.shift} onClick={() => void run(async () => { const data = await json("/api/pos/restaurant/floor", { method: "POST", body: JSON.stringify(auth({ tableCount: 12 })) }); setFloor(data); setFloorLoaded(true); setActiveArea(data.areas[0]?.id ?? ""); })}>{t("pos_restaurant.floor_seed")}</button></div></div> : <>
           <div className={styles.panelHeader}><div><h2>{t("pos_restaurant.rail_floor")}</h2><small>{t("pos_restaurant.floor_table_counts", { free: floor.tables.filter((row) => row.status === "AVAILABLE").length, occupied: floor.tables.filter((row) => row.status === "OCCUPIED").length })}</small></div>
                         <div className={styles.searchRow}><button
                             type="button"
@@ -3487,8 +3491,8 @@ export default function RestaurantPosPage() {
             </div>
           </div>
         </> : <>
-          <div className={styles.checkHead}><h2>{t("pos_restaurant.open_checks_count", { count: openChecks.length })}</h2></div>
-          {openChecks.length === 0
+          <div className={styles.checkHead}><h2>{floorLoaded ? t("pos_restaurant.open_checks_count", { count: openChecks.length }) : t("pos_restaurant.floor_unavailable")}</h2></div>
+          {!floorLoaded ? <div className={styles.empty}>{t("pos_restaurant.floor_unavailable_hint")}</div> : openChecks.length === 0
             ? <div className={styles.empty}><div><AppstoreOutlined style={{ fontSize: 36 }} /><h3>{t("pos_restaurant.no_open_check")}</h3><p>{t("pos_restaurant.no_open_check_hint")}</p></div></div>
             : <ul className={styles.openList}>{openChecks.map(({ table, check: row, state, label }) => <li key={row.id}>
                 <button type="button" className={styles.openRow} onClick={() => void openCheckById(table, row.id)}>

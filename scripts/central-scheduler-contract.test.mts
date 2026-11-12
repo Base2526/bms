@@ -35,6 +35,11 @@ test("configuration fails closed without credentials and rejects invalid origins
 
 test("UTC slots handle the daily boundary and recover only the latest slot after downtime", () => {
   const daily = jobs.find((j: typeof job) => j.group === "daily");
+  const hourly = jobs.find((j: typeof job) => j.name === "report-digest");
+  assert.equal(hourly.group, "hourly");
+  assert.equal(slotFor(hourly, instant + 59 * 60000), instant);
+  assert.equal(slotFor(hourly, instant + 60 * 60000), instant + 60 * 60000);
+  assert.equal(slotFor(hourly, instant + 4 * 60 * 60000), instant + 4 * 60 * 60000);
   assert.equal(slotFor(daily, instant - 1), instant - 86400000);
   assert.equal(slotFor(daily, instant), instant);
   assert.equal(slotFor(job, instant + 14 * 60000), instant);
@@ -49,11 +54,15 @@ test("all schedules match the existing workflow and use real guarded routes", ()
   assert.deepEqual(jobs.map((j: typeof job) => [j.name, j.path]).sort(), entries.map((m) => [m[1], m[2]]).sort());
   assert.equal(new Set(jobs.map((j: typeof job) => j.name)).size, jobs.length);
   const dailyStart = workflow.indexOf("  daily:");
+  const hourlyStart = workflow.indexOf("  hourly:");
+  assert.ok(hourlyStart > 0 && dailyStart > hourlyStart);
   for (const j of jobs) {
-    assert.equal(j.group, workflow.indexOf(`- name: ${j.name}\n`) > dailyStart ? "daily" : "frequent");
+    const position = workflow.indexOf(`- name: ${j.name}\n`);
+    assert.equal(j.group, position > dailyStart ? "daily" : position > hourlyStart ? "hourly" : "frequent");
     assert.match(read(`apps/web/app${j.path.split("?")[0]}/route.ts`), /authorizeCronRequest/);
     assert.match(read(`apps/web/app${j.path.split("?")[0]}/route.ts`), /withRouteErrorLog/);
   }
+  assert.match(workflow, /cron: "0 \* \* \* \*"/);
 });
 
 test("two runners and a restarted runner send just one request for a shared slot", async () => {
@@ -191,6 +200,6 @@ test("deployment opts in without database credentials or automatic GitHub duplic
     assert.match(read(filename), /BMS_SCHEDULER_BASE_URL/);
   }
   const workflow = read(".github/workflows/bms-cron.yml");
-  assert.equal((workflow.match(/vars.BMS_CRON_RUNNER == 'github'/g) || []).length, 2);
-  assert.equal((workflow.match(/vars.BMS_CRON_RUNNER != 'docker'/g) || []).length, 2);
+  assert.equal((workflow.match(/vars.BMS_CRON_RUNNER == 'github'/g) || []).length, 3);
+  assert.equal((workflow.match(/vars.BMS_CRON_RUNNER != 'docker'/g) || []).length, 3);
 });

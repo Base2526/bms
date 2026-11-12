@@ -85,7 +85,6 @@ export const bmsShippingResolvers = {
         actor: actorOf(ctx),
       });
       if (res.status === "CREATED") {
-        await audit(ctx, "shipping.create", res.shipmentId, { orderId: args.orderId, orderShipped: res.orderShipped });
         const bookingMessages: Record<string, string> = {
           UNCONFIGURED: "ยังไม่ได้ตั้งค่า carrier credentials; สร้าง shipment ใน BMS แล้วและกด Book carrier เพื่อลองใหม่ได้",
           NOT_IMPLEMENTED: "carrier live adapter ยังไม่พร้อม; สร้าง shipment ใน BMS แล้วโดยยังไม่ได้จองกับขนส่ง",
@@ -108,6 +107,7 @@ export const bmsShippingResolvers = {
       const msg: Record<string, string> = {
         ORDER_NOT_FOUND: "ไม่พบออร์เดอร์",
         BAD_CARRIER: "ขนส่งไม่ถูกต้อง",
+        PICKUP_ORDER: "ออร์เดอร์รับเองต้องยืนยันส่งมอบจากหน้าออร์เดอร์ ไม่สร้างพัสดุ",
         MISSING_SHIPPING_ADDRESS: "ลูกค้ายังไม่มีที่อยู่จัดส่งในระบบ",
         INVALID_STATE: "สถานะออร์เดอร์ไม่อนุญาตให้จัดส่ง (ต้องเป็น PACKING/SHIPPED)",
       };

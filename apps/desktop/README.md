@@ -180,6 +180,109 @@ member search and board-game copy selection on that real route using browser-onl
 including light/dark/system preferences, desktop/mobile widths and portalled dropdowns.
 It uses the same dev-server and Playwright environment as the update smoke above.
 
+## Desktop feature recheck (2026-11-12)
+
+The recheck covers pairing/recovery, local-server handoff, startup/login integration, POS route
+handoffs, checkout contracts, receipt/kitchen printing, customer/queue displays, notifications,
+manual update discovery and packaging. Fixes bound the entire kitchen-print preparation (including
+font/page loading), cancel stale work before submission, preserve uncertain jobs when journal writes
+fail, and allow recovery from a missing printer without claiming a job was submitted. The Windows
+kitchen fixture now uses Winspool status instead of a CUPS status value.
+
+Unpair, attention and display controls now require the cashier main frame. Manual/queue utility
+windows cannot navigate or redirect into another register or open nested windows. Display settings
+and kitchen-printer configuration reject overlapping writes; a failed save preserves the live
+display preview. Display smoke selectors follow the current accessible controls, and the button
+hover test measures final CSS values instead of sampling an in-progress theme transition. The managed
+display fixture loads the shipped POS/settings CSS so its width checks exercise the real layout.
+
+The follow-up cross-app recheck also prevents a setup frame that closed during a queued disk write
+from replacing the saved credential. Frame validity is checked before the atomic rename; if the
+rename was already submitted when the frame closed, its valid saved credential remains restorable,
+but the old request cannot navigate a replacement window. The shared POS operation deadline now
+rejects independently of transport abort, including a transport or body parser that ignores abort.
+Late completions do not turn the timed-out request into success or trigger an automatic retry.
+
+The dependency review also updates Electron **43.7.2 → 43.8.8** within the existing major release,
+including the upstream [TLS certificate mitigation](https://github.com/electron/electron/security/advisories/GHSA-jr5w-w6x2-84p9).
+Compatible `fast-uri` and both `undici` dependency versions were refreshed in the lockfile.
+Desktop's audit falls from **9 findings (2 high)** to **6 moderate findings**, all in the
+electron-builder/minimatch build-tool chain; zero high/critical findings remain in this audit.
+The Node tests, all ten UI smokes, native Windows keystore smoke and Windows x64 unpacked package
+were rerun successfully on Electron 43.8.8. The resulting package is under
+`dist/recheck-20261112-secure/win-unpacked`; it is not a signed installer/upgrade acceptance test.
+
+Verification on Windows: **135/135 Desktop Node tests**, syntax checks, Web typecheck and **3,529
+passing DB-free web tests (six skipped)**. All ten Electron smoke commands passed: setup/recovery,
+receipt, customer display, managed displays, queue board, queue manager, restaurant hover, kitchen,
+service mode and header. These use isolated API/bridge fixtures, not live-shop transactions.
+A Windows x64 unpacked build passed the packaged-source/version check using the locally installed
+Electron distribution; the initial ZIP-extraction build hit a Windows file-lock error. This is not
+an NSIS installation/upgrade test or a published release.
+
+`npm run test:keystore-smoke` also passed real Windows `safeStorage` encryption/decryption with
+synthetic text and an isolated Electron profile. It does not read the register's pairing or prove an
+installed-client upgrade. Logs for the follow-up are under repository-root `.test-output/cross-app-*`.
+
+These are source changes; installed clients need a rebuilt package. Native keystore upgrade tests,
+physical printers/displays and Linux/macOS installation acceptance remain separate checks.
+
+### Remaining release findings
+
+The existing Web installation was Next.js **14.2.5**, while the committed lockfile specifies
+**14.2.35**. The original checkout's Web gate passed, but that alone does not verify the lockfile.
+A separate detached worktree with the changed sources and clean locked Web/realtime dependencies
+also passed the complete Web gate on **Next.js 14.2.35**, including **3,529 tests (six skipped)** and
+the production build. The original Web environment was not modified.
+
+The locked Web dependency audit on 2026-11-12 reports **17 affected packages: 1 critical, 9 high,
+3 moderate and 4 low**. Next.js 14.2.35 remains affected; a passing build is not security clearance.
+Upstream advisories include [Windows-hosted server RCE](https://github.com/vercel/next.js/security/advisories/GHSA-p293-qw3h-jr36)
+and [Linux image optimization RCE](https://github.com/vercel/next.js/security/advisories/GHSA-2464-fhr4-w9xw).
+These concern the Web server and its deployment conditions, not proof that an Electron Windows
+client is exploitable. The audit recommends Next.js 16.4.6, a major upgrade; the framework/image
+dependency migration and its compatibility/security verification remain outstanding. No force-upgrade
+or deployment was performed. The audit JSON is `.test-output/cross-app-dependency-audit.json`.
+The six remaining Desktop build-tool advisories require a compatible upstream builder/minimatch
+solution; npm's proposed forced downgrade of electron-builder is not applied. Desktop audit evidence
+is `.test-output/cross-app-desktop-dependency-audit-after.json`.
+
+## Backend connection recheck (2026-11-12)
+
+The compact renderer and native app share `packages/pos-client-core/src/connectionFailure.ts`:
+safe category/HTTP codes, recovery steps, and separate failed-read/unknown-write messages.
+GraphQL preserves domain rejection/variant metadata, rejects malformed success data, and treats
+HTTP 5xx/408 and mixed decided/unknown errors as uncertain. Raw internal errors and proxy bodies
+are not shown. The restaurant REST adapter bounds headers plus JSON parsing and refuses HTML 200
+as a successful response. Required floor/waitlist/menu/kitchen arrays are checked before replacing
+the last snapshot; malformed boards cannot crash rendering or silently become an empty board.
+The POS error boundary also avoids claiming that a failed screen proves no write occurred.
+The compact startup gate stops its spinner on failure and retains retry controls when its detail
+banner is dismissed. Before the first valid restaurant floor snapshot, tables/bills show unavailable
+rather than fabricated zero counts or an empty-floor setup action; existing snapshots survive failed reads.
+An offline indicator never proves that a submitted write was unsent.
+Pairing probes now describe HTTP 408/429 as temporary failures instead of an incompatible server.
+
+Desktop Node tests: **137 passed**, syntax checks passed. The shared transport contract tests cover
+401/403/429/5xx, malformed bodies, preserved business results, external cancellation, and uncertain
+idempotency handling. The operator manual has matching Thai/English recovery guidance. Logs and
+browser screenshots are kept under `.test-output/connection-*`. Physical hardware, live backend
+commit/rollback and installed-client upgrade acceptance remain separate checks.
+
+The isolated locked-dependency Web gate passed **3,542 tests (six skipped)** and the production
+build. The subsequent board-response/error-boundary hardening passed **15 focused connection
+contracts** and a fresh production build; those focused tests overlap the gate inventory.
+The final UI changes also passed the Desktop, restaurant and i18n contract filters. Browser smoke
+passed **18 cases** across `/pos/app` and `/pos/restaurant` at **1440 px and 390 px**, using mocked
+HTML-200, HTTP 503/403, network failures and malformed floor responses. It checks visible recovery,
+no raw proxy body, no page exceptions or horizontal overflow, stopped startup spinners, and unknown
+floor data instead of false empty counts. These browser cases make no live business API calls;
+WebSockets are intercepted as unavailable, so this is not a live gateway/reconnect test.
+The Electron setup/recovery smoke and a Windows unpacked build passed; the latter is not a signed
+installer or an install/upgrade test. Re-run the browser smoke with `BMS_SMOKE_URL` pointing to a
+local production server and `node scripts/pos-connection-errors-browser-smoke.mjs` from the repo root
+(Playwright with Chrome is required; `BMS_PLAYWRIGHT_MODULE` can select an isolated module).
+
 ## Develop
 
 ```powershell
@@ -240,6 +343,10 @@ Preparing ticker, Minimal TV, Queue list, or Split. The saved choice is shared b
 queue display and temporary preview, updates an already-open window through origin storage events,
 and never changes queue status or branch policy. Dense layouts page visible numbers every eight
 seconds instead of shrinking them beyond across-the-room readability.
+Promotion and default images are configured per branch in Backoffice → Locations → Queue board media;
+the workstation setting controls only layout and sound. Customer and queue windows keep rendering
+while the cashier has focus and retry an initial page-load failure every five seconds until the
+configured window closes or the pairing changes.
 The same card chooses AI Studio speech, AI Studio speech plus a counter bell, counter bell only,
 double beep, or soft ping, with a queue-001 preview button. A branch-wide `OFF` policy still wins;
 the workstation choice cannot silently re-enable announcements disabled by the owner for the branch.

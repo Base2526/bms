@@ -127,7 +127,6 @@ const ROUTE_GUARDS = [
   "requirePlatformAdminSeeder", // seeder ระดับแพลตฟอร์ม
   "authorizeCronRequest",       // helper ที่ fail closed (lib/bms/cronRouteAuth.ts)
   "CRON_SECRET",                // job ที่ cron ยิง
-  "BMS_JOB_TOKEN",
   "verifyMetaSignature",        // webhook ที่ verify ลายเซ็น (fail-closed)
   "verifyLineSignature",
   "channel_secret",

@@ -6,7 +6,7 @@ export const WORK_ASSISTANT_CONFIRM_MUTATIONS: Record<
   { doc: any; vars: (args: any) => Record<string, unknown> }
 > = {
   bmsConfirmPayment: {
-    doc: gql`mutation($id: ID!) { bmsConfirmPayment(id: $id) { __typename } }`,
+    doc: gql`mutation($id: ID!) { bmsConfirmPayment(id: $id, confirmed: true) { __typename } }`,
     vars: (args) => ({ id: args.id }),
   },
   bmsRejectPayment: {

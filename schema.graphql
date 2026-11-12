@@ -10299,7 +10299,7 @@ type Mutation {
   bmsConfirmBankMatch(confirmed: Boolean!, input: BmsConfirmBankMatchInput!): BmsBankMutationResult!
   bmsConfirmInventoryValue(input: BmsInventoryOpeningInput!): BmsCostingActionResult!
   bmsConfirmMenuNetProfit(input: BmsMenuProfitInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
-  bmsConfirmPayment(id: ID!): BmsPaymentResult!
+  bmsConfirmPayment(confirmed: Boolean!, id: ID!): BmsPaymentResult!
   bmsCreateBankAccount(input: BmsCreateBankAccountInput!): BmsBankAccount!
   bmsCreateExpenseDocument(input: BmsCreateExpenseDocumentInput!): BmsExpenseDocument!
   bmsCreateInboxDiagnosticMessage(body: String, channel: String!): BmsInboxDiagnosticMessageResult!
@@ -10539,7 +10539,7 @@ type Mutation {
   bmsSetProductSalesSurfaces(productSku: String!, surfaces: [String!]!): [String!]!
   bmsSetReorderPoint(locationId: ID!, reorderPoint: Int!, size: String!, sku: String!): BmsVariant!
   bmsSetRestaurantCustomerTableDetails(locationId: ID!, publish: Boolean!): Boolean!
-  bmsSetRolePermissions(permissions: [String!]!, roleId: ID!): Boolean!
+  bmsSetRolePermissions(confirmed: Boolean!, permissions: [String!]!, roleId: ID!): Boolean!
   bmsSetShipmentStatus(id: ID!, status: BmsShipmentStatus!): Boolean!
   bmsSetShippingZoneOverride(provinceCode: String!, zone: String): Boolean!
   bmsSetTenantActive(active: Boolean!, tenantId: ID!): Boolean!

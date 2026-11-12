@@ -86,7 +86,7 @@ export function IncomingOrdersProvider({
         if (result?.status !== 'ACCEPTED') {
           return result?.reason ?? result?.status ?? 'รับออร์เดอร์ไม่สำเร็จ';
         }
-        await query.refetch();
+        await query.refetch().catch(() => undefined);
         return { ticketsCreated: result.ticketsCreated ?? 0 };
       } catch (error) {
         return error instanceof Error ? error.message : 'รับออร์เดอร์ไม่สำเร็จ';

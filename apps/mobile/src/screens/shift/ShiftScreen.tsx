@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -67,9 +67,12 @@ export default function ShiftScreen({ onBack }: Props) {
   const [approverId, setApproverId] = useState('');
   const [approverPin, setApproverPin] = useState('');
   const [movementKey, setMovementKey] = useState('');
+  const movementInFlight = useRef(false);
+  const [savingMovement, setSavingMovement] = useState(false);
   const [section, setSection] = useState<ShiftSection>('OVERVIEW');
 
   const closeMovement = () => {
+    if (movementInFlight.current) return;
     setMovementType(null);
     setAmount('');
     setReason('');
@@ -80,22 +83,30 @@ export default function ShiftScreen({ onBack }: Props) {
   };
 
   const submitMovement = async () => {
-    if (!movementType) return;
-    const failure = await shift.addMovement(
-      movementType,
-      amount,
-      reason,
-      {
-        approverUserId: approverId || undefined,
-        approverPin: approverPin || undefined,
-      },
-      movementKey,
-    );
-    if (failure) {
-      setError(failure);
-      return;
+    if (!movementType || movementInFlight.current) return;
+    movementInFlight.current = true;
+    setSavingMovement(true);
+    try {
+      const failure = await shift.addMovement(
+        movementType,
+        amount,
+        reason,
+        {
+          approverUserId: approverId || undefined,
+          approverPin: approverPin || undefined,
+        },
+        movementKey,
+      );
+      if (failure) {
+        setError(failure);
+        return;
+      }
+      movementInFlight.current = false;
+      closeMovement();
+    } finally {
+      movementInFlight.current = false;
+      setSavingMovement(false);
     }
-    closeMovement();
   };
 
   const submitClose = async () => {
@@ -110,6 +121,10 @@ export default function ShiftScreen({ onBack }: Props) {
   };
 
   const submitOpen = async () => {
+    if (!openingFloat.trim()) {
+      setError('กรุณากรอกเงินทอนตั้งต้น หรือ 0 หากไม่มีเงินทอน');
+      return;
+    }
     const failure = await shift.reopenShift(Number(openingFloat));
     if (failure) {
       setError(failure);
@@ -815,6 +830,7 @@ export default function ShiftScreen({ onBack }: Props) {
               </Text>
               <TextInput
                 accessibilityLabel="จำนวนเงิน"
+                editable={!savingMovement}
                 value={amount}
                 onChangeText={setAmount}
                 placeholder="จำนวนเงิน"
@@ -846,13 +862,14 @@ export default function ShiftScreen({ onBack }: Props) {
                           approverId === approver.id ? 'primary' : 'secondary'
                         }
                         fullWidth
-                        disabled={!approver.hasPin}
+                        disabled={!approver.hasPin || savingMovement}
                         onPress={() => setApproverId(approver.id)}
                       />
                     ))}
                   </View>
                   <TextInput
                     accessibilityLabel="PIN ผู้อนุมัติเงินออก"
+                    editable={!savingMovement}
                     value={approverPin}
                     onChangeText={setApproverPin}
                     placeholder="PIN ผู้อนุมัติ"
@@ -868,6 +885,7 @@ export default function ShiftScreen({ onBack }: Props) {
               ) : null}
               <TextInput
                 accessibilityLabel="เหตุผล"
+                editable={!savingMovement}
                 value={reason}
                 onChangeText={setReason}
                 placeholder="เหตุผล เช่น เติมเงินทอน / ซื้อวัตถุดิบ"
@@ -887,6 +905,7 @@ export default function ShiftScreen({ onBack }: Props) {
               <Button
                 label="บันทึก"
                 accessibilityLabel="บันทึกรายการเงินเข้า/ออก"
+                loading={savingMovement}
                 fullWidth
                 style={{ marginTop: spacing.md }}
                 onPress={submitMovement}
@@ -897,6 +916,7 @@ export default function ShiftScreen({ onBack }: Props) {
                 fullWidth
                 style={{ marginTop: spacing.sm }}
                 onPress={closeMovement}
+                disabled={savingMovement}
               />
             </ScrollView>
           </View>

@@ -1203,7 +1203,10 @@ resolve ว่า "ฐานเป้าหมายคือใบไหน" �
 ต่อให้ลูกทุกตัวแบบระบุชัด** — เดิมรันสองเครื่องมือจากเครื่องเดียวกันแล้วอาจตรวจฐานคนละใบโดยไม่มี
 อะไรบอก
 
-ด่านที่บล็อก: `check-schema-readiness` · `JWT_SECRET`/`BMS_SECRET_KEY` (hex 64) ·
+ด่านที่บล็อก: `check-schema-readiness` · `check-order-email-readiness` (อ่านเฉพาะ
+`email_templates` เพื่อตรวจว่า `order.pickup.*` ทั้งไทยและอังกฤษมีเวอร์ชันล่าสุดที่เผยแพร่,
+เปิดใช้ และมีหัวเรื่อง/เนื้อหา; ขาด ปิด หรือว่างต้อง apply `10.114` หรือเผยแพร่เวอร์ชันใหม่) ·
+`JWT_SECRET`/`BMS_SECRET_KEY` (hex 64) ·
 `check-bms-secret-key` · GRANT ของ `bms_app` (เรียกไฟล์เทสตัวเดิม **และตรวจว่าบรรทัดประกาศ
 read-only ยังอยู่ก่อนเรียก**) · `NODE_ENV=production` ต้องไม่มี `BMS_ALLOW_FAKE_SEED=1` ·
 **env ของ realtime/WS** (`WS_ALLOWED_ORIGINS` ต้องตั้งและต้องไม่ใช่ localhost · `JWT_SECRET`

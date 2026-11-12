@@ -248,9 +248,16 @@ export default function KitchenBoardScreen({ navigation }: Props) {
                 {item.station}
               </Text>
               {item.items.map((it, i) => (
-                <Text key={i} style={[typography.body, { color: colors.text }]}>
-                  {it.name} × {it.qty}
-                </Text>
+                <View key={i}>
+                  <Text style={[typography.body, { color: colors.text }]}>
+                    {it.name}{it.size && it.size !== '-' ? ` · ${it.size}` : ''} × {it.qty}
+                  </Text>
+                  {it.modifierCodes?.length ? (
+                    <Text style={[typography.caption, { color: colors.text }]}>
+                      ตัวเลือก: {it.modifierCodes.join(' · ')}
+                    </Text>
+                  ) : null}
+                </View>
               ))}
               {item.note && (
                 <Text

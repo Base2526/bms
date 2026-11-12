@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -73,6 +73,7 @@ export default function FloorScreen({ navigation }: Props) {
   const [areaId, setAreaId] = useState<string | null>(null);
   const [floorAreaHeight, setFloorAreaHeight] = useState(0);
   const [openingTakeaway, setOpeningTakeaway] = useState(false);
+  const takeawayInFlight = useRef(false);
   const [billPickerTable, setBillPickerTable] = useState<FloorTable | null>(
     null,
   );
@@ -197,12 +198,13 @@ export default function FloorScreen({ navigation }: Props) {
   }, [canvas.height, canvas.width, scale]);
 
   const openTakeawayCheck = async () => {
-    if (openingTakeaway) return;
+    if (takeawayInFlight.current) return;
     const credentials = session?.credentials;
     if (!credentials) {
       Alert.alert('เปิดบิลไม่ได้', 'กรุณาเข้าใช้งานใหม่');
       return;
     }
+    takeawayInFlight.current = true;
     setOpeningTakeaway(true);
     try {
       const response = await openCheck({
@@ -219,7 +221,7 @@ export default function FloorScreen({ navigation }: Props) {
       });
       const opened = response.data?.bmsPosRestaurantOpenCheck.check;
       if (!opened) throw new Error('เปิดบิลกลับบ้านไม่สำเร็จ');
-      await query.refetch();
+      await query.refetch().catch(() => undefined);
       getAppNavigation(navigation).navigate('CheckDetail', {
         checkId: opened.id,
         serviceMode: 'TAKEAWAY',
@@ -230,6 +232,7 @@ export default function FloorScreen({ navigation }: Props) {
         error instanceof Error ? error.message : 'กรุณาลองใหม่',
       );
     } finally {
+      takeawayInFlight.current = false;
       setOpeningTakeaway(false);
     }
   };

@@ -413,6 +413,7 @@ function BoardGameFloor({
   const { calls, pendingCount, refresh: refreshCalls } = useBoardGameService();
   const [callsOpen, setCallsOpen] = useState(false);
   const [workingCallId, setWorkingCallId] = useState('');
+  const callInFlight = useRef(false);
   const [queuePartySize, setQueuePartySize] = useState('2');
   const [queueGuestName, setQueueGuestName] = useState('');
   const [reservationPartySize, setReservationPartySize] = useState('2');
@@ -431,6 +432,7 @@ function BoardGameFloor({
     Record<string, string>
   >({});
   const [workingQueueId, setWorkingQueueId] = useState('');
+  const queueInFlight = useRef(false);
   const callOperationKeys = useRef<Record<string, string>>({});
   const [acknowledgeCall] = useMutation(
     MobilePosAcknowledgeBoardGameServiceCallDocument,
@@ -565,7 +567,8 @@ function BoardGameFloor({
     operationName: string,
     action: (idempotencyKey: string) => Promise<unknown>,
   ) => {
-    if (!credentials || workingQueueId) return;
+    if (!credentials || queueInFlight.current) return;
+    queueInFlight.current = true;
     const idempotencyKey = (callOperationKeys.current[operationName] ??=
       createIdempotencyKey(`board-queue-${operationName}`));
     setWorkingQueueId(operationName);
@@ -583,6 +586,7 @@ function BoardGameFloor({
       );
       return false;
     } finally {
+      queueInFlight.current = false;
       setWorkingQueueId('');
     }
   };
@@ -597,7 +601,8 @@ function BoardGameFloor({
       OTHER: 'อื่น ๆ',
     }[code] ?? code);
   const handleCall = async (callId: string, status: string) => {
-    if (!credentials || workingCallId) return;
+    if (!credentials || callInFlight.current) return;
+    callInFlight.current = true;
     const action = status === 'PENDING' ? 'acknowledge' : 'complete';
     const operationName = `${action}-${callId}`;
     const idempotencyKey = (callOperationKeys.current[operationName] ??=
@@ -614,13 +619,16 @@ function BoardGameFloor({
         });
       }
       delete callOperationKeys.current[operationName];
-      await refreshCalls();
+      await refreshCalls().catch(() => undefined);
     } catch (cause) {
+      if (isDecidedRejection(cause))
+        delete callOperationKeys.current[operationName];
       Alert.alert(
         'อัปเดตคำขอไม่สำเร็จ',
         cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
       );
     } finally {
+      callInFlight.current = false;
       setWorkingCallId('');
     }
   };
@@ -2392,6 +2400,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
   const [working, setWorking] = useState('');
   const notified = useRef(new Set<string>());
   const operationKeys = useRef<Record<string, string>>({});
+  const operationInFlight = useRef(false);
 
   const workspace = useQuery(MobilePosBoardGameWorkspaceDocument, {
     variables: { credentials: inputCredentials },
@@ -2618,7 +2627,8 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
   }, [data?.floor.tables, isFocused, navigation, view.kind]);
 
   const run = async (key: string, action: () => Promise<void>) => {
-    if (!credentials || working) return;
+    if (!credentials || operationInFlight.current) return;
+    operationInFlight.current = true;
     setWorking(key);
     try {
       await action();
@@ -2646,6 +2656,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
         cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
       );
     } finally {
+      operationInFlight.current = false;
       setWorking('');
     }
   };

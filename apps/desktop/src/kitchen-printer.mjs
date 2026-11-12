@@ -73,7 +73,7 @@ export function kitchenPrintDocument(job, paperWidth) {
 
 export function createKitchenPrinter({ createWindow, getPrinters, getConfig, getJournal, setJournal, timeoutMs = 30_000 }) {
   let busy = false;
-  return async function printKitchenTicket(input, options = {}) {
+  return async function printKitchenTicket(input, options = {}, authorized = () => true) {
     if (busy) return { ok: false, retrySafe: true, error: "กำลังส่งใบงานไปเครื่องพิมพ์" };
     let job;
     try { job = normalizeKitchenPrintJob(input); }
@@ -90,24 +90,54 @@ export function createKitchenPrinter({ createWindow, getPrinters, getConfig, get
     busy = true;
     let printWindow;
     let timer;
+    let cancelled = false;
+    let submitted = false;
+    const check = () => {
+      if (cancelled || !authorized()) throw new Error("หน้าขายเปลี่ยนแล้ว กรุณาลองใหม่");
+    };
     try {
-      const printers = await getPrinters();
-      receiptPrintOptions(route, printers, 1);
-      await setJournal(key, { status: "PRINTING", at: new Date().toISOString(), stationKey: job.stationKey });
-      printWindow = createWindow();
-      await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(kitchenPrintDocument(job, route.paperWidth))}`);
-      const height = await printWindow.webContents.executeJavaScript(RECEIPT_READY_SCRIPT);
-      const currentPrinters = await getPrinters();
-      const print = new Promise((resolve, reject) => printWindow.webContents.print(
-        receiptPrintOptions(route, currentPrinters, height),
-        (ok) => ok ? resolve() : reject(new Error("ส่งใบงานไม่สำเร็จ")),
-      ));
-      await Promise.race([print, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("เครื่องพิมพ์ไม่ตอบกลับ")), timeoutMs); })]);
-      await setJournal(key, { status: "PRINTED", at: new Date().toISOString(), stationKey: job.stationKey });
+      const task = (async () => {
+        check();
+        const printers = await getPrinters();
+        check();
+        receiptPrintOptions(route, printers, 1);
+        printWindow = createWindow();
+        await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(kitchenPrintDocument(job, route.paperWidth))}`);
+        check();
+        const height = await printWindow.webContents.executeJavaScript(RECEIPT_READY_SCRIPT);
+        const currentPrinters = await getPrinters();
+        check();
+        const printOptions = receiptPrintOptions(route, currentPrinters, height);
+        // Persist intent before handing anything to the driver. A crash after this point must
+        // require an operator to inspect the tray, never an automatic duplicate.
+        await setJournal(key, { status: "PRINTING", at: new Date().toISOString(), stationKey: job.stationKey });
+        check();
+        submitted = true;
+        const print = new Promise((resolve, reject) => printWindow.webContents.print(
+          printOptions,
+          (ok) => ok ? resolve() : reject(new Error("ส่งใบงานไม่สำเร็จ")),
+        ));
+        await print;
+        check();
+        await setJournal(key, { status: "PRINTED", at: new Date().toISOString(), stationKey: job.stationKey });
+      })();
+      await Promise.race([task, new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          cancelled = true;
+          reject(new Error("เครื่องพิมพ์ไม่ตอบกลับ"));
+        }, timeoutMs);
+      })]);
       return { ok: true };
     } catch (error) {
-      await setJournal(key, { status: "UNCERTAIN", at: new Date().toISOString(), stationKey: job.stationKey });
-      return { ok: false, uncertain: true, retrySafe: false, error: `${error?.message || "พิมพ์ใบงานไม่สำเร็จ"} · กรุณาตรวจถาดก่อนพิมพ์ซ้ำ` };
+      cancelled = true;
+      // Failure before the driver is safe to retry. Retain any durable PRINTING marker on
+      // journal failure; never let a second disk error escape the IPC result or cause a retry.
+      if (submitted) {
+        try { await setJournal(key, { status: "UNCERTAIN", at: new Date().toISOString(), stationKey: job.stationKey }); }
+        catch { /* PRINTING already prevents automatic retry. */ }
+      }
+      return { ok: false, uncertain: submitted, retrySafe: !submitted,
+        error: `${error?.message || "พิมพ์ใบงานไม่สำเร็จ"}${submitted ? " · กรุณาตรวจถาดก่อนพิมพ์ซ้ำ" : ""}` };
     } finally {
       clearTimeout(timer);
       if (printWindow && !printWindow.isDestroyed()) printWindow.destroy();

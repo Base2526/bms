@@ -11436,6 +11436,7 @@ export type SchemaMutationBmsConfirmMenuNetProfitArgs = {
 
 
 export type SchemaMutationBmsConfirmPaymentArgs = {
+  confirmed: Scalars['Boolean']['input'];
   id: Scalars['ID']['input'];
 };
 
@@ -12559,6 +12560,7 @@ export type SchemaMutationBmsSetMyAvailabilityArgs = {
 
 
 export type SchemaMutationBmsSetPharmacistLicenseArgs = {
+  confirmed: Scalars['Boolean']['input'];
   isLicensedPharmacist: Scalars['Boolean']['input'];
   licenseNo: InputMaybe<Scalars['String']['input']>;
   userId: Scalars['ID']['input'];
@@ -12610,6 +12612,7 @@ export type SchemaMutationBmsSetRestaurantCustomerTableDetailsArgs = {
 
 
 export type SchemaMutationBmsSetRolePermissionsArgs = {
+  confirmed: Scalars['Boolean']['input'];
   permissions: Array<Scalars['String']['input']>;
   roleId: Scalars['ID']['input'];
 };
@@ -14713,6 +14716,11 @@ export type SchemaQueryBmsPharmacyCatalogArgs = {
 
 export type SchemaQueryBmsPharmacyClinicalEvidenceArgs = {
   assessmentId: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsPharmacyLicenseCandidatesArgs = {
+  search: InputMaybe<Scalars['String']['input']>;
 };
 
 

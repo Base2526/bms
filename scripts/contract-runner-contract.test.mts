@@ -87,18 +87,19 @@ test('every contract test lands in exactly one mode, including ai-eval and infra
     assert.equal(out.status, 2, mode);
     const count = /\((\d+) ไฟล์\)/.exec(out.stderr);
     assert.ok(count, `ตัวรันโหมด ${mode} ไม่ได้บอกจำนวนไฟล์: ${out.stderr}`);
-    return { count: Number(count![1]), examples: out.stderr };
+    return { count: Number(count![1]) };
   };
   const pure = seen('pure');
   const db = seen('db');
   const all = seen('all');
   assert.equal(pure.count + db.count, all.count);
   assert.ok(pure.count > 50 && db.count > 20, `${pure.count} + ${db.count}`);
-  // ชุด ai-eval ต้องอยู่ในโหมด pure จริง ไม่ใช่แค่มีไฟล์อยู่บนดิสก์
-  assert.match(pure.examples, /ai-eval\//);
+  // --list คือรายชื่อทั้งหมดที่ตัวรันจะส่งให้ Node จริง; ตัวอย่างชื่อใน error มีเพียงสี่ชื่อแรก
+  // และจะเปลี่ยนเมื่อเพิ่มชุดเทสใหม่ตามลำดับอักษร
   const listed = run(['pure', '--list']);
   assert.equal(listed.status, 0, listed.stderr);
   const listedFiles = JSON.parse(listed.stdout) as string[];
+  assert.ok(listedFiles.some((f) => f.startsWith('scripts/ai-eval/')));
   assert.ok(listedFiles.includes('scripts/infra/multi-instance-contract.test.mts'));
   assert.ok(listedFiles.includes('scripts/retail-local-migration-checksum.test.mjs'));
   // และจำนวนที่ตัวรันเห็นต้องตรงกับไฟล์ที่มีอยู่จริง

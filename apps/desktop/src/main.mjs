@@ -85,7 +85,10 @@ let pendingPrinterTest = null;
 let printerOperationBusy = false;
 let kitchenPrinterConfig = { ...DEFAULT_KITCHEN_PRINTER_CONFIG };
 let kitchenPrintJournal = {};
+let kitchenJournalWrite = Promise.resolve();
 let displaySetupPromptOpen = false;
+let managedDisplayOperationBusy = false;
+let kitchenConfigBusy = false;
 let displayReconcileTimer = null;
 let refreshRequestSequence = 0;
 let pendingRefreshRequest = null;
@@ -153,15 +156,20 @@ async function saveKitchenPrinterConfig(next) {
   kitchenPrinterConfig = next;
 }
 
-async function saveKitchenJournalEntry(key, value) {
-  kitchenPrintJournal[key] = value;
-  const entries = Object.entries(kitchenPrintJournal)
-    .sort((left, right) => String(right[1]?.at ?? "").localeCompare(String(left[1]?.at ?? "")))
-    .slice(0, 1_000);
-  kitchenPrintJournal = Object.fromEntries(entries);
-  const target = kitchenPrintJournalPath();
-  await writeFile(`${target}.tmp`, JSON.stringify(kitchenPrintJournal), { encoding: "utf8", mode: 0o600 });
-  await rename(`${target}.tmp`, target);
+function saveKitchenJournalEntry(key, value) {
+  // A timed-out job can still have a pending disk write. Later jobs must not race its temp file.
+  const operation = kitchenJournalWrite.then(async () => {
+    kitchenPrintJournal[key] = value;
+    const entries = Object.entries(kitchenPrintJournal)
+      .sort((left, right) => String(right[1]?.at ?? "").localeCompare(String(left[1]?.at ?? "")))
+      .slice(0, 1_000);
+    kitchenPrintJournal = Object.fromEntries(entries);
+    const target = kitchenPrintJournalPath();
+    await writeFile(`${target}.tmp`, JSON.stringify(kitchenPrintJournal), { encoding: "utf8", mode: 0o600 });
+    await rename(`${target}.tmp`, target);
+  });
+  kitchenJournalWrite = operation.catch(() => {});
+  return operation;
 }
 
 const printDesktopReceipt = createReceiptPrinter({
@@ -237,8 +245,8 @@ function pairingPersistence() {
   return pairingWriter;
 }
 
-function writePairing(pairing) {
-  return pairingPersistence().write(pairing);
+function writePairing(pairing, isCurrent) {
+  return pairingPersistence().write(pairing, isCurrent);
 }
 
 async function removePairing() {
@@ -300,7 +308,7 @@ async function consumePairingHandoff(isCurrent = () => true) {
     }
     const verified = await verifyPairing(parsed);
     if (!verified.ok || !isCurrent()) return null;
-    await writePairing(parsed);
+    await writePairing(parsed, isCurrent);
     return { serverUrl: parsed.serverUrl, token: parsed.token, posEntryPath: null };
   } catch (error) {
     if (error?.code !== "ENOENT") console.error("Unable to consume local pairing handoff");
@@ -389,6 +397,8 @@ function isPairedPosFrame(event) {
 }
 
 function isPairedCashierFrame(event) {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents
+    || event.senderFrame !== event.sender.mainFrame) return false;
   if (!isPairedPosFrame(event)) return false;
   try {
     const pathname = new URL(event.senderFrame.url).pathname;
@@ -418,6 +428,41 @@ function openExternalHttp(value) {
     const target = new URL(value);
     if (target.protocol === "https:" || target.protocol === "http:") void shell.openExternal(target.toString());
   } catch {}
+}
+
+function secureUtilityWindow(window, url) {
+  const allowed = new URL(url);
+  const guard = (event, destination) => {
+    try {
+      const target = new URL(destination);
+      if (target.origin === activePairing?.serverUrl && target.origin === allowed.origin
+        && target.pathname === allowed.pathname) return;
+    } catch {}
+    event.preventDefault();
+  };
+  window.webContents.on("will-navigate", guard);
+  window.webContents.on("will-redirect", guard);
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+}
+
+function loadUtilityWithRetry(window, url, isCurrent) {
+  let retryTimer = null;
+  const retry = () => {
+    if (retryTimer || window.isDestroyed() || !isCurrent()) return;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      load();
+    }, 5_000);
+  };
+  const load = () => {
+    if (window.isDestroyed() || !isCurrent()) return;
+    void window.loadURL(url).catch(retry);
+  };
+  window.on("closed", () => {
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = null;
+  });
+  load();
 }
 
 function openAdminBackoffice() {
@@ -615,6 +660,8 @@ function createCustomerDisplayWindow(targetDisplay, kind = "managed") {
       sandbox: true,
       partition: "persist:bms-pos",
       zoomFactor: 1,
+      // Customer totals and idle promotions continue while the cashier window has focus.
+      backgroundThrottling: false,
     },
   });
   customerDisplayWindow = window;
@@ -638,15 +685,10 @@ function createCustomerDisplayWindow(targetDisplay, kind = "managed") {
       broadcastCustomerDisplayState();
     }
   });
-  window.webContents.on("will-navigate", (event, destination) => {
-    try {
-      const target = new URL(destination);
-      if (target.origin === activePairing?.serverUrl && target.pathname === "/pos/display") return;
-    } catch {}
-    event.preventDefault();
-  });
-  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  void window.loadURL(new URL("/pos/display", activePairing.serverUrl).toString()).catch(() => {});
+  secureUtilityWindow(window, new URL("/pos/display", activePairing.serverUrl).toString());
+  const url = new URL("/pos/display", activePairing.serverUrl).toString();
+  loadUtilityWithRetry(window, url, () => customerDisplayWindow === window
+    && activePairing?.serverUrl === new URL(url).origin);
 }
 
 function reconcileCustomerDisplay() {
@@ -775,15 +817,10 @@ function createQueueDisplayWindow(targetDisplay, kind = "managed") {
       broadcastQueueDisplayState();
     }
   });
-  window.webContents.on("will-navigate", (event, destination) => {
-    try {
-      const target = new URL(destination);
-      if (target.origin === activePairing?.serverUrl && target.pathname === "/pos/queue-board") return;
-    } catch {}
-    event.preventDefault();
-  });
-  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  void window.loadURL(new URL("/pos/queue-board?desktop=1", activePairing.serverUrl).toString()).catch(() => {});
+  secureUtilityWindow(window, new URL("/pos/queue-board", activePairing.serverUrl).toString());
+  const url = new URL("/pos/queue-board?desktop=1", activePairing.serverUrl).toString();
+  loadUtilityWithRetry(window, url, () => queueDisplayWindow === window
+    && activePairing?.serverUrl === new URL(url).origin);
 }
 
 function reconcileQueueDisplay() {
@@ -826,12 +863,16 @@ async function offerCustomerDisplaySetup() {
       detail: "เมื่อเปิดใช้งาน ระบบจะเปิดจอลูกค้าให้อัตโนมัติทุกครั้งที่เปิด POS เปลี่ยนจอได้ในตั้งค่า",
       buttons: ["เปิดจอลูกค้า", "ยังไม่ใช้"], defaultId: 0, cancelId: 1,
     });
-    if (activePairing !== pairing || customerDisplayConfig !== previousConfig
+    if (managedDisplayOperationBusy || activePairing !== pairing || customerDisplayConfig !== previousConfig
       || !mainWindow || mainWindow.isDestroyed()) return;
     const next = normalizeCustomerDisplayConfig({ mode: result.response === 0 ? "auto" : "off", configured: true });
-    await writeCustomerDisplayConfig(next);
-    customerDisplayConfig = next;
-    reconcileCustomerDisplay();
+    managedDisplayOperationBusy = true;
+    try {
+      await writeCustomerDisplayConfig(next);
+      customerDisplayConfig = next;
+      reconcileCustomerDisplay();
+      reconcileQueueDisplay();
+    } finally { managedDisplayOperationBusy = false; }
   } catch {
     console.error("Unable to save customer-display setup");
   } finally {
@@ -914,15 +955,17 @@ function createMainWindow() {
     void showStartup("error", "หน้าจอหยุดทำงาน กรุณาลองเปิดใหม่").catch(() => {});
   });
 
-  window.webContents.on("will-navigate", (event, destination) => {
-    if (destination.startsWith("file:")) return;
+  const guardNavigation = (event, destination) => {
     try {
       const target = new URL(destination);
       if (activePairing && target.origin === activePairing.serverUrl && isPosPath(target.pathname)) return;
     } catch {}
     event.preventDefault();
     openExternalHttp(destination);
-  });
+  };
+  window.webContents.on("will-navigate", guardNavigation);
+  window.webContents.on("will-redirect", guardNavigation);
+  window.webContents.on("did-create-window", (child, details) => secureUtilityWindow(child, details.url));
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     try {
@@ -952,6 +995,8 @@ function createMainWindow() {
               sandbox: true,
               partition: "persist:bms-pos",
               zoomFactor: 1,
+              // A legacy popup still serves as a live call screen while the till has focus.
+              backgroundThrottling: target.pathname !== "/pos/queue-board",
             },
           },
         };
@@ -1290,6 +1335,9 @@ function registerIpc() {
   });
   ipcMain.handle("bms-pos:set-kitchen-printer-config", async (event, input) => {
     if (!isPrinterCaller(event)) return { ok: false, error: "ไม่มีสิทธิ์ตั้งค่าเครื่องพิมพ์ครัว" };
+    if (kitchenConfigBusy) return { ok: false, error: "กำลังบันทึกเครื่องพิมพ์ครัว กรุณารอสักครู่" };
+    kitchenConfigBusy = true;
+    const pairing = activePairing;
     try {
       const next = normalizeKitchenPrinterConfig(input);
       const keys = new Set();
@@ -1298,6 +1346,7 @@ function registerIpc() {
         keys.add(route.stationKey);
       }
       const printers = await installedPrinters();
+      if (activePairing !== pairing || !isPrinterCaller(event)) throw new Error("หน้าขายเปลี่ยนแล้ว กรุณาลองใหม่");
       if (next.routes.some((route) => !printers.some((printer) => printer.name === route.deviceName))) {
         throw new Error("ไม่พบเครื่องพิมพ์ที่เลือก");
       }
@@ -1305,12 +1354,13 @@ function registerIpc() {
       return { ok: true };
     } catch (error) {
       return { ok: false, error: error?.message || "บันทึกเครื่องพิมพ์ครัวไม่สำเร็จ" };
-    }
+    } finally { kitchenConfigBusy = false; }
   });
   ipcMain.handle("bms-pos:test-kitchen-printer", async (event, stationKey) => {
     if (!isPrinterCaller(event)) return { ok: false, error: "ไม่มีสิทธิ์พิมพ์ทดสอบ" };
     const route = normalizeKitchenPrinterConfig(kitchenPrinterConfig).routes.find((item) => item.stationKey === stationKey);
     if (!route) return { ok: false, error: "ไม่พบสถานีที่ตั้งค่าไว้" };
+    const pairing = activePairing;
     return printDesktopKitchenTicket({
       jobId: `test:${route.stationKey}:${Date.now()}`,
       stationId: route.stationKey.startsWith("id:") ? route.stationKey.slice(3) : null,
@@ -1318,11 +1368,13 @@ function registerIpc() {
       label: "TEST KITCHEN",
       createdAt: new Date().toISOString(),
       items: [{ name: "ทดสอบภาษาไทย / Print test", qty: 1, modifiers: ["A", "B"], note: "ไม่ใช่ออเดอร์จริง" }],
-    }, { retry: true });
+    }, { retry: true }, () => activePairing === pairing && isPrinterCaller(event));
   });
   ipcMain.handle("bms-pos:print-kitchen-ticket", async (event, input, options) => {
     if (!isPrinterCaller(event)) return { ok: false, error: "ไม่มีสิทธิ์พิมพ์ใบงานครัว" };
-    return printDesktopKitchenTicket(input, { auto: options?.auto === true, retry: options?.retry === true });
+    const pairing = activePairing;
+    return printDesktopKitchenTicket(input, { auto: options?.auto === true, retry: options?.retry === true },
+      () => activePairing === pairing && isPrinterCaller(event));
   });
   ipcMain.on("bms-pos:refresh-data-result", (event, result) => {
     if (!isPairedCashierFrame(event) || !pendingRefreshRequest) return;
@@ -1371,13 +1423,17 @@ function registerIpc() {
     const parsed = parsePairingInput({ serverUrl: input?.serverUrl, pairingInput: input?.pairingInput });
     if (!parsed.ok) return parsed;
     pairingInProgress = true;
-    pairingRevision++;
+    const revision = ++pairingRevision;
+    const current = () => pairingRevision === revision && isSetupFrame(event);
     pairingRestoreRequest++;
     try {
       const verified = await verifyPairing(parsed);
       if (!verified.ok) return verified;
-      if (!isSetupFrame(event)) return { ok: false, error: "หน้าจอจับคู่เปลี่ยนแล้ว กรุณาลองใหม่" };
-      await writePairing(parsed);
+      if (!current()) return { ok: false, error: "หน้าจอจับคู่เปลี่ยนแล้ว กรุณาลองใหม่" };
+      await writePairing(parsed, current);
+      // A rename already in progress may finish after window closure. Its durable credential
+      // is valid for the next restore, but the old frame must not navigate a replacement window.
+      if (!current()) return { ok: true };
       activePairing = { serverUrl: parsed.serverUrl, token: parsed.token, posEntryPath: null };
       installApplicationMenu();
       void startPosNavigation();
@@ -1444,7 +1500,7 @@ function registerIpc() {
   });
 
   ipcMain.handle("bms-pos:unpair", async (event, options) => {
-    if (!isPairedPosFrame(event)) return { ok: false };
+    if (!isPairedCashierFrame(event)) return { ok: false };
     const targetWindow = mainWindow;
     const result = await removePairing();
     if (result.ok && targetWindow === mainWindow) {
@@ -1490,6 +1546,7 @@ function registerIpc() {
 
   ipcMain.handle("bms-pos:set-customer-display-config", async (event, input) => {
     if (!isPairedCashierFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์ตั้งค่าจอลูกค้า" };
+    if (managedDisplayOperationBusy) return { ok: false, error: "กำลังบันทึกการตั้งค่าจอ กรุณารอสักครู่" };
     const next = normalizeCustomerDisplayConfig(input);
     if (input?.mode !== next.mode) return { ok: false, error: "รูปแบบการตั้งค่าจอลูกค้าไม่ถูกต้อง" };
     const queueState = currentQueueDisplayState();
@@ -1504,16 +1561,17 @@ function registerIpc() {
       if (!selected) return { ok: false, error: "ไม่พบจอที่เลือก กรุณาตรวจสายจอแล้วลองใหม่" };
       if (String(selected.id) === cashierId) return { ok: false, error: "จอหลักกำลังใช้เป็นจอแคชเชียร์ กรุณาเลือกจออื่น" };
     }
+    managedDisplayOperationBusy = true;
     try {
-      if (customerDisplayWindowKind === "preview") closeCustomerDisplayWindow();
       await writeCustomerDisplayConfig(next);
+      if (customerDisplayWindowKind === "preview") closeCustomerDisplayWindow();
       customerDisplayConfig = next;
       reconcileCustomerDisplay();
       reconcileQueueDisplay();
       return { ok: true, state: currentCustomerDisplayState() };
     } catch {
       return { ok: false, error: "บันทึกการตั้งค่าจอลูกค้าไม่สำเร็จ" };
-    }
+    } finally { managedDisplayOperationBusy = false; }
   });
 
   ipcMain.handle("bms-pos:open-customer-display-preview", async (event) => {
@@ -1547,6 +1605,7 @@ function registerIpc() {
     if (!isPairedCashierFrame(event)) {
       return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์ตั้งค่าจอภายนอก" };
     }
+    if (managedDisplayOperationBusy) return { ok: false, error: "กำลังบันทึกการตั้งค่าจอ กรุณารอสักครู่" };
     if (input?.role !== "customer" && input?.role !== "queue") {
       return { ok: false, error: "ประเภทจอภายนอกไม่ถูกต้อง" };
     }
@@ -1595,6 +1654,7 @@ function registerIpc() {
       }
     }
 
+    managedDisplayOperationBusy = true;
     try {
       await writeManagedDisplayConfigs(nextCustomer, nextQueue, previousCustomer, previousQueue);
       if (customerDisplayWindowKind === "preview") closeCustomerDisplayWindow();
@@ -1607,7 +1667,7 @@ function registerIpc() {
       return { ok: true, state: currentManagedDisplayState() };
     } catch {
       return { ok: false, error: "บันทึกการตั้งค่าจอภายนอกไม่สำเร็จ" };
-    }
+    } finally { managedDisplayOperationBusy = false; }
   });
 
   ipcMain.handle("bms-pos:get-queue-display-state", async (event) => {
@@ -1617,6 +1677,7 @@ function registerIpc() {
 
   ipcMain.handle("bms-pos:set-queue-display-config", async (event, input) => {
     if (!isPairedCashierFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์ตั้งค่าจอเรียกคิว" };
+    if (managedDisplayOperationBusy) return { ok: false, error: "กำลังบันทึกการตั้งค่าจอ กรุณารอสักครู่" };
     const next = normalizeQueueDisplayConfig(input);
     if (input?.mode !== next.mode) return { ok: false, error: "รูปแบบการตั้งค่าจอเรียกคิวไม่ถูกต้อง" };
     if (next.mode === "selected") {
@@ -1628,15 +1689,16 @@ function registerIpc() {
         return { ok: false, error: "จอนี้กำลังใช้เป็นจอลูกค้า กรุณาเลือกคนละจอ" };
       }
     }
+    managedDisplayOperationBusy = true;
     try {
-      if (queueDisplayWindowKind === "preview") closeQueueDisplayWindow();
       await writeQueueDisplayConfig(next);
+      if (queueDisplayWindowKind === "preview") closeQueueDisplayWindow();
       queueDisplayConfig = next;
       reconcileQueueDisplay();
       return { ok: true, state: currentQueueDisplayState() };
     } catch {
       return { ok: false, error: "บันทึกการตั้งค่าจอเรียกคิวไม่สำเร็จ" };
-    }
+    } finally { managedDisplayOperationBusy = false; }
   });
 
   ipcMain.handle("bms-pos:open-queue-display-preview", async (event) => {

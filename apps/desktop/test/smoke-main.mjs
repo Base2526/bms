@@ -262,7 +262,7 @@ async function run() {
         handle: (name, handler) => { registered.push(name); ipcMain.handle(name, handler); },
         on: () => {},
       },
-      isPairedPosFrame: () => true,
+      isPairedCashierFrame: () => true,
       removePairing: async () => { removed = true; unpairContext.activePairing = null; return { ok: true }; },
       showSetup: async target => {
         const outcome = { removed, title: target.webContents.getTitle() };

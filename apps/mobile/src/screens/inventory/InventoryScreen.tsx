@@ -116,7 +116,10 @@ function resultError(
     | null
     | undefined,
 ): string | null {
-  if (!result) return 'ไม่ได้รับผลยืนยันจากเซิร์ฟเวอร์';
+  if (!result || typeof result.status !== 'string' || !result.status.trim()) {
+    // Missing status is an unknown outcome, not a decided business rejection.
+    throw new Error('ไม่ได้รับผลยืนยันจากเซิร์ฟเวอร์');
+  }
   if (result.reason) return result.reason;
   if (['OK', 'CREATED', 'APPLIED'].includes(result.status ?? '')) return null;
   if (result.status === 'INSUFFICIENT') {
@@ -727,6 +730,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
   const [countedQty, setCountedQty] = useState('');
   const [countItemNote, setCountItemNote] = useState('');
   const operationKeys = useRef<Record<string, string>>({});
+  const operationInFlight = useRef(false);
 
   const inputCredentials = credentials ?? { cashierUserId: '', pin: '' };
   const transfers = useQuery(MobilePosStockTransfersDocument, {
@@ -827,7 +831,8 @@ export default function InventoryScreen({ asTabRoot }: Props) {
   };
 
   const run = async (key: string, action: () => Promise<string | null>) => {
-    if (!credentials || working) return false;
+    if (!credentials || operationInFlight.current) return false;
+    operationInFlight.current = true;
     setWorking(key);
     try {
       const error = await action();
@@ -854,6 +859,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
       );
       return false;
     } finally {
+      operationInFlight.current = false;
       setWorking('');
     }
   };
@@ -1507,10 +1513,11 @@ export default function InventoryScreen({ asTabRoot }: Props) {
                 label="บันทึกรายการ"
                 loading={working === `count-item-${selectedCount.id}`}
                 disabled={
-                  !countSku.trim() || !countSize.trim() || countedQty === ''
+                  !countSku.trim() || !countSize.trim() || !countedQty.trim()
                 }
                 onPress={() =>
                   run(`count-item-${selectedCount.id}`, async () => {
+                    if (!countedQty.trim()) return 'กรุณากรอกจำนวนที่นับได้ หรือ 0 หากไม่มีสินค้า';
                     const response = await recordCountItem({
                       variables: {
                         input: {

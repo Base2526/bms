@@ -231,9 +231,8 @@ card `ReportSubscriptionCard.tsx` on `/admin/settings`, and a platform-admin-onl
 at `/admin/report-schedule`.
 
 - **Frequency**: `DAILY`/`WEEKLY`/`MONTHLY`, plus a send hour (and a weekday for weekly / a
-  day-of-month for monthly). All period math is Asia/Bangkok, computed as direct UTC+7 arithmetic
-  (no DST, no timezone library) — consistent with the rest of the codebase's
-  `Intl.DateTimeFormat`-based date handling.
+  day-of-month for monthly). The service resolves each shop's configured timezone and uses its
+  local hour and calendar period.
 - **Content**: revenue, order count, discount total, top products, and a breakdown by channel —
   the same shape as `computeSalesSummary()` reads directly from `bms_orders`/`bms_order_items`
   (`PAID` or later, same convention as [Sales Summary](#sales-summary-getsalessummaryfrom-to)
@@ -248,6 +247,10 @@ at `/admin/report-schedule`.
   (hour/weekday/day-of-month match), and skips any tenant whose `last_period_key` already matches
   the current period. This means the cron can be invoked at any frequency (hourly, or more often)
   without ever double-sending; it does not need to run exactly once per period.
+- **Dispatch**: the selected Docker or GitHub scheduler now calls the endpoint at the top of
+  every UTC hour. The service evaluates each shop's local send hour; a daily 03:00 Bangkok-only
+  dispatch would miss every shop configured for another hour. Inspect job and delivery history
+  to confirm a configured schedule actually ran.
 - **Testing**: `bmsSendTestReportNow` (`sendTestDigest()`) sends immediately using the last 24
   hours as an ad-hoc period, logs to `bms_report_deliveries` like a real send, but never touches
   the subscription's `last_sent_at`/`last_period_key` — so testing the configuration can't cause a

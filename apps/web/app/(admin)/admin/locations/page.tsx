@@ -15,6 +15,7 @@ import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useI18n } from "@/lib/i18nContext";
 import type { LocationParking } from "@/lib/bms/locationParking";
 import ThaiAddressFields from "@/components/ThaiAddressFields";
+import QueueBoardMediaEditor from "@/components/pos-desktop/QueueBoardMediaEditor";
 
 const Q = gql`
   query Locations {
@@ -74,6 +75,7 @@ export default function LocationsPage() {
   const parkingStatus = Form.useWatch(["parking", "status"], form);
   const emptyParking: LocationParking = { status: "UNKNOWN", published: false, carSpaces: null, motorcycleSpaces: null, details: null, mapUrl: null };
   const [editing, setEditing] = useState<Location | null>(null);
+  const [mediaLocation, setMediaLocation] = useState<{ id: string; name: string } | null>(null);
   const [open, setOpen] = useState(false);
   const [upsert, { loading: saving }] = useMutation(M_UPSERT);
 
@@ -192,9 +194,9 @@ export default function LocationsPage() {
               },
               {
                 title: "",
-                width: 90,
+                width: 190,
                 render: (_: unknown, l: Location) => (
-                  <Button
+                  <Space><Button
                     size="small"
                     onClick={() => {
                       setEditing(l);
@@ -204,7 +206,9 @@ export default function LocationsPage() {
                     }}
                   >
                     แก้ไข
-                  </Button>
+                  </Button><Button size="small" onClick={() => setMediaLocation({ id: l.id, name: l.name })}>
+                    {t("queue_board_media.title")}
+                  </Button></Space>
                 ),
               },
             ]}
@@ -347,6 +351,8 @@ export default function LocationsPage() {
           </Typography.Paragraph>
         )}
       </Modal>
+      <QueueBoardMediaEditor key={mediaLocation?.id ?? "closed"} location={mediaLocation}
+        onClose={() => setMediaLocation(null)} />
     </Space>
   );
 }

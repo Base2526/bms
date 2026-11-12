@@ -29,13 +29,14 @@
     "test:queue-board": "electron test/queue-board-smoke.mjs",
     "test:queue-manager": "electron test/queue-manager-smoke.mjs",
     "test:smoke": "electron test/smoke-main.mjs",
+    "test:keystore-smoke": "electron test/keystore-smoke.mjs",
     "pack:win": "electron-builder --win nsis",
     "pack:win32": "electron-builder --win nsis --ia32",
     "pack:linux": "electron-builder --linux AppImage deb --x64",
     "pack:mac": "electron-builder --mac dmg --x64 --arm64"
   },
   "devDependencies": {
-    "electron": "43.7.2",
+    "electron": "43.8.8",
     "electron-builder": "26.15.3"
   },
   "engines": {

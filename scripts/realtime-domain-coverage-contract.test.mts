@@ -232,6 +232,8 @@ const CONFIGURATION = [
 
 /** Operational state whose owning surface performs bounded polling plus post-write refresh. */
 const POLLED_OPERATIONAL_SURFACE = [
+  // 10.115: queue board polls media with its queue; admin editor refreshes after publishing.
+  "bms_queue_board_media",
   // 10.111: the till strip and the call screen poll the device-token API every few seconds.
   "bms_pickup_queue",
   // H evidence refreshes on demand; HOLD/RELEASE explicitly enqueue inventory.changed in their tenant tx.

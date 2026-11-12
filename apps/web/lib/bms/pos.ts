@@ -7581,6 +7581,12 @@ export async function recordCashMovement(input: {
   if (!idempotencyKey || idempotencyKey.length > 240) {
     return { status: "INVALID", reason: "idempotencyKey ไม่ถูกต้อง" };
   }
+  if (input.direction === "OUT") {
+    const approver = input.approvedByUserId?.trim();
+    if (!approver || approver.toLowerCase() === input.actorUserId.trim().toLowerCase()) {
+      return { status: "INVALID", reason: "เงินออกจากลิ้นชักต้องมีผู้อนุมัติคนละคน" };
+    }
+  }
 
   const client = await getClient();
   try {
@@ -7603,7 +7609,8 @@ export async function recordCashMovement(input: {
     // แต่ห้ามบอกว่าเหลือเท่าไร ไม่งั้นข้อความ error กลายเป็นช่องอ่านคำตอบ
     const blind = (await getVatSettings(input.tenantId)).blindClose;
     const replay = await client.query<any>(
-      `SELECT id, direction, amount, reason, created_at
+      `SELECT id, shift_id, device_id, direction, amount, reason,
+              actor_user_id, approved_by, created_at
          FROM bms_pos_cash_movements
         WHERE tenant_id = $1 AND idempotency_key = $2`,
       [input.tenantId, idempotencyKey]
@@ -7611,6 +7618,12 @@ export async function recordCashMovement(input: {
     if (replay.rows[0]) {
       const r = replay.rows[0];
       await client.query("ROLLBACK");
+      if (r.shift_id !== input.shiftId || r.device_id !== input.deviceId
+        || r.direction !== input.direction || Number(r.amount) !== amount
+        || r.reason !== reason || r.actor_user_id !== input.actorUserId
+        || (r.approved_by ?? null) !== (input.approvedByUserId?.trim() || null)) {
+        return { status: "INVALID", reason: "idempotencyKey นี้ใช้กับรายการเงินอื่นแล้ว" };
+      }
       return {
         status: "RECORDED",
         replayed: true,
@@ -7780,6 +7793,10 @@ export async function voidPosSale(input: {
   const reason = input.reason.trim();
   if (!reason) return { status: "NOT_VOIDABLE", reason: "ต้องระบุเหตุผล" };
   if (reason.length > 200) return { status: "NOT_VOIDABLE", reason: "เหตุผลยาวเกินไป" };
+  if (!input.approvedByUserId?.trim()
+    || input.approvedByUserId.trim().toLowerCase() === input.actorUserId.trim().toLowerCase()) {
+    return { status: "NOT_VOIDABLE", reason: "การยกเลิกบิลต้องมีผู้อนุมัติคนละคน" };
+  }
 
   const check = await query<{ status: string; pos_shift_id: string | null; shift_status: string | null; voided_at: Date | null; returns: string }>(
     `SELECT o.status, o.pos_shift_id, o.voided_at, s.status AS shift_status,

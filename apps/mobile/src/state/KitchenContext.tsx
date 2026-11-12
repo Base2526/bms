@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useContext,
   useMemo,
+  useRef,
 } from 'react';
 import { useMutation, useQuery } from '@apollo/client';
 import {
@@ -27,7 +28,10 @@ interface KitchenContextValue {
   stationSlas: Record<string, { warnMinutes: number; lateMinutes: number }>;
   advanceTicket: (ticketId: string) => Promise<string | null>;
   rollbackTicket: (ticketId: string) => Promise<string | null>;
-  setTicketsStatus: (ticketIds: string[], status: TicketStatus) => Promise<string | null>;
+  setTicketsStatus: (
+    ticketIds: string[],
+    status: TicketStatus,
+  ) => Promise<string | null>;
   refresh: () => Promise<void>;
 }
 
@@ -41,6 +45,7 @@ function knownStatus(value: string): TicketStatus {
 
 export function KitchenProvider({ children }: { children: React.ReactNode }) {
   const { session } = useSession();
+  const operationInFlight = useRef(false);
   const query = useQuery(MobileKitchenTicketsDocument, {
     variables: { status: null },
     skip: !session,
@@ -50,20 +55,31 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   const [setStatuses] = useMutation(MobileKitchenTicketsStatusDocument);
   const tickets = useMemo<KitchenTicket[]>(
     () =>
-      (query.data?.bmsPosKitchenTickets.tickets ?? []).map(ticket => ({
-        id: ticket.id,
-        // เลขคิวรับของ (10.111) เป็นเลขที่ลูกค้าถือและหน้าร้านเรียก จึงขึ้นหัวใบแทนชื่อบิล
-        tableCode: ticket.pickupQueueLabel
-          ? `คิว ${ticket.pickupQueueLabel}`
-          : ticket.tableCode ?? ticket.tableName ?? 'รับกลับ',
-        roundNo: ticket.roundNo ?? 1,
-        station: ticket.station ?? 'ไม่ระบุสถานี',
-        stationId: ticket.stationId ?? undefined,
-        status: knownStatus(ticket.status),
-        createdAt: ticket.updatedAt || ticket.createdAt,
-        items: [{ name: ticket.productName, qty: ticket.qty }],
-        note: ticket.kitchenNote ?? undefined,
-      })),
+      (query.data?.bmsPosKitchenTickets.tickets ?? [])
+        .filter(ticket =>
+          ['NEW', 'PREPARING', 'READY', 'SERVED'].includes(ticket.status),
+        )
+        .map(ticket => ({
+          id: ticket.id,
+          // เลขคิวรับของ (10.111) เป็นเลขที่ลูกค้าถือและหน้าร้านเรียก จึงขึ้นหัวใบแทนชื่อบิล
+          tableCode: ticket.pickupQueueLabel
+            ? `คิว ${ticket.pickupQueueLabel}`
+            : ticket.tableCode ?? ticket.tableName ?? 'รับกลับ',
+          roundNo: ticket.roundNo ?? 1,
+          station: ticket.station ?? 'ไม่ระบุสถานี',
+          stationId: ticket.stationId ?? undefined,
+          status: knownStatus(ticket.status),
+          createdAt: ticket.updatedAt || ticket.createdAt,
+          items: [
+            {
+              name: ticket.productName,
+              qty: ticket.qty,
+              size: ticket.size,
+              modifierCodes: ticket.modifierCodes ?? [],
+            },
+          ],
+          note: ticket.kitchenNote ?? undefined,
+        })),
     [query.data],
   );
   const stations = useMemo(
@@ -93,6 +109,8 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       const ticket = tickets.find(item => item.id === ticketId);
       const next = ticket ? choose(ticket.status) : null;
       if (!ticket || !next) return 'สถานะตั๋วไม่ถูกต้อง';
+      if (operationInFlight.current) return 'กำลังอัปเดตงานครัว กรุณารอสักครู่';
+      operationInFlight.current = true;
       try {
         const response = await setStatus({
           variables: {
@@ -109,12 +127,12 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         if (!result?.ticket) {
           return result?.reason ?? result?.status ?? 'เปลี่ยนสถานะไม่สำเร็จ';
         }
-        await query.refetch();
+        await query.refetch().catch(() => undefined);
         return null;
       } catch (error) {
-        return error instanceof Error
-          ? error.message
-          : 'เปลี่ยนสถานะไม่สำเร็จ';
+        return error instanceof Error ? error.message : 'เปลี่ยนสถานะไม่สำเร็จ';
+      } finally {
+        operationInFlight.current = false;
       }
     },
     [query, session, setStatus, tickets],
@@ -132,20 +150,29 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     async (ticketIds: string[], status: TicketStatus) => {
       if (!session) return 'กรุณาเข้าใช้งานใหม่';
       if (!ticketIds.length) return null;
+      if (operationInFlight.current) return 'กำลังอัปเดตงานครัว กรุณารอสักครู่';
+      operationInFlight.current = true;
       try {
-        const response = await setStatuses({ variables: { input: {
-          cashierUserId: session.credentials.cashierUserId,
-          pin: session.credentials.pin,
-          userId: session.cashier.id,
-          ticketIds,
-          status,
-        } } });
+        const response = await setStatuses({
+          variables: {
+            input: {
+              cashierUserId: session.credentials.cashierUserId,
+              pin: session.credentials.pin,
+              userId: session.cashier.id,
+              ticketIds,
+              status,
+            },
+          },
+        });
         const result = response.data?.bmsPosKitchenTicketsStatus;
-        if (!result?.tickets) return result?.reason ?? result?.status ?? 'เปลี่ยนสถานะไม่สำเร็จ';
-        await query.refetch();
+        if (!result?.tickets)
+          return result?.reason ?? result?.status ?? 'เปลี่ยนสถานะไม่สำเร็จ';
+        await query.refetch().catch(() => undefined);
         return null;
       } catch (error) {
         return error instanceof Error ? error.message : 'เปลี่ยนสถานะไม่สำเร็จ';
+      } finally {
+        operationInFlight.current = false;
       }
     },
     [query, session, setStatuses],

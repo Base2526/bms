@@ -30,7 +30,7 @@ import {
   MobileRestaurantSetOrderingPausedDocument,
   PosBootstrapDocument,
 } from '../../graphql/generated';
-import { createIdempotencyKey } from '../../lib/operation';
+import { createIdempotencyKey, isDecidedRejection } from '../../lib/operation';
 import { useSession } from '../../state/SessionContext';
 import { useRestaurantOperations } from '../../state/RestaurantOperationsContext';
 import type { OrdersStackParamList } from '../../navigation/types';
@@ -67,6 +67,7 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
     useRestaurantOperations();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workingId, setWorkingId] = useState<string | null>(null);
+  const operationInFlight = useRef(false);
   const [managerId, setManagerId] = useState('');
   const [managerPin, setManagerPin] = useState('');
   const [cancelNote, setCancelNote] = useState('');
@@ -79,7 +80,8 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
   );
 
   const togglePaused = async () => {
-    if (!session || workingId) return;
+    if (!session || operationInFlight.current) return;
+    operationInFlight.current = true;
     setWorkingId('pause');
     try {
       const response = await setPaused({
@@ -94,13 +96,14 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
       const result = response.data?.bmsPosRestaurantSetOrderingPaused;
       if (!result || result.reason)
         throw new Error(result?.reason ?? 'เปลี่ยนสถานะรับออร์เดอร์ไม่สำเร็จ');
-      await refresh();
+      await refresh().catch(() => undefined);
     } catch (cause) {
       Alert.alert(
         'ทำรายการไม่สำเร็จ',
         cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
       );
     } finally {
+      operationInFlight.current = false;
       setWorkingId(null);
     }
   };
@@ -110,7 +113,8 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
     orderItemId: number,
     qty: number,
   ) => {
-    if (!session || workingId) return;
+    if (!session || operationInFlight.current) return;
+    operationInFlight.current = true;
     const intent = `${order.id}:${orderItemId}`;
     const idempotencyKey =
       cancelKeys.current[intent] ??
@@ -140,8 +144,10 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
         },
       });
       const result = response.data?.bmsPosRestaurantCancelOrderLines;
+      if (!result || typeof result.status !== 'string' || !result.status.trim()) {
+        throw new Error('ยังไม่ได้รับผลยืนยันการยกเลิก กรุณาตรวจสถานะก่อนทำซ้ำ');
+      }
       if (
-        !result ||
         result.reason ||
         !['RETURNED', 'CANCELLED', 'COMPLETED'].includes(result.status ?? '')
       ) {
@@ -151,31 +157,35 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
         );
       }
       delete cancelKeys.current[intent];
-      await refresh();
+      await refresh().catch(() => undefined);
     } catch (cause) {
+      if (isDecidedRejection(cause)) delete cancelKeys.current[intent];
       Alert.alert(
         'ยกเลิกรายการไม่สำเร็จ',
         cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
       );
     } finally {
+      operationInFlight.current = false;
       setWorkingId(null);
     }
   };
 
   const onAccept = async (order: PosIncomingOrder) => {
-    if (workingId) return;
+    if (operationInFlight.current) return;
+    operationInFlight.current = true;
     setWorkingId(order.id);
-    const result = await acceptOrder(order.id);
-    setWorkingId(null);
-    if (typeof result === 'string') {
-      Alert.alert('รับออร์เดอร์ไม่สำเร็จ', result);
-      return;
+    try {
+      const result = await acceptOrder(order.id);
+      if (typeof result === 'string') {
+        Alert.alert('รับออร์เดอร์ไม่สำเร็จ', result);
+        return;
+      }
+      acknowledge();
+      Alert.alert('รับออร์เดอร์แล้ว', `ส่งเข้าครัว ${result.ticketsCreated} ตั๋ว`);
+    } finally {
+      operationInFlight.current = false;
+      setWorkingId(null);
     }
-    acknowledge();
-    Alert.alert(
-      'รับออร์เดอร์แล้ว',
-      `ส่งเข้าครัว ${result.ticketsCreated} ตั๋ว`,
-    );
   };
 
   return (

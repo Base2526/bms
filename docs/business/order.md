@@ -56,6 +56,21 @@ roll back an order-status change. Templates live in the existing global `email_t
 `order.returned`, seeded in both `th`/`en` locale by migration `7.19`), personalized per tenant at
 render time via `getStoreProfile()`/`getTenantName()`.
 
+Back-office payment confirmation requires `payment.confirm` plus an explicit confirmation flag at
+GraphQL or REST. The admin payment page shows the payment ID, amount and method before sending it;
+the work assistant sends the flag only from its human Confirm action. The service still owns the
+atomic payment/order/audit transition. An AI slip result never confirms payment.
+
+For a persisted `fulfillment_type = 'PICKUP'`, migration `10.114` supplies separate Thai/English
+templates for paid, packing, shipped and completed. The paid email says the order is being
+processed, not ready for collection; packing says to wait for the shop's confirmation; `SHIPPED`
+means the existing pickup handover has been recorded, without a parcel or tracking claim. The
+notification service selects these keys from the stored order and suppresses shipment lookup for
+pickup. `createShipment()` refuses `PICKUP` even when the customer has a saved shipping address;
+handover uses the locked order stock transition without creating a parcel. Cancellation and return
+retain the shared templates. Apply `10.114` before deploying the
+new caller; as with all mail, real-provider delivery still needs an environment-specific check.
+
 **Staff action alerts (2026-09):** a committed non-POS order creates a persistent, user-scoped
 notification for staff with `order.view`; reaching `PAID` notifies the staff who hold `order.ship`,
 and an accepted restaurant online order that creates kitchen tickets notifies staff with
@@ -261,7 +276,10 @@ PENDING → SHIPPED → IN_TRANSIT → DELIVERED
 `createShipment()` moves the order from `PACKING` → `SHIPPED`, deducts stock, and records a `SHIP`
 movement — all atomic. If the order is already `SHIPPED`, it just attaches the shipment without
 deducting stock again. A tracking number is optional at shipment creation and can be added later;
-an order cannot reach `COMPLETED` before it's `SHIPPED`. When a configured carrier client supports
+an order cannot reach `COMPLETED` before it's `SHIPPED`. `PICKUP` orders are refused before stock
+or parcel writes. The `shipping.create` audit row commits with the shipment for REST, GraphQL and
+confirmed AI-tool calls; audit failure rolls the local shipment and stock transition back. When a
+configured carrier client supports
 shipment creation, BMS first commits the local fulfillment transaction, releases its database locks,
 and then attempts carrier booking with the shipment UUID as a stable idempotency key. A failed,
 unconfigured, or unavailable carrier no longer looks like a successful booking: its typed status and

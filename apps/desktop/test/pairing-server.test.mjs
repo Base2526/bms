@@ -57,6 +57,15 @@ test("POS-only setup sends people to the cloud BMS login", () => {
 });
 
 const pairing = {serverUrl:"https://shop.example.com",token:"FAKE-device-token"};
+for (const status of [408, 429]) test(`temporary pairing HTTP ${status} does not imply the server is incompatible`, () => {
+  assert.throws(() => assertPairingServerResponse({ ok: false, status }), error => {
+    assert.ok(error instanceof PairingServerResponseError);
+    assert.ok(error.userMessage.includes(`HTTP ${status}`));
+    assert.ok(!error.userMessage.includes('ไม่รองรับ'));
+    assert.equal(canRecoverByStartingManagedLocalRuntime(error), false);
+    return true;
+  });
+});
 test("pairing checks the authenticated session body without following a redirect", async () => {
   const session={device:{id:"device",code:"POS-01"}};
   assert.deepEqual(await fetchPairingSession(pairing,async(url,options)=>{

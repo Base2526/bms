@@ -18,6 +18,8 @@ import {
 import { redactDeviceToken, type PairingTarget } from '../lib/pairing';
 import { graphqlHttpUrl } from '../lib/realtime';
 import { recordPosDiagnosticEvent } from '../lib/supportDiagnostics';
+import { runWithOperationTimeout } from '../lib/operation';
+import { describePosConnectionFailure, isPosBusinessError } from '../../../../packages/pos-client-core/src/connectionFailure';
 
 // "เครื่องนี้เป็นของร้านไหน" — state ระดับแอป
 //
@@ -210,11 +212,10 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         return next;
       };
 
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
       try {
         const startedAt = Date.now();
-        const res = await fetch(graphqlHttpUrl(candidate.serverUrl), {
+        const { res, body } = await runWithOperationTimeout(async signal => {
+          const response = await fetch(graphqlHttpUrl(candidate.serverUrl), {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
@@ -223,8 +224,14 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
             'x-scope': 'pos',
           },
           body: JSON.stringify({ query: print(PosBootstrapDocument) }),
-          signal: controller.signal,
+          signal,
         });
+          const payload = response.ok ? await response.json().catch(() => null) : null;
+          return { res: response, body: payload as {
+            data?: PosBootstrapQuery;
+            errors?: Array<{ message?: string; extensions?: { code?: string } }>;
+          } | null };
+        }, VERIFY_TIMEOUT_MS);
         if (seq !== verifySeq.current) return { kind: 'IDLE' };
 
         if (res.status === 401) {
@@ -250,7 +257,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
             category: 'pos',
             action: 'pos.device.verify',
             status: 'error',
-            message: `เซิร์ฟเวอร์ตอบ HTTP ${res.status}`,
+            message: describePosConnectionFailure({ httpStatus: res.status }).message,
             context: {
               route: 'DeviceProvider.verifyTarget',
               httpStatus: res.status,
@@ -259,17 +266,13 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           });
           return settle({
             kind: 'SERVER_ERROR',
-            message: `เซิร์ฟเวอร์ตอบ HTTP ${res.status}`,
+            message: describePosConnectionFailure({ httpStatus: res.status }).message,
             cause: `HTTP ${res.status}`,
           });
         }
 
         // URL ที่ชี้ผิดโดเมนมักตอบ 200 พร้อมหน้า HTML — ถ้าไม่ดักตรงนี้จะได้ error ของ JSON parser
         // ที่อ่านไม่รู้เรื่อง ทั้งที่ปัญหาจริงคือ "ใส่เซิร์ฟเวอร์ผิด"
-        const body = (await res.json().catch(() => null)) as {
-          data?: PosBootstrapQuery;
-          errors?: Array<{ message?: string; extensions?: { code?: string } }>;
-        } | null;
         // Headers can arrive before a newer verification, unpair, or authoritative
         // auth rejection. The JSON body is another asynchronous boundary.
         if (seq !== verifySeq.current) return { kind: 'IDLE' };
@@ -298,10 +301,11 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           });
         }
         if (body?.errors?.length) {
-          const errorMessage = typeof body.errors[0]?.message === 'string'
-            ? body.errors[0].message : 'เซิร์ฟเวอร์อ่านข้อมูลเครื่องไม่ได้';
-          const errorCode = typeof body.errors[0]?.extensions?.code === 'string'
-            ? body.errors[0].extensions.code : 'GRAPHQL_ERROR';
+          const failure = describePosConnectionFailure({ ...body.errors[0], httpStatus: 200 });
+          const business = isPosBusinessError(body.errors[0]?.extensions?.code);
+          const errorMessage = business && typeof body.errors[0]?.message === 'string'
+            ? body.errors[0].message : failure.message;
+          const errorCode = business ? body.errors[0].extensions!.code! : failure.code;
           recordPosDiagnosticEvent(candidate, {
             category: 'pos',
             action: 'pos.device.verify',
@@ -372,14 +376,15 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         });
       } catch (e: any) {
         if (seq !== verifySeq.current) return { kind: 'IDLE' };
-        const aborted = e?.name === 'AbortError';
+        const aborted = e?.name === 'AbortError' || e?.code === 'POS_TIMEOUT';
+        const failure = describePosConnectionFailure(e);
         recordPosDiagnosticEvent(candidate, {
           category: 'pos',
           action: 'pos.device.verify',
           status: 'error',
           message: aborted
             ? `ไม่ได้คำตอบภายใน ${VERIFY_TIMEOUT_MS / 1000} วินาที`
-            : `ต่อเซิร์ฟเวอร์ไม่ได้ (${String(e?.message ?? e)})`,
+            : failure.message,
           context: {
             route: 'DeviceProvider.verifyTarget',
             errorName: aborted ? 'AbortError' : String(e?.name ?? 'Error'),
@@ -394,15 +399,11 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
             ? `ไม่ได้คำตอบภายใน ${
                 VERIFY_TIMEOUT_MS / 1000
               } วินาที — เน็ตช้าหรือเซิร์ฟเวอร์ไม่ตอบ`
-            : `ต่อเซิร์ฟเวอร์ไม่ได้ (${String(
-                e?.message ?? e,
-              )}) — ถ้าเป็นเซิร์ฟเวอร์ทดสอบ HTTPS ให้ตรวจว่าเครื่องเชื่อถือ local CA แล้ว`,
+            : failure.message,
           cause: aborted
             ? `TIMEOUT ${VERIFY_TIMEOUT_MS / 1000}s`
-            : String(e?.message ?? e),
+            : failure.code,
         });
-      } finally {
-        clearTimeout(timer);
       }
     },
     [],

@@ -70,6 +70,29 @@ incoming orders, kitchen tickets, board-game timed sessions and game loans, and 
 transfers/counts. Runtime screens and state providers import no mock data.
 GraphQL WS carries named invalidations only; Apollo refetches the authoritative snapshot.
 
+Native HTTP GraphQL operations share the existing 15-second deadline. Expiry aborts the request and
+reports an unknown outcome, without automatically retrying a mutation. The shared timeout helper
+rejects independently when a transport or response parser ignores abort, and ignores late completion.
+Stock/count and incoming-line
+cancellation retain their idempotency key when the result has no usable status. In-flight guards
+prevent overlapping taps in stock, shift, restaurant, kitchen and board-game actions. A confirmed
+mutation remains successful if its follow-up read fails; a newly opened restaurant bill retains its
+ID before those reads. Cash movement forms cannot discard their draft/key while saving. Kitchen
+cards retain server-provided size, modifier codes and kitchen notes, and exclude cancelled/unknown
+ticket statuses from actionable work. Opening float, counted shift cash and stock-count quantities
+require an explicit value: blank/whitespace is not zero, while an entered `0` is valid.
+
+Connection errors share the presentation contract in `packages/pos-client-core/src/connectionFailure.ts`
+between native Apollo and Desktop compact GraphQL: connection/timeout, authentication, permission,
+rate limit, server, incompatible API and malformed response each have recovery guidance and a safe
+`POS_*` category code. Failed reads warn that visible data may be stale; uncertain writes require
+checking the original result before accepting money again or creating a replacement transaction.
+Domain rejection messages/codes and variant-selection metadata remain server-owned. No connection
+error retries a business mutation automatically. Mixed decided/unknown GraphQL errors retain uncertainty.
+Native pairing verification, realtime-ticket minting and diagnostic sends have deadlines independent
+of abort support. The restaurant REST adapter also bounds JSON reads and rejects proxy HTML with
+HTTP 200. Diagnostics retain the category and operation, never request PINs or raw proxy bodies.
+
 The app accepts a full POS link, a bare `pos_...` token plus server, or a
 `bmspos://pair?t=...&h=...` deep link. The long-lived device token lives in
 `react-native-keychain`, is masked on screen, and authenticates both GraphQL and ticket minting.
@@ -116,7 +139,7 @@ pricing or required choices.
 
 This is explicit focused input, not global native key capture and not a certified scanner adapter.
 Native `pressesBegan`/`UIKeyCommand` or Android key-event capture outside the open modal, physical
-camera/HID model verification, printing, customer-display hardware, background push, and pharmacy
+camera/HID model verification, printer-model certification, customer-display hardware, background push, and pharmacy
 review/evidence remain separate platform/specialist work. Unsupported approval-gated sales fail
 closed on the server. Do not port money, stock, refund, pharmacy or tax rules into the client.
 
@@ -129,7 +152,8 @@ local setup and current exclusions live in [the mobile README](../../apps/mobile
 ## Desktop POS client (Windows, Linux and macOS)
 
 `apps/desktop/` is an Electron shell around the POS surface the browser register already uses —
-`/pos`, `/pos/restaurant`, `/pos/display` and `/pos/manual`, served by the paired backend. It ships
+`/pos/app` (with legacy `/pos` fallback), `/pos/restaurant`, `/pos/display`, `/pos/queue-board`
+and `/pos/manual`, served by the paired backend. It ships
 as a Windows NSIS installer, a Linux AppImage/DEB (x64), and a macOS disk image built for both Apple
 Silicon and Intel. The shell holds no database, no price list and no settlement path. A sale rung up in it is the same `recordPosSale()` transaction as one rung up in
 Chrome, and the app grants a cashier nothing extra.
@@ -144,13 +168,22 @@ Secret Service or KWallet on Linux, Keychain on macOS. The encrypted file is wri
 paired on one platform cannot be read on another — the register has to pair again, which is
 expected, not a fault.
 
+Pairing persistence rechecks that the initiating setup frame/revision is current before committing
+the encrypted temporary file. Closing/replacing setup before that check preserves the previous
+credential. If the atomic rename was already submitted when setup closed, the saved verified
+credential can be restored later, but the old request cannot navigate a replacement window.
+
 The renderer never sees the file. `apps/web/lib/pos/deviceTokenClient.ts` reads the token through
 `window.bmsDesktop` when the bridge is present and falls back to `localStorage` otherwise, so the
-same POS page runs in both shells. Every IPC handler re-checks which frame is calling: `pair` and
-`app-info` answer only the local setup page, while `get-device-token`, `get-storage-namespace` and
-`unpair` answer only a `/pos*` frame on the paired origin. The window runs with context isolation, a
+same POS page runs in both shells. Every IPC handler re-checks which frame is calling: `pair` answers
+only the local setup page; `app-info` also supports paired POS pages. `get-device-token` and
+`get-storage-namespace` answer only a `/pos*` frame on the paired origin. Unpairing, native attention
+and display controls require the cashier's main frame; utility windows and subframes cannot invoke
+them. The window runs with context isolation, a
 sandboxed renderer and no Node integration; navigation away from the paired origin is handed to the
-system browser and the cashier manual is the only renderer-created child window. The main process
+system browser. Renderer-created children are limited to the cashier manual and pickup queue board;
+their navigation and redirects stay on their original utility route and they cannot open more windows.
+The main process
 owns at most one `/pos/display` window, places it on an automatically chosen or explicitly selected
 non-cashier display, remembers that choice, and reconciles display hot-plug changes. Its partition is
 shared so the existing same-origin `BroadcastChannel` works, but it deliberately has no preload or
@@ -192,9 +225,15 @@ and DEB on Linux, `.github/workflows/desktop-macos.yml` builds the two DMGs on m
 tests, lint and the Electron setup smoke test, and both upload a 14-day workflow artifact without
 signing, notarizing or publishing anything.
 
-Direct ESC/POS USB/LAN printing, cash-drawer control and offline tender are not part of the shell:
-it registers no USB or serial device handler, so the register's WebUSB path is unavailable inside it
-and receipts print through the same browser print dialog the web register falls back to. Linux
+Direct ESC/POS USB/LAN printing, cash-drawer control and offline tender are not part of the shell.
+Current Desktop builds support OS-driver receipt printing to an explicitly saved printer, and
+station-routed kitchen tickets with a local duplicate/uncertain-job journal. Receipt printing
+captures the existing server-backed receipt; kitchen printing formats the existing server ticket.
+Neither creates business records. Kitchen preparation and driver submission have a bounded wait;
+late work cannot submit after timeout, navigation or unpairing. Pre-submission failures can be retried,
+while an uncertain driver outcome requires an explicit retry after inspecting the tray. Missing
+printers never cause selection of another printer. The browser print-dialog fallback remains for
+older shells without the native bridge. Linux
 release acceptance still needs a distro matrix (GNOME/KDE, Wayland/X11), CUPS receipt printing,
 keyboard-wedge scanners, a second customer display, suspend/reconnect, and the keyring-locked
 states; a macOS rollout additionally needs an Apple Developer ID, notarization, and a decision about
@@ -1442,8 +1481,9 @@ as QR on browser/desktop print previews, ESC/POS byte output, and native mobile 
 receipts include a PNG QR attachment and link; text-only LINE receipts include the same tappable link.
 Deposits, unconfirmed Emergency Offline references, non-VAT receipts, voids and returned bills are not
 invoice-claimable. Reprints use the same link; the server always rechecks eligibility when scanned.
-Native hardware printing remains outside the current RN integration, and physical printers still need
-per-model QR scan verification before rollout.
+Native manual Wi-Fi/LAN ESC/POS printing sends the server-backed receipt raster only after the
+printer's online/cover/paper checks. Physical printers still need per-model QR scan verification before
+rollout; USB, Bluetooth, AirPrint and IPP printer transports are not implemented.
 
 The customer scans without signing in and selects Individual, Company or Foreigner. The form collects
 buyer name, a checksum-valid Thai 13-digit tax ID (required for Company, optional for Individual and
@@ -2151,8 +2191,8 @@ waiting for an **order**.
   without changing either saved role.
   Older shells show an update prompt instead of sending the operator to a manual URL. The screen uses the till's device token
   (never a public link) and polls
-  `/api/pos/pickup-queue?view=board`, which returns numbers and status only: no order ids, names,
-  phones, items or amounts. The branch chooses the spotlight duration. A newly called number is
+  `/api/pos/pickup-queue?view=board`, which returns numbers, status and public presentation
+  references only: no order ids, names, phones, items or amounts. The branch chooses the spotlight duration. A newly called number is
   highlighted inside the ready panel, so the preparing and ready lists remain visible instead of
   being pushed below a full-width overlay. Pressing **เรียกคิว** or **เรียกซ้ำ** at the till unlocks
   Web Audio in that cashier click and announces the successful call from the configured Thai/English
@@ -2179,14 +2219,38 @@ waiting for an **order**.
   paired token) but never treats it as a cashier frame: it cannot print or change display settings.
   Opening the URL directly in Chrome is unsupported; a missing, expired or revoked device token is
   replaced by instructions to reopen it from POS Settings and is never shown as a raw token error.
+- **Branch media on the call screen (`10.115`).** Locations → สื่อจอคิว publishes up to eight
+  public PNG/JPG/WebP images per branch. Staff can order them, enable them individually, set start/end
+  times in the shop timezone, choose a 4–30 second rotation and fade/slide/cut transition, and set
+  one default image. The default appears when no promotion is eligible; without it the queue keeps
+  its normal background. The call screen filters unavailable images and keeps numbers visible in all
+  six layouts. Publishing needs `location.manage` and branch access, validates tenant-owned files,
+  and records an audit row with the settings in one transaction. The board read falls back to an
+  empty media configuration if this presentation migration is absent, preserving the queue itself.
+  Video upload is not enabled. Deployment of this optional media feature requires migration `10.115`
+  and verification on the target display.
 - **The till and customer display share the hand-off.** A kitchen-sourced transition to READY plays
   the device's configured `PICKUP_READY` sound and shows a short banner at the selling screen; the
   first load is silent so old work does not chime again. After payment, the read-only customer
   display shows the issued number prominently alongside the verified settlement result.
 - **Idle customer-display promotions never cover a sale.** Store Profile can hold up to eight
-  private file URLs plus a 4–30 second interval. The read-only display preloads and rotates them only
+  tenant-owned public image URLs plus a 4–30 second interval. The read-only display preloads and rotates them only
   in its idle state; cart, payment, settlement and queue hand-off screens take precedence, and a
   failed image falls back to the configured welcome background.
+- **Queue-board media (`10.115`) belongs to the branch.** Locations → สื่อจอคิว manages up to
+  eight ordered, individually enabled images with optional start/end instants, one default image,
+  a 4–30 second interval and fade/short-slide/cut transitions. Images are validated, resized and
+  stored as tenant-owned public files immediately on upload, so operators must use non-confidential
+  artwork; only `location.manage` staff with access to that branch
+  can publish. The board API still requires its paired device token and returns only queue numbers,
+  status and public media references. An unavailable or expired image falls back to the next image,
+  then the branch default, then the normal board background. Calls pause rotation and dim the media;
+  the queue and its announcement always remain visible. The branch setting starts disabled on
+  migration, preserving existing call screens. Media publication is audited in the same tenant
+  transaction as the settings/playlist change. An image uploaded and then discarded before
+  publication remains a public file; this release does not yet purge such unused uploads.
+  Video is not enabled in `10.115`: the current image
+  upload and generic file response do not establish a verified, cross-platform inline-video path.
 - **Polling, not realtime push, by design.** The strip polls every 5 s and the screen every 3 s
   through the device-token API. "Your order is ready" tolerates a few seconds, and a screen that lost
   the shop's internet recovers on the next poll without a socket to re-authenticate.

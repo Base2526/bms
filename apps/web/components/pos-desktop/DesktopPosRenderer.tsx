@@ -1861,10 +1861,10 @@ function DesktopPosContent() {
     return (
       <main className={`${styles.centerPage} ${styles.lightTheme}`}>
         <section className={styles.gateCard}>
-          <div className={styles.spinner} />
-          <h1>กำลังโหลดแอปใหม่ทั้งหมด…</h1>
+          {!error && <div className={styles.spinner} />}
+          <h1>{error ? "โหลดข้อมูลเครื่องขายไม่สำเร็จ" : "กำลังโหลดแอปใหม่ทั้งหมด…"}</h1>
           {error
-            ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert>
+            ? <PosDismissibleAlert key={error} className={styles.errorBox}>{error}</PosDismissibleAlert>
             : <p>กำลังเชื่อมต่อเครื่องขายและตรวจสอบข้อมูลล่าสุด กรุณารอสักครู่</p>}
           {error ? (
             <div className={styles.gateActions}>

@@ -13,7 +13,10 @@ type Feature = {
   id: string; title: string; status: string; source: string;
   tests: string[]; requires: string[];
 };
-type Registry = { schemaVersion: number; scope: string; notes: string; maxUnmappedTests: number; features: Feature[] };
+type Registry = {
+  schemaVersion: number; scope: string; notes: string; maxUnmappedTests: number;
+  capabilityTests?: Record<string, string[]>; features: Feature[];
+};
 
 const args = process.argv.slice(2);
 const option = (name: string) => {
@@ -41,6 +44,8 @@ if (registry.schemaVersion !== 1 || registry.scope !== "baseline-in-progress" ||
   !Number.isSafeInteger(registry.maxUnmappedTests) || registry.maxUnmappedTests < 0 || !Array.isArray(registry.features)) {
   throw new Error("Unsupported release feature registry");
 }
+if (registry.capabilityTests != null && (typeof registry.capabilityTests !== "object" ||
+  Array.isArray(registry.capabilityTests))) throw new Error("Invalid capability test links");
 const safeRepoPath = (value: string) => {
   if (!value || path.isAbsolute(value) || value.includes("\\") || value.split("/").includes("..")) {
     throw new Error(`Unsafe repository path: ${value}`);
@@ -49,12 +54,18 @@ const safeRepoPath = (value: string) => {
   if (!resolved.startsWith(root + path.sep) || !existsSync(resolved)) throw new Error(`Missing repository path: ${value}`);
   return value;
 };
+const capabilityIds = new Set(SYSTEM_CAPABILITIES.map(capability => capability.id));
+for (const [id, tests] of Object.entries(registry.capabilityTests ?? {})) {
+  if (!capabilityIds.has(id) || !Array.isArray(tests) || tests.length === 0) {
+    throw new Error(`Invalid capability test links: ${id}`);
+  }
+}
 const features: Feature[] = SYSTEM_CAPABILITIES.map(capability => ({
   id: capability.id,
   title: capability.title.en,
   status: capability.status,
   source: "apps/web/lib/bms/assistantKnowledge/capabilities.ts",
-  tests: [], // A catalog contract is not proof of each business operation.
+  tests: registry.capabilityTests?.[capability.id] ?? [], // Links identify suites; release execution remains separate.
   requires: [...capability.configurationDependencies],
 }));
 features.push(...registry.features);

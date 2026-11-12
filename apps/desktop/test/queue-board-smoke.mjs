@@ -44,18 +44,22 @@ async function run() {
   let token = TOKEN;
   ipcMain.handle("bms-pos:get-device-token", () => token);
   ipcMain.handle("bms-pos:get-storage-namespace", () => "queue-board-smoke");
-  const state = { entries: [], status: 200 };
+  const state = { entries: [], status: 200, media: null };
+  const promoImage = await readFile(path.resolve(web, "public/sample/starter/food_beverage/04.jpg"));
   const seen = [];
   const server = createServer((req, res) => {
     const url = new URL(req.url, "http://127.0.0.1");
     if (url.pathname === "/") { res.setHeader("Content-Type", "text/html"); res.end(html); return; }
     if (url.pathname === "/board.js") { res.setHeader("Content-Type", "text/javascript"); res.end(js); return; }
+    if (url.pathname === "/api/files/1" || url.pathname === "/api/files/2") {
+      res.setHeader("Content-Type", "image/jpeg"); res.end(promoImage); return;
+    }
     if (url.pathname === "/api/pos/pickup-queue") {
       seen.push({ view: url.searchParams.get("view"), token: req.headers["x-pos-device-token"] ?? null });
       res.setHeader("Content-Type", "application/json");
       if (req.headers["x-pos-device-token"] !== TOKEN) { res.writeHead(401); res.end(JSON.stringify({ error: "device token ไม่ถูกต้อง" })); return; }
       if (state.status !== 200) { res.writeHead(state.status); res.end(JSON.stringify({ error: "เซิร์ฟเวอร์ขัดข้อง" })); return; }
-      res.end(JSON.stringify({ entries: state.entries, serverTime: iso() }));
+      res.end(JSON.stringify({ entries: state.entries, media: state.media, serverTime: iso() }));
       return;
     }
     res.writeHead(404); res.end();
@@ -142,15 +146,35 @@ async function run() {
 
     // Every owner-selectable presentation must render the same queue authority and fit a 1440p
     // cashier test window. The preference is workstation-local and survives reloads.
+    state.media = { version: 1, enabled: true, defaultUrl: "/api/files/1", intervalSeconds: 8,
+      transition: "FADE", items: [{ url: "/api/files/1" }] };
     for (const layout of ["SPOTLIGHT", "THREE_ZONE", "TICKER", "MINIMAL", "AIRPORT", "SPLIT"]) {
       await win.webContents.executeJavaScript(
         `localStorage.setItem('bms.pos.queueBoardLayout.queue-board-smoke', ${JSON.stringify(layout)})`,
       );
       await win.reload();
       await waitFor(win, `document.querySelector('[data-queue-layout="${layout.toLowerCase()}"]') && document.body.innerText.includes('พร้อมรับ')`);
+      await waitFor(win, "document.querySelector('.pq-media-slot img')?.complete");
       assert.deepEqual(await fits(), { wide: false, tall: false }, `${layout}: busy board must fit 1440x900`);
       await shot(`layout-${layout.toLowerCase()}-1440x900`);
     }
+    state.media = { ...state.media, intervalSeconds: 4,
+      items: [{ url: "/api/files/1" }, { url: "/api/files/2" }] };
+    await win.reload();
+    await waitFor(win, "document.querySelector('.pq-media-slot img')?.getAttribute('src') === '/api/files/2'", 9000);
+    state.media = { ...state.media, items: [] };
+    await win.reload();
+    await waitFor(win, "document.querySelector('.pq-media-slot img')?.getAttribute('src') === '/api/files/1'");
+    win.setContentSize(390, 844);
+    await win.webContents.executeJavaScript(
+      "localStorage.setItem('bms.pos.queueBoardLayout.queue-board-smoke', 'SPOTLIGHT')",
+    );
+    await win.reload();
+    await waitFor(win, "document.querySelector('.pq-media-slot img')?.complete && document.body.innerText.includes('พร้อมรับ')");
+    assert.equal((await fits()).wide, false, "390x844: media board must not overflow horizontally");
+    await shot("layout-spotlight-media-390x844");
+    win.setContentSize(1440, 900);
+    state.media = null;
 
     // A quiet shop must not leave a padded empty card across the bottom of the ticker layout.
     // Keep the status visible, but collapse it to a single aligned summary rail.
@@ -232,7 +256,7 @@ async function run() {
     assert.ok(!body.includes("device token ไม่ถูกต้อง"), "raw credential errors are not operator guidance");
     await shot("token-rejected-1440x900");
     assert.deepEqual(errors, []);
-    console.log(`Queue board: 6 saved layouts, selectable sound, default-on mute policy, unpaired, 6 viewports, call spotlight + ordering, busy paging, recovery, expiry and rejected-token guidance passed. Screenshots: ${output}`);
+    console.log(`Queue board: 6 layouts with media, image rotation/default, phone viewport, sound, calls, paging, recovery, expiry and rejected-token guidance passed. Screenshots: ${output}`);
   } finally {
     win.destroy();
     await new Promise(done => server.close(done));

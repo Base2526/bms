@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { diagnoseError, httpHint, knownDiagnosticCode, summarizeResult } from "./diagnostics.mjs";
 
 const QUARTER_HOUR = 15 * 60_000;
+const HOUR = 60 * 60_000;
 const DAY = 24 * 60 * 60_000;
 
 export function readConfig(env) {
@@ -23,6 +24,8 @@ export function readConfig(env) {
 // Only the latest period is eligible after downtime; never replay a backlog.
 export function slotFor(job, now) {
   if (job.group === "frequent") return Math.floor(now / QUARTER_HOUR) * QUARTER_HOUR;
+  if (job.group === "hourly") return Math.floor(now / HOUR) * HOUR;
+  if (job.group !== "daily") throw new Error(`Unknown scheduler group: ${job.group}`);
   const todayAt20 = Math.floor(now / DAY) * DAY + 20 * 60 * 60_000;
   return now >= todayAt20 ? todayAt20 : todayAt20 - DAY;
 }

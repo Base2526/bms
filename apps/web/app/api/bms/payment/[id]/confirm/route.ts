@@ -8,11 +8,13 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function handlePOST(_req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePOST(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await authorizeAdminRoute("payment.confirm");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
   const id = params.id?.trim();
   if (!id) return NextResponse.json({ error: "payment id required" }, { status: 400 });
+  const body = (await req.json().catch(() => null)) as { confirmed?: unknown } | null;
+  if (body?.confirmed !== true) return NextResponse.json({ error: "confirmation required" }, { status: 400 });
   const result = await confirmPayment(auth.tenantId, id, String(auth.adminId));
   const httpStatus =
     result.status === "CONFIRMED" ? 200

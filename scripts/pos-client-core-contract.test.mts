@@ -19,6 +19,29 @@ import {
 } from "../packages/pos-client-core/src/posPin.ts";
 import { receiptPayloadFromPosSale } from "../apps/web/lib/pos/posSaleReceipt.ts";
 import { buildReceipt } from "../apps/web/lib/pos/escpos.ts";
+import { runWithOperationTimeout, PosConnectionError } from "../packages/pos-client-core/src/operation.ts";
+
+test("shared Desktop/native deadline rejects a non-aborting transport and ignores its late completion", { timeout: 1000 }, async () => {
+  let complete!: (value: string) => void;
+  let signal!: AbortSignal;
+  let calls = 0;
+  const pending = runWithOperationTimeout(requestSignal => {
+    calls++;
+    signal = requestSignal;
+    return new Promise<string>(resolve => { complete = resolve; });
+  }, 10);
+  await assert.rejects(pending, PosConnectionError);
+  assert.equal(signal.aborted, true);
+  complete('late success');
+  await assert.rejects(pending, PosConnectionError);
+  assert.equal(calls, 1);
+});
+
+test("shared deadline preserves success and synchronous validation failures", async () => {
+  assert.equal(await runWithOperationTimeout(async () => 'server result', 10), 'server result');
+  const failure = new Error('invalid local input');
+  await assert.rejects(runWithOperationTimeout(() => { throw failure; }, 10), error => error === failure);
+});
 
 const desktopRenderer = readFileSync(
   new URL("../apps/web/components/pos-desktop/DesktopPosRenderer.tsx", import.meta.url),

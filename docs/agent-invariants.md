@@ -240,6 +240,13 @@ approved text. Approval remains per tenant, not a platform-wide publication deci
 
 ## Authentication identity and registration
 
+- Editing a tenant's role permission matrix is Administrator-only. Validate requested permission
+  names against `BMS_PERMISSIONS`; show the exact grant/revoke diff to the human and require
+  `confirmed: true` at GraphQL; lock the tenant and replace the matrix inside `beginTenantTx()`
+  with the actor's `rbac.set` audit before commit. An insert or audit failure must preserve the old
+  matrix, and another tenant's rows must never be touched. Effective permission and role-matrix reads
+  also establish tenant RLS context.
+
 - `apps/web/lib/auth/identity.ts` is the shared normalization/validation source for public login and
   registration. Username and email identity is trim + Unicode NFKC + lowercase; never add a new auth
   path that queries raw `email = $1` / `username = $1` or duplicates frontend-only validation.
@@ -362,6 +369,11 @@ obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or s
   `carrier-tracking-sync`. It is ready but unscheduled; recommended cadence is every 15 minutes.
 
 ## POS and tax
+
+- Back-office payment confirmation needs `payment.confirm` and an explicit `confirmed: true` at
+  GraphQL or REST after the human sees the payment identity, amount and method. The API refuses an
+  omitted or false confirmation before `confirmPayment()`; that service keeps the payment, order
+  and audit changes atomic. Slip analysis remains advisory.
 
 - **Cross-SKU gifts (`10.41`) are real inventory lines.** `BUY_A_GET_B` applies only to direct-stock
   RETAIL_POS variants, with no overlapping/chained product deals. The shared pure basket engine
@@ -494,10 +506,12 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   Electron `safeStorage` (DPAPI on Windows, Secret Service/KWallet on Linux, Keychain on macOS) in a
   `0600` file written atomically, and the web renderer reads it through `window.bmsDesktop` instead
   of `localStorage` (`apps/web/lib/pos/deviceTokenClient.ts`). Every IPC handler re-checks the
-  calling frame: `pair` and `app-info` answer only the local setup page, while `get-device-token`,
-  `get-storage-namespace` and `unpair` answer only a `/pos*` frame on the paired origin. Navigation
-  off that origin is handed to the system browser, `/pos/manual` is the only renderer-created child
-  window, and the main process owns the one `/pos/display` window on a configured non-cashier
+  calling frame: `pair` answers only the local setup page; `app-info` also supports paired POS pages.
+  `get-device-token` and `get-storage-namespace` answer only a `/pos*` frame on the paired origin.
+  Unpair, attention and display controls require the cashier main frame, never a utility or subframe.
+  Navigation off that origin is handed to the system browser. Renderer-created children are limited
+  to `/pos/manual` and `/pos/queue-board`, locked to that utility route including redirects and denied
+  further popups. The main process owns the one `/pos/display` window on a configured non-cashier
   display. That customer window shares the same storage partition only for same-origin
   `BroadcastChannel`, carries no preload/IPC bridge, and never becomes a second register. The
   shell may request generic OS-level attention for a newly observed incoming order, but that IPC is
@@ -547,7 +561,9 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   unknown CPU architecture requires a choice instead of a guessed download. It never installs,
   restarts, changes server runtime/schema or blocks sales. Pairing/startup probes bound both headers
   and session-body reads to five seconds; HTTP 200 without a device id/code is not a verified
-  pairing. A closed/replaced setup frame cannot finish pairing, and late startup work cannot
+  pairing. Recheck setup-frame/revision validity before committing the encrypted temporary file.
+  If an atomic rename was already submitted when setup closed, its verified credential may remain
+  restorable, but the old request must not navigate a replacement window. Late startup work cannot
   replace a newer window or pairing. Reopen the cashier by its own window identity, not the count
   of all Electron windows (a manual/print window may survive). Serialize pairing reads with writes
   and removal; apply restore results only to the current pairing revision/window, and share a
@@ -566,7 +582,11 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   keyboard actions and native preflight; a failed health read also disables test printing rather than
   trusting an earlier `canTest`. A queued test still needs cashier confirmation of readable
   paper. Unknown driver status needs a confirmed test and a known fault cannot be overridden by that
-  confirmation. Printer trouble never blocks a sale or settlement. Customer-display first-run detection asks once,
+  confirmation. Kitchen tickets use explicit station routes and a durable pre-submission journal;
+  timeout and authorization checks cover preparation as well as driver submission. A late result
+  cannot submit a cancelled job, and an uncertain submission never retries automatically. Concurrent
+  display configuration writes are excluded across both legacy and combined controls.
+  Printer trouble never blocks a sale or settlement. Customer-display first-run detection asks once,
   preserves explicit off choices, and restores an enabled display on startup/reconnect. See
   [apps/desktop/README.md](../apps/desktop/README.md) and
   [business/pos.md § Desktop POS client](business/pos.md#desktop-pos-client-windows-linux-and-macos).
@@ -636,6 +656,13 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   The actor holds `pos.expense.create`; a distinct approver with `pos.cash.movement` enters a second
   PIN. An advance settles to actual cost, returning change as `IN` or paying the shortfall as `OUT`,
   and an open advance blocks closing the shift.
+- **Drawer cash-out rejects self-approval in the service as well as at REST/GraphQL.**
+  `recordCashMovement()` requires a nonempty, distinct approver id for `OUT` before opening a
+  transaction; the route/resolver still verify that person's PIN and permission on every attempt.
+  `voidPosSale()` also rejects a missing or identical approver before reading a bill; its
+  route/resolver still enforce the second person's PIN and permission on every retry.
+  A cash-movement idempotency key reused with different shift, device, direction, amount, reason,
+  actor or approver returns `INVALID`, never the earlier movement as a false success.
 - **Sole-owner mode (`9.8`) never self-approves drawer cash.** An Administrator holding
   `pos.expense.personal` may record a `DIRECT` expense funded personally, with mandatory evidence.
   It creates no `bms_pos_cash_movements` row and leaves expected cash unchanged. Any later
@@ -757,10 +784,10 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
 - **e-Tax submission (`7.94`) is a separate, gated background queue** — issuing a tax document does
   not submit it to the Revenue Department by itself. `processEtaxQueue()` drives
   `PENDING → BUILT → SIGNED → SENT → ACCEPTED/REJECTED/FAILED` with bounded retry/backoff, gated by
-  `ETAX_ENABLED`/`bms_store_profile.etax_enabled`. `POST /api/bms/jobs/etax` runs it, but — unlike
-  every other cron endpoint — auths with `x-job-token`/`BMS_JOB_TOKEN` (not `x-cron-secret`) and does
-  **not** call `recordJobRun()`, so it has no run history on `/admin/operations-schedule`. Don't copy
-  that inconsistency into a new cron route; treat it as a known gap.
+  `ETAX_ENABLED`/`bms_store_profile.etax_enabled`. `POST /api/bms/jobs/etax` uses the shared
+  `x-cron-secret`/`BMS_CRON_SECRET` guard and `recordJobRun()`; enabled runs appear on
+  `/admin/operations-schedule`. It remains unscheduled and flag-off until a verified signing and
+  submission provider is available. A skipped disabled run writes no job history.
 - **ESC/POS printing (`lib/pos/{escpos,printerClient}.ts`) is unverified against real hardware** —
   written over WebUSB for receipt/barcode/drawer-kick, with the browser print dialog as fallback.
   Treat it as untested per printer model until run against one.

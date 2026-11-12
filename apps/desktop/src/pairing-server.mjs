@@ -28,6 +28,14 @@ export function assertPairingServerResponse(response) {
       `Server ยังไม่พร้อมใช้งาน (HTTP ${status}) กรุณาลองใหม่หรือตรวจสอบสถานะ Server`,
     );
   }
+  if (status === 429) {
+    throw new PairingServerResponseError(status,
+      "ส่งคำขอถี่เกินไป (HTTP 429) รอสักครู่แล้วลองตรวจการเชื่อมต่อใหม่ ไม่ต้องเปลี่ยน Server หรือออก token ใหม่");
+  }
+  if (status === 408) {
+    throw new PairingServerResponseError(status,
+      "การตรวจเครื่องหมดเวลารอ (HTTP 408) ตรวจเครือข่ายและสถานะ Server แล้วลองใหม่ ข้อมูลจับคู่เดิมยังอยู่");
+  }
   throw new PairingServerResponseError(
     status,
     status > 0

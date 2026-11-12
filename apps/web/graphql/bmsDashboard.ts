@@ -144,14 +144,16 @@ export const bmsDashboardResolvers = {
     },
     async bmsSetRolePermissions(
       _p: unknown,
-      args: { roleId: string; permissions: string[] },
+      args: { roleId: string; permissions: string[]; confirmed: boolean },
       ctx: any
     ) {
       requireSuper(ctx);
+      if (args.confirmed !== true) {
+        throw new GraphQLError("ต้องยืนยันการเปลี่ยนสิทธิ์", { extensions: { code: "BAD_USER_INPUT" } });
+      }
       try {
-        const ok = await setRolePermissions(getTenantId(ctx), args.roleId, args.permissions);
-        if (ok) await audit(ctx, "rbac.set", args.roleId, { count: args.permissions.length });
-        return ok;
+        return await setRolePermissions(getTenantId(ctx), args.roleId, args.permissions,
+          String(requireAuth(ctx).author_id));
       } catch (err: any) {
         throw err instanceof GraphQLError
           ? err

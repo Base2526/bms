@@ -166,8 +166,9 @@ test("native POS diagnostics are device-attributed and visible by server-side de
   assert.match(mobile, /Keychain\.setGenericPassword/);
   assert.match(mobile, /MAX_QUEUE_EVENTS/);
   assert.match(mobile, /scheduleRetry\(target\)/);
-  assert.match(mobile, /signal:\s*controller\.signal/);
-  assert.match(mobile, /clearTimeout\(timeout\)/);
+  assert.match(mobile, /runWithOperationTimeout\(signal => fetch/);
+  assert.match(mobile, /signal,/);
+  assert.match(mobile, /\}\), SEND_TIMEOUT_MS\)/);
   assert.match(login, /message:\s*'เริ่มตรวจ PIN พนักงาน'/);
   assert.match(login, /cashierUserId: cashier\.id/);
   assert.match(login, /PIN_VERIFY_TIMEOUT/);

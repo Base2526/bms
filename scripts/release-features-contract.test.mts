@@ -26,6 +26,16 @@ test("release inventory validates its evidence and emits a commit-bound diff", (
     assert.equal(manifest.version, "test-1");
     assert.equal(manifest.featureCount, manifest.features.length);
     assert.ok(manifest.features.some((feature: { id: string }) => feature.id === "inventory.transfer-lots"));
+    assert.ok(manifest.features.some((feature: { id: string }) => feature.id === "pos.pickup-queue"));
+    assert.deepEqual(
+      manifest.features.find((feature: { id: string }) => feature.id === "pos.queue-board-media")?.requires,
+      ["Migration 10.115", "Public image storage", "Target-device and display verification"],
+    );
+    assert.ok(manifest.features.some((feature: { id: string }) => feature.id === "operations.quality"));
+    assert.deepEqual(
+      manifest.features.find((feature: { id: string }) => feature.id === "receivables.credit-sales")?.tests,
+      ["scripts/ar-contract.test.mts", "scripts/ar-db-contract.test.mts"],
+    );
     assert.equal(manifest.scope, "baseline-in-progress");
     assert.ok(manifest.unmappedTests.length > 0, "missing evidence must remain visible");
 

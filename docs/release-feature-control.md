@@ -10,8 +10,9 @@ all BMS features or claim that an `AVAILABLE` entry is active for every tenant.
   product status, English title, and configuration dependencies. It is a product catalog, not a
   live tenant query.
 - `scripts/release-feature-registry.json` adds workflows outside that catalog, with stable IDs,
-  source paths, test links, and requirements. Add or update an entry in the same change as a new
-  workflow. Do not reuse an ID after removal.
+  source paths, test links, and requirements. Its `capabilityTests` map links existing catalog IDs
+  to suites that exercise them without changing their product status. Add or update an entry in the
+  same change as a new workflow. Do not reuse an ID after removal.
 - `docs/feature-inventory.md` remains a human-readable business inventory. Its aggregate numbers
   are a dated snapshot and have not been reconciled with every current feature. Reconcile it
   domain by domain before changing the registry scope to `complete`.
@@ -20,6 +21,12 @@ The registry check validates duplicate IDs, status values, repository source pat
 It fails if the count of features without feature-level test links grows beyond the recorded
 baseline. Existing missing links remain visible in every manifest; a catalog contract alone is
 not evidence that each business operation works.
+
+The 2026-11-12 reconciliation linked known workflows added after the older human inventory snapshot
+and mapped existing capability suites; 8 known capabilities still lack direct workflow test links.
+It still has `baseline-in-progress` scope. Continue with
+[feature-completion-plan.md](feature-completion-plan.md); the mapped suites must run on the release
+commit, and DB/provider/hardware results must be recorded separately.
 
 ## Before release
 

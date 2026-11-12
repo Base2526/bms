@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -53,6 +53,8 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
   const { catalog, resolveVariant } = useCatalog();
   const { session } = useSession();
   const [working, setWorking] = useState(false);
+  const operationInFlight = useRef(false);
+  const openedCheckId = useRef<string | null>(null);
   const [configuring, setConfiguring] = useState<PosMenuItem | null>(null);
   const [action, setAction] = useState<CheckAction | null>(null);
   const [guestCount, setGuestCount] = useState('1');
@@ -70,7 +72,8 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
     : undefined;
   const serviceMode =
     route.params.serviceMode ?? (table ? 'DINE_IN' : 'TAKEAWAY');
-  const checkId = route.params.checkId ?? table?.check?.id ?? null;
+  const checkId =
+    route.params.checkId ?? openedCheckId.current ?? table?.check?.id ?? null;
   const check = useQuery(MobileRestaurantCheckDocument, {
     variables: { id: checkId ?? '' },
     skip: !checkId,
@@ -150,7 +153,9 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
     });
     const opened = response.data?.bmsPosRestaurantOpenCheck.check;
     if (!opened) throw new Error('เปิดบิลโต๊ะไม่สำเร็จ');
-    await refresh(opened.id);
+    // Keep the committed bill identity even if the following reads fail.
+    openedCheckId.current = opened.id;
+    navigation.setParams({ checkId: opened.id });
     return opened.id;
   };
 
@@ -159,7 +164,8 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
     modifierCodes,
     kitchenNote,
   }: ConfiguredProduct) => {
-    if (!credentials || working) return;
+    if (!credentials || operationInFlight.current) return;
+    operationInFlight.current = true;
     setWorking(true);
     try {
       const id = await ensureCheck();
@@ -184,19 +190,20 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
           result?.reason ?? result?.status ?? 'เพิ่มรายการไม่สำเร็จ',
         );
       }
-      await refresh(id);
+      await refresh(id).catch(() => undefined);
     } catch (error) {
       Alert.alert(
         'เพิ่มรายการไม่สำเร็จ',
         error instanceof Error ? error.message : 'กรุณาลองใหม่',
       );
     } finally {
+      operationInFlight.current = false;
       setWorking(false);
     }
   };
 
   const onRemove = async (sku: string) => {
-    if (!credentials || !current || working) return;
+    if (!credentials || !current || operationInFlight.current) return;
     const line = [...current.items]
       .reverse()
       .find(item => item.sku === sku && item.status === 'NEW');
@@ -207,6 +214,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
       );
       return;
     }
+    operationInFlight.current = true;
     setWorking(true);
     try {
       const response = await removeItem({
@@ -222,19 +230,21 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
           result?.reason ?? result?.status ?? 'ลบรายการไม่สำเร็จ',
         );
       }
-      await refresh(current.id);
+      await refresh(current.id).catch(() => undefined);
     } catch (error) {
       Alert.alert(
         'ลบรายการไม่สำเร็จ',
         error instanceof Error ? error.message : 'กรุณาลองใหม่',
       );
     } finally {
+      operationInFlight.current = false;
       setWorking(false);
     }
   };
 
   const onSend = async () => {
-    if (!credentials || !current || working) return;
+    if (!credentials || !current || operationInFlight.current) return;
+    operationInFlight.current = true;
     setWorking(true);
     try {
       const response = await sendCheck({
@@ -244,7 +254,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
       if (result?.status !== 'SENT') {
         throw new Error(result?.reason ?? result?.status ?? 'ส่งครัวไม่สำเร็จ');
       }
-      await refresh(current.id);
+      await refresh(current.id).catch(() => undefined);
       Alert.alert('ส่งครัวแล้ว', `${result.kitchenTickets ?? 0} ตั๋ว`);
     } catch (error) {
       Alert.alert(
@@ -252,12 +262,14 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
         error instanceof Error ? error.message : 'กรุณาลองใหม่',
       );
     } finally {
+      operationInFlight.current = false;
       setWorking(false);
     }
   };
 
   const runCheckAction = async () => {
-    if (!credentials || !current || !action || working) return;
+    if (!credentials || !current || !action || operationInFlight.current) return;
+    operationInFlight.current = true;
     setWorking(true);
     try {
       let result:
@@ -353,7 +365,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
         );
       }
       setAction(null);
-      await floor.refetch();
+      await floor.refetch().catch(() => undefined);
       if (action === 'CANCEL') {
         navigation.goBack();
       } else if (
@@ -368,7 +380,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
             destination.serviceMode === 'TAKEAWAY' ? 'TAKEAWAY' : 'DINE_IN',
         });
       } else {
-        await check.refetch({ id: current.id });
+        await check.refetch({ id: current.id }).catch(() => undefined);
       }
     } catch (cause) {
       Alert.alert(
@@ -376,6 +388,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
         cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
       );
     } finally {
+      operationInFlight.current = false;
       setWorking(false);
     }
   };

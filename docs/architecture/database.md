@@ -1033,6 +1033,13 @@ Migration `7.78` seeds `user.view`/`user.manage` here for `Manager` in every ten
 lets a shop owner manage their own staff; *which* users they may touch is a separate code-level role
 rank (`lib/bms/staffRoles.ts`) and is not stored in this table — see the RBAC section of
 [api.md](api.md) before changing either half.
+`setRolePermissions()` validates every requested permission, locks the tenant row, replaces that
+tenant's role matrix, and writes the actor's `rbac.set` audit in one tenant transaction. A failed
+insert or audit rolls the prior matrix back; the GraphQL resolver checks Administrator before calling
+the service and requires an explicit `confirmed` argument. The UI shows the exact grants and
+revocations before sending that argument. Effective permission and matrix reads also establish
+tenant RLS context. The pure
+contract covers rollback; verify grants and RLS on an isolated database.
 
 **Shared AI budget (`10.54__bms_ai_cost_budget.sql`)** — adds nonnegative
 `budget_reserved_usd NUMERIC(16,8) NOT NULL DEFAULT 0` to `bms_ai_usage_events` and a partial
@@ -2406,3 +2413,11 @@ URLs) and `customer_display_promo_interval_seconds` to `bms_store_profile`. Slid
 display is idle; sale/payment state always wins. Therefore `10.112` is the deployment requirement
 declared in `scripts/schemaReadiness.mts`. See
 [business/pos.md](../business/pos.md#pickup-queue-numbers-and-the-call-screen-10111).
+
+`10.115` adds branch queue-board presentation columns to `bms_locations`: media enabled,
+default public file ID, 4–30 second interval, transition and optimistic version. The new
+`bms_queue_board_media` table stores at most eight ordered image file IDs per tenant/branch,
+per-item active state and optional `[starts_at, ends_at)` instants. Composite tenant/branch
+and tenant/file foreign keys, tenant RLS and `bms_app` grants keep the playlist isolated.
+Publication replaces the bounded playlist and inserts its audit row in one `beginTenantTx()`.
+No queue number, order, stock or payment row is changed by publishing media.

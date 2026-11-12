@@ -58,7 +58,7 @@ export default function PosError({
         <div style={{ fontSize: 34, lineHeight: 1 }} aria-hidden="true">!</div>
         <h1 style={{ margin: "14px 0 6px", fontSize: 24 }}>หน้าจอ POS เปิดไม่สำเร็จ</h1>
         <p style={{ margin: 0, color: "#667085", lineHeight: 1.6 }}>
-          ระบบยังไม่ได้ทำรายการขายหรือเปลี่ยนข้อมูล กรุณาลองโหลดหน้าจออีกครั้ง
+          หน้าจอขัดข้อง กรุณาลองโหลดใหม่ หากกำลังบันทึกรายการ ให้ตรวจประวัติหรือสถานะเดิมก่อนทำต่อ ห้ามรับเงินซ้ำหรือสร้างรายการใหม่แทนรายการที่ยังไม่ทราบผล
         </p>
         {process.env.NODE_ENV === "development" ? (
           <pre

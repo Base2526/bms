@@ -7,6 +7,8 @@ export type TicketStatus = 'NEW' | 'PREPARING' | 'READY' | 'SERVED';
 export interface KitchenTicketItem {
   name: string;
   qty: number;
+  size?: string | null;
+  modifierCodes?: string[];
 }
 
 export interface KitchenTicket {

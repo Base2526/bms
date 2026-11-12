@@ -1,4 +1,10 @@
-import React, { createContext, useCallback, useContext, useMemo } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+} from 'react';
 import { useMutation, useQuery } from '@apollo/client';
 import {
   MobilePosCashMovementDocument,
@@ -85,6 +91,7 @@ export function ShiftProvider({
   const { session } = useSession();
   const { target } = useDevice();
   const credentials = session?.credentials;
+  const operationInFlight = useRef(false);
   const bootstrap = useQuery(PosBootstrapDocument, {
     skip: !session,
     notifyOnNetworkStatusChange: true,
@@ -167,6 +174,8 @@ export function ShiftProvider({
       ) {
         return 'เงินออกต้องมีผู้อนุมัติคนที่สองและ PIN';
       }
+      if (operationInFlight.current) return 'กำลังทำรายการกะ กรุณารอสักครู่';
+      operationInFlight.current = true;
       try {
         const response = await movementMutation({
           variables: {
@@ -186,10 +195,12 @@ export function ShiftProvider({
         if (result?.status !== 'RECORDED') {
           return result?.reason ?? result?.status ?? 'บันทึกเงินไม่สำเร็จ';
         }
-        await refresh();
+        await refresh().catch(() => undefined);
         return null;
       } catch (error) {
         return error instanceof Error ? error.message : 'บันทึกเงินไม่สำเร็จ';
+      } finally {
+        operationInFlight.current = false;
       }
     },
     [credentials, movementMutation, refresh],
@@ -198,47 +209,60 @@ export function ShiftProvider({
   const closeShift = useCallback(
     async (countedCashText: string) => {
       if (!credentials) return 'กรุณาเข้าใช้งานใหม่';
-      let unresolved;
+      if (operationInFlight.current) return 'กำลังทำรายการกะ กรุณารอสักครู่';
+      operationInFlight.current = true;
       try {
-        unresolved = (await loadOfflineSales()).filter(
-          record =>
-            record.serverUrl === target?.serverUrl &&
-            record.branchId === session?.branch.id,
-        );
-      } catch (error) {
-        return error instanceof Error
-          ? `${error.message} · ยังปิดกะไม่ได้`
-          : 'ตรวจคิวออฟไลน์ไม่ได้ · ยังปิดกะไม่ได้';
-      }
-      if (unresolved.length > 0) {
-        return `ยังมีรายการออฟไลน์ ${unresolved.length} รายการ ต้องซิงก์หรือตรวจสอบก่อนปิดกะ`;
-      }
-      const countedCash = Number(countedCashText);
-      if (!Number.isFinite(countedCash) || countedCash < 0) {
-        return 'ยอดเงินสดที่นับได้ต้องเป็นตัวเลขไม่ติดลบ';
-      }
-      try {
-        const response = await shiftMutation({
-          variables: {
-            input: {
-              action: 'CLOSE',
-              cashierUserId: credentials.cashierUserId,
-              pin: credentials.pin,
-              countedCash,
-              openingFloat: null,
-              note: null,
-              userId: null,
-            },
-          },
-        });
-        const result = response.data?.bmsPosShift;
-        if (result?.status !== 'CLOSED') {
-          return result?.reason ?? result?.status ?? 'ปิดกะไม่สำเร็จ';
+        let unresolved;
+        try {
+          unresolved = (await loadOfflineSales()).filter(
+            record =>
+              record.serverUrl === target?.serverUrl &&
+              record.branchId === session?.branch.id,
+          );
+        } catch (error) {
+          return error instanceof Error
+            ? `${error.message} · ยังปิดกะไม่ได้`
+            : 'ตรวจคิวออฟไลน์ไม่ได้ · ยังปิดกะไม่ได้';
         }
-        await Promise.all([bootstrap.refetch(), historyQuery.refetch()]);
-        return null;
-      } catch (error) {
-        return error instanceof Error ? error.message : 'ปิดกะไม่สำเร็จ';
+        if (unresolved.length > 0) {
+          return `ยังมีรายการออฟไลน์ ${unresolved.length} รายการ ต้องซิงก์หรือตรวจสอบก่อนปิดกะ`;
+        }
+        const countedCash = Number(countedCashText);
+        if (
+          !countedCashText.trim() ||
+          !Number.isFinite(countedCash) ||
+          countedCash < 0
+        ) {
+          return 'ยอดเงินสดที่นับได้ต้องเป็นตัวเลขไม่ติดลบ';
+        }
+        try {
+          const response = await shiftMutation({
+            variables: {
+              input: {
+                action: 'CLOSE',
+                cashierUserId: credentials.cashierUserId,
+                pin: credentials.pin,
+                countedCash,
+                openingFloat: null,
+                note: null,
+                userId: null,
+              },
+            },
+          });
+          const result = response.data?.bmsPosShift;
+          if (result?.status !== 'CLOSED') {
+            return result?.reason ?? result?.status ?? 'ปิดกะไม่สำเร็จ';
+          }
+          await Promise.all([
+            bootstrap.refetch(),
+            historyQuery.refetch(),
+          ]).catch(() => undefined);
+          return null;
+        } catch (error) {
+          return error instanceof Error ? error.message : 'ปิดกะไม่สำเร็จ';
+        }
+      } finally {
+        operationInFlight.current = false;
       }
     },
     [
@@ -257,6 +281,8 @@ export function ShiftProvider({
       if (!Number.isFinite(openingFloat) || openingFloat < 0) {
         return 'เงินทอนตั้งต้นต้องเป็นตัวเลขไม่ติดลบ';
       }
+      if (operationInFlight.current) return 'กำลังทำรายการกะ กรุณารอสักครู่';
+      operationInFlight.current = true;
       try {
         const response = await shiftMutation({
           variables: {
@@ -275,10 +301,12 @@ export function ShiftProvider({
         if (result?.status !== 'OPENED') {
           return result?.reason ?? result?.status ?? 'เปิดกะไม่สำเร็จ';
         }
-        await refresh();
+        await refresh().catch(() => undefined);
         return null;
       } catch (error) {
         return error instanceof Error ? error.message : 'เปิดกะไม่สำเร็จ';
+      } finally {
+        operationInFlight.current = false;
       }
     },
     [credentials, refresh, shift, shiftMutation],

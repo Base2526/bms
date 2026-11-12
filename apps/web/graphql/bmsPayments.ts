@@ -21,6 +21,7 @@ import {
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
+import { GraphQLError } from "graphql/error";
 
 const toISO = (d: any) => (d instanceof Date ? d.toISOString() : d == null ? null : String(d));
 const actorOf = (ctx: any) => ctx?.admin?.email || ctx?.admin?.id || "admin";
@@ -80,8 +81,11 @@ export const bmsPaymentsResolvers = {
       return { status: res.status, paymentId: null, message: msg[res.status] ?? "ทำรายการไม่ได้" };
     },
 
-    async bmsConfirmPayment(_p: unknown, args: { id: string }, ctx: any) {
+    async bmsConfirmPayment(_p: unknown, args: { id: string; confirmed: boolean }, ctx: any) {
       await requirePermission(ctx, "payment.confirm");
+      if (args.confirmed !== true) {
+        throw new GraphQLError("ต้องยืนยันการรับชำระ", { extensions: { code: "BAD_USER_INPUT" } });
+      }
       const res = await confirmPayment(getTenantId(ctx), args.id, actorOf(ctx));
       if (res.status === "CONFIRMED") {
         return { status: "CONFIRMED", paymentId: args.id, message: res.orderPaid ? "ยืนยันแล้ว · ออร์เดอร์เป็น PAID" : "ยืนยันการชำระแล้ว" };

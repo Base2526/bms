@@ -15,8 +15,9 @@ import { sendEmail } from "@/lib/mailer";
 import { getLatestEmailTemplate, renderEmailTemplate } from "@/lib/emailTemplates";
 import { getStoreProfile, DEFAULT_EMAIL_THEME_COLOR } from "./storeProfile";
 import { getTenantName } from "./platform";
+import { orderEmailTemplateKey, type OrderEmailKey } from "./orderEmailPolicy";
 
-export type OrderEmailKey = "paid" | "packing" | "shipped" | "completed" | "cancelled" | "returned";
+export type { OrderEmailKey } from "./orderEmailPolicy";
 
 const APP_NAME = process.env.NEXT_PUBLIC_WEB_NAME ?? "BMS";
 const SUPPORT_URL = process.env.NEXT_PUBLIC_SUPPORT_URL ?? "";
@@ -28,10 +29,12 @@ export async function notifyOrderStatusEmail(
 ): Promise<void> {
   try {
     const orderRes = await query(
-      `SELECT o.id, o.total_amount, o.shipping_fee,
+      `SELECT o.id, o.total_amount, o.shipping_fee, o.fulfillment_type,
+              loc.name AS pickup_location_name,
               cu.name AS customer_name, cu.email AS customer_email, cu.preferred_language
          FROM bms_orders o
-         LEFT JOIN bms_customers cu ON cu.id = o.customer_id
+         LEFT JOIN bms_customers cu ON cu.tenant_id = o.tenant_id AND cu.id = o.customer_id
+         LEFT JOIN bms_locations loc ON loc.tenant_id = o.tenant_id AND loc.id = o.location_id
         WHERE o.tenant_id = $1 AND o.id = $2`,
       [tenantId, orderId]
     );
@@ -49,7 +52,7 @@ export async function notifyOrderStatusEmail(
 
     let trackingNo: string | null = null;
     let carrier: string | null = null;
-    if (statusKey === "shipped") {
+    if (statusKey === "shipped" && order.fulfillment_type !== "PICKUP") {
       const shipRes = await query(
         `SELECT carrier, tracking_no FROM bms_shipments
           WHERE tenant_id = $1 AND order_id = $2
@@ -90,11 +93,12 @@ export async function notifyOrderStatusEmail(
       })),
       tracking_no: trackingNo,
       carrier,
+      pickup_location_name: order.pickup_location_name || null,
       theme_color: profile.emailThemeColor || DEFAULT_EMAIL_THEME_COLOR,
       email_footer_text: profile.emailFooterText || null,
     };
 
-    const tpl = await getLatestEmailTemplate(`order.${statusKey}`, locale);
+    const tpl = await getLatestEmailTemplate(orderEmailTemplateKey(statusKey, order.fulfillment_type), locale);
     const rendered = renderEmailTemplate(tpl, data);
     await sendEmail(
       // ลูกค้ากดตอบแล้วต้องถึงร้าน ไม่ใช่ถึงอีเมลส่งของแพลตฟอร์ม

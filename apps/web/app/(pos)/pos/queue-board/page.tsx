@@ -39,6 +39,13 @@ type BoardEntry = {
   readyAt: string | null;
   calledAt: string | null;
 };
+type BoardMedia = {
+  enabled: boolean;
+  defaultUrl: string | null;
+  intervalSeconds: number;
+  transition: "FADE" | "SLIDE" | "CUT";
+  items: { url: string }[];
+};
 type BoardSettings = {
   enabled: boolean;
   autoHideMinutes: number;
@@ -137,6 +144,19 @@ const QUEUE_BOARD_CSS = `
   .pq-spotlight-title { margin-top: 3px; font-size: clamp(24px, 2.4vw, 40px); font-weight: 700; line-height: 1.15; }
   .pq-spotlight-number { font-size: clamp(72px, 10vw, 164px); font-weight: 800; line-height: .8; letter-spacing: -.045em; }
   .pq-layout { min-height: 0; flex: 1; }
+  .pq-board-and-media { flex: 1; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); gap: clamp(12px, 1.3vw, 20px); }
+  .pq-board-and-media.with-media { grid-template-rows: minmax(0, 1fr) clamp(100px, 16vh, 170px); }
+  .pq-board-and-media.airport.with-media { grid-template-columns: minmax(0, 1fr) minmax(220px, 26%); grid-template-rows: minmax(0, 1fr); }
+  .pq-board-and-media > .pq-layout, .pq-board-and-media > .pq-grid { min-height: 0; height: 100%; }
+  .pq-media-slot { position: relative; min-width: 0; min-height: 0; overflow: hidden; border-radius: 18px; border: 1px solid #395044; background: #17291e; }
+  .pq-media-slot img { width: 100%; height: 100%; display: block; object-fit: contain; }
+  .pq-media-slot[data-transition="FADE"] img { animation: pq-media-fade .55s ease-out; }
+  .pq-media-slot[data-transition="SLIDE"] img { animation: pq-media-slide .55s ease-out; }
+  .pq-media-slot > span { position: absolute; left: 12px; bottom: 10px; padding: 3px 8px; border-radius: 6px; background: #07160dbb; color: #f8fafc; font-size: 11px; }
+  .pq-board-and-media.calling .pq-media-slot { opacity: .65; }
+  @keyframes pq-media-fade { from { opacity: .1; } to { opacity: 1; } }
+  @keyframes pq-media-slide { from { opacity: .3; transform: translateX(12px); } to { opacity: 1; transform: translateX(0); } }
+  @media (prefers-reduced-motion: reduce) { .pq-media-slot img { animation: none !important; } }
   .pq-call-card {
     min-width: 0; min-height: 0; padding: clamp(22px, 3vw, 42px); border-radius: 22px;
     background: linear-gradient(125deg, #176640, #18b85c); border: 1px solid #49dc89;
@@ -199,6 +219,7 @@ const QUEUE_BOARD_CSS = `
     .pq-minimal-rail { grid-template-columns: 1fr; }
     .pq-board-row { grid-template-columns: .7fr 1fr; }
     .pq-board-note { display: none; }
+    .pq-board-and-media.airport.with-media { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 120px; }
   }
   @media (max-height: 700px) {
     .pq-page { padding: 14px 18px; gap: 12px; }
@@ -224,6 +245,9 @@ export default function PickupQueueBoardPage() {
   const [token, setToken] = useState<string | null>(null);
   const [entries, setEntries] = useState<BoardEntry[]>([]);
   const [settings, setSettings] = useState<BoardSettings | null>(null);
+  const [media, setMedia] = useState<BoardMedia | null>(null);
+  const [mediaIndex, setMediaIndex] = useState(0);
+  const [failedMedia, setFailedMedia] = useState<string[]>([]);
   const [offline, setOffline] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [spotlight, setSpotlight] = useState<{ label: string; until: number } | null>(null);
@@ -334,6 +358,7 @@ export default function PickupQueueBoardPage() {
           // with the operator workflow that can safely reopen the managed display.
           setEntries([]);
           setSettings(null);
+          setMedia(null);
           settingsRef.current = null;
           setSpotlight(null);
           setError(null);
@@ -353,6 +378,7 @@ export default function PickupQueueBoardPage() {
         settingsRef.current = nextSettings;
         setSettings(nextSettings);
       }
+      setMedia(data?.media && typeof data.media === "object" ? data.media as BoardMedia : null);
       setOffline(false);
       setError(null);
 
@@ -410,6 +436,27 @@ export default function PickupQueueBoardPage() {
 
   const sizes = numberSizes(entries.length);
   const currentLabel = spotlight?.label ?? ready[0]?.label ?? null;
+  const mediaUrls = media?.enabled && Array.isArray(media.items)
+    ? media.items.map((item) => item.url).filter((url) => /^\/api\/files\/\d+$/.test(url) && !failedMedia.includes(url))
+    : [];
+  const defaultMediaUrl = media?.defaultUrl && /^\/api\/files\/\d+$/.test(media.defaultUrl)
+    && !failedMedia.includes(media.defaultUrl) ? media.defaultUrl : null;
+  const displayedMediaUrl = mediaUrls.length ? mediaUrls[mediaIndex % mediaUrls.length] : defaultMediaUrl;
+  const mediaSignature = [media?.enabled, media?.defaultUrl, ...(media?.items ?? []).map((item) => item.url)].join("|");
+  useEffect(() => { setMediaIndex(0); setFailedMedia([]); }, [mediaSignature]);
+  useEffect(() => {
+    if (mediaUrls.length < 2 || spotlight) return;
+    const timer = window.setTimeout(() => setMediaIndex((value) => value + 1),
+      Math.min(30, Math.max(4, Number(media?.intervalSeconds ?? 8))) * 1000);
+    return () => window.clearTimeout(timer);
+  }, [mediaUrls.join("|"), mediaIndex, media?.intervalSeconds, spotlight]);
+  useEffect(() => {
+    if (mediaUrls.length < 2 || spotlight) return;
+    const next = mediaUrls[(mediaIndex + 1) % mediaUrls.length];
+    const image = new window.Image();
+    image.onerror = () => setFailedMedia((values) => values.includes(next) ? values : [...values, next]);
+    image.src = next;
+  }, [mediaUrls.join("|"), mediaIndex, spotlight]);
   const effectiveVoiceSettings = applyQueueBoardAudioStyle(settings, audioStyle);
   const chimeReadyLabel = audioStyle === "DOUBLE_BEEP"
     ? "บี๊บสองครั้งพร้อม"
@@ -518,6 +565,7 @@ export default function PickupQueueBoardPage() {
         {settings.boardMessage}
       </div>}
 
+      <div className={`pq-board-and-media ${layout.toLowerCase()}${displayedMediaUrl ? " with-media" : ""}${spotlight ? " calling" : ""}`}>
       {layout === "SPOTLIGHT" && <div className="pq-layout pq-spotlight-layout">
         {callCard}<div className="pq-layout-lower">{preparingPanel(9)}{readyPanel(8)}</div>
       </div>}
@@ -553,6 +601,12 @@ export default function PickupQueueBoardPage() {
       {layout === "SPLIT" && <div className="pq-grid">
         {preparingPanel(16)}{readyPanel(12, true)}
       </div>}
+      {displayedMediaUrl && <aside className="pq-media-slot" data-transition={media?.transition ?? "FADE"} aria-hidden="true">
+        <img key={displayedMediaUrl} src={displayedMediaUrl} alt=""
+          onError={() => setFailedMedia((values) => values.includes(displayedMediaUrl) ? values : [...values, displayedMediaUrl])} />
+        <span>ประชาสัมพันธ์</span>
+      </aside>}
+      </div>
     </main>
   );
 }

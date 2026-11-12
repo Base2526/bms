@@ -1136,7 +1136,7 @@ test("transport failures distinguish read refreshes from mutations with unknown 
   assert.match(failedWrite, /อย่ากดซ้ำทันที/);
 
   assert.match(describeTransportFailure(0, false, "GET"), /โหลดข้อมูลล่าสุดไม่ได้/);
-  assert.match(describeTransportFailure(0, false, "POST"), /รายการยังไม่ถูกส่ง/);
+  assert.match(describeTransportFailure(0, false, "POST"), /ยังไม่รู้ว่ารายการถูกบันทึกหรือไม่/);
   assert.match(describeTransportFailure(0, true, "GET"), /เชื่อมต่อเซิร์ฟเวอร์ไม่ได้/);
   assert.match(describeTransportFailure(0, true, "POST"), /อย่ากดซ้ำทันที/);
 });

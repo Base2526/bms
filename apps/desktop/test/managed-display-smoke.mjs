@@ -22,9 +22,14 @@ async function run() {
     outfile: path.join(output, "fixture.js"), platform: "browser", jsx: "automatic",
     tsconfig: path.join(web, "tsconfig.json"), nodePaths: [path.join(web, "node_modules")],
     define: { "process.env.NODE_ENV": '"production"' } });
+  const page = await readFile(path.join(web, "app/(pos)/pos/page.tsx"), "utf8");
+  const settingsCss = page.match(/<style>\{`([\s\S]*?)`\}<\/style>/)?.[1];
+  assert.ok(settingsCss?.includes(".pos-display-role-card"), "use the shipped settings layout");
+  assert.ok(!settingsCss.includes("${"), "dynamic styles need an explicit fixture adapter");
+  const posCss = await readFile(path.join(web, "app/(pos)/pos/pos.css"), "utf8");
   const html = `<!doctype html><html lang="th"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-    <style>:root{--posx-surface:#fff;--posx-line:#d9e2ef;--posx-muted:#667085;--posx-ink2:#475467;--posx-soft:#f2f4f7}body{margin:0;background:#f6f8fb;font-family:system-ui,sans-serif;color:#172033}</style>
-    <body><div id="root"></div><script src="/fixture.js"></script></body></html>`;
+    <style>${posCss}\n${settingsCss}\n:root{--posx-surface:#fff;--posx-line:#d9e2ef;--posx-muted:#667085;--posx-ink2:#475467;--posx-soft:#f2f4f7}body{margin:0;background:#f6f8fb;font-family:system-ui,sans-serif;color:#172033}</style>
+    <body><div id="root" class="pos-root"></div><script src="/fixture.js"></script></body></html>`;
   const js = await readFile(path.join(output, "fixture.js"));
   const server = createServer((req, res) => {
     if (req.url === "/fixture.js") { res.setHeader("Content-Type", "text/javascript"); res.end(js); return; }
@@ -41,11 +46,14 @@ async function run() {
     await waitFor(win, "document.body.innerText.includes('จอภายนอก') && document.body.innerText.includes('เชื่อมต่อแล้ว · HDMI')");
     const initialBody = await win.webContents.executeJavaScript("document.body.innerText");
     assert.ok(initialBody.includes("จอลูกค้า"));
-    assert.ok(initialBody.includes("ออกเลขคิวหลังขายของเครื่องนี้"), "queue issuance remains a distinct setting");
+    assert.ok(await win.webContents.executeJavaScript(
+      "!!document.querySelector('[data-pickup-queue-settings] [role=\"switch\"][aria-checked=\"true\"]')",
+    ), "queue issuance remains a distinct enabled setting");
     assert.ok(initialBody.includes("เปิดจอจริงหรือหน้าต่างทดสอบได้จากหัวข้อ"), "managed Desktop points to the single display control");
     assert.equal(initialBody.includes("เปิดจอคิวแบบหน้าต่าง"), false, "managed Desktop hides the duplicate legacy queue-board button");
-    assert.ok(initialBody.includes("เปิดทดสอบจอลูกค้าบนจอนี้"), "customer preview names its surface");
-    assert.ok(initialBody.includes("เปิดทดสอบจอเรียกคิวบนจอนี้"), "queue preview names its surface");
+    for (const label of ["เปิดทดสอบจอลูกค้าบนจอนี้", "เปิดทดสอบจอเรียกคิวบนจอนี้"]) {
+      assert.ok(await win.webContents.executeJavaScript(`!!document.querySelector('[aria-label="${label}"]')`), label);
+    }
     await shot("customer-1200x900");
     await win.webContents.executeJavaScript("window.scrollTo(0, document.documentElement.scrollHeight)");
     await new Promise((done) => setTimeout(done, 100));
@@ -53,7 +61,8 @@ async function run() {
     await win.webContents.executeJavaScript("window.scrollTo(0, 0)");
 
     await win.webContents.executeJavaScript("document.querySelector('[aria-label=\"เปิดจอเรียกคิวเมื่อเปิด POS\"]').click()");
-    await waitFor(win, "[...document.querySelectorAll('strong')].find(e => e.textContent === 'จอเรียกคิว')?.parentElement?.parentElement?.innerText.includes('เชื่อมต่อแล้ว · HDMI')");
+    await waitFor(win, "document.querySelector('[data-display-role=\"queue\"]')?.innerText.includes('เชื่อมต่อแล้ว · HDMI')");
+    await win.webContents.executeJavaScript("document.querySelector('[data-display-role=\"queue\"] details').open = true");
     const body = await win.webContents.executeJavaScript("document.body.innerText");
     assert.ok(body.includes("ปิดอยู่"), "the customer role was released before queue took the only external screen");
     assert.ok(body.includes("รูปแบบหน้าจอเรียกคิว"), "owner can choose the queue-board presentation");
@@ -65,20 +74,22 @@ async function run() {
     ), "queue-board audio selector is accessible");
     assert.ok(body.includes("AI Studio · ผู้หญิงสุภาพ (แนะนำ)") && body.includes("ทดลองเสียงคิว 001"),
       "queue-board audio defaults to the polite female AI Studio profile and offers a preview action");
+    assert.ok(body.includes("ระบบหลังบ้าน → สาขา → สื่อจอคิว"),
+      "desktop queue settings point to the branch media editor");
     await shot("queue-1200x900");
 
     await win.webContents.executeJavaScript("document.querySelector('[aria-label=\"เปิดจอเรียกคิวเมื่อเปิด POS\"]').click()");
     await waitFor(win, "document.querySelector('[data-display-role=\"queue\"]')?.innerText.includes('ปิดอยู่') && !document.querySelector('[data-display-role=\"queue\"] button')?.disabled");
     await win.webContents.executeJavaScript(
-      "[...document.querySelector('[data-display-role=\"customer\"]').querySelectorAll('button')].find((button) => button.textContent?.includes('เปิดทดสอบจอลูกค้าบนจอนี้')).click()",
+      "document.querySelector('[aria-label=\"เปิดทดสอบจอลูกค้าบนจอนี้\"]').click()",
     );
     await waitFor(win, "document.querySelector('[data-display-role=\"customer\"]')?.innerText.includes('กำลังทดสอบบนจอนี้')");
     await win.webContents.executeJavaScript(
-      "[...document.querySelector('[data-display-role=\"queue\"]').querySelectorAll('button')].find((button) => button.textContent?.includes('เปิดทดสอบจอเรียกคิวบนจอนี้')).click()",
+      "document.querySelector('[aria-label=\"เปิดทดสอบจอเรียกคิวบนจอนี้\"]').click()",
     );
     await waitFor(win, "document.querySelector('[data-display-role=\"customer\"]')?.innerText.includes('กำลังทดสอบบนจอนี้') && document.querySelector('[data-display-role=\"queue\"]')?.innerText.includes('กำลังทดสอบบนจอนี้')");
     const closePreviewCount = await win.webContents.executeJavaScript(
-      "[...document.querySelectorAll('button')].filter((button) => button.textContent?.includes('ปิดทดสอบจอ')).length",
+      "document.querySelectorAll('button[aria-label^=\"ปิดทดสอบจอ\"]').length",
     );
     assert.equal(closePreviewCount, 2, "customer and queue previews stay open independently");
     await new Promise((done) => setTimeout(done, 100));

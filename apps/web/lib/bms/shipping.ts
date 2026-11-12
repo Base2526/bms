@@ -50,6 +50,7 @@ export type CreateShipmentInput = {
   trackingNo?: string | null;
   note?: string | null;
   actor?: string | null;
+  auditVia?: "ai:staff";
 };
 
 export type CreateShipmentResult =
@@ -66,6 +67,7 @@ export type CreateShipmentResult =
     }
   | { status: "ORDER_NOT_FOUND" }
   | { status: "BAD_CARRIER" }
+  | { status: "PICKUP_ORDER" }
   | { status: "MISSING_SHIPPING_ADDRESS" }
   | { status: "INVALID_STATE"; current: string };
 
@@ -430,8 +432,8 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
   try {
     await beginTenantTx(client, tenantId);
 
-    const ord = await client.query<{ status: string; channel: string; customer_id: string | null }>(
-      `SELECT status, channel, customer_id
+    const ord = await client.query<{ status: string; channel: string; customer_id: string | null; fulfillment_type: string | null }>(
+      `SELECT status, channel, customer_id, fulfillment_type
          FROM bms_orders
         WHERE tenant_id = $1 AND id = $2
         FOR UPDATE`,
@@ -440,6 +442,10 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
     if (ord.rowCount === 0) {
       await client.query("ROLLBACK");
       return { status: "ORDER_NOT_FOUND" };
+    }
+    if (ord.rows[0].fulfillment_type === "PICKUP") {
+      await client.query("ROLLBACK");
+      return { status: "PICKUP_ORDER" };
     }
     const cur = ord.rows[0].status;
     marketplaceManaged = MARKETPLACE_CHANNELS.has(ord.rows[0].channel);
@@ -482,14 +488,15 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
                 updated_at = now()
            FROM (
              SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
-               FROM bms_order_stock_lines WHERE order_id = $1
+               FROM bms_order_stock_lines WHERE tenant_id = $2 AND order_id = $1
               GROUP BY tenant_id, location_id, product_sku, size
            ) oi
-          WHERE inv.tenant_id = oi.tenant_id
+          WHERE inv.tenant_id = $2
+            AND inv.tenant_id = oi.tenant_id
             AND inv.location_id = oi.location_id
             AND inv.product_sku = oi.product_sku
             AND inv.size = oi.size`,
-        [input.orderId]
+        [input.orderId, tenantId]
       );
       await recordOrderMovements(client, [input.orderId], "SHIP", input.actor ?? "system");
       orderShipped = true;
@@ -517,6 +524,15 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
       ]
     );
     shipmentId = ins.rows[0].id;
+
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'shipping.create', $3, $4::jsonb)`,
+      [tenantId, input.actor || "system", shipmentId, JSON.stringify({
+        orderId: input.orderId, orderShipped, carrier: input.carrier,
+        ...(input.auditVia ? { via: input.auditVia } : {}),
+      })]
+    );
 
     await client.query("COMMIT");
   } catch (err) {

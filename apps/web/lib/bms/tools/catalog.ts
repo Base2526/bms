@@ -2670,7 +2670,7 @@ const reorderTool: BmsTool = {
 const createShipmentTool: BmsTool = {
   name: "create_shipment",
   description:
-    "Create a shipment with its carrier and tracking number and actually dispatch it (order PACKING → SHIPPED, and stock is deducted).",
+    "Create a carrier shipment for a delivery order and dispatch it (order PACKING → SHIPPED, stock deducted). Pickup orders use order handover instead.",
   surfaces: ["staff"],
   permission: "shipping.create",
   inputSchema: {
@@ -2693,8 +2693,8 @@ const createShipmentTool: BmsTool = {
       trackingNo: optString(args, "trackingNo") ?? null,
       note: optString(args, "note") ?? null,
       actor: ec.actor,
+      auditVia: "ai:staff",
     });
-    if (r.status === "CREATED") await auditWrite(ec, "shipping.create", r.shipmentId, { orderId, carrier });
     return { ok: true, data: r };
   },
 };

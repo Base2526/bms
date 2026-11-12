@@ -5666,7 +5666,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS payment (admin) =====
     bmsSubmitPayment(orderId: ID!, method: BmsPaymentMethod!, amount: Float, slipUrl: String, slipRef: String, note: String): BmsPaymentResult!
-    bmsConfirmPayment(id: ID!): BmsPaymentResult!   # PENDING → CONFIRMED + order → PAID
+    bmsConfirmPayment(id: ID!, confirmed: Boolean!): BmsPaymentResult!   # PENDING → CONFIRMED + order → PAID
     bmsRejectPayment(id: ID!, note: String): Boolean!
     bmsRefundPayment(id: ID!): Boolean!             # CONFIRMED → REFUNDED (manager)
     bmsVerifyPaymentSlip(id: ID!): BmsSlipVerification   # OCR/AI แนะนำ (ไม่เปลี่ยนสถานะ)
@@ -5760,7 +5760,7 @@ export const typeDefs = /* GraphQL */ `
     bmsExpireLoyaltyPoints: BmsLoyaltyExpireResult!                 # ยังไม่มี cron จริง ต้องกดเอง
 
     # ===== BMS RBAC (admin) =====
-    bmsSetRolePermissions(roleId: ID!, permissions: [String!]!): Boolean!
+    bmsSetRolePermissions(roleId: ID!, permissions: [String!]!, confirmed: Boolean!): Boolean!
 
     # ===== BMS settings / channels (admin) =====
     bmsUpsertChannel(channel: String!, accessToken: String, channelSecret: String, webhookVerifyToken: String, externalAccountId: String, active: Boolean): Boolean!

@@ -48,7 +48,7 @@ const M_SUBMIT = gql`
     }
   }
 `;
-const M_CONFIRM = gql`mutation ($id: ID!) { bmsConfirmPayment(id: $id) { status message } }`;
+const M_CONFIRM = gql`mutation ($id: ID!) { bmsConfirmPayment(id: $id, confirmed: true) { status message } }`;
 const M_REJECT = gql`mutation ($id: ID!, $note: String) { bmsRejectPayment(id: $id, note: $note) }`;
 const M_REFUND = gql`mutation ($id: ID!) { bmsRefundPayment(id: $id) }`;
 const M_VERIFY = gql`
@@ -179,7 +179,14 @@ function PaymentManagement() {
       if (can("payment.confirm")) {
         btns.push(<Button key="verify" type="link" size="small" icon={<ScanOutlined />} disabled={busy} onClick={() => verify(v)}>{t("admin_payment.btn_verify")}</Button>);
         btns.push(
-          <Popconfirm key="confirm" title={t("admin_payment.confirm_confirm_title")} description={t("admin_payment.confirm_confirm_desc")} okText={t("admin_payment.confirm_ok_text")} cancelText={t("admin_payment.no_text")} disabled={busy} onConfirm={() => confirm(v)}>
+          <Popconfirm key="confirm" title={t("admin_payment.confirm_confirm_title")}
+            description={<div>
+              <p>{t("admin_payment.confirm_confirm_desc")}</p>
+              <p>ID: {r.id}</p>
+              <p>{t("admin_payment.col_amount")}: {baht(r.amount)}</p>
+              <p>{t("admin_payment.col_method")}: {METHOD_LABEL[r.method]}</p>
+            </div>}
+            okText={t("admin_payment.confirm_ok_text")} cancelText={t("admin_payment.no_text")} disabled={busy} onConfirm={() => confirm(v)}>
             <Button type="link" size="small" icon={<CheckCircleOutlined />} disabled={busy}>{t("admin_payment.btn_confirm")}</Button>
           </Popconfirm>
         );

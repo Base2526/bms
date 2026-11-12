@@ -1,4 +1,7 @@
 import { PosConnectionError, runWithOperationTimeout } from "@pos-core/operation";
+import { describePosConnectionFailure, isPosBusinessError, posTransportError } from "@pos-core/connectionFailure";
+import { getOperationAST } from "graphql/utilities/getOperationAST";
+import { parse } from "graphql/language/parser";
 
 export const POS_BOOTSTRAP_QUERY = `
   query PosBootstrap {
@@ -301,7 +304,9 @@ export async function posGraphqlRequest<T>(
   query: string,
   variables: Record<string, unknown> = {},
 ): Promise<T> {
-  return runWithOperationTimeout(async (signal) => {
+  let mutation = true;
+  try { mutation = getOperationAST(parse(query))?.operation !== 'query'; } catch { /* fail conservatively */ }
+  try { return await runWithOperationTimeout(async (signal) => {
     const response = await fetch("/api/graphql", {
       method: "POST",
       cache: "no-store",
@@ -320,15 +325,28 @@ export async function posGraphqlRequest<T>(
       data?: T;
       errors?: Array<{ message?: string; extensions?: Record<string, unknown> & { code?: string } }>;
     } | null;
-    if (!response.ok || body?.errors?.length || !body?.data) {
-      const first = body?.errors?.[0];
+    const validErrors = body?.errors == null || (Array.isArray(body.errors)
+      && body.errors.every(error => error && typeof error.message === 'string'));
+    const errors = validErrors && Array.isArray(body?.errors) ? body.errors : [];
+    const validData = body?.data != null && typeof body.data === 'object' && !Array.isArray(body.data)
+      && Object.keys(body.data).length > 0;
+    if (!response.ok || errors.length || !validData || !validErrors) {
+      // Prefer uncertainty over a decided rejection if several fields failed differently.
+      const first = errors.find(error => !isPosBusinessError(error.extensions?.code)) ?? errors[0];
+      const code = response.status === 408 || response.status === 504 ? 'POS_TIMEOUT'
+        : response.status >= 500 ? 'INTERNAL_SERVER_ERROR'
+          : first?.extensions?.code ?? (response.ok ? 'INVALID_RESPONSE' : null);
+      const failure = describePosConnectionFailure({ code, httpStatus: response.status }, mutation);
       throw new PosGraphqlError(
-        first?.message ?? `เซิร์ฟเวอร์ตอบ HTTP ${response.status}`,
-        first?.extensions?.code ?? null,
+        response.ok && isPosBusinessError(code) ? first!.message! : failure.message,
+        code,
         response.status,
         readVariantSelection(first?.extensions),
       );
     }
-    return body.data;
-  });
+    return body!.data!;
+  }); } catch (error) {
+    if (error instanceof PosGraphqlError) throw error;
+    throw posTransportError(error, mutation);
+  }
 }

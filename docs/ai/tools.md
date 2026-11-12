@@ -756,6 +756,7 @@ carrier adapter (`lib/bms/carriers/`): FLASH/KERRY = mock-ready scaffold เท�
 
 ผูก carrier/tracking + ship จริง: order PACKING → SHIPPED + ตัดสต็อก + SHIP movement (atomic)
 ถ้า order = SHIPPED อยู่แล้ว จะแค่แนบ shipment (ไม่ตัดสต็อกซ้ำ)
+ออเดอร์ `PICKUP` ต้องยืนยันส่งมอบจาก Orders; service คืน `PICKUP_ORDER` โดยไม่สร้าง shipment
 
 ก่อนส่งออเดอร์ของ LINE/Facebook/Instagram/Web/TikTok Chat ต้องมี CRM shipping address;
 Lazada/Shopee exempt เพราะที่อยู่อยู่ Seller Center ถ้าไม่ครบ service คืน

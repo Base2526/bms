@@ -6,7 +6,9 @@ production follow-up, `runMaterialFollowups()` claims confirmed plans with SKIP 
 supply or due plan review, and deduplicates by plan version. Failure contributes to the same job
 failure record. No supplier calls, stock receipt, external messages or new environment knobs.
 
-The opt-in `scheduler` Compose service runs 19 authenticated BMS cron APIs.
+The opt-in `scheduler` Compose service runs 22 authenticated BMS cron APIs. The flag-off e-Tax
+submission endpoint uses the same cron guard and job history, but remains deliberately unscheduled
+until a verified signing/submission provider and rollout gate exist.
 It owns timing and dispatch only: all SQL, tenant selection, permissions, business rules,
 idempotency and `recordJobRun()` remain in the Web services. It receives no database,
 AI-provider or GitHub credentials and has no host ports or Docker socket.
@@ -52,11 +54,12 @@ name/path/group parity with the existing GitHub workflow.
 
 | Group | UTC schedule | Bangkok time | Jobs |
 | --- | --- | --- | --- |
-| frequent | Every 15 minutes | Every 15 minutes | 14 order, follow-up, shipping, menu, delivery, board-game, tax-request email and operation-checklist jobs |
-| daily | 20:00 | 03:00 next day | Loyalty maintenance, channel health, AI health, report digest, answer-evidence retention |
+| frequent | Every 15 minutes | Every 15 minutes | 16 order, follow-up, shipping, menu, delivery, board-game, tax-request email and operation-checklist jobs |
+| hourly | Top of each hour | Top of each hour | Report digest (each tenant's configured local send hour is checked by the Web service) |
+| daily | 20:00 | 03:00 next day | Loyalty maintenance, channel health, AI health, inventory intelligence, answer-evidence retention |
 
 Polling is every 10 seconds with at most three concurrent requests. Startup/recovery catches up
-only the latest quarter-hour and daily period, including the previous UTC day's daily slot before
+only the latest quarter-hour, hourly and daily period, including the previous UTC day's daily slot before
 20:00. It never replays a historical dispatcher backlog. The checklist service itself catches up
 bounded missed checklist occurrences, preserving original due times (see its business runbook).
 The same checklist route also runs Release C reminders/escalations: up to 100 tenants and 100
@@ -68,14 +71,14 @@ oldest sweep first, SKIP LOCKED). Recipient and configured/on-duty supervisor no
 an unchanged sweep does not resend. Failure counts cover schedules, checklist follow-up and handovers;
 a failed tenant does not undo other commits.
 There is no external notification provider or new scheduler job.
-A first deployment can therefore run all 19 jobs
+A first deployment can therefore run all 22 jobs
 soon after startup rather than waiting for the next daily boundary.
 
 Before any POST, one Redis Lua command claims both the job's UTC slot and an in-flight lease.
 Slots survive scheduler restarts for three days. All replicas must use the **same base origin and
 Redis database** so they share the same keys. Redis errors fail closed; there is no local-lock
 fallback. The job lease lasts its HTTP timeout plus two minutes, and release checks its owner.
-Frequent requests have a five-minute limit; daily requests have ten minutes total, including
+Frequent and hourly requests have a five-minute limit; daily requests have ten minutes total, including
 retention pagination (at most 100 pages, validated tenant cursors). Responses are bounded to 1 MiB
 per page. HTTP errors, malformed JSON, `ok:false` and top-level `error` are failures. Successful
 transport is not proof that every provider is healthy: inspect the endpoint's domain run results.
@@ -107,7 +110,7 @@ even with HTTP 200. The final `warnings` count distinguishes this from a clean r
 success and container health do not assert that every domain item/provider succeeded.
 
 Every dispatch has a `runId`, and every page a separate `requestId`. Web accepts only valid UUIDs
-on the 19 registered cron paths for correlation. These headers grant no authority; the existing
+on the 22 registered cron paths for correlation. These headers grant no authority; the existing
 cron-secret guard still decides whether the handler may execute. AsyncLocalStorage isolates
 simultaneous requests. When `recordJobRun()` inserts history, Web returns `x-bms-job-run-id`;
 on a recognized error it also returns a safe machine code such as SQLSTATE `42703`.

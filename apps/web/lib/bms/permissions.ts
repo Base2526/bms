@@ -7,8 +7,8 @@
 
 import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
-import { query } from "@/lib/db";
-import { getTenantId } from "./tenant";
+import { getClient } from "@/lib/db";
+import { beginTenantTx, getTenantId } from "./tenant";
 
 export const BMS_PERMISSIONS = [
   "operations.quality.view",
@@ -244,14 +244,25 @@ export async function loadPermissions(ctx: any): Promise<Set<string>> {
     perms = new Set(BMS_PERMISSIONS); // super: ทุกสิทธิ์
   } else {
     // per-tenant: สิทธิ์ของ role แยกตามร้าน
-    const res = await query<{ permission: string }>(
-      `SELECT rp.permission
-         FROM bms_role_permissions rp
-         JOIN roles r ON r.id = rp.role_id
-        WHERE r.name = $1 AND rp.tenant_id = $2`,
-      [roleName, getTenantId(ctx)]
-    );
-    perms = new Set(res.rows.map((r) => r.permission));
+    const client = await getClient();
+    try {
+      const tenantId = getTenantId(ctx);
+      await beginTenantTx(client, tenantId);
+      const res = await client.query<{ permission: string }>(
+        `SELECT rp.permission
+           FROM bms_role_permissions rp
+           JOIN roles r ON r.id = rp.role_id
+          WHERE r.name = $1 AND rp.tenant_id = $2`,
+        [roleName, tenantId]
+      );
+      perms = new Set(res.rows.map((r) => r.permission));
+      await client.query("COMMIT");
+    } catch (err) {
+      try { await client.query("ROLLBACK"); } catch {}
+      throw err;
+    } finally {
+      client.release();
+    }
   }
   ctx.__bmsPerms = perms;
   return perms;
@@ -275,44 +286,88 @@ export async function myPermissions(ctx: any): Promise<string[]> {
 
 // ---- matrix editor (จัดการสิทธิ์ต่อ role, per-tenant) ----
 export async function listRolesWithPermissions(tenantId: string) {
-  const res = await query<{ id: string; name: string; is_super: boolean; permissions: string[] }>(
-    `SELECT r.id, r.name,
-            (r.name = $1) AS is_super,
-            COALESCE(array_agg(rp.permission) FILTER (WHERE rp.permission IS NOT NULL), '{}') AS permissions
-       FROM roles r
-       LEFT JOIN bms_role_permissions rp ON rp.role_id = r.id AND rp.tenant_id = $2
-      WHERE r.is_active
-      GROUP BY r.id, r.name
-      ORDER BY r.name`,
-    [SUPER_ROLE, tenantId]
-  );
-  // super role: แสดงว่าได้ทุกสิทธิ์
-  return res.rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    is_super: r.is_super,
-    permissions: r.is_super ? [...BMS_PERMISSIONS] : r.permissions,
-  }));
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const res = await client.query<{ id: string; name: string; is_super: boolean; permissions: string[] }>(
+      `SELECT r.id, r.name,
+              (r.name = $1) AS is_super,
+              COALESCE(array_agg(rp.permission) FILTER (WHERE rp.permission IS NOT NULL), '{}') AS permissions
+         FROM roles r
+         LEFT JOIN bms_role_permissions rp ON rp.role_id = r.id AND rp.tenant_id = $2
+        WHERE r.is_active
+        GROUP BY r.id, r.name
+        ORDER BY r.name`,
+      [SUPER_ROLE, tenantId]
+    );
+    await client.query("COMMIT");
+    // super role: แสดงว่าได้ทุกสิทธิ์
+    return res.rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      is_super: r.is_super,
+      permissions: r.is_super ? [...BMS_PERMISSIONS] : r.permissions,
+    }));
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /** แทนที่สิทธิ์ทั้งชุดของ role เฉพาะร้านนี้ (ยกเว้น Administrator ที่เป็น super) */
-export async function setRolePermissions(tenantId: string, roleId: string, permissions: string[]): Promise<boolean> {
-  const role = await query<{ name: string }>(`SELECT name FROM roles WHERE id = $1`, [roleId]);
-  if (role.rowCount === 0) throw new GraphQLError("ไม่พบ role");
-  if (role.rows[0].name === SUPER_ROLE) {
-    throw new GraphQLError("แก้สิทธิ์ Administrator ไม่ได้ (super role ได้ทุกสิทธิ์เสมอ)", {
-      extensions: { code: "BAD_USER_INPUT" },
-    });
+export async function setRolePermissions(
+  tenantId: string, roleId: string, permissions: string[], actorId: string
+): Promise<boolean> {
+  if (!actorId?.trim() || actorId === "undefined") {
+    throw new GraphQLError("ไม่พบผู้แก้ไขสิทธิ์", { extensions: { code: "FORBIDDEN" } });
   }
-  const valid = permissions.filter((p) => (BMS_PERMISSIONS as readonly string[]).includes(p));
-
-  await query(`DELETE FROM bms_role_permissions WHERE tenant_id = $1 AND role_id = $2`, [tenantId, roleId]);
-  if (valid.length > 0) {
-    const values = valid.map((_, i) => `($1, $2, $${i + 3})`).join(", ");
-    await query(
-      `INSERT INTO bms_role_permissions (tenant_id, role_id, permission) VALUES ${values}`,
-      [tenantId, roleId, ...valid]
+  if (!Array.isArray(permissions) || permissions.some((p) => !(BMS_PERMISSIONS as readonly string[]).includes(p))) {
+    throw new GraphQLError("มีสิทธิ์ที่ไม่อยู่ในทะเบียน", { extensions: { code: "BAD_USER_INPUT" } });
+  }
+  const valid = [...new Set(permissions)];
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorId });
+    // Serialize matrix edits for this tenant so concurrent saves cannot interleave delete/insert.
+    const tenant = await client.query(`SELECT id FROM bms_tenants WHERE id = $1 FOR UPDATE`, [tenantId]);
+    if (!tenant.rowCount) throw new GraphQLError("ไม่พบร้าน", { extensions: { code: "BAD_USER_INPUT" } });
+    const role = await client.query<{ name: string }>(`SELECT name FROM roles WHERE id = $1`, [roleId]);
+    if (!role.rowCount) throw new GraphQLError("ไม่พบ role", { extensions: { code: "BAD_USER_INPUT" } });
+    if (role.rows[0].name === SUPER_ROLE) {
+      throw new GraphQLError("แก้สิทธิ์ Administrator ไม่ได้ (super role ได้ทุกสิทธิ์เสมอ)", {
+        extensions: { code: "BAD_USER_INPUT" },
+      });
+    }
+    const before = await client.query<{ permission: string }>(
+      `SELECT permission FROM bms_role_permissions WHERE tenant_id = $1 AND role_id = $2`,
+      [tenantId, roleId]
     );
+    const old = new Set(before.rows.map((r) => r.permission));
+    const next = new Set(valid);
+    await client.query(`DELETE FROM bms_role_permissions WHERE tenant_id = $1 AND role_id = $2`, [tenantId, roleId]);
+    if (valid.length > 0) {
+      const values = valid.map((_, i) => `($1, $2, $${i + 3})`).join(", ");
+      await client.query(
+        `INSERT INTO bms_role_permissions (tenant_id, role_id, permission) VALUES ${values}`,
+        [tenantId, roleId, ...valid]
+      );
+    }
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'rbac.set', $3, $4::jsonb)`,
+      [tenantId, actorId, roleId, JSON.stringify({
+        added: valid.filter((p) => !old.has(p)),
+        removed: [...old].filter((p) => !next.has(p)),
+      })]
+    );
+    await client.query("COMMIT");
+    return true;
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally {
+    client.release();
   }
-  return true;
 }
