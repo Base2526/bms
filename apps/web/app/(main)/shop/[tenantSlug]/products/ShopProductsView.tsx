@@ -25,6 +25,7 @@ export default function ShopProductsView({
         title: `${shop.name} products`,
         subtitle: "Customer-safe product listing from this shop's active catalog.",
         backToShop: "Back to shop",
+        cart: "View cart",
         available: "Ready to ship",
         out: "Out of stock",
         emptyTitle: "No public products yet",
@@ -35,6 +36,7 @@ export default function ShopProductsView({
         title: `สินค้าที่เปิดขายของ ${shop.name}`,
         subtitle: "รายการสินค้าที่ลูกค้าดูได้จาก catalog สาธารณะของร้านนี้",
         backToShop: "กลับไปหน้าร้าน",
+        cart: "ดูตะกร้า",
         available: "พร้อมส่ง",
         out: "สินค้าหมด",
         emptyTitle: "ร้านนี้ยังไม่มีสินค้าที่เปิดขาย",
@@ -59,6 +61,7 @@ export default function ShopProductsView({
         <p className={styles.subtitle}>{copy.subtitle}</p>
         <div className={styles.ctaRow}>
           <Link href={shopPath} className={styles.secondaryAction}>{copy.backToShop}</Link>
+          <Link href={`${shopPath}/cart`} className={styles.secondaryAction}>{copy.cart}</Link>
         </div>
       </header>
 

@@ -129,6 +129,20 @@ generic admin handoff. The checkout is read-only for order lines, prices, discou
 reuses existing CRM delivery data without requiring re-entry, and shows shipment/tracking data only
 when those records exist. See [Customer Checkout & Payment Wireframe](../ui/customer-checkout-wireframe.md).
 
+Public retail storefront product pages now offer a 10-line local cart and `/shop/[tenantSlug]/cart`
+review. `POST /api/bms/retail-cart` simulates the real `createOrderInTx()` in a tenant transaction
+and rolls it back, so the review shows server-calculated lines, discounts, shipping estimate and
+stock availability without reserving stock. A purpose-bound, 10-minute signed review token carries
+the basket and a digest of that calculation. Customer confirmation takes a transaction advisory lock
+on the token nonce, rechecks that every product is active and published for both
+`PUBLIC_STOREFRONT` and `ONLINE_ORDER`, then runs the same order service. A changed price, discount,
+shipping estimate or stock rejects the confirmation and requires a fresh review. A repeated confirm
+returns the existing order via its unique idempotency key, then derives the existing signed checkout
+URL from the persisted order. The customer enters delivery and submits a pending payment through the
+existing checkout; the cart cannot confirm payment. Restaurant tenants are excluded from this retail
+cart because their online ordering requires branch, fulfillment and hours policy. Live DB and browser
+validation remain required before production rollout.
+
 ## Coupons (discount codes)
 
 **Implemented** (`bms_coupons`, migration `7.21`) — `PERCENT` (capped at 100) or `FIXED` discount

@@ -284,6 +284,14 @@ approved text. Approval remains per tenant, not a platform-wide publication deci
 
 ## Public customer checkout (signed link)
 
+The public retail cart is a separate intake before this signed checkout. Its preview calls
+`createOrderInTx()` inside a tenant transaction that is always rolled back; the confirm endpoint
+accepts only the purpose-bound 10-minute quote token, rechecks publication and the server-calculated
+review under a nonce lock, and commits once with an idempotency key. A stale review creates no order.
+The confirmation response supplies the existing signed checkout URL; it never accepts a browser
+total, tenant ID or customer identity as authority. Retail cart remains excluded for restaurant
+tenants. The review shipping fee is provisional until the checkout address recalculation.
+
 A successful customer `create_order`/`reorder` no longer ends in chat prose. The tool stores the
 verified order id on the server-only `ExecCtx.createdOrderId` (`tools/types.ts`), and `pipeline.ts`
 replaces the model's closing sentence with `orderCheckoutChatReply()` — a backend-built order

@@ -142,6 +142,7 @@ const ROUTE_GUARDS = [
 const PUBLIC_BY_DESIGN = new Map([
   ["app/api/bms/checkout/route.ts", "Signed checkout token; IP/token rate limits before order reads or delivery edits"],
   ["app/api/bms/checkout/payment/route.ts", "Signed checkout token; IP/token rate limits before slip processing"],
+  ["app/api/bms/retail-cart/route.ts", "Public retail preview by active shop slug and confirmed order by signed quote; bounded body and IP/token rate limits"],
   ["app/api/bms/tax-invoice-request/route.ts", "Cloud receipt-only capability for submission; independent private tracking secret; bounded body and IP/token rate limits"],
   ["app/api/bms/web/webhook/[tenantId]/route.ts", "วิดเจ็ตแชทบนเว็บของร้าน — ฝั่ง client ไม่มีความลับให้เซ็น"],
   ["app/api/bms/demo-chat/route.ts", "เดโมหน้าขายของ — ใครก็ลองได้โดยตั้งใจ"],
