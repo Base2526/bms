@@ -6,7 +6,8 @@ import { readCart, writeCart, type StoredCartLine } from "./cartStorage";
 import styles from "./cart.module.css";
 
 type Review = {
-  lines: Array<{ sku: string; name: string; size: string; qty: number; unitPrice: number; lineAmount: number }>;
+  lines: Array<{ sku: string; name: string; size: string; qty: number; unitPrice: number; lineAmount: number;
+    packCode: string | null; packQty: number | null; packUnitName: string | null }>;
   subtotal: number; discount: number; shippingFee: number; amountDue: number;
 };
 
@@ -50,7 +51,7 @@ export default function CartView({ slug, shopName, currency, lang }: {
       const response = await fetch("/api/bms/retail-cart", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(action === "preview"
-          ? { action, tenantSlug: slug, items: lines.map(({ sku, size, qty }) => ({ sku, size, qty })) }
+          ? { action, tenantSlug: slug, items: lines.map(({ sku, size, qty, packCode }) => ({ sku, size, qty, packCode })) }
           : { action, quoteToken }),
       });
       const data = await response.json();
@@ -72,8 +73,8 @@ export default function CartView({ slug, shopName, currency, lang }: {
     <h1>{copy.title} · {shopName}</h1>
     <p className={styles.muted}>{copy.limits}</p>
     {!lines.length ? <p>{copy.empty}</p> : <>
-      <ul className={styles.list}>{lines.map((line) => <li key={`${line.sku}\0${line.size}`} className={styles.line}>
-        <div><strong>{line.name}</strong><span>{line.size} · {line.sku}</span></div>
+      <ul className={styles.list}>{lines.map((line) => <li key={`${line.sku}\0${line.size}\0${line.packCode ?? "BASE"}`} className={styles.line}>
+        <div><strong>{line.name}</strong><span>{line.size} · {line.sku}{line.packCode ? ` · ${line.packUnitName ?? line.packCode}` : ""}</span></div>
         <div className={styles.controls}>
           <input type="number" min="1" max="100" aria-label={`${line.name} ${line.size}`}
             value={line.qty} onChange={(event) => {
@@ -87,8 +88,8 @@ export default function CartView({ slug, shopName, currency, lang }: {
       {!review && <button type="button" disabled={busy} className={styles.primary} onClick={() => submit("preview")}>{copy.review}</button>}
       {review && <section className={styles.review} aria-live="polite">
         <h2>{copy.review}</h2>
-        {review.lines.map((line) => <div className={styles.amount} key={`${line.sku}\0${line.size}`}>
-          <span>{line.name} · {line.size} × {line.qty}</span><strong>{money(line.lineAmount, currency, lang)}</strong>
+        {review.lines.map((line) => <div className={styles.amount} key={`${line.sku}\0${line.size}\0${line.packCode ?? "BASE"}`}>
+          <span>{line.name} · {line.size} × {line.packQty ?? line.qty}{line.packUnitName ? ` ${line.packUnitName}` : ""}</span><strong>{money(line.lineAmount, currency, lang)}</strong>
         </div>)}
         <div className={styles.amount}><span>{copy.subtotal}</span><strong>{money(review.subtotal, currency, lang)}</strong></div>
         {review.discount > 0 && <div className={styles.amount}><span>{copy.discount}</span><strong>-{money(review.discount, currency, lang)}</strong></div>}

@@ -11,10 +11,10 @@ closed.** “Repository progress” describes the current working tree; it is no
 
 | Track | Work | Repository progress | Closure still required |
 | --- | --- | --- | --- |
-| A | Inventory and release evidence | 86 known workflows registered; evidence template/checker added; missing direct test links reduced to 8 | Reconcile every older inventory row and create an exact clean-commit release record |
+| A | Inventory and release evidence | 88 known workflows registered; evidence template/checker added; missing direct test links reduced to 8 | Reconcile every older inventory row and create an exact clean-commit release record |
 | B | Tenant security and RBAC | Permission matrix reads/writes now use tenant RLS context; write, actor audit and confirmation are atomic/explicit | Isolated DB denial, grants and concurrent-edit tests; Administrator UAT |
 | C | Money, stock and order integrity | Existing service and pure/DB contract suites identified; shipment audit moved into its transaction | Restored DB races, replay/rollback, backup restore and shipment-create idempotency policy |
-| D | Retail web cart and pickup | Catalog and signed checkout exist | Server-priced cart, retail pickup state machine and end-to-end customer pilot |
+| D | Retail web cart and pickup | Server-reviewed variant/pack cart and signed checkout are in source; retail pickup is still absent | DB/browser proof, retail pickup state machine and end-to-end customer pilot |
 | E | Branch pricing | Base/pack branch overrides, promotion windows, return snapshots and `10.116` dated branch prices exist in source | Isolated DB/browser proof, cross-channel satang tests and target rollout |
 | F | Restaurant counter and notifications | Pickup email templates/queue code exist; report digest now dispatches hourly for local send hours | Apply migrations, durable status-email retry, printer/display tests and branch pilot |
 | G | Mobile and desktop POS | Native suites exist; code and packaging work is active | Signed builds, reconnect/replay, device and OS hardware matrix |
@@ -83,7 +83,8 @@ has a named owner and evidence slot. See [release-feature-control.md](release-fe
 
 ### Feature-level test links still missing
 
-The draft release manifest currently lists 86 **known** code capabilities, not every BMS feature:
+The draft release manifest currently lists 88 **known** code capabilities, not every BMS feature.
+The last status breakdown below predates the new branch price and retail cart pilot entries:
 24 `AVAILABLE`, 39 `CONDITIONAL`, 15 `PILOT`, 6 `BETA`, 1 `WIP`, and 1 `MOCK`.
 It has 8 capability IDs without a test that directly exercises their workflow. These are test
 coverage gaps, not proof that the workflows are broken. Add a link only after the stated boundary
@@ -137,11 +138,13 @@ business evidence; denial reveals no other tenant's data. Use the invariants in
 
 ### Retail web cart and Click & Collect
 
-The public product page is a catalog, not a self-service order. Build a server-priced cart using
-published `ONLINE_ORDER` items, variants and packs. Show every line before an affirmative; call
-`createOrder()` and the existing signed checkout path. Refresh price, stock, promotions and shipping
-at confirmation, with duplicate submission and last-item DB tests. Slip submission stays `PENDING`
-until staff confirms payment.
+The public product page now adds base-unit variants and configured packs to a local cart. A tenant-scoped server preview
+simulates `createOrderInTx()` and rolls back; a signed 10-minute review token binds the server totals
+and the confirmation rechecks publication, price and stock before one commit. Repeated confirms
+reuse the order idempotency key and return its signed checkout link. Pack size and price are
+revalidated from `bms_product_packs`; the browser sends only the pack code and count. A complete
+customer pilot is still missing; the new DB contract for rollback, stale price and replay has not
+run on the isolated database. Slip submission stays `PENDING` until staff confirms payment.
 
 Retail pickup needs its own fulfillment contract: selected branch, requested time, recipient,
 preparation, ready and one-time handover. Define when reserved stock becomes consumed, how an

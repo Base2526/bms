@@ -106,6 +106,7 @@ export default function PublicProductView({
         viewCart: "View cart",
         cartAdded: "Added to cart",
         cartFull: "The cart holds up to 10 different items",
+        packPrice: "Pack price confirmed in cart",
       }
     : {
         sku: "SKU",
@@ -139,6 +140,7 @@ export default function PublicProductView({
         viewCart: "ดูตะกร้า",
         cartAdded: "ใส่ตะกร้าแล้ว",
         cartFull: "ตะกร้าใส่ได้สูงสุด 10 รายการต่างชนิด",
+        packPrice: "ตรวจราคาแพ็กที่ตะกร้า",
       };
 
   useEffect(() => {
@@ -313,9 +315,16 @@ export default function PublicProductView({
                   <span className={styles.variantCount}>
                     {formatPrice(variant.price, shop.currency, lang)} · {variant.available > 0 ? `${variant.available} ${copy.units}` : copy.out}
                   </span>
-                  {variant.available > 0 && <button type="button" className={styles.secondaryAction} onClick={() => {
+                  {product.orderable && variant.available > 0 && <button type="button" className={styles.secondaryAction} onClick={() => {
                     setCartState(addCartLine(shop.slug, { sku: product.sku, size: variant.size, qty: 1, name: product.name }) ? "added" : "full");
                   }}>{copy.addToCart}</button>}
+                  {product.orderable && product.packs.filter((pack) => (pack.size === null || pack.size === variant.size)
+                    && variant.available >= pack.baseQty).map((pack) =>
+                    <button type="button" key={`${pack.size ?? "*"}:${pack.packCode}`} className={styles.secondaryAction}
+                      title={copy.packPrice} onClick={() => {
+                        setCartState(addCartLine(shop.slug, { sku: product.sku, size: variant.size, qty: 1,
+                          name: product.name, packCode: pack.packCode, packUnitName: pack.unitName }) ? "added" : "full");
+                      }}>{copy.addToCart} · {pack.unitName} ({pack.baseQty} {copy.units})</button>)}
                 </div>
               ))}
             </div>

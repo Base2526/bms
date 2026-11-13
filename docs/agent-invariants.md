@@ -284,7 +284,8 @@ approved text. Approval remains per tenant, not a platform-wide publication deci
 
 ## Public customer checkout (signed link)
 
-The public retail cart is a separate intake before this signed checkout. Its preview calls
+The public retail cart is a separate intake before this signed checkout. Browser pack selection
+sends only a code and count; `bms_product_packs` supplies the conversion and price. Its preview calls
 `createOrderInTx()` inside a tenant transaction that is always rolled back; the confirm endpoint
 accepts only the purpose-bound 10-minute quote token, rechecks publication and the server-calculated
 review under a nonce lock, and commits once with an idempotency key. A stale review creates no order.

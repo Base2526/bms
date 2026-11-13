@@ -89,6 +89,8 @@ export type PublicProduct = {
     food_safety_note: string | null;
     images: string[];
     variants: Array<{ size: string; available: number; price: number }>;
+    orderable: boolean;
+    packs: Array<{ size: string | null; packCode: string; unitName: string; baseQty: number }>;
     updatedAt: string | null;
   };
 };
@@ -1030,7 +1032,10 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
             p.category, p.brand, p.allergen_codes, p.allergen_information_provided,
             p.dietary_tags, p.food_safety_note, p.updated_at,
             t.name AS tenant_name, t.slug AS tenant_slug,
-            sp.logo_url, sp.website, sp.phone, sp.currency
+            sp.logo_url, sp.website, sp.phone, sp.currency,
+            EXISTS (SELECT 1 FROM bms_product_sales_surfaces order_surface
+              WHERE order_surface.tenant_id = p.tenant_id AND order_surface.product_sku = p.sku
+                AND order_surface.surface = 'ONLINE_ORDER' AND order_surface.enabled) AS orderable
        FROM bms_products p
        JOIN bms_tenants t ON t.id = p.tenant_id
        LEFT JOIN bms_store_profile sp ON sp.tenant_id = p.tenant_id
@@ -1049,9 +1054,14 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
   const row = res.rows[0];
   if (!row) return null;
 
-  const [gallery, variants] = await Promise.all([
+  const [gallery, variants, packs] = await Promise.all([
     listProductImages(row.tenant_id, row.sku),
     listVariants(row.tenant_id, row.sku),
+    query<{ size: string | null; pack_code: string; unit_name: string; base_qty: number }>(
+      `SELECT size, pack_code, unit_name, base_qty FROM bms_product_packs
+        WHERE tenant_id=$1 AND product_sku=$2 AND active AND upper(pack_code) <> 'BASE'
+        ORDER BY size NULLS FIRST, base_qty, pack_code LIMIT 40`, [row.tenant_id, row.sku]
+    ),
   ]);
   const variantPrices = variants.map((variant) => Number(variant.price));
   const minPrice = variantPrices.length ? Math.min(...variantPrices) : Number(row.price);
@@ -1089,6 +1099,9 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
         available: variant.usable_stock ?? 0,
         price: Number(variant.price),
       })),
+      orderable: row.orderable === true,
+      packs: packs.rows.map((pack) => ({ size: pack.size, packCode: pack.pack_code,
+        unitName: pack.unit_name, baseQty: Number(pack.base_qty) })),
       updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : (row.updated_at ?? null),
     },
   };

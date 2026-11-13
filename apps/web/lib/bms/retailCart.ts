@@ -10,9 +10,10 @@ const QUOTE_SECONDS = 10 * 60;
 const MAX_LINES = 10;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type RetailCartLine = { sku: string; size: string; qty: number };
+export type RetailCartLine = { sku: string; size: string; qty: number; packCode?: string };
 export type RetailCartReview = {
-  lines: Array<{ sku: string; name: string; size: string; qty: number; unitPrice: number; lineAmount: number }>;
+  lines: Array<{ sku: string; name: string; size: string; qty: number; unitPrice: number; lineAmount: number;
+    packCode: string | null; packQty: number | null; packUnitName: string | null }>;
   subtotal: number;
   discount: number;
   shippingFee: number;
@@ -36,10 +37,14 @@ function basket(value: unknown): RetailCartLine[] | null {
         !Number.isSafeInteger(item.qty) || Number(item.qty) < 1 || Number(item.qty) > 100) return null;
     const sku = item.sku.trim();
     const size = item.size.trim();
-    const key = `${sku}\0${size}`;
+    const packCode = item.packCode == null ? undefined : typeof item.packCode === "string"
+      && item.packCode.trim() && item.packCode.length <= 64
+      && item.packCode.trim().toUpperCase() !== "BASE" ? item.packCode.trim() : null;
+    if (packCode === null) return null;
+    const key = `${sku}\0${size}\0${packCode?.toUpperCase() ?? "BASE"}`;
     if (seen.has(key)) return null;
     seen.add(key);
-    lines.push({ sku, size, qty: Number(item.qty) });
+    lines.push({ sku, size, qty: Number(item.qty), ...(packCode ? { packCode } : {}) });
   }
   return lines;
 }
@@ -49,6 +54,8 @@ function reviewOf(result: Extract<CreateOrderResult, { status: "CREATED" }>): Re
     lines: result.items.map((line) => ({
       sku: line.sku, name: line.name, size: line.size, qty: line.qty,
       unitPrice: line.unitPrice, lineAmount: line.lineAmount,
+      packCode: line.packCode ?? null, packQty: line.packQty ?? null,
+      packUnitName: line.packUnitName ?? null,
     })),
     subtotal: result.subtotal,
     discount: result.discount,
@@ -94,7 +101,10 @@ function orderInput(tenantId: string, lines: RetailCartLine[], nonce: string): {
   tenantId: string; channel: "web"; customerRef: string; items: OrderItemInput[]; idempotencyKey: string;
 } {
   return { tenantId, channel: "web", customerRef: `web-cart:${nonce}`,
-    items: lines.map((line) => ({ ...line })), idempotencyKey: `retail-cart:${nonce}` };
+    items: lines.map((line) => line.packCode
+      ? { sku: line.sku, size: line.size, qty: line.qty, packCode: line.packCode, packQty: line.qty }
+      : { sku: line.sku, size: line.size, qty: line.qty }),
+    idempotencyKey: `retail-cart:${nonce}` };
 }
 
 /** Simulate the real order transaction and roll it back, including reservations and customer creation. */
@@ -130,8 +140,7 @@ export async function confirmRetailCart(rawToken: unknown): Promise<RetailCartRe
       !/^[a-f0-9]{64}$/.test(token.fingerprint)) return { status: "INVALID" };
   const lines = basket(token.lines);
   if (!lines) return { status: "INVALID" };
-  const tenantId = await publicRetailTenant(token.slug);
-  if (!tenantId || tenantId !== token.tenantId) return { status: "SHOP_UNAVAILABLE" };
+  const tenantId = String(token.tenantId);
   const client = await getClient();
   let orderId: string | null = null;
   let replayed = false;
@@ -147,6 +156,7 @@ export async function confirmRetailCart(rawToken: unknown): Promise<RetailCartRe
       orderId = prior.rows[0].id;
       replayed = true;
     } else {
+      if (await publicRetailTenant(String(token.slug)) !== tenantId) return { status: "SHOP_UNAVAILABLE" };
       if (!await publicBasketAllowed(client, tenantId, lines)) return { status: "REVIEW_REQUIRED" };
       const result = await createOrderInTx(client, orderInput(tenantId, lines, String(token.nonce)));
       if (result.status !== "CREATED") return { status: "REVIEW_REQUIRED", reason: result.status };

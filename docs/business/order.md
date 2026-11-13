@@ -129,11 +129,13 @@ generic admin handoff. The checkout is read-only for order lines, prices, discou
 reuses existing CRM delivery data without requiring re-entry, and shows shipment/tracking data only
 when those records exist. See [Customer Checkout & Payment Wireframe](../ui/customer-checkout-wireframe.md).
 
-Public retail storefront product pages now offer a 10-line local cart and `/shop/[tenantSlug]/cart`
+Public retail storefront product pages now offer a 10-line local variant/pack cart and `/shop/[tenantSlug]/cart`
 review. `POST /api/bms/retail-cart` simulates the real `createOrderInTx()` in a tenant transaction
 and rolls it back, so the review shows server-calculated lines, discounts, shipping estimate and
 stock availability without reserving stock. A purpose-bound, 10-minute signed review token carries
-the basket and a digest of that calculation. Customer confirmation takes a transaction advisory lock
+the basket and a digest of that calculation. Pack size and price are loaded again from
+`bms_product_packs`; a browser-supplied pack price or conversion is never trusted. Customer
+confirmation takes a transaction advisory lock
 on the token nonce, rechecks that every product is active and published for both
 `PUBLIC_STOREFRONT` and `ONLINE_ORDER`, then runs the same order service. A changed price, discount,
 shipping estimate or stock rejects the confirmation and requires a fresh review. A repeated confirm

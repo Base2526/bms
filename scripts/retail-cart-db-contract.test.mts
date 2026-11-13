@@ -10,6 +10,8 @@ test("retail cart review rolls back, stale quotes fail, and repeated confirmatio
     await f.product("FAKE-CART", 40, 107);
     await query(`INSERT INTO bms_product_sales_surfaces(tenant_id,product_sku,surface,enabled)
       VALUES ($1,'FAKE-CART','PUBLIC_STOREFRONT',TRUE),($1,'FAKE-CART','ONLINE_ORDER',TRUE)`, [f.tenant]);
+    await query(`INSERT INTO bms_product_packs(tenant_id,product_sku,pack_code,unit_name,base_qty,price,active)
+      VALUES($1,'FAKE-CART','BOX','box',2,190,TRUE)`, [f.tenant]);
     const slug = `fake-costing-${f.tenant}`;
     const lines = [{ sku: "FAKE-CART", size: "BASE", qty: 2 }];
     const first = await previewRetailCart(slug, lines);
@@ -41,6 +43,15 @@ test("retail cart review rolls back, stale quotes fail, and repeated confirmatio
     }
     assert.equal((await query("SELECT count(*)::int AS n FROM bms_orders WHERE tenant_id=$1", [f.tenant])).rows[0].n, 1);
     assert.equal(Number((await query("SELECT reserved_stock FROM bms_inventory WHERE tenant_id=$1 AND product_sku='FAKE-CART' AND location_id=$2", [f.tenant, f.location])).rows[0].reserved_stock), 2);
+
+    assert.equal((await previewRetailCart(slug, [{ ...lines[0], qty: 1, packCode: "FORGED" }])).status, "ORDER_REJECTED");
+    const pack = await previewRetailCart(slug, [{ ...lines[0], qty: 1, packCode: "BOX" }]);
+    assert.equal(pack.status, "READY", JSON.stringify(pack));
+    if (pack.status === "READY") {
+      assert.equal(pack.review.lines[0].packQty, 1);
+      assert.equal(pack.review.lines[0].qty, 2);
+      assert.equal(pack.review.lines[0].lineAmount, 190);
+    }
 
     await query(`UPDATE bms_product_sales_surfaces SET enabled=FALSE
       WHERE tenant_id=$1 AND product_sku='FAKE-CART' AND surface='PUBLIC_STOREFRONT'`, [f.tenant]);
