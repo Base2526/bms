@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 // การแกะ "ลิงก์จับคู่เครื่อง" — โมดูลบริสุทธิ์ ไม่ import อะไรเลย (ทดสอบได้โดยไม่ต้องมี RN)
 //
 // ⚠️ ต่างจากเว็บตรงจุดสำคัญหนึ่งข้อ: เบราว์เซอร์รู้ origin ของเซิร์ฟเวอร์ฟรี ๆ เพราะหน้า /pos
@@ -79,7 +80,7 @@ function queryParam(input: string, names: string[]): string | null {
  */
 export function parsePairingInput(raw: string): ParsedPairing {
   const input = raw.trim();
-  if (!input) return { ok: false, error: 'ยังไม่ได้ใส่ลิงก์หรือ token' };
+  if (!input) return { ok: false, error: posText("ยังไม่ได้ใส่ลิงก์หรือ token") };
 
   // 1) ลิงก์ของแอปเอง
   if (/^bmspos:\/\//i.test(input)) {
@@ -87,12 +88,12 @@ export function parsePairingInput(raw: string): ParsedPairing {
     if (!token)
       return {
         ok: false,
-        error: 'ลิงก์ bmspos:// นี้ไม่มีค่า t= (token) อยู่ในนั้น',
+        error: posText("ลิงก์ bmspos:// นี้ไม่มีค่า t= (token) อยู่ในนั้น"),
       };
     if (!TOKEN_SHAPE.test(token))
       return {
         ok: false,
-        error: `ค่า t= ในลิงก์ไม่ใช่ token ของเครื่องขาย (ต้องขึ้นต้นด้วย pos_)`,
+        error: posText("ค่า t= ในลิงก์ไม่ใช่ token ของเครื่องขาย (ต้องขึ้นต้นด้วย pos_)"),
       };
     const host = queryParam(input, ['h', 'host', 'server']);
     return {
@@ -109,14 +110,14 @@ export function parsePairingInput(raw: string): ParsedPairing {
       return {
         ok: false,
         error:
-          'ลิงก์นี้ไม่มีค่า t= (token) — คัดลอก “ลิงก์จับคู่” จากหน้าเครื่องขายในระบบหลังบ้าน',
+          posText("ลิงก์นี้ไม่มีค่า t= (token) — คัดลอก “ลิงก์จับคู่” จากหน้าเครื่องขายในระบบหลังบ้าน"),
       };
     }
     if (!TOKEN_SHAPE.test(token))
       return {
         ok: false,
         error:
-          'ค่า t= ในลิงก์ไม่ใช่ token ของเครื่องขาย (ต้องขึ้นต้นด้วย pos_)',
+          posText("ค่า t= ในลิงก์ไม่ใช่ token ของเครื่องขาย (ต้องขึ้นต้นด้วย pos_)"),
       };
     return { ok: true, token, serverUrl: normalizeServerUrl(input) };
   }
@@ -128,13 +129,13 @@ export function parsePairingInput(raw: string): ParsedPairing {
   if (input.startsWith('pos_')) {
     return {
       ok: false,
-      error: 'token สั้นเกินไปหรือมีอักขระแปลกปน — คัดลอกมาไม่ครบหรือเปล่า',
+      error: posText("token สั้นเกินไปหรือมีอักขระแปลกปน — คัดลอกมาไม่ครบหรือเปล่า"),
     };
   }
   return {
     ok: false,
     error:
-      'อ่านค่านี้ไม่ออก — วางลิงก์จับคู่ทั้งลิงก์ หรือ token ที่ขึ้นต้นด้วย pos_',
+      posText("อ่านค่านี้ไม่ออก — วางลิงก์จับคู่ทั้งลิงก์ หรือ token ที่ขึ้นต้นด้วย pos_"),
   };
 }
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/useUiText";
+
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import Link from "next/link";
@@ -88,6 +90,7 @@ export default function SystemHealthClient({
   windowMinutes,
   windowOptions,
 }: Props) {
+  const uiText = useUiText();
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -107,30 +110,30 @@ export default function SystemHealthClient({
   else if (db.total > db.maxConnections * 0.8)
     overallAlerts.push({
       type: "warning",
-      text: `Postgres connections ใกล้เต็ม (${db.total}/${db.maxConnections})`,
+      text: uiText("admin_ui.postgres_connections_nearly_full_de708", { v0: db.total, v1: db.maxConnections }),
     });
   if (!redis.ok) overallAlerts.push({ type: "error", text: `Redis: ${redis.error}` });
   if (!realtimeOutbox.ok) overallAlerts.push({ type: "error", text: `Realtime outbox: ${realtimeOutbox.error}` });
   else if (realtimeOutbox.failed > 0 || realtimeOutbox.oldestUnpublishedSeconds > 60)
     overallAlerts.push({
       type: realtimeOutbox.failed > 0 ? "error" : "warning",
-      text: `Realtime outbox ค้าง ${realtimeOutbox.pending + realtimeOutbox.processing} events · oldest ${realtimeOutbox.oldestUnpublishedSeconds}s · failed ${realtimeOutbox.failed}`,
+      text: uiText("admin_ui.realtime_outbox_backlog_events_oldest_s_failed_bed4f", { v0: realtimeOutbox.pending + realtimeOutbox.processing, v1: realtimeOutbox.oldestUnpublishedSeconds, v2: realtimeOutbox.failed }),
     });
   if (channelHealth.ok && channelHealth.unhealthyCount > 0)
-    overallAlerts.push({ type: "warning", text: `${channelHealth.unhealthyCount} ช่องทางไม่ปกติ (ข้ามทุกร้าน)` });
+    overallAlerts.push({ type: "warning", text: uiText("admin_ui.unhealthy_channels_across_all_stores_71083", { v0: channelHealth.unhealthyCount }) });
   if (failureIncidents.ok && failureIncidents.last24hByTier.A > 0)
     overallAlerts.push({
       type: "error",
-      text: `${failureIncidents.last24hByTier.A} เหตุการณ์ tier A ใน 24 ชม.ล่าสุด — ลูกค้าได้รับผลกระทบจริง`,
+      text: uiText("admin_ui.tier_a_incidents_in_the_last_24_hours_da31a", { v0: failureIncidents.last24hByTier.A }),
     });
   if (erroredJobRuns.length > 0)
-    overallAlerts.push({ type: "warning", text: `Cron/batch job ล่าสุดที่ error: ${erroredJobRuns.length} งาน` });
+    overallAlerts.push({ type: "warning", text: uiText("admin_ui.latest_cron_batch_runs_with_errors_a25c8", { v0: erroredJobRuns.length }) });
   if (stuckJobRuns.length > 0)
-    overallAlerts.push({ type: "error", text: `${stuckJobRuns.length} job ค้างสถานะ running เกิน 30 นาที` });
+    overallAlerts.push({ type: "error", text: uiText("admin_ui.jobs_have_been_running_for_more_than_30_a9695", { v0: stuckJobRuns.length }) });
   if (requestMetrics.ok && requestMetrics.totalRequests > 0 && requestMetrics.errorRatePct >= 5)
     overallAlerts.push({
       type: "error",
-      text: `Error rate ของ request metrics ที่เก็บอยู่ตอนนี้อยู่ที่ ${requestMetrics.errorRatePct}% ใน ${requestMetrics.windowMinutes} นาทีล่าสุด`,
+      text: uiText("admin_ui.recorded_request_error_rate_is_over_the_last_a2459", { v0: requestMetrics.errorRatePct, v1: requestMetrics.windowMinutes }),
     });
 
   return (
@@ -138,19 +141,16 @@ export default function SystemHealthClient({
       <Space align="center" style={{ marginBottom: 16, justifyContent: "space-between", width: "100%" }}>
         <div>
           <Title level={3} style={{ marginBottom: 0 }}>
-            System Health
-          </Title>
+            {uiText("admin_ui.en_system_health_bd51a")}</Title>
           <Text type="secondary">
-            รวมสถานะ DB / Redis / AI Provider / Channel / Cron ข้ามทุกร้าน — อ่านอย่างเดียว ไม่มีการเขียนข้อมูล
-          </Text>
+            {uiText("admin_ui.db_redis_ai_provider_channel_cron_status_across_3e0ec")}</Text>
         </div>
         <Space>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            อัปเดตล่าสุด: {new Date(generatedAt).toLocaleString()}
+            {uiText("admin_ui.last_updated_188d8")} {new Date(generatedAt).toLocaleString(uiText.locale)}
           </Text>
           <Button icon={<ReloadOutlined />} loading={refreshing} onClick={refresh}>
-            รีเฟรช
-          </Button>
+            {uiText("admin_ui.refresh_78a47")}</Button>
         </Space>
       </Space>
 
@@ -162,32 +162,32 @@ export default function SystemHealthClient({
         </Space>
       )}
       {overallAlerts.length === 0 && (
-        <Alert closable type="success" message="ทุกจุดที่เช็คได้ตอนนี้ปกติ" showIcon style={{ marginBottom: 16 }} />
+        <Alert closable type="success" message={uiText("admin_ui.all_currently_available_checks_are_healthy_fad30")} showIcon style={{ marginBottom: 16 }} />
       )}
 
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={12}>
-          <Card title="Database (Postgres)" size="small">
+          <Card title={uiText("admin_ui.en_database_postgres_b41cc")} size="small">
             {db.ok ? (
               <Row gutter={16}>
                 <Col span={8}>
-                  <Statistic title="Connections" value={`${db.total} / ${db.maxConnections}`} />
+                  <Statistic title={uiText("admin_ui.en_connections_8f350")} value={`${db.total} / ${db.maxConnections}`} />
                 </Col>
                 <Col span={8}>
-                  <Statistic title="Active queries" value={db.active} />
+                  <Statistic title={uiText("admin_ui.en_active_queries_c3e9f")} value={db.active} />
                 </Col>
                 <Col span={8}>
-                  <Statistic title="Idle in tx" value={db.idleInTransaction} />
+                  <Statistic title={uiText("admin_ui.en_idle_in_tx_fd05f")} value={db.idleInTransaction} />
                 </Col>
                 <Col span={8} style={{ marginTop: 12 }}>
-                  <Statistic title="Longest active query" value={`${db.longestActiveQuerySec}s`} />
+                  <Statistic title={uiText("admin_ui.en_longest_active_query_a01b7")} value={`${db.longestActiveQuerySec}s`} />
                 </Col>
                 <Col span={8} style={{ marginTop: 12 }}>
-                  <Statistic title="DB size" value={formatBytes(db.dbSizeBytes)} />
+                  <Statistic title={uiText("admin_ui.en_db_size_cf442")} value={formatBytes(db.dbSizeBytes)} />
                 </Col>
               </Row>
             ) : (
-              <Alert closable type="error" message="อ่านสถานะ DB ไม่ได้" description={db.error} showIcon />
+              <Alert closable type="error" message={uiText("admin_ui.could_not_read_db_status_97d01")} description={db.error} showIcon />
             )}
           </Card>
         </Col>
@@ -196,39 +196,39 @@ export default function SystemHealthClient({
             {redis.ok ? (
               <Row gutter={16}>
                 <Col span={8}>
-                  <Statistic title="Ping latency" value={`${redis.latencyMs} ms`} />
+                  <Statistic title={uiText("admin_ui.en_ping_latency_810f5")} value={`${redis.latencyMs} ms`} />
                 </Col>
                 <Col span={8}>
-                  <Statistic title="Connected clients" value={redis.connectedClients ?? "-"} />
+                  <Statistic title={uiText("admin_ui.en_connected_clients_9feff")} value={redis.connectedClients ?? "-"} />
                 </Col>
                 <Col span={8}>
-                  <Statistic title="Used memory" value={redis.usedMemoryHuman ?? "-"} />
+                  <Statistic title={uiText("admin_ui.en_used_memory_a5d88")} value={redis.usedMemoryHuman ?? "-"} />
                 </Col>
               </Row>
             ) : (
-              <Alert closable type="error" message="ต่อ Redis ไม่ได้" description={redis.error} showIcon />
+              <Alert closable type="error" message={uiText("admin_ui.could_not_connect_to_redis_1caed")} description={redis.error} showIcon />
             )}
           </Card>
         </Col>
       </Row>
 
-      <Card title="Realtime outbox" size="small" style={{ marginBottom: 16 }}>
+      <Card title={uiText("admin_ui.en_realtime_outbox_4b90b")} size="small" style={{ marginBottom: 16 }}>
         {realtimeOutbox.ok ? (
           <Row gutter={16}>
-            <Col xs={12} sm={8} md={4}><Statistic title="Pending" value={realtimeOutbox.pending} /></Col>
-            <Col xs={12} sm={8} md={4}><Statistic title="Processing" value={realtimeOutbox.processing} /></Col>
-            <Col xs={12} sm={8} md={4}><Statistic title="Published" value={realtimeOutbox.published} /></Col>
-            <Col xs={12} sm={8} md={4}><Statistic title="Failed" value={realtimeOutbox.failed} /></Col>
-            <Col xs={12} sm={8} md={4}><Statistic title="Oldest lag" value={`${realtimeOutbox.oldestUnpublishedSeconds}s`} /></Col>
-            <Col xs={12} sm={8} md={4}><Statistic title="Retries" value={realtimeOutbox.retryAttempts} /></Col>
+            <Col xs={12} sm={8} md={4}><Statistic title={uiText("admin_ui.en_pending_96f60")} value={realtimeOutbox.pending} /></Col>
+            <Col xs={12} sm={8} md={4}><Statistic title={uiText("admin_ui.en_processing_e6345")} value={realtimeOutbox.processing} /></Col>
+            <Col xs={12} sm={8} md={4}><Statistic title={uiText("admin_ui.en_published_483bf")} value={realtimeOutbox.published} /></Col>
+            <Col xs={12} sm={8} md={4}><Statistic title={uiText("admin_ui.en_failed_09fef")} value={realtimeOutbox.failed} /></Col>
+            <Col xs={12} sm={8} md={4}><Statistic title={uiText("admin_ui.en_oldest_lag_0ef6d")} value={`${realtimeOutbox.oldestUnpublishedSeconds}s`} /></Col>
+            <Col xs={12} sm={8} md={4}><Statistic title={uiText("admin_ui.en_retries_13093")} value={realtimeOutbox.retryAttempts} /></Col>
           </Row>
         ) : (
-          <Alert closable type="error" message="อ่าน realtime outbox ไม่ได้" description={realtimeOutbox.error} showIcon />
+          <Alert closable type="error" message={uiText("admin_ui.could_not_read_the_realtime_outbox_990d2")} description={realtimeOutbox.error} showIcon />
         )}
       </Card>
 
       <Card
-        title="Request Latency & Error Rate"
+        title={uiText("admin_ui.en_request_latency_error_rate_831ab")}
         size="small"
         style={{ marginBottom: 16 }}
         extra={
@@ -236,7 +236,7 @@ export default function SystemHealthClient({
             {windowOptions.map((w) => (
               <Link key={w} href={`/admin/system-health?window=${w}`} scroll={false}>
                 <Button size="small" type={w === windowMinutes ? "primary" : "default"}>
-                  {w >= 60 ? `${w / 60} ชม.` : `${w} นาที`}
+                  {w >= 60 ? uiText("admin_ui.hr_a5ebf", { v0: w / 60 }) : uiText("admin_ui.min_1f44d", { v0: w })}
                 </Button>
               </Link>
             ))}
@@ -247,39 +247,38 @@ export default function SystemHealthClient({
           type="info"
           showIcon
           style={{ marginBottom: 12 }}
-          message="ตอนนี้หน้าจอนี้ยังแสดงเฉพาะ GraphQL operations (`gql:`) ก่อน"
-          description="ตัว recorder รองรับ namespace แล้ว (`gql:` / `rest:`) แต่ฝั่ง REST ของ Next App Router ยังต้องครอบ handler ทีละ route ใน `/api/bms/**` จึงจะเริ่มมี `rest:` เพิ่มเข้ามา"
+          message={uiText("admin_ui.this_page_currently_displays_graphql_operations_gql_only_80b74")}
+          description={uiText("admin_ui.the_recorder_supports_namespaces_gql_rest_but_each_286f7")}
         />
         {!requestMetrics.ok ? (
-          <Alert closable type="error" message="อ่าน metric ไม่ได้ (Redis)" description={requestMetrics.error} showIcon />
+          <Alert closable type="error" message={uiText("admin_ui.could_not_read_metrics_redis_77a7a")} description={requestMetrics.error} showIcon />
         ) : requestMetrics.totalRequests === 0 ? (
-          <Empty description="ยังไม่มี request ในช่วงเวลานี้ — metric เริ่มเก็บหลัง deploy เท่านั้น ไม่มีข้อมูลย้อนหลัง และข้อมูลจะหายเมื่อ Redis restart" />
+          <Empty description={uiText("admin_ui.no_requests_in_this_period_metrics_start_after_767ff")} />
         ) : (
           <>
             <Row gutter={16} style={{ marginBottom: 12 }}>
               <Col span={6}>
-                <Statistic title="Requests" value={requestMetrics.totalRequests} />
+                <Statistic title={uiText("admin_ui.en_requests_f7194")} value={requestMetrics.totalRequests} />
               </Col>
               <Col span={6}>
                 <Statistic
-                  title="Error rate"
+                  title={uiText("admin_ui.en_error_rate_5329d")}
                   value={`${requestMetrics.errorRatePct}%`}
                   valueStyle={requestMetrics.errorRatePct >= 5 ? { color: "#cf1322" } : undefined}
                 />
               </Col>
               <Col span={6}>
-                <Statistic title="Errors" value={requestMetrics.totalErrors} />
+                <Statistic title={uiText("admin_ui.en_errors_805e8")} value={requestMetrics.totalErrors} />
               </Col>
               <Col span={6}>
-                <Statistic title="p95 รวมทุก operation" value={`${requestMetrics.overallP95Ms} ms`} />
+                <Statistic title={uiText("admin_ui.p95_across_all_operations_5f032")} value={`${requestMetrics.overallP95Ms} ms`} />
               </Col>
             </Row>
 
             {requestMetrics.errorCodes.length > 0 && (
               <div style={{ marginBottom: 12 }}>
                 <Text type="secondary" style={{ marginRight: 8 }}>
-                  Error codes:
-                </Text>
+                  {uiText("admin_ui.en_error_codes_11671")}</Text>
                 {requestMetrics.errorCodes.slice(0, 8).map((e) => (
                   <Tag key={e.code} color="red">
                     {e.code} × {e.count}
@@ -294,8 +293,8 @@ export default function SystemHealthClient({
               rowKey="name"
               dataSource={requestMetrics.operations}
               columns={[
-                { title: "Operation", dataIndex: "name", ellipsis: true },
-                { title: "Calls", dataIndex: "count", width: 80, sorter: (a, b) => a.count - b.count },
+                { title: uiText("admin_ui.en_operation_430d3"), dataIndex: "name", ellipsis: true },
+                { title: uiText("admin_ui.en_calls_0a19b"), dataIndex: "count", width: 80, sorter: (a, b) => a.count - b.count },
                 {
                   title: "p50",
                   dataIndex: "p50Ms",
@@ -320,7 +319,7 @@ export default function SystemHealthClient({
                   sorter: (a, b) => a.p99Ms - b.p99Ms,
                 },
                 {
-                  title: "เวลารวม",
+                  title: uiText("admin_ui.total_time_a9c57"),
                   dataIndex: "totalMs",
                   width: 110,
                   defaultSortOrder: "descend",
@@ -328,7 +327,7 @@ export default function SystemHealthClient({
                   sorter: (a, b) => a.totalMs - b.totalMs,
                 },
                 {
-                  title: "Error",
+                  title: uiText("admin_ui.en_error_7f2f6"),
                   dataIndex: "errorRatePct",
                   width: 100,
                   render: (v: number, row) =>
@@ -344,43 +343,39 @@ export default function SystemHealthClient({
               ]}
             />
             <Text type="secondary" style={{ fontSize: 12 }}>
-              เรียงตาม &quot;เวลารวม&quot; (calls × avg) เป็นค่าเริ่มต้น — operation ที่เร็วแต่ถูกเรียกบ่อยมากอาจกินเวลา
-              DB รวมมากกว่า operation ที่ช้าแต่นานๆ เรียกที · percentile คำนวณจาก histogram bucket จึงเป็นค่าประมาณ ·
-              ช่วงเวลาอาจเกินค่าที่เลือกไม่ถึง 5 นาทีตามขอบ histogram bucket · metric เริ่มนับหลัง deploy เท่านั้น
-              ไม่มีข้อมูลย้อนหลัง · เก็บใน Redis เท่านั้น (TTL 4 ชม.) — restart Redis แล้วข้อมูลหาย
-            </Text>
+              {uiText("admin_ui.sorted_by_total_time_calls_average_by_default_6379b")}</Text>
           </>
         )}
       </Card>
 
       <Card
-        title="AI Provider Health"
+        title={uiText("admin_ui.en_ai_provider_health_e40f3")}
         size="small"
         style={{ marginBottom: 16 }}
-        extra={<Link href="/admin/env">ดูรายละเอียด / ทดสอบ →</Link>}
+        extra={<Link href="/admin/env">{uiText("admin_ui.details_test_27152")}</Link>}
       >
         {aiProvidersError ? (
-          <Alert closable type="error" message="อ่านไม่ได้" description={aiProvidersError} showIcon />
+          <Alert closable type="error" message={uiText("admin_ui.unavailable_f31b3")} description={aiProvidersError} showIcon />
         ) : (
           <Table
             size="small"
             pagination={false}
             rowKey={(r) => `${r.provider}-${r.purpose}`}
             dataSource={aiProviders ?? []}
-            locale={{ emptyText: <Empty description="ไม่มีข้อมูล" /> }}
+            locale={{ emptyText: <Empty description={uiText("admin_ui.no_data_2056d")} /> }}
             columns={[
-              { title: "Provider", dataIndex: "provider" },
-              { title: "Purpose", dataIndex: "purpose" },
+              { title: uiText("admin_ui.en_provider_7ceee"), dataIndex: "provider" },
+              { title: uiText("admin_ui.en_purpose_a0fb8"), dataIndex: "purpose" },
               {
-                title: "Status",
+                title: uiText("admin_ui.en_status_bae7d"),
                 dataIndex: "status",
                 render: (s: string) => <Tag color={AI_STATUS_COLOR[s] ?? "default"}>{s}</Tag>,
               },
-              { title: "Detail", dataIndex: "status_detail", ellipsis: true },
+              { title: uiText("admin_ui.en_detail_7c9a7"), dataIndex: "status_detail", ellipsis: true },
               {
-                title: "Last checked",
+                title: uiText("admin_ui.en_last_checked_ada1b"),
                 dataIndex: "last_checked_at",
-                render: (v: string | null) => (v ? new Date(v).toLocaleString() : "-"),
+                render: (v: string | null) => (v ? new Date(v).toLocaleString(uiText.locale) : "-"),
               },
             ]}
           />
@@ -388,15 +383,15 @@ export default function SystemHealthClient({
       </Card>
 
       <Card
-        title="Cron / Batch Job Runs (last run per job)"
+        title={uiText("admin_ui.en_cron_batch_job_runs_last_run_per_job_ad2ba")}
         size="small"
         style={{ marginBottom: 16 }}
-        extra={<Link href="/admin/operations-schedule">ดูรายละเอียด / ประวัติ →</Link>}
+        extra={<Link href="/admin/operations-schedule">{uiText("admin_ui.details_history_875ad")}</Link>}
       >
         {jobRunsError ? (
           <Alert closable
             type="warning"
-            message="อ่านไม่ได้ (อาจยังไม่ apply migration 7.55)"
+            message={uiText("admin_ui.unavailable_migration_7_55_may_not_be_applied_9cfc4")}
             description={jobRunsError}
             showIcon
           />
@@ -406,61 +401,61 @@ export default function SystemHealthClient({
             pagination={false}
             rowKey="id"
             dataSource={jobRuns ?? []}
-            locale={{ emptyText: <Empty description="ยังไม่มี run เลย" /> }}
+            locale={{ emptyText: <Empty description={uiText("admin_ui.no_runs_yet_a6786")} /> }}
             columns={[
               {
-                title: "Job",
+                title: uiText("admin_ui.en_job_30c8c"),
                 dataIndex: "jobName",
                 render: (k: string) => jobNameByKey[k] ?? k,
               },
               {
-                title: "Status",
+                title: uiText("admin_ui.en_status_bae7d"),
                 dataIndex: "status",
                 render: (s: string) => <Tag color={JOB_STATUS_COLOR[s] ?? "default"}>{s}</Tag>,
               },
               {
-                title: "Started",
+                title: uiText("admin_ui.en_started_faa9e"),
                 dataIndex: "startedAt",
-                render: (v: string) => new Date(v).toLocaleString(),
+                render: (v: string) => new Date(v).toLocaleString(uiText.locale),
               },
               {
-                title: "Duration",
+                title: uiText("admin_ui.en_duration_13700"),
                 dataIndex: "durationMs",
                 render: (v: number | null) => (v != null ? `${v} ms` : "-"),
               },
-              { title: "Error", dataIndex: "error", ellipsis: true },
+              { title: uiText("admin_ui.en_error_7f2f6"), dataIndex: "error", ellipsis: true },
             ]}
           />
         )}
       </Card>
 
       <Card
-        title={`Channel Health — ไม่ปกติข้ามทุกร้าน (${channelHealth.ok ? channelHealth.unhealthyCount : "?"})`}
+        title={uiText("admin_ui.channel_health_unhealthy_across_all_stores_bea91", { v0: channelHealth.ok ? channelHealth.unhealthyCount : "?" })}
         size="small"
         style={{ marginBottom: 16 }}
       >
         {!channelHealth.ok ? (
-          <Alert closable type="error" message="อ่านไม่ได้" description={channelHealth.error} showIcon />
+          <Alert closable type="error" message={uiText("admin_ui.unavailable_f31b3")} description={channelHealth.error} showIcon />
         ) : (
           <Table
             size="small"
             pagination={false}
             rowKey={(r) => `${r.tenantId}-${r.channel}`}
             dataSource={channelHealth.rows}
-            locale={{ emptyText: <Empty description="ไม่มีช่องทางที่ผิดปกติตอนนี้" /> }}
+            locale={{ emptyText: <Empty description={uiText("admin_ui.no_unhealthy_channels_currently_aeda0")} /> }}
             columns={[
-              { title: "ร้าน", dataIndex: "tenantName" },
-              { title: "ช่องทาง", dataIndex: "channel" },
+              { title: uiText("admin_ui.shop_0ff21"), dataIndex: "tenantName" },
+              { title: uiText("admin_ui.channel_c0fcc"), dataIndex: "channel" },
               {
-                title: "Status",
+                title: uiText("admin_ui.en_status_bae7d"),
                 dataIndex: "status",
                 render: (s: string) => <Tag color={CHANNEL_STATUS_COLOR[s] ?? "default"}>{s}</Tag>,
               },
-              { title: "Detail", dataIndex: "statusDetail", ellipsis: true },
+              { title: uiText("admin_ui.en_detail_7c9a7"), dataIndex: "statusDetail", ellipsis: true },
               {
-                title: "Last checked",
+                title: uiText("admin_ui.en_last_checked_ada1b"),
                 dataIndex: "lastCheckedAt",
-                render: (v: string | null) => (v ? new Date(v).toLocaleString() : "-"),
+                render: (v: string | null) => (v ? new Date(v).toLocaleString(uiText.locale) : "-"),
               },
             ]}
           />
@@ -470,15 +465,15 @@ export default function SystemHealthClient({
       <Card
         title={
           failureIncidents.ok
-            ? `Failure Incidents — 24 ชม.ล่าสุด (Tier A: ${failureIncidents.last24hByTier.A} · Tier B: ${failureIncidents.last24hByTier.B})`
-            : "Failure Incidents"
+            ? uiText("admin_ui.failure_incidents_last_24_hours_tier_a_tier_1db5d", { v0: failureIncidents.last24hByTier.A, v1: failureIncidents.last24hByTier.B })
+            : uiText("admin_ui.en_failure_incidents_848a9")
         }
         size="small"
       >
         {!failureIncidents.ok ? (
           <Alert closable
             type="warning"
-            message="อ่านไม่ได้ (อาจยังไม่ apply migration 7.36)"
+            message={uiText("admin_ui.unavailable_migration_7_36_may_not_be_applied_4e207")}
             description={failureIncidents.error}
             showIcon
           />
@@ -488,22 +483,22 @@ export default function SystemHealthClient({
             pagination={{ pageSize: 10 }}
             rowKey="id"
             dataSource={failureIncidents.rows}
-            locale={{ emptyText: <Empty description="ไม่มีเหตุการณ์ล่าสุด" /> }}
+            locale={{ emptyText: <Empty description={uiText("admin_ui.no_recent_incidents_ccb0b")} /> }}
             columns={[
               {
-                title: "Tier",
+                title: uiText("admin_ui.en_tier_5bd44"),
                 dataIndex: "tier",
                 render: (t: string) => <Tag color={TIER_COLOR[t] ?? "default"}>{t}</Tag>,
               },
-              { title: "ร้าน", dataIndex: "tenantName" },
-              { title: "Code", dataIndex: "code" },
-              { title: "Surface", dataIndex: "surface" },
-              { title: "Channel", dataIndex: "channel", render: (v: string | null) => v ?? "-" },
-              { title: "Error", dataIndex: "errorMessage", ellipsis: true },
+              { title: uiText("admin_ui.shop_0ff21"), dataIndex: "tenantName" },
+              { title: uiText("admin_ui.en_code_adac6"), dataIndex: "code" },
+              { title: uiText("admin_ui.en_surface_cda05"), dataIndex: "surface" },
+              { title: uiText("admin_ui.en_channel_879f0"), dataIndex: "channel", render: (v: string | null) => v ?? "-" },
+              { title: uiText("admin_ui.en_error_7f2f6"), dataIndex: "errorMessage", ellipsis: true },
               {
-                title: "เวลา",
+                title: uiText("admin_ui.time_7a229"),
                 dataIndex: "createdAt",
-                render: (v: string) => new Date(v).toLocaleString(),
+                render: (v: string) => new Date(v).toLocaleString(uiText.locale),
               },
             ]}
           />

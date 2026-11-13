@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/useUiText";
+
 import {
   Alert, Button, Descriptions, Empty, Form, Input, InputNumber, List, Modal,
   Select, Space, Spin, Switch, Table, Tabs, Tag, Typography, message,
@@ -137,6 +139,7 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export default function BoardGamePage() {
+  const uiText = useUiText();
   const { t, lang } = useI18n();
   const { can, loading: permissionsLoading } = useBmsPermissions();
   const canManageSession = can("board_game.session.manage");
@@ -333,7 +336,7 @@ export default function BoardGamePage() {
       onOk: async () => {
         if (!reason.trim()) {
           message.error(t("admin_board_game.cancel_pass_reason"));
-          throw new Error("reason required");
+          throw new Error(uiText("admin_ui.en_reason_required_4c946"));
         }
         await api("/api/bms/board-game/passes", {
           method: "POST",

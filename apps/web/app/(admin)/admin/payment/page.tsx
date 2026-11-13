@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import {
   Table, Button, Space, Tag, message, Alert, Popconfirm,
@@ -113,6 +115,7 @@ function PaymentAmountBreakdown({ payment }: { payment: Payment }) {
 }
 
 function PaymentManagement() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const STATUS_LABEL = statusLabels(t);
   const METHOD_LABEL = methodLabels(t);
@@ -211,7 +214,7 @@ function PaymentManagement() {
 
   const columns = useMemo(
     () => [
-      { title: "Payment", dataIndex: "id", key: "id", width: 100,
+      { title: uiText("admin_ui.en_payment_b41a9"), dataIndex: "id", key: "id", width: 100,
         render: (id: string) => <Typography.Text code>{id.slice(0, 8)}</Typography.Text> },
       { title: t("admin_payment.col_target"), key: "target", width: 150,
         render: (_: unknown, r: Payment) => <Typography.Text code>
@@ -234,18 +237,18 @@ function PaymentManagement() {
       { title: t("admin_payment.col_verified_by"), dataIndex: "verifiedBy", key: "verifiedBy",
         render: (v: string | null) => v || <span style={{ color: "#999" }}>—</span> },
       { title: t("admin_payment.col_created"), dataIndex: "createdAt", key: "createdAt", width: 160,
-        render: (d: string) => new Date(d).toLocaleString() },
-      { title: "Actions", key: "actions", width: 220,
+        render: (d: string) => new Date(d).toLocaleString(uiText.locale) },
+      { title: uiText("admin_ui.en_actions_c3cd6"), key: "actions", width: 220,
         render: (_: any, r: Payment) => <Space size="small">{actionsFor(r)}</Space> },
     ],
-    [busy, can, STATUS_LABEL, METHOD_LABEL, t]
+    [uiText, busy, can, STATUS_LABEL, METHOD_LABEL, t]
   );
 
   if (error) return <Alert closable type="error" message={t("admin_payment.load_error")} description={error.message} showIcon />;
 
   return (
     <div>
-      <AdminPageHeader title="BMS Payment">
+      <AdminPageHeader title={uiText("admin_ui.en_bms_payment_e20c2")}>
         <Input.Search
           placeholder={t("admin_payment.search_placeholder")}
           allowClear
@@ -262,7 +265,7 @@ function PaymentManagement() {
         {can("payment.submit") && (
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setSubmitOpen(true)}>{t("admin_payment.btn_submit_payment")}</Button>
         )}
-        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{uiText("admin_ui.en_refresh_56e3b")}</Button>
       </AdminPageHeader>
 
       <Alert
@@ -305,7 +308,7 @@ function PaymentManagement() {
                     : (r.slipRef || <span style={{ color: "#999" }}>—</span>),
                 },
                 { label: t("admin_payment.col_verified_by"), value: r.verifiedBy || <span style={{ color: "#999" }}>—</span> },
-                { label: t("admin_payment.col_created"), value: new Date(r.createdAt).toLocaleString() },
+                { label: t("admin_payment.col_created"), value: new Date(r.createdAt).toLocaleString(uiText.locale) },
               ]}
               actions={actionsFor(r)}
             />
@@ -314,7 +317,7 @@ function PaymentManagement() {
       ) : (
         <Table rowKey="id" loading={loading} dataSource={payments} columns={columns}
           scroll={{ x: "max-content" }}
-          pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Total ${t} payment(s)` }}
+          pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => uiText("admin_ui.en_total_payment_s_e61ae", { v0: t }) }}
         />
       )}
 

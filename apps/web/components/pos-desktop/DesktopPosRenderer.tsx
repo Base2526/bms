@@ -1,5 +1,8 @@
 "use client";
 
+import { usePosText, thaiPosText, type PosTranslator } from "@/lib/pos/usePosText";
+
+import { PosLanguageSelector } from "@/components/pos/PosLanguageProvider";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -113,10 +116,11 @@ const BoardGamePanel = dynamic(loadBoardGameModule, {
 });
 
 function DesktopModuleLoading({ label }: { label: string }) {
+  const posText = usePosText();
   return (
     <div className={styles.moduleLoading} role="status">
       <span className={styles.catalogSpinner} aria-hidden="true" />
-      <strong>{label}</strong>
+      <strong>{posText(label)}</strong>
     </div>
   );
 }
@@ -139,8 +143,8 @@ type CartLine = PricedCartLine & {
  * The button that opens it is offered only with this notice: the compact cart does not move with
  * it, so offering it beside an unrelated notice sends the cashier away from a bill in progress.
  */
-const ADVANCED_ITEM_NOTICE =
-  "สินค้านี้ต้องกรอก serial / น้ำหนัก / ตัวเลือกเพิ่มเติม จึงต้องขายในหน้าขายแบบเต็มเพื่อไม่ข้ามการตรวจสอบ";
+// Stable notice identity keeps the full-workspace action available across language changes.
+const ADVANCED_ITEM_NOTICE = "ADVANCED_ITEM_NOTICE";
 
 type SaleResult = {
   completedAt?: number;
@@ -200,29 +204,29 @@ const money = (value: number) =>
     minimumFractionDigits: 2,
   }).format(value);
 
-const BOARD_GAME_PARTICIPANT_LABEL: Record<string, string> = {
-  GENERAL: "ทั่วไป",
-  STUDENT: "นักเรียน/นักศึกษา",
-  MEMBER: "สมาชิก",
-  CHILD: "เด็ก",
-  GUARDIAN: "ผู้ปกครอง",
-  OBSERVER: "ผู้สังเกตการณ์",
-  FOOD_ONLY: "อาหารและเครื่องดื่มเท่านั้น",
-  CUSTOM: "อัตราพิเศษ",
-};
+const BOARD_GAME_PARTICIPANT_LABEL = (posText: PosTranslator = thaiPosText): Record<string, string> => ({
+  GENERAL: posText("ทั่วไป"),
+  STUDENT: posText("นักเรียน/นักศึกษา"),
+  MEMBER: posText("สมาชิก"),
+  CHILD: posText("เด็ก"),
+  GUARDIAN: posText("ผู้ปกครอง"),
+  OBSERVER: posText("ผู้สังเกตการณ์"),
+  FOOD_ONLY: posText("อาหารและเครื่องดื่มเท่านั้น"),
+  CUSTOM: posText("อัตราพิเศษ"),
+});
 
-function boardGameTime(value: string | null): string {
+function boardGameTime(value: string | null, posText: PosTranslator = thaiPosText): string {
   if (!value) return "–";
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "–";
-  return date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleTimeString(posText.locale, { hour: "2-digit", minute: "2-digit" });
 }
 
-function boardGameDateTime(value: string | null): string {
+function boardGameDateTime(value: string | null, posText: PosTranslator = thaiPosText): string {
   if (!value) return "–";
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "–";
-  return date.toLocaleString("th-TH", {
+  return date.toLocaleString(posText.locale, {
     day: "numeric",
     month: "short",
     hour: "2-digit",
@@ -230,32 +234,32 @@ function boardGameDateTime(value: string | null): string {
   });
 }
 
-function boardGameMinutes(value: number | null | undefined): string {
+function boardGameMinutes(value: number | null | undefined, posText: PosTranslator = thaiPosText): string {
   const minutes = Math.max(0, Math.round(Number(value) || 0));
   const hours = Math.floor(minutes / 60);
-  if (!hours) return `${minutes} นาที`;
-  return minutes % 60 ? `${hours} ชม. ${minutes % 60} นาที` : `${hours} ชม.`;
+  if (!hours) return posText("{v0} นาที", { v0: minutes });
+  return minutes % 60 ? posText("{v0} ชม. {v1} นาที", { v0: hours, v1: minutes % 60 }) : posText("{v0} ชม.", { v0: hours });
 }
 
-const BOARD_GAME_OFFER_STATUS: Record<string, string> = {
-  NO_ACTIVE_OFFERS: "ไม่มีโปรค่าเล่นที่เปิดใช้สำหรับสาขานี้ ณ ตอนปิดบิล",
-  INELIGIBLE: "บิลนี้ไม่เข้าเงื่อนไขโปรค่าเล่น ณ ตอนปิดบิล",
-  NO_SAVING: "เข้าเงื่อนไขโปร แต่ยังไม่มีส่วนลดจากเวลาที่คิดในบิลนี้",
-  PASS_BETTER: "ใช้แพ็กเกจสมาชิก เพราะยอดถูกกว่าโปรค่าเล่น",
-  NO_CHARGE: "ไม่มีค่าเวลาที่ต้องนำมาลดด้วยโปร",
-};
-const BOARD_GAME_OFFER_REASON: Record<string, string> = {
-  INACTIVE: "โปรไม่ได้เปิดใช้งาน",
-  MIN_PLAYERS: "จำนวนผู้เล่นที่คิดเงินไม่ถึงขั้นต่ำของโปร",
-  MAX_PLAYERS: "จำนวนผู้เล่นที่คิดเงินเกินจำนวนสูงสุดของโปร",
-  INVALID_TIME_RULE: "ข้อมูลโปรซื้อเวลาแถมเวลาหรือเรทเวลาไม่ครบถ้วน",
-  MINIMUM_MINUTES: "มีผู้เล่นที่เวลาคิดเงินยังไม่ถึงขั้นต่ำของโปร",
-  REQUIRED_PRODUCT: "ยังไม่มีสินค้าที่โปรกำหนดในรายการสั่งของกลุ่มบิลนี้",
-  NOT_STARTED: "โปรยังไม่เริ่ม ณ เวลาปิดบิล",
-  EXPIRED: "โปรหมดอายุ ณ เวลาปิดบิล",
-  WEEKDAY: "วันที่ปิดบิลไม่ใช่วันในสัปดาห์ที่โปรกำหนด",
-  TIME_WINDOW: "เวลาปิดบิลอยู่นอกช่วงเวลาของโปร",
-};
+const BOARD_GAME_OFFER_STATUS = (posText: PosTranslator = thaiPosText): Record<string, string> => ({
+  NO_ACTIVE_OFFERS: posText("ไม่มีโปรค่าเล่นที่เปิดใช้สำหรับสาขานี้ ณ ตอนปิดบิล"),
+  INELIGIBLE: posText("บิลนี้ไม่เข้าเงื่อนไขโปรค่าเล่น ณ ตอนปิดบิล"),
+  NO_SAVING: posText("เข้าเงื่อนไขโปร แต่ยังไม่มีส่วนลดจากเวลาที่คิดในบิลนี้"),
+  PASS_BETTER: posText("ใช้แพ็กเกจสมาชิก เพราะยอดถูกกว่าโปรค่าเล่น"),
+  NO_CHARGE: posText("ไม่มีค่าเวลาที่ต้องนำมาลดด้วยโปร"),
+});
+const BOARD_GAME_OFFER_REASON = (posText: PosTranslator = thaiPosText): Record<string, string> => ({
+  INACTIVE: posText("โปรไม่ได้เปิดใช้งาน"),
+  MIN_PLAYERS: posText("จำนวนผู้เล่นที่คิดเงินไม่ถึงขั้นต่ำของโปร"),
+  MAX_PLAYERS: posText("จำนวนผู้เล่นที่คิดเงินเกินจำนวนสูงสุดของโปร"),
+  INVALID_TIME_RULE: posText("ข้อมูลโปรซื้อเวลาแถมเวลาหรือเรทเวลาไม่ครบถ้วน"),
+  MINIMUM_MINUTES: posText("มีผู้เล่นที่เวลาคิดเงินยังไม่ถึงขั้นต่ำของโปร"),
+  REQUIRED_PRODUCT: posText("ยังไม่มีสินค้าที่โปรกำหนดในรายการสั่งของกลุ่มบิลนี้"),
+  NOT_STARTED: posText("โปรยังไม่เริ่ม ณ เวลาปิดบิล"),
+  EXPIRED: posText("โปรหมดอายุ ณ เวลาปิดบิล"),
+  WEEKDAY: posText("วันที่ปิดบิลไม่ใช่วันในสัปดาห์ที่โปรกำหนด"),
+  TIME_WINDOW: posText("เวลาปิดบิลอยู่นอกช่วงเวลาของโปร"),
+});
 
 function BoardGameBillBreakdown({
   checkout,
@@ -264,16 +268,17 @@ function BoardGameBillBreakdown({
   checkout: PosBoardGameCheckout;
   receipt?: boolean;
 }) {
+  const posText = usePosText();
   return (
     <div className={`${styles.boardGameBreakdown} ${receipt ? styles.boardGameBreakdownReceipt : ""}`.trim()}>
       <section className={styles.boardGameBreakdownSection}>
         <div className={styles.boardGameBreakdownHead}>
           <div>
-            <strong>ค่าเวลาเล่น · {checkout.tableName}</strong>
+            <strong>{posText("ค่าเวลาเล่น ·") + " "}{checkout.tableName}</strong>
             <span>
-              {checkout.sessionGroupCount > 1 ? `กลุ่ม ${checkout.groupNo} · ` : ""}
-              {checkout.billingMode === "FIXED_DURATION" ? "ซื้อเวลาไว้ล่วงหน้า" : "คิดตามเวลาที่เล่นจริง"}
-              {` · ${boardGameDateTime(checkout.startedAt)}–${boardGameDateTime(checkout.endedAt)}`}
+              {checkout.sessionGroupCount > 1 ? posText("กลุ่ม {v0} · ", { v0: checkout.groupNo }) : ""}
+              {checkout.billingMode === "FIXED_DURATION" ? posText("ซื้อเวลาไว้ล่วงหน้า") : posText("คิดตามเวลาที่เล่นจริง")}
+              {` · ${boardGameDateTime(checkout.startedAt, posText)}–${boardGameDateTime(checkout.endedAt, posText)}`}
             </span>
           </div>
           <strong>{money(checkout.amountDue)}</strong>
@@ -281,7 +286,7 @@ function BoardGameBillBreakdown({
         <div className={styles.boardGameBreakdownRows}>
           {checkout.chargeLines.map((line, index) => {
             const rateName = line.rateName
-              || BOARD_GAME_PARTICIPANT_LABEL[line.participantType]
+              || BOARD_GAME_PARTICIPANT_LABEL(posText)[line.participantType]
               || line.participantType;
             const hasDifferentChargedEnd = Boolean(
               line.chargedUntil && line.actualEndedAt
@@ -292,22 +297,21 @@ function BoardGameBillBreakdown({
               <div key={line.participantId} className={styles.boardGameBreakdownRow}>
                 <span className={styles.boardGamePersonIndex}>{index + 1}</span>
                 <div>
-                  <strong>{line.displayName || `ผู้เล่น ${index + 1}`}</strong>
+                  <strong>{line.displayName || posText("ผู้เล่น {v0}", { v0: index + 1 })}</strong>
                   <span>
-                    {boardGameTime(line.joinedAt)}–{boardGameTime(line.actualEndedAt)}
-                    {' · เล่นจริง '}{boardGameMinutes(line.actualMinutes)}
+                    {boardGameTime(line.joinedAt, posText)}–{boardGameTime(line.actualEndedAt, posText)}
+                    {posText(" · เล่นจริง ")}{boardGameMinutes(line.actualMinutes, posText)}
                   </span>
                   <span>
-                    {rateName} · {money(line.hourlyRate)}/ชม.
-                    {' · เวลาก่อนสิทธิ์ '}{boardGameMinutes(line.billableMinutes)}
-                    {hasDifferentChargedEnd ? ` ถึง ${boardGameTime(line.chargedUntil)}` : ""}
+                    {rateName} · {money(line.hourlyRate)}{posText("/ชม.") + " "}{posText(" · เวลาก่อนสิทธิ์ ")}{boardGameMinutes(line.billableMinutes, posText)}
+                    {hasDifferentChargedEnd ? posText(" ถึง {v0}", { v0: boardGameTime(line.chargedUntil, posText) }) : ""}
                   </span>
                   {line.offerPaidMinutes != null && line.offerFreeMinutes != null ? (
                     <span>
-                      ตามโปร: จ่าย {boardGameMinutes(line.offerPaidMinutes)} · ฟรี {boardGameMinutes(line.offerFreeMinutes)}
+                      {posText("ตามโปร: จ่าย") + " "}{boardGameMinutes(line.offerPaidMinutes, posText)} {" " + posText("· ฟรี") + " "}{boardGameMinutes(line.offerFreeMinutes, posText)}
                     </span>
                   ) : null}
-                  {benefit > 0 ? <em>สิทธิ์ช่วยลด {money(benefit)}</em> : null}
+                  {benefit > 0 ? <em>{posText("สิทธิ์ช่วยลด") + " "}{money(benefit)}</em> : null}
                 </div>
                 <strong>{money(line.amount)}</strong>
               </div>
@@ -318,23 +322,23 @@ function BoardGameBillBreakdown({
           <div className={styles.boardGameOfferEvaluation} role="status">
             {checkout.offerEvaluation ? (
               <>
-                <strong>{BOARD_GAME_OFFER_STATUS[checkout.offerEvaluation.status] || "ไม่พบคำอธิบายผลโปรค่าเล่น"}</strong>
+                <strong>{BOARD_GAME_OFFER_STATUS(posText)[checkout.offerEvaluation.status] || posText("ไม่พบคำอธิบายผลโปรค่าเล่น")}</strong>
                 {checkout.offerEvaluation.checks.length > 0 ? (
                   <details>
-                    <summary>เหตุผลที่โปรไม่เข้า</summary>
+                    <summary>{posText("เหตุผลที่โปรไม่เข้า")}</summary>
                     <ul>
                       {checkout.offerEvaluation.checks.map((check) => (
                         <li key={check.offerCode}>
-                          {check.offerName} ({check.offerCode}): {BOARD_GAME_OFFER_REASON[check.reason] || "ข้อมูลเงื่อนไขไม่ครบถ้วน"}
+                          {check.offerName} ({check.offerCode}): {BOARD_GAME_OFFER_REASON(posText)[check.reason] || posText("ข้อมูลเงื่อนไขไม่ครบถ้วน")}
                         </li>
                       ))}
                     </ul>
-                    {checkout.offerEvaluation.omittedCount > 0 ? <span>ยังมีอีก {checkout.offerEvaluation.omittedCount} โปรที่ไม่เข้าเงื่อนไข</span> : null}
+                    {checkout.offerEvaluation.omittedCount > 0 ? <span>{posText("ยังมีอีก") + " "}{checkout.offerEvaluation.omittedCount} {" " + posText("โปรที่ไม่เข้าเงื่อนไข")}</span> : null}
                   </details>
                 ) : null}
               </>
             ) : checkout.offerDiscountAmount <= 0 ? (
-              <span>บิลนี้ไม่ได้บันทึกเหตุผลการเลือกโปรไว้ จึงตรวจย้อนหลังจากการตั้งค่าปัจจุบันไม่ได้</span>
+              <span>{posText("บิลนี้ไม่ได้บันทึกเหตุผลการเลือกโปรไว้ จึงตรวจย้อนหลังจากการตั้งค่าปัจจุบันไม่ได้")}</span>
             ) : null}
           </div>
         ) : null}
@@ -344,11 +348,10 @@ function BoardGameBillBreakdown({
         <section className={styles.boardGameBreakdownSection}>
           <div className={styles.boardGameBreakdownHead}>
             <div>
-              <strong>อาหารและเครื่องดื่ม</strong>
+              <strong>{posText("อาหารและเครื่องดื่ม")}</strong>
               <span>
-                {checkout.tabItems.length} บรรทัดในบิล
-                {checkout.tabItemCount !== checkout.tabItems.length
-                  ? ` · รวมจาก ${checkout.tabItemCount} รายการที่สั่ง` : ""}
+                {checkout.tabItems.length} {" " + posText("บรรทัดในบิล") + " "}{checkout.tabItemCount !== checkout.tabItems.length
+                  ? posText(" · รวมจาก {v0} รายการที่สั่ง", { v0: checkout.tabItemCount }) : ""}
               </span>
             </div>
             <strong>{money(checkout.tabAmount)}</strong>
@@ -360,7 +363,7 @@ function BoardGameBillBreakdown({
                   <strong>{item.productName}</strong>
                   <span>
                     {item.size ? `${item.size} · ` : ""}
-                    {item.quantity} {item.unitName || "ชิ้น"} × {money(item.unitPrice)}
+                    {item.quantity} {item.unitName || posText("ชิ้น")} × {money(item.unitPrice)}
                   </span>
                 </div>
                 <strong>{money(item.amount)}</strong>
@@ -369,8 +372,8 @@ function BoardGameBillBreakdown({
             {checkout.tabPricingDiscountAmount > 0 ? (
               <div className={`${styles.boardGameProductRow} ${styles.boardGameDiscountRow}`.trim()}>
                 <div>
-                  <strong>ส่วนลดสินค้า</strong>
-                  <span>ราคาส่ง / โปรโมชันที่ระบบคำนวณให้</span>
+                  <strong>{posText("ส่วนลดสินค้า")}</strong>
+                  <span>{posText("ราคาส่ง / โปรโมชันที่ระบบคำนวณให้")}</span>
                 </div>
                 <strong>−{money(checkout.tabPricingDiscountAmount)}</strong>
               </div>
@@ -382,31 +385,31 @@ function BoardGameBillBreakdown({
   );
 }
 
-function serviceCallLabel(call: PosServiceCallNotice): string {
+function serviceCallLabel(call: PosServiceCallNotice, posText: PosTranslator = thaiPosText): string {
   const labels: Record<string, string> = {
-    WATER: "ขอน้ำ",
-    CUTLERY: "ขอช้อนส้อม",
-    BILL: "เรียกเก็บเงิน",
-    MENU_HELP: "ขอความช่วยเหลือเรื่องเมนู",
-    GAME_HELP: "ช่วยสอนหรืออธิบายเกม",
-    GAME_ISSUE: "ชิ้นส่วนขาด / เกมชำรุด",
-    FOOD_DRINK: "อาหารหรือเครื่องดื่ม",
-    EXTEND_TIME: "ขอต่อเวลา",
-    CLEANUP: "น้ำหก / ขอทำความสะอาด",
-    OTHER: "ขอความช่วยเหลืออื่น ๆ",
+    WATER: posText("ขอน้ำ"),
+    CUTLERY: posText("ขอช้อนส้อม"),
+    BILL: posText("เรียกเก็บเงิน"),
+    MENU_HELP: posText("ขอความช่วยเหลือเรื่องเมนู"),
+    GAME_HELP: posText("ช่วยสอนหรืออธิบายเกม"),
+    GAME_ISSUE: posText("ชิ้นส่วนขาด / เกมชำรุด"),
+    FOOD_DRINK: posText("อาหารหรือเครื่องดื่ม"),
+    EXTEND_TIME: posText("ขอต่อเวลา"),
+    CLEANUP: posText("น้ำหก / ขอทำความสะอาด"),
+    OTHER: posText("ขอความช่วยเหลืออื่น ๆ"),
   };
   const label = labels[call.requestCode];
   if (label && call.requestNote) return `${label} · ${call.requestNote}`;
-  return label ?? call.requestNote ?? "เรียกพนักงาน";
+  return label ?? call.requestNote ?? posText("เรียกพนักงาน");
 }
 
-function serviceCallAge(createdAt: string): string {
+function serviceCallAge(createdAt: string, posText: PosTranslator = thaiPosText): string {
   const minutes = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 60_000));
-  return minutes < 1 ? "เมื่อสักครู่" : `${minutes} นาทีที่แล้ว`;
+  return minutes < 1 ? posText("เมื่อสักครู่") : posText("{v0} นาทีที่แล้ว", { v0: minutes });
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : "เกิดข้อผิดพลาด กรุณาลองใหม่";
+function messageOf(error: unknown, posText: PosTranslator = thaiPosText): string {
+  return error instanceof Error ? error.message : posText("เกิดข้อผิดพลาด กรุณาลองใหม่");
 }
 
 function cartVariantBaseQty(lines: readonly CartLine[], target: Pick<CartLine, "sku" | "size">): number {
@@ -414,7 +417,7 @@ function cartVariantBaseQty(lines: readonly CartLine[], target: Pick<CartLine, "
     ? sum + line.qty * line.baseQty : sum, 0);
 }
 
-function resolvedCartLine(hit: PosScanHit): CartLine {
+function resolvedCartLine(hit: PosScanHit, posText: PosTranslator = thaiPosText): CartLine {
   const size = String(hit.size ?? "");
   const packCode = String(hit.packCode ?? "BASE") || "BASE";
   const baseQty = Math.max(1, Number(hit.baseQty) || 1);
@@ -435,7 +438,7 @@ function resolvedCartLine(hit: PosScanHit): CartLine {
     modifierUnitPrice: 0,
     scaleBarcode: hit.scaleBarcode,
     unitPrice: packBasePrice,
-    unitName: hit.unitName || "ชิ้น",
+    unitName: hit.unitName || posText("ชิ้น"),
     priceTiers: normalizePriceTiers(hit.priceTiers),
     promotion: normalizePromotion(hit.promotion),
     modifierCodes: [],
@@ -449,6 +452,7 @@ function resolvedCartLine(hit: PosScanHit): CartLine {
 }
 
 function NavIcon({ name }: { name: string }) {
+
   const icons: Record<string, string> = {
     sell: "▥",
     restaurant: "◷",
@@ -463,6 +467,7 @@ function NavIcon({ name }: { name: string }) {
 }
 
 export default function DesktopPosRenderer() {
+
   // This register has a light-only palette. Keep Ant controls and body-portalled
   // selects on that palette without changing the user's admin/restaurant theme.
   return <ConfigProvider theme={{ algorithm: antdTheme.defaultAlgorithm }}
@@ -473,6 +478,7 @@ export default function DesktopPosRenderer() {
 }
 
 function DesktopPosContent() {
+  const posText = usePosText();
   const { t } = useI18n();
   const receiptPrinter = useReceiptPrinter();
   const router = useRouter();
@@ -529,6 +535,8 @@ function DesktopPosContent() {
   const [busy, setBusy] = useState(false);
   const [addingProductKey, setAddingProductKey] = useState("");
   const [notice, setNotice] = useState("");
+  const noticeText = notice === ADVANCED_ITEM_NOTICE
+    ? posText("สินค้านี้ต้องกรอก serial / น้ำหนัก / ตัวเลือกเพิ่มเติม จึงต้องขายในหน้าขายแบบเต็มเพื่อไม่ข้ามการตรวจสอบ") : notice;
   const [error, setError] = useState("");
   const [connection, setConnection] = useState<"checking" | "online" | "offline">("checking");
   const { status: realtimeStatus } = useRealtimeStatus();
@@ -623,7 +631,7 @@ function DesktopPosContent() {
       router.replace("/pos/restaurant");
     }).catch((cause) => {
       if (active) {
-        setError(messageOf(cause));
+        setError(messageOf(cause, posText));
         setLoginPhase("idle");
       }
     });
@@ -757,7 +765,7 @@ function DesktopPosContent() {
           if (version !== catalogRequestVersion.current) return;
           const status = posErrorConnectionStatus(cause);
           if (status) setConnection(status);
-          const text = messageOf(cause);
+          const text = messageOf(cause, posText);
           catalogLoadErrorRef.current = text;
           setCatalogError(text);
         })
@@ -773,7 +781,7 @@ function DesktopPosContent() {
       catalogRequestRef.current = { token: requestToken, query: normalizedQuery, promise };
       return promise;
     },
-    [],
+    [posText],
   );
 
   const bootstrapDevice = useCallback(async () => {
@@ -831,9 +839,9 @@ function DesktopPosContent() {
     } catch (cause) {
       const status = posErrorConnectionStatus(cause);
       if (status) setConnection(status);
-      setError(messageOf(cause));
+      setError(messageOf(cause, posText));
     }
-  }, [loadCatalog, router]);
+  }, [posText, loadCatalog, router]);
 
   useEffect(() => {
     void bootstrapDevice();
@@ -926,7 +934,7 @@ function DesktopPosContent() {
       sendFlow("CASHIER_VERIFIED");
     } catch (cause) {
       if (!verificationCompleted) setPin("");
-      setError(messageOf(cause));
+      setError(messageOf(cause, posText));
     } finally {
       if (!keepPreparingUntilNavigation) {
         setLoginPhase("idle");
@@ -955,12 +963,12 @@ function DesktopPosContent() {
         },
       });
       if (data.bmsPosShift.status !== "OPENED" || !data.bmsPosShift.shift) {
-        throw new Error(data.bmsPosShift.reason ?? "เปิดกะไม่สำเร็จ");
+        throw new Error(data.bmsPosShift.reason ?? posText("เปิดกะไม่สำเร็จ"));
       }
       setBootstrap((current) => (current ? { ...current, shift: data.bmsPosShift.shift } : current));
       sendFlow("SHIFT_OPENED");
     } catch (cause) {
-      setError(messageOf(cause));
+      setError(messageOf(cause, posText));
     } finally {
       setBusy(false);
     }
@@ -968,9 +976,9 @@ function DesktopPosContent() {
 
   const paymentNavigationBlocked = useCallback(() => {
     if (!saleSubmittingRef.current && !saleAttemptRef.current && !receiptPrintingRef.current) return false;
-    setError("กำลังรับชำระหรือพิมพ์ใบเสร็จ กรุณาทำรายการเดิมให้ทราบผลก่อนเปลี่ยนหน้าหรือพนักงาน");
+    setError(posText("กำลังรับชำระหรือพิมพ์ใบเสร็จ กรุณาทำรายการเดิมให้ทราบผลก่อนเปลี่ยนหน้าหรือพนักงาน"));
     return true;
-  }, []);
+  }, [posText]);
 
   const legacy = (tab: string) => {
     if (paymentNavigationBlocked()) return;
@@ -1012,7 +1020,7 @@ function DesktopPosContent() {
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error(typeof data.error === "string" ? data.error : "โหลดคำเรียกไม่สำเร็จ");
+          throw new Error(typeof data.error === "string" ? data.error : posText("โหลดคำเรียกไม่สำเร็จ"));
         }
         const rows = Array.isArray(data.calls) ? data.calls : [];
         setServiceCalls(rows.map((call: PosServiceCallNotice) => ({
@@ -1031,7 +1039,7 @@ function DesktopPosContent() {
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error(typeof data.error === "string" ? data.error : "โหลดคำเรียกไม่สำเร็จ");
+          throw new Error(typeof data.error === "string" ? data.error : posText("โหลดคำเรียกไม่สำเร็จ"));
         }
         const rows = Array.isArray(data.serviceCalls) ? data.serviceCalls : [];
         setServiceCalls(rows.map((call: PosServiceCallNotice) => ({
@@ -1045,7 +1053,7 @@ function DesktopPosContent() {
         console.error("[desktop-pos] service-call refresh failed", cause);
       }
     }
-  }, [bootstrap?.businessArchetype, cashier, pin, token]);
+  }, [posText, bootstrap?.businessArchetype, cashier, pin, token]);
 
   const refreshDesktopContent = useCallback(async () => {
     const currentToken = tokenRef.current;
@@ -1053,7 +1061,7 @@ function DesktopPosContent() {
     // A refresh must never race a money/stock write or turn an unknown payment result into a new
     // attempt. Keep the current screen intact and tell the operator why the shortcut was deferred.
     if (busy || saleSubmittingRef.current || saleAttemptRef.current) {
-      setNotice("กำลังบันทึกรายการอยู่ — ระบบจะไม่รีเฟรชจนกว่างานนี้จะทราบผล");
+      setNotice(posText("กำลังบันทึกรายการอยู่ — ระบบจะไม่รีเฟรชจนกว่างานนี้จะทราบผล"));
       return;
     }
     contentRefreshingRef.current = true;
@@ -1078,12 +1086,12 @@ function DesktopPosContent() {
     } catch (cause) {
       const status = posErrorConnectionStatus(cause);
       if (status) setConnection(status);
-      setError(`รีเฟรชข้อมูลไม่สำเร็จ: ${messageOf(cause)}`);
+      setError(posText("รีเฟรชข้อมูลไม่สำเร็จ: {v0}", { v0: messageOf(cause, posText) }));
     } finally {
       contentRefreshingRef.current = false;
       setContentRefreshing(false);
     }
-  }, [busy, cashier, loadCatalog, pin, query, refreshDesktopServiceCalls]);
+  }, [posText, busy, cashier, loadCatalog, pin, query, refreshDesktopServiceCalls]);
 
   useEffect(() => {
     if (typeof window.bmsDesktop?.onRefreshRequested !== "function") return;
@@ -1167,7 +1175,7 @@ function DesktopPosContent() {
       if (!response.ok) {
         throw new Error(typeof data.error === "string"
           ? data.error
-          : completing ? "ปิดงานไม่สำเร็จ" : "รับคำเรียกไม่สำเร็จ");
+          : completing ? posText("ปิดงานไม่สำเร็จ") : posText("รับคำเรียกไม่สำเร็จ"));
       }
       setServiceCalls((current) => completing
         ? current.filter((item) => !(item.id === call.id && item.source === call.source))
@@ -1175,14 +1183,14 @@ function DesktopPosContent() {
           ? { ...item, status: "ACKNOWLEDGED" }
           : item));
       setNotice(completing
-        ? `ปิดงานของ ${call.tableName || call.tableCode} แล้ว`
-        : `รับเรื่องจาก ${call.tableName || call.tableCode} แล้ว · กด “เสร็จสิ้น” หลังดูแลโต๊ะ`);
+        ? posText("ปิดงานของ {v0} แล้ว", { v0: call.tableName || call.tableCode })
+        : posText("รับเรื่องจาก {v0} แล้ว · กด “เสร็จสิ้น” หลังดูแลโต๊ะ", { v0: call.tableName || call.tableCode }));
     } catch (cause) {
-      setError(messageOf(cause));
+      setError(messageOf(cause, posText));
     } finally {
       setServiceCallsBusy("");
     }
-  }, [cashier, pin, serviceCallsBusy, token]);
+  }, [posText, cashier, pin, serviceCallsBusy, token]);
 
   const openServiceCall = useCallback((call: PosServiceCallNotice) => {
     if (call.source === "restaurant") {
@@ -1201,9 +1209,9 @@ function DesktopPosContent() {
   const openAdminBackoffice = useCallback(async () => {
     if (accountMenuRef.current) accountMenuRef.current.open = false;
     if (!await openDesktopAdmin()) {
-      setError("เปิดระบบหลังบ้านไม่สำเร็จ กรุณาลองใหม่จากเมนู BMS POS");
+      setError(posText("เปิดระบบหลังบ้านไม่สำเร็จ กรุณาลองใหม่จากเมนู BMS POS"));
     }
-  }, []);
+  }, [posText]);
 
   const unpair = useCallback(async () => {
     if (paymentNavigationBlocked()) return;
@@ -1231,10 +1239,10 @@ function DesktopPosContent() {
         sendFlow("UNPAIR");
       });
     } catch (error: any) {
-      setError(error?.message || "เลิกจับคู่เครื่องไม่สำเร็จ กรุณาลองใหม่");
+      setError(error?.message || posText("เลิกจับคู่เครื่องไม่สำเร็จ กรุณาลองใหม่"));
       return;
     }
-  }, [clearOperator, clearPreparedWorkspaces, clearScannedProduct, paymentNavigationBlocked, sendFlow]);
+  }, [posText, clearOperator, clearPreparedWorkspaces, clearScannedProduct, paymentNavigationBlocked, sendFlow]);
 
   const followWorkspaceShift = useCallback((open: boolean) => {
     if (open) return;
@@ -1268,7 +1276,7 @@ function DesktopPosContent() {
   const openBoardGameCheckout = useCallback(async (billingGroupId: string) => {
     if (!cashier || !pin || busy) return;
     if (saleAttemptRef.current) {
-      setError("มีรายการรับชำระที่ยังไม่ทราบผล กรุณาลองบันทึกรายการเดิมให้จบก่อน");
+      setError(posText("มีรายการรับชำระที่ยังไม่ทราบผล กรุณาลองบันทึกรายการเดิมให้จบก่อน"));
       setActiveModule("mobile_sell");
       return;
     }
@@ -1284,7 +1292,7 @@ function DesktopPosContent() {
       });
       setConnection("online");
       if (!data.bmsPosBoardGameCheckout) {
-        throw new Error("ไม่พบบิลกลุ่มนี้ หรือบิลถูกชำระจากเครื่องอื่นแล้ว");
+        throw new Error(posText("ไม่พบบิลกลุ่มนี้ หรือบิลถูกชำระจากเครื่องอื่นแล้ว"));
       }
       const checkout = data.bmsPosBoardGameCheckout;
       const checkoutCashMode = isCashRounding(bootstrap?.vat.cashRounding)
@@ -1310,7 +1318,7 @@ function DesktopPosContent() {
       setActiveModule("mobile_sell");
       sendFlow("START_CHECKOUT");
     } catch (cause) {
-      setError(messageOf(cause));
+      setError(messageOf(cause, posText));
       setActiveModule("mobile_sell");
       sendFlow("BACK_TO_CATALOG");
       const status = posErrorConnectionStatus(cause);
@@ -1318,7 +1326,7 @@ function DesktopPosContent() {
     } finally {
       setBusy(false);
     }
-  }, [bootstrap?.vat.cashRounding, busy, cashier, pin, sendFlow, token]);
+  }, [posText, bootstrap?.vat.cashRounding, busy, cashier, pin, sendFlow, token]);
 
   const addProduct = async (code: string, size?: string | null, fromScan = false) => {
     const clean = code.trim();
@@ -1340,9 +1348,9 @@ function DesktopPosContent() {
       );
       if (requestVersion !== scanResultVersion.current || tokenRef.current !== token) return;
       const hit = data.bmsPosScan;
-      if (!hit) throw new Error("ไม่พบสินค้านี้");
+      if (!hit) throw new Error(posText("ไม่พบสินค้านี้"));
       if ((size && hit.size.toLowerCase() !== size.trim().toLowerCase()) || (expectedSku && hit.sku !== expectedSku)) {
-        throw new Error("สินค้าหรือไซส์ที่ระบบตอบกลับไม่ตรงกับที่เลือก กรุณาสแกนใหม่");
+        throw new Error(posText("สินค้าหรือไซส์ที่ระบบตอบกลับไม่ตรงกับที่เลือก กรุณาสแกนใหม่"));
       }
       const showResult = !fromScan || scanDraftRevision.current === submittedRevision;
       if (showResult) setScannedProduct({ kind: "product", product: hit, added: false });
@@ -1350,17 +1358,17 @@ function DesktopPosContent() {
         setNotice(ADVANCED_ITEM_NOTICE);
         return;
       }
-      const incoming = resolvedCartLine(hit);
+      const incoming = resolvedCartLine(hit, posText);
       // A bundle or a RECIPE/NON_STOCK menu keeps its own inventory row at 0 by design; the
       // server reserves its components/ingredients at commit. Only a tracked row is a ceiling.
       if (incoming.stockTracked && incoming.available <= 0) {
-        throw new Error("สินค้านี้ไม่มีสต็อกพร้อมขาย");
+        throw new Error(posText("สินค้านี้ไม่มีสต็อกพร้อมขาย"));
       }
       if (
         incoming.stockTracked
         && cartVariantBaseQty(cart, incoming) + incoming.baseQty > incoming.available
       ) {
-        throw new Error(`เพิ่มไม่ได้ สาขานี้เหลือ ${incoming.available} หน่วยฐาน`);
+        throw new Error(posText("เพิ่มไม่ได้ สาขานี้เหลือ {v0} หน่วยฐาน", { v0: incoming.available }));
       }
       setCart((current) => {
         // ราคาส่งและโปรโมชันบางแบบนับรวมทุกไซซ์ของ SKU เดียวกัน กฎจาก scan ล่าสุด
@@ -1397,7 +1405,7 @@ function DesktopPosContent() {
         if (fromScan) setScanCode("");
         return;
       }
-      setError(messageOf(cause));
+      setError(messageOf(cause, posText));
     } finally {
       addProductPendingRef.current = false;
       setAddingProductKey("");
@@ -1414,7 +1422,7 @@ function DesktopPosContent() {
       && cartVariantBaseQty(cart, target) + delta * target.baseQty > target.available
     ) {
       // The server would refuse this at payment with OUT_OF_STOCK; say it while the line is in hand.
-      setError(`เพิ่มไม่ได้ สาขานี้เหลือ ${target.available} หน่วยฐาน`);
+      setError(posText("เพิ่มไม่ได้ สาขานี้เหลือ {v0} หน่วยฐาน", { v0: target.available }));
       return;
     }
     setCart((current) =>
@@ -1452,13 +1460,13 @@ function DesktopPosContent() {
     // an unknown result remains protected by saleAttemptRef until resolved.
   }, [paymentCount, total, busy]);
 
-  const validation = useMemo(() => validatePayments(total, payments), [payments, total]);
+  const validation = useMemo(() => validatePayments(total, payments, posText), [payments, total, posText]);
   const zeroDueBoardGameBill = Boolean(boardGameCheckout && total === 0);
   const canConfirmPayment = Boolean(saleAttemptRef.current) || (benefits.ready && (validation.canConfirm || zeroDueBoardGameBill));
   const itemCount = boardGameCheckout ? 0 : cart.reduce((sum, line) => sum + line.qty, 0);
   const billCountLabel = boardGameCheckout
-    ? "ค่าบริการ 1 รายการ"
-    : `${itemCount} ชิ้น`;
+    ? posText("ค่าบริการ 1 รายการ")
+    : posText("{v0} ชิ้น", { v0: itemCount });
   const boardGameBenefitAmount = boardGameCheckout
     ? Math.max(0, boardGameCheckout.passCoveredAmount) + Math.max(0, boardGameCheckout.offerDiscountAmount)
     : 0;
@@ -1487,8 +1495,8 @@ function DesktopPosContent() {
     const boardGameDisplayLines = boardGameCheckout
       ? [
           ...boardGameCheckout.chargeLines.map((line, index) => ({
-            name: `ค่าเล่น · ${line.displayName || `ผู้เล่น ${index + 1}`}`,
-            size: `${boardGameMinutes(line.billableMinutes)} · ${line.rateName || BOARD_GAME_PARTICIPANT_LABEL[line.participantType] || line.participantType}`,
+            name: posText("ค่าเล่น · {v0}", { v0: line.displayName || posText("ผู้เล่น {v0}", { v0: index + 1 }) }),
+            size: `${boardGameMinutes(line.billableMinutes, posText)} · ${line.rateName || BOARD_GAME_PARTICIPANT_LABEL(posText)[line.participantType] || line.participantType}`,
             qty: 1,
             unitName: "",
             amount: Number(line.grossAmount ?? line.amount),
@@ -1497,7 +1505,7 @@ function DesktopPosContent() {
             name: item.productName,
             size: item.size || null,
             qty: item.quantity,
-            unitName: item.unitName || "ชิ้น",
+            unitName: item.unitName || posText("ชิ้น"),
             amount: item.amount,
           })),
         ]
@@ -1627,13 +1635,13 @@ function DesktopPosContent() {
         POS_SCAN_QUERY,
         { code: line.sku, size: line.size || null, packCode: line.packCode || null, surface: "RETAIL_POS" },
       );
-      if (!data.bmsPosScan) throw new Error(`ไม่พบ ${line.name} ในแคตตาล็อกล่าสุด`);
-      const next = { ...resolvedCartLine(data.bmsPosScan), qty: line.qty };
+      if (!data.bmsPosScan) throw new Error(posText("ไม่พบ {v0} ในแคตตาล็อกล่าสุด", { v0: line.name }));
+      const next = { ...resolvedCartLine(data.bmsPosScan, posText), qty: line.qty };
       refreshed.push(next);
     }
     setCart(refreshed);
     if (refreshed.some((line, index) => cartLinePricingSignature(line) !== cartLinePricingSignature(cart[index]))) {
-      setNotice("ราคา ขั้นราคาส่ง หรือโปรโมชันเปลี่ยนแล้ว กรุณาตรวจยอดและรับเงินใหม่");
+      setNotice(posText("ราคา ขั้นราคาส่ง หรือโปรโมชันเปลี่ยนแล้ว กรุณาตรวจยอดและรับเงินใหม่"));
       return false;
     }
     return true;
@@ -1741,7 +1749,7 @@ function DesktopPosContent() {
       }
     } catch (cause) {
       releasePrint();
-      setError(cause instanceof Error ? cause.message : "พิมพ์ใบเสร็จไม่สำเร็จ");
+      setError(cause instanceof Error ? cause.message : posText("พิมพ์ใบเสร็จไม่สำเร็จ"));
       return;
     }
     document.body.setAttribute("data-pos-print-target", "receipt");
@@ -1765,7 +1773,7 @@ function DesktopPosContent() {
         if (!cleaned) fallbackTimer = window.setTimeout(cleanup, 1_000);
       } catch (cause) {
         cleanup();
-        setError(cause instanceof Error ? cause.message : "เปิดหน้าพิมพ์ไม่สำเร็จ");
+        setError(cause instanceof Error ? cause.message : posText("เปิดหน้าพิมพ์ไม่สำเร็จ"));
       }
     };
     window.requestAnimationFrame(fire);
@@ -1793,11 +1801,11 @@ function DesktopPosContent() {
         saleAttemptRef.current.payload,
       );
       setConnection("online");
-      if (!data.bmsPosSale?.status) throw new PosSaleResultError("ผลรับชำระไม่ครบถ้วน", data.bmsPosSale);
+      if (!data.bmsPosSale?.status) throw new PosSaleResultError(posText("ผลรับชำระไม่ครบถ้วน"), data.bmsPosSale);
       if (data.bmsPosSale.status !== "SOLD") {
-        throw new PosSaleResultError(data.bmsPosSale.reason ?? `ขายไม่สำเร็จ (${data.bmsPosSale.status})`, data.bmsPosSale);
+        throw new PosSaleResultError(data.bmsPosSale.reason ?? posText("ขายไม่สำเร็จ ({v0})", { v0: data.bmsPosSale.status }), data.bmsPosSale);
       }
-      if (!data.bmsPosSale.orderId) throw new PosSaleResultError("ผลรับชำระไม่ครบถ้วน", data.bmsPosSale);
+      if (!data.bmsPosSale.orderId) throw new PosSaleResultError(posText("ผลรับชำระไม่ครบถ้วน"), data.bmsPosSale);
       setReceipt({ ...data.bmsPosSale, completedAt: Date.now(), displayMember: saleAttemptRef.current.displayMember });
       saleAttemptRef.current = null;
       sendFlow("SALE_COMPLETED");
@@ -1812,8 +1820,8 @@ function DesktopPosContent() {
       if (!retrying && decided && !(cause instanceof PosSaleResultError && cause.retainAttempt)) saleAttemptRef.current = null;
       setError(
         decided
-          ? `${messageOf(cause)}${saleAttemptRef.current ? " · แก้ไขสาเหตุแล้วลองบันทึกบิลเดิมอีกครั้ง" : ""}`
-          : `${messageOf(cause)} · ยังไม่ทราบผล กรุณากดลองซ้ำ ระบบจะใช้รหัสรายการเดิม`,
+          ? `${messageOf(cause, posText)}${saleAttemptRef.current ? posText(" · แก้ไขสาเหตุแล้วลองบันทึกบิลเดิมอีกครั้ง") : ""}`
+          : posText("{v0} · ยังไม่ทราบผล กรุณากดลองซ้ำ ระบบจะใช้รหัสรายการเดิม", { v0: messageOf(cause, posText) }),
       );
       const status = posErrorConnectionStatus(cause);
       if (status) setConnection(status);
@@ -1844,14 +1852,14 @@ function DesktopPosContent() {
     return (
       <main className={`${styles.centerPage} ${styles.lightTheme}`}>
         <section className={styles.gateCard}>
+          <PosLanguageSelector />
           <div className={styles.brandMark}>B</div>
           <p className={styles.eyebrow}>BMS POS DESKTOP</p>
-          <h1>ยังไม่ได้เลือกเซิร์ฟเวอร์</h1>
+          <h1>{posText("ยังไม่ได้เลือกเซิร์ฟเวอร์")}</h1>
           {error ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert> : null}
-          <p>กลับไปหน้าตั้งค่า Electron เพื่อเลือกเซิร์ฟเวอร์และจับคู่เครื่องนี้ก่อน</p>
+          <p>{posText("กลับไปหน้าตั้งค่า Electron เพื่อเลือกเซิร์ฟเวอร์และจับคู่เครื่องนี้ก่อน")}</p>
           <button className={styles.primaryButton} onClick={() => void unpair()}>
-            เปิดหน้าจับคู่เครื่อง
-          </button>
+            {posText("เปิดหน้าจับคู่เครื่อง") + " "}</button>
         </section>
       </main>
     );
@@ -1861,15 +1869,16 @@ function DesktopPosContent() {
     return (
       <main className={`${styles.centerPage} ${styles.lightTheme}`}>
         <section className={styles.gateCard}>
+          <PosLanguageSelector />
           {!error && <div className={styles.spinner} />}
-          <h1>{error ? "โหลดข้อมูลเครื่องขายไม่สำเร็จ" : "กำลังโหลดแอปใหม่ทั้งหมด…"}</h1>
+          <h1>{error ? posText("โหลดข้อมูลเครื่องขายไม่สำเร็จ") : posText("กำลังโหลดแอปใหม่ทั้งหมด…")}</h1>
           {error
             ? <PosDismissibleAlert key={error} className={styles.errorBox}>{error}</PosDismissibleAlert>
-            : <p>กำลังเชื่อมต่อเครื่องขายและตรวจสอบข้อมูลล่าสุด กรุณารอสักครู่</p>}
+            : <p>{posText("กำลังเชื่อมต่อเครื่องขายและตรวจสอบข้อมูลล่าสุด กรุณารอสักครู่")}</p>}
           {error ? (
             <div className={styles.gateActions}>
-              <button className={styles.primaryButton} onClick={() => void bootstrapDevice()}>ลองอีกครั้ง</button>
-              <button onClick={() => void unpair()}>เปลี่ยนเซิร์ฟเวอร์</button>
+              <button className={styles.primaryButton} onClick={() => void bootstrapDevice()}>{posText("ลองอีกครั้ง")}</button>
+              <button onClick={() => void unpair()}>{posText("เปลี่ยนเซิร์ฟเวอร์")}</button>
             </div>
           ) : null}
         </section>
@@ -1883,18 +1892,18 @@ function DesktopPosContent() {
         <section className={styles.loginAside}>
           <div className={styles.logoLockup}><span>B</span><strong>BMS POS</strong></div>
           <div>
-            <p className={styles.eyebrow}>เครื่องขายพร้อมใช้งาน</p>
-            <h1>{bootstrap.location?.name ?? "สาขาหลัก"}</h1>
+            <p className={styles.eyebrow}>{posText("เครื่องขายพร้อมใช้งาน")}</p>
+            <h1>{bootstrap.location?.name ?? posText("สาขาหลัก")}</h1>
             <p>{bootstrap.device.name ?? bootstrap.device.code} · {bootstrap.device.registeredPosNo ?? "POS"}</p>
           </div>
-          <div className={styles.securityNote}>PIN อยู่เฉพาะในหน่วยความจำของหน้าจอนี้ และทุกการขายยังตรวจสิทธิ์กับเซิร์ฟเวอร์</div>
+          <div className={styles.securityNote}>{posText("PIN อยู่เฉพาะในหน่วยความจำของหน้าจอนี้ และทุกการขายยังตรวจสิทธิ์กับเซิร์ฟเวอร์")}</div>
         </section>
         <section className={styles.loginPanel}>
           <form className={styles.loginForm} onSubmit={signIn}>
-            <p className={styles.eyebrow}>เข้าสู่กะทำงาน</p>
-            <h2>ใส่ PIN พนักงาน</h2>
-            <label>พนักงาน
-              <select disabled={busy} value={cashierId} onChange={(event) => {
+            <PosLanguageSelector />
+            <p className={styles.eyebrow}>{posText("เข้าสู่กะทำงาน")}</p>
+            <h2>{posText("ใส่ PIN พนักงาน")}</h2>
+            <label>{posText("พนักงาน") + " "}<select disabled={busy} value={cashierId} onChange={(event) => {
                 setCashierId(event.target.value);
                 setVerifiedLogin(null);
                 clearOperator();
@@ -1906,8 +1915,7 @@ function DesktopPosContent() {
                 ))}
               </select>
             </label>
-            <label className={styles.pinLabel}>PIN 4–8 หลัก
-              <span className={styles.pinEntry}>
+            <label className={styles.pinLabel}>{posText("PIN 4–8 หลัก") + " "}<span className={styles.pinEntry}>
                 <input
                   className={styles.pinInput}
                   type="password"
@@ -1927,7 +1935,7 @@ function DesktopPosContent() {
                     setPin(nextPin);
                     setError("");
                   }}
-                  aria-label="PIN พนักงาน 4–8 หลัก"
+                  aria-label={posText("PIN พนักงาน 4–8 หลัก")}
                 />
                 <span className={styles.pinDots} aria-hidden="true">
                   {Array.from({ length: visiblePosPinSlots(pin) }, (_, index) => (
@@ -1939,14 +1947,14 @@ function DesktopPosContent() {
             {error ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert> : null}
             <button className={styles.primaryButton} disabled={!cashierId || !isPosPinValid(pin) || busy}>
               {loginPhase === "verifying"
-                ? "กำลังตรวจสอบ PIN…"
+                ? posText("กำลังตรวจสอบ PIN…")
                 : loginPhase === "preparing"
-                  ? "กำลังเตรียมหน้าร้าน…"
+                  ? posText("กำลังเตรียมหน้าร้าน…")
                   : verifiedLogin && error
-                    ? "ลองเตรียมหน้าร้านอีกครั้ง"
-                    : "เข้าสู่ระบบ"}
+                    ? posText("ลองเตรียมหน้าร้านอีกครั้ง")
+                    : posText("เข้าสู่ระบบ")}
             </button>
-            <button type="button" className={styles.textButton} onClick={() => void unpair()}>เปลี่ยนเซิร์ฟเวอร์ / จับคู่ใหม่</button>
+            <button type="button" className={styles.textButton} onClick={() => void unpair()}>{posText("เปลี่ยนเซิร์ฟเวอร์ / จับคู่ใหม่")}</button>
           </form>
         </section>
       </main>
@@ -1957,23 +1965,23 @@ function DesktopPosContent() {
     return (
       <main className={`${styles.centerPage} ${styles.lightTheme}`}>
         <form className={styles.shiftCard} onSubmit={openShift}>
+          <PosLanguageSelector />
           <div className={styles.stepBadge}>2</div>
-          <p className={styles.eyebrow}>ก่อนเริ่มขาย</p>
-          <h1>เปิดกะเงินสด</h1>
-          <p>สวัสดี {cashier?.name || cashier?.email} · ระบุเงินทอนตั้งต้นในลิ้นชัก</p>
-          <label>เงินสดตั้งต้น
-            <div className={styles.moneyInput}><span>฿</span><input inputMode="decimal" value={openingFloat} onChange={(event) => setOpeningFloat(event.target.value)} /></div>
+          <p className={styles.eyebrow}>{posText("ก่อนเริ่มขาย")}</p>
+          <h1>{posText("เปิดกะเงินสด")}</h1>
+          <p>{posText("สวัสดี") + " "}{cashier?.name || cashier?.email} {" " + posText("· ระบุเงินทอนตั้งต้นในลิ้นชัก")}</p>
+          <label>{posText("เงินสดตั้งต้น") + " "}<div className={styles.moneyInput}><span>฿</span><input inputMode="decimal" value={openingFloat} onChange={(event) => setOpeningFloat(event.target.value)} /></div>
           </label>
           {error ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert> : null}
-          <button className={styles.primaryButton} disabled={busy}>{busy ? "กำลังเปิดกะ…" : "เปิดกะและเริ่มขาย"}</button>
-          <button type="button" className={styles.textButton} onClick={signOutCashier}>เปลี่ยนพนักงาน</button>
+          <button className={styles.primaryButton} disabled={busy}>{busy ? posText("กำลังเปิดกะ…") : posText("เปิดกะและเริ่มขาย")}</button>
+          <button type="button" className={styles.textButton} onClick={signOutCashier}>{posText("เปลี่ยนพนักงาน")}</button>
         </form>
       </main>
     );
   }
 
   const receiptDialog = flow.stage === "RECEIPT" && receipt ? (
-      <Modal open centered width={900} title="ชำระเงินสำเร็จ" footer={null}
+      <Modal open centered width={900} title={posText("ชำระเงินสำเร็จ")} footer={null}
         maskClosable={false} keyboard={!receiptPrinting} closable={!receiptPrinting}
         onCancel={newSale} getContainer={false}
         className={styles.receiptDialog} rootClassName={styles.receiptDialogRoot}
@@ -1984,14 +1992,14 @@ function DesktopPosContent() {
           <h2>{money(receipt.total ?? total)}</h2>
           {boardGameCheckout ? <BoardGameBillBreakdown checkout={boardGameCheckout} receipt /> : null}
           <dl>
-            <div><dt>เลขที่ใบเสร็จ</dt><dd>{receipt.receiptNo || receipt.billNo || receipt.orderId}</dd></div>
-            <div><dt>รับเงิน</dt><dd>{money(receipt.cashTendered ?? validation.paidTotal)}</dd></div>
-            <div className={styles.changeRow}><dt>เงินทอน</dt><dd>{money(receipt.cashChange ?? 0)}</dd></div>
+            <div><dt>{posText("เลขที่ใบเสร็จ")}</dt><dd>{receipt.receiptNo || receipt.billNo || receipt.orderId}</dd></div>
+            <div><dt>{posText("รับเงิน")}</dt><dd>{money(receipt.cashTendered ?? validation.paidTotal)}</dd></div>
+            <div className={styles.changeRow}><dt>{posText("เงินทอน")}</dt><dd>{money(receipt.cashChange ?? 0)}</dd></div>
           </dl>
           {error ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert> : null}
           {hasDesktopPrinterBridge() && (
             <details style={{ textAlign: "left", marginBottom: 12 }}>
-              <summary style={{ cursor: "pointer" }}>ตั้งค่าเครื่องพิมพ์</summary>
+              <summary style={{ cursor: "pointer" }}>{posText("ตั้งค่าเครื่องพิมพ์")}</summary>
               <ReceiptPrinterSettings showStatus={false} />
             </details>
           )}
@@ -2000,19 +2008,18 @@ function DesktopPosContent() {
             <p role="status" className={styles.receiptPaperStatus}>{receiptPaper.taxRequestUnavailableReason}</p>
           ) : null}
           <div className={styles.receiptActions}>
-            <button disabled={!receiptPaper || receiptPrinting || receiptPrinter.disabled} onClick={printReceiptPaper}><PrinterOutlined /> {receiptPrinting ? "กำลังส่งพิมพ์…" : "พิมพ์ใบเสร็จ"}</button>
+            <button disabled={!receiptPaper || receiptPrinting || receiptPrinter.disabled} onClick={printReceiptPaper}><PrinterOutlined /> {receiptPrinting ? posText("กำลังส่งพิมพ์…") : posText("พิมพ์ใบเสร็จ")}</button>
             <button className={styles.primaryButton} disabled={receiptPrinting} onClick={newSale}>
-              {boardGameCheckout ? "กลับหน้าบอร์ดเกม" : "ขายรายการใหม่"}
+              {boardGameCheckout ? posText("กลับหน้าบอร์ดเกม") : posText("ขายรายการใหม่")}
             </button>
           </div>
           </section>
-          <section className={styles.receiptDialogPreview} aria-label="ตัวอย่างใบเสร็จ">
+          <section className={styles.receiptDialogPreview} aria-label={posText("ตัวอย่างใบเสร็จ")}>
           {receiptPaper ? <ReceiptPaper payload={receiptPaper} /> : receiptPaperState === "failed" ? (
             <p className={styles.receiptPaperStatus} role="alert">
-              บันทึกการขายสำเร็จแล้ว แต่ยังโหลดใบเสร็จไม่ได้
-              <button type="button" onClick={() => void loadReceiptPaper(receipt)}>ลองโหลดใบเสร็จอีกครั้ง</button>
+              {posText("บันทึกการขายสำเร็จแล้ว แต่ยังโหลดใบเสร็จไม่ได้") + " "}<button type="button" onClick={() => void loadReceiptPaper(receipt)}>{posText("ลองโหลดใบเสร็จอีกครั้ง")}</button>
             </p>
-          ) : <p role="status">กำลังโหลดใบเสร็จ…</p>}
+          ) : <p role="status">{posText("กำลังโหลดใบเสร็จ…")}</p>}
           </section>
         </div>
       </Modal>
@@ -2027,21 +2034,21 @@ function DesktopPosContent() {
         ? "online"
         : "fallback";
   const connectionLabel = connectionMode === "offline"
-    ? "การเชื่อมต่อมีปัญหา"
+    ? posText("การเชื่อมต่อมีปัญหา")
     : connectionMode === "checking"
-      ? "กำลังเชื่อมต่อ"
+      ? posText("กำลังเชื่อมต่อ")
       : connectionMode === "online"
-        ? "ออนไลน์"
-        : "ออนไลน์ · อัปเดตอัตโนมัติ";
+        ? posText("ออนไลน์")
+        : posText("ออนไลน์ · อัปเดตอัตโนมัติ");
   const navItems = ([
-    { key: "mobile_sell", label: "ขาย", enabled: true },
-    { key: "restaurant", label: "โต๊ะ", enabled: bootstrap.businessArchetype === "restaurant" },
-    { key: "boardgame", label: "บอร์ดเกม", enabled: bootstrap.businessArchetype === "board_game_cafe" },
-    { key: "returns", label: "คืน", enabled: true },
-    { key: "stock", label: "รับของ", enabled: true },
-    { key: "deposits", label: "มัดจำ", enabled: true },
-    { key: "shift", label: "กะ", enabled: true },
-    { key: "settings", label: "ตั้งค่า", enabled: true },
+    { key: "mobile_sell", label: posText("ขาย"), enabled: true },
+    { key: "restaurant", label: posText("โต๊ะ"), enabled: bootstrap.businessArchetype === "restaurant" },
+    { key: "boardgame", label: posText("บอร์ดเกม"), enabled: bootstrap.businessArchetype === "board_game_cafe" },
+    { key: "returns", label: posText("คืน"), enabled: true },
+    { key: "stock", label: posText("รับของ"), enabled: true },
+    { key: "deposits", label: posText("มัดจำ"), enabled: true },
+    { key: "shift", label: posText("กะ"), enabled: true },
+    { key: "settings", label: posText("ตั้งค่า"), enabled: true },
   ] satisfies Array<{ key: DesktopModule; label: string; enabled: boolean }>).filter((item) => item.enabled);
 
   return (
@@ -2062,20 +2069,21 @@ function DesktopPosContent() {
             </button>
           ))}
         </nav>
-        <div className={styles.railFooter} aria-label="ข้อมูลและความช่วยเหลือ">
-          <button type="button" onClick={() => openDesktopInfoDialog("help")} title="ช่วยเหลือ">
+        <div className={styles.railFooter} aria-label={posText("ข้อมูลและความช่วยเหลือ")}>
+          <button type="button" onClick={() => openDesktopInfoDialog("help")} title={posText("ช่วยเหลือ")}>
             <span aria-hidden="true">?</span>
-            <small>ช่วยเหลือ</small>
+            <small>{posText("ช่วยเหลือ")}</small>
           </button>
-          <button type="button" onClick={() => openDesktopInfoDialog("about")} title="เกี่ยวกับ BMS POS">
+          <button type="button" onClick={() => openDesktopInfoDialog("about")} title={posText("เกี่ยวกับ BMS POS")}>
             <span aria-hidden="true">i</span>
-            <small>เกี่ยวกับ</small>
+            <small>{posText("เกี่ยวกับ")}</small>
           </button>
         </div>
       </aside>
 
       <section className={styles.workspace} ref={(element) => { if (element) element.inert = Boolean(receiptDialog); }} aria-hidden={receiptDialog ? true : undefined}>
         <header className={styles.topbar}>
+          <PosLanguageSelector />
           <div className={styles.storeIdentity}>
             <div className={styles.storeMark} aria-hidden="true">
               {storeLogoUrl && storeLogoUrl !== failedStoreLogoUrl ? (
@@ -2090,24 +2098,24 @@ function DesktopPosContent() {
                 <ShopOutlined style={{ fontSize: 24, color: "inherit", marginTop: 0, display: "inline-flex" }} />
               )}
             </div>
-            <div><strong>{bootstrap.location?.name ?? "สาขาหลัก"}</strong><span>{bootstrap.device.registeredPosNo ?? bootstrap.device.code} · กะเปิดอยู่</span></div>
+            <div><strong>{bootstrap.location?.name ?? posText("สาขาหลัก")}</strong><span>{bootstrap.device.registeredPosNo ?? bootstrap.device.code} {" " + posText("· กะเปิดอยู่")}</span></div>
           </div>
           <div className={styles.topMeta}>
-            <span className={styles.refreshStatus} role="status" aria-label="สถานะการอัปเดตข้อมูล" aria-live="polite" aria-atomic="true">
-              {contentRefreshing ? "กำลังอัปเดตข้อมูล…" : ""}
+            <span className={styles.refreshStatus} role="status" aria-label={posText("สถานะการอัปเดตข้อมูล")} aria-live="polite" aria-atomic="true">
+              {contentRefreshing ? posText("กำลังอัปเดตข้อมูล…") : ""}
             </span>
             <div className={styles.connectionSlot}><PosConnectionStatus apiStatus={connection} /></div>
-            <button type="button" className={styles.alertBell} aria-label="รีเฟรชข้อมูล" title="รีเฟรชข้อมูล"
+            <button type="button" className={styles.alertBell} aria-label={posText("รีเฟรชข้อมูล")} title={posText("รีเฟรชข้อมูล")}
               disabled={contentRefreshing || busy || Boolean(saleAttemptRef.current)}
               onClick={() => void refreshDesktopContent()}><ReloadOutlined spin={contentRefreshing} /></button>
             <DesktopUpdateMenu />
             <details className={styles.alertMenu} data-desktop-popup>
               <summary
                 className={`${styles.alertBell}${alerts.settings.enabled ? ` ${styles.alertBellOn}` : ""}${alerts.blocked ? ` ${styles.alertBellBlocked}` : ""}`}
-                aria-label={`การแจ้งเตือน${pendingServiceCallCount ? ` รอรับ ${pendingServiceCallCount} รายการ` : ""}${acknowledgedServiceCallCount ? ` กำลังดำเนินการ ${acknowledgedServiceCallCount} รายการ` : ""}`}
+                aria-label={posText("การแจ้งเตือน{v0}{v1}", { v0: pendingServiceCallCount ? posText(" รอรับ {v0} รายการ", { v0: pendingServiceCallCount }) : "", v1: acknowledgedServiceCallCount ? posText(" กำลังดำเนินการ {v0} รายการ", { v0: acknowledgedServiceCallCount }) : "" })}
                 title={serviceCalls.length
-                  ? `รอรับ ${pendingServiceCallCount} · กำลังดำเนินการ ${acknowledgedServiceCallCount}`
-                  : "การแจ้งเตือน"}
+                  ? posText("รอรับ {v0} · กำลังดำเนินการ {v1}", { v0: pendingServiceCallCount, v1: acknowledgedServiceCallCount })
+                  : posText("การแจ้งเตือน")}
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
@@ -2120,30 +2128,30 @@ function DesktopPosContent() {
               <div className={styles.alertPopover}>
                 <div className={styles.alertPopoverHead}>
                   <div>
-                    <strong>การแจ้งเตือน</strong>
+                    <strong>{posText("การแจ้งเตือน")}</strong>
                     <small>{serviceCalls.length
-                      ? `รอรับ ${pendingServiceCallCount} · กำลังดำเนินการ ${acknowledgedServiceCallCount}`
-                      : "ไม่มีคำเรียกที่ต้องดำเนินการ"}</small>
+                      ? posText("รอรับ {v0} · กำลังดำเนินการ {v1}", { v0: pendingServiceCallCount, v1: acknowledgedServiceCallCount })
+                      : posText("ไม่มีคำเรียกที่ต้องดำเนินการ")}</small>
                   </div>
-                  <button type="button" onClick={() => setAlertSettingsOpen(true)} aria-label="ตั้งค่าเสียงแจ้งเตือน">⚙ ตั้งค่าเสียง</button>
+                  <button type="button" onClick={() => setAlertSettingsOpen(true)} aria-label={posText("ตั้งค่าเสียงแจ้งเตือน")}>{posText("⚙ ตั้งค่าเสียง")}</button>
                 </div>
                 <div className={styles.alertList}>
                   {serviceCalls.length === 0 ? (
-                    <div className={styles.alertEmpty}><span aria-hidden="true">✓</span><p>ไม่มีงานค้าง</p></div>
+                    <div className={styles.alertEmpty}><span aria-hidden="true">✓</span><p>{posText("ไม่มีงานค้าง")}</p></div>
                   ) : serviceCalls.map((call) => (
                     <article className={styles.alertItem} data-status={call.status} key={`${call.source}:${call.id}`}>
                       <button type="button" className={styles.alertItemMain} onClick={() => openServiceCall(call)}>
                         <span className={styles.alertItemIcon} aria-hidden="true">{call.status === "PENDING" ? "🔔" : "✓"}</span>
                         <span>
                           <strong>{call.tableName || call.tableCode}</strong>
-                          <b>{serviceCallLabel(call)}</b>
-                          <small>{call.status === "PENDING" ? "รอรับเรื่อง" : "กำลังดำเนินการ"} · {serviceCallAge(call.createdAt)} · {call.source === "restaurant" ? "ร้านอาหาร" : "บอร์ดเกม"}</small>
+                          <b>{serviceCallLabel(call, posText)}</b>
+                          <small>{call.status === "PENDING" ? posText("รอรับเรื่อง") : posText("กำลังดำเนินการ")} · {serviceCallAge(call.createdAt, posText)} · {call.source === "restaurant" ? posText("ร้านอาหาร") : posText("บอร์ดเกม")}</small>
                         </span>
                       </button>
                       <button type="button" className={`${styles.alertAccept}${call.status === "ACKNOWLEDGED" ? ` ${styles.alertComplete}` : ""}`} disabled={serviceCallsBusy === call.id} onClick={() => void updateServiceCall(call)}>
                         {serviceCallsBusy === call.id
-                          ? call.status === "PENDING" ? "กำลังรับ…" : "กำลังปิด…"
-                          : call.status === "PENDING" ? "รับเรื่อง" : "เสร็จสิ้น"}
+                          ? call.status === "PENDING" ? posText("กำลังรับ…") : posText("กำลังปิด…")
+                          : call.status === "PENDING" ? posText("รับเรื่อง") : posText("เสร็จสิ้น")}
                       </button>
                     </article>
                   ))}
@@ -2151,13 +2159,13 @@ function DesktopPosContent() {
               </div>
             </details>
             <details ref={accountMenuRef} className={styles.accountMenu} data-desktop-popup>
-              <summary aria-label={`เมนูพนักงาน ${cashier?.name || cashier?.email || ""}`}>
+              <summary aria-label={posText("เมนูพนักงาน {v0}", { v0: cashier?.name || cashier?.email || "" })}>
                 <span className={styles.accountAvatar} aria-hidden="true">
-                  {(cashier?.name || cashier?.email || "พ").slice(0, 1)}
+                  {(cashier?.name || cashier?.email || posText("พ")).slice(0, 1)}
                 </span>
                 <span className={styles.accountCopy}>
                   <strong>{cashier?.name || cashier?.email}</strong>
-                  <small>พนักงานขาย</small>
+                  <small>{posText("พนักงานขาย")}</small>
                 </span>
                 <span className={styles.accountChevron} aria-hidden="true">⌄</span>
               </summary>
@@ -2165,14 +2173,13 @@ function DesktopPosContent() {
                 {hasDesktopPosBridge() ? (
                   <>
                     <button className={styles.accountAdmin} onClick={() => void openAdminBackoffice()}>
-                      เปิดระบบหลังบ้าน <span aria-hidden="true">↗</span>
+                      {posText("เปิดระบบหลังบ้าน") + " "}<span aria-hidden="true">↗</span>
                     </button>
                     <div className={styles.accountDivider} />
                   </>
                 ) : null}
                 <button className={styles.accountSignOut} onClick={signOutCashier}>
-                  ล็อก / เปลี่ยนพนักงาน
-                </button>
+                  {posText("ล็อก / เปลี่ยนพนักงาน") + " "}</button>
               </div>
             </details>
           </div>
@@ -2221,11 +2228,11 @@ function DesktopPosContent() {
               <>
                 <div className={styles.sectionHead}>
                   <button className={styles.backButton} onClick={backFromCheckout}>
-                    ← {boardGameCheckout ? "กลับหน้าบอร์ดเกม" : "กลับไปแก้รายการ"}
+                    ← {boardGameCheckout ? posText("กลับหน้าบอร์ดเกม") : posText("กลับไปแก้รายการ")}
                   </button>
                   <div>
-                    <p className={styles.eyebrow}>ตรวจสอบก่อนรับเงิน</p>
-                    <h1>{boardGameCheckout ? "สรุปบิลบอร์ดเกม" : "สรุปรายการขาย"}</h1>
+                    <p className={styles.eyebrow}>{posText("ตรวจสอบก่อนรับเงิน")}</p>
+                    <h1>{boardGameCheckout ? posText("สรุปบิลบอร์ดเกม") : posText("สรุปรายการขาย")}</h1>
                   </div>
                 </div>
                 <div className={styles.orderSummary}>
@@ -2236,13 +2243,13 @@ function DesktopPosContent() {
                         <div className={styles.serviceBenefit}>
                           <strong>
                             {boardGameCheckout.offerDiscountAmount > 0
-                              ? `โปรโมชัน ${boardGameCheckout.offerName ?? boardGameCheckout.offerCode ?? "ค่าเล่น"}`
-                              : "ใช้แพ็กเกจสมาชิกแล้ว"}
+                              ? posText("โปรโมชัน {v0}", { v0: boardGameCheckout.offerName ?? boardGameCheckout.offerCode ?? posText("ค่าเล่น") })
+                              : posText("ใช้แพ็กเกจสมาชิกแล้ว")}
                           </strong>
                           <span>
                             {boardGameCheckout.offerDiscountAmount > 0
-                              ? `ลดค่าเล่น ${money(boardGameCheckout.offerDiscountAmount)}`
-                              : `แพ็กเกจครอบคลุมค่าเล่น ${money(boardGameCheckout.passCoveredAmount)}`}
+                              ? posText("ลดค่าเล่น {v0}", { v0: money(boardGameCheckout.offerDiscountAmount) })
+                              : posText("แพ็กเกจครอบคลุมค่าเล่น {v0}", { v0: money(boardGameCheckout.passCoveredAmount) })}
                           </span>
                         </div>
                       ) : null}
@@ -2265,22 +2272,22 @@ function DesktopPosContent() {
                 <div className={styles.summaryTotals}>
                   {boardGameCheckout ? (
                     <>
-                      <div><span>ค่าเล่นก่อนสิทธิ์</span><strong>{money(boardGameGrossTime)}</strong></div>
+                      <div><span>{posText("ค่าเล่นก่อนสิทธิ์")}</span><strong>{money(boardGameGrossTime)}</strong></div>
                       {boardGameBenefitAmount > 0 ? (
                         <div className={styles.savingsRow}>
-                          <span>{boardGameCheckout.offerDiscountAmount > 0 ? "โปรโมชันค่าเล่น" : "แพ็กเกจสมาชิก"}</span>
+                          <span>{boardGameCheckout.offerDiscountAmount > 0 ? posText("โปรโมชันค่าเล่น") : posText("แพ็กเกจสมาชิก")}</span>
                           <strong>−{money(boardGameBenefitAmount)}</strong>
                         </div>
                       ) : null}
                       {boardGameCheckout.tabItemCount > 0 ? (
                         <>
                           <div>
-                            <span>สินค้าก่อนส่วนลด</span>
+                            <span>{posText("สินค้าก่อนส่วนลด")}</span>
                             <strong>{money(boardGameCheckout.tabAmount + boardGameTabDiscountAmount)}</strong>
                           </div>
                           {boardGameTabDiscountAmount > 0 ? (
                             <div className={styles.savingsRow}>
-                              <span>ราคาส่ง / โปรโมชันสินค้า</span>
+                              <span>{posText("ราคาส่ง / โปรโมชันสินค้า")}</span>
                               <strong>−{money(boardGameTabDiscountAmount)}</strong>
                             </div>
                           ) : null}
@@ -2289,35 +2296,35 @@ function DesktopPosContent() {
                     </>
                   ) : (
                     <>
-                      <div><span>ยอดสินค้าราคาป้าย</span><strong>{money(retailListSubtotal)}</strong></div>
-                      {pricingSavings > 0 ? <div className={styles.savingsRow}><span>ราคาส่ง / โปรโมชัน</span><strong>−{money(pricingSavings)}</strong></div> : null}
+                      <div><span>{posText("ยอดสินค้าราคาป้าย")}</span><strong>{money(retailListSubtotal)}</strong></div>
+                      {pricingSavings > 0 ? <div className={styles.savingsRow}><span>{posText("ราคาส่ง / โปรโมชัน")}</span><strong>−{money(pricingSavings)}</strong></div> : null}
                     </>
                   )}
-                  {rounding !== 0 ? <div><span>ปัดเศษเงินสด</span><strong>{money(rounding)}</strong></div> : null}
-                  {benefits.ready && Number(benefits.preview?.totalDiscount) > 0 ? <div className={styles.savingsRow}><span>สมาชิก / คูปอง / แต้ม</span><strong>−{money(benefits.preview!.totalDiscount)}</strong></div> : null}
-                  <div className={styles.grandTotal}><span>ยอดสุทธิ</span><strong>{money(total)}</strong></div>
+                  {rounding !== 0 ? <div><span>{posText("ปัดเศษเงินสด")}</span><strong>{money(rounding)}</strong></div> : null}
+                  {benefits.ready && Number(benefits.preview?.totalDiscount) > 0 ? <div className={styles.savingsRow}><span>{posText("สมาชิก / คูปอง / แต้ม")}</span><strong>−{money(benefits.preview!.totalDiscount)}</strong></div> : null}
+                  <div className={styles.grandTotal}><span>{posText("ยอดสุทธิ")}</span><strong>{money(total)}</strong></div>
                 </div>
               </>
             ) : (
               <>
                 <form className={styles.scanBar} onSubmit={(event) => { event.preventDefault(); scanInputRef.current?.focus(); void addProduct(scanCode, undefined, true); }}>
                   <span className={styles.barcode}>▥</span>
-                  <input ref={scanInputRef} autoFocus aria-label="สแกนบาร์โค้ดหรือรหัสสินค้า" value={scanCode} onChange={(event) => { scanDraftRevision.current += 1; setScanCode(event.target.value); }} placeholder="ยิงบาร์โค้ด หรือพิมพ์รหัสสินค้า แล้วกด Enter" />
+                  <input ref={scanInputRef} autoFocus aria-label={posText("สแกนบาร์โค้ดหรือรหัสสินค้า")} value={scanCode} onChange={(event) => { scanDraftRevision.current += 1; setScanCode(event.target.value); }} placeholder={posText("ยิงบาร์โค้ด หรือพิมพ์รหัสสินค้า แล้วกด Enter")} />
                   <kbd>F12</kbd>
                 </form>
                 <div className={styles.catalogHeader}>
-                  <div><p className={styles.eyebrow}>แคตตาล็อกสินค้า</p><h1>เลือกสินค้า</h1></div>
-                  <input value={query} onChange={(event) => { clearScannedProduct(); setQuery(event.target.value); }} placeholder="ค้นหาชื่อหรือ SKU" />
+                  <div><p className={styles.eyebrow}>{posText("แคตตาล็อกสินค้า")}</p><h1>{posText("เลือกสินค้า")}</h1></div>
+                  <input value={query} onChange={(event) => { clearScannedProduct(); setQuery(event.target.value); }} placeholder={posText("ค้นหาชื่อหรือ SKU")} />
                 </div>
-                {(error || notice) ? <PosDismissibleAlert key={error || notice} className={error ? styles.errorBox : styles.noticeBox} onClose={() => { setError(""); setNotice(""); }}>{error || notice}{!error && notice === ADVANCED_ITEM_NOTICE ? <button onClick={() => openModule("sell")}>เปิดหน้าขายแบบเต็ม</button> : null}</PosDismissibleAlert> : null}
+                {(error || notice) ? <PosDismissibleAlert key={error || notice} className={error ? styles.errorBox : styles.noticeBox} onClose={() => { setError(""); setNotice(""); }}>{error || noticeText}{!error && notice === ADVANCED_ITEM_NOTICE ? <button onClick={() => openModule("sell")}>{posText("เปิดหน้าขายแบบเต็ม")}</button> : null}</PosDismissibleAlert> : null}
                 {catalog.length && catalogError ? (
                   <PosDismissibleAlert
                     key={catalogError}
                     className={styles.errorBox}
                     onClose={() => setCatalogError("")}
                   >
-                    อัปเดตรายการสินค้าไม่สำเร็จ · {catalogError}
-                    <button onClick={() => void loadCatalog(query)}>ลองใหม่</button>
+                    {posText("อัปเดตรายการสินค้าไม่สำเร็จ ·") + " "}{catalogError}
+                    <button onClick={() => void loadCatalog(query)}>{posText("ลองใหม่")}</button>
                   </PosDismissibleAlert>
                 ) : null}
                 {scannedProduct ? <ScannedProductPanel result={scannedProduct} busy={busy || Boolean(addingProductKey)}
@@ -2332,11 +2339,11 @@ function DesktopPosContent() {
                     // AVAILABLE with a zero own-stock row, so availableTotal is not the gate.
                     const sellable = item.availability === "AVAILABLE";
                     const stockLabel = !sellable
-                      ? item.availability === "SOLD_OUT_TODAY" ? "หมดวันนี้" : "หมด"
-                      : item.availableSizes.length > 1 ? `เลือก ${item.availableSizes.length} ไซส์`
+                      ? item.availability === "SOLD_OUT_TODAY" ? posText("หมดวันนี้") : posText("หมด")
+                      : item.availableSizes.length > 1 ? posText("เลือก {v0} ไซส์", { v0: item.availableSizes.length })
                       : selection.available > 0
-                        ? `เหลือ ${selection.available}${selectedVariant?.size ? ` · ${selectedVariant.size}` : ""}`
-                        : "พร้อมขาย";
+                        ? posText("เหลือ {v0}{v1}", { v0: selection.available, v1: selectedVariant?.size ? ` · ${selectedVariant.size}` : "" })
+                        : posText("พร้อมขาย");
                     return (
                     <div key={item.sku} className={styles.productCardWrap}>
                     <button
@@ -2349,7 +2356,7 @@ function DesktopPosContent() {
                       <div className={styles.productImage}>{item.imageUrl ? <img src={item.imageUrl} alt="" /> : <span>{item.name.slice(0, 1)}</span>}</div>
                       <strong>{item.name}</strong><small>{item.sku}</small>
                       <div>
-                        <b>{item.availableSizes.length > 1 ? "เริ่ม " : ""}{money(selection.price)}</b>
+                        <b>{item.availableSizes.length > 1 ? posText("เริ่ม ") : ""}{money(selection.price)}</b>
                         <span className={sellable ? styles.stockOk : styles.stockOut}>
                           {stockLabel}
                         </span>
@@ -2363,19 +2370,19 @@ function DesktopPosContent() {
                   {!catalog.length && catalogLoading ? (
                     <div className={styles.catalogStatus} role="status">
                       <span className={styles.catalogSpinner} aria-hidden="true" />
-                      <strong>กำลังโหลดสินค้า…</strong>
-                      <span>กำลังตรวจราคาและสต็อกล่าสุดของสาขานี้</span>
+                      <strong>{posText("กำลังโหลดสินค้า…")}</strong>
+                      <span>{posText("กำลังตรวจราคาและสต็อกล่าสุดของสาขานี้")}</span>
                     </div>
                   ) : null}
                   {!catalog.length && !catalogLoading && catalogError ? (
                     <div className={`${styles.catalogStatus} ${styles.catalogStatusError}`} role="alert">
-                      <strong>โหลดรายการสินค้าไม่สำเร็จ</strong>
+                      <strong>{posText("โหลดรายการสินค้าไม่สำเร็จ")}</strong>
                       <span>{catalogError}</span>
-                      <button onClick={() => void loadCatalog(query)}>ลองใหม่</button>
+                      <button onClick={() => void loadCatalog(query)}>{posText("ลองใหม่")}</button>
                     </div>
                   ) : null}
                   {!catalog.length && !catalogLoading && !catalogError && !busy ? (
-                    <div className={styles.emptyCatalog}>ไม่พบสินค้า ลองค้นด้วยชื่อหรือยิงบาร์โค้ด</div>
+                    <div className={styles.emptyCatalog}>{posText("ไม่พบสินค้า ลองค้นด้วยชื่อหรือยิงบาร์โค้ด")}</div>
                   ) : null}
                 </div>
               </>
@@ -2384,7 +2391,7 @@ function DesktopPosContent() {
 
           <aside className={styles.checkoutPane}>
             <div className={styles.billHeader}>
-              <div><span>{checkout ? "ยอดชำระ" : "บิลปัจจุบัน"}</span><small>{billCountLabel}</small></div>
+              <div><span>{checkout ? posText("ยอดชำระ") : posText("บิลปัจจุบัน")}</span><small>{billCountLabel}</small></div>
               <strong>{money(total)}</strong>
             </div>
 
@@ -2399,16 +2406,16 @@ function DesktopPosContent() {
                       <strong>{money(Number(line.packBasePrice ?? line.unitPrice ?? 0) * line.qty)}</strong>
                     </article>
                   ))}
-                  {!cart.length ? <div className={styles.emptyCart}><span>▥</span><strong>ยังไม่มีสินค้าในบิล</strong><p>ยิงบาร์โค้ดหรือเลือกสินค้าจากด้านซ้าย</p></div> : null}
+                  {!cart.length ? <div className={styles.emptyCart}><span>▥</span><strong>{posText("ยังไม่มีสินค้าในบิล")}</strong><p>{posText("ยิงบาร์โค้ดหรือเลือกสินค้าจากด้านซ้าย")}</p></div> : null}
                 </div>
                 <div className={styles.cartFooter}>
-                  {pricingSavings > 0 ? <div className={styles.savingsRow}><span>ส่วนลดราคาส่ง / โปรโมชัน</span><strong>−{money(pricingSavings)}</strong></div> : null}
-                  <div><span>ยอดสุทธิ</span><strong>{money(total)}</strong></div>
+                  {pricingSavings > 0 ? <div className={styles.savingsRow}><span>{posText("ส่วนลดราคาส่ง / โปรโมชัน")}</span><strong>−{money(pricingSavings)}</strong></div> : null}
+                  <div><span>{posText("ยอดสุทธิ")}</span><strong>{money(total)}</strong></div>
                   <button className={styles.payButton} disabled={!cart.length || Boolean(addingProductKey) || scannedProduct?.kind === "selection"}
                     onClick={() => {
                       if (addProductPendingRef.current || scannedProduct?.kind === "selection") return;
                       setError(""); setNotice(""); sendFlow("START_CHECKOUT");
-                    }}>ไปชำระเงิน <span>→</span></button>
+                    }}>{posText("ไปชำระเงิน") + " "}<span>→</span></button>
                 </div>
               </>
             ) : (
@@ -2419,21 +2426,21 @@ function DesktopPosContent() {
                   <PosDismissibleAlert className={styles.zeroDueNotice} role="status">
                     <span aria-hidden="true">✓</span>
                     <div>
-                      <strong>บิลนี้ไม่ต้องรับเงินเพิ่ม</strong>
+                      <strong>{posText("บิลนี้ไม่ต้องรับเงินเพิ่ม")}</strong>
                       <p>
                         {boardGameCheckout?.passCoveredAmount
-                          ? `แพ็กเกจสมาชิกครอบคลุมค่าเล่น ${money(boardGameCheckout.passCoveredAmount)}`
-                          : "ยอดสุทธิของกลุ่มนี้เป็นศูนย์"}
+                          ? posText("แพ็กเกจสมาชิกครอบคลุมค่าเล่น {v0}", { v0: money(boardGameCheckout.passCoveredAmount) })
+                          : posText("ยอดสุทธิของกลุ่มนี้เป็นศูนย์")}
                       </p>
                     </div>
                   </PosDismissibleAlert>
                 ) : (
                   <fieldset className={styles.paymentControls} disabled={busy || Boolean(saleAttemptRef.current)}>
-                <div className={styles.paymentTitle}><div><h2>วิธีชำระเงิน</h2><p>เลือกหนึ่งวิธี หรือแบ่งชำระหลายช่องทาง</p></div><button onClick={addSplitPayment}>＋ จ่ายผสม</button></div>
+                <div className={styles.paymentTitle}><div><h2>{posText("วิธีชำระเงิน")}</h2><p>{posText("เลือกหนึ่งวิธี หรือแบ่งชำระหลายช่องทาง")}</p></div><button onClick={addSplitPayment}>{posText("＋ จ่ายผสม")}</button></div>
                 <div className={styles.methodGrid}>
                   {primaryMethods.map((method) => (
                     <button key={method} className={payments.length === 1 && payments[0].method === method ? styles.methodActive : ""} onClick={() => chooseMethod(method)}>
-                      <span>{method === "cash" ? "▣" : method === "qr" ? "▦" : method === "card" ? "▤" : "▱"}</span>{paymentMethodLabel(method)}
+                      <span>{method === "cash" ? "▣" : method === "qr" ? "▦" : method === "card" ? "▤" : "▱"}</span>{paymentMethodLabel(method, posText)}
                     </button>
                   ))}
                 </div>
@@ -2442,32 +2449,31 @@ function DesktopPosContent() {
                     <section key={payment.id}>
                       {payments.length > 1 ? (
                         <div className={styles.paymentRowHead}>
-                          <label>ช่องทาง
-                            <select value={payment.method} onChange={(event) => updatePayment(payment.id, { method: event.target.value as PosPaymentMethod, reference: event.target.value === "cash" ? undefined : "", tendered: event.target.value === "cash" ? payment.amount : undefined })}>
-                              {[...primaryMethods, "bank_transfer" as const].map((method) => <option key={method} value={method}>{paymentMethodLabel(method)}</option>)}
+                          <label>{posText("ช่องทาง") + " "}<select value={payment.method} onChange={(event) => updatePayment(payment.id, { method: event.target.value as PosPaymentMethod, reference: event.target.value === "cash" ? undefined : "", tendered: event.target.value === "cash" ? payment.amount : undefined })}>
+                              {[...primaryMethods, "bank_transfer" as const].map((method) => <option key={method} value={method}>{paymentMethodLabel(method, posText)}</option>)}
                             </select>
                           </label>
-                          <label>ยอดช่องทางนี้<input inputMode="decimal" value={payment.amount || ""} onChange={(event) => updatePayment(payment.id, { amount: Math.max(0, Number(event.target.value) || 0) })} /></label>
-                          <button className={styles.removePayment} onClick={() => removePayment(payment.id)}>ลบ</button>
+                          <label>{posText("ยอดช่องทางนี้")}<input inputMode="decimal" value={payment.amount || ""} onChange={(event) => updatePayment(payment.id, { amount: Math.max(0, Number(event.target.value) || 0) })} /></label>
+                          <button className={styles.removePayment} onClick={() => removePayment(payment.id)}>{posText("ลบ")}</button>
                         </div>
                       ) : null}
                       {payment.method === "cash" ? (
                         <>
-                          <label className={styles.receivedInput}>รับเงินมา<input inputMode="decimal" value={payment.tendered ?? ""} onChange={(event) => updatePayment(payment.id, { tendered: Math.max(0, Number(event.target.value) || 0) })} /></label>
-                          <div className={styles.quickCash}>{quickCashAmounts(payment.amount).map((amount) => <button key={amount} onClick={() => updatePayment(payment.id, { tendered: amount }, amount === payment.amount)}>{amount === payment.amount ? "พอดี" : `฿${amount}`}</button>)}</div>
-                          <div className={styles.change}><span>เงินทอน</span><strong>{money(calculateCashChange(payment.amount, payment.tendered ?? 0))}</strong></div>
+                          <label className={styles.receivedInput}>{posText("รับเงินมา")}<input inputMode="decimal" value={payment.tendered ?? ""} onChange={(event) => updatePayment(payment.id, { tendered: Math.max(0, Number(event.target.value) || 0) })} /></label>
+                          <div className={styles.quickCash}>{quickCashAmounts(payment.amount).map((amount) => <button key={amount} onClick={() => updatePayment(payment.id, { tendered: amount }, amount === payment.amount)}>{amount === payment.amount ? posText("พอดี") : `฿${amount}`}</button>)}</div>
+                          <div className={styles.change}><span>{posText("เงินทอน")}</span><strong>{money(calculateCashChange(payment.amount, payment.tendered ?? 0))}</strong></div>
                         </>
                       ) : (
                         <>
                           <label className={styles.referenceInput}>
-                            {payment.method === "qr" ? "เลขอ้างอิง (ไม่บังคับ)" : "เลขอ้างอิง"}
+                            {payment.method === "qr" ? posText("เลขอ้างอิง (ไม่บังคับ)") : posText("เลขอ้างอิง")}
                             <input
                               value={payment.reference ?? ""}
                               onChange={(event) => updatePayment(payment.id, { reference: event.target.value })}
-                              placeholder={payment.method === "qr" ? "เว้นว่างได้" : "เลขท้าย / Transaction ID"}
+                              placeholder={payment.method === "qr" ? posText("เว้นว่างได้") : posText("เลขท้าย / Transaction ID")}
                             />
                           </label>
-                          {payment.method === "qr" ? <p className={styles.qrPaymentHint}>Dynamic QR ระบุยอดแล้ว กรุณาตรวจชื่อผู้รับ ยอด และรายการเงินเข้าก่อนกดยืนยัน</p> : null}
+                          {payment.method === "qr" ? <p className={styles.qrPaymentHint}>{posText("Dynamic QR ระบุยอดแล้ว กรุณาตรวจชื่อผู้รับ ยอด และรายการเงินเข้าก่อนกดยืนยัน")}</p> : null}
                         </>
                       )}
                       {index < payments.length - 1 ? <hr /> : null}
@@ -2476,10 +2482,10 @@ function DesktopPosContent() {
                 </div>
                   </fieldset>
                 )}
-                {(error || notice || (!zeroDueBoardGameBill && validation.errors.length > 0)) ? <PosDismissibleAlert key={error || notice || validation.errors[0]} className={error ? styles.errorBox : styles.noticeBox} onClose={() => { setError(""); setNotice(""); }}>{error || notice || validation.errors[0]?.replace("ทดสอบ", "")}</PosDismissibleAlert> : null}
+                {(error || notice || (!zeroDueBoardGameBill && validation.errors.length > 0)) ? <PosDismissibleAlert key={error || notice || validation.errors[0]} className={error ? styles.errorBox : styles.noticeBox} onClose={() => { setError(""); setNotice(""); }}>{error || notice || validation.errors[0]?.replace(posText("ทดสอบ"), "")}</PosDismissibleAlert> : null}
                 <div className={styles.paymentFooter}>
-                  <div><span>{validation.remaining > 0 && !zeroDueBoardGameBill ? "ยังขาด" : zeroDueBoardGameBill ? "พร้อมปิดบิล" : "พร้อมรับชำระ"}</span><strong>{validation.remaining > 0 && !zeroDueBoardGameBill ? money(validation.remaining) : money(total)}</strong></div>
-                  <button className={styles.payButton} disabled={!canConfirmPayment || busy} onClick={() => void submitSale()}>{busy ? "กำลังบันทึก…" : saleAttemptRef.current ? "ลองบันทึกซ้ำด้วยรหัสเดิม" : zeroDueBoardGameBill ? "ยืนยันปิดบิล" : `ยืนยันรับชำระ ${money(total)}`}</button>
+                  <div><span>{validation.remaining > 0 && !zeroDueBoardGameBill ? posText("ยังขาด") : zeroDueBoardGameBill ? posText("พร้อมปิดบิล") : posText("พร้อมรับชำระ")}</span><strong>{validation.remaining > 0 && !zeroDueBoardGameBill ? money(validation.remaining) : money(total)}</strong></div>
+                  <button className={styles.payButton} disabled={!canConfirmPayment || busy} onClick={() => void submitSale()}>{busy ? posText("กำลังบันทึก…") : saleAttemptRef.current ? posText("ลองบันทึกซ้ำด้วยรหัสเดิม") : zeroDueBoardGameBill ? posText("ยืนยันปิดบิล") : posText("ยืนยันรับชำระ {v0}", { v0: money(total) })}</button>
                 </div>
               </div>
             )}
@@ -2501,32 +2507,32 @@ function DesktopPosContent() {
             <header className={styles.infoDialogHead}>
               <div className={styles.infoDialogMark} aria-hidden="true">{desktopInfoDialog === "help" ? "?" : "B"}</div>
               <div>
-                <h2 id="desktop-info-title">{desktopInfoDialog === "help" ? "ศูนย์ช่วยเหลือ" : "เกี่ยวกับ BMS POS"}</h2>
-                <p>{desktopInfoDialog === "help" ? "คำแนะนำสำหรับงานหน้าร้าน" : "ข้อมูลแอปและเครื่องที่กำลังใช้งาน"}</p>
+                <h2 id="desktop-info-title">{desktopInfoDialog === "help" ? posText("ศูนย์ช่วยเหลือ") : posText("เกี่ยวกับ BMS POS")}</h2>
+                <p>{desktopInfoDialog === "help" ? posText("คำแนะนำสำหรับงานหน้าร้าน") : posText("ข้อมูลแอปและเครื่องที่กำลังใช้งาน")}</p>
               </div>
-              <button autoFocus type="button" className={styles.infoDialogClose} aria-label="ปิด" onClick={() => setDesktopInfoDialog(null)}>×</button>
+              <button autoFocus type="button" className={styles.infoDialogClose} aria-label={posText("ปิด")} onClick={() => setDesktopInfoDialog(null)}>×</button>
             </header>
 
             {desktopInfoDialog === "help" ? (
               <div className={styles.helpBody}>
                 <section className={styles.helpQuickGrid}>
-                  <article><span>▥</span><div><strong>ขายสินค้า</strong><p>ยิงบาร์โค้ดหรือกด F12 เพื่อกลับไปช่องค้นหา จากนั้นตรวจยอดก่อนรับชำระ</p></div></article>
-                  <article><span>🔔</span><div><strong>ลูกค้าเรียก</strong><p>เปิดกระดิ่ง กด “รับเรื่อง” และกด “เสร็จสิ้น” หลังดูแลโต๊ะเรียบร้อย</p></div></article>
-                  <article><span>●</span><div><strong>สถานะระบบ</strong><p>เขียวคือ realtime ปกติ เหลืองกำลังใช้การอัปเดตสำรอง แดงให้ตรวจอินเทอร์เน็ต</p></div></article>
+                  <article><span>▥</span><div><strong>{posText("ขายสินค้า")}</strong><p>{posText("ยิงบาร์โค้ดหรือกด F12 เพื่อกลับไปช่องค้นหา จากนั้นตรวจยอดก่อนรับชำระ")}</p></div></article>
+                  <article><span>🔔</span><div><strong>{posText("ลูกค้าเรียก")}</strong><p>{posText("เปิดกระดิ่ง กด “รับเรื่อง” และกด “เสร็จสิ้น” หลังดูแลโต๊ะเรียบร้อย")}</p></div></article>
+                  <article><span>●</span><div><strong>{posText("สถานะระบบ")}</strong><p>{posText("เขียวคือ realtime ปกติ เหลืองกำลังใช้การอัปเดตสำรอง แดงให้ตรวจอินเทอร์เน็ต")}</p></div></article>
                 </section>
                 <div className={styles.helpSafety}>
-                  <strong>หากไม่ทราบผลหลังรับเงิน</strong>
-                  <p>อย่ากดรับชำระซ้ำทันที ให้ตรวจใบเสร็จและรายการล่าสุดก่อน เพื่อป้องกันการบันทึกซ้ำ</p>
+                  <strong>{posText("หากไม่ทราบผลหลังรับเงิน")}</strong>
+                  <p>{posText("อย่ากดรับชำระซ้ำทันที ให้ตรวจใบเสร็จและรายการล่าสุดก่อน เพื่อป้องกันการบันทึกซ้ำ")}</p>
                 </div>
                 <div className={styles.helpShortcuts}>
-                  <span><kbd>F12</kbd> ค้นหา/ยิงสินค้า</span>
-                  <span><kbd>Esc</kbd> ปิดหน้าต่าง</span>
+                  <span><kbd>F12</kbd> {" " + posText("ค้นหา/ยิงสินค้า")}</span>
+                  <span><kbd>Esc</kbd> {" " + posText("ปิดหน้าต่าง")}</span>
                   {hasDesktopPosBridge() ? <>
-                    <span><kbd>Command/Ctrl + R</kbd> รีเฟรชข้อมูลหน้าปัจจุบัน โดยไม่ออกจากพนักงาน</span>
-                    <span><kbd>Command/Ctrl + Shift + R</kbd> โหลดแอปใหม่ทั้งหมด ใช้เมื่อหน้าค้าง</span>
+                    <span><kbd>Command/Ctrl + R</kbd> {" " + posText("รีเฟรชข้อมูลหน้าปัจจุบัน โดยไม่ออกจากพนักงาน")}</span>
+                    <span><kbd>Command/Ctrl + Shift + R</kbd> {" " + posText("โหลดแอปใหม่ทั้งหมด ใช้เมื่อหน้าค้าง")}</span>
                   </> : null}
                 </div>
-                <button type="button" className={styles.infoPrimary} onClick={() => window.open("/pos/manual", "bms-pos-manual", "width=980,height=900")}>เปิดคู่มือฉบับเต็ม</button>
+                <button type="button" className={styles.infoPrimary} onClick={() => window.open("/pos/manual", "bms-pos-manual", "width=980,height=900")}>{posText("เปิดคู่มือฉบับเต็ม")}</button>
               </div>
             ) : (
               <div className={styles.aboutBody}>
@@ -2535,37 +2541,37 @@ function DesktopPosContent() {
                   <div><strong>BMS POS</strong><small>{desktopAppInfo
                     ? `Desktop v${desktopAppInfo.version}`
                     : hasDesktopPosBridge()
-                      ? desktopAppInfoLoaded ? "ไม่พบข้อมูลเวอร์ชัน" : "กำลังอ่านเวอร์ชัน…"
+                      ? desktopAppInfoLoaded ? posText("ไม่พบข้อมูลเวอร์ชัน") : posText("กำลังอ่านเวอร์ชัน…")
                       : "Browser preview"}</small></div>
                 </div>
                 <dl className={styles.aboutFacts}>
-                  <div><dt>ไคลเอนต์</dt><dd>{desktopAppInfo?.clientLabel ?? (hasDesktopPosBridge() ? "Desktop Client" : "Web Browser")}</dd></div>
-                  <div><dt>เครื่องขาย</dt><dd>{bootstrap.device.registeredPosNo ?? bootstrap.device.code}</dd></div>
-                  <div><dt>สาขา</dt><dd>{bootstrap.location?.name ?? "สาขาหลัก"}</dd></div>
-                  <div><dt>การเชื่อมต่อ</dt><dd data-tone={connectionMode}>{connectionLabel}</dd></div>
-                  <div><dt>เซิร์ฟเวอร์</dt><dd>{typeof window === "undefined" ? "-" : window.location.host}</dd></div>
+                  <div><dt>{posText("ไคลเอนต์")}</dt><dd>{desktopAppInfo?.clientLabel ?? (hasDesktopPosBridge() ? "Desktop Client" : "Web Browser")}</dd></div>
+                  <div><dt>{posText("เครื่องขาย")}</dt><dd>{bootstrap.device.registeredPosNo ?? bootstrap.device.code}</dd></div>
+                  <div><dt>{posText("สาขา")}</dt><dd>{bootstrap.location?.name ?? posText("สาขาหลัก")}</dd></div>
+                  <div><dt>{posText("การเชื่อมต่อ")}</dt><dd data-tone={connectionMode}>{connectionLabel}</dd></div>
+                  <div><dt>{posText("เซิร์ฟเวอร์")}</dt><dd>{typeof window === "undefined" ? "-" : window.location.host}</dd></div>
                 </dl>
                 {desktopAppInfo?.securityNote ? <p className={styles.aboutSecurity}>⌾ {desktopAppInfo.securityNote}</p> : null}
-                <p className={styles.aboutNote}>ข้อมูลเวอร์ชันนี้ใช้ประกอบการแจ้งปัญหา และไม่มี Device Token หรือข้อมูลการชำระเงิน</p>
+                <p className={styles.aboutNote}>{posText("ข้อมูลเวอร์ชันนี้ใช้ประกอบการแจ้งปัญหา และไม่มี Device Token หรือข้อมูลการชำระเงิน")}</p>
                 <button type="button" className={styles.infoPrimary} onClick={() => void (async () => {
                   const diagnostic = [
                     `BMS POS ${desktopAppInfo ? `Desktop v${desktopAppInfo.version}` : hasDesktopPosBridge() ? "Desktop (version unavailable)" : "Browser"}`,
                     `Client: ${desktopAppInfo?.clientLabel ?? "Web Browser"}`,
                     `Platform: ${desktopAppInfo?.platform ?? "browser"}`,
                     `Register: ${bootstrap.device.registeredPosNo ?? bootstrap.device.code}`,
-                    `Branch: ${bootstrap.location?.name ?? "สาขาหลัก"}`,
+                    `Branch: ${bootstrap.location?.name ?? posText("สาขาหลัก")}`,
                     `Connection: ${connectionLabel}`,
                     `Server: ${window.location.host}`,
                   ].join("\n");
                   setDiagnosticsCopied(await copyTextToClipboard(diagnostic));
-                })()}>{diagnosticsCopied ? "คัดลอกข้อมูลแล้ว ✓" : "คัดลอกข้อมูลระบบ"}</button>
+                })()}>{diagnosticsCopied ? posText("คัดลอกข้อมูลแล้ว ✓") : posText("คัดลอกข้อมูลระบบ")}</button>
               </div>
             )}
           </section>
         </div>
       ) : null}
       {inspectedProduct && <ProductDetailsModal token={token} target={inspectedProduct} onClose={() => setInspectedProduct(null)} />}
-      {!hasDesktopPosBridge() ? <div className={styles.browserBadge}>Browser preview · Electron จะเก็บ device token ใน OS keychain</div> : null}
+      {!hasDesktopPosBridge() ? <div className={styles.browserBadge}>{posText("Browser preview · Electron จะเก็บ device token ใน OS keychain")}</div> : null}
     </main>
   );
 }

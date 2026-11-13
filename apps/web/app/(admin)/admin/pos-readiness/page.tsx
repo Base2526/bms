@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 // หน้าเช็คความพร้อมก่อนเปิดขายหน้าร้าน
 // -------------------------------------------------------------
 // ร้านยาเลือกแนวทาง "รีวิว policy ให้ครบทุกสินค้าก่อนเปิดร้าน" ได้ (สวิตช์ในหน้านี้)
@@ -86,12 +88,12 @@ const M_SET_VAT_UNKNOWN = gql`
   }
 `;
 
-const POLICY_LABEL: Record<string, { text: string; color: string }> = {
-  MISSING: { text: "ยังไม่เริ่ม", color: "red" },
-  DRAFT: { text: "ร่าง", color: "orange" },
-  PENDING_REVIEW: { text: "รอเภสัชกรตรวจ", color: "blue" },
-  RETIRED: { text: "เลิกใช้", color: "default" },
-};
+const POLICY_LABEL = (uiText: UiTranslator = thaiUiText): Record<string, { text: string; color: string }> => ({
+  MISSING: { text: uiText("admin_ui.not_started_05265"), color: "red" },
+  DRAFT: { text: uiText("admin_ui.draft_d1f1d"), color: "orange" },
+  PENDING_REVIEW: { text: uiText("admin_ui.awaiting_pharmacist_review_c686e"), color: "blue" },
+  RETIRED: { text: uiText("admin_ui.retire_e8bac"), color: "default" },
+});
 
 /**
  * ตั้งประเภท VAT ให้สินค้าที่ยังไม่ระบุ
@@ -101,6 +103,7 @@ const POLICY_LABEL: Record<string, { text: string; color: string }> = {
  * ไว้ถูกต้องแล้วต้องไม่พังทั้งร้านเพราะมีคนกดปุ่มนี้ครั้งเดียว
  */
 function VatCategoryFixCard({ count, onDone }: { count: number; onDone: () => void }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [category, setCategory] = useState<"V" | "N">("V");
   const [apply, { loading }] = useMutation(M_SET_VAT_UNKNOWN);
@@ -111,7 +114,7 @@ function VatCategoryFixCard({ count, onDone }: { count: number; onDone: () => vo
         <Alert closable
           type="warning"
           showIcon
-          message={`สินค้าที่เปิดขายยังไม่ระบุประเภท VAT ${count} รายการ`}
+          message={uiText("admin_ui.active_products_have_no_vat_category_442bf", { v0: count })}
           description={t("admin_products.vat_bulk_hint")}
         />
         <Space wrap>
@@ -126,7 +129,7 @@ function VatCategoryFixCard({ count, onDone }: { count: number; onDone: () => vo
           />
           <Popconfirm
             title={t("admin_products.vat_bulk_title")}
-            description={`ตั้งให้สินค้า ${count} รายการเป็น ${category === "V" ? t("admin_products.vat_v") : t("admin_products.vat_n")}`}
+            description={uiText("admin_ui.set_products_to_ea575", { v0: count, v1: category === "V" ? t("admin_products.vat_v") : t("admin_products.vat_n") })}
             onConfirm={async () => {
               try {
                 const res = await apply({ variables: { vatCategory: category } });
@@ -138,14 +141,14 @@ function VatCategoryFixCard({ count, onDone }: { count: number; onDone: () => vo
                 );
                 onDone();
               } catch (e: any) {
-                message.error(e?.message || "ตั้งค่าไม่สำเร็จ");
+                message.error(e?.message || uiText("admin_ui.couldn_t_save_settings_473c9"));
               }
             }}
           >
             <Button type="primary" loading={loading}>{t("admin_products.vat_bulk_apply")}</Button>
           </Popconfirm>
           <Typography.Text type="secondary">
-            แก้รายตัวได้ที่ <a href="/admin/products">สินค้า</a>
+            {uiText("admin_ui.edit_individual_products_at_cffcb")} <a href="/admin/products">{uiText("admin_ui.product_8432c")}</a>
           </Typography.Text>
         </Space>
       </Space>
@@ -173,20 +176,21 @@ function PharmacyCounterSettingsCard({
   blockShiftOnUnreviewed: boolean;
   onSaved: () => void;
 }) {
+  const uiText = useUiText();
   const [save, { loading: saving }] = useMutation(M_PHARMACY_COUNTER_SETTINGS);
 
   const set = async (variables: { counter?: boolean; blockShift?: boolean }) => {
     try {
       await save({ variables });
-      message.success("บันทึกแล้ว");
+      message.success(uiText("admin_ui.saved_75237"));
       onSaved();
     } catch (e: any) {
-      message.error(e?.message ?? "บันทึกไม่สำเร็จ");
+      message.error(e?.message ?? uiText("admin_ui.could_not_save_2fe23"));
     }
   };
 
   return (
-    <Card title="การอนุมัติของเภสัชกรที่เคาน์เตอร์">
+    <Card title={uiText("admin_ui.pharmacist_approval_at_the_counter_b2974")}>
       <Space direction="vertical" size="middle" style={{ width: "100%" }}>
         <Space align="start" size="middle">
           <Switch
@@ -195,13 +199,9 @@ function PharmacyCounterSettingsCard({
             onChange={(checked) => void set({ counter: checked })}
           />
           <div>
-            <Typography.Text strong>ให้เภสัชกรกด PIN อนุมัติจ่ายยาที่เครื่องขายได้</Typography.Text>
+            <Typography.Text strong>{uiText("admin_ui.allow_pharmacists_to_approve_dispensing_with_a_pin_a265f")}</Typography.Text>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              เปิดไว้ = ทำงานแบบร้านยาทั่วไป เภสัชกรที่ยืนอยู่หน้าร้านอนุมัติได้ทันที รวมถึงยาที่ต้องมี
-              ใบสั่งแพทย์และสินค้าที่ยังไม่ได้รีวิวนโยบาย · ทุกครั้งที่กดจะถูกบันทึกว่าใครอนุมัติยาอะไร
-              ให้บิลไหน · ปิด = ทุกอย่างต้องผ่านคิวเภสัชกรเท่านั้น (เหมาะกับร้านที่เภสัชกรไม่ได้อยู่หน้าร้าน)
-              · เพดานจำนวนต่อครั้งของสินค้ายังปลดด้วย PIN ไม่ได้ทั้งสองกรณี
-            </Typography.Paragraph>
+              {uiText("admin_ui.enabled_a_pharmacist_at_the_counter_can_approve_690cc")}</Typography.Paragraph>
           </div>
         </Space>
         <Space align="start" size="middle">
@@ -211,11 +211,9 @@ function PharmacyCounterSettingsCard({
             onChange={(checked) => void set({ blockShift: checked })}
           />
           <div>
-            <Typography.Text strong>ห้ามเปิดกะถ้ายังรีวิวนโยบายสินค้าไม่ครบ</Typography.Text>
+            <Typography.Text strong>{uiText("admin_ui.block_shift_opening_until_all_product_policies_are_39843")}</Typography.Text>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              ปิดไว้ (ค่าปริยาย) = เปิดร้านขายได้เลย สินค้าที่ยังไม่รีวิวจะขอ PIN เภสัชกรเป็นครั้ง ๆ ·
-              เปิด = บังคับให้รีวิวครบก่อนเปิดร้าน (พฤติกรรมเดิมก่อน 9.29)
-            </Typography.Paragraph>
+              {uiText("admin_ui.disabled_default_the_store_can_open_with_pharmacist_ab8d4")}</Typography.Paragraph>
           </div>
         </Space>
       </Space>
@@ -224,6 +222,7 @@ function PharmacyCounterSettingsCard({
 }
 
 function TaxSettingsCard({ onSaved }: { onSaved: () => void }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [form] = Form.useForm();
   const { data, loading } = useQuery(Q_TAX_SETTINGS, { fetchPolicy: "cache-and-network" });
@@ -235,13 +234,13 @@ function TaxSettingsCard({ onSaved }: { onSaved: () => void }) {
   }, [settings, form]);
 
   return (
-    <Card title="ค่าตั้งภาษีของร้าน" loading={loading && !settings}>
+    <Card title={uiText("admin_ui.store_tax_settings_4e7ff")} loading={loading && !settings}>
       <Alert closable
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="มีผลกับบิลใหม่เท่านั้น"
-        description="เอกสารที่ออกไปแล้วเก็บอัตราและยอดของตัวเองไว้ในเอกสารนั้น การแก้ตรงนี้ไม่ย้อนแก้ของเก่า · ค่าที่ถูกต้องให้ยืนยันกับผู้ทำบัญชีของร้านก่อนเปิดขาย"
+        message={uiText("admin_ui.applies_only_to_new_bills_d18a1")}
+        description={uiText("admin_ui.issued_documents_retain_their_own_rates_and_amounts_f4742")}
       />
       {settings?.priceIncludesVat === false && (
         <Alert
@@ -259,31 +258,31 @@ function TaxSettingsCard({ onSaved }: { onSaved: () => void }) {
         onFinish={async (values) => {
           try {
             await save({ variables: { input: { ...values, vatRate: Number(values.vatRate) } } });
-            message.success("บันทึกค่าตั้งภาษีแล้ว");
+            message.success(uiText("admin_ui.tax_settings_saved_78555"));
             onSaved();
           } catch (e: any) {
-            message.error(e?.message ?? "บันทึกไม่สำเร็จ");
+            message.error(e?.message ?? uiText("admin_ui.could_not_save_2fe23"));
           }
         }}
       >
         <Space size="large" wrap align="start">
-          <Form.Item name="vatRegistered" label="ร้านจด VAT" valuePropName="checked">
-            <Switch checkedChildren="จด" unCheckedChildren="ไม่จด" />
+          <Form.Item name="vatRegistered" label={uiText("admin_ui.store_is_vat_registered_ce9b7")} valuePropName="checked">
+            <Switch checkedChildren={uiText("admin_ui.registered_15804")} unCheckedChildren={uiText("admin_ui.not_registered_e3a8c")} />
           </Form.Item>
           <Form.Item
             name="abbreviatedApproved"
-            label="ได้รับอนุมัติให้ออกใบกำกับอย่างย่อ"
+            label={uiText("admin_ui.authorized_to_issue_abbreviated_tax_invoices_66870")}
             valuePropName="checked"
-            tooltip="ติ๊กเมื่อร้านได้รับอนุมัติจากสรรพากรแล้ว — ไม่ติ๊กจะยังขายได้แต่หน้าความพร้อมจะเตือนค้างไว้"
+            tooltip={uiText("admin_ui.select_only_after_revenue_department_approval_selling_remains_a4352")}
           >
-            <Switch checkedChildren="อนุมัติแล้ว" unCheckedChildren="ยังไม่" />
+            <Switch checkedChildren={uiText("admin_ui.approved_8f71e")} unCheckedChildren={uiText("admin_ui.not_yet_baa0a")} />
           </Form.Item>
-          <Form.Item name="vatRate" label="อัตรา VAT (%)">
+          <Form.Item name="vatRate" label={uiText("admin_ui.vat_rate_a129c")}>
             <InputNumber min={0} max={100} step={0.5} style={{ width: 120 }} />
           </Form.Item>
           <Form.Item
             name="priceIncludesVat"
-            label="ราคาสินค้าที่ตั้งไว้"
+            label={uiText("admin_ui.configured_product_prices_7c712")}
             help={t("admin_pos_readiness.vat_included_only_reason")}
           >
             <Select
@@ -294,50 +293,50 @@ function TaxSettingsCard({ onSaved }: { onSaved: () => void }) {
               ]}
             />
           </Form.Item>
-          <Form.Item name="vatRounding" label="วิธีปัดเศษ VAT">
+          <Form.Item name="vatRounding" label={uiText("admin_ui.vat_rounding_method_3185b")}>
             <Select
               style={{ width: 220 }}
               options={[
-                { value: "BASE_FIRST", label: "ปัดฐานก่อน (ค่าเริ่มต้น)" },
-                { value: "VAT_FIRST_TRUNCATE", label: "ตัดเศษ VAT ทิ้ง" },
-                { value: "VAT_FIRST_ROUND", label: "ปัด VAT ตามปกติ" },
+                { value: "BASE_FIRST", label: uiText("admin_ui.round_tax_base_first_default_46774") },
+                { value: "VAT_FIRST_TRUNCATE", label: uiText("admin_ui.truncate_vat_362df") },
+                { value: "VAT_FIRST_ROUND", label: uiText("admin_ui.round_vat_normally_654c9") },
               ]}
             />
           </Form.Item>
-          <Form.Item name="calendarEra" label="ปีบนเอกสาร">
+          <Form.Item name="calendarEra" label={uiText("admin_ui.year_format_on_documents_967c4")}>
             <Select
               style={{ width: 140 }}
               options={[
-                { value: "BE", label: "พ.ศ." },
-                { value: "CE", label: "ค.ศ." },
+                { value: "BE", label: uiText("admin_ui.buddhist_era_1d3e9") },
+                { value: "CE", label: uiText("admin_ui.common_era_087aa") },
               ]}
             />
           </Form.Item>
           <Form.Item
             name="cashRounding"
-            label="ปัดเศษเงินสด"
-            tooltip="ใช้เฉพาะบิลที่จ่ายเงินสดล้วน · ยอดปัดเป็นบรรทัดแยกบนใบเสร็จ ไม่ใช่ส่วนลด และไม่แตะฐาน VAT"
+            label={uiText("admin_ui.cash_rounding_72bf0")}
+            tooltip={uiText("admin_ui.applies_only_to_cash_only_bills_rounding_appears_74d15")}
           >
             <Select
               style={{ width: 160 }}
               options={[
-                { value: "NONE", label: "ไม่ปัด" },
-                { value: "0.25", label: "ปัดที่ 0.25" },
-                { value: "0.50", label: "ปัดที่ 0.50" },
-                { value: "1.00", label: "ปัดที่ 1 บาท" },
+                { value: "NONE", label: uiText("admin_ui.no_rounding_34563") },
+                { value: "0.25", label: uiText("admin_ui.round_to_0_25_99fc7") },
+                { value: "0.50", label: uiText("admin_ui.round_to_0_50_a70f7") },
+                { value: "1.00", label: uiText("admin_ui.round_to_1_baht_2bb65") },
               ]}
             />
           </Form.Item>
         </Space>
         <Button type="primary" htmlType="submit" loading={saving}>
-          บันทึกค่าตั้งภาษี
-        </Button>
+          {uiText("admin_ui.save_tax_settings_5d741")}</Button>
       </Form>
     </Card>
   );
 }
 
 export default function PosReadinessPage() {
+  const uiText = useUiText();
   const { can, loading: permsLoading } = useBmsPermissions();
   const canRead = can("pos.device.manage") && can("pharmacy.policy.read") && can("product.view") && can("stock.adjust");
   const { data, loading, refetch } = useQuery(Q_READINESS, {
@@ -350,8 +349,8 @@ export default function PosReadinessPage() {
     // ไม่มีสิทธิ์ดู lot หรือนโยบายร้านยา ซึ่งเป็นคนละเรื่องกัน
     return (
       <Space direction="vertical" size="large" style={{ width: "100%" }}>
-        <AdminPageHeader title="ความพร้อมก่อนเปิดขายหน้าร้าน" />
-        <Alert closable type="error" showIcon message="ไม่มีสิทธิ์ดูความพร้อม POS, สินค้า, lot หรือนโยบายร้านยาอย่างใดอย่างหนึ่ง" />
+        <AdminPageHeader title={uiText("admin_ui.pos_readiness_before_opening_59633")} />
+        <Alert closable type="error" showIcon message={uiText("admin_ui.you_lack_permission_for_one_or_more_of_fe7f7")} />
         {can("tax.setting.manage") && <TaxSettingsCard onSaved={() => {}} />}
       </Space>
     );
@@ -370,29 +369,29 @@ export default function PosReadinessPage() {
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <AdminPageHeader title="ความพร้อมก่อนเปิดขายหน้าร้าน">
-        <Link href="/admin/pos-manual"><Button icon={<ReadOutlined />}>คู่มือแคชเชียร์</Button></Link>
+      <AdminPageHeader title={uiText("admin_ui.pos_readiness_before_opening_59633")}>
+        <Link href="/admin/pos-manual"><Button icon={<ReadOutlined />}>{uiText("admin_ui.cashier_manual_3e8eb")}</Button></Link>
       </AdminPageHeader>
 
-      <Card title="ความพร้อม POS หลัก" loading={loading}>
+      <Card title={uiText("admin_ui.core_pos_readiness_dc724")} loading={loading}>
         {operational && (
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
             <Alert closable
               type={operational.ready ? "success" : "error"}
               showIcon
-              message={operational.ready ? "ข้อมูลหลักพร้อมสำหรับเปิดกะ" : `ยังมี blocker ${operational.blockers.length} รายการ`}
-              description={operational.ready ? "ยังต้องทดสอบเครื่องสแกน เครื่องพิมพ์ ช่องทางรับเงิน และแผนเมื่อระบบออฟไลน์บนเครื่องจริง" : operational.blockers.join(" · ")}
+              message={operational.ready ? uiText("admin_ui.master_data_is_ready_for_shift_opening_73cdd") : uiText("admin_ui.blockers_remain_b9369", { v0: operational.blockers.length })}
+              description={operational.ready ? uiText("admin_ui.scanners_printers_payment_methods_and_offline_procedures_still_0b019") : operational.blockers.join(" · ")}
             />
             {operational.warnings.length > 0 && (
-              <Alert closable type="warning" showIcon message="รายการที่ควรตรวจ" description={operational.warnings.join(" · ")} />
+              <Alert closable type="warning" showIcon message={uiText("admin_ui.items_to_review_84841")} description={operational.warnings.join(" · ")} />
             )}
             <Space size="large" wrap>
-              <Statistic title="สาขาที่เปิด" value={operational.activeLocations} />
-              <Statistic title="เครื่องพร้อมใช้" value={operational.pairedDevices} suffix={`/ ${operational.activeDevices}`} />
-              <Statistic title="พนักงานพร้อมขาย" value={operational.cashiersReady} suffix={`/ ${operational.cashiersWithPin}`} />
-              <Statistic title="สินค้าที่เปิดขาย" value={operational.sellableProducts} />
-              <Statistic title="สต็อกพร้อมขาย" value={operational.stockedVariants} />
-              <Statistic title="refund ค้าง" value={operational.pendingRefundCount} valueStyle={operational.pendingRefundCount ? { color: "#cf1322" } : undefined} />
+              <Statistic title={uiText("admin_ui.active_branches_58307")} value={operational.activeLocations} />
+              <Statistic title={uiText("admin_ui.ready_devices_44917")} value={operational.pairedDevices} suffix={`/ ${operational.activeDevices}`} />
+              <Statistic title={uiText("admin_ui.staff_ready_to_sell_a44b9")} value={operational.cashiersReady} suffix={`/ ${operational.cashiersWithPin}`} />
+              <Statistic title={uiText("admin_ui.active_products_bda3b")} value={operational.sellableProducts} />
+              <Statistic title={uiText("admin_ui.sellable_stock_78318")} value={operational.stockedVariants} />
+              <Statistic title={uiText("admin_ui.pending_refunds_e9a03")} value={operational.pendingRefundCount} valueStyle={operational.pendingRefundCount ? { color: "#cf1322" } : undefined} />
             </Space>
           </Space>
         )}
@@ -414,8 +413,8 @@ export default function PosReadinessPage() {
         <Alert closable
           type="info"
           showIcon
-          message="ร้านนี้ไม่ได้ตั้งเป็นร้านยา"
-          description="กฎการขายยาไม่ถูกบังคับใช้ และไม่มีการบล็อกการเปิดกะจากเรื่อง policy สินค้า"
+          message={uiText("admin_ui.this_store_is_not_configured_as_a_pharmacy_551f8")}
+          description={uiText("admin_ui.pharmacy_sales_rules_are_not_enforced_and_product_686d5")}
         />
       )}
 
@@ -431,39 +430,39 @@ export default function PosReadinessPage() {
         <Card>
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
             {readiness.ready ? (
-              <Alert closable type="success" showIcon message="รีวิวครบแล้ว เปิดกะขายได้" />
+              <Alert closable type="success" showIcon message={uiText("admin_ui.all_reviews_complete_shifts_can_open_723e3")} />
             ) : (
               <Alert closable
                 type="warning"
                 showIcon
                 message={
                   readiness.blockShiftOnUnreviewed
-                    ? `ยังเปิดกะไม่ได้ — เหลืออีก ${total - approved} รายการ`
-                    : `เปิดกะได้ แต่ยังเหลือสินค้าที่ยังไม่รีวิว ${total - approved} รายการ`
+                    ? uiText("admin_ui.cannot_open_a_shift_yet_items_remain_544c3", { v0: total - approved })
+                    : uiText("admin_ui.shifts_can_open_but_products_still_need_review_85b85", { v0: total - approved })
                 }
                 description={
                   readiness.blockShiftOnUnreviewed
-                    ? "เภสัชกรต้องอนุมัตินโยบายการขายให้ครบทุกสินค้าที่ยังใช้งานอยู่ก่อน มิฉะนั้นสินค้าที่ยังไม่ผ่านจะขายไม่ได้กลางคิวลูกค้า"
-                    : "สินค้าที่ยังไม่รีวิวขายได้เมื่อเภสัชกรกด PIN อนุมัติที่เครื่อง — ทุกครั้งที่ต้องกด แปลว่างานรีวิวยังค้างอยู่ตัวนั้น"
+                    ? uiText("admin_ui.a_pharmacist_must_approve_sales_policies_for_every_2b0a5")
+                    : uiText("admin_ui.unreviewed_products_can_be_sold_with_pharmacist_pin_ba1f0")
                 }
               />
             )}
             <Progress percent={percent} status={readiness.ready ? "success" : "active"} />
             <Space size="large" wrap>
-              <Statistic title="สินค้าทั้งหมด" value={total} />
-              <Statistic title="อนุมัติแล้ว" value={approved} valueStyle={{ color: "#3f8600" }} />
-              <Statistic title="ยังไม่เริ่ม" value={readiness.missing} valueStyle={{ color: "#cf1322" }} />
-              <Statistic title="ร่าง" value={readiness.draft} />
-              <Statistic title="รอตรวจ" value={readiness.pendingReview} />
+              <Statistic title={uiText("admin_ui.all_products_19b99")} value={total} />
+              <Statistic title={uiText("admin_ui.approved_8f71e")} value={approved} valueStyle={{ color: "#3f8600" }} />
+              <Statistic title={uiText("admin_ui.not_started_05265")} value={readiness.missing} valueStyle={{ color: "#cf1322" }} />
+              <Statistic title={uiText("admin_ui.draft_d1f1d")} value={readiness.draft} />
+              <Statistic title={uiText("admin_ui.awaiting_review_7d229")} value={readiness.pendingReview} />
             </Space>
           </Space>
         </Card>
       )}
 
       {readiness?.pharmacyArchetype && (
-      <Card title="สินค้าที่ยังรอเภสัชกร" loading={loading}>
+      <Card title={uiText("admin_ui.products_awaiting_pharmacist_review_fde1a")} loading={loading}>
         {pending.length === 0 ? (
-          <Empty description="ไม่มีรายการค้าง" />
+          <Empty description={uiText("admin_ui.no_pending_items_c67af")} />
         ) : (
           <Table
             size="small"
@@ -472,13 +471,13 @@ export default function PosReadinessPage() {
             pagination={{ pageSize: 20, showSizeChanger: false }}
             columns={[
               { title: "SKU", dataIndex: "sku", width: 160 },
-              { title: "ชื่อสินค้า", dataIndex: "name" },
+              { title: uiText("admin_ui.product_name_c9863"), dataIndex: "name" },
               {
-                title: "สถานะ",
+                title: uiText("admin_ui.status_2e8c4"),
                 dataIndex: "policyStatus",
                 width: 160,
                 render: (v: string) => {
-                  const meta = POLICY_LABEL[v] ?? { text: v, color: "default" };
+                  const meta = POLICY_LABEL(uiText)[v] ?? { text: v, color: "default" };
                   return <Tag color={meta.color}>{meta.text}</Tag>;
                 },
               },
@@ -486,14 +485,14 @@ export default function PosReadinessPage() {
           />
         )}
         <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
-          แก้ไขและอนุมัติได้ที่ <a href="/admin/pharmacy-protocols">นโยบายการขายรายสินค้า</a>
+          {uiText("admin_ui.edit_and_approve_at_7be7f")} <a href="/admin/pharmacy-protocols">{uiText("admin_ui.product_sales_policies_30fe0")}</a>
         </Typography.Paragraph>
       </Card>
       )}
 
-      <Card title="lot ที่หมดอายุแล้ว / จะหมดใน 90 วัน" loading={loading}>
+      <Card title={uiText("admin_ui.lots_expired_expiring_within_90_days_1c241")} loading={loading}>
         {expiring.length === 0 ? (
-          <Empty description="ไม่มี lot ใกล้หมดอายุ" />
+          <Empty description={uiText("admin_ui.no_lots_nearing_expiry_b6300")} />
         ) : (
           <Table
             size="small"
@@ -502,35 +501,34 @@ export default function PosReadinessPage() {
             pagination={{ pageSize: 10, showSizeChanger: false }}
             columns={[
               { title: "SKU", dataIndex: "productSku", width: 160 },
-              { title: "ไซซ์", dataIndex: "size", width: 80 },
-              { title: "lot", dataIndex: "lotNo", width: 140 },
+              { title: uiText("admin_ui.size_ff4b6"), dataIndex: "size", width: 80 },
+              { title: uiText("admin_ui.en_lot_dcf6a"), dataIndex: "lotNo", width: 140 },
               {
-                title: "วันหมดอายุ",
+                title: uiText("admin_ui.expiry_date_73dd6"),
                 dataIndex: "expiryDate",
                 width: 140,
                 render: (v: string) =>
-                  v && v < today ? <Tag color="red">{v} (หมดแล้ว)</Tag> : <Tag color="orange">{v}</Tag>,
+                  v && v < today ? <Tag color="red">{v}  {uiText("admin_ui.expired_e0a95")}</Tag> : <Tag color="orange">{v}</Tag>,
               },
-              { title: "คงเหลือ", dataIndex: "qty", width: 100 },
+              { title: uiText("admin_ui.available_dd579"), dataIndex: "qty", width: 100 },
             ]}
           />
         )}
         <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
-          lot ที่หมดอายุแล้วจะถูกข้ามอัตโนมัติตอนขาย (FEFO) — แต่ยังนับอยู่ในสต็อกรวมจนกว่าจะตัดออก
-        </Typography.Paragraph>
+          {uiText("admin_ui.expired_lots_are_automatically_skipped_during_sales_fefo_cc469")}</Typography.Paragraph>
       </Card>
 
-      <Card title="ยอด lot ไม่ตรงกับสต็อกรวม" loading={loading}>
+      <Card title={uiText("admin_ui.lot_balances_do_not_match_total_stock_224b7")} loading={loading}>
         {mismatches.length === 0 ? (
-          <Empty description="ตรงกันทุกแถว" />
+          <Empty description={uiText("admin_ui.all_rows_match_ee352")} />
         ) : (
           <>
             <Alert closable
               type="warning"
               showIcon
               style={{ marginBottom: 12 }}
-              message="สินค้าที่ยังไม่ได้บันทึก lot จะขึ้นที่นี่"
-              description="ถ้ายังไม่เคย backfill lot ให้ของเดิม รายการนี้จะยาวเป็นปกติ · หลัง backfill ครบแล้วรายการนี้ควรว่าง ถ้ายังมีแปลว่ามีที่ไหนเขียนสต็อกโดยไม่ผ่าน lot"
+              message={uiText("admin_ui.products_without_recorded_lots_appear_here_b3af4")}
+              description={uiText("admin_ui.this_list_may_be_long_if_existing_stock_fa117")}
             />
             <Table
               size="small"
@@ -539,11 +537,11 @@ export default function PosReadinessPage() {
               pagination={{ pageSize: 10, showSizeChanger: false }}
               columns={[
                 { title: "SKU", dataIndex: "productSku", width: 160 },
-                { title: "ไซซ์", dataIndex: "size", width: 80 },
-                { title: "สต็อกรวม", dataIndex: "currentStock", width: 120 },
-                { title: "รวมจาก lot", dataIndex: "lotTotal", width: 120 },
+                { title: uiText("admin_ui.size_ff4b6"), dataIndex: "size", width: 80 },
+                { title: uiText("admin_ui.total_stock_b47e3"), dataIndex: "currentStock", width: 120 },
+                { title: uiText("admin_ui.lot_total_aee11"), dataIndex: "lotTotal", width: 120 },
                 {
-                  title: "ต่าง",
+                  title: uiText("admin_ui.difference_d5059"),
                   width: 100,
                   render: (_: unknown, r: any) => (
                     <Tag color="red">{r.currentStock - r.lotTotal}</Tag>

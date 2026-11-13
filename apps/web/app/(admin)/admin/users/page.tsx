@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import { Table, Input, Space, Button, Tag, Popconfirm, Modal, message, Avatar, Typography, Tooltip } from "antd";
 import { PlusOutlined, DeleteOutlined, ReloadOutlined, EditOutlined } from "@ant-design/icons";
@@ -47,12 +49,12 @@ const ROLE_COLOR: Record<string, string> = {
 };
 const roleTag = (v: string) => <Tag color={ROLE_COLOR[v] ?? "default"}>{v}</Tag>;
 // created_at เดิมมาเป็น epoch string (ดู bug note ใน CLAUDE.local.md) — parse ให้ทนทั้ง 2 แบบ
-function formatDate(d: string | null) {
+function formatDate(d: string | null, uiText: UiTranslator = thaiUiText) {
   if (!d) return <span style={{ color: "var(--app-muted)" }}>—</span>;
   const asNumber = Number(d);
   const date = Number.isFinite(asNumber) && String(asNumber) === d ? new Date(asNumber) : new Date(d);
   if (Number.isNaN(date.getTime())) return <span style={{ color: "var(--app-muted)" }}>—</span>;
-  return date.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+  return date.toLocaleString(uiText.locale, { dateStyle: "medium", timeStyle: "short" });
 }
 
 function UserAvatar({ name, avatar }: { name: string; avatar: string | null }) {
@@ -114,6 +116,7 @@ function UserNameLink({ href, label, disabledReason }: { href: string; label: st
 }
 
 function UsersList() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const [searchInput, setSearchInput] = useState("");
@@ -266,8 +269,8 @@ function UsersList() {
       { title: t("admin_users.col_email"), dataIndex: "email" },
       { title: t("admin_users.col_phone"), dataIndex: "phone", render: (v: string | null) => v || <span style={{ color: "var(--app-muted)" }}>—</span> },
       { title: t("admin_users.col_role"), dataIndex: "role", render: (_: string, r: UserRow) => userRoleTags(r) },
-      { title: t("admin_users.col_created"), dataIndex: "created_at", render: formatDate },
-      { title: t("admin_users.col_last_login"), dataIndex: "lastLoginAt", render: (d: string | null) => d ? formatDate(d) : <span style={{ color: "var(--app-muted)" }}>{t("admin_users.never_logged_in")}</span> },
+      { title: t("admin_users.col_created"), dataIndex: "created_at", render: (value: string | null) => formatDate(value, uiText) },
+      { title: t("admin_users.col_last_login"), dataIndex: "lastLoginAt", render: (d: string | null) => d ? formatDate(d, uiText) : <span style={{ color: "var(--app-muted)" }}>{t("admin_users.never_logged_in")}</span> },
       {
         title: t("admin_users.col_actions"),
         render: (_: any, r: UserRow) => (
@@ -280,7 +283,7 @@ function UsersList() {
     ],
     // canWrite/meData อยู่ใน closure ของ blockedReason ที่ render ใช้ → ต้องอยู่ใน deps
     // ไม่งั้นปุ่มจะค้างสถานะเดิมตอนสิทธิ์โหลดเสร็จทีหลัง
-    [search, refetch, page, pageSize, total, myId, myRole, canWrite, meData, t]
+    [uiText, search, refetch, page, pageSize, total, myId, myRole, canWrite, meData, t]
   );
 
   const rowSelection = {
@@ -341,8 +344,8 @@ function UsersList() {
               fields={[
                 { label: t("admin_users.col_phone"), value: r.phone || "—" },
                 { label: t("admin_users.field_shop"), value: r.tenantName || "—", hidden: !r.tenantName },
-                { label: t("admin_users.col_created"), value: formatDate(r.created_at) },
-                { label: t("admin_users.col_last_login"), value: r.lastLoginAt ? formatDate(r.lastLoginAt) : t("admin_users.never_logged_in") },
+                { label: t("admin_users.col_created"), value: formatDate(r.created_at, uiText) },
+                { label: t("admin_users.col_last_login"), value: r.lastLoginAt ? formatDate(r.lastLoginAt, uiText) : t("admin_users.never_logged_in") },
               ]}
               actions={
                 <>

@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 import * as Keychain from 'react-native-keychain';
 import {
   OFFLINE_QUEUE_SCHEMA_VERSION,
@@ -133,21 +134,21 @@ async function readUnlocked(): Promise<OfflineSaleRecord[]> {
       parsed.version !== 2 &&
       parsed.version !== OFFLINE_QUEUE_SCHEMA_VERSION
     )
-      throw new Error('คิวออฟไลน์เป็นรุ่นที่แอปนี้ไม่รองรับ');
+      throw new Error(posText("คิวออฟไลน์เป็นรุ่นที่แอปนี้ไม่รองรับ"));
     if (!Array.isArray(parsed.records))
-      throw new Error('โครงสร้างคิวออฟไลน์ไม่ถูกต้อง');
+      throw new Error(posText("โครงสร้างคิวออฟไลน์ไม่ถูกต้อง"));
     for (const value of parsed.records) {
       if (!isOfflineSaleRecord(value))
-        throw new Error('ข้อมูลรายการในคิวออฟไลน์ไม่ถูกต้อง');
+        throw new Error(posText("ข้อมูลรายการในคิวออฟไลน์ไม่ถูกต้อง"));
       const record = value;
       if (record.id !== record.payload?.idempotencyKey) {
         throw new Error(
-          'คิวออฟไลน์มีรหัสรายการไม่ตรงกัน กรุณาให้ผู้ดูแลตรวจสอบเครื่อง',
+          posText("คิวออฟไลน์มีรหัสรายการไม่ตรงกัน กรุณาให้ผู้ดูแลตรวจสอบเครื่อง"),
         );
       }
       if (parsed.version !== 1 && !record.requestFingerprint) {
         throw new Error(
-          'คิวออฟไลน์ไม่มีข้อมูลตรวจสอบ กรุณาให้ผู้ดูแลตรวจสอบเครื่อง',
+          posText("คิวออฟไลน์ไม่มีข้อมูลตรวจสอบ กรุณาให้ผู้ดูแลตรวจสอบเครื่อง"),
         );
       }
       if (
@@ -158,13 +159,13 @@ async function readUnlocked(): Promise<OfflineSaleRecord[]> {
             : recordFingerprint(record))
       ) {
         throw new Error(
-          'คิวออฟไลน์มีข้อมูลเปลี่ยนแปลง กรุณาให้ผู้ดูแลตรวจสอบเครื่อง',
+          posText("คิวออฟไลน์มีข้อมูลเปลี่ยนแปลง กรุณาให้ผู้ดูแลตรวจสอบเครื่อง"),
         );
       }
     }
     return parsed.records;
   } catch {
-    throw new Error('อ่านคิวรายการออฟไลน์ไม่ได้ กรุณาให้ผู้ดูแลตรวจสอบเครื่อง');
+    throw new Error(posText("อ่านคิวรายการออฟไลน์ไม่ได้ กรุณาให้ผู้ดูแลตรวจสอบเครื่อง"));
   }
 }
 
@@ -173,12 +174,12 @@ async function writeUnlocked(
 ): Promise<OfflineSaleRecord[]> {
   if (records.length === 0) {
     const removed = await Keychain.resetGenericPassword({ service: SERVICE });
-    if (!removed) throw new Error('ล้างคิวออฟไลน์จากที่เก็บข้อมูลไม่สำเร็จ');
+    if (!removed) throw new Error(posText("ล้างคิวออฟไลน์จากที่เก็บข้อมูลไม่สำเร็จ"));
     return [];
   }
   const protectedRecords = records.map(record => {
     if (record.id !== record.payload.idempotencyKey) {
-      throw new Error('รหัสรายการออฟไลน์ไม่ตรงกับคำขอขาย');
+      throw new Error(posText("รหัสรายการออฟไลน์ไม่ตรงกับคำขอขาย"));
     }
     return {
       ...record,
@@ -192,14 +193,14 @@ async function writeUnlocked(
   const serialized = JSON.stringify(envelope);
   if (serialized.length > MAX_BYTES) {
     throw new Error(
-      'คิวออฟไลน์มีข้อมูลมากเกินขนาด ต้องซิงก์หรือตรวจสอบก่อนขายต่อ',
+      posText("คิวออฟไลน์มีข้อมูลมากเกินขนาด ต้องซิงก์หรือตรวจสอบก่อนขายต่อ"),
     );
   }
   const stored = await Keychain.setGenericPassword(USERNAME, serialized, {
     service: SERVICE,
     accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK,
   });
-  if (!stored) throw new Error('บันทึกคิวออฟไลน์ลงที่เก็บข้อมูลไม่สำเร็จ');
+  if (!stored) throw new Error(posText("บันทึกคิวออฟไลน์ลงที่เก็บข้อมูลไม่สำเร็จ"));
   return protectedRecords;
 }
 
@@ -220,14 +221,14 @@ export async function putOfflineSale(
   record: OfflineSaleRecord,
 ): Promise<OfflineSaleRecord[]> {
   if (record.id !== record.payload.idempotencyKey) {
-    throw new Error('รหัสรายการออฟไลน์ไม่ตรงกับคำขอขาย');
+    throw new Error(posText("รหัสรายการออฟไลน์ไม่ตรงกับคำขอขาย"));
   }
   return locked(async () => {
     const records = await readUnlocked();
     const index = records.findIndex(item => item.id === record.id);
     if (index < 0 && records.length >= MAX_RECORDS) {
       throw new Error(
-        `คิวออฟไลน์เต็ม ${MAX_RECORDS} รายการ ต้องซิงก์หรือตรวจสอบก่อนขายต่อ`,
+        posText("คิวออฟไลน์เต็ม {v0} รายการ ต้องซิงก์หรือตรวจสอบก่อนขายต่อ", { v0: MAX_RECORDS }),
       );
     }
     const next = [...records];
@@ -236,7 +237,7 @@ export async function putOfflineSale(
       const existing = records[index];
       if (recordFingerprint(existing) !== recordFingerprint(record)) {
         throw new Error(
-          'ห้ามเปลี่ยนข้อมูลรายการออฟไลน์ที่ใช้รหัสเดิม กรุณาให้ผู้ดูแลตรวจสอบเครื่อง',
+          posText("ห้ามเปลี่ยนข้อมูลรายการออฟไลน์ที่ใช้รหัสเดิม กรุณาให้ผู้ดูแลตรวจสอบเครื่อง"),
         );
       }
       next[index] = record;
@@ -254,7 +255,7 @@ export async function patchOfflineSale(
   return locked(async () => {
     const records = await readUnlocked();
     if (!records.some(record => record.id === id)) {
-      throw new Error('ไม่พบรายการที่ต้องแก้ในคิวออฟไลน์');
+      throw new Error(posText("ไม่พบรายการที่ต้องแก้ในคิวออฟไลน์"));
     }
     const next = records.map(record =>
       record.id === id

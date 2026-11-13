@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../../i18n/language';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -83,11 +84,11 @@ type Props = {
 };
 
 const discrepancyReasons = [
-  { code: 'LOST_IN_TRANSIT', label: 'สูญหายระหว่างทาง' },
-  { code: 'SOURCE_SHORT_SHIP', label: 'ต้นทางส่งขาด' },
-  { code: 'COUNT_ERROR', label: 'นับผิด' },
-  { code: 'DAMAGED', label: 'เสียหาย' },
-  { code: 'OTHER', label: 'อื่นๆ' },
+  { code: 'LOST_IN_TRANSIT', get label() { return posText("สูญหายระหว่างทาง"); } },
+  { code: 'SOURCE_SHORT_SHIP', get label() { return posText("ต้นทางส่งขาด"); } },
+  { code: 'COUNT_ERROR', get label() { return posText("นับผิด"); } },
+  { code: 'DAMAGED', get label() { return posText("เสียหาย"); } },
+  { code: 'OTHER', get label() { return posText("อื่นๆ"); } },
 ] as const;
 
 function hasDiscrepancy(row: ReceiptDraft): boolean {
@@ -118,24 +119,20 @@ function resultError(
 ): string | null {
   if (!result || typeof result.status !== 'string' || !result.status.trim()) {
     // Missing status is an unknown outcome, not a decided business rejection.
-    throw new Error('ไม่ได้รับผลยืนยันจากเซิร์ฟเวอร์');
+    throw new Error(posText("ไม่ได้รับผลยืนยันจากเซิร์ฟเวอร์"));
   }
   if (result.reason) return result.reason;
   if (['OK', 'CREATED', 'APPLIED'].includes(result.status ?? '')) return null;
   if (result.status === 'INSUFFICIENT') {
-    return `${result.sku}/${result.size} มีพร้อมโอน ${
-      result.available ?? 0
-    } แต่ขอ ${result.requested ?? 0}`;
+    return posText("{v0}/{v1} มีพร้อมโอน {v2} แต่ขอ {v3}", { v0: result.sku, v1: result.size, v2: result.available ?? 0, v3: result.requested ?? 0 });
   }
   if (result.status === 'WOULD_BREAK_RESERVED') {
-    return `${result.sku}/${result.size} จะเหลือ ${
-      result.wouldBe ?? 0
-    } ต่ำกว่ายอดจอง ${result.reserved ?? 0}`;
+    return posText("{v0}/{v1} จะเหลือ {v2} ต่ำกว่ายอดจอง {v3}", { v0: result.sku, v1: result.size, v2: result.wouldBe ?? 0, v3: result.reserved ?? 0 });
   }
   if (result.status === 'WRONG_STATE') {
-    return `สถานะปัจจุบัน ${result.current ?? '-'}`;
+    return posText("สถานะปัจจุบัน {v0}", { v0: result.current ?? '-' });
   }
-  return result.status ?? 'ทำรายการไม่สำเร็จ';
+  return result.status ?? posText("ทำรายการไม่สำเร็จ");
 }
 
 function branchDisplayLabel(branchName: string) {
@@ -143,8 +140,8 @@ function branchDisplayLabel(branchName: string) {
 }
 
 function transferStatusLabel(status: string) {
-  if (status === 'IN_TRANSIT') return 'รอรับ';
-  if (status === 'DRAFT') return 'ฉบับร่าง';
+  if (status === 'IN_TRANSIT') return posText("รอรับสินค้า");
+  if (status === 'DRAFT') return posText("ฉบับร่าง");
   return status;
 }
 
@@ -163,6 +160,7 @@ function InventorySummary({
   incomingCount,
   draftCountCount,
 }: InventorySummaryProps) {
+  usePosLanguage();
   const { colors, scheme, spacing, typography } = useTheme();
   const primaryTint =
     scheme === 'dark' ? 'rgba(22, 119, 255, 0.18)' : '#eff6ff';
@@ -170,7 +168,7 @@ function InventorySummary({
     {
       key: 'sellable',
       glyph: '◇',
-      label: 'พร้อมขาย',
+      label: posText("พร้อมขาย"),
       value: `${sellableSkuCount} SKU`,
       color: colors.success,
       backgroundColor: colors.successBg,
@@ -178,7 +176,7 @@ function InventorySummary({
     {
       key: 'low',
       glyph: '!',
-      label: 'ใกล้หมด',
+      label: posText("ใกล้หมด"),
       value: String(lowStockCount),
       color: colors.warning,
       backgroundColor: colors.warningBg,
@@ -186,7 +184,7 @@ function InventorySummary({
     {
       key: 'incoming',
       glyph: '⇥',
-      label: 'รอรับเข้า',
+      label: posText("รอรับเข้า"),
       value: String(incomingCount),
       color: colors.primary,
       backgroundColor: primaryTint,
@@ -194,7 +192,7 @@ function InventorySummary({
     {
       key: 'counts',
       glyph: '▣',
-      label: 'รอบนับค้าง',
+      label: posText("รอบนับค้าง"),
       value: String(draftCountCount),
       color: colors.danger,
       backgroundColor: colors.dangerBg,
@@ -268,6 +266,7 @@ function InventoryOverview({
   onOpenTransfers,
   onOpenCount,
 }: InventoryOverviewProps) {
+  usePosLanguage();
   const { colors, spacing, typography } = useTheme();
   const deviceLocationId = transferData?.deviceLocationId;
   const incoming = (transferData?.transfers ?? []).filter(
@@ -296,31 +295,31 @@ function InventoryOverview({
     ...incoming.map(transfer => ({
       key: `receive-${transfer.id}`,
       glyph: '⇥',
-      title: `รับสินค้าจาก${transfer.fromLocationName ?? 'อีกสาขา'}`,
-      detail: `${transfer.transferNo} · ${transfer.items.length} รายการ`,
-      status: 'รอรับ',
+      title: posText("รับสินค้าจาก{v0}", { v0: transfer.fromLocationName ?? posText("อีกสาขา") }),
+      detail: posText("{v0} · {v1} รายการ", { v0: transfer.transferNo, v1: transfer.items.length }),
+      status: posText("รอรับสินค้า"),
       statusColor: colors.warning,
-      action: 'ตรวจรับ',
+      action: posText("ตรวจรับ"),
       onPress: () => onReceive(transfer),
     })),
     ...draftCounts.map(count => ({
       key: `count-${count.id}`,
       glyph: '▣',
-      title: count.note?.trim() || 'นับสต็อกสาขา',
-      detail: `${count.countNo} · บันทึกแล้ว ${count.items.length} รายการ`,
-      status: 'ฉบับร่าง',
+      title: count.note?.trim() || posText("นับสต็อกสาขา"),
+      detail: posText("{v0} · บันทึกแล้ว {v1} รายการ", { v0: count.countNo, v1: count.items.length }),
+      status: posText("ฉบับร่าง"),
       statusColor: colors.textMuted,
-      action: 'ทำต่อ',
+      action: posText("ทำต่อ"),
       onPress: () => onOpenCount(count),
     })),
     ...outgoingDrafts.map(transfer => ({
       key: `send-${transfer.id}`,
       glyph: '⇄',
-      title: `โอนสินค้าไป${transfer.toLocationName ?? 'อีกสาขา'}`,
-      detail: `${transfer.transferNo} · ${transfer.items.length} รายการ`,
+      title: posText("โอนสินค้าไป{v0}", { v0: transfer.toLocationName ?? posText("อีกสาขา") }),
+      detail: posText("{v0} · {v1} รายการ", { v0: transfer.transferNo, v1: transfer.items.length }),
       status: transferStatusLabel(transfer.status),
       statusColor: colors.success,
-      action: 'ดูรายละเอียด',
+      action: posText("ดูรายละเอียด"),
       onPress: onOpenTransfers,
     })),
   ].slice(0, 4);
@@ -334,22 +333,19 @@ function InventoryOverview({
     >
       <View style={styles.between}>
         <Text style={[typography.subtitle, { color: colors.text }]}>
-          งานที่ต้องทำ
-        </Text>
+          {posText("งานที่ต้องทำ") + " "}</Text>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="ดูงานสต็อกทั้งหมด"
+          accessibilityLabel={posText("ดูงานสต็อกทั้งหมด")}
           onPress={onOpenTransfers}
         >
           <Text style={[typography.captionStrong, { color: colors.primary }]}>
-            ดูทั้งหมด ›
-          </Text>
+            {posText("ดูทั้งหมด ›") + " "}</Text>
         </Pressable>
       </View>
       {tasks.length === 0 ? (
         <Text style={[typography.body, { color: colors.textMuted }]}>
-          ไม่มีงานโอนหรือใบนับที่ค้างอยู่
-        </Text>
+          {posText("ไม่มีงานโอนหรือใบนับที่ค้างอยู่") + " "}</Text>
       ) : (
         tasks.map(task => (
           <View
@@ -406,7 +402,7 @@ function InventoryOverview({
             ) : null}
             <Button
               label={task.action}
-              variant={task.action === 'ตรวจรับ' ? 'primary' : 'secondary'}
+              variant={task.action === posText("ตรวจรับ") ? 'primary' : 'secondary'}
               onPress={task.onPress}
               style={styles.taskAction}
             />
@@ -425,16 +421,13 @@ function InventoryOverview({
     >
       <View style={styles.between}>
         <Text style={[typography.subtitle, { color: colors.text }]}>
-          สินค้าใกล้หมด
-        </Text>
+          {posText("สินค้าใกล้หมด") + " "}</Text>
         <Text style={[typography.captionStrong, { color: colors.primary }]}>
-          {transferData?.summary.lowStockCount ?? 0} รายการ
-        </Text>
+          {transferData?.summary.lowStockCount ?? 0} {" " + posText("รายการ") + " "}</Text>
       </View>
       {(transferData?.lowStock ?? []).length === 0 ? (
         <Text style={[typography.body, { color: colors.textMuted }]}>
-          ยังไม่มีสินค้าต่ำกว่าจุดสั่งซื้อ
-        </Text>
+          {posText("ยังไม่มีสินค้าต่ำกว่าจุดสั่งซื้อ") + " "}</Text>
       ) : (
         (transferData?.lowStock ?? []).slice(0, isTablet ? 6 : 4).map(item => (
           <View
@@ -463,10 +456,10 @@ function InventoryOverview({
               </Text>
             </View>
             <Text style={[typography.bodyStrong, { color: colors.danger }]}>
-              เหลือ {item.available}
+              {posText("เหลือ") + " "}{item.available}
             </Text>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
-              ขั้นต่ำ {item.reorderPoint}
+              {posText("ขั้นต่ำ") + " "}{item.reorderPoint}
             </Text>
           </View>
         ))
@@ -482,11 +475,9 @@ function InventoryOverview({
       ]}
     >
       <Text style={[typography.bodyStrong, { color: colors.text }]}>
-        สต็อกขาย ≠ คลังเกมเล่น
-      </Text>
+        {posText("สต็อกขาย ≠ คลังเกมเล่น") + " "}</Text>
       <Text style={[typography.caption, { color: colors.textMuted }]}>
-        เกมที่ให้ลูกค้ายืมจัดการในเมนูคลังเกม ไม่ตัดสต็อกขาย
-      </Text>
+        {posText("เกมที่ให้ลูกค้ายืมจัดการในเมนูคลังเกม ไม่ตัดสต็อกขาย") + " "}</Text>
     </View>
   );
 
@@ -509,8 +500,7 @@ function InventoryOverview({
     <View style={{ gap: spacing.md }}>
       <View style={[styles.infoStrip, { backgroundColor: colors.surface2 }]}>
         <Text style={[typography.captionStrong, { color: colors.primary }]}>
-          ⓘ สินค้าเพื่อขายเท่านั้น · เกมสำหรับเล่นอยู่ในคลังเกม
-        </Text>
+          {posText("ⓘ สินค้าเพื่อขายเท่านั้น · เกมสำหรับเล่นอยู่ในคลังเกม") + " "}</Text>
       </View>
       {summary}
       {phoneNavigation}
@@ -549,22 +539,21 @@ function StockLookup({
   onUseForTransfer: (item: StockSearchItem) => void;
   onUseForCount: (item: StockSearchItem) => void;
 }) {
+  usePosLanguage();
   const { colors, spacing, typography } = useTheme();
   return (
     <View style={{ gap: spacing.md }}>
       <Card style={{ gap: spacing.md }}>
         <Text style={[typography.subtitle, { color: colors.text }]}>
-          ค้นหาสต็อก
-        </Text>
+          {posText("ค้นหาสต็อก") + " "}</Text>
         <Text style={[typography.caption, { color: colors.textMuted }]}>
-          ค้นด้วยชื่อ SKU หรือบาร์โค้ด · แสดงยอดของสาขาเครื่องนี้จากเซิร์ฟเวอร์
-        </Text>
+          {posText("ค้นด้วยชื่อ SKU หรือบาร์โค้ด · แสดงยอดของสาขาเครื่องนี้จากเซิร์ฟเวอร์") + " "}</Text>
         <View style={styles.row}>
           <TextInput
             value={draft}
             onChangeText={onDraftChange}
             onSubmitEditing={onSearch}
-            placeholder="ชื่อสินค้า, SKU หรือบาร์โค้ด"
+            placeholder={posText("ชื่อสินค้า, SKU หรือบาร์โค้ด")}
             placeholderTextColor={colors.textSoft}
             autoCapitalize="none"
             autoCorrect={false}
@@ -580,16 +569,15 @@ function StockLookup({
               },
             ]}
           />
-          <Button label="ค้นหา" loading={loading} onPress={onSearch} />
-          <Button label="สแกน" variant="secondary" onPress={onScan} />
+          <Button label={posText("ค้นหา")} loading={loading} onPress={onSearch} />
+          <Button label={posText("สแกน")} variant="secondary" onPress={onScan} />
         </View>
       </Card>
 
       {!loading && !failed && items.length === 0 ? (
         <Card>
           <Text style={[typography.body, { color: colors.textMuted }]}>
-            ไม่พบสินค้าที่ตรงกับคำค้นหา
-          </Text>
+            {posText("ไม่พบสินค้าที่ตรงกับคำค้นหา") + " "}</Text>
         </Card>
       ) : null}
 
@@ -620,7 +608,7 @@ function StockLookup({
                     },
                   ]}
                 >
-                  พร้อมใช้ {item.available}
+                  {posText("พร้อมใช้") + " "}{item.available}
                 </Text>
                 <Text style={[typography.caption, { color: colors.textMuted }]}>
                   {unit}
@@ -629,19 +617,19 @@ function StockLookup({
             </View>
             <View style={styles.wrap}>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                คงเหลือ {item.currentStock}
+                {posText("คงเหลือ") + " "}{item.currentStock}
               </Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                จอง {item.reservedStock}
+                {posText("จอง") + " "}{item.reservedStock}
               </Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                กักกัน {item.quarantineStock}
+                {posText("กักกัน") + " "}{item.quarantineStock}
               </Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                กำลังเข้า {item.incomingStock}
+                {posText("กำลังเข้า") + " "}{item.incomingStock}
               </Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                จุดสั่งซื้อ {item.reorderPoint}
+                {posText("จุดสั่งซื้อ") + " "}{item.reorderPoint}
               </Text>
             </View>
             {item.operationBlockReason ? (
@@ -660,13 +648,13 @@ function StockLookup({
             ) : (
               <View style={styles.wrap}>
                 <Button
-                  label="เพิ่มลงใบโอน"
+                  label={posText("เพิ่มลงใบโอน")}
                   variant="secondary"
                   disabled={loading || failed || !item.transferSupported}
                   onPress={() => onUseForTransfer(item)}
                 />
                 <Button
-                  label="เพิ่มลงใบนับ"
+                  label={posText("เพิ่มลงใบนับ")}
                   variant="secondary"
                   disabled={loading || failed || !item.countSupported}
                   onPress={() => onUseForCount(item)}
@@ -680,16 +668,16 @@ function StockLookup({
       {offset > 0 || nextOffset != null ? (
         <View style={styles.between}>
           <Button
-            label="ก่อนหน้า"
+            label={posText("ก่อนหน้า")}
             variant="secondary"
             disabled={offset === 0 || loading}
             onPress={onPrevious}
           />
           <Text style={[typography.caption, { color: colors.textMuted }]}>
-            หน้า {Math.floor(offset / 30) + 1}
+            {posText("หน้า") + " "}{Math.floor(offset / 30) + 1}
           </Text>
           <Button
-            label="ถัดไป"
+            label={posText("ถัดไป")}
             variant="secondary"
             disabled={nextOffset == null || loading}
             onPress={onNext}
@@ -701,6 +689,7 @@ function StockLookup({
 }
 
 export default function InventoryScreen({ asTabRoot }: Props) {
+  usePosLanguage();
   const navigation =
     useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const { colors, spacing, typography } = useTheme();
@@ -813,18 +802,18 @@ export default function InventoryScreen({ asTabRoot }: Props) {
     setLookupSearch(lookupDraft.trim());
   };
   const resolveStockCode = async (code: string): Promise<StockScanResult> => {
-    if (!credentials) throw new Error('กรุณาเลือกพนักงานและใส่ PIN');
+    if (!credentials) throw new Error(posText("กรุณาเลือกพนักงานและใส่ PIN"));
     const response = await scanStock({
       variables: { credentials, q: code.trim(), limit: 30, offset: 0 },
     });
     const items = response.data?.bmsPosStockSearch.items ?? [];
-    if (items.length === 0) throw new Error(`ไม่พบสินค้า ${code}`);
+    if (items.length === 0) throw new Error(posText("ไม่พบสินค้า {v0}", { v0: code }));
     const first = items[0];
     return {
       name:
         items.length === 1
           ? `${first.name} · ${first.size}`
-          : `${first.name} · ${items.length} ตัวเลือก`,
+          : posText("{v0} · {v1} ตัวเลือก", { v0: first.name, v1: items.length }),
       sellable: true,
       code: code.trim(),
     };
@@ -854,8 +843,8 @@ export default function InventoryScreen({ asTabRoot }: Props) {
         await refetch().catch(() => undefined);
       }
       Alert.alert(
-        stale ? 'ข้อมูลเปลี่ยนไปแล้ว' : 'ทำรายการไม่สำเร็จ',
-        cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
+        stale ? posText("ข้อมูลเปลี่ยนไปแล้ว") : posText("ทำรายการไม่สำเร็จ"),
+        cause instanceof Error ? cause.message : posText("กรุณาลองใหม่"),
       );
       return false;
     } finally {
@@ -874,7 +863,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
       !Number.isInteger(qty) ||
       qty <= 0
     ) {
-      Alert.alert('รายการไม่ครบ', 'ระบุ SKU, ขนาด และจำนวนเต็มที่มากกว่า 0');
+      Alert.alert(posText("รายการไม่ครบ"), posText("ระบุ SKU, ขนาด และจำนวนเต็มที่มากกว่า 0"));
       return;
     }
     setDraftLines(previous => [
@@ -923,7 +912,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
       : mode === 'TRANSFER'
       ? transfers.error
       : counts.error;
-  const permissionDenied = activeError?.message.includes('ไม่มีสิทธิ์');
+  const permissionDenied = activeError?.message.includes(posText("ไม่มีสิทธิ์"));
   const retryActiveView = () => {
     if (mode === 'LOOKUP') {
       refetchStockSearch().catch(() => undefined);
@@ -940,10 +929,10 @@ export default function InventoryScreen({ asTabRoot }: Props) {
     <View style={[styles.segment, { gap: spacing.xs }]}>
       {(
         [
-          ['LOOKUP', 'ค้นหา'],
-          ['OVERVIEW', 'ภาพรวม'],
-          ['TRANSFER', 'โอนสินค้า'],
-          ['COUNT', 'นับสต็อก'],
+          ['LOOKUP', posText("ค้นหา")],
+          ['OVERVIEW', posText("ภาพรวม")],
+          ['TRANSFER', posText("โอนสินค้า")],
+          ['COUNT', posText("นับสต็อก")],
         ] as const
       ).map(([value, label]) => (
         <Button
@@ -966,19 +955,19 @@ export default function InventoryScreen({ asTabRoot }: Props) {
       <View style={styles.flex}>
         <Text style={[typography.bodyStrong, { color: colors.danger }]}>
           {permissionDenied
-            ? 'บัญชีนี้ไม่มีสิทธิ์ใช้งานสต็อก'
-            : 'โหลดข้อมูลงานสต็อกไม่สำเร็จ'}
+            ? posText("บัญชีนี้ไม่มีสิทธิ์ใช้งานสต็อก")
+            : posText("โหลดข้อมูลงานสต็อกไม่สำเร็จ")}
         </Text>
         <Text style={[typography.caption, { color: colors.textMuted }]}>
           {permissionDenied
             ? mode === 'LOOKUP'
-              ? 'ให้ผู้ดูแลกำหนดสิทธิ์ดูสินค้า (product.view) ให้บัญชีนี้'
-              : 'ให้ Manager, Warehouse หรือผู้ดูแลระบบเข้าใช้งาน'
-            : 'ตรวจสอบการเชื่อมต่อแล้วลองอีกครั้ง'}
+              ? posText("ให้ผู้ดูแลกำหนดสิทธิ์ดูสินค้า (product.view) ให้บัญชีนี้")
+              : posText("ให้ Manager, Warehouse หรือผู้ดูแลระบบเข้าใช้งาน")
+            : posText("ตรวจสอบการเชื่อมต่อแล้วลองอีกครั้ง")}
         </Text>
       </View>
       {permissionDenied ? null : (
-        <Button label="ลองใหม่" variant="secondary" onPress={retryActiveView} />
+        <Button label={posText("ลองใหม่")} variant="secondary" onPress={retryActiveView} />
       )}
     </View>
   ) : null;
@@ -1033,11 +1022,9 @@ export default function InventoryScreen({ asTabRoot }: Props) {
         <>
           <Card style={{ gap: spacing.md }}>
             <Text style={[typography.subtitle, { color: colors.text }]}>
-              สร้างใบโอน
-            </Text>
+              {posText("สร้างใบโอน") + " "}</Text>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
-              ต้นทางถูกกำหนดจากสาขาของเครื่อง เลือกเฉพาะปลายทาง
-            </Text>
+              {posText("ต้นทางถูกกำหนดจากสาขาของเครื่อง เลือกเฉพาะปลายทาง") + " "}</Text>
             <View style={styles.wrap}>
               {(transferData?.destinations ?? []).map(location => (
                 <Button
@@ -1066,7 +1053,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
                 onChangeText={size =>
                   setLine(previous => ({ ...previous, size }))
                 }
-                placeholder="ขนาด"
+                placeholder={posText("ขนาด")}
                 placeholderTextColor={colors.textSoft}
                 autoCapitalize="characters"
                 style={[inputStyle, styles.smallInput]}
@@ -1076,14 +1063,14 @@ export default function InventoryScreen({ asTabRoot }: Props) {
                 onChangeText={qty =>
                   setLine(previous => ({ ...previous, qty }))
                 }
-                placeholder="จำนวน"
+                placeholder={posText("จำนวน")}
                 placeholderTextColor={colors.textSoft}
                 keyboardType="number-pad"
                 style={[inputStyle, styles.smallInput]}
               />
             </View>
             <Button
-              label="เพิ่มรายการ"
+              label={posText("เพิ่มรายการ")}
               variant="secondary"
               onPress={addDraftLine}
             />
@@ -1098,7 +1085,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
                   {item.sku} / {item.size} × {item.qty}
                 </Text>
                 <Button
-                  label="ลบ"
+                  label={posText("ลบ")}
                   variant="ghost"
                   onPress={() =>
                     setDraftLines(rows =>
@@ -1111,12 +1098,12 @@ export default function InventoryScreen({ asTabRoot }: Props) {
             <TextInput
               value={transferNote}
               onChangeText={setTransferNote}
-              placeholder="หมายเหตุใบโอน"
+              placeholder={posText("หมายเหตุใบโอน")}
               placeholderTextColor={colors.textSoft}
               style={inputStyle}
             />
             <Button
-              label="บันทึกใบโอน"
+              label={posText("บันทึกใบโอน")}
               fullWidth
               loading={working === 'create-transfer'}
               disabled={!destinationId || draftLines.length === 0}
@@ -1154,25 +1141,23 @@ export default function InventoryScreen({ asTabRoot }: Props) {
             <Card style={{ gap: spacing.md }}>
               <View style={styles.between}>
                 <Text style={[typography.subtitle, { color: colors.text }]}>
-                  รับ {receiving.transferNo}
+                  {posText("รับ") + " "}{receiving.transferNo}
                 </Text>
                 <Button
-                  label="ปิด"
+                  label={posText("ปิด")}
                   variant="ghost"
                   onPress={() => setReceiving(null)}
                 />
               </View>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                จำนวนรับดี + เสียหาย ต้องไม่เกินจำนวนที่ส่ง
-                หากขาดหรือเสียหายต้องระบุเหตุผลและหมายเหตุ
-              </Text>
+                {posText("จำนวนรับดี + เสียหาย ต้องไม่เกินจำนวนที่ส่ง หากขาดหรือเสียหายต้องระบุเหตุผลและหมายเหตุ") + " "}</Text>
               {receiptRows.map((row, index) => (
                 <View
                   key={row.itemId}
                   style={[styles.receiptLine, { borderColor: colors.border }]}
                 >
                   <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                    {row.sku} / {row.size} · ส่ง {row.sent}
+                    {row.sku} / {row.size} {" " + posText("· ส่ง") + " "}{row.sent}
                   </Text>
                   <View style={styles.row}>
                     <TextInput
@@ -1184,7 +1169,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
                           ),
                         )
                       }
-                      placeholder="รับดี"
+                      placeholder={posText("รับดี")}
                       placeholderTextColor={colors.textSoft}
                       keyboardType="number-pad"
                       style={[inputStyle, styles.flex]}
@@ -1200,7 +1185,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
                           ),
                         )
                       }
-                      placeholder="เสียหาย"
+                      placeholder={posText("เสียหาย")}
                       placeholderTextColor={colors.textSoft}
                       keyboardType="number-pad"
                       style={[inputStyle, styles.flex]}
@@ -1239,7 +1224,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
                             ),
                           )
                         }
-                        placeholder="อธิบายส่วนต่าง (จำเป็น)"
+                        placeholder={posText("อธิบายส่วนต่าง (จำเป็น)")}
                         placeholderTextColor={colors.textSoft}
                         style={inputStyle}
                       />
@@ -1248,20 +1233,19 @@ export default function InventoryScreen({ asTabRoot }: Props) {
                     <Text
                       style={[typography.caption, { color: colors.success }]}
                     >
-                      รับครบตามจำนวนส่ง
-                    </Text>
+                      {posText("รับครบตามจำนวนส่ง") + " "}</Text>
                   )}
                 </View>
               ))}
               <TextInput
                 value={receivingNote}
                 onChangeText={setReceivingNote}
-                placeholder="หมายเหตุการรับ"
+                placeholder={posText("หมายเหตุการรับ")}
                 placeholderTextColor={colors.textSoft}
                 style={inputStyle}
               />
               <Button
-                label="ยืนยันรับสินค้า"
+                label={posText("ยืนยันรับสินค้า")}
                 fullWidth
                 loading={working === `receive-${receiving.id}`}
                 onPress={() =>
@@ -1332,16 +1316,16 @@ export default function InventoryScreen({ asTabRoot }: Props) {
                 <View style={styles.wrap}>
                   {transfer.status === 'DRAFT' && isSource ? (
                     <Button
-                      label="ส่งสินค้า"
+                      label={posText("ส่งสินค้า")}
                       loading={working === `send-${transfer.id}`}
                       onPress={() =>
                         Alert.alert(
-                          'ยืนยันส่งสินค้า',
-                          'สต็อกจะถูกตัดจากสาขาต้นทางทันที',
+                          posText("ยืนยันส่งสินค้า"),
+                          posText("สต็อกจะถูกตัดจากสาขาต้นทางทันที"),
                           [
-                            { text: 'กลับ' },
+                            { text: posText("กลับ") },
                             {
-                              text: 'ยืนยัน',
+                              text: posText("ยืนยัน"),
                               onPress: () => {
                                 run(`send-${transfer.id}`, async () => {
                                   const response = await sendTransfer({
@@ -1368,7 +1352,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
                   ) : null}
                   {transfer.status === 'DRAFT' && isSource ? (
                     <Button
-                      label="ยกเลิก"
+                      label={posText("ยกเลิก")}
                       variant="danger"
                       onPress={() =>
                         run(`cancel-${transfer.id}`, async () => {
@@ -1392,7 +1376,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
                   ) : null}
                   {transfer.status === 'IN_TRANSIT' && !isSource ? (
                     <Button
-                      label="รับสินค้า"
+                      label={posText("รับสินค้า")}
                       onPress={() => beginReceive(transfer)}
                     />
                   ) : null}
@@ -1405,17 +1389,16 @@ export default function InventoryScreen({ asTabRoot }: Props) {
         <>
           <Card style={{ gap: spacing.md }}>
             <Text style={[typography.subtitle, { color: colors.text }]}>
-              เริ่มใบนับใหม่
-            </Text>
+              {posText("เริ่มใบนับใหม่") + " "}</Text>
             <TextInput
               value={countNote}
               onChangeText={setCountNote}
-              placeholder="ขอบเขตหรือหมายเหตุการนับ"
+              placeholder={posText("ขอบเขตหรือหมายเหตุการนับ")}
               placeholderTextColor={colors.textSoft}
               style={inputStyle}
             />
             <Button
-              label="สร้างใบนับ"
+              label={posText("สร้างใบนับ")}
               loading={working === 'create-count'}
               onPress={() =>
                 run('create-count', async () => {
@@ -1454,14 +1437,14 @@ export default function InventoryScreen({ asTabRoot }: Props) {
                       { color: colors.primary },
                     ]}
                   >
-                    {count.items.length} รายการ · ต่าง {count.varianceUnits}
+                    {count.items.length} {" " + posText("รายการ · ต่าง") + " "}{count.varianceUnits}
                   </Text>
                 </View>
                 <Button
                   label={
                     selectedCountId === count.id
-                      ? 'กำลังกรอกใบนี้'
-                      : 'เปิดใบนับ'
+                      ? posText("กำลังกรอกใบนี้")
+                      : posText("เปิดใบนับ")
                   }
                   variant={
                     selectedCountId === count.id ? 'primary' : 'secondary'
@@ -1474,7 +1457,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
           {selectedCount ? (
             <Card style={{ gap: spacing.md }}>
               <Text style={[typography.subtitle, { color: colors.text }]}>
-                กรอก {selectedCount.countNo}
+                {posText("กรอก") + " "}{selectedCount.countNo}
               </Text>
               <View style={styles.row}>
                 <TextInput
@@ -1488,7 +1471,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
                 <TextInput
                   value={countSize}
                   onChangeText={setCountSize}
-                  placeholder="ขนาด"
+                  placeholder={posText("ขนาด")}
                   placeholderTextColor={colors.textSoft}
                   autoCapitalize="characters"
                   style={[inputStyle, styles.smallInput]}
@@ -1496,7 +1479,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
                 <TextInput
                   value={countedQty}
                   onChangeText={setCountedQty}
-                  placeholder="นับได้"
+                  placeholder={posText("นับได้")}
                   placeholderTextColor={colors.textSoft}
                   keyboardType="number-pad"
                   style={[inputStyle, styles.smallInput]}
@@ -1505,19 +1488,19 @@ export default function InventoryScreen({ asTabRoot }: Props) {
               <TextInput
                 value={countItemNote}
                 onChangeText={setCountItemNote}
-                placeholder="หมายเหตุรายการ"
+                placeholder={posText("หมายเหตุรายการ")}
                 placeholderTextColor={colors.textSoft}
                 style={inputStyle}
               />
               <Button
-                label="บันทึกรายการ"
+                label={posText("บันทึกรายการ")}
                 loading={working === `count-item-${selectedCount.id}`}
                 disabled={
                   !countSku.trim() || !countSize.trim() || !countedQty.trim()
                 }
                 onPress={() =>
                   run(`count-item-${selectedCount.id}`, async () => {
-                    if (!countedQty.trim()) return 'กรุณากรอกจำนวนที่นับได้ หรือ 0 หากไม่มีสินค้า';
+                    if (!countedQty.trim()) return posText("กรุณากรอกจำนวนที่นับได้ หรือ 0 หากไม่มีสินค้า");
                     const response = await recordCountItem({
                       variables: {
                         input: {
@@ -1562,24 +1545,24 @@ export default function InventoryScreen({ asTabRoot }: Props) {
                       },
                     ]}
                   >
-                    ระบบ {item.snapshotQty} · นับ {item.countedQty} · ต่าง{' '}
+                    {posText("ระบบ") + " "}{item.snapshotQty} {" " + posText("· นับ") + " "}{item.countedQty} {" " + posText("· ต่าง")}{' '}
                     {item.variance}
                   </Text>
                 </View>
               ))}
               <View style={styles.wrap}>
                 <Button
-                  label="ยืนยันปรับสต็อก"
+                  label={posText("ยืนยันปรับสต็อก")}
                   loading={working === `apply-count-${selectedCount.id}`}
                   disabled={selectedCount.items.length === 0}
                   onPress={() =>
                     Alert.alert(
-                      'ยืนยันผลนับ',
-                      'ระบบจะปรับสต็อกด้วยผลต่างจาก snapshot แรก',
+                      posText("ยืนยันผลนับ"),
+                      posText("ระบบจะปรับสต็อกด้วยผลต่างจาก snapshot แรก"),
                       [
-                        { text: 'กลับ' },
+                        { text: posText("กลับ") },
                         {
-                          text: 'ยืนยัน',
+                          text: posText("ยืนยัน"),
                           onPress: () => {
                             run(`apply-count-${selectedCount.id}`, async () => {
                               const response = await applyCount({
@@ -1606,7 +1589,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
                   }
                 />
                 <Button
-                  label="ยกเลิกใบนับ"
+                  label={posText("ยกเลิกใบนับ")}
                   variant="danger"
                   onPress={() =>
                     run(`cancel-count-${selectedCount.id}`, async () => {
@@ -1656,7 +1639,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
     return (
       <ScreenContainer>
         <ScreenHeader
-          title="สต็อกสาขา"
+          title={posText("สต็อกสาขา")}
           subtitle={branchDisplayLabel(branchName)}
           onBack={asTabRoot ? undefined : () => navigation.goBack()}
         />
@@ -1688,28 +1671,28 @@ export default function InventoryScreen({ asTabRoot }: Props) {
     glyph: string;
     label: string;
   }> = [
-    { key: 'LOOKUP', glyph: '⌕', label: 'ค้นหาสต็อก' },
-    { key: 'OVERVIEW', glyph: '▦', label: 'ภาพรวม' },
-    { key: 'TRANSFER', glyph: '⇄', label: 'โอนสินค้า' },
-    { key: 'RECEIVE', glyph: '⇥', label: 'รับสินค้า' },
-    { key: 'COUNT', glyph: '▣', label: 'นับสต็อก' },
+    { key: 'LOOKUP', glyph: '⌕', label: posText("ค้นหาสต็อก") },
+    { key: 'OVERVIEW', glyph: '▦', label: posText("ภาพรวม") },
+    { key: 'TRANSFER', glyph: '⇄', label: posText("โอนสินค้า") },
+    { key: 'RECEIVE', glyph: '⇥', label: posText("รับสินค้า") },
+    { key: 'COUNT', glyph: '▣', label: posText("นับสต็อก") },
   ];
   const tabletTitle =
     mode === 'LOOKUP'
-      ? 'ค้นหาสต็อกสาขา'
+      ? posText("ค้นหาสต็อกสาขา")
       : mode === 'OVERVIEW'
-      ? 'ภาพรวมสต็อกสาขา'
+      ? posText("ภาพรวมสต็อกสาขา")
       : mode === 'TRANSFER'
-      ? 'โอนและรับสินค้า'
-      : 'นับสต็อก';
+      ? posText("โอนและรับสินค้า")
+      : posText("นับสต็อก");
   const tabletSubtitle =
     mode === 'LOOKUP'
-      ? `${branchDisplayLabel(branchName)} · ค้นด้วยชื่อ SKU หรือบาร์โค้ด`
+      ? posText("{v0} · ค้นด้วยชื่อ SKU หรือบาร์โค้ด", { v0: branchDisplayLabel(branchName) })
       : mode === 'OVERVIEW'
-      ? `${branchDisplayLabel(branchName)} · ข้อมูลล่าสุดจากเซิร์ฟเวอร์`
+      ? posText("{v0} · ข้อมูลล่าสุดจากเซิร์ฟเวอร์", { v0: branchDisplayLabel(branchName) })
       : mode === 'TRANSFER'
-      ? 'ต้นทางกำหนดจากสาขาของเครื่อง · สินค้าระหว่างทางยังไม่เป็นของสาขาใด'
-      : 'ปรับด้วยผลต่างจาก snapshot แรก เพื่อไม่ทับยอดขายระหว่างนับ';
+      ? posText("ต้นทางกำหนดจากสาขาของเครื่อง · สินค้าระหว่างทางยังไม่เป็นของสาขาใด")
+      : posText("ปรับด้วยผลต่างจาก snapshot แรก เพื่อไม่ทับยอดขายระหว่างนับ");
 
   return (
     <ScreenContainer padded={false}>
@@ -1722,8 +1705,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
         >
           <View style={{ padding: spacing.lg, gap: spacing.xs }}>
             <Text style={[typography.title, { color: colors.text }]}>
-              สต็อกสาขา
-            </Text>
+              {posText("สต็อกสาขา") + " "}</Text>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
               {branchDisplayLabel(branchName)}
             </Text>
@@ -1785,20 +1767,19 @@ export default function InventoryScreen({ asTabRoot }: Props) {
             <Text
               style={[typography.captionStrong, { color: colors.textSoft }]}
             >
-              สถานะสาขา
-            </Text>
+              {posText("สถานะสาขา") + " "}</Text>
             {[
               {
-                label: 'สินค้าใกล้หมด',
+                label: posText("สินค้าใกล้หมด"),
                 value: transferData?.summary.lowStockCount ?? 0,
                 color: colors.warning,
               },
               {
-                label: 'รอรับเข้า',
+                label: posText("รอรับเข้า"),
                 value: incomingCount,
                 color: colors.primary,
               },
-              { label: 'รอบนับค้าง', value: draftCount, color: colors.danger },
+              { label: posText("รอบนับค้าง"), value: draftCount, color: colors.danger },
             ].map(item => (
               <View key={item.label} style={styles.between}>
                 <View style={styles.sidebarStatusLabel}>
@@ -1832,7 +1813,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
             right={
               mode === 'OVERVIEW' ? (
                 <Button
-                  label="＋ สร้างใบโอน"
+                  label={posText("＋ สร้างใบโอน")}
                   onPress={() => setMode('TRANSFER')}
                 />
               ) : undefined

@@ -1,3 +1,5 @@
+import { createPosTranslator } from "../apps/web/i18n/posClient.ts";
+const thaiPosText = createPosTranslator("th");
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -12,8 +14,8 @@ const source = read("apps/web/components/pos-desktop/CheckoutBenefits.tsx");
 const desktop = read("apps/web/components/pos-desktop/DesktopPosRenderer.tsx");
 const functionText = source.slice(source.indexOf("export function benefitsPayable("), source.indexOf("export function useCheckoutBenefits("));
 const compiled = ts.transpileModule(functionText.replaceAll("export function", "function"), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-const payable = new Function(`${compiled}; return benefitsPayable;`)();
-const selectionError = new Function(`${compiled}; return benefitsSelectionError;`)();
+const payable = new Function("thaiPosText", `${compiled}; return benefitsPayable;`)(thaiPosText);
+const selectionError = new Function("thaiPosText", `${compiled}; return benefitsSelectionError;`)(thaiPosText);
 
 test("member removal and capped points cannot silently change the requested benefits", () => {
   assert.equal(selectionError({ member: { customerId: "member" }, pointsUsed: 100 }, "member", 100), "");
@@ -51,7 +53,7 @@ test("stale quotes cannot authorize payment and an uncertain sale keeps its orig
   assert.match(desktop, /benefits\.ready && \(validation\.canConfirm/);
   assert.match(desktop, /saleAttemptRef\.current\.payload/);
   assert.match(desktop, /CheckoutBenefits benefits=\{benefits\} disabled=\{busy \|\| Boolean\(saleAttemptRef\.current\)\}/);
-  assert.match(desktop, /aria-label="รีเฟรชข้อมูล"/);
+  assert.match(desktop, /aria-label=\{posText\("รีเฟรชข้อมูล"\)\}/);
   assert.match(desktop, /onClick=\{\(\) => void refreshDesktopContent\(\)\}/);
   assert.match(desktop, /memberName: displayMemberName\(receipt\s*\?/);
   assert.match(desktop, /pointsBalance: receipt \? receipt.pointsBalance \?\? null/);

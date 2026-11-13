@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { gql, useApolloClient, useQuery } from "@apollo/client";
 import {
   Card, Input, Button, Space, Tag, Typography, Alert, message, Tooltip, Popconfirm, Drawer,
@@ -28,16 +30,16 @@ const INFO_NOTICE_DISMISSED_STORAGE_KEY = "bms-assistant-info-notice-dismissed-v
 const BKK = "Asia/Bangkok";
 const dayKey = (iso: string) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: BKK, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
-const timeLabel = (iso: string) =>
-  new Intl.DateTimeFormat("th-TH", { timeZone: BKK, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
-function dayLabel(iso: string, t: TFn) {
+const timeLabel = (iso: string, uiText: UiTranslator = thaiUiText) =>
+  new Intl.DateTimeFormat(uiText.locale, { timeZone: BKK, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+function dayLabel(iso: string, t: TFn, uiText: UiTranslator = thaiUiText) {
   const key = dayKey(iso);
   const now = new Date();
   const todayKey = dayKey(now.toISOString());
   const y = new Date(now); y.setDate(y.getDate() - 1);
   if (key === todayKey) return t("admin_assistant.day_today");
   if (key === dayKey(y.toISOString())) return t("admin_assistant.day_yesterday");
-  return new Intl.DateTimeFormat("th-TH", { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
+  return new Intl.DateTimeFormat(uiText.locale, { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
 }
 
 // ข้อความจาก AI เป็น markdown แบบพูด (**หนา**/`โค้ด`/ลิงก์) แต่โปรเจกต์นี้ไม่มี markdown renderer
@@ -215,6 +217,7 @@ const QUICK_START: Array<{ labelKey: string; fillKey: string }> = [
 ];
 
 export default function Page() {
+  const uiText = useUiText();
   const { t, lang } = useI18n();
   const client = useApolloClient();
   const { data: meData, loading: meLoading } = useQuery(Q_ME);
@@ -657,7 +660,7 @@ export default function Page() {
                       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "10px 0" }}>
                         <div style={{ flex: 1, height: 1, background: "var(--app-border)" }} />
                         <Text style={{ fontSize: 11, fontWeight: 700, color: "var(--text-soft, var(--text-secondary))", whiteSpace: "nowrap" }}>
-                          {dayLabel(b.createdAt!, t)}
+                          {dayLabel(b.createdAt!, t, uiText)}
                         </Text>
                         <div style={{ flex: 1, height: 1, background: "var(--app-border)" }} />
                       </div>
@@ -705,7 +708,7 @@ export default function Page() {
                       </div>
                       <div style={{ marginTop: 2 }}>
                         <Text style={{ fontSize: 11, color: "var(--text-soft, var(--text-secondary))" }}>
-                          {b.createdAt ? timeLabel(b.createdAt) : ""}
+                          {b.createdAt ? timeLabel(b.createdAt, uiText) : ""}
                           {b.error && (
                             <Text style={{ fontSize: 11, color: "#ff4d4f", fontWeight: 600, marginInlineStart: 6 }}>
                               {t("admin_assistant.send_failed_note")}

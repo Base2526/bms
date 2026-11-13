@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 interface BarcodeCatalogItem {
   sku: string;
   barcode?: string;
@@ -25,12 +26,12 @@ export function resolveMockBarcode<TItem extends BarcodeCatalogItem>(
       candidate.sku.toLowerCase() === normalized,
   );
   if (!item) {
-    return { ok: false, message: 'ไม่พบบาร์โค้ดนี้ในรายการสินค้าทดสอบ' };
+    return { ok: false, message: posText("ไม่พบบาร์โค้ดนี้ในรายการสินค้าทดสอบ") };
   }
   if (!item.sellable) {
     return {
       ok: false,
-      message: item.unavailableNote ?? 'สินค้านี้ขายไม่ได้ตอนนี้',
+      message: item.unavailableNote ?? posText("สินค้านี้ขายไม่ได้ตอนนี้"),
     };
   }
   return { ok: true, item };

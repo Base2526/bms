@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
+
 import * as React from "react";
 import { Modal, Typography, Input, Space, Tag, Divider, Button } from "antd";
 
@@ -24,15 +26,16 @@ type Props = {
   onUndo?: () => void;
 };
 
-const BANK_CATEGORIES: Array<{ label: string; value: BankReportCategory }> = [
-  { label: "Scam", value: "SCAM" },
-  { label: "Money Mule", value: "MONEY_MULE" },
-  { label: "Sales/Ads", value: "SALES_ADS" },
-  { label: "Dispute", value: "DISPUTE" },
-  { label: "Other", value: "OTHER" },
-];
+const BANK_CATEGORIES = (uiText: UiTranslator = thaiUiText): Array<{ label: string; value: BankReportCategory }> => ([
+  { label: uiText("admin_ui.en_scam_de94a"), value: "SCAM" },
+  { label: uiText("admin_ui.en_money_mule_44236"), value: "MONEY_MULE" },
+  { label: uiText("admin_ui.en_sales_ads_320e6"), value: "SALES_ADS" },
+  { label: uiText("admin_ui.en_dispute_3e05b"), value: "DISPUTE" },
+  { label: uiText("admin_ui.en_other_6e6a6"), value: "OTHER" },
+]);
 
 export function BankReportDialog({ open, bankName, account, reported, initialCategory, initialNote, confirmLoading, undoLoading, onCancel, onConfirm, onUndo }: Props) {
+  const uiText = useUiText();
   const [category, setCategory] = React.useState<BankReportCategory>("SCAM");
   const [note, setNote] = React.useState<string>("");
 
@@ -48,13 +51,13 @@ export function BankReportDialog({ open, bankName, account, reported, initialCat
     <Modal
       open={open}
       onCancel={onCancel}
-      title="Report bank account"
+      title={uiText("admin_ui.en_report_bank_account_ae57f")}
       destroyOnClose
       footer={null}
     >
       <Space direction="vertical" size={12} style={{ width: "100%" }}>
         <div>
-          <Typography.Text type="secondary">Account</Typography.Text>
+          <Typography.Text type="secondary">{uiText("admin_ui.en_account_85dfa")}</Typography.Text>
           <div style={{ marginTop: 4 }}>
             <Typography.Text strong>
               {bankName ? `${bankName} · ` : ""}
@@ -63,18 +66,17 @@ export function BankReportDialog({ open, bankName, account, reported, initialCat
           </div>
           {reported ? (
             <Typography.Text type="success" style={{ display: "block", marginTop: 6 }}>
-              Reported (on this device)
-            </Typography.Text>
+              {uiText("admin_ui.en_reported_on_this_device_32401")}</Typography.Text>
           ) : null}
         </div>
 
         <Divider style={{ margin: "6px 0" }} />
 
         <div>
-          <Typography.Text type="secondary">Category</Typography.Text>
+          <Typography.Text type="secondary">{uiText("admin_ui.en_category_a3c68")}</Typography.Text>
           <div style={{ marginTop: 6 }}>
             <Space size={[6, 6]} wrap>
-              {BANK_CATEGORIES.map((c) => (
+              {BANK_CATEGORIES(uiText).map((c) => (
                 <Tag.CheckableTag
                   key={c.value}
                   checked={category === c.value}
@@ -88,11 +90,11 @@ export function BankReportDialog({ open, bankName, account, reported, initialCat
         </div>
 
         <div>
-          <Typography.Text type="secondary">Note (optional)</Typography.Text>
+          <Typography.Text type="secondary">{uiText("admin_ui.en_note_optional_4e395")}</Typography.Text>
           <Input.TextArea
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="e.g. scam transfer / money mule..."
+            placeholder={uiText("admin_ui.en_e_g_scam_transfer_money_mule_611ab")}
             maxLength={160}
             showCount
             autoSize={{ minRows: 3, maxRows: 5 }}
@@ -101,7 +103,7 @@ export function BankReportDialog({ open, bankName, account, reported, initialCat
         </div>
 
         <Space style={{ width: "100%", justifyContent: "flex-end" }}>
-          <Button onClick={onCancel}>Cancel</Button>
+          <Button onClick={onCancel}>{uiText("admin_ui.en_cancel_77dfd")}</Button>
           {reported ? (
             <Button
               danger
@@ -109,8 +111,7 @@ export function BankReportDialog({ open, bankName, account, reported, initialCat
               disabled={!!confirmLoading || !!undoLoading}
               onClick={() => onUndo?.()}
             >
-              Undo report
-            </Button>
+              {uiText("admin_ui.en_undo_report_40eba")}</Button>
           ) : null}
           <Button
             type="primary"

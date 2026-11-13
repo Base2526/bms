@@ -1,4 +1,6 @@
 "use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useApolloClient, useQuery } from "@apollo/client";
 import { Alert, Button, Card, DatePicker, Form, Input, Modal, Select, Space, Table, Typography } from "antd";
 import { useState } from "react";
@@ -12,6 +14,7 @@ const OPENING=gql`mutation InventoryOpening($input:BmsInventoryOpeningInput!) {b
 const MENU=gql`query MenuActual($input:BmsMenuActualInput!) {bmsRestaurantMenuActual(input:$input){status errorCode complete truncated observedAt totalUnits totalContribution basis costBasis issues rows{sku size units revenue cost contribution classification popularityPercent}}}`;
 type ValueRow={sku:string;size:string;qty:string;value:string|null;unitCost:string|null;version:string};
 function Values({locationId}:{locationId:string}) {
+  const uiText = useUiText();
   const {t}=useI18n(),{can}=useBmsPermissions(),client=useApolloClient();
   const [search,setSearch]=useState(''),[page,setPage]=useState(1);
   const query=useQuery(VALUES,{variables:{locationId,search,offset:(page-1)*50,limit:50},fetchPolicy:'network-only'});
@@ -24,7 +27,7 @@ function Values({locationId}:{locationId:string}) {
     try {
       const response=await client.mutate({mutation:OPENING,variables:{input:{locationId,sku:row.sku,size:row.size,qty:row.qty,version:row.version,...review,confirmed:true}}});
       const r=response.data?.bmsConfirmInventoryValue;
-      if(r?.status!=='SAVED')throw new Error(r?.errorCode??'ERROR');
+      if(r?.status!=='SAVED')throw new Error(r?.errorCode??uiText("admin_ui.en_error_0b99c"));
       setRow(null);setReview(null);await query.refetch();
     } catch(e) {setError(e instanceof Error?e.message:'ERROR');} finally {setBusy(false);}
   }

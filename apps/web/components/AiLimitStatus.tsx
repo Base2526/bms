@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { useEffect, useState } from 'react';
 import { gql, useMutation, useQuery } from '@apollo/client';
 import { Alert, Badge, Button, Popover } from 'antd';
@@ -17,6 +19,7 @@ type Notice = { id: string; dimension: string; level: string; yearMonth: string;
 
 /** Server statuses are authoritative; this component never decides admission. */
 export default function AiLimitStatus() {
+  const uiText = useUiText();
   const { admin } = useSessionCtx();
   const { t, lang } = useI18n();
   const pathname = usePathname();
@@ -50,7 +53,7 @@ export default function AiLimitStatus() {
         try {
           setAckError(false);
           const result = await read({ variables: { id: notice.id } });
-          if (!result.data?.bmsReadAiLimitNotification) throw new Error('not acknowledged');
+          if (!result.data?.bmsReadAiLimitNotification) throw new Error(uiText("admin_ui.en_not_acknowledged_e7457"));
           await refetch();
         } catch { setAckError(true); }
       }}>{t('ai_limit.mark_read')}</Button>}

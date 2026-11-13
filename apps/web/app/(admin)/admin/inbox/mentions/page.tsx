@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Alert, Button, Empty, Segmented, Space, Spin, Typography, message } from "antd";
@@ -39,16 +41,16 @@ type Group = {
 const BKK = "Asia/Bangkok";
 const dayKey = (iso: string) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: BKK, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
-const timeLabel = (iso: string) =>
-  new Intl.DateTimeFormat("th-TH", { timeZone: BKK, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
-function dayLabel(iso: string, t: (key: string, vars?: Record<string, string | number>) => string) {
+const timeLabel = (iso: string, uiText: UiTranslator = thaiUiText) =>
+  new Intl.DateTimeFormat(uiText.locale, { timeZone: BKK, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+function dayLabel(iso: string, t: (key: string, vars?: Record<string, string | number>) => string, uiText: UiTranslator = thaiUiText) {
   const key = dayKey(iso);
   const now = new Date();
   const todayKey = dayKey(now.toISOString());
   const y = new Date(now); y.setDate(y.getDate() - 1);
   if (key === todayKey) return t("admin_inbox_mentions.today_label");
   if (key === dayKey(y.toISOString())) return t("admin_inbox_mentions.yesterday_label");
-  return new Intl.DateTimeFormat("th-TH", { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
+  return new Intl.DateTimeFormat(uiText.locale, { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
 }
 
 const isAiAuthor = (author: string | null) => author === "AI";
@@ -76,6 +78,7 @@ function groupByDay(list: Mention[]): { day: string; groups: Group[] }[] {
 }
 
 export default function MyMentionsPage() {
+  const uiText = useUiText();
   const router = useRouter();
   const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
@@ -190,7 +193,7 @@ export default function MyMentionsPage() {
 
           {dayGroups.map(({ day, groups }) => (
             <section key={day} className={styles.dayGroup}>
-              <div className={styles.dayLabel}>{dayLabel(groups[0].items[0].createdAt, t)}</div>
+              <div className={styles.dayLabel}>{dayLabel(groups[0].items[0].createdAt, t, uiText)}</div>
               {groups.map((g) => {
                 const latest = g.items[0];
                 const unreadCount = g.items.filter((i) => !i.readAt).length;
@@ -222,7 +225,7 @@ export default function MyMentionsPage() {
                       </div>
                       <div className={styles.side}>
                         {isUnread && <span className={styles.unreadDot} />}
-                        <span className={styles.time}>{timeLabel(latest.createdAt)}</span>
+                        <span className={styles.time}>{timeLabel(latest.createdAt, uiText)}</span>
                         <div className={styles.actions}>
                           <button
                             type="button"
@@ -268,7 +271,7 @@ export default function MyMentionsPage() {
                               >
                                 {!i.readAt && <span className={styles.unreadDot} />}
                                 <span>{t("admin_inbox_mentions.repeated_reminder_instance")}</span>
-                                <span className={styles.instanceTime}>{timeLabel(i.createdAt)}</span>
+                                <span className={styles.instanceTime}>{timeLabel(i.createdAt, uiText)}</span>
                               </div>
                             ))}
                           </div>

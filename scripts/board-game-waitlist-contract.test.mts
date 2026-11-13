@@ -225,15 +225,15 @@ test("the browser register uses one calendar date for browsing and creating rese
     "a PostgreSQL DATE must stay YYYY-MM-DD so saved bookings match the calendar key");
   assert.doesNotMatch(service, /SELECT_COLUMNS = `[^`]*w\.service_date,/,
     "letting node-postgres parse the service date as Date makes String(...).slice return a weekday label");
-  assert.match(browser, /role="grid" aria-label="ปฏิทินการจอง"/);
+  assert.match(browser, /role="grid" aria-label=\{posText\("ปฏิทินการจอง"\)\}/);
   assert.match(browser, /calendarDays\(reservationMonth\)/);
   assert.match(browser, /function reservationDateKey/);
   assert.match(browser, /localDateInput\(entry\.reservedFor\)/,
     "the calendar must recover from an old server's malformed service-date during rolling deploys");
   assert.match(browser, /reservationsByDate\.get\(day\.key\)/,
     "month cells must expose the reservations already occupying each day");
-  assert.match(browser, /จองแล้ว \{confirmed\}/);
-  assert.match(browser, /รอยืนยัน \{requested\}/);
+  assert.match(browser, /posText\("▣ จองแล้ว"\) \+ " "\}\{confirmed\}/);
+  assert.match(browser, /posText\("◷ รอยืนยัน"\) \+ " "\}\{requested\}/);
   assert.match(browser, /setReservationDate\(day\.key\)/,
     "clicking a calendar cell must select the day shown in the list and editor");
   assert.ok(
@@ -250,7 +250,7 @@ test("the browser register uses one calendar date for browsing and creating rese
   assert.match(browserCss, /\.pos-bg-reservation-calendar\s*\{[\s\S]*?grid-template-columns:\s*repeat\(7,/);
   assert.match(browserCss, /\.pos-bg-reservation-day--selected/);
   assert.match(browser, /pos-bg-reservation-card-status/);
-  assert.match(browser, /โทร\. \{entry\.guestPhone \|\| '-'\}/,
+  assert.match(browser, /posText\("โทร\."\) \+ " "\}\{entry\.guestPhone \|\| '-'\}/,
     "the selected-day card must expose the contact number instead of hiding it in edit mode");
   assert.match(browser, /aria-expanded=\{reservationEditorOpen\}/);
   assert.match(browser, /เพิ่มการจองใหม่/);

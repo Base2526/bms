@@ -1,3 +1,5 @@
+import { createPosTranslator } from '@/i18n/posClient';
+import { getLangCookie } from '@/lib/lang';
 import { PosConnectionError, runWithOperationTimeout } from "@pos-core/operation";
 import { describePosConnectionFailure, isPosBusinessError, posTransportError } from "@pos-core/connectionFailure";
 import { getOperationAST } from "graphql/utilities/getOperationAST";
@@ -304,6 +306,7 @@ export async function posGraphqlRequest<T>(
   query: string,
   variables: Record<string, unknown> = {},
 ): Promise<T> {
+  const posText = createPosTranslator(getLangCookie() ?? "th");
   let mutation = true;
   try { mutation = getOperationAST(parse(query))?.operation !== 'query'; } catch { /* fail conservatively */ }
   try { return await runWithOperationTimeout(async (signal) => {
@@ -336,7 +339,7 @@ export async function posGraphqlRequest<T>(
       const code = response.status === 408 || response.status === 504 ? 'POS_TIMEOUT'
         : response.status >= 500 ? 'INTERNAL_SERVER_ERROR'
           : first?.extensions?.code ?? (response.ok ? 'INVALID_RESPONSE' : null);
-      const failure = describePosConnectionFailure({ code, httpStatus: response.status }, mutation);
+      const failure = describePosConnectionFailure({ code, httpStatus: response.status }, mutation, posText);
       throw new PosGraphqlError(
         response.ok && isPosBusinessError(code) ? first!.message! : failure.message,
         code,
@@ -347,6 +350,6 @@ export async function posGraphqlRequest<T>(
     return body!.data!;
   }); } catch (error) {
     if (error instanceof PosGraphqlError) throw error;
-    throw posTransportError(error, mutation);
+    throw posTransportError(error, mutation, posText);
   }
 }

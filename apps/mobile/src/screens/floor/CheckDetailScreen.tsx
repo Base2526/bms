@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../../i18n/language';
 import React, { useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -48,6 +49,7 @@ type CheckAction = 'GUESTS' | 'MOVE' | 'SPLIT' | 'MERGE' | 'CANCEL';
 type MobilePane = 'MENU' | 'ORDER';
 
 export default function CheckDetailScreen({ route, navigation }: Props) {
+  usePosLanguage();
   const { colors, spacing, typography } = useTheme();
   const { width, isTablet } = useResponsive();
   const { catalog, resolveVariant } = useCatalog();
@@ -114,7 +116,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
     current?.hasCurrentOrder ||
       current?.items.some(item => item.status === 'SENT'),
   );
-  const billTabLabel = current ? 'บิล (1)' : 'บิลใหม่';
+  const billTabLabel = current ? posText("บิล (1)") : posText("บิลใหม่");
 
   const qtyBySku = useMemo(() => {
     const quantities: Record<string, number> = {};
@@ -135,9 +137,9 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
 
   const ensureCheck = async (): Promise<string> => {
     if (checkId) return checkId;
-    if (!credentials) throw new Error('กรุณาเข้าใช้งานใหม่');
+    if (!credentials) throw new Error(posText("กรุณาเข้าใช้งานใหม่"));
     if (!route.params.tableId) {
-      throw new Error('บิลกลับบ้านต้องเปิดจากหน้าผังโต๊ะก่อน');
+      throw new Error(posText("บิลกลับบ้านต้องเปิดจากหน้าผังโต๊ะก่อน"));
     }
     const response = await openCheck({
       variables: {
@@ -152,7 +154,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
       },
     });
     const opened = response.data?.bmsPosRestaurantOpenCheck.check;
-    if (!opened) throw new Error('เปิดบิลโต๊ะไม่สำเร็จ');
+    if (!opened) throw new Error(posText("เปิดบิลโต๊ะไม่สำเร็จ"));
     // Keep the committed bill identity even if the following reads fail.
     openedCheckId.current = opened.id;
     navigation.setParams({ checkId: opened.id });
@@ -187,14 +189,14 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
       const result = response.data?.bmsPosRestaurantAddCheckItem;
       if (!result?.check) {
         throw new Error(
-          result?.reason ?? result?.status ?? 'เพิ่มรายการไม่สำเร็จ',
+          result?.reason ?? result?.status ?? posText("เพิ่มรายการไม่สำเร็จ"),
         );
       }
       await refresh(id).catch(() => undefined);
     } catch (error) {
       Alert.alert(
-        'เพิ่มรายการไม่สำเร็จ',
-        error instanceof Error ? error.message : 'กรุณาลองใหม่',
+        posText("เพิ่มรายการไม่สำเร็จ"),
+        error instanceof Error ? error.message : posText("กรุณาลองใหม่"),
       );
     } finally {
       operationInFlight.current = false;
@@ -209,8 +211,8 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
       .find(item => item.sku === sku && item.status === 'NEW');
     if (!line) {
       Alert.alert(
-        'ลบไม่ได้',
-        'รายการที่ส่งครัวแล้วต้องจัดการผ่านขั้นตอนยกเลิก',
+        posText("ลบไม่ได้"),
+        posText("รายการที่ส่งครัวแล้วต้องจัดการผ่านขั้นตอนยกเลิก"),
       );
       return;
     }
@@ -227,14 +229,14 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
       const result = response.data?.bmsPosRestaurantRemoveCheckItem;
       if (!result?.check) {
         throw new Error(
-          result?.reason ?? result?.status ?? 'ลบรายการไม่สำเร็จ',
+          result?.reason ?? result?.status ?? posText("ลบรายการไม่สำเร็จ"),
         );
       }
       await refresh(current.id).catch(() => undefined);
     } catch (error) {
       Alert.alert(
-        'ลบรายการไม่สำเร็จ',
-        error instanceof Error ? error.message : 'กรุณาลองใหม่',
+        posText("ลบรายการไม่สำเร็จ"),
+        error instanceof Error ? error.message : posText("กรุณาลองใหม่"),
       );
     } finally {
       operationInFlight.current = false;
@@ -252,14 +254,14 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
       });
       const result = response.data?.bmsPosRestaurantSendCheckToKitchen;
       if (result?.status !== 'SENT') {
-        throw new Error(result?.reason ?? result?.status ?? 'ส่งครัวไม่สำเร็จ');
+        throw new Error(result?.reason ?? result?.status ?? posText("ส่งครัวไม่สำเร็จ"));
       }
       await refresh(current.id).catch(() => undefined);
-      Alert.alert('ส่งครัวแล้ว', `${result.kitchenTickets ?? 0} ตั๋ว`);
+      Alert.alert(posText("ส่งครัวแล้ว"), posText("{v0} ตั๋ว", { v0: result.kitchenTickets ?? 0 }));
     } catch (error) {
       Alert.alert(
-        'ส่งครัวไม่สำเร็จ',
-        error instanceof Error ? error.message : 'กรุณาลองใหม่',
+        posText("ส่งครัวไม่สำเร็จ"),
+        error instanceof Error ? error.message : posText("กรุณาลองใหม่"),
       );
     } finally {
       operationInFlight.current = false;
@@ -300,7 +302,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
           },
         });
         result = response.data?.bmsPosRestaurantSetCheckGuestCount;
-        if (!result?.check) throw new Error('แก้จำนวนลูกค้าไม่สำเร็จ');
+        if (!result?.check) throw new Error(posText("แก้จำนวนลูกค้าไม่สำเร็จ"));
       } else if (action === 'MOVE') {
         const response = await moveCheck({
           variables: {
@@ -309,7 +311,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
           },
         });
         result = response.data?.bmsPosRestaurantMoveCheck;
-        if (!result?.check) throw new Error('ย้ายโต๊ะไม่สำเร็จ');
+        if (!result?.check) throw new Error(posText("ย้ายโต๊ะไม่สำเร็จ"));
       } else if (action === 'SPLIT') {
         const response = await splitCheck({
           variables: {
@@ -324,7 +326,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
         result = response.data?.bmsPosRestaurantSplitCheck;
         if (result?.status !== 'SPLIT' || !result.target) {
           throw new Error(
-            result?.reason ?? result?.status ?? 'แยกบิลไม่สำเร็จ',
+            result?.reason ?? result?.status ?? posText("แยกบิลไม่สำเร็จ"),
           );
         }
       } else if (action === 'MERGE') {
@@ -337,7 +339,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
         result = response.data?.bmsPosRestaurantMergeChecks;
         if (result?.status !== 'MERGED' || !result.target) {
           throw new Error(
-            result?.reason ?? result?.status ?? 'รวมบิลไม่สำเร็จ',
+            result?.reason ?? result?.status ?? posText("รวมบิลไม่สำเร็จ"),
           );
         }
       } else {
@@ -355,13 +357,13 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
         result = response.data?.bmsPosRestaurantCancelCheck;
         if (result?.status !== 'CANCELLED') {
           throw new Error(
-            result?.reason ?? result?.status ?? 'ยกเลิกบิลไม่สำเร็จ',
+            result?.reason ?? result?.status ?? posText("ยกเลิกบิลไม่สำเร็จ"),
           );
         }
       }
       if (!result || result.reason) {
         throw new Error(
-          result?.reason ?? result?.status ?? 'ทำรายการไม่สำเร็จ',
+          result?.reason ?? result?.status ?? posText("ทำรายการไม่สำเร็จ"),
         );
       }
       setAction(null);
@@ -384,8 +386,8 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
       }
     } catch (cause) {
       Alert.alert(
-        'ทำรายการไม่สำเร็จ',
-        cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
+        posText("ทำรายการไม่สำเร็จ"),
+        cause instanceof Error ? cause.message : posText("กรุณาลองใหม่"),
       );
     } finally {
       operationInFlight.current = false;
@@ -396,8 +398,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
   const orderPanel = (
     <Card style={{ flex: 1 }}>
       <Text style={[typography.subtitle, { color: colors.text }]}>
-        {current?.tableName ?? table?.code ?? 'กลับบ้าน'} · ฿
-        {(current?.amountDue ?? 0).toFixed(2)}
+        {current?.tableName ?? table?.code ?? posText("กลับบ้าน")} {" " + posText("· ฿") + " "}{(current?.amountDue ?? 0).toFixed(2)}
       </Text>
       <FlatList
         data={current?.items ?? []}
@@ -405,8 +406,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
         contentContainerStyle={{ gap: spacing.sm, paddingVertical: spacing.md }}
         ListEmptyComponent={
           <Text style={[typography.body, { color: colors.textMuted }]}>
-            ยังไม่มีรายการ
-          </Text>
+            {posText("ยังไม่มีรายการ") + " "}</Text>
         }
         renderItem={({ item }) => (
           <View style={styles.row}>
@@ -427,8 +427,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
               </Text>
             </View>
             <Text style={[typography.bodyStrong, { color: colors.text }]}>
-              ฿
-              {(
+              {posText("฿") + " "}{(
                 item.lineAmount ?? (item.packPrice ?? 0) * item.packQty
               ).toFixed(2)}
             </Text>
@@ -439,10 +438,10 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
         <Button
           label={
             working
-              ? 'กำลังทำรายการ…'
+              ? posText("กำลังทำรายการ…")
               : current?.reservationLost
-              ? 'สร้างการจองสต็อกใหม่'
-              : 'ส่งรายการใหม่เข้าครัว'
+              ? posText("สร้างการจองสต็อกใหม่")
+              : posText("ส่งรายการใหม่เข้าครัว")
           }
           fullWidth
           disabled={
@@ -456,7 +455,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
         {current ? (
           <View style={styles.secondaryActions}>
             <Button
-              label="จำนวนลูกค้า"
+              label={posText("จำนวนลูกค้า")}
               variant="secondary"
               disabled={current.status !== 'OPEN'}
               style={!isTablet ? styles.secondaryActionButton : undefined}
@@ -468,7 +467,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
             {current.serviceMode === 'DINE_IN' && current.status === 'OPEN' ? (
               <>
                 <Button
-                  label="ย้ายโต๊ะ"
+                  label={posText("ย้ายโต๊ะ")}
                   variant="secondary"
                   style={!isTablet ? styles.secondaryActionButton : undefined}
                   onPress={() => {
@@ -477,7 +476,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
                   }}
                 />
                 <Button
-                  label="แยกบิล"
+                  label={posText("แยกบิล")}
                   variant="secondary"
                   disabled={splittableItems.length < 2}
                   style={!isTablet ? styles.secondaryActionButton : undefined}
@@ -488,7 +487,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
                   }}
                 />
                 <Button
-                  label="รวมบิล"
+                  label={posText("รวมบิล")}
                   variant="secondary"
                   style={!isTablet ? styles.secondaryActionButton : undefined}
                   onPress={() => {
@@ -499,7 +498,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
               </>
             ) : null}
             <Button
-              label="ยกเลิกบิล"
+              label={posText("ยกเลิกบิล")}
               variant="danger"
               disabled={!['OPEN', 'CLOSING'].includes(current.status)}
               style={!isTablet ? styles.secondaryActionButton : undefined}
@@ -513,7 +512,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
           </View>
         ) : null}
         <Button
-          label="ไปชำระเงิน"
+          label={posText("ไปชำระเงิน")}
           variant="secondary"
           fullWidth
           disabled={
@@ -541,13 +540,13 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
         <ScreenHeader
           title={
             serviceMode === 'TAKEAWAY'
-              ? `บิลกลับบ้าน ${current ? `#${current.id.slice(0, 8)}` : ''}`
+              ? posText("บิลกลับบ้าน {v0}", { v0: current ? `#${current.id.slice(0, 8)}` : '' })
               : table
-              ? `บิลโต๊ะ ${table.code}`
-              : 'บิลโต๊ะ'
+              ? posText("บิลโต๊ะ {v0}", { v0: table.code })
+              : posText("บิลโต๊ะ")
           }
           subtitle={
-            current ? `${splittableItems.length} รายการ` : 'พร้อมเปิดบิลใหม่'
+            current ? posText("{v0} รายการ", { v0: splittableItems.length }) : posText("พร้อมเปิดบิลใหม่")
           }
           onBack={() => navigation.goBack()}
         />
@@ -584,7 +583,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
               }}
             >
               <Button
-                label="เมนู"
+                label={posText("เมนู")}
                 variant={mobilePane === 'MENU' ? 'primary' : 'secondary'}
                 onPress={() => setMobilePane('MENU')}
               />
@@ -648,21 +647,21 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
             >
               <Text style={[typography.title, { color: colors.text }]}>
                 {action === 'GUESTS'
-                  ? 'จำนวนลูกค้า'
+                  ? posText("จำนวนลูกค้า")
                   : action === 'MOVE'
-                  ? 'ย้ายโต๊ะ'
+                  ? posText("ย้ายโต๊ะ")
                   : action === 'SPLIT'
-                  ? 'แยกบิล'
+                  ? posText("แยกบิล")
                   : action === 'MERGE'
-                  ? 'รวมบิล'
-                  : 'ยกเลิกบิล'}
+                  ? posText("รวมบิล")
+                  : posText("ยกเลิกบิล")}
               </Text>
               {action === 'GUESTS' || action === 'SPLIT' ? (
                 <TextInput
                   value={guestCount}
                   onChangeText={setGuestCount}
                   keyboardType="number-pad"
-                  placeholder="จำนวนลูกค้า"
+                  placeholder={posText("จำนวนลูกค้า")}
                   placeholderTextColor={colors.textSoft}
                   style={[
                     styles.input,
@@ -684,10 +683,10 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
                 ? mergeCandidates.map(option => (
                     <Button
                       key={option.id}
-                      label={`บิล ${option.id.slice(
+                      label={posText("บิล {v0} · ฿{v1}", { v0: option.id.slice(
                         0,
                         8,
-                      )} · ฿${option.amountDue.toFixed(2)}`}
+                      ), v1: option.amountDue.toFixed(2) })}
                       variant={targetId === option.id ? 'primary' : 'secondary'}
                       onPress={() => setTargetId(option.id)}
                     />
@@ -719,7 +718,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
                     value={reason}
                     onChangeText={setReason}
                     multiline
-                    placeholder="เหตุผลยกเลิก"
+                    placeholder={posText("เหตุผลยกเลิก")}
                     placeholderTextColor={colors.textSoft}
                     style={[
                       styles.input,
@@ -734,8 +733,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
                           { color: colors.warning },
                         ]}
                       >
-                        บิลที่ส่งครัวแล้วต้องให้ผู้อนุมัติคนที่สองกด PIN
-                      </Text>
+                        {posText("บิลที่ส่งครัวแล้วต้องให้ผู้อนุมัติคนที่สองกด PIN") + " "}</Text>
                       {voidApprovers.map(person => (
                         <Button
                           key={person.id}
@@ -752,7 +750,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
                           onChangeText={setApproverPin}
                           secureTextEntry
                           keyboardType="number-pad"
-                          placeholder="PIN ผู้อนุมัติ"
+                          placeholder={posText("PIN ผู้อนุมัติ")}
                           placeholderTextColor={colors.textSoft}
                           style={[
                             styles.input,
@@ -765,7 +763,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
                 </>
               ) : null}
               <Button
-                label={working ? 'กำลังบันทึก…' : 'ยืนยัน'}
+                label={working ? posText("กำลังบันทึก…") : posText("ยืนยัน")}
                 fullWidth
                 loading={working}
                 disabled={
@@ -781,7 +779,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
                 onPress={() => runCheckAction().catch(() => undefined)}
               />
               <Button
-                label="ปิด"
+                label={posText("ปิด")}
                 variant="secondary"
                 fullWidth
                 onPress={() => setAction(null)}

@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import {
   Table,
@@ -52,7 +54,7 @@ type PostRow = {
 };
 
 const formatDateTime = (
-  value: string | number | null | undefined
+  value: string | number | null | undefined, uiText: UiTranslator = thaiUiText
 ): string => {
   if (value === null || value === undefined || value === "") return "-";
 
@@ -79,10 +81,11 @@ const formatDateTime = (
 
   if (Number.isNaN(date.getTime())) return "-";
 
-  return date.toLocaleString("en-US");
+  return date.toLocaleString(uiText.locale);
 };
 
 function PostsList(){
+  const uiText = useUiText();
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -109,18 +112,18 @@ function PostsList(){
   const onBulkDelete = async () => {
     if (!selectedCount) return;
     Modal.confirm({
-      title: `Delete ${selectedCount} post(s)?`,
-      content: 'This action cannot be undone.',
+      title: uiText("admin_ui.en_delete_post_s_76f91", { v0: selectedCount }),
+      content: uiText("admin_ui.en_this_action_cannot_be_undone_951f4"),
       okButtonProps: { danger: true },
       onOk: async () => {
         const ids = selectedRowKeys.map(String);
         const res = await doDelMany({ variables: { ids } });
         if (res.data?.deletePosts) {
-          message.success(`Deleted ${selectedCount} item(s)`);
+          message.success(uiText("admin_ui.en_deleted_item_s_d41b7", { v0: selectedCount }));
           setSelectedRowKeys([]);
           refetch({ q, limit: pageSize, offset: (page-1)*pageSize });
         } else {
-          message.error('Delete failed');
+          message.error(uiText("admin_ui.en_delete_failed_64513"));
         }
       }
     });
@@ -131,14 +134,14 @@ function PostsList(){
       setDeletingId(id); // 👉 เซ็ต id ของแถวที่กำลังลบ
       const res = await doDel({ variables: { id } });
       if (res.data?.deletePost) {
-        message.success('Deleted');
+        message.success(uiText("admin_ui.en_deleted_441bd"));
         refetch({ q, limit: pageSize, offset: (page-1)*pageSize });
       } else {
-        message.error('Delete failed');
+        message.error(uiText("admin_ui.en_delete_failed_64513"));
       }
     } catch (err) {
       console.error(err);
-      message.error('Delete failed');
+      message.error(uiText("admin_ui.en_delete_failed_64513"));
     } finally {
       setDeletingId(null); // 👉 เคลียร์หลังลบเสร็จ
     }
@@ -146,39 +149,39 @@ function PostsList(){
 
   const cols = useMemo<TableColumnsType<PostRow>>(()=>[
     {
-      title:'Images',
+      title:uiText("admin_ui.en_images_09e87"),
       dataIndex:'images',
       render:(imgs:any)=><ThumbGrid images={imgs} width={160} height={110} />
     },
     {
-      title:'Title',
+      title:uiText("admin_ui.en_title_768e0"),
       render: (_:any, r:any)=>{
         return <Link href={`/admin/post/${r.id}`}>{r.title}</Link>
       }
     },
     {
-      title:'Detail',
+      title:uiText("admin_ui.en_detail_7c9a7"),
       dataIndex:'detail'
     },
     {
-      title:'Author',
+      title:uiText("admin_ui.en_author_5fda2"),
       render:(_:any,r:any)=>
         <Link href={`/admin/users/${r.author.id}/edit`} prefetch={false}>
           {r.author?.name}
         </Link>
     },
     {
-      title:'Status',
+      title:uiText("admin_ui.en_status_bae7d"),
       dataIndex:'status',
       render:statusTag
     },
     {
-      title:'Action',
+      title:uiText("admin_ui.en_action_97c89"),
       render: (_:any, r:any) => (
         <Space>
           {/* ปุ่ม Edit แบบไอคอน + Tooltip */}
           <>
-            <Tooltip title="Edit">
+            <Tooltip title={uiText("admin_ui.en_edit_53016")}>
               <Link href={`/admin/post/${r.id}/edit`} prefetch={false}>
                 <Button
                   type="text"
@@ -190,12 +193,12 @@ function PostsList(){
 
             {/* ปุ่ม Delete แบบ Popconfirm + Tooltip */}
             <Popconfirm
-              title="Confirm delete?"
-              okText="Yes"
-              cancelText="No"
+              title={uiText("admin_ui.en_confirm_delete_32a98")}
+              okText={uiText("admin_ui.en_yes_5397e")}
+              cancelText={uiText("admin_ui.en_no_816c5")}
               onConfirm={() => handleDelete(r.id)}
             >
-              <Tooltip title="Delete">
+              <Tooltip title={uiText("admin_ui.en_delete_f6fdb")}>
                 <Button
                   type="text"
                   size="small"
@@ -211,18 +214,18 @@ function PostsList(){
       )
     },
     {
-      title: 'Created At',
+      title: uiText("admin_ui.en_created_at_5db15"),
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (value) => formatDateTime(value),
+      render: (value) => formatDateTime(value, uiText),
     },
     {
-      title: 'Updated At',
+      title: uiText("admin_ui.en_updated_at_22714"),
       dataIndex: 'updated_at',
       key: 'updated_at',
-      render: (value) => formatDateTime(value),
+      render: (value) => formatDateTime(value, uiText),
     },
-  ], [deletingId, q, page, pageSize, refetch]); // เปลี่ยนจาก deleting -> deletingId
+  ], [uiText, deletingId, q, page, pageSize, refetch]); // เปลี่ยนจาก deleting -> deletingId
 
   const rowSelection = {
     selectedRowKeys,
@@ -237,19 +240,19 @@ function PostsList(){
     <>
       <Space style={{marginBottom:16}} wrap>
         <Input
-          placeholder="Search title/phone"
+          placeholder={uiText("admin_ui.en_search_title_phone_263ba")}
           value={q}
           onChange={e=>setQ(e.target.value)}
           onPressEnter={onSearch}
         />
-        <Button onClick={onSearch}>Search</Button>
+        <Button onClick={onSearch}>{uiText("admin_ui.en_search_bce06")}</Button>
 
         <Button danger disabled={!selectedCount} onClick={onBulkDelete}>
-          Delete selected ({selectedCount})
+          {uiText("admin_ui.en_delete_selected_eec82")}{selectedCount})
         </Button>
 
         <Button type="primary">
-          <Link href="/admin/post/new" style={{ color: 'inherit' }}>+ New Post</Link>
+          <Link href="/admin/post/new" style={{ color: 'inherit' }}>{uiText("admin_ui.en_new_post_25571")}</Link>
         </Button>
       </Space>
 
@@ -265,7 +268,7 @@ function PostsList(){
           total,
           showSizeChanger: true,
           showTotal: (tot, range) =>
-            `${range[0]}-${range[1]} of ${tot} items`,
+            uiText("admin_ui.en_of_items_9aa37", { v0: range[0], v1: range[1], v2: tot }),
           onChange: (p, ps) => {
             const changedPageSize = ps !== pageSize;
             setPage(p);

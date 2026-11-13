@@ -1,3 +1,4 @@
+import { getMessage } from "../apps/web/i18n/index.ts";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -270,7 +271,8 @@ test("delivery provider analytics separates operational, sales and statement aut
   assert.match(page, /key:"analytics"/);
   assert.match(page, /Settlement เป็น statement รวม จึงไม่ปันส่วนลงสาขา/);
   assert.match(page, /actualPayoutComplete/);
-  assert.match(page, /Shadow/);
+  assert.ok(page.includes('uiText("admin_ui.en_shadow_aa0e7")'));
+  assert.match(getMessage("en", "admin_ui.en_shadow_aa0e7"), /Shadow/);
 });
 
 test("late acceptance is blocked without inventing provider reject or refund semantics", () => {

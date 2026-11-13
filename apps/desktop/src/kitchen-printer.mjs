@@ -1,3 +1,5 @@
+import desktopLocale from '../renderer/locale.cjs';
+const { posText } = desktopLocale;
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { RECEIPT_READY_SCRIPT, receiptPrintOptions } from "./receipt-printer.mjs";
@@ -34,7 +36,7 @@ export function normalizeKitchenPrintJob(value) {
     note: clean(item?.note, 300),
   })).filter((item) => item.name && item.qty > 0) : [];
   if (!jobId || !routeKey(stationId, stationName) || !label || items.length === 0) {
-    throw new Error("ข้อมูลใบงานครัวไม่ครบ");
+    throw new Error(posText("ข้อมูลใบงานครัวไม่ครบ"));
   }
   return {
     jobId,
@@ -68,24 +70,24 @@ function fonts() {
 export function kitchenPrintDocument(job, paperWidth) {
   const width = paperWidth === 58 ? 58 : 80;
   const items = job.items.map((item) => `<section class="item"><div><b>${escapeHtml(item.qty)}×</b><strong>${escapeHtml(item.name)}</strong>${item.size ? `<span>${escapeHtml(item.size)}</span>` : ""}</div>${item.modifiers.length ? `<small>${item.modifiers.map(escapeHtml).join(" · ")}</small>` : ""}${item.note ? `<em>${escapeHtml(item.note)}</em>` : ""}</section>`).join("");
-  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none';font-src data:;style-src 'unsafe-inline';script-src 'none'"><style>${fonts()}@page{margin:0}*{box-sizing:border-box}html,body{margin:0;width:${width}mm;background:#fff;color:#000;font-family:"BMS Kitchen Thai",sans-serif}body{padding:3mm 4mm}header{text-align:center;border-bottom:2px solid #000;padding-bottom:3mm;margin-bottom:2mm}h1{font-size:26px;margin:0;line-height:1.1}header p{font-size:15px;margin:1mm 0 0}.station{font-size:17px}.item{padding:2.5mm 0;border-bottom:1px dashed #000;break-inside:avoid}.item div{display:grid;grid-template-columns:10mm 1fr auto;gap:2mm;font-size:18px}.item b{font-size:22px}.item strong{overflow-wrap:anywhere}.item span{font-size:13px}.item small,.item em{display:block;margin-left:12mm;font-size:14px;overflow-wrap:anywhere}.item em{font-style:normal;font-weight:700;border:1px solid #000;padding:1mm;margin-top:1mm}footer{text-align:center;margin-top:3mm;font-size:11px}</style></head><body><header><div class="station">${escapeHtml(job.stationName || "ไม่ระบุสถานี")}</div><h1>${escapeHtml(job.label)}</h1>${job.roundNo ? `<p>รอบ ${escapeHtml(job.roundNo)}</p>` : ""}</header>${items}<footer>${escapeHtml(job.createdAt || "")}</footer></body></html>`;
+  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none';font-src data:;style-src 'unsafe-inline';script-src 'none'"><style>${fonts()}@page{margin:0}*{box-sizing:border-box}html,body{margin:0;width:${width}mm;background:#fff;color:#000;font-family:"BMS Kitchen Thai",sans-serif}body{padding:3mm 4mm}header{text-align:center;border-bottom:2px solid #000;padding-bottom:3mm;margin-bottom:2mm}h1{font-size:26px;margin:0;line-height:1.1}header p{font-size:15px;margin:1mm 0 0}.station{font-size:17px}.item{padding:2.5mm 0;border-bottom:1px dashed #000;break-inside:avoid}.item div{display:grid;grid-template-columns:10mm 1fr auto;gap:2mm;font-size:18px}.item b{font-size:22px}.item strong{overflow-wrap:anywhere}.item span{font-size:13px}.item small,.item em{display:block;margin-left:12mm;font-size:14px;overflow-wrap:anywhere}.item em{font-style:normal;font-weight:700;border:1px solid #000;padding:1mm;margin-top:1mm}footer{text-align:center;margin-top:3mm;font-size:11px}</style></head><body><header><div class="station">${escapeHtml(job.stationName || posText("ไม่ระบุสถานี"))}</div><h1>${escapeHtml(job.label)}</h1>${job.roundNo ? posText("<p>รอบ {v0}</p>", { v0: escapeHtml(job.roundNo) }) : ""}</header>${items}<footer>${escapeHtml(job.createdAt || "")}</footer></body></html>`;
 }
 
 export function createKitchenPrinter({ createWindow, getPrinters, getConfig, getJournal, setJournal, timeoutMs = 30_000 }) {
   let busy = false;
   return async function printKitchenTicket(input, options = {}, authorized = () => true) {
-    if (busy) return { ok: false, retrySafe: true, error: "กำลังส่งใบงานไปเครื่องพิมพ์" };
+    if (busy) return { ok: false, retrySafe: true, error: posText("กำลังส่งใบงานไปเครื่องพิมพ์") };
     let job;
     try { job = normalizeKitchenPrintJob(input); }
     catch (error) { return { ok: false, retrySafe: true, error: error.message }; }
     const route = getConfig().routes.find((entry) => entry.stationKey === job.stationKey);
-    if (!route) return { ok: false, retrySafe: true, error: `ยังไม่ได้ตั้งค่าเครื่องพิมพ์สถานี ${job.stationName || job.stationId}` };
+    if (!route) return { ok: false, retrySafe: true, error: posText("ยังไม่ได้ตั้งค่าเครื่องพิมพ์สถานี {v0}", { v0: job.stationName || job.stationId }) };
     if (options.auto === true && !route.autoPrint) return { ok: true, skipped: true };
     const key = kitchenJobKey(job);
     const prior = getJournal()[key];
     if (prior?.status === "PRINTED") return { ok: true, duplicate: true };
     if (["UNCERTAIN", "PRINTING"].includes(prior?.status) && options.retry !== true) {
-      return { ok: false, uncertain: true, retrySafe: false, error: "ผลการพิมพ์ครั้งก่อนไม่แน่ชัด กรุณาตรวจถาดก่อนกดพิมพ์ซ้ำ" };
+      return { ok: false, uncertain: true, retrySafe: false, error: posText("ผลการพิมพ์ครั้งก่อนไม่แน่ชัด กรุณาตรวจถาดก่อนกดพิมพ์ซ้ำ") };
     }
     busy = true;
     let printWindow;
@@ -93,7 +95,7 @@ export function createKitchenPrinter({ createWindow, getPrinters, getConfig, get
     let cancelled = false;
     let submitted = false;
     const check = () => {
-      if (cancelled || !authorized()) throw new Error("หน้าขายเปลี่ยนแล้ว กรุณาลองใหม่");
+      if (cancelled || !authorized()) throw new Error(posText("หน้าขายเปลี่ยนแล้ว กรุณาลองใหม่"));
     };
     try {
       const task = (async () => {
@@ -115,7 +117,7 @@ export function createKitchenPrinter({ createWindow, getPrinters, getConfig, get
         submitted = true;
         const print = new Promise((resolve, reject) => printWindow.webContents.print(
           printOptions,
-          (ok) => ok ? resolve() : reject(new Error("ส่งใบงานไม่สำเร็จ")),
+          (ok) => ok ? resolve() : reject(new Error(posText("ส่งใบงานไม่สำเร็จ"))),
         ));
         await print;
         check();
@@ -124,7 +126,7 @@ export function createKitchenPrinter({ createWindow, getPrinters, getConfig, get
       await Promise.race([task, new Promise((_, reject) => {
         timer = setTimeout(() => {
           cancelled = true;
-          reject(new Error("เครื่องพิมพ์ไม่ตอบกลับ"));
+          reject(new Error(posText("เครื่องพิมพ์ไม่ตอบกลับ")));
         }, timeoutMs);
       })]);
       return { ok: true };
@@ -137,7 +139,7 @@ export function createKitchenPrinter({ createWindow, getPrinters, getConfig, get
         catch { /* PRINTING already prevents automatic retry. */ }
       }
       return { ok: false, uncertain: submitted, retrySafe: !submitted,
-        error: `${error?.message || "พิมพ์ใบงานไม่สำเร็จ"}${submitted ? " · กรุณาตรวจถาดก่อนพิมพ์ซ้ำ" : ""}` };
+        error: `${error?.message || posText("พิมพ์ใบงานไม่สำเร็จ")}${submitted ? posText(" · กรุณาตรวจถาดก่อนพิมพ์ซ้ำ") : ""}` };
     } finally {
       clearTimeout(timer);
       if (printWindow && !printWindow.isDestroyed()) printWindow.destroy();

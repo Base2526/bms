@@ -1,5 +1,9 @@
 "use client";
 
+import { deliveryStatusLabel } from "@/i18n/deliveryStatus";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
+
 import { useDeferredValue, useEffect, useState } from "react";
 import Link from "next/link";
 import { gql, useLazyQuery, useMutation, useQuery } from "@apollo/client";
@@ -158,9 +162,9 @@ const channelLabel: Record<string, string> = {
   instagram: "Instagram",
 };
 
-function formatDate(value?: string | null) {
+function formatDate(value?: string | null, uiText: UiTranslator = thaiUiText) {
   if (!value) return "-";
-  return new Intl.DateTimeFormat("th-TH", {
+  return new Intl.DateTimeFormat(uiText.locale, {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone: "Asia/Bangkok",
@@ -196,6 +200,7 @@ function formatPercent(value?: number | null) {
 }
 
 export default function RestockSubscriptionsPage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
@@ -367,7 +372,7 @@ export default function RestockSubscriptionsPage() {
       title: t("admin_restock.col_updated"),
       dataIndex: "updatedAt",
       width: 175,
-      render: formatDate,
+      render: (value: string | null) => formatDate(value, uiText),
     },
     {
       title: "",
@@ -496,7 +501,7 @@ export default function RestockSubscriptionsPage() {
                     </div>
                   </div>
                   <div className={styles.mobileMetaLine}>
-                    <Text type="secondary" className={styles.smallText}>{t("admin_restock.mobile_updated", { when: formatDate(item.updatedAt) })}</Text>
+                    <Text type="secondary" className={styles.smallText}>{t("admin_restock.mobile_updated", { when: formatDate(item.updatedAt, uiText) })}</Text>
                   </div>
                   <div className={styles.mobileActions}>
                     <Button size="small" onClick={(event) => { event.stopPropagation(); setSelected(item); }}>
@@ -571,16 +576,16 @@ export default function RestockSubscriptionsPage() {
             )}
 
             <Card size="small" title={t("admin_restock.card_customer_consent")}>
-              <Paragraph><Text strong>{selected.customerName || selected.customerRef}</Text><br />{channelLabel[selected.channel]}{t("admin_restock.consented_at", { when: formatDate(selected.consentedAt) })}</Paragraph>
+              <Paragraph><Text strong>{selected.customerName || selected.customerRef}</Text><br />{channelLabel[selected.channel]}{t("admin_restock.consented_at", { when: formatDate(selected.consentedAt, uiText) })}</Paragraph>
               {selected.conversationId && <Link href={`/admin/inbox?c=${selected.conversationId}`}><Button icon={<MessageOutlined />}>{t("admin_restock.btn_open_conversation")}</Button></Link>}
             </Card>
 
             {selected.resolvedOrderId && (
               <Card size="small" title={t("admin_restock.card_restock_order")}>
                 <Paragraph style={{ marginBottom: 8 }}>
-                  <Text strong>Order {selected.resolvedOrderId.slice(0, 8)}</Text><br />
-                  {t("admin_restock.ordered_at", { when: formatDate(selected.orderedAt) })}
-                  {selected.status === "PURCHASED" ? <><br />{t("admin_restock.paid_confirmed_at", { when: formatDate(selected.resolvedAt) })}</> : null}
+                  <Text strong>{uiText("admin_ui.en_order_1d757")} {selected.resolvedOrderId.slice(0, 8)}</Text><br />
+                  {t("admin_restock.ordered_at", { when: formatDate(selected.orderedAt, uiText) })}
+                  {selected.status === "PURCHASED" ? <><br />{t("admin_restock.paid_confirmed_at", { when: formatDate(selected.resolvedAt, uiText) })}</> : null}
                 </Paragraph>
                 {selected.recoveredRevenue != null ? (
                   <Tag color="green">{t("admin_restock.recovered_amount", { amount: selected.recoveredRevenue.toLocaleString("th-TH", { minimumFractionDigits: 2 }) })}</Tag>
@@ -597,9 +602,9 @@ export default function RestockSubscriptionsPage() {
                   color: delivery.status === "SENT" ? "green" : delivery.status === "FAILED" ? "red" : "gray",
                   children: (
                     <div className={styles.attempt}>
-                      <Space><Text strong>{t("admin_restock.attempt_no", { n: delivery.attemptNo })}</Text><Tag color={delivery.status === "SENT" ? "green" : "red"}>{delivery.status}</Tag></Space>
+                      <Space><Text strong>{t("admin_restock.attempt_no", { n: delivery.attemptNo })}</Text><Tag color={delivery.status === "SENT" ? "green" : "red"}>{deliveryStatusLabel(delivery.status, uiText)}</Tag></Space>
                       <Paragraph ellipsis={{ rows: 3, expandable: true, symbol: t("admin_restock.expand_symbol") }}>{delivery.body}</Paragraph>
-                      <Text type="secondary" className={styles.smallText}>{formatDate(delivery.completedAt || delivery.createdAt)} · {delivery.triggeredBy || t("admin_restock.triggered_by_system")}</Text>
+                      <Text type="secondary" className={styles.smallText}>{formatDate(delivery.completedAt || delivery.createdAt, uiText)} · {delivery.triggeredBy || t("admin_restock.triggered_by_system")}</Text>
                       {delivery.error && <Alert closable className={styles.deliveryError} type="error" showIcon message={delivery.error} />}
                     </div>
                   ),

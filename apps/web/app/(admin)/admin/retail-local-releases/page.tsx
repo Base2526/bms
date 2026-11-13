@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/useUiText";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -158,6 +160,7 @@ function inferVersionFromFilename(filename: string): string | null {
 }
 
 export default function RetailLocalReleasesPage() {
+  const uiText = useUiText();
   const { lang } = useI18n();
   const th = lang === "th";
   const [rows, setRows] = useState<ReleaseAsset[]>([]);
@@ -414,8 +417,7 @@ export default function RetailLocalReleasesPage() {
           <Col>
             <Space wrap>
               <Button href="/admin/retail-local-runtime-releases" icon={<CloudUploadOutlined />}>
-                Managed Runtime files
-              </Button>
+                {uiText("admin_ui.en_managed_runtime_files_96b15")}</Button>
               <Button icon={<ReloadOutlined />} onClick={() => load()} loading={loading}>{copy.refresh}</Button>
               <Button type="primary" icon={<UploadOutlined />} onClick={openUpload}>{copy.upload}</Button>
             </Space>
@@ -438,7 +440,7 @@ export default function RetailLocalReleasesPage() {
                       <div key={packageType} style={{ display: "grid", gap: 2, minWidth: 0 }}>
                         <Typography.Text strong>{PACKAGE_LABELS[packageType]}</Typography.Text>
                         <Typography.Text type="secondary" ellipsis title={release?.original_name}>
-                          {release ? `${release.version} · ${release.original_name}` : "Not published"}
+                          {release ? `${release.version} · ${release.original_name}` : uiText("admin_ui.en_not_published_40081")}
                         </Typography.Text>
                       </div>
                     );
@@ -482,7 +484,7 @@ export default function RetailLocalReleasesPage() {
             },
             { title: copy.checksum, dataIndex: "sha256", width: 220, render: (value: string) => <Typography.Text code copyable={{ text: value }}>{value.slice(0, 16)}...</Typography.Text> },
             { title: copy.minOs, dataIndex: "min_os", width: 220, ellipsis: true },
-            { title: copy.created, dataIndex: "created_at", width: 170, render: (value: string) => new Date(value).toLocaleString() },
+            { title: copy.created, dataIndex: "created_at", width: 170, render: (value: string) => new Date(value).toLocaleString(uiText.locale) },
             {
               title: copy.actions,
               width: 330,
@@ -568,7 +570,7 @@ export default function RetailLocalReleasesPage() {
                 <Select
                   options={[
                   { value: "windows-x64", label: "Windows x64 (.exe)" },
-                  { value: "windows-x86-legacy", label: "Windows x86 Legacy · POS only (.exe)" },
+                  { value: "windows-x86-legacy", label: uiText("admin_ui.en_windows_x86_legacy_pos_only_exe_b60d3") },
                   { value: "ubuntu-x64", label: "Ubuntu x64 (.deb)" },
                   { value: "macos-arm64", label: `macOS Apple Silicon (${macUploadExtension})` },
                   { value: "macos-x64", label: `macOS Intel (${macUploadExtension})` },

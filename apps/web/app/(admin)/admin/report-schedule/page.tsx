@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useQuery, useLazyQuery } from "@apollo/client";
 import { Table, Tag, Space, Alert, Button, Drawer, List, Typography, Empty } from "antd";
 import { ReloadOutlined, HistoryOutlined, MailOutlined, SlackOutlined, LineOutlined } from "@ant-design/icons";
@@ -52,6 +54,7 @@ function scheduleDetail(r: any, t: (key: string, vars?: Record<string, any>) => 
 }
 
 export default function ReportSchedulePage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [openTenant, setOpenTenant] = useState<{ id: string; name: string } | null>(null);
@@ -107,7 +110,7 @@ export default function ReportSchedulePage() {
       render: (_: any, r: any) => (
         r.lastSentAt ? (
           <Space direction="vertical" size={0}>
-            <span style={{ fontSize: 12.5 }}>{new Date(r.lastSentAt).toLocaleString("th-TH")}</span>
+            <span style={{ fontSize: 12.5 }}>{new Date(r.lastSentAt).toLocaleString(uiText.locale)}</span>
             <Tag color={STATUS_COLOR[r.lastStatus] || "default"} style={{ width: "fit-content" }}>{r.lastStatus}</Tag>
           </Space>
         ) : <Text type="secondary" style={{ fontSize: 12.5 }}>{t("admin_report_schedule.never_sent")}</Text>
@@ -164,7 +167,7 @@ export default function ReportSchedulePage() {
                     <Text strong>{channelLabel[d.channel] || d.channel}</Text>
                     <Text type="secondary" style={{ fontSize: 12 }}>{freqLabel[d.frequency] || d.frequency}</Text>
                   </Space>
-                  <Text type="secondary" style={{ fontSize: 12 }}>{new Date(d.createdAt).toLocaleString("th-TH")}</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{new Date(d.createdAt).toLocaleString(uiText.locale)}</Text>
                   {d.error && <Text type="danger" style={{ fontSize: 12 }}>{d.error}</Text>}
                 </Space>
               </List.Item>

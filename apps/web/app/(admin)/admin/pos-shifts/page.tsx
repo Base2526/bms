@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 
 import {
   Alert,
@@ -247,6 +249,7 @@ function duration(minutes: number) {
 }
 
 export default function PosShiftsPage() {
+  const uiText = useUiText();
   const { can, loading: permsLoading } = useBmsPermissions();
   const { lang } = useI18n();
   const text = COPY[lang === "en" ? "en" : "th"];
@@ -356,7 +359,7 @@ export default function PosShiftsPage() {
           presets={[
             { label: "7D", value: [dayjs().subtract(6, "day"), dayjs()] },
             { label: "30D", value: [dayjs().subtract(29, "day"), dayjs()] },
-            { label: "MTD", value: [dayjs().startOf("month"), dayjs()] },
+            { label: uiText("admin_ui.en_mtd_1204b"), value: [dayjs().startOf("month"), dayjs()] },
           ]}
         />
         <Button icon={<ReloadOutlined />} onClick={() => load()} loading={loading}>{text.refresh}</Button>

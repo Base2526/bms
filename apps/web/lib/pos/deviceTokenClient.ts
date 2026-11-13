@@ -1,3 +1,5 @@
+import { posText } from "./clientText";
+
 export type DesktopCustomerDisplayMode = "off" | "auto" | "selected";
 
 export type DesktopDisplay = {
@@ -88,6 +90,9 @@ declare global {
   interface Window {
     bmsDesktop?: {
       isDesktop: true;
+      getLanguage?(): Promise<"th" | "en">;
+      setLanguage?(language: "th" | "en"): Promise<{ ok: boolean }>;
+      onLanguageChanged?(listener: (language: "th" | "en") => void): () => void;
       getDeviceToken(): Promise<string | null>;
       getStorageNamespace(): Promise<string | null>;
       getAppInfo?(): Promise<DesktopAppInfo | null>;
@@ -185,9 +190,9 @@ export async function clearPosDeviceToken(afterRemoval?: () => void): Promise<vo
     let result;
     try { result = await window.bmsDesktop.unpair(cleanup); }
     catch { throw new Error(removalConfirmed
-      ? "เลิกจับคู่แล้ว แต่ล้างข้อมูลหน้าขายไม่สำเร็จ กรุณาปิดแอปแล้วเปิดใหม่"
-      : "เลิกจับคู่เครื่องไม่สำเร็จ กรุณาลองใหม่ ข้อมูลหน้าขายยังอยู่"); }
-    if (!result?.ok) throw new Error(result?.error || "เลิกจับคู่เครื่องไม่สำเร็จ กรุณาลองใหม่ ข้อมูลหน้าขายยังอยู่");
+      ? posText("เลิกจับคู่แล้ว แต่ล้างข้อมูลหน้าขายไม่สำเร็จ กรุณาปิดแอปแล้วเปิดใหม่")
+      : posText("เลิกจับคู่เครื่องไม่สำเร็จ กรุณาลองใหม่ ข้อมูลหน้าขายยังอยู่")); }
+    if (!result?.ok) throw new Error(result?.error || posText("เลิกจับคู่เครื่องไม่สำเร็จ กรุณาลองใหม่ ข้อมูลหน้าขายยังอยู่"));
     cleanup(); // Older preload clients do not support the pre-navigation callback.
     return;
   }

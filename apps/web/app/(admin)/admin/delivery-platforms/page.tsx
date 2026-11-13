@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 
 import { CheckCircleOutlined, ClockCircleOutlined, ReloadOutlined, PlusOutlined } from "@ant-design/icons";
 import {
@@ -41,6 +43,7 @@ function statusColor(value: string) {
 }
 
 export default function DeliveryPlatformsPage() {
+  const uiText = useUiText();
   const { lang } = useI18n();
   const L = (th: string, en: string) => lang === "th" ? th : en;
   const { can, loading: permissionLoading } = useBmsPermissions();
@@ -138,7 +141,7 @@ export default function DeliveryPlatformsPage() {
       let config: Record<string, unknown> = {};
       if (values.configJson?.trim()) {
         config = JSON.parse(values.configJson);
-        if (!config || Array.isArray(config) || typeof config !== "object") throw new Error("config must be a JSON object");
+        if (!config || Array.isArray(config) || typeof config !== "object") throw new Error(uiText("admin_ui.en_config_must_be_a_json_object_82042"));
       }
       await jsonFetch("/api/bms/delivery/integrations", { method: "POST", body: JSON.stringify({ ...values, config }) });
       message.success(L("บันทึกการเชื่อมต่อแล้ว", "Integration saved"));
@@ -272,18 +275,18 @@ export default function DeliveryPlatformsPage() {
       <Col xs={12} xl={5}><Card><Statistic title={L("ยอดขายก่อนคืน", "Gross sales")} value={analyticsMixedCurrency ? "—" : money(analyticsTotals.grossSales,analyticsCurrency)} /></Card></Col>
       <Col xs={12} xl={5}><Card><Statistic title={L("ยอดคืน", "Refunds")} value={analyticsMixedCurrency ? "—" : money(analyticsTotals.refundAmount,analyticsCurrency)} /></Card></Col>
       <Col xs={12} xl={5}><Card><Statistic title={L("ยอดขายสุทธิ", "Net sales")} value={analyticsMixedCurrency ? "—" : money(analyticsTotals.netSales,analyticsCurrency)} /></Card></Col>
-      <Col xs={12} xl={5}><Card><Statistic title={L("รับจริงจาก statement", "Actual statement payout")} value={analyticsLocationId || analyticsMixedCurrency || !actualPayoutComplete ? "—" : money(analyticsTotals.actualNet,analyticsCurrency)} suffix={analyticsTotals.mismatch ? <Tag color="red">{analyticsTotals.mismatch} mismatch</Tag> : undefined} /></Card></Col>
+      <Col xs={12} xl={5}><Card><Statistic title={L("รับจริงจาก statement", "Actual statement payout")} value={analyticsLocationId || analyticsMixedCurrency || !actualPayoutComplete ? "—" : money(analyticsTotals.actualNet,analyticsCurrency)} suffix={analyticsTotals.mismatch ? <Tag color="red">{analyticsTotals.mismatch}  {uiText("admin_ui.en_mismatch_170da")}</Tag> : undefined} /></Card></Col>
     </Row>
     <Card title={L("เปรียบเทียบ Provider", "Provider comparison")}>
       <Table rowKey="provider" loading={analyticsLoading} pagination={false} dataSource={analytics.providers} scroll={{x:2300}} columns={[
-        { title:"Provider", dataIndex:"provider", fixed:"left", width:125 },
+        { title:uiText("admin_ui.en_provider_7ceee"), dataIndex:"provider", fixed:"left", width:125 },
         { title:L("ออเดอร์ขาย", "Sales orders"), dataIndex:"salesOrders", align:"right", width:100 },
         { title:L("ยอดขาย", "Gross sales"), dataIndex:"grossSales", align:"right", width:135, render:(value,row)=>row.mixedCurrency?"—":money(value,row.currency) },
         { title:L("ยอดคืน", "Refunds"), dataIndex:"refundAmount", align:"right", width:125, render:(value,row)=>row.mixedCurrency?"—":money(value,row.currency) },
         { title:L("ยอดสุทธิ", "Net sales"), dataIndex:"netSales", align:"right", width:135, render:(value,row)=>row.mixedCurrency?"—":money(value,row.currency) },
         { title:"AOV", dataIndex:"averageOrderValue", align:"right", width:115, render:(value,row)=>row.mixedCurrency?"—":money(value,row.currency) },
         { title:L("รับเข้า", "Intake"), dataIndex:"intakeOrders", align:"right", width:80 },
-        { title:"Shadow", dataIndex:"shadowOrders", align:"right", width:80 },
+        { title:uiText("admin_ui.en_shadow_aa0e7"), dataIndex:"shadowOrders", align:"right", width:80 },
         { title:L("รับออเดอร์", "Acceptance"), dataIndex:"acceptanceRate", align:"right", width:105, render:percent },
         { title:L("สำเร็จ", "Completion"), dataIndex:"completionRate", align:"right", width:100, render:percent },
         { title:L("ยกเลิก", "Cancellation"), dataIndex:"cancellationRate", align:"right", width:105, render:percent },
@@ -296,7 +299,7 @@ export default function DeliveryPlatformsPage() {
         { title:L("รับจริง", "Actual payout"), align:"right", width:160, render:(_,row)=>row.settlement?.actualNetAmount==null?"—":<Space size={4}>{money(row.settlement.actualNetAmount,row.currency)}{!row.settlement.actualPayoutComplete&&<Tag color="orange">{L("บางส่วน","partial")}</Tag>}</Space> },
         { title:L("ส่วนต่าง", "Variance"), align:"right", width:125, render:(_,row)=>row.settlement?.actualPayoutComplete?money(row.settlement.varianceAmount,row.currency):"—" },
         { title:L("ค่าธรรมเนียม", "Fees"), align:"right", width:125, render:(_,row)=>row.settlement?money(row.settlement.feeAmount,row.currency):"—" },
-        { title:"Commission", align:"right", width:125, render:(_,row)=>row.settlement?money(row.settlement.commissionAmount,row.currency):"—" },
+        { title:uiText("admin_ui.en_commission_4bfc4"), align:"right", width:125, render:(_,row)=>row.settlement?money(row.settlement.commissionAmount,row.currency):"—" },
         { title:L("คืนเงินใน Statement", "Statement refunds"), align:"right", width:145, render:(_,row)=>row.settlement?money(row.settlement.refundAmount,row.currency):"—" },
         { title:L("Fee + commission", "Fee + commission"), align:"right", width:145, render:(_,row)=>row.settlement?percent(row.settlement.feeCommissionRate):"—" },
         { title:L("Statement ไม่ตรง", "Mismatched statements"), align:"right", width:130, render:(_,row)=>row.settlement?<Tag color={row.settlement.mismatchStatements?"red":"green"}>{row.settlement.mismatchStatements}</Tag>:"—" },
@@ -306,7 +309,7 @@ export default function DeliveryPlatformsPage() {
       <Table rowKey={(row)=>`${row.bucket}:${row.provider}`} size="small" loading={analyticsLoading} dataSource={analytics.trend}
         pagination={analytics.trend.length > 60 ? {pageSize:60} : false} columns={[
           { title:L("เริ่มช่วง", "Period start"), dataIndex:"bucket", render:(value)=>dayjs(value).format("YYYY-MM-DD") },
-          { title:"Provider", dataIndex:"provider", render:(value)=><Tag>{value}</Tag> },
+          { title:uiText("admin_ui.en_provider_7ceee"), dataIndex:"provider", render:(value)=><Tag>{value}</Tag> },
           { title:L("ออเดอร์", "Orders"), dataIndex:"orders", align:"right" },
           { title:L("ยอดขาย", "Gross sales"), dataIndex:"grossSales", align:"right", render:(value,row)=>{ const provider=analytics.providers.find((p)=>p.provider===row.provider); return provider?.mixedCurrency?"—":money(value,provider?.currency ?? "THB"); } },
           { title:L("ยอดคืน", "Refunds"), dataIndex:"refundAmount", align:"right", render:(value,row)=>{ const provider=analytics.providers.find((p)=>p.provider===row.provider); return provider?.mixedCurrency?"—":money(value,provider?.currency ?? "THB"); } },
@@ -328,12 +331,12 @@ export default function DeliveryPlatformsPage() {
           description={L("เจ้าของร้านยังไม่ต้องกรอก Client ID, token หรือ webhook secret หน้านี้จะเปิดการเชื่อมต่อเมื่อทีมแพลตฟอร์มตรวจ authentication, webhook, lifecycle, settlement และสิทธิ์การใช้ credential แล้ว", "Shop owners should not enter a Client ID, token, or webhook secret yet. Connection will open after the platform team verifies authentication, webhooks, lifecycle, settlement, and credential authority.")} />
         <Row gutter={[12, 12]}>
           {[
-            ["partner", "สัญญา Partner / เจ้าของ credential", "Partner agreement / credential ownership"],
-            ["webhook", "การยืนยัน webhook และ retry", "Webhook authentication and retry"],
-            ["lifecycle", "วงจรออเดอร์ / ยกเลิก / คืนเงิน", "Order lifecycle / cancel / refund"],
-            ["catalog", "รหัสร้านและเมนู", "Store and menu identifiers"],
-            ["settlement", "รูปแบบ settlement และเจ้าของภาษี", "Settlement format and tax ownership"],
-            ["sandbox", "Sandbox และ certification", "Sandbox and certification"],
+            ["partner", uiText("admin_ui.partner_agreement_credential_owner_7c300"), "Partner agreement / credential ownership"],
+            ["webhook", uiText("admin_ui.webhook_verification_and_retries_1a934"), "Webhook authentication and retry"],
+            ["lifecycle", uiText("admin_ui.order_cancellation_refund_lifecycle_ab52d"), "Order lifecycle / cancel / refund"],
+            ["catalog", uiText("admin_ui.store_and_menu_identifiers_e8f4e"), "Store and menu identifiers"],
+            ["settlement", uiText("admin_ui.settlement_format_and_tax_responsibility_64c49"), "Settlement format and tax ownership"],
+            ["sandbox", uiText("admin_ui.sandbox_and_certification_41643"), "Sandbox and certification"],
           ].map(([key, th, en]) => <Col xs={24} md={12} xl={8} key={key}>
             <Tag icon={<ClockCircleOutlined />} color="orange" style={{ width: "100%", padding: "6px 10px", whiteSpace: "normal" }}>
               {L(th, en)} · {L("รอ LINE MAN", "Waiting for LINE MAN")}
@@ -375,8 +378,8 @@ export default function DeliveryPlatformsPage() {
   const mappings = <Space direction="vertical" size="large" style={{ width:"100%" }}>
     <Card title={L("จับคู่สาขา", "Branch mappings")} extra={canManageMapping && <Button icon={<PlusOutlined />} onClick={() => { locationForm.resetFields(); locationForm.setFieldsValue({ active:true, timezone:"Asia/Bangkok" }); setLocationOpen(true); }}>{L("เพิ่ม", "Add")}</Button>}>
       <Table rowKey="id" dataSource={boot.mappings.locations} pagination={false} columns={[
-        { title:"Provider", dataIndex:"provider" }, { title:L("Provider store", "Provider store"), dataIndex:"provider_store_id" },
-        { title:L("สาขา BMS", "BMS location"), dataIndex:"location_name" }, { title:"Timezone", dataIndex:"timezone" },
+        { title:uiText("admin_ui.en_provider_7ceee"), dataIndex:"provider" }, { title:L("Provider store", "Provider store"), dataIndex:"provider_store_id" },
+        { title:L("สาขา BMS", "BMS location"), dataIndex:"location_name" }, { title:uiText("admin_ui.en_timezone_d1f7d"), dataIndex:"timezone" },
         { title:L("สถานะ", "Status"), dataIndex:"active", render:(v) => <Tag color={v ? "green" : "default"}>{v ? L("ใช้งาน", "Active") : L("ปิด", "Disabled")}</Tag> },
       ]} />
     </Card>
@@ -393,7 +396,7 @@ export default function DeliveryPlatformsPage() {
   const operations = <Space direction="vertical" size="large" style={{ width:"100%" }}>
     <Card title={L("เหตุการณ์ที่ต้องตรวจ", "Events requiring review")}>
       <Table rowKey="id" dataSource={boot.operations.events} columns={[
-        { title:"Provider", dataIndex:"provider" }, { title:L("ออเดอร์", "Order"), dataIndex:"provider_order_id" },
+        { title:uiText("admin_ui.en_provider_7ceee"), dataIndex:"provider" }, { title:L("ออเดอร์", "Order"), dataIndex:"provider_order_id" },
         { title:L("Event", "Event"), dataIndex:"event_type" }, { title:L("สถานะ", "Status"), dataIndex:"processing_status", render:(v)=><Tag color={statusColor(v)}>{v}</Tag> },
         { title:L("ข้อผิดพลาด", "Error"), dataIndex:"last_error" },
         { title:"", render:(_,r) => can("restaurant.delivery.review") && <Button size="small" onClick={() => void retry("event",r.id)}>{L("ลองใหม่", "Retry")}</Button> },
@@ -401,7 +404,7 @@ export default function DeliveryPlatformsPage() {
     </Card>
     <Card title={L("คำสั่งที่ยังไม่ยืนยัน", "Unconfirmed provider commands")}>
       <Table rowKey="id" dataSource={boot.operations.commands} columns={[
-        { title:"Provider", dataIndex:"provider" }, { title:L("คำสั่ง", "Command"), dataIndex:"command_type" },
+        { title:uiText("admin_ui.en_provider_7ceee"), dataIndex:"provider" }, { title:L("คำสั่ง", "Command"), dataIndex:"command_type" },
         { title:L("สถานะ", "Status"), dataIndex:"status", render:(v)=><Tag color={statusColor(v)}>{v}</Tag> },
         { title:L("ครั้ง", "Attempts"), dataIndex:"attempts" }, { title:L("ข้อผิดพลาด", "Error"), dataIndex:"last_error" },
         { title:"", render:(_,r) => canManageIntegration && ["FAILED","MANUAL_ACTION_REQUIRED"].includes(r.status) && <Button size="small" onClick={() => void retry("command",r.id)}>{L("ลองใหม่", "Retry")}</Button> },
@@ -409,7 +412,7 @@ export default function DeliveryPlatformsPage() {
     </Card>
     <Card title={L("ออเดอร์และ timeline ล่าสุด", "Recent orders and timeline")}>
       <Table rowKey="id" dataSource={boot.operations.orders} expandable={{ expandedRowRender:(r) => <pre style={{ whiteSpace:"pre-wrap", margin:0 }}>{JSON.stringify(r.timeline ?? [], null, 2)}</pre> }} columns={[
-        { title:"Provider", dataIndex:"provider" }, { title:L("เลขออเดอร์", "Order no."), render:(_,r)=>r.provider_display_number || r.provider_order_id },
+        { title:uiText("admin_ui.en_provider_7ceee"), dataIndex:"provider" }, { title:L("เลขออเดอร์", "Order no."), render:(_,r)=>r.provider_display_number || r.provider_order_id },
         { title:L("สาขา", "Location"), dataIndex:"location_name" }, { title:L("Local", "Local"), dataIndex:"local_status", render:(v)=><Tag color={statusColor(v)}>{v}</Tag> },
         { title:L("Provider", "Provider"), dataIndex:"provider_status" }, { title:L("หมดเวลารับ", "Accept by"), dataIndex:"acceptance_deadline", render:(v)=>v ? dayjs(v).format("YYYY-MM-DD HH:mm") : "—" },
       ]} />
@@ -424,7 +427,7 @@ export default function DeliveryPlatformsPage() {
         { title:L("Provider order", "Provider order"), dataIndex:"provider_order_id" }, { title:L("ยอดจริง", "Actual net"), dataIndex:"actual_net_amount" },
         { title:L("ผลกระทบยอด", "Reconciliation"), dataIndex:"reconciliation_status", render:(v)=><Tag color={statusColor(v)}>{v}</Tag> },
       ]} /> }} columns={[
-        { title:"Provider", dataIndex:"provider" }, { title:L("Statement", "Statement"), dataIndex:"statement_reference" },
+        { title:uiText("admin_ui.en_provider_7ceee"), dataIndex:"provider" }, { title:L("Statement", "Statement"), dataIndex:"statement_reference" },
         { title:L("ช่วง", "Period"), render:(_,r)=>`${dayjs(r.period_start).format("YYYY-MM-DD")} – ${dayjs(r.period_end).format("YYYY-MM-DD")}` },
         { title:L("คาดการณ์", "Expected"), dataIndex:"expected_net_amount" }, { title:L("รับจริง", "Actual"), dataIndex:"actual_net_amount" },
         { title:L("สถานะ", "Status"), dataIndex:"status", render:(v)=><Tag color={statusColor(v)}>{v}</Tag> },
@@ -454,47 +457,47 @@ export default function DeliveryPlatformsPage() {
 
     <Modal open={integrationOpen} title={L("ตั้งค่าการเชื่อมต่อ", "Configure integration")} onCancel={()=>setIntegrationOpen(false)} onOk={()=>void saveIntegration()} width={760} okText={L("บันทึก", "Save")} cancelText={L("ยกเลิก", "Cancel")}>
       <Form form={integrationForm} layout="vertical"><Form.Item name="id" hidden><Input /></Form.Item><Row gutter={12}>
-        <Col span={8}><Form.Item name="provider" label="Provider" rules={[{required:true}]}><Select options={["FOODPANDA","GRABFOOD","LINEMAN"].map(value=>({value}))} disabled={Boolean(integrationForm.getFieldValue("id"))} /></Form.Item></Col>
+        <Col span={8}><Form.Item name="provider" label={uiText("admin_ui.en_provider_7ceee")} rules={[{required:true}]}><Select options={["FOODPANDA","GRABFOOD","LINEMAN"].map(value=>({value}))} disabled={Boolean(integrationForm.getFieldValue("id"))} /></Form.Item></Col>
         <Col span={8}><Form.Item name="environment" label={L("สภาพแวดล้อม", "Environment")} rules={[{required:true}]}><Select options={["SANDBOX","LIVE"].map(value=>({value}))} disabled={Boolean(integrationForm.getFieldValue("id"))} /></Form.Item></Col>
-        <Col span={8}><Form.Item name="rolloutMode" label="Rollout" rules={[{required:true}]}><Select disabled={!tenantCredentialFieldsAvailable} options={["OFF","SHADOW","LIVE"].map(value=>({value}))} /></Form.Item></Col>
+        <Col span={8}><Form.Item name="rolloutMode" label={uiText("admin_ui.en_rollout_c0ea0")} rules={[{required:true}]}><Select disabled={!tenantCredentialFieldsAvailable} options={["OFF","SHADOW","LIVE"].map(value=>({value}))} /></Form.Item></Col>
       </Row>
       {!tenantCredentialFieldsAvailable && <Alert closable showIcon type="warning" style={{ marginBottom: 16 }}
         message={L("บันทึกได้เฉพาะรายการเตรียมเชื่อมต่อ", "Only a connection placeholder can be saved")}
         description={L("Contract ยังไม่บอกว่า credential เป็นของ BMS หรือของร้าน ระบบจึงบังคับ OFF และไม่รับ secret จนกว่าทีมแพลตฟอร์มจะเปิด Partner flow", "The contract has not established whether credentials belong to BMS or the shop, so the server enforces OFF and rejects secrets until the platform team enables the partner flow.")} />}
       <Row gutter={12}><Col span={12}><Form.Item name="active" label={L("เปิด integration", "Integration enabled")} valuePropName="checked"><Switch disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col><Col span={12}><Form.Item name="outboundCommandsEnabled" label={L("เปิด outbound command", "Outbound commands enabled")} valuePropName="checked"><Switch disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col></Row>
-      <Form.Item name="clientId" label="Client ID"><Input disabled={!tenantCredentialFieldsAvailable} /></Form.Item><Row gutter={12}><Col span={12}><Form.Item name="clientSecret" label={L("Client secret (เว้นว่างเพื่อคงเดิม)", "Client secret (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col><Col span={12}><Form.Item name="accessToken" label={L("Access token (เว้นว่างเพื่อคงเดิม)", "Access token (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col></Row>
+      <Form.Item name="clientId" label={uiText("admin_ui.en_client_id_a766c")}><Input disabled={!tenantCredentialFieldsAvailable} /></Form.Item><Row gutter={12}><Col span={12}><Form.Item name="clientSecret" label={L("Client secret (เว้นว่างเพื่อคงเดิม)", "Client secret (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col><Col span={12}><Form.Item name="accessToken" label={L("Access token (เว้นว่างเพื่อคงเดิม)", "Access token (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col></Row>
       <Row gutter={12}><Col span={12}><Form.Item name="refreshToken" label={L("Refresh token (เว้นว่างเพื่อคงเดิม)", "Refresh token (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col><Col span={12}><Form.Item name="webhookSecret" label={L("Webhook secret (เว้นว่างเพื่อคงเดิม)", "Webhook secret (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col></Row>
-      <Row gutter={12}><Col span={12}><Form.Item name="apiVersion" label="API version"><Input disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col><Col span={12}><Form.Item name="credentialExpiresAt" label={L("Credential หมดอายุ", "Credential expires at")}><Input disabled={!tenantCredentialFieldsAvailable} placeholder="2027-01-31T00:00:00+07:00" /></Form.Item></Col></Row>
+      <Row gutter={12}><Col span={12}><Form.Item name="apiVersion" label={uiText("admin_ui.en_api_version_0dd38")}><Input disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col><Col span={12}><Form.Item name="credentialExpiresAt" label={L("Credential หมดอายุ", "Credential expires at")}><Input disabled={!tenantCredentialFieldsAvailable} placeholder="2027-01-31T00:00:00+07:00" /></Form.Item></Col></Row>
       <Form.Item name="configJson" label={L("Config ที่ไม่ใช่ secret (JSON)", "Non-secret config (JSON)")}><Input.TextArea disabled={!tenantCredentialFieldsAvailable} rows={6} /></Form.Item></Form>
     </Modal>
 
     <Modal open={locationOpen} title={L("จับคู่สาขา", "Map provider store")} onCancel={()=>setLocationOpen(false)} onOk={()=>void saveLocationMapping()} okText={L("บันทึก", "Save")} cancelText={L("ยกเลิก", "Cancel")}>
-      <Form form={locationForm} layout="vertical"><Form.Item name="integrationId" label="Integration" rules={[{required:true}]}><Select options={integrationOptions} /></Form.Item>
-      <Form.Item name="providerStoreId" label="Provider store ID" rules={[{required:true}]}><Input /></Form.Item><Form.Item name="providerStoreName" label="Provider store name"><Input /></Form.Item>
+      <Form form={locationForm} layout="vertical"><Form.Item name="integrationId" label={uiText("admin_ui.en_integration_899e5")} rules={[{required:true}]}><Select options={integrationOptions} /></Form.Item>
+      <Form.Item name="providerStoreId" label={uiText("admin_ui.en_provider_store_id_31a1a")} rules={[{required:true}]}><Input /></Form.Item><Form.Item name="providerStoreName" label={uiText("admin_ui.en_provider_store_name_6322b")}><Input /></Form.Item>
       <Form.Item name="locationId" label={L("สาขา BMS", "BMS location")} rules={[{required:true}]}><Select options={boot.mappings.availableLocations.map(l=>({value:l.id,label:`${l.name} · ${l.code}`}))} /></Form.Item>
-      <Form.Item name="timezone" label="Timezone" rules={[{required:true}]}><Input /></Form.Item><Form.Item name="active" label={L("ใช้งาน", "Active")} valuePropName="checked"><Switch /></Form.Item></Form>
+      <Form.Item name="timezone" label={uiText("admin_ui.en_timezone_d1f7d")} rules={[{required:true}]}><Input /></Form.Item><Form.Item name="active" label={L("ใช้งาน", "Active")} valuePropName="checked"><Switch /></Form.Item></Form>
     </Modal>
 
     <Modal open={menuOpen} title={L("จับคู่เมนู", "Map menu item")} onCancel={()=>setMenuOpen(false)} onOk={()=>void saveMenuMapping()} okText={L("บันทึก", "Save")} cancelText={L("ยกเลิก", "Cancel")}>
-      <Form form={menuForm} layout="vertical"><Form.Item name="integrationId" label="Integration" rules={[{required:true}]}><Select options={integrationOptions} /></Form.Item>
+      <Form form={menuForm} layout="vertical"><Form.Item name="integrationId" label={uiText("admin_ui.en_integration_899e5")} rules={[{required:true}]}><Select options={integrationOptions} /></Form.Item>
       <Form.Item name="locationMappingId" label={L("Provider store mapping", "Provider store mapping")} rules={[{required:true}]}><Select options={boot.mappings.locations.map(l=>({value:l.id,label:`${l.provider} · ${l.provider_store_name || l.provider_store_id} → ${l.location_name}`}))} /></Form.Item>
       <Row gutter={12}><Col span={12}><Form.Item name="mappingKind" label={L("ชนิด", "Kind")} rules={[{required:true}]}><Select options={["ITEM","VARIANT","MODIFIER"].map(value=>({value}))} /></Form.Item></Col><Col span={12}><Form.Item name="mappingStatus" label={L("สถานะ", "Status")} rules={[{required:true}]}><Select options={["UNMAPPED","SUGGESTED","VERIFIED","STALE","DISABLED"].map(value=>({value}))} /></Form.Item></Col></Row>
-      <Form.Item name="providerName" label={L("ชื่อบน provider", "Provider name")} rules={[{required:true}]}><Input /></Form.Item><Form.Item name="providerItemId" label="Provider item ID" rules={[{required:true}]}><Input /></Form.Item>
-      <Row gutter={12}><Col span={12}><Form.Item name="providerVariantId" label="Provider variant ID"><Input /></Form.Item></Col><Col span={12}><Form.Item name="providerModifierId" label="Provider modifier ID"><Input /></Form.Item></Col></Row>
+      <Form.Item name="providerName" label={L("ชื่อบน provider", "Provider name")} rules={[{required:true}]}><Input /></Form.Item><Form.Item name="providerItemId" label={uiText("admin_ui.en_provider_item_id_39664")} rules={[{required:true}]}><Input /></Form.Item>
+      <Row gutter={12}><Col span={12}><Form.Item name="providerVariantId" label={uiText("admin_ui.en_provider_variant_id_7c52c")}><Input /></Form.Item></Col><Col span={12}><Form.Item name="providerModifierId" label={uiText("admin_ui.en_provider_modifier_id_c7ce6")}><Input /></Form.Item></Col></Row>
       <Form.Item name="catalogTarget" label={L("สินค้าและ variant ใน BMS", "BMS product and variant")}><Select showSearch optionFilterProp="label" options={catalogOptions} /></Form.Item>
       <Form.Item name="modifierCode" label={L("Modifier code ใน BMS", "BMS modifier code")}><Input /></Form.Item><Form.Item name="providerPrice" label={L("ราคา snapshot", "Price snapshot")}><InputNumber min={0} precision={2} style={{width:"100%"}} /></Form.Item>
       <Typography.Text type="secondary">{L("สถานะ VERIFIED จะผ่านได้ต่อเมื่อ product/variant เปิดขายบน ONLINE_ORDER และ modifier code มีจริง", "VERIFIED requires an active ONLINE_ORDER product/variant and an existing modifier code.")}</Typography.Text></Form>
     </Modal>
 
     <Modal open={settlementOpen} title={L("นำเข้า settlement แบบ manual", "Import manual settlement")} onCancel={()=>setSettlementOpen(false)} onOk={()=>void importSettlement()} width={760} okText={L("นำเข้า", "Import")} cancelText={L("ยกเลิก", "Cancel")}>
-      <Form form={settlementForm} layout="vertical"><Form.Item name="integrationId" label="Integration" rules={[{required:true}]}><Select options={integrationOptions} /></Form.Item>
+      <Form form={settlementForm} layout="vertical"><Form.Item name="integrationId" label={uiText("admin_ui.en_integration_899e5")} rules={[{required:true}]}><Select options={integrationOptions} /></Form.Item>
       <Form.Item name="statementReference" label={L("เลขอ้างอิง statement", "Statement reference")} rules={[{required:true}]}><Input /></Form.Item><Form.Item name="period" label={L("ช่วง settlement", "Settlement period")} rules={[{required:true}]}><DatePicker.RangePicker showTime style={{width:"100%"}} /></Form.Item>
       <Row gutter={12}><Col span={8}><Form.Item name="currency" label={L("สกุลเงิน", "Currency")} rules={[{required:true}]}><Input maxLength={3} /></Form.Item></Col><Col span={8}><Form.Item name="discountAmount" label={L("ส่วนลดรวม", "Discounts")}><InputNumber min={0} precision={2} style={{width:"100%"}} /></Form.Item></Col><Col span={8}><Form.Item name="commissionAmount" label={L("Commission", "Commission")}><InputNumber min={0} precision={2} style={{width:"100%"}} /></Form.Item></Col></Row>
       <Form.Item name="linesJson" label={L("รายการ (JSON สูงสุด 500 บรรทัด)", "Lines (JSON, max 500)")} rules={[{required:true}]}><Input.TextArea rows={10} /></Form.Item></Form>
     </Modal>
 
     <Modal open={adjustmentOpen} title={L("บันทึก adjustment", "Record adjustment")} onCancel={()=>setAdjustmentOpen(false)} onOk={()=>void saveAdjustment()} okText={L("บันทึก", "Record")} cancelText={L("ยกเลิก", "Cancel")}>
-      <Form form={adjustmentForm} layout="vertical"><Form.Item name="integrationId" label="Integration" rules={[{required:true}]}><Select options={integrationOptions} /></Form.Item>
+      <Form form={adjustmentForm} layout="vertical"><Form.Item name="integrationId" label={uiText("admin_ui.en_integration_899e5")} rules={[{required:true}]}><Select options={integrationOptions} /></Form.Item>
       <Form.Item name="deliveryOrderId" label={L("Delivery order (ไม่บังคับ)", "Delivery order (optional)")}><Select allowClear showSearch optionFilterProp="label" options={boot.operations.orders.map(o=>({value:o.id,label:`${o.provider} · ${o.provider_display_number || o.provider_order_id}`}))} /></Form.Item>
       <Form.Item name="settlementLineId" label={L("Settlement line (ไม่บังคับ)", "Settlement line (optional)")}><Select allowClear showSearch optionFilterProp="label" options={boot.finance.lines.map(l=>({value:l.id,label:`${l.statement_reference} · ${l.provider_order_id}`}))} /></Form.Item>
       <Row gutter={12}><Col span={12}><Form.Item name="adjustmentType" label={L("ชนิด", "Type")} rules={[{required:true}]}><Select options={["CHARGEBACK","PENALTY","REFUND","PROVIDER_CORRECTION","APPEAL_RESULT"].map(value=>({value}))} /></Form.Item></Col><Col span={12}><Form.Item name="effectiveAt" label={L("วันที่มีผล", "Effective at")} rules={[{required:true}]}><DatePicker showTime style={{width:"100%"}} /></Form.Item></Col></Row>
@@ -503,7 +506,7 @@ export default function DeliveryPlatformsPage() {
     </Modal>
 
     <Modal open={disputeOpen} title={L("สร้าง dispute", "Create dispute")} onCancel={()=>setDisputeOpen(false)} onOk={()=>void saveDispute()} okText={L("สร้าง", "Create")} cancelText={L("ยกเลิก", "Cancel")}>
-      <Form form={disputeForm} layout="vertical"><Form.Item name="integrationId" label="Integration" rules={[{required:true}]}><Select options={integrationOptions} /></Form.Item>
+      <Form form={disputeForm} layout="vertical"><Form.Item name="integrationId" label={uiText("admin_ui.en_integration_899e5")} rules={[{required:true}]}><Select options={integrationOptions} /></Form.Item>
       <Form.Item name="deliveryOrderId" label={L("Delivery order (ไม่บังคับ)", "Delivery order (optional)")}><Select allowClear showSearch optionFilterProp="label" options={boot.operations.orders.map(o=>({value:o.id,label:`${o.provider} · ${o.provider_display_number || o.provider_order_id}`}))} /></Form.Item>
       <Form.Item name="providerCaseId" label={L("Provider case ID (ไม่บังคับ)", "Provider case ID (optional)")}><Input /></Form.Item>
       <Row gutter={12}><Col span={16}><Form.Item name="claimedAmount" label={L("ยอดเรียกร้อง", "Claimed amount")} rules={[{required:true}]}><InputNumber min={0} precision={2} style={{width:"100%"}} /></Form.Item></Col><Col span={8}><Form.Item name="currency" label={L("สกุลเงิน", "Currency")} rules={[{required:true}]}><Input maxLength={3} /></Form.Item></Col></Row>

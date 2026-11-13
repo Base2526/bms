@@ -1,3 +1,5 @@
+import desktopLocale from '../renderer/locale.cjs';
+const { posText } = desktopLocale;
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
@@ -12,7 +14,7 @@ function body(name) {
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
 for(const paired of [true,false]) test(`reopening the cashier works with a surviving utility window (paired=${paired})`,()=>{
   const calls=[],window={isDestroyed:()=>false};
-  const context=vm.createContext({mainWindow:null,activePairing:paired?{}:null,app:{isReady:()=>true},
+  const context=vm.createContext({posText,mainWindow:null,activePairing:paired?{}:null,app:{isReady:()=>true},
     BrowserWindow:{getAllWindows:()=>[{}]},createMainWindow:()=>{calls.push('create');return window;},
     startPosNavigation:()=>calls.push('pos'),restoreSavedPairing:()=>calls.push('restore')});
   vm.runInContext(`${body('reopenMainWindow')};reopenMainWindow();`,context);
@@ -33,7 +35,7 @@ test('second launch and macOS activation restore/focus the existing minimized ca
 for(const fail of [true,false]) test(`a late server probe cannot replace a newer setup screen (failure=${fail})`,async()=>{
   const screens=[];let finish,startedResolve;
   const started=new Promise(resolve=>{startedResolve=resolve;});
-  const context=vm.createContext({mainWindow:{isDestroyed:()=>false},activePairing:{serverUrl:'https://old.example'},startupNavigation:null,pairingRevision:0,
+  const context=vm.createContext({posText,mainWindow:{isDestroyed:()=>false},activePairing:{serverUrl:'https://old.example'},startupNavigation:null,pairingRevision:0,
     showStartup:async(state)=>screens.push(state),
     ensurePairingServerAvailable:()=>new Promise((resolve,reject)=>{finish=()=>fail?reject(Error('offline')):resolve();startedResolve();}),
     showPos:()=>assert.fail('old pairing must not navigate'),reconcileCustomerDisplay:()=>{},console:{error:()=>{}}});
@@ -44,7 +46,7 @@ for(const fail of [true,false]) test(`a late server probe cannot replace a newer
 });
 test('a pairing verification cannot write after the setup frame changes; simultaneous requests are bounded',async()=>{
   const handlers=new Map();let finish,setup=true,writes=0;
-  const context=vm.createContext({ipcMain:{handle:(name,fn)=>handlers.set(name,fn),on:()=>{}},
+  const context=vm.createContext({posText,ipcMain:{handle:(name,fn)=>handlers.set(name,fn),on:()=>{}},
     pairingInProgress:false,pairingRevision:0,pairingRestoreRequest:0,isSetupFrame:()=>setup,currentSecureStorageStatus:()=>({ok:true}),
     parsePairingInput:()=>({ok:true,serverUrl:'https://shop.example',token:'FAKE'}),
     verifyPairing:()=>new Promise(resolve=>{finish=resolve;}),writePairing:()=>{writes++;},
@@ -60,7 +62,7 @@ test('a pairing verification cannot write after the setup frame changes; simulta
 test('pairing carries frame validity into the disk commit and never navigates after closure', async () => {
   const handlers=new Map(), saving=deferred(), entered=deferred();
   let setup=true, guard, navigations=0;
-  const context=vm.createContext({ipcMain:{handle:(name,fn)=>handlers.set(name,fn),on:()=>{}},
+  const context=vm.createContext({posText,ipcMain:{handle:(name,fn)=>handlers.set(name,fn),on:()=>{}},
     pairingInProgress:false,pairingRevision:0,pairingRestoreRequest:0,activePairing:null,
     isSetupFrame:()=>setup,currentSecureStorageStatus:()=>({ok:true}),
     parsePairingInput:()=>({ok:true,serverUrl:'https://shop.example',token:'FAKE'}),
@@ -83,7 +85,7 @@ test('pairing carries frame validity into the disk commit and never navigates af
 test('a slow disk restore cannot replace a newer pairing',async()=>{
   const read=deferred(),screens=[];
   const newer={serverUrl:'https://new.example',token:'FAKE-new'};
-  const context=vm.createContext({mainWindow:{isDestroyed:()=>false},activePairing:null,pairingRestoreError:null,
+  const context=vm.createContext({posText,mainWindow:{isDestroyed:()=>false},activePairing:null,pairingRestoreError:null,
     pairingRevision:0,pairingRestoreRequest:0,pairingRestoreTask:null,
     configPath:()=>'',decryptedToken:()=>'',readSavedPairing:()=>read.promise,
     pairingPersistence:()=>({read:()=>read.promise}),installApplicationMenu:()=>{},
@@ -100,7 +102,7 @@ test('a slow disk restore cannot replace a newer pairing',async()=>{
 test('reopening during installer verification shares the handoff and restores only the newest window',async()=>{
   const handoff=deferred(),entered=deferred();let reads=0,consumed=0;
   const screens=[],pairing={serverUrl:'https://shop.example',token:'FAKE'};
-  const context=vm.createContext({mainWindow:{isDestroyed:()=>false},activePairing:null,pairingRestoreError:null,
+  const context=vm.createContext({posText,mainWindow:{isDestroyed:()=>false},activePairing:null,pairingRestoreError:null,
     pairingRevision:0,pairingRestoreRequest:0,pairingRestoreTask:null,
     readPairing:async()=>{reads++;return {pairing:null,error:null};},
     consumePairingHandoff:()=>{consumed++;entered.resolve();return handoff.promise;},
@@ -116,7 +118,7 @@ test('reopening during installer verification shares the handoff and restores on
 
 test('a stale failed disk read cannot replace a newer recovery outcome',async()=>{
   const old=deferred(),screens=[],pairing={serverUrl:'https://new.example',token:'FAKE'};
-  const context=vm.createContext({mainWindow:{isDestroyed:()=>false},activePairing:null,pairingRestoreError:null,
+  const context=vm.createContext({posText,mainWindow:{isDestroyed:()=>false},activePairing:null,pairingRestoreError:null,
     pairingRevision:0,pairingRestoreRequest:0,pairingRestoreTask:null,
     readPairing:()=>old.promise,showStartup:()=>screens.push('error'),installApplicationMenu:()=>{}});
   vm.runInContext(body('restoreSavedPairing'),context);
@@ -128,7 +130,7 @@ test('a stale failed disk read cannot replace a newer recovery outcome',async()=
 
 test('change-server denial does not navigate and successful removal targets its original window',async()=>{
   const handlers=new Map(),window={},screens=[];let result={ok:false,error:'Cannot remove'},setup;
-  const context=vm.createContext({mainWindow:window,ipcMain:{handle:(name,fn)=>handlers.set(name,fn),on:()=>{}},
+  const context=vm.createContext({posText,mainWindow:window,ipcMain:{handle:(name,fn)=>handlers.set(name,fn),on:()=>{}},
     isStartupFrame:()=>true,isPairedCashierFrame:()=>true,removePairing:async()=>result,
     showSetup:async target=>{setup=target;screens.push('setup');}});
   vm.runInContext(`${body('registerIpc')};registerIpc();`,context);
@@ -139,7 +141,7 @@ test('change-server denial does not navigate and successful removal targets its 
 test('failed removal preserves the live pairing and returns an actionable failure',async()=>{
   const pairing={serverUrl:'https://shop.example',token:'FAKE'},failure=deferred();
   let reconciled=0;
-  const context=vm.createContext({activePairing:pairing,pairingRestoreError:null,pairingInProgress:false,
+  const context=vm.createContext({posText,activePairing:pairing,pairingRestoreError:null,pairingInProgress:false,
     pairingRevision:0,pairingRestoreRequest:0,startupNavigation:null,pendingRefreshRequest:null,
     installApplicationMenu:()=>{},closeCustomerDisplayWindow:()=>{},clearTimeout,
     scheduleCustomerDisplayReconcile:()=>reconciled++,
@@ -155,7 +157,7 @@ test('failed removal preserves the live pairing and returns an actionable failur
 for (const replaced of [false,true]) test(`unpair navigation requires its initiating frame and never replaces a new window (replaced=${replaced})`,async()=>{
   const handlers=new Map(),frame={},window={webContents:{},isDestroyed:()=>false};
   let timeout,navigated=0;
-  const context=vm.createContext({mainWindow:window,activePairing:null,pendingUnpair:null,
+  const context=vm.createContext({posText,mainWindow:window,activePairing:null,pendingUnpair:null,
     ipcMain:{handle:(name,fn)=>handlers.set(name,fn),on:()=>{}},
     isPairedCashierFrame:()=>true,removePairing:async()=>({ok:true}),
     setTimeout:fn=>{timeout=fn;return 1;},clearTimeout:()=>{},console,
@@ -175,7 +177,7 @@ for (const replaced of [false,true]) test(`unpair navigation requires its initia
 test('a stale macOS local probe cannot reopen startup or start the old runtime after unpair',async()=>{
   const pending=deferred(),screens=[],started=[];let probes=0;
   const pairing={serverUrl:'http://127.0.0.1:3100'};
-  const context=vm.createContext({activePairing:pairing,mainWindow:{isDestroyed:()=>false},pairingRevision:0,
+  const context=vm.createContext({posText,activePairing:pairing,mainWindow:{isDestroyed:()=>false},pairingRevision:0,
     probePairingServer:()=>++probes===1?pending.promise:Promise.resolve(),isManagedLocalServerUrl:()=>true,process:{platform:'darwin'},
     canRecoverByStartingManagedLocalRuntime:()=>true,showStartup:()=>screens.push('starting'),
     startManagedLocalRuntime:()=>started.push('runtime')});
@@ -187,7 +189,7 @@ test('a stale macOS local probe cannot reopen startup or start the old runtime a
 
 test('display hotplug after closing the cashier does not resurrect a customer window',()=>{
   let created=0,closed=0;
-  const context=vm.createContext({activePairing:{},mainWindow:null,customerDisplayConfig:{mode:'auto'},
+  const context=vm.createContext({posText,activePairing:{},mainWindow:null,customerDisplayConfig:{mode:'auto'},
     offerCustomerDisplaySetup:()=>{},closeCustomerDisplayWindow:()=>closed++,broadcastCustomerDisplayState:()=>{},
     screen:{getAllDisplays:()=>[{},{}]},cashierDisplay:()=>({id:1}),selectCustomerDisplay:()=>({id:2}),
     createCustomerDisplayWindow:()=>created++});
@@ -201,7 +203,7 @@ test('only the cashier main frame can control displays, attention or unpair', as
   const window = {webContents:sender,isDestroyed:()=>false};
   const handlers = new Map();
   let removed=0;
-  const context=vm.createContext({URL,mainWindow:window,activePairing:{serverUrl:'https://shop.example'},
+  const context=vm.createContext({posText,URL,mainWindow:window,activePairing:{serverUrl:'https://shop.example'},
     ipcMain:{handle:(name,fn)=>handlers.set(name,fn),on:()=>{}},
     removePairing:async()=>{removed++;return {ok:false};}});
   vm.runInContext(`${body('isPosPath')};${body('isPairedPosFrame')};${body('isPairedCashierFrame')};${body('registerIpc')};registerIpc();`,context);
@@ -222,7 +224,7 @@ test('only the cashier main frame can control displays, attention or unpair', as
 
 test('utility windows cannot navigate or redirect into another register, origin or local file',()=>{
   const handlers=new Map();let popup;
-  const context=vm.createContext({URL,activePairing:{serverUrl:'https://shop.example'}});
+  const context=vm.createContext({posText,URL,activePairing:{serverUrl:'https://shop.example'}});
   vm.runInContext(body('secureUtilityWindow'),context);
   context.secureUtilityWindow({webContents:{on:(name,fn)=>handlers.set(name,fn),setWindowOpenHandler:fn=>{popup=fn;}}},'https://shop.example/pos/queue-board');
   for(const kind of ['will-navigate','will-redirect']) {
@@ -240,7 +242,7 @@ test('managed display retries a failed page load and stops after closing or unpa
   const pending=[];const closed=[];let attempts=0,current=true,destroyed=false;
   const window={isDestroyed:()=>destroyed,on:(name,handler)=>{if(name==='closed')closed.push(handler);},
     loadURL:()=>{attempts++;return attempts===1?Promise.reject(Error('offline')):Promise.resolve();}};
-  const context=vm.createContext({setTimeout:(handler)=>{pending.push(handler);return pending.length;},
+  const context=vm.createContext({posText,setTimeout:(handler)=>{pending.push(handler);return pending.length;},
     clearTimeout:()=>{},window,isCurrent:()=>current});
   vm.runInContext(`${body('loadUtilityWithRetry')};loadUtilityWithRetry(window,'https://shop.example/pos/queue-board',isCurrent);`,context);
   await new Promise(resolve=>setImmediate(resolve));
@@ -269,7 +271,7 @@ test('managed display retries a failed page load and stops after closing or unpa
 
 test('display configuration writes exclude overlapping legacy and combined controls and release on failure',async()=>{
   const handlers=new Map(),gate=deferred();let writes=0;
-  const context=vm.createContext({ipcMain:{handle:(name,fn)=>handlers.set(name,fn),on:()=>{}},
+  const context=vm.createContext({posText,ipcMain:{handle:(name,fn)=>handlers.set(name,fn),on:()=>{}},
     isPairedCashierFrame:()=>true,managedDisplayOperationBusy:false,
     normalizeCustomerDisplayConfig,normalizeQueueDisplayConfig,
     customerDisplayConfig:{mode:'off'},queueDisplayConfig:{mode:'off'},queueDisplayWindowKind:null,
@@ -291,7 +293,7 @@ test('display configuration writes exclude overlapping legacy and combined contr
 test('kitchen journal serializes late writes and continues after a disk error',async()=>{
   const gate=deferred(),started=deferred(),writes=[];
   let renames=0;
-  const context=vm.createContext({kitchenJournalWrite:Promise.resolve(),kitchenPrintJournal:{},
+  const context=vm.createContext({posText,kitchenJournalWrite:Promise.resolve(),kitchenPrintJournal:{},
     kitchenPrintJournalPath:()=>'/fixture/journal',
     writeFile:async(_path,data)=>{writes.push(JSON.parse(data));if(writes.length===1){started.resolve();await gate.promise;}},
     rename:async()=>{if(++renames===1)throw Error('rename failed');}});

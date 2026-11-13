@@ -1,3 +1,4 @@
+import { getMessage } from "../apps/web/i18n/index.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -245,7 +246,8 @@ test("branch policy enables every online till and hides stale ready numbers only
   assert.match(MIGRATION, /ADD COLUMN IF NOT EXISTS pickup_queue_enabled BOOLEAN NOT NULL DEFAULT FALSE/);
   assert.match(MIGRATION, /pickup_queue_auto_hide_minutes INTEGER NOT NULL DEFAULT 30/);
   assert.match(LOCATIONS, /pickupQueue: PickupQueueLocationSettings/);
-  assert.match(LOCATION_PAGE, /ออกเลขคิวทุกเครื่องในสาขานี้/);
+  assert.ok(LOCATION_PAGE.includes('uiText("admin_ui.issue_pickup_numbers_on_every_register_in_this_55a9a")'));
+  assert.match(getMessage("th", "admin_ui.issue_pickup_numbers_on_every_register_in_this_55a9a"), /ออกเลขคิวทุกเครื่องในสาขานี้/);
   const wrapper = sliceFrom(SERVICE, "export async function issuePickupQueueAfterSale", 1800);
   assert.match(wrapper, /input\.allowBranchDefault === true && settings\.enabled/);
   assert.match(GRAPHQL, /allowBranchDefault: !textInput\(input\.offlineTenderedAt\)/);
@@ -280,8 +282,8 @@ test("desktop assigns customer and queue roles from one external-display control
   assert.match(POS_PAGE, /managedDisplay=\{hasDesktopManagedDisplayBridge\(\)\}/);
   assert.match(STRIP, /!managedDisplay && <button[^>]*onClick=\{openPickupQueueBoard\}/);
   assert.match(STRIP, /เปิดจอจริงหรือหน้าต่างทดสอบได้จากหัวข้อ/);
-  assert.match(MANAGED_DISPLAY_SETTINGS, /previewOpenLabel: "เปิดทดสอบจอลูกค้าบนจอนี้"/);
-  assert.match(MANAGED_DISPLAY_SETTINGS, /previewOpenLabel: "เปิดทดสอบจอเรียกคิวบนจอนี้"/);
+  assert.match(MANAGED_DISPLAY_SETTINGS, /previewOpenLabel: posText\("เปิดทดสอบจอลูกค้าบนจอนี้"\)/);
+  assert.match(MANAGED_DISPLAY_SETTINGS, /previewOpenLabel: posText\("เปิดทดสอบจอเรียกคิวบนจอนี้"\)/);
 });
 
 test("queue-board sound defaults on, keeps a per-device mute, and desktop permits managed autoplay", () => {
@@ -346,9 +348,9 @@ test("manager: keypad lookup, confirmed cancel and every action carries the cash
   // Cancel is two taps: the first only arms the confirmation.
   assert.match(MANAGER, /onClick=\{\(\) => setConfirmCancel\(row\.id\)\}/);
   const armed = sliceFrom(MANAGER, "confirmCancel === row.id && (", 900);
-  assert.match(armed, /onClick=\{\(\) => void act\(row, "cancel"\)\}>ยืนยันยกเลิก</, "the real cancel lives only behind the armed confirmation");
+  assert.match(armed, /onClick=\{\(\) => void act\(row, "cancel"\)\}>\{posText\("ยืนยันยกเลิก"\)\}</, "the real cancel lives only behind the armed confirmation");
   assert.equal([...MANAGER.matchAll(/act\(row, "cancel"\)/g)].length, 1, "no second, unconfirmed cancel path");
-  assert.match(MANAGER, /postPickupQueue\(token, \{ action, entryId: row\.id, cashierUserId, cashierPin \}\)/);
+  assert.match(MANAGER, /postPickupQueue\(token, \{ action, entryId: row\.id, cashierUserId, cashierPin \}, posText\)/);
   assert.match(STRIP, /<PickupQueueManager /);
   assert.doesNotMatch(STRIP, /if \(rows\.length === 0 && !error\) return null/, "the strip must stay reachable when empty");
 });
@@ -367,7 +369,7 @@ test("retry: a committed sale without a number can ask again for the same bill",
 test("mobile strip: recall, undo and cancel exist, and cancel asks first", () => {
   assert.match(MOBILE_STRIP, /'unready'/);
   const cancel = sliceFrom(MOBILE_STRIP, "const confirmCancel", 900);
-  assert.match(cancel, /Alert\.alert\(`ยกเลิกคิว \$\{label\}\?`/);
+  assert.match(cancel, /Alert\.alert\(posText\("ยกเลิกคิว \{v0\}\?", \{ v0: label \}\)/);
   assert.match(cancel, /onPress:[\s\S]{0,160}run\(entryId, label, 'cancel'\)/,
     "the destructive action runs only from the confirmation button");
   assert.equal([...cancel.matchAll(/run\(entryId, label, 'cancel'\)/g)].length, 1,
@@ -391,7 +393,7 @@ test("kitchen tickets carry the pickup number for counter orders and take-away c
   assert.match(KITCHEN_TYPEDEFS, /type BmsKitchenTicket \{[\s\S]*?pickupQueueLabel: String/);
   assert.match(ADMIN_KITCHEN, /pickupQueueLabel\n/);
   assert.match(MOBILE_OPS, /fragment MobileKitchenTicketFields on BmsKitchenTicket \{\s*id\s*pickupQueueLabel/);
-  assert.match(MOBILE_KITCHEN, /ticket\.pickupQueueLabel\s*\?\s*`คิว \$\{ticket\.pickupQueueLabel\}`/);
+  assert.match(MOBILE_KITCHEN, /ticket\.pickupQueueLabel\s*\?\s*posText\("คิว \{v0\}", \{ v0: ticket\.pickupQueueLabel \}, language\)/);
 });
 
 test("10.113 snapshots the prefix and keeps new branch presentation settings bounded", () => {
@@ -448,7 +450,7 @@ test("AI Studio is release-time only; the call screen has a same-origin voice pa
   assert.match(VOICE_GENERATOR, /id: "PUCK", voice: "Puck"/);
   assert.match(VOICE_GENERATOR, /id: "CHARON", voice: "Charon"/);
   assert.match(VOICE_GENERATOR, /profiles: selectedProfiles\.map/);
-  assert.match(QUEUE_BOARD_PREFERENCES, /aria-label="เลือกเสียงเรียกที่จอคิว"/);
+  assert.match(QUEUE_BOARD_PREFERENCES, /aria-label=\{posText\("เลือกเสียงเรียกที่จอคิว"\)\}/);
   assert.match(QUEUE_BOARD_PREFERENCES, /ทดลองเสียงคิว 001/);
   assert.match(BOARD_PAGE, /applyQueueBoardAudioStyle\(nextSettings, audioStyle\)/);
   assert.ok(

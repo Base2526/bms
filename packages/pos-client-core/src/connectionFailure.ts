@@ -15,7 +15,8 @@ type ErrorShape = {
 };
 
 /** Input messages, URLs, bodies and variables are deliberately never interpolated. */
-export function describePosConnectionFailure(error: unknown, mutation = false): PosFailure {
+export function describePosConnectionFailure(error: unknown, mutation = false,
+  translate: (source: string) => string = source => source): PosFailure {
   const outer = (error ?? {}) as ErrorShape;
   const value = outer.networkError ?? outer;
   const status = value.httpStatus ?? value.statusCode;
@@ -53,7 +54,7 @@ export function describePosConnectionFailure(error: unknown, mutation = false): 
     : outcome === 'read_failed' ? 'โหลดข้อมูลล่าสุดไม่สำเร็จ ข้อมูลที่เห็นอาจยังไม่อัปเดต' : '';
   return {
     kind, code: diagnosticCode, httpStatus, outcome,
-    message: [labels[kind][0], outcomeText, labels[kind][1],
+    message: [translate(labels[kind][0]), outcomeText ? translate(outcomeText) : '', translate(labels[kind][1]),
       `[${diagnosticCode}${httpStatus ? ` · HTTP ${httpStatus}` : ''}]`].filter(Boolean).join(' — '),
   };
 }
@@ -63,8 +64,9 @@ export function isPosBusinessError(code: unknown): boolean {
   return typeof code === 'string' && ['FORBIDDEN', 'BAD_USER_INPUT', 'CONFLICT', 'NOT_FOUND'].includes(code);
 }
 
-export function posTransportError(error: unknown, mutation = false): Error & { code: string; httpStatus: number | null; statusCode?: number } {
-  const failure = describePosConnectionFailure(error, mutation);
+export function posTransportError(error: unknown, mutation = false,
+  translate?: (source: string) => string): Error & { code: string; httpStatus: number | null; statusCode?: number } {
+  const failure = describePosConnectionFailure(error, mutation, translate);
   return Object.assign(new Error(failure.message), {
     name: 'PosTransportError', code: failure.code, httpStatus: failure.httpStatus,
     ...(failure.httpStatus ? { statusCode: failure.httpStatus } : {}),

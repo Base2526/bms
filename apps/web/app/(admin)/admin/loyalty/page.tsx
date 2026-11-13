@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 // หน้าจัดการสมาชิก + แต้มสะสม (migration 7.96)
 // ⚠️ ทุกอย่างในหน้านี้อิงร้านที่ยืนอยู่ (getTenantId) — ต้อง drill-down เข้าร้าน
 //    เป้าหมายก่อนแก้ ไม่งั้นจะไปแก้ร้าน default โดยไม่มี error เตือน
@@ -97,6 +99,7 @@ function tierDiscountLabel(tier: any, t: (k: string) => string) {
 function LedgerDrawer({ member, onClose, canAdjust, onAdjusted }: {
   member: any | null; onClose: () => void; canAdjust: boolean; onAdjusted: () => void;
 }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const [form] = Form.useForm();
@@ -160,11 +163,11 @@ function LedgerDrawer({ member, onClose, canAdjust, onAdjusted }: {
               { title: t("admin_loyalty.col_note"), dataIndex: "note", render: (v: string | null) => v || "—" },
               {
                 title: t("admin_loyalty.col_expires"), dataIndex: "expiresAt", width: 120,
-                render: (v: string | null) => (v ? new Date(v).toLocaleDateString() : "—"),
+                render: (v: string | null) => (v ? new Date(v).toLocaleDateString(uiText.locale) : "—"),
               },
               {
                 title: t("admin_loyalty.col_when"), dataIndex: "createdAt", width: 150,
-                render: (v: string) => new Date(v).toLocaleString(),
+                render: (v: string) => new Date(v).toLocaleString(uiText.locale),
               },
             ]}
           />
@@ -202,6 +205,7 @@ function LedgerDrawer({ member, onClose, canAdjust, onAdjusted }: {
 }
 
 export default function LoyaltyPage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const isMobile = useIsMobile();
@@ -306,7 +310,7 @@ export default function LoyaltyPage() {
     <div>
       <AdminPageHeader title={<Title level={4} style={{ margin: 0 }}>{t("admin_loyalty.title")}</Title>}>
         <Space wrap>
-          <Link href="/admin/pos-manual"><Button icon={<ReadOutlined />}>คู่มือแคชเชียร์</Button></Link>
+          <Link href="/admin/pos-manual"><Button icon={<ReadOutlined />}>{uiText("admin_ui.cashier_manual_3e8eb")}</Button></Link>
           {canManage && (
             <Button icon={<UserAddOutlined />} onClick={() => setEnrollOpen(true)}>
               {t("admin_loyalty.btn_enroll")}
@@ -507,7 +511,7 @@ export default function LoyaltyPage() {
                 },
                 {
                   title: "", dataIndex: "active", width: 60,
-                  render: (v: boolean) => <Tag color={v ? "green" : "default"}>{v ? "on" : "off"}</Tag>,
+                  render: (v: boolean) => <Tag color={v ? "green" : "default"}>{v ? uiText("admin_ui.en_on_db3d4") : uiText("admin_ui.en_off_da7a6")}</Tag>,
                 },
                 ...(canSettings ? [{
                   title: "", key: "actions", width: 80,
@@ -544,7 +548,7 @@ export default function LoyaltyPage() {
               columns={[
                 {
                   title: t("admin_loyalty.col_month"), dataIndex: "month",
-                  render: (v: string) => new Date(v).toLocaleDateString(undefined, { year: "numeric", month: "short" }),
+                  render: (v: string) => new Date(v).toLocaleDateString(uiText.locale, { year: "numeric", month: "short" }),
                 },
                 {
                   title: t("admin_loyalty.col_earned"), dataIndex: "earned", align: "right" as const,
@@ -622,7 +626,7 @@ export default function LoyaltyPage() {
               },
               {
                 title: t("admin_loyalty.col_expires"), dataIndex: "firstExpiresAt",
-                render: (v: string) => new Date(v).toLocaleDateString(),
+                render: (v: string) => new Date(v).toLocaleDateString(uiText.locale),
               },
             ]}
           />
@@ -678,7 +682,7 @@ export default function LoyaltyPage() {
             },
             {
               title: t("admin_loyalty.col_since"), dataIndex: "memberSince",
-              render: (v: string | null) => (v ? new Date(v).toLocaleDateString() : "—"),
+              render: (v: string | null) => (v ? new Date(v).toLocaleDateString(uiText.locale) : "—"),
             },
             {
               title: t("admin_loyalty.col_balance"), dataIndex: "pointsBalance", align: "right" as const,

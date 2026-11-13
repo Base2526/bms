@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -23,6 +24,7 @@ export function ReceiptDelivery({
   disabled?: boolean;
   scrollRef?: React.RefObject<React.ComponentRef<typeof ScrollView> | null>;
 }) {
+  usePosLanguage();
   const { colors, typography } = useTheme();
   const { session } = useSession();
   const [sendReceipt] = useMutation(MobilePosSendReceiptDocument);
@@ -65,7 +67,7 @@ export function ReceiptDelivery({
     if (!session || disabled || inFlight.current) return;
     const to = channel === 'email' ? email.trim() || null : null;
     if (to && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
-      Alert.alert('อีเมลไม่ถูกต้อง', 'กรุณาตรวจสอบอีเมลผู้รับ');
+      Alert.alert(posText("อีเมลไม่ถูกต้อง"), posText("กรุณาตรวจสอบอีเมลผู้รับ"));
       return;
     }
     const credentials = session.credentials;
@@ -76,14 +78,14 @@ export function ReceiptDelivery({
       setBusy(false);
     };
     Alert.alert(
-      'ยืนยันส่งสำเนาใบเสร็จ',
+      posText("ยืนยันส่งสำเนาใบเสร็จ"),
       channel === 'email'
-        ? `ผู้รับ: ${to ?? 'อีเมลสมาชิกที่ผูกกับบิลนี้'}`
-        : 'ผู้รับ: LINE สมาชิกที่ผูกกับบิลนี้',
+        ? posText("ผู้รับ: {v0}", { v0: to ?? posText("อีเมลสมาชิกที่ผูกกับบิลนี้") })
+        : posText("ผู้รับ: LINE สมาชิกที่ผูกกับบิลนี้"),
       [
-        { text: 'ยกเลิก', style: 'cancel', onPress: release },
+        { text: posText("ยกเลิก"), style: 'cancel', onPress: release },
         {
-          text: 'ส่งใบเสร็จ',
+          text: posText("ส่งใบเสร็จ"),
           onPress: async () => {
             try {
               const response = await sendReceipt({
@@ -99,17 +101,15 @@ export function ReceiptDelivery({
               });
               const result = response.data?.bmsPosSendReceipt;
               if (result?.status !== 'SENT')
-                throw new Error(result?.reason ?? 'ส่งใบเสร็จไม่สำเร็จ');
+                throw new Error(result?.reason ?? posText("ส่งใบเสร็จไม่สำเร็จ"));
               Alert.alert(
-                'ส่งแล้ว',
-                `ส่งใบเสร็จทาง ${
-                  channel === 'email' ? 'อีเมล' : 'LINE'
-                } สำเร็จ`,
+                posText("ส่งแล้ว"),
+                posText("ส่งใบเสร็จทาง {v0} สำเร็จ", { v0: channel === 'email' ? posText("อีเมล") : 'LINE' }),
               );
             } catch (error) {
               Alert.alert(
-                'ส่งใบเสร็จไม่สำเร็จ',
-                error instanceof Error ? error.message : 'กรุณาลองใหม่',
+                posText("ส่งใบเสร็จไม่สำเร็จ"),
+                error instanceof Error ? error.message : posText("กรุณาลองใหม่"),
               );
             } finally {
               release();
@@ -124,15 +124,14 @@ export function ReceiptDelivery({
   return (
     <View style={styles.root}>
       <Text style={[typography.bodyStrong, { color: colors.text }]}>
-        ส่งสำเนาใบเสร็จ
-      </Text>
+        {posText("ส่งสำเนาใบเสร็จ") + " "}</Text>
       <TextInput
         ref={recipientInput}
         onFocus={revealRecipient}
-        accessibilityLabel="อีเมลผู้รับใบเสร็จ"
+        accessibilityLabel={posText("อีเมลผู้รับใบเสร็จ")}
         value={email}
         onChangeText={setEmail}
-        placeholder="อีเมล หรือเว้นว่างเพื่อใช้ข้อมูลสมาชิก"
+        placeholder={posText("อีเมล หรือเว้นว่างเพื่อใช้ข้อมูลสมาชิก")}
         placeholderTextColor={colors.textSoft}
         autoCapitalize="none"
         autoCorrect={false}
@@ -144,14 +143,14 @@ export function ReceiptDelivery({
         ]}
       />
       <Button
-        label="ส่งอีเมล"
+        label={posText("ส่งอีเมล")}
         variant="secondary"
         fullWidth
         disabled={disabled || busy || !session}
         onPress={() => requestSend('email')}
       />
       <Button
-        label="ส่ง LINE สมาชิก"
+        label={posText("ส่ง LINE สมาชิก")}
         variant="secondary"
         fullWidth
         disabled={disabled || busy || !session}

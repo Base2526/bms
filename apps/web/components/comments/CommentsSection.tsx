@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 
 import { useEffect, useState } from 'react';
 import { gql, useQuery, useMutation, useSubscription } from '@apollo/client';
@@ -119,6 +121,7 @@ function CommentItem({
   rootId,
   level = 1,
 }: any) {
+  const uiText = useUiText();
   const [replying, setReplying] = useState(false);
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(comment.content);
@@ -175,7 +178,7 @@ function CommentItem({
             )}
 
             <Text type="secondary" style={{ fontSize: 12 }}>
-              {formatTimeAgo(comment.created_at)}
+              {formatTimeAgo(comment.created_at, uiText.language)}
             </Text>
           </div>
 
@@ -198,11 +201,9 @@ function CommentItem({
                     setEditing(false);
                   }}
                 >
-                  Save
-                </Button>
+                  {uiText("admin_ui.en_save_efc00")}</Button>
                 <Button size="small" onClick={() => setEditing(false)}>
-                  Cancel
-                </Button>
+                  {uiText("admin_ui.en_cancel_77dfd")}</Button>
               </Space>
             </div>
           )}
@@ -215,8 +216,7 @@ function CommentItem({
                 type="text"
                 onClick={() => setReplying(!replying)}
               >
-                Reply
-              </Button>
+                {uiText("admin_ui.en_reply_6c2bb")}</Button>
               {canEdit && !editing && (
                 <>
                   <Button
@@ -224,15 +224,13 @@ function CommentItem({
                     type="text"
                     onClick={() => setEditing(true)}
                   >
-                    Edit
-                  </Button>
+                    {uiText("admin_ui.en_edit_53016")}</Button>
                   <Popconfirm
-                    title="Delete this comment?"
+                    title={uiText("admin_ui.en_delete_this_comment_b88a2")}
                     onConfirm={() => onDelete(comment.id)}
                   >
                     <Button size="small" type="text" danger>
-                      Delete
-                    </Button>
+                      {uiText("admin_ui.en_delete_f6fdb")}</Button>
                   </Popconfirm>
                 </>
               )}
@@ -257,8 +255,7 @@ function CommentItem({
                   setReplying(false);
                 }}
               >
-                Reply
-              </Button>
+                {uiText("admin_ui.en_reply_6c2bb")}</Button>
             </div>
           )}
 
@@ -272,7 +269,7 @@ function CommentItem({
                 icon={showReplies ? <UpOutlined /> : <DownOutlined />}
                 style={{ paddingLeft: 0 }}
               >
-                {showReplies ? 'Hide replies' : `${replyCount} replies`}
+                {showReplies ? uiText("admin_ui.en_hide_replies_5b937") : uiText("admin_ui.en_replies_d7683", { v0: replyCount })}
               </Button>
             </div>
           )}
@@ -316,6 +313,7 @@ export function CommentsSection({
   postId: string;
   currentUserId?: string | number;
 }) {
+  const uiText = useUiText();
   const [newText, setNewText] = useState('');
 
   const { data, loading, error, refetch } = useQuery(Q_COMMENTS, {
@@ -365,7 +363,7 @@ export function CommentsSection({
 
   const handleAdd = async () => {
     if (!isLoggedIn) {
-      message.error('กรุณาเข้าสู่ระบบก่อนแสดงความคิดเห็น');
+      message.error(uiText("admin_ui.sign_in_before_commenting_1a513"));
       return;
     }
     if (!newText.trim()) return;
@@ -377,7 +375,7 @@ export function CommentsSection({
       refetch();
     } catch (e: any) {
       console.error(e);
-      message.error('Add comment failed');
+      message.error(uiText("admin_ui.en_add_comment_failed_71da1"));
     }
   };
 
@@ -388,7 +386,7 @@ export function CommentsSection({
         tagUser?: { id: string; name: string }
         ) => {
         if (!isLoggedIn) {
-            message.error('กรุณาเข้าสู่ระบบก่อนตอบคอมเมนต์');
+            message.error(uiText("admin_ui.sign_in_before_replying_to_a_comment_3577f"));
             return;
         }
         if (!content.trim()) return;
@@ -406,13 +404,13 @@ export function CommentsSection({
             refetch();
         } catch (e: any) {
             console.error(e);
-            message.error('Reply failed');
+            message.error(uiText("admin_ui.en_reply_failed_05c01"));
         }
     };
 
   const handleUpdate = async (id: string, content: string) => {
     if (!isLoggedIn) {
-      message.error('กรุณาเข้าสู่ระบบก่อนแก้ไขคอมเมนต์');
+      message.error(uiText("admin_ui.sign_in_before_editing_a_comment_c7e6d"));
       return;
     }
     if (!content.trim()) return;
@@ -421,13 +419,13 @@ export function CommentsSection({
       refetch();
     } catch (e: any) {
       console.error(e);
-      message.error('Update failed');
+      message.error(uiText("admin_ui.en_update_failed_4de04"));
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!isLoggedIn) {
-      message.error('กรุณาเข้าสู่ระบบก่อนลบคอมเมนต์');
+      message.error(uiText("admin_ui.sign_in_before_deleting_a_comment_3e01c"));
       return;
     }
     try {
@@ -435,12 +433,12 @@ export function CommentsSection({
       refetch();
     } catch (e: any) {
       console.error(e);
-      message.error('Delete failed');
+      message.error(uiText("admin_ui.en_delete_failed_64513"));
     }
   };
 
   if (loading) return <Spin />;
-  if (error) return <Text type="danger">Failed to load comments</Text>;
+  if (error) return <Text type="danger">{uiText("admin_ui.en_failed_to_load_comments_f9ed4")}</Text>;
 
   return (
     <div>
@@ -451,7 +449,7 @@ export function CommentsSection({
             <Input.TextArea
               rows={3}
               value={newText}
-              placeholder="Write a comment..."
+              placeholder={uiText("admin_ui.en_write_a_comment_7b01f")}
               onChange={(e) => setNewText(e.target.value)}
             />
             <Button
@@ -460,20 +458,18 @@ export function CommentsSection({
               onClick={handleAdd}
               disabled={!newText.trim()}
             >
-              Comment
-            </Button>
+              {uiText("admin_ui.en_comment_153d7")}</Button>
           </>
         ) : (
           <Text type="secondary">
-            กรุณา <Link href="/admin/login">เข้าสู่ระบบ</Link> เพื่อแสดงความคิดเห็น
-          </Text>
+            {uiText("admin_ui.please_4a2f4")} <Link href="/admin/login">{uiText("admin_ui.sign_in_25bf4")}</Link>  {uiText("admin_ui.to_comment_b1760")}</Text>
         )}
       </div>
 
       {/* list comments */}
       <div>
         {comments.length === 0 ? (
-          <Text type="secondary">No comments yet.</Text>
+          <Text type="secondary">{uiText("admin_ui.en_no_comments_yet_207b2")}</Text>
         ) : (
           comments.map((c: any) => (
             <CommentItem

@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React, { useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useMutation, useQuery } from '@apollo/client';
@@ -12,10 +13,10 @@ import { Button } from './Button';
 
 type QueueAction = 'call' | 'collect' | 'unready' | 'cancel';
 const DONE: Record<QueueAction, string> = {
-  call: 'เรียกคิว',
-  collect: 'บันทึกรับแล้ว',
-  unready: 'ย้ายกลับไปกำลังเตรียม',
-  cancel: 'ยกเลิกคิว',
+  get call() { return posText("เรียกคิว"); },
+  get collect() { return posText("บันทึกรับแล้ว"); },
+  get unready() { return posText("ย้ายกลับไปกำลังเตรียม"); },
+  get cancel() { return posText("ยกเลิกคิว"); },
 };
 
 /**
@@ -25,6 +26,7 @@ const DONE: Record<QueueAction, string> = {
  * Cancel asks again because it takes the number off the customer screen for good.
  */
 export function PickupQueueStrip() {
+  usePosLanguage();
   const deviceEnabled = usePickupQueueEnabled();
   const { session } = useSession();
   const enabled = deviceEnabled || session?.branch.pickupQueue?.enabled === true;
@@ -52,7 +54,7 @@ export function PickupQueueStrip() {
   const run = async (entryId: string, label: string, action: QueueAction) => {
     if (actionLock.current || firstLoad || feedUnavailable) return;
     if (!session) {
-      setNotice({ ok: false, text: 'เข้าสู่ระบบด้วยพนักงานและ PIN ก่อน' });
+      setNotice({ ok: false, text: posText("เข้าสู่ระบบด้วยพนักงานและ PIN ก่อน") });
       return;
     }
     actionLock.current = true;
@@ -69,18 +71,18 @@ export function PickupQueueStrip() {
           },
         },
       });
-      setNotice({ ok: true, text: `${DONE[action]} ${label} แล้ว` });
+      setNotice({ ok: true, text: posText("{v0} {v1} แล้ว", { v0: DONE[action], v1: label }) });
       setSelectedId(null);
       await refetch().catch(() => {
         setNotice({
           ok: true,
-          text: `${DONE[action]} ${label} แล้ว · แต่โหลดสถานะล่าสุดไม่สำเร็จ`,
+          text: posText("{v0} {v1} แล้ว · แต่โหลดสถานะล่าสุดไม่สำเร็จ", { v0: DONE[action], v1: label }),
         });
       });
     } catch (cause) {
       setNotice({
         ok: false,
-        text: cause instanceof Error ? cause.message : 'ทำรายการคิวไม่สำเร็จ',
+        text: cause instanceof Error ? cause.message : posText("ทำรายการคิวไม่สำเร็จ"),
       });
     } finally {
       actionLock.current = false;
@@ -94,10 +96,10 @@ export function PickupQueueStrip() {
   };
 
   const confirmCancel = (entryId: string, label: string) =>
-    Alert.alert(`ยกเลิกคิว ${label}?`, 'เลขจะหายจากจอเรียกคิวของลูกค้า', [
-      { text: 'ไม่ยกเลิก', style: 'cancel' },
+    Alert.alert(posText("ยกเลิกคิว {v0}?", { v0: label }), posText("เลขจะหายจากจอเรียกคิวของลูกค้า"), [
+      { text: posText("ไม่ยกเลิก"), style: 'cancel' },
       {
-        text: 'ยืนยันยกเลิก',
+        text: posText("ยืนยันยกเลิก"),
         style: 'destructive',
         onPress: () => {
           run(entryId, label, 'cancel').catch(() => undefined);
@@ -113,7 +115,7 @@ export function PickupQueueStrip() {
         key={row.id}
         accessibilityRole="button"
         accessibilityState={{ selected: isSelected, disabled: actionsDisabled }}
-        accessibilityLabel={`คิว ${row.label} ${isReady ? 'พร้อมรับ' : 'กำลังเตรียม'}`}
+        accessibilityLabel={posText("คิว {v0} {v1}", { v0: row.label, v1: isReady ? posText("พร้อมรับ") : posText("กำลังเตรียม") })}
         disabled={actionsDisabled}
         onPress={() => setSelectedId(isSelected ? null : row.id)}
         style={[
@@ -127,7 +129,7 @@ export function PickupQueueStrip() {
         ]}
       >
         <Text style={[typography.bodyStrong, { color: colors.text }]}>
-          {row.label} · {isReady ? 'พร้อมรับ' : 'กำลังเตรียม'}
+          {row.label} · {isReady ? posText("พร้อมรับ") : posText("กำลังเตรียม")}
         </Text>
       </Pressable>
     );
@@ -137,12 +139,12 @@ export function PickupQueueStrip() {
     <View style={{ gap: spacing.xs, marginBottom: spacing.sm }} testID="pickup-queue-strip">
       <Text style={[typography.caption, { color: colors.textMuted }]}>
         {firstLoad
-          ? 'คิวรับของ · กำลังตรวจสอบสถานะล่าสุด…'
+          ? posText("คิวรับของ · กำลังตรวจสอบสถานะล่าสุด…")
           : feedUnavailable
-          ? 'คิวรับของ · ตรวจสถานะล่าสุดไม่ได้'
+          ? posText("คิวรับของ · ตรวจสถานะล่าสุดไม่ได้")
           : rows.length === 0
-          ? 'คิวรับของ · ยังไม่มีคิวที่รออยู่'
-          : `คิวรับของ · กำลังเตรียม ${preparing.length} · พร้อมรับ ${ready.length} · แตะเลขเพื่อจัดการ`}
+          ? posText("คิวรับของ · ยังไม่มีคิวที่รออยู่")
+          : posText("คิวรับของ · กำลังเตรียม {v0} · พร้อมรับ {v1} · แตะเลขเพื่อจัดการ", { v0: preparing.length, v1: ready.length })}
       </Text>
       {feedUnavailable ? (
         <View style={styles.feedWarning}>
@@ -150,10 +152,9 @@ export function PickupQueueStrip() {
             accessibilityLiveRegion="polite"
             style={[typography.caption, { color: colors.danger }]}
           >
-            ยังยืนยันรายการคิวปัจจุบันไม่ได้ ปุ่มจัดการคิวถูกพักไว้เพื่อป้องกันการกดซ้ำ
-          </Text>
+            {posText("ยังยืนยันรายการคิวปัจจุบันไม่ได้ ปุ่มจัดการคิวถูกพักไว้เพื่อป้องกันการกดซ้ำ") + " "}</Text>
           <Button
-            label={loading ? 'กำลังลองใหม่…' : 'ลองโหลดคิวใหม่'}
+            label={loading ? posText("กำลังลองใหม่…") : posText("ลองโหลดคิวใหม่")}
             variant="secondary"
             disabled={loading}
             onPress={retryFeed}
@@ -169,27 +170,27 @@ export function PickupQueueStrip() {
       {selected ? (
         <View style={styles.row} testID="pickup-queue-actions">
           <Button
-            label={selected.status === 'READY' ? `เรียกซ้ำ ${selected.label}` : `เรียกคิว ${selected.label}`}
+            label={selected.status === 'READY' ? posText("เรียกซ้ำ {v0}", { v0: selected.label }) : posText("เรียกคิว {v0}", { v0: selected.label })}
             variant="primary"
             disabled={actionsDisabled}
             onPress={() => { run(selected.id, selected.label, 'call').catch(() => undefined); }}
           />
           <Button
-            label="รับแล้ว"
+            label={posText("รับแล้ว")}
             variant="secondary"
             disabled={actionsDisabled}
             onPress={() => { run(selected.id, selected.label, 'collect').catch(() => undefined); }}
           />
           {selected.status === 'READY' ? (
             <Button
-              label="ย้อน"
+              label={posText("ย้อน")}
               variant="secondary"
               disabled={actionsDisabled}
               onPress={() => { run(selected.id, selected.label, 'unready').catch(() => undefined); }}
             />
           ) : null}
           <Button
-            label="ยกเลิกคิว"
+            label={posText("ยกเลิกคิว")}
             variant="danger"
             disabled={actionsDisabled}
             onPress={() => confirmCancel(selected.id, selected.label)}
@@ -221,6 +222,7 @@ export function PickupQueueRetryBanner({
   reason: string;
   onIssued: () => void;
 }) {
+  usePosLanguage();
   const { session } = useSession();
   const { colors, spacing, typography } = useTheme();
   const [act] = useMutation(MobilePosPickupQueueActionDocument);
@@ -230,7 +232,7 @@ export function PickupQueueRetryBanner({
   const retry = async () => {
     if (issueLock.current) return;
     if (!session) {
-      setError('เข้าสู่ระบบด้วยพนักงานและ PIN ก่อน');
+      setError(posText("เข้าสู่ระบบด้วยพนักงานและ PIN ก่อน"));
       return;
     }
     issueLock.current = true;
@@ -250,7 +252,7 @@ export function PickupQueueRetryBanner({
       setError(null);
       onIssued();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'ออกเลขคิวไม่สำเร็จ');
+      setError(cause instanceof Error ? cause.message : posText("ออกเลขคิวไม่สำเร็จ"));
     } finally {
       issueLock.current = false;
       setBusy(false);
@@ -269,11 +271,10 @@ export function PickupQueueRetryBanner({
       }}
     >
       <Text style={[typography.bodyStrong, { color: colors.danger }]}>
-        ขายสำเร็จแล้ว แต่ออกเลขคิวไม่ได้
-      </Text>
+        {posText("ขายสำเร็จแล้ว แต่ออกเลขคิวไม่ได้") + " "}</Text>
       <Text style={[typography.caption, { color: colors.text }]}>{reason}</Text>
       <Button
-        label={busy ? 'กำลังออกเลข…' : 'ออกเลขคิวใหม่'}
+        label={busy ? posText("กำลังออกเลข…") : posText("ออกเลขคิวใหม่")}
         variant="primary"
         disabled={busy}
         onPress={() => { retry().catch(() => undefined); }}

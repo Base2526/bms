@@ -1,4 +1,6 @@
 "use client";
+
+import { useUiText } from "@/lib/useUiText";
 import React, { useState } from "react";
 import { gql, useQuery } from "@apollo/client";
 import { Card, Table, Tag, Input, Select, Space, Typography, Empty, Segmented } from "antd";
@@ -71,6 +73,7 @@ type MailLogEntry = {
 };
 
 export default function MailLogPage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<string | undefined>();
@@ -101,7 +104,7 @@ export default function MailLogPage() {
       width: 150,
       render: (v: string) => (
         <span style={{ fontFamily: "monospace", fontSize: 12 }}>
-          {dayjs(v).format("DD MMM HH:mm")}
+          {dayjs(v).locale(uiText.language).format("DD MMM HH:mm")}
         </span>
       ),
     },
@@ -132,7 +135,7 @@ export default function MailLogPage() {
       width: 130,
       render: (v: string) => CATEGORY_LABEL[v] || v,
     },
-    { title: "Provider", dataIndex: "provider", width: 90 },
+    { title: uiText("admin_ui.en_provider_7ceee"), dataIndex: "provider", width: 90 },
   ];
 
   const okRate = stats?.total ? Math.round((stats.success / stats.total) * 100) : null;
@@ -236,7 +239,7 @@ export default function MailLogPage() {
               <div><Text type="secondary">{t("admin_mail_log.detail_shop")} </Text>{selected.tenantName || t("admin_mail_log.system_shop")}</div>
               <div><Text type="secondary">{t("admin_mail_log.detail_provider")} </Text><Text code>{selected.provider}</Text></div>
               <div><Text type="secondary">{t("admin_mail_log.detail_triggered_by")} </Text><Text code>{selected.triggeredBy || "—"}</Text></div>
-              <div><Text type="secondary">{t("admin_mail_log.detail_time")} </Text>{dayjs(selected.createdAt).format("DD MMM YYYY HH:mm:ss")}</div>
+              <div><Text type="secondary">{t("admin_mail_log.detail_time")} </Text>{dayjs(selected.createdAt).locale(uiText.language).format("DD MMM YYYY HH:mm:ss")}</div>
               {selected.status === "success" && (
                 <div><Text type="secondary">{t("admin_mail_log.detail_message_id")} </Text><Text code>{selected.messageId || "—"}</Text></div>
               )}

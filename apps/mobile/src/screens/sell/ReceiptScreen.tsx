@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../../i18n/language';
 import React, { useRef, useState } from 'react';
 import { useQuery } from '@apollo/client';
 import {
@@ -17,7 +18,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ReceiptPaper } from '../../components/ReceiptPaper';
 import { ReceiptDelivery } from '../../components/ReceiptDelivery';
 import { Button } from '../../components/Button';
-import { MobilePosReceiptPreviewDocument } from '../../graphql/generated';
+import { MobilePosReceiptPreviewDocument, PosBootstrapDocument } from '../../graphql/generated';
+import { isReceiptLanguageMode } from '../../../../web/lib/pos/receiptI18n';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
 import type { AppStackParamList } from '../../navigation/types';
@@ -28,6 +30,7 @@ import { PickupQueueRetryBanner } from '../../components/PickupQueueStrip';
 type Props = NativeStackScreenProps<AppStackParamList, 'Receipt'>;
 
 export default function ReceiptScreen({ route, navigation }: Props) {
+  usePosLanguage();
   const { colors, spacing, typography } = useTheme();
   const { isTablet } = useResponsive();
   const deliveryScroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
@@ -37,7 +40,10 @@ export default function ReceiptScreen({ route, navigation }: Props) {
   const printLock = useRef(false);
   const printer = usePrinter();
   const preview = route.params.mode === 'preview';
-  const { data, loading, error, refetch } = useQuery(
+  const bootstrap = useQuery(PosBootstrapDocument, { fetchPolicy: 'cache-first' });
+  const configuredLanguage = bootstrap.data?.bmsPosSession?.store?.receiptLanguageMode;
+  const receiptLanguageMode = isReceiptLanguageMode(configuredLanguage) ? configuredLanguage : 'th';
+  const { data, loading: receiptLoading, error: receiptError, refetch } = useQuery(
     MobilePosReceiptPreviewDocument,
     {
       variables: { orderId: route.params.saleId },
@@ -45,6 +51,9 @@ export default function ReceiptScreen({ route, navigation }: Props) {
       notifyOnNetworkStatusChange: true,
     },
   );
+  // Wait for store receipt settings too; never print a guessed language on a cold open.
+  const loading = receiptLoading || bootstrap.loading;
+  const error = receiptError ?? bootstrap.error;
   // Search may return other matches. Never substitute another bill for this route's ID.
   const receipt = data?.bmsPosRecentSales.sales.find(
     sale => sale.orderId === route.params.saleId,
@@ -71,16 +80,17 @@ export default function ReceiptScreen({ route, navigation }: Props) {
     });
   };
   const leaveLabel = preview
-    ? 'ปิดตัวอย่าง'
+    ? posText("ปิดตัวอย่าง")
     : route.params.source === 'board_game'
-    ? 'กลับรายละเอียดโต๊ะ'
+    ? posText("กลับรายละเอียดโต๊ะ")
     : route.params.source === 'restaurant'
-    ? 'กลับผังโต๊ะ'
-    : 'ขายรายการใหม่';
+    ? posText("กลับผังโต๊ะ")
+    : posText("ขายรายการใหม่");
   const retry = () => {
     refetch().catch(() => undefined);
+    bootstrap.refetch().catch(() => undefined);
   };
-  const unavailable = !receipt || Boolean(error);
+  const unavailable = !receipt || Boolean(error) || (bootstrap.loading && !bootstrap.data?.bmsPosSession);
   const printReceipt = async () => {
     if (
       printLock.current ||
@@ -95,11 +105,11 @@ export default function ReceiptScreen({ route, navigation }: Props) {
       await printer.print(config =>
         captureReceipt(paperRef, paperLayout, config),
       );
-      Alert.alert('ส่งงานพิมพ์แล้ว', 'กรุณาตรวจใบเสร็จที่เครื่องพิมพ์');
+      Alert.alert(posText("ส่งงานพิมพ์แล้ว"), posText("กรุณาตรวจใบเสร็จที่เครื่องพิมพ์"));
     } catch (failure) {
       Alert.alert(
-        'พิมพ์ไม่สำเร็จ',
-        failure instanceof Error ? failure.message : 'กรุณาตรวจเครื่องพิมพ์',
+        posText("พิมพ์ไม่สำเร็จ"),
+        failure instanceof Error ? failure.message : posText("กรุณาตรวจเครื่องพิมพ์"),
       );
     } finally {
       printLock.current = false;
@@ -116,7 +126,7 @@ export default function ReceiptScreen({ route, navigation }: Props) {
         onLayout={event => setPaperLayout(event.nativeEvent.layout)}
         style={styles.paperCapture}
       >
-        <ReceiptPaper receipt={receipt} />
+        <ReceiptPaper receipt={receipt} languageMode={receiptLanguageMode} />
       </View>
     ) : (
       <View style={styles.state}>
@@ -126,13 +136,13 @@ export default function ReceiptScreen({ route, navigation }: Props) {
           style={[typography.body, { color: colors.text }]}
         >
           {loading
-            ? 'กำลังโหลดใบเสร็จ…'
+            ? posText("กำลังโหลดใบเสร็จ…")
             : error
-            ? 'โหลดใบเสร็จไม่สำเร็จ'
-            : 'ไม่พบใบเสร็จ'}
+            ? posText("โหลดใบเสร็จไม่สำเร็จ")
+            : posText("ไม่พบใบเสร็จ")}
         </Text>
         {!loading ? (
-          <Button label="ลองใหม่" variant="secondary" onPress={retry} />
+          <Button label={posText("ลองใหม่")} variant="secondary" onPress={retry} />
         ) : null}
       </View>
     );
@@ -159,8 +169,7 @@ export default function ReceiptScreen({ route, navigation }: Props) {
       >
         <View style={styles.summaryRow}>
           <Text style={[typography.caption, { color: colors.textMuted }]}>
-            เลขที่ใบเสร็จ
-          </Text>
+            {posText("เลขที่ใบเสร็จ") + " "}</Text>
           <Text
             style={[
               typography.bodyStrong,
@@ -173,8 +182,7 @@ export default function ReceiptScreen({ route, navigation }: Props) {
         </View>
         <View style={styles.summaryRow}>
           <Text style={[typography.caption, { color: colors.textMuted }]}>
-            รับเงิน
-          </Text>
+            {posText("รับเงิน") + " "}</Text>
           <Text
             style={[
               typography.bodyStrong,
@@ -182,7 +190,7 @@ export default function ReceiptScreen({ route, navigation }: Props) {
               { color: colors.text },
             ]}
           >
-            ฿{(receipt.cashTendered ?? receipt.total).toFixed(2)}
+            {posText("฿")}{(receipt.cashTendered ?? receipt.total).toFixed(2)}
           </Text>
         </View>
         <View
@@ -193,8 +201,7 @@ export default function ReceiptScreen({ route, navigation }: Props) {
           ]}
         >
           <Text style={[typography.bodyStrong, { color: colors.textMuted }]}>
-            เงินทอน
-          </Text>
+            {posText("เงินทอน") + " "}</Text>
           <Text
             style={[
               typography.title,
@@ -202,7 +209,7 @@ export default function ReceiptScreen({ route, navigation }: Props) {
               { color: colors.success },
             ]}
           >
-            ฿{(receipt.cashChange ?? 0).toFixed(2)}
+            {posText("฿")}{(receipt.cashChange ?? 0).toFixed(2)}
           </Text>
         </View>
       </View>
@@ -216,7 +223,7 @@ export default function ReceiptScreen({ route, navigation }: Props) {
         {printer.state.message}
       </Text>
       <Button
-        label="พิมพ์ใบเสร็จ"
+        label={posText("พิมพ์ใบเสร็จ")}
         fullWidth
         disabled={
           unavailable ||
@@ -228,7 +235,7 @@ export default function ReceiptScreen({ route, navigation }: Props) {
         onPress={printReceipt}
       />
       <Button
-        label="เชื่อมต่อเครื่องพิมพ์"
+        label={posText("เชื่อมต่อเครื่องพิมพ์")}
         variant="secondary"
         fullWidth
         disabled={printing || printer.state.status === 'printing'}
@@ -248,7 +255,7 @@ export default function ReceiptScreen({ route, navigation }: Props) {
       ) : null}
       {!preview ? (
         <Button
-          label="ดูประวัติ"
+          label={posText("ดูประวัติ")}
           variant="secondary"
           fullWidth
           onPress={() => navigation.navigate('SalesHistory')}
@@ -309,10 +316,10 @@ export default function ReceiptScreen({ route, navigation }: Props) {
             ) : null}
             <View style={styles.headerText}>
               <Text style={[typography.captionStrong, { color: colors.primary }]}>
-                {preview ? 'ตัวอย่างเอกสาร' : 'ชำระเงินสำเร็จ'}
+                {preview ? posText("ตัวอย่างเอกสาร") : posText("ชำระเงินสำเร็จ")}
               </Text>
               <Text style={[typography.title, { color: colors.text }]}>
-                {preview ? 'ตัวอย่างใบเสร็จ' : `ขายสำเร็จ ฿${receipt?.total.toFixed(2) ?? '0.00'}`}
+                {preview ? posText("ตัวอย่างใบเสร็จ") : posText("ขายสำเร็จ ฿{v0}", { v0: receipt?.total.toFixed(2) ?? '0.00' })}
               </Text>
             </View>
             <Pressable

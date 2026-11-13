@@ -1,4 +1,6 @@
 "use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { useState } from "react";
 import { gql, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Table } from "antd";
@@ -11,6 +13,7 @@ const Q = gql`query PackageMetrics($from:String!,$to:String!) {
   }
 }`;
 export default function PackageMetricsCard() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [window, setWindow] = useState(() => ({ from: new Date(Date.now()-30*86400000).toISOString(), to:new Date().toISOString() }));
   const { data, error, loading } = useQuery(Q, { variables: window, fetchPolicy: "network-only" });
@@ -29,7 +32,7 @@ export default function PackageMetricsCard() {
       <Table size="small" rowKey={(r:any)=>`${r.tenantId}/${r.source}`} pagination={{pageSize:10}} loading={loading}
         dataSource={m?.costs ?? []} scroll={{x:720}} columns={[
           {title:t("package_metrics.shop_id"),dataIndex:"tenantId"},
-          {title:"Shared / BYOK",dataIndex:"source"},
+          {title:uiText("admin_ui.en_shared_byok_d0ed3"),dataIndex:"source"},
           {title:t("package_metrics.calls"),dataIndex:"providerCalls"},
           {title:t("package_metrics.unpriced"),dataIndex:"unpricedProviderCalls"},
           {title:t("package_metrics.known_cost"),dataIndex:"knownCostUsd",render:(v:number|null)=>v==null?t("package_metrics.unknown"):`$${v.toFixed(6)}`},

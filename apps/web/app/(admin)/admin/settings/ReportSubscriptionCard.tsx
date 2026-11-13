@@ -1,4 +1,8 @@
-'use client';
+"use client";
+
+import { deliveryStatusLabel } from "@/i18n/deliveryStatus";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Input, Button, Space, Tag, message, Form, Divider, Typography, Select, Switch, InputNumber, List, Alert, Modal } from "antd";
 import { MailOutlined, SaveOutlined, SendOutlined, FileSearchOutlined, CopyOutlined, DownloadOutlined, ExportOutlined } from "@ant-design/icons";
@@ -78,6 +82,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 }
 
 export default function ReportSubscriptionCard() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { can, loading: permissionsLoading } = useBmsPermissions();
   const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => ({ value: h, label: t("admin_report_subscription.hour_suffix", { h: String(h).padStart(2, "0") }) }));
@@ -288,8 +293,8 @@ export default function ReportSubscriptionCard() {
 
       {sub?.lastSentAt && (
         <Text type="secondary" style={{ display: "block", marginTop: 12, fontSize: 12.5 }}>
-          {t("admin_report_subscription.last_sent_prefix", { time: new Date(sub.lastSentAt).toLocaleString("th-TH") })}{" "}
-          <Tag color={STATUS_COLOR[sub.lastStatus] || "default"} style={{ marginLeft: 4 }}>{sub.lastStatus}</Tag>
+          {t("admin_report_subscription.last_sent_prefix", { time: new Date(sub.lastSentAt).toLocaleString(uiText.locale) })}{" "}
+          <Tag color={STATUS_COLOR[sub.lastStatus] || "default"} style={{ marginLeft: 4 }}>{deliveryStatusLabel(sub.lastStatus, uiText)}</Tag>
         </Text>
       )}
 
@@ -303,9 +308,9 @@ export default function ReportSubscriptionCard() {
               <List.Item>
                 <div style={{ width: "100%" }}>
                   <Space>
-                    <Tag color={STATUS_COLOR[d.status] || "default"}>{d.status}</Tag>
+                    <Tag color={STATUS_COLOR[d.status] || "default"}>{deliveryStatusLabel(d.status, uiText)}</Tag>
                     <Text>{CHANNEL_LABEL[d.channel] || d.channel}</Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{new Date(d.createdAt).toLocaleString("th-TH")}</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>{new Date(d.createdAt).toLocaleString(uiText.locale)}</Text>
                   </Space>
                   {/* รายละเอียด response ต่อผู้รับ — FAILED โชว์ error เต็มไม่ตัดทอน, SUCCESS โชว์ preview
                       ของสิ่งที่ส่งจริง (payloadSnapshot) — ซ่อนไว้หลังปุ่มกันรายการยาวเกิน */}
@@ -336,7 +341,7 @@ export default function ReportSubscriptionCard() {
         width={detailDelivery?.status === "SUCCESS" && detailDelivery?.channel === "EMAIL" ? 640 : 520}
         title={
           detailDelivery
-            ? `${CHANNEL_LABEL[detailDelivery.channel] || detailDelivery.channel} · ${detailDelivery.status} · ${new Date(detailDelivery.createdAt).toLocaleString("th-TH")}`
+            ? `${CHANNEL_LABEL[detailDelivery.channel] || detailDelivery.channel} · ${deliveryStatusLabel(detailDelivery.status, uiText)} · ${new Date(detailDelivery.createdAt).toLocaleString(uiText.locale)}`
             : ""
         }
       >

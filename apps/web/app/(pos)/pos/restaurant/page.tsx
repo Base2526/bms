@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, BellOutlined, CheckCircleFilled, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, FullscreenExitOutlined, FullscreenOutlined, MergeCellsOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ScissorOutlined, SettingOutlined, ShopOutlined, ShoppingOutlined, SoundOutlined, SwapOutlined, TeamOutlined, UserAddOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingForPayments, type CashRounding } from "@/lib/pos/cashRounding";
+import { usePosText } from "@/lib/pos/usePosText";
 import { appendSplitPaymentRow, checkoutBlockReason, rebalanceSplitPayments, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
 import { describePosFailure, describeTransportFailure } from "@/lib/pos/failureMessage";
 import { readPosJson } from "@/lib/pos/response";
@@ -49,6 +50,7 @@ import { posPaymentMethodLabel, receiptDocumentTitle,
   restaurantServiceLabel,
   type ReceiptLanguageMode } from "@/lib/pos/receiptI18n";
 import { useI18n } from "@/lib/i18nContext";
+import { PosLanguageSelector } from "@/components/pos/PosLanguageProvider";
 import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
 import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
 import RestaurantTableChairs from "@/components/RestaurantTableChairs";
@@ -540,6 +542,7 @@ const lineKitchenStates = (t: Translate): Record<string, { label: string; color:
 });
 
 export default function RestaurantPosPage() {
+  const posText = usePosText();
   const receiptPrinter = useReceiptPrinter();
   const router = useRouter();
   const { operator: rememberedOperator, rememberOperator, clearOperator } = usePosOperatorSession();
@@ -1095,7 +1098,7 @@ export default function RestaurantPosPage() {
   const paymentTotal = Math.round(payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0) * 100) / 100;
   // เหตุผลเดียวที่ทั้งปุ่มยืนยัน แถบสรุป และ settle() ใช้ร่วมกัน — สามที่ตัดสินเองจะ drift
   // แล้ววันหนึ่งปุ่มกดได้แต่ settle ปฏิเสธ (หรือแย่กว่า: กดได้แล้ว server ปฏิเสธกลางบิล)
-  const paymentBlock = check == null ? null : checkoutBlockReason(payments, checkoutDue);
+  const paymentBlock = check == null ? null : checkoutBlockReason(payments, checkoutDue, posText);
   const manualApprovalBlock = Number(manualDiscount) > 0 && !discountReason.trim()
     ? t("pos_restaurant.discount_reason_required")
     : Number(manualDiscount) > 0 && (!discountApproverId || !discountApproverPin)
@@ -2789,6 +2792,7 @@ export default function RestaurantPosPage() {
       <header className={styles.topbar}>
         <div className={styles.brand}><div><h1 className={styles.title}>BMS Restaurant</h1><p className={styles.subtitle}>{session?.location?.name ?? "-"} · {session?.device.code}</p></div></div>
         <div className={styles.topActions}>
+          <PosLanguageSelector />
           <div className={styles.topStatusGroup}>
             <div className={styles.connectionStatus}><PosConnectionStatus apiStatus={incomingApiStatus} /></div>
             <span className={`${styles.shiftStatus} ${session?.shift ? styles.shiftStatusOpen : ""}`}>
@@ -3788,7 +3792,7 @@ export default function RestaurantPosPage() {
         {/* ยอดรวมอยู่บนปุ่มด้วย (okText) — บรรทัดนี้บอก "มาจากไหน" ให้ตรวจก่อนกด */}
         <div className={styles.menuTotalRow}>
           <span>{unmetModifiers.length > 0
-            ? describeUnmetModifierGroups(unmetModifiers)
+            ? describeUnmetModifierGroups(unmetModifiers, posText)
             : `฿${money(menuHitUnitPrice)} × ${menuQty}${menuHitUnitPrice !== menuHit.packPrice ? t("pos_restaurant.with_options") : ` / ${menuHit.unitName}`}`}</span>
           <b><span className={styles.baht}>฿</span>{money(menuHitTotal)}</b>
         </div>

@@ -3,10 +3,13 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+import assert from "node:assert/strict";
+import locale from "../renderer/locale.cjs";
+import { desktopMenuTemplate, localizeNativeMenu } from "../src/zoom-policy.mjs";
 import { platformClientLabel, platformSecurityNote } from "../src/secure-storage.mjs";
 import { PairingRestoreError } from "../src/pairing-store.mjs";
 
-const { app, BrowserWindow, ipcMain } = electronMain;
+const { app, BrowserWindow, ipcMain, Menu } = electronMain;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outputDir = path.join(__dirname, "../dist-smoke");
@@ -15,6 +18,16 @@ const compactScreenshotPath = path.join(outputDir, "setup-compact.png");
 const startupScreenshotPath = path.join(outputDir, "startup-error.png");
 
 async function run() {
+  const menuItems = menu => menu.items.flatMap(item => [item, ...(item.submenu ? menuItems(item.submenu) : [])]);
+  for (const language of ["en", "th"]) {
+    locale.applyAppLanguage(language);
+    const menu = localizeNativeMenu(Menu.buildFromTemplate(desktopMenuTemplate(process.platform, false, { language })));
+    Menu.setApplicationMenu(menu);
+    const copy = menuItems(menu).find(item => item.role === "copy");
+    assert.equal(copy?.label, language === "en" ? "Copy" : "คัดลอก");
+    assert.equal(menu.items.find(item => item.id === "view")?.label, language === "en" ? "View" : "มุมมอง");
+  }
+  console.log("smoke: native menu roles follow TH/EN");
   const { version } = JSON.parse(await readFile(path.join(__dirname, "../package.json"), "utf8"));
   // Use the host's labels, but keep pairing/storage stubbed: never read a real device token.
   ipcMain.handle("smoke:app-info", () => ({

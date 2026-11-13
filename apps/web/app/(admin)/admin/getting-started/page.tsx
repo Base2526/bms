@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 
 import Link from "next/link";
 import { gql, useMutation, useQuery } from "@apollo/client";
@@ -81,6 +83,7 @@ type SampleStatus = {
 };
 
 export default function Page() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [saveProgress] = useMutation(M_PROGRESS);
@@ -279,9 +282,9 @@ export default function Page() {
           </Paragraph>
           <Space wrap>
             <Tag color="blue">{tenant?.name || t("admin_getting_started.your_shop")}</Tag>
-            <Tag>{tenant?.slug ? `/${tenant.slug}` : "slug pending"}</Tag>
+            <Tag>{tenant?.slug ? `/${tenant.slug}` : uiText("admin_ui.en_slug_pending_c8da4")}</Tag>
             <Tag color="purple">{localizedShopArchetypeLabel(archetype, t)}</Tag>
-            {profile?.businessType ? <Tag color="geekblue">businessType: {profile.businessType}</Tag> : null}
+            {profile?.businessType ? <Tag color="geekblue">{uiText("admin_ui.en_businesstype_d1ff0")} {profile.businessType}</Tag> : null}
           </Space>
         </Space>
         <Divider />
@@ -422,7 +425,7 @@ export default function Page() {
                 <Space>
                   {step.icon}
                   <span>{step.title}</span>
-                  {step.recommended ? <Tag color="gold">Recommended</Tag> : null}
+                  {step.recommended ? <Tag color="gold">{uiText("admin_ui.en_recommended_9ef93")}</Tag> : null}
                 </Space>
               }
               extra={

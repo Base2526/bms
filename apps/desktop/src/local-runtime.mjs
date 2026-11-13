@@ -1,3 +1,5 @@
+import desktopLocale from '../renderer/locale.cjs';
+const { posText } = desktopLocale;
 import { execFile as execFileCallback } from "node:child_process";
 import { lstat, readFile } from "node:fs/promises";
 import os from "node:os";
@@ -50,7 +52,7 @@ export async function checkManagedLocalAdminReady({ fetch: request = globalThis.
   if (!ready) {
     throw new LocalRuntimeError(
       "LOCAL_ADMIN_UNAVAILABLE",
-      "ยังติดต่อ Retail Local Server บนเครื่องนี้ไม่ได้ กรุณาเปิดตัวติดตั้ง Server + POS เพื่อตรวจสอบหรือซ่อมแซม หากติดตั้งเฉพาะ POS ให้ใช้ Server URL และลิงก์จับคู่จากผู้ดูแลร้าน",
+      posText("ยังติดต่อ Retail Local Server บนเครื่องนี้ไม่ได้ กรุณาเปิดตัวติดตั้ง Server + POS เพื่อตรวจสอบหรือซ่อมแซม หากติดตั้งเฉพาะ POS ให้ใช้ Server URL และลิงก์จับคู่จากผู้ดูแลร้าน"),
       cause ?? new Error("local admin unavailable"),
     );
   }
@@ -118,7 +120,7 @@ export async function ensureManagedLocalRuntime(serverUrl, options = {}) {
   } catch (error) {
     throw new LocalRuntimeError(
       "LOCAL_RUNTIME_NOT_INSTALLED",
-      "ไม่พบ Retail Local Server ที่ติดตั้งเสร็จแล้ว กรุณาติดตั้ง Server หรือเปลี่ยนไปใช้เซิร์ฟเวอร์อื่น",
+      posText("ไม่พบ Retail Local Server ที่ติดตั้งเสร็จแล้ว กรุณาติดตั้ง Server หรือเปลี่ยนไปใช้เซิร์ฟเวอร์อื่น"),
       error,
     );
   }
@@ -130,7 +132,7 @@ export async function ensureManagedLocalRuntime(serverUrl, options = {}) {
     || !isRegularFile(controllerMetadata) || !controllerIsTrusted) {
     throw new LocalRuntimeError(
       "LOCAL_RUNTIME_UNTRUSTED",
-      "ไฟล์ควบคุม Retail Local Server ไม่ปลอดภัย กรุณาติดตั้ง Server ใหม่หรือติดต่อผู้ดูแลระบบ",
+      posText("ไฟล์ควบคุม Retail Local Server ไม่ปลอดภัย กรุณาติดตั้ง Server ใหม่หรือติดต่อผู้ดูแลระบบ"),
     );
   }
 
@@ -142,7 +144,7 @@ export async function ensureManagedLocalRuntime(serverUrl, options = {}) {
   } catch (error) {
     throw new LocalRuntimeError(
       "LOCAL_RUNTIME_INVALID_RECEIPT",
-      "ข้อมูลการติดตั้ง Retail Local Server ไม่ถูกต้อง กรุณาติดตั้ง Server ใหม่หรือติดต่อผู้ดูแลระบบ",
+      posText("ข้อมูลการติดตั้ง Retail Local Server ไม่ถูกต้อง กรุณาติดตั้ง Server ใหม่หรือติดต่อผู้ดูแลระบบ"),
       error,
     );
   }
@@ -156,7 +158,7 @@ export async function ensureManagedLocalRuntime(serverUrl, options = {}) {
   } catch (error) {
     throw new LocalRuntimeError(
       "LOCAL_RUNTIME_START_FAILED",
-      "พบ Retail Local Server แต่เริ่มบริการไม่สำเร็จ กรุณาลองใหม่ หากยังไม่สำเร็จให้เปิด BMS Retail Local เพื่อตรวจสอบระบบ",
+      posText("พบ Retail Local Server แต่เริ่มบริการไม่สำเร็จ กรุณาลองใหม่ หากยังไม่สำเร็จให้เปิด BMS Retail Local เพื่อตรวจสอบระบบ"),
       error,
     );
   }

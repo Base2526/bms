@@ -1,0 +1,747 @@
+{
+  "apps/web/app/(admin)/admin/ai-quality/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "AI"
+    ]
+  },
+  "apps/web/app/(admin)/admin/app-downloads/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "Android",
+      "https://…",
+      "App Store"
+    ]
+  },
+  "apps/web/app/(admin)/admin/assistant/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "email_report"
+    ]
+  },
+  "apps/web/app/(admin)/admin/billing/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "Retail Local",
+      "BYOK"
+    ]
+  },
+  "apps/web/app/(admin)/admin/board-game/BoardGameAnalyticsPanel.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "RevPATH"
+    ]
+  },
+  "apps/web/app/(admin)/admin/board-game/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "HTTP {v0}"
+    ]
+  },
+  "apps/web/app/(admin)/admin/branch-requisitions/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "PO:",
+      "PO"
+    ]
+  },
+  "apps/web/app/(admin)/admin/commission/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "SKU"
+    ]
+  },
+  "apps/web/app/(admin)/admin/customers/page.tsx": {
+    "reason": "Stored CRM tag values and technical identifiers are data; translating them would change filtering semantics.",
+    "strings": [
+      "ลูกค้าใหม่",
+      "ลูกค้าประจำ",
+      "08xxxxxxxx"
+    ]
+  },
+  "apps/web/app/(admin)/admin/dashboard/page.tsx": {
+    "reason": "Stored CRM tag values and technical identifiers are data; translating them would change filtering semantics.",
+    "strings": [
+      "ลูกค้าใหม่",
+      "ลูกค้าประจำ"
+    ]
+  },
+  "apps/web/app/(admin)/admin/delivery-platforms/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "HTTP_{v0}",
+      "AOV"
+    ]
+  },
+  "apps/web/app/(admin)/admin/delivery-provider-settings/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "HTTP_{v0}",
+      "https://provider.example/api",
+      "https://..."
+    ]
+  },
+  "apps/web/app/(admin)/admin/dev/fake/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "/admin/tenants",
+      "test-",
+      "demo-fashion",
+      "demo-food",
+      "demo-beauty",
+      "demo-minimart",
+      "demo-gadget",
+      "demo-pharmacy",
+      "demo-general",
+      "FAKE-",
+      "fake",
+      "FAKE",
+      "/admin/billing"
+    ]
+  },
+  "apps/web/app/(admin)/admin/dev/sql-console/SqlConsoleClient.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "OK",
+      "ms",
+      "function add(a, b) { console.log(a, b); return a + b; }\nadd(2, 3)",
+      "name@example.com\nanother@example.com",
+      "<div>Hello from BMS</div>",
+      "undefined",
+      "dev.sql_console.read",
+      "dev.sql_console.write",
+      "dev.js_console.run"
+    ]
+  },
+  "apps/web/app/(admin)/admin/env/EnvTableClient.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "Anthropic Chat",
+      "DeepSeek",
+      "QWEN OCR",
+      "Anthropic OCR",
+      "Anthropic",
+      "OK",
+      "NODE_ENV",
+      "PID",
+      ".env",
+      "bms_ai_usage_events",
+      "bms_ai_provider_health"
+    ]
+  },
+  "apps/web/app/(admin)/admin/followup-queue/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "RFM"
+    ]
+  },
+  "apps/web/app/(admin)/admin/inbox/Customer360Panel.tsx": {
+    "reason": "Authored customer-message templates, Thai parsing markers and technical identifiers retain their original language.",
+    "strings": [
+      "VIP"
+    ]
+  },
+  "apps/web/app/(admin)/admin/inbox/page.tsx": {
+    "reason": "Authored customer-message templates, Thai parsing markers and technical identifiers retain their original language.",
+    "strings": [
+      "[รูปภาพ]",
+      "[ไฟล์]",
+      "นะครับ",
+      "ครับ",
+      "เหลือ $1 ชิ้น",
+      "ชิ้น",
+      "PDF",
+      "ได้รับสลิปแล้วค่ะ เดี๋ยวตรวจสอบยอดให้ หากเรียบร้อยจะออกเลขพัสดุให้ทันทีนะคะ 🙏",
+      "กำลังตรวจสอบสถานะจัดส่งให้นะคะ ถ้ามีเลขพัสดุแล้วจะแจ้งให้ทันทีค่ะ",
+      "เดี๋ยวเช็กสต็อกและราคาให้ค่ะ ลูกค้าต้องการรุ่น/ไซซ์ไหนบ้างคะ",
+      "รับทราบค่ะ เดี๋ยวแอดมินตรวจสอบข้อมูลให้และแจ้งกลับโดยเร็วที่สุดนะคะ",
+      "AI:",
+      "{v0} บาท",
+      "ไม่มีกำหนด",
+      "ไม่จำกัดจำนวนครั้ง",
+      "เหลือ {v0} ครั้ง",
+      "ไม่มีขั้นต่ำ",
+      "{v0}🎟 คุณได้รับคูปองส่วนลดแล้วค่ะ\nโค้ด {v1}\nส่วนลด {v2}\nขั้นต่ำ {v3}\nใช้ได้ถึง {v4}\nสิทธิ์ {v5}\n\nคูปองนี้ถูกเพิ่มเข้ากระเป๋าคูปองของคุณแล้วค่ะ",
+      "ไซซ์ {v0} · เหลือ {v1} ชิ้น",
+      "เช็กไซซ์และสต็อกได้",
+      "\nดูรายละเอียดสินค้า: {v0}",
+      "SKU:",
+      "[ไฟล์] {v0}",
+      "ขออนุญาตตรวจสอบข้อมูลให้นิดนึงนะคะ เดี๋ยวแจ้งกลับทันทีค่ะ",
+      "ขอบคุณค่ะ หากมีข้อมูลเพิ่มเติมส่งมาได้เลยนะคะ 🙏"
+    ]
+  },
+  "apps/web/app/(admin)/admin/inbox/realtime-diagnostics/page.tsx": {
+    "reason": "Authored customer-message templates, Thai parsing markers and technical identifiers retain their original language.",
+    "strings": [
+      "LINE OA",
+      "Facebook Messenger",
+      "Instagram DM",
+      "TikTok",
+      "Shopee",
+      "Lazada",
+      "ms"
+    ]
+  },
+  "apps/web/app/(admin)/admin/installer-reports/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "reports_unavailable"
+    ]
+  },
+  "apps/web/app/(admin)/admin/locations/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "BR02",
+      "02-xxx-xxxx",
+      "https://...",
+      "English"
+    ]
+  },
+  "apps/web/app/(admin)/admin/logs/[id]/view/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "ms"
+    ]
+  },
+  "apps/web/app/(admin)/admin/logs/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "Test log from /admin/logs"
+    ]
+  },
+  "apps/web/app/(admin)/admin/logs/timeline/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      " • {v0}ms"
+    ]
+  },
+  "apps/web/app/(admin)/admin/loyalty/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "GOLD",
+      "Gold"
+    ]
+  },
+  "apps/web/app/(admin)/admin/mail-log/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "SendGrid",
+      "Gmail SMTP",
+      "SMTP relay"
+    ]
+  },
+  "apps/web/app/(admin)/admin/master-data/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "SWIFT/BIC",
+      "https://…/{trackingNo}",
+      "BMS"
+    ]
+  },
+  "apps/web/app/(admin)/admin/operations/MaterialPanel.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "· PO",
+      "{v0} / {v1} · {v2} · PO {v3} · {v4}: {v5} · {v6}: {v7} · {v8}: {v9} · {v10}: {v11}"
+    ]
+  },
+  "apps/web/app/(admin)/admin/orders/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      " · POS#{v0}",
+      "POS#"
+    ]
+  },
+  "apps/web/app/(admin)/admin/payment/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "ID:"
+    ]
+  },
+  "apps/web/app/(admin)/admin/pharmacy-intake-lab/page.tsx": {
+    "reason": "Reviewed clinical fixture data, customer-language intake examples and protocol identifiers; operator chrome is translated.",
+    "strings": [
+      "มีชื่อสินค้าที่ต้องการซื้อแล้วค่ะ",
+      "ให้เภสัชกรช่วยประเมินอาการค่ะ",
+      "ไม่ใช่ค่ะ",
+      "ยินยอม",
+      "ไม่ยินยอม",
+      "ข้อมูลถูกต้อง",
+      "ยืนยัน",
+      "ขอแก้ไข",
+      "เพิ่มสินค้า",
+      "ดูตะกร้า",
+      "ยืนยันตะกร้า",
+      "ลบรายการล่าสุด",
+      "ล้างตะกร้า",
+      "มี",
+      "ไม่มี",
+      "1 วัน",
+      "3 วัน",
+      "7 วัน",
+      "6 ชั่วโมง",
+      "12 ชั่วโมง",
+      "24 ชั่วโมง",
+      "หญิง",
+      "ชาย",
+      "ตัวเอง",
+      "ลูก",
+      "พ่อแม่",
+      "บุคคลอื่น",
+      "ไม่มีเสมหะ",
+      "เสมหะใส",
+      "เสมหะเหลือง",
+      "ไม่เคยแพ้ยา",
+      "ไม่ได้ใช้ยาอยู่",
+      "ซื้อสินค้า",
+      "ยืนยันตะกร้าแล้วค่ะ\nสร้าง Order จริงเรียบร้อยแล้ว\nหมายเลขออเดอร์: {v0}\n{v1}ดูรายการต่อได้ที่หน้า Orders ค่ะ",
+      "ยอดรวม: {v0} บาท\n",
+      "ยืนยันตะกร้าแล้ว แต่ยังไม่ได้สร้าง Order จริง\nสาเหตุ: {v0}\nกรุณาแก้ไขตะกร้าหรือข้อมูลที่ขาด แล้วลองยืนยันใหม่ค่ะ",
+      "{v0}\n\nหมายเลขเคส: {v1}\nเก็บหมายเลขนี้ไว้เพื่อติดตามเคสได้ค่ะ",
+      "รับข้อมูลยืนยันแล้ว แต่สร้างเคสเข้าคิวไม่สำเร็จ กรุณากดลองอีกครั้งค่ะ",
+      "ขออภัยค่ะ ระบบทดสอบร้านยาขัดข้องชั่วคราว ลองใหม่อีกครั้งนะคะ"
+    ]
+  },
+  "apps/web/app/(admin)/admin/pharmacy-protocols/page.tsx": {
+    "reason": "Reviewed clinical fixture data, customer-language intake examples and protocol identifiers; operator chrome is translated.",
+    "strings": [
+      "SKU",
+      "fever",
+      "ไข้",
+      "ไข้, ตัวร้อน, fever"
+    ]
+  },
+  "apps/web/app/(admin)/admin/pharmacy-queue/[caseId]/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "HTTP {v0}",
+      "ai",
+      "default"
+    ]
+  },
+  "apps/web/app/(admin)/admin/pharmacy-review-mockup/page.tsx": {
+    "reason": "Reviewed clinical fixture data, customer-language intake examples and protocol identifiers; operator chrome is translated.",
+    "strings": [
+      "ผู้ป่วย",
+      "เด็กชาย อายุ 6 ปี",
+      "อาการหลัก",
+      "ไอ 3 วัน มีไข้ต่ำ ไม่มีหอบ ไม่มีเจ็บหน้าอก",
+      "ประวัติแพ้ยา",
+      "ไม่มี",
+      "ยาที่ใช้อยู่",
+      "โรคประจำตัว",
+      "ไม่มีข้อมูลที่บ่งชี้",
+      "ข้อมูลสำคัญเพิ่ม",
+      "ไม่มีเสมหะ, ไม่มีเลือดปน, ดื่มน้ำได้, กินอาหารได้",
+      "เคสนี้ดูเข้ากลุ่ม upper respiratory tract infection / viral cough ที่ยังไม่พบ red flag รุนแรง",
+      "ข้อมูลค่อนข้างครบสำหรับเภสัช review ต่อ โดยยังควรเช็กน้ำหนักเด็กก่อนเลือกขนาดยาบางรายการ",
+      "ยังไม่ควรใช้ยาปฏิชีวนะจากข้อมูลปัจจุบัน",
+      "ควรให้คำแนะนำเรื่องการสังเกตอาการแย่ลง เช่น หอบ ซึม กินน้ำไม่ได้ ไข้สูงต่อเนื่อง",
+      "หายใจลำบาก / หอบเหนื่อย",
+      "เจ็บแน่นหน้าอก",
+      "ซึมลง ดื่มน้ำไม่ได้",
+      "ไข้สูงต่อเนื่องหลายวัน",
+      "ยืนยันน้ำหนักเด็กก่อน finalize dose",
+      "เช็กว่าไข้ล่าสุดกี่องศา และมีเครื่องวัดจริงหรือไม่",
+      "ดูว่าควรส่งกลับเป็นคำแนะนำอย่างเดียว หรือเปิดออเดอร์ยาให้ลูกค้าเลย",
+      "ปรับ/ลบรายการยาที่ AI draft ไว้ก่อน approve",
+      "ลูกชายไอมา 3 วันค่ะ มีไข้ต่ำ ๆ แต่ยังเล่นได้อยู่",
+      "ขอสอบถามเพิ่มนะคะ มีหอบ เหนื่อย หรือเจ็บหน้าอกร่วมด้วยไหมคะ",
+      "ไม่มีค่ะ กินน้ำได้ ไม่มีหอบ",
+      "มีเสมหะไหมคะ และมีประวัติแพ้ยาหรือไม่",
+      "ไม่มีเสมหะค่ะ ไม่เคยแพ้ยา",
+      "สรุปข้อมูลครบแล้ว เตรียมส่งให้เภสัชกรตรวจสอบค่ะ",
+      "ลดไข้/บรรเทาปวด",
+      "พร้อมขาย 18 ขวด",
+      "10-15 mg/kg/dose ทุก 4-6 ชม. เมื่อมีไข้",
+      "เหมาะกับอายุเด็กและใช้บรรเทาไข้ได้",
+      "ต้องคำนวณตามน้ำหนักจริงก่อนจ่าย",
+      "รอน้ำหนักเด็ก",
+      "บรรเทาไอ/ระคายคอ",
+      "Honey lemon cough syrup (เด็ก > 1 ปี)",
+      "พร้อมขาย 9 ขวด",
+      "5 mL หลังอาหาร วันละ 3 ครั้ง",
+      "ช่วยลดระคายคอและอาการไอทั่วไป",
+      "ควรยืนยันว่าไม่มีประวัติแพ้น้ำผึ้ง และอายุเกิน 1 ปี",
+      "พร้อมขาย 24 ขวด",
+      "หยอดจมูกตามอาการ",
+      "ช่วยถ้ามีน้ำมูก/คัดจมูกร่วม",
+      "เป็นตัวเลือกเสริม ไม่จำเป็นต้องจ่ายทุกเคส",
+      "ยืนยันเคสไอทั่วไปในเด็ก ยังไม่พบ red flag เร่งด่วน จ่ายยาตามอาการ พร้อมแนะนำสังเกตอาการ",
+      "จากข้อมูลเบื้องต้น ยังไม่พบสัญญาณอันตรายเร่งด่วน",
+      "แนะนำยาลดไข้และยาบรรเทาอาการไอตามที่เภสัชกรตรวจสอบแล้ว",
+      "หากมีหอบ ซึมลง กินน้ำไม่ได้ หรือไข้สูงต่อเนื่อง ให้ไปพบแพทย์ทันที",
+      "Pharmacy Review Mockup",
+      "Mockup",
+      "Risk: NORMAL",
+      "Completeness: 92%",
+      "AI confidence: medium-high",
+      "Catalog matched: 3 items",
+      "Ready for pharmacist review",
+      "Patient Snapshot",
+      "Structured Intake + Patient Memory",
+      "6 ปี",
+      "ชาย",
+      "ยังไม่ยืนยัน",
+      "เคยซื้อ paracetamol syrup เมื่อ 2 เดือนก่อน",
+      "ครอบครัวนี้ชอบรับคำแนะนำก่อนตัดสินใจซื้อ",
+      "AI Analysis Summary",
+      "Draft for pharmacist review",
+      "AI assessment",
+      "เบื้องต้นจัดเป็นเคสไอทั่วไปในเด็ก ยังไม่พบ red flag ที่บังคับ refer ทันที แต่ยังต้องให้เภสัชกรยืนยันขนาดยาและคำแนะนำ",
+      "What AI thinks pharmacist should verify before finalizing",
+      "ถามน้ำหนักเด็กเพื่อคำนวณ dose พาราให้แม่นขึ้น",
+      "ถ้าไข้สูงขึ้นหรือไอนานเกิน 5-7 วัน ควรประเมินซ้ำ",
+      "ถ้ามีเสมหะเปลี่ยนสีหรือเริ่มหอบ ให้เปลี่ยน risk level",
+      "เลือกว่าจะจ่ายยา 1-2 รายการหลัก หรือให้คำแนะนำอย่างเดียว",
+      "AI Draft Medication Plan",
+      "AI draft dosage",
+      "Pharmacist Summary Draft",
+      "Draft response to customer after pharmacist approval",
+      "Conversation history",
+      "Customer",
+      "AI intake",
+      "Recommended layout blocks",
+      "Action workspace",
+      "Fake Staff ap8IY",
+      "Approve and send to customer",
+      "Request more info",
+      "Refer to doctor",
+      "What this page should reduce"
+    ]
+  },
+  "apps/web/app/(admin)/admin/playground/page.tsx": {
+    "reason": "Customer-language sample inputs exercise the intent parser; changing UI language must not change the input.",
+    "strings": [
+      "Nike XL มีไหม",
+      "Nike มีไซซ์อะไรบ้าง",
+      "สั่ง Nike XL 2 ชิ้น",
+      "สั่ง Nike XL 1 ชิ้น กับ Adidas M 1 ชิ้น",
+      "สั่ง Nike XL 999 ชิ้น"
+    ]
+  },
+  "apps/web/app/(admin)/admin/pos-devices/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "/pos",
+      "/pos/restaurant",
+      "info",
+      " · HTTP {v0}",
+      "/admin",
+      "Cashier",
+      "PIN",
+      "POS-01",
+      "Tab"
+    ]
+  },
+  "apps/web/app/(admin)/admin/pos-readiness/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "SKU"
+    ]
+  },
+  "apps/web/app/(admin)/admin/product-labels/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "SKU"
+    ]
+  },
+  "apps/web/app/(admin)/admin/product-packs/page.tsx": {
+    "reason": "The stored base-unit default and standard barcode/unit codes are data, not localized form labels.",
+    "strings": [
+      "ชิ้น",
+      "UN/ECE",
+      "SKU",
+      "BOX"
+    ]
+  },
+  "apps/web/app/(admin)/admin/products/ImportModal.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "SKU"
+    ]
+  },
+  "apps/web/app/(admin)/admin/products/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "SKU",
+      "STD / S / M / LARGE",
+      "preview-{v0}"
+    ]
+  },
+  "apps/web/app/(admin)/admin/purchase/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "PO",
+      "SKU"
+    ]
+  },
+  "apps/web/app/(admin)/admin/receivables/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "e-Wallet"
+    ]
+  },
+  "apps/web/app/(admin)/admin/report-schedule/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "Slack",
+      "LINE"
+    ]
+  },
+  "apps/web/app/(admin)/admin/reports/CostAllocationReport.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "COST_ALLOCATION_PREVIEW_FAILED",
+      "COST_ALLOCATION_SAVE_FAILED"
+    ]
+  },
+  "apps/web/app/(admin)/admin/reports/OperatingCostReport.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "YYYY-MM"
+    ]
+  },
+  "apps/web/app/(admin)/admin/reports/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "/admin/assistant",
+      "SKU"
+    ]
+  },
+  "apps/web/app/(admin)/admin/restaurant-floor/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "QR"
+    ]
+  },
+  "apps/web/app/(admin)/admin/restock-subscriptions/page.tsx": {
+    "reason": "Authored customer-message templates, Thai parsing markers and technical identifiers retain their original language.",
+    "strings": [
+      "{v0} ({v1}) ไซซ์ {v2} เข้ามาแล้วค่ะ ตอนนี้มีพร้อมขาย {v3} ชิ้น สนใจให้ทางร้านช่วยสั่งให้ไหมคะ"
+    ]
+  },
+  "apps/web/app/(admin)/admin/retail-local-licenses/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "HTTP {v0}",
+      "customer-001",
+      "OK"
+    ]
+  },
+  "apps/web/app/(admin)/admin/retail-local-releases/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "HTTP {v0}",
+      "Windows x64 (.exe)",
+      "Ubuntu x64 (.deb)",
+      "macOS Apple Silicon ({v0})",
+      "macOS Intel ({v0})",
+      "0.3.0-internal.1",
+      "Windows 11 Pro x64 / Ubuntu 24.04 LTS x64 / macOS 15 Apple Silicon"
+    ]
+  },
+  "apps/web/app/(admin)/admin/retail-local-runtime-releases/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "HTTP {v0}",
+      "0.2.14-pilot.2"
+    ]
+  },
+  "apps/web/app/(admin)/admin/settings/ReportSubscriptionCard.tsx": {
+    "reason": "Authored customer-message templates, Thai parsing markers and technical identifiers retain their original language.",
+    "strings": [
+      "email-preview"
+    ]
+  },
+  "apps/web/app/(admin)/admin/settings/StoreProfileCard.tsx": {
+    "reason": "Authored customer-message templates, Thai parsing markers and technical identifiers retain their original language.",
+    "strings": [
+      "/admin/restock-subscriptions",
+      "https://...",
+      "https://.../logo.png",
+      "AUD",
+      "GBP",
+      "Asia/Bangkok"
+    ]
+  },
+  "apps/web/app/(admin)/admin/settings/page.tsx": {
+    "reason": "Authored customer-message templates, Thai parsing markers and technical identifiers retain their original language.",
+    "strings": [
+      "LINE Official Account",
+      "TikTok",
+      "Facebook Messenger",
+      "Instagram DM",
+      "Shopee (beta)",
+      "Lazada (beta)",
+      "ขอทราบราคา",
+      "ขอรายละเอียดสินค้าและบริการ",
+      "สนใจซื้อ",
+      "สวัสดีค่ะ สนใจสินค้าหรือบริการด้านไหน เลือกหัวข้อด้านล่างได้เลยค่ะ",
+      "Anthropic (Claude)",
+      "DeepSeek"
+    ]
+  },
+  "apps/web/app/(admin)/admin/stock-counts/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "SKU"
+    ]
+  },
+  "apps/web/app/(admin)/admin/stock-models/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "PIECE / GRAM",
+      "FEFO",
+      "NO_SUGAR",
+      "SWEETNESS",
+      "SKU",
+      "ING-CHICKEN",
+      "STD / GRAM",
+      "HOT / BAR"
+    ]
+  },
+  "apps/web/app/(admin)/admin/stock-transfers/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "SKU"
+    ]
+  },
+  "apps/web/app/(admin)/admin/support-diagnostics/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "HTTP {v0}"
+    ]
+  },
+  "apps/web/app/(admin)/admin/support-tickets/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "IP",
+      "-&gt;"
+    ]
+  },
+  "apps/web/app/(admin)/admin/system-health/SystemHealthClient.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "Redis",
+      "ms"
+    ]
+  },
+  "apps/web/app/(admin)/admin/tax-documents/page.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "VAT"
+    ]
+  },
+  "apps/web/components/pos/BoardGameCopyLabels.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "QR {v0}"
+    ]
+  },
+  "apps/web/components/post/PostView.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "จ่าเฉย (Jachoei)",
+      "Facebook",
+      "Facebook: {v0}"
+    ]
+  },
+  "apps/web/components/retail-local/LocalLicense.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "Ubuntu:",
+      "sudo bms-retail-local-configure-backup AGE_RECIPIENT /mnt/OFF_HOST",
+      "LIC-••••{v0}",
+      "bmsla_…"
+    ]
+  },
+  "apps/web/components/retail-local/RetailLocalLeadsPanel.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "HTTP {v0}",
+      "LINE: {v0}"
+    ]
+  },
+  "apps/web/components/admin/TaxInvoiceRequestsPanel.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "THB"
+    ]
+  },
+  "apps/web/components/AdminSidebar.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "BMS"
+    ]
+  },
+  "apps/web/components/admin/TaxControlDocument.tsx": {
+    "reason": "Official Thai printed tax document has an independent document-language policy; operator language must not rewrite it.",
+    "strings": [
+      "สรุปปิดงวด / Period close —",
+      "ฉบับ / Version",
+      "ฐานภาษี / Base",
+      "· VAT",
+      "· รวม / Total",
+      "ภาษีซื้อ / Input VAT",
+      "ตัวอย่างก่อนยืนยัน / PREVIEW",
+      "ใบแทน / SUBSTITUTE",
+      "ต้นฉบับ / ORIGINAL",
+      "ใบกำกับภาษีเต็มรูป / Tax invoice",
+      "ใบเพิ่มหนี้ / Debit note",
+      "ใบลดหนี้ / Credit note",
+      "เลขที่ / No.",
+      "กำหนดเมื่อยืนยัน / Assigned on confirmation",
+      "· วันที่ / Date",
+      "ใบแทนครั้งที่ / Substitute number",
+      "· วันที่ออกใบแทน / Issued",
+      "เหตุผล / Reason",
+      "ยกเลิกและออกใหม่แทนเอกสารเลขที่ / Replaces document",
+      "ผู้ขาย / Seller:",
+      "ผู้ซื้อ / Buyer:",
+      "อ้างอิงใบกำกับ / Original invoice",
+      "รายการ / Description",
+      "จำนวน / Qty",
+      "หน่วย / Unit",
+      "มูลค่า / Amount",
+      "รวมรายการ / Subtotal",
+      "· ส่วนลด / Discount",
+      "· ค่าส่ง / Shipping",
+      "ก่อน VAT / Before VAT",
+      "· ยกเว้น / Exempt",
+      "VAT",
+      "· ปัดเศษ / Rounding",
+      "รวม / Total",
+      "มูลค่าเดิม / Original value",
+      "ปรับลดสุทธิก่อนหน้า / Previous net credits",
+      "มูลค่าที่ถูกต้อง / Correct value",
+      "ผลต่าง / Difference",
+      "ผลต่างก่อน VAT / Difference before VAT",
+      "ผู้ออก / Issued by",
+      "ลงลายมือชื่อ / Signature ____________________",
+      "เอกสารกระดาษ ไม่ใช่ e-Tax Invoice / Paper document, not e-Tax"
+    ]
+  },
+  "apps/web/components/work-assistant/AdminCommandPalette.tsx": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "Esc",
+      "&ldquo;",
+      "&rdquo;"
+    ]
+  },
+  "packages/realtime/src/events.ts": {
+    "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
+    "strings": [
+      "maximumSize must be an integer between 1 and 10000"
+    ]
+  },
+  "apps/web/components/HeaderBar.tsx": {
+    "reason": "Product branding and physical keyboard modifier names are intentionally unchanged across operator languages.",
+    "strings": [
+      "BMS",
+      "Ctrl"
+    ]
+  }
+}

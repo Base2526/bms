@@ -13,11 +13,13 @@ export function isLang(value: unknown): value is Lang {
 export function getLangCookie(): Lang | null {
   if (typeof document === "undefined") return null;
   const m = document.cookie.match(/(?:^|; )lang=([^;]+)/);
-  const value = m ? decodeURIComponent(m[1]) : null;
-  return isLang(value) ? value : null;
+  try {
+    const value = m ? decodeURIComponent(m[1]) : null;
+    return isLang(value) ? value : null;
+  } catch { return null; }
 }
 
-export function setLangCookie(lang: Lang) {
+export function setLangCookie(lang: Lang, maxAgeSeconds?: number) {
   if (typeof document === "undefined") return;
-  document.cookie = `lang=${lang}; path=/; samesite=lax`;
+  document.cookie = `lang=${lang}; path=/; samesite=lax${maxAgeSeconds ? `; max-age=${maxAgeSeconds}` : ""}`;
 }

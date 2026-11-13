@@ -1116,6 +1116,9 @@
 }
 
 @media (max-width: 980px) {
+  .loginPage { grid-template-columns: minmax(0, 1fr); }
+  .loginAside { gap: 20px; padding: 24px; }
+  .loginPanel { min-width: 0; padding: 24px; }
   .shell { grid-template-columns: 68px minmax(0, 1fr); }
   .workspace { padding: 8px; }
   .content { grid-template-columns: 1fr; overflow-y: auto; }

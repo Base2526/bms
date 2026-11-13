@@ -1,4 +1,6 @@
 "use client";
+
+import { useUiText } from "@/lib/useUiText";
 import RestaurantPricePlan from "./RestaurantPricePlan";
 import RestaurantMenuPlan from "./RestaurantMenuPlan";
 
@@ -235,6 +237,7 @@ function RecipeVersionSelect({ value, onChange, parentSku, saved, planning = fal
 }
 
 export default function StockModelsPage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const searchParams = useSearchParams()!;
@@ -630,7 +633,7 @@ export default function StockModelsPage() {
             <Form.Item {...rest} name={[name, "sku"]} rules={[{ required: true }]}><Input placeholder={t("admin_stock.component_sku")} /></Form.Item>
             <Form.Item {...rest} name={[name, "size"]} rules={[{ required: true }]}><Input placeholder={t("admin_stock.component_size")} /></Form.Item>
             <Form.Item {...rest} name={[name, kind === "recipe" ? "qty" : "qtyDelta"]} rules={[{ required: true }]}>
-              <InputNumber style={{ width: "100%" }} precision={0} placeholder={kind === "recipe" ? "Qty" : "+/-"} />
+              <InputNumber style={{ width: "100%" }} precision={0} placeholder={kind === "recipe" ? uiText("admin_ui.en_qty_1e5ff") : "+/-"} />
             </Form.Item>
             <Button danger type="text" icon={<DeleteOutlined />} onClick={() => remove(name)} aria-label={t("admin_stock.remove_component")} />
           </div>
@@ -837,7 +840,7 @@ export default function StockModelsPage() {
         placeholder={t("admin_stock.select_product")}
         value={selectedSku}
         onChange={(sku) => { setSelectedSku(sku); policyForm.resetFields(); }}
-        options={products.map((p) => ({ value: p.sku, label: `${p.sku} · ${p.name}${p.active ? "" : " (inactive)"}` }))}
+        options={products.map((p) => ({ value: p.sku, label: `${p.sku} · ${p.name}${p.active ? "" : uiText("admin_ui.en_inactive_f6ce7")}` }))}
       />}
     </Card>
 
@@ -1031,7 +1034,7 @@ export default function StockModelsPage() {
                 <Form.Item {...rest} name={[name, "componentSku"]} rules={[{ required: true }]}><Input placeholder={t("admin_stock.component_sku")} /></Form.Item>
                 <Form.Item {...rest} name={[name, "componentSize"]} rules={[{ required: true }]}><Input placeholder={t("admin_stock.component_size")} /></Form.Item>
                 <Form.Item {...rest} name={[name, "qty"]} rules={[{ required: true }]}>
-                  <InputNumber style={{ width: "100%" }} min={1} precision={0} placeholder="Qty" />
+                  <InputNumber style={{ width: "100%" }} min={1} precision={0} placeholder={uiText("admin_ui.en_qty_1e5ff")} />
                 </Form.Item>
                 <Button danger type="text" icon={<DeleteOutlined />} onClick={() => remove(name)} aria-label={t("admin_stock.remove_component")} />
               </div>

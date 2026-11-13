@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 import type { MockPaymentInput, MockPaymentMethod } from './paymentMath';
 
 interface ReturnableCartLine {
@@ -53,9 +54,9 @@ export function calculateMockReturnTotal(lines: MockReturnLineInput[]): {
   const errors: string[] = [];
   let total = 0;
   for (const line of lines) {
-    if (line.returnQty < 0) errors.push(`${line.sku} จำนวนคืนต้องไม่ติดลบ`);
+    if (line.returnQty < 0) errors.push(posText("{v0} จำนวนคืนต้องไม่ติดลบ", { v0: line.sku }));
     if (line.returnQty > line.soldQty) {
-      errors.push(`${line.sku} จำนวนคืนมากกว่าที่ขาย`);
+      errors.push(posText("{v0} จำนวนคืนมากกว่าที่ขาย", { v0: line.sku }));
     }
     total += Math.max(0, line.returnQty) * line.unitRefundPrice;
   }

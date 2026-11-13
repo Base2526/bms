@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 import { ApolloLink, Observable } from '@apollo/client';
 import { getMainDefinition } from '@apollo/client/utilities';
 import {
@@ -15,12 +16,12 @@ export function connectionErrorLink() {
       next: result => {
         if (result.errors != null && (!Array.isArray(result.errors)
           || result.errors.some(error => !error || typeof error.message !== 'string'))) {
-          observer.error(posTransportError({ code: 'INVALID_RESPONSE', httpStatus: 200 }, mutation));
+          observer.error(posTransportError({ code: 'INVALID_RESPONSE', httpStatus: 200 }, mutation, posText));
           return;
         }
         if (!result.errors?.length && (!result.data || typeof result.data !== 'object'
           || Array.isArray(result.data) || Object.keys(result.data).length === 0)) {
-          observer.error(posTransportError({ code: 'INVALID_RESPONSE', httpStatus: 200 }, mutation));
+          observer.error(posTransportError({ code: 'INVALID_RESPONSE', httpStatus: 200 }, mutation, posText));
           return;
         }
         observer.next({
@@ -28,11 +29,11 @@ export function connectionErrorLink() {
           ...(result.errors?.length ? { errors: result.errors.map(error => ({
             ...error,
             message: isPosBusinessError(error.extensions?.code) ? error.message
-              : describePosConnectionFailure({ ...error, httpStatus: 200 }, mutation).message,
+              : describePosConnectionFailure({ ...error, httpStatus: 200 }, mutation, posText).message,
           })) } : {}),
         });
       },
-      error: error => observer.error(posTransportError(error, mutation)),
+      error: error => observer.error(posTransportError(error, mutation, posText)),
       complete: () => observer.complete(),
     });
     return () => subscription.unsubscribe();

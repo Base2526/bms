@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Input, Button, Space, Tag, Switch, message, Alert, Typography, Divider, Form, Steps, Table, Select, Tabs, Collapse } from "antd";
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -63,6 +65,7 @@ const BADGE_HEX: Record<string, string> = {
 };
 
 function useChannels(t: (key: string, vars?: Record<string, string | number>) => string) {
+  const uiText = useUiText();
   return useMemo(() => [
     { key: "line", label: "LINE Official Account", color: "green",
       hint: t("admin_settings.channel_line_hint"), needs: t("admin_settings.channel_line_needs"), status: "ready" },
@@ -72,13 +75,13 @@ function useChannels(t: (key: string, vars?: Record<string, string | number>) =>
       hint: t("admin_settings.channel_facebook_hint"), needs: t("admin_settings.channel_facebook_needs"), status: "ready" },
     { key: "instagram", label: "Instagram DM", color: "purple",
       hint: t("admin_settings.channel_instagram_hint"), needs: t("admin_settings.channel_instagram_needs"), status: "ready" },
-    { key: "web", label: "Website Live Chat", color: "geekblue",
+    { key: "web", label: uiText("admin_ui.en_website_live_chat_ca8de"), color: "geekblue",
       hint: t("admin_settings.channel_web_hint"), needs: t("admin_settings.channel_web_needs"), status: "no-token" },
     { key: "shopee", label: "Shopee (beta)", color: "orange",
       hint: t("admin_settings.channel_shopee_hint"), needs: t("admin_settings.channel_shopee_needs"), status: "beta" },
     { key: "lazada", label: "Lazada (beta)", color: "purple",
       hint: t("admin_settings.channel_lazada_hint"), needs: t("admin_settings.channel_lazada_needs"), status: "beta" },
-  ], [t]);
+  ], [uiText, t]);
 }
 
 function useStatusMeta(t: (key: string) => string): Record<string, { color: string; text: string }> {
@@ -120,12 +123,13 @@ function computeHealthBadge(
   return HEALTH_META[health?.status as string] || HEALTH_META.connected;
 }
 
-function fmtDT(iso: string | null | undefined) {
+function fmtDT(iso: string | null | undefined, uiText: UiTranslator = thaiUiText) {
   if (!iso) return "-";
-  return new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+  return new Date(iso).toLocaleString(uiText.locale, { dateStyle: "medium", timeStyle: "short" });
 }
 
 export default function Page() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const CHANNELS = useChannels(t);
   const STATUS_META = useStatusMeta(t);
@@ -261,7 +265,7 @@ export default function Page() {
                           <Text style={{ color: BADGE_HEX[badge.color] || undefined, fontWeight: 600, fontSize: 12.5 }}>{badge.text}</Text>
                           {cfg?.has_token && cfg?.active !== false && chHealth?.last_inbound_event_at ? (
                             <Text type="secondary" style={{ fontSize: 11.5 }}>
-                              · {t("admin_settings.last_inbound_event", { time: fmtDT(chHealth.last_inbound_event_at) })}
+                              · {t("admin_settings.last_inbound_event", { time: fmtDT(chHealth.last_inbound_event_at, uiText) })}
                             </Text>
                           ) : null}
                         </Space>
@@ -313,6 +317,7 @@ export default function Page() {
 // เนื้อหาฟอร์มของช่องทางเดียว — เดิมเป็นทั้ง <Card> (มี title/extra ของตัวเอง) ตอนนี้เหลือแค่ body
 // เพราะหัวแถว (dot/ชื่อ/สถานะ) ย้ายไปเรนเดอร์ที่ parent เป็น label ของ Collapse.Panel แทนแล้ว
 function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, messengerProfile, onSaved }: any) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [form] = Form.useForm();
   const accessTokenInputRef = useRef<any>(null);
@@ -395,7 +400,7 @@ function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, m
           description={
             <>
               {badge.action}
-              {health?.last_error_at && <div>{t("admin_settings.last_seen_prefix", { time: fmtDT(health.last_error_at) })}</div>}
+              {health?.last_error_at && <div>{t("admin_settings.last_seen_prefix", { time: fmtDT(health.last_error_at, uiText) })}</div>}
             </>
           }
         />
@@ -461,10 +466,10 @@ function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, m
       {cfg?.has_token && (
         <div style={{ marginTop: 4 }}>
           <Text type="secondary" style={{ fontSize: 12, display: "block" }}>
-            {t("admin_settings.last_inbound_event", { time: fmtDT(health?.last_inbound_event_at) })}
+            {t("admin_settings.last_inbound_event", { time: fmtDT(health?.last_inbound_event_at, uiText) })}
           </Text>
           <Text type="secondary" style={{ fontSize: 12, display: "block" }}>
-            {t("admin_settings.last_outbound_success", { time: fmtDT(health?.last_outbound_success_at) })}
+            {t("admin_settings.last_outbound_success", { time: fmtDT(health?.last_outbound_success_at, uiText) })}
           </Text>
         </div>
       )}
@@ -479,6 +484,7 @@ const MESSENGER_STARTERS = [
 ] as const;
 
 function MessengerProfileSettings({ profile, ready, onSaved }: any) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [form] = Form.useForm();
   const [publish, { loading }] = useMutation(M_PUBLISH_MESSENGER_PROFILE, {
@@ -504,7 +510,7 @@ function MessengerProfileSettings({ profile, ready, onSaved }: any) {
       <Text type="secondary">{t("admin_settings.messenger_profile_help")}</Text>
       {profile?.status && <Space wrap>
         <Tag color={profile.status === "PUBLISHED" ? "green" : profile.status === "FAILED" ? "red" : "gold"}>{profile.status}</Tag>
-        {profile.publishedAt && <Text type="secondary">{fmtDT(profile.publishedAt)}</Text>}
+        {profile.publishedAt && <Text type="secondary">{fmtDT(profile.publishedAt, uiText)}</Text>}
       </Space>}
     </Space>
     {profile?.lastError && <Alert closable type="warning" showIcon message={profile.lastError} style={{ marginBottom: 12 }} />}

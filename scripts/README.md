@@ -1,5 +1,29 @@
 # scripts/ — ชุดเทสและเครื่องมือตรวจของ repo นี้
 
+- `node scripts/admin-language-browser-smoke.mjs`: local synthetic admin smoke with all APIs
+  intercepted. Set `BMS_ADMIN_SMOKE_ORIGIN` and `BMS_PLAYWRIGHT_PACKAGE` as needed. Checks language
+  persistence, retained SKU input, Thai/English calendar months, role dialogs, stock transfers,
+  bounded playground stock, pharmacy review/status, loyalty months, report delivery status and
+  shared comment relative times at desktop/mobile widths; screenshots go to `.test-output/admin-language/`.
+  Shared post/comments are exercised through the public route; the admin post route requires a
+  DB-verified platform admin and is outside this synthetic fixture.
+
+- `admin-client-i18n-contract.test.mts`: scans admin routes, reachable shared UI and page errors
+  for untranslated authored copy. Reviewed data/brand/protocol exceptions live in
+  `fixtures/admin-ui-copy-exceptions.json`; do not add UI labels there to bypass translation.
+  `i18n-keys-contract.test.mts` validates literal keys in either quote style, recursive th/en parity
+  and admin interpolation placeholders. These checks do not claim arbitrary server data is bilingual.
+
+- `node scripts/pos-language-browser-smoke.mjs`: local web at `BMS_POS_SMOKE_ORIGIN` (default
+  `http://localhost:3000`), optional `BMS_PLAYWRIGHT_PACKAGE`. Intercepted synthetic APIs check
+  Thai/English shell persistence, stale-save races, retained pairing input/PIN/cart, and register
+  returns/restaurant/board-game/customer/queue screens at desktop and mobile widths, including
+  live cross-window language changes. Screenshots go to `.test-output/pos-language/`; no sale is submitted.
+  `pos-client-i18n-contract.test.mts` rejects untranslated operator copy and checks authored
+  keys, placeholders, verbatim data and unchanged payment/failure outcomes. Native persistence/receipt tests live in `apps/mobile/__tests__`; shell
+  persistence/menu tests and the setup smoke live in `apps/desktop/test`.
+- `mobile-native-i18n-contract.test.mts`: checks the iOS English/Thai permission strings and their
+  Xcode resource wiring. OS prompts follow the system/app language, independently of the POS preference.
 - `node scripts/pos-stock-rejection-browser-smoke.mjs`: local web at `BMS_SMOKE_URL` (default
   port 3100), intercepted API fixtures only. Checks the Desktop POS return workflow displays
   `STOCK_REVIEW_REQUIRED` reasons without a successful return receipt, and opens the updated manual

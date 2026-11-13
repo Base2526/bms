@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useQuery, useMutation, useLazyQuery } from "@apollo/client";
 import {
   Table, Button, Space, Tag, message, Alert, Popconfirm,
@@ -108,6 +110,7 @@ const NEXT_STATUS: ShipStatus[] = ["IN_TRANSIT", "DELIVERED", "RETURNED"];
 const FILTERS = ["ALL", "PENDING", "SHIPPED", "IN_TRANSIT", "DELIVERED", "RETURNED", "CANCELLED"] as const;
 
 function ShipmentManagement() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { can } = useBmsPermissions();
   const isMobile = useIsMobile();
@@ -215,26 +218,24 @@ function ShipmentManagement() {
     const btns: any[] = [];
     const done = r.status === "DELIVERED" || r.status === "CANCELLED" || r.status === "RETURNED";
     if (can("shipping.view")) {
-      btns.push(<Button key="label" type="link" size="small" icon={<PrinterOutlined />} onClick={() => setLabelId(r.id)}>Label</Button>);
+      btns.push(<Button key="label" type="link" size="small" icon={<PrinterOutlined />} onClick={() => setLabelId(r.id)}>{uiText("admin_ui.en_label_74341")}</Button>);
     }
     if (can("shipping.update") && r.trackingNo && SYNCABLE_CARRIERS.includes(r.carrier)) {
       btns.push(
         <Button key="sync" type="link" size="small" icon={<SyncOutlined spin={syncingId === r.id} />}
           disabled={busy && syncingId !== r.id} loading={syncingId === r.id} onClick={() => runSync(r.id)}>
-          Sync carrier
-        </Button>
+          {uiText("admin_ui.en_sync_carrier_63a06")}</Button>
       );
     }
     if (!done && !r.marketplaceManaged && can("shipping.update") && !r.trackingNo && SYNCABLE_CARRIERS.includes(r.carrier)) {
       btns.push(
         <Button key="book" type="link" size="small" icon={<SyncOutlined spin={bookingId === r.id} />}
           disabled={busy && bookingId !== r.id} loading={bookingId === r.id} onClick={() => runBooking(r.id)}>
-          Book carrier
-        </Button>
+          {uiText("admin_ui.en_book_carrier_60523")}</Button>
       );
     }
     if (!done && can("shipping.update")) {
-      btns.push(<Button key="edit" type="link" size="small" icon={<EditOutlined />} disabled={busy} onClick={() => setEditShip(r)}>tracking</Button>);
+      btns.push(<Button key="edit" type="link" size="small" icon={<EditOutlined />} disabled={busy} onClick={() => setEditShip(r)}>{uiText("admin_ui.en_tracking_da4df")}</Button>);
       NEXT_STATUS.forEach((s) => {
         btns.push(
           <Button key={s} type="link" size="small" disabled={busy}
@@ -256,21 +257,21 @@ function ShipmentManagement() {
 
   const columns = useMemo(
     () => [
-      { title: "Shipment", dataIndex: "id", key: "id", width: 100,
+      { title: uiText("admin_ui.en_shipment_0cd0f"), dataIndex: "id", key: "id", width: 100,
         render: (id: string) => <Typography.Text code>{id.slice(0, 8)}</Typography.Text> },
-      { title: "Order", dataIndex: "orderId", key: "orderId", width: 100,
+      { title: uiText("admin_ui.en_order_1d757"), dataIndex: "orderId", key: "orderId", width: 100,
         render: (id: string) => <Typography.Text code>{id.slice(0, 8)}</Typography.Text> },
       { title: t("admin_shipment.col_carrier"), dataIndex: "carrier", key: "carrier", width: 130,
         render: (_c: Carrier, r: Shipment) => r.carrierName || CARRIER_LABEL[r.carrier] || r.carrier },
       { title: t("admin_shipment.col_tracking"), dataIndex: "trackingNo", key: "trackingNo",
-        render: (value: string | null, r: Shipment) => value ? <Space direction="vertical" size={0}><Typography.Text copyable>{value}</Typography.Text>{r.trackingUrl&&<Typography.Link href={r.trackingUrl} target="_blank" rel="noreferrer">Tracking</Typography.Link>}{r.trackingNoWarning&&<Typography.Text type="warning">{r.trackingNoWarning}</Typography.Text>}</Space> : <span style={{ color: "#999" }}>—</span> },
+        render: (value: string | null, r: Shipment) => value ? <Space direction="vertical" size={0}><Typography.Text copyable>{value}</Typography.Text>{r.trackingUrl&&<Typography.Link href={r.trackingUrl} target="_blank" rel="noreferrer">{uiText("admin_ui.en_tracking_e81a1")}</Typography.Link>}{r.trackingNoWarning&&<Typography.Text type="warning">{r.trackingNoWarning}</Typography.Text>}</Space> : <span style={{ color: "#999" }}>—</span> },
       { title: t("admin_shipment.col_status"), dataIndex: "status", key: "status", width: 140,
         render: (s: ShipStatus) => <Tag color={STATUS_COLOR[s]}>{s} · {statusLabel(s, t)}</Tag> },
-      { title: "Carrier sync", key: "carrierSync", width: 170,
+      { title: uiText("admin_ui.en_carrier_sync_b417e"), key: "carrierSync", width: 170,
         render: (_: any, r: Shipment) => r.carrierLastSyncedAt ? (
           <Space direction="vertical" size={0}>
-            <Tag color={r.carrierTrackingSource === "live" ? "green" : "blue"}>{r.carrierTrackingSource || "carrier"}</Tag>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{new Date(r.carrierLastSyncedAt).toLocaleString()}</Typography.Text>
+            <Tag color={r.carrierTrackingSource === "live" ? "green" : "blue"}>{r.carrierTrackingSource || uiText("admin_ui.en_carrier_12cb5")}</Tag>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{new Date(r.carrierLastSyncedAt).toLocaleString(uiText.locale)}</Typography.Text>
           </Space>
         ) : (
           <Space direction="vertical" size={0}>
@@ -281,18 +282,18 @@ function ShipmentManagement() {
           </Space>
         ) },
       { title: t("admin_shipment.col_created"), dataIndex: "createdAt", key: "createdAt", width: 160,
-        render: (d: string) => new Date(d).toLocaleString() },
-      { title: "Actions", key: "actions", width: 320,
+        render: (d: string) => new Date(d).toLocaleString(uiText.locale) },
+      { title: uiText("admin_ui.en_actions_c3cd6"), key: "actions", width: 320,
         render: (_: any, r: Shipment) => <Space size={0} wrap>{actionsFor(r)}</Space> },
     ],
-    [busy, can]
+    [uiText, busy, can]
   );
 
   if (error) return <Alert closable type="error" message={t("admin_shipment.load_error")} description={error.message} showIcon />;
 
   return (
     <div>
-      <AdminPageHeader title="BMS Shipping">
+      <AdminPageHeader title={uiText("admin_ui.en_bms_shipping_adfad")}>
         <Input.Search
           placeholder={t("admin_shipment.search_placeholder")}
           allowClear
@@ -310,7 +311,7 @@ function ShipmentManagement() {
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>{t("admin_shipment.btn_create")}</Button>
         )}
         {can("shipping.update") && <Button onClick={()=>setZonesOpen(true)}>{t("admin_shipment.zone_overrides")}</Button>}
-        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{uiText("admin_ui.en_refresh_56e3b")}</Button>
       </AdminPageHeader>
 
       <Alert
@@ -342,16 +343,16 @@ function ShipmentManagement() {
                 {
                   label: t("admin_shipment.col_tracking"),
                   value: r.trackingNo
-                    ? <Space direction="vertical" size={0}><Typography.Text copyable>{r.trackingNo}</Typography.Text>{r.trackingUrl&&<Typography.Link href={r.trackingUrl} target="_blank" rel="noreferrer">Tracking</Typography.Link>}{r.trackingNoWarning&&<Typography.Text type="warning">{r.trackingNoWarning}</Typography.Text>}</Space>
+                    ? <Space direction="vertical" size={0}><Typography.Text copyable>{r.trackingNo}</Typography.Text>{r.trackingUrl&&<Typography.Link href={r.trackingUrl} target="_blank" rel="noreferrer">{uiText("admin_ui.en_tracking_e81a1")}</Typography.Link>}{r.trackingNoWarning&&<Typography.Text type="warning">{r.trackingNoWarning}</Typography.Text>}</Space>
                     : <span style={{ color: "#999" }}>—</span>,
                 },
                 {
-                  label: "Carrier sync",
+                  label: uiText("admin_ui.en_carrier_sync_b417e"),
                   value: r.carrierLastSyncedAt
-                    ? `${r.carrierTrackingSource || "carrier"} · ${new Date(r.carrierLastSyncedAt).toLocaleString()}`
+                    ? `${r.carrierTrackingSource || "carrier"} · ${new Date(r.carrierLastSyncedAt).toLocaleString(uiText.locale)}`
                     : `${r.carrierBookingStatus}${r.carrierBookingError ? ` · ${r.carrierBookingError}` : ""}`,
                 },
-                { label: t("admin_shipment.col_created"), value: new Date(r.createdAt).toLocaleString() },
+                { label: t("admin_shipment.col_created"), value: new Date(r.createdAt).toLocaleString(uiText.locale) },
               ]}
               actions={actionsFor(r)}
             />
@@ -360,7 +361,7 @@ function ShipmentManagement() {
       ) : (
         <Table rowKey="id" loading={loading} dataSource={shipments} columns={columns}
           scroll={{ x: "max-content" }}
-          pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Total ${t} shipment(s)` }}
+          pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => uiText("admin_ui.en_total_shipment_s_f6136", { v0: t }) }}
         />
       )}
 
@@ -504,6 +505,7 @@ function EditTrackingModal({ shipment, onClose, onDone }: { shipment: Shipment |
 
 // ---- Label modal --------------------------------------------
 function LabelModal({ shipmentId, onClose }: { shipmentId: string | null; onClose: () => void }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const [load, { data, loading }] = useLazyQuery(Q_LABEL, { fetchPolicy: "network-only" });
@@ -525,8 +527,8 @@ function LabelModal({ shipmentId, onClose }: { shipmentId: string | null; onClos
           {/* มือถือใช้ layout แนวตั้งเพื่อให้ที่อยู่ยังอ่านได้ */}
           <Descriptions bordered column={1} size="small" layout={isMobile ? "vertical" : "horizontal"}>
             <Descriptions.Item label={t("admin_shipment.col_carrier")}>{label.carrierName || CARRIER_LABEL[label.carrier as Carrier] || label.carrier}</Descriptions.Item>
-            <Descriptions.Item label={t("admin_shipment.col_tracking")}><Space direction="vertical" size={0}><span>{label.trackingNo || "—"}</span>{label.trackingUrl&&<Typography.Link href={label.trackingUrl} target="_blank" rel="noreferrer">Tracking</Typography.Link>}{label.trackingNoWarning&&<Typography.Text type="warning">{label.trackingNoWarning}</Typography.Text>}</Space></Descriptions.Item>
-            <Descriptions.Item label="Order">{label.orderId.slice(0, 8)}</Descriptions.Item>
+            <Descriptions.Item label={t("admin_shipment.col_tracking")}><Space direction="vertical" size={0}><span>{label.trackingNo || "—"}</span>{label.trackingUrl&&<Typography.Link href={label.trackingUrl} target="_blank" rel="noreferrer">{uiText("admin_ui.en_tracking_e81a1")}</Typography.Link>}{label.trackingNoWarning&&<Typography.Text type="warning">{label.trackingNoWarning}</Typography.Text>}</Space></Descriptions.Item>
+            <Descriptions.Item label={uiText("admin_ui.en_order_1d757")}>{label.orderId.slice(0, 8)}</Descriptions.Item>
             <Descriptions.Item label={t("admin_shipment.label_recipient")}>{label.shipTo?.name || "—"}</Descriptions.Item>
             <Descriptions.Item label={t("admin_shipment.label_phone")}>{label.shipTo?.phone || "—"}</Descriptions.Item>
             <Descriptions.Item label={t("admin_shipment.label_address")}>{label.shipTo?.address || "—"}</Descriptions.Item>
@@ -534,12 +536,12 @@ function LabelModal({ shipmentId, onClose }: { shipmentId: string | null; onClos
               {(label.items || []).map((it: any) => `${it.sku} ${it.size} ×${it.qty}`).join(", ") || "—"}
             </Descriptions.Item>
             {trackingEvents.length > 0 && (
-              <Descriptions.Item label="Tracking timeline">
+              <Descriptions.Item label={uiText("admin_ui.en_tracking_timeline_12175")}>
                 <Space direction="vertical" size={4}>
                   {trackingEvents.map((event: any) => (
                     <Typography.Text key={event.id} style={{ fontSize: 12 }}>
-                      {new Date(event.occurredAt).toLocaleString()} · {event.carrierStatus} · {event.description}
-                      {event.source === "mock" ? " (mock)" : ""}
+                      {new Date(event.occurredAt).toLocaleString(uiText.locale)} · {event.carrierStatus} · {event.description}
+                      {event.source === "mock" ? uiText("admin_ui.en_mock_c8138") : ""}
                     </Typography.Text>
                   ))}
                 </Space>

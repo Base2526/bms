@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 // ลูกหนี้การค้า / ขายเชื่อ (9.30)
 // -------------------------------------------------------------
 // สามส่วน: ภาพรวม+อายุหนี้ · บัญชีลูกค้า (วงเงิน/เทอม/ระงับ) · ใบที่ยังค้าง
@@ -116,15 +118,16 @@ type Invoice = {
 
 const baht = (n: number) =>
   n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const day = (iso: string) => new Date(iso).toLocaleDateString("th-TH");
+const day = (iso: string, uiText: UiTranslator = thaiUiText) => new Date(iso).toLocaleDateString(uiText.locale);
 
-const STATUS_LABEL: Record<Account["status"], { text: string; color: string }> = {
-  ACTIVE: { text: "ใช้งาน", color: "green" },
-  ON_HOLD: { text: "ระงับการขายเชื่อ", color: "orange" },
-  CLOSED: { text: "ปิดบัญชี", color: "default" },
-};
+const STATUS_LABEL = (uiText: UiTranslator = thaiUiText): Record<Account["status"], { text: string; color: string }> => ({
+  ACTIVE: { text: uiText("admin_ui.active_3a6f5"), color: "green" },
+  ON_HOLD: { text: uiText("admin_ui.credit_sales_suspended_62498"), color: "orange" },
+  CLOSED: { text: uiText("admin_ui.account_closed_89c87"), color: "default" },
+});
 
 export default function ReceivablesPage() {
+  const uiText = useUiText();
   const { can, loading: permLoading } = useBmsPermissions();
   const [search, setSearch] = useState("");
   const [withBalanceOnly, setWithBalanceOnly] = useState(false);
@@ -151,19 +154,19 @@ export default function ReceivablesPage() {
   };
 
   const [upsertAccount, upsertState] = useMutation(M_UPSERT, {
-    onCompleted: () => { message.success("บันทึกบัญชีเครดิตแล้ว"); setAccountModal(null); refetchAll(); },
+    onCompleted: () => { message.success(uiText("admin_ui.credit_account_saved_73272")); setAccountModal(null); refetchAll(); },
     onError: (e) => message.error(e.message),
   });
   const [recordReceipt, receiptState] = useMutation(M_RECEIPT, {
     onCompleted: (d) => {
-      message.success(`รับชำระแล้ว · ตัด ${d.bmsRecordArReceipt.allocations.length} ใบ`);
+      message.success(uiText("admin_ui.payment_recorded_allocated_to_bills_c04bd", { v0: d.bmsRecordArReceipt.allocations.length }));
       setReceiptFor(null);
       refetchAll();
     },
     onError: (e) => message.error(e.message),
   });
   const [writeOff] = useMutation(M_WRITEOFF, {
-    onCompleted: (d) => { message.success(`ตัดหนี้สูญ ฿${baht(d.bmsWriteOffArInvoice.amount)}`); refetchAll(); },
+    onCompleted: (d) => { message.success(uiText("admin_ui.bad_debt_written_off_830ef", { v0: baht(d.bmsWriteOffArInvoice.amount) })); refetchAll(); },
     onError: (e) => message.error(e.message),
   });
 
@@ -174,26 +177,26 @@ export default function ReceivablesPage() {
 
   const agingCells = useMemo(
     () => [
-      { label: "ยังไม่ถึงกำหนด", value: aging?.current ?? 0, color: undefined },
-      { label: "เกิน 1–30 วัน", value: aging?.d1to30 ?? 0, color: "#d48806" },
-      { label: "เกิน 31–60 วัน", value: aging?.d31to60 ?? 0, color: "#d46b08" },
-      { label: "เกิน 61–90 วัน", value: aging?.d61to90 ?? 0, color: "#cf1322" },
-      { label: "เกิน 90 วัน", value: aging?.d90plus ?? 0, color: "#a8071a" },
+      { label: uiText("admin_ui.not_yet_due_dc672"), value: aging?.current ?? 0, color: undefined },
+      { label: uiText("admin_ui.label_1_30_days_overdue_3550f"), value: aging?.d1to30 ?? 0, color: "#d48806" },
+      { label: uiText("admin_ui.label_31_60_days_overdue_56b0a"), value: aging?.d31to60 ?? 0, color: "#d46b08" },
+      { label: uiText("admin_ui.label_61_90_days_overdue_9dee4"), value: aging?.d61to90 ?? 0, color: "#cf1322" },
+      { label: uiText("admin_ui.over_90_days_overdue_60771"), value: aging?.d90plus ?? 0, color: "#a8071a" },
     ],
-    [aging]
+    [uiText, aging]
   );
 
   if (permLoading) return null;
   if (!can("ar.view")) {
-    return <Alert closable type="warning" showIcon message="ไม่มีสิทธิ์ดูข้อมูลลูกหนี้ (ar.view)" />;
+    return <Alert closable type="warning" showIcon message={uiText("admin_ui.you_do_not_have_permission_to_view_receivables_170fe")} />;
   }
 
   return (
     <div>
-      <AdminPageHeader title="ลูกหนี้การค้า (ขายเชื่อ)">
+      <AdminPageHeader title={uiText("admin_ui.accounts_receivable_credit_sales_3afdb")}>
         <Space wrap>
           <Input.Search
-            placeholder="ค้นชื่อ/เบอร์ลูกค้า"
+            placeholder={uiText("admin_ui.search_customer_name_phone_2218a")}
             allowClear
             style={{ width: 240 }}
             onSearch={setSearch}
@@ -203,12 +206,12 @@ export default function ReceivablesPage() {
             style={{ width: 180 }}
             onChange={(v) => setWithBalanceOnly(v === "debt")}
             options={[
-              { value: "debt", label: "เฉพาะที่มียอดค้าง" },
-              { value: "all", label: "ทุกบัญชี" },
+              { value: "debt", label: uiText("admin_ui.with_outstanding_balances_only_8beae") },
+              { value: "all", label: uiText("admin_ui.all_accounts_c5a20") },
             ]}
           />
           {can("ar.manage") && (
-            <Button type="primary" onClick={() => setAccountModal("new")}>เปิดบัญชีเครดิต</Button>
+            <Button type="primary" onClick={() => setAccountModal("new")}>{uiText("admin_ui.open_credit_account_876f4")}</Button>
           )}
         </Space>
       </AdminPageHeader>
@@ -218,8 +221,8 @@ export default function ReceivablesPage() {
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="ยอดลูกหนี้คงค้างเป็นสินทรัพย์ในงบดุล"
-        description="ส่งตัวเลขนี้ให้บัญชีก่อนปิดงบทุกงวด · การรับเงินสดต้องทำที่เครื่องขายที่เปิดกะอยู่ เพื่อให้เงินเข้าลิ้นชักและนับได้ตอนปิดกะ"
+        message={uiText("admin_ui.outstanding_receivables_are_assets_on_the_balance_sheet_ab55e")}
+        description={uiText("admin_ui.send_these_figures_to_accounting_before_each_period_4516d")}
       />
 
       {summary?.balanceMismatchCount > 0 && (
@@ -227,21 +230,21 @@ export default function ReceivablesPage() {
           type="error"
           showIcon
           style={{ marginBottom: 16 }}
-          message={`ยอดในบัญชีไม่ตรงกับสมุดรายวัน ${summary.balanceMismatchCount} บัญชี`}
-          description="ตัวเลขนี้ต้องเป็น 0 เสมอ — ไม่ 0 แปลว่ามีทางเขียนที่ไม่ได้คำนวณยอดใหม่จาก ledger อย่าปิดงบด้วยตัวเลขชุดนี้จนกว่าจะแก้"
+          message={uiText("admin_ui.account_balances_do_not_match_the_ledger_17bc3", { v0: summary.balanceMismatchCount })}
+          description={uiText("admin_ui.this_must_always_be_0_a_nonzero_count_2b6e4")}
         />
       )}
 
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col xs={12} md={6}>
           <Card size="small">
-            <Statistic title="ยอดค้างรวม" value={summary?.outstandingAmount ?? 0} precision={2} prefix="฿" />
+            <Statistic title={uiText("admin_ui.total_outstanding_6aa3a")} value={summary?.outstandingAmount ?? 0} precision={2} prefix="฿" />
           </Card>
         </Col>
         <Col xs={12} md={6}>
           <Card size="small">
             <Statistic
-              title="เลยกำหนดชำระ"
+              title={uiText("admin_ui.overdue_e8c27")}
               value={summary?.overdueAmount ?? 0}
               precision={2}
               prefix="฿"
@@ -251,17 +254,17 @@ export default function ReceivablesPage() {
         </Col>
         <Col xs={12} md={6}>
           <Card size="small">
-            <Statistic title="ลูกค้าที่มียอดค้าง" value={summary?.accountsWithBalance ?? 0} suffix="ราย" />
+            <Statistic title={uiText("admin_ui.customers_with_balances_57653")} value={summary?.accountsWithBalance ?? 0} suffix={uiText("admin_ui.people_fe594")} />
           </Card>
         </Col>
         <Col xs={12} md={6}>
           <Card size="small">
-            <Statistic title="ใบที่ยังค้าง" value={summary?.openInvoiceCount ?? 0} suffix="ใบ" />
+            <Statistic title={uiText("admin_ui.outstanding_bills_dd4a1")} value={summary?.openInvoiceCount ?? 0} suffix={uiText("admin_ui.coupon_s_a8880")} />
           </Card>
         </Col>
       </Row>
 
-      <Card size="small" title="อายุหนี้" style={{ marginBottom: 16 }}>
+      <Card size="small" title={uiText("admin_ui.receivables_aging_c69a8")} style={{ marginBottom: 16 }}>
         <Row gutter={[12, 12]}>
           {agingCells.map((cell) => (
             <Col xs={12} md={4} key={cell.label}>
@@ -275,12 +278,12 @@ export default function ReceivablesPage() {
             </Col>
           ))}
           <Col xs={12} md={4}>
-            <Statistic title="รวม" value={aging?.total ?? 0} precision={2} prefix="฿" valueStyle={{ fontSize: 18 }} />
+            <Statistic title={uiText("admin_ui.amount_7b26a")} value={aging?.total ?? 0} precision={2} prefix="฿" valueStyle={{ fontSize: 18 }} />
           </Col>
         </Row>
       </Card>
 
-      <Card size="small" title="บัญชีเครดิตของลูกค้า" style={{ marginBottom: 16 }}>
+      <Card size="small" title={uiText("admin_ui.customer_credit_accounts_2ee78")} style={{ marginBottom: 16 }}>
         <Table<Account>
           rowKey="id"
           size="small"
@@ -289,62 +292,62 @@ export default function ReceivablesPage() {
           pagination={{ pageSize: 20, hideOnSinglePage: true }}
           onRow={(row) => ({ onClick: () => setSelected(row) })}
           rowClassName={(row) => (row.id === selected?.id ? "ant-table-row-selected" : "")}
-          locale={{ emptyText: <Empty description="ยังไม่มีบัญชีเครดิต" /> }}
+          locale={{ emptyText: <Empty description={uiText("admin_ui.no_credit_accounts_yet_ecbfd")} /> }}
           columns={[
             {
-              title: "ลูกค้า",
+              title: uiText("admin_ui.customer_3011a"),
               dataIndex: "customerName",
               render: (_v, row) => (
                 <Space direction="vertical" size={0}>
-                  <Text strong>{row.customerName ?? "(ไม่มีชื่อ)"}</Text>
+                  <Text strong>{row.customerName ?? uiText("admin_ui.unnamed_071dd")}</Text>
                   <Text type="secondary" style={{ fontSize: 12 }}>{row.customerPhone ?? "—"}</Text>
                 </Space>
               ),
             },
             {
-              title: "สถานะ",
+              title: uiText("admin_ui.status_2e8c4"),
               dataIndex: "status",
               width: 150,
-              render: (v: Account["status"]) => <Tag color={STATUS_LABEL[v].color}>{STATUS_LABEL[v].text}</Tag>,
+              render: (v: Account["status"]) => <Tag color={STATUS_LABEL(uiText)[v].color}>{STATUS_LABEL(uiText)[v].text}</Tag>,
             },
             {
-              title: "วงเงิน",
+              title: uiText("admin_ui.credit_limit_28307"),
               dataIndex: "creditLimit",
               align: "right",
               render: (v: number) => `฿${baht(v)}`,
             },
             {
-              title: "ค้างอยู่",
+              title: uiText("admin_ui.pending_1412c"),
               dataIndex: "balance",
               align: "right",
               render: (v: number) => (
                 // ติดลบ = ร้านค้างลูกค้า (คืนของหลังจ่ายครบ) ต้องอ่านออกทันที
                 <Text type={v > 0 ? undefined : v < 0 ? "success" : "secondary"} strong={v !== 0}>
-                  {v < 0 ? `ร้านค้าง ฿${baht(-v)}` : `฿${baht(v)}`}
+                  {v < 0 ? uiText("admin_ui.store_owes_ec910", { v0: baht(-v) }) : `฿${baht(v)}`}
                 </Text>
               ),
             },
             {
-              title: "วงเงินเหลือ",
+              title: uiText("admin_ui.available_credit_a1227"),
               dataIndex: "creditLineAvailable",
               align: "right",
               render: (v: number) => `฿${baht(v)}`,
             },
             {
-              title: "เครดิตคืนสินค้า",
+              title: uiText("admin_ui.return_credit_31226"),
               dataIndex: "creditBalance",
               align: "right",
               render: (v: number) =>
                 v > 0 ? <Text type="success" strong>฿{baht(v)}</Text> : <Text type="secondary">—</Text>,
             },
             {
-              title: "เลยกำหนด",
+              title: uiText("admin_ui.overdue_f7099"),
               dataIndex: "overdueAmount",
               align: "right",
               render: (v: number) =>
                 v > 0 ? <Text type="danger" strong>฿{baht(v)}</Text> : <Text type="secondary">—</Text>,
             },
-            { title: "เทอม", dataIndex: "termsDays", align: "right", render: (v: number) => `${v} วัน` },
+            { title: uiText("admin_ui.terms_bdab1"), dataIndex: "termsDays", align: "right", render: (v: number) => uiText("admin_ui.days_bc9c4", { v0: v }) },
             {
               title: "",
               width: 200,
@@ -352,11 +355,10 @@ export default function ReceivablesPage() {
                 <Space size={4} onClick={(e) => e.stopPropagation()}>
                   {can("ar.collect") && row.balance > 0 && (
                     <Button size="small" type="primary" ghost onClick={() => setReceiptFor(row)}>
-                      รับชำระ
-                    </Button>
+                      {uiText("admin_ui.receive_payment_c383e")}</Button>
                   )}
                   {can("ar.manage") && (
-                    <Button size="small" onClick={() => setAccountModal(row)}>แก้ไข</Button>
+                    <Button size="small" onClick={() => setAccountModal(row)}>{uiText("admin_ui.edit_e7eca")}</Button>
                   )}
                 </Space>
               ),
@@ -367,7 +369,7 @@ export default function ReceivablesPage() {
 
       <Card
         size="small"
-        title={selected ? `ใบที่ยังค้าง — ${selected.customerName ?? ""}` : "ใบที่ยังค้าง (ทุกลูกค้า)"}
+        title={selected ? uiText("admin_ui.outstanding_bills_09800", { v0: selected.customerName ?? "" }) : uiText("admin_ui.outstanding_bills_all_customers_a25a5")}
         extra={
           <Space>
             <Select
@@ -376,11 +378,11 @@ export default function ReceivablesPage() {
               style={{ width: 160 }}
               onChange={(v) => setOverdueOnly(v === "overdue")}
               options={[
-                { value: "all", label: "ทั้งหมด" },
-                { value: "overdue", label: "เฉพาะเลยกำหนด" },
+                { value: "all", label: uiText("admin_ui.all_56eff") },
+                { value: "overdue", label: uiText("admin_ui.overdue_only_25dc9") },
               ]}
             />
-            {selected && <Button size="small" onClick={() => setSelected(null)}>ดูทุกลูกค้า</Button>}
+            {selected && <Button size="small" onClick={() => setSelected(null)}>{uiText("admin_ui.view_all_customers_19a8b")}</Button>}
           </Space>
         }
       >
@@ -390,48 +392,48 @@ export default function ReceivablesPage() {
           loading={invoices.loading}
           dataSource={invoiceRows}
           pagination={{ pageSize: 20, hideOnSinglePage: true }}
-          locale={{ emptyText: <Empty description="ไม่มีใบที่ค้างอยู่" /> }}
+          locale={{ emptyText: <Empty description={uiText("admin_ui.no_outstanding_bills_0f5e1")} /> }}
           columns={[
             {
-              title: "เอกสาร",
+              title: uiText("admin_ui.document_b21e6"),
               dataIndex: "docNo",
               render: (v: string | null, row) => (
                 <Space direction="vertical" size={0}>
-                  <Text strong>{v ?? "(ไม่มีเลขใบกำกับ)"}</Text>
-                  <Text type="secondary" style={{ fontSize: 12 }}>{day(row.issuedAt)}</Text>
+                  <Text strong>{v ?? uiText("admin_ui.no_tax_invoice_number_9e39d")}</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{day(row.issuedAt, uiText)}</Text>
                 </Space>
               ),
             },
-            ...(selected ? [] : [{ title: "ลูกค้า", dataIndex: "customerName" as const }]),
-            { title: "ยอดขายเชื่อ", dataIndex: "amount", align: "right" as const, render: (v: number) => `฿${baht(v)}` },
+            ...(selected ? [] : [{ title: uiText("admin_ui.customer_3011a"), dataIndex: "customerName" as const }]),
+            { title: uiText("admin_ui.credit_sale_amount_d2f5b"), dataIndex: "amount", align: "right" as const, render: (v: number) => `฿${baht(v)}` },
             {
-              title: "จ่ายแล้ว",
+              title: uiText("admin_ui.paid_c9fbb"),
               dataIndex: "settledAmount",
               align: "right" as const,
               render: (v: number) => (v > 0 ? `฿${baht(v)}` : "—"),
             },
             {
-              title: "คืน/ลดหนี้",
+              title: uiText("admin_ui.returns_credits_37a2b"),
               dataIndex: "creditedAmount",
               align: "right" as const,
               render: (v: number) => (v > 0 ? `฿${baht(v)}` : "—"),
             },
             {
-              title: "คงเหลือ",
+              title: uiText("admin_ui.available_dd579"),
               dataIndex: "outstanding",
               align: "right" as const,
               render: (v: number) => <Text strong>฿{baht(v)}</Text>,
             },
             {
-              title: "ครบกำหนด",
+              title: uiText("admin_ui.due_date_105c3"),
               dataIndex: "dueAt",
               render: (v: string, row) =>
                 row.overdue ? (
-                  <Tooltip title={`เลยกำหนด ${row.daysPastDue} วัน`}>
-                    <Tag color="red">{day(v)} · เกิน {row.daysPastDue} วัน</Tag>
+                  <Tooltip title={uiText("admin_ui.days_overdue_e9867", { v0: row.daysPastDue })}>
+                    <Tag color="red">{day(v, uiText)}  {uiText("admin_ui.overdue_61a3c")} {row.daysPastDue}  {uiText("admin_ui.day_3a8f3")}</Tag>
                   </Tooltip>
                 ) : (
-                  <Text type="secondary">{day(v)}</Text>
+                  <Text type="secondary">{day(v, uiText)}</Text>
                 ),
             },
             {
@@ -444,33 +446,31 @@ export default function ReceivablesPage() {
                     danger
                     onClick={() =>
                       Modal.confirm({
-                        title: "ตัดหนี้สูญ",
+                        title: uiText("admin_ui.write_off_bad_debt_ad7e0"),
                         content: (
                           <div>
-                            <p>ตัดยอดคงเหลือ ฿{baht(row.outstanding)} ออกจากลูกหนี้</p>
+                            <p>{uiText("admin_ui.write_off_the_remaining_80967")}{baht(row.outstanding)}  {uiText("admin_ui.from_receivables_272f7")}</p>
                             <p style={{ color: "#cf1322" }}>
-                              เป็นการลบสินทรัพย์ของร้านทิ้ง · ใบยังอยู่ในระบบพร้อมชื่อคนที่ตัดและเหตุผล
-                            </p>
-                            <Input.TextArea id="ar-writeoff-reason" rows={2} placeholder="เหตุผล (บังคับ)" />
+                              {uiText("admin_ui.this_removes_an_asset_from_the_store_the_a93d9")}</p>
+                            <Input.TextArea id="ar-writeoff-reason" rows={2} placeholder={uiText("admin_ui.reason_required_c8d06")} />
                           </div>
                         ),
-                        okText: "ตัดหนี้สูญ",
+                        okText: uiText("admin_ui.write_off_bad_debt_ad7e0"),
                         okButtonProps: { danger: true },
-                        cancelText: "ยกเลิก",
+                        cancelText: uiText("admin_ui.cancelled_fba6e"),
                         onOk: async () => {
                           const el = document.getElementById("ar-writeoff-reason") as HTMLTextAreaElement | null;
                           const reason = (el?.value ?? "").trim();
                           if (!reason) {
-                            message.error("ต้องระบุเหตุผล");
-                            return Promise.reject(new Error("no reason"));
+                            message.error(uiText("admin_ui.a_reason_is_required_61dc0"));
+                            return Promise.reject(new Error(uiText("admin_ui.en_no_reason_611b1")));
                           }
                           await writeOff({ variables: { invoiceId: row.id, reason } });
                         },
                       })
                     }
                   >
-                    ตัดหนี้สูญ
-                  </Button>
+                    {uiText("admin_ui.write_off_bad_debt_ad7e0")}</Button>
                 ) : null,
             },
           ]}
@@ -510,6 +510,7 @@ function AccountModal({
     customerId: string; creditLimit: number; termsDays: number; status: string; note: string | null;
   }) => void;
 }) {
+  const uiText = useUiText();
   const [form] = Form.useForm();
   const [customerSearch, setCustomerSearch] = useState("");
   const customers = useQuery(Q_CUSTOMERS, {
@@ -520,9 +521,9 @@ function AccountModal({
   return (
     <Modal
       open={open}
-      title={account ? `บัญชีเครดิต — ${account.customerName ?? ""}` : "เปิดบัญชีเครดิต"}
-      okText="บันทึก"
-      cancelText="ยกเลิก"
+      title={account ? uiText("admin_ui.credit_account_5e2c1", { v0: account.customerName ?? "" }) : uiText("admin_ui.open_credit_account_876f4")}
+      okText={uiText("admin_ui.save_f658a")}
+      cancelText={uiText("admin_ui.cancelled_fba6e")}
       confirmLoading={saving}
       destroyOnClose
       onCancel={onCancel}
@@ -552,49 +553,49 @@ function AccountModal({
         {!account && (
           <Form.Item
             name="customerId"
-            label="ลูกค้า"
-            rules={[{ required: true, message: "เลือกลูกค้า" }]}
-            extra="ขายเชื่อต้องผูกลูกค้าเสมอ — หนี้ที่ไม่รู้ว่าใครเป็นหนี้ไม่ใช่ลูกหนี้"
+            label={uiText("admin_ui.customer_3011a")}
+            rules={[{ required: true, message: uiText("admin_ui.select_customer_1caf2") }]}
+            extra={uiText("admin_ui.credit_sales_must_always_be_linked_to_a_87013")}
           >
             <Select
               showSearch
               filterOption={false}
-              placeholder="ค้นชื่อหรือเบอร์"
+              placeholder={uiText("admin_ui.search_name_or_phone_fe41a")}
               onSearch={setCustomerSearch}
               loading={customers.loading}
               options={(customers.data?.bmsCustomers ?? []).map((c: any) => ({
                 value: c.id,
-                label: `${c.name ?? "(ไม่มีชื่อ)"} · ${c.phone ?? "—"}`,
+                label: `${c.name ?? uiText("admin_ui.unnamed_071dd")} · ${c.phone ?? "—"}`,
               }))}
             />
           </Form.Item>
         )}
         <Form.Item
           name="creditLimit"
-          label="วงเงินเครดิต (บาท)"
-          rules={[{ required: true, message: "ระบุวงเงิน" }]}
-          extra="0 = เปิดบัญชีไว้แต่ยังขายเชื่อไม่ได้"
+          label={uiText("admin_ui.credit_limit_baht_626be")}
+          rules={[{ required: true, message: uiText("admin_ui.enter_a_credit_limit_b3331") }]}
+          extra={uiText("admin_ui.label_0_account_open_but_credit_sales_unavailable_e6e7b")}
         >
           <InputNumber min={0} step={1000} style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
           name="termsDays"
-          label="เครดิตเทอม (วัน)"
-          rules={[{ required: true, message: "ระบุเครดิตเทอม" }]}
-          extra="ใช้คำนวณวันครบกำหนดของบิลใหม่ · บิลที่ออกไปแล้วไม่เปลี่ยนตาม"
+          label={uiText("admin_ui.payment_terms_days_da3cf")}
+          rules={[{ required: true, message: uiText("admin_ui.enter_payment_terms_0b672") }]}
+          extra={uiText("admin_ui.used_to_calculate_due_dates_for_new_bills_16887")}
         >
           <InputNumber min={0} max={365} style={{ width: "100%" }} />
         </Form.Item>
-        <Form.Item name="status" label="สถานะ">
+        <Form.Item name="status" label={uiText("admin_ui.status_2e8c4")}>
           <Select
             options={[
-              { value: "ACTIVE", label: "ใช้งาน — ขายเชื่อได้" },
-              { value: "ON_HOLD", label: "ระงับ — ขายเชื่อไม่ได้ แต่ยังรับชำระได้" },
-              { value: "CLOSED", label: "ปิดบัญชี — ต้องไม่มียอดค้าง" },
+              { value: "ACTIVE", label: uiText("admin_ui.active_credit_sales_allowed_17ef1") },
+              { value: "ON_HOLD", label: uiText("admin_ui.suspended_no_credit_sales_payments_still_accepted_67352") },
+              { value: "CLOSED", label: uiText("admin_ui.closed_must_have_no_outstanding_balance_c205e") },
             ]}
           />
         </Form.Item>
-        <Form.Item name="note" label="หมายเหตุ">
+        <Form.Item name="note" label={uiText("admin_ui.note_ddbdb")}>
           <Input.TextArea rows={2} maxLength={500} />
         </Form.Item>
       </Form>
@@ -616,14 +617,15 @@ function ReceiptModal({
     accountId: string; amount: number; method: string; reference: string | null; idempotencyKey: string;
   }) => void;
 }) {
+  const uiText = useUiText();
   const [form] = Form.useForm();
 
   return (
     <Modal
       open={account !== null}
-      title={`รับชำระหนี้ — ${account?.customerName ?? ""}`}
-      okText="บันทึกการรับชำระ"
-      cancelText="ยกเลิก"
+      title={uiText("admin_ui.receive_debt_payment_a70eb", { v0: account?.customerName ?? "" })}
+      okText={uiText("admin_ui.record_payment_131f0")}
+      cancelText={uiText("admin_ui.cancelled_fba6e")}
       confirmLoading={saving}
       destroyOnClose
       onCancel={onCancel}
@@ -633,8 +635,8 @@ function ReceiptModal({
         type="warning"
         showIcon
         style={{ marginBottom: 12 }}
-        message="รับเงินสดที่หน้านี้ไม่ได้"
-        description="เงินสดต้องรับที่เครื่องขายที่เปิดกะอยู่ เพื่อให้เงินเข้าลิ้นชักและนับเจอตอนปิดกะ"
+        message={uiText("admin_ui.cash_cannot_be_received_on_this_page_542b1")}
+        description={uiText("admin_ui.receive_cash_at_a_register_with_an_open_b4efd")}
       />
       <Form
         form={form}
@@ -654,28 +656,27 @@ function ReceiptModal({
       >
         <Form.Item
           name="amount"
-          label="ยอดรับชำระ (บาท)"
-          rules={[{ required: true, message: "ระบุยอด" }]}
-          extra={`ค้างอยู่ ฿${baht(account?.balance ?? 0)} · รับเกินยอดค้างไม่ได้`}
+          label={uiText("admin_ui.payment_amount_baht_56243")}
+          rules={[{ required: true, message: uiText("admin_ui.enter_an_amount_c6678") }]}
+          extra={uiText("admin_ui.outstanding_payment_cannot_exceed_the_balance_06c13", { v0: baht(account?.balance ?? 0) })}
         >
           <InputNumber min={0.01} step={100} style={{ width: "100%" }} />
         </Form.Item>
-        <Form.Item name="method" label="วิธีรับชำระ">
+        <Form.Item name="method" label={uiText("admin_ui.payment_method_1dd41")}>
           <Select
             options={[
-              { value: "BANK_TRANSFER", label: "โอนเงิน" },
-              { value: "QR", label: "QR / พร้อมเพย์" },
-              { value: "CARD", label: "บัตร" },
+              { value: "BANK_TRANSFER", label: uiText("admin_ui.bank_transfer_acc4a") },
+              { value: "QR", label: uiText("admin_ui.qr_promptpay_4d56f") },
+              { value: "CARD", label: uiText("admin_ui.card_64593") },
               { value: "WALLET", label: "e-Wallet" },
             ]}
           />
         </Form.Item>
-        <Form.Item name="reference" label="เลขอ้างอิง" extra="เลขที่สลิป / เลขอนุมัติ">
+        <Form.Item name="reference" label={uiText("admin_ui.reference_number_4d443")} extra={uiText("admin_ui.slip_approval_reference_d353d")}>
           <Input maxLength={120} />
         </Form.Item>
         <Text type="secondary" style={{ fontSize: 12 }}>
-          เงินที่รับจะตัดใบที่ครบกำหนดก่อนตามลำดับ (ใบเก่าสุดก่อน)
-        </Text>
+          {uiText("admin_ui.payments_are_allocated_to_bills_in_due_date_b210f")}</Text>
       </Form>
     </Modal>
   );

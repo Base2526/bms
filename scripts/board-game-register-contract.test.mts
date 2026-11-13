@@ -259,7 +259,7 @@ test("an open table is a scannable workspace instead of one long form", () => {
   );
   assert.match(
     panel,
-    /role="tablist" aria-label="งานของโต๊ะนี้"/,
+    /role="tablist" aria-label=\{posText\("งานของโต๊ะนี้"\)\}/,
     "the detail pane must split overview, tab items, and games instead of stacking every form",
   );
   for (const value of ["overview", "tab", "games"]) {
@@ -325,9 +325,9 @@ test("merged tables keep every party's games visible without letting a stale ses
   );
   assert.match(panel, /seatingLoans\.filter\(\(\{ loan \}\) => !returnLoanId \|\| loan\.id === returnLoanId\)\.map\(/,
     "the games tab renders all merged seating loans unless the operator selected a return loan");
-  assert.match(panel, /`เดิม \$\{detail\.originTableCode\}`/,
+  assert.match(panel, /posText\("เดิม \{v0\}", \{ v0: detail\.originTableCode \}\)/,
     "party selectors must identify the original table");
-  assert.match(panel, /` · \$\{people\} คน · \$\{games\} เกม`/,
+  assert.match(panel, /posText\(" · \{v0\} คน · \{v1\} เกม", \{ v0: people, v1: games \}\)/,
     "party selectors must expose each party's game count");
   assert.match(
     cafe,
@@ -614,7 +614,7 @@ test("the tab field the placeholder promises you can scan into actually submits"
   );
   // ⚠️ ต้องเล็งที่ **ช่องที่ placeholder สัญญาว่ายิงบาร์โค้ดได้** ไม่ใช่ "มี onKeyDown สักที่
   // ในไฟล์" — ช่องจำนวนก็มี handler เหมือนกัน เทสที่นับรวมจึงเขียวทั้งที่ช่องบาร์โค้ดเงียบไปแล้ว
-  const scanAt = panel.indexOf('placeholder="ยิงบาร์โค้ดหรือพิมพ์รหัส"');
+  const scanAt = panel.indexOf('placeholder={posText("ยิงบาร์โค้ดหรือพิมพ์รหัส")}');
   assert.ok(scanAt > 0, "the tab must still invite the operator to scan into it");
   const scanTag = jsxTagAt(panel, panel.lastIndexOf("<input", scanAt));
   assert.ok(
@@ -684,7 +684,7 @@ test("clipboard helper falls back after writeText rejects instead of leaking the
 test("guest and desktop explain the complete service-call lifecycle", () => {
   assert.match(
     desktopRenderer,
-    /call\.status === "PENDING" \? "รับเรื่อง" : "เสร็จสิ้น"/,
+    /call\.status === "PENDING" \? posText\("รับเรื่อง"\) : posText\("เสร็จสิ้น"\)/,
     "acknowledged calls need an explicit staff completion step",
   );
   assert.match(desktopRenderer, /กำลังดำเนินการ/);

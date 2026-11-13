@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useLazyQuery, useQuery, useMutation } from "@apollo/client";
 import { Alert, Button, Divider, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Typography, Switch, message } from "antd";
 import { ReadOutlined } from "@ant-design/icons";
@@ -130,6 +132,7 @@ const REGULATORY_EVIDENCE_OPTIONS: readonly Opt[] = [
 ];
 
 export default function PharmacyProtocolsPage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const [form] = Form.useForm();
@@ -322,10 +325,10 @@ export default function PharmacyProtocolsPage() {
 
   const rows = protocolData?.bmsPharmacyProtocols || [];
   const columns = [
-    { title: "Protocol", dataIndex: "name", key: "name" },
-    { title: "Key", dataIndex: "protocolKey", key: "protocolKey" },
-    { title: "Version", dataIndex: "version", key: "version" },
-    { title: "Symptom group", dataIndex: "supportedSymptomGroup", key: "supportedSymptomGroup" },
+    { title: uiText("admin_ui.en_protocol_1ed77"), dataIndex: "name", key: "name" },
+    { title: uiText("admin_ui.en_key_c67dd"), dataIndex: "protocolKey", key: "protocolKey" },
+    { title: uiText("admin_ui.en_version_2da60"), dataIndex: "version", key: "version" },
+    { title: uiText("admin_ui.en_symptom_group_3f7ea"), dataIndex: "supportedSymptomGroup", key: "supportedSymptomGroup" },
     {
       title: t("admin_pharmacy_protocols.col_clinical_cert"),
       dataIndex: "clinicallyApproved",
@@ -333,7 +336,7 @@ export default function PharmacyProtocolsPage() {
       render: (v: boolean) => (v ? <Tag color="green">{t("admin_pharmacy_protocols.tag_certified")}</Tag> : <Tag color="red">{t("admin_pharmacy_protocols.tag_draft_uncertified")}</Tag>),
     },
     {
-      title: "Platform allowlist",
+      title: uiText("admin_ui.en_platform_allowlist_bb933"),
       dataIndex: "platformAllowed",
       key: "platformAllowed",
       render: (v: boolean) => v ? <Tag color="green">{t("admin_pharmacy_protocols.tag_allowed")}</Tag> : <Tag color="orange">{t("admin_pharmacy_protocols.tag_not_in_env")}</Tag>,
@@ -358,7 +361,7 @@ export default function PharmacyProtocolsPage() {
         <Space wrap>
           {row.status === "DRAFT" && <Button size="small" disabled={!canManage} onClick={() => void openEditor(row)}>{t("admin_pharmacy_protocols.btn_edit")}</Button>}
           {row.status === "DRAFT" && <Popconfirm title={t("admin_pharmacy_protocols.confirm_send_protocol_review")} onConfirm={() => transition(row)}><Button size="small" disabled={!canManage}>{t("admin_pharmacy_protocols.btn_send_review")}</Button></Popconfirm>}
-          {row.status === "PENDING_REVIEW" && <Popconfirm title={t("admin_pharmacy_protocols.confirm_clinical_reviewed")} onConfirm={() => transition(row, "APPROVE")}><Button size="small" type="primary" disabled={!canManage}>Clinical approve</Button></Popconfirm>}
+          {row.status === "PENDING_REVIEW" && <Popconfirm title={t("admin_pharmacy_protocols.confirm_clinical_reviewed")} onConfirm={() => transition(row, "APPROVE")}><Button size="small" type="primary" disabled={!canManage}>{uiText("admin_ui.en_clinical_approve_4140a")}</Button></Popconfirm>}
           {row.status === "PENDING_REVIEW" && <Button size="small" danger disabled={!canManage} onClick={() => transition(row, "REJECT")}>{t("admin_pharmacy_protocols.btn_send_back_draft")}</Button>}
         </Space>
       ),
@@ -394,8 +397,8 @@ export default function PharmacyProtocolsPage() {
     { title: t("admin_pharmacy_protocols.col_type"), dataIndex: "productType", key: "productType" },
     { title: t("admin_pharmacy_protocols.col_framework"), dataIndex: "regulatoryFramework", key: "regulatoryFramework" },
     { title: t("admin_pharmacy_protocols.col_master_suggestion"), key: "masterSuggestion", width: 260, render: (_: unknown, row: any) => row.suggestedMasterDrug ? <Space direction="vertical" size={2}><span>{row.suggestedMasterDrug.genericName} · {row.suggestedMasterDrug.strength}</span><Tag color={row.suggestedMasterDrug.reviewedByPharmacist ? "green" : "orange"}>{row.suggestedMasterDrug.reviewedByPharmacist ? t("admin_pharmacy_protocols.master_reviewed") : t("admin_pharmacy_protocols.master_not_reviewed")}</Tag></Space> : <Typography.Text type="secondary">{t("admin_pharmacy_protocols.no_master_suggestion")}</Typography.Text> },
-    { title: "Regulatory class", dataIndex: "regulatoryClass", key: "regulatoryClass" },
-    { title: "Sale policy", dataIndex: "salePolicy", key: "salePolicy", render: (value: string) => <Tag color={value === "DIRECT_SALE" ? "green" : value === "ONLINE_SALE_PROHIBITED" ? "red" : "orange"}>{value}</Tag> },
+    { title: uiText("admin_ui.en_regulatory_class_38989"), dataIndex: "regulatoryClass", key: "regulatoryClass" },
+    { title: uiText("admin_ui.en_sale_policy_651a0"), dataIndex: "salePolicy", key: "salePolicy", render: (value: string) => <Tag color={value === "DIRECT_SALE" ? "green" : value === "ONLINE_SALE_PROHIBITED" ? "red" : "orange"}>{value}</Tag> },
     { title: t("admin_pharmacy_protocols.col_max_qty"), dataIndex: "maxQuantity", key: "maxQuantity", render: (value: number | null) => value ?? "—" },
     { title: t("admin_pharmacy_protocols.col_status"), dataIndex: "status", key: "status", render: (value: string) => <Tag color={value === "APPROVED" ? "green" : value === "PENDING_REVIEW" ? "blue" : "default"}>{value}</Tag> },
     {
@@ -405,8 +408,8 @@ export default function PharmacyProtocolsPage() {
         <Space wrap>
           <Button size="small" disabled={!canApplySuggestion || masterDrugRows.length === 0 || row.status === "PENDING_REVIEW"} onClick={() => openSuggestion(row)}>{t("admin_pharmacy_protocols.use_master_suggestion")}</Button>
           {row.status !== "PENDING_REVIEW" && <Button size="small" disabled={!canManage} onClick={() => openPolicyEditor(row)}>{row.status === "MISSING" ? t("admin_pharmacy_protocols.btn_configure") : t("admin_pharmacy_protocols.btn_edit")}</Button>}
-          {row.status === "DRAFT" && <Popconfirm title={t("admin_pharmacy_protocols.confirm_send_policy_review")} onConfirm={() => transitionProductPolicy(row)}><Button size="small" disabled={!canManage}>ส่งตรวจ</Button></Popconfirm>}
-          {row.status === "PENDING_REVIEW" && <Popconfirm title={t("admin_pharmacy_protocols.confirm_policy_reviewed")} onConfirm={() => transitionProductPolicy(row, "APPROVE")}><Button size="small" type="primary" disabled={!canManage}>เภสัชกรอนุมัติ</Button></Popconfirm>}
+          {row.status === "DRAFT" && <Popconfirm title={t("admin_pharmacy_protocols.confirm_send_policy_review")} onConfirm={() => transitionProductPolicy(row)}><Button size="small" disabled={!canManage}>{uiText("admin_ui.submit_2ab83")}</Button></Popconfirm>}
+          {row.status === "PENDING_REVIEW" && <Popconfirm title={t("admin_pharmacy_protocols.confirm_policy_reviewed")} onConfirm={() => transitionProductPolicy(row, "APPROVE")}><Button size="small" type="primary" disabled={!canManage}>{uiText("admin_ui.pharmacist_approval_c8134")}</Button></Popconfirm>}
           {row.status === "PENDING_REVIEW" && <Button size="small" danger disabled={!canManage} onClick={() => transitionProductPolicy(row, "REJECT")}>{t("admin_pharmacy_protocols.btn_send_back_draft")}</Button>}
         </Space>
       ),
@@ -415,8 +418,8 @@ export default function PharmacyProtocolsPage() {
 
   return (
     <div>
-      <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>AI Pharmacy Intake — Protocols</Typography.Title>}>
-        <Link href="/admin/pharmacy-manual"><Button icon={<ReadOutlined />}>Pharmacist manual</Button></Link>
+      <AdminPageHeader title={<Typography.Title level={4} style={{ margin: 0 }}>{uiText("admin_ui.en_ai_pharmacy_intake_protocols_0a3a6")}</Typography.Title>}>
+        <Link href="/admin/pharmacy-manual"><Button icon={<ReadOutlined />}>{uiText("admin_ui.en_pharmacist_manual_d684d")}</Button></Link>
       </AdminPageHeader>
       <Alert closable
         type="warning"
@@ -437,7 +440,7 @@ export default function PharmacyProtocolsPage() {
       )}
       <Table rowKey="id" loading={protocolsLoading} dataSource={rows} columns={columns} pagination={false} scroll={{ x: "max-content" }} />
       <Divider />
-      <Typography.Title level={4}>Pharmacy Product Policy</Typography.Title>
+      <Typography.Title level={4}>{uiText("admin_ui.en_pharmacy_product_policy_b20b8")}</Typography.Title>
       <Alert closable
         type="info"
         showIcon
@@ -504,7 +507,7 @@ export default function PharmacyProtocolsPage() {
           total: policyTotal,
           showSizeChanger: true,
           pageSizeOptions: [10, 20, 50, 100],
-          showTotal: (total) => `Total ${total} SKU`,
+          showTotal: (total) => uiText("admin_ui.en_total_sku_f411b", { v0: total }),
           onChange: (page, pageSize) => {
             setPolicyPage(page);
             setPolicyPageSize(pageSize || 20);
@@ -533,7 +536,7 @@ export default function PharmacyProtocolsPage() {
         />
         {selectedMasterDrug && <Space direction="vertical" size={4}>
           <Typography.Text>{selectedMasterDrug.dosageForm} · {selectedMasterDrug.regulatoryClass}</Typography.Text>
-          <Typography.Text>{selectedMasterDrug.suggestedSalePolicy}{selectedMasterDrug.suggestedQuantityLimit ? ` · max ${selectedMasterDrug.suggestedQuantityLimit}` : ""}</Typography.Text>
+          <Typography.Text>{selectedMasterDrug.suggestedSalePolicy}{selectedMasterDrug.suggestedQuantityLimit ? uiText("admin_ui.en_max_fdd5b", { v0: selectedMasterDrug.suggestedQuantityLimit }) : ""}</Typography.Text>
           <Tag color={selectedMasterDrug.reviewedByPharmacist ? "green" : "orange"}>{selectedMasterDrug.reviewedByPharmacist ? t("admin_pharmacy_protocols.master_reviewed") : t("admin_pharmacy_protocols.master_not_reviewed")}</Tag>
           {selectedMasterDrug.reviewedByPharmacistName && <Typography.Text type="secondary">{selectedMasterDrug.reviewedByPharmacistName}</Typography.Text>}
         </Space>}
@@ -548,17 +551,17 @@ export default function PharmacyProtocolsPage() {
         />
         <Form form={form} layout="vertical">
           <Space align="start" wrap>
-            <Form.Item name="protocolKey" label="Protocol key" rules={[{ required: true }]}><Input disabled={Boolean(editing)} placeholder="fever" /></Form.Item>
-            <Form.Item name="version" label="Version" rules={[{ required: true }]}><InputNumber min={1} disabled={Boolean(editing)} /></Form.Item>
+            <Form.Item name="protocolKey" label={uiText("admin_ui.en_protocol_key_a2805")} rules={[{ required: true }]}><Input disabled={Boolean(editing)} placeholder="fever" /></Form.Item>
+            <Form.Item name="version" label={uiText("admin_ui.en_version_2da60")} rules={[{ required: true }]}><InputNumber min={1} disabled={Boolean(editing)} /></Form.Item>
             <Form.Item name="displayLabel" label={t("admin_pharmacy_protocols.form_display_label")} rules={[{ required: true }]}><Input placeholder="ไข้" /></Form.Item>{/* placeholder เป็นตัวอย่าง "รูปแบบข้อมูล" ที่ต้องกรอกเป็นไทย ไม่ใช่ UI copy — trigger term/label ถูก match กับข้อความไทยที่คนไข้พิมพ์ ถ้าแปลเป็นอังกฤษแอดมินจะกรอกคำอังกฤษแล้ว match ไม่เจอ */}
           </Space>
           <Form.Item name="name" label={t("admin_pharmacy_protocols.form_protocol_name")} rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="supportedSymptomGroup" label="Symptom group" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="supportedSymptomGroup" label={uiText("admin_ui.en_symptom_group_3f7ea")} rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="triggerTerms" label={t("admin_pharmacy_protocols.form_trigger_terms")} rules={[{ required: true }]}><Input placeholder="ไข้, ตัวร้อน, fever" /></Form.Item>
           {[
-            ["requiredFields", "Required fields JSON"], ["conditionalQuestions", "Conditional questions JSON"],
-            ["redFlagRules", "Red flag rules JSON"], ["completionRules", "Completion rules JSON"],
-            ["escalationRules", "Escalation rules JSON"],
+            ["requiredFields", uiText("admin_ui.protocol_required_fields")], ["conditionalQuestions", uiText("admin_ui.protocol_conditional_questions")],
+            ["redFlagRules", uiText("admin_ui.protocol_red_flags")], ["completionRules", uiText("admin_ui.protocol_completion_rules")],
+            ["escalationRules", uiText("admin_ui.protocol_escalation_rules")],
           ].map(([name, label]) => <Form.Item key={name} name={name} label={label} rules={[{ required: true }]}><Input.TextArea autoSize={{ minRows: 3, maxRows: 12 }} style={{ fontFamily: "monospace" }} /></Form.Item>)}
         </Form>
       </Modal>

@@ -1,5 +1,7 @@
 "use client";
 
+import { usePosText } from "@/lib/pos/usePosText";
+
 /**
  * Pickup queue numbers at the till (`10.111`)
  *
@@ -63,37 +65,34 @@ export function PickupQueueSettings({ enabled, branchEnabled = false, managedDis
   managedDisplay?: boolean;
   onChange: (next: boolean) => void;
 }) {
+  const posText = usePosText();
   return (
     <div className="pos-settings-row pos-settings-row--queue" data-pickup-queue-settings>
       <div className="pos-settings-row-copy">
-        <div className="pos-settings-row-title">คิวรับสินค้า</div>
+        <div className="pos-settings-row-title">{posText("คิวรับสินค้า")}</div>
         <div className="pos-settings-row-description">
-          แสดงเลขคิวบนใบเสร็จและจอเรียกคิว
-        </div>
+          {posText("แสดงเลขคิวบนใบเสร็จและจอเรียกคิว") + " "}</div>
         <div className="pos-settings-row-note">
           {branchEnabled
-            ? "สาขานี้เปิดออกเลขทุกเครื่องจากหลังบ้านแล้ว จึงปิดจากเครื่องนี้ไม่ได้"
-            : "ตั้งค่าเฉพาะเครื่องนี้ · บิลโต๊ะยังใช้เลขโต๊ะเหมือนเดิม"}
+            ? posText("สาขานี้เปิดออกเลขทุกเครื่องจากหลังบ้านแล้ว จึงปิดจากเครื่องนี้ไม่ได้")
+            : posText("ตั้งค่าเฉพาะเครื่องนี้ · บิลโต๊ะยังใช้เลขโต๊ะเหมือนเดิม")}
         </div>
       </div>
       <div className="pos-settings-row-actions">
         {branchEnabled
           ? <span role="status" className="pos-settings-status" data-tone="ready">
-            เปิดทั้งสาขา
-          </span>
+            {posText("เปิดทั้งสาขา") + " "}</span>
           : <button type="button" className="pos-settings-switch" role="switch" aria-checked={enabled}
             aria-pressed={enabled} onClick={() => onChange(!enabled)}
-            title="เปิดหรือปิดการออกเลขคิวบนใบเสร็จของเครื่องขายนี้ ไม่ได้ใช้เปิดหน้าจอเรียกคิว">
+            title={posText("เปิดหรือปิดการออกเลขคิวบนใบเสร็จของเครื่องขายนี้ ไม่ได้ใช้เปิดหน้าจอเรียกคิว")}>
             <span className="pos-settings-switch-track" aria-hidden="true"><i /></span>
-            <span className="pos-settings-status" data-tone={enabled ? "ready" : "muted"}>{enabled ? "เปิดอยู่" : "ปิดอยู่"}</span>
+            <span className="pos-settings-status" data-tone={enabled ? "ready" : "muted"}>{enabled ? posText("เปิดอยู่") : posText("ปิดอยู่")}</span>
           </button>}
         {!managedDisplay && <button type="button" className="pos-btn" onClick={openPickupQueueBoard}
-          title="เปิดหน้าต่างจอเรียกคิว แล้วลากไปจอที่หันไปทางลูกค้า">
-          เปิดจอคิวแบบหน้าต่าง
-        </button>}
+          title={posText("เปิดหน้าต่างจอเรียกคิว แล้วลากไปจอที่หันไปทางลูกค้า")}>
+          {posText("เปิดจอคิวแบบหน้าต่าง") + " "}</button>}
         {managedDisplay && <span className="pos-settings-row-action-note">
-          เปิดจอจริงหรือหน้าต่างทดสอบได้จากหัวข้อ “จอภายนอก” ด้านบน
-        </span>}
+          {posText("เปิดจอจริงหรือหน้าต่างทดสอบได้จากหัวข้อ “จอภายนอก” ด้านบน") + " "}</span>}
       </div>
     </div>
   );
@@ -110,6 +109,7 @@ type StripProps = {
 };
 
 export function PickupQueueStrip({ token, cashierUserId, cashierPin, refreshKey, variant = "default" }: StripProps) {
+  const posText = usePosText();
   const alerts = useOrderAlerts();
   const [rows, setRows] = useState<PickupQueueRow[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -125,7 +125,7 @@ export function PickupQueueStrip({ token, cashierUserId, cashierPin, refreshKey,
   const load = useCallback(async (): Promise<boolean> => {
     if (!token) {
       setFeedStatus("STALE");
-      setError("ยังตรวจสถานะคิวไม่ได้ · เครื่องขายยังไม่ได้รับสิทธิ์");
+      setError(posText("ยังตรวจสถานะคิวไม่ได้ · เครื่องขายยังไม่ได้รับสิทธิ์"));
       return false;
     }
     const sequence = ++loadSequence.current;
@@ -138,7 +138,7 @@ export function PickupQueueStrip({ token, cashierUserId, cashierPin, refreshKey,
       if (!res.ok) {
         if (sequence === loadSequence.current) {
           setFeedStatus("STALE");
-          setError(data?.error ?? `โหลดคิวไม่สำเร็จ (HTTP ${res.status})`);
+          setError(data?.error ?? posText("โหลดคิวไม่สำเร็จ (HTTP {v0})", { v0: res.status }));
         }
         return false;
       }
@@ -166,11 +166,11 @@ export function PickupQueueStrip({ token, cashierUserId, cashierPin, refreshKey,
     } catch {
       if (sequence === loadSequence.current) {
         setFeedStatus("STALE");
-        setError("โหลดคิวไม่สำเร็จ · ตรวจการเชื่อมต่อ");
+        setError(posText("โหลดคิวไม่สำเร็จ · ตรวจการเชื่อมต่อ"));
       }
       return false;
     }
-  }, [token]);
+  }, [posText, token]);
 
   useEffect(() => {
     if (!readyFlash) return;
@@ -187,7 +187,7 @@ export function PickupQueueStrip({ token, cashierUserId, cashierPin, refreshKey,
   const act = async (row: PickupQueueRow, action: "call" | "collect" | "unready" | "cancel") => {
     if (actionLock.current || feedStatus !== "LIVE") return;
     if (!cashierUserId || !cashierPin) {
-      setError("ใส่ผู้ขายและ PIN ที่แถบด้านบนก่อน");
+      setError(posText("ใส่ผู้ขายและ PIN ที่แถบด้านบนก่อน"));
       return;
     }
     // Prime Web Audio in the click handler; starting it after the POST is blocked as autoplay.
@@ -204,7 +204,7 @@ export function PickupQueueStrip({ token, cashierUserId, cashierPin, refreshKey,
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setError(data?.error ?? `ทำรายการไม่สำเร็จ (HTTP ${res.status})`);
+        setError(data?.error ?? posText("ทำรายการไม่สำเร็จ (HTTP {v0})", { v0: res.status }));
         return;
       }
       if (action === "call") {
@@ -212,10 +212,10 @@ export function PickupQueueStrip({ token, cashierUserId, cashierPin, refreshKey,
       }
       const refreshed = await load();
       if (!refreshed) {
-        setError("ทำรายการคิวสำเร็จแล้ว · แต่โหลดสถานะล่าสุดไม่สำเร็จ");
+        setError(posText("ทำรายการคิวสำเร็จแล้ว · แต่โหลดสถานะล่าสุดไม่สำเร็จ"));
       }
     } catch {
-      setError("ส่งคำสั่งคิวไม่สำเร็จ · ตรวจการเชื่อมต่อแล้วลองใหม่");
+      setError(posText("ส่งคำสั่งคิวไม่สำเร็จ · ตรวจการเชื่อมต่อแล้วลองใหม่"));
     } finally {
       actionLock.current = false;
       setBusyId(null);
@@ -228,10 +228,10 @@ export function PickupQueueStrip({ token, cashierUserId, cashierPin, refreshKey,
   const nextPreparing = preparing[0] ?? null;
   const actionsDisabled = busyId !== null || feedStatus !== "LIVE";
   const summary = feedStatus === "CHECKING"
-    ? "กำลังตรวจสอบคิว…"
+    ? posText("กำลังตรวจสอบคิว…")
     : feedStatus === "STALE"
-      ? "ตรวจสถานะคิวไม่ได้"
-      : `กำลังเตรียม ${preparing.length} · พร้อมรับ ${ready.length}`;
+      ? posText("ตรวจสถานะคิวไม่ได้")
+      : posText("กำลังเตรียม {v0} · พร้อมรับ {v1}", { v0: preparing.length, v1: ready.length });
   const closeManager = useCallback(() => setManagerOpen(false), []);
   const refreshAfterManagerAction = useCallback(() => {
     load().catch(() => undefined);
@@ -246,43 +246,42 @@ export function PickupQueueStrip({ token, cashierUserId, cashierPin, refreshKey,
       <div data-pickup-queue-strip data-variant="compact">
         <div data-pickup-queue-main>
           <span data-pickup-queue-summary>
-            <b>คิวรับของ</b>
+            <b>{posText("คิวรับของ")}</b>
             <span>{summary}</span>
           </span>
           {feedStatus === "STALE"
-            ? <span data-pickup-queue-current data-state="stale"><span>ข้อมูลคิวไม่อัปเดต</span></span>
+            ? <span data-pickup-queue-current data-state="stale"><span>{posText("ข้อมูลคิวไม่อัปเดต")}</span></span>
             : currentReady
             ? <span data-pickup-queue-current data-state="ready"
                 role={readyFlash === currentReady.label ? "status" : undefined}>
-                <span>พร้อมรับ</span><b>{currentReady.label}</b>
+                <span>{posText("พร้อมรับ")}</span><b>{currentReady.label}</b>
                 {ready.length > 1 && <small>+{ready.length - 1}</small>}
               </span>
             : nextPreparing
               ? <span data-pickup-queue-current data-state="preparing">
-                  <span>คิวถัดไป</span><b>{nextPreparing.label}</b>
+                  <span>{posText("คิวถัดไป")}</span><b>{nextPreparing.label}</b>
                   {preparing.length > 1 && <small>+{preparing.length - 1}</small>}
                 </span>
-              : <span data-pickup-queue-current data-state="empty"><span>ยังไม่มีคิวที่รออยู่</span></span>}
+              : <span data-pickup-queue-current data-state="empty"><span>{posText("ยังไม่มีคิวที่รออยู่")}</span></span>}
           <span data-pickup-queue-actions>
             {currentReady && <>
               <button type="button" className="pos-btn" data-action="collect" disabled={actionsDisabled}
-                onClick={() => void act(currentReady, "collect")}>รับแล้ว</button>
+                onClick={() => void act(currentReady, "collect")}>{posText("รับแล้ว")}</button>
               <button type="button" className="pos-btn" data-action="recall" disabled={actionsDisabled}
-                onClick={() => void act(currentReady, "call")} title="ประกาศเลขนี้บนจออีกครั้ง">เรียกซ้ำ</button>
+                onClick={() => void act(currentReady, "call")} title={posText("ประกาศเลขนี้บนจออีกครั้ง")}>{posText("เรียกซ้ำ")}</button>
             </>}
             {!currentReady && nextPreparing && <button type="button" className="pos-btn" data-action="call" disabled={actionsDisabled}
-              onClick={() => void act(nextPreparing, "call")} title="กดเพื่อเรียกคิวนี้ขึ้นจอ">เรียกคิว</button>}
+              onClick={() => void act(nextPreparing, "call")} title={posText("กดเพื่อเรียกคิวนี้ขึ้นจอ")}>{posText("เรียกคิว")}</button>}
             <button type="button" className="pos-btn" data-action="manage" onClick={() => setManagerOpen(true)}
-              title="ดูคิวทั้งหมดของวันนี้ เรียกด้วยเลข ย้อนสถานะ และยกเลิกคิว">จัดการคิว</button>
+              title={posText("ดูคิวทั้งหมดของวันนี้ เรียกด้วยเลข ย้อนสถานะ และยกเลิกคิว")}>{posText("จัดการคิว")}</button>
           </span>
         </div>
         {readyFlash && readyFlash !== currentReady?.label && <span role="status" data-pickup-ready-flash>
-          คิว {readyFlash} พร้อมรับแล้ว
-        </span>}
+          {posText("คิว") + " "}{readyFlash} {" " + posText("พร้อมรับแล้ว") + " "}</span>}
         {error && <div data-pickup-queue-error>
           {error}
           {feedStatus === "STALE" && <button type="button" className="pos-btn"
-            onClick={() => { load().catch(() => undefined); }}>ลองโหลดคิวใหม่</button>}
+            onClick={() => { load().catch(() => undefined); }}>{posText("ลองโหลดคิวใหม่")}</button>}
         </div>}
         {manager}
       </div>
@@ -295,29 +294,26 @@ export function PickupQueueStrip({ token, cashierUserId, cashierPin, refreshKey,
     <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }} data-pickup-queue-strip>
       {readyFlash && <div role="status" style={{ padding: "8px 12px", borderRadius: 8,
         background: "var(--posx-ok-bg, #f0fdf4)", color: "var(--posx-ok-text, #166534)", fontWeight: 700 }}>
-        คิว {readyFlash} พร้อมรับแล้ว
-      </div>}
+        {posText("คิว") + " "}{readyFlash} {" " + posText("พร้อมรับแล้ว") + " "}</div>}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>
           {feedStatus === "CHECKING"
-            ? "คิวรับของ · กำลังตรวจสอบสถานะล่าสุด…"
+            ? posText("คิวรับของ · กำลังตรวจสอบสถานะล่าสุด…")
             : feedStatus === "STALE"
-              ? "คิวรับของ · ตรวจสถานะล่าสุดไม่ได้"
+              ? posText("คิวรับของ · ตรวจสถานะล่าสุดไม่ได้")
               : rows.length === 0
-            ? "คิวรับของ · ยังไม่มีคิวที่รออยู่"
-            : `คิวรับของ · กำลังเตรียม ${preparing.length} · พร้อมรับ ${ready.length}`}
+            ? posText("คิวรับของ · ยังไม่มีคิวที่รออยู่")
+            : posText("คิวรับของ · กำลังเตรียม {v0} · พร้อมรับ {v1}", { v0: preparing.length, v1: ready.length })}
         </span>
         <button type="button" className="pos-btn" onClick={() => setManagerOpen(true)}
-          title="ดูคิวทั้งหมดของวันนี้ เรียกด้วยเลข และยกเลิกคิว">
-          จัดการคิว
-        </button>
+          title={posText("ดูคิวทั้งหมดของวันนี้ เรียกด้วยเลข และยกเลิกคิว")}>
+          {posText("จัดการคิว") + " "}</button>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {preparing.map((row) => (
           <button key={row.id} type="button" className="pos-btn" disabled={actionsDisabled}
-            onClick={() => void act(row, "call")} title="กดเพื่อเรียกคิวนี้ขึ้นจอ">
-            {row.label} · เรียกคิว
-          </button>
+            onClick={() => void act(row, "call")} title={posText("กดเพื่อเรียกคิวนี้ขึ้นจอ")}>
+            {row.label} {" " + posText("· เรียกคิว") + " "}</button>
         ))}
         {ready.map((row) => (
           <span key={row.id} style={{
@@ -326,13 +322,13 @@ export function PickupQueueStrip({ token, cashierUserId, cashierPin, refreshKey,
             background: "rgba(22, 163, 74, 0.08)",
           }}>
             <b>{row.label}</b>
-            <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>พร้อมรับ</span>
+            <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>{posText("พร้อมรับ")}</span>
             <button type="button" className="pos-btn" disabled={actionsDisabled}
-              onClick={() => void act(row, "collect")}>รับแล้ว</button>
+              onClick={() => void act(row, "collect")}>{posText("รับแล้ว")}</button>
             <button type="button" className="pos-btn" disabled={actionsDisabled}
-              onClick={() => void act(row, "call")} title="ประกาศเลขนี้บนจออีกครั้ง">เรียกซ้ำ</button>
+              onClick={() => void act(row, "call")} title={posText("ประกาศเลขนี้บนจออีกครั้ง")}>{posText("เรียกซ้ำ")}</button>
             <button type="button" className="pos-btn" disabled={actionsDisabled}
-              onClick={() => void act(row, "unready")} title="กดเรียกผิด ย้ายกลับไปกำลังเตรียม">ย้อน</button>
+              onClick={() => void act(row, "unready")} title={posText("กดเรียกผิด ย้ายกลับไปกำลังเตรียม")}>{posText("ย้อน")}</button>
           </span>
         ))}
       </div>
@@ -340,7 +336,7 @@ export function PickupQueueStrip({ token, cashierUserId, cashierPin, refreshKey,
         fontSize: 12, color: "var(--pos-danger, #b91c1c)" }}>
         <span>{error}</span>
         {feedStatus === "STALE" && <button type="button" className="pos-btn"
-          onClick={() => { load().catch(() => undefined); }}>ลองโหลดคิวใหม่</button>}
+          onClick={() => { load().catch(() => undefined); }}>{posText("ลองโหลดคิวใหม่")}</button>}
       </div>}
       {manager}
     </div>

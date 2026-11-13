@@ -1,4 +1,8 @@
-'use client';
+"use client";
+
+import { pharmacyReviewStatus } from "@/i18n/pharmacyReview";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { gql, useApolloClient, useQuery } from "@apollo/client";
 import {
   Alert,
@@ -44,14 +48,14 @@ const CHAT_STORAGE_KEY = "bms-pharmacy-intake-lab-chat-v1";
 const BKK = "Asia/Bangkok";
 const dayKey = (iso: string) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: BKK, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
-function dayLabel(iso: string, t: TFn) {
+function dayLabel(iso: string, t: TFn, uiText: UiTranslator = thaiUiText) {
   const key = dayKey(iso);
   const now = new Date();
   const todayKey = dayKey(now.toISOString());
   const y = new Date(now); y.setDate(y.getDate() - 1);
   if (key === todayKey) return t("admin_pharmacy_intake_lab.day_today");
   if (key === dayKey(y.toISOString())) return t("admin_pharmacy_intake_lab.day_yesterday");
-  return new Intl.DateTimeFormat("th-TH", { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
+  return new Intl.DateTimeFormat(uiText.locale, { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
 }
 
 const M_PHARMACY_TEST = gql`
@@ -325,6 +329,7 @@ function getPharmacyQuickReplies(session: PharmacySession | null, t: TFn): Quick
 }
 
 export default function PharmacyIntakeLabPage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const client = useApolloClient();
   const router = useRouter();
@@ -435,7 +440,7 @@ export default function PharmacyIntakeLabPage() {
       });
       const result = data?.bmsSeedPharmacyQueueDemo;
       const assessmentId = result?.assessmentId as string | null | undefined;
-      if (!result?.createdCount || !assessmentId) throw new Error("seed failed");
+      if (!result?.createdCount || !assessmentId) throw new Error(uiText("admin_ui.en_seed_failed_5ab54"));
 
       setLastSeededAssessmentId(assessmentId);
 
@@ -467,7 +472,7 @@ export default function PharmacyIntakeLabPage() {
     const cart = parseSessionProductCart(nextSession ?? null);
     if (cart.length === 0) {
       // ข้อความนี้ถูกฝังลงในคำตอบที่ "ลูกค้า" เห็นในบทสนทนาจำลอง (สาเหตุที่ยืนยันตะกร้าไม่ได้) — ต้องเป็นภาษาไทย
-      return { ok: false as const, message: "ไม่มีรายการสินค้าในตะกร้า", retryable: false };
+      return { ok: false as const, message: uiText("admin_ui.the_cart_is_empty_8b648"), retryable: false };
     }
     try {
       const { data } = await client.mutate({
@@ -494,7 +499,7 @@ export default function PharmacyIntakeLabPage() {
       // เหตุผลความล้มเหลวถูกฝังในคำตอบที่ลูกค้าเห็น (บทสนทนาจำลอง) — คงภาษาไทยไว้
       return {
         ok: false as const,
-        message: String(result?.message || "สร้างออร์เดอร์จาก Lab ไม่สำเร็จ"),
+        message: String(result?.message || uiText("admin_ui.could_not_create_the_order_from_the_lab_bfb28")),
         retryable: false,
       };
     } catch (e: any) {
@@ -502,7 +507,7 @@ export default function PharmacyIntakeLabPage() {
       // เหตุผลความล้มเหลวถูกฝังในคำตอบที่ลูกค้าเห็น (บทสนทนาจำลอง) — คงภาษาไทยไว้
       return {
         ok: false as const,
-        message: String(e?.message || "สร้างออร์เดอร์จาก Lab ไม่สำเร็จ"),
+        message: String(e?.message || uiText("admin_ui.could_not_create_the_order_from_the_lab_bfb28")),
         retryable: true,
       };
     }
@@ -638,7 +643,7 @@ export default function PharmacyIntakeLabPage() {
     <div>
       <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 20 }} wrap>
         <div>
-          <Title level={2} style={{ margin: 0 }}>Pharmacy Intake Lab</Title>
+          <Title level={2} style={{ margin: 0 }}>{uiText("admin_ui.en_pharmacy_intake_lab_8c9c2")}</Title>
           <Text type="secondary">
             {t("admin_pharmacy_intake_lab.subtitle", { path: "/admin/assistant" })}
           </Text>
@@ -707,7 +712,7 @@ export default function PharmacyIntakeLabPage() {
                           <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "10px 0" }}>
                             <div style={{ flex: 1, height: 1, background: "var(--app-border)" }} />
                             <Text style={{ fontSize: 11, fontWeight: 700, color: "var(--app-muted)", whiteSpace: "nowrap" }}>
-                              {dayLabel(bubble.createdAt, t)}
+                              {dayLabel(bubble.createdAt, t, uiText)}
                             </Text>
                             <div style={{ flex: 1, height: 1, background: "var(--app-border)" }} />
                           </div>
@@ -732,7 +737,7 @@ export default function PharmacyIntakeLabPage() {
                           </div>
                           <div style={{ marginTop: 4 }}>
                             <Text type="secondary" style={{ fontSize: 11 }}>
-                              {new Date(bubble.createdAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                              {new Date(bubble.createdAt).toLocaleTimeString(uiText.locale, { hour: "2-digit", minute: "2-digit" })}
                             </Text>
                           </div>
                           {bubble.error ? (
@@ -766,7 +771,7 @@ export default function PharmacyIntakeLabPage() {
                         shape="round"
                         danger
                         /* คำสั่งที่ส่งเข้า assistant แทนลูกค้า — backend จับคู่คำว่า "ลบ" ภาษาไทย ห้ามแปล */
-                        onClick={() => send(`ลบ ${item.sku}`)}
+                        onClick={() => send(uiText("admin_ui.remove_aabab", { v0: item.sku }))}
                         disabled={sending}
                       >
                         {`✕ ${item.name}`}
@@ -804,9 +809,9 @@ export default function PharmacyIntakeLabPage() {
             <Card size="small" style={{ borderRadius: 10 }} styles={{ body: { padding: "12px 14px" } }}>
               <Text strong style={{ fontSize: 12.5, display: "block", marginBottom: 8 }}>{t("admin_pharmacy_intake_lab.session_status")}</Text>
               <Space wrap size={[8, 8]}>
-                <Tag color="blue">phase: {session?.phase || "NONE"}</Tag>
-                <Tag>protocol: {session?.protocolKey || "—"}</Tag>
-                <Tag color={queueStatusColor}>queue: {autoQueueStatus}</Tag>
+                <Tag color="blue">{uiText("admin_ui.en_phase_652f0")} {session?.phase || uiText("admin_ui.en_none_0654a")}</Tag>
+                <Tag>{uiText("admin_ui.en_protocol_049a5")} {session?.protocolKey || "—"}</Tag>
+                <Tag color={queueStatusColor}>{uiText("admin_ui.en_queue_8704c")} {autoQueueStatus}</Tag>
               </Space>
               <Button size="small" style={{ marginTop: 10 }} onClick={() => setSession(null)}>
                 {t("admin_pharmacy_intake_lab.btn_reset_session")}
@@ -834,16 +839,15 @@ export default function PharmacyIntakeLabPage() {
 
             <Card
               size="small"
-              title={<Text strong style={{ fontSize: 12.5 }}>Customer confirmation snapshot</Text>}
+              title={<Text strong style={{ fontSize: 12.5 }}>{uiText("admin_ui.en_customer_confirmation_snapshot_b4a10")}</Text>}
               style={{ borderRadius: 10 }}
               styles={{ body: { padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 } }}
             >
               <Space wrap size={[8, 8]}>
-                <Tag color={completenessMeta.color}>{t("admin_pharmacy_intake_lab.tag_completeness", { value: completenessMeta.text })}</Tag>
-                <Tag color={confirmationMeta.color}>{t("admin_pharmacy_intake_lab.tag_confirmation", { value: confirmationMeta.text })}</Tag>
+                <Tag color={completenessMeta.color}>{t("admin_pharmacy_intake_lab.tag_completeness", { value: pharmacyReviewStatus(completenessMeta.text, uiText) })}</Tag>
+                <Tag color={confirmationMeta.color}>{t("admin_pharmacy_intake_lab.tag_confirmation", { value: pharmacyReviewStatus(confirmationMeta.text, uiText) })}</Tag>
                 <Button size="small" icon={<CopyOutlined />} onClick={copySummary} disabled={summaryRows.length === 0}>
-                  copy summary
-                </Button>
+                  {uiText("admin_ui.en_copy_summary_2dfe5")}</Button>
               </Space>
               {summaryRows.length > 0 ? (
                 <List
@@ -924,7 +928,7 @@ export default function PharmacyIntakeLabPage() {
 
       {/* ===== debug ล้วน ๆ — ลดน้ำหนักภาพลงด้วยพื้นหลังทึบกว่า เหมือน "ภาพรวมธุรกิจ" ใน dashboard ===== */}
       <div style={{ background: "var(--app-surface-2)", border: "1px solid var(--app-border)", borderRadius: 12, padding: 12, marginTop: 16 }}>
-        <Text strong style={{ display: "block", marginBottom: 8, fontSize: 12.5 }}>Current answers (debug)</Text>
+        <Text strong style={{ display: "block", marginBottom: 8, fontSize: 12.5 }}>{uiText("admin_ui.en_current_answers_debug_0b6d6")}</Text>
         <pre style={{ whiteSpace: "pre-wrap", margin: 0, padding: 10, borderRadius: 8, background: "var(--app-surface)", border: "1px solid var(--app-border)", fontSize: 12 }}>
           {JSON.stringify(session?.answers || {}, null, 2)}
         </pre>

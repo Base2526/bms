@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { gql, useQuery } from "@apollo/client";
 import { Table, Tag, Typography, Alert, Button, Space, Input, Tooltip } from "antd";
 import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
@@ -76,10 +78,11 @@ function TargetView({ target }: { target: string | null }) {
 
 // พ.ศ./เวลาไทย ชัดเจน — ของเดิม new Date(d).toLocaleString() พังเป็น "Invalid Date"
 // เพราะ resolver ส่ง created_at มาไม่ถูกฟอร์แมต (แก้ที่ BmsAuditEntry.created_at ใน bmsDashboard.ts แล้ว)
-const fmtDT = (iso?: string | null) =>
-  iso ? new Date(iso).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "medium", timeStyle: "medium" }) : "—";
+const fmtDT = (iso?: string | null, uiText: UiTranslator = thaiUiText) =>
+  iso ? new Date(iso).toLocaleString(uiText.locale, { timeZone: "Asia/Bangkok", dateStyle: "medium", timeStyle: "medium" }) : "—";
 
 export default function Page() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [q, setQ] = useState("");
@@ -121,7 +124,7 @@ export default function Page() {
         rowKey="id" loading={loading} dataSource={filtered}
         scroll={{ x: "max-content" }}
         columns={[
-          { title: t("admin_audit.col_time"), dataIndex: "created_at", width: 190, render: (d: string) => fmtDT(d) },
+          { title: t("admin_audit.col_time"), dataIndex: "created_at", width: 190, render: (d: string) => fmtDT(d, uiText) },
           { title: t("admin_audit.col_actor"), dataIndex: "actor", width: 200,
             render: (a: string) => a?.startsWith("system:") ? <Tag>{a}</Tag> : a || "—" },
           { title: t("admin_audit.col_action"), dataIndex: "action", width: 220,

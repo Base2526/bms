@@ -1054,7 +1054,7 @@ test("RN Board Game covers floor, time alerts, members, bill groups, library loa
   );
   assert.match(
     boardGame,
-    /`แจ้งเตือนเวลา \$\{pending\.length\} โต๊ะ`[\s\S]{0,300}text: 'ดูผังโต๊ะ'/,
+    /posText\("แจ้งเตือนเวลา \{v0\} โต๊ะ", \{ v0: pending\.length \}\)[\s\S]{0,300}text: posText\("ดูผังโต๊ะ"\)/,
     "the combined time alert must summarize all affected tables and return to the floor",
   );
   assert.match(
@@ -1295,7 +1295,7 @@ test("mobile inventory idempotency is transactional, tenant-scoped, and rejects 
 test("RN expense and petty-cash forms send the evidence required by the shared service", () => {
   assert.match(
     mobileOperationsScreen,
-    /placeholder="เลขที่ใบเสร็จ \/ หลักฐาน"/,
+    /placeholder=\{posText\("เลขที่ใบเสร็จ \/ หลักฐาน"\)\}/,
   );
   assert.match(mobileOperationsScreen, /receiptRef:\s*evidenceRef\.trim\(\)/);
   assert.match(mobileOperationsScreen, /evidenceRef: evidenceRef\.trim\(\)/);

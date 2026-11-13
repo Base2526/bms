@@ -1,3 +1,6 @@
+import { createPosTranslator, type PosTranslator } from "@/i18n/posClient";
+import { getLangCookie } from "@/lib/lang";
+
 /**
  * แปลสถานะที่ server ปฏิเสธให้เป็นภาษาที่คนหน้าเคาน์เตอร์ทำอะไรต่อได้
  *
@@ -11,74 +14,74 @@ function baht(n: number) {
   return Number(n || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export function describePosFailure(data: any): string {
+export function describePosFailure(data: any, posText: PosTranslator = createPosTranslator(getLangCookie() ?? "th")): string {
   switch (data?.status) {
     case "SHIFT_NOT_OPEN":
-      return "กะปิดไปแล้ว — เปิดกะใหม่ก่อน";
+      return posText("กะปิดไปแล้ว — เปิดกะใหม่ก่อน");
     case "PAYMENT_MISMATCH":
       return data.subtotal != null && data.discount != null
-        ? `ยอดไม่ตรง: ระบบคิดสินค้า ฿${baht(data.subtotal)} − ส่วนลดรวม ฿${baht(data.discount)} = ต้องรับ ฿${baht(data.expected)} แต่จอส่ง ฿${baht(data.received)}${Number(data.pointsUsed) > 0 ? ` (ใช้ ${Number(data.pointsUsed).toLocaleString()} แต้มแล้ว)` : ""} — ระบบล้างยอดรับเงินให้แล้ว กรุณาตรวจราคาและรับเงินใหม่`
-        : `ยอดไม่ตรง: ระบบคิด ฿${baht(data.expected)} แต่จอส่ง ฿${baht(data.received)} — ระบบล้างยอดรับเงินให้แล้ว กรุณารีเฟรชราคาและรับเงินใหม่`;
+        ? posText("ยอดไม่ตรง: ระบบคิดสินค้า ฿{v0} − ส่วนลดรวม ฿{v1} = ต้องรับ ฿{v2} แต่จอส่ง ฿{v3}{v4} — ระบบล้างยอดรับเงินให้แล้ว กรุณาตรวจราคาและรับเงินใหม่", { v0: baht(data.subtotal), v1: baht(data.discount), v2: baht(data.expected), v3: baht(data.received), v4: Number(data.pointsUsed) > 0 ? posText(" (ใช้ {v0} แต้มแล้ว)", { v0: Number(data.pointsUsed).toLocaleString() }) : "" })
+        : posText("ยอดไม่ตรง: ระบบคิด ฿{v0} แต่จอส่ง ฿{v1} — ระบบล้างยอดรับเงินให้แล้ว กรุณารีเฟรชราคาและรับเงินใหม่", { v0: baht(data.expected), v1: baht(data.received) });
     case "LOT_EXPIRED_OR_SHORT":
-      return `${data.sku}: ของที่ยังไม่หมดอายุเหลือ ${data.sellable} ต้องการ ${data.requested} — หยิบกล่องใหม่`;
+      return posText("{v0}: ของที่ยังไม่หมดอายุเหลือ {v1} ต้องการ {v2} — หยิบกล่องใหม่", { v0: data.sku, v1: data.sellable, v2: data.requested });
     case "INSUFFICIENT":
-      return `${data.sku}${data.size && data.size !== "-" ? ` (${data.size})` : ""} เหลือ ${data.available} ต้องการ ${data.requested}`;
+      return posText("{v0}{v1} เหลือ {v2} ต้องการ {v3}", { v0: data.sku, v1: data.size && data.size !== "-" ? ` (${data.size})` : "", v2: data.available, v3: data.requested });
     case "NOT_FOUND":
-      return `ไม่พบสินค้า ${data.sku ?? ""}`;
+      return posText("ไม่พบสินค้า {v0}", { v0: data.sku ?? "" });
     // สามตัวนี้มาจาก createOrderInTx โดยตรง เส้นทางเดียวที่ใช้คือการส่งครัวของบิลโต๊ะ
     // (บิลค้าปลีกกรองรายการที่ขายไม่ได้ทิ้งไปก่อนถึง server แล้ว)
     case "PACK_NOT_FOUND":
-      return `${data.sku}: ไม่พบหน่วยขาย ${data.packCode || "ที่เลือก"} — ลบรายการแล้วค้นเมนูใหม่`;
+      return posText("{v0}: ไม่พบหน่วยขาย {v1} — ลบรายการแล้วค้นเมนูใหม่", { v0: data.sku, v1: data.packCode || posText("ที่เลือก") });
     case "BUNDLE_INCOMPLETE":
-      return `${data.sku}: เป็นสินค้าชุดที่ยังไม่ได้ใส่ส่วนประกอบ — ตั้งส่วนประกอบที่หน้าแอดมินก่อนถึงจะขายได้`;
+      return posText("{v0}: เป็นสินค้าชุดที่ยังไม่ได้ใส่ส่วนประกอบ — ตั้งส่วนประกอบที่หน้าแอดมินก่อนถึงจะขายได้", { v0: data.sku });
     case "INVALID_ITEM":
-      return `รายการที่ ${Number(data.index) + 1} ใช้ไม่ได้: ${data.reason}`;
+      return posText("รายการที่ {v0} ใช้ไม่ได้: {v1}", { v0: Number(data.index) + 1, v1: data.reason });
     case "EMPTY":
-      return "ยังไม่มีรายการที่ส่งครัวได้ — เพิ่มเมนูก่อน";
+      return posText("ยังไม่มีรายการที่ส่งครัวได้ — เพิ่มเมนูก่อน");
     // เมนูที่ถูกตั้งว่า "หมดวันนี้" (9.55) — เดิมตกไปที่ default แล้วโชว์
     // "ขายไม่สำเร็จ (SOLD_OUT_TODAY)" ซึ่งไม่บอกว่าของตัวไหนและปลดที่ไหน
     case "SOLD_OUT_TODAY":
-      return `${data.sku}${data.size && data.size !== "-" ? ` (${data.size})` : ""}: ถูกตั้งว่าหมดวันนี้ — เปิดขายอีกครั้งที่แท็บครัว หรือเอารายการนี้ออกจากบิล`;
+      return posText("{v0}{v1}: ถูกตั้งว่าหมดวันนี้ — เปิดขายอีกครั้งที่แท็บครัว หรือเอารายการนี้ออกจากบิล", { v0: data.sku, v1: data.size && data.size !== "-" ? ` (${data.size})` : "" });
     case "INVALID_PACK":
-      return `${data.sku}: ไม่พบหน่วยขาย ${data.packCode || "ที่เลือก"} — โหลดสินค้าใหม่แล้วลองอีกครั้ง`;
+      return posText("{v0}: ไม่พบหน่วยขาย {v1} — โหลดสินค้าใหม่แล้วลองอีกครั้ง", { v0: data.sku, v1: data.packCode || posText("ที่เลือก") });
     case "PHARMACY_POLICY_UNKNOWN":
-      return `${data.sku}: ยังไม่มีนโยบายการขายที่อนุมัติไว้ — ให้เภสัชกรกด PIN อนุมัติที่เครื่องเพื่อจ่ายครั้งนี้`;
+      return posText("{v0}: ยังไม่มีนโยบายการขายที่อนุมัติไว้ — ให้เภสัชกรกด PIN อนุมัติที่เครื่องเพื่อจ่ายครั้งนี้", { v0: data.sku });
     case "PHARMACY_PRESCRIPTION_REQUIRED":
-      return `${data.sku}: ต้องมีใบสั่งแพทย์ — เภสัชกรตรวจใบสั่งแล้วกด PIN อนุมัติที่เครื่อง หรือส่งเคสเข้าคิวให้เภสัชกรอนุมัติก็ได้`;
+      return posText("{v0}: ต้องมีใบสั่งแพทย์ — เภสัชกรตรวจใบสั่งแล้วกด PIN อนุมัติที่เครื่อง หรือส่งเคสเข้าคิวให้เภสัชกรอนุมัติก็ได้", { v0: data.sku });
     case "PHARMACY_ONLINE_SALE_PROHIBITED":
-      return `${data.sku}: ห้ามขายออนไลน์ — ขายหน้าร้านได้เมื่อเภสัชกรกด PIN อนุมัติ`;
+      return posText("{v0}: ห้ามขายออนไลน์ — ขายหน้าร้านได้เมื่อเภสัชกรกด PIN อนุมัติ", { v0: data.sku });
     case "PHARMACY_REVIEW_REQUIRED":
     case "PHARMACY_SAFETY_CHECK_REQUIRED":
-      return `${data.sku}: ต้องให้เภสัชกรอนุมัติก่อน — ให้เภสัชกรกด PIN ที่เครื่อง หรือส่งเคสเข้าคิวถ้าต้องซักประวัติยาว`;
+      return posText("{v0}: ต้องให้เภสัชกรอนุมัติก่อน — ให้เภสัชกรกด PIN ที่เครื่อง หรือส่งเคสเข้าคิวถ้าต้องซักประวัติยาว", { v0: data.sku });
     // เพดานจำนวนต่อครั้งเป็นค่าที่ร้านตั้งเอง PIN เภสัชกรปลดไม่ได้ (9.29) — ต้องไปแก้ policy
     case "PHARMACY_QUANTITY_LIMIT_EXCEEDED":
-      return `${data.sku}: เกินจำนวนสูงสุดต่อครั้ง (${data.maxQuantity}) — ลดจำนวน หรือแก้นโยบายที่หน้าแอดมิน`;
+      return posText("{v0}: เกินจำนวนสูงสุดต่อครั้ง ({v1}) — ลดจำนวน หรือแก้นโยบายที่หน้าแอดมิน", { v0: data.sku, v1: data.maxQuantity });
     // ขายเชื่อ (9.30) — reason จาก server บอกวงเงิน/ยอดค้างมาแล้ว ไม่ต้องแต่งซ้ำ
     case "AR_NOT_ALLOWED":
       return data.code === "NO_CUSTOMER"
-        ? "ขายเชื่อต้องเลือกลูกค้าก่อน — ค้นสมาชิกที่ช่องลูกค้าด้านบน"
+        ? posText("ขายเชื่อต้องเลือกลูกค้าก่อน — ค้นสมาชิกที่ช่องลูกค้าด้านบน")
         : data.code === "NO_ACCOUNT"
-          ? "ลูกค้ารายนี้ยังไม่มีบัญชีเครดิต — เปิดบัญชีและตั้งวงเงินที่หน้าลูกหนี้การค้าก่อน"
-          : `ขายเชื่อไม่ได้: ${data.reason}`;
+          ? posText("ลูกค้ารายนี้ยังไม่มีบัญชีเครดิต — เปิดบัญชีและตั้งวงเงินที่หน้าลูกหนี้การค้าก่อน")
+          : posText("ขายเชื่อไม่ได้: {v0}", { v0: data.reason });
     case "COUPON_INVALID":
-      return `คูปองใช้ไม่ได้: ${data.reason}`;
+      return posText("คูปองใช้ไม่ได้: {v0}", { v0: data.reason });
     // สองตัวนี้เดิมตกไปที่ default แล้วโชว์ "ขายไม่สำเร็จ (POINTS_INVALID)" ซึ่งบอก
     // แคชเชียร์ไม่ได้ว่าต้องทำอะไรต่อ ทั้งที่ server ส่ง reason ที่อ่านรู้เรื่องมาให้แล้ว
     case "POINTS_INVALID":
-      return `แลกแต้มไม่ได้: ${data.reason}`;
+      return posText("แลกแต้มไม่ได้: {v0}", { v0: data.reason });
     case "DISCOUNT_UNAPPROVED":
-      return `ส่วนลดหน้าร้านใช้ไม่ได้: ${data.reason} — ให้หัวหน้าอนุมัติใหม่`;
+      return posText("ส่วนลดหน้าร้านใช้ไม่ได้: {v0} — ให้หัวหน้าอนุมัติใหม่", { v0: data.reason });
     case "SERIAL_REQUIRED":
-      return `${data.sku}: ต้องระบุเลขเครื่องให้ครบ ${data.expected} เลข (ใส่แล้ว ${data.received})`;
+      return posText("{v0}: ต้องระบุเลขเครื่องให้ครบ {v1} เลข (ใส่แล้ว {v2})", { v0: data.sku, v1: data.expected, v2: data.received });
     case "SERIAL_ALREADY_SOLD":
-      return `เลขเครื่อง ${data.serial} เคยขายไปแล้ว — หยิบกล่องผิดใบหรือยิงซ้ำ`;
+      return posText("เลขเครื่อง {v0} เคยขายไปแล้ว — หยิบกล่องผิดใบหรือยิงซ้ำ", { v0: data.serial });
     case "PAYMENT_FAILED":
-      return `บันทึกการชำระเงินไม่สำเร็จ: ${data.reason}`;
+      return posText("บันทึกการชำระเงินไม่สำเร็จ: {v0}", { v0: data.reason });
     // เซิร์ฟเวอร์พังกลางคำขอ — บิลอาจถูกสร้างไปแล้ว ห้ามบอกให้ "ยิงใหม่" ลอย ๆ
     case "SERVER_ERROR":
-      return `เซิร์ฟเวอร์ผิดพลาด (${data.error ?? "ไม่ทราบสาเหตุ"}) — กดชำระเงินอีกครั้ง ระบบจะใช้คีย์เดิมและไม่สร้างบิลซ้ำ`;
+      return posText("เซิร์ฟเวอร์ผิดพลาด ({v0}) — กดชำระเงินอีกครั้ง ระบบจะใช้คีย์เดิมและไม่สร้างบิลซ้ำ", { v0: data.error ?? posText("ไม่ทราบสาเหตุ") });
     default:
-      return data?.error ?? `ขายไม่สำเร็จ (${data?.status ?? "ไม่ทราบสาเหตุ"})`;
+      return data?.error ?? posText("ขายไม่สำเร็จ ({v0})", { v0: data?.status ?? posText("ไม่ทราบสาเหตุ") });
   }
 }
 
@@ -95,39 +98,39 @@ export function describePosFailure(data: any): string {
  * เสี่ยงทำงานซ้ำ (เช่น ส่งครัวสองรอบ) ส่วน GET เป็น read-only: มันโหลดข้อมูลล่าสุดไม่ได้
  * แต่ไม่มีผลการเขียนให้ต้องตาม จึงต้องบอกให้รีเฟรชโดยไม่ทำให้พนักงานเข้าใจว่ามีบิลค้างผล
  */
-export function describeTransportFailure(status: number, online = true, method = "POST"): string {
+export function describeTransportFailure(status: number, online = true, method = "POST", posText: PosTranslator = createPosTranslator(getLangCookie() ?? "th")): string {
   const readOnly = method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD";
   if (!online) return readOnly
-    ? "เน็ตหลุด — โหลดข้อมูลล่าสุดไม่ได้ ต่อเน็ตแล้วกดรีเฟรชอีกครั้ง"
-    : "เน็ตหลุด — ยังไม่รู้ว่ารายการถูกบันทึกหรือไม่ ต่อเน็ตแล้วตรวจประวัติหรือสถานะจริงก่อน อย่ากดซ้ำหรือรับเงินซ้ำ";
+    ? posText("เน็ตหลุด — โหลดข้อมูลล่าสุดไม่ได้ ต่อเน็ตแล้วกดรีเฟรชอีกครั้ง")
+    : posText("เน็ตหลุด — ยังไม่รู้ว่ารายการถูกบันทึกหรือไม่ ต่อเน็ตแล้วตรวจประวัติหรือสถานะจริงก่อน อย่ากดซ้ำหรือรับเงินซ้ำ");
   switch (status) {
     // fetch() ใช้ status 0 ในชั้น UI เมื่อไม่มี HTTP response เลย (DNS/TLS/socket/abort)
     // ต่างจาก 502 ที่ proxy ยังตอบกลับมาได้ แต่สำหรับพนักงานทั้งคู่คือยังยืนยันผลไม่ได้
     case 0:
       return readOnly
-        ? "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — โหลดข้อมูลล่าสุดไม่ได้ กดรีเฟรชอีกครั้ง ถ้ายังไม่หายให้แจ้งผู้ดูแลระบบ"
-        : "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ยังไม่รู้ว่ารายการถูกบันทึกหรือไม่ กดรีเฟรชเพื่อดูสถานะจริงก่อน อย่ากดซ้ำทันที";
+        ? posText("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — โหลดข้อมูลล่าสุดไม่ได้ กดรีเฟรชอีกครั้ง ถ้ายังไม่หายให้แจ้งผู้ดูแลระบบ")
+        : posText("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ยังไม่รู้ว่ารายการถูกบันทึกหรือไม่ กดรีเฟรชเพื่อดูสถานะจริงก่อน อย่ากดซ้ำทันที");
     case 502:
     case 503:
     case 504:
       return readOnly
-        ? `เซิร์ฟเวอร์ไม่ตอบ (${status}) — โหลดข้อมูลล่าสุดไม่ได้ กดรีเฟรชอีกครั้ง ถ้ายังไม่หายให้แจ้งผู้ดูแลระบบ`
-        : `เซิร์ฟเวอร์ไม่ตอบ (${status}) — ยังไม่รู้ว่ารายการถูกบันทึกหรือไม่ กดรีเฟรชเพื่อดูสถานะจริงก่อน อย่ากดซ้ำทันที ถ้ายังไม่หายให้แจ้งผู้ดูแลระบบ`;
+        ? posText("เซิร์ฟเวอร์ไม่ตอบ ({v0}) — โหลดข้อมูลล่าสุดไม่ได้ กดรีเฟรชอีกครั้ง ถ้ายังไม่หายให้แจ้งผู้ดูแลระบบ", { v0: status })
+        : posText("เซิร์ฟเวอร์ไม่ตอบ ({v0}) — ยังไม่รู้ว่ารายการถูกบันทึกหรือไม่ กดรีเฟรชเพื่อดูสถานะจริงก่อน อย่ากดซ้ำทันที ถ้ายังไม่หายให้แจ้งผู้ดูแลระบบ", { v0: status });
     case 401:
-      return "เครื่องนี้ไม่ได้จับคู่แล้ว — จับคู่เครื่อง POS ใหม่จากหลังบ้าน";
+      return posText("เครื่องนี้ไม่ได้จับคู่แล้ว — จับคู่เครื่อง POS ใหม่จากหลังบ้าน");
     case 403:
-      return "บัญชีนี้ไม่มีสิทธิ์ทำรายการนี้ — ให้คนที่มีสิทธิ์กด PIN";
+      return posText("บัญชีนี้ไม่มีสิทธิ์ทำรายการนี้ — ให้คนที่มีสิทธิ์กด PIN");
     case 404:
-      return "ไม่พบเส้นทางนี้บนเซิร์ฟเวอร์ — เวอร์ชันหน้าจอกับเซิร์ฟเวอร์อาจไม่ตรง ให้โหลดหน้าใหม่";
+      return posText("ไม่พบเส้นทางนี้บนเซิร์ฟเวอร์ — เวอร์ชันหน้าจอกับเซิร์ฟเวอร์อาจไม่ตรง ให้โหลดหน้าใหม่");
     case 429:
-      return "ยิงคำขอถี่เกินไป — รอสักครู่แล้วลองอีกครั้ง";
+      return posText("ยิงคำขอถี่เกินไป — รอสักครู่แล้วลองอีกครั้ง");
     default:
       return status >= 500
         ? readOnly
-          ? `เซิร์ฟเวอร์ผิดพลาด (${status}) — โหลดข้อมูลล่าสุดไม่ได้ กดรีเฟรชอีกครั้ง`
-          : `เซิร์ฟเวอร์ผิดพลาด (${status}) — ยังไม่รู้ว่ารายการถูกบันทึกหรือไม่ กดรีเฟรชเพื่อดูสถานะจริงก่อนลองใหม่`
+          ? posText("เซิร์ฟเวอร์ผิดพลาด ({v0}) — โหลดข้อมูลล่าสุดไม่ได้ กดรีเฟรชอีกครั้ง", { v0: status })
+          : posText("เซิร์ฟเวอร์ผิดพลาด ({v0}) — ยังไม่รู้ว่ารายการถูกบันทึกหรือไม่ กดรีเฟรชเพื่อดูสถานะจริงก่อนลองใหม่", { v0: status })
         : readOnly
-          ? `โหลดข้อมูลไม่สำเร็จ (${status}) — โหลดหน้าใหม่แล้วลองอีกครั้ง`
-          : `ทำรายการไม่สำเร็จ (${status}) — โหลดหน้าใหม่แล้วลองอีกครั้ง`;
+          ? posText("โหลดข้อมูลไม่สำเร็จ ({v0}) — โหลดหน้าใหม่แล้วลองอีกครั้ง", { v0: status })
+          : posText("ทำรายการไม่สำเร็จ ({v0}) — โหลดหน้าใหม่แล้วลองอีกครั้ง", { v0: status });
   }
 }

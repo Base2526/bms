@@ -1,3 +1,4 @@
+import { getMessage } from "../apps/web/i18n/index.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
@@ -46,9 +47,12 @@ test("transfer discrepancy evidence cannot silently become sellable stock", asyn
   assert.match(service, /type: "QUARANTINE_IN"/);
   assert.match(service, /type: "TRANSFER_LOST"/);
   assert.match(service, /มีส่วนต่าง ต้องเลือกสาเหตุและกรอกหมายเหตุ/);
-  assert.match(page, /รับสภาพดี/);
-  assert.match(page, /เสียหาย\/กักกัน/);
-  assert.match(page, /หมายเหตุส่วนต่าง/);
+  assert.ok(page.includes('uiText("admin_ui.good_units_received_a0797")'));
+  assert.match(getMessage("th", "admin_ui.good_units_received_a0797"), /รับสภาพดี/);
+  assert.ok(page.includes('uiText("admin_ui.damaged_quarantined_ebbd8")'));
+  assert.match(getMessage("th", "admin_ui.damaged_quarantined_ebbd8"), /เสียหาย\/กักกัน/);
+  assert.ok(page.includes('uiText("admin_ui.variance_note_15724")'));
+  assert.equal(getMessage("th", "admin_ui.variance_note_15724"), "หมายเหตุส่วนต่าง");
 });
 
 test("device scope lookup addresses an exact transfer or count instead of only the latest page", async () => {

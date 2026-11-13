@@ -1,4 +1,6 @@
 "use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useMutation, type DocumentNode } from "@apollo/client";
 import { useRef, useState } from "react";
 import { Button, Modal, message } from "antd";
@@ -17,6 +19,7 @@ export function useTeamCommand(
   onCommitted?: () => void,
   config?: { document: DocumentNode; field: string },
 ) {
+  const uiText = useUiText();
   const { t } = useI18n(),
     tr = (k: string) => t(`operation_team.${k}`),
     [mutate] = useMutation(config?.document ?? TEAM_COMMAND),
@@ -32,7 +35,7 @@ export function useTeamCommand(
     try {
       const response = await mutate({ variables: { input: pending.current } }),
         result = response.data?.[config?.field ?? "bmsOperationTeamCommand"];
-      if (!result) throw new Error("Missing outcome");
+      if (!result) throw new Error(uiText("admin_ui.en_missing_outcome_f6a2a"));
       pending.current = null;
       setUncertain(false);
       if (result.status !== "OK") {

@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/useUiText";
+
 import { gql, useLazyQuery, useMutation, useQuery } from "@apollo/client";
 import {
   Alert,
@@ -271,6 +273,7 @@ const statusColor: Record<string, string> = {
 };
 
 export default function BankReconciliationPage() {
+  const uiText = useUiText();
   const { lang } = useI18n();
   const th = lang === "th";
   const L = (thai: string, english: string) => (th ? thai : english);
@@ -403,7 +406,7 @@ export default function BankReconciliationPage() {
         { method: "POST", body: form },
       );
       const json = await response.json();
-      if (!response.ok) throw new Error(json.error || "upload failed");
+      if (!response.ok) throw new Error(json.error || uiText("admin_ui.en_upload_failed_c2a7d"));
       setPreview(json);
       message.success(
         L(
@@ -646,7 +649,7 @@ export default function BankReconciliationPage() {
             size="small"
             style={{ marginTop: 16 }}
             title={L("ตัวอย่างก่อนยืนยัน", "Preview before commit")}
-            extra={<Tag color="blue">{preview.preview.rowCount} rows</Tag>}
+            extra={<Tag color="blue">{preview.preview.rowCount}  {uiText("admin_ui.en_rows_6c30d")}</Tag>}
           >
             <Descriptions
               size="small"
@@ -674,7 +677,7 @@ export default function BankReconciliationPage() {
                 closable
                 type="warning"
                 showIcon
-                message={`${preview.preview.warnings.length} warning(s)`}
+                message={uiText("admin_ui.en_warning_s_5affa", { v0: preview.preview.warnings.length })}
                 description={preview.preview.warnings.slice(0, 5).join(" · ")}
               />
             ) : null}
@@ -1025,7 +1028,7 @@ export default function BankReconciliationPage() {
         items={[
           {
             key: "import",
-            label: "Phase 1 · Foundation",
+            label: uiText("admin_ui.en_phase_1_foundation_8df56"),
             children: (
               <Tag color="green">
                 {L(
@@ -1037,7 +1040,7 @@ export default function BankReconciliationPage() {
           },
           {
             key: "match",
-            label: "Phase 2 · Matching",
+            label: uiText("admin_ui.en_phase_2_matching_34592"),
             children: (
               <Tag color="green">
                 {readiness?.deterministicMatching
@@ -1051,7 +1054,7 @@ export default function BankReconciliationPage() {
           },
           {
             key: "review",
-            label: "Phase 3 · Review",
+            label: uiText("admin_ui.en_phase_3_review_2782d"),
             children: (
               <Tag color="green">
                 {L(
@@ -1063,7 +1066,7 @@ export default function BankReconciliationPage() {
           },
           {
             key: "close",
-            label: "Phase 4 · Month close",
+            label: uiText("admin_ui.en_phase_4_month_close_0296a"),
             children: (
               <Tag color="green">
                 {L("พร้อม · Lock + XLSX/CSV", "Ready · Lock + XLSX/CSV")}
@@ -1072,7 +1075,7 @@ export default function BankReconciliationPage() {
           },
           {
             key: "pilot",
-            label: "Phase 5 · Pilot",
+            label: uiText("admin_ui.en_phase_5_pilot_64478"),
             children: (
               <Tag color="blue">
                 {L(
@@ -1084,10 +1087,10 @@ export default function BankReconciliationPage() {
           },
           {
             key: "api",
-            label: "Phase 6 · Optional API",
+            label: uiText("admin_ui.en_phase_6_optional_api_4f615"),
             children: (
               <Tag color="default">
-                {readiness?.openBanking || "NOT_CONFIGURED"}
+                {readiness?.openBanking || uiText("admin_ui.en_not_configured_04bca")}
               </Tag>
             ),
           },
@@ -1170,7 +1173,7 @@ export default function BankReconciliationPage() {
             label: L("ปิดเดือน", "Month close"),
             children: closeTab,
           },
-          { key: "readiness", label: "Phase 1–6", children: phaseTab },
+          { key: "readiness", label: uiText("admin_ui.en_phase_1_6_b789e"), children: phaseTab },
         ]}
       />
       <Modal
@@ -1284,7 +1287,7 @@ export default function BankReconciliationPage() {
                             : "default"
                       }
                     >
-                      {r.stale ? "STALE" : r.status}
+                      {r.stale ? uiText("admin_ui.en_stale_600a5") : r.status}
                     </Tag>
                   ),
                 },

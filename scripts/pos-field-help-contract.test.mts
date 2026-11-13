@@ -10,7 +10,7 @@ const source = await readFile(
 test("POS contextual help works with touch and keyboard instead of hover only", () => {
   assert.match(source, /function PosHelp\(/);
   assert.match(source, /<details[\s\S]*className=\{`pos-help/);
-  assert.match(source, /<summary aria-label=\{`ดูคำอธิบาย:/);
+  assert.match(source, /<summary aria-label=\{posText\("ดูคำอธิบาย: \{v0\}", \{ v0: title \}\)\}/);
   assert.match(source, /\.pos-help > summary:focus-visible/);
   assert.match(source, /@media \(max-width: 767px\)[\s\S]*\.pos-help-popover \{ position: fixed/);
 });
@@ -37,18 +37,18 @@ test("POS help covers every high-risk workflow without decorating every basic fi
     "ขายเชื่อและเครดิตคืนสินค้า",
     "อนุมัติเฉพาะบิลนี้",
   ]) {
-    assert.match(source, new RegExp(`title=\\"${title}\\"`), `missing help topic: ${title}`);
+    assert.match(source, new RegExp(`title=\\{posText\\("${title}"\\)\\}`), `missing help topic: ${title}`);
   }
 });
 
 test("ambiguous POS fields and deposit commands say exactly what they do", () => {
-  assert.match(source, />ยอดที่จะรับครั้งนี้</);
-  assert.match(source, />รับมัดจำครั้งแรกจากบิลที่เลือก</);
-  assert.match(source, />รับมัดจำเพิ่ม</);
-  assert.match(source, /placeholder="ยอดที่แบ่งให้วิธีนี้"/);
-  assert.match(source, /placeholder="เงินสดที่ลูกค้ายื่นมา"/);
-  assert.match(source, /placeholder="รายละเอียดเหตุผล \(บังคับและแสดงในประวัติ\)"/);
-  assert.match(source, /placeholder="ข้อความนี้จะแสดงในประวัติออเดอร์"/);
+  assert.match(source, />\{posText\("ยอดที่จะรับครั้งนี้"\)\}</);
+  assert.match(source, />\{posText\("รับมัดจำครั้งแรกจากบิลที่เลือก"\)\}</);
+  assert.match(source, />\{posText\("รับมัดจำเพิ่ม"\)\}</);
+  assert.match(source, /placeholder=\{posText\("ยอดที่แบ่งให้วิธีนี้"\)\}/);
+  assert.match(source, /placeholder=\{posText\("เงินสดที่ลูกค้ายื่นมา"\)\}/);
+  assert.match(source, /placeholder=\{posText\("รายละเอียดเหตุผล \(บังคับและแสดงในประวัติ\)"\)\}/);
+  assert.match(source, /placeholder=\{posText\("ข้อความนี้จะแสดงในประวัติออเดอร์"\)\}/);
 });
 
 test("POS help flips side instead of being clipped by the work panel edge", () => {

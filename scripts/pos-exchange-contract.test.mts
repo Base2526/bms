@@ -108,10 +108,10 @@ test("all three return actions report missing operator credentials instead of si
     source,
     /function ensureReturnOperatorReady\(actionLabel: string\)/
   );
-  assert.match(source, /เลือกพนักงานและใส่ PIN ก่อน\$\{actionLabel\}/);
-  assert.match(full, /ensureReturnOperatorReady\("คืนทั้งบิล"\)/);
-  assert.match(partial, /ensureReturnOperatorReady\("คืนบางรายการ"\)/);
-  assert.match(exchange, /ensureReturnOperatorReady\("ทำบิลเปลี่ยนสินค้า"\)/);
+  assert.match(source, /posText\("เลือกพนักงานและใส่ PIN ก่อน\{v0\}", \{ v0: actionLabel \}\)/);
+  assert.match(full, /ensureReturnOperatorReady\(posText\("คืนทั้งบิล"\)\)/);
+  assert.match(partial, /ensureReturnOperatorReady\(posText\("คืนบางรายการ"\)\)/);
+  assert.match(exchange, /ensureReturnOperatorReady\(posText\("ทำบิลเปลี่ยนสินค้า"\)\)/);
 });
 
 test("partial and full return buttons send the correct modes and show the committed return receipt", () => {
@@ -167,7 +167,7 @@ test("exchange action cannot overwrite a pending sale or start without a selecte
   );
   assert.match(
     source,
-    /ตะกร้าขายปัจจุบันมี \$\{cart\.length\} รายการและจะถูกแทนที่/
+    /posText\("ตะกร้าขายปัจจุบันมี \{v0\} รายการและจะถูกแทนที่[^"\n]+", \{ v0: cart\.length \}\)/
   );
 });
 

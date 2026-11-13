@@ -1,3 +1,4 @@
+import { createPosTranslator } from "../apps/web/i18n/posClient.ts";
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
@@ -9,7 +10,7 @@ const compile=(source:string)=>ts.transpileModule(source,{compilerOptions:{modul
 
 test('the desktop bridge requires explicit removal success and surfaces failures without clearing browser storage',async()=>{
   const window:any={bmsDesktop:{unpair:async()=>({ok:true})},localStorage:{removeItem:()=>assert.fail('native credentials are not browser storage')}};
-  const exports:any={};new Function('window','exports',compile(read('lib/pos/deviceTokenClient.ts')))(window,exports);
+  const exports:any={};new Function('window','exports','require',compile(read('lib/pos/deviceTokenClient.ts')))(window,exports,(name:string)=>{ assert.equal(name, './clientText'); return {posText:createPosTranslator('th')}; });
   for(const result of [{ok:false,error:'Cannot remove'},null,undefined]) {
     window.bmsDesktop.unpair=async()=>result;
     await assert.rejects(exports.clearPosDeviceToken(),result?.error ? /Cannot remove/ : /เลิกจับคู่เครื่องไม่สำเร็จ/);

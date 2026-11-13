@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 import { useEffect, useState } from 'react';
 import * as Keychain from 'react-native-keychain';
 
@@ -36,7 +37,7 @@ export async function savePickupQueueEnabled(enabled: boolean): Promise<void> {
       enabled ? '1' : '0',
       { service: SERVICE, accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK },
     );
-    if (!stored) throw new Error('บันทึกการตั้งค่าเลขคิวไม่สำเร็จ');
+    if (!stored) throw new Error(posText("บันทึกการตั้งค่าเลขคิวไม่สำเร็จ"));
   });
   storageLock = write.catch(() => undefined);
   await write;

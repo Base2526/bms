@@ -8,6 +8,32 @@ surface within it; **Emergency Offline Mode is mobile-only**. The shell must not
 server or full-offline register until it has an encrypted queue, the same server revalidation and
 recovery guarantees, and its own failure-mode evidence.
 
+## Operator language (Thai / English)
+
+Choose Thai or English in setup, the native Language menu, or the POS language selector. The shell
+stores a validated preference in `userData/language.json`, separately from encrypted pairing.
+Hosted POS uses the existing `I18nProvider` and a persistent `lang` cookie, with an origin-checked
+IPC bridge to keep the shell and register language in sync. Old hosted deployments without this
+bridge retain their existing language behaviour until the web app is updated.
+
+Setup, startup recovery, custom and standard native menus, register checkout/settings and the embedded legacy
+return/receiving/deposit/shift tools, board-game workspace, customer display and queue board use
+bilingual authored copy. Restaurant keeps its existing dictionary under the same provider. Switching language
+does not reload the register or clear PIN, cart, tender or pending transaction keys. Standard menu
+roles (File/Edit/View/Window, Copy/Paste, Quit and related actions) are relabelled after Electron
+expands its default menus, preserving native actions and shortcuts. OS-provided service entries,
+external admin pages and raw server/user text retain their own language; receipt language and queue
+announcement voice remain separate store/device settings.
+
+The shared operator catalog is `apps/web/i18n/pos-client.json`; the dependency-free shell catalog is
+`renderer/locale.cjs`. Keep interpolation data verbatim. Tests cover persistence and native labels;
+browser smokes cover setup at desktop/compact widths, language changes and retained inputs.
+
+The customer display and queue board follow the register language while already open, using a
+same-origin language-only channel without extra credential IPC. Queue voice language and receipt
+language retain their separate settings. Rapid language changes keep the latest selection even if an
+earlier preference write fails.
+
 ## Current milestone (0.2)
 
 - first-run server and device pairing;

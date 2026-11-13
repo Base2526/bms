@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 import * as Keychain from 'react-native-keychain';
 import type { PairingTarget } from './pairing';
 
@@ -28,7 +29,7 @@ export async function loadPairing(): Promise<LoadResult> {
     const serverUrl = creds.username ?? '';
     const token = creds.password ?? '';
     if (!serverUrl || !token) {
-      return { status: 'UNAVAILABLE', error: 'พบข้อมูลจับคู่เดิมแต่ข้อมูลไม่ครบ กรุณาตรวจที่เก็บข้อมูลปลอดภัย ข้อมูลเดิมยังไม่ถูกลบ' };
+      return { status: 'UNAVAILABLE', error: posText("พบข้อมูลจับคู่เดิมแต่ข้อมูลไม่ครบ กรุณาตรวจที่เก็บข้อมูลปลอดภัย ข้อมูลเดิมยังไม่ถูกลบ") };
     }
     return { status: 'PAIRED', target: { serverUrl, token } };
   } catch (e: any) {
@@ -48,11 +49,11 @@ export async function savePairing(target: PairingTarget): Promise<void> {
     },
   );
   if (!stored)
-    throw new Error('บันทึกข้อมูลจับคู่ลงที่เก็บข้อมูลปลอดภัยไม่สำเร็จ');
+    throw new Error(posText("บันทึกข้อมูลจับคู่ลงที่เก็บข้อมูลปลอดภัยไม่สำเร็จ"));
 }
 
 export async function clearPairing(): Promise<void> {
   const cleared = await Keychain.resetGenericPassword({ service: SERVICE });
   if (!cleared)
-    throw new Error('ลบข้อมูลจับคู่จากที่เก็บข้อมูลปลอดภัยไม่สำเร็จ');
+    throw new Error(posText("ลบข้อมูลจับคู่จากที่เก็บข้อมูลปลอดภัยไม่สำเร็จ"));
 }

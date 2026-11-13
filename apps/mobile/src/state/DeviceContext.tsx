@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React, {
   createContext,
   useCallback,
@@ -89,10 +90,11 @@ const DeviceContext = createContext<DeviceContextValue | null>(null);
 /** fetch ไม่มี timeout ในตัว — คำขอที่ค้างครึ่งทาง (เน็ตร้านหลุดกลางคัน) จะทำให้ปุ่ม
  *  "ทดสอบการเชื่อมต่อ" หมุนค้างตลอดกาลโดยไม่มีอะไรบอก */
 const VERIFY_TIMEOUT_MS = 10_000;
-const REJECTED_TOKEN_MESSAGE =
-  'เซิร์ฟเวอร์ไม่รับ token ของเครื่องนี้ — มักเกิดจากมีคนกด “ออก token” ใหม่ให้เครื่องนี้ ตัวเก่าจะใช้ไม่ได้ทันที';
+const rejectedTokenMessage = () =>
+  posText("เซิร์ฟเวอร์ไม่รับ token ของเครื่องนี้ — มักเกิดจากมีคนกด “ออก token” ใหม่ให้เครื่องนี้ ตัวเก่าจะใช้ไม่ได้ทันที");
 
 export function DeviceProvider({ children }: { children: React.ReactNode }) {
+  usePosLanguage();
   const [status, setStatus] = useState<PairingStatus>('LOADING');
   const [target, setTarget] = useState<PairingTarget | null>(null);
   const [storeError, setStoreError] = useState<string | null>(null);
@@ -107,7 +109,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
   const pairingChangeInFlight = useRef(false);
   const changePairing = useCallback(async (change: () => Promise<void>) => {
     if (pairingChangeInFlight.current) {
-      throw new Error('กำลังเปลี่ยนข้อมูลจับคู่ กรุณารอให้เสร็จก่อนลองใหม่');
+      throw new Error(posText("กำลังเปลี่ยนข้อมูลจับคู่ กรุณารอให้เสร็จก่อนลองใหม่"));
     }
     pairingChangeInFlight.current = true;
     try {
@@ -161,7 +163,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         // while an accepted-cash row was added. A failed queue read must also block removal.
         if ((await loadOfflineSales()).length > 0) {
           throw new Error(
-            'ยังมีรายการรับเงินออฟไลน์ค้าง กรุณาซิงก์หรือตรวจสอบให้เสร็จก่อนเลิกจับคู่',
+            posText("ยังมีรายการรับเงินออฟไลน์ค้าง กรุณาซิงก์หรือตรวจสอบให้เสร็จก่อนเลิกจับคู่"),
           );
         }
         await clearPairing();
@@ -184,7 +186,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     setVerify(current =>
       current.kind === 'REJECTED'
         ? current
-        : { kind: 'REJECTED', message: REJECTED_TOKEN_MESSAGE },
+        : { kind: 'REJECTED', message: rejectedTokenMessage() },
     );
   }, []);
 
@@ -239,7 +241,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
             category: 'pos',
             action: 'pos.device.verify',
             status: 'error',
-            message: REJECTED_TOKEN_MESSAGE,
+            message: rejectedTokenMessage(),
             context: {
               route: 'DeviceProvider.verifyTarget',
               httpStatus: 401,
@@ -249,7 +251,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           });
           return settle({
             kind: 'REJECTED',
-            message: REJECTED_TOKEN_MESSAGE,
+            message: rejectedTokenMessage(),
           });
         }
         if (!res.ok) {
@@ -257,7 +259,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
             category: 'pos',
             action: 'pos.device.verify',
             status: 'error',
-            message: describePosConnectionFailure({ httpStatus: res.status }).message,
+            message: describePosConnectionFailure({ httpStatus: res.status }, false, posText).message,
             context: {
               route: 'DeviceProvider.verifyTarget',
               httpStatus: res.status,
@@ -266,7 +268,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           });
           return settle({
             kind: 'SERVER_ERROR',
-            message: describePosConnectionFailure({ httpStatus: res.status }).message,
+            message: describePosConnectionFailure({ httpStatus: res.status }, false, posText).message,
             cause: `HTTP ${res.status}`,
           });
         }
@@ -277,7 +279,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         // auth rejection. The JSON body is another asynchronous boundary.
         if (seq !== verifySeq.current) return { kind: 'IDLE' };
         if (body?.errors != null && !Array.isArray(body.errors)) {
-          return settle({ kind: 'SERVER_ERROR', message: 'เซิร์ฟเวอร์ตอบข้อมูลผิดรูปแบบ กรุณาให้ผู้ดูแลตรวจสอบ', cause: 'INVALID_GRAPHQL_RESPONSE' });
+          return settle({ kind: 'SERVER_ERROR', message: posText("เซิร์ฟเวอร์ตอบข้อมูลผิดรูปแบบ กรุณาให้ผู้ดูแลตรวจสอบ"), cause: 'INVALID_GRAPHQL_RESPONSE' });
         }
         if (
           body?.errors?.some(
@@ -288,7 +290,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
             category: 'pos',
             action: 'pos.device.verify',
             status: 'error',
-            message: REJECTED_TOKEN_MESSAGE,
+            message: rejectedTokenMessage(),
             context: {
               route: 'DeviceProvider.verifyTarget',
               durationMs: Date.now() - startedAt,
@@ -297,11 +299,11 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           });
           return settle({
             kind: 'REJECTED',
-            message: REJECTED_TOKEN_MESSAGE,
+            message: rejectedTokenMessage(),
           });
         }
         if (body?.errors?.length) {
-          const failure = describePosConnectionFailure({ ...body.errors[0], httpStatus: 200 });
+          const failure = describePosConnectionFailure({ ...body.errors[0], httpStatus: 200 }, false, posText);
           const business = isPosBusinessError(body.errors[0]?.extensions?.code);
           const errorMessage = business && typeof body.errors[0]?.message === 'string'
             ? body.errors[0].message : failure.message;
@@ -335,7 +337,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
             action: 'pos.device.verify',
             status: 'error',
             message:
-              'ที่อยู่นี้ตอบกลับมาไม่ใช่ข้อมูลของเครื่องขาย — ตรวจว่าใส่เซิร์ฟเวอร์ถูกตัวหรือยัง',
+              posText("ที่อยู่นี้ตอบกลับมาไม่ใช่ข้อมูลของเครื่องขาย — ตรวจว่าใส่เซิร์ฟเวอร์ถูกตัวหรือยัง"),
             context: {
               route: 'DeviceProvider.verifyTarget',
               durationMs: Date.now() - startedAt,
@@ -345,8 +347,8 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           return settle({
             kind: 'SERVER_ERROR',
             message:
-              'ที่อยู่นี้ตอบกลับมาไม่ใช่ข้อมูลของเครื่องขาย — ตรวจว่าใส่เซิร์ฟเวอร์ถูกตัวหรือยัง',
-            cause: 'ไม่ใช่ข้อมูลเครื่องขาย',
+              posText("ที่อยู่นี้ตอบกลับมาไม่ใช่ข้อมูลของเครื่องขาย — ตรวจว่าใส่เซิร์ฟเวอร์ถูกตัวหรือยัง"),
+            cause: posText("ไม่ใช่ข้อมูลเครื่องขาย"),
           });
         }
 
@@ -354,7 +356,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           category: 'pos',
           action: 'pos.device.verify',
           status: 'success',
-          message: 'ตรวจเครื่อง POS กับเซิร์ฟเวอร์สำเร็จ',
+          message: posText("ตรวจเครื่อง POS กับเซิร์ฟเวอร์สำเร็จ"),
           context: {
             route: 'DeviceProvider.verifyTarget',
             durationMs: Date.now() - startedAt,
@@ -377,13 +379,13 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       } catch (e: any) {
         if (seq !== verifySeq.current) return { kind: 'IDLE' };
         const aborted = e?.name === 'AbortError' || e?.code === 'POS_TIMEOUT';
-        const failure = describePosConnectionFailure(e);
+        const failure = describePosConnectionFailure(e, false, posText);
         recordPosDiagnosticEvent(candidate, {
           category: 'pos',
           action: 'pos.device.verify',
           status: 'error',
           message: aborted
-            ? `ไม่ได้คำตอบภายใน ${VERIFY_TIMEOUT_MS / 1000} วินาที`
+            ? posText("ไม่ได้คำตอบภายใน {v0} วินาที", { v0: VERIFY_TIMEOUT_MS / 1000 })
             : failure.message,
           context: {
             route: 'DeviceProvider.verifyTarget',
@@ -396,9 +398,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         return settle({
           kind: 'OFFLINE',
           message: aborted
-            ? `ไม่ได้คำตอบภายใน ${
-                VERIFY_TIMEOUT_MS / 1000
-              } วินาที — เน็ตช้าหรือเซิร์ฟเวอร์ไม่ตอบ`
+            ? posText("ไม่ได้คำตอบภายใน {v0} วินาที — เน็ตช้าหรือเซิร์ฟเวอร์ไม่ตอบ", { v0: VERIFY_TIMEOUT_MS / 1000 })
             : failure.message,
           cause: aborted
             ? `TIMEOUT ${VERIFY_TIMEOUT_MS / 1000}s`
@@ -423,7 +423,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         ) => {
           if (queued.some(record => record.serverUrl !== next.serverUrl)) {
             throw new Error(
-              'ยังมีเงินสดออฟไลน์ค้างจากเซิร์ฟเวอร์เดิม ห้ามเปลี่ยนเซิร์ฟเวอร์จนกว่าจะซิงก์หรือตรวจสอบเสร็จ',
+              posText("ยังมีเงินสดออฟไลน์ค้างจากเซิร์ฟเวอร์เดิม ห้ามเปลี่ยนเซิร์ฟเวอร์จนกว่าจะซิงก์หรือตรวจสอบเสร็จ"),
             );
           }
           if (
@@ -433,7 +433,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
               target.token !== next.token)
           ) {
             throw new Error(
-              'คิวออฟไลน์รุ่นเก่ายังไม่ผูกกับรหัสเครื่อง ห้ามเปลี่ยน token จนกว่าจะซิงก์หรือตรวจสอบโดยผู้ดูแลเสร็จ',
+              posText("คิวออฟไลน์รุ่นเก่ายังไม่ผูกกับรหัสเครื่อง ห้ามเปลี่ยน token จนกว่าจะซิงก์หรือตรวจสอบโดยผู้ดูแลเสร็จ"),
             );
           }
           if (
@@ -443,7 +443,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
             )
           ) {
             throw new Error(
-              'token นี้เป็นคนละเครื่องกับคิวเงินสดออฟไลน์เดิม กรุณาใช้ token ใหม่ของเครื่องเดิม',
+              posText("token นี้เป็นคนละเครื่องกับคิวเงินสดออฟไลน์เดิม กรุณาใช้ token ใหม่ของเครื่องเดิม"),
             );
           }
         };
@@ -452,9 +452,9 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         if (checked.kind !== 'OK') {
           const reason =
             checked.kind === 'IDLE'
-              ? 'การตรวจ token ถูกยกเลิก กรุณาลองใหม่'
+              ? posText("การตรวจ token ถูกยกเลิก กรุณาลองใหม่")
               : checked.kind === 'CHECKING'
-              ? 'ยังตรวจ token ไม่เสร็จ'
+              ? posText("ยังตรวจ token ไม่เสร็จ")
               : checked.message;
           throw new Error(reason);
         }
@@ -462,7 +462,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         const checkedSequence = verifySeq.current;
         assertCompatibleQueue(await loadOfflineSales(), checked.info.deviceId);
         if (checkedSequence !== verifySeq.current) {
-          throw new Error('การตรวจ token ถูกยกเลิก กรุณาลองใหม่');
+          throw new Error(posText("การตรวจ token ถูกยกเลิก กรุณาลองใหม่"));
         }
         await savePairing(next);
         pairingRevision.current += 1;
@@ -485,7 +485,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
               latest.kind === 'SERVER_ERROR' ||
               latest.kind === 'OFFLINE'
                 ? latest.message
-                : 'บันทึกข้อมูลจับคู่แล้ว แต่ยังตรวจ token ไม่สำเร็จ กรุณาลองใหม่',
+                : posText("บันทึกข้อมูลจับคู่แล้ว แต่ยังตรวจ token ไม่สำเร็จ กรุณาลองใหม่"),
             );
           }
         }
@@ -514,8 +514,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       runVerify,
       markAuthenticationRejected,
     }),
-    [
-      status,
+    [status,
       target,
       storeError,
       verify,

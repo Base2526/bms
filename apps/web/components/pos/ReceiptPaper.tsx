@@ -33,13 +33,13 @@ const money = (value: number, locale: string) =>
 export const RECEIPT_PRINT_ID = "pos-receipt";
 
 /** บาร์โค้ดเลขบิล — พนักงานสแกนตอนลูกค้าเอาบิลมาคืนของ แทนการพิมพ์เลขด้วยมือ */
-function ReceiptBarcode({ value }: { value: string }) {
+function ReceiptBarcode({ value, label }: { value: string; label: string }) {
   const code = code39Bars(value);
   if (!code) return null;
   const height = 36;
   return (
     <svg viewBox={`0 0 ${code.width} ${height}`} width="100%" height={height}
-      preserveAspectRatio="none" role="img" aria-label={`บาร์โค้ดเลขบิล ${value}`}
+      preserveAspectRatio="none" role="img" aria-label={`${label} ${value}`}
       style={{ display: "block" }}>
       {code.bars.map((bar, index) => (
         <rect key={index} x={bar.x} y={0} width={bar.width} height={height} fill="#000" />
@@ -180,7 +180,7 @@ export default function ReceiptPaper({ payload }: { payload: ReceiptPayload }) {
 
       {/* กฎเดียวกับ `buildReceipt`: barcodeValue ชนะ docNo — สลิปคืนต้องสแกนกลับไปหาบิลขายเดิม */}
       {(payload.barcodeValue ?? payload.docNo) && <div className="pos-receipt-foot">
-        <ReceiptBarcode value={(payload.barcodeValue ?? payload.docNo)!} />
+        <ReceiptBarcode label={receiptLabel(mode, "บาร์โค้ดเลขบิล", "Receipt barcode")} value={(payload.barcodeValue ?? payload.docNo)!} />
         <div>{payload.referenceDocNo ? `${label("บิลเดิม", "Original bill")} ` : ""}{payload.barcodeValue ?? payload.docNo}</div>
       </div>}
     </div>

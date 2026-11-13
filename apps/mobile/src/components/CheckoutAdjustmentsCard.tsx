@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React, { useMemo, useState } from 'react';
 import {
   Modal,
@@ -68,6 +69,7 @@ export function CheckoutAdjustmentsCard({
   previewErrorOverride?: string | null;
   presentation?: Presentation;
 }) {
+  const language = usePosLanguage();
   const { colors, spacing, radius, typography } = useTheme();
   const { isTablet } = useResponsive();
   const insets = useSafeAreaInsets();
@@ -129,52 +131,50 @@ export function CheckoutAdjustmentsCard({
     const allRows = [
       {
         key: 'member' as const,
-        title: 'สมาชิก',
+        title: posText("สมาชิก", undefined, language),
         value: selectedMember
           ? [selectedMember.name, selectedMember.memberNo]
               .filter(Boolean)
               .join(' · ')
-          : 'ค้นหาชื่อ เบอร์ หรือเลขสมาชิก',
+          : posText("ค้นหาชื่อ เบอร์ หรือเลขสมาชิก", undefined, language),
       },
       {
         key: 'points' as const,
-        title: 'ใช้แต้ม',
+        title: posText("ใช้แต้ม", undefined, language),
         // ⚠️ ต้องบอก "แต้มที่หักจริง" ที่ server ตอบกลับมา ไม่ใช่ตัวเลขที่แคชเชียร์พิมพ์ —
         // เศษที่ไม่ครบหน่วยแลก/ต่ำกว่าขั้นต่ำ/ชนเพดานส่วนลด จะถูกตัดออกเงียบ ๆ แล้ว
         // ยอดที่จอโชว์กับจำนวนแต้มที่บอกลูกค้าจะไม่ใช่เรื่องเดียวกัน
         value: selectedMember
           ? pointsToRedeem > 0
             ? pointsUsed === pointsToRedeem
-              ? `${pointsUsed} แต้ม`
-              : `ขอ ${pointsToRedeem} · หักได้จริง ${pointsUsed} แต้ม`
-            : `ใช้ได้ ${Math.floor(selectedMember.pointsUsable)} แต้ม`
-          : 'เลือกสมาชิกก่อนใช้แต้ม',
+              ? posText("{v0} แต้ม", { v0: pointsUsed }, language)
+              : posText("ขอ {v0} · หักได้จริง {v1} แต้ม", { v0: pointsToRedeem, v1: pointsUsed }, language)
+            : posText("ใช้ได้ {v0} แต้ม", { v0: Math.floor(selectedMember.pointsUsable) }, language)
+          : posText("เลือกสมาชิกก่อนใช้แต้ม", undefined, language),
       },
       {
         key: 'extra' as const,
-        title: 'ค่าบริการ / ถุง',
+        title: posText("ค่าบริการ / ถุง", undefined, language),
         value: cart.extraLines.length
-          ? `${cart.extraLines.length} รายการ · ฿${cart.extraTotal.toFixed(2)}`
-          : 'เพิ่มรายการนอกสินค้า',
+          ? posText("{v0} รายการ · ฿{v1}", { v0: cart.extraLines.length, v1: cart.extraTotal.toFixed(2) }, language)
+          : posText("เพิ่มรายการนอกสินค้า", undefined, language),
       },
       {
         key: 'coupon' as const,
-        title: 'คูปอง',
-        value: coupon?.code ?? 'กรอกรหัสคูปอง',
+        title: posText("คูปอง", undefined, language),
+        value: coupon?.code ?? posText("กรอกรหัสคูปอง", undefined, language),
       },
       {
         key: 'discount' as const,
-        title: 'ส่วนลดพิเศษ',
+        title: posText("ส่วนลดพิเศษ", undefined, language),
         value: manualDiscount
-          ? `฿${manualDiscount.amount.toFixed(2)} · ${
-              manualDiscount.reason
-            }`
-          : 'ต้องมีเหตุผลและผู้อนุมัติ',
+          ? posText("฿{v0} · {v1}", { v0: manualDiscount.amount.toFixed(2), v1: manualDiscount.reason }, language)
+          : posText("ต้องมีเหตุผลและผู้อนุมัติ", undefined, language),
       },
     ];
     if (memberOnly) return allRows.filter(row => row.key === 'member');
     return hideExtra ? allRows.filter(row => row.key !== 'extra') : allRows;
-  }, [
+  }, [language,
     coupon?.code,
     cart.extraLines.length,
     cart.extraTotal,
@@ -195,7 +195,7 @@ export function CheckoutAdjustmentsCard({
   const applyCoupon = () => {
     const code = couponCode.trim().toUpperCase();
     if (!code) {
-      setError('กรอกรหัสคูปอง');
+      setError(posText("กรอกรหัสคูปอง"));
       return;
     }
     setCoupon({ code });
@@ -205,15 +205,15 @@ export function CheckoutAdjustmentsCard({
   const applyDiscount = () => {
     const parsed = Number(amount);
     if (!Number.isFinite(parsed) || parsed <= 0) {
-      setError('กรอกจำนวนส่วนลดที่มากกว่า 0');
+      setError(posText("กรอกจำนวนส่วนลดที่มากกว่า 0"));
       return;
     }
     if (!reason.trim()) {
-      setError('ต้องระบุเหตุผลของส่วนลด');
+      setError(posText("ต้องระบุเหตุผลของส่วนลด"));
       return;
     }
     if (!approver || !approverPin) {
-      setError('เลือกผู้อนุมัติและกรอก PIN');
+      setError(posText("เลือกผู้อนุมัติและกรอก PIN"));
       return;
     }
     setManualDiscount({
@@ -318,7 +318,7 @@ export function CheckoutAdjustmentsCard({
             accessibilityRole="button"
             accessibilityState={{ expanded }}
             accessibilityLabel={
-              memberOnly ? 'สมาชิกในบิล' : 'สิทธิประโยชน์และส่วนลด'
+              memberOnly ? posText("สมาชิกในบิล") : posText("สิทธิประโยชน์และส่วนลด")
             }
             onPress={() => setExpanded(value => !value)}
             style={styles.collapsedHeader}
@@ -333,14 +333,14 @@ export function CheckoutAdjustmentsCard({
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                {memberOnly ? 'สมาชิกในบิล' : 'สิทธิประโยชน์และส่วนลด'}
+                {memberOnly ? posText("สมาชิกในบิล") : posText("สิทธิประโยชน์และส่วนลด")}
               </Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
                 {previewLoading
-                  ? 'กำลังตรวจสิทธิ์กับเซิร์ฟเวอร์…'
+                  ? posText("กำลังตรวจสิทธิ์กับเซิร์ฟเวอร์…")
                   : activeAdjustmentCount > 0
-                  ? `ใช้งานแล้ว ${activeAdjustmentCount} รายการ`
-                  : 'ยังไม่ได้ใช้'}
+                  ? posText("ใช้งานแล้ว {v0} รายการ", { v0: activeAdjustmentCount })
+                  : posText("ยังไม่ได้ใช้")}
               </Text>
             </View>
             <Text style={[typography.subtitle, { color: colors.textMuted }]}>
@@ -349,7 +349,7 @@ export function CheckoutAdjustmentsCard({
           </Pressable>
         ) : presentation === 'stacked' ? (
           <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-            {memberOnly ? 'สมาชิกในบิล' : 'สิทธิประโยชน์และส่วนลด'}
+            {memberOnly ? posText("สมาชิกในบิล") : posText("สิทธิประโยชน์และส่วนลด")}
           </Text>
         ) : null}
         {presentation === 'horizontal' ? (
@@ -358,7 +358,7 @@ export function CheckoutAdjustmentsCard({
             {!memberOnly && !hideExtra ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="ค่าบริการหรือถุง"
+                accessibilityLabel={posText("ค่าบริการหรือถุง")}
                 onPress={() => openTool('extra')}
                 style={({ pressed }) => [
                   styles.extraToolButton,
@@ -387,8 +387,7 @@ export function CheckoutAdjustmentsCard({
         ) : null}
         {!memberOnly && previewLoading && presentation !== 'collapsed' ? (
           <Text style={[typography.caption, { color: colors.textMuted }]}>
-            กำลังตรวจสิทธิ์กับเซิร์ฟเวอร์…
-          </Text>
+            {posText("กำลังตรวจสิทธิ์กับเซิร์ฟเวอร์…") + " "}</Text>
         ) : !memberOnly && previewError ? (
           <Text style={[typography.caption, { color: colors.danger }]}>
             {previewError}
@@ -437,12 +436,11 @@ export function CheckoutAdjustmentsCard({
               {tool === 'member' ? (
                 <>
                   <Text style={[typography.title, { color: colors.text }]}>
-                    เลือกสมาชิก
-                  </Text>
+                    {posText("เลือกสมาชิก") + " "}</Text>
                   <FormInput
                     value={search}
                     onChangeText={setSearch}
-                    placeholder="ชื่อ เบอร์ หรือเลขสมาชิก"
+                    placeholder={posText("ชื่อ เบอร์ หรือเลขสมาชิก")}
                   />
                   <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
                     {(members.data?.bmsPosMemberSearch.members ?? []).map(
@@ -476,7 +474,7 @@ export function CheckoutAdjustmentsCard({
                   </View>
                   {selectedMember ? (
                     <Button
-                      label="นำสมาชิกออกจากบิล"
+                      label={posText("นำสมาชิกออกจากบิล")}
                       variant="ghost"
                       fullWidth
                       style={{ marginTop: spacing.md }}
@@ -492,21 +490,20 @@ export function CheckoutAdjustmentsCard({
                       { color: colors.text, marginTop: spacing.lg },
                     ]}
                   >
-                    สมัครสมาชิกใหม่
-                  </Text>
+                    {posText("สมัครสมาชิกใหม่") + " "}</Text>
                   <FormInput
                     value={memberPhone}
                     onChangeText={setMemberPhone}
-                    placeholder="เบอร์โทรศัพท์"
+                    placeholder={posText("เบอร์โทรศัพท์")}
                     keyboardType="phone-pad"
                   />
                   <FormInput
                     value={memberName}
                     onChangeText={setMemberName}
-                    placeholder="ชื่อสมาชิก (ไม่บังคับ)"
+                    placeholder={posText("ชื่อสมาชิก (ไม่บังคับ)")}
                   />
                   <Button
-                    label={working ? 'กำลังสมัคร…' : 'สมัครและเลือกสมาชิก'}
+                    label={working ? posText("กำลังสมัคร…") : posText("สมัครและเลือกสมาชิก")}
                     fullWidth
                     disabled={working || !memberPhone.trim()}
                     style={{ marginTop: spacing.md }}
@@ -531,7 +528,7 @@ export function CheckoutAdjustmentsCard({
                             result?.reason ??
                               result?.error ??
                               result?.status ??
-                              'สมัครสมาชิกไม่สำเร็จ',
+                              posText("สมัครสมาชิกไม่สำเร็จ"),
                           );
                           return;
                         }
@@ -553,7 +550,7 @@ export function CheckoutAdjustmentsCard({
                         setError(
                           cause instanceof Error
                             ? cause.message
-                            : 'สมัครสมาชิกไม่สำเร็จ',
+                            : posText("สมัครสมาชิกไม่สำเร็จ"),
                         );
                       } finally {
                         setWorking(false);
@@ -566,21 +563,19 @@ export function CheckoutAdjustmentsCard({
               {tool === 'points' ? (
                 <>
                   <Text style={[typography.title, { color: colors.text }]}>
-                    ใช้แต้มสมาชิก
-                  </Text>
+                    {posText("ใช้แต้มสมาชิก") + " "}</Text>
                   <Text
                     style={[typography.caption, { color: colors.textMuted }]}
                   >
-                    เซิร์ฟเวอร์จะจำกัดแต้มตามยอดและกติกาของร้านอีกครั้ง
-                  </Text>
+                    {posText("เซิร์ฟเวอร์จะจำกัดแต้มตามยอดและกติกาของร้านอีกครั้ง") + " "}</Text>
                   <FormInput
                     value={points}
                     onChangeText={setPoints}
-                    placeholder="จำนวนแต้ม"
+                    placeholder={posText("จำนวนแต้ม")}
                     keyboardType="number-pad"
                   />
                   <Button
-                    label="ใช้แต้ม"
+                    label={posText("ใช้แต้ม")}
                     fullWidth
                     disabled={!selectedMember}
                     onPress={() => {
@@ -594,7 +589,7 @@ export function CheckoutAdjustmentsCard({
                   />
                   {pointsToRedeem > 0 ? (
                     <Button
-                      label="ยกเลิกการใช้แต้ม"
+                      label={posText("ยกเลิกการใช้แต้ม")}
                       variant="ghost"
                       fullWidth
                       onPress={() => {
@@ -609,23 +604,22 @@ export function CheckoutAdjustmentsCard({
               {tool === 'coupon' ? (
                 <>
                   <Text style={[typography.title, { color: colors.text }]}>
-                    ใช้คูปอง
-                  </Text>
+                    {posText("ใช้คูปอง") + " "}</Text>
                   <FormInput
                     value={couponCode}
                     onChangeText={setCouponCode}
-                    placeholder="รหัสคูปอง"
+                    placeholder={posText("รหัสคูปอง")}
                     autoCapitalize="characters"
                   />
                   <Button
-                    label="ตรวจสอบกับเซิร์ฟเวอร์"
+                    label={posText("ตรวจสอบกับเซิร์ฟเวอร์")}
                     fullWidth
                     style={{ marginTop: spacing.md }}
                     onPress={applyCoupon}
                   />
                   {coupon ? (
                     <Button
-                      label="นำคูปองออก"
+                      label={posText("นำคูปองออก")}
                       variant="ghost"
                       fullWidth
                       onPress={() => {
@@ -640,18 +634,17 @@ export function CheckoutAdjustmentsCard({
               {tool === 'discount' ? (
                 <>
                   <Text style={[typography.title, { color: colors.text }]}>
-                    ส่วนลดพิเศษ
-                  </Text>
+                    {posText("ส่วนลดพิเศษ") + " "}</Text>
                   <FormInput
                     value={amount}
                     onChangeText={setAmount}
-                    placeholder="จำนวนเงินส่วนลด"
+                    placeholder={posText("จำนวนเงินส่วนลด")}
                     keyboardType="decimal-pad"
                   />
                   <FormInput
                     value={reason}
                     onChangeText={setReason}
-                    placeholder="เหตุผลส่วนลด"
+                    placeholder={posText("เหตุผลส่วนลด")}
                   />
                   <Text
                     style={[
@@ -659,14 +652,13 @@ export function CheckoutAdjustmentsCard({
                       { color: colors.textMuted, marginTop: spacing.md },
                     ]}
                   >
-                    ผู้อนุมัติ
-                  </Text>
+                    {posText("ผู้อนุมัติ") + " "}</Text>
                   <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
                     {discountApprovers.map(option => (
                       <Button
                         key={option.id}
                         label={`${option.name ?? option.id}${
-                          option.hasPin ? '' : ' · ยังไม่ได้ตั้ง PIN'
+                          option.hasPin ? '' : posText(" · ยังไม่ได้ตั้ง PIN")
                         }`}
                         variant={
                           approver?.id === option.id ? 'primary' : 'secondary'
@@ -680,12 +672,12 @@ export function CheckoutAdjustmentsCard({
                   <FormInput
                     value={approverPin}
                     onChangeText={setApproverPin}
-                    placeholder="PIN ผู้อนุมัติ"
+                    placeholder={posText("PIN ผู้อนุมัติ")}
                     keyboardType="number-pad"
                     secureTextEntry
                   />
                   <Button
-                    label="ใช้ส่วนลด"
+                    label={posText("ใช้ส่วนลด")}
                     fullWidth
                     style={{ marginTop: spacing.md }}
                     onPress={applyDiscount}
@@ -696,8 +688,7 @@ export function CheckoutAdjustmentsCard({
               {tool === 'extra' ? (
                 <>
                   <Text style={[typography.title, { color: colors.text }]}>
-                    ค่าบริการ / ถุง
-                  </Text>
+                    {posText("ค่าบริการ / ถุง") + " "}</Text>
                   {cart.extraLines.map(line => (
                     <View key={line.id} style={styles.extraRow}>
                       <Text
@@ -706,11 +697,10 @@ export function CheckoutAdjustmentsCard({
                           { color: colors.text, flex: 1 },
                         ]}
                       >
-                        {line.label} · ฿
-                        {(line.qty * line.unitAmount).toFixed(2)}
+                        {line.label} {" " + posText("· ฿") + " "}{(line.qty * line.unitAmount).toFixed(2)}
                       </Text>
                       <Button
-                        label="ลบ"
+                        label={posText("ลบ")}
                         variant="ghost"
                         onPress={() =>
                           cart.setExtraLines(
@@ -723,16 +713,16 @@ export function CheckoutAdjustmentsCard({
                   <FormInput
                     value={extraLabel}
                     onChangeText={setExtraLabel}
-                    placeholder="ชื่อรายการ"
+                    placeholder={posText("ชื่อรายการ")}
                   />
                   <FormInput
                     value={extraAmount}
                     onChangeText={setExtraAmount}
-                    placeholder="จำนวนเงิน"
+                    placeholder={posText("จำนวนเงิน")}
                     keyboardType="decimal-pad"
                   />
                   <Button
-                    label="เพิ่มรายการ"
+                    label={posText("เพิ่มรายการ")}
                     fullWidth
                     onPress={() => {
                       const parsed = Number(extraAmount);
@@ -741,7 +731,7 @@ export function CheckoutAdjustmentsCard({
                         !Number.isFinite(parsed) ||
                         parsed <= 0
                       ) {
-                        setError('กรอกชื่อและจำนวนเงินที่มากกว่า 0');
+                        setError(posText("กรอกชื่อและจำนวนเงินที่มากกว่า 0"));
                         return;
                       }
                       cart.setExtraLines([
@@ -772,7 +762,7 @@ export function CheckoutAdjustmentsCard({
                 </Text>
               ) : null}
               <Button
-                label="ปิด"
+                label={posText("ปิด")}
                 variant="secondary"
                 fullWidth
                 style={{ marginTop: spacing.md }}

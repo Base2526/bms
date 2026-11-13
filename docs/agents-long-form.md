@@ -471,6 +471,26 @@ are in [agent-invariants.md](agent-invariants.md). Update this file when a rule 
 
 ## i18n (long form, including dictionary count history)
 
+**2026-11-12 admin recount:** 113 namespaces / 9,542 string leaves per language at exact parity;
+1,454 keys in `admin_ui` cover the back-office audit. `useUiText()` delegates to the same shared
+dictionary and context. The audit now includes English-only legacy admin screens, UI dates,
+paired bank/province names and the page-error boundary. `admin-client-i18n-contract` scans 205
+reachable UI files with reviewed exact-source exceptions; `i18n-keys-contract` uses an AST for
+literal `t()`/`uiText()` keys and recursive parity instead of quote/indentation assumptions.
+Earlier counts below are historical snapshots. Data, customer-message templates, clinical content,
+official printed tax text and technical identifiers retain their own language policy.
+
+POS Mobile/Desktop operator copy also uses explicit source/English pairs under
+`apps/web/i18n/pos-client.json` with `posClient.ts`; it is not included in the historical namespace
+counts below. Web POS uses the existing context, Mobile subscribes without remounting and keeps a
+separate Keychain language preference, and Electron persists its shell language separately from
+pairing. See [coverage and invariants](agent-invariants.md#i18n-coverage-what-bilingual-actually-means-today)
+and the two app READMEs. Store receipt language, queue voice, customer/product text and server
+evidence are independent of operator language. Customer/queue UI follows the register through a
+language-only same-origin channel. `pos-client-i18n-contract` rejects unwrapped operator copy and
+covers source keys, placeholder parity and unchanged payment results; app tests cover persistence,
+rapid selection and retained input.
+
 Operational scripts on Windows, Linux, and macOS use English for prompts, progress, warnings,
 errors, and completion messages, including PowerShell, shell entrypoints, and shared release tools.
 Keep authored console text ASCII where practical so it remains readable across code pages and fonts.
@@ -604,7 +624,8 @@ runs by hand does not run. `.github/workflows/gate.yml` runs the same steps as `
 | `file-visibility-contract` | `/api/files` guards, fail-closed visibility check, tenant match on owned files, and every upload site's public/private + owner choice |
 | `secret-fallback-contract` | every secret resolver throws in production, none is a module-level const with a string fallback |
 | `infra/multi-instance-contract` | storage driver, fleet-wide state, cron claim-before-act |
-| `i18n-keys-contract` | every literal `t()` key resolves in th+en; per-section key parity |
+| `i18n-keys-contract` | literal `t()`/`uiText()` keys resolve in th+en; recursive key and admin placeholder parity |
+| `admin-client-i18n-contract` | admin/shared UI authored-copy coverage and reviewed data/identifier exceptions |
 | `board-game-cafe-contract` · `board-game-register-contract` · `board-game-pos-parity-contract` | table/seating/billing-group source contracts and derived table status · the register's phone geometry and the money a running table may print · browser REST and native GraphQL reach the same command set through one permission table |
 | `board-game-pass-contract` · `board-game-identity-contract` · `board-game-offers-renewals-contract` | pass coverage math and quota spend at close · identity-hold purge/reveal gating · offer selection vs pass coverage, and renewal as one atomic entitlement + payment + credit-ledger write |
 | `board-game-waitlist-contract` · `board-game-service-call-contract` · `board-game-readiness-scope-contract` | queue/reservation state before a session, seating in one transaction · the guest bell moves nothing but staff attention · every table path is declared in `schemaReadiness` |

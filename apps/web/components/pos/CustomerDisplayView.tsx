@@ -1,5 +1,7 @@
 "use client";
 
+import { usePosText } from "@/lib/pos/usePosText";
+
 import { useEffect, useState } from "react";
 import { CheckOutlined, ShopOutlined, UserOutlined } from "@ant-design/icons";
 import QRCode from "qrcode";
@@ -10,11 +12,12 @@ import styles from "./CustomerDisplayView.module.css";
 const baht = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function Logo({ url, large = false }: { url?: string | null; large?: boolean }) {
+  const posText = usePosText();
   const safeUrl = displayUrl(url);
   const [failed, setFailed] = useState<string | null>(null);
   return <div className={large ? styles.largeLogo : styles.logo}>
     {safeUrl && failed !== safeUrl
-      ? <img src={safeUrl} alt="โลโก้ร้าน" onError={() => setFailed(safeUrl)} />
+      ? <img src={safeUrl} alt={posText("โลโก้ร้าน")} onError={() => setFailed(safeUrl)} />
       : <ShopOutlined aria-hidden />}
   </div>;
 }
@@ -28,6 +31,7 @@ function WelcomeBackground({
   promos?: string[];
   intervalSeconds?: number;
 }) {
+
   const fallback = displayUrl(url);
   const safePromos = Array.from(new Set(promos.map(displayUrl).filter((value): value is string => Boolean(value)))).slice(0, 8);
   const [failed, setFailed] = useState<string[]>([]);
@@ -63,6 +67,7 @@ function WelcomeBackground({
 }
 
 function DisplayQr({ payload, label }: { payload: string; label: string }) {
+  const posText = usePosText();
   const [result, setResult] = useState<{ payload: string; url: string | null } | null>(null);
   useEffect(() => {
     let active = true;
@@ -74,11 +79,12 @@ function DisplayQr({ payload, label }: { payload: string; label: string }) {
   const current = result?.payload === payload ? result : null;
   return <div className={styles.qr}>
     {current?.url ? <img src={current.url} alt={label} />
-      : <span>{current ? "กรุณาติดต่อพนักงาน" : "กำลังเตรียม QR"}</span>}
+      : <span>{current ? posText("กรุณาติดต่อพนักงาน") : posText("กำลังเตรียม QR")}</span>}
   </div>;
 }
 
 function DynamicPaymentQr({ basePayload, amount }: { basePayload: string; amount: number }) {
+  const posText = usePosText();
   let payload: string | null = null;
   try {
     payload = createDynamicPromptPayQrPayload(basePayload, amount);
@@ -87,27 +93,29 @@ function DynamicPaymentQr({ basePayload, amount }: { basePayload: string; amount
     // static QR that would ask the customer to key a different amount.
   }
   return payload
-    ? <DisplayQr payload={payload} label="Dynamic PromptPay QR พร้อมยอดชำระ" />
-    : <div className={styles.qr}><span>ไม่สามารถสร้าง QR พร้อมยอดได้ กรุณาติดต่อพนักงาน</span></div>;
+    ? <DisplayQr payload={payload} label={posText("Dynamic PromptPay QR พร้อมยอดชำระ")} />
+    : <div className={styles.qr}><span>{posText("ไม่สามารถสร้าง QR พร้อมยอดได้ กรุณาติดต่อพนักงาน")}</span></div>;
 }
 
 function Member({ state, showGuest = false }: { state: CustomerDisplayPayload; showGuest?: boolean }) {
+  const posText = usePosText();
   const name = displayMemberName(state.memberName);
   const kind = displayMemberKind(state);
   if (kind === "unknown") return null;
   if (kind === "guest") return showGuest ? <section className={`${styles.member} ${styles.guest}`} data-customer-kind="guest">
-    <UserOutlined aria-hidden /><div><strong>ลูกค้าทั่วไป</strong><p>รายการนี้ไม่ได้สะสมแต้ม</p></div>
+    <UserOutlined aria-hidden /><div><strong>{posText("ลูกค้าทั่วไป")}</strong><p>{posText("รายการนี้ไม่ได้สะสมแต้ม")}</p></div>
   </section> : null;
   return <section className={styles.member} data-customer-kind="member">
-    <UserOutlined aria-hidden /><div><strong>{name ? `สมาชิก ${name}` : "สมาชิก"}</strong>
-      {state.pointsBalance != null && <p>แต้มคงเหลือ {state.pointsBalance.toLocaleString("th-TH")}</p>}
-      {!state.finished && !state.pendingApproval && !state.pendingPricing && state.pointsWillEarn != null && <p className={styles.points}>แต้มที่คาดว่าจะได้รับ {state.pointsWillEarn}</p>}
-      {state.finished && state.pointsEarned != null && <p className={styles.points}>ได้รับ {state.pointsEarned} แต้ม</p>}
+    <UserOutlined aria-hidden /><div><strong>{name ? posText("สมาชิก {v0}", { v0: name }) : posText("สมาชิก")}</strong>
+      {state.pointsBalance != null && <p>{posText("แต้มคงเหลือ") + " "}{state.pointsBalance.toLocaleString("th-TH")}</p>}
+      {!state.finished && !state.pendingApproval && !state.pendingPricing && state.pointsWillEarn != null && <p className={styles.points}>{posText("แต้มที่คาดว่าจะได้รับ") + " "}{state.pointsWillEarn}</p>}
+      {state.finished && state.pointsEarned != null && <p className={styles.points}>{posText("ได้รับ") + " "}{state.pointsEarned} {" " + posText("แต้ม")}</p>}
     </div>
   </section>;
 }
 
 export function CustomerDisplayView({ state, linked }: { state: CustomerDisplayPayload; linked: boolean }) {
+  const posText = usePosText();
   const [visibleLimit, setVisibleLimit] = useState(8);
   useEffect(() => {
     const resize = () => setVisibleLimit(window.innerHeight >= 1000 ? 8 : window.innerHeight >= 850 ? 6 : window.innerHeight >= 700 ? 5 : 3);
@@ -119,8 +127,8 @@ export function CustomerDisplayView({ state, linked }: { state: CustomerDisplayP
   const brand = state.brand;
   const taxUrl = displayUrl(state.finished?.taxRequestUrl);
   const website = displayUrl(brand?.website);
-  const name = brand?.name || "ยินดีต้อนรับ";
-  const labels = { idle: "ยินดีต้อนรับ", cart: "รายการของคุณ", payment: "ชำระเงิน", finished: "ชำระเงินเรียบร้อย" };
+  const name = brand?.name || posText("ยินดีต้อนรับ");
+  const labels = { idle: posText("ยินดีต้อนรับ"), cart: posText("รายการของคุณ"), payment: posText("ชำระเงิน"), finished: posText("ชำระเงินเรียบร้อย") };
   return <main className={styles.screen} data-phase={phase}>
     {phase === "idle" && <WelcomeBackground
       url={brand?.customerDisplayBackgroundUrl}
@@ -130,67 +138,67 @@ export function CustomerDisplayView({ state, linked }: { state: CustomerDisplayP
     <header className={styles.header}>
       <div className={styles.brand}><Logo url={brand?.logoUrl} /><div><strong>{name}</strong>
         {brand?.branch && brand.branch !== name && <p>{brand.branch}</p>}</div></div>
-      <span className={styles.status}>{linked ? labels[phase] : "กรุณารอสักครู่"}</span>
+      <span className={styles.status}>{linked ? labels[phase] : posText("กรุณารอสักครู่")}</span>
     </header>
     {phase === "idle" && <div className={styles.idle}>
       <section className={styles.welcome}><Logo url={brand?.logoUrl} large />
-        <p className={styles.eyebrow}>ยินดีต้อนรับ</p><h1>{brand?.name || "พร้อมให้บริการ"}</h1>
+        <p className={styles.eyebrow}>{posText("ยินดีต้อนรับ")}</p><h1>{brand?.name || posText("พร้อมให้บริการ")}</h1>
         {brand?.branch && brand.branch !== name && <p>{brand.branch}</p>}
       </section>
       {(brand?.businessHours || website) && <aside className={styles.info}>
-        {brand?.businessHours && <section><h2>เวลาเปิดทำการ</h2><p>{brand.businessHours}</p></section>}
-        {website && <section><h2>ช่องทางของร้าน</h2><DisplayQr payload={website} label="QR ช่องทางของร้าน" /></section>}
+        {brand?.businessHours && <section><h2>{posText("เวลาเปิดทำการ")}</h2><p>{brand.businessHours}</p></section>}
+        {website && <section><h2>{posText("ช่องทางของร้าน")}</h2><DisplayQr payload={website} label={posText("QR ช่องทางของร้าน")} /></section>}
       </aside>}
     </div>}
     {phase === "cart" && <div className={styles.cart}>
-      <section className={styles.items}><div className={styles.sectionHeading}><h1>รายการของคุณ</h1><span>{state.itemCount} ชิ้น</span></div>
+      <section className={styles.items}><div className={styles.sectionHeading}><h1>{posText("รายการของคุณ")}</h1><span>{state.itemCount} {" " + posText("ชิ้น")}</span></div>
         <div className={styles.lines}>{state.lines.slice(-visibleLimit).map((line, i, lines) => <div key={i} className={`${styles.line} ${i === lines.length - 1 ? styles.latest : ""}`}>
           <span className={styles.quantity}>{line.qty}×</span><div className={styles.itemName}><span>{line.name}</span>
             {(line.size || line.unitName) && <small>{[line.size, line.unitName].filter(Boolean).join(" · ")}</small>}</div>
           <strong>{baht(line.amount)}</strong>
         </div>)}</div>
-        {state.lines.length > visibleLimit && <p className={styles.muted}>และอีก {state.lines.length - visibleLimit} รายการก่อนหน้า</p>}
+        {state.lines.length > visibleLimit && <p className={styles.muted}>{posText("และอีก") + " "}{state.lines.length - visibleLimit} {" " + posText("รายการก่อนหน้า")}</p>}
       </section>
       <aside className={styles.summary}><Member state={state} /><div className={styles.totals}>
-        {state.pendingApproval || state.pendingPricing ? <p>กรุณารอพนักงานยืนยันยอดชำระ</p> : <>
-        <div className={styles.row}><span>ยอดสินค้า</span><span>฿{baht(state.total)}</span></div>
-        {state.discountTotal > 0 && <div className={`${styles.row} ${styles.savings}`}><span>ส่วนลด</span><span>−฿{baht(state.discountTotal)}</span></div>}
-        <p>ยอดชำระ</p><strong className={styles.amount}>฿{baht(state.amountDue)}</strong>
+        {state.pendingApproval || state.pendingPricing ? <p>{posText("กรุณารอพนักงานยืนยันยอดชำระ")}</p> : <>
+        <div className={styles.row}><span>{posText("ยอดสินค้า")}</span><span>฿{baht(state.total)}</span></div>
+        {state.discountTotal > 0 && <div className={`${styles.row} ${styles.savings}`}><span>{posText("ส่วนลด")}</span><span>−฿{baht(state.discountTotal)}</span></div>}
+        <p>{posText("ยอดชำระ")}</p><strong className={styles.amount}>฿{baht(state.amountDue)}</strong>
         </>}
       </div></aside>
     </div>}
     {phase === "payment" && <div className={styles.payment}>
-      <section className={styles.paymentTotal}><p className={styles.eyebrow}>ยอดชำระทั้งหมด</p>
-        <h1 className={styles.amount}>฿{baht(state.amountDue)}</h1><p>{state.itemCount} ชิ้น</p>
-        {state.discountTotal > 0 && <p className={styles.savings}>ส่วนลด ฿{baht(state.discountTotal)}</p>}
+      <section className={styles.paymentTotal}><p className={styles.eyebrow}>{posText("ยอดชำระทั้งหมด")}</p>
+        <h1 className={styles.amount}>฿{baht(state.amountDue)}</h1><p>{state.itemCount} {" " + posText("ชิ้น")}</p>
+        {state.discountTotal > 0 && <p className={styles.savings}>{posText("ส่วนลด ฿")}{baht(state.discountTotal)}</p>}
         <Member state={state} />
       </section>
       {state.paymentQr ? <section className={styles.paymentQr}>
         <DynamicPaymentQr basePayload={state.paymentQr.payload} amount={state.paymentQr.amount} />
-        <div><h2>สแกนชำระเงิน</h2><strong className={styles.qrAmount}>฿{baht(state.paymentQr.amount)}</strong>
+        <div><h2>{posText("สแกนชำระเงิน")}</h2><strong className={styles.qrAmount}>฿{baht(state.paymentQr.amount)}</strong>
           {state.paymentQr.accountName && <p>{state.paymentQr.accountName}</p>}
-          <p>ยอดเงินถูกใส่ใน QR แล้ว โปรดตรวจสอบชื่อผู้รับและยอดก่อนยืนยัน</p><small>กรุณารอพนักงานยืนยันการชำระเงิน</small></div>
-      </section> : <section className={styles.paymentWaiting}><h2>ชำระเงินกับพนักงาน</h2><p>กรุณาตรวจสอบยอดเงิน</p></section>}
+          <p>{posText("ยอดเงินถูกใส่ใน QR แล้ว โปรดตรวจสอบชื่อผู้รับและยอดก่อนยืนยัน")}</p><small>{posText("กรุณารอพนักงานยืนยันการชำระเงิน")}</small></div>
+      </section> : <section className={styles.paymentWaiting}><h2>{posText("ชำระเงินกับพนักงาน")}</h2><p>{posText("กรุณาตรวจสอบยอดเงิน")}</p></section>}
     </div>}
     {phase === "finished" && state.finished && <div className={styles.finished}>
       <section className={styles.thanks} data-finished-primary><span className={styles.checkBadge}><CheckOutlined aria-hidden /></span>
-        <div className={styles.thanksCopy}><h1>ชำระเงินเรียบร้อย</h1><p>ขอบคุณที่อุดหนุน</p></div>
+        <div className={styles.thanksCopy}><h1>{posText("ชำระเงินเรียบร้อย")}</h1><p>{posText("ขอบคุณที่อุดหนุน")}</p></div>
       </section>
       <section className={`${styles.finishedSummary} ${state.finished.change == null ? styles.finishedSummaryNoChange : ""} ${state.finished.pickupQueueLabel ? styles.finishedSummaryQueue : ""}`} data-finished-summary>
         <div className={styles.settlement} data-finished-settlement>
-          <div className={`${styles.row} ${styles.totalRow}`}><span>ยอดชำระทั้งหมด</span><strong>฿{baht(state.finished.total)}</strong></div>
-          {state.finished.tendered != null && <div className={styles.row}><span>รับเงินสด</span><strong>฿{baht(state.finished.tendered)}</strong></div>}
+          <div className={`${styles.row} ${styles.totalRow}`}><span>{posText("ยอดชำระทั้งหมด")}</span><strong>฿{baht(state.finished.total)}</strong></div>
+          {state.finished.tendered != null && <div className={styles.row}><span>{posText("รับเงินสด")}</span><strong>฿{baht(state.finished.tendered)}</strong></div>}
         </div>
         {state.finished.pickupQueueLabel && <><span className={styles.finishedDivider} aria-hidden />
-          <div className={styles.pickupQueue}><p>เลขคิวรับของ</p><strong>{state.finished.pickupQueueLabel}</strong>
-            <small>กรุณารอเรียกที่เคาน์เตอร์</small></div></>}
-        {state.finished.change != null && <><span className={styles.finishedDivider} aria-hidden /><div className={styles.change}><p>เงินทอน</p><strong className={styles.amount}>฿{baht(state.finished.change)}</strong></div></>}
+          <div className={styles.pickupQueue}><p>{posText("เลขคิวรับของ")}</p><strong>{state.finished.pickupQueueLabel}</strong>
+            <small>{posText("กรุณารอเรียกที่เคาน์เตอร์")}</small></div></>}
+        {state.finished.change != null && <><span className={styles.finishedDivider} aria-hidden /><div className={styles.change}><p>{posText("เงินทอน")}</p><strong className={styles.amount}>฿{baht(state.finished.change)}</strong></div></>}
         <span className={styles.finishedDivider} aria-hidden />
         <aside className={styles.finishAside}><Member state={state} showGuest />
-          {taxUrl && <section className={styles.tax}><DisplayQr payload={taxUrl} label="QR ขอใบกำกับภาษีเต็มรูป" /><div className={styles.taxCopy}><h2>ขอใบกำกับภาษีเต็มรูป</h2><p>สแกน QR เพื่อกรอกข้อมูล</p></div></section>}
+          {taxUrl && <section className={styles.tax}><DisplayQr payload={taxUrl} label={posText("QR ขอใบกำกับภาษีเต็มรูป")} /><div className={styles.taxCopy}><h2>{posText("ขอใบกำกับภาษีเต็มรูป")}</h2><p>{posText("สแกน QR เพื่อกรอกข้อมูล")}</p></div></section>}
         </aside>
       </section>
     </div>}
-    <footer className={styles.footer}><span>{brand?.branch || brand?.name || ""}</span><span>ขอบคุณที่ใช้บริการ</span></footer>
+    <footer className={styles.footer}><span>{brand?.branch || brand?.name || ""}</span><span>{posText("ขอบคุณที่ใช้บริการ")}</span></footer>
   </main>;
 }

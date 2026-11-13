@@ -1,3 +1,4 @@
+import { getMessage } from "../apps/web/i18n/index.ts";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -160,8 +161,10 @@ test("native POS diagnostics are device-attributed and visible by server-side de
   assert.match(admin, /bmsPosDeviceDiagnostics\(deviceId: \$diagnosticDeviceId, limit: 50\)/);
   assert.match(admin, /expandedRowRender/);
   assert.match(admin, /DIAGNOSTIC_CONTEXT_LABELS/);
-  assert.match(admin, /Correlation ID/);
-  assert.match(admin, /พนักงานที่เลือก/);
+  assert.ok(admin.includes('uiText("admin_ui.en_correlation_id_805ca")'));
+  assert.match(getMessage("en", "admin_ui.en_correlation_id_805ca"), /Correlation ID/);
+  assert.ok(admin.includes('uiText("admin_ui.selected_staff_member_bb086")'));
+  assert.equal(getMessage("th", "admin_ui.selected_staff_member_bb086"), "พนักงานที่เลือก");
   assert.doesNotMatch(mobile, /body:\s*JSON\.stringify\([^)]*(pin|token)/i);
   assert.match(mobile, /Keychain\.setGenericPassword/);
   assert.match(mobile, /MAX_QUEUE_EVENTS/);
@@ -169,7 +172,7 @@ test("native POS diagnostics are device-attributed and visible by server-side de
   assert.match(mobile, /runWithOperationTimeout\(signal => fetch/);
   assert.match(mobile, /signal,/);
   assert.match(mobile, /\}\), SEND_TIMEOUT_MS\)/);
-  assert.match(login, /message:\s*'เริ่มตรวจ PIN พนักงาน'/);
+  assert.match(login, /message:\s*posText\("เริ่มตรวจ PIN พนักงาน"\)/);
   assert.match(login, /cashierUserId: cashier\.id/);
   assert.match(login, /PIN_VERIFY_TIMEOUT/);
 });

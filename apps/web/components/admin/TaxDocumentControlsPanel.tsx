@@ -1,20 +1,23 @@
 "use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { useEffect, useState } from "react";
 import { Alert, Button, Card, Checkbox, Form, Input, InputNumber, Modal, Radio, Select, Space, Table } from "antd";
 import { useI18n } from "@/lib/i18nContext";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import TaxControlDocument from "./TaxControlDocument";
 
-async function call(body?: any, params = "") {
+async function call(body?: any, params = "", uiText: UiTranslator = thaiUiText) {
   const res = await fetch(`/api/bms/tax-controls${params}`, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : { cache: "no-store" });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Tax controls unavailable");
+  if (!res.ok) throw new Error(data.error || uiText("admin_ui.en_tax_controls_unavailable_0e9a1"));
   return data;
 }
 export default function TaxDocumentControlsPanel({ month, locationId, establishments, documents, onChanged }: {
   month: string; locationId?: string; establishments: { locationId: string; name: string; branchCode: string }[];
   documents: any[]; onChanged: () => void;
 }) {
+  const uiText = useUiText();
   const { t } = useI18n(), { can } = useBmsPermissions();
   const [form] = Form.useForm();
   const [archive, setArchive] = useState<any>({ actions: [], periods: [] });
@@ -22,23 +25,23 @@ export default function TaxDocumentControlsPanel({ month, locationId, establishm
   const [review, setReview] = useState<any>(null), [printed, setPrinted] = useState<any>(null);
   const action = Form.useWatch("action", form), vat = Form.useWatch(["buyer", "vatRegistered"], form);
   const query = `?month=${encodeURIComponent(month)}${locationId ? `&locationId=${encodeURIComponent(locationId)}` : ""}`;
-  const reload = async () => { try { setArchive(await call(undefined, query)); } catch (e) { setError((e as Error).message); } };
-  useEffect(() => { let active = true; setArchive({ actions: [], periods: [] }); call(undefined, query).then(data => { if (active) setArchive(data); }).catch(e => { if (active) setError(e.message); }); return () => { active = false; }; }, [query]);
+  const reload = async () => { try { setArchive(await call(undefined, query, uiText)); } catch (e) { setError((e as Error).message); } };
+  useEffect(() => { let active = true; setArchive({ actions: [], periods: [] }); call(undefined, query, uiText).then(data => { if (active) setArchive(data); }).catch(e => { if (active) setError(e.message); }); return () => { active = false; }; }, [query]);
   const preview = async (values: any) => {
     setBusy(true); setError("");
-    try { const input = { ...values, month }; const result = await call(input); if (result.status === "COMPLETED") { setPrinted(result.snapshot); setOpen(false); } else setReview({ ...result, input }); }
+    try { const input = { ...values, month }; const result = await call(input, undefined, uiText); if (result.status === "COMPLETED") { setPrinted(result.snapshot); setOpen(false); } else setReview({ ...result, input }); }
     catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
   const confirm = async () => {
     setBusy(true);
     try {
-      const result = await call({ ...review.input, confirmed: true, reviewHash: review.reviewHash });
+      const result = await call({ ...review.input, confirmed: true, reviewHash: review.reviewHash }, undefined, uiText);
       setPrinted(result.snapshot); setReview(null); setOpen(false); await reload(); onChanged();
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
   const view = async (id: string, period = false) => {
     setPrinted(null); setBusy(true);
-    try { setPrinted(await call(undefined, `?id=${id}&period=${period}`)); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+    try { setPrinted(await call(undefined, `?id=${id}&period=${period}`, uiText)); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
   const options = [
     ...(can("tax.document.issue") ? [{ value: "SUBSTITUTE", label: t("tax_controls.substitute") }] : []),

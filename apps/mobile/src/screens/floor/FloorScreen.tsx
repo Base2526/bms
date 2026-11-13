@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../../i18n/language';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -51,10 +52,10 @@ function tableTone(table: FloorTable) {
 }
 
 function tableStatusLabel(table: FloorTable): string {
-  if (table.blocked) return 'ปิดใช้';
-  if (table.status === 'AVAILABLE') return 'ว่าง';
-  if (hasClosingCheck(table)) return 'กำลังคิดเงิน';
-  return 'มีลูกค้า';
+  if (table.blocked) return posText("ปิดใช้");
+  if (table.status === 'AVAILABLE') return posText("ว่าง");
+  if (hasClosingCheck(table)) return posText("กำลังคิดเงิน");
+  return posText("มีลูกค้า");
 }
 
 function tableSize(table: FloorTable) {
@@ -66,6 +67,7 @@ function clamp(value: number, min: number, max: number) {
 }
 
 export default function FloorScreen({ navigation }: Props) {
+  usePosLanguage();
   const { colors, spacing, typography, radius } = useTheme();
   const { width, isTablet } = useResponsive();
   const bottomTabBarHeight = useBottomTabBarHeight();
@@ -156,8 +158,7 @@ export default function FloorScreen({ navigation }: Props) {
     const widthScale = naturalWidth > 0 ? viewportWidth / naturalWidth : 1;
     const heightScale = naturalHeight > 0 ? viewportHeight / naturalHeight : 1;
     return clamp(Math.min(widthScale, heightScale, 1.08), 0.72, 1.08);
-  }, [
-    contentBounds.height,
+  }, [contentBounds.height,
     contentBounds.width,
     useFloorPlan,
     viewportHeight,
@@ -201,7 +202,7 @@ export default function FloorScreen({ navigation }: Props) {
     if (takeawayInFlight.current) return;
     const credentials = session?.credentials;
     if (!credentials) {
-      Alert.alert('เปิดบิลไม่ได้', 'กรุณาเข้าใช้งานใหม่');
+      Alert.alert(posText("เปิดบิลไม่ได้"), posText("กรุณาเข้าใช้งานใหม่"));
       return;
     }
     takeawayInFlight.current = true;
@@ -220,7 +221,7 @@ export default function FloorScreen({ navigation }: Props) {
         },
       });
       const opened = response.data?.bmsPosRestaurantOpenCheck.check;
-      if (!opened) throw new Error('เปิดบิลกลับบ้านไม่สำเร็จ');
+      if (!opened) throw new Error(posText("เปิดบิลกลับบ้านไม่สำเร็จ"));
       await query.refetch().catch(() => undefined);
       getAppNavigation(navigation).navigate('CheckDetail', {
         checkId: opened.id,
@@ -228,8 +229,8 @@ export default function FloorScreen({ navigation }: Props) {
       });
     } catch (error) {
       Alert.alert(
-        'เปิดบิลกลับบ้านไม่สำเร็จ',
-        error instanceof Error ? error.message : 'กรุณาลองใหม่',
+        posText("เปิดบิลกลับบ้านไม่สำเร็จ"),
+        error instanceof Error ? error.message : posText("กรุณาลองใหม่"),
       );
     } finally {
       takeawayInFlight.current = false;
@@ -271,26 +272,23 @@ export default function FloorScreen({ navigation }: Props) {
           />
         </View>
         <Text style={[typography.caption, { color: colors.textMuted }]}>
-          {item.name} · {item.seats} ที่นั่ง
-        </Text>
+          {item.name} · {item.seats} {" " + posText("ที่นั่ง") + " "}</Text>
         {item.check ? (
           <View style={{ marginTop: spacing.md }}>
             <Text style={[typography.bodyStrong, { color: colors.text }]}>
-              {item.check.itemCount} รายการ · ฿{item.check.amountDue.toFixed(2)}
+              {item.check.itemCount} {" " + posText("รายการ · ฿")}{item.check.amountDue.toFixed(2)}
             </Text>
             {item.check.unsentCount > 0 ? (
               <Text
                 style={[typography.captionStrong, { color: colors.warning }]}
               >
-                ยังไม่ส่งครัว {item.check.unsentCount} รายการ
-              </Text>
+                {posText("ยังไม่ส่งครัว") + " "}{item.check.unsentCount} {" " + posText("รายการ") + " "}</Text>
             ) : null}
           </View>
         ) : null}
         {item.checks.length > 1 ? (
           <Text style={[typography.captionStrong, { color: colors.primary }]}>
-            {item.checks.length} บิล แยกชำระ
-          </Text>
+            {item.checks.length} {" " + posText("บิล แยกชำระ") + " "}</Text>
         ) : null}
       </Card>
     </Pressable>
@@ -449,8 +447,7 @@ export default function FloorScreen({ navigation }: Props) {
               ]}
               numberOfLines={1}
             >
-              {table.check.itemCount} รายการ
-            </Text>
+              {table.check.itemCount} {" " + posText("รายการ") + " "}</Text>
           ) : null}
         </View>
       </Pressable>
@@ -463,23 +460,21 @@ export default function FloorScreen({ navigation }: Props) {
         <View style={styles.screenHeader}>
           <View style={styles.screenHeaderText}>
             <Text style={[typography.title, { color: colors.text }]}>
-              ผังโต๊ะ
-            </Text>
+              {posText("ผังโต๊ะ") + " "}</Text>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
               {query.loading
-                ? 'กำลังโหลด…'
-                : `${visibleTables.length} โต๊ะในสาขานี้`}
+                ? posText("กำลังโหลด…")
+                : posText("{v0} โต๊ะในสาขานี้", { v0: visibleTables.length })}
             </Text>
           </View>
           {query.error ? (
             <Pressable onPress={() => query.refetch()}>
               <Text style={[typography.caption, { color: colors.danger }]}>
-                {query.error.message} · แตะเพื่อลองใหม่
-              </Text>
+                {query.error.message} {" " + posText("· แตะเพื่อลองใหม่") + " "}</Text>
             </Pressable>
           ) : null}
           <Button
-            label="เปิดบิลกลับบ้าน"
+            label={posText("เปิดบิลกลับบ้าน")}
             loading={openingTakeaway}
             disabled={!session || openingTakeaway}
             style={isTablet ? undefined : styles.takeawayButtonPhone}
@@ -510,7 +505,7 @@ export default function FloorScreen({ navigation }: Props) {
               <Pressable
                 key={check.id}
                 accessibilityRole="button"
-                accessibilityLabel={`บิลกลับบ้าน ${check.id.slice(0, 8)}`}
+                accessibilityLabel={posText("บิลกลับบ้าน {v0}", { v0: check.id.slice(0, 8) })}
                 onPress={() =>
                   getAppNavigation(navigation).navigate('CheckDetail', {
                     checkId: check.id,
@@ -528,10 +523,10 @@ export default function FloorScreen({ navigation }: Props) {
                 }}
               >
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                  กลับบ้าน #{check.id.slice(0, 8)}
+                  {posText("กลับบ้าน #")}{check.id.slice(0, 8)}
                 </Text>
                 <Text style={[typography.caption, { color: colors.textMuted }]}>
-                  {check.itemCount} รายการ · ฿{check.amountDue.toFixed(2)}
+                  {check.itemCount} {" " + posText("รายการ · ฿")}{check.amountDue.toFixed(2)}
                 </Text>
                 {check.unsentCount > 0 ? (
                   <Text
@@ -540,8 +535,7 @@ export default function FloorScreen({ navigation }: Props) {
                       { color: colors.warning },
                     ]}
                   >
-                    ยังไม่ส่งครัว {check.unsentCount} รายการ
-                  </Text>
+                    {posText("ยังไม่ส่งครัว") + " "}{check.unsentCount} {" " + posText("รายการ") + " "}</Text>
                 ) : null}
               </Pressable>
             ))}
@@ -683,7 +677,7 @@ export default function FloorScreen({ navigation }: Props) {
             ]}
           >
             <Text style={[typography.title, { color: colors.text }]}>
-              เลือกบิล {billPickerTable?.code}
+              {posText("เลือกบิล") + " "}{billPickerTable?.code}
             </Text>
             <ScrollView contentContainerStyle={{ gap: spacing.sm }}>
               {(billPickerTable?.checks ?? []).map(check => (
@@ -691,9 +685,7 @@ export default function FloorScreen({ navigation }: Props) {
                   key={check.id}
                   fullWidth
                   variant="secondary"
-                  label={`บิล ${check.splitGroupNo} · ${
-                    check.itemCount
-                  } รายการ · ฿${check.amountDue.toFixed(2)}`}
+                  label={posText("บิล {v0} · {v1} รายการ · ฿{v2}", { v0: check.splitGroupNo, v1: check.itemCount, v2: check.amountDue.toFixed(2) })}
                   onPress={() => {
                     const tableId = billPickerTable?.id;
                     setBillPickerTable(null);
@@ -708,7 +700,7 @@ export default function FloorScreen({ navigation }: Props) {
               ))}
             </ScrollView>
             <Button
-              label="ปิด"
+              label={posText("ปิด")}
               variant="secondary"
               fullWidth
               onPress={() => setBillPickerTable(null)}

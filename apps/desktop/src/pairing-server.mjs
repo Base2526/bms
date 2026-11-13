@@ -1,3 +1,5 @@
+import desktopLocale from '../renderer/locale.cjs';
+const { posText } = desktopLocale;
 export class PairingServerResponseError extends Error {
   constructor(status, userMessage) {
     super(`Pairing server responded with HTTP ${status}`);
@@ -13,34 +15,34 @@ export function assertPairingServerResponse(response) {
   if (status === 401) {
     throw new PairingServerResponseError(
       status,
-      "Server ไม่รับ Device Token (HTTP 401) กรุณาให้ผู้ดูแลตรวจ URL สถานะเครื่อง และการออก token ใหม่ให้เครื่องเดิมก่อนจับคู่เครื่องใหม่",
+      posText("Server ไม่รับ Device Token (HTTP 401) กรุณาให้ผู้ดูแลตรวจ URL สถานะเครื่อง และการออก token ใหม่ให้เครื่องเดิมก่อนจับคู่เครื่องใหม่"),
     );
   }
   if (status === 403) {
     throw new PairingServerResponseError(
       status,
-      "เครื่องนี้ไม่มีสิทธิ์เข้าใช้งาน Server (HTTP 403) กรุณาติดต่อผู้ดูแลร้านเพื่อตรวจสิทธิ์",
+      posText("เครื่องนี้ไม่มีสิทธิ์เข้าใช้งาน Server (HTTP 403) กรุณาติดต่อผู้ดูแลร้านเพื่อตรวจสิทธิ์"),
     );
   }
   if (status >= 500) {
     throw new PairingServerResponseError(
       status,
-      `Server ยังไม่พร้อมใช้งาน (HTTP ${status}) กรุณาลองใหม่หรือตรวจสอบสถานะ Server`,
+      posText("Server ยังไม่พร้อมใช้งาน (HTTP {v0}) กรุณาลองใหม่หรือตรวจสอบสถานะ Server", { v0: status }),
     );
   }
   if (status === 429) {
     throw new PairingServerResponseError(status,
-      "ส่งคำขอถี่เกินไป (HTTP 429) รอสักครู่แล้วลองตรวจการเชื่อมต่อใหม่ ไม่ต้องเปลี่ยน Server หรือออก token ใหม่");
+      posText("ส่งคำขอถี่เกินไป (HTTP 429) รอสักครู่แล้วลองตรวจการเชื่อมต่อใหม่ ไม่ต้องเปลี่ยน Server หรือออก token ใหม่"));
   }
   if (status === 408) {
     throw new PairingServerResponseError(status,
-      "การตรวจเครื่องหมดเวลารอ (HTTP 408) ตรวจเครือข่ายและสถานะ Server แล้วลองใหม่ ข้อมูลจับคู่เดิมยังอยู่");
+      posText("การตรวจเครื่องหมดเวลารอ (HTTP 408) ตรวจเครือข่ายและสถานะ Server แล้วลองใหม่ ข้อมูลจับคู่เดิมยังอยู่"));
   }
   throw new PairingServerResponseError(
     status,
     status > 0
-      ? `Server ไม่รองรับการเชื่อมต่อ BMS POS (HTTP ${status}) กรุณาตรวจสอบ URL หรือเปลี่ยน Server`
-      : "Server ตอบกลับไม่ถูกต้อง กรุณาตรวจสอบ URL หรือเปลี่ยน Server",
+      ? posText("Server ไม่รองรับการเชื่อมต่อ BMS POS (HTTP {v0}) กรุณาตรวจสอบ URL หรือเปลี่ยน Server", { v0: status })
+      : posText("Server ตอบกลับไม่ถูกต้อง กรุณาตรวจสอบ URL หรือเปลี่ยน Server"),
   );
 }
 
@@ -53,7 +55,7 @@ export async function fetchPairingSession(pairing, fetcher, timeoutMs = 5_000) {
       timer = setTimeout(() => {
         controller.abort();
         const error = new Error("Pairing server request timed out");
-        error.userMessage = "เซิร์ฟเวอร์ไม่ตอบภายในเวลาที่กำหนด กรุณาตรวจเครือข่ายหรือเซิร์ฟเวอร์แล้วลองใหม่";
+        error.userMessage = posText("เซิร์ฟเวอร์ไม่ตอบภายในเวลาที่กำหนด กรุณาตรวจเครือข่ายหรือเซิร์ฟเวอร์แล้วลองใหม่");
         reject(error);
       }, timeoutMs);
     });
@@ -65,11 +67,11 @@ export async function fetchPairingSession(pairing, fetcher, timeoutMs = 5_000) {
       assertPairingServerResponse(response);
       let session;
       try { session = await response.json(); } catch {
-        throw new PairingServerResponseError(response.status, "เซิร์ฟเวอร์ตอบข้อมูลที่ไม่ใช่ BMS POS กรุณาตรวจ URL และการเชื่อมต่อ");
+        throw new PairingServerResponseError(response.status, posText("เซิร์ฟเวอร์ตอบข้อมูลที่ไม่ใช่ BMS POS กรุณาตรวจ URL และการเชื่อมต่อ"));
       }
       if (typeof session?.device?.id !== "string" || !session.device.id.trim()
         || typeof session?.device?.code !== "string" || !session.device.code.trim()) {
-        throw new PairingServerResponseError(response.status, "เซิร์ฟเวอร์ไม่ส่งข้อมูลเครื่อง BMS POS กรุณาตรวจ URL แล้วลองใหม่");
+        throw new PairingServerResponseError(response.status, posText("เซิร์ฟเวอร์ไม่ส่งข้อมูลเครื่อง BMS POS กรุณาตรวจ URL แล้วลองใหม่"));
       }
       return session;
     })(), timeout]);

@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { useState } from "react";
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Col, Row, Select, Space, Table, Tag, Typography } from "antd";
@@ -212,6 +214,7 @@ function TriageRow({
 }
 
 export default function Page() {
+  const uiText = useUiText();
   const { t, lang } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const canViewReports = can("report.view");
@@ -748,9 +751,9 @@ export default function Page() {
                   <Text strong>{Number(d?.lowStockCount ?? 0).toLocaleString()}</Text>
                 </div>
                 <Space wrap size={6} style={{ marginTop: 2 }}>
-                  <Link href="/admin/reports"><Button size="small">Reports</Button></Link>
-                  <Link href="/admin/products"><Button size="small">Products</Button></Link>
-                  <Link href="/admin/customers"><Button size="small">Customers</Button></Link>
+                  <Link href="/admin/reports"><Button size="small">{uiText("admin_ui.en_reports_88bc3")}</Button></Link>
+                  <Link href="/admin/products"><Button size="small">{uiText("admin_ui.en_products_fe0a0")}</Button></Link>
+                  <Link href="/admin/customers"><Button size="small">{uiText("admin_ui.en_customers_035ea")}</Button></Link>
                 </Space>
               </Space>
             </Card>
@@ -848,8 +851,8 @@ export default function Page() {
                 dataSource={aiFailure?.topFailingTools || []}
                 locale={{ emptyText: t("admin_dashboard.empty_no_ai_failures") }}
                 columns={[
-                  { title: "Tool", dataIndex: "tool", key: "tool" },
-                  { title: "Outcome", dataIndex: "outcome", key: "outcome", width: 120, render: (v: string) => <Tag color={v === "denied" ? "gold" : "red"}>{v}</Tag> },
+                  { title: uiText("admin_ui.en_tool_9a830"), dataIndex: "tool", key: "tool" },
+                  { title: uiText("admin_ui.en_outcome_d3f06"), dataIndex: "outcome", key: "outcome", width: 120, render: (v: string) => <Tag color={v === "denied" ? "gold" : "red"}>{v}</Tag> },
                   { title: t("admin_dashboard.col_times"), dataIndex: "count", key: "count", width: 100, align: "right" },
                 ]}
               />
@@ -900,7 +903,7 @@ export default function Page() {
                             dataIndex: "createdAt",
                             key: "createdAt",
                             width: 150,
-                            render: (v: string) => new Date(v).toLocaleString("th-TH", {
+                            render: (v: string) => new Date(v).toLocaleString(uiText.locale, {
                               timeZone: "Asia/Bangkok",
                               day: "numeric",
                               month: "short",

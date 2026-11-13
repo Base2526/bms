@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 import './printerPolyfills';
 import { Buffer } from 'buffer';
 import { decode } from 'fast-png';
@@ -5,7 +6,7 @@ import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 
 export const MAX_RECEIPT_HEIGHT = 16000;
 export function receiptRaster(base64: string, width: 384 | 576): Uint8Array {
-  if (base64.length > 16_000_000) throw new Error('ภาพใบเสร็จใหญ่เกินไป');
+  if (base64.length > 16_000_000) throw new Error(posText("ภาพใบเสร็จใหญ่เกินไป"));
   const bytes = Buffer.from(base64, 'base64');
   // Bound allocation before the decoder expands PNG pixels.
   if (
@@ -15,13 +16,13 @@ export function receiptRaster(base64: string, width: 384 | 576): Uint8Array {
     bytes.readUInt32BE(20) < 1 ||
     bytes.readUInt32BE(20) > MAX_RECEIPT_HEIGHT
   )
-    throw new Error('ขนาดภาพใบเสร็จไม่ถูกต้อง');
+    throw new Error(posText("ขนาดภาพใบเสร็จไม่ถูกต้อง"));
   const png = decode(bytes, { checkCrc: true });
   if (
     (png.depth !== 8 && png.depth !== 16) ||
     (png.channels !== 3 && png.channels !== 4)
   ) {
-    throw new Error('รูปแบบภาพใบเสร็จไม่รองรับ');
+    throw new Error(posText("รูปแบบภาพใบเสร็จไม่รองรับ"));
   }
   const maxChannel = png.depth === 16 ? 65535 : 255;
   const encoder = new ReceiptPrinterEncoder({
