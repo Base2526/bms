@@ -6551,6 +6551,8 @@ const en = {
     exempt: "VAT exempt",
   },
   restaurant_actual: {
+    cancel_window: "Cancel scheduled price",
+    cancel_window_confirm: "Cancel this scheduled branch price? The current branch price will apply when this window is cancelled.",
     surface: "Sales surface",
     all_surfaces: "All sales surfaces",
     starts_at: "Starts at (local time, optional)",

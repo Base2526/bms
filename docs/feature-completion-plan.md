@@ -15,7 +15,7 @@ closed.** “Repository progress” describes the current working tree; it is no
 | B | Tenant security and RBAC | Permission matrix reads/writes now use tenant RLS context; write, actor audit and confirmation are atomic/explicit | Isolated DB denial, grants and concurrent-edit tests; Administrator UAT |
 | C | Money, stock and order integrity | Existing service and pure/DB contract suites identified; shipment audit moved into its transaction | Restored DB races, replay/rollback, backup restore and shipment-create idempotency policy |
 | D | Retail web cart and pickup | Catalog and signed checkout exist | Server-priced cart, retail pickup state machine and end-to-end customer pilot |
-| E | Branch pricing | Base/pack branch overrides, promotion windows and POS return snapshots exist | Dated branch base/pack prices, cross-channel satang tests and target DB proof |
+| E | Branch pricing | Base/pack branch overrides, promotion windows, return snapshots and `10.116` dated branch prices exist in source | Isolated DB/browser proof, cross-channel satang tests and target rollout |
 | F | Restaurant counter and notifications | Pickup email templates/queue code exist; report digest now dispatches hourly for local send hours | Apply migrations, durable status-email retry, printer/display tests and branch pilot |
 | G | Mobile and desktop POS | Native suites exist; code and packaging work is active | Signed builds, reconnect/replay, device and OS hardware matrix |
 | H | External providers and delivery | Adapter scaffolds and capability gates exist | Contracts, verified signatures, sandbox/shadow/live reconciliation and carrier booking policy |
@@ -151,11 +151,11 @@ uncollected order expires, and how refund/tax rules apply. The current `orders.t
 ### Branch pricing
 
 Base/pack branch overrides already win over shared catalog prices, and sale snapshots protect
-historical returns. The override table has only one current row per branch/product/size/pack and
-no effective dates; promotion windows are a separate mechanism. Define how a future branch price
-is published, corrected and cancelled before adding its schema and operator controls. Then prove
-the chosen price and discounts to the satang across POS, OMS, checkout and customer tools on an
-isolated database. Do not treat the existing promotion scheduler as a branch base-price scheduler.
+historical returns. `10.116` now adds future branch price windows with confirmed cancellation;
+expiry restores the current override or shared catalog. Promotion windows remain a separate
+mechanism. The new path still needs migration application, isolated DB and desktop/mobile browser
+proof. Then prove the chosen price and discounts to the satang across POS, OMS, checkout and
+customer tools. Do not treat source code or a passing pure suite as a tenant rollout.
 
 ### Restaurant counter
 

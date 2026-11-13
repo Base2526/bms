@@ -208,6 +208,7 @@ const CONFIGURATION = [
   "bms_pharmacy_guidance_templates", "bms_pharmacy_protocols", "bms_product_categories", "bms_product_images",
   "bms_product_modifier_groups", "bms_product_modifiers", "bms_product_packs",
   "bms_branch_prices", // Shared catalog price configuration, resolved on scan and revalidated at settlement.
+  "bms_branch_price_windows", // Scheduled catalog price configuration; reads select the active window and sales revalidate at settlement.
   "bms_product_price_tiers", "bms_product_promotions", "bms_product_recipes",
   "bms_product_recipe_subrecipes", // Immutable recipe definition; Stock Models reads on open and refetches after save.
   "bms_operating_cost_reviews", // Human report classification; monthly view reads on open and refetches after each decision, no live money mutation.

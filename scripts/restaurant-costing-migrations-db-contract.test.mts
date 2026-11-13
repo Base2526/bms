@@ -93,3 +93,34 @@ test("completion schema: 10.71–10.72 fresh and repeated migration preserve RLS
     assert.equal((await c.query('SELECT * FROM bms_branch_prices')).rowCount,0);
   } finally {await c.query('ROLLBACK');c.release();}
 });
+
+test("10.116 branch price windows rerun cleanly with forced tenant RLS and no overlapping prices", async () => {
+  await assertCostingTestDatabase();
+  const c=await getClient();
+  try {
+    await c.query('BEGIN');
+    await c.query("SET LOCAL lock_timeout='10s'");
+    await c.query('DROP TABLE bms_branch_price_windows');
+    const sql=readFileSync(new URL('../db/migrations/10.116__bms_branch_price_windows.sql',import.meta.url),'utf8')
+      .replace(/^\s*(?:BEGIN|COMMIT);\s*$/gm,'');
+    for(let pass=0;pass<2;pass++) {
+      await c.query(sql);
+      const row=(await c.query(`SELECT relrowsecurity,relforcerowsecurity,
+        has_table_privilege('bms_app',oid,'SELECT') AS readable,
+        has_table_privilege('bms_app',oid,'INSERT') AS insertable,
+        has_table_privilege('bms_app',oid,'UPDATE') AS updatable,
+        has_table_privilege('bms_app',oid,'DELETE') AS deletable,
+        (SELECT count(*)::int FROM pg_policy WHERE polrelid=oid) AS policies
+        FROM pg_class WHERE oid='bms_branch_price_windows'::regclass`)).rows[0];
+      assert.ok(row.relrowsecurity&&row.relforcerowsecurity&&row.readable&&row.insertable&&row.updatable);
+      assert.equal(row.deletable,false);
+      assert.equal(row.policies,1);
+      assert.equal((await c.query(`SELECT 1 FROM pg_constraint
+        WHERE conrelid='bms_branch_price_windows'::regclass
+          AND conname='bms_branch_price_windows_no_overlap'`)).rowCount,1);
+    }
+    await c.query('SET LOCAL ROLE bms_app');
+    await c.query("SELECT set_config('bms.tenant_id','',true)");
+    assert.equal((await c.query('SELECT * FROM bms_branch_price_windows')).rowCount,0);
+  } finally { await c.query('ROLLBACK'); c.release(); }
+});

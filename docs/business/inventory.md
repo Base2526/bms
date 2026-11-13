@@ -1636,6 +1636,13 @@ supports both VAT price modes.
 
 ### Operating completion — 10.71–10.72
 
+Migration `10.116` adds future branch BASE/PACK price windows. A window requires a future start;
+an optional end returns pricing to the current branch override or shared catalog. Overlapping
+windows for the same branch/SKU/size/pack are refused. Staff can review existing windows in the
+price-publication preview and confirm cancellation; cancellation returns to the underlying price.
+Existing order-line snapshots remain authoritative for returns. Apply `10.116` before deploying
+the reader; this is not evidence of production rollout.
+
 - At price publication, choose all branches or one authorized branch for BASE/PACK. Branch overrides
   use the catalog variant and existing named-pack definition; quantity and barcode stay shared. A base
   override also works before a BASE pack row exists. Recipe menu prices and filters use serving variants

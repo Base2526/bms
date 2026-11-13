@@ -10280,6 +10280,7 @@ type Mutation {
   bmsBackfillEtaxQueue(limit: Int = 500): Int!
   bmsBookShipmentLive(id: ID!): BmsCarrierBookingResult!
   bmsBranchRequisitionCommand(input: BmsRequisitionCommandInput!): BmsRequisitionResult!
+  bmsCancelBranchPriceWindow(confirmed: Boolean!, id: ID!): BmsCostingActionResult!
   bmsCancelOrder(id: ID!): Boolean!
   bmsCancelPurchaseOrder(id: ID!): Boolean!
   bmsCancelRestockSubscription(id: ID!): Boolean!

@@ -1,5 +1,12 @@
 # BMS status log
 
+**Scheduled branch base/pack prices (`10.116`, source candidate, not deployed).** Branch
+prices can now have a future half-open window that temporarily overrides the current branch
+price. Overlapping windows are rejected by the database. Staff preview the exact price and
+scope, confirm publication, and can confirm cancellation of a window; sale and return snapshots
+remain unchanged. The shared price reader applies the same window to catalog, scan and order
+paths. Isolated database, authenticated browser and target-migration proof remain open.
+
 Per-feature decision narrative moved out of [CLAUDE.md](../CLAUDE.md) on 2026-10-13 to keep the
 always-loaded agent context small. The moved text is unchanged; newest entries are at the end.
 Entries were brought up to date on 2026-11-09 (through migration `10.113`, PR #406 and the

@@ -6553,6 +6553,8 @@ const th = {
     exempt: "ยกเว้น VAT",
   },
   restaurant_actual: {
+    cancel_window: "ยกเลิกราคาที่ตั้งเวลา",
+    cancel_window_confirm: "ยกเลิกราคาสาขาช่วงนี้หรือไม่ เมื่อยกเลิกแล้วจะใช้ราคาสาขาปัจจุบันแทน",
     surface: "ช่องทางขาย",
     all_surfaces: "ทุกช่องทางขาย",
     starts_at: "เริ่มเวลา (เวลาท้องถิ่น ไม่บังคับ)",

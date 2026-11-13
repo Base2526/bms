@@ -5450,6 +5450,7 @@ export const typeDefs = /* GraphQL */ `
     bmsConfirmMenuNetProfit(input: BmsMenuProfitInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
     bmsPublishMenuBundle(input: BmsMenuBundlePublicationInput!, review: BmsPricePublicationReview!): BmsPricePublicationResult!
     bmsPublishPricePlan(input: BmsPublishPriceInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
+    bmsCancelBranchPriceWindow(id: ID!, confirmed: Boolean!): BmsCostingActionResult!
 
     bmsRefreshActions: Int!
     bmsTransitionAction(id: ID!, status: BmsActionStatus!, reason: String, ownerId: ID, measuredOutcome: JSON): BmsAction!

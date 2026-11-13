@@ -2307,6 +2307,13 @@ nonnegative price; absence inherits the shared catalog. It changes no physical s
 Tenant RLS is fail-closed, with bms_app read/write grants. Writes go through confirmed publication
 with branch authorization and atomic publication/audit history.
 
+Migration `10.116` adds `bms_branch_price_windows` for future branch base/pack prices. An active
+half-open window supersedes the current `bms_branch_prices` row only within its interval; after
+expiry or confirmed cancellation the current row applies again. A GiST exclusion prevents two
+uncancelled windows for the same tenant/branch/SKU/size/pack from overlapping. The table is
+tenant-scoped with forced RLS and `bms_app` grants. Publication and cancellation each commit an
+audit in the same tenant transaction. Deploy the migration before the reader/writer code.
+
 Promotion active-SKU partial indexes are replaced by `bms_promotion_windows_exclusive`, a GiST
 exclusion on tenant/SKU/coalesced branch and `[starts_at,ends_at)` for active rows. Requires btree_gist.
 This permits multiple future windows while forbidding ambiguity at checkout. Old/current rule start

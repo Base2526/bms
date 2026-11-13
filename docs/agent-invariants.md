@@ -2801,3 +2801,8 @@ bucket. It is not complete if actual costs are unknown. Changed evidence invalid
 All sources are read in one tenant transaction. Bundle publication composes shared product, recipe
 and readiness services in one transaction, requires product.edit + product.delete + report.view,
 and never creates opening valuation or modifies existing SKUs.
+
+10.116: a future branch BASE/PACK price window supersedes the current branch price only in its
+half-open interval. It never changes pack quantity or historical sale snapshots. Overlap is denied
+by the database; cancellation requires product.edit, branch scope, explicit confirmation and an
+audit in the same transaction. Apply the migration before code that reads the new table.
