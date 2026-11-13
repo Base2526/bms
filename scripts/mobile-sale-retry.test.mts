@@ -1,3 +1,5 @@
+import { createPosTranslator } from "../apps/web/i18n/posClient.ts";
+const posText = createPosTranslator("th");
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -23,7 +25,7 @@ function harness(responses: any[], options: { offlineEligible?: boolean; mode?: 
     refreshPricing: async () => { pricingChecks++; return { error: null, changed: false }; },
     clear: () => { cartClears++; },
   };
-  const deps: Record<string, any> = {
+  const deps: Record<string, any> = { posText,
     saleAttemptRef: attempt, idempotencyRef: key, submittedRef: { current: false },
     pickupQueueEnabled: false,
     canConfirmPayment: true, restaurantPaymentsValid: true, restaurantReady: true, boardGameReady: true,

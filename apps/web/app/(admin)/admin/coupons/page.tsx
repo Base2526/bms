@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useQuery, useMutation, useLazyQuery } from "@apollo/client";
 import {
   Table, Tag, Button, Space, Alert, message, Modal, Form, Input, InputNumber,
@@ -87,6 +89,7 @@ function FieldPair({ isMobile, children }: { isMobile: boolean; children: React.
 
 // ---- Usage history modal — ไม่มีตาราง redemption แยก, query ตรงจาก bms_orders ----
 function RedemptionsModal({ couponId, code, onClose }: { couponId: string | null; code: string; onClose: () => void }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const [load, { data, loading }] = useLazyQuery(Q_REDEMPTIONS, { fetchPolicy: "network-only" });
@@ -139,7 +142,7 @@ function RedemptionsModal({ couponId, code, onClose }: { couponId: string | null
                   <Space direction="vertical" size={0}>
                     <Text strong style={{ fontSize: 13 }}>{name}</Text>
                     <Text type="secondary" copyable={{ text: r.orderId }} style={{ fontSize: 11 }}>
-                      order · {String(r.orderId).slice(0, 8)}
+                      {uiText("admin_ui.en_order_cdb71")} {String(r.orderId).slice(0, 8)}
                     </Text>
                   </Space>
                 </Space>
@@ -153,7 +156,7 @@ function RedemptionsModal({ couponId, code, onClose }: { couponId: string | null
           },
           { title: t("admin_coupons.col_discount_amount"), dataIndex: "discountAmount", width: 100, align: "right" as const, render: money },
           { title: t("admin_coupons.col_net_total"), dataIndex: "totalAmount", width: 100, align: "right" as const, render: money },
-          { title: t("admin_coupons.col_when"), dataIndex: "createdAt", width: 140, render: (v: string) => new Date(v).toLocaleString() },
+          { title: t("admin_coupons.col_when"), dataIndex: "createdAt", width: 140, render: (v: string) => new Date(v).toLocaleString(uiText.locale) },
         ]}
       />
     </Modal>
@@ -161,6 +164,7 @@ function RedemptionsModal({ couponId, code, onClose }: { couponId: string | null
 }
 
 export default function CouponsPage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const isMobile = useIsMobile();
@@ -255,8 +259,8 @@ export default function CouponsPage() {
       title: t("admin_coupons.col_period"), key: "period",
       render: (_: any, r: any) => (
         <Space direction="vertical" size={0} style={{ fontSize: 12 }}>
-          <span>{t("admin_coupons.period_starts", { value: r.startsAt ? new Date(r.startsAt).toLocaleDateString() : t("admin_coupons.starts_immediately") })}</span>
-          <span>{t("admin_coupons.period_expires", { value: r.expiresAt ? new Date(r.expiresAt).toLocaleDateString() : t("admin_coupons.no_expiry") })}</span>
+          <span>{t("admin_coupons.period_starts", { value: r.startsAt ? new Date(r.startsAt).toLocaleDateString(uiText.locale) : t("admin_coupons.starts_immediately") })}</span>
+          <span>{t("admin_coupons.period_expires", { value: r.expiresAt ? new Date(r.expiresAt).toLocaleDateString(uiText.locale) : t("admin_coupons.no_expiry") })}</span>
         </Space>
       ),
     },
@@ -303,8 +307,8 @@ export default function CouponsPage() {
                 { label: t("admin_coupons.col_min_order"), value: money(r.minOrderAmount) },
                 { label: t("admin_coupons.field_branch_scope"), value: branchScopeLabel(r, locationsById, t("admin_coupons.all_branches")) },
                 { label: t("admin_coupons.col_per_customer"), value: r.perCustomerLimit ?? t("admin_coupons.unlimited") },
-                { label: t("admin_coupons.field_starts"), value: r.startsAt ? new Date(r.startsAt).toLocaleDateString() : t("admin_coupons.starts_immediately") },
-                { label: t("admin_coupons.field_expires"), value: r.expiresAt ? new Date(r.expiresAt).toLocaleDateString() : t("admin_coupons.no_expiry") },
+                { label: t("admin_coupons.field_starts"), value: r.startsAt ? new Date(r.startsAt).toLocaleDateString(uiText.locale) : t("admin_coupons.starts_immediately") },
+                { label: t("admin_coupons.field_expires"), value: r.expiresAt ? new Date(r.expiresAt).toLocaleDateString(uiText.locale) : t("admin_coupons.no_expiry") },
                 { label: t("admin_coupons.field_note"), value: r.note, hidden: !r.note },
               ]}
               actions={

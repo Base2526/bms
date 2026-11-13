@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React, {
   createContext,
   useContext,
@@ -29,6 +30,7 @@ type Value = {
 const PrinterContext = createContext<Value | null>(null);
 
 export function PrinterProvider({ children }: { children: React.ReactNode }) {
+  usePosLanguage();
   const { target } = useDevice();
   const clientRef = useRef<NetworkPrinter | null>(null);
   if (!clientRef.current)
@@ -64,7 +66,7 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
     client.disconnect();
     const subscription = AppState.addEventListener('change', next => {
       if (next !== 'active')
-        client.disconnect('แอปพักการเชื่อมต่อ กรุณาเชื่อมต่อเครื่องพิมพ์ใหม่');
+        client.disconnect(posText("แอปพักการเชื่อมต่อ กรุณาเชื่อมต่อเครื่องพิมพ์ใหม่"));
     });
     const poll = setInterval(() => {
       client.refresh();
@@ -91,10 +93,10 @@ export function PrinterProvider({ children }: { children: React.ReactNode }) {
           accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK,
         },
       );
-      if (!result) throw new Error('บันทึกเครื่องพิมพ์ไม่ได้');
+      if (!result) throw new Error(posText("บันทึกเครื่องพิมพ์ไม่ได้"));
     } catch {
       setStorageWarning(
-        'บันทึกค่าลงเครื่องไม่ได้ การเชื่อมต่อนี้ใช้ได้เฉพาะรอบที่เปิดแอปอยู่',
+        posText("บันทึกค่าลงเครื่องไม่ได้ การเชื่อมต่อนี้ใช้ได้เฉพาะรอบที่เปิดแอปอยู่"),
       );
     }
   };

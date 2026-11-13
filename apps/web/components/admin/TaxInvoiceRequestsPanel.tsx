@@ -1,4 +1,6 @@
 "use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { useCallback, useEffect, useState } from "react";
 import {
   Alert,
@@ -23,6 +25,7 @@ export default function TaxInvoiceRequestsPanel({
   canIssue: boolean;
   onIssued: () => void;
 }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [status, setStatus] = useState("PENDING"),
     [offset, setOffset] = useState(0),
@@ -244,7 +247,7 @@ export default function TaxInvoiceRequestsPanel({
               {selected.buyer.name}
               {selected.buyer.buyerType && <> · {TAX_BUYER_TYPES.find((item) => item.value === selected.buyer.buyerType)?.label}</>}
               <br />
-              {taxIdentityLine(selected.buyer.taxId, selected.buyer.branchCode) ?? "ไม่มีเลขประจำตัวผู้เสียภาษี (ผู้ซื้อไม่ได้จด VAT)"}
+              {taxIdentityLine(selected.buyer.taxId, selected.buyer.branchCode) ?? uiText("admin_ui.no_tax_id_buyer_is_not_vat_registered_2a2ca")}
               <br />
               {selected.buyer.address}
               <br />

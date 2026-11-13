@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 // ใบกำกับภาษี + รายงานภาษีขาย (ประกอบ ภ.พ.30)
 // -------------------------------------------------------------
 // อ่านรายงานด้วย tax.document.view · ออกใบเต็มด้วย tax.document.issue · ส่งออกด้วย report.view
@@ -104,6 +106,7 @@ const baht = (n: number) =>
 const PAGE_SIZE = 50;
 
 export default function TaxDocumentsPage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const { can, loading: permLoading } = useBmsPermissions();
@@ -204,7 +207,7 @@ export default function TaxDocumentsPage() {
       const issued = result.data?.bmsIssueFullTaxInvoice;
       if (issued?.status !== "ISSUED" && issued?.status !== "ALREADY_ISSUED") {
         const missing = issued?.skus?.length ? `: ${issued.skus.join(", ")}` : "";
-        throw new Error(issued?.reason || `${issued?.status || "ออกเอกสารไม่สำเร็จ"}${missing}`);
+        throw new Error(issued?.reason || `${issued?.status || uiText("admin_ui.could_not_issue_the_document_103b3")}${missing}`);
       }
       message.success(t("admin_tax_documents.issue_full_done", { docNo: issued.document?.docNo ?? "" }));
       if (issued.reissuedCreditNotes?.length) {

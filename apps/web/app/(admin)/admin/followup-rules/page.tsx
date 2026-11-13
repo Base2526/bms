@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import {
   Table, Tag, Button, Space, Alert, message, Modal, Form, Input, InputNumber,
@@ -58,6 +60,7 @@ const M_UPSERT = gql`
 const M_DELETE = gql`mutation ($id: ID!) { bmsDeleteFollowupRule(id: $id) }`;
 
 export default function FollowupRulesPage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const isMobile = useIsMobile();
@@ -122,7 +125,7 @@ export default function FollowupRulesPage() {
   };
 
   const columns = [
-    { title: "Intent", dataIndex: "intent", key: "intent", render: (v: string) => <Text strong>{v}</Text> },
+    { title: uiText("admin_ui.en_intent_9c6e8"), dataIndex: "intent", key: "intent", render: (v: string) => <Text strong>{v}</Text> },
     { title: t("admin_followup_rules.col_goal"), dataIndex: "messageGoal", key: "messageGoal", render: goalLabel },
     { title: t("admin_followup_rules.col_delay"), dataIndex: "delayMinutes", key: "delayMinutes", align: "right" as const },
     { title: t("admin_followup_rules.col_max_retry"), dataIndex: "maxRetry", key: "maxRetry", align: "right" as const },

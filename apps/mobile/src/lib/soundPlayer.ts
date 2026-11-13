@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 import { Platform } from 'react-native';
 import Sound from 'react-native-sound';
 import type { OrderAlertKind } from './orderAlert';
@@ -62,7 +63,7 @@ export function setupOrderAlertSound(): void {
           // โหลดไม่ได้ = เอาออกจากทะเบียน ปล่อยให้ play() รายงานว่าเล่นไม่ได้
           loaded.delete(asset);
           console.warn(
-            `[orderAlert] โหลดเสียง ${assetName(asset)} ไม่สำเร็จ`,
+            posText("[orderAlert] โหลดเสียง {v0} ไม่สำเร็จ", { v0: assetName(asset) }),
             error,
           );
         }

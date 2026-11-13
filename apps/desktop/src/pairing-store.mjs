@@ -1,3 +1,5 @@
+import desktopLocale from '../renderer/locale.cjs';
+const { posText } = desktopLocale;
 import { readFile, writeFile, rename, rm } from "node:fs/promises";
 import { parsePairingInput } from "./pairing.mjs";
 import { cachedPosEntryPath } from "./renderer-route.mjs";
@@ -42,7 +44,7 @@ export function createPairingWriter(file, encrypt, io = { readFile, writeFile, r
   };
 }
 
-const RECOVERY_MESSAGE = "พบข้อมูลจับคู่เดิม แต่ยังอ่านหรือถอดรหัสไม่ได้ ไม่ได้แปลว่า token หมดอายุ กรุณาปลดล็อกที่เก็บข้อมูลของระบบและใช้บัญชีระบบปฏิบัติการเดิม แล้วกดลองใหม่ ข้อมูลจับคู่เดิมยังไม่ถูกลบ";
+const RECOVERY_MESSAGE = posText("พบข้อมูลจับคู่เดิม แต่ยังอ่านหรือถอดรหัสไม่ได้ ไม่ได้แปลว่า token หมดอายุ กรุณาปลดล็อกที่เก็บข้อมูลของระบบและใช้บัญชีระบบปฏิบัติการเดิม แล้วกดลองใหม่ ข้อมูลจับคู่เดิมยังไม่ถูกลบ");
 
 export class PairingRestoreError extends Error {
   constructor() {

@@ -16,6 +16,14 @@ ipcRenderer.on("bms-pos:refresh-data", (_event, requestId) => {
 
 contextBridge.exposeInMainWorld("bmsDesktop", {
   isDesktop: true,
+  getLanguage: () => ipcRenderer.invoke('bms-pos:get-language'),
+  setLanguage: (language) => ipcRenderer.invoke('bms-pos:set-language', language === 'th' || language === 'en' ? language : null),
+  onLanguageChanged: (listener) => {
+    if (typeof listener !== 'function') return () => {};
+    const handler = (_event, language) => { if (language === 'th' || language === 'en') listener(language); };
+    ipcRenderer.on('bms-pos:language-changed', handler);
+    return () => ipcRenderer.removeListener('bms-pos:language-changed', handler);
+  },
   pair: (input) => ipcRenderer.invoke("bms-pos:pair", {
     serverUrl: typeof input?.serverUrl === "string" ? input.serverUrl : "",
     pairingInput: typeof input?.pairingInput === "string" ? input.pairingInput : "",

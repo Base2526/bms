@@ -1,4 +1,6 @@
 "use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useApolloClient, useQuery } from "@apollo/client";
 import { useDeferredValue, useState, useEffect } from "react";
 import {
@@ -81,6 +83,7 @@ export default function ProductionPanel({
   staff: any[];
   onOpenRun: (id: string) => void;
 }) {
+  const uiText = useUiText();
   const { t } = useI18n(),
     tr = (k: string) => t(`operation_production.${k}`),
     { can } = useBmsPermissions(),
@@ -353,7 +356,7 @@ export default function ProductionPanel({
             {
               title: tr("due"),
               dataIndex: "due_at",
-              render: (v: string) => new Date(v).toLocaleString(),
+              render: (v: string) => new Date(v).toLocaleString(uiText.locale),
             },
             {
               title: tr("work"),
@@ -451,7 +454,7 @@ export default function ProductionPanel({
               <Card size="small" title={tr("cost")}>
                 <p>
                   {d.costVisible
-                    ? `${tr("total")}: ${d.value ?? tr("unknown")} THB · ${tr("per_unit")}: ${d.unitCost ?? tr("unknown")} THB`
+                    ? uiText("admin_ui.en_thb_thb_c3c5a", { v0: tr("total"), v1: d.value ?? tr("unknown"), v2: tr("per_unit"), v3: d.unitCost ?? tr("unknown") })
                     : tr("cost_permission")}
                 </p>
                 <p>{tr("cost_hint")}</p>
@@ -518,7 +521,7 @@ export default function ProductionPanel({
                 {d.events.map((e: any, n: number) => (
                   <p key={n}>
                     {e.action} — {e.note} —{" "}
-                    {new Date(e.created_at).toLocaleString()}
+                    {new Date(e.created_at).toLocaleString(uiText.locale)}
                   </p>
                 ))}
               </Card>

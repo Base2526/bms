@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { gql, useApolloClient, useQuery, useLazyQuery, useMutation, useSubscription } from "@apollo/client";
 import {
   List, Input, Button, Space, Tag, Segmented, message, Alert, Badge,
@@ -168,17 +170,17 @@ function staffLabel(s: StaffRef, t: Translate) {
 const BKK = "Asia/Bangkok";
 const dayKey = (iso: string) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: BKK, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
-const timeLabel = (iso: string) =>
-  new Intl.DateTimeFormat("th-TH", { timeZone: BKK, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+const timeLabel = (iso: string, uiText: UiTranslator = thaiUiText) =>
+  new Intl.DateTimeFormat(uiText.locale, { timeZone: BKK, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 const baht = (value: number | null | undefined, t: Translate) => `${Number(value ?? 0).toLocaleString("th-TH")} ${t("admin_inbox.baht_suffix")}`;
-function dayLabel(iso: string, t: Translate) {
+function dayLabel(iso: string, t: Translate, uiText: UiTranslator = thaiUiText) {
   const key = dayKey(iso);
   const now = new Date();
   const todayKey = dayKey(now.toISOString());
   const y = new Date(now); y.setDate(y.getDate() - 1);
   if (key === todayKey) return t("admin_inbox.today_label");
   if (key === dayKey(y.toISOString())) return t("admin_inbox.yesterday_label");
-  return new Intl.DateTimeFormat("th-TH", { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
+  return new Intl.DateTimeFormat(uiText.locale, { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
 }
 
 function eventIcon(kind: SystemEvent["kind"]) {
@@ -356,10 +358,10 @@ function parseCouponShare(body: string): CouponShare | null {
   return { code, discount, minOrder, expires, usage, walletUrl };
 }
 
-function fileKind(attachment: Attachment) {
+function fileKind(attachment: Attachment, uiText: UiTranslator = thaiUiText) {
   const extension = attachment.name?.split(".").pop()?.toUpperCase();
   if (attachment.mimeType?.toLowerCase().includes("pdf") || extension === "PDF") return { label: "PDF", pdf: true };
-  return { label: extension || attachment.mimeType?.split("/").pop()?.toUpperCase() || "FILE", pdf: false };
+  return { label: extension || attachment.mimeType?.split("/").pop()?.toUpperCase() || uiText("admin_ui.en_file_b4915"), pdf: false };
 }
 
 function suggestedReply(conv: any, gender?: string | null) {
@@ -397,6 +399,7 @@ const ConversationListItem = memo(function ConversationListItem({
   collapsed: boolean;
   onOpen: (conversationId: string) => void;
 }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const priority = convPriority(c, t);
   const source = sourceLabel(c, t);
@@ -471,7 +474,7 @@ const ConversationListItem = memo(function ConversationListItem({
                 {priority.label}
               </Tag>
               <Typography.Text type="secondary" style={{ fontSize: 9, marginLeft: "auto", flexShrink: 0 }}>
-                {c.lastMessageAt ? timeLabel(c.lastMessageAt) : ""}
+                {c.lastMessageAt ? timeLabel(c.lastMessageAt, uiText) : ""}
               </Typography.Text>
             </div>
           </div>
@@ -482,6 +485,7 @@ const ConversationListItem = memo(function ConversationListItem({
 });
 
 function Inbox() {
+  const uiText = useUiText();
   const apollo = useApolloClient();
   const { t } = useI18n();
   const { can } = useBmsPermissions();
@@ -792,7 +796,7 @@ function Inbox() {
       <div style={{ marginBottom: isMobile ? 8 : 10, flexShrink: 0 }}>
         <Space style={{ width: "100%", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center" }} wrap>
           <Space direction="vertical" size={0}>
-            <h2 style={{ margin: 0, fontSize: isMobile ? 22 : 15, fontWeight: 800, lineHeight: 1.15 }}>BMS Inbox (Omnichannel)</h2>
+            <h2 style={{ margin: 0, fontSize: isMobile ? 22 : 15, fontWeight: 800, lineHeight: 1.15 }}>{uiText("admin_ui.en_bms_inbox_omnichannel_d4f6c")}</h2>
             <Typography.Text type="secondary" style={{ fontSize: isMobile ? 12 : 10.5 }}>
               {t("admin_inbox.page_subtitle")}
             </Typography.Text>
@@ -816,7 +820,7 @@ function Inbox() {
                 </Space>
               </Tooltip>
             )}
-            <Button size={isMobile ? "middle" : "small"} icon={<ReloadOutlined />} onClick={() => { refetch(); if (activeId) refetchConv(convVariables(activeId)); }} loading={loading}>Refresh</Button>
+            <Button size={isMobile ? "middle" : "small"} icon={<ReloadOutlined />} onClick={() => { refetch(); if (activeId) refetchConv(convVariables(activeId)); }} loading={loading}>{uiText("admin_ui.en_refresh_56e3b")}</Button>
           </Space>
         </Space>
       </div>
@@ -987,6 +991,7 @@ function Inbox() {
 }
 
 function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gender, tenantSlug, initialTab }: { conv: any; can: (p: string) => boolean; onChanged: () => void; isMobile?: boolean; onBack?: () => void; gender?: string | null; tenantSlug?: string | null; initialTab?: string | null }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   // ควบคุม tab เอง (เดิม uncontrolled, default "แชท" เสมอ) เพื่อรองรับ deep-link ?tab=notes
   // จาก mention notification — ใช้ initialTab แค่ตอนเปิดแชทนี้ครั้งแรก ไม่บังคับทับถ้า staff สลับแท็บเอง
@@ -1495,7 +1500,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       ? `${Number(coupon.value).toLocaleString("th-TH")}%`
       : `${Number(coupon.value).toLocaleString("th-TH")} บาท`;
   const couponExpiresText = (expiresAt?: string | null) =>
-    expiresAt ? new Date(expiresAt).toLocaleDateString("th-TH", { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }) : "ไม่มีกำหนด";
+    expiresAt ? new Date(expiresAt).toLocaleDateString(uiText.locale, { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }) : "ไม่มีกำหนด";
   const insertCouponIntoChat = (coupon: CouponPickerItem) => {
     const usageLeft = coupon.maxRedemptions == null ? "ไม่จำกัดจำนวนครั้ง" : `เหลือ ${Math.max(0, coupon.maxRedemptions - coupon.redemptionsCount).toLocaleString("th-TH")} ครั้ง`;
     const minOrder = coupon.minOrderAmount ? `${Number(coupon.minOrderAmount).toLocaleString("th-TH")} บาท` : "ไม่มีขั้นต่ำ";
@@ -1595,7 +1600,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       content = (
         <div className={`${cardClass} ${messageStyles.mediaCard}`} data-message-kind="image">
           <button type="button" className={messageStyles.imageButton} onClick={openImage} aria-label={t("admin_inbox.view_image_aria", { name: m.attachment.name || t("admin_inbox.preview_image") })}>
-            <img src={m.attachment.url} alt={m.attachment.name || "image"} />
+            <img src={m.attachment.url} alt={m.attachment.name || uiText("admin_ui.en_image_0e762")} />
           </button>
           <div className={messageStyles.mediaFooter}>
             <div className={messageStyles.mediaCaption}>{m.body || m.attachment.name || t("admin_inbox.preview_image")}</div>
@@ -1606,7 +1611,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
         </div>
       );
     } else if (m.attachment) {
-      const kind = fileKind(m.attachment);
+      const kind = fileKind(m.attachment, uiText);
       content = (
         <div className={`${cardClass} ${messageStyles.fileCard}`} data-message-kind="file">
           <div className={`${messageStyles.fileIcon} ${kind.pdf ? messageStyles.pdfIcon : ""}`} aria-hidden="true">
@@ -1631,7 +1636,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       <div key={`m-${m.id}`} className={rowClass} style={{ maxWidth: isMobile ? "94%" : "62%" }}>
         {content}
         <Typography.Text type="secondary" className={messageStyles.meta}>
-          {m.sender} · {timeLabel(m.createdAt)}{statusNode(m)}
+          {m.sender} · {timeLabel(m.createdAt, uiText)}{statusNode(m)}
         </Typography.Text>
       </div>
     );
@@ -1646,13 +1651,13 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       feedNodes.push(
         <div key={`d-${key}`} style={{ alignSelf: "center", margin: "4px 0" }}>
           <span style={{ fontSize: 11, color: "var(--app-muted, #888)", background: "rgba(148,163,184,0.16)", padding: "2px 10px", borderRadius: 10 }}>
-            {dayLabel(item.at, t)}
+            {dayLabel(item.at, t, uiText)}
           </span>
         </div>
       );
     }
-    if (item.t === "start") feedNodes.push(centerRow("start", <>{t("admin_inbox.conversation_start_label", { channel: conv.channel })} · {timeLabel(item.at)}</>));
-    else if (item.t === "event") feedNodes.push(centerRow(`e-${item.ev.id}`, <>{eventIcon(item.ev.kind)} {eventText(item.ev, t)} · {timeLabel(item.at)}</>));
+    if (item.t === "start") feedNodes.push(centerRow("start", <>{t("admin_inbox.conversation_start_label", { channel: conv.channel })} · {timeLabel(item.at, uiText)}</>));
+    else if (item.t === "event") feedNodes.push(centerRow(`e-${item.ev.id}`, <>{eventIcon(item.ev.kind)} {eventText(item.ev, t)} · {timeLabel(item.at, uiText)}</>));
     else feedNodes.push(renderMsg(item.msg));
   }
 
@@ -2031,7 +2036,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       <List size="small" dataSource={conv.notes || []} locale={{ emptyText: t("admin_inbox.no_notes_yet") }}
         renderItem={(n: Note) => (
           <List.Item>
-            <List.Item.Meta title={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{n.author} · {dayLabel(n.createdAt, t)} {timeLabel(n.createdAt)}</Typography.Text>} description={renderNoteBody(n.body)} />
+            <List.Item.Meta title={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{n.author} · {dayLabel(n.createdAt, t, uiText)} {timeLabel(n.createdAt, uiText)}</Typography.Text>} description={renderNoteBody(n.body)} />
           </List.Item>
         )} />
     </div>
@@ -2082,7 +2087,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                       <span>{Number(o.total_amount).toLocaleString()} ฿</span>
                     </Space>
                   }
-                  description={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{new Date(o.created_at).toLocaleString()}</Typography.Text>}
+                  description={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{new Date(o.created_at).toLocaleString(uiText.locale)}</Typography.Text>}
                 />
               </List.Item>
             )}
@@ -2130,14 +2135,14 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
               {showDay && (
                 <div style={{ textAlign: "center", margin: "10px 0 8px" }}>
                   <Typography.Text type="secondary" style={{ fontSize: 11.5, background: "rgba(0,0,0,0.04)", padding: "2px 10px", borderRadius: 10 }}>
-                    {dayLabel(row.at, t)}
+                    {dayLabel(row.at, t, uiText)}
                   </Typography.Text>
                 </div>
               )}
               <div style={{ position: "relative", borderInlineStart: "1px solid rgba(0,0,0,0.08)", marginInlineStart: 5, paddingInlineStart: 14, paddingBottom: 12 }}>
                 <span style={{ position: "absolute", inlineSize: 9, blockSize: 9, borderRadius: "50%", background: dot, insetInlineStart: -5, insetBlockStart: 5 }} />
                 <Space size={4} wrap style={{ lineHeight: 1.4 }}>
-                  <Typography.Text type="secondary" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}>{timeLabel(row.at)}</Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}>{timeLabel(row.at, uiText)}</Typography.Text>
                   <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>{meta.label}</Tag>
                   {isOrder && row.channel && (
                     <Tag color={crossChannel ? CHANNEL_COLOR[row.channel] || "default" : "default"} style={{ marginInlineEnd: 0 }}>
@@ -2154,7 +2159,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                       {row.status && (
                         <Typography.Text type="secondary" style={{ fontSize: 11.5 }}>
                           {t("admin_inbox.status_now_label")} <Typography.Text style={{ fontSize: 11.5 }}>{row.status}</Typography.Text>
-                          {row.statusAt ? ` · ${dayLabel(row.statusAt, t)} ${timeLabel(row.statusAt)}` : ""}
+                          {row.statusAt ? ` · ${dayLabel(row.statusAt, t, uiText)} ${timeLabel(row.statusAt, uiText)}` : ""}
                         </Typography.Text>
                       )}
                     </Space>
@@ -2265,7 +2270,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                   fontSize: 10.5, fontWeight: 600, color: "rgba(255,255,255,0.9)",
                   background: "rgba(8,13,24,0.55)", backdropFilter: "blur(6px)", borderRadius: 999, padding: "4px 10px",
                 }}>
-                  {chatImages[imagePreviewIndex].sender} · {timeLabel(chatImages[imagePreviewIndex].createdAt)}
+                  {chatImages[imagePreviewIndex].sender} · {timeLabel(chatImages[imagePreviewIndex].createdAt, uiText)}
                 </div>
               </div>
               <Button

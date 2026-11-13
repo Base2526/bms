@@ -1,4 +1,6 @@
 "use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { useRef, useState } from "react";
 import {
@@ -132,6 +134,7 @@ const MUTATION = gql`
   }
 `;
 function useFollowupMutation(refresh: () => Promise<unknown>) {
+  const uiText = useUiText();
   const { t } = useI18n(),
     tr = (k: string) => t(`operation_checklists.${k}`);
   const [mutate] = useMutation(MUTATION),
@@ -147,7 +150,7 @@ function useFollowupMutation(refresh: () => Promise<unknown>) {
     try {
       const response = await mutate({ variables: { input: pending.current } }),
         result = response.data?.bmsChecklistFollowup;
-      if (!result) throw new Error("Missing outcome");
+      if (!result) throw new Error(uiText("admin_ui.en_missing_outcome_f6a2a"));
       pending.current = null;
       setUncertain(false);
       if (result.status !== "OK") {

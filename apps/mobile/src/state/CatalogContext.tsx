@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React, {
   createContext,
   useCallback,
@@ -59,6 +60,7 @@ function snapshotKey(
 }
 
 export function CatalogProvider({ children }: { children: React.ReactNode }) {
+  const language = usePosLanguage();
   const { mode } = useStoreMode();
   const { target } = useDevice();
   const health = useServerHealth();
@@ -104,8 +106,8 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
             sku: item.sku,
             name: item.name,
             price: item.price,
-            category: item.kitchenStation ?? 'เมนูอื่น',
-            station: item.kitchenStation ?? 'เมนูอื่น',
+            category: item.kitchenStation ?? posText("เมนูอื่น", undefined, language),
+            station: item.kitchenStation ?? posText("เมนูอื่น", undefined, language),
             sellable: item.sellable,
             imageUrl: serverAssetUrl(target?.serverUrl, item.imageUrl),
             unavailableNote: item.unavailableReason,
@@ -122,8 +124,8 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
             sku: item.sku,
             name: item.name,
             price: item.availableSizes[0]?.price ?? item.price,
-            category: 'สินค้า',
-            station: 'สินค้า',
+            category: posText("สินค้า", undefined, language),
+            station: posText("สินค้า", undefined, language),
             // Recipe menus own no stock; the server evaluates their selling policy.
             sellable: item.availability === 'AVAILABLE',
             imageUrl: serverAssetUrl(target?.serverUrl, item.imageUrl),
@@ -136,23 +138,23 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
             baseQty: 1,
             availableSizes: item.availableSizes,
           }));
-    const noun = mode === 'restaurant' ? 'เมนู' : 'สินค้า';
+    const noun = mode === 'restaurant' ? posText("เมนู", undefined, language) : posText("สินค้า", undefined, language);
     return {
       categories: [
-        mode === 'restaurant' ? 'เมนูทั้งหมด' : 'สินค้าทั้งหมด',
+        mode === 'restaurant' ? posText("เมนูทั้งหมด", undefined, language) : posText("สินค้าทั้งหมด", undefined, language),
         ...unique(items.map(item => item.category)),
       ],
       stations: unique(items.map(item => item.station)),
       items,
       searchPlaceholder:
         mode === 'restaurant'
-          ? 'ค้นหาเมนู หรือ SKU'
-          : 'ค้นหาสินค้า บาร์โค้ด หรือ SKU',
+          ? posText("ค้นหาเมนู หรือ SKU", undefined, language)
+          : posText("ค้นหาสินค้า บาร์โค้ด หรือ SKU", undefined, language),
       resultNoun: noun,
       unavailableLabel:
-        mode === 'restaurant' ? 'ขายไม่ได้ตอนนี้' : 'สต็อกไม่พอ',
+        mode === 'restaurant' ? posText("ขายไม่ได้ตอนนี้", undefined, language) : posText("สต็อกไม่พอ", undefined, language),
     };
-  }, [
+  }, [language,
     mode,
     health.status,
     resolvedSnapshots,
@@ -173,7 +175,7 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
       if (health.status === 'offline') {
         if (cached) return cached;
         throw new Error(
-          'สินค้านี้ยังไม่มี snapshot ราคาในเครื่อง ต้องเชื่อมต่อ Server อย่างน้อยหนึ่งครั้งก่อนขายออฟไลน์',
+          posText("สินค้านี้ยังไม่มี snapshot ราคาในเครื่อง ต้องเชื่อมต่อ Server อย่างน้อยหนึ่งครั้งก่อนขายออฟไลน์"),
         );
       }
       let authoritativeMiss = false;
@@ -192,7 +194,7 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
         const item = response.data?.bmsPosScan;
         if (!item) {
           authoritativeMiss = true;
-          throw new Error('ไม่พบสินค้าจากรหัสนี้');
+          throw new Error(posText("ไม่พบสินค้าจากรหัสนี้"));
         }
         const sellable = !item.stockTracked || item.available >= item.baseQty;
         const resolved: PosMenuItem = {
@@ -205,12 +207,12 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
           modifierUnitPrice: 0,
           priceTiers: normalizePriceTiers(item.priceTiers),
           promotion: normalizePromotion(item.promotion),
-          category: 'สินค้า',
-          station: 'สินค้า',
+          category: posText("สินค้า"),
+          station: posText("สินค้า"),
           sellable,
           stockTracked: item.stockTracked,
           imageUrl: serverAssetUrl(target?.serverUrl, item.imageUrl),
-          unavailableNote: sellable ? null : 'จำนวนคงเหลือไม่พอ',
+          unavailableNote: sellable ? null : posText("จำนวนคงเหลือไม่พอ"),
           artKind:
             mode === 'restaurant'
               ? 'food'
@@ -275,8 +277,7 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
       resolveVariant,
       setSearchQuery,
     }),
-    [
-      catalog,
+    [catalog,
       mode,
       refetch,
       resolveScan,

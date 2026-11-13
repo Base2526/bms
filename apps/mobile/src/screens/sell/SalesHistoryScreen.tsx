@@ -1,3 +1,4 @@
+import { posText, usePosLanguage, posLocale } from '../../i18n/language';
 import React, { useMemo } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -17,7 +18,7 @@ type Props = NativeStackScreenProps<AppStackParamList, 'SalesHistory'>;
 function formatSaleTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleString('th-TH', {
+  return date.toLocaleString(posLocale(), {
     day: '2-digit',
     month: 'short',
     hour: '2-digit',
@@ -38,10 +39,10 @@ function formatAmount(value: number): string {
 
 function saleCustomerLabel(sale: SaleSnapshot): string {
   if (sale.source !== 'restaurant') {
-    return sale.member?.name ?? 'ลูกค้าทั่วไป';
+    return sale.member?.name ?? posText("ลูกค้าทั่วไป");
   }
-  if (sale.restaurantServiceMode === 'TAKEAWAY') return 'กลับบ้าน';
-  return sale.tableCode ? `โต๊ะ ${sale.tableCode}` : 'กินในร้าน';
+  if (sale.restaurantServiceMode === 'TAKEAWAY') return posText("กลับบ้าน");
+  return sale.tableCode ? posText("โต๊ะ {v0}", { v0: sale.tableCode }) : posText("กินในร้าน");
 }
 
 function saleItemCount(sale: SaleSnapshot): number {
@@ -49,24 +50,25 @@ function saleItemCount(sale: SaleSnapshot): number {
 }
 
 function saleProductSummary(sale: SaleSnapshot, limit: number): string {
-  if (sale.lines.length === 0) return 'ไม่มีรายการสินค้า';
+  if (sale.lines.length === 0) return posText("ไม่มีรายการสินค้า");
   const visible = sale.lines
     .slice(0, limit)
     .map(line => `${line.name} ×${line.qty}`)
     .join(' · ');
   const hidden = sale.lines.length - limit;
-  return hidden > 0 ? `${visible} · +${hidden} รายการ` : visible;
+  return hidden > 0 ? posText("{v0} · +{v1} รายการ", { v0: visible, v1: hidden }) : visible;
 }
 
 function SaleStatus({ sale }: { sale: SaleSnapshot }) {
-  if (sale.voided) return <StatusPill label="Void" tone="danger" />;
+  usePosLanguage();
+  if (sale.voided) return <StatusPill label={posText("ยกเลิกบิลแล้ว")} tone="danger" />;
   if (sale.returns.length > 0) {
-    return <StatusPill label="คืนสินค้า" tone="warning" />;
+    return <StatusPill label={posText("คืนสินค้า")} tone="warning" />;
   }
   if (sale.offlineTenderedAt) {
-    return <StatusPill label="ขายออฟไลน์" tone="success" />;
+    return <StatusPill label={posText("ขายออฟไลน์")} tone="success" />;
   }
-  return <StatusPill label="ขายแล้ว" tone="success" />;
+  return <StatusPill label={posText("ขายแล้ว")} tone="success" />;
 }
 
 function ReceiptMetricIcon({ color }: { color: string }) {
@@ -102,6 +104,7 @@ function TotalMetricIcon({ color }: { color: string }) {
 }
 
 export default function SalesHistoryScreen({ navigation }: Props) {
+  usePosLanguage();
   const { colors, spacing, typography, radius } = useTheme();
   const { isTablet } = useResponsive();
   const {
@@ -126,8 +129,8 @@ export default function SalesHistoryScreen({ navigation }: Props) {
     <ScreenContainer padded={false}>
       <View style={{ flex: 1, padding: spacing.lg }}>
         <ScreenHeader
-          title="ประวัติการขาย"
-          subtitle="ใบเสร็จจากเซิร์ฟเวอร์ · แสดงไม่เกิน 50 รายการต่อการค้นหา"
+          title={posText("ประวัติการขาย")}
+          subtitle={posText("ใบเสร็จจากเซิร์ฟเวอร์ · แสดงไม่เกิน 50 รายการต่อการค้นหา")}
           onBack={() => navigation.goBack()}
           roundBackButton={!isTablet}
         />
@@ -149,7 +152,7 @@ export default function SalesHistoryScreen({ navigation }: Props) {
             <SearchField
               value={query}
               onChangeText={setQuery}
-              placeholder="ค้นหาเลขใบเสร็จ ลูกค้า สมาชิก SKU หรือบาร์โค้ด"
+              placeholder={posText("ค้นหาเลขใบเสร็จ ลูกค้า สมาชิก SKU หรือบาร์โค้ด")}
               showSearchIcon
               soft={isTablet}
             />
@@ -182,8 +185,7 @@ export default function SalesHistoryScreen({ navigation }: Props) {
                   <Text
                     style={[typography.caption, { color: colors.textMuted }]}
                   >
-                    ใบเสร็จ
-                  </Text>
+                    {posText("ใบเสร็จ") + " "}</Text>
                 </View>
               </View>
               <View
@@ -210,10 +212,9 @@ export default function SalesHistoryScreen({ navigation }: Props) {
                   <Text
                     style={[typography.caption, { color: colors.textMuted }]}
                   >
-                    ยอดรวม
-                  </Text>
+                    {posText("ยอดรวม") + " "}</Text>
                   <Text style={[styles.metricValue, { color: colors.text }]}>
-                    ฿{formatAmount(todayTotal)}
+                    {posText("฿")}{formatAmount(todayTotal)}
                   </Text>
                 </View>
               </View>
@@ -236,8 +237,7 @@ export default function SalesHistoryScreen({ navigation }: Props) {
                   {filtered.length}
                 </Text>
                 <Text style={[typography.caption, { color: colors.textMuted }]}>
-                  ใบเสร็จ
-                </Text>
+                  {posText("ใบเสร็จ") + " "}</Text>
               </View>
               <View
                 style={[
@@ -247,10 +247,9 @@ export default function SalesHistoryScreen({ navigation }: Props) {
               />
               <View style={styles.phoneTotalMetric}>
                 <Text style={[typography.caption, { color: colors.textMuted }]}>
-                  ยอดรวม
-                </Text>
+                  {posText("ยอดรวม") + " "}</Text>
                 <Text style={[styles.phoneTotalValue, { color: colors.text }]}>
-                  ฿{formatAmount(todayTotal)}
+                  {posText("฿")}{formatAmount(todayTotal)}
                 </Text>
               </View>
             </View>
@@ -262,8 +261,7 @@ export default function SalesHistoryScreen({ navigation }: Props) {
             style={{ marginTop: spacing.sm }}
           >
             <Text style={[typography.captionStrong, { color: colors.danger }]}>
-              {error} · แตะเพื่อลองใหม่
-            </Text>
+              {error} {" " + posText("· แตะเพื่อลองใหม่") + " "}</Text>
           </Pressable>
         ) : loading ? (
           <Text
@@ -272,8 +270,7 @@ export default function SalesHistoryScreen({ navigation }: Props) {
               { color: colors.textMuted, marginTop: spacing.sm },
             ]}
           >
-            กำลังโหลดประวัติการขาย…
-          </Text>
+            {posText("กำลังโหลดประวัติการขาย…") + " "}</Text>
         ) : null}
         <FlatList
           data={filtered}
@@ -311,8 +308,7 @@ export default function SalesHistoryScreen({ navigation }: Props) {
                     { color: colors.textMuted },
                   ]}
                 >
-                  ใบเสร็จ
-                </Text>
+                  {posText("ใบเสร็จ") + " "}</Text>
                 <Text
                   style={[
                     styles.tabletCustomerCell,
@@ -320,8 +316,7 @@ export default function SalesHistoryScreen({ navigation }: Props) {
                     { color: colors.textMuted },
                   ]}
                 >
-                  วันที่ / ลูกค้า
-                </Text>
+                  {posText("วันที่ / ลูกค้า") + " "}</Text>
                 <Text
                   style={[
                     styles.tabletProductsCell,
@@ -329,8 +324,7 @@ export default function SalesHistoryScreen({ navigation }: Props) {
                     { color: colors.textMuted },
                   ]}
                 >
-                  รายการสินค้า
-                </Text>
+                  {posText("รายการสินค้า") + " "}</Text>
                 <Text
                   style={[
                     styles.tabletTotalCell,
@@ -338,8 +332,7 @@ export default function SalesHistoryScreen({ navigation }: Props) {
                     { color: colors.textMuted },
                   ]}
                 >
-                  ยอดรวม
-                </Text>
+                  {posText("ยอดรวม") + " "}</Text>
                 <Text
                   style={[
                     styles.tabletStatusCell,
@@ -347,8 +340,7 @@ export default function SalesHistoryScreen({ navigation }: Props) {
                     { color: colors.textMuted },
                   ]}
                 >
-                  สถานะ
-                </Text>
+                  {posText("สถานะ") + " "}</Text>
                 <View style={styles.tabletChevronCell} />
               </View>
             ) : undefined
@@ -365,18 +357,16 @@ export default function SalesHistoryScreen({ navigation }: Props) {
               ]}
             >
               <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                ไม่พบประวัติการขาย
-              </Text>
+                {posText("ไม่พบประวัติการขาย") + " "}</Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                ลองเปลี่ยนคำค้นหรือรีเฟรชรายการล่าสุด
-              </Text>
+                {posText("ลองเปลี่ยนคำค้นหรือรีเฟรชรายการล่าสุด") + " "}</Text>
             </View>
           }
           renderItem={({ item }) =>
             isTablet ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`เปิดรายละเอียดใบเสร็จ ${item.receiptNo}`}
+                accessibilityLabel={posText("เปิดรายละเอียดใบเสร็จ {v0}", { v0: item.receiptNo })}
                 onPress={() => openSale(item)}
                 style={({ pressed }) => [
                   styles.tabletSaleRow,
@@ -398,8 +388,7 @@ export default function SalesHistoryScreen({ navigation }: Props) {
                   <Text
                     style={[typography.caption, { color: colors.textMuted }]}
                   >
-                    {saleItemCount(item)} รายการ
-                  </Text>
+                    {saleItemCount(item)} {" " + posText("รายการ") + " "}</Text>
                 </View>
                 <View style={styles.tabletCustomerCell}>
                   <Text
@@ -433,7 +422,7 @@ export default function SalesHistoryScreen({ navigation }: Props) {
                   ]}
                   numberOfLines={1}
                 >
-                  ฿{formatAmount(item.total)}
+                  {posText("฿")}{formatAmount(item.total)}
                 </Text>
                 <View style={styles.tabletStatusCell}>
                   <SaleStatus sale={item} />
@@ -453,7 +442,7 @@ export default function SalesHistoryScreen({ navigation }: Props) {
             ) : (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`เปิดรายละเอียดใบเสร็จ ${item.receiptNo}`}
+                accessibilityLabel={posText("เปิดรายละเอียดใบเสร็จ {v0}", { v0: item.receiptNo })}
                 onPress={() => openSale(item)}
                 style={({ pressed }) => [
                   styles.phoneSaleRow,
@@ -500,13 +489,12 @@ export default function SalesHistoryScreen({ navigation }: Props) {
                 </Text>
                 <View style={styles.phoneSaleAside}>
                   <Text style={[typography.subtitle, { color: colors.text }]}>
-                    ฿{formatAmount(item.total)}
+                    {posText("฿")}{formatAmount(item.total)}
                   </Text>
                   <Text
                     style={[typography.caption, { color: colors.textMuted }]}
                   >
-                    {saleItemCount(item)} รายการ
-                  </Text>
+                    {saleItemCount(item)} {" " + posText("รายการ") + " "}</Text>
                 </View>
               </Pressable>
             )

@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useLazyQuery, useQuery, useMutation } from "@apollo/client";
 import {
   Table,
@@ -357,6 +359,7 @@ function useMediaQuery(query: string) {
 }
 
 function ProductsManagement() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const isMobile = useMediaQuery(MOBILE_QUERY);
   const [form] = Form.useForm();
@@ -900,10 +903,10 @@ function ProductsManagement() {
       },
       { title: "SKU", dataIndex: "sku", key: "sku", width: 120,
         render: (s: string) => <Typography.Text code>{s}</Typography.Text> },
-      { title: "Barcode", dataIndex: "barcode", key: "barcode", width: 130,
+      { title: uiText("admin_ui.en_barcode_8e54d"), dataIndex: "barcode", key: "barcode", width: 130,
         render: (b: string | null) => b || <span style={{ color: "#999" }}>—</span> },
       {
-        title: "Name", dataIndex: "name", key: "name",
+        title: uiText("admin_ui.en_name_709a2"), dataIndex: "name", key: "name",
         render: (name: string, p: Product) => (
           <Space direction="vertical" size={0}>
             <span>{name}</span>
@@ -917,7 +920,7 @@ function ProductsManagement() {
         ),
       },
       {
-        title: "Price", dataIndex: "price", key: "price", width: 110, align: "right" as const,
+        title: uiText("admin_ui.en_price_3e824"), dataIndex: "price", key: "price", width: 110, align: "right" as const,
         render: (v: number, p: Product) => (
           <Space direction="vertical" size={0} align="end">
             <span>{Number(v).toLocaleString()} ฿</span>
@@ -930,7 +933,7 @@ function ProductsManagement() {
         ),
       },
       {
-        title: "Stock", key: "stock", width: 170,
+        title: uiText("admin_ui.en_stock_bcecf"), key: "stock", width: 170,
         render: (_: any, p: Product) => {
           const avail = p.variants.reduce((n, v) => n + v.available, 0);
           const lows = p.variants.filter((v) => v.low).length;
@@ -945,7 +948,7 @@ function ProductsManagement() {
         },
       },
       {
-        title: "Active", dataIndex: "active", key: "active", width: 80,
+        title: uiText("admin_ui.en_active_a733b"), dataIndex: "active", key: "active", width: 80,
         render: (active: boolean, p: Product) => (
           <Switch size="small" checked={active} disabled={!can("product.delete")}
             onChange={(c) => setActive({ variables: { sku: p.sku, active: c } })} />
@@ -962,7 +965,7 @@ function ProductsManagement() {
             : <span style={{ color: "#ccc" }}>—</span>,
       },
     ],
-    [can, t]
+    [uiText, can, t]
   );
 
   if (error) {
@@ -973,9 +976,9 @@ function ProductsManagement() {
     <div>
       <div style={{ marginBottom: 16 }}>
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-          <h2 style={{ margin: 0 }}>Products & Inventory</h2>
+          <h2 style={{ margin: 0 }}>{uiText("admin_ui.en_products_inventory_aa645")}</h2>
           <Space>
-            <Button icon={<ReloadOutlined />} onClick={refreshAll} loading={loading}>Refresh</Button>
+            <Button icon={<ReloadOutlined />} onClick={refreshAll} loading={loading}>{uiText("admin_ui.en_refresh_56e3b")}</Button>
             {can("product.edit") && <Button icon={<ImportOutlined />} disabled={loading} onClick={() => setImportModalOpen(true)}>{t("admin_products.btn_import")}</Button>}
             {can("product.edit") && <Button type="primary" icon={<PlusOutlined />} disabled={loading} onClick={openCreate}>{t("admin_products.btn_add_product")}</Button>}
           </Space>
@@ -1330,8 +1333,7 @@ function ProductsManagement() {
                       />
                       {index === 0 && (
                         <Tag color="blue" style={{ position: "absolute", left: 4, top: 4, margin: 0 }}>
-                          Cover
-                        </Tag>
+                          {uiText("admin_ui.en_cover_8b656")}</Tag>
                       )}
                       <Button
                         type="text"
@@ -1680,6 +1682,7 @@ function ProductsManagement() {
 }
 
 function SynonymReviewCard({ canEdit }: { canEdit: boolean }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [skuById, setSkuById] = useState<Record<string, string>>({});
   const { data, loading, refetch } = useQuery(Q_SYNONYMS, { fetchPolicy: "cache-and-network" });
@@ -1697,7 +1700,7 @@ function SynonymReviewCard({ canEdit }: { canEdit: boolean }) {
     <Card
       size="small"
       loading={loading}
-      title="AI synonym discovery"
+      title={uiText("admin_ui.en_ai_synonym_discovery_87a39")}
       extra={<Tag color="gold">{t("admin_products.synonym_pending", { n: candidates.length })}</Tag>}
       style={{ marginBottom: 16 }}
     >
@@ -1852,6 +1855,7 @@ function ProductDetail({
   onEdit: () => void;
   onToggleActive: (next: boolean) => void;
 }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const onErr = (e: any) => message.error(e?.message || t("admin_products.action_failed"));
   const { data: configurationData, refetch: refetchConfiguration } = useQuery(Q_PRODUCT_CONFIGURATION, {
@@ -1969,7 +1973,7 @@ function ProductDetail({
       ),
     },
     {
-      title: "Size",
+      title: uiText("admin_ui.en_size_b7152"),
       dataIndex: "size",
       key: "size",
       width: 100,
@@ -2167,14 +2171,14 @@ function ProductDetail({
 
   const moveCols = [
     { title: t("admin_products.col_time"), dataIndex: "created_at", key: "t", width: 165,
-      render: (d: string) => new Date(d).toLocaleString() },
+      render: (d: string) => new Date(d).toLocaleString(uiText.locale) },
     { title: t("admin_products.col_type"), dataIndex: "type", key: "type", width: 110,
       render: (moveType: string) => <Tag color={MOVE_COLOR[moveType] || "default"}>{moveType}</Tag> },
     { title: t("admin_products.col_branch"), key: "branch", width: 170,
       render: (_: unknown, move: Movement) => move.location_name || move.branch_code || "—" },
-    { title: "Size", dataIndex: "size", key: "size", width: 60 },
-    { title: "Qty", dataIndex: "qty", key: "qty", width: 60, align: "right" as const },
-    { title: "Order", dataIndex: "ref_order_id", key: "ref", width: 100,
+    { title: uiText("admin_ui.en_size_b7152"), dataIndex: "size", key: "size", width: 60 },
+    { title: uiText("admin_ui.en_qty_1e5ff"), dataIndex: "qty", key: "qty", width: 60, align: "right" as const },
+    { title: uiText("admin_ui.en_order_1d757"), dataIndex: "ref_order_id", key: "ref", width: 100,
       render: (o: string | null) => o ? <Typography.Text code>{o.slice(0, 8)}</Typography.Text> : "—" },
     { title: t("admin_products.col_actor"), dataIndex: "actor", key: "actor", render: (a: string | null) => a || "—" },
   ];
@@ -2640,6 +2644,7 @@ function ReservedOrdersModal({
   error: string | null;
   onClose: () => void;
 }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const orders = data?.orders ?? [];
   const truncated = (data?.lineCount ?? 0) > orders.length;
@@ -2647,7 +2652,7 @@ function ReservedOrdersModal({
   const cols = [
     // ถามรวมทุกไซซ์แล้วไม่บอกไซซ์ = พนักงานไม่รู้ว่าของที่ถูกจองคือไซซ์ไหน
     ...(size ? [] : [{
-      title: "Size",
+      title: uiText("admin_ui.en_size_b7152"),
       dataIndex: "size",
       key: "size",
       width: 80,
@@ -2662,7 +2667,7 @@ function ReservedOrdersModal({
             {r.orderId.slice(0, 8)}
           </Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-            {new Date(r.createdAt).toLocaleString()}
+            {new Date(r.createdAt).toLocaleString(uiText.locale)}
           </Typography.Text>
         </Space>
       ),

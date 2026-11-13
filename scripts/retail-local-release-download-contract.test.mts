@@ -1,3 +1,4 @@
+import { getMessage } from "../apps/web/i18n/index.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -56,7 +57,8 @@ test("Retail Local releases distinguish combined, server, and POS packages", () 
   assert.match(adminPage, /lower\.endsWith\("\.dmg"\)/);
   assert.match(adminPage, /uploadPackageType === "pos" \? "\.dmg" : "\.pkg"/);
   assert.match(adminPage, /macOS Apple Silicon \(\$\{macUploadExtension\}\)/);
-  assert.match(adminPage, /Windows x86 Legacy · POS only/);
+  assert.ok(adminPage.includes('uiText("admin_ui.en_windows_x86_legacy_pos_only_exe_b60d3")'));
+  assert.match(getMessage("en", "admin_ui.en_windows_x86_legacy_pos_only_exe_b60d3"), /Windows x86 Legacy · POS only/);
   assert.match(adminPage, /platform === "windows-x86-legacy" \? "pos"/);
   assert.match(adminPage, /accessLevel: "public"/);
   assert.doesNotMatch(adminPage, /disabled=\{uploadPackageType === "server-pos"\}/);

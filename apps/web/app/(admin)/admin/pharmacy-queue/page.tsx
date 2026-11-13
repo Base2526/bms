@@ -1,4 +1,8 @@
-'use client';
+"use client";
+
+import { pharmacyCaseStatus, pharmacyRiskLabel, pharmacyReviewValue } from "@/i18n/pharmacyReview";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { gql, useQuery } from "@apollo/client";
 import { Table, Tag, Alert, Typography, Tabs, Space, Select, Input, Button, Card } from "antd";
 import { ReadOutlined, ReloadOutlined } from "@ant-design/icons";
@@ -51,6 +55,7 @@ const POLICY_COLOR: Record<string, string> = {
 };
 
 function CounterAuthorizationLog({ timeRange }: { timeRange: string }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { data, loading } = useQuery(Q_COUNTER_LOG, {
     variables: { from: createdAfterFor(timeRange) },
@@ -86,7 +91,7 @@ function CounterAuthorizationLog({ timeRange }: { timeRange: string }) {
             title: t("admin_pharmacy_queue.counter_col_time"),
             dataIndex: "createdAt",
             key: "createdAt",
-            render: (v: string) => new Date(v).toLocaleString(),
+            render: (v: string) => new Date(v).toLocaleString(uiText.locale),
           },
           {
             title: t("admin_pharmacy_queue.counter_col_bill"),
@@ -163,7 +168,7 @@ const STATUS_COLOR: Record<string, string> = {
   EMERGENCY_REFERRAL: "red",
   CLOSED: "default",
 };
-const STATUS_OPTIONS = Object.keys(STATUS_COLOR).map((v) => ({ value: v, label: v }));
+const STATUS_VALUES = Object.keys(STATUS_COLOR);
 
 function timeOptions(t: (key: string) => string) {
   return [
@@ -204,14 +209,14 @@ function priorityForRow(row: any): number {
   return 6;
 }
 
-function buildColumns(t: (key: string, vars?: Record<string, any>) => string) {
+function buildColumns(t: (key: string, vars?: Record<string, any>) => string, uiText: UiTranslator = thaiUiText) {
   function renderConfirmationStatus(row: any) {
     const confirmationStatus = normalizeConfirmationStatus(row);
     if (confirmationStatus === "CONFIRMED") {
       return (
         <Space direction="vertical" size={2}>
           <Tag color="green">{t("admin_pharmacy_queue.confirm_confirmed")}</Tag>
-          <Text type="secondary">{row.customerConfirmedAt ? new Date(row.customerConfirmedAt).toLocaleString() : "—"}</Text>
+          <Text type="secondary">{row.customerConfirmedAt ? new Date(row.customerConfirmedAt).toLocaleString(uiText.locale) : "—"}</Text>
         </Space>
       );
     }
@@ -248,19 +253,19 @@ function buildColumns(t: (key: string, vars?: Record<string, any>) => string) {
       key: "id",
       render: (id: string) => <Link href={`/admin/pharmacy-queue/${id}`}>{id.slice(0, 8)}</Link>,
     },
-    { title: t("admin_pharmacy_queue.col_patient"), dataIndex: "patientRelationship", key: "patientRelationship" },
+    { title: t("admin_pharmacy_queue.col_patient"), dataIndex: "patientRelationship", key: "patientRelationship", render: (value: string | null) => pharmacyReviewValue(value, uiText) },
     { title: t("admin_pharmacy_queue.col_channel"), dataIndex: "channelId", key: "channelId", render: (v: string | null) => v || "—" },
     {
       title: t("admin_pharmacy_queue.col_risk"),
       dataIndex: "riskLevel",
       key: "riskLevel",
-      render: (v: string) => <Tag color={RISK_COLOR[v] || "default"}>{v}</Tag>,
+      render: (v: string) => <Tag color={RISK_COLOR[v] || "default"}>{pharmacyRiskLabel(v, uiText)}</Tag>,
     },
     {
       title: t("admin_pharmacy_queue.col_status"),
       dataIndex: "status",
       key: "status",
-      render: (v: string) => <Tag color={STATUS_COLOR[v] || "default"}>{v}</Tag>,
+      render: (v: string) => <Tag color={STATUS_COLOR[v] || "default"}>{pharmacyCaseStatus(v, uiText)}</Tag>,
     },
     {
       title: t("admin_pharmacy_queue.col_confirmation"),
@@ -278,11 +283,12 @@ function buildColumns(t: (key: string, vars?: Record<string, any>) => string) {
       key: "needsManualIntake",
       render: (v: boolean) => (v ? <Tag color="red">{t("admin_pharmacy_queue.ai_manual_required")}</Tag> : <Tag color="default">{t("admin_pharmacy_queue.ai_normal")}</Tag>),
     },
-    { title: t("admin_pharmacy_queue.col_updated_at"), dataIndex: "updatedAt", key: "updatedAt", render: (v: string) => new Date(v).toLocaleString() },
+    { title: t("admin_pharmacy_queue.col_updated_at"), dataIndex: "updatedAt", key: "updatedAt", render: (v: string) => new Date(v).toLocaleString(uiText.locale) },
   ];
 }
 
 export default function PharmacyQueuePage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const [tab, setTab] = useState<"emergency" | "urgent" | "normal" | "all">("emergency");
@@ -391,7 +397,7 @@ export default function PharmacyQueuePage() {
           allowClear
           placeholder={t("admin_pharmacy_queue.filter_status_placeholder")}
           style={{ width: 220 }}
-          options={STATUS_OPTIONS}
+          options={STATUS_VALUES.map(value => ({ value, label: pharmacyCaseStatus(value, uiText) }))}
           value={statusFilter}
           onChange={(v) => setStatusFilter(v)}
         />
@@ -409,7 +415,7 @@ export default function PharmacyQueuePage() {
         />
         <Select style={{ width: 160 }} options={timeOptions(t)} value={timeRange} onChange={(v) => setTimeRange(v)} />
       </Space>
-      <Table rowKey="id" loading={loading} dataSource={rows} columns={buildColumns(t)} pagination={{ pageSize: 20 }} scroll={{ x: "max-content" }} />
+      <Table rowKey="id" loading={loading} dataSource={rows} columns={buildColumns(t, uiText)} pagination={{ pageSize: 20 }} scroll={{ x: "max-content" }} />
       {/* ตัวกรองช่วงเวลาเดียวกับคิว — คนที่ถามว่า "วันนี้จ่ายอะไรออกไป" ไม่ต้องตั้งค่าสองที่ */}
       {can("pharmacy.audit.read") && <CounterAuthorizationLog timeRange={timeRange} />}
     </div>

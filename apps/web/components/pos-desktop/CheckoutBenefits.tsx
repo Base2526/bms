@@ -1,5 +1,7 @@
 "use client";
 
+import { usePosText, thaiPosText, type PosTranslator } from "@/lib/pos/usePosText";
+
 import { useEffect, useMemo, useState } from "react";
 import { Button, Input, InputNumber, Select } from "antd";
 import { posGraphqlRequest } from "@/lib/pos/mobileFlowGraphql";
@@ -31,13 +33,14 @@ export function benefitsPayable(preview: BenefitsPreview | null): number | null 
   return typeof amount === "number" && Number.isFinite(amount) && amount >= 0 ? amount : null;
 }
 
-export function benefitsSelectionError(preview: BenefitsPreview, customerId: string | null, points: number): string {
-  if (customerId && preview.member?.customerId !== customerId) return "ไม่พบสมาชิกนี้ในร้าน กรุณาเลือกสมาชิกใหม่";
-  if (points > 0 && preview.pointsUsed !== points) return `ใช้แต้มจำนวนนี้กับบิลนี้ไม่ได้ ใช้ได้ ${preview.pointsUsed} แต้ม`;
+export function benefitsSelectionError(preview: BenefitsPreview, customerId: string | null, points: number, posText: PosTranslator = thaiPosText): string {
+  if (customerId && preview.member?.customerId !== customerId) return posText("ไม่พบสมาชิกนี้ในร้าน กรุณาเลือกสมาชิกใหม่");
+  if (points > 0 && preview.pointsUsed !== points) return posText("ใช้แต้มจำนวนนี้กับบิลนี้ไม่ได้ ใช้ได้ {v0} แต้ม", { v0: preview.pointsUsed });
   return "";
 }
 
 export function useCheckoutBenefits(token: string, subtotal: number, groupId: string | null, active: boolean, revision: number) {
+  const posText = usePosText();
   const [member, setMember] = useState<Member | null>(null);
   const [coupon, setCoupon] = useState("");
   const [points, setPoints] = useState(0);
@@ -55,10 +58,10 @@ export function useCheckoutBenefits(token: string, subtotal: number, groupId: st
       void posGraphqlRequest<{ bmsPosMemberPreview: BenefitsPreview }>(token, BENEFITS_PREVIEW, { input })
         .then(({ bmsPosMemberPreview: preview }) => {
           if (!cancelled) setResult({ key, preview, error: benefitsPayable(preview) === null
-            ? preview.reason || preview.couponError || "ตรวจสอบส่วนลดไม่สำเร็จ"
-            : benefitsSelectionError(preview, input.customerId, input.pointsToRedeem) });
+            ? preview.reason || preview.couponError || posText("ตรวจสอบส่วนลดไม่สำเร็จ")
+            : benefitsSelectionError(preview, input.customerId, input.pointsToRedeem, posText) });
         }).catch((cause) => {
-          if (!cancelled) setResult({ key, preview: null, error: cause instanceof Error ? cause.message : "ตรวจสอบส่วนลดไม่สำเร็จ" });
+          if (!cancelled) setResult({ key, preview: null, error: cause instanceof Error ? cause.message : posText("ตรวจสอบส่วนลดไม่สำเร็จ") });
         });
     }, 250);
     return () => { cancelled = true; clearTimeout(timer); };
@@ -79,6 +82,7 @@ export function useCheckoutBenefits(token: string, subtotal: number, groupId: st
 }
 
 export default function CheckoutBenefits({ benefits, disabled }: { benefits: ReturnType<typeof useCheckoutBenefits>; disabled: boolean }) {
+  const posText = usePosText();
   const [query, setQuery] = useState("");
   const [members, setMembers] = useState<Member[]>([]);
   const [searching, setSearching] = useState(false);
@@ -92,40 +96,39 @@ export default function CheckoutBenefits({ benefits, disabled }: { benefits: Ret
     const timer = setTimeout(() => {
       void posGraphqlRequest<{ bmsPosMemberSearch: { members: Member[] } }>(benefits.token, MEMBER_SEARCH, { q: query.trim() })
         .then((data) => { if (!cancelled) setMembers(data.bmsPosMemberSearch.members); })
-        .catch(() => { if (!cancelled) setSearchError("ค้นหาสมาชิกไม่สำเร็จ กรุณาลองใหม่"); })
+        .catch(() => { if (!cancelled) setSearchError(posText("ค้นหาสมาชิกไม่สำเร็จ กรุณาลองใหม่")); })
         .finally(() => { if (!cancelled) setSearching(false); });
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [benefits.token, query]);
   const preview = benefits.preview;
   const selected = preview?.member ?? benefits.member;
-  return <section className={styles.root} aria-label="สมาชิก คูปอง และแต้ม">
-    <label>สมาชิก
-      <Select showSearch allowClear filterOption={false} disabled={disabled} loading={searching}
-        aria-label="ค้นหาสมาชิก" placeholder="ชื่อ / เบอร์โทร / เลขสมาชิก (3 ตัวขึ้นไป)"
+  return <section className={styles.root} aria-label={posText("สมาชิก คูปอง และแต้ม")}>
+    <label>{posText("สมาชิก") + " "}<Select showSearch allowClear filterOption={false} disabled={disabled} loading={searching}
+        aria-label={posText("ค้นหาสมาชิก")} placeholder={posText("ชื่อ / เบอร์โทร / เลขสมาชิก (3 ตัวขึ้นไป)")}
         value={benefits.member?.customerId} searchValue={query}
         onSearch={setQuery}
         onChange={(id) => { benefits.chooseMember(members.find((item) => item.customerId === id) ?? null); setQuery(""); }}
         options={[...(benefits.member && !members.some((item) => item.customerId === benefits.member?.customerId) ? [benefits.member] : []), ...members]
           .map((item) => ({ value: item.customerId, label: `${item.name} · ${item.memberNo || item.phone || ""}` }))}
-        notFoundContent={searchError || (searching ? "กำลังค้นหา…" : query.trim().length >= 3 ? "ไม่พบสมาชิก" : "พิมพ์อย่างน้อย 3 ตัวอักษร")} />
+        notFoundContent={searchError || (searching ? posText("กำลังค้นหา…") : query.trim().length >= 3 ? posText("ไม่พบสมาชิก") : posText("พิมพ์อย่างน้อย 3 ตัวอักษร"))} />
     </label>
     {selected ? <div className={styles.balance}>
-      <span>แต้มคงเหลือ <b>{selected.pointsBalance}</b></span><span>ใช้ได้ <b>{selected.pointsUsable}</b></span>
-      {preview?.pointsWillEarn != null ? <span>บิลนี้ได้รับ <b>{preview.pointsWillEarn}</b> แต้ม</span> : null}
+      <span>{posText("แต้มคงเหลือ") + " "}<b>{selected.pointsBalance}</b></span><span>{posText("ใช้ได้") + " "}<b>{selected.pointsUsable}</b></span>
+      {preview?.pointsWillEarn != null ? <span>{posText("บิลนี้ได้รับ") + " "}<b>{preview.pointsWillEarn}</b> {" " + posText("แต้ม")}</span> : null}
     </div> : null}
     <div className={styles.inputs}>
-      <label>รหัสคูปอง<Input allowClear aria-label="รหัสคูปอง" disabled={disabled} value={benefits.coupon} onChange={(event) => benefits.setCoupon(event.target.value)} /></label>
-      <label>ใช้แต้ม<InputNumber aria-label="ใช้แต้ม" min={0} precision={0} max={selected?.pointsUsable ?? 0}
+      <label>{posText("รหัสคูปอง")}<Input allowClear aria-label={posText("รหัสคูปอง")} disabled={disabled} value={benefits.coupon} onChange={(event) => benefits.setCoupon(event.target.value)} /></label>
+      <label>{posText("ใช้แต้ม")}<InputNumber aria-label={posText("ใช้แต้ม")} min={0} precision={0} max={selected?.pointsUsable ?? 0}
         disabled={disabled || !benefits.member || preview?.loyaltyEnabled === false}
         value={benefits.points} onChange={(value) => benefits.setPoints(value ?? 0)} /></label>
     </div>
     {benefits.ready && preview && selected && (preview.pointsWillEarn === 0 || !preview.loyaltyEnabled)
-      ? <div role="status">{pointsEarnMessage(preview.loyaltyEnabled ? preview.pointsEarnBlock : "PROGRAM_DISABLED")}</div> : null}
-    {benefits.pending ? <div role="status">กำลังตรวจสอบยอดและส่วนลด…</div> : null}
-    {benefits.error ? <div role="alert" className={styles.error}>{benefits.error} <Button disabled={disabled} onClick={benefits.retry}>ลองใหม่</Button></div> : null}
+      ? <div role="status">{posText(pointsEarnMessage(preview.loyaltyEnabled ? preview.pointsEarnBlock : "PROGRAM_DISABLED"))}</div> : null}
+    {benefits.pending ? <div role="status">{posText("กำลังตรวจสอบยอดและส่วนลด…")}</div> : null}
+    {benefits.error ? <div role="alert" className={styles.error}>{benefits.error} <Button disabled={disabled} onClick={benefits.retry}>{posText("ลองใหม่")}</Button></div> : null}
     {benefits.ready && preview ? <div className={styles.discounts}>
-      {[["ส่วนลดสมาชิก", preview.tierDiscount], ["ส่วนลดคูปอง", preview.couponDiscount], [`ใช้ ${preview.pointsUsed} แต้ม`, preview.pointsDiscount], ["หักมัดจำแล้ว", preview.reservationDepositApplied ?? 0]].map(([label, amount]) => Number(amount) > 0
+      {[[posText("ส่วนลดสมาชิก"), preview.tierDiscount], [posText("ส่วนลดคูปอง"), preview.couponDiscount], [posText("ใช้ {v0} แต้ม", { v0: preview.pointsUsed }), preview.pointsDiscount], [posText("หักมัดจำแล้ว"), preview.reservationDepositApplied ?? 0]].map(([label, amount]) => Number(amount) > 0
         ? <div key={label}><span>{label}</span><strong>−฿{Number(amount).toFixed(2)}</strong></div> : null)}
     </div> : null}
   </section>;

@@ -1,12 +1,15 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { ShiftProvider, useShift } from '../src/state/ShiftContext';
+import { applyPosLanguage } from '../src/i18n/catalog';
+
+let mockQueryData: any;
 
 const mockMutation = jest.fn(),
   mockRefresh = jest.fn(),
   mockQueue = jest.fn();
 jest.mock('@apollo/client', () => ({
-  useQuery: () => ({ data: undefined, refetch: mockRefresh }),
+  useQuery: () => ({ data: mockQueryData, refetch: mockRefresh }),
   useMutation: () => [mockMutation],
 }));
 jest.mock('../src/state/SessionContext', () => ({
@@ -31,6 +34,8 @@ function Probe() {
 }
 beforeEach(async () => {
   jest.clearAllMocks();
+  mockQueryData = undefined;
+  applyPosLanguage('th');
   mockQueue.mockResolvedValue([]);
   mockRefresh.mockResolvedValue(undefined);
   await act(async () => {
@@ -43,6 +48,25 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await act(async () => tree.unmount());
+  applyPosLanguage('th');
+});
+
+test('cached movement times update after a language switch without a server mutation', async () => {
+  mockQueryData = {
+    bmsPosSession: { shift: { id: 'shift', status: 'OPEN' } },
+    bmsPosShiftHistory: { shifts: [] },
+    bmsPosShiftReport: { report: null },
+    bmsPosCashMovements: { movements: [{ id: 'movement', direction: 'IN', amount: 50, reason: 'FAKE เหตุผล', createdAt: '2026-11-12T09:30:00Z' }] },
+  };
+  const time = jest.spyOn(Date.prototype, 'toLocaleTimeString').mockImplementation(function (locale) { return String(locale); });
+  try {
+    await act(async () => tree.update(<ShiftProvider><Probe /></ShiftProvider>));
+    expect(shift.movements[0].at).toBe('th-TH');
+    await act(async () => applyPosLanguage('en'));
+    expect(shift.movements[0].at).toBe('en-GB');
+    expect(shift.movements[0].reason).toBe('FAKE เหตุผล');
+    expect(mockMutation).not.toHaveBeenCalled();
+  } finally { time.mockRestore(); }
 });
 
 test.each(['cash', 'open', 'close'])(

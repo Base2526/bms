@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../../i18n/language';
 import React, { useEffect, useRef, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 import { useMutation } from '@apollo/client';
@@ -45,6 +46,7 @@ export function PurchaseReceiving({
   loading: boolean;
   error?: unknown;
 }) {
+  usePosLanguage();
   const { target } = useDevice();
   const { colors, spacing, typography, radius } = useTheme();
   const scope = target
@@ -76,13 +78,13 @@ export function PurchaseReceiving({
           setReady(true);
           if (saved)
             setNotice(
-              'มีรายการรับที่ยังไม่ยืนยันผล กรุณาตรวจรายการเดิมก่อนรับครั้งใหม่',
+              posText("มีรายการรับที่ยังไม่ยืนยันผล กรุณาตรวจรายการเดิมก่อนรับครั้งใหม่"),
             );
         })
         .catch(() => {
           if (active)
             setNotice(
-              'อ่านรายการรับที่เก็บไว้ไม่ได้ กรุณาเปิดหน้ารับสินค้าอีกครั้งหรือติดต่อผู้ดูแล',
+              posText("อ่านรายการรับที่เก็บไว้ไม่ได้ กรุณาเปิดหน้ารับสินค้าอีกครั้งหรือติดต่อผู้ดูแล"),
             );
         });
     return () => {
@@ -98,15 +100,15 @@ export function PurchaseReceiving({
       setDrafts({});
       setNotice(
         committed
-          ? 'บันทึกรับสินค้าแล้ว และโหลดข้อมูลล่าสุดแล้ว'
-          : 'โหลดใบสั่งซื้อค้างรับล่าสุดแล้ว',
+          ? posText("บันทึกรับสินค้าแล้ว และโหลดข้อมูลล่าสุดแล้ว")
+          : posText("โหลดใบสั่งซื้อค้างรับล่าสุดแล้ว"),
       );
     } catch {
       setReadBlocked(true);
       setNotice(
         committed
-          ? 'บันทึกรับสินค้าแล้ว แต่โหลดข้อมูลล่าสุดไม่ได้ กรุณาโหลดใบสั่งซื้อใหม่ก่อนรับครั้งถัดไป'
-          : 'โหลดใบสั่งซื้อไม่ได้ กรุณาลองใหม่',
+          ? posText("บันทึกรับสินค้าแล้ว แต่โหลดข้อมูลล่าสุดไม่ได้ กรุณาโหลดใบสั่งซื้อใหม่ก่อนรับครั้งถัดไป")
+          : posText("โหลดใบสั่งซื้อไม่ได้ กรุณาลองใหม่"),
       );
     }
   }
@@ -125,7 +127,7 @@ export function PurchaseReceiving({
         pending.branchId !== session.branch.id)
     ) {
       setNotice(
-        'รายการค้างเป็นของผู้รับหรือสาขาเดิม กรุณาเข้าใช้งานด้วยผู้รับและสาขาเดิมเพื่อตรวจผล',
+        posText("รายการค้างเป็นของผู้รับหรือสาขาเดิม กรุณาเข้าใช้งานด้วยผู้รับและสาขาเดิมเพื่อตรวจผล"),
       );
       return;
     }
@@ -152,7 +154,7 @@ export function PurchaseReceiving({
           i => !Number.isInteger(i.qty) || i.qty <= 0 || i.qty > 2147483647,
         )
       ) {
-        setNotice('กรุณาระบุจำนวนรับเป็นจำนวนเต็มมากกว่าศูนย์');
+        setNotice(posText("กรุณาระบุจำนวนรับเป็นจำนวนเต็มมากกว่าศูนย์"));
         return;
       }
       request = {
@@ -195,12 +197,12 @@ export function PurchaseReceiving({
       const result = response.data?.bmsPosReceivePurchase;
       if (result?.status === 'RECEIVED' || result?.status === 'PARTIAL') {
         // This result may be a replay. Only the fresh read describes current PO progress.
-        setNotice('บันทึกรับสินค้าแล้ว');
+        setNotice(posText("บันทึกรับสินค้าแล้ว"));
         try {
           await clearPendingPurchaseReceipt(scope, receipt.idempotencyKey);
         } catch {
           setNotice(
-            'บันทึกรับสินค้าแล้ว แต่ยังล้างรายการค้างไม่ได้ กรุณาตรวจรายการเดิมอีกครั้ง',
+            posText("บันทึกรับสินค้าแล้ว แต่ยังล้างรายการค้างไม่ได้ กรุณาตรวจรายการเดิมอีกครั้ง"),
           );
           return;
         }
@@ -213,25 +215,23 @@ export function PurchaseReceiving({
         setPending(null);
         setReadBlocked(true);
         setNotice(
-          `${
-            result.message || 'รับสินค้าไม่สำเร็จ กรุณาตรวจรายการ'
-          } · โหลดใบสั่งซื้อใหม่ก่อนแก้ไข`,
+          posText("{v0} · โหลดใบสั่งซื้อใหม่ก่อนแก้ไข", { v0: result.message || posText("รับสินค้าไม่สำเร็จ กรุณาตรวจรายการ") }),
         );
       } else {
         setNotice(
-          'ยังยืนยันผลรับสินค้าไม่ได้ กรุณาตรวจรายการเดิมอีกครั้ง ระบบจะไม่เพิ่มสต็อกซ้ำ',
+          posText("ยังยืนยันผลรับสินค้าไม่ได้ กรุณาตรวจรายการเดิมอีกครั้ง ระบบจะไม่เพิ่มสต็อกซ้ำ"),
         );
       }
     } catch {
       if (currentScope.current !== scope) return;
       if (saved || pending)
         setNotice(
-          'ยังยืนยันผลรับสินค้าไม่ได้ ตรวจการเชื่อมต่อและสิทธิ์ผู้รับ แล้วกดตรวจรายการเดิมอีกครั้ง',
+          posText("ยังยืนยันผลรับสินค้าไม่ได้ ตรวจการเชื่อมต่อและสิทธิ์ผู้รับ แล้วกดตรวจรายการเดิมอีกครั้ง"),
         );
       else {
         setReady(false);
         setNotice(
-          'เก็บรายการป้องกันรับซ้ำไม่ได้ กรุณาเปิดหน้ารับสินค้าอีกครั้งก่อนลองใหม่',
+          posText("เก็บรายการป้องกันรับซ้ำไม่ได้ กรุณาเปิดหน้ารับสินค้าอีกครั้งก่อนลองใหม่"),
         );
       }
     } finally {
@@ -252,8 +252,7 @@ export function PurchaseReceiving({
   return (
     <View style={{ gap: spacing.md }}>
       <Text style={[typography.title, { color: colors.text }]}>
-        รับสินค้า PO
-      </Text>
+        {posText("รับสินค้า PO") + " "}</Text>
       {!!notice && (
         <Text accessibilityRole="alert" style={{ color: colors.text }}>
           {notice}
@@ -261,23 +260,18 @@ export function PurchaseReceiving({
       )}
       {!!error && (
         <Text style={{ color: colors.danger }}>
-          โหลดใบสั่งซื้อไม่สำเร็จ กรุณาโหลดใหม่
-        </Text>
+          {posText("โหลดใบสั่งซื้อไม่สำเร็จ กรุณาโหลดใหม่") + " "}</Text>
       )}
       {pending ? (
         <View style={{ gap: spacing.sm }}>
           <Text style={{ color: colors.text }}>
-            รายการรอตรวจผล · {pending.poId.slice(0, 8)}
+            {posText("รายการรอตรวจผล ·") + " "}{pending.poId.slice(0, 8)}
           </Text>
           {pending.items.map((i, index) => (
-            <Text key={index} style={{ color: colors.text }}>{`${i.sku}/${
-              i.size
-            } · ${i.qty} หน่วย${i.lotNo ? ` · ล็อต ${i.lotNo}` : ''}${
-              i.expiryDate ? ` · หมดอายุ ${i.expiryDate}` : ''
-            }`}</Text>
+            <Text key={index} style={{ color: colors.text }}>{posText("{v0}/{v1} · {v2} หน่วย{v3}{v4}", { v0: i.sku, v1: i.size, v2: i.qty, v3: i.lotNo ? posText(" · ล็อต {v0}", { v0: i.lotNo }) : '', v4: i.expiryDate ? posText(" · หมดอายุ {v0}", { v0: i.expiryDate }) : '' })}</Text>
           ))}
           <Button
-            label="ตรวจรายการเดิมอีกครั้ง"
+            label={posText("ตรวจรายการเดิมอีกครั้ง")}
             loading={busy}
             disabled={!ready}
             onPress={() => submit()}
@@ -285,13 +279,13 @@ export function PurchaseReceiving({
         </View>
       ) : (
         <Button
-          label="โหลดใบสั่งซื้อค้างรับใหม่"
+          label={posText("โหลดใบสั่งซื้อค้างรับใหม่")}
           disabled={busy || !ready || loading}
           onPress={() => reload()}
         />
       )}
       {!pending && !loading && !error && orders.length === 0 && (
-        <Text style={{ color: colors.text }}>ไม่มีใบสั่งซื้อค้างรับ</Text>
+        <Text style={{ color: colors.text }}>{posText("ไม่มีใบสั่งซื้อค้างรับ")}</Text>
       )}
       {orders.map(order => (
         <View
@@ -304,16 +298,16 @@ export function PurchaseReceiving({
           }}
         >
           <Text style={[typography.bodyStrong, { color: colors.text }]}>
-            {order.supplier?.name || 'ไม่ระบุผู้ขาย'} ·{' '}
+            {order.supplier?.name || posText("ไม่ระบุผู้ขาย")} ·{' '}
             {order.status === 'PARTIAL'
-              ? 'รับบางส่วน'
+              ? posText("รับบางส่วน")
               : order.status === 'OPEN'
-              ? 'รอรับของ'
-              : 'รับเพิ่มไม่ได้'}
+              ? posText("รอรับของ")
+              : posText("รับเพิ่มไม่ได้")}
           </Text>
           <Text
             style={{ color: colors.text }}
-          >{`รับแล้ว ${order.qtyReceived} จาก ${order.qtyOrdered} หน่วย`}</Text>
+          >{posText("รับแล้ว {v0} จาก {v1} หน่วย", { v0: order.qtyReceived, v1: order.qtyOrdered })}</Text>
           {order.items
             .filter(i => i.qtyOrdered > i.qtyReceived)
             .map(item => {
@@ -333,11 +327,9 @@ export function PurchaseReceiving({
                 }));
               return (
                 <View key={key} style={{ gap: spacing.sm }}>
-                  <Text style={{ color: colors.text }}>{`${item.sku}/${
-                    item.size
-                  } · ค้างรับ ${item.qtyOrdered - item.qtyReceived}`}</Text>
+                  <Text style={{ color: colors.text }}>{posText("{v0}/{v1} · ค้างรับ {v2}", { v0: item.sku, v1: item.size, v2: item.qtyOrdered - item.qtyReceived })}</Text>
                   <TextInput
-                    accessibilityLabel={`จำนวนรับ ${item.sku} ${item.size}`}
+                    accessibilityLabel={posText("จำนวนรับ {v0} {v1}", { v0: item.sku, v1: item.size })}
                     value={draft.qty}
                     keyboardType="number-pad"
                     editable={!disabled}
@@ -345,8 +337,8 @@ export function PurchaseReceiving({
                     style={inputStyle}
                   />
                   <TextInput
-                    accessibilityLabel={`เลขล็อต ${item.sku} ${item.size}`}
-                    placeholder="เลขล็อตตามฉลาก (สินค้าติดตามล็อตต้องกรอก)"
+                    accessibilityLabel={posText("เลขล็อต {v0} {v1}", { v0: item.sku, v1: item.size })}
+                    placeholder={posText("เลขล็อตตามฉลาก (สินค้าติดตามล็อตต้องกรอก)")}
                     placeholderTextColor={colors.textMuted}
                     value={draft.lotNo}
                     editable={!disabled}
@@ -355,8 +347,8 @@ export function PurchaseReceiving({
                     style={inputStyle}
                   />
                   <TextInput
-                    accessibilityLabel={`วันหมดอายุ ${item.sku} ${item.size}`}
-                    placeholder="วันหมดอายุ YYYY-MM-DD (ถ้าติดตามวันหมดอายุ)"
+                    accessibilityLabel={posText("วันหมดอายุ {v0} {v1}", { v0: item.sku, v1: item.size })}
+                    placeholder={posText("วันหมดอายุ YYYY-MM-DD (ถ้าติดตามวันหมดอายุ)")}
                     placeholderTextColor={colors.textMuted}
                     value={draft.expiryDate}
                     editable={!disabled}
@@ -368,7 +360,7 @@ export function PurchaseReceiving({
               );
             })}
           <Button
-            label="ยืนยันรับสินค้าตามจำนวนที่ระบุ"
+            label={posText("ยืนยันรับสินค้าตามจำนวนที่ระบุ")}
             disabled={disabled || !['OPEN', 'PARTIAL'].includes(order.status)}
             loading={busy && pending?.poId === order.id}
             onPress={() => submit(order)}

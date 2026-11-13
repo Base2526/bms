@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../../i18n/language';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -24,6 +25,7 @@ export default function PrinterSettingsScreen({
 }: {
   navigation: { goBack: () => void };
 }) {
+  usePosLanguage();
   const { colors, typography } = useTheme();
   const printer = usePrinter();
   const [host, setHost] = useState(printer.saved?.host ?? '');
@@ -58,8 +60,8 @@ export default function PrinterSettingsScreen({
       await printer.connect({ host, port: Number(port), paperWidth });
     } catch (error) {
       Alert.alert(
-        'เชื่อมต่อไม่ได้',
-        error instanceof Error ? error.message : 'กรุณาลองใหม่',
+        posText("เชื่อมต่อไม่ได้"),
+        error instanceof Error ? error.message : posText("กรุณาลองใหม่"),
       );
     } finally {
       setBusy(false);
@@ -69,11 +71,11 @@ export default function PrinterSettingsScreen({
     setBusy(true);
     try {
       await printer.print(config => captureReceipt(testPaper, layout, config));
-      Alert.alert('ส่งงานทดสอบแล้ว', 'กรุณาตรวจข้อความภาษาไทยและ QR บนกระดาษ');
+      Alert.alert(posText("ส่งงานทดสอบแล้ว"), posText("กรุณาตรวจข้อความภาษาไทยและ QR บนกระดาษ"));
     } catch (error) {
       Alert.alert(
-        'พิมพ์ไม่สำเร็จ',
-        error instanceof Error ? error.message : 'กรุณาลองใหม่',
+        posText("พิมพ์ไม่สำเร็จ"),
+        error instanceof Error ? error.message : posText("กรุณาลองใหม่"),
       );
     } finally {
       setBusy(false);
@@ -87,7 +89,7 @@ export default function PrinterSettingsScreen({
   return (
     <ScreenContainer edges={['top', 'left', 'right', 'bottom']}>
       <ScreenHeader
-        title="เครื่องพิมพ์ใบเสร็จ"
+        title={posText("เครื่องพิมพ์ใบเสร็จ")}
         onBack={() => navigation.goBack()}
       />
       <KeyboardAvoidingView
@@ -116,10 +118,9 @@ export default function PrinterSettingsScreen({
             </Text>
           ) : null}
           <Text style={[typography.caption, { color: colors.textMuted }]}>
-            IP เครื่องพิมพ์
-          </Text>
+            {posText("IP เครื่องพิมพ์") + " "}</Text>
           <TextInput
-            accessibilityLabel="IP เครื่องพิมพ์"
+            accessibilityLabel={posText("IP เครื่องพิมพ์")}
             value={host}
             onChangeText={text => change(() => setHost(text))}
             editable={!locked}
@@ -131,10 +132,9 @@ export default function PrinterSettingsScreen({
             style={inputStyle}
           />
           <Text style={[typography.caption, { color: colors.textMuted }]}>
-            พอร์ต
-          </Text>
+            {posText("พอร์ต") + " "}</Text>
           <TextInput
-            accessibilityLabel="พอร์ตเครื่องพิมพ์"
+            accessibilityLabel={posText("พอร์ตเครื่องพิมพ์")}
             value={port}
             onChangeText={text => change(() => setPort(text))}
             editable={!locked}
@@ -142,8 +142,7 @@ export default function PrinterSettingsScreen({
             style={inputStyle}
           />
           <Text style={[typography.caption, { color: colors.textMuted }]}>
-            กระดาษ
-          </Text>
+            {posText("กระดาษ") + " "}</Text>
           <View style={styles.segment} accessibilityRole="radiogroup">
             {([58, 80] as const).map(width => (
               <Pressable
@@ -166,20 +165,19 @@ export default function PrinterSettingsScreen({
                 ]}
               >
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                  {width} มม.
-                </Text>
+                  {width} {" " + posText("มม.") + " "}</Text>
               </Pressable>
             ))}
           </View>
           <Button
-            label={connected ? 'ยกเลิกการเชื่อมต่อ' : 'เชื่อมต่อเครื่องพิมพ์'}
+            label={connected ? posText("ยกเลิกการเชื่อมต่อ") : posText("เชื่อมต่อเครื่องพิมพ์")}
             fullWidth
             disabled={locked}
             loading={printer.state.status === 'connecting'}
             onPress={connected ? printer.disconnect : connect}
           />
           <Button
-            label="พิมพ์ทดสอบ"
+            label={posText("พิมพ์ทดสอบ")}
             variant="secondary"
             fullWidth
             disabled={!connected || locked || !layout}
@@ -192,9 +190,9 @@ export default function PrinterSettingsScreen({
             style={styles.testPaper}
           >
             <Text style={styles.testTitle}>BMS POS</Text>
-            <Text style={styles.testText}>ทดสอบเครื่องพิมพ์</Text>
+            <Text style={styles.testText}>{posText("ทดสอบเครื่องพิมพ์")}</Text>
             <Text style={styles.testText}>ภาษาไทย · ABC 0123456789</Text>
-            <Text style={styles.testText}>ไม่ใช่ใบเสร็จรับเงิน</Text>
+            <Text style={styles.testText}>{posText("ไม่ใช่ใบเสร็จรับเงิน")}</Text>
             <QRCode value="BMS-PRINTER-TEST" size={128} />
           </View>
         </ScrollView>

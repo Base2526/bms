@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Card, Form, Input, Select, Button, message, Alert } from "antd";
 import React from "react";
@@ -21,6 +23,7 @@ query { roles { id name is_active } }
 const Q_ME = gql`query { bmsMe { id role is_platform_admin } }`;
 
 function FormNew(){
+  const uiText = useUiText();
   const { t } = useI18n();
   const [form] = Form.useForm();
   const watchName = Form.useWatch('name', form);   // 👈 debug helper
@@ -149,7 +152,7 @@ function FormNew(){
 
       {/* debug ดูค่าในฟอร์ม */}
       <pre style={{marginTop:16, opacity:.6}}>
-        name: {String(watchName || '')} | email: {String(watchEmail || '')}
+        {uiText("admin_ui.en_name_09278")} {String(watchName || '')}  {uiText("admin_ui.en_email_c5fc8")} {String(watchEmail || '')}
       </pre>
     </Card>
   );

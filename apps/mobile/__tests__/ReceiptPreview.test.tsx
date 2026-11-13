@@ -18,6 +18,7 @@ import { ReceiptDelivery } from '../src/components/ReceiptDelivery';
 import ReceiptScreen from '../src/screens/sell/ReceiptScreen';
 import { ThemeProvider } from '../src/theme/ThemeProvider';
 import type { MobilePosReceiptFieldsFragment } from '../src/graphql/generated';
+import { PosBootstrapDocument } from '../src/graphql/generated';
 
 const mockSendReceipt = jest.fn();
 const mockPrinter = {
@@ -111,6 +112,14 @@ const receipt: MobilePosReceiptFieldsFragment = {
 let renderer: ReactTestRenderer.ReactTestRenderer;
 let alertSpy: jest.SpyInstance;
 
+function mockReceiptQuery(result: any, storeResult?: any) {
+  const bootstrap = storeResult ?? {
+    data: { bmsPosSession: result.data?.bmsPosSession ?? { store: { receiptLanguageMode: 'th' } } },
+    loading: false, refetch: jest.fn().mockResolvedValue({}),
+  };
+  jest.mocked(useQuery).mockImplementation(document => document === PosBootstrapDocument ? bootstrap : result);
+}
+
 async function render(node: React.ReactNode) {
   await act(() => {
     renderer = ReactTestRenderer.create(
@@ -147,7 +156,7 @@ beforeEach(() => {
   mockSendReceipt.mockResolvedValue({
     data: { bmsPosSendReceipt: { status: 'SENT' } },
   });
-  jest.mocked(useQuery).mockReturnValue({
+  mockReceiptQuery({
     data: { bmsPosRecentSales: { sales: [receipt] } },
     loading: false,
     refetch: jest.fn().mockResolvedValue({}),
@@ -214,6 +223,35 @@ test('reveals the focused recipient inside the resized keyboard viewport and rem
 });
 
 describe('Receipt paper', () => {
+  test('a cold preview waits for store receipt settings instead of printing a guessed language', async () => {
+    mockReceiptQuery({ data: { bmsPosRecentSales: { sales: [receipt] } }, loading: false }, { loading: true });
+    await render(<ReceiptScreen route={{ params: { saleId: receipt.orderId } } as never} navigation={{} as never} />);
+    expect(renderer.root.findAllByType(ReceiptPaper)).toHaveLength(0);
+    expect(text()).toContain('กำลังโหลดใบเสร็จ');
+    expect(mockPrinter.print).not.toHaveBeenCalled();
+  });
+
+  test.each(['en', 'bilingual'] as const)('uses store receipt language %s while preserving amounts and original product text', async languageMode => {
+    await render(<ReceiptPaper receipt={receipt} languageMode={languageMode} />);
+    expect(text()).toContain('Change');
+    expect(text()).toContain('Cash');
+    expect(text()).toContain('สินค้าทดสอบ');
+    expect(text()).toContain('฿107.00');
+    expect(text()).toContain('฿13.00');
+    expect(text()).not.toContain('฿99.99');
+    if (languageMode === 'bilingual') expect(text()).toContain('เงินทอน / Change');
+  });
+
+  test('receipt preview takes its language from the store bootstrap', async () => {
+    mockReceiptQuery({
+      data: { bmsPosRecentSales: { sales: [receipt] }, bmsPosSession: { store: { receiptLanguageMode: 'en' } } },
+      loading: false, refetch: jest.fn().mockResolvedValue({}),
+    } as never);
+    await render(<ReceiptScreen route={{ params: { saleId: receipt.orderId } } as never} navigation={{} as never} />);
+    expect(renderer.root.findByType(ReceiptPaper).props.languageMode).toBe('en');
+    expect(text()).toContain('Change');
+  });
+
   test('uses returned line totals, VAT, discounts, charges and cash change without recomputing prices', async () => {
     await render(<ReceiptPaper receipt={receipt} />);
     expect(text()).toContain('TEST-0001');
@@ -405,7 +443,7 @@ describe('Receipt navigation and recovery', () => {
   });
 
   test('keeps the confirmed paper and delivery form mounted during background refresh', async () => {
-    jest.mocked(useQuery).mockReturnValue({
+    mockReceiptQuery({
       loading: true,
       data: { bmsPosRecentSales: { sales: [receipt] } },
       refetch: jest.fn(),
@@ -505,12 +543,12 @@ describe('Receipt navigation and recovery', () => {
 
   test('shows loading, errors, retry and missing data without another order leaking into the preview', async () => {
     const refetch = jest.fn().mockRejectedValue(new Error('offline'));
-    jest.mocked(useQuery).mockReturnValue({ loading: true, refetch } as never);
+    mockReceiptQuery({ loading: true, refetch } as never);
     await screen();
     expect(text()).toContain('กำลังโหลดใบเสร็จ');
     expect(renderer.root.findAllByType(ReceiptPaper)).toHaveLength(0);
     await act(() => renderer.unmount());
-    jest.mocked(useQuery).mockReturnValue({
+    mockReceiptQuery({
       loading: false,
       error: new Error('offline'),
       data: { bmsPosRecentSales: { sales: [receipt] } },
@@ -522,7 +560,7 @@ describe('Receipt navigation and recovery', () => {
     await act(() => button('ลองใหม่').props.onPress());
     expect(refetch).toHaveBeenCalledTimes(1);
     await act(() => renderer.unmount());
-    jest.mocked(useQuery).mockReturnValue({
+    mockReceiptQuery({
       loading: false,
       data: {
         bmsPosRecentSales: {

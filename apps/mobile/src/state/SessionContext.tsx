@@ -1,3 +1,4 @@
+import { posText } from '../i18n/language';
 import React, {
   createContext,
   useCallback,
@@ -94,9 +95,9 @@ export function useSession(): SessionContextValue {
 }
 
 export function sessionCashierName(session: PosSession | null): string {
-  return session?.cashier.name ?? 'ยังไม่ได้เข้าใช้งาน';
+  return session?.cashier.name ?? posText("ยังไม่ได้เข้าใช้งาน");
 }
 
 export function sessionBranchName(session: PosSession | null): string {
-  return session?.branch.name ?? 'ยังไม่ทราบสาขา';
+  return session?.branch.name ?? posText("ยังไม่ทราบสาขา");
 }

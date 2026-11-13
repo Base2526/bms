@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { usePosText } from "@/lib/pos/usePosText";
 
 import { useState, type CSSProperties, type ReactNode } from 'react';
 
@@ -22,6 +24,7 @@ export default function PosDismissibleAlert({
   role = 'alert',
   onClose,
 }: Props) {
+  const posText = usePosText();
   const [visible, setVisible] = useState(true);
 
   if (!visible) return null;
@@ -36,8 +39,8 @@ export default function PosDismissibleAlert({
       <button
         type="button"
         className="pos-alert-close"
-        aria-label="ปิดการแจ้งเตือน"
-        title="ปิด"
+        aria-label={posText("ปิดการแจ้งเตือน")}
+        title={posText("ปิด")}
         onClick={() => {
           setVisible(false);
           onClose?.();

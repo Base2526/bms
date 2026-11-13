@@ -1,3 +1,5 @@
+import { posText } from "./clientText";
+
 import type { DesktopKitchenPrintJob, DesktopKitchenPrinterRoute, DesktopKitchenPrinterState } from "./deviceTokenClient";
 
 export function hasDesktopKitchenPrinterBridge(): boolean {
@@ -11,12 +13,12 @@ export async function getDesktopKitchenPrinterState(): Promise<DesktopKitchenPri
 
 export async function saveDesktopKitchenPrinterRoutes(routes: DesktopKitchenPrinterRoute[]) {
   const result = await window.bmsDesktop?.setKitchenPrinterConfig?.({ routes });
-  if (!result?.ok) throw new Error(result?.error || "บันทึกเครื่องพิมพ์ครัวไม่สำเร็จ");
+  if (!result?.ok) throw new Error(result?.error || posText("บันทึกเครื่องพิมพ์ครัวไม่สำเร็จ"));
 }
 
 export async function testDesktopKitchenPrinter(stationKey: string) {
   const result = await window.bmsDesktop?.testKitchenPrinter?.(stationKey);
-  if (!result?.ok) throw new Error(result?.error || "พิมพ์ทดสอบไม่สำเร็จ");
+  if (!result?.ok) throw new Error(result?.error || posText("พิมพ์ทดสอบไม่สำเร็จ"));
 }
 
 export async function printDesktopKitchenTicket(
@@ -24,6 +26,6 @@ export async function printDesktopKitchenTicket(
   options: { auto?: boolean; retry?: boolean } = {},
 ) {
   const result = await window.bmsDesktop?.printKitchenTicket?.(job, options);
-  if (!result) throw new Error("เดสก์ท็อปเวอร์ชันนี้ยังไม่รองรับเครื่องพิมพ์ครัว");
+  if (!result) throw new Error(posText("เดสก์ท็อปเวอร์ชันนี้ยังไม่รองรับเครื่องพิมพ์ครัว"));
   return result;
 }

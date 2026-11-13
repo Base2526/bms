@@ -1,5 +1,7 @@
 // apps/web/app/(admin)/admin/file/page.tsx
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import React, { useMemo, useState } from "react";
 import { Input, Upload, Button, Table, Space, Modal, message, Popconfirm, Image } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
@@ -40,6 +42,7 @@ type FileRow = {
 };
 
 export default function FilesPage(){
+  const uiText = useUiText();
   const [q,setQ] = useState("");
   const [page,setPage] = useState(1);
   const [pageSize,setPageSize] = useState(20);
@@ -68,48 +71,48 @@ export default function FilesPage(){
   const delFile = async (r: FileRow) => {
     const res = await mutDel({ variables: { id: String(r.id) } });
     if (res.data?.deleteFile) {
-      message.success("Deleted");
+      message.success(uiText("admin_ui.en_deleted_441bd"));
       refetch({ q, limit: pageSize, offset: (page-1)*pageSize });
     } else {
-      message.error("Delete failed");
+      message.error(uiText("admin_ui.en_delete_failed_64513"));
     }
   };
 
   const delFilesBulk = async () => {
     if (!selectedCount) return;
     Modal.confirm({
-      title: `Delete ${selectedCount} file(s)?`,
-      content: 'This action cannot be undone.',
+      title: uiText("admin_ui.en_delete_file_s_5896e", { v0: selectedCount }),
+      content: uiText("admin_ui.en_this_action_cannot_be_undone_951f4"),
       okButtonProps: { danger: true },
       onOk: async () => {
         const ids = selectedRowKeys.map(String);
         const res = await mutDelMany({ variables: { ids } });
         if (res.data?.deleteFiles) {
-          message.success(`Deleted ${selectedCount} item(s)`);
+          message.success(uiText("admin_ui.en_deleted_item_s_d41b7", { v0: selectedCount }));
           setSelectedRowKeys([]);
           refetch({ q, limit: pageSize, offset: (page-1)*pageSize });
         } else {
-          message.error("Delete failed");
+          message.error(uiText("admin_ui.en_delete_failed_64513"));
         }
       }
     });
   };
 
   const renameFile = async (r: FileRow) => {
-    const name = prompt("Rename to:", r.original_name || r.filename);
+    const name = prompt(uiText("admin_ui.en_rename_to_5942b"), r.original_name || r.filename);
     if (!name) return;
     const res = await mutRename({ variables: { id: String(r.id), name } });
     if (res.data?.renameFile) {
-      message.success("Renamed");
+      message.success(uiText("admin_ui.en_renamed_e5ad1"));
       refetch({ q, limit: pageSize, offset: (page-1)*pageSize });
     } else {
-      message.error("Rename failed");
+      message.error(uiText("admin_ui.en_rename_failed_85aa4"));
     }
   };
 
   const columns = useMemo(()=>[
     {
-      title: "Preview",
+      title: uiText("admin_ui.en_preview_f1fbb"),
       dataIndex: "thumb",
       key: "thumb",
       render: (_: any, r: FileRow) =>{
@@ -117,30 +120,30 @@ export default function FilesPage(){
           <Image src={r.url} alt="" width={64} height={64} style={{ objectFit:'cover', borderRadius:6 }} />
         ) : (
           <div style={{ width:64, height:64, borderRadius:6, background:'var(--app-surface-2)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ color:'var(--app-muted)', fontSize:12 }}>no preview</span>
+            <span style={{ color:'var(--app-muted)', fontSize:12 }}>{uiText("admin_ui.en_no_preview_00a6e")}</span>
           </div>
         )
       },
       width: 90,
     },
-    { title:"Name", dataIndex:"original_name", key:"original_name", render:(v: string|null, r:FileRow)=> v || r.filename },
-    { title:"Type", dataIndex:"mimetype", key:"mimetype" },
-    { title:"Size", dataIndex:"size", key:"size", render:(v:number)=> (v/1024).toFixed(1)+" KB" },
-    { title:"Created", dataIndex:"created_at", key:"created_at" },
+    { title:uiText("admin_ui.en_name_709a2"), dataIndex:"original_name", key:"original_name", render:(v: string|null, r:FileRow)=> v || r.filename },
+    { title:uiText("admin_ui.en_type_3deb7"), dataIndex:"mimetype", key:"mimetype" },
+    { title:uiText("admin_ui.en_size_b7152"), dataIndex:"size", key:"size", render:(v:number)=> (v/1024).toFixed(1)+" KB" },
+    { title:uiText("admin_ui.en_created_accf4"), dataIndex:"created_at", key:"created_at" },
     {
-      title:"Actions",
+      title:uiText("admin_ui.en_actions_c3cd6"),
       key:"actions",
       render: (_:any, r:FileRow)=> (
         <Space>
-          <Link href={`${r.url}?mode=download`}>Download</Link>
-          <a onClick={()=> renameFile(r)}>Rename</a>
-          <Popconfirm title="Delete this file?" onConfirm={()=> delFile(r)}>
-            <a>Delete</a>
+          <Link href={`${r.url}?mode=download`}>{uiText("admin_ui.en_download_a479c")}</Link>
+          <a onClick={()=> renameFile(r)}>{uiText("admin_ui.en_rename_d3f4c")}</a>
+          <Popconfirm title={uiText("admin_ui.en_delete_this_file_3cf37")} onConfirm={()=> delFile(r)}>
+            <a>{uiText("admin_ui.en_delete_f6fdb")}</a>
           </Popconfirm>
         </Space>
       )
     },
-  ],[]);
+  ],[uiText, ]);
 
   const rowSelection = {
     selectedRowKeys,
@@ -150,10 +153,10 @@ export default function FilesPage(){
 
   const onUploadChange = (info:any) => {
     if (info.file.status === "done") {
-      message.success("Uploaded");
+      message.success(uiText("admin_ui.en_uploaded_80c49"));
       refetch({ q, limit: pageSize, offset: (page-1)*pageSize });
     } else if (info.file.status === "error") {
-      message.error("Upload failed");
+      message.error(uiText("admin_ui.en_upload_failed_ad0d0"));
     }
   };
 
@@ -161,7 +164,7 @@ export default function FilesPage(){
     <div className="p-6">
       <Space className="mb-4" wrap>
         <Input.Search
-          placeholder="Search by name"
+          placeholder={uiText("admin_ui.en_search_by_name_28abc")}
           allowClear
           enterButton
           value={q}
@@ -169,11 +172,11 @@ export default function FilesPage(){
           onSearch={()=>onSearch()}
         />
         <Upload name="file" action="/api/files" onChange={onUploadChange} showUploadList={false}>
-          <Button icon={<UploadOutlined/>}>Upload</Button>
+          <Button icon={<UploadOutlined/>}>{uiText("admin_ui.en_upload_8bdf0")}</Button>
         </Upload>
 
         <Button danger disabled={!selectedCount} onClick={delFilesBulk}>
-          Delete selected ({selectedCount})
+          {uiText("admin_ui.en_delete_selected_eec82")}{selectedCount})
         </Button>
       </Space>
 
@@ -189,7 +192,7 @@ export default function FilesPage(){
           total,
           showSizeChanger: true,
           showTotal: (tot, range) =>
-            `${range[0]}-${range[1]} of ${tot} items`,
+            uiText("admin_ui.en_of_items_9aa37", { v0: range[0], v1: range[1], v2: tot }),
           onChange: (p, ps) => {
             setPage(p);
             setPageSize(ps);

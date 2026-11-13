@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Col, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Statistic, Switch, Table, Tag, message } from "antd";
@@ -23,6 +25,7 @@ const whtTypes = ["RENT","SERVICE","PROFESSIONAL","TRANSPORT","ADVERTISING","OTH
 const baht = (n:number) => Number(n ?? 0).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2});
 
 export default function ExpensesPage(){
+  const uiText = useUiText();
   const { t } = useI18n();
   const { can, loading: permLoading } = useBmsPermissions();
   const allowed = can("expense.view"), canManage = can("expense.manage"), canReport = can("report.view");
@@ -59,7 +62,7 @@ export default function ExpensesPage(){
   return <div>
     <AdminPageHeader title={t("admin_expenses.page_title")}>
       <DatePicker picker="month" allowClear={false} value={month} onChange={v=>v&&setMonth(v.startOf("month"))}/>
-      <Select allowClear style={{width:230}} placeholder={t("admin_expenses.all_branches")} value={locationId} onChange={setLocationId} options={establishments.map((e:any)=>({value:e.locationId,label:`${e.isHeadOffice?"HQ":e.branchCode} · ${e.name}`}))}/>
+      <Select allowClear style={{width:230}} placeholder={t("admin_expenses.all_branches")} value={locationId} onChange={setLocationId} options={establishments.map((e:any)=>({value:e.locationId,label:`${e.isHeadOffice?uiText("admin_ui.en_hq_2c06b"):e.branchCode} · ${e.name}`}))}/>
       <Button icon={<ReloadOutlined/>} onClick={()=>void docs.refetch()}/>
       {canReport&&<Button icon={<FileExcelOutlined/>} loading={generating} onClick={()=>void exportInputVat()}>{t("admin_expenses.export_input_vat")}</Button>}
       {canReport&&<Button target="_blank" rel="noopener noreferrer" href={`/api/bms/reports/tax-print?${new URLSearchParams({reportType:"VAT_PURCHASE",from,to,...(locationId?{locationId}:{})})}`}>{t("admin_expenses.print_report")}</Button>}

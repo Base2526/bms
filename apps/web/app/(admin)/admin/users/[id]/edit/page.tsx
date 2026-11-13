@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Form, Input, Select, Button, Space, Upload, message, Image, Alert } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
@@ -73,6 +75,7 @@ mutation($user_id:ID!, $file:Upload!){
 const Q_ME = gql`query { bmsMe { id role is_platform_admin } }`;
 
 function FormEdit({ id }: { id: string }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [form] = Form.useForm();
   const { data, refetch } = useQuery(Q, { variables: { id } });
@@ -215,7 +218,7 @@ function FormEdit({ id }: { id: string }) {
       )}
       <Space direction="vertical" size={0} style={{ marginBottom: 16, color: '#888', fontSize: 13 }}>
         {u.tenantName ? <span>{t("admin_users_edit.shop_label")} <b>{u.tenantName}</b></span> : null}
-        <span>{t("admin_users_edit.last_login")} {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : t("admin_users_edit.never")}</span>
+        <span>{t("admin_users_edit.last_login")} {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString(uiText.locale) : t("admin_users_edit.never")}</span>
       </Space>
       <Form
         key={u.id}
@@ -258,7 +261,7 @@ function FormEdit({ id }: { id: string }) {
           <Space direction="vertical">
             <div style={{ width: 100, height: 100, borderRadius: '50%', overflow: 'hidden', background: 'var(--app-surface-2)' }}>
               {currentAvatar ? (
-                <Image src={currentAvatar} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <Image src={currentAvatar} alt={uiText("admin_ui.en_avatar_9c3bb")} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               ) : (
                 <div style={{
                   width: '100%', height: '100%',

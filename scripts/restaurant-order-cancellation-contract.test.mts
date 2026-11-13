@@ -57,7 +57,7 @@ test("POS owns both cancellation and refund-queue controls while admin mirrors p
   assert.match(posPage, /data\?\.status === "APPROVAL_REQUIRED"/);
   assert.match(posPage, /restaurant\.floor\.manage/);
   assert.match(posPage, /managerUserId: manager\.id, managerPin/);
-  assert.match(posPage, /ปิดเมนู “\$\{item\.name\}” เป็นหมดวันนี้ที่สาขานี้ด้วยหรือไม่/);
+  assert.match(posPage, /posText\("ปิดเมนู “\{v0\}” เป็นหมดวันนี้ที่สาขานี้ด้วยหรือไม่\?", \{ v0: item\.name \}\)/);
   assert.match(posPage, /productSku: item\.sku[\s\S]{0,120}unavailable: true/);
   assert.match(adminPage, /pendingRefundAmount/);
 });

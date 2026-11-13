@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/useUiText";
+
 import { useEffect, useState } from "react";
 import { gql, useMutation, useQuery } from "@apollo/client";
 import {
@@ -144,6 +146,7 @@ function statusTag(status: string, t: (key: string) => string) {
 }
 
 export default function SupportTicketsPage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const TOPIC_LABEL = topicLabels(t);
   const [q, setQ] = useState("");
@@ -188,11 +191,11 @@ export default function SupportTicketsPage() {
       dataIndex: "createdAt",
       width: 150,
       render: (v: string) => (
-        <span style={{ fontFamily: "monospace", fontSize: 12 }}>{dayjs(v).format("DD MMM HH:mm")}</span>
+        <span style={{ fontFamily: "monospace", fontSize: 12 }}>{dayjs(v).locale(uiText.language).format("DD MMM HH:mm")}</span>
       ),
     },
     {
-      title: "Ticket",
+      title: uiText("admin_ui.en_ticket_a7677"),
       dataIndex: "ticketId",
       width: 170,
       render: (v: string) => <Text code>{v}</Text>,
@@ -240,8 +243,7 @@ export default function SupportTicketsPage() {
       <Space direction="vertical" size={16} style={{ width: "100%" }}>
         <div>
           <Title level={2} style={{ margin: 0 }}>
-            <CustomerServiceOutlined /> Support Tickets
-          </Title>
+            <CustomerServiceOutlined />  {uiText("admin_ui.en_support_tickets_6564b")}</Title>
           <Text type="secondary">{t("admin_support_tickets.page_subtitle")}</Text>
         </div>
 
@@ -337,17 +339,17 @@ export default function SupportTicketsPage() {
           >
             <Descriptions size="small" bordered column={{ xs: 1, md: 2 }}>
               <Descriptions.Item label={t("admin_support_tickets.detail_status")}>{statusTag(selected.status, t)}</Descriptions.Item>
-              <Descriptions.Item label={t("admin_support_tickets.detail_created")}>{dayjs(selected.createdAt).format("DD MMM YYYY HH:mm")}</Descriptions.Item>
-              <Descriptions.Item label={t("admin_support_tickets.detail_updated")}>{selected.updatedAt ? dayjs(selected.updatedAt).format("DD MMM YYYY HH:mm") : "-"}</Descriptions.Item>
-              <Descriptions.Item label={t("admin_support_tickets.detail_closed")}>{selected.closedAt ? dayjs(selected.closedAt).format("DD MMM YYYY HH:mm") : "-"}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_support_tickets.detail_created")}>{dayjs(selected.createdAt).locale(uiText.language).format("DD MMM YYYY HH:mm")}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_support_tickets.detail_updated")}>{selected.updatedAt ? dayjs(selected.updatedAt).locale(uiText.language).format("DD MMM YYYY HH:mm") : "-"}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_support_tickets.detail_closed")}>{selected.closedAt ? dayjs(selected.closedAt).locale(uiText.language).format("DD MMM YYYY HH:mm") : "-"}</Descriptions.Item>
               <Descriptions.Item label={t("admin_support_tickets.detail_name")}>{selected.name || "-"}</Descriptions.Item>
               <Descriptions.Item label={t("admin_support_tickets.detail_email")}>{selected.email}</Descriptions.Item>
               <Descriptions.Item label={t("admin_support_tickets.detail_phone")}>{selected.phone || "-"}</Descriptions.Item>
               <Descriptions.Item label={t("admin_support_tickets.detail_topic")}>{TOPIC_LABEL[selected.topic] || selected.topic}</Descriptions.Item>
-              <Descriptions.Item label="Ref">{selected.ref || "-"}</Descriptions.Item>
+              <Descriptions.Item label={uiText("admin_ui.en_ref_c89dd")}>{selected.ref || "-"}</Descriptions.Item>
               <Descriptions.Item label="IP">{selected.ip || "-"}</Descriptions.Item>
-              <Descriptions.Item label="Page URL" span={2}>{selected.pageUrl || "-"}</Descriptions.Item>
-              <Descriptions.Item label="User Agent" span={2}>{selected.userAgent || "-"}</Descriptions.Item>
+              <Descriptions.Item label={uiText("admin_ui.en_page_url_efc21")} span={2}>{selected.pageUrl || "-"}</Descriptions.Item>
+              <Descriptions.Item label={uiText("admin_ui.en_user_agent_8f9f2")} span={2}>{selected.userAgent || "-"}</Descriptions.Item>
               {selected.diagnosticBundleId ? (
                 <Descriptions.Item label={t("admin_support_tickets.diagnostic_bundle")} span={2}>
                   <Button
@@ -361,7 +363,7 @@ export default function SupportTicketsPage() {
             </Descriptions>
             <Paragraph style={{ whiteSpace: "pre-wrap", marginTop: 16 }}>{selected.message}</Paragraph>
 
-            <Card size="small" title="Internal comment" style={{ marginTop: 16 }}>
+            <Card size="small" title={uiText("admin_ui.en_internal_comment_3389d")} style={{ marginTop: 16 }}>
               <Input.TextArea
                 rows={4}
                 value={comment}
@@ -373,7 +375,7 @@ export default function SupportTicketsPage() {
               </Text>
             </Card>
 
-            <Card size="small" title="Comments" style={{ marginTop: 16 }}>
+            <Card size="small" title={uiText("admin_ui.en_comments_fce06")} style={{ marginTop: 16 }}>
               {selected.comments.length === 0 ? (
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("admin_support_tickets.no_comments")} />
               ) : (
@@ -382,8 +384,8 @@ export default function SupportTicketsPage() {
                     children: (
                       <Space direction="vertical" size={2}>
                         <Space wrap>
-                          <Text strong>{item.authorEmail || "platform admin"}</Text>
-                          <Text type="secondary">{dayjs(item.createdAt).format("DD MMM YYYY HH:mm")}</Text>
+                          <Text strong>{item.authorEmail || uiText("admin_ui.en_platform_admin_9a528")}</Text>
+                          <Text type="secondary">{dayjs(item.createdAt).locale(uiText.language).format("DD MMM YYYY HH:mm")}</Text>
                           {item.fromStatus !== item.toStatus ? (
                             <Text type="secondary">
                               {item.fromStatus || "-"} -&gt; {item.toStatus || "-"}

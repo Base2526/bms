@@ -1,3 +1,4 @@
+import { posLocale, posText, usePosLanguage } from '../../i18n/language';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -29,25 +30,25 @@ import { getTabNavigation } from '../../navigation/parentNavigation';
 
 const STATUS_LABEL: Record<TicketStatus, { label: string; tone: StatusTone }> =
   {
-    NEW: { label: 'เข้าใหม่', tone: 'warning' },
-    PREPARING: { label: 'กำลังทำ', tone: 'neutral' },
-    READY: { label: 'พร้อมเสิร์ฟ', tone: 'success' },
-    SERVED: { label: 'เสิร์ฟแล้ว', tone: 'neutral' },
+    NEW: { get label() { return posText("เข้าใหม่"); }, tone: 'warning' },
+    PREPARING: { get label() { return posText("กำลังทำ"); }, tone: 'neutral' },
+    READY: { get label() { return posText("พร้อมเสิร์ฟ"); }, tone: 'success' },
+    SERVED: { get label() { return posText("เสิร์ฟแล้ว"); }, tone: 'neutral' },
   };
 
 const NEXT_ACTION: Record<TicketStatus, string> = {
-  NEW: 'เริ่มทำ',
-  PREPARING: 'พร้อมเสิร์ฟ',
-  READY: 'เสิร์ฟแล้ว',
+  get NEW() { return posText("เริ่มทำ"); },
+  get PREPARING() { return posText("พร้อมเสิร์ฟ"); },
+  get READY() { return posText("เสิร์ฟแล้ว"); },
   SERVED: '',
 };
-
-const ALL = 'ทั้งหมด';
 
 // จอครัวอ่าน snapshot จาก GraphQL และ named subscription จะสั่ง refetch เมื่อเครื่องอื่นเปลี่ยนงาน
 type Props = NativeStackScreenProps<KitchenStackParamList, 'KitchenBoard'>;
 
 export default function KitchenBoardScreen({ navigation }: Props) {
+  usePosLanguage();
+  const ALL = posText("ทั้งหมด");
   const { colors, spacing, typography, radius } = useTheme();
   const { gridColumns } = useResponsive();
   const {
@@ -103,10 +104,9 @@ export default function KitchenBoardScreen({ navigation }: Props) {
         onOpenQueue={() => getTabNavigation(navigation).navigate('OrdersTab')}
       />
       <View style={styles.headRow}>
-        <Text style={[typography.title, { color: colors.text }]}>จอครัว</Text>
+        <Text style={[typography.title, { color: colors.text }]}>{posText("จอครัว")}</Text>
         <Text style={[typography.caption, { color: colors.textMuted }]}>
-          ค้างอยู่ {openCount} ใบ · จาก {visible.length} ใบบนกระดาน
-        </Text>
+          {posText("ค้างอยู่") + " "}{openCount} {" " + posText("ใบ · จาก") + " "}{visible.length} {" " + posText("ใบบนกระดาน") + " "}</Text>
       </View>
       <Text
         style={[
@@ -115,12 +115,12 @@ export default function KitchenBoardScreen({ navigation }: Props) {
         ]}
       >
         {error
-          ? `เชื่อมต่อครัวมีปัญหา: ${error}`
+          ? posText("เชื่อมต่อครัวมีปัญหา: {v0}", { v0: error })
           : loading
-          ? 'กำลังอัปเดตงานครัว…'
+          ? posText("กำลังอัปเดตงานครัว…")
           : generatedAt
-          ? `อัปเดตล่าสุด ${new Date(generatedAt).toLocaleTimeString('th-TH')}`
-          : 'รอข้อมูลล่าสุดจากเซิร์ฟเวอร์'}
+          ? posText("อัปเดตล่าสุด {v0}", { v0: new Date(generatedAt).toLocaleTimeString(posLocale()) })
+          : posText("รอข้อมูลล่าสุดจากเซิร์ฟเวอร์")}
       </Text>
 
       <FlatList
@@ -141,7 +141,7 @@ export default function KitchenBoardScreen({ navigation }: Props) {
             <Pressable
               accessibilityRole="button"
               accessibilityState={{ selected }}
-              accessibilityLabel={`กรองสถานี ${item} ค้าง ${count} ใบ`}
+              accessibilityLabel={posText("กรองสถานี {v0} ค้าง {v1} ใบ", { v0: item, v1: count })}
               onPress={() => setStation(item === ALL ? null : item)}
               style={{
                 paddingHorizontal: spacing.md,
@@ -165,9 +165,9 @@ export default function KitchenBoardScreen({ navigation }: Props) {
       <View style={[styles.bulkRow, { marginBottom: spacing.md }]}>
         {(
           [
-            ['NEW', 'PREPARING', 'เริ่มทั้งหมด'],
-            ['PREPARING', 'READY', 'พร้อมทั้งหมด'],
-            ['READY', 'SERVED', 'เสิร์ฟทั้งหมด'],
+            ['NEW', 'PREPARING', posText("เริ่มทั้งหมด")],
+            ['PREPARING', 'READY', posText("พร้อมทั้งหมด")],
+            ['READY', 'SERVED', posText("เสิร์ฟทั้งหมด")],
           ] as const
         ).map(([from, to, label]) => {
           const ids = visible
@@ -184,7 +184,7 @@ export default function KitchenBoardScreen({ navigation }: Props) {
                 setBulkWorking(true);
                 const failure = await setTicketsStatus(ids, to);
                 setBulkWorking(false);
-                if (failure) Alert.alert('เปลี่ยนสถานะไม่สำเร็จ', failure);
+                if (failure) Alert.alert(posText("เปลี่ยนสถานะไม่สำเร็จ"), failure);
               }}
             />
           );
@@ -200,8 +200,7 @@ export default function KitchenBoardScreen({ navigation }: Props) {
         contentContainerStyle={{ gap: spacing.md }}
         ListEmptyComponent={
           <Text style={[typography.body, { color: colors.textMuted }]}>
-            ยังไม่มีตั๋วบนกระดาน — กดส่งครัวจากบิลโต๊ะแล้วรอบนั้นจะมาที่นี่
-          </Text>
+            {posText("ยังไม่มีตั๋วบนกระดาน — กดส่งครัวจากบิลโต๊ะแล้วรอบนั้นจะมาที่นี่") + " "}</Text>
         }
         renderItem={({ item }) => {
           if (!item) return <View style={{ flex: 1 }} />;
@@ -233,11 +232,10 @@ export default function KitchenBoardScreen({ navigation }: Props) {
             >
               <View style={styles.ticketHeader}>
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                  {item.tableCode} · รอบ {item.roundNo}
+                  {item.tableCode} {" " + posText("· รอบ") + " "}{item.roundNo}
                 </Text>
                 <Text style={[typography.captionStrong, { color: clockColor }]}>
-                  {minutes} น.
-                </Text>
+                  {minutes} {" " + posText("น.") + " "}</Text>
               </View>
               <Text
                 style={[
@@ -254,7 +252,7 @@ export default function KitchenBoardScreen({ navigation }: Props) {
                   </Text>
                   {it.modifierCodes?.length ? (
                     <Text style={[typography.caption, { color: colors.text }]}>
-                      ตัวเลือก: {it.modifierCodes.join(' · ')}
+                      {posText("ตัวเลือก:") + " "}{it.modifierCodes.join(' · ')}
                     </Text>
                   ) : null}
                 </View>
@@ -266,7 +264,7 @@ export default function KitchenBoardScreen({ navigation }: Props) {
                     { color: colors.warning, marginTop: spacing.xs },
                   ]}
                 >
-                  หมายเหตุ: {item.note}
+                  {posText("หมายเหตุ:") + " "}{item.note}
                 </Text>
               )}
               <View style={{ marginTop: spacing.sm }}>
@@ -276,27 +274,25 @@ export default function KitchenBoardScreen({ navigation }: Props) {
                 {forward && (
                   <Button
                     label={NEXT_ACTION[item.status]}
-                    accessibilityLabel={`${NEXT_ACTION[item.status]} ${
-                      item.tableCode
-                    } รอบ ${item.roundNo} ${item.station}`}
+                    accessibilityLabel={posText("{v0} {v1} รอบ {v2} {v3}", { v0: NEXT_ACTION[item.status], v1: item.tableCode, v2: item.roundNo, v3: item.station })}
                     fullWidth
                     onPress={() => {
                       advanceTicket(item.id).then(failure => {
                         if (failure)
-                          Alert.alert('เปลี่ยนสถานะไม่สำเร็จ', failure);
+                          Alert.alert(posText("เปลี่ยนสถานะไม่สำเร็จ"), failure);
                       });
                     }}
                   />
                 )}
                 {back && (
                   <Button
-                    label="ย้อนสถานะ"
-                    accessibilityLabel={`ย้อนสถานะตั๋ว ${item.tableCode} รอบ ${item.roundNo} ${item.station}`}
+                    label={posText("ย้อนสถานะ")}
+                    accessibilityLabel={posText("ย้อนสถานะตั๋ว {v0} รอบ {v1} {v2}", { v0: item.tableCode, v1: item.roundNo, v2: item.station })}
                     variant="ghost"
                     fullWidth
                     onPress={() => {
                       rollbackTicket(item.id).then(failure => {
-                        if (failure) Alert.alert('ย้อนสถานะไม่สำเร็จ', failure);
+                        if (failure) Alert.alert(posText("ย้อนสถานะไม่สำเร็จ"), failure);
                       });
                     }}
                   />

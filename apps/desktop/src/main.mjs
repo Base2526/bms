@@ -1,3 +1,6 @@
+import desktopLocale from '../renderer/locale.cjs';
+const { getAppLanguage, applyAppLanguage, posText } = desktopLocale;
+import { createLanguageStore } from './language-store.mjs';
 import electronMain from "electron/main";
 import { createReceiptPrinter, DEFAULT_PRINTER_CONFIG, isReceiptPrinterCaller, normalizePrinterConfig } from "./receipt-printer.mjs";
 import { printerReadiness } from "./printer-health.mjs";
@@ -42,6 +45,7 @@ import { createLaunchAtLogin } from "./launch-at-login.mjs";
 import { platformClientLabel, platformSecurityNote, secureStorageStatus } from "./secure-storage.mjs";
 import {
   desktopMenuTemplate,
+  localizeNativeMenu,
   installFixedZoomPolicy,
   installGlobalZoomPolicy,
 } from "./zoom-policy.mjs";
@@ -127,7 +131,7 @@ async function installedPrinters() {
   try {
     return await Promise.race([
       mainWindow.webContents.getPrintersAsync(),
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("ตรวจสอบเครื่องพิมพ์ไม่สำเร็จ กรุณาตรวจระบบพิมพ์แล้วลองใหม่")), 8000); }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(posText("ตรวจสอบเครื่องพิมพ์ไม่สำเร็จ กรุณาตรวจระบบพิมพ์แล้วลองใหม่"))), 8000); }),
     ]);
   } finally { clearTimeout(timer); }
 }
@@ -250,7 +254,7 @@ function writePairing(pairing, isCurrent) {
 }
 
 async function removePairing() {
-  if (pairingInProgress) return { ok: false, error: "กำลังเปลี่ยนข้อมูลจับคู่ กรุณารอสักครู่แล้วลองใหม่" };
+  if (pairingInProgress) return { ok: false, error: posText("กำลังเปลี่ยนข้อมูลจับคู่ กรุณารอสักครู่แล้วลองใหม่") };
   pairingInProgress = true;
   pairingRevision++;
   pairingRestoreRequest++;
@@ -272,7 +276,7 @@ async function removePairing() {
     pairingRestoreError = previousError;
     installApplicationMenu();
     scheduleCustomerDisplayReconcile();
-    return { ok: false, error: "ลบข้อมูลจับคู่ไม่สำเร็จ ข้อมูลเดิมยังอยู่ กรุณาตรวจสิทธิ์เข้าถึงไฟล์ของบัญชีระบบปฏิบัติการแล้วลองใหม่" };
+    return { ok: false, error: posText("ลบข้อมูลจับคู่ไม่สำเร็จ ข้อมูลเดิมยังอยู่ กรุณาตรวจสิทธิ์เข้าถึงไฟล์ของบัญชีระบบปฏิบัติการแล้วลองใหม่") };
   } finally { pairingInProgress = false; }
 }
 
@@ -508,8 +512,8 @@ async function toggleLaunchAtLogin(menuItem) {
     installApplicationMenu();
     void dialog.showMessageBox(mainWindow ?? undefined, {
       type: "info",
-      message: "ย้ายแอปไปไว้ในโฟลเดอร์ Applications ก่อน",
-      detail: "แอปกำลังเปิดจากไฟล์ติดตั้ง (DMG) ซึ่งจะหายไปหลังรีสตาร์ท ลาก BMS POS ไปไว้ใน Applications แล้วเปิดจากที่นั่น จากนั้นค่อยติ๊กตัวเลือกนี้",
+      message: posText("ย้ายแอปไปไว้ในโฟลเดอร์ Applications ก่อน"),
+      detail: posText("แอปกำลังเปิดจากไฟล์ติดตั้ง (DMG) ซึ่งจะหายไปหลังรีสตาร์ท ลาก BMS POS ไปไว้ใน Applications แล้วเปิดจากที่นั่น จากนั้นค่อยติ๊กตัวเลือกนี้"),
     });
     return;
   }
@@ -526,19 +530,21 @@ async function toggleLaunchAtLogin(menuItem) {
   if (launchAtLoginEnabled !== wanted) {
     void dialog.showMessageBox(mainWindow ?? undefined, {
       type: "warning",
-      message: wanted ? "ตั้งให้เปิดอัตโนมัติไม่สำเร็จ" : "ยกเลิกการเปิดอัตโนมัติไม่สำเร็จ",
+      message: wanted ? posText("ตั้งให้เปิดอัตโนมัติไม่สำเร็จ") : posText("ยกเลิกการเปิดอัตโนมัติไม่สำเร็จ"),
       detail: process.platform === "darwin"
-        ? "macOS อาจต้องให้อนุญาตเองที่ System Settings > General > Login Items"
-        : "ระบบปฏิบัติการไม่ยอมบันทึกการตั้งค่านี้ กรุณาลองใหม่หรือตั้งค่าจากระบบปฏิบัติการโดยตรง",
+        ? posText("macOS อาจต้องให้อนุญาตเองที่ System Settings > General > Login Items")
+        : posText("ระบบปฏิบัติการไม่ยอมบันทึกการตั้งค่านี้ กรุณาลองใหม่หรือตั้งค่าจากระบบปฏิบัติการโดยตรง"),
     });
   }
 }
 
 function installApplicationMenu() {
-  Menu.setApplicationMenu(Menu.buildFromTemplate(desktopMenuTemplate(
+  Menu.setApplicationMenu(localizeNativeMenu(Menu.buildFromTemplate(desktopMenuTemplate(
     process.platform,
     process.env.BMS_POS_DESKTOP_DEVTOOLS === "1",
     {
+      language: getAppLanguage(),
+      setLanguage: (value) => { void changeAppLanguage(value); },
       adminAvailable: Boolean(activePairing),
       openAdmin: openAdminBackoffice,
       refreshData: refreshMainWindowData,
@@ -547,7 +553,7 @@ function installApplicationMenu() {
       launchAtLoginSupported: launchAtLogin.supported(),
       toggleLaunchAtLogin: (menuItem) => { void toggleLaunchAtLogin(menuItem); },
     },
-  )));
+  ))));
 }
 
 function setupWindowSecurity(targetSession) {
@@ -579,7 +585,7 @@ function isWaylandSession() {
 function displaySummary(display, index, cashierDisplayId) {
   return {
     id: String(display.id),
-    label: String(display.label ?? "").trim() || `จอ ${index + 1}`,
+    label: String(display.label ?? "").trim() || posText("จอ {v0}", { v0: index + 1 }),
     primary: display.id === screen.getPrimaryDisplay().id,
     cashier: String(display.id) === String(cashierDisplayId),
     width: display.size.width,
@@ -651,7 +657,7 @@ function createCustomerDisplayWindow(targetDisplay, kind = "managed") {
     skipTaskbar: preview ? false : !isWaylandSession(),
     resizable: preview,
     maximizable: preview,
-    title: preview ? "BMS POS — ทดสอบจอลูกค้า" : "BMS POS — จอลูกค้า",
+    title: preview ? posText("BMS POS — ทดสอบจอลูกค้า") : posText("BMS POS — จอลูกค้า"),
     backgroundColor: "#0b0b0c",
     autoHideMenuBar: true,
     webPreferences: {
@@ -783,7 +789,7 @@ function createQueueDisplayWindow(targetDisplay, kind = "managed") {
     skipTaskbar: preview ? false : !isWaylandSession(),
     resizable: preview,
     maximizable: preview,
-    title: preview ? "BMS POS — ทดสอบจอเรียกคิว" : "BMS POS — จอเรียกคิว",
+    title: preview ? posText("BMS POS — ทดสอบจอเรียกคิว") : posText("BMS POS — จอเรียกคิว"),
     backgroundColor: "#0f172a",
     autoHideMenuBar: true,
     webPreferences: {
@@ -859,9 +865,9 @@ async function offerCustomerDisplaySetup() {
   const previousConfig = customerDisplayConfig;
   try {
     const result = await dialog.showMessageBox(mainWindow, {
-      type: "question", title: "จอลูกค้า", message: "พบจอเพิ่มเติม ใช้เป็นจอลูกค้าหรือไม่?",
-      detail: "เมื่อเปิดใช้งาน ระบบจะเปิดจอลูกค้าให้อัตโนมัติทุกครั้งที่เปิด POS เปลี่ยนจอได้ในตั้งค่า",
-      buttons: ["เปิดจอลูกค้า", "ยังไม่ใช้"], defaultId: 0, cancelId: 1,
+      type: "question", title: posText("จอลูกค้า"), message: posText("พบจอเพิ่มเติม ใช้เป็นจอลูกค้าหรือไม่?"),
+      detail: posText("เมื่อเปิดใช้งาน ระบบจะเปิดจอลูกค้าให้อัตโนมัติทุกครั้งที่เปิด POS เปลี่ยนจอได้ในตั้งค่า"),
+      buttons: [posText("เปิดจอลูกค้า"), posText("ยังไม่ใช้")], defaultId: 0, cancelId: 1,
     });
     if (managedDisplayOperationBusy || activePairing !== pairing || customerDisplayConfig !== previousConfig
       || !mainWindow || mainWindow.isDestroyed()) return;
@@ -892,7 +898,7 @@ function scheduleCustomerDisplayReconcile() {
 function identifyDisplays() {
   const cashierId = cashierDisplay().id;
   for (const [index, display] of screen.getAllDisplays().entries()) {
-    const role = display.id === cashierId ? "จอแคชเชียร์" : "จอที่เลือกได้";
+    const role = display.id === cashierId ? posText("จอแคชเชียร์") : posText("จอที่เลือกได้");
     const overlay = new BrowserWindow({
       ...display.bounds,
       show: false,
@@ -952,7 +958,7 @@ function createMainWindow() {
   window.webContents.on("render-process-gone", (_event, details) => {
     console.error(`Desktop POS renderer exited: ${details.reason}`);
     if (!activePairing || window.isDestroyed()) return;
-    void showStartup("error", "หน้าจอหยุดทำงาน กรุณาลองเปิดใหม่").catch(() => {});
+    void showStartup("error", posText("หน้าจอหยุดทำงาน กรุณาลองเปิดใหม่")).catch(() => {});
   });
 
   const guardNavigation = (event, destination) => {
@@ -1047,7 +1053,7 @@ function refreshMainWindowData() {
 
 async function showSetup(targetWindow = mainWindow) {
   if (!targetWindow || targetWindow.isDestroyed()) return;
-  await targetWindow.loadFile(SETUP_FILE);
+  await targetWindow.loadFile(SETUP_FILE, { query: { language: getAppLanguage() } });
   if (!targetWindow.isDestroyed()) targetWindow.show();
 }
 
@@ -1057,6 +1063,7 @@ async function showStartup(state = "loading", message = "", targetWindow = mainW
     query: {
       state,
       message,
+      language: getAppLanguage(),
     },
   });
   if (!targetWindow.isDestroyed()) targetWindow.show();
@@ -1100,7 +1107,7 @@ async function ensurePairingServerAvailable(pairing, targetWindow = mainWindow) 
 
   await showStartup(
     "starting",
-    "พบ Retail Local Server ในเครื่องนี้ กำลังเริ่มบริการและตรวจสอบฐานข้อมูล กรุณารอสักครู่",
+    posText("พบ Retail Local Server ในเครื่องนี้ กำลังเริ่มบริการและตรวจสอบฐานข้อมูล กรุณารอสักครู่"),
     targetWindow,
   );
   if (!current()) return;
@@ -1194,7 +1201,7 @@ function startPosNavigation() {
         await showStartup(
           "error",
           error?.userMessage
-            ?? "เชื่อมต่อหน้าขายไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตหรือเซิร์ฟเวอร์แล้วลองใหม่",
+            ?? posText("เชื่อมต่อหน้าขายไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตหรือเซิร์ฟเวอร์แล้วลองใหม่"),
           targetWindow,
         );
       } catch (recoveryError) {
@@ -1245,7 +1252,7 @@ async function verifyPairing(pairing) {
     await probePairingServer(pairing);
     return { ok: true };
   } catch (error) {
-    return { ok: false, error: error?.userMessage ?? "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจ URL อินเทอร์เน็ต และใบรับรอง HTTPS" };
+    return { ok: false, error: error?.userMessage ?? posText("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจ URL อินเทอร์เน็ต และใบรับรอง HTTPS") };
   }
 }
 
@@ -1257,24 +1264,40 @@ function finishUnpairNavigation(request = pendingUnpair) {
   void showSetup(request.window).catch(() => console.error("Unable to open setup after unpairing"));
 }
 
+let languageStore;
+async function changeAppLanguage(value) {
+  if ((value !== 'th' && value !== 'en') || !languageStore) return { ok: false };
+  try {
+    await languageStore.write(value);
+    applyAppLanguage(value);
+    installApplicationMenu();
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bms-pos:language-changed', value);
+    return { ok: true };
+  } catch { return { ok: false }; }
+}
+
 function registerIpc() {
+  const languageCaller = (event) => isSetupFrame(event) || isStartupFrame(event) || isPairedCashierFrame(event);
+  ipcMain.handle('bms-pos:get-language', (event) => languageCaller(event) ? getAppLanguage() : null);
+  ipcMain.handle('bms-pos:set-language', (event, value) => languageCaller(event)
+    ? changeAppLanguage(value) : { ok: false });
   const isPrinterCaller = (event) => isReceiptPrinterCaller(event, mainWindow, activePairing?.serverUrl);
   ipcMain.handle("bms-pos:get-printer-state", async (event) => {
     if (!isPrinterCaller(event)) return null;
     return printerState();
   });
   ipcMain.handle("bms-pos:set-printer-config", async (event, input) => {
-    if (!isPrinterCaller(event)) return { ok: false, error: "ไม่มีสิทธิ์ตั้งค่าเครื่องพิมพ์" };
-    if (printerOperationBusy) return { ok: false, error: "กำลังใช้เครื่องพิมพ์ กรุณารอสักครู่" };
+    if (!isPrinterCaller(event)) return { ok: false, error: posText("ไม่มีสิทธิ์ตั้งค่าเครื่องพิมพ์") };
+    if (printerOperationBusy) return { ok: false, error: posText("กำลังใช้เครื่องพิมพ์ กรุณารอสักครู่") };
     printerOperationBusy = true;
     const pairing = activePairing;
     try {
-      if (![58, 80].includes(input?.paperWidth)) throw new Error("ขนาดกระดาษไม่ถูกต้อง");
+      if (![58, 80].includes(input?.paperWidth)) throw new Error(posText("ขนาดกระดาษไม่ถูกต้อง"));
       const next = normalizePrinterConfig(input);
       const { printers } = await printerState();
-      if (activePairing !== pairing || !isPrinterCaller(event)) throw new Error("หน้าขายเปลี่ยนแล้ว กรุณาลองใหม่");
+      if (activePairing !== pairing || !isPrinterCaller(event)) throw new Error(posText("หน้าขายเปลี่ยนแล้ว กรุณาลองใหม่"));
       if (!next.deviceName || !printers.some((printer) => printer.name === next.deviceName)) {
-        throw new Error("ไม่พบเครื่องพิมพ์ที่เลือก");
+        throw new Error(posText("ไม่พบเครื่องพิมพ์ที่เลือก"));
       }
       if (next.deviceName !== printerConfig.deviceName || next.paperWidth !== printerConfig.paperWidth) {
         next.tested = false;
@@ -1284,11 +1307,11 @@ function registerIpc() {
       }
       return { ok: true, state: await printerState() };
     } catch (error) {
-      return { ok: false, error: error?.message || "บันทึกเครื่องพิมพ์ไม่สำเร็จ" };
+      return { ok: false, error: error?.message || posText("บันทึกเครื่องพิมพ์ไม่สำเร็จ") };
     } finally { printerOperationBusy = false; }
   });
   const runPrinterJob = async (event, testPage) => {
-    if (printerOperationBusy) return { ok: false, error: "กำลังใช้เครื่องพิมพ์ กรุณารอสักครู่" };
+    if (printerOperationBusy) return { ok: false, error: posText("กำลังใช้เครื่องพิมพ์ กรุณารอสักครู่") };
     printerOperationBusy = true;
     const pairing = activePairing;
     try {
@@ -1300,29 +1323,29 @@ function registerIpc() {
       else if (testPage) pendingPrinterTest = printerConfig;
       return result;
     } catch {
-      printerProblem = "ตรวจสอบเครื่องพิมพ์ไม่สำเร็จ กรุณาตรวจสอบและพิมพ์ทดสอบอีกครั้ง";
+      printerProblem = posText("ตรวจสอบเครื่องพิมพ์ไม่สำเร็จ กรุณาตรวจสอบและพิมพ์ทดสอบอีกครั้ง");
       return { ok: false, error: printerProblem };
     }
     finally { printerOperationBusy = false; }
   };
   ipcMain.handle("bms-pos:print-receipt", async (event) => {
-    if (!isPrinterCaller(event)) return { ok: false, error: "ไม่มีสิทธิ์พิมพ์ใบเสร็จ" };
+    if (!isPrinterCaller(event)) return { ok: false, error: posText("ไม่มีสิทธิ์พิมพ์ใบเสร็จ") };
     return runPrinterJob(event, false);
   });
   ipcMain.handle("bms-pos:test-receipt-printer", async (event) => {
-    if (!isPrinterCaller(event)) return { ok: false, error: "ไม่มีสิทธิ์พิมพ์ทดสอบ" };
+    if (!isPrinterCaller(event)) return { ok: false, error: posText("ไม่มีสิทธิ์พิมพ์ทดสอบ") };
     return runPrinterJob(event, true);
   });
   ipcMain.handle("bms-pos:confirm-printer-test", async (event, printed) => {
     if (!isPrinterCaller(event) || printerOperationBusy || !pendingPrinterTest || pendingPrinterTest !== printerConfig
-      || typeof printed !== "boolean") return { ok: false, error: "กรุณาพิมพ์ทดสอบก่อนยืนยัน" };
+      || typeof printed !== "boolean") return { ok: false, error: posText("กรุณาพิมพ์ทดสอบก่อนยืนยัน") };
     printerOperationBusy = true;
     try {
       await savePrinterConfig({ ...printerConfig, tested: printed });
       pendingPrinterTest = null;
-      printerProblem = printed ? "" : "กระดาษทดสอบไม่ออกหรือไม่ถูกต้อง ตรวจเครื่องและคิวพิมพ์ แล้วทดสอบใหม่";
+      printerProblem = printed ? "" : posText("กระดาษทดสอบไม่ออกหรือไม่ถูกต้อง ตรวจเครื่องและคิวพิมพ์ แล้วทดสอบใหม่");
       return { ok: true };
-    } catch { return { ok: false, error: "บันทึกผลทดสอบไม่สำเร็จ" }; }
+    } catch { return { ok: false, error: posText("บันทึกผลทดสอบไม่สำเร็จ") }; }
     finally { printerOperationBusy = false; }
   });
   ipcMain.handle("bms-pos:get-kitchen-printer-state", async (event) => {
@@ -1334,44 +1357,44 @@ function registerIpc() {
     };
   });
   ipcMain.handle("bms-pos:set-kitchen-printer-config", async (event, input) => {
-    if (!isPrinterCaller(event)) return { ok: false, error: "ไม่มีสิทธิ์ตั้งค่าเครื่องพิมพ์ครัว" };
-    if (kitchenConfigBusy) return { ok: false, error: "กำลังบันทึกเครื่องพิมพ์ครัว กรุณารอสักครู่" };
+    if (!isPrinterCaller(event)) return { ok: false, error: posText("ไม่มีสิทธิ์ตั้งค่าเครื่องพิมพ์ครัว") };
+    if (kitchenConfigBusy) return { ok: false, error: posText("กำลังบันทึกเครื่องพิมพ์ครัว กรุณารอสักครู่") };
     kitchenConfigBusy = true;
     const pairing = activePairing;
     try {
       const next = normalizeKitchenPrinterConfig(input);
       const keys = new Set();
       for (const route of next.routes) {
-        if (keys.has(route.stationKey)) throw new Error("สถานีครัวซ้ำกัน");
+        if (keys.has(route.stationKey)) throw new Error(posText("สถานีครัวซ้ำกัน"));
         keys.add(route.stationKey);
       }
       const printers = await installedPrinters();
-      if (activePairing !== pairing || !isPrinterCaller(event)) throw new Error("หน้าขายเปลี่ยนแล้ว กรุณาลองใหม่");
+      if (activePairing !== pairing || !isPrinterCaller(event)) throw new Error(posText("หน้าขายเปลี่ยนแล้ว กรุณาลองใหม่"));
       if (next.routes.some((route) => !printers.some((printer) => printer.name === route.deviceName))) {
-        throw new Error("ไม่พบเครื่องพิมพ์ที่เลือก");
+        throw new Error(posText("ไม่พบเครื่องพิมพ์ที่เลือก"));
       }
       await saveKitchenPrinterConfig(next);
       return { ok: true };
     } catch (error) {
-      return { ok: false, error: error?.message || "บันทึกเครื่องพิมพ์ครัวไม่สำเร็จ" };
+      return { ok: false, error: error?.message || posText("บันทึกเครื่องพิมพ์ครัวไม่สำเร็จ") };
     } finally { kitchenConfigBusy = false; }
   });
   ipcMain.handle("bms-pos:test-kitchen-printer", async (event, stationKey) => {
-    if (!isPrinterCaller(event)) return { ok: false, error: "ไม่มีสิทธิ์พิมพ์ทดสอบ" };
+    if (!isPrinterCaller(event)) return { ok: false, error: posText("ไม่มีสิทธิ์พิมพ์ทดสอบ") };
     const route = normalizeKitchenPrinterConfig(kitchenPrinterConfig).routes.find((item) => item.stationKey === stationKey);
-    if (!route) return { ok: false, error: "ไม่พบสถานีที่ตั้งค่าไว้" };
+    if (!route) return { ok: false, error: posText("ไม่พบสถานีที่ตั้งค่าไว้") };
     const pairing = activePairing;
     return printDesktopKitchenTicket({
       jobId: `test:${route.stationKey}:${Date.now()}`,
       stationId: route.stationKey.startsWith("id:") ? route.stationKey.slice(3) : null,
-      stationName: route.stationName || (route.stationKey.startsWith("name:") ? route.stationKey.slice(5) : "สถานีทดสอบ"),
+      stationName: route.stationName || (route.stationKey.startsWith("name:") ? route.stationKey.slice(5) : posText("สถานีทดสอบ")),
       label: "TEST KITCHEN",
       createdAt: new Date().toISOString(),
-      items: [{ name: "ทดสอบภาษาไทย / Print test", qty: 1, modifiers: ["A", "B"], note: "ไม่ใช่ออเดอร์จริง" }],
+      items: [{ name: "ทดสอบภาษาไทย / Print test", qty: 1, modifiers: ["A", "B"], note: posText("ไม่ใช่ออเดอร์จริง") }],
     }, { retry: true }, () => activePairing === pairing && isPrinterCaller(event));
   });
   ipcMain.handle("bms-pos:print-kitchen-ticket", async (event, input, options) => {
-    if (!isPrinterCaller(event)) return { ok: false, error: "ไม่มีสิทธิ์พิมพ์ใบงานครัว" };
+    if (!isPrinterCaller(event)) return { ok: false, error: posText("ไม่มีสิทธิ์พิมพ์ใบงานครัว") };
     const pairing = activePairing;
     return printDesktopKitchenTicket(input, { auto: options?.auto === true, retry: options?.retry === true },
       () => activePairing === pairing && isPrinterCaller(event));
@@ -1397,7 +1420,7 @@ function registerIpc() {
         title: "BMS POS",
         // This may be a new acceptance, hand-off, deadline or recovery task. Keep the
         // lock-screen copy generic but accurate for every transition.
-        body: "มีงานออร์เดอร์รอดำเนินการ",
+        body: posText("มีงานออร์เดอร์รอดำเนินการ"),
         silent: true,
       });
       // Keep the object alive until the OS closes it; otherwise some Linux notification
@@ -1416,8 +1439,8 @@ function registerIpc() {
     return { ok: true };
   });
   ipcMain.handle("bms-pos:pair", async (event, input) => {
-    if (!isSetupFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์จับคู่เครื่อง" };
-    if (pairingInProgress) return { ok: false, error: "กำลังตรวจการจับคู่ กรุณารอสักครู่" };
+    if (!isSetupFrame(event)) return { ok: false, error: posText("หน้าต่างนี้ไม่มีสิทธิ์จับคู่เครื่อง") };
+    if (pairingInProgress) return { ok: false, error: posText("กำลังตรวจการจับคู่ กรุณารอสักครู่") };
     const storage = currentSecureStorageStatus();
     if (!storage.ok) return { ok: false, error: storage.error };
     const parsed = parsePairingInput({ serverUrl: input?.serverUrl, pairingInput: input?.pairingInput });
@@ -1429,7 +1452,7 @@ function registerIpc() {
     try {
       const verified = await verifyPairing(parsed);
       if (!verified.ok) return verified;
-      if (!current()) return { ok: false, error: "หน้าจอจับคู่เปลี่ยนแล้ว กรุณาลองใหม่" };
+      if (!current()) return { ok: false, error: posText("หน้าจอจับคู่เปลี่ยนแล้ว กรุณาลองใหม่") };
       await writePairing(parsed, current);
       // A rename already in progress may finish after window closure. Its durable credential
       // is valid for the next restore, but the old frame must not navigate a replacement window.
@@ -1439,7 +1462,7 @@ function registerIpc() {
       void startPosNavigation();
       return { ok: true };
     } catch {
-      return { ok: false, error: "บันทึกการจับคู่แบบเข้ารหัสไม่สำเร็จ" };
+      return { ok: false, error: posText("บันทึกการจับคู่แบบเข้ารหัสไม่สำเร็จ") };
     } finally { pairingInProgress = false; }
   });
 
@@ -1461,7 +1484,7 @@ function registerIpc() {
   // The setup screen's "no pairing link yet?" shortcut: the local Retail Local back office when this
   // machine runs one, otherwise the cloud BMS login. Only the setup frame may ask.
   ipcMain.handle("bms-pos:open-setup-admin", async (event) => {
-    if (!isSetupFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์เปิดระบบหลังบ้าน" };
+    if (!isSetupFrame(event)) return { ok: false, error: posText("หน้าต่างนี้ไม่มีสิทธิ์เปิดระบบหลังบ้าน") };
     const kind = await setupAdminTarget();
     if (kind === "cloud") {
       await shell.openExternal(cloudAdminUrl());
@@ -1474,7 +1497,7 @@ function registerIpc() {
         ok: false,
         kind,
         error: error?.userMessage
-          ?? "เปิดระบบหลังบ้านบนเครื่องนี้ไม่สำเร็จ กรุณาตรวจสอบการติดตั้ง Retail Local Server",
+          ?? posText("เปิดระบบหลังบ้านบนเครื่องนี้ไม่สำเร็จ กรุณาตรวจสอบการติดตั้ง Retail Local Server"),
       };
     }
   });
@@ -1545,21 +1568,21 @@ function registerIpc() {
   });
 
   ipcMain.handle("bms-pos:set-customer-display-config", async (event, input) => {
-    if (!isPairedCashierFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์ตั้งค่าจอลูกค้า" };
-    if (managedDisplayOperationBusy) return { ok: false, error: "กำลังบันทึกการตั้งค่าจอ กรุณารอสักครู่" };
+    if (!isPairedCashierFrame(event)) return { ok: false, error: posText("หน้าต่างนี้ไม่มีสิทธิ์ตั้งค่าจอลูกค้า") };
+    if (managedDisplayOperationBusy) return { ok: false, error: posText("กำลังบันทึกการตั้งค่าจอ กรุณารอสักครู่") };
     const next = normalizeCustomerDisplayConfig(input);
-    if (input?.mode !== next.mode) return { ok: false, error: "รูปแบบการตั้งค่าจอลูกค้าไม่ถูกต้อง" };
+    if (input?.mode !== next.mode) return { ok: false, error: posText("รูปแบบการตั้งค่าจอลูกค้าไม่ถูกต้อง") };
     const queueState = currentQueueDisplayState();
     if (next.mode === "selected" && queueDisplayConfig.mode !== "off"
       && (next.targetDisplayId === queueState.activeDisplayId
         || next.targetDisplayId === queueState.targetDisplayId)) {
-      return { ok: false, error: "จอนี้กำลังใช้เป็นจอเรียกคิว กรุณาเลือกคนละจอ" };
+      return { ok: false, error: posText("จอนี้กำลังใช้เป็นจอเรียกคิว กรุณาเลือกคนละจอ") };
     }
     if (next.mode === "selected") {
       const cashierId = String(cashierDisplay().id);
       const selected = screen.getAllDisplays().find((display) => String(display.id) === next.targetDisplayId);
-      if (!selected) return { ok: false, error: "ไม่พบจอที่เลือก กรุณาตรวจสายจอแล้วลองใหม่" };
-      if (String(selected.id) === cashierId) return { ok: false, error: "จอหลักกำลังใช้เป็นจอแคชเชียร์ กรุณาเลือกจออื่น" };
+      if (!selected) return { ok: false, error: posText("ไม่พบจอที่เลือก กรุณาตรวจสายจอแล้วลองใหม่") };
+      if (String(selected.id) === cashierId) return { ok: false, error: posText("จอหลักกำลังใช้เป็นจอแคชเชียร์ กรุณาเลือกจออื่น") };
     }
     managedDisplayOperationBusy = true;
     try {
@@ -1570,26 +1593,26 @@ function registerIpc() {
       reconcileQueueDisplay();
       return { ok: true, state: currentCustomerDisplayState() };
     } catch {
-      return { ok: false, error: "บันทึกการตั้งค่าจอลูกค้าไม่สำเร็จ" };
+      return { ok: false, error: posText("บันทึกการตั้งค่าจอลูกค้าไม่สำเร็จ") };
     } finally { managedDisplayOperationBusy = false; }
   });
 
   ipcMain.handle("bms-pos:open-customer-display-preview", async (event) => {
-    if (!isPairedCashierFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์เปิดตัวอย่างจอลูกค้า" };
+    if (!isPairedCashierFrame(event)) return { ok: false, error: posText("หน้าต่างนี้ไม่มีสิทธิ์เปิดตัวอย่างจอลูกค้า") };
     if (customerDisplayWindow && !customerDisplayWindow.isDestroyed() && customerDisplayWindowKind !== "preview") {
-      return { ok: false, error: "จอลูกค้าจริงกำลังเปิดอยู่แล้ว กรุณาใช้จอนั้นหรือปิดการตั้งค่าจอก่อน" };
+      return { ok: false, error: posText("จอลูกค้าจริงกำลังเปิดอยู่แล้ว กรุณาใช้จอนั้นหรือปิดการตั้งค่าจอก่อน") };
     }
     try {
       createCustomerDisplayWindow(cashierDisplay(), "preview");
       broadcastCustomerDisplayState();
       return { ok: true, state: currentCustomerDisplayState() };
     } catch {
-      return { ok: false, error: "เปิดหน้าต่างทดสอบจอลูกค้าไม่สำเร็จ" };
+      return { ok: false, error: posText("เปิดหน้าต่างทดสอบจอลูกค้าไม่สำเร็จ") };
     }
   });
 
   ipcMain.handle("bms-pos:close-customer-display-preview", async (event) => {
-    if (!isPairedCashierFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์ปิดตัวอย่างจอลูกค้า" };
+    if (!isPairedCashierFrame(event)) return { ok: false, error: posText("หน้าต่างนี้ไม่มีสิทธิ์ปิดตัวอย่างจอลูกค้า") };
     if (customerDisplayWindowKind === "preview") closeCustomerDisplayWindow();
     broadcastCustomerDisplayState();
     return { ok: true, state: currentCustomerDisplayState() };
@@ -1603,18 +1626,18 @@ function registerIpc() {
 
   ipcMain.handle("bms-pos:set-external-display-role", async (event, input) => {
     if (!isPairedCashierFrame(event)) {
-      return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์ตั้งค่าจอภายนอก" };
+      return { ok: false, error: posText("หน้าต่างนี้ไม่มีสิทธิ์ตั้งค่าจอภายนอก") };
     }
-    if (managedDisplayOperationBusy) return { ok: false, error: "กำลังบันทึกการตั้งค่าจอ กรุณารอสักครู่" };
+    if (managedDisplayOperationBusy) return { ok: false, error: posText("กำลังบันทึกการตั้งค่าจอ กรุณารอสักครู่") };
     if (input?.role !== "customer" && input?.role !== "queue") {
-      return { ok: false, error: "ประเภทจอภายนอกไม่ถูกต้อง" };
+      return { ok: false, error: posText("ประเภทจอภายนอกไม่ถูกต้อง") };
     }
     const normalize = input.role === "customer"
       ? normalizeCustomerDisplayConfig
       : normalizeQueueDisplayConfig;
     const requested = normalize(input);
     if (input?.mode !== requested.mode) {
-      return { ok: false, error: "รูปแบบการตั้งค่าจอภายนอกไม่ถูกต้อง" };
+      return { ok: false, error: posText("รูปแบบการตั้งค่าจอภายนอกไม่ถูกต้อง") };
     }
 
     const displays = screen.getAllDisplays();
@@ -1622,7 +1645,7 @@ function registerIpc() {
     const externalDisplays = displays.filter((display) => String(display.id) !== cashierId);
     if (requested.mode === "selected") {
       const selected = externalDisplays.find((display) => String(display.id) === requested.targetDisplayId);
-      if (!selected) return { ok: false, error: "ไม่พบจอที่เลือก กรุณาตรวจสายจอแล้วลองใหม่" };
+      if (!selected) return { ok: false, error: posText("ไม่พบจอที่เลือก กรุณาตรวจสายจอแล้วลองใหม่") };
     }
 
     const previousCustomer = customerDisplayConfig;
@@ -1666,7 +1689,7 @@ function registerIpc() {
       reconcileQueueDisplay();
       return { ok: true, state: currentManagedDisplayState() };
     } catch {
-      return { ok: false, error: "บันทึกการตั้งค่าจอภายนอกไม่สำเร็จ" };
+      return { ok: false, error: posText("บันทึกการตั้งค่าจอภายนอกไม่สำเร็จ") };
     } finally { managedDisplayOperationBusy = false; }
   });
 
@@ -1676,17 +1699,17 @@ function registerIpc() {
   });
 
   ipcMain.handle("bms-pos:set-queue-display-config", async (event, input) => {
-    if (!isPairedCashierFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์ตั้งค่าจอเรียกคิว" };
-    if (managedDisplayOperationBusy) return { ok: false, error: "กำลังบันทึกการตั้งค่าจอ กรุณารอสักครู่" };
+    if (!isPairedCashierFrame(event)) return { ok: false, error: posText("หน้าต่างนี้ไม่มีสิทธิ์ตั้งค่าจอเรียกคิว") };
+    if (managedDisplayOperationBusy) return { ok: false, error: posText("กำลังบันทึกการตั้งค่าจอ กรุณารอสักครู่") };
     const next = normalizeQueueDisplayConfig(input);
-    if (input?.mode !== next.mode) return { ok: false, error: "รูปแบบการตั้งค่าจอเรียกคิวไม่ถูกต้อง" };
+    if (input?.mode !== next.mode) return { ok: false, error: posText("รูปแบบการตั้งค่าจอเรียกคิวไม่ถูกต้อง") };
     if (next.mode === "selected") {
       const selected = screen.getAllDisplays().find((display) => String(display.id) === next.targetDisplayId);
       if (selected && String(selected.id) === String(cashierDisplay().id)) {
-        return { ok: false, error: "จอแคชเชียร์ใช้เป็นจอเรียกคิวไม่ได้" };
+        return { ok: false, error: posText("จอแคชเชียร์ใช้เป็นจอเรียกคิวไม่ได้") };
       }
       if (next.targetDisplayId === customerDisplayTargetId()) {
-        return { ok: false, error: "จอนี้กำลังใช้เป็นจอลูกค้า กรุณาเลือกคนละจอ" };
+        return { ok: false, error: posText("จอนี้กำลังใช้เป็นจอลูกค้า กรุณาเลือกคนละจอ") };
       }
     }
     managedDisplayOperationBusy = true;
@@ -1697,26 +1720,26 @@ function registerIpc() {
       reconcileQueueDisplay();
       return { ok: true, state: currentQueueDisplayState() };
     } catch {
-      return { ok: false, error: "บันทึกการตั้งค่าจอเรียกคิวไม่สำเร็จ" };
+      return { ok: false, error: posText("บันทึกการตั้งค่าจอเรียกคิวไม่สำเร็จ") };
     } finally { managedDisplayOperationBusy = false; }
   });
 
   ipcMain.handle("bms-pos:open-queue-display-preview", async (event) => {
-    if (!isPairedCashierFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์เปิดตัวอย่างจอเรียกคิว" };
+    if (!isPairedCashierFrame(event)) return { ok: false, error: posText("หน้าต่างนี้ไม่มีสิทธิ์เปิดตัวอย่างจอเรียกคิว") };
     if (queueDisplayWindow && !queueDisplayWindow.isDestroyed() && queueDisplayWindowKind !== "preview") {
-      return { ok: false, error: "จอเรียกคิวจริงกำลังเปิดอยู่แล้ว กรุณาใช้จอนั้นหรือปิดการตั้งค่าจอก่อน" };
+      return { ok: false, error: posText("จอเรียกคิวจริงกำลังเปิดอยู่แล้ว กรุณาใช้จอนั้นหรือปิดการตั้งค่าจอก่อน") };
     }
     try {
       createQueueDisplayWindow(cashierDisplay(), "preview");
       broadcastQueueDisplayState();
       return { ok: true, state: currentQueueDisplayState() };
     } catch {
-      return { ok: false, error: "เปิดหน้าต่างทดสอบจอเรียกคิวไม่สำเร็จ" };
+      return { ok: false, error: posText("เปิดหน้าต่างทดสอบจอเรียกคิวไม่สำเร็จ") };
     }
   });
 
   ipcMain.handle("bms-pos:close-queue-display-preview", async (event) => {
-    if (!isPairedCashierFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์ปิดตัวอย่างจอเรียกคิว" };
+    if (!isPairedCashierFrame(event)) return { ok: false, error: posText("หน้าต่างนี้ไม่มีสิทธิ์ปิดตัวอย่างจอเรียกคิว") };
     if (queueDisplayWindowKind === "preview") closeQueueDisplayWindow();
     broadcastQueueDisplayState();
     return { ok: true, state: currentQueueDisplayState() };
@@ -1747,6 +1770,8 @@ if (!singleInstance) {
     app.on("web-contents-created", (_event, webContents) => {
       installFixedZoomPolicy(webContents);
     });
+    languageStore = createLanguageStore(app.getPath('userData'));
+    applyAppLanguage(await languageStore.read());
     registerIpc();
     mainWindow = createMainWindow();
     customerDisplayConfig = await readCustomerDisplayConfig();

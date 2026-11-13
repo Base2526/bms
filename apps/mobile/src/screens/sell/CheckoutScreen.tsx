@@ -1,3 +1,4 @@
+import { posText, usePosLanguage, posLocale } from '../../i18n/language';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -89,6 +90,7 @@ const PAYMENT_METHODS: MockPaymentMethod[] = [
 const RESTAURANT_PAYMENT_METHODS: MockPaymentMethod[] = ['cash', 'qr', 'card'];
 
 export default function CheckoutScreen({ route, navigation }: Props) {
+  usePosLanguage();
   const { colors, spacing, typography } = useTheme();
   const { width, isTablet } = useResponsive();
   const cart = useCart();
@@ -165,17 +167,15 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const boardGameTimeBenefit =
     boardGameBill && boardGameBill.offerDiscountAmount > 0
       ? {
-          title: `โปรโมชัน ${
-            boardGameBill.offerName ?? boardGameBill.offerCode ?? 'ค่าเล่น'
-          }`,
-          detail: `ลดค่าเล่น ฿${boardGameBill.offerDiscountAmount.toFixed(2)}`,
+          title: posText("โปรโมชัน {v0}", { v0: boardGameBill.offerName ?? boardGameBill.offerCode ?? posText("ค่าเล่น") }),
+          detail: posText("ลดค่าเล่น ฿{v0}", { v0: boardGameBill.offerDiscountAmount.toFixed(2) }),
         }
       : boardGameBill && boardGameBill.passCoveredAmount > 0
       ? {
-          title: 'ใช้แพ็กเกจสมาชิกแล้ว',
-          detail: `แพ็กเกจจ่ายค่าเล่นให้ ฿${boardGameBill.passCoveredAmount.toFixed(
+          title: posText("ใช้แพ็กเกจสมาชิกแล้ว"),
+          detail: posText("แพ็กเกจจ่ายค่าเล่นให้ ฿{v0}", { v0: boardGameBill.passCoveredAmount.toFixed(
             2,
-          )}`,
+          ) }),
         }
       : null;
   const boardGamePricingInput = useMemo(
@@ -208,8 +208,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         unitAmount: line.unitAmount,
       })),
     }),
-    [
-      boardGameParams?.boardGameBillingGroupId,
+    [boardGameParams?.boardGameBillingGroupId,
       cart.coupon?.code,
       cart.extraLines,
       cart.lines,
@@ -272,13 +271,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         {
           key: `board-game-${boardGameBill.id}`,
           sku: '__BOARD_GAME_TIME__',
-          name: `บิลบอร์ดเกม · ${boardGameBill.tableCode} ${
-            boardGameBill.tableName
-          }${
-            boardGameBill.sessionGroupCount > 1
-              ? ` · กลุ่ม ${boardGameBill.groupNo}`
-              : ''
-          }`,
+          name: posText("บิลบอร์ดเกม · {v0} {v1}{v2}", { v0: boardGameBill.tableCode, v1: boardGameBill.tableName, v2: boardGameBill.sessionGroupCount > 1
+              ? posText(" · กลุ่ม {v0}", { v0: boardGameBill.groupNo })
+              : '' }),
           qty: 1,
           unitPrice: boardGameBill.totalDue,
           size: 'SERVICE',
@@ -318,7 +313,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       ? cart.extraLines.map(line => ({
           key: `extra-${line.id}`,
           name: line.label,
-          variantLabel: 'รายการเพิ่มเติม',
+          variantLabel: posText("รายการเพิ่มเติม"),
           qty: line.qty,
           unitPrice: line.unitAmount,
         }))
@@ -407,8 +402,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const [completion, setCompletion] = useState<(() => void) | null>(null);
   usePreventRemove(submitting || Boolean(saleAttemptRef.current), () => {
     Alert.alert(
-      'มีบิลที่ยังไม่เสร็จ',
-      'กรุณาลองบันทึกบิลเดิมให้จบก่อนออกจากหน้าชำระเงิน',
+      posText("มีบิลที่ยังไม่เสร็จ"),
+      posText("กรุณาลองบันทึกบิลเดิมให้จบก่อนออกจากหน้าชำระเงิน"),
     );
   });
   // Native-stack removal must wait until usePreventRemove has observed the cleared attempt.
@@ -646,7 +641,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         setSubmitting(false);
         setConfirmOpen(false);
         setSaleRetryMessage(
-          'ยังติดต่อเซิร์ฟเวอร์ไม่ได้ · เก็บบิลเดิมไว้แล้ว กรุณาลองอีกครั้งเมื่อเชื่อมต่อได้',
+          posText("ยังติดต่อเซิร์ฟเวอร์ไม่ได้ · เก็บบิลเดิมไว้แล้ว กรุณาลองอีกครั้งเมื่อเชื่อมต่อได้"),
         );
         return;
       }
@@ -655,8 +650,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         setSubmitting(false);
         setConfirmOpen(false);
         Alert.alert(
-          'รายการนี้ขายออฟไลน์ไม่ได้',
-          'โหมดออฟไลน์รองรับเฉพาะร้านทั่วไปที่ขายปลีกเงินสด ไม่มีสมาชิก แต้ม คูปอง ส่วนลด serial สินค้าชั่ง หรือการอนุมัติพิเศษ',
+          posText("รายการนี้ขายออฟไลน์ไม่ได้"),
+          posText("โหมดออฟไลน์รองรับเฉพาะร้านทั่วไปที่ขายปลีกเงินสด ไม่มีสมาชิก แต้ม คูปอง ส่วนลด serial สินค้าชั่ง หรือการอนุมัติพิเศษ"),
         );
         return;
       }
@@ -676,10 +671,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         idempotencyRef.current = null;
         setConfirmOpen(false);
         Alert.alert(
-          'รับเงินแล้ว · รอซิงก์',
-          `เลขอ้างอิงชั่วคราว ${idempotencyKey.slice(
+          posText("รับเงินแล้ว · รอซิงก์"),
+          posText("เลขอ้างอิงชั่วคราว {v0} · ยังไม่ใช่ใบเสร็จหรือใบกำกับภาษี", { v0: idempotencyKey.slice(
             -10,
-          )} · ยังไม่ใช่ใบเสร็จหรือใบกำกับภาษี`,
+          ) }),
         );
         finishCheckout(() =>
           navigation.reset({
@@ -696,12 +691,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           idempotencyRef.current = null;
           setConfirmOpen(false);
           Alert.alert(
-            'รับเงินแล้ว · คิวต้องตรวจสอบ',
-            `${
-              error instanceof Error
+            posText("รับเงินแล้ว · คิวต้องตรวจสอบ"),
+            posText("{v0} · ห้ามขายรายการนี้ซ้ำ กรุณาให้ผู้จัดการตรวจคิว", { v0: error instanceof Error
                 ? error.message
-                : 'อัปเดตสถานะคิวออฟไลน์ไม่ได้'
-            } · ห้ามขายรายการนี้ซ้ำ กรุณาให้ผู้จัดการตรวจคิว`,
+                : posText("อัปเดตสถานะคิวออฟไลน์ไม่ได้") }),
           );
           finishCheckout(() =>
             navigation.reset({
@@ -712,8 +705,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           return;
         }
         Alert.alert(
-          'เก็บรายการออฟไลน์ไม่ได้',
-          error instanceof Error ? error.message : 'กรุณาอย่ารับเงินรายการนี้',
+          posText("เก็บรายการออฟไลน์ไม่ได้"),
+          error instanceof Error ? error.message : posText("กรุณาอย่ารับเงินรายการนี้"),
         );
       } finally {
         submittedRef.current = false;
@@ -734,9 +727,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         setConfirmOpen(false);
         // Keep explicitly received cash and split allocations for cashier review.
         Alert.alert(
-          recheck.error ? 'ตรวจราคาไม่สำเร็จ' : 'ราคามีการเปลี่ยนแปลง',
+          recheck.error ? posText("ตรวจราคาไม่สำเร็จ") : posText("ราคามีการเปลี่ยนแปลง"),
           recheck.error ??
-            'ราคา ขั้นราคาส่ง หรือโปรโมชันเปลี่ยนไป · อัปเดตยอดล่าสุดแล้ว กรุณาตรวจและรับเงินใหม่',
+            posText("ราคา ขั้นราคาส่ง หรือโปรโมชันเปลี่ยนไป · อัปเดตยอดล่าสุดแล้ว กรุณาตรวจและรับเงินใหม่"),
         );
         return;
       }
@@ -749,7 +742,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           throw new Error(
             latest?.reason ??
               latest?.couponError ??
-              'ตรวจยอดบิลบอร์ดเกมล่าสุดไม่สำเร็จ',
+              posText("ตรวจยอดบิลบอร์ดเกมล่าสุดไม่สำเร็จ"),
           );
         }
         const signature = (
@@ -767,8 +760,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           setSubmitting(false);
           setConfirmOpen(false);
           Alert.alert(
-            'ยอดบิลมีการเปลี่ยนแปลง',
-            'ยอดสินค้า ส่วนลด หรือเวลาเล่นเปลี่ยนไป · อัปเดตยอดล่าสุดแล้ว กรุณาตรวจและรับเงินใหม่',
+            posText("ยอดบิลมีการเปลี่ยนแปลง"),
+            posText("ยอดสินค้า ส่วนลด หรือเวลาเล่นเปลี่ยนไป · อัปเดตยอดล่าสุดแล้ว กรุณาตรวจและรับเงินใหม่"),
           );
           return;
         }
@@ -777,10 +770,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         setSubmitting(false);
         setConfirmOpen(false);
         Alert.alert(
-          'ตรวจยอดไม่สำเร็จ',
+          posText("ตรวจยอดไม่สำเร็จ"),
           error instanceof Error
             ? error.message
-            : 'ตรวจยอดบิลบอร์ดเกมล่าสุดไม่สำเร็จ',
+            : posText("ตรวจยอดบิลบอร์ดเกมล่าสุดไม่สำเร็จ"),
         );
         return;
       }
@@ -793,7 +786,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           throw new Error(
             latest?.reason ??
               latest?.couponError ??
-              'ตรวจยอดบิลโต๊ะล่าสุดไม่สำเร็จ',
+              posText("ตรวจยอดบิลโต๊ะล่าสุดไม่สำเร็จ"),
           );
         }
         const signature = (
@@ -811,8 +804,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           setSubmitting(false);
           setConfirmOpen(false);
           Alert.alert(
-            'ยอดบิลมีการเปลี่ยนแปลง',
-            'ยอดอาหาร ส่วนลด หรือแต้มเปลี่ยนไป · กรุณาตรวจและรับเงินใหม่',
+            posText("ยอดบิลมีการเปลี่ยนแปลง"),
+            posText("ยอดอาหาร ส่วนลด หรือแต้มเปลี่ยนไป · กรุณาตรวจและรับเงินใหม่"),
           );
           return;
         }
@@ -821,10 +814,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         setSubmitting(false);
         setConfirmOpen(false);
         Alert.alert(
-          'ตรวจยอดไม่สำเร็จ',
+          posText("ตรวจยอดไม่สำเร็จ"),
           error instanceof Error
             ? error.message
-            : 'ตรวจยอดบิลโต๊ะล่าสุดไม่สำเร็จ',
+            : posText("ตรวจยอดบิลโต๊ะล่าสุดไม่สำเร็จ"),
         );
         return;
       }
@@ -835,7 +828,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     try {
       let orderId: string;
       if (source === 'restaurant') {
-        if (!check) throw new Error('ไม่พบบิลโต๊ะสำหรับชำระเงิน');
+        if (!check) throw new Error(posText("ไม่พบบิลโต๊ะสำหรับชำระเงิน"));
         const response = await runWithOperationTimeout(signal =>
           settleCheck({
             context: { fetchOptions: { signal } },
@@ -863,7 +856,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         const result = response.data?.bmsPosRestaurantSettleCheck;
         if (result?.status !== 'SOLD' || !result.orderId) {
           throw new Error(
-            describeMobileSaleFailure(result, 'ชำระบิลไม่สำเร็จ'),
+            describeMobileSaleFailure(result, posText("ชำระบิลไม่สำเร็จ")),
           );
         }
         orderId = result.orderId;
@@ -976,7 +969,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                 pin: session.credentials.pin,
                 idempotencyKey: pharmacyReviewKeyRef.current,
                 customerId: cart.member?.id ?? null,
-                label: 'รอเภสัชกรตรวจจาก POS Mobile',
+                label: posText("รอเภสัชกรตรวจจาก POS Mobile"),
                 lines: cart.lines.map(line => ({
                   sku: line.sku,
                   size: line.size,
@@ -1014,7 +1007,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             throw new Error(
               reviewResult?.reason ??
                 reviewResult?.status ??
-                'ส่งให้เภสัชกรตรวจไม่สำเร็จ',
+                posText("ส่งให้เภสัชกรตรวจไม่สำเร็จ"),
             );
           }
           pharmacyReviewKeyRef.current = null;
@@ -1022,10 +1015,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           idempotencyRef.current = null;
           setConfirmOpen(false);
           Alert.alert(
-            'ส่งให้เภสัชกรแล้ว',
-            `เลขเคส ${
-              reviewResult.caseCode ?? reviewResult.assessmentId.slice(0, 8)
-            } เมื่ออนุมัติแล้วให้เรียกบิลพักกลับมาชำระ`,
+            posText("ส่งให้เภสัชกรแล้ว"),
+            posText("เลขเคส {v0} เมื่ออนุมัติแล้วให้เรียกบิลพักกลับมาชำระ", { v0: reviewResult.caseCode ?? reviewResult.assessmentId.slice(0, 8) }),
           );
           return;
         }
@@ -1036,8 +1027,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           idempotencyRef.current = null;
           setConfirmOpen(false);
           Alert.alert(
-            'รับมัดจำแล้ว',
-            `รับมัดจำ ฿${paymentTarget.toFixed(2)} สำเร็จ`,
+            posText("รับมัดจำแล้ว"),
+            posText("รับมัดจำ ฿{v0} สำเร็จ", { v0: paymentTarget.toFixed(2) }),
           );
           finishCheckout(() =>
             navigation.reset({
@@ -1096,9 +1087,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         // Keep a staged cash row owned by this checkout; an explicit business refusal must
         // neither enqueue automatic tender nor discard the reserved order's identity.
         setSaleRetryMessage(
-          `${
-            error instanceof Error ? error.message : 'บันทึกบิลไม่สำเร็จ'
-          } · แก้ไขสาเหตุแล้วลองบันทึกบิลเดิมอีกครั้ง`,
+          posText("{v0} · แก้ไขสาเหตุแล้วลองบันทึกบิลเดิมอีกครั้ง", { v0: error instanceof Error ? error.message : posText("บันทึกบิลไม่สำเร็จ") }),
         );
         return;
       }
@@ -1111,24 +1100,24 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         try {
           await offlineSales.queue(
             idempotencyRef.current,
-            error instanceof Error ? error.message : 'ยังไม่ทราบผลการขาย',
+            error instanceof Error ? error.message : posText("ยังไม่ทราบผลการขาย"),
           );
         } catch (queueError) {
           queueWarning =
             queueError instanceof Error
               ? queueError.message
-              : 'อัปเดตสถานะคิวออฟไลน์ไม่ได้';
+              : posText("อัปเดตสถานะคิวออฟไลน์ไม่ได้");
         }
         cart.clear();
         const reference = idempotencyRef.current.slice(-10);
         idempotencyRef.current = null;
         Alert.alert(
           queueWarning
-            ? 'รับเงินแล้ว · คิวต้องตรวจสอบ'
-            : 'รับเงินแล้ว · กำลังตรวจสอบผล',
+            ? posText("รับเงินแล้ว · คิวต้องตรวจสอบ")
+            : posText("รับเงินแล้ว · กำลังตรวจสอบผล"),
           queueWarning
-            ? `${queueWarning} · เลขอ้างอิง ${reference} · ห้ามขายรายการนี้ซ้ำ กรุณาให้ผู้จัดการตรวจคิว`
-            : `เลขอ้างอิงชั่วคราว ${reference} · ระบบจะตรวจรายการเดิมก่อนซิงก์และจะไม่สร้างบิลซ้ำ`,
+            ? posText("{v0} · เลขอ้างอิง {v1} · ห้ามขายรายการนี้ซ้ำ กรุณาให้ผู้จัดการตรวจคิว", { v0: queueWarning, v1: reference })
+            : posText("เลขอ้างอิงชั่วคราว {v0} · ระบบจะตรวจรายการเดิมก่อนซิงก์และจะไม่สร้างบิลซ้ำ", { v0: reference }),
         );
         finishCheckout(() =>
           navigation.reset({
@@ -1149,14 +1138,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         idempotencyRef.current = null;
       } else if (saleAttemptRef.current) {
         setSaleRetryMessage(
-          `${
-            error instanceof Error ? error.message : 'ยังไม่ทราบผล'
-          } · กรุณาลองบันทึกบิลเดิมอีกครั้ง`,
+          posText("{v0} · กรุณาลองบันทึกบิลเดิมอีกครั้ง", { v0: error instanceof Error ? error.message : posText("ยังไม่ทราบผล") }),
         );
       }
       Alert.alert(
-        'ขายไม่สำเร็จ',
-        error instanceof Error ? error.message : 'กรุณาลองใหม่',
+        posText("ขายไม่สำเร็จ"),
+        error instanceof Error ? error.message : posText("กรุณาลองใหม่"),
       );
     } finally {
       submittedRef.current = false;
@@ -1168,20 +1155,20 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     <Card style={{ flex: 1 }}>
       <View style={styles.line}>
         <Text style={[typography.subtitle, { color: colors.text }]}>
-          รายการ ({itemCount})
+          {posText("รายการ (")}{itemCount})
         </Text>
         {source === 'retail' && lines.length > 0 ? (
           <Button
-            label="ล้างรายการ"
+            label={posText("ล้างรายการ")}
             variant="secondary"
             onPress={() =>
               Alert.alert(
-                'ล้างรายการทั้งหมด?',
-                'สินค้าทั้งหมดจะถูกนำออกจากบิล',
+                posText("ล้างรายการทั้งหมด?"),
+                posText("สินค้าทั้งหมดจะถูกนำออกจากบิล"),
                 [
-                  { text: 'ยกเลิก', style: 'cancel' },
+                  { text: posText("ยกเลิก"), style: 'cancel' },
                   {
-                    text: 'ล้างรายการ',
+                    text: posText("ล้างรายการ"),
                     style: 'destructive',
                     onPress: cart.clear,
                   },
@@ -1194,8 +1181,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       {source === 'restaurant' &&
       check?.items.some(item => item.status === 'NEW') ? (
         <Text style={[typography.captionStrong, { color: colors.danger }]}>
-          มีรายการ NEW ที่ยังไม่ส่งครัว จึงชำระไม่ได้
-        </Text>
+          {posText("มีรายการ NEW ที่ยังไม่ส่งครัว จึงชำระไม่ได้") + " "}</Text>
       ) : null}
       <FlatList
         data={lines}
@@ -1203,8 +1189,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         contentContainerStyle={{ gap: spacing.sm, paddingTop: spacing.md }}
         ListEmptyComponent={
           <Text style={[typography.body, { color: colors.textMuted }]}>
-            ไม่มีรายการสำหรับชำระเงิน
-          </Text>
+            {posText("ไม่มีรายการสำหรับชำระเงิน") + " "}</Text>
         }
         renderItem={({ item }) => (
           <View
@@ -1250,15 +1235,13 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                   <Text
                     style={[typography.caption, { color: colors.textMuted }]}
                   >
-                    {boardGameBill.chargeLineCount} คน · ปิดเวลา{' '}
+                    {boardGameBill.chargeLineCount} {" " + posText("คน · ปิดเวลา")}{' '}
                     {new Date(boardGameBill.endedAt).toLocaleTimeString(
-                      'th-TH',
+                      posLocale(),
                       { hour: '2-digit', minute: '2-digit' },
                     )}
                     {boardGameBill.tabItemCount > 0
-                      ? ` · ของที่สั่งไว้ ${
-                          boardGameBill.tabItemCount
-                        } รายการ ฿${boardGameBill.tabAmount.toFixed(2)}`
+                      ? posText(" · ของที่สั่งไว้ {v0} รายการ ฿{v1}", { v0: boardGameBill.tabItemCount, v1: boardGameBill.tabAmount.toFixed(2) })
                       : ''}
                   </Text>
                 ) : null}
@@ -1266,8 +1249,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                     ตอบไม่ได้ว่าหายไปไหน — เลขมาจาก server ไม่ใช่การเดาจากยอดที่เหลือ */}
                 {item.sku === '__BOARD_GAME_TIME__' && passCoveredAmount > 0 ? (
                   <Text style={[typography.caption, { color: colors.success }]}>
-                    แพ็กเกจสมาชิกจ่ายค่าเล่นให้แล้ว ฿
-                    {passCoveredAmount.toFixed(2)}
+                    {posText("แพ็กเกจสมาชิกจ่ายค่าเล่นให้แล้ว ฿") + " "}{passCoveredAmount.toFixed(2)}
                   </Text>
                 ) : null}
               </View>
@@ -1284,8 +1266,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                       cart.addItem({
                         ...item,
                         price: item.unitPrice,
-                        category: 'สินค้า',
-                        station: 'สินค้า',
+                        category: posText("สินค้า"),
+                        station: posText("สินค้า"),
                         sellable: true,
                         selectedModifierCodes: item.modifierCodes,
                       })
@@ -1295,8 +1277,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                   <Text
                     style={[typography.caption, { color: colors.textSoft }]}
                   >
-                    ฿{item.unitPrice.toFixed(2)} / หน่วย
-                  </Text>
+                    {posText("฿")}{item.unitPrice.toFixed(2)} {" " + posText("/ หน่วย") + " "}</Text>
                 </View>
                 {item.serialTracked ? (
                   <View style={{ gap: spacing.xs }}>
@@ -1306,7 +1287,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                         { color: colors.warning },
                       ]}
                     >
-                      เลขเครื่อง {item.serials.filter(Boolean).length}/
+                      {posText("เลขเครื่อง") + " "}{item.serials.filter(Boolean).length}/
                       {Math.round(item.qty * item.baseQty)}
                     </Text>
                     {Array.from({
@@ -1335,8 +1316,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             ) : (
               <Text style={[typography.caption, { color: colors.textSoft }]}>
                 {item.sku === '__BOARD_GAME_TIME__'
-                  ? 'ยอดค่าเวลาถูก freeze จาก session และตรวจซ้ำที่เซิร์ฟเวอร์'
-                  : 'คิดเงินจากบิลร้านอาหารเดิม ไม่สร้าง cart ใหม่'}
+                  ? posText("ยอดค่าเวลาถูก freeze จาก session และตรวจซ้ำที่เซิร์ฟเวอร์")
+                  : posText("คิดเงินจากบิลร้านอาหารเดิม ไม่สร้าง cart ใหม่")}
               </Text>
             )}
           </View>
@@ -1365,8 +1346,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     >
       {isTablet ? (
         <Text style={[typography.title, { color: colors.text }]}>
-          รับชำระเงิน
-        </Text>
+          {posText("รับชำระเงิน") + " "}</Text>
       ) : null}
       {source === 'retail' ? (
         <View
@@ -1376,7 +1356,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           ]}
         >
           <Button
-            label="ขายปกติ"
+            label={posText("ขายปกติ")}
             variant={saleMode === 'SALE' ? 'primary' : 'secondary'}
             style={styles.saleModeButton}
             onPress={() => {
@@ -1392,7 +1372,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             }}
           />
           <Button
-            label="รับมัดจำ"
+            label={posText("รับมัดจำ")}
             variant={saleMode === 'DEPOSIT' ? 'primary' : 'secondary'}
             style={styles.saleModeButton}
             onPress={() => {
@@ -1427,7 +1407,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                 },
               ]);
             }}
-            placeholder="ยอดมัดจำ (ต้องน้อยกว่ายอดบิล)"
+            placeholder={posText("ยอดมัดจำ (ต้องน้อยกว่ายอดบิล)")}
             keyboardType="decimal-pad"
             placeholderTextColor={colors.textSoft}
             style={[
@@ -1438,7 +1418,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           <TextInput
             value={depositNote}
             onChangeText={setDepositNote}
-            placeholder="ชื่อลูกค้า / หมายเหตุรับของ"
+            placeholder={posText("ชื่อลูกค้า / หมายเหตุรับของ")}
             placeholderTextColor={colors.textSoft}
             style={[
               styles.input,
@@ -1448,7 +1428,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           <TextInput
             value={depositDueAt}
             onChangeText={setDepositDueAt}
-            placeholder="วันรับของ เช่น 2026-09-20"
+            placeholder={posText("วันรับของ เช่น 2026-09-20")}
             autoCapitalize="none"
             placeholderTextColor={colors.textSoft}
             style={[
@@ -1466,10 +1446,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           ]}
         >
           {passCoveredAmount > 0
-            ? `แพ็กเกจสมาชิกจ่ายค่าเล่นให้แล้ว ฿${passCoveredAmount.toFixed(
+            ? posText("แพ็กเกจสมาชิกจ่ายค่าเล่นให้แล้ว ฿{v0} · ไม่มียอดต้องชำระ", { v0: passCoveredAmount.toFixed(
                 2,
-              )} · ไม่มียอดต้องชำระ`
-            : 'บิลนี้ไม่มียอดต้องชำระ'}
+              ) })
+            : posText("บิลนี้ไม่มียอดต้องชำระ")}
         </Text>
       ) : (
         <>
@@ -1488,14 +1468,14 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                   >
                     {index === 0
                       ? isTablet
-                        ? 'ช่องทางการชำระเงิน'
-                        : 'เลือกช่องทางชำระเงิน'
-                      : `ช่องทาง ${index + 1}`}
+                        ? posText("ช่องทางการชำระเงิน")
+                        : posText("เลือกช่องทางชำระเงิน")
+                      : posText("ช่องทาง {v0}", { v0: index + 1 })}
                   </Text>
                   {payments.length > 1 && (
                     <Button
-                      label="ลบ"
-                      accessibilityLabel={`ลบช่องทางชำระเงินที่ ${index + 1}`}
+                      label={posText("ลบ")}
+                      accessibilityLabel={posText("ลบช่องทางชำระเงินที่ {v0}", { v0: index + 1 })}
                       variant="ghost"
                       onPress={() => {
                         if (submittedRef.current) return;
@@ -1557,8 +1537,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                             { color: colors.text },
                           ]}
                         >
-                          ช่องทางอื่น
-                        </Text>
+                          {posText("ช่องทางอื่น") + " "}</Text>
                         <Text
                           style={[
                             typography.caption,
@@ -1601,7 +1580,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                 ) : null}
                 {payments.length > 1 ? (
                   <MoneyField
-                    label="ยอดช่องทางนี้"
+                    label={posText("ยอดช่องทางนี้")}
                     value={payment.amount}
                     onChange={amount => updatePayment(payment.id, { amount })}
                   />
@@ -1619,10 +1598,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                     <Text
                       style={[typography.bodyStrong, { color: colors.text }]}
                     >
-                      รับเงิน
-                    </Text>
+                      {posText("รับเงิน") + " "}</Text>
                     <MoneyField
-                      label="เงินสดที่รับ"
+                      label={posText("เงินสดที่รับ")}
                       value={payment.tendered ?? 0}
                       style={styles.cashInput}
                       onChange={tendered =>
@@ -1634,11 +1612,11 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                         <Button
                           key={amount}
                           label={
-                            amount === payment.amount ? 'รับพอดี' : `฿${amount}`
+                            amount === payment.amount ? posText("รับพอดี") : posText("฿{v0}", { v0: amount })
                           }
-                          accessibilityLabel={`เงินสดรับ ${amount.toFixed(
+                          accessibilityLabel={posText("เงินสดรับ {v0} บาท", { v0: amount.toFixed(
                             2,
-                          )} บาท`}
+                          ) })}
                           variant="secondary"
                           style={styles.quickCashButton}
                           onPress={() =>
@@ -1660,8 +1638,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                       <Text
                         style={[typography.subtitle, { color: colors.success }]}
                       >
-                        ✓ เงินทอน ฿
-                        {calculateCashChange(
+                        {posText("✓ เงินทอน ฿") + " "}{calculateCashChange(
                           payment.amount,
                           payment.tendered ?? 0,
                         ).toFixed(2)}
@@ -1672,8 +1649,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                   <Text
                     style={[typography.caption, { color: colors.textMuted }]}
                   >
-                    ขายเชื่อจะใช้สมาชิกในบิลและตรวจวงเงินที่เซิร์ฟเวอร์
-                  </Text>
+                    {posText("ขายเชื่อจะใช้สมาชิกในบิลและตรวจวงเงินที่เซิร์ฟเวอร์") + " "}</Text>
                 ) : (
                   <>
                     <TextInput
@@ -1683,8 +1659,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                       }
                       placeholder={
                         payment.method === 'qr'
-                          ? 'เลขอ้างอิง (ไม่บังคับ)'
-                          : 'เลขอ้างอิง'
+                          ? posText("เลขอ้างอิง (ไม่บังคับ)")
+                          : posText("เลขอ้างอิง")
                       }
                       placeholderTextColor={colors.textSoft}
                       style={[
@@ -1699,8 +1675,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                           { color: colors.textMuted, marginTop: spacing.xs },
                         ]}
                       >
-                        Dynamic QR ระบุยอดแล้ว กรุณาตรวจชื่อผู้รับ ยอด และรายการเงินเข้าก่อนกดยืนยัน
-                      </Text>
+                        {posText("Dynamic QR ระบุยอดแล้ว กรุณาตรวจชื่อผู้รับ ยอด และรายการเงินเข้าก่อนกดยืนยัน") + " "}</Text>
                     ) : null}
                   </>
                 )}
@@ -1712,8 +1687,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
               <Button
                 label={
                   splitOptionsOpen
-                    ? 'ซ่อนตัวเลือกแบ่งชำระ'
-                    : 'แบ่งชำระหลายช่องทาง'
+                    ? posText("ซ่อนตัวเลือกแบ่งชำระ")
+                    : posText("แบ่งชำระหลายช่องทาง")
                 }
                 variant="ghost"
                 fullWidth
@@ -1725,9 +1700,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                     <Button
                       key={method}
                       label={`+ ${paymentMethodLabel(method)}`}
-                      accessibilityLabel={`เพิ่มช่องทาง${paymentMethodLabel(
+                      accessibilityLabel={posText("เพิ่มช่องทาง{v0}", { v0: paymentMethodLabel(
                         method,
-                      )}`}
+                      ) })}
                       variant="secondary"
                       style={styles.addPaymentButton}
                       onPress={() => addPayment(method)}
@@ -1742,8 +1717,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       {usesCredit ? (
         <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
           <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-            ผู้มีสิทธิ์ขายเชื่อ (เลือกเมื่อแคชเชียร์ไม่มีสิทธิ์)
-          </Text>
+            {posText("ผู้มีสิทธิ์ขายเชื่อ (เลือกเมื่อแคชเชียร์ไม่มีสิทธิ์)") + " "}</Text>
           <View style={styles.methodRow}>
             {creditApprovers.map(approver => (
               <Button
@@ -1760,7 +1734,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             <TextInput
               value={creditApproverPin}
               onChangeText={setCreditApproverPin}
-              placeholder="PIN ผู้อนุมัติขายเชื่อ"
+              placeholder={posText("PIN ผู้อนุมัติขายเชื่อ")}
               placeholderTextColor={colors.textSoft}
               keyboardType="number-pad"
               secureTextEntry
@@ -1775,14 +1749,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       {source === 'retail' && storeMode === 'pharmacy' ? (
         <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
           <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-            เภสัชกรอนุมัติที่เคาน์เตอร์
-          </Text>
+            {posText("เภสัชกรอนุมัติที่เคาน์เตอร์") + " "}</Text>
           <Text style={[typography.caption, { color: colors.textMuted }]}>
-            เลือกเฉพาะเมื่อเภสัชกรผู้มีใบอนุญาตตรวจรายการและอนุมัติการจ่ายยาแล้ว
-          </Text>
+            {posText("เลือกเฉพาะเมื่อเภสัชกรผู้มีใบอนุญาตตรวจรายการและอนุมัติการจ่ายยาแล้ว") + " "}</Text>
           <View style={styles.methodRow}>
             <Button
-              label="ส่งเข้าคิวตรวจ"
+              label={posText("ส่งเข้าคิวตรวจ")}
               variant={!pharmacistId ? 'primary' : 'secondary'}
               onPress={() => {
                 setPharmacistId('');
@@ -1805,7 +1777,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             <TextInput
               value={pharmacistPin}
               onChangeText={setPharmacistPin}
-              placeholder="PIN เภสัชกร"
+              placeholder={posText("PIN เภสัชกร")}
               keyboardType="number-pad"
               secureTextEntry
               placeholderTextColor={colors.textSoft}
@@ -1819,7 +1791,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             <TextInput
               value={pharmacistNote}
               onChangeText={setPharmacistNote}
-              placeholder="บันทึกการอนุมัติ (ถ้ามี)"
+              placeholder={posText("บันทึกการอนุมัติ (ถ้ามี)")}
               placeholderTextColor={colors.textSoft}
               style={[
                 styles.input,
@@ -1854,11 +1826,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       {!shiftLoading && !isShiftOpen ? (
         <View style={{ gap: spacing.xs }}>
           <Text style={[typography.captionStrong, { color: colors.danger }]}>
-            ยังไม่ได้เปิดกะของเครื่องนี้ กรุณาเปิดกะก่อนขาย
-          </Text>
+            {posText("ยังไม่ได้เปิดกะของเครื่องนี้ กรุณาเปิดกะก่อนขาย") + " "}</Text>
           <Button
-            label="ไปเปิดกะ"
-            accessibilityLabel="ไปหน้าเปิดกะก่อนขาย"
+            label={posText("ไปเปิดกะ")}
+            accessibilityLabel={posText("ไปหน้าเปิดกะก่อนขาย")}
             variant="secondary"
             onPress={() => navigation.navigate('ShiftDetail')}
           />
@@ -1874,15 +1845,14 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       ))}
       {discountPending && (
         <Text style={[typography.caption, { color: colors.textMuted }]}>
-          กำลังคำนวณส่วนลดกับเซิร์ฟเวอร์…
-        </Text>
+          {posText("กำลังคำนวณส่วนลดกับเซิร์ฟเวอร์…") + " "}</Text>
       )}
       {source === 'board_game' && !discountPending && !boardGameReady && (
         <Text style={[typography.captionStrong, { color: colors.danger }]}>
           {boardGamePricing.error?.message ??
             boardGamePreview?.reason ??
             boardGamePreview?.couponError ??
-            'ยังตรวจยอดบิลบอร์ดเกมล่าสุดไม่สำเร็จ'}
+            posText("ยังตรวจยอดบิลบอร์ดเกมล่าสุดไม่สำเร็จ")}
         </Text>
       )}
       {source === 'restaurant' && !discountPending && !restaurantReady && (
@@ -1890,7 +1860,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           {restaurantPricing.error?.message ??
             restaurantPreview?.reason ??
             restaurantPreview?.couponError ??
-            'ยังตรวจยอดบิลโต๊ะล่าสุดไม่สำเร็จ'}
+            posText("ยังตรวจยอดบิลโต๊ะล่าสุดไม่สำเร็จ")}
         </Text>
       )}
     </>
@@ -1898,8 +1868,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 
   const confirmButton = (
     <Button
-      label="ยืนยันการขาย"
-      accessibilityLabel="ยืนยันการขายพร้อมป้องกันกดซ้ำ"
+      label={posText("ยืนยันการขาย")}
+      accessibilityLabel={posText("ยืนยันการขายพร้อมป้องกันกดซ้ำ")}
       fullWidth
       loading={submitting}
       disabled={confirmDisabled}
@@ -1926,31 +1896,31 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       ) : null}
       {discounts.discountTotal > 0 && (
         <View style={{ gap: spacing.xs, marginBottom: spacing.md }}>
-          <AmountRow label="ยอดสินค้า" value={subtotal} />
+          <AmountRow label={posText("ยอดสินค้า")} value={subtotal} />
           {discounts.tierDiscount > 0 && (
             <AmountRow
-              label="ส่วนลดสมาชิก"
+              label={posText("ส่วนลดสมาชิก")}
               value={-discounts.tierDiscount}
               discount
             />
           )}
           {discounts.couponDiscount > 0 && (
             <AmountRow
-              label="ส่วนลดคูปอง"
+              label={posText("ส่วนลดคูปอง")}
               value={-discounts.couponDiscount}
               discount
             />
           )}
           {discounts.pointsDiscount > 0 && (
             <AmountRow
-              label="ส่วนลดจากแต้ม"
+              label={posText("ส่วนลดจากแต้ม")}
               value={-discounts.pointsDiscount}
               discount
             />
           )}
           {discounts.appliedManualDiscount > 0 && (
             <AmountRow
-              label="ส่วนลดพิเศษ"
+              label={posText("ส่วนลดพิเศษ")}
               value={-discounts.appliedManualDiscount}
               discount
             />
@@ -1960,21 +1930,21 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       {/* ไม่มีบรรทัดนี้ ยอดสุทธิจะไม่เท่ากับยอดสินค้าหักส่วนลดโดยไม่มีอะไรบนจอเดียวกันอธิบาย */}
       {roundingDelta !== 0 && (
         <>
-          <AmountRow label="ยอดก่อนปัดเศษ" value={payableBeforeRounding} />
-          <AmountRow label="ปัดเศษเงินสด" value={roundingDelta} />
+          <AmountRow label={posText("ยอดก่อนปัดเศษ")} value={payableBeforeRounding} />
+          <AmountRow label={posText("ปัดเศษเงินสด")} value={roundingDelta} />
         </>
       )}
       {source === 'board_game' &&
         (boardGamePreview?.reservationDepositApplied ?? 0) > 0 && (
           <AmountRow
-            label="ใช้มัดจำการจอง"
+            label={posText("ใช้มัดจำการจอง")}
             value={-Number(boardGamePreview?.reservationDepositApplied ?? 0)}
             discount
           />
         )}
-      <AmountRow label="ยอดสุทธิ" value={total} />
-      <AmountRow label="ชำระแล้ว" value={validation.paidTotal} />
-      <AmountRow label="คงเหลือ" value={validation.remaining} />
+      <AmountRow label={posText("ยอดสุทธิ")} value={total} />
+      <AmountRow label={posText("ชำระแล้ว")} value={validation.paidTotal} />
+      <AmountRow label={posText("คงเหลือ")} value={validation.remaining} />
       {validationFeedback}
       {confirmButton}
     </Card>
@@ -2037,18 +2007,16 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   if (saleRetryMessage && saleAttemptRef.current) {
     return (
       <ScreenContainer edges={['top', 'left', 'right', 'bottom']}>
-        <ScreenHeader title="บิลเดิมยังไม่เสร็จ" />
+        <ScreenHeader title={posText("บิลเดิมยังไม่เสร็จ")} />
         <Card>
           <Text style={[typography.body, { color: colors.text }]}>
             {saleRetryMessage}
           </Text>
-          <AmountRow label="ยอดบิลเดิม" value={saleAttemptRef.current.total} />
+          <AmountRow label={posText("ยอดบิลเดิม")} value={saleAttemptRef.current.total} />
           <Text style={[typography.caption, { color: colors.textMuted }]}>
-            เก็บรายการสินค้า ส่วนลด และการชำระเดิมไว้แล้ว
-            กรุณาอย่ารับเงินรายการนี้ซ้ำ
-          </Text>
+            {posText("เก็บรายการสินค้า ส่วนลด และการชำระเดิมไว้แล้ว กรุณาอย่ารับเงินรายการนี้ซ้ำ") + " "}</Text>
           <Button
-            label="ลองบันทึกบิลเดิมอีกครั้ง"
+            label={posText("ลองบันทึกบิลเดิมอีกครั้ง")}
             loading={submitting}
             disabled={submitting}
             onPress={completeSale}
@@ -2063,18 +2031,14 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       <ScreenHeader
         title={
           source === 'restaurant'
-            ? `ชำระ${
-                check?.serviceMode === 'TAKEAWAY' ? 'บิลกลับบ้าน' : 'โต๊ะ'
-              } ${
-                check?.serviceMode === 'TAKEAWAY'
+            ? posText("ชำระ{v0} {v1}", { v0: check?.serviceMode === 'TAKEAWAY' ? posText("บิลกลับบ้าน") : posText("โต๊ะ"), v1: check?.serviceMode === 'TAKEAWAY'
                   ? `#${check.id.slice(0, 8)}`
-                  : table?.code ?? check?.tableCode ?? '-'
-              }`
+                  : table?.code ?? check?.tableCode ?? '-' })
             : source === 'board_game'
-            ? `ชำระโต๊ะ ${boardGameBill?.tableCode ?? '-'}`
-            : 'ชำระเงิน'
+            ? posText("ชำระโต๊ะ {v0}", { v0: boardGameBill?.tableCode ?? '-' })
+            : posText("ชำระเงิน")
         }
-        subtitle="ตรวจสอบรายการและรับชำระเงิน"
+        subtitle={posText("ตรวจสอบรายการและรับชำระเงิน")}
         onBack={() => navigation.goBack()}
         right={
           !isTablet ? (
@@ -2082,7 +2046,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
               style={[styles.totalPill, { backgroundColor: colors.surface3 }]}
             >
               <Text style={[typography.bodyStrong, { color: colors.primary }]}>
-                ฿{total.toFixed(2)}
+                {posText("฿")}{total.toFixed(2)}
               </Text>
             </View>
           ) : undefined
@@ -2150,10 +2114,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           >
             <View style={{ flex: 1 }}>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                ยอดสุทธิ
-              </Text>
+                {posText("ยอดสุทธิ") + " "}</Text>
               <Text style={[typography.numeric, { color: colors.text }]}>
-                ฿{total.toFixed(2)}
+                {posText("฿")}{total.toFixed(2)}
               </Text>
             </View>
             <View style={styles.phoneConfirm}>{confirmButton}</View>
@@ -2186,13 +2149,14 @@ function PaymentMethodButton({
   tablet?: boolean;
   onPress: () => void;
 }) {
+  usePosLanguage();
   const { colors, radius, typography } = useTheme();
   const foreground = selected ? colors.primaryText : colors.text;
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`เลือก${paymentMethodLabel(method)}`}
+      accessibilityLabel={posText("เลือก{v0}", { v0: paymentMethodLabel(method) })}
       accessibilityState={{ selected }}
       onPress={onPress}
       style={({ pressed }) => [
@@ -2253,6 +2217,7 @@ function AmountRow({
   value: number;
   discount?: boolean;
 }) {
+  usePosLanguage();
   const { colors, typography } = useTheme();
   return (
     <View style={styles.line}>
@@ -2265,7 +2230,7 @@ function AmountRow({
           { color: discount ? colors.success : colors.text },
         ]}
       >
-        {value < 0 ? '−' : ''}฿{Math.abs(value).toFixed(2)}
+        {value < 0 ? '−' : ''}{posText("฿")}{Math.abs(value).toFixed(2)}
       </Text>
     </View>
   );

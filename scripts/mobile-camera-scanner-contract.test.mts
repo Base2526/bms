@@ -67,8 +67,8 @@ test("binary เก่าที่ไม่มี native scanner ต้องต
 });
 
 test("เลือกเครื่องสแกนได้ทั้งตอนเปิดกล้องและในช่องกรอก และจำค่าด้วย Keychain", () => {
-  assert.equal(scanner.match(/label="ใช้เครื่องสแกน"/g)?.length, 2);
-  assert.ok(/label="เปิดกล้องอีกครั้ง"/.test(scanner));
+  assert.equal(scanner.match(/label=\{posText\("ใช้เครื่องสแกน"\)\}/g)?.length, 2);
+  assert.ok(/label=\{posText\("เปิดกล้องอีกครั้ง"\)\}/.test(scanner));
   assert.ok(/saveScannerInputMode\('hardware'\)/.test(scanner));
   assert.ok(/saveScannerInputMode\('camera'\)/.test(scanner));
   assert.ok(/com\.bms\.pos\.scanner-preference\.v1/.test(preference));
@@ -112,8 +112,8 @@ test("โหมด hardware เพิ่มต่อเนื่องโดย 
       scanner
     )
   );
-  assert.ok(/เพิ่มแล้ว · \{lastAdded\}/.test(scanner));
-  assert.ok(/label=\{inputMode === 'hardware' \? 'เสร็จ' : 'ยกเลิก'\}/.test(scanner));
+  assert.ok(/posText\("เพิ่มแล้ว ·"\) \+ " "\}\{lastAdded\}/.test(scanner));
+  assert.ok(/label=\{inputMode === 'hardware' \? posText\("เสร็จ"\) : posText\("ยกเลิก"\)\}/.test(scanner));
 });
 
 test("submit จาก HID กัน CR+LF ซ้ำและ response เก่าเพิ่มสินค้าไม่ได้", () => {
@@ -161,6 +161,6 @@ test("กล้องยังปิด modal เมื่อสำเร็จ�
       scanner
     )
   );
-  assert.ok(/return 'เปิดกล้องสแกนไม่ได้/.test(scanner));
+  assert.ok(/return posText\("เปิดกล้องสแกนไม่ได้/.test(scanner));
   assert.ok(/view === 'manual'[\s\S]*<TextInput/.test(scanner));
 });

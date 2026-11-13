@@ -249,7 +249,7 @@ test("desktop refresh status stays in the header without a workspace overlay", (
   const header = desktopRenderer.slice(desktopRenderer.indexOf("<header className={styles.topbar}>"),
     desktopRenderer.indexOf("</header>", desktopRenderer.indexOf("<header className={styles.topbar}>")));
   assert.match(header, /styles\.refreshStatus[\s\S]*?role="status"[\s\S]*?aria-live="polite"/);
-  assert.match(header, /contentRefreshing \? "กำลังอัปเดตข้อมูล…" : ""/);
+  assert.match(header, /contentRefreshing \? posText\("กำลังอัปเดตข้อมูล…"\) : ""/);
   assert.match(header, /contentRefreshing \? <div className=\{styles\.refreshProgress\} aria-hidden="true"/);
   assert.doesNotMatch(desktopRenderer, /contentRefreshOverlay|เมนู ผู้ปฏิบัติงาน และกะจะยังคงอยู่/);
   const css = readFileSync(new URL("../apps/web/components/pos-desktop/DesktopPosRenderer.module.css", import.meta.url), "utf8");
@@ -372,7 +372,7 @@ test("desktop POS alerts expose a close control on every operating surface", () 
   assert.match(desktopRenderer, /serviceCalls\.length > 0/);
   assert.match(desktopRenderer, /\/api\/pos\/restaurant\/service-calls/);
   assert.match(desktopRenderer, /action: completing \? "service\.complete" : "service\.acknowledge"/);
-  assert.match(desktopRenderer, /call\.status === "PENDING" \? "รับเรื่อง" : "เสร็จสิ้น"/);
+  assert.match(desktopRenderer, /call\.status === "PENDING" \? posText\("รับเรื่อง"\) : posText\("เสร็จสิ้น"\)/);
   assert.doesNotMatch(
     desktopRenderer,
     /setServiceCalls\(calls\.filter\(\(call\) => call\.status === "PENDING"\)\)/,

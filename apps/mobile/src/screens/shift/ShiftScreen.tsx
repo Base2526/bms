@@ -1,3 +1,4 @@
+import { posText, usePosLanguage, posLocale } from '../../i18n/language';
 import React, { useRef, useState } from 'react';
 import {
   Modal,
@@ -39,6 +40,7 @@ type Props = { onBack?: () => void };
 type ShiftSection = 'OVERVIEW' | 'MOVEMENTS' | 'HISTORY';
 
 export default function ShiftScreen({ onBack }: Props) {
+  usePosLanguage();
   const { colors, spacing, typography } = useTheme();
   const { isTablet } = useResponsive();
   const shift = useShift();
@@ -122,7 +124,7 @@ export default function ShiftScreen({ onBack }: Props) {
 
   const submitOpen = async () => {
     if (!openingFloat.trim()) {
-      setError('กรุณากรอกเงินทอนตั้งต้น หรือ 0 หากไม่มีเงินทอน');
+      setError(posText("กรุณากรอกเงินทอนตั้งต้น หรือ 0 หากไม่มีเงินทอน"));
       return;
     }
     const failure = await shift.reopenShift(Number(openingFloat));
@@ -135,44 +137,44 @@ export default function ShiftScreen({ onBack }: Props) {
     setError('');
   };
 
-  const branchName = session?.branch.name ?? 'ไม่พบสาขา';
+  const branchName = session?.branch.name ?? posText("ไม่พบสาขา");
   const branchLabel = branchName.replace(/^BOOM\s+/, 'BOOM · ');
   const expectedCashLabel = shift.expectedCashHidden
-    ? 'ซ่อนจนปิดกะ'
+    ? posText("ซ่อนจนปิดกะ")
     : shift.expectedCash == null
-    ? 'รอข้อมูล'
+    ? posText("รอข้อมูล")
     : formatBaht(shift.expectedCash);
   const summaryItems = [
     {
-      label: 'สถานะกะ',
-      value: shift.isOpen ? 'เปิดอยู่' : 'ปิดแล้ว',
+      label: posText("สถานะกะ"),
+      value: shift.isOpen ? posText("เปิดอยู่") : posText("ปิดแล้ว"),
       note: shift.isOpen
-        ? `เปิดเมื่อ ${formatShiftTime(shift.openedAt)}`
-        : 'พร้อมเปิดกะใหม่',
+        ? posText("เปิดเมื่อ {v0}", { v0: formatShiftTime(shift.openedAt) })
+        : posText("พร้อมเปิดกะใหม่"),
       glyph: shift.isOpen ? '●' : '×',
       ink: shift.isOpen ? colors.success : colors.danger,
       background: shift.isOpen ? colors.successBg : colors.dangerBg,
     },
     {
-      label: 'เงินทอนตั้งต้น',
+      label: posText("เงินทอนตั้งต้น"),
       value: formatBaht(shift.openingFloat),
-      note: `ผู้เปิดกะ ${shift.openedByName}`,
+      note: posText("ผู้เปิดกะ {v0}", { v0: shift.openedByName }),
       glyph: '▰',
       ink: colors.success,
       background: colors.successBg,
     },
     {
-      label: 'ยอดขายเงินสด',
+      label: posText("ยอดขายเงินสด"),
       value: formatBaht(shift.cashSales),
-      note: 'ยอดขายของกะนี้',
+      note: posText("ยอดขายของกะนี้"),
       glyph: '▤',
       ink: colors.primary,
       background: `${colors.primary}0e`,
     },
     {
-      label: 'เงินที่ควรมี',
+      label: posText("เงินที่ควรมี"),
       value: expectedCashLabel,
-      note: shift.expectedCashHidden ? 'โหมดนับปิดตา' : 'ยอดในลิ้นชัก',
+      note: shift.expectedCashHidden ? posText("โหมดนับปิดตา") : posText("ยอดในลิ้นชัก"),
       glyph: '▦',
       ink: colors.primary,
       background: `${colors.primary}0e`,
@@ -182,17 +184,17 @@ export default function ShiftScreen({ onBack }: Props) {
   const sectionNavigation = (
     <View style={[styles.sectionTabs, { borderColor: colors.border }]}>
       <SectionTab
-        label="ภาพรวม"
+        label={posText("ภาพรวม")}
         selected={section === 'OVERVIEW'}
         onPress={() => setSection('OVERVIEW')}
       />
       <SectionTab
-        label="เงินเข้าออก"
+        label={posText("เงินเข้าออก")}
         selected={section === 'MOVEMENTS'}
         onPress={() => setSection('MOVEMENTS')}
       />
       <SectionTab
-        label="ประวัติกะ"
+        label={posText("ประวัติกะ")}
         selected={section === 'HISTORY'}
         onPress={() => setSection('HISTORY')}
       />
@@ -254,36 +256,34 @@ export default function ShiftScreen({ onBack }: Props) {
         </Text>
       </View>
       <Text style={[typography.bodyStrong, { color: colors.text }]}>
-        ยังไม่มีรายการเงินเข้า/ออก
-      </Text>
+        {posText("ยังไม่มีรายการเงินเข้า/ออก") + " "}</Text>
       <Text
         style={[
           typography.caption,
           { color: colors.textMuted, textAlign: 'center' },
         ]}
       >
-        รายการที่บันทึกระหว่างกะจะแสดงที่นี่
-      </Text>
+        {posText("รายการที่บันทึกระหว่างกะจะแสดงที่นี่") + " "}</Text>
     </View>
   );
 
   const closeSummary = shift.closeSummary;
   const reconciliationCard = (
     <Card style={styles.primaryPanel}>
-      <PanelHeading glyph="▤" title="สรุปการปิดกะ" />
+      <PanelHeading glyph="▤" title={posText("สรุปการปิดกะ")} />
       {closeSummary ? (
         <>
           <View
             style={[styles.reconciliationRows, { borderColor: colors.border }]}
           >
             <Row
-              label="นับได้จริง"
+              label={posText("นับได้จริง")}
               value={formatBaht(closeSummary.countedCash)}
               colors={colors}
               strong
             />
             <Row
-              label="ควรมี"
+              label={posText("ควรมี")}
               value={formatBaht(closeSummary.expectedCash)}
               colors={colors}
               strong
@@ -293,8 +293,7 @@ export default function ShiftScreen({ onBack }: Props) {
             />
             <View style={styles.varianceRow}>
               <Text style={[typography.body, { color: colors.textMuted }]}>
-                ผลต่าง
-              </Text>
+                {posText("ผลต่าง") + " "}</Text>
               <StatusPill
                 label={varianceLabel(closeSummary.variance)}
                 tone={closeSummary.variance === 0 ? 'success' : 'danger'}
@@ -340,11 +339,11 @@ export default function ShiftScreen({ onBack }: Props) {
                 ]}
               >
                 {closeSummary.variance === 0
-                  ? 'ยอดเงินตรงกัน'
-                  : 'ยอดเงินมีผลต่าง'}
+                  ? posText("ยอดเงินตรงกัน")
+                  : posText("ยอดเงินมีผลต่าง")}
               </Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                ปิดกะเมื่อ {formatShiftTime(closeSummary.closedAt)}
+                {posText("ปิดกะเมื่อ") + " "}{formatShiftTime(closeSummary.closedAt)}
               </Text>
             </View>
           </View>
@@ -355,13 +354,13 @@ export default function ShiftScreen({ onBack }: Props) {
             style={[styles.reconciliationRows, { borderColor: colors.border }]}
           >
             <Row
-              label="เปิดกะเมื่อ"
+              label={posText("เปิดกะเมื่อ")}
               value={formatShiftTime(shift.openedAt)}
               colors={colors}
             />
-            <Row label="ผู้เปิดกะ" value={shift.openedByName} colors={colors} />
+            <Row label={posText("ผู้เปิดกะ")} value={shift.openedByName} colors={colors} />
             <Row
-              label="เงินที่ควรมี"
+              label={posText("เงินที่ควรมี")}
               value={expectedCashLabel}
               colors={colors}
               strong
@@ -380,11 +379,9 @@ export default function ShiftScreen({ onBack }: Props) {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[typography.bodyStrong, { color: colors.primary }]}>
-                กะกำลังเปิดอยู่
-              </Text>
+                {posText("กะกำลังเปิดอยู่") + " "}</Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                ปิดกะแล้วผลต่างจะแสดงในส่วนนี้
-              </Text>
+                {posText("ปิดกะแล้วผลต่างจะแสดงในส่วนนี้") + " "}</Text>
             </View>
           </View>
         </>
@@ -394,41 +391,41 @@ export default function ShiftScreen({ onBack }: Props) {
 
   const cashDetailCard = (
     <Card style={styles.detailPanel}>
-      <PanelHeading glyph="฿" title="รายละเอียดเงินสด" />
+      <PanelHeading glyph={posText("฿")} title={posText("รายละเอียดเงินสด")} />
       <Row
-        label="เงินทอนตั้งต้น"
+        label={posText("เงินทอนตั้งต้น")}
         value={formatBaht(shift.openingFloat)}
         colors={colors}
       />
       <Row
-        label="ยอดขายเงินสด"
+        label={posText("ยอดขายเงินสด")}
         value={formatBaht(shift.cashSales)}
         colors={colors}
       />
       {shift.cashRefunds > 0 ? (
         <Row
-          label="คืนเงินสด"
+          label={posText("คืนเงินสด")}
           value={`−${formatBaht(shift.cashRefunds)}`}
           colors={colors}
         />
       ) : null}
       {shift.movementIn > 0 ? (
         <Row
-          label="เงินเข้าลิ้นชัก"
+          label={posText("เงินเข้าลิ้นชัก")}
           value={`+${formatBaht(shift.movementIn)}`}
           colors={colors}
         />
       ) : null}
       {shift.movementOut > 0 ? (
         <Row
-          label="เงินออกจากลิ้นชัก"
+          label={posText("เงินออกจากลิ้นชัก")}
           value={`−${formatBaht(shift.movementOut)}`}
           colors={colors}
         />
       ) : null}
       {shift.roundingTotal !== 0 ? (
         <Row
-          label="ปัดเศษเงินสด"
+          label={posText("ปัดเศษเงินสด")}
           value={`${shift.roundingTotal < 0 ? '−' : '+'}${formatBaht(
             Math.abs(shift.roundingTotal),
           )}`}
@@ -436,8 +433,7 @@ export default function ShiftScreen({ onBack }: Props) {
         />
       ) : null}
       <Text style={[typography.caption, { color: colors.textSoft }]}>
-        นับเฉพาะเงินสด — QR/บัตร และการคืนที่ยังรอยืนยันไม่อยู่ในลิ้นชัก
-      </Text>
+        {posText("นับเฉพาะเงินสด — QR/บัตร และการคืนที่ยังรอยืนยันไม่อยู่ในลิ้นชัก") + " "}</Text>
     </Card>
   );
 
@@ -449,12 +445,12 @@ export default function ShiftScreen({ onBack }: Props) {
           : styles.secondaryPanel
       }
     >
-      <PanelHeading glyph="↕" title="รายการเงินเข้า/ออก" />
+      <PanelHeading glyph="↕" title={posText("รายการเงินเข้า/ออก")} />
       {movementList}
       <View style={styles.movementButtons}>
         <Button
-          label="＋ บันทึกเงินเข้า"
-          accessibilityLabel="บันทึกเงินเข้าลิ้นชัก"
+          label={posText("＋ บันทึกเงินเข้า")}
+          accessibilityLabel={posText("บันทึกเงินเข้าลิ้นชัก")}
           variant="secondary"
           style={{ flex: 1 }}
           disabled={!shift.isOpen}
@@ -465,8 +461,8 @@ export default function ShiftScreen({ onBack }: Props) {
           }}
         />
         <Button
-          label="− บันทึกเงินออก"
-          accessibilityLabel="บันทึกเงินออกจากลิ้นชัก"
+          label={posText("− บันทึกเงินออก")}
+          accessibilityLabel={posText("บันทึกเงินออกจากลิ้นชัก")}
           variant="secondary"
           style={{ flex: 1 }}
           disabled={!shift.isOpen}
@@ -482,15 +478,15 @@ export default function ShiftScreen({ onBack }: Props) {
 
   const historyCard = (
     <Card style={styles.historyPanel}>
-      <PanelHeading glyph="◷" title="ประวัติกะล่าสุด" />
+      <PanelHeading glyph="◷" title={posText("ประวัติกะล่าสุด")} />
       {closeSummary ? (
         <View style={[styles.historyItem, { borderColor: colors.border }]}>
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={[typography.bodyStrong, { color: colors.text }]}>
-              ปิดกะแล้ว · {formatShiftTime(closeSummary.closedAt)}
+              {posText("ปิดกะแล้ว ·") + " "}{formatShiftTime(closeSummary.closedAt)}
             </Text>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
-              นับได้ {formatBaht(closeSummary.countedCash)} · ควรมี{' '}
+              {posText("นับได้") + " "}{formatBaht(closeSummary.countedCash)} {" " + posText("· ควรมี")}{' '}
               {formatBaht(closeSummary.expectedCash)}
             </Text>
           </View>
@@ -505,8 +501,7 @@ export default function ShiftScreen({ onBack }: Props) {
             ◷
           </Text>
           <Text style={[typography.bodyStrong, { color: colors.text }]}>
-            ยังไม่มีประวัติปิดกะ
-          </Text>
+            {posText("ยังไม่มีประวัติปิดกะ") + " "}</Text>
         </View>
       )}
     </Card>
@@ -516,8 +511,8 @@ export default function ShiftScreen({ onBack }: Props) {
     <View style={styles.actions}>
       {!shift.isOpen ? (
         <Button
-          label="▶  เปิดกะใหม่"
-          accessibilityLabel="เปิดกะใหม่"
+          label={posText("▶  เปิดกะใหม่")}
+          accessibilityLabel={posText("เปิดกะใหม่")}
           fullWidth
           onPress={() => {
             setError('');
@@ -529,8 +524,8 @@ export default function ShiftScreen({ onBack }: Props) {
         />
       ) : (
         <Button
-          label="ปิดกะ"
-          accessibilityLabel="ปิดกะและนับเงินในลิ้นชัก"
+          label={posText("ปิดกะ")}
+          accessibilityLabel={posText("ปิดกะและนับเงินในลิ้นชัก")}
           variant="danger"
           fullWidth
           onPress={() => {
@@ -542,13 +537,13 @@ export default function ShiftScreen({ onBack }: Props) {
       )}
       <View style={styles.secondaryActions}>
         <Button
-          label="⚙  ตั้งค่าเครื่อง"
+          label={posText("⚙  ตั้งค่าเครื่อง")}
           variant="secondary"
           style={{ flex: 1 }}
           onPress={openSettings}
         />
         <Button
-          label="♙  เปลี่ยนผู้ปฏิบัติงาน"
+          label={posText("♙  เปลี่ยนผู้ปฏิบัติงาน")}
           variant="secondary"
           style={{ flex: 1 }}
           onPress={() => {
@@ -587,7 +582,7 @@ export default function ShiftScreen({ onBack }: Props) {
             <Text
               style={[
                 styles.summaryValue,
-                { color: item.label === 'สถานะกะ' ? item.ink : colors.text },
+                { color: item.label === posText("สถานะกะ") ? item.ink : colors.text },
               ]}
               numberOfLines={1}
               adjustsFontSizeToFit
@@ -625,12 +620,12 @@ export default function ShiftScreen({ onBack }: Props) {
 
   const pageHeader = onBack ? (
     <ScreenHeader
-      title="กะและลิ้นชัก"
+      title={posText("กะและลิ้นชัก")}
       subtitle={branchLabel}
       onBack={onBack}
       right={
         <Button
-          label="↻ รีเฟรช"
+          label={posText("↻ รีเฟรช")}
           variant="secondary"
           loading={shift.loading}
           onPress={shift.refresh}
@@ -646,11 +641,11 @@ export default function ShiftScreen({ onBack }: Props) {
             { color: colors.text },
           ]}
         >
-          {isTablet ? 'ภาพรวมกะและลิ้นชัก' : 'กะและลิ้นชัก'}
+          {isTablet ? posText("ภาพรวมกะและลิ้นชัก") : posText("กะและลิ้นชัก")}
         </Text>
         <Text style={[typography.body, { color: colors.textMuted }]}>
           {isTablet
-            ? `${branchLabel} · ${new Date().toLocaleString('th-TH', {
+            ? `${branchLabel} · ${new Date().toLocaleString(posLocale(), {
                 dateStyle: 'medium',
                 timeStyle: 'short',
               })}`
@@ -658,7 +653,7 @@ export default function ShiftScreen({ onBack }: Props) {
         </Text>
       </View>
       <Button
-        label="↻ รีเฟรช"
+        label={posText("↻ รีเฟรช")}
         variant="secondary"
         loading={shift.loading}
         onPress={shift.refresh}
@@ -709,8 +704,7 @@ export default function ShiftScreen({ onBack }: Props) {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[typography.title, { color: colors.text }]}>
-                  กะและลิ้นชัก
-                </Text>
+                  {posText("กะและลิ้นชัก") + " "}</Text>
                 <Text style={[typography.body, { color: colors.textMuted }]}>
                   {branchLabel}
                 </Text>
@@ -720,19 +714,19 @@ export default function ShiftScreen({ onBack }: Props) {
             <View style={styles.sidebarSections}>
               <SidebarSectionButton
                 glyph="▣"
-                label="ภาพรวมกะ"
+                label={posText("ภาพรวมกะ")}
                 selected={section === 'OVERVIEW'}
                 onPress={() => setSection('OVERVIEW')}
               />
               <SidebarSectionButton
                 glyph="↕"
-                label="เงินเข้า/ออก"
+                label={posText("เงินเข้า/ออก")}
                 selected={section === 'MOVEMENTS'}
                 onPress={() => setSection('MOVEMENTS')}
               />
               <SidebarSectionButton
                 glyph="◷"
-                label="ประวัติกะ"
+                label={posText("ประวัติกะ")}
                 selected={section === 'HISTORY'}
                 onPress={() => setSection('HISTORY')}
               />
@@ -745,8 +739,7 @@ export default function ShiftScreen({ onBack }: Props) {
               <Text
                 style={[typography.captionStrong, { color: colors.textSoft }]}
               >
-                สถานะปัจจุบัน
-              </Text>
+                {posText("สถานะปัจจุบัน") + " "}</Text>
               <View
                 style={[
                   styles.sidebarStatusCard,
@@ -776,7 +769,7 @@ export default function ShiftScreen({ onBack }: Props) {
                       },
                     ]}
                   >
-                    {shift.isOpen ? 'เปิดอยู่' : 'ปิดแล้ว'}
+                    {shift.isOpen ? posText("เปิดอยู่") : posText("ปิดแล้ว")}
                   </Text>
                   <Text
                     style={[typography.caption, { color: colors.textMuted }]}
@@ -822,18 +815,17 @@ export default function ShiftScreen({ onBack }: Props) {
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={[typography.subtitle, { color: colors.text }]}>
                 {movementType === 'IN'
-                  ? 'เงินเข้าลิ้นชัก'
-                  : 'เงินออกจากลิ้นชัก'}
+                  ? posText("เงินเข้าลิ้นชัก")
+                  : posText("เงินออกจากลิ้นชัก")}
               </Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                รายการจะบันทึกในลิ้นชักของกะปัจจุบันบนเซิร์ฟเวอร์
-              </Text>
+                {posText("รายการจะบันทึกในลิ้นชักของกะปัจจุบันบนเซิร์ฟเวอร์") + " "}</Text>
               <TextInput
-                accessibilityLabel="จำนวนเงิน"
+                accessibilityLabel={posText("จำนวนเงิน")}
                 editable={!savingMovement}
                 value={amount}
                 onChangeText={setAmount}
-                placeholder="จำนวนเงิน"
+                placeholder={posText("จำนวนเงิน")}
                 placeholderTextColor={colors.textSoft}
                 keyboardType="decimal-pad"
                 style={[
@@ -849,14 +841,13 @@ export default function ShiftScreen({ onBack }: Props) {
                       { color: colors.textMuted },
                     ]}
                   >
-                    ผู้อนุมัติคนที่สอง
-                  </Text>
+                    {posText("ผู้อนุมัติคนที่สอง") + " "}</Text>
                   <View style={{ gap: spacing.sm, marginBottom: spacing.sm }}>
                     {approvers.map(approver => (
                       <Button
                         key={approver.id}
                         label={`${approver.name ?? approver.id}${
-                          approver.hasPin ? '' : ' · ยังไม่ได้ตั้ง PIN'
+                          approver.hasPin ? '' : posText(" · ยังไม่ได้ตั้ง PIN")
                         }`}
                         variant={
                           approverId === approver.id ? 'primary' : 'secondary'
@@ -868,11 +859,11 @@ export default function ShiftScreen({ onBack }: Props) {
                     ))}
                   </View>
                   <TextInput
-                    accessibilityLabel="PIN ผู้อนุมัติเงินออก"
+                    accessibilityLabel={posText("PIN ผู้อนุมัติเงินออก")}
                     editable={!savingMovement}
                     value={approverPin}
                     onChangeText={setApproverPin}
-                    placeholder="PIN ผู้อนุมัติ"
+                    placeholder={posText("PIN ผู้อนุมัติ")}
                     placeholderTextColor={colors.textSoft}
                     keyboardType="number-pad"
                     secureTextEntry
@@ -884,11 +875,11 @@ export default function ShiftScreen({ onBack }: Props) {
                 </>
               ) : null}
               <TextInput
-                accessibilityLabel="เหตุผล"
+                accessibilityLabel={posText("เหตุผล")}
                 editable={!savingMovement}
                 value={reason}
                 onChangeText={setReason}
-                placeholder="เหตุผล เช่น เติมเงินทอน / ซื้อวัตถุดิบ"
+                placeholder={posText("เหตุผล เช่น เติมเงินทอน / ซื้อวัตถุดิบ")}
                 placeholderTextColor={colors.textSoft}
                 style={[
                   styles.input,
@@ -903,15 +894,15 @@ export default function ShiftScreen({ onBack }: Props) {
                 </Text>
               ) : null}
               <Button
-                label="บันทึก"
-                accessibilityLabel="บันทึกรายการเงินเข้า/ออก"
+                label={posText("บันทึก")}
+                accessibilityLabel={posText("บันทึกรายการเงินเข้า/ออก")}
                 loading={savingMovement}
                 fullWidth
                 style={{ marginTop: spacing.md }}
                 onPress={submitMovement}
               />
               <Button
-                label="ยกเลิก"
+                label={posText("ยกเลิก")}
                 variant="secondary"
                 fullWidth
                 style={{ marginTop: spacing.sm }}
@@ -942,18 +933,16 @@ export default function ShiftScreen({ onBack }: Props) {
           >
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={[typography.subtitle, { color: colors.text }]}>
-                ปิดกะ
-              </Text>
+                {posText("ปิดกะ") + " "}</Text>
               {/* ไม่บอก "ควรมีเท่าไร" ก่อนนับ — การนับแบบเห็นคำตอบก่อนไม่ใช่การนับ
                   (ฝั่งเว็บมีโหมดนับปิดตาด้วยเหตุผลเดียวกัน) */}
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                นับเงินในลิ้นชักแล้วกรอกยอดจริง ผลต่างจะแสดงหลังยืนยัน
-              </Text>
+                {posText("นับเงินในลิ้นชักแล้วกรอกยอดจริง ผลต่างจะแสดงหลังยืนยัน") + " "}</Text>
               <TextInput
-                accessibilityLabel="เงินสดที่นับได้"
+                accessibilityLabel={posText("เงินสดที่นับได้")}
                 value={countedCash}
                 onChangeText={setCountedCash}
-                placeholder="เงินสดที่นับได้"
+                placeholder={posText("เงินสดที่นับได้")}
                 placeholderTextColor={colors.textSoft}
                 keyboardType="decimal-pad"
                 style={[
@@ -969,15 +958,15 @@ export default function ShiftScreen({ onBack }: Props) {
                 </Text>
               ) : null}
               <Button
-                label="ยืนยันปิดกะ"
-                accessibilityLabel="ยืนยันปิดกะ"
+                label={posText("ยืนยันปิดกะ")}
+                accessibilityLabel={posText("ยืนยันปิดกะ")}
                 variant="danger"
                 fullWidth
                 style={{ marginTop: spacing.md }}
                 onPress={submitClose}
               />
               <Button
-                label="ยกเลิก"
+                label={posText("ยกเลิก")}
                 variant="secondary"
                 fullWidth
                 style={{ marginTop: spacing.sm }}
@@ -1006,16 +995,14 @@ export default function ShiftScreen({ onBack }: Props) {
             ]}
           >
             <Text style={[typography.subtitle, { color: colors.text }]}>
-              เปิดกะ
-            </Text>
+              {posText("เปิดกะ") + " "}</Text>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
-              ตรวจนับเงินทอนตั้งต้นก่อนเริ่มรับชำระ
-            </Text>
+              {posText("ตรวจนับเงินทอนตั้งต้นก่อนเริ่มรับชำระ") + " "}</Text>
             <TextInput
-              accessibilityLabel="เงินทอนตั้งต้น"
+              accessibilityLabel={posText("เงินทอนตั้งต้น")}
               value={openingFloat}
               onChangeText={setOpeningFloat}
-              placeholder="เงินทอนตั้งต้น"
+              placeholder={posText("เงินทอนตั้งต้น")}
               placeholderTextColor={colors.textSoft}
               keyboardType="decimal-pad"
               style={[
@@ -1031,13 +1018,13 @@ export default function ShiftScreen({ onBack }: Props) {
               </Text>
             ) : null}
             <Button
-              label="ยืนยันเปิดกะ"
+              label={posText("ยืนยันเปิดกะ")}
               fullWidth
               style={{ marginTop: spacing.md }}
               onPress={submitOpen}
             />
             <Button
-              label="ยกเลิก"
+              label={posText("ยกเลิก")}
               variant="secondary"
               fullWidth
               style={{ marginTop: spacing.sm }}
@@ -1051,26 +1038,26 @@ export default function ShiftScreen({ onBack }: Props) {
 }
 
 function formatBaht(value: number) {
-  return `฿${value.toLocaleString('th-TH', {
+  return posText("฿{v0}", { v0: value.toLocaleString('th-TH', {
     minimumFractionDigits: value % 1 === 0 ? 0 : 2,
     maximumFractionDigits: 2,
-  })}`;
+  }) });
 }
 
 function formatShiftTime(value: string) {
   const timestamp = new Date(value);
   if (Number.isNaN(timestamp.getTime())) return value;
-  return timestamp.toLocaleString('th-TH', {
+  return timestamp.toLocaleString(posLocale(), {
     dateStyle: 'medium',
     timeStyle: 'short',
   });
 }
 
 function varianceLabel(variance: number) {
-  if (variance === 0) return 'ตรงพอดี';
+  if (variance === 0) return posText("ตรงพอดี");
   return variance > 0
-    ? `เกิน ${formatBaht(variance)}`
-    : `ขาด ${formatBaht(Math.abs(variance))}`;
+    ? posText("เกิน {v0}", { v0: formatBaht(variance) })
+    : posText("ขาด {v0}", { v0: formatBaht(Math.abs(variance)) });
 }
 
 function PanelHeading({ glyph, title }: { glyph: string; title: string }) {

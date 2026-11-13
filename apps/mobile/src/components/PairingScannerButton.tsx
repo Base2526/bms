@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -23,6 +24,7 @@ function sameTarget(a: PairingTarget | null, b: PairingTarget | null) {
 
 /** Separate from product scanning: credentials must never enter SKU lookup or scan history. */
 export function PairingScannerButton(props: Props) {
+  usePosLanguage();
   const latest = useRef(props);
   const pairingVersion = useRef(0);
   // Compare every observed change, not just the final value: A -> B -> A invalidates old scans too.
@@ -91,8 +93,8 @@ export function PairingScannerButton(props: Props) {
       candidate = parsePairingQr(result.value);
       if (!candidate) {
         Alert.alert(
-          'QR จับคู่ไม่ถูกต้อง',
-          'ใช้ QR จากหน้าเครื่องขายในระบบหลังบ้านที่เปิดผ่าน HTTPS ต้องมีทั้งเซิร์ฟเวอร์และ token ครบถ้วน',
+          posText("QR จับคู่ไม่ถูกต้อง"),
+          posText("ใช้ QR จากหน้าเครื่องขายในระบบหลังบ้านที่เปิดผ่าน HTTPS ต้องมีทั้งเซิร์ฟเวอร์และ token ครบถ้วน"),
         );
         return;
       }
@@ -107,17 +109,17 @@ export function PairingScannerButton(props: Props) {
           };
           cancelConfirmation.current = cancel;
           Alert.alert(
-            'เปลี่ยนการจับคู่เครื่อง?',
-            `เดิม: ${displayHost(previous.serverUrl)}\nใหม่: ${displayHost(
+            posText("เปลี่ยนการจับคู่เครื่อง?"),
+            posText("เดิม: {v0}\nใหม่: {v1}\nจะตรวจและใช้ token จาก QR แทนตัวเดิม", { v0: displayHost(previous.serverUrl), v1: displayHost(
               candidate!.serverUrl,
-            )}\nจะตรวจและใช้ token จาก QR แทนตัวเดิม`,
+            ) }),
             [
               {
-                text: 'ยกเลิก',
+                text: posText("ยกเลิก"),
                 style: 'cancel',
                 onPress: cancel,
               },
-              { text: 'เปลี่ยนการจับคู่', onPress: () => finish(true) },
+              { text: posText("เปลี่ยนการจับคู่"), onPress: () => finish(true) },
             ],
             { cancelable: true, onDismiss: cancel },
           );
@@ -129,19 +131,19 @@ export function PairingScannerButton(props: Props) {
       if (!active()) return;
       latest.current.onPaired();
       Alert.alert(
-        'จับคู่สำเร็จ',
-        'บันทึก token แล้ว กลับหน้าเข้าสู่ระบบและใช้ PIN พนักงานเพื่อเริ่มขาย',
+        posText("จับคู่สำเร็จ"),
+        posText("บันทึก token แล้ว กลับหน้าเข้าสู่ระบบและใช้ PIN พนักงานเพื่อเริ่มขาย"),
       );
     } catch (error) {
       if (!active()) return;
       const message = error instanceof Error ? error.message : '';
       if (!candidate && /cancell?ed/i.test(message)) return;
       Alert.alert(
-        candidate ? 'จับคู่ไม่สำเร็จ' : 'เปิดกล้องสแกนไม่ได้',
+        candidate ? posText("จับคู่ไม่สำเร็จ") : posText("เปิดกล้องสแกนไม่ได้"),
         candidate
           ? redactDeviceToken(message, candidate.token) ||
-              'ตรวจ token หรือบันทึกไม่สำเร็จ กรุณาลองใหม่'
-          : 'ตรวจสิทธิ์กล้องและความพร้อมของเครื่อง หากยังสแกนไม่ได้ให้คัดลอกลิงก์จับคู่จากหลังบ้านมาวาง',
+              posText("ตรวจ token หรือบันทึกไม่สำเร็จ กรุณาลองใหม่")
+          : posText("ตรวจสิทธิ์กล้องและความพร้อมของเครื่อง หากยังสแกนไม่ได้ให้คัดลอกลิงก์จับคู่จากหลังบ้านมาวาง"),
       );
     } finally {
       locked.current = false;
@@ -155,7 +157,7 @@ export function PairingScannerButton(props: Props) {
 
   return (
     <Button
-      label="สแกน QR เพื่อจับคู่"
+      label={posText("สแกน QR เพื่อจับคู่")}
       onPress={() => {
         scan();
       }}

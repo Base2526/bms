@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import { Table, Tag, Switch, Select, Button, Space, Alert, message, Statistic, Row, Col, Card, Popconfirm } from "antd";
 import { ReloadOutlined, ShopOutlined, LoginOutlined, DeleteOutlined } from "@ant-design/icons";
@@ -23,6 +25,7 @@ const M_DELETE = gql`mutation ($tenantId: ID!) { bmsDeleteTenant(tenantId: $tena
 const baht = (n: number) => `${Number(n || 0).toLocaleString()} ฿`;
 
 export default function Page() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [setActive] = useMutation(M_ACTIVE, {
@@ -93,7 +96,7 @@ export default function Page() {
     },
     {
       title: t("admin_tenants.col_created_at"), dataIndex: "created_at", key: "created_at", width: 120,
-      render: (v: string) => (v ? new Date(v).toLocaleDateString("th-TH") : "-"),
+      render: (v: string) => (v ? new Date(v).toLocaleDateString(uiText.locale) : "-"),
     },
     {
       title: "", key: "act", width: 180, fixed: "right" as const,

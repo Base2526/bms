@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import {
   Table,
@@ -143,6 +145,7 @@ const orderSubtotal = (order: Order) =>
   order.items.reduce((sum, it) => sum + (Number(it.unit_price) || 0) * (Number(it.qty) || 0), 0);
 
 function OrdersManagement() {
+  const uiText = useUiText();
   const { t, lang } = useI18n();
   const STATUS_LABEL = useMemo(() => getStatusLabel(t), [t]);
   const { can } = useBmsPermissions();
@@ -241,11 +244,11 @@ function OrdersManagement() {
 
   const columns = useMemo(
     () => [
-      { title: "Order", dataIndex: "id", key: "id", width: 100,
+      { title: uiText("admin_ui.en_order_1d757"), dataIndex: "id", key: "id", width: 100,
         render: (id: string) => <Typography.Text code>{id.slice(0, 8)}</Typography.Text> },
-      { title: "Channel", dataIndex: "channel", key: "channel", width: 90,
+      { title: uiText("admin_ui.en_channel_879f0"), dataIndex: "channel", key: "channel", width: 90,
         render: (c: string) => <Tag color={CHANNEL_COLOR[c] || "default"}>{c}</Tag> },
-      { title: "Customer", dataIndex: "customer_ref", key: "customer_ref",
+      { title: uiText("admin_ui.en_customer_0e857"), dataIndex: "customer_ref", key: "customer_ref",
         render: (c: string | null) => c || <span style={{ color: "#999" }}>—</span> },
       {
         title: t("admin_orders.col_branch"), key: "branch", width: 170,
@@ -259,7 +262,7 @@ function OrdersManagement() {
           </Space>
         ) : <Typography.Text type="secondary">—</Typography.Text>,
       },
-      { title: "Items", key: "items",
+      { title: uiText("admin_ui.en_items_44d25"), key: "items",
         render: (_: any, r: Order) => <span>{t("admin_orders.col_items", { qty: r.items.reduce((n, it) => n + it.qty, 0), count: r.items.length })}</span> },
       { title: t("admin_orders.col_amount_due"), dataIndex: "amount_due", key: "amount_due", width: 130, align: "right" as const,
         render: (v: number, r: Order) => (
@@ -297,14 +300,14 @@ function OrdersManagement() {
             )}
           </Space>
         ) },
-      { title: "Status", dataIndex: "status", key: "status", width: 130,
+      { title: uiText("admin_ui.en_status_bae7d"), dataIndex: "status", key: "status", width: 130,
         render: (s: OrderStatus) => <Tag color={STATUS_COLOR[s]}>{s} · {STATUS_LABEL[s]}</Tag> },
       { title: t("admin_orders.col_updated"), dataIndex: "updated_at", key: "updated_at", width: 160,
-        render: (d: string) => new Date(d).toLocaleString() },
+        render: (d: string) => new Date(d).toLocaleString(uiText.locale) },
       { title: t("admin_orders.col_actions"), key: "actions", width: 220,
         render: (_: any, r: Order) => <Space size="small">{actionsFor(r)}</Space> },
     ],
-    [busy, can, t, STATUS_LABEL]
+    [uiText, busy, can, t, STATUS_LABEL]
   );
 
   if (error) return <Alert closable type="error" message={t("admin_orders.load_error")} description={error.message} showIcon />;
@@ -356,15 +359,15 @@ function OrdersManagement() {
           rowKey="id" loading={loading} dataSource={orders} columns={columns}
           scroll={{ x: "max-content" }}
           expandable={{ expandedRowRender: (r: Order) => <OrderDetails order={r} /> }}
-          pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Total ${t} order(s)` }}
+          pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => uiText("admin_ui.en_total_order_s_04c66", { v0: t }) }}
         />
       )}
     </div>
   );
 }
 
-const ITEM_COLUMNS = [
-  { title: "สินค้า / SKU", dataIndex: "product_sku", key: "sku",
+const ITEM_COLUMNS = (uiText: UiTranslator = thaiUiText) => ([
+  { title: uiText("admin_ui.product_sku_c1e5b"), dataIndex: "product_sku", key: "sku",
     render: (_: string, it: OrderItem) => (
       <Space direction="vertical" size={0}>
         <Typography.Text>{it.product_name || it.product_sku}</Typography.Text>
@@ -373,13 +376,13 @@ const ITEM_COLUMNS = [
         )}
       </Space>
     ) },
-  { title: "Size", dataIndex: "size", key: "size", width: 80 },
-  { title: "Qty", dataIndex: "qty", key: "qty", width: 80, align: "right" as const },
-  { title: "Unit Price", dataIndex: "unit_price", key: "up", width: 120, align: "right" as const,
+  { title: uiText("admin_ui.en_size_b7152"), dataIndex: "size", key: "size", width: 80 },
+  { title: uiText("admin_ui.en_qty_1e5ff"), dataIndex: "qty", key: "qty", width: 80, align: "right" as const },
+  { title: uiText("admin_ui.en_unit_price_1eea6"), dataIndex: "unit_price", key: "up", width: 120, align: "right" as const,
     render: (v: number) => money(v) },
-  { title: "Line Total", key: "lt", width: 120, align: "right" as const,
+  { title: uiText("admin_ui.en_line_total_2d1a0"), key: "lt", width: 120, align: "right" as const,
     render: (_: any, it: OrderItem) => money(it.line_amount) },
-];
+]);
 
 /** เส้นทางออร์เดอร์ + รายการสินค้า + สรุปยอด — ใช้ทั้งแถวขยายของตาราง (desktop) และการ์ด (มือถือ) */
 /**
@@ -416,6 +419,7 @@ function useVisibleRowWidth() {
 }
 
 function OrderDetails({ order: r }: { order: Order }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { ref: wrapRef, width: visibleWidth } = useVisibleRowWidth();
   // ยอดคืนจาก journey (bmsOrderJourney) — คนละ query กับ order list ด้านบน
@@ -443,11 +447,11 @@ function OrderDetails({ order: r }: { order: Order }) {
         {r.fulfillmentType && <Tag color="purple">
           {r.fulfillmentType === "PICKUP" ? t("admin_orders.fulfillment_pickup") : t("admin_orders.fulfillment_delivery")}
         </Tag>}
-        {r.promisedAt && <Tag>{t("admin_orders.promised_at")}: {new Date(r.promisedAt).toLocaleString()}</Tag>}
+        {r.promisedAt && <Tag>{t("admin_orders.promised_at")}: {new Date(r.promisedAt).toLocaleString(uiText.locale)}</Tag>}
       </div>
       <div>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>{t("admin_orders.items_label")}</Typography.Text>
-        <Table style={{ marginTop: 6 }} rowKey={(it) => `${it.product_sku}-${it.size}`} dataSource={r.items} columns={ITEM_COLUMNS} pagination={false} size="small" scroll={{ x: "max-content" }} />
+        <Table style={{ marginTop: 6 }} rowKey={(it) => `${it.product_sku}-${it.size}`} dataSource={r.items} columns={ITEM_COLUMNS(uiText)} pagination={false} size="small" scroll={{ x: "max-content" }} />
         <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
           <Space direction="vertical" size={2} style={{ minWidth: 0, width: "100%", maxWidth: 320 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
@@ -503,6 +507,7 @@ function OrderDetails({ order: r }: { order: Order }) {
 
 /** 1 ออร์เดอร์ = 1 การ์ดบนมือถือ — รายละเอียด (journey/รายการ) กางในการ์ดเดียวกัน */
 function MobileOrderCard({ order: r, actions }: { order: Order; actions: React.ReactNode }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const STATUS_LABEL = useMemo(() => getStatusLabel(t), [t]);
   const [open, setOpen] = useState(false);
@@ -549,7 +554,7 @@ function MobileOrderCard({ order: r, actions }: { order: Order; actions: React.R
             </>
           ),
         },
-        { label: t("admin_orders.updated_label"), value: fmtDT(r.updated_at) },
+        { label: t("admin_orders.updated_label"), value: fmtDT(r.updated_at, uiText) },
       ]}
       footer={open ? <div style={{ marginTop: 12 }}><OrderDetails order={r} /></div> : null}
       actions={
@@ -589,8 +594,8 @@ type JStep = { status: string; at: string | null; actorName: string | null; reac
 type JEvent = { kind: string; at: string; text: string; actorName: string | null };
 
 const CHANNEL_COLOR_O: Record<string, string> = { line: "green", tiktok: "magenta", facebook: "blue", instagram: "purple", web: "geekblue" };
-const fmtDT = (iso?: string | null) =>
-  iso ? new Date(iso).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
+const fmtDT = (iso?: string | null, uiText: UiTranslator = thaiUiText) =>
+  iso ? new Date(iso).toLocaleString(uiText.locale, { timeZone: "Asia/Bangkok", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
 
 function StaffChip({ s, size = 22 }: { s: StaffRef; size?: number }) {
   return (
@@ -611,6 +616,7 @@ function OrderJourney({
   // (นอก component นี้) ต้องใช้ต่อ — บับเบิลขึ้นแทนยิง query ซ้ำ
   onReturnSummary?: (v: { returnedTotal: number; remainingAfterReturn: number } | null) => void;
 }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const { data, loading } = useQuery(Q_JOURNEY, { variables: { orderId }, fetchPolicy: "cache-and-network" });
@@ -631,10 +637,10 @@ function OrderJourney({
   const helpers: StaffRef[] = j.helpers || [];
 
   const stepItems = steps.map((s) => ({
-    title: <span style={{ fontSize: 12 }}>{s.status}</span>,
+    title: <span style={{ fontSize: 12 }}>{getStatusLabel(t)[s.status as OrderStatus] ?? s.status}</span>,
     description: (
       <span style={{ fontSize: 11, lineHeight: 1.3, display: "inline-block" }}>
-        {fmtDT(s.at)}{s.actorName ? <><br />{s.actorName}</> : null}
+        {fmtDT(s.at, uiText)}{s.actorName ? <><br />{s.actorName}</> : null}
       </span>
     ),
     status: s.branch ? ("error" as const) : s.reached ? ("finish" as const) : ("wait" as const),
@@ -741,7 +747,7 @@ function OrderJourney({
             <span style={{ fontSize: 12 }}>
               {e.text}
               <span style={{ color: "var(--app-muted, #888)" }}>
-                {" · "}{fmtDT(e.at)}{e.actorName ? ` · ${e.actorName}` : ""}
+                {" · "}{fmtDT(e.at, uiText)}{e.actorName ? ` · ${e.actorName}` : ""}
               </span>
             </span>
           ),

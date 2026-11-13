@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
@@ -24,6 +25,7 @@ export function NumericKeypad({
   onClear,
   disabled,
 }: Props) {
+  usePosLanguage();
   const { colors, spacing, radius, typography } = useTheme();
 
   return (
@@ -32,7 +34,7 @@ export function NumericKeypad({
         <View key={i} style={styles.row}>
           {row.map(key => {
             const isAction = key === 'clear' || key === 'back';
-            const label = key === 'clear' ? 'ล้าง' : key === 'back' ? '⌫' : key;
+            const label = key === 'clear' ? posText("ล้าง") : key === 'back' ? '⌫' : key;
             return (
               <Pressable
                 key={key}

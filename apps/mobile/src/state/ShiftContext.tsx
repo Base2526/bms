@@ -1,3 +1,4 @@
+import { posText, usePosLanguage, posLocale } from '../i18n/language';
 import React, {
   createContext,
   useCallback,
@@ -88,6 +89,7 @@ export function ShiftProvider({
   children: React.ReactNode;
   openedByName?: string;
 }) {
+  const language = usePosLanguage();
   const { session } = useSession();
   const { target } = useDevice();
   const credentials = session?.credentials;
@@ -135,14 +137,14 @@ export function ShiftProvider({
         type: movement.direction === 'OUT' ? 'OUT' : 'IN',
         amount: movement.amount,
         reason: movement.reason,
-        at: new Date(movement.createdAt).toLocaleTimeString('th-TH', {
+        at: new Date(movement.createdAt).toLocaleTimeString(posLocale(), {
           hour: '2-digit',
           minute: '2-digit',
         }),
         actorName: movement.actorName,
         approvedByName: movement.approvedByName,
       })),
-    [movementsQuery.data, shift],
+    [language, movementsQuery.data, shift],
   );
 
   const refresh = useCallback(async () => {
@@ -162,19 +164,19 @@ export function ShiftProvider({
       approval: MovementApproval = {},
       idempotencyKey = createIdempotencyKey('cash'),
     ) => {
-      if (!credentials) return 'กรุณาเข้าใช้งานใหม่';
+      if (!credentials) return posText("กรุณาเข้าใช้งานใหม่");
       const amount = Number(amountText);
       if (!Number.isFinite(amount) || amount <= 0) {
-        return 'จำนวนเงินต้องมากกว่า 0';
+        return posText("จำนวนเงินต้องมากกว่า 0");
       }
-      if (!reason.trim()) return 'ต้องระบุเหตุผลของเงินเข้า/ออก';
+      if (!reason.trim()) return posText("ต้องระบุเหตุผลของเงินเข้า/ออก");
       if (
         type === 'OUT' &&
         (!approval.approverUserId || !approval.approverPin)
       ) {
-        return 'เงินออกต้องมีผู้อนุมัติคนที่สองและ PIN';
+        return posText("เงินออกต้องมีผู้อนุมัติคนที่สองและ PIN");
       }
-      if (operationInFlight.current) return 'กำลังทำรายการกะ กรุณารอสักครู่';
+      if (operationInFlight.current) return posText("กำลังทำรายการกะ กรุณารอสักครู่");
       operationInFlight.current = true;
       try {
         const response = await movementMutation({
@@ -193,12 +195,12 @@ export function ShiftProvider({
         });
         const result = response.data?.bmsPosCashMovement;
         if (result?.status !== 'RECORDED') {
-          return result?.reason ?? result?.status ?? 'บันทึกเงินไม่สำเร็จ';
+          return result?.reason ?? result?.status ?? posText("บันทึกเงินไม่สำเร็จ");
         }
         await refresh().catch(() => undefined);
         return null;
       } catch (error) {
-        return error instanceof Error ? error.message : 'บันทึกเงินไม่สำเร็จ';
+        return error instanceof Error ? error.message : posText("บันทึกเงินไม่สำเร็จ");
       } finally {
         operationInFlight.current = false;
       }
@@ -208,8 +210,8 @@ export function ShiftProvider({
 
   const closeShift = useCallback(
     async (countedCashText: string) => {
-      if (!credentials) return 'กรุณาเข้าใช้งานใหม่';
-      if (operationInFlight.current) return 'กำลังทำรายการกะ กรุณารอสักครู่';
+      if (!credentials) return posText("กรุณาเข้าใช้งานใหม่");
+      if (operationInFlight.current) return posText("กำลังทำรายการกะ กรุณารอสักครู่");
       operationInFlight.current = true;
       try {
         let unresolved;
@@ -221,11 +223,11 @@ export function ShiftProvider({
           );
         } catch (error) {
           return error instanceof Error
-            ? `${error.message} · ยังปิดกะไม่ได้`
-            : 'ตรวจคิวออฟไลน์ไม่ได้ · ยังปิดกะไม่ได้';
+            ? posText("{v0} · ยังปิดกะไม่ได้", { v0: error.message })
+            : posText("ตรวจคิวออฟไลน์ไม่ได้ · ยังปิดกะไม่ได้");
         }
         if (unresolved.length > 0) {
-          return `ยังมีรายการออฟไลน์ ${unresolved.length} รายการ ต้องซิงก์หรือตรวจสอบก่อนปิดกะ`;
+          return posText("ยังมีรายการออฟไลน์ {v0} รายการ ต้องซิงก์หรือตรวจสอบก่อนปิดกะ", { v0: unresolved.length });
         }
         const countedCash = Number(countedCashText);
         if (
@@ -233,7 +235,7 @@ export function ShiftProvider({
           !Number.isFinite(countedCash) ||
           countedCash < 0
         ) {
-          return 'ยอดเงินสดที่นับได้ต้องเป็นตัวเลขไม่ติดลบ';
+          return posText("ยอดเงินสดที่นับได้ต้องเป็นตัวเลขไม่ติดลบ");
         }
         try {
           const response = await shiftMutation({
@@ -251,7 +253,7 @@ export function ShiftProvider({
           });
           const result = response.data?.bmsPosShift;
           if (result?.status !== 'CLOSED') {
-            return result?.reason ?? result?.status ?? 'ปิดกะไม่สำเร็จ';
+            return result?.reason ?? result?.status ?? posText("ปิดกะไม่สำเร็จ");
           }
           await Promise.all([
             bootstrap.refetch(),
@@ -259,7 +261,7 @@ export function ShiftProvider({
           ]).catch(() => undefined);
           return null;
         } catch (error) {
-          return error instanceof Error ? error.message : 'ปิดกะไม่สำเร็จ';
+          return error instanceof Error ? error.message : posText("ปิดกะไม่สำเร็จ");
         }
       } finally {
         operationInFlight.current = false;
@@ -277,11 +279,11 @@ export function ShiftProvider({
 
   const reopenShift = useCallback(
     async (openingFloat = shift?.countedCash ?? 0) => {
-      if (!credentials) return 'กรุณาเข้าใช้งานใหม่';
+      if (!credentials) return posText("กรุณาเข้าใช้งานใหม่");
       if (!Number.isFinite(openingFloat) || openingFloat < 0) {
-        return 'เงินทอนตั้งต้นต้องเป็นตัวเลขไม่ติดลบ';
+        return posText("เงินทอนตั้งต้นต้องเป็นตัวเลขไม่ติดลบ");
       }
-      if (operationInFlight.current) return 'กำลังทำรายการกะ กรุณารอสักครู่';
+      if (operationInFlight.current) return posText("กำลังทำรายการกะ กรุณารอสักครู่");
       operationInFlight.current = true;
       try {
         const response = await shiftMutation({
@@ -299,12 +301,12 @@ export function ShiftProvider({
         });
         const result = response.data?.bmsPosShift;
         if (result?.status !== 'OPENED') {
-          return result?.reason ?? result?.status ?? 'เปิดกะไม่สำเร็จ';
+          return result?.reason ?? result?.status ?? posText("เปิดกะไม่สำเร็จ");
         }
         await refresh().catch(() => undefined);
         return null;
       } catch (error) {
-        return error instanceof Error ? error.message : 'เปิดกะไม่สำเร็จ';
+        return error instanceof Error ? error.message : posText("เปิดกะไม่สำเร็จ");
       } finally {
         operationInFlight.current = false;
       }
@@ -333,7 +335,7 @@ export function ShiftProvider({
     () => ({
       id: shift?.id ?? null,
       isOpen: shift?.status === 'OPEN',
-      openedAt: shift?.openedAt ?? report?.openedAt ?? 'ยังไม่เปิดกะ',
+      openedAt: shift?.openedAt ?? report?.openedAt ?? posText("ยังไม่เปิดกะ", undefined, language),
       openedByName: report?.openedByName ?? session?.cashier.name ?? '-',
       openingFloat: shift?.openingFloat ?? report?.openingFloat ?? 0,
       movements,
@@ -362,7 +364,7 @@ export function ShiftProvider({
       reopenShift,
       refresh,
     }),
-    [
+    [language,
       addMovement,
       bootstrap.error?.message,
       bootstrap.loading,

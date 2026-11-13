@@ -1,3 +1,5 @@
+import { LanguageSelector } from '../components/LanguageSelector';
+import { posText, usePosLanguage } from '../i18n/language';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Modal,
@@ -39,6 +41,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 const VERIFY_PIN_TIMEOUT_MS = 15_000;
 
 export default function LoginScreen({ navigation }: Props) {
+  usePosLanguage();
   const { colors, spacing, typography } = useTheme();
   const { isTablet } = useResponsive();
   const { status: pairStatus, target, verify } = useDevice();
@@ -103,8 +106,7 @@ export default function LoginScreen({ navigation }: Props) {
               { color: colors.textMuted, marginBottom: spacing.sm },
             ]}
           >
-            สาขา
-          </Text>
+            {posText("สาขา") + " "}</Text>
           {branch ? (
             <Text style={[typography.subtitle, { color: colors.text }]}>
               {branch.name}
@@ -112,8 +114,8 @@ export default function LoginScreen({ navigation }: Props) {
           ) : (
             <Text style={[typography.body, { color: colors.textMuted }]}>
               {loading
-                ? 'กำลังอ่านสาขาจากเครื่อง…'
-                : 'ยังอ่านสาขาจากเครื่องไม่ได้'}
+                ? posText("กำลังอ่านสาขาจากเครื่อง…")
+                : posText("ยังอ่านสาขาจากเครื่องไม่ได้")}
             </Text>
           )}
         </View>
@@ -124,8 +126,7 @@ export default function LoginScreen({ navigation }: Props) {
               style={[typography.caption, { color: colors.textMuted }]}
               numberOfLines={2}
             >
-              กำหนดจากเครื่องนี้
-            </Text>
+              {posText("กำหนดจากเครื่องนี้") + " "}</Text>
           </View>
         ) : null}
       </View>
@@ -135,9 +136,7 @@ export default function LoginScreen({ navigation }: Props) {
   const cashierCard = (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`เลือกผู้ปฏิบัติงาน${
-        cashier ? ` ปัจจุบัน ${cashier.name}` : ''
-      }`}
+      accessibilityLabel={posText("เลือกผู้ปฏิบัติงาน{v0}", { v0: cashier ? posText(" ปัจจุบัน {v0}", { v0: cashier.name }) : '' })}
       accessibilityState={{ disabled: cashiers.length === 0 }}
       disabled={cashiers.length === 0}
       onPress={() => setCashierPickerOpen(true)}
@@ -155,8 +154,7 @@ export default function LoginScreen({ navigation }: Props) {
             { color: colors.textMuted, marginBottom: spacing.sm },
           ]}
         >
-          ผู้ปฏิบัติงาน
-        </Text>
+          {posText("ผู้ปฏิบัติงาน") + " "}</Text>
         <View style={styles.operatorRow}>
           <Text
             style={[
@@ -166,14 +164,13 @@ export default function LoginScreen({ navigation }: Props) {
             numberOfLines={1}
           >
             {cashier?.name ??
-              (loading ? 'กำลังโหลดรายชื่อ…' : 'ยังไม่มีผู้ปฏิบัติงาน')}
+              (loading ? posText("กำลังโหลดรายชื่อ…") : posText("ยังไม่มีผู้ปฏิบัติงาน"))}
           </Text>
           {cashiers.length > 0 ? <ChevronDownIcon color={colors.text} /> : null}
         </View>
         {cashiers.length > 0 ? (
           <Text style={[typography.body, { color: colors.textMuted }]}>
-            แตะเพื่อเปลี่ยนผู้ปฏิบัติงาน
-          </Text>
+            {posText("แตะเพื่อเปลี่ยนผู้ปฏิบัติงาน") + " "}</Text>
         ) : null}
       </Card>
     </Pressable>
@@ -184,8 +181,7 @@ export default function LoginScreen({ navigation }: Props) {
     // ส่วนล่างออกจาก content size ทำให้เห็น PIN แต่เลื่อนต่อไปถึงปุ่มเข้าใช้งานไม่ได้
     <Card>
       <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-        PIN 4–8 หลัก
-      </Text>
+        {posText("PIN 4–8 หลัก") + " "}</Text>
       <View style={styles.pinRow}>
         {Array.from({ length: visiblePosPinSlots(pin) }).map((_, i) => (
           <View
@@ -213,7 +209,7 @@ export default function LoginScreen({ navigation }: Props) {
       </View>
 
       <Button
-        label={verifying ? 'กำลังตรวจ PIN…' : 'เข้าใช้งาน'}
+        label={verifying ? posText("กำลังตรวจ PIN…") : posText("เข้าใช้งาน")}
         fullWidth
         disabled={!canSubmit}
         onPress={async () => {
@@ -223,7 +219,7 @@ export default function LoginScreen({ navigation }: Props) {
             category: 'pos',
             action: 'pos.cashier.verify',
             status: 'info',
-            message: 'เริ่มตรวจ PIN พนักงาน',
+            message: posText("เริ่มตรวจ PIN พนักงาน"),
             context: { route: 'LoginScreen', cashierUserId: cashier.id },
           });
           const controller = new AbortController();
@@ -240,12 +236,12 @@ export default function LoginScreen({ navigation }: Props) {
               context: { fetchOptions: { signal: controller.signal } },
             });
             const verified = result.data?.bmsPosVerifyCashier;
-            if (!verified) throw new Error('เซิร์ฟเวอร์ไม่คืนข้อมูลพนักงาน');
+            if (!verified) throw new Error(posText("เซิร์ฟเวอร์ไม่คืนข้อมูลพนักงาน"));
             recordPosDiagnosticEvent(target, {
               category: 'pos',
               action: 'pos.cashier.verify',
               status: 'success',
-              message: 'ยืนยัน PIN พนักงานสำเร็จ',
+              message: posText("ยืนยัน PIN พนักงานสำเร็จ"),
               context: { route: 'LoginScreen', cashierUserId: cashier.id },
             });
             signIn(
@@ -265,10 +261,10 @@ export default function LoginScreen({ navigation }: Props) {
               (submitError instanceof Error &&
                 submitError.name === 'AbortError');
             const diagnosticMessage = timedOut
-              ? `ตรวจ PIN ไม่สำเร็จภายใน ${VERIFY_PIN_TIMEOUT_MS / 1000} วินาที`
+              ? posText("ตรวจ PIN ไม่สำเร็จภายใน {v0} วินาที", { v0: VERIFY_PIN_TIMEOUT_MS / 1000 })
               : submitError instanceof Error
               ? submitError.message
-              : 'ตรวจ PIN ไม่สำเร็จ';
+              : posText("ตรวจ PIN ไม่สำเร็จ");
             recordPosDiagnosticEvent(target, {
               category: 'pos',
               action: 'pos.cashier.verify',
@@ -301,8 +297,7 @@ export default function LoginScreen({ navigation }: Props) {
               { color: colors.danger, marginTop: spacing.sm },
             ]}
           >
-            {loginError ?? error?.message} · แตะเพื่อลองใหม่
-          </Text>
+            {loginError ?? error?.message} {" " + posText("· แตะเพื่อลองใหม่") + " "}</Text>
         </Pressable>
       )}
     </Card>
@@ -315,8 +310,7 @@ export default function LoginScreen({ navigation }: Props) {
         { color: colors.text, marginBottom: spacing.md },
       ]}
     >
-      เข้าใช้งานเครื่องขาย
-    </Text>
+      {posText("เข้าใช้งานเครื่องขาย") + " "}</Text>
   );
 
   const deviceStrip = (
@@ -331,6 +325,7 @@ export default function LoginScreen({ navigation }: Props) {
           : undefined
       }
     >
+      <LanguageSelector />
       {isTablet ? (
         <View style={[styles.panes, { gap: spacing.xxl }]}>
           <View style={styles.identityPane}>
@@ -375,6 +370,7 @@ export default function LoginScreen({ navigation }: Props) {
 // สรุปการจับคู่เครื่องแบบบรรทัดเดียว — สถานะมาจากผลถามเซิร์ฟเวอร์จริง ไม่ใช่จากค่าที่เก็บไว้
 // (เก็บ token ไว้ ≠ token ยังใช้ได้ · ตัวที่บอกได้คือ GraphQL bmsPosSession เท่านั้น)
 function DeviceStrip({ onPress }: { onPress: () => void }) {
+  usePosLanguage();
   const { colors, spacing, radius, typography, minTouchTarget } = useTheme();
   const { isTablet } = useResponsive();
   const { status, target, verify } = useDevice();
@@ -382,39 +378,35 @@ function DeviceStrip({ onPress }: { onPress: () => void }) {
   let label: string;
   let tone: 'ok' | 'warn' | 'bad';
   if (status === 'LOADING') {
-    label = 'กำลังอ่านค่าเครื่อง…';
+    label = posText("กำลังอ่านค่าเครื่อง…");
     tone = 'warn';
   } else if (!target) {
-    label = 'ยังไม่ได้จับคู่เครื่องกับร้าน — แตะเพื่อตั้งค่า';
+    label = posText("ยังไม่ได้จับคู่เครื่องกับร้าน — แตะเพื่อตั้งค่า");
     tone = 'bad';
   } else if (verify.kind === 'OK') {
-    label = 'จับคู่เครื่องแล้ว';
+    label = posText("จับคู่เครื่องแล้ว");
     tone = 'ok';
   } else if (verify.kind === 'REJECTED') {
-    label = `token ถูกยกเลิก — แตะเพื่อจับคู่ใหม่ (${displayHost(
+    label = posText("token ถูกยกเลิก — แตะเพื่อจับคู่ใหม่ ({v0})", { v0: displayHost(
       target.serverUrl,
-    )})`;
+    ) });
     tone = 'bad';
   } else if (verify.kind === 'CHECKING') {
-    label = `กำลังตรวจกับ ${displayHost(target.serverUrl)}…`;
+    label = posText("กำลังตรวจกับ {v0}…", { v0: displayHost(target.serverUrl) });
     tone = 'warn';
   } else if (verify.kind === 'OFFLINE') {
     // ต่อไม่ถึงเลย — ยังไม่มี response ให้พูดถึง คำตอบดิบของ URLSession คือเบาะแสเดียวที่มี
-    label = `${displayHost(target.serverUrl)} · ต่อไม่ถึงเซิร์ฟเวอร์ (${
-      verify.cause
-    })`;
+    label = posText("{v0} · ต่อไม่ถึงเซิร์ฟเวอร์ ({v1})", { v0: displayHost(target.serverUrl), v1: verify.cause });
     tone = 'warn';
   } else if (verify.kind === 'SERVER_ERROR') {
     // ต่อถึงแล้วแต่คำตอบใช้ไม่ได้ — คนละเรื่องกับต่อไม่ถึง และพาไปทำคนละอย่าง
-    label = `${displayHost(target.serverUrl)} · เซิร์ฟเวอร์ตอบผิดปกติ (${
-      verify.cause
-    })`;
+    label = posText("{v0} · เซิร์ฟเวอร์ตอบผิดปกติ ({v1})", { v0: displayHost(target.serverUrl), v1: verify.cause });
     tone = 'bad';
   } else {
     // IDLE — ยังไม่เคยถามเลย ไม่ใช่ความล้ม · เหมารวมกับสองอันบนคือการบอกว่าพังทั้งที่ยังไม่ได้ลอง
-    label = `${displayHost(
+    label = posText("{v0} · ยังไม่ได้ตรวจกับเซิร์ฟเวอร์ — แตะเพื่อทดสอบ", { v0: displayHost(
       target.serverUrl,
-    )} · ยังไม่ได้ตรวจกับเซิร์ฟเวอร์ — แตะเพื่อทดสอบ`;
+    ) });
     tone = 'warn';
   }
 
@@ -434,7 +426,7 @@ function DeviceStrip({ onPress }: { onPress: () => void }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`ตั้งค่าเครื่อง · ${label}`}
+      accessibilityLabel={posText("ตั้งค่าเครื่อง · {v0}", { v0: label })}
       onPress={onPress}
       style={({ pressed }) => [
         styles.strip,
@@ -461,7 +453,7 @@ function DeviceStrip({ onPress }: { onPress: () => void }) {
       >
         {label}
       </Text>
-      <Text style={[typography.captionStrong, { color: fg }]}>ตั้งค่า</Text>
+      <Text style={[typography.captionStrong, { color: fg }]}>{posText("ตั้งค่า")}</Text>
     </Pressable>
   );
 }
@@ -479,6 +471,7 @@ function CashierPickerModal({
   onClose: () => void;
   onSelect: (cashier: PosSessionCashier) => void;
 }) {
+  usePosLanguage();
   const { colors, spacing, radius, typography, minTouchTarget } = useTheme();
   const { isTablet } = useResponsive();
 
@@ -503,13 +496,13 @@ function CashierPickerModal({
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="ปิดรายการผู้ปฏิบัติงาน"
+          accessibilityLabel={posText("ปิดรายการผู้ปฏิบัติงาน")}
           style={StyleSheet.absoluteFill}
           onPress={onClose}
         />
         <View
           accessibilityViewIsModal
-          accessibilityLabel="เลือกผู้ปฏิบัติงาน"
+          accessibilityLabel={posText("เลือกผู้ปฏิบัติงาน")}
           style={[
             styles.pickerPanel,
             {
@@ -527,15 +520,13 @@ function CashierPickerModal({
           <View style={styles.pickerHeader}>
             <View style={styles.pickerHeaderText}>
               <Text style={[typography.title, { color: colors.text }]}>
-                เลือกผู้ปฏิบัติงาน
-              </Text>
+                {posText("เลือกผู้ปฏิบัติงาน") + " "}</Text>
               <Text style={[typography.body, { color: colors.textMuted }]}>
-                เลือกชื่อของคุณ แล้วกรอก PIN เพื่อยืนยัน
-              </Text>
+                {posText("เลือกชื่อของคุณ แล้วกรอก PIN เพื่อยืนยัน") + " "}</Text>
             </View>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="ปิด"
+              accessibilityLabel={posText("ปิด")}
               onPress={onClose}
               hitSlop={12}
               style={({ pressed }) => [

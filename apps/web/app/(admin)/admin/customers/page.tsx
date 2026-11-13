@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { gql, useQuery, useLazyQuery, useMutation } from "@apollo/client";
 import {
   Table, Button, Space, Tag, Modal, Form, Input, Select, message, Alert, Typography, Divider, Empty, Popconfirm,
@@ -131,8 +133,8 @@ function formatDiscount(coupon: CustomerCoupon, t: TFn) {
 
 type TFn = (key: string, vars?: Record<string, string | number>) => string;
 
-function formatDate(value: string | null) {
-  return value ? new Date(value).toLocaleDateString() : "—";
+function formatDate(value: string | null, uiText: UiTranslator = thaiUiText) {
+  return value ? new Date(value).toLocaleDateString(uiText.locale) : "—";
 }
 
 function enrollmentChannelLabel(channel: string | null, t: TFn) {
@@ -144,6 +146,7 @@ function enrollmentChannelLabel(channel: string | null, t: TFn) {
 }
 
 function CustomersManagement() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [form] = Form.useForm();
   const [addrForm] = Form.useForm();
@@ -255,7 +258,7 @@ function CustomersManagement() {
       ) },
     { title: t("admin_customers.col_phone"), dataIndex: "phone", key: "phone", width: 130,
       render: (p: string | null) => p || <span style={{ color: "#999" }}>—</span> },
-    { title: "Tags", dataIndex: "tags", key: "tags",
+    { title: uiText("admin_ui.en_tags_848ee"), dataIndex: "tags", key: "tags",
       render: (tags: string[]) => tags?.length
         ? tags.map((t) => <Tag key={t} color={TAG_COLOR[t] || "default"}>{t}</Tag>)
         : <span style={{ color: "#999" }}>—</span> },
@@ -304,7 +307,7 @@ function CustomersManagement() {
               </Text>
             )}
             <Text type="secondary" style={{ fontSize: 11 }}>
-              {t("admin_customers.enrollment_date", { date: formatDate(m.memberSince) })}
+              {t("admin_customers.enrollment_date", { date: formatDate(m.memberSince, uiText) })}
             </Text>
           </Space>
         );
@@ -327,7 +330,7 @@ function CustomersManagement() {
           </Popconfirm>
         </Space>
       ) },
-  ], []);
+  ], [uiText, ]);
 
   if (error) return <Alert closable type="error" message={t("admin_customers.load_error")} description={error.message} showIcon />;
 
@@ -335,7 +338,7 @@ function CustomersManagement() {
     <div>
       <div style={{ marginBottom: 16 }}>
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-          <h2 style={{ margin: 0 }}>Customers (CRM)</h2>
+          <h2 style={{ margin: 0 }}>{uiText("admin_ui.en_customers_crm_2e0cd")}</h2>
           <Space wrap>
             <Input.Search placeholder={t("admin_customers.search_placeholder")} allowClear style={{ width: 220 }}
               onSearch={(v) => setSearch(v)} onChange={(e) => !e.target.value && setSearch("")} />
@@ -350,7 +353,7 @@ function CustomersManagement() {
                 label: `${location.name} (${location.branchCode})`,
               }))}
             />
-            <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+            <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{uiText("admin_ui.en_refresh_56e3b")}</Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>{t("admin_customers.btn_add_customer")}</Button>
           </Space>
         </Space>
@@ -375,7 +378,7 @@ function CustomersManagement() {
             />
           ) : null,
         }}
-        pagination={{ pageSize: 20, showTotal: (t) => `Total ${t} customer(s)` }}
+        pagination={{ pageSize: 20, showTotal: (t) => uiText("admin_ui.en_total_customer_s_2a0e8", { v0: t }) }}
       />
 
       {/* modal แก้ไข/สร้างลูกค้า */}
@@ -387,7 +390,7 @@ function CustomersManagement() {
             <Input placeholder={t("admin_customers.form_name_placeholder")} />
           </Form.Item>
           <Form.Item label={t("admin_customers.form_phone")} name="phone"><Input placeholder="08xxxxxxxx" /></Form.Item>
-          <Form.Item label="Tags" name="tags">
+          <Form.Item label={uiText("admin_ui.en_tags_848ee")} name="tags">
             <Select mode="tags" options={TAG_OPTIONS.map((t) => ({ value: t, label: t }))} placeholder={t("admin_customers.form_tags_placeholder")} />
           </Form.Item>
           <Form.Item label={t("admin_customers.form_note")} name="note"><Input.TextArea rows={2} /></Form.Item>
@@ -473,6 +476,7 @@ function CustomerDetail({
   reorderingId: string | null;
   onReorder: (orderId: string) => void;
 }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const couponCols = [
     { title: t("admin_customers.col_code"), dataIndex: "code", key: "code", width: 130, render: (code: string, coupon: CustomerCoupon) => (
@@ -494,7 +498,7 @@ function CustomerDetail({
         {coupon.customerUsedCount > 0 && <Tag color="green">{t("admin_customers.cond_used", { count: coupon.customerUsedCount })}</Tag>}
       </Space>
     ) },
-    { title: t("admin_customers.col_expires"), dataIndex: "expiresAt", key: "expiresAt", width: 130, render: (expiresAt: string | null) => formatDate(expiresAt) },
+    { title: t("admin_customers.col_expires"), dataIndex: "expiresAt", key: "expiresAt", width: 130, render: (expiresAt: string | null) => formatDate(expiresAt, uiText) },
     { title: t("admin_customers.col_order"), key: "order", width: 120, render: (_: any, coupon: CustomerCoupon) => {
       const orderId = coupon.redeemedOrderId || coupon.reservedOrderId;
       return orderId ? <Text code>{orderId.slice(0, 8)}</Text> : <Text type="secondary">—</Text>;
@@ -503,14 +507,14 @@ function CustomerDetail({
   const [expandedOrders, setExpandedOrders] = useState<string[]>([]);
   const toggleBill = (id: string) => setExpandedOrders((ids) => ids.includes(id) ? ids.filter((key) => key !== id) : [...ids, id]);
   const orderCols = [
-    { title: "Order", dataIndex: "id", key: "id", width: 120, render: (id: string) => <Space direction="vertical" size={0}>
+    { title: uiText("admin_ui.en_order_1d757"), dataIndex: "id", key: "id", width: 120, render: (id: string) => <Space direction="vertical" size={0}>
       <Text code>{id.slice(0, 8)}</Text>
       <Button type="link" size="small" icon={<FileTextOutlined />} aria-expanded={expandedOrders.includes(id)} onClick={() => toggleBill(id)}>{t(expandedOrders.includes(id) ? "admin_customers.detail_close" : "admin_customers.detail_open")}</Button>
     </Space> },
-    { title: "Channel", dataIndex: "channel", key: "ch", width: 90 },
-    { title: "Status", dataIndex: "status", key: "st", width: 120, render: (s: string) => <Tag color={STATUS_COLOR[s] || "default"}>{s}</Tag> },
+    { title: uiText("admin_ui.en_channel_879f0"), dataIndex: "channel", key: "ch", width: 90 },
+    { title: uiText("admin_ui.en_status_bae7d"), dataIndex: "status", key: "st", width: 120, render: (s: string) => <Tag color={STATUS_COLOR[s] || "default"}>{s}</Tag> },
     { title: t("admin_customers.col_amount"), dataIndex: "total_amount", key: "amt", width: 110, align: "right" as const, render: (v: number) => `${Number(v).toLocaleString()} ฿` },
-    { title: t("admin_customers.col_date"), dataIndex: "created_at", key: "d", render: (d: string) => new Date(d).toLocaleString() },
+    { title: t("admin_customers.col_date"), dataIndex: "created_at", key: "d", render: (d: string) => new Date(d).toLocaleString(uiText.locale) },
     { title: "", key: "actions", width: 90, render: (_: any, o: Order) => (
       <Button type="link" size="small" loading={reorderingId === o.id} onClick={() => onReorder(o.id)}>{t("admin_customers.btn_reorder")}</Button>
     ) },

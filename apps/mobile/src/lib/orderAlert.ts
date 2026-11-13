@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 // กติกาการแจ้งเตือน "มีออร์เดอร์เข้า" — โมดูลนี้ตั้งใจไม่ import อะไรเลย (เทสได้โดยไม่ต้องมี RN)
 //
 // พอร์ตกติกามาจากฝั่งเว็บ (`apps/web/lib/pos/orderAlertSound.ts`) ไม่ได้คิดชุดที่สองขึ้นมาเอง —
@@ -148,19 +149,19 @@ export function alertReachedSomeone(outcome: AlertOutcome): boolean {
 /** ข้อความบนแถบเตือนเมื่อเปิดเสียงไว้แต่เล่นไม่ได้ — ต้องบอกสาเหตุ ไม่ใช่แค่ว่าล้มเหลว */
 export function alertBlockedNotice(outcome: AlertOutcome): string | null {
   if (outcome.sound === 'unavailable' && outcome.vibration === 'played') {
-    return 'เครื่องนี้ยังไม่มีโมดูลเสียง — แจ้งเตือนด้วยการสั่นและแถบบนจอแทน';
+    return posText("เครื่องนี้ยังไม่มีโมดูลเสียง — แจ้งเตือนด้วยการสั่นและแถบบนจอแทน");
   }
   if (!alertReachedSomeone(outcome)) {
-    return 'แจ้งเตือนไม่ถึงเครื่องนี้ (ไม่มีทั้งเสียงและการสั่น) — ดูแถบบนจอแทน';
+    return posText("แจ้งเตือนไม่ถึงเครื่องนี้ (ไม่มีทั้งเสียงและการสั่น) — ดูแถบบนจอแทน");
   }
   return null;
 }
 
 export function describeAgo(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return 'เมื่อครู่';
+  if (!Number.isFinite(ms) || ms < 0) return posText("เมื่อครู่");
   const minutes = Math.floor(ms / 60000);
-  if (minutes < 1) return 'เมื่อครู่';
-  if (minutes < 60) return `${minutes} นาทีที่แล้ว`;
+  if (minutes < 1) return posText("เมื่อครู่");
+  if (minutes < 60) return posText("{v0} นาทีที่แล้ว", { v0: minutes });
   const hours = Math.floor(minutes / 60);
-  return `${hours} ชม. ${minutes % 60} น. ที่แล้ว`;
+  return posText("{v0} ชม. {v1} น. ที่แล้ว", { v0: hours, v1: minutes % 60 });
 }

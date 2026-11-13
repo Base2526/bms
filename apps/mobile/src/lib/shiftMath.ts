@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 // คณิตศาสตร์ของลิ้นชัก — โมดูลนี้ตั้งใจไม่ import อะไรเลย (เทสได้โดยไม่ต้องมี React/Native)
 //
 // ⚠️ กฎข้อเดียวของไฟล์นี้: "เงินที่ควรมีในลิ้นชัก" ต้องมีสูตรเดียวคือ `drawerExpectedFrom()`
@@ -129,13 +130,13 @@ export interface ParsedAmount {
 /** แปลงตัวเลขที่คนพิมพ์เป็นยอดเงิน — ปฏิเสธค่าที่อ่านไม่ออกแทนที่จะปัดเป็น 0 เงียบ ๆ */
 export function parseAmountInput(text: string): ParsedAmount {
   const trimmed = text.trim();
-  if (!trimmed) return { ok: false, amount: 0, error: 'กรอกจำนวนเงิน' };
+  if (!trimmed) return { ok: false, amount: 0, error: posText("กรอกจำนวนเงิน") };
   const value = Number(trimmed);
   if (!Number.isFinite(value)) {
-    return { ok: false, amount: 0, error: 'จำนวนเงินต้องเป็นตัวเลข' };
+    return { ok: false, amount: 0, error: posText("จำนวนเงินต้องเป็นตัวเลข") };
   }
   if (value <= 0) {
-    return { ok: false, amount: 0, error: 'จำนวนเงินต้องมากกว่า 0' };
+    return { ok: false, amount: 0, error: posText("จำนวนเงินต้องมากกว่า 0") };
   }
   return { ok: true, amount: roundMoney(value) };
 }
@@ -149,7 +150,7 @@ export function validateCashOut(
   expectedCash: number,
 ): string | null {
   if (amount > expectedCash) {
-    return `เบิกได้ไม่เกินเงินที่มีในลิ้นชัก ฿${expectedCash.toFixed(2)}`;
+    return posText("เบิกได้ไม่เกินเงินที่มีในลิ้นชัก ฿{v0}", { v0: expectedCash.toFixed(2) });
   }
   return null;
 }

@@ -1,3 +1,4 @@
+import { posText, usePosLanguage, posLocale } from '../../i18n/language';
 import React, {
   useCallback,
   useEffect,
@@ -123,23 +124,23 @@ const DURATION_PRESETS = [60, 90, 120, 180] as const;
 const ALERT_PRESETS = [5, 10, 15, 30] as const;
 
 function durationLabel(minutes: number) {
-  if (minutes === 60) return '1 ชม.';
-  if (minutes === 90) return '1.5 ชม.';
-  if (minutes % 60 === 0) return `${minutes / 60} ชม.`;
-  return `${minutes} นาที`;
+  if (minutes === 60) return posText("1 ชม.");
+  if (minutes === 90) return posText("1.5 ชม.");
+  if (minutes % 60 === 0) return posText("{v0} ชม.", { v0: minutes / 60 });
+  return posText("{v0} นาที", { v0: minutes });
 }
 
 function bahtLabel(amount: number) {
   return Number.isInteger(amount)
-    ? amount.toLocaleString('th-TH')
-    : amount.toLocaleString('th-TH', { maximumFractionDigits: 2 });
+    ? amount.toLocaleString(posLocale())
+    : amount.toLocaleString(posLocale(), { maximumFractionDigits: 2 });
 }
 
 function rateLabel(name: string, pricePerHour: number) {
   // ร้านเก่าบางแห่งบันทึกราคาไว้ในชื่ออัตราแล้ว อย่าต่อราคาให้ซ้ำบนปุ่ม
   return /(?:฿|บาท)/.test(name)
     ? name
-    : `${name} ฿${bahtLabel(pricePerHour)} / ชม.`;
+    : posText("{v0} ฿{v1} / ชม.", { v0: name, v1: bahtLabel(pricePerHour) });
 }
 
 function localDateTimeInput(value: string | null | undefined) {
@@ -283,11 +284,11 @@ const IDENTITY_KIND_ORDER = [
   'OTHER',
 ];
 const IDENTITY_KIND_LABEL: Record<string, string> = {
-  NATIONAL_ID: 'บัตรประชาชน',
-  STUDENT_ID: 'บัตรนักเรียน/นักศึกษา',
-  DRIVER_LICENSE: 'ใบขับขี่',
-  PASSPORT: 'พาสปอร์ต',
-  OTHER: 'อื่น ๆ',
+  get NATIONAL_ID() { return posText("บัตรประชาชน"); },
+  get STUDENT_ID() { return posText("บัตรนักเรียน/นักศึกษา"); },
+  get DRIVER_LICENSE() { return posText("ใบขับขี่"); },
+  get PASSPORT() { return posText("พาสปอร์ต"); },
+  get OTHER() { return posText("อื่น ๆ"); },
 };
 
 function elapsedLabel(startedAt: string | null | undefined, now: number) {
@@ -297,7 +298,7 @@ function elapsedLabel(startedAt: string | null | undefined, now: number) {
     Math.floor((now - new Date(startedAt).getTime()) / 60000),
   );
   const hours = Math.floor(minutes / 60);
-  return hours > 0 ? `${hours} ชม. ${minutes % 60} นาที` : `${minutes} นาที`;
+  return hours > 0 ? posText("{v0} ชม. {v1} นาที", { v0: hours, v1: minutes % 60 }) : posText("{v0} นาที", { v0: minutes });
 }
 
 function elapsedClockLabel(startedAt: string | null | undefined, now: number) {
@@ -314,7 +315,7 @@ function elapsedClockLabel(startedAt: string | null | undefined, now: number) {
 function tableTitle(table: Table) {
   const trailingNumber = table.code.match(/(?:^|[-_\s])(\d{1,3})$/)?.[1];
   return trailingNumber
-    ? `โต๊ะ ${trailingNumber.padStart(2, '0')}`
+    ? posText("โต๊ะ {v0}", { v0: trailingNumber.padStart(2, '0') })
     : table.code;
 }
 
@@ -338,10 +339,10 @@ function floorStatus(table: Table): FloorStatus {
 }
 
 function alertLabel(status: string | null | undefined) {
-  if (status === 'OVERDUE') return 'เกินเวลา';
-  if (status === 'ENDING_SOON') return 'ใกล้หมดเวลา';
-  if (status === 'CLOSING') return 'รอชำระ';
-  return 'กำลังเล่น';
+  if (status === 'OVERDUE') return posText("เกินเวลา");
+  if (status === 'ENDING_SOON') return posText("ใกล้หมดเวลา");
+  if (status === 'CLOSING') return posText("รอชำระ");
+  return posText("กำลังเล่น");
 }
 
 function attentionLabel(
@@ -352,8 +353,8 @@ function attentionLabel(
   const remainingMs = new Date(session.nextAlertAt).getTime() - now;
   if (!Number.isFinite(remainingMs)) return alertLabel(session.alertStatus);
   return remainingMs <= 0
-    ? `เกิน ${Math.max(1, Math.ceil(Math.abs(remainingMs) / 60000))} นาที`
-    : `เหลือ ${Math.ceil(remainingMs / 60000)} นาที`;
+    ? posText("เกิน {v0} นาที", { v0: Math.max(1, Math.ceil(Math.abs(remainingMs) / 60000)) })
+    : posText("เหลือ {v0} นาที", { v0: Math.ceil(remainingMs / 60000) });
 }
 
 export default function BoardGameScreen({ navigation }: FloorProps) {
@@ -408,6 +409,7 @@ function BoardGameFloor({
   onOpenSession,
   onNavigateTab,
 }: BoardGameFloorProps) {
+  usePosLanguage();
   const { colors, scheme, spacing, typography } = useTheme();
   const { session } = useSession();
   const { calls, pendingCount, refresh: refreshCalls } = useBoardGameService();
@@ -516,13 +518,13 @@ function BoardGameFloor({
       entry.kind === 'RESERVATION' &&
       (entry.status === 'REQUESTED' || entry.status === 'CONFIRMED'),
   );
-  const reservationNeedle = reservationSearch.trim().toLocaleLowerCase('th-TH');
+  const reservationNeedle = reservationSearch.trim().toLocaleLowerCase(posLocale());
   const reservations = allReservations.filter(entry => {
     const matchesDate =
       !reservationDate || entry.serviceDate === reservationDate;
     const haystack = `${entry.guestName ?? ''} ${entry.guestPhone ?? ''} ${
       entry.guestEmail ?? ''
-    } ${entry.reservedTableCode ?? ''}`.toLocaleLowerCase('th-TH');
+    } ${entry.reservedTableCode ?? ''}`.toLocaleLowerCase(posLocale());
     return (
       matchesDate &&
       (!reservationNeedle || haystack.includes(reservationNeedle))
@@ -581,8 +583,8 @@ function BoardGameFloor({
       if (isDecidedRejection(cause))
         delete callOperationKeys.current[operationName];
       Alert.alert(
-        'อัปเดตคิวไม่สำเร็จ',
-        cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
+        posText("อัปเดตคิวไม่สำเร็จ"),
+        cause instanceof Error ? cause.message : posText("กรุณาลองใหม่"),
       );
       return false;
     } finally {
@@ -592,13 +594,13 @@ function BoardGameFloor({
   };
   const callLabel = (code: string) =>
     ({
-      GAME_HELP: 'ช่วยสอนเกม',
-      GAME_ISSUE: 'ชิ้นส่วนขาด / เกมชำรุด',
-      FOOD_DRINK: 'อาหารหรือเครื่องดื่ม',
-      BILL: 'ขอคิดเงิน',
-      EXTEND_TIME: 'ขอต่อเวลา',
-      CLEANUP: 'น้ำหก / ทำความสะอาด',
-      OTHER: 'อื่น ๆ',
+      GAME_HELP: posText("ช่วยสอนเกม"),
+      GAME_ISSUE: posText("ชิ้นส่วนขาด / เกมชำรุด"),
+      FOOD_DRINK: posText("อาหารหรือเครื่องดื่ม"),
+      BILL: posText("ขอคิดเงิน"),
+      EXTEND_TIME: posText("ขอต่อเวลา"),
+      CLEANUP: posText("น้ำหก / ทำความสะอาด"),
+      OTHER: posText("อื่น ๆ"),
     }[code] ?? code);
   const handleCall = async (callId: string, status: string) => {
     if (!credentials || callInFlight.current) return;
@@ -624,8 +626,8 @@ function BoardGameFloor({
       if (isDecidedRejection(cause))
         delete callOperationKeys.current[operationName];
       Alert.alert(
-        'อัปเดตคำขอไม่สำเร็จ',
-        cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
+        posText("อัปเดตคำขอไม่สำเร็จ"),
+        cause instanceof Error ? cause.message : posText("กรุณาลองใหม่"),
       );
     } finally {
       callInFlight.current = false;
@@ -635,7 +637,7 @@ function BoardGameFloor({
   const callBell = (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`คำเรียกจากโต๊ะ ${pendingCount} รายการ`}
+      accessibilityLabel={posText("คำเรียกจากโต๊ะ {v0} รายการ", { v0: pendingCount })}
       onPress={() => setCallsOpen(true)}
       style={({ pressed }) => [
         styles.callBell,
@@ -674,14 +676,12 @@ function BoardGameFloor({
           <View style={styles.between}>
             <View>
               <Text style={[typography.title, { color: colors.text }]}>
-                คำเรียกจากโต๊ะ
-              </Text>
+                {posText("คำเรียกจากโต๊ะ") + " "}</Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                รับทราบก่อน แล้วปิดงานเมื่อดูแลเสร็จ
-              </Text>
+                {posText("รับทราบก่อน แล้วปิดงานเมื่อดูแลเสร็จ") + " "}</Text>
             </View>
             <Button
-              label="ปิด"
+              label={posText("ปิด")}
               variant="ghost"
               onPress={() => setCallsOpen(false)}
             />
@@ -689,8 +689,7 @@ function BoardGameFloor({
           <ScrollView contentContainerStyle={{ gap: spacing.sm }}>
             {calls.length === 0 ? (
               <Text style={[typography.body, { color: colors.textMuted }]}>
-                ไม่มีโต๊ะรอพนักงาน
-              </Text>
+                {posText("ไม่มีโต๊ะรอพนักงาน") + " "}</Text>
             ) : (
               calls.map(call => (
                 <Card key={call.id} style={{ gap: spacing.sm }}>
@@ -709,8 +708,8 @@ function BoardGameFloor({
                       >
                         {call.requestNote ??
                           (call.status === 'PENDING'
-                            ? 'ยังไม่มีพนักงานรับ'
-                            : 'พนักงานรับทราบแล้ว')}
+                            ? posText("ยังไม่มีพนักงานรับ")
+                            : posText("พนักงานรับทราบแล้ว"))}
                       </Text>
                     </View>
                     <Text
@@ -724,12 +723,12 @@ function BoardGameFloor({
                         },
                       ]}
                     >
-                      {call.status === 'PENDING' ? 'รอรับ' : 'กำลังดูแล'}
+                      {call.status === 'PENDING' ? posText("รอรับ") : posText("กำลังดูแล")}
                     </Text>
                   </View>
                   <View style={styles.wrap}>
                     <Button
-                      label="เปิดโต๊ะ"
+                      label={posText("เปิดโต๊ะ")}
                       variant="secondary"
                       onPress={() => {
                         setCallsOpen(false);
@@ -738,7 +737,7 @@ function BoardGameFloor({
                     />
                     <Button
                       label={
-                        call.status === 'PENDING' ? 'รับทราบ' : 'เสร็จแล้ว'
+                        call.status === 'PENDING' ? posText("รับทราบ") : posText("เสร็จแล้ว")
                       }
                       loading={workingCallId === call.id}
                       onPress={() =>
@@ -758,7 +757,7 @@ function BoardGameFloor({
     switch (status) {
       case 'available':
         return {
-          label: 'ว่าง',
+          label: posText("ว่าง"),
           color: colors.success,
           backgroundColor: colors.successBg,
           badgeBackground: scheme === 'dark' ? colors.successBg : '#d1fae5',
@@ -766,7 +765,7 @@ function BoardGameFloor({
         };
       case 'ending':
         return {
-          label: 'ใกล้ครบ',
+          label: posText("ใกล้ครบ"),
           color: colors.warning,
           backgroundColor: colors.warningBg,
           badgeBackground: scheme === 'dark' ? colors.warningBg : '#fef3c7',
@@ -774,7 +773,7 @@ function BoardGameFloor({
         };
       case 'overdue':
         return {
-          label: 'เกินเวลา',
+          label: posText("เกินเวลา"),
           color: colors.danger,
           backgroundColor: colors.dangerBg,
           badgeBackground: scheme === 'dark' ? colors.dangerBg : '#fee2e2',
@@ -782,7 +781,7 @@ function BoardGameFloor({
         };
       case 'blocked':
         return {
-          label: 'ปิดใช้',
+          label: posText("ปิดใช้"),
           color: colors.textMuted,
           backgroundColor: colors.surface2,
           badgeBackground: colors.surface3,
@@ -790,7 +789,7 @@ function BoardGameFloor({
         };
       default:
         return {
-          label: 'กำลังเล่น',
+          label: posText("กำลังเล่น"),
           color: colors.primary,
           backgroundColor: primaryTint,
           badgeBackground: primaryTintStrong,
@@ -803,10 +802,10 @@ function BoardGameFloor({
     label: string;
     count: number;
   }> = [
-    { key: 'available', label: 'ว่าง', count: counts.available },
-    { key: 'playing', label: 'กำลังเล่น', count: counts.playing },
-    { key: 'ending', label: 'ใกล้ครบ', count: counts.ending },
-    { key: 'overdue', label: 'เกินเวลา', count: counts.overdue },
+    { key: 'available', label: posText("ว่าง"), count: counts.available },
+    { key: 'playing', label: posText("กำลังเล่น"), count: counts.playing },
+    { key: 'ending', label: posText("ใกล้ครบ"), count: counts.ending },
+    { key: 'overdue', label: posText("เกินเวลา"), count: counts.overdue },
   ];
 
   const zoneButton = (id: string, label: string) => {
@@ -816,7 +815,7 @@ function BoardGameFloor({
         key={id}
         accessibilityRole="button"
         accessibilityState={{ selected }}
-        accessibilityLabel={`แสดงโซน ${label}`}
+        accessibilityLabel={posText("แสดงโซน {v0}", { v0: label })}
         onPress={() => setSelectedAreaId(id)}
         style={({ pressed }) => [
           isTablet ? styles.tabletZoneButton : styles.phoneZoneButton,
@@ -920,13 +919,12 @@ function BoardGameFloor({
         <View style={styles.between}>
           <View style={styles.flex}>
             <Text style={[typography.bodyStrong, { color: colors.text }]}>
-              โต๊ะที่ต้องดูตอนนี้
-            </Text>
+              {posText("โต๊ะที่ต้องดูตอนนี้") + " "}</Text>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
-              เกินเวลา {counts.overdue} · ใกล้หมดเวลา {counts.ending}
+              {posText("เกินเวลา") + " "}{counts.overdue} {" " + posText("· ใกล้หมดเวลา") + " "}{counts.ending}
             </Text>
           </View>
-          <Button label="รีเฟรช" variant="secondary" onPress={onRetry} />
+          <Button label={posText("รีเฟรช")} variant="secondary" onPress={onRetry} />
         </View>
         <View style={styles.attentionList}>
           {attentionTables.map(table => {
@@ -968,11 +966,11 @@ function BoardGameFloor({
                       { color: colors.textMuted },
                     ]}
                   >
-                    {sessionSummary.guestCount} คน · ครบเวลา{' '}
+                    {sessionSummary.guestCount} {" " + posText("คน · ครบเวลา")}{' '}
                     {sessionSummary.expectedEndAt
                       ? new Date(
                           sessionSummary.expectedEndAt,
-                        ).toLocaleTimeString('th-TH', {
+                        ).toLocaleTimeString(posLocale(), {
                           hour: '2-digit',
                           minute: '2-digit',
                         })
@@ -999,33 +997,29 @@ function BoardGameFloor({
       {loading && !data ? (
         <Card>
           <Text style={[typography.body, { color: colors.textMuted }]}>
-            กำลังโหลดผังโต๊ะ...
-          </Text>
+            {posText("กำลังโหลดผังโต๊ะ...") + " "}</Text>
         </Card>
       ) : null}
       {errorMessage && !data ? (
         <Card style={{ gap: spacing.sm }}>
           <Text style={[typography.bodyStrong, { color: colors.danger }]}>
-            โหลดข้อมูล Board Game ไม่สำเร็จ
-          </Text>
+            {posText("โหลดข้อมูล Board Game ไม่สำเร็จ") + " "}</Text>
           <Text style={[typography.caption, { color: colors.textMuted }]}>
             {errorMessage}
           </Text>
-          <Button label="ลองใหม่" variant="secondary" onPress={onRetry} />
+          <Button label={posText("ลองใหม่")} variant="secondary" onPress={onRetry} />
         </Card>
       ) : null}
       {data && tables.length === 0 ? (
         <Card>
           <Text style={[typography.body, { color: colors.textMuted }]}>
-            ยังไม่มีโต๊ะ Board Game ในสาขานี้ กรุณาตั้งค่าผังจาก Admin
-          </Text>
+            {posText("ยังไม่มีโต๊ะ Board Game ในสาขานี้ กรุณาตั้งค่าผังจาก Admin") + " "}</Text>
         </Card>
       ) : null}
       {data && tables.length > 0 && visibleTables.length === 0 ? (
         <Card>
           <Text style={[typography.body, { color: colors.textMuted }]}>
-            โซนนี้ยังไม่มีโต๊ะ
-          </Text>
+            {posText("โซนนี้ยังไม่มีโต๊ะ") + " "}</Text>
         </Card>
       ) : null}
       {data ? (
@@ -1033,12 +1027,9 @@ function BoardGameFloor({
           <View style={styles.between}>
             <View style={styles.flex}>
               <Text style={[typography.subtitle, { color: colors.text }]}>
-                การจองล่วงหน้า
-              </Text>
+                {posText("การจองล่วงหน้า") + " "}</Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                ยืนยันอยู่ {data.waitlist.confirmedReservationCount} รายการ ·
-                รอพิจารณา {data.waitlist.requestedReservationCount} รายการ
-              </Text>
+                {posText("ยืนยันอยู่") + " "}{data.waitlist.confirmedReservationCount} {" " + posText("รายการ · รอพิจารณา") + " "}{data.waitlist.requestedReservationCount} {" " + posText("รายการ") + " "}</Text>
             </View>
             {reservationEditingId ? (
               <View
@@ -1050,8 +1041,7 @@ function BoardGameFloor({
                 <Text
                   style={[typography.captionStrong, { color: colors.primary }]}
                 >
-                  กำลังแก้ไข
-                </Text>
+                  {posText("กำลังแก้ไข") + " "}</Text>
               </View>
             ) : null}
           </View>
@@ -1065,13 +1055,12 @@ function BoardGameFloor({
                     { color: colors.textMuted },
                   ]}
                 >
-                  ชื่อลูกค้า
-                </Text>
+                  {posText("ชื่อลูกค้า") + " "}</Text>
                 <TextInput
-                  accessibilityLabel="ชื่อลูกค้าที่จอง"
+                  accessibilityLabel={posText("ชื่อลูกค้าที่จอง")}
                   value={reservationGuestName}
                   onChangeText={setReservationGuestName}
-                  placeholder="ชื่อผู้จอง"
+                  placeholder={posText("ชื่อผู้จอง")}
                   placeholderTextColor={colors.textSoft}
                   style={[
                     styles.input,
@@ -1090,14 +1079,13 @@ function BoardGameFloor({
                     { color: colors.textMuted },
                   ]}
                 >
-                  เบอร์โทร
-                </Text>
+                  {posText("เบอร์โทร") + " "}</Text>
                 <TextInput
-                  accessibilityLabel="เบอร์โทรลูกค้าที่จอง"
+                  accessibilityLabel={posText("เบอร์โทรลูกค้าที่จอง")}
                   keyboardType="phone-pad"
                   value={reservationGuestPhone}
                   onChangeText={setReservationGuestPhone}
-                  placeholder="เบอร์โทร"
+                  placeholder={posText("เบอร์โทร")}
                   placeholderTextColor={colors.textSoft}
                   style={[
                     styles.input,
@@ -1119,11 +1107,10 @@ function BoardGameFloor({
                     { color: colors.textMuted },
                   ]}
                 >
-                  วันที่
-                </Text>
+                  {posText("วันที่") + " "}</Text>
                 <Pressable
-                  accessibilityLabel="วันที่จอง"
-                  accessibilityHint="แตะเพื่อเปิดปฏิทิน"
+                  accessibilityLabel={posText("วันที่จอง")}
+                  accessibilityHint={posText("แตะเพื่อเปิดปฏิทิน")}
                   accessibilityRole="button"
                   onPress={() => setReservationPickerTarget('start-date')}
                   style={({ pressed }) => [
@@ -1147,7 +1134,7 @@ function BoardGameFloor({
                     ]}
                   >
                     {reservationDateDisplayValue(reservationStartDate) ||
-                      'เลือกวันที่'}
+                      posText("เลือกวันที่")}
                   </Text>
                   <Text style={styles.reservationPickerGlyph}>📅</Text>
                 </Pressable>
@@ -1159,11 +1146,10 @@ function BoardGameFloor({
                     { color: colors.textMuted },
                   ]}
                 >
-                  เวลา
-                </Text>
+                  {posText("เวลา") + " "}</Text>
                 <Pressable
-                  accessibilityLabel="เวลาจอง"
-                  accessibilityHint="แตะเพื่อเปิดตัวเลือกเวลา"
+                  accessibilityLabel={posText("เวลาจอง")}
+                  accessibilityHint={posText("แตะเพื่อเปิดตัวเลือกเวลา")}
                   accessibilityRole="button"
                   onPress={() => setReservationPickerTarget('start-time')}
                   style={({ pressed }) => [
@@ -1186,7 +1172,7 @@ function BoardGameFloor({
                       },
                     ]}
                   >
-                    {reservationStartTime || 'เลือกเวลา'}
+                    {reservationStartTime || posText("เลือกเวลา")}
                   </Text>
                   <Text style={styles.reservationPickerGlyph}>🕒</Text>
                 </Pressable>
@@ -1201,8 +1187,7 @@ function BoardGameFloor({
                     { color: colors.textMuted },
                   ]}
                 >
-                  ระยะเวลา (นาที)
-                </Text>
+                  {posText("ระยะเวลา (นาที)") + " "}</Text>
                 <View style={styles.reservationDurationRow}>
                   {DURATION_PRESETS.map(minutes => {
                     const selected = reservationDuration === String(minutes);
@@ -1210,9 +1195,9 @@ function BoardGameFloor({
                       <Pressable
                         key={minutes}
                         accessibilityRole="button"
-                        accessibilityLabel={`ระยะเวลา ${durationLabel(
+                        accessibilityLabel={posText("ระยะเวลา {v0}", { v0: durationLabel(
                           minutes,
-                        )}`}
+                        ) })}
                         accessibilityState={{ selected }}
                         onPress={() => setReservationDuration(String(minutes))}
                         style={({ pressed }) => [
@@ -1247,11 +1232,11 @@ function BoardGameFloor({
                     minutes => reservationDuration === String(minutes),
                   ) ? (
                     <TextInput
-                      accessibilityLabel="ระยะเวลาจองเป็นนาที"
+                      accessibilityLabel={posText("ระยะเวลาจองเป็นนาที")}
                       keyboardType="number-pad"
                       value={reservationDuration}
                       onChangeText={setReservationDuration}
-                      placeholder="นาที"
+                      placeholder={posText("นาที")}
                       placeholderTextColor={colors.textSoft}
                       style={[
                         styles.reservationDurationInput,
@@ -1272,8 +1257,7 @@ function BoardGameFloor({
                     { color: colors.textMuted },
                   ]}
                 >
-                  จำนวนคน
-                </Text>
+                  {posText("จำนวนคน") + " "}</Text>
                 <View
                   style={[
                     styles.reservationStepper,
@@ -1285,7 +1269,7 @@ function BoardGameFloor({
                 >
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="ลดจำนวนคน"
+                    accessibilityLabel={posText("ลดจำนวนคน")}
                     onPress={() =>
                       setReservationPartySize(
                         String(
@@ -1303,7 +1287,7 @@ function BoardGameFloor({
                     </Text>
                   </Pressable>
                   <TextInput
-                    accessibilityLabel="จำนวนคนที่จอง"
+                    accessibilityLabel={posText("จำนวนคนที่จอง")}
                     keyboardType="number-pad"
                     value={reservationPartySize}
                     onChangeText={setReservationPartySize}
@@ -1315,7 +1299,7 @@ function BoardGameFloor({
                   />
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="เพิ่มจำนวนคน"
+                    accessibilityLabel={posText("เพิ่มจำนวนคน")}
                     onPress={() =>
                       setReservationPartySize(
                         String(
@@ -1341,8 +1325,7 @@ function BoardGameFloor({
           </View>
 
           <Text style={[typography.captionStrong, { color: colors.text }]}>
-            เลือกโต๊ะ
-          </Text>
+            {posText("เลือกโต๊ะ") + " "}</Text>
           <View style={styles.reservationTableGrid}>
             {tables
               .filter(table => !table.blocked)
@@ -1355,9 +1338,7 @@ function BoardGameFloor({
                   <Pressable
                     key={table.id}
                     accessibilityRole="button"
-                    accessibilityLabel={`${tableTitle(table)} รองรับ ${
-                      table.seats
-                    } คน`}
+                    accessibilityLabel={posText("{v0} รองรับ {v1} คน", { v0: tableTitle(table), v1: table.seats })}
                     accessibilityState={{ selected, disabled }}
                     disabled={disabled}
                     onPress={() => setReservationTableId(table.id)}
@@ -1385,14 +1366,13 @@ function BoardGameFloor({
                     <Text
                       style={[typography.caption, { color: colors.textMuted }]}
                     >
-                      {table.seats} ที่นั่ง
-                    </Text>
+                      {table.seats} {" " + posText("ที่นั่ง") + " "}</Text>
                   </Pressable>
                 );
               })}
           </View>
           <Button
-            label={reservationEditingId ? 'บันทึกการแก้ไข' : 'ยืนยันจอง'}
+            label={reservationEditingId ? posText("บันทึกการแก้ไข") : posText("ยืนยันจอง")}
             fullWidth
             loading={
               workingQueueId === 'reservation-add' ||
@@ -1409,15 +1389,15 @@ function BoardGameFloor({
               );
               if (!parsedDate) {
                 Alert.alert(
-                  'วันที่จองไม่ถูกต้อง',
-                  'ใช้รูปแบบ 2026-09-18, 18/09/2569 หรือ 18092569',
+                  posText("วันที่จองไม่ถูกต้อง"),
+                  posText("ใช้รูปแบบ 2026-09-18, 18/09/2569 หรือ 18092569"),
                 );
                 return;
               }
               if (!parsedTime) {
                 Alert.alert(
-                  'เวลาจองไม่ถูกต้อง',
-                  'ใช้รูปแบบ 18:00 หรือ 18.00',
+                  posText("เวลาจองไม่ถูกต้อง"),
+                  posText("ใช้รูปแบบ 18:00 หรือ 18.00"),
                 );
                 return;
               }
@@ -1443,8 +1423,8 @@ function BoardGameFloor({
                 selectedTable.seats < partySize
               ) {
                 Alert.alert(
-                  'ข้อมูลจองไม่ครบ',
-                  'ระบุเวลา โต๊ะ ชื่อ เบอร์โทร จำนวนคน และระยะเวลาอย่างน้อย 30 นาที',
+                  posText("ข้อมูลจองไม่ครบ"),
+                  posText("ระบุเวลา โต๊ะ ชื่อ เบอร์โทร จำนวนคน และระยะเวลาอย่างน้อย 30 นาที"),
                 );
                 return;
               }
@@ -1490,7 +1470,7 @@ function BoardGameFloor({
           />
           {reservationEditingId ? (
             <Button
-              label="เลิกแก้ไข"
+              label={posText("เลิกแก้ไข")}
               variant="ghost"
               fullWidth
               onPress={resetReservationForm}
@@ -1504,14 +1484,13 @@ function BoardGameFloor({
             ]}
           >
             <Text style={[typography.captionStrong, { color: colors.text }]}>
-              รายการจอง
-            </Text>
+              {posText("รายการจอง") + " "}</Text>
             <View style={styles.reservationFilterRow}>
               <TextInput
-                accessibilityLabel="ค้นหารายการจอง"
+                accessibilityLabel={posText("ค้นหารายการจอง")}
                 value={reservationSearch}
                 onChangeText={setReservationSearch}
-                placeholder="ค้นหาชื่อ เบอร์ หรือโต๊ะ"
+                placeholder={posText("ค้นหาชื่อ เบอร์ หรือโต๊ะ")}
                 placeholderTextColor={colors.textSoft}
                 style={[
                   styles.input,
@@ -1525,8 +1504,8 @@ function BoardGameFloor({
               />
               <View style={styles.reservationFilterDateWrap}>
                 <Pressable
-                  accessibilityLabel="กรองวันที่จอง"
-                  accessibilityHint="แตะเพื่อเปิดปฏิทิน"
+                  accessibilityLabel={posText("กรองวันที่จอง")}
+                  accessibilityHint={posText("แตะเพื่อเปิดปฏิทิน")}
                   accessibilityRole="button"
                   onPress={() => setReservationPickerTarget('filter-date')}
                   style={({ pressed }) => [
@@ -1549,7 +1528,7 @@ function BoardGameFloor({
                       },
                     ]}
                   >
-                    {reservationDateDisplayValue(reservationDate) || 'วันที่'}
+                    {reservationDateDisplayValue(reservationDate) || posText("วันที่")}
                   </Text>
                   {!reservationDate ? (
                     <Text style={styles.reservationPickerGlyph}>📅</Text>
@@ -1557,7 +1536,7 @@ function BoardGameFloor({
                 </Pressable>
                 {reservationDate ? (
                   <Pressable
-                    accessibilityLabel="ล้างตัวกรองวันที่"
+                    accessibilityLabel={posText("ล้างตัวกรองวันที่")}
                     accessibilityRole="button"
                     hitSlop={8}
                     onPress={() => setReservationDate('')}
@@ -1584,8 +1563,7 @@ function BoardGameFloor({
           </View>
           {allReservations.length > 0 && reservations.length === 0 ? (
             <Text style={[typography.caption, { color: colors.textMuted }]}>
-              ไม่พบรายการที่ตรงกับตัวกรอง
-            </Text>
+              {posText("ไม่พบรายการที่ตรงกับตัวกรอง") + " "}</Text>
           ) : null}
           {reservations.map(entry => {
             const reviewTableId = reviewTableByEntry[entry.id] ?? '';
@@ -1608,24 +1586,23 @@ function BoardGameFloor({
             return (
               <View key={entry.id} style={{ gap: spacing.xs }}>
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                  {entry.source === 'CHAT' ? 'แชท / Chat · ' : entry.status === 'REQUESTED' ? 'คำขอออนไลน์ · ' : ''}
-                  {entry.guestName || 'ไม่ระบุชื่อ'} · {entry.partySize} คน ·{' '}
-                  {entry.reservedTableCode || 'รอจัดโต๊ะ'}
+                  {entry.source === 'CHAT' ? posText("แชท / Chat · ") : entry.status === 'REQUESTED' ? posText("คำขอออนไลน์ · ") : ''}
+                  {entry.guestName || posText("ไม่ระบุชื่อ")} · {entry.partySize} {" " + posText("คน ·")}{' '}
+                  {entry.reservedTableCode || posText("รอจัดโต๊ะ")}
                 </Text>
                 <Text style={[typography.caption, { color: colors.textMuted }]}>
                   {entry.reservedFor
-                    ? new Date(entry.reservedFor).toLocaleString('th-TH')
+                    ? new Date(entry.reservedFor).toLocaleString(posLocale())
                     : '-'}{' '}
-                  · {entry.reservedDurationMinutes ?? 0} นาที
-                  {entry.guestEmail ? ` · ${entry.guestEmail}` : ''}
-                  {entry.source === 'CHAT' ? ` · ${entry.guestPhone ?? '—'} · กรุณาโทรแจ้งผล / Call customer; no automatic notification` : ''}
+                  · {entry.reservedDurationMinutes ?? 0} {" " + posText("นาที") + " "}{entry.guestEmail ? ` · ${entry.guestEmail}` : ''}
+                  {entry.source === 'CHAT' ? posText(" · {v0} · กรุณาโทรแจ้งผล / Call customer; no automatic notification", { v0: entry.guestPhone ?? '—' }) : ''}
                 </Text>
                 {entry.depositAmount > 0 ? (
                   <Text
                     style={[typography.caption, { color: colors.textMuted }]}
                   >
-                    มัดจำ ฿{Number(entry.depositAmount).toFixed(2)} ·{' '}
-                    {entry.depositStatus} · แจ้งผล{' '}
+                    {posText("มัดจำ ฿")}{Number(entry.depositAmount).toFixed(2)} ·{' '}
+                    {entry.depositStatus} {" " + posText("· แจ้งผล")}{' '}
                     {entry.decisionNotificationStatus}
                   </Text>
                 ) : null}
@@ -1657,7 +1634,7 @@ function BoardGameFloor({
                     </View>
                     <View style={styles.wrap}>
                       <Button
-                        label="ยืนยันคำขอ"
+                        label={posText("ยืนยันคำขอ")}
                         disabled={!reviewTableId}
                         loading={
                           workingQueueId === `reservation-confirm-${entry.id}`
@@ -1690,7 +1667,7 @@ function BoardGameFloor({
                         }
                       />
                       <Button
-                        label="ปฏิเสธ"
+                        label={posText("ปฏิเสธ")}
                         variant="ghost"
                         loading={
                           workingQueueId === `reservation-reject-${entry.id}`
@@ -1707,7 +1684,7 @@ function BoardGameFloor({
                                     entryId: entry.id,
                                     decision: 'REJECT',
                                     tableId: null,
-                                    reason: 'ร้านไม่สามารถรับคำขอนี้ได้',
+                                    reason: posText("ร้านไม่สามารถรับคำขอนี้ได้"),
                                   },
                                 },
                               }),
@@ -1719,7 +1696,7 @@ function BoardGameFloor({
                 ) : (
                   <View style={styles.wrap}>
                     <Button
-                      label="แก้ไข/เลื่อน"
+                      label={posText("แก้ไข/เลื่อน")}
                       variant="secondary"
                       onPress={() => {
                         setReservationEditingId(entry.id);
@@ -1738,7 +1715,7 @@ function BoardGameFloor({
                       }}
                     />
                     <Button
-                      label="เช็กอิน"
+                      label={posText("เช็กอิน")}
                       variant="secondary"
                       disabled={!canArrive || !depositReady}
                       loading={
@@ -1766,12 +1743,12 @@ function BoardGameFloor({
                     !table.openSession &&
                     table.seats >= entry.partySize ? (
                       <Button
-                        label="นั่งโต๊ะ"
+                        label={posText("นั่งโต๊ะ")}
                         onPress={() => onOpen(table, entry.id)}
                       />
                     ) : null}
                     <Button
-                      label="ยกเลิก"
+                      label={posText("ยกเลิก")}
                       variant="ghost"
                       loading={
                         workingQueueId === `reservation-cancel-${entry.id}`
@@ -1796,7 +1773,7 @@ function BoardGameFloor({
                     />
                     {canMarkNoShow ? (
                       <Button
-                        label="ไม่มา"
+                        label={posText("ไม่มา")}
                         variant="ghost"
                         loading={
                           workingQueueId === `reservation-noshow-${entry.id}`
@@ -1832,22 +1809,20 @@ function BoardGameFloor({
           <View style={styles.between}>
             <View style={styles.flex}>
               <Text style={[typography.subtitle, { color: colors.text }]}>
-                คิวรอโต๊ะ
-              </Text>
+                {posText("คิวรอโต๊ะ") + " "}</Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                รอ {data.waitlist.waitingCount} กลุ่ม ·{' '}
-                {data.waitlist.waitingGuests} คน · นานสุด{' '}
-                {data.waitlist.longestWaitMinutes} นาที
-              </Text>
+                {posText("รอ") + " "}{data.waitlist.waitingCount} {" " + posText("กลุ่ม ·")}{' '}
+                {data.waitlist.waitingGuests} {" " + posText("คน · นานสุด")}{' '}
+                {data.waitlist.longestWaitMinutes} {" " + posText("นาที") + " "}</Text>
             </View>
           </View>
           <View style={styles.wrap}>
             <TextInput
-              accessibilityLabel="จำนวนคนในคิว"
+              accessibilityLabel={posText("จำนวนคนในคิว")}
               keyboardType="number-pad"
               value={queuePartySize}
               onChangeText={setQueuePartySize}
-              placeholder="จำนวนคน"
+              placeholder={posText("จำนวนคน")}
               placeholderTextColor={colors.textSoft}
               style={[
                 styles.input,
@@ -1860,10 +1835,10 @@ function BoardGameFloor({
               ]}
             />
             <TextInput
-              accessibilityLabel="ชื่อเรียกคิว"
+              accessibilityLabel={posText("ชื่อเรียกคิว")}
               value={queueGuestName}
               onChangeText={setQueueGuestName}
-              placeholder="ชื่อเรียก"
+              placeholder={posText("ชื่อเรียก")}
               placeholderTextColor={colors.textSoft}
               style={[
                 styles.input,
@@ -1877,7 +1852,7 @@ function BoardGameFloor({
               ]}
             />
             <Button
-              label="รับคิว"
+              label={posText("รับคิว")}
               loading={workingQueueId === 'add'}
               onPress={() => {
                 const partySize = Number(queuePartySize);
@@ -1886,7 +1861,7 @@ function BoardGameFloor({
                   partySize < 1 ||
                   partySize > 500
                 ) {
-                  Alert.alert('จำนวนคนไม่ถูกต้อง', 'ระบุจำนวนคนระหว่าง 1–500');
+                  Alert.alert(posText("จำนวนคนไม่ถูกต้อง"), posText("ระบุจำนวนคนระหว่าง 1–500"));
                   return;
                 }
                 runQueueAction('add', key =>
@@ -1916,8 +1891,7 @@ function BoardGameFloor({
           </View>
           {openQueue.length === 0 ? (
             <Text style={[typography.body, { color: colors.textMuted }]}>
-              ยังไม่มีคนรอ
-            </Text>
+              {posText("ยังไม่มีคนรอ") + " "}</Text>
           ) : (
             openQueue.map(entry => {
               const fitting = tables.filter(
@@ -1929,27 +1903,26 @@ function BoardGameFloor({
               return (
                 <View key={entry.id} style={{ gap: spacing.xs }}>
                   <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                    คิว {entry.queueNo} · {entry.guestName || 'ไม่ระบุชื่อ'} ·{' '}
-                    {entry.partySize} คน
-                  </Text>
+                    {posText("คิว") + " "}{entry.queueNo} · {entry.guestName || posText("ไม่ระบุชื่อ")} ·{' '}
+                    {entry.partySize} {" " + posText("คน") + " "}</Text>
                   <Text
                     style={[typography.caption, { color: colors.textMuted }]}
                   >
-                    รอ {elapsedLabel(entry.createdAt, now)}
-                    {entry.status === 'CALLED' ? ' · เรียกแล้ว' : ''}
+                    {posText("รอ") + " "}{elapsedLabel(entry.createdAt, now)}
+                    {entry.status === 'CALLED' ? posText(" · เรียกแล้ว") : ''}
                   </Text>
                   <View style={styles.wrap}>
                     {fitting.slice(0, 4).map(table => (
                       <Button
                         key={table.id}
-                        label={`นั่ง ${table.code}`}
+                        label={posText("นั่ง {v0}", { v0: table.code })}
                         variant="secondary"
                         onPress={() => onOpen(table, entry.id)}
                       />
                     ))}
                     {entry.status === 'WAITING' ? (
                       <Button
-                        label="เรียก"
+                        label={posText("เรียก")}
                         variant="secondary"
                         loading={workingQueueId === `call-${entry.id}`}
                         onPress={() =>
@@ -1968,7 +1941,7 @@ function BoardGameFloor({
                       />
                     ) : null}
                     <Button
-                      label={entry.status === 'CALLED' ? 'ไม่มา' : 'ยกเลิก'}
+                      label={entry.status === 'CALLED' ? posText("ไม่มา") : posText("ยกเลิก")}
                       variant="ghost"
                       loading={workingQueueId === `close-${entry.id}`}
                       onPress={() =>
@@ -2004,11 +1977,11 @@ function BoardGameFloor({
           const areaName = areaNameById.get(table.areaId);
           const statusLabel =
             table.openSession?.alertStatus === 'CLOSING'
-              ? 'รอชำระ'
+              ? posText("รอชำระ")
               : visual.label;
           const timer = table.openSession
             ? elapsedClockLabel(table.openSession.startedAt, now)
-            : 'พร้อมใช้งาน';
+            : posText("พร้อมใช้งาน");
           const tableCallCount = calls.filter(call =>
             table.openSession?.sessionIds?.includes(call.sessionId),
           ).length;
@@ -2072,17 +2045,15 @@ function BoardGameFloor({
                 style={[typography.caption, { color: colors.textMuted }]}
               >
                 {areaName ? `${areaName} · ` : ''}
-                {table.seats} ที่นั่ง
-              </Text>
+                {table.seats} {" " + posText("ที่นั่ง") + " "}</Text>
               {isTablet && table.openSession?.startedAt ? (
                 <Text style={[typography.caption, { color: colors.textSoft }]}>
-                  เริ่มเล่น{' '}
+                  {posText("เริ่มเล่น")}{' '}
                   {new Date(table.openSession.startedAt).toLocaleTimeString(
-                    'th-TH',
+                    posLocale(),
                     { hour: '2-digit', minute: '2-digit' },
                   )}{' '}
-                  น.
-                </Text>
+                  {posText("น.") + " "}</Text>
               ) : null}
               {table.openSession &&
               ['ENDING_SOON', 'OVERDUE'].includes(
@@ -2117,10 +2088,10 @@ function BoardGameFloor({
                     { color: visual.color },
                   ]}
                 >
-                  {status === 'blocked' ? 'ไม่พร้อมใช้งาน' : timer}
+                  {status === 'blocked' ? posText("ไม่พร้อมใช้งาน") : timer}
                 </Text>
                 <Button
-                  label={table.openSession ? 'ดูโต๊ะ' : 'เปิดโต๊ะ'}
+                  label={table.openSession ? posText("ดูโต๊ะ") : posText("เปิดโต๊ะ")}
                   variant={table.openSession ? 'secondary' : 'primary'}
                   disabled={table.blocked}
                   onPress={() => onOpen(table)}
@@ -2142,6 +2113,8 @@ function BoardGameFloor({
           value={reservationPickerValue}
           mode={reservationPickerMode}
           display={reservationPickerMode === 'date' ? 'calendar' : 'clock'}
+          positiveButton={{ label: posText("ตกลง") }}
+          negativeButton={{ label: posText("ยกเลิก") }}
           is24Hour
           onChange={handleReservationPickerChange}
         />
@@ -2164,7 +2137,7 @@ function BoardGameFloor({
             ]}
           >
             <Text style={[typography.title, { color: colors.text }]}>
-              {reservationPickerMode === 'date' ? 'เลือกวันที่' : 'เลือกเวลา'}
+              {reservationPickerMode === 'date' ? posText("เลือกวันที่") : posText("เลือกเวลา")}
             </Text>
             {reservationPickerTarget ? (
               <DateTimePicker
@@ -2174,13 +2147,13 @@ function BoardGameFloor({
                   reservationPickerMode === 'date' ? 'inline' : 'spinner'
                 }
                 is24Hour
-                locale="th-TH"
+                locale={posLocale()}
                 themeVariant={scheme}
                 onChange={handleReservationPickerChange}
               />
             ) : null}
             <Button
-              label="เสร็จสิ้น"
+              label={posText("เสร็จสิ้น")}
               fullWidth
               onPress={() => setReservationPickerTarget(null)}
             />
@@ -2203,8 +2176,7 @@ function BoardGameFloor({
           <View>
             <View style={styles.between}>
               <Text style={[typography.title, { color: colors.text }]}>
-                โต๊ะและเวลา
-              </Text>
+                {posText("โต๊ะและเวลา") + " "}</Text>
               {callBell}
             </View>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
@@ -2219,7 +2191,7 @@ function BoardGameFloor({
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.phoneZoneRow}
           >
-            {zoneButton('all', 'ทั้งหมด')}
+            {zoneButton('all', posText("ทั้งหมด"))}
             {areas.map(area =>
               zoneButton(area.id, areaDisplayLabel(area.name)),
             )}
@@ -2243,13 +2215,13 @@ function BoardGameFloor({
         >
           <View style={styles.floorSidebarContent}>
             <Text style={[typography.title, { color: colors.text }]}>
-              Board Game
+              {posText("บอร์ดเกม")}
             </Text>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
               {branchDisplayLabel(branchName)}
             </Text>
             <View style={styles.floorSidebarZones}>
-              {zoneButton('all', 'ทุกโซน')}
+              {zoneButton('all', posText("ทุกโซน"))}
               {areas.map(area =>
                 zoneButton(area.id, areaDisplayLabel(area.name)),
               )}
@@ -2307,17 +2279,16 @@ function BoardGameFloor({
           <View style={styles.floorTabletHeader}>
             <View style={styles.flex}>
               <Text style={[typography.title, { color: colors.text }]}>
-                โต๊ะและเวลา
-              </Text>
+                {posText("โต๊ะและเวลา") + " "}</Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                {new Date(now).toLocaleDateString('th-TH', {
+                {new Date(now).toLocaleDateString(posLocale(), {
                   weekday: 'long',
                   day: 'numeric',
                   month: 'short',
                   year: 'numeric',
                 })}{' '}
-                เวลา{' '}
-                {new Date(now).toLocaleTimeString('th-TH', {
+                {posText("เวลา")}{' '}
+                {new Date(now).toLocaleTimeString(posLocale(), {
                   hour: '2-digit',
                   minute: '2-digit',
                 })}
@@ -2326,7 +2297,7 @@ function BoardGameFloor({
             {callBell}
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="รีเฟรชผังโต๊ะ"
+              accessibilityLabel={posText("รีเฟรชผังโต๊ะ")}
               onPress={onRetry}
               style={({ pressed }) => [
                 styles.floorRefresh,
@@ -2338,8 +2309,7 @@ function BoardGameFloor({
               ]}
             >
               <Text style={[typography.bodyStrong, { color: colors.primary }]}>
-                ↻ รีเฟรช
-              </Text>
+                {posText("↻ รีเฟรช") + " "}</Text>
             </Pressable>
           </View>
           {summary}
@@ -2354,6 +2324,7 @@ function BoardGameFloor({
 }
 
 function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
+  usePosLanguage();
   const { colors, spacing, typography } = useTheme();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const { target: deviceTarget } = useDevice();
@@ -2587,12 +2558,12 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
     if (pending.length === 1) {
       const item = pending[0];
       Alert.alert(
-        item.status === 'OVERDUE' ? 'โต๊ะเกินเวลาแล้ว' : 'โต๊ะใกล้หมดเวลา',
+        item.status === 'OVERDUE' ? posText("โต๊ะเกินเวลาแล้ว") : posText("โต๊ะใกล้หมดเวลา"),
         message,
         [
-          { text: 'รับทราบ' },
+          { text: posText("รับทราบ") },
           {
-            text: 'เปิดโต๊ะ',
+            text: posText("เปิดโต๊ะ"),
             onPress: () =>
               navigation.push('BoardGameDetail', {
                 sessionId: item.sessionId,
@@ -2608,18 +2579,18 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
     ).length;
     const endingSoonCount = pending.length - overdueCount;
     const summary = [
-      overdueCount > 0 ? `เกินเวลา ${overdueCount}` : '',
-      endingSoonCount > 0 ? `ใกล้หมดเวลา ${endingSoonCount}` : '',
+      overdueCount > 0 ? posText("เกินเวลา {v0}", { v0: overdueCount }) : '',
+      endingSoonCount > 0 ? posText("ใกล้หมดเวลา {v0}", { v0: endingSoonCount }) : '',
     ]
       .filter(Boolean)
       .join(' · ');
     Alert.alert(
-      `แจ้งเตือนเวลา ${pending.length} โต๊ะ`,
+      posText("แจ้งเตือนเวลา {v0} โต๊ะ", { v0: pending.length }),
       `${summary}\n\n${message}`,
       [
-        { text: 'รับทราบ' },
+        { text: posText("รับทราบ") },
         {
-          text: 'ดูผังโต๊ะ',
+          text: posText("ดูผังโต๊ะ"),
           onPress: () => navigation.popToTop(),
         },
       ],
@@ -2652,8 +2623,8 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
         ]).catch(() => undefined);
       }
       Alert.alert(
-        stale ? 'ข้อมูลเปลี่ยนไปแล้ว' : 'ทำรายการไม่สำเร็จ',
-        cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
+        stale ? posText("ข้อมูลเปลี่ยนไปแล้ว") : posText("ทำรายการไม่สำเร็จ"),
+        cause instanceof Error ? cause.message : posText("กรุณาลองใหม่"),
       );
     } finally {
       operationInFlight.current = false;
@@ -2668,7 +2639,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
     const group = Number(participantGroup);
     const personalDuration = Number(participantDurationMinutes);
     if (!rate || !Number.isInteger(group) || group < 1 || group > 20) {
-      Alert.alert('ข้อมูลผู้เล่นไม่ครบ', 'เลือกอัตราและระบุกลุ่มบิล 1-20');
+      Alert.alert(posText("ข้อมูลผู้เล่นไม่ครบ"), posText("เลือกอัตราและระบุกลุ่มบิล 1-20"));
       return;
     }
     if (
@@ -2677,7 +2648,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
         personalDuration < 1 ||
         personalDuration > 1440)
     ) {
-      Alert.alert('เวลาของผู้เล่นไม่ถูกต้อง', 'ระบุเวลา 1–1,440 นาที');
+      Alert.alert(posText("เวลาของผู้เล่นไม่ถูกต้อง"), posText("ระบุเวลา 1–1,440 นาที"));
       return;
     }
     const count = selectedMember ? 1 : participantCount;
@@ -2784,8 +2755,8 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
     ? `${
         expectedEndAt.toDateString() === new Date(now).toDateString()
           ? ''
-          : 'พรุ่งนี้ '
-      }${expectedEndAt.toLocaleTimeString('th-TH', {
+          : posText("พรุ่งนี้ ")
+      }${expectedEndAt.toLocaleTimeString(posLocale(), {
         hour: '2-digit',
         minute: '2-digit',
       })}`
@@ -2795,19 +2766,19 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
       ? hourlyTotal * (durationValue / 60)
       : null;
   const openBlockReason = shift.loading
-    ? 'กำลังตรวจสอบสถานะกะ...'
+    ? posText("กำลังตรวจสอบสถานะกะ...")
     : shift.error
-    ? 'ตรวจสอบสถานะกะไม่สำเร็จ กรุณาลองใหม่'
+    ? posText("ตรวจสอบสถานะกะไม่สำเร็จ กรุณาลองใหม่")
     : !shift.isOpen
-    ? 'ยังไม่ได้เปิดกะ กรุณาเปิดกะก่อนเริ่มจับเวลา'
+    ? posText("ยังไม่ได้เปิดกะ กรุณาเปิดกะก่อนเริ่มจับเวลา")
     : activeRates.length === 0
-    ? 'ยังไม่มีอัตราค่าเล่นที่เปิดใช้ กรุณาตั้งค่าจาก Admin ก่อน'
+    ? posText("ยังไม่มีอัตราค่าเล่นที่เปิดใช้ กรุณาตั้งค่าจาก Admin ก่อน")
     : participants.length === 0
-    ? 'เพิ่มผู้เล่นอย่างน้อย 1 คนก่อนเริ่มจับเวลา'
+    ? posText("เพิ่มผู้เล่นอย่างน้อย 1 คนก่อนเริ่มจับเวลา")
     : billingMode === 'FIXED_DURATION' && !fixedDurationValid
-    ? 'ระบุเวลาที่ซื้อระหว่าง 1–1,440 นาที'
+    ? posText("ระบุเวลาที่ซื้อระหว่าง 1–1,440 นาที")
     : billingMode === 'FIXED_DURATION' && !alertValid
-    ? 'ระบุเวลาแจ้งเตือนระหว่าง 0–120 นาที'
+    ? posText("ระบุเวลาแจ้งเตือนระหว่าง 0–120 นาที")
     : null;
   const wideOpenPanel = supportsTabletLayout(windowWidth, windowHeight, 760);
 
@@ -2853,7 +2824,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
         const result = response.data?.bmsPosOpenBoardGameSession;
         id = result?.id ?? result?.sessionId ?? '';
       }
-      if (!id) throw new Error('เปิดโต๊ะไม่สำเร็จ');
+      if (!id) throw new Error(posText("เปิดโต๊ะไม่สำเร็จ"));
       navigation.replace('BoardGameDetail', { sessionId: id });
     }).catch(() => undefined);
   };
@@ -2865,12 +2836,12 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
       return;
     }
     Alert.alert(
-      'จำนวนคนเกินความจุโต๊ะ',
-      `${openingTable.code} มี ${openingTable.seats} ที่นั่ง แต่กำลังเปิดให้ ${participants.length} คน`,
+      posText("จำนวนคนเกินความจุโต๊ะ"),
+      posText("{v0} มี {v1} ที่นั่ง แต่กำลังเปิดให้ {v2} คน", { v0: openingTable.code, v1: openingTable.seats, v2: participants.length }),
       [
-        { text: 'กลับ' },
+        { text: posText("กลับ") },
         {
-          text: 'ยืนยันเปิดโต๊ะ',
+          text: posText("ยืนยันเปิดโต๊ะ"),
           onPress: () => performOpenSession(true),
         },
       ],
@@ -2881,7 +2852,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
     if (!selectedSession) return;
     const rate = activeRates.find(item => item.id === participantRateId);
     if (!rate) {
-      Alert.alert('ข้อมูลผู้เล่นไม่ครบ', 'เลือกอัตราค่าบริการ');
+      Alert.alert(posText("ข้อมูลผู้เล่นไม่ครบ"), posText("เลือกอัตราค่าบริการ"));
       return;
     }
     const personalDuration = Number(participantDurationMinutes);
@@ -2891,7 +2862,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
         personalDuration < 1 ||
         personalDuration > 1440)
     ) {
-      Alert.alert('เวลาของผู้เล่นไม่ถูกต้อง', 'ระบุเวลา 1–1,440 นาที');
+      Alert.alert(posText("เวลาของผู้เล่นไม่ถูกต้อง"), posText("ระบุเวลา 1–1,440 นาที"));
       return;
     }
     const operationName = `add-participant-${selectedSession.id}`;
@@ -2927,12 +2898,12 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
       nextGuestCount > selectedTable.seats
     ) {
       Alert.alert(
-        'จำนวนคนเกินความจุโต๊ะ',
-        `${selectedTable.code} มี ${selectedTable.seats} ที่นั่ง แต่จะมี ${nextGuestCount} คน`,
+        posText("จำนวนคนเกินความจุโต๊ะ"),
+        posText("{v0} มี {v1} ที่นั่ง แต่จะมี {v2} คน", { v0: selectedTable.code, v1: selectedTable.seats, v2: nextGuestCount }),
         [
-          { text: 'กลับ' },
+          { text: posText("กลับ") },
           {
-            text: 'ยืนยันเพิ่มผู้เล่น',
+            text: posText("ยืนยันเพิ่มผู้เล่น"),
             onPress: () => submitAdditionalParticipant(true),
           },
         ],
@@ -2969,12 +2940,12 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
           view.kind === 'open'
             ? openingTable
               ? seatingQueueEntry
-                ? `พาคิว ${seatingQueueEntry.queueNo} ไปโต๊ะ ${openingTable.code}`
-                : `เปิดโต๊ะ ${openingTable.code}`
-              : 'เปิดโต๊ะ'
-            : 'รายละเอียดโต๊ะ'
+                ? posText("พาคิว {v0} ไปโต๊ะ {v1}", { v0: seatingQueueEntry.queueNo, v1: openingTable.code })
+                : posText("เปิดโต๊ะ {v0}", { v0: openingTable.code })
+              : posText("เปิดโต๊ะ")
+            : posText("รายละเอียดโต๊ะ")
         }
-        subtitle={`${session?.branch.name ?? '-'} · โต๊ะ เวลา ผู้เล่น และเกม`}
+        subtitle={posText("{v0} · โต๊ะ เวลา ผู้เล่น และเกม", { v0: session?.branch.name ?? '-' })}
         onBack={() => navigation.goBack()}
       />
       <ScrollView
@@ -2983,17 +2954,15 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
         {workspace.loading && !data ? (
           <Card>
             <Text style={[typography.body, { color: colors.textMuted }]}>
-              กำลังโหลดผังโต๊ะ...
-            </Text>
+              {posText("กำลังโหลดผังโต๊ะ...") + " "}</Text>
           </Card>
         ) : null}
         {workspace.error && !data ? (
           <Card style={{ gap: spacing.sm }}>
             <Text style={[typography.bodyStrong, { color: colors.danger }]}>
-              โหลดข้อมูล Board Game ไม่สำเร็จ
-            </Text>
+              {posText("โหลดข้อมูล Board Game ไม่สำเร็จ") + " "}</Text>
             <Button
-              label="ลองใหม่"
+              label={posText("ลองใหม่")}
               variant="secondary"
               onPress={() => workspace.refetch()}
             />
@@ -3002,20 +2971,18 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
         {selectedSessionId && !selectedSession && sessionQuery.loading ? (
           <Card>
             <Text style={[typography.body, { color: colors.textMuted }]}>
-              กำลังโหลดรายละเอียดโต๊ะ...
-            </Text>
+              {posText("กำลังโหลดรายละเอียดโต๊ะ...") + " "}</Text>
           </Card>
         ) : null}
         {selectedSessionId && !selectedSession && sessionQuery.error ? (
           <Card style={{ gap: spacing.sm }}>
             <Text style={[typography.bodyStrong, { color: colors.danger }]}>
-              เปิดรายละเอียดโต๊ะไม่สำเร็จ
-            </Text>
+              {posText("เปิดรายละเอียดโต๊ะไม่สำเร็จ") + " "}</Text>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
               {sessionQuery.error.message}
             </Text>
             <Button
-              label="ลองใหม่"
+              label={posText("ลองใหม่")}
               variant="primary"
               onPress={() => sessionQuery.refetch()}
             />
@@ -3026,12 +2993,10 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
             <View style={styles.between}>
               <View style={styles.flex}>
                 <Text style={[typography.subtitle, { color: colors.text }]}>
-                  เปิดโต๊ะ {openingTable.code} · {openingTable.name}
+                  {posText("เปิดโต๊ะ") + " "}{openingTable.code} · {openingTable.name}
                 </Text>
                 <Text style={[typography.caption, { color: colors.textSoft }]}>
-                  {openingTable.seats} ที่นั่ง · ตั้งเวลา เพิ่มผู้เล่น
-                  และตรวจสรุปก่อนเริ่ม
-                </Text>
+                  {openingTable.seats} {" " + posText("ที่นั่ง · ตั้งเวลา เพิ่มผู้เล่น และตรวจสรุปก่อนเริ่ม") + " "}</Text>
               </View>
             </View>
             <View
@@ -3061,20 +3026,18 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     <Text
                       style={[typography.bodyStrong, { color: colors.text }]}
                     >
-                      เวลา
-                    </Text>
+                      {posText("เวลา") + " "}</Text>
                     <Text
                       style={[typography.caption, { color: colors.textSoft }]}
                     >
-                      เลือกว่าจะคิดค่าเล่นของโต๊ะนี้แบบไหน
-                    </Text>
+                      {posText("เลือกว่าจะคิดค่าเล่นของโต๊ะนี้แบบไหน") + " "}</Text>
                   </View>
                 </View>
 
                 <View style={styles.wrap}>
                   <Button
-                    label="คิดตามเวลาจริง"
-                    accessibilityLabel="คิดตามเวลาจริง เริ่มจับเวลาเลยและคิดเงินตอนปิดโต๊ะ"
+                    label={posText("คิดตามเวลาจริง")}
+                    accessibilityLabel={posText("คิดตามเวลาจริง เริ่มจับเวลาเลยและคิดเงินตอนปิดโต๊ะ")}
                     variant={
                       billingMode === 'OPEN_ENDED' ? 'primary' : 'secondary'
                     }
@@ -3084,8 +3047,8 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     }}
                   />
                   <Button
-                    label="ซื้อเวลาไว้ก่อน"
-                    accessibilityLabel="ซื้อเวลาไว้ก่อน ระบบเตือนก่อนหมดเวลา"
+                    label={posText("ซื้อเวลาไว้ก่อน")}
+                    accessibilityLabel={posText("ซื้อเวลาไว้ก่อน ระบบเตือนก่อนหมดเวลา")}
                     variant={
                       billingMode === 'FIXED_DURATION' ? 'primary' : 'secondary'
                     }
@@ -3097,8 +3060,8 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                 </View>
                 <Text style={[typography.caption, { color: colors.textMuted }]}>
                   {billingMode === 'OPEN_ENDED'
-                    ? 'เริ่มจับเวลาเลย แล้วคิดเงินตามเวลาจริงตอนปิดบิล'
-                    : 'กำหนดเวลาที่ซื้อไว้ ระบบจะแจ้งเตือนพนักงานก่อนหมดเวลา'}
+                    ? posText("เริ่มจับเวลาเลย แล้วคิดเงินตามเวลาจริงตอนปิดบิล")
+                    : posText("กำหนดเวลาที่ซื้อไว้ ระบบจะแจ้งเตือนพนักงานก่อนหมดเวลา")}
                 </Text>
 
                 {billingMode === 'FIXED_DURATION' ? (
@@ -3107,8 +3070,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                       <Text
                         style={[typography.bodyStrong, { color: colors.text }]}
                       >
-                        เวลาที่ซื้อ
-                      </Text>
+                        {posText("เวลาที่ซื้อ") + " "}</Text>
                       <View style={styles.wrap}>
                         {DURATION_PRESETS.map(minutes => (
                           <Button
@@ -3123,7 +3085,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                           />
                         ))}
                         <Button
-                          label="กำหนดเอง"
+                          label={posText("กำหนดเอง")}
                           variant={
                             DURATION_PRESETS.includes(
                               durationValue as (typeof DURATION_PRESETS)[number],
@@ -3151,13 +3113,12 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                               { color: colors.text },
                             ]}
                           >
-                            จำนวนนาที
-                          </Text>
+                            {posText("จำนวนนาที") + " "}</Text>
                           <TextInput
-                            accessibilityLabel="จำนวนนาทีที่ซื้อ"
+                            accessibilityLabel={posText("จำนวนนาทีที่ซื้อ")}
                             value={durationMinutes}
                             onChangeText={setDurationMinutes}
-                            placeholder="เช่น 150"
+                            placeholder={posText("เช่น 150")}
                             placeholderTextColor={colors.textSoft}
                             keyboardType="number-pad"
                             style={inputStyle}
@@ -3171,8 +3132,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                             { color: colors.success },
                           ]}
                         >
-                          เริ่มตอนนี้ → หมดเวลาประมาณ {expectedEndLabel} น.
-                        </Text>
+                          {posText("เริ่มตอนนี้ → หมดเวลาประมาณ") + " "}{expectedEndLabel} {" " + posText("น.") + " "}</Text>
                       ) : null}
                     </View>
 
@@ -3180,18 +3140,16 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                       <Text
                         style={[typography.bodyStrong, { color: colors.text }]}
                       >
-                        เตือนก่อนหมดเวลา
-                      </Text>
+                        {posText("เตือนก่อนหมดเวลา") + " "}</Text>
                       <Text
                         style={[typography.caption, { color: colors.textSoft }]}
                       >
-                        ผังโต๊ะจะแจ้งเตือนพนักงานตามเวลาที่เลือก
-                      </Text>
+                        {posText("ผังโต๊ะจะแจ้งเตือนพนักงานตามเวลาที่เลือก") + " "}</Text>
                       <View style={styles.wrap}>
                         {ALERT_PRESETS.map(minutes => (
                           <Button
                             key={minutes}
-                            label={`${minutes} นาที`}
+                            label={posText("{v0} นาที", { v0: minutes })}
                             variant={
                               alertValue === minutes ? 'primary' : 'secondary'
                             }
@@ -3201,7 +3159,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                           />
                         ))}
                         <Button
-                          label="กำหนดเอง"
+                          label={posText("กำหนดเอง")}
                           variant={
                             ALERT_PRESETS.includes(
                               alertValue as (typeof ALERT_PRESETS)[number],
@@ -3223,10 +3181,10 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                         alertValue as (typeof ALERT_PRESETS)[number],
                       ) ? (
                         <TextInput
-                          accessibilityLabel="แจ้งเตือนล่วงหน้ากี่นาที"
+                          accessibilityLabel={posText("แจ้งเตือนล่วงหน้ากี่นาที")}
                           value={alertBeforeMinutes}
                           onChangeText={setAlertBeforeMinutes}
-                          placeholder="0–120 นาที"
+                          placeholder={posText("0–120 นาที")}
                           placeholderTextColor={colors.textSoft}
                           keyboardType="number-pad"
                           style={inputStyle}
@@ -3257,13 +3215,11 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     <Text
                       style={[typography.bodyStrong, { color: colors.text }]}
                     >
-                      ใครเล่นบ้าง
-                    </Text>
+                      {posText("ใครเล่นบ้าง") + " "}</Text>
                     <Text
                       style={[typography.caption, { color: colors.textSoft }]}
                     >
-                      ค่าเล่นคิดเป็นรายคน เลือกอัตราแล้วเพิ่มลงโต๊ะ
-                    </Text>
+                      {posText("ค่าเล่นคิดเป็นรายคน เลือกอัตราแล้วเพิ่มลงโต๊ะ") + " "}</Text>
                   </View>
                 </View>
 
@@ -3271,8 +3227,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   <Text
                     style={[typography.captionStrong, { color: colors.text }]}
                   >
-                    อัตราค่าเล่น
-                  </Text>
+                    {posText("อัตราค่าเล่น") + " "}</Text>
                   <View style={styles.wrap}>
                     {activeRates.map(rate => (
                       <Button
@@ -3294,8 +3249,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                         { color: colors.danger },
                       ]}
                     >
-                      ยังไม่มีอัตราค่าบริการที่เปิดใช้ กรุณาตั้งค่าจาก Admin
-                    </Text>
+                      {posText("ยังไม่มีอัตราค่าบริการที่เปิดใช้ กรุณาตั้งค่าจาก Admin") + " "}</Text>
                   ) : null}
                 </View>
 
@@ -3303,22 +3257,19 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   <Text
                     style={[typography.captionStrong, { color: colors.text }]}
                   >
-                    ค้นสมาชิก (ไม่บังคับ)
-                  </Text>
+                    {posText("ค้นสมาชิก (ไม่บังคับ)") + " "}</Text>
                   <Text
                     style={[typography.caption, { color: colors.textSoft }]}
                   >
-                    พิมพ์อย่างน้อย 3 ตัว
-                    เลือกสมาชิกแล้วระบบจะใช้อัตราสมาชิกให้อัตโนมัติ
-                  </Text>
+                    {posText("พิมพ์อย่างน้อย 3 ตัว เลือกสมาชิกแล้วระบบจะใช้อัตราสมาชิกให้อัตโนมัติ") + " "}</Text>
                   <TextInput
-                    accessibilityLabel="ค้นหาสมาชิกด้วยชื่อ เลขสมาชิก หรือเบอร์โทร"
+                    accessibilityLabel={posText("ค้นหาสมาชิกด้วยชื่อ เลขสมาชิก หรือเบอร์โทร")}
                     value={memberSearch}
                     onChangeText={value => {
                       setMemberSearch(value);
                       setSelectedMember(null);
                     }}
-                    placeholder="ชื่อ เลขสมาชิก หรือเบอร์โทร"
+                    placeholder={posText("ชื่อ เลขสมาชิก หรือเบอร์โทร")}
                     placeholderTextColor={colors.textSoft}
                     style={inputStyle}
                   />
@@ -3345,7 +3296,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                         { color: colors.success },
                       ]}
                     >
-                      เลือกแล้ว: {selectedMember.name}
+                      {posText("เลือกแล้ว:") + " "}{selectedMember.name}
                       {selectedMember.memberNo
                         ? ` · ${selectedMember.memberNo}`
                         : ''}
@@ -3357,13 +3308,12 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   <Text
                     style={[typography.captionStrong, { color: colors.text }]}
                   >
-                    ชื่อเรียก (ไม่บังคับ)
-                  </Text>
+                    {posText("ชื่อเรียก (ไม่บังคับ)") + " "}</Text>
                   <TextInput
-                    accessibilityLabel="ชื่อเรียกผู้เล่น"
+                    accessibilityLabel={posText("ชื่อเรียกผู้เล่น")}
                     value={participantName}
                     onChangeText={setParticipantName}
-                    placeholder="เช่น พี่นก"
+                    placeholder={posText("เช่น พี่นก")}
                     placeholderTextColor={colors.textSoft}
                     style={inputStyle}
                   />
@@ -3373,17 +3323,15 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   <Text
                     style={[typography.captionStrong, { color: colors.text }]}
                   >
-                    จำนวนคน
-                  </Text>
+                    {posText("จำนวนคน") + " "}</Text>
                   <Text
                     style={[typography.caption, { color: colors.textSoft }]}
                   >
-                    เพิ่มหลายคนพร้อมกันได้เมื่อไม่ได้เลือกสมาชิก
-                  </Text>
+                    {posText("เพิ่มหลายคนพร้อมกันได้เมื่อไม่ได้เลือกสมาชิก") + " "}</Text>
                   <View style={styles.quantityControl}>
                     <Button
                       label="−"
-                      accessibilityLabel="ลดจำนวนคน"
+                      accessibilityLabel={posText("ลดจำนวนคน")}
                       variant="secondary"
                       disabled={
                         Boolean(selectedMember) || participantCount <= 1
@@ -3393,7 +3341,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                       }
                     />
                     <Text
-                      accessibilityLabel={`จำนวน ${participantCount} คน`}
+                      accessibilityLabel={posText("จำนวน {v0} คน", { v0: participantCount })}
                       style={[
                         typography.subtitle,
                         styles.quantityValue,
@@ -3404,7 +3352,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     </Text>
                     <Button
                       label="+"
-                      accessibilityLabel="เพิ่มจำนวนคน"
+                      accessibilityLabel={posText("เพิ่มจำนวนคน")}
                       variant="secondary"
                       disabled={
                         Boolean(selectedMember) || participantCount >= 20
@@ -3420,18 +3368,16 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   <Text
                     style={[typography.captionStrong, { color: colors.text }]}
                   >
-                    ใส่ไว้บิลไหน
-                  </Text>
+                    {posText("ใส่ไว้บิลไหน") + " "}</Text>
                   <Text
                     style={[typography.caption, { color: colors.textSoft }]}
                   >
-                    คนที่จ่ายด้วยกันให้อยู่บิลเดียวกัน ถ้าแยกจ่ายให้เปิดบิลใหม่
-                  </Text>
+                    {posText("คนที่จ่ายด้วยกันให้อยู่บิลเดียวกัน ถ้าแยกจ่ายให้เปิดบิลใหม่") + " "}</Text>
                   <View style={styles.wrap}>
                     {draftBillingGroups.map(([group, count]) => (
                       <Button
                         key={group}
-                        label={`บิล ${group} · ${count} คน`}
+                        label={posText("บิล {v0} · {v1} คน", { v0: group, v1: count })}
                         variant={
                           selectedBillingGroup === group
                             ? 'primary'
@@ -3442,7 +3388,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     ))}
                     {nextBillingGroup <= 20 && participants.length > 0 ? (
                       <Button
-                        label="เปิดบิลใหม่"
+                        label={posText("เปิดบิลใหม่")}
                         variant="secondary"
                         onPress={() =>
                           setParticipantGroup(String(nextBillingGroup))
@@ -3456,11 +3402,10 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   <Text
                     style={[typography.captionStrong, { color: colors.text }]}
                   >
-                    เวลาของผู้เล่นชุดนี้
-                  </Text>
+                    {posText("เวลาของผู้เล่นชุดนี้") + " "}</Text>
                   <View style={styles.wrap}>
                     <Button
-                      label="ตามเวลาจริง"
+                      label={posText("ตามเวลาจริง")}
                       variant={
                         participantTimeMode === 'ACTUAL'
                           ? 'primary'
@@ -3470,7 +3415,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     />
                     {billingMode === 'FIXED_DURATION' ? (
                       <Button
-                        label="ตามเวลาของโต๊ะ"
+                        label={posText("ตามเวลาของโต๊ะ")}
                         variant={
                           participantTimeMode === 'SESSION_END'
                             ? 'primary'
@@ -3480,7 +3425,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                       />
                     ) : null}
                     <Button
-                      label="ซื้อเวลาแยกคน"
+                      label={posText("ซื้อเวลาแยกคน")}
                       variant={
                         participantTimeMode === 'DURATION'
                           ? 'primary'
@@ -3491,10 +3436,10 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   </View>
                   {participantTimeMode === 'DURATION' ? (
                     <TextInput
-                      accessibilityLabel="จำนวนนาทีของผู้เล่นชุดนี้"
+                      accessibilityLabel={posText("จำนวนนาทีของผู้เล่นชุดนี้")}
                       value={participantDurationMinutes}
                       onChangeText={setParticipantDurationMinutes}
-                      placeholder="เช่น 60"
+                      placeholder={posText("เช่น 60")}
                       placeholderTextColor={colors.textSoft}
                       keyboardType="number-pad"
                       style={inputStyle}
@@ -3505,8 +3450,8 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                 <Button
                   label={
                     participantCount > 1 && !selectedMember
-                      ? `เพิ่ม ${participantCount} คนลงโต๊ะ`
-                      : 'เพิ่มลงโต๊ะ'
+                      ? posText("เพิ่ม {v0} คนลงโต๊ะ", { v0: participantCount })
+                      : posText("เพิ่มลงโต๊ะ")
                   }
                   variant="secondary"
                   disabled={!participantRateId}
@@ -3535,7 +3480,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                               ]}
                             >
                               {participant.displayName ||
-                                `ผู้เล่น ${index + 1}`}
+                                posText("ผู้เล่น {v0}", { v0: index + 1 })}
                               {participant.memberNo
                                 ? ` · ${participant.memberNo}`
                                 : ''}
@@ -3549,16 +3494,16 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                               {rate
                                 ? rateLabel(rate.name, rate.pricePerHour)
                                 : '-'}{' '}
-                              · บิล {participant.billingGroupNo} ·{' '}
+                              {posText("· บิล") + " "}{participant.billingGroupNo} ·{' '}
                               {participant.timeMode === 'DURATION'
-                                ? `${participant.purchasedDurationMinutes} นาที`
+                                ? posText("{v0} นาที", { v0: participant.purchasedDurationMinutes })
                                 : participant.timeMode === 'SESSION_END'
-                                ? 'ตามเวลาของโต๊ะ'
-                                : 'ตามเวลาจริง'}
+                                ? posText("ตามเวลาของโต๊ะ")
+                                : posText("ตามเวลาจริง")}
                             </Text>
                           </View>
                           <Button
-                            label="ลบ"
+                            label={posText("ลบ")}
                             variant="ghost"
                             onPress={() =>
                               setParticipants(rows =>
@@ -3595,20 +3540,18 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     <Text
                       style={[typography.bodyStrong, { color: colors.text }]}
                     >
-                      หมายเหตุ
-                    </Text>
+                      {posText("หมายเหตุ") + " "}</Text>
                     <Text
                       style={[typography.caption, { color: colors.textSoft }]}
                     >
-                      ไม่บังคับ ใช้บอกข้อมูลที่พนักงานคนอื่นควรรู้
-                    </Text>
+                      {posText("ไม่บังคับ ใช้บอกข้อมูลที่พนักงานคนอื่นควรรู้") + " "}</Text>
                   </View>
                 </View>
                 <TextInput
-                  accessibilityLabel="หมายเหตุโต๊ะ"
+                  accessibilityLabel={posText("หมายเหตุโต๊ะ")}
                   value={sessionNote}
                   onChangeText={setSessionNote}
-                  placeholder="เช่น จองไว้ถึง 21:00 หรือขอโต๊ะเงียบ ๆ"
+                  placeholder={posText("เช่น จองไว้ถึง 21:00 หรือขอโต๊ะเงียบ ๆ")}
                   placeholderTextColor={colors.textSoft}
                   style={inputStyle}
                 />
@@ -3625,8 +3568,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                 ]}
               >
                 <Text style={[typography.subtitle, { color: colors.text }]}>
-                  สรุปก่อนเริ่ม
-                </Text>
+                  {posText("สรุปก่อนเริ่ม") + " "}</Text>
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
                   {openingTable.code} · {openingTable.name}
                 </Text>
@@ -3635,16 +3577,15 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     <Text
                       style={[typography.caption, { color: colors.textMuted }]}
                     >
-                      เวลา
-                    </Text>
+                      {posText("เวลา") + " "}</Text>
                     <Text
                       style={[typography.captionStrong, { color: colors.text }]}
                     >
                       {billingMode === 'FIXED_DURATION' && fixedDurationValid
-                        ? `ซื้อไว้ ${durationLabel(durationValue)}`
+                        ? posText("ซื้อไว้ {v0}", { v0: durationLabel(durationValue) })
                         : billingMode === 'FIXED_DURATION'
-                        ? 'ยังไม่ได้ระบุเวลา'
-                        : 'คิดตามเวลาจริง'}
+                        ? posText("ยังไม่ได้ระบุเวลา")
+                        : posText("คิดตามเวลาจริง")}
                     </Text>
                   </View>
                   {expectedEndLabel ? (
@@ -3655,34 +3596,30 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                           { color: colors.textMuted },
                         ]}
                       >
-                        หมดเวลาประมาณ
-                      </Text>
+                        {posText("หมดเวลาประมาณ") + " "}</Text>
                       <Text
                         style={[
                           typography.captionStrong,
                           { color: colors.text },
                         ]}
                       >
-                        {expectedEndLabel} น.
-                      </Text>
+                        {expectedEndLabel} {" " + posText("น.") + " "}</Text>
                     </View>
                   ) : null}
                   <View style={styles.between}>
                     <Text
                       style={[typography.caption, { color: colors.textMuted }]}
                     >
-                      ผู้เล่น
-                    </Text>
+                      {posText("ผู้เล่น") + " "}</Text>
                     <Text
                       style={[typography.captionStrong, { color: colors.text }]}
                     >
-                      {participants.length} คน ·{' '}
+                      {participants.length} {" " + posText("คน ·")}{' '}
                       {
                         draftBillingGroups.filter(([, count]) => count > 0)
                           .length
                       }{' '}
-                      บิล
-                    </Text>
+                      {posText("บิล") + " "}</Text>
                   </View>
                 </View>
 
@@ -3700,8 +3637,8 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                             { color: colors.textSecondary },
                           ]}
                         >
-                          {participant.displayName || `ผู้เล่น ${index + 1}`} ·{' '}
-                          {rate?.name ?? '-'} · บิล {participant.billingGroupNo}
+                          {participant.displayName || posText("ผู้เล่น {v0}", { v0: index + 1 })} ·{' '}
+                          {rate?.name ?? '-'} {" " + posText("· บิล") + " "}{participant.billingGroupNo}
                         </Text>
                       );
                     })}
@@ -3710,8 +3647,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   <Text
                     style={[typography.caption, { color: colors.textMuted }]}
                   >
-                    ยังไม่มีผู้เล่นในโต๊ะนี้
-                  </Text>
+                    {posText("ยังไม่มีผู้เล่นในโต๊ะนี้") + " "}</Text>
                 )}
 
                 <View
@@ -3720,18 +3656,14 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   <Text
                     style={[typography.caption, { color: colors.textMuted }]}
                   >
-                    ค่าเล่นรวม
-                  </Text>
+                    {posText("ค่าเล่นรวม") + " "}</Text>
                   <Text style={[typography.title, { color: colors.text }]}>
-                    ฿{bahtLabel(hourlyTotal)} / ชม.
-                  </Text>
+                    {posText("฿")}{bahtLabel(hourlyTotal)} {" " + posText("/ ชม.") + " "}</Text>
                   {estimatedTotal != null && participants.length > 0 ? (
                     <Text
                       style={[typography.caption, { color: colors.textMuted }]}
                     >
-                      {durationLabel(durationValue)} ≈ ฿
-                      {bahtLabel(estimatedTotal)} · ยังไม่รวมของที่สั่งเข้าโต๊ะ
-                    </Text>
+                      {durationLabel(durationValue)} {" " + posText("≈ ฿") + " "}{bahtLabel(estimatedTotal)} {" " + posText("· ยังไม่รวมของที่สั่งเข้าโต๊ะ") + " "}</Text>
                   ) : null}
                 </View>
 
@@ -3755,15 +3687,15 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                       },
                     ]}
                   >
-                    {openBlockReason ?? 'ครบแล้ว พร้อมเริ่มจับเวลา'}
+                    {openBlockReason ?? posText("ครบแล้ว พร้อมเริ่มจับเวลา")}
                   </Text>
                 </View>
                 <Button
-                  label="เริ่มจับเวลา"
+                  label={posText("เริ่มจับเวลา")}
                   accessibilityLabel={
                     openBlockReason
-                      ? `ยังเริ่มจับเวลาไม่ได้: ${openBlockReason}`
-                      : 'เริ่มจับเวลา นาฬิกาจะเริ่มเดินทันที'
+                      ? posText("ยังเริ่มจับเวลาไม่ได้: {v0}", { v0: openBlockReason })
+                      : posText("เริ่มจับเวลา นาฬิกาจะเริ่มเดินทันที")
                   }
                   fullWidth
                   loading={working === `open-${openingTable.id}`}
@@ -3772,7 +3704,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                 />
                 {!shift.loading && !shift.error && !shift.isOpen ? (
                   <Button
-                    label="ไปเปิดกะ"
+                    label={posText("ไปเปิดกะ")}
                     variant="secondary"
                     fullWidth
                     onPress={() =>
@@ -3781,8 +3713,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   />
                 ) : null}
                 <Text style={[typography.caption, { color: colors.textSoft }]}>
-                  กดแล้วนาฬิกาจะเริ่มเดินทันที
-                </Text>
+                  {posText("กดแล้วนาฬิกาจะเริ่มเดินทันที") + " "}</Text>
               </View>
             </View>
           </Card>
@@ -3794,7 +3725,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
               <View style={styles.flex}>
                 <Text style={[typography.subtitle, { color: colors.text }]}>
                   {selectedTable?.code ?? ''} ·{' '}
-                  {selectedTable?.name ?? 'โต๊ะบอร์ดเกม'}
+                  {selectedTable?.name ?? posText("โต๊ะบอร์ดเกม")}
                 </Text>
                 <Text
                   style={[
@@ -3818,7 +3749,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
               </View>
               {selectedSession.status === 'OPEN' ? (
                 <Button
-                  label="QR เรียกพนักงาน"
+                  label={posText("QR เรียกพนักงาน")}
                   variant="secondary"
                   loading={issuingGuestAccess}
                   onPress={() => {
@@ -3837,15 +3768,15 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                       .then(response => {
                         const access =
                           response.data?.bmsPosIssueBoardGameGuestAccess;
-                        if (!access) throw new Error('สร้าง QR ไม่สำเร็จ');
+                        if (!access) throw new Error(posText("สร้าง QR ไม่สำเร็จ"));
                         setGuestAccess(access);
                       })
                       .catch(cause =>
                         Alert.alert(
-                          'สร้าง QR ไม่สำเร็จ',
+                          posText("สร้าง QR ไม่สำเร็จ"),
                           cause instanceof Error
                             ? cause.message
-                            : 'กรุณาลองใหม่',
+                            : posText("กรุณาลองใหม่"),
                         ),
                       );
                   }}
@@ -3854,23 +3785,19 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
             </View>
             {selectedSession.nextAlertAt ? (
               <Text style={[typography.body, { color: colors.text }]}>
-                รอบเวลาถัดไป{' '}
+                {posText("รอบเวลาถัดไป")}{' '}
                 {new Date(selectedSession.nextAlertAt).toLocaleTimeString(
-                  'th-TH',
+                  posLocale(),
                   { hour: '2-digit', minute: '2-digit' },
                 )}{' '}
-                · เตือนก่อน {selectedSession.alertBeforeMinutes} นาที
-              </Text>
+                {posText("· เตือนก่อน") + " "}{selectedSession.alertBeforeMinutes} {" " + posText("นาที") + " "}</Text>
             ) : null}
             {seatingSessionIds.length > 1 ? (
               <>
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                  ชุดลูกค้าที่นั่งร่วมโต๊ะนี้
-                </Text>
+                  {posText("ชุดลูกค้าที่นั่งร่วมโต๊ะนี้") + " "}</Text>
                 <Text style={[typography.caption, { color: colors.textSoft }]}>
-                  แต่ละชุดมีเวลา ผู้เล่น เกม และบิลของตัวเอง
-                  เลือกชุดก่อนทำรายการ
-                </Text>
+                  {posText("แต่ละชุดมีเวลา ผู้เล่น เกม และบิลของตัวเอง เลือกชุดก่อนทำรายการ") + " "}</Text>
                 <ScrollView
                   horizontal
                   style={{ flexGrow: 0 }}
@@ -3879,9 +3806,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   {seatingSessionIds.map((id, index) => (
                     <Button
                       key={id}
-                      label={`ชุด ${index + 1}${
-                        id === selectedSession.id ? ' · กำลังดู' : ''
-                      }`}
+                      label={posText("ชุด {v0}{v1}", { v0: index + 1, v1: id === selectedSession.id ? posText(" · กำลังดู") : '' })}
                       variant={
                         id === selectedSession.id ? 'primary' : 'secondary'
                       }
@@ -3896,12 +3821,11 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
               </>
             ) : null}
             <Text style={[typography.bodyStrong, { color: colors.text }]}>
-              ย้าย / รวมโต๊ะ
-            </Text>
+              {posText("ย้าย / รวมโต๊ะ") + " "}</Text>
             <Text style={[typography.caption, { color: colors.textSoft }]}>
               {sharedSeating
-                ? 'โต๊ะนี้มีหลายชุดนั่งร่วมกัน — ย้ายไปโต๊ะว่างจะแยกเฉพาะชุดนี้ออกไป ส่วนรวมโต๊ะจะพาไปทั้งโต๊ะ'
-                : 'เวลา บิล ของบน tab และเกมที่ยืมยังเป็นของเดิมทุกใบ เปลี่ยนแค่ว่านั่งโต๊ะไหน'}
+                ? posText("โต๊ะนี้มีหลายชุดนั่งร่วมกัน — ย้ายไปโต๊ะว่างจะแยกเฉพาะชุดนี้ออกไป ส่วนรวมโต๊ะจะพาไปทั้งโต๊ะ")
+                : posText("เวลา บิล ของบน tab และเกมที่ยืมยังเป็นของเดิมทุกใบ เปลี่ยนแค่ว่านั่งโต๊ะไหน")}
             </Text>
             <ScrollView
               horizontal
@@ -3944,36 +3868,36 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     key={target.id}
                     label={`${target.code} · ${
                       merging
-                        ? 'รวมโต๊ะ'
+                        ? posText("รวมโต๊ะ")
                         : sharedSeating
-                        ? 'แยกมาที่นี่'
-                        : 'ย้ายมาที่นี่'
+                        ? posText("แยกมาที่นี่")
+                        : posText("ย้ายมาที่นี่")
                     }`}
                     variant="secondary"
                     loading={working === busyKey}
                     onPress={() =>
                       Alert.alert(
                         merging
-                          ? `รวมกับโต๊ะ ${target.code}`
-                          : `ย้ายไปโต๊ะ ${target.code}`,
+                          ? posText("รวมกับโต๊ะ {v0}", { v0: target.code })
+                          : posText("ย้ายไปโต๊ะ {v0}", { v0: target.code }),
                         merging
-                          ? 'ทุกชุดที่โต๊ะนี้จะไปนั่งรวมกับโต๊ะปลายทาง โดยบิลและเวลาของแต่ละชุดยังแยกเดิม'
+                          ? posText("ทุกชุดที่โต๊ะนี้จะไปนั่งรวมกับโต๊ะปลายทาง โดยบิลและเวลาของแต่ละชุดยังแยกเดิม")
                           : sharedSeating
-                          ? 'เฉพาะชุดที่กำลังดูอยู่จะย้ายไปโต๊ะนั้น ชุดอื่นยังอยู่โต๊ะเดิม'
-                          : 'ทั้งโต๊ะจะย้ายไปโต๊ะนั้น โดยบิลและเวลายังเป็นของเดิม',
+                          ? posText("เฉพาะชุดที่กำลังดูอยู่จะย้ายไปโต๊ะนั้น ชุดอื่นยังอยู่โต๊ะเดิม")
+                          : posText("ทั้งโต๊ะจะย้ายไปโต๊ะนั้น โดยบิลและเวลายังเป็นของเดิม"),
                         [
-                          { text: 'กลับ' },
+                          { text: posText("กลับ") },
                           {
-                            text: 'ยืนยัน',
+                            text: posText("ยืนยัน"),
                             onPress: () => {
                               if (overCapacity) {
                                 Alert.alert(
-                                  'จำนวนคนเกินความจุโต๊ะ',
-                                  `${target.code} มี ${target.seats} ที่นั่ง แต่จะมี ${targetGuestCount} คน`,
+                                  posText("จำนวนคนเกินความจุโต๊ะ"),
+                                  posText("{v0} มี {v1} ที่นั่ง แต่จะมี {v2} คน", { v0: target.code, v1: target.seats, v2: targetGuestCount }),
                                   [
-                                    { text: 'กลับ' },
+                                    { text: posText("กลับ") },
                                     {
-                                      text: 'ยืนยันอีกครั้ง',
+                                      text: posText("ยืนยันอีกครั้ง"),
                                       onPress: () => relocate(true),
                                     },
                                   ],
@@ -3992,22 +3916,21 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
             </ScrollView>
             {relocateTargets.length === 0 ? (
               <Text style={[typography.caption, { color: colors.textSoft }]}>
-                สาขานี้ไม่มีโต๊ะอื่นให้ย้ายไป
-              </Text>
+                {posText("สาขานี้ไม่มีโต๊ะอื่นให้ย้ายไป") + " "}</Text>
             ) : null}
             {selectedSession.status === 'CLOSING' ? (
               <>
                 <Text style={[typography.numeric, { color: colors.text }]}>
-                  ฿{selectedSession.amountDue.toFixed(2)}
+                  {posText("฿")}{selectedSession.amountDue.toFixed(2)}
                 </Text>
                 {selectedSession.billingGroups
                   .filter(group => group.status === 'CLOSING')
                   .map(group => (
                     <Button
                       key={group.id}
-                      label={`ไปชำระกลุ่ม ${group.groupNo} · ฿${(
+                      label={posText("ไปชำระกลุ่ม {v0} · ฿{v1}", { v0: group.groupNo, v1: (
                         group.amountDue + group.tabAmount
-                      ).toFixed(2)}`}
+                      ).toFixed(2) })}
                       fullWidth
                       onPress={() => openBillingGroupCheckout(group.id)}
                     />
@@ -4020,8 +3943,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     <Text
                       style={[typography.bodyStrong, { color: colors.text }]}
                     >
-                      กลุ่มบิล
-                    </Text>
+                      {posText("กลุ่มบิล") + " "}</Text>
                     {openBillingGroups.length > 1 ? (
                       <View style={{ gap: spacing.sm }}>
                         <Text
@@ -4030,25 +3952,24 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                             { color: colors.textSoft },
                           ]}
                         >
-                          รวมกลุ่มก่อนปิดเพื่อชำระครั้งเดียว หรือแยกกลุ่มไปโต๊ะว่าง
-                        </Text>
+                          {posText("รวมกลุ่มก่อนปิดเพื่อชำระครั้งเดียว หรือแยกกลุ่มไปโต๊ะว่าง") + " "}</Text>
                         {openBillingGroups.slice(1).map(sourceGroup => {
                           const targetGroup = openBillingGroups[0];
                           const mergeKey = `merge-group-${sourceGroup.id}-${targetGroup.id}`;
                           return (
                             <Button
                               key={mergeKey}
-                              label={`รวมกลุ่ม ${sourceGroup.groupNo} เข้ากลุ่ม ${targetGroup.groupNo}`}
+                              label={posText("รวมกลุ่ม {v0} เข้ากลุ่ม {v1}", { v0: sourceGroup.groupNo, v1: targetGroup.groupNo })}
                               variant="secondary"
                               loading={working === mergeKey}
                               onPress={() =>
                                 Alert.alert(
-                                  'รวมเป็นบิลเดียว',
-                                  `ผู้เล่นและของบนบิลกลุ่ม ${sourceGroup.groupNo} จะย้ายเข้ากลุ่ม ${targetGroup.groupNo}`,
+                                  posText("รวมเป็นบิลเดียว"),
+                                  posText("ผู้เล่นและของบนบิลกลุ่ม {v0} จะย้ายเข้ากลุ่ม {v1}", { v0: sourceGroup.groupNo, v1: targetGroup.groupNo }),
                                   [
-                                    { text: 'กลับ' },
+                                    { text: posText("กลับ") },
                                     {
-                                      text: 'ยืนยันรวมบิล',
+                                      text: posText("ยืนยันรวมบิล"),
                                       onPress: () =>
                                         run(mergeKey, async () => {
                                           await mergeBillingGroups({
@@ -4085,16 +4006,14 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                                 { color: colors.text },
                               ]}
                             >
-                              เกมและบัตรที่จะย้ายตามกลุ่ม
-                            </Text>
+                              {posText("เกมและบัตรที่จะย้ายตามกลุ่ม") + " "}</Text>
                             <Text
                               style={[
                                 typography.caption,
                                 { color: colors.textSoft },
                               ]}
                             >
-                              ไม่เลือก = ทรัพย์สินยังอยู่โต๊ะเดิม · บัตรที่ผูกกับเกมจะเลือกเกมให้อัตโนมัติ
-                            </Text>
+                              {posText("ไม่เลือก = ทรัพย์สินยังอยู่โต๊ะเดิม · บัตรที่ผูกกับเกมจะเลือกเกมให้อัตโนมัติ") + " "}</Text>
                             <View style={styles.wrap}>
                               {selectedSession.games
                                 .filter(loan => loan.status === 'CHECKED_OUT')
@@ -4146,7 +4065,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                                           },
                                         ]}
                                       >
-                                        เกม · {loan.title ?? loan.copyCode ?? 'ไม่ระบุชื่อ'}
+                                        {posText("เกม ·") + " "}{loan.title ?? loan.copyCode ?? posText("ไม่ระบุชื่อ")}
                                       </Text>
                                     </Pressable>
                                   );
@@ -4196,7 +4115,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                                           },
                                         ]}
                                       >
-                                        บัตร · {hold.holderName ?? hold.documentKind}
+                                        {posText("บัตร ·") + " "}{hold.holderName ?? hold.documentKind}
                                       </Text>
                                     </Pressable>
                                   );
@@ -4241,7 +4160,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                                         ?.bmsPosDetachBoardGameBillingGroup
                                         .sessionId;
                                     if (!nextSessionId)
-                                      throw new Error('แยกกลุ่มไม่สำเร็จ');
+                                      throw new Error(posText("แยกกลุ่มไม่สำเร็จ"));
                                     setDetachLoanIds([]);
                                     setDetachHoldIds([]);
                                     navigation.replace('BoardGameDetail', {
@@ -4251,28 +4170,28 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                                 return (
                                   <Button
                                     key={detachKey}
-                                    label={`กลุ่ม ${group.groupNo} → ${target.code}`}
+                                    label={posText("กลุ่ม {v0} → {v1}", { v0: group.groupNo, v1: target.code })}
                                     variant="secondary"
                                     loading={working === detachKey}
                                     onPress={() => {
                                       const overCapacity =
                                         groupGuests > target.seats;
                                       Alert.alert(
-                                        `แยกกลุ่ม ${group.groupNo} ไป ${target.code}`,
-                                        `ย้ายผู้เล่น ${groupGuests} คน ของบนบิล เกม ${detachLoanIds.length} รายการ และบัตร ${detachHoldIds.length} รายการไปโต๊ะใหม่`,
+                                        posText("แยกกลุ่ม {v0} ไป {v1}", { v0: group.groupNo, v1: target.code }),
+                                        posText("ย้ายผู้เล่น {v0} คน ของบนบิล เกม {v1} รายการ และบัตร {v2} รายการไปโต๊ะใหม่", { v0: groupGuests, v1: detachLoanIds.length, v2: detachHoldIds.length }),
                                         [
-                                          { text: 'กลับ' },
+                                          { text: posText("กลับ") },
                                           {
-                                            text: 'ยืนยัน',
+                                            text: posText("ยืนยัน"),
                                             onPress: () => {
                                               if (overCapacity) {
                                                 Alert.alert(
-                                                  'จำนวนคนเกินความจุโต๊ะ',
-                                                  `${target.code} มี ${target.seats} ที่นั่ง แต่กลุ่มนี้มี ${groupGuests} คน`,
+                                                  posText("จำนวนคนเกินความจุโต๊ะ"),
+                                                  posText("{v0} มี {v1} ที่นั่ง แต่กลุ่มนี้มี {v2} คน", { v0: target.code, v1: target.seats, v2: groupGuests }),
                                                   [
-                                                    { text: 'กลับ' },
+                                                    { text: posText("กลับ") },
                                                     {
-                                                      text: 'ยืนยันอีกครั้ง',
+                                                      text: posText("ยืนยันอีกครั้ง"),
                                                       onPress: () =>
                                                         executeDetach(true),
                                                     },
@@ -4302,28 +4221,27 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                             { color: colors.text, flex: 1 },
                           ]}
                         >
-                          กลุ่ม {group.groupNo} ·{' '}
+                          {posText("กลุ่ม") + " "}{group.groupNo} ·{' '}
                           {group.status === 'OPEN'
-                            ? 'กำลังเล่น'
+                            ? posText("กำลังเล่น")
                             : group.status === 'CLOSING'
-                            ? 'รอชำระ'
-                            : 'ชำระแล้ว'}
-                          {' · '}฿
-                          {(group.amountDue + group.tabAmount).toFixed(2)}
+                            ? posText("รอชำระ")
+                            : posText("ชำระแล้ว")}
+                          {' · '}{posText("฿") + " "}{(group.amountDue + group.tabAmount).toFixed(2)}
                         </Text>
                         {group.status === 'OPEN' ? (
                           <Button
-                            label="ปิดบิล/เก็บเงิน"
+                            label={posText("ปิดบิล/เก็บเงิน")}
                             variant="secondary"
                             loading={working === `close-group-${group.id}`}
                             onPress={() =>
                               Alert.alert(
-                                `ปิดบิลกลุ่ม ${group.groupNo}`,
-                                'ค่าเวลาของกลุ่มนี้จะหยุดตรงนี้ ส่วนกลุ่มอื่นยังเล่นต่อ',
+                                posText("ปิดบิลกลุ่ม {v0}", { v0: group.groupNo }),
+                                posText("ค่าเวลาของกลุ่มนี้จะหยุดตรงนี้ ส่วนกลุ่มอื่นยังเล่นต่อ"),
                                 [
-                                  { text: 'กลับ' },
+                                  { text: posText("กลับ") },
                                   {
-                                    text: 'ยืนยัน',
+                                    text: posText("ยืนยัน"),
                                     onPress: () => {
                                       run(
                                         `close-group-${group.id}`,
@@ -4345,7 +4263,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                                               ?.bmsPosCloseBoardGameBillingGroup
                                               .groups[0];
                                           if (!closed?.id)
-                                            throw new Error('ปิดบิลไม่สำเร็จ');
+                                            throw new Error(posText("ปิดบิลไม่สำเร็จ"));
                                           openBillingGroupCheckout(closed.id);
                                         },
                                       );
@@ -4357,7 +4275,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                           />
                         ) : group.status === 'CLOSING' ? (
                           <Button
-                            label="ไปชำระ"
+                            label={posText("ไปชำระ")}
                             onPress={() => openBillingGroupCheckout(group.id)}
                           />
                         ) : null}
@@ -4366,12 +4284,9 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   </>
                 ) : null}
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                  ของที่สั่งเข้าบิล
-                </Text>
+                  {posText("ของที่สั่งเข้าบิล") + " "}</Text>
                 <Text style={[typography.caption, { color: colors.textSoft }]}>
-                  ของที่ส่งให้ลูกค้าแล้วจะถูกจองสต็อกทันที
-                  และรวมกับค่าเวลาเมื่อชำระ
-                </Text>
+                  {posText("ของที่ส่งให้ลูกค้าแล้วจะถูกจองสต็อกทันที และรวมกับค่าเวลาเมื่อชำระ") + " "}</Text>
                 {selectedSession.billingGroups.map(group => {
                   const draft = tabDrafts[group.id] ?? { sku: '', qty: '1' };
                   return (
@@ -4383,8 +4298,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                             { color: colors.text },
                           ]}
                         >
-                          กลุ่ม {group.groupNo} · ของบนบิล ฿
-                          {group.tabAmount.toFixed(2)}
+                          {posText("กลุ่ม") + " "}{group.groupNo} {" " + posText("· ของบนบิล ฿") + " "}{group.tabAmount.toFixed(2)}
                         </Text>
                       ) : null}
                       {group.tabItems.length === 0 ? (
@@ -4394,8 +4308,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                             { color: colors.textMuted },
                           ]}
                         >
-                          ยังไม่มีสินค้าในบิลนี้
-                        </Text>
+                          {posText("ยังไม่มีสินค้าในบิลนี้") + " "}</Text>
                       ) : null}
                       {group.tabItems.map(item => (
                         <View key={item.id} style={styles.between}>
@@ -4413,7 +4326,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                           </Text>
                           {group.status === 'OPEN' ? (
                             <Button
-                              label="เอาออก"
+                              label={posText("เอาออก")}
                               variant="danger"
                               loading={working === `tab-remove-${item.id}`}
                               onPress={() =>
@@ -4447,7 +4360,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                                 [group.id]: { ...draft, sku },
                               }))
                             }
-                            placeholder="บาร์โค้ด / SKU"
+                            placeholder={posText("บาร์โค้ด / SKU")}
                             placeholderTextColor={colors.textSoft}
                             autoCapitalize="characters"
                             style={[inputStyle, styles.flex]}
@@ -4460,13 +4373,13 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                                 [group.id]: { ...draft, qty },
                               }))
                             }
-                            placeholder="จำนวน"
+                            placeholder={posText("จำนวน")}
                             placeholderTextColor={colors.textSoft}
                             keyboardType="number-pad"
                             style={[inputStyle, styles.groupInput]}
                           />
                           <Button
-                            label="เพิ่มเข้าบิล"
+                            label={posText("เพิ่มเข้าบิล")}
                             disabled={!draft.sku.trim()}
                             loading={working === `tab-add-${group.id}`}
                             onPress={() => {
@@ -4477,8 +4390,8 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                                 qty > 9999
                               ) {
                                 Alert.alert(
-                                  'จำนวนไม่ถูกต้อง',
-                                  'ระบุจำนวนเต็มตั้งแต่ 1 ถึง 9,999',
+                                  posText("จำนวนไม่ถูกต้อง"),
+                                  posText("ระบุจำนวนเต็มตั้งแต่ 1 ถึง 9,999"),
                                 );
                                 return;
                               }
@@ -4513,8 +4426,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   );
                 })}
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                  ผู้เล่น
-                </Text>
+                  {posText("ผู้เล่น") + " "}</Text>
                 {selectedSession.participants.map((participant, index) => (
                   <View key={participant.id} style={styles.between}>
                     <Text
@@ -4528,27 +4440,26 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                         },
                       ]}
                     >
-                      {participant.displayName || `ผู้เล่น ${index + 1}`} ·{' '}
-                      {participant.participantType ?? '-'} · ฿
-                      {(participant.hourlyRate ?? 0).toFixed(2)}/ชม. · บิล{' '}
+                      {participant.displayName || posText("ผู้เล่น {v0}", { v0: index + 1 })} ·{' '}
+                      {participant.participantType ?? '-'} {" " + posText("· ฿") + " "}{(participant.hourlyRate ?? 0).toFixed(2)}{posText("/ชม. · บิล")}{' '}
                       {participant.billingGroupNo ?? 1}
                       {participant.timeMode === 'DURATION' &&
                       participant.plannedEndAt
-                        ? ` · ถึง ${new Date(
+                        ? posText(" · ถึง {v0}", { v0: new Date(
                             participant.plannedEndAt,
-                          ).toLocaleTimeString('th-TH', {
+                          ).toLocaleTimeString(posLocale(), {
                             hour: '2-digit',
                             minute: '2-digit',
-                          })}`
+                          }) })
                         : participant.timeMode === 'SESSION_END'
-                        ? ' · ตามเวลาของโต๊ะ'
-                        : ' · ตามเวลาจริง'}
-                      {participant.leftAt ? ' · ออกแล้ว' : ''}
+                        ? posText(" · ตามเวลาของโต๊ะ")
+                        : posText(" · ตามเวลาจริง")}
+                      {participant.leftAt ? posText(" · ออกแล้ว") : ''}
                     </Text>
                     {!participant.leftAt &&
                     participant.billingGroupStatus === 'OPEN' ? (
                       <Button
-                        label="ออก"
+                        label={posText("ออก")}
                         variant="ghost"
                         loading={working === `leave-${participant.id}`}
                         onPress={() =>
@@ -4589,7 +4500,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     setMemberSearch(value);
                     setSelectedMember(null);
                   }}
-                  placeholder="ค้นหาสมาชิกด้วยชื่อ เลขสมาชิก หรือเบอร์โทร"
+                  placeholder={posText("ค้นหาสมาชิกด้วยชื่อ เลขสมาชิก หรือเบอร์โทร")}
                   placeholderTextColor={colors.textSoft}
                   style={inputStyle}
                 />
@@ -4616,7 +4527,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                       { color: colors.success },
                     ]}
                   >
-                    สมาชิกที่เลือก: {selectedMember.name}
+                    {posText("สมาชิกที่เลือก:") + " "}{selectedMember.name}
                     {selectedMember.memberNo
                       ? ` · ${selectedMember.memberNo}`
                       : ''}
@@ -4625,11 +4536,10 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                 <Text
                   style={[typography.captionStrong, { color: colors.text }]}
                 >
-                  เวลาของผู้เล่นใหม่
-                </Text>
+                  {posText("เวลาของผู้เล่นใหม่") + " "}</Text>
                 <View style={styles.wrap}>
                   <Button
-                    label="ตามเวลาจริง"
+                    label={posText("ตามเวลาจริง")}
                     variant={
                       participantTimeMode === 'ACTUAL'
                         ? 'primary'
@@ -4639,7 +4549,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   />
                   {selectedSession.billingMode === 'FIXED_DURATION' ? (
                     <Button
-                      label="ตามเวลาของโต๊ะ"
+                      label={posText("ตามเวลาของโต๊ะ")}
                       variant={
                         participantTimeMode === 'SESSION_END'
                           ? 'primary'
@@ -4649,7 +4559,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     />
                   ) : null}
                   <Button
-                    label="ซื้อเวลาแยกคน"
+                    label={posText("ซื้อเวลาแยกคน")}
                     variant={
                       participantTimeMode === 'DURATION'
                         ? 'primary'
@@ -4662,7 +4572,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   <TextInput
                     value={participantDurationMinutes}
                     onChangeText={setParticipantDurationMinutes}
-                    placeholder="จำนวนนาที เช่น 60"
+                    placeholder={posText("จำนวนนาที เช่น 60")}
                     placeholderTextColor={colors.textSoft}
                     keyboardType="number-pad"
                     style={inputStyle}
@@ -4672,20 +4582,20 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   <TextInput
                     value={participantName}
                     onChangeText={setParticipantName}
-                    placeholder="ชื่อผู้เล่นเพิ่ม"
+                    placeholder={posText("ชื่อผู้เล่นเพิ่ม")}
                     placeholderTextColor={colors.textSoft}
                     style={[inputStyle, styles.flex]}
                   />
                   <TextInput
                     value={participantGroup}
                     onChangeText={setParticipantGroup}
-                    placeholder="กลุ่ม"
+                    placeholder={posText("กลุ่ม")}
                     placeholderTextColor={colors.textSoft}
                     keyboardType="number-pad"
                     style={[inputStyle, styles.groupInput]}
                   />
                   <Button
-                    label="เพิ่ม"
+                    label={posText("เพิ่ม")}
                     disabled={!participantRateId}
                     loading={
                       working === `add-participant-${selectedSession.id}`
@@ -4695,8 +4605,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                 </View>
 
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                  เกมที่ยืม
-                </Text>
+                  {posText("เกมที่ยืม") + " "}</Text>
                 {selectedSession.games
                   .filter(game => game.status === 'CHECKED_OUT')
                   .map(game => (
@@ -4711,7 +4620,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                       </Text>
                       <View style={styles.wrap}>
                         <Button
-                          label="คืนปกติ"
+                          label={posText("คืนปกติ")}
                           variant="secondary"
                           loading={working === `return-${game.id}`}
                           onPress={() =>
@@ -4735,7 +4644,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                           }
                         />
                         <Button
-                          label="มีปัญหา"
+                          label={posText("มีปัญหา")}
                           variant="danger"
                           onPress={() =>
                             run(`issue-${game.id}`, async () => {
@@ -4751,7 +4660,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                                     copyStatus: 'NEEDS_CHECK',
                                     returnNote:
                                       returnNote.trim() ||
-                                      'พนักงานระบุว่าต้องตรวจกล่อง',
+                                      posText("พนักงานระบุว่าต้องตรวจกล่อง"),
                                   },
                                 },
                               });
@@ -4765,7 +4674,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                 <TextInput
                   value={returnNote}
                   onChangeText={setReturnNote}
-                  placeholder="หมายเหตุสภาพเกมตอนคืน"
+                  placeholder={posText("หมายเหตุสภาพเกมตอนคืน")}
                   placeholderTextColor={colors.textSoft}
                   style={inputStyle}
                 />
@@ -4803,8 +4712,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   <Text
                     style={[typography.caption, { color: colors.textMuted }]}
                   >
-                    ไม่มีกล่องเกมที่พร้อมยืมในสาขานี้
-                  </Text>
+                    {posText("ไม่มีกล่องเกมที่พร้อมยืมในสาขานี้") + " "}</Text>
                 ) : null}
 
                 {/* บัตรที่รับไว้ค้ำกล่องเกม (`9.93`)
@@ -4812,16 +4720,14 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     **จอนี้ไม่มีทางอ่านเลขเต็ม** — เครื่องขายเป็นจอที่แชร์กันและหันออกทางลูกค้า
                     การอ่านเลขอยู่หลังบ้านอย่างเดียว (board_game.identity.reveal) */}
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                  บัตรที่รับไว้
-                </Text>
+                  {posText("บัตรที่รับไว้") + " "}</Text>
                 {selectedSession.identityHolds.filter(
                   hold => hold.status === 'HELD',
                 ).length === 0 ? (
                   <Text
                     style={[typography.caption, { color: colors.textMuted }]}
                   >
-                    ไม่ได้ถือบัตรของโต๊ะนี้ไว้
-                  </Text>
+                    {posText("ไม่ได้ถือบัตรของโต๊ะนี้ไว้") + " "}</Text>
                 ) : null}
                 {selectedSession.identityHolds
                   .filter(hold => hold.status === 'HELD')
@@ -4837,11 +4743,11 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                         {IDENTITY_KIND_LABEL[hold.documentKind] ??
                           hold.documentKind}
                         {hold.documentNumberTail
-                          ? ` · ลงท้าย ${hold.documentNumberTail}`
-                          : ' · ไม่ได้บันทึกเลข'}
+                          ? posText(" · ลงท้าย {v0}", { v0: hold.documentNumberTail })
+                          : posText(" · ไม่ได้บันทึกเลข")}
                       </Text>
                       <Button
-                        label="คืนบัตร"
+                        label={posText("คืนบัตร")}
                         variant="secondary"
                         loading={working === `id-release-${hold.id}`}
                         onPress={() =>
@@ -4880,7 +4786,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                 <TextInput
                   value={holderName}
                   onChangeText={setHolderName}
-                  placeholder="ชื่อบนบัตร"
+                  placeholder={posText("ชื่อบนบัตร")}
                   placeholderTextColor={colors.textSoft}
                   style={inputStyle}
                 />
@@ -4888,12 +4794,12 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                 <TextInput
                   value={documentNumber}
                   onChangeText={setDocumentNumber}
-                  placeholder="เลขบัตร (ไม่บังคับ)"
+                  placeholder={posText("เลขบัตร (ไม่บังคับ)")}
                   placeholderTextColor={colors.textSoft}
                   style={inputStyle}
                 />
                 <Button
-                  label="รับบัตรไว้"
+                  label={posText("รับบัตรไว้")}
                   variant="secondary"
                   disabled={!holderName.trim()}
                   loading={working === 'identity-hold'}
@@ -4925,7 +4831,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                 <TextInput
                   value={cancelReason}
                   onChangeText={setCancelReason}
-                  placeholder="เหตุผลยกเลิก session (กรอกเมื่อต้องยกเลิก)"
+                  placeholder={posText("เหตุผลยกเลิก session (กรอกเมื่อต้องยกเลิก)")}
                   placeholderTextColor={colors.textSoft}
                   style={inputStyle}
                 />
@@ -4933,7 +4839,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                 <View style={styles.wrap}>
                   {selectedSession.billingMode === 'FIXED_DURATION' ? (
                     <Button
-                      label="เพิ่มเวลา 30 นาที"
+                      label={posText("เพิ่มเวลา 30 นาที")}
                       variant="secondary"
                       loading={working === `extend-${selectedSession.id}`}
                       onPress={() =>
@@ -4971,23 +4877,23 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                   <Button
                     label={
                       openBillingGroups.length > 1
-                        ? 'ปิดเวลาทุกกลุ่ม'
-                        : 'ปิดเวลา/คิดเงิน'
+                        ? posText("ปิดเวลาทุกกลุ่ม")
+                        : posText("ปิดเวลา/คิดเงิน")
                     }
                     loading={working === `close-session-${selectedSession.id}`}
                     onPress={() =>
                       Alert.alert(
-                        'ปิดเวลาและคิดเงิน',
+                        posText("ปิดเวลาและคิดเงิน"),
                         openBillingGroups.length > 1
-                          ? `ระบบจะแช่ยอดเป็น ${openBillingGroups.length} บิลแยกกัน หากต้องการใบเสร็จเดียวให้กลับไปรวมกลุ่มก่อน`
-                          : 'ระบบจะ freeze ค่าเวลาตามผู้เล่นและอัตราปัจจุบัน หลังจากนี้แก้รายการไม่ได้',
+                          ? posText("ระบบจะแช่ยอดเป็น {v0} บิลแยกกัน หากต้องการใบเสร็จเดียวให้กลับไปรวมกลุ่มก่อน", { v0: openBillingGroups.length })
+                          : posText("ระบบจะ freeze ค่าเวลาตามผู้เล่นและอัตราปัจจุบัน หลังจากนี้แก้รายการไม่ได้"),
                         [
-                          { text: 'กลับ' },
+                          { text: posText("กลับ") },
                           {
                             text:
                               openBillingGroups.length > 1
-                                ? `ปิดแยก ${openBillingGroups.length} บิล`
-                                : 'ยืนยัน',
+                                ? posText("ปิดแยก {v0} บิล", { v0: openBillingGroups.length })
+                                : posText("ยืนยัน"),
                             onPress: () => {
                               run(
                                 `close-session-${selectedSession.id}`,
@@ -5010,13 +4916,13 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                                     !bill?.sessionId ||
                                     bill.groups.length === 0
                                   )
-                                    throw new Error('ปิดเวลาไม่สำเร็จ');
+                                    throw new Error(posText("ปิดเวลาไม่สำเร็จ"));
                                   if (bill.groups.length === 1) {
                                     openBillingGroupCheckout(bill.groups[0].id);
                                   } else {
                                     Alert.alert(
-                                      'ปิดเวลาทุกกลุ่มแล้ว',
-                                      `มี ${bill.groups.length} บิลรอชำระ เลือกเก็บทีละกลุ่ม`,
+                                      posText("ปิดเวลาทุกกลุ่มแล้ว"),
+                                      posText("มี {v0} บิลรอชำระ เลือกเก็บทีละกลุ่ม", { v0: bill.groups.length }),
                                     );
                                   }
                                 },
@@ -5028,14 +4934,14 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                     }
                   />
                   <Button
-                    label="ยกเลิก session"
+                    label={posText("ยกเลิก session")}
                     variant="danger"
                     disabled={!cancelReason.trim()}
                     onPress={() =>
-                      Alert.alert('ยกเลิก session', cancelReason.trim(), [
-                        { text: 'กลับ' },
+                      Alert.alert(posText("ยกเลิก session"), cancelReason.trim(), [
+                        { text: posText("กลับ") },
                         {
-                          text: 'ยืนยันยกเลิก',
+                          text: posText("ยืนยันยกเลิก"),
                           style: 'destructive',
                           onPress: () => {
                             run(
@@ -5087,12 +4993,10 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
               ]}
             >
               <Text style={[typography.title, { color: colors.text }]}>
-                QR เรียกพนักงาน
-              </Text>
+                {posText("QR เรียกพนักงาน") + " "}</Text>
               <Text style={[typography.body, { color: colors.textMuted }]}>
-                ให้ลูกค้าที่ {guestAccess.tableName || guestAccess.tableCode}{' '}
-                สแกนจากเครื่องของตน
-              </Text>
+                {posText("ให้ลูกค้าที่") + " "}{guestAccess.tableName || guestAccess.tableCode}{' '}
+                {posText("สแกนจากเครื่องของตน") + " "}</Text>
               <View style={styles.qrCanvas}>
                 <QRCode
                   value={new URL(
@@ -5105,7 +5009,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                 />
               </View>
               <Button
-                label="แชร์ลิงก์"
+                label={posText("แชร์ลิงก์")}
                 fullWidth
                 onPress={() => {
                   const url = new URL(
@@ -5116,7 +5020,7 @@ function BoardGameWorkspace({ navigation, view }: WorkspaceProps) {
                 }}
               />
               <Button
-                label="ปิด"
+                label={posText("ปิด")}
                 variant="ghost"
                 fullWidth
                 onPress={() => setGuestAccess(null)}

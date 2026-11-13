@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import React, { FC, useMemo, useRef, useEffect } from 'react';
 import { Space, Avatar, Button, Typography } from 'antd';
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
@@ -38,6 +40,7 @@ const AttachFileField: FC<AttachFileFieldProps> = ({
   accept = 'image/*',
   thumbSize = 120,
 }) => {
+  const uiText = useUiText();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const previews = useMemo(() => {
@@ -65,7 +68,7 @@ const AttachFileField: FC<AttachFileFieldProps> = ({
     if (added.length === 0) return;
     const newList = [...values, ...added];
     onChange(newList);
-    onSnackbar?.({ open: true, message: `Added ${added.length} file(s)` });
+    onSnackbar?.({ open: true, message: uiText("admin_ui.en_added_file_s_d804e", { v0: added.length }) });
     e.target.value = '';
   };
 
@@ -74,10 +77,10 @@ const AttachFileField: FC<AttachFileFieldProps> = ({
     if (isExisting(item)) {
       const i = next.findIndex((v) => isExisting(v) && (v as any)._id === (item as any)._id);
       if (i !== -1) next[i] = { ...(next[i] as any), delete: true };
-      onSnackbar?.({ open: true, message: 'Marked image for delete' });
+      onSnackbar?.({ open: true, message: uiText("admin_ui.en_marked_image_for_delete_fc56e") });
     } else {
       next.splice(index, 1);
-      onSnackbar?.({ open: true, message: 'Removed image' });
+      onSnackbar?.({ open: true, message: uiText("admin_ui.en_removed_image_7cb39") });
     }
     onChange(next);
   };

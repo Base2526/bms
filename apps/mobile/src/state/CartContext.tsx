@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React, {
   createContext,
   useCallback,
@@ -105,6 +106,7 @@ interface CartContextValue {
 const CartContext = createContext<CartContextValue | null>(null);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
+  const language = usePosLanguage();
   const { session } = useSession();
   const { isOpen: isShiftOpen } = useShift();
   const { resolveVariant } = useCatalog();
@@ -134,8 +136,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       lines: null,
       extraLines: null,
     }),
-    [
-      coupon?.code,
+    [coupon?.code,
       manualDiscount?.amount,
       member?.id,
       pointsToRedeem,
@@ -343,7 +344,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               name:
                 parked.cart.member.name ??
                 parked.cart.member.memberNo ??
-                'สมาชิก',
+                posText("สมาชิก", undefined, language),
               phone: parked.cart.member.phone,
               tier: null,
               tierDiscountPct: 0,
@@ -372,13 +373,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             }
           : null,
       })),
-    [parkedQuery.data],
+    [language, parkedQuery.data],
   );
 
   const mutatePark = useCallback(
     async (input: Record<string, unknown>) => {
-      if (!session) return 'กรุณาเข้าใช้งานใหม่';
-      if (!isShiftOpen) return 'กรุณาเปิดกะก่อนจัดการบิลพัก';
+      if (!session) return posText("กรุณาเข้าใช้งานใหม่");
+      if (!isShiftOpen) return posText("กรุณาเปิดกะก่อนจัดการบิลพัก");
       try {
         const response = await parkMutation({
           variables: {
@@ -393,12 +394,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           !result ||
           !['PARKED', 'RESUMED', 'DROPPED'].includes(result.status)
         ) {
-          return result?.reason ?? result?.status ?? 'จัดการบิลพักไม่สำเร็จ';
+          return result?.reason ?? result?.status ?? posText("จัดการบิลพักไม่สำเร็จ");
         }
         await parkedQuery.refetch();
         return null;
       } catch (error) {
-        return error instanceof Error ? error.message : 'จัดการบิลพักไม่สำเร็จ';
+        return error instanceof Error ? error.message : posText("จัดการบิลพักไม่สำเร็จ");
       }
     },
     [isShiftOpen, parkMutation, parkedQuery, session],
@@ -406,11 +407,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const parkCurrentBill = useCallback(
     async (name: string, note: string) => {
-      if (!lines.length) return 'ยังไม่มีรายการในบิล';
+      if (!lines.length) return posText("ยังไม่มีรายการในบิล");
       const failure = await mutatePark({
         action: 'park',
         label:
-          [name.trim(), note.trim()].filter(Boolean).join(' - ') || 'บิลพัก',
+          [name.trim(), note.trim()].filter(Boolean).join(' - ') || posText("บิลพัก"),
         itemCount: lines.reduce((sum, line) => sum + line.qty, 0),
         subtotalHint: subtotal,
         cart: {
@@ -500,7 +501,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         ) {
           return {
             line,
-            error: `หน่วยขายหรือรุ่นของ ${line.name} เปลี่ยนแล้ว กรุณาลบรายการและเพิ่มใหม่`,
+            error: posText("หน่วยขายหรือรุ่นของ {v0} เปลี่ยนแล้ว กรุณาลบรายการและเพิ่มใหม่", { v0: line.name }),
           };
         }
         const allowed = new Set((latest.modifiers ?? []).map(m => m.code));
@@ -508,7 +509,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         if (closed) {
           return {
             line,
-            error: `ตัวเลือก ${closed} ของ ${line.name} ถูกปิดแล้ว กรุณาลบรายการและเพิ่มใหม่`,
+            error: posText("ตัวเลือก {v0} ของ {v1} ถูกปิดแล้ว กรุณาลบรายการและเพิ่มใหม่", { v0: closed, v1: line.name }),
           };
         }
         const selected = (latest.modifiers ?? []).filter(modifier =>
@@ -539,7 +540,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           error:
             cause instanceof Error
               ? cause.message
-              : `ตรวจราคาล่าสุดของ ${line.name} ไม่สำเร็จ`,
+              : posText("ตรวจราคาล่าสุดของ {v0} ไม่สำเร็จ", { v0: line.name }),
         };
       }
     },
@@ -589,7 +590,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const resumeParkedBill = useCallback(
     async (id: string) => {
       const parked = parkedBills.find(bill => bill.id === id);
-      if (!parked) return 'ไม่พบบิลพัก';
+      if (!parked) return posText("ไม่พบบิลพัก");
       const failure = await mutatePark({ action: 'resume', parkedId: id });
       if (!failure) {
         setLines(await refreshParkedLines(parked.lines));
@@ -663,8 +664,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       previewError:
         preview.error?.message ?? serverPreview?.couponError ?? null,
     }),
-    [
-      addItem,
+    [addItem,
       appliedManualDiscount,
       clear,
       coupon,

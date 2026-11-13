@@ -4,6 +4,8 @@ import React, { useMemo } from "react";
 import { ConfigProvider, theme as antdTheme } from "antd";
 import enUS from "antd/locale/en_US";
 import thTH from "antd/locale/th_TH";
+// rc-picker selects the date locale per instance; register Thai month/day names too.
+import "dayjs/locale/th";
 
 import { useI18n } from "@/lib/i18nContext";
 import { useTheme } from "@/lib/useTheme";

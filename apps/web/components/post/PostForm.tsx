@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -120,6 +122,7 @@ const makeLocalId = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export default function PostForm({ apiBase = '', initialData, onSaved, title }: Props) {
+  const uiText = useUiText();
   const [form] = Form.useForm();
   const [files, setFiles] = useState<FileValue[]>([]);
   const isEdit = !!initialData?.id;
@@ -449,11 +452,11 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
       const ap = data?.upsertPost?.auto_publish;
       if (ap) {
         message.success(isEdit
-          ? 'บันทึกสำเร็จ และระบบจะเผยแพร่อัตโนมัติ'
-          : 'สร้างรายการสำเร็จ และระบบจะเผยแพร่อัตโนมัติ'
+          ? uiText("admin_ui.saved_the_system_will_publish_automatically_97abd")
+          : uiText("admin_ui.created_the_system_will_publish_automatically_19b56")
         );
       } else {
-        message.success(isEdit ? 'บันทึกสำเร็จ' : 'สร้างรายการสำเร็จ');
+        message.success(isEdit ? uiText("admin_ui.saved_9461a") : uiText("admin_ui.created_67d17"));
       }
 
       const savedImgs = (data.upsertPost.images || []).map((img: any) => ({ _id: img.id, url: img.url }));
@@ -481,7 +484,7 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
 
       onSaved?.(data.upsertPost.id);
     } else {
-      message.error(isEdit ? 'บันทึกไม่สำเร็จ' : 'สร้างรายการไม่สำเร็จ');
+      message.error(isEdit ? uiText("admin_ui.could_not_save_2fe23") : uiText("admin_ui.could_not_create_the_entry_0c9ec"));
     }
   }
 
@@ -558,7 +561,7 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
   };
 
   return (
-    <Card title={title ?? (isEdit ? 'แก้ไขรายการ' : 'สร้างรายการใหม่')}>
+    <Card title={title ?? (isEdit ? uiText("admin_ui.edit_entry_08204") : uiText("admin_ui.create_new_entry_4a316"))}>
       <Form
         form={form}
         layout="vertical"
@@ -574,60 +577,60 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
         
         {/* ชื่อคนขาย */}
         <Form.Item
-          label="ชื่อ-นามสกุล คนขาย"
+          label={uiText("admin_ui.seller_s_full_name_b92fe")}
           name="first_last_name"
-          rules={[{ required: true, message: 'กรุณากรอกชื่อ-นามสกุล คนขาย' }]}
+          rules={[{ required: true, message: uiText("admin_ui.enter_the_seller_s_full_name_81ec8") }]}
         >
-          <Input placeholder="กรุณากรอกชื่อ-นามสกุล คนขาย" />
+          <Input placeholder={uiText("admin_ui.enter_the_seller_s_full_name_81ec8")} />
         </Form.Item>
 
         <Form.Item
-          label="เลขบัตรประชาชนคนขาย (13 หลัก) หรือ พาสปอร์ต"
+          label={uiText("admin_ui.seller_s_national_id_13_digits_or_passport_51d76")}
           name="id_card"
-          rules={[{ message: 'กรุณากรอกเลขบัตรประชาชน หรือ พาสปอร์ต' }]}
+          rules={[{ message: uiText("admin_ui.enter_a_national_id_or_passport_number_92f8d") }]}
         >
-          <Input placeholder="กรุณากรอกเลขบัตรประชาชน หรือ พาสปอร์ต" maxLength={13} />
+          <Input placeholder={uiText("admin_ui.enter_a_national_id_or_passport_number_92f8d")} maxLength={13} />
         </Form.Item>
 
         {/* สินค้า/บริการ ที่สั่งซื้อ */}
         <Form.Item
-          label="สินค้า/บริการ ที่สั่งซื้อ"
+          label={uiText("admin_ui.product_service_ordered_35370")}
           name="title"
-          rules={[{ required: true, message: 'กรุณากรอกสินค้า/บริการ ที่สั่งซื้อ' }]}
+          rules={[{ required: true, message: uiText("admin_ui.enter_the_product_service_ordered_9754d") }]}
         >
-          <Input placeholder="กรุณากรอกสินค้า/บริการ ที่สั่งซื้อ" />
+          <Input placeholder={uiText("admin_ui.enter_the_product_service_ordered_9754d")} />
         </Form.Item>
 
         {/* ยอดโอน */}
         <Form.Item
-          label="ยอดโอน"
+          label={uiText("admin_ui.transferred_amount_997eb")}
           name="transfer_amount"
-          rules={[{ required: true, message: 'กรุณากรอกยอดโอน' }]}
+          rules={[{ required: true, message: uiText("admin_ui.enter_the_transferred_amount_52288") }]}
         >
-          <InputNumber placeholder="กรุณากรอกยอดโอน" style={{ width: '100%' }} />
+          <InputNumber placeholder={uiText("admin_ui.enter_the_transferred_amount_52288")} style={{ width: '100%' }} />
         </Form.Item>
 
         {/* วันโอนเงิน */}
         <Form.Item
-          label="วันโอนเงิน"
+          label={uiText("admin_ui.transfer_date_d4ee4")}
           name="transfer_date"
-          rules={[{ required: true, message: 'กรุณาเลือกวันโอนเงิน' }]}
+          rules={[{ required: true, message: uiText("admin_ui.select_the_transfer_date_59900") }]}
         >
-          <DatePicker placeholder="กรุณาเลือกวันโอนเงิน" style={{ width: '100%' }} format="DD/MM/YYYY" />
+          <DatePicker placeholder={uiText("admin_ui.select_the_transfer_date_59900")} style={{ width: '100%' }} format="DD/MM/YYYY" />
         </Form.Item>
 
         {/* เว็บประกาศขายของ */}
         <Form.Item
-          label="เว็บ/แพลตฟอร์มที่ประกาศขาย"
+          label={uiText("admin_ui.website_platform_where_the_sale_was_advertised_4d3fe")}
           name="website"
-          rules={[{ message: 'กรุณากรอกเว็บ/แพลตฟอร์มที่ประกาศขาย' }]}
+          rules={[{ message: uiText("admin_ui.enter_the_website_platform_where_the_sale_was_6950e") }]}
         >
-          <Input placeholder="เช่น Facebook Marketplace, Kaidee, Shopee, Lazada, เว็บไซต์อื่น ๆ" />
+          <Input placeholder={uiText("admin_ui.e_g_facebook_marketplace_kaidee_shopee_lazada_or_41279")} />
         </Form.Item>
 
         {/* รายละเอียดเพิ่มเติม */}
-        <Form.Item label="รายละเอียดเพิ่มเติม" name="detail">
-          <Input.TextArea rows={4} placeholder="กรุณากรอกรายละเอียดเพิ่มเติม" />
+        <Form.Item label={uiText("admin_ui.additional_details_4b4f2")} name="detail">
+          <Input.TextArea rows={4} placeholder={uiText("admin_ui.enter_additional_details_bbc8b")} />
         </Form.Item>
 
         {/* Tel Numbers */}
@@ -645,27 +648,25 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
                 }}
               >
                 <Form.Item
-                  label={`เบอร์โทรศัพท์ / LINE / ช่องทางติดต่อ ${index + 1}`}
+                  label={uiText("admin_ui.phone_line_contact_method_69790", { v0: index + 1 })}
                   name={['tel_numbers', index, 'tel']}
-                  rules={[{ required: true, message: 'กรุณากรอกช่องทางติดต่อ' }]}
+                  rules={[{ required: true, message: uiText("admin_ui.enter_a_contact_method_173ba") }]}
                 >
                   <Input
-                    placeholder="เช่น 08x-xxx-xxxx หรือ LINE ID"
+                    placeholder={uiText("admin_ui.e_g_08x_xxx_xxxx_or_line_id_1a109")}
                     onChange={(e) => handleTelChange(index, e.target.value)}
                   />
                 </Form.Item>
 
                 <Button type="dashed" onClick={() => removeTelNumber(index)}>
-                  <MinusCircleOutlined /> ลบ
-                </Button>
+                  <MinusCircleOutlined />  {uiText("admin_ui.remove_f535f")}</Button>
               </div>
             )
           ))}
 
           <Form.Item>
             <Button type="dashed" onClick={addTelNumber}>
-              <PlusOutlined /> เพิ่มช่องทางติดต่อ
-            </Button>
+              <PlusOutlined />  {uiText("admin_ui.add_contact_method_617ad")}</Button>
           </Form.Item>
         </div>
 
@@ -684,62 +685,60 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
                 }}
               >
                 <Form.Item
-                  label={`ชื่อบัญชีคนขาย ${index + 1}`}
+                  label={uiText("admin_ui.seller_s_account_name_33fb1", { v0: index + 1 })}
                   name={['seller_accounts', index, 'bank_name']}
-                  rules={[{ required: true, message: 'กรุณากรอกชื่อบัญชีคนขาย' }]}
+                  rules={[{ required: true, message: uiText("admin_ui.enter_the_seller_s_account_name_132f9") }]}
                 >
                   <Input
-                    placeholder="ชื่อบัญชีตามหน้า Bank"
+                    placeholder={uiText("admin_ui.account_name_as_shown_by_the_bank_ea9cc")}
                     onChange={(e) => handleSellerAccountChange(index, 'bank_name', e.target.value)}
                   />
                 </Form.Item>
 
                 <Form.Item
-                  label={`เลขที่บัญชีคนขาย ${index + 1}`}
+                  label={uiText("admin_ui.seller_s_account_number_8e4e9", { v0: index + 1 })}
                   name={['seller_accounts', index, 'seller_account']}
-                  rules={[{ required: true, message: 'กรุณากรอกเลขที่บัญชีคนขาย' }]}
+                  rules={[{ required: true, message: uiText("admin_ui.enter_the_seller_s_account_number_6763e") }]}
                 >
                   <Input
-                    placeholder="กรอกเลขบัญชี"
+                    placeholder={uiText("admin_ui.enter_account_number_a0b89")}
                     onChange={(e) => handleSellerAccountChange(index, 'seller_account', e.target.value)}
                   />
                 </Form.Item>
 
                 <Form.Item
-                  label="เลือกธนาคาร"
+                  label={uiText("admin_ui.select_bank_a8163")}
                   name={['seller_accounts', index, 'bank_id']}
-                  rules={[{ required: true, message: 'กรุณาเลือกธนาคาร' }]}
+                  rules={[{ required: true, message: uiText("admin_ui.select_a_bank_84bb3") }]}
                 >
                   <Select
-                    placeholder="กรุณาเลือกธนาคาร"
+                    placeholder={uiText("admin_ui.select_a_bank_84bb3")}
                     onChange={(value) => handleSellerAccountChange(index, 'bank_id', value)}
                     optionFilterProp="children"
                     showSearch
                   >
                     {banks.map((bank, index2) => (
                       <Select.Option key={`${bank.id}-${index2}`} value={bank.id}>
-                        {bank.name_th}
+                        {uiText.language === "en" ? bank.name_en || bank.name_th : bank.name_th}
                       </Select.Option>
                     ))}
                   </Select>
                 </Form.Item>
 
                 <Button type="dashed" onClick={() => removeSellerAccount(index)}>
-                  <MinusCircleOutlined /> ลบ
-                </Button>
+                  <MinusCircleOutlined />  {uiText("admin_ui.remove_f535f")}</Button>
               </div>
             )
           ))}
 
           <Form.Item>
             <Button type="dashed" onClick={addSellerAccount}>
-              <PlusOutlined /> เพิ่มบัญชีคนขายใหม่
-            </Button>
+              <PlusOutlined />  {uiText("admin_ui.add_another_seller_account_16594")}</Button>
           </Form.Item>
         </div>
 
         <AttachFileField
-          label="ไฟล์แนบ"
+          label={uiText("admin_ui.attachment_737c9")}
           values={files}
           multiple
           accept="image/*"
@@ -749,15 +748,15 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
 
         {/* จังหวัดของคนสร้างรายงาน */}
         <Form.Item
-          label="จังหวัดของคนสร้างรายงาน"
+          label={uiText("admin_ui.reporter_s_province_b294c")}
           name="province_id"
-          rules={[{ required: true, message: 'กรุณาเลือกจังหวัด' }]}
+          rules={[{ required: true, message: uiText("admin_ui.select_a_province_f67b7") }]}
         >
           <Select
-            placeholder="กรุณาเลือกจังหวัด"
+            placeholder={uiText("admin_ui.select_a_province_f67b7")}
             showSearch
             optionFilterProp="label"
-            options={provinces.map((p) => ({ label: p.name_th, value: p.id }))}
+            options={provinces.map((p) => ({ label: uiText.language === "en" ? p.name_en || p.name_th : p.name_th, value: p.id }))}
           />
         </Form.Item>
 
@@ -776,11 +775,10 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
             <Switch />
           </Form.Item>
 
-          <Text strong>เผยแพร่อัตโนมัติ (Auto Publish)</Text>
+          <Text strong>{uiText("admin_ui.auto_publish_9abc7")}</Text>
           <div style={{ marginTop: 4 }}>
             <Text type="secondary">
-              เมื่อเปิด ระบบจะนำข้อมูลนี้ไปเผยแพร่ไปยังช่องทางที่ตั้งค่าไว้ (เช่น X / Facebook) แบบอัตโนมัติหลังบันทึก
-            </Text>
+              {uiText("admin_ui.when_enabled_the_system_automatically_publishes_this_information_0673e")}</Text>
           </div>
         </div>
 
@@ -798,7 +796,7 @@ export default function PostForm({ apiBase = '', initialData, onSaved, title }: 
 
         {!dirty && (
           <div style={{ marginTop: 8 }}>
-            <Text type="secondary">ยังไม่มีการแก้ไขข้อมูล</Text>
+            <Text type="secondary">{uiText("admin_ui.no_changes_yet_27568")}</Text>
           </div>
         )}
       </Form>

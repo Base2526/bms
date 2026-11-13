@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Statistic, Row, Col, Table, Tag, Button, Alert, DatePicker, Typography, Select, Space, message, Switch } from "antd";
 import { DollarOutlined, ShoppingCartOutlined, ReloadOutlined, InboxOutlined, WarningOutlined, FileExcelOutlined, DownloadOutlined } from "@ant-design/icons";
@@ -32,6 +34,7 @@ const M_GENERATE_REPORT = gql`
 `;
 
 function ReportGeneratorCard({ from, to, locationId, archetype }: { from: string; to: string; locationId?: string; archetype?: string | null }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { can } = useBmsPermissions();
   const REPORT_TYPE_OPTIONS = [
@@ -113,7 +116,7 @@ function ReportGeneratorCard({ from, to, locationId, archetype }: { from: string
             render: (v: string | null) => v ? <Typography.Text style={{ maxWidth: 320 }} ellipsis={{ tooltip: v }}>{v}</Typography.Text> : "—",
           },
           { title: t("admin_reports.col_generated_by"), dataIndex: "generatedBy" },
-          { title: t("admin_reports.col_generated_at"), dataIndex: "createdAt", render: (v: string) => new Date(v).toLocaleString() },
+          { title: t("admin_reports.col_generated_at"), dataIndex: "createdAt", render: (v: string) => new Date(v).toLocaleString(uiText.locale) },
           {
             title: "", key: "download",
             render: (_: any, r: any) => r.fileUrl
@@ -231,6 +234,7 @@ const changeColor = (value: number | null | undefined) => value == null ? undefi
 const changePrefix = (value: number | null | undefined) => value == null ? "—" : value >= 0 ? "+" : "";
 
 export default function Page() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const [range, setRange] = useState<[Dayjs, Dayjs]>([dayjs().subtract(29, "day"), dayjs()]);
@@ -465,7 +469,7 @@ export default function Page() {
               dataSource={posReturns?.recent || []}
               scroll={{ x: "max-content" }}
               columns={[
-                { title: t("admin_reports.col_when"), dataIndex: "createdAt", render: (v: string) => new Date(v).toLocaleString() },
+                { title: t("admin_reports.col_when"), dataIndex: "createdAt", render: (v: string) => new Date(v).toLocaleString(uiText.locale) },
                 { title: t("admin_reports.col_order"), dataIndex: "orderId" },
                 { title: t("admin_reports.col_channel"), dataIndex: "sourceChannel" },
                 {

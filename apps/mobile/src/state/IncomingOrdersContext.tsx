@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React, {
   createContext,
   useCallback,
@@ -33,6 +34,7 @@ export function IncomingOrdersProvider({
 }: {
   children: React.ReactNode;
 }) {
+  const language = usePosLanguage();
   const { session } = useSession();
   const { mode } = useStoreMode();
   const query = useQuery(MobileRestaurantIncomingDocument, {
@@ -45,7 +47,7 @@ export function IncomingOrdersProvider({
       (query.data?.bmsPosRestaurantIncoming.orders ?? []).map(order => ({
         id: order.id,
         channel: order.channel,
-        customerName: order.customerRef ?? 'ลูกค้า',
+        customerName: order.customerRef ?? posText("ลูกค้า", undefined, language),
         fulfillmentType: order.fulfillmentType,
         amountDue: order.amountDue,
         receivedAt: order.createdAt,
@@ -61,7 +63,7 @@ export function IncomingOrdersProvider({
           modifierCodes: item.modifierCodes ?? [],
         })),
       })),
-    [query.data],
+    [language, query.data],
   );
   const pending = useMemo(
     () => orders.filter(order => order.status === 'PAID'),
@@ -71,7 +73,7 @@ export function IncomingOrdersProvider({
 
   const acceptOrder = useCallback(
     async (id: string): Promise<{ ticketsCreated: number } | string> => {
-      if (!session) return 'กรุณาเข้าใช้งานใหม่';
+      if (!session) return posText("กรุณาเข้าใช้งานใหม่");
       try {
         const response = await accept({
           variables: {
@@ -84,12 +86,12 @@ export function IncomingOrdersProvider({
         });
         const result = response.data?.bmsPosRestaurantAcceptIncomingOrder;
         if (result?.status !== 'ACCEPTED') {
-          return result?.reason ?? result?.status ?? 'รับออร์เดอร์ไม่สำเร็จ';
+          return result?.reason ?? result?.status ?? posText("รับออร์เดอร์ไม่สำเร็จ");
         }
         await query.refetch().catch(() => undefined);
         return { ticketsCreated: result.ticketsCreated ?? 0 };
       } catch (error) {
-        return error instanceof Error ? error.message : 'รับออร์เดอร์ไม่สำเร็จ';
+        return error instanceof Error ? error.message : posText("รับออร์เดอร์ไม่สำเร็จ");
       }
     },
     [accept, query, session],
@@ -109,8 +111,7 @@ export function IncomingOrdersProvider({
       acceptOrder,
       refresh,
     }),
-    [
-      acceptOrder,
+    [acceptOrder,
       orders,
       pending,
       pendingIds,

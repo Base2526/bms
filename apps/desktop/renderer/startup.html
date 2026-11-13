@@ -9,8 +9,13 @@
     <link rel="stylesheet" href="./startup.css" />
   </head>
   <body>
+
     <main class="startup-shell">
       <section class="startup-card" aria-live="polite">
+    <div class="language-control"><label for="language">Language / ภาษา</label>
+      <select id="language"><option value="th">ไทย</option><option value="en">English</option></select>
+      <span id="language-status" role="status"></span>
+    </div>
         <img src="./app-icon.svg" alt="" width="62" height="62" />
         <div id="loading-state">
           <div class="spinner" aria-hidden="true"></div>
@@ -31,6 +36,8 @@
         <p class="safe-note">ยังไม่มีการขาย การชำระเงิน หรือการเปลี่ยนสต็อกในขั้นตอนนี้</p>
       </section>
     </main>
+    <script src="./locale.cjs"></script>
+    <script src="./language-control.js"></script>
     <script src="./startup.js"></script>
   </body>
 </html>

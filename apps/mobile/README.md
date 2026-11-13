@@ -4,6 +4,26 @@ Bare React Native POS client (`react-native@0.87.1`, no Expo). The app uses HTTP
 authoritative reads and commands and GraphQL WS only for scoped invalidation. The database and BMS
 services remain the source of truth.
 
+## Operator language (Thai / English)
+
+Choose Thai or English on the sign-in screen or under Device settings. Thai is the default.
+The preference is saved separately from pairing in Keychain/Keystore (`com.bms.pos.language.v1`)
+and restored on launch. A storage failure leaves the selected language active for the session and
+shows a message. Changing language rerenders the current screen without clearing PIN, cart,
+pending payment or offline queue state.
+
+Authored operator copy uses `src/i18n/catalog.ts` and the explicit paired catalog
+`apps/web/i18n/pos-client.json`; React screens subscribe through `usePosLanguage()`. Keep business
+helpers React-free. Server errors, product/customer names, pharmacist evidence and user-entered
+text remain verbatim. Receipt language follows the store's receipt configuration independently.
+Language tests cover persistence races, failed writes, retaining entered state and refreshing cached
+shift timestamps. Action copy distinguishes **Cancel** from **Cancelled/Voided** status labels.
+iOS bundles `en.lproj/InfoPlist.strings` and `th.lproj/InfoPlist.strings` for camera/local-network
+permission explanations, registered in the Xcode target. These prompts follow the **iOS app/system
+language**, separately from the in-app operator preference. Android native date/time pickers follow
+the system locale; their OK/Cancel buttons use the selected operator language. Native layout,
+OS dialogs and printer output still require Android/iOS device QA.
+
 ## Pairing by Admin QR (Android / iOS)
 
 Open Admin **POS Devices** through a device-reachable HTTPS origin, select the register and confirm

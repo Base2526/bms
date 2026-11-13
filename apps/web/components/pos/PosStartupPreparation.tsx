@@ -1,5 +1,7 @@
 "use client";
 
+import { usePosText, thaiPosText, type PosTranslator } from "@/lib/pos/usePosText";
+
 import {
   createContext,
   useCallback,
@@ -45,19 +47,19 @@ type PosStartupPreparationValue = {
 
 const PosStartupPreparationContext = createContext<PosStartupPreparationValue | null>(null);
 
-function responseMessage(body: unknown, status: number): string {
+function responseMessage(body: unknown, status: number, posText: PosTranslator = thaiPosText): string {
   if (body && typeof body === "object") {
     const value = body as Record<string, unknown>;
     for (const key of ["error", "reason", "message"]) {
       if (typeof value[key] === "string" && value[key]) return value[key];
     }
   }
-  return `โหลดข้อมูลหน้าร้านไม่สำเร็จ (HTTP ${status})`;
+  return posText("โหลดข้อมูลหน้าร้านไม่สำเร็จ (HTTP {v0})", { v0: status });
 }
 
-async function readJson(response: Response): Promise<unknown> {
+async function readJson(response: Response, posText: PosTranslator = thaiPosText): Promise<unknown> {
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(responseMessage(body, response.status));
+  if (!response.ok) throw new Error(responseMessage(body, response.status, posText));
   return body;
 }
 
@@ -70,6 +72,7 @@ async function readJson(response: Response): Promise<unknown> {
  * in either prepared slot.
  */
 export function PosStartupPreparationProvider({ children }: { children: ReactNode }) {
+  const posText = usePosText();
   const restaurant = useRef<PreparedRestaurantSlot | null>(null);
   const restaurantInFlight = useRef<{ token: string; promise: Promise<void> } | null>(null);
   const restaurantAbort = useRef<AbortController | null>(null);
@@ -101,7 +104,7 @@ export function PosStartupPreparationProvider({ children }: { children: ReactNod
         cache: "no-store",
         signal: controller.signal,
       });
-      return [url, await readJson(response)] as const;
+      return [url, await readJson(response, posText)] as const;
     })).then((entries) => {
       if (restaurantGeneration.current !== generation) return;
       restaurant.current = {
@@ -111,7 +114,7 @@ export function PosStartupPreparationProvider({ children }: { children: ReactNod
       };
     }).catch((cause) => {
       if (cause instanceof DOMException && cause.name === "AbortError") {
-        throw new Error("โหลดข้อมูลหน้าร้านใช้เวลานานเกินไป กรุณาลองอีกครั้ง");
+        throw new Error(posText("โหลดข้อมูลหน้าร้านใช้เวลานานเกินไป กรุณาลองอีกครั้ง"));
       }
       throw cause;
     }).finally(() => {
@@ -121,7 +124,7 @@ export function PosStartupPreparationProvider({ children }: { children: ReactNod
     });
     restaurantInFlight.current = { token, promise };
     return promise;
-  }, []);
+  }, [posText]);
 
   const takeRestaurantStartupResponse = useCallback((token: string, url: string) => {
     const cached = restaurant.current;
@@ -168,7 +171,7 @@ export function PosStartupPreparationProvider({ children }: { children: ReactNod
       };
     }).catch((cause) => {
       if (cause instanceof DOMException && cause.name === "AbortError") {
-        throw new Error("โหลดข้อมูลหน้าร้านใช้เวลานานเกินไป กรุณาลองอีกครั้ง");
+        throw new Error(posText("โหลดข้อมูลหน้าร้านใช้เวลานานเกินไป กรุณาลองอีกครั้ง"));
       }
       throw cause;
     }).finally(() => {
@@ -178,7 +181,7 @@ export function PosStartupPreparationProvider({ children }: { children: ReactNod
     });
     boardGameInFlight.current = { token, cashierUserId, promise };
     return promise;
-  }, []);
+  }, [posText]);
 
   const takeBoardGameWorkspace = useCallback((token: string, cashierUserId: string) => {
     const cached = boardGame.current;
@@ -225,6 +228,7 @@ export function PosStartupPreparationProvider({ children }: { children: ReactNod
 }
 
 export function usePosStartupPreparation(): PosStartupPreparationValue {
+
   const value = useContext(PosStartupPreparationContext);
   if (!value) throw new Error("usePosStartupPreparation must be used inside PosStartupPreparationProvider");
   return value;

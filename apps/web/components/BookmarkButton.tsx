@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 
 import { useState, useEffect } from 'react';
 import { useMutation, gql } from '@apollo/client';
@@ -20,12 +22,13 @@ interface BookmarkButtonProps {
 }
 
 export default function BookmarkButton({ postId, defaultBookmarked = false }: BookmarkButtonProps) {
+  const uiText = useUiText();
   const [isBookmarked, setIsBookmarked] = useState(defaultBookmarked);
   const [toggleBookmark, { loading }] = useMutation(M_TOGGLE_BOOKMARK, {
     onCompleted: (res) => {
       const ok = !!res?.toggleBookmark?.isBookmarked;
       setIsBookmarked(ok);
-      message.success(ok ? 'Added to bookmarks' : 'Removed from bookmarks');
+      message.success(ok ? uiText("admin_ui.en_added_to_bookmarks_71f33") : uiText("admin_ui.en_removed_from_bookmarks_435ef"));
     },
     update: (cache, { data }) => {
       const ok = data?.toggleBookmark?.isBookmarked;
@@ -45,7 +48,7 @@ export default function BookmarkButton({ postId, defaultBookmarked = false }: Bo
     },
     onError: (err) => {
       console.error('Toggle bookmark failed:', err);
-      message.error('Please login first or try again.');
+      message.error(uiText("admin_ui.en_please_login_first_or_try_again_3965e"));
     },
   });
 
@@ -62,7 +65,7 @@ export default function BookmarkButton({ postId, defaultBookmarked = false }: Bo
   }
 
   return (
-    <Tooltip title={isBookmarked ? 'Remove bookmark' : 'Add to bookmarks'}>
+    <Tooltip title={isBookmarked ? uiText("admin_ui.en_remove_bookmark_7da72") : uiText("admin_ui.en_add_to_bookmarks_5c1a3")}>
       <Button
         type="text"
         size="small"

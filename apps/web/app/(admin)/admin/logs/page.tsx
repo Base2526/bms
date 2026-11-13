@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ReloadOutlined } from '@ant-design/icons';
 import { Card, Space, Input, Select, Button, Popconfirm, List, Tag, Divider, message, Checkbox, DatePicker } from 'antd';
@@ -33,7 +35,7 @@ async function fetchLogs(params: {
   date_end?: string;
   page: number;
   pageSize: number;
-}) {
+}, uiText: UiTranslator = thaiUiText) {
   const qs = new URLSearchParams();
   if (params.q) qs.set('q', params.q);
   if (params.level) qs.set('level', params.level);
@@ -50,16 +52,16 @@ async function fetchLogs(params: {
   qs.set('page', String(params.page));
   qs.set('pageSize', String(params.pageSize));
   const res = await fetch(`${ADMIN_API_PREFIX}/logs?` + qs.toString(), { cache: 'no-store' });
-  if (!res.ok) throw new Error('Failed to load logs');
+  if (!res.ok) throw new Error(uiText("admin_ui.en_failed_to_load_logs_9448b"));
   return res.json(); // { items: LogRow[], total: number }
 }
 
-async function deleteLogsByIds(ids: (string|number)[]) {
+async function deleteLogsByIds(ids: (string|number)[], uiText: UiTranslator = thaiUiText) {
   const qs = new URLSearchParams();
   qs.set('ids', ids.join(','));
   const res = await fetch(`${ADMIN_API_PREFIX}/logs?` + qs.toString(), { method: 'DELETE' });
   const j = await res.json().catch(()=> ({}));
-  if (!res.ok) throw new Error(j.error || 'Bulk delete failed');
+  if (!res.ok) throw new Error(j.error || uiText("admin_ui.en_bulk_delete_failed_d3ba6"));
   return j; // { deleted: number }
 }
 
@@ -73,6 +75,7 @@ function levelTag(level: string){
 }
 
 export default function AdminLogsPage() {
+  const uiText = useUiText();
   const [q,setQ] = useState('');
   const [level,setLevel] = useState<string|undefined>();
   const [category,setCategory] = useState<string|undefined>();
@@ -96,7 +99,7 @@ export default function AdminLogsPage() {
 
   useEffect(() => {
     fetch(`${ADMIN_API_PREFIX}/admin/log-categories`, { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Failed to load categories'))))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(uiText("admin_ui.en_failed_to_load_categories_8c99f")))))
       .then((arr) => setCategories(Array.isArray(arr) ? arr : []))
       .catch(() => setCategories([]));
   }, []);
@@ -128,7 +131,7 @@ export default function AdminLogsPage() {
       const start = dayjs(dateStart);
       const end = dayjs(dateEnd);
       if (start.isValid() && end.isValid() && start.isAfter(end, 'day')) {
-        message.warning('Date start must be before or equal to date end');
+        message.warning(uiText("admin_ui.en_date_start_must_be_before_or_equal_to_c2682"));
         return;
       }
     }
@@ -150,12 +153,12 @@ export default function AdminLogsPage() {
         date_end: dateEnd,
         page,
         pageSize,
-      });
+      }, uiText);
       setData(res.items || []); setTotal(res.total || 0);
       // เคลียร์ selections ที่ไม่อยู่ในผลลัพธ์แล้ว (กันค้าง)
       setSelectedIds(prev => prev.filter(id => (res.items || []).some((x:LogRow)=> x.id === id)));
     }catch(e:any){
-      message.error(e.message||'Load logs failed');
+      message.error(e.message||uiText("admin_ui.en_load_logs_failed_d25f7"));
     }finally{ setLoading(false); }
   }
   useEffect(()=>{ load(); /* eslint-disable-next-line */ }, [q, level, category, userId, action, status, correlationId, sessionId, platform, appVersion, dateStart, dateEnd, page, pageSize]);
@@ -176,7 +179,7 @@ export default function AdminLogsPage() {
       headers:{ 'Content-Type':'application/json' },
       body: JSON.stringify({ level: 'info', category: 'logs-page', message: 'Test log from /admin/logs' })
     });
-    if(res.ok){ message.success('Created'); load(); } else { message.error('Create failed'); }
+    if(res.ok){ message.success(uiText("admin_ui.en_created_accf4")); load(); } else { message.error(uiText("admin_ui.en_create_failed_aac8c")); }
   }
 
   async function purgeByFilter(){
@@ -188,29 +191,29 @@ export default function AdminLogsPage() {
     if(dateEnd) qs.set('date_end', dateEnd);
     const res = await fetch(`${ADMIN_API_PREFIX}/logs?` + qs.toString(), { method: 'DELETE' });
     const j = await res.json();
-    if(res.ok){ message.success(`Deleted ${j.deleted} logs`); load(); } else { message.error(j.error||'Purge failed'); }
+    if(res.ok){ message.success(uiText("admin_ui.en_deleted_logs_8ae08", { v0: j.deleted })); load(); } else { message.error(j.error||uiText("admin_ui.en_purge_failed_3a59b")); }
   }
 
   async function bulkDeleteSelected() {
     if (!selectedIds.length) return;
     try {
-      const j = await deleteLogsByIds(selectedIds);
-      message.success(`Deleted ${j.deleted ?? selectedIds.length} logs`);
+      const j = await deleteLogsByIds(selectedIds, uiText);
+      message.success(uiText("admin_ui.en_deleted_logs_8ae08", { v0: j.deleted ?? selectedIds.length }));
       setSelectedIds([]);
       load();
     } catch (e:any) {
-      message.error(e.message || 'Bulk delete failed');
+      message.error(e.message || uiText("admin_ui.en_bulk_delete_failed_d3ba6"));
     }
   }
 
   return (
     <Card
-      title="System Logs"
+      title={uiText("admin_ui.en_system_logs_26e97")}
       extra={
         <Space wrap>
-          <Input.Search placeholder="Search text" onSearch={(val)=>{ setPage(1); setQ(val); }} allowClear enterButton />
+          <Input.Search placeholder={uiText("admin_ui.en_search_text_36ff8")} onSearch={(val)=>{ setPage(1); setQ(val); }} allowClear enterButton />
           <Input
-            placeholder="User ID"
+            placeholder={uiText("admin_ui.en_user_id_23bf4")}
             style={{ width: 120 }}
             value={userId}
             onChange={(e) => {
@@ -220,7 +223,7 @@ export default function AdminLogsPage() {
             allowClear
           />
           <Input
-            placeholder="Action"
+            placeholder={uiText("admin_ui.en_action_97c89")}
             style={{ width: 180 }}
             value={action}
             onChange={(e) => {
@@ -231,7 +234,7 @@ export default function AdminLogsPage() {
           />
           <Select
             allowClear
-            placeholder="Status"
+            placeholder={uiText("admin_ui.en_status_bae7d")}
             style={{ width: 140 }}
             value={status}
             onChange={(v)=>{ setPage(1); setStatus(v); }}
@@ -239,7 +242,7 @@ export default function AdminLogsPage() {
           />
           <Select
             allowClear
-            placeholder="Level"
+            placeholder={uiText("admin_ui.en_level_7c7f5")}
             style={{ width: 140 }}
             value={level}
             onChange={(v)=>{ setPage(1); setLevel(v); }}
@@ -247,14 +250,14 @@ export default function AdminLogsPage() {
           />
           <Select
             allowClear
-            placeholder="Platform"
+            placeholder={uiText("admin_ui.en_platform_123a7")}
             style={{ width: 140 }}
             value={platform}
             onChange={(v)=>{ setPage(1); setPlatform(v); }}
             options={[ 'android','ios','web' ].map(v=>({ value: v, label: v }))}
           />
           <Input
-            placeholder="App version"
+            placeholder={uiText("admin_ui.en_app_version_0e25b")}
             style={{ width: 140 }}
             value={appVersion}
             onChange={(e) => {
@@ -264,7 +267,7 @@ export default function AdminLogsPage() {
             allowClear
           />
           <Select
-            placeholder="Category"
+            placeholder={uiText("admin_ui.en_category_a3c68")}
             allowClear
             style={{ width: 200 }}
             value={category}
@@ -275,7 +278,7 @@ export default function AdminLogsPage() {
             }}
           />
           <Input
-            placeholder="Correlation ID"
+            placeholder={uiText("admin_ui.en_correlation_id_805ca")}
             style={{ width: 180 }}
             value={correlationId}
             onChange={(e) => {
@@ -285,7 +288,7 @@ export default function AdminLogsPage() {
             allowClear
           />
           <Input
-            placeholder="Session ID"
+            placeholder={uiText("admin_ui.en_session_id_25e4f")}
             style={{ width: 180 }}
             value={sessionId}
             onChange={(e) => {
@@ -296,7 +299,7 @@ export default function AdminLogsPage() {
           />
           <DatePicker
             allowClear
-            placeholder="Date start"
+            placeholder={uiText("admin_ui.en_date_start_2bc8f")}
             style={{ width: 160 }}
             value={dateStart ? dayjs(dateStart) : null}
             onChange={(v) => {
@@ -306,7 +309,7 @@ export default function AdminLogsPage() {
           />
           <DatePicker
             allowClear
-            placeholder="Date end"
+            placeholder={uiText("admin_ui.en_date_end_873f9")}
             style={{ width: 160 }}
             value={dateEnd ? dayjs(dateEnd) : null}
             onChange={(v) => {
@@ -316,8 +319,7 @@ export default function AdminLogsPage() {
           />
 
           <Button icon={<ReloadOutlined />} onClick={reload} loading={loading} disabled={loading}>
-            Reload
-          </Button>
+            {uiText("admin_ui.en_reload_cce71")}</Button>
           {/* <Button onClick={addTest}>Add test</Button> */}
           {/* <Popconfirm title="Delete logs by current filters?" onConfirm={purgeByFilter}>
             <Button danger>Purge by filter</Button>
@@ -329,16 +331,15 @@ export default function AdminLogsPage() {
             checked={allChecked}
             onChange={e => toggleSelectAllPage(e.target.checked)}
           >
-            Select page
-          </Checkbox>
+            {uiText("admin_ui.en_select_page_e9921")}</Checkbox>
           <Popconfirm
-            title={`Delete ${selectedIds.length} selected log(s)?`}
+            title={uiText("admin_ui.en_delete_selected_log_s_45d15", { v0: selectedIds.length })}
             onConfirm={bulkDeleteSelected}
             okButtonProps={{ danger:true }}
             disabled={!selectedIds.length}
           >
             <Button danger disabled={!selectedIds.length}>
-              Delete selected ({selectedIds.length})
+              {uiText("admin_ui.en_delete_selected_eec82")}{selectedIds.length})
             </Button>
           </Popconfirm>
         </Space>
@@ -375,14 +376,14 @@ export default function AdminLogsPage() {
                 />
                 {levelTag(item.level)}
                 <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--app-muted)' }}>
-                  {new Date(item.created_at).toLocaleString()}
+                  {new Date(item.created_at).toLocaleString(uiText.locale)}
                 </span>
               </div>
 
               {/* title / message */}
               <div style={{ fontWeight: 600, color: 'var(--app-text)' }}>
                 <Link href={`/admin/logs/${item.id}/view`}>
-                  {item.message || '(no message)'}
+                  {item.message || uiText("admin_ui.en_no_message_e0f65")}
                 </Link>
               </div>
 

@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import {
   Table,
@@ -132,6 +134,7 @@ function statusLabels(t: (key: string) => string): Record<POStatus, string> {
 type ProductOpt = { sku: string; name: string; variants: { size: string }[] };
 
 function PurchaseManagement() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const STATUS_LABEL = statusLabels(t);
   const { can } = useBmsPermissions();
@@ -205,7 +208,7 @@ function PurchaseManagement() {
     () => [
       { title: "PO", dataIndex: "id", key: "id", width: 100,
         render: (id: string) => <Typography.Text code>{id.slice(0, 8)}</Typography.Text> },
-      { title: "Supplier", key: "supplier",
+      { title: uiText("admin_ui.en_supplier_55edd"), key: "supplier",
         render: (_: any, r: PO) => r.supplier?.name || <span style={{ color: "#999" }}>—</span> },
       { title: t("admin_purchase.col_progress"), key: "progress", width: 130,
         render: (_: any, r: PO) => t("admin_purchase.col_progress_value", { received: r.qtyReceived, ordered: r.qtyOrdered }) },
@@ -216,18 +219,18 @@ function PurchaseManagement() {
       { title: t("admin_purchase.col_status"), dataIndex: "status", key: "status", width: 140,
         render: (s: POStatus) => <Tag color={STATUS_COLOR[s]}>{STATUS_LABEL[s] ?? s}</Tag> },
       { title: t("admin_purchase.col_created"), dataIndex: "createdAt", key: "createdAt", width: 160,
-        render: (d: string) => new Date(d).toLocaleString() },
-      { title: "Actions", key: "actions", width: 180,
+        render: (d: string) => new Date(d).toLocaleString(uiText.locale) },
+      { title: uiText("admin_ui.en_actions_c3cd6"), key: "actions", width: 180,
         render: (_: any, r: PO) => <Space size="small">{actionsFor(r)}</Space> },
     ],
-    [canceling, can, STATUS_LABEL]
+    [uiText, canceling, can, STATUS_LABEL]
   );
 
   const itemColumns = [
     { title: "SKU", dataIndex: "sku", key: "sku" },
     { title: t("admin_purchase.item_col_supplier_sku"), dataIndex: "supplierSku", key: "supplierSku",
       render: (value: string | null) => value || <Typography.Text type="secondary">—</Typography.Text> },
-    { title: "Size", dataIndex: "size", key: "size", width: 80 },
+    { title: uiText("admin_ui.en_size_b7152"), dataIndex: "size", key: "size", width: 80 },
     { title: t("admin_purchase.item_col_received"), dataIndex: "qtyReceived", key: "qr", width: 90, align: "right" as const },
     { title: t("admin_purchase.item_col_remaining"), key: "rem", width: 90, align: "right" as const,
       render: (_: any, it: POItem) => it.qtyOrdered - it.qtyReceived },
@@ -248,7 +251,7 @@ function PurchaseManagement() {
       <div style={{ marginBottom: 16 }}>
         {linkedId && <Button onClick={()=>{setLinkedId(null);setExpandedKeys([]);}}>{t("branch_requisitions.all_documents")}</Button>}
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-          <h2 style={{ margin: 0 }}>BMS Purchase (PO)</h2>
+          <h2 style={{ margin: 0 }}>{uiText("admin_ui.en_bms_purchase_po_6bb47")}</h2>
           <Space wrap>
             <Input.Search
               placeholder={t("admin_purchase.search_placeholder")}
@@ -260,7 +263,7 @@ function PurchaseManagement() {
             {can("purchase.edit") && (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>{t("admin_purchase.btn_create")}</Button>
             )}
-            <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+            <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{uiText("admin_ui.en_refresh_56e3b")}</Button>
           </Space>
         </Space>
       </div>
@@ -280,7 +283,7 @@ function PurchaseManagement() {
             <Table rowKey={(it) => `${it.sku}-${it.size}`} dataSource={r.items} columns={itemColumns} pagination={false} size="small" scroll={{ x: "max-content" }} />
           ),
         }}
-        pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Total ${t} PO(s)` }}
+        pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => uiText("admin_ui.en_total_po_s_560cc", { v0: t }) }}
       />
 
       <CreatePOModal

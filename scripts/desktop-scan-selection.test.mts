@@ -1,3 +1,5 @@
+import { createPosTranslator } from "../apps/web/i18n/posClient.ts";
+const posText = createPosTranslator("th");
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -36,7 +38,7 @@ const graphql = read("apps/web/graphql/bmsPosDevice.ts");
 const resolverSource = graphql.slice(graphql.indexOf("    async bmsPosScan("), graphql.indexOf("    async bmsPosLastSale("));
 test("GraphQL ambiguous scans return image and choices from authenticated tenant and device branch", async () => {
   const calls: unknown[] = [];
-  const deps = {
+  const deps = { posText,
     requirePosDevice: (ctx: any) => { if (!ctx.device) throw new Error("unauthenticated"); return ctx.device; },
     badPosInput: () => { throw new Error("bad input"); },
     resolvePosScan: async (...args: unknown[]) => { calls.push(args); throw Object.assign(new Error("Choose size"), { sku: selection.sku, productName: selection.productName }); },
@@ -67,7 +69,7 @@ function harness(response: any, options: { selection?: boolean; pending?: boolea
   let finish!: (value: any) => void;
   const pending = new Promise(resolve => { finish = resolve; });
   const state = { result: null as any, cart: options.cart ?? [], error: "", notice: "", draft: selection.scanCode };
-  const deps = {
+  const deps = { posText,
     busy: false, addProductPendingRef: { current: false }, scanDraftRevision: { current: 0 }, scanResultVersion: { current: 0 },
     saleAttemptRef: { current: null as unknown }, cartVariantBaseQty,
     tokenRef: { current: "FAKE" }, token: "FAKE", scannedProduct: options.selection ? { kind: "selection", selection } : null,
@@ -160,7 +162,7 @@ test("quantity edits cannot race an in-flight scan and cannot oversell by mixing
   const body = compile(renderer.slice(renderer.indexOf("  const changeQty ="), renderer.indexOf("  const retailPricing =")));
   const cart = [{ ...hit, key: "BASE", qty: 1, available: 7 }, { ...hit, key: "BOX", qty: 1, baseQty: 6, available: 7 }];
   const state = { error: "", writes: 0 };
-  const deps = { saleAttemptRef: { current: null }, addProductPendingRef: { current: true }, cart, cartVariantBaseQty,
+  const deps = { posText, saleAttemptRef: { current: null }, addProductPendingRef: { current: true }, cart, cartVariantBaseQty,
     setError: (value: string) => { state.error = value; }, setCart: () => { state.writes++; } };
   const change = new Function(...Object.keys(deps), `${body}; return changeQty;`)(...Object.values(deps));
   change("BASE", -1);
@@ -189,6 +191,7 @@ test("a refreshed selection cannot inherit a size from the previous selection ob
   }).outputText;
   const exported: any = {};
   new Function("require", "exports", compiled)((id: string) => {
+    if (id === "@/lib/pos/usePosText") return { usePosText: () => posText };
     if (id === "react") return { useState: () => [choice, (value: any) => { choice = value; }] };
     if (id === "react/jsx-runtime") return require(id);
     if (id === "@ant-design/icons") return { ArrowLeftOutlined: () => null, CheckCircleOutlined: () => null,

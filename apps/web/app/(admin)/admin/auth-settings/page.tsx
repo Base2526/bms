@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/useUiText";
+
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Alert, Card, Col, Modal, Row, Space, Switch, Tag, Typography, message } from "antd";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
@@ -66,6 +68,7 @@ const issueLabels: Record<string, string> = {
 };
 
 export default function AuthSettingsPage() {
+  const uiText = useUiText();
   const { lang } = useI18n();
   const L = (th: string, en: string) => lang === "th" ? th : en;
   const { data, loading, error, refetch } = useQuery(SETTINGS, { fetchPolicy: "network-only" });
@@ -151,8 +154,8 @@ export default function AuthSettingsPage() {
               loading={loading}
               title={<span style={{ textTransform: "capitalize" }}>{setting.provider}</span>}
               extra={setting.configReady
-                ? <Tag color="green">READY</Tag>
-                : <Tag color="red">MISCONFIGURED</Tag>}
+                ? <Tag color="green">{uiText("admin_ui.en_ready_fc554")}</Tag>
+                : <Tag color="red">{uiText("admin_ui.en_misconfigured_af61e")}</Tag>}
             >
               {!setting.configReady && (
                 <Alert

@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 import * as Keychain from 'react-native-keychain';
 
 const SERVICE = 'com.bms.pos.scanner-preference.v1';
@@ -29,7 +30,7 @@ export async function saveScannerInputMode(
       service: SERVICE,
       accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK,
     });
-    if (!stored) throw new Error('บันทึกโหมดเครื่องสแกนไม่สำเร็จ');
+    if (!stored) throw new Error(posText("บันทึกโหมดเครื่องสแกนไม่สำเร็จ"));
   });
   // write ที่ล้มต้องไม่ทำให้ทุก write/read หลังจากนั้นถูก reject ต่อเป็นลูกโซ่
   storageLock = write.catch(() => undefined);

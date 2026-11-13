@@ -1,3 +1,5 @@
+import { createPosTranslator, type PosTranslator } from "../../i18n/posClient";
+
 /**
  * กลุ่มตัวเลือกที่ยังเลือกไม่ครบขั้นต่ำ — ใช้กันไม่ให้จอส่งสิ่งที่ server ปฏิเสธแน่ ๆ
  *
@@ -38,7 +40,7 @@ export function unmetModifierGroups<T extends ModifierGroupRule>(
 }
 
 /** ข้อความบอกว่าต้องแตะอะไรก่อน — ชื่อกลุ่มเสมอ ไม่ใช่ "กรอกข้อมูลให้ครบ" ที่ไม่ชี้ว่าตรงไหน */
-export function describeUnmetModifierGroups(names: readonly string[]): string {
+export function describeUnmetModifierGroups(names: readonly string[], posText: PosTranslator = createPosTranslator("th")): string {
   if (!names.length) return "";
-  return `ยังต้องเลือก: ${names.join(" · ")}`;
+  return posText("ยังต้องเลือก: {v0}", { v0: names.join(" · ") });
 }

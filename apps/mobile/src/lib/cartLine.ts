@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 /**
  * ตัวตัดสินว่า "สองบรรทัดในตะกร้าเป็นบรรทัดเดียวกันไหม" และ "บรรทัดนี้คือรุ่นไหนของสินค้า"
  *
@@ -51,7 +52,7 @@ export function cartLineVariantLabel(parts: CartLineVariantParts): string {
   const chunks: string[] = [];
   const size = (parts.size ?? '').trim();
   if (size && !PLACEHOLDER_SIZES.has(size.toLowerCase())) {
-    chunks.push(`ขนาด ${size}`);
+    chunks.push(posText("ขนาด {v0}", { v0: size }));
   }
   const unitName = (parts.unitName ?? '').trim();
   if (unitName && unitName.toLowerCase() !== size.toLowerCase()) {

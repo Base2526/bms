@@ -76,7 +76,7 @@ test("desktop menu separates data refresh from application reload", () => {
     refreshData: () => { refreshed += 1; },
     reloadApplication: () => { reloaded += 1; },
   });
-  const view = template.find((item) => item.label === "View");
+  const view = template.find((item) => item.id === "view");
   const refresh = view.submenu.find((item) => item.accelerator === "CmdOrCtrl+R");
   const reload = view.submenu.find((item) => item.accelerator === "CmdOrCtrl+Shift+R");
   assert.equal(refresh.label, "รีเฟรชข้อมูลหน้าปัจจุบัน");

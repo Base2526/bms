@@ -1,7 +1,12 @@
+import { createPosTranslator } from '../../../web/i18n/posClient';
+import { receiptLabel, receiptLocale, posPaymentMethodLabel, type ReceiptLanguageMode } from '../../../web/lib/pos/receiptI18n';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import type { MobilePosReceiptFieldsFragment } from '../graphql/generated';
+
+const thai = createPosTranslator('th');
+const english = createPosTranslator('en');
 
 type Receipt = MobilePosReceiptFieldsFragment;
 
@@ -9,18 +14,6 @@ function money(amount: number) {
   return `${amount < 0 ? '−' : ''}฿${Math.abs(amount).toFixed(2)}`;
 }
 
-function paymentLabel(method: string) {
-  const labels: Record<string, string> = {
-    CASH: 'เงินสด',
-    QR: 'QR',
-    CARD: 'บัตร',
-    BANK_TRANSFER: 'โอนเงิน',
-    WALLET: 'วอลเล็ต',
-    STORE_CREDIT: 'เครดิตร้าน',
-    CREDIT: 'ขายเชื่อ',
-  };
-  return labels[method.toUpperCase()] ?? method;
-}
 
 function AmountRow({
   label,
@@ -43,7 +36,9 @@ function AmountRow({
   );
 }
 
-export function ReceiptPaper({ receipt }: { receipt: Receipt }) {
+export function ReceiptPaper({ receipt, languageMode = 'th' }: { receipt: Receipt; languageMode?: ReceiptLanguageMode }) {
+  const receiptText = (source: string, values?: Record<string, unknown>) =>
+    receiptLabel(languageMode, thai(source, values), english(source, values));
   const reversed =
     Boolean(receipt.voidedAt) || receipt.orderStatus === 'CANCELLED';
   const returned =
@@ -65,18 +60,18 @@ export function ReceiptPaper({ receipt }: { receipt: Receipt }) {
 
   return (
     <View style={styles.paper} testID="receipt-paper">
-      <Text style={[styles.heading, styles.center]}>ใบเสร็จรับเงิน</Text>
+      <Text style={[styles.heading, styles.center]}>{receiptText("ใบเสร็จรับเงิน")}</Text>
       {receipt.locationName ? (
         <Text style={[styles.text, styles.center]}>{receipt.locationName}</Text>
       ) : null}
       {receipt.branchCode ? (
         <Text style={[styles.small, styles.center]}>
-          สาขา {receipt.branchCode}
+          {receiptText("สาขา") + " "}{receipt.branchCode}
         </Text>
       ) : null}
       {receipt.pickupQueueLabel ? (
         <View style={[styles.section, { alignItems: 'center' }]} testID="receipt-pickup-queue">
-          <Text style={[styles.text, styles.center]}>คิวของคุณ</Text>
+          <Text style={[styles.text, styles.center]}>{receiptText("คิวของคุณ")}</Text>
           <Text style={[styles.heading, styles.center, styles.queueNumber]}>
             {receipt.pickupQueueLabel}
           </Text>
@@ -85,40 +80,40 @@ export function ReceiptPaper({ receipt }: { receipt: Receipt }) {
       <View style={styles.section}>
         <Text style={styles.text}>
           {receiptNumber
-            ? `เลขที่ ${receiptNumber}`
-            : `เลขอ้างอิงรายการ ${receipt.orderId}`}
+            ? receiptText("เลขที่ {v0}", { v0: receiptNumber })
+            : receiptText("เลขอ้างอิงรายการ {v0}", { v0: receipt.orderId })}
         </Text>
         <Text style={styles.small}>
-          {new Date(receipt.soldAt).toLocaleString('th-TH', {
+          {new Date(receipt.soldAt).toLocaleString(receiptLocale(languageMode), {
             timeZone: 'Asia/Bangkok',
           })}
         </Text>
         {receipt.posLabel ? (
-          <Text style={styles.small}>เครื่องขาย {receipt.posLabel}</Text>
+          <Text style={styles.small}>{receiptText("เครื่องขาย") + " "}{receipt.posLabel}</Text>
         ) : null}
         {receipt.cashierName ? (
-          <Text style={styles.small}>พนักงาน {receipt.cashierName}</Text>
+          <Text style={styles.small}>{receiptText("พนักงาน") + " "}{receipt.cashierName}</Text>
         ) : null}
         {receipt.memberName ? (
           <Text style={styles.small}>
-            สมาชิก {receipt.memberName}
+            {receiptText("สมาชิก") + " "}{receipt.memberName}
             {receipt.memberNo ? ` · ${receipt.memberNo}` : ''}
           </Text>
         ) : null}
         {receipt.restaurantServiceMode ? (
           <Text style={styles.small}>
             {receipt.restaurantServiceMode === 'TAKEAWAY'
-              ? 'กลับบ้าน'
-              : 'กินในร้าน'}
+              ? receiptText("กลับบ้าน")
+              : receiptText("กินในร้าน")}
           </Text>
         ) : null}
         {receipt.offlineTenderedAt ? (
-          <Text style={styles.small}>รับเงินออฟไลน์ · ซิงก์สำเร็จแล้ว</Text>
+          <Text style={styles.small}>{receiptText("รับเงินออฟไลน์ · ซิงก์สำเร็จแล้ว")}</Text>
         ) : null}
       </View>
       {reversed || returned ? (
         <Text style={styles.status}>
-          {reversed ? 'ยกเลิกบิลแล้ว' : 'บิลนี้มีรายการคืนสินค้า'}
+          {reversed ? receiptText("ยกเลิกบิลแล้ว") : receiptText("บิลนี้มีรายการคืนสินค้า")}
         </Text>
       ) : null}
       <View style={styles.section}>
@@ -146,21 +141,21 @@ export function ReceiptPaper({ receipt }: { receipt: Receipt }) {
           />
         ))}
         {receipt.roundingAmount !== 0 ? (
-          <AmountRow label="ปัดเศษเงินสด" amount={receipt.roundingAmount} />
+          <AmountRow label={receiptText("ปัดเศษเงินสด")} amount={receipt.roundingAmount} />
         ) : null}
       </View>
       <View style={styles.section}>
-        <AmountRow label="ยอดสุทธิ" amount={receipt.total} strong />
+        <AmountRow label={receiptText("ยอดสุทธิ")} amount={receipt.total} strong />
         {receipt.vat ? (
           <>
-            <AmountRow label="ยอดก่อน VAT" amount={receipt.vat.netBeforeVat} />
+            <AmountRow label={receiptText("ยอดก่อน VAT")} amount={receipt.vat.netBeforeVat} />
             <AmountRow
               label={`VAT ${receipt.vat.rate}%`}
               amount={receipt.vat.vatAmount}
             />
             {receipt.vat.exemptAmount > 0 ? (
               <AmountRow
-                label="ยอดยกเว้น VAT"
+                label={receiptText("ยอดยกเว้น VAT")}
                 amount={receipt.vat.exemptAmount}
               />
             ) : null}
@@ -171,14 +166,14 @@ export function ReceiptPaper({ receipt }: { receipt: Receipt }) {
         {payments.map(payment => (
           <View key={payment.id}>
             <AmountRow
-              label={paymentLabel(payment.method)}
+              label={posPaymentMethodLabel(payment.method, languageMode)}
               amount={payment.amount}
             />
             {payment.cashTendered != null ? (
-              <AmountRow label="รับเงินสด" amount={payment.cashTendered} />
+              <AmountRow label={receiptText("รับเงินสด")} amount={payment.cashTendered} />
             ) : null}
             {payment.cashChange != null ? (
-              <AmountRow label="เงินทอน" amount={payment.cashChange} />
+              <AmountRow label={receiptText("เงินทอน")} amount={payment.cashChange} />
             ) : null}
           </View>
         ))}
@@ -194,26 +189,25 @@ export function ReceiptPaper({ receipt }: { receipt: Receipt }) {
       {receipt.returnEvents.map(event => (
         <View key={event.id} style={styles.section}>
           <AmountRow
-            label={event.isVoid ? 'ยกเลิกบิล' : 'คืนสินค้า'}
+            label={event.isVoid ? receiptText("ยกเลิกบิล") : receiptText("คืนสินค้า")}
             amount={event.refundAmount}
           />
           <Text style={styles.small}>
-            {new Date(event.returnedAt).toLocaleString('th-TH', {
+            {new Date(event.returnedAt).toLocaleString(receiptLocale(languageMode), {
               timeZone: 'Asia/Bangkok',
             })}
           </Text>
           <Text style={styles.small}>
             {event.settlementStatus === 'COMPLETED'
-              ? 'คืนเงินครบแล้ว'
-              : 'รอดำเนินการคืนเงิน'}
+              ? receiptText("คืนเงินครบแล้ว")
+              : receiptText("รอดำเนินการคืนเงิน")}
           </Text>
         </View>
       ))}
       {receipt.taxRequestUrl && !reversed && !returned ? (
         <View style={styles.qr}>
           <Text style={[styles.text, styles.center]}>
-            สแกนขอใบกำกับภาษีเต็มรูป
-          </Text>
+            {receiptText("สแกนขอใบกำกับภาษีเต็มรูป") + " "}</Text>
           <QRCode
             value={receipt.taxRequestUrl}
             size={160}

@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React, { useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Button } from './Button';
@@ -39,6 +40,7 @@ export function MenuGrid({
   catalog,
   onSearchChange,
 }: Props) {
+  usePosLanguage();
   const { colors, spacing, typography, radius } = useTheme();
   const [category, setCategory] = useState(catalog.categories[0]);
   const [query, setQuery] = useState('');
@@ -78,7 +80,7 @@ export function MenuGrid({
         style={{ flex: 1, alignSelf: 'stretch' }}
         disabled={!item.sellable}
         accessibilityRole="button"
-        accessibilityLabel={`${item.name} ${item.price.toFixed(2)} บาท`}
+        accessibilityLabel={posText("{v0} {v1} บาท", { v0: item.name, v1: item.price.toFixed(2) })}
         onPress={() => onAdd(item)}
       >
         <View
@@ -166,7 +168,7 @@ export function MenuGrid({
                   { color: colors.textSoft, marginBottom: 2 },
                 ]}
               >
-                {item.unavailableNote ?? 'ขายไม่ได้ตอนนี้'}
+                {item.unavailableNote ?? posText("ขายไม่ได้ตอนนี้")}
               </Text>
             )}
 
@@ -177,7 +179,7 @@ export function MenuGrid({
                 { color: item.sellable ? colors.text : colors.textMuted },
               ]}
             >
-              ฿{item.price.toFixed(2)}
+              {posText("฿")}{item.price.toFixed(2)}
             </Text>
           </View>
         </View>
@@ -204,9 +206,8 @@ export function MenuGrid({
 
         {trimmed ? (
           <Text style={[typography.caption, { color: colors.textMuted }]}>
-            ผลค้นหา “{trimmed}” · {items.length} {catalog.resultNoun}
-            (ค้นทุกหมวด)
-          </Text>
+            {posText("ผลค้นหา “")}{trimmed}” · {items.length} {catalog.resultNoun}
+            {posText("(ค้นทุกหมวด)") + " "}</Text>
         ) : (
           <FlatList
             horizontal
@@ -223,7 +224,7 @@ export function MenuGrid({
               <Pressable
                 accessibilityRole="button"
                 accessibilityState={{ selected: category === item }}
-                accessibilityLabel={`หมวด ${item}`}
+                accessibilityLabel={posText("หมวด {v0}", { v0: item })}
                 onPress={() => setCategory(item)}
                 style={{
                   minHeight: 44,
@@ -282,19 +283,19 @@ export function MenuGrid({
           >
             <Text style={[typography.body, { color: colors.textMuted }]}>
               {trimmed
-                ? `ไม่พบ${catalog.resultNoun}ที่ตรงกับ “${trimmed}”`
-                : `หมวด “${category}” ยังไม่มี${catalog.resultNoun}`}
+                ? posText("ไม่พบ{v0}ที่ตรงกับ “{v1}”", { v0: catalog.resultNoun, v1: trimmed })
+                : posText("หมวด “{v0}” ยังไม่มี{v1}", { v0: category, v1: catalog.resultNoun })}
             </Text>
             {trimmed ? (
               <Button
-                label="ล้างคำค้น"
+                label={posText("ล้างคำค้น")}
                 variant="secondary"
                 onPress={() => setQuery('')}
               />
             ) : (
               <Button
                 label={catalog.categories[0]}
-                accessibilityLabel={`กลับไปหมวด ${catalog.categories[0]}`}
+                accessibilityLabel={posText("กลับไปหมวด {v0}", { v0: catalog.categories[0] })}
                 variant="secondary"
                 onPress={() => setCategory(catalog.categories[0])}
               />

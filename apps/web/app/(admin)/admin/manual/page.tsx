@@ -1374,6 +1374,16 @@ const TH: ManualContent = {
       warning: "รายงานวิเคราะห์ใช้วันตามปฏิทินและเวลาเปิดที่ตั้งแบบมีผลตามวันที่; ข้อมูลก่อน migration 10.89 อาจประมาณการย้ายโต๊ะ และสถานะปิด/บล็อกโต๊ะย้อนหลังยังอิงค่าปัจจุบัน รายงานไม่รวมค่าเช่า ค่าแรง ค่าสาธารณูปโภค ค่าเสื่อม หรือการพยากรณ์",
     },
     {
+      title: "เปลี่ยนภาษาหลังบ้าน Mobile และ Desktop POS",
+      desc: "เลือกภาษาไทยหรืออังกฤษสำหรับหน้าจอพนักงาน โดยไม่ต้องออกจากระบบ",
+      steps: [
+        "หลังบ้าน: เปิดเมนูบัญชี ⋯ ที่ sidebar แล้วเลือก ภาษา เพื่อสลับไทย–อังกฤษ (มือถือเปิดเมนูด้านข้างก่อน) รวมถึงปุ่ม ฟอร์ม ข้อความแจ้งผล และวันที่บนหน้าจอ",
+        "Mobile: เลือกภาษาที่หน้าเข้าสู่ระบบ หรือ ตั้งค่าเครื่อง; Desktop: เลือกที่หน้าจับคู่ เมนู Language หรือช่องเลือกภาษาในจอขาย ระบบจำภาษาหลังเปิดแอปใหม่ จอลูกค้าและจอเรียกคิวที่เปิดอยู่เปลี่ยนภาษาตามจอขาย",
+        "สลับภาษาได้โดยไม่ล้าง PIN ตะกร้า หรือรายการค้าง หากบันทึกภาษาไม่สำเร็จ ภาษาที่เลือกยังใช้ได้ในรอบนี้และจะแจ้งให้เลือกใหม่หลังเปิดแอป",
+        "ภาษาใบเสร็จและเสียงเรียกคิวตั้งแยกต่างหาก ชื่อสินค้า ลูกค้า ข้อความที่กรอก และข้อความจากเซิร์ฟเวอร์ยังแสดงตามต้นฉบับ",
+      ],
+    },
+    {
       title: "สแกน ค้น และจัดตะกร้า",
       desc: "ขาย base unit, pack, หลายไซซ์ และสินค้ามี serial",
       steps: [
@@ -2682,6 +2692,16 @@ const EN: ManualContent = {
         "For Nearby board game cafe search, enter the public address, coordinates, opening hours, and rate/availability disclosure choices, then publish. The branch remains absent from /board-game until explicitly published.",
       ],
       warning: "Analytics uses calendar days and effective opening hours. Pre-10.89 table moves may be approximate, while historical active/blocked table state still uses today's configuration. It excludes rent, payroll, utilities, depreciation, and forecasting.",
+    },
+    {
+      title: "Change back-office, Mobile and Desktop POS language",
+      desc: "Choose Thai or English for operator screens without signing out.",
+      steps: [
+        "Back office: open the sidebar account menu (⋯), then Language, to switch Thai/English labels, forms, feedback and UI dates. On mobile, open the side menu first.",
+        "Mobile: choose a language on sign-in or in Device settings. Desktop: use setup, the native Language menu or the register selector. The app remembers it after restarting. Open customer and queue displays follow the register language.",
+        "Switching preserves PIN, cart and pending transactions. If saving fails, the selected language still works for this session and a message asks you to select it again after restart.",
+        "Receipt language and queue announcement voice are separate settings. Product/customer names, entered text and server messages stay in their original language.",
+      ],
     },
     {
       title: "Scan, search, and build the cart",

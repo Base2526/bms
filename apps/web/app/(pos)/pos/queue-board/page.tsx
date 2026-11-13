@@ -1,5 +1,7 @@
 "use client";
 
+import { usePosText } from "@/lib/pos/usePosText";
+
 /**
  * Customer-facing pickup call screen (`10.111`)
  *
@@ -242,6 +244,7 @@ function numberSizes(count: number) {
 }
 
 export default function PickupQueueBoardPage() {
+  const posText = usePosText();
   const [token, setToken] = useState<string | null>(null);
   const [entries, setEntries] = useState<BoardEntry[]>([]);
   const [settings, setSettings] = useState<BoardSettings | null>(null);
@@ -459,8 +462,8 @@ export default function PickupQueueBoardPage() {
   }, [mediaUrls.join("|"), mediaIndex, spotlight]);
   const effectiveVoiceSettings = applyQueueBoardAudioStyle(settings, audioStyle);
   const chimeReadyLabel = audioStyle === "DOUBLE_BEEP"
-    ? "บี๊บสองครั้งพร้อม"
-    : audioStyle === "SOFT_PING" ? "เสียงนุ่มพร้อม" : "กระดิ่งเคาน์เตอร์พร้อม";
+    ? posText("บี๊บสองครั้งพร้อม")
+    : audioStyle === "SOFT_PING" ? posText("เสียงนุ่มพร้อม") : posText("กระดิ่งเคาน์เตอร์พร้อม");
   const pageRows = (rows: BoardEntry[], limit: number) => {
     const pages = Math.max(1, Math.ceil(rows.length / limit));
     const pageIndex = pageTick % pages;
@@ -479,29 +482,28 @@ export default function PickupQueueBoardPage() {
         ))}
       </div>
       {visible.pages > 1 && <div className="pq-overflow">
-        หน้า {visible.pageIndex + 1}/{visible.pages} · ทั้งหมด {rows.length} คิว · สลับทุก 8 วินาที
-      </div>}
+        {posText("หน้า") + " "}{visible.pageIndex + 1}/{visible.pages} {" " + posText("· ทั้งหมด") + " "}{rows.length} {" " + posText("คิว · สลับทุก 8 วินาที") + " "}</div>}
     </>;
   };
   const preparingPanel = (limit = 12) => <section className={`pq-panel pq-preparing${preparing.length === 0 ? " is-empty" : ""}`}>
-    <div className="pq-panel-head"><h2 className="pq-panel-title">กำลังเตรียม</h2><span className="pq-count">{preparing.length} คิว</span></div>
+    <div className="pq-panel-head"><h2 className="pq-panel-title">{posText("กำลังเตรียม")}</h2><span className="pq-count">{preparing.length} {" " + posText("คิว")}</span></div>
     {renderNumbers(preparing, "preparing", limit)}
   </section>;
   const readyPanel = (limit = 10, includeLiveCall = false) => <section className="pq-panel pq-ready">
     {includeLiveCall && spotlight && <div role="status" aria-live="assertive" className="pq-spotlight">
-      <div><div className="pq-spotlight-kicker">กำลังเรียก</div><div className="pq-spotlight-title">เชิญรับที่เคาน์เตอร์</div></div>
+      <div><div className="pq-spotlight-kicker">{posText("กำลังเรียก")}</div><div className="pq-spotlight-title">{posText("เชิญรับที่เคาน์เตอร์")}</div></div>
       <div className="pq-spotlight-number">{spotlight.label}</div>
     </div>}
-    <div className="pq-panel-head"><h2 className="pq-panel-title">พร้อมรับ</h2><span className="pq-count">{ready.length} คิว</span></div>
+    <div className="pq-panel-head"><h2 className="pq-panel-title">{posText("พร้อมรับ")}</h2><span className="pq-count">{ready.length} {" " + posText("คิว")}</span></div>
     {renderNumbers(ready, "ready", limit)}
   </section>;
   const callCard = <section className={`pq-call-card${spotlight ? " is-live" : ""}`}
     role={spotlight ? "status" : undefined} aria-live={spotlight ? "assertive" : undefined}>
     <div className="pq-call-copy">
-      <div className="pq-call-kicker">{spotlight ? "กำลังเรียกตอนนี้" : "เรียกล่าสุด"}</div>
+      <div className="pq-call-kicker">{spotlight ? posText("กำลังเรียกตอนนี้") : posText("เรียกล่าสุด")}</div>
       <div className="pq-call-title">{spotlight
-        ? "เชิญรับที่เคาน์เตอร์"
-        : currentLabel ? "คิวพร้อมรับล่าสุด" : "ยังไม่มีคิวพร้อมรับ"}</div>
+        ? posText("เชิญรับที่เคาน์เตอร์")
+        : currentLabel ? posText("คิวพร้อมรับล่าสุด") : posText("ยังไม่มีคิวพร้อมรับ")}</div>
     </div>
     <div className="pq-call-number">{currentLabel ?? "—"}</div>
   </section>;
@@ -515,11 +517,10 @@ export default function PickupQueueBoardPage() {
   if (!token) {
     return (
       <main style={{ ...page, alignItems: "center", justifyContent: "center", textAlign: "center" }}>
-        <div style={{ fontSize: 30, fontWeight: 600 }}>เปิดจอเรียกคิวจากแอป BMS POS</div>
-        <div style={{ fontSize: 18, color: "#cbd5e1" }}>POS → ตั้งค่า → จอภายนอก → จอเรียกคิว</div>
+        <div style={{ fontSize: 30, fontWeight: 600 }}>{posText("เปิดจอเรียกคิวจากแอป BMS POS")}</div>
+        <div style={{ fontSize: 18, color: "#cbd5e1" }}>{posText("POS → ตั้งค่า → จอภายนอก → จอเรียกคิว")}</div>
         <div style={{ maxWidth: 680, fontSize: 16, lineHeight: 1.6, color: "#94a3b8" }}>
-          แอปจะเปิดหน้าต่างบนจอที่เลือกและส่งสิทธิ์ของเครื่องขายให้อัตโนมัติ ไม่ต้องคัดลอก URL นี้ไปเปิดใน Chrome
-        </div>
+          {posText("แอปจะเปิดหน้าต่างบนจอที่เลือกและส่งสิทธิ์ของเครื่องขายให้อัตโนมัติ ไม่ต้องคัดลอก URL นี้ไปเปิดใน Chrome") + " "}</div>
       </main>
     );
   }
@@ -531,31 +532,30 @@ export default function PickupQueueBoardPage() {
         <div className="pq-brand">
           <div className="pq-mark" aria-hidden="true">B</div>
           <div style={{ minWidth: 0 }}>
-            <div className="pq-title">คิวรับของ</div>
+            <div className="pq-title">{posText("คิวรับของ")}</div>
             {settings?.branchName && <div className="pq-branch">{settings.branchName}</div>}
           </div>
         </div>
         <div className="pq-controls">
-          {offline && <span className="pq-warning">กำลังเชื่อมต่อใหม่…</span>}
+          {offline && <span className="pq-warning">{posText("กำลังเชื่อมต่อใหม่…")}</span>}
           {error && <span className="pq-error">{error}</span>}
-          {soundEnabled === false && <span className="pq-sound-off">🔇 ปิดเสียงจากการตั้งค่าเครื่อง</span>}
+          {soundEnabled === false && <span className="pq-sound-off">{posText("🔇 ปิดเสียงจากการตั้งค่าเครื่อง")}</span>}
           {soundEnabled === true && !soundOn && (
             <button type="button" onClick={() => void startSound(true)} className="pq-sound-button">
-              🔊 แตะเพื่อเปิดเสียง
-            </button>
+              {posText("🔊 แตะเพื่อเปิดเสียง") + " "}</button>
           )}
           {soundEnabled === true && soundOn && effectiveVoiceSettings.voiceMode === "OFF" && (
-            <span className="pq-sound-off">🔇 ปิดเสียงจากการตั้งค่าสาขา</span>
+            <span className="pq-sound-off">{posText("🔇 ปิดเสียงจากการตั้งค่าสาขา")}</span>
           )}
           {soundEnabled === true && soundOn && effectiveVoiceSettings.voiceMode !== "OFF" && (
             <span className={voiceStatus === "CHIME" ? "pq-warning" : "pq-sound-state"}>
               {effectiveVoiceSettings.voiceMode === "CHIME"
                 ? chimeReadyLabel
                 : voiceStatus === "AI_STUDIO"
-                  ? "AI Studio voice พร้อม"
+                  ? posText("AI Studio voice พร้อม")
                   : voiceStatus === "SYSTEM"
-                    ? "ใช้เสียงพูดภาษาไทยของเครื่อง"
-                    : voiceStatus === "CHIME" ? "ใช้กริ่งสำรอง" : "กำลังเตรียมเสียง…"}
+                    ? posText("ใช้เสียงพูดภาษาไทยของเครื่อง")
+                    : voiceStatus === "CHIME" ? posText("ใช้กริ่งสำรอง") : posText("กำลังเตรียมเสียง…")}
             </span>
           )}
         </div>
@@ -579,23 +579,23 @@ export default function PickupQueueBoardPage() {
       {layout === "MINIMAL" && <div className="pq-layout pq-minimal-layout">
         {callCard}
         <section className="pq-minimal-rail">
-          <div><div className="pq-panel-title">พร้อมรับ</div><div className="pq-count">{ready.length} คิว</div></div>
+          <div><div className="pq-panel-title">{posText("พร้อมรับ")}</div><div className="pq-count">{ready.length} {" " + posText("คิว")}</div></div>
           {renderNumbers(ready, "ready", 5)}
-          <div className="pq-minimal-preparing">กำลังเตรียม {preparing.length} คิว</div>
+          <div className="pq-minimal-preparing">{posText("กำลังเตรียม") + " "}{preparing.length} {" " + posText("คิว")}</div>
         </section>
       </div>}
       {layout === "AIRPORT" && (() => {
         const ordered = [...ready, ...preparing];
         const visible = pageRows(ordered, 9);
         return <div className="pq-layout pq-airport-layout">
-          <div className="pq-board-row pq-board-head"><span>หมายเลขคิว</span><span>สถานะ</span><span>จุดรับอาหาร</span></div>
+          <div className="pq-board-row pq-board-head"><span>{posText("หมายเลขคิว")}</span><span>{posText("สถานะ")}</span><span>{posText("จุดรับอาหาร")}</span></div>
           {visible.rows.map((entry) => <div key={`${entry.status}-${entry.label}`}
             className={`pq-board-row ${spotlight?.label === entry.label ? "current" : entry.status === "READY" ? "ready" : ""}`}>
             <div className="pq-board-no">{entry.label}</div>
-            <div className="pq-board-status">{spotlight?.label === entry.label ? "กำลังเรียก" : entry.status === "READY" ? "พร้อมรับ" : "กำลังเตรียม"}</div>
-            <div className="pq-board-note">{entry.status === "READY" ? "เชิญรับที่เคาน์เตอร์" : "กรุณารอสักครู่"}</div>
+            <div className="pq-board-status">{spotlight?.label === entry.label ? posText("กำลังเรียก") : entry.status === "READY" ? posText("พร้อมรับ") : posText("กำลังเตรียม")}</div>
+            <div className="pq-board-note">{entry.status === "READY" ? posText("เชิญรับที่เคาน์เตอร์") : posText("กรุณารอสักครู่")}</div>
           </div>)}
-          <div className="pq-board-footer">หน้า {visible.pageIndex + 1}/{visible.pages} · ทั้งหมด {ordered.length} คิว · สลับทุก 8 วินาที</div>
+          <div className="pq-board-footer">{posText("หน้า") + " "}{visible.pageIndex + 1}/{visible.pages} {" " + posText("· ทั้งหมด") + " "}{ordered.length} {" " + posText("คิว · สลับทุก 8 วินาที")}</div>
         </div>;
       })()}
       {layout === "SPLIT" && <div className="pq-grid">
@@ -604,7 +604,7 @@ export default function PickupQueueBoardPage() {
       {displayedMediaUrl && <aside className="pq-media-slot" data-transition={media?.transition ?? "FADE"} aria-hidden="true">
         <img key={displayedMediaUrl} src={displayedMediaUrl} alt=""
           onError={() => setFailedMedia((values) => values.includes(displayedMediaUrl) ? values : [...values, displayedMediaUrl])} />
-        <span>ประชาสัมพันธ์</span>
+        <span>{posText("ประชาสัมพันธ์")}</span>
       </aside>}
       </div>
     </main>

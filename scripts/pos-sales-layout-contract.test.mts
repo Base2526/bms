@@ -23,9 +23,9 @@ test("the sell tab opts into the approved compact 64/36 workspace", () => {
 
 test("the basket matches the mockup hierarchy", () => {
   assert.match(page, /className="pos-sale-basket-head"/);
-  assert.match(page, /className="pos-sale-basket-title">รายการขาย/);
+  assert.match(page, /className="pos-sale-basket-title">\{posText\("รายการขาย"\)/);
   assert.match(page, /onClick=\{\(\) => setParkOpen\(true\)\}[\s\S]{0,100}พักบิล/);
-  assert.match(page, /className="pos-sale-line-header"[\s\S]{0,180}<span>สินค้า<\/span>[\s\S]*?<span>ราคา<\/span>[\s\S]*?<span>จำนวน<\/span>[\s\S]*?<span>รวม<\/span>/);
+  assert.match(page, /className="pos-sale-line-header"[\s\S]{0,180}<span>\{posText\("สินค้า"\)\}<\/span>[\s\S]*?<span>\{posText\("ราคา"\)\}<\/span>[\s\S]*?<span>\{posText\("จำนวน"\)\}<\/span>[\s\S]*?<span>\{posText\("รวม"\)\}<\/span>/);
   assert.match(page, /className="pos-line-unit-price"/);
   assert.match(page, /className="pos-sale-empty"[\s\S]{0,180}ยังไม่มีสินค้าในบิล/);
 });
@@ -39,15 +39,15 @@ test("the checkout keeps summary, method selection, cash keypad, and the primary
   assert.match(page, /className="pos-sale-payment-head"[\s\S]{0,100}วิธีชำระเงิน/);
   assert.match(page, /className="pos-sale-method-grid"/);
   assert.match(page, /className="pos-sale-cash"/);
-  assert.match(page, /payBlockedReason \?\? `รับชำระ ฿\$\{baht\(amountDue\)\}`/);
-  assert.match(page, /className="pos-sale-coupon"[\s\S]{0,180}<summary>โค้ดส่วนลด<\/summary>/);
+  assert.match(page, /payBlockedReason \?\? posText\("รับชำระ ฿\{v0\}", \{ v0: baht\(amountDue\) \}\)/);
+  assert.match(page, /className="pos-sale-coupon"[\s\S]{0,180}<summary>\{posText\("โค้ดส่วนลด"\)\}<\/summary>/);
   assert.match(page, /className="pos-sale-member-heading"[\s\S]{0,160}ลูกค้า \/ สมาชิก[\s\S]*?ค้นหาด้วยเบอร์โทรหรือเลขสมาชิกก่อนรับชำระ/);
   assert.match(page, /className="pos-sale-customer-discount-toggle"[\s\S]{0,180}aria-expanded=\{customerDiscountOpen\}/);
   assert.match(page, /ลูกค้าและส่วนลด[\s\S]{0,500}ไม่มีส่วนลด/);
   assert.match(css, /\.pos-sale-checkout \.pos-sale-adjustments\s*\{[\s\S]*?width:\s*100%;[\s\S]*?padding:\s*0;/);
   assert.match(css, /\.pos-sale-customer-discount \.pos-sale-member\s*\{[\s\S]*?width:\s*100%;[\s\S]*?display:\s*block;/);
   assert.match(page, /className="pos-sale-status"/);
-  assert.match(page, /className="pos-sale-bill-options"[\s\S]{0,180}tab === "sell" \? "ตัวเลือกบิล"/);
+  assert.match(page, /className="pos-sale-bill-options"[\s\S]{0,180}tab === "sell" \? posText\("ตัวเลือกบิล"\)/);
   assert.match(css, /\.pos-sale-checkout\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto;[\s\S]*?overflow:\s*hidden/);
   assert.match(css, /\.pos-sale-checkout-scroll\s*\{[\s\S]*?overflow-y:\s*auto/);
   assert.match(css, /\.pos-sale-discount-tools\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,/);

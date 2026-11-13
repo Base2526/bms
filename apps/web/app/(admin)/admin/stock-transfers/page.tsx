@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 // โอนย้ายสต็อกระหว่างสาขา (7.98)
 // -------------------------------------------------------------
 // หน้าจอของงานสองขั้น: สาขาต้นทางกด "ส่ง" (ตัดสต็อกทันที) แล้วสาขาปลายทาง
@@ -59,12 +61,12 @@ const pendingStorageKey = (scope: string) => `bms:stock-transfer:pending:${scope
 
 const FILTERS: readonly Filter[] = ["ALL", "DRAFT", "IN_TRANSIT", "RECEIVED", "CANCELLED"];
 
-const STATUS_LABEL: Record<TransferStatus, string> = {
-  DRAFT: "ร่าง",
-  IN_TRANSIT: "อยู่ระหว่างทาง",
-  RECEIVED: "รับแล้ว",
-  CANCELLED: "ยกเลิก",
-};
+const STATUS_LABEL = (uiText: UiTranslator = thaiUiText): Record<TransferStatus, string> => ({
+  DRAFT: uiText("admin_ui.draft_d1f1d"),
+  IN_TRANSIT: uiText("admin_ui.in_transit_c4409"),
+  RECEIVED: uiText("admin_ui.accepted_65451"),
+  CANCELLED: uiText("admin_ui.cancelled_fba6e"),
+});
 
 const STATUS_COLOR: Record<TransferStatus, string> = {
   DRAFT: "default",
@@ -73,39 +75,40 @@ const STATUS_COLOR: Record<TransferStatus, string> = {
   CANCELLED: "error",
 };
 
-const REASON_LABELS: Record<string, string> = {
-  LOST_IN_TRANSIT: "สูญหายระหว่างทาง",
-  SOURCE_SHORT_SHIP: "ต้นทางส่งไม่ครบ",
-  COUNT_ERROR: "จำนวนนับไม่ตรง",
-  DAMAGED: "เสียหายระหว่างขนส่ง",
-  OTHER: "อื่น ๆ",
-  LEGACY_SHORT_RECEIPT: "รายการเก่าที่ไม่ได้เก็บสาเหตุ",
-};
+const REASON_LABELS = (uiText: UiTranslator = thaiUiText): Record<string, string> => ({
+  LOST_IN_TRANSIT: uiText("admin_ui.lost_in_transit_82b6e"),
+  SOURCE_SHORT_SHIP: uiText("admin_ui.short_shipment_from_source_73dc1"),
+  COUNT_ERROR: uiText("admin_ui.count_mismatch_93e0e"),
+  DAMAGED: uiText("admin_ui.damaged_in_transit_17358"),
+  OTHER: uiText("admin_ui.other_b38f6"),
+  LEGACY_SHORT_RECEIPT: uiText("admin_ui.legacy_entry_with_no_recorded_reason_2ae14"),
+});
 
-const fmtTime = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "—";
+const fmtTime = (iso: string | null, uiText: UiTranslator = thaiUiText) =>
+  iso ? new Date(iso).toLocaleString(uiText.locale, { dateStyle: "short", timeStyle: "short" }) : "—";
 
 /** แปลผลลัพธ์จาก API เป็นประโยคที่คนหน้างานอ่านแล้วรู้ว่าต้องทำอะไรต่อ */
-function explain(body: any): string {
+function explain(body: any, uiText: UiTranslator = thaiUiText): string {
   switch (body?.status) {
     case "FORBIDDEN":
-      return "ไม่มีสิทธิ์ทำรายการที่สาขานี้";
+      return uiText("admin_ui.you_do_not_have_permission_to_operate_at_f1f24");
     case "CONFLICT":
-      return body.reason ?? "คำขอเดิมมีข้อมูลไม่ตรงกัน กรุณาตรวจสอบใบโอนล่าสุด";
+      return body.reason ?? uiText("admin_ui.the_previous_request_has_different_data_check_the_b390b");
     case "INVALID":
-      return body.reason ?? "ข้อมูลไม่ถูกต้อง";
+      return body.reason ?? uiText("admin_ui.invalid_data_9c4d0");
     case "NOT_FOUND":
-      return "ไม่พบใบโอนนี้";
+      return uiText("admin_ui.transfer_not_found_4a612");
     case "WRONG_STATE":
-      return `ใบโอนอยู่สถานะ "${STATUS_LABEL[body.current as TransferStatus] ?? body.current}" แล้ว ทำรายการนี้ไม่ได้`;
+      return uiText("admin_ui.this_transfer_is_already_this_action_is_unavailable_72d04", { v0: STATUS_LABEL(uiText)[body.current as TransferStatus] ?? body.current });
     case "INSUFFICIENT":
-      return `${body.sku} ไซซ์ ${body.size} โอนได้แค่ ${body.available} ชิ้น (สั่งโอน ${body.requested}) — ของที่ลูกค้าจองไว้แล้วโอนออกไม่ได้`;
+      return uiText("admin_ui.size_only_units_can_be_transferred_requested_customer_9ab1a", { v0: body.sku, v1: body.size, v2: body.available, v3: body.requested });
     default:
-      return body?.error ?? "ทำรายการไม่สำเร็จ";
+      return body?.error ?? uiText("admin_ui.could_not_complete_this_action_1af08");
   }
 }
 
 export default function StockTransfersPage() {
+  const uiText = useUiText();
   const { can, loading: permsLoading } = useBmsPermissions();
   const canUse = can("inventory.transfer");
 
@@ -157,17 +160,17 @@ export default function StockTransfersPage() {
       if (version !== loadVersion.current) return;
       if (!res.ok) {
         if (res.status === 401 || res.status === 403) setReady(false);
-        throw new Error(res.status === 403 ? "ไม่มีสิทธิ์ดูใบโอน (ต้องมี inventory.transfer)" : "โหลดรายการไม่สำเร็จ");
+        throw new Error(res.status === 403 ? uiText("admin_ui.you_do_not_have_permission_to_view_transfers_8f7bd") : uiText("admin_ui.could_not_load_the_list_56c99"));
       }
       const body = await res.json();
       if (version !== loadVersion.current) return;
-      if (typeof body.commandScope !== "string") throw new Error("โหลดบริบทผู้ใช้ไม่สำเร็จ");
+      if (typeof body.commandScope !== "string") throw new Error(uiText("admin_ui.could_not_load_user_context_b912a"));
       if (scopeRef.current !== body.commandScope) {
         setReady(false);
         const saved = sessionStorage.getItem(pendingStorageKey(body.commandScope));
         const restored = saved ? JSON.parse(saved) as PendingCommand : null;
         if (restored && (!restored.payload || typeof restored.idempotencyKey !== "string"))
-          throw new Error("ข้อมูลคำขอค้างไม่ถูกต้อง กรุณาติดต่อผู้ดูแล");
+          throw new Error(uiText("admin_ui.invalid_pending_request_data_contact_an_administrator_b2852"));
         setCreateOpen(false); setReceiving(null); form.resetFields();
         scopeRef.current = body.commandScope;
         pendingRef.current = restored;
@@ -177,11 +180,11 @@ export default function StockTransfersPage() {
       setLocations(body.locations ?? []);
       setReady(true);
     } catch (e: any) {
-      if (version === loadVersion.current) message.error(e?.message ?? "โหลดรายการไม่สำเร็จ");
+      if (version === loadVersion.current) message.error(e?.message ?? uiText("admin_ui.could_not_load_the_list_56c99"));
     } finally {
       if (version === loadVersion.current) setLoading(false);
     }
-  }, [filter,linkedId,form]);
+  }, [uiText, filter,linkedId,form]);
 
   useEffect(() => {
     if (canUse) void load();
@@ -190,7 +193,7 @@ export default function StockTransfersPage() {
   async function post(payload: Record<string, unknown>, retry = false): Promise<boolean> {
     if (busyRef.current || !scopeRef.current || !ready) return false;
     if (pendingRef.current && !retry) {
-      message.warning("กรุณาตรวจผลคำขอเดิมก่อนทำรายการใหม่");
+      message.warning(uiText("admin_ui.check_the_previous_request_s_outcome_before_starting_25ab5"));
       return false;
     }
     busyRef.current = true;
@@ -204,7 +207,7 @@ export default function StockTransfersPage() {
       try {
         sessionStorage.setItem(pendingStorageKey(commandScope), JSON.stringify(command));
       } catch {
-        message.error("เบราว์เซอร์เก็บคำขอไม่ได้ จึงยังไม่ส่งรายการ กรุณาตรวจการตั้งค่าพื้นที่จัดเก็บ");
+        message.error(uiText("admin_ui.the_browser_could_not_save_the_request_so_731c9"));
         return false;
       }
       pendingRef.current = command;
@@ -226,17 +229,17 @@ export default function StockTransfersPage() {
       }
       if (!success && !rejected) {
         if ([401, 403].includes(res.status) || body.status === "SCOPE_CHANGED") setReady(false);
-        message.warning(body.status === "SCOPE_CHANGED" ? body.reason : "ยังยืนยันผลไม่ได้ กรุณากดตรวจผลคำขอเดิม ห้ามสร้างรายการซ้ำ");
+        message.warning(body.status === "SCOPE_CHANGED" ? body.reason : uiText("admin_ui.the_outcome_is_still_unconfirmed_check_the_previous_f7460"));
         setCreateOpen(false); setReceiving(null);
         return false;
       }
       if (!res.ok) {
-        message.error(explain(body));
+        message.error(explain(body, uiText));
         return false;
       }
       return true;
     } catch {
-      message.error("ยังยืนยันผลไม่ได้ — ตรวจผลคำขอเดิมก่อนทำรายการใหม่");
+      message.error(uiText("admin_ui.outcome_unconfirmed_check_the_previous_request_before_starting_13971"));
       setCreateOpen(false); setReceiving(null);
       return false;
     } finally {
@@ -247,7 +250,7 @@ export default function StockTransfersPage() {
 
   async function retryPending() {
     if (pendingRef.current && await post(pendingRef.current.payload, true)) {
-      message.success("ยืนยันแล้วว่าคำขอเดิมสำเร็จ");
+      message.success(uiText("admin_ui.confirmed_that_the_previous_request_succeeded_5eceb"));
       setCreateOpen(false); setReceiving(null); form.resetFields();
       await load();
     }
@@ -264,7 +267,7 @@ export default function StockTransfersPage() {
       items: (values.items ?? []).map((i: any) => ({ sku: i.sku?.trim(), size: i.size?.trim(), qty: i.qty })),
     });
     if (!ok) return;
-    message.success("สร้างใบโอนแล้ว — ยังไม่ตัดสต็อกจนกว่าจะกดส่ง");
+    message.success(uiText("admin_ui.transfer_created_stock_is_not_deducted_until_dispatch_0a26b"));
     setCreateOpen(false);
     form.resetFields();
     await load();
@@ -272,14 +275,14 @@ export default function StockTransfersPage() {
 
   async function send(t: Transfer) {
     if (await post({ action: "send", transferId: t.id })) {
-      message.success(`ส่ง ${t.transferNo} แล้ว — ตัดสต็อกจาก ${t.fromLocationName ?? "ต้นทาง"} เรียบร้อย`);
+      message.success(uiText("admin_ui.dispatched_stock_deducted_from_119b5", { v0: t.transferNo, v1: t.fromLocationName ?? uiText("admin_ui.source_ff61d") }));
       await load();
     }
   }
 
   async function cancel(t: Transfer) {
     if (await post({ action: "cancel", transferId: t.id })) {
-      message.success(`ยกเลิก ${t.transferNo} แล้ว`);
+      message.success(uiText("admin_ui.cancelled_aa598", { v0: t.transferNo }));
       await load();
     }
   }
@@ -314,17 +317,17 @@ export default function StockTransfersPage() {
     const damaged = receiving.items.reduce((sum, i) => sum + (damagedQty[i.id] ?? 0), 0);
     message.success(
       missing > 0
-        ? `รับ ${receiving.transferNo} แล้ว — ไม่พบ ${missing} ชิ้น${damaged ? ` · กักกัน ${damaged} ชิ้น` : ""}`
+        ? uiText("admin_ui.received_units_missing_08835", { v0: receiving.transferNo, v1: missing, v2: damaged ? uiText("admin_ui.units_quarantined_9ffbb", { v0: damaged }) : "" })
         : damaged > 0
-          ? `รับ ${receiving.transferNo} แล้ว — กักกันของเสียหาย ${damaged} ชิ้น`
-        : `รับ ${receiving.transferNo} ครบตามที่ส่ง`
+          ? uiText("admin_ui.received_damaged_units_quarantined_c293c", { v0: receiving.transferNo, v1: damaged })
+        : uiText("admin_ui.received_all_units_dispatched_in_12479", { v0: receiving.transferNo })
     );
     setReceiving(null);
     await load();
   }
 
   if (!permsLoading && !canUse) {
-    return <Alert closable type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี inventory.transfer)" />;
+    return <Alert closable type="error" showIcon message={uiText("admin_ui.you_do_not_have_permission_to_view_this_37784")} />;
   }
 
   const activeLocations = locations.filter((l) => l.active);
@@ -348,34 +351,33 @@ export default function StockTransfersPage() {
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      {pending && <Card title="มีคำขอที่ยังต้องยืนยันผล" size="small">
+      {pending && <Card title={uiText("admin_ui.a_request_still_needs_its_outcome_confirmed_3a4c4")} size="small">
         <Space direction="vertical" style={{ width: "100%", overflowWrap: "anywhere" }}>
-          <span>{({ create: "สร้างใบโอน", send: "ส่งของ", receive: "รับของ", cancel: "ยกเลิกใบโอน" } as Record<string,string>)[String(pending.payload.action)]}
+          <span>{({ create: uiText("admin_ui.create_transfer_49241"), send: uiText("admin_ui.dispatch_42a83"), receive: uiText("admin_ui.receive_243d3"), cancel: uiText("admin_ui.cancel_transfer_ef145") } as Record<string,string>)[String(pending.payload.action)]}
             {pending.payload.transferId ? ` · ${rows.find(r => r.id === pending.payload.transferId)?.transferNo ?? pending.payload.transferId}` : ""}
-            {pending.payload.fromLocationId ? ` · ${locations.find(l => l.id === pending.payload.fromLocationId)?.name ?? "ต้นทาง"} → ${locations.find(l => l.id === pending.payload.toLocationId)?.name ?? "ปลายทาง"}` : ""}
+            {pending.payload.fromLocationId ? ` · ${locations.find(l => l.id === pending.payload.fromLocationId)?.name ?? uiText("admin_ui.source_ff61d")} → ${locations.find(l => l.id === pending.payload.toLocationId)?.name ?? uiText("admin_ui.destination_7c0d1")}` : ""}
           </span>
           {Array.isArray(pending.payload.items) && pending.payload.items.map((item: any, index: number) =>
-            <span key={index}>{item.sku} · {item.size} · {item.qty} ชิ้น</span>)}
+            <span key={index}>{item.sku} · {item.size} · {item.qty}  {uiText("admin_ui.piece_408d4")}</span>)}
           {Array.isArray(pending.payload.received) && pending.payload.received.map((item: any) => {
             const line = rows.find(r => r.id === pending.payload.transferId)?.items.find(i => i.id === item.itemId);
-            return <span key={item.itemId}>{line ? `${line.sku} · ${line.size}` : `รายการ ${item.itemId}`} · รับดี {item.qty} · เสียหาย {item.damagedQty ?? 0}{item.note ? ` · ${item.note}` : ""}</span>;
+            return <span key={item.itemId}>{line ? `${line.sku} · ${line.size}` : uiText("admin_ui.items_15d66", { v0: item.itemId })}  {uiText("admin_ui.good_units_received_b0454")} {item.qty}  {uiText("admin_ui.damaged_92c5a")} {item.damagedQty ?? 0}{item.note ? ` · ${item.note}` : ""}</span>;
           })}
-          {(pending.payload.note || pending.payload.receivingNote) ? <span>หมายเหตุ: {String(pending.payload.note || pending.payload.receivingNote)}</span> : null}
-          <span>ระบบเก็บข้อมูลเดิมไว้ แม้รีโหลดหน้านี้</span>
-          <span>ตรวจผลด้วยคำขอเดิมเพื่อป้องกันตัดสต็อกหรือสร้างใบโอนซ้ำ หากสิทธิ์เปลี่ยนให้ติดต่อผู้ดูแล</span>
-          <Button onClick={() => void retryPending()} loading={busy} disabled={!ready}>ตรวจผลคำขอเดิม</Button>
+          {(pending.payload.note || pending.payload.receivingNote) ? <span>{uiText("admin_ui.note_5d8f3")} {String(pending.payload.note || pending.payload.receivingNote)}</span> : null}
+          <span>{uiText("admin_ui.the_system_retains_the_original_request_even_after_d0cd8")}</span>
+          <span>{uiText("admin_ui.check_the_original_request_to_prevent_duplicate_stock_c3b3c")}</span>
+          <Button onClick={() => void retryPending()} loading={busy} disabled={!ready}>{uiText("admin_ui.check_previous_request_65b85")}</Button>
         </Space></Card>}
-      {linkedId && <Button disabled={busy} onClick={()=>{setLinkedId(null);setExpandedKeys([]);}}>แสดงเอกสารทั้งหมด</Button>}
-      <AdminPageHeader title="โอนย้ายสต็อกระหว่างสาขา">
+      {linkedId && <Button disabled={busy} onClick={()=>{setLinkedId(null);setExpandedKeys([]);}}>{uiText("admin_ui.show_all_documents_3f321")}</Button>}
+      <AdminPageHeader title={uiText("admin_ui.stock_transfers_between_branches_f39a1")}>
         <ResponsiveStatusFilter<Filter>
           options={FILTERS}
           value={filter}
           onChange={(value) => { if (!busyRef.current) setFilter(value); }}
-          labels={{ ALL: "ทั้งหมด", ...STATUS_LABEL }}
+          labels={{ ALL: uiText("admin_ui.all_56eff"), ...STATUS_LABEL(uiText) }}
         />
         <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading} disabled={busy}>
-          รีเฟรช
-        </Button>
+          {uiText("admin_ui.refresh_78a47")}</Button>
         <Button
           type="primary"
           icon={<PlusOutlined />}
@@ -386,24 +388,23 @@ export default function StockTransfersPage() {
             setCreateOpen(true);
           }}
         >
-          สร้างใบโอน
-        </Button>
+          {uiText("admin_ui.create_transfer_49241")}</Button>
       </AdminPageHeader>
 
       {activeLocations.length < 2 && !loading && (
         <Alert closable
           type="warning"
           showIcon
-          message="คุณเข้าถึงสาขาที่เปิดใช้งานได้ไม่ถึง 2 สาขา"
-          description="สร้างใบโอนต้องมีสิทธิ์ทั้งต้นทางและปลายทาง — ให้ผู้จัดการที่มีสิทธิ์สร้างใบโอน หรือใช้คำขอเติมสินค้าจากสาขา"
+          message={uiText("admin_ui.you_have_access_to_fewer_than_2_active_bd87d")}
+          description={uiText("admin_ui.creating_a_transfer_requires_access_to_both_source_27499")}
         />
       )}
 
       <Alert closable
         type="info"
         showIcon
-        message="ของที่ส่งแล้วแต่ยังไม่ถึง ไม่ได้อยู่ในสต็อกของสาขาไหน"
-        description="กด “ส่ง” = ตัดสต็อกต้นทางทันที · กด “รับ” = เพิ่มเข้าปลายทางตามจำนวนที่รับจริง · ยกเลิกได้เฉพาะใบที่ยังไม่ส่ง เพราะของที่ออกจากชั้นไปแล้วต้องเดินให้จบด้วยการรับ"
+        message={uiText("admin_ui.dispatched_goods_that_have_not_arrived_are_not_eae3a")}
+        description={uiText("admin_ui.dispatch_deducts_stock_from_the_source_immediately_receive_11486")}
       />
 
       <Card>
@@ -413,7 +414,7 @@ export default function StockTransfersPage() {
           size="small"
           loading={loading}
           dataSource={rows}
-          locale={{ emptyText: <Empty description="ยังไม่มีใบโอน" /> }}
+          locale={{ emptyText: <Empty description={uiText("admin_ui.no_transfers_yet_394a3")} /> }}
           pagination={{ pageSize: 20, showSizeChanger: false }}
           expandable={{
             expandedRowKeys:expandedKeys,
@@ -426,42 +427,42 @@ export default function StockTransfersPage() {
                 dataSource={t.items}
                 pagination={false}
                 title={t.receivingNote ? () => (
-                  <Typography.Text type="secondary">หมายเหตุการรับ: {t.receivingNote}</Typography.Text>
+                  <Typography.Text type="secondary">{uiText("admin_ui.receiving_note_67930")} {t.receivingNote}</Typography.Text>
                 ) : undefined}
                 columns={[
                   { title: "SKU", dataIndex: "sku", width: 160 },
                   {
-                    title: "สินค้า",
+                    title: uiText("admin_ui.product_8432c"),
                     dataIndex: "productName",
                     render: (v: string | null) => v ?? <span style={{ color: "#999" }}>—</span>,
                   },
-                  { title: "ไซซ์", dataIndex: "size", width: 90 },
-                  { title: "ส่ง", dataIndex: "qty", width: 80 },
+                  { title: uiText("admin_ui.size_ff4b6"), dataIndex: "size", width: 90 },
+                  { title: uiText("admin_ui.ship_d6ace"), dataIndex: "qty", width: 80 },
                   {
-                    title: "รับจริง",
+                    title: uiText("admin_ui.receives_for_real_08dfd"),
                     dataIndex: "receivedQty",
                     width: 110,
                     render: (v: number | null, i) =>
                       v == null ? (
                         <span style={{ color: "#999" }}>—</span>
                       ) : v < i.qty ? (
-                        <Tag color="red">{v} (ขาด {i.qty - v})</Tag>
+                        <Tag color="red">{v}  {uiText("admin_ui.short_fd47b")} {i.qty - v})</Tag>
                       ) : (
                         <Tag color="green">{v}</Tag>
                       ),
                   },
                   {
-                    title: "เสียหาย", dataIndex: "damagedQty", width: 90,
+                    title: uiText("admin_ui.damaged_6ed5f"), dataIndex: "damagedQty", width: 90,
                     render: (value: number) => value > 0 ? <Tag color="red">{value}</Tag> : "0",
                   },
                   {
-                    title: "ไม่พบ", dataIndex: "missingQty", width: 90,
+                    title: uiText("admin_ui.missing_77bc6"), dataIndex: "missingQty", width: 90,
                     render: (value: number | null) => value && value > 0 ? <Tag color="volcano">{value}</Tag> : value ?? "—",
                   },
                   {
-                    title: "สาเหตุ / หมายเหตุ", width: 260,
+                    title: uiText("admin_ui.reason_note_7999d"), width: 260,
                     render: (_: unknown, item) => item.discrepancyReason
-                      ? `${REASON_LABELS[item.discrepancyReason] ?? item.discrepancyReason}${item.discrepancyNote ? ` · ${item.discrepancyNote}` : ""}`
+                      ? `${REASON_LABELS(uiText)[item.discrepancyReason] ?? item.discrepancyReason}${item.discrepancyNote ? ` · ${item.discrepancyNote}` : ""}`
                       : "—",
                   },
                 ]}
@@ -469,9 +470,9 @@ export default function StockTransfersPage() {
             ),
           }}
           columns={[
-            { title: "เลขที่", dataIndex: "transferNo", width: 150 },
+            { title: uiText("admin_ui.document_no_7e315"), dataIndex: "transferNo", width: 150 },
             {
-              title: "จาก → ไป",
+              title: uiText("admin_ui.from_to_ef131"),
               render: (_: unknown, t) => (
                 <span>
                   {t.fromLocationName ?? "—"} <b>→</b> {t.toLocationName ?? "—"}
@@ -479,18 +480,18 @@ export default function StockTransfersPage() {
               ),
             },
             {
-              title: "สถานะ",
+              title: uiText("admin_ui.status_2e8c4"),
               dataIndex: "status",
               width: 140,
-              render: (s: TransferStatus) => <Tag color={STATUS_COLOR[s]}>{STATUS_LABEL[s]}</Tag>,
+              render: (s: TransferStatus) => <Tag color={STATUS_COLOR[s]}>{STATUS_LABEL(uiText)[s]}</Tag>,
             },
             {
-              title: "รายการ",
+              title: uiText("admin_ui.item_51c19"),
               width: 110,
-              render: (_: unknown, t) => `${t.items.length} รายการ`,
+              render: (_: unknown, t) => uiText("admin_ui.items_d57ca", { v0: t.items.length }),
             },
-            { title: "สร้างโดย", dataIndex: "createdByName", width: 150, render: (v: string | null) => v ?? "—" },
-            { title: "สร้างเมื่อ", width: 150, render: (_: unknown, t) => fmtTime(t.createdAt) },
+            { title: uiText("admin_ui.created_by_bafce"), dataIndex: "createdByName", width: 150, render: (v: string | null) => v ?? "—" },
+            { title: uiText("admin_ui.created_5b68f"), width: 150, render: (_: unknown, t) => fmtTime(t.createdAt, uiText) },
             {
               title: "",
               width: 190,
@@ -498,29 +499,28 @@ export default function StockTransfersPage() {
                 <Space>
                   {t.status === "DRAFT" && accessible.has(t.fromLocationId) && (
                     <Popconfirm
-                      title={`ส่ง ${t.transferNo}?`}
-                      description="สต็อกที่ต้นทางจะถูกตัดทันที และยกเลิกใบนี้ไม่ได้อีก"
-                      okText="ส่ง"
-                      cancelText="ยังไม่ส่ง"
+                      title={uiText("admin_ui.dispatch_09725", { v0: t.transferNo })}
+                      description={uiText("admin_ui.source_stock_will_be_deducted_immediately_and_this_647ab")}
+                      okText={uiText("admin_ui.ship_d6ace")}
+                      cancelText={uiText("admin_ui.don_t_send_yet_a98d8")}
                       onConfirm={() => void send(t)}
                     >
-                      <Button size="small" type="primary" loading={busy} disabled={blocked}>ส่งของ</Button>
+                      <Button size="small" type="primary" loading={busy} disabled={blocked}>{uiText("admin_ui.dispatch_42a83")}</Button>
                     </Popconfirm>
                   )}
                   {t.status === "DRAFT" && accessible.has(t.fromLocationId) && (
                     <Popconfirm
-                      title={`ยกเลิก ${t.transferNo}?`}
-                      okText="ยกเลิกใบโอน"
-                      cancelText="ไม่"
+                      title={uiText("admin_ui.cancel_4e47c", { v0: t.transferNo })}
+                      okText={uiText("admin_ui.cancel_transfer_ef145")}
+                      cancelText={uiText("admin_ui.no_d73fb")}
                       onConfirm={() => void cancel(t)}
                     >
-                      <Button size="small" danger disabled={blocked}>ยกเลิก</Button>
+                      <Button size="small" danger disabled={blocked}>{uiText("admin_ui.cancelled_fba6e")}</Button>
                     </Popconfirm>
                   )}
                   {t.status === "IN_TRANSIT" && accessible.has(t.toLocationId) && (
                     <Button size="small" type="primary" disabled={blocked} onClick={() => openReceive(t)}>
-                      รับของ
-                    </Button>
+                      {uiText("admin_ui.receive_243d3")}</Button>
                   )}
                 </Space>
               ),
@@ -531,55 +531,55 @@ export default function StockTransfersPage() {
 
       <Modal
         open={createOpen}
-        title="สร้างใบโอน"
+        title={uiText("admin_ui.create_transfer_49241")}
         onCancel={() => { if (!busyRef.current) setCreateOpen(false); }}
         onOk={() => void create()}
         confirmLoading={busy}
         okButtonProps={{ disabled: blocked }}
-        okText="สร้าง (ยังไม่ตัดสต็อก)"
-        cancelText="ยกเลิก"
+        okText={uiText("admin_ui.create_no_stock_deduction_yet_4e9be")}
+        cancelText={uiText("admin_ui.cancelled_fba6e")}
         width={720}
       >
         <Form form={form} layout="vertical" disabled={busy}>
           <Space style={{ width: "100%" }} size="middle" wrap>
             <Form.Item
               name="fromLocationId"
-              label="สาขาต้นทาง"
-              rules={[{ required: true, message: "ต้องเลือกต้นทาง" }]}
+              label={uiText("admin_ui.sending_branch_90a4e")}
+              rules={[{ required: true, message: uiText("admin_ui.select_a_source_57fc9") }]}
               style={{ minWidth: 260 }}
             >
               <Select
-                placeholder="เลือกสาขา"
+                placeholder={uiText("admin_ui.select_branch_1bfe8")}
                 options={activeLocations.map((l) => ({ value: l.id, label: `${l.name} (${l.code})` }))}
               />
             </Form.Item>
             <Form.Item
               name="toLocationId"
-              label="สาขาปลายทาง"
+              label={uiText("admin_ui.destination_branch_e8620")}
               dependencies={["fromLocationId"]}
               rules={[
-                { required: true, message: "ต้องเลือกปลายทาง" },
+                { required: true, message: uiText("admin_ui.select_a_destination_1c004") },
                 ({ getFieldValue }) => ({
                   validator: (_, v) =>
                     v && v === getFieldValue("fromLocationId")
-                      ? Promise.reject(new Error("ต้องต่างจากต้นทาง"))
+                      ? Promise.reject(new Error(uiText("admin_ui.must_differ_from_the_source_356fe")))
                       : Promise.resolve(),
                 }),
               ]}
               style={{ minWidth: 260 }}
             >
               <Select
-                placeholder="เลือกสาขา"
+                placeholder={uiText("admin_ui.select_branch_1bfe8")}
                 options={activeLocations.map((l) => ({ value: l.id, label: `${l.name} (${l.code})` }))}
               />
             </Form.Item>
           </Space>
 
-          <Form.Item name="note" label="โน้ต" extra="เช่น รอบรถส่งของ หรือเหตุผลที่ต้องโอน">
-            <Input placeholder="ไม่บังคับ" />
+          <Form.Item name="note" label={uiText("admin_ui.note_06591")} extra={uiText("admin_ui.e_g_delivery_run_or_reason_for_the_d71cc")}>
+            <Input placeholder={uiText("admin_ui.optional_e39a0")} />
           </Form.Item>
 
-          <Typography.Text strong>รายการที่โอน</Typography.Text>
+          <Typography.Text strong>{uiText("admin_ui.transfer_items_219de")}</Typography.Text>
           <Form.List name="items">
             {(fields, { add, remove }) => (
               <div style={{ marginTop: 8 }}>
@@ -587,24 +587,24 @@ export default function StockTransfersPage() {
                   <Space key={field.key} align="baseline" wrap style={{ display: "flex", marginBottom: 4 }}>
                     <Form.Item
                       name={[field.name, "sku"]}
-                      rules={[{ required: true, message: "ต้องระบุ SKU" }]}
+                      rules={[{ required: true, message: uiText("admin_ui.enter_a_sku_09104") }]}
                       style={{ marginBottom: 8 }}
                     >
                       <Input placeholder="SKU" style={{ width: 220 }} />
                     </Form.Item>
                     <Form.Item
                       name={[field.name, "size"]}
-                      rules={[{ required: true, message: "ต้องระบุไซซ์" }]}
+                      rules={[{ required: true, message: uiText("admin_ui.enter_a_size_f6257") }]}
                       style={{ marginBottom: 8 }}
                     >
-                      <Input placeholder="ไซซ์" style={{ width: 110 }} />
+                      <Input placeholder={uiText("admin_ui.size_ff4b6")} style={{ width: 110 }} />
                     </Form.Item>
                     <Form.Item
                       name={[field.name, "qty"]}
-                      rules={[{ required: true, message: "ต้องระบุจำนวน" }]}
+                      rules={[{ required: true, message: uiText("admin_ui.enter_a_quantity_10971") }]}
                       style={{ marginBottom: 8 }}
                     >
-                      <InputNumber min={1} precision={0} placeholder="จำนวน" style={{ width: 110 }} />
+                      <InputNumber min={1} precision={0} placeholder={uiText("admin_ui.quantity_6681e")} style={{ width: 110 }} />
                     </Form.Item>
                     {fields.length > 1 && (
                       <Button
@@ -617,8 +617,7 @@ export default function StockTransfersPage() {
                   </Space>
                 ))}
                 <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add({ sku: "", size: "", qty: 1 })}>
-                  เพิ่มรายการ
-                </Button>
+                  {uiText("admin_ui.add_item_72c2f")}</Button>
               </div>
             )}
           </Form.List>
@@ -627,21 +626,21 @@ export default function StockTransfersPage() {
 
       <Modal
         open={!!receiving}
-        title={`รับของ · ${receiving?.transferNo ?? ""}`}
+        title={uiText("admin_ui.receive_goods_9182c", { v0: receiving?.transferNo ?? "" })}
         onCancel={() => { if (!busyRef.current) setReceiving(null); }}
         onOk={() => void confirmReceive()}
         confirmLoading={busy}
         okButtonProps={{ disabled: invalidDiscrepancy || blocked }}
-        okText="ยืนยันรับของ"
-        cancelText="ยังไม่รับ"
+        okText={uiText("admin_ui.confirm_receipt_72635")}
+        cancelText={uiText("admin_ui.not_received_yet_55c89")}
         width={720}
       >
         {receiving && (
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
             <Descriptions size="small" column={1} bordered>
-              <Descriptions.Item label="จาก">{receiving.fromLocationName ?? "—"}</Descriptions.Item>
-              <Descriptions.Item label="ไป">{receiving.toLocationName ?? "—"}</Descriptions.Item>
-              <Descriptions.Item label="ส่งเมื่อ">{fmtTime(receiving.sentAt)}</Descriptions.Item>
+              <Descriptions.Item label={uiText("admin_ui.of_16b68")}>{receiving.fromLocationName ?? "—"}</Descriptions.Item>
+              <Descriptions.Item label={uiText("admin_ui.to_ed56a")}>{receiving.toLocationName ?? "—"}</Descriptions.Item>
+              <Descriptions.Item label={uiText("admin_ui.dispatched_at_189d9")}>{fmtTime(receiving.sentAt, uiText)}</Descriptions.Item>
             </Descriptions>
 
             <Alert closable
@@ -649,13 +648,13 @@ export default function StockTransfersPage() {
               showIcon
               message={
                 missingOnReceive > 0 || damagedOnReceive > 0
-                  ? `ไม่พบ ${missingOnReceive} ชิ้น · เสียหาย ${damagedOnReceive} ชิ้น`
-                  : "นับของจริงก่อนกดยืนยัน"
+                  ? uiText("admin_ui.units_missing_units_damaged_39c6e", { v0: missingOnReceive, v1: damagedOnReceive })
+                  : uiText("admin_ui.count_the_actual_goods_before_confirming_83b75")
               }
               description={
                 missingOnReceive > 0 || damagedOnReceive > 0
-                  ? "ของสภาพดีเข้าสต็อกขาย ของเสียหายเข้ากักกัน และของไม่พบถูกบันทึกเป็นส่วนต่าง — ต้องระบุเหตุผลและหมายเหตุก่อนยืนยัน"
-                  : "ค่าเริ่มต้นคือรับสภาพดีครบ แก้จำนวนให้ตรงกับของที่ตรวจจริง"
+                  ? uiText("admin_ui.good_units_enter_sellable_stock_damaged_units_enter_2b421")
+                  : uiText("admin_ui.defaults_to_receiving_all_units_in_good_condition_6b447")
               }
             />
 
@@ -668,14 +667,14 @@ export default function StockTransfersPage() {
               columns={[
                 { title: "SKU", dataIndex: "sku", width: 170 },
                 {
-                  title: "สินค้า",
+                  title: uiText("admin_ui.product_8432c"),
                   dataIndex: "productName",
                   render: (v: string | null) => v ?? <span style={{ color: "#999" }}>—</span>,
                 },
-                { title: "ไซซ์", dataIndex: "size", width: 80 },
-                { title: "ส่งมา", dataIndex: "qty", width: 75 },
+                { title: uiText("admin_ui.size_ff4b6"), dataIndex: "size", width: 80 },
+                { title: uiText("admin_ui.dispatched_f55e7"), dataIndex: "qty", width: 75 },
                 {
-                  title: "รับสภาพดี",
+                  title: uiText("admin_ui.good_units_received_a0797"),
                   width: 120,
                   render: (_: unknown, i) => (
                     <InputNumber
@@ -690,7 +689,7 @@ export default function StockTransfersPage() {
                   ),
                 },
                 {
-                  title: "เสียหาย/กักกัน", width: 130,
+                  title: uiText("admin_ui.damaged_quarantined_ebbd8"), width: 130,
                   render: (_: unknown, i) => (
                     <InputNumber
                       min={0}
@@ -706,7 +705,7 @@ export default function StockTransfersPage() {
                   ),
                 },
                 {
-                  title: "ไม่พบ", width: 80,
+                  title: uiText("admin_ui.missing_77bc6"), width: 80,
                   render: (_: unknown, i) => (
                     <Typography.Text strong type={
                       i.qty - (receivedQty[i.id] ?? i.qty) - (damagedQty[i.id] ?? 0) > 0
@@ -717,7 +716,7 @@ export default function StockTransfersPage() {
                   ),
                 },
                 {
-                  title: "สาเหตุ", width: 180,
+                  title: uiText("admin_ui.reason_d3661"), width: 180,
                   render: (_: unknown, i) => {
                     const hasDifference = (damagedQty[i.id] ?? 0) > 0
                       || i.qty - (receivedQty[i.id] ?? i.qty) - (damagedQty[i.id] ?? 0) > 0;
@@ -725,9 +724,9 @@ export default function StockTransfersPage() {
                       <Select
                         disabled={busy || !hasDifference}
                         value={discrepancyReason[i.id]}
-                        placeholder="เลือกสาเหตุ"
+                        placeholder={uiText("admin_ui.select_a_reason_a3246")}
                         style={{ width: "100%" }}
-                        options={Object.entries(REASON_LABELS)
+                        options={Object.entries(REASON_LABELS(uiText))
                           .filter(([value]) => value !== "LEGACY_SHORT_RECEIPT")
                           .map(([value, label]) => ({ value, label }))}
                         onChange={(value) => setDiscrepancyReason((prev) => ({ ...prev, [i.id]: value }))}
@@ -736,7 +735,7 @@ export default function StockTransfersPage() {
                   },
                 },
                 {
-                  title: "หมายเหตุส่วนต่าง", width: 240,
+                  title: uiText("admin_ui.variance_note_15724"), width: 240,
                   render: (_: unknown, i) => {
                     const hasDifference = (damagedQty[i.id] ?? 0) > 0
                       || i.qty - (receivedQty[i.id] ?? i.qty) - (damagedQty[i.id] ?? 0) > 0;
@@ -744,7 +743,7 @@ export default function StockTransfersPage() {
                       <Input
                         disabled={busy || !hasDifference}
                         value={discrepancyNote[i.id] ?? ""}
-                        placeholder={hasDifference ? "บังคับกรอก" : "ไม่มีส่วนต่าง"}
+                        placeholder={hasDifference ? uiText("admin_ui.required_8d2ce") : uiText("admin_ui.no_variance_3bba7")}
                         onChange={(event) => setDiscrepancyNote((prev) => ({
                           ...prev, [i.id]: event.target.value,
                         }))}
@@ -760,7 +759,7 @@ export default function StockTransfersPage() {
               onChange={(event) => setReceivingNote(event.target.value)}
               rows={2}
               maxLength={1000}
-              placeholder="หมายเหตุการรับของรอบนี้ เช่น กล่องเปียก ซีลขาด หรือเลขพัสดุอ้างอิง (ไม่บังคับ)"
+              placeholder={uiText("admin_ui.note_for_this_receipt_e_g_wet_box_4f79a")}
             />
           </Space>
         )}

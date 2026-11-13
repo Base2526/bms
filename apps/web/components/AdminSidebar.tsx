@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import Link from 'next/link';
 import { aiCreditCapacity } from '@/lib/aiUsageClient';
 import { Layout, Menu, Avatar, Button, Dropdown, message, Tooltip, Drawer, Badge, Skeleton, Segmented } from 'antd';
@@ -71,10 +73,13 @@ import {
   ProfileOutlined,
   ControlOutlined,
   MoreOutlined,
+  GlobalOutlined,
   DownloadOutlined,
   CloudUploadOutlined,
 } from '@ant-design/icons';
 import { usePathname, useRouter } from 'next/navigation';
+import { setLangCookie } from '@/lib/lang';
+import type { Lang } from '@/i18n';
 import { gql, useQuery } from '@apollo/client';
 import { useBmsPermissions } from '@/app/hooks/useBmsPermissions';
 import { useIsMobile } from '@/app/hooks/useMediaQuery';
@@ -318,7 +323,8 @@ const NAV_ICONS: Record<string, React.ReactNode> = {
 const WORKSPACE_STORAGE_KEY = 'bms_admin_workspace';
 
 export default function AdminSidebar({ retailLocal = false }: { retailLocal?: boolean }) {
-  const { t, lang } = useI18n();
+  const uiText = useUiText();
+  const { t, lang, setLang } = useI18n();
   const pathname = usePathname()!;
   const router = useRouter();
   // จอมือถือไม่มีที่ให้ rail 64px (เหลือเนื้อหา ~272px บนจอ 360px) → ซ่อน Sider ทั้งตัว
@@ -477,10 +483,10 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
     const res = await fetch('/api/auth/logout-admin', { method: 'POST' });
     refreshSession();
     if (res.ok) {
-      message.success('Logged out');
+      message.success(uiText("admin_ui.en_logged_out_25edf"));
       window.location.href = '/admin/login';
     } else {
-      message.error('Logout failed');
+      message.error(uiText("admin_ui.en_logout_failed_d2313"));
     }
   }
 
@@ -620,6 +626,13 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
   // ⚠️ เมนูนี้ถือเฉพาะสิ่งที่แถบ *ในโหมดนั้น* ไม่มีเป้าของตัวเองให้ — ตอนขยายทั้งผู้ช่วยและโปรไฟล์
   // มีแถวของตัวเองอยู่แล้ว การใส่ซ้ำคือสองทางไปที่เดียวกันที่ห่างกัน 40px (เหตุผลเดียวกับที่ไม่ใส่
   // "สลับธีม") · ตอนย่อรางกว้าง 64px ไม่มีที่ให้แถวไหนเลย เมนูจึงต้องรับทั้งสองไว้แทน
+  const changeLanguage = (nextLanguage: Lang) => {
+    if (nextLanguage === lang) return;
+    setLangCookie(nextLanguage);
+    setLang?.(nextLanguage);
+    // Refresh server copy in place, retaining client forms and pending commands.
+    router.refresh();
+  };
   const accountMenuItems = (compact: boolean): MenuProps['items'] => [
     ...(compact
       ? [{
@@ -636,6 +649,17 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
           label: <Link href="/admin/profile">{t('admin.profile')}</Link>,
         }]
       : []),
+    {
+      key: 'language',
+      icon: <GlobalOutlined />,
+      label: t('settingsPage.language'),
+      children: (['th', 'en'] as const).map(language => ({
+        key: `language-${language}`,
+        disabled: language === lang,
+        label: <span data-admin-language={language}>{language === 'th' ? t('settingsPage.language_th') : t('settingsPage.language_en')}</span>,
+        onClick: () => changeLanguage(language),
+      })),
+    },
     { type: 'divider' },
     { key: 'logout', icon: <LogoutOutlined />, danger: true, label: t('admin.logout'), onClick: onLogout },
   ];

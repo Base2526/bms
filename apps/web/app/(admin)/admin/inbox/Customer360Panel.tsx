@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 // =============================================================
 // Customer 360 Panel — right-hand column ของหน้า Inbox
 // -------------------------------------------------------------
@@ -143,8 +145,8 @@ function OutlinePill({ children }: { children: React.ReactNode }) {
 }
 const PANEL_COLLAPSE_KEY = "bms_inbox_customer360_collapsed";
 const money = (n: number) => `${Number(n || 0).toLocaleString()} ฿`;
-const dateOnly = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString() : "—");
-const dateTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : "—");
+const dateOnly = (iso?: string | null, uiText: UiTranslator = thaiUiText) => (iso ? new Date(iso).toLocaleDateString(uiText.locale) : "—");
+const dateTime = (iso?: string | null, uiText: UiTranslator = thaiUiText) => (iso ? new Date(iso).toLocaleString(uiText.locale) : "—");
 const orderSubtotal = (order: any) =>
   (order?.items || []).reduce((sum: number, it: any) => sum + (Number(it.unitPrice) || 0) * (Number(it.qty) || 0), 0);
 const discountLabel = (order: any, t: (key: string, vars?: Record<string, any>) => string) =>
@@ -177,11 +179,12 @@ function SectionLoading() {
 
 // ---- Section 1 — Customer Summary ------------------------------
 function SummarySection({ c, conv }: { c: any; conv: any }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   if (!c) return <Empty description={t("admin_inbox_customer360.empty_no_customer_data")} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   const tagBadges: { label: string; color: string }[] = [
     ...(c.tags || []).includes("VIP") ? [{ label: "VIP", color: "gold" }] : [],
-    ...(c.tags || []).includes("Fraud Risk") ? [{ label: "Fraud Risk", color: "red" }] : [],
+    ...(c.tags || []).includes(uiText("admin_ui.en_fraud_risk_74625")) ? [{ label: uiText("admin_ui.en_fraud_risk_74625"), color: "red" }] : [],
     c.isNewCustomer
       ? { label: t("admin_inbox_customer360.customer_new"), color: "blue" }
       : { label: t("admin_inbox_customer360.customer_returning"), color: "cyan" },
@@ -204,7 +207,7 @@ function SummarySection({ c, conv }: { c: any; conv: any }) {
         </Space>
       </div>
       <Descriptions size="small" column={1} colon={false}>
-        <Descriptions.Item label={t("admin_inbox_customer360.summary_customer_since")}>{dateOnly(c.createdAt)}</Descriptions.Item>
+        <Descriptions.Item label={t("admin_inbox_customer360.summary_customer_since")}>{dateOnly(c.createdAt, uiText)}</Descriptions.Item>
         <Descriptions.Item label={t("admin_inbox_customer360.summary_language")}>{c.preferredLanguage || "—"}</Descriptions.Item>
         <Descriptions.Item label={t("admin_inbox_customer360.summary_timezone")}>{c.timezone || "—"}</Descriptions.Item>
         <Descriptions.Item label={t("admin_inbox_customer360.summary_current_channel")}>
@@ -259,6 +262,7 @@ function ContactSection({ c, identities, addresses }: { c: any; identities: any[
 
 // ---- Section 3 — Statistics --------------------------------------
 function StatsSection({ s }: { s: any }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   if (!s) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   const row = (label: string, value: React.ReactNode) => (
@@ -274,8 +278,8 @@ function StatsSection({ s }: { s: any }) {
       {row(t("admin_inbox_customer360.stats_completed_orders"), s.completedOrders)}
       {row(t("admin_inbox_customer360.stats_cancelled_orders"), s.cancelledOrders)}
       {row(t("admin_inbox_customer360.stats_refund_count"), s.refundCount)}
-      {row(t("admin_inbox_customer360.stats_last_order"), dateOnly(s.lastOrderDate))}
-      {row(t("admin_inbox_customer360.stats_last_conversation"), dateTime(s.lastConversationAt))}
+      {row(t("admin_inbox_customer360.stats_last_order"), dateOnly(s.lastOrderDate, uiText))}
+      {row(t("admin_inbox_customer360.stats_last_conversation"), dateTime(s.lastConversationAt, uiText))}
       {row(
         t("admin_inbox_customer360.stats_avg_response_time"),
         s.avgResponseTimeSeconds != null
@@ -290,6 +294,7 @@ function StatsSection({ s }: { s: any }) {
 function RecentOrdersSection({
   orders, selectedOrderId, onOpenPreview,
 }: { orders: any[]; selectedOrderId: string | null; onOpenPreview: (orderId: string) => void }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   if (!orders?.length) return <Empty description={t("admin_inbox_customer360.orders_empty")} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   return (
@@ -322,7 +327,7 @@ function RecentOrdersSection({
               </Space>
             )}
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 2 }}>
-              <Text type="secondary" style={{ fontSize: 10.5 }}>{dateOnly(o.createdAt)}</Text>
+              <Text type="secondary" style={{ fontSize: 10.5 }}>{dateOnly(o.createdAt, uiText)}</Text>
               <Text strong style={{ fontSize: 14, fontVariantNumeric: "tabular-nums" }}>{money(o.totalAmount)}</Text>
             </div>
             {o.trackingNo && (
@@ -354,6 +359,7 @@ function RecentOrdersSection({
 function OrderPreviewDrawer({
   open, order, onClose,
 }: { open: boolean; order: any | null; onClose: () => void }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   return (
     <Drawer
@@ -387,7 +393,7 @@ function OrderPreviewDrawer({
           </Space>
 
           <Descriptions size="small" column={1} colon={false}>
-            <Descriptions.Item label={t("admin_inbox_customer360.drawer_date")}>{dateTime(order.createdAt)}</Descriptions.Item>
+            <Descriptions.Item label={t("admin_inbox_customer360.drawer_date")}>{dateTime(order.createdAt, uiText)}</Descriptions.Item>
             <Descriptions.Item label={t("admin_inbox_customer360.drawer_subtotal")}>{money(orderSubtotal(order))}</Descriptions.Item>
             {Number(order.discountAmount || 0) > 0 && (
               <Descriptions.Item label={t("admin_inbox_customer360.drawer_discount_label", { coupon: order.couponCode ? ` (${order.couponCode})` : "" })}>
@@ -513,13 +519,14 @@ function CartSection({ draftOrder }: { draftOrder: any }) {
 
 // ---- Section 7 — Notes (internal, staff only) ---------------------
 function NotesSection({ notes }: { notes: any[] }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   if (!notes?.length) return <Empty description={t("admin_inbox_customer360.notes_empty")} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   return (
     <List size="small" dataSource={notes} renderItem={(n: any) => (
       <List.Item>
         <List.Item.Meta
-          title={<Text type="secondary" style={{ fontSize: 11 }}>{n.author || "—"} · {dateTime(n.createdAt)}</Text>}
+          title={<Text type="secondary" style={{ fontSize: 11 }}>{n.author || "—"} · {dateTime(n.createdAt, uiText)}</Text>}
           description={<Text style={{ fontSize: 12 }}>{n.body}</Text>}
         />
       </List.Item>
@@ -528,6 +535,7 @@ function NotesSection({ notes }: { notes: any[] }) {
 }
 
 function CouponWalletSection({ coupons }: { coupons: any[] }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   if (!coupons?.length) return <Empty description={t("admin_inbox_customer360.coupon_wallet_empty")} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   return (
@@ -549,8 +557,8 @@ function CouponWalletSection({ coupons }: { coupons: any[] }) {
           </div>
 
           <div style={{ fontSize: 12, color: "var(--app-muted, #888)" }}>
-            {t("admin_inbox_customer360.coupon_assigned_at", { date: dateTime(coupon.assignedAt) })}
-            {coupon.expiresAt ? t("admin_inbox_customer360.coupon_expires_at", { date: dateTime(coupon.expiresAt) }) : t("admin_inbox_customer360.coupon_no_expiry")}
+            {t("admin_inbox_customer360.coupon_assigned_at", { date: dateTime(coupon.assignedAt, uiText) })}
+            {coupon.expiresAt ? t("admin_inbox_customer360.coupon_expires_at", { date: dateTime(coupon.expiresAt, uiText) }) : t("admin_inbox_customer360.coupon_no_expiry")}
           </div>
 
           {(coupon.state === "RESERVED" || coupon.state === "REDEEMED") && (coupon.reservedOrderId || coupon.redeemedOrderId) && (
@@ -582,6 +590,7 @@ function CouponWalletSection({ coupons }: { coupons: any[] }) {
 function AssignCouponModal({
   open, customerId, channel, customerRef, conversationId, canManage, onClose, onDone,
 }: { open: boolean; customerId: string | null; channel?: string | null; customerRef?: string | null; conversationId?: string | null; canManage: boolean; onClose: () => void; onDone: () => void }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [form] = Form.useForm();
   const { data, loading } = useQuery(Q_COUPONS_PICKER, {
@@ -592,7 +601,7 @@ function AssignCouponModal({
     .filter((coupon: any) => coupon.active)
     .map((coupon: any) => ({
       value: coupon.code,
-      label: `${coupon.code} · ${coupon.type === "PERCENT" ? `${coupon.value}%` : money(coupon.value)}${coupon.expiresAt ? t("admin_inbox_customer360.assign_coupon_option_expiry", { date: dateOnly(coupon.expiresAt) }) : ""}`,
+      label: `${coupon.code} · ${coupon.type === "PERCENT" ? `${coupon.value}%` : money(coupon.value)}${coupon.expiresAt ? t("admin_inbox_customer360.assign_coupon_option_expiry", { date: dateOnly(coupon.expiresAt, uiText) }) : ""}`,
     }));
 
   const [assignCoupon, { loading: saving }] = useMutation(M_ASSIGN_CUSTOMER_COUPON, {
@@ -656,6 +665,7 @@ function AssignCouponModal({
 
 // ---- Section 8 — Timeline (lazy) -----------------------------------
 function TimelineSection({ customerId }: { customerId: string }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [load, { data, loading, called }] = useLazyQuery(Q_TIMELINE, { fetchPolicy: "network-only" });
   useEffect(() => { if (customerId) load({ variables: { customerId } }); }, [customerId]); // eslint-disable-line
@@ -666,7 +676,7 @@ function TimelineSection({ customerId }: { customerId: string }) {
     <List size="small" dataSource={entries} renderItem={(t: any) => (
       <List.Item>
         <List.Item.Meta
-          title={<Space size={4}><Tag>{t.type}</Tag><Text type="secondary" style={{ fontSize: 11 }}>{dateTime(t.at)}</Text></Space>}
+          title={<Space size={4}><Tag>{t.type}</Tag><Text type="secondary" style={{ fontSize: 11 }}>{dateTime(t.at, uiText)}</Text></Space>}
           description={<Text style={{ fontSize: 12 }}>{t.text}</Text>}
         />
       </List.Item>
@@ -676,6 +686,7 @@ function TimelineSection({ customerId }: { customerId: string }) {
 
 // ---- Section 9 — AI Insights (lazy) --------------------------------
 function InsightsSection({ customerId }: { customerId: string }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [load, { data, loading, called }] = useLazyQuery(Q_INSIGHTS, { fetchPolicy: "cache-first" });
   useEffect(() => { if (customerId) load({ variables: { customerId } }); }, [customerId]); // eslint-disable-line
@@ -688,7 +699,7 @@ function InsightsSection({ customerId }: { customerId: string }) {
       <Text type="secondary" style={{ fontSize: 11 }}>
         {t("admin_inbox_customer360.insights_footer", {
           source: insights.cached ? t("admin_inbox_customer360.insights_cached") : t("admin_inbox_customer360.insights_fresh"),
-          date: dateTime(insights.generatedAt),
+          date: dateTime(insights.generatedAt, uiText),
         })}
       </Text>
     </div>
@@ -806,6 +817,7 @@ function CreateOrderModal({
 function InvoiceModal({
   open, orders, onClose,
 }: { open: boolean; orders: any[]; onClose: () => void }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [orderId, setOrderId] = useState<string | null>(null);
   const [load, { data, loading }] = useLazyQuery(Q_INVOICE, { fetchPolicy: "network-only" });
@@ -850,7 +862,7 @@ function InvoiceModal({
             </div>
             <div style={{ textAlign: "right" }}>
               <Text strong>{t("admin_inbox_customer360.invoice_number", { number: doc.number })}</Text><br />
-              <Text type="secondary" style={{ fontSize: 12 }}>{dateOnly(doc.date)}</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>{dateOnly(doc.date, uiText)}</Text>
             </div>
           </div>
           <Descriptions size="small" column={2} colon={false} style={{ marginBottom: 12 }}>

@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 import * as Keychain from 'react-native-keychain';
 
 export type PendingPurchaseReceipt = {
@@ -46,7 +47,7 @@ function parse(value: unknown): PendingPurchaseReceipt {
     )
   ) {
     throw new Error(
-      'อ่านรายการรับสินค้าที่ค้างไว้ไม่ได้ กรุณาตรวจประวัติรับสินค้ากับผู้ดูแล',
+      posText("อ่านรายการรับสินค้าที่ค้างไว้ไม่ได้ กรุณาตรวจประวัติรับสินค้ากับผู้ดูแล"),
     );
   }
   return {
@@ -86,17 +87,17 @@ export function savePendingPurchaseReceipt(
     const receipt = parse(input);
     const current = await loadPendingPurchaseReceipt(scope);
     if (current && JSON.stringify(current) !== JSON.stringify(receipt)) {
-      throw new Error('มีรายการรับเดิมรอตรวจผล กรุณาเปิดหน้ารับสินค้าอีกครั้ง');
+      throw new Error(posText("มีรายการรับเดิมรอตรวจผล กรุณาเปิดหน้ารับสินค้าอีกครั้ง"));
     }
     const json = JSON.stringify(receipt);
     if (json.length > 64000)
-      throw new Error('รายการรับสินค้าใหญ่เกินพื้นที่จัดเก็บ');
+      throw new Error(posText("รายการรับสินค้าใหญ่เกินพื้นที่จัดเก็บ"));
     const stored = await Keychain.setGenericPassword('purchase-receipt', json, {
       service: scope,
       accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK,
     });
     if (!stored)
-      throw new Error('เก็บรายการป้องกันรับสินค้าซ้ำไม่ได้ กรุณาลองใหม่');
+      throw new Error(posText("เก็บรายการป้องกันรับสินค้าซ้ำไม่ได้ กรุณาลองใหม่"));
   });
 }
 
@@ -109,11 +110,11 @@ export function clearPendingPurchaseReceipt(
     if (!current) return;
     if (current.idempotencyKey !== key)
       throw new Error(
-        'รายการรับที่เก็บไว้เปลี่ยนไป กรุณาเปิดหน้ารับสินค้าอีกครั้ง',
+        posText("รายการรับที่เก็บไว้เปลี่ยนไป กรุณาเปิดหน้ารับสินค้าอีกครั้ง"),
       );
     if (!(await Keychain.resetGenericPassword({ service: scope })))
       throw new Error(
-        'ยังล้างรายการรับที่บันทึกแล้วไม่ได้ กรุณาตรวจรายการเดิมอีกครั้ง',
+        posText("ยังล้างรายการรับที่บันทึกแล้วไม่ได้ กรุณาตรวจรายการเดิมอีกครั้ง"),
       );
   });
 }

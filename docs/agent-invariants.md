@@ -2501,6 +2501,50 @@ live browser: § System Health + request metrics in [CLAUDE.local.md](../CLAUDE.
 
 ## i18n coverage (what "bilingual" actually means today)
 
+**Admin audit (2026-11-12, supersedes the historical percentages below):** The shared dictionaries
+contain **113 namespaces / 9,542 string leaves per language**, including **1,454 `admin_ui` keys**.
+The sidebar account menu offers Thai/English on desktop and in the mobile drawer, using the
+existing cookie and router refresh without signing out or clearing forms. Back-office branch/device setup, POS readiness, stock counts/transfers, receivables, commission,
+product packs/labels, pharmacy review chrome, diagnostics, roles, files, logs, posts and scheduler
+chrome now use Thai/English operator copy. Remaining English headings on previously bilingual
+pages were included. `useUiText()` is a facade over the existing `useI18n()`/`getMessage()` dictionary,
+not another translation store. Pass its translator into pure format/label helpers; never freeze
+translated arrays at module initialization. UI dates use the selected locale; Thai Dayjs names are
+registered for Ant Design's per-picker locale. Stored timestamps, tax calculations, workflow
+identifiers and payload values do not change with language. Paired bank/province names select the
+existing English name when available. The shared page-error boundary is bilingual too. The playground stock preview also reads the
+current bounded product connection (`items`/`total`), with a bilingual partial-list notice.
+The follow-up recheck covers comment relative times, loyalty month names, order timeline labels,
+delivery-attempt statuses and pharmacy queue/case status filters; unknown status codes retain their
+original value. UI labels never rewrite stored statuses or clinical evidence.
+The dictionary-content pass also replaces 84 English-only values in the Thai dictionary (actions,
+headings, workflow tabs and diagnostics); key parity alone does not verify a translation's content.
+
+`admin-client-i18n-contract` scans 205 admin/shared UI files and rejects new unreviewed Thai literals
+or English UI labels. Its exact-source exception inventory documents customer-message templates,
+Thai input/parsing examples, CRM values, official printed tax text, brands and protocol identifiers.
+It does not translate data returned by servers, clinical guidance, arbitrary logs, customer text or
+OS dialogs. Runtime-built labels still need targeted review. `i18n-keys-contract` parses both quote
+styles for literal `t()`/`uiText()` calls and checks full recursive dictionary parity plus `admin_ui`
+placeholder parity. A translated shell is not evidence that every possible server error or every
+native hardware dialog has been localized. Keep new operator copy in the shared dictionary.
+
+**POS operator language (2026-11-12):** Mobile and Desktop now select `th`/`en` independently of
+receipt language. Explicit authored copy is paired in `apps/web/i18n/pos-client.json` and translated
+by the pure `posClient.ts` helper (shared with React Native); this extends the shared i18n directory,
+not the dead `lib/i18n.ts`. Web POS wraps the existing `I18nProvider`, persists its cookie and syncs
+with Desktop's origin-checked language IPC. Mobile keeps a separate Keychain preference, while the
+shell keeps a validated `userData/language.json` and its dependency-free `renderer/locale.cjs`.
+Switch in place: never reload/remount the register, clear cashier/cart/tender/pending keys, or touch
+pairing to change language. Do not translate arbitrary server/user data, clinical guidance or receipt
+payloads with the operator catalog. A failed preference write must not block selling. The
+`pos-client-i18n-contract` checks explicit call coverage, placeholders and payment outcome parity;
+Mobile and Desktop have their own persistence tests, including rapid selection and stale-save failures.
+Customer and queue displays follow the register through a same-origin language-only BroadcastChannel
+(handshake plus changes); do not grant these utility windows new credential IPC. Board-game controls,
+queue layout/audio labels and camera/printer validation use the same operator catalog. Queue speech
+and official tax-document copy retain their own language policy. Native hardware/OS dialogs are separate QA.
+
 There are **four i18n mechanisms in this codebase; treat the first three as real, the fourth as dead**:
 
 - **`apps/web/i18n/` + `apps/web/lib/i18nContext.tsx`** (`I18nProvider`/`useI18n()`) — the main shared
@@ -2540,7 +2584,7 @@ There are **four i18n mechanisms in this codebase; treat the first three as real
   `useTranslation(` outside its own definition returns zero hits anywhere in the app. Do not extend
   this; if you're touching it, delete it instead.
 
-**Real coverage, as of 2026-08**: every public marketing/legal page, every auth form (login/register/
+**Historical coverage, as of 2026-08 (superseded by the admin audit above)**: every public marketing/legal page, every auth form (login/register/
 forgot/reset/verify-email — verify-email is now fully migrated, not partial), `/checkout`, the public
 product storefront (`/shop/**`), and a long tail of previously-Thai-only public utility pages —
 `/shop-signup`, `/settings` (the reachable Profile & Account/Security/My Posts/My Bookmarks panels;

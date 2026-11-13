@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 // หน้าพิมพ์สติกเกอร์บาร์โค้ดติดสินค้า
 // -------------------------------------------------------------
 // ปิดวงให้ปุ่ม "สร้างเลขของร้าน" ที่หน้าสินค้า — เลขที่สร้างมาไม่มีประโยชน์จนกว่า
@@ -37,6 +39,7 @@ type Row = { sku: string; name: string; price: number; barcode: string | null };
  * พนักงานต้องพิมพ์เลขเข้าเครื่องเองได้
  */
 function EanSvg({ code, heightMm = 12 }: { code: string; heightMm?: number }) {
+  const uiText = useUiText();
   const render = eanBars(code);
   if (!render) return null;
 
@@ -51,7 +54,7 @@ function EanSvg({ code, heightMm = 12 }: { code: string; heightMm?: number }) {
       viewBox={`0 0 ${width + 12} 56`}
       style={{ display: "block", width: "100%", height: `${heightMm}mm` }}
       role="img"
-      aria-label={`บาร์โค้ด ${code}`}
+      aria-label={uiText("admin_ui.barcode_c8c23", { v0: code })}
     >
       {/* เว้นขอบซ้าย-ขวา (quiet zone) — ไม่มีแล้วสแกนไม่ติด แม้แท่งจะถูกทุกแท่ง */}
       <g transform="translate(6,0)">
@@ -67,6 +70,7 @@ function EanSvg({ code, heightMm = 12 }: { code: string; heightMm?: number }) {
 }
 
 export default function ProductLabelsPage() {
+  const uiText = useUiText();
   const { can, loading: permLoading } = useBmsPermissions();
   const [search, setSearch] = useState("");
   const [copies, setCopies] = useState<Record<string, number>>({});
@@ -93,36 +97,35 @@ export default function ProductLabelsPage() {
   );
 
   if (!permLoading && !can("product.view")) {
-    return <Alert closable type="error" showIcon message="ไม่มีสิทธิ์ดูสินค้า" />;
+    return <Alert closable type="error" showIcon message={uiText("admin_ui.you_do_not_have_permission_to_view_products_ee80e")} />;
   }
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <div className="labels-screen-only">
-        <AdminPageHeader title="พิมพ์สติกเกอร์บาร์โค้ด" />
+        <AdminPageHeader title={uiText("admin_ui.print_barcode_labels_b19c1")} />
 
         <Alert closable
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message="พิมพ์เฉพาะสินค้าที่ไม่มีบาร์โค้ดจากโรงงาน"
-          description="ของที่ผู้ผลิตติดบาร์โค้ดมาแล้วไม่ต้องแปะทับ — เลขบนตัวสินค้าใช้ได้อยู่แล้ว การแปะทับทำให้ยิงได้เลขที่ไม่ตรงกับที่ซัพพลายเออร์และคู่ค้าใช้"
+          message={uiText("admin_ui.print_only_for_products_without_manufacturer_barcodes_a7414")}
+          description={uiText("admin_ui.do_not_cover_manufacturer_barcodes_the_existing_product_3aaa4")}
         />
 
         <Card
-          title="เลือกสินค้าและจำนวนดวง"
+          title={uiText("admin_ui.select_products_and_label_quantities_b5aea")}
           loading={loading && rows.length === 0}
           extra={
             <Space>
-              <Typography.Text type="secondary">{labels.length} ดวง</Typography.Text>
+              <Typography.Text type="secondary">{labels.length}  {uiText("admin_ui.labels_73f6e")}</Typography.Text>
               <Button type="primary" disabled={labels.length === 0} onClick={() => window.print()}>
-                พิมพ์
-              </Button>
+                {uiText("admin_ui.print_c6afc")}</Button>
             </Space>
           }
         >
           <Input.Search
-            placeholder="ค้นหาชื่อ / SKU / barcode"
+            placeholder={uiText("admin_ui.search_name_sku_barcode_f5fc3")}
             allowClear
             onSearch={setSearch}
             style={{ marginBottom: 12, maxWidth: 360 }}
@@ -133,23 +136,22 @@ export default function ProductLabelsPage() {
               type="warning"
               showIcon
               style={{ marginBottom: 12 }}
-              message={`${unprintable.length} รายการที่เลือกไว้พิมพ์เป็นบาร์โค้ดไม่ได้`}
+              message={uiText("admin_ui.selected_products_cannot_be_printed_as_barcodes_9a405", { v0: unprintable.length })}
               description={
                 <>
                   {unprintable.map((r) => {
                     const res = checkBarcode(r.barcode ?? "");
                     return (
                       <div key={r.sku}>
-                        {r.sku} — {res.kind === "EMPTY" ? "ยังไม่มีบาร์โค้ด"
-                          : res.kind === "BAD_CHECK_DIGIT" ? `หลักตรวจสอบผิด (ควรลงท้าย ${res.expected})`
+                        {r.sku} — {res.kind === "EMPTY" ? uiText("admin_ui.no_barcode_yet_be4ed")
+                          : res.kind === "BAD_CHECK_DIGIT" ? uiText("admin_ui.invalid_check_digit_should_end_in_a6647", { v0: res.expected })
                           : res.kind === "NON_STANDARD" ? res.reason
-                          : "รูปแบบที่พิมพ์เป็น EAN ไม่ได้"}
+                          : uiText("admin_ui.cannot_be_printed_in_ean_format_f30e3")}
                       </div>
                     );
                   })}
                   <div style={{ marginTop: 6 }}>
-                    กด &quot;สร้างเลขของร้าน&quot; ที่ <a href="/admin/products">หน้าสินค้า</a> ให้สินค้าเหล่านี้ก่อน
-                  </div>
+                    {uiText("admin_ui.select_generate_store_code_on_the_560d2")} <a href="/admin/products">{uiText("admin_ui.products_page_6a963")}</a>  {uiText("admin_ui.for_these_products_first_d8bf2")}</div>
                 </>
               }
             />
@@ -162,20 +164,20 @@ export default function ProductLabelsPage() {
             pagination={{ pageSize: 20, showSizeChanger: false }}
             columns={[
               { title: "SKU", dataIndex: "sku", width: 160 },
-              { title: "ชื่อสินค้า", dataIndex: "name" },
+              { title: uiText("admin_ui.product_name_c9863"), dataIndex: "name" },
               {
-                title: "Barcode",
+                title: uiText("admin_ui.en_barcode_8e54d"),
                 dataIndex: "barcode",
                 width: 220,
                 render: (v: string | null) => {
-                  if (!v) return <Tag>ยังไม่มี</Tag>;
+                  if (!v) return <Tag>{uiText("admin_ui.none_yet_6c944")}</Tag>;
                   return eanBars(v)
                     ? <Typography.Text code>{v}</Typography.Text>
-                    : <Space size={4}><Typography.Text code>{v}</Typography.Text><Tag color="orange">พิมพ์ไม่ได้</Tag></Space>;
+                    : <Space size={4}><Typography.Text code>{v}</Typography.Text><Tag color="orange">{uiText("admin_ui.cannot_print_c972c")}</Tag></Space>;
                 },
               },
               {
-                title: "จำนวนดวง",
+                title: uiText("admin_ui.label_quantity_7ac00"),
                 width: 120,
                 render: (_: unknown, row: Row) => (
                   <InputNumber
@@ -195,7 +197,7 @@ export default function ProductLabelsPage() {
       {/* แผ่นสติกเกอร์ — ซ่อนบนจอ โผล่เฉพาะตอนพิมพ์ */}
       <div className="labels-sheet">
         {labels.length === 0 ? (
-          <div className="labels-screen-only"><Empty description="ยังไม่ได้เลือกสินค้า" /></div>
+          <div className="labels-screen-only"><Empty description={uiText("admin_ui.no_products_selected_afe90")} /></div>
         ) : (
           labels.map((row, i) => (
             <div className="label" key={`${row.sku}-${i}`}>
