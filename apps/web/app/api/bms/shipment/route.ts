@@ -50,9 +50,9 @@ async function handlePOST(req: NextRequest) {
   });
 
   const httpStatus =
-    result.status === "CREATED" ? 201
+    result.status === "CREATED" ? (result.replayed ? 200 : 201)
       : result.status === "ORDER_NOT_FOUND" ? 404
-      : result.status === "INVALID_STATE" || result.status === "PICKUP_ORDER" ? 409
+      : result.status === "INVALID_STATE" || result.status === "PICKUP_ORDER" || result.status === "SHIPMENT_EXISTS" ? 409
       : 400; // BAD_CARRIER
   return NextResponse.json(result, { status: httpStatus });
 }

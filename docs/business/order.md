@@ -274,8 +274,12 @@ PENDING → SHIPPED → IN_TRANSIT → DELIVERED
 ```
 
 `createShipment()` moves the order from `PACKING` → `SHIPPED`, deducts stock, and records a `SHIP`
-movement — all atomic. If the order is already `SHIPPED`, it just attaches the shipment without
-deducting stock again. A tracking number is optional at shipment creation and can be added later;
+movement — all atomic. An order already `SHIPPED` can attach its first shipment without
+deducting stock again. The order lock serializes concurrent creates: repeating the same carrier,
+tracking number and note returns the original shipment without another audit, stock movement or
+carrier call (`replayed: true`); different details or legacy duplicate rows return
+`SHIPMENT_EXISTS` for staff review. Use the tracking editor for a deliberate change. A tracking
+number is optional at shipment creation and can be added later;
 an order cannot reach `COMPLETED` before it's `SHIPPED`. `PICKUP` orders are refused before stock
 or parcel writes. The `shipping.create` audit row commits with the shipment for REST, GraphQL and
 confirmed AI-tool calls; audit failure rolls the local shipment and stock transition back. When a

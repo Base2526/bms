@@ -15,7 +15,7 @@ closed.** “Repository progress” describes the current working tree; it is no
 | B | Tenant security and RBAC | Permission matrix reads/writes now use tenant RLS context; write, actor audit and confirmation are atomic/explicit | Isolated DB denial, grants and concurrent-edit tests; Administrator UAT |
 | C | Money, stock and order integrity | Existing service and pure/DB contract suites identified; shipment audit moved into its transaction | Restored DB races, replay/rollback, backup restore and shipment-create idempotency policy |
 | D | Retail web cart and pickup | Catalog and signed checkout exist | Server-priced cart, retail pickup state machine and end-to-end customer pilot |
-| E | Branch pricing | Shop-wide and some branch promotion rules exist | Branch price precedence, immutable snapshots and cross-channel satang tests |
+| E | Branch pricing | Base/pack branch overrides, promotion windows and POS return snapshots exist | Dated branch base/pack prices, cross-channel satang tests and target DB proof |
 | F | Restaurant counter and notifications | Pickup email templates/queue code exist; report digest now dispatches hourly for local send hours | Apply migrations, durable status-email retry, printer/display tests and branch pilot |
 | G | Mobile and desktop POS | Native suites exist; code and packaging work is active | Signed builds, reconnect/replay, device and OS hardware matrix |
 | H | External providers and delivery | Adapter scaffolds and capability gates exist | Contracts, verified signatures, sandbox/shadow/live reconciliation and carrier booking policy |
@@ -118,9 +118,11 @@ test-link debt.
 - `createShipment()` now records `shipping.create` in the same transaction for REST, GraphQL and
   AI tool calls with a server-derived actor. Prove audit rollback and grants on an isolated DB;
   the previous GraphQL-only post-commit audit gave no such guarantee.
-- A repeated `createShipment()` on an already `SHIPPED` order can attach another parcel. Define
-  when replacement is legitimate, then enforce one replay outcome and test concurrent requests
-  before enabling carrier booking for real merchants.
+- A repeated `createShipment()` now returns the existing parcel for matching details and rejects
+  changed details or legacy duplicates. The pure boundary covers replay and refusal; the concurrent
+  DB assertion is added to `multi-store-stock-db-contract` but still needs the isolated database.
+  Deliberate changes use the tracking editor. Verify this on the target schema before enabling
+  carrier booking for real merchants.
 - Reconcile bill line amounts, payment allocations, movements, tax snapshots and reports after
   every scenario. Restore a backup to a different isolated instance and reconcile again.
 - Verify Redis, cron ownership and realtime recovery without letting a failed notification undo
@@ -148,10 +150,12 @@ uncollected order expires, and how refund/tax rules apply. The current `orders.t
 
 ### Branch pricing
 
-Define server precedence and effective dates for branch price overrides while preserving shop-wide
-defaults. Snapshot the selected price in the sale; never reprice a historical return from today's
-catalog. Reuse the same pricing service in POS, OMS, checkout and customer tools. Test promotions,
-packs, wholesale tiers and membership discounts to the satang across branches.
+Base/pack branch overrides already win over shared catalog prices, and sale snapshots protect
+historical returns. The override table has only one current row per branch/product/size/pack and
+no effective dates; promotion windows are a separate mechanism. Define how a future branch price
+is published, corrected and cancelled before adding its schema and operator controls. Then prove
+the chosen price and discounts to the satang across POS, OMS, checkout and customer tools on an
+isolated database. Do not treat the existing promotion scheduler as a branch base-price scheduler.
 
 ### Restaurant counter
 

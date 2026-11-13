@@ -341,6 +341,10 @@ obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or s
 - **A carrier call never runs inside the fulfillment transaction.** `createShipment()` commits the
   local order/stock/movement work and releases its locks first, then books. A network call holding a
   `bms_orders`/`bms_inventory` row lock is the failure mode this design exists to prevent.
+- **One create call attaches at most one parcel to an order.** The locked order is checked for an
+  existing tenant-scoped shipment before stock or parcel writes. Matching retries return that row;
+  changed carrier/tracking/note or legacy duplicate rows are conflicts for staff review. An order
+  already shipped by another workflow may attach its first parcel without moving stock again.
 - **The shipment UUID is the idempotency key.** It is passed as
   `CarrierCreateShipmentRequest.idempotencyKey` and must stay stable across retries; a live adapter
   must forward it through the carrier's own idempotency/reference mechanism so a retry returns the
