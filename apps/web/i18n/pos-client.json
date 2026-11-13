@@ -3665,5 +3665,8 @@
   "ประชาสัมพันธ์": "Announcements",
   "ตกลง": "OK",
   "รอรับสินค้า": "Awaiting receipt",
-  "คำขอเรียกพนักงาน": "Staff calls"
+  "คำขอเรียกพนักงาน": "Staff calls",
+  "การแสดงผล": "Display",
+  "ภาษา": "Language",
+  "ภาษาที่ใช้บนหน้าเข้าใช้งานและหน้าขาย": "Language used on sign-in and sales screens"
 }

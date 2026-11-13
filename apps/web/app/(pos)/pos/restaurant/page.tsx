@@ -50,7 +50,6 @@ import { posPaymentMethodLabel, receiptDocumentTitle,
   restaurantServiceLabel,
   type ReceiptLanguageMode } from "@/lib/pos/receiptI18n";
 import { useI18n } from "@/lib/i18nContext";
-import { PosLanguageSelector } from "@/components/pos/PosLanguageProvider";
 import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
 import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
 import RestaurantTableChairs from "@/components/RestaurantTableChairs";
@@ -2792,7 +2791,6 @@ export default function RestaurantPosPage() {
       <header className={styles.topbar}>
         <div className={styles.brand}><div><h1 className={styles.title}>BMS Restaurant</h1><p className={styles.subtitle}>{session?.location?.name ?? "-"} · {session?.device.code}</p></div></div>
         <div className={styles.topActions}>
-          <PosLanguageSelector />
           <div className={styles.topStatusGroup}>
             <div className={styles.connectionStatus}><PosConnectionStatus apiStatus={incomingApiStatus} /></div>
             <span className={`${styles.shiftStatus} ${session?.shift ? styles.shiftStatusOpen : ""}`}>

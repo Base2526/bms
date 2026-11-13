@@ -16,7 +16,7 @@ const out = fileURLToPath(
   new URL("../.test-output/pos-language/", import.meta.url)
 );
 mkdirSync(out, { recursive: true });
-async function languageRace(page, selector) {
+async function languageRace(page, choose, current) {
   await page.evaluate(() => {
     window.smokeOriginalSave = window.bmsDesktop.setLanguage;
     window.smokePendingSaves = [];
@@ -24,18 +24,23 @@ async function languageRace(page, selector) {
       window.smokePendingSaves.push({ language, resolve });
     });
   });
-  await selector.selectOption("th");
-  await selector.selectOption("en");
+  await choose("th");
+  await choose("en");
   await page.evaluate(() => {
     window.smokeEmitLanguage("th");
     window.smokePendingSaves[0].resolve({ ok: false });
   });
-  assert.equal(await selector.inputValue(), "en", "Old save events must not replace the latest selection");
+  assert.equal(await current(), "en", "Old save events must not replace the latest selection");
   await page.evaluate(() => window.smokePendingSaves[1].resolve({ ok: true }));
   assert.doesNotMatch(await page.locator("body").innerText(), /could not (?:be saved|save preference)/i);
   await page.evaluate(() => { window.bmsDesktop.setLanguage = window.smokeOriginalSave; });
-  await selector.selectOption("en");
+  await choose("en");
 }
+const posLanguage = (page) => page.getByRole("group", { name: /^(Language|ภาษา)$/ });
+const choosePosLanguage = (page, language) => posLanguage(page)
+  .getByRole("button", { name: language === "en" ? "English" : "ไทย" }).click();
+const currentPosLanguage = async (page) =>
+  await posLanguage(page).getByRole("button", { name: "English" }).getAttribute("aria-pressed") === "true" ? "en" : "th";
 (async () => {
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   try {
@@ -84,7 +89,8 @@ async function languageRace(page, selector) {
     await setup
       .getByText("Create from local back office", { exact: true })
       .waitFor();
-    await languageRace(setup, setup.locator("#language"));
+    await languageRace(setup, (language) => setup.locator("#language").selectOption(language),
+      () => setup.locator("#language").inputValue());
     assert.equal(
       await setup.locator("#server-url").inputValue(),
       "https://example.test"
@@ -297,11 +303,14 @@ async function languageRace(page, selector) {
       });
     });
     await page.goto(origin + "/pos/app");
-    await page
-      .locator('select[aria-label="Language / ภาษา"]:visible')
-      .selectOption("en");
+    assert.equal(await page.locator('select[aria-label="Language / ภาษา"]').count(), 0);
+    await page.getByRole("button", { name: "ตั้งค่าเครื่อง" }).click();
+    await choosePosLanguage(page, "en");
     await page.getByRole("heading", { name: "Enter employee PIN" }).waitFor();
-    await languageRace(page, page.locator('select[aria-label="Language / ภาษา"]:visible'));
+    await languageRace(page, (language) => choosePosLanguage(page, language),
+      () => currentPosLanguage(page));
+    await page.getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("dialog").waitFor({ state: "hidden" });
     await page.locator("input[type=password]").fill("1234");
     await page.screenshot({
       path: out + "/login-en-desktop.png",
@@ -324,24 +333,22 @@ async function languageRace(page, selector) {
     await page.getByText("Fixture product", { exact: true }).first().waitFor();
     await page.getByText("Fixture product", { exact: true }).first().click();
     await page.screenshot({ path: out + "/register-en.png", fullPage: true });
-    const before = await page
-      .getByText("Fixture product", { exact: true })
-      .count();
-    assert.ok(before >= 2, "Product is in catalog and cart");
-    await page
-      .locator('select[aria-label="Language / ภาษา"]:visible')
-      .selectOption("th");
-    assert.equal(
-      await page.getByText("Fixture product", { exact: true }).count(),
-      before
-    );
-    await page
-      .locator('select[aria-label="Language / ภาษา"]:visible')
-      .selectOption("en");
-    assert.equal(
-      await page.getByText("Fixture product", { exact: true }).count(),
-      before
-    );
+    const billLine = page.locator('aside[class*="checkoutPane"]')
+      .getByText("Fixture product", { exact: true });
+    assert.equal(await billLine.count(), 1, "Product is in the current bill");
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.screenshot({ path: out + "/settings-en-desktop.png", fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: out + "/settings-en-mobile.png", fullPage: true });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await choosePosLanguage(page, "th");
+    await page.getByRole("button", { name: "ขาย", exact: true }).click();
+    assert.equal(await billLine.count(), 1);
+    await page.getByRole("button", { name: "ตั้งค่า", exact: true }).click();
+    await choosePosLanguage(page, "en");
+    await page.getByRole("button", { name: "Sell", exact: true }).click();
+    assert.equal(await billLine.count(), 1);
     await page.getByRole("button", { name: "Return", exact: true }).click();
     await page
       .getByText("Search past bills", { exact: true })
@@ -388,11 +395,11 @@ async function languageRace(page, selector) {
     await queue.addInitScript(() => localStorage.setItem("bms.pos.deviceToken", "pos_FAKE_i18n_test"));
     await queue.goto(origin + "/pos/queue-board");
     await queue.getByText("A042", { exact: true }).first().waitFor();
-    const picker = page.locator('select[aria-label="Language / ภาษา"]:visible');
-    await picker.selectOption("th");
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await choosePosLanguage(page, "th");
     await display.getByText("ขอบคุณที่ใช้บริการ", { exact: true }).waitFor();
     await queue.getByText("คิวรับของ", { exact: true }).waitFor();
-    await picker.selectOption("en");
+    await choosePosLanguage(page, "en");
     await display.getByText("Thank you for visiting", { exact: true }).waitFor();
     await queue.getByText("Pickup queue", { exact: true }).waitFor();
     assert.equal(await display.evaluate(() => Boolean(window.bmsDesktop)), false);
@@ -411,9 +418,9 @@ async function languageRace(page, selector) {
     await page
       .getByRole("heading", { name: "BMS Restaurant", exact: true })
       .waitFor();
-    await page
-      .locator('select[aria-label="Language / ภาษา"]:visible')
-      .selectOption("en");
+    await page.getByRole("button", { name: "ตั้งค่าเครื่องขาย", exact: true }).click();
+    await choosePosLanguage(page, "en");
+    assert.equal(await currentPosLanguage(page), "en");
     await page.screenshot({ path: out + "/restaurant-en-mobile.png" });
     assert.equal(
       await page.evaluate(

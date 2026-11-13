@@ -10,7 +10,8 @@ recovery guarantees, and its own failure-mode evidence.
 
 ## Operator language (Thai / English)
 
-Choose Thai or English in setup, the native Language menu, or the POS language selector. The shell
+Choose Thai or English in setup, the native Language menu, or POS Settings → Display → Language.
+The cashier PIN screen also has a small Device settings entry for changing language before sign-in. The shell
 stores a validated preference in `userData/language.json`, separately from encrypted pairing.
 Hosted POS uses the existing `I18nProvider` and a persistent `lang` cookie, with an origin-checked
 IPC bridge to keep the shell and register language in sync. Old hosted deployments without this

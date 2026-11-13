@@ -1,7 +1,7 @@
 "use client";
 
 import { usePosText, thaiPosText, type PosTranslator } from "@/lib/pos/usePosText";
-import { PosLanguageSelector } from "@/components/pos/PosLanguageProvider";
+import { PosLanguageSetting } from "@/components/pos/PosLanguageProvider";
 // จอขายหน้าร้าน
 // -------------------------------------------------------------
 // กฎที่ยึดตลอดทั้งไฟล์: เครื่องหน้าร้านห้ามคิดเลขเอง
@@ -6778,8 +6778,8 @@ export default function PosPage() {
   if (!token || tokenRejected) {
     return (
       <div style={{ maxWidth: 460, margin: "0 auto", padding: 32 }}>
-        <PosLanguageSelector />
         <h1 style={{ fontSize: 20, fontWeight: 500 }}>{posText("ตั้งค่าเครื่องขาย")}</h1>
+        <PosLanguageSetting />
         {notice && (
           <PosDismissibleAlert key={`${notice.type}:${notice.text}`} role="alert" onClose={() => setNotice(null)}
             style={{ background: "var(--posx-danger-bg, #fdecea)", color: "var(--posx-danger-text, #611a15)", padding: 12, borderRadius: 8, margin: "12px 0" }}>
@@ -7189,7 +7189,6 @@ export default function PosPage() {
             แบบนั้น มันจะหายไปตั้งแต่พิมพ์ตัวแรก โฟกัสหลุด แล้ว PIN ที่ส่งไปเหลือ
             ตัวเดียว → server ตอบ "PIN ไม่ถูกต้อง" ทั้งที่พนักงานพิมพ์ถูก */}
         <div className="pos-header-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <PosLanguageSelector />
           {!embedded && <PosConnectionStatus apiStatus={incomingApiStatus} />}
           {!embedded && <DesktopUpdateMenu />}
           {!embedded && session?.businessArchetype === "restaurant" && (
@@ -8751,6 +8750,12 @@ export default function PosPage() {
 
       {tab === "settings" && (
         <div className="pos-device-settings">
+          <section className="pos-settings-section">
+            <header className="pos-settings-section-head">
+              <div><h2>{posText("การแสดงผล")}</h2><p>{posText("ภาษาที่ใช้บนหน้าเข้าใช้งานและหน้าขาย")}</p></div>
+            </header>
+            <div className="pos-settings-card pos-settings-row-card"><PosLanguageSetting /></div>
+          </section>
           {hasDesktopManagedDisplayBridge()
             ? <ManagedDisplaySettings />
             : <section className="pos-settings-section">

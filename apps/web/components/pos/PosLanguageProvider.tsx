@@ -12,8 +12,10 @@ import enGB from "antd/locale/en_GB";
 import thTH from "antd/locale/th_TH";
 import { I18nProvider, useI18n } from "@/lib/i18nContext";
 import { setLangCookie } from "@/lib/lang";
+import { usePosText } from "@/lib/pos/usePosText";
 import type { Lang } from "@/i18n";
 import "@/lib/pos/deviceTokenClient";
+import styles from "./PosLanguageSetting.module.css";
 
 /** Device-local operator preference. Never reload/remount a register with an active bill. */
 export function PosLanguageProvider({ children }: { children: ReactNode }) {
@@ -110,25 +112,24 @@ export function PosLanguageProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function PosLanguageSelector() {
+export function PosLanguageSetting() {
   const { lang, setLang } = useI18n();
+  const posText = usePosText();
   return (
-    <select
-      aria-label="Language / ภาษา"
-      value={lang}
-      onChange={(event) => setLang?.(event.target.value === "en" ? "en" : "th")}
-      style={{
-        minHeight: 40,
-        maxWidth: 112,
-        padding: "6px 10px",
-        border: "1px solid #d0d5dd",
-        borderRadius: 8,
-        background: "#fff",
-        color: "#101828",
-      }}
-    >
-      <option value="th">ไทย</option>
-      <option value="en">English</option>
-    </select>
+    <div className={styles.row}>
+      <div className={styles.copy}>
+        <strong>{posText("ภาษา")}</strong>
+        <span>{posText("ภาษาที่ใช้บนหน้าเข้าใช้งานและหน้าขาย")}</span>
+      </div>
+      <div className={styles.choices} role="group" aria-label={posText("ภาษา")}>
+        {(["th", "en"] as const).map((value) => (
+          <button key={value} type="button" className={styles.choice}
+            aria-pressed={lang === value}
+            onClick={() => setLang?.(value)}>
+            {value === "th" ? "ไทย" : "English"}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
