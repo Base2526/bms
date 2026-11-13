@@ -192,6 +192,7 @@ test("a hold placed on an empty source lot after SEND blocks receipt and rolls b
     if (sql.includes("FROM bms_stock_transfer_items")) return { rows: [{ id: 1, product_sku: "SKU", size: "BASE", qty: 2 }] };
     if (sql.includes("FROM bms_stock_transfer_item_lots")) return { rowCount: 1, rows: [{ qty: 2, source_lot_id: "source-lot" }] };
     if (sql.includes("AS day")) return { rows: [{ day: "2026-11-02" }] };
+    if (sql.includes("FROM bms_product_stock_policies")) return { rows: [{ requires_lots: false }] };
     if (sql.includes("FROM bms_inventory_lots")) {
       assert.match(sql, /FOR UPDATE OF l/);
       assert.equal(params[0], "tenant");

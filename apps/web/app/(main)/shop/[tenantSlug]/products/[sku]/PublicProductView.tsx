@@ -272,7 +272,7 @@ export default function PublicProductView({
             <button type="button" className={styles.secondaryAction} onClick={handleShareLink}>
               {copy.shareLink}
             </button>
-            <Link className={styles.secondaryAction} href={`/shop/${encodeURIComponent(shop.slug)}/cart`}>{copy.viewCart}</Link>
+            {product.orderable && <Link className={styles.secondaryAction} href={`/shop/${encodeURIComponent(shop.slug)}/cart`}>{copy.viewCart}</Link>}
           </div>
 
           <div className={styles.copyStatus} aria-live="polite">

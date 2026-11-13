@@ -9,7 +9,11 @@ export function usableLotSql(alias: string) {
 /** Read-only availability; physical/reserved balances remain unchanged. Unknown reconciliation cannot promise stock. */
 export function usableStockSql(alias: string) {
   if (!/^[a-z_]+$/.test(alias)) throw new Error("Invalid internal SQL alias");
-  return `(SELECT CASE WHEN count(*)=0 THEN GREATEST(${alias}.current_stock-${alias}.reserved_stock,0)
+  return `(SELECT CASE WHEN count(*)=0 THEN CASE WHEN EXISTS(
+      SELECT 1 FROM bms_product_stock_policies policy
+       WHERE policy.tenant_id=${alias}.tenant_id AND policy.product_sku=${alias}.product_sku
+         AND (policy.lot_tracking OR policy.expiry_tracking)
+    ) THEN 0 ELSE GREATEST(${alias}.current_stock-${alias}.reserved_stock,0) END
     WHEN sum(ql.qty)<>${alias}.current_stock THEN 0
     ELSE GREATEST(COALESCE(sum(ql.qty) FILTER(WHERE ${usableLotSql("ql")} AND (ql.expiry_date IS NULL OR ql.expiry_date >= (now() AT TIME ZONE 'Asia/Bangkok')::date)),0)-${alias}.reserved_stock,0) END::int
     FROM bms_inventory_lots ql WHERE ql.tenant_id=${alias}.tenant_id AND ql.location_id=${alias}.location_id AND ql.product_sku=${alias}.product_sku AND ql.size=${alias}.size)`;
@@ -34,6 +38,12 @@ export async function qualityStock(
       [tenant, location, sku, size],
     )
   ).rows;
+  const tracking = (await c.query<{ requires_lots: boolean }>(
+    `SELECT (lot_tracking OR expiry_tracking) AS requires_lots
+       FROM bms_product_stock_policies
+      WHERE tenant_id=$1 AND product_sku=$2 FOR SHARE`,
+    [tenant, sku],
+  )).rows[0]?.requires_lots === true;
   const day = (
     await c.query(
       `SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date::text AS day`,
@@ -50,10 +60,10 @@ export async function qualityStock(
     stock,
     reserved,
     lots,
-    reconciled: !lots.length || total === stock,
+    reconciled: lots.length ? total === stock : !tracking || stock === 0,
     available: lots.length
       ? Math.max(0, Math.min(stock, eligible) - reserved)
-      : Math.max(0, stock - reserved),
+      : tracking ? 0 : Math.max(0, stock - reserved),
   };
 }
 export type QualityHoldRejection = {

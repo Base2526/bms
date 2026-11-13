@@ -15,7 +15,7 @@ type ExistingShipment = {
 
 function shipmentHarness(fulfillmentType: string | null, orderStatus = "PACKING", auditFails = false,
   existingShipments: ExistingShipment[] = []) {
-  const calls = { sql: [] as Array<{ text: string; params: unknown[] }>, movements: 0, emails: 0, releases: 0 };
+  const calls = { sql: [] as Array<{ text: string; params: unknown[] }>, movements: 0, lots: 0, emails: 0, releases: 0 };
   const client = {
     release() { calls.releases++; },
     async query(text: string, params: unknown[] = []) {
@@ -28,7 +28,9 @@ function shipmentHarness(fulfillmentType: string | null, orderStatus = "PACKING"
         return { rowCount: existingShipments.length, rows: existingShipments };
       }
       if (text.includes("FROM bms_customer_addresses")) return { rowCount: 1, rows: [{ one: 1 }] };
-      if (text.includes("UPDATE bms_orders") || text.includes("UPDATE bms_inventory")) return { rowCount: 1, rows: [] };
+      if (text.includes("WITH expected AS") && text.includes("UPDATE bms_inventory"))
+        return { rowCount: 1, rows: [{ expected_count: "1", updated_count: "1" }] };
+      if (text.includes("UPDATE bms_orders")) return { rowCount: 1, rows: [] };
       if (text.includes("INSERT INTO bms_shipments")) return { rowCount: 1, rows: [{ id: "shipment" }] };
       if (text.includes("INSERT INTO bms_audit_log")) {
         if (auditFails) throw new Error("audit failed");
@@ -37,9 +39,18 @@ function shipmentHarness(fulfillmentType: string | null, orderStatus = "PACKING"
       throw new Error(`Unexpected SQL: ${text}`);
     },
   };
+  const stockModule = { exports: {} as Record<string, any> };
+  const stockSource = ts.transpileModule(read("apps/web/lib/bms/orderShippingStock.ts"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  new Function("require", "module", "exports", stockSource)((name: string) => {
+    if (name === "./orderLots") return { consumeOrderLotsInTx: async () => { calls.lots++; } };
+    if (name === "./movements") return { recordOrderMovements: async () => { calls.movements++; } };
+    throw new Error(`Unexpected stock dependency: ${name}`);
+  }, stockModule, stockModule.exports);
   const mocks: Record<string, unknown> = {
     "@/lib/db": { getClient: async () => client, query: async () => { throw new Error("Unexpected pool query"); } },
-    "./movements": { recordOrderMovements: async () => { calls.movements++; } },
+    "./orderShippingStock": stockModule.exports,
     "./tenant": { beginTenantTx: async () => {} },
     "./orderNotify": { notifyOrderStatusEmail: async () => { calls.emails++; } },
     "./carriers": { getCarrierClient: () => null },
@@ -83,12 +94,13 @@ test("delivery shipment still moves stock once within the requested tenant", asy
   assert.equal(result.status, "CREATED");
   assert.equal(result.orderShipped, true);
   assert.equal(calls.movements, 1);
+  assert.equal(calls.lots, 1);
   assert.equal(calls.emails, 1);
   const stock = calls.sql.find(({ text }) => text.includes("UPDATE bms_inventory"));
   assert.ok(stock);
-  assert.match(stock.text, /FROM bms_order_stock_lines WHERE tenant_id = \$2 AND order_id = \$1/);
-  assert.match(stock.text, /WHERE inv\.tenant_id = \$2/);
-  assert.deepEqual(stock.params, ["order", "tenant"]);
+  assert.match(stock.text, /FROM bms_order_stock_lines[\s\S]*WHERE tenant_id = \$1 AND order_id = \$2/);
+  assert.match(stock.text, /WHERE inv\.tenant_id = \$1/);
+  assert.deepEqual(stock.params, ["tenant", "order"]);
   assert.ok(calls.sql.some(({ text }) => text.includes("INSERT INTO bms_shipments")));
   const audit = calls.sql.find(({ text }) => text.includes("INSERT INTO bms_audit_log"));
   assert.ok(audit);

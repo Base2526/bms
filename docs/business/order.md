@@ -142,7 +142,10 @@ shipping estimate or stock rejects the confirmation and requires a fresh review.
 returns the existing order via its unique idempotency key, then derives the existing signed checkout
 URL from the persisted order. The customer enters delivery and submits a pending payment through the
 existing checkout; the cart cannot confirm payment. Restaurant tenants are excluded from this retail
-cart because their online ordering requires branch, fulfillment and hours policy. Live DB and browser
+cart, including its public links, because their online ordering requires branch, fulfillment and
+hours policy. Retail catalog cards and product details show the default order branch's usable stock;
+product details show its current base price;
+the review remains authoritative if either changes. Live DB and browser
 validation remain required before production rollout.
 
 ## Coupons (discount codes)
@@ -290,7 +293,9 @@ PENDING → SHIPPED → IN_TRANSIT → DELIVERED
 ```
 
 `createShipment()` moves the order from `PACKING` → `SHIPPED`, deducts stock, and records a `SHIP`
-movement — all atomic. An order already `SHIPPED` can attach its first shipment without
+movement and source-lot allocation — all atomic. It and `shipOrder()` use the same reserved-stock
+transition. A missing inventory row or short reservation aborts the order and parcel transaction;
+it cannot silently omit a movement. An order already `SHIPPED` can attach its first shipment without
 deducting stock again. The order lock serializes concurrent creates: repeating the same carrier,
 tracking number and note returns the original shipment without another audit, stock movement or
 carrier call (`replayed: true`); different details or legacy duplicate rows return

@@ -19,7 +19,7 @@
     "catalog.products": ["scripts/product-catalog-foundation-contract.test.mts", "scripts/product-import-workbook-contract.test.mts"],
     "inventory.branch": ["scripts/multi-store-stock-db-contract.test.mts"],
     "inventory.snapshot-counts": ["scripts/stock-integrity-contract.test.mts", "scripts/stock-integrity-db-contract.test.mts"],
-    "inventory.stock-model": ["scripts/multi-store-stock-contract.test.mts", "scripts/multi-store-stock-db-contract.test.mts"],
+    "inventory.stock-model": ["scripts/multi-store-stock-contract.test.mts", "scripts/lot-shipping-boundary-contract.test.mts", "scripts/multi-store-stock-db-contract.test.mts"],
     "inventory.wastage-ledger": ["scripts/stock-ledger-db-contract.test.mts"],
     "kitchen.workflow": ["scripts/kitchen-board-contract.test.mts", "scripts/kitchen-station-db-contract.test.mts"],
     "orders.lifecycle": ["scripts/order-journey-contract.test.mts"],
@@ -47,7 +47,7 @@
     "restock.subscriptions": ["scripts/ai-eval/restock-lifecycle-contract.test.mts"],
     "restaurant.chat-requests": ["scripts/restaurant-request-contract.test.mts", "scripts/restaurant-request-db-contract.test.mts"],
     "settings.channels": ["scripts/meta-channel-read-probe.test.mts"],
-    "shipping.fulfillment": ["scripts/shipping-pickup-boundary-contract.test.mts", "scripts/multi-store-stock-db-contract.test.mts", "scripts/master-data-phase3-contract.test.mts"],
+    "shipping.fulfillment": ["scripts/shipping-pickup-boundary-contract.test.mts", "scripts/order-shipping-stock-contract.test.mts", "scripts/lot-shipping-boundary-contract.test.mts", "scripts/shipment-lot-db-contract.test.mts", "scripts/multi-store-stock-db-contract.test.mts", "scripts/master-data-phase3-contract.test.mts"],
     "system.health": ["scripts/system-health-boundary-contract.test.mts"],
     "tax.documents": ["scripts/tax-invoice-eligibility-contract.test.mts", "scripts/tax-backoffice-guards-db-contract.test.mts"],
     "commission.staff": ["scripts/commission-db-contract.test.mts"]
@@ -55,7 +55,7 @@
   "features": [
     { "id": "pos.return-lot-reconciliation", "title": "POS return lot reconciliation", "status": "CONDITIONAL", "source": "apps/web/lib/bms/pos.ts", "tests": ["scripts/pos-cross-branch-return-db-contract.test.mts"], "requires": ["Original lot identity and an authorized return"] },
     { "id": "inventory.transfer-lots", "title": "Lot identity across branch transfers", "status": "WIP", "source": "apps/web/lib/bms/stockTransfers.ts", "tests": ["scripts/stock-transfer-lots-contract.test.mts"], "requires": ["Migration 10.107", "Production rollout verification"] },
-    { "id": "pricing.branch-windows", "title": "Scheduled branch base and pack prices", "status": "PILOT", "source": "apps/web/lib/bms/branchPrices.ts", "tests": ["scripts/restaurant-completion-db-contract.test.mts", "scripts/restaurant-costing-migrations-db-contract.test.mts"], "requires": ["Migration 10.116", "Isolated DB and browser proof", "Target rollout verification"] },
+    { "id": "pricing.branch-windows", "title": "Scheduled branch base and pack prices", "status": "PILOT", "source": "apps/web/lib/bms/branchPrices.ts", "tests": ["scripts/branch-price-compat-contract.test.mts", "scripts/restaurant-completion-db-contract.test.mts", "scripts/restaurant-costing-migrations-db-contract.test.mts"], "requires": ["Migration 10.116", "Isolated DB and browser proof", "Target rollout verification"] },
     { "id": "finance.bank-reconciliation", "title": "Bank statement reconciliation evidence", "status": "PILOT", "source": "apps/web/lib/bms/bankReconciliationFeature.ts", "tests": ["scripts/bank-reconciliation-contract.test.mts"], "requires": ["Migration 10.110", "Feature flags and finance permissions"] },
     { "id": "customer.merge-reviewed", "title": "Reviewed customer merges", "status": "CONDITIONAL", "source": "apps/web/lib/bms/customerMergeReview.ts", "tests": ["scripts/customer-merge-review-contract.test.mts"], "requires": ["Customer edit permission", "Signed preview and human confirmation"] },
     { "id": "customer.web-chat-session", "title": "Tenant-bound signed web chat sessions", "status": "AVAILABLE", "source": "apps/web/lib/bms/webChatSession.ts", "tests": ["scripts/web-chat-session-contract.test.mts"], "requires": [] },

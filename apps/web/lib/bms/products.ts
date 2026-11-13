@@ -9,7 +9,8 @@ import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 import { beginTenantTx } from "./tenant";
 import { assertNoQualityHold, usableStockSql } from "./lotQuality";
 import { resolveDefaultLocationIdInTx } from "./locations";
-import { resolveDefaultLocationId } from "./locations";
+import { findDefaultLocationId, resolveDefaultLocationId } from "./locations";
+import { getVariantBasePrice } from "./productPacks";
 import { isMenuSellable, type MenuStockPolicy } from "./menuAvailability";
 import { resolveKitchenStationForProductInTx } from "./kitchenStations";
 import { enforceProductQuota } from "./plans";
@@ -127,6 +128,7 @@ export type PublicShop = {
   currency: string;
   productCount: number;
   updatedAt: string | null;
+  retailCartEnabled: boolean;
 };
 
 export type VariantRow = {
@@ -1033,7 +1035,8 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
             p.dietary_tags, p.food_safety_note, p.updated_at,
             t.name AS tenant_name, t.slug AS tenant_slug,
             sp.logo_url, sp.website, sp.phone, sp.currency,
-            EXISTS (SELECT 1 FROM bms_product_sales_surfaces order_surface
+            COALESCE(sp.business_archetype, '') <> 'restaurant'
+              AND EXISTS (SELECT 1 FROM bms_product_sales_surfaces order_surface
               WHERE order_surface.tenant_id = p.tenant_id AND order_surface.product_sku = p.sku
                 AND order_surface.surface = 'ONLINE_ORDER' AND order_surface.enabled) AS orderable
        FROM bms_products p
@@ -1054,7 +1057,8 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
   const row = res.rows[0];
   if (!row) return null;
 
-  const [gallery, variants, packs] = await Promise.all([
+  const requestedOrderable = row.orderable === true;
+  const [gallery, allVariants, packs, orderLocationId] = await Promise.all([
     listProductImages(row.tenant_id, row.sku),
     listVariants(row.tenant_id, row.sku),
     query<{ size: string | null; pack_code: string; unit_name: string; base_qty: number }>(
@@ -1062,7 +1066,20 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
         WHERE tenant_id=$1 AND product_sku=$2 AND active AND upper(pack_code) <> 'BASE'
         ORDER BY size NULLS FIRST, base_qty, pack_code LIMIT 40`, [row.tenant_id, row.sku]
     ),
+    requestedOrderable ? findDefaultLocationId(row.tenant_id) : Promise.resolve(null),
   ]);
+  const orderable = requestedOrderable && Boolean(orderLocationId);
+  // Retail orders reserve the default branch. Show that branch's availability
+  // and current base price for products that can enter this cart.
+  const branchVariants = requestedOrderable
+    ? allVariants.filter((variant) => variant.location_id === orderLocationId)
+    : allVariants;
+  const variants = await Promise.all(branchVariants.map(async (variant) => ({
+    ...variant,
+    price: orderLocationId
+      ? (await getVariantBasePrice(row.tenant_id, row.sku, variant.size, orderLocationId)) ?? Number(variant.price)
+      : Number(variant.price),
+  })));
   const variantPrices = variants.map((variant) => Number(variant.price));
   const minPrice = variantPrices.length ? Math.min(...variantPrices) : Number(row.price);
   const maxPrice = variantPrices.length ? Math.max(...variantPrices) : Number(row.price);
@@ -1099,7 +1116,7 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
         available: variant.usable_stock ?? 0,
         price: Number(variant.price),
       })),
-      orderable: row.orderable === true,
+      orderable,
       packs: packs.rows.map((pack) => ({ size: pack.size, packCode: pack.pack_code,
         unitName: pack.unit_name, baseQty: Number(pack.base_qty) })),
       updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : (row.updated_at ?? null),
@@ -1156,9 +1173,17 @@ export async function listPublicRelatedProducts(
               COALESCE(SUM(${usableStockSql('i')}), 0)::text AS available
          FROM bms_products p
          JOIN bms_tenants t ON t.id = p.tenant_id
+         LEFT JOIN bms_store_profile sp ON sp.tenant_id = p.tenant_id
+         LEFT JOIN LATERAL (
+           SELECT id FROM bms_locations
+            WHERE tenant_id = p.tenant_id AND active
+            ORDER BY (code = 'MAIN') DESC, is_head_office DESC, created_at
+            LIMIT 1
+         ) order_location ON TRUE
          LEFT JOIN bms_inventory i
            ON i.tenant_id = p.tenant_id
           AND i.product_sku = p.sku
+          AND (sp.business_archetype = 'restaurant' OR i.location_id = order_location.id)
         WHERE ${where}
         GROUP BY p.tenant_id, p.sku, p.name, p.price, p.image_url, p.category, p.brand
         ORDER BY COALESCE(SUM(${usableStockSql('i')}), 0) DESC, p.name
@@ -1243,6 +1268,8 @@ export async function getPublicShop(tenantSlug: string): Promise<PublicShop | nu
     currency: string | null;
     product_count: string;
     updated_at: Date | string | null;
+    business_archetype: string | null;
+    has_active_location: boolean;
   }>(
     `SELECT t.slug,
             t.name,
@@ -1250,6 +1277,8 @@ export async function getPublicShop(tenantSlug: string): Promise<PublicShop | nu
             sp.website,
             sp.phone,
             sp.currency,
+            sp.business_archetype,
+            EXISTS (SELECT 1 FROM bms_locations loc WHERE loc.tenant_id=t.id AND loc.active) AS has_active_location,
             COUNT(p.sku)::text AS product_count,
             MAX(p.updated_at) AS updated_at
        FROM bms_tenants t
@@ -1265,7 +1294,7 @@ export async function getPublicShop(tenantSlug: string): Promise<PublicShop | nu
         )
       WHERE t.slug = $1
         AND t.active = TRUE
-      GROUP BY t.slug, t.name, sp.logo_url, sp.website, sp.phone, sp.currency
+      GROUP BY t.id, t.slug, t.name, sp.logo_url, sp.website, sp.phone, sp.currency, sp.business_archetype
       LIMIT 1`,
     [slug]
   );
@@ -1281,6 +1310,7 @@ export async function getPublicShop(tenantSlug: string): Promise<PublicShop | nu
     currency: normalizeCurrency(row.currency),
     productCount: Math.max(0, Number(row.product_count) || 0),
     updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : (row.updated_at ?? null),
+    retailCartEnabled: row.business_archetype !== "restaurant" && row.has_active_location,
   };
 }
 
@@ -1313,9 +1343,17 @@ export async function listPublicProducts(
        FROM bms_products p
        JOIN bms_tenants t
          ON t.id = p.tenant_id
+       LEFT JOIN bms_store_profile sp ON sp.tenant_id = p.tenant_id
+       LEFT JOIN LATERAL (
+         SELECT id FROM bms_locations
+          WHERE tenant_id = p.tenant_id AND active
+          ORDER BY (code = 'MAIN') DESC, is_head_office DESC, created_at
+          LIMIT 1
+       ) order_location ON TRUE
        LEFT JOIN bms_inventory i
          ON i.tenant_id = p.tenant_id
         AND i.product_sku = p.sku
+        AND (sp.business_archetype = 'restaurant' OR i.location_id = order_location.id)
       WHERE t.slug = $1
         AND t.active = TRUE
         AND p.active = TRUE

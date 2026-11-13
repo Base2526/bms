@@ -350,6 +350,10 @@ obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or s
 - **A carrier call never runs inside the fulfillment transaction.** `createShipment()` commits the
   local order/stock/movement work and releases its locks first, then books. A network call holding a
   `bms_orders`/`bms_inventory` row lock is the failure mode this design exists to prevent.
+- **Both shipping paths consume the same reserved stock and source lots.** `shipOrder()` and
+  `createShipment()` call `consumeReservedOrderStockInTx()`, which refuses a missing or short
+  inventory row before writing lot allocations and `SHIP` movements. Failure rolls back the order
+  status and parcel row with the stock transition.
 - **One create call attaches at most one parcel to an order.** The locked order is checked for an
   existing tenant-scoped shipment before stock or parcel writes. Matching retries return that row;
   changed carrier/tracking/note or legacy duplicate rows are conflicts for staff review. An order
@@ -2814,4 +2818,6 @@ and never creates opening valuation or modifies existing SKUs.
 10.116: a future branch BASE/PACK price window supersedes the current branch price only in its
 half-open interval. It never changes pack quantity or historical sale snapshots. Overlap is denied
 by the database; cancellation requires product.edit, branch scope, explicit confirmation and an
-audit in the same transaction. Apply the migration before code that reads the new table.
+audit in the same transaction. Until the migration is installed, `branchPrice()` reads existing
+branch overrides only; scheduled windows remain unavailable. Apply the migration before publishing
+or cancelling a window.

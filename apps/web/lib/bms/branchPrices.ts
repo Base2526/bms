@@ -7,16 +7,24 @@ type Reader = {query: typeof query};
 /** A missing branch override inherits the shared catalog. Zero is a valid explicit price. */
 export async function branchPrice(client:Reader,tenant:string,location:string|null|undefined,sku:string,size:string,packCode="BASE"):Promise<number|null> {
   if (!location) return null;
+  // 10.116 can be staged after the web release. Keep existing branch prices
+  // readable until that table is installed; a missing relation inside a tenant
+  // transaction would otherwise abort every order that checks a price.
+  const windowsReady = (await client.query<{present:boolean}>(
+    "SELECT to_regclass('bms_branch_price_windows') IS NOT NULL AS present"
+  )).rows[0]?.present === true;
+  const candidates = windowsReady
+    ? `SELECT tenant_id,location_id,product_sku,size,pack_code,price,1 AS priority
+         FROM bms_branch_prices
+       UNION ALL
+       SELECT tenant_id,location_id,product_sku,size,pack_code,price,0 AS priority
+         FROM bms_branch_price_windows
+        WHERE cancelled_at IS NULL AND starts_at <= transaction_timestamp()
+          AND (ends_at IS NULL OR ends_at > transaction_timestamp())`
+    : `SELECT tenant_id,location_id,product_sku,size,pack_code,price,1 AS priority
+         FROM bms_branch_prices`;
   const r=await client.query(`SELECT bp.price::text
-    FROM (
-      SELECT tenant_id,location_id,product_sku,size,pack_code,price,1 AS priority
-        FROM bms_branch_prices
-      UNION ALL
-      SELECT tenant_id,location_id,product_sku,size,pack_code,price,0 AS priority
-        FROM bms_branch_price_windows
-       WHERE cancelled_at IS NULL AND starts_at <= transaction_timestamp()
-         AND (ends_at IS NULL OR ends_at > transaction_timestamp())
-    ) bp JOIN bms_products p ON p.tenant_id=bp.tenant_id AND p.sku=bp.product_sku AND p.active
+    FROM (${candidates}) bp JOIN bms_products p ON p.tenant_id=bp.tenant_id AND p.sku=bp.product_sku AND p.active
     WHERE bp.tenant_id=$1 AND bp.location_id=$2 AND bp.product_sku=$3 AND bp.size=$4
       AND bp.pack_code=CASE WHEN EXISTS(SELECT 1 FROM bms_product_packs k WHERE k.tenant_id=$1 AND k.product_sku=$3 AND (k.size=$4 OR k.size IS NULL) AND upper(k.pack_code)=upper($5) AND k.is_base AND k.active) THEN 'BASE' ELSE upper($5) END
       AND ((bp.pack_code='BASE' AND EXISTS(SELECT 1 FROM bms_product_variants v WHERE v.tenant_id=$1 AND v.product_sku=$3 AND v.code=$4 AND v.active))

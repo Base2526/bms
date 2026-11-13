@@ -21,6 +21,10 @@ import { normalizeLocationParking, publicLocationParking, readLocationParking, t
 import { resolveThaiAddressCodesInTx, type ThaiAddressCodes } from "./thaiAddress";
 
 export const DEFAULT_LOCATION_CODE = "MAIN";
+const defaultLocationSql = `SELECT id FROM bms_locations
+      WHERE tenant_id = $1 AND active
+      ORDER BY (code = $2) DESC, is_head_office DESC, created_at
+      LIMIT 1`;
 
 export type BmsLocation = {
   id: string;
@@ -97,16 +101,16 @@ export async function resolveDefaultLocationIdInTx(
   client: PoolClient,
   tenantId: string
 ): Promise<string> {
-  const res = await client.query<{ id: string }>(
-    `SELECT id FROM bms_locations
-      WHERE tenant_id = $1 AND active
-      ORDER BY (code = $2) DESC, is_head_office DESC, created_at
-      LIMIT 1`,
-    [tenantId, DEFAULT_LOCATION_CODE]
-  );
+  const res = await client.query<{ id: string }>(defaultLocationSql, [tenantId, DEFAULT_LOCATION_CODE]);
   const id = res.rows[0]?.id;
   if (!id) throw new Error(`ร้านนี้ยังไม่มีสาขา (tenant ${tenantId}) — สร้างสาขาก่อนจึงจะบันทึกสต็อกได้`);
   return id;
+}
+
+/** Public catalog reads may have no active selling branch; callers then hide checkout. */
+export async function findDefaultLocationId(tenantId: string): Promise<string | null> {
+  const res = await query<{ id: string }>(defaultLocationSql, [tenantId, DEFAULT_LOCATION_CODE]);
+  return res.rows[0]?.id ?? null;
 }
 
 export async function resolveDefaultLocationId(tenantId: string): Promise<string> {

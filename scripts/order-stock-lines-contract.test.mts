@@ -67,12 +67,16 @@ test("no statement moves stock straight from bms_order_items", () => {
 
 test("the paths that move stock for an order actually name the view", () => {
   // Guards the inverse mistake: dropping the join altogether would satisfy the test above.
-  const expected = ["orders.ts", "pos.ts", "shipping.ts", "deposits.ts"];
+  const expected = ["orderShippingStock.ts", "orders.ts", "pos.ts", "deposits.ts"];
   for (const name of expected) {
     const source = readFileSync(path.join(BMS, name), "utf8");
     assert.ok(
       source.includes("bms_order_stock_lines"),
       `${name} moves order stock but never reads bms_order_stock_lines`
     );
+  }
+  for (const name of ["orders.ts", "shipping.ts"]) {
+    const source = readFileSync(path.join(BMS, name), "utf8");
+    assert.ok(source.includes("consumeReservedOrderStockInTx"), `${name} bypasses the shared order stock and lot transition`);
   }
 });

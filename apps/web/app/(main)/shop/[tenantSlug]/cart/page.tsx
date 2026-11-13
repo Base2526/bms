@@ -10,7 +10,7 @@ export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 export default async function RetailCartPage({ params }: { params: { tenantSlug: string } }) {
   const shop = await getPublicShop(params.tenantSlug);
-  if (!shop) notFound();
+  if (!shop?.retailCartEnabled) notFound();
   const lang = (await cookies()).get("lang")?.value === "en" ? "en" : "th";
   return <CartView slug={shop.slug} shopName={shop.name} currency={shop.currency} lang={lang} />;
 }

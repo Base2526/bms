@@ -911,6 +911,10 @@ gram, millilitre, or millimetre; display units and precision are presentation me
 become component quantities in `bms_order_item_stock_consumption` before the order commits. Reserve,
 cancel, ship, POS FEFO, return, and movement ledger all consume that snapshot through
 `bms_order_stock_lines`, so editing a recipe later cannot reinterpret an old bill.
+When a product policy requires lot or expiry tracking, physical stock without source lot rows is
+unavailable for new reservations. A legacy order with that gap also fails its shipping transaction;
+it cannot consume physical stock while omitting lot allocation. Untracked products with no lot rows
+retain their ordinary stock path.
 
 ### Which capability flags are switches, and which are not
 
@@ -1640,8 +1644,9 @@ Migration `10.116` adds future branch BASE/PACK price windows. A window requires
 an optional end returns pricing to the current branch override or shared catalog. Overlapping
 windows for the same branch/SKU/size/pack are refused. Staff can review existing windows in the
 price-publication preview and confirm cancellation; cancellation returns to the underlying price.
-Existing order-line snapshots remain authoritative for returns. Apply `10.116` before deploying
-the reader; this is not evidence of production rollout.
+Existing order-line snapshots remain authoritative for returns. Without `10.116`, the reader keeps
+using current branch overrides; apply `10.116` before publishing windows. This is not evidence of
+production rollout.
 
 - At price publication, choose all branches or one authorized branch for BASE/PACK. Branch overrides
   use the catalog variant and existing named-pack definition; quantity and barcode stay shared. A base

@@ -3,6 +3,7 @@ import test from "node:test";
 import { query } from "../apps/web/lib/db.ts";
 import { previewRetailCart, confirmRetailCart } from "../apps/web/lib/bms/retailCart.ts";
 import { verifyCheckoutToken } from "../apps/web/lib/bms/checkoutToken.ts";
+import { getPublicProduct, getPublicShop, listPublicProducts } from "../apps/web/lib/bms/products.ts";
 import { withCostingFixture } from "./testing/restaurantCostingFixture.mts";
 
 test("retail cart review rolls back, stale quotes fail, and repeated confirmation reuses one order", async () =>
@@ -56,4 +57,31 @@ test("retail cart review rolls back, stale quotes fail, and repeated confirmatio
     await query(`UPDATE bms_product_sales_surfaces SET enabled=FALSE
       WHERE tenant_id=$1 AND product_sku='FAKE-CART' AND surface='PUBLIC_STOREFRONT'`, [f.tenant]);
     assert.equal((await previewRetailCart(slug, lines)).status, "ORDER_REJECTED");
+  }));
+
+test("retail cart hides restaurant ordering and shows stock from the actual order branch", async () =>
+  withCostingFixture(async (f) => {
+    await query(`INSERT INTO bms_products(tenant_id,sku,name,price,cost_price,active,vat_category)
+      VALUES ($1,'FAKE-VIEW','FAKE View',107,40,TRUE,'V')`, [f.tenant]);
+    for (const [index, location] of f.locations.entries()) await query(`INSERT INTO bms_inventory
+      (tenant_id,location_id,product_sku,size,current_stock,reserved_stock)
+      VALUES ($1,$2,'FAKE-VIEW','BASE',$3,0)`, [f.tenant, location, index === 0 ? 0 : 10]);
+    await query(`INSERT INTO bms_product_sales_surfaces(tenant_id,product_sku,surface,enabled)
+      VALUES ($1,'FAKE-VIEW','PUBLIC_STOREFRONT',TRUE),($1,'FAKE-VIEW','ONLINE_ORDER',TRUE)`, [f.tenant]);
+    const slug = `fake-costing-${f.tenant}`;
+    const product = await getPublicProduct(slug, "FAKE-VIEW");
+    assert.equal(product?.product.orderable, true);
+    assert.deepEqual(product?.product.variants.map((variant) => variant.available), [0]);
+    assert.equal((await listPublicProducts(slug)).find((card) => card.sku === "FAKE-VIEW")?.available, 0);
+    assert.equal((await previewRetailCart(slug, [{ sku: "FAKE-VIEW", size: "BASE", qty: 1 }])).status, "ORDER_REJECTED");
+
+    await query(`UPDATE bms_store_profile SET business_archetype='restaurant' WHERE tenant_id=$1`, [f.tenant]);
+    assert.equal((await getPublicShop(slug))?.retailCartEnabled, false);
+    assert.equal((await getPublicProduct(slug, "FAKE-VIEW"))?.product.orderable, false);
+    assert.equal((await previewRetailCart(slug, [{ sku: "FAKE-VIEW", size: "BASE", qty: 1 }])).status, "SHOP_UNAVAILABLE");
+
+    await query(`UPDATE bms_store_profile SET business_archetype=NULL WHERE tenant_id=$1`, [f.tenant]);
+    await query(`UPDATE bms_locations SET active=FALSE WHERE tenant_id=$1`, [f.tenant]);
+    assert.equal((await getPublicShop(slug))?.retailCartEnabled, false);
+    assert.equal((await getPublicProduct(slug, "FAKE-VIEW"))?.product.orderable, false);
   }));

@@ -1,7 +1,7 @@
 # BMS feature completion plan
 
 Status: implementation backlog, not a production certification. Reviewed against the repository
-on 2026-11-12. The release registry remains `baseline-in-progress`; a code status, a migration
+on 2026-11-13. The release registry remains `baseline-in-progress`; a code status, a migration
 filename, or a linked test does not prove tenant enablement or live-provider behavior.
 
 ## A–J execution tracker
@@ -124,6 +124,9 @@ test-link debt.
   DB assertion is added to `multi-store-stock-db-contract` but still needs the isolated database.
   Deliberate changes use the tracking editor. Verify this on the target schema before enabling
   carrier booking for real merchants.
+- Parcel creation and the ordinary `shipOrder()` path now share one reserved-stock consumer. It
+  checks every inventory row, consumes tracked lots, and records SHIP movements in the same tenant
+  transaction. The new DB contract must run on the isolated database before this is considered proven.
 - Reconcile bill line amounts, payment allocations, movements, tax snapshots and reports after
   every scenario. Restore a backup to a different isolated instance and reconcile again.
 - Verify Redis, cron ownership and realtime recovery without letting a failed notification undo
@@ -145,6 +148,9 @@ reuse the order idempotency key and return its signed checkout link. Pack size a
 revalidated from `bms_product_packs`; the browser sends only the pack code and count. A complete
 customer pilot is still missing; the new DB contract for rollback, stale price and replay has not
 run on the isolated database. Slip submission stays `PENDING` until staff confirms payment.
+Public catalog stock and product-detail stock for retail now use the default order branch; a
+restaurant or a shop with no active branch cannot offer the retail cart. The updated DB and browser
+checks remain open.
 
 Retail pickup needs its own fulfillment contract: selected branch, requested time, recipient,
 preparation, ready and one-time handover. Define when reserved stock becomes consumed, how an
@@ -159,6 +165,7 @@ expiry restores the current override or shared catalog. Promotion windows remain
 mechanism. The new path still needs migration application, isolated DB and desktop/mobile browser
 proof. Then prove the chosen price and discounts to the satang across POS, OMS, checkout and
 customer tools. Do not treat source code or a passing pure suite as a tenant rollout.
+The price resolver now keeps legacy overrides readable when `10.116` has not yet been applied.
 
 ### Restaurant counter
 
