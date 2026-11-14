@@ -44,7 +44,8 @@ export async function applyMetaInboxSignals(
           await client.query(
             `UPDATE bms_messages
                 SET meta=meta || jsonb_build_object('echoedAt',$3,'status',
-                  CASE WHEN meta->>'status' IN ('DELIVERED','READ') THEN meta->>'status' ELSE 'SENT' END)
+                  CASE WHEN meta->>'status' IN ('DELIVERED','READ','PARTIAL','PENDING','FAILED')
+                    THEN meta->>'status' ELSE 'SENT' END)
               WHERE tenant_id=$1 AND id=$2`,
             [tenantId, matched.rows[0].id, occurredAt.toISOString()],
           );
@@ -98,12 +99,13 @@ export async function applyMetaInboxSignals(
         const updated = await client.query<{ conversation_id: string }>(
           `UPDATE bms_messages m
               SET meta=m.meta || jsonb_build_object(
-                'delivered',true,
+                'delivered',CASE WHEN m.meta->>'status'='PARTIAL' THEN false ELSE true END,
                 'deliveredAt',$4,
-                'status',CASE WHEN m.meta->>'status'='READ' THEN 'READ' ELSE 'DELIVERED' END)
+                'status',CASE WHEN m.meta->>'status' IN ('READ','PARTIAL') THEN m.meta->>'status' ELSE 'DELIVERED' END)
              FROM bms_conversations c
             WHERE m.tenant_id=$1 AND c.tenant_id=$1 AND c.id=m.conversation_id
               AND c.channel=$2 AND c.customer_ref=$3 AND m.direction='OUT'
+              AND COALESCE(m.meta->>'status','SENT') NOT IN ('PENDING','FAILED')
               AND (
                 (cardinality($5::text[])>0 AND EXISTS (
                   SELECT 1
@@ -122,10 +124,14 @@ export async function applyMetaInboxSignals(
 
       const updated = await client.query<{ conversation_id: string }>(
         `UPDATE bms_messages m
-            SET meta=m.meta || jsonb_build_object('delivered',true,'readAt',$4,'status','READ')
+            SET meta=m.meta || jsonb_build_object(
+              'delivered',CASE WHEN m.meta->>'status'='PARTIAL' THEN false ELSE true END,
+              'readAt',$4,
+              'status',CASE WHEN m.meta->>'status'='PARTIAL' THEN 'PARTIAL' ELSE 'READ' END)
            FROM bms_conversations c
           WHERE m.tenant_id=$1 AND c.tenant_id=$1 AND c.id=m.conversation_id
             AND c.channel=$2 AND c.customer_ref=$3 AND m.direction='OUT' AND m.created_at<=$5
+            AND COALESCE(m.meta->>'status','SENT') NOT IN ('PENDING','FAILED')
           RETURNING m.conversation_id`,
         [tenantId, channel, signal.customerRef, occurredAt.toISOString(), occurredAt],
       );

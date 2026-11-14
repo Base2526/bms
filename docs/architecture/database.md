@@ -394,6 +394,14 @@ apply after normal billing-time rounding, as repeating paid/free cycles; the win
 chosen server-side at group close and frozen into the charge snapshot, so already-frozen bills are
 never repriced. Declared in schema readiness.
 
+`10.117` adds `publish_to_chat BOOLEAN NOT NULL DEFAULT FALSE` to existing
+`bms_board_game_pass_plans` and `bms_board_game_offers`. Existing rows stay private until a
+staff member with the relevant manage permission opts in per row. Customer chat reads use the
+tenant transaction/RLS context, require a chat-visible active branch, and include only active,
+published rows scoped to that branch (plus tenant-wide rows); expired offers are excluded.
+The flag controls disclosure only. It does not affect offer evaluation, pass sales, billing,
+or an already-frozen charge. Apply the migration before enabling the new reader/UI.
+
 ### Supplier VAT adjustment notes (`10.37`)
 
 `bms_expense_documents` gains `received_date`, `reference_document_no` and `adjustment_reason`,
@@ -417,7 +425,7 @@ debit note increases it (`lib/bms/expenseAdjustments.ts`).
 | Payment | `bms_payments` | `5.3` |
 | POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_stock_transfer_item_lots`, `bms_product_packs`, `bms_product_price_tiers`, `bms_pos_devices`, `bms_pos_shifts`, `bms_pos_purchase_receipts`, `bms_pos_expenses`, `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_store_credits`, `bms_store_credit_ledger`, `bms_pos_deposits`, `bms_ar_accounts`, `bms_ar_invoices`, `bms_ar_receipts`, `bms_ar_ledger`, `bms_tax_documents`, `bms_expense_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions`, `bms_tax_invoice_requests`, `bms_tax_request_submissions`, `bms_tax_request_emails` (+ supplier credit/debit-note columns on expense documents; `users.pos_only`, per-size pack and wholesale-price columns, cross-size wholesale scope/percentage, credit-note/cash-rounding columns; scanner protocol columns on POS devices; deposit, drawer-movement, expense, and PO-receipt idempotency; `CREDIT` added to payment/refund methods; preferred split-refund method; return/refund event-shift attribution; sale/receiving branch and source/destination lot attribution for returns and transfers) | `7.84`–`10.11` (`9.4` repair), `10.37` (supplier VAT notes), `10.38`–`10.39` (receipt-QR tax-invoice requests), `10.58` (tax-request email outbox), `10.107` (transfer-lot provenance) |
 | Shipping | `bms_shipments`, `bms_shipment_tracking_events` | `5.4`, `7.76`, `7.77` |
-| Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes`, `bms_conversation_note_mentions`, `bms_channel_inbound_jobs` (Facebook/Instagram durable inbound queue) | `5.5`, `7.18`, `7.51` (read/search indexes), `10.104` (inbound jobs + `bms_tenant_channels.webhook_verify_token`/`external_account_id`), `10.108` (bounded `event_meta`) |
+| Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes`, `bms_conversation_note_mentions`, `bms_channel_inbound_jobs` (Facebook/Instagram durable inbound queue) | `5.5`, `7.18`, `7.51` (read/search indexes), `10.104` (inbound jobs + `bms_tenant_channels.webhook_verify_token`/`external_account_id`), `10.108` (bounded `event_meta`), `10.118` (tenant/editor-checked self-availability function) |
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8`, `7.78` |
 | Channel Health | `bms_channel_health_log` (+ columns on `bms_tenant_channels`) | `6.4` |
@@ -783,6 +791,13 @@ indexes cover latest message/event slices, and trigram indexes support bounded t
 conversation previews, customer refs, message bodies, CRM names, and cached channel display names.
 Keep list/detail GraphQL queries bounded; do not reintroduce unbounded message/note/event reads on
 the initial inbox view.
+
+**Inbox self-availability (`10.118`)** — `bms_set_own_inbox_availability(tenant, user, available)`
+is a narrow security-definer update of the legacy `users.is_available` field. It rejects missing
+input and a transaction whose `bms.tenant_id` or `app.editor_id` differs from the requested tenant
+or user, updates only that tenant/user row, and returns whether it found one. Only `bms_app` receives
+EXECUTE; it receives no direct `users` UPDATE grant. Apply this migration before deploying the
+service change that calls the function.
 
 Explicit BMS presales callback requests reuse this existing work queue rather than creating a
 parallel lead table. The transaction reopens the conversation, adds `sales-callback` and `hot-lead`
@@ -2307,6 +2322,14 @@ nonnegative price; absence inherits the shared catalog. It changes no physical s
 Tenant RLS is fail-closed, with bms_app read/write grants. Writes go through confirmed publication
 with branch authorization and atomic publication/audit history.
 
+Migration `10.116` adds `bms_branch_price_windows` for future branch base/pack prices. An active
+half-open window supersedes the current `bms_branch_prices` row only within its interval; after
+expiry or confirmed cancellation the current row applies again. A GiST exclusion prevents two
+uncancelled windows for the same tenant/branch/SKU/size/pack from overlapping. The table is
+tenant-scoped with forced RLS and `bms_app` grants. Publication and cancellation each commit an
+audit in the same tenant transaction. The reader falls back to current branch overrides when this
+table is absent; deploy the migration before publishing or cancelling windows.
+
 Promotion active-SKU partial indexes are replaced by `bms_promotion_windows_exclusive`, a GiST
 exclusion on tenant/SKU/coalesced branch and `[starts_at,ends_at)` for active rows. Requires btree_gist.
 This permits multiple future windows while forbidding ambiguity at checkout. Old/current rule start
@@ -2388,7 +2411,7 @@ Receipt replay precedes mutable branch availability checks, including default-br
 for staff, so disabling a branch cannot misreport an already committed stock movement as failed.
 New receipts still require an active branch; the device branch and actor remain part of the POS hash.
 
-## Pickup queue numbers and branch experience (`10.111`–`10.112`)
+## Pickup queue numbers and branch experience (`10.112`–`10.115`)
 
 `bms_pickup_queue` holds one pickup number per counter POS order (`UNIQUE (tenant_id, order_id)`),
 unique per branch per service day (`tenant_id, location_id, service_date, queue_no`). Status is
@@ -2400,7 +2423,7 @@ hold no customer identity or amounts. The row is written after the sale commits,
 visibility, READY auto-hide minutes and an optional 120-character board message). Auto-hide is a
 read-time customer-board filter; it never deletes the queue row or hides staff history.
 
-`10.112` adds the branch prefix/start number, spotlight duration and announcement preferences. Each
+`10.113` adds the branch prefix/start number, spotlight duration and announcement preferences. Each
 queue row snapshots `queue_prefix`, so changing a branch from `A` to `B` never renames already-issued
 numbers or receipt history. The service still serializes issue under the branch/service-day lock and
 starts an empty day at `pickup_queue_start_no`; a start-number change never rewinds a day that already
@@ -2410,9 +2433,13 @@ customer or order data to a speech provider at runtime.
 
 The same migration adds `customer_display_promo_slides` (a bounded JSON array of tenant-owned public file API
 URLs) and `customer_display_promo_interval_seconds` to `bms_store_profile`. Slides run only while the
-display is idle; sale/payment state always wins. Therefore `10.112` is the deployment requirement
+display is idle; sale/payment state always wins. Therefore `10.113` is a deployment requirement
 declared in `scripts/schemaReadiness.mts`. See
 [business/pos.md](../business/pos.md#pickup-queue-numbers-and-the-call-screen-10111).
+
+`10.114` seeds Thai/English `order.pickup.*` status email templates for orders whose persisted
+`fulfillment_type` is `PICKUP` (apply before deploying the `orderEmailTemplateKey()` caller; see
+[business/order.md](../business/order.md)).
 
 `10.115` adds branch queue-board presentation columns to `bms_locations`: media enabled,
 default public file ID, 4–30 second interval, transition and optimistic version. The new
@@ -2421,3 +2448,31 @@ per-item active state and optional `[starts_at, ends_at)` instants. Composite te
 and tenant/file foreign keys, tenant RLS and `bms_app` grants keep the playlist isolated.
 Publication replaces the bounded playlist and inserts its audit row in one `beginTenantTx()`.
 No queue number, order, stock or payment row is changed by publishing media.
+
+## Fish-dock intake evidence (`10.119`)
+
+`bms_fish_intakes` is the tenant-scoped, idempotent header for `HISTORICAL`, `LIVE` and
+`OPENING` batches. `bms_fish_intake_lines` stores source-row/date, supplier, vessel,
+fish/size/quality, bill and actual grams, reviewed THB amounts and optional stock identity.
+Both tables use forced tenant RLS and `bms_app` grants. `(tenant_id, kind, request_key)`
+is unique; a payload hash rejects reuse of a key with changed facts. Historical rows have
+no SKU, location or movement and never enter stock. Confirmed live/opening lines bind to
+one `bms_stock_movements` row and one lot receipt. `bms_inventory_value_entries` gains a
+nullable `fish_intake_line_id` FK to preserve the source of its reviewed amount. The stock,
+lot, movement, value entry and decision audit use one tenant transaction. The app stores
+integer grams because the existing inventory and movement quantities are integers; kg
+input is accepted to three decimal places without changing shared quantity columns.
+
+## Fish-dock owner evidence (`10.120`)
+
+`bms_fish_storage_counts` and its lines hold a human-confirmed READY/COLD_ROOM/OTHER split of
+one lot. Its grams must match the locked lot. The stored `lot_updated_at_count` and quantity
+identify a current placement snapshot; any later lot write marks it stale in reads. These rows
+are evidence only and never change `bms_inventory`, lots or movements.
+
+`bms_fish_delivery_plans` and lines store customer/branch fish commitments in integer grams.
+`bms_fish_delivery_plan_orders` links multiple ordinary orders to one plan; the service rejects
+other customers/branches, unrelated SKU/size and over-committed grams. The ordinary order,
+shipment, payment and AR tables remain authoritative. New rows have composite tenant foreign
+keys, forced tenant RLS and `bms_app` grants. Both creation and linking audit in the same tenant
+transaction. The sidecar has no implicit stock or money mutation.

@@ -46,7 +46,7 @@ import {
   listCustomerRestaurantReservations,
   requestRestaurantReservation,
 } from "../restaurantCustomer";
-import { readBoardGameCustomerInfo, type BoardGameCustomerRead } from "../boardGameCustomerInfo";
+import { readBoardGameCustomerInfo, readBoardGameCustomerPasses, readBoardGameCustomerCatalog, type BoardGameCustomerRead } from "../boardGameCustomerInfo";
 import { executeBoardGameReservationRequest } from "../boardGameReservationPolicy";
 import { BOARD_GAME_CHAT_ACTIONS, executeBoardGameChatAction } from "../boardGameChatActionPolicy";
 import { previewBoardGameChatAction, commitBoardGameChatAction, validateBoardGameChatAction } from "../boardGameChatActions";
@@ -55,6 +55,7 @@ import { isIdempotencyConflictError } from "../idempotencyErrors";
 import { checkStock, listVariantReservations } from "../stock";
 import { CARRIER_CODES } from "../carriers/constants";
 import { quoteShipping } from "../shippingRates";
+import { shippingEstimateItems } from "./shippingEstimateInput";
 import {
   createOrder,
   recalculateOrderShipping,
@@ -2845,6 +2846,13 @@ const setCustomerTagsTool: BmsTool = {
   },
 };
 
+function staffInboxMutationOptions(ec: ExecCtx): { actor: string; restrictedUserId?: string } {
+  const actorId = ec.ctx?.admin?.id ? String(ec.ctx.admin.id) : null;
+  if (!actorId) throw new ToolArgError("ต้องมีบัญชีพนักงานเพื่อจัดการแชท");
+  return { actor: ec.actor,
+    ...(ec.ctx?.admin?.role === "Sales" ? { restrictedUserId: actorId } : {}) };
+}
+
 const assignConversationTool: BmsTool = {
   name: "assign_conversation",
   description: "Assign a conversation to one staff member (as its primary owner).",
@@ -2857,8 +2865,7 @@ const assignConversationTool: BmsTool = {
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const id = reqString(args, "conversationId");
-    const ok = await assignConversation(ec.tenantId, id, reqString(args, "userId"));
-    if (ok) await auditWrite(ec, "inbox.assign", id, {});
+    const ok = await assignConversation(ec.tenantId, id, reqString(args, "userId"), staffInboxMutationOptions(ec));
     return { ok: true, data: { updated: ok } };
   },
 };
@@ -2879,8 +2886,7 @@ const setConversationStatusTool: BmsTool = {
   execute: async (args, ec): Promise<ToolResult> => {
     const id = reqString(args, "conversationId");
     const status = enumVal(args, "status", CONV_STATUSES)!;
-    const ok = await setConversationStatus(ec.tenantId, id, status);
-    if (ok) await auditWrite(ec, "inbox.manage", id, { status });
+    const ok = await setConversationStatus(ec.tenantId, id, status, staffInboxMutationOptions(ec));
     return { ok: true, data: { updated: ok } };
   },
 };
@@ -2901,8 +2907,7 @@ const setConversationTagsTool: BmsTool = {
   execute: async (args, ec): Promise<ToolResult> => {
     const id = reqString(args, "conversationId");
     const tags = Array.isArray(args.tags) ? args.tags.map(String) : [];
-    const ok = await setConversationTags(ec.tenantId, id, tags);
-    if (ok) await auditWrite(ec, "inbox.manage", id, { kind: "tags" });
+    const ok = await setConversationTags(ec.tenantId, id, tags, staffInboxMutationOptions(ec));
     return { ok: true, data: { updated: ok } };
   },
 };
@@ -2919,8 +2924,9 @@ const addNoteTool: BmsTool = {
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const id = reqString(args, "conversationId");
-    const note = await addNote(ec.tenantId, id, ec.actor, reqString(args, "body"));
-    if (note) await auditWrite(ec, "inbox.manage", id, { kind: "note" });
+    const scope = staffInboxMutationOptions(ec);
+    const note = await addNote(ec.tenantId, id, ec.actor, reqString(args, "body"), null,
+      scope.restrictedUserId ? { restrictedUserId: scope.restrictedUserId } : {});
     return { ok: true, data: note ?? { added: false } };
   },
 };
@@ -3114,6 +3120,8 @@ const BOARD_GAME_CUSTOMER_TOOLS = new Set([
   "manage_board_game_booking",
   "request_board_game_reservation", "get_board_game_reservation_status",
   "get_board_game_rates", "search_board_game_library", "get_board_game_availability",
+  "get_board_game_my_passes",
+  "get_board_game_pass_plans", "get_board_game_offers",
 ]);
 
 
@@ -3233,6 +3241,35 @@ const searchBoardGameLibraryTool = boardGameCustomerReadTool("search_board_game_
 const getBoardGameAvailabilityTool = boardGameCustomerReadTool("get_board_game_availability", "availability",
   "Read this shop's branch information/hours, current aggregate table counts, opt-in customer-safe area/floor and capacity groups, and booking/deposit policy. Table details contain public area labels, seat capacity and grouped counts only—never table numbers, ids, occupants or sessions. When booking.canSubmitViaChat is true, use request_board_game_reservation for a customer-confirmed booking; booking.autoConfirm determines automatic confirmation versus staff review. This read never submits or confirms a booking. Use manage_board_game_booking for changes or staff requests. Cannot predict waiting time or guarantee future availability. NOT_PUBLISHED or null fields mean not enabled for chat, not zero.");
 
+const getBoardGameMyPassesTool: BmsTool = {
+  name: "get_board_game_my_passes", surfaces: ["customer"], permission: "order.view",
+  description: "Read this channel-verified customer's purchased board-game time passes, remaining minutes and expiry. No arguments or customer identifiers. A null remainingMinutes is not zero: unlimited, inactive, or a ledger discrepancy; for REVIEW_REQUIRED ask staff to check the balance. This is not the catalog of passes for sale and does not reveal current prices, promotions, or eligibility. Do not treat loyalty points as play-time minutes.",
+  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  execute: async (args, ec) => {
+    if (Object.keys(args).length) throw new ToolArgError("This tool accepts no arguments");
+    if (!ec.channel || !ec.customerRef) return { ok: false, error: "CUSTOMER_IDENTITY_REQUIRED" };
+    const customerId = await findCustomerIdByIdentity(ec.tenantId, ec.channel, ec.customerRef);
+    if (!customerId) return { ok: true, data: { status: "NO_CUSTOMER", passes: [], truncated: false } };
+    return { ok: true, data: await readBoardGameCustomerPasses(ec.tenantId, customerId) };
+  },
+};
+
+function boardGamePublishedCatalogTool(kind: "plans" | "offers"): BmsTool {
+  return {
+    name: kind === "plans" ? "get_board_game_pass_plans" : "get_board_game_offers",
+    surfaces: ["customer"],
+    description: kind === "plans"
+      ? "Read active board-game play-time pass plans explicitly published to customer chat for a branch. Listed price and duration are not proof that the customer bought a pass. A 30-day pass is not necessarily a calendar-month subscription. Ask which branch if ambiguous; do not infer unpublished plans are unavailable."
+      : "Read active, unexpired board-game play-time offers explicitly published to customer chat for a branch. Return stated conditions only: dates, local weekday/time, party size, minimum play time and whether a product purchase is required. Never guarantee eligibility, stacking with a pass or a final bill. Ask which branch if ambiguous; no listed offers means none published to chat, not no promotions in the shop.",
+    inputSchema: { type: "object", additionalProperties: false, properties: {
+      branch: { type: "string", maxLength: 120, description: "Exact branch name returned by shop chat tools; omit if the customer has not selected one." },
+    } },
+    execute: async (args, ec) => ({ ok: true, data: await readBoardGameCustomerCatalog(ec.tenantId, kind, optString(args, "branch")) }),
+  };
+}
+const getBoardGamePassPlansTool = boardGamePublishedCatalogTool("plans");
+const getBoardGameOffersTool = boardGamePublishedCatalogTool("offers");
+
 const getStoreInfoTool: BmsTool = {
   name: "get_store_info",
   description:
@@ -3299,47 +3336,50 @@ const getPaymentInfoTool: BmsTool = {
 const getShippingEstimateTool: BmsTool = {
   name: "get_shipping_estimate",
   description:
-    "Estimate shipping cost and delivery time from the rates the shop configured. Pass the order subtotal so any free-shipping threshold is applied, " +
-    "and pass province when the customer has stated their destination so the zone rate is used instead of the shop's flat rate. " +
-    "Read `warnings` before answering: if it says the province was guessed or product weights are missing, tell the customer the fee is an estimate to be confirmed.",
+    "Estimate shipping cost and delivery time from the rates the shop configured. Customer chat cannot supply a subtotal; the final free-shipping threshold is checked at checkout. Staff may pass a verified what-if subtotal. " +
+    "Pass province when the customer has stated their destination so the zone rate is used instead of the shop's flat rate. " +
+    "Read `warnings` before answering: an unknown destination or missing product weights makes this an estimate to be confirmed. Never invent a province or item quantity.",
   surfaces: ["customer", "staff"],
   inputSchema: {
     type: "object",
     properties: {
       subtotal: {
         type: "number",
-        description: "Order subtotal, if known, used to check free shipping.",
+        description: "Staff-only verified what-if subtotal; never pass from customer chat.",
       },
       province: {
         type: "string",
+        maxLength: 200,
         description: "Destination province, only when the customer stated it. Never invent one.",
       },
       items: {
         type: "array",
-        description: "Line items, if known, so parcel weight can be summed for weight-based rates.",
+        maxItems: 20,
+        description: "Verified SKU and explicit positive whole-unit quantity for each known line, up to 20. Omit items if quantity is unknown; never assume one.",
         items: {
           type: "object",
-          properties: { sku: { type: "string" }, qty: { type: "integer" } },
+          additionalProperties: false,
+          properties: { sku: { type: "string", minLength: 1, maxLength: 200 }, qty: { type: "integer", minimum: 1 } },
           required: ["sku", "qty"],
         },
       },
     },
   },
   execute: async (args, ec): Promise<ToolResult> => {
-    const subtotal = typeof args.subtotal === "number" ? args.subtotal : null;
-    const rawItems = Array.isArray(args.items) ? args.items : null;
-    const items = rawItems
-      ? rawItems
-          .map((r: any) => ({ sku: String(r?.sku ?? "").trim(), qty: Number(r?.qty) || 1 }))
-          .filter((r) => r.sku)
-      : null;
+    const subtotal = optMoney(args, "subtotal");
+    if (ec.surface === "customer" && subtotal !== null) {
+      throw new ToolArgError('"subtotal" ต้องตรวจจากยอดออร์เดอร์ของเซิร์ฟเวอร์ก่อน ไม่รับยอดที่โมเดลส่งมา');
+    }
+    const items = shippingEstimateItems(args.items);
+    const province = optString(args, "province") ?? null;
+    if (province && province.length > 200) throw new ToolArgError('"province" ยาวเกินไป');
     return {
       ok: true,
       data: await quoteShipping({
         tenantId: ec.tenantId,
         subtotal,
-        province: optString(args, "province") ?? null,
-        items: items && items.length ? items : null,
+        province,
+        items,
       }),
     };
   },
@@ -3909,6 +3949,9 @@ export const ALL_TOOLS: BmsTool[] = [
   getBoardGameReservationStatusTool,
   searchBoardGameLibraryTool,
   getBoardGameAvailabilityTool,
+  getBoardGameMyPassesTool,
+  getBoardGamePassPlansTool,
+  getBoardGameOffersTool,
   getPaymentInfoTool,
   getShippingEstimateTool,
   // B2 — documents

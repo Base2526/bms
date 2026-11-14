@@ -28,6 +28,7 @@ export type Migration = {
 // bms_set_pharmacist_license — เรียกเฉพาะตอน Administrator บันทึกใบอนุญาต และ fail closed) เพราะไม่ใช่
 // สิ่งที่โค้ดอ้างแบบไม่มีเงื่อนไข · ถ้าเปิด flag ของ 10.110 ต้องตรวจตารางของไฟล์นั้นบนฐานเป้าหมายเอง
 export const MIGRATIONS: Migration[] = [
+  {file:'10.116__bms_branch_price_windows.sql',impact:'Every branch price read checks scheduled price windows; catalog, scans and checkout fail until this table exists',needs:[{kind:'table',name:'bms_branch_price_windows'}]},
   {file:'10.113__bms_pickup_queue_experience.sql',impact:'Branch queue numbering/voice settings and idle customer-display promo slides require the experience columns before the settings, POS session and queue board can load',needs:[
     {kind:'column',table:'bms_locations',name:'pickup_queue_prefix'},
     {kind:'column',table:'bms_locations',name:'pickup_queue_start_no'},

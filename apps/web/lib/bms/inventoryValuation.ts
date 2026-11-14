@@ -8,6 +8,7 @@ export type ValuationMovement = {
   direction?: string | null; refOrderId?: string | null;
   orderItemId?: string | number | null; returnId?: string | null;
   transferItemId?: string | number | null; purchaseItemId?: string | number | null;
+  fishIntakeLineId?: string | number | null;
   initialQty?: string;
   productionId?: string;
 };
@@ -51,6 +52,21 @@ export async function valueMovementInTx(client: PoolClient, movementId: string, 
     if (!source) throw new Error("VALUATION_PURCHASE_SOURCE_MISSING");
     amount = micro(source.cost);
   }
+  if (m.fishIntakeLineId != null) {
+    if (!((m.type === "STOCK_IN") || (m.type === "COUNT_ADJUST" && m.direction === "IN")))
+      throw new Error("VALUATION_FISH_MOVEMENT_INVALID");
+    const source = (await client.query<{cost:string}>(`
+      SELECT (l.purchase_amount + l.extra_amount)::text AS cost
+        FROM bms_fish_intake_lines l
+        JOIN bms_fish_intakes h ON h.tenant_id=l.tenant_id AND h.id=l.intake_id
+       WHERE l.tenant_id=$1 AND l.id=$2 AND h.location_id=$3
+         AND l.sku=$4 AND l.size=$5 AND l.received_grams=$6
+         AND h.kind=$7`,
+      [m.tenantId,m.fishIntakeLineId,m.locationId,m.sku,m.size,m.qty,
+        m.type === "STOCK_IN" ? "LIVE" : "OPENING"])).rows[0];
+    if (!source) throw new Error("VALUATION_FISH_SOURCE_MISSING");
+    amount = micro(source.cost);
+  }
   if (m.type === 'PRODUCTION_IN') {
     // Only persisted, same-transaction physical input entries authorize output value. Never a caller amount.
     const source = (await client.query<{amount:string|null}>(`SELECT CASE WHEN count(*)>0 AND bool_and(v.amount IS NOT NULL)
@@ -74,22 +90,27 @@ export async function valueMovementInTx(client: PoolClient, movementId: string, 
     const balance = (await client.query<{qty:string;value:string|null}>(`SELECT qty::text,value::text FROM bms_inventory_values
       WHERE tenant_id=$1 AND location_id=$2 AND product_sku=$3 AND size=$4 FOR UPDATE`,scope)).rows[0];
     const prior = BigInt(balance.qty), value = balance.value == null ? null : micro(balance.value);
-    if (inbound && m.type === "COUNT_ADJUST" && value != null && prior > 0n) amount = portion(value,q,prior);
+    if (m.fishIntakeLineId != null && prior !== initial)
+      throw new Error("VALUATION_FISH_BALANCE_REVIEW_REQUIRED");
+    if (inbound && m.type === "COUNT_ADJUST" && m.fishIntakeLineId == null && value != null && prior > 0n)
+      amount = portion(value,q,prior);
     if (!inbound) {
       if (prior < q) throw new Error("VALUATION_QUANTITY_MISMATCH");
       amount = value == null ? null : portion(value,q,prior);
     }
     const nextQty = prior+(inbound ? q : -q);
-    const nextValue = nextQty===0n ? 0n : value==null || amount==null ? null : value+(inbound ? amount : -amount);
+    const nextValue = nextQty===0n ? 0n
+      : m.fishIntakeLineId != null && inbound && prior===0n && amount!=null ? amount
+      : value==null || amount==null ? null : value+(inbound ? amount : -amount);
     await client.query(`UPDATE bms_inventory_values SET qty=$5,value=$6,version=version+1
       WHERE tenant_id=$1 AND location_id=$2 AND product_sku=$3 AND size=$4`,
     [...scope,String(nextQty),nextValue==null ? null : decimal(nextValue)]);
   }
   await client.query(`INSERT INTO bms_inventory_value_entries
-    (tenant_id,movement_id,location_id,product_sku,size,kind,qty,amount,order_id,order_item_id,return_id,transfer_item_id,purchase_item_id)
-    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+    (tenant_id,movement_id,location_id,product_sku,size,kind,qty,amount,order_id,order_item_id,return_id,transfer_item_id,purchase_item_id,fish_intake_line_id)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
   [m.tenantId,movementId,m.locationId,m.sku,m.size,m.type==='COUNT_ADJUST' ? `COUNT_${m.direction}` : m.type,
-    m.qty,amount==null ? null : decimal(amount),m.refOrderId??null,m.orderItemId??null,m.returnId??null,m.transferItemId??null,m.purchaseItemId??null]);
+    m.qty,amount==null ? null : decimal(amount),m.refOrderId??null,m.orderItemId??null,m.returnId??null,m.transferItemId??null,m.purchaseItemId??null,m.fishIntakeLineId??null]);
 }
 
 export async function assertValuationLocation(client: PoolClient, tenant: string, actor: string, location: string) {

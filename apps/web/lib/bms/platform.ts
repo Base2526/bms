@@ -13,7 +13,7 @@ import { GraphQLError } from "graphql/error";
 import type { PoolClient } from "pg";
 import { requireAuth } from "@/lib/auth";
 import { query, getClient } from "@/lib/db";
-import { DEFAULT_TENANT_ID } from "./tenant";
+import { beginTenantTx, DEFAULT_TENANT_ID } from "./tenant";
 
 /** platform admin หรือไม่ — อ่านสด ๆ จาก DB ด้วย id ใน session */
 export async function isPlatformAdmin(ctx: any): Promise<boolean> {
@@ -85,9 +85,24 @@ export async function listTenants(): Promise<TenantRow[]> {
 }
 
 /** เปิด/ปิดร้าน (ปิด = ระงับการใช้งาน) */
-export async function setTenantActive(tenantId: string, active: boolean): Promise<boolean> {
-  const res = await query(`UPDATE bms_tenants SET active = $2 WHERE id = $1`, [tenantId, active]);
-  return (res.rowCount ?? 0) > 0;
+export async function setTenantActive(tenantId: string, active: boolean, actorId: string): Promise<boolean> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorId });
+    const res = await client.query(`UPDATE bms_tenants SET active = $2 WHERE id = $1`, [tenantId, active]);
+    if (res.rowCount) {
+      await client.query(
+        `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
+         VALUES($1,$2,$3,$1,$4::jsonb)`,
+        [tenantId, actorId, active ? "tenant.activate" : "tenant.suspend", JSON.stringify({ active })]
+      );
+    }
+    await client.query("COMMIT");
+    return (res.rowCount ?? 0) > 0;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally { client.release(); }
 }
 
 /** ชื่อร้าน (bms_tenants.name) จาก tenantId — ใช้เป็นชื่อร้านชื่อเดียวทั้งระบบ (AI/เอกสาร) */
@@ -121,7 +136,8 @@ function normalizeSlug(raw: string): string {
  */
 export async function updateTenantIdentity(
   tenantId: string,
-  patch: { name?: string | null; slug?: string | null }
+  patch: { name?: string | null; slug?: string | null },
+  actorId: string
 ): Promise<{ id: string; name: string; slug: string }> {
   const name = typeof patch.name === "string" && patch.name.trim() ? patch.name.trim() : null;
 
@@ -129,20 +145,35 @@ export async function updateTenantIdentity(
   if (typeof patch.slug === "string" && patch.slug.trim()) {
     slug = normalizeSlug(patch.slug);
     if (!slug) throw new Error("slug ไม่ถูกต้อง (ใช้ได้เฉพาะ a-z, 0-9, -)");
-    const dup = await query(`SELECT 1 FROM bms_tenants WHERE slug = $1 AND id <> $2 LIMIT 1`, [slug, tenantId]);
-    if ((dup.rowCount ?? 0) > 0) throw new Error(`slug "${slug}" ถูกใช้แล้วโดยร้านอื่น`);
   }
-
-  const res = await query<{ id: string; name: string; slug: string }>(
-    `UPDATE bms_tenants
-        SET name = COALESCE($2, name),
-            slug = COALESCE($3, slug)
-      WHERE id = $1
-      RETURNING id, name, slug`,
-    [tenantId, name, slug]
-  );
-  if (res.rowCount === 0) throw new Error("ไม่พบร้าน");
-  return res.rows[0];
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorId });
+    if (slug) {
+      const dup = await client.query(`SELECT 1 FROM bms_tenants WHERE slug = $1 AND id <> $2 LIMIT 1`, [slug, tenantId]);
+      if ((dup.rowCount ?? 0) > 0) throw new Error(`slug "${slug}" ถูกใช้แล้วโดยร้านอื่น`);
+    }
+    const res = await client.query<{ id: string; name: string; slug: string }>(
+      `UPDATE bms_tenants
+          SET name = COALESCE($2, name), slug = COALESCE($3, slug)
+        WHERE id = $1
+        RETURNING id, name, slug`,
+      [tenantId, name, slug]
+    );
+    if (res.rowCount === 0) throw new Error("ไม่พบร้าน");
+    await client.query(
+      `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
+       VALUES($1,$2,'tenant.identity_update',$1,$3::jsonb)`,
+      [tenantId, actorId, JSON.stringify({ name: res.rows[0].name, slug: res.rows[0].slug })]
+    );
+    await client.query("COMMIT");
+    return res.rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /**

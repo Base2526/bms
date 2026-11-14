@@ -188,6 +188,10 @@ The Analytics tab at `/admin/delivery-platforms?tab=analytics` is permission-gat
 accounting facts. It reports BMS sales, completed refunds, net sales, intake/acceptance/completion,
 current action-required orders, preparation time and command outcomes by provider, with daily,
 weekly or monthly trends. Shadow events stay separate from live intake and never become revenue.
+`delivery.settlement.view` alone opens the Analytics and Finance tabs. Its read response includes
+only tenant-scoped provider identifiers, active branch labels and bounded order identifiers needed
+for those finance controls; integration credentials, mappings and operational queues still require
+`delivery.integration.view` and are not fetched for a finance-only role.
 Statement gross, fees, commission, expected payout, actual payout and mismatch counts remain a
 separate settlement block. A missing `actual_net_amount` is unknown, never zero, and the combined
 actual-payout card stays blank until every statement in scope has an actual amount.
@@ -212,6 +216,10 @@ automatically issue an additional tax document for a platform order.
 - OAuth bearer tokens are short-lived and cached encrypted in shared Redis; they are never stored as
   plaintext in Redis/PostgreSQL or copied into error/health records.
 - Dispute files must use `private` visibility and carry a tenant binding.
+- Staff with `delivery.dispute.manage` may attach up to ten PNG/JPEG/WEBP evidence images while a
+  dispute is `DRAFT`, `SUBMITTED` or `UNDER_REVIEW`. Each image is decoded and normalized, limited to
+  5 MB on input, linked and audited in the dispute transaction. Downloads require
+  `delivery.settlement.view` through a dedicated route; generic file downloads refuse this evidence.
 - Retention/anonymization periods come from the signed provider agreement. Until they are known,
   retain only the sanitized operational records needed for audit and do not add raw-payload storage.
 
@@ -238,6 +246,9 @@ For an incident:
 5. After recovery, replay retryable inbox/outbox rows, fetch authoritative provider state where the
    verified adapter supports it, and record resolution in the safe timeline/audit.
 
+The Admin UI asks for confirmation before re-queuing an event or provider command and before a
+dispute status change. Cancelling the optional provider-case-id prompt leaves the dispute unchanged.
+
 The integration is not production-complete until official credentials/contracts, sandbox lifecycle,
 shadow comparison, security/load tests, tax approval and at least one real settlement cycle pass.
 
@@ -247,7 +258,7 @@ The foundation intentionally does not claim features for which there is no verif
 no completed operational surface. Before production sign-off, the project still needs provider
 catalog drift polling, authoritative order reconciliation/fetch-latest actions, provider-confirmed
 amendments, capacity recommendations, shift-handover acknowledgement, saved/bulk inbox actions,
-role-targeted notification escalation, dispute-evidence upload workflow, provider statement parser,
+role-targeted notification escalation, provider statement parser,
 retention/anonymization jobs, load/security exercises, and native-client workflows if the pilot uses
 mobile POS. These are not silently simulated by the current UI. They remain visible pilot blockers
 alongside credentials, tax ownership, sandbox certification and a real settlement cycle.

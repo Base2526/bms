@@ -99,3 +99,12 @@ export async function authorizePlatformAdminRoute(): Promise<AdminRouteAuth> {
     return { ok: false, status: 403 };
   }
 }
+
+/** Same server-side role boundary as tenant configuration GraphQL mutations. */
+export async function authorizeTenantSettingsAdminRoute(): Promise<AdminRouteAuth> {
+  const auth = await authorizeAdminRoute(null);
+  if (!auth.ok) return auth;
+  return auth.admin.role === "Administrator" || auth.admin.is_platform_admin === true
+    ? auth
+    : { ok: false, status: 403 };
+}

@@ -1,3 +1,13 @@
+# Notifications
+
+Current implementation (2026-11-14): `/notification` reads a bounded, user-scoped GraphQL list.
+The server scopes read, unread and delete mutations to `ctx.user.id`; a missing or other user's
+notification returns `false`. The row links to `/post/[id]` or to an existing room in `/chat?chat=`;
+the chat page opens the room only if `myChats` includes it, and message reads still check membership.
+The Settings button opens `/settings`. The notification row delete action asks for confirmation.
+The design sketches below predate this implementation; use `page.tsx`, `graphql/typeDefs.ts` and
+`graphql/resolvers.ts` for the current contract.
+
 ---- #1
 
 ## 1. ภาพรวม Concept

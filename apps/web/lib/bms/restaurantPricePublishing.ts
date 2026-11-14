@@ -1,4 +1,4 @@
-import { saveBranchPriceInTx } from "./branchPrices";
+import { saveBranchPriceInTx, scheduleBranchPriceInTx } from "./branchPrices";
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
 import { getClient } from "@/lib/db";
@@ -36,16 +36,25 @@ async function prepare(client:PoolClient,tenant:string,actor:string,input:Publis
   if ((salesSurface && !['RETAIL_POS','RESTAURANT_POS','ONLINE_ORDER'].includes(salesSurface))
     || (startsAt && !Number.isFinite(startsAt.getTime())) || (endsAt && !Number.isFinite(endsAt.getTime()))
     || (startsAt && endsAt && endsAt<=startsAt)) throw new Error('PRICE_PUBLISH_INVALID_SCOPE');
-  if (input.mode!=='PROMOTION' && (salesSurface||startsAt||endsAt)) throw new Error('PRICE_PUBLISH_SCOPE_REQUIRES_PROMOTION');
+  if (input.mode!=='PROMOTION' && (salesSurface || ((startsAt||endsAt) && !locationId)
+    || (endsAt && !startsAt))) throw new Error('PRICE_PUBLISH_INVALID_BRANCH_WINDOW');
   const estimate=await getRecipeCostEstimate(tenant,plan.recipeId,client,plan,actor);
   if (!estimate || estimate.status!=='COMPLETE') throw new Error('PRICE_PUBLISH_COST_INCOMPLETE');
   const sku=String(recipe.product_sku),size=String(recipe.size);
   const packs=(await client.query('SELECT * FROM bms_product_packs WHERE tenant_id=$1 AND product_sku=$2 ORDER BY id',[tenant,sku])).rows;
   const promotions=(await client.query('SELECT * FROM bms_product_promotions WHERE tenant_id=$1 AND product_sku=$2 AND active ORDER BY id',[tenant,sku])).rows;
   const now=(await client.query('SELECT transaction_timestamp() AS now')).rows[0].now as Date;
+  if (input.mode!=='PROMOTION' && startsAt && startsAt<=now) throw new Error('PRICE_PUBLISH_INVALID_BRANCH_WINDOW');
   const currentPromotionIds=promotions.filter(p=>(!p.starts_at||new Date(p.starts_at)<=now)&&(!p.ends_at||new Date(p.ends_at)>now)).map(p=>String(p.id));
   const tiers=(await client.query('SELECT * FROM bms_product_price_tiers WHERE tenant_id=$1 AND product_sku=$2 ORDER BY id',[tenant,sku])).rows;
   const branchPrices=(await client.query("SELECT * FROM bms_branch_prices WHERE tenant_id=$1 AND product_sku=$2 ORDER BY location_id,size,pack_code",[tenant,sku])).rows;
+  const branchPriceWindows=locationId && input.mode!=='PROMOTION'
+    ? (await client.query(`SELECT id,location_id,product_sku,size,pack_code,price,starts_at,ends_at
+        FROM bms_branch_price_windows WHERE tenant_id=$1 AND product_sku=$2 AND location_id=$3
+          AND size=$4 AND pack_code=$5 AND cancelled_at IS NULL
+          AND (ends_at IS NULL OR ends_at > transaction_timestamp())
+        ORDER BY starts_at LIMIT 50`,[tenant,sku,locationId,size,packCode])).rows
+    : [];
   const base=(await client.query('SELECT price::text FROM bms_products WHERE tenant_id=$1 AND sku=$2',[tenant,sku])).rows[0];
   const matches=(p:any)=>input.mode==='BASE' ? p.is_base : p.pack_code===packCode;
   const existing=packs.find(p=>p.size===size && matches(p)) ?? (locationId ? packs.find(p=>p.size==null && matches(p)) : undefined);
@@ -59,7 +68,7 @@ async function prepare(client:PoolClient,tenant:string,actor:string,input:Publis
   if (price>1_000_000_000) throw new Error('PRICE_PUBLISH_PRICE_LIMIT');
   const snapshot={plan,scenarioIndex:input.scenarioIndex,mode:input.mode,quantity:input.quantity,packCode,
     sku,size,price,scope:locationId?'SELECTED_BRANCH':input.mode==='PROMOTION'?'SELECTED_PROMOTION_SCOPE':'ALL_BRANCHES_ALL_CHANNELS',locationId,salesSurface,startsAt:startsAt?.toISOString()??null,endsAt:endsAt?.toISOString()??null,existingPackId:existing?.id??null,
-    estimate:{...estimate,calculatedAt:undefined},recipe,packs,promotions,tiers,base,branchPrices,currentPromotionIds};
+    estimate:{...estimate,calculatedAt:undefined},recipe,packs,promotions,tiers,base,branchPrices,branchPriceWindows,currentPromotionIds};
   return {fingerprint:hash(snapshot),snapshot,existing};
 }
 export async function previewPricePublication(tenant:string,actor:string,input:PublishPriceInput) {
@@ -90,6 +99,8 @@ export async function publishPricePlan(tenant:string,actor:string,input:PublishP
     if (p.fingerprint!==review.fingerprint) throw new Error('PRICE_PUBLISH_STALE_REVIEW');
     if (s.mode==='PROMOTION') await upsertProductPromotionInTx(client,{tenantId:tenant,actorUserId:actor,productSku:s.sku,
       kind:'N_FOR_PRICE',buySize:s.size,locationId:s.locationId,salesSurface:s.salesSurface,startsAt:s.startsAt,endsAt:s.endsAt,buyQty:s.quantity,bundlePrice:s.price,note:`Price plan: ${s.plan.scenarios[s.scenarioIndex].label}`});
+    else if(s.locationId && s.startsAt) await scheduleBranchPriceInTx(client,tenant,actor,s.locationId,s.sku,s.size,
+      s.mode==='BASE'?'BASE':s.packCode,s.price,s.startsAt,s.endsAt);
     else if(s.locationId) await saveBranchPriceInTx(client,tenant,actor,s.locationId,s.sku,s.size,s.mode==='BASE'?'BASE':s.packCode,s.price);
     else await upsertProductPackInTx(client,tenant,{id:p.existing?.id,productSku:s.sku,size:s.size,
       packCode:p.existing?.pack_code??s.packCode,unitName:p.existing?.unit_name,
@@ -97,5 +108,8 @@ export async function publishPricePlan(tenant:string,actor:string,input:PublishP
     await client.query('INSERT INTO bms_price_plan_publications(tenant_id,request_id,request_hash,snapshot,created_by) VALUES($1,$2,$3,$4::jsonb,$5)',[tenant,review.requestId,requestHash,JSON.stringify(s),actor]);
     await client.query(`INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta) VALUES($1,$2,'restaurant.price_plan_published',$3,$4::jsonb)`,[tenant,`user:${actor}`,review.requestId,JSON.stringify({sku:s.sku,mode:s.mode,price:s.price,fingerprint:p.fingerprint})]);
     await client.query('COMMIT');return {status:'PUBLISHED'};
-  } catch(e) { await client.query('ROLLBACK');throw e; } finally {client.release();}
+  } catch(e) { await client.query('ROLLBACK');
+    if ((e as { code?: string })?.code==='23P01') throw new Error('PRICE_PUBLISH_WINDOW_OVERLAP');
+    throw e;
+  } finally {client.release();}
 }

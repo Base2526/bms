@@ -103,7 +103,7 @@ type MemberOption = { customerId: string; name: string; memberNo: string | null 
 type PassPlan = {
   id: string; locationId: string | null; code: string; name: string;
   kind: "UNLIMITED" | "MINUTES"; price: number; durationDays: number;
-  includedMinutes: number | null; active: boolean; sortOrder: number; note: string | null;
+  includedMinutes: number | null; active: boolean; publishToChat: boolean; sortOrder: number; note: string | null;
 };
 type MemberPass = {
   id: string; locationId: string | null; customerId: string; customerName: string | null; planName: string;
@@ -118,7 +118,7 @@ type BoardGameOffer = {
   maxPlayers: number | null; minimumMinutes: number; requiredProductSku: string | null;
   validFrom: string | null; validUntil: string | null; weekdays: number[];
   startsLocalTime: string | null; endsLocalTime: string | null;
-  active: boolean; sortOrder: number; note: string | null;
+  active: boolean; publishToChat: boolean; sortOrder: number; note: string | null;
 };
 type PassRenewal = {
   id: string; customerId: string; customerName: string | null; sourcePassId: string;
@@ -970,12 +970,12 @@ export default function BoardGamePage() {
                     <Typography.Text type="secondary">{t("admin_board_game.pass_plans_description")}</Typography.Text>
                   </div>
                   {canManagePass && <Button icon={<PlusOutlined />}
-                    onClick={() => { planForm.resetFields(); planForm.setFieldsValue({ kind: "UNLIMITED", durationDays: 30 }); setPlanModal("new"); }}>
+                    onClick={() => { planForm.resetFields(); planForm.setFieldsValue({ kind: "UNLIMITED", durationDays: 30, publishToChat: false }); setPlanModal("new"); }}>
                     {t("admin_board_game.add_pass_plan")}
                   </Button>}
                 </div>
                 <Table rowKey="id" size="small" pagination={false} dataSource={passPlans} columns={[
-                  { title: t("admin_board_game.pass_plan_name"), render: (_, row) => <>{row.name}{row.active ? null : <Tag>{t("admin_board_game.inactive")}</Tag>}</> },
+                  { title: t("admin_board_game.pass_plan_name"), render: (_, row) => <>{row.name}{row.active ? null : <Tag>{t("admin_board_game.inactive")}</Tag>}{row.active && row.publishToChat && <Tag color="blue">{t("admin_board_game.publish_to_chat")}</Tag>}</> },
                   {
                     title: t("admin_board_game.pass_kind"),
                     render: (_, row) => row.kind === "UNLIMITED"
@@ -1129,12 +1129,12 @@ export default function BoardGamePage() {
                 {canManageOffer && <Button icon={<PlusOutlined />} onClick={() => {
                   offerForm.resetFields();
                   offerForm.setFieldsValue({ kind: "TIME_PERCENT", percentOff: 10, minPlayers: 1,
-                    minimumMinutes: 0, weekdays: [0,1,2,3,4,5,6], active: true, sortOrder: 0 });
+                    minimumMinutes: 0, weekdays: [0,1,2,3,4,5,6], active: true, publishToChat: false, sortOrder: 0 });
                   setOfferModal("new");
                 }}>{t("admin_board_game.offer_add")}</Button>}
               </div>
               <Table rowKey="id" size="small" pagination={false} dataSource={offers} columns={[
-                { title: t("admin_board_game.offer_name"), render: (_, row) => <>{row.name}{row.active ? null : <Tag>{t("admin_board_game.inactive")}</Tag>}</> },
+                { title: t("admin_board_game.offer_name"), render: (_, row) => <>{row.name}{row.active ? null : <Tag>{t("admin_board_game.inactive")}</Tag>}{row.active && row.publishToChat && <Tag color="blue">{t("admin_board_game.publish_to_chat")}</Tag>}</> },
                 { title: t("admin_board_game.offer_kind"), render: (_, row) => t(`admin_board_game.offer_kind_${row.kind.toLowerCase()}`) },
                 { title: t("admin_board_game.offer_value"), render: (_, row) => row.kind === "TIME_BUY_GET" ? `${row.buyMinutes} + ${row.freeMinutes} ${t("admin_board_game.minutes")}` : row.kind === "TIME_PERCENT" ? `${row.percentOff}%` : `฿${Number(row.fixedPrice).toFixed(2)}` },
                 { title: t("admin_board_game.offer_conditions"), render: (_, row) => [
@@ -1495,6 +1495,7 @@ export default function BoardGamePage() {
             <Form.Item name="validUntil" label={t("admin_board_game.offer_valid_until")}><Input type="datetime-local" /></Form.Item>
           </div>
           <Form.Item name="active" label={t("common.active")} valuePropName="checked"><Switch /></Form.Item>
+          <Form.Item name="publishToChat" label={t("admin_board_game.publish_to_chat")} valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>
       <Modal open={Boolean(rateModal)} title={t("admin_board_game.rate_editor")} onCancel={() => setRateModal(null)} onOk={() => void saveRate()}>
@@ -1508,7 +1509,7 @@ export default function BoardGamePage() {
       <Modal open={Boolean(planModal)} title={t("admin_board_game.pass_plan_editor")}
         onCancel={() => setPlanModal(null)} onOk={() => void planForm.submit()}>
         <Form form={planForm} layout="vertical" onFinish={savePlan}
-          initialValues={{ kind: "UNLIMITED", price: 0, durationDays: 30, active: true, sortOrder: 0 }}>
+          initialValues={{ kind: "UNLIMITED", price: 0, durationDays: 30, active: true, publishToChat: false, sortOrder: 0 }}>
           <Form.Item name="name" label={t("admin_board_game.pass_plan_name")} rules={[{ required: true }]}><Input /></Form.Item>
           {/* ว่าง = ขายได้ทุกสาขา · เลือกสาขา = แพ็กเกจของสาขานั้นสาขาเดียว (`9.92` ประกาศกฎนี้
               ไว้ที่คอลัมน์เอง) · ตัวเลือกมีเฉพาะสาขาที่บัญชีนี้ดูแล ไม่งั้นจะผูกให้สาขาที่ตัวเองแตะไม่ได้ */}
@@ -1533,6 +1534,7 @@ export default function BoardGamePage() {
             ) : null}
           </Form.Item>
           <Form.Item name="active" label={t("common.active")} valuePropName="checked"><Switch /></Form.Item>
+          <Form.Item name="publishToChat" label={t("admin_board_game.publish_to_chat")} valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>
       {imageTitle && <BoardGameImageEditor title={imageTitle} onClose={() => setImageTitle(null)} onSaved={refreshLocation} />}

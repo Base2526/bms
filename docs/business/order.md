@@ -129,6 +129,25 @@ generic admin handoff. The checkout is read-only for order lines, prices, discou
 reuses existing CRM delivery data without requiring re-entry, and shows shipment/tracking data only
 when those records exist. See [Customer Checkout & Payment Wireframe](../ui/customer-checkout-wireframe.md).
 
+Public retail storefront product pages now offer a 10-line local variant/pack cart and `/shop/[tenantSlug]/cart`
+review. `POST /api/bms/retail-cart` simulates the real `createOrderInTx()` in a tenant transaction
+and rolls it back, so the review shows server-calculated lines, discounts, shipping estimate and
+stock availability without reserving stock. A purpose-bound, 10-minute signed review token carries
+the basket and a digest of that calculation. Pack size and price are loaded again from
+`bms_product_packs`; a browser-supplied pack price or conversion is never trusted. Customer
+confirmation takes a transaction advisory lock
+on the token nonce, rechecks that every product is active and published for both
+`PUBLIC_STOREFRONT` and `ONLINE_ORDER`, then runs the same order service. A changed price, discount,
+shipping estimate or stock rejects the confirmation and requires a fresh review. A repeated confirm
+returns the existing order via its unique idempotency key, then derives the existing signed checkout
+URL from the persisted order. The customer enters delivery and submits a pending payment through the
+existing checkout; the cart cannot confirm payment. Restaurant tenants are excluded from this retail
+cart, including its public links, because their online ordering requires branch, fulfillment and
+hours policy. Retail catalog cards and product details show the default order branch's usable stock;
+product details show its current base price;
+the review remains authoritative if either changes. Live DB and browser
+validation remain required before production rollout.
+
 ## Coupons (discount codes)
 
 **Implemented** (`bms_coupons`, migration `7.21`) — `PERCENT` (capped at 100) or `FIXED` discount
@@ -274,8 +293,14 @@ PENDING → SHIPPED → IN_TRANSIT → DELIVERED
 ```
 
 `createShipment()` moves the order from `PACKING` → `SHIPPED`, deducts stock, and records a `SHIP`
-movement — all atomic. If the order is already `SHIPPED`, it just attaches the shipment without
-deducting stock again. A tracking number is optional at shipment creation and can be added later;
+movement and source-lot allocation — all atomic. It and `shipOrder()` use the same reserved-stock
+transition. A missing inventory row or short reservation aborts the order and parcel transaction;
+it cannot silently omit a movement. An order already `SHIPPED` can attach its first shipment without
+deducting stock again. The order lock serializes concurrent creates: repeating the same carrier,
+tracking number and note returns the original shipment without another audit, stock movement or
+carrier call (`replayed: true`); different details or legacy duplicate rows return
+`SHIPMENT_EXISTS` for staff review. Use the tracking editor for a deliberate change. A tracking
+number is optional at shipment creation and can be added later;
 an order cannot reach `COMPLETED` before it's `SHIPPED`. `PICKUP` orders are refused before stock
 or parcel writes. The `shipping.create` audit row commits with the shipment for REST, GraphQL and
 confirmed AI-tool calls; audit failure rolls the local shipment and stock transition back. When a

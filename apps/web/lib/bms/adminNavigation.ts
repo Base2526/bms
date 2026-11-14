@@ -165,7 +165,8 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
   {
     id: "sales.delivery-platforms", route: "/admin/delivery-platforms", labelKey: "admin_nav.delivery_platforms",
     section: "sales", workspace: "SHOP",
-    visible: (ctx) => ctx.archetype === "restaurant" && ctx.can("delivery.integration.view"),
+    visible: (ctx) => ctx.archetype === "restaurant"
+      && (ctx.can("delivery.integration.view") || ctx.can("delivery.settlement.view")),
   },
   {
     id: "sales.board-game", route: "/admin/board-game", labelKey: "admin_nav.board_game",
@@ -199,6 +200,17 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
   {
     id: "inventory.purchase", route: "/admin/purchase", labelKey: "admin_nav.purchase",
     section: "inventory", workspace: "SHOP", visible: (ctx) => ctx.can("purchase.view"),
+  },
+  {
+    id: "inventory.fish-intake", route: "/admin/fish-intake", labelKey: "admin_nav.fish_intake",
+    section: "inventory", workspace: "SHOP",
+    visible: (ctx) => ctx.can("purchase.view") || ctx.can("inventory.count"),
+  },
+  {
+    id: "inventory.fish-owner", route: "/admin/fish-owner", labelKey: "admin_nav.fish_owner",
+    section: "inventory", workspace: "SHOP",
+    visible: (ctx) => ctx.can("report.view") && ctx.can("purchase.view") && ctx.can("product.view")
+      && ctx.can("shipping.view") && ctx.can("ar.view"),
   },
   {
     id: "inventory.stock-transfers", route: "/admin/stock-transfers", labelKey: "admin_nav.stock_transfers",
@@ -350,7 +362,7 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
   {
     id: "settings.pos-devices", route: "/admin/pos-devices", labelKey: "admin_nav.pos_devices",
     section: "settings", workspace: "SHOP",
-    visible: (ctx) => ctx.can("pos.device.manage") || ctx.can("pos.pin.manage") || ctx.can("pos.staff.manage"),
+    visible: (ctx) => ctx.can("pos.device.manage") || ctx.can("pos.pin.manage") || ctx.can("pos.staff.manage") || ctx.can("support.logs.view"),
   },
   {
     id: "settings.pos-readiness", route: "/admin/pos-readiness", labelKey: "admin_nav.pos_readiness",

@@ -127,7 +127,7 @@ test("ทุกจุดที่บันทึกไฟล์ระบุ visi
     const src = read(file);
     assert.match(
       src,
-      new RegExp(`persistWebFile\\([^)]*"${visibility}"`, "s"),
+      new RegExp(`persistWebFile\\([^;]*"${visibility}"`, "s"),
       `${file} ต้องระบุ "${visibility}" ตรงจุดที่เรียก persistWebFile`
     );
   }
@@ -271,7 +271,7 @@ test("ทุกจุดที่อัปโหลดไฟล์ของร�
 
 test("อัปโหลดโลโก้ร้านต้องยืนยัน admin และจำกัดไฟล์รูป", () => {
   const src = read("app/api/bms/store-profile/logo/upload/route.ts");
-  assert.match(src, /authorizeAdminRoute\(null\)/, "ต้องใช้ขอบเขตเดียวกับ store profile mutation");
+  assert.match(src, /authorizeTenantSettingsAdminRoute\(\)/, "ต้องใช้ขอบเขต Administrator เดียวกับ store profile mutation");
   assert.match(src, /image\/jpeg/, "ต้องรองรับ JPG");
   assert.match(src, /image\/png/, "ต้องรองรับ PNG");
   assert.match(src, /image\/webp/, "ต้องรองรับ WebP");
@@ -282,7 +282,7 @@ test("อัปโหลดโลโก้ร้านต้องยืนย�
 
 test("อัปโหลดพื้นหลังจอลูกค้าต้องยืนยัน admin ตรวจรูป และผูก tenant", () => {
   const src = read("app/api/bms/store-profile/customer-display-background/upload/route.ts");
-  assert.match(src, /authorizeAdminRoute\(null\)/);
+  assert.match(src, /authorizeTenantSettingsAdminRoute\(\)/);
   assert.match(src, /image\/jpeg/);
   assert.match(src, /image\/png/);
   assert.match(src, /image\/webp/);

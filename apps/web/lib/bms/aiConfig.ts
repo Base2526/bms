@@ -4,7 +4,8 @@ import { meteredUsage } from "./aiMetering";
 // (เข้ารหัส api_key เหมือน channel_secret ใน lib/bms/channels.ts)
 // =============================================================
 
-import { query } from "@/lib/db";
+import { getClient, query } from "@/lib/db";
+import { beginTenantTx } from "./tenant";
 import { isRetailLocalDeployment } from "./deploymentMode";
 import {
   callAnthropicCompatibleMessages,
@@ -88,44 +89,71 @@ export async function getAiBillingContext(tenantId: string): Promise<{
 
 export async function setTenantAiKey(
   tenantId: string,
-  input: { apiKey?: string | null; model?: string | null; provider?: string | null }
+  input: { apiKey?: string | null; model?: string | null; provider?: string | null },
+  actorId?: string | null
 ): Promise<boolean> {
-  const cur = await query<any>(
-    `SELECT api_key_encrypted, model, provider
-       FROM bms_tenant_ai_config
-      WHERE tenant_id = $1`,
-    [tenantId]
-  );
-  const prev = cur.rows[0];
-
   const hasNew = (v: unknown) => typeof v === "string" && v.trim() !== "";
   if (input.provider != null && !normalizeAiProvider(input.provider)) {
     throw new Error("รองรับ AI provider เฉพาะ anthropic หรือ deepseek");
   }
-  const provider = normalizeAiProvider(input.provider ?? prev?.provider) ?? "anthropic";
-  const previousProvider = normalizeAiProvider(prev?.provider) ?? "anthropic";
-  if (prev?.api_key_encrypted && provider !== previousProvider && !hasNew(input.apiKey)) {
-    throw new Error("เมื่อเปลี่ยน AI provider ต้องกรอก API Key ของ provider ใหม่");
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, actorId ? { editorId: actorId } : undefined);
+    const tenant = await client.query(`SELECT id FROM bms_tenants WHERE id=$1 FOR UPDATE`, [tenantId]);
+    if (!tenant.rowCount) throw new Error("ไม่พบร้าน");
+    const cur = await client.query<any>(
+      `SELECT api_key_encrypted, model, provider FROM bms_tenant_ai_config
+        WHERE tenant_id=$1 FOR UPDATE`, [tenantId]
+    );
+    const prev = cur.rows[0];
+    const provider = normalizeAiProvider(input.provider ?? prev?.provider) ?? "anthropic";
+    const previousProvider = normalizeAiProvider(prev?.provider) ?? "anthropic";
+    if (prev?.api_key_encrypted && provider !== previousProvider && !hasNew(input.apiKey)) {
+      throw new Error("เมื่อเปลี่ยน AI provider ต้องกรอก API Key ของ provider ใหม่");
+    }
+    const apiKey = hasNew(input.apiKey) ? encryptSecret(input.apiKey as string) : prev?.api_key_encrypted ?? null;
+    const model = input.model !== undefined ? input.model : prev?.model ?? null;
+    await client.query(
+      `INSERT INTO bms_tenant_ai_config (tenant_id, api_key_encrypted, model, provider)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (tenant_id) DO UPDATE SET
+         api_key_encrypted=EXCLUDED.api_key_encrypted, model=EXCLUDED.model,
+         provider=EXCLUDED.provider, updated_at=now()`,
+      [tenantId, apiKey, model, provider]
+    );
+    if (actorId) await client.query(
+      `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
+       VALUES($1,$2,'ai.set_key',$1,$3::jsonb)`,
+      [tenantId, actorId, JSON.stringify({ provider, model })]
+    );
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
   }
-  const apiKey = hasNew(input.apiKey) ? encryptSecret(input.apiKey as string) : prev?.api_key_encrypted ?? null;
-  const model = input.model !== undefined ? input.model : prev?.model ?? null;
-
-  await query(
-    `INSERT INTO bms_tenant_ai_config (tenant_id, api_key_encrypted, model, provider)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (tenant_id) DO UPDATE SET
-       api_key_encrypted = EXCLUDED.api_key_encrypted,
-       model             = EXCLUDED.model,
-       provider          = EXCLUDED.provider,
-       updated_at        = now()`,
-    [tenantId, apiKey, model, provider]
-  );
-  return true;
 }
 
-export async function removeTenantAiKey(tenantId: string): Promise<boolean> {
-  await query(`DELETE FROM bms_tenant_ai_config WHERE tenant_id = $1`, [tenantId]);
-  return true;
+export async function removeTenantAiKey(tenantId: string, actorId?: string | null): Promise<boolean> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, actorId ? { editorId: actorId } : undefined);
+    await client.query(`DELETE FROM bms_tenant_ai_config WHERE tenant_id=$1`, [tenantId]);
+    if (actorId) await client.query(
+      `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
+       VALUES($1,$2,'ai.remove_key',$1,'{}'::jsonb)`,
+      [tenantId, actorId]
+    );
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export type TestAiKeyResult = { ok: boolean; message: string };

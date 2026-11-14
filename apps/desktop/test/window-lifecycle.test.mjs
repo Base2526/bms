@@ -14,12 +14,43 @@ function body(name) {
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
 for(const paired of [true,false]) test(`reopening the cashier works with a surviving utility window (paired=${paired})`,()=>{
   const calls=[],window={isDestroyed:()=>false};
-  const context=vm.createContext({posText,mainWindow:null,activePairing:paired?{}:null,app:{isReady:()=>true},
+  const context=vm.createContext({posText,mainWindow:null,activePairing:paired?{}:null,
+    pendingRefreshRequest:null,startupNavigation:null,mainLoadRecovery:null,app:{isReady:()=>true},
     BrowserWindow:{getAllWindows:()=>[{}]},createMainWindow:()=>{calls.push('create');return window;},
     startPosNavigation:()=>calls.push('pos'),restoreSavedPairing:()=>calls.push('restore')});
   vm.runInContext(`${body('reopenMainWindow')};reopenMainWindow();`,context);
   assert.equal(context.mainWindow,window);
   assert.deepEqual(calls,['create',paired?'pos':'restore']);
+});
+test('reopening a destroyed cashier does not inherit its unfinished navigation or refresh',()=>{
+  const calls=[];
+  const oldWindow={isDestroyed:()=>true};
+  const newWindow={isDestroyed:()=>false};
+  const timer=setTimeout(()=>assert.fail('stale refresh timer fired'),1000);
+  const context=vm.createContext({mainWindow:oldWindow,activePairing:{},app:{isReady:()=>true},
+    pendingRefreshRequest:{timer},startupNavigation:Promise.resolve(),mainLoadRecovery:Promise.resolve(),
+    clearTimeout,createMainWindow:()=>newWindow,
+    startPosNavigation:()=>{calls.push('pos');assert.equal(context.startupNavigation,null);
+      assert.equal(context.mainLoadRecovery,null);assert.equal(context.pendingRefreshRequest,null);},
+    restoreSavedPairing:()=>assert.fail('pairing is already active')});
+  vm.runInContext(`${body('reopenMainWindow')};reopenMainWindow();`,context);
+  assert.equal(context.mainWindow,newWindow);
+  assert.deepEqual(calls,['pos']);
+});
+test('late close of an old cashier leaves the replacement display windows open',()=>{
+  const calls=[];
+  const oldWindow={};const newWindow={};
+  const context=vm.createContext({mainWindow:newWindow,pendingRefreshRequest:null,pendingUnpair:null,
+    startupNavigation:null,mainLoadRecovery:null,clearTimeout,
+    closeCustomerDisplayWindow:()=>calls.push('customer'),
+    closeQueueDisplayWindow:()=>calls.push('queue')});
+  vm.runInContext(body('handleMainWindowClosed'),context);
+  context.handleMainWindowClosed(oldWindow);
+  assert.equal(context.mainWindow,newWindow);
+  assert.deepEqual(calls,[]);
+  context.handleMainWindowClosed(newWindow);
+  assert.equal(context.mainWindow,null);
+  assert.deepEqual(calls,['customer','queue']);
 });
 test('second launch and macOS activation restore/focus the existing minimized cashier',()=>{
   const calls=[];
@@ -31,6 +62,85 @@ test('second launch and macOS activation restore/focus the existing minimized ca
   assert.deepEqual(calls,['restore','show','focus']);
   assert.match(source,/app\.on\("second-instance", reopenMainWindow\)/);
   assert.match(source,/app\.on\("activate", reopenMainWindow\)/);
+});
+test('a failed cashier reload shows local recovery without clearing pairing',async()=>{
+  const screens=[];const paired={serverUrl:'https://shop.example'};
+  const window={isDestroyed:()=>false};
+  const context=vm.createContext({URL,posText,mainWindow:window,activePairing:paired,
+    startupNavigation:null,mainLoadRecovery:null,isPosPath:pathname=>pathname.startsWith('/pos/'),
+    showStartup:async(state,message,target)=>screens.push({state,message,target}),
+    console:{error:()=>assert.fail('recovery should load')}});
+  vm.runInContext(`${body('handleMainPosLoadFailure')};handleMainPosLoadFailure(mainWindow,-106,'https://shop.example/pos/app',true);`,context);
+  await context.mainLoadRecovery;
+  assert.equal(screens.length,1);
+  assert.equal(screens[0].state,'error');
+  assert.equal(screens[0].target,window);
+  assert.match(screens[0].message,/เชื่อมต่อหน้าขายไม่สำเร็จ/);
+  assert.equal(context.activePairing,paired);
+  assert.match(source,/webContents\.on\("did-fail-load"[\s\S]*?handleMainPosLoadFailure\(window, errorCode, failedUrl, isMainFrame\)/);
+});
+test('failed subresources, cancelled or stale navigations never replace the cashier',()=>{
+  const screens=[];const window={isDestroyed:()=>false};
+  const context=vm.createContext({URL,posText,mainWindow:window,activePairing:{serverUrl:'https://shop.example'},
+    startupNavigation:null,mainLoadRecovery:null,isPosPath:pathname=>pathname.startsWith('/pos/'),
+    showStartup:async state=>screens.push(state),console:{error:()=>{}}});
+  vm.runInContext(body('handleMainPosLoadFailure'),context);
+  const fail=(code,url,main=true,target=window)=>context.handleMainPosLoadFailure(target,code,url,main);
+  fail(-106,'https://shop.example/pos/app',false);
+  fail(-3,'https://shop.example/pos/app');
+  fail(-106,'https://other.example/pos/app');
+  fail(-106,'https://shop.example/admin');
+  context.startupNavigation=Promise.resolve();fail(-106,'https://shop.example/pos/app');context.startupNavigation=null;
+  fail(-106,'https://shop.example/pos/app',true,{isDestroyed:()=>false});
+  assert.deepEqual(screens,[]);
+});
+test('main POS HTTP 5xx recovers even when Chromium completes the navigation',async()=>{
+  const screens=[];const window={webContents:{id:41},isDestroyed:()=>false};
+  const context=vm.createContext({URL,posText,mainWindow:window,activePairing:{serverUrl:'https://shop.example'},
+    startupNavigation:Promise.resolve(),mainLoadRecovery:null,
+    isPosPath:pathname=>pathname.startsWith('/pos/'),
+    showStartup:async(state,message,target)=>screens.push({state,message,target}),
+    console:{error:()=>assert.fail('recovery should load')}});
+  vm.runInContext(`${body('handleMainPosLoadFailure')};${body('handleMainPosHttpResponse')}`,context);
+  const response=(statusCode,resourceType='mainFrame',webContentsId=41,url='https://shop.example/pos/app')=>
+    context.handleMainPosHttpResponse(window,{statusCode,resourceType,webContentsId,url});
+  response(503,'script');response(503,'mainFrame',42);response(200);response(503,'mainFrame',41,'https://other.example/pos/app');
+  assert.deepEqual(screens,[]);
+  response(503);
+  await context.mainLoadRecovery;
+  assert.equal(screens.length,1);
+  assert.equal(screens[0].state,'error');
+  assert.equal(screens[0].target,window);
+  assert.match(screens[0].message,/HTTP 503/);
+  assert.match(source,/webRequest\.onCompleted\(\{ urls: \["<all_urls>"\] \}, \(details\) => \{\s+handleMainPosHttpResponse\(window, details\)/);
+});
+test('Retry waits for an in-flight failed navigation and keeps the saved pairing',async()=>{
+  const pending=deferred();let navigations=0;
+  const pairing={serverUrl:'https://shop.example'};
+  const window={isDestroyed:()=>false,webContents:{getURL:()=>`file:///app/startup.html?state=error`}};
+  const context=vm.createContext({mainWindow:window,activePairing:pairing,pairingRevision:4,
+    startupNavigation:pending.promise,mainLoadRecovery:null,STARTUP_FILE:'/app/startup.html',
+    fileURLToPath:value=>new URL(value).pathname,startPosNavigation:()=>{navigations++;}});
+  vm.runInContext(`${body('retryStartupFromRecovery')};retryStartupFromRecovery();`,context);
+  assert.equal(navigations,0);
+  pending.resolve();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(navigations,1);
+  assert.equal(context.activePairing,pairing);
+  assert.match(source,/ipcMain\.handle\("bms-pos:retry-startup"[\s\S]*?retryStartupFromRecovery\(\)/);
+});
+for(const changed of ['screen','pairing','window']) test(`a queued Retry cannot interrupt a newer ${changed}`,async()=>{
+  const pending=deferred();let navigations=0,url='file:///app/startup.html?state=error';
+  const window={isDestroyed:()=>false,webContents:{getURL:()=>url}};
+  const context=vm.createContext({mainWindow:window,activePairing:{serverUrl:'https://shop.example'},
+    pairingRevision:4,startupNavigation:pending.promise,mainLoadRecovery:null,
+    STARTUP_FILE:'/app/startup.html',fileURLToPath:value=>new URL(value).pathname,
+    startPosNavigation:()=>{navigations++;}});
+  vm.runInContext(`${body('retryStartupFromRecovery')};retryStartupFromRecovery();`,context);
+  if(changed==='screen') url='https://shop.example/pos/app';
+  if(changed==='pairing') context.pairingRevision++;
+  if(changed==='window') context.mainWindow={isDestroyed:()=>false};
+  pending.resolve();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(navigations,0);
 });
 for(const fail of [true,false]) test(`a late server probe cannot replace a newer setup screen (failure=${fail})`,async()=>{
   const screens=[];let finish,startedResolve;

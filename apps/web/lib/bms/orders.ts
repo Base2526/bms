@@ -1,6 +1,7 @@
 import { branchPrice } from "./branchPrices";
 import { qualityStock } from "./lotQuality";
-import { consumeOrderLotsInTx, restoreOrderLotsInTx } from "./orderLots";
+import { restoreOrderLotsInTx } from "./orderLots";
+import { consumeReservedOrderStockInTx } from "./orderShippingStock";
 import { promotionForVariant } from "./pricing";
 // =============================================================
 // BMS Orders — สร้าง order + reserve สต็อกแบบ atomic
@@ -2017,27 +2018,7 @@ export async function shipOrderInTx(
   );
   if (ord.rowCount === 0) return false;
 
-  await client.query(
-    `UPDATE bms_inventory inv
-        SET current_stock  = current_stock  - oi.qty,
-            reserved_stock = reserved_stock - oi.qty,
-            updated_at = now()
-       FROM (
-         -- view ไม่ใช่ตารางตรง ๆ (8.8) — สินค้าชุดถูกแทนด้วยส่วนประกอบแล้ว
-         SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
-           FROM bms_order_stock_lines WHERE tenant_id = $2 AND order_id = $1
-          GROUP BY tenant_id, location_id, product_sku, size
-       ) oi
-      WHERE TRUE
-        AND inv.tenant_id = oi.tenant_id
-        AND inv.location_id = oi.location_id
-        AND inv.product_sku = oi.product_sku
-        AND inv.size = oi.size`,
-    [orderId, tenantId]
-  );
-
-  await consumeOrderLotsInTx(client, tenantId, orderId);
-  await recordOrderMovements(client, [orderId], "SHIP", actor);
+  await consumeReservedOrderStockInTx(client, tenantId, orderId, actor);
   return true;
 }
 

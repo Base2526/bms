@@ -332,8 +332,8 @@
     เปิดหน้าขายไม่สำเร็จ: "Could not open register",
     ยังเชื่อมต่อเซิร์ฟเวอร์ไม่ได้: "Cannot connect to server yet",
     เปลี่ยนเซิร์ฟเวอร์: "Change server",
-    "ยังไม่มีการขาย การชำระเงิน หรือการเปลี่ยนสต็อกในขั้นตอนนี้":
-      "No sales, payments or stock changes occur at this step.",
+    "ปุ่มลองใหม่จะใช้ข้อมูลจับคู่เครื่องเดิม ไม่ต้องจับคู่ใหม่":
+      "Retry keeps this device's existing pairing. No need to pair it again.",
   };
   let language = "th";
   const getAppLanguage = () => language;

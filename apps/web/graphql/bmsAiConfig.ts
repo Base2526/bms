@@ -1,5 +1,6 @@
 // GraphQL resolver — BMS AI config (BYOK ต่อร้าน + usage/quota + ทดสอบ key)
 import { GraphQLError } from "graphql/error";
+import { requireTenantSettingsAdministrator } from "./tenantSettingsAuth";
 import { requireAuth } from "@/lib/auth";
 import { getTenantId } from "@/lib/bms/tenant";
 import {
@@ -100,26 +101,21 @@ export const bmsAiConfigResolvers = {
       args: { apiKey?: string; model?: string; provider?: string },
       ctx: any
     ) {
-      requireTenantAdmin(ctx);
+      await requireTenantSettingsAdministrator(ctx);
       const ok = await setTenantAiKey(getTenantId(ctx), {
         apiKey: args.apiKey,
         model: args.model,
         provider: args.provider,
-      });
-      await audit(ctx, "ai.set_key", null, {
-        provider: args.provider ?? "unchanged",
-        model: args.model ?? null,
-      });
+      }, String(ctx.admin.id));
       return ok;
     },
     async bmsRemoveAiKey(_p: unknown, _a: unknown, ctx: any) {
-      requireTenantAdmin(ctx);
-      const ok = await removeTenantAiKey(getTenantId(ctx));
-      await audit(ctx, "ai.remove_key");
+      await requireTenantSettingsAdministrator(ctx);
+      const ok = await removeTenantAiKey(getTenantId(ctx), String(ctx.admin.id));
       return ok;
     },
     async bmsTestAiKey(_p: unknown, _a: unknown, ctx: any) {
-      requireTenantAdmin(ctx);
+      await requireTenantSettingsAdministrator(ctx);
       const result = await testTenantAiKey(getTenantId(ctx));
       await audit(ctx, "ai.test_key", null, { ok: result.ok });
       return result;

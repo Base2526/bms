@@ -31,7 +31,7 @@ test("LINE completes each turn before starting the next event and acknowledging"
   assert.equal((await response).status, 200);
   assert.deepEqual(h.calls.logs.map(args => args[3]), ["first", "second"]);
   assert.equal(h.calls.deliveries.length, 2);
-  assert.deepEqual(h.calls.deliveryStatuses.map(status => status[2]), [true, true]);
+  assert.deepEqual(h.calls.deliveryStatuses.map(status => status[2].delivered), [true, true]);
   assert.equal(h.calls.incidents.length, 0);
 });
 
@@ -63,7 +63,7 @@ test("LINE pipeline failure persists and sends one fallback", async () => {
   assert.equal((await h.post()).status, 200);
   assert.equal(h.calls.logs.length, 1);
   assert.equal(h.calls.deliveries.length, 1);
-  assert.deepEqual(h.calls.deliveryStatuses[0].slice(0, 3), ["FAKE-tenant", "FAKE-out-1", true]);
+  assert.deepEqual(h.calls.deliveryStatuses[0], ["FAKE-tenant", "FAKE-out-1", { delivered: true, providerMessageIds: [] }]);
   const sent = JSON.parse(h.calls.deliveries[0][1].body);
   assert.equal(sent.messages[0].text, h.calls.logs[0][4]);
   assert.deepEqual(h.calls.incidents.map(x => x.code), ["channel.reply_failed"]);
@@ -75,15 +75,24 @@ test("LINE delivery rejection reports push failure without rerunning AI", async 
   assert.equal(h.calls.pipeline.length, 1);
   assert.equal(h.calls.logs.length, 1);
   assert.equal(h.calls.deliveries.length, 1);
-  assert.deepEqual(h.calls.deliveryStatuses[0].slice(0, 3), ["FAKE-tenant", "FAKE-out-1", false]);
+  assert.deepEqual(h.calls.deliveryStatuses[0], ["FAKE-tenant", "FAKE-out-1", { delivered: false, providerMessageIds: [] }]);
   assert.deepEqual(h.calls.incidents.map(x => x.code), ["channel.push_failed"]);
+});
+
+test("LINE transport timeout leaves the persisted reply pending for human reconciliation", async () => {
+  const h = webhookHarness("line", { fetch: async () => { throw new Error("FAKE timeout after request"); } });
+  assert.equal((await h.post()).status, 200);
+  assert.equal(h.calls.pipeline.length, 1);
+  assert.equal(h.calls.deliveries.length, 1);
+  assert.deepEqual(h.calls.deliveryStatuses[0][2],
+    { delivered: false, providerMessageIds: [], uncertain: true });
 });
 
 test("LINE health telemetry failure cannot mark an accepted reply as failed", async () => {
   const h = webhookHarness("line", { healthThrows: true });
   assert.equal((await h.post()).status, 200);
   assert.equal(h.calls.deliveries.length, 1);
-  assert.equal(h.calls.deliveryStatuses[0][2], true);
+  assert.equal(h.calls.deliveryStatuses[0][2].delivered, true);
   assert.equal(h.calls.incidents.length, 0);
 });
 

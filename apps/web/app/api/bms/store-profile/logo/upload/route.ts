@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
+import { authorizeTenantSettingsAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 import { buildFileUrlById, persistWebFile } from "@/lib/storage";
 import { prepareStoreLogo } from "@/lib/bms/storeLogo";
@@ -12,9 +12,7 @@ const MAX_BYTES = 5 * 1024 * 1024;
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 async function handlePOST(req: NextRequest) {
-  // Store profile mutations are admin-scoped rather than permission-scoped. Keep
-  // the upload under the same boundary and derive the tenant from the session.
-  const auth = await authorizeAdminRoute(null);
+  const auth = await authorizeTenantSettingsAdminRoute();
   if (!auth.ok) {
     return NextResponse.json(
       { error: auth.status === 401 ? "unauthorized" : "forbidden" },

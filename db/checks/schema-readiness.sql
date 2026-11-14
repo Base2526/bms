@@ -2,6 +2,7 @@
 -- บนเซิร์ฟเวอร์:  docker compose ... exec -T postgres psql -U <user> -d <db> < readiness.sql
 CREATE TEMP TABLE bms_schema_readiness AS
 WITH required(migration, kind, tbl, col, impact, expected) AS (VALUES
+    ('10.116__bms_branch_price_windows.sql', 'table', 'bms_branch_price_windows', NULL, 'Every branch price read checks scheduled price windows; catalog, scans and checkout fail until this table exists', NULL),
     ('10.113__bms_pickup_queue_experience.sql', 'column', 'bms_locations', 'pickup_queue_prefix', 'Branch queue numbering/voice settings and idle customer-display promo slides require the experience columns before the settings, POS session and queue board can load', NULL),
     ('10.113__bms_pickup_queue_experience.sql', 'column', 'bms_locations', 'pickup_queue_start_no', 'Branch queue numbering/voice settings and idle customer-display promo slides require the experience columns before the settings, POS session and queue board can load', NULL),
     ('10.113__bms_pickup_queue_experience.sql', 'column', 'bms_locations', 'pickup_queue_spotlight_seconds', 'Branch queue numbering/voice settings and idle customer-display promo slides require the experience columns before the settings, POS session and queue board can load', NULL),

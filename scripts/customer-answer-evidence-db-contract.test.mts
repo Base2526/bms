@@ -52,6 +52,7 @@ test("disposable DB: evidence tenancy, atomic messages, savepoint isolation, exa
         if (failEvidence) await args[0].query("SELECT 1/0");
         else return await store.persistAnswerEvidence(...args);
       } },
+      "./inboxMedia": { outboundInboxMediaUrl: async (_tenant: string, url: string) => url },
     });
     const turn = () => captureCustomerAnswer(a, "web", async () => {
       recordCustomerToolEvidence({ tenantId: a, surface: "customer", tool: "get_restaurant_availability", input: {},

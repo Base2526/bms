@@ -15,6 +15,8 @@ import {getOperatingCostReport,reviewOperatingCost} from '../apps/web/lib/bms/op
 import {bmsRestaurantCostingResolvers} from '../apps/web/graphql/bmsRestaurantCosting.ts';
 import {checkStock} from '../apps/web/lib/bms/stock.ts';
 import {listSellableProducts} from '../apps/web/lib/bms/products.ts';
+import {createOrder} from '../apps/web/lib/bms/orders.ts';
+import {cancelBranchPriceWindow} from '../apps/web/lib/bms/branchPrices.ts';
 type F=Parameters<Parameters<typeof withCostingFixture>[0]>[0];
 const scenario=(price=214)=>({label:'FAKE',price,vatMode:'INCLUSIVE',vatPercent:7,gpPercent:0,gpBasis:'NET_REVENUE',extraUnitCost:0,expectedDailyUnits:1,targetMarginPercent:null});
 const review=(fingerprint:string)=>({fingerprint,requestId:randomUUID(),confirmed:true});
@@ -54,6 +56,40 @@ test('completion: future promotion preserves today, switches at a half-open boun
  await f.sale('FAKE-MENU',1,f.location,100);
  for(const [time,price] of [['2098-12-31T23:59:59Z','100.00'],['2099-01-01T00:00:00Z','80.00']]) {const r=await query("SELECT bundle_price FROM bms_product_promotions WHERE tenant_id=$1 AND active AND tstzrange(starts_at,ends_at,'[)') @> $2::timestamptz",[f.tenant,time]);assert.equal(r.rowCount,1);assert.equal(r.rows[0].bundle_price,price);}
  await assert.rejects(upsertProductPromotion({tenantId:f.tenant,actorUserId:f.actor,productSku:'FAKE-MENU',kind:'N_FOR_PRICE',buyQty:1,bundlePrice:70,locationId:f.location,startsAt:'2098-12-01',endsAt:'2099-01-02'}),/SCHEDULE_OVERLAP/);
+}));
+test('completion: scheduled branch base price overrides only its window and can be cancelled',async()=>withCostingFixture(async f=>{
+ const {input}=await fixture(f);
+ const scheduled={...input,locationId:f.location,startsAt:'2099-01-01T00:00:00Z',endsAt:'2099-02-01T00:00:00Z',
+   plan:{...input.plan,scenarios:[scenario(321)]}};
+ let p=await previewPricePublication(f.tenant,f.actor,scheduled);
+ await publishPricePlan(f.tenant,f.actor,scheduled,review(p.fingerprint));
+ assert.equal((await resolvePosScan(f.tenant,'FAKE-MENU',{size:'BASE',locationId:f.location}))?.packPrice,214);
+ const window=(await query<{id:string}>(`SELECT id FROM bms_branch_price_windows
+   WHERE tenant_id=$1 AND location_id=$2 AND product_sku='FAKE-MENU'`,[f.tenant,f.location])).rows[0];
+ assert.ok(window);
+ const overlap={...scheduled,startsAt:'2099-01-15T00:00:00Z'};
+ p=await previewPricePublication(f.tenant,f.actor,overlap);
+ await assert.rejects(publishPricePlan(f.tenant,f.actor,overlap,review(p.fingerprint)),/PRICE_PUBLISH_WINDOW_OVERLAP/);
+ await query(`UPDATE bms_branch_price_windows SET starts_at=transaction_timestamp()-interval '1 minute',
+   ends_at=transaction_timestamp()+interval '1 minute' WHERE tenant_id=$1 AND id=$2`,[f.tenant,window.id]);
+ assert.equal((await resolvePosScan(f.tenant,'FAKE-MENU',{size:'BASE',locationId:f.location}))?.packPrice,321);
+ const stock=await checkStock(f.tenant,'FAKE-MENU',null,f.location);
+ assert.ok('sizes' in stock);
+ assert.equal(stock.sizes?.find(r=>r.size==='BASE')?.price,321);
+ const catalog=await listSellableProducts(f.tenant,{search:'FAKE-MENU',locationId:f.location,salesSurface:'RETAIL_POS'});
+ assert.equal(catalog.items[0]?.price,321);
+ await query(`INSERT INTO bms_product_sales_surfaces(tenant_id,product_sku,surface,enabled)
+   VALUES($1,'FAKE-MENU','ONLINE_ORDER',TRUE) ON CONFLICT DO NOTHING`,[f.tenant]);
+ const online=await createOrder({tenantId:f.tenant,channel:'web',locationId:f.location,
+   items:[{sku:'FAKE-MENU',size:'BASE',qty:1}]} as any);
+ assert.equal(online.status,'CREATED',JSON.stringify(online));
+ if (online.status==='CREATED') assert.equal(online.total,321);
+ assert.equal((await resolvePosScan(f.tenant,'FAKE-MENU',{size:'BASE',locationId:f.locations[1]}))?.packPrice,214);
+ await withAuditFailure(f.tenant,'restaurant.branch_price_window_cancelled',()=>
+   assert.rejects(cancelBranchPriceWindow(f.tenant,f.actor,window.id,true),/TEST_COST_AUDIT_FAILURE/));
+ assert.equal((await resolvePosScan(f.tenant,'FAKE-MENU',{size:'BASE',locationId:f.location}))?.packPrice,321);
+ assert.deepEqual(await cancelBranchPriceWindow(f.tenant,f.actor,window.id,true),{status:'CANCELLED'});
+ assert.equal((await resolvePosScan(f.tenant,'FAKE-MENU',{size:'BASE',locationId:f.location}))?.packPrice,214);
 }));
 test('completion: confirmed multi-menu publication creates a sellable pinned BOM and consumes real ingredients atomically',async()=>withCostingFixture(async f=>{
  const {bundle}=await fixture(f);await opening(f,'FAKE-RICE');

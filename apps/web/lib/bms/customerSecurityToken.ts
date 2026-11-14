@@ -14,12 +14,14 @@ function signature(value: string): string {
   return createHmac("sha256", secret()).update(value).digest("base64url");
 }
 
-export function signCustomerToken(purpose: "web-chat-v1" | "customer-merge-v1", payload: Record<string, unknown>): string {
+type CustomerTokenPurpose = "web-chat-v1" | "customer-merge-v1" | "retail-cart-v1";
+
+export function signCustomerToken(purpose: CustomerTokenPurpose, payload: Record<string, unknown>): string {
   const value = `${purpose}.${Buffer.from(JSON.stringify(payload)).toString("base64url")}`;
   return `${value}.${signature(value)}`;
 }
 
-export function readCustomerToken(purpose: "web-chat-v1" | "customer-merge-v1", token: unknown): Record<string, unknown> | null {
+export function readCustomerToken(purpose: CustomerTokenPurpose, token: unknown): Record<string, unknown> | null {
   if (typeof token !== "string" || token.length > 4096) return null;
   const [kind, body, mac, extra] = token.split(".");
   if (kind !== purpose || !body || !mac || extra !== undefined) return null;

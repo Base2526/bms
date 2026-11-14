@@ -1,5 +1,12 @@
 # AI Pipeline Evaluation
 
+The [customer Inbox question bank](../../docs/ai/customer-inbox-question-bank-th.md) has 440
+questions across 13 shop archetypes plus 50 multi-turn scenarios. Its
+[per-question capability audit](../../docs/ai/customer-inbox-coverage-audit-th.md) is a static
+tool/guard review, not a live-model result. `customer-inbox-coverage-contract.test.mts` checks that
+every question and scenario is mapped exactly once. A claim that the AI answers every item correctly
+still needs a seeded sandbox, provider run, and comparison with service facts.
+
 Emergency directory follow-up (`10.46`, 2026-10-07):
 `node scripts/run-contract-tests.mjs pure emergency-facilities` covers kind routing, 1669-first,
 1367/1323/1155, 24h-only/max-three composition, no-import composer, and real pipeline execution
@@ -164,7 +171,7 @@ node --import tsx --test ../../scripts/ai-eval/customer-message-routing-contract
 
 ### Board-game customer FAQ
 
-`board-game-customer-corpus.mjs` contains 57 scenarios / 59 turns covering the user's 20 FAQ
+`board-game-customer-corpus.mjs` contains 60 scenarios / 62 turns covering the user's 20 FAQ
 topics and four staff-handled topics. Priority is a user-supplied grouping, not measured chat volume.
 It checks required and forbidden tools, player ranges/difficulty, multi-turn followups, write
 attempts and unsupported-action claims. These checks do not establish factual correctness merely

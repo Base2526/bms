@@ -335,7 +335,15 @@ export async function processMetaInboundJob(job: MetaInboundJob): Promise<void> 
   const profileSync = syncFacebookProfileBestEffort(job, cfg.access_token);
   const delivery = await deliverToChannelTracked(job.tenantId, job.channel, job.customerRef, result.reply);
   if (persisted?.outboundMessageId) {
-    await recordAiReplyDelivery(job.tenantId, persisted.outboundMessageId, delivery.delivered, delivery.providerMessageIds);
+    try {
+      await recordAiReplyDelivery(job.tenantId, persisted.outboundMessageId, delivery);
+    } catch (error) {
+      // The provider has already answered. A status write failure cannot replay it.
+      console.error("[BMS] Meta reply delivery status write failed:", error);
+      await reportBmsFailure({ tenantId: job.tenantId, code: "channel.push_failed", error,
+        surface: "customer", channel: job.channel, customerRef: job.customerRef,
+        meta: { eventId: job.eventId } }).catch(() => undefined);
+    }
   }
   await profileSync;
   if (!delivery.delivered) {
@@ -348,6 +356,11 @@ export async function processMetaInboundJob(job: MetaInboundJob): Promise<void> 
       customerRef: job.customerRef,
       meta: { eventId: job.eventId },
     });
+    // A timeout or partially accepted send must not replay the entire reply.
+    if (delivery.uncertain || delivery.partial) {
+      await recordInboundEvent(job.tenantId, job.channel);
+      return;
+    }
     throw new Error("META_REPLY_DELIVERY_FAILED");
   }
   await recordInboundEvent(job.tenantId, job.channel);

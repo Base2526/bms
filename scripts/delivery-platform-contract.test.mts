@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { DELIVERY_CAPABILITIES } from "../apps/web/lib/bms/deliveryPlatforms/capabilities";
 import { normalizeFoodpandaOrder } from "../apps/web/lib/bms/deliveryPlatforms/foodpanda";
+import { normalizeDeliveryDisputeImage } from "../apps/web/lib/bms/deliveryDisputeEvidence";
 import {
   assertTenantDeliveryConfigurationAllowed,
   DELIVERY_PROVIDER_ONBOARDING,
@@ -232,11 +233,22 @@ test("admin operations, action center and finance reconciliation are tenant-scop
   const actions = read("apps/web/lib/bms/actionCenter.ts");
   assert.match(page, /delivery\.integration\.view/);
   assert.match(page, /delivery\.settlement\.view/);
+  assert.match(page, /if \(!canView && !canViewFinance\) return/);
+  assert.match(page, /canView \? jsonFetch\("\/api\/bms\/delivery\/integrations"\)/);
+  assert.match(page, /canViewFinance \? jsonFetch\("\/api\/bms\/delivery\/settlements"\)/);
+  assert.match(page, /\!canView && \!canViewFinance/);
+  assert.match(page, /if \(entered === null\) return/);
+  assert.match(page, /function confirmDisputeTransition/);
+  assert.match(page, /onConfirm=\{\(\) => retry\("command",r\.id\)\}/);
+  assert.match(page, /onConfirm=\{\(\) => retry\("event",r\.id\)\}/);
   assert.match(financeRoute, /authorizeAdminRoute\("delivery\.settlement\.view"\)/);
   assert.match(financeRoute, /delivery\.dispute\.manage/);
   assert.match(finance, /beginTenantTx\(client, input\.tenantId/);
   assert.match(finance, /MISSING_SETTLEMENT/);
   assert.match(finance, /delivery\.adjustment_recorded/);
+  assert.match(finance, /SELECT id,provider,environment FROM bms_delivery_integrations[\s\S]*WHERE tenant_id=\$1/);
+  assert.match(finance, /SELECT id,code,name FROM bms_locations[\s\S]*WHERE tenant_id=\$1/);
+  assert.match(finance, /SELECT id,provider,provider_order_id,provider_display_number[\s\S]*FROM bms_delivery_orders WHERE tenant_id=\$1[\s\S]*LIMIT \$2/);
   assert.match(page, /record_adjustment/);
   assert.match(page, /create_dispute/);
   assert.match(page, /transition_dispute/);
@@ -244,6 +256,27 @@ test("admin operations, action center and finance reconciliation are tenant-scop
   assert.match(operations, /sanitized_payload->>'providerOrderId'/);
   assert.doesNotMatch(operations, /e\.provider_order_id/);
   assert.match(actions, /collectDeliverySignals/);
+});
+
+test("dispute evidence is normalized, tenant-linked and never served by generic files", async () => {
+  await assert.rejects(normalizeDeliveryDisputeImage(Buffer.from("not an image")), /DELIVERY_DISPUTE_EVIDENCE_INVALID/);
+  const normalized = await normalizeDeliveryDisputeImage(fs.readFileSync(path.join(root, "apps/web/public/og.png")));
+  assert.equal(normalized.toString("ascii", 0, 4), "RIFF");
+  assert.equal(normalized.toString("ascii", 8, 12), "WEBP");
+
+  const service = read("apps/web/lib/bms/deliveryDisputeEvidence.ts");
+  const upload = read("apps/web/app/api/bms/delivery/disputes/evidence/route.ts");
+  const download = read("apps/web/app/api/bms/delivery/disputes/evidence/[id]/route.ts");
+  const generic = read("apps/web/app/api/files/[id]/route.ts");
+  assert.match(upload, /authorizeAdminRoute\("delivery\.dispute\.manage"\)/);
+  assert.match(upload, /size > DELIVERY_DISPUTE_IMAGE_MAX_BYTES/);
+  assert.match(download, /authorizeAdminRoute\("delivery\.settlement\.view"\)/);
+  assert.match(service, /beginTenantTx\(client, input\.tenantId, \{ editorId: input\.actorUserId \}\)/);
+  assert.match(service, /SELECT status FROM bms_delivery_disputes WHERE tenant_id=\$1 AND id=\$2 FOR UPDATE/);
+  assert.match(service, /INSERT INTO bms_delivery_dispute_evidence\(tenant_id,dispute_id,file_id\)/);
+  assert.match(service, /'delivery\.dispute_evidence_added'/);
+  assert.match(service, /'private'/);
+  assert.match(generic, /row\.is_delivery_dispute_evidence/);
 });
 
 test("delivery provider analytics separates operational, sales and statement authority", () => {

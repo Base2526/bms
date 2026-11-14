@@ -10,21 +10,24 @@ import type { PricePlanInput } from "@/lib/bms/restaurantPricePlanning";
 const LOCATIONS=gql`query PricePublicationLocations {bmsLocations{id name}}`;
 const PREVIEW=gql`query PreviewPricePublication($input:BmsPublishPriceInput!){bmsPreviewPricePublication(input:$input){status errorCode fingerprint snapshot}}`;
 const PUBLISH=gql`mutation PublishPricePlan($input:BmsPublishPriceInput!,$review:BmsPricePublicationReview!){bmsPublishPricePlan(input:$input,review:$review){status errorCode}}`;
+const CANCEL_WINDOW=gql`mutation CancelBranchPriceWindow($id:ID!){bmsCancelBranchPriceWindow(id:$id,confirmed:true){status errorCode}}`;
 type InputValues={mode:string;quantity:number;packCode?:string;locationId?:string;salesSurface?:string;startsAt?:string;endsAt?:string};
-type Snapshot={sku:string;size:string;price:number;quantity:number;mode:string;packs:unknown[];promotions:unknown[];tiers:unknown[];locationId:string|null;salesSurface:string|null;startsAt:string|null;endsAt:string|null};
+type Snapshot={sku:string;size:string;price:number;quantity:number;mode:string;packs:unknown[];promotions:unknown[];tiers:unknown[];locationId:string|null;salesSurface:string|null;startsAt:string|null;endsAt:string|null;branchPriceWindows:Array<{id:string;price:string;starts_at:string;ends_at:string|null}>};
 export default function RestaurantPricePublish({plan,scenarioIndex}:{plan:PricePlanInput;scenarioIndex:number}) {
   const uiText = useUiText();
   const {t}=useI18n(),{can}=useBmsPermissions(),client=useApolloClient();
   const [form]=Form.useForm();
   const locations=useQuery(LOCATIONS);
   const mode=Form.useWatch('mode',form)??'BASE';
+  const locationId=Form.useWatch('locationId',form);
   const [open,setOpen]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(false);
   const [review,setReview]=useState<{input:Omit<InputValues,"locationId"|"salesSurface"|"startsAt"|"endsAt">&{locationId:string|null;salesSurface:string|null;startsAt:string|null;endsAt:string|null;plan:PricePlanInput;scenarioIndex:number};fingerprint:string;requestId:string;snapshot:Snapshot}|null>(null);
   if(!can('product.edit')||!can('report.view'))return null;
   async function preview(values:InputValues) {
     setBusy(true);setError('');setReview(null);setDone(false);
     try {
-      const input={...values,locationId:values.locationId||null,salesSurface:values.mode==='PROMOTION'?values.salesSurface||null:null,startsAt:values.mode==='PROMOTION'&&values.startsAt?new Date(values.startsAt).toISOString():null,endsAt:values.mode==='PROMOTION'&&values.endsAt?new Date(values.endsAt).toISOString():null,quantity:values.mode==='BASE'?1:values.quantity,plan,scenarioIndex};
+      const dated=values.mode==='PROMOTION'||Boolean(values.locationId);
+      const input={...values,locationId:values.locationId||null,salesSurface:values.mode==='PROMOTION'?values.salesSurface||null:null,startsAt:dated&&values.startsAt?new Date(values.startsAt).toISOString():null,endsAt:dated&&values.endsAt?new Date(values.endsAt).toISOString():null,quantity:values.mode==='BASE'?1:values.quantity,plan,scenarioIndex};
       const {data}=await client.query({query:PREVIEW,variables:{input},fetchPolicy:'no-cache'});
       const r=data.bmsPreviewPricePublication;
       if(r.status!=='READY')throw new Error(r.errorCode??uiText("admin_ui.en_error_0b99c"));
@@ -39,6 +42,17 @@ export default function RestaurantPricePublish({plan,scenarioIndex}:{plan:PriceP
       setReview(null);setDone(true);
     } catch(e) {setError(e instanceof Error && e.message==='PRICE_PUBLISH_EXCLUSIVE_CHECKOUT_UNSUPPORTED' ? t('restaurant_actual.inclusive_checkout_required') : e instanceof Error?e.message:'ERROR');} finally {setBusy(false);}
   }
+  async function cancelWindow(id:string) {
+    Modal.confirm({title:t('restaurant_actual.cancel_window_confirm'),okText:t('restaurant_actual.cancel_window'),onOk:async()=>{
+      setBusy(true);setError('');
+      try {
+        const {data}=await client.mutate({mutation:CANCEL_WINDOW,variables:{id}});
+        if(!['CANCELLED','ALREADY_CANCELLED'].includes(data?.bmsCancelBranchPriceWindow?.status))
+          throw new Error(data?.bmsCancelBranchPriceWindow?.errorCode??uiText("admin_ui.en_error_0b99c"));
+        setReview(null);setDone(true);
+      } catch(e) {setError(e instanceof Error?e.message:uiText("admin_ui.en_error_0b99c"));} finally {setBusy(false);}
+    }});
+  }
   return <>
     <Button onClick={()=>{setOpen(true);setDone(false);setError('');setReview(null);}}>{t('restaurant_actual.publish_open')}</Button>
     <Modal open={open} destroyOnClose footer={null} style={{top:24}} styles={{body:{maxHeight:"calc(100dvh - 160px)",overflowY:"auto"}}} title={t('restaurant_actual.publish_open')} onCancel={()=>{if(!busy)setOpen(false);}}>
@@ -51,8 +65,8 @@ export default function RestaurantPricePublish({plan,scenarioIndex}:{plan:PriceP
         {mode!=='BASE'&&<Form.Item name="quantity" label={t('restaurant_actual.pack_qty')}><InputNumber min={mode==='PACK'?2:1} max={10000} precision={0}/></Form.Item>}
         {mode==='PACK'&&<Form.Item name="packCode" label={t('restaurant_actual.pack_code')}><Input maxLength={30}/></Form.Item>}
         <Form.Item name="locationId" label={t('restaurant_actual.branch')}><Select allowClear options={(locations.data?.bmsLocations??[]).map((l:{id:string;name:string})=>({value:l.id,label:l.name}))} placeholder={t('restaurant_actual.all_branches')}/></Form.Item>
-        {mode==='PROMOTION'&&<>
-          <Form.Item name="salesSurface" label={t('restaurant_actual.surface')}><Select allowClear options={['RETAIL_POS','RESTAURANT_POS','ONLINE_ORDER'].map(value=>({value,label:value}))} placeholder={t('restaurant_actual.all_surfaces')}/></Form.Item>
+        {mode==='PROMOTION'&&<Form.Item name="salesSurface" label={t('restaurant_actual.surface')}><Select allowClear options={['RETAIL_POS','RESTAURANT_POS','ONLINE_ORDER'].map(value=>({value,label:value}))} placeholder={t('restaurant_actual.all_surfaces')}/></Form.Item>}
+        {(mode==='PROMOTION'||locationId)&&<>
           <Form.Item name="startsAt" label={t('restaurant_actual.starts_at')}><Input type="datetime-local"/></Form.Item>
           <Form.Item name="endsAt" label={t('restaurant_actual.ends_at')}><Input type="datetime-local"/></Form.Item>
         </>}
@@ -63,6 +77,10 @@ export default function RestaurantPricePublish({plan,scenarioIndex}:{plan:PriceP
           {t('restaurant_actual.qty')}: {review.snapshot.quantity}<br/>{t('restaurant_actual.sale_price')}: ฿{review.snapshot.price}</Typography.Paragraph>
         <Typography.Paragraph>{<>{t('restaurant_actual.branch')}: {locations.data?.bmsLocations?.find((l:{id:string})=>l.id===review.snapshot.locationId)?.name??t('restaurant_actual.all_branches')} · {review.snapshot.salesSurface??t('restaurant_actual.all_surfaces')}<br/>{review.snapshot.startsAt??t('restaurant_actual.immediately')} → {review.snapshot.endsAt??t('restaurant_actual.no_end')}<br/></>}
           {t('restaurant_actual.current_rules')}: {review.snapshot.packs.length} / {review.snapshot.tiers.length} / {review.snapshot.promotions.length}</Typography.Paragraph>
+        {review.snapshot.branchPriceWindows?.map(window=><Typography.Paragraph key={window.id}>
+          {t('restaurant_actual.sale_price')}: ฿{window.price} · {window.starts_at} → {window.ends_at??t('restaurant_actual.no_end')}
+          <Button danger size="small" disabled={busy} onClick={()=>void cancelWindow(window.id)}>{t('restaurant_actual.cancel_window')}</Button>
+        </Typography.Paragraph>)}
         <Button type="primary" loading={busy} onClick={()=>void publish()}>{t('restaurant_actual.publish_confirm')}</Button>
       </section>}
     </Modal>

@@ -2,11 +2,11 @@
 
 import { usePosText, thaiPosText, type PosTranslator } from "@/lib/pos/usePosText";
 
-import { PosLanguageSelector } from "@/components/pos/PosLanguageProvider";
+import { PosLanguageSetting } from "@/components/pos/PosLanguageProvider";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { InfoCircleOutlined, ReloadOutlined, PrinterOutlined, CheckCircleOutlined, ShopOutlined } from "@ant-design/icons";
+import { InfoCircleOutlined, ReloadOutlined, PrinterOutlined, CheckCircleOutlined, ShopOutlined, SettingOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 import ProductDetailsModal from "./ProductDetailsModal";
 import ScannedProductPanel, { type ScannedProductResult } from "./ScannedProductPanel";
@@ -544,6 +544,7 @@ function DesktopPosContent() {
   // notification rules and playback remain owned by the existing POS alert pipeline.
   const alerts = useOrderAlerts(Boolean(bootstrap && cashier));
   const [alertSettingsOpen, setAlertSettingsOpen] = useState(false);
+  const [deviceLanguageOpen, setDeviceLanguageOpen] = useState(false);
   const [serviceCalls, setServiceCalls] = useState<PosServiceCallNotice[]>([]);
   const [serviceCallsBusy, setServiceCallsBusy] = useState("");
   const [desktopInfoDialog, setDesktopInfoDialog] = useState<DesktopInfoDialog>(null);
@@ -1848,11 +1849,18 @@ function DesktopPosContent() {
     sendFlow("NEW_SALE");
   };
 
+  const deviceLanguageDialog = (
+    <Modal open={deviceLanguageOpen} onCancel={() => setDeviceLanguageOpen(false)}
+      title={posText("ตั้งค่าเครื่อง")} footer={null} width={480}>
+      <PosLanguageSetting />
+    </Modal>
+  );
+
   if (flow.stage === "PAIRING") {
     return (
       <main className={`${styles.centerPage} ${styles.lightTheme}`}>
+        {deviceLanguageDialog}
         <section className={styles.gateCard}>
-          <PosLanguageSelector />
           <div className={styles.brandMark}>B</div>
           <p className={styles.eyebrow}>BMS POS DESKTOP</p>
           <h1>{posText("ยังไม่ได้เลือกเซิร์ฟเวอร์")}</h1>
@@ -1860,6 +1868,7 @@ function DesktopPosContent() {
           <p>{posText("กลับไปหน้าตั้งค่า Electron เพื่อเลือกเซิร์ฟเวอร์และจับคู่เครื่องนี้ก่อน")}</p>
           <button className={styles.primaryButton} onClick={() => void unpair()}>
             {posText("เปิดหน้าจับคู่เครื่อง") + " "}</button>
+          <button type="button" className={styles.languageSettingsButton} onClick={() => setDeviceLanguageOpen(true)}><SettingOutlined /> {posText("ตั้งค่าเครื่อง")}</button>
         </section>
       </main>
     );
@@ -1868,8 +1877,8 @@ function DesktopPosContent() {
   if (flow.stage === "VERIFYING_DEVICE" || !bootstrap) {
     return (
       <main className={`${styles.centerPage} ${styles.lightTheme}`}>
+        {deviceLanguageDialog}
         <section className={styles.gateCard}>
-          <PosLanguageSelector />
           {!error && <div className={styles.spinner} />}
           <h1>{error ? posText("โหลดข้อมูลเครื่องขายไม่สำเร็จ") : posText("กำลังโหลดแอปใหม่ทั้งหมด…")}</h1>
           {error
@@ -1881,6 +1890,7 @@ function DesktopPosContent() {
               <button onClick={() => void unpair()}>{posText("เปลี่ยนเซิร์ฟเวอร์")}</button>
             </div>
           ) : null}
+          {error ? <button type="button" className={styles.languageSettingsButton} onClick={() => setDeviceLanguageOpen(true)}><SettingOutlined /> {posText("ตั้งค่าเครื่อง")}</button> : null}
         </section>
       </main>
     );
@@ -1889,9 +1899,17 @@ function DesktopPosContent() {
   if (flow.stage === "CASHIER_LOGIN") {
     return (
       <main className={`${styles.loginPage} ${styles.lightTheme}`}>
+        {deviceLanguageDialog}
         <section className={styles.loginAside}>
           <div className={styles.logoLockup}><span>B</span><strong>BMS POS</strong></div>
           <div>
+            <div className={styles.loginShopMark} aria-hidden="true">
+              {storeLogoUrl && storeLogoUrl !== failedStoreLogoUrl ? (
+                <img key={storeLogoUrl} src={storeLogoUrl} alt="" onError={() => setFailedStoreLogoUrl(storeLogoUrl)} />
+              ) : (
+                <ShopOutlined />
+              )}
+            </div>
             <p className={styles.eyebrow}>{posText("เครื่องขายพร้อมใช้งาน")}</p>
             <h1>{bootstrap.location?.name ?? posText("สาขาหลัก")}</h1>
             <p>{bootstrap.device.name ?? bootstrap.device.code} · {bootstrap.device.registeredPosNo ?? "POS"}</p>
@@ -1899,8 +1917,8 @@ function DesktopPosContent() {
           <div className={styles.securityNote}>{posText("PIN อยู่เฉพาะในหน่วยความจำของหน้าจอนี้ และทุกการขายยังตรวจสิทธิ์กับเซิร์ฟเวอร์")}</div>
         </section>
         <section className={styles.loginPanel}>
+          <button type="button" className={`${styles.languageSettingsButton} ${styles.loginDeviceSettings}`} onClick={() => setDeviceLanguageOpen(true)}><SettingOutlined /> {posText("ตั้งค่าเครื่อง")}</button>
           <form className={styles.loginForm} onSubmit={signIn}>
-            <PosLanguageSelector />
             <p className={styles.eyebrow}>{posText("เข้าสู่กะทำงาน")}</p>
             <h2>{posText("ใส่ PIN พนักงาน")}</h2>
             <label>{posText("พนักงาน") + " "}<select disabled={busy} value={cashierId} onChange={(event) => {
@@ -1964,8 +1982,8 @@ function DesktopPosContent() {
   if (flow.stage === "SHIFT_REQUIRED") {
     return (
       <main className={`${styles.centerPage} ${styles.lightTheme}`}>
+        {deviceLanguageDialog}
         <form className={styles.shiftCard} onSubmit={openShift}>
-          <PosLanguageSelector />
           <div className={styles.stepBadge}>2</div>
           <p className={styles.eyebrow}>{posText("ก่อนเริ่มขาย")}</p>
           <h1>{posText("เปิดกะเงินสด")}</h1>
@@ -1975,6 +1993,7 @@ function DesktopPosContent() {
           {error ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert> : null}
           <button className={styles.primaryButton} disabled={busy}>{busy ? posText("กำลังเปิดกะ…") : posText("เปิดกะและเริ่มขาย")}</button>
           <button type="button" className={styles.textButton} onClick={signOutCashier}>{posText("เปลี่ยนพนักงาน")}</button>
+          <button type="button" className={styles.languageSettingsButton} onClick={() => setDeviceLanguageOpen(true)}><SettingOutlined /> {posText("ตั้งค่าเครื่อง")}</button>
         </form>
       </main>
     );
@@ -2083,7 +2102,6 @@ function DesktopPosContent() {
 
       <section className={styles.workspace} ref={(element) => { if (element) element.inert = Boolean(receiptDialog); }} aria-hidden={receiptDialog ? true : undefined}>
         <header className={styles.topbar}>
-          <PosLanguageSelector />
           <div className={styles.storeIdentity}>
             <div className={styles.storeMark} aria-hidden="true">
               {storeLogoUrl && storeLogoUrl !== failedStoreLogoUrl ? (

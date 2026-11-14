@@ -980,10 +980,13 @@
 .logoLockup { gap: 12px; font-size: 20px; }
 .logoLockup span { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 11px; background: #fff; color: #0958d9; }
 .loginAside .eyebrow { color: #b7d8ff; }
+.loginShopMark { width: 72px; height: 72px; display: grid; place-items: center; margin-bottom: 22px; overflow: hidden; border-radius: 16px; background: #fff; color: #0958d9; box-shadow: 0 8px 24px rgba(4, 31, 80, .18); }
+.loginShopMark img { width: 100%; height: 100%; object-fit: contain; }
+.loginShopMark :global(.anticon) { font-size: 34px; }
 .loginAside h1 { margin: 7px 0 5px; font-size: clamp(32px, 4vw, 52px); }
 .loginAside p { color: #cfe4ff; }
 .securityNote { max-width: 460px; padding: 14px 16px; border: 1px solid rgba(255,255,255,.2); border-radius: 12px; background: rgba(255,255,255,.08); color: #dcecff; font-size: 12px; }
-.loginPanel { display: grid; place-items: center; padding: 40px; }
+.loginPanel { position: relative; display: grid; place-items: center; padding: 40px; }
 .loginForm { width: min(420px, 100%); display: flex; flex-direction: column; gap: 14px; }
 .loginForm > .eyebrow { margin-bottom: -8px; }
 .loginForm h2 { margin: 0 0 4px; font-size: 30px; }
@@ -1000,6 +1003,33 @@
 .loginForm .primaryButton { margin-top: 4px; }
 .loginForm .textButton { margin-top: 0; }
 .textButton { width: 100%; margin-top: 7px; border-color: transparent !important; box-shadow: none !important; color: #657085 !important; }
+.languageSettingsButton {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  justify-content: center;
+  gap: 7px;
+  width: auto;
+  min-height: 38px;
+  margin-top: 2px;
+  padding: 4px 10px;
+  border: 0;
+  background: transparent;
+  color: #657085;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.languageSettingsButton:hover { color: #1677ff; }
+.languageSettingsButton:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
+.lightTheme .languageSettingsButton {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.lightTheme .languageSettingsButton:hover { border: 0; background: transparent; box-shadow: none; }
+.loginDeviceSettings { position: absolute; top: 24px; right: 32px; margin-top: 0; }
 
 .stepBadge { width: 54px; height: 54px; display: grid; place-items: center; margin: 0 auto 18px; border-radius: 50%; background: #e6f4ff; color: #1677ff; font-size: 24px; font-weight: 700; }
 .shiftCard { text-align: left; }
@@ -1118,7 +1148,10 @@
 @media (max-width: 980px) {
   .loginPage { grid-template-columns: minmax(0, 1fr); }
   .loginAside { gap: 20px; padding: 24px; }
-  .loginPanel { min-width: 0; padding: 24px; }
+  .loginShopMark { width: 56px; height: 56px; margin-bottom: 14px; border-radius: 12px; }
+  .loginShopMark :global(.anticon) { font-size: 27px; }
+  .loginPanel { min-width: 0; padding: 76px 24px 24px; }
+  .loginDeviceSettings { top: 16px; right: 24px; }
   .shell { grid-template-columns: 68px minmax(0, 1fr); }
   .workspace { padding: 8px; }
   .content { grid-template-columns: 1fr; overflow-y: auto; }

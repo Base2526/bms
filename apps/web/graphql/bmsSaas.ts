@@ -181,14 +181,18 @@ export const bmsSaasResolvers = {
     },
 
     // ===== Platform admin — จัดการร้านข้ามร้าน =====
-    async bmsSetTenantActive(_p: unknown, args: { tenantId: string; active: boolean }, ctx: any) {
+    async bmsSetTenantActive(_p: unknown, args: { tenantId: string; active: boolean; confirm: boolean }, ctx: any) {
       await requirePlatformAdmin(ctx);
-      const ok = await setTenantActive(args.tenantId, args.active);
-      if (ok) await audit(ctx, args.active ? "tenant.activate" : "tenant.suspend", args.tenantId);
-      return ok;
+      if (args.confirm !== true) throw new GraphQLError("Confirmation required", {
+        extensions: { code: "CONFIRMATION_REQUIRED", http: { status: 400 } },
+      });
+      return setTenantActive(args.tenantId, args.active, String(requireAuth(ctx).author_id));
     },
-    async bmsSetTenantPlan(_p: unknown, args: { tenantId: string; planCode: string }, ctx: any) {
+    async bmsSetTenantPlan(_p: unknown, args: { tenantId: string; planCode: string; confirm: boolean }, ctx: any) {
       await requirePlatformAdmin(ctx);
+      if (args.confirm !== true) throw new GraphQLError("Confirmation required", {
+        extensions: { code: "CONFIRMATION_REQUIRED", http: { status: 400 } },
+      });
       try {
         return await changePlan(args.tenantId, args.planCode, String(requireAuth(ctx).author_id), "tenant.plan.change");
       } catch (err: any) {

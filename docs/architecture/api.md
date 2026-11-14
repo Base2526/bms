@@ -763,7 +763,7 @@ Readiness reports Open Banking as `NOT_CONFIGURED`. The four permissions are see
 | `bmsProducts.ts` | products (`bmsProducts` list plus lazy `bmsProductBySku` configuration detail), categories, stock adjustments, bulk CSV/XLSX product/menu import (`bmsImportProducts`), catalog variants and sales surfaces, publish readiness (`bmsPublishProduct`), draft configuration cloning (`bmsDuplicateProduct`), shop-maintained customer facts on `BmsProduct` (`allergenCodes`, `allergenInformationProvided`, `dietaryTags`, `foodSafetyNote` from `10.43`; `medicineLabel` from `10.44`; written through the normal `product.edit` upsert, and an empty unreviewed declaration means unknown), and reservation drill-down (`bmsVariantReservations`, gated on `order.view` because the answer carries bill ids and customer contact) |
 | `bmsOrders.ts` | order lifecycle transitions, staff create/reorder, invoice projection, shipping-address eligibility |
 | `bmsCustomers.ts` | CRM: profile, addresses, tags, merge. `bmsCustomerOrderDetail(customerId, orderId)` (`customer.view`) returns one purchase's exact sale lines, totals and points. A merge is reviewed: `bmsCustomerMergePreview` (`customer.edit`) returns a ten-minute signed preview with server-counted impact, and `bmsMergeCustomers` requires its `review` input (preview token, reason, verification method, evidence reference, `confirmed`) — old callers without a review are refused. See [../business/crm.md](../business/crm.md) |
-| `bmsInbox.ts` | conversations, messages, notes, timeline, diagnostic Inbox message creation (`bmsCreateInboxDiagnosticMessage`). Outbound `status` is `PENDING`/`SENT`/`DELIVERED`/`READ`/`FAILED` (null = legacy row): LINE/Meta AI replies are saved `PENDING` and become `SENT`/`FAILED` after the channel call, and Meta delivery/read webhooks advance `SENT → DELIVERED → READ`. `bmsRetryMessage` (`inbox.reply`) retries only a `FAILED` push message and locks the row during the attempt |
+| `bmsInbox.ts` | conversations, messages, notes, timeline, diagnostic Inbox message creation (`bmsCreateInboxDiagnosticMessage`). Outbound `status` includes `PENDING`/`PARTIAL`/`SENT`/`DELIVERED`/`READ`/`FAILED` (null = legacy row): LINE/Meta replies commit as `PENDING` before provider I/O; Meta delivery/read webhooks advance confirmed sends without promoting an uncertain or partial row. `bmsRetryMessage` (`inbox.reply`) atomically claims only a `FAILED` push message as `PENDING` before external I/O. Assignment, helper, status, tag, unread and note writes recheck Sales scope under a tenant transaction; mutation audit and note mentions commit with the write, with notifications after commit |
 | `bmsChannels.ts` | per-tenant channel credentials (settings page) + Channel Health status/test (`bmsChannelHealth`, `bmsChannelHealthCount`, `bmsTestChannel`) + realtime signal probe (`bmsEmitInboxDiagnosticEvent`) |
 | `bmsPurchase.ts` | supplier purchase orders; `bmsReceivePurchaseOrder(id, items, idempotencyKey)` (`purchase.receive`) — see § transition routes for the retry ledger and lot/expiry rules |
 | `bmsBankReconciliation.ts` | `10.110` bank accounts, statement imports/entries, match candidates/links, month periods — `bank_reconciliation.view`/`.import`/`.review`/`.close`, feature-flagged (see § Bank reconciliation) |
@@ -960,6 +960,11 @@ engine/stop-condition/scheduler design. The queue query now also returns queue-l
 UI can sort and explain which pending jobs look most promising without embedding business logic in
 React. The analytics query summarizes 30-day history by goal/intent/day using the same underlying
 tenant-scoped tables (`bms_followup_jobs`, `bms_followup_history`, `bms_messages`, `bms_orders`).
+The fleet cron discovers due tenants read-only and leases each tenant's jobs inside a tenant
+transaction. Scheduling suppresses a repeat for the same inbound customer message but allows a
+later inbound message to start a new round. A confirmed provider failure records failed work;
+partial or uncertain delivery requires manual review and stops further automatic attempts for
+that job. Outcome, history and audit commit together.
 See the § "Follow-up automation scheduler" note in [AGENTS.md](../../AGENTS.md) for the durable
 invariants.
 
@@ -1382,6 +1387,24 @@ the current date in the report timezone. All require `report.view`; none is a cu
 tenant/actor branch access, return bounded allowlisted data and omit customer identity. These add
 no endpoint or schema. `generate_report`/`email_report` now forward branch/area filters for
 BOARD_GAME_ANALYTICS only; XLSX/date constraints and confirmation semantics remain enforced.
+
+## Fish-dock owner REST
+
+`GET /api/bms/fish-owner?day=YYYY-MM-DD` composes branch-scoped receipt, lot, production,
+sale/valuation, delivery-plan and AR evidence. It requires `report.view`, `purchase.view`,
+`product.view`, `shipping.view` and `ar.view`. `POST` requires an explicit `confirmed` flag and
+uses action-specific `inventory.count.apply`, `order.create` or `shipping.update` permission;
+the services check actor branch access and audit in the tenant transaction.
+`GET /api/bms/fish-owner/options` is a bounded server search for order creators or shipping staff.
+`GET /api/bms/fish-owner/net?day=...` uses the reviewed monthly net-profit source and requires
+the base read permissions plus `expense.view`, `delivery.settlement.view` and
+`tax.document.view`, and all-branch access. It returns an unavailable status if the evidence is
+incomplete; READY is explicitly a revenue-share management estimate using positive gross
+merchandise sales as weights (returns retain negative revenue with zero shared-cost weight).
+Non-void POS returns affect line margin on the recorded return date even when cash refund is
+pending. Non-void partial returns reduce linked delivery grams, and missing return-lot evidence blocks
+the estimate. All routes derive tenant
+and actor from the admin session, never the request body.
 
 ## Fake-store ground truth
 

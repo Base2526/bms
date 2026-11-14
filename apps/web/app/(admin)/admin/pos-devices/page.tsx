@@ -111,8 +111,8 @@ export default function PosDevicesPage() {
   const [diagnosticStatus, setDiagnosticStatus] = useState("all");
   const { data, loading, refetch } = useQuery(Q, {
     fetchPolicy: "cache-and-network",
-    variables: { includeDevices: canDevices, includeLocations: canLocations, includeStaff: canStaff, includeDiagnostics: canDiagnostics, diagnosticDeviceId },
-    skip: !canDevices && !canPins && !canStaff,
+    variables: { includeDevices: canDevices, includeLocations: canLocations, includeStaff: canStaff || canPins, includeDiagnostics: canDiagnostics, diagnosticDeviceId },
+    skip: !canDevices && !canPins && !canStaff && !canDiagnostics,
   });
 
   const [deviceForm] = Form.useForm();
@@ -137,7 +137,7 @@ export default function PosDevicesPage() {
   const [setPin, { loading: pinSaving }] = useMutation(M_PIN);
   const [setMode] = useMutation(M_MODE);
 
-  if (!permsLoading && !canDevices && !canPins && !canStaff) {
+  if (!permsLoading && !canDevices && !canPins && !canStaff && !canDiagnostics) {
     return <Alert closable type="error" showIcon message={uiText("admin_ui.you_do_not_have_permission_to_view_this_7354b")} />;
   }
 
@@ -145,13 +145,17 @@ export default function PosDevicesPage() {
   const devices: Device[] = data?.bmsPosDevices ?? [];
   const cashiers = data?.bmsPosStaff ?? [];
   const diagnostics: DiagnosticEvent[] = data?.bmsPosDeviceDiagnostics ?? [];
+  const diagnosticDeviceOptions = canDevices
+    ? devices.map((device) => ({ value: device.id, label: `${device.code}${device.name ? ` · ${device.name}` : ""}` }))
+    : Array.from(new Set(diagnostics.map((event) => event.deviceId).filter((id): id is string => Boolean(id))))
+      .map((id) => ({ value: id, label: id }));
   const visibleDiagnostics = diagnosticStatus === "all"
     ? diagnostics
     : diagnostics.filter((event) => (event.status ?? "info") === diagnosticStatus);
   const locationName = (id: string) => locations.find((l: any) => l.id === id)?.name ?? "—";
   const deviceLabel = (id: string | null | undefined) => {
     const device = devices.find((item) => item.id === id);
-    return device ? `${device.code}${device.name ? ` · ${device.name}` : ""}` : "—";
+    return device ? `${device.code}${device.name ? ` · ${device.name}` : ""}` : id ?? "—";
   };
   const fmtDT = (value: string | null | undefined) => value ? new Date(value).toLocaleString(uiText.locale) : "—";
   // ลิงก์จับคู่: หน้าขายอ่าน ?t= แล้วเก็บลง localStorage และลบ query ออกจาก URL ทันที
@@ -217,17 +221,18 @@ export default function PosDevicesPage() {
     }
   }
 
-  async function savePin(clear = false) {
-    if (!pinFor) return;
-    if (!clear && !isPosPinValid(pinValue)) {
+  async function savePin(target: { id: string; label: string }, pin: string | null) {
+    if (pin !== null && !isPosPinValid(pin)) {
       message.error(uiText("admin_ui.pin_must_contain_4_8_digits_24222"));
       return;
     }
     try {
-      await setPin({ variables: { userId: pinFor.id, pin: clear ? null : pinValue } });
-      message.success(clear ? uiText("admin_ui.pin_cleared_47036") : uiText("admin_ui.pin_set_297a4"));
-      setPinFor(null);
-      setPinValue("");
+      await setPin({ variables: { userId: target.id, pin } });
+      message.success(pin === null ? uiText("admin_ui.pin_cleared_47036") : uiText("admin_ui.pin_set_297a4"));
+      if (pinFor?.id === target.id) {
+        setPinFor(null);
+        setPinValue("");
+      }
       await refetch();
     } catch (e: any) {
       message.error(e?.message ?? uiText("admin_ui.could_not_set_pin_5a625"));
@@ -352,10 +357,7 @@ export default function PosDevicesPage() {
                 style={{ width: 260 }}
                 value={diagnosticDeviceId ?? undefined}
                 onChange={(value) => setDiagnosticDeviceId(value ?? null)}
-                options={devices.map((device) => ({
-                  value: device.id,
-                  label: deviceLabel(device.id),
-                }))}
+                options={diagnosticDeviceOptions}
               />
               <Select
                 aria-label={uiText("admin_ui.filter_pos_event_status_22049")}
@@ -486,8 +488,8 @@ export default function PosDevicesPage() {
         </Card>
       )}
 
-      {canPins && (
-        <Card title={uiText("admin_ui.pos_staff_pins_64a9b")} loading={loading}>
+      {(canPins || canStaff) && (
+        <Card title={canPins ? uiText("admin_ui.pos_staff_pins_64a9b") : uiText("admin_ui.pos_staff_access")} loading={loading}>
           <Alert closable
             type="info"
             showIcon
@@ -532,13 +534,21 @@ export default function PosDevicesPage() {
                 width: 150,
                 render: (v: boolean, c: any) =>
                   canStaff ? (
-                    <Switch
-                      checked={v}
-                      disabled={c.role === "Administrator"}
-                      onChange={(checked) => void toggleMode(c.id, checked)}
-                      checkedChildren={uiText("admin_ui.block_admin_9bdc9")}
-                      unCheckedChildren={uiText("admin_ui.allowed_00dd1")}
-                    />
+                    <Popconfirm
+                      title={v
+                        ? uiText("admin_ui.allow_back_office_confirm", { v0: c.name || c.email })
+                        : uiText("admin_ui.block_back_office_confirm", { v0: c.name || c.email })}
+                      onConfirm={() => toggleMode(c.id, !v)}
+                      okText={uiText("admin_ui.confirm_action")}
+                      cancelText={uiText("admin_ui.cancelled_fba6e")}
+                    >
+                      <Switch
+                        checked={v}
+                        disabled={c.role === "Administrator"}
+                        checkedChildren={uiText("admin_ui.block_admin_9bdc9")}
+                        unCheckedChildren={uiText("admin_ui.allowed_00dd1")}
+                      />
+                    </Popconfirm>
                   ) : v ? (
                     <Tag color="green">{uiText("admin_ui.block_admin_9bdc9")}</Tag>
                   ) : (
@@ -548,21 +558,24 @@ export default function PosDevicesPage() {
               {
                 title: "",
                 width: 200,
-                render: (_: unknown, c: any) => (
+                render: (_: unknown, c: any) => canPins ? (
                   <Space>
                     <Button size="small" onClick={() => { setPinFor({ id: c.id, label: c.name || c.email }); setPinValue(""); }}>
                       {c.hasPin ? uiText("admin_ui.change_pin_ecd74") : uiText("admin_ui.set_pin_23abc")}
                     </Button>
                     {c.hasPin && (
-                      <Button
-                        size="small"
-                        danger
-                        onClick={() => { setPinFor({ id: c.id, label: c.name || c.email }); setPinValue(""); void savePin(true); }}
+                      <Popconfirm
+                        title={uiText("admin_ui.clear_pos_pin_confirm", { v0: c.name || c.email })}
+                        onConfirm={() => savePin({ id: c.id, label: c.name || c.email }, null)}
+                        okText={uiText("admin_ui.clear_6dacc")}
+                        cancelText={uiText("admin_ui.cancelled_fba6e")}
+                        okButtonProps={{ loading: pinSaving, danger: true }}
                       >
-                        {uiText("admin_ui.clear_6dacc")}</Button>
+                        <Button size="small" danger>{uiText("admin_ui.clear_6dacc")}</Button>
+                      </Popconfirm>
                     )}
                   </Space>
-                ),
+                ) : null,
               },
             ]}
           />
@@ -707,7 +720,7 @@ export default function PosDevicesPage() {
         open={Boolean(pinFor) && pinValue !== null}
         title={uiText("admin_ui.set_pin_4e160", { v0: pinFor?.label ?? "" })}
         onCancel={() => { setPinFor(null); setPinValue(""); }}
-        onOk={() => void savePin(false)}
+        onOk={() => { if (pinFor) void savePin(pinFor, pinValue); }}
         confirmLoading={pinSaving}
         okText={uiText("admin_ui.save_f658a")}
         cancelText={uiText("admin_ui.cancelled_fba6e")}

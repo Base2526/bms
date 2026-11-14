@@ -711,6 +711,8 @@ function ChatUI() {
 
   const searchParams = useSearchParams()!;
   const toParam = searchParams.get("to");
+  const chatParam = searchParams.get("chat");
+  const handledChatParamRef = useRef<string | null>(null);
   const { data: me } = useQuery(Q_ME);
 
   const membersByIdRef = useRef<Map<string, any>>(new Map());
@@ -1057,16 +1059,26 @@ function ChatUI() {
     if (isMobile) setMobileChatsOpen(false);
   };
 
+  // A notification may deep-link to an existing room. Only open rooms returned by
+  // myChats; the server still enforces membership on message reads.
+  useEffect(() => {
+    if (!chatParam || loadingChats || !chats || handledChatParamRef.current === chatParam) return;
+    handledChatParamRef.current = chatParam;
+    if ((chats?.myChats || []).some((chat: { id: string }) => chat.id === chatParam)) {
+      void openChatById(chatParam);
+    }
+  }, [chatParam, chats, loadingChats]); // eslint-disable-line
+
   // auto select first chat
   useEffect(() => {
-    if (toParam) return;
+    if (toParam || chatParam) return;
     if (loadingChats) return;
     const list = chats?.myChats || [];
     if (!sel && list.length > 0) {
       const firstId = list[0].id;
       openChatById(firstId);
     }
-  }, [toParam, chats, loadingChats, sel]); // eslint-disable-line
+  }, [toParam, chatParam, chats, loadingChats, sel]); // eslint-disable-line
 
   // handle ?to=
   useEffect(() => {

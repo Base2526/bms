@@ -10,6 +10,7 @@ import {
 } from "@/lib/bms/adminRouteAuth";
 import { findGeneratedReportByFileId } from "@/lib/bms/reportEngine";
 import { requirePermission } from "@/lib/bms/permissions";
+import { canAccessInboxConversation } from "@/lib/bms/inbox";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,7 @@ type FileRow = {
   is_community_reference?: boolean;
   is_pharmacy_evidence?: boolean;
   is_operation_evidence?: boolean;
+  is_delivery_dispute_evidence?: boolean;
   is_support_bundle?: boolean;
   is_release_asset?: boolean;
 };
@@ -261,6 +263,9 @@ async function handleGET(
                SELECT 1 FROM bms_operation_evidence e WHERE e.file_id = f.id
              ) AS is_operation_evidence,
              EXISTS (
+               SELECT 1 FROM bms_delivery_dispute_evidence e WHERE e.file_id = f.id
+             ) AS is_delivery_dispute_evidence,
+             EXISTS (
                SELECT 1 FROM bms_support_bundles b WHERE b.file_id = f.id
              ) AS is_support_bundle,
              EXISTS (
@@ -288,9 +293,11 @@ async function handleGET(
     // checks. The generic sequential-id route must never be an alternate path.
     if (
       row.filename?.includes("operation-evidence-") ||
+      row.filename?.includes("delivery-dispute-evidence-") ||
       row.filename?.includes("bank-statement-") ||
       row.is_pharmacy_evidence ||
       row.is_operation_evidence ||
+      row.is_delivery_dispute_evidence ||
       row.is_support_bundle ||
       row.is_release_asset ||
       isBlockedGenericDownload(row)
@@ -322,6 +329,29 @@ async function handleGET(
       actorIds ??= await actorIdsForFileRequest();
       const ownerMatch =
         Boolean(row.owner_user_id) && actorIds.includes(String(row.owner_user_id));
+
+      // Inbox uploads are sequentially addressable files. A tenant match alone
+      // must not let an unrelated staff member read another conversation.
+      if (row.filename?.startsWith("bms-inbox-")) {
+        const auth = await authorizeAdminRoute("inbox.view");
+        if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "file not found" },
+          { status: auth.status === 401 ? 401 : 404 });
+        if (String(auth.tenantId) !== String(row.tenant_id))
+          return NextResponse.json({ error: "file not found" }, { status: 404 });
+        const linked = await query<{ conversation_id: string }>(
+          `SELECT m.conversation_id FROM bms_messages m
+            WHERE m.tenant_id=$1 AND (
+              m.meta->'attachment'->>'url'=$2 OR
+              m.meta->'attachment'->>'url' LIKE $3
+            ) LIMIT 1`,
+          [auth.tenantId, `/api/files/${id}`, `/api/bms/inbox/media/${id}?token=%`]
+        );
+        if (!linked.rowCount && !ownerMatch)
+          return NextResponse.json({ error: "file not found" }, { status: 404 });
+        if (linked.rowCount && auth.admin.role === "Sales" &&
+            !(await canAccessInboxConversation(auth.tenantId, linked.rows[0].conversation_id, String(auth.adminId))))
+          return NextResponse.json({ error: "file not found" }, { status: 404 });
+      }
 
       // A chat membership or the exact user owner is sufficient. Tenant-owned
       // BMS files continue through their tenant/RBAC checks below.

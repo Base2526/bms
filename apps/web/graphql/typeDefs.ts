@@ -5450,6 +5450,7 @@ export const typeDefs = /* GraphQL */ `
     bmsConfirmMenuNetProfit(input: BmsMenuProfitInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
     bmsPublishMenuBundle(input: BmsMenuBundlePublicationInput!, review: BmsPricePublicationReview!): BmsPricePublicationResult!
     bmsPublishPricePlan(input: BmsPublishPriceInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
+    bmsCancelBranchPriceWindow(id: ID!, confirmed: Boolean!): BmsCostingActionResult!
 
     bmsRefreshActions: Int!
     bmsTransitionAction(id: ID!, status: BmsActionStatus!, reason: String, ownerId: ID, measuredOutcome: JSON): BmsAction!
@@ -5591,7 +5592,9 @@ export const typeDefs = /* GraphQL */ `
     updateMe(data: MeInput!): User!
 
     markNotificationRead(id: ID!): Boolean!
+    setNotificationRead(id: ID!, isRead: Boolean!): Boolean!
     markAllNotificationsRead: Boolean!
+    deleteNotification(id: ID!): Boolean!
 
     addComment(post_id: ID!, content: String!): Comment!
     replyComment(comment_id: ID!, content: String!): Comment!
@@ -5830,8 +5833,8 @@ export const typeDefs = /* GraphQL */ `
     bmsChangePlan(planCode: String!): Boolean!
 
     # ===== BMS platform admin (ข้ามร้าน) =====
-    bmsSetTenantActive(tenantId: ID!, active: Boolean!): Boolean!
-    bmsSetTenantPlan(tenantId: ID!, planCode: String!): Boolean!
+    bmsSetTenantActive(tenantId: ID!, active: Boolean!, confirm: Boolean!): Boolean!
+    bmsSetTenantPlan(tenantId: ID!, planCode: String!, confirm: Boolean!): Boolean!
     bmsUpdateSocialAuthSetting(input: BmsSocialAuthSettingInput!, confirm: Boolean!): BmsSocialAuthSetting!
     bmsEnterTenant(tenantId: ID!): Boolean!   # drill-down เข้ามุมร้าน
     bmsExitTenant: Boolean!                   # ออกจากมุมร้าน

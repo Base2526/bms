@@ -168,6 +168,15 @@ One conversation = `(tenant, channel, customer_ref)`. Staff can assign conversat
 messages + notes + orders. Since this session, a dedicated "ลูกค้า" tab also surfaces purchase
 history, lifetime spend, tags, and notes the moment a conversation is opened — see
 [../ui/customer360.md](../ui/customer360.md).
+Sales reads enforce owner/helper scope in each service SQL statement, including nested GraphQL
+messages, notes, helpers, events and each timeline source; an adapter check alone is not sufficient
+when another staff member can reassign the conversation. New-conversation auto-assignment locks an
+unassigned row and commits the owner and `inbox.assign` audit together; a human assignment wins if
+it committed first. Pipeline conversation creation also uses a tenant transaction; an assignment
+failure after creation does not make the created conversation disappear from the caller's result.
+The self-availability switch requires `inbox.view` and the signed-in user's own ID. Migration
+`10.118` provides a narrow `bms_app` function that checks the acting tenant and editor inside the
+transaction before updating the legacy `users` table; it does not grant direct table UPDATE.
 
 **Incoming-message alerts (2026-09):** `GlobalInboxNotifier` is mounted for every admin session with
 `inbox.view`, not only on the Inbox route. A committed unread customer message outside the chat the
@@ -193,7 +202,8 @@ alongside `GlobalInboxNotifier`) turns that into a browser notification deep-lin
 "เมนชันของฉัน" page (`/admin/inbox/mentions`, `bmsMyMentionsUnreadCount`/`bmsMyMentions`) lists a
 user's own mentions, filterable by unread, with mark-read/mark-all-read actions
 (`bmsMarkMentionRead`/`bmsMarkAllMentionsRead`) that use the `read_at` column reserved when the
-mentions table was first created.
+mentions table was first created. These updates and the AI handoff counter use tenant transactions;
+mention list joins bind note, conversation and customer rows to the same tenant.
 
 The desktop right-hand Customer 360 panel also provides permission-gated Quick Actions: staff can
 create a `PENDING` order for the active identity through the shared order service and can preview/
@@ -215,7 +225,10 @@ that realtime invalidation reaches the browser; it does not create a conversatio
 creates a tenant-scoped diagnostic conversation/message with `customer_ref =
 diagnostic:{channel}:{adminId}` and `sender = diagnostic` so staff can verify that the Inbox list
 updates immediately. It does not call the AI pipeline and does not send anything to external
-platforms.
+platforms. Conversation/message/audit commit together, so a failed diagnostic write leaves no
+partial test message. Non-AI inbound media likewise commits its conversation unread update with
+its message; failure rolls both back. Post-commit auto-assignment failure does not misreport a
+persisted message as lost.
 
 Permissions: `inbox.view` / `inbox.reply` / `inbox.manage` · `customer.view` / `customer.edit`.
 
@@ -230,7 +243,13 @@ Sale/Recover Abandoned Cart) and is stored in `bms_messages` like a normal AI re
 already replied, conversation closed, retry limit reached, customer opted out, rule disabled — are
 **always enforced by the scheduler**, not something a rule can turn off. Managed at
 `/admin/followup-rules` (`followup.manage`) and observed at `/admin/followup-queue`
-(`followup.view`, seeded to Sales as read-only). As of 2026-08-11, the queue page also includes a
+(`followup.view`, seeded to Sales as read-only). A completed job is not silently scheduled again for
+the same inbound customer message; a later inbound message can start a new round. An outbound row
+is committed before provider I/O; a confirmed
+delivery failure leaves failed work for staff, while an uncertain or partial result stops subsequent
+automatic rounds until staff checks the actual channel. Each job outcome, history row and audit row
+commit in one tenant transaction.
+As of 2026-08-11, the queue page also includes a
 **heuristic opportunity score** (`HOT/WARM/COOL`) per job plus a lightweight analytics summary for
 the last 30 days: sent/skipped/failed counts, reply rate after follow-up, order-after-follow-up
 rate, top goals/intents, and a 7-day trend. These v2 metrics are intentionally heuristic and

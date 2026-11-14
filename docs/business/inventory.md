@@ -333,6 +333,76 @@ fix failed rows and upload them again. A quota-blocked batch is never shown as s
 
 ## Purchase Orders (supplier replenishment)
 
+### Fish-dock receipts and historical Excel (`10.119`)
+
+`/admin/fish-intake` has three explicit actions. A live receipt records the supplier/แพ,
+vessel or vehicle, bill and receipt dates, fish/size, bill weight, actual weight, grade,
+lot, and reviewed THB amount. The operator previews totals and confirms; stock increases
+by **actual grams** (integer base units, displayed as kg to three decimals). The reviewed
+line amount plus reviewed extra cost enters the existing moving-average valuation, and
+the stock movement, lot, intake evidence and one audit record commit together. A live
+receipt requires `purchase.view`, `purchase.edit`, `purchase.receive`, an active allowed
+branch, and the `WEIGHTED_PRODUCT` capability. Products must be weighted/GRAM with an
+active variant and lot tracking; expiry is required when configured. This path is separate
+from integer-quantity PO receiving and does not create a PO, payable, cash payment or tax document.
+
+Historical import accepts only a reviewed daily-fish detail sheet with B/C/F/O/S headers.
+It previews every distinct fish name with its row count, total rows, bill/actual kg and THB,
+and detects ambiguous dates, invalid lines and
+matching core detail rows. A human must mark each possible duplicate as a separate receipt or
+skip it after checking the source bill; each change requires a fresh preview. Confirmation stores history and
+audit evidence only: **no inventory, lot, stock movement, valuation or today's payable is
+created**. The file hash is the retry key, so re-uploading the same confirmed file does
+not duplicate rows. It requires `purchase.view` to preview and `purchase.edit` to commit.
+The source workbook is retained by the operator; BMS stores its name/hash and parsed rows,
+not a copy of the uploaded file.
+
+Opening stock records the fish physically counted on day one, by branch/SKU/size/lot,
+with a reviewed opening value. It accepts only an empty inventory and lot balance for each
+SKU/size, requires `inventory.count.apply` and `report.view`, and creates a `COUNT_ADJUST`
+inbound movement with valuation and audit in one transaction. It does not overwrite an
+existing count. After opening, run one small live receipt and one real sale, then reconcile
+the receipt weight, remaining grams, sales and separately recorded cash before expansion.
+The fish-intake feature is available only after migration `10.119` is applied to the target
+environment; a successful local type check is not evidence of production deployment.
+
+### Fish-dock owner view (`10.120`)
+
+`/admin/fish-owner` answers five day-to-day questions from recorded evidence. The selected-day
+receipt table groups LIVE fish intake by supplier, SKU and size, and compares billed with actual
+grams and reviewed THB. Historical Excel rows do not count as today's purchase or stock.
+The lot table shows branch, remaining grams and usability. An authorized staff member can count
+READY/COLD_ROOM/OTHER placement; all zones must sum to the locked lot. A subsequent lot change
+invalidates that placement until it is recounted. Posted production inputs show fish consumed on
+the selected day.
+
+The sale panel groups recorded line revenue and shipment/return inventory valuation by fish, lot and customer.
+Non-void POS returns reverse the line margin on the return date when stock returns, even if
+the cash refund is still pending; refund settlement remains a separate money status.
+When one order line consumes multiple lots, its revenue and cost are apportioned by grams. It is
+an **estimated line margin**: line amounts precede order-wide discounts and VAT, while return
+amounts follow the recorded refund. It is not exact purchase-lot margin or net profit after operating expenses. Missing
+cost or lot evidence is shown as incomplete; net operating expenses remain in financial reports.
+With all-branch financial permissions, the operator can request a separate monthly management
+estimate that allocates reviewed operating/GP/depreciation costs and valued stock losses by the
+share of positive gross merchandise line revenue before returns. The selected day's fish rows then show gross profit,
+allocated shared cost and profit after allocation by fish, lot and customer. The calculation
+refuses incomplete monthly P&L, truncated fish rows, missing lot/cost evidence or a nonpositive
+monthly revenue basis. Return rows retain negative revenue but receive no second shared-cost allocation.
+Its line-revenue weights precede order-wide discounts and VAT, so this
+is an explicit management estimate, not statutory net profit or a purchase-lot cost assertion.
+
+Staff can create a customer/branch delivery commitment and link one ordinary BMS order for each
+delivery trip. The view counts shipped or completed order grams against the agreed weight; an
+order still awaiting shipment does not count as delivered. Non-void partial returns reduce the
+linked order's remaining weight; voided returns do not. It shows pending payment on linked
+`PENDING` orders separately from outstanding linked credit-sale AR invoices. Staff must create,
+pay, pack and ship the ordinary orders through their normal workflows; linking does none of these
+steps. Unlinked orders and payments outside BMS are outside this plan view. The page requires
+report, purchase, product, shipping and AR read permissions; count/plan/link writes need their
+respective stock, order and shipping permissions. This feature requires migration `10.120` in
+the target environment and is not a claim of production rollout.
+
 **Implemented** (`bms_purchase_orders.status`):
 
 ```
@@ -911,6 +981,10 @@ gram, millilitre, or millimetre; display units and precision are presentation me
 become component quantities in `bms_order_item_stock_consumption` before the order commits. Reserve,
 cancel, ship, POS FEFO, return, and movement ledger all consume that snapshot through
 `bms_order_stock_lines`, so editing a recipe later cannot reinterpret an old bill.
+When a product policy requires lot or expiry tracking, physical stock without source lot rows is
+unavailable for new reservations. A legacy order with that gap also fails its shipping transaction;
+it cannot consume physical stock while omitting lot allocation. Untracked products with no lot rows
+retain their ordinary stock path.
 
 ### Which capability flags are switches, and which are not
 
@@ -1635,6 +1709,14 @@ supports both VAT price modes.
   store tax flag or existing price is silently rewritten. Mixed-menu bundle comparisons require a separate explicit preview/confirm to publish a sellable recipe SKU (10.72).
 
 ### Operating completion — 10.71–10.72
+
+Migration `10.116` adds future branch BASE/PACK price windows. A window requires a future start;
+an optional end returns pricing to the current branch override or shared catalog. Overlapping
+windows for the same branch/SKU/size/pack are refused. Staff can review existing windows in the
+price-publication preview and confirm cancellation; cancellation returns to the underlying price.
+Existing order-line snapshots remain authoritative for returns. Without `10.116`, the reader keeps
+using current branch overrides; apply `10.116` before publishing windows. This is not evidence of
+production rollout.
 
 - At price publication, choose all branches or one authorized branch for BASE/PACK. Branch overrides
   use the catalog variant and existing named-pack definition; quantity and barcode stay shared. A base

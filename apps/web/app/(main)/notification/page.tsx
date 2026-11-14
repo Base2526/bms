@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { gql, useQuery, useMutation } from '@apollo/client';
 import {
   List,
@@ -15,6 +16,8 @@ import {
   Space,
   Spin,
   Alert,
+  Modal,
+  message,
 } from 'antd';
 import {
   BellOutlined,
@@ -41,6 +44,7 @@ const Q_NOTIFICATIONS = gql`
       id
       type
       entity_type
+      entity_id
       title
       message
       is_read
@@ -67,6 +71,18 @@ const MUT_MARK_ALL_READ = gql`
   }
 `;
 
+const MUT_SET_READ = gql`
+  mutation SetNotificationRead($id: ID!, $isRead: Boolean!) {
+    setNotificationRead(id: $id, isRead: $isRead)
+  }
+`;
+
+const MUT_DELETE = gql`
+  mutation DeleteNotification($id: ID!) {
+    deleteNotification(id: $id)
+  }
+`;
+
 /* =====================
  * Types
  * ===================== */
@@ -75,6 +91,7 @@ type GqlNotification = {
   id: string;
   type: string;
   entity_type: string;
+  entity_id: string;
   title: string;
   message: string;
   is_read: boolean;
@@ -85,6 +102,7 @@ type NotificationItem = {
   id: string;
   type: string; // CHAT_CREATED, POST_COMMENT, ...
   entity_type: string; // 'chat' | 'post' | 'system'
+  entity_id: string;
   title: string;
   message: string;
   is_read: boolean;
@@ -186,6 +204,7 @@ function mapNotificationToItem(n: GqlNotification, t: Translate): NotificationIt
 
 export default function NotificationPage() {
   const { t } = useI18n();
+  const router = useRouter();
   const [tab, setTab] = useState<string>('all');
   const [search, setSearch] = useState<string>('');
 
@@ -211,6 +230,8 @@ export default function NotificationPage() {
 
   const [markReadMutation] = useMutation(MUT_MARK_READ);
   const [markAllReadMutation] = useMutation(MUT_MARK_ALL_READ);
+  const [setReadMutation] = useMutation(MUT_SET_READ);
+  const [deleteMutation] = useMutation(MUT_DELETE);
 
   const rawNotifications: GqlNotification[] = data?.myNotifications ?? [];
 
@@ -240,10 +261,6 @@ export default function NotificationPage() {
     return acc;
   }, {});
 
-  useEffect(()=>{
-    console.log("notification =", data);
-  }, [data]);
-
   const alsoRefetch = async () => {
     await Promise.all([refetchNotifications(), refetchUnreadCount()]);
   };
@@ -269,8 +286,35 @@ export default function NotificationPage() {
   };
 
   const onClickItem = (item: NotificationItem) => {
-    onMarkSingleRead(item.id, item.is_read);
-    // TODO: navigate to /chat/[id] หรือ /post/[id] ตาม entity_type + entity_id (ต้องขอมาเพิ่มใน GraphQL)
+    void onMarkSingleRead(item.id, item.is_read);
+    if (item.entity_type === 'chat') router.push(`/chat?chat=${encodeURIComponent(item.entity_id)}`);
+    if (item.entity_type === 'post') router.push(`/post/${encodeURIComponent(item.entity_id)}`);
+  };
+
+  const onSetRead = async (item: NotificationItem) => {
+    try {
+      const result = await setReadMutation({ variables: { id: item.id, isRead: !item.is_read } });
+      if (!result.data?.setNotificationRead) throw new Error('Notification not found');
+      await alsoRefetch();
+    } catch {
+      message.error(t('notificationPage.actionFailed'));
+    }
+  };
+
+  const onDelete = (item: NotificationItem) => {
+    Modal.confirm({
+      title: t('notificationPage.deleteConfirm'),
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          const result = await deleteMutation({ variables: { id: item.id } });
+          if (!result.data?.deleteNotification) throw new Error('Notification not found');
+          await alsoRefetch();
+        } catch {
+          message.error(t('notificationPage.actionFailed'));
+        }
+      },
+    });
   };
 
   const menuForItem = (item: NotificationItem) => (
@@ -279,21 +323,13 @@ export default function NotificationPage() {
         {
           key: 'read',
           label: item.is_read ? t('notificationPage.markAsUnread') : t('notificationPage.markAsRead'),
-          onClick: () => {
-            if (!item.is_read) {
-              onMarkSingleRead(item.id, item.is_read);
-            }
-            // ถ้าต้องการ support "mark as unread" ฝั่ง backend เพิ่ม field/mutation เพิ่มได้ภายหลัง
-          },
+          onClick: () => { void onSetRead(item); },
         },
         {
           key: 'delete',
           danger: true,
-          label: t('notificationPage.deleteTodo'),
-          onClick: () => {
-            // ถ้าต้องการลบจริง ให้เพิ่ม mutation deleteNotification ก่อน
-            console.log('TODO: delete notification', item.id);
-          },
+          label: t('notificationPage.delete'),
+          onClick: () => onDelete(item),
         },
       ]}
     />
@@ -303,16 +339,16 @@ export default function NotificationPage() {
     <div style={{ margin: '0 auto', padding: '24px' }}>
       {/* Header */}
       <Space
-        style={{ width: '100%', justifyContent: 'space-between', marginBottom: 16 }}
+        style={{ width: '100%', justifyContent: 'space-between', flexWrap: 'wrap', rowGap: 8, marginBottom: 16 }}
       >
         <Space>
-          <Title level={3} style={{ margin: 0 }}>
+          <Title level={3} style={{ margin: 0, fontSize: 22, whiteSpace: 'nowrap' }}>
             {t('notificationPage.title')}
           </Title>
           {backendUnreadCount > 0 && <Badge count={backendUnreadCount} />}
         </Space>
         <Space>
-          <Button type="link" icon={<SettingOutlined />}>
+          <Button type="link" icon={<SettingOutlined />} onClick={() => router.push('/settings')}>
             {t('notificationPage.settings')}
           </Button>
           <Button onClick={onMarkAllRead} disabled={backendUnreadCount === 0}>
@@ -366,7 +402,6 @@ export default function NotificationPage() {
               itemLayout="horizontal"
               dataSource={groupItems}
               renderItem={(item) => {
-                console.log("[renderItem] = ", item);
                 return  <List.Item
                           onClick={() => onClickItem(item)}
                           style={{

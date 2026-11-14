@@ -27,6 +27,7 @@ function inboxHarness(failAt: number | null = null, newlyInserted = false) {
     "./coupons": {}, "./tenant": { beginTenantTx: async () => {} }, "./aiQuality": {}, "./customers": {},
     "./customerAnswerEvidence": { evidenceForQuality: () => undefined },
     "./answerEvidenceStore": {},
+    "./inboxMedia": { outboundInboxMediaUrl: async (_tenant: string, url: string) => url },
     "./failureAlert": { reportBmsFailure: async (incident: any) => { incidents.push(incident); } },
   });
   return { incidents, log: (...args: any[]) => inbox.logConversation(...args), queryCount: () => queries,

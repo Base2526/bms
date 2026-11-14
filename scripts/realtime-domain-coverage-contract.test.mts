@@ -208,6 +208,7 @@ const CONFIGURATION = [
   "bms_pharmacy_guidance_templates", "bms_pharmacy_protocols", "bms_product_categories", "bms_product_images",
   "bms_product_modifier_groups", "bms_product_modifiers", "bms_product_packs",
   "bms_branch_prices", // Shared catalog price configuration, resolved on scan and revalidated at settlement.
+  "bms_branch_price_windows", // Scheduled catalog price configuration; reads select the active window and sales revalidate at settlement.
   "bms_product_price_tiers", "bms_product_promotions", "bms_product_recipes",
   "bms_product_recipe_subrecipes", // Immutable recipe definition; Stock Models reads on open and refetches after save.
   "bms_operating_cost_reviews", // Human report classification; monthly view reads on open and refetches after each decision, no live money mutation.
@@ -232,6 +233,13 @@ const CONFIGURATION = [
 
 /** Operational state whose owning surface performs bounded polling plus post-write refresh. */
 const POLLED_OPERATIONAL_SURFACE = [
+  // Fish intake page refreshes its bounded recent list after confirmed writes;
+  // live/opening stock itself uses the canonical inventory movement path.
+  "bms_fish_intakes", "bms_fish_intake_lines",
+  // Fish owner view loads bounded evidence on open and refreshes after each confirmed count/plan/link.
+  // These sidecars never move stock or money; canonical order/stock paths emit their own events.
+  "bms_fish_storage_counts", "bms_fish_storage_count_lines",
+  "bms_fish_delivery_plans", "bms_fish_delivery_plan_lines", "bms_fish_delivery_plan_orders",
   // 10.115: queue board polls media with its queue; admin editor refreshes after publishing.
   "bms_queue_board_media",
   // 10.111: the till strip and the call screen poll the device-token API every few seconds.
@@ -301,6 +309,8 @@ for (const [reason, tables] of [
 ] as const) {
   for (const table of tables) CLASSIFIED.set(table, reason);
 }
+CLASSIFIED.set("bms_delivery_dispute_evidence",
+  "private dispute evidence; Finance reads on open and refetches after upload; no POS realtime audience");
 
 /** การลบทั้ง tenant ไม่มี subscriber เหลืออยู่ และ outbox ของ tenant ถูก cascade ทิ้ง */
 const OPERATION_EXEMPTIONS = new Map<string, string>([
@@ -364,9 +374,11 @@ test("operation exemptions stay explicit, exercised, and uncovered", () => {
 });
 
 test("message delivery metadata keeps its explicit conversation invalidation", () => {
+  const finalizer = INBOX.slice(INBOX.indexOf("async function finalizeInboxOutbound"),
+    INBOX.indexOf("export async function sendStaffMessage"));
   assert.match(
-    INBOX,
-    /UPDATE bms_messages SET meta[\s\S]{0,500}publishInboxChanged\(tenantId, row\.conversation_id, "CONVERSATION_CHANGED"\)/,
+    finalizer,
+    /UPDATE bms_messages SET meta[\s\S]*await client\.query\("COMMIT"\)[\s\S]*publishInboxChanged\(tenantId, conversationId, "MESSAGES_CHANGED", source, messageId\)/,
   );
 });
 

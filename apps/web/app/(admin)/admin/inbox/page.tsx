@@ -1057,7 +1057,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     onCompleted: (d: any) => {
       const r = d?.bmsSendMessage;
       if (r?.status === "SENT") {
-        message.success(r.message);
+        (r.delivered ? message.success : message.warning)(r.message);
         setReply("");
         setDraftAttachment(null);
         onChanged();
@@ -1367,6 +1367,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const statusNode = (m: Msg) => {
     if (m.direction !== "OUT" || !m.status) return null;
     if (m.status === "PENDING") return <>{" · "}<span>{t("admin_inbox.send_pending_label")}</span></>;
+    if (m.status === "PARTIAL") return <>{" · "}<span style={{ color: "#d48806" }}>{t("admin_inbox.send_partial_label")}</span></>;
     if (m.status === "FAILED") return (
       <>{" · "}<span style={{ color: "#ff4d4f" }}>✗ {t("admin_inbox.send_failed_label")}</span>{" "}
         <Button type="link" size="small" style={{ padding: 0, height: "auto", fontSize: 11 }}

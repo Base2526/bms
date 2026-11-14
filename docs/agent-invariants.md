@@ -130,7 +130,9 @@ The catalog also covers store profile (`lib/bms/storeProfile.ts`, migrations `6.
 is a single source: `bms_tenants.name` via `getTenantName()` (the `store_name` column is deprecated — do
 not reintroduce it), and a shop Administrator renames their own tenant name through
 `bmsUpdateMyTenant` (`updateTenantIdentity()` in `platform.ts`, slug validated + unique); `bms_tenants`
-has no revision trigger so the rename is safe, while plan/active stay platform-admin only. Slug is
+has no revision trigger so the rename is safe, while plan/active stay platform-admin only and require
+an explicit GraphQL confirmation. The active-state write and audit commit in one tenant transaction.
+Slug is
 read-only in the Settings UI and is now the stable public-shop handle used by
 `/shop/[tenantSlug]/products/[sku]`; the mutation still accepts it for controlled future changes.
 Also documents (`lib/bms/documents.ts` —
@@ -284,6 +286,15 @@ approved text. Approval remains per tenant, not a platform-wide publication deci
 
 ## Public customer checkout (signed link)
 
+The public retail cart is a separate intake before this signed checkout. Browser pack selection
+sends only a code and count; `bms_product_packs` supplies the conversion and price. Its preview calls
+`createOrderInTx()` inside a tenant transaction that is always rolled back; the confirm endpoint
+accepts only the purpose-bound 10-minute quote token, rechecks publication and the server-calculated
+review under a nonce lock, and commits once with an idempotency key. A stale review creates no order.
+The confirmation response supplies the existing signed checkout URL; it never accepts a browser
+total, tenant ID or customer identity as authority. Retail cart remains excluded for restaurant
+tenants. The review shipping fee is provisional until the checkout address recalculation.
+
 A successful customer `create_order`/`reorder` no longer ends in chat prose. The tool stores the
 verified order id on the server-only `ExecCtx.createdOrderId` (`tools/types.ts`), and `pipeline.ts`
 replaces the model's closing sentence with `orderCheckoutChatReply()` — a backend-built order
@@ -341,6 +352,14 @@ obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or s
 - **A carrier call never runs inside the fulfillment transaction.** `createShipment()` commits the
   local order/stock/movement work and releases its locks first, then books. A network call holding a
   `bms_orders`/`bms_inventory` row lock is the failure mode this design exists to prevent.
+- **Both shipping paths consume the same reserved stock and source lots.** `shipOrder()` and
+  `createShipment()` call `consumeReservedOrderStockInTx()`, which refuses a missing or short
+  inventory row before writing lot allocations and `SHIP` movements. Failure rolls back the order
+  status and parcel row with the stock transition.
+- **One create call attaches at most one parcel to an order.** The locked order is checked for an
+  existing tenant-scoped shipment before stock or parcel writes. Matching retries return that row;
+  changed carrier/tracking/note or legacy duplicate rows are conflicts for staff review. An order
+  already shipped by another workflow may attach its first parcel without moving stock again.
 - **The shipment UUID is the idempotency key.** It is passed as
   `CarrierCreateShipmentRequest.idempotencyKey` and must stay stable across retries; a live adapter
   must forward it through the carrier's own idempotency/reference mechanism so a retry returns the
@@ -1185,6 +1204,12 @@ seat capacity only; never expose table numbers/ids, occupants, sessions or custo
 Both readers share one SQL projection for rates, current seating counts and game highlights;
 the public reader alone retains the directory visibility and optional-tenant predicates.
 Customer tool results must continue to omit internal branch/table/copy identifiers.
+Pass plans and offers are a separate per-row chat publication choice (`10.117`): existing rows
+default to private, and customer reads require active rows plus `publish_to_chat` in the selected
+active branch or tenant-wide scope. An empty published list is `NOT_PUBLISHED`, not proof the shop
+has no plan or offer. Listed terms are not eligibility or a final bill; never expose an internal
+required-product SKU or staff note. A purchased-pass balance comes only from the channel-bound
+customer and a matching ledger, not from the current plan catalog.
 Both restaurant and board-game table detail lists are bounded to 100 groups, with a 101st group
 used to detect truncation. `tableDetailsTruncated=true` must be explained as partial coverage;
 never derive a whole-branch total or an absence claim from the partial list. Unpublished details
@@ -1927,6 +1952,23 @@ an operator note, and the audit preserves those per-line facts. Never add damage
 - **Counting and accepting variance are separate jobs.** `inventory.count` may create/edit/cancel a
   draft; `inventory.count.apply` signs the stock change. Transfers use `inventory.transfer`. The REST
   routes derive tenant and actor from the signed admin session and drill-down cookie, never the body.
+- **Fish-dock intake (`10.119`) keeps history separate from stock.** The historical Excel path
+  requires review of ambiguous dates, likely duplicate rows and totals before confirmation, and
+  writes no stock, lot, movement or valuation. Live and opening intake convert kg to integer grams,
+  require weighted/GRAM products with lots and the applicable permission, and commit stock, lot,
+  reviewed line value and audit in one tenant transaction. Opening accepts only an empty SKU/size
+  balance. Fish receipt is not a payment or payable posting.
+- **Fish-owner evidence (`10.120`) does not replace stock or money authority.** Zone counts lock a
+  fish lot, must sum to its actual grams, and become stale on any later lot update. Delivery plans
+  bind one customer/branch and weighted fish SKU/size to multiple ordinary orders; only an order's
+  shipped/completed status counts as delivered grams. A plan or link does not ship stock, confirm a
+  payment or create AR. The owner read separates pending order payment from credit-sale AR, and
+  labels proportional physical inventory COGS allocation by lot as gross profit rather than actual purchase-lot
+  margin or net profit. All writes are tenant-scoped, branch-authorized and audited in one transaction.
+  The optional profit-after-allocation estimate requires complete all-branch monthly net-profit
+  evidence and the financial read permissions. It distributes reviewed shared costs and valued
+  stock losses using recorded merchandise revenue before order-wide discounts/VAT; missing
+  evidence returns unavailable rather than a made-up zero.
 - **Every decision audit commits with its write.** Create/send/receive/cancel and count
   create/apply/cancel insert one `bms_audit_log` row inside the service transaction. Individual count
   lines are intentionally not audited. A future AI tool must wrap the service in
@@ -1967,6 +2009,30 @@ The rules that follow from it:
   hand-built object. The helper exists because this sequence was copy-pasted into eight routes, and
   each copy was a chance to drop the acting-tenant check that keeps one shop's admin out of another's
   data.
+- Inbox Sales scope applies to GraphQL single-conversation reads, timeline and actions, plus REST
+  list/reply: the caller must be the assigned owner or helper. Each conversation, nested message,
+  note, helper, event and timeline source read applies that owner/helper check in the same SQL
+  statement, so a reassignment between GraphQL field reads does not expose later data. A newly
+  created conversation's auto-assignment locks the still-unassigned row, selects staff under the
+  tenant GUC, and commits assignment with audit; it never overwrites a human assignment.
+  Non-AI inbound conversation/message writes share a tenant transaction, while diagnostic
+  conversation/message/audit share one transaction; failure cannot leave an unread count without
+  a message or diagnostic evidence without its audit. A later assignment failure does not undo
+  or misreport a committed message. Pipeline conversation creation, the AI handoff counter and
+  mention-read updates also use tenant transactions; mention list joins bind their related rows
+  to the same tenant. Self-availability requires `inbox.view` and uses migration `10.118`'s
+  tenant/editor-checked function inside a tenant transaction, without a direct `users` UPDATE grant.
+  Assignment/helper targets must be
+  eligible staff in the same tenant. The assignment service locks the conversation, rechecks a
+  Sales owner/helper within the transaction, and commits the owner change, duplicate-helper
+  removal and audit together. Helper add/remove uses the same lock and scope, with its audit in
+  the same transaction. Status/tag writes and unread clearing also recheck the scope after locking;
+  status/tag audit commits with those writes. A note, its validated mentions and audit commit
+  together; notifications are best-effort after commit. AI staff tools pass the same server-derived Sales
+  scope. Store
+  configuration writes (channel credentials, AI key,
+  store profile/identity and branding uploads) require the shop Administrator or a DB-verified
+  platform admin; an admin session by itself is insufficient.
 - **The tenant never comes from the request body.** Accepting it rebuilds the original hole behind a
   login. A _branch_ may come from the body — one shop legitimately has several — because an id
   belonging to another shop matches no row and returns `NOT_FOUND`.
@@ -2127,14 +2193,29 @@ their provider independently:
   it never throws, and callers must keep it out of the transaction that produced the failure.
   `logConversation()` reports `inbox.message_lost` at its own persistence catch before swallowing
   the error; a caller's `.catch()` cannot observe it. Failure after message insertion (for example,
-  assignment) must not label the saved messages lost. Meta webhook replies also check the boolean
-  from `deliverToChannel()` and report `channel.push_failed` when it is false.
-  LINE/Meta AI reply rows start `PENDING` and record `SENT`/`FAILED` after channel delivery; Inbox
-  retry is server-gated to `FAILED` push messages and locks the message row during the attempt.
+  assignment) must not label the saved messages lost. Meta webhook replies inspect the tracked
+  delivery result and report `channel.push_failed` when the reply is not confirmed.
+  All staff, follow-up and pharmacy-intake outbound rows commit as `PENDING` before provider I/O;
+  the reply audit (and any coupon-wallet assignment) commits with the staff row. A failed draft or
+  audit cannot reach the provider. Delivery records `SENT`/`FAILED` afterward; a transport timeout
+  remains `PENDING` because the provider might have accepted the request. Inbox retry is
+  server-gated to `FAILED` push messages and atomically claims them as `PENDING` before provider I/O.
+  A failed final status write leaves `PENDING` for human reconciliation, never a retryable `FAILED`.
+  A reclaimed follow-up lease must reuse the committed outbound row for its `(jobId, retryIndex)`;
+  a later scheduled follow-up has a different retry index and may send normally.
+  LINE and Meta AI replies apply the same uncertainty rule. Meta text/image sends that only partly
+  succeed record `PARTIAL` and require manual review before
+  any fresh response, since resending the whole payload would duplicate the accepted part. Meta
+  echo/delivery/read callbacks must preserve `PARTIAL` and must not promote explicit `PENDING` or
+  `FAILED` rows into a delivered state from a broad watermark.
   Channel-health telemetry is best-effort after provider acceptance: a health DB failure cannot
   relabel an accepted reply `FAILED` and invite a duplicate resend.
   Meta messages with attachments, including text captions, enter Inbox for staff review without
   running the text-only AI pipeline; the model must not guess unseen image/file contents.
+  Staff Inbox uploads are tenant-private and owner-bound. External LINE/Meta fetches use a
+  purpose-bound, tenant/file-scoped signed media URL (30-day expiry); the sender checks the
+  upload proof and file's tenant before using it. Do not turn Inbox uploads into public files or
+  send `/api/files/{id}` to providers: that route needs a staff session.
   Three rules an agent must not get wrong:
   - **Never hook alerting off a tool's audit `outcome`.** `auditAttempt()` in `tools/runtime.ts` looks
     like the perfect choke point, but its `outcome === "error"` merges a genuine thrown exception, a
@@ -2195,6 +2276,18 @@ Analytics dashboard are intentionally not built yet (see `CLAUDE.local.md` § Fo
   `followup.manage` grant firing a cross-tenant background job (even one whose data it can't read
   back) is a tenancy leak. This is the general rule, not just this feature: a manual trigger over an
   otherwise cross-tenant cron/service function must always be scoped to the caller's tenant.
+- Follow-up rule create/update/delete writes and their audit rows share one tenant transaction;
+  an audit failure rolls the rule change back. Worker reads of rules, conversations, customers,
+  intents and history must bind the tenant from the claimed job, even when a globally unique ID
+  is present. The fleet cron discovers due tenants read-only, then claims each tenant's work under
+  its own GUC with `SKIP LOCKED`. A job outcome, history and audit commit together with a retry-index
+  compare-and-swap guard; a late worker cannot overwrite a later result. A reclaimed send round
+  uses the existing outbound row and its original body. An uncertain/partial provider result ends
+  later automatic rounds for that job and requires human review. A confirmed delivery failure is
+  failed work, not a sent retry round. Scheduling compares existing jobs against the latest inbound
+  customer message: cron cannot recreate a completed job for the same message, but a new inbound
+  message can start a new round. The worker compares the latest tenant-scoped inbound message
+  timestamp with job creation, so a later AI reply cannot hide the customer's response.
 - AI-drafted follow-up text is generated by a direct `resolveAiCredentials()`/provider call in
   `followups.ts`, the same pattern `generateResponse()` in `ai.ts` already uses for the customer
   stock-reply template — this is a system-initiated text generation, not a model-selected tool call,
@@ -2797,3 +2890,10 @@ bucket. It is not complete if actual costs are unknown. Changed evidence invalid
 All sources are read in one tenant transaction. Bundle publication composes shared product, recipe
 and readiness services in one transaction, requires product.edit + product.delete + report.view,
 and never creates opening valuation or modifies existing SKUs.
+
+10.116: a future branch BASE/PACK price window supersedes the current branch price only in its
+half-open interval. It never changes pack quantity or historical sale snapshots. Overlap is denied
+by the database; cancellation requires product.edit, branch scope, explicit confirmation and an
+audit in the same transaction. Until the migration is installed, `branchPrice()` reads existing
+branch overrides only; scheduled windows remain unavailable. Apply the migration before publishing
+or cancelling a window.

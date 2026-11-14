@@ -10280,6 +10280,7 @@ type Mutation {
   bmsBackfillEtaxQueue(limit: Int = 500): Int!
   bmsBookShipmentLive(id: ID!): BmsCarrierBookingResult!
   bmsBranchRequisitionCommand(input: BmsRequisitionCommandInput!): BmsRequisitionResult!
+  bmsCancelBranchPriceWindow(confirmed: Boolean!, id: ID!): BmsCostingActionResult!
   bmsCancelOrder(id: ID!): Boolean!
   bmsCancelPurchaseOrder(id: ID!): Boolean!
   bmsCancelRestockSubscription(id: ID!): Boolean!
@@ -10542,8 +10543,8 @@ type Mutation {
   bmsSetRolePermissions(confirmed: Boolean!, permissions: [String!]!, roleId: ID!): Boolean!
   bmsSetShipmentStatus(id: ID!, status: BmsShipmentStatus!): Boolean!
   bmsSetShippingZoneOverride(provinceCode: String!, zone: String): Boolean!
-  bmsSetTenantActive(active: Boolean!, tenantId: ID!): Boolean!
-  bmsSetTenantPlan(planCode: String!, tenantId: ID!): Boolean!
+  bmsSetTenantActive(active: Boolean!, confirm: Boolean!, tenantId: ID!): Boolean!
+  bmsSetTenantPlan(confirm: Boolean!, planCode: String!, tenantId: ID!): Boolean!
   bmsSetVatCategoryForUnknown(activeOnly: Boolean, vatCategory: String!): Int!
   bmsShipOrder(id: ID!): Boolean!
   bmsSignup(businessArchetype: String, email: String!, name: String, password: String!, shopName: String!): BmsSignupResult!
@@ -10622,6 +10623,7 @@ type Mutation {
   deleteFile(id: ID!): Boolean!
   deleteFiles(ids: [ID!]!): Boolean!
   deleteMessage(message_id: ID!): Boolean!
+  deleteNotification(id: ID!): Boolean!
   deletePost(id: ID!): Boolean!
   deletePosts(ids: [ID!]!): Boolean!
   deleteRole(id: ID!): Boolean!
@@ -10654,6 +10656,7 @@ type Mutation {
   resetPassword(newPassword: String!, token: String!): Boolean
   send(text: String!): Boolean!
   sendMessage(audio: Upload, audio_duration_sec: Int, chat_id: ID!, client_message_id: String, images: [Upload!], location: MessageLocationInput, reply_to_id: ID, text: String!, to_user_ids: [ID!]!): Message!
+  setNotificationRead(id: ID!, isRead: Boolean!): Boolean!
   setRoleActive(id: ID!, is_active: Boolean!): Role!
   toggleBookmark(postId: ID!): ToggleBookmarkResult!
   unblockNumber(phoneNumber: String!): PhoneCenterActionPayload!

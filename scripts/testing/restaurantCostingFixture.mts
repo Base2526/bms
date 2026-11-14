@@ -26,10 +26,10 @@ export async function withCostingFixture(work: (f: Awaited<ReturnType<typeof cre
       for (const table of [
         "bms_inventory_wastage", "bms_stock_transfers", "bms_purchase_orders", "bms_suppliers",
         "bms_pos_refund_allocations", "bms_pos_return_items", "bms_pos_returns", "bms_tax_documents",
-        "bms_payments", "bms_pos_cash_movements", "bms_kitchen_tickets", "bms_order_items",
+        "bms_payments", "bms_pos_cash_movements", "bms_kitchen_tickets", "bms_order_item_lots", "bms_order_items",
         "bms_order_discounts", "bms_order_extra_lines", "bms_orders", "bms_pos_expenses",
-        "bms_pos_shifts", "bms_pos_devices", "bms_stock_movements", "bms_inventory",
-        "bms_branch_prices", "bms_product_recipe_subrecipes", "bms_product_recipes", "bms_products",
+        "bms_pos_shifts", "bms_pos_devices", "bms_stock_movements", "bms_inventory_lots", "bms_inventory",
+        "bms_branch_price_windows", "bms_branch_prices", "bms_product_recipe_subrecipes", "bms_product_recipes", "bms_products",
         "bms_cost_allocations", "bms_operating_cost_reviews", "bms_expense_documents",
         "bms_delivery_settlements", "bms_delivery_integrations",
         "bms_user_allowed_locations", "bms_role_permissions", "bms_store_profile", "bms_store_capabilities",

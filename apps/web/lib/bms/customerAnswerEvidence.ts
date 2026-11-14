@@ -28,6 +28,7 @@ export const PUBLIC_EVIDENCE_TOOLS = new Set([
   "search_products", "browse_catalog", "list_new_arrivals", "find_alternatives", "get_product",
   "check_stock", "list_menu_modifiers", "list_restaurant_order_locations", "get_restaurant_availability",
   "get_board_game_rates", "search_board_game_library", "get_board_game_availability", "get_store_info",
+  "get_board_game_pass_plans", "get_board_game_offers",
   "list_available_coupons", "list_customer_coupons", "check_coupon", "get_shipping_estimate",
   "recommend_products", "search_bms_presales", "list_bms_public_plans",
 ]);
@@ -53,7 +54,9 @@ const PUBLIC_KEYS = new Set((
   "kitchen inProgressTickets readyAwaitingServiceTickets oldestInProgressTicketMinutes activeStations configuredSlaMinutes warnFrom lateBy estimatedPrepMinutes " +
   "pricePerHour customerType availableSizes packs packCode unitName baseQty candidates basis createdAt updatedAt " +
   "foodProfile allergenCodes allergenInformationProvided dietaryTags minSelect maxSelect " +
-  "type minOrderAmount remainingRedemptions subtotalOk discountPreview reason state warnings"
+  "type minOrderAmount remainingRedemptions subtotalOk discountPreview reason state warnings " +
+  "plans offers durationDays includedMinutes percentOff fixedPrice buyMinutes freeMinutes requiresProductPurchase " +
+  "weekdays startsLocalTime endsLocalTime validFrom validUntil startsInFuture"
 ).split(/\s+/));
 const STATUS_KEYS = new Set((
   "status configured marketplaceManaged hasRecipientName hasPhone hasAddress missingFields " +
@@ -81,15 +84,16 @@ export const STATUS_EVIDENCE_TOOLS = new Set([
   "get_loyalty_points", "get_order_status", "get_customer_checkout", "create_order",
   "save_customer_checkout_details", "submit_payment", "reorder", "request_board_game_reservation",
   "get_board_game_reservation_status", "manage_board_game_booking", "get_payment_info",
+  "get_board_game_my_passes",
   "present_customer_choices", "detect_language", "get_pharmacy_product_facts",
   "get_pharmacy_service_status", "get_pharmacy_case_status",
 ]);
-const CONTAINER_KEYS = new Set(("products variants sizes branch branches locations branchParking parking tableDetails groups rates games titles booking " +
+const CONTAINER_KEYS = new Set(("products variants sizes branch branches locations branchParking parking tableDetails groups rates games titles booking offers " +
   "options modifierGroups coupons requested alternatives fields requests orders items tier tables queue reservations kitchen configuredSlaMinutes " +
   "availableSizes packs candidates foodProfile matches plans").split(/\s+/));
-const ARRAY_KEYS = new Set(("products variants sizes branches locations tableDetails groups rates games titles tags options modifierGroups " +
+const ARRAY_KEYS = new Set(("products variants sizes branches locations tableDetails groups rates games titles tags options modifierGroups offers weekdays " +
   "coupons alternatives requests orders items enabledCarriers missingFields omittedFields availableSizes packs candidates allergenCodes dietaryTags warnings matches plans feature_keys topicIds").split(/\s+/));
-const SCALAR_ARRAY_KEYS = new Set("sizes tags enabledCarriers missingFields omittedFields availableSizes allergenCodes dietaryTags warnings feature_keys topicIds".split(/\s+/));
+const SCALAR_ARRAY_KEYS = new Set("sizes tags enabledCarriers missingFields omittedFields availableSizes allergenCodes dietaryTags warnings feature_keys topicIds weekdays".split(/\s+/));
 export function redactEvidenceText(value: string): string {
   return value.replace(/https?:\/\/\S+/gi, "[URL]")
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[EMAIL]")
@@ -142,6 +146,17 @@ export function projectToolEvidence(tool: string, input: unknown, output: unknow
   if (clinical) reasons.add("CLINICAL_METADATA_ONLY");
   if (!input || typeof input !== "object" || Array.isArray(input)) { input = {}; reasons.add("INVALID_INPUT_SHAPE"); }
   if (!output || typeof output !== "object") { output = {}; reasons.add("NON_OBJECT_OUTPUT"); }
+  if (tool === "get_board_game_my_passes") {
+    // The QA record only needs whether a read found passes and a mismatch, never a customer's entitlement.
+    const facts = output as { status?: unknown; passes?: unknown; truncated?: unknown };
+    const passes = Array.isArray(facts.passes) ? facts.passes : [];
+    return { input: {}, output: {
+      status: ["OK", "NO_PASSES", "NO_CUSTOMER"].includes(String(facts.status)) ? facts.status : "UNKNOWN",
+      passCount: Math.min(passes.length, 10),
+      reviewRequired: passes.some((pass) => pass && typeof pass === "object" && pass.balanceStatus === "REVIEW_REQUIRED"),
+      truncated: facts.truncated === true,
+    }, reasons: [...reasons, "STATUS_ONLY"], omissions };
+  }
   const presales = tool === "search_bms_presales" || tool === "list_bms_public_plans";
   const safeInput = bound(project(input, clinical ? new Set() : presales ? PRESALES_INPUT_KEYS : INPUT_KEYS, reasons, omissions), EVIDENCE_LIMITS.input, reasons);
   const keys = tool === "search_bms_presales" ? PRESALES_KNOWLEDGE_KEYS

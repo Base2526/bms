@@ -520,6 +520,13 @@ export async function upsertStoreProfile(
         JSON.stringify(merged.customerDisplayPromoSlides), merged.customerDisplayPromoIntervalSeconds,
       ]
     );
+    if (editorId) {
+      await client.query(
+        `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
+         VALUES($1,$2,'store.profile_update',$1,'{}'::jsonb)`,
+        [tenantId, editorId]
+      );
+    }
     await client.query("COMMIT");
     await invalidateCache(storeProfileCacheKey(tenantId));
     return merged;

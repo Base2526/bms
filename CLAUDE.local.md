@@ -11,13 +11,16 @@
 > บันทึก 2026-08-17 → 2026-10-23) อยู่ใต้ "ชุดที่ 2" ของ archive — ค้นด้วยเลข migration เช่น
 > `grep -n "9.66" docs/local-notes-archive.md`
 
-## สถานะ working tree ล่าสุด (2026-11-09)
+## สถานะ working tree ล่าสุด (2026-11-14)
 
-- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `e3de7756` (#406) ·
-  branch `codex/feature-release-manifest` = `develop` + 3 commit ของ release feature manifest
-  (`c5552c9d` · `7fbcd619` · `e989c0ab`) + อัปเดตเอกสารรอบ 2026-11-09
-- **migration ล่าสุด `10.111`** (เลขว่างถัดไป `10.112` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
-  ตรวจเลขซ้ำ 2026-11-09 แล้วว่าง
+- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `9d0c8a32` (#412,
+  ภาษาไทย/อังกฤษของ POS/mobile/desktop) · branch `codex/bms-completion-core-20261113` = `develop` +
+  public retail cart, branch price windows (`10.116`), shipment retry, lot shipping + งาน Inbox/Admin
+  hardening, fish-dock (`10.119`–`10.120`) และอัปเดตเอกสารรอบ 2026-11-14
+- **migration ล่าสุด `10.120`** (เลขว่างถัดไป `10.121` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
+  ตรวจเลขซ้ำ 2026-11-14 แล้วว่าง · คิวรับของคือ `10.112`–`10.113` (ไม่ใช่ `10.111` = ใบอนุญาตเภสัชกร)
+- หลักฐานรอบตรวจระบบ 2026-11-14 (Inbox/Desktop/Mobile/Admin) และสิ่งที่ยัง **ไม่** verify:
+  [docs/architecture/system-recheck-2026-11-14.md](docs/architecture/system-recheck-2026-11-14.md)
 - renumber merge แล้ว (#391): `10.106` = Retail Local lead erasure · Meta inbox enrichment = **`10.108`** ·
   environment ที่เคย apply ไฟล์เก่า `10.106__bms_meta_inbox_enrichment` ไปแล้ว รัน `10.108` ซ้ำได้โดยไม่เสียหาย
   (`ADD COLUMN IF NOT EXISTS`)
@@ -66,8 +69,8 @@ node scripts/run-contract-tests.mjs pure <name-filter>   # ไฟล์เดี
 node scripts/run-contract-tests.mjs db <name-filter>     # ต้องมี POSTGRES_HOST/POSTGRES_DB ของเครื่องท้องถิ่น
 ```
 
-- นับ 2026-11-09: **420 ไฟล์ที่ตัวรันหยิบ** = pure **319** (285 ชั้นบนของ `scripts/` รวม
-  `retail-local-migration-checksum.test.mjs` + 33 ใน `ai-eval/` + 1 ใน `infra/`) + DB **101**
+- นับ 2026-11-14: **468 ไฟล์ที่ตัวรันหยิบ** = pure **365** (329 ชั้นบนของ `scripts/` รวม
+  `retail-local-migration-checksum.test.mjs` + 35 ใน `ai-eval/` + 1 ใน `infra/`) + DB **103**
   (`-db-contract` ทั้งหมดอยู่ชั้นบนของ `scripts/`) · นับใหม่ด้วย
   `node scripts/run-contract-tests.mjs pure --list` (และ `db --list`) — พิมพ์รายชื่อเป็น JSON
 - ผลรันจะถูกเขียนลง `.test-output/<mode>.tap` + `.test-output/<mode>.run.txt` — **ไฟล์ `.run.txt`
@@ -144,7 +147,7 @@ node scripts/run-contract-tests.mjs db <name-filter>     # ต้องมี PO
 
 ## ค้างอยู่ / ยังไม่ verify (สรุป — รายละเอียดอยู่ใน archive ตามเลข migration)
 
-อัปเดต 2026-11-09 · บันทึกก่อน 2026-10-23 อยู่ใน [archive](docs/local-notes-archive.md) — หลายข้อแก้ไปแล้ว
+อัปเดต 2026-11-14 · บันทึกก่อน 2026-10-23 อยู่ใน [archive](docs/local-notes-archive.md) — หลายข้อแก้ไปแล้ว
 (เช่น AI usage `7.82` แก้ 2026-09-08, `/live-dashboard` ต่อข้อมูลจริงแล้ว) **ตรวจซ้ำก่อนอ้างทุกครั้ง**
 
 - **`10.107` โอนสต็อกพร้อมล็อต = WIP ของการ rollout** — ดู § สถานะ working tree ด้านบน
@@ -176,6 +179,7 @@ node scripts/run-contract-tests.mjs db <name-filter>     # ต้องมี PO
 - apply ทีละไฟล์เรียงเลขด้วย `psql -1` (ไฟล์ที่ล้มกลางทางจะไม่ค้างครึ่งเดียว) · deploy `apps/web` กับ
   `apps/ws` พร้อมกันเสมอ · migration อย่างเดียวไม่เปิดฟีเจอร์ ต้อง deploy โค้ดตาม
 - ลำดับช่วงท้าย: `10.105` → `10.106` (lead erasure) → `10.107` → `10.108` → `10.109` → `10.110` → `10.111`
+  → `10.112` → `10.113` → `10.114` → `10.115` → `10.116` → `10.117` → `10.118` → `10.119` → `10.120`
 - **`10.107` ผูกกับโค้ด `develop` แล้ว** — `stockTransfers.ts` อ่าน `bms_stock_transfer_item_lots` และ
   readiness ระบุว่าการโอนทุกหน้าล้มถ้าไม่มีตาราง → deploy `develop` = ตัดสินใจ rollout `10.107` ไปด้วย
   ต้องได้การยืนยันก่อน
@@ -187,4 +191,12 @@ node scripts/run-contract-tests.mjs db <name-filter>     # ต้องมี PO
   ฟีเจอร์ปิดไว้โดย default (`BMS_BANK_RECONCILIATION_ENABLED` + `NEXT_PUBLIC_BMS_BANK_RECONCILIATION_ENABLED`
   = false) — เปิดเป็น pilot ตามขั้นใน [bank-reconciliation.md](docs/business/bank-reconciliation.md) · rollback = ปิดทั้งสอง flag
 - **`10.111`** สร้างฟังก์ชัน `bms_set_pharmacist_license` — ต้องมี `7.57` และ `10.47` ก่อน · รันซ้ำได้
+- **`10.112`/`10.113`/`10.116` อยู่ใน schema-readiness** (คิวรับของ, ตั้งค่าคิว/สไลด์จอลูกค้า, หน้าต่างราคาสาขา —
+  ไม่มีตาราง = ครัว/void/ใบเสร็จ หรือแคตตาล็อก/สแกน/checkout ล้ม) · **`10.114`** (template อีเมลรับเอง) ต้อง apply
+  ก่อน deploy `orderEmailTemplateKey()` · **`10.115`** (สื่อจอเรียกคิว) ไม่อยู่ใน readiness
+- **`10.117`–`10.120` ยังไม่อยู่ใน schema-readiness — ตรวจฐานเป้าหมายเอง:** `10.117` เพิ่ม `publish_to_chat`
+  (ค่าเริ่มต้น FALSE → แพ็ก/โปรเดิมหายจากแชทลูกค้าจนผู้จัดการเปิดทีละรายการ; โค้ด board game อ่านคอลัมน์นี้) ·
+  `10.118` ฟังก์ชัน `bms_set_own_inbox_availability` (ไม่ให้ `bms_app` UPDATE `users` ตรง) — verify บนฐาน throwaway
+  แล้ว 2026-11-14 · `10.119`–`10.120` ตาราง fish-dock (หลักฐาน/แผนส่ง ไม่ย้ายสต็อกเอง; ใช้สิทธิ์
+  `purchase.*`/`inventory.count*`/`report.view` เดิม ไม่ต้อง seed) — rollback = ปิด route ก่อนแล้วเก็บแถวไว้
 - 500 บน production → query `system_logs` ก่อนเดา (§ เฉพาะเครื่อง/โปรเจกต์นี้)

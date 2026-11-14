@@ -119,6 +119,24 @@ test("every Admin page keeps an entry point for someone who is allowed to open i
 });
 
 test("menu guards match the read gate of the page they open", () => {
+  assert.ok(routesOf(buildAdminNavigation(withPermissions(["delivery.settlement.view"], { archetype: "restaurant" }), "SHOP"))
+    .includes("/admin/delivery-platforms"), "finance-only staff must reach Delivery Analytics and Finance");
+  assert.ok(!routesOf(buildAdminNavigation(withPermissions(["delivery.settlement.view"], { archetype: "mini_mart" }), "SHOP"))
+    .includes("/admin/delivery-platforms"), "delivery platform operations remain restaurant-scoped");
+
+  const posSetupPage = source("apps/web/app/(admin)/admin/pos-devices/page.tsx");
+  const posResolver = source("apps/web/graphql/bmsPos.ts");
+  assert.match(posSetupPage, /skip: !canDevices && !canPins && !canStaff && !canDiagnostics/);
+  assert.match(posSetupPage, /includeStaff: canStaff \|\| canPins/);
+  assert.match(posSetupPage, /\{\(canPins \|\| canStaff\) && \(/);
+  assert.match(posSetupPage, /onConfirm=\{\(\) => savePin\(\{ id: c\.id, label: c\.name \|\| c\.email \}, null\)\}/);
+  assert.match(posSetupPage, /onConfirm=\{\(\) => toggleMode\(c\.id, !v\)\}/);
+  assert.match(posResolver, /if \(!\(await loadPermissions\(ctx\)\)\.has\("pos\.pin\.manage"\)\) \{\s*await requirePermission\(ctx, "pos\.staff\.manage"\)/);
+  for (const permission of ["pos.device.manage", "pos.pin.manage", "pos.staff.manage", "support.logs.view"]) {
+    assert.ok(routesOf(buildAdminNavigation(withPermissions([permission]), "SHOP")).includes("/admin/pos-devices"),
+      `${permission} cannot reach the POS setup view it can read`);
+  }
+
   // POS Readiness reads with all four permissions; three of them must not show the entry.
   const posPermissions = ["pos.device.manage", "pharmacy.policy.read", "product.view", "stock.adjust"];
   const readinessPage = source("apps/web/app/(admin)/admin/pos-readiness/page.tsx");

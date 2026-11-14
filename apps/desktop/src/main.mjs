@@ -97,6 +97,7 @@ let displayReconcileTimer = null;
 let refreshRequestSequence = 0;
 let pendingRefreshRequest = null;
 let startupNavigation = null;
+let mainLoadRecovery = null;
 let localRuntimeStartup = null;
 let lastOperationalAttentionAt = 0;
 const OPERATIONAL_ATTENTION_COOLDOWN_MS = 5_000;
@@ -915,6 +916,21 @@ function identifyDisplays() {
   }
 }
 
+function handleMainWindowClosed(window) {
+  if (mainWindow !== window) return;
+  if (pendingRefreshRequest) clearTimeout(pendingRefreshRequest.timer);
+  pendingRefreshRequest = null;
+  if (pendingUnpair?.window === window) {
+    clearTimeout(pendingUnpair.timer);
+    pendingUnpair = null;
+  }
+  mainWindow = null;
+  startupNavigation = null;
+  mainLoadRecovery = null;
+  closeCustomerDisplayWindow();
+  closeQueueDisplayWindow();
+}
+
 function createMainWindow() {
   const window = new BrowserWindow({
     width: 1366,
@@ -939,26 +955,19 @@ function createMainWindow() {
   });
 
   setupWindowSecurity(window.webContents.session);
+  window.webContents.session.webRequest.onCompleted({ urls: ["<all_urls>"] }, (details) => {
+    handleMainPosHttpResponse(window, details);
+  });
   window.on("move", scheduleCustomerDisplayReconcile);
   window.on("focus", () => window.flashFrame(false));
-  window.on("closed", () => {
-    if (mainWindow === window) {
-      if (pendingRefreshRequest) clearTimeout(pendingRefreshRequest.timer);
-      pendingRefreshRequest = null;
-      if (pendingUnpair?.window === window) {
-        clearTimeout(pendingUnpair.timer);
-        pendingUnpair = null;
-      }
-      mainWindow = null;
-      startupNavigation = null;
-    }
-    closeCustomerDisplayWindow();
-    closeQueueDisplayWindow();
-  });
+  window.on("closed", () => handleMainWindowClosed(window));
   window.webContents.on("render-process-gone", (_event, details) => {
     console.error(`Desktop POS renderer exited: ${details.reason}`);
-    if (!activePairing || window.isDestroyed()) return;
-    void showStartup("error", posText("หน้าจอหยุดทำงาน กรุณาลองเปิดใหม่")).catch(() => {});
+    if (!activePairing || window !== mainWindow || window.isDestroyed()) return;
+    void showStartup("error", posText("หน้าจอหยุดทำงาน กรุณาลองเปิดใหม่"), window).catch(() => {});
+  });
+  window.webContents.on("did-fail-load", (_event, errorCode, _description, failedUrl, isMainFrame) => {
+    handleMainPosLoadFailure(window, errorCode, failedUrl, isMainFrame);
   });
 
   const guardNavigation = (event, destination) => {
@@ -1067,6 +1076,34 @@ async function showStartup(state = "loading", message = "", targetWindow = mainW
     },
   });
   if (!targetWindow.isDestroyed()) targetWindow.show();
+}
+
+function handleMainPosLoadFailure(targetWindow, errorCode, failedUrl, isMainFrame, options = {}) {
+  // A cancelled navigation and a failed subresource must not replace a working register.
+  if (!isMainFrame || errorCode === -3 || (startupNavigation && !options.duringStartup) || mainLoadRecovery
+    || !activePairing || targetWindow !== mainWindow || targetWindow.isDestroyed()) return;
+  let failedPage;
+  try { failedPage = new URL(failedUrl); } catch { return; }
+  if (failedPage.origin !== activePairing.serverUrl || !isPosPath(failedPage.pathname)) return;
+
+  const recovery = showStartup(
+    "error",
+    options.message ?? posText("เชื่อมต่อหน้าขายไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตหรือเซิร์ฟเวอร์แล้วลองใหม่"),
+    targetWindow,
+  ).catch((error) => console.error("Unable to show desktop POS recovery", error));
+  mainLoadRecovery = recovery;
+  void recovery.finally(() => {
+    if (mainLoadRecovery === recovery) mainLoadRecovery = null;
+  });
+}
+
+function handleMainPosHttpResponse(targetWindow, details) {
+  if (details.webContentsId !== targetWindow.webContents.id || details.resourceType !== "mainFrame"
+    || details.statusCode < 500) return;
+  handleMainPosLoadFailure(targetWindow, details.statusCode, details.url, true, {
+    duringStartup: true,
+    message: posText("Server ยังไม่พร้อมใช้งาน (HTTP {v0}) กรุณาลองใหม่หรือตรวจสอบสถานะ Server", { v0: details.statusCode }),
+  });
 }
 
 async function loadPosUrl(url, targetWindow = mainWindow) {
@@ -1214,6 +1251,23 @@ function startPosNavigation() {
   });
   startupNavigation = wrappedOperation;
   return wrappedOperation;
+}
+
+function retryStartupFromRecovery() {
+  if (!activePairing || !mainWindow || mainWindow.isDestroyed()) return;
+  const targetWindow = mainWindow;
+  const revision = pairingRevision;
+  const retry = () => {
+    if (mainWindow !== targetWindow || targetWindow.isDestroyed()
+      || pairingRevision !== revision || !activePairing) return;
+    try {
+      if (fileURLToPath(targetWindow.webContents.getURL()) !== STARTUP_FILE) return;
+    } catch { return; }
+    void startPosNavigation();
+  };
+  const pending = [startupNavigation, mainLoadRecovery].filter(Boolean);
+  if (pending.length) void Promise.allSettled(pending).then(retry);
+  else retry();
 }
 
 async function restoreSavedPairing() {
@@ -1504,7 +1558,7 @@ function registerIpc() {
 
   ipcMain.handle("bms-pos:retry-startup", async (event) => {
     if (!isStartupFrame(event)) return { ok: false };
-    if (activePairing) void startPosNavigation();
+    if (activePairing) retryStartupFromRecovery();
     else await restoreSavedPairing();
     return { ok: true };
   });
@@ -1750,6 +1804,12 @@ function reopenMainWindow() {
   if (!app.isReady()) return;
   // A manual/print window may remain after the cashier closes. It is not the register.
   if (!mainWindow || mainWindow.isDestroyed()) {
+    // Electron can report a destroyed window before its `closed` callback runs. Do not let
+    // navigation or refresh work owned by that window hold the replacement on a blank page.
+    if (pendingRefreshRequest) clearTimeout(pendingRefreshRequest.timer);
+    pendingRefreshRequest = null;
+    startupNavigation = null;
+    mainLoadRecovery = null;
     mainWindow = createMainWindow();
     void (activePairing ? startPosNavigation() : restoreSavedPairing());
     return;

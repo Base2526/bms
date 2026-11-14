@@ -7,8 +7,15 @@ const read = (relative: string) => readFileSync(new URL(`../${relative}`, import
 const require = createRequire(new URL("../apps/web/package.json", import.meta.url));
 const ts = require("typescript") as typeof import("typescript");
 
-function shipmentHarness(fulfillmentType: string | null, orderStatus = "PACKING", auditFails = false) {
-  const calls = { sql: [] as Array<{ text: string; params: unknown[] }>, movements: 0, emails: 0, releases: 0 };
+type ExistingShipment = {
+  id: string; carrier: string; tracking_no: string | null; note: string | null;
+  label_url: string | null; external_shipment_id: string | null;
+  carrier_tracking_source: string; carrier_booking_status: string;
+};
+
+function shipmentHarness(fulfillmentType: string | null, orderStatus = "PACKING", auditFails = false,
+  existingShipments: ExistingShipment[] = []) {
+  const calls = { sql: [] as Array<{ text: string; params: unknown[] }>, movements: 0, lots: 0, emails: 0, releases: 0 };
   const client = {
     release() { calls.releases++; },
     async query(text: string, params: unknown[] = []) {
@@ -17,8 +24,13 @@ function shipmentHarness(fulfillmentType: string | null, orderStatus = "PACKING"
         return { rowCount: 1, rows: [{ status: orderStatus, channel: "web", customer_id: "customer", fulfillment_type: fulfillmentType }] };
       }
       if (text === "ROLLBACK" || text === "COMMIT") return { rowCount: 0, rows: [] };
+      if (text.includes("FROM bms_shipments") && text.includes("LIMIT 2 FOR UPDATE")) {
+        return { rowCount: existingShipments.length, rows: existingShipments };
+      }
       if (text.includes("FROM bms_customer_addresses")) return { rowCount: 1, rows: [{ one: 1 }] };
-      if (text.includes("UPDATE bms_orders") || text.includes("UPDATE bms_inventory")) return { rowCount: 1, rows: [] };
+      if (text.includes("WITH expected AS") && text.includes("UPDATE bms_inventory"))
+        return { rowCount: 1, rows: [{ expected_count: "1", updated_count: "1" }] };
+      if (text.includes("UPDATE bms_orders")) return { rowCount: 1, rows: [] };
       if (text.includes("INSERT INTO bms_shipments")) return { rowCount: 1, rows: [{ id: "shipment" }] };
       if (text.includes("INSERT INTO bms_audit_log")) {
         if (auditFails) throw new Error("audit failed");
@@ -27,9 +39,18 @@ function shipmentHarness(fulfillmentType: string | null, orderStatus = "PACKING"
       throw new Error(`Unexpected SQL: ${text}`);
     },
   };
+  const stockModule = { exports: {} as Record<string, any> };
+  const stockSource = ts.transpileModule(read("apps/web/lib/bms/orderShippingStock.ts"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  new Function("require", "module", "exports", stockSource)((name: string) => {
+    if (name === "./orderLots") return { consumeOrderLotsInTx: async () => { calls.lots++; } };
+    if (name === "./movements") return { recordOrderMovements: async () => { calls.movements++; } };
+    throw new Error(`Unexpected stock dependency: ${name}`);
+  }, stockModule, stockModule.exports);
   const mocks: Record<string, unknown> = {
     "@/lib/db": { getClient: async () => client, query: async () => { throw new Error("Unexpected pool query"); } },
-    "./movements": { recordOrderMovements: async () => { calls.movements++; } },
+    "./orderShippingStock": stockModule.exports,
     "./tenant": { beginTenantTx: async () => {} },
     "./orderNotify": { notifyOrderStatusEmail: async () => { calls.emails++; } },
     "./carriers": { getCarrierClient: () => null },
@@ -73,12 +94,13 @@ test("delivery shipment still moves stock once within the requested tenant", asy
   assert.equal(result.status, "CREATED");
   assert.equal(result.orderShipped, true);
   assert.equal(calls.movements, 1);
+  assert.equal(calls.lots, 1);
   assert.equal(calls.emails, 1);
   const stock = calls.sql.find(({ text }) => text.includes("UPDATE bms_inventory"));
   assert.ok(stock);
-  assert.match(stock.text, /FROM bms_order_stock_lines WHERE tenant_id = \$2 AND order_id = \$1/);
-  assert.match(stock.text, /WHERE inv\.tenant_id = \$2/);
-  assert.deepEqual(stock.params, ["order", "tenant"]);
+  assert.match(stock.text, /FROM bms_order_stock_lines[\s\S]*WHERE tenant_id = \$1 AND order_id = \$2/);
+  assert.match(stock.text, /WHERE inv\.tenant_id = \$1/);
+  assert.deepEqual(stock.params, ["tenant", "order"]);
   assert.ok(calls.sql.some(({ text }) => text.includes("INSERT INTO bms_shipments")));
   const audit = calls.sql.find(({ text }) => text.includes("INSERT INTO bms_audit_log"));
   assert.ok(audit);
@@ -108,12 +130,56 @@ test("AI-assisted shipment keeps attribution in the transactional domain audit",
   });
 });
 
+test("matching create replay returns the existing parcel without stock, audit, email or carrier work", async () => {
+  const existing: ExistingShipment = {
+    id: "shipment-old", carrier: "FLASH", tracking_no: "TH123", note: "fragile",
+    label_url: null, external_shipment_id: null,
+    carrier_tracking_source: "manual", carrier_booking_status: "manual",
+  };
+  const { calls, createShipment } = shipmentHarness("DELIVERY", "SHIPPED", false, [existing]);
+  const result = await createShipment({ tenantId: "tenant", orderId: "order", carrier: "FLASH",
+    trackingNo: " TH123 ", note: "fragile" });
+  assert.equal(result.status, "CREATED");
+  assert.equal(result.replayed, true);
+  assert.equal(result.shipmentId, "shipment-old");
+  assert.equal(calls.sql.length, 3);
+  assert.equal(calls.sql.at(-1)?.text, "ROLLBACK");
+  assert.match(calls.sql[1].text, /WHERE tenant_id = \$1 AND order_id = \$2[\s\S]*FOR UPDATE/);
+  assert.equal(calls.movements, 0);
+  assert.equal(calls.emails, 0);
+});
+
+test("different parcel details and legacy duplicates refuse a second parcel", async () => {
+  const existing: ExistingShipment = {
+    id: "shipment-old", carrier: "FLASH", tracking_no: "TH123", note: null,
+    label_url: null, external_shipment_id: null,
+    carrier_tracking_source: "manual", carrier_booking_status: "manual",
+  };
+  for (const [status, rows, carrier, trackingNo, note] of [
+    ["SHIPPED", [existing], "KERRY", "TH123", null],
+    ["SHIPPED", [existing], "FLASH", "TH999", null],
+    ["SHIPPED", [existing], "FLASH", "TH123", "changed"],
+    ["SHIPPED", [existing, { ...existing, id: "shipment-second" }], "FLASH", "TH123", null],
+    ["PACKING", [existing], "FLASH", "TH123", null],
+  ] as Array<[string, ExistingShipment[], string, string, string | null]>) {
+    const { calls, createShipment } = shipmentHarness("DELIVERY", status, false, rows);
+    const result = await createShipment({ tenantId: "tenant", orderId: "order", carrier, trackingNo, note });
+    assert.equal(result.status, "SHIPMENT_EXISTS");
+    assert.equal(calls.sql.at(-1)?.text, "ROLLBACK");
+    assert.equal(calls.movements, 0);
+    assert.equal(calls.emails, 0);
+    assert.ok(!calls.sql.some(({ text }) => text.includes("INSERT INTO bms_shipments")));
+  }
+});
+
 test("REST and GraphQL expose a specific pickup refusal", () => {
   const rest = read("apps/web/app/api/bms/shipment/route.ts");
   const graphql = read("apps/web/graphql/bmsShipping.ts");
   const tool = read("apps/web/lib/bms/tools/catalog.ts").split("const createShipmentTool: BmsTool = {")[1]
     .split("const updateTrackingTool: BmsTool = {")[0];
-  assert.match(rest, /result\.status === "PICKUP_ORDER" \? 409/);
+  assert.match(rest, /result\.status === "PICKUP_ORDER"/);
+  assert.match(rest, /result\.replayed \? 200 : 201/);
+  assert.match(rest, /result\.status === "SHIPMENT_EXISTS" \? 409/);
   assert.match(rest, /actor: String\(auth\.adminId\)/);
   assert.match(graphql, /PICKUP_ORDER: "ออร์เดอร์รับเอง/);
   assert.doesNotMatch(graphql.split("async bmsCreateShipment(")[1].split("async bmsUpdateTracking(")[0], /await audit\(/);
