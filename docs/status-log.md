@@ -1,16 +1,9 @@
 # BMS status log
 
-**Scheduled branch base/pack prices (`10.116`, source candidate, not deployed).** Branch
-prices can now have a future half-open window that temporarily overrides the current branch
-price. Overlapping windows are rejected by the database. Staff preview the exact price and
-scope, confirm publication, and can confirm cancellation of a window; sale and return snapshots
-remain unchanged. The shared price reader applies the same window to catalog, scan and order
-paths. Isolated database, authenticated browser and target-migration proof remain open.
-
 Per-feature decision narrative moved out of [CLAUDE.md](../CLAUDE.md) on 2026-10-13 to keep the
 always-loaded agent context small. The moved text is unchanged; newest entries are at the end.
-Entries were brought up to date on 2026-11-09 (through migration `10.113`, PR #406 and the
-release-manifest commits). The compact area index lives in CLAUDE.md § Current status; full
+Entries were brought up to date on 2026-11-14 (through migration `10.120`, PR #412 and the
+`codex/bms-completion-core-20261113` branch). The compact area index lives in CLAUDE.md § Current status; full
 per-domain rules live in [agent-invariants.md](agent-invariants.md).
 
 ## Current status summary (as written 2026-11)
@@ -914,3 +907,68 @@ live-model drivers), and the GitHub gate uploads a candidate manifest. The regis
 rather than production enablement, and `inventory.transfer-lots` stays WIP. Production availability
 still needs the deployed artifact, target schema, flags, configuration, entitlements and rollout
 evidence. See [release-feature-control.md](release-feature-control.md).
+
+**Pickup status emails and branch queue-board media (`10.114`–`10.115`, not yet applied to
+production).** Orders whose persisted `fulfillment_type` is `PICKUP` now use separate Thai/English
+`order.pickup.*` status templates, so "paid" no longer reads as "ready to collect"; apply `10.114`
+before deploying the `orderEmailTemplateKey()` caller. `10.115` gives each branch's call screen an
+ordered playlist of at most eight public images with interval, transition and optional time
+windows; publication and its audit commit in one tenant transaction. See
+[business/order.md](business/order.md) and [business/pos.md](business/pos.md).
+
+**Thai/English operator language on Mobile, Desktop and the web POS (#412, no migration).** Each
+client keeps its own saved language (Mobile in Keychain/Keystore, Desktop in its language store,
+the web POS in settings) and switching rerenders without clearing PIN, cart or pairing. Contract
+tests pin every catalog key in both languages. Physical device and installed Windows/Linux runs are
+still open. See [apps/mobile/README.md](../apps/mobile/README.md) and
+[apps/desktop/README.md](../apps/desktop/README.md).
+
+**Scheduled branch base/pack prices (`10.116`, source candidate, not deployed).** Branch
+prices can now have a future half-open window that temporarily overrides the current branch
+price. Overlapping windows are rejected by the database. Staff preview the exact price and
+scope, confirm publication, and can confirm cancellation of a window; sale and return snapshots
+remain unchanged. The shared price reader applies the same window to catalog, scan and order
+paths. Isolated database, authenticated browser and target-migration proof remain open.
+
+**Server-reviewed public retail cart, retry-safe shipments and lot-aware shipping (no migration).**
+Public storefront pages offer a 10-line variant/pack cart; `POST /api/bms/retail-cart` simulates
+`createOrderInTx()` and rolls back, and a 10-minute signed review token carries the basket and a
+digest of that calculation. Pack size/price always reload from `bms_product_packs`; any change in
+price, discount, shipping or stock rejects confirmation, and a repeated confirm returns the same
+order by its idempotency key. Restaurant tenants are excluded. Shipment creation replays an
+identical request without a second audit, stock movement or carrier call, refuses `PICKUP`, and
+books a carrier only after the local commit with the shipment UUID as the carrier idempotency key.
+Live DB and browser validation remain open. See [business/order.md](business/order.md) and
+[business/inventory.md](business/inventory.md).
+
+**Board-game passes and offers reach customer chat only when published (`10.117`).** A per-row
+`publish_to_chat` switch (default off, including existing rows) controls what the AI may quote; it
+reads only active, same-branch, in-date rows and states the label price and published conditions,
+never final eligibility or the amount due. The switch is audited with the offer. After applying
+`10.117` a manager must opt each pass/offer back in. See
+[business/board-game-cafe.md](business/board-game-cafe.md).
+
+**Inbox, settings and follow-up hardening (`10.118`, recheck 2026-11-14).** Sales staff can no
+longer read or act on another owner's conversation by ID: owner/helper scope is checked in the same
+SQL statement that returns data and rechecked under a conversation lock for every write, with the
+audit in that transaction. Inbound messages, notes and auto-assignment commit atomically; staff,
+follow-up and pharmacy replies persist before provider I/O, and timeouts stay `PENDING` for human
+reconciliation. Inbox attachments use a tenant/file-scoped 30-day media capability instead of
+session URLs. Channel credentials, AI keys and store identity now require the tenant Administrator
+or a DB-verified platform admin, and platform tenant suspension/plan changes need an explicit
+server-checked confirmation. `10.118` replaces direct `users` updates with the narrow
+`bms_set_own_inbox_availability` function (verified on throwaway databases). Live provider sends,
+full-schema RLS/trigger runs and device hardware stay unverified. See
+[architecture/system-recheck-2026-11-14.md](architecture/system-recheck-2026-11-14.md) and
+[business/crm.md](business/crm.md#omnichannel-inbox).
+
+**Fish-dock receipts, history and owner view (`10.119`–`10.120`, not yet applied to production).**
+`/admin/fish-intake` records live receipts by actual grams with reviewed THB into moving-average
+valuation, imports reviewed historical Excel as evidence only (no stock, lot or payable), and takes
+a one-time opening count into empty balances. `/admin/fish-owner` shows the day's receipts, lot
+placement counts (READY/COLD_ROOM/OTHER, invalidated when the lot changes), production use, an
+estimated line margin by fish/lot/customer and an explicit monthly management estimate, plus
+delivery commitments that link ordinary orders. These sidecars never move stock or money
+themselves and reuse existing purchase/inventory/report permissions. See
+[business/inventory.md](business/inventory.md) and
+[architecture/database.md](architecture/database.md).
