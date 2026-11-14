@@ -1,4 +1,4 @@
-import { posText, usePosLanguage, posLocale } from '../i18n/language';
+import { posText, usePosLanguage } from '../i18n/language';
 import React, {
   createContext,
   useCallback,
@@ -137,7 +137,7 @@ export function ShiftProvider({
         type: movement.direction === 'OUT' ? 'OUT' : 'IN',
         amount: movement.amount,
         reason: movement.reason,
-        at: new Date(movement.createdAt).toLocaleTimeString(posLocale(), {
+        at: new Date(movement.createdAt).toLocaleTimeString(language === 'en' ? 'en-GB' : 'th-TH', {
           hour: '2-digit',
           minute: '2-digit',
         }),

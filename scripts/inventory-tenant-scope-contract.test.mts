@@ -120,6 +120,7 @@ test("every SQL statement touching a tenant-scoped stock table filters by tenant
  */
 const ROUTE_GUARDS = [
   "authorizeAdminRoute",        // แอดมินที่ล็อกอิน + RBAC + tenant จาก session
+  "authorizeTenantSettingsAdminRoute", // Administrator ของร้านหรือ platform admin ที่ยืนยันจาก DB
   "authorizePlatformAdminRoute", // platform admin เท่านั้น สำหรับข้อมูลข้ามร้าน
   "verifyAdminSession",         // role-based gate ที่ไม่ได้ใช้ permission catalog (onboarding/sample-data)
   // จงใจไม่รับ `requireAdminOrInternal` เป็นการ์ดที่ยอมรับได้: มันแค่ยืนยันว่าล็อกอินแล้ว
@@ -131,6 +132,7 @@ const ROUTE_GUARDS = [
   "verifyLineSignature",
   "channel_secret",
   "getCheckoutByToken",         // ลิงก์ checkout ที่เซ็นไว้ (ลูกค้าเปิดเอง ไม่มี session)
+  "verifyInboxMedia",            // capability เฉพาะ tenant/file พร้อม expiry; route มี rateLimit
   "ingestRetailLocalLicenseEvidence", // issued bearer token + signed device evidence; license id from token binding
   "getRetailLocalHostLicenseStatus", // validates issued bearer hash; installation join is scoped to that token's license
   "mockWebhookDisabled",        // mock ยุคร้านเดียว — 404 ใน production ยิงได้แค่ dev

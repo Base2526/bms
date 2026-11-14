@@ -21,8 +21,7 @@ import { meteredUsage } from "./aiMetering";
 // shape as detectStaleChannels()/runScheduledDigests().
 // =============================================================
 
-import { query } from "@/lib/db";
-import { audit } from "./audit";
+import { getClient, query } from "@/lib/db";
 import { getConversation, listMessages, sendFollowupMessage } from "./inbox";
 import { getCustomer360 } from "./customer360";
 import { getStoreProfile } from "./storeProfile";
@@ -30,6 +29,7 @@ import { resolveAiCredentials, type AiCredentials } from "./ai";
 import { finalizeAiUsageEvent, recordAiProviderAttempt } from "./aiUsage";
 import { callAnthropicCompatibleMessages } from "./aiProvider";
 import { commercePolicyForArchetype } from "./shopArchetypes";
+import { beginTenantTx } from "./tenant";
 
 export const FOLLOWUP_INTENTS = [
   "ASK_PRICE",
@@ -136,10 +136,6 @@ function sanitizeStopConditions(list: string[] | undefined | null): string[] {
   return list.filter((v) => (STOP_CONDITIONS as readonly string[]).includes(v));
 }
 
-function systemActor(tenantId: string) {
-  return { tenant_id: tenantId, admin: { email: "system:followup-scheduler" } };
-}
-
 // =============================================================
 // Rule CRUD
 // =============================================================
@@ -152,7 +148,7 @@ export async function listFollowupRules(tenantId: string): Promise<FollowupRule[
   return res.rows.map(mapRule);
 }
 
-export async function upsertFollowupRule(tenantId: string, input: FollowupRuleInput): Promise<FollowupRule> {
+export async function upsertFollowupRule(tenantId: string, input: FollowupRuleInput, actor: string): Promise<FollowupRule> {
   const intent = assertIntent(input.intent);
   const messageGoal = assertGoal(input.messageGoal);
   const delayMinutes = Number(input.delayMinutes);
@@ -169,8 +165,10 @@ export async function upsertFollowupRule(tenantId: string, input: FollowupRuleIn
   const businessHoursOnly = input.businessHoursOnly ?? false;
   const template = input.template ?? null;
 
-  if (input.id) {
-    const res = await query(
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actor });
+    const res = input.id ? await client.query(
       `UPDATE bms_followup_rules
           SET intent = $2, enabled = $3, priority = $4, delay_minutes = $5, max_retry = $6,
               stop_conditions = $7, message_goal = $8, business_hours_only = $9, template = $10,
@@ -178,24 +176,50 @@ export async function upsertFollowupRule(tenantId: string, input: FollowupRuleIn
         WHERE tenant_id = $1 AND id = $11
       RETURNING *`,
       [tenantId, intent, enabled, priority, delayMinutes, maxRetry, stopConditions, messageGoal, businessHoursOnly, template, input.id]
+    ) : await client.query(
+      `INSERT INTO bms_followup_rules
+         (tenant_id, intent, enabled, priority, delay_minutes, max_retry, stop_conditions, message_goal, business_hours_only, template)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING *`,
+      [tenantId, intent, enabled, priority, delayMinutes, maxRetry, stopConditions, messageGoal, businessHoursOnly, template]
     );
-    if (res.rowCount === 0) throw new Error("ไม่พบ follow-up rule");
-    return mapRule(res.rows[0]);
+    if (!res.rows[0]) throw new Error("ไม่พบ follow-up rule");
+    const rule = mapRule(res.rows[0]);
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'followup.rule_upsert', $3, $4::jsonb)`,
+      [tenantId, actor, rule.id, JSON.stringify({ intent: rule.intent, goal: rule.messageGoal, enabled: rule.enabled })]
+    );
+    await client.query("COMMIT");
+    return rule;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
   }
-
-  const res = await query(
-    `INSERT INTO bms_followup_rules
-       (tenant_id, intent, enabled, priority, delay_minutes, max_retry, stop_conditions, message_goal, business_hours_only, template)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-     RETURNING *`,
-    [tenantId, intent, enabled, priority, delayMinutes, maxRetry, stopConditions, messageGoal, businessHoursOnly, template]
-  );
-  return mapRule(res.rows[0]);
 }
 
-export async function deleteFollowupRule(tenantId: string, id: string): Promise<boolean> {
-  const res = await query(`DELETE FROM bms_followup_rules WHERE tenant_id = $1 AND id = $2`, [tenantId, id]);
-  return (res.rowCount ?? 0) > 0;
+export async function deleteFollowupRule(tenantId: string, id: string, actor: string): Promise<boolean> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actor });
+    const res = await client.query(`DELETE FROM bms_followup_rules WHERE tenant_id = $1 AND id = $2`, [tenantId, id]);
+    if (res.rowCount) {
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+         VALUES ($1, $2, 'followup.rule_delete', $3, '{}'::jsonb)`,
+        [tenantId, actor, id]
+      );
+    }
+    await client.query("COMMIT");
+    return Boolean(res.rowCount);
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /** highest-priority enabled rule for this intent — null = ไม่มี rule ให้ทำอะไรเลย (ไม่ invent) */
@@ -316,11 +340,21 @@ export async function classifyConversationIntent(
     result = { ...h, source: "heuristic" };
   }
 
-  await query(
-    `INSERT INTO bms_conversation_intents (tenant_id, conversation_id, intent, confidence, source)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [tenantId, conversationId, result.intent, result.confidence, result.source]
-  );
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    await client.query(
+      `INSERT INTO bms_conversation_intents (tenant_id, conversation_id, intent, confidence, source)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [tenantId, conversationId, result.intent, result.confidence, result.source]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
   return result;
 }
 
@@ -329,8 +363,8 @@ const INTENT_STALE_MS = 24 * 60 * 60 * 1000; // reclassify if the latest intent 
 async function getOrClassifyIntent(tenantId: string, conversationId: string): Promise<FollowupIntent> {
   const latest = await query<{ intent: string; detected_at: Date | string }>(
     `SELECT intent, detected_at FROM bms_conversation_intents
-      WHERE conversation_id = $1 ORDER BY detected_at DESC LIMIT 1`,
-    [conversationId]
+      WHERE conversation_id = $1 AND tenant_id = $2 ORDER BY detected_at DESC LIMIT 1`,
+    [conversationId, tenantId]
   );
   const row = latest.rows[0];
   if (row) {
@@ -404,9 +438,9 @@ async function generateFollowupMessage(
     listMessages(tenantId, conversationId, 20),
     query<{ message_body: string | null; created_at: Date | string }>(
       `SELECT message_body, created_at FROM bms_followup_history
-        WHERE conversation_id = $1 AND outcome = 'SENT'
+        WHERE conversation_id = $1 AND tenant_id = $2 AND outcome = 'SENT'
         ORDER BY created_at DESC LIMIT 5`,
-      [conversationId]
+      [conversationId, tenantId]
     ),
   ]);
 
@@ -643,14 +677,21 @@ function computeQueueScore(args: {
 async function scheduleNewJobs(tenantId?: string): Promise<number> {
   // conversations with no PENDING job at all, still open, and not last-answered by staff
   // (staff already engaged — don't auto-follow-up over a human)
-  const candidates = await query<{ id: string; tenant_id: string; last_message_at: Date | string }>(
-    `SELECT c.id, c.tenant_id, c.last_message_at
+  const candidates = await query<{ id: string; tenant_id: string; last_message_at: Date | string;
+    last_customer_at: Date | string }>(
+    `SELECT c.id, c.tenant_id, c.last_message_at, inbound.last_customer_at
        FROM bms_conversations c
+       JOIN LATERAL (
+         SELECT MAX(m.created_at) AS last_customer_at FROM bms_messages m
+          WHERE m.tenant_id=c.tenant_id AND m.conversation_id=c.id AND m.direction='IN'
+       ) inbound ON inbound.last_customer_at IS NOT NULL
       WHERE c.status IN ('OPEN', 'PENDING')
         AND c.last_sender_type IS NOT NULL
         AND c.last_sender_type != 'staff'
         AND ($1::uuid IS NULL OR c.tenant_id = $1)
-        AND NOT EXISTS (SELECT 1 FROM bms_followup_jobs j WHERE j.conversation_id = c.id AND j.status = 'PENDING')
+        AND NOT EXISTS (SELECT 1 FROM bms_followup_jobs j
+          WHERE j.conversation_id = c.id AND j.tenant_id = c.tenant_id
+            AND j.created_at >= inbound.last_customer_at)
       ORDER BY c.last_message_at ASC
       LIMIT ${CANDIDATE_BATCH}`,
     [tenantId ?? null]
@@ -662,74 +703,168 @@ async function scheduleNewJobs(tenantId?: string): Promise<number> {
     const rule = await matchRule(c.tenant_id, intent);
     if (!rule) continue; // no matching enabled rule — never invent one
 
-    const res = await query(
-      `INSERT INTO bms_followup_jobs (tenant_id, conversation_id, rule_id, next_run_at)
-       VALUES ($1, $2, $3, $4::timestamptz + ($5 || ' minutes')::interval)
-       ON CONFLICT (conversation_id, rule_id) WHERE status = 'PENDING' DO NOTHING
-       RETURNING id`,
-      [c.tenant_id, c.id, rule.id, c.last_message_at, rule.delayMinutes]
-    );
-    if (res.rowCount) created += 1;
+    const client = await getClient();
+    try {
+      await beginTenantTx(client, c.tenant_id);
+      const res = await client.query(
+        `INSERT INTO bms_followup_jobs (tenant_id, conversation_id, rule_id, next_run_at)
+         SELECT $1, $2, $3, $4::timestamptz + ($5 || ' minutes')::interval
+          WHERE NOT EXISTS (SELECT 1 FROM bms_followup_jobs
+            WHERE tenant_id=$1 AND conversation_id=$2 AND rule_id=$3
+              AND created_at >= $6::timestamptz)
+         ON CONFLICT (conversation_id, rule_id) WHERE status = 'PENDING' DO NOTHING
+         RETURNING id`,
+        [c.tenant_id, c.id, rule.id, c.last_message_at, rule.delayMinutes, c.last_customer_at]
+      );
+      await client.query("COMMIT");
+      if (res.rowCount) created += 1;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
   return created;
+}
+
+type DueFollowupJob = {
+  job_id: string;
+  tenant_id: string;
+  conversation_id: string;
+  rule_id: string;
+  retry_count: number;
+  job_created_at: Date | string;
+};
+
+async function claimDueJobs(tenantId?: string): Promise<DueFollowupJob[]> {
+  // The fleet cron discovers tenants globally, then each write runs with a
+  // tenant GUC. Manual runs use only the caller's tenant.
+  const tenants = tenantId ? [tenantId] : (await query<{ tenant_id: string }>(
+    `SELECT tenant_id FROM bms_followup_jobs
+      WHERE status='PENDING' AND next_run_at<=now()
+      GROUP BY tenant_id ORDER BY MIN(next_run_at), tenant_id LIMIT ${DUE_JOB_BATCH}`
+  )).rows.map(row => row.tenant_id);
+  const claimed: DueFollowupJob[] = [];
+  for (const scopedTenantId of tenants) {
+    const remaining = DUE_JOB_BATCH - claimed.length;
+    if (remaining <= 0) break;
+    const client = await getClient();
+    try {
+      await beginTenantTx(client, scopedTenantId);
+      const due = await client.query<DueFollowupJob>(
+        `UPDATE bms_followup_jobs j
+            SET next_run_at=now()+($2 || ' minutes')::interval, updated_at=now()
+          WHERE j.tenant_id=$1 AND j.id IN (
+            SELECT id FROM bms_followup_jobs
+             WHERE tenant_id=$1 AND status='PENDING' AND next_run_at<=now()
+             ORDER BY next_run_at, id LIMIT $3 FOR UPDATE SKIP LOCKED
+          )
+         RETURNING j.id AS job_id,j.tenant_id,j.conversation_id,j.rule_id,j.retry_count,
+                   j.created_at AS job_created_at`,
+        [scopedTenantId, String(JOB_LEASE_MINUTES), remaining]
+      );
+      await client.query("COMMIT");
+      claimed.push(...due.rows);
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  return claimed;
+}
+
+type FollowupOutcome = "SENT" | "SKIPPED" | "FAILED";
+
+async function recordFollowupOutcome(
+  job: DueFollowupJob,
+  outcome: FollowupOutcome,
+  details: { reason?: string; goal?: string | null; messageBody?: string;
+    nextRetryCount?: number; done?: boolean; delayMinutes?: number;
+    hasConversation?: boolean; hasRule?: boolean },
+): Promise<boolean> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, job.tenant_id);
+    // The retry index is a compare-and-swap guard: a late worker cannot
+    // overwrite a newer outcome after its lease was reclaimed.
+    const updated = outcome === "SENT"
+      ? await client.query(
+        `UPDATE bms_followup_jobs
+            SET retry_count=$4, status=CASE WHEN $5 THEN 'SENT' ELSE 'PENDING' END,
+                next_run_at=CASE WHEN $5 THEN next_run_at ELSE now()+($6 || ' minutes')::interval END,
+                last_result=$7, updated_at=now()
+          WHERE tenant_id=$1 AND id=$2 AND status='PENDING' AND retry_count=$3
+          RETURNING id`,
+        [job.tenant_id, job.job_id, job.retry_count, details.nextRetryCount,
+          details.done, details.delayMinutes, details.reason ?? "sent"]
+      )
+      : await client.query(
+        `UPDATE bms_followup_jobs SET status=$4, last_result=$5, updated_at=now()
+          WHERE tenant_id=$1 AND id=$2 AND status='PENDING' AND retry_count=$3
+          RETURNING id`,
+        [job.tenant_id, job.job_id, job.retry_count,
+          outcome === "SKIPPED" ? "STOPPED" : "FAILED", details.reason ?? outcome.toLowerCase()]
+      );
+    if (!updated.rowCount) {
+      await client.query("COMMIT");
+      return false;
+    }
+    // A broken cross-tenant conversation reference must not land in history.
+    if (details.hasConversation !== false) {
+      await client.query(
+        `INSERT INTO bms_followup_history
+           (tenant_id,job_id,conversation_id,rule_id,outcome,reason,message_body,goal)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [job.tenant_id, job.job_id, job.conversation_id, details.hasRule === false ? null : job.rule_id, outcome,
+          details.reason ?? null, details.messageBody ?? null, details.goal ?? null]
+      );
+    }
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id,actor,action,target,meta)
+       VALUES ($1,'system:followup-scheduler',$2,$3,$4::jsonb)`,
+      [job.tenant_id, `followup.${outcome === "SKIPPED" ? "skipped" : outcome.toLowerCase()}`,
+        details.hasConversation === false ? job.job_id : job.conversation_id,
+        JSON.stringify({ ruleId: job.rule_id, retry: job.retry_count,
+          ...(details.reason ? { reason: details.reason } : {}) })]
+    );
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function processDueJobs(tenantId?: string): Promise<RunSummary> {
   const summary: RunSummary = { scanned: 0, sent: 0, skipped: 0, failed: 0 };
 
-  const due = await query<{
-    job_id: string;
-    tenant_id: string;
-    conversation_id: string;
-    rule_id: string;
-    retry_count: number;
-    job_created_at: Date | string;
-  }>(
-    // เคลมงานก่อนทำ ไม่ใช่แค่ SELECT: การอ่านเฉย ๆ แล้วค่อยไปส่งข้อความทีหลัง แปลว่าถ้ามี
-    // scheduler ยิงพร้อมกันสองทาง (cron ชนกับปุ่ม "รันตอนนี้", หรือ cron ยิงเข้า LB ที่มี web
-    // หลาย instance) ทั้งสองฝั่งจะอ่านงานใบเดียวกันแล้ว **ส่งข้อความหาลูกค้าซ้ำ**
-    //
-    // เคลมด้วยการเลื่อน next_run_at ออกไปเป็น lease ไม่ใช่เปลี่ยน status เพราะ CHECK constraint
-    // ของ bms_followup_jobs.status มีแค่ PENDING/SENT/STOPPED/FAILED (ไม่มี RUNNING) — ทำแบบนี้
-    // จึงไม่ต้องมี migration ใหม่ · FOR UPDATE SKIP LOCKED ให้ instance ที่สแกนพร้อมกันข้ามแถวที่
-    // ถูกจับไปแล้วแทนที่จะรอ · ถ้า process ตายกลางทาง lease หมดอายุแล้วงานกลับมาถึงกำหนดเอง
-    `UPDATE bms_followup_jobs j
-        SET next_run_at = now() + ($2 || ' minutes')::interval,
-            updated_at = now()
-      WHERE j.id IN (
-        SELECT id FROM bms_followup_jobs
-         WHERE status = 'PENDING' AND next_run_at <= now()
-           AND ($1::uuid IS NULL OR tenant_id = $1)
-         ORDER BY next_run_at ASC
-         LIMIT ${DUE_JOB_BATCH}
-         FOR UPDATE SKIP LOCKED
-      )
-     RETURNING j.id AS job_id, j.tenant_id, j.conversation_id, j.rule_id, j.retry_count,
-               j.created_at AS job_created_at`,
-    [tenantId ?? null, String(JOB_LEASE_MINUTES)]
-  );
+  const due = await claimDueJobs(tenantId);
 
-  for (const job of due.rows) {
+  for (const job of due) {
     summary.scanned += 1;
-    const ctx = systemActor(job.tenant_id);
 
     const [rule, convRow] = await Promise.all([
-      query(`SELECT * FROM bms_followup_rules WHERE id = $1`, [job.rule_id]).then((r) => (r.rowCount ? mapRule(r.rows[0]) : null)),
-      query<{ status: string; last_sender_type: string | null; last_message_at: Date | string; customer_id: string | null }>(
-        `SELECT status, last_sender_type, last_message_at, customer_id FROM bms_conversations WHERE id = $1`,
-        [job.conversation_id]
+      query(`SELECT * FROM bms_followup_rules WHERE id = $1 AND tenant_id = $2`,
+        [job.rule_id, job.tenant_id]).then((r) => (r.rowCount ? mapRule(r.rows[0]) : null)),
+      query<{ status: string; last_sender_type: string | null; last_message_at: Date | string;
+        customer_id: string | null; last_customer_at: Date | string | null }>(
+        `SELECT c.status, c.last_sender_type, c.last_message_at, c.customer_id,
+                (SELECT MAX(m.created_at) FROM bms_messages m
+                  WHERE m.tenant_id=c.tenant_id AND m.conversation_id=c.id
+                    AND m.direction='IN') AS last_customer_at
+           FROM bms_conversations c WHERE c.id = $1 AND c.tenant_id = $2`,
+        [job.conversation_id, job.tenant_id]
       ).then((r) => r.rows[0] ?? null),
     ]);
 
     const stop = async (reason: string) => {
-      await query(`UPDATE bms_followup_jobs SET status = 'STOPPED', last_result = $2, updated_at = now() WHERE id = $1`, [job.job_id, reason]);
-      await query(
-        `INSERT INTO bms_followup_history (tenant_id, job_id, conversation_id, rule_id, outcome, reason, goal)
-         VALUES ($1, $2, $3, $4, 'SKIPPED', $5, $6)`,
-        [job.tenant_id, job.job_id, job.conversation_id, job.rule_id, reason, rule?.messageGoal ?? null]
-      );
-      await audit(ctx, "followup.skipped", job.conversation_id, { ruleId: job.rule_id, reason });
-      summary.skipped += 1;
+      if (await recordFollowupOutcome(job, "SKIPPED", { reason, goal: rule?.messageGoal,
+        hasConversation: Boolean(convRow), hasRule: Boolean(rule) })) summary.skipped += 1;
     };
 
     if (!convRow) {
@@ -745,7 +880,8 @@ async function processDueJobs(tenantId?: string): Promise<RunSummary> {
       continue;
     }
     const repliedSince = new Date(convRow.last_message_at).getTime() > new Date(job.job_created_at).getTime();
-    if (repliedSince && convRow.last_sender_type === "customer") {
+    if (convRow.last_customer_at &&
+        new Date(convRow.last_customer_at).getTime() > new Date(job.job_created_at).getTime()) {
       await stop("customer_replied");
       continue;
     }
@@ -755,8 +891,8 @@ async function processDueJobs(tenantId?: string): Promise<RunSummary> {
     }
     if (convRow.customer_id) {
       const optOut = await query<{ followup_opt_out: boolean }>(
-        `SELECT followup_opt_out FROM bms_customers WHERE id = $1`,
-        [convRow.customer_id]
+        `SELECT followup_opt_out FROM bms_customers WHERE id = $1 AND tenant_id = $2`,
+        [convRow.customer_id, job.tenant_id]
       );
       if (optOut.rows[0]?.followup_opt_out) {
         await stop("opted_out");
@@ -777,51 +913,32 @@ async function processDueJobs(tenantId?: string): Promise<RunSummary> {
       const sendResult = await sendFollowupMessage(job.tenant_id, job.conversation_id, text, {
         ruleId: job.rule_id,
         jobId: job.job_id,
+        retryIndex: job.retry_count,
         goal: rule.messageGoal,
       });
-      if (sendResult.status !== "SENT") {
-        await query(`UPDATE bms_followup_jobs SET status = 'FAILED', last_result = $2, updated_at = now() WHERE id = $1`, [job.job_id, sendResult.status]);
-        await query(
-          `INSERT INTO bms_followup_history (tenant_id, job_id, conversation_id, rule_id, outcome, reason, goal)
-           VALUES ($1, $2, $3, $4, 'FAILED', $5, $6)`,
-          [job.tenant_id, job.job_id, job.conversation_id, job.rule_id, sendResult.status, rule.messageGoal]
-        );
-        await audit(ctx, "followup.failed", job.conversation_id, { ruleId: job.rule_id, reason: sendResult.status });
-        summary.failed += 1;
+      if (sendResult.status !== "SENT" ||
+          (!sendResult.delivered && !sendResult.uncertain && !sendResult.partial)) {
+        if (await recordFollowupOutcome(job, "FAILED", { reason: sendResult.status !== "SENT"
+          ? sendResult.status : "delivery_failed",
+          goal: rule.messageGoal })) summary.failed += 1;
         continue;
       }
 
       const nextRetryCount = job.retry_count + 1;
-      const done = nextRetryCount >= rule.maxRetry;
-      await query(
-        `UPDATE bms_followup_jobs
-            SET retry_count = $2,
-                status = CASE WHEN $3 THEN 'SENT' ELSE 'PENDING' END,
-                next_run_at = CASE WHEN $3 THEN next_run_at ELSE now() + ($4 || ' minutes')::interval END,
-                last_result = 'sent',
-                updated_at = now()
-          WHERE id = $1`,
-        [job.job_id, nextRetryCount, done, rule.delayMinutes]
-      );
-      await query(
-        `INSERT INTO bms_followup_history (tenant_id, job_id, conversation_id, rule_id, outcome, message_body, goal)
-         VALUES ($1, $2, $3, $4, 'SENT', $5, $6)`,
-        [job.tenant_id, job.job_id, job.conversation_id, job.rule_id, text, rule.messageGoal]
-      );
-      await audit(ctx, "followup.sent", job.conversation_id, { ruleId: job.rule_id, goal: rule.messageGoal, retry: nextRetryCount });
-      summary.sent += 1;
+      // A timeout or partial provider acceptance needs human review; never
+      // schedule another automatic follow-up to the same customer.
+      const done = nextRetryCount >= rule.maxRetry || Boolean(sendResult.uncertain || sendResult.partial);
+      if (await recordFollowupOutcome(job, "SENT", {
+        nextRetryCount, done, delayMinutes: rule.delayMinutes,
+        reason: sendResult.uncertain ? "delivery_unknown" : sendResult.partial ? "partial_delivery" : "sent",
+        messageBody: sendResult.messageBody ?? text, goal: rule.messageGoal,
+      })) summary.sent += 1;
     } catch (err) {
       console.error("[BMS] followup job failed:", err);
-      await query(`UPDATE bms_followup_jobs SET status = 'FAILED', last_result = $2, updated_at = now() WHERE id = $1`, [
-        job.job_id,
-        err instanceof Error ? err.message.slice(0, 200) : "unknown error",
-      ]);
-      await query(
-        `INSERT INTO bms_followup_history (tenant_id, job_id, conversation_id, rule_id, outcome, reason, goal)
-         VALUES ($1, $2, $3, $4, 'FAILED', $5, $6)`,
-        [job.tenant_id, job.job_id, job.conversation_id, job.rule_id, "exception", rule?.messageGoal ?? null]
-      );
-      summary.failed += 1;
+      if (await recordFollowupOutcome(job, "FAILED", {
+        reason: "exception",
+        goal: rule?.messageGoal,
+      })) summary.failed += 1;
     }
   }
 
@@ -858,9 +975,9 @@ export async function listFollowupQueue(tenantId: string, limit = 50): Promise<F
             stats.lifetime_value AS customer_lifetime_value,
             stats.total_orders
        FROM bms_followup_jobs j
-       JOIN bms_followup_rules r ON r.id = j.rule_id
-       JOIN bms_conversations c ON c.id = j.conversation_id
-       LEFT JOIN bms_customers cu ON cu.id = c.customer_id
+       JOIN bms_followup_rules r ON r.id = j.rule_id AND r.tenant_id = j.tenant_id
+       JOIN bms_conversations c ON c.id = j.conversation_id AND c.tenant_id = j.tenant_id
+       LEFT JOIN bms_customers cu ON cu.id = c.customer_id AND cu.tenant_id = j.tenant_id
        LEFT JOIN bms_customer_identities ci
          ON ci.tenant_id = c.tenant_id AND ci.channel = c.channel AND ci.external_ref = c.customer_ref
        LEFT JOIN (
@@ -970,7 +1087,7 @@ export async function getFollowupAnalytics(tenantId: string, windowDays = 30): P
                     JOIN bms_orders o
                       ON o.tenant_id = c.tenant_id
                      AND o.customer_id = c.customer_id
-                   WHERE c.id = h.conversation_id
+                   WHERE c.id = h.conversation_id AND c.tenant_id = h.tenant_id
                      AND c.customer_id IS NOT NULL
                      AND o.created_at > h.created_at
                      AND o.created_at <= h.created_at + interval '7 days'
@@ -1009,7 +1126,7 @@ export async function getFollowupAnalytics(tenantId: string, windowDays = 30): P
                     JOIN bms_orders o
                       ON o.tenant_id = c.tenant_id
                      AND o.customer_id = c.customer_id
-                   WHERE c.id = h.conversation_id
+                   WHERE c.id = h.conversation_id AND c.tenant_id = h.tenant_id
                      AND c.customer_id IS NOT NULL
                      AND o.created_at > h.created_at
                      AND o.created_at <= h.created_at + interval '7 days'
@@ -1052,7 +1169,7 @@ export async function getFollowupAnalytics(tenantId: string, windowDays = 30): P
                     JOIN bms_orders o
                       ON o.tenant_id = c.tenant_id
                      AND o.customer_id = c.customer_id
-                   WHERE c.id = h.conversation_id
+                   WHERE c.id = h.conversation_id AND c.tenant_id = h.tenant_id
                      AND c.customer_id IS NOT NULL
                      AND o.created_at > h.created_at
                      AND o.created_at <= h.created_at + interval '7 days'
@@ -1061,7 +1178,7 @@ export async function getFollowupAnalytics(tenantId: string, windowDays = 30): P
               COUNT(*) FILTER (WHERE h.outcome = 'FAILED')::int AS failed,
               COUNT(*) FILTER (WHERE h.outcome = 'SKIPPED')::int AS skipped
          FROM bms_followup_history h
-         LEFT JOIN bms_followup_rules r ON r.id = h.rule_id
+         LEFT JOIN bms_followup_rules r ON r.id = h.rule_id AND r.tenant_id = h.tenant_id
         WHERE h.tenant_id = $1
           AND h.created_at >= ${sinceExpr}
         GROUP BY COALESCE(r.intent, 'UNKNOWN')
@@ -1096,7 +1213,7 @@ export async function getFollowupAnalytics(tenantId: string, windowDays = 30): P
                     JOIN bms_orders o
                       ON o.tenant_id = c.tenant_id
                      AND o.customer_id = c.customer_id
-                   WHERE c.id = h.conversation_id
+                   WHERE c.id = h.conversation_id AND c.tenant_id = h.tenant_id
                      AND c.customer_id IS NOT NULL
                      AND o.created_at > h.created_at
                      AND o.created_at <= h.created_at + interval '7 days'

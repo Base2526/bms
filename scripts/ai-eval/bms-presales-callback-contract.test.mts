@@ -185,6 +185,10 @@ test("closing callback work uses a tenant transaction and publishes only after c
     const client = {
       async query(sql: string, params: any[] = []) {
         calls.push(sql);
+        if (sql.includes("FROM bms_conversations") && sql.includes("FOR UPDATE")) {
+          assert.deepEqual(params, ["FAKE-tenant", "FAKE-conversation"]);
+          return { rows: [{ assigned_to_user_id: null }], rowCount: 1 };
+        }
         if (sql.includes("UPDATE bms_conversations")) {
           assert.deepEqual(params, ["FAKE-tenant", "FAKE-conversation", "CLOSED"]);
           assert.match(sql, /CASE WHEN \$3 = 'CLOSED' THEN array_remove\(tags, 'sales-callback'\) ELSE tags END/);
@@ -201,16 +205,20 @@ test("closing callback work uses a tenant transaction and publishes only after c
       "./channels": {}, "./channelHealth": {}, "@/lib/notifications/service": {},
       "./coupons": {}, "./aiQuality": {}, "./customers": {}, "./failureAlert": {},
       "./customerAnswerEvidence": {}, "./answerEvidenceStore": {},
+      "./inboxMedia": { outboundInboxMediaUrl: async (_tenant: string, url: string) => url },
       "./tenant": { beginTenantTx: async (_client: unknown, tenant: string) => {
         assert.equal(tenant, "FAKE-tenant"); calls.push("BEGIN_TENANT");
       } },
     });
     if (failWrite) {
-      await assert.rejects(api.setConversationStatus("FAKE-tenant", "FAKE-conversation", "CLOSED"), /FAKE-status-failure/);
+      await assert.rejects(api.setConversationStatus("FAKE-tenant", "FAKE-conversation", "CLOSED",
+        { actor: "FAKE-actor" }), /FAKE-status-failure/);
       assert.deepEqual(calls.slice(-2), ["ROLLBACK", "RELEASE"]);
       assert.ok(!calls.includes("PUBLISH"));
     } else {
-      assert.equal(await api.setConversationStatus("FAKE-tenant", "FAKE-conversation", "CLOSED"), true);
+      assert.equal(await api.setConversationStatus("FAKE-tenant", "FAKE-conversation", "CLOSED",
+        { actor: "FAKE-actor" }), true);
+      assert.ok(calls.some(sql => sql.includes("INSERT INTO bms_audit_log")));
       assert.deepEqual(calls.slice(-3), ["COMMIT", "RELEASE", "PUBLISH"]);
     }
   }

@@ -172,6 +172,8 @@ const PRICE_PATTERN = /(\d{1,3}(,\d{3})*|\d+)\s*(บาท|฿|baht)/i;
 const STOCK_PATTERN = /(มี|เหลือ)\s*(\d+)\s*(ชิ้น|ตัว|อัน|คู่|ชุด)/i;
 const PRICE_FACT_TOOLS = new Set([
   "get_board_game_rates",
+  "get_board_game_pass_plans",
+  "get_board_game_offers",
   "get_board_game_availability",
   "search_products",
   "browse_catalog",
@@ -440,10 +442,13 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     ...(profile.businessArchetype === "board_game_cafe" ? [
       BOARD_GAME_CUSTOMER_GUARD_POLICY,
       "บริการเล่นบอร์ดเกมเป็นคนละเรื่องกับสินค้าขาย: ค่าเล่นใช้ get_board_game_rates เกมให้เล่น/แนะนำเกมตามจำนวนคนใช้ search_board_game_library โต๊ะว่าง/การมาเล่น/การจอง/ข้อมูลสาขาใช้ get_board_game_availability; ใช้ catalog เฉพาะสินค้า เครื่องดื่ม ขนม หรือเกมที่ลูกค้าต้องการซื้อ",
+      "ลูกค้าถามแพ็กเวลาเล่นของตัวเองหรือวันหมดอายุให้ใช้ get_board_game_my_passes ซึ่งอ่านเฉพาะตัวตนช่องทางนี้ ถ้า REVIEW_REQUIRED ให้พนักงานตรวจยอด; remainingMinutes=null ไม่ใช่ศูนย์ ห้ามใช้ทูลนี้อ้างราคาแพ็กใหม่ โปรโมชั่น หรือสิทธิ์ที่ยังไม่ได้ซื้อ",
+      "ราคาแพ็กเวลาเล่นใหม่ใช้ get_board_game_pass_plans และโปรโมชั่นค่าเล่นใช้ get_board_game_offers เฉพาะรายการที่ร้านเปิดเผยให้แชท ถ้ามีหลายสาขาถามสาขาก่อน แสดงเงื่อนไขที่ทูลส่งกลับครบ; ไม่พบรายการที่เผยแพร่ไม่ใช่ข้อสรุปว่าร้านไม่มีแพ็กหรือโปร ห้ามรับรองสิทธิ์ ส่วนลดสุดท้าย หรือการใช้ซ้อนกับแพ็กก่อนปิดบิล",
       "เมื่อ businessHours ของข้อมูลร้านว่าง ให้ตรวจ openingHours ของสาขาผ่าน get_board_game_availability ก่อนบอกว่าไม่มีเวลาทำการ ถ้ามีหลายสาขาให้ลูกค้าเลือกชื่อสาขาจากผลทูล ห้ามเลือกแทน",
       "การจอง: อ่าน get_board_game_availability ก่อน เมื่อ canSubmitViaChat=true เก็บสาขา วัน เวลา ระยะเวลา จำนวนคนทีละข้อ ห้ามเดาวัน/เวลาหรือเวลาเปิดปิด ใช้ get_customer_checkout และ save_customer_checkout_details เก็บเฉพาะชื่อ/เบอร์ที่ขาด แล้วเรียก request_board_game_reservation ให้ server แสดงสรุปก่อนลูกค้าตกลง ถ้า autoConfirm=true ระบบตรวจและจองโต๊ะจริงได้เมื่อผลเป็น CONFIRMED; REQUESTED ยังรอร้านตรวจ โต๊ะว่างตอนนี้ไม่ใช่ของวันที่จอง ถ้าปิดรับหรือเก็บมัดจำให้ติดต่อร้าน ติดตามด้วย get_board_game_reservation_status",
       "ยกเลิก/เลื่อนจอง: อ่าน get_board_game_reservation_status และใช้ reference ที่ระบบผูกกับตัวเลือกของลูกค้า ห้ามให้ลูกค้าพิมพ์รหัสซ้ำหรือเดา reference แล้วใช้ manage_board_game_booking action CANCEL หรือ RESCHEDULE; เวลาใหม่ต้องมาจากลูกค้า แต่ถ้าลูกค้าไม่ได้เปลี่ยนระยะเวลาหรือจำนวนคนให้ละ field นั้นเพื่อคงค่าปัจจุบัน ระบบแสดงสรุปและรอลูกค้ายืนยัน คืนเงิน/ลดราคา/ต่อเวลา/ร้องเรียน/เรียกพนักงาน ใช้ action REFUND/DISCOUNT/EXTEND_TIME/STAFF พร้อม note ตามที่ลูกค้าขอ เป็นคำขอให้พนักงานอนุมัติ ไม่มีการเปลี่ยนเงิน ราคา หรือเวลาเล่นทันที ห้ามอ้างว่าพนักงานรับงานหรือทำเสร็จแล้วจากการส่งคำขอ",
-      "โปรโมชัน รายละเอียดแพ็ก และยอดคงเหลือแพ็กยังไม่มีทูลฝั่งลูกค้า ห้ามแปลว่าไม่มีโปรหรือไม่มีแพ็ก กติกาเกมให้พนักงานช่วยอธิบายจนกว่าจะมีแหล่งกติกาที่อนุมัติ ห้ามอธิบายจากความจำของโมเดล",
+      "ของหายหรือชิ้นส่วนเกมเสียหาย: ห้ามบอกว่าพบของหรือระบุค่าเสียหายโดยไม่มีข้อมูลจริง หากลูกค้าต้องการให้ร้านตรวจ ให้ใช้ manage_board_game_booking action STAFF พร้อม note สั้น ๆ ที่ไม่มีข้อมูลติดต่อ/เลขบัตร ระบบแสดงสรุปและรอลูกค้ายืนยันก่อนส่งเข้า Inbox; การส่งคำขอไม่ใช่การตรวจพบของหรือประเมินราคาแล้ว บัตรประชาชนที่ฝากไว้ต้องให้พนักงานตรวจตัวตนที่ร้าน ห้ามอ่านชื่อหรือเลขบัตรผ่านแชท",
+      "หากร้านยังไม่เปิดเผยโปรโมชันหรือแพ็กในแชท ห้ามแปลว่าร้านไม่มีรายการนั้น; ยอดแพ็กของลูกค้าให้ยึดผล get_board_game_my_passes เท่านั้น กติกาเกมให้พนักงานช่วยอธิบายจนกว่าจะมีแหล่งกติกาที่อนุมัติ ห้ามอธิบายจากความจำของโมเดล",
       "คำถามสั้น มี Catan ไหม หรือ มีเกมอื่นไหม ในร้านบอร์ดเกมหมายถึงเกมให้เล่นก่อน เว้นแต่ลูกค้าระบุซื้อ/ขาย/กลับบ้าน เมื่อถาม 8–10 คนให้ค้น players=8, playersTo=10; เกมง่ายหรือมือใหม่ใช้ difficulty=LIGHT ส่วนมีคนสอนหรือไม่ต้องดูนโยบายร้าน ห้ามสัญญาว่ามีพนักงานสอนจากความยากของเกม",
       "อาหาร/เครื่องดื่มที่ขายอ่าน catalog แต่นำขนมมาเอง ยอดสั่งขั้นต่ำ จัดงาน เหมาร้าน แยกบิล การทิ้งบัตรหรือมัดจำยืมเกม เป็นนโยบายร้าน: ตรวจ about และ summary สาขา ถ้าไม่ระบุให้บอกเฉพาะเรื่องนั้นว่าต้องติดต่อพนักงาน อย่าใช้ค่ามัดจำจองโต๊ะตอบแทนมัดจำเกมหรือบัตรประชาชน",
       "ค้นเกมตามชื่อ/แนวแล้วไม่พบ ให้ลองรายการคลังเกมที่ไม่กรอง keyword ก่อนสรุป หากแท็กภาษาไม่ตรงกันให้เลือกจาก metadata ที่คืนมาจริงเท่านั้น ห้ามแนะนำชื่อเกมจากความจำ",
@@ -1460,7 +1465,7 @@ function isShippingEstimateQuestion(message: string): boolean {
   );
 }
 
-function shippingEstimateReply(
+export function shippingEstimateReply(
   estimate: {
     configured?: boolean;
     fee?: number | null;
@@ -1493,13 +1498,18 @@ function shippingEstimateReply(
         ? `Estimated delivery time: ${estimate.estDaysMin ?? estimate.estDaysMax}-${estimate.estDaysMax ?? estimate.estDaysMin} day(s)`
         : `ระยะเวลาจัดส่งโดยประมาณ: ${estimate.estDaysMin ?? estimate.estDaysMax}-${estimate.estDaysMax ?? estimate.estDaysMin} วัน`
       : null;
-  const warning = estimate.warnings?.[0];
-  const warningText = warning
-    ? english
-      ? `Please note: ${warning}`
-      : `หมายเหตุ: ${warning}`
+  const warningText = estimate.warnings?.length
+    ? `${english ? "Please note" : "หมายเหตุ"}: ${estimate.warnings.slice(0, 4).join("; ")}`
     : null;
-  return [feeText, dayText, warningText].filter(Boolean).join("\n");
+  // This deterministic route calls get_shipping_estimate without basket lines or subtotal.
+  // Its fee is the configured base quote, not a verified quote for the customer's basket:
+  // weight tiers and free-shipping thresholds may change the final amount.
+  const basketCaveat = estimate.fee == null
+    ? null
+    : english
+      ? "This is the shop's base estimate. The final fee needs the items, quantities and destination checked."
+      : "นี่เป็นค่าส่งตั้งต้นของร้าน ยอดจริงต้องตรวจสินค้า จำนวน และปลายทางก่อนค่ะ";
+  return [feeText, dayText, basketCaveat, warningText].filter(Boolean).join("\n");
 }
 
 function couponCheckReply(

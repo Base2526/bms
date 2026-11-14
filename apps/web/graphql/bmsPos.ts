@@ -5,7 +5,7 @@
 // device token เพราะเปิดค้างทั้งวันและใช้ session cookie ของ admin ไม่ได้
 import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
-import { requirePermission } from "@/lib/bms/permissions";
+import { loadPermissions, requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
 import { listLocations, listLocationsForUser, upsertLocation } from "@/lib/bms/locations";
@@ -75,10 +75,11 @@ export const bmsPosResolvers = {
       });
     },
 
-    /** พนักงานในร้าน + สถานะ PIN — ใช้ในหน้าตั้งค่า POS ฝั่งแอดมิน */
-    /** พนักงานทุกคนในร้าน — สำหรับหน้าจัดการ ไม่ใช่ dropdown ที่เคาน์เตอร์ */
+    /** ผู้จัดการ PIN ต้องเห็นรายชื่อผู้ที่จะตั้ง PIN ได้; การแก้โหมดบัญชียังใช้ pos.staff.manage */
     async bmsPosStaff(_p: unknown, _a: unknown, ctx: any) {
-      await requirePermission(ctx, "pos.staff.manage");
+      if (!(await loadPermissions(ctx)).has("pos.pin.manage")) {
+        await requirePermission(ctx, "pos.staff.manage");
+      }
       return listTenantStaff(getTenantId(ctx));
     },
 

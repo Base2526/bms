@@ -553,14 +553,36 @@ export async function assignCouponToCustomer(
   rawCode: string,
   opts?: { actor?: string | null; source?: string | null; note?: string | null }
 ): Promise<boolean> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: opts?.actor });
+    const assigned = await assignCouponToCustomerInTx(client, tenantId, customerId, rawCode, opts);
+    await client.query("COMMIT");
+    return assigned;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/** Use the caller's tenant transaction when a coupon is shared with an Inbox reply. */
+export async function assignCouponToCustomerInTx(
+  client: PoolClient,
+  tenantId: string,
+  customerId: string,
+  rawCode: string,
+  opts?: { actor?: string | null; source?: string | null; note?: string | null }
+): Promise<boolean> {
   const code = rawCode.trim().toUpperCase();
   if (!code) return false;
-  const coupon = await query<{ id: string }>(
+  const coupon = await client.query<{ id: string }>(
     `SELECT id FROM bms_coupons WHERE tenant_id = $1 AND code = $2 LIMIT 1`,
     [tenantId, code]
   );
   if (coupon.rowCount === 0) return false;
-  await query(
+  await client.query(
     `INSERT INTO bms_customer_coupon_wallet
        (tenant_id, customer_id, coupon_id, source, assigned_by, note, assigned_at, revoked_at, updated_at, state,
         claimed_at, reserved_at, reserved_order_id, redeemed_at, redeemed_order_id, expired_at)
@@ -580,6 +602,11 @@ export async function assignCouponToCustomer(
            expired_at = NULL,
            updated_at = now()`,
     [tenantId, customerId, coupon.rows[0].id, opts?.source ?? "MANUAL_CHAT", opts?.actor ?? null, opts?.note ?? null]
+  );
+  await client.query(
+    `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+     VALUES ($1, $2, 'coupon.assign_customer', $3, $4::jsonb)`,
+    [tenantId, opts?.actor ?? "system", customerId, JSON.stringify({ code })]
   );
   return true;
 }

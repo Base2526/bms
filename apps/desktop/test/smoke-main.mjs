@@ -1,4 +1,5 @@
 import electronMain from "electron/main";
+import { createServer } from "node:http";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -250,6 +251,7 @@ async function run() {
     try {
       vm.runInNewContext(`${reopenSource};reopenMainWindow();`, {
         app, mainWindow:oldCashier, activePairing:{},
+        pendingRefreshRequest:null, startupNavigation:Promise.resolve(), mainLoadRecovery:Promise.resolve(),
         createMainWindow:()=>{reopened=new BrowserWindow({show:false});return reopened;},
         startPosNavigation:()=>{opened++;},
       });
@@ -297,6 +299,33 @@ async function run() {
       if (unpairContext.pendingUnpair) clearTimeout(unpairContext.pendingUnpair.timer);
       for (const name of registered) ipcMain.removeHandler(name);
       if (!pairedWindow.isDestroyed()) pairedWindow.destroy();
+    }
+    // Chromium can finish an HTTP error document without emitting did-fail-load. Check the
+    // native webRequest fields that the cashier recovery handler uses for this case.
+    const failedPageServer = createServer((_request, response) => {
+      response.writeHead(503, { "content-type": "text/html" });
+      response.end("<html><body></body></html>");
+    });
+    await new Promise(resolve => failedPageServer.listen(0, "127.0.0.1", resolve));
+    try {
+      const failedUrl = `http://127.0.0.1:${failedPageServer.address().port}/pos/app`;
+      const completed = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("HTTP 503 main-frame event missing")), 5_000);
+        window.webContents.session.webRequest.onCompleted({ urls: ["<all_urls>"] }, details => {
+          if (details.url !== failedUrl || details.resourceType !== "mainFrame") return;
+          clearTimeout(timer);
+          resolve(details);
+        });
+      });
+      await window.loadURL(failedUrl).catch(() => {});
+      const details = await completed;
+      if (details.statusCode !== 503 || details.webContentsId !== window.webContents.id) {
+        throw new Error(`HTTP failure was not attributed to the cashier: ${JSON.stringify(details)}`);
+      }
+      console.log("smoke: HTTP 503 main-frame response is attributable to the cashier");
+    } finally {
+      window.webContents.session.webRequest.onCompleted(null);
+      await new Promise(resolve => failedPageServer.close(resolve));
     }
     console.log(JSON.stringify({ ok: true, platform: process.platform, version, cashierReopened:true, screenshotPath, compactScreenshotPath, startupScreenshotPath, state, compactState, loadingState, localRuntimeState, startupState }));
   } finally {

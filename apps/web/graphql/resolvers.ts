@@ -2120,8 +2120,8 @@ const rawResolvers = {
       const user = ctx.user; // สมมติ auth middleware ใส่มาแล้ว
       if (!user) throw new Error('Unauthorized');
 
-      const limit = args.limit ?? 20;
-      const offset = args.offset ?? 0;
+      const limit = Number.isInteger(args.limit) ? Math.min(Math.max(args.limit!, 1), 100) : 20;
+      const offset = Number.isInteger(args.offset) ? Math.min(Math.max(args.offset!, 0), 10_000) : 0;
 
       const { rows } = await query(
         `
@@ -6366,6 +6366,16 @@ const rawResolvers = {
 
       return rows.length > 0;
     },
+    setNotificationRead: async (_: any, args: { id: string; isRead: boolean }, ctx: any) => {
+      const user = ctx.user;
+      if (!user) throw new Error('Unauthorized');
+      const { rows } = await query(
+        `UPDATE notifications SET is_read = $3
+          WHERE id = $1 AND user_id = $2 RETURNING id`,
+        [args.id, user.id, args.isRead]
+      );
+      return rows.length > 0;
+    },
     markAllNotificationsRead: async (_: any, __: any, ctx: any) => {
       const user = ctx.user;
       if (!user) throw new Error('Unauthorized');
@@ -6381,6 +6391,15 @@ const rawResolvers = {
       );
 
       return true;
+    },
+    deleteNotification: async (_: any, args: { id: string }, ctx: any) => {
+      const user = ctx.user;
+      if (!user) throw new Error('Unauthorized');
+      const { rows } = await query(
+        `DELETE FROM notifications WHERE id = $1 AND user_id = $2 RETURNING id`,
+        [args.id, user.id]
+      );
+      return rows.length > 0;
     },
     addComment: async (_: any, { post_id, content }: any, ctx: any) => {
       // const { author_id, scope, isAuthenticated } = requireAuth(ctx); 

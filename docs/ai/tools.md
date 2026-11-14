@@ -31,6 +31,8 @@ their dedicated server summaries. Staff confirmation continues through the exist
 | `request_board_game_reservation` | `order.create` | Board-game archetype only. Branch name, branch-local date/time, duration 30–720 minutes, party 1–500 and non-contact note ≤300 characters. First call is a read-only preview, never an insert. Pipeline saves a 15-minute fingerprint and displays its own summary. Exact latest-summary consent is server-only in ExecCtx; changed fields/config require confirmation again. Inserts CHAT/REQUESTED only, using CRM name/phone and a server retry key. |
 | `get_board_game_reservation_status` | `order.view` | No arguments. Latest five CHAT requests of the channel-derived CRM customer, scoped to the acting tenant. Short reference, branch/time/timezone, party, duration, status and bounded rejection reason; no table, staff or customer identity. Pipeline composes the reply. |
 | `get_board_game_availability` | Read | `booking.canSubmitViaChat = bookingEnabled && reservationDepositPolicy === 'NONE'`; directory listing is independent. May return opt-in area/floor and capacity-grouped counts, never table numbers or occupants. Current free tables are not future availability. |
+| `get_board_game_my_passes` | `order.view` | Board-game customer only. No arguments; identity comes from the server-established channel binding. Returns up to 10 own purchased passes with expiry and ledger-verified remaining minutes. A mismatch suppresses the balance and requires staff review. No current plan prices or offers. |
+| `get_board_game_pass_plans`, `get_board_game_offers` | Read | Board-game customer only. Active per-row chat opt-in, selected active branch or tenant-wide scope, at most 20 rows with truncation. Offers exclude expired dates and disclose conditions, not guaranteed eligibility or a final bill. |
 
 Contact completeness uses `get_customer_checkout`; missing name/phone use the existing
 `save_customer_checkout_details`. Neither customer/tenant IDs nor a confirmation flag are model
@@ -1246,7 +1248,7 @@ Confidence
   on keyword routing or the model remembering to request shop context. No payment accounts,
   credentials, customer data, or private settings are included in this prefetched projection.
 - `get_board_game_rates` — customer-only for `board_game_cafe`; published hourly rates by
-  participant type plus minimum, rounding and grace minutes. Offers, pass balances and final-bill
+  participant type plus minimum, rounding and grace minutes. Final-bill
   quotes are not exposed. Requires a published branch with `publish_rates` enabled.
 - Staff analytics (not customer discovery): `list_board_game_report_branches` returns up to 100
   branches allowed to the authenticated actor, a truncation flag, `allBranchesAllowed`, timezone
@@ -1336,6 +1338,16 @@ Confidence
   These three tools use `boardGameCustomerInfo.ts` inside tenant/RLS transactions. Branch selection
   accepts a published name, never an operational id. Multiple/mismatched branches return
   `BRANCH_REQUIRED`; unpublished data returns `NOT_PUBLISHED`, not zero or proof of absence.
+- `get_board_game_my_passes` — customer-only read of the channel-derived CRM customer's purchased
+  pass snapshots, capped at 10 with a truncation flag. Reads in a tenant/RLS transaction; compares
+  cached remaining minutes with the pass ledger and suppresses a mismatched balance. Inactive,
+  unlimited and mismatched passes have `remainingMinutes: null`, never an inferred zero. This does
+  not publish pass plans or offers from the customer's entitlement record.
+- `get_board_game_pass_plans` / `get_board_game_offers` — explicit per-row opt-in from `10.117`,
+  off by default, plus active row and branch scope. Plans expose listed name, price, duration and
+  included minutes; offers expose stated conditions without internal SKU/note. Both cap at 20 with
+  truncation. No visible rows return `NOT_PUBLISHED`, which is not proof the shop has no plans or
+  offers. Neither tool claims a purchase, offer eligibility, benefit stacking or final amount.
 - `request_board_game_reservation` — board-game customer-only, `order.create`; previews exact
   branch-local date/time, duration and party size for fresh customer confirmation. Backend derives
   CRM identity/contact. Default is `REQUESTED`; branch `chatAutoConfirm=true` with no deposit
@@ -1382,7 +1394,7 @@ Confidence
   names an actual table/check.
 - `get_payment_info` — บัญชีรับเงินของร้านที่กรอกข้อมูลใช้งานได้จริง (ธนาคาร/พร้อมเพย์) พร้อม
   `configured`; แถวว่างถูกตัดออก และเมื่อ `configured=false` AI ห้ามยกตัวอย่างช่องทางเอง
-- `get_shipping_estimate` — ประเมินค่าส่ง/ระยะเวลา (flat rate + ส่งฟรีเมื่อถึงยอดขั้นต่ำ)
+- `get_shipping_estimate` — ประเมินค่าส่ง/ระยะเวลาจากเรตที่ร้านตั้ง (flat/zone + เกณฑ์ส่งฟรี) เมื่อระบุ `items` เพื่อคำนวณน้ำหนัก ต้องมี SKU และจำนวนเต็มบวกของแต่ละรายการจริง; จำนวนที่ขาด ผิดรูปแบบ หรือมากกว่า 20 รายการถูกปฏิเสธ ไม่สมมติเป็น 1 หรือทิ้งรายการเงียบ ๆ ฝั่งลูกค้าไม่รับ `subtotal` ที่โมเดลส่งมา เพราะอาจทำให้ลดค่าส่งเป็นศูนย์ผิด; เกณฑ์ส่งฟรีตรวจจากยอดจริงใน checkout เท่านั้น ส่วน staff ใช้ยอด what-if ที่ตรวจแล้วได้ เส้นทางตอบอัตโนมัติที่ถาม “ค่าส่งเท่าไร” แบบไม่มีตะกร้าจะได้เพียงเรตตั้งต้นและต้องระบุว่าราคาจริงต้องตรวจสินค้า จำนวน และปลายทาง
 
 ข้อมูลมาจาก migration `6.9__bms_store_profile.sql` (1 แถวต่อร้าน) กรอกที่ `/admin/settings` (การ์ด
 "ข้อมูลร้าน") ผ่าน `bmsStoreProfile`/`bmsUpsertStoreProfile` (gate `requireTenantAdmin`, ไม่มี permission ใหม่)

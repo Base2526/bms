@@ -68,6 +68,7 @@ export async function recordMovement(
     returnId?: string | null;
     transferItemId?: string | number | null;
     purchaseItemId?: string | number | null;
+    fishIntakeLineId?: string | number | null;
     initialQty?: string;
     productionId?: string;
   }

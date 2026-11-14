@@ -4,8 +4,8 @@ import { useUiText } from "@/lib/useUiText";
 
 import { CheckCircleOutlined, ClockCircleOutlined, ReloadOutlined, PlusOutlined } from "@ant-design/icons";
 import {
-  Alert, Button, Card, Col, DatePicker, Form, Input, InputNumber, Modal, Row, Select,
-  Space, Statistic, Switch, Table, Tabs, Tag, Typography, message,
+  Alert, Button, Card, Col, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Row, Select,
+  Space, Statistic, Switch, Table, Tabs, Tag, Typography, Upload, message,
 } from "antd";
 import dayjs from "dayjs";
 import { useEffect, useMemo, useState } from "react";
@@ -20,7 +20,8 @@ type Boot = {
   integrations: Integration[];
   mappings: { locations: any[]; menus: any[]; availableLocations: any[]; catalog: any[] };
   operations: { orders: any[]; events: any[]; commands: any[]; controls: any[] };
-  finance: { settlements: any[]; lines: any[]; adjustments: any[]; disputes: any[] };
+  finance: { settlements: any[]; lines: any[]; adjustments: any[]; disputes: any[];
+    integrations: any[]; availableLocations: any[]; orders: any[]; evidence: any[] };
 };
 type Analytics = {
   from: string; to: string; locationId: string | null; granularity: "DAY" | "WEEK" | "MONTH"; settlementScope: string;
@@ -56,7 +57,7 @@ export default function DeliveryPlatformsPage() {
   const [boot, setBoot] = useState<Boot>({
     integrations: [], mappings: { locations: [], menus: [], availableLocations: [], catalog: [] },
     operations: { orders: [], events: [], commands: [], controls: [] },
-    finance: { settlements: [], lines: [], adjustments: [], disputes: [] },
+    finance: { settlements: [], lines: [], adjustments: [], disputes: [], integrations: [], availableLocations: [], orders: [], evidence: [] },
   });
   const [loading, setLoading] = useState(false);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
@@ -74,6 +75,7 @@ export default function DeliveryPlatformsPage() {
   const [settlementOpen, setSettlementOpen] = useState(false);
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
   const [disputeOpen, setDisputeOpen] = useState(false);
+  const [uploadingEvidenceFor, setUploadingEvidenceFor] = useState<string | null>(null);
   const [integrationForm] = Form.useForm();
   const selectedIntegrationProvider = Form.useWatch("provider", integrationForm) as "FOODPANDA" | "GRABFOOD" | "LINEMAN" | undefined;
   const tenantCredentialFieldsAvailable = selectedIntegrationProvider
@@ -101,15 +103,21 @@ export default function DeliveryPlatformsPage() {
   };
 
   const load = async () => {
-    if (!canView) return;
+    if (!canView && !canViewFinance) return;
     setLoading(true);
     try {
       const [integrations, mappings, operations, finance] = await Promise.all([
-        jsonFetch("/api/bms/delivery/integrations"), jsonFetch("/api/bms/delivery/mappings"),
-        jsonFetch("/api/bms/delivery/operations"),
-        canViewFinance ? jsonFetch("/api/bms/delivery/settlements") : Promise.resolve({ settlements: [], lines: [], adjustments: [], disputes: [] }),
+        canView ? jsonFetch("/api/bms/delivery/integrations") : Promise.resolve({ integrations: [] }),
+        canView ? jsonFetch("/api/bms/delivery/mappings") : Promise.resolve({ locations: [], menus: [], availableLocations: [], catalog: [] }),
+        canView ? jsonFetch("/api/bms/delivery/operations") : Promise.resolve({ orders: [], events: [], commands: [], controls: [] }),
+        canViewFinance ? jsonFetch("/api/bms/delivery/settlements") : Promise.resolve({ settlements: [], lines: [], adjustments: [], disputes: [], integrations: [], availableLocations: [], orders: [], evidence: [] }),
       ]);
-      setBoot({ integrations: integrations.integrations ?? [], mappings, operations, finance });
+      setBoot({
+        integrations: canView ? integrations.integrations ?? [] : finance.integrations ?? [],
+        mappings: { ...mappings, availableLocations: canView ? mappings.availableLocations ?? [] : finance.availableLocations ?? [] },
+        operations: { ...operations, orders: canView ? operations.orders ?? [] : finance.orders ?? [] },
+        finance,
+      });
     } catch (error: any) { message.error(error?.message ?? L("โหลดข้อมูลไม่สำเร็จ", "Unable to load delivery data")); }
     finally { setLoading(false); }
   };
@@ -118,6 +126,11 @@ export default function DeliveryPlatformsPage() {
     const tab = new URLSearchParams(window.location.search).get("tab");
     if (tab && ["analytics", "integrations", "mappings", "operations", "finance"].includes(tab)) setActiveTab(tab);
   }, []);
+  useEffect(() => {
+    if (permissionLoading) return;
+    if (!canView && canViewFinance && !["analytics", "finance"].includes(activeTab)) setActiveTab("analytics");
+    if (canView && !canViewFinance && ["analytics", "finance"].includes(activeTab)) setActiveTab("integrations");
+  }, [permissionLoading, canView, canViewFinance, activeTab]);
   useEffect(() => { void load(); }, [canView, canViewFinance]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void loadAnalytics(); }, [canViewFinance, analyticsRange, analyticsLocationId, analyticsGranularity]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -205,11 +218,33 @@ export default function DeliveryPlatformsPage() {
     } catch (error: any) { if (!error?.errorFields) message.error(error?.message ?? L("บันทึกไม่สำเร็จ", "Save failed")); }
   }
 
+  async function uploadDisputeEvidence(disputeId: string, file: File) {
+    if (file.size > 5 * 1024 * 1024) {
+      message.error(L("ภาพหลักฐานต้องไม่เกิน 5 MB", "Evidence image must be 5 MB or less"));
+      return;
+    }
+    setUploadingEvidenceFor(disputeId);
+    try {
+      const response = await fetch(`/api/bms/delivery/disputes/evidence?disputeId=${encodeURIComponent(disputeId)}`, {
+        method: "POST", body: file,
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? `HTTP_${response.status}`);
+      message.success(L("แนบภาพหลักฐานแล้ว", "Evidence image attached"));
+      await load();
+    } catch (error: any) {
+      message.error(error?.message ?? L("แนบภาพหลักฐานไม่สำเร็จ", "Unable to attach evidence image"));
+    } finally { setUploadingEvidenceFor(null); }
+  }
+
   async function transitionDispute(dispute: any, status: string) {
     try {
-      const providerCaseId = status === "SUBMITTED"
-        ? window.prompt(L("Provider case ID (เว้นว่างได้)", "Provider case ID (optional)"), dispute.provider_case_id ?? "")?.trim()
-        : undefined;
+      let providerCaseId: string | undefined;
+      if (status === "SUBMITTED") {
+        const entered = window.prompt(L("Provider case ID (เว้นว่างได้)", "Provider case ID (optional)"), dispute.provider_case_id ?? "");
+        if (entered === null) return;
+        providerCaseId = entered.trim();
+      }
       await jsonFetch("/api/bms/delivery/settlements", { method: "POST", body: JSON.stringify({
         action: "transition_dispute", disputeId: dispute.id, status, providerCaseId: providerCaseId || undefined,
       }) });
@@ -224,7 +259,16 @@ export default function DeliveryPlatformsPage() {
     } catch (error: any) { message.error(error?.message ?? L("ลองใหม่ไม่สำเร็จ", "Retry failed")); }
   }
 
-  if (!permissionLoading && !canView) return <Alert closable type="error" showIcon message={L("ไม่มีสิทธิ์ delivery.integration.view", "Missing delivery.integration.view permission")} />;
+  function confirmDisputeTransition(dispute: any, status: string) {
+    Modal.confirm({
+      title: L("ยืนยันการเปลี่ยนสถานะ dispute", "Confirm dispute status change"),
+      content: `${dispute.provider_order_id ?? dispute.id} → ${status}`,
+      okText: L("ยืนยัน", "Confirm"), cancelText: L("ยกเลิก", "Cancel"),
+      onOk: () => transitionDispute(dispute, status),
+    });
+  }
+
+  if (!permissionLoading && !canView && !canViewFinance) return <Alert closable type="error" showIcon message={L("ไม่มีสิทธิ์ดูข้อมูลเดลิเวอรี", "Missing delivery access permission")} />;
 
   const money = (value: unknown, currency = "THB") => {
     try {
@@ -399,7 +443,10 @@ export default function DeliveryPlatformsPage() {
         { title:uiText("admin_ui.en_provider_7ceee"), dataIndex:"provider" }, { title:L("ออเดอร์", "Order"), dataIndex:"provider_order_id" },
         { title:L("Event", "Event"), dataIndex:"event_type" }, { title:L("สถานะ", "Status"), dataIndex:"processing_status", render:(v)=><Tag color={statusColor(v)}>{v}</Tag> },
         { title:L("ข้อผิดพลาด", "Error"), dataIndex:"last_error" },
-        { title:"", render:(_,r) => can("restaurant.delivery.review") && <Button size="small" onClick={() => void retry("event",r.id)}>{L("ลองใหม่", "Retry")}</Button> },
+        { title:"", render:(_,r) => can("restaurant.delivery.review") && <Popconfirm
+          title={L("ส่งเหตุการณ์นี้เข้าคิวตรวจอีกครั้ง?", "Queue this event for review again?")}
+          onConfirm={() => retry("event",r.id)} okText={L("ยืนยัน", "Confirm")} cancelText={L("ยกเลิก", "Cancel")}
+        ><Button size="small">{L("ลองใหม่", "Retry")}</Button></Popconfirm> },
       ]} />
     </Card>
     <Card title={L("คำสั่งที่ยังไม่ยืนยัน", "Unconfirmed provider commands")}>
@@ -407,7 +454,10 @@ export default function DeliveryPlatformsPage() {
         { title:uiText("admin_ui.en_provider_7ceee"), dataIndex:"provider" }, { title:L("คำสั่ง", "Command"), dataIndex:"command_type" },
         { title:L("สถานะ", "Status"), dataIndex:"status", render:(v)=><Tag color={statusColor(v)}>{v}</Tag> },
         { title:L("ครั้ง", "Attempts"), dataIndex:"attempts" }, { title:L("ข้อผิดพลาด", "Error"), dataIndex:"last_error" },
-        { title:"", render:(_,r) => canManageIntegration && ["FAILED","MANUAL_ACTION_REQUIRED"].includes(r.status) && <Button size="small" onClick={() => void retry("command",r.id)}>{L("ลองใหม่", "Retry")}</Button> },
+        { title:"", render:(_,r) => canManageIntegration && ["FAILED","MANUAL_ACTION_REQUIRED"].includes(r.status) && <Popconfirm
+          title={L("ส่งคำสั่งนี้เข้าคิวอีกครั้ง? อาจเรียก API ผู้ให้บริการ", "Queue this command again? It may call the provider API.")}
+          onConfirm={() => retry("command",r.id)} okText={L("ยืนยัน", "Confirm")} cancelText={L("ยกเลิก", "Cancel")}
+        ><Button size="small">{L("ลองใหม่", "Retry")}</Button></Popconfirm> },
       ]} />
     </Card>
     <Card title={L("ออเดอร์และ timeline ล่าสุด", "Recent orders and timeline")}>
@@ -439,20 +489,38 @@ export default function DeliveryPlatformsPage() {
       { title:L("ชนิด", "Type"), dataIndex:"adjustment_type" }, { title:L("จำนวน", "Amount"), render:(_,r)=>`${r.currency} ${r.amount}` }, { title:L("ออเดอร์", "Order"), dataIndex:"provider_order_id" }, { title:L("เหตุผล", "Reason"), dataIndex:"reason" },
     ]} /></Card></Col><Col xs={24} xl={12}><Card title={L("Disputes", "Disputes")} extra={canManageDispute ? <Button size="small" icon={<PlusOutlined />} onClick={() => {
       disputeForm.resetFields(); disputeForm.setFieldsValue({ currency:"THB", claimedAmount:0 }); setDisputeOpen(true);
-    }}>{L("สร้าง", "Create")}</Button> : null}><Table size="small" rowKey="id" dataSource={boot.finance.disputes} columns={[
+    }}>{L("สร้าง", "Create")}</Button> : null}><Table size="small" rowKey="id" dataSource={boot.finance.disputes}
+    expandable={{ expandedRowRender: (dispute) => <Space direction="vertical" size="small">
+      <Typography.Text strong>{L("ภาพหลักฐาน", "Evidence images")}</Typography.Text>
+      {(boot.finance.evidence ?? []).filter((item) => item.dispute_id === dispute.id).map((item) =>
+        <a key={item.file_id} href={`/api/bms/delivery/disputes/evidence/${item.file_id}`}>
+          {L("ภาพหลักฐาน", "Evidence image")} · {dayjs(item.created_at).format("YYYY-MM-DD HH:mm")}
+        </a>)}
+      {!(boot.finance.evidence ?? []).some((item) => item.dispute_id === dispute.id) &&
+        <Typography.Text type="secondary">{L("ยังไม่มีภาพหลักฐาน", "No evidence images yet")}</Typography.Text>}
+      {canManageDispute && ["DRAFT", "SUBMITTED", "UNDER_REVIEW"].includes(dispute.status) &&
+        <Upload accept="image/png,image/jpeg,image/webp" showUploadList={false}
+          beforeUpload={(file) => { void uploadDisputeEvidence(dispute.id, file); return false; }}>
+          <Button size="small" loading={uploadingEvidenceFor === dispute.id} disabled={uploadingEvidenceFor !== null}>
+            {L("แนบภาพหลักฐาน", "Attach evidence image")}
+          </Button>
+        </Upload>}
+    </Space> }} columns={[
       { title:L("ออเดอร์", "Order"), dataIndex:"provider_order_id" }, { title:L("จำนวน", "Claim"), render:(_,r)=>`${r.currency} ${r.claimed_amount}` }, { title:L("สถานะ", "Status"), dataIndex:"status", render:(v)=><Tag color={statusColor(v)}>{v}</Tag> },
-      { title:"", render:(_,r) => canManageDispute && !["WON","LOST","CANCELLED"].includes(r.status) ? <Select size="small" style={{width:145}} placeholder={L("เปลี่ยนสถานะ", "Transition")} onChange={(status)=>void transitionDispute(r,status)} options={(r.status === "DRAFT" ? ["SUBMITTED","CANCELLED"] : r.status === "SUBMITTED" ? ["UNDER_REVIEW","WON","LOST","CANCELLED"] : ["WON","LOST","CANCELLED"]).map(value=>({value,label:value}))} /> : null },
+      { title:"", render:(_,r) => canManageDispute && !["WON","LOST","CANCELLED"].includes(r.status) ? <Select size="small" style={{width:145}} placeholder={L("เปลี่ยนสถานะ", "Transition")} onChange={(status)=>confirmDisputeTransition(r,status)} options={(r.status === "DRAFT" ? ["SUBMITTED","CANCELLED"] : r.status === "SUBMITTED" ? ["UNDER_REVIEW","WON","LOST","CANCELLED"] : ["WON","LOST","CANCELLED"]).map(value=>({value,label:value}))} /> : null },
     ]} /></Card></Col></Row>
   </Space>;
 
   return <Space direction="vertical" size="large" style={{ width:"100%" }}>
     <AdminPageHeader title={L("แพลตฟอร์มเดลิเวอรี", "Delivery platforms")}><Button icon={<ReloadOutlined />} loading={loading || analyticsLoading} onClick={() => void Promise.all([load(),loadAnalytics()])}>{L("รีเฟรช", "Refresh")}</Button></AdminPageHeader>
     <Tabs activeKey={activeTab} onChange={(key) => { setActiveTab(key); history.replaceState(null,"",`?tab=${key}`); }} items={[
-      { key:"analytics", label:L("วิเคราะห์", "Analytics"), children:analyticsView },
-      { key:"integrations", label:L("การเชื่อมต่อ", "Integrations"), children:integrations },
-      { key:"mappings", label:L("Mapping", "Mappings"), children:mappings },
-      { key:"operations", label:L("ปฏิบัติการ", "Operations"), children:operations },
-      { key:"finance", label:L("การเงิน", "Finance"), children:finance },
+      ...(canViewFinance ? [{ key:"analytics", label:L("วิเคราะห์", "Analytics"), children:analyticsView }] : []),
+      ...(canView ? [
+        { key:"integrations", label:L("การเชื่อมต่อ", "Integrations"), children:integrations },
+        { key:"mappings", label:L("Mapping", "Mappings"), children:mappings },
+        { key:"operations", label:L("ปฏิบัติการ", "Operations"), children:operations },
+      ] : []),
+      ...(canViewFinance ? [{ key:"finance", label:L("การเงิน", "Finance"), children:finance }] : []),
     ]} />
 
     <Modal open={integrationOpen} title={L("ตั้งค่าการเชื่อมต่อ", "Configure integration")} onCancel={()=>setIntegrationOpen(false)} onOk={()=>void saveIntegration()} width={760} okText={L("บันทึก", "Save")} cancelText={L("ยกเลิก", "Cancel")}>

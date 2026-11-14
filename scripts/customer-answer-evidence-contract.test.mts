@@ -33,6 +33,26 @@ test("restaurant, board-game and parking snapshots preserve actual counts, branc
   }
 });
 
+test("customer pass evidence records status without names, branch or remaining minutes", () => {
+  const projected = projectToolEvidence("get_board_game_my_passes", {}, {
+    status: "OK", truncated: false, passes: [{ planName: "FAKE Secret", branch: "FAKE Private",
+      remainingMinutes: 120, balanceStatus: "REVIEW_REQUIRED" }],
+  });
+  assert.deepEqual(projected.output, { status: "OK", passCount: 1, reviewRequired: true, truncated: false });
+  assert.doesNotMatch(JSON.stringify(projected), /FAKE Secret|FAKE Private|120/);
+});
+
+test("published board-game catalog evidence keeps stated terms but not internal notes or SKU", () => {
+  const offer = projectToolEvidence("get_board_game_offers", { branch: "FAKE Main" }, {
+    status: "OK", offers: [{ name: "FAKE offer", percentOff: 10, weekdays: [1, 2],
+      requiresProductPurchase: true, requiredProductSku: "PRIVATE-SKU", note: "PRIVATE-NOTE" }],
+  });
+  assert.deepEqual((offer.output as any).offers[0], {
+    name: "FAKE offer", percentOff: 10, weekdays: [1, 2], requiresProductPurchase: true,
+  });
+  assert.doesNotMatch(JSON.stringify(offer), /PRIVATE-SKU|PRIVATE-NOTE/);
+});
+
 test("private fields never survive projection; unknown tools and clinical tools fail closed", () => {
   const secret = "FAKE-PRIVATE-SENTINEL";
   const payload = { name: secret, phone: secret, address: secret, note: secret, bankAccount: secret,

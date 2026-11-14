@@ -29,7 +29,10 @@ export async function getOnboardingProgress(tenantId: string): Promise<Onboardin
        FROM bms_store_profile WHERE tenant_id = $1`,
     [tenantId]
   );
-  const row = result.rows[0];
+  return progressFromRow(result.rows[0]);
+}
+
+function progressFromRow(row: any): OnboardingProgress {
   const progress = row?.onboarding_progress && typeof row.onboarding_progress === "object"
     ? row.onboarding_progress
     : {};
@@ -48,14 +51,22 @@ export async function updateOnboardingProgress(input: {
   dismissed?: boolean | null;
   editorId?: string | null;
 }): Promise<OnboardingProgress> {
-  const current = await getOnboardingProgress(input.tenantId);
-  const completed = input.completed == null ? current.completed : validSteps(input.completed);
-  const skipped = (input.skipped == null ? current.skipped : validSteps(input.skipped))
-    .filter((step) => !completed.includes(step));
   const client = await getClient();
   try {
     await beginTenantTx(client, input.tenantId, input.editorId ? { editorId: input.editorId } : undefined);
-    await client.query(
+    // Serializes the first upsert as well as edits to an existing profile.
+    const tenant = await client.query(`SELECT id FROM bms_tenants WHERE id=$1 FOR UPDATE`, [input.tenantId]);
+    if (!tenant.rowCount) throw new Error("ไม่พบร้าน");
+    const previous = await client.query(
+      `SELECT onboarding_progress, onboarding_dismissed_at, onboarding_last_seen_at
+         FROM bms_store_profile WHERE tenant_id=$1 FOR UPDATE`,
+      [input.tenantId]
+    );
+    const current = progressFromRow(previous.rows[0]);
+    const completed = input.completed == null ? current.completed : validSteps(input.completed);
+    const skipped = (input.skipped == null ? current.skipped : validSteps(input.skipped))
+      .filter((step) => !completed.includes(step));
+    const updated = await client.query(
       `INSERT INTO bms_store_profile
          (tenant_id, onboarding_progress, onboarding_dismissed_at, onboarding_last_seen_at)
        VALUES ($1, $2::jsonb, CASE WHEN $3::boolean THEN now() ELSE NULL END, now())
@@ -66,15 +77,26 @@ export async function updateOnboardingProgress(input: {
            ELSE NULL
          END,
          onboarding_last_seen_at = now(),
-         updated_at = now()`,
+         updated_at = now()
+       RETURNING onboarding_progress, onboarding_dismissed_at, onboarding_last_seen_at`,
       [input.tenantId, JSON.stringify({ completed, skipped }), input.dismissed ?? Boolean(current.dismissedAt)]
     );
+    const result = progressFromRow(updated.rows[0]);
+    if (input.editorId) {
+      await client.query(
+        `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
+         VALUES($1,$2,'onboarding.progress_update',$1,$3::jsonb)`,
+        [input.tenantId, input.editorId, JSON.stringify({
+          completed: result.completed, skipped: result.skipped, dismissed: Boolean(result.dismissedAt),
+        })]
+      );
+    }
     await client.query("COMMIT");
+    return result;
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
     throw error;
   } finally {
     client.release();
   }
-  return getOnboardingProgress(input.tenantId);
 }

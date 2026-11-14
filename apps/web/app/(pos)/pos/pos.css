@@ -762,6 +762,53 @@
 .pos-scan input:focus { box-shadow: none; }
 .pos-scan-shortcut { flex: none; }
 
+/* Purchase receiving: choose the receiver and PO before working in the draft. */
+.pos-stock-page { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.pos-stock-heading { justify-content: space-between; padding: 0 2px; }
+.pos-stock-heading .pos-block-title { font-size: 21px; line-height: 1.35; }
+.pos-stock-setup {
+  display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .6fr) minmax(0, 1.3fr) auto;
+  gap: 10px; align-items: end; padding: 15px;
+  background: var(--pos-surface); border: 1px solid var(--pos-line); border-radius: var(--pos-radius);
+}
+.pos-stock-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; font-size: 12px; color: var(--pos-muted); }
+.pos-stock-field input, .pos-stock-field select { width: 100%; min-width: 0; }
+.pos-stock-step { color: var(--pos-accent); font-size: 12px; font-weight: 600; }
+.pos-stock-load { white-space: nowrap; }
+.pos-stock-setup-hint { background: var(--pos-accent-bg); color: var(--pos-text); }
+.pos-stock-work-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, 25%); gap: 14px; align-items: start; }
+.pos-stock-panel { min-width: 0; padding: 17px; background: var(--pos-surface); border: 1px solid var(--pos-line); border-radius: var(--pos-radius); }
+.pos-stock-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.pos-stock-panel-head .pos-block-title, .pos-stock-summary .pos-block-title { font-size: 17px; margin: 3px 0 0; }
+.pos-stock-list-panel .pos-scan { margin-bottom: 12px; }
+.pos-stock-po-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 9px 0; font-size: 12px; }
+.pos-stock-po-meta strong { overflow-wrap: anywhere; }
+.pos-stock-lines { display: flex; flex-direction: column; }
+.pos-stock-line { padding: 13px 0; border-top: 1px solid var(--pos-line); }
+.pos-stock-line strong { overflow-wrap: anywhere; }
+.pos-stock-lot-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.pos-stock-lot-fields > label { min-width: 0; }
+.pos-stock-lot-fields input { width: 100%; min-width: 0; }
+.pos-stock-empty { color: var(--pos-muted); text-align: center; padding: 42px 12px; background: var(--pos-sunken); border-radius: var(--pos-radius); }
+.pos-stock-summary-row { display: flex; justify-content: space-between; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--pos-line); font-size: 12px; }
+.pos-stock-summary-row span { color: var(--pos-muted); }
+.pos-stock-summary-row strong { text-align: right; overflow-wrap: anywhere; }
+.pos-stock-confirm-note { margin: 14px 0; padding: 11px; border-radius: var(--pos-radius); background: var(--pos-accent-bg); font-size: 12px; line-height: 1.5; }
+.pos-root .pos-stock-confirm { width: 100%; background: var(--pos-accent); border-color: var(--pos-accent); color: #fff; font-weight: 600; }
+.pos-root .pos-stock-confirm:hover:not(:disabled) { background: var(--pos-accent-hover); color: #fff; }
+@media (max-width: 1120px) {
+  .pos-stock-setup { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .pos-stock-work-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .pos-stock-setup { grid-template-columns: minmax(0, 1fr); padding: 13px; }
+  .pos-stock-panel { padding: 13px; }
+  .pos-stock-lot-fields { grid-template-columns: minmax(0, 1fr); }
+  .pos-stock-heading { align-items: flex-start; }
+}
+
 /* ปุ่มกล้อง (โหมดเทส) — ทรงกลมล้วน ๆ ให้ต่างจากกรอบสี่เหลี่ยมของช่องยิง
    ต้องเขียนคู่กับ .pos-root ให้ specificity ชนะ `.pos-root button` ด้านบน
    ไม่งั้นโดน border-radius/padding/min-height ของปุ่มมาตรฐานทับจนเป็นสี่เหลี่ยม */
@@ -963,6 +1010,129 @@
 }
 .pos-petty-history { border-top: 1px solid var(--pos-line); margin-top: 9px; padding-top: 6px; }
 
+/* Deposit work is split by bill origin so amounts cannot be mistaken for another bill. */
+.pos-deposit-page { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.pos-deposit-heading { justify-content: space-between; padding: 0 2px; }
+.pos-deposit-heading .pos-block-title { font-size: 21px; line-height: 1.35; }
+.pos-deposit-work-grid {
+  display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
+  gap: 14px; align-items: start;
+}
+.pos-deposit-panel {
+  min-width: 0; background: var(--pos-surface); border: 1px solid var(--pos-line);
+  border-radius: var(--pos-radius); padding: 17px;
+}
+.pos-deposit-panel .pos-block-title { font-size: 17px; line-height: 1.35; margin-bottom: 10px; }
+.pos-deposit-intro {
+  color: var(--pos-muted); line-height: 1.5; margin-bottom: 14px;
+}
+.pos-deposit-cart-fields,
+.pos-deposit-existing-fields,
+.pos-deposit-actions,
+.pos-deposit-close-fields {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+}
+.pos-deposit-cart-fields > *,
+.pos-deposit-existing-fields > *,
+.pos-deposit-actions > *,
+.pos-deposit-close-fields > * { min-width: 0; }
+.pos-deposit-panel input,
+.pos-deposit-panel select { width: 100%; min-width: 0; }
+.pos-deposit-cart-fields > button,
+.pos-deposit-actions > button:last-child,
+.pos-deposit-close-fields > button { grid-column: 1 / -1; }
+.pos-deposit-cart-fields > button,
+.pos-deposit-actions > button { min-height: 48px; }
+.pos-deposit-existing-fields { margin-top: 14px; }
+.pos-deposit-actions { margin-top: 10px; }
+.pos-deposit-close {
+  border-top: 1px solid var(--pos-line); margin-top: 16px; padding-top: 16px;
+}
+.pos-deposit-close-fields > label { width: 100%; }
+.pos-deposit-search > div:nth-child(2) { align-items: stretch; }
+.pos-deposit-search > div:nth-child(2) input { flex: 1 1 320px; width: auto; }
+.pos-root .pos-deposit-row {
+  border: 1px solid transparent; border-radius: var(--pos-radius); padding: 10px 12px;
+  margin-top: 4px;
+}
+.pos-root .pos-deposit-row:hover:not(:disabled) { background: var(--pos-accent-bg); }
+.pos-root .pos-deposit-row[aria-pressed="true"] {
+  background: var(--pos-accent-bg); border-color: var(--pos-accent);
+}
+@media (max-width: 980px) {
+  .pos-deposit-work-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .pos-deposit-panel { padding: 13px; }
+  .pos-deposit-cart-fields,
+  .pos-deposit-existing-fields,
+  .pos-deposit-actions,
+  .pos-deposit-close-fields { grid-template-columns: minmax(0, 1fr); }
+  .pos-deposit-search > div:nth-child(2) input { flex-basis: 100%; }
+  .pos-deposit-row { flex-wrap: wrap; }
+  .pos-deposit-row > .pos-num { width: 100%; text-align: right; }
+}
+
+/* Keep the shift actions intact while giving each task a clear, scan-friendly place. */
+.pos-shift-page {
+  display: flex; flex-direction: column; gap: 14px; min-width: 0;
+}
+.pos-shift-title {
+  justify-content: space-between; padding: 0 2px;
+}
+.pos-shift-title .pos-block-title {
+  font-size: 21px; line-height: 1.3;
+}
+.pos-shift-summary {
+  gap: 0; overflow: hidden; background: var(--pos-surface);
+  border: 1px solid var(--pos-line); border-radius: var(--pos-radius);
+}
+.pos-shift-summary .pos-stat {
+  min-width: 0; padding: 15px 17px; background: transparent;
+  border-radius: 0; border-right: 1px solid var(--pos-line);
+}
+.pos-shift-summary .pos-stat:last-child { border-right: 0; }
+.pos-shift-work-grid,
+.pos-shift-ops-grid {
+  display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(290px, .9fr);
+  gap: 14px; align-items: start;
+}
+.pos-shift-side { min-width: 0; }
+.pos-shift-side { display: flex; flex-direction: column; gap: 14px; }
+.pos-shift-panel {
+  min-width: 0; padding: 17px; background: var(--pos-surface);
+  border: 1px solid var(--pos-line); border-radius: var(--pos-radius);
+}
+.pos-block.pos-shift-panel { border: 1px solid var(--pos-line); padding-top: 17px; }
+.pos-shift-panel .pos-block-title { font-size: 17px; line-height: 1.35; }
+.pos-shift-close > div:not(.pos-block-title) { width: 100%; }
+.pos-shift-close label { flex: 1 1 180px; min-width: 0; }
+.pos-shift-close .pos-num { width: 100% !important; }
+.pos-shift-close .pos-shift-btn-primary { margin-left: auto; }
+.pos-shift-side > .pos-petty-wallet {
+  margin-top: 0; background: var(--pos-surface);
+}
+.pos-shift-side .pos-petty-wallet-head b { font-size: 17px; }
+.pos-shift-side .pos-petty-fund-grid { grid-template-columns: minmax(0, 1fr); }
+.pos-shift-side .pos-petty-fund-grid > * { width: 100%; min-width: 0; }
+.pos-shift-ops-grid .pos-block { margin: 0; }
+.pos-shift-report,
+.pos-shift-history { width: 100%; }
+@media (max-width: 1100px) {
+  .pos-shift-work-grid,
+  .pos-shift-ops-grid { grid-template-columns: minmax(0, 1fr); }
+  .pos-shift-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .pos-shift-summary { grid-template-columns: minmax(0, 1fr); }
+  .pos-shift-summary .pos-stat {
+    border-right: 0; border-bottom: 1px solid var(--pos-line);
+  }
+  .pos-shift-summary .pos-stat:last-child { border-bottom: 0; }
+  .pos-shift-panel { padding: 13px; }
+  .pos-block.pos-shift-panel { padding-top: 13px; }
+}
+
 .pos-move-row {
   display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
   font-size: 13px; color: var(--pos-muted); padding: 3px 0;
@@ -1054,6 +1224,70 @@
      ไปที่ serif ปริยาย แล้วครึ่งบรรทัดกลายเป็นคนละแบบอักษรกับทั้งจอ */
   --ret-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas,
     "Noto Sans Thai", "Sarabun", "Leelawadee UI", system-ui, monospace;
+}
+
+/* คืนสินค้า: ค้นบิลเป็นงานหลัก ส่วนงานค้างและการอนุมัติอยู่ในแถบข้าง */
+.pos-returns-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(270px, 310px);
+  grid-template-areas: "heading heading" "receipts rail";
+  align-content: start;
+  align-items: start;
+  gap: 16px;
+  padding: 20px;
+}
+.pos-returns-header {
+  grid-area: heading;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--pos-line);
+}
+.pos-returns-header-title { display: flex; align-items: center; gap: 6px; }
+.pos-returns-header h2 { margin: 0; font-size: 23px; line-height: 1.3; }
+.pos-returns-header p { margin: 3px 0 0; color: var(--pos-muted); font-size: 12.5px; }
+.pos-returns-header-status { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; color: var(--pos-muted); font-size: 12.5px; }
+.pos-returns-rail { grid-area: rail; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pos-returns-pending > div,
+.pos-returns-rail-card { border: 1px solid var(--pos-line); border-radius: 10px; padding: 13px; background: var(--pos-surface); }
+.pos-returns-rail-card + .pos-returns-rail-card { margin-top: 12px; }
+.pos-returns-rail-card h3 { margin: 0; font-size: 14px; line-height: 1.4; }
+.pos-returns-rail-card p { margin: 5px 0 11px; color: var(--pos-muted); font-size: 12px; line-height: 1.5; }
+.pos-returns-rail-card > .pos-btn-ghost { width: 100%; white-space: normal; text-align: center; }
+.pos-returns-approver-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0; background: transparent; border: 0; color: var(--pos-text); font-size: 14px; font-weight: 700; text-align: left; }
+.pos-returns-approved { display: block; margin-top: 5px; color: var(--pos-money); font-size: 12px; }
+.pos-returns-approver-form { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin-top: 10px; }
+.pos-returns-approver-form select,
+.pos-returns-approver-form input { width: 100%; min-width: 0 !important; }
+.pos-returns-rail-card select,
+.pos-returns-rail-card input { max-width: 100%; }
+.pos-returns-blind-form select,
+.pos-returns-blind-form input { flex: 1 1 130px; min-width: 0 !important; }
+.pos-returns-pending .pos-ret-pending-row { display: flex; flex-direction: column; align-items: stretch; gap: 8px; min-width: 0; }
+.pos-returns-pending .pos-ret-pending-row input { width: 100%; }
+.pos-returns-pending .pos-ret-pending-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.pos-returns-pending .pos-ret-pending-actions .pos-ret-btn { white-space: normal; }
+.pos-returns-main { grid-area: receipts; min-width: 0; }
+.pos-returns-search-heading { margin-bottom: 13px; }
+.pos-returns-search-heading h3 { margin: 0; font-size: 17px; }
+.pos-returns-search-heading p { margin: 4px 0 0; color: var(--pos-muted); font-size: 12px; line-height: 1.5; }
+.pos-returns-main .pos-ret-hint { margin-bottom: 12px; }
+
+@media (max-width: 1100px) {
+  .pos-returns-workspace { grid-template-columns: minmax(0, 1fr); grid-template-areas: "heading" "receipts" "rail"; }
+  .pos-returns-rail { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pos-returns-pending { grid-column: 1 / -1; }
+  .pos-returns-side-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .pos-returns-rail-card + .pos-returns-rail-card { margin-top: 0; }
+}
+@media (max-width: 650px) {
+  .pos-returns-header { align-items: flex-start; flex-direction: column; }
+  .pos-returns-header-status { justify-content: flex-start; }
+  .pos-returns-rail { display: flex; }
+  .pos-returns-side-actions { display: flex; flex-direction: column; }
+  .pos-returns-workspace { padding: 12px; gap: 12px; }
 }
 
 /* ---- หัวแท็บ: กล่องบอกขั้นตอน + ช่องค้น ---- */

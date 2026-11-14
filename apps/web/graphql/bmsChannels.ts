@@ -1,5 +1,6 @@
 // GraphQL resolver — BMS settings / channel connections (admin, per-tenant)
 import { GraphQLError } from "graphql/error";
+import { requireTenantSettingsAdministrator } from "./tenantSettingsAuth";
 import { requireAuth } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { publishRealtimeHint } from "@/lib/pubsub";
@@ -74,7 +75,7 @@ export const bmsChannelsResolvers = {
       args: { channel: string; accessToken?: string; channelSecret?: string; webhookVerifyToken?: string; externalAccountId?: string; active?: boolean },
       ctx: any
     ) {
-      requireTenantAdmin(ctx);
+      await requireTenantSettingsAdministrator(ctx);
       if (!ALLOWED.includes(args.channel)) {
         throw new GraphQLError("channel ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
       }
@@ -93,7 +94,7 @@ export const bmsChannelsResolvers = {
       return ok;
     },
     async bmsTestChannel(_p: unknown, args: { channel: string }, ctx: any) {
-      requireTenantAdmin(ctx);
+      await requireTenantSettingsAdministrator(ctx);
       if (!ALLOWED.includes(args.channel)) {
         throw new GraphQLError("channel ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
       }
@@ -106,7 +107,7 @@ export const bmsChannelsResolvers = {
       args: { input: { greeting?: unknown; starterPayloads?: unknown } },
       ctx: any,
     ) {
-      requireTenantAdmin(ctx);
+      await requireTenantSettingsAdministrator(ctx);
       try {
         return await publishMessengerProfile(
           getTenantId(ctx),

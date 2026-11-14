@@ -12,7 +12,7 @@ import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
 import { verifyLineSignature } from "@/lib/bms/crypto";
 import { rateLimit } from "@/lib/bms/rateLimit";
-import { logConversation, notifyInboxConversationChanged, logInboundMessage, recordAiReplyDelivery, type Attachment } from "@/lib/bms/inbox";
+import { logConversation, notifyInboxConversationChanged, logInboundMessage, recordAiReplyDelivery, type Attachment, type ChannelDeliveryResult } from "@/lib/bms/inbox";
 import { fallbackEvidenceQuality } from "@/lib/bms/customerAnswerEvidence";
 import { persistBuffer, buildFileUrlById } from "@/lib/storage";
 import { syncLineBotInfo, syncLineUserProfile } from "@/lib/bms/lineProfile";
@@ -113,7 +113,7 @@ async function pushLineReply(
   replyToken: string,
   text: string,
   customerRef?: string | null
-): Promise<boolean> {
+): Promise<ChannelDeliveryResult> {
   try {
     const resp = await fetch("https://api.line.me/v2/bot/message/reply", {
       method: "POST",
@@ -122,7 +122,7 @@ async function pushLineReply(
     });
     if (resp.ok) {
       await recordLineHealthBestEffort(tenantId, () => recordOutboundSuccess(tenantId, "line"));
-      return true;
+      return { delivered: true, providerMessageIds: [] };
     } else {
       const detail = formatOutboundErrorDetail(resp, await resp.text().catch(() => ""));
       await recordLineHealthBestEffort(tenantId, () => recordOutboundError(tenantId, "line", resp.status, detail));
@@ -137,7 +137,7 @@ async function pushLineReply(
         customerRef: customerRef ?? null,
         meta: { httpStatus: resp.status },
       });
-      return false;
+      return { delivered: false, providerMessageIds: [] };
     }
   } catch (e) {
     const detail = e instanceof Error ? e.message : "LINE reply request failed";
@@ -151,7 +151,7 @@ async function pushLineReply(
       channel: "line",
       customerRef: customerRef ?? null,
     });
-    return false;
+    return { delivered: false, providerMessageIds: [], uncertain: true };
   }
 }
 
@@ -165,10 +165,10 @@ async function recordLineHealthBestEffort(tenantId: string, write: () => Promise
   }
 }
 
-async function recordLineReplyDelivery(tenantId: string, messageId: string | undefined, delivered: boolean): Promise<void> {
+async function recordLineReplyDelivery(tenantId: string, messageId: string | undefined, delivery: ChannelDeliveryResult): Promise<void> {
   if (!messageId) return;
   try {
-    await recordAiReplyDelivery(tenantId, messageId, delivered, []);
+    await recordAiReplyDelivery(tenantId, messageId, delivery);
   } catch (error) {
     // A status write must never cause a second fallback reply after LINE accepted the first one.
     console.error("[BMS] LINE reply delivery status write failed:", { tenantId, messageId, error });
@@ -247,10 +247,10 @@ async function processLineEvent(
     const persisted = await logConversation(tenantId, "line", userId, text, result.reply, result.quality);
 
     // ตอบกลับด้วย token ของร้าน (ถ้ามี)
-    const delivered = cfg.access_token && ev.replyToken
+    const delivery = cfg.access_token && ev.replyToken
       ? await pushLineReply(tenantId, cfg.access_token, ev.replyToken, result.reply, userId)
-      : false;
-    await recordLineReplyDelivery(tenantId, persisted?.outboundMessageId, delivered);
+      : { delivered: false, providerMessageIds: [] };
+    await recordLineReplyDelivery(tenantId, persisted?.outboundMessageId, delivery);
     if (!cfg.access_token || !ev.replyToken) {
       await reportBmsFailure({ tenantId, code: "channel.push_failed", error: "LINE_REPLY_CREDENTIAL_OR_TOKEN_UNAVAILABLE",
         surface: "customer", channel: "line", customerRef: userId,
@@ -280,10 +280,10 @@ async function processLineEvent(
       meta: { messageId: ev.message?.id ?? null },
     });
     const persisted = await logConversation(tenantId, "line", userId, text, fallbackReply, fallbackEvidenceQuality(error, fallbackReply));
-    const delivered = cfg.access_token && ev.replyToken
+    const delivery = cfg.access_token && ev.replyToken
       ? await pushLineReply(tenantId, cfg.access_token, ev.replyToken, fallbackReply, userId)
-      : false;
-    await recordLineReplyDelivery(tenantId, persisted?.outboundMessageId, delivered);
+      : { delivered: false, providerMessageIds: [] };
+    await recordLineReplyDelivery(tenantId, persisted?.outboundMessageId, delivery);
     return {
       replyToken: ev.replyToken,
       reply: fallbackReply,

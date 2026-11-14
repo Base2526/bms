@@ -19,7 +19,7 @@ const input = {
   weekdays: [0, 1, 2, 3, 4, 5, 6], startsLocalTime: null, endsLocalTime: null,
 };
 
-function harness(options: { missingBranch?: boolean; missingSku?: boolean; noUpdate?: boolean; fail?: boolean } = {}) {
+function harness(options: { missingBranch?: boolean; missingSku?: boolean; noUpdate?: boolean; fail?: boolean; auditFail?: boolean } = {}) {
   const calls: Array<{ sql: string; params: unknown[] }> = [];
   let released = false;
   const client = {
@@ -27,12 +27,13 @@ function harness(options: { missingBranch?: boolean; missingSku?: boolean; noUpd
       calls.push({ sql, params });
       if (sql.includes("SELECT 1 FROM bms_locations")) return { rowCount: options.missingBranch ? 0 : 1 };
       if (sql.includes("SELECT 1 FROM bms_products")) return { rowCount: options.missingSku ? 0 : 1 };
+      if (sql.includes("INSERT INTO bms_audit_log") && options.auditFail) throw new Error("audit failure");
       if (/^(INSERT|UPDATE)/.test(sql)) {
         const indexes = [...new Set([...sql.matchAll(/\$(\d+)/g)].map((match) => Number(match[1])))].sort((a, b) => a - b);
         assert.deepEqual(indexes, Array.from({ length: params.length }, (_, i) => i + 1), "SQL must consume every bound parameter without a numbering gap");
         if (options.fail) throw new Error("database failure");
         return { rowCount: options.noUpdate ? 0 : 1, rows: [{ id: offerId, code: "FAKE_PROMO", name: input.name,
-          kind: input.kind, fixed_price: "50", min_players: 1, minimum_minutes: 120, weekdays: input.weekdays, active: true, sort_order: 0 }] };
+          kind: input.kind, fixed_price: "50", min_players: 1, minimum_minutes: 120, weekdays: input.weekdays, active: true, publish_to_chat: params.at(-1) ?? false, sort_order: 0 }] };
       }
       return { rows: [], rowCount: 0 };
     },
@@ -62,7 +63,7 @@ test("new offers bind contiguous parameters for all kinds and both branch scopes
       assert.deepEqual(saved.params, [tenant, locationId, "FAKE_PROMO", input.name, kind,
         kind === "TIME_PERCENT" ? 20 : null, ["TIME_PERCENT", "TIME_BUY_GET"].includes(kind) ? null : 50,
         1, null, 120, null, new Date(input.validFrom), new Date(input.validUntil), input.weekdays,
-        null, null, true, 0, null, kind === "TIME_BUY_GET" ? 120 : null, kind === "TIME_BUY_GET" ? 60 : null]);
+        null, null, true, 0, null, kind === "TIME_BUY_GET" ? 120 : null, kind === "TIME_BUY_GET" ? 60 : null, false]);
       assert.equal(h.calls.at(-1)?.sql, "COMMIT");
       assert.equal(h.released(), true);
     }
@@ -77,7 +78,35 @@ test("updates retain tenant/id guards and align optional SKU, times and disabled
   assert.match(saved.sql, /WHERE tenant_id=\$1 AND id=\$2/);
   assert.deepEqual(saved.params, [tenant, offerId, branch, "FAKE_PROMO", input.name, input.kind,
     null, 50, 1, null, 120, "FAKE-DRINK", new Date(input.validFrom), new Date(input.validUntil),
-    input.weekdays, "10:00", "18:00", false, 7, "test", null, null]);
+    input.weekdays, "10:00", "18:00", false, 7, "test", null, null, null]);
+  assert.match(saved.sql, /publish_to_chat=COALESCE\(\$23::boolean, publish_to_chat\)/);
+});
+
+test("publication requires explicit boolean and defaults private", async () => {
+  const draft = harness();
+  await draft.save(tenant, { ...input, publishToChat: true });
+  assert.equal(draft.calls.find((call) => call.sql.startsWith("INSERT"))!.params.at(-1), true);
+  const edit = harness();
+  await edit.save(tenant, { ...input, id: offerId, publishToChat: false });
+  assert.equal(edit.calls.find((call) => call.sql.startsWith("UPDATE"))!.params.at(-1), false);
+  await assert.rejects(harness().save(tenant, { ...input, publishToChat: "true" } as any), /เผยแพร่ในแชท/);
+  await assert.rejects(harness().save(tenant, { ...input, active: "false" } as any), /สถานะโปรโมชัน/);
+  await assert.rejects(harness().save(tenant, { ...input, weekdays: "123" } as any), /วันใช้งาน/);
+});
+
+test("offer publication writes an attributed audit row before commit and rolls back with audit failure", async () => {
+  const h = harness();
+  await h.save(tenant, { ...input, publishToChat: true }, "44444444-4444-4444-8444-444444444444");
+  const auditIndex = h.calls.findIndex((call) => call.sql.includes("INSERT INTO bms_audit_log"));
+  assert.ok(auditIndex > 0);
+  assert.equal(h.calls[auditIndex + 1].sql, "COMMIT");
+  assert.deepEqual(h.calls[auditIndex].params.slice(0, 4), [tenant, "user:44444444-4444-4444-8444-444444444444", "board_game.offer_upsert", offerId]);
+  assert.equal(JSON.parse(String(h.calls[auditIndex].params[4])).publishToChat, true);
+  assert.equal(h.released(), true);
+  const rejected = harness({ auditFail: true });
+  await assert.rejects(rejected.save(tenant, { ...input, publishToChat: true }), /audit failure/);
+  assert.equal(rejected.calls.at(-1)?.sql, "ROLLBACK");
+  assert.equal(rejected.calls.some((call) => call.sql === "COMMIT"), false);
 });
 
 test("missing branch/SKU/offer and database failure roll back and release", async () => {
@@ -112,6 +141,7 @@ test("PostgreSQL executes new and updated offer statements in a temporary table 
     const timeMigration = readFileSync(new URL("../db/migrations/10.40__bms_board_game_time_buy_get.sql", import.meta.url), "utf8");
     await db.query(timeMigration);
     await db.query(timeMigration);
+    await db.query("ALTER TABLE bms_board_game_offers ADD COLUMN publish_to_chat BOOLEAN NOT NULL DEFAULT FALSE");
     for (const [index, locationId] of [null, branch].entries()) {
       const h = harness();
       await h.save(tenant, { ...input, code: `FAKE_${index}`, locationId });
@@ -125,6 +155,11 @@ test("PostgreSQL executes new and updated offer statements in a temporary table 
       const statement = update.calls.find((call) => call.sql.startsWith("UPDATE"))!;
       assert.equal(Number((await db.query(statement.sql, statement.params)).rows[0].fixed_price), 75);
     }
+    const duplicate = harness();
+    await duplicate.save(tenant, { ...input, code: "FAKE_0", locationId: null });
+    const duplicateInsert = duplicate.calls.find((call) => call.sql.startsWith("INSERT INTO bms_board_game_offers"))!;
+    await assert.rejects(db.query(duplicateInsert.sql, duplicateInsert.params), /duplicate key/);
+    assert.equal((await db.query("SELECT COUNT(*)::int AS count FROM bms_board_game_offers WHERE code = 'FAKE_0'")).rows[0].count, 1);
     const timeOffer = harness();
     await timeOffer.save(tenant, { ...input, code: "FAKE_BUY_GET", kind: "TIME_BUY_GET", buyMinutes: 120, freeMinutes: 60 });
     const statement = timeOffer.calls.find((call) => call.sql.startsWith("INSERT"))!;

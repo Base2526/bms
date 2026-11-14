@@ -15,7 +15,7 @@ async function handleGET(req: NextRequest) {
   const url = new URL(req.url);
   const rows = await listConversations(auth.tenantId, {
     status: url.searchParams.get("status"),
-    assignedTo: url.searchParams.get("assignedTo"),
+    assignedTo: auth.admin.role === "Sales" ? String(auth.adminId) : url.searchParams.get("assignedTo"),
     tag: url.searchParams.get("tag"),
     search: url.searchParams.get("search"),
     limit: Number(url.searchParams.get("limit")) || 50,

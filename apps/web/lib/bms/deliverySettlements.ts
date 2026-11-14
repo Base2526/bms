@@ -36,7 +36,7 @@ export async function listDeliveryFinance(tenantId: string, limit = 100) {
   try {
     await beginTenantTx(client, tenantId);
     const bounded = Math.min(Math.max(Math.trunc(limit), 1), 200);
-    const [settlements, lines, adjustments, disputes] = await Promise.all([
+    const [settlements, lines, adjustments, disputes, integrations, availableLocations, orders] = await Promise.all([
       client.query<any>(
         `SELECT s.*, i.environment
            FROM bms_delivery_settlements s
@@ -66,9 +66,36 @@ export async function listDeliveryFinance(tenantId: string, limit = 100) {
           WHERE d.tenant_id=$1 ORDER BY d.updated_at DESC LIMIT $2`,
         [tenantId, bounded],
       ),
+      client.query<{ id: string; provider: string; environment: string }>(
+        `SELECT id,provider,environment FROM bms_delivery_integrations
+          WHERE tenant_id=$1 ORDER BY provider,environment`,
+        [tenantId],
+      ),
+      client.query<{ id: string; code: string; name: string }>(
+        `SELECT id,code,name FROM bms_locations
+          WHERE tenant_id=$1 AND active ORDER BY name,code`,
+        [tenantId],
+      ),
+      client.query<{ id: string; provider: string; provider_order_id: string; provider_display_number: string | null }>(
+        `SELECT id,provider,provider_order_id,provider_display_number
+           FROM bms_delivery_orders WHERE tenant_id=$1
+          ORDER BY created_at DESC LIMIT $2`,
+        [tenantId, bounded],
+      ),
     ]);
+    const disputeIds = disputes.rows.map((row: { id: string }) => row.id);
+    const evidence = disputeIds.length ? await client.query<{ dispute_id: string; file_id: number; created_at: string }>(
+      `SELECT dispute_id,file_id,created_at FROM bms_delivery_dispute_evidence
+        WHERE tenant_id=$1 AND dispute_id=ANY($2::uuid[])
+        ORDER BY created_at DESC`,
+      [tenantId, disputeIds],
+    ) : { rows: [] };
     await client.query("COMMIT");
-    return { settlements: settlements.rows, lines: lines.rows, adjustments: adjustments.rows, disputes: disputes.rows };
+    return {
+      settlements: settlements.rows, lines: lines.rows, adjustments: adjustments.rows, disputes: disputes.rows,
+      integrations: integrations.rows, availableLocations: availableLocations.rows, orders: orders.rows,
+      evidence: evidence.rows,
+    };
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
     throw error;

@@ -99,7 +99,6 @@ export const bmsCouponsResolvers = {
       if (!ok) {
         throw new GraphQLError("ไม่พบคูปองนี้ หรือยังไม่สามารถแจกให้ลูกค้าได้", { extensions: { code: "BAD_USER_INPUT" } });
       }
-      await audit(ctx, "coupon.assign_customer", activeCustomerId, { code: String(args.code || "").trim().toUpperCase() });
       return true;
     },
   },

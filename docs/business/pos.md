@@ -250,6 +250,11 @@ Verification for the shell is `npm run lint` and `npm test` (pairing and keystor
    one-time token, and pairs the browser.
 2. Staff PINs and RBAC are configured. Selling, opening/closing a shift, returning goods, and
    confirming a non-cash refund each have independent server-side permission checks.
+   In `/admin/pos-devices`, `pos.pin.manage` can read the staff list needed to set or clear PINs;
+   changing a staff account's POS-only mode requires `pos.staff.manage` and is available to roles
+   that hold only that permission. Both clearing a PIN and changing POS-only mode require a visible
+   confirmation. A role with only
+   `support.logs.view` can read POS device events there without device-management permission.
 3. The cashier opens a shift with the drawer float, scans a barcode/SKU or searches the live catalog,
    and can sell base units or configured packs.
    In the compact desktop register, a product-level code with multiple variants opens one product

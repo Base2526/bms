@@ -351,7 +351,7 @@ const currentPosLanguage = async (page) =>
     assert.equal(await billLine.count(), 1);
     await page.getByRole("button", { name: "Return", exact: true }).click();
     await page
-      .getByText("Search past bills", { exact: true })
+      .getByRole("heading", { name: "Search past bills", exact: true })
       .waitFor()
       .catch(async (e) => {
         await page.screenshot({

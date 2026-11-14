@@ -5,7 +5,7 @@ import { loadWithStubs } from "./testing/webhookHarness.mts";
 const job = { id: "job-1", tenantId: "tenant-1", channel: "facebook", eventId: "mid-1",
   externalAccountId: "123456", customerRef: "998877", messageText: "hello", attachments: [], attempts: 2 };
 
-function harness(options: { claimed?: number; active?: boolean; account?: string; expired?: boolean; mode?: string; profileThrows?: boolean; delivered?: boolean } = {}) {
+function harness(options: { claimed?: number; active?: boolean; account?: string; expired?: boolean; mode?: string; profileThrows?: boolean; delivered?: boolean; uncertain?: boolean; partial?: boolean; statusWriteFails?: boolean } = {}) {
   const calls = { pipeline: 0, pipelineArgs: [] as any[][], sends: 0, profiles: 0, deliveryStatuses: [] as any[][],
     inbound: [] as any[][],
     profileNotifications: [] as any[][], incidents: [] as any[], sql: [] as string[] };
@@ -40,8 +40,9 @@ function harness(options: { claimed?: number; active?: boolean; account?: string
     "./inbox": { logConversation: async () => ({ outboundMessageId: "message-1" }),
       logInboundMessage: async (...args: any[]) => { calls.inbound.push(args); },
       notifyInboxConversationChanged: (...args: any[]) => { calls.profileNotifications.push(args); },
-      recordAiReplyDelivery: async (...args: any[]) => { calls.deliveryStatuses.push(args); },
-      deliverToChannelTracked: async () => { calls.sends++; return { delivered: options.delivered ?? true, providerMessageIds: [] }; } },
+      recordAiReplyDelivery: async (...args: any[]) => { calls.deliveryStatuses.push(args); if (options.statusWriteFails) throw new Error("FAKE status write failed"); },
+      deliverToChannelTracked: async () => { calls.sends++; return { delivered: options.delivered ?? true, providerMessageIds: [],
+        ...(options.uncertain ? { uncertain: true } : {}), ...(options.partial ? { partial: true } : {}) }; } },
     "./customerAnswerEvidence": { fallbackEvidenceQuality: () => ({}) },
     "./channelHealth": { recordInboundEvent: noop },
     "./failureAlert": { reportBmsFailure: async (incident: any) => { calls.incidents.push(incident); } },
@@ -71,7 +72,7 @@ test("valid lease processes one customer turn and reply", async () => {
   await worker.processMetaInboundJob(job);
   assert.equal(calls.pipeline, 1);
   assert.equal(calls.sends, 1);
-  assert.deepEqual(calls.deliveryStatuses, [[job.tenantId, "message-1", true, []]]);
+  assert.deepEqual(calls.deliveryStatuses, [[job.tenantId, "message-1", { delivered: true, providerMessageIds: [] }]]);
   assert.equal(calls.profiles, 1);
   assert.deepEqual(calls.profileNotifications[0], [job.tenantId, "conversation-1", "CONVERSATION_CHANGED"]);
 });
@@ -88,8 +89,21 @@ test("Facebook profile enrichment failure never blocks the verified message or r
 test("Meta failed push records a failed AI message and alerts staff", async () => {
   const { worker, calls } = harness({ delivered: false });
   await assert.rejects(worker.processMetaInboundJob(job), /META_REPLY_DELIVERY_FAILED/);
-  assert.deepEqual(calls.deliveryStatuses, [[job.tenantId, "message-1", false, []]]);
+  assert.deepEqual(calls.deliveryStatuses, [[job.tenantId, "message-1", { delivered: false, providerMessageIds: [] }]]);
   assert.deepEqual(calls.incidents.map(incident => incident.code), ["channel.push_failed"]);
+});
+
+test("Meta uncertain delivery or status write failure never replays the customer reply", async () => {
+  for (const options of [
+    { delivered: false, uncertain: true },
+    { delivered: false, partial: true },
+    { delivered: true, statusWriteFails: true },
+  ]) {
+    const { worker, calls } = harness(options);
+    await worker.processMetaInboundJob(job);
+    assert.equal(calls.sends, 1);
+    assert.equal(calls.pipeline, 1);
+  }
 });
 
 test("Meta text with an attachment reaches staff without asking AI to guess the media", async () => {

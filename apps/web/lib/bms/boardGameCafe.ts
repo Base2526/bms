@@ -3303,6 +3303,7 @@ export type BoardGamePassPlan = {
   durationDays: number;
   includedMinutes: number | null;
   active: boolean;
+  publishToChat: boolean;
   sortOrder: number;
   note: string | null;
 };
@@ -3346,6 +3347,7 @@ function mapPassPlan(row: any): BoardGamePassPlan {
     durationDays: Number(row.duration_days),
     includedMinutes: row.included_minutes == null ? null : Number(row.included_minutes),
     active: Boolean(row.active),
+    publishToChat: Boolean(row.publish_to_chat),
     sortOrder: Number(row.sort_order),
     note: row.note ?? null,
   };
@@ -3397,7 +3399,7 @@ export async function listBoardGamePassPlans(
     : null;
   const result = await query(
     `SELECT id, location_id, code, name, kind, price, duration_days, included_minutes,
-            active, sort_order, note
+            active, publish_to_chat, sort_order, note
        FROM bms_board_game_pass_plans
       WHERE tenant_id = $1
         AND ($2::uuid[] IS NULL OR location_id IS NULL OR location_id = ANY($2::uuid[]))
@@ -3419,6 +3421,7 @@ export async function upsertBoardGamePassPlan(
     durationDays: number;
     includedMinutes?: number | null;
     active?: boolean | null;
+    publishToChat?: boolean | null;
     sortOrder?: number | null;
     note?: string | null;
   },
@@ -3439,6 +3442,7 @@ export async function upsertBoardGamePassPlan(
     : null;
   const sortOrder = integerInRange(input.sortOrder ?? 0, "ลำดับ", -100000, 100000);
   const active = booleanOrDefault(input.active, true, "สถานะแพ็กเกจ");
+  const publishToChat = input.publishToChat == null ? null : booleanOrDefault(input.publishToChat, false, "เผยแพร่ในแชท");
   const note = optionalText(input.note, "หมายเหตุ", 500);
   const client = await getClient();
   try {
@@ -3449,25 +3453,27 @@ export async function upsertBoardGamePassPlan(
         ? `UPDATE bms_board_game_pass_plans
               SET location_id = $3, code = $4, name = $5, kind = $6, price = $7,
                   duration_days = $8, included_minutes = $9, active = $10, sort_order = $11,
-                  note = $12, version = version + 1, updated_at = now()
+                  note = $12, publish_to_chat = COALESCE($13::boolean, publish_to_chat),
+                  version = version + 1, updated_at = now()
             WHERE tenant_id = $1 AND id = $2
             RETURNING id, location_id, code, name, kind, price, duration_days,
-                      included_minutes, active, sort_order, note`
+                      included_minutes, active, publish_to_chat, sort_order, note`
         : `INSERT INTO bms_board_game_pass_plans
               (tenant_id, location_id, code, name, kind, price, duration_days,
-               included_minutes, active, sort_order, note)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+               included_minutes, active, sort_order, note, publish_to_chat)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
            RETURNING id, location_id, code, name, kind, price, duration_days,
-                     included_minutes, active, sort_order, note`,
+                     included_minutes, active, publish_to_chat, sort_order, note`,
       id
         ? [tenantId, id, locationId, code, name, kind, price, durationDays,
-           includedMinutes, active, sortOrder, note]
+           includedMinutes, active, sortOrder, note, publishToChat]
         : [tenantId, locationId, code, name, kind, price, durationDays,
-           includedMinutes, active, sortOrder, note]
+           includedMinutes, active, sortOrder, note, publishToChat ?? false]
     );
     if (!result.rowCount) throw new Error("ไม่พบแพ็กเกจที่ต้องการแก้ไข");
     await auditInTx(client, tenantId, actorUserId, "board_game.pass_plan_upsert", result.rows[0].id, {
       code, kind, price, durationDays, includedMinutes, active,
+      publishToChat: Boolean(result.rows[0].publish_to_chat),
     });
     await client.query("COMMIT");
     return mapPassPlan(result.rows[0]);

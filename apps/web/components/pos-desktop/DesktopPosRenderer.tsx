@@ -1903,6 +1903,13 @@ function DesktopPosContent() {
         <section className={styles.loginAside}>
           <div className={styles.logoLockup}><span>B</span><strong>BMS POS</strong></div>
           <div>
+            <div className={styles.loginShopMark} aria-hidden="true">
+              {storeLogoUrl && storeLogoUrl !== failedStoreLogoUrl ? (
+                <img key={storeLogoUrl} src={storeLogoUrl} alt="" onError={() => setFailedStoreLogoUrl(storeLogoUrl)} />
+              ) : (
+                <ShopOutlined />
+              )}
+            </div>
             <p className={styles.eyebrow}>{posText("เครื่องขายพร้อมใช้งาน")}</p>
             <h1>{bootstrap.location?.name ?? posText("สาขาหลัก")}</h1>
             <p>{bootstrap.device.name ?? bootstrap.device.code} · {bootstrap.device.registeredPosNo ?? "POS"}</p>
@@ -1910,6 +1917,7 @@ function DesktopPosContent() {
           <div className={styles.securityNote}>{posText("PIN อยู่เฉพาะในหน่วยความจำของหน้าจอนี้ และทุกการขายยังตรวจสิทธิ์กับเซิร์ฟเวอร์")}</div>
         </section>
         <section className={styles.loginPanel}>
+          <button type="button" className={`${styles.languageSettingsButton} ${styles.loginDeviceSettings}`} onClick={() => setDeviceLanguageOpen(true)}><SettingOutlined /> {posText("ตั้งค่าเครื่อง")}</button>
           <form className={styles.loginForm} onSubmit={signIn}>
             <p className={styles.eyebrow}>{posText("เข้าสู่กะทำงาน")}</p>
             <h2>{posText("ใส่ PIN พนักงาน")}</h2>
@@ -1965,7 +1973,6 @@ function DesktopPosContent() {
                     : posText("เข้าสู่ระบบ")}
             </button>
             <button type="button" className={styles.textButton} onClick={() => void unpair()}>{posText("เปลี่ยนเซิร์ฟเวอร์ / จับคู่ใหม่")}</button>
-            <button type="button" className={styles.languageSettingsButton} onClick={() => setDeviceLanguageOpen(true)}><SettingOutlined /> {posText("ตั้งค่าเครื่อง")}</button>
           </form>
         </section>
       </main>

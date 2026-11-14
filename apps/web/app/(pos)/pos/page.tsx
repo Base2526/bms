@@ -1855,6 +1855,7 @@ export default function PosPage() {
   const [depositSearched, setDepositSearched] = useState(false);
   /** บิลที่ค้นในแท็บคืนแล้วปรากฏว่าเป็นมัดจำ — ของยังไม่ได้ส่งมอบ จึงคืนไม่ได้ */
   const [recentDepositMatches, setRecentDepositMatches] = useState<PosDeposit[]>([]);
+  const [cartDepositMethod, setCartDepositMethod] = useState("CASH");
   const [depositMethod, setDepositMethod] = useState("CASH");
   const [depositReason, setDepositReason] = useState("");
   const [depositOutcome, setDepositOutcome] = useState<"CANCELLED" | "FORFEITED">("CANCELLED");
@@ -1973,6 +1974,10 @@ export default function PosPage() {
   }>({ count: 0, total: 0, pendingCount: 0, pendingTotal: 0 });
   const scanRef = useRef<PosProductSearchInputHandle>(null);
   const stockScanRef = useRef<HTMLInputElement>(null);
+  const stockDraftUnits = stockOrder?.items.reduce(
+    (sum, line) => sum + (stockDraft[stockLineKey(line.sku, line.size)]?.qty ?? 0),
+    0
+  ) ?? 0;
   const hasPendingOrderWrite = hasPendingSale || hasPendingDepositSale;
   const pendingRefundTasks = useMemo(() => recentReceipts.flatMap((row) => {
     const refundSummary = getReceiptRefundSummary(row);
@@ -3846,7 +3851,8 @@ export default function PosPage() {
     // ปิดปุ่มไว้ก่อนดีกว่าให้กดแล้วเจอ error ตอนลูกค้ายืนรอ
     const elsewhere = deposit.isOtherLocation === true;
     return (
-      <button key={deposit.id} type="button" className="pos-move-row"
+      <button key={deposit.id} type="button" className="pos-move-row pos-deposit-row"
+              aria-pressed={depositOrderId === deposit.orderId}
               disabled={elsewhere}
               title={elsewhere ? posText("มัดจำใบนี้จองของไว้ที่สาขาอื่น ต้องไปทำรายการที่สาขานั้น") : undefined}
               onClick={() => {
@@ -3855,7 +3861,7 @@ export default function PosPage() {
                 setDepositAmount(String(deposit.balanceDue));
               }}
               style={{
-                width: "100%", textAlign: "left", background: "transparent", border: 0,
+                width: "100%", textAlign: "left",
                 alignItems: "flex-start", opacity: elsewhere ? 0.65 : undefined,
                 cursor: elsewhere ? "not-allowed" : undefined,
               }}>
@@ -3993,9 +3999,9 @@ export default function PosPage() {
               .map((line) => ({ label: line.label.trim(), unitAmount: Number(line.unitAmount) }))
               .filter((line) => line.label && Number.isFinite(line.unitAmount) && line.unitAmount > 0),
             payments: [{
-              method: depositMethod,
+              method: cartDepositMethod,
               amount,
-              cashTendered: depositMethod === "CASH" ? amount : null,
+              cashTendered: cartDepositMethod === "CASH" ? amount : null,
             }],
           };
 
@@ -7302,126 +7308,451 @@ export default function PosPage() {
           minHeight: 0,
         }}
       >
-      <section className={`pos-card pos-pane pos-work-panel${tab === "sell" ? " pos-sale-basket" : ""}`}>
+      <section className={`pos-card pos-pane pos-work-panel${tab === "sell" ? " pos-sale-basket" : ""}${tab === "returns" ? " pos-returns-workspace" : ""}`}>
+      {tab === "returns" && (
+        <header className="pos-returns-header">
+          <div>
+            <div className="pos-returns-header-title">
+              <h2>{posText("คืนสินค้า")}</h2>
+              <PosHelp title={posText("คืนสินค้าและคืนเงินจริง")}>
+                {posText("คืนสินค้าจะบันทึกของกลับก่อน เงินสดถือว่าคืนทันที ส่วน QR บัตร โอน และวอลเล็ทต้องกรอกเลขอ้างอิงเพื่อยืนยันคืนเงินจริงอีกครั้ง") + " "}
+              </PosHelp>
+            </div>
+            <p>{posText("ขั้นที่ 1 — ค้นหาใบเสร็จเดิมก่อน")}</p>
+          </div>
+          <div className="pos-returns-header-status">
+            {session?.shift && <span>{posText("กะนี้คืนแล้ว") + " "}{shiftReturnSummary.count} {" " + posText("บิล · ฿")}{baht(shiftReturnSummary.total)}</span>}
+            {shiftReturnSummary.pendingCount > 0 && (
+              <button type="button" className="pos-ret-btn" onClick={openPendingRefundQueue}>
+                {posText("รอยืนยันคืนเงินจริง") + " "}{shiftReturnSummary.pendingCount} {" " + posText("รายการ")}
+              </button>
+            )}
+          </div>
+        </header>
+      )}
+      {/* บิลเก่าอยู่แท็บ "คืน" — ตะกร้าที่กำลังขายไม่ถูกดันหาย และคอลัมน์ขวา
+          (ยอด + ปุ่มชำระ) ยังอยู่ที่เดิม กดจ่ายให้ลูกค้าคนแรกได้ระหว่างค้นบิลคืนของ */}
       {tab === "returns" && (<>
-      <div style={{ fontSize: 13 }}>
-        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontWeight: 500, display: "inline-flex", alignItems: "center" }}>
-            {posText("คืนสินค้า") + " "}<PosHelp title={posText("คืนสินค้าและคืนเงินจริง")}>
-              {posText("คืนสินค้าจะบันทึกของกลับก่อน เงินสดถือว่าคืนทันที ส่วน QR บัตร โอน และวอลเล็ทต้องกรอกเลขอ้างอิงเพื่อยืนยันคืนเงินจริงอีกครั้ง") + " "}</PosHelp>
-          </span>
-          {session?.shift && (
-            <span style={{ color: "var(--posx-muted, #666)" }}>
-              {posText("กะนี้คืนแล้ว") + " "}{shiftReturnSummary.count} {" " + posText("บิล · ฿")}{baht(shiftReturnSummary.total)}
-            </span>
-          )}
-          {shiftReturnSummary.pendingCount > 0 && (
-            <button
-              type="button"
-              className="pos-btn-ghost"
-              style={{ fontSize: 12 }}
-              onClick={openPendingRefundQueue}
-            >
-              {posText("รอยืนยันคืนเงินจริง") + " "}{shiftReturnSummary.pendingCount} {" " + posText("รายการ") + " "}</button>
-          )}
-          <button
-            onClick={() => setReturnPanelOpen((v) => !v)}
-            style={{ padding: "4px 12px", fontSize: 13, marginLeft: "auto" }}
-          >
-            {returnPanelOpen ? "▾" : "▸"} {" " + posText("ผู้อนุมัติ") + " "}</button>
-          {approvalUserId && approvalPin && !returnPanelOpen && (
-            <span style={{ color: "var(--posx-ok-text, #237804)" }}>{posText("ตั้งผู้อนุมัติไว้แล้ว")}</span>
-          )}
-        </div>
-
-        {/* คืนไม่มีใบเสร็จ (8.2) — ยุบไว้เสมอ เพราะทางปกติคือค้นบิลเดิมให้เจอ
-            ทางนี้คือทางออกสุดท้ายเมื่อใบเสร็จหายจริง และเป็นช่องจ่ายเงินออกที่
-            เสี่ยงที่สุด จึงไม่ควรอยู่ในระยะที่กดพลาดได้ */}
-        <div style={{ marginTop: 10, borderTop: "1px solid var(--pos-line)", paddingTop: 10 }}>
-          {!blindOpen ? (
-            <button
-              type="button"
-              className="pos-btn-ghost"
-              style={{ fontSize: 12 }}
-              onClick={openBlindReturn}
-            >
-              {posText("+ คืนโดยไม่มีใบเสร็จ (ต้องมีหัวหน้าอนุมัติ)") + " "}</button>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ fontSize: 12, color: "var(--posx-warn-text, #8a6100)" }}>
-                {posText("โหมดนี้ใช้เมื่อหาใบเสร็จไม่เจอจริง ๆ เท่านั้น · ยิงบาร์โค้ดสินค้าได้จากหน้านี้เลย ระบบจะใส่ของลงตะกร้าและพยายามค้นบิลที่เคยขายสินค้านี้ให้ด้านล่างพร้อมกัน · ถ้ายังหาใบเสร็จไม่ได้จึงค่อยให้หัวหน้าอนุมัติคืนตามราคาป้ายวันนี้ (")}{cart.length} {" " + posText("รายการในตะกร้า) · จ่ายเป็นเงินสดจากลิ้นชัก · ไม่มีใบกำกับต้นทางให้อ้าง จึงออกใบลดหนี้ไม่ได้") + " "}</div>
-              <PosDismissibleAlert style={{ background: "var(--posx-warn-bg, #fff7e6)", border: "1px solid var(--posx-warn-line, #ffd591)", color: "var(--posx-warn-text, #874d00)", borderRadius: 10, padding: "10px 12px", fontSize: 13 }}>
-                <div style={{ fontWeight: 700, marginBottom: 4 }}>{posText("ขั้นที่ 2 — ถ้ายังหาใบเสร็จไม่เจอจริง ค่อยกรอกส่วนนี้เพื่อคืนไม่มีใบเสร็จ")}</div>
-                <div>{posText("ส่วนนี้ไม่ใช่ช่องค้นบิล ใช้กรอกเหตุผลและผู้อนุมัติก่อนกด “ยืนยันคืน + จ่ายเงินสด” เท่านั้น")}</div>
-              </PosDismissibleAlert>
-              <div style={{ fontSize: 12, color: "var(--posx-ink2, #555)", background: "var(--posx-soft, #fafafa)", border: "1px dashed var(--posx-line, #d9d9d9)", borderRadius: 8, padding: "8px 10px" }}>
-                {posText("Scanner ตอนนี้ = รับของคืน · ถ้าต้องการหาใบเสร็จเดิม ให้ใช้ช่องค้นบิลด้านล่างได้ทั้งเลขใบเสร็จ, order id, barcode สินค้า, SKU, รหัสสมาชิก หรือเบอร์โทร") + " "}</div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--posx-warn-text, #8a6100)" }}>{posText("เหตุผลคืนไม่มีใบเสร็จ")}</div>
-              <input
-                ref={blindReasonRef}
-                value={blindReason}
-                onChange={(e) => setBlindReason(e.target.value)}
-                maxLength={300}
-                placeholder={posText("เหตุผล เช่น ใบเสร็จหาย ของอยู่ในสภาพเดิม ซื้อเมื่อวาน")}
-                style={{ padding: 9, fontSize: 13 }}
-              />
-              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--posx-warn-text, #8a6100)" }}>{posText("ผู้อนุมัติคืนไม่มีใบเสร็จ")}</div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <select
-                  ref={blindApproverSelectRef}
-                  value={blindApproverId}
-                  onChange={(e) => setBlindApproverId(e.target.value)}
-                  style={{ padding: 9, fontSize: 13, minWidth: 170 }}
-                >
-                  <ApproverOptions session={session} permission="pos.return.noreceipt" excludeUserId={cashierId} placeholder={posText("— ผู้อนุมัติ —")} />
-                </select>
-                <input
-                  ref={blindApproverPinRef}
-                  type="password"
-                  inputMode="numeric"
-                  value={blindApproverPin}
-                  onChange={(e) => setBlindApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
-                  placeholder={posText("PIN หัวหน้า")}
-                  style={{ padding: 9, fontSize: 13, width: 120 }}
-                />
-                <button onClick={() => void doBlindReturn()} disabled={busy || cart.length === 0}
-                        style={{ padding: "9px 16px", fontSize: 13 }}>
-                  {posText("ยืนยันคืน + จ่ายเงินสด") + " "}</button>
-                <button type="button" className="pos-btn-ghost" onClick={closeBlindReturn}>
-                  {posText("ยกเลิก") + " "}</button>
+          <div className="pos-ret pos-returns-main">
+            <div className="pos-returns-search-heading">
+              <h3>{posText("ค้นบิลย้อนหลัง")}</h3>
+              <p>{posText("ไม่รู้เลขใบเสร็จก็หาได้: ยิงบาร์โค้ดสินค้า, พิมพ์ SKU, ชื่อสมาชิก, รหัสสมาชิก หรือเบอร์โทร · เมื่อมีคำค้น ระบบจะค้นย้อนหลังทุกช่องทางและทุกสาขาในร้านให้")}</p>
+            </div>
+            <div className="pos-ret-hint">
+              <span className="pos-ret-hint-icon" aria-hidden="true">🧾</span>
+              <div>
+                <div className="pos-ret-hint-title">{posText("ขั้นที่ 1 — ค้นหาใบเสร็จเดิมก่อน")}</div>
+                <div className="pos-ret-hint-body">{posText("พิมพ์หรือยิงข้อมูลในช่องค้นด้านล่างนี้ก่อนทุกครั้ง ถ้าเจอบิลแล้ว ให้คืนจากใบเสร็จแทนการคืนไม่มีใบเสร็จ")}</div>
               </div>
             </div>
-          )}
-        </div>
+            <div className="pos-ret-search">
+              <button type="button" className="pos-ret-toggle" onClick={() => setRecentOpen((v) => !v)}>
+                {recentOpen ? "▾" : "▸"} {returnReceiptFilter === "pending" ? posText("บิลที่ยังค้างยืนยัน") : posText("บิลล่าสุด")} ({visibleRecentReceipts.length})
+              </button>
+              <div className="pos-ret-search-field">
+                <label htmlFor="pos-recent-sales-query">{posText("ค้นบิลย้อนหลัง")}</label>
+                <input
+                  id="pos-recent-sales-query"
+                  value={recentSalesQuery}
+                  onChange={(e) => setRecentSalesQuery(e.target.value)}
+                  placeholder={posText("ค้นเลขบิล / barcode สินค้า / SKU / สมาชิก / เบอร์โทร")}
+                />
+              </div>
+            </div>
+            {visibleRecentReceipts.length > 0 && (
+              <div className="pos-ret-list" style={{ display: recentOpen ? "flex" : "none" }}>
+                {visibleRecentReceipts.map((row, idx) => {
+                  const soldOnThisDevice = Boolean(row.posDeviceId) && row.posDeviceId === session?.device.id;
+                  const crossBranch = Boolean(
+                    row.saleLocationId && session?.location?.id && row.saleLocationId !== session.location.id
+                  );
+                  const refundSummary = getReceiptRefundSummary(row);
+                  const latestReturnEvent = [...(row.returnEvents ?? [])]
+                    .filter((event) => !event.isVoid)
+                    .sort((a, b) => new Date(b.returnedAt).getTime() - new Date(a.returnedAt).getTime())[0];
+                  // บิลที่คืนครบทุกชิ้นแล้วแต่สถานะยังเป็น COMPLETED ก็ไม่มีอะไรให้คืนต่อ
+                  const canReturn =
+                    Boolean(row.orderId) &&
+                    row.returnEligible !== false &&
+                    row.orderStatus !== "RETURNED" &&
+                    row.lines.some((line) => (line.refundablePackQty ?? 0) > 0);
+                  const panelOpen = canReturn && returnPanelOrderId === row.orderId;
+                  const historyOpen = historyOrderId === row.orderId;
+                  const refundPaymentOptions = getRefundPaymentOptions(row);
+                  const requestedRefundMethod = row.orderId
+                    ? preferredRefundMethods[row.orderId] ?? ""
+                    : "";
+                  const selectedRefundMethod = refundPaymentOptions.some((option) => option.method === requestedRefundMethod)
+                    ? requestedRefundMethod
+                    : "";
+                  const needsRefundMethodChoice = refundPaymentOptions.length > 1 && !selectedRefundMethod;
+                  // void = ยางลบของกะนี้ ไม่ใช่ประตูลบยอดขายย้อนหลัง (server บังคับซ้ำอีกชั้น)
+                  const canVoid =
+                    soldOnThisDevice &&
+                    Boolean(row.orderId) &&
+                    !row.voidedAt &&
+                    row.orderStatus !== "RETURNED" &&
+                    Boolean(session?.shift) &&
+                    row.shiftId === session?.shift?.id;
+                  // แถบสีข้างซ้าย + ป้ายกลม อ่านสถานะได้ก่อนอ่านตัวหนังสือ
+                  // ยกเลิก ≠ คืนแล้ว — คนอ่านรายงานต้องแยกออกตั้งแต่ตรงนี้
+                  const statusKind = row.voidedAt ? "void" : row.orderStatus === "RETURNED" ? "returned" : "ok";
+                  const statusLabel = row.voidedAt ? posText("ยกเลิกแล้ว") : row.orderStatus === "RETURNED" ? posText("คืนแล้ว") : posText("สำเร็จ");
+                  return (
+                  <article
+                    key={row.orderId ?? `recent-${idx}`}
+                    ref={(node) => {
+                      if (!row.orderId) return;
+                      receiptCardRefs.current[row.orderId] = node;
+                    }}
+                    className={`pos-ret-card pos-ret-card--${statusKind}${highlightedReceiptOrderId === row.orderId ? " pos-ret-card--highlight" : ""}`}
+                  >
+                    <div className="pos-ret-head">
+                      <div style={{ minWidth: 0 }}>
+                        <div className="pos-ret-id">
+                          <span className="pos-ret-docno">{row.docNo ?? row.orderId ?? posText("บิล POS")}</span>
+                          {row.orderStatus && (
+                            <span className={`pos-ret-pill pos-ret-pill--${statusKind}`}>{statusLabel}</span>
+                          )}
+                          {row.offlineTenderedAt && (
+                            <span className="pos-ret-pill pos-ret-pill--ok">{posText("ออฟไลน์ · ซิงก์แล้ว")}</span>
+                          )}
+                        </div>
+                        {/* ย่อเหลือบรรทัดเดียว — รายการบิลมีไว้ให้ "หาบิลเจอ" ไม่ใช่ให้อ่านทั้งใบ
+                            เลขอ้างอิงการชำระเงินอ่านได้ในใบเสร็จ ไม่ต้องกินที่ตรงนี้ */}
+                        <div className="pos-ret-meta">
+                          {row.atIso ? new Date(row.atIso).toLocaleString(posText.locale) : row.at} · {row.payments.length > 1 ? posText("จ่ายหลายวิธี") : row.payments[0] ? posPaymentMethodLabel(row.payments[0].method, posText.language) : row.paymentLabel} · {row.lines.slice(0, 2).map((line) => `${line.packQty}× ${receiptVariantLabel(line)}`).join(" · ")}
+                          {row.lines.length > 2 ? ` · +${row.lines.length - 2}` : ""}
+                        </div>
+                        {(row.memberNo || row.memberName || row.memberPhone) && (
+                          <div className="pos-ret-store">
+                            {posText("สมาชิก") + " "}{row.memberNo ?? "—"} · {row.memberName ?? posText("ไม่ระบุชื่อ")}{row.memberPhone ? ` · ${row.memberPhone}` : ""}
+                          </div>
+                        )}
+                        <div className={`pos-ret-store${crossBranch ? " pos-ret-store--offsite" : ""}`}>
+                          {posText("ช่องทาง") + " "}{row.sourceChannel ?? "pos"} {" " + posText("· ขายที่") + " "}{row.storeName ?? posText("ไม่ทราบสาขา")}{row.branchCode ? ` (${row.branchCode})` : ""}{row.posLabel ? ` · POS#${row.posLabel}` : ""}
+                          {row.returnBlockedReason === "MARKETPLACE_MANAGED"
+                            ? posText(" · ต้องคืนผ่าน marketplace ต้นทาง")
+                            : crossBranch
+                              ? posText(" · คืนข้ามสาขาต้องให้ผู้มีสิทธิ์คนที่สองอนุมัติ")
+                              : !soldOnThisDevice && row.sourceChannel === "pos"
+                                ? posText(" · เป็นบิลจาก POS เครื่องอื่นในสาขาเดียวกัน")
+                                : ""}
+                        </div>
+                      </div>
+                      <div className="pos-ret-money">
+                        <div className="pos-ret-money-label">
+                          {refundSummary.hasReturnActivity ? posText("ยอดขายเดิม") : posText("ยอดบิล")}
+                        </div>
+                        <div className="pos-ret-money-total">฿{baht(row.total)}</div>
+                        {refundSummary.hasReturnActivity && (
+                          <div className="pos-ret-money-net">{posText("เหลือสุทธิ ฿")}{baht(refundSummary.remainingAfterRefund)}</div>
+                        )}
+                      </div>
+                    </div>
 
-        {returnPanelOpen && (
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
-            <span style={{ color: "var(--posx-muted, #666)" }}>{posText("ผู้อนุมัติ (ใช้เมื่อระบบร้องขอ):")}</span>
-            <select
-              ref={approvalUserSelectRef}
-              value={approvalUserId}
-              onChange={(e) => setApprovalUserId(e.target.value)}
-              style={{ padding: 8, fontSize: 13, minWidth: 160 }}
-            >
-              {/* คืนตั้งแต่ ฿500 ต้องให้ผู้มีสิทธิ์ `payment.refund` อนุมัติ (approvalRuleForRefundAmount)
-                  ไม่ใช่คนที่ "รับคืน" ได้เฉย ๆ — เดิม dropdown นี้ยื่นพนักงานขายทุกคนให้เลือก */}
-              <ApproverOptions session={session} permission="payment.refund" placeholder={posText("เลือกผู้อนุมัติ")} />
-            </select>
-            <input
-              ref={approvalPinRef}
-              type="password"
-              inputMode="numeric"
-              value={approvalPin}
-              onChange={(e) => setApprovalPin(e.target.value)}
-              placeholder={posText("PIN ผู้อนุมัติ")}
-              style={{ padding: 8, fontSize: 13, width: 130 }}
-            />
-            <span style={{ fontSize: 12, color: "var(--posx-muted, #888)" }}>
-              {posText("คืนตั้งแต่ ฿500 ขึ้นไปเริ่มมี approval flow · ตั้งแต่ ฿2,000 ถือเป็น high-value return") + " "}</span>
+                    {refundSummary.hasReturnActivity && (
+                      <div className="pos-ret-summary">
+                        <span>{posText("บิลขายเดิม") + " "}<b>฿{baht(row.total)}</b></span>
+                        <span className="pos-ret-summary-sep">·</span>
+                        <span>{posText("คืนแล้ว") + " "}<b>฿{baht(refundSummary.refundedTotal)}</b></span>
+                        <span className="pos-ret-summary-sep">·</span>
+                        <span>{posText("คงเหลือหลังคืน") + " "}<b className="pos-ret-summary-ok">฿{baht(refundSummary.remainingAfterRefund)}</b></span>
+                        {refundSummary.pendingRefundTotal > 0 && (
+                          <>
+                            <span className="pos-ret-summary-sep">·</span>
+                            <span>{posText("รอยืนยันคืนเงินจริง") + " "}<b>฿{baht(refundSummary.pendingRefundTotal)}</b></span>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {(row.refunds ?? []).length > 0 && (
+                      <div className="pos-ret-refunds">
+                        {(row.refunds ?? []).map((refund) => (
+                          <div className="pos-ret-refund-row" key={refund.id}>
+                            <span className="pos-ret-refund-method">
+                              {posPaymentMethodLabel(refund.method, posText.language)} · ฿{baht(refund.amount)}
+                            </span>
+                            <span className={`pos-ret-refund-status${refund.status === "COMPLETED" ? " pos-ret-refund-status--ok" : ""}`}>
+                              {refund.status === "COMPLETED" ? posText("คืนแล้ว") : posText("รอยืนยัน")}
+                            </span>
+                            {refund.status === "PENDING" ? (
+                              <span className="pos-ret-refund-settle">
+                                <input
+                                  value={settlementRefs[refund.id] ?? ""}
+                                  onChange={(event) => setSettlementRefs((cur) => ({ ...cur, [refund.id]: event.target.value }))}
+                                  placeholder={posText("เลขอ้างอิงจากธนาคาร/เครื่องบัตร (บังคับ)")}
+                                />
+                                <button
+                                  className="pos-ret-btn pos-ret-btn--sm"
+                                  onClick={() => void completeRefundSettlement(row, refund)}
+                                  disabled={busy}
+                                >
+                                  {posText("ยืนยันคืนแล้ว") + " "}</button>
+                              </span>
+                            ) : (
+                              <span className="pos-ret-refund-note">
+                                {refund.externalRef ? posText("อ้างอิง {v0}", { v0: refund.externalRef }) : posText("บันทึกคืนสำเร็จแล้ว")}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* ปุ่มมีลำดับชั้น: หลัก(ทึบ) = ดูใบ · รอง(โปร่ง) = กางส่วนขยาย · แดง = ยกเลิก */}
+                    <div className="pos-ret-actions">
+                      <button
+                        className="pos-ret-btn pos-ret-btn--primary"
+                        onClick={() => {
+                          setReceipt(row);
+                          setReceiptModalOpen(true);
+                          window.localStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(row));
+                        }}
+                      >
+                        {refundSummary.hasReturnActivity ? posText("ดูใบขายเดิม") : posText("ดู/พิมพ์")}
+                      </button>
+                      {latestReturnEvent && (
+                        <button
+                          type="button"
+                          className="pos-ret-btn pos-ret-btn--warn"
+                          onClick={() => openReturnEventReceipt(row, latestReturnEvent)}
+                        >
+                          {posText("ดูใบรับคืนล่าสุด") + " "}</button>
+                      )}
+                      <button
+                        className={`pos-ret-btn${historyOpen ? " pos-ret-btn--open" : ""}`}
+                        onClick={() => setHistoryOrderId((cur) => (cur === row.orderId ? null : row.orderId ?? null))}
+                      >
+                        {historyOpen ? posText("▾ ซ่อนประวัติบิล") : posText("▸ ดูประวัติบิล ({v0})", { v0: 1 + (row.returnEvents?.length ?? 0) })}
+                      </button>
+                      {canReturn && (
+                        <button
+                          className={`pos-ret-btn${panelOpen ? " pos-ret-btn--open" : ""}`}
+                          onClick={() =>
+                            setReturnPanelOrderId((cur) => (cur === row.orderId ? null : row.orderId ?? null))
+                          }
+                        >
+                          {panelOpen ? posText("▾ คืน/เปลี่ยนสินค้า") : posText("▸ คืน/เปลี่ยนสินค้า")}
+                        </button>
+                      )}
+                      {!canReturn && (
+                        <span className="pos-ret-note">
+                          {row.returnBlockedReason === "MARKETPLACE_MANAGED" ? posText("คืนผ่าน marketplace ต้นทาง")
+                            : row.voidedAt ? posText("ยกเลิกบิลแล้ว")
+                            : row.orderStatus === "RETURNED" ? posText("คืนแล้วทั้งบิล")
+                            : posText("คืนครบทุกรายการแล้ว")}
+                        </span>
+                      )}
+                      {/* ยกเลิกบิล (7.97) — เฉพาะบิลในกะที่ยังเปิดและยังไม่เคยคืน/ยกเลิก
+                          บิลของกะที่ปิดไปแล้วต้องเดินทางการคืนสินค้าแทน เพราะเงินถูกนับส่งไปแล้ว */}
+                      {canVoid && (
+                        <button
+                          className={`pos-ret-btn pos-ret-btn--danger${voidTarget === row.orderId ? " pos-ret-btn--open" : ""}`}
+                          onClick={() => setVoidTarget((cur) => (cur === row.orderId ? null : row.orderId ?? null))}
+                        >
+                          {posText("ยกเลิกบิล") + " "}</button>
+                      )}
+                    </div>
+
+                    {/* ฟอร์มคืนสินค้ากางเฉพาะบิลที่กดเปิด และเปิดได้ทีละใบ
+                        เดิมกางทุกใบตลอดเวลา — 3 บิลก็เลื่อนจอหาไม่เจอแล้ว */}
+                    {panelOpen && (
+                      <div className="pos-ret-expand">
+                        <div className="pos-ret-reason">
+                          <select
+                            ref={returnReasonSelectRef}
+                            value={returnReasonCodes[row.orderId!] ?? ""}
+                            onChange={(e) => setReturnReasonCodes((cur) => ({ ...cur, [row.orderId!]: e.target.value }))}
+                          >
+                            <option value="">{posText("เลือกประเภทเหตุผล")}</option>
+                            {RETURN_REASON_OPTIONS(posText).map((opt) => (
+                              <option key={opt.key} value={opt.key}>{opt.label}</option>
+                            ))}
+                          </select>
+                          <input
+                            ref={returnNoteInputRef}
+                            value={returnNotes[row.orderId!] ?? ""}
+                            onChange={(e) => setReturnNotes((cur) => ({ ...cur, [row.orderId!]: e.target.value }))}
+                            placeholder={posText("รายละเอียดเหตุผล (บังคับและแสดงในประวัติ)")}
+                          />
+                        </div>
+                        {refundPaymentOptions.length > 0 && (
+                          <div className="pos-ret-method">
+                            <label className="pos-ret-method-label">
+                              <span style={{ display: "inline-flex", alignItems: "center" }}>
+                                {posText("คืนเงินจากช่องทางใดก่อน") + " "}<PosHelp title={posText("ลำดับช่องทางคืนเงิน")}>
+                                  {posText("ใช้เมื่อบิลเดิมจ่ายหลายวิธี เลือกว่าจะคืนจากยอดเงินสด QR บัตร หรือช่องทางใดก่อน ระบบจะไม่คืนเกินยอดที่เคยรับในแต่ละช่องทาง") + " "}</PosHelp>
+                              </span>
+                              {refundPaymentOptions.length === 1 ? (
+                                <span className="pos-ret-method-single">
+                                  {posPaymentMethodLabel(refundPaymentOptions[0].method, posText.language)} {" " + posText("· คืนได้อีก ฿")}{baht(refundPaymentOptions[0].available)}
+                                </span>
+                              ) : (
+                                <select
+                                  ref={refundMethodSelectRef}
+                                  value={selectedRefundMethod}
+                                  onChange={(event) => setPreferredRefundMethods((cur) => ({
+                                    ...cur,
+                                    [row.orderId!]: event.target.value,
+                                  }))}
+                                >
+                                  <option value="">{posText("เลือกช่องทางคืนเงินก่อน")}</option>
+                                  {refundPaymentOptions.map((option) => (
+                                    <option key={option.method} value={option.method}>
+                                      {posPaymentMethodLabel(option.method, posText.language)} {" " + posText("· คืนได้อีก ฿")}{baht(option.available)}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </label>
+                            <div className="pos-ret-method-hint">
+                              {posText("ระบบคืนได้ไม่เกินยอดที่รับผ่านช่องทางนั้น หากยอดคืนมากกว่า ระบบจะแบ่งส่วนที่เหลือไปยังช่องทางเดิมอื่นและแสดงให้ตรวจทุกรายการ") + " "}</div>
+                          </div>
+                        )}
+                        {row.lines
+                          .filter((line) => (line.refundablePackQty ?? 0) > 0 && line.orderItemId)
+                          .map((line) => {
+                            const selected = Number(returnDrafts[row.orderId!]?.[line.orderItemId!] ?? 0);
+                            const maxQty = Number(line.refundablePackQty ?? 0);
+                            return (
+                              <div key={`${row.orderId}-${line.orderItemId}`} className="pos-ret-line">
+                                <div className="pos-ret-line-info">
+                                  <div className="pos-ret-line-name">{receiptVariantLabel(line)}</div>
+                                  <div className="pos-ret-line-sub">
+                                    SKU {line.sku} {" " + posText("· ขาย") + " "}{line.packQty} {line.unitName} {" " + posText("· คืนได้อีก") + " "}{maxQty} {" " + posText("/ คืนแล้ว") + " "}{line.returnedPackQty ?? 0}
+                                  </div>
+                                </div>
+                                <div className="pos-ret-step">
+                                  <button
+                                    onClick={() => updateReturnDraft(row.orderId!, line.orderItemId!, selected - 1, maxQty)}
+                                    aria-label={posText("ลดจำนวนคืน {v0} SKU {v1}", { v0: receiptVariantLabel(line), v1: line.sku })}
+                                  >
+                                    −
+                                  </button>
+                                  <span className="pos-ret-step-value">{selected}</span>
+                                  <button
+                                    onClick={() => updateReturnDraft(row.orderId!, line.orderItemId!, selected + 1, maxQty)}
+                                    aria-label={posText("เพิ่มจำนวนคืน {v0} SKU {v1}", { v0: receiptVariantLabel(line), v1: line.sku })}
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        <div className="pos-ret-form-note">
+                          {posText("ยอดคืนจริงจะคำนวณจากจำนวนที่เหลือใหม่ หากไม่ครบขั้นต่ำราคาส่ง/โปร ยอดคืนจะลดลงตามเงื่อนไขเดิมตอนขาย") + " "}</div>
+                        {/* เหตุผล/หมายเหตุใช้ช่องเดียวกันทั้งคืนบางรายการและคืนทั้งบิล
+                            (เป็น state ตัวเดียวกันมาแต่แรก — เดิมวาดซ้ำสองชุดโดยไม่จำเป็น) */}
+                        <div className="pos-ret-form-actions">
+                          <button
+                            className="pos-ret-btn"
+                            onClick={() => void partialReturnReceipt(row)}
+                            disabled={busy || getPartialRefundPreview(row) <= 0 || needsRefundMethodChoice}
+                          >
+                            {posText("คืนบางรายการ") + " "}</button>
+                          <button
+                            className="pos-ret-btn pos-ret-btn--solid"
+                            onClick={() => void returnReceipt(row)}
+                            disabled={busy || needsRefundMethodChoice}
+                          >
+                            {posText("คืนทั้งบิล") + " "}</button>
+                          <button
+                            className="pos-ret-btn"
+                            onClick={() => void startExchangeFromReceipt(row)}
+                            disabled={busy || hasPendingOrderWrite || getPartialRefundPreview(row) <= 0 || needsRefundMethodChoice}
+                          >
+                            {posText("คืนที่เลือก + ทำบิลเปลี่ยน") + " "}</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {historyOpen && (
+                      <BillHistoryPanel
+                        receipt={row}
+                        onOpenReturnReceipt={(event) => openReturnEventReceipt(row, event)}
+                      />
+                    )}
+
+                    {canVoid && voidTarget === row.orderId && (
+                      <div className="pos-ret-void">
+                        <div className="pos-ret-void-why">
+                          <span style={{ display: "inline-flex", alignItems: "center" }}>
+                            {posText("ยกเลิกบิลนี้") + " "}<PosHelp title={posText("ยกเลิกบิลไม่ใช่คืนสินค้า")}>
+                              {posText("ใช้เมื่อบิลผิดและต้องย้อนทั้งรายการ โดยต้องเป็นบิลของกะที่ยังเปิดอยู่ การคืนสินค้าปกติควรใช้ปุ่มคืนบางรายการหรือคืนทั้งบิล") + " "}</PosHelp>
+                          </span>{posText(": ของกลับเข้าสต็อก เงินคืนลูกค้า แต้มถูกดึงคืน และใบกำกับถูกยกเลิก (เลขใบยังอยู่ในลำดับ ไม่ได้ถูกลบ)") + " "}</div>
+                        <input
+                          ref={voidReasonRef}
+                          value={voidReason}
+                          onChange={(e) => setVoidReason(e.target.value)}
+                          maxLength={200}
+                          placeholder={posText("เหตุผล เช่น สแกนซ้ำ / กดผิดคน")}
+                        />
+                        <div className="pos-ret-void-row">
+                          <select ref={voidApproverSelectRef} value={voidApproverId} onChange={(e) => setVoidApproverId(e.target.value)}
+                                  style={{ minWidth: 170 }}>
+                            <ApproverOptions session={session} permission="pos.void" excludeUserId={cashierId} placeholder={posText("— ผู้อนุมัติ —")} />
+                          </select>
+                          <input ref={voidApproverPinRef} type="password" inputMode="numeric" value={voidApproverPin}
+                                 onChange={(e) => setVoidApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
+                                 placeholder={posText("PIN หัวหน้า")} style={{ width: 120 }} />
+                          <button className="pos-ret-btn pos-ret-btn--danger"
+                                  onClick={() => void doVoidSale(row.orderId!)} disabled={busy}>
+                            {posText("ยืนยันยกเลิก") + " "}</button>
+                        </div>
+                      </div>
+                    )}
+                  </article>
+                  );
+                })}
+              </div>
+            )}
+            {/* บิลนี้มีอยู่จริง แต่เป็นมัดจำ — แท็บคืนค้นเฉพาะบิลที่ปิดแล้วโดยตั้งใจ
+                (ของที่ยังไม่ได้ส่งมอบจะคืนไม่ได้) แต่พนักงานที่ถือใบเสร็จมาย่อมมาที่นี่ก่อน
+                คำตอบที่ถูกคือบอกว่ามันอยู่ไหน ไม่ใช่ "ไม่พบ" */}
+            {recentReceipts.length === 0 && recentDepositMatches.length > 0 && (
+              <div className="pos-ret-empty" style={{ textAlign: "left" }}>
+                <b>{posText("บิลนี้เป็นมัดจำ — ของยังไม่ได้ส่งมอบ จึงยังคืนไม่ได้")}</b>
+                <div style={{ marginTop: 6 }}>
+                  {recentDepositMatches.map((deposit) => (
+                    <div key={deposit.id} style={{ fontSize: 13, marginTop: 4 }}>
+                      #{deposit.orderId.slice(0, 8).toUpperCase()}
+                      {deposit.customerNote?.trim() || deposit.customerName?.trim()
+                        ? ` · ${deposit.customerNote?.trim() || deposit.customerName?.trim()}`
+                        : ""}
+                      {" · "}{posText("จ่ายแล้ว ฿")}{baht(deposit.depositPaid)} {" " + posText("· ค้าง ฿")}{baht(deposit.balanceDue)}
+                      {deposit.isOtherLocation ? posText(" · อยู่สาขา {v0}", { v0: deposit.locationName || posText("อื่น") }) : ""}
+                    </div>
+                  ))}
+                </div>
+                <button style={{ marginTop: 10 }}
+                        onClick={() => {
+                          setTab("deposits");
+                          // พาคำค้นเดิมไปด้วย ไม่ให้พนักงานต้องพิมพ์ซ้ำที่แท็บใหม่
+                          setDepositSearch(recentSalesQuery);
+                          void refreshDeposits(recentSalesQuery);
+                        }}>
+                  {posText("ไปแท็บมัดจำ") + " "}</button>
+              </div>
+            )}
+            {recentReceipts.length === 0 && recentDepositMatches.length === 0 && recentSalesQuery.trim().length > 0 && (
+              <div className="pos-ret-empty">
+                {posText("ไม่พบบิลที่ตรงกับคำค้นนี้ — ลองเลขบิล, barcode สินค้า, SKU, ชื่อสมาชิก, รหัสสมาชิก หรือเบอร์โทร") + " "}</div>
+            )}
+            {recentReceipts.length > 0 && visibleRecentReceipts.length === 0 && returnReceiptFilter === "pending" && recentSalesQuery.trim().length === 0 && (
+              <div className="pos-ret-empty">
+                {posText("ไม่มีบิลที่ค้างยืนยันอยู่ในรายการล่าสุดของเครื่องนี้") + " "}</div>
+            )}
+            {recentReceipts.length === 0 && recentSalesQuery.trim().length === 0 && (
+              <div className="pos-ret-empty">
+                {posText("ยังไม่มีบิลของเครื่องนี้ในกะนี้") + " "}</div>
+            )}
           </div>
-        )}
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+      </>)}
+      {tab === "returns" && (<aside className="pos-returns-rail">
+      <div className="pos-returns-pending">
         <div style={{
           border: shiftReturnSummary.pendingCount > 0 ? "1px solid var(--posx-warn-line, #ffd591)" : "1px solid var(--pos-line)",
           background: shiftReturnSummary.pendingCount > 0 ? "var(--posx-warn-bg, #fff7e6)" : "var(--posx-soft, #f8fafc)",
@@ -7510,7 +7841,106 @@ export default function PosPage() {
           )}
         </div>
       </div>
-      </>)}
+      <div className="pos-returns-side-actions">
+
+        {/* คืนไม่มีใบเสร็จ (8.2) — ยุบไว้เสมอ เพราะทางปกติคือค้นบิลเดิมให้เจอ
+            ทางนี้คือทางออกสุดท้ายเมื่อใบเสร็จหายจริง และเป็นช่องจ่ายเงินออกที่
+            เสี่ยงที่สุด จึงไม่ควรอยู่ในระยะที่กดพลาดได้ */}
+        <div className="pos-returns-rail-card">
+          <h3>{posText("กรณีไม่มีใบเสร็จ")}</h3>
+          <p>{posText("ค้นบิลไม่พบ ต้องให้หัวหน้าอนุมัติก่อนรับคืน")}</p>
+          {!blindOpen ? (
+            <button
+              type="button"
+              className="pos-btn-ghost"
+              style={{ fontSize: 12 }}
+              onClick={openBlindReturn}
+            >
+              {posText("เริ่มคืนไม่มีใบเสร็จ")}</button>
+          ) : (
+            <div className="pos-returns-blind-form" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 12, color: "var(--posx-warn-text, #8a6100)" }}>
+                {posText("โหมดนี้ใช้เมื่อหาใบเสร็จไม่เจอจริง ๆ เท่านั้น · ยิงบาร์โค้ดสินค้าได้จากหน้านี้เลย ระบบจะใส่ของลงตะกร้าและพยายามค้นบิลที่เคยขายสินค้านี้ให้ด้านล่างพร้อมกัน · ถ้ายังหาใบเสร็จไม่ได้จึงค่อยให้หัวหน้าอนุมัติคืนตามราคาป้ายวันนี้ (")}{cart.length} {" " + posText("รายการในตะกร้า) · จ่ายเป็นเงินสดจากลิ้นชัก · ไม่มีใบกำกับต้นทางให้อ้าง จึงออกใบลดหนี้ไม่ได้") + " "}</div>
+              <PosDismissibleAlert style={{ background: "var(--posx-warn-bg, #fff7e6)", border: "1px solid var(--posx-warn-line, #ffd591)", color: "var(--posx-warn-text, #874d00)", borderRadius: 10, padding: "10px 12px", fontSize: 13 }}>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>{posText("ขั้นที่ 2 — ถ้ายังหาใบเสร็จไม่เจอจริง ค่อยกรอกส่วนนี้เพื่อคืนไม่มีใบเสร็จ")}</div>
+                <div>{posText("ส่วนนี้ไม่ใช่ช่องค้นบิล ใช้กรอกเหตุผลและผู้อนุมัติก่อนกด “ยืนยันคืน + จ่ายเงินสด” เท่านั้น")}</div>
+              </PosDismissibleAlert>
+              <div style={{ fontSize: 12, color: "var(--posx-ink2, #555)", background: "var(--posx-soft, #fafafa)", border: "1px dashed var(--posx-line, #d9d9d9)", borderRadius: 8, padding: "8px 10px" }}>
+                {posText("Scanner ตอนนี้ = รับของคืน · ถ้าต้องการหาใบเสร็จเดิม ให้ใช้ช่องค้นบิลด้านล่างได้ทั้งเลขใบเสร็จ, order id, barcode สินค้า, SKU, รหัสสมาชิก หรือเบอร์โทร") + " "}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--posx-warn-text, #8a6100)" }}>{posText("เหตุผลคืนไม่มีใบเสร็จ")}</div>
+              <input
+                ref={blindReasonRef}
+                value={blindReason}
+                onChange={(e) => setBlindReason(e.target.value)}
+                maxLength={300}
+                placeholder={posText("เหตุผล เช่น ใบเสร็จหาย ของอยู่ในสภาพเดิม ซื้อเมื่อวาน")}
+                style={{ padding: 9, fontSize: 13 }}
+              />
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--posx-warn-text, #8a6100)" }}>{posText("ผู้อนุมัติคืนไม่มีใบเสร็จ")}</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <select
+                  ref={blindApproverSelectRef}
+                  value={blindApproverId}
+                  onChange={(e) => setBlindApproverId(e.target.value)}
+                  style={{ padding: 9, fontSize: 13, minWidth: 170 }}
+                >
+                  <ApproverOptions session={session} permission="pos.return.noreceipt" excludeUserId={cashierId} placeholder={posText("— ผู้อนุมัติ —")} />
+                </select>
+                <input
+                  ref={blindApproverPinRef}
+                  type="password"
+                  inputMode="numeric"
+                  value={blindApproverPin}
+                  onChange={(e) => setBlindApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
+                  placeholder={posText("PIN หัวหน้า")}
+                  style={{ padding: 9, fontSize: 13, width: 120 }}
+                />
+                <button onClick={() => void doBlindReturn()} disabled={busy || cart.length === 0}
+                        style={{ padding: "9px 16px", fontSize: 13 }}>
+                  {posText("ยืนยันคืน + จ่ายเงินสด") + " "}</button>
+                <button type="button" className="pos-btn-ghost" onClick={closeBlindReturn}>
+                  {posText("ยกเลิก") + " "}</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="pos-returns-rail-card">
+          <button type="button" className="pos-returns-approver-toggle" onClick={() => setReturnPanelOpen((v) => !v)}>
+            <span>{posText("ผู้อนุมัติ")}</span><span aria-hidden="true">{returnPanelOpen ? "▾" : "▸"}</span>
+          </button>
+          {approvalUserId && approvalPin && !returnPanelOpen && (
+            <span className="pos-returns-approved">{posText("ตั้งผู้อนุมัติไว้แล้ว")}</span>
+          )}
+        {returnPanelOpen && (
+          <div className="pos-returns-approver-form">
+            <span style={{ color: "var(--posx-muted, #666)" }}>{posText("ผู้อนุมัติ (ใช้เมื่อระบบร้องขอ):")}</span>
+            <select
+              ref={approvalUserSelectRef}
+              value={approvalUserId}
+              onChange={(e) => setApprovalUserId(e.target.value)}
+              style={{ padding: 8, fontSize: 13, minWidth: 160 }}
+            >
+              {/* คืนตั้งแต่ ฿500 ต้องให้ผู้มีสิทธิ์ `payment.refund` อนุมัติ (approvalRuleForRefundAmount)
+                  ไม่ใช่คนที่ "รับคืน" ได้เฉย ๆ — เดิม dropdown นี้ยื่นพนักงานขายทุกคนให้เลือก */}
+              <ApproverOptions session={session} permission="payment.refund" placeholder={posText("เลือกผู้อนุมัติ")} />
+            </select>
+            <input
+              ref={approvalPinRef}
+              type="password"
+              inputMode="numeric"
+              value={approvalPin}
+              onChange={(e) => setApprovalPin(e.target.value)}
+              placeholder={posText("PIN ผู้อนุมัติ")}
+              style={{ padding: 8, fontSize: 13, width: 130 }}
+            />
+            <span style={{ fontSize: 12, color: "var(--posx-muted, #888)" }}>
+              {posText("คืนตั้งแต่ ฿500 ขึ้นไปเริ่มมี approval flow · ตั้งแต่ ฿2,000 ถือเป็น high-value return") + " "}</span>
+          </div>
+        )}
+        </div>
+      </div>
+      </aside>)}
 
       {/* โต๊ะ/เวลาเล่น — ร้านบอร์ดเกมคาเฟ่เท่านั้น · ปิดเวลาแล้วบิลมารวมที่แท็บขายใบเดียว */}
       {tab === "boardgame" && (
@@ -7689,8 +8119,8 @@ export default function PosPage() {
       )}
 
       {tab === "stock" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div className="pos-shift-head">
+        <div className="pos-stock-page">
+          <div className="pos-shift-head pos-stock-heading">
             <div>
               <div className="pos-block-title" style={{ marginBottom: 2, display: "flex", alignItems: "center" }}>
                 {posText("รับสินค้าจากใบสั่งซื้อ") + " "}<PosHelp title={posText("การรับสินค้าเข้า")}>
@@ -7699,20 +8129,17 @@ export default function PosPage() {
               <div className="pos-block-hint">
                 {posText("รับเข้าที่สาขา") + " "}{session?.location?.name ?? posText("ของเครื่องนี้")} {" " + posText("· สแกนเป็นรายการร่างก่อน ยืนยันครั้งเดียวจึงขยับสต็อก") + " "}</div>
             </div>
-            <button
-              type="button"
-              onClick={async () => {
-                if (await loadReceivableOrders(stockOrder?.id)) setNotice({ type: "ok", text: posText("โหลดใบสั่งซื้อล่าสุดแล้ว") });
-              }}
-              disabled={stockLoading || stockReceiving || stockReceiveUncertain || !stockReceiverId || !stockReceiverPin}
-              style={{ padding: "8px 12px", fontSize: 13 }}
-            >
-              {stockLoading ? posText("กำลังโหลด…") : posText("โหลด PO ค้างรับ")}
-            </button>
+            {stockOrder && (
+              <span className="pos-chip pos-chip--personal">
+                PO {stockOrder.id.slice(0, 8)} · {stockOrder.status === "OPEN" ? posText("รอรับของ") : stockOrder.status === "PARTIAL" ? posText("รับบางส่วน") : stockOrder.status}
+              </span>
+            )}
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <select
+          <div className="pos-stock-setup">
+            <label className="pos-stock-field">
+              <span className="pos-stock-step">{posText("1 · ผู้รับสินค้า")}</span>
+              <select
               value={stockReceiverId}
               disabled={stockReceiving || stockReceiveUncertain}
               onChange={(event) => {
@@ -7725,7 +8152,6 @@ export default function PosPage() {
                 replaceStockDraft({});
                 stockReceiveRequestRef.current = null;
               }}
-              style={{ flex: "1 1 220px", minWidth: 0, padding: 10, fontSize: 13 }}
             >
               <option value="">{posText("— ผู้รับสินค้า —")}</option>
               {(session?.purchaseReceivers ?? []).map((receiver) => (
@@ -7734,41 +8160,63 @@ export default function PosPage() {
                   {receiver.hasPin ? "" : posText(" — ยังไม่ตั้ง PIN")}
                 </option>
               ))}
-            </select>
-            <input
+              </select>
+            </label>
+            <label className="pos-stock-field">
+              <span>{posText("PIN ผู้รับสินค้า")}</span>
+              <input
               type="password"
               inputMode="numeric"
               value={stockReceiverPin}
               disabled={stockReceiving}
               onChange={(event) => setStockReceiverPin(event.target.value.replace(/[^0-9]/g, ""))}
               placeholder={posText("PIN ผู้รับสินค้า")}
-              style={{ flex: "0 1 170px", minWidth: 130, padding: 10, fontSize: 13 }}
             />
+            </label>
+            <label className="pos-stock-field">
+              <span className="pos-stock-step">{posText("2 · ใบสั่งซื้อที่รับของ")}</span>
+              <select
+                value={stockOrder?.id ?? ""}
+                onChange={(event) => void loadStockOrder(event.target.value)}
+                disabled={stockLoading || stockReceiving || stockReceiveUncertain || receivableOrders.length === 0}
+              >
+                <option value="">{posText("— เลือก PO —")}</option>
+                {receivableOrders.map((order) => (
+                  <option key={order.id} value={order.id}>
+                    {order.id.slice(0, 8)} · {order.supplier?.name ?? posText("ไม่ระบุ supplier")} {" " + posText("· ค้าง") + " "}{order.qtyOrdered - order.qtyReceived}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={async () => {
+                if (await loadReceivableOrders(stockOrder?.id)) setNotice({ type: "ok", text: posText("โหลดใบสั่งซื้อล่าสุดแล้ว") });
+              }}
+              disabled={stockLoading || stockReceiving || stockReceiveUncertain || !stockReceiverId || !stockReceiverPin}
+              className="pos-stock-load"
+            >
+              {stockLoading ? posText("กำลังโหลด…") : posText("โหลด PO ค้างรับ")}
+            </button>
           </div>
           {(!stockReceiverId || !stockReceiverPin) && (
-            <PosDismissibleAlert className="pos-note pos-note--err">{posText("เลือกผู้รับสินค้าและใส่ PIN — ระบบตรวจสิทธิ์รับสินค้าทุกครั้ง")}</PosDismissibleAlert>
+            <PosDismissibleAlert className="pos-note pos-stock-setup-hint">{posText("เลือกผู้รับสินค้าและใส่ PIN — ระบบตรวจสิทธิ์รับสินค้าทุกครั้ง")}</PosDismissibleAlert>
           )}
 
-          <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12 }}>
-            {posText("ใบสั่งซื้อที่รับของ") + " "}<select
-              value={stockOrder?.id ?? ""}
-              onChange={(event) => void loadStockOrder(event.target.value)}
-              disabled={stockLoading || stockReceiving || stockReceiveUncertain || receivableOrders.length === 0}
-              style={{ padding: 10, fontSize: 14 }}
-            >
-              <option value="">{posText("— เลือก PO —")}</option>
-              {receivableOrders.map((order) => (
-                <option key={order.id} value={order.id}>
-                  {order.id.slice(0, 8)} · {order.supplier?.name ?? posText("ไม่ระบุ supplier")} {" " + posText("· ค้าง") + " "}{order.qtyOrdered - order.qtyReceived}
-                </option>
-              ))}
-            </select>
-          </label>
           {!stockLoading && receivableOrders.length === 0 && stockReceiverId && stockReceiverPin && (
-            <div style={{ fontSize: 12, color: "var(--pos-muted)" }}>
+            <div className="pos-block-hint">
               {posText("กด “โหลด PO ค้างรับ” — ถ้าไม่พบ แปลว่าไม่มีใบสั่งซื้อที่รอรับของหรือรับไปบางส่วน") + " "}</div>
           )}
 
+          <div className="pos-stock-work-grid">
+            <section className="pos-stock-panel pos-stock-list-panel">
+              <div className="pos-stock-panel-head">
+                <div>
+                  <div className="pos-stock-step">{posText("3 · สแกนและตรวจจำนวน")}</div>
+                  <div className="pos-block-title">{posText("สินค้าในใบสั่งซื้อ")}</div>
+                </div>
+                {stockOrder && <span className="pos-chip pos-chip--personal">{stockOrder.items.length} {posText("รายการ")}</span>}
+              </div>
           <div className="pos-scan">
             <ScanBarcodeIcon />
             <input
@@ -7787,25 +8235,20 @@ export default function PosPage() {
             />
           </div>
 
-          {stockOrder && (() => {
-            const draftUnits = stockOrder.items.reduce(
-              (sum, line) => sum + (stockDraft[stockLineKey(line.sku, line.size)]?.qty ?? 0),
-              0
-            );
-            return (
+          {stockOrder ? (
               <>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", fontSize: 12 }}>
+                <div className="pos-stock-po-meta">
                   <strong>PO {stockOrder.id.slice(0, 8)} · {stockOrder.supplier?.name ?? posText("ไม่ระบุ supplier")}</strong>
                   <span style={{ color: "var(--pos-muted)" }}>{posText("สถานะ") + " "}{stockOrder.status === "OPEN" ? posText("รอรับของ") : stockOrder.status === "PARTIAL" ? posText("รับบางส่วน") : stockOrder.status}</span>
                 </div>
                 {stockOrder.note && <div style={{ fontSize: 12, color: "var(--pos-muted)" }}>{posText("หมายเหตุ:") + " "}{stockOrder.note}</div>}
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div className="pos-stock-lines">
                   {stockOrder.items.map((line) => {
                     const key = stockLineKey(line.sku, line.size);
                     const draft = stockDraft[key] ?? { qty: 0, lotNo: "", expiryDate: "" };
                     const remaining = Math.max(0, line.qtyOrdered - line.qtyReceived);
                     return (
-                      <div key={key} style={{ border: "1px solid var(--pos-line)", borderRadius: 8, padding: 10 }}>
+                      <div key={key} className="pos-stock-line">
                         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 10, alignItems: "center" }}>
                           <div style={{ minWidth: 0 }}>
                             <strong style={{ fontSize: 13 }}>{line.sku} · {line.size}</strong>
@@ -7828,7 +8271,7 @@ export default function PosPage() {
                           </fieldset>
                         </div>
                         {draft.qty > 0 && (
-                          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(140px,1fr)", gap: 8, marginTop: 8 }}>
+                          <div className="pos-stock-lot-fields">
                             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, color: "var(--pos-muted)" }}>
                               {posText("เลขล็อตตามฉลาก (สินค้าที่ติดตามล็อตต้องกรอก)") + " "}<input
                                 value={draft.lotNo}
@@ -7859,27 +8302,49 @@ export default function PosPage() {
                     );
                   })}
                 </div>
-                <button
-                  type="button"
-                  disabled={draftUnits === 0 || stockReceiving || stockLoading || stockReadFailed || !stockReceiverId || !stockReceiverPin}
-                  onClick={() => {
-                    if (window.confirm(posText("ยืนยันรับสินค้า {v0} หน่วยเข้าสต็อกสาขานี้? รายการนี้ขยับสต็อกจริงและย้อนกลับจากหน้านี้ไม่ได้", { v0: draftUnits }))) {
-                      void submitStockReceive();
-                    }
-                  }}
-                  style={{ padding: "11px 14px", fontSize: 14, fontWeight: 600 }}
-                >
-                  {stockReceiving ? posText("กำลังบันทึก…") : stockReceiveUncertain ? posText("ตรวจรายการเดิมอีกครั้ง") : posText("ยืนยันรับเข้า {v0} หน่วย", { v0: draftUnits })}
-                </button>
               </>
-            );
-          })()}
+          ) : (
+            <div className="pos-stock-empty">{posText("เลือก PO ก่อนยิงสินค้า")}</div>
+          )}
+            </section>
+            <aside className="pos-stock-panel pos-stock-summary">
+              <div className="pos-stock-step">{posText("4 · ตรวจและยืนยัน")}</div>
+              <div className="pos-block-title">{posText("สรุปรับเข้าครั้งนี้")}</div>
+              <div className="pos-stock-summary-row">
+                <span>{posText("รับเข้าที่สาขา")}</span>
+                <strong>{session?.location?.name ?? posText("ของเครื่องนี้")}</strong>
+              </div>
+              <div className="pos-stock-summary-row">
+                <span>{posText("ใบสั่งซื้อที่รับของ")}</span>
+                <strong>{stockOrder ? `PO ${stockOrder.id.slice(0, 8)}` : "—"}</strong>
+              </div>
+              <div className="pos-stock-summary-row">
+                <span>{posText("จำนวนรับ")}</span>
+                <strong className="pos-num">{stockDraftUnits} {posText("หน่วย")}</strong>
+              </div>
+              <div className="pos-stock-confirm-note">
+                {posText("รายการที่สแกนยังเป็นร่างจนกดยืนยัน เมื่อยืนยันแล้วสต็อกของสาขานี้จะเพิ่มจริงและย้อนกลับจากหน้า POS ไม่ได้")}
+              </div>
+              <button
+                type="button"
+                className="pos-stock-confirm"
+                disabled={stockDraftUnits === 0 || stockReceiving || stockLoading || stockReadFailed || !stockReceiverId || !stockReceiverPin}
+                onClick={() => {
+                  if (window.confirm(posText("ยืนยันรับสินค้า {v0} หน่วยเข้าสต็อกสาขานี้? รายการนี้ขยับสต็อกจริงและย้อนกลับจากหน้านี้ไม่ได้", { v0: stockDraftUnits }))) {
+                    void submitStockReceive();
+                  }
+                }}
+              >
+                {stockReceiving ? posText("กำลังบันทึก…") : stockReceiveUncertain ? posText("ตรวจรายการเดิมอีกครั้ง") : posText("ยืนยันรับเข้า {v0} หน่วย", { v0: stockDraftUnits })}
+              </button>
+            </aside>
+          </div>
         </div>
       )}
 
       {tab === "deposits" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div className="pos-shift-head">
+        <div className="pos-deposit-page">
+          <div className="pos-shift-head pos-deposit-heading">
             <div>
               <div className="pos-block-title" style={{ marginBottom: 2, display: "flex", alignItems: "center" }}>
                 {posText("มัดจำ / ยอดค้างรับ") + " "}<PosHelp title={posText("วงจรบิลมัดจำ")}>
@@ -7890,13 +8355,15 @@ export default function PosPage() {
             <button onClick={() => void refreshDeposits()} style={{ padding: "7px 12px" }}>{posText("โหลดใหม่")}</button>
           </div>
 
-          <div className="pos-block">
-            <div className="pos-block-title">{posText("ทำรายการ")}</div>
-            <div style={{ background: "var(--posx-info-bg, #f0f7ff)", border: "1px solid var(--posx-info-line, #91caff)", borderRadius: 8, padding: 10, marginBottom: 10 }}>
-              <b>{posText("ลูกค้าหน้าร้าน:")}</b> {" " + posText("ใส่สินค้าในตะกร้าตามปกติ ใส่ยอดมัดจำในช่องนี้ แล้วกดสร้างบิล ระบบจะสร้าง Order ID, คำนวณราคาล่าสุด และจองสต็อกให้อัตโนมัติ") + " "}{/* ช่องยอดอยู่ในกล่องนี้ ไม่ใช่กลุ่ม "บิลที่ต้องการทำรายการ" ข้างล่าง —
+          <div className="pos-deposit-work-grid">
+            <section className="pos-deposit-panel pos-deposit-cart">
+              <div className="pos-block-title">{posText("ลูกค้าหน้าร้าน:")}</div>
+              <div className="pos-deposit-intro">
+                {posText("ใส่สินค้าในตะกร้าตามปกติ ใส่ยอดมัดจำในช่องนี้ แล้วกดสร้างบิล ระบบจะสร้าง Order ID, คำนวณราคาล่าสุด และจองสต็อกให้อัตโนมัติ") + " "}{/* ช่องยอดอยู่ในกล่องนี้ ไม่ใช่กลุ่ม "บิลที่ต้องการทำรายการ" ข้างล่าง —
                   ช่องนั้นเป็นของบิลที่มีอยู่แล้ว และการเลือกบิลจะเขียนทับค่าในช่องนั้น
                   แคชเชียร์ที่พิมพ์ยอดของตะกร้าลงไปจึงเสียยอดทิ้งโดยไม่มีอะไรเตือน */}
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 10 }}>
+              </div>
+              <div className="pos-deposit-cart-fields">
                 <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>{posText("ยอดมัดจำที่รับ")}</span>
                   <input
@@ -7905,12 +8372,12 @@ export default function PosPage() {
                     value={cartDepositAmount}
                     onChange={(e) => setCartDepositAmount(e.target.value.replace(/[^0-9.]/g, ""))}
                     placeholder="0.00"
-                    style={{ width: 150, textAlign: "right" }}
+                    style={{ textAlign: "right" }}
                   />
                 </label>
                 <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>{posText("วิธีรับเงิน")}</span>
-                  <select value={depositMethod} onChange={(e) => setDepositMethod(e.target.value)}>
+                  <select value={cartDepositMethod} onChange={(e) => setCartDepositMethod(e.target.value)}>
                     <option value="CASH">{posText("เงินสด")}</option>
                     <option value="QR">QR</option>
                     <option value="CARD">{posText("บัตร")}</option>
@@ -7920,7 +8387,7 @@ export default function PosPage() {
                 </label>
                 {/* ชื่อ/โน้ต คือสิ่งเดียวที่ทำให้แถวในรายการค้างชี้ตัวได้ — ไม่กรอกแล้วแถวนั้น
                     เหลือแค่ UUID 8 ตัว · ไม่บังคับ เพราะบิลที่ลูกค้ายืนรออยู่ต้องจบได้ */}
-                <label style={{ display: "flex", flexDirection: "column", gap: 5, flex: "1 1 190px", minWidth: 170 }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>{posText("ชื่อลูกค้า / โน้ต")}</span>
                   <input
                     value={cartDepositNote}
@@ -7952,10 +8419,12 @@ export default function PosPage() {
                 <div className="pos-block-hint" style={{ marginTop: 6 }}>
                   {posText("ยอดบิล ฿")}{baht(amountDue)} {" " + posText("— มัดจำต้องน้อยกว่านี้ ส่วนที่เหลือเก็บตอนลูกค้ามารับของ") + " "}</div>
               )}
-            </div>
+            </section>
+            <section className="pos-deposit-panel pos-deposit-existing">
+            <div className="pos-block-title">{posText("บิลที่มีอยู่แล้ว")}</div>
             <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               <span style={{ fontSize: 12, color: "var(--pos-muted)", display: "inline-flex", alignItems: "center" }}>
-                {posText("หรือทำรายการกับบิลที่มีอยู่แล้ว — เลือกบิล") + " "}<PosHelp title={posText("บิลที่มีอยู่แล้ว")}>
+                {posText("เลือกบิล") + " "}<PosHelp title={posText("บิลที่มีอยู่แล้ว")}>
                   {posText("ใช้กับออเดอร์ PENDING จาก Inbox หรือ Customer 360; บิลที่ยังไม่เคยรับเงินใช้รับมัดจำครั้งแรก ส่วนบิลมัดจำที่เปิดอยู่ใช้รับเพิ่มหรือรับยอดคงเหลือ") + " "}</PosHelp>
               </span>
               <select value={depositOrderId} onChange={(event) => {
@@ -7990,12 +8459,12 @@ export default function PosPage() {
               <span className="pos-block-hint">
                 {posText("กรณีมีออเดอร์จาก Inbox / Customer 360 อยู่แล้ว ให้เลือกบิลจากรายการนี้เพื่อรับมัดจำ ไม่ต้องพิมพ์ UUID หรือบาร์โค้ดสินค้าเอง") + " "}</span>
             </label>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
+            <div className="pos-deposit-existing-fields">
               <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                 <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>{posText("ยอดที่จะรับครั้งนี้")}</span>
                 <input className="pos-num" inputMode="decimal" value={depositAmount}
                        onChange={(e) => setDepositAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-                       placeholder="0.00" style={{ width: 150, textAlign: "right" }} />
+                       placeholder="0.00" style={{ textAlign: "right" }} />
               </label>
               <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                 <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>{posText("วิธีรับเงิน")}</span>
@@ -8007,6 +8476,8 @@ export default function PosPage() {
                   <option value="WALLET">Wallet</option>
                 </select>
               </label>
+            </div>
+            <div className="pos-deposit-actions">
               <button disabled={busy || !depositCandidateOrders.some((order) => order.orderId === depositOrderId)}
                       onClick={() => void doDepositAction("take")}>{posText("รับมัดจำครั้งแรกจากบิลที่เลือก")}</button>
               <button disabled={busy || !deposits.some((deposit) => deposit.orderId === depositOrderId)}
@@ -8019,8 +8490,8 @@ export default function PosPage() {
               <div className="pos-block-hint" style={{ marginTop: 6 }}>
                 {posText("เลือกบิลก่อน ระบบจะเปิดเฉพาะคำสั่งที่ใช้ได้กับสถานะของบิลนั้น") + " "}</div>
             )}
-            <div style={{ borderTop: "1px solid var(--pos-line)", marginTop: 12, paddingTop: 10 }}>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div className="pos-deposit-close">
+              <div className="pos-deposit-close-fields">
                 <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   <span style={{ fontSize: 12, color: "var(--pos-muted)", display: "inline-flex", alignItems: "center" }}>
                     {posText("ผลการปิดมัดจำ") + " "}<PosHelp title={posText("ผลการปิดมัดจำ")}>
@@ -8032,7 +8503,7 @@ export default function PosPage() {
                     <option value="FORFEITED">{posText("ยึดมัดจำ")}</option>
                   </select>
                 </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: 5, flex: 1, minWidth: 220 }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   <span style={{ fontSize: 12, color: "var(--pos-muted)" }}>{posText("เหตุผลที่ปิดมัดจำ")}</span>
                   <input value={depositReason} onChange={(e) => setDepositReason(e.target.value)}
                          maxLength={300} placeholder={posText("ข้อความนี้จะแสดงในประวัติออเดอร์")} />
@@ -8043,11 +8514,12 @@ export default function PosPage() {
               <div className="pos-block-hint">
                 {posText("การปิดจะคืนสินค้าที่จองไว้ทันที ส่วนการจ่ายเงินคืนลูกค้าให้ทำผ่าน refund ตามวิธีเดิม") + " "}</div>
             </div>
+            </section>
           </div>
 
           {/* ค้นหา — เหตุผลอันดับหนึ่งที่หาใบมัดจำไม่เจอคือมันอยู่คนละสาขา ช่องนี้จึงค้น
               ทั้งร้าน แล้วบอกว่าใบนั้นอยู่สาขาไหน แทนที่จะตอบว่า "ไม่พบ" */}
-          <div className="pos-block">
+          <section className="pos-deposit-panel pos-deposit-search">
             <div className="pos-block-title">{posText("ค้นหามัดจำ")}</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <input
@@ -8055,7 +8527,7 @@ export default function PosPage() {
                 onChange={(e) => setDepositSearch(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") void refreshDeposits(); }}
                 placeholder={posText("เลขบิล / ชื่อลูกค้า / เบอร์โทร / รหัสสมาชิก")}
-                style={{ flex: 1, minWidth: 240 }}
+                style={{ flex: 1 }}
               />
               <button onClick={() => void refreshDeposits()}>{posText("ค้นหา")}</button>
               {depositSearched && (
@@ -8073,22 +8545,22 @@ export default function PosPage() {
                 </div>
               )
             )}
-          </div>
+          </section>
 
-          <div className="pos-block">
+          <section className="pos-deposit-panel pos-deposit-open-list">
             <div className="pos-block-title">{posText("รายการที่ยังเปิดอยู่ (")}{deposits.length})</div>
             {deposits.length === 0 ? (
               <div className="pos-block-hint">{posText("ไม่มีมัดจำค้างของสาขานี้")}</div>
             ) : deposits.map((deposit) => renderDepositRow(deposit))}
-          </div>
+          </section>
         </div>
       )}
 
       {tab === "shift" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="pos-shift-page">
           {session?.shift ? (
             <>
-              <div className="pos-shift-head">
+              <div className="pos-shift-head pos-shift-title">
                 <div className="pos-block-title" style={{ marginBottom: 0 }}>{posText("กะขายของเครื่องนี้")}</div>
                 <span className="pos-chip pos-chip--ok">
                   {posText("กะเปิดอยู่")}{session.device.code ? ` · ${session.device.code}` : ""}
@@ -8097,7 +8569,7 @@ export default function PosPage() {
 
               {/* ข้อมูลหัวกะเป็นการ์ดตัวเลข ไม่ใช่สามบรรทัดเรียงกัน — แคชเชียร์
                   อ่านจากระยะยืนขาย ไม่ได้ก้มอ่านเหมือนอ่านเอกสาร */}
-              <div className="pos-stats">
+              <div className="pos-stats pos-shift-summary">
                 <div className="pos-stat">
                   <div className="pos-stat-label">{posText("เปิดกะ")}</div>
                   <div className="pos-stat-value">
@@ -8134,45 +8606,11 @@ export default function PosPage() {
                 </div>
               </div>
 
-              {/* ปิดกะขณะมีของค้างในตะกร้าไม่ได้ — บิลที่ยังไม่จบจะหายไปกับกะ */}
-              {cart.length > 0 ? (
-                <PosDismissibleAlert className="pos-note pos-note--warn">
-                  {posText("ยังมีสินค้าค้างในตะกร้า — ปิดบิลให้จบหรือล้างบิลก่อนปิดกะ") + " "}</PosDismissibleAlert>
-              ) : (
-                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
-                  <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    <span style={{ fontSize: 12, color: "var(--pos-muted)", display: "inline-flex", alignItems: "center" }}>
-                      {posText("เงินที่นับได้ในลิ้นชัก") + " "}<PosHelp title={posText("ยอดนับปิดกะ")}>
-                        {posText("ให้นับเงินสดจริงทั้งหมดในลิ้นชัก ระบบจะเทียบกับเงินตั้งต้น ยอดขาย เงินคืน และเงินเข้าออกที่บันทึกไว้ หลังปิดกะจึงแสดงผลต่าง") + " "}</PosHelp>
-                    </span>
-                    <input
-                      ref={countedCashRef}
-                      value={countedCash}
-                      onChange={(e) => setCountedCash(e.target.value)}
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      className="pos-num"
-                      style={{ fontSize: 15, width: 170, textAlign: "right" }}
-                    />
-                  </label>
-                  <button
-                    className="pos-shift-btn-primary"
-                    disabled={busy || !cashierId || !pin || !countedCash}
-                    onClick={() => void shiftAction("close")}
-                    style={{ padding: "10px 18px" }}
-                  >
-                    {posText("ปิดกะ + นับเงิน") + " "}</button>
-                  {shiftReport?.expectedCashHidden && (
-                    <span style={{ fontSize: 12, color: "var(--pos-muted)", paddingBottom: 12 }}>
-                      {posText("โหมดนับปิดตา — ยอดที่ควรมีจะแสดงหลังกดปิดกะ") + " "}</span>
-                  )}
-                </div>
-              )}
-
+              <div className="pos-shift-work-grid">
               {/* ---- ค่าใช้จ่ายเงินสดย่อย (9.7) -----------------------
                   แยกออกจาก drawer movement เพราะนำฝากธนาคาร/ย้ายเงินทอน
                   ไม่ใช่ต้นทุน ส่วนเงินที่เข้าออกจริงยังลง movement ให้สูตรปิดกะ */}
-              <div className="pos-block">
+              <div className="pos-block pos-shift-panel pos-shift-expense">
                 <div className="pos-shift-head" style={{ marginBottom: 8 }}>
                   <div className="pos-block-title" style={{ marginBottom: 0, flex: 1, display: "flex", alignItems: "center" }}>
                     {posText("ค่าใช้จ่ายหน้าร้าน") + " "}<PosHelp title={posText("ค่าใช้จ่ายหน้าร้าน")}>
@@ -8270,62 +8708,6 @@ export default function PosPage() {
                   </div>
                 )}
 
-                <div className="pos-petty-wallet">
-                  <div className="pos-petty-wallet-head">
-                    <span>
-                      <b>{posText("กระเป๋าเงินสดย่อยสาขา")}</b>
-                      <small>{posText("อยู่นอกลิ้นชัก POS")}</small>
-                    </span>
-                    <strong>฿{baht(pettyCashBalance)}</strong>
-                  </div>
-                  {canManagePettyCash && (
-                    <div className="pos-petty-fund-grid">
-                      <select value={pettyFundSource}
-                              onChange={(e) => setPettyFundSource(e.target.value as "OWNER_PERSONAL" | "BUSINESS_ACCOUNT")}>
-                        <option value="OWNER_PERSONAL">{posText("เติมจากเงินเจ้าของ")}</option>
-                        <option value="BUSINESS_ACCOUNT">{posText("เติมจากบัญชีร้าน")}</option>
-                      </select>
-                      <input ref={pettyFundAmountRef} className="pos-num" inputMode="decimal" value={pettyFundAmount}
-                             onChange={(e) => setPettyFundAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-                             placeholder={posText("จำนวนเงิน")} style={{ textAlign: "right" }} />
-                      <input ref={pettyFundReasonRef} value={pettyFundReason} onChange={(e) => setPettyFundReason(e.target.value)}
-                             maxLength={200} placeholder={posText("เหตุผล เช่น เงินสดย่อยประจำสัปดาห์")} />
-                      <input ref={pettyFundEvidenceRef} value={pettyFundEvidence} onChange={(e) => setPettyFundEvidence(e.target.value)}
-                             maxLength={300} placeholder={posText("หลักฐาน/เลขอ้างอิง (จำเป็น)")} />
-                      <button type="button" disabled={busy} onClick={() => void fundPettyCash()}>{posText("เติมเงินสดย่อย")}</button>
-                    </div>
-                  )}
-                  {!canManagePettyCash && (
-                    <div className="pos-approve pos-approve--petty" style={{ marginTop: 8 }}>
-                      <div className="pos-approve-why">
-                        {expenseAccessError
-                          ? posText("ยังใช้งานไม่ได้: {v0}", { v0: expenseAccessError })
-                          : pettyCashBalance <= 0
-                            ? posText("ยอดเป็น ฿0.00 และบัญชีนี้ไม่มีสิทธิ์เติมเงินสดย่อย")
-                            : posText("บัญชีนี้ใช้ยอดที่มีจ่ายค่าใช้จ่ายได้ แต่ไม่มีสิทธิ์เติมเงินเพิ่ม")}
-                        <br />
-                        {posText("วิธีเติม: เลือกบัญชี Administrator ด้านบน ใส่ PIN แล้วกด “ตรวจสิทธิ์/ยอดใหม่” จากนั้นระบุแหล่งเงิน จำนวน เหตุผล และหลักฐาน") + " "}</div>
-                      <button type="button" disabled={busy || !cashierId || !pin} onClick={() => void refreshExpenses()}>
-                        {posText("ตรวจสิทธิ์/ยอดใหม่") + " "}</button>
-                    </div>
-                  )}
-                  {pettyCashEntries.length > 0 && (
-                    <div className="pos-petty-history">
-                      {pettyCashEntries.slice(0, 5).map((entry) => (
-                        <div key={entry.id} className="pos-move-row">
-                          <span>
-                            <span className={entry.direction === "IN" ? "pos-move-dir--in" : "pos-move-dir--out"}>
-                              {entry.direction === "IN" ? posText("เติม") : posText("จ่าย")}
-                            </span>
-                            {" · "}{entry.reason} {" " + posText("· หลักฐาน") + " "}{entry.evidenceRef}
-                          </span>
-                          <span className="pos-num">{entry.direction === "IN" ? "+" : "−"}฿{baht(entry.amount)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
                 {expenses.length > 0 && (
                   <div style={{ marginTop: 10, borderTop: "1px solid var(--pos-line)", paddingTop: 6 }}>
                     {expenses.map((expense) => (
@@ -8404,10 +8786,108 @@ export default function PosPage() {
                 })()}
               </div>
 
+                <div className="pos-shift-side">
+                  <div className="pos-shift-close pos-shift-panel">
+                    <div className="pos-block-title">{posText("ปิดกะ")}</div>
+                    {/* ปิดกะขณะมีของค้างในตะกร้าไม่ได้ — บิลที่ยังไม่จบจะหายไปกับกะ */}
+                  {cart.length > 0 ? (
+                    <PosDismissibleAlert className="pos-note pos-note--warn">
+                      {posText("ยังมีสินค้าค้างในตะกร้า — ปิดบิลให้จบหรือล้างบิลก่อนปิดกะ") + " "}</PosDismissibleAlert>
+                  ) : (
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                      <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                        <span style={{ fontSize: 12, color: "var(--pos-muted)", display: "inline-flex", alignItems: "center" }}>
+                          {posText("เงินที่นับได้ในลิ้นชัก") + " "}<PosHelp title={posText("ยอดนับปิดกะ")}>
+                            {posText("ให้นับเงินสดจริงทั้งหมดในลิ้นชัก ระบบจะเทียบกับเงินตั้งต้น ยอดขาย เงินคืน และเงินเข้าออกที่บันทึกไว้ หลังปิดกะจึงแสดงผลต่าง") + " "}</PosHelp>
+                        </span>
+                        <input
+                          ref={countedCashRef}
+                          value={countedCash}
+                          onChange={(e) => setCountedCash(e.target.value)}
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          className="pos-num"
+                          style={{ fontSize: 15, width: 170, textAlign: "right" }}
+                        />
+                      </label>
+                      <button
+                        className="pos-shift-btn-primary"
+                        disabled={busy || !cashierId || !pin || !countedCash}
+                        onClick={() => void shiftAction("close")}
+                        style={{ padding: "10px 18px" }}
+                      >
+                        {posText("ปิดกะ + นับเงิน") + " "}</button>
+                      {shiftReport?.expectedCashHidden && (
+                        <span style={{ fontSize: 12, color: "var(--pos-muted)", paddingBottom: 12 }}>
+                          {posText("โหมดนับปิดตา — ยอดที่ควรมีจะแสดงหลังกดปิดกะ") + " "}</span>
+                      )}
+                    </div>
+                  )}
+
+                  </div>
+                  <div className="pos-petty-wallet pos-shift-panel">
+                    <div className="pos-petty-wallet-head">
+                      <span>
+                        <b>{posText("กระเป๋าเงินสดย่อยสาขา")}</b>
+                        <small>{posText("อยู่นอกลิ้นชัก POS")}</small>
+                      </span>
+                      <strong>฿{baht(pettyCashBalance)}</strong>
+                    </div>
+                    {canManagePettyCash && (
+                      <div className="pos-petty-fund-grid">
+                        <select value={pettyFundSource}
+                                onChange={(e) => setPettyFundSource(e.target.value as "OWNER_PERSONAL" | "BUSINESS_ACCOUNT")}>
+                          <option value="OWNER_PERSONAL">{posText("เติมจากเงินเจ้าของ")}</option>
+                          <option value="BUSINESS_ACCOUNT">{posText("เติมจากบัญชีร้าน")}</option>
+                        </select>
+                        <input ref={pettyFundAmountRef} className="pos-num" inputMode="decimal" value={pettyFundAmount}
+                               onChange={(e) => setPettyFundAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                               placeholder={posText("จำนวนเงิน")} style={{ textAlign: "right" }} />
+                        <input ref={pettyFundReasonRef} value={pettyFundReason} onChange={(e) => setPettyFundReason(e.target.value)}
+                               maxLength={200} placeholder={posText("เหตุผล เช่น เงินสดย่อยประจำสัปดาห์")} />
+                        <input ref={pettyFundEvidenceRef} value={pettyFundEvidence} onChange={(e) => setPettyFundEvidence(e.target.value)}
+                               maxLength={300} placeholder={posText("หลักฐาน/เลขอ้างอิง (จำเป็น)")} />
+                        <button type="button" disabled={busy} onClick={() => void fundPettyCash()}>{posText("เติมเงินสดย่อย")}</button>
+                      </div>
+                    )}
+                    {!canManagePettyCash && (
+                      <div className="pos-approve pos-approve--petty" style={{ marginTop: 8 }}>
+                        <div className="pos-approve-why">
+                          {expenseAccessError
+                            ? posText("ยังใช้งานไม่ได้: {v0}", { v0: expenseAccessError })
+                            : pettyCashBalance <= 0
+                              ? posText("ยอดเป็น ฿0.00 และบัญชีนี้ไม่มีสิทธิ์เติมเงินสดย่อย")
+                              : posText("บัญชีนี้ใช้ยอดที่มีจ่ายค่าใช้จ่ายได้ แต่ไม่มีสิทธิ์เติมเงินเพิ่ม")}
+                          <br />
+                          {posText("วิธีเติม: เลือกบัญชี Administrator ด้านบน ใส่ PIN แล้วกด “ตรวจสิทธิ์/ยอดใหม่” จากนั้นระบุแหล่งเงิน จำนวน เหตุผล และหลักฐาน") + " "}</div>
+                        <button type="button" disabled={busy || !cashierId || !pin} onClick={() => void refreshExpenses()}>
+                          {posText("ตรวจสิทธิ์/ยอดใหม่") + " "}</button>
+                      </div>
+                    )}
+                    {pettyCashEntries.length > 0 && (
+                      <div className="pos-petty-history">
+                        {pettyCashEntries.slice(0, 5).map((entry) => (
+                          <div key={entry.id} className="pos-move-row">
+                            <span>
+                              <span className={entry.direction === "IN" ? "pos-move-dir--in" : "pos-move-dir--out"}>
+                                {entry.direction === "IN" ? posText("เติม") : posText("จ่าย")}
+                              </span>
+                              {" · "}{entry.reason} {" " + posText("· หลักฐาน") + " "}{entry.evidenceRef}
+                            </span>
+                            <span className="pos-num">{entry.direction === "IN" ? "+" : "−"}฿{baht(entry.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="pos-shift-ops-grid">
               {/* ---- เงินเข้า-ออกลิ้นชัก (7.97) ------------------------
                   ก่อนมีส่วนนี้ การถอนเงินไปฝากกลางกะทำให้ปิดกะขึ้นเงินขาดทุกครั้ง
                   โดยไม่มีที่ให้อธิบาย · เงินออกต้องมีหัวหน้ากด PIN เงินเข้าไม่ต้อง */}
-              <div className="pos-block">
+              <div className="pos-block pos-shift-panel pos-shift-cash-movement">
                 <div className="pos-block-title" style={{ display: "flex", alignItems: "center" }}>
                   {posText("เงินเข้า–ออกลิ้นชัก") + " "}<PosHelp title={posText("เงินเข้าออกที่ไม่ใช่ยอดขาย")}>
                     {posText("ใช้กับนำส่งธนาคาร ย้ายเงิน หรือเติมเงินทอนจากภายนอกเท่านั้น ยอดขายเงินสดและเงินคืนจะลงลิ้นชักอัตโนมัติ ห้ามบันทึกซ้ำที่นี่") + " "}</PosHelp>
@@ -8484,7 +8964,7 @@ export default function PosPage() {
               {/* ---- เปิดลิ้นชักโดยไม่ขาย (8.0) ------------------------
                   ห้ามไม่ได้จริง (ทุกลิ้นชักมีคันโยกฉุกเฉินใต้เครื่อง) จึงทำให้ทางที่
                   ถูกต้องสะดวกกว่าทางลัด: กดปุ่มนี้แล้วลิ้นชักเปิดให้เลยถ้าต่อเครื่องพิมพ์ไว้ */}
-              <div className="pos-block">
+              <div className="pos-block pos-shift-panel pos-shift-no-sale">
                 <div className="pos-shift-head" style={{ marginBottom: 8 }}>
                   <div className="pos-block-title" style={{ marginBottom: 0 }}>{posText("เปิดลิ้นชักโดยไม่ขาย")}</div>
                   {shiftReport && (
@@ -8506,9 +8986,11 @@ export default function PosPage() {
                 <div className="pos-block-hint">{posText("ทุกครั้งที่เปิดจะถูกบันทึกและนับรวมในสรุปกะ")}</div>
               </div>
 
+              </div>
+
               {/* ---- สรุปกะ X-report (7.97) ---------------------------
                   กระดาษที่ผู้จัดการเซ็นรับเงินจากแคชเชียร์ทุกกะ */}
-              <div className="pos-block">
+              <div className="pos-block pos-shift-panel pos-shift-report">
                 <div className="pos-shift-head" style={{ marginBottom: 8 }}>
                   <div className="pos-block-title" style={{ marginBottom: 0, flex: 1 }}>{posText("สรุปกะ")}</div>
                   <button onClick={() => void loadShiftReport()} style={{ padding: "6px 14px", fontSize: 13, minHeight: 36 }}>
@@ -8619,39 +9101,41 @@ export default function PosPage() {
             </>
           ) : (
             <>
-              <div className="pos-block-title">{posText("กะขายของเครื่องนี้")}</div>
-              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
-                <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  <span style={{ fontSize: 12, color: "var(--pos-muted)", display: "inline-flex", alignItems: "center" }}>
-                    {posText("เงินตั้งต้นในลิ้นชัก") + " "}<PosHelp title={posText("เงินตั้งต้น")}>
-                      {posText("เงินสดจริงที่ใส่ไว้สำหรับทอนก่อนเริ่มขาย ไม่ใช่ยอดขายและไม่ใช่วงเงินค่าใช้จ่าย") + " "}</PosHelp>
-                  </span>
-                  <input
-                    ref={openingFloatRef}
-                    value={openingFloat}
-                    onChange={(e) => setOpeningFloat(e.target.value)}
-                    inputMode="decimal"
-                    placeholder="0.00"
-                    className="pos-num"
-                    style={{ fontSize: 15, width: 200, textAlign: "right" }}
-                  />
-                </label>
-                <button
-                  className="pos-shift-btn-primary"
-                  disabled={busy || !cashierId || !pin}
-                  onClick={() => void shiftAction("open")}
-                  style={{ padding: "10px 18px" }}
-                >
-                  {posText("เปิดกะ") + " "}</button>
-                {(!cashierId || !pin) && (
-                  <span style={{ fontSize: 13, color: "var(--pos-warn)", paddingBottom: 12 }}>
-                    {posText("เลือกผู้ขายและใส่ PIN ก่อน") + " "}</span>
-                )}
+              <div className="pos-shift-opening pos-shift-panel">
+                <div className="pos-block-title">{posText("กะขายของเครื่องนี้")}</div>
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    <span style={{ fontSize: 12, color: "var(--pos-muted)", display: "inline-flex", alignItems: "center" }}>
+                      {posText("เงินตั้งต้นในลิ้นชัก") + " "}<PosHelp title={posText("เงินตั้งต้น")}>
+                        {posText("เงินสดจริงที่ใส่ไว้สำหรับทอนก่อนเริ่มขาย ไม่ใช่ยอดขายและไม่ใช่วงเงินค่าใช้จ่าย") + " "}</PosHelp>
+                    </span>
+                    <input
+                      ref={openingFloatRef}
+                      value={openingFloat}
+                      onChange={(e) => setOpeningFloat(e.target.value)}
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      className="pos-num"
+                      style={{ fontSize: 15, width: 200, textAlign: "right" }}
+                    />
+                  </label>
+                  <button
+                    className="pos-shift-btn-primary"
+                    disabled={busy || !cashierId || !pin}
+                    onClick={() => void shiftAction("open")}
+                    style={{ padding: "10px 18px" }}
+                  >
+                    {posText("เปิดกะ") + " "}</button>
+                  {(!cashierId || !pin) && (
+                    <span style={{ fontSize: 13, color: "var(--pos-warn)", paddingBottom: 12 }}>
+                      {posText("เลือกผู้ขายและใส่ PIN ก่อน") + " "}</span>
+                  )}
+                </div>
               </div>
             </>
           )}
 
-          <div className="pos-block">
+          <div className="pos-block pos-shift-panel pos-shift-history">
             <div className="pos-shift-head" style={{ marginBottom: 8 }}>
               <div style={{ flex: 1 }}>
                 <div className="pos-block-title" style={{ marginBottom: 2 }}>{posText("ประวัติกะของเครื่องนี้")}</div>
@@ -8707,7 +9191,7 @@ export default function PosPage() {
           </div>
 
           {!session?.shift && shiftReport && (
-            <div className="pos-block">
+            <div className="pos-block pos-shift-panel pos-shift-z-report">
               <div className="pos-shift-head" style={{ marginBottom: 8 }}>
                 <div style={{ flex: 1 }}>
                   <div className="pos-block-title" style={{ marginBottom: 2 }}>{posText("Z Report ที่เลือก")}</div>
@@ -9291,425 +9775,6 @@ export default function PosPage() {
           </div>
       </>)}
 
-      {/* บิลเก่าอยู่แท็บ "คืน" — ตะกร้าที่กำลังขายไม่ถูกดันหาย และคอลัมน์ขวา
-          (ยอด + ปุ่มชำระ) ยังอยู่ที่เดิม กดจ่ายให้ลูกค้าคนแรกได้ระหว่างค้นบิลคืนของ */}
-      {tab === "returns" && (<>
-          <div className="pos-ret" style={{ marginTop: 14, borderTop: "1px solid var(--pos-line)", paddingTop: 12 }}>
-            <div className="pos-ret-hint">
-              <span className="pos-ret-hint-icon" aria-hidden="true">🧾</span>
-              <div>
-                <div className="pos-ret-hint-title">{posText("ขั้นที่ 1 — ค้นหาใบเสร็จเดิมก่อน")}</div>
-                <div className="pos-ret-hint-body">{posText("พิมพ์หรือยิงข้อมูลในช่องค้นด้านล่างนี้ก่อนทุกครั้ง ถ้าเจอบิลแล้ว ให้คืนจากใบเสร็จแทนการคืนไม่มีใบเสร็จ")}</div>
-              </div>
-            </div>
-            <div className="pos-ret-search">
-              <button type="button" className="pos-ret-toggle" onClick={() => setRecentOpen((v) => !v)}>
-                {recentOpen ? "▾" : "▸"} {returnReceiptFilter === "pending" ? posText("บิลที่ยังค้างยืนยัน") : posText("บิลล่าสุด")} ({visibleRecentReceipts.length})
-              </button>
-              <div className="pos-ret-search-field">
-                <label htmlFor="pos-recent-sales-query">{posText("ค้นบิลย้อนหลัง")}</label>
-                <input
-                  id="pos-recent-sales-query"
-                  value={recentSalesQuery}
-                  onChange={(e) => setRecentSalesQuery(e.target.value)}
-                  placeholder={posText("ค้นเลขบิล / barcode สินค้า / SKU / สมาชิก / เบอร์โทร")}
-                />
-              </div>
-            </div>
-            <div className="pos-ret-help">
-              {posText("ไม่รู้เลขใบเสร็จก็หาได้: ยิงบาร์โค้ดสินค้า, พิมพ์ SKU, ชื่อสมาชิก, รหัสสมาชิก หรือเบอร์โทร · เมื่อมีคำค้น ระบบจะค้นย้อนหลังทุกช่องทางและทุกสาขาในร้านให้") + " "}</div>
-            {visibleRecentReceipts.length > 0 && (
-              <div className="pos-ret-list" style={{ display: recentOpen ? "flex" : "none" }}>
-                {visibleRecentReceipts.map((row, idx) => {
-                  const soldOnThisDevice = Boolean(row.posDeviceId) && row.posDeviceId === session?.device.id;
-                  const crossBranch = Boolean(
-                    row.saleLocationId && session?.location?.id && row.saleLocationId !== session.location.id
-                  );
-                  const refundSummary = getReceiptRefundSummary(row);
-                  const latestReturnEvent = [...(row.returnEvents ?? [])]
-                    .filter((event) => !event.isVoid)
-                    .sort((a, b) => new Date(b.returnedAt).getTime() - new Date(a.returnedAt).getTime())[0];
-                  // บิลที่คืนครบทุกชิ้นแล้วแต่สถานะยังเป็น COMPLETED ก็ไม่มีอะไรให้คืนต่อ
-                  const canReturn =
-                    Boolean(row.orderId) &&
-                    row.returnEligible !== false &&
-                    row.orderStatus !== "RETURNED" &&
-                    row.lines.some((line) => (line.refundablePackQty ?? 0) > 0);
-                  const panelOpen = canReturn && returnPanelOrderId === row.orderId;
-                  const historyOpen = historyOrderId === row.orderId;
-                  const refundPaymentOptions = getRefundPaymentOptions(row);
-                  const requestedRefundMethod = row.orderId
-                    ? preferredRefundMethods[row.orderId] ?? ""
-                    : "";
-                  const selectedRefundMethod = refundPaymentOptions.some((option) => option.method === requestedRefundMethod)
-                    ? requestedRefundMethod
-                    : "";
-                  const needsRefundMethodChoice = refundPaymentOptions.length > 1 && !selectedRefundMethod;
-                  // void = ยางลบของกะนี้ ไม่ใช่ประตูลบยอดขายย้อนหลัง (server บังคับซ้ำอีกชั้น)
-                  const canVoid =
-                    soldOnThisDevice &&
-                    Boolean(row.orderId) &&
-                    !row.voidedAt &&
-                    row.orderStatus !== "RETURNED" &&
-                    Boolean(session?.shift) &&
-                    row.shiftId === session?.shift?.id;
-                  // แถบสีข้างซ้าย + ป้ายกลม อ่านสถานะได้ก่อนอ่านตัวหนังสือ
-                  // ยกเลิก ≠ คืนแล้ว — คนอ่านรายงานต้องแยกออกตั้งแต่ตรงนี้
-                  const statusKind = row.voidedAt ? "void" : row.orderStatus === "RETURNED" ? "returned" : "ok";
-                  const statusLabel = row.voidedAt ? posText("ยกเลิกแล้ว") : row.orderStatus === "RETURNED" ? posText("คืนแล้ว") : posText("สำเร็จ");
-                  return (
-                  <article
-                    key={row.orderId ?? `recent-${idx}`}
-                    ref={(node) => {
-                      if (!row.orderId) return;
-                      receiptCardRefs.current[row.orderId] = node;
-                    }}
-                    className={`pos-ret-card pos-ret-card--${statusKind}${highlightedReceiptOrderId === row.orderId ? " pos-ret-card--highlight" : ""}`}
-                  >
-                    <div className="pos-ret-head">
-                      <div style={{ minWidth: 0 }}>
-                        <div className="pos-ret-id">
-                          <span className="pos-ret-docno">{row.docNo ?? row.orderId ?? posText("บิล POS")}</span>
-                          {row.orderStatus && (
-                            <span className={`pos-ret-pill pos-ret-pill--${statusKind}`}>{statusLabel}</span>
-                          )}
-                          {row.offlineTenderedAt && (
-                            <span className="pos-ret-pill pos-ret-pill--ok">{posText("ออฟไลน์ · ซิงก์แล้ว")}</span>
-                          )}
-                        </div>
-                        {/* ย่อเหลือบรรทัดเดียว — รายการบิลมีไว้ให้ "หาบิลเจอ" ไม่ใช่ให้อ่านทั้งใบ
-                            เลขอ้างอิงการชำระเงินอ่านได้ในใบเสร็จ ไม่ต้องกินที่ตรงนี้ */}
-                        <div className="pos-ret-meta">
-                          {row.atIso ? new Date(row.atIso).toLocaleString(posText.locale) : row.at} · {row.payments.length > 1 ? posText("จ่ายหลายวิธี") : row.payments[0] ? posPaymentMethodLabel(row.payments[0].method, posText.language) : row.paymentLabel} · {row.lines.slice(0, 2).map((line) => `${line.packQty}× ${receiptVariantLabel(line)}`).join(" · ")}
-                          {row.lines.length > 2 ? ` · +${row.lines.length - 2}` : ""}
-                        </div>
-                        {(row.memberNo || row.memberName || row.memberPhone) && (
-                          <div className="pos-ret-store">
-                            {posText("สมาชิก") + " "}{row.memberNo ?? "—"} · {row.memberName ?? posText("ไม่ระบุชื่อ")}{row.memberPhone ? ` · ${row.memberPhone}` : ""}
-                          </div>
-                        )}
-                        <div className={`pos-ret-store${crossBranch ? " pos-ret-store--offsite" : ""}`}>
-                          {posText("ช่องทาง") + " "}{row.sourceChannel ?? "pos"} {" " + posText("· ขายที่") + " "}{row.storeName ?? posText("ไม่ทราบสาขา")}{row.branchCode ? ` (${row.branchCode})` : ""}{row.posLabel ? ` · POS#${row.posLabel}` : ""}
-                          {row.returnBlockedReason === "MARKETPLACE_MANAGED"
-                            ? posText(" · ต้องคืนผ่าน marketplace ต้นทาง")
-                            : crossBranch
-                              ? posText(" · คืนข้ามสาขาต้องให้ผู้มีสิทธิ์คนที่สองอนุมัติ")
-                              : !soldOnThisDevice && row.sourceChannel === "pos"
-                                ? posText(" · เป็นบิลจาก POS เครื่องอื่นในสาขาเดียวกัน")
-                                : ""}
-                        </div>
-                      </div>
-                      <div className="pos-ret-money">
-                        <div className="pos-ret-money-label">
-                          {refundSummary.hasReturnActivity ? posText("ยอดขายเดิม") : posText("ยอดบิล")}
-                        </div>
-                        <div className="pos-ret-money-total">฿{baht(row.total)}</div>
-                        {refundSummary.hasReturnActivity && (
-                          <div className="pos-ret-money-net">{posText("เหลือสุทธิ ฿")}{baht(refundSummary.remainingAfterRefund)}</div>
-                        )}
-                      </div>
-                    </div>
-
-                    {refundSummary.hasReturnActivity && (
-                      <div className="pos-ret-summary">
-                        <span>{posText("บิลขายเดิม") + " "}<b>฿{baht(row.total)}</b></span>
-                        <span className="pos-ret-summary-sep">·</span>
-                        <span>{posText("คืนแล้ว") + " "}<b>฿{baht(refundSummary.refundedTotal)}</b></span>
-                        <span className="pos-ret-summary-sep">·</span>
-                        <span>{posText("คงเหลือหลังคืน") + " "}<b className="pos-ret-summary-ok">฿{baht(refundSummary.remainingAfterRefund)}</b></span>
-                        {refundSummary.pendingRefundTotal > 0 && (
-                          <>
-                            <span className="pos-ret-summary-sep">·</span>
-                            <span>{posText("รอยืนยันคืนเงินจริง") + " "}<b>฿{baht(refundSummary.pendingRefundTotal)}</b></span>
-                          </>
-                        )}
-                      </div>
-                    )}
-
-                    {(row.refunds ?? []).length > 0 && (
-                      <div className="pos-ret-refunds">
-                        {(row.refunds ?? []).map((refund) => (
-                          <div className="pos-ret-refund-row" key={refund.id}>
-                            <span className="pos-ret-refund-method">
-                              {posPaymentMethodLabel(refund.method, posText.language)} · ฿{baht(refund.amount)}
-                            </span>
-                            <span className={`pos-ret-refund-status${refund.status === "COMPLETED" ? " pos-ret-refund-status--ok" : ""}`}>
-                              {refund.status === "COMPLETED" ? posText("คืนแล้ว") : posText("รอยืนยัน")}
-                            </span>
-                            {refund.status === "PENDING" ? (
-                              <span className="pos-ret-refund-settle">
-                                <input
-                                  value={settlementRefs[refund.id] ?? ""}
-                                  onChange={(event) => setSettlementRefs((cur) => ({ ...cur, [refund.id]: event.target.value }))}
-                                  placeholder={posText("เลขอ้างอิงจากธนาคาร/เครื่องบัตร (บังคับ)")}
-                                />
-                                <button
-                                  className="pos-ret-btn pos-ret-btn--sm"
-                                  onClick={() => void completeRefundSettlement(row, refund)}
-                                  disabled={busy}
-                                >
-                                  {posText("ยืนยันคืนแล้ว") + " "}</button>
-                              </span>
-                            ) : (
-                              <span className="pos-ret-refund-note">
-                                {refund.externalRef ? posText("อ้างอิง {v0}", { v0: refund.externalRef }) : posText("บันทึกคืนสำเร็จแล้ว")}
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* ปุ่มมีลำดับชั้น: หลัก(ทึบ) = ดูใบ · รอง(โปร่ง) = กางส่วนขยาย · แดง = ยกเลิก */}
-                    <div className="pos-ret-actions">
-                      <button
-                        className="pos-ret-btn pos-ret-btn--primary"
-                        onClick={() => {
-                          setReceipt(row);
-                          setReceiptModalOpen(true);
-                          window.localStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(row));
-                        }}
-                      >
-                        {refundSummary.hasReturnActivity ? posText("ดูใบขายเดิม") : posText("ดู/พิมพ์")}
-                      </button>
-                      {latestReturnEvent && (
-                        <button
-                          type="button"
-                          className="pos-ret-btn pos-ret-btn--warn"
-                          onClick={() => openReturnEventReceipt(row, latestReturnEvent)}
-                        >
-                          {posText("ดูใบรับคืนล่าสุด") + " "}</button>
-                      )}
-                      <button
-                        className={`pos-ret-btn${historyOpen ? " pos-ret-btn--open" : ""}`}
-                        onClick={() => setHistoryOrderId((cur) => (cur === row.orderId ? null : row.orderId ?? null))}
-                      >
-                        {historyOpen ? posText("▾ ซ่อนประวัติบิล") : posText("▸ ดูประวัติบิล ({v0})", { v0: 1 + (row.returnEvents?.length ?? 0) })}
-                      </button>
-                      {canReturn && (
-                        <button
-                          className={`pos-ret-btn${panelOpen ? " pos-ret-btn--open" : ""}`}
-                          onClick={() =>
-                            setReturnPanelOrderId((cur) => (cur === row.orderId ? null : row.orderId ?? null))
-                          }
-                        >
-                          {panelOpen ? posText("▾ คืน/เปลี่ยนสินค้า") : posText("▸ คืน/เปลี่ยนสินค้า")}
-                        </button>
-                      )}
-                      {!canReturn && (
-                        <span className="pos-ret-note">
-                          {row.returnBlockedReason === "MARKETPLACE_MANAGED" ? posText("คืนผ่าน marketplace ต้นทาง")
-                            : row.voidedAt ? posText("ยกเลิกบิลแล้ว")
-                            : row.orderStatus === "RETURNED" ? posText("คืนแล้วทั้งบิล")
-                            : posText("คืนครบทุกรายการแล้ว")}
-                        </span>
-                      )}
-                      {/* ยกเลิกบิล (7.97) — เฉพาะบิลในกะที่ยังเปิดและยังไม่เคยคืน/ยกเลิก
-                          บิลของกะที่ปิดไปแล้วต้องเดินทางการคืนสินค้าแทน เพราะเงินถูกนับส่งไปแล้ว */}
-                      {canVoid && (
-                        <button
-                          className={`pos-ret-btn pos-ret-btn--danger${voidTarget === row.orderId ? " pos-ret-btn--open" : ""}`}
-                          onClick={() => setVoidTarget((cur) => (cur === row.orderId ? null : row.orderId ?? null))}
-                        >
-                          {posText("ยกเลิกบิล") + " "}</button>
-                      )}
-                    </div>
-
-                    {/* ฟอร์มคืนสินค้ากางเฉพาะบิลที่กดเปิด และเปิดได้ทีละใบ
-                        เดิมกางทุกใบตลอดเวลา — 3 บิลก็เลื่อนจอหาไม่เจอแล้ว */}
-                    {panelOpen && (
-                      <div className="pos-ret-expand">
-                        <div className="pos-ret-reason">
-                          <select
-                            ref={returnReasonSelectRef}
-                            value={returnReasonCodes[row.orderId!] ?? ""}
-                            onChange={(e) => setReturnReasonCodes((cur) => ({ ...cur, [row.orderId!]: e.target.value }))}
-                          >
-                            <option value="">{posText("เลือกประเภทเหตุผล")}</option>
-                            {RETURN_REASON_OPTIONS(posText).map((opt) => (
-                              <option key={opt.key} value={opt.key}>{opt.label}</option>
-                            ))}
-                          </select>
-                          <input
-                            ref={returnNoteInputRef}
-                            value={returnNotes[row.orderId!] ?? ""}
-                            onChange={(e) => setReturnNotes((cur) => ({ ...cur, [row.orderId!]: e.target.value }))}
-                            placeholder={posText("รายละเอียดเหตุผล (บังคับและแสดงในประวัติ)")}
-                          />
-                        </div>
-                        {refundPaymentOptions.length > 0 && (
-                          <div className="pos-ret-method">
-                            <label className="pos-ret-method-label">
-                              <span style={{ display: "inline-flex", alignItems: "center" }}>
-                                {posText("คืนเงินจากช่องทางใดก่อน") + " "}<PosHelp title={posText("ลำดับช่องทางคืนเงิน")}>
-                                  {posText("ใช้เมื่อบิลเดิมจ่ายหลายวิธี เลือกว่าจะคืนจากยอดเงินสด QR บัตร หรือช่องทางใดก่อน ระบบจะไม่คืนเกินยอดที่เคยรับในแต่ละช่องทาง") + " "}</PosHelp>
-                              </span>
-                              {refundPaymentOptions.length === 1 ? (
-                                <span className="pos-ret-method-single">
-                                  {posPaymentMethodLabel(refundPaymentOptions[0].method, posText.language)} {" " + posText("· คืนได้อีก ฿")}{baht(refundPaymentOptions[0].available)}
-                                </span>
-                              ) : (
-                                <select
-                                  ref={refundMethodSelectRef}
-                                  value={selectedRefundMethod}
-                                  onChange={(event) => setPreferredRefundMethods((cur) => ({
-                                    ...cur,
-                                    [row.orderId!]: event.target.value,
-                                  }))}
-                                >
-                                  <option value="">{posText("เลือกช่องทางคืนเงินก่อน")}</option>
-                                  {refundPaymentOptions.map((option) => (
-                                    <option key={option.method} value={option.method}>
-                                      {posPaymentMethodLabel(option.method, posText.language)} {" " + posText("· คืนได้อีก ฿")}{baht(option.available)}
-                                    </option>
-                                  ))}
-                                </select>
-                              )}
-                            </label>
-                            <div className="pos-ret-method-hint">
-                              {posText("ระบบคืนได้ไม่เกินยอดที่รับผ่านช่องทางนั้น หากยอดคืนมากกว่า ระบบจะแบ่งส่วนที่เหลือไปยังช่องทางเดิมอื่นและแสดงให้ตรวจทุกรายการ") + " "}</div>
-                          </div>
-                        )}
-                        {row.lines
-                          .filter((line) => (line.refundablePackQty ?? 0) > 0 && line.orderItemId)
-                          .map((line) => {
-                            const selected = Number(returnDrafts[row.orderId!]?.[line.orderItemId!] ?? 0);
-                            const maxQty = Number(line.refundablePackQty ?? 0);
-                            return (
-                              <div key={`${row.orderId}-${line.orderItemId}`} className="pos-ret-line">
-                                <div className="pos-ret-line-info">
-                                  <div className="pos-ret-line-name">{receiptVariantLabel(line)}</div>
-                                  <div className="pos-ret-line-sub">
-                                    SKU {line.sku} {" " + posText("· ขาย") + " "}{line.packQty} {line.unitName} {" " + posText("· คืนได้อีก") + " "}{maxQty} {" " + posText("/ คืนแล้ว") + " "}{line.returnedPackQty ?? 0}
-                                  </div>
-                                </div>
-                                <div className="pos-ret-step">
-                                  <button
-                                    onClick={() => updateReturnDraft(row.orderId!, line.orderItemId!, selected - 1, maxQty)}
-                                    aria-label={posText("ลดจำนวนคืน {v0} SKU {v1}", { v0: receiptVariantLabel(line), v1: line.sku })}
-                                  >
-                                    −
-                                  </button>
-                                  <span className="pos-ret-step-value">{selected}</span>
-                                  <button
-                                    onClick={() => updateReturnDraft(row.orderId!, line.orderItemId!, selected + 1, maxQty)}
-                                    aria-label={posText("เพิ่มจำนวนคืน {v0} SKU {v1}", { v0: receiptVariantLabel(line), v1: line.sku })}
-                                  >
-                                    +
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        <div className="pos-ret-form-note">
-                          {posText("ยอดคืนจริงจะคำนวณจากจำนวนที่เหลือใหม่ หากไม่ครบขั้นต่ำราคาส่ง/โปร ยอดคืนจะลดลงตามเงื่อนไขเดิมตอนขาย") + " "}</div>
-                        {/* เหตุผล/หมายเหตุใช้ช่องเดียวกันทั้งคืนบางรายการและคืนทั้งบิล
-                            (เป็น state ตัวเดียวกันมาแต่แรก — เดิมวาดซ้ำสองชุดโดยไม่จำเป็น) */}
-                        <div className="pos-ret-form-actions">
-                          <button
-                            className="pos-ret-btn"
-                            onClick={() => void partialReturnReceipt(row)}
-                            disabled={busy || getPartialRefundPreview(row) <= 0 || needsRefundMethodChoice}
-                          >
-                            {posText("คืนบางรายการ") + " "}</button>
-                          <button
-                            className="pos-ret-btn pos-ret-btn--solid"
-                            onClick={() => void returnReceipt(row)}
-                            disabled={busy || needsRefundMethodChoice}
-                          >
-                            {posText("คืนทั้งบิล") + " "}</button>
-                          <button
-                            className="pos-ret-btn"
-                            onClick={() => void startExchangeFromReceipt(row)}
-                            disabled={busy || hasPendingOrderWrite || getPartialRefundPreview(row) <= 0 || needsRefundMethodChoice}
-                          >
-                            {posText("คืนที่เลือก + ทำบิลเปลี่ยน") + " "}</button>
-                        </div>
-                      </div>
-                    )}
-
-                    {historyOpen && (
-                      <BillHistoryPanel
-                        receipt={row}
-                        onOpenReturnReceipt={(event) => openReturnEventReceipt(row, event)}
-                      />
-                    )}
-
-                    {canVoid && voidTarget === row.orderId && (
-                      <div className="pos-ret-void">
-                        <div className="pos-ret-void-why">
-                          <span style={{ display: "inline-flex", alignItems: "center" }}>
-                            {posText("ยกเลิกบิลนี้") + " "}<PosHelp title={posText("ยกเลิกบิลไม่ใช่คืนสินค้า")}>
-                              {posText("ใช้เมื่อบิลผิดและต้องย้อนทั้งรายการ โดยต้องเป็นบิลของกะที่ยังเปิดอยู่ การคืนสินค้าปกติควรใช้ปุ่มคืนบางรายการหรือคืนทั้งบิล") + " "}</PosHelp>
-                          </span>{posText(": ของกลับเข้าสต็อก เงินคืนลูกค้า แต้มถูกดึงคืน และใบกำกับถูกยกเลิก (เลขใบยังอยู่ในลำดับ ไม่ได้ถูกลบ)") + " "}</div>
-                        <input
-                          ref={voidReasonRef}
-                          value={voidReason}
-                          onChange={(e) => setVoidReason(e.target.value)}
-                          maxLength={200}
-                          placeholder={posText("เหตุผล เช่น สแกนซ้ำ / กดผิดคน")}
-                        />
-                        <div className="pos-ret-void-row">
-                          <select ref={voidApproverSelectRef} value={voidApproverId} onChange={(e) => setVoidApproverId(e.target.value)}
-                                  style={{ minWidth: 170 }}>
-                            <ApproverOptions session={session} permission="pos.void" excludeUserId={cashierId} placeholder={posText("— ผู้อนุมัติ —")} />
-                          </select>
-                          <input ref={voidApproverPinRef} type="password" inputMode="numeric" value={voidApproverPin}
-                                 onChange={(e) => setVoidApproverPin(e.target.value.replace(/[^0-9]/g, ""))}
-                                 placeholder={posText("PIN หัวหน้า")} style={{ width: 120 }} />
-                          <button className="pos-ret-btn pos-ret-btn--danger"
-                                  onClick={() => void doVoidSale(row.orderId!)} disabled={busy}>
-                            {posText("ยืนยันยกเลิก") + " "}</button>
-                        </div>
-                      </div>
-                    )}
-                  </article>
-                  );
-                })}
-              </div>
-            )}
-            {/* บิลนี้มีอยู่จริง แต่เป็นมัดจำ — แท็บคืนค้นเฉพาะบิลที่ปิดแล้วโดยตั้งใจ
-                (ของที่ยังไม่ได้ส่งมอบจะคืนไม่ได้) แต่พนักงานที่ถือใบเสร็จมาย่อมมาที่นี่ก่อน
-                คำตอบที่ถูกคือบอกว่ามันอยู่ไหน ไม่ใช่ "ไม่พบ" */}
-            {recentReceipts.length === 0 && recentDepositMatches.length > 0 && (
-              <div className="pos-ret-empty" style={{ textAlign: "left" }}>
-                <b>{posText("บิลนี้เป็นมัดจำ — ของยังไม่ได้ส่งมอบ จึงยังคืนไม่ได้")}</b>
-                <div style={{ marginTop: 6 }}>
-                  {recentDepositMatches.map((deposit) => (
-                    <div key={deposit.id} style={{ fontSize: 13, marginTop: 4 }}>
-                      #{deposit.orderId.slice(0, 8).toUpperCase()}
-                      {deposit.customerNote?.trim() || deposit.customerName?.trim()
-                        ? ` · ${deposit.customerNote?.trim() || deposit.customerName?.trim()}`
-                        : ""}
-                      {" · "}{posText("จ่ายแล้ว ฿")}{baht(deposit.depositPaid)} {" " + posText("· ค้าง ฿")}{baht(deposit.balanceDue)}
-                      {deposit.isOtherLocation ? posText(" · อยู่สาขา {v0}", { v0: deposit.locationName || posText("อื่น") }) : ""}
-                    </div>
-                  ))}
-                </div>
-                <button style={{ marginTop: 10 }}
-                        onClick={() => {
-                          setTab("deposits");
-                          // พาคำค้นเดิมไปด้วย ไม่ให้พนักงานต้องพิมพ์ซ้ำที่แท็บใหม่
-                          setDepositSearch(recentSalesQuery);
-                          void refreshDeposits(recentSalesQuery);
-                        }}>
-                  {posText("ไปแท็บมัดจำ") + " "}</button>
-              </div>
-            )}
-            {recentReceipts.length === 0 && recentDepositMatches.length === 0 && recentSalesQuery.trim().length > 0 && (
-              <div className="pos-ret-empty">
-                {posText("ไม่พบบิลที่ตรงกับคำค้นนี้ — ลองเลขบิล, barcode สินค้า, SKU, ชื่อสมาชิก, รหัสสมาชิก หรือเบอร์โทร") + " "}</div>
-            )}
-            {recentReceipts.length > 0 && visibleRecentReceipts.length === 0 && returnReceiptFilter === "pending" && recentSalesQuery.trim().length === 0 && (
-              <div className="pos-ret-empty">
-                {posText("ไม่มีบิลที่ค้างยืนยันอยู่ในรายการล่าสุดของเครื่องนี้") + " "}</div>
-            )}
-            {recentReceipts.length === 0 && recentSalesQuery.trim().length === 0 && (
-              <div className="pos-ret-empty">
-                {posText("ยังไม่มีบิลของเครื่องนี้ในกะนี้") + " "}</div>
-            )}
-          </div>
-      </>)}
         </section>
 
         {tab === "sell" && (

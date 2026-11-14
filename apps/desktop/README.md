@@ -138,6 +138,12 @@ renderer stops responding; older clients retain the original immediate setup flo
 
 Server rejection text identifies HTTP 401 without claiming expiry; HTTP 403 asks for permission
 review without recommending re-pairing. Neither response automatically removes the saved token.
+If the cashier page later fails to reload because the server or network is unavailable, or its main
+document returns HTTP 5xx, Desktop shows its bundled recovery screen with Retry and Change server
+instead of leaving Chromium's blank page. Cancelled navigations and failed subresources do not replace a working register; Retry retains
+the existing pairing and device token. If Retry is pressed while the failed navigation is still
+settling, Desktop waits for it before trying again and ignores the queued retry after the cashier
+page, pairing, or main window has changed.
 Record the exact message/status, old/new versions, server host, OS and whether installation was in
 place when investigating an upgrade. Never include the token, encrypted record or cashier PIN.
 
@@ -206,6 +212,16 @@ Restaurant POS theme are unchanged. `scripts/desktop-pos-theme-browser-smoke.mjs
 member search and board-game copy selection on that real route using browser-only fixtures,
 including light/dark/system preferences, desktop/mobile widths and portalled dropdowns.
 It uses the same dev-server and Playwright environment as the update smoke above.
+
+## Desktop window recheck (2026-11-14)
+
+The cashier window now discards navigation/recovery/refresh work from a destroyed predecessor
+before opening its replacement. A late `closed` event from that predecessor no longer closes the
+replacement's customer or queue display windows. Regression tests cover both races; the Desktop
+Node suite passes 153/153, source syntax checks pass, and the native macOS setup/recovery,
+managed-display and Keychain smokes pass. Windows and Linux window and keystore behavior remain
+covered by platform-specific unit cases and their native CI workflows; those installers and OS
+keystores were not run on this macOS host.
 
 ## Desktop feature recheck (2026-11-12)
 
