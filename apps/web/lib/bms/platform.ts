@@ -93,7 +93,7 @@ export async function setTenantActive(tenantId: string, active: boolean, actorId
     if (res.rowCount) {
       await client.query(
         `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
-         VALUES($1,$2,$3,$1,$4::jsonb)`,
+         VALUES($1,$2,$3,$1::uuid::text,$4::jsonb)`,
         [tenantId, actorId, active ? "tenant.activate" : "tenant.suspend", JSON.stringify({ active })]
       );
     }
@@ -163,7 +163,7 @@ export async function updateTenantIdentity(
     if (res.rowCount === 0) throw new Error("ไม่พบร้าน");
     await client.query(
       `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
-       VALUES($1,$2,'tenant.identity_update',$1,$3::jsonb)`,
+       VALUES($1,$2,'tenant.identity_update',$1::uuid::text,$3::jsonb)`,
       [tenantId, actorId, JSON.stringify({ name: res.rows[0].name, slug: res.rows[0].slug })]
     );
     await client.query("COMMIT");

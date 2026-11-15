@@ -2,7 +2,7 @@
 // BMS SaaS — self-serve signup (สร้างร้าน + เจ้าของร้าน)
 // -------------------------------------------------------------
 // เก็บคำขอไว้ก่อน แล้วสร้าง tenant + owner ในทรานแซกชันเดียวหลังยืนยันอีเมล
-// role Manager = จัดการร้านได้ครบ แต่ไม่ใช่ super (แก้ RBAC ทั้งระบบไม่ได้)
+// ผู้สร้างร้านที่ยืนยันตัวตนแล้วเป็น Administrator ของร้านนั้น
 // =============================================================
 
 import crypto from "crypto";
@@ -10,7 +10,7 @@ import bcrypt from "bcryptjs";
 import { getClient } from "@/lib/db";
 import { getLatestEmailTemplate, renderEmailTemplate } from "@/lib/emailTemplates";
 import { sendEmail } from "@/lib/mailer";
-import { validateEmail } from "@/lib/auth/identity";
+import { validateEmail, validateNewPassword } from "@/lib/auth/identity";
 import { verifySocialIdentity } from "@/lib/auth/social";
 import { archetypeToBusinessType, isValidShopArchetype, normalizeShopArchetype } from "./shopArchetypes";
 import { isRetailLocalDeployment } from "./deploymentMode";
@@ -32,6 +32,27 @@ export type SignupInput = {
   password: string;
   businessArchetype?: string | null;
 };
+
+function parseShopChoice(input: { shopName: unknown; businessArchetype?: unknown }):
+  { shopName: string; businessArchetype: string | null } | null {
+  if (typeof input.shopName !== "string" ||
+      (input.businessArchetype != null && typeof input.businessArchetype !== "string")) return null;
+  const shopName = input.shopName.trim();
+  const rawArchetype = typeof input.businessArchetype === "string" ? input.businessArchetype.trim() : "";
+  if (!shopName || shopName.length > 120 || !isValidShopArchetype(rawArchetype)) return null;
+  return { shopName, businessArchetype: normalizeShopArchetype(rawArchetype) };
+}
+
+export function parseEmailShopSignupInput(input: SignupInput):
+  { shopName: string; ownerName: string | null; email: string; password: string; businessArchetype: string | null } | null {
+  const shop = parseShopChoice(input);
+  const email = validateEmail(input.email);
+  const password = validateNewPassword(input.password);
+  if (input.name != null && typeof input.name !== "string") return null;
+  const ownerName = input.name?.trim() || null;
+  if (!shop || !email.ok || !password.ok || (ownerName?.length ?? 0) > 120) return null;
+  return { ...shop, ownerName, email: email.value, password: password.value };
+}
 export type SignupResult =
   | { status: "PENDING_VERIFICATION" }
   | { status: "VERIFIED"; tenantId: string; slug: string; user: SignupUser }
@@ -93,8 +114,11 @@ async function createShopOwnerInTx(
   }
   if (!tenantId) throw new Error("Unable to allocate a unique shop slug");
 
-  const roleRes = await client.query<{ id: string }>(`SELECT id FROM roles WHERE name = 'Manager'`);
-  const roleId = roleRes.rows[0]?.id ?? null;
+  const roleRes = await client.query<{ id: string }>(
+    `SELECT id FROM roles WHERE name = 'Administrator' AND is_active LIMIT 1`
+  );
+  const roleId = roleRes.rows[0]?.id;
+  if (!roleId) throw new Error("Administrator role is missing after migrations");
   await client.query(
     `INSERT INTO bms_role_permissions (tenant_id, role_id, permission)
      SELECT $1, role_id, permission FROM bms_role_permissions
@@ -106,7 +130,7 @@ async function createShopOwnerInTx(
     `INSERT INTO users
        (name, username, email, role, role_id, tenant_id, password_hash, is_email_verified,
         provider, provider_id, avatar)
-     VALUES ($1, $2, $2, 'Manager', $3, $4, $5, TRUE, $6, $7, $8)
+     VALUES ($1, $2, $2, 'Administrator', $3, $4, $5, TRUE, $6, $7, $8)
      RETURNING *`,
     [
       input.ownerName || input.shopName,
@@ -118,6 +142,11 @@ async function createShopOwnerInTx(
       input.providerId || null,
       input.avatar || null,
     ]
+  );
+  await client.query(
+    `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+     VALUES ($1, $2, 'shop.signup.owner_created', $3, $4::jsonb)`,
+    [tenantId, userResult.rows[0].id, userResult.rows[0].id, JSON.stringify({ role: "Administrator" })]
   );
   await client.query(
     `INSERT INTO bms_store_profile (tenant_id, business_type, business_archetype)
@@ -137,17 +166,9 @@ export async function signupShop(input: SignupInput): Promise<SignupResult> {
   // signup active would silently turn one local installation into a second
   // multi-tenant platform without backup/licensing/support boundaries for it.
   if (isRetailLocalDeployment()) return { status: "INVALID" };
-  const shopName = input.shopName?.trim();
-  const email = input.email?.trim().toLowerCase();
-  const password = input.password ?? "";
-  const ownerName = input.name?.trim() || null;
-  const businessArchetype = normalizeShopArchetype(input.businessArchetype) ?? (input.businessArchetype?.trim() ? input.businessArchetype.trim() as any : null);
-  const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email || "");
-  if (
-    !shopName || shopName.length > 120 || !email || email.length > 254 || !validEmail ||
-    password.length < 6 || password.length > 128 || (ownerName?.length ?? 0) > 120 ||
-    !isValidShopArchetype(businessArchetype)
-  ) return { status: "INVALID" };
+  const parsed = parseEmailShopSignupInput(input);
+  if (!parsed) return { status: "INVALID" };
+  const { shopName, email, password, ownerName, businessArchetype } = parsed;
 
   const rawToken = crypto.randomBytes(32).toString("hex");
   const hash = await bcrypt.hash(password, 10);
@@ -199,11 +220,11 @@ export async function signupShopWithSocial(input: {
 }): Promise<SignupResult> {
   if (isRetailLocalDeployment()) return { status: "INVALID" };
   const provider = await assertSocialAuthAvailable(input.provider, "SHOP_SIGNUP");
-  const shopName = input.shopName?.trim();
-  const businessArchetype = normalizeShopArchetype(input.businessArchetype) ?? (input.businessArchetype?.trim() ? input.businessArchetype.trim() as any : null);
-  if (!shopName || shopName.length > 120 || !isValidShopArchetype(businessArchetype)) {
+  const shop = parseShopChoice(input);
+  if (!shop) {
     return { status: "INVALID" };
   }
+  const { shopName, businessArchetype } = shop;
 
   const social = await verifySocialIdentity(provider, input.accessToken);
   if (!social?.email_verified) return { status: "INVALID" };
@@ -271,6 +292,12 @@ export async function verifyPendingShopSignup(rawToken: string): Promise<VerifyS
     );
     const pending = pendingResult.rows[0];
     if (!pending) {
+      await client.query("ROLLBACK");
+      return { status: "INVALID_OR_EXPIRED" };
+    }
+    // A choice that was withdrawn while the verification email was in flight
+    // cannot create a newly unsupported shop during a rolling deployment.
+    if (!isValidShopArchetype(pending.business_archetype)) {
       await client.query("ROLLBACK");
       return { status: "INVALID_OR_EXPIRED" };
     }

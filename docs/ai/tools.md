@@ -913,11 +913,12 @@ Permission: shipping.view
 ✅ Implemented — service `lib/bms/inbox.ts`, migration `5.5__bms_inbox.sql`,
 REST `/api/bms/inbox*`, GraphQL `bmsConversation*` / `bmsSendMessage`, admin UI `/admin/inbox`.
 
-ทุกข้อความจาก webhook (LINE/TikTok) + คำตอบ AI ถูกบันทึกอัตโนมัติผ่าน
-`logConversation()` (hook ใน webhook) — 1 บทสนทนา = (tenant, channel, customer_ref)
+ข้อความ LINE ที่ AI ตอบได้บันทึกคำถามและคำตอบผ่าน `logConversation()`;
+TikTok/Shopee/Lazada บันทึกข้อความเข้า Inbox ให้พนักงานตรวจผ่าน `logInboundMessage()`
+โดยไม่เรียก AI เพราะยังไม่มี API ส่งคำตอบกลับลูกค้า — 1 บทสนทนา = (tenant, channel, customer_ref)
 
 **Shopee/Lazada 🧪 beta:** `app/api/bms/{shopee,lazada}/webhook/[tenantId]/route.ts` มีโครงรับ webhook
-แบบเดียวกับ TikTok (rate limit + HMAC verify + parse → pipeline → `logConversation()`) และต่อ config/UI
+แบบเดียวกับ TikTok (rate limit + HMAC verify + parse → `logInboundMessage()`) และต่อ config/UI
 (settings, `Channel` type, `CHANNEL_COLOR`) ครบเหมือน channel อื่นแล้ว — **แต่** signature verify scheme
 กับชื่อ field ใน payload (`parseShopeeMessages()`/`parseLazadaMessages()`) เป็น placeholder ที่ยังไม่ตรวจกับ
 เอกสาร Shopee/Lazada Open Platform จริง (ดู `TODO(prod)` ในไฟล์) ต้องแก้ก่อนใช้ production · ยังไม่มี send API
@@ -1499,7 +1500,7 @@ tenant-scoped seed ledger, so it is intentionally available in production withou
 
 ## bmsSignup() — public
 สมัครใช้งานเอง → เก็บ pending signup และส่งลิงก์ยืนยันอีเมลก่อน โดยยังไม่สร้างร้าน; เมื่อเจ้าของอีเมล
-กดลิงก์จึงสร้าง tenant (plan free) + owner (role Manager) แบบ atomic. ไม่ต้อง auth. (`lib/bms/signup.ts`)
+กดลิงก์จึงสร้าง tenant (plan free) + owner (role Administrator ของร้าน) แบบ atomic. ไม่ต้อง auth. เส้นทางสมัครด้วยโซเชียลใช้บทบาทเดียวกันหลังตรวจตัวตนจากผู้ให้บริการแล้ว (`lib/bms/signup.ts`)
 
 ## bmsTenants() / bmsIsPlatformAdmin()
 list ทุกร้าน + สถิติ (users/products/orders/revenue). `bmsIsPlatformAdmin` ใช้ gate เมนู/หน้า UI.

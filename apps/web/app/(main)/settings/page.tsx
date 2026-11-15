@@ -79,7 +79,7 @@ type LogRow = {
 /* ================= GraphQL ================= */
 
 // Users
-const Q_USERS = gql`query($search:String){ users(search:$search){ id name email phone role created_at avatar } }`;
+const Q_USERS = gql`query($search:String){ users(search:$search){ items { id name email phone role created_at avatar } total } }`;
 const Q_USER  = gql`query($id:ID!){ user(id:$id){ id name email phone avatar role } }`;
 const M_DELETE_USER = gql`mutation($id:ID!){ deleteUser(id:$id) }`;
 const M_UPSERT_USER = gql`mutation($id:ID, $data:UserInput!){ upsertUser(id:$id, data:$data){ id } }`;
@@ -305,7 +305,7 @@ function UsersList({ onNew, onEdit }: { onNew: () => void; onEdit: (id: string) 
     >
       <Table
         rowKey="id"
-        dataSource={data?.users || []}
+        dataSource={data?.users?.items || []}
         columns={cols as any}
         pagination={{ pageSize: 10, showSizeChanger: true }}
         scroll={{ x: 'max-content' }}

@@ -29,7 +29,7 @@ import { ensureCustomerForIdentity } from "./customers";
 import { reportBmsFailure } from "./failureAlert";
 import { evidenceForQuality } from "./customerAnswerEvidence";
 import { persistAnswerEvidence } from "./answerEvidenceStore";
-import { outboundInboxMediaUrl } from "./inboxMedia";
+import { outboundInboxMediaUrl, safeInboxAttachmentUrl } from "./inboxMedia";
 
 export type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
 
@@ -90,9 +90,10 @@ export function messagePreview(body: string | null | undefined, att?: Attachment
 }
 
 // ช่องที่ push ออกได้จริง (มี API ส่ง) → FAILED มีความหมาย
-// web/tiktok/test = ไม่ push (widget poll / ยังไม่มี API) → ถือว่า SENT เมื่อ persist สำเร็จ
+// web/tiktok/shopee/lazada/test = บันทึกใน Inbox เท่านั้น; ไม่มีช่องทางส่งคำตอบของ staff กลับลูกค้า
+export const OUTBOUND_PUSH_CHANNELS = ["line", "facebook", "instagram"] as const;
 export function channelSupportsPush(channel: string): boolean {
-  return channel === "line" || channel === "facebook" || channel === "instagram";
+  return (OUTBOUND_PUSH_CHANNELS as readonly string[]).includes(channel);
 }
 
 /** สถานะ outbound (Phase 1): push channel → delivered?SENT:FAILED · อื่น → SENT (บันทึกแล้ว) */
@@ -184,7 +185,8 @@ export async function logConversation(
 
     const inboundMeta = JSON.stringify({
       ...(incomingMeta ? { inbound: incomingMeta } : {}),
-      ...(incomingAttachment ? { attachment: incomingAttachment } : {}),
+      ...(incomingAttachment && safeInboxAttachmentUrl(incomingAttachment.url)
+        ? { attachment: incomingAttachment } : {}),
     });
     const messages = await client.query<{ id: string; direction: "IN" | "OUT" }>(
       `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
@@ -297,9 +299,10 @@ export async function logInboundMessage(
 ): Promise<string | null> {
   if (!customerRef || (channel === "test" && !isPersistedPharmacyLabConversation(channel, customerRef))) return null;
   const body = (input.body ?? "").trim();
-  const attachment = input.attachment?.url ? input.attachment : null;
+  const attachment = input.attachment?.url && safeInboxAttachmentUrl(input.attachment.url) ? input.attachment : null;
   const preview = messagePreview(body, attachment) || "[ข้อความที่ระบบยังไม่รองรับ]";
   let client: PoolClient | null = null;
+  let persistedConversationId: string | null = null;
   try {
     const cust = await query<{ customer_id: string }>(
       `SELECT customer_id FROM bms_customer_identities
@@ -349,6 +352,7 @@ export async function logInboundMessage(
       ]
     );
     await client.query("COMMIT");
+    persistedConversationId = conversationId;
     client.release();
     client = null;
 
@@ -365,7 +369,7 @@ export async function logInboundMessage(
   } catch (error) {
     if (client) await client.query("ROLLBACK").catch(() => undefined);
     console.error("[BMS] logInboundMessage failed:", error);
-    return null;
+    return persistedConversationId;
   } finally {
     client?.release();
   }
@@ -497,7 +501,7 @@ export async function pickAutoAssignee(
   tenantId: string,
   excludeUserIds: string[] = [],
   client?: PoolClient,
-  requiredPermissions: string[] = []
+  requiredPermissions: string[] = ["inbox.view", "inbox.reply"]
 ): Promise<string | null> {
   const run = client ? client.query.bind(client) : query;
   for (const roleName of ["Sales", "Manager", "Administrator"]) {
@@ -506,6 +510,7 @@ export async function pickAutoAssignee(
          FROM users u
          JOIN roles r ON r.id = u.role_id
         WHERE u.tenant_id = $1 AND r.name = $2 AND u.is_available = true
+          AND u.pos_only = FALSE AND u.is_platform_admin = FALSE
           AND (cardinality($3::uuid[]) = 0 OR u.id <> ALL($3::uuid[]))
           AND (r.name = 'Administrator' OR NOT EXISTS (
             SELECT 1 FROM unnest($4::text[]) AS needed(permission)
@@ -528,6 +533,12 @@ export async function listAutoAssignPool(tenantId: string): Promise<string[]> {
     const res = await query<{ id: string }>(
       `SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id
         WHERE u.tenant_id = $1 AND r.name = $2 AND u.is_available = true
+          AND u.pos_only = FALSE AND u.is_platform_admin = FALSE
+          AND (r.name = 'Administrator' OR NOT EXISTS (
+            SELECT 1 FROM unnest(ARRAY['inbox.view','inbox.reply']::text[]) AS needed(permission)
+             WHERE NOT EXISTS (SELECT 1 FROM bms_role_permissions rp
+               WHERE rp.tenant_id = $1 AND rp.role_id = u.role_id AND rp.permission = needed.permission)
+          ))
         ORDER BY u.created_at`,
       [tenantId, roleName]
     );
@@ -1561,6 +1572,7 @@ async function markMentionsReadInTenant(
 
 // ---- staff reply (persist + ยิงกลับช่องทาง) ------------------
 export type SendResult = { status: "SENT"; delivered: boolean; partial?: boolean; uncertain?: boolean;
+  deliveryFailed?: boolean; statusUnconfirmed?: boolean;
   messageId?: string; messageBody?: string } | { status: "NOT_FOUND" } | { status: "EMPTY" } | { status: "NOT_RETRYABLE" };
 
 const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || "v26.0";
@@ -1749,7 +1761,7 @@ export async function recordAiReplyDelivery(
 async function finalizeInboxOutbound(
   tenantId: string, conversationId: string, messageId: string,
   delivery: ChannelDeliveryResult, channel: string, source: "staff" | "ai"
-): Promise<void> {
+): Promise<boolean> {
   let client: PoolClient | null = null;
   try {
     client = await getClient();
@@ -1763,11 +1775,13 @@ async function finalizeInboxOutbound(
     );
     await client.query("COMMIT");
     publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED", source, messageId);
+    return true;
   } catch (error) {
     await client?.query("ROLLBACK").catch(() => undefined);
     // The provider may already have accepted the message. Leave the durable
     // PENDING row for reconciliation instead of making it retryable.
     console.error("[BMS] Inbox outbound delivery state update failed:", error);
+    return false;
   } finally {
     client?.release();
   }
@@ -1871,9 +1885,12 @@ export async function sendStaffMessage(
     return { status: "SENT", delivered: false, uncertain: true, messageId };
   }
   const delivered = delivery.delivered;
-  await finalizeInboxOutbound(tenantId, conversationId, messageId, delivery, channel, "staff");
+  const statusSaved = await finalizeInboxOutbound(tenantId, conversationId, messageId, delivery, channel, "staff");
   return { status: "SENT", delivered, ...(delivery.partial ? { partial: true } : {}),
-    ...(delivery.uncertain ? { uncertain: true } : {}), messageId };
+    ...(delivery.uncertain ? { uncertain: true } : {}),
+    ...(!statusSaved ? { statusUnconfirmed: true } : {}),
+    ...(!delivered && !delivery.partial && !delivery.uncertain && channelSupportsPush(channel)
+      ? { deliveryFailed: true } : {}), messageId };
 }
 
 async function sendAutomatedInboxMessage(
@@ -1945,9 +1962,10 @@ async function sendAutomatedInboxMessage(
     console.error("[BMS] Inbox automated delivery outcome is unknown:", error);
     return { status: "SENT", delivered: false, uncertain: true, messageId };
   }
-  await finalizeInboxOutbound(tenantId, conversationId, messageId, delivery, channel, "ai");
+  const statusSaved = await finalizeInboxOutbound(tenantId, conversationId, messageId, delivery, channel, "ai");
   return { status: "SENT", delivered: delivery.delivered,
     ...(delivery.partial ? { partial: true } : {}), ...(delivery.uncertain ? { uncertain: true } : {}),
+    ...(!statusSaved ? { statusUnconfirmed: true } : {}),
     messageId, messageBody: text };
 }
 
@@ -2054,9 +2072,10 @@ export async function retryMessage(
     console.error("[BMS] Inbox retry delivery outcome is unknown:", error);
     return { status: "SENT", delivered: false, uncertain: true };
   }
-  await finalizeInboxOutbound(tenantId, conversationId, messageId, delivery, channel, "staff");
+  const statusSaved = await finalizeInboxOutbound(tenantId, conversationId, messageId, delivery, channel, "staff");
   return { status: "SENT", delivered: delivery.delivered,
-    ...(delivery.partial ? { partial: true } : {}), ...(delivery.uncertain ? { uncertain: true } : {}) };
+    ...(delivery.partial ? { partial: true } : {}), ...(delivery.uncertain ? { uncertain: true } : {}),
+    ...(!statusSaved ? { statusUnconfirmed: true } : {}) };
 }
 
 // ---- timeline (message + note + order) -----------------------

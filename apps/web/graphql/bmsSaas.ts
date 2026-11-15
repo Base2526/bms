@@ -15,6 +15,7 @@ import { cookies } from "next/headers";
 import { signActTenant, ACT_TENANT_COOKIE } from "@/lib/auth/token";
 import { issueAdminSession } from "@/lib/auth/adminSession";
 import { enforceAuthRateLimit } from "@/lib/auth/rateLimit";
+import { normalizeEmail } from "@/lib/auth/identity";
 import {
   getSocialAuthAvailability,
   listSocialAuthSettings,
@@ -133,7 +134,7 @@ export const bmsSaasResolvers = {
       ctx: any,
     ) {
       await enforceAuthRateLimit(
-        ctx, "shop-signup", String(args.email ?? "").trim().toLowerCase(), 3, 20, 60 * 60_000,
+        ctx, "shop-signup", normalizeEmail(args.email), 3, 20, 60 * 60_000,
       );
       return signupShop({
         shopName: args.shopName,

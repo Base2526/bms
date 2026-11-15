@@ -98,7 +98,8 @@ test("a failed reply can be retried once and then becomes non-retryable", async 
 
 test("accepted retry with final DB failure remains PENDING and cannot resend", async () => {
   const h = retryHarness("FAILED", "line", true);
-  assert.deepEqual(await h.inbox.retryMessage("FAKE-tenant", "FAKE-message"), { status: "SENT", delivered: true });
+  assert.deepEqual(await h.inbox.retryMessage("FAKE-tenant", "FAKE-message"),
+    { status: "SENT", delivered: true, statusUnconfirmed: true });
   assert.equal(h.row.meta.status, "PENDING");
   assert.deepEqual(await h.inbox.retryMessage("FAKE-tenant", "FAKE-message"), { status: "NOT_RETRYABLE" });
   assert.equal(h.sends(), 0);

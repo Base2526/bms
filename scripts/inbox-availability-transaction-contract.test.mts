@@ -54,6 +54,7 @@ test("GraphQL availability mutation requires Inbox permission and derives actor 
   for (const allowed of [false, true]) {
     const calls: unknown[][] = [];
     const resolvers = loadWithStubs("apps/web/graphql/bmsInbox.ts", {
+      "@/lib/bms/inboxMedia": { safeInboxAttachmentUrl: (url: unknown) => typeof url === "string" ? url : null },
       "@/lib/bms/inbox": { setUserAvailability: async (...args: unknown[]) => {
         calls.push(args); return true;
       } },
@@ -73,5 +74,32 @@ test("GraphQL availability mutation requires Inbox permission and derives actor 
       await assert.rejects(resolvers.Mutation.bmsSetMyAvailability(null, { available: true }, {}), /FORBIDDEN/);
       assert.deepEqual(calls, []);
     }
+  }
+});
+
+test("auto-assignment chooses only an available tenant staff account that can view and reply", async () => {
+  const calls: Array<{ sql: string; args: unknown[] }> = [];
+  const inbox = loadWithStubs("apps/web/lib/bms/inbox.ts", {
+    "@/lib/db": { query: async (sql: string, args: unknown[]) => {
+      calls.push({ sql, args });
+      return args[1] === "Manager"
+        ? { rows: [{ id: "FAKE-manager" }], rowCount: 1 }
+        : { rows: [], rowCount: 0 };
+    } },
+    "./tenant": {},
+    "@/lib/pubsub": { pubsub: { publish: async () => undefined } },
+    "../../../../packages/graphql-core/src/bmsInboxSync": { topicBmsInboxChanged: () => "FAKE-topic" },
+    "@/lib/notifications/service": {}, "./channels": {}, "./channelHealth": {},
+    "./coupons": {}, "./aiQuality": {}, "./customers": {},
+    "./customerAnswerEvidence": {}, "./answerEvidenceStore": {},
+    "./failureAlert": {}, "./inboxMedia": {},
+  });
+  assert.equal(await inbox.pickAutoAssignee("FAKE-tenant"), "FAKE-manager");
+  assert.deepEqual(calls.map(c => c.args[1]), ["Sales", "Manager"]);
+  for (const call of calls) {
+    assert.deepEqual(call.args, ["FAKE-tenant", call.args[1], [], ["inbox.view", "inbox.reply"]]);
+    assert.match(call.sql, /u\.tenant_id = \$1/);
+    assert.match(call.sql, /u\.pos_only = FALSE AND u\.is_platform_admin = FALSE/);
+    assert.match(call.sql, /bms_role_permissions/);
   }
 });

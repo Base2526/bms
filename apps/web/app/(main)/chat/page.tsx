@@ -193,9 +193,8 @@ const Q_MSGS = gql`
 
 const Q_USERS = gql`
   query ($q: String) {
-    users(search: $q) {
-      id
-      name
+    users(search: $q, limit: 100) {
+      items { id name }
     }
   }
 `;
@@ -1146,7 +1145,7 @@ function ChatUI() {
   }, [chats, meId]);
 
   const availableUsers = useMemo(() => {
-    let arr = (users?.users || []).filter((u: any) => u.id !== meId);
+    let arr = (users?.users?.items || []).filter((u: any) => u.id !== meId);
     if (mode === "single") {
       arr = arr.filter((u: any) => !existingOneToOnePartnerIds.has(u.id));
     }
@@ -1194,7 +1193,7 @@ function ChatUI() {
           <Select
             style={{ width: "100%" }}
             placeholder="Pick one user"
-            options={(users?.users || []).map((u: any) => ({
+            options={(users?.users?.items || []).map((u: any) => ({
               value: u.id,
               label: u.name,
             }))}

@@ -2116,7 +2116,7 @@ export default function PosPage() {
       setTab("deposits");
       setNotice({
         type: "error",
-        text: posText("พบรายการสร้างบิลมัดจำที่ผลลัพธ์ยังไม่แน่ชัด — กด “สร้างบิล + รับมัดจำ” ซ้ำ ระบบจะใช้คีย์เดิมและไม่รับเงินซ้ำ"),
+        text: posText("ยังยืนยันผลบิลมัดจำครั้งก่อนไม่ได้ — ตรวจบิลล่าสุดก่อน หากไม่พบจึงกด “สร้างบิล + รับมัดจำ” อีกครั้ง ระบบจะใช้คำขอเดิม"),
       });
     } catch {}
   }, [session?.shift?.id]);
@@ -4053,10 +4053,10 @@ export default function PosPage() {
       }
       notePharmacyBlock(data);
       setNotice({ type: "error", text: data?.reason ?? describeFailure(data) });
-    } catch (error: any) {
+    } catch {
       setNotice({
         type: "error",
-        text: posText("ส่งไม่สำเร็จ ({v0}) — กด “สร้างบิล + รับมัดจำ” ซ้ำ ระบบจะใช้คีย์เดิมและไม่รับเงินซ้ำ", { v0: String(error?.message ?? error) }),
+        text: posText("ยังยืนยันผลบิลมัดจำไม่ได้ — ตรวจบิลล่าสุดก่อน หากไม่พบจึงกด “สร้างบิล + รับมัดจำ” อีกครั้ง ระบบจะใช้คำขอเดิม"),
       });
     } finally {
       setBusy(false);
@@ -6299,11 +6299,11 @@ export default function PosPage() {
         notePharmacyBlock(data);
         setNotice({ type: "error", text: failureText });
       }
-    } catch (e: any) {
+    } catch {
       // เน็ตหลุดกลางคำขอ: บิลอาจสร้างไปแล้ว → ห้ามให้พนักงานกดขายใหม่ทันที
       setNotice({
         type: "error",
-        text: posText("ส่งไม่สำเร็จ ({v0}) — กดชำระเงินอีกครั้ง ระบบจะใช้คีย์เดิมและไม่สร้างบิลซ้ำ", { v0: String(e?.message ?? e) }),
+        text: posText("ยังยืนยันผลการขายไม่ได้ — ตรวจบิลล่าสุดก่อน หากไม่พบบิลจึงกดชำระเงินอีกครั้ง ระบบจะใช้คำขอเดิมและไม่สร้างบิลซ้ำ"),
       });
     } finally {
       setBusy(false);

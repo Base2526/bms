@@ -1,5 +1,15 @@
 # BMS feature log
 
+## Verified shop owner role (`10.121`, 2026-11-14)
+
+Both email-verified and social `/shop-signup` now create the first shop user as its
+Administrator. This matches tenant settings and RBAC ownership. Migration `10.121`
+repairs only proven email-signup owners still on Manager when their shop has no
+Administrator and no later user-update audit; other Managers remain unchanged.
+Repair and audit are atomic, sessions are invalidated, and rerunning the migration
+does not promote anyone twice. Earlier social signups have no equivalent verified
+pending-email record and require individual review before any role change.
+
 ## Inbox AI reply delivery status and media handoff (no migration, 2026-11-09)
 
 - LINE/Meta AI replies are now saved `PENDING` and become `SENT` or `FAILED` only after the channel

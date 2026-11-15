@@ -280,7 +280,7 @@ export async function processMetaInboundJob(job: MetaInboundJob): Promise<void> 
   }
   const attachment = firstAttachment(job);
   if (!job.messageText || job.attachments.length > 0) {
-    await logInboundMessage(job.tenantId, job.channel, job.customerRef, {
+    const savedConversationId = await logInboundMessage(job.tenantId, job.channel, job.customerRef, {
       body: job.messageText ?? "",
       attachment,
       meta: {
@@ -290,6 +290,7 @@ export async function processMetaInboundJob(job: MetaInboundJob): Promise<void> 
         raw: { attachmentCount: job.attachments.length, ...job.eventMeta },
       },
     });
+    if (!savedConversationId) throw new Error("META_INBOUND_PERSIST_FAILED");
     await syncFacebookProfileBestEffort(job, cfg.access_token);
     await recordInboundEvent(job.tenantId, job.channel);
     return;
@@ -346,6 +347,10 @@ export async function processMetaInboundJob(job: MetaInboundJob): Promise<void> 
     }
   }
   await profileSync;
+  // The AI may already have committed a business action and the provider may
+  // already have accepted the reply. Keep this job for human review rather
+  // than marking an absent Inbox turn as successfully processed.
+  if (!persisted) throw new Error("META_INBOUND_PERSIST_FAILED");
   if (!delivery.delivered) {
     await reportBmsFailure({
       tenantId: job.tenantId,

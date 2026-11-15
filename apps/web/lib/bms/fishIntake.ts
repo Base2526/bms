@@ -213,7 +213,13 @@ export async function saveFishIntake(tenantId: string, actorId: string, input: F
     if (input.kind !== "HISTORICAL") {
       if (!(await isCapabilityEnabledInTx(client,tenantId,"WEIGHTED_PRODUCT")))
         throw new FishIntakeError("WEIGHTED_PRODUCT_DISABLED","ต้องเปิดใช้งานสินค้าชั่งน้ำหนักก่อนรับปลาเข้าสต็อก");
-      await assertValuationLocation(client,tenantId,actorId,input.locationId!);
+      try {
+        await assertValuationLocation(client,tenantId,actorId,input.locationId!);
+      } catch (error) {
+        if (error instanceof Error && error.message === "VALUATION_CURRENCY_REVIEW_REQUIRED")
+          throw new FishIntakeError("STORE_CURRENCY_REQUIRED","ตั้งสกุลเงินร้านเป็นบาท (THB) ในหน้าตั้งค่าร้านก่อนรับปลาเข้าสต็อก");
+        throw error;
+      }
       const active = await client.query(`SELECT 1 FROM bms_locations WHERE tenant_id=$1 AND id=$2 AND active`,
         [tenantId,input.locationId]);
       if (!active.rowCount) throw new FishIntakeError("LOCATION_INACTIVE","สาขานี้ไม่เปิดใช้งาน");
@@ -355,8 +361,10 @@ export async function fishIntakeOptions(tenantId:string, actorId:string, search=
        WHERE p.tenant_id=$1 AND p.active AND sp.stock_policy='WEIGHTED' AND sp.base_unit='GRAM'
          AND sp.lot_tracking AND ($2='' OR p.sku ILIKE '%'||$2||'%' OR p.name ILIKE '%'||$2||'%')
        ORDER BY p.name,v.sort_order,v.code LIMIT 200`,[tenantId,term])).rows;
+    const currency=(await client.query<{currency:string|null}>(
+      `SELECT currency FROM bms_store_profile WHERE tenant_id=$1`,[tenantId])).rows[0]?.currency??null;
     await client.query("COMMIT");
-    return {locations,products};
+    return {locations,products,currency};
   } catch(error) { await client.query("ROLLBACK"); throw error; }
   finally {client.release();}
 }

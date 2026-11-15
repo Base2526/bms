@@ -22,10 +22,12 @@
 /** rank สูง = จัดการ rank ที่ต่ำกว่าได้ · ตัวเลขเว้นช่องไว้เผื่อแทรก role ใหม่ */
 export const STAFF_ROLE_RANK: Record<string, number> = {
   Administrator: 100, // super ของร้าน (และเป็น super ใน loadPermissions() ด้วย)
-  Manager: 60, // เจ้าของร้าน/ผู้จัดการ — จัดการทีมงานหน้าร้านได้
+  Manager: 60, // ผู้จัดการร้าน (รวมเจ้าของร้านที่สมัครก่อนเปลี่ยนค่าเริ่มต้น) — จัดการทีมงานหน้าร้านได้
   Sales: 20,
   Warehouse: 20,
+  Cashier: 20, // POS-only users are still team members that a Manager may manage
   Staff: 20, // legacy จาก 1.24__roles.sql
+  // Pharmacist is deliberately excluded: a Manager must not take over a licensed clinical account.
   Subscriber: 0, // บัญชีสาธารณะ (community) ไม่มีสิทธิ์หลังบ้าน
 };
 

@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
+import { operatorMessage } from "@/lib/operatorMessage";
 import { shopExperienceForArchetype, type StockExperienceSection } from "@/lib/bms/shopExperience";
 import { POLICY_REQUIRED_CAPABILITY, PRODUCT_STOCK_POLICIES } from "@/lib/bms/productStockPolicyOptions";
 import styles from "./page.module.css";
@@ -164,10 +165,6 @@ type Modifier = {
 
 const POLICY_OPTIONS = PRODUCT_STOCK_POLICIES.map((value) => ({ value, label: value as string }));
 
-function errorText(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
-
 import {RecipeCostBasisSelect,costSelection} from "./RecipeCostBasis";
 
 function RecipeCostDetails({ recipeId }: { recipeId: string }) {
@@ -182,7 +179,7 @@ function RecipeCostDetails({ recipeId }: { recipeId: string }) {
     extra={<Button size="small" loading={result.loading} onClick={() => void result.refetch().catch(() => undefined)}>{t("admin_stock.refresh")}</Button>}>
     <Alert closable type="info" showIcon message={t("admin_stock.cost_scope")} />
     <RecipeCostBasisSelect value={basis} onChange={setBasis}/>
-    {result.loading ? <Spin /> : result.error ? <Alert closable type="error" message={t("admin_stock.action_failed")} /> : !estimate
+    {result.loading ? <Spin /> : result.error ? <Alert closable type="error" message={operatorMessage(result.error,t)} /> : !estimate
       ? <Typography.Paragraph>{t("admin_stock.cost_unavailable")}</Typography.Paragraph> : <>
         <Typography.Paragraph style={{ marginTop: 12 }}>
           {t("admin_stock.version")} {estimate.recipeVersion} · {t("admin_stock.output_qty")} {estimate.outputQty} · {t("admin_stock.cost_as_of")} {estimate.calculatedAt}
@@ -232,13 +229,14 @@ function RecipeVersionSelect({ value, onChange, parentSku, saved, planning = fal
       onChange={next => { setSku(next); onChange?.(undefined); }} />
     <Select value={value} onChange={onChange} disabled={!sku ? true : undefined} loading={versions.loading} options={options}
       aria-label={planning ? t("restaurant_menu_plan.recipe") : t("admin_stock.subrecipe_version")} placeholder={planning ? t("restaurant_menu_plan.recipe") : t("admin_stock.subrecipe_version")} />
-    {(products.error || versions.error) && <Typography.Text type="danger">{t("admin_stock.action_failed")}</Typography.Text>}
+    {(products.error || versions.error) && <Typography.Text type="danger">{operatorMessage(products.error || versions.error,t)}</Typography.Text>}
   </div>;
 }
 
 export default function StockModelsPage() {
   const uiText = useUiText();
   const { t } = useI18n();
+  const errorText = (error: unknown, fallback: string) => `${fallback}: ${operatorMessage(error,t,"write")}`;
   const { can, loading: permsLoading } = useBmsPermissions();
   const searchParams = useSearchParams()!;
   const canView = can("product.view");
@@ -657,7 +655,7 @@ export default function StockModelsPage() {
         <div><h2 className={styles.sectionTitle}>{t("admin_stock.capabilities")}</h2><Typography.Text type="secondary">{t("admin_stock.capability_hint")}</Typography.Text></div>
         <Button icon={<ReloadOutlined />} onClick={() => capabilities.refetch()}>{t("admin_stock.refresh")}</Button>
       </Space>
-      {capabilities.error && <Alert closable type="error" showIcon message={capabilities.error.message} style={{ marginBottom: 12 }} />}
+      {capabilities.error && <Alert closable type="error" showIcon message={operatorMessage(capabilities.error,t)} style={{ marginBottom: 12 }} />}
       <Spin spinning={capabilities.loading || capabilityMutation.loading}>
         {recommendedCapabilities.length > 0 && <>
           <Typography.Title level={5}>{t("admin_stock.recommended_for_shop")}</Typography.Title>
@@ -808,7 +806,7 @@ export default function StockModelsPage() {
                           message.success(t("admin_stock.saved"));
                           await stationSlas.refetch();
                         } catch (error: any) {
-                          message.error(error?.message ?? t("admin_stock.save_failed"));
+                          message.error(errorText(error,t("admin_stock.save_failed")));
                         }
                       }}>{t("admin_stock.save")}</Button>
                     {row.configured && <Popconfirm title={t("admin_stock.station_sla_reset_confirm")}

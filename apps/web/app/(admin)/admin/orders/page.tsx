@@ -154,14 +154,21 @@ function OrdersManagement() {
   const [locationFilter, setLocationFilter] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  const [offset, setOffset] = useState(0);
 
   useEffect(() => {
-    const t = setTimeout(() => setSearch(searchInput.trim()), 300);
+    const t = setTimeout(() => {
+      const next = searchInput.trim();
+      if (next !== search) {
+        setOffset(0);
+        setSearch(next);
+      }
+    }, 300);
     return () => clearTimeout(t);
-  }, [searchInput]);
+  }, [searchInput, search]);
 
   const { data, loading, error, refetch } = useQuery(Q_ORDERS, {
-    variables: { search: search || null, status: filter === "ALL" ? null : filter, locationId: locationFilter, limit: 100, offset: 0 },
+    variables: { search: search || null, status: filter === "ALL" ? null : filter, locationId: locationFilter, limit: 101, offset },
     fetchPolicy: "cache-and-network",
     pollInterval: 15000,
   });
@@ -186,7 +193,9 @@ function OrdersManagement() {
   const [ret, { loading: l6 }] = useMutation(M_RETURN, opts(t("admin_orders.returned_success")));
   const busy = l1 || l2 || l3 || l4 || l5 || l6;
 
-  const orders: Order[] = data?.bmsOrders || [];
+  const fetchedOrders: Order[] = data?.bmsOrders || [];
+  const orders = fetchedOrders.slice(0, 100);
+  const hasOlderOrders = fetchedOrders.length > 100;
 
   // Realtime is the fast path; the 15s query poll above is the recovery path when a socket event
   // is missed. Both use the authoritative server query rather than inserting guessed rows locally.
@@ -326,7 +335,7 @@ function OrdersManagement() {
         <ResponsiveStatusFilter
           options={FILTERS}
           value={filter}
-          onChange={setFilter}
+          onChange={(value) => { setOffset(0); setFilter(value); }}
           labels={{ ALL: t("admin_orders.status_all"), ...STATUS_LABEL }}
         />
         <Select
@@ -334,7 +343,7 @@ function OrdersManagement() {
           placeholder={t("admin_orders.branch_filter_placeholder")}
           style={{ width: isMobile ? "100%" : 220 }}
           value={locationFilter ?? undefined}
-          onChange={(value) => setLocationFilter(value ?? null)}
+          onChange={(value) => { setOffset(0); setLocationFilter(value ?? null); }}
           options={locations.map((l) => ({ value: l.id, label: `${l.name} (${l.branchCode})` }))}
         />
         <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{t("admin_orders.refresh")}</Button>
@@ -347,20 +356,39 @@ function OrdersManagement() {
 
       {isMobile ? (
         <AdminMobileList
+          key={`${search}-${filter}-${locationFilter}-${offset}`}
           loading={loading}
           dataSource={orders}
           rowKey={(o) => o.id}
-          totalText={(n) => t("admin_orders.total_orders", { n })}
+          totalText={(n) => (offset > 0 || hasOlderOrders)
+            ? t("admin.batch_loaded", { count: n })
+            : t("admin_orders.total_orders", { n })}
           renderItem={(r) => <MobileOrderCard key={r.id} order={r} actions={actionsFor(r)} />}
           emptyText={t("admin_orders.empty_no_orders")}
         />
       ) : (
         <Table
+          key={`${search}-${filter}-${locationFilter}-${offset}`}
           rowKey="id" loading={loading} dataSource={orders} columns={columns}
           scroll={{ x: "max-content" }}
           expandable={{ expandedRowRender: (r: Order) => <OrderDetails order={r} /> }}
-          pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => uiText("admin_ui.en_total_order_s_04c66", { v0: t }) }}
+          pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (count) => (offset > 0 || hasOlderOrders)
+            ? t("admin.batch_loaded", { count })
+            : uiText("admin_ui.en_total_order_s_04c66", { v0: count }) }}
         />
+      )}
+      {(offset > 0 || hasOlderOrders) && (
+        <Space wrap style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
+          <Button disabled={loading || offset === 0} onClick={() => setOffset(Math.max(0, offset - 100))}>
+            {t("admin.batch_previous")}
+          </Button>
+          <Typography.Text type="secondary">
+            {t("admin.batch_range", { from: offset + 1, to: offset + orders.length })}
+          </Typography.Text>
+          <Button disabled={loading || !hasOlderOrders} onClick={() => setOffset(offset + 100)}>
+            {t("admin.batch_next")}
+          </Button>
+        </Space>
       )}
     </div>
   );

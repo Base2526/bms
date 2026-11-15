@@ -6,6 +6,7 @@ import type { PricePlanInput } from "@/lib/bms/restaurantPricePlanning";
 import { useState, useRef, useEffect } from "react";
 import RecipeCostBasis, {costSelection} from "./RecipeCostBasis";
 import { useI18n } from "@/lib/i18nContext";
+import { operatorMessage } from "@/lib/operatorMessage";
 const QUERY = gql`query RestaurantPricePlan($input: BmsRestaurantPricePlanInput!) {
   bmsRestaurantPricePlan(input: $input) { status errorCode
     estimate { recipeId recipeVersion calculatedAt status totalUnitCost }
@@ -45,8 +46,8 @@ export default function RestaurantPricePlan({ recipeId }: { recipeId: string }) 
       } } });
       if (request!==revision.current) return;
       const data = response.data.bmsRestaurantPricePlan;
-      if (data.status !== "OK") setError(data.errorCode ?? data.status); else { setResult(data); setPlan({ recipeId,...costSelection(values.costSelection),assumptionSource:values.assumptionSource,scenarios:values.scenarios,dailyTargetProfit:values.dailyTargetProfit, dailyFixedCost:values.dailyFixedCost??null }); }
-    } catch (e) { if(request===revision.current) setError(e instanceof Error ? e.message : "ERROR"); }
+      if (data.status !== "OK") setError(operatorMessage(data.errorCode,t)); else { setResult(data); setPlan({ recipeId,...costSelection(values.costSelection),assumptionSource:values.assumptionSource,scenarios:values.scenarios,dailyTargetProfit:values.dailyTargetProfit, dailyFixedCost:values.dailyFixedCost??null }); }
+    } catch (e) { if(request===revision.current) setError(operatorMessage(e,t)); }
     finally { if(request===revision.current) setLoading(false); }
   }
   return <>

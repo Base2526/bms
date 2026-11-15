@@ -6,6 +6,7 @@ import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
+import { operatorMessage } from "@/lib/operatorMessage";
 import styles from "./page.module.css";
 
 const Q_PROMOTIONS = gql`
@@ -342,7 +343,7 @@ export default function PromotionsPage() {
           <Button icon={<ReloadOutlined />} loading={list.loading} onClick={() => list.refetch()} />
         </Space>}
       >
-        {list.error && <Alert closable type="error" showIcon message={list.error.message} style={{ marginBottom: 12 }} />}
+        {list.error && <Alert closable type="error" showIcon message={operatorMessage(list.error,t)} style={{ marginBottom: 12 }} />}
         <Table rowKey="id" scroll={{ x: 700 }} loading={list.loading} dataSource={rows} pagination={{ pageSize: 20, showSizeChanger: false }} columns={[
           {
             title: t("admin_promotions.product"),

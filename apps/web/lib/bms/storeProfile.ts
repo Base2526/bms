@@ -11,7 +11,7 @@ import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { getOrSetCache, invalidateCache } from "@/lib/cache";
 import { beginTenantTx } from "./tenant";
-import { isShopArchetypeAvailableForNewInstall, normalizeShopArchetype } from "./shopArchetypes";
+import { archetypeToBusinessType, isShopArchetypeAvailableForNewInstall, normalizeShopArchetype } from "./shopArchetypes";
 import { isCarrier, type Carrier } from "./carriers/constants";
 import { normalizeProvince, parseWeightTiers, parseZoneRates } from "./shippingZones";
 import { isReceiptLanguageMode, type ReceiptLanguageMode } from "@/lib/pos/receiptI18n";
@@ -216,7 +216,7 @@ async function fetchStoreProfileWithClient(tenantId: string, client?: PoolClient
   };
 }
 
-export type StoreProfileInput = Partial<StoreProfile>;
+export type StoreProfileInput = Partial<StoreProfile> & { tenantName?: string | null };
 
 const NON_NULL_PROFILE_KEYS = [
   "aiLanguage", "aiOrderingStyle", "aiRequiredFields", "aiInterpretShortReplies",
@@ -228,7 +228,8 @@ const NON_NULL_PROFILE_KEYS = [
 
 /** GraphQL nullable fields may arrive as null, but these domain values map to NOT NULL columns. */
 export function mergeStoreProfileInput(current: StoreProfile, input: StoreProfileInput): StoreProfile {
-  const merged = { ...current, ...input } as StoreProfile;
+  const { tenantName: _tenantName, ...profileInput } = input;
+  const merged = { ...current, ...profileInput } as StoreProfile;
   for (const key of NON_NULL_PROFILE_KEYS) {
     if (input[key] == null) (merged as any)[key] = current[key];
   }
@@ -276,8 +277,14 @@ export async function upsertStoreProfile(
     await beginTenantTx(client, tenantId, editorId ? { editorId } : undefined);
     // The tenant row is also referenced by every order. FOR UPDATE serializes this
     // decision with a concurrent order INSERT, so "first real order" is an exact boundary.
-    const tenant = await client.query(`SELECT id FROM bms_tenants WHERE id = $1 FOR UPDATE`, [tenantId]);
+    const tenant = await client.query<{ name: string }>(`SELECT name FROM bms_tenants WHERE id = $1 FOR UPDATE`, [tenantId]);
     if (!tenant.rowCount) throw new Error("ไม่พบร้านที่ระบุ");
+    const tenantName = input.tenantName === undefined ? undefined :
+      typeof input.tenantName === "string" ? input.tenantName.trim() : "";
+    if (tenantName !== undefined && tenantName !== tenant.rows[0].name &&
+        (!tenantName || tenantName.length > 120)) {
+      throw new Error("ชื่อร้านต้องมีความยาว 1–120 ตัวอักษร");
+    }
 
     // Merge from the transaction's fresh row, never from the read-through cache. Otherwise
     // an unrelated concurrent save can write a stale archetype back over the locked value.
@@ -327,6 +334,9 @@ export async function upsertStoreProfile(
       throw new Error("archetype ร้านไม่ถูกต้อง");
     }
     merged.businessArchetype = normalizedBusinessArchetype;
+    // A selected archetype is the authoritative classification. The legacy type
+    // remains independently editable only for shops that have no archetype yet.
+    if (merged.businessArchetype) merged.businessType = archetypeToBusinessType(merged.businessArchetype);
     const currentArchetype = normalizeShopArchetype(cur.businessArchetype);
     if (currentArchetype !== merged.businessArchetype) {
       // Deprecated/disabled ids remain readable for existing shops, but they cannot be
@@ -520,10 +530,20 @@ export async function upsertStoreProfile(
         JSON.stringify(merged.customerDisplayPromoSlides), merged.customerDisplayPromoIntervalSeconds,
       ]
     );
+    if (tenantName !== undefined && tenantName !== tenant.rows[0].name) {
+      await client.query(`UPDATE bms_tenants SET name = $2 WHERE id = $1`, [tenantId, tenantName]);
+      if (editorId) {
+        await client.query(
+          `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
+           VALUES($1,$2,'tenant.identity_update',$1::uuid::text,$3::jsonb)`,
+          [tenantId, editorId, JSON.stringify({ name: tenantName })]
+        );
+      }
+    }
     if (editorId) {
       await client.query(
         `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
-         VALUES($1,$2,'store.profile_update',$1,'{}'::jsonb)`,
+         VALUES($1,$2,'store.profile_update',$1::uuid::text,'{}'::jsonb)`,
         [tenantId, editorId]
       );
     }

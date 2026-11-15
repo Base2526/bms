@@ -64,6 +64,7 @@ function graphqlHarness(allowed: boolean, role = "Sales") {
     },
   };
   const loaded = loadWithStubs("apps/web/graphql/bmsInbox.ts", {
+    "@/lib/bms/inboxMedia": { safeInboxAttachmentUrl: (url: unknown) => typeof url === "string" ? url : null },
     "@/lib/bms/inbox": inbox,
     "@/lib/bms/permissions": { requirePermission: async () => {} },
     "@/lib/bms/tenant": { getTenantId: () => "tenant-1" },

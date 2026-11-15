@@ -79,7 +79,7 @@ test("denial or draft persistence failure cannot call provider", async () => {
 test("provider acceptance with a failed final status write keeps the committed draft", async () => {
   const h = harness({ finalFails: true });
   assert.deepEqual(await h.inbox.sendStaffMessage("FAKE-tenant", "FAKE-conversation", "hello", "FAKE-actor"),
-    { status: "SENT", delivered: true, messageId: "42" });
+    { status: "SENT", delivered: true, statusUnconfirmed: true, messageId: "42" });
   assert.ok(h.events.indexOf("commit-draft") < h.events.indexOf("provider"));
   assert.ok(h.events.includes("rollback-final"));
   assert.equal(h.events.includes("commit-final"), false);
@@ -107,6 +107,15 @@ test("follow-up and pharmacy intake also persist before channel delivery", async
     assert.deepEqual(h.events, ["begin", "conversation", ...(kind === "followup" ? ["followup-claim:FAKE-job:0"] : []), "draft:PENDING", "commit-draft",
       "provider", "begin", "final:SENT", "commit-final"]);
   }
+});
+
+test("accepted follow-up with a failed final state write requires review before another round", async () => {
+  const h = harness({ finalFails: true });
+  assert.deepEqual(await h.inbox.sendFollowupMessage("FAKE-tenant", "FAKE-conversation", "hello",
+    { ruleId: "FAKE-rule", jobId: "FAKE-job", retryIndex: 0, goal: "FAKE-goal" }),
+    { status: "SENT", delivered: true, statusUnconfirmed: true, messageId: "42", messageBody: "hello" });
+  assert.ok(h.events.indexOf("commit-draft") < h.events.indexOf("provider"));
+  assert.ok(h.events.includes("rollback-final"));
 });
 
 test("reclaimed follow-up round reuses its durable message and never sends twice", async () => {

@@ -3,6 +3,7 @@ import {gql,useApolloClient} from '@apollo/client';
 import {Alert,Button,Form,Input,Modal,Select,Table,Typography} from 'antd';
 import {useState} from 'react';
 import {useI18n} from '@/lib/i18nContext';
+import {operatorMessage} from '@/lib/operatorMessage';
 import {useBmsPermissions} from '@/app/hooks/useBmsPermissions';
 import type {MenuPlan} from '@/lib/bms/restaurantMenuPlanning';
 const PREVIEW=gql`query PreviewMenuBundle($input:BmsMenuBundlePublicationInput!){bmsPreviewMenuBundle(input:$input){status errorCode fingerprint snapshot}}`;
@@ -11,8 +12,8 @@ export default function MenuBundlePublish({plan}:{plan:MenuPlan}) {
  const {t}=useI18n(),{can}=useBmsPermissions(),client=useApolloClient();
  const [open,setOpen]=useState(false),[review,setReview]=useState<any>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[done,setDone]=useState('');
  if(!can('product.edit')||!can('product.delete')||!can('report.view'))return null;
- async function preview(values:Record<string,unknown>) {setBusy(true);setError('');setDone('');setReview(null);try{const input={...values,plan};const {data}=await client.query({query:PREVIEW,variables:{input},fetchPolicy:'no-cache'});const r=data.bmsPreviewMenuBundle;if(r.status!=='READY')throw new Error(r.errorCode);setReview({...r,input,requestId:crypto.randomUUID()});}catch(e){setError(e instanceof Error?e.message:'ERROR');}finally{setBusy(false);}}
- async function publish(){if(!review)return;setBusy(true);setError('');try{const {data}=await client.mutate({mutation:SAVE,variables:{input:review.input,review:{fingerprint:review.fingerprint,requestId:review.requestId,confirmed:true}}});if(data.bmsPublishMenuBundle.status!=='PUBLISHED')throw new Error(data.bmsPublishMenuBundle.errorCode);setDone(review.snapshot.sku);setReview(null);}catch(e){setError(e instanceof Error?e.message:'ERROR');}finally{setBusy(false);}}
+ async function preview(values:Record<string,unknown>) {setBusy(true);setError('');setDone('');setReview(null);try{const input={...values,plan};const {data}=await client.query({query:PREVIEW,variables:{input},fetchPolicy:'no-cache'});const r=data.bmsPreviewMenuBundle;if(r.status!=='READY')throw new Error(r.errorCode??'');setReview({...r,input,requestId:crypto.randomUUID()});}catch(e){setError(operatorMessage(e,t));}finally{setBusy(false);}}
+ async function publish(){if(!review)return;setBusy(true);setError('');try{const {data}=await client.mutate({mutation:SAVE,variables:{input:review.input,review:{fingerprint:review.fingerprint,requestId:review.requestId,confirmed:true}}});if(data.bmsPublishMenuBundle.status!=='PUBLISHED')throw new Error(data.bmsPublishMenuBundle.errorCode??'');setDone(review.snapshot.sku);setReview(null);}catch(e){setError(operatorMessage(e,t,'write'));}finally{setBusy(false);}}
  return <>
  <Button onClick={()=>{setOpen(true);setReview(null);setError('');setDone('');}}>{t('restaurant_completion.publish_bundle')}</Button>
  <Modal open={open} destroyOnClose footer={null} width={800} title={t('restaurant_completion.publish_bundle')} style={{top:24}} styles={{body:{maxHeight:'calc(100dvh - 160px)',overflowY:'auto'}}} onCancel={()=>{if(!busy)setOpen(false);}}>

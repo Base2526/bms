@@ -22,7 +22,7 @@ import { meteredUsage } from "./aiMetering";
 // =============================================================
 
 import { getClient, query } from "@/lib/db";
-import { getConversation, listMessages, sendFollowupMessage } from "./inbox";
+import { OUTBOUND_PUSH_CHANNELS, channelSupportsPush, getConversation, listMessages, sendFollowupMessage } from "./inbox";
 import { getCustomer360 } from "./customer360";
 import { getStoreProfile } from "./storeProfile";
 import { resolveAiCredentials, type AiCredentials } from "./ai";
@@ -686,6 +686,7 @@ async function scheduleNewJobs(tenantId?: string): Promise<number> {
           WHERE m.tenant_id=c.tenant_id AND m.conversation_id=c.id AND m.direction='IN'
        ) inbound ON inbound.last_customer_at IS NOT NULL
       WHERE c.status IN ('OPEN', 'PENDING')
+        AND c.channel = ANY($2::text[])
         AND c.last_sender_type IS NOT NULL
         AND c.last_sender_type != 'staff'
         AND ($1::uuid IS NULL OR c.tenant_id = $1)
@@ -694,7 +695,7 @@ async function scheduleNewJobs(tenantId?: string): Promise<number> {
             AND j.created_at >= inbound.last_customer_at)
       ORDER BY c.last_message_at ASC
       LIMIT ${CANDIDATE_BATCH}`,
-    [tenantId ?? null]
+    [tenantId ?? null, [...OUTBOUND_PUSH_CHANNELS]]
   );
 
   let created = 0;
@@ -851,9 +852,9 @@ async function processDueJobs(tenantId?: string): Promise<RunSummary> {
     const [rule, convRow] = await Promise.all([
       query(`SELECT * FROM bms_followup_rules WHERE id = $1 AND tenant_id = $2`,
         [job.rule_id, job.tenant_id]).then((r) => (r.rowCount ? mapRule(r.rows[0]) : null)),
-      query<{ status: string; last_sender_type: string | null; last_message_at: Date | string;
+      query<{ channel: string; status: string; last_sender_type: string | null; last_message_at: Date | string;
         customer_id: string | null; last_customer_at: Date | string | null }>(
-        `SELECT c.status, c.last_sender_type, c.last_message_at, c.customer_id,
+        `SELECT c.channel, c.status, c.last_sender_type, c.last_message_at, c.customer_id,
                 (SELECT MAX(m.created_at) FROM bms_messages m
                   WHERE m.tenant_id=c.tenant_id AND m.conversation_id=c.id
                     AND m.direction='IN') AS last_customer_at
@@ -873,6 +874,10 @@ async function processDueJobs(tenantId?: string): Promise<RunSummary> {
     }
     if (!rule || !rule.enabled) {
       await stop("rule_disabled");
+      continue;
+    }
+    if (!channelSupportsPush(convRow.channel)) {
+      await stop("channel_no_outbound");
       continue;
     }
     if (convRow.status === "CLOSED") {
@@ -925,12 +930,13 @@ async function processDueJobs(tenantId?: string): Promise<RunSummary> {
       }
 
       const nextRetryCount = job.retry_count + 1;
-      // A timeout or partial provider acceptance needs human review; never
+      // A timeout, partial acceptance or unconfirmed status needs human review; never
       // schedule another automatic follow-up to the same customer.
-      const done = nextRetryCount >= rule.maxRetry || Boolean(sendResult.uncertain || sendResult.partial);
+      const done = nextRetryCount >= rule.maxRetry || Boolean(sendResult.uncertain || sendResult.partial || sendResult.statusUnconfirmed);
       if (await recordFollowupOutcome(job, "SENT", {
         nextRetryCount, done, delayMinutes: rule.delayMinutes,
-        reason: sendResult.uncertain ? "delivery_unknown" : sendResult.partial ? "partial_delivery" : "sent",
+        reason: sendResult.statusUnconfirmed ? "delivery_status_unconfirmed" :
+          sendResult.uncertain ? "delivery_unknown" : sendResult.partial ? "partial_delivery" : "sent",
         messageBody: sendResult.messageBody ?? text, goal: rule.messageGoal,
       })) summary.sent += 1;
     } catch (err) {

@@ -10,7 +10,7 @@ assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(new URL(origin).hostname)
 const out = new URL("../.test-output/inbox-partial/", import.meta.url);
 mkdirSync(out, { recursive: true });
 const now = "2026-11-14T00:00:00Z";
-const conversation = { id: "FAKE-conversation", channel: "facebook", customerRef: "FAKE-customer",
+const conversation = { id: "FAKE-conversation", channel: "facebook", supportsOutboundPush: true, customerRef: "FAKE-customer",
   customerId: null, customerName: "Fixture Customer", customerAvatar: null,
   sourceDisplayName: "Fixture Page", sourceHandle: null, sourceAvatar: null,
   status: "OPEN", tags: [], unread: 0, lastMessage: "Fixture reply", lastMessageAt: now, createdAt: now,
@@ -23,7 +23,11 @@ const conversation = { id: "FAKE-conversation", channel: "facebook", customerRef
   }] };
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 try {
-  for (const width of [1440, 390]) {
+  for (const { channel, supportsOutboundPush } of [
+    { channel: "facebook", supportsOutboundPush: true },
+    { channel: "web", supportsOutboundPush: false },
+  ]) for (const width of [1440, 390]) {
+    const activeConversation = { ...conversation, channel, supportsOutboundPush };
     const context = await browser.newContext({ viewport: { width, height: 900 } });
     await context.routeWebSocket(/.*/, socket => socket.close());
     await context.addCookies([{ name: "ADMIN_COOKIE", value: "FAKE-inbox-fixture", url: origin },
@@ -44,7 +48,7 @@ try {
         bmsIsPlatformAdmin: false, bmsActingTenant: null, bmsStoreProfile: null,
         bmsMe: { id: "FAKE-admin", role: "Administrator", is_available: true, gender: null,
           tenant: { slug: "fixture" } },
-        bmsConversations: [conversation], bmsConversation: conversation,
+        bmsConversations: [activeConversation], bmsConversation: activeConversation,
         bmsAssignableStaff: [], bmsInboxUnreadCount: 0, bmsMyMentionsUnreadCount: 0,
       } } });
     });
@@ -56,9 +60,15 @@ try {
     await page.getByText("Partly sent — review in the channel before replying again").waitFor();
     await page.getByText("Delivery pending").waitFor();
     assert.equal(await page.getByRole("button", { name: "Resend" }).count(), 0);
+    if (!supportsOutboundPush) {
+      await page.getByText("This channel cannot send messages from Inbox yet. Your text will be saved for staff only.").waitFor();
+      await page.getByRole("button", { name: "Save in Inbox" }).waitFor();
+    } else {
+      assert.equal(await page.getByText("This channel cannot send messages from Inbox yet.").count(), 0);
+    }
     assert.deepEqual(errors, []);
-    await page.screenshot({ path: new URL(`partial-${width}.png`, out).pathname });
-    console.log(`PASS Inbox partial-delivery state at ${width}px`);
+    await page.screenshot({ path: new URL(`${channel}-${width}.png`, out).pathname });
+    console.log(`PASS Inbox ${channel} state at ${width}px`);
     await context.close();
   }
 } finally {

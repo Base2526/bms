@@ -1334,6 +1334,7 @@ type BmsConversation {
   sourceDisplayName: String
   sourceHandle: String
   status: BmsConvStatus!
+  supportsOutboundPush: Boolean!
   systemEvents(limit: Int): [BmsSystemEvent!]!
   tags: [String!]!
   unread: Int!
@@ -9032,6 +9033,7 @@ type BmsSendReportResult {
 type BmsSendResult {
   delivered: Boolean!
   message: String
+  needsReview: Boolean!
   status: String!
 }
 
@@ -9376,6 +9378,7 @@ input BmsStoreProfileInput {
   shippingZoneRates: [BmsShippingZoneRateInput!]
   subdistrictCode: String
   taxId: String
+  tenantName: String
   timezone: String
   website: String
 }

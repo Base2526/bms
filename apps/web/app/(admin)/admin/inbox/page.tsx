@@ -103,7 +103,7 @@ const Q_LIST = gql`
 const Q_CONV = gql`
   query ($id: ID!, $messageLimit: Int, $eventLimit: Int, $noteLimit: Int) {
     bmsConversation(id: $id) {
-      id channel customerRef customerId customerName customerAvatar sourceDisplayName sourceHandle sourceAvatar status tags unread lastMessageAt createdAt
+      id channel supportsOutboundPush customerRef customerId customerName customerAvatar sourceDisplayName sourceHandle sourceAvatar status tags unread lastMessageAt createdAt
       assignedStaff { ${STAFF_FIELDS} }
       helpers { ${STAFF_FIELDS} }
       messages(limit: $messageLimit) { id direction body sender createdAt attachment { url name mimeType isImage } status canReportDelivery }
@@ -149,8 +149,8 @@ const Q_COUPONS_PICKER = gql`
     }
   }
 `;
-const M_SEND = gql`mutation ($id: ID!, $body: String, $attachment: BmsAttachmentInput) { bmsSendMessage(id: $id, body: $body, attachment: $attachment) { status delivered message } }`;
-const M_RETRY = gql`mutation ($id: ID!) { bmsRetryMessage(id: $id) { status delivered message } }`;
+const M_SEND = gql`mutation ($id: ID!, $body: String, $attachment: BmsAttachmentInput) { bmsSendMessage(id: $id, body: $body, attachment: $attachment) { status delivered needsReview message } }`;
+const M_RETRY = gql`mutation ($id: ID!) { bmsRetryMessage(id: $id) { status delivered needsReview message } }`;
 const M_ASSIGN = gql`mutation ($id: ID!, $userId: ID!) { bmsAssignConversation(id: $id, userId: $userId) }`;
 const M_HELPER_ADD = gql`mutation ($id: ID!, $userId: ID!) { bmsAddConversationHelper(id: $id, userId: $userId) }`;
 const M_HELPER_REMOVE = gql`mutation ($id: ID!, $userId: ID!) { bmsRemoveConversationHelper(id: $id, userId: $userId) }`;
@@ -1057,7 +1057,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     onCompleted: (d: any) => {
       const r = d?.bmsSendMessage;
       if (r?.status === "SENT") {
-        (r.delivered ? message.success : message.warning)(r.message);
+        (r.needsReview || !r.delivered ? message.warning : message.success)(r.message);
         setReply("");
         setDraftAttachment(null);
         onChanged();
@@ -1072,7 +1072,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const [retry, { loading: retrying }] = useMutation(M_RETRY, {
     onCompleted: (d: any) => {
       const r = d?.bmsRetryMessage;
-      if (r?.status === "SENT") { (r.delivered ? message.success : message.warning)(r.message); onChanged(); }
+      if (r?.status === "SENT") { (r.needsReview || !r.delivered ? message.warning : message.success)(r.message); onChanged(); }
       else onErr({ message: r?.message });
     }, onError: onErr,
   });
@@ -1756,6 +1756,9 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       {/* กล่องพิมพ์ — ปักล่างสุด + toolbar */}
       {can("inbox.reply") && (
         <div style={{ borderTop: "1px solid var(--app-border, #303030)", paddingTop: 8, marginTop: 6, flexShrink: 0 }}>
+          {!conv.supportsOutboundPush && (
+            <Alert closable type="warning" showIcon message={t("admin_inbox.save_only_notice")} style={{ marginBottom: 8 }} />
+          )}
           <input ref={imgInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onPickFile} />
           <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={onPickFile} />
           <Modal
@@ -1955,7 +1958,8 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
               onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); submitReply(); } }}
             />
             <Button type="primary" icon={<SendOutlined />} loading={sending} disabled={uploading || (!reply.trim() && !draftAttachment)}
-              style={{ minWidth: isMobile ? 40 : 60, fontSize: 12, fontWeight: 700, borderRadius: 8 }} onClick={submitReply}>{isMobile ? "" : t("admin_inbox.send_button")}</Button>
+              aria-label={conv.supportsOutboundPush ? t("admin_inbox.send_button") : t("admin_inbox.save_only_button")}
+              style={{ minWidth: isMobile ? 40 : 60, fontSize: 12, fontWeight: 700, borderRadius: 8 }} onClick={submitReply}>{isMobile ? "" : conv.supportsOutboundPush ? t("admin_inbox.send_button") : t("admin_inbox.save_only_button")}</Button>
           </div>
         </div>
       )}

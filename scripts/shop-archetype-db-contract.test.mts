@@ -14,6 +14,7 @@
  * CLAUDE.local.md — it happened, and it took ten POS tests down with it).
  */
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
@@ -279,7 +280,39 @@ test("products and fake orders stay editable; the first real order locks the arc
   await query(`UPDATE bms_store_profile SET business_archetype = 'restaurant' WHERE tenant_id = $1`, [tenantId]);
 
   const updated = await upsertStoreProfile(tenantId, { businessType: "fashion" });
-  assert.equal(updated.businessType, "fashion");
+  assert.equal(updated.businessType, "food", "a selected archetype owns the legacy AI classification");
+
+  const oldName = (await query<{ name: string }>(`SELECT name FROM bms_tenants WHERE id = $1`, [tenantId])).rows[0].name;
+  await assert.rejects(
+    () => upsertStoreProfile(tenantId, { tenantName: "FAKE renamed", businessArchetype: "fashion" }),
+    /มีออร์เดอร์จริงแล้ว|locked/i
+  );
+  assert.equal(
+    (await query<{ name: string }>(`SELECT name FROM bms_tenants WHERE id = $1`, [tenantId])).rows[0].name,
+    oldName,
+    "a rejected archetype change must not partially save the tenant name"
+  );
+  await assert.rejects(
+    () => upsertStoreProfile(tenantId, { tenantName: "  ", about: "FAKE invalid" }),
+    /ชื่อร้านต้องมีความยาว/
+  );
+  const actorId = randomUUID();
+  await upsertStoreProfile(tenantId, { tenantName: "FAKE renamed", about: "FAKE updated" }, actorId);
+  assert.equal(
+    (await query<{ name: string }>(`SELECT name FROM bms_tenants WHERE id = $1`, [tenantId])).rows[0].name,
+    "FAKE renamed"
+  );
+  assert.equal(
+    (await query<{ name: string }>(`SELECT name FROM bms_tenants WHERE id = $1`, [blankTenant])).rows[0].name,
+    `FAKE ${TAG}`,
+    "saving one shop cannot rename another tenant"
+  );
+  const audit = await query<{ action: string }>(
+    `SELECT action FROM bms_audit_log WHERE tenant_id = $1 AND actor = $2
+      AND action IN ('store.profile_update', 'tenant.identity_update') ORDER BY action`,
+    [tenantId, actorId]
+  );
+  assert.deepEqual(audit.rows.map(row => row.action), ["store.profile_update", "tenant.identity_update"]);
 });
 
 test("a concurrent first real order cannot race past the database lock", async () => {

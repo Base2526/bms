@@ -13,6 +13,7 @@ import { shopExperienceForArchetype } from "@/lib/bms/shopExperience";
 import { useI18n } from "@/lib/i18nContext";
 import { runSignupRequest, SignupRequestTimeout } from "@/lib/auth/signupRequest";
 import SocialLogin from "@/components/auth/SocialLogin";
+import { validateEmail, validateNewPassword } from "@/lib/auth/identity";
 
 const { Paragraph } = Typography;
 
@@ -167,7 +168,7 @@ export default function Page() {
           </Paragraph>
           <Form form={form} layout="vertical" autoComplete="off" disabled={loading} aria-busy={loading}>
             <Form.Item label={t("shopSignup.shop_name")} name="shopName" rules={[{ required: true, message: t("shopSignup.shop_name_required") }]}>
-              <Input placeholder={t("shopSignup.shop_name_placeholder")} size="large" />
+              <Input placeholder={t("shopSignup.shop_name_placeholder")} size="large" maxLength={120} />
             </Form.Item>
             <Form.Item
               label={t("shopSignup.shop_type")}
@@ -203,12 +204,23 @@ export default function Page() {
               onFacebookFail={onFacebookFail}
             />
             <Form.Item label={t("shopSignup.owner_name")} name="name">
-              <Input placeholder={t("shopSignup.owner_name_placeholder")} />
+              <Input placeholder={t("shopSignup.owner_name_placeholder")} maxLength={120} />
             </Form.Item>
-            <Form.Item label={t("shopSignup.email")} name="email" rules={[{ required: true, type: "email", message: t("shopSignup.email_invalid") }]}>
+            <Form.Item label={t("shopSignup.email")} name="email" rules={[{
+              validator: async (_, value) => {
+                if (!validateEmail(value).ok) throw new Error(t("shopSignup.email_invalid"));
+              },
+            }]}>
               <Input placeholder={t("shopSignup.email_placeholder")} />
             </Form.Item>
-            <Form.Item label={t("shopSignup.password")} name="password" rules={[{ required: true, min: 6, message: t("shopSignup.password_min") }]}>
+            <Form.Item label={t("shopSignup.password")} name="password" rules={[{
+              validator: async (_, value) => {
+                const result = validateNewPassword(value);
+                if (result.ok) return;
+                throw new Error(t(result.code === "TOO_LONG"
+                  ? "shopSignup.password_max_bytes" : "shopSignup.password_min"));
+              },
+            }]}>
               <Input.Password placeholder={t("shopSignup.password_placeholder")} />
             </Form.Item>
             <Button type="primary" size="large" block loading={loading} onClick={submit}>

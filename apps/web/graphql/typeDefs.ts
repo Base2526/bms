@@ -2190,6 +2190,7 @@ export const typeDefs = /* GraphQL */ `
   type BmsConversation {
     id: ID!
     channel: String!
+    supportsOutboundPush: Boolean!
     customerRef: String
     customerId: ID
     customerName: String
@@ -2312,6 +2313,7 @@ export const typeDefs = /* GraphQL */ `
   type BmsSendResult {
     status: String!
     delivered: Boolean!
+    needsReview: Boolean!
     message: String
   }
   type BmsInboxDiagnosticMessageResult {
@@ -5067,6 +5069,7 @@ export const typeDefs = /* GraphQL */ `
   }
   type BmsInventoryWastageResult { id: ID! }
   input BmsStoreProfileInput {
+    tenantName: String
     businessArchetype: String
     businessType: String
     aiLanguage: String

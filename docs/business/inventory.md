@@ -363,6 +363,9 @@ SKU/size, requires `inventory.count.apply` and `report.view`, and creates a `COU
 inbound movement with valuation and audit in one transaction. It does not overwrite an
 existing count. After opening, run one small live receipt and one real sale, then reconcile
 the receipt weight, remaining grams, sales and separately recorded cash before expansion.
+Live and opening receipts require the store profile currency to be explicitly `THB` before
+confirmation. The intake screen shows an Administrator a link to the store setting when it is
+missing; the commit API also returns a configuration error rather than a generic server error.
 The fish-intake feature is available only after migration `10.119` is applied to the target
 environment; a successful local type check is not evidence of production deployment.
 
@@ -924,6 +927,9 @@ An archetype is an onboarding preset, not a stock rule. `bms_store_capabilities`
 overrides, while `bms_product_stock_policies` decides each product's authoritative behaviour:
 `DIRECT`, `PACK`, `BUNDLE`, `WEIGHTED`, `RECIPE`, or `SERIALIZED`. A mixed shop can keep a restaurant
 archetype and manually enable weighed products without moving tenant or inventory data.
+The archetype also determines the older broad AI `business_type` while it is selected. Shops that
+never picked an archetype keep their existing broad type. The settings form saves the shop name and
+profile together, so an invalid archetype change cannot rename the shop by itself.
 
 ### Catalog lifecycle and product roles (`9.51`)
 

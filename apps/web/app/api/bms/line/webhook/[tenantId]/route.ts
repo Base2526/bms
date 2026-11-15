@@ -26,7 +26,7 @@ import {
   recordOutboundError,
   formatOutboundErrorDetail,
 } from "@/lib/bms/channelHealth";
-import { claimInboundEvent } from "@/lib/bms/inboundEvents";
+import { claimInboundEvent, releaseUnprocessedInboundEvent } from "@/lib/bms/inboundEvents";
 import { reportBmsFailure } from "@/lib/bms/failureAlert";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -78,7 +78,8 @@ function lineInboundBody(message: NonNullable<LineEvent["message"]>, hasAttachme
   }
   if (hasAttachment) return "";
   const defaults = LINE_MEDIA_DEFAULTS[message.type];
-  return defaults ? `[${defaults.label}]` : `[ข้อความ LINE ชนิด ${message.type}]`;
+  return defaults ? `[${defaults.label}: ดาวน์โหลดไฟล์ไม่สำเร็จ กรุณาขอให้ลูกค้าส่งใหม่]`
+    : `[ข้อความ LINE ชนิด ${message.type}]`;
 }
 
 async function fetchLineInboundAttachment(
@@ -211,14 +212,20 @@ async function processLineEvent(
   assistantMode: CustomerAssistantMode
 ): Promise<{ replyToken?: string | null; handled?: boolean; duplicate?: boolean; logged?: string; reply?: string; error?: string }> {
   if (ev.type !== "message" || !ev.message) return { replyToken: ev.replyToken, handled: false };
-  if (!(await claimInboundEvent(tenantId, "line", ev.message.id ?? ev.replyToken))) {
+  const userId = ev.source?.userId ?? null;
+  if (!userId) {
+    await reportBmsFailure({ tenantId, code: "channel.reply_failed", error: "LINE_SOURCE_USER_ID_MISSING",
+      surface: "customer", channel: "line", meta: { messageId: ev.message.id ?? null } });
+    return { replyToken: ev.replyToken, handled: false, error: "LINE_SOURCE_USER_ID_MISSING" };
+  }
+  const eventId = ev.message.id ?? ev.replyToken;
+  if (!(await claimInboundEvent(tenantId, "line", eventId))) {
     return { replyToken: ev.replyToken, duplicate: true, handled: true };
   }
 
-  const userId = ev.source?.userId ?? null;
   if (ev.message.type !== "text") {
     const attachment = await fetchLineInboundAttachment(tenantId, cfg.access_token, ev.message);
-    await logInboundMessage(tenantId, "line", userId, {
+    const savedConversationId = await logInboundMessage(tenantId, "line", userId, {
       body: lineInboundBody(ev.message, Boolean(attachment)),
       attachment,
       meta: {
@@ -234,6 +241,12 @@ async function processLineEvent(
         },
       },
     });
+    if (!savedConversationId) {
+      // No AI or provider action has run, so a LINE retry may safely try to
+      // persist this media event again. Do not acknowledge a lost Inbox turn.
+      await releaseUnprocessedInboundEvent(tenantId, "line", eventId);
+      throw new Error("LINE_INBOUND_PERSIST_FAILED");
+    }
     await refreshLineUserProfile(tenantId, userId, cfg.access_token);
     return { replyToken: ev.replyToken, logged: ev.message.type, handled: true };
   }
@@ -331,6 +344,17 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
     }
   })() as { events?: LineEvent[] };
   const events = Array.isArray(body.events) ? body.events : [];
+  if (events.some((ev) => {
+    if (!ev || typeof ev !== "object") return true;
+    if (ev.type !== "message") return false;
+    if (!ev.message || typeof ev.message !== "object" ||
+      (ev.message.type === "text" && typeof ev.message.text !== "string")) return true;
+    const eventId = ev.message.id ?? ev.replyToken;
+    return (typeof eventId !== "string" && typeof eventId !== "number") || !String(eventId).trim() ||
+      (ev.source?.userId != null && typeof ev.source.userId !== "string");
+  })) {
+    return NextResponse.json({ error: "invalid message event" }, { status: 400 });
+  }
 
   // The BMS prospect assistant is selected only from LINE's bot identity, never from
   // message content or a caller-provided tenant/body field. Refresh before processing so

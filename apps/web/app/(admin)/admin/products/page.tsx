@@ -464,6 +464,11 @@ function ProductsManagement() {
   const lowCount: number = lowItems.length;
   const outOfStockItems = lowItems.filter((x) => x.available <= 0);
   const lowStockItems = lowItems.filter((x) => x.available > 0).sort((a, b) => a.available - b.available);
+  useEffect(() => {
+    if (window.location.hash !== "#low-stock" || lowCount === 0) return;
+    setLowExpanded(true);
+    document.getElementById("low-stock")?.scrollIntoView({ block: "start" });
+  }, [lowCount]);
   // ยิงเฉพาะตอนเปิดโมดัล และกลืน error เอง — ฐานที่ยังไม่ apply 9.40 ต้องไม่ทำให้
   // ฟอร์มสินค้าเปิดไม่ได้ · ล้มเหลว = แสดงทุกรูปแบบเหมือนเดิม (server ยังเป็นด่านจริง)
   const { data: capabilityData } = useQuery(Q_STOCK_CAPABILITIES, {
@@ -1008,7 +1013,7 @@ function ProductsManagement() {
       </div>
 
       {lowCount > 0 && (
-        <div style={{ marginBottom: 16, border: "1px solid #ffe58f", background: "#fffbe6", borderRadius: 8, overflow: "hidden" }}>
+        <div id="low-stock" style={{ marginBottom: 16, scrollMarginTop: 90, border: "1px solid #ffe58f", background: "#fffbe6", borderRadius: 8, overflow: "hidden" }}>
           <button
             type="button"
             onClick={toggleLowExpanded}

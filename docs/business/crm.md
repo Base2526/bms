@@ -160,8 +160,8 @@ migration or new required configuration is introduced.
 Every conversation belongs to exactly one customer and is **never deleted**. Internal notes are
 never visible to the customer.
 
-**Implemented** (`bms_conversations` / `bms_messages` / `bms_conversation_notes`): every message
-from every channel — plus the AI's replies — is logged automatically via `logConversation()`.
+**Implemented** (`bms_conversations` / `bms_messages` / `bms_conversation_notes`): accepted
+text turns and supported media events are logged by the channel adapter when Inbox persistence succeeds.
 One conversation = `(tenant, channel, customer_ref)`. Staff can assign conversations, set status
 (`OPEN`/`PENDING`/`CLOSED`), tag, add internal notes (`inbox.manage` only), reply directly
 (`sendStaffMessage`, with image/file attachments), and view a merged timeline of
@@ -216,9 +216,24 @@ start `PENDING` when saved, then become `SENT` or `FAILED` after the channel cal
 Shopee/Lazada don't push at all yet, so they're marked `SENT` once persisted (no fake failure state). Read
 receipts are not implemented on channels that can't genuinely report them (LINE, TikTok).
 
+The Inbox composer reads `supportsOutboundPush` from the backend. For web/TikTok/Shopee/Lazada it
+labels the action as **Save in Inbox** and warns that the text will only be visible to staff. A
+failed LINE/Meta push keeps the saved message, shows a failure, and permits a server-checked retry
+only for an explicit `FAILED` status. An uncertain or partly accepted provider request is held for
+manual review. If the provider accepted a staff reply but its status write failed, the mutation
+reports the acceptance with `needsReview`; the stored row stays `PENDING` and the UI asks staff to
+check the channel before replying again. Shopee and Lazada webhook payload/signature mappings
+remain unverified scaffolds;
+their Inbox presence is not evidence of a production chat integration. TikTok has no outbound send
+API in BMS yet. Inbound text on TikTok/Shopee/Lazada is saved for staff without running AI or
+committing an unseen business action. Web chat returns an AI reply in the widget's HTTP response; staff Inbox drafts are
+not pushed back to the widget.
+
 Meta messages that contain an attachment and a text caption are saved together as an inbound Inbox
 message for staff. The AI text pipeline does not inspect attachments, so it does not answer those
 messages as if it had seen the media.
+If LINE media cannot be downloaded, Inbox records a clear unavailable-file note so staff can ask
+the customer to send it again; the attachment is never shown as if it were stored.
 
 **Diagnostics:** `/admin/inbox/realtime-diagnostics` is not a customer channel. `Emit` proves only
 that realtime invalidation reaches the browser; it does not create a conversation. `Create Msg`
@@ -229,6 +244,11 @@ platforms. Conversation/message/audit commit together, so a failed diagnostic wr
 partial test message. Non-AI inbound media likewise commits its conversation unread update with
 its message; failure rolls both back. Post-commit auto-assignment failure does not misreport a
 persisted message as lost.
+If a LINE/TikTok/Shopee/Lazada non-text event cannot be saved, its pre-effect idempotency claim is
+released and the webhook fails so a provider retry can try again. A missing LINE user identity is
+reported and never enters the AI or Inbox path. Meta's durable worker marks an unsaved media turn
+or an unsaved AI turn for manual review instead of recording a false success; a text turn may already
+have performed an action or sent a reply, so it is never replayed automatically.
 
 Permissions: `inbox.view` / `inbox.reply` / `inbox.manage` · `customer.view` / `customer.edit`.
 
@@ -247,8 +267,11 @@ already replied, conversation closed, retry limit reached, customer opted out, r
 the same inbound customer message; a later inbound message can start a new round. An outbound row
 is committed before provider I/O; a confirmed
 delivery failure leaves failed work for staff, while an uncertain or partial result stops subsequent
-automatic rounds until staff checks the actual channel. Each job outcome, history row and audit row
+automatic rounds until staff checks the actual channel. An accepted provider send whose final DB
+status cannot be written also stops later rounds for manual review. Each job outcome, history row and audit row
 commit in one tenant transaction.
+New jobs are scheduled only for LINE/Facebook/Instagram, the channels with an outbound API.
+Older jobs on Web/TikTok/Shopee/Lazada stop as `channel_no_outbound` before generating AI text.
 As of 2026-08-11, the queue page also includes a
 **heuristic opportunity score** (`HOT/WARM/COOL`) per job plus a lightweight analytics summary for
 the last 30 days: sent/skipped/failed counts, reply rate after follow-up, order-after-follow-up

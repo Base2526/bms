@@ -42,6 +42,11 @@ test("outbound files require upload proof, reject another tenant and retain publ
   await assert.rejects(media.outboundInboxMediaUrl("tenant-a", "/api/files/11"));
   await assert.rejects(media.outboundInboxMediaUrl("tenant-a", media.inboxMediaPath("tenant-a", 12)));
   assert.equal(await media.outboundInboxMediaUrl("tenant-a", "/api/files/13"), "/api/files/13");
+  for (const invalid of ["javascript:alert(1)", "data:text/html,FAKE", "//example.test/file", "/\\example.test/file"]) {
+    assert.equal(media.safeInboxAttachmentUrl(invalid), null);
+    await assert.rejects(media.outboundInboxMediaUrl("tenant-a", invalid), /Invalid Inbox attachment URL/);
+  }
+  assert.equal(media.safeInboxAttachmentUrl("https://example.test/photo.jpg"), "https://example.test/photo.jpg");
 });
 
 test("public media route fails closed before storage and serves only a matching signed private file", async () => {

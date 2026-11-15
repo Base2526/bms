@@ -10,8 +10,8 @@ const rule = { id: "FAKE-rule", tenant_id: tenantId, intent: "ORDER", enabled: t
   business_hours_only: false, template: "FAKE follow-up", created_at: new Date(), updated_at: new Date() };
 
 function harness(options: { denied?: boolean; auditFails?: boolean; staleOutcome?: boolean;
-  uncertain?: boolean; deliveryFails?: boolean; existingJob?: boolean; customerReplied?: boolean;
-  candidate?: boolean; globalTenants?: string[] } = {}) {
+  uncertain?: boolean; statusUnconfirmed?: boolean; deliveryFails?: boolean; existingJob?: boolean; customerReplied?: boolean;
+  candidate?: boolean; globalTenants?: string[]; channel?: string } = {}) {
   const events: string[] = [];
   let sends = 0;
   const client = () => ({ release() { events.push("release"); }, query: async (sql: string, args: any[] = []) => {
@@ -23,7 +23,11 @@ function harness(options: { denied?: boolean; auditFails?: boolean; staleOutcome
       return { rows: options.denied ? [] : [job], rowCount: options.denied ? 0 : 1 };
     }
     if (sql.includes("UPDATE bms_followup_jobs") && sql.includes("retry_count=$4")) {
-      events.push(`outcome:${args[0]}:${args[6]}:${args[4]}`);
+      events.push(`outcome:${args[0]}:${args[6] ?? args[4]}:${args[4]}`);
+      return { rows: options.staleOutcome ? [] : [{ id: job.job_id }], rowCount: options.staleOutcome ? 0 : 1 };
+    }
+    if (sql.includes("UPDATE bms_followup_jobs") && sql.includes("status=$4")) {
+      events.push(`outcome:${args[0]}:${args[4]}:${args[4]}`);
       return { rows: options.staleOutcome ? [] : [{ id: job.job_id }], rowCount: options.staleOutcome ? 0 : 1 };
     }
     if (sql.includes("INSERT INTO bms_followup_jobs")) {
@@ -45,6 +49,8 @@ function harness(options: { denied?: boolean; auditFails?: boolean; staleOutcome
     "@/lib/db": { getClient: async () => client(), query: async (sql: string, args: any[] = []) => {
       if (sql.includes("SELECT c.id, c.tenant_id")) {
         assert.match(sql, /JOIN LATERAL/);
+        assert.match(sql, /c\.channel = ANY\(\$2::text\[\]\)/);
+        assert.deepEqual(args[1], ["line", "facebook", "instagram"]);
         assert.match(sql, /m\.direction='IN'/);
         assert.match(sql, /NOT EXISTS \(SELECT 1 FROM bms_followup_jobs j/);
         assert.match(sql, /j\.created_at >= inbound\.last_customer_at/);
@@ -66,7 +72,7 @@ function harness(options: { denied?: boolean; auditFails?: boolean; staleOutcome
       if (sql.includes("FROM bms_conversations") && sql.includes("last_sender_type")) {
         assert.deepEqual(args, [job.conversation_id, tenantId]);
         assert.match(sql, /m\.direction='IN'/);
-        return { rows: [{ status: "OPEN", last_sender_type: "ai",
+        return { rows: [{ channel: options.channel ?? "line", status: "OPEN", last_sender_type: "ai",
           last_message_at: options.customerReplied ? new Date(Date.now() + 60_000) : new Date(0),
           last_customer_at: options.customerReplied ? new Date(Date.now() + 60_000) : new Date(0),
           customer_id: null }], rowCount: 1 };
@@ -75,10 +81,13 @@ function harness(options: { denied?: boolean; auditFails?: boolean; staleOutcome
       throw new Error(`Unexpected global query: ${sql}`);
     } },
     "./tenant": { beginTenantTx: async (_client: any, scoped: string) => { events.push(`begin:${scoped}`); } },
-    "./inbox": { getConversation: async () => ({ customer_id: null }), listMessages: async () => [],
+    "./inbox": { OUTBOUND_PUSH_CHANNELS: ["line", "facebook", "instagram"],
+      channelSupportsPush: (channel: string) => ["line", "facebook", "instagram"].includes(channel),
+      getConversation: async () => ({ customer_id: null }), listMessages: async () => [],
       sendFollowupMessage: async () => { sends++; events.push("provider");
         return { status: "SENT", delivered: !options.uncertain && !options.deliveryFails,
-          uncertain: Boolean(options.uncertain), messageBody: "FAKE follow-up" }; } },
+          uncertain: Boolean(options.uncertain), statusUnconfirmed: Boolean(options.statusUnconfirmed),
+          messageBody: "FAKE follow-up" }; } },
     "./storeProfile": { getStoreProfile: async () => ({}) },
     "./ai": { resolveAiCredentials: async () => null },
     "./aiMetering": {}, "./aiUsage": {}, "./aiProvider": {}, "./customer360": {}, "./shopArchetypes": {},
@@ -129,6 +138,14 @@ test("uncertain delivery records review state and stops automatic follow-up retr
   assert.ok(h.events.includes("outcome:FAKE-tenant:delivery_unknown:true"));
 });
 
+test("accepted follow-up with unconfirmed DB status stops later automatic rounds", async () => {
+  const h = harness({ statusUnconfirmed: true });
+  assert.deepEqual(await h.service.runDueFollowups(tenantId),
+    { scanned: 1, sent: 1, skipped: 0, failed: 0 });
+  assert.ok(h.events.includes("outcome:FAKE-tenant:delivery_status_unconfirmed:true"));
+  assert.equal(h.sends(), 1);
+});
+
 test("confirmed delivery failure is failed work, never a sent retry round", async () => {
   const h = harness({ deliveryFails: true });
   assert.deepEqual(await h.service.runDueFollowups(tenantId),
@@ -136,6 +153,16 @@ test("confirmed delivery failure is failed work, never a sent retry round", asyn
   assert.ok(h.events.includes("audit:FAKE-tenant"));
   assert.ok(h.events.some(event => event.startsWith("history:FAKE-tenant:")));
   assert.equal(h.events.some(event => event.includes("outcome:FAKE-tenant:sent")), false);
+});
+
+test("legacy follow-up jobs on inbound-only channels stop before generating or sending", async () => {
+  for (const channel of ["web", "tiktok", "shopee", "lazada"]) {
+    const h = harness({ channel });
+    assert.deepEqual(await h.service.runDueFollowups(tenantId),
+      { scanned: 1, sent: 0, skipped: 1, failed: 0 });
+    assert.equal(h.sends(), 0);
+    assert.ok(h.events.includes("outcome:FAKE-tenant:channel_no_outbound:channel_no_outbound"));
+  }
 });
 
 test("a finished job is not rescheduled for the same customer message", async () => {

@@ -1044,6 +1044,11 @@ they belong to ops/support, not a specific shop's business data.
 **`bms_role_permissions`** — composite key `(tenant_id, role_id, permission)`; `permission` is a
 free-text string validated against the `BMS_PERMISSIONS` catalog in `lib/bms/permissions.ts`, not a
 DB-level enum. Administrator role bypasses this table entirely (hardcoded super-access in code).
+Verified self-serve shop signup creates the shop's first user with the active `Administrator`
+role; both `users.role` and `users.role_id` must agree, and missing role setup aborts signup.
+Migration `10.121` upgrades only email-verified signup owners still on `Manager` when that shop
+has no Administrator and no later `user.update` audit for the owner. Other Manager accounts are
+left unchanged. The role change and its audit row are atomic, and the session version is bumped.
 Migration `7.78` seeds `user.view`/`user.manage` here for `Manager` in every tenant, which is what
 lets a shop owner manage their own staff; *which* users they may touch is a separate code-level role
 rank (`lib/bms/staffRoles.ts`) and is not stored in this table — see the RBAC section of
@@ -1234,7 +1239,9 @@ Signup/onboarding extension (`7.42`) — the current store-profile `business_typ
 AI-facing classification, while the separate optional `business_archetype` field captures richer
 onboarding/demo defaults. `bms_pending_shop_signups.business_archetype` stores the value until email
 verification, then `verifyPendingShopSignup()` copies it into the first `bms_store_profile` row in
-the same transaction that creates the tenant and Manager account. See
+the same transaction that creates the tenant and Administrator owner. Email/password signup uses
+the shared NFKC email identity and password rules (at least 8 characters, at most 72 UTF-8 bytes).
+See
 [../ui/shop-signup-archetype-spec.md](../ui/shop-signup-archetype-spec.md).
 
 Migration `7.43` enforces the shared archetype allowlist at the database boundary (while allowing
@@ -1254,6 +1261,11 @@ the same rule for every write path. Both sides lock the tenant row before checki
 because `bms_orders.tenant_id` references that row, a concurrent first order and archetype change
 are serialized rather than both passing on stale snapshots. Demo-seed orders identified by the
 reserved `FAKE-*` customer marker do not establish this lock.
+When an archetype is selected, the profile service derives the legacy `business_type` from it even
+if a GraphQL caller submits a conflicting type. Shops without an archetype retain their editable
+legacy type. The settings form submits `tenantName` with the profile in one tenant transaction, so
+a rejected profile cannot leave a renamed `bms_tenants` row behind. Both writes and their audit
+entries commit or roll back together.
 
 Migration `7.30` also adds validated AI language/ordering/required-field/short-reply/handoff policy.
 `bms_inbound_events` is the tenant/channel/platform-event idempotency ledger, while
