@@ -2,7 +2,7 @@
 // POST /api/bms/shopee/webhook/[tenantId] — Shopee webhook ต่อร้าน
 // -------------------------------------------------------------
 // ⚠️ SCAFFOLD — โครงนี้ทำตาม pattern เดียวกับ tiktok webhook (verify
-// HMAC ด้วย channel_secret ของร้าน + parse body → pipeline → log inbox)
+// HMAC ด้วย channel_secret ของร้าน + parse body → log inbox)
 // แต่ "ชื่อ field ใน body" และ "scheme การ verify signature" ด้านล่าง
 // เป็นการเดา ยังไม่เคยตรวจกับเอกสาร Shopee Open Platform จริง —
 // ต้องแก้ parseShopeeMessages() + header signature ให้ตรง spec จริงก่อนใช้ production
@@ -13,13 +13,12 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
 import { rateLimit } from "@/lib/bms/rateLimit";
-import { logConversation, logInboundMessage, type Attachment } from "@/lib/bms/inbox";
+import { logInboundMessage, type Attachment } from "@/lib/bms/inbox";
 import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
 import crypto from "crypto";
-import { claimInboundEvent } from "@/lib/bms/inboundEvents";
+import { claimInboundEvent, releaseUnprocessedInboundEvent } from "@/lib/bms/inboundEvents";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -100,34 +99,36 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
 
   const replies = [];
   for (const m of messages) {
-    const text = (m.content?.text ?? m.message ?? "").trim();
-    if (!(await claimInboundEvent(tenantId, "shopee", m.message_id ?? m.id))) {
-      replies.push({ userId: m.from_id ?? m.sender_id, duplicate: true });
+    const sender = m?.from_id ?? m?.sender_id;
+    if ((typeof sender !== "string" && typeof sender !== "number") || !String(sender).trim())
+      return NextResponse.json({ error: "sender required" }, { status: 400 });
+    const rawText = m.content?.text ?? m.message ?? "";
+    if (typeof rawText !== "string") return NextResponse.json({ error: "invalid message text" }, { status: 400 });
+    const text = rawText.trim();
+    const eventId = m.message_id ?? m.id;
+    if ((typeof eventId !== "string" && typeof eventId !== "number") || !String(eventId).trim())
+      return NextResponse.json({ error: "message id required" }, { status: 400 });
+    if (!(await claimInboundEvent(tenantId, "shopee", eventId))) {
+      replies.push({ userId: String(sender), duplicate: true });
       continue;
     }
-    const userId = m.from_id ?? m.sender_id ?? null;
-    if (!text) {
-      const attachment = shopeeAttachment(m);
-      await logInboundMessage(tenantId, "shopee", userId, {
-        body: attachment ? "" : `[ข้อความ Shopee ชนิด ${shopeeMessageType(m)}]`,
-        attachment,
-        meta: {
-          type: shopeeMessageType(m),
-          providerMessageId: m.message_id ?? m.id ?? null,
-          unsupportedForAi: true,
-          raw: { hasAttachment: Boolean(attachment) },
-        },
-      });
-      replies.push({ userId, logged: shopeeMessageType(m) });
-      continue;
+    const userId = String(sender);
+    const attachment = text ? null : shopeeAttachment(m);
+    const savedConversationId = await logInboundMessage(tenantId, "shopee", userId, {
+      body: text || (attachment ? "" : `[ข้อความ Shopee ชนิด ${shopeeMessageType(m)}]`),
+      attachment,
+      meta: {
+        type: text ? "text" : shopeeMessageType(m),
+        providerMessageId: eventId,
+        unsupportedForAi: true,
+        raw: { hasAttachment: Boolean(attachment) },
+      },
+    });
+    if (!savedConversationId) {
+      await releaseUnprocessedInboundEvent(tenantId, "shopee", eventId);
+      throw new Error("SHOPEE_INBOUND_PERSIST_FAILED");
     }
-
-    const result = await runPipeline(text, "shopee", tenantId, userId);
-
-    await logConversation(tenantId, "shopee", userId, text, result.reply, result.quality);
-
-    // TODO(prod): ยิงกลับผ่าน Shopee Chat API ด้วย cfg.access_token (ยังไม่ implement)
-    replies.push({ userId, reply: result.reply });
+    replies.push({ userId, logged: text ? "text" : shopeeMessageType(m) });
   }
   if (replies.length > 0) await recordInboundEvent(tenantId, "shopee");
 

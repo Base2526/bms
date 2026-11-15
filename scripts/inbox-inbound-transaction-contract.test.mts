@@ -56,7 +56,7 @@ function harness(options: { failAt?: "message" | "audit"; inserted?: boolean;
     "@/lib/notifications/service": {}, "./channels": {}, "./channelHealth": {},
     "./coupons": {}, "./aiQuality": {}, "./customers": {},
     "./customerAnswerEvidence": {}, "./answerEvidenceStore": {},
-    "./failureAlert": {}, "./inboxMedia": {},
+    "./failureAlert": {}, "./inboxMedia": { safeInboxAttachmentUrl: (url: unknown) => typeof url === "string" ? url : null },
   });
   return { inbox, events };
 }

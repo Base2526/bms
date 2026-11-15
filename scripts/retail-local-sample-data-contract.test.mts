@@ -204,6 +204,7 @@ test("first-run installers pass shop type and optional Starter Catalog explicitl
   assert.match(pack, /shopArchetypes/);
   assert.match(signer, /\["shop-archetypes", "support-file"\]/);
   assert.doesNotMatch(windows, /ValidateSet\("mini_mart"/);
-  assert.match(signup, /isValidShopArchetype\(businessArchetype\)/);
+  assert.match(signup, /isValidShopArchetype\(rawArchetype\)/);
+  assert.match(signup, /const shop = parseShopChoice\(input\)/);
   assert.match(storeProfile, /isShopArchetypeAvailableForNewInstall\(merged\.businessArchetype\)/);
 });

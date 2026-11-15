@@ -6,6 +6,7 @@ import { ReloadOutlined, SettingOutlined, SoundOutlined, AudioMutedOutlined } fr
 import { useEffect, useRef, useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
+import { operatorMessage } from "@/lib/operatorMessage";
 import {
   formatKitchenElapsed,
   groupKitchenTickets,
@@ -240,7 +241,7 @@ export default function KitchenPage() {
         <Button icon={<ReloadOutlined />} onClick={() => feed.refreshNow()} loading={tickets.loading}>{t("admin_kitchen.refresh")}</Button>
       </Space>
     </Space>
-    {tickets.error && <Alert closable type="error" showIcon message={tickets.error.message} />}
+    {tickets.error && <Alert closable type="error" showIcon message={operatorMessage(tickets.error,t)} />}
     <Spin spinning={tickets.loading || moveState.loading}>
       <div className={styles.board}>
         {LANES.map((lane) => {

@@ -5,6 +5,7 @@ import { Alert, Button, Collapse, Empty, Input, Select, Space, Spin, Switch, Tab
 import { DownloadOutlined, ReloadOutlined, SaveOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/lib/i18nContext";
+import { operatorMessage } from "@/lib/operatorMessage";
 import styles from "./page.module.css";
 
 const ANALYTICS = gql`
@@ -225,7 +226,7 @@ export default function BoardGameAnalyticsPanel(props: {
         <Input type="time" disabled={row.closed} value={row.opensAt ?? ""} onChange={(event) => updateHour(row.weekday, { opensAt: event.target.value })} />
         <span>–</span><Input type="time" disabled={row.closed} value={row.closesAt ?? ""} onChange={(event) => updateHour(row.weekday, { closesAt: event.target.value })} />
       </div>)}</div>
-      {hoursQuery.error && <Alert closable type="error" message={hoursQuery.error.message} />}
+      {hoursQuery.error && <Alert closable type="error" message={operatorMessage(hoursQuery.error,t)} />}
       <Button type="primary" icon={<SaveOutlined />} disabled={hoursQuery.loading || Boolean(hoursQuery.error) || hoursLocation !== locationId} loading={saveState.loading} onClick={() => void save()}>{t("admin_board_game.analytics_save_hours")}</Button>
     </> }]} />}
   </div>;

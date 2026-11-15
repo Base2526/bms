@@ -4,6 +4,11 @@
 
 **Status: 🧪 beta — config/UI/type layer works today; webhook parsing is an unverified placeholder.**
 
+The Settings page marks these channels as unverified scaffolds. Saving a reply in Inbox does not
+send it to Shopee or Lazada and must not be presented as customer delivery.
+Inbound text and media, when accepted by the placeholder webhook, are saved for staff only.
+They do not run AI or perform customer business actions while no reply API exists.
+
 Lazada and Shopee were added as new channels in the same session, following the exact same pattern,
 so this doc covers both.
 

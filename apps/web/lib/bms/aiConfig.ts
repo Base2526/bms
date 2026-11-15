@@ -123,7 +123,7 @@ export async function setTenantAiKey(
     );
     if (actorId) await client.query(
       `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
-       VALUES($1,$2,'ai.set_key',$1,$3::jsonb)`,
+       VALUES($1,$2,'ai.set_key',$1::uuid::text,$3::jsonb)`,
       [tenantId, actorId, JSON.stringify({ provider, model })]
     );
     await client.query("COMMIT");
@@ -143,7 +143,7 @@ export async function removeTenantAiKey(tenantId: string, actorId?: string | nul
     await client.query(`DELETE FROM bms_tenant_ai_config WHERE tenant_id=$1`, [tenantId]);
     if (actorId) await client.query(
       `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
-       VALUES($1,$2,'ai.remove_key',$1,'{}'::jsonb)`,
+       VALUES($1,$2,'ai.remove_key',$1::uuid::text,'{}'::jsonb)`,
       [tenantId, actorId]
     );
     await client.query("COMMIT");

@@ -22,6 +22,7 @@ import { getTenantId } from "@/lib/bms/tenant";
 import { requireAuth } from "@/lib/auth";
 import { isPlatformAdmin } from "@/lib/bms/platform";
 import { GraphQLError } from "graphql/error";
+import { safeInboxAttachmentUrl } from "@/lib/bms/inboxMedia";
 
 const staffRef = (r: any) => r && ({
   id: r.id, name: r.name ?? null, email: r.email ?? null, avatar: r.avatar ?? null,
@@ -135,13 +136,18 @@ export const bmsInboxResolvers = {
         return {
           status: "SENT",
           delivered: res.delivered,
-          message: res.partial ? "ส่งได้บางส่วน กรุณาตรวจในช่องทางก่อนดำเนินการต่อ" :
+          needsReview: Boolean(res.partial || res.uncertain || res.statusUnconfirmed || res.deliveryFailed),
+          message: res.statusUnconfirmed ? (res.delivered
+            ? "ช่องทางตอบรับแล้ว แต่ยังบันทึกสถานะการส่งไม่ได้ กรุณาตรวจในช่องทางก่อนตอบใหม่"
+            : "ยังบันทึกผลการส่งไม่ได้ กรุณาตรวจในช่องทางก่อนตอบใหม่") :
+            res.partial ? "ส่งได้บางส่วน กรุณาตรวจในช่องทางก่อนดำเนินการต่อ" :
             res.uncertain ? "ผลการส่งไม่แน่ชัด กรุณาตรวจในช่องทางก่อนตอบใหม่" :
-            res.delivered ? "ส่งข้อความแล้ว" : "บันทึกข้อความแล้ว (ยังไม่ได้ส่งออกช่องทาง)",
+            res.deliveryFailed ? "ส่งออกไม่สำเร็จ แต่บันทึกข้อความไว้แล้ว กดส่งใหม่จากข้อความนี้ได้" :
+            res.delivered ? "ส่งข้อความแล้ว" : "บันทึกใน Inbox แล้ว ช่องทางนี้ยังไม่รองรับการส่งออกจาก Inbox",
         };
       }
       const msg: Record<string, string> = { NOT_FOUND: "ไม่พบบทสนทนา", EMPTY: "ข้อความว่าง" };
-      return { status: res.status, delivered: false, message: msg[res.status] ?? "ส่งไม่ได้" };
+      return { status: res.status, delivered: false, needsReview: false, message: msg[res.status] ?? "ส่งไม่ได้" };
     },
 
     async bmsRetryMessage(_p: unknown, args: { id: string }, ctx: any) {
@@ -152,12 +158,16 @@ export const bmsInboxResolvers = {
       if (res.status === "SENT") {
         return {
           status: "SENT", delivered: res.delivered,
-          message: res.partial ? "ส่งซ้ำได้บางส่วน กรุณาตรวจในช่องทางก่อนดำเนินการต่อ" :
+          needsReview: Boolean(res.partial || res.uncertain || res.statusUnconfirmed || !res.delivered),
+          message: res.statusUnconfirmed ? (res.delivered
+            ? "ช่องทางตอบรับแล้ว แต่ยังบันทึกสถานะการส่งไม่ได้ กรุณาตรวจในช่องทางก่อนตอบใหม่"
+            : "ยังบันทึกผลการส่งไม่ได้ กรุณาตรวจในช่องทางก่อนตอบใหม่") :
+            res.partial ? "ส่งซ้ำได้บางส่วน กรุณาตรวจในช่องทางก่อนดำเนินการต่อ" :
             res.uncertain ? "ผลการส่งซ้ำไม่แน่ชัด กรุณาตรวจในช่องทางก่อนตอบใหม่" :
             res.delivered ? "ส่งซ้ำสำเร็จ" : "ส่งไม่สำเร็จ ตรวจสถานะข้อความก่อนลองอีกครั้ง",
         };
       }
-      return { status: res.status, delivered: false, message: res.status === "NOT_FOUND"
+      return { status: res.status, delivered: false, needsReview: false, message: res.status === "NOT_FOUND"
         ? "ไม่พบข้อความ" : "ส่งซ้ำได้เฉพาะข้อความที่ส่งไม่สำเร็จ" };
     },
 
@@ -261,6 +271,7 @@ export const bmsInboxResolvers = {
 
   // field resolvers
   BmsConversation: {
+    supportsOutboundPush: (p: any) => channelSupportsPush(p.channel),
     customerRef: (p: any) => p.customer_ref ?? null,
     customerId: (p: any) => p.customer_id ?? null,
     customerName: (p: any) => p.customer_name ?? null,
@@ -299,7 +310,7 @@ export const bmsInboxResolvers = {
         return {
           id: String(m.id), direction: m.direction, body: m.body,
           sender: m.sender ?? null, createdAt: toISO(m.created_at),
-          attachment: att?.url
+          attachment: safeInboxAttachmentUrl(att?.url)
             ? { url: privateMedia ? `/api/files/${privateMedia[1]}` : att.url,
                 name: att.name ?? null, mimeType: att.mimeType ?? null, isImage: isImageMime(att.mimeType) }
             : null,

@@ -19,6 +19,7 @@ import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useI18n } from "@/lib/i18nContext";
+import { operatorMessage } from "@/lib/operatorMessage";
 import { isValidThaiTaxId } from "@/lib/bms/thaiTaxId";
 import ThaiAddressFields from "@/components/ThaiAddressFields";
 import { formatTaxDate, taxIdentityLine, taxPrintCopyLabel, type TaxPrintCopy } from "@/lib/bms/taxDocumentText";
@@ -306,7 +307,7 @@ export default function TaxDocumentsPage() {
       />
 
       {summary.error && (
-        <Alert closable type="error" showIcon style={{ marginBottom: 16 }} message={t("admin_tax_documents.load_error")} description={summary.error.message} />
+        <Alert closable type="error" showIcon style={{ marginBottom: 16 }} message={t("admin_tax_documents.load_error")} description={operatorMessage(summary.error,t)} />
       )}
 
       {s && !s.vatRegistered && (
@@ -420,7 +421,7 @@ export default function TaxDocumentsPage() {
           </Space>
         }
       >
-        {docs.error && <Alert closable type="error" showIcon message={docs.error.message} style={{ marginBottom: 12 }} />}
+        {docs.error && <Alert closable type="error" showIcon message={operatorMessage(docs.error,t)} style={{ marginBottom: 12 }} />}
         <Table
           size="small"
           rowKey="id"
@@ -573,7 +574,7 @@ export default function TaxDocumentsPage() {
         ]}
       >
         {fullInvoice.loading ? <Typography.Text>{t("admin_tax_documents.loading_full")}</Typography.Text> : (() => {
-          if (fullInvoice.error) return <Alert closable type="error" showIcon message={fullInvoice.error.message} />;
+          if (fullInvoice.error) return <Alert closable type="error" showIcon message={operatorMessage(fullInvoice.error,t)} />;
           const invoice = fullInvoice.data?.bmsFullTaxInvoiceView;
           if (!invoice) return <Empty description={t("admin_tax_documents.full_not_found")} />;
           const sellerIdentity = taxIdentityLine(invoice.seller.taxId, invoice.seller.branchCode);
@@ -644,7 +645,7 @@ export default function TaxDocumentsPage() {
         ]}
       >
         {creditNote.loading ? <Typography.Text>{t("admin_tax_documents.loading_credit")}</Typography.Text> : (() => {
-          if (creditNote.error) return <Alert closable type="error" showIcon message={creditNote.error.message} />;
+          if (creditNote.error) return <Alert closable type="error" showIcon message={operatorMessage(creditNote.error,t)} />;
           const note = creditNote.data?.bmsCreditNoteView;
           if (!note) return <Empty description={t("admin_tax_documents.credit_not_found")} />;
           // ใบที่ถูกยกเลิกไม่มีผลทางภาษี — ไม่เรนเดอร์เป็นเอกสารที่พิมพ์ได้

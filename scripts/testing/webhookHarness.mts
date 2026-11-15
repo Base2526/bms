@@ -34,9 +34,11 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
   botSync?: Function;
   profileSync?: Function;
   healthThrows?: boolean;
+  inboundSaved?: boolean;
 } = {}) {
   const calls = { claims: [] as any[][], pipeline: [] as any[][], logs: [] as any[][], deliveryStatuses: [] as any[][],
-    deliveries: [] as any[][], incidents: [] as any[], health: [] as any[][], inbound: [] as any[][], profiles: 0, botSync: [] as any[][] };
+    deliveries: [] as any[][], incidents: [] as any[], health: [] as any[][], inbound: [] as any[][], releases: [] as any[][],
+    profiles: 0, botSync: [] as any[][] };
   const verifiedExtra = { botBasicId: "@fake-shop", botInfoSyncedAt: new Date().toISOString(),
     botIdentityTokenHash: lineBotIdentity.lineBotTokenHash("FAKE-token") };
   const noop = async () => {};
@@ -52,7 +54,7 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
     "./pipeline": { runPipeline: async (...args: any[]) => { calls.pipeline.push(args); return options.pipeline ? options.pipeline(...args) : { reply: `reply:${args[0]}` }; } },
     "./inbox": {
       logConversation: async (...args: any[]) => { calls.logs.push(args); return { outboundMessageId: `FAKE-out-${calls.logs.length}` }; },
-      logInboundMessage: async (...args: any[]) => { calls.inbound.push(args); },
+      logInboundMessage: async (...args: any[]) => { calls.inbound.push(args); return options.inboundSaved === false ? null : "FAKE-conversation"; },
       notifyInboxConversationChanged() {},
       recordAiReplyDelivery: async (...args: any[]) => { calls.deliveryStatuses.push(args); },
       deliverToChannelTracked: async (...args: any[]) => {
@@ -86,13 +88,14 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
     "@/lib/bms/rateLimit": { rateLimit: async () => ({ ok: true }) },
     "@/lib/bms/channels": { getChannel: async () => ({ active: true, channel_secret: options.secret === undefined ? "FAKE-secret" : options.secret, access_token: "FAKE-token", webhook_verify_token: "FAKE-verify-token-0123456789012345", external_account_id: "123456789012345", extra: options.lineBotExtra ?? verifiedExtra }) },
     "@/lib/bms/crypto": { verifyLineSignature: () => options.signatureValid !== false, verifyMetaSignature: () => options.signatureValid !== false },
-    "@/lib/bms/inboundEvents": { claimInboundEvent: async (...args: any[]) => { calls.claims.push(args); return options.claim ? options.claim(...args) : true; } },
+    "@/lib/bms/inboundEvents": { claimInboundEvent: async (...args: any[]) => { calls.claims.push(args); return options.claim ? options.claim(...args) : true; },
+      releaseUnprocessedInboundEvent: async (...args: any[]) => { calls.releases.push(args); } },
     "@/lib/bms/pipeline": { runPipeline: async (...args: any[]) => { calls.pipeline.push(args); return options.pipeline ? options.pipeline(...args) : { reply: `reply:${args[0]}` }; } },
     "@/lib/bms/customerAnswerEvidence": { fallbackEvidenceQuality: () => ({ outcome: "FAILURE", reasonCodes: ["PIPELINE_EXCEPTION"], successfulToolCalls: 0, failedToolCalls: 0 }) },
     "@/lib/bms/inbox": {
       logConversation: async (...args: any[]) => { calls.logs.push(args); return { outboundMessageId: `FAKE-out-${calls.logs.length}` }; },
       recordAiReplyDelivery: async (...args: any[]) => { calls.deliveryStatuses.push(args); },
-      logInboundMessage: async (...args: any[]) => { calls.inbound.push(args); },
+      logInboundMessage: async (...args: any[]) => { calls.inbound.push(args); return options.inboundSaved === false ? null : "FAKE-conversation"; },
       notifyInboxConversationChanged() {},
       deliverToChannel: async (...args: any[]) => { calls.deliveries.push(args); return options.deliver ? options.deliver(...args) : true; },
     },

@@ -46,7 +46,7 @@
 | LINE | มี receive/reply/push และตรวจ identity ของ OA; ต้องตั้งค่าบัญชีร้านและทดสอบ webhook จริง | “เปิดใช้ได้ทันทีโดยไม่ต้องตั้งค่า” |
 | Facebook/Instagram | มี webhook และเส้นทางส่งผ่าน Meta; ขึ้นกับ token/permission/account ของร้าน | “ทุกบัญชีเชื่อมสำเร็จแน่นอน” |
 | Web chat | มี public webhook endpoint; client/widget ต้องเชื่อม endpoint | “มีเว็บตะกร้าซื้อเองครบแล้ว” |
-| TikTok | webhook เข้า pipeline ได้ แต่ `TODO(prod)` ที่จุดส่งกลับ และ `channelSupportsPush()` ไม่รวม TikTok | “AI ตอบและปิดการขายกลับไปใน TikTok อัตโนมัติแล้ว” |
+| TikTok | webhook บันทึกข้อความเข้า Inbox ให้พนักงานตรวจ แต่ไม่เรียก AI หรือส่งกลับ; `channelSupportsPush()` ไม่รวม TikTok | “AI ตอบและปิดการขายกลับไปใน TikTok อัตโนมัติแล้ว” |
 | Shopee/Lazada | scaffold/beta และการชำระ/จัดส่งอยู่ใน Seller Center | “ซิงก์ marketplace production ครบทั้งออร์เดอร์ สต็อก แชท และคืนเงิน” |
 
 หลักฐาน: [LINE](../integrations/line.md), [TikTok](../integrations/tiktok.md),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useUiText } from "@/lib/useUiText";
+import { operatorMessage } from "@/lib/operatorMessage";
 import { gql, useApolloClient, useQuery } from "@apollo/client";
 import { Alert, Button, Card, DatePicker, Form, Input, Modal, Select, Space, Table, Typography } from "antd";
 import { useState } from "react";
@@ -14,7 +14,6 @@ const OPENING=gql`mutation InventoryOpening($input:BmsInventoryOpeningInput!) {b
 const MENU=gql`query MenuActual($input:BmsMenuActualInput!) {bmsRestaurantMenuActual(input:$input){status errorCode complete truncated observedAt totalUnits totalContribution basis costBasis issues rows{sku size units revenue cost contribution classification popularityPercent}}}`;
 type ValueRow={sku:string;size:string;qty:string;value:string|null;unitCost:string|null;version:string};
 function Values({locationId}:{locationId:string}) {
-  const uiText = useUiText();
   const {t}=useI18n(),{can}=useBmsPermissions(),client=useApolloClient();
   const [search,setSearch]=useState(''),[page,setPage]=useState(1);
   const query=useQuery(VALUES,{variables:{locationId,search,offset:(page-1)*50,limit:50},fetchPolicy:'network-only'});
@@ -27,14 +26,14 @@ function Values({locationId}:{locationId:string}) {
     try {
       const response=await client.mutate({mutation:OPENING,variables:{input:{locationId,sku:row.sku,size:row.size,qty:row.qty,version:row.version,...review,confirmed:true}}});
       const r=response.data?.bmsConfirmInventoryValue;
-      if(r?.status!=='SAVED')throw new Error(r?.errorCode??uiText("admin_ui.en_error_0b99c"));
+      if(r?.status!=='SAVED')throw new Error(r?.errorCode??'');
       setRow(null);setReview(null);await query.refetch();
-    } catch(e) {setError(e instanceof Error?e.message:'ERROR');} finally {setBusy(false);}
+    } catch(e) {setError(operatorMessage(e,t,'write'));} finally {setBusy(false);}
   }
   const money=(v:string|null)=>v==null?t('restaurant_actual.unknown'):`฿${v}`;
   return <>
     <Alert closable type="info" message={t('restaurant_actual.opening_hint')} style={{marginBlock:12}}/>
-    {query.error||data?.status==='REJECTED'?<Alert closable type="error" message={query.error?.message??data?.errorCode}/>:null}
+    {query.error||data?.status==='REJECTED'?<Alert closable type="error" message={operatorMessage(query.error??data?.errorCode,t)}/>:null}
     <Input.Search aria-label={t('restaurant_actual.search')} placeholder={t('restaurant_actual.search')} allowClear onSearch={v=>{setSearch(v);setPage(1);}} style={{marginBlock:12}}/>
     <Table<ValueRow> loading={query.loading} rowKey={r=>JSON.stringify([r.sku,r.size])} dataSource={data?.rows??[]} scroll={{x:800}} pagination={{current:page,pageSize:50,total:data?.total??0,showSizeChanger:false,onChange:setPage}} columns={[
       {title:t('restaurant_actual.sku'),dataIndex:'sku'},{title:t('restaurant_actual.size'),dataIndex:'size'},
@@ -66,8 +65,8 @@ function Menu({month,locationId}:{month:string;locationId:string|null}) {
   return <>
     <Alert closable style={{marginBlock:12}} type="info" message={t('restaurant_actual.menu_hint')}/>
     <Select mode="tags" aria-label={t('restaurant_actual.menu_selection')} placeholder={t('restaurant_actual.menu_selection')} value={menuSkus} onChange={setMenuSkus} style={{width:'100%',marginBottom:12}}/>
-    {query.error||data?.status==='REJECTED'?<Alert closable type="error" message={query.error?.message??data?.errorCode}/>:null}
-    {data?.status==='OK'&&<Alert closable type={data.complete?'success':'warning'} message={data.complete?t('restaurant_actual.complete'):t('restaurant_actual.incomplete')} description={data.issues?.length ? t('restaurant_actual.review_issues') : undefined}/>}
+    {query.error||data?.status==='REJECTED'?<Alert closable type="error" message={operatorMessage(query.error??data?.errorCode,t)}/>:null}
+    {data?.status==='OK'&&<Alert closable type={data.complete?'success':'warning'} message={data.complete?t('restaurant_actual.complete'):t('restaurant_actual.incomplete')} description={data.issues?.length ? <>{t('restaurant_actual.review_issues')}<ul>{data.issues.map((issue:string)=><li key={issue} title={issue}>{operatorMessage(issue,t)}</li>)}</ul></> : undefined}/>}
     <Table<{sku:string;size:string;units:string;revenue:string|null;cost:string|null;contribution:string|null;classification:string}> loading={query.loading} rowKey={r=>JSON.stringify([r.sku,r.size])} dataSource={data?.rows??[]} scroll={{x:900}} pagination={{pageSize:10}} columns={[
       {title:t('restaurant_actual.sku'),dataIndex:'sku'},{title:t('restaurant_actual.size'),dataIndex:'size'},
       {title:t('restaurant_actual.qty'),dataIndex:'units'},{title:t('restaurant_actual.revenue'),dataIndex:'revenue',render:money},

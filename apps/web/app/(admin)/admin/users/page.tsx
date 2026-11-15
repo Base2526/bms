@@ -2,7 +2,7 @@
 
 import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { Table, Input, Space, Button, Tag, Popconfirm, Modal, message, Avatar, Typography, Tooltip } from "antd";
+import { Table, Input, Space, Button, Tag, Popconfirm, Modal, message, Avatar, Typography, Tooltip, Pagination, Alert } from "antd";
 import { PlusOutlined, DeleteOutlined, ReloadOutlined, EditOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
 import debounce from "lodash/debounce";
@@ -127,8 +127,8 @@ function UsersList() {
   const limit = pageSize;
   const offset = (page - 1) * pageSize;
 
-  const { data, refetch, loading } = useQuery(Q_USERS, {
-    variables: { search: "", limit, offset },
+  const { data, refetch, loading, error } = useQuery(Q_USERS, {
+    variables: { search, limit, offset },
     fetchPolicy: "cache-and-network",
   });
   // ใช้เช็คว่าแถวไหนคือบัญชีตัวเอง — ห้ามลบตัวเองทั้ง UI (ปุ่ม/checkbox) และ backend (deleteUser/deleteUsers)
@@ -184,14 +184,13 @@ function UsersList() {
       debounce(async (v: string) => {
         setPage(1);
         setSelectedRowKeys([]);
-        await refetch({ search: v, limit: pageSize, offset: 0 });
+        setSearch(v);
       }, 300),
-    [refetch, pageSize]
+    []
   );
   useEffect(() => () => debouncedSearch.cancel(), [debouncedSearch]);
   const onSearchChange = (v: string) => {
     setSearchInput(v);
-    setSearch(v);
     debouncedSearch(v);
   };
 
@@ -297,6 +296,7 @@ function UsersList() {
 
   return (
     <div>
+      {error && <Alert closable type="error" showIcon message={t("admin_users.load_error")} description={error.message} style={{ marginBottom: 12 }} />}
       <AdminPageHeader title={t("admin_users.title")}>
         <Input.Search
           placeholder={t("admin_users.search_placeholder")}
@@ -318,8 +318,9 @@ function UsersList() {
         <AdminMobileList
           loading={loading}
           dataSource={items}
+          pageSize={pageSize}
           rowKey={(r) => r.id}
-          totalText={(n) => t("admin_users.mobile_total", { n })}
+          totalText={() => t("admin_users.mobile_total", { n: total })}
           emptyText={
             search.trim()
               ? t("admin_users.empty_search")
@@ -385,13 +386,22 @@ function UsersList() {
               setPageSize(finalSize);
               setSelectedRowKeys([]);
 
-              await refetch({
-                search,
-                limit: finalSize,
-                offset: (finalPage - 1) * finalSize,
-              });
             },
           }}
+        />
+      )}
+      {isMobile && total > pageSize && (
+        <Pagination
+          simple
+          size="small"
+          current={page}
+          pageSize={pageSize}
+          total={total}
+          onChange={(nextPage) => {
+            setPage(nextPage);
+            setSelectedRowKeys([]);
+          }}
+          style={{ display: "flex", justifyContent: "center", marginTop: 12 }}
         />
       )}
     </div>

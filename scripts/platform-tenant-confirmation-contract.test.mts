@@ -24,6 +24,7 @@ test("platform tenant suspension and plan change require explicit confirmation b
       setTenantActive: async () => { calls.push("active"); return true; },
     },
     "next/headers": {}, "@/lib/auth/token": {}, "@/lib/auth/adminSession": {},
+    "@/lib/auth/identity": { normalizeEmail: (value: unknown) => String(value ?? "").trim().normalize("NFKC").toLowerCase() },
     "@/lib/auth/rateLimit": {}, "@/lib/bms/socialAuthSettings": {},
   }).bmsSaasResolvers;
   for (const confirm of [false, undefined]) {

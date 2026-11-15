@@ -35,11 +35,6 @@ const Q = gql`
   }
 `;
 
-const M_TENANT = gql`
-  mutation ($name: String, $slug: String) {
-    bmsUpdateMyTenant(name: $name, slug: $slug) { id name slug }
-  }
-`;
 const M_PROFILE = gql`
   mutation ($input: BmsStoreProfileInput!) {
     bmsUpsertStoreProfile(input: $input) { about }
@@ -123,7 +118,6 @@ export default function StoreProfileCard() {
   const [form] = Form.useForm();
   const { data, loading, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const masterBanks: Array<{ code: string; nameTh: string; nameEn: string; active: boolean }> = data?.bmsMasterBanks ?? [];
-  const [saveTenant, { loading: savingT }] = useMutation(M_TENANT);
   const [saveProfile, { loading: savingP }] = useMutation(M_PROFILE);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingCustomerDisplayBackground, setUploadingCustomerDisplayBackground] = useState(false);
@@ -203,11 +197,10 @@ export default function StoreProfileCard() {
   const onFinish = async (v: any) => {
     if (decodingPaymentQrRef.current) return;
     try {
-      // 1) ชื่อร้าน → bms_tenants (slug ปิดไม่ให้แก้ ส่ง null = คงค่าเดิม)
-      await saveTenant({ variables: { name: v.name?.trim() || null, slug: null } });
-      // 2) ข้อมูลร้านที่เหลือ → bms_store_profile
+      // Save the tenant name and profile in one server transaction.
       const input: any = {};
       for (const k of PROFILE_KEYS) input[k] = v[k] ?? null;
+      input.tenantName = v.name?.trim() || null;
       // This field is a NOT NULL boolean. Conditional form rendering may omit it while the
       // archetype data is loading, so preserve the server value instead of sending null.
       input.restaurantOrdersPaused = v.restaurantOrdersPaused
@@ -1147,7 +1140,7 @@ export default function StoreProfileCard() {
           />
 
           <Divider style={{ margin: "4px 0 16px" }} />
-          <Button type="primary" htmlType="submit" icon={<SaveOutlined />} size="large" loading={savingT || savingP}>
+          <Button type="primary" htmlType="submit" icon={<SaveOutlined />} size="large" loading={savingP}>
             {t("admin_store_profile.save_btn")}
           </Button>
         </Form>

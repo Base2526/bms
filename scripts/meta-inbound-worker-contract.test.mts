@@ -5,7 +5,7 @@ import { loadWithStubs } from "./testing/webhookHarness.mts";
 const job = { id: "job-1", tenantId: "tenant-1", channel: "facebook", eventId: "mid-1",
   externalAccountId: "123456", customerRef: "998877", messageText: "hello", attachments: [], attempts: 2 };
 
-function harness(options: { claimed?: number; active?: boolean; account?: string; expired?: boolean; mode?: string; profileThrows?: boolean; delivered?: boolean; uncertain?: boolean; partial?: boolean; statusWriteFails?: boolean } = {}) {
+function harness(options: { claimed?: number; active?: boolean; account?: string; expired?: boolean; mode?: string; profileThrows?: boolean; delivered?: boolean; uncertain?: boolean; partial?: boolean; statusWriteFails?: boolean; inboundSaved?: boolean; conversationSaved?: boolean } = {}) {
   const calls = { pipeline: 0, pipelineArgs: [] as any[][], sends: 0, profiles: 0, deliveryStatuses: [] as any[][],
     inbound: [] as any[][],
     profileNotifications: [] as any[][], incidents: [] as any[], sql: [] as string[] };
@@ -37,8 +37,8 @@ function harness(options: { claimed?: number; active?: boolean; account?: string
       return { ok: true, conversationIds: ["conversation-1"] };
     }, syncFacebookPageProfile: async () => ({ ok: true }) },
     "./pipeline": { runPipeline: async (...args: any[]) => { calls.pipeline++; calls.pipelineArgs.push(args); return { reply: "hello" }; } },
-    "./inbox": { logConversation: async () => ({ outboundMessageId: "message-1" }),
-      logInboundMessage: async (...args: any[]) => { calls.inbound.push(args); },
+    "./inbox": { logConversation: async () => options.conversationSaved === false ? null : { outboundMessageId: "message-1" },
+      logInboundMessage: async (...args: any[]) => { calls.inbound.push(args); return options.inboundSaved === false ? null : "conversation-1"; },
       notifyInboxConversationChanged: (...args: any[]) => { calls.profileNotifications.push(args); },
       recordAiReplyDelivery: async (...args: any[]) => { calls.deliveryStatuses.push(args); if (options.statusWriteFails) throw new Error("FAKE status write failed"); },
       deliverToChannelTracked: async () => { calls.sends++; return { delivered: options.delivered ?? true, providerMessageIds: [],
@@ -117,6 +117,23 @@ test("Meta text with an attachment reaches staff without asking AI to guess the 
   assert.equal(calls.inbound[0][3].body, "รูปนี้คือสินค้าอะไร");
   assert.equal(calls.inbound[0][3].meta.unsupportedForAi, true);
   assert.equal(calls.inbound[0][3].attachment.url, "https://example.test/image.jpg");
+});
+
+test("Meta media is not marked processed when the Inbox write failed", async () => {
+  const { worker, calls } = harness({ inboundSaved: false });
+  await assert.rejects(worker.processMetaInboundJob({ ...job, attachments: [
+    { type: "image", url: "https://example.test/image.jpg" },
+  ] }), /META_INBOUND_PERSIST_FAILED/);
+  assert.equal(calls.pipeline, 0);
+  assert.equal(calls.sends, 0);
+});
+
+test("Meta reply can be sent but an unrecorded turn requires manual review", async () => {
+  const { worker, calls } = harness({ conversationSaved: false });
+  await assert.rejects(worker.processMetaInboundJob(job), /META_INBOUND_PERSIST_FAILED/);
+  assert.equal(calls.pipeline, 1);
+  assert.equal(calls.sends, 1);
+  assert.equal(calls.deliveryStatuses.length, 0);
 });
 
 test("the designated Facebook Page uses presales while shops and Instagram retain commerce", async () => {

@@ -44,7 +44,20 @@ export function verifyInboxMedia(token: unknown): { tenantId: string; fileId: nu
   } catch { return null; }
 }
 
+/** Only browser-safe web URLs may be stored or sent as Inbox attachments. */
+export function safeInboxAttachmentUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const url = value.trim();
+  if (!url || url.length > 4096 || /[\x00-\x1f\\]/.test(url)) return null;
+  if (url.startsWith("/") && !url.startsWith("//")) return url;
+  try {
+    const parsed = new URL(url);
+    return (parsed.protocol === "https:" || parsed.protocol === "http:") && parsed.hostname ? url : null;
+  } catch { return null; }
+}
+
 export async function outboundInboxMediaUrl(tenantId: string, url: string): Promise<string> {
+  if (!safeInboxAttachmentUrl(url)) throw new Error("Invalid Inbox attachment URL");
   const signedMatch = SIGNED_MEDIA_URL.exec(url);
   const localMatch = LOCAL_FILE_URL.exec(url);
   if (!signedMatch && !localMatch) return url;

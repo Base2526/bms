@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import dayjs from "dayjs";
 import { useI18n } from "@/lib/i18nContext";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { operatorMessage } from "@/lib/operatorMessage";
 
 const SNAPSHOT = gql`fragment AllocationSnapshot on BmsCostAllocationSnapshot {
   version month sourceKey amount fingerprint currency salesBasis
@@ -74,10 +75,10 @@ function Worksheet() {
       const response = await client.query({ query: PREVIEW, variables: { input }, fetchPolicy: "no-cache" });
       if (!mounted.current || sequence.current !== request || formKey !== JSON.stringify(form.getFieldsValue(true))) return;
       const result = response.data?.bmsPreviewCostAllocation;
-      if (result?.status !== "READY") throw new Error(result?.errorCode ?? "COST_ALLOCATION_PREVIEW_FAILED");
+      if (result?.status !== "READY") throw new Error(result?.errorCode ?? "");
       setPreview({ ...result, input, formKey });
     } catch (error) {
-      if (mounted.current && sequence.current === request && formKey === JSON.stringify(form.getFieldsValue(true))) message.error(String(error));
+      if (mounted.current && sequence.current === request && formKey === JSON.stringify(form.getFieldsValue(true))) message.error(operatorMessage(error,t,"read"));
     } finally { if (mounted.current && sequence.current === request) setBusy(false); }
   }
   async function submit() {
@@ -88,9 +89,9 @@ function Worksheet() {
         previewFingerprint: preview.snapshot.fingerprint } } });
       if (!mounted.current || sequence.current !== request) return;
       const result = response.data?.bmsSaveCostAllocation;
-      if (result?.status !== "SAVED") throw new Error(result?.errorCode ?? "COST_ALLOCATION_SAVE_FAILED");
+      if (result?.status !== "SAVED") throw new Error(result?.errorCode ?? "");
       setSelected(null); invalidate(); await query.refetch(); message.success(t("admin_reports.cost_saved"));
-    } catch (error) { if (mounted.current && sequence.current === request) { invalidate(); message.error(String(error)); } }
+    } catch (error) { if (mounted.current && sequence.current === request) { invalidate(); message.error(operatorMessage(error,t,"write")); } }
   }
   return <>
     <Alert closable type="info" showIcon message={t("admin_reports.allocation_scope")} description={t("admin_reports.allocation_basis")} />
@@ -100,12 +101,12 @@ function Worksheet() {
       <Button loading={query.loading} disabled={saving.loading} onClick={() => { invalidate(); setSelected(null); void query.refetch().catch(() => undefined); }}>{t("admin_reports.refresh")}</Button>
     </Space>
     {query.loading ? <Spin /> : query.error || data?.status === "REJECTED" ? <Alert closable type="error" message={t("admin_reports.cost_load_error")}
-      description={query.error?.message ?? data.errorCode} /> : data?.status === "OK" && <>
+      description={operatorMessage(query.error??data.errorCode,t)} /> : data?.status === "OK" && <>
       <Alert closable type={data.complete ? "success" : "warning"} message={data.complete ? t("admin_reports.allocation_complete") : t("admin_reports.allocation_incomplete")} />
       <Typography.Paragraph>{t("admin_reports.allocation_known")}: {money(data.knownAllocated)} · {t("admin_reports.allocation_total")}: {money(data.allocatedTotal)}</Typography.Paragraph>
       <Table rowKey="sourceKey" size="small" scroll={{ x: 700 }} pagination={{ pageSize: 20 }} dataSource={data.rows} columns={[
         { title: t("admin_reports.cost_source"), dataIndex: "reference" }, { title: t("admin_reports.cost_recognized"), dataIndex: "amount", render: money },
-        { title: t("admin_reports.cost_state"), render: (_: any, row: any) => <span>{states[row.state] ?? row.state}<br />{row.issue}</span> },
+        { title: t("admin_reports.cost_state"), render: (_: any, row: any) => <span>{states[row.state] ?? row.state}{row.issue && <><br />{operatorMessage(row.issue,t)}</>}</span> },
         { title: t("admin_reports.allocation_version"), dataIndex: "version" },
         { title: "", render: (_: any, row: any) => <Button onClick={() => open(row)}>{t("admin_reports.cost_details")}</Button> },
       ]} />

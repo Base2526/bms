@@ -1,6 +1,6 @@
 "use client";
 
-import { useUiText } from "@/lib/useUiText";
+import { operatorMessage } from "@/lib/operatorMessage";
 import { gql, useApolloClient, useQuery } from "@apollo/client";
 import { Alert, Button, Form, Input, InputNumber, Modal, Select, Typography } from "antd";
 import { useState } from "react";
@@ -14,7 +14,6 @@ const CANCEL_WINDOW=gql`mutation CancelBranchPriceWindow($id:ID!){bmsCancelBranc
 type InputValues={mode:string;quantity:number;packCode?:string;locationId?:string;salesSurface?:string;startsAt?:string;endsAt?:string};
 type Snapshot={sku:string;size:string;price:number;quantity:number;mode:string;packs:unknown[];promotions:unknown[];tiers:unknown[];locationId:string|null;salesSurface:string|null;startsAt:string|null;endsAt:string|null;branchPriceWindows:Array<{id:string;price:string;starts_at:string;ends_at:string|null}>};
 export default function RestaurantPricePublish({plan,scenarioIndex}:{plan:PricePlanInput;scenarioIndex:number}) {
-  const uiText = useUiText();
   const {t}=useI18n(),{can}=useBmsPermissions(),client=useApolloClient();
   const [form]=Form.useForm();
   const locations=useQuery(LOCATIONS);
@@ -30,17 +29,17 @@ export default function RestaurantPricePublish({plan,scenarioIndex}:{plan:PriceP
       const input={...values,locationId:values.locationId||null,salesSurface:values.mode==='PROMOTION'?values.salesSurface||null:null,startsAt:dated&&values.startsAt?new Date(values.startsAt).toISOString():null,endsAt:dated&&values.endsAt?new Date(values.endsAt).toISOString():null,quantity:values.mode==='BASE'?1:values.quantity,plan,scenarioIndex};
       const {data}=await client.query({query:PREVIEW,variables:{input},fetchPolicy:'no-cache'});
       const r=data.bmsPreviewPricePublication;
-      if(r.status!=='READY')throw new Error(r.errorCode??uiText("admin_ui.en_error_0b99c"));
+      if(r.status!=='READY')throw new Error(r.errorCode??'');
       setReview({input,fingerprint:r.fingerprint,snapshot:r.snapshot,requestId:crypto.randomUUID()});
-    } catch(e) {setError(e instanceof Error && e.message==='PRICE_PUBLISH_EXCLUSIVE_CHECKOUT_UNSUPPORTED' ? t('restaurant_actual.inclusive_checkout_required') : e instanceof Error?e.message:'ERROR');} finally {setBusy(false);}
+    } catch(e) {setError(operatorMessage(e,t));} finally {setBusy(false);}
   }
   async function publish() {
     if(!review)return;setBusy(true);setError('');
     try {
       const {data}=await client.mutate({mutation:PUBLISH,variables:{input:review.input,review:{fingerprint:review.fingerprint,requestId:review.requestId,confirmed:true}}});
-      if(data?.bmsPublishPricePlan.status!=='PUBLISHED')throw new Error(data?.bmsPublishPricePlan.errorCode??uiText("admin_ui.en_error_0b99c"));
+      if(data?.bmsPublishPricePlan.status!=='PUBLISHED')throw new Error(data?.bmsPublishPricePlan.errorCode??'');
       setReview(null);setDone(true);
-    } catch(e) {setError(e instanceof Error && e.message==='PRICE_PUBLISH_EXCLUSIVE_CHECKOUT_UNSUPPORTED' ? t('restaurant_actual.inclusive_checkout_required') : e instanceof Error?e.message:'ERROR');} finally {setBusy(false);}
+    } catch(e) {setError(operatorMessage(e,t,'write'));} finally {setBusy(false);}
   }
   async function cancelWindow(id:string) {
     Modal.confirm({title:t('restaurant_actual.cancel_window_confirm'),okText:t('restaurant_actual.cancel_window'),onOk:async()=>{
@@ -48,9 +47,9 @@ export default function RestaurantPricePublish({plan,scenarioIndex}:{plan:PriceP
       try {
         const {data}=await client.mutate({mutation:CANCEL_WINDOW,variables:{id}});
         if(!['CANCELLED','ALREADY_CANCELLED'].includes(data?.bmsCancelBranchPriceWindow?.status))
-          throw new Error(data?.bmsCancelBranchPriceWindow?.errorCode??uiText("admin_ui.en_error_0b99c"));
+          throw new Error(data?.bmsCancelBranchPriceWindow?.errorCode??'');
         setReview(null);setDone(true);
-      } catch(e) {setError(e instanceof Error?e.message:uiText("admin_ui.en_error_0b99c"));} finally {setBusy(false);}
+      } catch(e) {setError(operatorMessage(e,t,'write'));} finally {setBusy(false);}
     }});
   }
   return <>

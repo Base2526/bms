@@ -5,6 +5,7 @@ import { useState } from "react";
 import dayjs from "dayjs";
 import { useI18n } from "@/lib/i18nContext";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { operatorMessage } from "@/lib/operatorMessage";
 
 const REPORT = gql`query NetProfitReport($month: String!) {
   bmsNetProfit(month: $month) { status errorCode month observedAt complete truncated eventCount basis costBasis returnBasis expenseBasis
@@ -44,7 +45,7 @@ function Result({ month }: { month: string }) {
   return <>
     <Button style={{ marginBlock: 16 }} loading={query.loading} onClick={() => void query.refetch().catch(() => undefined)}>{t("admin_reports.refresh")}</Button>
     {query.loading ? <Spin /> : query.error || data?.status !== "OK" ?
-      <Alert closable type="error" message={t("admin_reports.cost_load_error")} description={query.error?.message ?? data?.errorCode} /> : <>
+      <Alert closable type="error" message={t("admin_reports.cost_load_error")} description={operatorMessage(query.error??data?.errorCode,t)} /> : <>
         <Alert closable type={data.complete ? "success" : "warning"} message={data.complete ? t("admin_reports.net_profit_complete") : t("admin_reports.net_profit_incomplete")} />
         <Typography.Paragraph>{data.month} · {data.observedAt} · {t("admin_reports.net_profit_events")}: {data.eventCount}</Typography.Paragraph>
         <Descriptions bordered size="small" column={{ xs: 1, sm: 1, md: 2, lg: 2, xl: 2, xxl: 2 }} items={fields.map(([key, label]) => ({
@@ -58,11 +59,11 @@ function Result({ month }: { month: string }) {
         <Typography.Title level={5}>{t("admin_reports.net_profit_issues")}</Typography.Title>
         <Typography.Paragraph>{t("admin_reports.net_profit_gap_hint")}</Typography.Paragraph>
         <Table size="small" rowKey="code" scroll={{ x: 480 }} dataSource={data.issues} pagination={{ pageSize: 10 }} columns={[
-          { title: t("admin_reports.net_profit_issue_code"), dataIndex: "code" }, { title: t("admin_reports.net_profit_events"), dataIndex: "count" },
+          { title: t("admin_reports.net_profit_issue_code"), dataIndex: "code", render: (v: string) => <span title={v}>{operatorMessage(v,t)}</span> }, { title: t("admin_reports.net_profit_events"), dataIndex: "count" },
         ]} />
         <details><summary>{t("admin_reports.net_profit_samples")}</summary><Table size="small" scroll={{ x: 600 }} pagination={{ pageSize: 10 }}
           rowKey={(r: any) => JSON.stringify([r.key, r.code])} dataSource={data.samples} columns={[
-            { title: t("admin_reports.cost_source"), dataIndex: "key" }, { title: t("admin_reports.net_profit_issue_code"), dataIndex: "code" },
+            { title: t("admin_reports.cost_source"), dataIndex: "key" }, { title: t("admin_reports.net_profit_issue_code"), dataIndex: "code", render: (v: string) => <span title={v}>{operatorMessage(v,t)}</span> },
           ]} /></details>
       </>}
   </>;

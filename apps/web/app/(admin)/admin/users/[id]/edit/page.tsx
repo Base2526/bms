@@ -78,7 +78,7 @@ function FormEdit({ id }: { id: string }) {
   const uiText = useUiText();
   const { t } = useI18n();
   const [form] = Form.useForm();
-  const { data, refetch } = useQuery(Q, { variables: { id } });
+  const { data, refetch, loading: userLoading, error: userError } = useQuery(Q, { variables: { id } });
 
   // Fetch available roles
   const { data: rolesData, loading: rolesLoading, error: rolesError } = useQuery(Q_ROLES);
@@ -104,7 +104,7 @@ function FormEdit({ id }: { id: string }) {
   const canWrite = isPlatformAdmin || myRole === "Administrator" || can("user.manage");
   const isSelf = Boolean(u && myId && u.id === myId);
   const isAdministrator = myRole === "Administrator";
-  const readOnly = Boolean(meData) && !canWrite;
+  const readOnly = !canWrite;
 
   // แตะแถวที่ role สูงกว่า/เท่ากับตัวเองไม่ได้ (server ปฏิเสธที่ requireManageableTarget อยู่แล้ว —
   // เช็คที่นี่ด้วยเพื่อไม่ให้เปิด URL ตรงมาแล้วกดบันทึกเปลี่ยน role โดยไม่รู้ตัว)
@@ -127,8 +127,9 @@ function FormEdit({ id }: { id: string }) {
   const getInitialRoleId = (): string => {
     if (!u) return '';
 
-    // Prefer role_id if available
-    if (u.role_id) return u.role_id;
+    // An inactive/unknown role must be resolved by an administrator explicitly;
+    // never silently replace it with the first selectable role on save.
+    if (u.role_id && roles.some(r => r.id === u.role_id)) return u.role_id;
 
     // Fallback: match by role name for backward compatibility
     if (u.role && roles.length > 0) {
@@ -136,8 +137,7 @@ function FormEdit({ id }: { id: string }) {
       if (matchedRole) return matchedRole.id;
     }
 
-    // Default to first role or empty
-    return roles[0]?.id || '';
+    return '';
   };
 
   // Update form when user data or roles change
@@ -153,7 +153,9 @@ function FormEdit({ id }: { id: string }) {
   }, [u, roles, form]);
 
   // Loading states
-  if (!u) return <div>{t("admin_users_edit.loading_user")}</div>;
+  if (userError) return <Alert closable type="error" showIcon message={t("admin_users_edit.user_load_error")} description={userError.message} />;
+  if (userLoading && !u) return <div>{t("admin_users_edit.loading_user")}</div>;
+  if (!u) return <Alert closable type="warning" showIcon message={t("admin_users_edit.user_not_found")} />;
   if (rolesLoading) return <div>{t("admin_users_edit.loading_roles")}</div>;
   if (rolesError) {
     return (
@@ -215,6 +217,9 @@ function FormEdit({ id }: { id: string }) {
           description={t("admin_users_edit.read_only_desc")}
           style={{ marginBottom: 16 }}
         />
+      )}
+      {!getInitialRoleId() && (
+        <Alert closable type="warning" showIcon message={t("admin_users_edit.current_role_unavailable")} style={{ marginBottom: 16 }} />
       )}
       <Space direction="vertical" size={0} style={{ marginBottom: 16, color: '#888', fontSize: 13 }}>
         {u.tenantName ? <span>{t("admin_users_edit.shop_label")} <b>{u.tenantName}</b></span> : null}

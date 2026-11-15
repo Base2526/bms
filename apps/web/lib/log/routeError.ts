@@ -97,7 +97,7 @@ export function withRouteErrorLog<Args extends any[]>(
       // จำนวนครั้งยังนับครบที่ requestMetrics อยู่แล้ว
       const sourceKey = errorSourceKey(args);
       if (!shouldLog(`api|${sourceKey}|${routeName}|${detail.code ?? detail.message ?? ""}`, ERROR_WINDOW_MS)) {
-        return errorResponse(detail.message);
+        return errorResponse(detail.message, routeName, args);
       }
 
       // ไม่ await — ถ้าต้นเหตุคือฐานล่ม การรอเขียน log จะหน่วง response เปล่า ๆ
@@ -119,14 +119,21 @@ export function withRouteErrorLog<Args extends any[]>(
         }
       ));
 
-      return errorResponse(detail.message);
+      return errorResponse(detail.message, routeName, args);
     }
   });
 }
 
-function errorResponse(message: string | null) {
+function errorResponse(message: string | null, routeName: string, args: unknown[]) {
+  const request = args[0] as NextRequest | undefined;
+  const english = /^en\b/i.test(request?.headers?.get?.("accept-language") ?? "");
+  const read = /^GET\s/i.test(routeName);
   const publicMessage = process.env.NODE_ENV === "production"
-    ? "เซิร์ฟเวอร์ผิดพลาด"
+    ? read
+      ? english ? "Could not load data. Refresh this page. If the problem continues, contact support."
+        : "โหลดข้อมูลไม่ได้ กรุณารีเฟรชหน้า หากยังไม่หายให้แจ้งผู้ดูแลระบบ"
+      : english ? "The result of this action is unknown. Check the latest record before trying again. If the problem continues, contact support."
+        : "ยังยืนยันผลของรายการนี้ไม่ได้ กรุณาตรวจรายการล่าสุดก่อนกดซ้ำ หากยังไม่หายให้แจ้งผู้ดูแลระบบ"
     : (message ? String(message) : "เซิร์ฟเวอร์ผิดพลาด");
   return NextResponse.json(
     { status: "SERVER_ERROR", error: publicMessage },

@@ -79,7 +79,7 @@ export function describePosFailure(data: any, posText: PosTranslator = createPos
       return posText("บันทึกการชำระเงินไม่สำเร็จ: {v0}", { v0: data.reason });
     // เซิร์ฟเวอร์พังกลางคำขอ — บิลอาจถูกสร้างไปแล้ว ห้ามบอกให้ "ยิงใหม่" ลอย ๆ
     case "SERVER_ERROR":
-      return posText("เซิร์ฟเวอร์ผิดพลาด ({v0}) — กดชำระเงินอีกครั้ง ระบบจะใช้คีย์เดิมและไม่สร้างบิลซ้ำ", { v0: data.error ?? posText("ไม่ทราบสาเหตุ") });
+      return posText("ยังยืนยันผลการขายไม่ได้ — ตรวจบิลล่าสุดก่อน หากไม่พบบิลจึงกดชำระเงินอีกครั้ง ระบบจะใช้คำขอเดิมและไม่สร้างบิลซ้ำ");
     default:
       return data?.error ?? posText("ขายไม่สำเร็จ ({v0})", { v0: data?.status ?? posText("ไม่ทราบสาเหตุ") });
   }

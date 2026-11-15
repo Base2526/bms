@@ -6,6 +6,7 @@ import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
+import { operatorMessage } from "@/lib/operatorMessage";
 import styles from "./page.module.css";
 
 const Q_WASTAGE = gql`
@@ -85,7 +86,7 @@ export default function WastagePage() {
         </Form>
       </Card>
       <Card title={t("admin_wastage.history")} extra={<Button icon={<ReloadOutlined />} onClick={() => history.refetch()} loading={history.loading}>{t("admin_wastage.refresh")}</Button>}>
-        {history.error && <Alert closable type="error" showIcon message={history.error.message} style={{ marginBottom: 12 }} />}
+        {history.error && <Alert closable type="error" showIcon message={operatorMessage(history.error,t)} style={{ marginBottom: 12 }} />}
         <Table rowKey="id" loading={history.loading} dataSource={rows} pagination={{ pageSize: 20, showSizeChanger: false }} columns={[
           { title: t("admin_wastage.when"), dataIndex: "createdAt", width: 150, render: (value: string) => new Date(value).toLocaleString(lang === "th" ? "th-TH" : "en-GB", { dateStyle: "short", timeStyle: "short" }) },
           { title: t("admin_wastage.product"), render: (_: unknown, row: WastageRow) => <><strong>{row.productName}</strong><br /><small>{row.productSku} · {row.size}</small></> },

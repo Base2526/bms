@@ -39,6 +39,77 @@ export type ManagedUserRow = {
   is_platform_admin: boolean;
 };
 
+/** Staff contact fields are available only to self or a user.view-authorized roster read. */
+export function canReadStaffContact(
+  row: { id?: string | number; tenant_id?: string | null; __staffContactVisible?: boolean },
+  ctx: { user?: { id?: string | number }; admin?: { id?: string | number } }
+): boolean {
+  if (!row.tenant_id) return true;
+  return row.__staffContactVisible === true ||
+    String(row.id) === String(ctx?.user?.id ?? ctx?.admin?.id ?? "");
+}
+const USER_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Commit the team-account audit with the account change it describes. */
+export async function auditUserChangeInTx(
+  client: PoolClient,
+  tenantId: string,
+  actorId: string,
+  action: string,
+  targetId: string,
+  meta: Record<string, unknown>
+): Promise<void> {
+  await client.query("SELECT set_config('bms.tenant_id', $1, true)", [tenantId]);
+  await client.query(
+    `INSERT INTO bms_audit_log(tenant_id, actor, action, target, meta)
+     VALUES ($1, $2, $3, $4, $5::jsonb)`,
+    [tenantId, actorId, action, targetId, JSON.stringify(meta)]
+  );
+}
+
+/** Keep open work visible: an account with live assignments must be handed over first. */
+export async function assertNoActiveStaffAssignments(
+  client: PoolClient,
+  tenantId: string,
+  userId: string
+): Promise<void> {
+  await client.query("SELECT set_config('bms.tenant_id', $1, true)", [tenantId]);
+  const checks = [
+    ["bms_operation_runs", "assigned_to = $2 AND status NOT IN ('APPROVED','VOID')", "รายการตรวจงาน"],
+    ["bms_operation_actions", "assigned_to = $2 AND status NOT IN ('RESOLVED','VERIFIED')", "งานแก้ไข"],
+    ["bms_operation_schedules", "assigned_to = $2 AND active = TRUE", "ตารางงานประจำ"],
+    ["bms_operation_rosters", "assigned_to = $2 AND status = 'PUBLISHED' AND ends_at > now()", "ตารางเวร"],
+    ["bms_operation_handovers", "(recipient = $2 AND status = 'SUBMITTED') OR (sender = $2 AND status = 'DRAFT')", "งานส่งต่อเวร"],
+    ["bms_operation_policies", "supervisor_id = $2 AND enabled = TRUE", "ผู้รับแจ้งเตือนงาน"],
+    ["bms_operation_escalations", "recipient = $2 AND status = 'OPEN'", "งานติดตาม"],
+    ["bms_operation_quality_cases", "assigned_to = $2 AND status <> 'CLOSED'", "เคสคุณภาพ"],
+  ] as const;
+  for (const [table, predicate, label] of checks) {
+    const exists = await client.query<{ present: string | null }>(
+      "SELECT to_regclass($1) AS present", [`public.${table}`]
+    );
+    if (!exists.rows[0]?.present) continue; // Older installations may not have operations yet.
+    const found = await client.query(
+      `SELECT 1 FROM ${table} WHERE tenant_id = $1 AND (${predicate}) LIMIT 1`,
+      [tenantId, userId]
+    );
+    if (found.rowCount) {
+      throw new GraphQLError(`ลบผู้ใช้นี้ไม่ได้: ยังมี${label}ที่มอบหมายอยู่ กรุณาส่งต่องานก่อน`, {
+        extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+      });
+    }
+  }
+}
+
+export function explainUserDeleteFailure(error: unknown): never {
+  if ((error as { code?: string })?.code === "23503") {
+    throw new GraphQLError("ลบบัญชีนี้ไม่ได้ เพราะมีประวัติการทำรายการที่ต้องเก็บไว้ กรุณาคงบัญชีและปรับสิทธิ์ตามนโยบายร้าน", {
+      extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+    });
+  }
+  throw error;
+}
+
 /** ข้ามด่าน rank ทั้งหมด (platform admin / Administrator) */
 function bypasses(gate: UserAdminGate): boolean {
   return gate.platform || gate.isSuper;
@@ -66,6 +137,7 @@ async function loadTarget(
   client?: PoolClient,
   lock = false
 ): Promise<ManagedUserRow | null> {
+  if (!USER_UUID_RE.test(targetId)) return null;
   const lockSql = lock ? " FOR UPDATE" : "";
   const sql = gate.platform
     ? `SELECT id, tenant_id, role, is_platform_admin FROM users WHERE id = $1${lockSql}`
@@ -122,13 +194,8 @@ async function assertManageable(ctx: any, gate: UserAdminGate, row: ManagedUserR
 }
 
 /**
- * เวอร์ชัน batch — คืนเฉพาะแถวที่มีจริงและแตะได้
- *
- * - id ที่ resolve ไม่ได้ (ถูกลบไปแล้ว / อยู่ร้านอื่น) → **ข้ามเงียบ ๆ** เพื่อรักษาพฤติกรรมเดิมของ
- *   `deleteUsers` ที่ `WHERE id = ANY(...)` ไม่แคร์ id ที่ไม่ match ไว้ ไม่งั้นแอดมินเลือกหลายแถว
- *   แล้วมีคนอื่นลบไปก่อนหนึ่งแถว จะกลายเป็นลบไม่ได้ทั้งชุด
- * - id ที่มีจริงแต่ rank ไม่ถึง → **throw ทั้งชุด** (all-or-nothing) ไม่ลบบางส่วนเงียบ ๆ
- *   เพราะ UI ปิดเช็คบ็อกซ์แถวพวกนั้นอยู่แล้ว ถ้ามาถึงตรงนี้แปลว่ายิง request มือ
+ * เวอร์ชัน batch — ปฏิเสธทั้งชุดเมื่อแถวใดหายไป อยู่ร้านอื่น หรือแตะไม่ได้
+ * เพื่อไม่ให้คำขอลบหลายคนรายงานสำเร็จทั้งที่ลบเพียงบางคนเงียบ ๆ
  */
 export async function requireManageableTargets(
   ctx: any,
@@ -139,7 +206,7 @@ export async function requireManageableTargets(
   const rows: ManagedUserRow[] = [];
   for (const id of targetIds) {
     const row = await loadTarget(gate, id, client, Boolean(client));
-    if (!row) continue;
+    if (!row) throw notFound();
     await assertManageable(ctx, gate, row);
     rows.push(row);
   }
@@ -159,7 +226,7 @@ export async function resolveAssignableRole(
   ctx: any,
   gate: UserAdminGate,
   input: { role_id?: string | null; role?: string | null },
-  opts: { fallbackName?: string } = {},
+  opts: { fallbackName?: string; unchangedSelfRoleName?: string } = {},
   client?: PoolClient
 ): Promise<{ roleId: string; roleName: string } | null> {
   const roleId = input.role_id ? String(input.role_id) : null;
@@ -185,7 +252,19 @@ export async function resolveAssignableRole(
     });
   }
 
+  if (roleId && roleText && row.name !== roleText) {
+    throw new GraphQLError("บทบาทที่ระบุไม่ตรงกัน", {
+      extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+    });
+  }
+
   if (bypasses(gate)) return { roleId: row.id, roleName: row.name };
+
+  // Editing one's own profile may round-trip the existing role_id. This is
+  // not a grant; the caller supplied the locked current row and cannot change it.
+  if (opts.unchangedSelfRoleName === row.name && gate.actorRole === row.name) {
+    return { roleId: row.id, roleName: row.name };
+  }
 
   if (!canManageStaffRole(gate.actorRole, row.name)) {
     await audit(ctx, "user.manage_denied", null, {

@@ -69,8 +69,8 @@ function useChannels(t: (key: string, vars?: Record<string, string | number>) =>
   return useMemo(() => [
     { key: "line", label: "LINE Official Account", color: "green",
       hint: t("admin_settings.channel_line_hint"), needs: t("admin_settings.channel_line_needs"), status: "ready" },
-    { key: "tiktok", label: "TikTok", color: "magenta",
-      hint: t("admin_settings.channel_tiktok_hint"), needs: t("admin_settings.channel_tiktok_needs"), status: "ready" },
+    { key: "tiktok", label: t("admin_settings.channel_tiktok_label"), color: "magenta",
+      hint: t("admin_settings.channel_tiktok_hint"), needs: t("admin_settings.channel_tiktok_needs"), status: "inbound-only" },
     { key: "facebook", label: "Facebook Messenger", color: "blue",
       hint: t("admin_settings.channel_facebook_hint"), needs: t("admin_settings.channel_facebook_needs"), status: "ready" },
     { key: "instagram", label: "Instagram DM", color: "purple",
@@ -88,6 +88,7 @@ function useStatusMeta(t: (key: string) => string): Record<string, { color: stri
   return useMemo(() => ({
     ready: { color: "green", text: t("admin_settings.status_ready") },
     "no-token": { color: "default", text: t("admin_settings.status_no_token") },
+    "inbound-only": { color: "orange", text: t("admin_settings.status_inbound_only") },
     beta: { color: "orange", text: t("admin_settings.status_beta") },
   }), [t]);
 }

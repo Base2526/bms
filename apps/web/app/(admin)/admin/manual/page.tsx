@@ -458,6 +458,8 @@ const MENU_CARDS_TH: MenuCard[] = [
     desc: "ดูภาพรวมวันนี้, งานค้าง, สต็อกเสี่ยง, action ที่ระบบแนะนำ และสุขภาพช่องทางขาย",
     bullets: [
       "เริ่มวันจากยอดขายวันนี้, จำนวนออเดอร์, ลูกค้า, และ low stock",
+      "กดการ์ดยอดขายเพื่อเปิดรายงานช่วงวันนี้ตามเขตเวลาร้าน กดออเดอร์หรือลูกค้าเพื่อดูรายการ และกดสินค้าใกล้หมดเพื่อเปิดรายการที่ต้องตรวจในหน้าสินค้า (ต้องมีสิทธิ์ของปลายทาง)",
+      "หน้า Orders และ Customers แสดงรายการครั้งละไม่เกิน 100 แถว ถ้ามีรายการมากกว่านั้นให้กด รายการชุดถัดไป หรือใช้ช่องค้นหาเพื่อหาข้อมูลเก่า",
       "ดูการ์ดงานด่วน เช่น แชทรอ, สลิปรอตรวจ, ออเดอร์รอแพ็ก และจองสินค้าที่ใกล้หมดเวลา",
       "เลือกสาขาแล้วดูความเสี่ยงหมดสต็อก คำแนะนำซื้อ ความผิดปกติ และความแม่นยำของ forecast จากหลักฐานแยกสาขา",
       "บันทึก lost sale หรือปรับ inventory policy รายสาขาจากหน้าเดียวได้; demand/PO ที่ยังไม่ระบุสาขาจะแสดงแยกและไม่ถูกนับซ้ำ",
@@ -468,7 +470,7 @@ const MENU_CARDS_TH: MenuCard[] = [
   {
     title: "Inbox",
     desc: "รับแชท, ดู Customer 360, assign staff, ตามงานต่อจากแชท",
-    bullets: ["เริ่มงานจากแชทใหม่", "ระบบบันทึกข้อความก่อนส่งออก หากค้าง รอผลการส่ง ให้ตรวจในช่องทางก่อนตอบใหม่; ส่งได้บางส่วน หมายถึงข้อความหรือรูปสำเร็จเพียงส่วนเดียว ให้ส่งเฉพาะส่วนที่ยังขาด", "คำตอบ AI จาก LINE/Facebook/Instagram จะแสดง รอผลการส่ง แล้วเปลี่ยนเป็น ส่งแล้ว หรือ ส่งไม่สำเร็จ; เมื่อส่งไม่สำเร็จให้กด ส่งใหม่ ที่ข้อความนั้น", "ข้อความ Meta ที่มีรูปหรือไฟล์แนบพร้อมคำบรรยายจะเข้าคิว Inbox ให้พนักงานตรวจและตอบ AI จะไม่เดาเนื้อหาในไฟล์", "คำขอจากผู้สนใจ BMS ที่ให้ Sales ติดต่อกลับจะติดป้าย Sales ติดต่อกลับ อยู่บนสุดของคิวที่ยังเปิด คงผู้รับผิดชอบเดิมที่มีสิทธิ์ หรือมอบหมาย Sales ก่อน และบันทึกเมนชันให้ผู้รับผิดชอบกับ Administrator แม้ไม่ว่าง; เปิดแชทเพื่อตรวจชื่อบริษัท เรื่องที่สนใจ เบอร์และเวลาสะดวก เมื่อดำเนินการเสร็จให้ปิดบทสนทนา ระบบจะล้างป้ายติดต่อกลับ", "ข้อความลูกค้าใหม่ที่ยังไม่ได้เปิดดูจะแจ้งด้วยเสียง, toast ในระบบ และ browser notification; ถ้าเบราว์เซอร์บล็อกเสียง ระบบจะแสดงปุ่มให้เปิดเสียง", "Customer 360 สร้างออเดอร์และออกใบแจ้งหนี้ได้ตามสิทธิ์", "ออเดอร์ล่าสุดเปิดดูแบบ preview ใน Inbox ได้ก่อน และมีปุ่มเปิดหน้า Orders เต็มจอเป็นแท็บใหม่", "รูป/ไฟล์จะเข้า draft ก่อนส่งและแนบได้ครั้งละ 1 รายการ", "ข้อความ รูป ไฟล์ สินค้า และคูปองจะแสดงคนละรูปแบบ: bubble ข้อความ, การ์ดรูป, การ์ดไฟล์, การ์ดสินค้า และการ์ดคูปอง", "สินค้าแชร์ public link ให้ลูกค้าดูราคา สต็อก และ gallery ได้; ในแชทแนบเฉพาะรูป cover และกด ดูสินค้า จากการ์ดได้", "คูปองส่งเป็นข้อความ fallback พร้อมลิงก์กระเป๋าคูปอง ระบบเพิ่มสิทธิ์เข้า wallet เมื่อพนักงานกดส่งใน transaction เดียวกับข้อความ แม้ช่องทางภายนอกส่งไม่สำเร็จ ให้ตรวจผลก่อนส่งลิงก์ใหม่", "AI ตรวจคูปองจาก backend ก่อนตอบลูกค้า ถ้าโค้ดใช้ไม่ได้จะบอกเหตุผลและเสนอคูปองที่ยังใช้ได้แทน แต่จะไม่ใช้คูปองจากข้อความอิสระ", "ลิงก์ Products หลังบ้านเปิดแท็บใหม่สำหรับพนักงานและไม่ถูกส่งให้ลูกค้า", "มือถือใช้ flow รายชื่อ → แชทเต็มจอ พร้อมปุ่มย้อนกลับ", "แชทที่เปิดอยู่จะอ่านและล้าง badge อัตโนมัติเมื่อข้อความเข้า", "อยู่ท้ายแชทจะเลื่อนตามอัตโนมัติ; ถ้าอ่านย้อนหลังให้กดปุ่มข้อความใหม่เพื่อลงด้านล่าง", "ดูข้อมูลลูกค้าไม่ต้องสลับหน้า", "เหมาะกับทีมขาย/แอดมินหน้าร้าน"],
+    bullets: ["เริ่มงานจากแชทใหม่", "ระบบบันทึกข้อความก่อนส่งออก หากค้าง รอผลการส่ง ให้ตรวจในช่องทางก่อนตอบใหม่; ส่งได้บางส่วน หมายถึงข้อความหรือรูปสำเร็จเพียงส่วนเดียว ให้ส่งเฉพาะส่วนที่ยังขาด", "คำตอบ AI จาก LINE/Facebook/Instagram จะแสดง รอผลการส่ง แล้วเปลี่ยนเป็น ส่งแล้ว หรือ ส่งไม่สำเร็จ; เมื่อส่งไม่สำเร็จให้กด ส่งใหม่ ที่ข้อความนั้น", "Web/TikTok/Shopee/Lazada บันทึกข้อความจากหน้า Inbox ให้ทีมเห็นเท่านั้น ปุ่มจะแสดง บันทึกใน Inbox และไม่มีการส่งออกถึงลูกค้า; ข้อความเข้าจาก TikTok/Shopee/Lazada ให้พนักงานตอบในแอปของช่องทางนั้น ระบบไม่เรียก AI หรือทำรายการธุรกิจอัตโนมัติ; Shopee/Lazada ยังเป็นโครงทดลองที่ไม่ยืนยัน webhook กับผู้ให้บริการ", "ข้อความ Meta ที่มีรูปหรือไฟล์แนบพร้อมคำบรรยายจะเข้าคิว Inbox ให้พนักงานตรวจและตอบ AI จะไม่เดาเนื้อหาในไฟล์", "ถ้าไฟล์จาก LINE ดาวน์โหลดไม่สำเร็จ Inbox จะแจ้งว่าไฟล์ยังไม่พร้อม ให้ขอลูกค้าส่งใหม่", "คำขอจากผู้สนใจ BMS ที่ให้ Sales ติดต่อกลับจะติดป้าย Sales ติดต่อกลับ อยู่บนสุดของคิวที่ยังเปิด คงผู้รับผิดชอบเดิมที่มีสิทธิ์ หรือมอบหมาย Sales ก่อน และบันทึกเมนชันให้ผู้รับผิดชอบกับ Administrator แม้ไม่ว่าง; เปิดแชทเพื่อตรวจชื่อบริษัท เรื่องที่สนใจ เบอร์และเวลาสะดวก เมื่อดำเนินการเสร็จให้ปิดบทสนทนา ระบบจะล้างป้ายติดต่อกลับ", "ข้อความลูกค้าใหม่ที่ยังไม่ได้เปิดดูจะแจ้งด้วยเสียง, toast ในระบบ และ browser notification; ถ้าเบราว์เซอร์บล็อกเสียง ระบบจะแสดงปุ่มให้เปิดเสียง", "Customer 360 สร้างออเดอร์และออกใบแจ้งหนี้ได้ตามสิทธิ์", "ออเดอร์ล่าสุดเปิดดูแบบ preview ใน Inbox ได้ก่อน และมีปุ่มเปิดหน้า Orders เต็มจอเป็นแท็บใหม่", "รูป/ไฟล์จะเข้า draft ก่อนส่งและแนบได้ครั้งละ 1 รายการ", "ข้อความ รูป ไฟล์ สินค้า และคูปองจะแสดงคนละรูปแบบ: bubble ข้อความ, การ์ดรูป, การ์ดไฟล์, การ์ดสินค้า และการ์ดคูปอง", "สินค้าแชร์ public link ให้ลูกค้าดูราคา สต็อก และ gallery ได้; ในแชทแนบเฉพาะรูป cover และกด ดูสินค้า จากการ์ดได้", "คูปองส่งเป็นข้อความ fallback พร้อมลิงก์กระเป๋าคูปอง ระบบเพิ่มสิทธิ์เข้า wallet เมื่อพนักงานกดส่งใน transaction เดียวกับข้อความ แม้ช่องทางภายนอกส่งไม่สำเร็จ ให้ตรวจผลก่อนส่งลิงก์ใหม่", "AI ตรวจคูปองจาก backend ก่อนตอบลูกค้า ถ้าโค้ดใช้ไม่ได้จะบอกเหตุผลและเสนอคูปองที่ยังใช้ได้แทน แต่จะไม่ใช้คูปองจากข้อความอิสระ", "ลิงก์ Products หลังบ้านเปิดแท็บใหม่สำหรับพนักงานและไม่ถูกส่งให้ลูกค้า", "มือถือใช้ flow รายชื่อ → แชทเต็มจอ พร้อมปุ่มย้อนกลับ", "แชทที่เปิดอยู่จะอ่านและล้าง badge อัตโนมัติเมื่อข้อความเข้า", "อยู่ท้ายแชทจะเลื่อนตามอัตโนมัติ; ถ้าอ่านย้อนหลังให้กดปุ่มข้อความใหม่เพื่อลงด้านล่าง", "ดูข้อมูลลูกค้าไม่ต้องสลับหน้า", "เหมาะกับทีมขาย/แอดมินหน้าร้าน"],
   },
   {
     title: "Products",
@@ -503,7 +505,7 @@ const MENU_CARDS_TH: MenuCard[] = [
       "สถานะรอรับของหมายถึงยังไม่รับสินค้า รับบางส่วนหมายถึงยังมีของค้างรับ และรับครบหมายถึงรับครบใบสั่งซื้อ หากเลขล็อตหรือวันหมดอายุขัดกับสต็อก ระบบจะแจ้งรายการที่ต้องตรวจและยังไม่เพิ่มสต็อก",
       "ถ้าระบบยังยืนยันผลรับสินค้าไม่ได้ ให้กดตรวจรายการเดิมอีกครั้ง ระบบเก็บคำขอเดิมไว้ป้องกันรับซ้ำ ห้ามเริ่มรับรายการเดิมใหม่ในอีกเครื่อง ส่วนข้อความรับแล้วแต่โหลดข้อมูลล่าสุดไม่ได้ ให้โหลด PO ค้างรับก่อนทำรายการต่อ",
       "รับของจากหน้า Purchase ได้ หรือใช้ PO เดิมใน POS Receive เพื่อสแกนเป็นร่างแล้วค่อยยืนยันเข้าสต็อกสาขาของเครื่อง",
-      "งานล้งปลาเปิด /admin/fish-intake: ตั้งสินค้าเป็นชั่งน้ำหนัก หน่วย GRAM มีไซซ์และติดตามล็อตก่อน รับปลาใหม่กรอกน้ำหนักตามบิลเทียบกับรับจริง แพ/เรือ ไซซ์ สภาพและยอดเงิน ตรวจตัวอย่างแล้วยืนยัน ระบบเพิ่มสต็อกตามกรัมที่รับจริง ประวัติ Excel ต้องเลือกแท็บรายการหลัก แก้วันที่กำกวมและตรวจยอดก่อนนำเข้าโดยไม่เพิ่มสต็อก ยอดตั้งต้นใช้ปลาที่นับจริงเฉพาะ SKU/ไซซ์ที่ยังว่าง ใบรับปลาไม่บันทึกการจ่ายเงินหรือเจ้าหนี้ ต้องลงรายการเงินแยกต่างหาก",
+      "งานล้งปลาเปิด /admin/fish-intake: ให้ Administrator ตั้งสกุลเงินร้านเป็นบาท (THB) ในข้อมูลร้าน → ภูมิภาค / เวลาทำการก่อน ตั้งสินค้าเป็นชั่งน้ำหนัก หน่วย GRAM มีไซซ์และติดตามล็อตก่อน รับปลาใหม่กรอกน้ำหนักตามบิลเทียบกับรับจริง แพ/เรือ ไซซ์ สภาพและยอดเงิน ตรวจตัวอย่างแล้วยืนยัน ระบบเพิ่มสต็อกตามกรัมที่รับจริง ประวัติ Excel ต้องเลือกแท็บรายการหลัก แก้วันที่กำกวมและตรวจยอดก่อนนำเข้าโดยไม่เพิ่มสต็อก ยอดตั้งต้นใช้ปลาที่นับจริงเฉพาะ SKU/ไซซ์ที่ยังว่าง ใบรับปลาไม่บันทึกการจ่ายเงินหรือเจ้าหนี้ ต้องลงรายการเงินแยกต่างหาก",
     ],
   },
   {
@@ -542,6 +544,7 @@ const MENU_CARDS_TH: MenuCard[] = [
     bullets: [
       "Coupons ใช้สร้าง master coupon, ตั้ง quota/ขั้นต่ำ/วันใช้ได้, จำกัดสาขาที่ใช้โค้ดได้เมื่อเป็นโปรเฉพาะสาขา, และดูว่าแต่ละโค้ดถูกใช้กับใครบ้าง",
       "Follow-up Rules ใช้ตั้งกฎให้ระบบสร้างงานติดตามแบบอัตโนมัติจากพฤติกรรมลูกค้าหรือสถานะงาน",
+      "ระบบส่ง follow-up อัตโนมัติได้เฉพาะ LINE, Facebook และ Instagram; ช่องทางอื่นให้พนักงานติดต่อลูกค้าผ่านแอปของช่องทางนั้น",
       "Follow-up Queue ใช้รับงานที่ระบบสร้างแล้ว, review ข้อความ, accept, contact, หรือปิดงานพร้อมเหตุผล",
       "ถ้าข้อความ follow-up แสดง รอผลการส่ง หรือ ส่งได้บางส่วน ให้ตรวจที่ช่องทางจริงก่อนตอบใหม่ ระบบจะหยุดรอบติดตามอัตโนมัติที่เหลือของงานนั้น",
       "Restock subscriptions เป็นคิวเฉพาะสำหรับลูกค้าที่ยินยอมให้แจ้งเมื่อของกลับเข้า",
@@ -678,7 +681,8 @@ const MENU_CARDS_TH: MenuCard[] = [
     desc: "ตั้งค่าบัญชีตัวเอง, จัดการผู้ใช้ในร้าน, ดูสิทธิ์ และตรวจย้อนหลังว่าใครแก้อะไร",
     bullets: [
       "Profile ใช้ตั้งธีม, ภาษา, คำลงท้าย, รูปโปรไฟล์, และดู permission ของบัญชีตัวเอง",
-      "Users ใช้เพิ่ม/แก้พนักงานในร้านตามสิทธิ์ที่มี โดยงานละเอียดเรื่อง role ยังถูกคุมที่ permission ของ server",
+      "Users ใช้เพิ่ม/แก้พนักงานในร้านตามสิทธิ์ที่มี ผู้จัดการจัดการได้เฉพาะบทบาทที่ต่ำกว่า เช่น Sales, Warehouse และ Cashier; บัญชี Pharmacist ที่ใช้สิทธิ์ทางคลินิกต้องให้ Administrator จัดการ",
+      "สร้างบัญชีทีมงานแล้วให้ตั้ง PIN ที่ POS Devices แยกต่างหากหากต้องขายหน้าร้าน การเพิ่มผู้ใช้ยังไม่ส่งคำเชิญหรือรหัสผ่านให้พนักงานอัตโนมัติ; ก่อนลบต้องส่งต่องานที่ยังมอบหมายไว้ และแชทค้างต้องมีผู้ที่พร้อมและมีสิทธิ์ Inbox รับช่วงต่อ บัญชีที่มีประวัติธุรกรรมบางชนิดอาจลบไม่ได้",
       "Permissions ใช้ดู matrix สิทธิ์ต่อ role สำหรับร้านของคุณ ถ้าบัญชีมีสิทธิ์เข้าถึง",
       "Audit log ใช้ตรวจ action สำคัญย้อนหลัง โดยเฉพาะเรื่องเงิน สต็อก และการอนุมัติ",
       "Getting Started เหมาะกับร้านใหม่ที่ยังตั้งร้านไม่ครบและอยากเดิน checklist แบบ onboarding",
@@ -932,7 +936,7 @@ const LIMIT_GROUPS_TH: LimitGroup[] = SYSTEM_LIMITS.map((group) => ({ title: gro
 const LINK_STEPS_TH: LinkStep[] = [
   {
     title: "ตั้งร้านใหม่แบบมี checklist",
-    description: <>เปิด <Link href={ROUTES.gettingStarted}>Getting Started</Link> เพื่อไล่ setup ร้าน, ช่องทางขาย, สินค้า, และ onboarding step ที่ยังไม่ครบ</>,
+    description: <>สมัครที่ /shop-signup และยืนยันอีเมลก่อน ผู้สมัครเป็น Administrator ของร้าน จึงตั้งค่าร้านและจัดการสิทธิ์ทีมได้ จากนั้นเปิด <Link href={ROUTES.gettingStarted}>Getting Started</Link> เพื่อไล่ setup ร้าน, ช่องทางขาย, สินค้า, และ onboarding step ที่ยังไม่ครบ</>,
   },
   {
     title: "ดูภาพรวมและ action ที่ควรทำวันนี้",
@@ -1022,7 +1026,8 @@ const LINK_STEPS_TH: LinkStep[] = [
         ประเทศ/สกุลเงิน — AI จะใช้ตอบลูกค้า เช่น “ร้านชื่ออะไร/เปิดกี่โมง” “โอนเข้าบัญชีไหน” “ค่าส่งเท่าไหร่” และจะยกตัวอย่าง/ถามต่อให้เข้ากับประเภทร้านจากข้อมูลจริง ไม่เดา
         · หน้า <b>/shop-signup</b> มีตัวเลือก <b>archetype ร้าน</b> แบบ optional เพื่อเตรียม
         หมวดสินค้า/ข้อมูลตัวอย่าง/คำแนะนำเริ่มต้นให้เหมาะกับร้าน และใช้ชู flow
-        <b> restock subscriptions</b> สำหรับร้านที่เสียยอดขายจากของหมดบ่อย
+        <b> restock subscriptions</b> สำหรับร้านที่เสียยอดขายจากของหมดบ่อย · ระบบบันทึกชื่อร้านกับข้อมูลร้านพร้อมกัน
+        และจะล็อกรูปแบบร้านเมื่อมีออร์เดอร์จริงครั้งแรก
       </>
     ),
   },
@@ -1791,7 +1796,9 @@ const MENU_CARDS_EN: MenuCard[] = [
       "Start the day from new chats",
       "AI replies on LINE, Facebook, and Instagram show Delivery pending, then Sent or Send failed; use Resend on a failed message",
       "A reply is saved before the provider call. If it remains Delivery pending, check the provider channel before replying again. Partly sent means one part of a text/image reply was accepted; review the channel and send only what is missing",
+      "TikTok, Shopee, and Lazada inbound messages go to staff only. Reply in the provider app; BMS does not run AI or commit a customer business action for these channels until outbound messaging exists",
       "Meta messages with an image or file and a caption go to staff in Inbox; AI does not guess the media content",
+      "If a LINE file cannot be downloaded, Inbox says so; ask the customer to send it again",
       "BMS prospects who explicitly request a Sales callback are labelled Sales callback, stay above ordinary open work, keep their eligible assignee or are assigned Sales-first, and create durable mentions for the assignee and Administrators even when unavailable; review company, topic, phone, and convenient time, then close the conversation after completing the follow-up to clear callback priority",
       "A new unread customer message triggers sound, an in-app toast, and a browser notification; if the browser blocks audio, the app shows a button to enable it",
       "Customer 360 can create orders and print invoices, subject to your permissions",
@@ -1842,7 +1849,7 @@ const MENU_CARDS_EN: MenuCard[] = [
       "Awaiting receipt means nothing has been received; partially received means some items remain; fully received means the PO is complete. A lot or expiry conflict identifies the item to review and does not add stock",
       "If a receipt outcome is unknown, retry the same receipt. The retained request prevents duplicate stock; do not recreate it on another register. If receipt succeeded but refresh failed, reload outstanding POs before continuing",
       "You can receive from the Purchase page, or reopen the same PO in POS Receive to scan a draft and confirm it into the register branch",
-      "Fish dock: open /admin/fish-intake after configuring weighted GRAM products with variants and lots. A new receipt compares bill and actual kg, captures supplier/vessel, size, grade and reviewed THB, then adds actual grams only after confirmation. Historical Excel import reviews the primary detail sheet, ambiguous dates and totals without adding current stock. Opening stock uses a physical count only for empty SKU/size balances. Fish receipt does not record a cash payment or payable; record money separately.",
+      "Fish dock: an Administrator first sets store currency to THB in Store settings → Region / hours. Open /admin/fish-intake after configuring weighted GRAM products with variants and lots. A new receipt compares bill and actual kg, captures supplier/vessel, size, grade and reviewed THB, then adds actual grams only after confirmation. Historical Excel import reviews the primary detail sheet, ambiguous dates and totals without adding current stock. Opening stock uses a physical count only for empty SKU/size balances. Fish receipt does not record a cash payment or payable; record money separately.",
     ],
   },
   {
@@ -1881,6 +1888,7 @@ const MENU_CARDS_EN: MenuCard[] = [
     bullets: [
       "Coupons manages master coupon setup, quotas, minimum spend, valid dates, branch-specific scope when a promotion is local to a branch, and each coupon's real redemptions",
       "Follow-up Rules defines when the system should create follow-up work from customer behavior or business state",
+      "Automatic follow-ups run only for LINE, Facebook, and Instagram; other channels need staff to contact the customer in the provider app",
       "Follow-up Queue is where staff review, accept, contact, or close those generated tasks with a reason",
       "If a follow-up shows Delivery pending or Partly sent, check the provider channel before replying again. The scheduler stops later automatic attempts for that job",
       "Restock subscriptions remain the dedicated queue for customers who explicitly opted in for back-in-stock updates",
@@ -2004,7 +2012,8 @@ const MENU_CARDS_EN: MenuCard[] = [
     desc: "Manage your own account settings, staff users, permissions visibility, and historical admin actions",
     bullets: [
       "Profile stores theme, language, polite particle, avatar, and the permissions visible to your own account",
-      "Users lets a shop add or edit staff accounts when the role has that access",
+      "Users lets a shop add or edit staff accounts when the role has that access. Managers can manage lower roles such as Sales, Warehouse and Cashier; an Administrator manages protected clinical Pharmacist accounts.",
+      "Set a separate PIN in POS Devices for counter work. Adding a user does not automatically send an invitation or password. Reassign active work before deletion; open chats need another available staff member with Inbox view and reply access. Historical transactions may prevent deletion.",
       "Permissions gives the role-permission matrix for the current tenant when the account is allowed to see it",
       "Audit log helps investigate important actions such as money movement, stock changes, and approvals",
       "Getting Started is the onboarding checklist for new shops that still need to finish the first setup steps",
@@ -2250,7 +2259,7 @@ const LIMIT_GROUPS_EN: LimitGroup[] = SYSTEM_LIMITS.map((group) => ({ title: gro
 const LINK_STEPS_EN: LinkStep[] = [
   {
     title: "Set up a new shop with a checklist",
-    description: <>Open <Link href={ROUTES.gettingStarted}>Getting Started</Link> to walk through shop setup, channels, products, and any onboarding steps that are still incomplete.</>,
+    description: <>Sign up at /shop-signup and verify your email first. The signup owner is the shop Administrator and can manage settings and staff access. Then open <Link href={ROUTES.gettingStarted}>Getting Started</Link> to walk through shop setup, channels, products, and any onboarding steps that are still incomplete.</>,
   },
   {
     title: "See today's overview and suggested actions",
@@ -2347,7 +2356,8 @@ const LINK_STEPS_EN: LinkStep[] = [
         follow-up questions to your business type using real data rather than guessing · the <b>/shop-signup</b> page
         has an optional <b>shop archetype</b> that prioritizes suitable product templates, stock capabilities, navigation, sample data, and starter tips while keeping existing or manually enabled capabilities visible,
         and highlights the
-        <b> restock subscriptions</b> flow for shops that regularly lose sales to stock-outs
+        <b> restock subscriptions</b> flow for shops that regularly lose sales to stock-outs. The shop name
+        and profile save together, and the archetype locks after the first real order.
       </>
     ),
   },

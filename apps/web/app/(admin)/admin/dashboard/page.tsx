@@ -157,8 +157,11 @@ function channelState(cfg: any, health: any, t: (key: string) => string): { tone
   return { tone: "bad", text: healthKey[status] ? t(healthKey[status]) : status };
 }
 
-function KpiCard({ title, value, hint, icon }: { title: string; value: string | number; hint: string; icon: React.ReactNode }) {
-  return (
+function KpiCard({ title, value, hint, icon, href, detailLabel }: {
+  title: string; value: string | number; hint: string; icon: React.ReactNode;
+  href?: string; detailLabel?: string;
+}) {
+  const card = (
     <Card style={{ height: "100%", borderRadius: 8 }} styles={{ body: { padding: "10px 12px" } }}>
       <Space direction="vertical" size={2} style={{ width: "100%" }}>
         <div className={styles.kpiHead}>
@@ -167,9 +170,11 @@ function KpiCard({ title, value, hint, icon }: { title: string; value: string | 
         </div>
         <div className={styles.kpiValue}>{value}</div>
         <Text type="secondary" className={styles.kpiHint}>{hint}</Text>
+        {href && detailLabel && <span className={styles.kpiMore}>{detailLabel} →</span>}
       </Space>
     </Card>
   );
+  return href ? <Link href={href} className={styles.kpiLink} aria-label={`${title}: ${value}. ${detailLabel ?? ""}`}>{card}</Link> : card;
 }
 
 type Tier = "crit" | "warn" | "info";
@@ -300,6 +305,7 @@ export default function Page() {
   const packing = countOf(ordersByStatus, "PACKING");
   const shipped = countOf(ordersByStatus, "SHIPPED");
   const completed = countOf(ordersByStatus, "COMPLETED");
+  const today = d?.salesDaily?.at(-1)?.day;
   const maxRev = Math.max(1, ...(d?.salesDaily || []).map((x: any) => x.revenue));
 
   // ===== "ต้องทำตอนนี้" — รวม alert/action ที่เคยกระจายกัน 8 กล่องเป็นลิสต์เดียว เรียงตามความรุนแรงจริง
@@ -420,16 +426,20 @@ export default function Page() {
 
       <Row gutter={[8, 8]} style={{ marginBottom: 8 }}>
         <Col xs={12} xl={6}>
-          <KpiCard title={t("admin_dashboard.kpi_revenue_today")} value={baht(d?.revenueToday)} hint={t("admin_dashboard.kpi_revenue_total_hint", { value: baht(d?.revenueTotal) })} icon={<DollarOutlined />} />
+          <KpiCard title={t("admin_dashboard.kpi_revenue_today")} value={baht(d?.revenueToday)} hint={t("admin_dashboard.kpi_revenue_total_hint", { value: baht(d?.revenueTotal) })} icon={<DollarOutlined />}
+            href={today ? `/admin/reports?from=${today}&to=${today}&source=dashboard-kpi#sales-summary` : undefined} detailLabel={t("admin_dashboard.view_details")} />
         </Col>
         <Col xs={12} xl={6}>
-          <KpiCard title={t("admin_dashboard.kpi_order_count")} value={d?.orderCount ?? 0} hint={t("admin_dashboard.kpi_order_hint", { completed, shipped })} icon={<ShoppingCartOutlined />} />
+          <KpiCard title={t("admin_dashboard.kpi_order_count")} value={d?.orderCount ?? 0} hint={t("admin_dashboard.kpi_order_hint", { completed, shipped })} icon={<ShoppingCartOutlined />}
+            href={can("order.view") ? "/admin/orders" : undefined} detailLabel={t("admin_dashboard.view_details")} />
         </Col>
         <Col xs={12} xl={6}>
-          <KpiCard title={t("admin_dashboard.kpi_customer_count")} value={d?.customerCount ?? 0} hint={t("admin_dashboard.kpi_people_unit")} icon={<TeamOutlined />} />
+          <KpiCard title={t("admin_dashboard.kpi_customer_count")} value={d?.customerCount ?? 0} hint={t("admin_dashboard.kpi_people_unit")} icon={<TeamOutlined />}
+            href={can("customer.view") ? "/admin/customers" : undefined} detailLabel={t("admin_dashboard.view_details")} />
         </Col>
         <Col xs={12} xl={6}>
-          <KpiCard title={t("admin_dashboard.kpi_low_stock")} value={t("admin_dashboard.kpi_items_unit", { n: d?.lowStockCount ?? 0 })} hint={t("admin_dashboard.kpi_low_stock_hint")} icon={<InboxOutlined />} />
+          <KpiCard title={t("admin_dashboard.kpi_low_stock")} value={t("admin_dashboard.kpi_items_unit", { n: d?.lowStockCount ?? 0 })} hint={t("admin_dashboard.kpi_low_stock_hint")} icon={<InboxOutlined />}
+            href={can("product.view") ? "/admin/products#low-stock" : undefined} detailLabel={t("admin_dashboard.view_details")} />
         </Col>
       </Row>
 

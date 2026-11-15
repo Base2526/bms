@@ -6,9 +6,11 @@ import path from "node:path";
 import {
   canManageUserTarget,
   canViewUserTarget,
+  canManageStaffRole,
   type UserAdminPolicyActor,
   type UserAdminPolicyTarget,
 } from "../apps/web/lib/bms/staffRoles.ts";
+import { assertNoActiveStaffAssignments, auditUserChangeInTx, canReadStaffContact, explainUserDeleteFailure, requireManageableTargets, resolveAssignableRole } from "../apps/web/lib/bms/userAdmin.ts";
 import { isSessionVersionCurrent } from "../apps/web/lib/auth/sessionVersion.ts";
 import {
   buildPasswordResetUrl,
@@ -66,6 +68,82 @@ test("tenant Manager can manage only lower-ranked non-platform users in its tena
   assert.equal(canManageUserTarget(manager, target({ role: "Administrator" })), false);
   assert.equal(canManageUserTarget(manager, target({ tenantId: T2, role: "Sales" })), false);
   assert.equal(canManageUserTarget(manager, target({ role: "Sales", isPlatformAdmin: true })), false);
+  assert.equal(canManageStaffRole("Manager", "Cashier"), true);
+  assert.equal(canManageStaffRole("Manager", "Pharmacist"), false);
+});
+
+test("self profile edit accepts the unchanged locked role but rejects conflicting role inputs", async () => {
+  const gate = { platform: false, tenantId: T1, actorId: T2, actorRole: "Manager", isSuper: false };
+  const roleId = "33333333-3333-4333-8333-333333333333";
+  const client = { query: async () => ({ rows: [{ id: roleId, name: "Manager" }] }) } as any;
+  assert.deepEqual(
+    await resolveAssignableRole({}, gate, { role_id: roleId }, { unchangedSelfRoleName: "Manager" }, client),
+    { roleId, roleName: "Manager" }
+  );
+  await assert.rejects(
+    resolveAssignableRole({}, gate, { role_id: roleId, role: "Administrator" },
+      { unchangedSelfRoleName: "Manager" }, client),
+    /บทบาทที่ระบุไม่ตรงกัน/
+  );
+});
+
+test("bulk team changes fail closed when any selected user is missing or outside the tenant", async () => {
+  const ownId = "33333333-3333-4333-8333-333333333333";
+  const otherId = "44444444-4444-4444-8444-444444444444";
+  const gate = { platform: false, tenantId: T1, actorId: T2, actorRole: "Manager", isSuper: false };
+  const queries: string[] = [];
+  const client = { query: async (sql: string, params: unknown[]) => {
+    queries.push(sql);
+    assert.match(sql, /tenant_id = \$2/);
+    assert.equal(params[1], T1);
+    return { rows: params[0] === ownId ? [{ id: ownId, tenant_id: T1, role: "Sales", is_platform_admin: false }] : [] };
+  } } as any;
+  await assert.rejects(requireManageableTargets({}, gate, [ownId, otherId], client), /user not found in current tenant/);
+  assert.equal(queries.length, 2);
+});
+
+test("team audit is written through the caller transaction and a failure propagates", async () => {
+  const calls: unknown[][] = [];
+  const client = { query: async (sql: string, params: unknown[]) => {
+    if (sql.includes("set_config")) return { rows: [] };
+    assert.match(sql, /INSERT INTO bms_audit_log/);
+    calls.push(params);
+    if (params[3] === "fail") throw new Error("audit unavailable");
+  } } as any;
+  await auditUserChangeInTx(client, T1, T2, "user.create", "ok", { role: "Sales" });
+  assert.deepEqual(calls[0], [T1, T2, "user.create", "ok", '{"role":"Sales"}']);
+  await assert.rejects(auditUserChangeInTx(client, T1, T2, "user.delete", "fail", {}), /audit unavailable/);
+});
+
+test("active team assignments block account deletion before Inbox reassignment", async () => {
+  const calls: string[] = [];
+  const client = { query: async (sql: string, params: unknown[]) => {
+    calls.push(sql);
+    if (sql.includes("to_regclass")) return { rows: [{ present: String(params[0]) }] };
+    if (sql.includes("FROM bms_operation_schedules")) return { rowCount: 1, rows: [{ "?column?": 1 }] };
+    return { rowCount: 0, rows: [] };
+  } } as any;
+  await assert.rejects(assertNoActiveStaffAssignments(client, T1, T2), /ตารางงานประจำ/);
+  assert.ok(calls.some((sql) => sql.includes("set_config('bms.tenant_id'")));
+  assert.ok(calls.some((sql) => sql.includes("tenant_id = $1")));
+  assert.throws(() => explainUserDeleteFailure({ code: "23503" }), /มีประวัติการทำรายการ/);
+});
+
+test("social user discovery excludes staff accounts and private contact fields", () => {
+  const resolver = src("apps/web/graphql/resolvers.ts");
+  assert.match(resolver, /tenant_id IS NULL AND is_platform_admin = FALSE/);
+  assert.match(resolver, /"id, name, avatar, role, role_id, created_at, username, language, notifications_enabled, is_platform_admin"/);
+  assert.match(resolver, /FROM users WHERE id=\$1 AND tenant_id IS NULL AND is_platform_admin=FALSE/);
+  assert.match(resolver, /FROM users u\s+WHERE u\.tenant_id IS NULL AND u\.is_platform_admin = FALSE AND \(/);
+  assert.match(resolver, /roles: async \(_:\s*any, __:\s*any, ctx:\s*any\) => \{\s*await requireUserAdmin\(ctx, "user\.view"\)/);
+  assert.match(resolver, /user_count: async \(parent: any, _: any, ctx: any\) =>[\s\S]*?AND tenant_id = \$2 AND is_platform_admin = FALSE/);
+  assert.match(resolver, /email: \(parent: any, _: any, ctx: any\) => canReadStaffContact/);
+  assert.match(resolver, /phone: \(parent: any, _: any, ctx: any\) => canReadStaffContact/);
+  assert.equal(canReadStaffContact({ id: T1, tenant_id: T2 }, { user: { id: T1 } }), true);
+  assert.equal(canReadStaffContact({ id: T1, tenant_id: T2 }, { user: { id: T2 } }), false);
+  assert.equal(canReadStaffContact({ id: T1, tenant_id: T2 }, { admin: { id: T2 } }), false);
+  assert.equal(canReadStaffContact({ id: T1, tenant_id: T2, __staffContactVisible: true }, { admin: { id: T2 } }), true);
+  assert.match(src("apps/web/app/(main)/chat/page.tsx"), /users\(search: \$q, limit: 100\)\s*\{\s*items/);
 });
 
 test("admin session version invalidates tokens issued before a security change", () => {

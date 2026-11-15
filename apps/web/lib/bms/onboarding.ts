@@ -85,7 +85,7 @@ export async function updateOnboardingProgress(input: {
     if (input.editorId) {
       await client.query(
         `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
-         VALUES($1,$2,'onboarding.progress_update',$1,$3::jsonb)`,
+         VALUES($1,$2,'onboarding.progress_update',$1::uuid::text,$3::jsonb)`,
         [input.tenantId, input.editorId, JSON.stringify({
           completed: result.completed, skipped: result.skipped, dismissed: Boolean(result.dismissedAt),
         })]

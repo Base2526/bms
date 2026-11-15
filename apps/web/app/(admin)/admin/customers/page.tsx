@@ -50,8 +50,8 @@ type Customer = {
 };
 
 const Q_CUSTOMERS = gql`
-  query ($search: String, $enrolledLocationId: ID) {
-    bmsCustomers(search: $search, enrolledLocationId: $enrolledLocationId, limit: 100) {
+  query ($search: String, $enrolledLocationId: ID, $offset: Int) {
+    bmsCustomers(search: $search, enrolledLocationId: $enrolledLocationId, limit: 101, offset: $offset) {
       id name phone note tags total_spent order_count created_at
       identities { channel external_ref }
       addresses { id label address is_default province postcode provinceCode districtCode subdistrictCode }
@@ -153,6 +153,7 @@ function CustomersManagement() {
   const selectedProvinceCode = Form.useWatch("provinceCode", addrForm);
   const selectedDistrictCode = Form.useWatch("districtCode", addrForm);
   const [search, setSearch] = useState("");
+  const [offset, setOffset] = useState(0);
   const [enrolledLocationId, setEnrolledLocationId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
@@ -163,7 +164,7 @@ function CustomersManagement() {
   const [reviewMerge, setReviewMerge] = useState(false);
 
   const customersQuery = useQuery(Q_CUSTOMERS, {
-    variables: { search: search || null, enrolledLocationId },
+    variables: { search: search || null, enrolledLocationId, offset },
     fetchPolicy: "cache-and-network",
   });
   useVisibleQueryRefresh(customersQuery);
@@ -209,7 +210,9 @@ function CustomersManagement() {
     onError: onErr,
   });
 
-  const customers: Customer[] = data?.bmsCustomers || [];
+  const fetchedCustomers: Customer[] = data?.bmsCustomers || [];
+  const customers = fetchedCustomers.slice(0, 100);
+  const hasOlderCustomers = fetchedCustomers.length > 100;
 
   const openCreate = () => { setEditing(null); form.resetFields(); form.setFieldsValue({ tags: [] }); setModalOpen(true); };
   const openEdit = (c: Customer) => {
@@ -341,13 +344,13 @@ function CustomersManagement() {
           <h2 style={{ margin: 0 }}>{uiText("admin_ui.en_customers_crm_2e0cd")}</h2>
           <Space wrap>
             <Input.Search placeholder={t("admin_customers.search_placeholder")} allowClear style={{ width: 220 }}
-              onSearch={(v) => setSearch(v)} onChange={(e) => !e.target.value && setSearch("")} />
+              onSearch={(v) => { setOffset(0); setSearch(v); }} onChange={(e) => { if (!e.target.value) { setOffset(0); setSearch(""); } }} />
             <Select
               allowClear
               value={enrolledLocationId ?? undefined}
               placeholder={t("admin_customers.filter_enrollment_branch")}
               style={{ minWidth: 220 }}
-              onChange={(value) => setEnrolledLocationId(value ?? null)}
+              onChange={(value) => { setOffset(0); setEnrolledLocationId(value ?? null); }}
               options={(locationData?.bmsCustomerLocations ?? []).map((location: any) => ({
                 value: location.id,
                 label: `${location.name} (${location.branchCode})`,
@@ -363,6 +366,7 @@ function CustomersManagement() {
         message={t("admin_customers.info_banner")} />
 
       <Table
+        key={`${search}-${enrolledLocationId}-${offset}`}
         rowKey="id" loading={loading} dataSource={customers} columns={columns}
         scroll={{ x: "max-content" }}
         expandable={{
@@ -378,8 +382,21 @@ function CustomersManagement() {
             />
           ) : null,
         }}
-        pagination={{ pageSize: 20, showTotal: (t) => uiText("admin_ui.en_total_customer_s_2a0e8", { v0: t }) }}
+        pagination={{ pageSize: 20, showTotal: (count) => (offset > 0 || hasOlderCustomers)
+          ? t("admin.batch_loaded", { count })
+          : uiText("admin_ui.en_total_customer_s_2a0e8", { v0: count }) }}
       />
+      {(offset > 0 || hasOlderCustomers) && (
+        <Space wrap style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
+          <Button disabled={loading || offset === 0} onClick={() => setOffset(Math.max(0, offset - 100))}>
+            {t("admin.batch_previous")}
+          </Button>
+          <Text type="secondary">{t("admin.batch_range", { from: offset + 1, to: offset + customers.length })}</Text>
+          <Button disabled={loading || !hasOlderCustomers} onClick={() => setOffset(offset + 100)}>
+            {t("admin.batch_next")}
+          </Button>
+        </Space>
+      )}
 
       {/* modal แก้ไข/สร้างลูกค้า */}
       <Modal title={editing ? t("admin_customers.modal_edit_title", { name: editing.name }) : t("admin_customers.modal_create_title")} open={modalOpen}

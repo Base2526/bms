@@ -105,6 +105,10 @@ import { requirePermission } from "@/lib/bms/permissions";
 import { audit } from "@/lib/bms/audit";
 import { assertSocialAuthAvailable } from "@/lib/bms/socialAuthSettings";
 import {
+  assertNoActiveStaffAssignments,
+  auditUserChangeInTx,
+  canReadStaffContact,
+  explainUserDeleteFailure,
   requireManageableTarget,
   requireManageableTargets,
   resolveAssignableRole,
@@ -819,14 +823,15 @@ const rawResolvers = {
   JSON: GraphQLJSON,
   Upload: GraphQLUpload,
   Role: {
-    user_count: async (parent: any) => {
+    user_count: async (parent: any, _: any, ctx: any) => {
       const roleId = parent?.id;
       if (!roleId) return 0;
-      
+      const { platform, tenantId } = await requireUserAdmin(ctx, "user.view");
       try {
         const { rows } = await query(
-          `SELECT COUNT(*)::int AS count FROM users WHERE role_id = $1`,
-          [roleId]
+          `SELECT COUNT(*)::int AS count FROM users WHERE role_id = $1
+             ${platform ? "" : "AND tenant_id = $2 AND is_platform_admin = FALSE"}`,
+          platform ? [roleId] : [roleId, tenantId]
         );
         return rows[0]?.count || 0;
       } catch (err) {
@@ -836,6 +841,8 @@ const rawResolvers = {
     },
   },
   User: {
+    email: (parent: any, _: any, ctx: any) => canReadStaffContact(parent, ctx) ? parent?.email ?? null : null,
+    phone: (parent: any, _: any, ctx: any) => canReadStaffContact(parent, ctx) ? parent?.phone ?? null : null,
     themePreference: (parent: any) => parent?.themePreference ?? parent?.theme_preference ?? null,
     roleDetails: async (parent: any) => {
       const roleId = parent?.role_id;
@@ -855,7 +862,7 @@ const rawResolvers = {
     // ให้ platform admin เห็นว่า user นี้เป็นของร้านไหน (หน้า /admin/users แสดง user ข้ามร้านได้
     // แต่ไม่เคยบอกว่า user เป็นของร้านไหนเลย) — user ที่ไม่มี tenant_id (เช่นบัญชีระบบเก่า) คืน null
     tenantName: async (parent: any) => {
-      if (!parent?.tenant_id) return null;
+      if (!parent?.tenant_id || !parent?.__staffContactVisible) return null;
       try {
         return await getTenantName(parent.tenant_id);
       } catch (err) {
@@ -1727,8 +1734,7 @@ const rawResolvers = {
       };
     },
     roles: async (_: any, __: any, ctx: any) => {
-      const { author_id } = requireAuth(ctx, { optionalWeb: true, optionalAndroid: true });
-      console.log('[Query] roles:', author_id);
+      await requireUserAdmin(ctx, "user.view");
 
       try {
         const { rows } = await query(
@@ -1743,8 +1749,7 @@ const rawResolvers = {
       }
     },
     role: async (_: any, { id }: { id: string }, ctx: any) => {
-      const { author_id } = requireAuth(ctx, { optionalWeb: true, optionalAndroid: true });
-      console.log('[Query] role:', author_id, id);
+      await requireUserAdmin(ctx, "user.view");
 
       try {
         const { rows } = await query(
@@ -1778,11 +1783,12 @@ const rawResolvers = {
       if (search) {
         params.push(`%${search}%`);
         const p = `$${params.length}`;
-        conds.push(`(name ILIKE ${p} OR phone ILIKE ${p} OR email ILIKE ${p})`);
+        conds.push(auth.scope === "admin"
+          ? `(name ILIKE ${p} OR phone ILIKE ${p} OR email ILIKE ${p})`
+          : `name ILIKE ${p}`);
       }
 
-      // scope=admin → หน้าจัดการผู้ใช้ BMS: บังคับสิทธิ์ + กรองตามร้าน
-      //   (scope=web/android = ค้นหาคนในแอป social → คงเดิม ไม่กรอง)
+      // Public social discovery cannot enumerate shop staff or their contact data.
       if (auth.scope === "admin") {
         const { platform, tenantId } = await requireUserAdmin(ctx, "user.view");
         if (!platform) {
@@ -1790,6 +1796,8 @@ const rawResolvers = {
           conds.push(`tenant_id = $${params.length}`);
           conds.push(`is_platform_admin = FALSE`);
         }
+      } else {
+        conds.push(`tenant_id IS NULL AND is_platform_admin = FALSE`);
       }
 
       const where = conds.length ? `WHERE ${conds.join(" AND ")}` : ``;
@@ -1807,7 +1815,8 @@ const rawResolvers = {
 
       const itemsRes = await query(
         `
-        SELECT *
+        SELECT ${auth.scope === "admin" ? "*" :
+          "id, name, avatar, role, role_id, created_at, username, language, notifications_enabled, is_platform_admin"}
         FROM users
         ${where}
         ORDER BY created_at DESC
@@ -1816,7 +1825,9 @@ const rawResolvers = {
         [...params, safeLimit, safeOffset]
       );
 
-      return { items: itemsRes.rows, total };
+      return { items: auth.scope === "admin"
+        ? itemsRes.rows.map((row: any) => ({ ...row, __staffContactVisible: true }))
+        : itemsRes.rows, total };
     },
     user: async (_: any, { id }: { id: string }, ctx: any) => {
       const { author_id, scope } = requireAuth(ctx, {  optionalWeb: true, optionalAndroid: true });
@@ -1831,11 +1842,21 @@ const rawResolvers = {
               LIMIT 1`,
             [id, tenantId]
           );
-          return rows[0] ?? null;
+          return rows[0] ? { ...rows[0], __staffContactVisible: true } : null;
         }
+        const row = await getUserById(id);
+        return row ? { ...row, __staffContactVisible: true } : null;
       }
 
-      return await getUserById(id);
+      if (String(id) === String(author_id)) return await getUserById(id);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) return null;
+      const { rows } = await query(
+        `SELECT id, name, avatar, role, role_id, created_at, username, language,
+                notifications_enabled, is_platform_admin
+           FROM users WHERE id=$1 AND tenant_id IS NULL AND is_platform_admin=FALSE LIMIT 1`,
+        [id]
+      );
+      return rows[0] ?? null;
     },
     postsByUserId: async (_: any, { user_id }: { user_id: string }, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx, {  optionalWeb: true, optionalAndroid: true });
@@ -2317,7 +2338,7 @@ const rawResolvers = {
               similarity(coalesce(u.phone,          ''), $1)
             ) AS sim
           FROM users u
-          WHERE
+          WHERE u.tenant_id IS NULL AND u.is_platform_admin = FALSE AND (
                 tsvector_concat(
                   setweight(to_tsvector('simple', coalesce(u.name_unaccent,  '')), 'A'),
                   setweight(to_tsvector('simple', coalesce(u.email_unaccent, '')), 'B')
@@ -2325,6 +2346,7 @@ const rawResolvers = {
              OR u.name_unaccent  ILIKE unaccent($2)
              OR u.email_unaccent ILIKE unaccent($2)
              OR u.phone ILIKE $2
+          )
         ) AS s
         ORDER BY
           (s.ft_rank * 2.5 + s.sim * 4.0) DESC
@@ -5472,19 +5494,23 @@ const rawResolvers = {
       // ✅ ใช้ transaction wrapper เพื่อ ensure COMMIT/ROLLBACK และ SET LOCAL app.editor_id
       const { revisionId, result } = await runInTransaction(author_id, async (client) => {
         let resultUser = null;
+        const target = id
+          ? await requireManageableTarget(ctx, gate, String(id), client, true)
+          : null;
         const resolvedRole = await resolveAssignableRole(
           ctx,
           gate,
           { role_id: data.role_id, role: data.role },
-          id ? {} : { fallbackName: "Subscriber" },
+          id
+            ? { unchangedSelfRoleName: target?.id === gate.actorId ? target.role ?? undefined : undefined }
+            : { fallbackName: "Subscriber" },
           client
         );
         const roleId = resolvedRole?.roleId ?? null;
 
         if (id) {
-          const target = await requireManageableTarget(ctx, gate, String(id), client, true);
           if (String(id) === gate.actorId && !platform && !gate.isSuper &&
-              resolvedRole && resolvedRole.roleName !== gate.actorRole) {
+              resolvedRole && resolvedRole.roleName !== target?.role) {
             throw new GraphQLError("เปลี่ยนบทบาทของตัวเองไม่ได้", {
               extensions: { code: "FORBIDDEN", http: { status: 403 } },
             });
@@ -5521,7 +5547,7 @@ const rawResolvers = {
             paramIndex++;
           }
 
-          const roleChanged = Boolean(resolvedRole && target.role !== resolvedRole.roleName);
+          const roleChanged = Boolean(resolvedRole && target?.role !== resolvedRole.roleName);
           if (roleChanged || passwordHash) {
             updateFields.push(`admin_session_version = admin_session_version + 1`);
           }
@@ -5578,21 +5604,17 @@ const rawResolvers = {
           }
         }
 
+        if (resultUser?.id) {
+          await auditUserChangeInTx(
+            client, resultUser.tenant_id ?? tenantId, author_id,
+            id ? "user.update" : "user.create", String(resultUser.id),
+            { role: resolvedRole?.roleName ?? null, passwordChanged: Boolean(passwordHash) }
+          );
+        }
         return { user: resultUser, roleName: resolvedRole?.roleName ?? null };
       });
 
       const resultUser = result.user;
-
-      // audit ลง bms_audit_log (คนละที่กับ addLog/system_logs ด้านบน) — Administrator ของร้าน
-      // อ่านได้ที่ /admin/audit จึงตามได้ว่า Manager แก้ใครไปบ้าง
-      // ⚠️ เรียกหลัง transaction เสมอ (audit() ใช้ pool ธรรมดา ถ้าอยู่ในนั้นจะติด rollback ไปด้วย)
-      // ⚠️ ห้ามใส่ password hash ลง meta
-      if (resultUser?.id) {
-        await audit(ctx, id ? "user.update" : "user.create", String(resultUser.id), {
-          role: result.roleName,
-          passwordChanged: Boolean(passwordHash),
-        });
-      }
 
       return resultUser;
     },
@@ -5608,17 +5630,13 @@ const rawResolvers = {
 
       console.log("[Mutation] uploadAvatar :", author_id);
 
-      // เปลี่ยนรูปคนอื่นต้องมี rank สูงกว่า (รูปตัวเองแก้ได้เสมอ)
-      if (String(user_id) !== gate.actorId) {
-        await requireManageableTarget(ctx, gate, String(user_id));
-      }
+      // Self-edit still needs a tenant match (notably during platform drill-down).
+      await requireManageableTarget(ctx, gate, String(user_id), undefined, true);
 
       const { revisionId, result } = await runInTransaction(author_id, async (client) => {
         // Repeat the row guard under lock. The target may have been promoted
         // after the early UX check but before this transaction started.
-        if (String(user_id) !== gate.actorId) {
-          await requireManageableTarget(ctx, gate, String(user_id), client);
-        }
+        await requireManageableTarget(ctx, gate, String(user_id), client, true);
         const f = await file; // { filename, mimetype, encoding, createReadStream }
 
         // สร้างชื่อใหม่ เช่น avatar-<user_id>.ext
@@ -5675,6 +5693,7 @@ const rawResolvers = {
         // Reassignment and deletion are atomic: a failed delete must not leave
         // conversations moved as a partial side effect.
         if (target.tenant_id) {
+          await assertNoActiveStaffAssignments(client, target.tenant_id, id);
           await reassignStaffConversations(target.tenant_id, id, client);
         }
         const res = platform
@@ -5683,6 +5702,8 @@ const rawResolvers = {
         const ok = res.rowCount === 1;
 
         if (ok) {
+          await auditUserChangeInTx(client, target.tenant_id ?? tenantId, author_id,
+            "user.delete", String(id), { role: target.role });
           await addLog('info', 'user-delete', 'User deleted', {
             deletedId: id,
             author_id,
@@ -5690,11 +5711,7 @@ const rawResolvers = {
         }
 
         return { ok, role: target.role };
-      });
-
-      if (result.ok) {
-        await audit(ctx, "user.delete", String(id), { role: result.role });
-      }
+      }).catch(explainUserDeleteFailure);
 
       return result.ok;
     },
@@ -5710,9 +5727,12 @@ const rawResolvers = {
 
       const uuidPattern =
         /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      // กรองบัญชีตัวเองออกเสมอ (เหมือน deleteUser) แทนที่จะปฏิเสธทั้ง batch — เลือกหลายคนรวมตัวเอง
-      // มาด้วยได้ แค่ตัวเองไม่โดนลบ ที่เหลือยังลบตามปกติ
-      const uuidIds = [...new Set(ids.filter((i) => uuidPattern.test(i) && String(i) !== author_id))].sort();
+      if (ids.length > 100 || ids.some((i) => !uuidPattern.test(i) || String(i) === author_id)) {
+        throw new GraphQLError("รายการผู้ใช้ที่เลือกไม่ถูกต้องหรือมีบัญชีของตัวเอง", {
+          extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+        });
+      }
+      const uuidIds = [...new Set(ids)].sort();
 
       if (uuidIds.length === 0) return false;
 
@@ -5723,6 +5743,7 @@ const rawResolvers = {
 
         for (const t of targets) {
           if (t.tenant_id) {
+            await assertNoActiveStaffAssignments(client, t.tenant_id, t.id);
             await reassignStaffConversations(t.tenant_id, t.id, client, deletableIds);
           }
         }
@@ -5733,6 +5754,15 @@ const rawResolvers = {
         const affected = res.rowCount ?? 0; // กัน null ที่นี่
 
         if (affected > 0) {
+          const byTenant = new Map<string, string[]>();
+          for (const target of targets) {
+            const scope = target.tenant_id ?? tenantId;
+            byTenant.set(scope, [...(byTenant.get(scope) ?? []), target.id]);
+          }
+          for (const [scope, deletedIds] of byTenant) {
+            await auditUserChangeInTx(client, scope, author_id,
+              "user.delete_bulk", deletedIds.join(","), { ids: deletedIds, count: deletedIds.length });
+          }
           await addLog(
             "info",
             "user-delete",
@@ -5742,11 +5772,7 @@ const rawResolvers = {
         }
 
         return { ok: affected > 0, ids: deletableIds };
-      });
-
-      if (result.ok) {
-        await audit(ctx, "user.delete_bulk", null, { ids: result.ids, count: result.ids.length });
-      }
+      }).catch(explainUserDeleteFailure);
 
       return result.ok;
     },

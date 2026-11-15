@@ -41,6 +41,7 @@ import { useMemo, useState } from "react";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
+import { operatorMessage } from "@/lib/operatorMessage";
 
 const Q_BOOT = gql`
   query BankReconciliationBoot($accountId: ID, $month: String) {
@@ -274,7 +275,7 @@ const statusColor: Record<string, string> = {
 
 export default function BankReconciliationPage() {
   const uiText = useUiText();
-  const { lang } = useI18n();
+  const { lang, t } = useI18n();
   const th = lang === "th";
   const L = (thai: string, english: string) => (th ? thai : english);
   const { can, loading: permissionLoading } = useBmsPermissions();
@@ -1142,7 +1143,7 @@ export default function BankReconciliationPage() {
             "โหลดข้อมูลไม่สำเร็จ",
             "Could not load reconciliation data",
           )}
-          description={boot.error.message}
+          description={operatorMessage(boot.error,t)}
           style={{ marginBottom: 16 }}
         />
       ) : null}

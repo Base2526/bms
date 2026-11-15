@@ -242,6 +242,12 @@ approved text. Approval remains per tenant, not a platform-wide publication deci
 
 ## Authentication identity and registration
 
+- A verified `/shop-signup` creates the new tenant's first user as an active tenant
+  `Administrator`, for both email and social signup. A missing Administrator role aborts
+  provisioning. Never use the Manager permissions as a substitute for shop ownership.
+  Migration `10.121` repairs only a verified email signup owner who is still Manager,
+  has no later user-update audit, and belongs to a shop with no Administrator; it bumps
+  the admin session version and audits the repair in the same transaction.
 - Editing a tenant's role permission matrix is Administrator-only. Validate requested permission
   names against `BMS_PERMISSIONS`; show the exact grant/revoke diff to the human and require
   `confirmed: true` at GraphQL; lock the tenant and replace the matrix inside `beginTenantTx()`
@@ -2022,8 +2028,21 @@ The rules that follow from it:
   mention-read updates also use tenant transactions; mention list joins bind their related rows
   to the same tenant. Self-availability requires `inbox.view` and uses migration `10.118`'s
   tenant/editor-checked function inside a tenant transaction, without a direct `users` UPDATE grant.
-  Assignment/helper targets must be
-  eligible staff in the same tenant. The assignment service locks the conversation, rechecks a
+  Assignment/helper targets must be eligible staff in the same tenant. A user selected automatically
+  for new or reassigned conversations must be available, not POS-only
+  or a platform identity, and must currently have both `inbox.view` and `inbox.reply` (Administrator
+  uses the established super-role rule). Deleting the sole eligible assignee fails and leaves the
+  account and conversations untouched. Team-account create/update/delete audit commits inside the
+  same user transaction; bulk deletion rejects a missing or foreign-tenant id rather than silently
+  deleting a subset. Managers may manage lower-ranked Cashiers, but not protected Pharmacist accounts.
+  Account deletion checks live checklist runs/actions, recurring schedules, rosters, handovers,
+  supervisor policies, escalations, and quality cases before Inbox reassignment. Historical foreign
+  keys may still prevent deletion; return a user-facing reason and keep the transaction unchanged.
+  Public social user lookup excludes tenant staff and platform identities and omits private contact
+  fields; an authenticated user may still read their own profile. Global social search applies the
+  same staff exclusion. Role lists require `user.view`; role user counts use the acting tenant unless
+  the caller is a platform admin outside drill-down.
+  The assignment service locks the conversation, rechecks a
   Sales owner/helper within the transaction, and commits the owner change, duplicate-helper
   removal and audit together. Helper add/remove uses the same lock and scope, with its audit in
   the same transaction. Status/tag writes and unread clearing also recheck the scope after locking;
@@ -2212,6 +2231,13 @@ their provider independently:
   relabel an accepted reply `FAILED` and invite a duplicate resend.
   Meta messages with attachments, including text captions, enter Inbox for staff review without
   running the text-only AI pipeline; the model must not guess unseen image/file contents.
+  A Meta job with no confirmed Inbox message is marked for manual review, not SUCCEEDED.
+  TikTok/Shopee/Lazada inbound text and media are staff-only until an outbound send API exists;
+  never run their AI pipeline and commit a business action the customer cannot see or confirm.
+  A LINE media-only or TikTok/Shopee/Lazada inbound webhook may release its event claim only when
+  Inbox persistence failed before AI, business writes, or provider delivery; a retry may then save it.
+  Never release a text turn claim after the AI pipeline starts because its business outcome may
+  already be committed.
   Staff Inbox uploads are tenant-private and owner-bound. External LINE/Meta fetches use a
   purpose-bound, tenant/file-scoped signed media URL (30-day expiry); the sender checks the
   upload proof and file's tenant before using it. Do not turn Inbox uploads into public files or
@@ -2267,6 +2293,8 @@ Analytics dashboard are intentionally not built yet (see `CLAUDE.local.md` § Fo
   max retry exceeded, customer opted out, rule disabled. These six are **unconditionally enforced**,
   not something a rule can opt out of; `bms_followup_rules.stop_conditions` is validated and stored
   only for a future workflow engine and must not be read as a gate today.
+- Schedule only channels in `OUTBOUND_PUSH_CHANNELS`; stop an older job with
+  `channel_no_outbound` before generating AI text when the channel cannot deliver a follow-up.
 - `bms_conversation_intents` uses its own 10-value intent set (`ASK_PRICE`/`PRODUCT_INFORMATION`/…).
   Do not reuse or extend `nlu.ts`'s `Intent` type for this — that type is load-bearing for the live
   chat pipeline's deterministic fallback and has a different shape (`CHECK_STOCK`/`CONFIRM_ORDER`/
@@ -2283,7 +2311,8 @@ Analytics dashboard are intentionally not built yet (see `CLAUDE.local.md` § Fo
   its own GUC with `SKIP LOCKED`. A job outcome, history and audit commit together with a retry-index
   compare-and-swap guard; a late worker cannot overwrite a later result. A reclaimed send round
   uses the existing outbound row and its original body. An uncertain/partial provider result ends
-  later automatic rounds for that job and requires human review. A confirmed delivery failure is
+  later automatic rounds for that job and requires human review; so does provider acceptance when
+  its final Inbox status write is unconfirmed. A confirmed delivery failure is
   failed work, not a sent retry round. Scheduling compares existing jobs against the latest inbound
   customer message: cron cannot recreate a completed job for the same message, but a new inbound
   message can start a new round. The worker compares the latest tenant-scoped inbound message

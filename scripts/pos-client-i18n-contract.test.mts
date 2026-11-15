@@ -68,6 +68,9 @@ test('English connection failures retain uncertainty, permission and diagnostic 
   assert.match(describeTransportFailure(502, true, 'POST', en), /transaction result is unknown/);
   assert.doesNotMatch(describeTransportFailure(502, true, 'GET', en), /transaction result/);
   assert.match(describePosFailure({ status: 'SERIAL_REQUIRED', sku: 'ชื่อไทย', expected: 2, received: 1 }, en), /ชื่อไทย: 2 serial numbers required \(1 entered\)/);
+  const saleError = describePosFailure({ status: 'SERVER_ERROR', error: 'SQL_PRIVATE_DETAIL' }, en);
+  assert.match(saleError, /Check the latest bill first/);
+  assert.doesNotMatch(saleError, /SQL_PRIVATE_DETAIL/);
 });
 
 test('interpolation preserves operator data verbatim and does not translate inserted values', () => {

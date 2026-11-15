@@ -10,6 +10,7 @@ import { useState } from "react";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
+import { operatorMessage } from "@/lib/operatorMessage";
 
 const Q_BOOT = gql`query ExpenseBoot { bmsExpenseEstablishments { locationId code name branchCode isHeadOffice } bmsExpenseSuppliers { id name taxId branchCode address entityType } }`;
 const Q_LIST = gql`query ExpenseDocuments($input:BmsExpenseDocumentListInput!,$from:String!,$to:String!,$locationId:ID){
@@ -69,7 +70,7 @@ export default function ExpensesPage(){
       {canManage&&<Button type="primary" icon={<PlusOutlined/>} onClick={()=>{setCreateKey(crypto.randomUUID());setOpen(true);}}>{t("admin_expenses.add")}</Button>}
     </AdminPageHeader>
     <Alert closable showIcon type="info" style={{marginBottom:16}} message={t("admin_expenses.intro")}/>
-    {docs.error&&<Alert closable showIcon type="error" style={{marginBottom:16}} message={t("admin_expenses.load_error")} description={docs.error.message}/>}
+    {docs.error&&<Alert closable showIcon type="error" style={{marginBottom:16}} message={t("admin_expenses.load_error")} description={operatorMessage(docs.error,t)}/>}
     <Row gutter={[16,16]} style={{marginBottom:16}}>
       <Col xs={12} md={6}><Card><Statistic title={t("admin_expenses.expense_base")} value={total?.expenseBase??0} precision={2} suffix="฿"/></Card></Col>
       <Col xs={12} md={6}><Card><Statistic title={t("admin_expenses.vat_purchase")} value={total?.vatPurchase??0} precision={2} suffix="฿"/></Card></Col>
