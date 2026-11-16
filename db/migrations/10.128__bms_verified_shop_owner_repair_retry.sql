@@ -1,12 +1,12 @@
--- Retry the narrowly scoped 10.121 owner repair on databases whose normal
--- statement_timeout is shorter than the historical audit lookup. Keep 10.121
--- immutable: Retail Local records its checksum after application.
+-- Idempotent follow-up to the narrowly scoped 10.121 owner repair. The ordered
+-- 10.121 file now sets a transaction-local timeout; this file also covers
+-- databases that previously applied the pre-timeout 10.121 version.
 --
 -- If a prior HeidiSQL attempt failed, execute ROLLBACK as a separate statement
--- in that same connection before running this file. A timeout aborts the whole
--- transaction, including the role change and its audit row.
--- This repair has no dependency on the intervening factory migrations and may
--- be run by itself on BMS-LIVE after its 10.121 attempt has been rolled back.
+-- in that same connection before running the ordered migration sequence. A
+-- timeout aborts the whole transaction, including the role change and audit.
+-- This repair has no dependency on the intervening factory migrations; normal
+-- ordered installs run it after the now-bounded 10.121.
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '2min';
