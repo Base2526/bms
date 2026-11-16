@@ -75,3 +75,46 @@ test('confirmed unpair keeps Settings open for pairing and removes the register 
     alert.mockRestore();
   }
 });
+
+test.each(['pending cash', 'queue read failure', 'secure-storage failure'])(
+  'failed unpair leaves navigation and cashier untouched: %s',
+  async scenario => {
+    mockUnpair.mockReset();
+    mockSignOut.mockClear();
+    if (scenario === 'pending cash') {
+      (loadOfflineSales as jest.Mock).mockResolvedValue([{ id: 'unresolved-sale' }]);
+    } else if (scenario === 'queue read failure') {
+      (loadOfflineSales as jest.Mock).mockRejectedValue(new Error('queue unreadable'));
+    } else {
+      (loadOfflineSales as jest.Mock).mockResolvedValue([]);
+      mockUnpair.mockRejectedValue(new Error('Keychain unavailable'));
+    }
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const navigation = { canGoBack: () => true, goBack: jest.fn(), reset: jest.fn(), navigate: jest.fn() };
+    let tree!: Renderer.ReactTestRenderer;
+    try {
+      await act(async () => {
+        tree = Renderer.create(
+          <ThemeProvider>
+            <DeviceSettingsScreen route={{ key: 'settings-1', name: 'Settings' }} navigation={navigation as never} />
+          </ThemeProvider>,
+        );
+      });
+      const unpairButton = tree.root.findAllByType(Button).find(button => button.props.label === 'เลิกจับคู่');
+      await act(async () => { await unpairButton!.props.onPress(); });
+      if (scenario === 'secure-storage failure') {
+        const actions = alert.mock.calls[0][2];
+        await act(async () => { await actions?.[1]?.onPress?.(); });
+        expect(alert.mock.calls[1][0]).toBe('เลิกจับคู่ไม่สำเร็จ');
+      } else {
+        expect(alert.mock.calls[0][0]).toBe('ยังเลิกจับคู่ไม่ได้');
+        expect(mockUnpair).not.toHaveBeenCalled();
+      }
+      expect(mockSignOut).not.toHaveBeenCalled();
+      expect(navigation.reset).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => tree?.unmount());
+      alert.mockRestore();
+    }
+  },
+);

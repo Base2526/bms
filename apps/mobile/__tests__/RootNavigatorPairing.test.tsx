@@ -17,8 +17,10 @@ let mockRootState: {
   ],
 };
 const mockResetRoot = jest.fn();
+let mockReady = true;
+let mockOnReady: (() => void) | null = null;
 const mockNavigationRef = {
-  isReady: () => true,
+  isReady: () => mockReady,
   getRootState: () => mockRootState,
   resetRoot: mockResetRoot,
 };
@@ -35,7 +37,8 @@ jest.mock('@react-navigation/native', () => ({
   DefaultTheme: { colors: {} },
   DarkTheme: { colors: {} },
   useNavigationContainerRef: () => mockNavigationRef,
-  NavigationContainer: ({ children }: { children: React.ReactNode }) => {
+  NavigationContainer: ({ children, onReady }: { children: React.ReactNode; onReady: () => void }) => {
+    mockOnReady = onReady;
     require('react').useEffect(() => {
       mockMount();
     }, []);
@@ -56,6 +59,7 @@ jest.mock('../src/navigation/AppNavigator', () => ({
 }));
 
 test('rejected saved device keeps Settings visible with Login underneath and clears cashier', async () => {
+  mockReady = true;
   mockTarget = null;
   mockVerify = { kind: 'IDLE' };
   mockSignOut.mockClear();
@@ -128,5 +132,23 @@ test('rejected saved device keeps Settings visible with Login underneath and cle
     index: 0,
     routes: [{ name: 'Login' }],
   });
+  await act(async () => tree.unmount());
+});
+
+test('startup rejection waits for navigation to become ready before clearing the stack', async () => {
+  mockTarget = { serverUrl: 'https://shop.example.test', token: 'FAKE' };
+  mockVerify = { kind: 'REJECTED' };
+  mockRootState = { index: 0, routes: [{ name: 'Login', key: 'login-startup' }] };
+  mockReady = false;
+  mockSignOut.mockClear();
+  mockResetRoot.mockClear();
+  let tree!: Renderer.ReactTestRenderer;
+  await act(async () => { tree = Renderer.create(<RootNavigator />); });
+  expect(mockSignOut).not.toHaveBeenCalled();
+  expect(mockResetRoot).not.toHaveBeenCalled();
+  mockReady = true;
+  await act(async () => { mockOnReady?.(); });
+  expect(mockSignOut).toHaveBeenCalledTimes(1);
+  expect(mockResetRoot).toHaveBeenCalledWith({ index: 0, routes: [{ name: 'Login' }] });
   await act(async () => tree.unmount());
 });
