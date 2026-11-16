@@ -7,6 +7,7 @@ import pg from "pg";
 import {
   compatibleMigrationChecksums,
   migrationChecksum,
+  previouslyAppliedMigrationChecksums,
 } from "./retail-local-migration-checksum.mjs";
 
 const { Client } = pg;
@@ -98,8 +99,14 @@ async function applyOne(client, name, sql) {
   );
   if (existing.rows[0]) {
     const existingChecksum = existing.rows[0].checksum;
-    if (!compatibleMigrationChecksums(sql).has(existingChecksum)) {
+    const previousChecksum = previouslyAppliedMigrationChecksums(name).has(existingChecksum);
+    if (!compatibleMigrationChecksums(sql).has(existingChecksum) && !previousChecksum) {
       throw new Error(`Migration ${name} changed after it was applied; refusing to continue`);
+    }
+    if (previousChecksum) {
+      // Keep the ledger's evidence of the exact SQL that this database ran.
+      console.log(`skip  ${name} (pre-timeout checksum)`);
+      return;
     }
     if (existingChecksum !== digest) {
       await client.query(

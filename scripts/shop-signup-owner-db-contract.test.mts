@@ -82,6 +82,9 @@ test("owner repair is one-time and leaves other Managers unchanged", async () =>
   const withoutWrappers = (sql: string) => sql.replace(/^BEGIN;\s*/m, "").replace(/^COMMIT;\s*/m, "");
   const originalMigration = withoutWrappers(originalSql);
   const retryMigration = withoutWrappers(retrySql);
+  assert.match(originalMigration, /SET LOCAL lock_timeout = '5s'/);
+  assert.match(originalMigration, /SET LOCAL statement_timeout = '2min'/);
+  assert.match(originalMigration, /pg_advisory_xact_lock\(hashtextextended\('bms-verified-shop-owner-repair', 0\)\)/);
   assert.match(retryMigration, /SET LOCAL lock_timeout = '5s'/);
   assert.match(retryMigration, /SET LOCAL statement_timeout = '2min'/);
   assert.match(retryMigration, /pg_advisory_xact_lock\(hashtextextended\('bms-verified-shop-owner-repair', 0\)\)/);
@@ -141,7 +144,12 @@ test("owner repair is one-time and leaves other Managers unchanged", async () =>
     const ordinaryManager = await shop("ordinary manager", false);
     const managedShop = await shop("shop already has admin", true, true);
     const editedOwner = await shop("owner edited later", true, false, true);
-    await client.query(retryMigration);
+    await client.query(originalMigration);
+    const timeoutSettings = (await client.query(
+      `SELECT current_setting('statement_timeout') statement_timeout,
+              current_setting('lock_timeout') lock_timeout`,
+    )).rows[0];
+    assert.deepEqual(timeoutSettings, { statement_timeout: "2min", lock_timeout: "5s" });
     const rows = await client.query<{ id: string; role: string }>(
       `SELECT id, role FROM users WHERE id = ANY($1::uuid[])`,
       [[owner.userId, ordinaryManager.userId, managedShop.userId, editedOwner.userId]]
@@ -151,15 +159,23 @@ test("owner repair is one-time and leaves other Managers unchanged", async () =>
     for (const account of [ordinaryManager, managedShop, editedOwner]) {
       assert.equal(roleById.get(account.userId), "Manager");
     }
-    const countRepairs = async () => Number((await client.query<{ n: number }>(
+    const countRepairs = async (tenantId: string) => Number((await client.query<{ n: number }>(
       `SELECT COUNT(*)::int AS n FROM bms_audit_log
         WHERE tenant_id = $1 AND action = 'shop.signup.owner_role_repaired'`,
-      [owner.tenantId]
+      [tenantId]
     )).rows[0].n);
-    assert.equal(await countRepairs(), 1);
+    assert.equal(await countRepairs(owner.tenantId), 1);
+    const lateOwner = await shop("verified owner after 10.121", true);
+    await client.query(retryMigration);
+    assert.equal((await client.query<{ role: string }>(
+      `SELECT role FROM users WHERE tenant_id=$1 AND id=$2`,
+      [lateOwner.tenantId, lateOwner.userId],
+    )).rows[0].role, "Administrator");
+    assert.equal(await countRepairs(lateOwner.tenantId), 1);
     await client.query(originalMigration);
     await client.query(retryMigration);
-    assert.equal(await countRepairs(), 1);
+    assert.equal(await countRepairs(owner.tenantId), 1);
+    assert.equal(await countRepairs(lateOwner.tenantId), 1);
   } finally {
     await client.query("ROLLBACK");
     client.release();
