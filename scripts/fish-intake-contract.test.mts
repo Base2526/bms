@@ -119,6 +119,22 @@ test("live receipt uses exact grams and reviewed money, with a stable preview ha
     (error:unknown)=>error instanceof FishIntakeError&&error.code==="INVALID_WEIGHT");
 });
 
+test("fish receipt accepts whole-kg values and surrounding whitespace",()=>{
+  const input={kind:"LIVE" as const,locationId:"00000000-0000-0000-0000-000000000001",
+    requestKey:"example-live-request-98",lines:[{
+      fishName:"ปลาตัวอย่าง",sku:"FISH-98",size:"L",supplierName:"แพตัวอย่าง",
+      billDate:"2025-09-01",receivedDate:"2025-09-01",billKg:"98",receivedKg:"98",
+      unitPricePerKg:"39.75",purchaseAmount:"3895.5",extraAmount:"0",
+    }]};
+  const expected=validateFishIntake(input).totals;
+  assert.equal(expected.billGrams,98000);
+  assert.equal(expected.receivedGrams,98000);
+  assert.equal(expected.purchaseAmount,"3895.50");
+  assert.deepEqual(validateFishIntake({...input,lines:[{...input.lines[0],billKg:" 98 ",receivedKg:"98\u00a0"}]}).totals,expected);
+  assert.throws(()=>validateFishIntake({...input,lines:[{...input.lines[0],receivedKg:"98.0000"}]}),
+    (error:unknown)=>error instanceof FishIntakeError&&error.code==="INVALID_WEIGHT"&&error.line===1);
+});
+
 test("opening stock rejects bill fields and history rejects stock mappings",()=>{
   const base={requestKey:"example-opening-request-1",lines:[{fishName:"ปลาเก๋า",sku:"FISH-2",size:"L",
     receivedDate:"2025-01-01",receivedKg:"2.001",purchaseAmount:"300.00"}]};

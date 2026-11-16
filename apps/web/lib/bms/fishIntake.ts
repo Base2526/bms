@@ -93,13 +93,14 @@ const dateField = (value: unknown): string | null => {
   return date;
 };
 const grams = (value: unknown, required: boolean): number | null => {
-  if (value == null || value === "") {
+  const normalized = typeof value === "string" ? value.trim() : value;
+  if (normalized == null || normalized === "") {
     if (required) throw new FishIntakeError("WEIGHT_REQUIRED", "ต้องระบุน้ำหนักเป็นกิโลกรัม");
     return null;
   }
-  if (typeof value !== "string" || !/^(?:0|[1-9]\d{0,6})(?:\.\d{1,3})?$/.test(value))
+  if (typeof normalized !== "string" || !/^(?:0|[1-9]\d{0,6})(?:\.\d{1,3})?$/.test(normalized))
     throw new FishIntakeError("INVALID_WEIGHT", "น้ำหนักต้องเป็นกิโลกรัม ทศนิยมไม่เกิน 3 ตำแหน่ง");
-  const [whole, fractional = ""] = value.split(".");
+  const [whole, fractional = ""] = normalized.split(".");
   const amount = Number(whole) * 1000 + Number(fractional.padEnd(3,"0"));
   if (!Number.isSafeInteger(amount) || (required && amount <= 0) || amount > 2147483647)
     throw new FishIntakeError("INVALID_WEIGHT", "น้ำหนักต้องมากกว่า 0 และไม่เกินขนาดที่ระบบรับได้");

@@ -151,6 +151,9 @@ function HistoryImport({onSaved,canCommit}:{onSaved:()=>void;canCommit:boolean})
 function StockEntry({kind,options,onSaved,onSearchProducts,canCommit}:{kind:"LIVE"|"OPENING";options:Options;onSaved:()=>void;onSearchProducts:(search:string)=>void;canCommit:boolean}) {
   const {lang,t}=useI18n();
   const L=(th:string,en:string)=>lang==="en"?en:th;
+  const kgRule={pattern:/^(?:0|[1-9]\d{0,6})(?:\.\d{1,3})?$/,
+    message:L("กรอกน้ำหนักเป็นกิโลกรัม ทศนิยมไม่เกิน 3 ตำแหน่ง","Enter kg with up to 3 decimal places")};
+  const trimWeight=(value:unknown)=>typeof value==="string"?value.trim():value;
   const [form]=Form.useForm();
   const [requestKey,setRequestKey]=useState(()=>crypto.randomUUID());
   const [preview,setPreview]=useState<{previewHash:string;totals:{lineCount:number;billGrams:number;receivedGrams:number;purchaseAmount:string;extraAmount:string}}|null>(null);
@@ -276,8 +279,8 @@ function StockEntry({kind,options,onSaved,onSearchProducts,canCommit}:{kind:"LIV
                 ]}/>
             </Form.Item>
             {kind==="LIVE" && <Form.Item {...rest} name={[name,"billSize"]} label={L("ไซซ์ตามบิล","Bill size")}><Input maxLength={100}/></Form.Item>}
-            {kind==="LIVE" && <Form.Item {...rest} name={[name,"billKg"]} label={L("น้ำหนักตามบิล (กก.)","Bill weight (kg)")} rules={[{required:true}]}><Input inputMode="decimal"/></Form.Item>}
-            <Form.Item {...rest} name={[name,"receivedKg"]} label={kind==="LIVE"?L("น้ำหนักรับจริง (กก.)","Received weight (kg)"):L("น้ำหนักที่นับ (กก.)","Counted weight (kg)")} rules={[{required:true}]}><Input inputMode="decimal"/></Form.Item>
+            {kind==="LIVE" && <Form.Item {...rest} name={[name,"billKg"]} label={L("น้ำหนักตามบิล (กก.)","Bill weight (kg)")} normalize={trimWeight} rules={[{required:true},kgRule]}><Input inputMode="decimal"/></Form.Item>}
+            <Form.Item {...rest} name={[name,"receivedKg"]} label={kind==="LIVE"?L("น้ำหนักรับจริง (กก.)","Received weight (kg)"):L("น้ำหนักที่นับ (กก.)","Counted weight (kg)")} normalize={trimWeight} rules={[{required:true},kgRule]}><Input inputMode="decimal"/></Form.Item>
             {kind==="LIVE" && <Form.Item {...rest} name={[name,"unitPricePerKg"]} label={L("ราคาตามบิล (บาท/กก.)","Bill rate (THB/kg)")}><Input inputMode="decimal"/></Form.Item>}
             <Form.Item {...rest} name={[name,"purchaseAmount"]} label={kind==="LIVE"?L("ยอดค่าปลาตามบิล (บาท)","Reviewed goods amount (THB)"):L("มูลค่าสต็อกที่นับ (บาท)","Opening stock value (THB)")} rules={[{required:true}]}><Input inputMode="decimal"/></Form.Item>
             {kind==="LIVE" && <Form.Item {...rest} name={[name,"extraAmount"]} label={L("ต้นทุนเพิ่มที่ตรวจแล้ว (บาท)","Reviewed additional cost (THB)")}><Input inputMode="decimal"/></Form.Item>}

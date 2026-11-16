@@ -12,6 +12,7 @@ const browser=await browserType.launch({headless:true,...(browserType===chromium
 try {
   for (const width of [1280,390]) {
     const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:"block"});
+    let previewRequest=null;
     context.setDefaultTimeout(20000);
     await context.addCookies([
       {name:"ADMIN_COOKIE",value:"FAKE-fish-ui",url:base},
@@ -40,6 +41,11 @@ try {
         currency:"THB",
       }});
       if (url.pathname==="/api/bms/fish-intake" && req.method()==="GET") return route.fulfill({json:{items:[]}});
+      if (url.pathname==="/api/bms/fish-intake" && req.method()==="POST") {
+        previewRequest=req.postDataJSON();
+        return route.fulfill({json:{previewHash:"FAKE-preview",totals:{lineCount:1,billGrams:98000,
+          receivedGrams:98000,purchaseAmount:"3895.50",extraAmount:"0.00"}}});
+      }
       return route.fulfill({json:{}});
     });
     const page=await context.newPage();
@@ -49,6 +55,23 @@ try {
     await page.getByText("43.17 บาท/กก.",{exact:false}).first().waitFor();
     await page.locator(".ant-select-selector").nth(2).click();
     await page.getByText("ปลาพร้อมรับ").first().waitFor();
+    await page.getByText("ปลาพร้อมรับ · L (FAKE-READY)").click();
+    await page.getByLabel("วันที่รับปลา").fill("2025-09-01");
+    await page.getByLabel("วันที่บิล").fill("2025-09-01");
+    await page.getByLabel("แพ/ผู้ขาย").fill("FAKE supplier");
+    await page.getByLabel("น้ำหนักตามบิล (กก.)").fill("98.0000");
+    await page.getByLabel("น้ำหนักรับจริง (กก.)").fill("98");
+    await page.getByLabel("ราคาตามบิล (บาท/กก.)").fill("39.75");
+    await page.getByLabel("ยอดค่าปลาตามบิล (บาท)").fill("3895.5");
+    await page.getByRole("button",{name:"ตรวจยอดก่อนบันทึก"}).click();
+    await page.getByText("กรอกน้ำหนักเป็นกิโลกรัม ทศนิยมไม่เกิน 3 ตำแหน่ง").waitFor();
+    assert.equal(previewRequest,null,"invalid weight must remain on the form");
+    await page.getByLabel("น้ำหนักตามบิล (กก.)").fill(" 98 ");
+    await page.getByRole("button",{name:"ตรวจยอดก่อนบันทึก"}).click();
+    await page.getByText("ยอดที่ตรวจแล้ว").waitFor();
+    await page.getByText("กรอกน้ำหนักเป็นกิโลกรัม ทศนิยมไม่เกิน 3 ตำแหน่ง").waitFor({state:"hidden"});
+    assert.equal(previewRequest.input.lines[0].billKg,"98");
+    assert.equal(previewRequest.input.lines[0].receivedKg,"98");
     assert.equal(await page.getByText("ยังไม่มีปลาที่ตั้งค่าเป็นสินค้าชั่งน้ำหนักพร้อมติดตามล็อต").count(),0);
     await page.screenshot({path:`${output}/${browserType.name()}-${width}.png`,fullPage:true});
     console.log(`${browserType.name()} ${width}px: fish setup warning, ready option and form rendered`);
