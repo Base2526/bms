@@ -331,7 +331,8 @@ export async function saveFishIntake(tenantId: string, actorId: string, input: F
   } finally { client.release(); }
 }
 
-export async function listFishIntakes(tenantId: string, actorId: string, limit = 30) {
+export async function listFishIntakes(tenantId: string, actorId: string, limit = 30,
+  allowedKinds: FishIntakeKind[] = ["HISTORICAL","LIVE","OPENING"]) {
   const client = await getClient();
   try {
     await beginTenantTx(client,tenantId);
@@ -340,7 +341,7 @@ export async function listFishIntakes(tenantId: string, actorId: string, limit =
     created_at:Date;line_count:number;received_grams:string;purchase_amount:string;extra_amount:string;
   }>(`WITH recent AS (
          SELECT tenant_id,id,kind,location_id,source_name,source_sheet,created_at
-           FROM bms_fish_intakes h WHERE h.tenant_id=$1
+           FROM bms_fish_intakes h WHERE h.tenant_id=$1 AND h.kind=ANY($4::text[])
              AND (h.kind='HISTORICAL'
                OR NOT EXISTS(SELECT 1 FROM bms_user_allowed_locations a WHERE a.tenant_id=$1 AND a.user_id=$3)
                OR EXISTS(SELECT 1 FROM bms_user_allowed_locations a
@@ -355,11 +356,63 @@ export async function listFishIntakes(tenantId: string, actorId: string, limit =
          ON l.tenant_id=h.tenant_id AND l.intake_id=h.id
       GROUP BY h.id,h.kind,h.location_id,h.source_name,h.source_sheet,h.created_at
       ORDER BY h.created_at DESC`,
-    [tenantId,Math.min(Math.max(limit,1),100),actorId]);
+    [tenantId,Math.min(Math.max(limit,1),100),actorId,allowedKinds]);
     await client.query("COMMIT");
     return rows.rows.map(r=>({id:r.id,kind:r.kind,locationId:r.location_id,sourceName:r.source_name,
     sourceSheet:r.source_sheet,createdAt:r.created_at instanceof Date?r.created_at.toISOString():String(r.created_at),
     lineCount:r.line_count,receivedGrams:Number(r.received_grams),purchaseAmount:r.purchase_amount,extraAmount:r.extra_amount}));
+  } catch(error) { await client.query("ROLLBACK"); throw error; }
+  finally { client.release(); }
+}
+
+/** Immutable receipt evidence, scoped exactly like the recent list. */
+export async function getFishIntake(tenantId: string, actorId: string, intakeId: string,
+  allowedKinds: FishIntakeKind[] = ["HISTORICAL","LIVE","OPENING"]) {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client,tenantId);
+    const header = (await client.query<{
+      id:string;kind:FishIntakeKind;location_id:string|null;location_name:string|null;
+      source_name:string|null;source_sheet:string|null;source_year:number|null;note:string|null;
+      created_at:Date;
+    }>(`SELECT h.id,h.kind,h.location_id,loc.name AS location_name,h.source_name,h.source_sheet,
+               h.source_year,h.note,h.created_at
+          FROM bms_fish_intakes h
+          LEFT JOIN bms_locations loc ON loc.tenant_id=h.tenant_id AND loc.id=h.location_id
+         WHERE h.tenant_id=$1 AND h.id=$2 AND h.kind=ANY($4::text[])
+           AND (h.kind='HISTORICAL'
+             OR NOT EXISTS(SELECT 1 FROM bms_user_allowed_locations a
+                 WHERE a.tenant_id=$1 AND a.user_id=$3)
+             OR EXISTS(SELECT 1 FROM bms_user_allowed_locations a
+                 WHERE a.tenant_id=$1 AND a.user_id=$3 AND a.location_id=h.location_id))`,
+      [tenantId,intakeId,actorId,allowedKinds])).rows[0];
+    if (!header) { await client.query("COMMIT"); return null; }
+    const lines = (await client.query<{
+      line_no:number;source_row:number|null;bill_date:string|null;received_date:string|null;
+      supplier_name:string|null;vessel_registration:string|null;fish_name:string;
+      bill_size:string|null;actual_size:string|null;sku:string|null;size:string|null;
+      bill_grams:string|null;received_grams:string;unit_price_per_kg:string|null;
+      purchase_amount:string;extra_amount:string;quality:string|null;note:string|null;
+      lot_no:string|null;expiry_date:string|null;
+    }>(`SELECT line_no,source_row,bill_date::text,received_date::text,supplier_name,
+               vessel_registration,fish_name,bill_size,actual_size,sku,size,bill_grams::text,
+               received_grams::text,unit_price_per_kg::text,purchase_amount::text,
+               extra_amount::text,quality,note,lot_no,expiry_date::text
+          FROM bms_fish_intake_lines
+         WHERE tenant_id=$1 AND intake_id=$2 ORDER BY line_no`,[tenantId,intakeId])).rows;
+    await client.query("COMMIT");
+    return {id:header.id,kind:header.kind,locationId:header.location_id,
+      locationName:header.location_name,sourceName:header.source_name,sourceSheet:header.source_sheet,
+      sourceYear:header.source_year,note:header.note,
+      createdAt:header.created_at instanceof Date?header.created_at.toISOString():String(header.created_at),
+      lines:lines.map(line=>({lineNo:line.line_no,sourceRow:line.source_row,billDate:line.bill_date,
+        receivedDate:line.received_date,supplierName:line.supplier_name,
+        vesselRegistration:line.vessel_registration,fishName:line.fish_name,billSize:line.bill_size,
+        actualSize:line.actual_size,sku:line.sku,size:line.size,
+        billGrams:line.bill_grams==null?null:Number(line.bill_grams),
+        receivedGrams:Number(line.received_grams),unitPricePerKg:line.unit_price_per_kg,
+        purchaseAmount:line.purchase_amount,extraAmount:line.extra_amount,quality:line.quality,
+        note:line.note,lotNo:line.lot_no,expiryDate:line.expiry_date}))};
   } catch(error) { await client.query("ROLLBACK"); throw error; }
   finally { client.release(); }
 }

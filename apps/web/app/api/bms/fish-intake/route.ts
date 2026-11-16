@@ -1,17 +1,22 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
-import { requirePermission } from "@/lib/bms/permissions";
+import { loadPermissions, requirePermission } from "@/lib/bms/permissions";
 import { FishIntakeError, fishIntakePreview, listFishIntakes, saveFishIntake,
-  type FishIntakeInput } from "@/lib/bms/fishIntake";
+  type FishIntakeInput, type FishIntakeKind } from "@/lib/bms/fishIntake";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 
 async function handleGET() {
-  const auth=await authorizeAdminRoute("purchase.view");
+  const auth=await authorizeAdminRoute(null);
   if (!auth.ok) return NextResponse.json({error:auth.status===401?"unauthorized":"forbidden"},{status:auth.status});
-  return NextResponse.json({items:await listFishIntakes(auth.tenantId,String(auth.adminId))});
+  const perms=await loadPermissions(auth.ctx);
+  const kinds:FishIntakeKind[]=[];
+  if (perms.has("purchase.view")) kinds.push("HISTORICAL","LIVE");
+  if (perms.has("inventory.count")) kinds.push("OPENING");
+  if (!kinds.length) return NextResponse.json({error:"forbidden"},{status:403});
+  return NextResponse.json({items:await listFishIntakes(auth.tenantId,String(auth.adminId),30,kinds)});
 }
 
 async function handlePOST(req:NextRequest) {

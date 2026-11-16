@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Table, Tabs, Typography, message } from "antd";
+import { Alert, Button, Card, Descriptions, Form, Input, InputNumber, List, Modal, Select, Space, Table, Tabs, Typography, message } from "antd";
 import { PlusOutlined, DeleteOutlined, ReloadOutlined } from "@ant-design/icons";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
@@ -18,6 +18,14 @@ type ImportPreview={previewHash:string;rowCount:number;readyCount:number;issues:
   fishNames:Array<{name:string;count:number}>;
   sample:Array<{row:number;billDate:string;receivedDate:string;supplierName:string;fishName:string;receivedKg:string;purchaseAmount:string}>};
 type Saved={status:"SAVED"|"REPLAYED";intakeId:string;lineCount:number;billGrams:number;receivedGrams:number;purchaseAmount:string;extraAmount:string};
+type IntakeDetail={id:string;kind:FishIntakeKind;locationName:string|null;sourceName:string|null;
+  sourceSheet:string|null;sourceYear:number|null;note:string|null;createdAt:string;lines:Array<{
+    lineNo:number;sourceRow:number|null;billDate:string|null;receivedDate:string|null;
+    supplierName:string|null;vesselRegistration:string|null;fishName:string;billSize:string|null;
+    actualSize:string|null;sku:string|null;size:string|null;billGrams:number|null;
+    receivedGrams:number;unitPricePerKg:string|null;purchaseAmount:string;extraAmount:string;
+    quality:string|null;note:string|null;lotNo:string|null;expiryDate:string|null;
+  }>};
 
 async function readJson(response:Response, lang:string, action:"read"|"write"="read") {
   const parsed=await response.json().catch(()=>null);
@@ -37,7 +45,7 @@ async function readJson(response:Response, lang:string, action:"read"|"write"="r
 }
 const formatKg=(grams:number)=>`${(grams/1000).toLocaleString(undefined,{maximumFractionDigits:3})} kg`;
 
-function HistoryImport({onSaved,canCommit}:{onSaved:()=>void;canCommit:boolean}) {
+function HistoryImport({onSaved,onOpenDetail,canCommit}:{onSaved:()=>void;onOpenDetail:(id:string)=>void;canCommit:boolean}) {
   const {lang,t}=useI18n();
   const L=(th:string,en:string)=>lang==="en"?en:th;
   const [file,setFile]=useState<File|null>(null);
@@ -144,11 +152,12 @@ function HistoryImport({onSaved,canCommit}:{onSaved:()=>void;canCommit:boolean})
       </Typography.Text>}
     </Card>}
     {saved && <Alert type="success" showIcon closable message={L(saved.status==="REPLAYED"?"ไฟล์นี้เคยนำเข้าแล้ว":"นำเข้าสำเร็จ",saved.status==="REPLAYED"?"This file was already imported":"Import complete")}
-      description={`${saved.lineCount.toLocaleString()} ${L("แถว","rows")} · ${saved.intakeId}`} />}
+      description={<Space wrap>{`${saved.lineCount.toLocaleString()} ${L("แถว","rows")} · ${saved.intakeId}`}
+        <Button type="link" onClick={()=>onOpenDetail(saved.intakeId)}>{L("ดูรายละเอียด","View details")}</Button></Space>} />}
   </Space>;
 }
 
-function StockEntry({kind,options,onSaved,onSearchProducts,canCommit}:{kind:"LIVE"|"OPENING";options:Options;onSaved:()=>void;onSearchProducts:(search:string)=>void;canCommit:boolean}) {
+function StockEntry({kind,options,onSaved,onOpenDetail,onSearchProducts,canCommit}:{kind:"LIVE"|"OPENING";options:Options;onSaved:()=>void;onOpenDetail:(id:string)=>void;onSearchProducts:(search:string)=>void;canCommit:boolean}) {
   const {lang,t}=useI18n();
   const L=(th:string,en:string)=>lang==="en"?en:th;
   const kgRule={pattern:/^(?:0|[1-9]\d{0,6})(?:\.\d{1,3})?$/,
@@ -284,13 +293,14 @@ function StockEntry({kind,options,onSaved,onSearchProducts,canCommit}:{kind:"LIV
             {kind==="LIVE" && <Form.Item {...rest} name={[name,"unitPricePerKg"]} label={L("ราคาตามบิล (บาท/กก.)","Bill rate (THB/kg)")}><Input inputMode="decimal"/></Form.Item>}
             <Form.Item {...rest} name={[name,"purchaseAmount"]} label={kind==="LIVE"?L("ยอดค่าปลาตามบิล (บาท)","Reviewed goods amount (THB)"):L("มูลค่าสต็อกที่นับ (บาท)","Opening stock value (THB)")} rules={[{required:true}]}><Input inputMode="decimal"/></Form.Item>
             {kind==="LIVE" && <Form.Item {...rest} name={[name,"extraAmount"]} label={L("ต้นทุนเพิ่มที่ตรวจแล้ว (บาท)","Reviewed additional cost (THB)")}><Input inputMode="decimal"/></Form.Item>}
-            <Form.Item {...rest} name={[name,"lotNo"]} label={L("เลขล็อต (ว่าง = ระบบสร้าง)","Lot ID (blank = generated)")}><Input maxLength={120}/></Form.Item>
+            <Form.Item {...rest} name={[name,"lotNo"]} label={L("เลขล็อตของรายการนี้ (ว่าง = สร้างล็อตใหม่)","Lot ID for this line (blank = new lot)")}
+              extra={L("แต่ละรายการที่ปล่อยว่างจะได้เลขล็อตแยกกันหลังยืนยัน","Each blank line gets a separate lot ID after confirmation")}><Input maxLength={120}/></Form.Item>
             <Form.Item {...rest} name={[name,"expiryDate"]} label={L("วันหมดอายุ ถ้าติดตาม","Expiry date if tracked")}><Input type="date"/></Form.Item>
             <Form.Item {...rest} name={[name,"quality"]} label={L("สภาพ/เกรดปลา","Quality/grade")}><Input maxLength={200}/></Form.Item>
           </Space>
           <Form.Item {...rest} name={[name,"note"]} label={L("หมายเหตุ","Note")}><Input maxLength={1000}/></Form.Item>
         </Card>)}
-        <Button icon={<PlusOutlined/>} onClick={()=>add({extraAmount:"0"})}>{L("เพิ่มชนิดปลา","Add fish line")}</Button>
+        <Button icon={<PlusOutlined/>} onClick={()=>add({extraAmount:"0"})}>{L("เพิ่มรายการรับ / ล็อต","Add receipt line / lot")}</Button>
       </Space>}</Form.List>
       <Form.Item name="note" label={L("หมายเหตุทั้งใบ","Receipt note")} style={{marginTop:16}}><Input maxLength={1000}/></Form.Item>
       <Space wrap>
@@ -309,7 +319,7 @@ function StockEntry({kind,options,onSaved,onSearchProducts,canCommit}:{kind:"LIV
     {preview && <Alert showIcon closable type="info" message={L("ยอดที่ตรวจแล้ว","Reviewed totals")}
       description={`${preview.totals.lineCount} ${L("รายการ","lines")} · ${kind==="LIVE"?`${L("ตามบิล","bill")} ${formatKg(preview.totals.billGrams)} → `:""}${L("รับจริง","actual")} ${formatKg(preview.totals.receivedGrams)} · ${Number(preview.totals.purchaseAmount).toLocaleString()} ฿${kind==="LIVE"?` + ${Number(preview.totals.extraAmount).toLocaleString()} ฿`:""}`} />}
     {saved && <Alert showIcon closable type="success" message={L(saved.status==="REPLAYED"?"รายการนี้เคยบันทึกแล้ว":"บันทึกสำเร็จ",saved.status==="REPLAYED"?"This request was already saved":"Saved")}
-      description={saved.intakeId} />}
+      description={<Space wrap>{saved.intakeId}<Button type="link" onClick={()=>onOpenDetail(saved.intakeId)}>{L("ดูรายละเอียดและเลขล็อต","View details and lot IDs")}</Button></Space>} />}
   </Space>;
 }
 
@@ -321,6 +331,18 @@ export default function FishIntakePage() {
   const [recent,setRecent]=useState<Array<{id:string;kind:FishIntakeKind;createdAt:string;lineCount:number;receivedGrams:number;purchaseAmount:string;sourceName:string|null}>>([]);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState<string|null>(null);
+  const [detailId,setDetailId]=useState<string|null>(null);
+  const [detail,setDetail]=useState<IntakeDetail|null>(null);
+  const [detailLoading,setDetailLoading]=useState(false);
+  const [detailError,setDetailError]=useState<string|null>(null);
+  async function openDetail(id:string) {
+    setDetailId(id);setDetail(null);setDetailError(null);setDetailLoading(true);
+    try {
+      const item=await readJson(await fetch(`/api/bms/fish-intake/${encodeURIComponent(id)}`,{credentials:"include"}),lang) as IntakeDetail;
+      setDetail(item);
+    } catch(e) {setDetailError(operatorMessage(e,t));}
+    finally {setDetailLoading(false);}
+  }
   async function searchProducts(search:string) {
     if (search.trim().length<2) return;
     try {
@@ -350,19 +372,19 @@ export default function FishIntakePage() {
   useEffect(()=>{void refresh();},[]);
   const tabs=[];
   if (can("purchase.view")) tabs.push({key:"history",label:L("นำเข้าประวัติ Excel","Historical Excel import"),
-    children:<HistoryImport canCommit={can("purchase.edit")} onSaved={()=>void refresh()}/>});
+    children:<HistoryImport canCommit={can("purchase.edit")} onSaved={()=>void refresh()} onOpenDetail={id=>void openDetail(id)}/>});
   if (can("purchase.view")) tabs.push({key:"live",label:L("รับปลาใหม่","New fish receipt"),
     children:<StockEntry kind="LIVE" options={options} canCommit={can("purchase.edit")&&can("purchase.receive")}
-      onSearchProducts={search=>void searchProducts(search)} onSaved={()=>void refresh()}/>});
+      onSearchProducts={search=>void searchProducts(search)} onSaved={()=>void refresh()} onOpenDetail={id=>void openDetail(id)}/>});
   if (can("inventory.count")) tabs.push({key:"opening",label:L("ยอดสต็อกวันแรก","Opening stock"),
     children:<StockEntry kind="OPENING" options={options} canCommit={can("inventory.count.apply")&&can("report.view")}
-      onSearchProducts={search=>void searchProducts(search)} onSaved={()=>void refresh()}/>});
+      onSearchProducts={search=>void searchProducts(search)} onSaved={()=>void refresh()} onOpenDetail={id=>void openDetail(id)}/>});
   return <Space direction="vertical" size="large" style={{width:"100%"}}>
     <AdminPageHeader title={L("ล้งปลา: รับปลาและประวัติ","Fish dock: receipts and history")}/>
     {error && <Alert type="error" showIcon closable message={error} />}
     {!permissionsLoading&&tabs.length===0 && <Alert type="warning" showIcon closable message={L("ไม่มีสิทธิ์ใช้งานหน้านี้","No permission for this page")}/ >}
     <Card loading={loading}><Tabs items={tabs}/></Card>
-    {can("purchase.view")&&<Card title={L("รายการล่าสุด","Recent records")} extra={<Button icon={<ReloadOutlined/>} onClick={()=>void refresh()}>{L("โหลดใหม่","Refresh")}</Button>}>
+    {(can("purchase.view")||can("inventory.count"))&&<Card title={L("รายการล่าสุด","Recent records")} extra={<Button icon={<ReloadOutlined/>} onClick={()=>void refresh()}>{L("โหลดใหม่","Refresh")}</Button>}>
       <Table rowKey="id" dataSource={recent} pagination={{pageSize:10}} scroll={{x:700}} columns={[
         {title:L("เวลา","Time"),dataIndex:"createdAt",render:(v:string)=>new Date(v).toLocaleString(lang==="en"?"en-GB":"th-TH")},
         {title:L("ประเภท","Type"),dataIndex:"kind",render:(v:FishIntakeKind)=>v==="HISTORICAL"?L("ประวัติ","History"):v==="OPENING"?L("ยอดตั้งต้น","Opening"):L("รับปลา","Receipt")},
@@ -370,7 +392,55 @@ export default function FishIntakePage() {
         {title:L("น้ำหนักรับ","Received"),dataIndex:"receivedGrams",render:(v:number)=>formatKg(v)},
         {title:L("ยอดซื้อ/มูลค่า","Amount/value"),dataIndex:"purchaseAmount",render:(v:string)=>`${Number(v).toLocaleString()} ฿`},
         {title:L("ไฟล์","File"),dataIndex:"sourceName",render:(v:string|null)=>v??"—"},
+        {title:L("รายละเอียด","Details"),key:"detail",render:(_:unknown,r:{id:string})=><Button type="link" onClick={()=>void openDetail(r.id)}>{L("ดูรายการ / ล็อต","View lines / lots")}</Button>},
       ]}/>
     </Card>}
+    <Modal open={detailId!==null} onCancel={()=>setDetailId(null)} footer={null} width={900} centered
+      title={L("รายละเอียดใบรับปลา","Fish intake details")} styles={{body:{maxHeight:"70vh",overflowY:"auto"}}}>
+      {detailError && <Alert type="error" showIcon message={detailError}/>}
+      {detailLoading && <Card loading/>}
+      {detail && <Space direction="vertical" size="middle" style={{width:"100%"}}>
+        <Typography.Text copyable>{detail.id}</Typography.Text>
+        <Descriptions size="small" column={{xs:1,sm:2}} items={[
+          {key:"kind",label:L("ประเภท","Type"),children:detail.kind==="HISTORICAL"?L("ประวัติ","History"):detail.kind==="OPENING"?L("ยอดตั้งต้น","Opening"):L("รับปลา","Receipt")},
+          {key:"created",label:L("เวลาบันทึก","Saved at"),children:new Date(detail.createdAt).toLocaleString(lang==="en"?"en-GB":"th-TH")},
+          {key:"branch",label:L("สาขา","Branch"),children:detail.locationName??"—"},
+          {key:"lines",label:L("จำนวนรายการ","Lines"),children:detail.lines.length},
+          ...(detail.kind!=="HISTORICAL"?[{key:"lots",label:L("จำนวนล็อตในใบรับ","Distinct receipt lots"),
+            children:new Set(detail.lines.filter(line=>line.lotNo).map(line=>JSON.stringify([line.sku,line.size,line.lotNo]))).size}]:[]),
+          ...(detail.sourceName?[{key:"source",label:L("ไฟล์ต้นทาง","Source file"),children:detail.sourceName}]:[]),
+          ...(detail.sourceSheet?[{key:"sheet",label:L("ชีต","Sheet"),children:detail.sourceSheet}]:[]),
+          ...(detail.sourceYear?[{key:"year",label:L("ปีข้อมูล","Source year"),children:detail.sourceYear}]:[]),
+          ...(detail.note?[{key:"note",label:L("หมายเหตุทั้งใบ","Receipt note"),children:detail.note}]:[]),
+        ]}/>
+        {detail.kind!=="HISTORICAL" && <Alert type="info" showIcon
+          message={L("เลขล็อตด้านล่างเป็นเลขที่บันทึกตอนรับเข้า น้ำหนักคงเหลืออาจเปลี่ยนหลังมีการขายหรือปรับสต็อก",
+            "Lot IDs below are from this receipt. Current balances may have changed after sales or stock adjustments.")}/>}
+        <List dataSource={detail.lines} pagination={{pageSize:10,hideOnSinglePage:true}}
+          renderItem={line=><List.Item style={{display:"block",paddingInline:0}}>
+            <Card size="small" title={`${L("รายการ","Line")} ${line.lineNo} · ${line.fishName}`}>
+              <Descriptions size="small" column={{xs:1,sm:2}} items={[
+                ...(line.sourceRow!=null?[{key:"sourceRow",label:L("แถวในไฟล์","Source row"),children:line.sourceRow}]:[]),
+                {key:"product",label:L("สินค้า / ไซซ์","Product / size"),children:line.sku?`${line.sku} / ${line.size}`:"—"},
+                {key:"lot",label:L("เลขล็อต","Lot ID"),children:line.lotNo?<Typography.Text code copyable>{line.lotNo}</Typography.Text>:"—"},
+                {key:"billDate",label:L("วันที่บิล","Bill date"),children:line.billDate??"—"},
+                {key:"receivedDate",label:L("วันที่รับ","Received date"),children:line.receivedDate??"—"},
+                {key:"supplier",label:L("แพ / ผู้ขาย","Supplier"),children:line.supplierName??"—"},
+                {key:"vessel",label:L("ทะเบียนเรือ / รถ","Vessel / vehicle"),children:line.vesselRegistration??"—"},
+                {key:"billSize",label:L("ไซซ์ตามบิล","Bill size"),children:line.billSize??"—"},
+                {key:"size",label:L("ไซซ์รับจริง","Actual size"),children:line.actualSize??line.size??"—"},
+                {key:"billKg",label:L("น้ำหนักตามบิล","Bill weight"),children:line.billGrams==null?"—":formatKg(line.billGrams)},
+                {key:"receivedKg",label:L("น้ำหนักรับจริง","Received weight"),children:formatKg(line.receivedGrams)},
+                {key:"rate",label:L("ราคาตามบิล / กก.","Bill rate / kg"),children:line.unitPricePerKg==null?"—":`${Number(line.unitPricePerKg).toLocaleString()} ฿`},
+                {key:"amount",label:L("ยอดค่าปลา / มูลค่า","Fish amount / value"),children:`${Number(line.purchaseAmount).toLocaleString()} ฿`},
+                {key:"extra",label:L("ต้นทุนเพิ่ม","Additional cost"),children:`${Number(line.extraAmount).toLocaleString()} ฿`},
+                {key:"expiry",label:L("วันหมดอายุ","Expiry date"),children:line.expiryDate??"—"},
+                {key:"quality",label:L("สภาพ / เกรด","Quality / grade"),children:line.quality??"—"},
+                {key:"note",label:L("หมายเหตุ","Note"),children:line.note??"—"},
+              ]}/>
+            </Card>
+          </List.Item>}/>
+      </Space>}
+    </Modal>
   </Space>;
 }

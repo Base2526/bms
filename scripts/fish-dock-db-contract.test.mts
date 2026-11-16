@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
 import { query } from "../apps/web/lib/db.ts";
-import { fishIntakeOptions, listFishIntakes, saveFishIntake, FishIntakeError } from "../apps/web/lib/bms/fishIntake.ts";
+import { fishIntakeOptions, getFishIntake, listFishIntakes, saveFishIntake, FishIntakeError } from "../apps/web/lib/bms/fishIntake.ts";
 import { getFishOwnerSnapshot } from "../apps/web/lib/bms/fishOwnerRead.ts";
 import { saveFishStorageCount, FishOwnerError } from "../apps/web/lib/bms/fishOwnerOperations.ts";
 import { createFishDeliveryPlan, attachFishDeliveryOrder } from "../apps/web/lib/bms/fishOwnerOperations.ts";
@@ -160,4 +160,31 @@ test("unconfigured store currency explains rejection and leaves fish stock uncha
   assert.equal((await query(`SELECT current_stock FROM bms_inventory
     WHERE tenant_id=$1 AND location_id=$2 AND product_sku=$3 AND size='L'`,[tenant,location,sku])).rows[0].current_stock,before);
   assert.equal((await query(`SELECT count(*)::int n FROM bms_fish_intakes WHERE tenant_id=$1 AND request_key=$2`,[tenant,key])).rows[0].n,0);
+});
+
+test("two receipt lines keep separate generated lots and read-only details stay scoped",async()=>{
+  const saved=await saveFishIntake(tenant,actor,{kind:"LIVE",locationId:location,requestKey:randomUUID(),
+    lines:[
+      {fishName:"FAKE fish",sku,size:"L",supplierName:"FAKE raft",billDate:"2026-11-16",
+        receivedDate:"2026-11-16",billKg:"98",receivedKg:"98",purchaseAmount:"3895.50"},
+      {fishName:"FAKE fish",sku,size:"L",supplierName:"FAKE raft",billDate:"2026-11-16",
+        receivedDate:"2026-11-16",billKg:"7",receivedKg:"7",purchaseAmount:"274.75"},
+    ]});
+  const detail=await getFishIntake(tenant,actor,saved.intakeId);
+  assert.ok(detail);
+  assert.deepEqual(detail.lines.map(line=>[line.lineNo,line.receivedGrams,line.lotNo]),[
+    [1,98000,`FISH-${saved.intakeId.toUpperCase()}-1`],
+    [2,7000,`FISH-${saved.intakeId.toUpperCase()}-2`],
+  ]);
+  const lots=(await query(`SELECT lot_no,qty FROM bms_inventory_lots
+    WHERE tenant_id=$1 AND location_id=$2 AND product_sku=$3 AND lot_no=ANY($4::text[])
+    ORDER BY lot_no`,[tenant,location,sku,detail.lines.map(line=>line.lotNo)])).rows;
+  assert.deepEqual(lots.map(row=>Number(row.qty)),[98000,7000]);
+  assert.equal(await getFishIntake(otherTenant,actor,saved.intakeId),null);
+  assert.equal(await getFishIntake(tenant,actor,saved.intakeId,["OPENING"]),null);
+  assert.ok(!(await listFishIntakes(tenant,actor,30,["OPENING"])).some(row=>row.id===saved.intakeId));
+  const otherBranch=(await query(`SELECT id FROM bms_fish_intakes
+    WHERE tenant_id=$1 AND location_id=$2 AND kind='LIVE' ORDER BY created_at DESC LIMIT 1`,
+    [tenant,otherLocation])).rows[0].id as string;
+  assert.equal(await getFishIntake(tenant,actor,otherBranch),null);
 });

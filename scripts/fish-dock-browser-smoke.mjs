@@ -5,13 +5,14 @@ const { firefox,chromium } = await import(process.env.BMS_PLAYWRIGHT_MODULE || "
 const base=process.env.BMS_SMOKE_URL || "http://127.0.0.1:3018";
 assert.ok(["localhost","127.0.0.1"].includes(new URL(base).hostname),"Local fixture only");
 const output=".test-output/fish-dock-browser";
+const fixtureIntakeId="00000000-0000-4000-8000-000000000099";
 await mkdir(output,{recursive:true});
 const browserType=process.env.BMS_BROWSER==="chromium"?chromium:firefox;
 const browser=await browserType.launch({headless:true,...(browserType===chromium?{channel:"chrome"}:
   process.env.BMS_FIREFOX_EXECUTABLE?{executablePath:process.env.BMS_FIREFOX_EXECUTABLE}:{})});
 try {
   for (const width of [1280,390]) {
-    const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:"block"});
+    const context=await browser.newContext({viewport:{width,height:width===1280?1200:900},serviceWorkers:"block"});
     let previewRequest=null;
     context.setDefaultTimeout(20000);
     await context.addCookies([
@@ -40,7 +41,25 @@ try {
         unreadyProducts:[{sku:"FAKE-UNREADY",name:"ปลาไม่มีล็อต",reasons:["NOT_WEIGHTED","NOT_GRAM","LOT_DISABLED"]}],
         currency:"THB",
       }});
-      if (url.pathname==="/api/bms/fish-intake" && req.method()==="GET") return route.fulfill({json:{items:[]}});
+      if (url.pathname==="/api/bms/fish-intake" && req.method()==="GET") return route.fulfill({json:{items:[{
+        id:fixtureIntakeId,kind:"LIVE",createdAt:"2026-11-16T13:40:18.000Z",lineCount:2,
+        receivedGrams:105000,purchaseAmount:"4170.25",sourceName:null,
+      }]}});
+      if (url.pathname===`/api/bms/fish-intake/${fixtureIntakeId}`) return route.fulfill({json:{
+        id:fixtureIntakeId,kind:"LIVE",locationName:"FAKE branch",sourceName:null,sourceSheet:null,
+        sourceYear:null,note:null,createdAt:"2026-11-16T13:40:18.000Z",lines:[
+          {lineNo:1,sourceRow:null,billDate:"2026-11-16",receivedDate:"2026-11-16",
+            supplierName:"FAKE supplier",vesselRegistration:null,fishName:"FAKE fish",billSize:null,
+            actualSize:"L",sku:"FAKE-READY",size:"L",billGrams:98000,receivedGrams:98000,
+            unitPricePerKg:"39.75",purchaseAmount:"3895.50",extraAmount:"0.00",quality:null,
+            note:null,lotNo:"FAKE-LOT-1",expiryDate:null},
+          {lineNo:2,sourceRow:null,billDate:"2026-11-16",receivedDate:"2026-11-16",
+            supplierName:"FAKE supplier",vesselRegistration:null,fishName:"FAKE fish",billSize:null,
+            actualSize:"L",sku:"FAKE-READY",size:"L",billGrams:7000,receivedGrams:7000,
+            unitPricePerKg:"39.25",purchaseAmount:"274.75",extraAmount:"0.00",quality:null,
+            note:null,lotNo:"FAKE-LOT-2",expiryDate:null},
+        ],
+      }});
       if (url.pathname==="/api/bms/fish-intake" && req.method()==="POST") {
         previewRequest=req.postDataJSON();
         return route.fulfill({json:{previewHash:"FAKE-preview",totals:{lineCount:1,billGrams:98000,
@@ -74,7 +93,25 @@ try {
     assert.equal(previewRequest.input.lines[0].receivedKg,"98");
     assert.equal(await page.getByText("ยังไม่มีปลาที่ตั้งค่าเป็นสินค้าชั่งน้ำหนักพร้อมติดตามล็อต").count(),0);
     await page.screenshot({path:`${output}/${browserType.name()}-${width}.png`,fullPage:true});
-    console.log(`${browserType.name()} ${width}px: fish setup warning, ready option and form rendered`);
+    await page.addStyleTag({content:".ant-message{display:none!important}"});
+    if (width===1280) await page.locator(".ant-card").filter({hasText:"รายการล่าสุด"}).last()
+      .screenshot({path:`${output}/mockup-recent-desktop.png`});
+    await page.getByRole("button",{name:"ดูรายการ / ล็อต"}).click();
+    await page.getByText("FAKE-LOT-1").waitFor();
+    await page.getByText("FAKE-LOT-2").waitFor();
+    const dialog=page.getByRole("dialog");
+    await page.waitForFunction(()=>{
+      const modal=document.querySelector('[role="dialog"]');
+      return modal && getComputedStyle(modal).opacity==="1";
+    });
+    const bounds=await dialog.boundingBox();
+    assert.ok(bounds && bounds.x>=0 && bounds.x+bounds.width<=width &&
+      bounds.y>=0 && bounds.y<900,"receipt detail must fit the viewport");
+    if (width<500) await page.screenshot({path:`${output}/mockup-detail-mobile-first.png`});
+    if (width<500) await page.getByText("FAKE-LOT-2").scrollIntoViewIfNeeded();
+    await page.screenshot({path:`${output}/${browserType.name()}-${width}-detail.png`});
+    await page.screenshot({path:`${output}/mockup-detail-${width===1280?"desktop":"mobile-second"}.png`});
+    console.log(`${browserType.name()} ${width}px: form validation and separate receipt lots visible`);
     await context.close();
   }
 } finally {await browser.close();}

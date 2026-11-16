@@ -1973,7 +1973,9 @@ an operator note, and the audit preserves those per-line facts. Never add damage
   requires review of ambiguous dates, likely duplicate rows and totals before confirmation, and
   writes no stock, lot, movement or valuation. Live and opening intake convert kg to integer grams,
   require weighted/GRAM products with lots and the applicable permission, and commit stock, lot,
-  reviewed line value and audit in one tenant transaction. Opening accepts only an empty SKU/size
+  reviewed line value and audit in one tenant transaction. A blank lot ID generates a distinct lot
+  per receipt line; receipt details are read-only evidence and use the same tenant/branch scope as
+  the list (`purchase.view` for live/history, `inventory.count` for opening). Opening accepts only an empty SKU/size
   balance. Fish receipt is not a payment or payable posting. The selling catalog price remains
   a separate two-decimal per-gram amount. Arbitrary per-kg fish rates such as 43.17 THB/kg are
   not yet exact across order/POS/customer channels; do not describe fish receipt as a complete

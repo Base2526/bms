@@ -341,6 +341,13 @@ lot, and reviewed THB amount. The operator previews totals and confirms; stock i
 by **actual grams** (integer base units, displayed as kg to three decimals). The reviewed
 line amount plus reviewed extra cost enters the existing moving-average valuation, and
 the stock movement, lot, intake evidence and one audit record commit together. A live
+receipt has one line per lot: the add-line button creates another receipt line, and leaving
+its lot ID blank generates a distinct lot ID for that line. Supplying an existing lot ID
+can receive into that lot when its SKU/size/expiry identity matches. The recent-receipts
+table opens a read-only detail view with each saved line, its recorded lot ID, weights,
+dates, supplier and reviewed amounts. These are receipt-time facts, not the current lot
+balance. Live/history details require `purchase.view`; opening details require
+`inventory.count`, with the same tenant and branch scope as the recent list. A live
 receipt requires `purchase.view`, `purchase.edit`, `purchase.receive`, an active allowed
 branch, and the `WEIGHTED_PRODUCT` capability. Products must be weighted/GRAM with an
 active variant and lot tracking; expiry is required when configured. This path is separate
