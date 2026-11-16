@@ -47,9 +47,7 @@ function toGqlError(err: any): never {
   // ต้องเหลือร่องรอยจริงไว้ใน log ของ server ไม่งั้นเหลือแค่ 400 เปล่า ๆ ให้ไล่
   if (err?.code || err?.detail || err?.stack) {
     console.error("[bmsProducts] resolver error", {
-      code: err?.code ?? null,          // SQLSTATE ถ้ามาจาก pg
-      detail: err?.detail ?? null,
-      message: err?.message ?? null,
+      sqlstate: typeof err?.code === "string" && /^[0-9A-Z]{5}$/.test(err.code) ? err.code : null,
     });
   }
   throw new GraphQLError(err?.message || "operation failed", {

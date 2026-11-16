@@ -54,7 +54,8 @@ test("load runner reports a local read-only scenario without setup or hidden fai
   const webDir = path.resolve(import.meta.dirname, "../apps/web");
   try {
     const result = await new Promise<{ code: number | null; output: string }>((resolve, reject) => {
-      const child = spawn("npx", ["--no-install", "tsx", "../../scripts/load-test/run.mts",
+      const tsxCli = path.resolve(webDir, "node_modules/tsx/dist/cli.mjs");
+      const child = spawn(process.execPath, [tsxCli, "../../scripts/load-test/run.mts",
         "--scenario", "checkout-read", "--concurrency", "2", "--duration", "0.5", "--timeout", "1000"], {
         cwd: webDir,
         env: { ...process.env, BASE_URL: `http://127.0.0.1:${address.port}`, CHECKOUT_TOKEN: "FAKE-read-only" },

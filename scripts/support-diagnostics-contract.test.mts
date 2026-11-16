@@ -116,13 +116,16 @@ test("legacy fleet logs are no longer an unauthenticated read surface", async ()
   const detail = code(await read("apps/web/app/api/logs/[id]/route.ts"));
   const categories = code(await read("apps/web/app/api/admin/log-categories/route.ts"));
   const writer = code(await read("apps/web/lib/log/writeLog.server.ts"));
+  const sanitizer = code(await read("apps/web/lib/log/sanitize.ts"));
   assert.match(list, /authorizePlatformAdminRoute\(\)/);
   assert.match(detail, /authorizePlatformAdminRoute\(\)/);
   assert.match(categories, /authorizePlatformAdminRoute\(\)/);
   assert.match(list, /rateLimit\(`client-logs:/);
   assert.match(list, /tenantId,/);
-  assert.match(writer, /SENSITIVE_KEY/);
-  assert.match(writer, /SENSITIVE_TEXT/);
+  assert.match(writer, /sanitizeLogText/);
+  assert.match(writer, /sanitizeLogValue/);
+  assert.match(sanitizer, /SENSITIVE_KEY/);
+  assert.match(sanitizer, /CREDENTIAL/);
 });
 
 test("browser queue is scoped, idempotent and standalone POS can export/send", async () => {

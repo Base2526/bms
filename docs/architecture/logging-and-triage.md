@@ -15,12 +15,29 @@ one request (subject to log throttling). Explicit client and authorization codes
 `FORBIDDEN`, `BAD_USER_INPUT`, `BAD_REQUEST`, `NOT_FOUND`, `CONFLICT`, GraphQL parse/validation
 and other expected codes in `graphql/expectedErrorCodes.ts`) use `level=warn`. Unexpected failures
 still use `level=error`.
+The resolver wrapper records operation, actor and argument **keys** only; it never writes argument
+values such as phone numbers, bank accounts, passwords or customer text. The shared logger redacts
+credentials, contact data, account-sized numbers and sensitive metadata keys before stdout,
+`system_logs` or Slack. `system_logs.created_by` remains a legacy integer column: UUID actors stay
+in redacted `meta.userId`, rather than being misparsed into an unrelated integer.
+
+Authenticated client batches to `POST /api/logs` are limited to 256 KiB and 50 records. Actor and
+tenant are refreshed from the server, and each row is marked `meta.source=client`; client-submitted
+errors do not trigger Slack. A failed insert returns a non-success response with `insertedCount`.
+The platform-admin delete API requires an explicit confirmation header and writes a `log-admin`
+deletion record in the same transaction. Those deletion records cannot be removed through the API.
+Log detail and deletion accept both integer and legacy UUID row IDs. Log filters reject malformed
+IDs, dates and pagination values instead of broadening a query. Legacy GraphQL resolver `console`
+calls that printed customer input or returned rows have been removed; fallback error output is
+sanitized before reaching stdout.
 The Redis request metric records every GraphQL error response, including expected ones; its error
 rate is a request-outcome metric, not a count of server faults. Wrapped REST routes use a static
 `rest:METHOD:/api/...` metric label, but routes without `withRouteErrorLog()` are not covered.
 
 The daily collector in `scripts/bms-log-triage/collect-error-logs.mjs` selects `level=error`, groups
-and redacts those records. Its workflow opens only a draft PR for review. It does not equate
+and redacts every exported field, labels client/server origin and bounds the report. The report is
+untrusted input to its model workflow; text inside a log cannot authorize an action. Its workflow
+opens only a draft PR for review. It does not equate
 `status=error` with a server failure. A locally copied/restored database and the live deployment
 can have different log IDs, counts, timestamps and schema state; record which source was inspected
 before comparing trends or claiming a production fix.

@@ -67,7 +67,7 @@ type FileRow = {
 };
 
 type LogRow = {
-  id: number;
+  id: string | number;
   level: 'debug' | 'info' | 'warn' | 'error' | string;
   category: string;
   message: string;
@@ -852,7 +852,7 @@ function LogsPanel() {
     if (level) qs.set('level', level);
     if (category) qs.set('category', category);
     if (q) qs.set('q', q);
-    const res = await fetch('/api/logs?' + qs.toString(), { method: 'DELETE' });
+    const res = await fetch('/api/logs?' + qs.toString(), { method: 'DELETE', headers: { 'x-bms-confirmed': 'true' } });
     const j = await res.json();
     if (res.ok) { message.success(`Deleted ${j.deleted} logs`); load(); } else { message.error(j.error || 'Purge failed'); }
   }

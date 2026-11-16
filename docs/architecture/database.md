@@ -2268,6 +2268,11 @@ never revisits a completed event. Environment overrides keep precedence for the 
 deployment settings. `10.84` serializes each provider/model timeline and closes adjacent periods so
 future rates cannot overlap even when admins add them out of chronological order. Unknown model cost
 remains `NULL`; this table never grants AI entitlement.
+Tool-loop and pharmacy retries pass each provider response's token breakdown to finalization, so a
+multi-provider event uses the effective rate for each provider/model. A call with incomplete usage
+remains in `unpriced_provider_calls`; known costs from other calls remain a subtotal. Older callers
+that supply an explicit cost without per-response evidence retain that estimate and are labelled
+`CALLER_ESTIMATE` in event metadata.
 
 Operational reports, scheduled digests, restaurant ordering hours, menu reset boundaries, waitlist
 service dates, customer reservations, and pharmacy lot dates prefer the validated `timezone_code`.

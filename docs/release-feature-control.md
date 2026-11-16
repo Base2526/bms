@@ -22,8 +22,8 @@ It fails if the count of features without feature-level test links grows beyond 
 baseline. Existing missing links remain visible in every manifest; a catalog contract alone is
 not evidence that each business operation works.
 
-The 2026-11-12 reconciliation linked known workflows added after the older human inventory snapshot
-and mapped existing capability suites; 8 known capabilities still lack direct workflow test links.
+The reconciliation linked known workflows added after the older human inventory snapshot
+and mapped existing capability suites; 6 known capabilities still lack direct workflow test links.
 It still has `baseline-in-progress` scope. Continue with
 [feature-completion-plan.md](feature-completion-plan.md); the mapped suites must run on the release
 commit, and DB/provider/hardware results must be recorded separately.

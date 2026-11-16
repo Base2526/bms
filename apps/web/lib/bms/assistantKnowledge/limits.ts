@@ -87,7 +87,7 @@ export const SYSTEM_LIMITS: readonly SystemLimitGroup[] = [
         "เปลี่ยนชื่อสถานีได้ ประวัติไม่เปลี่ยนตาม: ตั๋วเก็บชื่อสถานี ณ เวลาที่ครัวเห็น ส่วนเกณฑ์เวลาย้ายไปกับชื่อใหม่ให้เอง",
         "ปิดสถานีคือปิดใช้งาน ไม่ใช่ลบ — ตั๋วเก่าและประวัติยังอยู่ครบ และสถานีที่ปิดแล้วแต่ยังมีของค้างในครัวยังมีปุ่มบนกระดาน",
         "ปิดสถานีที่ยังมีเมนูเปิดขายผูกอยู่ต้องยืนยันก่อน เพราะตั๋วของเมนูเหล่านั้นจะไปช่อง ไม่ระบุสถานี",
-        "จัดการสถานีที่ Stock models (สิทธิ์ product.edit) — ยังไม่มีการต่อเครื่องพิมพ์แยกตามสถานี",
+        "จัดการสถานีที่ Stock models (สิทธิ์ product.edit) — Desktop มี pilot จับคู่สถานีกับเครื่องพิมพ์ของแต่ละเครื่อง ยังไม่มีเส้นทางพิมพ์ส่วนกลางหรือการพิมพ์จากมือถือ/เบราว์เซอร์",
       ],
       [
         "One branch can run several stations (hot line, cold line, bar) — a station is not a branch and never splits stock; stock still moves by the order's branch.",
@@ -96,7 +96,7 @@ export const SYSTEM_LIMITS: readonly SystemLimitGroup[] = [
         "Renaming a station does not rewrite history: each ticket keeps the station name the kitchen actually saw, while the SLA thresholds follow the new name.",
         "Deactivating a station is not a delete — old tickets and history stay, and a deactivated station with food still in the kitchen keeps its button on the board.",
         "Deactivating a station that selling menu items still point at needs a confirmation, because their tickets will show as unassigned.",
-        "Stations are managed on Stock models (product.edit permission) — per-station printer routing is not built.",
+        "Stations are managed on Stock models (product.edit permission). Desktop has a per-workstation station-printer pilot; central routing and mobile/browser printing are not available.",
       ]
     ),
     aliases: lists(

@@ -24,10 +24,11 @@ import {
   RESET_TOKEN_TTL_MIN,
   sendPasswordResetEmail,
 } from "@/lib/passwordReset";
-import { buildFileUrlById, persistUploadStream } from "@/lib/storage";
+import { buildFileUrlById, deleteStoredFile, persistUploadStream, type StoredFileRow } from "@/lib/storage";
 import { requireAuth, sha256Hex, generateRawToken } from "@/lib/auth"
 import { getTenantName } from "@/lib/bms/platform";
 import { addLog } from "@/lib/log/log.server";
+import { sanitizeLogText, sanitizeLogValue } from "@/lib/log/sanitize";
 import { v4 as uuidv4 } from 'uuid';
 
 import { verifySocialIdentity, type VerifiedSocialIdentity } from "@/lib/auth/social";
@@ -106,6 +107,7 @@ import { audit } from "@/lib/bms/audit";
 import { assertSocialAuthAvailable } from "@/lib/bms/socialAuthSettings";
 import {
   assertNoActiveStaffAssignments,
+  assertAdministratorRemains,
   auditUserChangeInTx,
   canReadStaffContact,
   explainUserDeleteFailure,
@@ -560,34 +562,8 @@ function serializeError(err: unknown): { name?: string; message?: string } {
   }
 }
 
-function redactSecrets(value: unknown, depth = 0): unknown {
-  if (depth > 6) return "[MaxDepth]";
-  if (value == null) return value;
-  if (typeof value !== "object") return value;
-
-  if (Array.isArray(value)) {
-    return value.map((v) => redactSecrets(v, depth + 1));
-  }
-
-  const obj = value as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (/password|token|secret|authorization|cookie/i.test(k)) {
-      out[k] = "[REDACTED]";
-      continue;
-    }
-    out[k] = redactSecrets(v, depth + 1);
-  }
-  return out;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function pickValue(source: unknown, key: string): unknown {
-  if (!isRecord(source)) return undefined;
-  return source[key];
 }
 
 function buildResolverMeta(kind: "Query" | "Mutation", name: string, args: unknown, ctx: unknown) {
@@ -596,25 +572,10 @@ function buildResolverMeta(kind: "Query" | "Mutation", name: string, args: unkno
   const user_id = (ctxUser?.id ?? ctxRec?.author_id ?? null) as unknown;
 
   const argsRec = isRecord(args) ? args : undefined;
-  const input = argsRec && isRecord(argsRec.input) ? (argsRec.input as Record<string, unknown>) : undefined;
-  const source: unknown = input ?? argsRec ?? {};
-
-  const client_id = pickValue(source, "client_id") ?? pickValue(source, "clientId");
-  const phone = pickValue(source, "phone");
-  const bank_name = pickValue(source, "bank_name") ?? pickValue(source, "bankName");
-  const account = pickValue(source, "account") ?? pickValue(source, "account_no") ?? pickValue(source, "account_norm");
-  const postId = pickValue(source, "postId") ?? pickValue(source, "post_id");
-  const id = pickValue(source, "id");
-
   const meta: Record<string, unknown> = {
     resolver: `${kind}.${name}`,
     user_id,
-    client_id,
-    phone,
-    bank_name,
-    account,
-    postId,
-    id,
+    argumentKeys: argsRec ? Object.keys(argsRec).slice(0, 30) : [],
   };
 
   // strip null/undefined to keep logs tidy
@@ -640,10 +601,7 @@ function wrapResolverMap(kind: "Query" | "Mutation", map: Record<string, unknown
       const meta = buildResolverMeta(kind, name, args, ctx);
 
       void logAsync("info", "graphql", `${kind}.${name} called`, meta);
-      void logAsync("debug", "graphql", `${kind}.${name} args`, {
-        ...meta,
-        args: redactSecrets(args),
-      });
+      void logAsync("debug", "graphql", `${kind}.${name} args`, meta);
 
       try {
         const result = await Promise.resolve((fn as (...a: unknown[]) => unknown)(...resolverArgs));
@@ -836,7 +794,7 @@ const rawResolvers = {
         );
         return rows[0]?.count || 0;
       } catch (err) {
-        console.error('[Role.user_count] Error counting users:', err);
+        console.error('[Role.user_count] Error counting users:', sanitizeLogValue(err));
         return 0;
       }
     },
@@ -856,7 +814,7 @@ const rawResolvers = {
         );
         return rows[0] || null;
       } catch (err) {
-        console.error('[User.roleDetails] Error fetching role:', err);
+        console.error('[User.roleDetails] Error fetching role:', sanitizeLogValue(err));
         return null;
       }
     },
@@ -867,7 +825,7 @@ const rawResolvers = {
       try {
         return await getTenantName(parent.tenant_id);
       } catch (err) {
-        console.error('[User.tenantName] Error fetching tenant name:', err);
+        console.error('[User.tenantName] Error fetching tenant name:', sanitizeLogValue(err));
         return null;
       }
     },
@@ -1745,7 +1703,7 @@ const rawResolvers = {
         );
         return rows;
       } catch (err) {
-        console.error('[Query.roles] Error fetching roles:', err);
+        console.error('[Query.roles] Error fetching roles:', sanitizeLogValue(err));
         return [];
       }
     },
@@ -1762,7 +1720,7 @@ const rawResolvers = {
         );
         return rows[0] || null;
       } catch (err) {
-        console.error('[Query.role] Error fetching role:', err);
+        console.error('[Query.role] Error fetching role:', sanitizeLogValue(err));
         return null;
       }
     },
@@ -1772,7 +1730,6 @@ const rawResolvers = {
       ctx: any
     ) => {
       const auth = requireAuth(ctx);
-      console.log("[Query] users :", auth.author_id, { search, limit, offset });
 
       // กัน limit โหด ๆ
       const safeLimit = Math.min(Math.max(limit || 10, 1), 100);
@@ -2246,7 +2203,6 @@ const rawResolvers = {
     },
     globalSearch: async (_: any, { q }: { q: string }, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx, {  optionalWeb: true, optionalAndroid: true });
-      console.log("[Query] globalSearch (pro) :", author_id, q);
 
       const term = (q || "").trim();
       if (!term) {
@@ -2508,7 +2464,6 @@ const rawResolvers = {
       }: { cursor?: string | null; limit: number; sinceVersion: string },
       ctx: any
     ) => {
-      console.log("[Query] scamPhonesDelta", { cursor, sinceVersion, limit });
 
       // เลือก source ก่อน: cursor > sinceVersion
       const rawSince = cursor || sinceVersion;
@@ -2610,7 +2565,6 @@ const rawResolvers = {
       { q, limit = 20 }: { q: string; limit: number },
       ctx: any
     ) => {
-      console.log("[Query] searchBankAccounts", { q, limit });
 
       const term = String(q || "").trim();
       if (!term) return [];
@@ -2618,7 +2572,6 @@ const rawResolvers = {
       const safeLimit = Math.min(Math.max(limit || 20, 1), 50);
       const qNorm = normalizeAccountNo(term);
 
-      console.log("[Query][qNorm] searchBankAccounts", qNorm);
 
       const mapRow = async (r: any) => {
         const masked = maskAccount(r.account_no || r.account_norm);
@@ -3032,7 +2985,7 @@ const rawResolvers = {
       await enforceAuthRateLimit(ctx, "login", identifier, 10, 60, 15 * 60_000);
       const { rows } = await query(
         `
-        SELECT id, name, username, email, role, avatar, phone, password_hash
+        SELECT id, name, username, email, role, avatar, phone, password_hash, is_email_verified
         FROM users
         WHERE ${email ? "lower(btrim(email))" : "lower(btrim(username))"} = $1
         LIMIT 1
@@ -3044,6 +2997,9 @@ const rawResolvers = {
       if (!(await passwordMatches(password, user))) {
         // ป้องกันการเดารหัส/บัญชี โดยไม่บอกว่า email หรือ password ผิด
         return { ok: false, message: "Invalid credentials" };
+      }
+      if (user.is_email_verified === false) {
+        return { ok: false, message: "Please verify your email before signing in" };
       }
 
       // // สร้าง token อย่างง่าย (ควรเปลี่ยนเป็น JWT/Session จริงในงานจริง)
@@ -3223,7 +3179,7 @@ const rawResolvers = {
 
       // best-effort — พลาดตรงนี้ต้องไม่ทำให้ login ล้มเหลว (แค่แสดง last login ไม่ได้)
       query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]).catch((err) => {
-        console.error("[loginAdmin] update last_login_at failed:", err);
+        console.error("[loginAdmin] update last_login_at failed:", sanitizeLogValue(err));
       });
 
       return {
@@ -3273,7 +3229,7 @@ const rawResolvers = {
       const token = await issueAdminSession(user);
 
       query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]).catch((err) => {
-        console.error("[loginAdminWithSocial] update last_login_at failed:", err);
+        console.error("[loginAdminWithSocial] update last_login_at failed:", sanitizeLogValue(err));
       });
 
       return {
@@ -3366,7 +3322,7 @@ const rawResolvers = {
         );
       } catch (tokenError) {
         await cleanupUnverifiedRegistration().catch((cleanupError) => {
-          console.error("[registerUser] cleanup after verification-token failure failed:", cleanupError);
+          console.error("[registerUser] cleanup after verification-token failure failed:", sanitizeLogValue(cleanupError));
         });
         throw tokenError;
       }
@@ -3399,7 +3355,7 @@ const rawResolvers = {
       } catch (mailError) {
         // Do not leave a newly-created, unusable account that makes the retry look like a duplicate.
         await cleanupUnverifiedRegistration().catch((cleanupError) => {
-          console.error("[registerUser] cleanup after verification-email failure failed:", cleanupError);
+          console.error("[registerUser] cleanup after verification-email failure failed:", sanitizeLogValue(cleanupError));
         });
         throw mailError;
       }
@@ -3437,7 +3393,7 @@ const rawResolvers = {
         }
       } catch (e) {
         // ไม่ throw — การสมัครสำเร็จแม้สร้าง chat ไม่ได้
-        console.error('[registerUser] failed to create admin chat', e);
+        console.error('[registerUser] failed to create admin chat', sanitizeLogValue(e));
       }
 
       return true;
@@ -3490,7 +3446,7 @@ const rawResolvers = {
         // Preserve the non-enumerating response and make the unsent token
         // unusable. The mailer already records the provider failure.
         await invalidateResetToken(token).catch(() => void 0);
-        console.error("[requestPasswordReset] email delivery failed", err);
+        console.error("[requestPasswordReset] email delivery failed", sanitizeLogValue(err));
       }
 
       return true;
@@ -3564,7 +3520,7 @@ const rawResolvers = {
       // (apps/web/i18n) ไม่รู้จัก ซึ่งจะ getMessage() แล้วได้ key เปล่ากลับมาแทนข้อความจริง
       const languageVal = language === "th" || language === "en" ? language : null;
 
-      console.log("[Mutation] updateMe :", author_id, name, phone, username, languageVal, gender, themePreferenceVal, notifications_enabled );
+      console.log("[Mutation] updateMe :", author_id, { fields: Object.keys(data) });
       const { rows } = await query(
         `UPDATE users SET
           name = COALESCE($1, name),
@@ -3818,7 +3774,6 @@ const rawResolvers = {
       }
       const author_id = String(auth.author_id);
 
-      console.log("[Mutation] upsertPost :", author_id, data, image_ids_delete);
 
       // ✅ ให้เก็บ postId ไว้ใช้ emit หลัง commit
       let finalPostId: string | null = null;
@@ -3901,30 +3856,22 @@ const rawResolvers = {
             const phone = tel.tel;
             const post = postId;
 
-            console.log(`[TEL_SYNC] mode=${mode} | id=${telId} | tel="${phone}" | postId=${post}`);
 
             if (mode === "deleted") {
-              console.log(`[TEL_DELETE] DELETE FROM post_tel_numbers WHERE id=${telId} AND post_id=${post}`);
               await client.query(`DELETE FROM post_tel_numbers WHERE id=$1 AND post_id=$2`, [telId, post]);
-              console.log(`[TEL_DELETE] success id=${telId}`);
             } else if (mode === "edited") {
-              console.log(`[TEL_UPDATE] UPDATE post_tel_numbers SET tel="${phone}" WHERE id=${telId} AND post_id=${post}`);
               await client.query(`UPDATE post_tel_numbers SET tel=$1 WHERE id=$2 AND post_id=$3`, [
                 phone,
                 telId,
                 post,
               ]);
-              console.log(`[TEL_UPDATE] success id=${telId}, newTel="${phone}"`);
             } else if (mode === "new") {
-              console.log(`[TEL_INSERT] INSERT INTO post_tel_numbers (post_id, tel) VALUES (${post}, "${phone}")`);
               await client.query(
                 `INSERT INTO post_tel_numbers (post_id, tel)
                 VALUES ($1,$2) ON CONFLICT DO NOTHING`,
                 [post, phone]
               );
-              console.log(`[TEL_INSERT] success tel="${phone}"`);
             } else {
-              console.warn(`[TEL_SYNC] Unknown mode="${mode}" for id=${telId}`);
             }
           }
         }
@@ -4058,7 +4005,6 @@ const rawResolvers = {
         return out;
       });
 
-      console.log("[upsertPost] = ", result);
 
       // ============================================================
       // ✅ EMIT EVENT (หลัง commit เท่านั้น)
@@ -5437,7 +5383,7 @@ const rawResolvers = {
             }
           }
         } catch (e) {
-          if (isDev) console.warn("[FCM] push send failed", e);
+          if (isDev) console.warn("[FCM] push send failed", sanitizeLogValue(e));
         }
       })();
 
@@ -5474,8 +5420,10 @@ const rawResolvers = {
 
       // 2️⃣ ทำความสะอาดข้อมูล
       const name = (data.name ?? '').trim();
-      const avatar = data.avatar ?? null;
-      const phone = data.phone ?? null;
+      // GraphQL distinguishes an omitted optional field from an explicit null.
+      // An edit that only changes a role/password must preserve existing contact data.
+      const avatar = data.avatar;
+      const phone = data.phone;
       if (!name) throw new GraphQLError("name is required");
       const emailResult = data.email ? validateEmail(String(data.email)) : null;
       if (!id && (!emailResult || !emailResult.ok)) throw new GraphQLError("valid email is required");
@@ -5509,6 +5457,11 @@ const rawResolvers = {
         );
         const roleId = resolvedRole?.roleId ?? null;
 
+        if (target?.tenant_id && !target.is_platform_admin && target.role === "Administrator" &&
+            resolvedRole && resolvedRole.roleName !== "Administrator") {
+          await assertAdministratorRemains(client, target.tenant_id, [target.id]);
+        }
+
         if (id) {
           if (String(id) === gate.actorId && !platform && !gate.isSuper &&
               resolvedRole && resolvedRole.roleName !== target?.role) {
@@ -5526,13 +5479,17 @@ const rawResolvers = {
           updateValues.push(name);
           paramIndex++;
 
-          updateFields.push(`avatar = $${paramIndex}`);
-          updateValues.push(avatar);
-          paramIndex++;
+          if (avatar !== undefined) {
+            updateFields.push(`avatar = $${paramIndex}`);
+            updateValues.push(avatar);
+            paramIndex++;
+          }
 
-          updateFields.push(`phone = $${paramIndex}`);
-          updateValues.push(phone);
-          paramIndex++;
+          if (phone !== undefined) {
+            updateFields.push(`phone = $${paramIndex}`);
+            updateValues.push(phone);
+            paramIndex++;
+          }
 
           // เขียนเฉพาะ `role_id` — เลิกเขียน `role` เป็น text (trigger sync ชื่อให้เองอยู่แล้ว)
           // path text เป็นทางเดียวที่ทำให้เกิด role ใหม่ในตารางกลางโดยไม่ตั้งใจ
@@ -5591,7 +5548,7 @@ const rawResolvers = {
           const { rows } = await client.query(
             `INSERT INTO users (name, avatar, phone, email, role_id, password_hash, tenant_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-            [name, avatar, phone, email, roleId, passwordHash, newTenantId]
+            [name, avatar ?? null, phone ?? null, email, roleId, passwordHash, newTenantId]
           );
           resultUser = rows[0] || null;
 
@@ -5634,44 +5591,63 @@ const rawResolvers = {
       // Self-edit still needs a tenant match (notably during platform drill-down).
       await requireManageableTarget(ctx, gate, String(user_id), undefined, true);
 
-      const { revisionId, result } = await runInTransaction(author_id, async (client) => {
-        // Repeat the row guard under lock. The target may have been promoted
-        // after the early UX check but before this transaction started.
-        await requireManageableTarget(ctx, gate, String(user_id), client, true);
-        const f = await file; // { filename, mimetype, encoding, createReadStream }
+      const uploaded: { row: StoredFileRow | null } = { row: null };
+      try {
+        const { result } = await runInTransaction(author_id, async (client) => {
+          // Repeat the row guard under lock. The target may have been promoted
+          // after the early UX check but before this transaction started.
+          const target = await requireManageableTarget(ctx, gate, String(user_id), client, true);
+          const f = await file; // { filename, mimetype, encoding, createReadStream }
 
-        // สร้างชื่อใหม่ เช่น avatar-<user_id>.ext
-        const ext = path.extname(f.filename || f.fileName || "");
-        const renameTo = `avatar-${user_id}${ext || ""}`;
+          const ext = path.extname(f.filename || f.fileName || "");
+          const renameTo = `avatar-${user_id}${ext || ""}`;
 
-        const row = await persistUploadStream(f, renameTo, {
-          visibility: "public",
-          tenantId: platform ? null : tenantId,
-          ownerUserId: String(user_id),
-          maxBytes: 5 * 1024 * 1024,
-          allowedMimeTypes: SAFE_IMAGE_UPLOAD_MIME_TYPES,
-        });
-
-        const avatarUrl = buildFileUrlById(row.id);
-
-        const updateRes = platform
-          ? await client.query(`UPDATE users SET avatar=$1 WHERE id=$2`, [avatarUrl, user_id])
-          : await client.query(`UPDATE users SET avatar=$1 WHERE id=$2 AND tenant_id=$3`, [avatarUrl, user_id, tenantId]);
-        if (updateRes.rowCount !== 1) {
-          throw new GraphQLError("user not found in current tenant", {
-            extensions: { code: "NOT_FOUND" },
+          const row = await persistUploadStream(f, renameTo, {
+            visibility: "public",
+            tenantId: platform ? null : tenantId,
+            ownerUserId: String(user_id),
+            maxBytes: 5 * 1024 * 1024,
+            allowedMimeTypes: SAFE_IMAGE_UPLOAD_MIME_TYPES,
           });
-        }
+          uploaded.row = row;
 
-        await addLog("info", "upload-avatar", "Upload avatar", {
-          userId: user_id,
-          fileId: row.id,
+          const avatarUrl = buildFileUrlById(row.id);
+
+          const updateRes = platform
+            ? await client.query(`UPDATE users SET avatar=$1 WHERE id=$2`, [avatarUrl, user_id])
+            : await client.query(`UPDATE users SET avatar=$1 WHERE id=$2 AND tenant_id=$3`, [avatarUrl, user_id, tenantId]);
+          if (updateRes.rowCount !== 1) {
+            throw new GraphQLError("user not found in current tenant", {
+              extensions: { code: "NOT_FOUND" },
+            });
+          }
+
+          await auditUserChangeInTx(client, target.tenant_id ?? tenantId, author_id,
+            "user.avatar", String(user_id), { fileId: row.id });
+
+          await addLog("info", "upload-avatar", "Upload avatar", {
+            userId: user_id,
+            fileId: row.id,
+          });
+
+          return avatarUrl;
         });
 
-        return avatarUrl;
-      });
-
-      return result;
+        return result;
+      } catch (error) {
+        // Storage/file metadata is written outside the user transaction. If the
+        // account write or audit rolls back, remove only this new orphan.
+        if (uploaded.row) {
+          try {
+            const removed = await query(`DELETE FROM files WHERE id = $1 AND owner_user_id = $2`,
+              [uploaded.row.id, String(user_id)]);
+            if (removed.rowCount === 1) await deleteStoredFile(uploaded.row.relpath);
+          } catch (cleanupError) {
+            console.error("[uploadAvatar] orphan cleanup failed:", sanitizeLogValue(cleanupError));
+          }
+        }
+        throw error;
+      }
     },
     deleteUser: async (_: any, { id }: { id: string }, ctx: any) => {
       // gate: platform admin ลบได้ทุกร้าน · Administrator ร้านตัวเอง · role ที่มี user.manage
@@ -5691,6 +5667,9 @@ const rawResolvers = {
 
       const { revisionId, result } = await runInTransaction(author_id, async (client) => {
         const target = await requireManageableTarget(ctx, gate, String(id), client);
+        if (target.tenant_id && !target.is_platform_admin && target.role === "Administrator") {
+          await assertAdministratorRemains(client, target.tenant_id, [target.id]);
+        }
         // Reassignment and deletion are atomic: a failed delete must not leave
         // conversations moved as a partial side effect.
         if (target.tenant_id) {
@@ -5742,6 +5721,17 @@ const rawResolvers = {
         if (targets.length === 0) return { ok: false, ids: [] as string[] };
         const deletableIds = targets.map((t) => t.id);
 
+        const administratorIdsByTenant = new Map<string, string[]>();
+        for (const target of targets) {
+          if (target.tenant_id && !target.is_platform_admin && target.role === "Administrator") {
+            administratorIdsByTenant.set(target.tenant_id,
+              [...(administratorIdsByTenant.get(target.tenant_id) ?? []), target.id]);
+          }
+        }
+        for (const tenant of [...administratorIdsByTenant.keys()].sort()) {
+          await assertAdministratorRemains(client, tenant, administratorIdsByTenant.get(tenant)!);
+        }
+
         for (const t of targets) {
           if (t.tenant_id) {
             await assertNoActiveStaffAssignments(client, t.tenant_id, t.id);
@@ -5785,7 +5775,7 @@ const rawResolvers = {
       }
       const author_id = String(auth.author_id);
 
-      console.log("[Mutation] updateMyProfile :", author_id, data);
+      console.log("[Mutation] updateMyProfile :", author_id, { fields: Object.keys(data) });
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         const { rows } = await client.query(
@@ -5820,7 +5810,6 @@ const rawResolvers = {
       }
       const author_id = String(auth.author_id);
 
-      console.log('[Mutation] renameChat :', chat_id, name, author_id);
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         const renamed = await client.query(
@@ -6073,7 +6062,6 @@ const rawResolvers = {
         });
       }
 
-      console.log("revisionId =", revisionId, "result =", result);
       return result;
     },
     deleteFile: async (_: any, { id }: { id: string }, ctx: any) => {
@@ -6110,7 +6098,6 @@ const rawResolvers = {
         }
       });
 
-      console.log("revisionId =", revisionId, "result =", result);
 
       return result;
     },
@@ -6156,7 +6143,6 @@ const rawResolvers = {
         return deleted;
       });
 
-      console.log("revisionId =", revisionId, "result =", result);
 
       return result;
     },
@@ -6264,7 +6250,7 @@ const rawResolvers = {
           myBookmarkStatusChanged: payload,
         });
       } catch (e) {
-        console.warn("[toggleBookmark] publish myBookmarkStatusChanged failed", e);
+        console.warn("[toggleBookmark] publish myBookmarkStatusChanged failed", sanitizeLogValue(e));
       }
 
       // ✅ หลัง transaction commit → addLog สำหรับ external service (optional)
@@ -6320,7 +6306,7 @@ const rawResolvers = {
           myBookmarkStatusChanged: payload,
         });
       } catch (e) {
-        console.warn("[bookmark] publish myBookmarkStatusChanged failed", e);
+        console.warn("[bookmark] publish myBookmarkStatusChanged failed", sanitizeLogValue(e));
       }
 
       return {
@@ -6368,7 +6354,7 @@ const rawResolvers = {
           myBookmarkStatusChanged: payload,
         });
       } catch (e) {
-        console.warn("[unbookmark] publish myBookmarkStatusChanged failed", e);
+        console.warn("[unbookmark] publish myBookmarkStatusChanged failed", sanitizeLogValue(e));
       }
 
       return {
@@ -6439,7 +6425,6 @@ const rawResolvers = {
       
       const user = await getUserById(author_id); // { id, name, avatar, ... }
 
-      console.log("[Mutation] addComment:", author_id, user);
 
       const id = uuidv4();
 
@@ -6454,7 +6439,6 @@ const rawResolvers = {
       );
       const comment = rows[0];
 
-      console.log("[Mutation] addComment-comment", comment);
 
       // หาเจ้าของโพสต์เพื่อแจ้งเตือน
       const postRes = await query(
@@ -6511,7 +6495,6 @@ const rawResolvers = {
 
       const user = await getUserById(author_id);
 
-      console.log("[replyComment]", author_id, user);
 
       const id = uuidv4();
 
@@ -6633,7 +6616,6 @@ const rawResolvers = {
         app_version,
       } = input;
 
-      console.log("[reportScamPhone] input:", input);
 
       const auth = requireAuth(ctx);
       if (!auth.isAuthenticated || !auth.author_id) throw new Error("Unauthenticated");
@@ -6841,7 +6823,7 @@ const rawResolvers = {
           { category: "support", triggeredBy: "resolvers:createSupportTicket" }
         );
       } catch (e: any) {
-        console.error("[support] email notification failed", e?.message || e);
+        console.error("[support] email notification failed", sanitizeLogValue(e));
       }
 
       return { ok: true, message: "Received. We will reply soon.", ticketId };
@@ -7000,7 +6982,7 @@ const rawResolvers = {
       } catch (err: any) {
         console.error("[uploadDiagnostics] failed", {
           uploadId,
-          message: err?.message || "unknown",
+          message: sanitizeLogText(err?.message || "unknown"),
         });
 
         await addLog("error", "diagnostics-upload", "Mobile diagnostics upload failed", {
@@ -7492,7 +7474,7 @@ const rawResolvers = {
           myBankBlockStatusChanged: payload,
         });
       } catch (e) {
-        console.warn("[reportScamBankAccount] publish myBankBlockStatusChanged failed", e);
+        console.warn("[reportScamBankAccount] publish myBankBlockStatusChanged failed", sanitizeLogValue(e));
       }
 
       return result;
@@ -7605,7 +7587,7 @@ const rawResolvers = {
           myBankBlockStatusChanged: payload,
         });
       } catch (e) {
-        console.warn("[unreportScamBankAccount] publish myBankBlockStatusChanged failed", e);
+        console.warn("[unreportScamBankAccount] publish myBankBlockStatusChanged failed", sanitizeLogValue(e));
       }
 
       return result;
@@ -7617,7 +7599,6 @@ const rawResolvers = {
     createRole: async (_: any, { input }: { input: any }, ctx: any) => {
       await requirePlatformOnly(ctx); // role = นิยามกลางทั้งระบบ → platform admin เท่านั้น
       const { author_id } = requireAuth(ctx);
-      console.log('[Mutation] createRole:', author_id, input);
 
       const { name, description, is_active } = input;
 
@@ -7650,10 +7631,9 @@ const rawResolvers = {
           [trimmedName, description || null, is_active !== false]
         );
 
-        console.log('[Mutation] createRole success:', rows[0]);
         return rows[0];
       } catch (err: any) {
-        console.error('[Mutation] createRole error:', err);
+        console.error('[Mutation] createRole error:', sanitizeLogValue(err));
         throw new Error(err.message || 'Failed to create role');
       }
     },
@@ -7661,7 +7641,6 @@ const rawResolvers = {
     updateRole: async (_: any, { id, input }: { id: string; input: any }, ctx: any) => {
       await requirePlatformOnly(ctx); // role = นิยามกลางทั้งระบบ → platform admin เท่านั้น
       const { author_id } = requireAuth(ctx);
-      console.log('[Mutation] updateRole:', author_id, id, input);
 
       const { name, description, is_active } = input;
 
@@ -7738,10 +7717,9 @@ const rawResolvers = {
           params
         );
 
-        console.log('[Mutation] updateRole success:', rows[0]);
         return rows[0];
       } catch (err: any) {
-        console.error('[Mutation] updateRole error:', err);
+        console.error('[Mutation] updateRole error:', sanitizeLogValue(err));
         throw new Error(err.message || 'Failed to update role');
       }
     },
@@ -7783,7 +7761,7 @@ const rawResolvers = {
         console.log('[Mutation] deleteRole success:', id);
         return true;
       } catch (err: any) {
-        console.error('[Mutation] deleteRole error:', err);
+        console.error('[Mutation] deleteRole error:', sanitizeLogValue(err));
         throw new Error(err.message || 'Failed to delete role');
       }
     },
@@ -7815,7 +7793,7 @@ const rawResolvers = {
         console.log('[Mutation] setRoleActive success:', rows[0]);
         return rows[0];
       } catch (err: any) {
-        console.error('[Mutation] setRoleActive error:', err);
+        console.error('[Mutation] setRoleActive error:', sanitizeLogValue(err));
         throw new Error(err.message || 'Failed to set role active status');
       }
     },

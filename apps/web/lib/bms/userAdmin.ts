@@ -101,6 +101,55 @@ export async function assertNoActiveStaffAssignments(
   }
 }
 
+/** Serialize Administrator removals so concurrent edits cannot leave a shop ownerless. */
+export async function assertAdministratorRemains(
+  client: PoolClient,
+  tenantId: string,
+  removingIds: string[]
+): Promise<void> {
+  if (removingIds.length === 0) return;
+  await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 741))", [tenantId]);
+  const remaining = await client.query(
+    `SELECT 1 FROM users
+      WHERE tenant_id = $1 AND role = 'Administrator' AND is_platform_admin = FALSE
+        AND id <> ALL($2::uuid[]) LIMIT 1`,
+    [tenantId, removingIds]
+  );
+  if (!remaining.rowCount) {
+    throw new GraphQLError("ร้านต้องมี Administrator อย่างน้อยหนึ่งบัญชี", {
+      extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+    });
+  }
+}
+
+/** Apply the same account rank boundary to POS staff changes as to team edits. */
+export async function assertManageablePosAccountInTx(
+  client: PoolClient,
+  tenantId: string,
+  targetId: string,
+  actorId: string
+): Promise<void> {
+  const target = await client.query<ManagedUserRow>(
+    `SELECT id, tenant_id, role, is_platform_admin FROM users
+      WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+    [tenantId, targetId]
+  );
+  const row = target.rows[0];
+  if (!row) throw notFound();
+  const actor = await client.query<ManagedUserRow>(
+    "SELECT id, tenant_id, role, is_platform_admin FROM users WHERE id = $1", [actorId]
+  );
+  const current = actor.rows[0];
+  if (!current || (!current.is_platform_admin && current.tenant_id !== tenantId)) {
+    throw forbidden("ไม่มีสิทธิ์จัดการบัญชีนี้");
+  }
+  if (row.id === actorId) return;
+  if (!canManageUserTarget(
+    { platform: current.is_platform_admin, tenantId, role: current.role ?? "" },
+    { tenantId: row.tenant_id, role: row.role, isPlatformAdmin: row.is_platform_admin }
+  )) throw forbidden("ไม่มีสิทธิ์จัดการบัญชีนี้");
+}
+
 export function explainUserDeleteFailure(error: unknown): never {
   if ((error as { code?: string })?.code === "23503") {
     throw new GraphQLError("ลบบัญชีนี้ไม่ได้ เพราะมีประวัติการทำรายการที่ต้องเก็บไว้ กรุณาคงบัญชีและปรับสิทธิ์ตามนโยบายร้าน", {

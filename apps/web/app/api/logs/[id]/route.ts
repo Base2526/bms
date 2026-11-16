@@ -26,8 +26,11 @@ async function ensureStructuredColsReady() {
 async function handleGET(_req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await authorizePlatformAdminRoute();
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
-  const id = parseInt(params.id, 10);
-  if (isNaN(id)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+  const id = params.id;
+  if (!/^(?:[1-9]\d{0,18}|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(id) ||
+      (/^\d+$/.test(id) && BigInt(id) > 9_223_372_036_854_775_807n)) {
+    return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+  }
 
   const hasStructured = await ensureStructuredColsReady();
 
@@ -36,7 +39,7 @@ async function handleGET(_req: NextRequest, { params }: { params: { id: string }
               action, status, correlation_id, session_id, screen_name, route_name,
               platform, app_version, duration_ms, error_message, stack, device_info
          FROM system_logs
-        WHERE id = $1
+        WHERE id::text = $1
         LIMIT 1`
     : `SELECT id, level, category, message, meta, created_by, created_at,
               meta->>'action' AS action,
@@ -52,7 +55,7 @@ async function handleGET(_req: NextRequest, { params }: { params: { id: string }
               meta->>'stack' AS stack,
               meta->'deviceInfo' AS device_info
          FROM system_logs
-        WHERE id = $1
+        WHERE id::text = $1
         LIMIT 1`;
 
   const { rows } = await query(sql, [id]);

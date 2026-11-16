@@ -11,6 +11,11 @@ import { formatTimeAgo } from "../apps/web/components/comments/Helper.ts";
 test("admin and reachable shared UI have no unreviewed authored language leaks", () => {
   const { files, candidates } = auditAdminUi();
   assert.ok(files.length >= 200, "Admin routes and their shared components must be scanned");
+  for (const page of ["manual", "pharmacy-manual", "architecture"]) {
+    assert.ok(files.some(file => file.replaceAll("\\", "/").endsWith(`/admin/${page}/page.tsx`)));
+    assert.ok(!candidates.some(candidate => candidate.file.endsWith(`/admin/${page}/page.tsx`)),
+      `${page} has its own bilingual content tree and must not enter the UI-copy scan`);
+  }
   const exceptions = JSON.parse(readFileSync(new URL("./fixtures/admin-ui-copy-exceptions.json", import.meta.url), "utf8"));
   const missing = candidates.filter(({ file, text }: { file: string; text: string }) => !exceptions[file]?.strings.includes(text));
   assert.deepEqual(missing, [], "Localize new UI copy; exceptions are for reviewed data, brands and protocol identifiers only");

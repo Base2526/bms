@@ -164,7 +164,7 @@ const th = {
     en_reject_2b03b: "ปฏิเสธ",
     en_prefix_90ece: "คำนำหน้า",
     en_warning_e9c45: "คำเตือน",
-    en_enter_2b9ec: "เข้าดู",
+    en_enter_2b9ec: "Enter",
     en_loading_b04ba: "กำลังโหลด...",
     en_title_768e0: "ชื่อเรื่อง",
     en_author_5fda2: "ผู้เขียน",

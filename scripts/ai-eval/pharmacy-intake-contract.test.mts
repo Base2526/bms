@@ -880,6 +880,7 @@ test("pharmacy retries use one event and finalize aggregated provider usage once
   assert.equal(finalized[0].result.inputTokens, 30);
   assert.equal(finalized[0].result.outputTokens, 5);
   assert.equal(finalized[0].result.estimatedCost, 0.000165);
+  assert.deepEqual(finalized[0].result.providerUsages.map((item: any) => [item.inputTokens, item.outputTokens]), [[10, 2], [20, 3]]);
 });
 
 test("unknown questionKey from the model is rejected — AI may pick, never invent, a question", async () => {

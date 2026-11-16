@@ -57,7 +57,8 @@ export const bmsPosResolvers = {
       return listLocationsForUser(getTenantId(ctx), String(auth.author_id));
     },
     async bmsLocations(_p: unknown, _a: unknown, ctx: any) {
-      await requirePermission(ctx, "product.view");
+      const perms = await loadPermissions(ctx);
+      if (!perms.has("pos.device.manage")) await requirePermission(ctx, "product.view");
       return listLocations(getTenantId(ctx));
     },
 
@@ -313,6 +314,7 @@ export const bmsPosResolvers = {
         if (args.pin) await setCashierPin(tenantId, args.userId, args.pin, actorUserId);
         else await clearCashierPin(tenantId, args.userId, actorUserId);
       } catch (e: any) {
+        if (e instanceof GraphQLError) throw e;
         throw new GraphQLError(e?.message || "ตั้ง PIN ไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
       }
       return true;
@@ -326,6 +328,7 @@ export const bmsPosResolvers = {
           getTenantId(ctx), args.userId, args.posOnly, String(requireAuth(ctx).author_id)
         );
       } catch (e: any) {
+        if (e instanceof GraphQLError) throw e;
         throw new GraphQLError(e?.message || "ตั้งค่าบัญชีไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
       }
       return true;

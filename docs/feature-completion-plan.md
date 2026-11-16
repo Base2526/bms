@@ -1,7 +1,7 @@
 # BMS feature completion plan
 
 Status: implementation backlog, not a production certification. Reviewed against the repository
-on 2026-11-13. The release registry remains `baseline-in-progress`; a code status, a migration
+on 2026-11-16. The release registry remains `baseline-in-progress`; a code status, a migration
 filename, or a linked test does not prove tenant enablement or live-provider behavior.
 
 ## A–J execution tracker
@@ -11,7 +11,7 @@ closed.** “Repository progress” describes the current working tree; it is no
 
 | Track | Work | Repository progress | Closure still required |
 | --- | --- | --- | --- |
-| A | Inventory and release evidence | 88 known workflows registered; evidence template/checker added; missing direct test links reduced to 8 | Reconcile every older inventory row and create an exact clean-commit release record |
+| A | Inventory and release evidence | 88 known workflows registered; evidence template/checker added; missing direct test links reduced to 6 | Reconcile every older inventory row and create an exact clean-commit release record |
 | B | Tenant security and RBAC | Permission matrix reads/writes now use tenant RLS context; write, actor audit and confirmation are atomic/explicit | Isolated DB denial, grants and concurrent-edit tests; Administrator UAT |
 | C | Money, stock and order integrity | Existing service and pure/DB contract suites identified; shipment audit moved into its transaction | Restored DB races, replay/rollback, backup restore and shipment-create idempotency policy |
 | D | Retail web cart and pickup | Server-reviewed variant/pack cart and signed checkout are in source; retail pickup is still absent | DB/browser proof, retail pickup state machine and end-to-end customer pilot |
@@ -25,7 +25,17 @@ closed.** “Repository progress” describes the current working tree; it is no
 Track details and implementation order follow. Do not close a track from a code status or pure test
 alone; attach the evidence listed in the completion rule below.
 
-### Local verification on 2026-11-12
+### Local verification on 2026-11-16
+
+On a dirty Windows working tree, `npm run gate` passed: release registry, regression inventory,
+TypeScript, 3,804 pure tests (6 skipped), and the Web production build (151 static pages). The
+Mobile TypeScript check and Jest suite (473/473), and Desktop Node suite (153/153), passed
+separately. The gate first exposed a Windows path-separator error in the Admin copy scanner and a
+Windows `spawn npx ENOENT` in the load-measurement contract; both were repaired and the full gate
+passed. This is local source evidence only. No isolated DB suite, authenticated browser, live
+provider, hardware, backup restore, or target deployment was run in this pass.
+
+### Earlier local verification on 2026-11-12
 
 The current **dirty working tree** passed `cd apps/web && npm run gate`: the release-registry
 check, regression inventory, TypeScript, 3,587 pure assertions (6 skipped), and production
@@ -86,23 +96,25 @@ has a named owner and evidence slot. See [release-feature-control.md](release-fe
 The draft release manifest currently lists 88 **known** code capabilities, not every BMS feature.
 The last status breakdown below predates the new branch price and retail cart pilot entries:
 24 `AVAILABLE`, 39 `CONDITIONAL`, 15 `PILOT`, 6 `BETA`, 1 `WIP`, and 1 `MOCK`.
-It has 8 capability IDs without a test that directly exercises their workflow. These are test
+It has 6 capability IDs without a test that directly exercises their workflow. These are test
 coverage gaps, not proof that the workflows are broken. Add a link only after the stated boundary
 is exercised; the target run result must be recorded separately.
 
 | Capability | Minimum useful proof | Additional closure |
 | --- | --- | --- |
-| `payments.review` | Confirmation boundary now has a direct pure contract; still prove slip approval/rejection, replay, permission and payment rollback together | Bank/provider evidence and human confirmation |
 | `pos.expenses` | Shift cash-out, second PIN, idempotency and drawer reconciliation | Real register close-out |
 | `reports.email` | Confirmed send, bounded file access, retry and provider failure | Verified sender and delivered attachment |
 | `restaurant.waitlist` | Queue/book/seat transitions, same-transaction check open and capacity race | Branch seating pilot |
 | `settings.byok` | Secret storage/redaction, provider switch and tool-permission invariance | Owner credential/provider test |
 | `settings.marketplaces` | Signature, tenant mapping, duplicate webhook and failure replay | Official Shopee/Lazada contract verification |
 | `shipping.carrier-integrations` | Provider booking outbox, retry and reconciliation | Signed Flash/Kerry contract and sandbox |
-| `tax.etax` | Queue eligibility, repeat submission and fail-closed provider result | Verified signer/submission provider and tax review |
+
+`payments.review` now links the REST/GraphQL human-confirmation boundary contract, and `tax.etax`
+links the cron auth/history/partial-failure contract. Neither link proves payment rollback, e-Tax
+queue eligibility or live provider submission; those checks remain open.
 
 The remaining older inventory rows also need stable IDs or explicit planned-work entries before
-changing `baseline-in-progress` to `complete`. The 8 rows above are only the current registry's
+changing `baseline-in-progress` to `complete`. The 6 rows above are only the current registry's
 test-link debt.
 
 ## Wave 1: core business correctness
@@ -169,7 +181,10 @@ The price resolver now keeps legacy overrides readable when `10.116` has not yet
 
 ### Restaurant counter
 
-Finish station-to-printer assignment, bounded print outbox/retry and operator-visible failures.
+The Desktop workstation has a local station-to-OS-printer pilot with a bounded journal and
+operator-reviewed uncertain retries. Centrally managed printer profiles, shared routing across
+workstations, browser/mobile printing and named hardware verification remain open; the kitchen
+display remains the work source of truth. See [business/pos.md](business/pos.md).
 Pickup-specific status email templates and routing are implemented in `10.114`; apply that migration
 before the caller. Target preflight checks that all eight Thai/English templates are published and
 active; live delivery through the configured mail provider remains to verify. The parcel service now

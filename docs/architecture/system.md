@@ -182,8 +182,8 @@ Flash/Kerry carrier adapters — the booking/tracking/label
 plumbing and its safety contract are built (`7.76`/`7.77`), what is missing is the carrier-issued
 merchant contract and credentials, then the [carrier checklist](../integrations/carriers.md) ·
 e-Tax XML submission to the Revenue Department (`lib/bms/etax/*`, `7.94`) is built and flag-gated off
-by default — no real signing/submission provider has been wired up or verified yet, and its cron
-route (`POST /api/bms/jobs/etax`) doesn't yet record into `bms_job_runs` like the others do ·
+by default — no real signing/submission provider has been wired up or verified yet; its cron
+route (`POST /api/bms/jobs/etax`) records runs in `bms_job_runs` ·
 ESC/POS printing/cash-drawer kick over WebUSB (`lib/pos/escpos.ts`) is written but has never been
 run against real printer hardware ·
 AI OCR / forecasting (beyond payment-slip verify; forecasting is heuristic, not ML) ·
@@ -194,8 +194,7 @@ owner) — needs an admin-to-LINE-user-id binding that doesn't exist yet, separa
 LINE OA channel ·
 failure-incident coverage beyond the LINE webhook (Facebook/Instagram/TikTok/Shopee/Lazada webhooks do
 not report yet) and an admin page listing incidents (today they surface only as alerts/Slack/SQL) ·
- finishing admin i18n (57 of 99 admin `.tsx` files are bilingual — see [AGENTS.md](../../AGENTS.md)
-§ i18n coverage for what is deliberately *not* a gap) ·
+ continuing reviewed admin i18n coverage (see [agent-invariants.md § i18n](../agent-invariants.md#i18n-coverage-what-bilingual-actually-means-today)) ·
 Follow-up Automation's Workflow Engine and decision-driving scoring model ·
 **POS Mobile native integrations (iOS/Android)** — the bare React Native counter client is built for
 staff and uses GraphQL with a device token plus cashier PIN. One-shot camera scanning and an
