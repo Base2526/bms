@@ -1,4 +1,82 @@
-# Operations production — Release E
+# Operations production — Release E and factory extension
+
+## Factory extension for plastic twine and straws (`10.122`–`10.127`)
+
+This extension is implemented in code for a controlled pilot; it is **not a production deployment**.
+Apply `10.91`–`10.98`, then `10.122` QC policy, `10.123` factory BOM, `10.124` demand, and
+`10.125` machine evidence, `10.126` QC reviewer, and `10.127` pinned BOM units before starting the new web version. Existing production posts read the
+new QC policy table even when no policy is enabled. No AI tool, new permission, new realtime trigger,
+or automatic external customer message is added. Branch inventory and POS retain their existing
+authorization and stock rules.
+
+For a first catalog at a plastic factory, use a physical SKU/variant for each stock state that is
+actually counted. Examples: PP resin/pigment in **GRAM**, extruded twine in **ROLL** (nominal roll
+weight in the product specification), loose straws in **PIECE**, packed straws in **BAG**, and a
+stocked carton in **CARTON**. A customer order's selling packs can multiply a stock base unit via
+`bms_product_packs`; a selling pack does not assemble physical stock. If bags or cartons are
+counted, define a separate stocked SKU and BOM production stage consuming prior-stage stock plus
+packaging material. Choose exact pack sizes and tolerances with the factory; 100 straws per bag and
+1 kg per roll are examples only. Integer base-unit quantities remain required; use GRAM for
+weight-based material. Exact variable-weight roll sales and mixed/co-product output remain out of
+scope.
+
+Operator path:
+
+1. Set up direct-stock products/variants, branch stock policies, sales packs, prices and source
+   lot tracking as needed. Enable the `ONLINE_ORDER` sales surface on outputs that will be
+   converted from factory demand into a standard order; the existing order service requires it.
+   Keep food/menu `RECIPE` products separate from factory BOMs.
+2. In `/admin/operations` → Production, create a versioned **Factory BOM** with one stocked output,
+   positive integer output yield, direct-stock materials and SOP steps. A new save deactivates the
+   prior active version; the BOM freezes each base unit, and planned batches retain their frozen
+   BOM, units and material quantities. If a catalog unit changes, new batches reject that BOM until
+   an operator reviews the quantities and saves a new version. Migration `10.127` deactivates
+   older unitless BOMs rather than guessing their original units. Revising an existing output must
+   start from its active version; a concurrent change is rejected instead of silently replacing it.
+   A twine extrusion BOM can consume grams and produce rolls. A bagging BOM can consume loose
+   straw pieces and empty bags to produce stocked bags. Each stage has its own batch and lot.
+3. Optionally register a branch machine. Optionally create **Factory demand** for an existing CRM
+   customer, output SKU, quantity and due instant. Demand is planning evidence: it has no price,
+   order, reservation, shipment promise or stock movement. Link one or more production batches to
+   the open demand. Cancel only after all linked batches are cancelled.
+4. Create/ready/post production using the factory BOM or legacy menu recipe. Posting rechecks
+   material stock and units and moves source/output lots and weighted material value atomically.
+   An output without expiry tracking may leave expiry blank; an expiry-tracked output still requires
+   a valid date. Optionally record actual machine start/end (together), rejected output, labor
+   minutes and energy kWh. Recorded actual runs on one machine cannot overlap. These metrics are
+   evidence only; they do not add stock or conversion cost. Rejected output is not a second
+   wastage movement when it never entered stock.
+5. Optionally enable the branch/output **Production QC policy** with an eligible QC case owner.
+   Every newly posted output lot then
+   opens a quality case and active hold **inside the posting transaction**. The lot is physically
+   present but unavailable to sell, reserve, transfer or consume. Use the existing separate-review
+   quality checklist, proposal and second-person approval to release or dispose it. Disabling the
+   policy never releases prior holds. Existing lots are not retroactively held. If that owner loses
+   quality-view permission, posting fails closed until the policy is reassigned. Policy changes
+   compare the last-read version; a stale edit is rejected. Policy enable/disable and output posting
+   serialize per branch/output so a concurrent edit has a definite before/after order.
+6. After linked posted output reaches the demand quantity, an authorized person may convert it to
+   a normal order. A live, non-deleted CRM customer is required. The existing order service checks
+   current catalog price, sale eligibility, usable unreserved stock and lots; it creates/reserves
+   the order in the same tenant transaction as the demand's ORDERED status and audit. A QC hold can
+   make conversion fail until release. Demand due time is not copied into the order as a delivery
+   promise; delivery terms and formal quotations need a separate sales review.
+
+Factory BOM/demand/machine writes require checklist.view plus production.manage; BOM edits also
+require product.edit; demand reads/actions additionally need customer.view and order.create;
+QC policy changes need quality.manage, production.manage and product.view. All changes use explicit
+confirmation, stable command keys, branch/tenant checks, RLS and same-transaction audit. A policy
+row is unique by tenant/branch/output variant; BOM versions are immutable except active status;
+machine codes are immutable. Output lot lineage continues to the existing quality trace where
+recorded, but it is not a complete recall register. Material plans still do not reserve stock.
+
+The current first release does **not** promise machine capacity planning, automatic MRP, fixed-price
+contract quotes, customer delivery commitments, payroll, energy/overhead capitalization, WIP,
+co-products, statistical QC limits, variable-weight roll invoicing, or regulatory certification.
+Use the existing purchase, order, shipping and financial workflows for those real transactions.
+Pilot the actual SKU/unit/pack definitions, yields, machine roster, quality criteria, approval
+roles, taxes and customer terms with the factory before enabling policies. See the per-domain
+invariants and the database architecture for rollout dependencies.
 
 ## Release H — quality cases, lot holds and impact evidence
 
@@ -162,7 +240,8 @@ No AI tool, external messaging or new realtime trigger is added.
 3. Review unreserved stock constrained by usable lots; inconsistent lot totals show unknown.
    Plans freeze BOM/SOP but reserve nothing. Cancel/recreate to change a plan.
 4. Mark DRAFT → READY. Enter actual inputs (same ingredient set), positive output, produced date,
-   shop-provided expiry date and variance explanation, then explicitly confirm posting.
+   shop-provided expiry date when the output tracks expiry, and variance explanation, then
+   explicitly confirm posting.
 5. POST consumes usable source lots FEFO, writes PRODUCTION_OUT, receives one unique output lot,
    and writes PRODUCTION_IN. Stock, lots, provenance, value, batch state, notices, idempotency result
    and audit commit together. Posting never approves/closes the checklist; checklist review or

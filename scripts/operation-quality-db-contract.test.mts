@@ -36,10 +36,8 @@ import { checkStock } from "../apps/web/lib/bms/stock";
 import { availability } from "../apps/web/lib/bms/operationProductionReads";
 import { operationWeeklyReport } from "../apps/web/lib/bms/operationImprovementReads";
 import { bmsOperationQualityResolvers } from "../apps/web/graphql/bmsOperationQuality";
-import {
-  commandProduction,
-  directProduct,
-} from "../apps/web/lib/bms/operationProduction";
+import { commandProduction } from "../apps/web/lib/bms/operationProduction";
+import { directProduct } from "../apps/web/lib/bms/operationProductionProduct";
 import { upsertProductRecipe } from "../apps/web/lib/bms/productRecipes";
 import {
   confirmInventoryValue,

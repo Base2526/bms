@@ -295,7 +295,7 @@ export async function weeklyFacts(
     `SELECT h.id,h.location_id,h.roster_id,h.status,h.due_at,h.submitted_at,h.received_at,h.version FROM bms_operation_handovers h JOIN bms_operation_rosters r ON r.tenant_id=h.tenant_id AND r.id=h.roster_id WHERE h.tenant_id=$1 AND h.location_id=ANY($2::uuid[]) AND ${period("r.starts_at")} ORDER BY h.id`,
   );
   const production = await bounded(
-    `SELECT p.id,p.run_id,p.location_id,p.recipe_id,p.snapshot->>'recipeVersion' recipe_version,p.snapshot->>'baseUnit' base_unit,p.output_sku,p.output_size,p.status,p.planned_qty,p.actual_qty,p.version FROM bms_operation_production p JOIN bms_operation_runs r ON r.tenant_id=p.tenant_id AND r.id=p.run_id WHERE p.tenant_id=$1 AND p.location_id=ANY($2::uuid[]) AND ${period("r.due_at")} ORDER BY p.id`,
+    `SELECT p.id,p.run_id,p.location_id,COALESCE(p.factory_bom_id,p.recipe_id) recipe_id,p.snapshot->>'recipeVersion' recipe_version,p.snapshot->>'baseUnit' base_unit,p.output_sku,p.output_size,p.status,p.planned_qty,p.actual_qty,p.version FROM bms_operation_production p JOIN bms_operation_runs r ON r.tenant_id=p.tenant_id AND r.id=p.run_id WHERE p.tenant_id=$1 AND p.location_id=ANY($2::uuid[]) AND ${period("r.due_at")} ORDER BY p.id`,
   );
   // Summary permission exposes bounded operational evidence, never PO prices or lot balances.
   const quality = await bounded(`SELECT id,location_id,title,status,version,severity,assigned_to,due_at,run_id,created_at FROM bms_operation_quality_cases WHERE tenant_id=$1 AND location_id=ANY($2::uuid[]) AND (${period('created_at')} OR status<>'CLOSED') ORDER BY id`);

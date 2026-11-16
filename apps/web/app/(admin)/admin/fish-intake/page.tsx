@@ -397,7 +397,7 @@ export default function FishIntakePage() {
     </Card>}
     <Modal open={detailId!==null} onCancel={()=>setDetailId(null)} footer={null} width={900} centered
       title={L("รายละเอียดใบรับปลา","Fish intake details")} styles={{body:{maxHeight:"70vh",overflowY:"auto"}}}>
-      {detailError && <Alert type="error" showIcon message={detailError}/>}
+      {detailError && <Alert closable type="error" showIcon message={detailError}/>}
       {detailLoading && <Card loading/>}
       {detail && <Space direction="vertical" size="middle" style={{width:"100%"}}>
         <Typography.Text copyable>{detail.id}</Typography.Text>
@@ -413,7 +413,7 @@ export default function FishIntakePage() {
           ...(detail.sourceYear?[{key:"year",label:L("ปีข้อมูล","Source year"),children:detail.sourceYear}]:[]),
           ...(detail.note?[{key:"note",label:L("หมายเหตุทั้งใบ","Receipt note"),children:detail.note}]:[]),
         ]}/>
-        {detail.kind!=="HISTORICAL" && <Alert type="info" showIcon
+        {detail.kind!=="HISTORICAL" && <Alert closable type="info" showIcon
           message={L("เลขล็อตด้านล่างเป็นเลขที่บันทึกตอนรับเข้า น้ำหนักคงเหลืออาจเปลี่ยนหลังมีการขายหรือปรับสต็อก",
             "Lot IDs below are from this receipt. Current balances may have changed after sales or stock adjustments.")}/>}
         <List dataSource={detail.lines} pagination={{pageSize:10,hideOnSinglePage:true}}

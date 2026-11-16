@@ -23,7 +23,7 @@ import { teamInstant } from "./operationTeamPolicy";
 import { checklistRecipient } from "./operationChecklistDispatch";
 import { notifyQualityCase, notifyLotAvailabilityInTx } from "./operationQualityDispatch";
 import { qualityStock } from "./lotQuality";
-import { directProduct } from "./operationProduction";
+import { directProduct } from "./operationProductionProduct";
 import { recordInventoryWastageInTx } from "./wastage";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
 export const QUALITY_PERMISSIONS = {
