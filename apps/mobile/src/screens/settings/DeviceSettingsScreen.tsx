@@ -59,7 +59,7 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
   usePosLanguage();
   const { colors, spacing, typography, radius, minTouchTarget } = useTheme();
   const pickupQueueEnabled = usePickupQueueEnabled();
-  const { session } = useSession();
+  const { session, signOut } = useSession();
   const branchPickupQueueEnabled = session?.branch.pickupQueue?.enabled === true;
   const { isTablet } = useResponsive();
   const {
@@ -150,7 +150,13 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
           onPress: async () => {
             try {
               await unpair();
-              navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+              signOut();
+              // Leave Settings open for the next QR. Remove any signed-in register
+              // beneath it so Android Back cannot return to an unpaired POS.
+              navigation.reset({
+                index: 1,
+                routes: [{ name: 'Login' }, { name: 'Settings' }],
+              });
             } catch (e: any) {
               Alert.alert(posText("เลิกจับคู่ไม่สำเร็จ"), String(e?.message ?? e));
             }

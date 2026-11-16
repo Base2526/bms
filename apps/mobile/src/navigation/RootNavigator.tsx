@@ -1,8 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import {
   NavigationContainer,
   DefaultTheme,
   DarkTheme,
+  useNavigationContainerRef,
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { LinkingOptions } from '@react-navigation/native';
@@ -34,13 +35,35 @@ export function RootNavigator() {
   const { scheme, colors } = useTheme();
   const { verify, target } = useDevice();
   const { signOut } = useSession();
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
+  const rejectionHandled = useRef(false);
   // A rejected first-pair candidate has no authenticated register to sign out.
   // Keep Settings mounted so the scan error is shown and the operator can retry.
   const authenticationRejected = target !== null && verify.kind === 'REJECTED';
 
+  const handleAuthenticationRejected = useCallback(() => {
+    if (!authenticationRejected || rejectionHandled.current || !navigationRef.isReady()) return;
+    rejectionHandled.current = true;
+    signOut();
+    const state = navigationRef.getRootState();
+    const activeRoute = state?.routes[state.index];
+    // Keep the visible verification result, but remove Main from the back stack.
+    // Reusing the Settings route key also preserves its unsaved pairing input.
+    navigationRef.resetRoot(activeRoute?.name === 'Settings'
+      ? {
+          index: 1,
+          routes: [
+            { name: 'Login' },
+            { name: 'Settings', key: activeRoute.key, params: activeRoute.params },
+          ],
+        }
+      : { index: 0, routes: [{ name: 'Login' }] });
+  }, [authenticationRejected, navigationRef, signOut]);
+
   useEffect(() => {
-    if (authenticationRejected) signOut();
-  }, [authenticationRejected, signOut]);
+    if (!authenticationRejected) rejectionHandled.current = false;
+    else handleAuthenticationRejected();
+  }, [authenticationRejected, handleAuthenticationRejected]);
 
   const navTheme = {
     ...(scheme === 'dark' ? DarkTheme : DefaultTheme),
@@ -56,9 +79,10 @@ export function RootNavigator() {
 
   return (
     <NavigationContainer
-      key={authenticationRejected ? 'authentication-rejected' : 'authenticated'}
+      ref={navigationRef}
       theme={navTheme}
       linking={linking}
+      onReady={handleAuthenticationRejected}
     >
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Login" component={LoginScreen} />
