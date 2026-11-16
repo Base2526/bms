@@ -247,7 +247,11 @@ approved text. Approval remains per tenant, not a platform-wide publication deci
   provisioning. Never use the Manager permissions as a substitute for shop ownership.
   Migration `10.121` repairs only a verified email signup owner who is still Manager,
   has no later user-update audit, and belongs to a shop with no Administrator; it bumps
-  the admin session version and audits the repair in the same transaction.
+  the admin session version and audits the repair in the same transaction. `10.128` is
+  an idempotent retry with the same eligibility rules. The ordered `10.121` file has
+  transaction-local timeouts; the Retail Local runner recognizes only its exact
+  pre-timeout checksums for already-applied installations. Clear a failed transaction
+  before retrying either file.
 - Admin identity refresh applies the current account gates to existing sessions. A switch to
   `users.pos_only` increments `admin_session_version` in the same tenant transaction and rejects
   already-open admin sessions; unverified, Subscriber, and inactive-tenant accounts are also denied.

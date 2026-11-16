@@ -33,6 +33,10 @@ Administrator and no later user-update audit; other Managers remain unchanged.
 Repair and audit are atomic, sessions are invalidated, and rerunning the migration
 does not promote anyone twice. Earlier social signups have no equivalent verified
 pending-email record and require individual review before any role change.
+The ordered `10.121` file now applies a two-minute statement timeout only inside its
+transaction, so sequential migration runs can complete on a database with a shorter
+session limit. Retail Local accepts the exact old checksum where `10.121` was already
+applied. `10.128` (2026-11-16) repeats the same repair idempotently after `10.121`.
 
 ## Inbox AI reply delivery status and media handoff (no migration, 2026-11-09)
 

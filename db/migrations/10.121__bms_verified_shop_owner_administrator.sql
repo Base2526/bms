@@ -1,4 +1,9 @@
 BEGIN;
+-- Bound this one repair without changing the session or server defaults.
+-- A shorter live statement_timeout previously canceled the historical lookup.
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '2min';
+SELECT pg_advisory_xact_lock(hashtextextended('bms-verified-shop-owner-repair', 0));
 
 -- A verified self-serve shop owner needs the Administrator role to manage
 -- tenant settings and the role matrix. Do not promote ordinary Managers.
