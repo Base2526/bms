@@ -4,7 +4,6 @@ import Renderer, { act } from 'react-test-renderer';
 import * as Keychain from 'react-native-keychain';
 import { DeviceProvider, useDevice } from '../src/state/DeviceContext';
 import { PairingScannerButton } from '../src/components/PairingScannerButton';
-import { Button } from '../src/components/Button';
 import { ThemeProvider } from '../src/theme/ThemeProvider';
 import { loadOfflineSales } from '../src/lib/offlineSales';
 import { buildPairingQr } from '../../../packages/pos-client-core/src/pairingQr';
@@ -107,7 +106,7 @@ test.each([
         );
       });
       await act(async () => {
-        tree.root.findByType(Button).props.onPress();
+        tree.root.findByProps({ accessibilityLabel: 'สแกน QR เพื่อจับคู่' }).props.onPress();
       });
       const writes = (
         Keychain.setGenericPassword as jest.Mock
@@ -126,7 +125,7 @@ test.each([
       );
       expect(onPaired).toHaveBeenCalledTimes(scenario === 'success' ? 1 : 0);
       expect(device.target).toEqual(scenario === 'success' ? target : null);
-      expect(tree.root.findByType(Button).props.loading).toBe(false);
+      expect(tree.root.findByProps({ accessibilityLabel: 'สแกน QR เพื่อจับคู่' }).props.accessibilityState.busy).toBe(false);
       expect(alert.mock.calls[0][0]).toBe(
         scenario === 'success' ? 'จับคู่สำเร็จ' : 'จับคู่ไม่สำเร็จ',
       );

@@ -59,7 +59,7 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
   usePosLanguage();
   const { colors, spacing, typography, radius, minTouchTarget } = useTheme();
   const pickupQueueEnabled = usePickupQueueEnabled();
-  const { session } = useSession();
+  const { session, signOut } = useSession();
   const branchPickupQueueEnabled = session?.branch.pickupQueue?.enabled === true;
   const { isTablet } = useResponsive();
   const {
@@ -150,7 +150,13 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
           onPress: async () => {
             try {
               await unpair();
-              navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+              signOut();
+              // Leave Settings open for the next QR. Remove any signed-in register
+              // beneath it so Android Back cannot return to an unpaired POS.
+              navigation.reset({
+                index: 1,
+                routes: [{ name: 'Login' }, { name: 'Settings' }],
+              });
             } catch (e: any) {
               Alert.alert(posText("เลิกจับคู่ไม่สำเร็จ"), String(e?.message ?? e));
             }
@@ -433,19 +439,6 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
         >
           {posText("เอามาจากระบบหลังบ้าน → เครื่องขาย (POS) → ปุ่ม “ออก token” แล้วสแกน QR เพื่อเพิ่ม token อัตโนมัติ หรือคัดลอกลิงก์มาวาง") + " "}</Text>
 
-        <View style={{ marginTop: spacing.md }}>
-          <PairingScannerButton
-            target={target}
-            disabled={saving || status === 'LOADING' || status === 'UNAVAILABLE'}
-            pair={pair}
-            onBusyChange={setScanning}
-            onPaired={() => {
-              setInput('');
-              setServerInput('');
-            }}
-          />
-        </View>
-
         <TextInput
           value={input}
           onChangeText={setInput}
@@ -525,14 +518,33 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
           </View>
         )}
 
-        <Button
-          label={target ? posText("บันทึกและใช้ token ใหม่นี้") : posText("จับคู่เครื่อง")}
-          fullWidth
-          disabled={!canSave || scanning}
-          loading={saving}
-          style={{ marginTop: spacing.lg }}
-          onPress={onSave}
-        />
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'stretch',
+            gap: spacing.sm,
+            marginTop: spacing.lg,
+          }}
+        >
+          <Button
+            label={target ? posText("บันทึกและใช้ token ใหม่นี้") : posText("จับคู่เครื่อง")}
+            fullWidth
+            disabled={!canSave || scanning}
+            loading={saving}
+            style={{ flex: 1 }}
+            onPress={onSave}
+          />
+          <PairingScannerButton
+            target={target}
+            disabled={saving || status === 'LOADING' || status === 'UNAVAILABLE'}
+            pair={pair}
+            onBusyChange={setScanning}
+            onPaired={() => {
+              setInput('');
+              setServerInput('');
+            }}
+          />
+        </View>
       </Card>
 
       <Card>

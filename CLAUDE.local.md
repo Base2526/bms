@@ -11,14 +11,13 @@
 > บันทึก 2026-08-17 → 2026-10-23) อยู่ใต้ "ชุดที่ 2" ของ archive — ค้นด้วยเลข migration เช่น
 > `grep -n "9.66" docs/local-notes-archive.md`
 
-## สถานะ working tree ล่าสุด (2026-11-14)
+## สถานะ working tree ล่าสุด (2026-11-16)
 
-- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `9d0c8a32` (#412,
-  ภาษาไทย/อังกฤษของ POS/mobile/desktop) · branch `codex/bms-completion-core-20261113` = `develop` +
-  public retail cart, branch price windows (`10.116`), shipment retry, lot shipping + งาน Inbox/Admin
-  hardening, fish-dock (`10.119`–`10.120`) และอัปเดตเอกสารรอบ 2026-11-14
-- **migration ล่าสุด `10.120`** (เลขว่างถัดไป `10.121` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
-  ตรวจเลขซ้ำ 2026-11-14 แล้วว่าง · คิวรับของคือ `10.112`–`10.113` (ไม่ใช่ `10.111` = ใบอนุญาตเภสัชกร)
+- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `90eb7d3c` (#416,
+  admin session/POS auth/log redaction) · branch `codex/android-device-verify-navigation` = `develop` +
+  แก้ mobile ให้หน้า Device Settings ค้างหลังยกเลิกจับคู่ + ปุ่มสแกน QR เป็นไอคอนข้างปุ่มจับคู่ + อัปเดตเอกสาร 2026-11-16
+- **migration ล่าสุด `10.121`** (เลขว่างถัดไป `10.122` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
+  ตรวจเลขซ้ำ 2026-11-16 แล้วว่าง · คิวรับของคือ `10.112`–`10.113` (ไม่ใช่ `10.111` = ใบอนุญาตเภสัชกร)
 - หลักฐานรอบตรวจระบบ 2026-11-14 (Inbox/Desktop/Mobile/Admin) และสิ่งที่ยัง **ไม่** verify:
   [docs/architecture/system-recheck-2026-11-14.md](docs/architecture/system-recheck-2026-11-14.md)
 - renumber merge แล้ว (#391): `10.106` = Retail Local lead erasure · Meta inbox enrichment = **`10.108`** ·
@@ -69,8 +68,8 @@ node scripts/run-contract-tests.mjs pure <name-filter>   # ไฟล์เดี
 node scripts/run-contract-tests.mjs db <name-filter>     # ต้องมี POSTGRES_HOST/POSTGRES_DB ของเครื่องท้องถิ่น
 ```
 
-- นับ 2026-11-14: **468 ไฟล์ที่ตัวรันหยิบ** = pure **365** (329 ชั้นบนของ `scripts/` รวม
-  `retail-local-migration-checksum.test.mjs` + 35 ใน `ai-eval/` + 1 ใน `infra/`) + DB **103**
+- นับ 2026-11-16: **491 ไฟล์ที่ตัวรันหยิบ** = pure **381** (345 ชั้นบนของ `scripts/` รวม
+  `retail-local-migration-checksum.test.mjs` + 35 ใน `ai-eval/` + 1 ใน `infra/`) + DB **110**
   (`-db-contract` ทั้งหมดอยู่ชั้นบนของ `scripts/`) · นับใหม่ด้วย
   `node scripts/run-contract-tests.mjs pure --list` (และ `db --list`) — พิมพ์รายชื่อเป็น JSON
 - ผลรันจะถูกเขียนลง `.test-output/<mode>.tap` + `.test-output/<mode>.run.txt` — **ไฟล์ `.run.txt`
@@ -147,7 +146,7 @@ node scripts/run-contract-tests.mjs db <name-filter>     # ต้องมี PO
 
 ## ค้างอยู่ / ยังไม่ verify (สรุป — รายละเอียดอยู่ใน archive ตามเลข migration)
 
-อัปเดต 2026-11-14 · บันทึกก่อน 2026-10-23 อยู่ใน [archive](docs/local-notes-archive.md) — หลายข้อแก้ไปแล้ว
+อัปเดต 2026-11-16 · บันทึกก่อน 2026-10-23 อยู่ใน [archive](docs/local-notes-archive.md) — หลายข้อแก้ไปแล้ว
 (เช่น AI usage `7.82` แก้ 2026-09-08, `/live-dashboard` ต่อข้อมูลจริงแล้ว) **ตรวจซ้ำก่อนอ้างทุกครั้ง**
 
 - **`10.107` โอนสต็อกพร้อมล็อต = WIP ของการ rollout** — ดู § สถานะ working tree ด้านบน
@@ -179,7 +178,7 @@ node scripts/run-contract-tests.mjs db <name-filter>     # ต้องมี PO
 - apply ทีละไฟล์เรียงเลขด้วย `psql -1` (ไฟล์ที่ล้มกลางทางจะไม่ค้างครึ่งเดียว) · deploy `apps/web` กับ
   `apps/ws` พร้อมกันเสมอ · migration อย่างเดียวไม่เปิดฟีเจอร์ ต้อง deploy โค้ดตาม
 - ลำดับช่วงท้าย: `10.105` → `10.106` (lead erasure) → `10.107` → `10.108` → `10.109` → `10.110` → `10.111`
-  → `10.112` → `10.113` → `10.114` → `10.115` → `10.116` → `10.117` → `10.118` → `10.119` → `10.120`
+  → `10.112` → `10.113` → `10.114` → `10.115` → `10.116` → `10.117` → `10.118` → `10.119` → `10.120` → `10.121`
 - **`10.107` ผูกกับโค้ด `develop` แล้ว** — `stockTransfers.ts` อ่าน `bms_stock_transfer_item_lots` และ
   readiness ระบุว่าการโอนทุกหน้าล้มถ้าไม่มีตาราง → deploy `develop` = ตัดสินใจ rollout `10.107` ไปด้วย
   ต้องได้การยืนยันก่อน
@@ -199,4 +198,9 @@ node scripts/run-contract-tests.mjs db <name-filter>     # ต้องมี PO
   `10.118` ฟังก์ชัน `bms_set_own_inbox_availability` (ไม่ให้ `bms_app` UPDATE `users` ตรง) — verify บนฐาน throwaway
   แล้ว 2026-11-14 · `10.119`–`10.120` ตาราง fish-dock (หลักฐาน/แผนส่ง ไม่ย้ายสต็อกเอง; ใช้สิทธิ์
   `purchase.*`/`inventory.count*`/`report.view` เดิม ไม่ต้อง seed) — rollback = ปิด route ก่อนแล้วเก็บแถวไว้
+- **`10.121` เปลี่ยน role ผู้ใช้จริง** — เลื่อนเจ้าของร้านที่สมัครด้วยอีเมลที่ยืนยันแล้วและยังเป็น `Manager` เป็น
+  `Administrator` เฉพาะร้านที่ยังไม่มี Administrator และไม่มี audit `user.update` ของเจ้าของหลังจากนั้น · ต้องมี role
+  `Administrator` ที่ active ไม่งั้น migration ล้มทั้งไฟล์ · role + audit + bump session version อยู่ในทรานแซกชันเดียว
+  (ผู้ถูกเลื่อนต้องล็อกอินใหม่) · รันซ้ำไม่เลื่อนซ้ำ · ก่อน apply ให้ `SELECT` นับคนที่เข้าเงื่อนไขก่อน · เจ้าของที่สมัครผ่าน
+  social login รุ่นเก่าไม่ถูกแตะ ต้องตรวจทีละราย
 - 500 บน production → query `system_logs` ก่อนเดา (§ เฉพาะเครื่อง/โปรเจกต์นี้)

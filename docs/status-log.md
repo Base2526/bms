@@ -2,9 +2,8 @@
 
 Per-feature decision narrative moved out of [CLAUDE.md](../CLAUDE.md) on 2026-10-13 to keep the
 always-loaded agent context small. The moved text is unchanged; newest entries are at the end.
-Entries were brought up to date on 2026-11-14 (through migration `10.120`, PR #412 and the
-`codex/bms-completion-core-20261113` branch); the 2026-11-16 no-migration boundary and log work
-is recorded in [feature-log.md](feature-log.md). The compact area index lives in CLAUDE.md
+Entries were brought up to date on 2026-11-16 (through migration `10.121` and PR #416); the
+detailed 2026-11-16 boundary and log notes are in [feature-log.md](feature-log.md). The compact area index lives in CLAUDE.md
 § Current status; full
 per-domain rules live in [agent-invariants.md](agent-invariants.md).
 
@@ -974,3 +973,23 @@ delivery commitments that link ordinary orders. These sidecars never move stock 
 themselves and reuse existing purchase/inventory/report permissions. See
 [business/inventory.md](business/inventory.md) and
 [architecture/database.md](architecture/database.md).
+
+**Verified shop owner is the shop Administrator (`10.121`, #414).** Email-verified and social
+`/shop-signup` create the first user as `Administrator` (`users.role` and `role_id` agree; missing
+role setup aborts signup). `10.121` promotes only email-verified signup owners still on `Manager`
+whose shop has no Administrator and no later `user.update` audit; other Managers stay unchanged.
+The role change, audit row and session-version bump are atomic and a rerun promotes no one twice.
+Earlier social signups have no verified pending-email record and need individual review. Admin
+screens show translated operator messages (`operatorMessage()`) instead of raw GraphQL errors.
+See [architecture/database.md](architecture/database.md) and [feature-log.md](feature-log.md).
+
+**Operational boundaries, admin sessions and log redaction (#415–#416, no migration).** Bare
+order-pay adapters can no longer mark an order `PAID` without a confirmed payment; signed inbound
+routes bound bodies and reject malformed JSON before claiming an event; lock-screen notifications
+show generic text. Every admin request re-applies the live login gates (session version, POS-only,
+unverified email, subscriber role, inactive tenant); POS send-receipt and device-location routes
+authenticate explicitly. `lib/log/sanitize.ts` bounds and redacts credentials, tokens, contact data
+and IPs before text reaches stdout, Postgres, Slack or the daily triage report. Local web gate,
+mobile Jest and DB runner passed on 2026-11-16; production and authenticated browser runs remain
+unverified. See [architecture/logging-and-triage.md](architecture/logging-and-triage.md) and
+[feature-log.md](feature-log.md).

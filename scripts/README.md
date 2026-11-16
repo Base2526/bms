@@ -712,11 +712,12 @@ feature enabled with a test-only secret and HTTPS public origin. Both smokes blo
 These checks do not prove SQL execution: run `db tax-sales-report` and `db tax-backoffice-guards`
 against a restored disposable local database before deploying.
 
-ตอนนี้ (นับ 2026-11-14 บน `codex/bms-completion-core-20261113`): **468 ไฟล์ที่ตัวรันหยิบ** = pure **365 ไฟล์** (329 ชั้นบนสุดของ
+ตอนนี้ (นับ 2026-11-16 บน `codex/android-device-verify-navigation`): **491 ไฟล์ที่ตัวรันหยิบ** = pure **381 ไฟล์** (345 ชั้นบนสุดของ
 `scripts/` รวม `retail-local-migration-checksum.test.mjs` + 35 ใน `scripts/ai-eval/` + 1 ใน `scripts/infra/`)
-+ DB **103 ไฟล์** (ทั้งหมดอยู่ชั้นบนสุดของ `scripts/`)
++ DB **110 ไฟล์** (ทั้งหมดอยู่ชั้นบนสุดของ `scripts/`)
 
-ผลรัน `npm run gate` วันเดียวกัน (macOS): **3,718 เทส — 3,708 ผ่าน · 0 แดง · 10 ข้าม (skip)** · build 151 หน้า · `exit=0` ·
+ผลรัน `npm run gate` 2026-11-16 ชุด pure: **3,826 เทส** (แดง 1 = `realtime-client-contract` ที่ยังตรวจรูปโค้ดเก่าของ
+`RootNavigator` — แก้เทสให้ตรวจ sign-out ครั้งเดียว + `resetRoot` แล้ว) · ผลรัน 2026-11-14 (macOS): **3,718 เทส — 3,708 ผ่าน · 0 แดง · 10 ข้าม (skip)** · build 151 หน้า · `exit=0` ·
 รอบก่อน (2026-11-09): 3,480 เทส — 3,474 ผ่าน · 6 ข้าม ·
 ใช้เวลา ~4 นาทีบนเครื่อง Windows ที่รัน (เครื่อง Linux/CI เร็วกว่า) · ตัวแดงของรอบ 2026-10-13
 (`ai-eval/restaurant-customer-assistance-contract`) ไม่แดงแล้ว · **ชุด DB ไม่ได้รันในรอบนี้** (เครื่องที่นับ
@@ -725,7 +726,7 @@ against a restored disposable local database before deploying.
 ตัวรัน `scripts/run-contract-tests.mjs` เดินหาไฟล์เอง: `*.test.mts` ชั้นบนสุดของ `scripts/` +
 โฟลเดอร์ย่อย `ai-eval/` และ `infra/` + `retail-local-migration-checksum.test.mjs` (`scripts/testing/`
 ไม่ถูกเดิน) · ชื่อมี `-db-contract` = โหมด db ที่เหลือ = โหมด pure · ตัวรันพิมพ์จำนวนไฟล์ของโหมดเป็น
-บรรทัดแรก (`[gate] โหมด pure — 365 ไฟล์`) · `run-contract-tests.mjs <mode> --list` พิมพ์รายชื่อไฟล์ของ
+บรรทัดแรก (`[gate] โหมด pure — 381 ไฟล์`) · `run-contract-tests.mjs <mode> --list` พิมพ์รายชื่อไฟล์ของ
 โหมดนั้นเป็น JSON และ `run-contract-tests.mjs <mode> zzz-nope` บอกจำนวนไฟล์ของโหมดนั้นตอนกรองไม่ตรง
 
 > **ตัวเลขนี้เก่าได้เร็ว** — นับใหม่ก่อนอ้าง (ตรงกับวิธีที่ตัวรันแยกโหมด):
@@ -783,7 +784,7 @@ cd apps/web && npm run test:pure
 ### ผ่าน (สิ่งที่จะได้เห็นบนจอ)
 
 ตัวอย่างนี้มาจากรอบ 2026-09-07 ตอนชุดยังมี 80 ไฟล์ — **รูปแบบยังเหมือนเดิม แต่ตัวเลขปัจจุบันดูหัวไฟล์นี้**
-(รอบ 2026-11-14 มี 365 ไฟล์):
+(รอบ 2026-11-16 มี 381 ไฟล์):
 
 ```
 [gate] โหมด pure — 80 ไฟล์

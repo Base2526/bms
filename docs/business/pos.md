@@ -129,8 +129,14 @@ context. The Admin page blocks overlapping issuance requests and fetches only fi
 the operator's permissions; it retains the credential only in the one-time modal, not Apollo cache.
 Mobile rejects malformed bootstrap identities before secure-storage writes, redacts credentials in
 error/status/diagnostic text (including restored diagnostic queues), and preserves Settings after a
-rejected first-pair candidate. Sale/stock scanners reject pairing QRs and issued-format device tokens
+rejected first-pair candidate. If a saved token is rejected, the app clears the cashier session and
+removes the register from navigation; an open Settings screen stays visible so the operator can read
+the result and pair again. Its Back button leads to Login. A connection or server failure does not
+invalidate the token. Sale/stock scanners reject pairing QRs and issued-format device tokens
 before SKU resolution, clear their input and direct the operator to Settings.
+Confirmed unpairing clears the local token and cashier, then leaves Device Settings open for the
+next pairing QR; Back leads to Login, never to the previous register. Unresolved offline cash or a
+failed queue read still blocks unpairing before any navigation change.
 Tenant, branch, device, shift and store archetype are always server-derived. Cashier and
 second-person PINs live only in React memory and are rechecked with action-specific RBAC on every
 sensitive mutation. Manual discount, void and cash-out selectors filter the server approver list by

@@ -29,7 +29,8 @@ OS dialogs and printer output still require Android/iOS device QA.
 Open Admin **POS Devices** through a device-reachable HTTPS origin, select the register and confirm
 **Issue token**. The one-time display now includes a locally generated QR containing the HTTPS
 origin and the issued device credential (`bmspos://pair?t=...&h=...`). No external QR service is used.
-In the mobile app, open **Device Settings > Scan QR to pair**. A valid scan calls the existing
+In the mobile app, open **Device Settings** and tap the square QR icon beside **Pair device**
+(its accessibility label is "Scan QR to pair"; it shows a spinner while scanning). A valid scan calls the existing
 server verification and secure-storage flow automatically; a different existing credential requires
 confirmation first. Cashier PIN/RBAC and unresolved offline-cash guards still apply.
 
@@ -55,8 +56,11 @@ Detailed recheck on `codex/mobile-qr-pairing` (2026-11-03) also covers:
 - malformed bootstrap identities/errors, HTTP 401 versus 403/5xx, failed secure-storage writes and
   incompatible pending cash; only a verified, stored token reports success;
 - credential redaction before status display, diagnostic persistence and restored-queue delivery;
-- navigation remaining on Settings after a rejected first-pair candidate, while a revoked saved
-  credential still clears the cashier and resets navigation;
+- navigation remaining on Settings after a rejected first-pair candidate; a revoked saved
+  credential clears the cashier and removes the register from the back stack while keeping an
+  open Settings screen visible with its verification result and unsaved pairing input;
+- confirmed unpairing leaves Device Settings open for a new QR or pairing link, with Login beneath
+  it and no register on the back stack;
 - rejecting pairing QR/token inputs on product/stock scanners before calling a SKU resolver.
 
 The three previously failing source-text contracts were updated to verify the current safeguards:
