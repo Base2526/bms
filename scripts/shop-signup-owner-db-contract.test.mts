@@ -71,10 +71,25 @@ test("a verified shop signup creates an Administrator owner and auditable tenant
 
 test("owner repair is one-time and leaves other Managers unchanged", async () => {
   assert.ok(["localhost", "127.0.0.1", "::1", "postgres", "db"].includes(process.env.POSTGRES_HOST ?? ""));
-  const migration = readFileSync(
+  const originalSql = readFileSync(
     new URL("../db/migrations/10.121__bms_verified_shop_owner_administrator.sql", import.meta.url),
     "utf8"
-  ).replace(/^BEGIN;\s*/m, "").replace(/^COMMIT;\s*/m, "");
+  );
+  const retrySql = readFileSync(
+    new URL("../db/migrations/10.128__bms_verified_shop_owner_repair_retry.sql", import.meta.url),
+    "utf8"
+  );
+  const withoutWrappers = (sql: string) => sql.replace(/^BEGIN;\s*/m, "").replace(/^COMMIT;\s*/m, "");
+  const originalMigration = withoutWrappers(originalSql);
+  const retryMigration = withoutWrappers(retrySql);
+  assert.match(retryMigration, /SET LOCAL lock_timeout = '5s'/);
+  assert.match(retryMigration, /SET LOCAL statement_timeout = '2min'/);
+  assert.match(retryMigration, /pg_advisory_xact_lock\(hashtextextended\('bms-verified-shop-owner-repair', 0\)\)/);
+  const repairBody = (sql: string) => sql.slice(sql.indexOf("DO $$"), sql.indexOf("\nCOMMIT;"))
+    .replace(/migration:10\.12[18]/g, "migration:10.12X")
+    .replace(/\s+/g, " ").trim();
+  assert.equal(repairBody(retrySql), repairBody(originalSql),
+    "the timeout retry must not widen the verified-owner eligibility rules");
   const client = await getClient();
   await client.query("BEGIN");
   try {
@@ -126,7 +141,7 @@ test("owner repair is one-time and leaves other Managers unchanged", async () =>
     const ordinaryManager = await shop("ordinary manager", false);
     const managedShop = await shop("shop already has admin", true, true);
     const editedOwner = await shop("owner edited later", true, false, true);
-    await client.query(migration);
+    await client.query(retryMigration);
     const rows = await client.query<{ id: string; role: string }>(
       `SELECT id, role FROM users WHERE id = ANY($1::uuid[])`,
       [[owner.userId, ordinaryManager.userId, managedShop.userId, editedOwner.userId]]
@@ -142,7 +157,8 @@ test("owner repair is one-time and leaves other Managers unchanged", async () =>
       [owner.tenantId]
     )).rows[0].n);
     assert.equal(await countRepairs(), 1);
-    await client.query(migration);
+    await client.query(originalMigration);
+    await client.query(retryMigration);
     assert.equal(await countRepairs(), 1);
   } finally {
     await client.query("ROLLBACK");

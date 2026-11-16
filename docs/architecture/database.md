@@ -1070,6 +1070,13 @@ role; both `users.role` and `users.role_id` must agree, and missing role setup a
 Migration `10.121` upgrades only email-verified signup owners still on `Manager` when that shop
 has no Administrator and no later `user.update` audit for the owner. Other Manager accounts are
 left unchanged. The role change and its audit row are atomic, and the session version is bumped.
+Migration `10.128` repeats this exact repair for a live database where `10.121` timed out. It
+uses a transaction-local two-minute statement limit and five-second lock limit; `10.121` stays
+unchanged because Retail Local verifies applied migration checksums. A transaction advisory lock
+serializes concurrent retries. After a failed HeidiSQL
+attempt, run `ROLLBACK;` alone in the same connection before applying `10.128`; see
+[the owner-repair runbook](owner-repair-rollout.md). A zero-row retry is valid when no eligible
+owner remains.
 Migration `7.78` seeds `user.view`/`user.manage` here for `Manager` in every tenant, which is what
 lets a shop owner manage their own staff; *which* users they may touch is a separate code-level role
 rank (`lib/bms/staffRoles.ts`) and is not stored in this table — see the RBAC section of

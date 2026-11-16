@@ -33,6 +33,9 @@ Administrator and no later user-update audit; other Managers remain unchanged.
 Repair and audit are atomic, sessions are invalidated, and rerunning the migration
 does not promote anyone twice. Earlier social signups have no equivalent verified
 pending-email record and require individual review before any role change.
+`10.128` (2026-11-16) retries the same verified-owner repair when the live database's
+statement timeout cancels `10.121`. The original migration remains unchanged for
+checksum continuity; the retry's longer timeout applies only inside its transaction.
 
 ## Inbox AI reply delivery status and media handoff (no migration, 2026-11-09)
 
