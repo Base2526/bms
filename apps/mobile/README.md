@@ -29,7 +29,8 @@ OS dialogs and printer output still require Android/iOS device QA.
 Open Admin **POS Devices** through a device-reachable HTTPS origin, select the register and confirm
 **Issue token**. The one-time display now includes a locally generated QR containing the HTTPS
 origin and the issued device credential (`bmspos://pair?t=...&h=...`). No external QR service is used.
-In the mobile app, open **Device Settings > Scan QR to pair**. A valid scan calls the existing
+In the mobile app, open **Device Settings** and tap the square QR icon beside **Pair device**
+(its accessibility label is "Scan QR to pair"; it shows a spinner while scanning). A valid scan calls the existing
 server verification and secure-storage flow automatically; a different existing credential requires
 confirmation first. Cashier PIN/RBAC and unresolved offline-cash guards still apply.
 

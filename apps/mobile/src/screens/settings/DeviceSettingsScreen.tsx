@@ -439,19 +439,6 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
         >
           {posText("เอามาจากระบบหลังบ้าน → เครื่องขาย (POS) → ปุ่ม “ออก token” แล้วสแกน QR เพื่อเพิ่ม token อัตโนมัติ หรือคัดลอกลิงก์มาวาง") + " "}</Text>
 
-        <View style={{ marginTop: spacing.md }}>
-          <PairingScannerButton
-            target={target}
-            disabled={saving || status === 'LOADING' || status === 'UNAVAILABLE'}
-            pair={pair}
-            onBusyChange={setScanning}
-            onPaired={() => {
-              setInput('');
-              setServerInput('');
-            }}
-          />
-        </View>
-
         <TextInput
           value={input}
           onChangeText={setInput}
@@ -531,14 +518,33 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
           </View>
         )}
 
-        <Button
-          label={target ? posText("บันทึกและใช้ token ใหม่นี้") : posText("จับคู่เครื่อง")}
-          fullWidth
-          disabled={!canSave || scanning}
-          loading={saving}
-          style={{ marginTop: spacing.lg }}
-          onPress={onSave}
-        />
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'stretch',
+            gap: spacing.sm,
+            marginTop: spacing.lg,
+          }}
+        >
+          <Button
+            label={target ? posText("บันทึกและใช้ token ใหม่นี้") : posText("จับคู่เครื่อง")}
+            fullWidth
+            disabled={!canSave || scanning}
+            loading={saving}
+            style={{ flex: 1 }}
+            onPress={onSave}
+          />
+          <PairingScannerButton
+            target={target}
+            disabled={saving || status === 'LOADING' || status === 'UNAVAILABLE'}
+            pair={pair}
+            onBusyChange={setScanning}
+            onPaired={() => {
+              setInput('');
+              setServerInput('');
+            }}
+          />
+        </View>
       </Card>
 
       <Card>

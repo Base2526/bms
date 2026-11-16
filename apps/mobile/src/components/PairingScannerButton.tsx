@@ -1,8 +1,9 @@
 import { posText, usePosLanguage } from '../i18n/language';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert } from 'react-native';
+import { ActivityIndicator, Alert, Pressable } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { Button } from './Button';
+import Svg, { Path, Rect } from 'react-native-svg';
+import { useTheme } from '../theme/ThemeProvider';
 import {
   displayHost,
   redactDeviceToken,
@@ -25,6 +26,7 @@ function sameTarget(a: PairingTarget | null, b: PairingTarget | null) {
 /** Separate from product scanning: credentials must never enter SKU lookup or scan history. */
 export function PairingScannerButton(props: Props) {
   usePosLanguage();
+  const { colors, radius, minTouchTarget } = useTheme();
   const latest = useRef(props);
   const pairingVersion = useRef(0);
   // Compare every observed change, not just the final value: A -> B -> A invalidates old scans too.
@@ -155,15 +157,43 @@ export function PairingScannerButton(props: Props) {
     }
   }
 
+  const isDisabled = props.disabled || busy;
   return (
-    <Button
-      label={posText("สแกน QR เพื่อจับคู่")}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={posText("สแกน QR เพื่อจับคู่")}
+      accessibilityState={{ disabled: isDisabled, busy }}
       onPress={() => {
         scan();
       }}
-      disabled={props.disabled}
-      loading={busy}
-      fullWidth
-    />
+      disabled={isDisabled}
+      style={({ pressed }) => ({
+        width: minTouchTarget,
+        height: minTouchTarget,
+        borderRadius: radius.md,
+        backgroundColor: colors.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity: isDisabled ? 0.5 : pressed ? 0.85 : 1,
+      })}
+    >
+      {busy ? (
+        <ActivityIndicator color={colors.primaryText} />
+      ) : (
+        <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+          <Path
+            d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"
+            stroke={colors.primaryText}
+            strokeWidth={2}
+            strokeLinecap="round"
+          />
+          <Rect x={7} y={7} width={4} height={4} fill={colors.primaryText} />
+          <Rect x={13} y={7} width={4} height={4} fill={colors.primaryText} />
+          <Rect x={7} y={13} width={4} height={4} fill={colors.primaryText} />
+          <Rect x={13} y={13} width={2} height={2} fill={colors.primaryText} />
+          <Rect x={16} y={16} width={2} height={2} fill={colors.primaryText} />
+        </Svg>
+      )}
+    </Pressable>
   );
 }
