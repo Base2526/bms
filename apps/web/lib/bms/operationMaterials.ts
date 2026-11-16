@@ -29,7 +29,7 @@ import {
 import { teamBranches, teamHash } from "./operationTeamReads";
 import { teamInstant } from "./operationTeamPolicy";
 import { teamNotice, operationSupervisor } from "./operationTeamDispatch";
-import { directProduct } from "./operationProduction";
+import { directProduct } from "./operationProductionProduct";
 import { productionDate } from "./operationProductionPolicy";
 import {
   createPurchaseOrderInTx,

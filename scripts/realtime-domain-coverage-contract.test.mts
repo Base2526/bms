@@ -164,6 +164,7 @@ const CHILD_OF_AGGREGATE = [
   "bms_board_game_reservation_deposit_applications", "bms_board_game_pass_renewal_runs",
   "bms_delivery_order_lines", "bms_delivery_order_modifiers", "bms_delivery_order_events",
   "bms_delivery_handoffs", "bms_delivery_settlement_lines",
+  "bms_factory_bom_items", // Immutable child of a versioned factory BOM.
 ];
 
 /** ร่องรอย/ตัวชี้วัดของระบบ ไม่ใช่สถานะธุรกิจที่จอไหนเฝ้าดูอยู่ */
@@ -254,6 +255,9 @@ const POLLED_OPERATIONAL_SURFACE = [
   "bms_operation_policies", "bms_operation_notices", "bms_operation_escalations",
   "bms_operation_rosters", "bms_operation_handovers", "bms_operation_team_events", "bms_operation_team_notices", "bms_operation_daily_reviews",
   "bms_operation_production", "bms_operation_production_inputs", "bms_operation_production_events", "bms_operation_production_waste",
+  // Factory settings/demand/machines refresh on open and after writes. A QC hold also emits
+  // the existing inventory.changed event in the posting transaction.
+  "bms_factory_boms", "bms_factory_demands", "bms_factory_machines", "bms_factory_qc_policies",
   // Release F is polled on view/refetch; actionable work reuses canonical checklist notifications.
   "bms_operation_standards", "bms_operation_learning", "bms_operation_issues", "bms_operation_issue_sources", "bms_operation_weekly_reviews", "bms_operation_improvements", "bms_operation_improvement_events",
   "bms_ai_limit_notices", // Personal admin bell: 30-second/focus/mutation refresh; no shop-wide broadcast of recipients.

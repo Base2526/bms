@@ -28,6 +28,11 @@ import { partiallyReturnPosSale } from "../apps/web/lib/bms/pos.ts";
 import { getStockLedger } from "../apps/web/lib/bms/stockLedger";
 import { getNetProfitReport } from "../apps/web/lib/bms/netProfit";
 import { bmsOperationProductionResolvers } from "../apps/web/graphql/bmsOperationProduction.ts";
+import { factoryQcPolicy, setFactoryQcPolicy } from "../apps/web/lib/bms/factoryQcPolicy.ts";
+import { factoryBomDetail, saveFactoryBom } from "../apps/web/lib/bms/factoryBoms.ts";
+import { commandFactoryDemand, factoryDemandWorkspace } from "../apps/web/lib/bms/factoryDemands.ts";
+import { factoryMachines, saveFactoryMachine } from "../apps/web/lib/bms/factoryMachines.ts";
+import { recordPosSale } from "../apps/web/lib/bms/pos.ts";
 import {
   assertCostingTestDatabase,
   withCostingFixture,
@@ -288,7 +293,231 @@ test.before(async () => {
     ),
   );
   await query(readFileSync(new URL('../db/migrations/10.95__bms_operation_improvement.sql',import.meta.url),'utf8'));
+  const factorySql = readFileSync(new URL('../db/migrations/10.122__bms_factory_qc_policy.sql',import.meta.url),'utf8');
+  await query(factorySql);
+  await query(factorySql);
+  const bomSql = readFileSync(new URL('../db/migrations/10.123__bms_factory_boms.sql',import.meta.url),'utf8');
+  await query(bomSql);
+  await query(bomSql);
+  const demandSql = readFileSync(new URL('../db/migrations/10.124__bms_factory_demands.sql',import.meta.url),'utf8');
+  await query(demandSql);
+  await query(demandSql);
+  const machineSql = readFileSync(new URL('../db/migrations/10.125__bms_factory_machine_evidence.sql',import.meta.url),'utf8');
+  await query(machineSql);
+  await query(machineSql);
+  const reviewerSql = readFileSync(new URL('../db/migrations/10.126__bms_factory_qc_reviewer.sql',import.meta.url),'utf8');
+  await query(reviewerSql);
+  await query(reviewerSql);
 });
+test("factory schema keeps tenant RLS and denies app deletion of policy and evidence", async () => {
+  const names = ["bms_factory_qc_policies", "bms_factory_boms", "bms_factory_bom_items",
+    "bms_factory_demands", "bms_factory_machines"];
+  const rows = (await query(`SELECT relname,relrowsecurity,relforcerowsecurity,
+    has_table_privilege('bms_app',oid,'DELETE') app_delete
+    FROM pg_class WHERE relname=ANY($1::text[]) ORDER BY relname`, [names])).rows;
+  assert.equal(rows.length, names.length);
+  assert.ok(rows.every((x) => x.relrowsecurity && x.relforcerowsecurity && !x.app_delete));
+  const c = await getClient();
+  try {
+    await c.query("BEGIN");
+    await c.query("SET LOCAL ROLE bms_app");
+    for (const name of names)
+      assert.equal((await c.query(`SELECT 1 FROM ${name} LIMIT 1`)).rowCount, 0);
+    await c.query("ROLLBACK");
+  } finally { c.release(); }
+});
+test("factory machine evidence records actual time and rejects overlapping posted runs", async () =>
+  fixture(async (f) => {
+    const machine = await saveFactoryMachine(f.s, {
+      locationId: f.location, code: "EXT-01", name: "FAKE extruder", active: true,
+      confirmed: true, idempotencyKey: randomUUID(),
+    });
+    assert.equal(machine.status, "OK", JSON.stringify(machine));
+    assert.equal((await factoryMachines(f.s, f.location)).rows[0].code, "EXT-01");
+    const t = Date.now();
+    const first = await f.ready({ machineId: machine.id });
+    const posted = await f.post(first, {
+      startedAt: new Date(t - 20 * 60000).toISOString(),
+      endedAt: new Date(t - 10 * 60000).toISOString(),
+      rejectedQty: 2, laborMinutes: 20, energyKwh: 1.25,
+      expiryDate: undefined,
+    });
+    assert.equal(posted.status, "OK", JSON.stringify(posted));
+    const detail = await productionDetail(f.s, posted.id);
+    assert.equal(detail.machine_id, machine.id);
+    assert.equal(detail.rejected_qty, 2);
+    assert.equal(detail.labor_minutes, 20);
+    assert.equal(detail.energy_kwh, "1.250");
+    const next = await f.ready({ machineId: machine.id });
+    assert.equal((await f.post(next, {
+      startedAt: new Date(t - 15 * 60000).toISOString(),
+      endedAt: new Date(t - 5 * 60000).toISOString(),
+      expiryDate: undefined,
+    })).status, "MACHINE_TIME_OVERLAP");
+    assert.equal((await productionDetail(f.s, next.id)).status, "READY");
+    assert.equal((await f.post(next, {
+      startedAt: new Date(t - 5 * 60000).toISOString(),
+      endedAt: new Date(t - 1 * 60000).toISOString(),
+      expiryDate: undefined,
+    })).status, "OK");
+  }));
+test("customer production demand does not reserve stock and converts only after posted output", async () =>
+  fixture(async (f) => {
+    await query(`INSERT INTO bms_product_sales_surfaces(tenant_id,product_sku,surface)
+      VALUES($1,'FAKE-PREP','ONLINE_ORDER') ON CONFLICT DO NOTHING`, [f.tenant]);
+    const customerId = (await query(`INSERT INTO bms_customers(tenant_id,name)
+      VALUES($1,'FAKE factory customer') RETURNING id`, [f.tenant])).rows[0].id;
+    const before = (await query(`SELECT current_stock,reserved_stock FROM bms_inventory
+      WHERE tenant_id=$1 AND location_id=$2 AND product_sku='FAKE-PREP'`,
+      [f.tenant, f.location])).rows[0];
+    assert.equal((await commandFactoryDemand(f.s, {
+      action: "CREATE", idempotencyKey: randomUUID(), confirmed: true,
+      locationId: f.location, outputSku: "FAKE-PREP", outputSize: "BASE", qty: 8,
+      dueAt: new Date(Date.now() + 86400000).toISOString(),
+    })).status, "CUSTOMER_REQUIRED");
+    const created = await commandFactoryDemand(f.s, {
+      action: "CREATE", idempotencyKey: randomUUID(), confirmed: true,
+      locationId: f.location, customerId, outputSku: "FAKE-PREP", outputSize: "BASE", qty: 8,
+      dueAt: new Date(Date.now() + 86400000).toISOString(), note: "FAKE customer request",
+    });
+    assert.equal(created.status, "OK", JSON.stringify(created));
+    assert.equal((await factoryDemandWorkspace(f.s, { locationId: f.location })).rows[0].produced_qty, 0);
+    assert.deepEqual((await query(`SELECT current_stock,reserved_stock FROM bms_inventory
+      WHERE tenant_id=$1 AND location_id=$2 AND product_sku='FAKE-PREP'`,
+      [f.tenant, f.location])).rows[0], before);
+    assert.equal((await commandFactoryDemand(f.s, {
+      action: "CONVERT", id: created.id, version: created.version,
+      confirmed: true, idempotencyKey: randomUUID(),
+    })).status, "PRODUCTION_SHORT");
+    const ready = await f.ready({ factoryDemandId: created.id, plannedQty: 8 });
+    assert.equal((await f.post(ready, { expiryDate: undefined })).status, "OK");
+    await withAuditFailure(f.tenant, "factory.demand.convert", async () =>
+      assert.rejects(commandFactoryDemand(f.s, {
+        action: "CONVERT", id: created.id, version: created.version,
+        confirmed: true, idempotencyKey: randomUUID(),
+      }), /TEST_COST_AUDIT_FAILURE/));
+    assert.equal((await query(`SELECT status,order_id FROM bms_factory_demands WHERE tenant_id=$1 AND id=$2`,
+      [f.tenant, created.id])).rows[0].order_id, null);
+    const convertInput = {
+      action: "CONVERT", id: created.id, version: created.version,
+      confirmed: true, idempotencyKey: randomUUID(),
+    } as const;
+    const converted = await commandFactoryDemand(f.s, convertInput);
+    assert.equal(converted.status, "OK", JSON.stringify(converted));
+    const after = (await query(`SELECT d.status,d.order_id,o.status order_status
+      FROM bms_factory_demands d JOIN bms_orders o ON o.tenant_id=d.tenant_id AND o.id=d.order_id
+      WHERE d.tenant_id=$1 AND d.id=$2`, [f.tenant, created.id])).rows[0];
+    assert.equal(after.status, "ORDERED");
+    assert.ok(after.order_id);
+    assert.equal((await query(`SELECT reserved_stock FROM bms_inventory
+      WHERE tenant_id=$1 AND location_id=$2 AND product_sku='FAKE-PREP'`,
+      [f.tenant, f.location])).rows[0].reserved_stock, 8);
+    await query(`INSERT INTO bms_user_allowed_locations(tenant_id,user_id,location_id)
+      VALUES($1,$2,$3)`, [f.tenant, f.actor, f.locations[1]]);
+    assert.equal((await commandFactoryDemand(f.s, convertInput)).status, "NOT_FOUND");
+  }));
+test("factory BOM converts material and output units, pins versions and posts one stocked stage", async () =>
+  fixture(async (f) => {
+    await upsertProductStockPolicy(f.tenant, { productSku: "FAKE-ING", baseUnit: "GRAM" }, f.actor);
+    await upsertProductStockPolicy(f.tenant, { productSku: "FAKE-PREP", baseUnit: "ROLL" }, f.actor);
+    const input = {
+      outputSku: "FAKE-PREP", outputSize: "BASE", outputQty: 10,
+      ingredients: [{ sku: "FAKE-ING", size: "BASE", qty: 20 }],
+      sopSteps: ["Extrude", "Wind"], confirmed: true, idempotencyKey: randomUUID(),
+    };
+    const first = await saveFactoryBom(f.s, input);
+    assert.equal(first.status, "OK", JSON.stringify(first));
+    assert.deepEqual(await saveFactoryBom(f.s, input), first);
+    const batch = await f.ready({ recipeId: undefined, factoryBomId: first.id });
+    const second = await saveFactoryBom(f.s, { ...input, outputQty: 20, idempotencyKey: randomUUID() });
+    assert.equal(second.status, "OK", JSON.stringify(second));
+    assert.equal(second.version, 2);
+    assert.equal((await factoryBomDetail(f.s, first.id)).active, false);
+    assert.equal((await factoryBomDetail(f.s, second.id)).active, true);
+    assert.equal((await productionDetail(f.s, batch.id)).snapshot.recipeVersion, 1);
+    const posted = await f.post(batch, { expiryDate: undefined });
+    assert.equal(posted.status, "OK", JSON.stringify(posted));
+    const detail = await productionDetail(f.s, posted.id);
+    assert.equal(detail.factory_bom_id, first.id);
+    assert.equal(detail.recipe_id, null);
+    assert.equal(detail.snapshot.sourceKind, "FACTORY_BOM");
+    assert.equal(detail.snapshot.baseUnit, "ROLL");
+    assert.equal(detail.snapshot.ingredients[0].baseUnit, "GRAM");
+    assert.equal(detail.lot.qty, 8);
+    assert.equal(detail.value, "40.000000");
+  }));
+test("production expiry is optional for plastic goods but required by an expiry-tracked policy", async () =>
+  fixture(async (f) => {
+    const plain = await f.post(await f.ready(), { expiryDate: undefined });
+    assert.equal(plain.status, "OK", JSON.stringify(plain));
+    const detail = await productionDetail(f.s, plain.id);
+    assert.equal(detail.expiry_date, null);
+    assert.equal(detail.lot.expiry_date, null);
+    await upsertProductStockPolicy(f.tenant, {
+      productSku: "FAKE-PREP", lotTracking: true, expiryTracking: true,
+    }, f.actor);
+    const tracked = await f.ready();
+    assert.equal((await f.post(tracked, { expiryDate: undefined })).status, "EXPIRY_REQUIRED");
+    assert.equal((await productionDetail(f.s, tracked.id)).status, "READY");
+    assert.equal((await f.post(tracked)).status, "OK");
+  }));
+test("factory QC policy creates a held output lot atomically and disabling it does not release the lot", async () =>
+  fixture(async (f) => {
+    const input = {
+      locationId: f.location, sku: "FAKE-PREP", size: "BASE", required: true,
+      dueMinutes: 240, reviewerId: f.actor,
+      confirmed: true, idempotencyKey: randomUUID(),
+    };
+    assert.equal((await setFactoryQcPolicy(f.s, {
+      ...input, reviewerId: null, idempotencyKey: randomUUID(),
+    })).status, "QUALITY_REVIEWER_REQUIRED");
+    const set = await setFactoryQcPolicy(f.s, input);
+    assert.equal(set.status, "OK", JSON.stringify(set));
+    assert.deepEqual(await setFactoryQcPolicy(f.s, input), set);
+    assert.equal((await factoryQcPolicy(f.s, f.location, "FAKE-PREP", "BASE")).required, true);
+    assert.equal((await factoryQcPolicy(f.s, f.location, "FAKE-PREP", "BASE")).reviewerId, f.actor);
+    const posted = await f.post(await f.ready(), { expiryDate: undefined });
+    assert.equal(posted.status, "OK", JSON.stringify(posted));
+    const held = (await query(
+      `SELECT h.id,h.status,c.source_production_id,c.category,c.source_run_id
+       FROM bms_operation_lot_holds h JOIN bms_operation_quality_cases c
+         ON c.tenant_id=h.tenant_id AND c.id=h.case_id
+       WHERE h.tenant_id=$1 AND c.source_production_id=$2`,
+      [f.tenant, posted.id],
+    )).rows;
+    assert.equal(held.length, 1);
+    assert.equal(held[0].status, "ACTIVE");
+    assert.equal(held[0].category, "PRODUCTION_QC");
+    const reg = await f.register();
+    const sale = await recordPosSale({
+      tenantId: f.tenant, deviceId: reg.device, shiftId: reg.shift,
+      cashierUserId: f.actor, idempotencyKey: randomUUID(),
+      lines: [{ sku: "FAKE-PREP", size: "BASE", packQty: 1 }],
+      payments: [{ method: "CASH", amount: 107, cashTendered: 107 }],
+    });
+    assert.notEqual(sale.status, "SOLD");
+    assert.equal((await setFactoryQcPolicy(f.s, { ...input, required: false, idempotencyKey: randomUUID() })).status, "OK");
+    assert.equal((await query(`SELECT status FROM bms_operation_lot_holds WHERE tenant_id=$1 AND id=$2`,
+      [f.tenant, held[0].id])).rows[0].status, "ACTIVE");
+  }));
+test("failed QC audit rolls the production lot, movements, case and hold back together", async () =>
+  fixture(async (f) => {
+    assert.equal((await setFactoryQcPolicy(f.s, {
+      locationId: f.location, sku: "FAKE-PREP", size: "BASE", required: true,
+      dueMinutes: 60, reviewerId: f.actor,
+      confirmed: true, idempotencyKey: randomUUID(),
+    })).status, "OK");
+    const ready = await f.ready();
+    await withAuditFailure(f.tenant, "factory.qc_auto_hold", async () =>
+      assert.rejects(f.post(ready, { expiryDate: undefined }), /TEST_COST_AUDIT_FAILURE/));
+    const detail = await productionDetail(f.s, ready.id);
+    assert.equal(detail.status, "READY");
+    assert.equal(detail.inputs.length, 0);
+    assert.equal((await query(`SELECT count(*)::int n FROM bms_operation_quality_cases WHERE tenant_id=$1 AND source_production_id=$2`,
+      [f.tenant, ready.id])).rows[0].n, 0);
+    assert.equal((await query(`SELECT current_stock FROM bms_inventory WHERE tenant_id=$1 AND location_id=$2 AND product_sku='FAKE-PREP'`,
+      [f.tenant, f.location])).rows[0].current_stock, 0);
+  }));
 test("production ledger treats conversion as physical in/out, not unrecorded opening or expense", async () =>
   fixture(async (f) => {
     const p = await f.ready();
@@ -511,6 +740,10 @@ async function fixture(
       });
     } finally {
       for (const table of [
+        "bms_operation_quality_events",
+        "bms_operation_quality_decisions",
+        "bms_operation_lot_holds",
+        "bms_operation_quality_cases",
         "bms_operation_production_waste",
         "bms_operation_production_events",
         "bms_operation_production_inputs",
@@ -528,6 +761,11 @@ async function fixture(
         "bms_operation_runs",
         "bms_operation_templates",
         "bms_operation_commands",
+        "bms_factory_qc_policies",
+        "bms_factory_demands",
+        "bms_factory_bom_items",
+        "bms_factory_boms",
+        "bms_factory_machines",
       ])
         await query(`DELETE FROM ${table} WHERE tenant_id=$1`, [f.tenant]);
     }
@@ -544,6 +782,9 @@ test("production schema reapplication preserves RLS, grants and movement kinds",
   );
   await query(sql);
   await query(sql);
+  // The historical 10.94 migration revokes UPDATE before granting its original
+  // columns. Restore the later machine-evidence column grant after this test's rerun.
+  await query(readFileSync(new URL('../db/migrations/10.125__bms_factory_machine_evidence.sql',import.meta.url),'utf8'));
   const r = await query(
     `SELECT relname,relrowsecurity,relforcerowsecurity FROM pg_class WHERE relname IN ('bms_operation_production','bms_operation_production_inputs','bms_operation_production_events','bms_operation_production_waste')`,
   );

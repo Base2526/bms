@@ -14,6 +14,7 @@ import {
 } from "./operationChecklistPolicy";
 import { productionRecipe } from "./operationProduction";
 import { productionQuantity } from "./operationProductionPolicy";
+import { factoryBomSnapshotInTx } from "./factoryBoms";
 export async function availability(
   c: PoolClient,
   tenant: string,
@@ -111,12 +112,19 @@ export async function productionWorkspace(
         [s.tenantId, recipeSearch],
       )
     ).rows;
+    const factoryBoms = (await c.query(
+      `SELECT id,output_sku,output_size,version,output_qty
+       FROM bms_factory_boms WHERE tenant_id=$1 AND active
+       AND ($2='' OR position(lower($2) in lower(output_sku))>0)
+       ORDER BY output_sku,output_size LIMIT 101`,
+      [s.tenantId, recipeSearch],
+    )).rows;
     const outputs = (
       await c.query(
         `SELECT v.product_sku,v.code size,p.name,COALESCE(sp.base_unit,'PIECE') base_unit FROM bms_product_variants v
    JOIN bms_products p ON p.tenant_id=v.tenant_id AND p.sku=v.product_sku
    LEFT JOIN bms_product_stock_policies sp ON sp.tenant_id=p.tenant_id AND sp.product_sku=p.sku
-   WHERE v.tenant_id=$1 AND v.active AND NOT p.serial_tracked AND NOT p.is_bundle AND COALESCE(sp.stock_policy,'DIRECT')='DIRECT'
+   WHERE v.tenant_id=$1 AND v.active AND p.active AND NOT p.serial_tracked AND NOT p.is_bundle AND COALESCE(sp.stock_policy,'DIRECT')='DIRECT'
    AND ($2='' OR position(lower($2) in lower(p.sku||' '||p.name))>0) ORDER BY v.product_sku,v.code LIMIT 101`,
         [s.tenantId, outputSearch],
       )
@@ -125,8 +133,9 @@ export async function productionWorkspace(
       rows,
       total,
       recipes: recipes.slice(0, 100),
+      factoryBoms: factoryBoms.slice(0, 100),
       outputs: outputs.slice(0, 100),
-      optionsTruncated: recipes.length > 100 || outputs.length > 100,
+      optionsTruncated: recipes.length > 100 || factoryBoms.length > 100 || outputs.length > 100,
     };
   });
 }
@@ -134,7 +143,8 @@ export async function productionPreview(
   s: ChecklistScope,
   i: {
     locationId: string;
-    recipeId: string;
+    recipeId?: string;
+    factoryBomId?: string;
     plannedQty: number;
     outputSku: string;
     outputSize: string;
@@ -145,12 +155,14 @@ export async function productionPreview(
     s,
     async (c) => {
       await teamBranches(c, s, i.locationId);
-      const recipe = await productionRecipe(
-        c,
-        s.tenantId,
-        i.recipeId,
-        productionQuantity(i.plannedQty),
-      );
+      if (Boolean(i.recipeId) === Boolean(i.factoryBomId)) return reject("INVALID_INPUT");
+      const recipe = i.factoryBomId
+        ? await factoryBomSnapshotInTx(c, s.tenantId, i.factoryBomId, productionQuantity(i.plannedQty))
+        : await productionRecipe(c, s.tenantId, i.recipeId!, productionQuantity(i.plannedQty));
+      if (i.factoryBomId &&
+          (recipe.recipeSku !== i.outputSku ||
+           !("outputSize" in recipe) || recipe.outputSize !== i.outputSize))
+        return reject("OUTPUT_MUST_BE_SEPARATE");
       const ingredients = [];
       for (const x of recipe.ingredients)
         ingredients.push({
@@ -187,6 +199,12 @@ export async function productionDetail(s: ChecklistScope, id: string) {
       ).rows[0];
       if (!p) return reject("NOT_FOUND");
       await teamBranches(c, s, p.location_id);
+      const outputExpiryTracking = (
+        await c.query<{ expiry_tracking: boolean }>(
+          `SELECT expiry_tracking FROM bms_product_stock_policies WHERE tenant_id=$1 AND product_sku=$2`,
+          [s.tenantId, p.output_sku],
+        )
+      ).rows[0]?.expiry_tracking === true;
       const inputs = (
         await c.query(
           `SELECT i.*,v.amount::text FROM bms_operation_production_inputs i LEFT JOIN bms_inventory_value_entries v ON v.tenant_id=i.tenant_id AND v.movement_id=i.movement_id WHERE i.tenant_id=$1 AND i.production_id=$2 ORDER BY i.product_sku,i.size`,
@@ -224,6 +242,7 @@ export async function productionDetail(s: ChecklistScope, id: string) {
         : null;
       return {
         ...p,
+        outputExpiryTracking,
         inputs: inputs.map((x) => ({
           ...x,
           amount: costVisible ? x.amount : null,

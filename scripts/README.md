@@ -284,6 +284,17 @@ still required before production use.
 - Regression: `restaurant-actual-costs` DB filter on :5433; `operation-checklists` on its separate
   synthetic `bms_operations_test` DB. Never run either against an active shop database.
 
+### Factory extension — plastic twine and straws (`10.122`–`10.126`)
+
+- The same `operation-production` pure/DB filters now cover optional output expiry, versioned
+  factory BOM, staged stock units, customer demand to order, branch machine intervals, automatic
+  QC hold and permission/idempotency/rollback boundaries. DB mode requires the disposable
+  restored `bms_realtime_test` instance and all five factory migrations.
+- The production browser fixture also opens the factory BOM, demand, machine and QC policy
+  controls at English/Thai × desktop/mobile widths. It mocks auth/GraphQL and takes screenshots;
+  it is not a real-account or production deployment check.
+- Pilot setup and explicit scope limits: [factory-twine-straw-pilot-th.md](../docs/business/factory-twine-straw-pilot-th.md).
+
 ## Board-game owner assistant reads
 
 - `node scripts/run-contract-tests.mjs pure board-game-analytics-tools`: actual tool adapters/runtime,

@@ -2120,6 +2120,53 @@ type BmsExpiringPointsRow {
   phone: String
 }
 
+input BmsFactoryBomInput {
+  confirmed: Boolean!
+  idempotencyKey: String!
+  ingredients: [BmsProductionIngredient!]!
+  outputQty: Int!
+  outputSize: String!
+  outputSku: String!
+  sopSteps: [String!]!
+}
+
+input BmsFactoryDemandInput {
+  action: String!
+  confirmed: Boolean!
+  customerId: ID
+  dueAt: String
+  id: ID
+  idempotencyKey: String!
+  locationId: ID
+  note: String
+  outputSize: String
+  outputSku: String
+  qty: Int
+  version: Int
+}
+
+input BmsFactoryMachineInput {
+  active: Boolean!
+  code: String!
+  confirmed: Boolean!
+  id: ID
+  idempotencyKey: String!
+  locationId: ID!
+  name: String!
+  version: Int
+}
+
+input BmsFactoryQcPolicyInput {
+  confirmed: Boolean!
+  dueMinutes: Int!
+  idempotencyKey: String!
+  locationId: ID!
+  required: Boolean!
+  reviewerId: ID
+  size: String!
+  sku: String!
+}
+
 type BmsFeatureAccess {
   allowed: Boolean!
   feature: String!
@@ -7862,11 +7909,17 @@ input BmsProductionInput {
   confirmed: Boolean!
   dueAt: String
   dutyKey: String
+  endedAt: String
+  energyKwh: Float
   expiryDate: String
+  factoryBomId: ID
+  factoryDemandId: ID
   id: ID
   idempotencyKey: String!
   ingredients: [BmsProductionIngredient!]
+  laborMinutes: Int
   locationId: ID
+  machineId: ID
   note: String
   outputSize: String
   outputSku: String
@@ -7874,16 +7927,19 @@ input BmsProductionInput {
   producedOn: String
   qty: Int
   recipeId: ID
+  rejectedQty: Int
+  startedAt: String
   templateId: ID
   version: Int
 }
 
 input BmsProductionPreviewInput {
+  factoryBomId: ID
   locationId: ID!
   outputSize: String!
   outputSku: String!
   plannedQty: Int!
-  recipeId: ID!
+  recipeId: ID
 }
 
 type BmsProfitDay {
@@ -10345,6 +10401,7 @@ type Mutation {
   bmsEscalateAssessmentToEmergency(assessmentId: ID!, reason: String!): BmsPharmacyAssessment!
   bmsExitTenant: Boolean!
   bmsExpireLoyaltyPoints: BmsLoyaltyExpireResult!
+  bmsFactoryDemandCommand(input: BmsFactoryDemandInput!): BmsChecklistCommandResult!
   bmsGenerateInStoreBarcode: String!
   bmsGenerateMedicationSuggestions(assessmentId: ID!): BmsPharmacyAssessment!
   bmsGenerateReport(input: BmsGenerateReportInput!): BmsGenerateReportResult!
@@ -10514,6 +10571,8 @@ type Mutation {
   bmsRunSandboxedJs(code: String!): BmsJsConsoleResult!
   bmsRunSql(sql: String!): BmsSqlResult!
   bmsSaveCostAllocation(input: BmsCostAllocationSaveInput!): BmsCostAllocationSaveResult!
+  bmsSaveFactoryBom(input: BmsFactoryBomInput!): BmsChecklistCommandResult!
+  bmsSaveFactoryMachine(input: BmsFactoryMachineInput!): BmsChecklistCommandResult!
   bmsSavePharmacyGuidanceDraft(body: String!, code: String!, locale: String!): BmsPharmacyGuidanceTemplate!
   bmsSaveRestaurantFloorLayout(locationId: ID!, positions: [BmsRestaurantTablePositionInput!]!): Boolean!
   bmsSeedPharmacyGuidanceDrafts: Int!
@@ -10535,6 +10594,7 @@ type Mutation {
   bmsSetConversationTags(id: ID!, tags: [String!]!): Boolean!
   bmsSetCustomerTags(id: ID!, tags: [String!]!): Boolean!
   bmsSetDefaultCustomerAddress(addressId: ID!): BmsCustomerAddress!
+  bmsSetFactoryQcPolicy(input: BmsFactoryQcPolicyInput!): BmsChecklistCommandResult!
   bmsSetMyAvailability(available: Boolean!): Boolean!
   bmsSetPharmacistLicense(confirmed: Boolean!, isLicensedPharmacist: Boolean!, licenseNo: String, userId: ID!): Boolean!
 
@@ -11004,6 +11064,11 @@ type Query {
   bmsExpenseSuppliers: [BmsSupplier!]!
   bmsExpenseTaxSummary(from: String!, locationId: ID, to: String!): BmsExpenseTaxSummary!
   bmsExpiringLots(withinDays: Int = 90): [BmsInventoryLot!]!
+  bmsFactoryBomDetail(id: ID!): JSON!
+  bmsFactoryDemandCustomers(search: String!): JSON!
+  bmsFactoryDemandWorkspace(locationId: ID, offset: Int, search: String): JSON!
+  bmsFactoryMachines(locationId: ID!, search: String): JSON!
+  bmsFactoryQcPolicy(locationId: ID!, size: String!, sku: String!): JSON!
   bmsFeatureAccess: [BmsFeatureAccess!]!
   bmsFollowupAnalytics(windowDays: Int): BmsFollowupAnalytics!
   bmsFollowupHistory(conversationId: ID, limit: Int): [BmsFollowupHistoryEntry!]!

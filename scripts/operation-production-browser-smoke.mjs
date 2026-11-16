@@ -133,12 +133,16 @@ try {
                     "operations.checklist.execute",
                     "operations.production.manage",
                     "operations.production.post",
+                    "operations.quality.manage",
                     "product.view",
+                    "product.edit",
+                    "order.create",
+                    "customer.view",
                     "report.view",
                     "stock.adjust",
                   ],
             };
-          if (/Production|ChecklistWorkspace/.test(q)) {
+          if (/Production|Factory|ChecklistWorkspace/.test(q)) {
             const doc = parse(q);
             assert.deepEqual(
               [
@@ -203,6 +207,14 @@ try {
             };
           if (q.includes("ProductionDetail"))
             data = { bmsProductionDetail: batch };
+          if (q.includes("FactoryMachines"))
+            data = { bmsFactoryMachines: { rows: [], truncated: false } };
+          if (q.includes("FactoryDemandWorkspace"))
+            data = { bmsFactoryDemandWorkspace: { rows: [], total: 0 } };
+          if (q.includes("FactoryDemandCustomers"))
+            data = { bmsFactoryDemandCustomers: [] };
+          if (q.includes("FactoryQcPolicy"))
+            data = { bmsFactoryQcPolicy: { required: false, dueMinutes: 1440, reviewerId: null, version: 0 } };
           if (q.includes("ProductionPreview"))
             data = {
               bmsProductionPreview: {
@@ -346,6 +358,23 @@ try {
       await page.waitForTimeout(300);
       if (await page.locator(".ant-drawer-open .ant-drawer-close").count())
         await page.locator(".ant-drawer-open .ant-drawer-close").click();
+      for (const [name, button, hint] of [
+        ["bom", tr.factory_bom, tr.factory_bom_hint],
+        ["demand", tr.factory_demands, tr.demand_hint],
+        ["machines", tr.machines, tr.machine_hint],
+        ["qc", tr.qc_policy, tr.qc_policy_hint],
+      ]) {
+        await page.getByRole("button", { name: button, exact: true }).click();
+        const factoryModal = page.locator(".ant-modal:visible").filter({ hasText: hint });
+        await factoryModal.waitFor();
+        await page.waitForTimeout(250);
+        assert.equal(await factoryModal.count(), 1, `${name} modal must remain open`);
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 2));
+        await page.screenshot({ path: `${output}/${lang}-${width}-factory-${name}.png`, fullPage: false });
+        await page.locator(".ant-modal:visible .ant-modal-close").click();
+        await page.locator(".ant-modal:visible").waitFor({ state: "hidden" });
+      }
+      await page.screenshot({ path: `${output}/${lang}-${width}-factory-actions.png`, fullPage: false });
       await page.getByRole("button", { name: tr.create, exact: true }).click();
       modal = page.locator(".ant-modal:visible");
       const choose = async (label, text) => {

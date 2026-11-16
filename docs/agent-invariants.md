@@ -1695,6 +1695,18 @@ Disposal revalidates the frozen output unit/policy; detail reads share one seria
 Recipe/output selectors search independently on the server. A denied retry after a lost response
 must release the retry-only UI while keeping the original outcome explicitly unverified.
 
+Factory extension (`10.122`–`10.126`): `bms_factory_qc_policies` may hold a newly posted output
+lot with case/hold/audit/realtime in the production transaction; the assigned QC owner must retain
+quality-view access. Disabling the policy does not
+release an existing hold. `bms_factory_boms` are versioned direct-stock conversion definitions;
+the production row references exactly one legacy recipe or factory BOM, and the frozen snapshot
+remains authoritative. Factory demand is planning evidence, never a reservation or fixed quote;
+conversion reuses `createOrderInTx()` inside the same tenant transaction and succeeds only after
+linked posted output and live customer/usable stock checks. Machine time and rejected/labor/energy
+figures are explicit evidence, not inventory or actual conversion-cost postings. Optional output
+expiry is allowed only when the product policy does not track expiry. See
+[factory workflow](business/operation-production.md#factory-extension-for-plastic-twine-and-straws-1012210126).
+
 - `/admin/operations` is an admin-session surface, not a POS/PIN or offline workflow. Both
   reads and mutations require checklist permission plus server-resolved tenant/branch scope.
 - Template content and run snapshots are immutable; editing creates a new version. Publication

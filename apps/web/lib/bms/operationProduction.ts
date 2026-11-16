@@ -21,9 +21,14 @@ import { consumeLotsForWastageInTx, receiveLotInTx } from "./lots";
 import { recordMovement } from "./movements";
 import { assertValuationLocation } from "./inventoryValuation";
 import { recordInventoryWastageInTx } from "./wastage";
+import { holdFactoryOutputInTx } from "./factoryQcPolicy";
+import { directProduct } from "./operationProductionProduct";
+import { factoryBomSnapshotInTx } from "./factoryBoms";
 import {
   PRODUCTION_PERMISSIONS,
   productionDate,
+  productionExpiryDate,
+  productionMetrics,
   productionQuantity,
   productionIngredients,
   scaleProductionIngredients,
@@ -38,6 +43,9 @@ export type ProductionCommand = {
   version?: number;
   locationId?: string;
   recipeId?: string;
+  factoryBomId?: string;
+  factoryDemandId?: string;
+  machineId?: string;
   outputSku?: string;
   outputSize?: string;
   plannedQty?: number;
@@ -49,6 +57,11 @@ export type ProductionCommand = {
   ingredients?: ProductionIngredient[];
   producedOn?: string;
   expiryDate?: string;
+  startedAt?: string;
+  endedAt?: string;
+  rejectedQty?: number;
+  laborMinutes?: number;
+  energyKwh?: number;
   note?: string;
   qty?: number;
   actionId?: string;
@@ -75,40 +88,6 @@ async function event(
       JSON.stringify({ note, details }),
     ],
   );
-}
-// Lock product then policy/variant to prevent concurrent catalog edits while material is posted.
-export async function directProduct(
-  c: PoolClient,
-  tenant: string,
-  sku: string,
-  size: string,
-  options: { includeInactive?: boolean } = {},
-) {
-  const p = (
-    await c.query(
-      `SELECT sku,serial_tracked,is_bundle FROM bms_products WHERE tenant_id=$1 AND sku=$2 FOR SHARE`,
-      [tenant, sku],
-    )
-  ).rows[0];
-  const policy = (
-    await c.query(
-      `SELECT stock_policy,base_unit FROM bms_product_stock_policies WHERE tenant_id=$1 AND product_sku=$2 FOR SHARE`,
-      [tenant, sku],
-    )
-  ).rows[0];
-  const variant = await c.query(
-    `SELECT code FROM bms_product_variants WHERE tenant_id=$1 AND product_sku=$2 AND code=$3 AND (active OR $4) FOR SHARE`,
-    [tenant, sku, size, options.includeInactive === true],
-  );
-  if (
-    !p ||
-    p.serial_tracked ||
-    p.is_bundle ||
-    !variant.rowCount ||
-    (policy?.stock_policy ?? "DIRECT") !== "DIRECT"
-  )
-    return reject("DIRECT_STOCK_REQUIRED");
-  return policy?.base_unit ?? "PIECE";
 }
 async function stock(
   c: PoolClient,
@@ -180,16 +159,40 @@ async function execute(c: PoolClient, s: ChecklistScope, i: ProductionCommand) {
   const note = checklistText(i.note, 2000);
   if (i.action === "CREATE") {
     checklistPermission(s, "operations.checklist.manage");
-    if (!i.locationId || !i.recipeId || !checklistUuid(i.templateId))
+    if (!i.locationId || Boolean(i.recipeId) === Boolean(i.factoryBomId) || !checklistUuid(i.templateId))
       return reject("INVALID_INPUT");
     await teamBranches(c, s, i.locationId);
     const planned = productionQuantity(i.plannedQty),
       due = teamInstant(i.dueAt),
       sku = checklistText(i.outputSku, 200, true),
       size = checklistText(i.outputSize, 100, true);
-    const snapshot = await productionRecipe(c, s.tenantId, i.recipeId, planned);
+    const snapshot = i.factoryBomId
+      ? await factoryBomSnapshotInTx(c, s.tenantId, i.factoryBomId, planned)
+      : await productionRecipe(c, s.tenantId, i.recipeId!, planned);
+    if (i.factoryDemandId) {
+      if (!checklistUuid(i.factoryDemandId)) return reject("INVALID_INPUT");
+      const demand = (await c.query(
+        `SELECT location_id,output_sku,output_size,status FROM bms_factory_demands
+         WHERE tenant_id=$1 AND id=$2 FOR SHARE`,
+        [s.tenantId, i.factoryDemandId],
+      )).rows[0];
+      if (!demand || demand.status !== "OPEN" || demand.location_id !== i.locationId ||
+          demand.output_sku !== sku || demand.output_size !== size)
+        return reject("DEMAND_MISMATCH");
+    }
+    if (i.machineId) {
+      if (!checklistUuid(i.machineId)) return reject("INVALID_INPUT");
+      const machine = (await c.query(
+        `SELECT 1 FROM bms_factory_machines WHERE tenant_id=$1 AND location_id=$2
+         AND id=$3 AND active FOR SHARE`,
+        [s.tenantId, i.locationId, i.machineId],
+      ));
+      if (!machine.rowCount) return reject("MACHINE_NOT_FOUND");
+    }
     if (
-      snapshot.recipeSku === sku ||
+      (i.factoryBomId
+        ? snapshot.recipeSku !== sku || (snapshot as any).outputSize !== size
+        : snapshot.recipeSku === sku) ||
       snapshot.ingredients.some((x) => x.sku === sku)
     )
       return reject("OUTPUT_MUST_BE_SEPARATE");
@@ -222,13 +225,16 @@ async function execute(c: PoolClient, s: ChecklistScope, i: ProductionCommand) {
     );
     const row = (
       await c.query(
-        `INSERT INTO bms_operation_production(tenant_id,location_id,run_id,recipe_id,output_sku,output_size,planned_qty,snapshot,note,created_by)
-   VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10) RETURNING id,version`,
+        `INSERT INTO bms_operation_production(tenant_id,location_id,run_id,recipe_id,factory_bom_id,factory_demand_id,machine_id,output_sku,output_size,planned_qty,snapshot,note,created_by)
+   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13) RETURNING id,version`,
         [
           s.tenantId,
           i.locationId,
           run.id,
-          i.recipeId,
+          i.recipeId ?? null,
+          i.factoryBomId ?? null,
+          i.factoryDemandId ?? null,
+          i.machineId ?? null,
           sku,
           size,
           planned,
@@ -297,14 +303,34 @@ async function execute(c: PoolClient, s: ChecklistScope, i: ProductionCommand) {
       !note
     )
       return reject("VARIANCE_REASON_REQUIRED");
+    const outputPolicy = (
+      await c.query<{ expiry_tracking: boolean }>(
+        `SELECT expiry_tracking FROM bms_product_stock_policies WHERE tenant_id=$1 AND product_sku=$2 FOR SHARE`,
+        [s.tenantId, p.output_sku],
+      )
+    ).rows[0];
     const produced = productionDate(i.producedOn),
-      expiry = productionDate(i.expiryDate);
+      expiry = productionExpiryDate(i.expiryDate, outputPolicy?.expiry_tracking === true);
+    const metrics = productionMetrics(i);
+    if (metrics.rejectedQty && !note) return reject("VARIANCE_REASON_REQUIRED");
+    if (p.machine_id && metrics.startedAt && metrics.endedAt) {
+      await c.query(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, [
+        `${s.tenantId}:factory-machine:${p.machine_id}`,
+      ]);
+      const overlap = await c.query(
+        `SELECT 1 FROM bms_operation_production
+         WHERE tenant_id=$1 AND machine_id=$2 AND id<>$3 AND status='POSTED'
+           AND started_at<$5::timestamptz AND ended_at>$4::timestamptz LIMIT 1`,
+        [s.tenantId, p.machine_id, p.id, metrics.startedAt, metrics.endedAt],
+      );
+      if (overlap.rowCount) return reject("MACHINE_TIME_OVERLAP");
+    }
     const today = (
       await c.query(
         `SELECT to_char(now() AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') today`,
       )
     ).rows[0].today;
-    if (produced > today || expiry < today || expiry < produced)
+    if (produced > today || (expiry !== null && (expiry < today || expiry < produced)))
       return reject("INVALID_DATE");
     // Require same base unit as the pinned definition even after catalog edits.
     const all = [
@@ -418,9 +444,24 @@ async function execute(c: PoolClient, s: ChecklistScope, i: ProductionCommand) {
       note: `Production ${p.id}`,
     });
     await c.query(
-      `UPDATE bms_operation_production SET status='POSTED',version=version+1,actual_qty=$3,output_lot_id=$4,produced_on=$5,expiry_date=$6,note=$7,posted_at=now() WHERE tenant_id=$1 AND id=$2`,
-      [s.tenantId, p.id, actual, lot, produced, expiry, note],
+      `UPDATE bms_operation_production SET status='POSTED',version=version+1,
+       actual_qty=$3,output_lot_id=$4,produced_on=$5,expiry_date=$6,note=$7,
+       started_at=$8,ended_at=$9,rejected_qty=$10,labor_minutes=$11,energy_kwh=$12,
+       posted_at=now() WHERE tenant_id=$1 AND id=$2`,
+      [s.tenantId, p.id, actual, lot, produced, expiry, note,
+        metrics.startedAt, metrics.endedAt, metrics.rejectedQty,
+        metrics.laborMinutes, metrics.energyKwh],
     );
+    await holdFactoryOutputInTx(c, s, {
+      productionId: p.id,
+      runId: run.id,
+      locationId: p.location_id,
+      sku: p.output_sku,
+      size: p.output_size,
+      lotId: lot,
+      qty: actual,
+      baseUnit: p.snapshot.baseUnit,
+    });
     if (actual !== p.planned_qty)
       await teamNotice(
         c,
