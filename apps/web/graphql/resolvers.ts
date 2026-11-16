@@ -116,6 +116,7 @@ import {
 } from "@/lib/bms/userAdmin";
 
 import { logAsync } from "@/lib/logger";
+import { isExpectedGraphqlError } from "./expectedErrorCodes";
 
 // =============================================================
 // Authz helpers — จัดการผู้ใช้/สิทธิ์ ใน BMS admin
@@ -652,7 +653,7 @@ function wrapResolverMap(kind: "Query" | "Mutation", map: Record<string, unknown
         });
         return result;
       } catch (err) {
-        void logAsync("error", "graphql", `${kind}.${name} failed`, {
+        void logAsync(isExpectedGraphqlError(err) ? "warn" : "error", "graphql", `${kind}.${name} failed`, {
           ...meta,
           duration_ms: Date.now() - start,
           error: serializeError(err),

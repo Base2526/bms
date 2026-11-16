@@ -137,7 +137,7 @@ test("webhook boundary derives tenant from integration and enforces auth, size a
   const service = read("apps/web/lib/bms/deliveryPlatforms/webhooks.ts");
   assert.match(route, /rateLimit\(/);
   assert.match(route, /256 \* 1024/);
-  assert.match(route, /req\.arrayBuffer\(\)/);
+  assert.match(route, /readBoundedWebhookText\(req, MAX_BODY_BYTES\)/);
   assert.match(service, /verifyWebhook/);
   assert.match(service, /integration\.tenant_id/);
   assert.doesNotMatch(route, /tenantId.*body/i);

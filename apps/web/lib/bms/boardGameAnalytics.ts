@@ -454,16 +454,16 @@ export async function getBoardGameAnalytics(
       `SELECT count(*)::int AS entries,
               count(*) FILTER (WHERE status='SEATED')::int AS seated,
               avg(EXTRACT(EPOCH FROM (seated_at-wait_started_at))/60)
-                FILTER (WHERE status='SEATED' AND wait_started_at <= seated_at AND seated_at <= $5)::text AS wait_minutes,
+                FILTER (WHERE status='SEATED' AND wait_started_at <= seated_at AND seated_at <= $5::timestamptz)::text AS wait_minutes,
               count(*) FILTER (WHERE status='SEATED' AND (wait_started_at IS NULL OR seated_at IS NULL
-                OR wait_started_at > seated_at OR seated_at > $5))::int AS invalid_wait,
+                OR wait_started_at > seated_at OR seated_at > $5::timestamptz))::int AS invalid_wait,
               count(*) FILTER (WHERE status='NO_SHOW')::int AS no_show,
               count(*) FILTER (WHERE status='CANCELLED')::int AS cancelled,
               COALESCE(sum(deposit_amount) FILTER (WHERE deposit_status='FORFEITED'),0)::text AS deposits_forfeited
          FROM (SELECT status,seated_at,deposit_status,deposit_amount,
                       CASE WHEN kind='RESERVATION' THEN checked_in_at ELSE created_at END AS wait_started_at
                  FROM bms_board_game_waitlist
-                WHERE tenant_id=$1 AND created_at >= $2 AND created_at < LEAST($3,$5)
+                WHERE tenant_id=$1 AND created_at >= $2::timestamptz AND created_at < LEAST($3::timestamptz,$5::timestamptz)
                   AND ($4::uuid[] IS NULL OR location_id=ANY($4::uuid[]))) cohort`,
       [tenantId, bounds.start, bounds.end, locationIds, observedAt],
     )).rows[0];
@@ -484,13 +484,13 @@ export async function getBoardGameAnalytics(
 
     let libraryRows = (await client.query<{ title_id: string; name: string; plays: number; minutes: string }>(
       `SELECT title.id AS title_id,title.title AS name,count(*)::int AS plays,
-              COALESCE(sum(EXTRACT(EPOCH FROM (LEAST(COALESCE(loan.returned_at,$5),$3,$5)-GREATEST(loan.checked_out_at,$2)))/60),0)::text AS minutes
+              COALESCE(sum(EXTRACT(EPOCH FROM (LEAST(COALESCE(loan.returned_at,$5::timestamptz),$3::timestamptz,$5::timestamptz)-GREATEST(loan.checked_out_at,$2::timestamptz)))/60),0)::text AS minutes
          FROM bms_board_game_session_games loan
          JOIN bms_board_game_sessions session ON session.tenant_id=loan.tenant_id AND session.id=loan.session_id
          JOIN bms_board_game_titles title ON title.tenant_id=loan.tenant_id AND title.id=(
            SELECT copy.title_id FROM bms_board_game_copies copy WHERE copy.tenant_id=loan.tenant_id AND copy.id=loan.copy_id
          )
-        WHERE loan.tenant_id=$1 AND loan.checked_out_at < LEAST($3,$5) AND COALESCE(loan.returned_at,$5) > $2
+        WHERE loan.tenant_id=$1 AND loan.checked_out_at < LEAST($3::timestamptz,$5::timestamptz) AND COALESCE(loan.returned_at,$5::timestamptz) > $2::timestamptz
           AND ($4::uuid[] IS NULL OR session.location_id=ANY($4::uuid[]))
         GROUP BY title.id,title.title ORDER BY plays DESC,name LIMIT 101`,
       [tenantId, bounds.start, bounds.end, locationIds, observedAt],

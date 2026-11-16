@@ -17,13 +17,14 @@ export function operatorMessage(error: unknown, t: Translate, action: "read" | "
       return t("operator_message.permission");
     case "MENU_PROFIT_ALL_BRANCH_ACCESS_REQUIRED": case "BUNDLE_PUBLISH_ALL_BRANCH_ACCESS_REQUIRED":
     case "PRICE_PUBLISH_ALL_BRANCH_ACCESS_REQUIRED": case "COST_ALLOCATION_ALL_BRANCH_ACCESS_REQUIRED":
+    case "COST_ALL_BRANCH_ACCESS_REQUIRED":
     case "NET_PROFIT_ALL_BRANCH_ACCESS_REQUIRED": return t("operator_message.all_branches");
     case "STORE_CURRENCY_REQUIRED": case "VALUATION_CURRENCY_REVIEW_REQUIRED": case "COST_ALLOCATION_CURRENCY_REVIEW_REQUIRED":
     case "NET_PROFIT_CURRENCY_REVIEW_REQUIRED": case "PRICE_PUBLISH_CURRENCY_REVIEW_REQUIRED":
       return t("operator_message.currency");
     case "VALUATION_STALE_REVIEW": case "MENU_PROFIT_STALE_REVIEW": case "BUNDLE_PUBLISH_STALE_REVIEW":
     case "PRICE_PUBLISH_STALE_REVIEW": case "COST_ALLOCATION_PREVIEW_STALE": case "COST_ALLOCATION_CONFLICT":
-    case "COST_ALLOCATION_SNAPSHOT_INVALID": case "CONFLICT": return t("operator_message.changed");
+    case "COST_ALLOCATION_SNAPSHOT_INVALID": case "COST_REVIEW_CONFLICT": case "CONFLICT": return t("operator_message.changed");
     case "IDEMPOTENCY_CONFLICT": case "VALUATION_IDEMPOTENCY_CONFLICT": case "MENU_PROFIT_IDEMPOTENCY_CONFLICT":
     case "BUNDLE_PUBLISH_IDEMPOTENCY_CONFLICT": case "PRICE_PUBLISH_IDEMPOTENCY_CONFLICT":
       return t("operator_message.request_conflict");

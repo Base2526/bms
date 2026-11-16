@@ -54,10 +54,8 @@ export function GlobalOrderNotifier() {
         }}>{t("order_notifications.open")}</Button>,
       });
 
-      const browser = await notify(event.title || t("order_notifications.fallback_title"), {
-        body: event.message || "",
-        tag: `bms-order-${event.data?.kind || "action"}-${event.data?.orderId || event.id}`,
-      });
+      // Lock-screen notifications contain no order number, amount, branch or provider detail.
+      const browser = await notify(t("order_notifications.fallback_title"), { tag: "bms-order" });
       if (browser) {
         browser.onclick = () => {
           window.focus();

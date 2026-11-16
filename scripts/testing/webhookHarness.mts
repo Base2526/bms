@@ -86,6 +86,11 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
   const route = loadWithStubs(`apps/web/app/api/bms/${channel}/webhook/[tenantId]/route.ts`, {
     "next/server": { NextResponse: { json: (body: unknown, options?: { status: number }) => ({ body, status: options?.status ?? 200 }) } },
     "@/lib/bms/rateLimit": { rateLimit: async () => ({ ok: true }) },
+    "@/lib/bms/webhookBody": {
+      readBoundedWebhookText: async (req: { text: () => Promise<string> }) => ({ ok: true, text: await req.text() }),
+      readBoundedBodyBytes: async (resp: { arrayBuffer: () => Promise<ArrayBuffer> }) =>
+        ({ ok: true, bytes: new Uint8Array(await resp.arrayBuffer()) }),
+    },
     "@/lib/bms/channels": { getChannel: async () => ({ active: true, channel_secret: options.secret === undefined ? "FAKE-secret" : options.secret, access_token: "FAKE-token", webhook_verify_token: "FAKE-verify-token-0123456789012345", external_account_id: "123456789012345", extra: options.lineBotExtra ?? verifiedExtra }) },
     "@/lib/bms/crypto": { verifyLineSignature: () => options.signatureValid !== false, verifyMetaSignature: () => options.signatureValid !== false },
     "@/lib/bms/inboundEvents": { claimInboundEvent: async (...args: any[]) => { calls.claims.push(args); return options.claim ? options.claim(...args) : true; },

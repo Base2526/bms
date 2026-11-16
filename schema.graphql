@@ -7167,6 +7167,11 @@ type BmsPosScanResult {
   baseQty: Float!
   imageUrl: String
   modifiers: [BmsPosModifier!]!
+
+  """
+  Server-derived: this product may be queued as a plain cash sale on native POS.
+  """
+  offlineRetailEligible: Boolean!
   packCode: String!
   packPrice: Float!
   packs: [BmsPosPackOption!]!
@@ -10284,7 +10289,7 @@ type Mutation {
   bmsBookShipmentLive(id: ID!): BmsCarrierBookingResult!
   bmsBranchRequisitionCommand(input: BmsRequisitionCommandInput!): BmsRequisitionResult!
   bmsCancelBranchPriceWindow(confirmed: Boolean!, id: ID!): BmsCostingActionResult!
-  bmsCancelOrder(id: ID!): Boolean!
+  bmsCancelOrder(confirmed: Boolean!, id: ID!): Boolean!
   bmsCancelPurchaseOrder(id: ID!): Boolean!
   bmsCancelRestockSubscription(id: ID!): Boolean!
   bmsCancelShipment(id: ID!): Boolean!
@@ -10494,7 +10499,7 @@ type Mutation {
   bmsResetStoreCapability(capability: String!): BmsStoreCapability!
   bmsRetirePharmacyGuidance(id: ID!): BmsPharmacyGuidanceTemplate!
   bmsRetryMessage(id: ID!): BmsSendResult!
-  bmsReturnOrder(id: ID!): Boolean!
+  bmsReturnOrder(confirmed: Boolean!, id: ID!): Boolean!
   bmsReviewAiQualityCase(category: String!, id: ID!, note: String, verdict: String!): BmsAiQualityCaseDetail!
   bmsReviewAiSynonymCandidate(decision: String!, id: ID!, productSku: String): BmsAiSynonymCandidate!
   bmsReviewMasterBarcode(input: BmsMasterBarcodeReviewInput!): BmsMasterBarcode!
@@ -11666,7 +11671,7 @@ type User {
   role_id: ID
   tenantName: String
   themePreference: String
-  username: String!
+  username: String
 }
 
 type UserConnection {

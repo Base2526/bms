@@ -104,8 +104,19 @@ export function parseFishImportWorkbook(buffer: Buffer, sourceName: string, sour
     const rowNo=index+1;
     const fishName=typeof row[5]==="string"?row[5].trim():"";
     const hasDate=row[1]!=null||row[2]!=null;
-    if (!fishName && !hasDate) continue;
-    if (!fishName) continue; // section labels and monthly subtotal rows
+    const hasFishAmounts=row[14]!=null||row[16]!=null||row[18]!=null;
+    if (!fishName && !hasDate && !hasFishAmounts) continue;
+    if (!fishName) {
+      // The source report contains monthly subtotal rows and formula-filled footer totals.
+      // A detail row has a bill/receipt date or supplier; totals have neither (or a month label).
+      const monthLabel=/^เดือน\s/.test(cellText(row[1]));
+      const hasDetailIdentity=!monthLabel && (hasDate || !!cellText(row[3]));
+      if (hasFishAmounts && hasDetailIdentity) {
+        count++;
+        issues.push({row:rowNo,field:"line",value:"",message:"แถวนี้มีน้ำหนักหรือยอดเงินแต่ไม่มีชื่อปลา: แก้ไฟล์ก่อนนำเข้า"});
+      }
+      continue;
+    }
     count++;
     fishNameCounts.set(fishName,(fishNameCounts.get(fishName)??0)+1);
     if (row[14]==null) {

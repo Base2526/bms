@@ -13,6 +13,8 @@ test("operator messages turn business codes into actionable Thai and English", (
     "RETURN_COST_REVERSAL_UNVERIFIED",
     "PRICE_PUBLISH_EXCLUSIVE_CHECKOUT_UNSUPPORTED",
     "PRICE_PUBLISH_INVALID_PACK",
+    "COST_ALL_BRANCH_ACCESS_REQUIRED",
+    "COST_REVIEW_CONFLICT",
   ]) {
     const thai = operatorMessage(code, th);
     const english = operatorMessage(code, en);

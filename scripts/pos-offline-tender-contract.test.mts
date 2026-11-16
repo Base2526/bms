@@ -109,8 +109,11 @@ test("specialized store archetypes cannot enter the retail offline path", () => 
   );
   assert.match(
     checkout,
-    /!line\.serialTracked &&\s*line\.serials\.length === 0/
+    /line\.offlineRetailEligible === true &&\s*!line\.serialTracked &&\s*line\.serials\.length === 0/
   );
+  const service = read("apps/web/lib/bms/pos.ts");
+  assert.match(service, /input\.offlineTenderedAt && canonical\.offlineRestrictedSku/);
+  assert.match(service, /row\.stock_policy !== "DIRECT" && row\.stock_policy !== "PACK"/);
 });
 
 test("native recovery remains bounded, visible after commit, and cannot be hidden by unpair", () => {

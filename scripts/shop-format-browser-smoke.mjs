@@ -56,6 +56,8 @@ try {
     await page.locator("#password").fill("12345678");
     await page.locator(".ant-select").filter({ has: page.locator("#businessArchetype") })
       .locator(".ant-select-selector").click();
+    await page.locator(".ant-select-dropdown:visible").waitFor();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     await page.locator(".ant-select-item-option:visible").filter({ hasText: "มินิมาร์ท" }).click();
     await page.getByRole("button", { name: "สร้างร้านฟรี" }).click();
     await page.getByText(/ตรวจสอบอีเมล|ยืนยันอีเมล/).first().waitFor();

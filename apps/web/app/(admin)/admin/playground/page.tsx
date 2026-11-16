@@ -11,6 +11,7 @@ import { SendOutlined, ReloadOutlined, ShoppingCartOutlined } from "@ant-design/
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
+import { operatorMessage } from "@/lib/operatorMessage";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 const { Text, Paragraph } = Typography;
@@ -76,15 +77,24 @@ export default function Page() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ message: message_, channel, customerRef }),
       });
-      const data = await res.json();
-      setChat((c) => [...c, { from: "bot", text: data.reply || t("admin_playground.no_reply"), trace: data }]);
-      if (data?.order?.status === "CREATED") {
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(res.status === 401 ? t("operator_message.sign_in")
+          : res.status === 403 ? t("operator_message.permission")
+          : res.status === 413 ? t("admin_playground.input_too_large")
+          : res.status === 400 ? t("admin_playground.invalid_request")
+          : t("operator_message.write_unknown"));
+      }
+      if (!data || typeof data.reply !== "string" || !data.reply.trim())
+        throw new Error(t("operator_message.write_unknown"));
+      setChat((c) => [...c, { from: "bot", text: data.reply, trace: data }]);
+      if (data?.order?.status === "CREATED" && typeof data.order.orderId === "string" && data.order.orderId.trim()) {
         setLastOrderId(data.order.orderId);
         message.success(t("admin_playground.order_created", { id: data.order.orderId.slice(0, 8) }));
       }
       refetchStock();
     } catch (e: any) {
-      message.error(e?.message || t("admin_playground.send_error"));
+      message.error(operatorMessage(e, t, "write"));
     } finally {
       setSending(false);
     }

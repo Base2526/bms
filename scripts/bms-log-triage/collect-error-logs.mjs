@@ -1,7 +1,7 @@
 // =============================================================
 // BMS daily log triage — collector
 // -------------------------------------------------------------
-// ดึง error จาก system_logs (24 ชม.ล่าสุด) → จัดกลุ่ม + dedupe
+// ดึงรายการ level=error จาก system_logs (24 ชม.ล่าสุด) → จัดกลุ่ม + dedupe
 // → ปิดบัง secret/PII → เขียน bms-log-report.md
 // ตั้ง output has_errors ให้ workflow ตัดสินใจว่าจะเรียก AI ต่อไหม
 //
@@ -55,7 +55,7 @@ const SQL = `
          (array_agg(route_name  ORDER BY created_at DESC) FILTER (WHERE route_name IS NOT NULL))[1] AS route
     FROM system_logs
    WHERE created_at >= now() - make_interval(hours => $1)
-     AND (level = 'error' OR status = 'error')
+     AND level = 'error'
    GROUP BY category, msg
    ORDER BY cnt DESC
    LIMIT $2`;

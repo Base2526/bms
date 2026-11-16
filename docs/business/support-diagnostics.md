@@ -46,6 +46,9 @@ The legacy global `/api/logs` surface is platform-admin-only. It must not be use
 export because it contains fleet-wide operational data. Standalone deployments still need durable
 stdout/file rotation for the case where PostgreSQL itself is unavailable; the browser ring buffer
 preserves client history but cannot replace database-server crash logs.
+For platform incident review, `level=error` and structured `status=error` are different filters;
+expected GraphQL authorization/client failures are warnings. See the
+[log triage runbook](../architecture/logging-and-triage.md) before interpreting counts.
 
 ## Two role/RLS rules this module must not break
 

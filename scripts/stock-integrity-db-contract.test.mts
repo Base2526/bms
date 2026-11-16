@@ -5,7 +5,8 @@ import { query, getClient } from "../apps/web/lib/db.ts";
 import { beginTenantTx } from "../apps/web/lib/bms/tenant.ts";
 import { createPurchaseOrder, receivePurchaseOrder, cancelPurchaseOrder, getPurchaseOrder } from "../apps/web/lib/bms/purchase.ts";
 import { adjustStock } from "../apps/web/lib/bms/products.ts";
-import { createOrder, shipOrder, returnOrder, releaseExpiredOrders } from "../apps/web/lib/bms/orders.ts";
+import { createOrder, payOrder, packOrder, completeOrder, shipOrder, returnOrder, cancelOrder, releaseExpiredOrders, canAccessOrderBranch } from "../apps/web/lib/bms/orders.ts";
+import { submitPayment, confirmPayment } from "../apps/web/lib/bms/payments.ts";
 import { takeDeposit } from "../apps/web/lib/bms/deposits.ts";
 import { createStockCount, recordCountItem, applyStockCount } from "../apps/web/lib/bms/stockCounts.ts";
 import { assertCostingTestDatabase } from "./testing/restaurantCostingFixture.mts";
@@ -150,6 +151,84 @@ test('manual adjustment cannot create untracked opening stock for a tracked prod
   const sku=await product('ADJUST',true);
   await assert.rejects(adjustStock(tenant,sku,'BASE',3,null,actor,actor,location),/ล็อต/);
   assert.deepEqual(await balances(sku),{current_stock:0,reserved_stock:0,lots:0});
+});
+
+test('a bare order-pay command cannot claim money; a confirmed payment changes order and audit together', async () => {
+  const sku = await product('PAY-EVIDENCE', false, 10), id = await order(sku);
+  assert.equal(await payOrder(tenant,id), false);
+  assert.equal((await query(`SELECT status FROM bms_orders WHERE tenant_id=$1 AND id=$2`,[tenant,id])).rows[0].status,'PENDING');
+  assert.equal((await query(`SELECT count(*)::int n FROM bms_payments WHERE tenant_id=$1 AND order_id=$2`,[tenant,id])).rows[0].n,0);
+  const submitted = await submitPayment({ tenantId:tenant, orderId:id, method:'CASH' });
+  assert.equal(submitted.status,'SUBMITTED');
+  if(submitted.status!=='SUBMITTED') return;
+  assert.equal((await query(`SELECT status FROM bms_orders WHERE tenant_id=$1 AND id=$2`,[tenant,id])).rows[0].status,'PENDING');
+  assert.equal((await confirmPayment(tenant,submitted.paymentId,actor)).status,'CONFIRMED');
+  assert.equal((await query(`SELECT status FROM bms_orders WHERE tenant_id=$1 AND id=$2`,[tenant,id])).rows[0].status,'PAID');
+  assert.equal((await query(`SELECT count(*)::int n FROM bms_audit_log WHERE tenant_id=$1 AND action='payment.confirm' AND target=$2`,
+    [tenant,submitted.paymentId])).rows[0].n,1);
+});
+
+test('order actions enforce branch access and audit rollback; pack, ship and complete identify the actor', async () => {
+  const sku = await product('BRANCH-AUDIT', false, 10), id = await order(sku);
+  const other = (await query(`INSERT INTO bms_locations(tenant_id,code,name,branch_code)
+    VALUES($1,'SECOND','FAKE second branch','00001') RETURNING id`, [tenant])).rows[0].id;
+  assert.equal(await canAccessOrderBranch(tenant, id, actor), true);
+  await query(`INSERT INTO bms_user_allowed_locations(tenant_id,user_id,location_id) VALUES($1,$2,$3)`, [tenant,actor,other]);
+  try {
+    assert.equal(await canAccessOrderBranch(tenant, id, actor), false);
+    assert.equal(await canAccessOrderBranch(randomUUID(), id, actor), false);
+    assert.equal(await canAccessOrderBranch(tenant, 'invalid-id', actor), false);
+    await query(`UPDATE bms_user_allowed_locations SET location_id=$3 WHERE tenant_id=$1 AND user_id=$2`, [tenant,actor,location]);
+    assert.equal(await canAccessOrderBranch(tenant, id, actor), true);
+    await query(`CREATE OR REPLACE FUNCTION fake_order_audit_failure() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF NEW.target='${id}' AND NEW.action='order.cancel' THEN RAISE EXCEPTION 'FAKE order audit failure'; END IF; RETURN NEW; END $$;
+      CREATE TRIGGER fake_order_audit BEFORE INSERT ON bms_audit_log FOR EACH ROW EXECUTE FUNCTION fake_order_audit_failure()`);
+    try {
+      await assert.rejects(cancelOrder(tenant,id,actor), /FAKE order audit failure/);
+      assert.equal((await query(`SELECT status FROM bms_orders WHERE tenant_id=$1 AND id=$2`, [tenant,id])).rows[0].status,'PENDING');
+      assert.equal((await balances(sku)).reserved_stock,2);
+    } finally {
+      await query('DROP TRIGGER fake_order_audit ON bms_audit_log; DROP FUNCTION fake_order_audit_failure()');
+    }
+    const payment = await submitPayment({tenantId:tenant,orderId:id,method:'CASH'});
+    assert.equal(payment.status,'SUBMITTED'); if(payment.status!=='SUBMITTED') return;
+    assert.equal((await confirmPayment(tenant,payment.paymentId,actor)).status,'CONFIRMED');
+    assert.equal(await packOrder(tenant,id,actor),true);
+    await query(`UPDATE bms_orders SET fulfillment_type='PICKUP' WHERE tenant_id=$1 AND id=$2`, [tenant,id]);
+    assert.equal(await shipOrder(tenant,id,actor),true);
+    assert.equal(await completeOrder(tenant,id,actor),true);
+    const actions = (await query(`SELECT action,actor FROM bms_audit_log WHERE tenant_id=$1 AND target=$2
+      AND action IN ('order.pack','order.ship','order.complete') ORDER BY id`, [tenant,id])).rows;
+    assert.deepEqual(actions.map((r:{action:string;actor:string})=>[r.action,r.actor]),
+      [['order.pack',actor],['order.ship',actor],['order.complete',actor]]);
+  } finally {
+    await query(`DELETE FROM bms_user_allowed_locations WHERE tenant_id=$1 AND user_id=$2`, [tenant,actor]);
+  }
+});
+
+test('cancel and expiry refuse a drifted reservation without changing the order or ledger', async () => {
+  const sku = await product('MISSING-CANCEL', false, 10), id = await order(sku);
+  // The order-item FK prevents deleting the inventory row. Lowering its reserved total
+  // simulates a legacy or manual drift while retaining valid database constraints.
+  await query(`UPDATE bms_inventory SET reserved_stock=0 WHERE tenant_id=$1 AND location_id=$2 AND product_sku=$3 AND size='BASE'`,
+    [tenant, location, sku]);
+  await assert.rejects(cancelOrder(tenant, id), /STOCK_REVIEW_REQUIRED/);
+  assert.equal((await query(`SELECT status FROM bms_orders WHERE tenant_id=$1 AND id=$2`, [tenant,id])).rows[0].status, 'PENDING');
+  assert.equal((await query(`SELECT count(*)::int n FROM bms_stock_movements WHERE tenant_id=$1 AND ref_order_id=$2 AND type='RELEASE'`,
+    [tenant,id])).rows[0].n, 0);
+  await query(`UPDATE bms_orders SET created_at=now()-interval '2 hours' WHERE tenant_id=$1 AND id=$2`, [tenant,id]);
+  try {
+    const sweep = await releaseExpiredOrders(30, tenant);
+    assert.equal(sweep.released, 0);
+    assert.ok(sweep.failed.some(f => f.orderId === id && f.reason.includes('STOCK_REVIEW_REQUIRED')));
+    assert.equal((await query(`SELECT status FROM bms_orders WHERE tenant_id=$1 AND id=$2`, [tenant,id])).rows[0].status, 'PENDING');
+  } finally {
+    // Restore the synthetic drift so later expiry tests in this tenant stay independent.
+    await query(`UPDATE bms_inventory SET reserved_stock=2 WHERE tenant_id=$1 AND location_id=$2 AND product_sku=$3 AND size='BASE'`,
+      [tenant, location, sku]);
+    await query(`UPDATE bms_orders SET created_at=now() WHERE tenant_id=$1 AND id=$2`, [tenant,id]);
+    assert.equal(await cancelOrder(tenant,id), true);
+  }
 });
 
 for(const corrupt of [false,true]) test(`full return ${corrupt?'rejects missing allocation atomically':'restores exact lots once'}`,async()=>{

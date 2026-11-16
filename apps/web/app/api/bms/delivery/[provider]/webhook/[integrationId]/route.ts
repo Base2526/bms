@@ -4,6 +4,7 @@ import { rateLimit } from "@/lib/bms/rateLimit";
 import { intakeDeliveryWebhook } from "@/lib/bms/deliveryPlatforms/webhooks";
 import type { DeliveryProvider } from "@/lib/bms/deliveryPlatforms";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { readBoundedWebhookText } from "@/lib/bms/webhookBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,20 +35,9 @@ async function handlePOST(
     );
   }
 
-  const declaredLength = Number(req.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
-    return NextResponse.json({ error: "payload too large" }, { status: 413 });
-  }
-  const bytes = await req.arrayBuffer();
-  if (bytes.byteLength > MAX_BODY_BYTES) {
-    return NextResponse.json({ error: "payload too large" }, { status: 413 });
-  }
-  let rawBody: string;
-  try {
-    rawBody = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    return NextResponse.json({ error: "invalid utf-8 payload" }, { status: 400 });
-  }
+  const payload = await readBoundedWebhookText(req, MAX_BODY_BYTES);
+  if (!payload.ok) return NextResponse.json({ error: payload.error }, { status: payload.status });
+  const rawBody = payload.text;
 
   const result = await intakeDeliveryWebhook({ provider, integrationId, rawBody, headers: req.headers });
   switch (result.status) {

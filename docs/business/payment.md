@@ -4,6 +4,13 @@
 
 An order cannot move to `PAID` without payment verification, and **only the backend confirms
 payment** — AI may assist by reading a payment slip, but it never decides the outcome itself.
+The legacy `bmsPayOrder`/`POST /api/bms/order/:id/pay` Boolean adapters now refuse a bare
+order-ID transition. Staff open the Payment page from a pending order, record the actual payment
+if needed, review its identity/method/amount, and explicitly confirm it with `payment.confirm`.
+`confirmPayment()` commits the payment, order, loyalty effects and audit together.
+REST and GraphQL order cancellation/whole-order return are separate goods workflows: they require
+an explicit human confirmation, branch access, and an actor audit in the same stock transaction.
+Returning goods does not itself refund a confirmed payment; the payment refund workflow is separate.
 
 ## Methods & lifecycle (`bms_payments`)
 

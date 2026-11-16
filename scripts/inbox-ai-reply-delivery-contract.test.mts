@@ -88,6 +88,28 @@ test("a provider transport timeout is uncertain, never a retryable rejection", a
   }
 });
 
+test("outbound LINE and Meta requests have a deadline so pending replies do not hang forever", async () => {
+  for (const channel of ["line", "facebook"]) {
+    let signal: AbortSignal | undefined;
+    const inbox = loadWithStubs("apps/web/lib/bms/inbox.ts", {
+      "@/lib/db": { query: async () => ({ rows: [{ allowed: true }] }) },
+      "@/lib/pubsub": {},
+      "../../../../packages/graphql-core/src/bmsInboxSync": {},
+      "./channels": { getChannel: async () => ({ active: true, access_token: "FAKE-token", external_account_id: "FAKE-page" }) },
+      "./channelHealth": { recordOutboundSuccess: async () => {} },
+      "@/lib/notifications/service": {}, "./coupons": {}, "./tenant": {}, "./aiQuality": {},
+      "./customers": {}, "./customerAnswerEvidence": {}, "./answerEvidenceStore": {},
+      "./failureAlert": {}, "./inboxMedia": { outboundInboxMediaUrl: async (_tenant: string, url: string) => url },
+    }, async (_url: string, init: RequestInit) => {
+      signal = init.signal ?? undefined;
+      return { ok: true, text: async () => '{"message_id":"FAKE-provider-mid"}' };
+    });
+    const result = await inbox.deliverToChannelTracked("FAKE-tenant", channel, "real-customer", "reply");
+    assert.equal(result.delivered, true);
+    assert.ok(signal, `${channel} request must have an abort signal`);
+  }
+});
+
 test("a failed reply can be retried once and then becomes non-retryable", async () => {
   const h = retryHarness("FAILED");
   assert.deepEqual(await h.inbox.retryMessage("FAKE-tenant", "FAKE-message"), { status: "SENT", delivered: true });

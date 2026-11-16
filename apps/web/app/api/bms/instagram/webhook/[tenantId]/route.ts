@@ -9,6 +9,7 @@ import { applyMetaInboxSignals } from "@/lib/bms/metaInboxSignals";
 import { enqueueMetaInboundEvents, runMetaInboundBatch } from "@/lib/bms/metaInboundJobs";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { readBoundedWebhookText } from "@/lib/bms/webhookBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +41,9 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
     return NextResponse.json({ error: "Meta account ID / webhook verify token not configured" }, { status: 503 });
   }
 
-  const raw = await req.text();
+  const payload = await readBoundedWebhookText(req, 1024 * 1024);
+  if (!payload.ok) return NextResponse.json({ error: payload.error }, { status: payload.status });
+  const raw = payload.text;
   if (!cfg.channel_secret) {
     await recordWebhookVerifyFailed(tenantId, CHANNEL);
     return NextResponse.json({ error: "channel secret not configured" }, { status: 401 });
@@ -50,13 +53,21 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
-  const body = (() => { try { return JSON.parse(raw); } catch { return {}; } })();
+  let body: unknown;
+  try { body = JSON.parse(raw); }
+  catch { return NextResponse.json({ error: "invalid JSON payload" }, { status: 400 }); }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "JSON object required" }, { status: 400 });
+  }
   if (!metaEnvelopeMatches(body, cfg.external_account_id, "instagram")) {
     await recordWebhookVerifyFailed(tenantId, CHANNEL);
     return NextResponse.json({ error: "Meta account does not match this tenant" }, { status: 403 });
   }
   const events = parseMetaEvents(body, cfg.external_account_id, "instagram");
   const signals = parseMetaInboxSignals(body, cfg.external_account_id, "instagram");
+  if (events.length + signals.length > 200) {
+    return NextResponse.json({ error: "too many events" }, { status: 413 });
+  }
   const signalResult = await applyMetaInboxSignals(tenantId, CHANNEL, signals);
   const queued = await enqueueMetaInboundEvents(tenantId, CHANNEL, events);
   const work = events.length > 0

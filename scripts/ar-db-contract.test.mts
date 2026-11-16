@@ -56,6 +56,7 @@ let tenantId = "";
 let locationId = "";
 let deviceId = "";
 let cashierId = "";
+let approverId = "";
 let shiftId = "";
 let customerId = "";
 /** ลูกค้าคนที่สอง — ใช้กับเคสที่ต้องแยกบัญชีออกจากกันจริง ๆ */
@@ -138,6 +139,12 @@ test("setup: สินค้า ฿1,000 · เครื่องขาย · �
     `SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id
       WHERE u.tenant_id = $1 AND r.name = 'Administrator' ORDER BY u.created_at LIMIT 1`,
     [tenantId]
+  )).rows[0].id;
+  approverId = (await query<{ id: string }>(
+    `INSERT INTO users (name, email, role, role_id, tenant_id, password_hash, fake_test)
+     SELECT $2, $3, role, role_id, tenant_id, password_hash, TRUE
+       FROM users WHERE tenant_id=$1 AND id=$4 RETURNING id`,
+    [tenantId, `FAKE ${TAG} approver`, `${TAG}-${process.pid}@example.invalid`, cashierId]
   )).rows[0].id;
   await setCashierPin(tenantId, cashierId, PIN);
   const opened = await openPosShift({ tenantId, deviceId, openedBy: cashierId, openingFloat: 5000 });
@@ -463,12 +470,10 @@ test("ยกเลิกบิลเชื่อ: หนี้หายทั้
   const balanceBefore = (await getArAccountByCustomer(tenantId, customerId))!.balance;
   const voided = await voidPosSale({
     tenantId, deviceId, shiftId, orderId: sold.orderId, actorUserId: cashierId,
+    approvedByUserId: approverId,
     reason: "กดผิดบิล", idempotencyKey: key("void-credit"),
-  } as any);
-  assert.ok(
-    String((voided as any).status).includes("VOID") || (voided as any).status === "PARTIAL_RETURNED",
-    JSON.stringify(voided)
-  );
+  });
+  assert.equal(voided.status, "VOIDED", JSON.stringify(voided));
 
   const invoice = await getArInvoiceByOrder(tenantId, sold.orderId);
   assert.equal(invoice!.outstanding, 0);
@@ -497,12 +502,10 @@ test("ยอดเครดิตจากคืนของหลังจ่�
 
   const voided = await voidPosSale({
     tenantId, deviceId, shiftId, orderId: first.orderId, actorUserId: cashierId,
+    approvedByUserId: approverId,
     reason: "ทดสอบยอดเครดิตคงเหลือ", idempotencyKey: key("void-offset-source"),
-  } as any);
-  assert.ok(
-    String((voided as any).status).includes("VOID") || (voided as any).status === "PARTIAL_RETURNED",
-    JSON.stringify(voided)
-  );
+  });
+  assert.equal(voided.status, "VOIDED", JSON.stringify(voided));
   assert.equal(
     (await getArAccountByCustomer(tenantId, creditOffsetCustomerId))!.balance,
     -2000,
@@ -676,6 +679,7 @@ test("teardown: ลบทุกแถวที่ชุดนี้สร้า�
   await query(`DELETE FROM bms_inventory WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
   await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku = $2`, [tenantId, SKU]);
   await query(`DELETE FROM bms_customers WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
-    [tenantId, [customerId, otherCustomerId]]);
+    [tenantId, [customerId, otherCustomerId, creditOffsetCustomerId]]);
+  await query(`DELETE FROM users WHERE tenant_id=$1 AND id=$2`, [tenantId, approverId]);
   await query(`UPDATE bms_loyalty_settings SET enabled = TRUE WHERE tenant_id = $1`, [tenantId]);
 });

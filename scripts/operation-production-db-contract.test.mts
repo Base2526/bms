@@ -755,7 +755,7 @@ test("prepared stock sells and returns through original POS cost and lot machine
       idempotencyKey: randomUUID(),
       lines: [{ orderItemId: Number(item.id), packQty: 1 }],
     });
-    assert.equal(returned.status, "PARTIAL_RETURNED");
+    assert.equal(returned.status, "PARTIAL_RETURNED", JSON.stringify(returned));
     const d = await productionDetail(f.s, p.id);
     assert.equal(d.lot.qty, 7);
     const v = (

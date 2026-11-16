@@ -3,12 +3,14 @@ import test from "node:test";
 import { loadWithStubs } from "./testing/webhookHarness.mts";
 
 function harness(options: { deny?: boolean; insertFails?: boolean; finalFails?: boolean; providerThrows?: boolean;
-  existingFollowup?: boolean; existingFollowupStatus?: string } = {}) {
+  existingFollowup?: boolean; existingFollowupStatus?: string; channel?: string; coupon?: boolean } = {}) {
   const events: string[] = [];
+  let finalSql = "";
   const initial = { release() {}, query: async (sql: string, args: any[] = []) => {
     if (sql.includes("FROM bms_conversations") && sql.includes("FOR UPDATE")) {
       events.push(sql.includes("FROM bms_conversations c") ? `scope:${args[2]}` : "conversation");
-      return { rows: options.deny ? [] : [{ channel: "line", customer_ref: "real-customer", customer_id: null }], rowCount: options.deny ? 0 : 1 };
+      return { rows: options.deny ? [] : [{ channel: options.channel ?? "line", customer_ref: "real-customer",
+        customer_id: options.coupon ? "FAKE-customer" : null }], rowCount: options.deny ? 0 : 1 };
     }
     if (sql.includes("FROM bms_messages") && sql.includes("meta->>'jobId'")) {
       events.push(`followup-claim:${args[2]}:${args[3]}`);
@@ -28,6 +30,7 @@ function harness(options: { deny?: boolean; insertFails?: boolean; finalFails?: 
   } };
   const final = { release() {}, query: async (sql: string, args: any[] = []) => {
     if (sql.includes("UPDATE bms_messages SET meta")) {
+      finalSql = sql;
       events.push(`final:${JSON.parse(args[2]).status}`);
       if (options.finalFails) throw new Error("FAKE final update failed");
     }
@@ -43,14 +46,16 @@ function harness(options: { deny?: boolean; insertFails?: boolean; finalFails?: 
     "./channels": { getChannel: async () => ({ active: true, access_token: "FAKE-token" }) },
     "./channelHealth": { recordOutboundSuccess: async () => {} },
     "@/lib/notifications/service": {},
-    "./coupons": { couponCodeFromShareText: () => null },
+    "./coupons": { couponCodeFromShareText: () => options.coupon ? "FAKE-COUPON" : null,
+      assignCouponToCustomerInTx: async () => { events.push("coupon"); return true; },
+      createCouponWalletToken: () => "FAKE-token" },
     "./tenant": { beginTenantTx: async () => { events.push("begin"); } },
     "./aiQuality": {}, "./customers": {}, "./customerAnswerEvidence": {},
     "./answerEvidenceStore": {}, "./failureAlert": {},
     "./inboxMedia": { outboundInboxMediaUrl: async (_tenant: string, url: string) => { events.push("media"); return url; } },
   }, async () => { events.push("provider"); if (options.providerThrows) throw new Error("FAKE provider timeout");
     return { ok: true }; });
-  return { inbox, events };
+  return { inbox, events, finalSql: () => finalSql };
 }
 
 test("staff reply commits tenant-scoped draft and audit before any provider call", async () => {
@@ -60,6 +65,8 @@ test("staff reply commits tenant-scoped draft and audit before any provider call
   assert.deepEqual(result, { status: "SENT", delivered: true, messageId: "42" });
   assert.deepEqual(h.events, ["begin", "scope:FAKE-sales", "draft:PENDING", "audit", "commit-draft",
     "provider", "begin", "final:SENT", "commit-final"]);
+  assert.match(h.finalSql(), /status' IN \('DELIVERED','READ','PARTIAL'\)/,
+    "a late provider finalization cannot downgrade a delivery/read/partial signal");
 });
 
 test("denial or draft persistence failure cannot call provider", async () => {
@@ -74,6 +81,14 @@ test("denial or draft persistence failure cannot call provider", async () => {
     /FAKE insert failed/);
   assert.ok(failed.events.includes("rollback-draft"));
   assert.equal(failed.events.includes("provider"), false);
+});
+
+test("a save-only channel cannot assign a coupon that the customer never received", async () => {
+  const h = harness({ channel: "web", coupon: true });
+  const result = await h.inbox.sendStaffMessage("FAKE-tenant", "FAKE-conversation", "FAKE-COUPON", "FAKE-actor");
+  assert.equal(result.delivered, false);
+  assert.equal(h.events.includes("coupon"), false);
+  assert.equal(h.events.includes("provider"), false);
 });
 
 test("provider acceptance with a failed final status write keeps the committed draft", async () => {

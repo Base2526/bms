@@ -18,11 +18,11 @@ export const WORK_ASSISTANT_CONFIRM_MUTATIONS: Record<
     vars: (args) => ({ id: args.id }),
   },
   bmsCancelOrder: {
-    doc: gql`mutation($id: ID!) { bmsCancelOrder(id: $id) }`,
+    doc: gql`mutation($id: ID!) { bmsCancelOrder(id: $id, confirmed: true) }`,
     vars: (args) => ({ id: args.id }),
   },
   bmsReturnOrder: {
-    doc: gql`mutation($id: ID!) { bmsReturnOrder(id: $id) }`,
+    doc: gql`mutation($id: ID!) { bmsReturnOrder(id: $id, confirmed: true) }`,
     vars: (args) => ({ id: args.id }),
   },
   bmsAdjustStock: {

@@ -327,6 +327,7 @@ query MobilePosScan(
     available
     stockTracked
     serialTracked
+    offlineRetailEligible
     scaleBarcode
     imageUrl
     # ราคาส่ง (8.1) และโปร (8.7) — เครื่องขายต้องพรีวิวยอดด้วยกฎเดียวกับ createOrder

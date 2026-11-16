@@ -41,7 +41,9 @@ const Q_PAYMENTS = gql`
   }
 `;
 const Q_PENDING_ORDERS = gql`
-  query { bmsOrders(status: PENDING, limit: 200) { id customer_ref total_amount shipping_fee amount_due } }
+  query PendingPaymentOrders($search: String) {
+    bmsOrders(status: PENDING, search: $search, limit: 200) { id customer_ref total_amount shipping_fee amount_due }
+  }
 `;
 const M_SUBMIT = gql`
   mutation ($orderId: ID!, $method: BmsPaymentMethod!, $amount: Float, $slipUrl: String, $slipRef: String, $note: String) {
@@ -123,8 +125,17 @@ function PaymentManagement() {
   const isMobile = useIsMobile();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("ALL");
   const [submitOpen, setSubmitOpen] = useState(false);
+  const [linkedOrderId, setLinkedOrderId] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    const orderId = new URLSearchParams(window.location.search).get("orderId")?.trim();
+    if (orderId && /^[0-9a-f-]{36}$/i.test(orderId)) {
+      setLinkedOrderId(orderId);
+      setSearchInput(orderId);
+    }
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput.trim()), 300);
@@ -321,18 +332,28 @@ function PaymentManagement() {
         />
       )}
 
-      <SubmitPaymentModal open={submitOpen} onClose={() => setSubmitOpen(false)} onDone={() => { setSubmitOpen(false); refetch(); }} />
+      <SubmitPaymentModal open={submitOpen} initialOrderId={linkedOrderId}
+        onClose={() => setSubmitOpen(false)} onDone={() => { setSubmitOpen(false); refetch(); }} />
     </div>
   );
 }
 
 // ---- Submit payment modal -----------------------------------
-function SubmitPaymentModal({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: () => void }) {
+function SubmitPaymentModal({ open, initialOrderId, onClose, onDone }: {
+  open: boolean; initialOrderId: string | null; onClose: () => void; onDone: () => void;
+}) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const [form] = Form.useForm();
-  const { data } = useQuery(Q_PENDING_ORDERS, { fetchPolicy: "cache-and-network", skip: !open });
+  const { data } = useQuery(Q_PENDING_ORDERS, {
+    variables: { search: initialOrderId }, fetchPolicy: "cache-and-network", skip: !open,
+  });
   const orders: { id: string; customer_ref: string | null; total_amount: number; shipping_fee: number; amount_due: number }[] = data?.bmsOrders || [];
+  useEffect(() => {
+    if (open && initialOrderId && orders.some((order) => order.id === initialOrderId)) {
+      form.setFieldValue("orderId", initialOrderId);
+    }
+  }, [open, initialOrderId, orders, form]);
   const methodLabelMap = methodLabels(t);
 
   const [submit, { loading }] = useMutation(M_SUBMIT, {

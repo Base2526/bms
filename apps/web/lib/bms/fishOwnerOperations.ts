@@ -48,6 +48,7 @@ async function assertAllowedLocation(client: Awaited<ReturnType<typeof getClient
 export type StorageCountInput = {
   lotId: string;
   expectedLotGrams: number;
+  expectedLotUpdatedAt: string;
   expectedVersion: number | null;
   zones: Array<{ zone: FishZone; grams: number }>;
 };
@@ -57,6 +58,9 @@ export async function saveFishStorageCount(tenant: string, actor: string, raw: S
   if (!raw || typeof raw !== "object") throw new FishOwnerError("INVALID_INPUT", "ข้อมูลตรวจนับไม่ถูกต้อง");
   const lotId = uuid(raw?.lotId, "ล็อต");
   const expected = grams(raw?.expectedLotGrams);
+  const expectedLotUpdatedAt = raw.expectedLotUpdatedAt;
+  if (typeof expectedLotUpdatedAt !== "string" || !Number.isFinite(Date.parse(expectedLotUpdatedAt)))
+    throw new FishOwnerError("INVALID_INPUT", "เวลาข้อมูลล็อตไม่ถูกต้อง");
   if (raw.expectedVersion !== null && (!Number.isInteger(raw.expectedVersion) || raw.expectedVersion < 1))
     throw new FishOwnerError("INVALID_INPUT", "รุ่นข้อมูลไม่ถูกต้อง");
   if (!Array.isArray(raw.zones) || raw.zones.length < 1 || raw.zones.length > 3)
@@ -73,8 +77,8 @@ export async function saveFishStorageCount(tenant: string, actor: string, raw: S
   const client = await getClient();
   try {
     await beginTenantTx(client, tenant, { editorId: actor });
-    const lot = (await client.query<{ location_id: string; qty: number; updated_at: Date; stock_policy: string | null; base_unit: string | null; lot_tracking: boolean | null }>(
-      `SELECT l.location_id,l.qty,l.updated_at,sp.stock_policy,sp.base_unit,sp.lot_tracking
+    const lot = (await client.query<{ location_id: string; qty: number; updated_at: string; stock_policy: string | null; base_unit: string | null; lot_tracking: boolean | null }>(
+      `SELECT l.location_id,l.qty,l.updated_at::text AS updated_at,sp.stock_policy,sp.base_unit,sp.lot_tracking
          FROM bms_inventory_lots l LEFT JOIN bms_product_stock_policies sp
            ON sp.tenant_id=l.tenant_id AND sp.product_sku=l.product_sku
         WHERE l.tenant_id=$1 AND l.id=$2 FOR UPDATE OF l`,
@@ -84,7 +88,8 @@ export async function saveFishStorageCount(tenant: string, actor: string, raw: S
     await assertAllowedLocation(client, tenant, actor, lot.location_id);
     if (lot.stock_policy !== "WEIGHTED" || lot.base_unit !== "GRAM" || lot.lot_tracking !== true)
       throw new FishOwnerError("PRODUCT_NOT_READY", "ล็อตนี้ไม่ใช่สินค้าชั่งน้ำหนักหน่วยกรัมที่ติดตามล็อต");
-    if (Number(lot.qty) !== expected) throw new FishOwnerError("STALE_LOT", "ยอดล็อตเปลี่ยนแล้ว กรุณาตรวจนับใหม่");
+    if (Number(lot.qty) !== expected || lot.updated_at !== expectedLotUpdatedAt)
+      throw new FishOwnerError("STALE_LOT", "ข้อมูลล็อตเปลี่ยนแล้ว กรุณาโหลดใหม่และตรวจนับใหม่");
     const prior = (await client.query<{ id: string; version: number }>(
       `SELECT id,version FROM bms_fish_storage_counts WHERE tenant_id=$1 AND lot_id=$2 FOR UPDATE`,
       [tenant, lotId],

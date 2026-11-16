@@ -29,6 +29,7 @@ import {
 import { claimInboundEvent, releaseUnprocessedInboundEvent } from "@/lib/bms/inboundEvents";
 import { reportBmsFailure } from "@/lib/bms/failureAlert";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { readBoundedBodyBytes, readBoundedWebhookText } from "@/lib/bms/webhookBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,6 +61,7 @@ const LINE_MEDIA_DEFAULTS: Record<string, { mimeType: string; extension: string;
   file: { mimeType: "application/octet-stream", extension: "bin", label: "ไฟล์จาก LINE" },
 };
 const LINE_INBOUND_MAX_BYTES = 10 * 1024 * 1024;
+const LINE_WEBHOOK_MAX_BYTES = 1024 * 1024;
 
 type LineChannelConfig = NonNullable<Awaited<ReturnType<typeof getChannel>>>;
 
@@ -94,10 +96,9 @@ async function fetchLineInboundAttachment(
       headers: { authorization: `Bearer ${accessToken}` },
     });
     if (!resp.ok) return null;
-    const len = Number(resp.headers.get("content-length") || "0");
-    if (Number.isFinite(len) && len > LINE_INBOUND_MAX_BYTES) return null;
-    const buf = Buffer.from(await resp.arrayBuffer());
-    if (buf.length > LINE_INBOUND_MAX_BYTES) return null;
+    const media = await readBoundedBodyBytes(resp, LINE_INBOUND_MAX_BYTES);
+    if (!media.ok) return null;
+    const buf = Buffer.from(media.bytes);
     const mimeType = resp.headers.get("content-type")?.split(";", 1)[0]?.trim() || defaults.mimeType;
     const filename = message.fileName || `line-${message.type}-${message.id}.${defaults.extension}`;
     const row = await persistBuffer(buf, filename, mimeType, "private", tenantId);
@@ -323,7 +324,9 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
   }
 
   // ต้องอ่าน raw body เพื่อ verify signature
-  const raw = await req.text();
+  const payload = await readBoundedWebhookText(req, LINE_WEBHOOK_MAX_BYTES);
+  if (!payload.ok) return NextResponse.json({ error: payload.error }, { status: payload.status });
+  const raw = payload.text;
   // fail-closed: channel active ต้องมี channel_secret เสมอ ไม่งั้นใครก็ปลอม request เข้ามาได้
   // (เดิมข้ามการ verify ไปเลยถ้าไม่มี secret — เป็นช่องโหว่ ไม่ใช่ fallback ที่ตั้งใจ)
   if (!cfg.channel_secret) {
@@ -336,14 +339,14 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
-  const body = (() => {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return {};
-    }
-  })() as { events?: LineEvent[] };
-  const events = Array.isArray(body.events) ? body.events : [];
+  let body: { events?: LineEvent[] };
+  try { body = JSON.parse(raw); }
+  catch { return NextResponse.json({ error: "invalid JSON payload" }, { status: 400 }); }
+  if (!body || typeof body !== "object" || !Array.isArray(body.events)) {
+    return NextResponse.json({ error: "events array required" }, { status: 400 });
+  }
+  const events = body.events;
+  if (events.length > 200) return NextResponse.json({ error: "too many events" }, { status: 413 });
   if (events.some((ev) => {
     if (!ev || typeof ev !== "object") return true;
     if (ev.type !== "message") return false;

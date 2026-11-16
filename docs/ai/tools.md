@@ -1481,8 +1481,8 @@ Claude วิเคราะห์ + เสนอแพตช์ → เปิ�
 
 ✅ **Fake Data Seeder (dev)** — `/admin/dev/fake` + `app/api/dev/fake/*` สร้างข้อมูลทดสอบทีละมากๆ
 (products/customers/orders+pay+ship/conversations/purchase) · marker `FAKE-`/tag `fake` → cleanup ลบทีเดียว
-· **seed ลง tenant ของผู้ล็อกอิน** (ร้านค้าเทสเองได้ · เมนูโชว์ให้คนมีสิทธิ์ `product.edit`) · cleanup scope เฉพาะร้านตัวเอง
-· ปิดใน production default · เปิดเครื่อง demo ด้วย env `BMS_ALLOW_FAKE_SEED=1` (`lib/dev-guards.ts` → `fakeSeedDisabled()`) · posts/users fixture ยังปิด production
+· เฉพาะ platform admin ที่มี session/role ปัจจุบันจากฐานข้อมูล และยังต้อง scope การสร้าง/ลบตาม tenant ที่เลือก
+· ปิดใน production default · `BMS_ALLOW_FAKE_SEED=1` เปิดใช้ได้เฉพาะเมื่อผ่าน platform-admin guard (`lib/dev-guards.ts`); posts fixture ปิดใน production เสมอ ส่วน users fixture ใช้ flag นี้
 
 The explicit onboarding action `/api/bms/onboarding/sample-data` is separate from these dev routes:
 it is Administrator/Manager-only, accepts only the current empty tenant, and uses a resumable

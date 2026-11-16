@@ -913,6 +913,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     basePrice: Float!
     priceTiers: [BmsPosPriceTier!]!
     serialTracked: Boolean!
+    """Server-derived: this product may be queued as a plain cash sale on native POS."""
+    offlineRetailEligible: Boolean!
     promotion: BmsPosPromotion
     modifiers: [BmsPosModifier!]!
     packs: [BmsPosPackOption!]!

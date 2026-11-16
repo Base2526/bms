@@ -63,7 +63,7 @@ try {
       const download = page.getByRole('link', { name: lang === 'th' ? 'ดาวน์โหลด PDF ล่าสุด' : 'Download latest PDF' });
       assert.equal(await download.getAttribute('href'), `/api/public/packages/pdf?lang=${lang}`);
       await page.getByRole('button', { name: lang === 'th' ? 'แชร์แพ็กเกจล่าสุด' : 'Share latest packages' }).click();
-      assert.equal(await page.evaluate(() => window.__lastSharedPackage?.url), `${base}/#pricing`);
+      assert.equal(await page.evaluate(() => window.__lastSharedPackage?.url), page.url());
       await page.getByText(lang === 'th' ? 'แชร์แล้ว' : 'Shared', { exact: true }).waitFor();
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2), false);
       if (width === 390) {

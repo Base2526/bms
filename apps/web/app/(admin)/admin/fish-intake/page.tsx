@@ -8,9 +8,10 @@ import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
 import { operatorMessage } from "@/lib/operatorMessage";
-import type { FishIntakeInput, FishIntakeKind, FishIntakeLineInput } from "@/lib/bms/fishIntake";
+import type { FishIntakeInput, FishIntakeKind, FishIntakeLineInput, FishIntakeSetupReason } from "@/lib/bms/fishIntake";
 
-type Options={locations:Array<{id:string;name:string}>;products:Array<{sku:string;name:string;size:string;expiry_tracking:boolean}>;currency:string|null};
+type Options={locations:Array<{id:string;name:string}>;products:Array<{sku:string;name:string;size:string;expiry_tracking:boolean}>;
+  unreadyProducts:Array<{sku:string;name:string;reasons:FishIntakeSetupReason[]}>;currency:string|null};
 type Issue={row:number;field:"billDate"|"receivedDate"|"duplicate"|"line";value:string;message:string};
 type ImportPreview={previewHash:string;rowCount:number;readyCount:number;issues:Issue[];
   totals:{billKg:string;receivedKg:string;purchaseAmount:string};
@@ -81,7 +82,7 @@ function HistoryImport({onSaved,canCommit}:{onSaved:()=>void;canCommit:boolean})
   const issueRows=preview?.issues??[];
   return <Space direction="vertical" size="middle" style={{width:"100%"}}>
     <Alert type="info" showIcon closable message={L("ประวัติย้อนหลังไม่เพิ่มสต็อกปัจจุบัน","Historical imports do not change current stock")}
-      description={L("เลือกแท็บรายการหลักเพียงแท็บเดียว ตรวจวันที่ที่ไม่ชัดเจน แล้วดูยอดก่อนยืนยัน","Select one primary detail sheet, review ambiguous dates, then confirm the totals.")} />
+      description={L("เลือกแท็บรายการหลักเพียงแท็บเดียว ตรวจวันที่และรายการซ้ำก่อนยืนยัน การตรวจซ้ำอัตโนมัติครอบคลุมแถวในแท็บนี้และการอัปโหลดไฟล์เดิมเท่านั้น หากนำเข้าไฟล์อื่นที่มีรายการเดิม ต้องตรวจด้วยตนเอง","Select one primary detail sheet and review dates and duplicates before confirming. Automatic duplicate checks cover rows in this sheet and retries of the same file only. Check other files manually for overlapping receipts.")} />
     <Space wrap align="end">
       <label>{L("ไฟล์รายงาน .xlsx","Report .xlsx")}<br/><Input type="file" accept=".xlsx" disabled={busy}
         onChange={event=>{const selected=event.target.files?.[0];if(selected)void inspect(selected);}} /></label>
@@ -109,7 +110,7 @@ function HistoryImport({onSaved,canCommit}:{onSaved:()=>void;canCommit:boolean})
         ]}/>
       {dirty && <Alert style={{marginTop:12}} type="warning" showIcon closable message={L("ข้อมูลเปลี่ยนแล้ว กดตรวจตัวอย่างใหม่","Changes need another preview")} />}
       {issueRows.length>0 && <div style={{marginTop:16}}>
-        <Typography.Title level={5}>{L("แก้วันที่ที่ไม่ชัดเจนทีละแถว","Review ambiguous dates by row")}</Typography.Title>
+        <Typography.Title level={5}>{L("ตรวจและแก้ข้อมูลที่ไม่ชัดเจนทีละแถว","Review and correct each flagged row")}</Typography.Title>
         <Table size="small" rowKey={r=>`${r.row}-${r.field}`} pagination={{pageSize:25}}
           dataSource={issueRows} columns={[
             {title:L("แถว","Row"),dataIndex:"row",width:75},
@@ -157,6 +158,12 @@ function StockEntry({kind,options,onSaved,onSearchProducts,canCommit}:{kind:"LIV
   const [saved,setSaved]=useState<Saved|null>(null);
   const [productSearch,setProductSearch]=useState("");
   const productByKey=new Map(options.products.map(p=>[JSON.stringify([p.sku,p.size]),p]));
+  const setupReason=(reason:FishIntakeSetupReason)=>({
+    NO_ACTIVE_SIZE:L("ไม่มีไซซ์ที่เปิดใช้","no active size"),
+    NOT_WEIGHTED:L("ยังไม่เป็นสินค้าชั่งน้ำหนัก","not weighted"),
+    NOT_GRAM:L("หน่วยฐานยังไม่ใช่กรัม","base unit is not grams"),
+    LOT_DISABLED:L("ยังไม่ติดตามล็อต","lot tracking is off"),
+  })[reason];
   useEffect(()=>{
     if (!form.getFieldValue("locationId") && options.locations[0])
       form.setFieldValue("locationId",options.locations[0].id);
@@ -209,10 +216,26 @@ function StockEntry({kind,options,onSaved,onSearchProducts,canCommit}:{kind:"LIV
       message={kind==="LIVE"?L("รับปลาใหม่: เพิ่มสต็อกตามน้ำหนักรับจริง","New fish receipt: stock uses actual received weight"):
         L("ยอดตั้งต้น: ใช้ของที่นับจริง และรับเฉพาะ SKU/ไซซ์ที่สต็อกยังว่าง","Opening stock: physical count only, for empty SKU/size balances")}
       description={L("สินค้าแต่ละตัวต้องตั้งเป็นชั่งน้ำหนัก หน่วยกรัม และติดตามล็อตก่อน","Each product must be configured as weighted, gram based, and lot tracked.")} />
+    <Alert showIcon closable type="warning"
+      message={L("ตรวจราคาขายปลาแยกจากราคาตามบิลก่อนเปิดขาย","Review fish selling prices separately from receipt rates before selling")}
+      description={L("ระบบขายใช้ราคาแค็ตตาล็อกต่อกรัมที่เก็บได้ 2 ทศนิยม จึงยังคิดราคา 43.17 บาท/กก. ตามน้ำหนักกรัมได้ไม่ตรง รับปลาเข้าสต็อกได้ แต่ยังไม่ควรเปิดขายราคาต่อกิโลกรัมที่แปลงเป็นราคา/กรัม 2 ทศนิยมไม่ได้",
+        "Sales use a catalog price per gram with two decimal places. A 43.17 THB/kg rate cannot be priced accurately for arbitrary grams yet. Stock receipt works, but do not open sales at per-kg rates that cannot be expressed as a two-decimal per-gram price.")} />
     {options.products.length===0 && <Alert showIcon closable type="warning" message={L("ยังไม่มีปลาที่ตั้งค่าเป็นสินค้าชั่งน้ำหนักพร้อมติดตามล็อต","No weighted, lot tracked products are configured")}
       description={<>{L("เพิ่มปลาและไซซ์ใน ","Add the fish and size in ")}<Link href="/admin/products">{L("สินค้า","Products")}</Link>
         {L(" แล้วเปิดสินค้าชั่งน้ำหนัก หน่วยกรัม และติดตามล็อตใน ",", then enable weighted stock, grams and lot tracking in ")}
         <Link href="/admin/stock-models">{L("รูปแบบสต็อก","Stock models")}</Link>{L(" ก่อนกลับมาโหลดหน้านี้ใหม่"," before refreshing this page.")}</>} />}
+    {options.unreadyProducts.length>0 && <Alert showIcon closable type="warning"
+      message={L(`มีสินค้า ${options.unreadyProducts.length} รายการที่ยังเลือกในช่องปลา/ไซซ์ไม่ได้`,
+        `${options.unreadyProducts.length} products are not ready for fish intake`)}
+      description={<Space direction="vertical" size={4}>
+        {options.unreadyProducts.slice(0,10).map(p=><span key={p.sku} style={{overflowWrap:"anywhere"}}>
+          <Link href={p.reasons.includes("NO_ACTIVE_SIZE")?"/admin/products":`/admin/stock-models?sku=${encodeURIComponent(p.sku)}`}>{p.name}</Link>
+          {` (${p.sku}): ${p.reasons.map(setupReason).join(", ")}`}
+        </span>)}
+        {options.unreadyProducts.length>10 && <span>{L("ค้นหาชื่อสินค้าเพื่อดูรายการที่เหลือ","Search by product name to see the rest")}</span>}
+        <span>{L("ตั้งค่าให้ครบแล้วกลับมากดโหลดหน้านี้ใหม่ ราคาขายในสินค้าและราคาตามบิลรับปลาเป็นคนละค่า กรุณาตรวจราคาขายก่อนเปิดขาย",
+          "Complete the settings, then refresh this page. Catalog selling price and fish receipt bill rate are separate; check selling price before sales.")}</span>
+      </Space>} />}
     {options.currency!=="THB" && <Alert showIcon closable type="error"
       message={L("ยังบันทึกรับปลาไม่ได้: ร้านยังไม่ได้ตั้งสกุลเงินเป็นบาท (THB)",
         "Fish receipt cannot be saved: store currency must be THB")}
@@ -245,8 +268,12 @@ function StockEntry({kind,options,onSaved,onSearchProducts,canCommit}:{kind:"LIV
               <Select showSearch filterOption={false} style={{minWidth:260}}
                 onSearch={search=>{setProductSearch(search);onSearchProducts(search);}}
                 onDropdownVisibleChange={open=>{if(!open)setProductSearch("");}}
-                options={options.products.filter(p=>!productSearch || `${p.name} ${p.size} ${p.sku}`.toLocaleLowerCase().includes(productSearch.toLocaleLowerCase()))
-                  .map(p=>({value:JSON.stringify([p.sku,p.size]),label:`${p.name} · ${p.size} (${p.sku})`}))}/>
+                options={[
+                  ...options.products.filter(p=>!productSearch || `${p.name} ${p.size} ${p.sku}`.toLocaleLowerCase().includes(productSearch.toLocaleLowerCase()))
+                    .map(p=>({value:JSON.stringify([p.sku,p.size]),label:`${p.name} · ${p.size} (${p.sku})`})),
+                  ...options.unreadyProducts.filter(p=>!productSearch || `${p.name} ${p.sku}`.toLocaleLowerCase().includes(productSearch.toLocaleLowerCase()))
+                    .map(p=>({value:JSON.stringify([p.sku,"unready"]),label:`${p.name} (${p.sku}) — ${p.reasons.map(setupReason).join(", ")}`,disabled:true})),
+                ]}/>
             </Form.Item>
             {kind==="LIVE" && <Form.Item {...rest} name={[name,"billSize"]} label={L("ไซซ์ตามบิล","Bill size")}><Input maxLength={100}/></Form.Item>}
             {kind==="LIVE" && <Form.Item {...rest} name={[name,"billKg"]} label={L("น้ำหนักตามบิล (กก.)","Bill weight (kg)")} rules={[{required:true}]}><Input inputMode="decimal"/></Form.Item>}
@@ -287,7 +314,7 @@ export default function FishIntakePage() {
   const {lang,t}=useI18n();
   const L=(th:string,en:string)=>lang==="en"?en:th;
   const {can,loading:permissionsLoading}=useBmsPermissions();
-  const [options,setOptions]=useState<Options>({locations:[],products:[],currency:null});
+  const [options,setOptions]=useState<Options>({locations:[],products:[],unreadyProducts:[],currency:null});
   const [recent,setRecent]=useState<Array<{id:string;kind:FishIntakeKind;createdAt:string;lineCount:number;receivedGrams:number;purchaseAmount:string;sourceName:string|null}>>([]);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState<string|null>(null);
@@ -298,14 +325,16 @@ export default function FishIntakePage() {
       setOptions(current=>{
         const products=new Map(current.products.map(p=>[JSON.stringify([p.sku,p.size]),p]));
         for (const product of result.products) products.set(JSON.stringify([product.sku,product.size]),product);
-        return {...current,products:[...products.values()]};
+        const unreadyProducts=new Map(current.unreadyProducts.map(p=>[p.sku,p]));
+        for (const product of result.unreadyProducts??[]) unreadyProducts.set(product.sku,product);
+        return {...current,products:[...products.values()],unreadyProducts:[...unreadyProducts.values()]};
       });
     } catch(e) {message.error(operatorMessage(e,t));}
   }
   async function refresh() {
     try {
       const o=await readJson(await fetch("/api/bms/fish-intake/options",{credentials:"include"}),lang);
-      setOptions(o);
+      setOptions({...o,unreadyProducts:o.unreadyProducts??[]});
       const recentResponse=await fetch("/api/bms/fish-intake",{credentials:"include"});
       if (recentResponse.status!==403) {
         const r=await readJson(recentResponse,lang);

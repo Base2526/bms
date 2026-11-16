@@ -5,11 +5,20 @@ import { InstallerReportError, readInstallerReportBody } from "@/lib/bms/install
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+function isSameOrigin(request: NextRequest): boolean {
+  const firstHeader = (value: string | null) => (value || "").split(",", 1)[0].trim();
+  const origin = firstHeader(request.headers.get("origin"));
+  const host = firstHeader(request.headers.get("x-forwarded-host")) || firstHeader(request.headers.get("host"));
+  const protocol = firstHeader(request.headers.get("x-forwarded-proto"))
+    || new URL(request.url).protocol.slice(0, -1);
+  return Boolean(origin && host && ["http", "https"].includes(protocol)
+    && origin === `${protocol}://${host}`);
+}
 async function handle(request: NextRequest, { params }: { params: { id: string } }, update: boolean) {
   const auth = await authorizePlatformAdminRoute();
   const headers = { "Cache-Control": "no-store" };
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status, headers });
-  if (update && request.headers.get("origin") !== request.nextUrl.origin) return NextResponse.json({ error: "invalid_origin" }, { status: 403, headers });
+  if (update && !isSameOrigin(request)) return NextResponse.json({ error: "invalid_origin" }, { status: 403, headers });
   try {
     const result = update ? await updateInstallerReport(params.id, JSON.parse((await readInstallerReportBody(request)).toString("utf8")), String(auth.adminId))
       : await getInstallerReport(params.id);

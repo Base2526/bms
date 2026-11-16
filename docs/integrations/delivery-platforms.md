@@ -43,6 +43,8 @@ Official sources reviewed on 2026-09-24:
 
 - The URL contains an opaque integration id. The server resolves the tenant from that integration;
   a webhook body can never choose a tenant or branch.
+- The webhook route enforces a 256 KiB limit while reading the body, including requests without
+  `Content-Length`; invalid UTF-8 is rejected before the adapter verifies and stores the event.
 - Provider store id selects only a previously verified branch mapping. A menu line becomes a real
   order line only from a `VERIFIED` item/variant/modifier mapping.
 - Provider payloads are normalized inside adapters. A logical webhook id is order + status + provider

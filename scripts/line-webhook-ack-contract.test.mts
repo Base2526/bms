@@ -51,6 +51,23 @@ test("LINE rejects invalid signatures and missing secrets before claiming", asyn
   }
 });
 
+test("LINE rejects signed malformed JSON and missing events before claiming", async () => {
+  const h = webhookHarness("line");
+  for (const raw of ["{", "null", "{}", '{"events":{}}']) {
+    assert.equal((await h.post([], async () => raw)).status, 400);
+  }
+  assert.equal(h.calls.claims.length, 0);
+  assert.equal(h.calls.pipeline.length, 0);
+});
+
+test("LINE refuses a large signed event batch before any AI call", async () => {
+  const h = webhookHarness("line");
+  const events = Array.from({ length: 201 }, (_, index) => h.event("hello", `FAKE-${index}`));
+  assert.equal((await h.post(events)).status, 413);
+  assert.equal(h.calls.claims.length, 0);
+  assert.equal(h.calls.pipeline.length, 0);
+});
+
 test("LINE duplicates do not run AI or send a second reply", async () => {
   const h = webhookHarness("line", { claim: async () => false });
   assert.equal((await h.post()).status, 200);

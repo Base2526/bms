@@ -318,6 +318,8 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "นับสต็อกแล้วปรับยอดยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.count", origin: "coverage" },
   { q: "ล้งปลานำเข้า Excel เก่าและรับปลาตามน้ำหนักจริงยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.fish-intake", origin: "coverage" },
   { q: "how do I import old fish Excel and receive weighed fish", locale: "en", context: GUIDES, expect: "answer", expectTop: "inventory.fish-intake", origin: "coverage" },
+  { q: "ขายปลาโอลาย 43.17 บาทต่อกิโลตามน้ำหนักกรัมได้ตรงไหม", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.fish-intake", origin: "coverage" },
+  { q: "can weighed fish sell accurately at 43.17 THB per kg", locale: "en", context: GUIDES, expect: "answer", expectTop: "inventory.fish-intake", origin: "coverage" },
   { q: "เจ้าของล้งจะดูปลาในห้องเย็น ค้างส่ง และลูกหนี้ตรงไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.fish-owner", origin: "coverage" },
   { q: "how do I use the fish owner view to track delivery plans and AR", locale: "en", context: GUIDES, expect: "answer", expectTop: "inventory.fish-owner", origin: "coverage" },
   { q: "ตั้งสูตรตัดวัตถุดิบของเมนูยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.stock-models", origin: "coverage" },

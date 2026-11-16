@@ -2,10 +2,22 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createRequire } from "node:module";
 import { parseFishImportWorkbook } from "../apps/web/lib/bms/fishImport.ts";
-import { FishIntakeError, fishIntakePreview, validateFishIntake } from "../apps/web/lib/bms/fishIntake.ts";
+import { FishIntakeError, fishIntakePreview, fishIntakeProductSetupReasons, validateFishIntake } from "../apps/web/lib/bms/fishIntake.ts";
 
 const requireWeb=createRequire(new URL("../apps/web/package.json",import.meta.url));
 const XLSX=requireWeb("xlsx") as typeof import("../apps/web/node_modules/xlsx/types/index.d.ts");
+
+test("fish intake setup explains why an active catalog product cannot be selected",()=>{
+  assert.deepEqual(fishIntakeProductSetupReasons({
+    stock_policy:"DIRECT",base_unit:"PIECE",lot_tracking:false,has_active_variant:true,
+  }),["NOT_WEIGHTED","NOT_GRAM","LOT_DISABLED"]);
+  assert.deepEqual(fishIntakeProductSetupReasons({
+    stock_policy:"WEIGHTED",base_unit:"GRAM",lot_tracking:true,has_active_variant:false,
+  }),["NO_ACTIVE_SIZE"]);
+  assert.deepEqual(fishIntakeProductSetupReasons({
+    stock_policy:"WEIGHTED",base_unit:"GRAM",lot_tracking:true,has_active_variant:true,
+  }),[]);
+});
 
 function workbook() {
   const header=Array(26).fill(null);
@@ -70,6 +82,25 @@ test("possible duplicate rows require an explicit keep or skip decision",()=>{
   assert.equal(kept.readyCount,4);
   assert.equal(kept.totals.purchaseAmount,"1212.50");
   assert.notEqual(kept.previewHash,skipped.previewHash);
+});
+
+test("Excel import flags a valued row without a fish name instead of silently dropping it",()=>{
+  const book=XLSX.read(workbook(),{type:"buffer"});
+  const sheet=book.Sheets["01-1068"];
+  const rows=XLSX.utils.sheet_to_json<unknown[]>(sheet,{header:1,raw:true,defval:null,blankrows:true});
+  const missingName=[...rows[2]];
+  missingName[5]=null;
+  const monthSubtotal=Array(26).fill(null);
+  monthSubtotal[1]="เดือน ม.ค.";monthSubtotal[16]=100;monthSubtotal[18]=5000;
+  const footerTotal=Array(26).fill(null);
+  footerTotal[16]=100;footerTotal[18]=5000;
+  XLSX.utils.sheet_add_aoa(sheet,[missingName,monthSubtotal,footerTotal],{origin:"A6"});
+  const buffer=XLSX.write(book,{type:"buffer",bookType:"xlsx"}) as Buffer;
+  const preview=parseFishImportWorkbook(buffer,"fish.xlsx",2025,"01-1068");
+  assert.equal(preview.rowCount,4);
+  assert.equal(preview.readyCount,2);
+  assert.deepEqual(preview.issues.map(issue=>issue.row),[5,6]);
+  assert.ok(preview.issues[1].field==="line"&&preview.issues[1].message.includes("ไม่มีชื่อปลา"));
 });
 
 test("live receipt uses exact grams and reviewed money, with a stable preview hash",()=>{

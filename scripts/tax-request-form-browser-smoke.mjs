@@ -43,10 +43,10 @@ try {
       await page.getByLabel("ชื่อ-นามสกุล", { exact: true }).fill("FAKE Buyer");
       await page.getByLabel("ที่อยู่ในการออกใบกำกับภาษี (บรรทัดที่ 1)", { exact: true }).fill("FAKE address 1");
       await page.getByLabel("ที่อยู่ในการออกใบกำกับภาษี (บรรทัดที่ 2)", { exact: true }).fill("FAKE address 2");
-      await page.getByLabel("จังหวัด", { exact: true }).click();
-      await page.getByLabel("จังหวัด", { exact: true }).fill("กรุงเทพมหานคร");
-      await page.getByLabel("จังหวัด", { exact: true }).press("Enter");
-      await page.getByLabel("รหัสไปรษณีย์", { exact: true }).fill("10140");
+      await page.locator("#province").click();
+      await page.locator("#province").fill("กรุงเทพมหานคร");
+      await page.locator("#province").press("Enter");
+      assert.equal(await page.getByLabel("รหัสไปรษณีย์", { exact: true }).isEditable(), false);
       await page.getByLabel("เบอร์โทรศัพท์", { exact: true }).fill("020000000");
       const email = page.getByLabel("อีเมล (สำหรับติดต่อเรื่องการจัดส่งเอกสาร)", { exact: true });
       const submit = page.getByRole("button", { name: "ยืนยันข้อมูลและส่งคำขอ" });

@@ -30,6 +30,7 @@ import { writeLogServer } from "./writeLog.server";
 import { ERROR_WINDOW_MS, shouldLog } from "./logThrottle";
 import { isRestaurantCheckError } from "@/lib/bms/restaurantPosErrors";
 import { withScheduledJobTrace } from "@/lib/bms/scheduledJobTrace";
+import { recordRequestMetric } from "@/lib/bms/requestMetrics";
 
 type RouteHandler<Args extends any[]> = (...args: Args) => Promise<Response> | Response;
 
@@ -68,7 +69,12 @@ export function withRouteErrorLog<Args extends any[]>(
   routeName: string,
   handler: RouteHandler<Args>
 ): (...args: Args) => Promise<Response> {
-  return (...args: Args): Promise<Response> => withScheduledJobTrace(args[0], async () => {
+  // This is a static route label supplied by the handler, never the request URL.
+  // Keep the suffix distinct when long labels exceed the Redis metric field limit.
+  const rawMetricName = `rest:${routeName.replace(/\s+/, ":")}`;
+  const metricName = rawMetricName.length <= 60 ? rawMetricName
+    : `${rawMetricName.slice(0, 51)}:${crypto.createHash("sha256").update(rawMetricName).digest("hex").slice(0, 8)}`;
+  const handled = (...args: Args): Promise<Response> => withScheduledJobTrace(args[0], async () => {
     try {
       return await handler(...args);
     } catch (error: any) {
@@ -122,6 +128,30 @@ export function withRouteErrorLog<Args extends any[]>(
       return errorResponse(detail.message, routeName, args);
     }
   });
+  return async (...args: Args): Promise<Response> => {
+    const startedAt = performance.now();
+    let status = 500;
+    try {
+      const response = await handled(...args);
+      status = response.status;
+      return response;
+    } finally {
+      // Apollo already records its own operation names; avoid counting it twice.
+      // Metric failure must never change the handler's response.
+      if (routeName !== "/api/graphql") {
+        try {
+          recordRequestMetric({
+            name: metricName,
+            durationMs: performance.now() - startedAt,
+            ok: status < 400,
+            errorCode: status >= 400 ? `HTTP_${status}` : null,
+          });
+        } catch {
+          // Observability is fail-open, including synchronous Redis failures.
+        }
+      }
+    }
+  };
 }
 
 function errorResponse(message: string | null, routeName: string, args: unknown[]) {

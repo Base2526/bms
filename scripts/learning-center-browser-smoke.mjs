@@ -65,7 +65,7 @@ try {
     // Follow the actual contents page: every board-game article must render in both languages,
     // including all numbered steps, without clipping at the narrowest supported width.
     await page.goto(`${baseURL}/learn/board-game`);
-    const articlePaths = await page.locator('main ol a[href^="/learn/guides/"]').evaluateAll((links) =>
+    const articlePaths = await page.locator('main ol a[href*="/learn/guides/"]').evaluateAll((links) =>
       [...new Set(links.map((link) => link.getAttribute("href")))]);
     assert.ok(articlePaths.length >= 40, "Board-game path is missing reviewed lessons");
     for (const articlePath of articlePaths) {
@@ -78,7 +78,7 @@ try {
     }
     console.log(`Verified ${articlePaths.length} board-game articles in ${lang}`);
     await page.goto(`${baseURL}/learn/pharmacy`);
-    const pharmacyPaths = await page.locator('main ol a[href^="/learn/guides/pharmacy-"]').evaluateAll((links) =>
+    const pharmacyPaths = await page.locator('main ol a[href*="/learn/guides/pharmacy-"]').evaluateAll((links) =>
       [...new Set(links.map((link) => link.getAttribute("href")))]);
     assert.ok(pharmacyPaths.length >= 8, "Pharmacy path is missing reviewed lessons");
     for (const articlePath of pharmacyPaths) {
@@ -106,7 +106,7 @@ try {
     await page.waitForURL(/q=/);
     assert.ok(await page.locator('main a[href*="board-game-move-split"]').count());
     await page.getByRole("link", { name: lang === "th" ? "ล้างตัวกรอง" : "Clear filters" }).click();
-    await page.waitForURL(`${baseURL}/learn`);
+    await page.waitForURL(/\/learn$/);
     assert.equal(await page.getByRole("searchbox").inputValue(), "");
     await page.goto(`${baseURL}/learn?q=unmatched-example-987654321`);
     await page.getByText(lang === "th" ? "ยังไม่พบบทเรียนที่ตรงกัน" : "No matching lesson").waitFor();
@@ -172,8 +172,8 @@ try {
   await mobile.locator("main").click({ position: { x: 2, y: 2 } });
   assert.equal(await menu.getAttribute("open"), null);
   await toggle.click();
-  await menu.locator('a[href="/learn/restaurant"]').click();
-  await mobile.waitForURL(`${baseURL}/learn/restaurant`);
+  await menu.locator('a[href$="/learn/restaurant"]').click();
+  await mobile.waitForURL(/\/learn\/restaurant$/);
   assert.equal(await menu.getAttribute("open"), null);
   await toggle.click();
   await mobile.setViewportSize({ width: 1440, height: 950 });
@@ -185,8 +185,8 @@ try {
   const noJsMobile = await noJsMobileContext.newPage();
   await noJsMobile.goto(`${baseURL}/learn`);
   await noJsMobile.locator("header summary").click();
-  await noJsMobile.locator('header details a[href="/learn/board-game"]').click();
-  await noJsMobile.waitForURL(`${baseURL}/learn/board-game`);
+  await noJsMobile.locator('header details a[href$="/learn/board-game"]').click();
+  await noJsMobile.waitForURL(/\/learn\/board-game$/);
   await noJsMobileContext.close();
   const navigationContext = await browser.newContext();
   await navigationContext.route("**/api/auth/me", (route) => route.fulfill({ json: { user: null, admin: null, isAuthenticated: false } }));
@@ -198,13 +198,13 @@ try {
   for (const width of [1440, 1024, 390]) {
     await navigation.setViewportSize({ width, height: 950 });
     await navigation.goto(`${baseURL}/`);
-    await navigation.locator('footer a[href="/learn"]').waitFor();
-    await navigation.locator('footer a[href="/learn/retail"]').waitFor();
-    await navigation.locator('footer a[href="/learn/restaurant"]').waitFor();
-    await navigation.locator('footer a[href="/learn/board-game"]').waitFor();
-    await navigation.locator('footer a[href="/learn/pharmacy"]').waitFor();
-    await navigation.locator('footer a[href="/learn/inventory"]').waitFor();
-    if (width >= 940) await navigation.locator('header nav a[href="/learn"]').waitFor();
+    await navigation.locator('footer a[href$="/learn"]').waitFor();
+    await navigation.locator('footer a[href$="/learn/retail"]').waitFor();
+    await navigation.locator('footer a[href$="/learn/restaurant"]').waitFor();
+    await navigation.locator('footer a[href$="/learn/board-game"]').waitFor();
+    await navigation.locator('footer a[href$="/learn/pharmacy"]').waitFor();
+    await navigation.locator('footer a[href$="/learn/inventory"]').waitFor();
+    if (width >= 940) await navigation.locator('header nav a[href$="/learn"]').waitFor();
     else {
       await navigation.locator('header button:has(.anticon-more)').click();
       await navigation.getByRole("menuitem", { name: /ศูนย์เรียนรู้|Learning center/ }).waitFor();

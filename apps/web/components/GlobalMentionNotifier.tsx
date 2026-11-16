@@ -3,6 +3,7 @@
 import { gql, useSubscription } from "@apollo/client";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { notify } from "@/lib/notify";
+import { useI18n } from "@/lib/i18nContext";
 
 const SUB_NOTIFICATION_CREATED = gql`
   subscription { notificationCreated { id title message entity_type data } }
@@ -16,6 +17,7 @@ const SUB_NOTIFICATION_CREATED = gql`
  * mount แบบ global (SessionLayer.tsx) เหมือน GlobalInboxNotifier
  */
 export function GlobalMentionNotifier() {
+  const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
 
   useSubscription(SUB_NOTIFICATION_CREATED, {
@@ -25,7 +27,7 @@ export function GlobalMentionNotifier() {
       if (!n || n.entity_type !== "bms_conversation_note_mention") return;
 
       const conversationId = n.data?.conversationId;
-      const result = await notify(n.title || "มีคนกล่าวถึงคุณ", { body: n.message || "", tag: `bms-mention-${n.id}` });
+      const result = await notify(t("order_notifications.mention_private_title"), { tag: "bms-mention" });
       if (result && conversationId) {
         result.onclick = () => {
           window.focus();

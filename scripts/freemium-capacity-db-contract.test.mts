@@ -22,12 +22,18 @@ test('capacity and package evidence: real services in disposable PostgreSQL only
       CREATE TABLE bms_locations(id uuid PRIMARY KEY,tenant_id uuid,code text,name text,branch_code text,address text,phone text,active boolean,
         is_head_office boolean,parking_info jsonb,updated_at timestamptz,
         province_code text,district_code text,subdistrict_code text,province text,district text,subdistrict text,postcode text,
+        pickup_queue_enabled boolean,pickup_queue_auto_hide_minutes int,pickup_queue_show_preparing boolean,
+        pickup_queue_board_message text,pickup_queue_prefix text,pickup_queue_start_no int,
+        pickup_queue_spotlight_seconds int,pickup_queue_voice_mode text,pickup_queue_voice_language text,
+        pickup_queue_voice_repeat int,pickup_queue_voice_volume int,
         UNIQUE(tenant_id,code),UNIQUE(tenant_id,id));
       CREATE TABLE bms_user_allowed_locations(tenant_id uuid,user_id uuid,location_id uuid);
       CREATE TABLE bms_pos_devices(id uuid PRIMARY KEY,tenant_id uuid,location_id uuid,code text,name text,registered_pos_no text,receipt_prefix text,
         scanner_mode text,scanner_prefix_key text,scanner_suffix_key text,scanner_max_gap_ms int,active boolean,updated_at timestamptz,UNIQUE(tenant_id,code),
         FOREIGN KEY(tenant_id,location_id) REFERENCES bms_locations(tenant_id,id));
-      CREATE TABLE bms_tenant_channels(tenant_id uuid,channel text,access_token text,channel_secret text,active boolean,extra jsonb,updated_at timestamptz,UNIQUE(tenant_id,channel));
+      CREATE TABLE bms_tenant_channels(tenant_id uuid,channel text,access_token text,channel_secret text,
+        webhook_verify_token text,external_account_id text,active boolean,extra jsonb,updated_at timestamptz,
+        UNIQUE(tenant_id,channel));
       CREATE TABLE bms_report_subscriptions(tenant_id uuid);
       CREATE TABLE bms_audit_log(tenant_id uuid,actor text,action text,target text,meta jsonb,created_at timestamptz DEFAULT now());
       CREATE TABLE bms_ai_usage_events(tenant_id uuid,provider text,source text,provider_calls int,unpriced_provider_calls int,actual_cost_usd numeric,created_at timestamptz);

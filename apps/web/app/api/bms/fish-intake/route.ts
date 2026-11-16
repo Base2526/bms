@@ -11,7 +11,7 @@ export const dynamic="force-dynamic";
 async function handleGET() {
   const auth=await authorizeAdminRoute("purchase.view");
   if (!auth.ok) return NextResponse.json({error:auth.status===401?"unauthorized":"forbidden"},{status:auth.status});
-  return NextResponse.json({items:await listFishIntakes(auth.tenantId)});
+  return NextResponse.json({items:await listFishIntakes(auth.tenantId,String(auth.adminId))});
 }
 
 async function handlePOST(req:NextRequest) {

@@ -74,6 +74,7 @@ export async function getFishOwnerSnapshot(tenant: string, actor: string, reques
     const stock = (await client.query<any>(
       `SELECT l.id::text AS lot_id,l.location_id::text AS location_id,
               l.product_sku AS sku,p.name,l.size,l.lot_no,l.qty AS qty_grams,
+              l.updated_at::text AS lot_updated_at,
               l.expiry_date::text AS expiry_date,
               (${usableLotSql("l")} AND (l.expiry_date IS NULL OR l.expiry_date >= (now() AT TIME ZONE 'Asia/Bangkok')::date)) AS usable,
               c.id::text AS count_id,c.lot_qty_at_count,c.version,c.counted_at,

@@ -3,7 +3,7 @@
 เอกสารนี้เป็น checklist สำหรับเตรียม BMS ให้พร้อมรองรับการเติบโตของ admin users โดยยังไม่บังคับให้ต้อง
 อัปเกรด infra ทันที ใช้เป็นแผนลงมือทีละขั้นก่อนถึงวันที่ต้อง scale จริง
 
-อัปเดตล่าสุดตามผลที่วัดได้วันที่ **2026-08-02**
+Production baseline ด้านล่างวัดวันที่ **2026-08-02**; ผลทดสอบบนฐานทิ้งที่เพิ่มภายหลังแยกไว้ด้านล่าง
 
 ## เป้าหมาย
 
@@ -145,12 +145,14 @@ Checklist:
 
 - [x] เก็บ request rate, p50, p95, p99 แยกตาม **GraphQL operation** — Apollo plugin
       (`apps/web/graphql/metricsPlugin.ts`) → Redis histogram (`apps/web/lib/bms/requestMetrics.ts`)
-      · recorder รองรับ namespace prefix แล้ว (`gql:` / `rest:`) โดยรอบนี้เริ่มจาก `gql:` ก่อน
+      · recorder แยก namespace prefix (`gql:` / `rest:`)
       · percentile และช่วงเวลาย้อนหลังเป็นค่าประมาณจาก bucket 5 นาที (window อาจเกินค่าที่เลือกไม่ถึง 5 นาที)
       · metric เริ่มนับหลัง deploy นี้เท่านั้น และหายเมื่อ restart Redis (TTL 4 ชม.)
 - [x] เก็บ error rate แยกตาม GraphQL operation + error code breakdown
-- [ ] เก็บ request/error ของ **REST route** (`/api/bms/**`) — ยังไม่ทำ: Next App Router ไม่มีจุดกลาง
-      ให้จับเวลา handler ต้องครอบทีละ route (`recordRequestMetric()` รองรับแล้วผ่าน prefix `rest:`)
+- [x] เก็บ request/error ของ **REST route ที่ใช้ `withRouteErrorLog()`** ด้วย label แบบ
+      `rest:METHOD:/api/...` (HTTP 4xx/5xx นับเป็น error; `/api/graphql` ไม่ถูกนับซ้ำ)
+- [ ] ตรวจและครอบ REST route ที่ยังไม่ใช้ `withRouteErrorLog()`; ข้อมูลจาก route เหล่านี้
+      ยังไม่ปรากฏใน metric และเวลาที่วัดไม่รวมการส่ง response body แบบ stream หรือเวลาเครือข่าย
 - [ ] เก็บ CPU / memory ของ app — **ตั้งใจยังไม่ทำ**: ต้องให้ container เข้าถึง Docker socket
       ซึ่งเป็น privilege escalation surface ต้องตัดสินใจแยกก่อน
 - [x] เก็บ DB connections (`pg_stat_activity`: active/idle/idle-in-tx, longest running query, DB size)
@@ -190,12 +192,20 @@ Priority แนะนำ:
 
 Checklist:
 
-- [ ] profile query ของ `bmsDashboard`
+- [x] profile query ของ `bmsDashboard` บนฐานทดสอบที่ restore แล้ว (ยังไม่ใช่ production profile)
 - [ ] profile query ของ `bmsConversations(limit: 100)`
 - [ ] profile query ของ `bmsOrders(limit: 100)`
 - [ ] ดูว่ามี N+1 query หรือไม่
 - [ ] ดูว่ามี aggregate ที่คำนวณสดทุก request หรือไม่
 - [ ] ดูว่ามี join ที่ขาด index หรือไม่
+
+**ผลตรวจบนฐานทดสอบ 2026-11-15:** tenant ตัวอย่างมีออร์เดอร์ 10,037 รายการ.
+SQL กราฟยอดขาย 7 วันเดิม join ออร์เดอร์ทั้งหมดซ้ำ 7 รอบ; `EXPLAIN ANALYZE` เมื่อปิด JIT
+ใช้ 23.435 ms. การรวมยอดจากออร์เดอร์ครั้งเดียวก่อน join วันที่ใช้ 1.850 ms ในรอบวัดเดียวกัน;
+ผลลัพธ์ทั้ง 7 วันที่มียอดขายตรงกัน (`EXCEPT ALL` ไม่มีรายการต่าง). ตัวเลขนี้เป็นของฐานทดสอบ ไม่ใช่ SLA หรือ
+capacity ของ production. หน้า Orders เดิมยิง query รายการสินค้า, ที่อยู่จัดส่ง และส่วนลดซ้ำต่อบิล;
+list resolver ตอนนี้ batch เฉพาะ field ที่ GraphQL ขอ จึงใช้สูงสุด 3 query เพิ่มต่อหน้าแทนสูงสุด
+3 query ต่อบิล. สิทธิ์, tenant และ field resolver สำหรับหน้ารายละเอียดเดี่ยวคงรูปแบบเดิม.
 
 ไฟล์ที่ควร review ก่อน:
 

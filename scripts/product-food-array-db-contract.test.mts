@@ -21,7 +21,7 @@ test("product food arrays: PostgreSQL round trips and original error reproductio
       ON COMMIT DROP`);
     const params: unknown[] = [
       "00000000-0000-4000-8000-000000000001", "ARRAY-TEST", "Array test", 100, [], false,
-      null, null, null, null, null, null, null, null, null, null, null, null, null,
+      null, null, null, null, null, null, null, null, null, null, null, null, null, [],
     ];
     const save = async (allergens: string[] | null, tags: string[] | null) => {
       const values = [...params];

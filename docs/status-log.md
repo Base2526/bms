@@ -3,7 +3,9 @@
 Per-feature decision narrative moved out of [CLAUDE.md](../CLAUDE.md) on 2026-10-13 to keep the
 always-loaded agent context small. The moved text is unchanged; newest entries are at the end.
 Entries were brought up to date on 2026-11-14 (through migration `10.120`, PR #412 and the
-`codex/bms-completion-core-20261113` branch). The compact area index lives in CLAUDE.md § Current status; full
+`codex/bms-completion-core-20261113` branch); the 2026-11-16 no-migration boundary and log work
+is recorded in [feature-log.md](feature-log.md). The compact area index lives in CLAUDE.md
+§ Current status; full
 per-domain rules live in [agent-invariants.md](agent-invariants.md).
 
 ## Current status summary (as written 2026-11)

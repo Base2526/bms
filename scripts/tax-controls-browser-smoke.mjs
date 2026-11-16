@@ -20,8 +20,9 @@ try {
     const permissions = ["tax.document.view", "tax.document.issue", "tax.document.adjust", "tax.period.close", "expense.view"];
     await context.route("**/*", async route => {
       const url = new URL(route.request().url());
-      if (url.origin !== new URL(base).origin) return route.abort();
-      if (!/\/api\/|\/graphql$/.test(url.pathname)) return route.continue();
+      const isApi = /\/api\/|\/graphql$/.test(url.pathname);
+      if (url.origin !== new URL(base).origin && !isApi) return route.abort();
+      if (!isApi) return route.continue();
       let json = {};
       if (url.pathname === "/api/auth/me") json = { isAuthenticated: true, admin: { id: "FAKE", role: "Administrator", name: "FAKE admin", language: "th" } };
       else if (url.pathname === "/api/bms/tax-invoice-requests") json = { enabled: false, rows: [], hasMore: false };

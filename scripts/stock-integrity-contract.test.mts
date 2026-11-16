@@ -67,6 +67,11 @@ test("expiry excludes owned reservations, rechecks late deposits and scopes each
             assert.deepEqual(params, [candidate.tenant_id, candidate.id]);
             return rows(candidate.id === "late-deposit" ? [{}] : []);
           }
+          if (sql.includes("UPDATE bms_inventory inv")) {
+            assert.equal(candidate.id, "ordinary"); assert.match(sql, /tenant_id = \$2/);
+            assert.deepEqual(params, [[candidate.id], candidate.tenant_id]); tx.writes++;
+            return rows([{ expected_count: "1", updated_count: "1" }]);
+          }
           if (/^\s*UPDATE/.test(sql)) {
             assert.equal(candidate.id, "ordinary"); assert.match(sql, /tenant_id = \$2/);
             assert.deepEqual(params, [[candidate.id], candidate.tenant_id]); tx.writes++; return rows([{}]);
@@ -76,6 +81,9 @@ test("expiry excludes owned reservations, rechecks late deposits and scopes each
       transactions.push(tx); return tx;
     },
     beginTenantTx: async (tx: any, tenant: string) => { tx.tenant = tenant; },
+    auditOrderTransitionInTx: async (_tx: any, tenant: string, actor: string, action: string, orderId: string) => {
+      assert.deepEqual([tenant, actor, action, orderId], ["tenant-c", "system:auto-release", "order.cancel", "ordinary"]);
+    },
     recordOrderMovements: async (_c: any, ids: string[]) => { movements.push(...ids); },
     releaseCouponForOrdersInTx: async () => {}, releaseCustomerCouponReservationsInTx: async () => {},
     reopenRestockSubscriptionsForOrders: async () => {}, markRestockSubscriptionsReadyForOrders: async () => {},
@@ -272,7 +280,10 @@ for (const scenario of ["missing allocation", "partial allocation", "lot mismatc
       if (sql === "ROLLBACK") { state = structuredClone(before); return rows(); }
       if (sql === "COMMIT") return rows();
       if (sql.includes("UPDATE bms_orders")) { state.returned = true; return rows([{}]); }
-      if (sql.includes("UPDATE bms_inventory inv")) { if (scenario !== "missing inventory") state.stock += 2; return rows(); }
+      if (sql.includes("UPDATE bms_inventory inv")) {
+        if (scenario !== "missing inventory") state.stock += 2;
+        return rows([{ expected_count: "1", updated_count: scenario === "missing inventory" ? "0" : "1" }]);
+      }
       if (sql.includes("UPDATE bms_inventory_lots")) { state.lot += allocated; return rows([{}]); }
       if (sql.includes("FROM bms_order_stock_lines") && !sql.includes("FROM bms_order_item_lots")) {
         return rows([{ location_id: "branch", product_sku: "SKU", size: "BASE", qty: 2,
@@ -293,6 +304,7 @@ for (const scenario of ["missing allocation", "partial allocation", "lot mismatc
       recordOrderMovements: async () => { state.movements++; }, releasePointsForOrdersInTx: async () => {},
       reverseCreditForOrderInTx: async () => {}, reopenRestockSubscriptionsForOrders: async () => {},
       markRestockSubscriptionsReadyForOrders: async () => {}, notifyOrderStatusEmail: async () => {},
+      auditOrderTransitionInTx: async () => {},
     };
     const service: any = {};
     new Function("exports", ...Object.keys(deps), ts.transpileModule(body, {

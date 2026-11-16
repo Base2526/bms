@@ -21,7 +21,13 @@ const errors = [];
 let page;
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 950 } });
-  await context.routeWebSocket(/.*/, socket => socket.close());
+  await context.routeWebSocket(/.*/, socket => socket.onMessage(raw => {
+    try {
+      if (JSON.parse(String(raw)).type === "connection_init") {
+        socket.send(JSON.stringify({ type: "connection_ack" }));
+      }
+    } catch { /* synthetic fixture ignores unrelated frames */ }
+  }));
   await context.addCookies([{ name: "ADMIN_COOKIE", value: "FAKE-localization-fixture", url: origin }, { name: "lang", value: "en", url: origin }]);
   await context.route("**/api/**", async route => {
     const pathname = new URL(route.request().url()).pathname;
@@ -83,7 +89,7 @@ try {
       json = { data };
     } else if (pathname.endsWith("/inventory/transfers")) json = { transfers: [], commandScope: "FAKE-scope", locations: [{ id: "FAKE-a", code: "A", name: "FAKE สาขา", active: true }, { id: "FAKE-b", code: "B", name: "FAKE branch", active: true }] };
     else if (pathname.endsWith("/inventory/counts")) json = { counts: [], locations: [] };
-    else if (pathname.endsWith("/realtime/ticket")) return route.fulfill({ status: 503, json: { error: "FAKE realtime disabled" } });
+    else if (pathname.endsWith("/realtime/ticket")) return route.fulfill({ json: { ticket: "FAKE-localization-fixture" } });
     await route.fulfill({ json });
   });
   page = await context.newPage();
@@ -110,7 +116,7 @@ try {
   for (const language of ["en", "th"]) {
     if (language === "th") await switchLanguage("th");
     await page.goto(`${origin}/admin/commission`);
-    await page.locator(".ant-picker input").first().click();
+    await page.locator(".ant-picker").first().click();
     const month = page.locator(".ant-picker-dropdown:visible .ant-picker-month-btn").first();
     await month.waitFor();
     assert.equal(/[ก-๙]/.test(await month.innerText()), language === "th", "Calendar month follows operator language");

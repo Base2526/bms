@@ -93,12 +93,11 @@ const Q_LOCATIONS = gql`
     bmsOrderLocations { id name branchCode active }
   }
 `;
-const M_PAY = gql`mutation ($id: ID!) { bmsPayOrder(id: $id) }`;
 const M_PACK = gql`mutation ($id: ID!) { bmsPackOrder(id: $id) }`;
 const M_SHIP = gql`mutation ($id: ID!) { bmsShipOrder(id: $id) }`;
 const M_COMPLETE = gql`mutation ($id: ID!) { bmsCompleteOrder(id: $id) }`;
-const M_CANCEL = gql`mutation ($id: ID!) { bmsCancelOrder(id: $id) }`;
-const M_RETURN = gql`mutation ($id: ID!) { bmsReturnOrder(id: $id) }`;
+const M_CANCEL = gql`mutation ($id: ID!) { bmsCancelOrder(id: $id, confirmed: true) }`;
+const M_RETURN = gql`mutation ($id: ID!) { bmsReturnOrder(id: $id, confirmed: true) }`;
 const STAFF_F = `id name avatar email`;
 const Q_JOURNEY = gql`
   query ($orderId: ID!) {
@@ -185,13 +184,12 @@ function OrdersManagement() {
     onError: onErr,
   });
 
-  const [pay, { loading: l1 }] = useMutation(M_PAY, opts(t("admin_orders.paid_success")));
   const [pack, { loading: l2 }] = useMutation(M_PACK, opts(t("admin_orders.packing_success")));
   const [ship, { loading: l3 }] = useMutation(M_SHIP, opts(t("admin_orders.shipped_success")));
   const [complete, { loading: l4 }] = useMutation(M_COMPLETE, opts(t("admin_orders.completed_success")));
   const [cancel, { loading: l5 }] = useMutation(M_CANCEL, opts(t("admin_orders.cancelled_success")));
   const [ret, { loading: l6 }] = useMutation(M_RETURN, opts(t("admin_orders.returned_success")));
-  const busy = l1 || l2 || l3 || l4 || l5 || l6;
+  const busy = l2 || l3 || l4 || l5 || l6;
 
   const fetchedOrders: Order[] = data?.bmsOrders || [];
   const orders = fetchedOrders.slice(0, 100);
@@ -209,7 +207,9 @@ function OrdersManagement() {
   const actionsFor = (r: Order) => {
     const v = { variables: { id: r.id } };
     const btns: any[] = [];
-    const payBtn = <Button key="pay" type="link" size="small" icon={<DollarOutlined />} disabled={busy} onClick={() => pay(v)}>{t("admin_orders.btn_pay")}</Button>;
+    const payBtn = <Link key="pay" href={`/admin/payment?orderId=${encodeURIComponent(r.id)}`}>
+      <Button type="link" size="small" icon={<DollarOutlined />} disabled={busy}>{t("admin_orders.btn_pay")}</Button>
+    </Link>;
     const packBtn = <Button key="pack" type="link" size="small" icon={<InboxOutlined />} disabled={busy} onClick={() => pack(v)}>{r.fulfillmentType ? t("admin_orders.btn_accept") : t("admin_orders.btn_pack")}</Button>;
     const shipBtn = r.hasShippingAddress ? (
       <Popconfirm key="ship" title={r.fulfillmentType === "PICKUP" ? t("admin_orders.pickup_confirm_title") : t("admin_orders.ship_confirm_title")} description={r.fulfillmentType === "PICKUP" ? t("admin_orders.pickup_confirm_desc") : t("admin_orders.ship_confirm_desc")} okText={r.fulfillmentType === "PICKUP" ? t("admin_orders.btn_handover") : t("admin_orders.ship_ok_text")} cancelText={t("admin_orders.cancel_text")} disabled={busy} onConfirm={() => ship(v)}>
@@ -229,7 +229,7 @@ function OrdersManagement() {
 
     switch (r.status) {
       case "PENDING":
-        if (can("order.pay")) btns.push(payBtn);
+        if (can("payment.view")) btns.push(payBtn);
         if (can("order.cancel")) btns.push(cancelBtn);
         break;
       case "PAID":

@@ -192,6 +192,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             packBasePrice: item.packBasePrice ?? item.price,
             modifierUnitPrice: item.modifierUnitPrice ?? 0,
             unitName: item.unitName,
+            offlineRetailEligible: item.offlineRetailEligible,
           } : line,
         );
       }
@@ -215,6 +216,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           modifierCodes,
           modifierNames,
           serialTracked: item.serialTracked,
+          offlineRetailEligible: item.offlineRetailEligible,
           scaleBarcode: item.scaleBarcode,
           serials: [],
           imageUrl: item.imageUrl,
@@ -530,6 +532,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             modifierUnitPrice,
             priceTiers: latest.priceTiers,
             promotion: latest.promotion ?? null,
+            offlineRetailEligible: latest.offlineRetailEligible,
             // ชื่อตัวเลือกไม่ได้ถูกเก็บลงบิลพัก — ประกอบใหม่จากรหัสที่เก็บไว้
             modifierNames: selected.map(modifier => modifier.name),
           } satisfies PosCartLine,

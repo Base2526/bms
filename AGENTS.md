@@ -316,11 +316,13 @@ Platform-admin, **read-only** page answering "how is the system doing right now"
 never add a button here that writes, restarts, or mutates anything. `lib/bms/systemHealth.ts` is a
 **composition layer, not a new subsystem**: reuse an existing service if one exists, and every read
 returns `{ok:false, error}` instead of throwing (an unapplied migration must degrade to one warning
-card, not a 500). GraphQL latency/error-rate metrics live in Redis histograms
+card, not a 500). GraphQL and wrapped REST latency/error-rate metrics live in Redis histograms
 (`lib/bms/requestMetrics.ts`), not Postgres, on purpose — do not add a per-request DB write here or a
-process-local `Map`. Full rationale, what it does not answer yet (slow-query, REST latency,
+process-local `Map`. Full rationale, what it does not answer yet (slow-query, unwrapped REST latency,
 container CPU/memory), and the request-metrics design tradeoffs:
 [agent-invariants.md § Observability](docs/agent-invariants.md#observability-adminsystem-health).
+For incident triage, distinguish `system_logs.level` from structured `status`; use
+[the log runbook](docs/architecture/logging-and-triage.md) before classifying a row as a server fault.
 
 ## Working method
 

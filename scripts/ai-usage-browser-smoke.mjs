@@ -100,7 +100,7 @@ try {
       creditBlocked = false;
       unlimited = true;
       await page.goto(`${base}/admin/billing`, { waitUntil: 'domcontentloaded' });
-      if (width === 1440) await page.getByText(lang === 'th' ? 'AI ไม่จำกัด' : 'Unlimited AI', { exact: true }).waitFor();
+      if (width === 1440) await page.getByRole('main').getByText(lang === 'th' ? 'AI ไม่จำกัด' : 'Unlimited AI', { exact: true }).waitFor();
       await page.getByText('150.1234', { exact: false }).first().waitFor();
       await page.getByText(lang === 'th' ? 'วันที่ 1 เวลา 00:00 น. (เวลาไทย)' : '1st of each month, 00:00 Thailand time', { exact: true }).first().waitFor();
       await page.getByText('1,000 AI points', { exact: true }).waitFor();
@@ -108,7 +108,7 @@ try {
       assert.match(await page.getByTestId('plan-ai-change').first().innerText(), /5,000.*00:00/);
       assert.equal(await page.getByText(lang === 'th' ? 'จัดการ AI point' : 'Manage AI points', { exact: true }).count(), 0);
       const contactButtons = page.getByRole('button', { name: lang === 'th' ? 'ติดต่อผู้ดูแลแพลตฟอร์ม' : 'Contact platform administrator', exact: true });
-      assert.equal(await contactButtons.count(), 2);
+      assert.equal(await contactButtons.count(), 4);
       for (const button of await contactButtons.all()) assert.equal(await button.isDisabled(), true);
       assert.equal(grantMutations, 0);
       assert.doesNotMatch(await page.locator('body').innerText(), /-1 AI points|0 \/ -1|total -1|ทั้งหมด -1|\$100|Budget \$/);
@@ -120,7 +120,9 @@ try {
       await page.getByRole('button', { name: lang === 'th' ? 'เลือกแพ็กเกจนี้' : 'Choose this plan', exact: true }).first().click();
       const confirmation = page.getByRole('dialog');
       await confirmation.waitFor();
-      assert.match(await confirmation.innerText(), /FAKE Free.*0 THB\/month.*100 point\/month/s);
+      assert.match(await confirmation.innerText(), lang === 'th'
+        ? /FAKE Free.*0 บาท\/เดือน.*100 คะแนน\/เดือน/s
+        : /FAKE Free.*0 THB\/month.*100 point\/month/s);
       assert.equal(grantMutations, 0, 'opening confirmation does not grant a plan');
       await confirmation.getByRole('button', { name: /^(OK|ตกลง)$/ }).click();
       await confirmation.waitFor({ state: 'hidden' });

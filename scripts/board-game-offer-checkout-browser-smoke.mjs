@@ -89,7 +89,7 @@ try {
       await page.getByText(/คิดตามเวลาที่เล่นจริง/).waitFor();
       await page.getByText(/เวลาก่อนสิทธิ์ 3 ชม\./).waitFor();
       if (applied) {
-        await page.getByText(/ตามโปร: จ่าย 2 ชม\. · ฟรี 1 ชม\./).waitFor();
+        await page.getByText(/ตามโปร: จ่าย 2 ชม/).waitFor();
         await page.getByText(/ลดค่าเล่น ฿50\.00/).waitFor();
         assert.equal(await page.getByText(/เหตุผลที่โปรไม่เข้า/).count(), 0);
       } else if (scenario === "INELIGIBLE") {

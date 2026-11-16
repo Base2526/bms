@@ -29,16 +29,14 @@ import type { PoolClient } from "pg";
 import { restaurantOrderItemsInTx, readRestaurantItemSnapshot, type RestaurantItemSnapshot } from "./restaurantItemSnapshots";
 import { notifyOrderStatusEmail } from "./orderNotify";
 import { notifyOrderActionCommitted } from "./orderActionNotify";
-import { applyCouponInTx, releaseCouponForOrdersInTx, redeemCustomerCouponForOrderInTx, releaseCustomerCouponReservationsInTx, reserveCustomerCouponInTx } from "./coupons";
+import { applyCouponInTx, releaseCouponForOrdersInTx, releaseCustomerCouponReservationsInTx, reserveCustomerCouponInTx } from "./coupons";
 import {
   composeDiscounts,
-  earnPointsForOrderInTx,
   getLoyaltySettings,
   getMemberForOrderInTx,
   recordOrderDiscountsInTx,
   redeemPointsInTx,
   releasePointsForOrdersInTx,
-  reviewMemberTierForOrder,
   type OrderDiscountLine,
 } from "./membership";
 import {
@@ -59,7 +57,6 @@ import type { VatCategory } from "./vat";
 import { reverseCreditForOrderInTx } from "./storeCredit";
 import {
   markRestockSubscriptionsOrdered,
-  markRestockSubscriptionsPurchasedForOrder,
   reopenRestockSubscriptionsForOrders,
   markRestockSubscriptionsReadyForOrders,
 } from "./restockSubscriptions";
@@ -1891,54 +1888,37 @@ export async function reorderFromOrder(
   });
 }
 
-// ---- transition แบบไม่ขยับสต็อก (pay / pack / complete) — tenant-scoped -----
-async function transition(
-  tenantId: string,
-  orderId: string,
-  from: string[],
-  to: string
-): Promise<boolean> {
-  const res = await query(
-    `UPDATE bms_orders SET status = $4, updated_at = now()
-      WHERE tenant_id = $1 AND id = $2 AND status = ANY($3)`,
-    [tenantId, orderId, from, to]
+// Keep REST and GraphQL on the same branch boundary. A missing order is never authorized.
+export async function canAccessOrderBranch(tenantId: string, orderId: string, userId: string): Promise<boolean> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId)) return false;
+  const res = await query<{ allowed: boolean }>(
+    `SELECT (NOT EXISTS (
+       SELECT 1 FROM bms_user_allowed_locations al WHERE al.tenant_id = $1 AND al.user_id = $3
+     ) OR EXISTS (
+       SELECT 1 FROM bms_user_allowed_locations al
+        WHERE al.tenant_id = o.tenant_id AND al.user_id = $3 AND al.location_id = o.location_id
+     )) AS allowed
+       FROM bms_orders o WHERE o.tenant_id = $1 AND o.id = $2`,
+    [tenantId, orderId, userId],
   );
-  return (res.rowCount ?? 0) > 0;
+  return res.rows[0]?.allowed === true;
 }
 
-/** จ่ายเงินแล้ว: PENDING → PAID */
-export async function payOrder(tenantId: string, orderId: string): Promise<boolean> {
-  const client = await getClient();
-  try {
-    await beginTenantTx(client, tenantId);
-    const ord = await client.query(
-      `UPDATE bms_orders SET status = 'PAID', paid_at = COALESCE(paid_at, now()), updated_at = now()
-        WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`,
-      [tenantId, orderId]
-    );
-    if ((ord.rowCount ?? 0) === 0) {
-      await client.query("ROLLBACK");
-      return false;
-    }
-    await redeemCustomerCouponForOrderInTx(client, tenantId, orderId);
-    // แต้มสะสม (7.96) — ให้ทุกช่องทางที่บิลถึงสถานะ PAID ไม่ใช่แค่หน้าร้าน
-    // ลูกค้าสั่งทาง LINE/TikTok แล้วโอนเงิน ต้องได้แต้มเหมือนเดินมาซื้อเอง
-    await earnPointsForOrderInTx(client, { tenantId, orderId });
-    await markRestockSubscriptionsPurchasedForOrder({ tenantId, orderId, client });
-    await client.query("COMMIT");
-  } catch (err) {
-    try { await client.query("ROLLBACK"); } catch {}
-    throw err;
-  } finally {
-    client.release();
-  }
-  void reviewMemberTierForOrder(tenantId, orderId);
-  void notifyOrderStatusEmail(tenantId, orderId, "paid");
-  await notifyOrderActionCommitted({ tenantId, orderId, kind: "ORDER_PAID" });
-  return true;
+async function auditOrderTransitionInTx(client: PoolClient, tenantId: string, actor: string, action: string, orderId: string): Promise<void> {
+  await client.query(
+    `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta) VALUES ($1, $2, $3, $4, '{}'::jsonb)`,
+    [tenantId, actor, action, orderId],
+  );
+}
+
+/** Legacy order.pay adapter: a bare order ID is not payment evidence or human confirmation. */
+export async function payOrder(_tenantId: string, _orderId: string): Promise<boolean> {
+  // Payment submission + confirmPayment() own the audited PENDING -> PAID transaction.
+  // Keep the old Boolean API fail-closed for older clients instead of silently marking paid.
+  return false;
 }
 /** แพ็คของ: PAID → PACKING */
-export async function packOrder(tenantId: string, orderId: string): Promise<boolean> {
+export async function packOrder(tenantId: string, orderId: string, actor = "system"): Promise<boolean> {
   const client = await getClient();
   let ok = false;
   let createdKitchenTickets = false;
@@ -1961,6 +1941,7 @@ export async function packOrder(tenantId: string, orderId: string): Promise<bool
       await enqueueKitchenTicketsInTx(client, tenantId, orderId);
       createdKitchenTickets = true;
     }
+    await auditOrderTransitionInTx(client, tenantId, actor, "order.pack", orderId);
     await client.query("COMMIT");
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
@@ -1975,8 +1956,26 @@ export async function packOrder(tenantId: string, orderId: string): Promise<bool
   return true;
 }
 /** ปิดงาน: SHIPPED → COMPLETED */
-export async function completeOrder(tenantId: string, orderId: string): Promise<boolean> {
-  const ok = await transition(tenantId, orderId, ["SHIPPED"], "COMPLETED");
+export async function completeOrder(tenantId: string, orderId: string, actor = "system"): Promise<boolean> {
+  const client = await getClient();
+  let ok = false;
+  try {
+    await beginTenantTx(client, tenantId);
+    const updated = await client.query(
+      `UPDATE bms_orders SET status = 'COMPLETED', updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND status = 'SHIPPED'`,
+      [tenantId, orderId],
+    );
+    ok = Boolean(updated.rowCount);
+    if (!ok) { await client.query("ROLLBACK"); return false; }
+    await auditOrderTransitionInTx(client, tenantId, actor, "order.complete", orderId);
+    await client.query("COMMIT");
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
   if (ok) void notifyOrderStatusEmail(tenantId, orderId, "completed");
   return ok;
 }
@@ -2019,14 +2018,15 @@ export async function shipOrderInTx(
   if (ord.rowCount === 0) return false;
 
   await consumeReservedOrderStockInTx(client, tenantId, orderId, actor);
+  await auditOrderTransitionInTx(client, tenantId, actor, "order.ship", orderId);
   return true;
 }
 
-export async function shipOrder(tenantId: string, orderId: string): Promise<boolean> {
+export async function shipOrder(tenantId: string, orderId: string, actor = "system"): Promise<boolean> {
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId);
-    const shipped = await shipOrderInTx(client, tenantId, orderId);
+    const shipped = await shipOrderInTx(client, tenantId, orderId, actor);
     if (!shipped) {
       await client.query("ROLLBACK");
       return false;
@@ -2043,7 +2043,7 @@ export async function shipOrder(tenantId: string, orderId: string): Promise<bool
 }
 
 /** คืนสินค้า: (SHIPPED/COMPLETED) → RETURNED → คืนสต็อก (current += qty) */
-export async function returnOrder(tenantId: string, orderId: string): Promise<boolean> {
+export async function returnOrder(tenantId: string, orderId: string, actor = "system"): Promise<boolean> {
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId);
@@ -2064,25 +2064,31 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
       return false;
     }
 
-    await client.query(
-      `UPDATE bms_inventory inv
-          SET current_stock = current_stock + oi.qty, updated_at = now()
-         FROM (
+    const returnedStock = await client.query<{ expected_count: string; updated_count: string }>(
+      `WITH expected AS (
            -- view ไม่ใช่ตารางตรง ๆ (8.8) — สินค้าชุดถูกแทนด้วยส่วนประกอบแล้ว
            SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
-             FROM bms_order_stock_lines WHERE order_id = $1
+             FROM bms_order_stock_lines WHERE tenant_id = $2 AND order_id = $1
             GROUP BY tenant_id, location_id, product_sku, size
-         ) oi
-        WHERE TRUE
-          AND inv.tenant_id = oi.tenant_id
-          AND inv.location_id = oi.location_id
-          AND inv.product_sku = oi.product_sku
-          AND inv.size = oi.size`,
-      [orderId]
+         ), updated AS (
+           UPDATE bms_inventory inv
+              SET current_stock = inv.current_stock + expected.qty, updated_at = now()
+             FROM expected
+            WHERE inv.tenant_id = $2 AND inv.tenant_id = expected.tenant_id
+              AND inv.location_id = expected.location_id
+              AND inv.product_sku = expected.product_sku AND inv.size = expected.size
+           RETURNING inv.product_sku
+         )
+         SELECT (SELECT count(*)::text FROM expected) AS expected_count,
+                (SELECT count(*)::text FROM updated) AS updated_count`,
+      [orderId, tenantId]
     );
+    if (!returnedStock.rows[0] || Number(returnedStock.rows[0].expected_count) !== Number(returnedStock.rows[0].updated_count)) {
+      throw new Error("STOCK_REVIEW_REQUIRED: order return inventory is incomplete");
+    }
 
     await restoreOrderLotsInTx(client, tenantId, orderId);
-    await recordOrderMovements(client, [orderId], "RETURN", "system");
+    await recordOrderMovements(client, [orderId], "RETURN", actor);
     // คืนทั้งบิล = แต้มต้องกลับไปเป็นเหมือนก่อนบิลนี้ (7.96) — ดึงแต้มที่ได้คืน
     // และคืนแต้มที่ลูกค้าแลกไป · ไม่ทำ = ซื้อ→ได้แต้ม→คืนของ ได้แต้มฟรี และ
     // แต้มที่แลกไปหายไปเลยทั้งที่ของถูกคืนแล้ว
@@ -2092,6 +2098,7 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
     // ที่จ่ายด้วยบัตรไปเปล่า ๆ ทั้งที่ของกลับมาแล้ว
     await reverseCreditForOrderInTx(client, tenantId, orderId);
     await reopenRestockSubscriptionsForOrders({ orderIds: [orderId], client });
+    await auditOrderTransitionInTx(client, tenantId, actor, "order.return", orderId);
 
     await client.query("COMMIT");
     await markRestockSubscriptionsReadyForOrders([orderId]);
@@ -2112,7 +2119,8 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
 export async function cancelOrderInTx(
   client: PoolClient,
   tenantId: string,
-  orderId: string
+  orderId: string,
+  actor = "system",
 ): Promise<boolean> {
     await assertNoActiveSalesTaxDocumentInTx(client, tenantId, orderId);
     const ord = await client.query(
@@ -2123,24 +2131,31 @@ export async function cancelOrderInTx(
     if (ord.rowCount === 0) return false;
 
     // คืน reserved ตามรายการใน order
-    await client.query(
-      `UPDATE bms_inventory inv
-          SET reserved_stock = reserved_stock - oi.qty, updated_at = now()
-         FROM (
+    const releasedStock = await client.query<{ expected_count: string; updated_count: string }>(
+      `WITH expected AS (
            -- view ไม่ใช่ตารางตรง ๆ (8.8) — สินค้าชุดถูกแทนด้วยส่วนประกอบแล้ว
            SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
-             FROM bms_order_stock_lines WHERE order_id = $1
+             FROM bms_order_stock_lines WHERE tenant_id = $2 AND order_id = $1
             GROUP BY tenant_id, location_id, product_sku, size
-         ) oi
-        WHERE TRUE
-          AND inv.tenant_id = oi.tenant_id
-          AND inv.location_id = oi.location_id
-          AND inv.product_sku = oi.product_sku
-          AND inv.size = oi.size`,
-      [orderId]
+         ), updated AS (
+           UPDATE bms_inventory inv
+              SET reserved_stock = inv.reserved_stock - expected.qty, updated_at = now()
+             FROM expected
+            WHERE inv.tenant_id = $2 AND inv.tenant_id = expected.tenant_id
+              AND inv.location_id = expected.location_id
+              AND inv.product_sku = expected.product_sku AND inv.size = expected.size
+              AND inv.reserved_stock >= expected.qty
+           RETURNING inv.product_sku
+         )
+         SELECT (SELECT count(*)::text FROM expected) AS expected_count,
+                (SELECT count(*)::text FROM updated) AS updated_count`,
+      [orderId, tenantId]
     );
+    if (!releasedStock.rows[0] || Number(releasedStock.rows[0].expected_count) !== Number(releasedStock.rows[0].updated_count)) {
+      throw new Error("STOCK_REVIEW_REQUIRED: order cancellation reservation is incomplete");
+    }
 
-    await recordOrderMovements(client, [orderId], "RELEASE", "system");
+    await recordOrderMovements(client, [orderId], "RELEASE", actor);
     // บิลที่ยกเลิกแล้วต้องไม่ค้างเป็นงานบนกระดานครัว (9.40) — ตั๋วที่เปิดอยู่หลังยกเลิก
     // คืออาหารที่ยังถูกทำและถูกทิ้ง โดยไม่มีบิลไหนอธิบายได้ว่าทำเพื่อใคร
     await cancelKitchenTicketsForOrderInTx(client, tenantId, orderId);
@@ -2151,6 +2166,7 @@ export async function cancelOrderInTx(
     // เครดิตร้าน (8.9) — บิลที่ถูกยกเลิกต้องไม่กินยอดบัตรของลูกค้าไป
     await reverseCreditForOrderInTx(client, tenantId, orderId);
     await reopenRestockSubscriptionsForOrders({ orderIds: [orderId], client });
+    await auditOrderTransitionInTx(client, tenantId, actor, "order.cancel", orderId);
 
     return true;
 }
@@ -2169,7 +2185,7 @@ export async function afterOrderCancellationCommitted(tenantId: string, orderId:
  * ทางที่ถูกคือยกเลิกบิลที่เครื่องขาย (`cancelRestaurantCheck`) ซึ่งปิดตั๋วครัว คืนโต๊ะ
  * และเขียนเหตุผล + audit ให้ครบในทรานแซกชันเดียว
  */
-export async function cancelOrder(tenantId: string, orderId: string): Promise<boolean> {
+export async function cancelOrder(tenantId: string, orderId: string, actor = "system"): Promise<boolean> {
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId);
@@ -2191,7 +2207,7 @@ export async function cancelOrder(tenantId: string, orderId: string): Promise<bo
       );
     }
 
-    const cancelled = await cancelOrderInTx(client, tenantId, orderId);
+    const cancelled = await cancelOrderInTx(client, tenantId, orderId, actor);
     if (!cancelled) {
       await client.query("ROLLBACK");
       return false;
@@ -2296,21 +2312,29 @@ export async function releaseExpiredOrders(
       }
       const ids = [row.id];
 
-      await client.query(
-        `UPDATE bms_inventory inv
-            SET reserved_stock = reserved_stock - oi.qty, updated_at = now()
-           FROM (
+      const releasedStock = await client.query<{ expected_count: string; updated_count: string }>(
+        `WITH expected AS (
              -- view ไม่ใช่ตารางตรง ๆ (8.8 / 9.40) — เซ็ตและเมนูจองที่ส่วนประกอบ
              SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
                FROM bms_order_stock_lines WHERE tenant_id = $2 AND order_id = ANY($1::uuid[])
               GROUP BY tenant_id, location_id, product_sku, size
-           ) oi
-          WHERE inv.tenant_id = oi.tenant_id
-            AND inv.location_id = oi.location_id
-            AND inv.product_sku = oi.product_sku
-            AND inv.size = oi.size`,
+           ), updated AS (
+             UPDATE bms_inventory inv
+                SET reserved_stock = inv.reserved_stock - expected.qty, updated_at = now()
+               FROM expected
+              WHERE inv.tenant_id = $2 AND inv.tenant_id = expected.tenant_id
+                AND inv.location_id = expected.location_id
+                AND inv.product_sku = expected.product_sku AND inv.size = expected.size
+                AND inv.reserved_stock >= expected.qty
+             RETURNING inv.product_sku
+           )
+           SELECT (SELECT count(*)::text FROM expected) AS expected_count,
+                  (SELECT count(*)::text FROM updated) AS updated_count`,
         [ids, row.tenant_id]
       );
+      if (!releasedStock.rows[0] || Number(releasedStock.rows[0].expected_count) !== Number(releasedStock.rows[0].updated_count)) {
+        throw new Error("STOCK_REVIEW_REQUIRED: expired order reservation is incomplete");
+      }
 
       await recordOrderMovements(client, ids, "RELEASE", "system:auto-release");
       await releaseCouponForOrdersInTx(client, ids);
@@ -2322,6 +2346,7 @@ export async function releaseExpiredOrders(
           WHERE tenant_id = $2 AND id = ANY($1::uuid[])`,
         [ids, row.tenant_id]
       );
+      await auditOrderTransitionInTx(client, row.tenant_id, "system:auto-release", "order.cancel", row.id);
 
       await client.query("COMMIT");
       released.push(row.id);

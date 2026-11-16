@@ -200,6 +200,20 @@ const requestHandler = async (request: NextRequest) => {
     return NextResponse.json({ errors: [{ message: "GraphQL request is too large" }] }, { status: 413 });
   }
 
+  // The Next Apollo integration calls request.json() before Apollo can format
+  // an error. Empty or malformed JSON otherwise escapes as an unhandled 500.
+  if (request.method === "POST" && contentType.toLowerCase().includes("application/json")) {
+    try {
+      await request.clone().json();
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      return NextResponse.json(
+        { errors: [{ message: "Invalid JSON request body", extensions: { code: "BAD_REQUEST" } }] },
+        { status: 400 }
+      );
+    }
+  }
+
   return handler(request);
 };
 

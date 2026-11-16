@@ -40,6 +40,7 @@ const scanResult = {
   unitName: 'piece',
   baseQty: 1,
   serialTracked: false,
+  offlineRetailEligible: true,
   scaleBarcode: null,
   modifiers: [],
   packs: [{ code: 'PIECE', unitName: 'piece', baseQty: 1, price: 100 }],
@@ -142,6 +143,22 @@ describe('CatalogProvider offline snapshots', () => {
     ]);
 
     await act(async () => tree!.unmount());
+  });
+  test.each([false, undefined])('hides a scanned product without confirmed offline eligibility (%s)', async offlineRetailEligible => {
+    const scan = jest.fn().mockResolvedValue({
+      data: { bmsPosScan: { ...scanResult, offlineRetailEligible } },
+    });
+    (useLazyQuery as jest.Mock).mockReturnValue([scan]);
+    let catalog: ReturnType<typeof useCatalog> | undefined;
+    function Probe() { catalog = useCatalog(); return null; }
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => { tree = ReactTestRenderer.create(<CatalogProvider><Probe /></CatalogProvider>); });
+    await act(async () => { await catalog!.resolveVariant('SKU-1', 'STD', null); });
+    mockHealthStatus = 'offline';
+    await act(async () => { tree.update(<CatalogProvider><Probe /></CatalogProvider>); });
+    expect(catalog!.catalog.items).toEqual([]);
+    await expect(catalog!.resolveVariant('SKU-1', 'STD', null)).rejects.toThrow(/ต้องเชื่อมต่อเซิร์ฟเวอร์/);
+    await act(async () => tree.unmount());
   });
   test.each([
     ['AVAILABLE', true],

@@ -9,6 +9,7 @@
  * production. Use the guarded runner: `node scripts/run-contract-tests.mjs db board-game-waitlist`.
  */
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
@@ -242,7 +243,7 @@ test("reservations lock one table window, reject overlap, and check in to the se
 });
 
 test("public request owns no table until staff review and its opaque token can cancel", async () => {
-  const token = `public_${"a".repeat(40)}_${sequence++}`;
+  const token = `public_${randomUUID()}`;
   const reservedFor = futureIso(8);
   const requested = await requestPublicBoardGameReservation({
     tenantSlug, locationId, requestToken: token, reservedFor, durationMinutes: 120,

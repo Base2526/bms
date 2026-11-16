@@ -1963,7 +1963,10 @@ an operator note, and the audit preserves those per-line facts. Never add damage
   writes no stock, lot, movement or valuation. Live and opening intake convert kg to integer grams,
   require weighted/GRAM products with lots and the applicable permission, and commit stock, lot,
   reviewed line value and audit in one tenant transaction. Opening accepts only an empty SKU/size
-  balance. Fish receipt is not a payment or payable posting.
+  balance. Fish receipt is not a payment or payable posting. The selling catalog price remains
+  a separate two-decimal per-gram amount. Arbitrary per-kg fish rates such as 43.17 THB/kg are
+  not yet exact across order/POS/customer channels; do not describe fish receipt as a complete
+  weighed-fish sales pricing workflow.
 - **Fish-owner evidence (`10.120`) does not replace stock or money authority.** Zone counts lock a
   fish lot, must sum to its actual grams, and become stale on any later lot update. Delivery plans
   bind one customer/branch and weighted fish SKU/size to multiple ordinary orders; only an order's
@@ -2066,7 +2069,12 @@ The rules that follow from it:
   `NODE_ENV=production`.
 - **Public by design still means bounded.** `/api/bms/demo-chat` and the web-widget webhook are open
   on purpose, and both carry a `rateLimit()` ceiling. An open endpoint that calls a model is an open
-  invoice.
+  invoice. The web-widget body is capped at 64 KiB while streaming. Signed LINE, Meta,
+  TikTok, Shopee and Lazada webhook bodies are capped at 1 MiB, delivery-platform webhooks
+  at 256 KiB, and Retail Local license evidence at 64 KiB. Limits apply even when
+  `Content-Length` is absent or incorrect; malformed UTF-8/JSON is rejected before any
+  claim, Inbox write or AI call. Signed LINE/Meta event batches are limited to 200 entries
+  before processing. LINE inbound media is capped at 10 MiB while downloading.
 - `onboarding/sample-data` now uses `authorizeAdminRoute("product.edit")` (it previously gated on
   the role read from the database). What it may delete is decided by the `10.26` run ledger
   (`bms_sample_runs`/`bms_sample_records`), never by a `FAKE-`/`SAMPLE-` name prefix.
@@ -2353,7 +2361,7 @@ reuse `sharedRedisClient` exported from `lib/cache.ts` and namespace your own ke
   its real work in `recordJobRun(jobName, "cron", () => ...)`, not call the underlying function
   directly, or that job has no run history on `/admin/operations-schedule`.
 - **Request metrics** (`apps/web/lib/bms/requestMetrics.ts`, 2026-08) — latency histograms + error
-  counts per GraphQL operation, read by `/admin/system-health`. Deliberately **not** a Postgres table:
+  counts per GraphQL operation and wrapped REST route, read by `/admin/system-health`. Deliberately **not** a Postgres table:
   one row per request would add write load to the very database the page exists to diagnose. Stored as
   fixed-width histogram buckets (not raw samples) so memory is bounded and counters merge across
   instances for free via `HINCRBY` — an in-process `Map` would report per-instance numbers the moment
@@ -2363,8 +2371,9 @@ reuse `sharedRedisClient` exported from `lib/cache.ts` and namespace your own ke
   restart (TTL 4h, no cron cleanup) — this is monitoring data, not a system of record. The one Apollo
   plugin registered for this (`graphql/metricsPlugin.ts`, wired once in `app/api/graphql/route.ts`)
   covers admin UI, AI assistant, and eval traffic — `uploadProcess` multipart requests included, since
-  they route through `server.executeOperation()` — but not REST routes; see § Observability below for
-  what to do when instrumenting one.
+  they route through `server.executeOperation()`. `withRouteErrorLog()` records its static REST
+  route label after the handler returns, counts HTTP 4xx/5xx as errors, and skips `/api/graphql`
+  to avoid double counting Apollo. REST routes without that wrapper are not measured.
 
 Redis auth is opt-in as of 2026-08: set `REDIS_PASSWORD` and the compose redis service starts with
 `requirepass` (leave it unset and nothing changes) — `REDIS_URL` must then carry the credential as
@@ -2429,6 +2438,9 @@ Production migration state, recovery/load proof, and bounded replay remain separ
 
 - Realtime is an invalidation hint. PostgreSQL and the existing service/API reads remain the source
   of truth; event payloads never become a second business-state store.
+- Admin realtime tickets use the refreshed identity on every mint. An acting-tenant cookie is
+  honored only while that identity is still a platform administrator; a demotion must fall back to
+  the user's own tenant, even when the previously signed cookie has not expired.
 - **`apps/ws` and `apps/web` are one deployable unit.** The gateway accepts exactly one connection
   parameter shape (`{ ticket }`); any other shape closes the socket with `4403`, and `graphql-ws`
   treats 4403 as retryable, so an older client reconnects every ≤30s forever while realtime stays
@@ -2607,10 +2619,10 @@ What it does **not** answer yet, so don't assume it does:
 - **Which SQL query is slow.** That needs `pg_stat_statements`, which is preloaded in
   `docker-compose.yml` but requires a Postgres restart plus `CREATE EXTENSION` per database before any
   data exists. Until both are done there is no slow-query card.
-- **REST route latency/errors.** Only GraphQL is instrumented (see the Request metrics item above).
-  Next App Router has no central place to time a route handler, so REST needs per-route wrapping. Pass
-  `rest:/api/bms/...` as the metric name when that happens; the prefix is the namespace, and
-  `recordRequestMetric()` needs no change.
+- **REST route latency/errors outside `withRouteErrorLog()`.** Wrapped REST handlers are now
+  instrumented with a static `rest:METHOD:/api/...` label. Next App Router still has no central
+  handler hook, so routes that do not use the wrapper are absent. Timing ends when the handler
+  returns a `Response`; streamed body transfer and client network time are not included.
 - **CPU/memory of the container.** Deliberately skipped: reading it would mean giving the app access
   to the Docker socket, which is a real privilege escalation surface. That is a decision to take
   explicitly, not a feature to add quietly.
@@ -2925,4 +2937,5 @@ half-open interval. It never changes pack quantity or historical sale snapshots.
 by the database; cancellation requires product.edit, branch scope, explicit confirmation and an
 audit in the same transaction. Until the migration is installed, `branchPrice()` reads existing
 branch overrides only; scheduled windows remain unavailable. Apply the migration before publishing
-or cancelling a window.
+or cancelling a window. Catalog price ranges, branch product cards, stock checks, POS scans and
+settlement must all show the active window price for the same branch and instant.

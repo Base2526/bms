@@ -70,3 +70,33 @@ test("GraphQL and both human confirmation surfaces send the explicit flag", () =
   const assistant = read("apps/web/components/work-assistant/confirmMutations.ts");
   assert.match(assistant, /bmsConfirmPayment\(id: \$id, confirmed: true\)/);
 });
+
+test("GraphQL payment confirmation attributes loyalty to the authenticated user ID, not email", async () => {
+  const calls: unknown[][] = [];
+  const mocks: Record<string, unknown> = {
+    "@/lib/bms/payments": { confirmPayment: async (...args: unknown[]) => {
+      calls.push(args);
+      return { status: "CONFIRMED", orderPaid: true };
+    } },
+    "@/lib/bms/permissions": { requirePermission: async (_ctx: unknown, permission: string) => {
+      assert.equal(permission, "payment.confirm");
+    } },
+    "@/lib/bms/tenant": { getTenantId: () => "tenant-a" },
+    "@/lib/bms/audit": { audit: async () => {} },
+    "@/lib/auth": { requireAuth: () => ({ author_id: "11111111-1111-4111-8111-111111111111" }) },
+    "graphql/error": { GraphQLError: class extends Error {} },
+  };
+  const module = { exports: {} as Record<string, any> };
+  const source = ts.transpileModule(read("apps/web/graphql/bmsPayments.ts"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  new Function("require", "module", "exports", source)((name: string) => {
+    assert.ok(name in mocks, `Unexpected dependency: ${name}`);
+    return mocks[name];
+  }, module, module.exports);
+  const result = await module.exports.bmsPaymentsResolvers.Mutation.bmsConfirmPayment(
+    null, { id: "payment-1", confirmed: true }, { admin: { email: "staff@example.invalid" } },
+  );
+  assert.equal(result.status, "CONFIRMED");
+  assert.deepEqual(calls, [["tenant-a", "payment-1", "11111111-1111-4111-8111-111111111111"]]);
+});

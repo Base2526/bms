@@ -83,10 +83,9 @@ export function GlobalInboxNotifier() {
         }}>{t("order_notifications.open_inbox")}</Button>,
       });
 
-      const n = await notify(title, {
-        body: conv.lastMessage || "",
-        tag: `bms-inbox-${conv.id}`,
-      });
+      // OS notifications can appear on a lock screen. Keep customer details in the
+      // authenticated in-app toast only.
+      const n = await notify(t("order_notifications.inbox_fallback_title"), { tag: "bms-inbox" });
       if (n) {
         n.onclick = () => {
           window.focus();

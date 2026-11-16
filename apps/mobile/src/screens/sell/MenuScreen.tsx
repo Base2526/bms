@@ -418,6 +418,7 @@ export default function MenuScreen({ navigation }: Props) {
                     packCode: item.packCode,
                     unitName: item.unitName,
                     baseQty: item.baseQty,
+                    offlineRetailEligible: item.offlineRetailEligible,
                     selectedModifierCodes: item.modifierCodes,
                   })
                 }

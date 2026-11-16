@@ -139,9 +139,9 @@ try {
       await dialog.getByRole("button", { name: new RegExp(calculate) }).click();
       await result.getByText(lang === "th" ? "จำนวนขายเป็นศูนย์ทั้งหมด — ยังไม่มีเกณฑ์ความนิยมและกำไรส่วนเกิน" : "All demand is zero — no popularity or contribution benchmark", { exact: true }).waitFor();
       mode = "error"; await dialog.getByRole("button", { name: new RegExp(calculate) }).click();
-      await dialog.getByText("FAKE unavailable", { exact: true }).waitFor(); assert.equal(await result.count(), 0);
+      await dialog.getByText(lang === "th" ? "โหลดข้อมูลไม่ได้ กรุณารีเฟรชหน้า หากยังไม่หายให้แจ้งผู้ดูแลระบบ" : "Could not load data. Refresh the page. If the problem continues, contact support.", { exact: true }).waitFor(); assert.equal(await result.count(), 0);
       mode = "invalid"; await dialog.getByRole("button", { name: new RegExp(calculate) }).click();
-      await dialog.getByText("MENU_PLAN_INVALID_INPUT", { exact: true }).waitFor(); assert.equal(await result.count(), 0);
+      await dialog.getByText(lang === "th" ? "ข้อมูลที่กรอกไม่ครบหรือไม่ถูกต้อง กรุณาตรวจช่องที่กรอกแล้วลองอีกครั้ง" : "Some inputs are missing or invalid. Review the form and try again.", { exact: true }).waitFor(); assert.equal(await result.count(), 0);
       mode = "complete";
       await dialog.getByRole("checkbox").uncheck(); await dialog.getByRole("button", { name: new RegExp(calculate) }).click();
       await result.waitFor(); assert.equal(savedInput.bundle, null); assert.deepEqual(mutations, []);

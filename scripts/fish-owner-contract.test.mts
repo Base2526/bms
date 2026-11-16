@@ -12,7 +12,12 @@ const location = "00000000-0000-0000-0000-000000000004";
 const lot = "00000000-0000-0000-0000-000000000005";
 
 test("physical placement refuses missing or duplicate grams before any database write", async () => {
-  const base = { lotId: lot, expectedLotGrams: 1250, expectedVersion: null };
+  const base = { lotId: lot, expectedLotGrams: 1250,
+    expectedLotUpdatedAt: "2026-11-15 00:00:00+00", expectedVersion: null };
+  await assert.rejects(
+    saveFishStorageCount(tenant, actor, { ...base, expectedLotUpdatedAt: "", zones: [{ zone: "READY", grams: 1250 }] }),
+    (error: unknown) => error instanceof FishOwnerError && error.code === "INVALID_INPUT",
+  );
   await assert.rejects(
     saveFishStorageCount(tenant, actor, { ...base, zones: [{ zone: "READY", grams: 1000 }] }),
     (error: unknown) => error instanceof FishOwnerError && error.code === "WEIGHT_MISMATCH",
