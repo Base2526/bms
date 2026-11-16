@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import test from "node:test";
+import { sanitizeLogText } from "../apps/web/lib/log/sanitize.ts";
 
 const root = path.resolve(import.meta.dirname, "..");
 const require = createRequire(new URL("../apps/web/package.json", import.meta.url));
@@ -24,6 +25,7 @@ test("wrapped REST routes record status and elapsed time without changing respon
     "@/lib/bms/adminRouteAuth": { authorizeAdminRoute: async () => ({ ok: false }) },
     "./writeLog.server": { writeLogServer: () => {} },
     "./logThrottle": { ERROR_WINDOW_MS: 1000, shouldLog: () => false },
+    "./sanitize": { sanitizeLogText },
     "@/lib/bms/restaurantPosErrors": { isRestaurantCheckError: () => false },
     "@/lib/bms/scheduledJobTrace": { withScheduledJobTrace: (_req: unknown, run: () => Promise<Response>) => run() },
     "@/lib/bms/requestMetrics": { recordRequestMetric: (value: typeof metrics[number]) => {

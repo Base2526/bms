@@ -194,17 +194,24 @@ export async function persistUploadStream(
     renameTo
   );
 
-  return insertFileRow({
-    storedName: stored.filename,
-    originalName: stored.original_name,
-    mimetype: stored.mimetype,
-    size: stored.size,
-    checksum: stored.checksum,
-    key: stored.relpath,
-    visibility: options.visibility ?? "private",
-    tenantId: options.tenantId,
-    ownerUserId: options.ownerUserId,
-  });
+  try {
+    return await insertFileRow({
+      storedName: stored.filename,
+      originalName: stored.original_name,
+      mimetype: stored.mimetype,
+      size: stored.size,
+      checksum: stored.checksum,
+      key: stored.relpath,
+      visibility: options.visibility ?? "private",
+      tenantId: options.tenantId,
+      ownerUserId: options.ownerUserId,
+    });
+  } catch (error) {
+    // A metadata failure must not strand bytes written before the INSERT.
+    try { await deleteStoredFile(stored.relpath); }
+    catch (cleanupError) { console.error("[storage] upload cleanup failed:", cleanupError); }
+    throw error;
+  }
 }
 
 /**

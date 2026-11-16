@@ -12,6 +12,7 @@
 // =============================================================
 
 import { writeLogServer } from "@/lib/log/writeLog.server";
+import { sanitizeLogValue } from "@/lib/log/sanitize";
 import { startRealtimeOutboxPump } from "@/lib/bms/realtimePump";
 
 startRealtimeOutboxPump();
@@ -23,7 +24,7 @@ const describe = (err: any) => ({
 });
 
 process.on("unhandledRejection", (reason: any) => {
-  console.error("[process] unhandledRejection", reason);
+  console.error("[process] unhandledRejection", sanitizeLogValue(describe(reason)));
   void writeLogServer("error", "process", "unhandled promise rejection", {
     action: "process.unhandled_rejection",
     ...describe(reason),
@@ -35,7 +36,7 @@ process.on("unhandledRejection", (reason: any) => {
 // crash) การใส่ uncaughtException จะกลืน crash ไว้แล้วปล่อยให้ process วิ่งต่อ
 // ทั้งที่ state พังแล้ว ซึ่งอันตรายกว่าการตายให้ orchestrator restart
 process.on("uncaughtExceptionMonitor", (err) => {
-  console.error("[process] uncaughtException", err);
+  console.error("[process] uncaughtException", sanitizeLogValue(describe(err)));
   // เขียนแบบ fire-and-forget เท่าที่ทัน — process กำลังจะตายตามพฤติกรรมเดิมของ
   // Node ถ้าเขียนไม่ทันก็ยังเหลือบรรทัดข้างบนใน stdout
   void writeLogServer("error", "process", "uncaught exception", {

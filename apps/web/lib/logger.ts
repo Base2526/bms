@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { sanitizeLogText, sanitizeLogValue } from "@/lib/log/sanitize";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -41,10 +42,10 @@ function serializeForConsole(payload: LogPayload): void {
       message: "failed to serialize log payload",
       meta: {
         original_level: payload.level,
-        original_category: payload.category,
-        original_message: payload.message,
+        original_category: sanitizeLogText(payload.category, 80),
+        original_message: sanitizeLogText(payload.message),
         meta_type: typeof payload.meta,
-        error: err instanceof Error ? { name: err.name, message: err.message } : String(err),
+        error: err instanceof Error ? { name: err.name, message: sanitizeLogText(err.message) } : sanitizeLogText(err),
       },
       at: new Date().toISOString(),
     };
@@ -57,18 +58,20 @@ function serializeForConsole(payload: LogPayload): void {
   }
 }
 
-function safeMeta(meta: unknown): unknown {
-  if (meta === undefined) return undefined;
-  if (meta instanceof Error) {
-    return { name: meta.name, message: meta.message };
-  }
-
-  // Ensure JSON-serializable; if not, stringify best-effort.
+function buildPayload(level: LogLevel, category: string, message: string, meta: unknown): LogPayload {
   try {
-    JSON.stringify(meta);
-    return meta;
+    return {
+      level,
+      category: sanitizeLogText(category, 80),
+      message: sanitizeLogText(message),
+      ...(meta === undefined ? {} : { meta: sanitizeLogValue(meta) }),
+      at: new Date().toISOString(),
+    };
   } catch {
-    return { value: String(meta) };
+    return {
+      level: "error", category: "logger", message: "failed to sanitize log payload",
+      at: new Date().toISOString(),
+    };
   }
 }
 
@@ -80,18 +83,22 @@ export async function writeLogToDb(payload: LogPayload): Promise<void> {
   // console.debug("[writeLogToDb] payload:", payload, "dbLevels:", dbLevels);
   if (!dbLevels.has(payload.level)) return;
   try {
-    const metaJson = payload.meta === undefined ? null : JSON.stringify(safeMeta(payload.meta));
+    const metaJson = payload.meta === undefined ? null : JSON.stringify(sanitizeLogValue(payload.meta));
     await query(
       `INSERT INTO public.system_logs(level, category, message, meta, created_at)
        VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz)`,
-      [payload.level, payload.category, payload.message, metaJson, payload.at]
+      [payload.level, sanitizeLogText(payload.category, 80), sanitizeLogText(payload.message), metaJson, payload.at]
     );
   } catch (err) {
     const fallback: LogPayload = {
       level: "error",
       category: "logger",
       message: "failed to persist log to db",
-      meta: safeMeta({ original: payload, error: err instanceof Error ? { name: err.name, message: err.message } : String(err) }),
+      meta: sanitizeLogValue({
+        original_level: payload.level,
+        original_category: payload.category,
+        error: err instanceof Error ? { name: err.name, message: err.message } : String(err),
+      }),
       at: new Date().toISOString(),
     };
     serializeForConsole(fallback);
@@ -111,13 +118,7 @@ export const log = (
   const isDebug = process.env.DEBUG_LOG === "true";
   if (level === "debug" && !isDebug) return;
 
-  const payload: LogPayload = {
-    level,
-    category,
-    message,
-    ...(meta === undefined ? {} : { meta }),
-    at: new Date().toISOString(),
-  };
+  const payload = buildPayload(level, category, message, meta);
 
   // Important: console.log -> captured by docker logs / k8s
   serializeForConsole(payload);
@@ -137,21 +138,12 @@ export async function logAsync(
   const isDebug = process.env.DEBUG_LOG === "true";
   if (level === "debug" && !isDebug) return;
 
-  const payload: LogPayload = {
-    level,
-    category,
-    message,
-    ...(meta === undefined ? {} : { meta }),
-    at: new Date().toISOString(),
-  };
+  const payload = buildPayload(level, category, message, meta);
 
   serializeForConsole(payload);
 
   // Fire-and-forget DB write (won't throw)
-  void writeLogToDb({
-    ...payload,
-    ...(meta === undefined ? {} : { meta: safeMeta(meta) }),
-  });
+  void writeLogToDb(payload);
 }
 
 export async function syslog(message:string, opts?: {
@@ -162,15 +154,15 @@ export async function syslog(message:string, opts?: {
 }){
   const level = opts?.level || "info";
   const category = opts?.category || "app";
-  const meta = opts?.meta || {};
+  const meta = sanitizeLogValue(opts?.meta ?? {});
   const user_id = opts?.user_id ?? null;
   try{
     await query(
       `INSERT INTO system_logs(level, category, message, meta, created_by)
        VALUES ($1,$2,$3,$4,$5)`,
-      [ level, category, message, JSON.stringify(meta), user_id ]
+      [level, sanitizeLogText(category, 80), sanitizeLogText(message), JSON.stringify(meta), user_id]
     );
   }catch(e){
-    console.error("[syslog insert failed]", e);
+    console.error("[syslog insert failed]", sanitizeLogValue(e));
   }
 }

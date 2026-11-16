@@ -8,7 +8,7 @@ import Link from 'next/link';
 import dayjs from 'dayjs';
 
 type LogRow = {
-  id: number;
+  id: string | number;
   level: 'debug' | 'info' | 'warn' | 'error' | string;
   category: string;
   message: string;
@@ -59,7 +59,7 @@ async function fetchLogs(params: {
 async function deleteLogsByIds(ids: (string|number)[], uiText: UiTranslator = thaiUiText) {
   const qs = new URLSearchParams();
   qs.set('ids', ids.join(','));
-  const res = await fetch(`${ADMIN_API_PREFIX}/logs?` + qs.toString(), { method: 'DELETE' });
+  const res = await fetch(`${ADMIN_API_PREFIX}/logs?` + qs.toString(), { method: 'DELETE', headers: { 'x-bms-confirmed': 'true' } });
   const j = await res.json().catch(()=> ({}));
   if (!res.ok) throw new Error(j.error || uiText("admin_ui.en_bulk_delete_failed_d3ba6"));
   return j; // { deleted: number }
@@ -105,7 +105,7 @@ export default function AdminLogsPage() {
   }, []);
 
   // ========== NEW: selections ==========
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [selectedIds, setSelectedIds] = useState<(string | number)[]>([]);
   const pageIds = useMemo(()=> data.map(d => d.id), [data]);
   const allChecked = pageIds.length > 0 && pageIds.every(id => selectedIds.includes(id));
   const indeterminate = selectedIds.length > 0 && !allChecked;
@@ -121,7 +121,7 @@ export default function AdminLogsPage() {
       setSelectedIds(remain);
     }
   }
-  function toggleOne(id: number, checked: boolean) {
+  function toggleOne(id: string | number, checked: boolean) {
     if (checked) setSelectedIds(prev => Array.from(new Set([...prev, id])));
     else setSelectedIds(prev => prev.filter(x => x !== id));
   }
@@ -189,7 +189,7 @@ export default function AdminLogsPage() {
     if(q) qs.set('q', q);
     if(dateStart) qs.set('date_start', dateStart);
     if(dateEnd) qs.set('date_end', dateEnd);
-    const res = await fetch(`${ADMIN_API_PREFIX}/logs?` + qs.toString(), { method: 'DELETE' });
+    const res = await fetch(`${ADMIN_API_PREFIX}/logs?` + qs.toString(), { method: 'DELETE', headers: { 'x-bms-confirmed': 'true' } });
     const j = await res.json();
     if(res.ok){ message.success(uiText("admin_ui.en_deleted_logs_8ae08", { v0: j.deleted })); load(); } else { message.error(j.error||uiText("admin_ui.en_purge_failed_3a59b")); }
   }

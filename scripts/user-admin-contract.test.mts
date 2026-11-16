@@ -10,8 +10,9 @@ import {
   type UserAdminPolicyActor,
   type UserAdminPolicyTarget,
 } from "../apps/web/lib/bms/staffRoles.ts";
-import { assertNoActiveStaffAssignments, auditUserChangeInTx, canReadStaffContact, explainUserDeleteFailure, requireManageableTargets, resolveAssignableRole } from "../apps/web/lib/bms/userAdmin.ts";
+import { assertAdministratorRemains, assertManageablePosAccountInTx, assertNoActiveStaffAssignments, auditUserChangeInTx, canReadStaffContact, explainUserDeleteFailure, requireManageableTargets, resolveAssignableRole } from "../apps/web/lib/bms/userAdmin.ts";
 import { isSessionVersionCurrent } from "../apps/web/lib/auth/sessionVersion.ts";
+import { canUseAdminSession } from "../apps/web/lib/auth/adminSessionEligibility.ts";
 import {
   buildPasswordResetUrl,
   hashResetToken,
@@ -115,6 +116,20 @@ test("team audit is written through the caller transaction and a failure propaga
   await assert.rejects(auditUserChangeInTx(client, T1, T2, "user.delete", "fail", {}), /audit unavailable/);
 });
 
+test("team edit preserves optional contact fields when GraphQL omits them", () => {
+  const resolver = src("apps/web/graphql/resolvers.ts");
+  const edit = resolver.slice(resolver.indexOf("upsertUser: async"), resolver.indexOf("uploadAvatar: async"));
+  assert.match(edit, /if \(avatar !== undefined\) \{\s*updateFields\.push\(`avatar =/);
+  assert.match(edit, /if \(phone !== undefined\) \{\s*updateFields\.push\(`phone =/);
+  assert.match(edit, /\[name, avatar \?\? null, phone \?\? null, email, roleId, passwordHash, newTenantId\]/);
+});
+
+test("profile mutation logs field names without writing contact values", () => {
+  const resolver = src("apps/web/graphql/resolvers.ts");
+  assert.match(resolver, /console\.log\("\[Mutation\] updateMe :", author_id, \{ fields: Object\.keys\(data\) \}\)/);
+  assert.match(resolver, /console\.log\("\[Mutation\] updateMyProfile :", author_id, \{ fields: Object\.keys\(data\) \}\)/);
+});
+
 test("active team assignments block account deletion before Inbox reassignment", async () => {
   const calls: string[] = [];
   const client = { query: async (sql: string, params: unknown[]) => {
@@ -127,6 +142,53 @@ test("active team assignments block account deletion before Inbox reassignment",
   assert.ok(calls.some((sql) => sql.includes("set_config('bms.tenant_id'")));
   assert.ok(calls.some((sql) => sql.includes("tenant_id = $1")));
   assert.throws(() => explainUserDeleteFailure({ code: "23503" }), /มีประวัติการทำรายการ/);
+});
+
+test("Administrator removal is serialized and refuses to leave a tenant without one", async () => {
+  const calls: Array<{ sql: string; params: unknown[] }> = [];
+  const client = { query: async (sql: string, params: unknown[]) => {
+    calls.push({ sql, params });
+    return sql.includes("FROM users") ? { rowCount: 0 } : { rowCount: 1 };
+  } } as any;
+  await assert.rejects(assertAdministratorRemains(client, T1, [T2]), /Administrator อย่างน้อยหนึ่งบัญชี/);
+  assert.match(calls[0].sql, /pg_advisory_xact_lock/);
+  assert.equal(calls[0].params[0], T1);
+  assert.match(calls[1].sql, /id <> ALL\(\$2::uuid\[\]\)/);
+  assert.deepEqual(calls[1].params, [T1, [T2]]);
+
+  const writable = { query: async (sql: string) => ({ rowCount: sql.includes("FROM users") ? 1 : 0 }) } as any;
+  await assertAdministratorRemains(writable, T1, [T2]);
+});
+
+test("POS PIN changes follow the same account-rank boundary as Users", async () => {
+  const targetId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const actorId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const makeClient = (targetRole: string, targetPlatform = false, actorRole = "Manager", actorTenant = T1) => {
+    const calls: string[] = [];
+    const client = { query: async (sql: string) => {
+      calls.push(sql);
+      if (sql.includes("FOR UPDATE")) return { rows: [{ id: targetId, tenant_id: T1, role: targetRole, is_platform_admin: targetPlatform }] };
+      return { rows: [{ id: actorId, tenant_id: actorTenant, role: actorRole, is_platform_admin: false }] };
+    } } as any;
+    return { client, calls };
+  };
+  const staff = makeClient("Cashier");
+  await assertManageablePosAccountInTx(staff.client, T1, targetId, actorId);
+  assert.match(staff.calls[0], /tenant_id = \$1 AND id = \$2 FOR UPDATE/);
+  await assert.rejects(assertManageablePosAccountInTx(makeClient("Administrator").client, T1, targetId, actorId), /ไม่มีสิทธิ์/);
+  await assert.rejects(assertManageablePosAccountInTx(makeClient("Cashier", true).client, T1, targetId, actorId), /ไม่มีสิทธิ์/);
+  await assert.rejects(assertManageablePosAccountInTx(makeClient("Cashier", false, "Manager", T2).client, T1, targetId, actorId), /ไม่มีสิทธิ์/);
+  const pos = src("apps/web/lib/bms/pos.ts");
+  assert.equal((pos.match(/if \(actingUserId\) await assertManageablePosAccountInTx\(/g) ?? []).length, 2);
+  assert.match(pos, /await assertManageablePosAccountInTx\(client, tenantId, userId, actingUserId\);\s*const target/);
+  assert.match(pos, /WHERE u\.tenant_id = \$1 AND u\.is_platform_admin = FALSE\s*ORDER BY r\.name/);
+});
+
+test("legacy login enforces email verification before issuing a session", () => {
+  const resolver = src("apps/web/graphql/resolvers.ts");
+  const login = resolver.slice(resolver.indexOf("login: async"), resolver.indexOf("loginUser: async"));
+  assert.match(login, /password_hash, is_email_verified/);
+  assert.ok(login.indexOf("user.is_email_verified === false") < login.indexOf("INSERT INTO sessions"));
 });
 
 test("social user discovery excludes staff accounts and private contact fields", () => {
@@ -150,6 +212,28 @@ test("admin session version invalidates tokens issued before a security change",
   assert.equal(isSessionVersionCurrent(undefined, 0), true);
   assert.equal(isSessionVersionCurrent(3, 3), true);
   assert.equal(isSessionVersionCurrent(3, 4), false);
+});
+
+test("an open admin session loses access when the account becomes POS-only or otherwise ineligible", () => {
+  const row = {
+    role: "Cashier", tenant_id: T1, is_platform_admin: false,
+    admin_session_version: 4, pos_only: false, is_email_verified: true,
+    tenant_active: true,
+  };
+  assert.equal(canUseAdminSession(4, row), true);
+  assert.equal(canUseAdminSession(4, { ...row, pos_only: true }), false);
+  assert.equal(canUseAdminSession(4, { ...row, admin_session_version: 5 }), false);
+  assert.equal(canUseAdminSession(4, { ...row, role: "Subscriber" }), false);
+  assert.equal(canUseAdminSession(4, { ...row, is_email_verified: false }), false);
+  assert.equal(canUseAdminSession(4, { ...row, tenant_active: false }), false);
+  assert.equal(canUseAdminSession(4, { ...row, tenant_id: null }), false);
+  assert.equal(canUseAdminSession(4, { ...row, tenant_id: null, is_platform_admin: true }), true);
+  const identity = src("apps/web/lib/auth/adminIdentity.ts");
+  const pos = src("apps/web/lib/bms/pos.ts");
+  assert.match(identity, /canUseAdminSession\(session\.session_version, row\)/);
+  assert.match(pos, /admin_session_version = CASE WHEN pos_only IS DISTINCT FROM \$3/);
+  assert.match(pos, /u\.is_platform_admin FROM users u/);
+  assert.match(pos, /target\.rows\[0\]\.is_platform_admin/);
 });
 
 test("password reset tokens are hashed and reset URLs fail closed in production", () => {

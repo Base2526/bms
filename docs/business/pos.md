@@ -270,6 +270,8 @@ Verification for the shell is `npm run lint` and `npm test` (pairing and keystor
 2. Staff PINs and RBAC are configured. Selling, opening/closing a shift, returning goods, and
    confirming a non-cash refund each have independent server-side permission checks.
    In `/admin/pos-devices`, `pos.pin.manage` can read the staff list needed to set or clear PINs;
+   setting/clearing another person's PIN also follows the Users role-rank rule and cannot target a
+   platform-admin account; an authorized staff member can change their own PIN.
    changing a staff account's POS-only mode requires `pos.staff.manage` and is available to roles
    that hold only that permission. Both clearing a PIN and changing POS-only mode require a visible
    confirmation. A role with only
@@ -1647,9 +1649,9 @@ background queue (`bms_etax_submissions`, migration `7.94`), gated off by defaul
 `ETAX_ENABLED`/`bms_store_profile.etax_enabled`. When enabled, `processEtaxQueue()` drives each
 submission through `PENDING → BUILT → SIGNED → SENT → ACCEPTED/REJECTED/FAILED` with bounded
 retry/backoff; `POST /api/bms/jobs/etax` runs one pass. That route authenticates with
-`x-job-token`/`BMS_JOB_TOKEN` (not the `x-cron-secret` the other cron routes use — see
-[api.md](../architecture/api.md)) and does not yet record into `bms_job_runs`, so it has no run
-history on `/admin/operations-schedule` today. Until a real signing/submission provider is wired up
+`x-cron-secret`/`BMS_CRON_SECRET` like the other cron routes (see
+[api.md](../architecture/api.md)) and records into `bms_job_runs` for
+`/admin/operations-schedule`. Until a real signing/submission provider is wired up
 and verified, leave `ETAX_ENABLED` off and rely on locally generated documents plus the accountant's
 own filing process.
 
@@ -2083,8 +2085,9 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   separate background queue (`bms_etax_submissions`, migration `7.94`), gated off unless
   `ETAX_ENABLED`/`bms_store_profile.etax_enabled` is turned on — see "e-Tax submission queue" below.
 - A `pos_only` cashier account (migration `7.92`) is hard-blocked from `/admin` login by `loginAdmin`
-  itself, not just a hidden menu item; it also cannot toggle its own `pos_only` flag or an
-  Administrator's.
+  itself. Changing the flag increments the admin session version, and admin identity refresh rejects
+  an already-open session while `pos_only` is true; it also cannot toggle its own `pos_only` flag or
+  any Administrator/platform-admin account's.
 - Pair the actual scanner (keyboard-wedge input), receipt printer, paper size, cash drawer process,
   and payment terminals. Printing falls back to the browser print dialog; the ESC/POS path over
   WebUSB (receipt, barcode, drawer kick) is written but has never been run against real hardware, so

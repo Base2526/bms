@@ -17,6 +17,7 @@ import { ReadOutlined } from "@ant-design/icons";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { canManageStaffRole } from "@/lib/bms/staffRoles";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { LocalExtraDeviceNotice } from "@/components/retail-local/LocalCommercial";
 import { buildPairingQr } from "@pos-core/pairingQr";
@@ -39,6 +40,7 @@ const Q = gql`
     }
   }
 `;
+const Q_ME = gql`query { bmsMe { id role is_platform_admin } }`;
 const M_UPSERT = gql`
   mutation($input: BmsPosDeviceInput!) {
     bmsUpsertPosDevice(input: $input) { id code }
@@ -102,11 +104,12 @@ export default function PosDevicesPage() {
   const uiText = useUiText();
   const apollo = useApolloClient();
   const { can, loading: permsLoading } = useBmsPermissions();
+  const { data: meData } = useQuery(Q_ME);
   const canDevices = can("pos.device.manage");
   const canPins = can("pos.pin.manage");
   const canStaff = can("pos.staff.manage");
   const canDiagnostics = can("support.logs.view");
-  const canLocations = can("product.view");
+  const canLocations = can("product.view") || canDevices;
   const [diagnosticDeviceId, setDiagnosticDeviceId] = useState<string | null>(null);
   const [diagnosticStatus, setDiagnosticStatus] = useState("all");
   const { data, loading, refetch } = useQuery(Q, {
@@ -144,6 +147,11 @@ export default function PosDevicesPage() {
   const locations = data?.bmsLocations ?? [];
   const devices: Device[] = data?.bmsPosDevices ?? [];
   const cashiers = data?.bmsPosStaff ?? [];
+  const myId: string | undefined = meData?.bmsMe?.id;
+  const myRole: string | undefined = meData?.bmsMe?.role;
+  const isPlatformAdmin = meData?.bmsMe?.is_platform_admin === true;
+  const canManageStaffAccount = (staff: { id: string; role: string | null }) =>
+    Boolean(myId && (staff.id === myId || isPlatformAdmin || canManageStaffRole(myRole, staff.role)));
   const diagnostics: DiagnosticEvent[] = data?.bmsPosDeviceDiagnostics ?? [];
   const diagnosticDeviceOptions = canDevices
     ? devices.map((device) => ({ value: device.id, label: `${device.code}${device.name ? ` · ${device.name}` : ""}` }))
@@ -533,7 +541,7 @@ export default function PosDevicesPage() {
                 dataIndex: "posOnly",
                 width: 150,
                 render: (v: boolean, c: any) =>
-                  canStaff ? (
+                  canStaff && canManageStaffAccount(c) ? (
                     <Popconfirm
                       title={v
                         ? uiText("admin_ui.allow_back_office_confirm", { v0: c.name || c.email })
@@ -544,7 +552,7 @@ export default function PosDevicesPage() {
                     >
                       <Switch
                         checked={v}
-                        disabled={c.role === "Administrator"}
+                        disabled={c.role === "Administrator" || (c.id === myId && !v)}
                         checkedChildren={uiText("admin_ui.block_admin_9bdc9")}
                         unCheckedChildren={uiText("admin_ui.allowed_00dd1")}
                       />
@@ -558,7 +566,7 @@ export default function PosDevicesPage() {
               {
                 title: "",
                 width: 200,
-                render: (_: unknown, c: any) => canPins ? (
+                render: (_: unknown, c: any) => canPins && canManageStaffAccount(c) ? (
                   <Space>
                     <Button size="small" onClick={() => { setPinFor({ id: c.id, label: c.name || c.email }); setPinValue(""); }}>
                       {c.hasPin ? uiText("admin_ui.change_pin_ecd74") : uiText("admin_ui.set_pin_23abc")}
@@ -640,7 +648,7 @@ export default function PosDevicesPage() {
             <Form.Item name="scannerSuffixKey" label={uiText("admin_ui.en_suffix_key_e6363")} rules={[{ required: true }]}>
               <Select
                 options={[
-                  { value: uiText("admin_ui.en_enter_2b9ec"), label: uiText("admin_ui.en_enter_2b9ec") },
+                  { value: "Enter", label: uiText("admin_ui.en_enter_2b9ec") },
                   { value: "Tab", label: "Tab" },
                 ]}
                 style={{ width: 130 }}

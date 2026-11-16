@@ -75,7 +75,9 @@ export function auditAdminUi() {
     }
     imports(ast);
     // These prose pages use complete, separately authored bilingual content trees.
-    if (["/admin/manual/page.tsx", "/admin/pharmacy-manual/page.tsx", "/admin/architecture/page.tsx"].some(p => file.endsWith(p))) continue;
+    // Normalize before matching: directory traversal returns backslashes on Windows.
+    const portableFile = file.split(path.sep).join("/");
+    if (["/admin/manual/page.tsx", "/admin/pharmacy-manual/page.tsx", "/admin/architecture/page.tsx"].some(p => portableFile.endsWith(p))) continue;
     function visit(node) {
       if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateExpression(node) || ts.isJsxText(node)) && !translated(node)) {
         const text = textOf(node);

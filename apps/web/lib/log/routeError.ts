@@ -31,13 +31,13 @@ import { ERROR_WINDOW_MS, shouldLog } from "./logThrottle";
 import { isRestaurantCheckError } from "@/lib/bms/restaurantPosErrors";
 import { withScheduledJobTrace } from "@/lib/bms/scheduledJobTrace";
 import { recordRequestMetric } from "@/lib/bms/requestMetrics";
+import { sanitizeLogText } from "./sanitize";
 
 type RouteHandler<Args extends any[]> = (...args: Args) => Promise<Response> | Response;
 
-const SECRET_TEXT = /(Bearer\s+[A-Za-z0-9._~+\/-]+=*|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/g;
 function safeErrorText(value: unknown, max = 2_000): string | null {
   if (value == null) return null;
-  return String(value).replace(SECRET_TEXT, "[REDACTED]").slice(0, max);
+  return sanitizeLogText(value, max);
 }
 
 function errorSourceKey(args: unknown[]) {
@@ -91,7 +91,6 @@ export function withRouteErrorLog<Args extends any[]>(
       const detail = {
         code: safeErrorText(error?.code, 80),             // SQLSTATE ถ้ามาจาก pg
         constraint: safeErrorText(error?.constraint, 160),
-        detail: safeErrorText(error?.detail),
         message: safeErrorText(error?.message),
       };
       // console เขียนทุกครั้งเสมอ ไม่ throttle — เป็นทางถอยเดียวตอนฐานล่มจนเขียน
@@ -120,7 +119,6 @@ export function withRouteErrorLog<Args extends any[]>(
           stack: safeStack,
           sqlstate: detail.code,
           constraint: detail.constraint,
-          detail: detail.detail,
           tenantId,
         }
       ));

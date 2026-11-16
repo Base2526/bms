@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "scope": "baseline-in-progress",
-  "maxUnmappedTests": 8,
+  "maxUnmappedTests": 6,
   "notes": "The assistant capability catalog is included automatically. Additional workflows below have source and test links, but the registry is not yet exhaustive and a test link is not a passing result or production rollout evidence.",
   "capabilityTests": {
     "access.matrix": ["scripts/access-matrix-boundary-contract.test.mts"],
@@ -23,6 +23,7 @@
     "inventory.wastage-ledger": ["scripts/stock-ledger-db-contract.test.mts"],
     "kitchen.workflow": ["scripts/kitchen-board-contract.test.mts", "scripts/kitchen-station-db-contract.test.mts"],
     "orders.lifecycle": ["scripts/order-journey-contract.test.mts"],
+    "payments.review": ["scripts/payment-confirm-boundary-contract.test.mts"],
     "purchase.orders": ["scripts/stock-integrity-db-contract.test.mts"],
     "customers.crm": ["scripts/customer-purchase-detail.test.mts"],
     "coupons.promotions": ["scripts/coupon-contract.test.mts"],
@@ -50,6 +51,7 @@
     "shipping.fulfillment": ["scripts/shipping-pickup-boundary-contract.test.mts", "scripts/order-shipping-stock-contract.test.mts", "scripts/lot-shipping-boundary-contract.test.mts", "scripts/shipment-lot-db-contract.test.mts", "scripts/multi-store-stock-db-contract.test.mts", "scripts/master-data-phase3-contract.test.mts"],
     "system.health": ["scripts/system-health-boundary-contract.test.mts"],
     "tax.documents": ["scripts/tax-invoice-eligibility-contract.test.mts", "scripts/tax-backoffice-guards-db-contract.test.mts"],
+    "tax.etax": ["scripts/etax-cron-boundary-contract.test.mts"],
     "commission.staff": ["scripts/commission-db-contract.test.mts"]
   },
   "features": [

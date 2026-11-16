@@ -14,27 +14,22 @@
 
 import { writeFileSync, appendFileSync } from "node:fs";
 import pg from "pg";
+import { formatLogReport } from "./report-format.mjs";
 
 const url = process.env.BMS_LOG_DATABASE_URL;
 if (!url) {
   console.error("❌ missing BMS_LOG_DATABASE_URL");
   process.exit(1);
 }
-const HOURS = Number(process.env.LOG_WINDOW_HOURS || 24);
-const MAX_GROUPS = Number(process.env.LOG_MAX_GROUPS || 30);
-
-// ---- redaction (กัน secret/PII หลุดออกไป external) ----------
-function redact(input) {
-  if (!input) return input;
-  return String(input)
-    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "«email»")
-    .replace(/\b(?:\+?66|0)\d{8,9}\b/g, "«phone»")
-    .replace(/(Bearer\s+)[A-Za-z0-9._\-]+/gi, "$1«token»")
-    .replace(/\bsk-[A-Za-z0-9\-]{8,}\b/g, "«api-key»")
-    .replace(/\benc:[A-Za-z0-9+/=:]+/g, "«enc»")
-    .replace(/\b[0-9a-fA-F]{32,}\b/g, "«hex»")
-    .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, "«ip»");
+function boundedInt(raw, fallback, max) {
+  const value = raw == null || raw === "" ? fallback : Number(raw);
+  if (!Number.isInteger(value) || value < 1 || value > max) {
+    throw new Error(`Invalid log collector limit (must be 1..${max})`);
+  }
+  return value;
 }
+const HOURS = boundedInt(process.env.LOG_WINDOW_HOURS, 24, 168);
+const MAX_GROUPS = boundedInt(process.env.LOG_MAX_GROUPS, 30, 100);
 
 const setOutput = (line) => {
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, line + "\n");
@@ -48,6 +43,7 @@ const pool = new Pool({
 
 const SQL = `
   SELECT category,
+         COALESCE(meta->>'source', 'server') AS source,
          COALESCE(NULLIF(error_message, ''), message) AS msg,
          count(*)::int                                  AS cnt,
          max(created_at)                                AS last_at,
@@ -56,7 +52,7 @@ const SQL = `
     FROM system_logs
    WHERE created_at >= now() - make_interval(hours => $1)
      AND level = 'error'
-   GROUP BY category, msg
+   GROUP BY category, source, msg
    ORDER BY cnt DESC
    LIMIT $2`;
 
@@ -74,24 +70,13 @@ try {
     process.exit(0);
   }
 
-  let md = `# BMS Log Triage — ${today}\n\n`;
-  md += `ช่วง: ${HOURS} ชม.ล่าสุด · กลุ่ม error: **${rows.length}** · redacted แล้ว\n\n`;
-  rows.forEach((r, i) => {
-    md += `## ${i + 1}. [${r.category}] ${redact(r.msg)}\n`;
-    md += `- เกิด **${r.cnt}** ครั้ง · ล่าสุด ${new Date(r.last_at).toISOString()}`;
-    md += r.route ? ` · route \`${redact(r.route)}\`\n` : `\n`;
-    if (r.sample_stack) {
-      const stack = redact(r.sample_stack).split("\n").slice(0, 20).join("\n");
-      md += "\n```\n" + stack + "\n```\n";
-    }
-    md += "\n";
-  });
+  const md = formatLogReport(rows, { today, hours: HOURS });
 
   writeFileSync("bms-log-report.md", md);
   setOutput("has_errors=true");
   setOutput(`groups=${rows.length}`);
   console.log(`✅ wrote bms-log-report.md (${rows.length} groups)`);
 } catch (e) {
-  console.error("❌ collector failed:", e?.message || e);
+  console.error("collector failed:", e?.code || e?.name || "Error");
   process.exit(1);
 }

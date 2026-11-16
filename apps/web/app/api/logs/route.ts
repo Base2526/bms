@@ -1,12 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { getClient, query } from "@/lib/db";
 import { verifyUserFromRequest } from "@/lib/auth/server";
 import { authorizeAdminRoute, authorizePlatformAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { writeLogServer } from "@/lib/log/writeLog.server";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { readBoundedWebhookText } from "@/lib/bms/webhookBody";
 
 export const dynamic = "force-dynamic";
+const MAX_LOG_BATCH_BYTES = 256 * 1024;
+const USER_ID_RE = /^(?:\d{1,10}|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+const LOG_ID_RE = /^(?:[1-9]\d{0,18}|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+function validUserId(value: string): boolean {
+  return USER_ID_RE.test(value) && (!/^\d+$/.test(value) || Number(value) <= 2_147_483_647);
+}
+
+function positiveInt(value: string, max: number): number | null {
+  if (!/^\d+$/.test(value)) return null;
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 1 && number <= max ? number : null;
+}
+
+function validLogDate(value: string): boolean {
+  if (isDateOnly(value)) {
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  }
+  return /^\d{4}-\d{2}-\d{2}T/.test(value) &&
+    validLogDate(value.slice(0, 10)) && Number.isFinite(Date.parse(value));
+}
 
 function isDateOnly(v: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(v);
@@ -36,6 +58,27 @@ function whereEq(hasStructured: boolean, column: string, metaKey: string, paramI
   return hasStructured ? `${column} = $${paramIdx}` : `meta->>'${metaKey}' = $${paramIdx}`;
 }
 
+async function deleteLogsWithAudit(sql: string, args: unknown[], actorId: string | number, mode: string) {
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+    const deleted = await client.query(sql, args);
+    const count = deleted.rowCount ?? 0;
+    await client.query(
+      `INSERT INTO system_logs(level, category, message, meta)
+       VALUES ('warn', 'log-admin', 'System logs deleted', $1::jsonb)`,
+      [JSON.stringify({ action: "system_logs.delete", actorId: String(actorId), mode, count })]
+    );
+    await client.query("COMMIT");
+    return count;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 // GET /api/logs
 // Filters:
 //  q, level, category, user_id, action, status, correlation_id, session_id, platform, app_version, date_start, date_end, page, pageSize
@@ -57,26 +100,32 @@ async function handleGET(req: NextRequest) {
   const app_version = (searchParams.get("app_version") || "").trim();
   const date_start = (searchParams.get("date_start") || "").trim();
   const date_end = (searchParams.get("date_end") || "").trim();
-  const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
-  const pageSize = Math.min(200, Math.max(1, parseInt(searchParams.get("pageSize") || "50", 10)));
+  const page = positiveInt(searchParams.get("page") || "1", 100_000);
+  const pageSize = positiveInt(searchParams.get("pageSize") || "50", 200);
+  if (page === null || pageSize === null ||
+      (user_id && !validUserId(user_id)) || q.length > 200 ||
+      (date_start && !validLogDate(date_start)) ||
+      (date_end && !validLogDate(date_end))) {
+    return NextResponse.json({ error: "Invalid log filters" }, { status: 400 });
+  }
   const offset = (page - 1) * pageSize;
 
   const conds: string[] = [];
   const args: any[] = [];
 
   if (q) {
-    args.push(`%${q}%`);
-    // Always allow searching meta text too.
+    args.push(q);
+    // Literal substring search: '%' and '_' in a filter must not widen a purge.
     conds.push(
-      "(LOWER(message) LIKE LOWER($" +
+      "(POSITION(LOWER($" +
         args.length +
-        ") OR LOWER(level) LIKE LOWER($" +
+        ") IN LOWER(message)) > 0 OR POSITION(LOWER($" +
         args.length +
-        ") OR LOWER(category) LIKE LOWER($" +
+        ") IN LOWER(level)) > 0 OR POSITION(LOWER($" +
         args.length +
-        ") OR LOWER(COALESCE(meta::text,'')) LIKE LOWER($" +
+        ") IN LOWER(category)) > 0 OR POSITION(LOWER($" +
         args.length +
-        "))"
+        ") IN LOWER(COALESCE(meta::text,''))) > 0)"
     );
   }
   if (level) {
@@ -88,11 +137,11 @@ async function handleGET(req: NextRequest) {
     conds.push("category = $" + args.length);
   }
   if (user_id) {
-    const n = parseInt(user_id, 10);
-    if (!isNaN(n)) {
-      args.push(n);
-      conds.push("created_by = $" + args.length);
-    }
+    args.push(user_id);
+    const at = `$${args.length}`;
+    conds.push(/^\d+$/.test(user_id)
+      ? `(created_by = ${at}::int OR meta->>'userId' = ${at} OR meta->>'user_id' = ${at})`
+      : `(meta->>'userId' = ${at} OR meta->>'user_id' = ${at})`);
   }
   if (action) {
     args.push(action);
@@ -139,7 +188,7 @@ async function handleGET(req: NextRequest) {
               platform, app_version, duration_ms, error_message, stack, device_info
          FROM system_logs
          ${where}
-         ORDER BY created_at DESC
+         ORDER BY created_at DESC, id DESC
          LIMIT $${args.length + 1} OFFSET $${args.length + 2}`
     : `SELECT id, level, category, message, meta, created_by, created_at,
               meta->>'action' AS action,
@@ -156,7 +205,7 @@ async function handleGET(req: NextRequest) {
               meta->'deviceInfo' AS device_info
          FROM system_logs
          ${where}
-         ORDER BY created_at DESC
+         ORDER BY created_at DESC, id DESC
          LIMIT $${args.length + 1} OFFSET $${args.length + 2}`;
 
   const countSQL = `SELECT COUNT(*)::int AS count FROM system_logs ${where}`;
@@ -173,12 +222,15 @@ async function handleGET(req: NextRequest) {
 async function handlePOST(req: NextRequest) {
   const cookieAuth = await authorizeAdminRoute(null);
   const bearer = cookieAuth.ok ? null : verifyUserFromRequest(req);
-  if (!cookieAuth.ok && !bearer) {
+  const bearerIdentity = bearer ? (await query<{ id: string; tenant_id: string | null; is_email_verified: boolean }>(
+    `SELECT id, tenant_id, is_email_verified FROM users WHERE id = $1 LIMIT 1`, [bearer.id]
+  )).rows[0] : null;
+  if (!cookieAuth.ok && (!bearerIdentity || bearerIdentity.is_email_verified === false)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const actor = cookieAuth.ok ? cookieAuth.admin : bearer;
+  const actor = cookieAuth.ok ? cookieAuth.admin : bearerIdentity;
   const createdBy = actor?.id ?? null;
-  const tenantId = cookieAuth.ok ? cookieAuth.tenantId : bearer?.tenant_id ?? null;
+  const tenantId = cookieAuth.ok ? cookieAuth.tenantId : bearerIdentity?.tenant_id ?? null;
   const limit = await rateLimit(`client-logs:${tenantId ?? "none"}:${createdBy ?? "unknown"}`, 30, 60_000);
   if (!limit.ok) {
     return NextResponse.json(
@@ -187,23 +239,37 @@ async function handlePOST(req: NextRequest) {
     );
   }
 
-  const body = await req.json().catch(() => ({} as any));
-  const list: any[] = Array.isArray(body?.logs) ? body.logs : [body];
-  const capped = list.slice(0, 50);
+  const bounded = await readBoundedWebhookText(req, MAX_LOG_BATCH_BYTES);
+  if (!bounded.ok) return NextResponse.json({ error: bounded.error }, { status: bounded.status });
+  let body: unknown;
+  try { body = JSON.parse(bounded.text); }
+  catch { return NextResponse.json({ error: "Invalid log JSON" }, { status: 400 }); }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "Invalid log payload" }, { status: 400 });
+  }
+  const list: unknown[] = Array.isArray((body as any).logs) ? (body as any).logs : [body];
+  if (list.length < 1 || list.length > 50 ||
+      list.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
+    return NextResponse.json({ error: "Invalid log batch" }, { status: 400 });
+  }
+  if (list.some((item: any) => !["debug", "info", "warn", "error"].includes(String(item.level || "info").toLowerCase()))) {
+    return NextResponse.json({ error: "Invalid log level" }, { status: 400 });
+  }
 
   let insertedCount = 0;
-  for (const raw of capped) {
+  for (const raw of list as Record<string, any>[]) {
     const requestedLevel = String(raw?.level || "info").toLowerCase();
-    const level = ["debug", "info", "warn", "error"].includes(requestedLevel) ? requestedLevel : "info";
+    const level = requestedLevel;
     const category = String(raw?.category || "mobile").slice(0, 80);
     const message = String(raw?.message || raw?.action || "client log").slice(0, 2_000);
-    const meta = raw?.meta && typeof raw.meta === "object" ? raw.meta : {};
+    const meta = raw?.meta && typeof raw.meta === "object" && !Array.isArray(raw.meta) ? raw.meta : {};
 
     const mergedMeta = {
       ...meta,
       // Ensure server can attribute logs even if client didn't send userId.
       userId: createdBy,
       tenantId,
+      source: "client",
 
       // Preserve structured fields at top-level inside meta too.
       action: raw?.action ?? meta?.action,
@@ -220,11 +286,12 @@ async function handlePOST(req: NextRequest) {
       deviceInfo: raw?.deviceInfo ?? meta?.deviceInfo,
     };
 
-    const ok = await writeLogServer(level as any, category, message, mergedMeta);
+    const ok = await writeLogServer(level as any, category, message, mergedMeta, { alert: false });
     if (ok) insertedCount += 1;
   }
 
-  return NextResponse.json({ ok: true, insertedCount }, { status: 201 });
+  const ok = insertedCount === list.length;
+  return NextResponse.json({ ok, insertedCount }, { status: ok ? 201 : 503 });
 }
 
 // DELETE /api/logs
@@ -233,22 +300,25 @@ async function handlePOST(req: NextRequest) {
 async function handleDELETE(req: NextRequest) {
   const auth = await authorizePlatformAdminRoute();
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
+  if (req.headers.get("x-bms-confirmed") !== "true") {
+    return NextResponse.json({ error: "Confirmation required" }, { status: 400 });
+  }
   const hasStructured = await ensureStructuredColsReady();
   const { searchParams } = new URL(req.url);
 
   const idsParam = (searchParams.get("ids") || "").trim();
   if (idsParam) {
-    const ids = idsParam
-      .split(",")
-      .map((s) => parseInt(s.trim(), 10))
-      .filter((n) => !isNaN(n));
-
-    if (ids.length === 0) {
+    const rawIds = idsParam.split(",").map((s) => s.trim());
+    if (rawIds.length < 1 || rawIds.length > 200 || rawIds.some((id) =>
+      !LOG_ID_RE.test(id) || (/^\d+$/.test(id) && BigInt(id) > 9_223_372_036_854_775_807n))) {
       return NextResponse.json({ error: "No valid ids" }, { status: 400 });
     }
 
-    const { rowCount } = await query(`DELETE FROM system_logs WHERE id = ANY($1::int[])`, [ids]);
-    return NextResponse.json({ deleted: rowCount ?? 0 }, { status: 200 });
+    const deleted = await deleteLogsWithAudit(
+      `DELETE FROM system_logs WHERE id::text = ANY($1::text[]) AND category <> 'log-admin'`,
+      [[...new Set(rawIds)]], auth.adminId, "selected"
+    );
+    return NextResponse.json({ deleted }, { status: 200 });
   }
 
   const q = (searchParams.get("q") || "").trim();
@@ -263,22 +333,27 @@ async function handleDELETE(req: NextRequest) {
   const app_version = (searchParams.get("app_version") || "").trim();
   const date_start = (searchParams.get("date_start") || "").trim();
   const date_end = (searchParams.get("date_end") || "").trim();
+  if ((user_id && !validUserId(user_id)) || q.length > 200 ||
+      (date_start && !validLogDate(date_start)) ||
+      (date_end && !validLogDate(date_end))) {
+    return NextResponse.json({ error: "Invalid log filters" }, { status: 400 });
+  }
 
   const conds: string[] = [];
   const args: any[] = [];
 
   if (q) {
-    args.push(`%${q}%`);
+    args.push(q);
     conds.push(
-      "(LOWER(message) LIKE LOWER($" +
+      "(POSITION(LOWER($" +
         args.length +
-        ") OR LOWER(level) LIKE LOWER($" +
+        ") IN LOWER(message)) > 0 OR POSITION(LOWER($" +
         args.length +
-        ") OR LOWER(category) LIKE LOWER($" +
+        ") IN LOWER(level)) > 0 OR POSITION(LOWER($" +
         args.length +
-        ") OR LOWER(COALESCE(meta::text,'')) LIKE LOWER($" +
+        ") IN LOWER(category)) > 0 OR POSITION(LOWER($" +
         args.length +
-        "))"
+        ") IN LOWER(COALESCE(meta::text,''))) > 0)"
     );
   }
   if (level) {
@@ -290,11 +365,11 @@ async function handleDELETE(req: NextRequest) {
     conds.push("category = $" + args.length);
   }
   if (user_id) {
-    const n = parseInt(user_id, 10);
-    if (!isNaN(n)) {
-      args.push(n);
-      conds.push("created_by = $" + args.length);
-    }
+    args.push(user_id);
+    const at = `$${args.length}`;
+    conds.push(/^\d+$/.test(user_id)
+      ? `(created_by = ${at}::int OR meta->>'userId' = ${at} OR meta->>'user_id' = ${at})`
+      : `(meta->>'userId' = ${at} OR meta->>'user_id' = ${at})`);
   }
   if (action) {
     args.push(action);
@@ -337,9 +412,9 @@ async function handleDELETE(req: NextRequest) {
     return NextResponse.json({ error: "Refuse to purge without any condition" }, { status: 400 });
   }
 
-  const sql = `DELETE FROM system_logs WHERE ${conds.join(" AND ")}`;
-  const result = await query(sql, args);
-  return NextResponse.json({ deleted: result.rowCount || 0 });
+  const sql = `DELETE FROM system_logs WHERE category <> 'log-admin' AND ${conds.join(" AND ")}`;
+  const deleted = await deleteLogsWithAudit(sql, args, auth.adminId, "filters");
+  return NextResponse.json({ deleted });
 }
 
 export const GET = withRouteErrorLog("GET /api/logs", handleGET);

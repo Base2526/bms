@@ -26,6 +26,7 @@ import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 import { isPosPinValid } from "@pos-core/posPin";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { assertManageablePosAccountInTx } from "./userAdmin";
 import { buildReturnFinancialSnapshot } from "./returnFinancialSnapshot";
 import { resetMenuAvailabilityForLocationInTx } from "./menuAvailability";
 import { refreshSessionFromGroupsInTx } from "./boardGameSessionStatus";
@@ -1065,7 +1066,7 @@ export async function listPosCashiers(tenantId: string): Promise<PosCashier[]> {
             (u.pos_pin_hash IS NOT NULL) AS has_pin
        FROM users u
        LEFT JOIN roles r ON r.id = u.role_id
-      WHERE u.tenant_id = $1
+      WHERE u.tenant_id = $1 AND u.is_platform_admin = FALSE
         AND (
           r.name = 'Administrator'
           OR EXISTS (
@@ -1116,7 +1117,7 @@ export async function listPosApprovers(
             END AS approvals
        FROM users u
        LEFT JOIN roles r ON r.id = u.role_id
-      WHERE u.tenant_id = $1
+      WHERE u.tenant_id = $1 AND u.is_platform_admin = FALSE
         AND (
           r.name = 'Administrator'
           OR EXISTS (
@@ -1153,7 +1154,7 @@ export async function listPosKitchenOperators(tenantId: string): Promise<PosCash
             (u.pos_pin_hash IS NOT NULL) AS has_pin
        FROM users u
        LEFT JOIN roles r ON r.id = u.role_id
-      WHERE u.tenant_id = $1
+      WHERE u.tenant_id = $1 AND u.is_platform_admin = FALSE
         AND (
           r.name = 'Administrator'
           OR EXISTS (
@@ -1183,7 +1184,7 @@ export async function listPosPurchaseReceivers(tenantId: string): Promise<PosCas
             (u.pos_pin_hash IS NOT NULL) AS has_pin
        FROM users u
        LEFT JOIN roles r ON r.id = u.role_id
-      WHERE u.tenant_id = $1
+      WHERE u.tenant_id = $1 AND u.is_platform_admin = FALSE
         AND (
           r.name = 'Administrator'
           OR EXISTS (
@@ -1226,16 +1227,23 @@ export async function setCashierAccountMode(
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId: actingUserId });
-    const target = await client.query<{ role_name: string | null }>(
-      `SELECT r.name AS role_name FROM users u LEFT JOIN roles r ON r.id = u.role_id
+    await assertManageablePosAccountInTx(client, tenantId, userId, actingUserId);
+    const target = await client.query<{ role_name: string | null; is_platform_admin: boolean }>(
+      `SELECT r.name AS role_name, u.is_platform_admin FROM users u LEFT JOIN roles r ON r.id = u.role_id
         WHERE u.tenant_id = $1 AND u.id = $2 FOR UPDATE OF u`,
       [tenantId, userId]
     );
     if (!target.rowCount) throw new Error("ไม่พบพนักงานคนนี้ในร้าน");
-    if (posOnly && target.rows[0].role_name === "Administrator") {
-      throw new Error("ตั้ง Administrator เป็นบัญชีเฉพาะหน้าร้านไม่ได้");
+    if (posOnly && (target.rows[0].role_name === "Administrator" || target.rows[0].is_platform_admin)) {
+      throw new Error("ตั้งผู้ดูแลระบบเป็นบัญชีเฉพาะหน้าร้านไม่ได้");
     }
-    await client.query(`UPDATE users SET pos_only = $3 WHERE tenant_id = $1 AND id = $2`, [tenantId, userId, posOnly]);
+    await client.query(
+      `UPDATE users SET pos_only = $3,
+          admin_session_version = CASE WHEN pos_only IS DISTINCT FROM $3
+            THEN admin_session_version + 1 ELSE admin_session_version END
+        WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, userId, posOnly]
+    );
     await client.query(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
        VALUES ($1,$2,$3,$4,$5)`,
@@ -1259,7 +1267,7 @@ export async function listTenantStaff(tenantId: string): Promise<PosCashier[]> {
             (u.pos_pin_hash IS NOT NULL) AS has_pin
        FROM users u
        LEFT JOIN roles r ON r.id = u.role_id
-      WHERE u.tenant_id = $1
+      WHERE u.tenant_id = $1 AND u.is_platform_admin = FALSE
       ORDER BY r.name NULLS LAST, u.name NULLS LAST, u.email`,
     [tenantId]
   );
@@ -1298,6 +1306,7 @@ export async function setCashierPin(
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId: actingUserId ?? userId });
+    if (actingUserId) await assertManageablePosAccountInTx(client, tenantId, userId, actingUserId);
     const res = await client.query(
       `UPDATE users
           SET pos_pin_hash = $3, pos_pin_set_at = now(),
@@ -1328,6 +1337,7 @@ export async function clearCashierPin(
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId: actingUserId ?? userId });
+    if (actingUserId) await assertManageablePosAccountInTx(client, tenantId, userId, actingUserId);
     const res = await client.query(
       `UPDATE users SET pos_pin_hash = NULL, pos_pin_set_at = NULL,
                         pos_pin_failures = 0, pos_pin_locked_until = NULL

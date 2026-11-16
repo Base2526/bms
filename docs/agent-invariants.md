@@ -248,6 +248,17 @@ approved text. Approval remains per tenant, not a platform-wide publication deci
   Migration `10.121` repairs only a verified email signup owner who is still Manager,
   has no later user-update audit, and belongs to a shop with no Administrator; it bumps
   the admin session version and audits the repair in the same transaction.
+- Admin identity refresh applies the current account gates to existing sessions. A switch to
+  `users.pos_only` increments `admin_session_version` in the same tenant transaction and rejects
+  already-open admin sessions; unverified, Subscriber, and inactive-tenant accounts are also denied.
+  Team edits preserve omitted optional phone/avatar fields; an explicit `null` clears them.
+  Avatar changes write a tenant audit row in the account transaction and clean up a new upload if
+  that transaction fails. Profile logs record changed field names, never contact values.
+  Demoting or deleting a tenant Administrator must leave another tenant Administrator; the check
+  serializes concurrent removals and bulk deletion enforces it per tenant.
+  POS PIN changes use the same target-role boundary as Users: staff may change their own PIN,
+  but cannot reset a higher-ranked or platform-admin account. The legacy login mutation also
+  checks email verification before creating a session.
 - Editing a tenant's role permission matrix is Administrator-only. Validate requested permission
   names against `BMS_PERMISSIONS`; show the exact grant/revoke diff to the human and require
   `confirmed: true` at GraphQL; lock the tenant and replace the matrix inside `beginTenantTx()`
@@ -2599,6 +2610,13 @@ per-screen examples: [architecture/react-native-graphql-client.md](architecture/
   authenticate.
 
 ## Observability (`/admin/system-health`)
+
+Operational logging is a separate evidence path: redact metadata and free text before stdout,
+Postgres or alerts; never log GraphQL argument values. Client log submissions must bind actor and
+tenant from live server identity, be bounded, and never trigger a server-failure Slack alert.
+Deleting system logs requires platform authority, explicit confirmation and a same-transaction
+deletion record. Daily AI triage treats log content as untrusted data and sends only redacted,
+bounded fields to the model.
 
 Platform-admin-only page (`requirePlatformAdminPage()` in its own `layout.tsx`, same gate as
 `/admin/env`) that answers "how is the system doing right now" in one place instead of across four.
