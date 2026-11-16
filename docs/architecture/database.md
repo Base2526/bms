@@ -86,7 +86,7 @@ and 10.67 valuation tables. New movement kinds PRODUCTION_OUT/PRODUCTION_IN tran
 without counting conversion as expense. No new realtime triggers; inventory's existing triggers fire.
 Read details and rollback in [production workflow](../business/operation-production.md).
 
-### Factory production extension (`10.122`–`10.126`)
+### Factory production extension (`10.122`–`10.127`)
 
 `10.122` creates tenant/branch/output `bms_factory_qc_policies` (required/due minutes/version).
 `10.123` creates immutable-version `bms_factory_boms` and `bms_factory_bom_items`, adds nullable
@@ -96,13 +96,16 @@ quantity/due, linked order), plus nullable production `factory_demand_id`. `10.1
 `bms_factory_machines` and optional machine/time/rejected/labor/energy evidence on production.
 `10.126` adds an explicit eligible QC case owner to policy settings; existing legacy rows may be
 null and are checked against the posting actor before use.
+`10.127` pins output and component base units on BOM versions. It deactivates older unitless BOMs
+because their original units cannot be reconstructed safely; existing production snapshots remain
+unchanged. New active versions require pinned units, and planning refuses catalog unit drift.
 New tables have tenant FKs, FORCE RLS, missing-GUC denial, bms_app read/insert and narrow update
 grants. BOM items and posted production evidence have no app DELETE/UPDATE authority. Factory
 machine actual intervals are guarded in the service under a per-machine transaction lock. Demand
 conversion calls the existing order writer in the demand transaction; no order/stock state is
-inferred from planning demand. Apply all five migrations after `10.98` before new app code; a
+inferred from planning demand. Apply all six migrations after `10.98` before new app code; a
 rollout must never deploy a writer that reads the policy/BOM tables before they exist. No destructive
-down migration or historical backfill. [Operator flow](../business/operation-production.md#factory-extension-for-plastic-twine-and-straws-1012210126).
+down migration or historical backfill. [Operator flow](../business/operation-production.md#factory-extension-for-plastic-twine-and-straws-1012210127).
 
 ## Operations checklists / food-safety evidence (`10.91`–`10.93`)
 

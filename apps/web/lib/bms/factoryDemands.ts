@@ -42,8 +42,8 @@ export async function factoryDemandWorkspace(
     const rows = (await c.query(
       `SELECT d.id,d.location_id,d.customer_id,cu.name customer_name,d.output_sku,d.output_size,
         d.qty,d.due_at,d.note,d.status,d.version,d.order_id,d.created_at,
-        COALESCE((SELECT sum(p.actual_qty)::int FROM bms_operation_production p
-          WHERE p.tenant_id=d.tenant_id AND p.factory_demand_id=d.id AND p.status='POSTED'),0) produced_qty
+        (SELECT LEAST(COALESCE(sum(p.actual_qty),0),2147483647)::int FROM bms_operation_production p
+          WHERE p.tenant_id=d.tenant_id AND p.factory_demand_id=d.id AND p.status='POSTED') produced_qty
        FROM bms_factory_demands d LEFT JOIN bms_customers cu
          ON cu.tenant_id=d.tenant_id AND cu.id=d.customer_id
        WHERE ${predicate} ORDER BY (d.status='OPEN') DESC,d.due_at,d.id LIMIT 25 OFFSET $4`,
@@ -118,7 +118,7 @@ export async function commandFactoryDemand(s: ChecklistScope, input: FactoryDema
         const customerId = input.customerId;
         if (!checklistUuid(customerId)) return reject("CUSTOMER_REQUIRED");
         if (!(await c.query(
-          `SELECT 1 FROM bms_customers WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`,
+          `SELECT 1 FROM bms_customers WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL FOR SHARE`,
           [s.tenantId, customerId],
         )).rowCount) return reject("CUSTOMER_NOT_FOUND");
         const row = (await c.query(
@@ -151,11 +151,11 @@ export async function commandFactoryDemand(s: ChecklistScope, input: FactoryDema
         } else {
           if (!demand.customer_id) return reject("CUSTOMER_REQUIRED");
           if (!(await c.query(
-            `SELECT 1 FROM bms_customers WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`,
+            `SELECT 1 FROM bms_customers WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL FOR SHARE`,
             [s.tenantId, demand.customer_id],
           )).rowCount) return reject("CUSTOMER_NOT_FOUND");
           const produced = (await c.query(
-            `SELECT COALESCE(sum(actual_qty),0)::int qty FROM bms_operation_production
+            `SELECT LEAST(COALESCE(sum(actual_qty),0),2147483647)::int qty FROM bms_operation_production
              WHERE tenant_id=$1 AND factory_demand_id=$2 AND status='POSTED'`,
             [s.tenantId, demand.id],
           )).rows[0].qty;
@@ -180,7 +180,8 @@ export async function commandFactoryDemand(s: ChecklistScope, input: FactoryDema
         `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
          VALUES($1,$2,$3,$4,$5::jsonb)`,
         [s.tenantId, s.actorId, `factory.demand.${input.action.toLowerCase()}`, outcome.id,
-          JSON.stringify({ orderId: committedOrderId, note: checklistText(input.note, 2000) })],
+          JSON.stringify({ orderId: committedOrderId,
+            ...(input.action === "CANCEL" ? { reason: checklistText(input.note, 2000, true) } : {}) })],
       );
       await c.query(
         `INSERT INTO bms_operation_commands(tenant_id,actor,key,fingerprint,result)

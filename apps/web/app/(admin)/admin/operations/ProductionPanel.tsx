@@ -153,7 +153,8 @@ export default function ProductionPanel({
   const [machineForm] = Form.useForm();
   const [bomOpen, setBomOpen] = useState(false),
     [bomPending, setBomPending] = useState<any>(null),
-    [bomOutputOption, setBomOutputOption] = useState<CatalogOption>();
+    [bomOutputOption, setBomOutputOption] = useState<CatalogOption>(),
+    [bomBaseVersion, setBomBaseVersion] = useState(0);
   const [demandOpen, setDemandOpen] = useState(false),
     [demandCreate, setDemandCreate] = useState(false),
     [demandPending, setDemandPending] = useState<any>(null),
@@ -178,13 +179,20 @@ export default function ProductionPanel({
     skip: !qcOpen || !locationId || !qcIdentity,
     fetchPolicy: "network-only",
   });
+  const selectedQcPolicy = qcPolicy.data?.bmsFactoryQcPolicy;
+  const qcPolicyReady = !!locationId && !!qcIdentity && !!selectedQcPolicy &&
+    selectedQcPolicy.locationId === locationId &&
+    selectedQcPolicy.sku === qcIdentity[0] &&
+    selectedQcPolicy.size === qcIdentity[1] &&
+    !qcPolicy.loading && !qcPolicy.error;
   useEffect(() => {
     const policy = qcPolicy.data?.bmsFactoryQcPolicy;
-    if (!policy) return;
+    if (!policy || !qcIdentity || policy.locationId !== locationId ||
+        policy.sku !== qcIdentity[0] || policy.size !== qcIdentity[1]) return;
     setQcRequired(policy.required === true);
     setQcDueMinutes(policy.dueMinutes ?? 1440);
     setQcReviewerId(policy.reviewerId ?? undefined);
-  }, [qcPolicy.data]);
+  }, [qcPolicy.data, qcOutput, locationId]);
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("production");
     if (id) setSelected(id);
@@ -247,7 +255,7 @@ export default function ProductionPanel({
   );
   const bomCommand = useTeamCommand(
     async () => { await q.refetch(); },
-    () => { setBomPending(null); setBomOpen(false); bomForm.resetFields(); },
+    () => { setBomPending(null); setBomOpen(false); setBomBaseVersion(0); bomForm.resetFields(); },
     { document: SAVE_BOM, field: "bmsSaveFactoryBom" },
   );
   const demandCommand = useTeamCommand(
@@ -350,6 +358,7 @@ export default function ProductionPanel({
       const result = await client.query({ query: BOM_DETAIL, variables: { id }, fetchPolicy: "network-only" });
       const bom = result.data.bmsFactoryBomDetail;
       const output = JSON.stringify([bom.output_sku, bom.output_size]);
+      setBomBaseVersion(bom.version);
       setBomOutputOption({ value: output, label: `${bom.output_sku} / ${bom.output_size}` });
       bomForm.setFieldsValue({
         output, outputQty: bom.output_qty,
@@ -458,7 +467,7 @@ export default function ProductionPanel({
         )}
         {can("operations.production.manage") && can("product.edit") && (
           <Button disabled={blocked || bomCommand.busy || bomCommand.uncertain}
-            onClick={() => { bomForm.resetFields(); setBomOutputOption(undefined); setBomPending(null); setBomOpen(true); }}>
+            onClick={() => { bomForm.resetFields(); setBomOutputOption(undefined); setBomBaseVersion(0); setBomPending(null); setBomOpen(true); }}>
             {tr("factory_bom")}
           </Button>
         )}
@@ -1030,13 +1039,15 @@ export default function ProductionPanel({
       <Modal open={qcOpen} title={tr("qc_policy")}
         onCancel={() => !qcCommand.busy && !qcCommand.uncertain && setQcOpen(false)}
         onOk={() => {
+          const policy = selectedQcPolicy;
           if (!locationId || !qcIdentity || (qcRequired && !qcReviewerId) ||
-              qcPolicy.loading || qcPolicy.error) return;
+              !qcPolicyReady || !policy) return;
           setQcPending({ locationId, sku: qcIdentity[0], size: qcIdentity[1],
+            version: policy.version,
             required: qcRequired, dueMinutes: qcDueMinutes,
             reviewerId: qcRequired ? qcReviewerId : null, confirmed: true });
         }}
-        okButtonProps={{ disabled: !qcIdentity || (qcRequired && !qcReviewerId) || qcPolicy.loading || !!qcPolicy.error || qcCommand.busy || qcCommand.uncertain }}
+        okButtonProps={{ disabled: !qcPolicyReady || (qcRequired && !qcReviewerId) || qcCommand.busy || qcCommand.uncertain }}
         maskClosable={false}>
         <Space direction="vertical" style={{ width: "100%" }}>
           <p>{tr("qc_policy_hint")}</p>
@@ -1073,7 +1084,8 @@ export default function ProductionPanel({
         <Form form={bomForm} layout="vertical" onFinish={(values) => {
           try {
             const [outputSku, outputSize] = JSON.parse(values.output);
-            setBomPending({ outputSku, outputSize, outputQty: values.outputQty,
+            setBomPending({ outputSku, outputSize, expectedActiveVersion: bomBaseVersion,
+              outputQty: values.outputQty,
               ingredients: values.ingredients.map((x: any) => {
                 const [sku, size] = JSON.parse(x.product);
                 return { sku, size, qty: x.qty };
@@ -1091,7 +1103,7 @@ export default function ProductionPanel({
           </Form.Item>
           <Form.Item name="output" label={tr("output")} rules={[{ required: true }]}>
             <Select showSearch filterOption={false} onSearch={setOutputSearch}
-              onChange={(_, option) => { setBomOutputOption(option as CatalogOption); setOutputSearch(""); }}
+              onChange={(_, option) => { setBomOutputOption(option as CatalogOption); setBomBaseVersion(0); setOutputSearch(""); }}
               options={withSelection((w?.outputs ?? []).map((x: any) => ({
                 value: JSON.stringify([x.product_sku, x.size]),
                 label: `${x.product_sku} / ${x.size} (${x.base_unit})`,
@@ -1132,7 +1144,7 @@ export default function ProductionPanel({
         onOk={() => bomCommand.command(bomPending)} confirmLoading={bomCommand.busy}
         okButtonProps={{ disabled: bomCommand.uncertain }} maskClosable={false}>
         {bomPending && <>
-          <p>{bomPending.outputSku} / {bomPending.outputSize} · {tr("bom_yield")}: {bomPending.outputQty}</p>
+          <p>{bomPending.outputSku} / {bomPending.outputSize} · v{bomPending.expectedActiveVersion} → {tr("bom_yield")}: {bomPending.outputQty}</p>
           {bomPending.ingredients.map((x: any) => <p key={x.sku + x.size}>
             {x.sku} / {x.size}: {x.qty}
           </p>)}
@@ -1147,7 +1159,7 @@ export default function ProductionPanel({
           <Alert closable type="info" message={tr("demand_hint")} />
           <Space wrap>
             <Input.Search value={demandSearch} onChange={(e) => { setDemandSearch(e.target.value); setDemandPage(1); }}
-              placeholder={tr("search")} style={{ width: 270 }} />
+              placeholder={tr("demand_search")} style={{ width: 270 }} />
             <Button type="primary" onClick={() => { demandForm.resetFields(); setDemandCreate(true); }}>
               {tr("new_demand")}
             </Button>
@@ -1236,7 +1248,7 @@ export default function ProductionPanel({
         <Space direction="vertical" style={{ width: "100%" }}>
           <p>{tr("machine_hint")}</p>
           <Input.Search value={machineSearch} onChange={(e) => setMachineSearch(e.target.value)}
-            placeholder={tr("search")} />
+            placeholder={tr("machine_search")} />
           {machines.data?.bmsFactoryMachines?.truncated &&
             <Alert closable type="warning" message={tr("truncated")} />}
           <Table rowKey="id" size="small" dataSource={machines.data?.bmsFactoryMachines?.rows ?? []}

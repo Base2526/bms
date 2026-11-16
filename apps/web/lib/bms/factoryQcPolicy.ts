@@ -21,6 +21,7 @@ export type FactoryQcPolicyInput = {
   locationId: string;
   sku: string;
   size: string;
+  version: number;
   required: boolean;
   dueMinutes: number;
   reviewerId?: string | null;
@@ -32,6 +33,14 @@ function policyPermission(s: ChecklistScope) {
   checklistPermission(s, "operations.quality.manage");
   checklistPermission(s, "operations.production.manage");
   checklistPermission(s, "product.view");
+}
+
+async function lockQcPolicyInTx(
+  c: PoolClient, tenant: string, location: string, sku: string, size: string,
+) {
+  await c.query(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, [
+    `factory-qc-policy:${tenant}:${location}:${sku}:${size}`,
+  ]);
 }
 
 export async function factoryQcPolicy(
@@ -71,6 +80,7 @@ export async function setFactoryQcPolicy(s: ChecklistScope, input: FactoryQcPoli
     if (input.confirmed !== true) return reject("CONFIRMATION_REQUIRED");
     if (
       !checklistUuid(input.locationId) ||
+      !Number.isInteger(input.version) || input.version < 0 || input.version > 2147483647 ||
       typeof input.required !== "boolean" ||
       !Number.isInteger(input.dueMinutes) ||
       input.dueMinutes < 1 ||
@@ -78,15 +88,12 @@ export async function setFactoryQcPolicy(s: ChecklistScope, input: FactoryQcPoli
     ) return reject("INVALID_INPUT");
     const sku = checklistText(input.sku, 200, true);
     const size = checklistText(input.size, 100, true);
-    const reviewerId = input.reviewerId || null;
+    const reviewerId = input.required ? input.reviewerId || null : null;
     if (input.required && !checklistUuid(reviewerId)) return reject("QUALITY_REVIEWER_REQUIRED");
     const key = `factory-qc:${checklistText(input.idempotencyKey, 128, true)}`;
-    const fingerprint = teamHash({ ...input, sku, size });
-    return checklistTx(s, async (c) => {
+    const fingerprint = teamHash({ ...input, sku, size, reviewerId });
+    return await checklistTx(s, async (c) => {
       await teamBranches(c, s, input.locationId);
-      if (input.required && !(await checklistRecipient(c, s.tenantId,
-        reviewerId, input.locationId, "operations.quality.view")))
-        return reject("QUALITY_REVIEWER_REQUIRED");
       await c.query(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, [
         `${s.tenantId}:${s.actorId}:${key}`,
       ]);
@@ -101,6 +108,16 @@ export async function setFactoryQcPolicy(s: ChecklistScope, input: FactoryQcPoli
         if (prior.fingerprint !== fingerprint) return reject("IDEMPOTENCY_CONFLICT");
         return prior.result;
       }
+      await lockQcPolicyInTx(c, s.tenantId, input.locationId, sku, size);
+      const current = (await c.query<{ version: number }>(
+        `SELECT version FROM bms_factory_qc_policies
+         WHERE tenant_id=$1 AND location_id=$2 AND product_sku=$3 AND size=$4 FOR UPDATE`,
+        [s.tenantId, input.locationId, sku, size],
+      )).rows[0];
+      if ((current?.version ?? 0) !== input.version) return reject("STALE_VERSION");
+      if (input.required && !(await checklistRecipient(c, s.tenantId,
+        reviewerId, input.locationId, "operations.quality.view")))
+        return reject("QUALITY_REVIEWER_REQUIRED");
       const product = (
         await c.query(
           `SELECT p.serial_tracked,p.is_bundle,COALESCE(sp.stock_policy,'DIRECT') stock_policy
@@ -123,11 +140,13 @@ export async function setFactoryQcPolicy(s: ChecklistScope, input: FactoryQcPoli
            DO UPDATE SET required=EXCLUDED.required,due_minutes=EXCLUDED.due_minutes,
              reviewer_id=EXCLUDED.reviewer_id,version=bms_factory_qc_policies.version+1,
              updated_by=EXCLUDED.updated_by,updated_at=now()
+           WHERE bms_factory_qc_policies.version=$9
            RETURNING version`,
           [s.tenantId, input.locationId, sku, size, input.required, input.dueMinutes,
-            reviewerId, s.actorId],
+            reviewerId, s.actorId, input.version],
         )
       ).rows[0];
+      if (!row) return reject("STALE_VERSION");
       await c.query(
         `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
          VALUES($1,$2,'factory.qc_policy.set',$3,$4::jsonb)`,
@@ -166,6 +185,7 @@ export async function holdFactoryOutputInTx(
     baseUnit: string;
   },
 ) {
+  await lockQcPolicyInTx(c, s.tenantId, output.locationId, output.sku, output.size);
   const policy = (
     await c.query<{ due_minutes: number; reviewer_id: string | null }>(
       `SELECT due_minutes,reviewer_id FROM bms_factory_qc_policies

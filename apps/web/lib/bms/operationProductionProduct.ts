@@ -11,7 +11,7 @@ export async function directProduct(
 ) {
   const p = (
     await c.query(
-      `SELECT sku,serial_tracked,is_bundle FROM bms_products WHERE tenant_id=$1 AND sku=$2 FOR SHARE`,
+      `SELECT sku,active,serial_tracked,is_bundle FROM bms_products WHERE tenant_id=$1 AND sku=$2 FOR SHARE`,
       [tenant, sku],
     )
   ).rows[0];
@@ -26,7 +26,8 @@ export async function directProduct(
     [tenant, sku, size, options.includeInactive === true],
   );
   if (
-    !p || p.serial_tracked || p.is_bundle || !variant.rowCount ||
+    !p || (!p.active && !options.includeInactive) ||
+    p.serial_tracked || p.is_bundle || !variant.rowCount ||
     (policy?.stock_policy ?? "DIRECT") !== "DIRECT"
   ) return reject("DIRECT_STOCK_REQUIRED");
   return policy?.base_unit ?? "PIECE";

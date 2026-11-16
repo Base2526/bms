@@ -21,6 +21,7 @@ const browser = await chromium.launch({ channel: "chrome", headless: true });
 try {
   for (const lang of ["en", "th"])
     for (const width of [1280, 390]) {
+      if (process.env.BMS_SMOKE_ONLY && process.env.BMS_SMOKE_ONLY !== `${lang}-${width}`) continue;
       const ctx = await browser.newContext({
         viewport: { width, height: 1000 },
         serviceWorkers: "block",
@@ -94,6 +95,7 @@ try {
         lot: null,
       };
       const writes = [],
+        factoryWrites = { bom: [], demand: [], machine: [], qc: [] },
         errors = [],
         outcomes = new Map();
       let lose = true,
@@ -192,16 +194,11 @@ try {
                         },
                       ]
                     : [],
-                outputs:
-                  v.filter.outputSearch === "FAKE-PREP"
-                    ? [
-                        {
-                          product_sku: "FAKE-PREP",
-                          size: "BASE",
-                          base_unit: "PIECE",
-                        },
-                      ]
-                    : [],
+                factoryBoms: [],
+                outputs: [
+                  { product_sku: "FAKE-PREP", size: "BASE", base_unit: "ROLL" },
+                  { product_sku: "FAKE-ING", size: "BASE", base_unit: "GRAM" },
+                ].filter((x) => !v.filter.outputSearch || x.product_sku.includes(v.filter.outputSearch)),
                 optionsTruncated: false,
               },
             };
@@ -212,9 +209,26 @@ try {
           if (q.includes("FactoryDemandWorkspace"))
             data = { bmsFactoryDemandWorkspace: { rows: [], total: 0 } };
           if (q.includes("FactoryDemandCustomers"))
-            data = { bmsFactoryDemandCustomers: [] };
+            data = { bmsFactoryDemandCustomers: [{ id: actor, name: "FAKE Customer", phone: null }] };
           if (q.includes("FactoryQcPolicy"))
-            data = { bmsFactoryQcPolicy: { required: false, dueMinutes: 1440, reviewerId: null, version: 0 } };
+            data = { bmsFactoryQcPolicy: { locationId: v.locationId, sku: v.sku, size: v.size,
+              required: false, dueMinutes: 1440, reviewerId: null, version: 0 } };
+          if (q.includes("SaveFactoryBom")) {
+            factoryWrites.bom.push(v.input);
+            data = { bmsSaveFactoryBom: { status: "OK", id: recipe, version: 1 } };
+          }
+          if (q.includes("FactoryDemandCommand")) {
+            factoryWrites.demand.push(v.input);
+            data = { bmsFactoryDemandCommand: { status: "OK", id: recipe, version: 1 } };
+          }
+          if (q.includes("SaveFactoryMachine")) {
+            factoryWrites.machine.push(v.input);
+            data = { bmsSaveFactoryMachine: { status: "OK", id: recipe, version: 1 } };
+          }
+          if (q.includes("SetFactoryQcPolicy")) {
+            factoryWrites.qc.push(v.input);
+            data = { bmsSetFactoryQcPolicy: { status: "OK", version: 1 } };
+          }
           if (q.includes("ProductionPreview"))
             data = {
               bmsProductionPreview: {
@@ -375,6 +389,73 @@ try {
         await page.locator(".ant-modal:visible").waitFor({ state: "hidden" });
       }
       await page.screenshot({ path: `${output}/${lang}-${width}-factory-actions.png`, fullPage: false });
+      await page.getByRole("button", { name: tr.factory_bom, exact: true }).click();
+      let factoryModal = page.locator(".ant-modal:visible").filter({ hasText: tr.factory_bom_hint });
+      await factoryModal.getByLabel(tr.output, { exact: true }).click();
+      await page.locator(".ant-select-item-option:visible").filter({ hasText: "FAKE-PREP" }).click();
+      await factoryModal.getByLabel(tr.bom_yield, { exact: true }).fill("10");
+      await factoryModal.getByRole("button", { name: tr.add_ingredient, exact: true }).click();
+      await factoryModal.getByLabel(tr.ingredient, { exact: true }).click();
+      await page.locator(".ant-select-item-option:visible").filter({ hasText: "FAKE-ING" }).last().click();
+      await factoryModal.getByLabel(tr.required, { exact: true }).fill("20");
+      await factoryModal.getByRole("button", { name: tr.review, exact: true }).click();
+      const bomConfirmation = page.locator(".ant-modal:visible").filter({ hasText: tr.factory_bom_confirm });
+      await bomConfirmation.waitFor();
+      await bomConfirmation.locator(".ant-modal-footer .ant-btn-primary").click();
+      await page.waitForTimeout(300);
+      assert.equal(factoryWrites.bom.at(-1)?.expectedActiveVersion, 0);
+      assert.deepEqual(factoryWrites.bom.at(-1)?.ingredients, [{ sku: "FAKE-ING", size: "BASE", qty: 20 }]);
+      await page.getByRole("button", { name: tr.qc_policy, exact: true }).click();
+      factoryModal = page.locator(".ant-modal:visible").filter({ hasText: tr.qc_policy_hint });
+      await factoryModal.getByRole("combobox", { name: tr.output, exact: true }).click();
+      await page.locator(".ant-select-item-option:visible").filter({ hasText: "FAKE-PREP" }).last().click();
+      await factoryModal.locator(".ant-switch").click();
+      await factoryModal.locator("label").filter({ hasText: tr.qc_reviewer }).locator(".ant-select").click();
+      await page.locator(".ant-select-item-option:visible").filter({ hasText: "FAKE Manager" }).last().click();
+      await factoryModal.locator(".ant-modal-footer .ant-btn-primary").waitFor({ state: "visible" });
+      await page.waitForTimeout(250);
+      assert.equal(await factoryModal.locator(".ant-modal-footer .ant-btn-primary").isDisabled(), false);
+      await factoryModal.locator(".ant-modal-footer .ant-btn-primary").click();
+      const qcConfirmation = page.locator(".ant-modal:visible").filter({ hasText: tr.qc_policy_confirm });
+      await qcConfirmation.waitFor();
+      await qcConfirmation.locator(".ant-modal-footer .ant-btn-primary").click();
+      await page.waitForTimeout(300);
+      assert.equal(factoryWrites.qc.at(-1)?.version, 0);
+      assert.equal(factoryWrites.qc.at(-1)?.sku, "FAKE-PREP");
+      assert.equal(factoryWrites.qc.at(-1)?.required, true);
+      assert.equal(factoryWrites.qc.at(-1)?.reviewerId, actor);
+      await page.getByRole("button", { name: tr.factory_demands, exact: true }).click();
+      factoryModal = page.locator(".ant-modal:visible").filter({ hasText: tr.demand_hint });
+      await factoryModal.getByRole("button", { name: tr.new_demand, exact: true }).click();
+      const demandFormModal = page.locator(".ant-modal:visible").last();
+      await demandFormModal.getByLabel(tr.customer, { exact: true }).click();
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await demandFormModal.getByLabel(tr.output, { exact: true }).click();
+      await page.keyboard.press("Enter");
+      await demandFormModal.getByLabel(tr.planned, { exact: true }).fill("10");
+      await demandFormModal.getByLabel(tr.due, { exact: true }).fill("2026-11-18T10:00");
+      await demandFormModal.getByRole("button", { name: tr.review, exact: true }).click();
+      const demandConfirmation = page.locator(".ant-modal:visible").filter({ hasText: tr.demand_confirm_hint });
+      await demandConfirmation.waitFor();
+      await demandConfirmation.locator(".ant-modal-footer .ant-btn-primary").click();
+      await page.waitForTimeout(300);
+      assert.equal(factoryWrites.demand.at(-1)?.action, "CREATE");
+      assert.equal(factoryWrites.demand.at(-1)?.customerId, actor);
+      assert.equal(factoryWrites.demand.at(-1)?.outputSku, "FAKE-PREP");
+      await page.locator(".ant-modal:visible").filter({ hasText: tr.demand_hint }).locator(".ant-modal-close").click();
+      await page.getByRole("button", { name: tr.machines, exact: true }).click();
+      factoryModal = page.locator(".ant-modal:visible").filter({ hasText: tr.machine_hint });
+      await factoryModal.getByLabel(tr.machine_code, { exact: true }).fill("FAKE-EXTRUDER");
+      await factoryModal.getByLabel(tr.machine_name, { exact: true }).fill("FAKE Extruder");
+      await factoryModal.getByRole("button", { name: tr.review, exact: true }).click();
+      const machineConfirmation = page.locator(".ant-modal:visible").filter({ hasText: tr.machine_confirm });
+      await machineConfirmation.waitFor();
+      await machineConfirmation.locator(".ant-modal-footer .ant-btn-primary").click();
+      await page.waitForTimeout(300);
+      assert.equal(factoryWrites.machine.at(-1)?.code, "FAKE-EXTRUDER");
+      assert.equal(factoryWrites.machine.at(-1)?.locationId, location);
+      await page.locator(".ant-modal:visible").filter({ hasText: tr.machine_hint }).locator(".ant-modal-close").click();
       await page.getByRole("button", { name: tr.create, exact: true }).click();
       modal = page.locator(".ant-modal:visible");
       const choose = async (label, text) => {

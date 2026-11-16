@@ -77,6 +77,7 @@ export const bmsOperationProductionTypeDefs = /* GraphQL */ `
     locationId: ID!
     sku: String!
     size: String!
+    version: Int!
     required: Boolean!
     dueMinutes: Int!
     reviewerId: ID
@@ -86,6 +87,7 @@ export const bmsOperationProductionTypeDefs = /* GraphQL */ `
   input BmsFactoryBomInput {
     outputSku: String!
     outputSize: String!
+    expectedActiveVersion: Int!
     outputQty: Int!
     ingredients: [BmsProductionIngredient!]!
     sopSteps: [String!]!

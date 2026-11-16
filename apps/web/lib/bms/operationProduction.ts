@@ -485,7 +485,8 @@ async function execute(c: PoolClient, s: ChecklistScope, i: ProductionCommand) {
     await assertValuationLocation(c, s.tenantId, s.actorId, p.location_id);
     // Catalog edits must not reinterpret a historical output lot in a different unit/policy.
     if (
-      (await directProduct(c, s.tenantId, p.output_sku, p.output_size)) !==
+      (await directProduct(c, s.tenantId, p.output_sku, p.output_size,
+        { includeInactive: true })) !==
       p.snapshot.baseUnit
     )
       return reject("OUTPUT_UNIT_MISMATCH");

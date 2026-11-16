@@ -1,10 +1,10 @@
 # Operations production — Release E and factory extension
 
-## Factory extension for plastic twine and straws (`10.122`–`10.126`)
+## Factory extension for plastic twine and straws (`10.122`–`10.127`)
 
 This extension is implemented in code for a controlled pilot; it is **not a production deployment**.
 Apply `10.91`–`10.98`, then `10.122` QC policy, `10.123` factory BOM, `10.124` demand, and
-`10.125` machine evidence, and `10.126` QC reviewer before starting the new web version. Existing production posts read the
+`10.125` machine evidence, `10.126` QC reviewer, and `10.127` pinned BOM units before starting the new web version. Existing production posts read the
 new QC policy table even when no policy is enabled. No AI tool, new permission, new realtime trigger,
 or automatic external customer message is added. Branch inventory and POS retain their existing
 authorization and stock rules.
@@ -23,10 +23,16 @@ scope.
 Operator path:
 
 1. Set up direct-stock products/variants, branch stock policies, sales packs, prices and source
-   lot tracking as needed. Keep food/menu `RECIPE` products separate from factory BOMs.
+   lot tracking as needed. Enable the `ONLINE_ORDER` sales surface on outputs that will be
+   converted from factory demand into a standard order; the existing order service requires it.
+   Keep food/menu `RECIPE` products separate from factory BOMs.
 2. In `/admin/operations` → Production, create a versioned **Factory BOM** with one stocked output,
    positive integer output yield, direct-stock materials and SOP steps. A new save deactivates the
-   prior active version; planned batches retain their frozen BOM, units and material quantities.
+   prior active version; the BOM freezes each base unit, and planned batches retain their frozen
+   BOM, units and material quantities. If a catalog unit changes, new batches reject that BOM until
+   an operator reviews the quantities and saves a new version. Migration `10.127` deactivates
+   older unitless BOMs rather than guessing their original units. Revising an existing output must
+   start from its active version; a concurrent change is rejected instead of silently replacing it.
    A twine extrusion BOM can consume grams and produce rolls. A bagging BOM can consume loose
    straw pieces and empty bags to produce stocked bags. Each stage has its own batch and lot.
 3. Optionally register a branch machine. Optionally create **Factory demand** for an existing CRM
@@ -46,7 +52,9 @@ Operator path:
    present but unavailable to sell, reserve, transfer or consume. Use the existing separate-review
    quality checklist, proposal and second-person approval to release or dispose it. Disabling the
    policy never releases prior holds. Existing lots are not retroactively held. If that owner loses
-   quality-view permission, posting fails closed until the policy is reassigned.
+   quality-view permission, posting fails closed until the policy is reassigned. Policy changes
+   compare the last-read version; a stale edit is rejected. Policy enable/disable and output posting
+   serialize per branch/output so a concurrent edit has a definite before/after order.
 6. After linked posted output reaches the demand quantity, an authorized person may convert it to
    a normal order. A live, non-deleted CRM customer is required. The existing order service checks
    current catalog price, sale eligibility, usable unreserved stock and lots; it creates/reserves

@@ -2122,6 +2122,7 @@ type BmsExpiringPointsRow {
 
 input BmsFactoryBomInput {
   confirmed: Boolean!
+  expectedActiveVersion: Int!
   idempotencyKey: String!
   ingredients: [BmsProductionIngredient!]!
   outputQty: Int!
@@ -2165,6 +2166,7 @@ input BmsFactoryQcPolicyInput {
   reviewerId: ID
   size: String!
   sku: String!
+  version: Int!
 }
 
 type BmsFeatureAccess {
