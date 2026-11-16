@@ -584,7 +584,9 @@ $0.072 output per million tokens as checked 2026-07-30) and can be overridden wi
 
 A separate AI workflow that maintains the system itself (daily GitHub Actions run).
 Implemented: [`.github/workflows/daily-log-triage.yml`](../../.github/workflows/daily-log-triage.yml) +
-[`scripts/bms-log-triage/`](../../scripts/bms-log-triage/)
+[`scripts/bms-log-triage/`](../../scripts/bms-log-triage/). It collects `level=error` rows;
+an expected client rejection recorded as `warn` is not a server incident. See the
+[log triage runbook](../architecture/logging-and-triage.md).
 
 ```
 Cron (daily)
@@ -607,9 +609,11 @@ confirms before anything reaches production.
 
 ## Testing the pipeline
 
-- **Playground** (`/api/bms/chat`, channel=`test`) — requires a signed admin session, derives the
-  tenant from that session/drill-down context, and returns the full trace (intent/tool/reply)
-  without logging to inbox.
+- **Playground** (`/api/bms/chat`) — requires a current admin session and `ai_quality.view`, derives
+  the tenant from that session/drill-down context, and returns the full trace (intent/tool/reply).
+  Channel `test` does not log to Inbox; a non-test channel with a customer ref follows the normal
+  conversation persistence path and may create business records when the customer flow confirms them.
+  Invalid or oversized requests are rejected before AI work or conversation writes.
 - **AI eval suites** ([`scripts/ai-eval/`](../../scripts/ai-eval/)) — the deterministic runtime
   contract suite forces provider/tool validation, authorization, proposal, timeout, bounded-loop,
   audit-redaction, and post-write-outage paths without network or DB access. The live-model suite
@@ -630,8 +634,9 @@ confirms before anything reaches production.
 - **Fake Data Seeder** (`/admin/dev/fake`) — bulk-generates products/customers/orders/conversations/
   purchase orders to populate Dashboard/Reports/Inbox/Payment/Shipping/Purchase (marker `FAKE-`,
   cleanable; off in production by default, enabled on demo machines via `BMS_ALLOW_FAKE_SEED=1`).
-  Seeds into **the logged-in user's own tenant** — a platform admin must drill down into a shop
-  (`bmsEnterTenant`) first to see that shop's pipeline/data.
+  Every seeder route requires a current database-verified platform-admin session. It seeds into
+  the selected tenant context; a platform admin drills down into a shop (`bmsEnterTenant`) before
+  working with that shop's pipeline/data.
 
 Every tool in the pipeline runs through a service scoped by `getTenantId(ctx)` — webhook context
 comes from `{tenantId}` in the URL; admin context comes from the session (or whichever shop a

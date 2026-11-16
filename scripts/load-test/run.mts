@@ -1,4 +1,5 @@
 import { performance } from "node:perf_hooks";
+import { timedFetch as fetchWithTiming, toRequestResult } from "./measure.mts";
 
 type ScenarioName =
   | "admin-dashboard"
@@ -360,6 +361,10 @@ console.log(`[BMS load-test] concurrency=${concurrency}`);
 console.log(`[BMS load-test] durationSeconds=${durationSeconds}`);
 console.log(`[BMS load-test] timeoutMs=${timeoutMs}\n`);
 
+const setupStartedAt = performance.now();
+const sessions = await Promise.all(Array.from({ length: concurrency }, async (_, index) =>
+  scenario.setup ? scenario.setup(index + 1) : Promise.resolve({} as Session)));
+const setupSeconds = (performance.now() - setupStartedAt) / 1000;
 const startedAt = performance.now();
 const deadline = startedAt + durationSeconds * 1000;
 const results: RequestResult[] = [];
@@ -368,26 +373,19 @@ await Promise.all(
   Array.from({ length: concurrency }, async (_, index) => {
     const workerId = index + 1;
     let iteration = 0;
-    let session: Session = {};
-
-    if (scenario.setup) {
-      session = await scenario.setup(workerId);
-    }
+    const session = sessions[index];
 
     while (performance.now() < deadline) {
       iteration += 1;
+      const requestStartedAt = performance.now();
       try {
-        const result = await withTimeout(
-          scenario.run(workerId, iteration, session),
-          timeoutMs,
-          `timeout after ${timeoutMs}ms`
-        );
+        const result = await scenario.run(workerId, iteration, session);
         results.push(result);
       } catch (error) {
         results.push({
           ok: false,
           status: 0,
-          durationMs: timeoutMs,
+          durationMs: performance.now() - requestStartedAt,
           error: error instanceof Error ? error.message : String(error),
         });
       }
@@ -395,6 +393,7 @@ await Promise.all(
   })
 );
 
+console.log(`[BMS load-test] setupSeconds=${setupSeconds.toFixed(2)} (excluded from request throughput)`);
 printSummary(results, (performance.now() - startedAt) / 1000);
 
 function parseArgs(argv: string[]) {
@@ -484,7 +483,7 @@ async function loginAdminSession(workerId: number): Promise<Session> {
     headers: adminGraphqlHeaders(adminCookie),
     body: JSON.stringify({ query: sanityQuery }),
   });
-  if (!sanity.response.ok || sanity.text.includes('"errors"')) {
+  if (!toRequestResult(sanity).ok || !safeJsonParse(sanity.text)?.data?.bmsMe?.id) {
     throw new Error(
       `worker ${workerId}: admin session sanity check failed ` +
         `(status ${sanity.response.status}) ${truncate(sanity.text, 200)}`
@@ -508,7 +507,7 @@ async function fetchFirstConversation(cookie: string, workerId: number): Promise
     headers: adminGraphqlHeaders(cookie),
     body: JSON.stringify({ query }),
   });
-  if (!result.response.ok || result.text.includes('"errors"')) {
+  if (!toRequestResult(result).ok) {
     throw new Error(
       `worker ${workerId}: failed to load conversation seed ` +
         `(status ${result.response.status}) ${truncate(result.text, 200)}`
@@ -547,48 +546,13 @@ function nullToUndefined<T>(value: T | null | undefined): T | undefined {
   return value == null ? undefined : value;
 }
 
-async function timedFetch(input: string, init: RequestInit) {
-  const started = performance.now();
-  const response = await fetch(input, init);
-  const durationMs = performance.now() - started;
-  const text = await response.text().catch(() => "");
-  return { response, durationMs, text };
-}
-
-function toRequestResult(result: {
-  response: Response;
-  durationMs: number;
-  text: string;
-}): RequestResult {
-  const graphqlFailure = result.response.ok && result.text.includes('"errors"');
-
-  return {
-    ok: result.response.ok && !graphqlFailure,
-    status: result.response.status,
-    durationMs: result.durationMs,
-    error: result.response.ok ? undefined : truncate(result.text, 160),
-  };
+function timedFetch(input: string, init: RequestInit) {
+  return fetchWithTiming(input, init, timeoutMs);
 }
 
 function truncate(value: string, max: number) {
   if (value.length <= max) return value;
   return `${value.slice(0, max - 1)}…`;
-}
-
-async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
-  return await new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(message)), ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        clearTimeout(timer);
-        reject(error);
-      }
-    );
-  });
 }
 
 function percentile(sorted: number[], p: number) {

@@ -81,6 +81,7 @@ test("HTTP mints admin tickets only after strict revocation, fresh identity, act
   assert.match(realtimeAuth, /isAdminSessionActiveForRealtime/);
   assert.match(realtimeAuth, /refreshAdminIdentity/);
   assert.match(realtimeAuth, /actingTenantId/);
+  assert.match(realtimeAuth, /fresh\.is_platform_admin === true && acting\?\.actTenantId/);
   assert.match(realtimeAuth, /loadPermissions/);
   assert.match(realtimeAuth, /bms_user_allowed_locations/);
   assert.doesNotMatch(realtimeAuth, /DEFAULT_TENANT/);

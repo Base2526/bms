@@ -21,10 +21,13 @@ import {
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
+import { requireAuth } from "@/lib/auth";
 import { GraphQLError } from "graphql/error";
 
 const toISO = (d: any) => (d instanceof Date ? d.toISOString() : d == null ? null : String(d));
-const actorOf = (ctx: any) => ctx?.admin?.email || ctx?.admin?.id || "admin";
+// The payment service passes this actor into the loyalty ledger's UUID user column.
+// An email/display label here rolls back confirmation for member orders.
+const actorOf = (ctx: any) => String(requireAuth(ctx).author_id);
 
 export const bmsPaymentsResolvers = {
   Query: {

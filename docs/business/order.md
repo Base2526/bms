@@ -35,14 +35,18 @@ reserved unit, so "who is holding this piece" is rebuilt from those three status
 | RETURNED | Stock returned to inventory (`current_stock += qty`) — refund handled separately at Payment (`REFUNDED`) |
 
 Every transition is **atomic** (single DB transaction) to prevent oversell or double-deduction —
-see `lib/bms/orders.ts`.
+see `lib/bms/orders.ts`. Packing, shipping, completion, cancellation and whole-order return write
+their actor audit in that transaction; an audit failure rolls back the status and stock change.
+REST and GraphQL staff transitions check the same tenant and allowed branch before changing the
+order. Cancellation and whole-order return also require an explicit confirmation flag at the API
+boundary; the admin page and assistant send it only after the operator confirms the action.
 
 Migration `9.15` keeps `paid_at`, `cancelled_at`, and `returned_at` separately from row creation and
 generic updates. Report periods therefore follow the actual business event in `Asia/Bangkok`,
 including cancellation or return after midnight. Legacy rows are backfilled from the best evidence
 available; new writes set the event timestamp in the state-change transaction.
 
-**Order status emails (2026-07):** every status transition — `payOrder`/`packOrder`/`shipOrder`/
+**Order status emails (2026-07):** every successful status transition — `packOrder`/`shipOrder`/
 `completeOrder`/`cancelOrder`/`returnOrder` in `lib/bms/orders.ts`, plus the two other places an
 order can reach `PAID`/`SHIPPED`/`COMPLETED` outside those functions (`confirmPayment()` in
 `lib/bms/payments.ts`, and `createShipment()`/`setShipmentStatus()` in `lib/bms/shipping.ts`) —
@@ -60,6 +64,9 @@ Back-office payment confirmation requires `payment.confirm` plus an explicit con
 GraphQL or REST. The admin payment page shows the payment ID, amount and method before sending it;
 the work assistant sends the flag only from its human Confirm action. The service still owns the
 atomic payment/order/audit transition. An AI slip result never confirms payment.
+Orders links pending bills to the Payment page with the order ID preselected for review or
+submission. The old bare `order.pay` transition refuses to mark an order paid without a confirmed
+payment; older GraphQL/REST callers receive a failed transition and must use the payment workflow.
 
 For a persisted `fulfillment_type = 'PICKUP'`, migration `10.114` supplies separate Thai/English
 templates for paid, packing, shipped and completed. The paid email says the order is being
@@ -77,7 +84,8 @@ and an accepted restaurant online order that creates kitchen tickets notifies st
 `restaurant.kitchen.update`. Recipient selection is server-side, tenant-scoped, honours each user's
 opt-in branch restrictions, excludes `pos_only` accounts (their operating screens already have
 their own live alerts), and carries no customer PII. The admin listener turns the notification into
-an in-app toast, browser notification and device-local sound; `/admin/orders` refreshes immediately
+an in-app toast, generic browser notification without order/customer details on the lock screen,
+and device-local sound; `/admin/orders` refreshes immediately
 from the event and also polls every 15 seconds as recovery if realtime delivery is missed. All of
 this runs after commit and is best-effort: an alert failure is logged but never rolls back or changes
 the order.

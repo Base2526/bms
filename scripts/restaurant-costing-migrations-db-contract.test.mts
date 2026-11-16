@@ -110,8 +110,8 @@ test("10.116 branch price windows rerun cleanly with forced tenant RLS and no ov
         has_table_privilege('bms_app',oid,'INSERT') AS insertable,
         has_table_privilege('bms_app',oid,'UPDATE') AS updatable,
         has_table_privilege('bms_app',oid,'DELETE') AS deletable,
-        (SELECT count(*)::int FROM pg_policy WHERE polrelid=oid) AS policies
-        FROM pg_class WHERE oid='bms_branch_price_windows'::regclass`)).rows[0];
+        (SELECT count(*)::int FROM pg_policy WHERE polrelid=c.oid) AS policies
+        FROM pg_class c WHERE c.oid='bms_branch_price_windows'::regclass`)).rows[0];
       assert.ok(row.relrowsecurity&&row.relforcerowsecurity&&row.readable&&row.insertable&&row.updatable);
       assert.equal(row.deletable,false);
       assert.equal(row.policies,1);

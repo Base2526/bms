@@ -75,7 +75,7 @@ function harness(options: { open?: boolean; oldReturn?: boolean; costHidden?: bo
     }
     if (sql.includes("FROM bms_board_game_waitlist")) return rows([{ entries: 0, seated: 0, no_show: 0, cancelled: 0, deposits_forfeited: "0", invalid_wait: options.missingWait ? 1 : 0 }]);
     if (sql.includes("FROM bms_payments")) { assert.doesNotMatch(sql, /OR mp\.location_id IS NULL/); return rows([{ revenue: "0", minutes: "0" }]); }
-    if (sql.includes("FROM bms_board_game_session_games")) { assert.match(sql, /LEAST\(COALESCE\(loan\.returned_at,\$5\),\$3,\$5\)/); assert.equal(params[4], now); return rows(); }
+    if (sql.includes("FROM bms_board_game_session_games")) { assert.match(sql, /LEAST\(COALESCE\(loan\.returned_at,\$5::timestamptz\),\$3::timestamptz,\$5::timestamptz\)/); assert.equal(params[4], now); return rows(); }
     if (sql.includes("FROM bms_board_game_copies")) return rows([{ attention: 0, purchase_cost: "500.00" }]);
     if (sql.includes("INSERT INTO bms_board_game_branch_hours")) return rows();
     if (sql.includes("INSERT INTO bms_audit_log")) { if (options.failAudit) throw new Error("audit unavailable"); return rows(); }

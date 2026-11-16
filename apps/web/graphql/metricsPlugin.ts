@@ -14,20 +14,11 @@ import type { ApolloServerPlugin, BaseContext, GraphQLRequestListener } from "@a
 import { recordRequestMetric } from "@/lib/bms/requestMetrics";
 import { writeLogServer } from "@/lib/log/writeLog.server";
 import { ERROR_WINDOW_MS, EXPECTED_WINDOW_MS, shouldLog } from "@/lib/log/logThrottle";
+import { isExpectedGraphqlCode } from "./expectedErrorCodes";
 
 // error ที่ "ตั้งใจให้เกิด" — ผู้ใช้กรอกผิด/ไม่มีสิทธิ์/หมดอายุ ไม่ใช่ระบบพัง
 // เก็บไว้อ่านย้อนหลังได้เหมือนกัน แต่เป็น warn เพื่อไม่ให้ไปปลุก Slack alert
 // (alertSlackServer ยิงเมื่อ level=error ครบ threshold) และไม่กลบของจริง
-const EXPECTED_CODES = new Set([
-  "BAD_USER_INPUT",
-  "FORBIDDEN",
-  "UNAUTHENTICATED",
-  "GRAPHQL_VALIDATION_FAILED",
-  "GRAPHQL_PARSE_FAILED",
-  "BAD_REQUEST",
-  "PERSISTED_QUERY_NOT_FOUND",
-]);
-
 // Apollo 4.13 tightened the listener error type to the formatted transport
 // shape even though runtime errors still carry these standard GraphQL fields.
 // Keep logging structural and read-only instead of coupling it to one Apollo
@@ -61,7 +52,7 @@ export function metricsPlugin<TContext extends BaseContext>(): ApolloServerPlugi
           // ที่พังจึงไม่เหลือร่องรอยเลย
           const operationName =
             requestContext.operationName || requestContext.operation?.name?.value || "anonymous";
-          const expected = EXPECTED_CODES.has(String(errorCode));
+          const expected = isExpectedGraphqlCode(errorCode);
           const level = expected ? "warn" : "error";
           // error เดียวกันรัว ๆ ไม่ต้องเขียนทุกครั้ง — จำนวนครั้งนับครบอยู่แล้วที่
           // recordRequestMetric ข้างล่าง (403 ทุกครั้งที่โหลดหน้าเป็นเรื่องปกติมาก)

@@ -70,7 +70,7 @@ try {
     await root.locator('[data-play]').click();
     await page.waitForFunction(()=>!document.querySelector('[data-cost-player] audio').paused);
     await page.goto(base+'/restaurant');
-    await page.locator('[data-restaurant-guide] a[href="/cost-pricing"]').waitFor();
+    await page.locator('[data-restaurant-guide] a[href*="/learn/restaurant"]').first().waitFor();
     admin=true;await page.goto(base+'/cost-pricing');
     await root.locator('[data-session-cta][href="/admin/dashboard"]').waitFor();
     await context.addCookies([{name:'theme',value:'dark',url:base}]);await page.reload();

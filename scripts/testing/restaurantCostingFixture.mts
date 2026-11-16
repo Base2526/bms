@@ -48,7 +48,7 @@ export async function withCostingFixture(work: (f: Awaited<ReturnType<typeof cre
 }
 
 async function createFixture(tenant: string) {
-  await query("INSERT INTO bms_tenants(id,name,slug) VALUES ($1,'FAKE costing DB contract',$2)", [tenant, `fake-costing-${tenant}`]);
+  await query("INSERT INTO bms_tenants(id,name,slug,plan) VALUES ($1,'FAKE costing DB contract',$2,'business')", [tenant, `fake-costing-${tenant}`]);
   await query(`INSERT INTO bms_store_profile(tenant_id,currency,vat_registered,price_includes_vat,vat_rate)
     VALUES ($1,'THB',TRUE,TRUE,7)`, [tenant]);
   const locations: string[] = [];

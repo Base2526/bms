@@ -529,6 +529,8 @@ export type PosScanHit = {
   priceTiers: PriceTier[];
   /** true = ต้องระบุเลขเครื่องครบทุกชิ้นก่อนขาย (8.3) — จอต้องกางช่องกรอกให้ */
   serialTracked: boolean;
+  /** Server-derived eligibility for native cash-only emergency offline sales. */
+  offlineRetailEligible: boolean;
   /**
    * โปรที่ใช้งานอยู่ของสินค้านี้ (8.7) — ส่งให้จอพรีวิวยอดด้วยกฎเดียวกับ createOrder
    * null = ไม่มีโปร หรือหมดช่วงเวลาไปแล้ว
@@ -789,6 +791,9 @@ export async function resolvePosScan(
     pack_price: string | null;
     barcode: string | null;
     size: string | null;
+    stock_policy: string;
+    is_bundle: boolean;
+    serial_tracked: boolean;
   }>(
     `SELECT p.sku,
             p.name,
@@ -796,6 +801,8 @@ export async function resolvePosScan(
             CASE WHEN k.pack_code IS NOT NULL AND k.pack_code <> 'BASE'
               THEN k.barcode ELSE COALESCE(k.barcode, p.barcode) END AS barcode,
             p.serial_tracked,
+            p.is_bundle,
+            COALESCE(policy.stock_policy, 'DIRECT') AS stock_policy,
             k.pack_code,
             k.unit_name,
             k.base_qty,
@@ -845,6 +852,8 @@ export async function resolvePosScan(
                 HAVING count(DISTINCT upper(i.size)) = 1)
             )                                        AS size
        FROM bms_products p
+       LEFT JOIN bms_product_stock_policies policy
+         ON policy.tenant_id = p.tenant_id AND policy.product_sku = p.sku
        LEFT JOIN bms_product_packs k
         ON k.tenant_id = p.tenant_id AND k.product_sku = p.sku
         AND (k.barcode = $2 OR (
@@ -990,7 +999,10 @@ export async function resolvePosScan(
     packPrice,
     basePrice,
     priceTiers,
-    serialTracked: (row as any).serial_tracked === true,
+    serialTracked: row.serial_tracked === true,
+    offlineRetailEligible: !row.is_bundle && !row.serial_tracked
+      && (row.stock_policy === "DIRECT" || row.stock_policy === "PACK")
+      && !scaleBarcode,
     promotion,
     modifiers: modifierRes.rows.map((modifier) => ({
       code: modifier.code,
@@ -2814,11 +2826,12 @@ async function canonicalizePosSaleLines(
   // แต่ **คิดเงินไม่ได้** โดยขึ้นเป็น INVALID_PACK ที่อ่านไม่รู้เรื่องหน้าลูกค้า
   salesSurface: "RETAIL_POS" | "RESTAURANT_POS"
 ): Promise<
-  | { ok: true; items: OrderItemInput[]; serialLines: CanonicalPosSerialLine[] }
+  | { ok: true; items: OrderItemInput[]; serialLines: CanonicalPosSerialLine[]; offlineRestrictedSku: string | null }
   | { ok: false; sku: string; packCode: string }
 > {
   const items: OrderItemInput[] = [];
   const serialLines: CanonicalPosSerialLine[] = [];
+  let offlineRestrictedSku: string | null = null;
   for (const line of lines) {
     const sku = String(line.sku ?? "").trim();
     // ดูเหตุผลที่ห้าม toUpperCase() ที่ resolvePosScan — ไซซ์ที่มีหน่วยตัวพิมพ์เล็ก
@@ -2828,6 +2841,7 @@ async function canonicalizePosSaleLines(
     if (!sku || !size || !Number.isInteger(packQty) || packQty <= 0) continue;
     const rawScaleBarcode = String(line.scaleBarcode ?? "").trim();
     if (rawScaleBarcode) {
+      offlineRestrictedSku ??= sku;
       const scaleHit = await resolvePosScan(tenantId, rawScaleBarcode, { locationId });
       if (!scaleHit || !scaleHit.scaleBarcode || scaleHit.sku !== sku || scaleHit.size !== size) {
         return { ok: false, sku, packCode: "SCALE" };
@@ -2857,9 +2871,13 @@ async function canonicalizePosSaleLines(
       pack_price: string | null;
       stored_size: string | null;
       serial_tracked: boolean;
+      is_bundle: boolean;
+      stock_policy: string;
     }>(
       `SELECT COALESCE(sized_base.price, shared_base.price, p.price) AS base_price,
               p.serial_tracked,
+              p.is_bundle,
+              COALESCE(sp.stock_policy, 'DIRECT') AS stock_policy,
               k.pack_code,
               k.unit_name,
               k.base_qty,
@@ -2914,6 +2932,10 @@ async function canonicalizePosSaleLines(
     if (!row || (packCode !== "BASE" && !row.pack_code)) {
       return { ok: false, sku, packCode };
     }
+    if (row.is_bundle || row.serial_tracked
+      || (row.stock_policy !== "DIRECT" && row.stock_policy !== "PACK")) {
+      offlineRestrictedSku ??= sku;
+    }
     const baseQty = row.base_qty ?? 1;
     const basePrice = await readBranchPrice(tenantId,locationId,sku,row.stored_size ?? size) ?? Number(row.base_price);
     const packPrice = await readBranchPrice(tenantId,locationId,sku,row.stored_size ?? size,packCode) ?? (row.pack_price == null ? basePrice * baseQty : Number(row.pack_price));
@@ -2940,7 +2962,7 @@ async function canonicalizePosSaleLines(
       });
     }
   }
-  return { ok: true, items, serialLines };
+  return { ok: true, items, serialLines, offlineRestrictedSku };
 }
 
 export type BoardGamePosPricingPreview = {
@@ -3813,6 +3835,12 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     input.restaurantCheckId ? "RESTAURANT_POS" : input.salesSurface ?? "RETAIL_POS"
   );
   if (!canonical.ok) return { status: "INVALID_PACK", sku: canonical.sku, packCode: canonical.packCode };
+  if (input.offlineTenderedAt && canonical.offlineRestrictedSku) {
+    return {
+      status: "OFFLINE_NOT_ALLOWED",
+      reason: `สินค้า ${canonical.offlineRestrictedSku} ต้องขายขณะเชื่อมต่อระบบ เนื่องจากมีวิธีตัดสต็อกหรือขั้นตอนเฉพาะ`,
+    };
+  }
   const items = canonical.items;
   if (items.length === 0 && !boardGameBillingGroupId) return { status: "EMPTY" };
 
@@ -6409,7 +6437,7 @@ export async function processPosReturn(input: {
           note: string | null;
           available_to_return: number;
         }>(
-          `SELECT oil.lot_id, lot.lot_no, lot.expiry_date, lot.received_at,
+          `SELECT oil.lot_id, lot.lot_no, lot.expiry_date::text AS expiry_date, lot.received_at,
                   lot.supplier_id, lot.unit_cost, lot.note,
                   (oil.qty - COALESCE((
                     SELECT SUM(pril.qty)

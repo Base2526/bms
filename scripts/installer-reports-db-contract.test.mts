@@ -10,13 +10,13 @@ test("isolated installer intake/list/detail/triage/retention round trip", { skip
   (globalThis as any).AsyncLocalStorage = AsyncLocalStorage;
   const { query, getClient } = await import("../apps/web/lib/db.ts");
   const service = await import("../apps/web/lib/bms/installerReports.ts");
-  await query("CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY, is_platform_admin BOOLEAN NOT NULL DEFAULT false)");
+  await query("CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY, name TEXT NOT NULL, password_hash TEXT NOT NULL, is_platform_admin BOOLEAN NOT NULL DEFAULT false)");
   await query("DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='bms_app') THEN CREATE ROLE bms_app; END IF; END $$");
   const migration = await readFile(new URL("../db/migrations/10.31__bms_installer_reports.sql", import.meta.url), "utf8");
   await query(migration); await query(migration);
   await query("TRUNCATE bms_installer_reports");
   const admin = "11111111-1111-4111-8111-111111111111";
-  await query("INSERT INTO users(id,is_platform_admin) VALUES ($1,true) ON CONFLICT(id) DO NOTHING", [admin]);
+  await query("INSERT INTO users(id,name,password_hash,is_platform_admin) VALUES ($1,'FAKE installer admin','!',true) ON CONFLICT(id) DO NOTHING", [admin]);
   const payload = (kernel: string, version: string, time = "2026-10-01T12:00:00Z") => Buffer.from(`formatVersion=1\nproduct=pos\ninstallerVersion=${version}\nstage=download\nerror=download failed\nkernel=${kernel}\narchitecture=x86_64\ncreatedAt=${time}\n`);
   const a = await service.submitInstallerReport(payload("Linux 6.8", "0.2.13"));
   const duplicate = await service.submitInstallerReport(payload("Linux 6.8", "0.2.13"));
@@ -61,5 +61,5 @@ test("isolated installer intake/list/detail/triage/retention round trip", { skip
     () => GET(new NextRequest("http://localhost/api/admin/installer-reports")));
   assert.equal((await runAs()).status, 401);
   const shopAdmin = "22222222-2222-4222-8222-222222222222";
-  await query("INSERT INTO users(id) VALUES($1) ON CONFLICT(id) DO NOTHING", [shopAdmin]);
+  await query("INSERT INTO users(id,name,password_hash) VALUES($1,'FAKE installer shop admin','!') ON CONFLICT(id) DO NOTHING", [shopAdmin]);
 });

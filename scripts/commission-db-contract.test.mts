@@ -67,6 +67,7 @@ let tenantId = "";
 let locationId = "";
 let deviceId = "";
 let cashierId = "";
+let approverId = "";
 let shiftId = "";
 let firstOrderId = "";
 
@@ -127,6 +128,12 @@ test("setup: two products at ฿1,000, a register, an open shift", async () => {
     `SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id
       WHERE u.tenant_id = $1 AND r.name = 'Administrator' ORDER BY u.created_at LIMIT 1`,
     [tenantId]
+  )).rows[0].id;
+  approverId = (await query<{ id: string }>(
+    `INSERT INTO users (name, email, role, role_id, tenant_id, password_hash, fake_test)
+     SELECT $2, $3, role, role_id, tenant_id, password_hash, TRUE
+       FROM users WHERE tenant_id=$1 AND id=$4 RETURNING id`,
+    [tenantId, `FAKE ${TAG} approver`, `${TAG}-${process.pid}@example.invalid`, cashierId]
   )).rows[0].id;
   await setCashierPin(tenantId, cashierId, PIN);
   const opened = await openPosShift({ tenantId, deviceId, openedBy: cashierId, openingFloat: 20000 });
@@ -255,7 +262,7 @@ test("a voided bill earns nothing", async () => {
 
   const voided = await voidPosSale({
     tenantId, deviceId, shiftId, orderId: sale.orderId,
-    actorUserId: cashierId, approvedByUserId: cashierId,
+    actorUserId: cashierId, approvedByUserId: approverId,
     reason: "กดผิด", idempotencyKey: key("void"),
   });
   assert.equal(voided.status, "VOIDED", JSON.stringify(voided));
@@ -321,6 +328,7 @@ test("teardown: remove every row this suite created", async () => {
   await query(`DELETE FROM bms_pos_cash_movements WHERE tenant_id = $1 AND device_id = $2`, [tenantId, deviceId]);
   await query(`DELETE FROM bms_pos_shifts WHERE tenant_id = $1 AND device_id = $2`, [tenantId, deviceId]);
   await query(`DELETE FROM bms_pos_devices WHERE tenant_id = $1 AND id = $2`, [tenantId, deviceId]);
+  await query(`DELETE FROM users WHERE tenant_id = $1 AND id = $2`, [tenantId, approverId]);
   // ⚠️ ต้องรวม SKU_PACK ด้วย — ชุดนี้ใช้ร้านจริงของฐาน dev ซึ่งอยู่แพ็กเกจ Free (สินค้าสูงสุด 5)
   // สินค้าที่ค้างไว้หนึ่งตัวกินโควตาของชุดที่รันถัดไปจนล้มด้วย "เกินโควตาแพ็กเกจ" ที่อ่านแล้ว
   // ไม่มีทางเดาว่าเป็นเศษของเทสตัวก่อน

@@ -512,12 +512,16 @@ See [../business/pos.md](../business/pos.md) for the operator flow and go-live c
 ## REST — debug / test endpoints
 
 - `POST /api/bms/chat` — run the AI pipeline on a message and return the full trace (intent,
-  tool, reply) without logging to inbox. Used by the Playground admin page; it requires the signed
-  admin cookie and derives tenant from the session (including signed platform-admin drill-down),
+  tool, reply). Used by the Playground admin page; it requires an active admin session and
+  `ai_quality.view`, and derives tenant from the session (including signed platform-admin drill-down),
   never from request JSON. Since AI tool-calling
   landed, `tool` is `"ai:tool-calling"` and the response includes a `trace[]` of which tools Claude
   actually called whenever the tenant has AI credentials; it only falls back to the old
-  intent/tool/checkStock shape when there's no AI key or the shared quota is exhausted.
+  intent/tool/checkStock shape when there's no AI key or the shared quota is exhausted. Channel
+  `test` does not log to Inbox; non-test channels with a customer ref can persist a conversation
+  and confirmed business actions. The request body is capped at 64 KiB, the message at 10,000
+  characters, and the customer reference at 256 characters; malformed input is rejected before
+  the pipeline runs.
 - `POST /api/bms/order` — create an order directly via curl, bypassing chat. Both endpoints
   validate `channel` against a local allowlist that must be kept in sync with `lib/bms/pipeline.ts`'s
   `Channel` type (see the lesson recorded in [CLAUDE.local.md](../../CLAUDE.local.md) about channel
@@ -616,7 +620,9 @@ host differs from the request host is refused with 403 (native clients send no `
 are capped at 1 MiB and multipart uploads at 64 MiB per request / 25 MiB per file with an image/audio
 MIME allowlist, and the `graphqlRequestLimitsRule` validation rule rejects operations deeper than 30,
 with more than 2,500 fields (fragment expansions counted) or more than 200 aliases before any
-resolver runs.
+resolver runs. A malformed or empty JSON POST returns 400 with `BAD_REQUEST` before Apollo parses it;
+it is a caller error, not a server 500. Resolver logging records explicit GraphQL client and
+authorization rejection codes as warnings so they do not inflate the system error count.
 
 ## REST — order/payment/purchase/shipment transition routes
 
@@ -912,8 +918,8 @@ outstanding points are an accounting liability, not a marketing statistic. All f
 seeded by `7.96` to Manager, and `member.*` also to Sales and Cashier.
 
 Like coupon redemption, earning and redeeming points are not resolver-level concerns. Redemption
-happens inside `createOrder()` alongside `applyCouponInTx()`, and earning happens wherever an order
-reaches `PAID` — `payOrder()`, `confirmPayment()`, the split-payment confirm, and
+happens inside `createOrder()` alongside `applyCouponInTx()`, and earning happens on payment-confirmed
+paths that move an order to `PAID` — `confirmPayment()`, the split-payment confirm, and
 `finalizePosSale()` — so every caller gets it without opting in. Tier is re-evaluated after each of
 those, outside the transaction, because a failed review must not undo a payment that already happened.
 
@@ -1234,6 +1240,10 @@ the admin sidebar/header without signing in again. Role/password changes increme
 version, and deletion or tenant deactivation makes refresh fail, so stale JWT claims cannot retain
 permissions for the rest of their nominal lifetime. The Redis check remains an additional explicit
 logout mechanism rather than the source of role truth.
+
+`users.username` is nullable for email-only accounts. GraphQL `User.username` is nullable as well;
+callers that display an identity use the existing name/email fallback instead of treating a missing
+username as a failed request.
 
 ## Operational list search
 

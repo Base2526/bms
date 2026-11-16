@@ -1,5 +1,29 @@
 # BMS feature log
 
+## Operational boundaries and log triage (no migration, 2026-11-16)
+
+- GraphQL client/auth rejection codes are recorded as warnings in both resolver and Apollo log
+  paths. Empty or malformed JSON at `/api/graphql` returns `400 BAD_REQUEST`; a nullable database
+  username and a post without an author no longer turn a read into a server error. The daily log
+  collector selects `level=error` rather than treating every `status=error` row as a server fault.
+  See the [log runbook](architecture/logging-and-triage.md) for audit scope and limits.
+- Bare order-pay adapters refuse to move an order to `PAID` without a confirmed payment. Staff use
+  the Payment review flow; cancellation and whole-order return require confirmation and branch
+  access, with actor audit inside the stock transaction. Order list reads batch selected child
+  fields. See [order](business/order.md), [payment](business/payment.md), and
+  [API](architecture/api.md).
+- Signed inbound routes now bound streamed bodies and reject malformed UTF-8/JSON before an event
+  claim; LINE media downloads are size bounded. Browser/OS notifications show generic text on lock
+  screens while authenticated in-app views retain operational context. See
+  [integration notes](integrations/line.md) and [Inbox](manual/inbox.md).
+- Fish intake and owner views distinguish reviewed receipt cost, inventory valuation and the
+  separate two-decimal per-gram selling price; arbitrary per-kg rates are not yet sale-ready across
+  channels. See [inventory](business/inventory.md).
+- Verification on 2026-11-16: web `npm run gate` passed (3,795 pass, 10 skip), mobile typecheck and
+  Jest passed (473/473). The DB runner on `bms_realtime_test` passed 911, skipped 20 and reported
+  eight name/port guards; those eight passed separately on their required disposable databases.
+  These are local tests, not production deployment or authenticated admin-browser verification.
+
 ## Verified shop owner role (`10.121`, 2026-11-14)
 
 Both email-verified and social `/shop-signup` now create the first shop user as its
@@ -1857,6 +1881,6 @@ decision-driving scoring model, and deeper analytics/dashboarding beyond the cur
 layout/loading guards and English-only legacy platform pages — see [AGENTS.md](../AGENTS.md) § i18n
 coverage before assuming any of them is a leak) · restarting Postgres to make the already-preloaded
 `pg_stat_statements` take effect (plus `CREATE EXTENSION` per database) so `/admin/system-health` can
-add a slow-query card · instrumenting REST route latency (`rest:` prefix, no recorder change needed)
+add a slow-query card · instrumenting remaining REST routes not yet covered by `withRouteErrorLog()`
 · deciding whether container CPU/memory belongs on `/admin/system-health` given the Docker-socket
 access it would require.

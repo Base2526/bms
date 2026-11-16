@@ -215,10 +215,11 @@ test('platform AI cost admission is durable, tenant scoped and serialized', asyn
     } finally { sub.mock.timers.reset(); }
   });
 
-  await t.test('catalog matches all three packages and a reduced grant preserves recorded consumption', async () => {
+  await t.test('catalog matches the current packages and a reduced grant preserves recorded consumption', async () => {
     const plans = (await query("SELECT code,price_monthly,ai_credits_monthly,max_ai_messages_month FROM bms_plans ORDER BY code")).rows;
     assert.deepEqual(plans.map(p => [p.code, Number(p.price_monthly),p.ai_credits_monthly,p.max_ai_messages_month]),
-      [['business',1990,5000,5000],['free',0,100,100],['pro',599,1000,1000]]);
+      [['business',4900,5000,5000],['enterprise',29900,10000,10000],['free',0,100,100],
+        ['growth',1990,2500,2500],['pro',990,1000,1000]]);
     const tenant = await shop();
     await getAiUsage(tenant);
     await query("UPDATE bms_ai_usage_monthly SET credits_granted=1000,credits_consumed=130,credits_bonus=5,credits_adjusted=2 WHERE tenant_id=$1", [tenant]);

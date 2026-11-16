@@ -59,6 +59,22 @@ export class FishIntakeError extends Error {
   constructor(public code: string, message: string, public line?: number) { super(message); }
 }
 
+export type FishIntakeSetupReason = "NO_ACTIVE_SIZE" | "NOT_WEIGHTED" | "NOT_GRAM" | "LOT_DISABLED";
+
+export function fishIntakeProductSetupReasons(product: {
+  stock_policy: string | null;
+  base_unit: string | null;
+  lot_tracking: boolean | null;
+  has_active_variant: boolean;
+}): FishIntakeSetupReason[] {
+  const reasons: FishIntakeSetupReason[] = [];
+  if (!product.has_active_variant) reasons.push("NO_ACTIVE_SIZE");
+  if (product.stock_policy !== "WEIGHTED") reasons.push("NOT_WEIGHTED");
+  if (product.base_unit !== "GRAM") reasons.push("NOT_GRAM");
+  if (product.lot_tracking !== true) reasons.push("LOT_DISABLED");
+  return reasons;
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const textField = (value: unknown, max: number): string | null => {
@@ -314,7 +330,7 @@ export async function saveFishIntake(tenantId: string, actorId: string, input: F
   } finally { client.release(); }
 }
 
-export async function listFishIntakes(tenantId: string, limit = 30) {
+export async function listFishIntakes(tenantId: string, actorId: string, limit = 30) {
   const client = await getClient();
   try {
     await beginTenantTx(client,tenantId);
@@ -323,7 +339,12 @@ export async function listFishIntakes(tenantId: string, limit = 30) {
     created_at:Date;line_count:number;received_grams:string;purchase_amount:string;extra_amount:string;
   }>(`WITH recent AS (
          SELECT tenant_id,id,kind,location_id,source_name,source_sheet,created_at
-           FROM bms_fish_intakes WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT $2
+           FROM bms_fish_intakes h WHERE h.tenant_id=$1
+             AND (h.kind='HISTORICAL'
+               OR NOT EXISTS(SELECT 1 FROM bms_user_allowed_locations a WHERE a.tenant_id=$1 AND a.user_id=$3)
+               OR EXISTS(SELECT 1 FROM bms_user_allowed_locations a
+                 WHERE a.tenant_id=$1 AND a.user_id=$3 AND a.location_id=h.location_id))
+           ORDER BY h.created_at DESC LIMIT $2
        )
        SELECT h.id,h.kind,h.location_id,h.source_name,h.source_sheet,h.created_at,
         count(l.id)::int AS line_count,coalesce(sum(l.received_grams),0)::text AS received_grams,
@@ -333,7 +354,7 @@ export async function listFishIntakes(tenantId: string, limit = 30) {
          ON l.tenant_id=h.tenant_id AND l.intake_id=h.id
       GROUP BY h.id,h.kind,h.location_id,h.source_name,h.source_sheet,h.created_at
       ORDER BY h.created_at DESC`,
-    [tenantId,Math.min(Math.max(limit,1),100)]);
+    [tenantId,Math.min(Math.max(limit,1),100),actorId]);
     await client.query("COMMIT");
     return rows.rows.map(r=>({id:r.id,kind:r.kind,locationId:r.location_id,sourceName:r.source_name,
     sourceSheet:r.source_sheet,createdAt:r.created_at instanceof Date?r.created_at.toISOString():String(r.created_at),
@@ -361,10 +382,30 @@ export async function fishIntakeOptions(tenantId:string, actorId:string, search=
        WHERE p.tenant_id=$1 AND p.active AND sp.stock_policy='WEIGHTED' AND sp.base_unit='GRAM'
          AND sp.lot_tracking AND ($2='' OR p.sku ILIKE '%'||$2||'%' OR p.name ILIKE '%'||$2||'%')
        ORDER BY p.name,v.sort_order,v.code LIMIT 200`,[tenantId,term])).rows;
+    const unreadyRows=(await client.query<{
+      sku:string;name:string;stock_policy:string|null;base_unit:string|null;
+      lot_tracking:boolean|null;has_active_variant:boolean;
+    }>(`
+      SELECT p.sku,p.name,sp.stock_policy,sp.base_unit,sp.lot_tracking,
+        EXISTS(SELECT 1 FROM bms_product_variants v
+          WHERE v.tenant_id=p.tenant_id AND v.product_sku=p.sku AND v.active) AS has_active_variant
+        FROM bms_products p
+        LEFT JOIN bms_product_stock_policies sp
+          ON sp.tenant_id=p.tenant_id AND sp.product_sku=p.sku
+       WHERE p.tenant_id=$1 AND p.active
+         AND ($2='' OR p.sku ILIKE '%'||$2||'%' OR p.name ILIKE '%'||$2||'%')
+         AND (sp.stock_policy IS DISTINCT FROM 'WEIGHTED'
+           OR sp.base_unit IS DISTINCT FROM 'GRAM'
+           OR NOT COALESCE(sp.lot_tracking,false)
+           OR NOT EXISTS(SELECT 1 FROM bms_product_variants v
+             WHERE v.tenant_id=p.tenant_id AND v.product_sku=p.sku AND v.active))
+       ORDER BY p.name,p.sku LIMIT 100`,[tenantId,term])).rows;
+    const unreadyProducts=unreadyRows.map(row=>({sku:row.sku,name:row.name,
+      reasons:fishIntakeProductSetupReasons(row)}));
     const currency=(await client.query<{currency:string|null}>(
       `SELECT currency FROM bms_store_profile WHERE tenant_id=$1`,[tenantId])).rows[0]?.currency??null;
     await client.query("COMMIT");
-    return {locations,products,currency};
+    return {locations,products,unreadyProducts,currency};
   } catch(error) { await client.query("ROLLBACK"); throw error; }
   finally {client.release();}
 }

@@ -93,6 +93,7 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
         ? ('pharmacy' as const)
         : ('retail' as const);
     const offlineRetailItems = resolvedSnapshots.filter(item => {
+      if (item.offlineRetailEligible !== true) return false;
       const query = searchQuery.trim().toLocaleLowerCase();
       return (
         !query ||
@@ -173,7 +174,12 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
       const requestedKey = snapshotKey(code, size, packCode);
       const cached = snapshotCache.current.get(requestedKey);
       if (health.status === 'offline') {
-        if (cached) return cached;
+        if (cached) {
+          if (cached.offlineRetailEligible !== true) {
+            throw new Error(posText("สินค้านี้ต้องเชื่อมต่อเซิร์ฟเวอร์ก่อนขาย เพราะมีวิธีตัดสต็อกหรือขั้นตอนเฉพาะ"));
+          }
+          return cached;
+        }
         throw new Error(
           posText("สินค้านี้ยังไม่มี snapshot ราคาในเครื่อง ต้องเชื่อมต่อ Server อย่างน้อยหนึ่งครั้งก่อนขายออฟไลน์"),
         );
@@ -224,6 +230,7 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
           unitName: item.unitName,
           baseQty: item.baseQty,
           serialTracked: item.serialTracked,
+          offlineRetailEligible: item.offlineRetailEligible,
           scaleBarcode: item.scaleBarcode,
           modifiers: item.modifiers.map(modifier => ({
             ...modifier,

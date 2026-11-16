@@ -9,6 +9,8 @@
   checked against the `x-tiktok-signature` (or `x-signature`) header — implemented directly in the
   route rather than through a shared crypto helper (unlike LINE/Meta).
 - Rate limit: 120 req/min per tenant, same pattern as every other channel.
+- The signed request body has a 1 MiB streaming limit. Malformed UTF-8/JSON or a missing
+  `messages[]` returns a client error before claiming an event.
 
 ## Message flow
 

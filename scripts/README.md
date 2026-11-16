@@ -1,5 +1,11 @@
 # scripts/ — ชุดเทสและเครื่องมือตรวจของ repo นี้
 
+- `node scripts/playground-denial-browser-smoke.mjs`: local synthetic AI Playground smoke at
+  `BMS_SMOKE_URL` (default `http://127.0.0.1:3000`), with optional `BMS_PLAYWRIGHT_MODULE`.
+  Chrome and Firefox at 1280/390 px verify 403 and 413 show useful errors without inventing an
+  AI reply, then a verified fixture reply renders. Every API is intercepted; no provider call,
+  customer message or business write occurs. Screenshots go to `.test-output/playground-denial-browser/`.
+
 - `node scripts/admin-language-browser-smoke.mjs`: local synthetic admin smoke with all APIs
   intercepted. Set `BMS_ADMIN_SMOKE_ORIGIN` and `BMS_PLAYWRIGHT_PACKAGE` as needed. Checks language
   persistence, retained SKU input, Thai/English calendar months, role dialogs, stock transfers,
@@ -942,12 +948,18 @@ diff /tmp/before /tmp/after
 (เช่น `product-vat-category` ที่แก้ประเภทภาษีของสินค้าทั้งร้าน) รันผิดฐาน = แก้ข้อมูลลูกค้า
 
 ```bash
-cd apps/web && POSTGRES_HOST=localhost POSTGRES_DB=bms POSTGRES_USER=app \
-  POSTGRES_PASSWORD="$(grep -E '^POSTGRES_PASSWORD=' ../../.env.dev | cut -d= -f2-)" \
-  REDIS_URL=redis://127.0.0.1:6379 npm run test:db
+cd apps/web && POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5433 \
+  POSTGRES_DB=bms_realtime_test POSTGRES_USER=app \
+  POSTGRES_PASSWORD="$BMS_TEST_DB_PASSWORD" \
+  REDIS_URL=redis://127.0.0.1:6380 npm run test:db
 ```
 
-`POSTGRES_HOST=localhost` เพราะ `.env.dev` ชี้ host ชื่อ `postgres` (ชื่อใน docker network)
+ตั้ง `BMS_TEST_DB_PASSWORD` จากฐานทดสอบแยกก่อนรัน ห้ามนำรหัสของฐานใช้งานจริงมาใช้.
+`test:db` ทั้งชุดมีบางไฟล์ที่บังคับฐานเฉพาะ เช่น `bms_freemium_test`,
+`bms_requisition_test`, `bms_operations_test` และ `bms_restaurant_readiness_test`;
+เมื่อรันบน `bms_realtime_test` ไฟล์เหล่านี้จะ fail ตาม guard โดยตั้งใจ ให้รันแยกกับฐานที่ชื่อ
+ถูกต้องและอ่านผลของชุดที่เหลือแยกจากกัน. `restaurant-pickup` บังคับพอร์ต `5547` ด้วย
+(ดูคำสั่งในหัวข้อ Restaurant pickup checkout). `npm run gate` ไม่รวม DB mode.
 
 ### ด่านกันรันผิดฐาน — ทั้งสองแบบออก exit `2` และ **ยังไม่รันเทสสักตัว**
 
@@ -971,8 +983,8 @@ host ที่ถือว่าท้องถิ่น: `localhost` · `127.0.
 ### ผ่านด่านแล้วจะพิมพ์ว่ากำลังรันกับฐานไหน
 
 ```
-[gate] เทส DB จะรันกับ localhost/bms
-[gate] โหมด db — 67 ไฟล์
+[gate] เทส DB จะรันกับ 127.0.0.1/bms_realtime_test
+[gate] โหมด db — จำนวนไฟล์ที่ runner พบในวันนั้น
 ```
 
 **อ่านบรรทัดนี้ก่อนปล่อยให้รันต่อทุกครั้ง**
@@ -990,7 +1002,7 @@ not ok 1 - restaurant intake -> callback -> atomic order; original demand, retri
 **แยกให้ออก**: exit `2` = ด่านปฏิเสธ ยังไม่ได้แตะฐาน · exit `1` = รันแล้วมีอะไรแดง
 (รวมกรณีต่อฐานไม่ได้) — อย่างหลังไม่ได้แปลว่าโค้ดผิด ให้ดูว่า Postgres ขึ้นอยู่หรือยัง
 
-### `npm run test:all` = pure + db (287 ไฟล์) ใช้ด่านและ env ชุดเดียวกับ `test:db`
+### `npm run test:all` = pure + db ใช้ด่านและ env ชุดเดียวกับ `test:db`
 
 ---
 
@@ -1601,6 +1613,20 @@ The browser also asserts exact due-time preservation on findings-only edits and 
   (`BMS_PLAYWRIGHT_MODULE` may override its import). `BMS_SMOKE_URL` must be a local dev server
   (default `http://127.0.0.1:3000`). Screenshots contain fake credentials only and are written under
   `.test-output/pos-pairing-qr/`. This is not physical-camera or live backend verification.
+
+## Fish dock
+
+- `node ../../scripts/run-contract-tests.mjs pure fish-intake-contract` and `fish-owner-contract`
+  from `apps/web` check import validation, intake math, placement input and cost allocation.
+- `POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5433 POSTGRES_DB=bms_realtime_test
+  POSTGRES_USER=app POSTGRES_PASSWORD=realtime_test_only node ../../scripts/run-contract-tests.mjs
+  db fish-dock-db-contract` from `apps/web` writes only to the restored disposable test database.
+  It checks history versus stock, lot/valuation/audit, retries, branch and tenant isolation,
+  stale placement, and delivery plans linked to ordinary orders.
+- `BMS_PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs node scripts/fish-dock-browser-smoke.mjs`
+  from the repo root checks the compiled local admin page with synthetic API responses in
+  Playwright Firefox at 1280/390 px. Set `BMS_SMOKE_URL` for a local server other than port 3018.
+  No customer message or production write occurs. Screenshots are under `.test-output/fish-dock-browser/`.
 
 ## Retail Local commercial integration
 

@@ -419,7 +419,7 @@ test("one unreleasable bill no longer blocks the rest of the sweep", async () =>
   assert.deepEqual(swept.orderIds, [healthy.orderId], "the healthy bill must still be released");
   assert.equal(swept.failed.length, 1, "the drifted bill must be reported, not thrown");
   assert.equal(swept.failed[0].orderId, broken.orderId);
-  assert.ok(swept.failed[0].reason.includes("reserved_stock"), swept.failed[0].reason);
+  assert.ok(swept.failed[0].reason.includes("STOCK_REVIEW_REQUIRED"), swept.failed[0].reason);
   assert.equal(await reserved(RICE), riceReserved - 200, "its ingredients came back");
 
   const statuses = await query<{ id: string; status: string }>(

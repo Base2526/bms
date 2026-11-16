@@ -165,10 +165,9 @@ function PostsList(){
     },
     {
       title:uiText("admin_ui.en_author_5fda2"),
-      render:(_:any,r:any)=>
-        <Link href={`/admin/users/${r.author.id}/edit`} prefetch={false}>
-          {r.author?.name}
-        </Link>
+      render:(_:unknown,r:PostRow)=>r.author?.id
+        ? <Link href={`/admin/users/${r.author.id}/edit`} prefetch={false}>{r.author.name || "-"}</Link>
+        : "-"
     },
     {
       title:uiText("admin_ui.en_status_bae7d"),

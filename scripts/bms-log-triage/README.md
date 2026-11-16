@@ -3,7 +3,7 @@
 อัตโนมัติทุกวัน: อ่าน error จาก `system_logs` → ให้ Claude วิเคราะห์ + เสนอแพตช์ → เปิด **draft PR** ให้คนรีวิว
 
 ## ส่วนประกอบ
-- [`collect-error-logs.mjs`](collect-error-logs.mjs) — ดึง error 24 ชม.ล่าสุด, จัดกลุ่ม/dedupe, **ปิดบัง secret/PII**, เขียน `bms-log-report.md`
+- [`collect-error-logs.mjs`](collect-error-logs.mjs) — ดึง `level=error` 24 ชม.ล่าสุด, จัดกลุ่ม/dedupe, **ปิดบัง secret/PII**, เขียน `bms-log-report.md` (`status=error` อย่างเดียวไม่ใช่ข้อพิสูจน์ว่าเซิร์ฟเวอร์พัง)
 - [`notify-line.mjs`](notify-line.mjs) — แจ้งเตือนทีมผ่าน LINE (Messaging API push) เมื่อเปิด PR
 - [`../../.github/workflows/daily-log-triage.yml`](../../.github/workflows/daily-log-triage.yml) — cron รายวัน → collector → Claude → draft PR → แจ้ง LINE
 
@@ -30,6 +30,7 @@
 - เวลา: แก้ `cron` ใน workflow (ตอนนี้ 22:00 UTC ≈ 09:00 AEST)
 - ช่วง/ขนาด: env `LOG_WINDOW_HOURS` (24), `LOG_MAX_GROUPS` (30)
 - ขอบเขตการแก้ของ AI: แก้ `prompt` / `claude_args --allowedTools` ใน workflow
+- วิธีอ่าน log และตรวจเหตุขัดข้องจริง: [logging-and-triage.md](../../docs/architecture/logging-and-triage.md)
 
 ## กติกาความปลอดภัย (ยึดตาม production safety)
 - เปิดเป็น **draft PR เสมอ** — คนต้องรีวิว/merge เอง (ไม่มี auto-merge, ไม่มี deploy)

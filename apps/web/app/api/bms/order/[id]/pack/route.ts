@@ -1,7 +1,7 @@
 // POST /api/bms/order/:id/pack — OMS transition (packOrder) [signed admin + RBAC · tenant จาก session]
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { packOrder } from "@/lib/bms/orders";
+import { packOrder, canAccessOrderBranch } from "@/lib/bms/orders";
 import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -13,7 +13,10 @@ async function handlePOST(_req: NextRequest, { params }: { params: { id: string 
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
   const orderId = params.id?.trim();
   if (!orderId) return NextResponse.json({ error: "order id required" }, { status: 400 });
-  const ok = await packOrder(auth.tenantId, orderId);
+  if (!(await canAccessOrderBranch(auth.tenantId, orderId, String(auth.adminId)))) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  const ok = await packOrder(auth.tenantId, orderId, String(auth.adminId));
   if (!ok) return NextResponse.json({ status: "INVALID_TRANSITION", orderId }, { status: 409 });
   return NextResponse.json({ ok: true, orderId });
 }

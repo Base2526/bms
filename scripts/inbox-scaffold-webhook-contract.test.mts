@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import crypto from "node:crypto";
 import { loadWithStubs } from "./testing/webhookHarness.mts";
+import { readBoundedWebhookText } from "../apps/web/lib/bms/webhookBody.ts";
 
 for (const channel of ["tiktok", "shopee", "lazada"] as const) {
   function harness(saved: boolean) {
@@ -11,6 +12,7 @@ for (const channel of ["tiktok", "shopee", "lazada"] as const) {
       "@/lib/bms/pipeline": { runPipeline: async () => { calls.pipeline++; return { reply: "FAKE-reply" }; } },
       "@/lib/bms/channels": { getChannel: async () => ({ active: true, channel_secret: "FAKE-secret" }) },
       "@/lib/bms/rateLimit": { rateLimit: async () => ({ ok: true }) },
+      "@/lib/bms/webhookBody": { readBoundedWebhookText },
       "@/lib/bms/inbox": {
         logConversation: async () => "FAKE-conversation",
         logInboundMessage: async (...args: unknown[]) => {
@@ -25,16 +27,19 @@ for (const channel of ["tiktok", "shopee", "lazada"] as const) {
       },
       "@/lib/log/routeError": { withRouteErrorLog: (_name: string, handler: unknown) => handler },
     });
-    const post = (message: Record<string, unknown>) => {
-      const raw = JSON.stringify({ messages: [message] });
+    const postRaw = (raw: string) => {
       const signature = crypto.createHmac("sha256", "FAKE-secret").update(raw).digest("hex");
       const header = channel === "tiktok" ? "x-tiktok-signature" : `x-${channel}-signature`;
-      return route.POST({ text: async () => raw, headers: new Headers({ [header]: signature }) },
+      return route.POST(new Request("https://example.test/webhook", {
+        method: "POST", body: raw, headers: { [header]: signature },
+      }),
         { params: { tenantId: "FAKE-tenant" } });
     };
+    const post = (message: Record<string, unknown> | Record<string, unknown>[]) =>
+      postRaw(JSON.stringify({ messages: Array.isArray(message) ? message : [message] }));
     const sender = channel === "tiktok" ? { user_id: "FAKE-user" }
       : channel === "shopee" ? { from_id: "FAKE-user" } : { buyer_id: "FAKE-user" };
-    return { calls, post, sender };
+    return { calls, post, postRaw, sender };
   }
 
   test(`${channel} rejects missing sender before claiming or running AI`, async () => {
@@ -51,6 +56,38 @@ for (const channel of ["tiktok", "shopee", "lazada"] as const) {
     assert.equal((await h.post({ ...h.sender, id: "FAKE-event", content: { text: { invalid: true } } })).status, 400);
     assert.equal(h.calls.claims, 0);
     assert.equal(h.calls.pipeline, 0);
+  });
+
+  test(`${channel} rejects a malformed later item before persisting the first`, async () => {
+    const h = harness(true);
+    const response = await h.post([
+      { ...h.sender, id: "FAKE-good", content: { text: "hello" } },
+      { ...h.sender, content: { text: "missing id" } },
+    ]);
+    assert.equal(response.status, 400);
+    assert.equal(h.calls.claims, 0);
+    assert.equal(h.calls.inbound, 0);
+  });
+
+  test(`${channel} rejects malformed JSON and an oversized body before claiming events`, async () => {
+    const h = harness(true);
+    assert.equal((await h.postRaw("{")).status, 400);
+    assert.equal((await h.postRaw("null")).status, 400);
+    assert.equal((await h.postRaw("{}")).status, 400);
+    assert.equal((await h.postRaw(" ".repeat(1024 * 1024 + 1))).status, 413);
+    assert.equal(h.calls.claims, 0);
+    assert.equal(h.calls.inbound, 0);
+  });
+
+  test(`${channel} rejects an oversized batch before any event claim`, async () => {
+    const h = harness(true);
+    const batch = Array.from({ length: 201 }, (_, index) => ({
+      ...h.sender, id: `FAKE-${index}`, content: { text: "hello" },
+    }));
+    const response = await h.post(batch);
+    assert.equal(response.status, 413);
+    assert.equal(h.calls.claims, 0);
+    assert.equal(h.calls.inbound, 0);
   });
 
   test(`${channel} media persistence failure releases the claim for safe provider retry`, async () => {
@@ -80,6 +117,17 @@ for (const channel of ["tiktok", "shopee", "lazada"] as const) {
     assert.equal(h.calls.savedInputs[0].meta.unsupportedForAi, true);
     assert.equal(h.calls.pipeline, 0);
     assert.equal("reply" in (response.body as any).replies[0], false);
+  });
+
+  test(`${channel} keeps a media attachment alongside its caption`, async () => {
+    const h = harness(true);
+    const response = await h.post({ ...h.sender, id: "FAKE-caption-media",
+      content: { text: "ช่วยดูรูปนี้", image_url: "https://example.test/photo.jpg" } });
+    assert.equal(response.status, 200);
+    assert.equal(h.calls.savedInputs[0].body, "ช่วยดูรูปนี้");
+    assert.equal(h.calls.savedInputs[0].attachment.url, "https://example.test/photo.jpg");
+    assert.equal(h.calls.savedInputs[0].meta.unsupportedForAi, true);
+    assert.equal(h.calls.pipeline, 0);
   });
 
   test(`${channel} text persistence failure releases its claim without running AI`, async () => {

@@ -1627,6 +1627,7 @@ export async function deliverToChannelTracked(
     try {
       const resp = await fetch("https://api.line.me/v2/bot/message/push", {
         method: "POST",
+        signal: AbortSignal.timeout(15_000),
         headers: { "content-type": "application/json", authorization: `Bearer ${cfg.access_token}` },
         body: JSON.stringify({ to, messages }),
       });
@@ -1667,7 +1668,8 @@ export async function deliverToChannelTracked(
     const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(cfg.external_account_id)}/messages`;
     const send = async (msg: any) => {
       const response = await fetch(url, {
-        method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${cfg.access_token}` },
+        method: "POST", signal: AbortSignal.timeout(15_000),
+        headers: { "content-type": "application/json", authorization: `Bearer ${cfg.access_token}` },
         body: JSON.stringify({ recipient: { id: to }, messaging_type: "RESPONSE", message: msg }),
       });
       const bodyText = typeof response.text === "function" ? await response.text().catch(() => "") : "";
@@ -1767,7 +1769,12 @@ async function finalizeInboxOutbound(
     client = await getClient();
     await beginTenantTx(client, tenantId);
     await client.query(
-      `UPDATE bms_messages SET meta = meta || $3::jsonb
+      `UPDATE bms_messages SET meta = meta || $3::jsonb || jsonb_build_object(
+          'delivered', CASE WHEN meta->>'status' IN ('DELIVERED','READ') THEN true
+                            WHEN meta->>'status'='PARTIAL' THEN false
+                            ELSE ($3::jsonb->>'delivered')::boolean END,
+          'status', CASE WHEN meta->>'status' IN ('DELIVERED','READ','PARTIAL') THEN meta->>'status'
+                         ELSE $3::jsonb->>'status' END)
         WHERE tenant_id = $1 AND id = $2 AND direction = 'OUT'`,
       [tenantId, messageId, JSON.stringify({ delivered: delivery.delivered,
         status: delivery.partial ? "PARTIAL" : delivery.uncertain ? "PENDING" : outboundStatus(channel, delivery.delivered),
@@ -1828,7 +1835,9 @@ export async function sendStaffMessage(
     customerRef = conv.rows[0].customer_ref;
     const customerId = conv.rows[0].customer_id ?? null;
     const couponCode = couponCodeFromShareText(text);
-    if (couponCode && customerId && !/\/coupon\/wallet\?t=/i.test(text)) {
+    // A locally saved reply on web/TikTok/marketplaces never reaches the customer.
+    // Do not assign a coupon wallet based on a message that was not delivered.
+    if (channelSupportsPush(channel) && couponCode && customerId && !/\/coupon\/wallet\?t=/i.test(text)) {
       await client.query("SAVEPOINT inbox_coupon_assign");
       try {
         const assigned = await assignCouponToCustomerInTx(client, tenantId, customerId, couponCode, {

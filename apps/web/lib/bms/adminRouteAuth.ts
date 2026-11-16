@@ -39,7 +39,7 @@ export type AdminRouteAuth =
 
 /**
  * `permission = null` = "ต้องล็อกอินแต่ไม่ผูกกับสิทธิ์ใดเป็นพิเศษ" ใช้กับ route ที่ยังไม่มี
- * permission ตรงตัวใน catalog (เช่น AI playground) — เขียนให้ชัดดีกว่าปล่อยให้แต่ละ route
+ * permission ตรงตัวใน catalog — เขียนให้ชัดดีกว่าปล่อยให้แต่ละ route
  * ไปเรียก `verifyAdminSession()` เองแล้วลืมส่วน acting-tenant
  */
 export async function authorizeAdminRoute(permission: BmsPermission | null): Promise<AdminRouteAuth> {

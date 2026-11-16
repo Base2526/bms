@@ -27,6 +27,11 @@
 - latency (`avg`, `p50`, `p95`, `p99`, `max`)
 - status code distribution
 
+Latency นับจนอ่าน response body ครบ; request ที่เกิน timeout ถูก abort. GraphQL HTTP 200
+ที่มี `errors` หรือไม่มี `data` นับเป็น failure. การล็อกอินและเลือกข้อมูล fixture เป็นช่วง setup
+แยกจากระยะเวลาวัด throughput ของ request. ผลจาก local/dev ใช้เทียบโค้ดในสภาพแวดล้อมนั้นเท่านั้น
+และไม่ใช่ตัวเลขรองรับผู้ใช้ของ production.
+
 ## การใช้งาน
 
 รันจาก `apps/web` เพราะ repo นี้มี `tsx` อยู่ใน package นี้:

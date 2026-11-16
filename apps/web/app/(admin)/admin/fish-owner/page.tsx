@@ -15,7 +15,7 @@ type Purchase = { id: string; intake_id: string; location_id: string; supplier_n
 type Supplier = { supplier_name: string; sku: string; size: string; line_count: number; received_grams: string;
   bill_grams: string; purchase_amount: string; observed_baht_per_kg: string | null };
 type StockLot = { lot_id: string; location_id: string; sku: string; name: string; size: string; lot_no: string;
-  qty_grams: number; expiry_date: string | null; usable: boolean; count_id: string | null; version: number | null;
+  qty_grams: number; lot_updated_at: string; expiry_date: string | null; usable: boolean; count_id: string | null; version: number | null;
   ready_grams: number; cold_grams: number; other_grams: number; storageCurrent: boolean };
 type Profit = { sku: string; size: string; customer_id: string | null; customer_name: string | null; lot_id: string;
   lot_no: string; grams: number; revenue: number; cost: number | null; profit: number | null };
@@ -138,7 +138,8 @@ export default function FishOwnerPage() {
         content: `${selectedLot.name} ${selectedLot.lot_no} · ${kg(selectedLot.qty_grams)} · ${zones.map(x => `${x.zone} ${kg(x.grams)}`).join(" / ")}`,
         okText: L("ยืนยัน","Confirm"), onOk: async () => {
           if (await post({ action:"storage-count", confirmed:true, input:{ lotId:selectedLot.lot_id,
-            expectedLotGrams:selectedLot.qty_grams, expectedVersion:selectedLot.version ?? null,zones } })) setSelectedLot(null);
+            expectedLotGrams:selectedLot.qty_grams, expectedLotUpdatedAt:selectedLot.lot_updated_at,
+            expectedVersion:selectedLot.version ?? null,zones } })) setSelectedLot(null);
         } });
     } catch (e) { if (!(e as {errorFields?: unknown}).errorFields) message.error((e as Error).message); }
   }

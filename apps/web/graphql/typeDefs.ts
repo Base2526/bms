@@ -23,7 +23,7 @@ export const typeDefs = /* GraphQL */ `
     role_id: ID # New normalized field
     roleDetails: Role # Related role object
     created_at: String!
-    username: String!
+    username: String
     language: String!
     themePreference: String
     notifications_enabled: Boolean!
@@ -5640,12 +5640,12 @@ export const typeDefs = /* GraphQL */ `
     setRoleActive(id: ID!, is_active: Boolean!): Role!
 
     # ===== BMS orders (admin) — OMS state machine =====
-    bmsPayOrder(id: ID!): Boolean!        # PENDING → PAID
+    bmsPayOrder(id: ID!): Boolean!        # Legacy adapter returns false; use bmsSubmitPayment + bmsConfirmPayment
     bmsPackOrder(id: ID!): Boolean!       # PAID → PACKING
     bmsShipOrder(id: ID!): Boolean!       # PACKING → SHIPPED (ตัดสต็อก)
     bmsCompleteOrder(id: ID!): Boolean!   # SHIPPED → COMPLETED
-    bmsCancelOrder(id: ID!): Boolean!     # (PENDING/PAID/PACKING) → CANCELLED (คืน reserved)
-    bmsReturnOrder(id: ID!): Boolean!     # (SHIPPED/COMPLETED) → RETURNED (คืนสต็อก)
+    bmsCancelOrder(id: ID!, confirmed: Boolean!): Boolean!     # (PENDING/PAID/PACKING) → CANCELLED (คืน reserved)
+    bmsReturnOrder(id: ID!, confirmed: Boolean!): Boolean!     # (SHIPPED/COMPLETED) → RETURNED (คืนสต็อก)
     bmsReorderFromOrder(id: ID!): BmsReorderResult!   # "ซื้อซ้ำ" — สร้างออร์เดอร์ใหม่จากรายการเดิม
     bmsCreateOrder(channel: String, customerRef: String, items: [BmsOrderItemInput!]!, couponCode: String, preferredCarrier: BmsCarrier, locationId: ID): BmsReorderResult!  # แอดมิน/staff สร้างออร์เดอร์เอง (จองสต็อก atomic เหมือน AI create_order)
 

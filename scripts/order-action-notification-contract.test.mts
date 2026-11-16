@@ -39,7 +39,8 @@ test("order-created alert runs only after the owning transaction releases its cl
 test("paid handoff and kitchen handoff both produce staff notifications", async () => {
   const orders = await read("../apps/web/lib/bms/orders.ts");
   const payments = await read("../apps/web/lib/bms/payments.ts");
-  assert.match(orders, /kind: "ORDER_PAID"/);
+  assert.doesNotMatch(orders, /kind: "ORDER_PAID"/,
+    "a bare order-pay command must not announce a payment without verified payment evidence");
   assert.match(orders, /createdKitchenTickets[\s\S]{0,500}kind: "KITCHEN_TICKETS_CREATED"/);
   assert.equal((payments.match(/kind: "ORDER_PAID"/g) ?? []).length, 2,
     "both single-payment and split-payment confirmation paths must announce the paid order");

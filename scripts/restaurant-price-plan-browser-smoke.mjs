@@ -73,9 +73,9 @@ try {
       await dialog.locator('#assumptionSource').fill("FAKE dated planning assumptions, no double-counted labor");
       await dialog.locator('#dailyFixedCost').fill("1000"); await dialog.locator('#dailyTargetProfit').fill("200");
       await dialog.locator('#scenarios_0_label').fill("FAKE Delivery");
-      await dialog.locator('.ant-select-selector').first().click();
-      await page.locator('.ant-select-item-option').filter({ hasText: lang === "th" ? "ราคารวม VAT" : "VAT included" }).click();
       await dialog.locator('.ant-select-selector').nth(1).click();
+      await page.locator('.ant-select-item-option').filter({ hasText: lang === "th" ? "ราคารวม VAT" : "VAT included" }).click();
+      await dialog.locator('.ant-select-selector').nth(2).click();
       await page.locator('.ant-select-item-option').filter({ hasText: lang === "th" ? "ยอดลูกค้าจ่ายรวม VAT" : "Customer payment including VAT" }).click();
       for (const [name, value] of [["price", "107"], ["vatPercent", "7"], ["gpPercent", "30"], ["extraUnitCost", "5"], ["expectedDailyUnits", "60"], ["targetMarginPercent", "20"]]) await dialog.locator(`#scenarios_0_${name}`).fill(value);
       await dialog.getByRole('button', { name: lang === "th" ? "เพิ่มสถานการณ์" : "Add scenario" }).click();
@@ -105,9 +105,9 @@ try {
       await result.getByText(lang === "th" ? "ต้นทุนสูตรไม่ครบ — ยังไม่ทราบกำไรและเป้าขาย" : "Recipe estimate incomplete — profit and targets unknown", { exact: true }).first().waitFor();
       assert.equal(await result.getByText("100.53 THB", { exact: false }).count(), 0);
       await dialog.getByRole('button', { name: new RegExp(calculate) }).click();
-      await dialog.getByText("FAKE unavailable", { exact: true }).waitFor(); assert.equal(await result.count(), 0);
+      await dialog.getByText(lang === "th" ? "โหลดข้อมูลไม่ได้ กรุณารีเฟรชหน้า หากยังไม่หายให้แจ้งผู้ดูแลระบบ" : "Could not load data. Refresh the page. If the problem continues, contact support.", { exact: true }).waitFor(); assert.equal(await result.count(), 0);
       await dialog.getByRole('button', { name: new RegExp(calculate) }).click();
-      await dialog.getByText("PRICE_PLAN_INVALID_INPUT", { exact: true }).waitFor(); assert.equal(await result.count(), 0);
+      await dialog.getByText(lang === "th" ? "ข้อมูลที่กรอกไม่ครบหรือไม่ถูกต้อง กรุณาตรวจช่องที่กรอกแล้วลองอีกครั้ง" : "Some inputs are missing or invalid. Review the form and try again.", { exact: true }).waitFor(); assert.equal(await result.count(), 0);
       await dialog.locator('#dailyFixedCost').fill("");
       await dialog.getByRole('button', { name: new RegExp(calculate) }).click();
       await result.getByText(lang === "th" ? "ยังไม่ทราบต้นทุนคงที่ — ยังไม่ทราบเป้าขายและกำไรต่อวัน" : "Daily fixed cost unknown — daily targets and profit unknown", { exact: true }).first().waitFor();

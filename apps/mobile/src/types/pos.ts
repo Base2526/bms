@@ -26,6 +26,8 @@ export interface PosMenuItem {
   /** False for bundles/recipes whose component stock is checked only by the server. */
   stockTracked?: boolean;
   serialTracked?: boolean;
+  /** Only an authoritative scan may set this true; missing data fails closed offline. */
+  offlineRetailEligible?: boolean;
   scaleBarcode?: string | null;
   modifiers?: PosModifier[];
   selectedModifierCodes?: string[];
@@ -91,6 +93,7 @@ export interface PosCartLine {
    *  และแคชเชียร์ต้องอ่านออกว่าบรรทัดไหนคือ "หวานน้อย" โดยไม่ต้องแปลรหัสเอง */
   modifierNames?: string[];
   serialTracked?: boolean;
+  offlineRetailEligible?: boolean;
   scaleBarcode?: string | null;
   serials: string[];
   imageUrl?: string | null;

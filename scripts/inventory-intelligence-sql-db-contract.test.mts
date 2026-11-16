@@ -25,6 +25,7 @@ test("inventory PostgreSQL SQL, RLS, partial receipts, migrations and exact fore
       CREATE TABLE users(id uuid PRIMARY KEY);
       CREATE TABLE bms_locations(tenant_id uuid, id uuid, name text, active boolean DEFAULT true, PRIMARY KEY(tenant_id,id));
       CREATE TABLE bms_products(tenant_id uuid, sku text, name text, active boolean DEFAULT true, PRIMARY KEY(tenant_id,sku));
+      CREATE TABLE bms_product_stock_policies(tenant_id uuid, product_sku text, lot_tracking boolean DEFAULT false, expiry_tracking boolean DEFAULT false);
       CREATE TABLE bms_inventory(tenant_id uuid, location_id uuid, product_sku text, size text, current_stock int, reserved_stock int, quarantine_stock int, reorder_point int);
       CREATE TABLE bms_inventory_lots(id uuid, tenant_id uuid, location_id uuid, product_sku text, size text, lot_no text, qty int, expiry_date date);
       CREATE TABLE bms_operation_lot_holds(tenant_id uuid, lot_id uuid, status text);

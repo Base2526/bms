@@ -73,11 +73,16 @@ test('completion: scheduled branch base price overrides only its window and can 
  await query(`UPDATE bms_branch_price_windows SET starts_at=transaction_timestamp()-interval '1 minute',
    ends_at=transaction_timestamp()+interval '1 minute' WHERE tenant_id=$1 AND id=$2`,[f.tenant,window.id]);
  assert.equal((await resolvePosScan(f.tenant,'FAKE-MENU',{size:'BASE',locationId:f.location}))?.packPrice,321);
+ await query(`INSERT INTO bms_product_sales_surfaces(tenant_id,product_sku,surface,enabled)
+   SELECT $1,'FAKE-MENU',surface,TRUE FROM unnest(ARRAY['CUSTOMER_AI','ONLINE_ORDER']) surface
+   ON CONFLICT DO NOTHING`,[f.tenant]);
  const stock=await checkStock(f.tenant,'FAKE-MENU',null,f.location);
  assert.ok('sizes' in stock);
- assert.equal(stock.sizes?.find(r=>r.size==='BASE')?.price,321);
+ assert.equal(stock.sizes?.find(r=>r.size==='BASE')?.price,321,JSON.stringify(stock));
  const catalog=await listSellableProducts(f.tenant,{search:'FAKE-MENU',locationId:f.location,salesSurface:'RETAIL_POS'});
  assert.equal(catalog.items[0]?.price,321);
+ assert.equal((await listSellableProducts(f.tenant,{search:'FAKE-MENU',locationId:f.location,salesSurface:'RETAIL_POS',minPrice:300})).items[0]?.sku,'FAKE-MENU');
+ assert.equal((await listSellableProducts(f.tenant,{search:'FAKE-MENU',locationId:f.location,salesSurface:'RETAIL_POS',maxPrice:300})).items.length,0);
  await query(`INSERT INTO bms_product_sales_surfaces(tenant_id,product_sku,surface,enabled)
    VALUES($1,'FAKE-MENU','ONLINE_ORDER',TRUE) ON CONFLICT DO NOTHING`,[f.tenant]);
  const online=await createOrder({tenantId:f.tenant,channel:'web',locationId:f.location,

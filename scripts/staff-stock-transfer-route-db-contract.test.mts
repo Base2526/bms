@@ -44,11 +44,12 @@ const {
 const jwt = require("jsonwebtoken");
 const tenant = randomUUID(),
   actor = randomUUID(),
+  deniedActor = randomUUID(),
   source = randomUUID(),
   dest = randomUUID();
 const sku = `FAKE-ROUTE-${randomUUID()}`;
-const token = (role = "Administrator") =>
-  jwt.sign({ id: actor, tenant_id: tenant, role }, jwtSecret(), {
+const token = (id = actor, role = "Administrator") =>
+  jwt.sign({ id, tenant_id: tenant, role }, jwtSecret(), {
     expiresIn: "5m",
   });
 const call = (
@@ -87,6 +88,10 @@ test.before(async () => {
     [actor, tenant, `${actor}@example.invalid`]
   );
   await query(
+    `INSERT INTO users(id,tenant_id,name,email,password_hash,role,role_id) SELECT $1,$2,'FAKE denied user',$3,'disabled','Cashier',id FROM roles WHERE name='Cashier'`,
+    [deniedActor, tenant, `${deniedActor}@example.invalid`]
+  );
+  await query(
     `INSERT INTO bms_locations(id,tenant_id,code,name,branch_code) VALUES($1,$3,'SRC','FAKE source','00001'),($2,$3,'DST','FAKE dest','00002')`,
     [source, dest, tenant]
   );
@@ -99,7 +104,7 @@ test("REST requires session + permission and validates body before service write
   for (const method of ["GET", "POST"] as const) {
     assert.equal((await call(method, {}, null)).status, 401);
     assert.equal(
-      (await call(method, {}, token("FAKE no permissions"))).status,
+      (await call(method, {}, token(deniedActor, "Cashier"))).status,
       403
     );
   }

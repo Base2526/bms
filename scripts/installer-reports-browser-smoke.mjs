@@ -24,7 +24,8 @@ await new Promise((resolve, reject) => {
     res.resume(); res.on("end", resolve);
   });
   req.on("error", reject);
-  req.write(Buffer.alloc(40000)); req.end(Buffer.alloc(40000));
+  // Leave the oversized chunked request open so unread bytes really require a closed connection.
+  req.write(Buffer.alloc(40000)); req.write(Buffer.alloc(40000));
 });
 const payload = Buffer.from(JSON.stringify({ formatVersion: 1, product: "server-pos", installerVersion: "0.2.13-pilot.1", stage: "start-postgres", createdAt: new Date().toISOString(),
   failure: { message: "PostgreSQL service did not become healthy", hresult: -1, scriptLine: 320 },
@@ -71,7 +72,8 @@ try {
   await page.locator("textarea").fill("Investigated with isolated test evidence");
   const saved = page.waitForResponse(response => response.url().endsWith(reportId) && response.request().method() === "PATCH");
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  assert.equal((await saved).status(), 200);
+  const savedResponse = await saved;
+  assert.equal(savedResponse.status(), 200, await savedResponse.text());
   const detail = await (await api(`/api/admin/installer-reports/${reportId}`, { headers: { Cookie: adminCookie } })).json();
   assert.equal(detail.note, "Investigated with isolated test evidence");
   // Another platform admin saves while this drawer still holds the previous revision.

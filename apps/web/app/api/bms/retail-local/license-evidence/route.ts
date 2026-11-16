@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { readBoundedWebhookText } from "@/lib/bms/webhookBody";
 import {
   ingestRetailLocalLicenseEvidence,
   RetailLocalLicenseError,
@@ -31,12 +32,13 @@ async function handlePOST(request: NextRequest) {
   if (contentType !== "application/vnd.bms.license-evidence+json" && contentType !== "application/json") {
     return NextResponse.json({ error: "unsupported_media_type" }, { status: 415 });
   }
-  const text = await request.text();
-  if (Buffer.byteLength(text, "utf8") > 64 * 1024) {
-    return NextResponse.json({ error: "payload_too_large" }, { status: 413 });
+  const payload = await readBoundedWebhookText(request, 64 * 1024);
+  if (!payload.ok) {
+    return NextResponse.json({ error: payload.status === 413 ? "payload_too_large" : "invalid_utf8" },
+      { status: payload.status });
   }
   try {
-    const result = await ingestRetailLocalLicenseEvidence(match[1], JSON.parse(text));
+    const result = await ingestRetailLocalLicenseEvidence(match[1], JSON.parse(payload.text));
     return NextResponse.json(result, { status: result.duplicate ? 200 : 202, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof SyntaxError) return NextResponse.json({ error: "invalid_json" }, { status: 400 });

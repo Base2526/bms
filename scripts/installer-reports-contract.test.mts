@@ -112,7 +112,8 @@ test("intake has consent, deployment opt-in, rate limits and no public GET; admi
     const source = await read(path); assert.match(source, /await authorizePlatformAdminRoute\(\)/); assert.match(source, /if \(!auth.ok\)/); assert.match(source, /no-store/);
   }
   const mutation = await read("apps/web/app/api/admin/installer-reports/[id]/route.ts");
-  assert.match(mutation, /get\("origin"\) !== request.nextUrl.origin/);
+  assert.match(mutation, /if \(update && !isSameOrigin\(request\)\)/);
+  assert.match(mutation, /origin === `\$\{protocol\}:\/\/\$\{host\}`/);
 });
 
 const uploadStream = (headers = {}) => Object.assign(new PassThrough(), { headers }) as unknown as IncomingMessage;

@@ -345,15 +345,32 @@ receipt requires `purchase.view`, `purchase.edit`, `purchase.receive`, an active
 branch, and the `WEIGHTED_PRODUCT` capability. Products must be weighted/GRAM with an
 active variant and lot tracking; expiry is required when configured. This path is separate
 from integer-quantity PO receiving and does not create a PO, payable, cash payment or tax document.
+The fish/size selector also lists active products that cannot yet be selected, with the missing
+stock-policy, gram-unit, lot-tracking or active-variant setting and a link to that product's stock
+model. The catalog selling price is separate from the reviewed bill rate. The current order/POS
+path multiplies integer grams by a catalog price stored to two decimal places **per gram**. It
+cannot exactly quote or charge a rate such as 43.17 THB/kg for arbitrary weights (that would
+require 0.04317 THB/gram). Operators may receive and value fish but must not open sales at a
+per-kg rate that cannot be represented exactly per gram until a separate per-kg selling-price
+contract is implemented across all sales channels. Neither the fish bill rate nor its lot value
+automatically becomes a selling price.
+
+For example, a **new receipt** for one fish/size can have bill weight 12.500 kg, actual received
+weight 12.300 kg, bill rate 40 THB/kg, reviewed fish amount 500 THB and reviewed additional cost
+25 THB. Confirmation adds 12,300 grams, with 525 THB entering valuation; the 0.200 kg shortfall
+remains visible in the receipt evidence. These are illustrative values, not an automatic entry.
 
 Historical import accepts only a reviewed daily-fish detail sheet with B/C/F/O/S headers.
 It previews every distinct fish name with its row count, total rows, bill/actual kg and THB,
-and detects ambiguous dates, invalid lines and
-matching core detail rows. A human must mark each possible duplicate as a separate receipt or
+and detects ambiguous dates, missing fish names on detail rows with weights or values, invalid lines and
+matching core detail rows within the selected sheet. Monthly subtotals and footer totals are excluded.
+A human must mark each possible duplicate as a separate receipt or
 skip it after checking the source bill; each change requires a fresh preview. Confirmation stores history and
 audit evidence only: **no inventory, lot, stock movement, valuation or today's payable is
 created**. The file hash is the retry key, so re-uploading the same confirmed file does
 not duplicate rows. It requires `purchase.view` to preview and `purchase.edit` to commit.
+Overlapping receipts in a different file with different bytes are not automatically deduplicated;
+the operator must compare source documents before confirming another file.
 The source workbook is retained by the operator; BMS stores its name/hash and parsed rows,
 not a copy of the uploaded file.
 
@@ -363,6 +380,9 @@ SKU/size, requires `inventory.count.apply` and `report.view`, and creates a `COU
 inbound movement with valuation and audit in one transaction. It does not overwrite an
 existing count. After opening, run one small live receipt and one real sale, then reconcile
 the receipt weight, remaining grams, sales and separately recorded cash before expansion.
+For example, a physically counted 8.250 kg with a reviewed value of 330 THB adds 8,250 grams
+and 330 THB only when the selected branch/SKU/size has no existing stock or lot balance. A
+previous purchase is never entered again as opening stock.
 Live and opening receipts require the store profile currency to be explicitly `THB` before
 confirmation. The intake screen shows an Administrator a link to the store setting when it is
 missing; the commit API also returns a configuration error rather than a generic server error.
@@ -378,6 +398,9 @@ The lot table shows branch, remaining grams and usability. An authorized staff m
 READY/COLD_ROOM/OTHER placement; all zones must sum to the locked lot. A subsequent lot change
 invalidates that placement until it is recounted. Posted production inputs show fish consumed on
 the selected day.
+The count confirmation includes the lot's last-update timestamp, so a lot that changes and later
+returns to the same gram balance still requires a fresh count. Recent LIVE and OPENING receipts are
+listed only for branches the staff member may access; historical imports remain tenant-wide evidence.
 
 The sale panel groups recorded line revenue and shipment/return inventory valuation by fish, lot and customer.
 Non-void POS returns reverse the line margin on the return date when stock returns, even if

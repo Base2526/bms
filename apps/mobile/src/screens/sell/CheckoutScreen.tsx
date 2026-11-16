@@ -560,6 +560,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     !usesCredit &&
     cart.lines.every(
       line =>
+        line.offlineRetailEligible === true &&
         !line.serialTracked &&
         line.serials.length === 0 &&
         !line.scaleBarcode &&
@@ -651,7 +652,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         setConfirmOpen(false);
         Alert.alert(
           posText("รายการนี้ขายออฟไลน์ไม่ได้"),
-          posText("โหมดออฟไลน์รองรับเฉพาะร้านทั่วไปที่ขายปลีกเงินสด ไม่มีสมาชิก แต้ม คูปอง ส่วนลด serial สินค้าชั่ง หรือการอนุมัติพิเศษ"),
+          posText("โหมดออฟไลน์รองรับเฉพาะร้านทั่วไปที่ขายปลีกเงินสด และสินค้าที่สแกนยืนยันว่าขายออฟไลน์ได้ ไม่มีสมาชิก แต้ม คูปอง ส่วนลด serial สินค้าชั่ง หรือการอนุมัติพิเศษ"),
         );
         return;
       }

@@ -71,7 +71,7 @@ async function abbreviated(locationId: string, deviceId: string | null): Promise
 
 test("setup: a VAT-registered shop with a head office, a branch and three registers", async () => {
   tenantId = (await query<{ id: string }>(
-    `INSERT INTO bms_tenants (name, slug) VALUES ($1,$2) RETURNING id`,
+    `INSERT INTO bms_tenants (name, slug, plan) VALUES ($1,$2,'business') RETURNING id`,
     [`FAKE ${TAG}`, `fake-${TAG}-${process.pid}`]
   )).rows[0].id;
   await query(

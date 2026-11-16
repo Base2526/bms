@@ -13,6 +13,25 @@ capability currently available only in the native mobile POS for plain retail ca
 browser and every richer workflow still require the Cloud. See
 [Cloud + Hybrid POS product contract](cloud-hybrid-pos.md).
 
+### Selling screen by shop archetype
+
+`business_archetype` chooses onboarding defaults and the initial screen; it is not a universal
+permission or an inventory rule. The actual sellability of a product still comes from its active
+variant, sales surface, stock policy, branch stock and the sale service's permission checks.
+
+| Archetype | Counter workflow today |
+| --- | --- |
+| `restaurant` | Dedicated `/pos/restaurant` table, rounds, kitchen and settlement flow; native restaurant floor/menu. |
+| `board_game_cafe` | General counter plus board-game sessions, loans and billing group; native board-game tab. |
+| `pharmacy` | General counter with pharmacy approval and product-policy gates; a licensed pharmacist retains every clinical decision. |
+| `mini_mart`, `fashion`, `home_kitchen`, `beauty_personal_care`, `food_beverage`, `gadgets_accessories`, `b2b_wholesale`, `gifts_seasonal`, `pet_supply`, `building_materials`, `other` | General retail counter; product capabilities and configuration determine packs, weighed sale, serials and other behavior. |
+
+Online customer orders, channel messages and AI order creation use their own authenticated order
+pipeline, not the counter UI. A configured archetype does not by itself enable a channel, a
+provider integration, a product capability, a payment method or emergency offline sales. Restaurant,
+pharmacy and board-game archetypes are excluded from native emergency offline cash; the remaining
+archetypes still require each scanned product to pass the ordinary DIRECT/PACK eligibility check.
+
 ### GraphQL mobile contract and REST compatibility
 
 Normal counter workflows have device-scoped GraphQL queries and mutations in
@@ -483,7 +502,7 @@ the accountant this figure at period end; it is not an optional dashboard number
 
 ### Where points are earned
 
-Earning is hooked to every path that moves an order to `PAID` — `payOrder()`, `confirmPayment()`, the
+Earning is hooked to payment-confirmed paths that move an order to `PAID` — `confirmPayment()`, the
 split-payment confirm, and `finalizePosSale()` — not just the counter, so a customer who orders over
 LINE and transfers the money earns the same as one who walks in. Redemption and tier discount already
 worked everywhere because they live in `createOrder()`.
@@ -1984,7 +2003,12 @@ a single due date per invoice, and no credit-limit approval workflow — a manag
 - Returns also require an idempotency key based on the receipt and cumulative returned quantities.
 - This is not a general offline POS. Native POS may queue only a plain retail sale paid entirely in
   cash, with no member, points, coupon, manual discount, serial/weighted/modifier item, pharmacy
-  approval, credit, deposit, restaurant check, or board-game billing group. The encrypted device
+  approval, credit, deposit, restaurant check, or board-game billing group. The signed-in scan
+  supplies a server-derived offline eligibility flag; a missing flag fails closed. At sync the
+  server rechecks the product's current stock policy and bundle/serial status: only ordinary
+  DIRECT and PACK products are accepted. RECIPE, WEIGHTED, BUNDLE, SERIALIZED and NON_STOCK
+  products require an online sale even when entered by SKU rather than a special barcode.
+  The encrypted device
   queue stores no PIN, recovers by the original idempotency key before retrying, flushes serially
   under the original cashier while that device shift remains open,
   and blocks shift close while unresolved. A rejected sync remains visible for review and can be

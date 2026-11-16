@@ -6,7 +6,7 @@ import {
   useGlobalChatStore,
   getGlobalChatState,
 } from "@/store/globalChatStore";
-import { notify } from "@/lib/notify";
+import { useI18n } from "@/lib/i18nContext";
 import { normalizeBank, normalizeTel } from "@/app/lib/jachoeiLocalState";
 
 // ===== QUERIES =====
@@ -130,24 +130,6 @@ function normalizeIncomingMessage(m: any) {
   };
 }
 
-const SUB_USER_MESSAGE = gql`
-  subscription ($user_id: ID!) {
-    userMessageAdded(user_id: $user_id) {
-      id
-      chat_id
-      sender {
-        id
-        name
-        phone
-        email
-      }
-      text
-      created_at
-      to_user_ids
-    }
-  }
-`;
-
 // ===== JACHOEI REALTIME (BLOCK / UNBLOCK) =====
 const Q_MY_BLOCKED_PHONE_KEYS = gql`
   query MyBlockedPhoneKeys {
@@ -205,6 +187,7 @@ const SUB_MY_BOOKMARK_STATUS_CHANGED = gql`
 //     GLOBAL CHAT LISTENER (FINAL)
 // ====================================
 export function GlobalChatListener() {
+  const { t } = useI18n();
   const apolloClient = useApolloClient();
   const { data: meData } = useQuery(Q_ME);
   const meId = meData?.me?.id;
@@ -283,7 +266,6 @@ export function GlobalChatListener() {
       if (!m) return;
 
       const state = getGlobalChatState();
-      console.log("[SUB_INCOMING]", m, state);
 
       const isCurrentRoom = state.currentChatId === m.chat_id;
       const isFocused = state.windowFocused;
@@ -294,15 +276,8 @@ export function GlobalChatListener() {
         if (typeof window !== "undefined" && "Notification" in window) {
           if (Notification.permission === "granted") {
             try {
-              const hasImages = Array.isArray(m.images) && m.images.length > 0;
-              const hasAudio = !!m.audio;
-              const body =
-                (m.text || "").trim() ||
-                (hasAudio ? "ส่งข้อความเสียงมา" : hasImages ? "ส่งรูปภาพมา" : "ส่งข้อความมา");
-
-              new Notification(m.sender?.name || "New message", {
-                body,
-              });
+              // A lock screen must not expose the sender or message content.
+              new Notification(t("order_notifications.social_private_title"), { tag: "social-chat" });
             } catch (e) {
               console.error("Notification error:", e);
             }
@@ -339,54 +314,11 @@ export function GlobalChatListener() {
   });
 
   // ===========================================================
-  // B) SUB_USER_MESSAGE → ใช้สำหรับ notify + dispatch event
-  // ===========================================================
-  useSubscription(SUB_USER_MESSAGE, {
-    skip: !meId,
-    variables: { user_id: meId },
-    onData: async ({ data }) => {
-      const msg = data.data?.userMessageAdded;
-      if (!msg) return;
-
-      const isChatPage =
-        typeof window !== "undefined" &&
-        window.location.pathname.startsWith("/chat");
-
-      const activeChatId =
-        typeof window !== "undefined"
-          ? new URLSearchParams(window.location.search).get("chatId")
-          : null;
-
-      const isActiveChat = isChatPage && activeChatId === msg.chat_id;
-
-      if (!isActiveChat) {
-        await notify("ข้อความใหม่", {
-          body: msg.text,
-          tag: `chat-${msg.chat_id}`,
-        });
-
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(
-            new CustomEvent("chat-unread", {
-              detail: {
-                chatId: msg.chat_id,
-                count: 1,
-                lastText: msg.text,
-              },
-            })
-          );
-        }
-      }
-    },
-  });
-
-  // ===========================================================
   // D) JACHOEI realtime: block/unblock tel (same user)
   // ===========================================================
   useSubscription(SUB_MY_PHONE_BLOCK_STATUS_CHANGED, {
     skip: !meId,
     onData: ({ data, client }) => {
-      console.log("[SUB_MY_PHONE_BLOCK_STATUS_CHANGED]", data);
       const p = data.data?.myPhoneBlockStatusChanged;
       if (!p) return;
 
@@ -421,7 +353,6 @@ export function GlobalChatListener() {
   useSubscription(SUB_MY_BANK_BLOCK_STATUS_CHANGED, {
     skip: !meId,
     onData: ({ data, client }) => {
-      console.log("[SUB_MY_BANK_BLOCK_STATUS_CHANGED]", data);
       const p = data.data?.myBankBlockStatusChanged;
       if (!p) return;
 
@@ -456,7 +387,6 @@ export function GlobalChatListener() {
   useSubscription(SUB_MY_BOOKMARK_STATUS_CHANGED, {
     skip: !meId,
     onData: ({ data, client }) => {
-      console.log("[SUB_MY_BOOKMARK_STATUS_CHANGED]", data);
       const p = data.data?.myBookmarkStatusChanged;
       if (!p) return;
 

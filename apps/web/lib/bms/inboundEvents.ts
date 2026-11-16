@@ -10,9 +10,9 @@ const CHANNELS = new Set(["line", "facebook", "instagram", "tiktok", "shopee", "
 export async function claimInboundEvent(
   tenantId: string,
   channel: string,
-  externalEventId: string | null | undefined
+  externalEventId: string | number | null | undefined
 ): Promise<boolean> {
-  const eventId = String(externalEventId || "").trim();
+  const eventId = externalEventId == null ? "" : String(externalEventId).trim();
   if (!eventId) return true;
   if (!CHANNELS.has(channel)) throw new Error("unsupported inbound channel");
   if (eventId.length > 256) throw new Error("external event id is too long");
@@ -46,9 +46,9 @@ export async function claimInboundEvent(
 export async function releaseUnprocessedInboundEvent(
   tenantId: string,
   channel: string,
-  externalEventId: string | null | undefined,
+  externalEventId: string | number | null | undefined,
 ): Promise<void> {
-  const eventId = String(externalEventId || "").trim();
+  const eventId = externalEventId == null ? "" : String(externalEventId).trim();
   if (!eventId) return;
   if (!CHANNELS.has(channel) || eventId.length > 256) throw new Error("invalid inbound event claim");
   const client = await getClient();

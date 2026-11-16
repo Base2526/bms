@@ -798,7 +798,8 @@ question type and language, with a text **its own licensed pharmacist approved**
 - **Editing approved text returns it to `DRAFT`** in the service and in a DB trigger, so an
   approved text cannot change under a pharmacist's name.
 - **Rendering** fills `{{shop_phone}}`, `{{business_hours}}`, `{{shop_address}}` from the store
-  profile; a line whose value is unset (or whose placeholder is unknown) is dropped; the
+  profile via a narrow database read inside the 500 ms budget, so a Redis outage does not spend
+  that budget before shop facts are read. A line whose value is unset (or whose placeholder is unknown) is dropped; the
   "not a medication approval" footer is always appended by the server.
   Malformed/non-ASCII/nested/multiline placeholders and placeholder syntax inside shop values
   also omit the affected line. Multiline shop facts are flattened, not inserted as new sentences.

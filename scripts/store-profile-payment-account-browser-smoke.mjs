@@ -119,7 +119,7 @@ try {
         await route.fulfill({ body: await readFile(qrSmokeImage), contentType: "image/png" });
       });
       await page.evaluate(() => { URL.createObjectURL = () => `${location.origin}/test-qr-image`; });
-      await page.locator('input[type="file"][accept="image/png,image/jpeg,image/webp"]').nth(2).setInputFiles(qrSmokeImage);
+      await receiving.locator('..').locator('input[type="file"][accept="image/png,image/jpeg,image/webp"]').first().setInputFiles(qrSmokeImage);
       await decodeStarted;
       try {
         assert.equal(await page.getByRole("button", { name: lang === "th" ? /ลบบัญชีนี้/ : /Remove this account/ }).isDisabled(), true, "decoding cannot lose its account row");

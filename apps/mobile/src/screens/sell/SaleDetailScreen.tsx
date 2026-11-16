@@ -303,6 +303,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                   baseQty: latest.baseQty,
                   modifierCodes: latest.selectedModifierCodes ?? [],
                   serialTracked: latest.serialTracked,
+                  offlineRetailEligible: latest.offlineRetailEligible,
                   scaleBarcode: latest.scaleBarcode,
                   serials: [],
                   imageUrl: latest.imageUrl,

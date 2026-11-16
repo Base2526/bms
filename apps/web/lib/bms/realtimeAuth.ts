@@ -84,7 +84,7 @@ export async function mintAdminRealtimeTicket(
 
   const fresh = await refreshAdminIdentity(session);
   if (!fresh?.id) return null;
-  const actingTenantId = acting?.actTenantId && String(acting.by) === String(fresh.id)
+  const actingTenantId = fresh.is_platform_admin === true && acting?.actTenantId && String(acting.by) === String(fresh.id)
     ? acting.actTenantId
     : undefined;
   const tenantId = actingTenantId ?? fresh.tenant_id;

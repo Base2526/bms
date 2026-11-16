@@ -63,19 +63,24 @@ export async function getDashboard(tenantId: string) {
         [PAID, tenantId]
       ),
       query(
-        `SELECT d::date AS day,
-                COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = ANY($1)), 0) AS revenue,
-                COUNT(o.id) FILTER (WHERE o.status = ANY($1))::int AS orders
+        `WITH daily AS (
+           SELECT (COALESCE(paid_at, created_at) AT TIME ZONE $3)::date AS day,
+                  SUM(total_amount) AS revenue, COUNT(*)::int AS orders
+             FROM bms_orders
+            WHERE tenant_id = $2 AND status = ANY($1)
+              AND COALESCE(paid_at, created_at) >= (((now() AT TIME ZONE $3)::date - 6)::timestamp AT TIME ZONE $3)
+              AND COALESCE(paid_at, created_at) < ((((now() AT TIME ZONE $3)::date + 1)::timestamp) AT TIME ZONE $3)
+            GROUP BY 1
+         )
+         SELECT d::date AS day, COALESCE(daily.revenue, 0) AS revenue,
+                COALESCE(daily.orders, 0) AS orders
            FROM generate_series(
              (now() AT TIME ZONE $3)::date - 6,
              (now() AT TIME ZONE $3)::date,
              interval '1 day'
            ) d
-           LEFT JOIN bms_orders o
-             ON o.tenant_id = $2
-            AND COALESCE(o.paid_at,o.created_at) >= (d::timestamp AT TIME ZONE $3)
-            AND COALESCE(o.paid_at,o.created_at) < ((d + interval '1 day')::timestamp AT TIME ZONE $3)
-          GROUP BY day ORDER BY day`,
+           LEFT JOIN daily ON daily.day = d::date
+          ORDER BY day`,
         [PAID, tenantId, timeZone]
       ),
       // ส่วนลดที่แจกไปเดือนนี้ — ไม่กรองตาม status (เหมือน bms_coupons.redemptions_count เดิมที่ไม่

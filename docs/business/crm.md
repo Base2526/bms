@@ -186,7 +186,9 @@ message source so staff replies and automated outbound follow-ups never alert th
 delivery of the same message is deduplicated by its stable message id, including across several
 open tabs on the same device. Diagnostic messages update the Inbox without ringing every coworker's
 device. Browser autoplay restrictions are surfaced through the single global sound-recovery banner
-shared with order alerts rather than failing silently.
+shared with order alerts rather than failing silently. The in-app toast can show the conversation
+context; the browser/OS notification uses a generic title without customer or message details so
+the lock screen does not reveal them.
 
 **@mention in internal notes (2026-07):** typing `@name` while writing a note opens a picker over
 `bmsAssignableStaff` (Sales/Manager/Administrator only, same list used for assign/helper); selecting
@@ -197,7 +199,8 @@ free text, so a duplicate/misspelled name can't misfire. Each valid mention is b
 a future "my mentions" view) and pushed through the existing generic `notifications` table/
 `notificationCreated` subscription — no new realtime channel. `GlobalMentionNotifier` (mounted
 alongside `GlobalInboxNotifier`) turns that into a browser notification deep-linking to
-`/admin/inbox?c=<id>`. Gated by the existing `inbox.manage` permission (creating a mention) and
+`/admin/inbox?c=<id>` without putting note text on the lock screen. Gated by the existing
+`inbox.manage` permission (creating a mention) and
 `inbox.view` (reading your own); no new permission was added. A sidebar badge next to a dedicated
 "เมนชันของฉัน" page (`/admin/inbox/mentions`, `bmsMyMentionsUnreadCount`/`bmsMyMentions`) lists a
 user's own mentions, filterable by unread, with mark-read/mark-all-read actions

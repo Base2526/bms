@@ -366,9 +366,26 @@ export async function listSellableProducts(
   const maxPriceParam = params.length;
   params.push(limit);
   const limitParam = params.length;
+  // Branch price windows may be installed after the web release. Use the same
+  // active-window precedence as settlement without referencing an absent table.
+  const windowsReady = (await query<{ present: boolean }>(
+    "SELECT to_regclass('bms_branch_price_windows') IS NOT NULL AS present"
+  )).rows[0]?.present === true;
+  const branchBasePrice = (sizeExpr: string, locationExpr: string) => `(
+    SELECT bp.price FROM (
+      SELECT tenant_id,location_id,product_sku,size,pack_code,price,1 AS priority
+        FROM bms_branch_prices
+      ${windowsReady ? `UNION ALL
+      SELECT tenant_id,location_id,product_sku,size,pack_code,price,0 AS priority
+        FROM bms_branch_price_windows
+       WHERE cancelled_at IS NULL AND starts_at <= transaction_timestamp()
+         AND (ends_at IS NULL OR ends_at > transaction_timestamp())` : ""}
+    ) bp WHERE bp.tenant_id=p.tenant_id AND bp.product_sku=p.sku
+      AND bp.size=${sizeExpr} AND bp.pack_code='BASE' AND bp.location_id=${locationExpr}
+    ORDER BY bp.priority LIMIT 1)`.trim();
   const variantPriceRangeSql = `
-    SELECT MIN(COALESCE((SELECT bp.price FROM bms_branch_prices bp WHERE bp.tenant_id=p.tenant_id AND bp.product_sku=p.sku AND bp.size=variants.size AND bp.pack_code='BASE' AND bp.location_id=$${locationParam}),sized.price, shared.price, p.price)) AS min_price,
-           MAX(COALESCE((SELECT bp.price FROM bms_branch_prices bp WHERE bp.tenant_id=p.tenant_id AND bp.product_sku=p.sku AND bp.size=variants.size AND bp.pack_code='BASE' AND bp.location_id=$${locationParam}),sized.price, shared.price, p.price)) AS max_price
+    SELECT MIN(COALESCE(${branchBasePrice("variants.size", `$${locationParam}`)},sized.price, shared.price, p.price)) AS min_price,
+           MAX(COALESCE(${branchBasePrice("variants.size", `$${locationParam}`)},sized.price, shared.price, p.price)) AS max_price
       FROM (
         SELECT DISTINCT price_i.size
           FROM bms_inventory price_i
@@ -525,7 +542,7 @@ export async function listSellableProducts(
     ? { rows: [] as Array<{ product_sku: string; size: string; price: string }> }
     : await query<{ product_sku: string; size: string; price: string }>(
         `SELECT i.product_sku, i.size,
-                COALESCE((SELECT bp.price FROM bms_branch_prices bp WHERE bp.tenant_id=p.tenant_id AND bp.product_sku=p.sku AND bp.size=i.size AND bp.pack_code='BASE' AND bp.location_id=$3),sized.price, shared.price, p.price)::text AS price
+                COALESCE(${branchBasePrice("i.size", "$3")},sized.price, shared.price, p.price)::text AS price
            FROM (
              SELECT tenant_id,product_sku,size FROM bms_inventory WHERE tenant_id=$1 AND product_sku=ANY($2::text[])
              UNION
