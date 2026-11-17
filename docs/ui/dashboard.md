@@ -209,12 +209,12 @@ also listed in the corresponding sheet's `columns`/`rows` in `documentGenerator.
 separate steps, and forgetting the second one is exactly how the by-status/reorder-point fields above
 went missing for a while.
 
-Known output limitation:
+Known output limits:
 
-- **PDF Thai text**: current PDF generation uses `pdfkit`'s built-in fonts, which do not render Thai
-  glyphs correctly. The generator therefore keeps its own headings/labels in English for now. Thai
-  data values in PDF remain a known limitation until a Thai-capable TTF is embedded. XLSX/CSV use
-  UTF-8 and handle Thai correctly today.
+- General PDFs embed the bundled OFL Sarabun font, so Thai shop-entered values render. Report
+  headings and labels remain English because the shared document model has no language parameter.
+  The PDF builder rejects more than 10,000 rows instead of silently truncating at 200. Statutory
+  VAT and stock-ledger sheets still require XLSX/CSV until their full table layout is implemented.
 
 ## Sales digest subscriptions (email/Slack/LINE)
 

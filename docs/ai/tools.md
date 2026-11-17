@@ -1184,7 +1184,7 @@ Permission: report.view
   แทนการตีต้นทุนเป็นศูนย์ ต้องแสดง `disclaimer`/evidence state ในไฟล์เสมอ
 - `OPERATIONS` รวม previous-period comparison, reconciliation, inventory activity aging/cover และ discount signals;
   `PURCHASES` รวม supplier fill rate/approximate lead time; `CUSTOMERS` รวม paid-customer segments
-- PDF ใช้ `pdfkit` font มาตรฐาน จึงยังไม่รองรับ Thai glyphs ครบ; heading/label ของเอกสารจงใจเป็น English
+- PDF รายงานทั่วไปฝัง Sarabun จึงแสดงข้อมูลภาษาไทยได้ แต่ heading/label ยังเป็น English; PDF จำกัด 10,000 แถวและปฏิเสธเมื่อเกิน (ไม่ตัดข้อมูลเงียบ ๆ). รายงานภาษี/บัญชีสต็อกยังออกเฉพาะ XLSX/CSV จนกว่าจะจัดรูปแบบตาราง PDF ครบ
 - ดาวน์โหลดต้องผ่าน `/api/bms/reports/download/<id>` ซึ่งเช็ค tenant ownership ของ `bms_generated_reports`
   ก่อนเสมอ ไม่ใช้ `/api/files/<id>` ตรง ๆ
 

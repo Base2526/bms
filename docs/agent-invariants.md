@@ -154,9 +154,11 @@ Generated report exports (`lib/bms/reportEngine.ts`, `lib/bms/documentGenerator.
 shape: date-range validation, report assembly, optional AI executive summary, file persistence, DB row,
 and audit all belong in `generateReport()`, while API layers stay thin. Downloaded files must go through
 the tenant-gated `/api/bms/reports/download/[id]` route, never the bare `/api/files/[id]` path, because
-generated reports may contain revenue/profit/customer data. Current PDF output deliberately uses English
-labels only: `pdfkit`'s built-in fonts do not render Thai glyphs correctly until a Thai-capable TTF is
-embedded, so do not "translate" PDF headings into Thai without adding font embedding in the generator.
+generated reports may contain revenue/profit/customer data. General PDF output embeds the bundled
+OFL Sarabun font for Thai values, but the report builders still supply English labels and have no
+viewer-language parameter. Statutory VAT/stock-ledger reports remain XLSX/CSV-only until their
+preamble, grouped headings and totals have a complete PDF layout. PDF rejects more than 10,000
+rows instead of silently dropping rows.
 Report field completeness is a two-step contract, not one: a summary query (e.g. `getSalesSummary()`,
 `listLowStock()` in `lib/bms/reports.ts`/`products.ts`) can return a field that never reaches any
 output, because each `build*ReportDoc()` function in `documentGenerator.ts` explicitly lists which
@@ -2817,9 +2819,9 @@ converted, on purpose). Separately, `components/AppLayout.tsx` has **zero import
 repo** — it is dead code carrying its own untranslated PDPA bar and app-download section; the live
 footer/consent bar is `components/footer/AppFooter.tsx`, which is already bilingual via a page-local
 `COPY.th/en`. Delete `AppLayout.tsx` rather than translating it. Generated report files
-(`lib/bms/documentGenerator.ts`) have no language parameter and are English-label-only regardless of
-the viewer's language (deliberate for PDF, due to `pdfkit`'s font gap; not deliberate for XLSX/CSV,
-just not done).
+(`lib/bms/documentGenerator.ts`) have no language parameter and retain English labels regardless
+of the viewer's language; PDF now embeds Sarabun for Thai data values. Translating report labels
+still requires bilingual report builders across PDF, XLSX and CSV.
 
 If you're asked to "make X bilingual," check which of the mechanisms above (if any) the file already
 uses before adding translated strings — most _admin_ files use none, and adding real 2-language
