@@ -11,13 +11,15 @@
 > บันทึก 2026-08-17 → 2026-10-23) อยู่ใต้ "ชุดที่ 2" ของ archive — ค้นด้วยเลข migration เช่น
 > `grep -n "9.66" docs/local-notes-archive.md`
 
-## สถานะ working tree ล่าสุด (2026-11-16)
+## สถานะ working tree ล่าสุด (2026-11-16; เลข migration อัปเดต 2026-11-17)
 
 - **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `90eb7d3c` (#416,
   admin session/POS auth/log redaction) · branch `codex/android-device-verify-navigation` = `develop` +
   แก้ mobile ให้หน้า Device Settings ค้างหลังยกเลิกจับคู่ + ปุ่มสแกน QR เป็นไอคอนข้างปุ่มจับคู่ + อัปเดตเอกสาร 2026-11-16
-- **migration ล่าสุด `10.121`** (เลขว่างถัดไป `10.122` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
-  ตรวจเลขซ้ำ 2026-11-16 แล้วว่าง · คิวรับของคือ `10.112`–`10.113` (ไม่ใช่ `10.111` = ใบอนุญาตเภสัชกร)
+- **migration ล่าสุด `10.132`** (เลขว่างถัดไป `10.133` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
+  `10.122`/`10.123` โรงงานคงเดิม; audit ที่ชนเลขย้ายเป็น `10.131`/`10.132` และมีวิธีจัดการ
+  ledger เก่าใน [audit traceability](docs/architecture/audit-traceability.md#verification-and-rollout) ·
+  คิวรับของคือ `10.112`–`10.113` (ไม่ใช่ `10.111` = ใบอนุญาตเภสัชกร)
 - หลักฐานรอบตรวจระบบ 2026-11-14 (Inbox/Desktop/Mobile/Admin) และสิ่งที่ยัง **ไม่** verify:
   [docs/architecture/system-recheck-2026-11-14.md](docs/architecture/system-recheck-2026-11-14.md)
 - renumber merge แล้ว (#391): `10.106` = Retail Local lead erasure · Meta inbox enrichment = **`10.108`** ·

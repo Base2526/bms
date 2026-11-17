@@ -9,7 +9,7 @@ decision, actor and target, while revision snapshots show selected before/after 
 | Source | Purpose | Durability |
 | --- | --- | --- |
 | `bms_audit_log` | Tenant business decisions, approvals, AI tool attempts | Required service writes belong in the business transaction; legacy `audit(ctx)` is best-effort |
-| `bms_security_events` (`10.122`) | Login, logout, password reset, sensitive reads | Successful login and sensitive reads require a committed event; denied attempts and logout are best-effort so logout is never blocked |
+| `bms_security_events` (`10.131`) | Login, logout, password reset, sensitive reads | Successful login and sensitive reads require a committed event; denied attempts and logout are best-effort so logout is never blocked |
 | Domain ledgers and `_revisions` | Exact stock/money/operational facts and selected previous row snapshots | Follow each domain transaction and permission contract |
 
 The admin `/admin/audit` timeline unions tenant business and security events with cursor pagination.
@@ -41,8 +41,8 @@ The actor flow uses exact UUID identity and keyset cursors; it never requests a 
 uses `OFFSET`. With an actor and no free-text query, `listAuditTimeline()` reads at most `limit + 1`
 IDs from each of four indexed streams (structured business actor, raw UUID-text actor,
 `user:<UUID>` actor and security actor), then resolves display fields and merges them. The generic
-timeline filters and limits each business/security source before merging. Migration `10.122`
-supplies the tenant/time and structured actor/time indexes; `10.123` supplies the legacy text-actor
+timeline filters and limits each business/security source before merging. Migration `10.131`
+supplies the tenant/time and structured actor/time indexes; `10.132` supplies the legacy text-actor
 index, including for services that still write only the text actor field. On an in-memory
 PostgreSQL fixture of about 250,000 business and 25,000 security rows spread across ten years, the first
 actor page used index scans of 31 rows per active stream, and a cursor 9.5 years back read 12–13
@@ -103,14 +103,20 @@ new service integrations; neither may be supplied as authority by a client.
 - A successful privileged login and sensitive file response must wait for `recordSecurityEvent()`.
   Failed anonymous login attempts and logout use the best-effort variant; their absence is not
   proof that no attempt occurred.
-- `10.122` revokes `UPDATE`/`DELETE` on `bms_audit_log` from `bms_app`. The runtime `app` role is
+- `10.131` revokes `UPDATE`/`DELETE` on `bms_audit_log` from `bms_app`. The runtime `app` role is
   currently a database superuser in some deployments, so the table is not tamper-proof against that
   role. Reducing runtime DB privileges is a separate deployment prerequisite for that claim.
 
 ## Verification and rollout
 
-Apply `10.122` before deploying code that reads or writes the new columns/table. Recheck migration
-filename collisions before release; migration identity is immutable after application. Export
+Apply `10.131` and `10.132` before deploying code that reads or writes the new columns/table.
+The audit files were first merged as `10.122__bms_audit_attribution_security_events.sql` and
+`10.123__bms_audit_legacy_actor_lookup.sql`, colliding with the factory migrations. On Retail Local,
+the migration runner recognizes only those exact old SQL checksums (LF or CRLF), renames existing
+ledger rows to `10.131`/`10.132`, and preserves their `applied_at` values. A manually managed
+database that ran the old audit files should verify their columns, table, grants, policies and
+indexes, then run the new files in numeric order; both are rerunnable. Do not treat an old
+`10.122` or `10.123` number alone as proof that either audit or factory SQL ran. Export
 `schema.graphql` in the same change. Test tenant RLS, grants, repeated migration application,
 cross-tenant denial, rollback on audit failure and cursor stability on a disposable restored DB.
 Pure tests and TypeScript cannot establish deployed database state. Historical unlogged actions

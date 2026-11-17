@@ -22,6 +22,26 @@ const EXCLUDED = new Map([
 // Preserve checksum-ledger continuity for migrations renumbered after parallel branches merged.
 const RENAMED_MIGRATIONS = new Map([
   [
+    "10.131__bms_audit_attribution_security_events.sql",
+    {
+      name: "10.122__bms_audit_attribution_security_events.sql",
+      checksums: new Set([
+        "1fab3476ace8a61cfcd1dbad3d9872e0616576bca9edb5ed80bb8458e153c2f9",
+        "32b7c1b0cc10c5aa34702ee8bde3a45e2ef7f4012ea14ba68dbef9e46acc149d",
+      ]),
+    },
+  ],
+  [
+    "10.132__bms_audit_legacy_actor_lookup.sql",
+    {
+      name: "10.123__bms_audit_legacy_actor_lookup.sql",
+      checksums: new Set([
+        "a5e3d8a92360b5d5ab0b611626831e2d995a0490f35c403134b016993d9fbe19",
+        "5f1768024e981dad5ab7e1e8460a74428cec4d68e67f26727fc765e2215b01b4",
+      ]),
+    },
+  ],
+  [
     "10.29__bms_retail_local_macos_x64_release_assets.sql",
     {
       name: "10.26__bms_retail_local_macos_x64_release_assets.sql",

@@ -244,7 +244,7 @@ approved text. Approval remains per tenant, not a platform-wide publication deci
 
 ## Authentication identity and registration
 
-- Migration `10.122` adds an append-only security-event stream. Successful login and password
+- Migration `10.131` adds an append-only security-event stream. Successful login and password
   reset must record evidence before returning success; the legacy session insert and reset update
   commit with that evidence. Failed anonymous attempts and logout are best-effort so audit storage
   cannot disclose account existence or prevent sign-out. Never store a raw session token in an
