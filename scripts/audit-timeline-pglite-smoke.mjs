@@ -52,7 +52,7 @@ try {
     CREATE INDEX idx_bms_security_events_time_id ON bms_security_events
       (tenant_id, created_at DESC, id DESC);
   `);
-  const legacyIndexMigration = readFileSync(new URL("../db/migrations/10.123__bms_audit_legacy_actor_lookup.sql", import.meta.url), "utf8");
+  const legacyIndexMigration = readFileSync(new URL("../db/migrations/10.132__bms_audit_legacy_actor_lookup.sql", import.meta.url), "utf8");
   await db.exec(legacyIndexMigration);
   await db.exec(legacyIndexMigration);
   await db.query(`INSERT INTO bms_security_events(tenant_id,actor_user_id,event,outcome,source)

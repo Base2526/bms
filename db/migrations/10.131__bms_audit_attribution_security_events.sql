@@ -1,4 +1,4 @@
--- 10.122: stable audit attribution and authentication/security events.
+-- 10.131: stable audit attribution and authentication/security events.
 -- ROLLBACK: drop bms_security_events, then the new bms_audit_log columns and indexes.
 -- Keep old audit rows and the legacy actor column; never rewrite historical identity.
 

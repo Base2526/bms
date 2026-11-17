@@ -46,3 +46,22 @@ test("the 10.121 timeout repair accepts only the exact pre-timeout SQL checksum"
   assert.ok(!previouslyAppliedMigrationChecksums(name).has(migrationChecksum(updated)));
   assert.ok(!previouslyAppliedMigrationChecksums(name).has(migrationChecksum(original + "-- changed")));
 });
+
+test("audit migration renames accept only the original 10.122 and 10.123 SQL", () => {
+  const runner = readFileSync(new URL("../apps/web/scripts/retail-local-migrate.mjs", import.meta.url), "utf8");
+  for (const [oldNumber, newNumber, basename] of [
+    ["10.122", "10.131", "bms_audit_attribution_security_events.sql"],
+    ["10.123", "10.132", "bms_audit_legacy_actor_lookup.sql"],
+  ]) {
+    const oldName = `${oldNumber}__${basename}`;
+    const newName = `${newNumber}__${basename}`;
+    const current = readFileSync(new URL(`../db/migrations/${newName}`, import.meta.url), "utf8");
+    const original = current.replace(`-- ${newNumber}:`, `-- ${oldNumber}:`);
+    assert.notEqual(original, current);
+    const mapping = runner.slice(runner.indexOf(`"${newName}"`), runner.indexOf("],", runner.indexOf(`"${newName}"`)));
+    assert.ok(mapping.includes(`name: "${oldName}"`));
+    for (const checksum of compatibleMigrationChecksums(original)) {
+      assert.ok(mapping.includes(`"${checksum}"`), `${oldName} checksum is missing`);
+    }
+  }
+});

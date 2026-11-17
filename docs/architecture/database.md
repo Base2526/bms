@@ -1256,10 +1256,10 @@ nullable for migration compatibility but new code never writes or queries it.
 **`bms_audit_log`** — append-only business audit. Required decisions use `insertAuditInTx()`
 (`lib/bms/audit.ts`) and roll back with the business write if audit fails. Legacy resolver
 `audit(ctx, action, target, meta)` remains best-effort and swallows failures.
-Migration `10.122` adds stable `actor_user_id`, actor/source/target classification, request and
+Migration `10.131` adds stable `actor_user_id`, actor/source/target classification, request and
 idempotency keys, and removes `UPDATE`/`DELETE` grants from `bms_app`. Required business audits use
 `insertAuditInTx()` on the same transaction; `audit(ctx)` remains best-effort for diagnostics.
-Migration `10.123` adds a tenant/legacy-text-actor/time index for exact UUID-text history lookups;
+Migration `10.132` adds a tenant/legacy-text-actor/time index for exact UUID-text history lookups;
 `listAuditTimeline()` limits each source before merging them, then uses keyset cursors rather than
 offsets. This bounds the final merge even when the audit tables are large. The tables themselves
 are still unpartitioned and have no retention/archive policy; see the audit traceability capacity

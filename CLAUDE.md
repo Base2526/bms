@@ -79,11 +79,11 @@ per entry in [status-log.md](docs/status-log.md)):
 
 Migrations not yet applied to production: [CLAUDE.local.md](CLAUDE.local.md) § ก่อน production —
 check the target DB; several features need their migration first.
-The open-item POS build needs `10.129` and `10.130` applied in order before rollout. The full
-`npm run gate` check on 2026-11-17 still had three pre-existing failures: duplicate migration
-numbers `10.122`/`10.123`, the Retail Local `10.121` checksum contract, and the dependent contract
-runner check. Targeted open-item DB tests, mobile tests, Web typecheck/build, and desktop/mobile-width
-browser smoke passed; this does not establish production deployment.
+The open-item POS build needs `10.129` and `10.130` applied in order before rollout. Audit
+traceability now uses `10.131`/`10.132`; the factory migrations retain `10.122`–`10.127`. See
+[audit traceability rollout](docs/architecture/audit-traceability.md#verification-and-rollout)
+for handling environments that ran the old audit filenames. `npm run gate` passed on 2026-11-17;
+this does not establish production deployment or DB migration verification.
 
 ## AI rules (non-negotiable)
 

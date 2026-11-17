@@ -1,4 +1,4 @@
-/** Run only after 10.122 on a disposable restored local BMS database. */
+/** Run only after 10.131 and 10.132 on a disposable restored local BMS database. */
 import assert from "node:assert/strict";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
@@ -56,7 +56,7 @@ test("disposable DB: long-history cursor merge preserves exact actor and source 
       VALUES ($1,$2,'auth.login','SUCCESS','TEST',$3)`, [tenant, actor, at]);
     const index = await client.query(`SELECT 1 FROM pg_indexes WHERE schemaname='public'
       AND tablename='bms_audit_log' AND indexname='idx_bms_audit_legacy_actor_time'`);
-    assert.equal(index.rowCount, 1, "apply 10.123 before running this test");
+    assert.equal(index.rowCount, 1, "apply 10.132 before running this test");
 
     const list = timelineOnClient(client);
     const first = await list(tenant, { actorUserId: actor, limit: 2 });

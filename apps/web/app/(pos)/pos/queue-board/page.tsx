@@ -505,7 +505,7 @@ export default function PickupQueueBoardPage() {
         ? posText("เชิญรับที่เคาน์เตอร์")
         : currentLabel ? posText("คิวพร้อมรับล่าสุด") : posText("ยังไม่มีคิวพร้อมรับ")}</div>
     </div>
-    <div className="pq-call-number">{currentLabel ?? "—"}</div>
+    {currentLabel && <div className="pq-call-number">{currentLabel}</div>}
   </section>;
   const page: React.CSSProperties = {
     minHeight: "100vh", boxSizing: "border-box", padding: "24px 32px",

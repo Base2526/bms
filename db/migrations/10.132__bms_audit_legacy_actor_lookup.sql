@@ -1,4 +1,4 @@
--- 10.123: keep exact-identity history lookups bounded as audit rows accumulate.
+-- 10.132: keep exact-identity history lookups bounded as audit rows accumulate.
 -- The text actor remains necessary for older rows and services without actor_user_id.
 -- ROLLBACK: DROP INDEX IF EXISTS idx_bms_audit_legacy_actor_time;
 -- Creating this index scans bms_audit_log. Schedule the migration before the table is
