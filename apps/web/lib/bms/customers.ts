@@ -594,7 +594,12 @@ export async function customerOrderDetailInTx(
          'kind', 'SERVICE', 'label', e.label, 'sku', NULL, 'size', NULL, 'qty', e.qty,
          'saleQty', e.qty, 'unitName', NULL,
          'unitAmount', e.unit_amount, 'lineAmount', e.qty * e.unit_amount) ORDER BY e.id)
-         FROM bms_order_extra_lines e WHERE e.tenant_id = o.tenant_id AND e.order_id = o.id), '[]'::jsonb) AS lines,
+         FROM bms_order_extra_lines e WHERE e.tenant_id = o.tenant_id AND e.order_id = o.id), '[]'::jsonb)
+       || COALESCE((SELECT jsonb_agg(jsonb_build_object(
+         'kind', 'OPEN_ITEM', 'label', i.label, 'sku', NULL, 'size', NULL, 'qty', i.qty,
+         'saleQty', i.qty, 'unitName', 'ชิ้น',
+         'unitAmount', i.unit_amount, 'lineAmount', i.line_amount) ORDER BY i.id)
+         FROM bms_order_open_items i WHERE i.tenant_id = o.tenant_id AND i.order_id = o.id), '[]'::jsonb) AS lines,
        COALESCE((SELECT jsonb_agg(jsonb_build_object('kind', l.kind, 'points', l.points) ORDER BY l.created_at, l.id)
          FROM bms_loyalty_ledger l WHERE l.tenant_id = o.tenant_id AND l.order_id = o.id
            AND l.customer_id = o.customer_id AND l.kind IN ('EARN', 'REDEEM', 'REVERSE')), '[]'::jsonb) AS points

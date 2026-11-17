@@ -27,7 +27,7 @@ test("the basket matches the mockup hierarchy", () => {
   assert.match(page, /onClick=\{\(\) => setParkOpen\(true\)\}[\s\S]{0,100}พักบิล/);
   assert.match(page, /className="pos-sale-line-header"[\s\S]{0,180}<span>\{posText\("สินค้า"\)\}<\/span>[\s\S]*?<span>\{posText\("ราคา"\)\}<\/span>[\s\S]*?<span>\{posText\("จำนวน"\)\}<\/span>[\s\S]*?<span>\{posText\("รวม"\)\}<\/span>/);
   assert.match(page, /className="pos-line-unit-price"/);
-  assert.match(page, /className="pos-sale-empty"[\s\S]{0,180}ยังไม่มีสินค้าในบิล/);
+  assert.match(page, /className="pos-sale-empty"[\s\S]{0,260}openItems\.length \? posText\("สินค้าชั่วคราวในบิล"\) : posText\("ยังไม่มีสินค้าในบิล"\)/);
 });
 
 test("the checkout keeps summary, method selection, cash keypad, and the primary action in one pane", () => {

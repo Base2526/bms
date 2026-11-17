@@ -117,6 +117,7 @@ export const BMS_PERMISSIONS = [
   "location.manage",
   // POS — seed ที่ 7.87
   "pos.sell",
+  "pos.open_item.sell",
   "pos.shift.open",
   "pos.shift.close",
   "pos.discount.approve",

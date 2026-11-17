@@ -94,7 +94,9 @@ test("releasing a reservation refuses a fractional quantity instead of letting P
   // malformed consumption snapshot would silently round stock and leave untraceable drift.
   const pos = withoutComments(read("apps/web/lib/bms/pos.ts"));
   const online = pos.slice(pos.indexOf("if (onlineCancellation) {"));
-  const branch = online.slice(0, online.indexOf("returnedItems.push"));
+  // The first push can now be a stock-free open item. Inspect through the stocked-line release.
+  const firstPush = online.indexOf("returnedItems.push");
+  const branch = online.slice(0, online.indexOf("returnedItems.push", firstPush + 1));
   assert.match(branch, /Number\.isInteger\(exactQty\)/);
   assert.match(branch, /reserved_stock = reserved_stock - \$5/);
 });

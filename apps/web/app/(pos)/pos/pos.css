@@ -716,6 +716,16 @@
   border-radius: 8px;
   background: var(--pos-sunken);
 }
+.pos-root .pos-sale-bill-options-body .pos-sale-bill-options-close {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 6px;
+  background: var(--pos-surface);
+}
 .pos-root .pos-sale-bill-options-body .pos-sale-clear-bill {
   width: 100%;
   margin-top: 0 !important;

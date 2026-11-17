@@ -419,6 +419,14 @@ obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or s
 
 ## POS and tax
 
+- Open-item retail sales (`10.129`) use `bms_order_open_items`, not a fake SKU or
+  `bms_order_extra_lines`. Require cash-only settlement, `pos.open_item.sell`, cashier PIN,
+  and the existing POS idempotency key. The immutable sale label/qty/price/VAT category
+  enter receipts, tax and sale evidence. Returns write `bms_pos_return_open_items` in the
+  same transaction as the refund and never move stock. Missing cost is explicit. No
+  restaurant/board-game/pharmacy, deposit, coupon, points redemption, manual discount or
+  emergency-offline path may accept an open item.
+
 - Back-office payment confirmation needs `payment.confirm` and an explicit `confirmed: true` at
   GraphQL or REST after the human sees the payment identity, amount and method. The API refuses an
   omitted or false confirmation before `confirmPayment()`; that service keeps the payment, order

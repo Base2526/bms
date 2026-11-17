@@ -153,6 +153,8 @@ export default function MenuScreen({ navigation }: Props) {
   const { width, isTablet } = useResponsive();
   const {
     lines,
+    openItems,
+    setOpenItems,
     addItem,
     decrementItem,
     decrementSku,
@@ -183,6 +185,11 @@ export default function MenuScreen({ navigation }: Props) {
   const [configuringFromHardwareScan, setConfiguringFromHardwareScan] =
     useState(false);
   const [parkOpen, setParkOpen] = useState(false);
+  const [openItemModal, setOpenItemModal] = useState(false);
+  const [openLabel, setOpenLabel] = useState('');
+  const [openQty, setOpenQty] = useState('1');
+  const [openPrice, setOpenPrice] = useState('');
+  const [openVat, setOpenVat] = useState<'V' | 'N' | ''>('');
   const [parkName, setParkName] = useState('');
   const [parkNote, setParkNote] = useState('');
   const [lastScanned, setLastScanned] = useState('');
@@ -203,7 +210,27 @@ export default function MenuScreen({ navigation }: Props) {
     return map;
   }, [lines]);
 
-  const cartCount = lines.reduce((n, l) => n + l.qty, 0);
+  const cartCount = lines.reduce((n, l) => n + l.qty, 0) + openItems.reduce((n, l) => n + l.qty, 0);
+  const addOpenItem = () => {
+    const label = openLabel.trim();
+    const qty = Number(openQty);
+    const unitAmount = Number(openPrice);
+    if (!label || label.length > 120 || /[\u0000-\u001f\u007f]/u.test(label) ||
+      !Number.isInteger(qty) || qty < 1 || qty > 9999 ||
+      !Number.isFinite(unitAmount) || unitAmount <= 0 || unitAmount > 9999999.99 ||
+      Math.abs(unitAmount * 100 - Math.round(unitAmount * 100)) > 0.000001 ||
+      qty * unitAmount > 9999999999.99 || (openVat !== 'V' && openVat !== 'N') ||
+      openItems.length >= 10) {
+      Alert.alert(posText("ข้อมูลสินค้าชั่วคราวไม่ถูกต้อง"), posText("กรอกชื่อ จำนวนเต็ม ราคาบวกไม่เกินสองตำแหน่ง และเลือก VAT (สูงสุด 10 รายการ)"));
+      return;
+    }
+    setOpenItems([...openItems, { id: `open-${Date.now()}-${openItems.length}`, label, qty, unitAmount, vatCategory: openVat }]);
+    setOpenLabel('');
+    setOpenQty('1');
+    setOpenPrice('');
+    setOpenVat('');
+    setOpenItemModal(false);
+  };
   const continueSale = () => {
     const appNavigation = getAppNavigation(navigation);
     if (!isShiftOpen) {
@@ -306,6 +333,7 @@ export default function MenuScreen({ navigation }: Props) {
               </View>
             )}
           </View>
+          {mode === 'general' && <Button label={posText("เพิ่มสินค้าชั่วคราว")} variant="secondary" onPress={() => setOpenItemModal(true)} />}
         </>
       }
     />
@@ -431,6 +459,13 @@ export default function MenuScreen({ navigation }: Props) {
         )}
       />
 
+      {openItems.map(item => (
+        <View key={item.id} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xs }}>
+          <Text style={[typography.body, { color: colors.text, flex: 1 }]}>{item.label} × {item.qty} · ฿{(item.qty * item.unitAmount).toFixed(2)} ({item.vatCategory})</Text>
+          <Button label={posText("ลบ")} variant="secondary" onPress={() => setOpenItems(openItems.filter(row => row.id !== item.id))} />
+        </View>
+      ))}
+
       <View
         style={{
           borderTopWidth: StyleSheet.hairlineWidth,
@@ -545,6 +580,22 @@ export default function MenuScreen({ navigation }: Props) {
           setScannerOpen(false);
         }}
       />
+      <Modal transparent visible={openItemModal} animationType="fade" onRequestClose={() => setOpenItemModal(false)}>
+        <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
+          <View style={[styles.parkModal, { backgroundColor: colors.surface, borderColor: colors.border, padding: spacing.lg }]}>
+            <Text style={[typography.subtitle, { color: colors.text }]}>{posText("สินค้าชั่วคราว · เงินสด · ไม่ตัดสต็อก")}</Text>
+            <TextInput value={openLabel} onChangeText={setOpenLabel} maxLength={120} placeholder={posText("ชื่อสินค้าบนใบเสร็จ")} placeholderTextColor={colors.textSoft} style={[styles.input, { color: colors.text, borderColor: colors.border }]} />
+            <TextInput value={openQty} onChangeText={setOpenQty} keyboardType="number-pad" placeholder={posText("จำนวน")} placeholderTextColor={colors.textSoft} style={[styles.input, { color: colors.text, borderColor: colors.border }]} />
+            <TextInput value={openPrice} onChangeText={setOpenPrice} keyboardType="decimal-pad" placeholder={posText("ราคาต่อหน่วย")} placeholderTextColor={colors.textSoft} style={[styles.input, { color: colors.text, borderColor: colors.border }]} />
+            <View style={{ flexDirection: 'row', gap: spacing.sm, marginVertical: spacing.sm }}>
+              <Button label={posText("คิด VAT")} variant={openVat === 'V' ? 'primary' : 'secondary'} onPress={() => setOpenVat('V')} />
+              <Button label={posText("ไม่คิด VAT")} variant={openVat === 'N' ? 'primary' : 'secondary'} onPress={() => setOpenVat('N')} />
+            </View>
+            <Button label={posText("เพิ่มรายการ")} fullWidth onPress={addOpenItem} />
+            <Button label={posText("ยกเลิก")} variant="secondary" fullWidth style={{ marginTop: spacing.sm }} onPress={() => setOpenItemModal(false)} />
+          </View>
+        </View>
+      </Modal>
       <ProductOptionsModal
         item={configuring}
         restaurant={mode === 'restaurant'}

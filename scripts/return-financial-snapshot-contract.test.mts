@@ -168,6 +168,7 @@ function harness() {
       product_sku: "MEAL", size: "BOWL", unit_price: "100.00", receipt_unit_price: "100.00", line_amount: "300.00", pricing_snapshot: {}, vat_category: "V",
       stock_consumption_version: 2, restaurant_check_item_id: "check-item", returned_pack_qty: String(state.items.reduce((a: number, r: any) => a + r.pack_qty, 0)),
       returned_refund_amount: String(state.items.reduce((a: number, r: any) => a + r.refund_amount, 0)) }]);
+    if (sql.includes("FROM bms_order_open_items oi") && sql.includes("FOR UPDATE")) return result();
     if (sql.includes("FROM bms_product_menu_unavailability")) return result();
     if (sql.includes("financial_snapshot AS snapshot")) {
       assert.deepEqual(p, ["tenant-a", "order-a"]); assert.match(sql, /LIMIT 1001/);

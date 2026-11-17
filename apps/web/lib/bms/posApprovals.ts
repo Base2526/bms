@@ -57,6 +57,7 @@ const ACTION_LABEL_TH: Record<string, string> = {
   "ar.view": "ดูข้อมูลลูกหนี้",
   "purchase.receive": "รับสินค้าเข้า",
   "pos.sell": "ขายหน้าร้าน",
+  "pos.open_item.sell": "ขายสินค้าชั่วคราว",
   "pos.nosale": "เปิดลิ้นชักโดยไม่ขาย",
   "pos.deposit.take": "รับมัดจำ",
   "pos.shift.open": "เปิดกะ",

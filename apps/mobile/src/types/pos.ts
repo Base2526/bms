@@ -129,6 +129,14 @@ export interface PosExtraLine {
   unitAmount: number;
 }
 
+export interface PosOpenItem {
+  id: string;
+  label: string;
+  qty: number;
+  unitAmount: number;
+  vatCategory: 'V' | 'N';
+}
+
 export interface PosTable {
   id: string;
   code: string;

@@ -581,6 +581,7 @@ type ParkedCartSnapshot = {
   pointsToRedeem?: string;
   couponCode?: string;
   extraLines?: Array<{ label: string; unitAmount: string }>;
+  openItems?: Array<{ label: string; qty: string; unitAmount: string; vatCategory: "V" | "N" | "" }>;
   pharmacyReview?: {
     assessmentId: string;
     caseCode: string;
@@ -606,6 +607,14 @@ function parseParkedCartSnapshot(raw: unknown): ParkedCartSnapshot {
       ? (value.extraLines as Array<any>).map((line) => ({
           label: typeof line?.label === "string" ? line.label : "",
           unitAmount: typeof line?.unitAmount === "string" ? line.unitAmount : "",
+        }))
+      : [],
+    openItems: Array.isArray(value.openItems)
+      ? (value.openItems as Array<any>).slice(0, 10).map((line) => ({
+          label: typeof line?.label === "string" ? line.label : "",
+          qty: typeof line?.qty === "string" ? line.qty : "",
+          unitAmount: typeof line?.unitAmount === "string" ? line.unitAmount : "",
+          vatCategory: line?.vatCategory === "V" || line?.vatCategory === "N" ? line.vatCategory : "",
         }))
       : [],
     pharmacyReview:
@@ -1913,6 +1922,9 @@ export default function PosPage() {
   // ---- ค่าบริการ/ค่าถุง (8.6) ----
   // ไม่ใช่สินค้าในคลัง จึงไม่อยู่ในตะกร้า แต่ต้องรวมในยอดที่ลูกค้าจ่าย
   const [extraLines, setExtraLines] = useState<Array<{ label: string; unitAmount: string }>>([]);
+  const [openItems, setOpenItems] = useState<Array<{
+    label: string; qty: string; unitAmount: string; vatCategory: "V" | "N" | "";
+  }>>([]);
   const [boardGameCheckoutId, setBoardGameCheckoutId] = useState("");
   const [boardGameCheckout, setBoardGameCheckout] = useState<BoardGameCheckout | null>(null);
   const [boardGameCheckoutLoading, setBoardGameCheckoutLoading] = useState(false);
@@ -2066,6 +2078,7 @@ export default function PosPage() {
       setCouponCode(snapshot.couponCode ?? "");
       setCouponOpen(Boolean(snapshot.couponCode?.trim()));
       setExtraLines(snapshot.extraLines ?? []);
+      setOpenItems(snapshot.openItems ?? []);
       if (typeof saved.body.boardGameBillingGroupId === "string") {
         setBoardGameCheckoutId(saved.body.boardGameBillingGroupId);
       }
@@ -2098,6 +2111,7 @@ export default function PosPage() {
       setCouponCode(snapshot.couponCode ?? "");
       setCouponOpen(Boolean(snapshot.couponCode?.trim()));
       setExtraLines(snapshot.extraLines ?? []);
+      setOpenItems(snapshot.openItems ?? []);
       setPharmacyReviewLink(saved.pharmacyReviewLink ?? (
         snapshot.pharmacyReview?.assessmentId && snapshot.pharmacyReview.caseCode
           ? {
@@ -2369,7 +2383,7 @@ export default function PosPage() {
   useEffect(() => {
     if (!deviceStorageNamespace || !localDraftRestoredRef.current) return;
     const key = LOCAL_CART_DRAFT_KEY_PREFIX + deviceStorageNamespace;
-    if (cart.length === 0) {
+    if (cart.length === 0 && openItems.length === 0) {
       window.localStorage.removeItem(key);
       return;
     }
@@ -2384,7 +2398,7 @@ export default function PosPage() {
     };
     window.localStorage.setItem(key, JSON.stringify(snapshot));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, member, pointsToRedeem, couponCode, extraLines, deviceStorageNamespace, session?.shift?.id]);
+  }, [cart, member, pointsToRedeem, couponCode, extraLines, openItems, deviceStorageNamespace, session?.shift?.id]);
 
   useEffect(() => {
     if (!deviceStorageNamespace) return;
@@ -2424,7 +2438,7 @@ export default function PosPage() {
         return;
       }
       const snapshot = parseParkedCartSnapshot(parsed);
-      if (snapshot.lines.length === 0) return;
+      if (snapshot.lines.length === 0 && !snapshot.openItems?.length) return;
       restoreBillFromSnapshot({ ...snapshot, pharmacyReview: null });
       setNotice({ type: "ok", text: posText("กู้ตะกร้าที่ค้างไว้ก่อนหน้าคืนแล้ว — ตรวจรายการก่อนกดจ่ายอีกครั้ง") });
     } catch {
@@ -2512,6 +2526,11 @@ export default function PosPage() {
     }, 0),
     [extraLines]
   );
+  const openItemTotal = useMemo(() => Math.round(openItems.reduce((sum, item) => {
+    const qty = Number(item.qty), price = Number(item.unitAmount);
+    return sum + (item.label.trim() && Number.isInteger(qty) && qty > 0
+      && Number.isFinite(price) && price > 0 ? qty * price : 0);
+  }, 0) * 100) / 100, [openItems]);
 
   /**
    * โปรโมชัน (8.7) — คิดต่อ SKU+ไซซ์จากจำนวนรวมทั้งตะกร้า
@@ -2568,7 +2587,8 @@ export default function PosPage() {
     }
     return Math.round(sum * 100) / 100;
   }, [cart, tierPriceByKey, promoBySku]);
-  const itemCount = useMemo(() => cart.reduce((sum, l) => sum + l.packQty, 0), [cart]);
+  const itemCount = useMemo(() => cart.reduce((sum, l) => sum + l.packQty, 0)
+    + openItems.reduce((sum, item) => sum + (Number.isInteger(Number(item.qty)) ? Number(item.qty) : 0), 0), [cart, openItems]);
 
   // ---- สมาชิก + แต้ม (7.96) ----------------------------------------
   // ส่วนลดทุกชั้นคิดที่ server เท่านั้น (/api/pos/member/preview) จอแค่แสดงผล
@@ -2582,7 +2602,7 @@ export default function PosPage() {
   /** ส่วนลดทุกชนิดใช้ฐานสินค้าเท่านั้น ค่าถุง/ค่าบริการบวกหลังหักส่วนลด */
   const netTotal = Math.round(Math.max(0, total - discountTotal) * 100) / 100;
   const fallbackPayableBeforeRounding = Math.round(
-    (netTotal + extraTotal + (boardGameCheckout?.totalDue ?? 0)) * 100
+    (netTotal + extraTotal + openItemTotal + (boardGameCheckout?.totalDue ?? 0)) * 100
   ) / 100;
   const payableBeforeRounding = boardGameCheckout && memberPreview?.status === "READY"
     && memberPreview.amountDue != null
@@ -2793,6 +2813,7 @@ export default function PosPage() {
     clearPharmacyReviewState();
     // ค่าบริการผูกกับบิลใบนี้ ไม่ใช่ค่าตั้งของเครื่อง — ขายจบต้องล้าง
     setExtraLines([]);
+    setOpenItems([]);
     // บัญชีเครดิตผูกกับลูกค้าของบิลนี้ (9.30) — ค้างไว้ = บิลถัดไปเห็นวงเงินของคนก่อน
     clearArState();
   }
@@ -2923,6 +2944,7 @@ export default function PosPage() {
       pointsToRedeem,
       couponCode,
       extraLines,
+      openItems,
       pharmacyReview: pharmacyReviewLink
         ? {
             assessmentId: pharmacyReviewLink.assessmentId,
@@ -2943,6 +2965,7 @@ export default function PosPage() {
     setCouponCode(snapshot.couponCode ?? "");
     setCouponOpen(Boolean(snapshot.couponCode?.trim()));
     setExtraLines(snapshot.extraLines ?? []);
+    setOpenItems(snapshot.openItems ?? []);
     setPharmacyReviewLink(
       snapshot.pharmacyReview?.assessmentId && snapshot.pharmacyReview.caseCode
         ? {
@@ -3278,7 +3301,7 @@ export default function PosPage() {
   }
 
   async function doParkSale() {
-    if (cart.length === 0) { setNotice({ type: "error", text: posText("ตะกร้าว่าง") }); return; }
+    if (cart.length === 0 && openItems.length === 0) { setNotice({ type: "error", text: posText("ตะกร้าว่าง") }); return; }
     if (!parkLabel.trim()) {
       setNotice({ type: "error", text: posText("ตั้งชื่อบิลก่อน เช่น ชื่อลูกค้า") });
       return;
@@ -3290,7 +3313,7 @@ export default function PosPage() {
         headers: { ...authHeaders, "content-type": "application/json" },
         body: JSON.stringify({
           action: "park", cashierUserId: cashierId, label: parkLabel.trim(),
-          cart: buildParkedCartSnapshot(), itemCount: itemCount, subtotalHint: total,
+          cart: buildParkedCartSnapshot(), itemCount: itemCount, subtotalHint: total + openItemTotal,
         }),
       });
       const data = await res.json();
@@ -4763,7 +4786,17 @@ export default function PosPage() {
     if (hasPendingDepositSale) return posText("มีรายการมัดจำรอตรวจสอบ — ไปแท็บมัดจำและกดตรวจรายการเดิม");
     if (blindOpen) return posText("กำลังอยู่ในโหมดคืนไม่มีใบเสร็จ — ยืนยันคืนหรือยกเลิกรายการนี้ก่อน");
     if (boardGameCheckoutLoading) return posText("กำลังโหลดบิลเวลาเล่น");
-    if (cart.length === 0 && !boardGameCheckout) return posText("ยังไม่มีสินค้าในบิล");
+    if (cart.length === 0 && openItems.length === 0 && !boardGameCheckout) return posText("ยังไม่มีสินค้าในบิล");
+    if (openItems.length && (boardGameCheckout || couponCode.trim() || Number(pointsToRedeem) > 0 || approvedDiscount))
+      return posText("สินค้าชั่วคราวใช้กับบิลเงินสดที่ไม่มีคูปอง แต้ม หรือส่วนลดมือ");
+    if (openItems.length && (payments.length !== 1 || payments[0].method !== "CASH"))
+      return posText("สินค้าชั่วคราวรับชำระด้วยเงินสดเท่านั้น");
+    if (openItems.some((item) => !item.label.trim() || item.label.trim().length > 120
+      || !Number.isInteger(Number(item.qty)) || Number(item.qty) < 1 || Number(item.qty) > 9999
+      || !Number.isFinite(Number(item.unitAmount)) || Number(item.unitAmount) <= 0
+      || Math.abs(Math.round(Number(item.unitAmount) * 100) - Number(item.unitAmount) * 100) > 0.000001
+      || (item.vatCategory !== "V" && item.vatCategory !== "N")))
+      return posText("กรอกชื่อ จำนวน ราคา และ VAT ของสินค้าชั่วคราวให้ครบ");
     if (!session?.shift) return posText("ยังไม่ได้เปิดกะ");
     if (!cashierId) return posText("เลือกผู้ขายก่อน");
     if (!pin) return posText("ใส่ PIN ของผู้ขาย");
@@ -5995,7 +6028,7 @@ export default function PosPage() {
   }
 
   async function pay() {
-    if (!session?.shift || (cart.length === 0 && !boardGameCheckout) || !cashierId || !pin || busy) return;
+    if (!session?.shift || (cart.length === 0 && openItems.length === 0 && !boardGameCheckout) || !cashierId || !pin || busy) return;
     if (blindOpen) {
       setNotice({ type: "error", text: posText("กำลังอยู่ในโหมดคืนไม่มีใบเสร็จ — ต้องยืนยันคืนหรือยกเลิกรายการนี้ก่อนขาย") });
       return;
@@ -6119,6 +6152,10 @@ export default function PosPage() {
           modifierCodes: line.modifierCodes ?? [],
           // เลขเครื่อง (8.3) — ส่งเฉพาะที่กรอกไว้ server บังคับความครบเอง
           serials: line.serials?.length ? line.serials : undefined,
+        })),
+        openItems: openItems.map((item) => ({
+          label: item.label.trim(), qty: Number(item.qty),
+          unitAmount: Number(item.unitAmount), vatCategory: item.vatCategory,
         })),
         // ค่าบริการ/ค่าถุง (8.6) — ส่งเฉพาะแถวที่กรอกครบ
         extraLines: extraLines
@@ -9589,16 +9626,16 @@ export default function PosPage() {
             <div>
               <div className="pos-sale-basket-title">{posText("รายการขาย")}</div>
               <div className="pos-sale-basket-meta">
-                {cart.length === 0
+                {cart.length === 0 && openItems.length === 0
                   ? (boardGameCheckout ? posText("บิลเวลาเล่น {v0}", { v0: boardGameCheckout.tableName }) : posText("ยังไม่มีรายการ"))
-                  : posText("{v0} รายการ · {v1} ชิ้น", { v0: cart.length, v1: itemCount })}
+                  : posText("{v0} รายการ · {v1} ชิ้น", { v0: cart.length + openItems.length, v1: itemCount })}
                 {session?.device.registeredPosNo ? ` · POS#${session.device.registeredPosNo}` : ""}
               </div>
             </div>
             <div className="pos-sale-basket-actions">
               <button
                 type="button"
-                disabled={hasPendingOrderWrite || cart.length === 0}
+                disabled={hasPendingOrderWrite || (cart.length === 0 && openItems.length === 0)}
                 onClick={() => setParkOpen(true)}
               >
                 <svg className="pos-sale-action-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -9665,7 +9702,7 @@ export default function PosPage() {
           )}
           <div className="pos-sale-lines">
             <GiftPromotionSummary lines={cart.map((line) => ({ ...line, qty: line.packQty }))} onAdd={(sku, size) => enqueueScan(sku, "manual", size)} />
-            {cart.length > 0 && (
+            {(cart.length > 0 || openItems.length > 0) && (
               <div className="pos-sale-line-header" aria-hidden="true">
                 <span>{posText("สินค้า")}</span>
                 <span>{posText("ราคา")}</span>
@@ -9765,10 +9802,25 @@ export default function PosPage() {
                 </div>
               </div>
             ))}
-            {cart.length === 0 && !boardGameCheckout && (
+            {openItems.map((item, index) => (
+              <div key={`open-${index}`} className="pos-line-item">
+                <div className="pos-line-product">
+                  <div className="pos-line-product-copy">
+                    <div className="pos-line-name">
+                      <span>{item.label.trim() || posText("สินค้าชั่วคราว")}</span>
+                    </div>
+                    <div className="pos-line-meta">{posText("สินค้าชั่วคราว · ไม่ตัดสต็อก")}</div>
+                  </div>
+                </div>
+                <div className="pos-line-unit-price">฿{baht(Number(item.unitAmount) || 0)}</div>
+                <div className="pos-qty"><span className="pos-qty-value">{item.qty || "?"}</span></div>
+                <div className="pos-line-amount">฿{baht((Number(item.qty) || 0) * (Number(item.unitAmount) || 0))}</div>
+              </div>
+            ))}
+            {cart.length === 0 && openItems.length === 0 && !boardGameCheckout && (
               <div className="pos-sale-empty" role="status">
                 <span className="pos-sale-empty-icon" aria-hidden="true">▣</span>
-                <strong>{posText("ยังไม่มีสินค้าในบิล")}</strong>
+                <strong>{openItems.length ? posText("สินค้าชั่วคราวในบิล") : posText("ยังไม่มีสินค้าในบิล")}</strong>
                 <span>{posText("ยิงบาร์โค้ดหรือค้นหาสินค้าเพื่อเริ่มขาย")}</span>
               </div>
             )}
@@ -9787,6 +9839,7 @@ export default function PosPage() {
               <div className="pos-sale-summary">
                 <div><span>{posText("ยอดสินค้า")}</span><strong>฿{baht(total)}</strong></div>
                 {extraTotal > 0 && <div><span>{posText("ค่าบริการเพิ่มเติม")}</span><strong>฿{baht(extraTotal)}</strong></div>}
+                {openItemTotal > 0 && <div><span>{posText("สินค้าชั่วคราว · ไม่ตัดสต็อก")}</span><strong>฿{baht(openItemTotal)}</strong></div>}
                 {boardGameCheckout && <div><span>{posText("ค่าเล่นบอร์ดเกม")}</span><strong>฿{baht(boardGameCheckout.totalDue)}</strong></div>}
                 <div><span>{posText("ส่วนลด")}</span><strong>−฿{baht(discountTotal)}</strong></div>
                 <div className="pos-sale-summary-total"><span>{posText("ยอดสุทธิ")}</span><strong>฿{baht(amountDue)}</strong></div>
@@ -9801,6 +9854,7 @@ export default function PosPage() {
             <div className="pos-sale-summary">
               <div><span>{posText("ยอดสินค้า")}</span><strong>฿{baht(total)}</strong></div>
               {extraTotal > 0 && <div><span>{posText("ค่าบริการเพิ่มเติม")}</span><strong>฿{baht(extraTotal)}</strong></div>}
+              {openItemTotal > 0 && <div><span>{posText("สินค้าชั่วคราว · ไม่ตัดสต็อก")}</span><strong>฿{baht(openItemTotal)}</strong></div>}
               <div><span>{posText("ส่วนลด")}</span><strong>−฿{baht(discountTotal)}</strong></div>
               <div className="pos-sale-summary-total"><span>{posText("ยอดสุทธิ")}</span><strong>฿{baht(amountDue)}</strong></div>
             </div>
@@ -9812,6 +9866,13 @@ export default function PosPage() {
                   .map((x, i) => (
                     <div key={i}>{x.label.trim()} +฿{baht(Number(x.unitAmount))}</div>
                   ))}
+              </div>
+            )}
+            {openItems.length > 0 && (
+              <div className="pos-total-break" style={{ borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
+                {openItems.map((item, index) => (
+                  <div key={index}>{item.label.trim() || posText("สินค้าชั่วคราว")} × {item.qty || "?"} · ฿{baht(Number(item.unitAmount) || 0)}</div>
+                ))}
               </div>
             )}
             {boardGameCheckout && (
@@ -10831,7 +10892,7 @@ export default function PosPage() {
             <button
               type="button"
               className="pos-sale-footer-park"
-              disabled={hasPendingOrderWrite || cart.length === 0}
+              disabled={hasPendingOrderWrite || (cart.length === 0 && openItems.length === 0)}
               onClick={() => setParkOpen(true)}
             >
               <span aria-hidden="true">Ⅱ</span>
@@ -10841,11 +10902,16 @@ export default function PosPage() {
           <details className="pos-sale-bill-options">
             <summary>{tab === "sell" ? posText("ตัวเลือกบิล") : posText("ตัวเลือก")}</summary>
             <div className="pos-sale-bill-options-body">
+          <button type="button" className="pos-sale-bill-options-close"
+            onClick={(event) => event.currentTarget.closest("details")?.removeAttribute("open")}>
+            {posText("ปิด")}
+          </button>
           <button
             className="pos-sale-clear-bill"
             disabled={hasPendingOrderWrite}
             onClick={() => {
               setCart([]);
+              setOpenItems([]);
               clearBoardGameCheckout();
               setPayments([{ id: "pay-1", method: "CASH", amount: "", tendered: "", ref: "" }]);
               resetToSimpleCash();
@@ -10900,6 +10966,46 @@ export default function PosPage() {
           <div className="pos-block-hint" style={{ display: "flex", alignItems: "center", justifyContent: "center", marginTop: 4 }}>
             {posText("ไม่ตัดสต็อก แต่รวมในยอดชำระและแสดงบนใบเสร็จ") + " "}<PosHelp title={posText("ค่าบริการและค่าถุง")} align="right">
               {posText("ใช้กับรายการที่ไม่ใช่สินค้าในคลัง เช่น ค่าถุงหรือค่าบริการ ชื่อและยอดที่กรอกจะแสดงให้ลูกค้าเห็นบนใบเสร็จ") + " "}</PosHelp>
+          </div>
+          <div style={{ borderTop: "1px solid var(--pos-line)", marginTop: 12, paddingTop: 10 }}>
+            <strong>{posText("ขายสินค้าชั่วคราว")}</strong>
+            <p className="pos-block-hint">{posText("สำหรับสินค้าจริงที่ยังไม่มีในระบบ · รับเงินสดเท่านั้น · ไม่ตัดสต็อก · ผู้ขายต้องมีสิทธิ์เฉพาะ")}</p>
+            {openItems.map((row, idx) => (
+              <div key={idx} style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 7 }}>
+                <input aria-label={posText("ชื่อสินค้าชั่วคราว")}
+                  value={row.label} maxLength={120} disabled={hasPendingOrderWrite}
+                  onChange={(e) => setOpenItems((cur) => cur.map((x, i) => i === idx ? { ...x, label: e.target.value } : x))}
+                  placeholder={posText("ชื่อสินค้า")}
+                  style={{ flex: "2 1 160px", minWidth: 0, padding: "8px 10px", fontSize: 13 }} />
+                <input aria-label={posText("จำนวนสินค้าชั่วคราว")}
+                  value={row.qty} inputMode="numeric" disabled={hasPendingOrderWrite}
+                  onChange={(e) => setOpenItems((cur) => cur.map((x, i) => i === idx ? { ...x, qty: e.target.value.replace(/[^0-9]/g, "") } : x))}
+                  placeholder={posText("จำนวน")}
+                  style={{ flex: "0 1 65px", minWidth: 0, padding: "8px 10px", fontSize: 13 }} />
+                <input aria-label={posText("ราคาต่อหน่วย")}
+                  value={row.unitAmount} inputMode="decimal" disabled={hasPendingOrderWrite}
+                  onChange={(e) => setOpenItems((cur) => cur.map((x, i) => i === idx ? { ...x, unitAmount: e.target.value.replace(/[^0-9.]/g, "") } : x))}
+                  placeholder={posText("บาทต่อหน่วย")}
+                  style={{ flex: "0 1 100px", minWidth: 0, padding: "8px 10px", fontSize: 13 }} />
+                <select aria-label={posText("ประเภท VAT ของสินค้าชั่วคราว")}
+                  value={row.vatCategory} disabled={hasPendingOrderWrite}
+                  onChange={(e) => setOpenItems((cur) => cur.map((x, i) => i === idx ? { ...x, vatCategory: e.target.value as "V" | "N" | "" } : x))}
+                  style={{ flex: "0 1 120px", padding: "8px 10px", fontSize: 13 }}>
+                  <option value="">{posText("เลือก VAT")}</option>
+                  <option value="V">{posText("VAT ปกติ")}</option>
+                  <option value="N">{posText("ยกเว้น VAT")}</option>
+                </select>
+                <button type="button" aria-label={posText("ลบสินค้าชั่วคราว")}
+                  disabled={hasPendingOrderWrite}
+                  onClick={() => setOpenItems((cur) => cur.filter((_, i) => i !== idx))}
+                  className="pos-btn-ghost" style={{ padding: "0 10px" }}>✕</button>
+              </div>
+            ))}
+            <button type="button" disabled={hasPendingOrderWrite || openItems.length >= 10}
+              onClick={() => setOpenItems((cur) => [...cur, { label: "", qty: "1", unitAmount: "", vatCategory: "" }])}
+              style={{ marginTop: 7, padding: "10px 0", fontSize: 14 }}>
+              {posText("+ ขายสินค้าชั่วคราว")}
+            </button>
           </div>
             </div>
           </details>
