@@ -14,6 +14,7 @@ export function parsePosOpenItems(raw: unknown):
     return { ok: false, reason: "รายการขายชั่วคราวต้องเป็นรายการไม่เกิน 10 บรรทัด" };
   }
   const items: PosOpenItem[] = [];
+  let totalCents = 0;
   for (const row of raw) {
     if (!row || typeof row !== "object") return { ok: false, reason: "รายการขายชั่วคราวไม่ถูกต้อง" };
     const value = row as Record<string, unknown>;
@@ -35,8 +36,13 @@ export function parsePosOpenItems(raw: unknown):
     if (vatCategory !== "V" && vatCategory !== "N") {
       return { ok: false, reason: "ต้องระบุประเภท VAT ของสินค้าชั่วคราว" };
     }
-    if (qty * unitAmount > 9999999999.99) {
+    const lineCents = Math.round(qty * unitAmount * 100);
+    if (lineCents > 999999999999) {
       return { ok: false, reason: "ยอดสินค้าชั่วคราวเกินวงเงินต่อบรรทัด" };
+    }
+    totalCents += lineCents;
+    if (totalCents > 999999999999) {
+      return { ok: false, reason: "ยอดสินค้าชั่วคราวรวมเกินวงเงินต่อบิล" };
     }
     items.push({ label, qty, unitAmount, vatCategory });
   }

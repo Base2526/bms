@@ -73,9 +73,12 @@ test("all publishers clear customer state when the cashier is locked or working 
   const restaurant = read("app/(pos)/pos/restaurant/page.tsx");
   const desktop = read("components/pos-desktop/DesktopPosRenderer.tsx");
   assert.match(retail, /!token \|\| tokenRejected \|\| !session\?\.shift \|\| !cashierId \|\| !pin \|\| tab !== "sell"/);
-  assert.match(retail, /cart\.length === 0 && extraTotal === 0 && !boardGameCheckout \? justSold : null/);
+  assert.match(retail, /cart\.length === 0 && openItems\.length === 0 && extraTotal === 0 && !boardGameCheckout \? justSold : null/);
+  assert.match(retail, /\.\.\.openItems\s*\.filter\(/);
+  assert.match(retail, /total: Math\.round\(\(total \+ openItemTotal\) \* 100\) \/ 100/);
+  assert.match(retail, /setCart\(\[\]\);\s*setOpenItems\(\[\]\);/);
   assert.match(retail, /memberPreviewAppliedKey !== memberPreviewRequestKey/);
-  assert.match(retail, /return !pendingPricing && !approvedDiscount\?\.amount && configuredQr/);
+  assert.match(retail, /return !openItems\.length && !pendingPricing && !approvedDiscount\?\.amount && configuredQr/);
   assert.match(restaurant, /!token \|\| tokenRejected \|\| !session\?\.shift \|\| !actorUserId \|\| !actorPin/);
   assert.match(restaurant, /!check && settlementReceipt/);
   assert.match(restaurant, /screen !== "ORDER" && !checkoutOpen/);
@@ -86,9 +89,9 @@ test("all publishers clear customer state when the cashier is locked or working 
   assert.match(desktop, /flow.stage === "CATALOG" && shownModule === "mobile_sell"/);
   assert.match(desktop, /!displayActive\s*\? \{ \.\.\.EMPTY_CUSTOMER_DISPLAY/);
   assert.match(desktop, /pendingPricing: flow.stage === "CHECKOUT" && !benefits.ready/);
-  assert.match(desktop, /paymentQr: flow.stage === "CHECKOUT" && benefits.ready && validation.isBalanced/);
+  assert.match(desktop, /paymentQr: !openItems\.length && flow.stage === "CHECKOUT" && benefits.ready && validation.isBalanced/);
   assert.match(desktop, /displayMember: saleAttemptRef.current.displayMember/);
-  assert.match(desktop, /pointsWillEarn: !receipt && benefits.ready/);
+  assert.match(desktop, /pointsWillEarn: !receipt && !openItems\.length && benefits.ready/);
 });
 
 test("membership survives hidden names and unavailable receipt details without inventing guest status", () => {

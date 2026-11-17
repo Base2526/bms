@@ -46,6 +46,7 @@ import {
 import { isCameraScanSupported, needsDecoderDownload, startCameraScan } from "@/lib/pos/cameraScan";
 import { cashRoundingForPayments, type CashRounding } from "@/lib/pos/cashRounding";
 import { cartLineCharge } from "@/lib/pos/cartCharge";
+import { parsePosOpenItems } from "@/lib/bms/posOpenItems";
 // เกณฑ์ "เคสนี้เภสัชกรตัดสินได้ไหม" ต้องเป็นชุดเดียวกับ server (ไฟล์นี้ pure ไม่มี import อื่น)
 import { isPharmacistReviewableBlock } from "@/lib/bms/pharmacy/productPolicyDecision";
 import { RESTAURANT_CANCELLATION_CAUSES } from "@/lib/bms/restaurantCancellationPolicy";
@@ -4659,7 +4660,7 @@ export default function PosPage() {
       ch.postMessage(idle);
       return;
     }
-    const completed = cart.length === 0 && extraTotal === 0 && !boardGameCheckout ? justSold : null;
+    const completed = cart.length === 0 && openItems.length === 0 && extraTotal === 0 && !boardGameCheckout ? justSold : null;
     const needsPreview = Boolean(boardGameCheckout || member || pointsToRedeem || couponCode.trim() || approvedDiscount);
     const pendingPricing = (needsPreview || Boolean(memberPreview)) && (!memberPreview || memberPreview.status !== "READY"
       || memberPreviewAppliedKey !== memberPreviewRequestKey);
@@ -4676,6 +4677,12 @@ export default function PosPage() {
           unitName: l.unitName,
           amount: cartLineCharge(l, tierPriceByKey.get(l.key)).amount,
         })),
+        ...openItems
+          .filter((item) => item.label.trim() && Number(item.qty) > 0 && Number(item.unitAmount) > 0)
+          .map((item) => ({
+            name: item.label.trim(), size: null, qty: Number(item.qty), unitName: "",
+            amount: Math.round(Number(item.qty) * Number(item.unitAmount) * 100) / 100,
+          })),
         ...extraLines
           .filter((x) => x.label.trim() && Number(x.unitAmount) > 0)
           .map((x) => ({
@@ -4692,20 +4699,20 @@ export default function PosPage() {
         }] : []),
       ],
       itemCount,
-      total,
+      total: Math.round((total + openItemTotal) * 100) / 100,
       discountTotal,
       amountDue,
       memberAttached: completed ? completed.memberAttached : Boolean(member),
       memberName: displayMemberName(completed ? completed.memberName : member?.name),
       pointsEarned: completed ? completed.pointsEarned : null,
       pointsBalance: completed ? completed.pointsBalance : member?.pointsBalance ?? null,
-      pointsWillEarn: memberPreview?.pointsWillEarn ?? null,
+      pointsWillEarn: openItems.length ? null : memberPreview?.pointsWillEarn ?? null,
       paymentQr: (() => {
         const configuredQr = session?.store?.paymentQr;
         const qrAmount = Math.round(payments
           .filter((payment) => payment.method === "QR")
           .reduce((sum, payment) => sum + Math.max(0, Number(payment.amount) || 0), 0) * 100) / 100;
-        return !pendingPricing && !approvedDiscount?.amount && configuredQr && qrAmount > 0
+        return !openItems.length && !pendingPricing && !approvedDiscount?.amount && configuredQr && qrAmount > 0
           ? { ...configuredQr, amount: qrAmount }
           : null;
       })(),
@@ -4717,7 +4724,7 @@ export default function PosPage() {
     };
     displayPayload.current = payload;
     ch.postMessage(payload);
-  }, [suppressCustomerDisplay, token, tokenRejected, cashierId, pin, tab, cart, extraLines, extraTotal, boardGameCheckout, itemCount, total, discountTotal, amountDue, member, memberPreview, memberPreviewAppliedKey, memberPreviewRequestKey, pointsToRedeem, couponCode, approvedDiscount, justSold, tierPriceByKey, payments, session]);
+  }, [suppressCustomerDisplay, token, tokenRejected, cashierId, pin, tab, cart, openItems, openItemTotal, extraLines, extraTotal, boardGameCheckout, itemCount, total, discountTotal, amountDue, member, memberPreview, memberPreviewAppliedKey, memberPreviewRequestKey, pointsToRedeem, couponCode, approvedDiscount, justSold, tierPriceByKey, payments, session]);
 
   const pharmacyReviewOfferCartKey = useMemo(
     () => JSON.stringify(cart.map((line) => [line.key, line.packQty, line.size, line.packCode])),
@@ -4791,11 +4798,10 @@ export default function PosPage() {
       return posText("สินค้าชั่วคราวใช้กับบิลเงินสดที่ไม่มีคูปอง แต้ม หรือส่วนลดมือ");
     if (openItems.length && (payments.length !== 1 || payments[0].method !== "CASH"))
       return posText("สินค้าชั่วคราวรับชำระด้วยเงินสดเท่านั้น");
-    if (openItems.some((item) => !item.label.trim() || item.label.trim().length > 120
-      || !Number.isInteger(Number(item.qty)) || Number(item.qty) < 1 || Number(item.qty) > 9999
-      || !Number.isFinite(Number(item.unitAmount)) || Number(item.unitAmount) <= 0
-      || Math.abs(Math.round(Number(item.unitAmount) * 100) - Number(item.unitAmount) * 100) > 0.000001
-      || (item.vatCategory !== "V" && item.vatCategory !== "N")))
+    if (!parsePosOpenItems(openItems.map((item) => ({
+      label: item.label, qty: Number(item.qty), unitAmount: Number(item.unitAmount),
+      vatCategory: item.vatCategory,
+    }))).ok)
       return posText("กรอกชื่อ จำนวน ราคา และ VAT ของสินค้าชั่วคราวให้ครบ");
     if (!session?.shift) return posText("ยังไม่ได้เปิดกะ");
     if (!cashierId) return posText("เลือกผู้ขายก่อน");
@@ -6282,6 +6288,7 @@ export default function PosPage() {
               : posText(" · รับ ฿{v0}", { v0: baht(soldTotal) }), v2: Number(data.kitchenTickets ?? 0) > 0 ? posText(" · เข้าครัว {v0} รายการ", { v0: Number(data.kitchenTickets) }) : "", v3: data.pickupQueue?.label ? posText(" · คิว {v0}", { v0: data.pickupQueue.label }) : "", v4: data.replayed ? posText(" (บิลเดิม ไม่ได้ขายซ้ำ)") : "" }),
         });
         setCart([]);
+        setOpenItems([]);
         clearBoardGameCheckout();
         // สมาชิก/คูปองผูกกับบิล ไม่ใช่กับเครื่อง — ต้องล้างทุกบิล ไม่งั้นลูกค้า
         // คนถัดไปได้ส่วนลด/แต้มของคนก่อน
@@ -10124,7 +10131,7 @@ export default function PosPage() {
 
                   {/* แต้มที่บิลนี้จะได้ ต้องเห็น "ก่อนรับเงิน" ไม่ใช่ไปรู้ตอนใบเสร็จออกจาก
                       เครื่องพิมพ์ · server เป็นคนคิดและเป็นคนบอกเหตุผลเมื่อได้ 0 จอไม่เดาเอง */}
-                  {memberPreview?.pointsWillEarn != null && memberPreview.status === "READY"
+                  {!openItems.length && memberPreview?.pointsWillEarn != null && memberPreview.status === "READY"
                     && memberPreviewAppliedKey === memberPreviewRequestKey && (
                     <span
                       style={{

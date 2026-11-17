@@ -19,6 +19,7 @@ test("open item rejects ambiguous or unsafe money and labels", () => {
     { ...base, label: "a\nb" }, { ...base, label: " " },
   ]) assert.equal(parsePosOpenItems([bad]).ok, false, JSON.stringify(bad));
   assert.equal(parsePosOpenItems(Array(11).fill(base)).ok, false);
+  assert.equal(parsePosOpenItems(Array(2).fill({ ...base, qty: 1000, unitAmount: 6000000 })).ok, false);
 });
 
 test("return evidence preserves the open item ID namespace and full refund VAT", () => {

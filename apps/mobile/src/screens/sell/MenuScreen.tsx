@@ -220,6 +220,7 @@ export default function MenuScreen({ navigation }: Props) {
       !Number.isFinite(unitAmount) || unitAmount <= 0 || unitAmount > 9999999.99 ||
       Math.abs(unitAmount * 100 - Math.round(unitAmount * 100)) > 0.000001 ||
       qty * unitAmount > 9999999999.99 || (openVat !== 'V' && openVat !== 'N') ||
+      openItems.reduce((sum, item) => sum + item.qty * item.unitAmount, 0) + qty * unitAmount > 9999999999.99 ||
       openItems.length >= 10) {
       Alert.alert(posText("ข้อมูลสินค้าชั่วคราวไม่ถูกต้อง"), posText("กรอกชื่อ จำนวนเต็ม ราคาบวกไม่เกินสองตำแหน่ง และเลือก VAT (สูงสุด 10 รายการ)"));
       return;

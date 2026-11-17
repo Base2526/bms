@@ -581,6 +581,14 @@
 .catalogHeader h1,
 .sectionHead h1 { margin: 2px 0 0; font-size: 24px; letter-spacing: -0.3px; }
 .catalogHeader input { width: min(330px, 42%); }
+.openItemAction { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 2px 14px; }
+.openItemAction button { padding: 8px 12px; border: 1px solid #91b7f8; border-radius: 8px; background: #eef5ff; color: #135ddd; font-weight: 600; cursor: pointer; }
+.openItemAction button:disabled { opacity: 0.5; cursor: not-allowed; }
+.openItemAction span, .openItemPaymentHint { color: #66758c; font-size: 12px; }
+.openItemForm { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.openItemForm label { display: grid; gap: 5px; font-size: 13px; }
+.openItemForm input, .openItemForm select { width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid #c7d0df; border-radius: 7px; background: #fff; color: #253247; }
+.openItemError { color: #ad2020; }
 .eyebrow { margin: 0; color: #1677ff; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
 
 .productGrid {
@@ -734,6 +742,7 @@
 .summaryLinePrice > span { color: #7a8598; font-size: 12px; }
 .summaryLinePrice > .savingsRow { color: #389e0d; }
 @media (max-width: 600px) {
+  .openItemForm { grid-template-columns: minmax(0, 1fr); }
   .orderSummary article > .summaryLinePrice { grid-column: 2 / -1; max-width: none; text-align: left; }
 }
 .orderSummary article {

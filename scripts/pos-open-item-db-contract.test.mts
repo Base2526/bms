@@ -62,6 +62,18 @@ test("non-cash open sale fails without an order", async () => {
   assert.equal(refused.status, "PAYMENT_FAILED");
 });
 
+test("open-item receipt keeps the cashier's entry order", async () => {
+  const sold = await recordPosSale({ tenantId, deviceId, shiftId, cashierUserId: cashierId,
+    idempotencyKey: key("receipt-order"), lines: [],
+    openItems: [
+      { label: `${tag} zebra`, qty: 1, unitAmount: 12, vatCategory: "N" },
+      { label: `${tag} apple`, qty: 1, unitAmount: 8, vatCategory: "N" },
+    ], payments: [{ method: "CASH", amount: 20, cashTendered: 20 }] });
+  assert.equal(sold.status, "SOLD", JSON.stringify(sold));
+  if (sold.status !== "SOLD") return;
+  assert.deepEqual(sold.extraLines.map((line) => line.label), [`${tag} zebra`, `${tag} apple`]);
+});
+
 test("cashier without the open-item permission cannot create a sale", async () => {
   const idempotencyKey = key("permission-denied");
   const refused = await recordPosSale({ tenantId, deviceId, shiftId, cashierUserId: randomUUID(),

@@ -2575,14 +2575,13 @@ async function loadPosReceiptExtraLines(
   orderId: string
 ): Promise<PosReceiptExtraLine[]> {
   const result = await db.query<{ label: string; qty: string; unit_amount: string }>(
-    `SELECT label, qty, unit_amount
-       FROM bms_order_extra_lines
-      WHERE tenant_id = $1 AND order_id = $2
-      UNION ALL
-      SELECT label, qty, unit_amount
-        FROM bms_order_open_items
-       WHERE tenant_id = $1 AND order_id = $2
-       ORDER BY label`,
+    `SELECT label, qty, unit_amount FROM (
+       SELECT label, qty, unit_amount, 0 AS source_order, id
+         FROM bms_order_extra_lines WHERE tenant_id = $1 AND order_id = $2
+       UNION ALL
+       SELECT label, qty, unit_amount, 1 AS source_order, id
+         FROM bms_order_open_items WHERE tenant_id = $1 AND order_id = $2
+     ) lines ORDER BY source_order, id`,
     [tenantId, orderId]
   );
   return result.rows.map((row) => {
@@ -5220,7 +5219,7 @@ export async function listRecentPosSales(
     `SELECT order_id, label, qty, unit_amount
        FROM bms_order_extra_lines
       WHERE tenant_id = $1 AND order_id = ANY($2::uuid[])
-       ORDER BY order_id, label`,
+       ORDER BY order_id, id`,
     [tenantId, orderIds]
   );
   const extraLinesByOrder = new Map<string, PosReceiptExtraLine[]>();
