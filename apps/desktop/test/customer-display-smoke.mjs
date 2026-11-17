@@ -65,8 +65,9 @@ async function run() {
       }
     }
     win.setContentSize(1024, 768);
+    await waitFor(win, "innerWidth === 1024 && innerHeight === 768");
     await win.webContents.executeJavaScript("window.displayFixture('long')");
-    await waitFor(win, "document.body.textContent.includes('และอีก 4 รายการ')");
+    await waitFor(win, "/และอีก\\s+4\\s+รายการก่อนหน้า/.test(document.body.textContent)");
     await writeFile(path.join(output, "long-1024.png"), (await win.webContents.capturePage()).toPNG());
     assert.equal(await win.webContents.executeJavaScript("document.documentElement.scrollHeight > innerHeight + 2"), false, "recent rows fit POS monitor");
     await win.webContents.executeJavaScript("window.displayFixture('pending')");

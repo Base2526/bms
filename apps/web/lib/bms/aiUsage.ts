@@ -88,6 +88,7 @@ export type AiUsage = {
 export type AiUsageContext = {
   surface?: "customer" | "staff" | "system";
   feature?: string;
+  requiresVision?: boolean;
   channel?: string | null;
   provider?: string;
   model?: string | null;

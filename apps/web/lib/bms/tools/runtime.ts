@@ -366,6 +366,8 @@ function isRetryableProviderError(err: unknown): boolean {
 
 export type ToolLoopOptions = {
   tenantId: string;
+  /** Reject a text-only configured model before the provider call or quota charge. */
+  requiresVision?: boolean;
   /** ส่วนที่ต้อง byte-identical ทุก request ของร้านเดียวกัน — เป็น prefix ที่ถูก cache */
   system: string;
   /**
@@ -501,6 +503,7 @@ async function runToolLoopInternal(
   const creds = await resolveCredentials(opts.tenantId, {
     surface: opts.execCtx.surface,
     feature: opts.execCtx.surface === "staff" ? "staff_assistant" : "customer_tool_loop",
+    requiresVision: opts.requiresVision,
     channel: opts.execCtx.surface === "customer" ? opts.execCtx.channel ?? null : null,
     meta: {
       actor: opts.execCtx.actor,

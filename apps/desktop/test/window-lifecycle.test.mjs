@@ -350,10 +350,10 @@ test('utility windows cannot navigate or redirect into another register, origin 
 
 test('managed display retries a failed page load and stops after closing or unpairing',async()=>{
   const pending=[];const closed=[];let attempts=0,current=true,destroyed=false;
-  const window={isDestroyed:()=>destroyed,on:(name,handler)=>{if(name==='closed')closed.push(handler);},
+  const window={webContents:{id:42},isDestroyed:()=>destroyed,on:(name,handler)=>{if(name==='closed')closed.push(handler);},
     loadURL:()=>{attempts++;return attempts===1?Promise.reject(Error('offline')):Promise.resolve();}};
   const context=vm.createContext({posText,setTimeout:(handler)=>{pending.push(handler);return pending.length;},
-    clearTimeout:()=>{},window,isCurrent:()=>current});
+    clearTimeout:()=>{},window,isCurrent:()=>current,utilityHttpRetries:new Map()});
   vm.runInContext(`${body('loadUtilityWithRetry')};loadUtilityWithRetry(window,'https://shop.example/pos/queue-board',isCurrent);`,context);
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(attempts,1);
@@ -377,6 +377,28 @@ test('managed display retries a failed page load and stops after closing or unpa
   pending.shift()();
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(attempts,4,'closed windows do not retry');
+});
+
+test('managed display retries only its own HTTP 5xx page',async()=>{
+  const timers=[];let attempts=0;
+  const window={webContents:{id:42},isDestroyed:()=>false,on:()=>{},
+    loadURL:()=>{attempts++;return Promise.resolve();}};
+  const context=vm.createContext({URL,utilityHttpRetries:new Map(),window,
+    setTimeout:(handler)=>{timers.push(handler);return timers.length;},clearTimeout:()=>{}});
+  vm.runInContext(`${body('loadUtilityWithRetry')};${body('handleUtilityHttpResponse')}`,context);
+  context.loadUtilityWithRetry(window,'https://shop.example/pos/display',()=>true);
+  const response=(statusCode,resourceType='mainFrame',webContentsId=42,url='https://shop.example/pos/display')=>
+    context.handleUtilityHttpResponse({statusCode,resourceType,webContentsId,url});
+  response(503,'script');response(200);response(503,'mainFrame',99);
+  response(503,'mainFrame',42,'https://shop.example/pos/app');
+  response(503,'mainFrame',42,'https://other.example/pos/display');
+  assert.equal(timers.length,0);
+  response(503);response(503);
+  assert.equal(timers.length,1,'two failed responses schedule one retry');
+  timers.shift()();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(attempts,2);
+  assert.match(source,/handleMainPosHttpResponse\(window, details\);\s+handleUtilityHttpResponse\(details\)/);
 });
 
 test('display configuration writes exclude overlapping legacy and combined controls and release on failure',async()=>{

@@ -624,7 +624,7 @@ function AiCard({ aiConfig, aiUsage, onSaved }: any) {
             onChange={(provider) => {
               form.setFieldValue(
                 "model",
-                provider === "deepseek" ? "deepseek-v4-flash" : "claude-haiku-4-5-20251001"
+                provider === "deepseek" ? "deepseek-flash" : "claude-haiku-4-5-20251001"
               );
             }}
           />

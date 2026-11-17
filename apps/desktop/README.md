@@ -388,8 +388,9 @@ and never changes queue status or branch policy. Dense layouts page visible numb
 seconds instead of shrinking them beyond across-the-room readability.
 Promotion and default images are configured per branch in Backoffice → Locations → Queue board media;
 the workstation setting controls only layout and sound. Customer and queue windows keep rendering
-while the cashier has focus and retry an initial page-load failure every five seconds until the
-configured window closes or the pairing changes.
+while the cashier has focus and retry a failed page load, including an HTTP 5xx main document,
+every five seconds until the configured window closes or the pairing changes. Failed subresources
+and unrelated windows do not trigger a display reload.
 The same card chooses AI Studio speech, AI Studio speech plus a counter bell, counter bell only,
 double beep, or soft ping, with a queue-001 preview button. A branch-wide `OFF` policy still wins;
 the workstation choice cannot silently re-enable announcements disabled by the owner for the branch.
@@ -581,7 +582,8 @@ cd apps/desktop
 npm run pack:win
 ```
 
-The unsigned installer is written to `apps/desktop/dist/`. Production distribution still requires a
+`pack:win` pins x64 explicitly, including when invoked on an ARM build host. The unsigned installer
+is written to `apps/desktop/dist/`. Production distribution still requires a
 Windows code-signing certificate and a release/update policy; the Linux AppImage/DEB and the macOS
 DMGs are unsigned for the same reason and have no update channel either. A signed macOS release
 additionally needs an Apple Developer ID and notarization — the macOS workflow runs with

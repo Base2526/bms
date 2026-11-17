@@ -7295,7 +7295,7 @@ const th = {
     ai_key_current: "(ปัจจุบัน: {masked} — เว้นว่างถ้าไม่เปลี่ยน)",
     ai_key_placeholder_empty: "วาง API Key ของ provider ที่เลือก",
     ai_model_label: "Model (เว้นว่าง = ค่าเริ่มต้นของ provider)",
-    ai_model_placeholder: "claude-haiku-4-5-20251001 หรือ deepseek-v4-flash",
+    ai_model_placeholder: "claude-haiku-4-5-20251001 หรือ deepseek-flash",
     save_ai_key_btn: "บันทึก AI Key",
     ai_encrypted_note: "API Key เข้ารหัส (AES-256-GCM) ก่อนเก็บเหมือนกับ token ของช่องทางอื่น",
   },

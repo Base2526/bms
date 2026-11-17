@@ -5388,6 +5388,7 @@ export const typeDefs = /* GraphQL */ `
   }
   input BmsWorkAssistantInput {
     message: String!
+    image: Upload
     history: [BmsAssistantTurn!]
     currentPath: String
     pageId: String

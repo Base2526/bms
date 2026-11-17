@@ -215,7 +215,9 @@ shared so the existing same-origin `BroadcastChannel` works, but it deliberately
 IPC bridge. The `/pos/app` renderer publishes its active cart and the server-confirmed final/change
 figures into that channel; embedded legacy settings are not a second publisher. Camera permission is
 granted only for video on the paired origin. "Unpair" closes the customer window, clears the stored
-pairing and returns the cashier window to setup.
+pairing and returns the cashier window to setup. Managed customer and queue windows retry failed
+main-document loads, including HTTP 5xx, every five seconds while the pairing and window remain
+current; a failed subresource does not reload the display.
 
 Native order attention stays deliberately narrower than the web workflow. The restaurant surface
 polls its existing device-scoped incoming-order read on every operational screen, even before a

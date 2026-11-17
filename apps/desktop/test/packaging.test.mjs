@@ -74,6 +74,10 @@ test("the bundled fonts are inside the packaged files glob", () => {
   assert.ok(pkg.build.files.includes("renderer/**/*"), "renderer/fonts must be packaged");
 });
 
+test("the Windows installer targets x64 on an ARM build host too", () => {
+  assert.match(pkg.scripts["pack:win"], /--win nsis --x64(?:\s|$)/);
+});
+
 test("every native packaging workflow gates the build on setup smoke and retains screenshots", () => {
   for (const [platform, runner, command] of [
     ["windows", "windows-latest", "npm run test:smoke"],
