@@ -1,0 +1,157 @@
+"use client";
+
+import type { CSSProperties } from "react";
+import { useEffect, useState } from "react";
+import { LearningFlowFullscreen } from "../LearningFlowFullscreen";
+import s from "../learning.module.css";
+import g from "./factory-guide.module.css";
+
+type Lang = "th" | "en";
+type Copy = { th: string; en: string };
+type FlowNode = {
+  icon: string;
+  title: Copy;
+  detail: Copy;
+  explanation: Copy;
+  tone?: "green" | "orange" | "purple";
+};
+
+const lanes: { label: Copy; nodes: FlowNode[] }[] = [
+  { label: { th: "เริ่มต้น", en: "Setup" }, nodes: [
+    { icon: "①", title: { th: "สมัครกิจการ", en: "Sign up" }, detail: { th: "ยืนยันอีเมลและตั้งสาขา", en: "Verify email; set branch" }, explanation: { th: "สมัครกิจการ ยืนยันอีเมล ตั้งสาขาและสิทธิ์ผู้ทำงานแต่ละหน้าที่ ขั้นนี้ยังไม่มีสต็อก", en: "Register, verify email, and set branch and staff permissions. There is no stock yet." } },
+    { icon: "▣", title: { th: "สร้าง SKU", en: "Create SKUs" }, detail: { th: "วัตถุดิบ เชือก หลอด ถุง ลัง", en: "Materials, twine, straws, packs" }, explanation: { th: "กำหนด SKU และหน่วยฐานตามจุดที่นับจริง เช่น PP เป็นกรัม เชือกเป็นม้วน และหลอดเป็นชิ้น", en: "Define each counted SKU and base unit, such as resin in grams, twine in rolls and straws in pieces." } },
+    { icon: "↓", title: { th: "รับวัตถุดิบ", en: "Receive materials" }, detail: { th: "รับ PO พร้อมล็อต", en: "Receive PO with lots" }, explanation: { th: "รับเม็ด PP สี ถุงเปล่าและกล่องตาม PO ที่ตรวจแล้ว การรับเข้าทำให้วัตถุดิบเพิ่มตามสาขาและล็อต", en: "Receive resin, color, empty bags and cartons against the checked PO. Receipt increases material stock by branch and lot." }, tone: "green" },
+    { icon: "≡", title: { th: "ตั้งสูตร BOM", en: "Set BOMs" }, detail: { th: "ตรึงหน่วยและเวอร์ชัน", en: "Pin units and versions" }, explanation: { th: "ตั้ง BOM แยกเชือก หลอดชิ้น หลอดถุง และหลอดลัง สูตรที่บันทึกยังไม่ตัดหรือเพิ่มสต็อก", en: "Version separate BOMs for twine, loose straws, bags and cartons. Saving a BOM does not move stock." }, tone: "purple" },
+  ] },
+  { label: { th: "สายเชือก", en: "Twine line" }, nodes: [
+    { icon: "▤", title: { th: "สร้างใบผลิต", en: "Create batch" }, detail: { th: "เลือก BOM และจำนวนแผน", en: "Choose BOM and planned qty" }, explanation: { th: "สร้างใบผลิตเชือก 10 ม้วน ตรวจวัตถุดิบที่ใช้ได้ แล้วเปลี่ยนเป็นพร้อมผลิต การวางแผนยังไม่เปลี่ยนสต็อก", en: "Plan a 10-roll twine batch and check usable materials. Planning or marking ready does not move stock." }, tone: "purple" },
+    { icon: "↗", title: { th: "โพสต์ผลเชือก", en: "Post twine output" }, detail: { th: "ตัด PP/สี รับเชือก 10 ม้วน", en: "Consume inputs; receive 10 rolls" }, explanation: { th: "โพสต์จำนวนดีและวัตถุดิบที่ใช้จริง ระบบตัด PP กับสี และรับเชือกพร้อมล็อตในธุรกรรมเดียว", en: "Post good output and actual inputs. The system consumes resin and color and receives the twine lot in one transaction." }, tone: "green" },
+    { icon: "✓", title: { th: "ตรวจ QC เชือก", en: "Twine QC" }, detail: { th: "ปล่อยล็อตก่อนขาย", en: "Release lot before sale" }, explanation: { th: "ถ้าเปิดนโยบาย QC ล็อตเชือกถูกพักทันที ผู้ตรวจเสนอผล และผู้มีสิทธิ์อีกคนอนุมัติการปล่อยล็อต", en: "With QC enabled, the twine lot is held immediately. An inspector proposes a decision and another authorized reviewer releases it." }, tone: "orange" },
+  ] },
+  { label: { th: "สายหลอด · ผลิตและบรรจุถุง", en: "Straw line · pieces and bags" }, nodes: [
+    { icon: "↗", title: { th: "ผลิตหลอดชิ้น", en: "Post loose straws" }, detail: { th: "รับ 3,000 ชิ้น", en: "Receive 3,000 pieces" }, explanation: { th: "โพสต์ใบผลิตหลอดชิ้น ตัด PP กับสี แล้วรับหลอด 3,000 ชิ้นพร้อมล็อต", en: "Post loose-straw production, consuming resin and color and receiving a lot of 3,000 pieces." }, tone: "green" },
+    { icon: "✓", title: { th: "ตรวจ QC หลอดชิ้น", en: "Loose-straw QC" }, detail: { th: "ปล่อยล็อตก่อนบรรจุ", en: "Release before packing" }, explanation: { th: "ถ้าเปิดนโยบาย QC ต้องตรวจและปล่อยล็อตหลอดชิ้นก่อนนำ 2,000 ชิ้นไปบรรจุถุง", en: "With QC enabled, inspect and release the loose-straw lot before using 2,000 pieces for bagging." }, tone: "orange" },
+    { icon: "▥", title: { th: "บรรจุถุง", en: "Pack bags" }, detail: { th: "ตัด 2,000 ชิ้น รับ 20 ถุง", en: "Use 2,000; receive 20 bags" }, explanation: { th: "หลังปล่อยล็อตที่ใช้ได้ โพสต์งานบรรจุถุง ตัดหลอด 2,000 ชิ้นและถุงเปล่า 20 ใบ รับผลผลิต 20 ถุง", en: "After lot release, post bagging: consume 2,000 straws and 20 empty bags, then receive 20 packed bags." }, tone: "green" },
+  ] },
+  { label: { th: "สายหลอด · บรรจุลัง", en: "Straw line · cartons" }, nodes: [
+    { icon: "✓", title: { th: "ตรวจ QC ถุง", en: "Bag QC" }, detail: { th: "ปล่อยล็อตก่อนขึ้นลัง", en: "Release before cartoning" }, explanation: { th: "ตรวจและปล่อยล็อตหลอดถุงก่อนนำ 10 ถุงไปบรรจุเป็นลัง ล็อตที่พักอยู่ยังใช้ผลิตต่อไม่ได้", en: "Inspect and release the bag lot before using 10 bags for cartoning. A held lot cannot be used downstream." }, tone: "orange" },
+    { icon: "▣", title: { th: "บรรจุลัง", en: "Pack carton" }, detail: { th: "ตัด 10 ถุง รับ 1 ลัง", en: "Use 10 bags; receive 1 carton" }, explanation: { th: "หลังปล่อยล็อตถุงที่ใช้ได้ โพสต์งานบรรจุลัง ตัด 10 ถุงกับกล่องเปล่า 1 ใบ รับหลอด 1 ลัง", en: "After releasing the bag lot, post cartoning: consume 10 bags and one empty carton, then receive one finished carton." }, tone: "green" },
+    { icon: "✓", title: { th: "ตรวจ QC ลัง", en: "Carton QC" }, detail: { th: "ปล่อยล็อตก่อนขาย", en: "Release before sale" }, explanation: { th: "ตรวจและปล่อยล็อตหลอดลังที่ใช้ได้ก่อนสร้างออร์เดอร์ ล็อตที่พัก QC ยังอยู่ในยอดกายภาพแต่ขายหรือจองไม่ได้", en: "Inspect and release the finished carton lot before ordering. A QC-held lot remains in physical stock but cannot be sold or reserved." }, tone: "orange" },
+  ] },
+  { label: { th: "ยอดสุดท้าย", en: "Final balance" }, nodes: [
+    { icon: "▦", title: { th: "เทียบยอดสต็อก", en: "Reconcile stock" }, detail: { th: "แยกสาขา SKU และล็อต", en: "By branch, SKU and lot" }, explanation: { th: "หลังรับเข้าและโพสต์ทั้งสี่ใบผลิต ตัวอย่างคงเหลือ PP 37,130 กรัม เชือก 10 ม้วน หลอดชิ้น 1,000 ชิ้น ถุง 10 ถุง และลัง 1 ลัง", en: "After receipt and four posted batches, example balances are 37,130 g resin, 10 twine rolls, 1,000 loose straws, 10 bags and 1 carton." } },
+    { icon: "→", title: { th: "สร้างออร์เดอร์", en: "Create order" }, detail: { th: "ตรวจราคาและของที่ใช้ได้", en: "Recheck price and usable stock" }, explanation: { th: "เมื่อผลิตครบและปล่อยล็อตแล้ว ผู้มีสิทธิ์จึงแปลงความต้องการเป็นออร์เดอร์ ระบบตรวจราคาและสต็อกที่ใช้ได้อีกครั้ง การสร้างออร์เดอร์จองสต็อกแต่ยังไม่ตัดยอดทางกายภาพ", en: "After production and lot release, an authorized person converts demand to an order. The system rechecks price and usable stock. Order creation reserves stock but does not consume physical stock." } },
+  ] },
+];
+
+const nodes = lanes.flatMap((lane) => lane.nodes);
+
+export function FactoryGuideOverview({ lang }: { lang: Lang }) {
+  const th = lang === "th";
+  const [step, setStep] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
+
+  useEffect(() => {
+    if (!playing) return;
+    const timer = window.setTimeout(() => {
+      if (step === nodes.length - 1) setPlaying(false);
+      else setStep(step + 1);
+    }, 4500 / speed);
+    return () => window.clearTimeout(timer);
+  }, [playing, speed, step]);
+
+  useEffect(() => {
+    if (!playing || document.querySelector("dialog[data-learning-fullscreen][open]")) return;
+    const target = document.getElementById(`factory-flow-step-${step}`);
+    target?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+  }, [playing, step]);
+
+  function move(next: number) {
+    setPlaying(false);
+    setStep(Math.max(0, Math.min(next, nodes.length - 1)));
+  }
+
+  function togglePlaying() {
+    if (!playing && step === nodes.length - 1) setStep(0);
+    setPlaying((value) => !value);
+  }
+
+  function renderDiagram(fullscreen = false) {
+    let offset = 0;
+    return <div className={`${s.inventoryFlowDiagram} ${s.businessFlowDiagram} ${g.factoryFlowDiagram}`} data-track="factory">
+      {lanes.map((lane, laneIndex) => {
+        const start = offset;
+        offset += lane.nodes.length;
+        return <div className={`${s.inventoryFlowLane} ${s.businessFlowLane} ${g.factoryFlowLane}`} key={lane.label.en}>
+          <span className={s.inventoryFlowBranch} aria-hidden="true">{laneIndex === 0 ? "" : "↳"}</span>
+          <div className={g.laneContent}>
+            <span className={g.laneLabel}>{lane.label[lang]}</span>
+            <ol style={{ "--flow-columns": String(lane.nodes.length) } as CSSProperties}>
+              {lane.nodes.map((node, index) => {
+                const current = start + index;
+                const active = step === current;
+                return <li key={node.title.en} id={fullscreen ? undefined : `factory-flow-step-${current}`} data-tone={node.tone} data-active={active} data-flow-active={active}>
+                  <button type="button" className={g.flowNode} onClick={() => move(current)} aria-current={active ? "step" : undefined}>
+                    <span className={s.inventoryFlowIcon} aria-hidden="true">{node.icon}</span>
+                    <span><strong>{node.title[lang]}</strong><small>{node.detail[lang]}</small></span>
+                  </button>
+                  {index < lane.nodes.length - 1 && <span className={s.inventoryFlowArrow} aria-hidden="true">→</span>}
+                </li>;
+              })}
+            </ol>
+          </div>
+        </div>;
+      })}
+    </div>;
+  }
+
+  return <section className={`${s.inventoryOverview} ${s.businessOverview} ${g.factoryOverview}`} aria-labelledby="factory-overview-title">
+    <div className={s.inventoryOverviewHeading}>
+      <div>
+        <span className={s.inventoryAiEyebrow}>FACTORY · PILOT</span>
+        <h2 id="factory-overview-title">{th ? "จากสมัครกิจการถึงสต็อกโรงงาน" : "From signup to factory stock"}</h2>
+        <p>{th ? "ภาพจำลองขั้นตอนสำหรับสายเชือกและสายหลอด กดแต่ละกล่องเพื่ออ่านคำอธิบาย" : "A visual walkthrough for twine and straw production. Select any box for details."}</p>
+      </div>
+      <div className={s.inventoryNarration}>
+        <button type="button" onClick={togglePlaying} aria-pressed={playing}>{playing ? (th ? "❚❚ หยุด Flow" : "❚❚ Pause flow") : (th ? "▶ เล่น Flow" : "▶ Play flow")}</button>
+        <span>{th ? "ภาพเปลี่ยนขั้นอัตโนมัติ ไม่มีเสียงบรรยาย" : "Steps advance automatically without narration."}</span>
+      </div>
+    </div>
+    <nav className={`${s.inventoryJumpLinks} ${g.flowTabs}`} aria-label={th ? "หัวข้อคู่มือโรงงาน" : "Factory guide sections"}>
+      <a href="#factory-flow">{th ? "ภาพรวม" : "Overview"}</a>
+      <a href="#bom">{th ? "สูตรผลิต" : "BOMs"}</a>
+      <a href="#production">{th ? "ใบผลิตและ QC" : "Batches and QC"}</a>
+      <a href="#stock">{th ? "สต็อก" : "Stock"}</a>
+    </nav>
+    <section className={s.inventoryFlowPanel} id="factory-flow" aria-labelledby="factory-flow-title">
+      <div className={s.flowPanelHeading}>
+        <h3 id="factory-flow-title">{th ? "Flow โรงงานเชือกและหลอดพลาสติก" : "Twine and straw factory flow"}</h3>
+        <LearningFlowFullscreen
+          lang={lang} title={th ? "Flow โรงงานเชือกและหลอดพลาสติก" : "Twine and straw factory flow"}
+          cueText={nodes[step].explanation[lang]} step={step} total={nodes.length}
+          playing={playing} canPlay onTogglePlaying={togglePlaying}
+          onPrevious={() => move(step - 1)} onNext={() => move(step + 1)}
+          renderDiagram={() => renderDiagram(true)}
+          playLabel={th ? "เล่น Flow" : "Play flow"}
+          followLabel={th ? "ติดตามขั้นตอน" : "Follow steps"}
+          detailNote={th ? "ตัวเลขเป็นตัวอย่าง · ส่วนขยายโรงงานยังอยู่ใน branch ทดสอบ" : "Example quantities · the factory extension remains on a test branch"}
+        />
+      </div>
+      <div className={s.inventoryPlayback} data-playing={playing}>
+        <div className={s.inventoryPlaybackHeading}>
+          <span>{th ? "ขั้น" : "Step"} {step + 1} / {nodes.length}</span>
+          <div className={s.inventoryPlaybackControls}>
+            <button type="button" onClick={() => move(step - 1)} disabled={step === 0}>{th ? "ก่อนหน้า" : "Previous"}</button>
+            <button type="button" onClick={() => move(step + 1)} disabled={step === nodes.length - 1}>{th ? "ถัดไป" : "Next"}</button>
+            <button type="button" onClick={() => move(0)}>{th ? "เริ่มใหม่" : "Restart"}</button>
+            <label>{th ? "ความเร็ว" : "Speed"}<select value={speed} onChange={(event) => setSpeed(Number(event.target.value))}><option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option></select></label>
+          </div>
+        </div>
+        <p aria-live={playing ? "off" : "polite"}>{nodes[step].explanation[lang]}</p>
+      </div>
+      {renderDiagram()}
+      <p className={g.flowNote}>{th ? "จุดสีเขียวคือการรับเข้าหรือโพสต์ผลผลิตที่เปลี่ยนยอดทางกายภาพ ส่วนการตั้ง SKU, BOM และใบผลิตยังไม่เปลี่ยนสต็อก การสร้างออร์เดอร์จองของก่อนส่ง" : "Green steps change physical stock through receipt or production posting. SKUs, BOMs and batches do not move stock. Order creation reserves goods before shipment."}</p>
+    </section>
+  </section>;
+}

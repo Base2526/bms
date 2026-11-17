@@ -16,10 +16,14 @@ type Props = {
   onPrevious: () => void;
   onNext: () => void;
   renderDiagram: () => ReactNode;
+  playLabel?: string;
+  followLabel?: string;
+  detailNote?: string;
 };
 
 export function LearningFlowFullscreen({
   lang, title, cueText, step, total, playing, canPlay, onTogglePlaying, onPrevious, onNext, renderDiagram,
+  playLabel, followLabel, detailNote,
 }: Props) {
   const th = lang === "th";
   const [open, setOpen] = useState(false);
@@ -121,17 +125,17 @@ export function LearningFlowFullscreen({
         <aside className={s.flowFullscreenDetail} aria-live={playing ? "off" : "polite"}>
           <span>{th ? "กำลังอธิบาย" : "Now explaining"}</span>
           <p>{cueText}</p>
-          <small>{th ? "AI ช่วยสรุปและใช้เครื่องมือที่อนุญาต ข้อมูลและการอนุมัติยังยึดระบบจริง" : "AI summarizes and uses approved tools; verified system data and human authority remain decisive."}</small>
+          <small>{detailNote ?? (th ? "AI ช่วยสรุปและใช้เครื่องมือที่อนุญาต ข้อมูลและการอนุมัติยังยึดระบบจริง" : "AI summarizes and uses approved tools; verified system data and human authority remain decisive.")}</small>
         </aside>
       </div>
       <footer className={s.flowFullscreenControls}>
         <div>
           <button type="button" onClick={onPrevious} disabled={step === 0}>← {th ? "ก่อนหน้า" : "Previous"}</button>
-          <button type="button" className={s.flowFullscreenPlay} onClick={onTogglePlaying} disabled={!canPlay}>{playing ? "❚❚" : "▶"} {playing ? (th ? "หยุด" : "Pause") : (th ? "เล่นเสียง" : "Play")}</button>
+          <button type="button" className={s.flowFullscreenPlay} onClick={onTogglePlaying} disabled={!canPlay}>{playing ? "❚❚" : "▶"} {playing ? (th ? "หยุด" : "Pause") : (playLabel ?? (th ? "เล่นเสียง" : "Play"))}</button>
           <button type="button" onClick={onNext} disabled={step === total - 1}>{th ? "ถัดไป" : "Next"} →</button>
         </div>
         <div>
-          <label className={s.flowAutoFollow}><input type="checkbox" checked={autoFollow} onChange={(event) => setAutoFollow(event.target.checked)} /> {th ? "ติดตามเสียง" : "Auto-follow"}</label>
+          <label className={s.flowAutoFollow}><input type="checkbox" checked={autoFollow} onChange={(event) => setAutoFollow(event.target.checked)} /> {followLabel ?? (th ? "ติดตามเสียง" : "Auto-follow")}</label>
           <button type="button" onClick={() => setZoom((value) => Math.max(.75, value - .25))} disabled={zoom <= .75} aria-label={th ? "ซูมออก" : "Zoom out"}>−</button>
           <output aria-label={th ? "ระดับการซูม" : "Zoom level"}>{Math.round(zoom * 100)}%</output>
           <button type="button" onClick={() => setZoom((value) => Math.min(1.75, value + .25))} disabled={zoom >= 1.75} aria-label={th ? "ซูมเข้า" : "Zoom in"}>+</button>
