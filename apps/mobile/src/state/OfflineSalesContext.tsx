@@ -290,6 +290,7 @@ export function OfflineSalesProvider({
                   discountApproverUserId: null,
                   discountReason: null,
                   extraLines: null,
+                  openItems: null,
                   manualDiscount: null,
                   pharmacistAuthorizationNote: null,
                   pharmacistAuthorizerPin: null,

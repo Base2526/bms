@@ -50,9 +50,10 @@ test("stale quotes cannot authorize payment and an uncertain sale keeps its orig
   assert.match(source, /if \(!cancelled\) setResult/);
   assert.match(source, /pointsToRedeem: points, lines: \[\]/);
   assert.match(desktop, /\.\.\.benefits\.saleFields/);
-  assert.match(desktop, /benefits\.ready && \(validation\.canConfirm/);
+  assert.match(desktop, /benefits\.ready && openSaleValid && \(validation\.canConfirm/);
+  assert.match(desktop, /payments\.length === 1 && payments\[0\]\.method === "cash"/);
   assert.match(desktop, /saleAttemptRef\.current\.payload/);
-  assert.match(desktop, /CheckoutBenefits benefits=\{benefits\} disabled=\{busy \|\| Boolean\(saleAttemptRef\.current\)\}/);
+  assert.match(desktop, /CheckoutBenefits benefits=\{benefits\} disabled=\{busy \|\| Boolean\(saleAttemptRef\.current\)\} discountsDisabled=\{openItems\.length > 0\}/);
   assert.match(desktop, /aria-label=\{posText\("รีเฟรชข้อมูล"\)\}/);
   assert.match(desktop, /onClick=\{\(\) => void refreshDesktopContent\(\)\}/);
   assert.match(desktop, /memberName: displayMemberName\(receipt\s*\?/);

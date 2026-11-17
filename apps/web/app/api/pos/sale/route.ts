@@ -14,6 +14,7 @@ import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, cashierHasPermission, recordPosSale, verifyCashierPin } from "@/lib/bms/pos";
 import { isDistinctPosApprover, isPosUuid, parsePosExtraLines, parsePosPayments, parsePosSaleLines } from "@/lib/bms/posRouteHelpers";
+import { parsePosOpenItems } from "@/lib/bms/posOpenItems";
 import { issuePickupQueueAfterSale } from "@/lib/bms/pickupQueue";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -64,10 +65,16 @@ async function handlePOST(req: NextRequest) {
   }
 
   const lines = parsePosSaleLines(body.lines);
+  const parsedOpenItems = parsePosOpenItems(body.openItems);
+  if (!parsedOpenItems.ok) return badRequest(parsedOpenItems.reason);
+  const openItems = parsedOpenItems.items;
+  if (openItems.length && !(await cashierHasPermission(device.tenantId, auth.userId, "pos.open_item.sell"))) {
+    return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "pos.open_item.sell") }, { status: 403 });
+  }
   const boardGameBillingGroupId = typeof body.boardGameBillingGroupId === "string"
     ? body.boardGameBillingGroupId.trim()
     : "";
-  if (lines.length === 0 && !boardGameBillingGroupId) {
+  if (lines.length === 0 && !boardGameBillingGroupId && !openItems.length) {
     return badRequest("ต้องมีรายการสินค้าหรือ session บอร์ดเกมอย่างน้อย 1 รายการ");
   }
   if (mode === "DEPOSIT" && boardGameBillingGroupId) {
@@ -206,6 +213,7 @@ async function handlePOST(req: NextRequest) {
     idempotencyKey,
     mode,
     lines,
+    openItems,
     boardGameBillingGroupId: boardGameBillingGroupId || null,
     payments,
     couponCode: typeof body.couponCode === "string" ? body.couponCode : null,

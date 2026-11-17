@@ -310,19 +310,26 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       ...displayPricing(item),
     })),
     ...(source === 'retail'
-      ? cart.extraLines.map(line => ({
+      ? [...cart.extraLines.map(line => ({
           key: `extra-${line.id}`,
           name: line.label,
           variantLabel: posText("รายการเพิ่มเติม"),
           qty: line.qty,
           unitPrice: line.unitAmount,
-        }))
+        })), ...cart.openItems.map(line => ({
+          key: `open-${line.id}`,
+          name: line.label,
+          variantLabel: posText("สินค้าชั่วคราว (ไม่ตัดสต็อก)"),
+          qty: line.qty,
+          unitPrice: line.unitAmount,
+        }))]
       : []),
   ];
   const fallbackSubtotal =
     source === 'restaurant'
       ? check?.amountDue ?? 0
-      : cart.subtotal + (boardGameBill?.totalDue ?? 0);
+      : cart.subtotal + cart.openItems.reduce((sum, item) => sum + item.qty * item.unitAmount, 0)
+        + (boardGameBill?.totalDue ?? 0);
   const subtotal =
     source === 'restaurant' && restaurantPreview?.subtotal != null
       ? restaurantPreview.subtotal
@@ -544,6 +551,11 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       payment.method === 'cash' ? payment.tendered ?? payment.amount : null,
     ref: payment.reference?.trim() || null,
   }));
+  const openSaleInvalid = cart.openItems.length > 0 && (
+    source !== 'retail' || storeMode !== 'general' || saleMode !== 'SALE' ||
+    paymentInput.length !== 1 || paymentInput[0]?.method !== 'CASH' ||
+    Boolean(cart.coupon || cart.manualDiscount) || cart.pointsToRedeem > 0
+  );
   const offlineEligible =
     source === 'retail' &&
     storeMode === 'general' &&
@@ -555,6 +567,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     cart.pointsUsed <= 0 &&
     !cart.manualDiscount &&
     cart.extraLines.length === 0 &&
+    cart.openItems.length === 0 &&
     !cart.pharmacyReview &&
     !pharmacistId &&
     !usesCredit &&
@@ -622,6 +635,10 @@ export default function CheckoutScreen({ route, navigation }: Props) {
 
   const completeSale = async () => {
     const retrying = Boolean(saleAttemptRef.current);
+    if (!retrying && openSaleInvalid) {
+      Alert.alert(posText("ขายสินค้าชั่วคราวไม่ได้"), posText("สินค้าชั่วคราวขายได้เฉพาะร้านทั่วไป รับเงินสดเต็มจำนวน และไม่ใช้มัดจำ คูปอง แต้ม หรือส่วนลดพิเศษ"));
+      return;
+    }
     if (
       (!retrying &&
         (!canConfirmPayment ||
@@ -901,6 +918,9 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             discountReason: cart.manualDiscount?.reason ?? null,
             discountApproverUserId: cart.manualDiscount?.approverUserId ?? null,
             discountApproverPin: cart.manualDiscount?.approverPin ?? null,
+            openItems: cart.openItems.map(({ label, qty, unitAmount, vatCategory }) => ({
+              label, qty, unitAmount, vatCategory,
+            })),
             extraLines: cart.extraLines.map(line => ({
               label: line.label,
               qty: line.qty,
@@ -1809,7 +1829,8 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     shiftLoading ||
     !isShiftOpen ||
     discountPending ||
-    lines.length === 0 ||
+    (lines.length === 0 && (source !== 'retail' || cart.openItems.length === 0)) ||
+    openSaleInvalid ||
     Boolean(check?.items.some(item => item.status === 'NEW')) ||
     !canConfirmPayment ||
     !restaurantPaymentsValid ||

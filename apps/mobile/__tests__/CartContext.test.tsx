@@ -4,12 +4,14 @@ import { CartProvider, useCart } from '../src/state/CartContext';
 import type { PosMenuItem } from '../src/types/pos';
 
 const mockResolveVariant = jest.fn();
+const mockParkMutation = jest.fn();
+let mockParkedData: unknown;
 jest.mock('../src/state/CatalogContext', () => ({ useCatalog: () => ({ resolveVariant: mockResolveVariant }) }));
 jest.mock('../src/state/SessionContext', () => ({ useSession: () => ({ session: null }) }));
 jest.mock('../src/state/ShiftContext', () => ({ useShift: () => ({ isOpen: true }) }));
 jest.mock('@apollo/client', () => ({
-  useQuery: () => ({ data: undefined, loading: false }),
-  useMutation: () => [jest.fn()],
+  useQuery: () => ({ data: mockParkedData, loading: false }),
+  useMutation: () => [mockParkMutation],
 }));
 const item: PosMenuItem = {
   sku: 'MENU', name: 'Menu', size: 'S', packCode: 'BASE', baseQty: 1,
@@ -21,6 +23,8 @@ function Probe() { cart = useCart(); return null; }
 let tree: Renderer.ReactTestRenderer;
 beforeEach(async () => {
   mockResolveVariant.mockReset();
+  mockParkMutation.mockReset();
+  mockParkedData = undefined;
   await act(async () => { tree = Renderer.create(<CartProvider><Probe /></CartProvider>); });
 });
 afterEach(async () => { await act(async () => tree.unmount()); });
@@ -72,4 +76,20 @@ test('pack conversion changes require re-adding the line even when its price is 
   expect(result?.error).toMatch(/หน่วยขาย.*เปลี่ยน/);
   expect(cart.lines[0].baseQty).toBe(6);
   expect(cart.subtotal).toBe(500);
+});
+
+test('resuming a parked bill cannot discard an unsold open item', async () => {
+  mockParkedData = { bmsPosParkedSales: { parked: [{
+    id: 'parked-1', label: 'Earlier bill', createdAt: new Date().toISOString(), cart: null,
+    pharmacyReview: null,
+  }] } };
+  await act(async () => tree.update(<CartProvider><Probe /></CartProvider>));
+  await act(async () => cart.setOpenItems([{
+    id: 'open-1', label: 'Uncataloged item', qty: 1, unitAmount: 25, vatCategory: 'N',
+  }]));
+  let result: string | null = null;
+  await act(async () => { result = await cart.resumeParkedBill('parked-1'); });
+  expect(result).toMatch(/ตะกร้า/);
+  expect(cart.openItems).toHaveLength(1);
+  expect(mockParkMutation).not.toHaveBeenCalled();
 });

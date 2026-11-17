@@ -41,7 +41,7 @@ export function readReturnFinancialSnapshot(value: unknown, expectedAmount: stri
         || !Array.isArray(s.lines) || s.lines.length === 0) return null;
     for (const key of sourceKeys) key === "rounding" ? cents(s.source[key]) : nonnegative(s.source[key]);
     if (new Set(s.lines.map(l => l.orderItemId)).size !== s.lines.length
-        || s.lines.some(l => !/^[1-9]\d*$/.test(l.orderItemId) || !["V", "N", "UNKNOWN"].includes(l.vatCategory))
+        || s.lines.some(l => !/^-?[1-9]\d*$/.test(l.orderItemId) || !["V", "N", "UNKNOWN"].includes(l.vatCategory))
         || sum(s.lines.map(l => nonnegative(l.amount))) !== cents(s.amount)) return null;
     if (s.components !== null) {
       const c = s.components;

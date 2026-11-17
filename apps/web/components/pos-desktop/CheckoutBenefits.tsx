@@ -81,7 +81,9 @@ export function useCheckoutBenefits(token: string, subtotal: number, groupId: st
   };
 }
 
-export default function CheckoutBenefits({ benefits, disabled }: { benefits: ReturnType<typeof useCheckoutBenefits>; disabled: boolean }) {
+export default function CheckoutBenefits({ benefits, disabled, discountsDisabled = false, hidePointsEstimate = false }: {
+  benefits: ReturnType<typeof useCheckoutBenefits>; disabled: boolean; discountsDisabled?: boolean; hidePointsEstimate?: boolean;
+}) {
   const posText = usePosText();
   const [query, setQuery] = useState("");
   const [members, setMembers] = useState<Member[]>([]);
@@ -115,15 +117,15 @@ export default function CheckoutBenefits({ benefits, disabled }: { benefits: Ret
     </label>
     {selected ? <div className={styles.balance}>
       <span>{posText("แต้มคงเหลือ") + " "}<b>{selected.pointsBalance}</b></span><span>{posText("ใช้ได้") + " "}<b>{selected.pointsUsable}</b></span>
-      {preview?.pointsWillEarn != null ? <span>{posText("บิลนี้ได้รับ") + " "}<b>{preview.pointsWillEarn}</b> {" " + posText("แต้ม")}</span> : null}
+      {!hidePointsEstimate && preview?.pointsWillEarn != null ? <span>{posText("บิลนี้ได้รับ") + " "}<b>{preview.pointsWillEarn}</b> {" " + posText("แต้ม")}</span> : null}
     </div> : null}
     <div className={styles.inputs}>
-      <label>{posText("รหัสคูปอง")}<Input allowClear aria-label={posText("รหัสคูปอง")} disabled={disabled} value={benefits.coupon} onChange={(event) => benefits.setCoupon(event.target.value)} /></label>
+      <label>{posText("รหัสคูปอง")}<Input allowClear aria-label={posText("รหัสคูปอง")} disabled={disabled || discountsDisabled} value={benefits.coupon} onChange={(event) => benefits.setCoupon(event.target.value)} /></label>
       <label>{posText("ใช้แต้ม")}<InputNumber aria-label={posText("ใช้แต้ม")} min={0} precision={0} max={selected?.pointsUsable ?? 0}
-        disabled={disabled || !benefits.member || preview?.loyaltyEnabled === false}
+        disabled={disabled || discountsDisabled || !benefits.member || preview?.loyaltyEnabled === false}
         value={benefits.points} onChange={(value) => benefits.setPoints(value ?? 0)} /></label>
     </div>
-    {benefits.ready && preview && selected && (preview.pointsWillEarn === 0 || !preview.loyaltyEnabled)
+    {!hidePointsEstimate && benefits.ready && preview && selected && (preview.pointsWillEarn === 0 || !preview.loyaltyEnabled)
       ? <div role="status">{posText(pointsEarnMessage(preview.loyaltyEnabled ? preview.pointsEarnBlock : "PROGRAM_DISABLED"))}</div> : null}
     {benefits.pending ? <div role="status">{posText("กำลังตรวจสอบยอดและส่วนลด…")}</div> : null}
     {benefits.error ? <div role="alert" className={styles.error}>{benefits.error} <Button disabled={disabled} onClick={benefits.retry}>{posText("ลองใหม่")}</Button></div> : null}

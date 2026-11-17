@@ -6011,6 +6011,13 @@ type BmsPosNoSalesResult {
   noSales: [BmsPosNoSale!]!
 }
 
+input BmsPosOpenItemInput {
+  label: String!
+  qty: Int!
+  unitAmount: Float!
+  vatCategory: String!
+}
+
 type BmsPosOperationalReadiness {
   activeDevices: Int!
   activeLocations: Int!
@@ -6061,6 +6068,7 @@ type BmsPosParkedCart {
   extraLines: [BmsPosParkedExtraLine!]
   lines: [BmsPosParkedCartLine!]!
   member: BmsPosParkedCartMember
+  openItems: [BmsPosParkedOpenItem!]
   pharmacyReview: BmsPosParkedCartPharmacyReview
   pointsToRedeem: String
   version: Int!
@@ -6109,6 +6117,13 @@ type BmsPosParkedCartPharmacyReview {
 type BmsPosParkedExtraLine {
   label: String!
   unitAmount: String!
+}
+
+type BmsPosParkedOpenItem {
+  label: String!
+  qty: Int!
+  unitAmount: Float!
+  vatCategory: String!
 }
 
 type BmsPosParkedPharmacyReview {
@@ -7141,6 +7156,7 @@ input BmsPosSaleInput {
   manualDiscount: Float
   mode: String
   offlineTenderedAt: String
+  openItems: [BmsPosOpenItemInput!]
   payments: [BmsPosPaymentInput!]!
   pharmacistAuthorizationNote: String
   pharmacistAuthorizerPin: String

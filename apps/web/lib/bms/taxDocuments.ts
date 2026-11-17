@@ -358,7 +358,13 @@ async function loadOrderLinesInTx(client: PoolClient, tenantId: string, orderId:
             vat_category,
             unit_amount * qty AS amount,
             FALSE AS discount_eligible
-       FROM bms_order_extra_lines WHERE tenant_id = $1 AND order_id = $2`,
+       FROM bms_order_extra_lines WHERE tenant_id = $1 AND order_id = $2
+      UNION ALL
+      SELECT 'OPEN:' || id AS product_sku,
+             vat_category,
+             line_amount AS amount,
+             FALSE AS discount_eligible
+        FROM bms_order_open_items WHERE tenant_id = $1 AND order_id = $2`,
     [tenantId, orderId]
   );
   return res.rows.map((r: any) => ({
@@ -839,7 +845,10 @@ export async function issueCreditNote(args: {
     const byLine = itemIds.length > 0
       ? await client.query<{ id: number; vat_category: string }>(
           `SELECT id, vat_category FROM bms_order_items
-            WHERE tenant_id = $1 AND order_id = $2 AND id = ANY($3::bigint[])`,
+            WHERE tenant_id = $1 AND order_id = $2 AND id = ANY($3::bigint[])
+           UNION ALL
+           SELECT -id AS id, vat_category FROM bms_order_open_items
+            WHERE tenant_id = $1 AND order_id = $2 AND -id = ANY($3::bigint[])`,
           [tenantId, orderId, itemIds]
         )
       : null;
@@ -1018,6 +1027,14 @@ export async function getFullTaxInvoiceView(
     lines.push({ sku: "", name: row.label, size: "", qty: Number(row.qty), unit: "หน่วย",
       unitPrice: Number(row.unit_amount), amount: Math.round(Number(row.qty) * Number(row.unit_amount) * 100) / 100 });
   }
+  const openItems = await reader.query<any>(
+    `SELECT label,qty,unit_amount,line_amount FROM bms_order_open_items
+      WHERE tenant_id=$1 AND order_id=$2 ORDER BY id`, [tenantId, d.order_id]
+  );
+  for (const row of openItems.rows) {
+    lines.push({ sku: "", name: row.label, size: "", qty: Number(row.qty), unit: "ชิ้น",
+      unitPrice: Number(row.unit_amount), amount: Number(row.line_amount) });
+  }
   const subtotal = Math.round(lines.reduce((sum: number, line: any) => sum + line.amount, 0) * 100) / 100;
   const taxableAmount = Number(d.taxable_amount);
   const exemptAmount = Number(d.exempt_amount);
@@ -1155,6 +1172,17 @@ export async function getCreditNoteView(
         [tenantId, returnRef, d.order_id]
       )
     : { rows: [] as any[] };
+  const openReturnItems = returnRef
+    ? await reader.query<any>(
+        `SELECT ri.qty,ri.refund_amount,oi.label AS item_name
+           FROM bms_pos_return_open_items ri
+           JOIN bms_pos_returns pr ON pr.tenant_id=ri.tenant_id AND pr.id=ri.pos_return_id
+           JOIN bms_order_open_items oi ON oi.tenant_id=ri.tenant_id AND oi.id=ri.order_open_item_id
+          WHERE ri.tenant_id=$1 AND ri.pos_return_id=$2 AND pr.order_id=$3
+          ORDER BY ri.id`,
+        [tenantId, returnRef, d.order_id]
+      )
+    : { rows: [] as any[] };
   const lines = items.rows.map((row: any) => ({
     name: row.item_name,
     size: row.size ?? "",
@@ -1162,6 +1190,10 @@ export async function getCreditNoteView(
     unit: row.pack_unit_name ?? "หน่วย",
     amount: Number(row.refund_amount),
   }));
+  for (const row of openReturnItems.rows) {
+    lines.push({ name: row.item_name, size: "", qty: Number(row.qty), unit: "ชิ้น",
+      amount: Number(row.refund_amount) });
+  }
 
   const figures = creditNoteFigures({
     originalTotal: Number(d.original_total ?? d.original_grand_total),

@@ -93,6 +93,7 @@ import {
   normalizePosSearchQuery,
   isPosUuid,
 } from "@/lib/bms/posRouteHelpers";
+import { parsePosOpenItems } from "@/lib/bms/posOpenItems";
 import {
   createPosExpense,
   fundPosPettyCash,
@@ -237,6 +238,13 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     unitAmount: Float!
   }
 
+  input BmsPosOpenItemInput {
+    label: String!
+    qty: Int!
+    unitAmount: Float!
+    vatCategory: String!
+  }
+
   input BmsPosReturnLineInput {
     orderItemId: Int!
     packQty: Int!
@@ -288,6 +296,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     offlineTenderedAt: String
     mode: String
     lines: [BmsPosSaleLineInput!]!
+    openItems: [BmsPosOpenItemInput!]
     boardGameBillingGroupId: ID
     payments: [BmsPosPaymentInput!]!
     couponCode: String
@@ -1413,6 +1422,13 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     refundablePackQty: Float
   }
 
+  type BmsPosParkedOpenItem {
+    label: String!
+    qty: Int!
+    unitAmount: Float!
+    vatCategory: String!
+  }
+
   type BmsPosParkedCart {
     version: Int!
     lines: [BmsPosParkedCartLine!]!
@@ -1420,6 +1436,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     pointsToRedeem: String
     couponCode: String
     extraLines: [BmsPosParkedExtraLine!]
+    openItems: [BmsPosParkedOpenItem!]
     pharmacyReview: BmsPosParkedCartPharmacyReview
   }
 
@@ -4333,11 +4350,19 @@ export const bmsPosDeviceResolvers = {
         });
       }
       const lines = parsePosSaleLines(input.lines);
+      const parsedOpenItems = parsePosOpenItems(input.openItems);
+      if (!parsedOpenItems.ok) return badPosInput(parsedOpenItems.reason);
+      const openItems = parsedOpenItems.items;
+      if (openItems.length && !(await cashierHasPermission(device.tenantId, actor.userId, "pos.open_item.sell"))) {
+        throw mobileGraphqlError("ไม่มีสิทธิ์ขายสินค้าชั่วคราว", "FORBIDDEN", {
+          permission: "pos.open_item.sell",
+        });
+      }
       const boardGameBillingGroupId = optionalUuidInput(
         input.boardGameBillingGroupId,
         "session บอร์ดเกมไม่ถูกต้อง",
       );
-      if (!lines.length && !boardGameBillingGroupId)
+      if (!lines.length && !boardGameBillingGroupId && !openItems.length)
         return badPosInput(
           "ต้องมีรายการสินค้าหรือ session บอร์ดเกมอย่างน้อย 1 รายการ",
         );
@@ -4466,6 +4491,7 @@ export const bmsPosDeviceResolvers = {
         offlineTenderedAt: textInput(input.offlineTenderedAt) || null,
         mode,
         lines,
+        openItems,
         boardGameBillingGroupId,
         salesSurface:
           profile.businessArchetype === "restaurant"

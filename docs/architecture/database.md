@@ -2,6 +2,20 @@
 
 ## POS device credential issuance (existing tables)
 
+### Open retail sale lines (`10.129`)
+
+`bms_order_open_items` stores tenant/order FK, immutable sale label, integer qty,
+unit/line amount and `V`/`N` VAT category. It has no SKU or inventory link.
+`bms_pos_return_open_items` stores tenant/return/open-line FK, returned qty and
+allocated refund. Both tables have tenant RLS and `bms_app` SELECT/INSERT and
+sequence grants. Migration `10.130` revokes UPDATE/DELETE from `bms_app` so a
+return or void adds evidence without rewriting the sale or an earlier return.
+The Manager role gains `pos.open_item.sell`; existing permissions and cashier PIN
+still apply. Negative open-line IDs in POS return and financial-snapshot APIs are
+an adapter namespace for these positive DB IDs; they are never inventory IDs.
+Apply this migration before the application because ordinary POS receipts, history,
+tax and sales evidence query these tables unconditionally.
+
 `issuePosDeviceToken()` updates `bms_pos_devices.token_hash/token_issued_at` and inserts the
 `pos.device.token.issue` row in `bms_audit_log` on the same client inside `beginTenantTx()`.
 The authenticated Admin supplies editor/audit attribution; device lookup is constrained by both

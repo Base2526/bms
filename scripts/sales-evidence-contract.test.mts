@@ -217,7 +217,7 @@ test("one serializable tenant snapshot reads all pages with server branch scope 
   assert.equal(pages[1].params[5], "SALE:099");
   assert.doesNotMatch(pages[0].sql, /bms_products|bms_product_recipes|\bINSERT\b|\bUPDATE\b|\bDELETE\b/);
   assert.match(pages[0].sql, /location_id=ANY\(\$4::uuid\[\]\)/);
-  assert.match(pages[0].sql, /prev\.tenant_id=ri\.tenant_id/);
+  assert.match(pages[0].sql, /prev\.tenant_id=base\.tenant_id/);
   assert.match(pages[0].sql, /a\.tenant_id=p\.tenant_id AND a\.payment_id=p\.id/);
   assert.match(pages[0].sql, /Asia\/Bangkok/);
   assert.match(pages[0].sql, /o\.paid_at IS NOT NULL OR o\.status IN/);

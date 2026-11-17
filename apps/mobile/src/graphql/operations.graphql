@@ -416,6 +416,12 @@ query MobilePosParkedSales {
           label
           unitAmount
         }
+        openItems {
+          label
+          qty
+          unitAmount
+          vatCategory
+        }
         pharmacyReview {
           assessmentId
           caseCode

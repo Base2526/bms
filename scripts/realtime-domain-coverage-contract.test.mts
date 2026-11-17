@@ -160,6 +160,7 @@ const CHILD_OF_AGGREGATE = [
   "bms_shipment_tracking_events", "bms_stock_count_items", "bms_stock_transfer_items",
   "bms_stock_transfer_item_lots",
   "bms_support_events", "bms_order_discounts", "bms_order_extra_lines",
+  "bms_order_open_items", "bms_pos_return_open_items", // Order/return aggregate publishes after commit.
   "bms_order_item_stock_consumption", "bms_stock_movements",
   "bms_board_game_reservation_deposit_applications", "bms_board_game_pass_renewal_runs",
   "bms_delivery_order_lines", "bms_delivery_order_modifiers", "bms_delivery_order_events",

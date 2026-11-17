@@ -121,6 +121,14 @@ before changing that domain.
 - A return reconciles lot identity before refunding in the same transaction. Unknown source lots,
   mixed tracked/untracked stock, conflicting expiry, or a no-receipt return into existing/tracked
   lots fails closed with `STOCK_REVIEW_REQUIRED`; no stock/refund/return evidence may partially land.
+- Open-item retail sales (`10.129`–`10.130`) are cash-only, PIN/`pos.sell`/`pos.open_item.sell`
+  gated, and record app-role append-only `bms_order_open_items` instead of creating a SKU, stock
+  movement, or `bms_order_extra_lines` service fee. Freeze label, quantity, amount, and `V`/`N`
+  tax choice at sale;
+  cost stays unknown. Return/void appends `bms_pos_return_open_items` without adding stock; an
+  exchange needs a separate new sale. Reject open items in deposit, pharmacy, restaurant, board-game,
+  coupon, points redemption, manual-discount, and Emergency Offline flows. Preserve an open-item basket when
+  switching or resuming workflows.
 - Money authority is `bms_order_items.line_amount` (`10.13`), never `unit_price × qty`. Tax documents
   are immutable; a full invoice issues only for a completed, never-voided/returned bill; back office
   refuses cancel/return/refund with an active tax document.

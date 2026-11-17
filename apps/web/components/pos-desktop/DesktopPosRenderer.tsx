@@ -104,6 +104,7 @@ import { useReceiptPrinter } from "./useReceiptPrinter";
 import type { ReceiptPayload } from "@/lib/pos/escpos";
 import { isReceiptLanguageMode } from "@/lib/pos/receiptI18n";
 import { receiptPayloadFromPosSale, type PosSaleReceiptRow } from "@/lib/pos/posSaleReceipt";
+import { parsePosOpenItems, type PosOpenItem } from "@/lib/bms/posOpenItems";
 import styles from "./DesktopPosRenderer.module.css";
 
 const loadAdvancedPosModule = () => import("@/app/(pos)/pos/page");
@@ -519,6 +520,10 @@ function DesktopPosContent() {
   }, []);
   const [inspectedProduct, setInspectedProduct] = useState<{ code: string; size?: string; packCode?: string } | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [openItems, setOpenItems] = useState<PosOpenItem[]>([]);
+  const [openItemDialog, setOpenItemDialog] = useState(false);
+  const [openItemDraft, setOpenItemDraft] = useState({ label: "", qty: "1", unitAmount: "", vatCategory: "" });
+  const [openItemError, setOpenItemError] = useState("");
   // A timed-play bill is a frozen billing group, not a synthetic product. Keep it outside
   // the retail cart so collecting one group never consumes or discards a sale in progress.
   const [boardGameCheckout, setBoardGameCheckout] = useState<PosBoardGameCheckout | null>(null);
@@ -1234,6 +1239,9 @@ function DesktopPosContent() {
         setCatalog([]);
         setCatalogLoading(false);
         setCatalogError("");
+        setCart([]);
+        setOpenItems([]);
+        setOpenItemDialog(false);
         setBoardGameCheckout(null);
         clearScannedProduct();
         setServiceCalls([]);
@@ -1250,6 +1258,8 @@ function DesktopPosContent() {
     clearScannedProduct();
     setBootstrap((current) => current ? { ...current, shift: null } : current);
     setCart([]);
+    setOpenItems([]);
+    setOpenItemDialog(false);
     setBoardGameCheckout(null);
     setActiveModule("mobile_sell");
     setFlow((current) => ({
@@ -1269,6 +1279,8 @@ function DesktopPosContent() {
     setLoginPhase("idle");
     setPin("");
     setCart([]);
+    setOpenItems([]);
+    setOpenItemDialog(false);
     setBoardGameCheckout(null);
     setServiceCalls([]);
     sendFlow("SIGN_OUT");
@@ -1438,14 +1450,15 @@ function DesktopPosContent() {
   const retailPricing = useMemo(() => cartProductPricing(cart), [cart]);
   const retailSubtotal = retailPricing.subtotal;
   const retailListSubtotal = retailPricing.listSubtotal;
+  const openItemTotal = Math.round(openItems.reduce((sum, item) => sum + item.qty * item.unitAmount, 0) * 100) / 100;
   const pricingSavings = Math.max(0, Math.round((retailListSubtotal - retailSubtotal) * 100) / 100);
   const benefits = useCheckoutBenefits(token, boardGameCheckout?.totalDue ?? retailSubtotal,
     boardGameCheckout?.id ?? null, flow.stage === "CHECKOUT", contentRefreshSignal);
   useEffect(() => {
     if (!cashier || !bootstrap?.shift) benefits.clear();
   }, [cashier?.id, bootstrap?.shift?.id]);
-  const payableBeforeRounding = (benefits.ready ? benefitsPayable(benefits.preview) : null)
-    ?? boardGameCheckout?.totalDue ?? retailSubtotal;
+  const payableBeforeRounding = boardGameCheckout?.totalDue
+    ?? Math.round((((benefits.ready ? benefitsPayable(benefits.preview) : null) ?? retailSubtotal) + openItemTotal) * 100) / 100;
   const cashMode = isCashRounding(bootstrap?.vat.cashRounding)
     ? bootstrap.vat.cashRounding
     : "NONE";
@@ -1463,11 +1476,33 @@ function DesktopPosContent() {
 
   const validation = useMemo(() => validatePayments(total, payments, posText), [payments, total, posText]);
   const zeroDueBoardGameBill = Boolean(boardGameCheckout && total === 0);
-  const canConfirmPayment = Boolean(saleAttemptRef.current) || (benefits.ready && (validation.canConfirm || zeroDueBoardGameBill));
-  const itemCount = boardGameCheckout ? 0 : cart.reduce((sum, line) => sum + line.qty, 0);
+  const openSaleValid = !openItems.length || (payments.length === 1 && payments[0].method === "cash"
+    && !benefits.coupon.trim() && benefits.points === 0 && !boardGameCheckout);
+  const canConfirmPayment = Boolean(saleAttemptRef.current)
+    || (benefits.ready && openSaleValid && (validation.canConfirm || zeroDueBoardGameBill));
+  const itemCount = boardGameCheckout ? 0 : cart.reduce((sum, line) => sum + line.qty, 0)
+    + openItems.reduce((sum, item) => sum + item.qty, 0);
   const billCountLabel = boardGameCheckout
     ? posText("ค่าบริการ 1 รายการ")
     : posText("{v0} ชิ้น", { v0: itemCount });
+  const addOpenItem = () => {
+    if (busy || saleAttemptRef.current || boardGameCheckout) return;
+    const parsed = parsePosOpenItems([...openItems, {
+      label: openItemDraft.label,
+      qty: Number(openItemDraft.qty),
+      unitAmount: Number(openItemDraft.unitAmount),
+      vatCategory: openItemDraft.vatCategory,
+    }]);
+    if (!parsed.ok) { setOpenItemError(posText(parsed.reason)); return; }
+    setOpenItems(parsed.items);
+    benefits.setCoupon("");
+    benefits.setPoints(0);
+    setPayments([{ id: "payment-1", method: "cash", amount: 0, tendered: 0 }]);
+    setOpenItemDraft({ label: "", qty: "1", unitAmount: "", vatCategory: "" });
+    setOpenItemError("");
+    setOpenItemDialog(false);
+    setError("");
+  };
   const boardGameBenefitAmount = boardGameCheckout
     ? Math.max(0, boardGameCheckout.passCoveredAmount) + Math.max(0, boardGameCheckout.offerDiscountAmount)
     : 0;
@@ -1522,7 +1557,7 @@ function DesktopPosContent() {
       pendingPricing: flow.stage === "CHECKOUT" && !benefits.ready,
       lines: boardGameCheckout
         ? boardGameDisplayLines
-        : cart.map((line) => ({
+        : [...cart.map((line) => ({
             name: line.name,
             size: line.size || null,
             qty: line.qty,
@@ -1531,11 +1566,14 @@ function DesktopPosContent() {
               Number(line.packBasePrice ?? line.unitPrice ?? 0)
               + Number(line.modifierUnitPrice ?? 0)
             ) * line.qty * 100) / 100,
-          })),
+          })), ...openItems.map((item) => ({
+            name: item.label, size: null, qty: item.qty, unitName: "",
+            amount: Math.round(item.qty * item.unitAmount * 100) / 100,
+          }))],
       itemCount: boardGameCheckout ? boardGameDisplayLines.length : itemCount,
       total: boardGameCheckout
         ? Math.round((boardGameCheckout.totalDue + boardGameTotalDiscountAmount) * 100) / 100
-        : retailListSubtotal,
+        : Math.round((retailListSubtotal + openItemTotal) * 100) / 100,
       discountTotal: (boardGameCheckout ? boardGameTotalDiscountAmount : pricingSavings) + (benefits.ready ? benefits.preview?.totalDiscount ?? 0 : 0),
       amountDue: receipt?.total ?? total,
       memberAttached: receipt
@@ -1545,9 +1583,9 @@ function DesktopPosContent() {
         ? receiptPaper?.orderId === receipt.orderId ? receiptPaper?.member?.name : receipt.displayMember?.name
         : benefits.member?.name ?? null),
       pointsEarned: receipt ? receipt.pointsEarned ?? null : null,
-      pointsWillEarn: !receipt && benefits.ready ? benefits.preview?.pointsWillEarn ?? null : null,
+      pointsWillEarn: !receipt && !openItems.length && benefits.ready ? benefits.preview?.pointsWillEarn ?? null : null,
       pointsBalance: receipt ? receipt.pointsBalance ?? null : benefits.member?.pointsBalance ?? null,
-      paymentQr: flow.stage === "CHECKOUT" && benefits.ready && validation.isBalanced && qrPaymentAmount > 0 && configuredQr
+      paymentQr: !openItems.length && flow.stage === "CHECKOUT" && benefits.ready && validation.isBalanced && qrPaymentAmount > 0 && configuredQr
         ? { ...configuredQr, amount: qrPaymentAmount }
         : null,
       finished,
@@ -1564,6 +1602,8 @@ function DesktopPosContent() {
     boardGameCheckout,
     boardGameTotalDiscountAmount,
     cart,
+    openItems,
+    openItemTotal,
     bootstrap,
     flow.stage,
     itemCount,
@@ -1592,6 +1632,7 @@ function DesktopPosContent() {
 
   const chooseMethod = (method: PosPaymentMethod) => {
     if (saleSubmittingRef.current || saleAttemptRef.current) return;
+    if (openItems.length && method !== "cash") return;
     setPayments([
       {
         id: "payment-1",
@@ -1612,6 +1653,7 @@ function DesktopPosContent() {
 
   const addSplitPayment = () => {
     if (saleSubmittingRef.current || saleAttemptRef.current) return;
+    if (openItems.length) return;
     setPayments((current) => [
       ...current,
       {
@@ -1668,6 +1710,7 @@ function DesktopPosContent() {
         scaleBarcode: line.scaleBarcode ?? null,
         serials: line.serials,
       })),
+      openItems: boardGameCheckout ? [] : openItems,
       payments: (zeroDueBoardGameBill ? [] : payments).map((payment) => ({
         method: payment.method.toUpperCase(),
         amount: payment.amount,
@@ -1782,7 +1825,8 @@ function DesktopPosContent() {
   };
 
   const submitSale = async () => {
-    if (!cashier || busy || saleSubmittingRef.current || !canConfirmPayment || (!boardGameCheckout && cart.length === 0)) return;
+    if (!cashier || busy || saleSubmittingRef.current || !canConfirmPayment
+      || (!boardGameCheckout && cart.length === 0 && openItems.length === 0)) return;
     saleSubmittingRef.current = true;
     setBusy(true);
     setError("");
@@ -1836,7 +1880,10 @@ function DesktopPosContent() {
     clearScannedProduct();
     benefits.clear();
     const completedBoardGameBill = Boolean(boardGameCheckout);
-    if (!completedBoardGameBill) setCart([]);
+    if (!completedBoardGameBill) {
+      setCart([]);
+      setOpenItems([]);
+    }
     setBoardGameCheckout(null);
     setReceipt(null);
     setReceiptPaper(null);
@@ -2272,7 +2319,8 @@ function DesktopPosContent() {
                         </div>
                       ) : null}
                     </>
-                  ) : cart.map((line, index) => (
+                  ) : <>
+                  {cart.map((line, index) => (
                     <article key={line.key}>
                       <div className={styles.productThumb}>{line.imageUrl ? <img src={line.imageUrl} alt="" /> : line.name.slice(0, 1)}</div>
                       <div><strong>{line.name}</strong><span>{line.sku}{line.size ? ` · ${line.size}` : ""}</span></div>
@@ -2286,6 +2334,17 @@ function DesktopPosContent() {
                       </div>
                     </article>
                   ))}
+                  {openItems.map((item, index) => (
+                    <article key={`open-${index}`}>
+                      <div className={styles.productThumb}>▣</div>
+                      <div><strong>{item.label}</strong><span>{posText("สินค้าชั่วคราว · ไม่ตัดสต็อก")}</span></div>
+                      <div className={styles.summaryLinePrice}>
+                        <span>{item.qty} {posText("ชิ้น")} × {money(item.unitAmount)}</span>
+                        <strong>{money(item.qty * item.unitAmount)}</strong>
+                      </div>
+                    </article>
+                  ))}
+                  </>}
                 </div>
                 <div className={styles.summaryTotals}>
                   {boardGameCheckout ? (
@@ -2314,7 +2373,7 @@ function DesktopPosContent() {
                     </>
                   ) : (
                     <>
-                      <div><span>{posText("ยอดสินค้าราคาป้าย")}</span><strong>{money(retailListSubtotal)}</strong></div>
+                      <div><span>{posText("ยอดสินค้าราคาป้าย")}</span><strong>{money(retailListSubtotal + openItemTotal)}</strong></div>
                       {pricingSavings > 0 ? <div className={styles.savingsRow}><span>{posText("ราคาส่ง / โปรโมชัน")}</span><strong>−{money(pricingSavings)}</strong></div> : null}
                     </>
                   )}
@@ -2334,6 +2393,14 @@ function DesktopPosContent() {
                   <div><p className={styles.eyebrow}>{posText("แคตตาล็อกสินค้า")}</p><h1>{posText("เลือกสินค้า")}</h1></div>
                   <input value={query} onChange={(event) => { clearScannedProduct(); setQuery(event.target.value); }} placeholder={posText("ค้นหาชื่อหรือ SKU")} />
                 </div>
+                {!(["restaurant", "board_game_cafe", "pharmacy"].includes(bootstrap?.businessArchetype ?? "")) ? (
+                  <div className={styles.openItemAction}>
+                    <button type="button" disabled={busy || openItems.length >= 10} onClick={() => { setOpenItemError(""); setOpenItemDialog(true); }}>
+                      + {posText("ขายสินค้าชั่วคราว")}
+                    </button>
+                    <span>{posText("เงินสดเท่านั้น · ไม่ตัดสต็อก")}</span>
+                  </div>
+                ) : null}
                 {(error || notice) ? <PosDismissibleAlert key={error || notice} className={error ? styles.errorBox : styles.noticeBox} onClose={() => { setError(""); setNotice(""); }}>{error || noticeText}{!error && notice === ADVANCED_ITEM_NOTICE ? <button onClick={() => openModule("sell")}>{posText("เปิดหน้าขายแบบเต็ม")}</button> : null}</PosDismissibleAlert> : null}
                 {catalog.length && catalogError ? (
                   <PosDismissibleAlert
@@ -2424,12 +2491,21 @@ function DesktopPosContent() {
                       <strong>{money(Number(line.packBasePrice ?? line.unitPrice ?? 0) * line.qty)}</strong>
                     </article>
                   ))}
-                  {!cart.length ? <div className={styles.emptyCart}><span>▥</span><strong>{posText("ยังไม่มีสินค้าในบิล")}</strong><p>{posText("ยิงบาร์โค้ดหรือเลือกสินค้าจากด้านซ้าย")}</p></div> : null}
+                  {openItems.map((item, index) => (
+                    <article key={`open-${index}`}>
+                      <div className={styles.cartName}><strong>{item.label}</strong><span>{posText("สินค้าชั่วคราว · ไม่ตัดสต็อก")}</span></div>
+                      <div className={styles.stepper}><b>{item.qty}</b><button type="button" aria-label={posText("ลบสินค้าชั่วคราว")}
+                        onClick={() => setOpenItems((current) => current.filter((_, i) => i !== index))}>✕</button></div>
+                      <strong>{money(item.qty * item.unitAmount)}</strong>
+                    </article>
+                  ))}
+                  {!cart.length && !openItems.length ? <div className={styles.emptyCart}><span>▥</span><strong>{posText("ยังไม่มีสินค้าในบิล")}</strong><p>{posText("ยิงบาร์โค้ดหรือเลือกสินค้าจากด้านซ้าย")}</p></div> : null}
                 </div>
                 <div className={styles.cartFooter}>
                   {pricingSavings > 0 ? <div className={styles.savingsRow}><span>{posText("ส่วนลดราคาส่ง / โปรโมชัน")}</span><strong>−{money(pricingSavings)}</strong></div> : null}
+                  {openItemTotal > 0 ? <div><span>{posText("สินค้าชั่วคราว · ไม่ตัดสต็อก")}</span><strong>{money(openItemTotal)}</strong></div> : null}
                   <div><span>{posText("ยอดสุทธิ")}</span><strong>{money(total)}</strong></div>
-                  <button className={styles.payButton} disabled={!cart.length || Boolean(addingProductKey) || scannedProduct?.kind === "selection"}
+                  <button className={styles.payButton} disabled={(!cart.length && !openItems.length) || Boolean(addingProductKey) || scannedProduct?.kind === "selection"}
                     onClick={() => {
                       if (addProductPendingRef.current || scannedProduct?.kind === "selection") return;
                       setError(""); setNotice(""); sendFlow("START_CHECKOUT");
@@ -2439,7 +2515,8 @@ function DesktopPosContent() {
             ) : (
               <div className={styles.paymentArea}>
                 <GiftPromotionSummary lines={cart} />
-                <CheckoutBenefits benefits={benefits} disabled={busy || Boolean(saleAttemptRef.current)} />
+                <CheckoutBenefits benefits={benefits} disabled={busy || Boolean(saleAttemptRef.current)} discountsDisabled={openItems.length > 0} hidePointsEstimate={openItems.length > 0} />
+                {openItems.length > 0 ? <p className={styles.openItemPaymentHint}>{posText("สินค้าชั่วคราวรับชำระด้วยเงินสดเท่านั้น")}</p> : null}
                 {zeroDueBoardGameBill ? (
                   <PosDismissibleAlert className={styles.zeroDueNotice} role="status">
                     <span aria-hidden="true">✓</span>
@@ -2454,10 +2531,10 @@ function DesktopPosContent() {
                   </PosDismissibleAlert>
                 ) : (
                   <fieldset className={styles.paymentControls} disabled={busy || Boolean(saleAttemptRef.current)}>
-                <div className={styles.paymentTitle}><div><h2>{posText("วิธีชำระเงิน")}</h2><p>{posText("เลือกหนึ่งวิธี หรือแบ่งชำระหลายช่องทาง")}</p></div><button onClick={addSplitPayment}>{posText("＋ จ่ายผสม")}</button></div>
+                <div className={styles.paymentTitle}><div><h2>{posText("วิธีชำระเงิน")}</h2><p>{posText("เลือกหนึ่งวิธี หรือแบ่งชำระหลายช่องทาง")}</p></div><button disabled={openItems.length > 0} onClick={addSplitPayment}>{posText("＋ จ่ายผสม")}</button></div>
                 <div className={styles.methodGrid}>
                   {primaryMethods.map((method) => (
-                    <button key={method} className={payments.length === 1 && payments[0].method === method ? styles.methodActive : ""} onClick={() => chooseMethod(method)}>
+                    <button key={method} disabled={openItems.length > 0 && method !== "cash"} className={payments.length === 1 && payments[0].method === method ? styles.methodActive : ""} onClick={() => chooseMethod(method)}>
                       <span>{method === "cash" ? "▣" : method === "qr" ? "▦" : method === "card" ? "▤" : "▱"}</span>{paymentMethodLabel(method, posText)}
                     </button>
                   ))}
@@ -2517,6 +2594,31 @@ function DesktopPosContent() {
         alerts={alerts}
         kinds={ALERT_KINDS}
       />
+      <Modal open={openItemDialog} title={posText("ขายสินค้าชั่วคราว")}
+        okText={posText("เพิ่มรายการ")} cancelText={posText("ยกเลิก")}
+        onOk={addOpenItem} onCancel={() => setOpenItemDialog(false)}
+        okButtonProps={{ disabled: busy }}>
+        <p>{posText("สินค้าชั่วคราว · เงินสด · ไม่ตัดสต็อก")}</p>
+        <div className={styles.openItemForm}>
+          <label>{posText("ชื่อสินค้าชั่วคราว")}
+            <input value={openItemDraft.label} maxLength={120}
+              onChange={(event) => setOpenItemDraft((current) => ({ ...current, label: event.target.value }))} /></label>
+          <label>{posText("จำนวนสินค้าชั่วคราว")}
+            <input inputMode="numeric" value={openItemDraft.qty}
+              onChange={(event) => setOpenItemDraft((current) => ({ ...current, qty: event.target.value.replace(/[^0-9]/g, "") }))} /></label>
+          <label>{posText("ราคาต่อหน่วย")}
+            <input inputMode="decimal" value={openItemDraft.unitAmount}
+              onChange={(event) => setOpenItemDraft((current) => ({ ...current, unitAmount: event.target.value.replace(/[^0-9.]/g, "") }))} /></label>
+          <label>{posText("ประเภท VAT ของสินค้าชั่วคราว")}
+            <select value={openItemDraft.vatCategory}
+              onChange={(event) => setOpenItemDraft((current) => ({ ...current, vatCategory: event.target.value }))}>
+              <option value="">{posText("เลือก VAT")}</option>
+              <option value="V">{posText("VAT ปกติ")}</option>
+              <option value="N">{posText("ยกเว้น VAT")}</option>
+            </select></label>
+        </div>
+        {openItemError ? <p role="alert" className={styles.openItemError}>{openItemError}</p> : null}
+      </Modal>
       {desktopInfoDialog ? (
         <div className={styles.infoBackdrop} onPointerDown={(event) => {
           if (event.target === event.currentTarget) setDesktopInfoDialog(null);
