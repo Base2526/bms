@@ -26,11 +26,13 @@ import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 import { isPosPinValid } from "@pos-core/posPin";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { insertAuditInTx } from "./audit";
 import { assertManageablePosAccountInTx } from "./userAdmin";
 import { buildReturnFinancialSnapshot } from "./returnFinancialSnapshot";
 import { resetMenuAvailabilityForLocationInTx } from "./menuAvailability";
 import { refreshSessionFromGroupsInTx } from "./boardGameSessionStatus";
 import { createOrder, createOrderInTx, cancelOrder, type OrderItemInput } from "./orders";
+import { parsePosOpenItems, type PosOpenItem } from "./posOpenItems";
 import { resolveStockConsumptionInTx } from "./stockConsumption";
 import { cancelKitchenTicketsForOrderInTx, cancelKitchenTicketsForOrderItemsInTx, enqueueKitchenTicketsInTx } from "./kitchen";
 import { cancelPickupQueueForOrderInTx, formatPickupQueueNo } from "./pickupQueue";
@@ -1593,17 +1595,18 @@ export async function openPosShift(input: {
       [tenantId, device.rows[0].location_id, deviceId, input.openedBy,
         openingFloat, input.pharmacistUserId ?? null]
     );
-    await client.query(
-      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
-       VALUES ($1, $2, 'pos.shift.open', $3, $4)`,
-      [tenantId, input.openedBy, res.rows[0].id, JSON.stringify({
+    await insertAuditInTx(client, {
+      tenantId, actor: input.openedBy, actorKind: "STAFF", actorUserId: input.openedBy,
+      action: "pos.shift.open", target: res.rows[0].id, targetKind: "POS_SHIFT",
+      source: "POS_SERVICE", eventKey: `pos.shift.open:${res.rows[0].id}`,
+      meta: {
         deviceId,
         locationId: device.rows[0].location_id,
         openingFloat,
         pharmacistUserId: input.pharmacistUserId ?? null,
         reopenedMenuCount,
-      })]
-    );
+      },
+    });
     await client.query("COMMIT");
     return { status: "OPENED", shift: mapShift(res.rows[0]) };
   } catch (err) {
@@ -2318,18 +2321,19 @@ export async function closePosShift(input: {
     // ปิดกะคือจังหวะที่ผู้จัดการเซ็นรับเงินจากแคชเชียร์ — เงินขาด/เกินต้องมีบรรทัด
     // ของตัวเองใน audit log ไม่ใช่อยู่แค่ในคอลัมน์ของกะที่ต้องรู้ก่อนว่าจะไปหาที่ไหน
     const counted = Math.max(0, Number(input.countedCash));
-    await client.query(
-      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
-       VALUES ($1, $2, 'pos.shift.close', $3, $4)`,
-      [input.tenantId, input.closedBy, input.shiftId, JSON.stringify({
+    await insertAuditInTx(client, {
+      tenantId: input.tenantId, actor: input.closedBy, actorKind: "STAFF", actorUserId: input.closedBy,
+      action: "pos.shift.close", target: input.shiftId, targetKind: "POS_SHIFT",
+      source: "POS_SERVICE", eventKey: `pos.shift.close:${input.shiftId}`,
+      meta: {
         expectedCash: expected,
         countedCash: counted,
         variance: Math.round((counted - expected) * 100) / 100,
         cashIn,
         cashOut,
         partialReturnCashOut,
-      })]
-    );
+      },
+    });
 
     await client.query("COMMIT");
     return { status: "CLOSED", shift: mapShift(res.rows[0]), partialReturnCashOut, cashIn, cashOut };
@@ -2386,6 +2390,7 @@ export type PosSaleInput = {
   /** SALE = รับเต็มยอดและส่งของทันที; DEPOSIT = จองของและรับมัดจำงวดแรก */
   mode?: "SALE" | "DEPOSIT";
   lines: PosSaleLine[];
+  openItems?: PosOpenItem[] | null;
   /**
    * Which catalog surface the POS cart came from.
    * Restaurant counter sales use restaurant menu rows without a table check.
@@ -2507,6 +2512,7 @@ async function loadPosReceiptDiscountLines(
       coupon_id: string | null;
       receipt_gross: string;
       extra_total: string;
+      open_total: string;
     }>(
       `SELECT o.total_amount,
               o.discount_amount,
@@ -2519,7 +2525,9 @@ async function loadPosReceiptDiscountLines(
                 SELECT SUM(extra.qty * extra.unit_amount)
                   FROM bms_order_extra_lines extra
                  WHERE extra.tenant_id = o.tenant_id AND extra.order_id = o.id
-              ), 0) AS extra_total
+              ), 0) AS extra_total,
+              COALESCE((SELECT SUM(line.line_amount) FROM bms_order_open_items line
+                         WHERE line.tenant_id=o.tenant_id AND line.order_id=o.id),0) AS open_total
          FROM bms_orders o
         WHERE o.tenant_id = $1 AND o.id = $2`,
       [tenantId, orderId]
@@ -2537,7 +2545,7 @@ async function loadPosReceiptDiscountLines(
   if (row) {
     const productTotalBeforeOrderDiscount = Number(row.total_amount)
       + Number(row.discount_amount)
-      - Number(row.extra_total);
+      - Number(row.extra_total) - Number(row.open_total);
     const pricingDiscount = Math.round(
       Math.max(0, Number(row.receipt_gross) - productTotalBeforeOrderDiscount) * 100
     ) / 100;
@@ -2567,10 +2575,13 @@ async function loadPosReceiptExtraLines(
   orderId: string
 ): Promise<PosReceiptExtraLine[]> {
   const result = await db.query<{ label: string; qty: string; unit_amount: string }>(
-    `SELECT label, qty, unit_amount
-       FROM bms_order_extra_lines
-      WHERE tenant_id = $1 AND order_id = $2
-      ORDER BY id`,
+    `SELECT label, qty, unit_amount FROM (
+       SELECT label, qty, unit_amount, 0 AS source_order, id
+         FROM bms_order_extra_lines WHERE tenant_id = $1 AND order_id = $2
+       UNION ALL
+       SELECT label, qty, unit_amount, 1 AS source_order, id
+         FROM bms_order_open_items WHERE tenant_id = $1 AND order_id = $2
+     ) lines ORDER BY source_order, id`,
     [tenantId, orderId]
   );
   return result.rows.map((row) => {
@@ -3748,6 +3759,28 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
   const { tenantId } = input;
   const isDeposit = input.mode === "DEPOSIT";
   const boardGameBillingGroupId = input.boardGameBillingGroupId?.trim() || null;
+  const parsedOpenItems = parsePosOpenItems(input.openItems);
+  if (!parsedOpenItems.ok) return { status: "PAYMENT_FAILED", reason: parsedOpenItems.reason };
+  const openItems = parsedOpenItems.items;
+  if (openItems.length) {
+    if (isDeposit || boardGameBillingGroupId || input.restaurantCheckId
+      || (input.salesSurface ?? "RETAIL_POS") !== "RETAIL_POS" || input.offlineTenderedAt
+      || input.payments.length !== 1 || input.payments[0].method !== "CASH"
+      || input.couponCode || Number(input.pointsToRedeem ?? 0) > 0
+      || Number(input.manualDiscount ?? 0) > 0 || input.pharmacyApprovedAssessmentId
+      || input.pharmacistCounterAuthorization) {
+      return { status: "PAYMENT_FAILED", reason: "ขายสินค้าชั่วคราวได้เฉพาะขายปลีกเงินสดเต็มจำนวน โดยไม่ใช้มัดจำหรือส่วนลด" };
+    }
+    if (!(await cashierHasPermission(tenantId, input.cashierUserId, "pos.open_item.sell"))) {
+      return { status: "PAYMENT_FAILED", reason: "ไม่มีสิทธิ์ขายสินค้าชั่วคราว" };
+    }
+    const archetype = await query<{ business_archetype: string | null }>(
+      `SELECT business_archetype FROM bms_store_profile WHERE tenant_id=$1`, [tenantId]
+    );
+    if (["restaurant", "board_game_cafe", "pharmacy"].includes(archetype.rows[0]?.business_archetype ?? "")) {
+      return { status: "PAYMENT_FAILED", reason: "ร้านประเภทนี้ต้องขายผ่านรายการที่ตั้งค่าและตรวจสอบแล้ว" };
+    }
+  }
   if (isDeposit && boardGameBillingGroupId) {
     return { status: "DEPOSIT_INVALID", reason: "ค่าเล่นบอร์ดเกมต้องชำระเต็มจำนวน" };
   }
@@ -3852,7 +3885,7 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     };
   }
   const items = canonical.items;
-  if (items.length === 0 && !boardGameBillingGroupId) return { status: "EMPTY" };
+  if (items.length === 0 && !boardGameBillingGroupId && !openItems.length) return { status: "EMPTY" };
 
   // ---- เลขเครื่อง (8.3) ----
   // ตรวจก่อนเรียก createOrder โดยตั้งใจ: ล้มตรงนี้ยังไม่มีสต็อกถูกตัด ไม่มีแต้มถูกหัก
@@ -3994,6 +4027,7 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     customerId: input.customerId ?? null,
     pointsToRedeem: input.pointsToRedeem ?? null,
     extraLines: input.extraLines ?? null,
+    openItems,
     manualDiscount: input.manualDiscount ?? null,
     discountApprovedBy: input.discountApprovedBy ?? null,
     discountReason: input.discountReason ?? null,
@@ -4669,6 +4703,7 @@ async function finalizePosSale(args: {
         ...(input.offlineTenderedAt
           ? { offlineTenderedAt: input.offlineTenderedAt, offlineSynced: true }
           : {}),
+        ...(input.openItems?.length ? { openItemCount: input.openItems.length } : {}),
       })]
     );
 
@@ -5060,6 +5095,9 @@ export async function listRecentPosSales(
                  )
                )
           )
+          OR EXISTS (SELECT 1 FROM bms_order_open_items open_item
+                      WHERE open_item.tenant_id=o.tenant_id AND open_item.order_id=o.id
+                        AND open_item.label ILIKE '%' || $4 || '%')
         )
       ORDER BY (o.pos_device_id = $2) DESC, COALESCE(o.paid_at, o.created_at) DESC, o.id DESC
       LIMIT $3`,
@@ -5143,6 +5181,35 @@ export async function listRecentPosSales(
     linesByOrder.set(line.order_id, existing);
   }
 
+  const openLineRes = await query<{
+    id: string; order_id: string; label: string; qty: number;
+    unit_amount: string; line_amount: string; returned_qty: string;
+  }>(
+    `SELECT oi.id,oi.order_id,oi.label,oi.qty,oi.unit_amount,oi.line_amount,
+            COALESCE((SELECT SUM(ri.qty) FROM bms_pos_return_open_items ri
+                       JOIN bms_pos_returns pr ON pr.tenant_id=ri.tenant_id AND pr.id=ri.pos_return_id
+                      WHERE ri.tenant_id=oi.tenant_id AND ri.order_open_item_id=oi.id
+                        AND pr.order_id=oi.order_id),0) AS returned_qty
+       FROM bms_order_open_items oi
+      WHERE oi.tenant_id=$1 AND oi.order_id=ANY($2::uuid[])
+      ORDER BY oi.order_id,oi.id`,
+    [tenantId, orderIds]
+  );
+  for (const line of openLineRes.rows) {
+    const qty = Number(line.qty);
+    const returned = Number(line.returned_qty);
+    const mapped = {
+      orderItemId: -Number(line.id), sku: "", receiptName: line.label, size: "",
+      packCode: "BASE", baseQty: 1, packPrice: Number(line.unit_amount),
+      basePrice: Number(line.unit_amount), packQty: qty, returnedPackQty: returned,
+      refundablePackQty: Math.max(0, qty - returned), unitName: "ชิ้น",
+      lineTotal: Number(line.line_amount),
+    };
+    const existing = linesByOrder.get(line.order_id) ?? [];
+    existing.push(mapped);
+    linesByOrder.set(line.order_id, existing);
+  }
+
   const extraLinesRes = await query<{
     order_id: string;
     label: string;
@@ -5152,7 +5219,7 @@ export async function listRecentPosSales(
     `SELECT order_id, label, qty, unit_amount
        FROM bms_order_extra_lines
       WHERE tenant_id = $1 AND order_id = ANY($2::uuid[])
-      ORDER BY order_id, id`,
+       ORDER BY order_id, id`,
     [tenantId, orderIds]
   );
   const extraLinesByOrder = new Map<string, PosReceiptExtraLine[]>();
@@ -5306,7 +5373,14 @@ export async function listRecentPosSales(
        JOIN bms_order_items oi
          ON oi.tenant_id = pri.tenant_id AND oi.id = pri.order_item_id
       WHERE pri.tenant_id = $1 AND pr.order_id = ANY($2::uuid[])
-      ORDER BY pr.created_at, pri.id`,
+      UNION ALL
+      SELECT pr.order_id,ri.pos_return_id,-ri.order_open_item_id AS order_item_id,
+             ri.qty AS pack_qty,ri.refund_amount,'' AS product_sku,oi.label AS product_name,'' AS size
+        FROM bms_pos_return_open_items ri
+        JOIN bms_pos_returns pr ON pr.tenant_id=ri.tenant_id AND pr.id=ri.pos_return_id
+        JOIN bms_order_open_items oi ON oi.tenant_id=ri.tenant_id AND oi.id=ri.order_open_item_id
+       WHERE ri.tenant_id=$1 AND pr.order_id=ANY($2::uuid[])
+      ORDER BY order_id, pos_return_id, order_item_id`,
     [tenantId, orderIds]
   );
   const returnItemsByReturn = new Map<string, PosRecentReceipt["returnEvents"][number]["items"]>();
@@ -6019,7 +6093,40 @@ export async function processPosReturn(input: {
     // ถ้าไม่แปลงให้เป็นชนิดเดียวกัน byId.get(978) จะไม่เจอ "978" แล้วการคืนสินค้า
     // แบบระบุรายการจะตอบ ITEM_NOT_FOUND ทุกครั้ง (คืนทั้งบิลไม่โดนเพราะสร้าง
     // requestedMap จาก row.id เอง ชนิดจึงตรงกันโดยบังเอิญ)
-    const orderItems = itemsRes.rows.map((row) => ({ ...row, id: Number(row.id) }));
+    // The order row is already locked for this return. Open sale lines are append-only
+    // under bms_app, so no second row lock is needed (SELECT FOR SHARE requires UPDATE
+    // privilege and would defeat the immutable-table grant).
+    const openRes = await client.query<{
+      id: string; label: string; qty: number; unit_amount: string; line_amount: string;
+      vat_category: string; returned_pack_qty: string; returned_refund_amount: string;
+    }>(
+      `SELECT oi.id, oi.label, oi.qty, oi.unit_amount, oi.line_amount, oi.vat_category,
+              COALESCE((SELECT SUM(ri.qty) FROM bms_pos_return_open_items ri
+                         JOIN bms_pos_returns pr ON pr.tenant_id=ri.tenant_id AND pr.id=ri.pos_return_id
+                        WHERE ri.tenant_id=oi.tenant_id AND ri.order_open_item_id=oi.id
+                          AND pr.order_id=oi.order_id),0) AS returned_pack_qty,
+              COALESCE((SELECT SUM(ri.refund_amount) FROM bms_pos_return_open_items ri
+                         JOIN bms_pos_returns pr ON pr.tenant_id=ri.tenant_id AND pr.id=ri.pos_return_id
+                        WHERE ri.tenant_id=oi.tenant_id AND ri.order_open_item_id=oi.id
+                          AND pr.order_id=oi.order_id),0) AS returned_refund_amount
+         FROM bms_order_open_items oi
+        WHERE oi.tenant_id=$1 AND oi.order_id=$2 ORDER BY oi.id`,
+      [input.tenantId, input.orderId]
+    );
+    const orderItems = [
+      ...itemsRes.rows.map((row) => ({ ...row, id: Number(row.id), isOpen: false })),
+      ...openRes.rows.map((row) => ({
+        id: -Number(row.id), order_id: input.orderId, tenant_id: input.tenantId,
+        location_id: saleLocationId, product_sku: `OPEN:${row.id}`, size: "",
+        qty: Number(row.qty), pack_qty: Number(row.qty), pack_unit_price: null,
+        unit_price: row.unit_amount, line_amount: row.line_amount,
+        receipt_unit_price: row.unit_amount,
+        pricing_snapshot: { source: "SALE", priceTiers: [], promotion: null, modifierUnitPrice: 0 },
+        returned_pack_qty: row.returned_pack_qty, returned_refund_amount: row.returned_refund_amount,
+        stock_consumption_version: 0, restaurant_check_item_id: null,
+        vat_category: row.vat_category, isOpen: true,
+      })),
+    ];
     const byId = new Map(orderItems.map((row) => [row.id, row]));
     const cancellationCauses = new Map<number, RestaurantCancellationCause>();
     if (input.mode === "PARTIAL") for (const [orderItemId, packQty] of requestedMap) {
@@ -6361,6 +6468,16 @@ export async function processPosReturn(input: {
 
     for (const line of calculated) {
       const item = line.item;
+      if (item.isOpen) {
+        await client.query(
+          `INSERT INTO bms_pos_return_open_items
+             (tenant_id,pos_return_id,order_open_item_id,qty,refund_amount)
+           VALUES ($1,$2,$3,$4,$5)`,
+          [input.tenantId, posReturnId, -item.id, line.packQty, line.refundAmount]
+        );
+        returnedItems.push({ orderItemId: item.id, packQty: line.packQty, refundAmount: line.refundAmount });
+        continue;
+      }
       const originalPackQty = item.pack_qty ?? item.qty;
       const baseQtyPerPack = Math.max(1, Math.round(item.qty / Math.max(1, originalPackQty)));
       const baseQtyToReturn = line.packQty * baseQtyPerPack;
@@ -7089,6 +7206,7 @@ type PosParkedCartPayload = {
   pointsToRedeem?: string;
   couponCode?: string;
   extraLines?: unknown;
+  openItems?: unknown;
   pharmacyReview?: {
     assessmentId?: string | null;
     caseCode?: string | null;
@@ -7199,7 +7317,9 @@ export async function parkSale(input: {
 }): Promise<ParkSaleResult> {
   const label = input.label.trim();
   if (!label) return { status: "EMPTY" };
-  if (parkedCartLines(input.cart).length === 0) return { status: "EMPTY" };
+  const parkedOpen = parsePosOpenItems((input.cart as PosParkedCartPayload | null)?.openItems);
+  if (!parkedOpen.ok) return { status: "EMPTY" };
+  if (parkedCartLines(input.cart).length === 0 && parkedOpen.items.length === 0) return { status: "EMPTY" };
 
   const shift = await query<{ id: string; location_id: string }>(
     `SELECT id, location_id FROM bms_pos_shifts
@@ -8229,8 +8349,10 @@ export async function getPosShiftExportData(
     query<any>(
       `SELECT o.id AS order_id, doc.doc_no, o.created_at AS sold_at,
               COALESCE(u.name, u.email) AS cashier, o.status, o.voided_at,
-              (SELECT COUNT(*) FROM bms_order_items oi
-                WHERE oi.tenant_id = o.tenant_id AND oi.order_id = o.id)::int AS item_count,
+              ((SELECT COUNT(*) FROM bms_order_items oi
+                WHERE oi.tenant_id = o.tenant_id AND oi.order_id = o.id)
+                + (SELECT COUNT(*) FROM bms_order_open_items open_item
+                   WHERE open_item.tenant_id=o.tenant_id AND open_item.order_id=o.id))::int AS item_count,
               (o.total_amount + COALESCE(o.discount_amount, 0)) AS gross_total,
               COALESCE(o.discount_amount, 0) AS discount_total,
               COALESCE(o.rounding_amount, 0) AS rounding_amount,

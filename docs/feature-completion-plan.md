@@ -13,7 +13,7 @@ closed.** “Repository progress” describes the current working tree; it is no
 
 | Track | Work | Repository progress | Closure still required |
 | --- | --- | --- | --- |
-| A | Inventory and release evidence | 88 known workflows registered; evidence template/checker added; missing direct test links reduced to 6 | Reconcile every older inventory row and create an exact clean-commit release record |
+| A | Inventory and release evidence | 88 known workflows registered; evidence template/checker added; missing direct test links reduced to 2 | Reconcile every older inventory row and create an exact clean-commit release record |
 | B | Tenant security and RBAC | Permission matrix reads/writes now use tenant RLS context; write, actor audit and confirmation are atomic/explicit | Isolated DB denial, grants and concurrent-edit tests; Administrator UAT |
 | C | Money, stock and order integrity | Existing service and pure/DB contract suites identified; shipment audit moved into its transaction | Restored DB races, replay/rollback, backup restore and shipment-create idempotency policy |
 | D | Retail web cart and pickup | Server-reviewed variant/pack cart and signed checkout are in source; retail pickup is still absent | DB/browser proof, retail pickup state machine and end-to-end customer pilot |
@@ -26,6 +26,18 @@ closed.** “Repository progress” describes the current working tree; it is no
 
 Track details and implementation order follow. Do not close a track from a code status or pure test
 alone; attach the evidence listed in the completion rule below.
+
+### Local recheck on 2026-11-17
+
+The review worktree passed the full Web gate: release registry, regression inventory, TypeScript,
+3,825 database-free tests (10 skipped) and the production build (151 static pages). Mobile
+TypeScript/Jest (478/478) and Desktop Node tests (153/153) passed separately. The first gate
+attempt stopped at build with host `ENOSPC`; the final full gate passed after removing only
+generated worktree files. The original dirty workspace ran the restored-database
+suite: 923 passed, 20 skipped and 8 dedicated-database guard failures. All 8 files passed when
+rerun against their required disposable databases (93 tests). Schema and pickup-mail readiness
+passed on the test clone. This is **not** exact clean-commit or production evidence. See
+[the detailed recheck](architecture/full-feature-recheck-2026-11-17.md).
 
 ### Local verification on 2026-11-16
 
@@ -99,25 +111,28 @@ The draft release manifest currently lists 88 **known** code capabilities, not e
 The current 88 known entries comprise 24 `AVAILABLE`, 39 `CONDITIONAL`, 17 `PILOT`,
 6 `BETA`, 1 `WIP`, and 1 `MOCK`. A `CONDITIONAL` entry may simply require ordinary shop
 configuration or permission; it is not automatically an unfinished implementation.
-It has 6 capability IDs without a test that directly exercises their workflow. These are test
+It has 2 capability IDs without a test that directly exercises their workflow. These are test
 coverage gaps, not proof that the workflows are broken. Add a link only after the stated boundary
 is exercised; the target run result must be recorded separately.
 
 | Capability | Minimum useful proof | Additional closure |
 | --- | --- | --- |
-| `pos.expenses` | Shift cash-out, second PIN, idempotency and drawer reconciliation | Real register close-out |
-| `reports.email` | Confirmed send, bounded file access, retry and provider failure | Verified sender and delivered attachment |
-| `restaurant.waitlist` | Queue/book/seat transitions, same-transaction check open and capacity race | Branch seating pilot |
-| `settings.byok` | Secret storage/redaction, provider switch and tool-permission invariance | Owner credential/provider test |
 | `settings.marketplaces` | Signature, tenant mapping, duplicate webhook and failure replay | Official Shopee/Lazada contract verification |
 | `shipping.carrier-integrations` | Provider booking outbox, retry and reconciliation | Signed Flash/Kerry contract and sandbox |
+
+`pos.expenses` now links the service second-approver boundary and the drawer-ledger DB flow;
+`restaurant.waitlist` links its seat/check transaction DB flow; `settings.byok` links the
+AI-key write/audit rollback flow. `reports.email` links a boundary test for recipient validation,
+tenant-owned file access, attachment content and provider failure. It still lacks a durable
+retry/reconciliation policy. These links do not prove the real register, branch seating or provider
+credential pilot. Their remaining acceptance work stays in the detailed packages below.
 
 `payments.review` now links the REST/GraphQL human-confirmation boundary contract, and `tax.etax`
 links the cron auth/history/partial-failure contract. Neither link proves payment rollback, e-Tax
 queue eligibility or live provider submission; those checks remain open.
 
 The remaining older inventory rows also need stable IDs or explicit planned-work entries before
-changing `baseline-in-progress` to `complete`. The 6 rows above are only the current registry's
+changing `baseline-in-progress` to `complete`. The 2 rows above are only the current registry's
 test-link debt.
 
 ## Wave 1: core business correctness
@@ -161,11 +176,12 @@ simulates `createOrderInTx()` and rolls back; a signed 10-minute review token bi
 and the confirmation rechecks publication, price and stock before one commit. Repeated confirms
 reuse the order idempotency key and return its signed checkout link. Pack size and price are
 revalidated from `bms_product_packs`; the browser sends only the pack code and count. A complete
-customer pilot is still missing; the new DB contract for rollback, stale price and replay has not
-run on the isolated database. Slip submission stays `PENDING` until staff confirms payment.
+customer pilot is still missing. The DB contract for rollback, stale price and replay passed on the
+isolated restored database in the 17 November dirty-workspace recheck; repeat it on the exact clean
+release commit. Slip submission stays `PENDING` until staff confirms payment.
 Public catalog stock and product-detail stock for retail now use the default order branch; a
-restaurant or a shop with no active branch cannot offer the retail cart. The updated DB and browser
-checks remain open.
+restaurant or a shop with no active branch cannot offer the retail cart. Authenticated browser
+checks and a release-commit DB rerun remain open.
 
 Retail pickup needs its own fulfillment contract: selected branch, requested time, recipient,
 preparation, ready and one-time handover. Define when reserved stock becomes consumed, how an
@@ -177,8 +193,9 @@ uncollected order expires, and how refund/tax rules apply. The current `orders.t
 Base/pack branch overrides already win over shared catalog prices, and sale snapshots protect
 historical returns. `10.116` now adds future branch price windows with confirmed cancellation;
 expiry restores the current override or shared catalog. Promotion windows remain a separate
-mechanism. The new path still needs migration application, isolated DB and desktop/mobile browser
-proof. Then prove the chosen price and discounts to the satang across POS, OMS, checkout and
+mechanism. Schema readiness and isolated DB contracts for `10.116` passed on the dirty local test
+clone; target migration, release-commit DB rerun and desktop/mobile browser proof remain open. Then
+prove the chosen price and discounts to the satang across POS, OMS, checkout and
 customer tools. Do not treat source code or a passing pure suite as a tenant rollout.
 The price resolver now keeps legacy overrides readable when `10.116` has not yet been applied.
 
@@ -264,7 +281,7 @@ counter, `P3` depends on provider authority, `P4` is regulated, `P5` is pilot qu
 
 - Reconcile every row in `feature-inventory.md` and newer domain docs with a stable registry ID or
   an explicit planned-work entry; correct dated contradictions such as retail cart, scheduled branch
-  prices, pickup queue and the Desktop station-printer pilot. Add direct workflow tests for the six
+  prices, pickup queue and the Desktop station-printer pilot. Add direct workflow tests for the two
   unmapped IDs listed above, without claiming that a link means the suite passed.
 - Generate a manifest from an exact clean commit. Store its artifact digest, applied target
   migrations, effective flags/entitlements and tenant scope alongside Web, DB, browser, native,
@@ -491,10 +508,14 @@ counter, `P3` depends on provider authority, `P4` is regulated, `P5` is pilot qu
 
 **[13] Add Thai-capable generated-report PDF output.**
 
-- Embed a licensed Thai TTF in the shared document generator, keep XLSX/CSV content parity, and
-  test mixed Thai/English labels, long values, page breaks and downloadable tenant-private files.
+- The general PDF builder now embeds the bundled OFL Sarabun font, handles Thai Sara Am with
+  NFKD-equivalent copied text, includes rows beyond the former silent 200-row cutoff, and rejects
+  more than 10,000 rows with an explicit XLSX/CSV alternative. The targeted contract passed and a
+  four-page mixed Thai/English sample was rendered and inspected. Keep XLSX/CSV content parity and
+  test downloadable tenant-private files on the exact release commit.
 - Render and visually inspect representative Sales, Inventory, Profit and Customer PDFs. Exit when
   Thai glyphs print and copy correctly on the actual report formats without missing columns.
+  Statutory VAT/stock-ledger PDF needs its own preamble, grouped-heading and total layout first.
 
 ### P5 — native clients, local deployment and domain pilots
 
@@ -601,7 +622,7 @@ counter, `P3` depends on provider authority, `P4` is regulated, `P5` is pilot qu
 
 ### Suggested first release slices
 
-1. **Evidence baseline:** [32] registry reconciliation and the six missing workflow test links,
+1. **Evidence baseline:** [32] registry reconciliation and the two missing workflow test links,
    then [33] isolated DB transaction proof and [36] policy decisions. This identifies which code
    can safely advance without changing shop behavior.
 2. **Retail pilot candidate:** [16] cart proof, [17] branch prices and [18] lot transfers, each

@@ -7,6 +7,7 @@ import {
 } from "@/lib/bms/bankReconciliation";
 import { requireBankReconciliationEnabled } from "@/lib/bms/bankReconciliationFeature";
 import { audit } from "@/lib/bms/audit";
+import { recordSecurityEvent } from "@/lib/bms/securityEvents";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -92,6 +93,11 @@ async function handleGET(request: NextRequest) {
   await audit(auth.ctx, "bank_reconciliation.export", `${accountId}:${month}`, {
     format,
     rowCount: rows.length,
+  });
+  await recordSecurityEvent({
+    tenantId: auth.tenantId, actorUserId: String(auth.adminId),
+    event: "access.sensitive_read", outcome: "SUCCESS", source: "BANK_RECONCILIATION_EXPORT",
+    meta: { resourceKind: "bank_reconciliation", resourceId: `${accountId}:${month}` },
   });
   const filename = `bank-reconciliation-${month.slice(0, 7)}.${ext}`;
   return new NextResponse(new Uint8Array(body), {

@@ -202,11 +202,18 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
       return;
     }
     if (action === 'EXCHANGE') {
+      if (selectedLines.some(selected => selected.line.orderItemId < 0)) {
+        Alert.alert(
+          posText("เปลี่ยนสินค้าไม่ได้"),
+          posText("สินค้าชั่วคราวทำบิลเปลี่ยนต่ออัตโนมัติไม่ได้ — คืนรายการก่อน แล้วเปิดบิลขายใหม่"),
+        );
+        return;
+      }
       if (
-        cart.lines.length > 0 &&
+        (cart.lines.length > 0 || cart.openItems.length > 0 || cart.extraLines.length > 0) &&
         !(await confirmAction(
           posText("แทนที่ตะกร้าปัจจุบัน"),
-          posText("ตะกร้ามี {v0} รายการและจะถูกแทนที่ด้วยบิลเปลี่ยนสินค้า", { v0: cart.lines.length }),
+          posText("ตะกร้ามี {v0} รายการและจะถูกแทนที่ด้วยบิลเปลี่ยนสินค้า", { v0: cart.lines.length + cart.openItems.length + cart.extraLines.length }),
         ))
       ) {
         return;

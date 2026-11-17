@@ -48,6 +48,8 @@ async function handlePOST(req: NextRequest) {
     slipUrl: typeof body.slipUrl === "string" ? body.slipUrl : null,
     slipRef: typeof body.slipRef === "string" ? body.slipRef : null,
     note: typeof body.note === "string" ? body.note : null,
+    actor: String(auth.admin.id),
+    actorUserId: String(auth.adminId),
   });
 
   const httpStatus =

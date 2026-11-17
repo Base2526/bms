@@ -1,7 +1,7 @@
 import crypto, { randomUUID }  from "crypto";
 import { GraphQLError } from "graphql/error";
 import bcrypt from 'bcryptjs';
-import { query, runInTransaction } from "@/lib/db";
+import { getClient, query, runInTransaction } from "@/lib/db";
 import { publishRealtimeHint } from "@/lib/pubsub";
 import * as jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
@@ -104,6 +104,7 @@ import { enforceUserQuota } from "@/lib/bms/plans";
 import { reassignStaffConversations } from "@/lib/bms/inbox";
 import { requirePermission } from "@/lib/bms/permissions";
 import { audit } from "@/lib/bms/audit";
+import { insertSecurityEventInTx, recordSecurityEvent, recordSecurityEventBestEffort } from "@/lib/bms/securityEvents";
 import { assertSocialAuthAvailable } from "@/lib/bms/socialAuthSettings";
 import {
   assertNoActiveStaffAssignments,
@@ -246,6 +247,14 @@ function normalizeStr(input: string): string {
 async function passwordMatches(password: string, user: any): Promise<boolean> {
   const valid = await bcrypt.compare(password, user?.password_hash || DUMMY_PASSWORD_HASH);
   return !!user?.password_hash && valid;
+}
+
+async function recordDeniedLogin(source: string, user?: any, reasonCode = "BAD_CREDENTIALS") {
+  await recordSecurityEventBestEffort({
+    tenantId: user?.tenant_id ?? null,
+    actorUserId: user?.id ? String(user.id) : null,
+    event: "auth.login_denied", outcome: "DENIED", source, reasonCode,
+  });
 }
 
 async function findAndLinkSocialUser(identity: VerifiedSocialIdentity, email: string) {
@@ -2985,7 +2994,7 @@ const rawResolvers = {
       await enforceAuthRateLimit(ctx, "login", identifier, 10, 60, 15 * 60_000);
       const { rows } = await query(
         `
-        SELECT id, name, username, email, role, avatar, phone, password_hash, is_email_verified
+        SELECT id, tenant_id, name, username, email, role, avatar, phone, password_hash, is_email_verified
         FROM users
         WHERE ${email ? "lower(btrim(email))" : "lower(btrim(username))"} = $1
         LIMIT 1
@@ -2995,10 +3004,12 @@ const rawResolvers = {
 
       const user = rows[0];
       if (!(await passwordMatches(password, user))) {
+        await recordDeniedLogin("LEGACY_SESSION", user);
         // ป้องกันการเดารหัส/บัญชี โดยไม่บอกว่า email หรือ password ผิด
         return { ok: false, message: "Invalid credentials" };
       }
       if (user.is_email_verified === false) {
+        await recordDeniedLogin("LEGACY_SESSION", user, "EMAIL_UNVERIFIED");
         return { ok: false, message: "Please verify your email before signing in" };
       }
 
@@ -3024,14 +3035,27 @@ const rawResolvers = {
       // (ทางเลือก) ยกเลิก session เดิมของผู้ใช้ (ให้มี 1 session ต่อคน)
       // await query(`DELETE FROM sessions WHERE user_id=$1`, [user.id]);
 
-      // แทรก session ใหม่
-      await query(
-        `
-        INSERT INTO sessions (token, user_id, user_agent, ip, expired_at)
-        VALUES ($1, $2, $3, $4, NOW() + ($5 || ' days')::interval)
-        `,
-        [token, user.id, ua, ip, String(ttlDays)]
-      );
+      // Session and its login evidence commit together.
+      const sessionClient = await getClient();
+      try {
+        await sessionClient.query("BEGIN");
+        await sessionClient.query(
+          `INSERT INTO sessions (token, user_id, user_agent, ip, expired_at)
+           VALUES ($1, $2, $3, $4, NOW() + ($5 || ' days')::interval)`,
+          [token, user.id, ua, ip, String(ttlDays)]
+        );
+        await insertSecurityEventInTx(sessionClient, {
+          tenantId: user.tenant_id ?? null, actorUserId: String(user.id),
+          event: "auth.login", outcome: "SUCCESS", source: "LEGACY_SESSION",
+          sessionId: token,
+        });
+        await sessionClient.query("COMMIT");
+      } catch (error) {
+        await sessionClient.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      } finally {
+        sessionClient.release();
+      }
 
       // (ทางเลือกแนะนำ) ตั้ง httpOnly cookie ที่ชั้น Route/Handler
       // ctx.res?.setHeader("Set-Cookie", `token=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${ttlDays*86400}`);
@@ -3061,8 +3085,14 @@ const rawResolvers = {
       const user = rows[0];
 
       const valid = await passwordMatches(password, user);
-      if (!valid) throw new Error("Invalid credentials");
-      if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
+      if (!valid) {
+        await recordDeniedLogin("USER_PASSWORD", user);
+        throw new Error("Invalid credentials");
+      }
+      if (user.is_email_verified === false) {
+        await recordDeniedLogin("USER_PASSWORD", user, "EMAIL_UNVERIFIED");
+        throw new Error("Please verify your email before signing in");
+      }
 
       const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role },
@@ -3070,6 +3100,10 @@ const rawResolvers = {
         { expiresIn: "7d" }
       );
 
+      await recordSecurityEvent({
+        tenantId: user.tenant_id ?? null, actorUserId: String(user.id),
+        event: "auth.login", outcome: "SUCCESS", source: "USER_PASSWORD",
+      });
       cookies().set(USER_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
       return {
         ok: true,
@@ -3093,9 +3127,11 @@ const rawResolvers = {
       const socialData = await verifySocialIdentity(normalizedProvider, accessToken);
 
       if (!socialData) {
+        await recordDeniedLogin("USER_SOCIAL", null, "TOKEN_INVALID");
         throw new GraphQLError("Social token invalid");
       }
       if (socialData.email_verified !== true) {
+        await recordDeniedLogin("USER_SOCIAL", null, "EMAIL_UNVERIFIED");
         throw new GraphQLError("Social account email is not verified");
       }
 
@@ -3132,6 +3168,10 @@ const rawResolvers = {
         { expiresIn: "7d" }
       );
 
+      await recordSecurityEvent({
+        tenantId: user.tenant_id ?? null, actorUserId: String(user.id),
+        event: "auth.login", outcome: "SUCCESS", source: "USER_SOCIAL",
+      });
       cookies().set(USER_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
 
       return {
@@ -3161,21 +3201,30 @@ const rawResolvers = {
       const user = rows[0];
 
       if (!(await passwordMatches(password, user))) {
+        await recordDeniedLogin("ADMIN_PASSWORD", user);
         throw new Error("Invalid credentials");
       }
       // บัญชีเฉพาะหน้าร้าน (7.92): ยืนยันตัวตนด้วย PIN ที่เครื่องขายเท่านั้น
       // ปฏิเสธที่นี่ ไม่ใช่แค่ไม่ให้สิทธิ์ — แคชเชียร์ที่รู้รหัสผ่านตัวเองต้องเข้า
       // หลังบ้านไม่ได้เลย ไม่ใช่เข้าได้แต่เห็นหน้าว่าง
       if (user.pos_only === true) {
+        await recordDeniedLogin("ADMIN_PASSWORD", user, "POS_ONLY");
         throw new Error("บัญชีนี้ใช้ได้เฉพาะที่เครื่องขายหน้าร้าน (เข้าด้วย PIN ที่เครื่อง)");
       }
       if (!user.is_platform_admin && (!user.tenant_id || String(user.role).toLowerCase() === "subscriber")) {
+        await recordDeniedLogin("ADMIN_PASSWORD", user, "ACCOUNT_INELIGIBLE");
         throw new Error("Invalid credentials");
       }
-      if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
-      if (user.tenant_id && user.tenant_active === false) throw new Error("Shop is not active");
+      if (user.is_email_verified === false) {
+        await recordDeniedLogin("ADMIN_PASSWORD", user, "EMAIL_UNVERIFIED");
+        throw new Error("Please verify your email before signing in");
+      }
+      if (user.tenant_id && user.tenant_active === false) {
+        await recordDeniedLogin("ADMIN_PASSWORD", user, "TENANT_INACTIVE");
+        throw new Error("Shop is not active");
+      }
 
-      const token = await issueAdminSession(user);
+      const token = await issueAdminSession(user, "ADMIN_PASSWORD");
 
       // best-effort — พลาดตรงนี้ต้องไม่ทำให้ login ล้มเหลว (แค่แสดง last login ไม่ได้)
       query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]).catch((err) => {
@@ -3204,6 +3253,7 @@ const rawResolvers = {
 
       const socialData = await verifySocialIdentity(normalizedProvider, accessToken);
       if (!socialData?.email_verified) {
+        await recordDeniedLogin("ADMIN_SOCIAL", null, "TOKEN_INVALID");
         throw new GraphQLError("Social token invalid");
       }
       const emailResult = validateEmail(socialData.email);
@@ -3218,15 +3268,23 @@ const rawResolvers = {
         throw new Error("Invalid credentials");
       }
       if (user.pos_only === true) {
+        await recordDeniedLogin("ADMIN_SOCIAL", user, "POS_ONLY");
         throw new Error("บัญชีนี้ใช้ได้เฉพาะที่เครื่องขายหน้าร้าน (เข้าด้วย PIN ที่เครื่อง)");
       }
       if (!user.is_platform_admin && (!user.tenant_id || String(user.role).toLowerCase() === "subscriber")) {
+        await recordDeniedLogin("ADMIN_SOCIAL", user, "ACCOUNT_INELIGIBLE");
         throw new Error("Invalid credentials");
       }
-      if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
-      if (user.tenant_id && user.tenant_active === false) throw new Error("Shop is not active");
+      if (user.is_email_verified === false) {
+        await recordDeniedLogin("ADMIN_SOCIAL", user, "EMAIL_UNVERIFIED");
+        throw new Error("Please verify your email before signing in");
+      }
+      if (user.tenant_id && user.tenant_active === false) {
+        await recordDeniedLogin("ADMIN_SOCIAL", user, "TENANT_INACTIVE");
+        throw new Error("Shop is not active");
+      }
 
-      const token = await issueAdminSession(user);
+      const token = await issueAdminSession(user, "ADMIN_SOCIAL");
 
       query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]).catch((err) => {
         console.error("[loginAdminWithSocial] update last_login_at failed:", sanitizeLogValue(err));
@@ -3248,13 +3306,23 @@ const rawResolvers = {
         [emailNorm]
       );
       const user = rows[0];
-      if (!(await passwordMatches(password, user))) throw new Error("Invalid credentials");
-      if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
+      if (!(await passwordMatches(password, user))) {
+        await recordDeniedLogin("MOBILE_PASSWORD", user);
+        throw new Error("Invalid credentials");
+      }
+      if (user.is_email_verified === false) {
+        await recordDeniedLogin("MOBILE_PASSWORD", user, "EMAIL_UNVERIFIED");
+        throw new Error("Please verify your email before signing in");
+      }
       const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role },
         jwtSecret(),
         { expiresIn: "7d" }
       );
+      await recordSecurityEvent({
+        tenantId: user.tenant_id ?? null, actorUserId: String(user.id),
+        event: "auth.login", outcome: "SUCCESS", source: "MOBILE_PASSWORD",
+      });
       return { ok: true, message: "Login success", token, user };
     },
     registerUser: async(_: any, { input }: any, ctx: any) => {
@@ -3456,22 +3524,37 @@ const rawResolvers = {
       const passwordResult = validateNewPassword(newPassword);
       if (!passwordResult.ok) throw new Error("Invalid new password");
       const password_hash = await bcrypt.hash(passwordResult.value, 10);
-      const claimed = await query(
-        `WITH claimed AS (
-           UPDATE password_reset_tokens
-              SET used = true
-            WHERE token_hash = $1 AND used = false AND expires_at > now()
-            RETURNING user_id
-         )
-         UPDATE users u
-            SET password_hash = $2,
-                admin_session_version = admin_session_version + 1
-           FROM claimed c
-          WHERE u.id = c.user_id
-         RETURNING u.id`,
-        [sha256Hex(token), password_hash]
-      );
-      if (!claimed.rowCount) throw new Error("Invalid or expired token");
+      const client = await getClient();
+      try {
+        await client.query("BEGIN");
+        const claimed = await client.query<{ id: string; tenant_id: string | null }>(
+          `WITH claimed AS (
+             UPDATE password_reset_tokens
+                SET used = true
+              WHERE token_hash = $1 AND used = false AND expires_at > now()
+              RETURNING user_id
+           )
+           UPDATE users u
+              SET password_hash = $2,
+                  admin_session_version = admin_session_version + 1
+             FROM claimed c
+            WHERE u.id = c.user_id
+           RETURNING u.id, u.tenant_id`,
+          [sha256Hex(token), password_hash]
+        );
+        if (!claimed.rowCount) throw new Error("Invalid or expired token");
+        const user = claimed.rows[0];
+        await insertSecurityEventInTx(client, {
+          tenantId: user.tenant_id, actorUserId: user.id,
+          event: "auth.password_reset", outcome: "SUCCESS", source: "RESET_TOKEN",
+        });
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
 
       // (ออปชัน) revoke sessions อื่นๆ ของ user นี้
 

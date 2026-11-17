@@ -1697,6 +1697,7 @@ export const typeDefs = /* GraphQL */ `
     bmsPermissionCatalog: [String!]!      # รายการสิทธิ์ทั้งหมด
     bmsRolePermissions: [BmsRolePermissions!]!
     bmsAuditLog(limit: Int = 100): [BmsAuditEntry!]!
+    bmsAuditTimeline(filter: BmsAuditTimelineFilter, platformGlobal: Boolean = false): BmsAuditTimelinePage!
     bmsRevisionHistory(kind: BmsRevisionKind!, entityId: ID!, limit: Int = 50): [BmsRevisionEntry!]!
     bmsRevisionDetail(kind: BmsRevisionKind!, revisionId: ID!): BmsRevisionEntry
     bmsRevisionCompare(kind: BmsRevisionKind!, fromRevisionId: ID!, toRevisionId: ID!): BmsRevisionComparison
@@ -3435,6 +3436,32 @@ export const typeDefs = /* GraphQL */ `
     target: String
     meta: JSON
     created_at: String!
+  }
+
+  input BmsAuditTimelineFilter {
+    actorUserId: ID
+    q: String
+    from: String
+    to: String
+    cursor: String
+    limit: Int
+  }
+
+  type BmsAuditTimelineEvent {
+    id: ID!
+    source: String!
+    actor: String
+    actorUserId: ID
+    action: String!
+    target: String
+    meta: JSON
+    outcome: String
+    created_at: String!
+  }
+
+  type BmsAuditTimelinePage {
+    nodes: [BmsAuditTimelineEvent!]!
+    nextCursor: String
   }
 
   enum BmsRevisionKind {

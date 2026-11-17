@@ -7,6 +7,7 @@ import { getClient, query } from "@/lib/db";
 import { recordMovement } from "./movements";
 import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 import { beginTenantTx } from "./tenant";
+import { insertAuditInTx } from "./audit";
 import { assertNoQualityHold, usableStockSql } from "./lotQuality";
 import { resolveDefaultLocationIdInTx } from "./locations";
 import { findDefaultLocationId, resolveDefaultLocationId } from "./locations";
@@ -36,6 +37,11 @@ import {
   resolveStoredVariantCodeInTx,
   type ProductSalesSurface,
 } from "./productConfiguration";
+
+function auditUserId(value: string | number | null | undefined): string | null {
+  const id = value == null ? "" : String(value);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ? id : null;
+}
 
 export type ProductRowFull = {
   tenant_id?: string;
@@ -1870,6 +1876,14 @@ export async function upsertProduct(
       confirmed: input.confirm_barcode_master === true,
     });
 
+    if (!transaction && !options.importMode) {
+      await insertAuditInTx(client, {
+        tenantId, actor: editorId == null ? "system" : String(editorId),
+        actorKind: editorId == null ? "SYSTEM" : "STAFF", actorUserId: auditUserId(editorId),
+        action: "product.upsert", target: sku, targetKind: "PRODUCT", source: "PRODUCT_SERVICE",
+        meta: { fields: providedFields },
+      });
+    }
     if (!transaction) await client.query("COMMIT");
     return res.rows[0];
   } catch (error) {
@@ -1895,6 +1909,14 @@ export async function setProductActive(
       `UPDATE bms_products SET active = $3, updated_at = now() WHERE tenant_id = $1 AND sku = $2`,
       [tenantId, sku, active]
     );
+    if (res.rowCount) {
+      await insertAuditInTx(client, {
+        tenantId, actor: editorId == null ? "system" : String(editorId),
+        actorKind: editorId == null ? "SYSTEM" : "STAFF", actorUserId: auditUserId(editorId),
+        action: "product.active", target: sku, targetKind: "PRODUCT", source: "PRODUCT_SERVICE",
+        meta: { active },
+      });
+    }
     await client.query("COMMIT");
     return (res.rowCount ?? 0) > 0;
   } catch (err) {
@@ -1931,6 +1953,12 @@ export async function setReorderPoint(
                  0::integer AS in_transit_qty, 0::integer AS transfer_lost_qty, reorder_point`,
       [tenantId, sku, size.trim().toUpperCase(), rp, locationId]
     );
+    await insertAuditInTx(client, {
+      tenantId, actor: editorId == null ? "system" : String(editorId),
+      actorKind: editorId == null ? "SYSTEM" : "STAFF", actorUserId: auditUserId(editorId),
+      action: "inventory.reorder_point.set", target: sku, targetKind: "INVENTORY",
+      source: "PRODUCT_SERVICE", meta: { locationId, size: size.trim().toUpperCase(), reorderPoint: rp },
+    });
     await client.query("COMMIT");
     return res.rows[0];
   } catch (err) {
@@ -2070,6 +2098,13 @@ export async function adjustStock(
       tenantId, locationId, sku, size: sizeUp,
       type: delta > 0 ? "STOCK_IN" : "STOCK_OUT",
       qty: Math.abs(delta), note: note ?? null, actor: actor ?? "admin",
+    });
+
+    await insertAuditInTx(client, {
+      tenantId, actor: actor ?? (editorId == null ? "system" : String(editorId)),
+      actorKind: editorId == null ? "SYSTEM" : "STAFF", actorUserId: auditUserId(editorId),
+      action: "stock.adjust", target: sku, targetKind: "INVENTORY", source: "PRODUCT_SERVICE",
+      meta: { locationId, size: sizeUp, delta },
     });
 
     await client.query("COMMIT");

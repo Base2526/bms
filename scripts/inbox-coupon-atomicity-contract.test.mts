@@ -24,6 +24,7 @@ function harness(failAt?: "wallet" | "audit") {
   const coupons = loadWithStubs("apps/web/lib/bms/coupons.ts", {
     crypto: {}, "@/lib/db": { getClient: async () => client },
     "./tenant": { beginTenantTx: async (_client: unknown, tenantId: string) => { events.push(`begin:${tenantId}`); } },
+    "./audit": { insertAuditInTx: async (tx: typeof client) => tx.query("INSERT INTO bms_audit_log", []) },
     "./customers": {},
   });
   return { coupons, events };

@@ -21,7 +21,7 @@ function harness(responses: any[], options: { offlineEligible?: boolean; mode?: 
   const cart = {
     lines: [{ sku: "FAKE-SKU", size: "S", packCode: "BASE", qty: 1, baseQty: 1, unitName: "piece", modifierCodes: [], serials: [] }],
     member: { id: "FAKE-member" }, coupon: { code: "FAKE-coupon" }, pointsUsed: 100,
-    manualDiscount: null, extraLines: [], pharmacyReview: null,
+    manualDiscount: null, extraLines: [], openItems: [], pharmacyReview: null,
     refreshPricing: async () => { pricingChecks++; return { error: null, changed: false }; },
     clear: () => { cartClears++; },
   };
@@ -29,6 +29,7 @@ function harness(responses: any[], options: { offlineEligible?: boolean; mode?: 
     saleAttemptRef: attempt, idempotencyRef: key, submittedRef: { current: false },
     pickupQueueEnabled: false,
     canConfirmPayment: true, restaurantPaymentsValid: true, restaurantReady: true, boardGameReady: true,
+    openSaleInvalid: false,
     session: { credentials: { cashierUserId: "FAKE-cashier", pin: "1234" }, cashier: { id: "FAKE-cashier" } },
     setSubmitting: () => {}, setConfirmOpen: () => {}, setSaleRetryMessage: (value: string) => { message = value; },
     serverHealth: { status: "online", checkNow: async () => true, markOffline: () => { offlineMarks++; } },

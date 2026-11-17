@@ -154,9 +154,11 @@ Generated report exports (`lib/bms/reportEngine.ts`, `lib/bms/documentGenerator.
 shape: date-range validation, report assembly, optional AI executive summary, file persistence, DB row,
 and audit all belong in `generateReport()`, while API layers stay thin. Downloaded files must go through
 the tenant-gated `/api/bms/reports/download/[id]` route, never the bare `/api/files/[id]` path, because
-generated reports may contain revenue/profit/customer data. Current PDF output deliberately uses English
-labels only: `pdfkit`'s built-in fonts do not render Thai glyphs correctly until a Thai-capable TTF is
-embedded, so do not "translate" PDF headings into Thai without adding font embedding in the generator.
+generated reports may contain revenue/profit/customer data. General PDF output embeds the bundled
+OFL Sarabun font for Thai values, but the report builders still supply English labels and have no
+viewer-language parameter. Statutory VAT/stock-ledger reports remain XLSX/CSV-only until their
+preamble, grouped headings and totals have a complete PDF layout. PDF rejects more than 10,000
+rows instead of silently dropping rows.
 Report field completeness is a two-step contract, not one: a summary query (e.g. `getSalesSummary()`,
 `listLowStock()` in `lib/bms/reports.ts`/`products.ts`) can return a field that never reaches any
 output, because each `build*ReportDoc()` function in `documentGenerator.ts` explicitly lists which
@@ -242,6 +244,13 @@ approved text. Approval remains per tenant, not a platform-wide publication deci
 
 ## Authentication identity and registration
 
+- Migration `10.122` adds an append-only security-event stream. Successful login and password
+  reset must record evidence before returning success; the legacy session insert and reset update
+  commit with that evidence. Failed anonymous attempts and logout are best-effort so audit storage
+  cannot disclose account existence or prevent sign-out. Never store a raw session token in an
+  event: hash its opaque identifier. Platform drill-down and test-shop deletion use global security
+  events; deletion evidence commits in the deletion transaction. See
+  [audit traceability](architecture/audit-traceability.md) for coverage and rollout.
 - A verified `/shop-signup` creates the new tenant's first user as an active tenant
   `Administrator`, for both email and social signup. A missing Administrator role aborts
   provisioning. Never use the Manager permissions as a substitute for shop ownership.
@@ -409,6 +418,15 @@ obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or s
   `carrier-tracking-sync`. It is ready but unscheduled; recommended cadence is every 15 minutes.
 
 ## POS and tax
+
+- Open-item retail sales (`10.129`) use `bms_order_open_items`, not a fake SKU or
+  `bms_order_extra_lines`. Require cash-only settlement, `pos.open_item.sell`, cashier PIN,
+  and the existing POS idempotency key. The immutable sale label/qty/price/VAT category
+  enter receipts, tax and sale evidence. Returns write `bms_pos_return_open_items` in the
+  same transaction as the refund and never move stock. Missing cost is explicit. No
+  restaurant/board-game/pharmacy, deposit, coupon, points redemption, manual discount or
+  emergency-offline path may accept an open item. `10.130` removes app-role UPDATE/DELETE
+  on sale and return open-item rows; corrections append a return/void instead.
 
 - Back-office payment confirmation needs `payment.confirm` and an explicit `confirmed: true` at
   GraphQL or REST after the human sees the payment identity, amount and method. The API refuses an
@@ -2818,9 +2836,9 @@ converted, on purpose). Separately, `components/AppLayout.tsx` has **zero import
 repo** — it is dead code carrying its own untranslated PDPA bar and app-download section; the live
 footer/consent bar is `components/footer/AppFooter.tsx`, which is already bilingual via a page-local
 `COPY.th/en`. Delete `AppLayout.tsx` rather than translating it. Generated report files
-(`lib/bms/documentGenerator.ts`) have no language parameter and are English-label-only regardless of
-the viewer's language (deliberate for PDF, due to `pdfkit`'s font gap; not deliberate for XLSX/CSV,
-just not done).
+(`lib/bms/documentGenerator.ts`) have no language parameter and retain English labels regardless
+of the viewer's language; PDF now embeds Sarabun for Thai data values. Translating report labels
+still requires bilingual report builders across PDF, XLSX and CSV.
 
 If you're asked to "make X bilingual," check which of the mechanisms above (if any) the file already
 uses before adding translated strings — most _admin_ files use none, and adding real 2-language

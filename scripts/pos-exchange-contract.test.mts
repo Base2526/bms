@@ -167,7 +167,7 @@ test("exchange action cannot overwrite a pending sale or start without a selecte
   );
   assert.match(
     source,
-    /posText\("ตะกร้าขายปัจจุบันมี \{v0\} รายการและจะถูกแทนที่[^"\n]+", \{ v0: cart\.length \}\)/
+    /posText\("ตะกร้าขายปัจจุบันมี \{v0\} รายการและจะถูกแทนที่[^"\n]+", \{ v0: cart\.length \+ openItems\.length \+ extraLines\.length \}\)/
   );
 });
 

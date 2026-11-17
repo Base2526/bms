@@ -1,5 +1,16 @@
 # BMS feature log
 
+## Release recheck and Thai report PDF (no migration, 2026-11-17)
+
+- The release registry still covers 88 known code capabilities rather than every BMS workflow.
+  Direct workflow test-link debt fell from 6 to 2; marketplace settings and carrier integrations
+  remain unlinked until provider contracts can be verified. The local evidence and remaining gates
+  are recorded in [the full-feature recheck](architecture/full-feature-recheck-2026-11-17.md).
+- General generated-report PDFs now embed the existing OFL Sarabun font, preserve Thai text through
+  PDFKit's Sara Am shaping with NFKD-equivalent extraction, and include rows beyond the old silent
+  200-row cutoff. Reports over 10,000 rows fail explicitly with an XLSX/CSV alternative. VAT and
+  stock-ledger PDFs remain unavailable until their statutory table layout is complete.
+
 ## Operational boundaries and log triage (no migration, 2026-11-16)
 
 - GraphQL client/auth rejection codes are recorded as warnings in both resolver and Apollo log

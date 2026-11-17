@@ -18,6 +18,8 @@ const candidates = ["scripts", "apps", "packages"].flatMap(walk).filter(file =>
   || file === "scripts/ai-eval/run.mjs"
 ).sort();
 const manualSpecial = new Set([
+  "scripts/audit-actor-flow-perf-smoke.mjs",
+  "scripts/audit-timeline-pglite-smoke.mjs",
   "scripts/retail-local-setup-diagnostics.test.ps1",
   "scripts/tax-invoice-pdf-smoke.mts",
   "scripts/realtime-live-smoke.mts",

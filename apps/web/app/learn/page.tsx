@@ -19,6 +19,7 @@ export default function LearnPage({ searchParams }: { searchParams: Params }) {
   const role = typeof searchParams.role === "string" && Object.hasOwn(roleLabels, searchParams.role) ? searchParams.role as Role : undefined;
   const filtered = Boolean(q || track || role);
   const results = searchLessons(q, lang, track, role);
+  const factoryResult = Boolean(q && !track && /โรงงาน|เชือก|หลอด|factory|twine|straw/i.test(q));
   return <>
     <StructuredData id="learning-home-breadcrumb-jsonld" data={breadcrumbJsonLd(lang, [
       { name: th ? "หน้าหลัก" : "Home", path: "/" },
@@ -42,8 +43,8 @@ export default function LearnPage({ searchParams }: { searchParams: Params }) {
       <Sidebar lang={lang} />
       <div className={s.homeContents}>
         {filtered ? <section>
-          <h2 className={s.sectionTitle}>{th ? "ผลการค้นหา" : "Search results"} · {results.length}</h2>
-          {results.length ? <div className={s.grid}>{results.map((lesson) => <LessonCard key={lesson.slug} lesson={lesson} lang={lang} track={track} />)}</div> : <div className={s.empty}><h3>{th ? "ยังไม่พบบทเรียนที่ตรงกัน" : "No matching lesson"}</h3><p>{th ? "ลองคำสั้นลง เช่น โต๊ะ, PIN หรือ คืนเงิน หรือเลือกดูเส้นทางตามประเภทร้าน" : "Try shorter terms such as table, PIN or refund, or browse a business learning path."}</p><Link className={s.secondary} href={localizedPublicPath("/learn", lang)}>{th ? "ดูคู่มือทั้งหมด" : "Browse all guides"}</Link></div>}
+          <h2 className={s.sectionTitle}>{th ? "ผลการค้นหา" : "Search results"} · {results.length + Number(factoryResult)}</h2>
+          {results.length || factoryResult ? <div className={s.grid}>{factoryResult && <Link className={s.card} href={localizedPublicPath("/learn/factory-twine-straw", lang)}><span className={s.tag}>{th ? "คู่มือทดลอง" : "Pilot guide"}</span><h3>{th ? "โรงงานเชือกพลาสติกและหลอดพลาสติก" : "Plastic twine & straw factory"}</h3><p>{th ? "สมัคร สร้างสินค้า รับวัตถุดิบ ผลิต ตรวจ QC และตรวจยอดสต็อก" : "Signup, catalog, receiving, production, QC and stock balances."}</p><span className={s.arrow}>{th ? "เปิดคู่มือ" : "Open guide"} →</span></Link>}{results.map((lesson) => <LessonCard key={lesson.slug} lesson={lesson} lang={lang} track={track} />)}</div> : <div className={s.empty}><h3>{th ? "ยังไม่พบบทเรียนที่ตรงกัน" : "No matching lesson"}</h3><p>{th ? "ลองคำสั้นลง เช่น โต๊ะ, PIN หรือ คืนเงิน หรือเลือกดูเส้นทางตามประเภทร้าน" : "Try shorter terms such as table, PIN or refund, or browse a business learning path."}</p><Link className={s.secondary} href={localizedPublicPath("/learn", lang)}>{th ? "ดูคู่มือทั้งหมด" : "Browse all guides"}</Link></div>}
         </section> : <>
           <section><h2 className={s.sectionTitle}>{th ? "เริ่มจากร้านของคุณ" : "Start with your business"}</h2>
             <div className={s.grid}>{businessTrackIds.map((id) => <Link className={`${s.card} ${s.businessCard}`} href={localizedPublicPath(`/learn/${id}`, lang)} key={id}>
@@ -55,7 +56,11 @@ export default function LearnPage({ searchParams }: { searchParams: Params }) {
             <div className={s.grid}>{specialistTrackIds.map((id) => <Link className={`${s.card} ${s.businessCard}`} href={localizedPublicPath(`/learn/${id}`, lang)} key={id}>
               <h3><span className={s.icon} aria-hidden="true">{tracks[id].icon}</span> {localize(tracks[id].title, lang)}</h3>
               <p>{localize(tracks[id].description, lang)}</p><div className={s.businessMeta}><span className={s.tag}>{trackOrder[id].length} {th ? "บทเรียน · ใช้ร่วมหลายประเภทร้าน" : "lessons · Cross-business workflow"}</span><span className={s.arrow}>{th ? "เปิดคู่มือ" : "Open guide"} →</span></div>
-            </Link>)}</div>
+            </Link>)}<Link className={`${s.card} ${s.businessCard}`} href={localizedPublicPath("/learn/factory-twine-straw", lang)}>
+              <h3><span className={s.icon} aria-hidden="true">🏭</span> {th ? "โรงงานเชือกพลาสติกและหลอดพลาสติก" : "Plastic twine & straw factory"}</h3>
+              <p>{th ? "ตัวอย่างกรอกข้อมูลตั้งแต่สมัคร สร้าง SKU รับวัตถุดิบ ตั้ง BOM ผลิต ตรวจ QC จนถึงยอดสต็อก" : "Worked examples from signup and SKUs through receiving, BOMs, production, QC and stock balances."}</p>
+              <div className={s.businessMeta}><span className={s.tag}>{th ? "คู่มือทดลอง · ยังไม่เปิดใช้ production" : "Pilot guide · Not deployed to production"}</span><span className={s.arrow}>{th ? "เปิดคู่มือ" : "Open guide"} →</span></div>
+            </Link></div>
           </section>
           <section className={s.callout}><h2>{th ? "เพิ่งเริ่มใช้ BMS?" : "New to BMS?"}</h2><p>{th ? "อ่านภาพรวมก่อน แล้วตั้งสาขา พนักงาน สินค้า และเครื่องขายตามลำดับ ทดลองในร้านทดสอบก่อนเริ่มรับเงินจริง" : "Start with the overview, then configure branches, staff, products and registers. Rehearse in a test shop before taking real payments."}</p><div className={s.links}><Link href={localizedPublicPath("/learn/guides/start-here", lang)}>{th ? "เริ่มบทแรก →" : "First lesson →"}</Link><Link href={localizedPublicPath("/learn/guides/launch-checklist", lang)}>{th ? "Checklist เปิดร้าน →" : "Launch checklist →"}</Link></div></section>
           {(Object.keys(categoryLabels) as (keyof typeof categoryLabels)[]).map((category) => <section className={s.section} key={category}>

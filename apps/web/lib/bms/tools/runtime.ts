@@ -307,7 +307,8 @@ async function auditToolCall(
     sensitive: Boolean(tool?.sensitive),
     channel: ec.surface === "customer" ? ec.channel ?? null : null,
     customerMode: ec.surface === "customer" ? ec.customerMode ?? "shop_commerce" : null,
-  });
+    conversationId: ec.conversationId ?? null,
+  }, { actorKind: "AI", source: ec.surface === "customer" ? "CUSTOMER_AI" : "STAFF_AI", targetKind: "AI_TOOL" });
 }
 
 async function callProviderMessages(

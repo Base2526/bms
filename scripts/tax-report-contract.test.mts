@@ -101,12 +101,12 @@ test("every report type in code is allowed by the latest DB CHECK (the 9.95 fail
   for (const t of types) assert.ok(allowed.includes(t), `${t} is generated but the DB CHECK rejects it`);
 });
 
-test("the sales tax report cannot be exported as a PDF that renders Thai as blank boxes", () => {
+test("statutory reports stay XLSX/CSV-only until their PDF table layout is complete", () => {
   const engine = read("apps/web/lib/bms/reportEngine.ts");
-  assert.ok(/THAI_ONLY_REPORT_TYPES[\s\S]{0,80}"VAT_SALES"/.test(engine));
-  assert.ok(/format === "PDF" && THAI_ONLY_REPORT_TYPES\.has\(reportType\)/.test(engine));
+  assert.ok(/STATUTORY_XLSX_CSV_REPORT_TYPES[\s\S]{0,80}"VAT_SALES"/.test(engine));
+  assert.ok(/format === "PDF" && STATUTORY_XLSX_CSV_REPORT_TYPES\.has\(reportType\)/.test(engine));
   // และไม่ส่งตัวเลขภาษีไปให้ AI สรุป
-  assert.ok(/THAI_ONLY_REPORT_TYPES\.has\(reportType\) \? false/.test(engine));
+  assert.ok(/STATUTORY_XLSX_CSV_REPORT_TYPES\.has\(reportType\) \? false/.test(engine));
 });
 
 test("a full invoice replacing an abbreviated invoice is a zero-value reference row", () => {

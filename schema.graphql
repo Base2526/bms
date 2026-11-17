@@ -507,6 +507,32 @@ type BmsAuditEntry {
   target: String
 }
 
+type BmsAuditTimelineEvent {
+  action: String!
+  actor: String
+  actorUserId: ID
+  created_at: String!
+  id: ID!
+  meta: JSON
+  outcome: String
+  source: String!
+  target: String
+}
+
+input BmsAuditTimelineFilter {
+  actorUserId: ID
+  cursor: String
+  from: String
+  limit: Int
+  q: String
+  to: String
+}
+
+type BmsAuditTimelinePage {
+  nextCursor: String
+  nodes: [BmsAuditTimelineEvent!]!
+}
+
 type BmsBankAccount {
   accountLast4: String!
   bankCode: String!
@@ -5985,6 +6011,13 @@ type BmsPosNoSalesResult {
   noSales: [BmsPosNoSale!]!
 }
 
+input BmsPosOpenItemInput {
+  label: String!
+  qty: Int!
+  unitAmount: Float!
+  vatCategory: String!
+}
+
 type BmsPosOperationalReadiness {
   activeDevices: Int!
   activeLocations: Int!
@@ -6035,6 +6068,7 @@ type BmsPosParkedCart {
   extraLines: [BmsPosParkedExtraLine!]
   lines: [BmsPosParkedCartLine!]!
   member: BmsPosParkedCartMember
+  openItems: [BmsPosParkedOpenItem!]
   pharmacyReview: BmsPosParkedCartPharmacyReview
   pointsToRedeem: String
   version: Int!
@@ -6083,6 +6117,13 @@ type BmsPosParkedCartPharmacyReview {
 type BmsPosParkedExtraLine {
   label: String!
   unitAmount: String!
+}
+
+type BmsPosParkedOpenItem {
+  label: String!
+  qty: Int!
+  unitAmount: Float!
+  vatCategory: String!
 }
 
 type BmsPosParkedPharmacyReview {
@@ -7115,6 +7156,7 @@ input BmsPosSaleInput {
   manualDiscount: Float
   mode: String
   offlineTenderedAt: String
+  openItems: [BmsPosOpenItemInput!]
   payments: [BmsPosPaymentInput!]!
   pharmacistAuthorizationNote: String
   pharmacistAuthorizerPin: String
@@ -11010,6 +11052,7 @@ type Query {
   bmsArOutstanding: BmsArOutstanding!
   bmsAssignableStaff: [BmsStaffRef!]!
   bmsAuditLog(limit: Int = 100): [BmsAuditEntry!]!
+  bmsAuditTimeline(filter: BmsAuditTimelineFilter, platformGlobal: Boolean = false): BmsAuditTimelinePage!
   bmsBankAccounts(includeArchived: Boolean): [BmsBankAccount!]!
   bmsBankMatchCandidates(entryId: ID!): [BmsBankMatchCandidate!]!
   bmsBankReconciliationLinks(entryId: ID!): [BmsBankReconciliationLink!]!

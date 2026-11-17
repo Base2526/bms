@@ -169,6 +169,10 @@ export const TH_SECTIONS: ManualSection[] = [
           "ใช้สิทธิ์ pos.sell ธรรมดา — ชื่อรายการพิมพ์บนใบเสร็จให้ลูกค้าเห็นเป็นการควบคุมที่แน่นกว่าการล็อกสิทธิ์",
         ],
       },
+      { kind: "sub", text: "สินค้าจริงที่ยังไม่มี SKU" },
+      { kind: "p", text: "กด ขายสินค้าชั่วคราว แล้วกรอกชื่อ จำนวน ราคาต่อหน่วย และประเภท VAT บิลหนึ่งมีทั้งสินค้าปกติและชั่วคราวได้ หรือขายชั่วคราวอย่างเดียวได้" },
+      { kind: "callout", tone: "warn", title: "เงินสดและสิทธิ์เฉพาะ", body: "ผู้ขายต้องมี PIN, pos.sell และ pos.open_item.sell (Manager) รับเงินสดเต็มจำนวน ไม่ใช้มัดจำ คูปอง แต้มแลก หรือส่วนลดมือ ไม่ใช้กับร้านยา ร้านอาหาร บอร์ดเกม หรือ Emergency Offline" },
+      { kind: "p", text: "บิลพักเก็บรายการนี้ได้ ใบเสร็จ/ภาษีแสดงรายการจากเวลาขาย คืนหรือ void ผ่านบิลเดิมโดยไม่เพิ่มสต็อก ถ้าจะเปลี่ยนสินค้าให้คืนก่อนแล้วเปิดบิลขายใหม่ ต้นทุนยังไม่ทราบ ควรสร้าง SKU ก่อนขายครั้งถัดไป" },
     ],
   },
   {
@@ -714,6 +718,10 @@ export const EN_SECTIONS: ManualSection[] = [
           "Just needs pos.sell — the line name printed on the receipt is a tighter control than gating the permission",
         ],
       },
+      { kind: "sub", text: "Physical goods without a SKU" },
+      { kind: "p", text: "Choose Add open item and enter the receipt name, quantity, unit price and VAT category. The bill can contain both catalog and open items, or open items alone." },
+      { kind: "callout", tone: "warn", title: "Cash and special permission", body: "The cashier needs a PIN, pos.sell and pos.open_item.sell (Manager). Collect the full amount in cash. Deposits, coupons, point redemption, manual discounts, pharmacy, restaurant, board-game and Emergency Offline sales are excluded." },
+      { kind: "p", text: "Parked bills retain open items. Receipts and tax use the sale-time details; a return or void follows the original bill without adding stock. For an exchange, return the open item and start a new sale. Cost remains unknown until the product is catalogued for later sales." },
     ],
   },
   {

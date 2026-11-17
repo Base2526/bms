@@ -37,6 +37,9 @@ The database is the source of truth. Business decisions are enforced by backend 
    established audit mechanism. Tool-attempt audit metadata must not contain raw arguments or PII.
    Use revision history only for business records that need exact before/after snapshots; use
    append-only audit logs for permission, approval, and execution events.
+   A tool-attempt event may carry an internal conversation ID for correlation, never a channel
+   customer reference or raw model arguments. The attempt event is best-effort; a business write
+   needs its own audit in the service transaction to prove that it committed.
    When an AI-assisted or admin-confirmed write updates a revision-enabled business record, the
    backend transaction should pass the authenticated actor into `beginTenantTx(..., { editorId })`.
 

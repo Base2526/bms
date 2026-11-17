@@ -20,6 +20,7 @@ import type {
   PosManualDiscount,
   PosMember,
   PosMenuItem,
+  PosOpenItem,
 } from '../types/pos';
 import { cartLineKey } from '../lib/cartLine';
 import {
@@ -43,6 +44,7 @@ export interface ParkedBill {
   pointsUsed: number;
   manualDiscount: null;
   extraLines: PosExtraLine[];
+  openItems: PosOpenItem[];
   pharmacyReview: PosPharmacyReview | null;
 }
 
@@ -80,6 +82,8 @@ interface CartContextValue {
   setPointsToRedeem: (points: number) => void;
   extraLines: PosExtraLine[];
   setExtraLines: (lines: PosExtraLine[]) => void;
+  openItems: PosOpenItem[];
+  setOpenItems: (items: PosOpenItem[]) => void;
   pharmacyReview: PosPharmacyReview | null;
   parkedBills: ParkedBill[];
   parkCurrentBill: (name: string, note: string) => Promise<string | null>;
@@ -117,6 +121,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     useState<PosManualDiscount | null>(null);
   const [pointsToRedeem, setPointsToRedeem] = useState(0);
   const [extraLines, setExtraLines] = useState<PosExtraLine[]>([]);
+  const [openItems, setOpenItems] = useState<PosOpenItem[]>([]);
   const [pharmacyReview, setPharmacyReview] =
     useState<PosPharmacyReview | null>(null);
   // ⚠️ ห้ามกลับไปเป็น `qty × unitPrice` — ยอดนี้ต้องเท่ากับที่ createOrderInTx คิดตอน commit
@@ -276,6 +281,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setManualDiscount(null);
     setPointsToRedeem(0);
     setExtraLines([]);
+    setOpenItems([]);
     setPharmacyReview(null);
   }, []);
   const replaceForExchange = useCallback(
@@ -286,6 +292,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setManualDiscount(null);
       setPointsToRedeem(0);
       setExtraLines([]);
+      setOpenItems([]);
       setPharmacyReview(null);
     },
     [],
@@ -365,6 +372,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           qty: 1,
           unitAmount: Number(line.unitAmount ?? 0),
         })),
+        openItems: (parked.cart?.openItems ?? []).map((line, index) => ({
+          id: `parked-open-${parked.id}-${index}`,
+          label: line.label,
+          qty: line.qty,
+          unitAmount: line.unitAmount,
+          vatCategory: line.vatCategory as 'V' | 'N',
+        })),
         pharmacyReview: parked.pharmacyReview
           ? {
               assessmentId: parked.pharmacyReview.assessmentId,
@@ -409,13 +423,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const parkCurrentBill = useCallback(
     async (name: string, note: string) => {
-      if (!lines.length) return posText("ยังไม่มีรายการในบิล");
+      if (!lines.length && !openItems.length) return posText("ยังไม่มีรายการในบิล");
       const failure = await mutatePark({
         action: 'park',
         label:
           [name.trim(), note.trim()].filter(Boolean).join(' - ') || posText("บิลพัก"),
-        itemCount: lines.reduce((sum, line) => sum + line.qty, 0),
-        subtotalHint: subtotal,
+        itemCount: lines.reduce((sum, line) => sum + line.qty, 0) + openItems.reduce((sum, item) => sum + item.qty, 0),
+        subtotalHint: subtotal + openItems.reduce((sum, item) => sum + item.qty * item.unitAmount, 0),
         cart: {
           version: 2,
           couponCode: coupon?.code ?? null,
@@ -431,6 +445,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                   : `${line.label.trim()} × ${line.qty}`,
               unitAmount: String(line.qty * line.unitAmount),
             })),
+          openItems: openItems.map(({ label, qty, unitAmount, vatCategory }) => ({
+            label, qty, unitAmount, vatCategory,
+          })),
           member: member
             ? {
                 customerId: member.id,
@@ -470,6 +487,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       coupon?.code,
       extraLines,
       lines,
+      openItems,
       member,
       mutatePark,
       pharmacyReview,
@@ -594,6 +612,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     async (id: string) => {
       const parked = parkedBills.find(bill => bill.id === id);
       if (!parked) return posText("ไม่พบบิลพัก");
+      if (lines.length > 0 || openItems.length > 0 || extraLines.length > 0) {
+        return posText("ตะกร้ายังมีของ — ปิดบิลหรือพักบิลปัจจุบันก่อน");
+      }
       const failure = await mutatePark({ action: 'resume', parkedId: id });
       if (!failure) {
         setLines(await refreshParkedLines(parked.lines));
@@ -602,11 +623,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         setManualDiscount(null);
         setPointsToRedeem(parked.pointsUsed);
         setExtraLines(parked.extraLines);
+        setOpenItems(parked.openItems);
         setPharmacyReview(parked.pharmacyReview);
       }
       return failure;
     },
-    [mutatePark, parkedBills, refreshParkedLines],
+    [extraLines.length, lines.length, mutatePark, openItems.length, parkedBills, refreshParkedLines],
   );
 
   const deleteParkedBill = useCallback(
@@ -625,7 +647,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   // ผลรอบก่อนระหว่างกำลังโหลดรอบใหม่ ถ้าเอา netTotal มาใช้ ยอดจะเป็นของตะกร้าใบก่อน
   // (แคชเชียร์กดเพิ่มของแล้วกดรับเงินทันทีจะเก็บเงินตามยอดเก่า)
   const total = round2(
-    Math.max(0, round2(subtotal - discountTotal)) + extraTotal,
+    Math.max(0, round2(subtotal - discountTotal)) + extraTotal
+      + openItems.reduce((sum, item) => sum + item.qty * item.unitAmount, 0),
   );
 
   const value = useMemo<CartContextValue>(
@@ -649,6 +672,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setPointsToRedeem,
       extraLines,
       setExtraLines,
+      openItems,
+      setOpenItems,
       pharmacyReview,
       parkedBills,
       parkCurrentBill,
@@ -680,6 +705,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       manualDiscount,
       pointsToRedeem,
       extraLines,
+      openItems,
       pharmacyReview,
       extraTotal,
       member,

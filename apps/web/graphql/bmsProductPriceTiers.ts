@@ -8,7 +8,6 @@ import {
 } from "@/lib/bms/productPriceTiers";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
-import { audit } from "@/lib/bms/audit";
 import { requireAuth } from "@/lib/auth";
 import { GraphQLError } from "graphql/error";
 import { listLocationsForUser, userCanAccessLocation, userHasLocationScope } from "@/lib/bms/locations";
@@ -70,9 +69,6 @@ export const bmsProductPriceTiersResolvers = {
           productSku: args.input.productSku,
           locationId,
           tiers: Array.isArray(args.input.tiers) ? args.input.tiers : [],
-        });
-        await audit(ctx, "product.price_tiers_saved", args.input.productSku, {
-          locationId, tierCount: tiers.length,
         });
         return tiers;
       } catch (e: any) {

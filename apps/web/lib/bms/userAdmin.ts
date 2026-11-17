@@ -19,7 +19,7 @@
 import { GraphQLError } from "graphql/error";
 import type { PoolClient } from "pg";
 import { query } from "@/lib/db";
-import { audit } from "./audit";
+import { audit, insertAuditInTx } from "./audit";
 import { canManageStaffRole, canManageUserTarget } from "./staffRoles";
 
 export type UserAdminGate = {
@@ -60,11 +60,11 @@ export async function auditUserChangeInTx(
   meta: Record<string, unknown>
 ): Promise<void> {
   await client.query("SELECT set_config('bms.tenant_id', $1, true)", [tenantId]);
-  await client.query(
-    `INSERT INTO bms_audit_log(tenant_id, actor, action, target, meta)
-     VALUES ($1, $2, $3, $4, $5::jsonb)`,
-    [tenantId, actorId, action, targetId, JSON.stringify(meta)]
-  );
+  await insertAuditInTx(client, {
+    tenantId, actor: actorId, actorKind: "STAFF", actorUserId: actorId,
+    action, target: targetId, targetKind: "USER", source: "USER_ADMIN",
+    meta,
+  });
 }
 
 /** Keep open work visible: an account with live assignments must be handed over first. */

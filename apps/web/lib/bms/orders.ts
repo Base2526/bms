@@ -20,6 +20,7 @@ import { recordOrderMovements } from "./movements";
 import { resolveOrCreateCustomer } from "./customers";
 import { cancelKitchenTicketsForOrderInTx, enqueueKitchenTicketsInTx } from "./kitchen";
 import { beginTenantTx } from "./tenant";
+import { insertAuditInTx } from "./audit";
 import { DEFAULT_LOCATION_CODE, resolveDefaultLocationIdInTx } from "./locations";
 import { listConversationHelpers, listSystemEvents } from "./inbox";
 import { listShipments, MARKETPLACE_CHANNELS } from "./shipping";
@@ -54,6 +55,7 @@ import {
 } from "./pricing";
 import { getVariantBasePriceInTx } from "./productPacks";
 import type { VatCategory } from "./vat";
+import { parsePosOpenItems, type PosOpenItem } from "./posOpenItems";
 import { reverseCreditForOrderInTx } from "./storeCredit";
 import {
   markRestockSubscriptionsOrdered,
@@ -123,6 +125,10 @@ export type CreateOrderInput = {
   pointsToRedeem?: number | null;
   items: OrderItemInput[];
   editorId?: string | number | null;
+  /** Server-derived provenance for a reorder, never accepted from a public request. */
+  auditSourceOrderId?: string | null;
+  /** Internal inbox conversation provenance supplied by the server-side AI runtime. */
+  auditConversationId?: string | null;
   couponCode?: string | null;
   /**
    * Carrier the customer asked for. A *preference* only — the carrier actually used is
@@ -201,6 +207,8 @@ export type CreateOrderInput = {
    * อยู่ในฐาน VAT เหมือนบรรทัดสินค้า ไม่ใช่ยอดบวกท้ายบิล
    */
   extraLines?: Array<{ label: string; qty?: number; unitAmount: number; vatCategory?: VatCategory | null }> | null;
+  /** Retail POS only; an open item is not a catalog product or stock movement. */
+  openItems?: PosOpenItem[] | null;
   manualDiscount?: number | null;
   /** ส่วนลดหน้าร้านต้องมีหัวหน้าอนุมัติ */
   discountApprovedBy?: string | null;
@@ -548,10 +556,18 @@ export async function createOrderInTx(
 ): Promise<CreateOrderResult> {
   const tenantId = input.tenantId;
   const boardGameBillingGroupId = input.boardGameBillingGroupId?.trim() || null;
+  const parsedOpenItems = parsePosOpenItems(input.openItems);
+  if (!parsedOpenItems.ok) return { status: "INVALID_ITEM", index: -1, reason: parsedOpenItems.reason };
+  const openItems = parsedOpenItems.items;
+  if (openItems.length && (input.channel !== "pos" || (input.posSalesSurface ?? "RETAIL_POS") !== "RETAIL_POS"
+    || input.restaurantCheckId || boardGameBillingGroupId || !input.posDeviceId || !input.posShiftId
+    || !input.cashierUserId || input.pharmacyApprovedAssessmentId || input.pharmacistCounterAuthorization)) {
+    return { status: "INVALID_ITEM", index: -1, reason: "ขายสินค้าชั่วคราวได้เฉพาะ POS ขายปลีก" };
+  }
   let boardGameSessionId: string | null = null;
   const validation = validateOrderItems(input.items);
   if (!validation.ok) {
-    if (validation.index === -1 && !boardGameBillingGroupId) return { status: "EMPTY" };
+    if (validation.index === -1 && !boardGameBillingGroupId && !openItems.length) return { status: "EMPTY" };
     if (validation.index === -1) {
       // A frozen board-game session is a billable service and may be the only
       // line on a POS bill. Its amount is loaded below; the caller cannot use
@@ -749,7 +765,7 @@ export async function createOrderInTx(
         unitAmount: amountDue,
         vatCategory: "V",
       }];
-    } else if (!items.length) {
+    } else if (!items.length && !openItems.length) {
       // กลุ่มที่ยังเล่นอยู่และไม่มีอะไรบน tab ไม่มีอะไรให้จอง — ใบจองเปล่าคือบิล ฿0 ที่ไม่มีใครตั้งใจ
       return { status: "INVALID_ITEM", index: -1, reason: "บิลบอร์ดเกมนี้ยังไม่มีรายการให้จอง" };
     }
@@ -783,7 +799,7 @@ export async function createOrderInTx(
   }
   const mergedValidation = validateOrderItems(items);
   if (!mergedValidation.ok) {
-    if (mergedValidation.index === -1 && boardGameBillingGroupId) {
+    if (mergedValidation.index === -1 && (boardGameBillingGroupId || openItems.length)) {
       // The server-validated session charge is the order's service line.
     } else {
     return {
@@ -1407,7 +1423,10 @@ export async function createOrderInTx(
       (sum, extra) => sum + extra.unitAmount * extra.qty,
       0
     ) * 100) / 100;
-    const grossSubtotal = Math.round((productSubtotal + extraTotal) * 100) / 100;
+    const openTotal = Math.round(openItems.reduce(
+      (sum, item) => sum + item.unitAmount * item.qty, 0
+    ) * 100) / 100;
+    const grossSubtotal = Math.round((productSubtotal + extraTotal + openTotal) * 100) / 100;
 
     // ส่วนลดมือ: ไม่มีหลักฐานว่าใครอนุมัติ = ไม่รับ ห้าม fallback เป็น 0 เงียบ ๆ
     // เพราะจอบอกลูกค้าไปแล้วว่าลดให้ ถ้าเงียบ ๆ ไม่ลด ยอดที่เตรียมจ่ายจะไม่ตรงกับบิล
@@ -1454,7 +1473,7 @@ export async function createOrderInTx(
 
     const discount = breakdown.totalDiscount;
     const discountedProductTotal = Math.max(0, productSubtotal - discount);
-    const finalTotal = Math.round((discountedProductTotal + extraTotal) * 100) / 100;
+    const finalTotal = Math.round((discountedProductTotal + extraTotal + openTotal) * 100) / 100;
 
     // ขนส่งที่ลูกค้าอยากได้ — เก็บเฉพาะโค้ดที่รู้จัก ที่เหลือทิ้งเป็น null (ไม่ทำให้ออร์เดอร์ล้ม)
     const preferredCarrier: Carrier | null = isCarrier(input.preferredCarrier) ? input.preferredCarrier : null;
@@ -1620,6 +1639,16 @@ export async function createOrderInTx(
       );
     }
 
+    for (const item of openItems) {
+      await client.query(
+        `INSERT INTO bms_order_open_items
+           (tenant_id, order_id, label, qty, unit_amount, line_amount, vat_category)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [tenantId, orderId, item.label, item.qty, item.unitAmount,
+          Math.round(item.qty * item.unitAmount * 100) / 100, item.vatCategory]
+      );
+    }
+
     for (const [lineIndex, ln] of lines.entries()) {
       const insertedItem = await client.query<{ id: string }>(
         `INSERT INTO bms_order_items (tenant_id, location_id, order_id, product_sku, product_name, size, qty, unit_price, line_amount,
@@ -1701,6 +1730,22 @@ export async function createOrder(
       if (result.status !== "CREATED") {
         await client.query("ROLLBACK");
       } else {
+        const staffId = typeof input.editorId === "string" &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.editorId)
+          ? input.editorId : null;
+        await insertAuditInTx(client, {
+          tenantId: input.tenantId,
+          actor: staffId ?? (input.customerRef ? `customer:${input.channel}` : "system:order"),
+          actorKind: staffId ? "STAFF" : input.customerRef ? "CUSTOMER" : "SYSTEM",
+          actorUserId: staffId,
+          action: input.auditSourceOrderId ? "order.reorder" : "order.create",
+          target: result.orderId, targetKind: "ORDER", source: "ORDER_SERVICE",
+          eventKey: `order.create:${result.orderId}`,
+          meta: { channel: input.channel, itemCount: result.items.length,
+            total: result.total, discount: result.discount,
+            sourceOrderId: input.auditSourceOrderId ?? null,
+            ...(input.auditConversationId ? { conversationId: input.auditConversationId } : {}) },
+        });
         await client.query("COMMIT");
       }
       return result;
@@ -1858,7 +1903,8 @@ export async function reorderFromOrder(
   tenantId: string,
   orderId: string,
   editorId?: string | number | null,
-  currentIdentity?: CustomerChannelIdentity | null
+  currentIdentity?: CustomerChannelIdentity | null,
+  auditConversationId?: string | null
 ): Promise<ReorderResult> {
   const src = await query<{ channel: Channel; customer_ref: string | null; preferred_carrier: string | null }>(
     `SELECT channel, customer_ref, preferred_carrier FROM bms_orders WHERE tenant_id = $1 AND id = $2`,
@@ -1883,6 +1929,8 @@ export async function reorderFromOrder(
     customerRef: targetIdentity.customerRef,
     items: itemsRes.rows.map((r) => ({ sku: r.product_sku, size: r.size, qty: Number(r.qty) })),
     editorId,
+    auditSourceOrderId: orderId,
+    auditConversationId,
     // Same customer reordering — keep the carrier they asked for last time.
     preferredCarrier: src.rows[0].preferred_carrier,
   });

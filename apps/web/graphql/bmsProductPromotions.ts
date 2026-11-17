@@ -9,7 +9,6 @@ import {
 } from "@/lib/bms/productPromotions";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
-import { audit } from "@/lib/bms/audit";
 import { requireAuth } from "@/lib/auth";
 import { GraphQLError } from "graphql/error";
 import { listLocationsForUser, userCanAccessLocation, userHasLocationScope } from "@/lib/bms/locations";
@@ -101,9 +100,6 @@ export const bmsProductPromotionsResolvers = {
           endsAt: args.input.endsAt ?? null,
           note: args.input.note ?? null,
         });
-        await audit(ctx, "product.promotion_saved", promotion.id, {
-          sku: promotion.productSku, locationId: promotion.locationId, kind: promotion.kind,
-        });
         return promotion;
       } catch (e: any) {
         throw new GraphQLError(e?.message || "บันทึกโปรโมชันไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
@@ -123,7 +119,6 @@ export const bmsProductPromotionsResolvers = {
         }
       }
       const ok = await deactivateProductPromotion({ tenantId, id: String(args.id), actorUserId: userId });
-      if (ok) await audit(ctx, "product.promotion_deactivated", String(args.id));
       return ok;
     },
   },

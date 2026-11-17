@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { insertAuditInTx } from "./audit";
 import { assertReadinessAllowsSaveOfActiveProduct, getProductReadinessInTx } from "./productConfiguration";
 import { positiveBaseQuantity, sameRecipeDefinition, type RecipeComponentInput } from "./recipeDefinition";
 import { normalizeRecipeCostAssumptions, type RecipeCostAssumptions } from "./recipeCosting";
@@ -440,6 +441,12 @@ export async function upsertProductModifier(
     const optionCount = Number(groupState.rows[0]?.option_count ?? 0);
     if (selectedCount > (maxSelect ?? optionCount)) throw new Error("ค่าเริ่มต้นของกลุ่ม Modifier เกินจำนวนที่เลือกได้");
     if (minSelect > optionCount) throw new Error("จำนวนขั้นต่ำของกลุ่ม Modifier มากกว่าตัวเลือกที่เปิดใช้");
+    await insertAuditInTx(client, {
+      tenantId, actor: editorId ?? "system", actorKind: editorId ? "STAFF" : "SYSTEM",
+      actorUserId: editorId ?? null, action: "product.modifier_upsert",
+      target: modifierId, targetKind: "PRODUCT_MODIFIER", source: "PRODUCT_RECIPE_SERVICE",
+      meta: { productSku, size, code },
+    });
     await client.query("COMMIT");
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}

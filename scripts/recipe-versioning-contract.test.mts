@@ -102,6 +102,7 @@ function harness() {
     if (name === "./tenant") return { beginTenantTx: async (c: typeof client, tenantId: string, options: any) => {
       assert.ok(tenantId); assert.equal(options.editorId, "actor"); await c.query("BEGIN");
     } };
+    if (name === "./audit") return {};
     if (name === "./recipeDefinition") return definition;
     if (name === "./recipeComposition") return composition;
     if (name === "./recipeCosting") return costing;
