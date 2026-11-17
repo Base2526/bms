@@ -89,6 +89,14 @@ The four business learning flows use that same pinned voice. After editing
 `generate-business-guide-thai-audio.py --model-dir .test-output/fastthai-model`. Commit
 `businessThaiAudio.json`, the MP3 files and their provenance together; the learning-center contract
 checks that every Thai cue has a verified recording.
+
+The factory pilot's 15 Thai captions can be recorded with Google AI Studio's
+`gemini-3.8-flash-tts` model. In a shell with `GEMINI_API_KEY` set, run
+`node scripts/generate-factory-guide-tts.mts` from the repository root. The script stages and
+checksum-verifies WAV clips under ignored `.test-output/`, then publishes the complete
+`factoryThaiAudio.json` manifest, public WAVs and provenance together. Never commit the API key.
+Without a complete recorded pack, the factory guide uses the device speech engine; the public
+runtime makes no Google API call. Regenerate the pack when a Thai caption changes.
 - `node scripts/restaurant-public-browser-smoke.mjs`: local web at `BMS_SMOKE_URL` (default port
   3107); TH/EN at 1440/390 px, every diagram, zoom/pan, deep links/history, text transcript,
   light/dark themes, session-aware CTA, homepage/footer links and page overflow. Uses intercepted
