@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { businessTrackIds, getTrackLessons, isRestaurantFormat, isRetailFormat, isTrack, lessons, searchLessons, specialistTrackIds, trackOrder } from "../apps/web/lib/learning/catalog.ts";
 import { inventoryNarrationCues } from "../apps/web/lib/learning/inventoryNarration.ts";
 import { businessGuideFlows, businessNarrationCues, type BusinessTrackId } from "../apps/web/lib/learning/businessGuideFlow.ts";
+import { factoryNodes } from "../apps/web/lib/learning/factoryGuideFlow.ts";
 
 test("public learning paths resolve unique bilingual lessons and real action destinations", () => {
   assert.equal(new Set(lessons.map((lesson) => lesson.slug)).size, lessons.length);
@@ -110,6 +111,27 @@ test("all four business overviews ship bilingual flows and verified Thai narrati
   assert.match(businessNarrationCues("board-game", "th").at(-1)?.text ?? "", /แอดมิน.*รายได้ต่อโต๊ะ.*โนโชว์.*ส่งออกรายงาน.*ยืนยัน/);
   assert.match(businessNarrationCues("restaurant", "th").at(-1)?.text ?? "", /แอดมิน.*ยอดเฉลี่ยต่อบิล.*ฟู้ดคอสต์.*คอขวด.*ส่งออกรายงาน.*ยืนยัน/);
   assert.match(businessNarrationCues("pharmacy", "th").at(-1)?.text ?? "", /แอดมิน.*วันหมดอายุ.*คิวที่รอเภสัชกร.*ไม่วินิจฉัย.*เภสัชกรที่มีใบอนุญาต/);
+});
+
+test("factory narration is either device-backed or a complete verified Gemini 3.8 pack", () => {
+  const manifest = JSON.parse(readFileSync(new URL("../apps/web/app/learn/factory-twine-straw/factoryThaiAudio.json", import.meta.url), "utf8"));
+  const indices = Object.keys(manifest);
+  assert.ok(indices.length === 0 || indices.length === factoryNodes.length, "Do not publish a partial factory voice pack");
+  if (!indices.length) return;
+  const provenance = JSON.parse(readFileSync(new URL("../apps/web/public/audio/learning-factory/th/provenance.json", import.meta.url), "utf8"));
+  assert.equal(provenance.provider, "google-ai-studio");
+  assert.equal(provenance.model, "gemini-3.8-flash-tts");
+  assert.equal(provenance.cues.length, factoryNodes.length);
+  for (const [index, node] of factoryNodes.entries()) {
+    const clip = manifest[String(index)];
+    assert.equal(clip.text, node.explanation.th);
+    assert.match(clip.file, /^\/audio\/learning-factory\/th\/[a-f0-9]{24}\.wav$/);
+    assert.ok(clip.duration > 0.2 && clip.duration < 90);
+    const file = new URL(`../apps/web/public${clip.file}`, import.meta.url);
+    assert.ok(statSync(file).size > 1000);
+    assert.equal(createHash("sha256").update(readFileSync(file)).digest("hex"), clip.sha256);
+    assert.equal(provenance.cues[index].sha256, clip.sha256);
+  }
 });
 
 test("restaurant and cafe guide filters Restaurant POS formats without treating an ordinary counter cafe as a kitchen workflow", () => {

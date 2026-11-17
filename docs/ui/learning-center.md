@@ -93,6 +93,13 @@ focus return, scrollable narration, zoom/pan and optional cue following. Backgro
 is suspended during narration in the dialog. Phones retain a scrollable transcript below the diagram.
 These public examples do not query shop data or execute AI tools.
 
+The factory pilot flow narrates its 15 bilingual captions. Thai first uses complete, locally hosted
+Gemini 3.8 Flash TTS recordings when its `factoryThaiAudio.json` manifest is populated; until then,
+and for English, it uses the browser's speech engine when available. Playback advances after each
+spoken cue ends, and selecting a step or changing speed stops the current cue. The site does not
+send guide text or shop data to a TTS provider at runtime. The factory recordings are built with
+`scripts/generate-factory-guide-tts.mts` after connecting an AI Studio API key.
+
 ## Verification commands
 
 - `cd apps/web && npm run typecheck`
