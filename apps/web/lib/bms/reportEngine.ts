@@ -72,8 +72,8 @@ export const REPORT_TYPES = [
   "BOARD_GAME_ANALYTICS",
 ] as const;
 
-/** รายงานที่หัวคอลัมน์/ข้อมูลเป็นภาษาไทยล้วน — pdfkit แสดงไม่ได้ (ดู documentGenerator.ts) */
-const THAI_ONLY_REPORT_TYPES: ReadonlySet<string> = new Set(["VAT_SALES", "VAT_PURCHASE", "STOCK_LEDGER"]);
+/** Statutory sheets need a dedicated PDF layout for preamble, grouped headings and totals. */
+const STATUTORY_XLSX_CSV_REPORT_TYPES: ReadonlySet<string> = new Set(["VAT_SALES", "VAT_PURCHASE", "STOCK_LEDGER"]);
 
 /** เดือนปัจจุบันตามเวลาไทย — ค่าปริยายของรายงานภาษีที่ต้องมีช่วงวันที่เสมอ */
 function currentTaxMonth(): { from: string; to: string } {
@@ -325,12 +325,12 @@ export async function generateReport(
   // สรุปด้วย AI ไม่มีประโยชน์กับรายงานภาษี และส่งตัวเลขภาษีของร้านออกไปหา provider เปล่า ๆ
   const includeSummary = reportType === "BOARD_GAME_ANALYTICS"
     ? false
-    : THAI_ONLY_REPORT_TYPES.has(reportType) ? false : input.includeSummary ?? true;
+    : STATUTORY_XLSX_CSV_REPORT_TYPES.has(reportType) ? false : input.includeSummary ?? true;
   if (reportType === "BOARD_GAME_ANALYTICS" && format !== "XLSX") {
     throw new Error("รายงานกำไรและการใช้โต๊ะบอร์ดเกมออกได้เฉพาะ XLSX");
   }
-  if (format === "PDF" && THAI_ONLY_REPORT_TYPES.has(reportType)) {
-    throw new Error("รายงานนี้ออกได้เฉพาะ XLSX หรือ CSV (PDF ยังแสดงภาษาไทยไม่ได้)");
+  if (format === "PDF" && STATUTORY_XLSX_CSV_REPORT_TYPES.has(reportType)) {
+    throw new Error("รายงานภาษีและบัญชีสต็อกนี้ออกได้เฉพาะ XLSX หรือ CSV (PDF ยังไม่มีรูปแบบตารางครบ)");
   }
   if (reportType === "VAT_SALES") await requirePermission(ctx, "tax.document.view");
   if (reportType === "VAT_PURCHASE") await requirePermission(ctx, "expense.view");

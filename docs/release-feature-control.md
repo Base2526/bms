@@ -23,7 +23,7 @@ baseline. Existing missing links remain visible in every manifest; a catalog con
 not evidence that each business operation works.
 
 The reconciliation linked known workflows added after the older human inventory snapshot
-and mapped existing capability suites; 6 known capabilities still lack direct workflow test links.
+and mapped existing capability suites; 2 known capabilities still lack direct workflow test links.
 It still has `baseline-in-progress` scope. Continue with
 [feature-completion-plan.md](feature-completion-plan.md); the mapped suites must run on the release
 commit, and DB/provider/hardware results must be recorded separately.

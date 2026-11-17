@@ -5,18 +5,15 @@
 // by all three format builders so XLSX/CSV/PDF of the same report can
 // never disagree on columns/rows — build the mapping once, not three times.
 //
-// ⚠️ Known gap, called out on purpose (not a silent bug): `pdfkit`'s
-// built-in standard fonts (Helvetica etc.) only cover Latin/WinAnsi
-// glyphs — Thai text renders as blank boxes. This module keeps PDF
-// labels in English for that reason. Thai data VALUES (product names,
-// channel names, etc. as typed by the shop) will still not render
-// correctly in the PDF until a Thai-capable TTF (e.g. Noto Sans Thai) is
-// embedded via `.font()` — deferred, not attempted here. XLSX and CSV are
-// plain UTF-8 text and render Thai correctly today.
+// Use the same bundled OFL Sarabun font as taxInvoicePdf so shop-entered
+// Thai values and mixed-language summaries render in the general PDF exports.
+// Statutory tax reports remain XLSX/CSV-only until their preamble, grouped
+// headers and totals have a complete PDF layout.
 // =============================================================
 
 import * as XLSX from "xlsx";
 import PDFDocument from "pdfkit";
+import path from "node:path";
 
 export type ReportColumn = { key: string; label: string; numberFormat?: string };
 type ReportCell = string | number | boolean | null | undefined;
@@ -628,7 +625,7 @@ export function buildSpecializedReportDoc(data: ManagementReport): ReportDoc {
 // ---- รายงานภาษีขาย (ประกอบ ภ.พ.30) ----
 //
 // หัวคอลัมน์เป็นภาษาไทยโดยตั้งใจ — เป็นเอกสารที่ส่งให้นักบัญชีไทย และออกได้เฉพาะ XLSX/CSV
-// (reportEngine ปฏิเสธ PDF ของรายงานนี้ เพราะ pdfkit แสดงภาษาไทยไม่ได้ ดูหัวไฟล์)
+// (reportEngine ปฏิเสธ PDF ของรายงานนี้จนกว่าจะจัด preamble, grouped headers และ totals ครบ)
 
 const SALES_TAX_KIND_LABEL: Record<string, string> = {
   FULL: "ใบกำกับภาษีเต็มรูป",
@@ -1218,34 +1215,45 @@ export function buildCsv(doc: ReportDoc): Buffer {
 
 export function buildPdf(doc: ReportDoc, summary?: string | null): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const pdf = new PDFDocument({ margin: 40 });
+    const rowCount = doc.sheets.reduce((count, sheet) => count + sheet.rows.length, 0);
+    if (rowCount > 10_000) {
+      throw new Error("PDF รองรับสูงสุด 10,000 แถว กรุณาเลือกช่วงที่สั้นลงหรือใช้ XLSX/CSV");
+    }
+    // Set the initial font in the constructor: PDFKit may resolve its default
+    // Helvetica before a later .font() call, and Helvetica has no Thai glyphs.
+    const font = path.join(process.cwd(), "public/fonts/sarabun/Sarabun-Regular.ttf");
+    const pdf = new PDFDocument({ margin: 40, font });
+    // PDFKit/fontkit splits Thai Sara Am for shaping. Passing U+0E33 directly
+    // duplicates the trailing vowel in ToUnicode (copying "กำไร" yields
+    // "กำาไร"). The compatibility decomposition preserves the visual glyph and
+    // gives text extractors the NFKD-equivalent original instead.
+    const pdfText = (value: unknown) => String(value ?? "").replace(/\u0E33/g, "\u0E4D\u0E32");
     const chunks: Buffer[] = [];
     pdf.on("data", (c) => chunks.push(c));
     pdf.on("end", () => resolve(Buffer.concat(chunks)));
     pdf.on("error", reject);
 
-    pdf.fontSize(18).text(doc.title);
-    pdf.fontSize(10).fillColor("#555").text(doc.subtitle);
+    pdf.fontSize(18).text(pdfText(doc.title));
+    pdf.fontSize(10).fillColor("#555").text(pdfText(doc.subtitle));
     pdf.moveDown();
 
     pdf.fillColor("#000").fontSize(11);
-    for (const m of doc.meta) pdf.text(`${m.label}: ${m.value}`);
+    for (const m of doc.meta) pdf.text(pdfText(`${m.label}: ${m.value}`));
     pdf.moveDown();
 
     if (summary) {
       pdf.fontSize(12).text("Summary", { underline: true });
-      pdf.fontSize(10).text(summary);
+      pdf.fontSize(10).text(pdfText(summary));
       pdf.moveDown();
     }
 
     for (const sheet of doc.sheets) {
       if (sheet.rows.length === 0) continue;
-      pdf.fontSize(13).text(sheet.name, { underline: true });
+      pdf.fontSize(13).text(pdfText(sheet.name), { underline: true });
       pdf.fontSize(9);
-      pdf.text(sheet.columns.map((c) => c.label).join("  |  "));
-      for (const row of sheet.rows.slice(0, 200)) {
-        // 200-row cap keeps the PDF from growing unbounded for large ranges
-        pdf.text(sheet.columns.map((c) => String(row[c.key] ?? "")).join("  |  "));
+      pdf.text(pdfText(sheet.columns.map((c) => c.label).join("  |  ")));
+      for (const row of sheet.rows) {
+        pdf.text(pdfText(sheet.columns.map((c) => String(row[c.key] ?? "")).join("  |  ")));
       }
       pdf.moveDown();
     }
