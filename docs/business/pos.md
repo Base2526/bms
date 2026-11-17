@@ -2239,6 +2239,9 @@ waiting for an **order**.
   number from the customer screen for good. The list is the staff-only `?view=day` (today's numbers
   including closed ones, with the bill reference); the public board view is unchanged. The mobile
   strip has the same actions per tapped number, with a confirmation dialog for cancel.
+  The Desktop compact sell screen reads the same per-device queue switch as its Settings workspace,
+  requests a number with the committed sale, and shows the strip above the catalog. After a successful
+  retry it reloads the saved receipt before printing, so the new number appears on the paper too.
 - **Retry a number that failed to issue.** Where a committed sale reported `pickupQueueError`
   (web sell screen, restaurant settlement, mobile receipt screen) a **ออกเลขคิวใหม่** button asks
   again for the same bill (REST `action: "issue"` with `orderId`; GraphQL `bmsPosPickupQueueAction`

@@ -69,6 +69,7 @@ import {
   openDesktopAdmin,
   readDesktopAppInfo,
   readPosDeviceToken,
+  posDeviceStorageNamespace,
   type DesktopAppInfo,
 } from "@/lib/pos/deviceTokenClient";
 import {
@@ -78,6 +79,8 @@ import {
   type CustomerDisplayPayload,
 } from "@/lib/pos/customerDisplay";
 import { useOrderAlerts } from "@/app/hooks/useOrderAlerts";
+import { PickupQueueStrip, readPickupQueueEnabled } from "@/components/pos/PickupQueuePanel";
+import { PickupQueueRetryButton } from "@/components/pos/PickupQueueManager";
 import OrderAlertSettingsModal from "@/components/pos/OrderAlertSettingsModal";
 import {
   PosWorkspaceContext,
@@ -494,6 +497,8 @@ function DesktopPosContent() {
   const desktopRootRef = useRef<HTMLElement | null>(null);
   const accountMenuRef = useRef<HTMLDetailsElement | null>(null);
   const [token, setToken] = useState("");
+  const [pickupQueueEnabled, setPickupQueueEnabled] = useState(false);
+  const [pickupQueueRefresh, setPickupQueueRefresh] = useState(0);
   const tokenRef = useRef("");
   const [flow, setFlow] = useState<PosClientFlowState>(() => initialPosClientFlow(true));
   const [bootstrap, setBootstrap] = useState<PosBootstrap | null>(null);
@@ -535,6 +540,7 @@ function DesktopPosContent() {
   // no lines, discounts, tax-document number or VAT split. Null while it loads or when it failed.
   const [receiptPaper, setReceiptPaper] = useState<ReceiptPayload | null>(null);
   const [receiptPaperState, setReceiptPaperState] = useState<"idle" | "loading" | "failed">("idle");
+  const receiptPaperLoadSequence = useRef(0);
   const [receiptPrinting, setReceiptPrinting] = useState(false);
   const receiptPrintingRef = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -568,6 +574,18 @@ function DesktopPosContent() {
   const pharmacyRegister = bootstrap?.businessArchetype === "pharmacy";
   const shownModule: DesktopModule =
     pharmacyRegister && activeModule === "mobile_sell" ? "sell" : activeModule;
+  const pickupQueueActive = pickupQueueEnabled || bootstrap?.location?.pickupQueue?.enabled === true;
+  useEffect(() => {
+    let cancelled = false;
+    if (!token) {
+      setPickupQueueEnabled(false);
+      return;
+    }
+    void posDeviceStorageNamespace(token).then((namespace) => {
+      if (!cancelled) setPickupQueueEnabled(readPickupQueueEnabled(namespace));
+    });
+    return () => { cancelled = true; };
+  }, [token, shownModule]);
   useEffect(() => {
     if (shownModule !== "mobile_sell" || flow.stage !== "CATALOG") return;
     const focusScan = (event: KeyboardEvent) => {
@@ -1697,6 +1715,7 @@ function DesktopPosContent() {
       idempotencyKey: key,
       offlineTenderedAt: null,
       mode: "SALE",
+      pickupQueue: pickupQueueActive && !boardGameCheckout,
       boardGameBillingGroupId: boardGameCheckout?.id ?? null,
       lines: (boardGameCheckout ? [] : cart).map((line) => ({
         sku: line.sku,
@@ -1737,6 +1756,7 @@ function DesktopPosContent() {
 
   const loadReceiptPaper = useCallback(async (sale: SaleResult) => {
     if (!sale.orderId) return;
+    const sequence = ++receiptPaperLoadSequence.current;
     setReceiptPaper(null);
     setReceiptPaperState("loading");
     try {
@@ -1748,6 +1768,7 @@ function DesktopPosContent() {
       // The latest sale of this device must be the one just confirmed. Anything else would print
       // another customer's bill, so fail visibly instead.
       if (!row || row.orderId !== sale.orderId) throw new Error("receipt mismatch");
+      if (sequence !== receiptPaperLoadSequence.current) return;
       const languageMode = isReceiptLanguageMode(bootstrap?.store.receiptLanguageMode)
         ? bootstrap.store.receiptLanguageMode
         : "th";
@@ -1767,7 +1788,7 @@ function DesktopPosContent() {
       }));
       setReceiptPaperState("idle");
     } catch {
-      setReceiptPaperState("failed");
+      if (sequence === receiptPaperLoadSequence.current) setReceiptPaperState("failed");
     }
   }, [bootstrap, token]);
 
@@ -1852,6 +1873,9 @@ function DesktopPosContent() {
       }
       if (!data.bmsPosSale.orderId) throw new PosSaleResultError(posText("ผลรับชำระไม่ครบถ้วน"), data.bmsPosSale);
       setReceipt({ ...data.bmsPosSale, completedAt: Date.now(), displayMember: saleAttemptRef.current.displayMember });
+      if (data.bmsPosSale.pickupQueue || data.bmsPosSale.pickupQueueError) {
+        setPickupQueueRefresh((current) => current + 1);
+      }
       saleAttemptRef.current = null;
       sendFlow("SALE_COMPLETED");
       setConnection("online");
@@ -1886,6 +1910,7 @@ function DesktopPosContent() {
     }
     setBoardGameCheckout(null);
     setReceipt(null);
+    receiptPaperLoadSequence.current += 1;
     setReceiptPaper(null);
     setReceiptPaperState("idle");
     setPayments([{ id: "payment-1", method: "cash", amount: 0, tendered: 0 }]);
@@ -2059,9 +2084,24 @@ function DesktopPosContent() {
           {boardGameCheckout ? <BoardGameBillBreakdown checkout={boardGameCheckout} receipt /> : null}
           <dl>
             <div><dt>{posText("เลขที่ใบเสร็จ")}</dt><dd>{receipt.receiptNo || receipt.billNo || receipt.orderId}</dd></div>
+            {receipt.pickupQueue?.label && <div><dt>{posText("เลขคิวรับของ")}</dt><dd>{receipt.pickupQueue.label}</dd></div>}
             <div><dt>{posText("รับเงิน")}</dt><dd>{money(receipt.cashTendered ?? validation.paidTotal)}</dd></div>
             <div className={styles.changeRow}><dt>{posText("เงินทอน")}</dt><dd>{money(receipt.cashChange ?? 0)}</dd></div>
           </dl>
+          {receipt.pickupQueueError && receipt.orderId && (
+            <p role="status" className={styles.receiptPaperStatus}>
+              {posText("ขายสำเร็จแล้ว แต่ออกเลขคิวไม่ได้:") + " "}{receipt.pickupQueueError}{" "}
+              <PickupQueueRetryButton token={token} cashierUserId={cashier?.id ?? cashierId}
+                cashierPin={pin} orderId={receipt.orderId} onIssued={(label) => {
+                  setReceipt((current) => current ? {
+                    ...current, pickupQueue: { id: "", queueNo: Number(label.replace(/\D/g, "")), label },
+                    pickupQueueError: null,
+                  } : current);
+                  setPickupQueueRefresh((current) => current + 1);
+                  void loadReceiptPaper(receipt);
+                }} />
+            </p>
+          )}
           {error ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert> : null}
           {hasDesktopPrinterBridge() && (
             <details style={{ textAlign: "left", marginBottom: 12 }}>
@@ -2287,7 +2327,13 @@ function DesktopPosContent() {
             </section>
           </div>
         ) : (
-        <div className={styles.content}>
+        <div className={`${styles.content}${pickupQueueActive && token ? ` ${styles.contentWithQueue}` : ""}`}>
+          {pickupQueueActive && token && (
+            <div className={styles.queueBar}>
+              <PickupQueueStrip token={token} cashierUserId={cashier?.id ?? cashierId}
+                cashierPin={pin} refreshKey={pickupQueueRefresh} variant="compact" />
+            </div>
+          )}
           <section className={styles.catalogPane}>
             {checkout ? (
               <>
