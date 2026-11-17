@@ -46,7 +46,8 @@ async function handlePOST(req: NextRequest) {
   }
 
   const couponCode = typeof body.couponCode === "string" ? body.couponCode : null;
-  const result = await createOrder({ tenantId: auth.tenantId, channel, customerRef, items, couponCode });
+  const result = await createOrder({ tenantId: auth.tenantId, channel, customerRef, items, couponCode,
+    editorId: auth.adminId });
 
   const httpStatus =
     result.status === "CREATED"

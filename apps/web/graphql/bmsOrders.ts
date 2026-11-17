@@ -291,7 +291,6 @@ export const bmsOrdersResolvers = {
       await assertOrderBranchAccess(ctx, tenantId, args.id);
       const r = await reorderFromOrder(tenantId, args.id, ctx?.admin?.id ?? null);
       if (r.status === "CREATED") {
-        await audit(ctx, "order.reorder", r.orderId, { sourceOrderId: args.id });
         return { status: r.status, orderId: r.orderId, total: r.total, message: `สร้างออร์เดอร์ใหม่แล้ว ยอดรวม ${r.total.toLocaleString()} ฿` };
       }
       const messages: Record<string, string> = {
@@ -332,7 +331,6 @@ export const bmsOrdersResolvers = {
         locationId,
       });
       if (r.status === "CREATED") {
-        await audit(ctx, "order.create", r.orderId, { itemCount: (args.items ?? []).length, total: r.total, discount: r.discount, couponCode: r.couponCode });
         const discountNote = r.discount > 0 ? ` (ใช้โค้ดส่วนลด ${r.couponCode} -${r.discount.toLocaleString()} ฿)` : "";
         return { status: r.status, orderId: r.orderId, total: r.total, message: `สร้างออร์เดอร์แล้ว ยอดรวม ${r.total.toLocaleString()} ฿${discountNote}` };
       }

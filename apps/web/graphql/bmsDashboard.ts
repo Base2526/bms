@@ -16,6 +16,8 @@ import {
   setRolePermissions,
 } from "@/lib/bms/permissions";
 import { audit, listAudit } from "@/lib/bms/audit";
+import { listAuditTimeline, type AuditTimelineFilter } from "@/lib/bms/auditTimeline";
+import { requirePlatformAdmin } from "@/lib/bms/platform";
 import { getActionMetrics, listActions, recordDemandEvent, refreshActions, transitionAction, upsertInventoryPolicy } from "@/lib/bms/actionCenter";
 
 // จัดการ RBAC ได้เฉพาะ Administrator (super)
@@ -106,6 +108,18 @@ export const bmsDashboardResolvers = {
     async bmsAuditLog(_p: unknown, args: { limit?: number }, ctx: any) {
       requireSuper(ctx);
       return listAudit(getTenantId(ctx), args.limit ?? 100);
+    },
+    async bmsAuditTimeline(_p: unknown, args: { filter?: AuditTimelineFilter; platformGlobal?: boolean }, ctx: any) {
+      if (args.platformGlobal === true) await requirePlatformAdmin(ctx);
+      else if (ctx?.admin?.role === "Administrator") requireSuper(ctx);
+      else await requirePlatformAdmin(ctx);
+      const tenantId = args.platformGlobal === true ? null : ctx?.admin?.tenant_id ?? null;
+      if (!tenantId) await requirePlatformAdmin(ctx);
+      const page = await listAuditTimeline(tenantId, args.filter ?? {});
+      return {
+        ...page,
+        nodes: page.nodes.map((row) => ({ ...row, actorUserId: row.actor_user_id })),
+      };
     },
   },
   Mutation: {

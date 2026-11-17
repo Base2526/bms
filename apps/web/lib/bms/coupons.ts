@@ -13,6 +13,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { insertAuditInTx } from "./audit";
 import { findCustomerIdByIdentity } from "./customers";
 
 type CouponQueryFn = (sql: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number | null }>;
@@ -805,6 +806,10 @@ export async function upsertCoupon(
       );
       if (res.rowCount === 0) throw new Error("ไม่พบโค้ดส่วนลดนี้");
       await replaceCouponLocationsInTx(client, tenantId, res.rows[0].id, v.locationIds ?? null);
+      await insertAuditInTx(client, { tenantId, actor: String(editorId ?? "system"),
+        actorKind: editorId ? "STAFF" : "SYSTEM", actorUserId: editorId ? String(editorId) : null,
+        action: "coupon.upsert", target: res.rows[0].id, targetKind: "COUPON",
+        source: "COUPON_SERVICE", meta: { code: v.code } });
       await client.query("COMMIT");
       return mapRow(res.rows[0]);
     }
@@ -820,6 +825,10 @@ export async function upsertCoupon(
       ]
     );
     await replaceCouponLocationsInTx(client, tenantId, res.rows[0].id, v.locationIds ?? null);
+    await insertAuditInTx(client, { tenantId, actor: String(editorId ?? "system"),
+      actorKind: editorId ? "STAFF" : "SYSTEM", actorUserId: editorId ? String(editorId) : null,
+      action: "coupon.upsert", target: res.rows[0].id, targetKind: "COUPON",
+      source: "COUPON_SERVICE", meta: { code: v.code } });
     await client.query("COMMIT");
     return mapRow(res.rows[0]);
   } catch (err: any) {
@@ -853,31 +862,47 @@ async function replaceCouponLocationsInTx(
   );
 }
 
-export async function deleteCoupon(tenantId: string, id: string): Promise<boolean> {
+export async function deleteCoupon(tenantId: string, id: string, actorUserId?: string | null): Promise<boolean> {
   // ห้ามลบคูปองที่เคยถูกใช้กับออเดอร์แล้ว — แม้ order จะถูก cancel แล้วคืน quota จน
   // redemptions_count กลับเป็น 0 ก็ตาม ประวัติการใช้/ออเดอร์เก่ายังต้อง trace ได้
   // ให้ "ปิดใช้งาน" (active=false) แทน หยุดใช้ต่อได้แต่เก็บประวัติครบ
-  const cur = await query<{ code: string; redemptions_count: number; order_count: number }>(
-    `SELECT c.code, c.redemptions_count,
-            COUNT(o.id)::int AS order_count
-       FROM bms_coupons c
-       LEFT JOIN bms_orders o
-         ON o.tenant_id = c.tenant_id
-        AND (o.coupon_id = c.id OR (o.coupon_id IS NULL AND o.coupon_code = c.code))
-      WHERE c.tenant_id = $1 AND c.id = $2
-      GROUP BY c.id`,
-    [tenantId, id]
-  );
-  if (cur.rowCount === 0) return false;
-  const usageCount = Math.max(cur.rows[0].redemptions_count, cur.rows[0].order_count);
-  if (usageCount > 0) {
-    throw new Error(
-      `ลบไม่ได้: โค้ด "${cur.rows[0].code}" เคยถูกใช้แล้ว ${usageCount} ครั้ง/รายการ — ` +
-      `ให้ "ปิดใช้งาน" แทน (แก้โค้ด → ปิดสวิตช์เปิดใช้งาน) เพื่อเก็บประวัติการใช้ไว้`
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorUserId });
+    const cur = await client.query<{ code: string; redemptions_count: number }>(
+      `SELECT code, redemptions_count FROM bms_coupons
+        WHERE tenant_id = $1 AND id = $2 FOR UPDATE`, [tenantId, id]
     );
+    if (!cur.rowCount) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    const used = await client.query<{ order_count: number }>(
+      `SELECT COUNT(*)::int AS order_count FROM bms_orders
+        WHERE tenant_id = $1 AND (coupon_id = $2 OR (coupon_id IS NULL AND coupon_code = $3))`,
+      [tenantId, id, cur.rows[0].code]
+    );
+    const usageCount = Math.max(cur.rows[0].redemptions_count, Number(used.rows[0]?.order_count ?? 0));
+    if (usageCount > 0) {
+      throw new Error(
+        `ลบไม่ได้: โค้ด "${cur.rows[0].code}" เคยถูกใช้แล้ว ${usageCount} ครั้ง/รายการ — ` +
+        `ให้ "ปิดใช้งาน" แทน (แก้โค้ด → ปิดสวิตช์เปิดใช้งาน) เพื่อเก็บประวัติการใช้ไว้`
+      );
+    }
+    const res = await client.query(`DELETE FROM bms_coupons WHERE tenant_id = $1 AND id = $2`, [tenantId, id]);
+    if (res.rowCount) await insertAuditInTx(client, {
+      tenantId, actor: actorUserId ?? "system", actorKind: actorUserId ? "STAFF" : "SYSTEM",
+      actorUserId: actorUserId ?? null, action: "coupon.delete", target: id,
+      targetKind: "COUPON", source: "COUPON_SERVICE", meta: { code: cur.rows[0].code },
+    });
+    await client.query("COMMIT");
+    return (res.rowCount ?? 0) > 0;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
   }
-  const res = await query(`DELETE FROM bms_coupons WHERE tenant_id = $1 AND id = $2`, [tenantId, id]);
-  return (res.rowCount ?? 0) > 0;
 }
 
 /**

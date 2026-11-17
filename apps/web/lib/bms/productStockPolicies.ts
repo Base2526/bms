@@ -1,5 +1,6 @@
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { insertAuditInTx } from "./audit";
 import { assertReadinessAllowsSaveOfActiveProduct, getProductReadinessInTx } from "./productConfiguration";
 import { resolveKitchenStationForProductInTx } from "./kitchenStations";
 
@@ -197,6 +198,12 @@ export async function upsertProductStockPolicy(
       const readiness = await getProductReadinessInTx(client, tenantId, input.productSku);
       assertReadinessAllowsSaveOfActiveProduct(readiness);
     }
+    await insertAuditInTx(client, {
+      tenantId, actor: editorId ?? "system", actorKind: editorId ? "STAFF" : "SYSTEM",
+      actorUserId: editorId ?? null, action: "product.stock_policy_upsert",
+      target: input.productSku, targetKind: "PRODUCT", source: "STOCK_POLICY_SERVICE",
+      meta: { stockPolicy },
+    });
     await client.query("COMMIT");
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}

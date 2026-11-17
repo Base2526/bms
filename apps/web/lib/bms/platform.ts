@@ -14,6 +14,7 @@ import type { PoolClient } from "pg";
 import { requireAuth } from "@/lib/auth";
 import { query, getClient } from "@/lib/db";
 import { beginTenantTx, DEFAULT_TENANT_ID } from "./tenant";
+import { insertSecurityEventInTx } from "./securityEvents";
 
 /** platform admin หรือไม่ — อ่านสด ๆ จาก DB ด้วย id ใน session */
 export async function isPlatformAdmin(ctx: any): Promise<boolean> {
@@ -332,7 +333,7 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
   }
 }
 
-export async function deleteTenant(tenantId: string): Promise<{ slug: string; name: string }> {
+export async function deleteTenant(tenantId: string, actorUserId?: string | null): Promise<{ slug: string; name: string }> {
   if (tenantId === DEFAULT_TENANT_ID) {
     throw new Error("ห้ามลบร้าน default");
   }
@@ -350,6 +351,11 @@ export async function deleteTenant(tenantId: string): Promise<{ slug: string; na
   try {
     await client.query("BEGIN");
     await deleteTenantRows(client, [tenantId]);
+    await insertSecurityEventInTx(client, {
+      tenantId: null, actorUserId: actorUserId ?? null,
+      event: "tenant.delete", outcome: "SUCCESS", source: actorUserId ? "PLATFORM_ADMIN" : "SYSTEM",
+      meta: { targetTenantId: tenantId, slug },
+    });
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});

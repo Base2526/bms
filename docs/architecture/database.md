@@ -1210,8 +1210,20 @@ request authentication compares it with the live user row. `password_reset_token
 stores only a SHA-256 digest of the bearer token. The legacy plaintext `token` column remains
 nullable for migration compatibility but new code never writes or queries it.
 
-**`bms_audit_log`** — append-only, written via `audit(ctx, action, target, meta)`
-(`lib/bms/audit.ts`); failures to write are swallowed (never blocks the mutation that triggered it).
+**`bms_audit_log`** — append-only business audit. Required decisions use `insertAuditInTx()`
+(`lib/bms/audit.ts`) and roll back with the business write if audit fails. Legacy resolver
+`audit(ctx, action, target, meta)` remains best-effort and swallows failures.
+Migration `10.122` adds stable `actor_user_id`, actor/source/target classification, request and
+idempotency keys, and removes `UPDATE`/`DELETE` grants from `bms_app`. Required business audits use
+`insertAuditInTx()` on the same transaction; `audit(ctx)` remains best-effort for diagnostics.
+Migration `10.123` adds a tenant/legacy-text-actor/time index for exact UUID-text history lookups;
+`listAuditTimeline()` limits each source before merging them, then uses keyset cursors rather than
+offsets. This bounds the final merge even when the audit tables are large. The tables themselves
+are still unpartitioned and have no retention/archive policy; see the audit traceability capacity
+section before claiming ten-year operating readiness.
+`bms_security_events` records auth and sensitive-read events, including platform/unknown-tenant
+events that cannot fit `bms_audit_log.tenant_id NOT NULL`. See
+[audit traceability](audit-traceability.md) for guarantees and known gaps.
 The AI runtime writes `ai.tool_call` for every tool success, failure, denial, or proposal. Its meta
 contains only surface/outcome/permission/sensitivity/channel—not raw args, prompts, or customer PII.
 Successful AI writes also retain their normal domain action, while confirmed sensitive proposals

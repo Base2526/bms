@@ -1,6 +1,7 @@
 import { getClient, query } from "@/lib/db";
 import type { QueryResult, QueryResultRow } from "pg";
 import { beginTenantTx } from "./tenant";
+import { insertAuditInTx } from "./audit";
 import { normalizeShopArchetype } from "./shopArchetypes";
 import { shopExperienceForArchetype } from "./shopExperience";
 
@@ -252,6 +253,12 @@ export async function upsertStoreCapability(
          source = 'MANUAL', updated_at = now()`,
       [tenantId, input.capability, Boolean(input.enabled), JSON.stringify(config)]
     );
+    await insertAuditInTx(client, {
+      tenantId, actor: editorId ?? "system", actorKind: editorId ? "STAFF" : "SYSTEM",
+      actorUserId: editorId ?? null, action: "store.capability_upsert",
+      target: input.capability, targetKind: "STORE_CAPABILITY", source: "STORE_CAPABILITY_SERVICE",
+      meta: { enabled: Boolean(input.enabled) },
+    });
     await client.query("COMMIT");
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
@@ -274,10 +281,15 @@ export async function resetStoreCapability(
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, editorId ? { editorId } : undefined);
-    await client.query(
+    const removed = await client.query(
       `DELETE FROM bms_store_capabilities WHERE tenant_id = $1 AND capability = $2`,
       [tenantId, capability]
     );
+    if (removed.rowCount) await insertAuditInTx(client, {
+      tenantId, actor: editorId ?? "system", actorKind: editorId ? "STAFF" : "SYSTEM",
+      actorUserId: editorId ?? null, action: "store.capability_reset",
+      target: capability, targetKind: "STORE_CAPABILITY", source: "STORE_CAPABILITY_SERVICE",
+    });
     await client.query("COMMIT");
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}

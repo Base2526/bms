@@ -10,6 +10,7 @@ import { getTenantEntitlements } from "@/lib/bms/entitlements";
 import { getPackageMetrics } from "@/lib/bms/packageMetrics";
 import { signupShop, signupShopWithSocial, verifyPendingShopSignup } from "@/lib/bms/signup";
 import { audit } from "@/lib/bms/audit";
+import { recordSecurityEvent, recordSecurityEventBestEffort } from "@/lib/bms/securityEvents";
 import { isPlatformAdmin, requirePlatformAdmin, listTenants, setTenantActive, deleteTenant } from "@/lib/bms/platform";
 import { cookies } from "next/headers";
 import { signActTenant, ACT_TENANT_COOKIE } from "@/lib/auth/token";
@@ -165,7 +166,7 @@ export const bmsSaasResolvers = {
       });
       if (result.status !== "VERIFIED") return result;
 
-      const token = await issueAdminSession(result.user);
+      const token = await issueAdminSession(result.user, "SHOP_SIGNUP");
       return { ...result, token };
     },
     async bmsVerifyShopSignup(_p: unknown, args: { token: string }) {
@@ -223,16 +224,11 @@ export const bmsSaasResolvers = {
       return saved;
     },
     // ลบร้านถาวร (ใช้กับร้านทดสอบเท่านั้น — deleteTenant() ปฏิเสธ slug ที่ไม่ขึ้นต้นด้วย "test-")
-    // audit ก่อนลบเสมอ (เขียนลง audit log ของร้านผู้กระทำเอง ไม่ใช่ร้านเป้าหมายที่กำลังจะหายไป)
+    // The platform-global event commits in deleteTenant's own transaction.
     async bmsDeleteTenant(_p: unknown, args: { tenantId: string }, ctx: any) {
       await requirePlatformAdmin(ctx);
       try {
-        const before = await query<{ slug: string; name: string }>(
-          `SELECT slug, name FROM bms_tenants WHERE id = $1`,
-          [args.tenantId]
-        );
-        await audit(ctx, "tenant.delete", args.tenantId, { slug: before.rows[0]?.slug, name: before.rows[0]?.name });
-        await deleteTenant(args.tenantId);
+        await deleteTenant(args.tenantId, String(requireAuth(ctx).author_id));
         return true;
       } catch (err: any) {
         throw new GraphQLError(err?.message || "failed", { extensions: { code: "BAD_USER_INPUT" } });
@@ -244,17 +240,27 @@ export const bmsSaasResolvers = {
       await requirePlatformAdmin(ctx);
       const r = await query<any>(`SELECT id FROM bms_tenants WHERE id = $1`, [args.tenantId]);
       if (!r.rowCount) throw new GraphQLError("ไม่พบร้าน", { extensions: { code: "BAD_USER_INPUT" } });
-      const adminId = ctx?.admin?.id;
-      cookies().set(ACT_TENANT_COOKIE, signActTenant(args.tenantId, adminId), {
+      const adminId = requireAuth(ctx).author_id;
+      if (!adminId) throw new GraphQLError("Admin identity required", { extensions: { code: "FORBIDDEN" } });
+      const actingToken = signActTenant(args.tenantId, adminId);
+      await recordSecurityEvent({
+        tenantId: null, actorUserId: String(adminId),
+        event: "tenant.impersonate.enter", outcome: "SUCCESS", source: "PLATFORM_ADMIN",
+        meta: { targetTenantId: args.tenantId },
+      });
+      cookies().set(ACT_TENANT_COOKIE, actingToken, {
         httpOnly: true, sameSite: "lax", path: "/", secure: process.env.NODE_ENV === "production",
       });
-      await audit(ctx, "tenant.impersonate.enter", args.tenantId);
       return true;
     },
     async bmsExitTenant(_p: unknown, _a: unknown, ctx: any) {
       const actId = ctx?.admin?.__actingTenantId;
       cookies().delete(ACT_TENANT_COOKIE);
-      if (actId) await audit(ctx, "tenant.impersonate.exit", actId);
+      if (actId) await recordSecurityEventBestEffort({
+        tenantId: null, actorUserId: String(ctx?.admin?.id ?? ""),
+        event: "tenant.impersonate.exit", outcome: "SUCCESS", source: "PLATFORM_ADMIN",
+        meta: { targetTenantId: String(actId) },
+      });
       return true;
     },
   },

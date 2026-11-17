@@ -82,6 +82,7 @@ test("platform tenant suspension cannot commit without its audit record", async 
     "@/lib/auth": {},
     "@/lib/db": { getClient: async () => failing.client, query: async () => ({ rows: [] }) },
     "./tenant": { beginTenantTx, DEFAULT_TENANT_ID: "FAKE-default" },
+    "./securityEvents": { insertSecurityEventInTx: async () => {} },
   });
   await assert.rejects(platform.setTenantActive("tenant-a", false, "actor-a"), /audit failure/);
   assert.equal(failing.state().committed, false);

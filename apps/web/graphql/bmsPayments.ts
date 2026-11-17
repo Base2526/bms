@@ -71,9 +71,9 @@ export const bmsPaymentsResolvers = {
         slipRef: args.slipRef ?? null,
         note: args.note ?? null,
         actor: actorOf(ctx),
+        actorUserId: actorOf(ctx),
       });
       if (res.status === "SUBMITTED") {
-        await audit(ctx, "payment.submit", res.paymentId, { orderId: args.orderId, amount: res.amount });
         return { status: "SUBMITTED", paymentId: res.paymentId, message: "บันทึกการชำระแล้ว (รอยืนยัน)" };
       }
       const msg: Record<string, string> = {
@@ -116,9 +116,8 @@ export const bmsPaymentsResolvers = {
 
     async bmsVerifyPaymentSlip(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "payment.confirm");
-      const res = await verifyPaymentSlip(getTenantId(ctx), args.id);
+      const res = await verifyPaymentSlip(getTenantId(ctx), args.id, actorOf(ctx));
       if (!res) return null;
-      await audit(ctx, "payment.verify", args.id, { method: res.method, verified: res.verified });
       return res;
     },
   },

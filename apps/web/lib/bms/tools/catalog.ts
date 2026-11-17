@@ -247,7 +247,9 @@ function auditCtxOf(ec: ExecCtx): any {
   return ec.ctx ?? { tenant_id: ec.tenantId, admin: { email: ec.actor } };
 }
 async function auditWrite(ec: ExecCtx, action: string, target: string | null, meta: Record<string, unknown>) {
-  await audit(auditCtxOf(ec), action, target, { ...meta, via: `ai:${ec.surface}` });
+  await audit(auditCtxOf(ec), action, target, {
+    ...meta, via: `ai:${ec.surface}`, conversationId: ec.conversationId ?? null,
+  }, { actorKind: "AI", source: ec.surface === "customer" ? "CUSTOMER_AI" : "STAFF_AI" });
 }
 
 async function inventoryToolScope(ec: ExecCtx, locationId?: string | null) {
@@ -2377,6 +2379,7 @@ const createOrderTool: BmsTool = {
       customerRef,
       items,
       editorId: ec.surface === "staff" ? ec.ctx?.admin?.id ?? null : null,
+      auditConversationId: ec.conversationId ?? null,
       couponCode: optString(args, "couponCode") ?? null,
       preferredCarrier: requestedCarrier ?? null,
       locationId: requestedLocationId,
@@ -2420,7 +2423,6 @@ const createOrderTool: BmsTool = {
     }
     if (r.status === "CREATED") {
       if (ec.surface === "customer") ec.createdOrderId = r.orderId;
-      await auditWrite(ec, "order.create", r.orderId, { itemCount: items.length, total: r.total });
       if (ec.surface === "customer" && ec.channel && ec.customerRef) {
         return {
           ok: true,
@@ -2658,11 +2660,11 @@ const reorderTool: BmsTool = {
       ec.surface === "staff" ? ec.ctx?.admin?.id ?? null : null,
       ec.surface === "customer" && ec.channel && ec.customerRef
         ? { channel: ec.channel, customerRef: ec.customerRef }
-        : null
+        : null,
+      ec.conversationId ?? null
     );
     if ((r as any).status === "CREATED") {
       if (ec.surface === "customer") ec.createdOrderId = (r as any).orderId;
-      await auditWrite(ec, "order.create", (r as any).orderId, { reorderFrom: orderId });
     }
     return { ok: true, data: r };
   },
@@ -2943,7 +2945,9 @@ const verifyPaymentSlipTool: BmsTool = {
     required: ["paymentId"],
   },
   execute: async (args, ec): Promise<ToolResult> => {
-    const v = await verifyPaymentSlip(ec.tenantId, reqString(args, "paymentId"));
+    const v = await verifyPaymentSlip(
+      ec.tenantId, reqString(args, "paymentId"), ec.ctx?.admin?.id ? String(ec.ctx.admin.id) : null
+    );
     if (!v) return { ok: false, error: "ไม่พบการชำระเงิน หรือไม่มีสลิปให้ตรวจ" };
     return { ok: true, data: v };
   },

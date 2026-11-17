@@ -20,6 +20,7 @@ import { recordOrderMovements } from "./movements";
 import { resolveOrCreateCustomer } from "./customers";
 import { cancelKitchenTicketsForOrderInTx, enqueueKitchenTicketsInTx } from "./kitchen";
 import { beginTenantTx } from "./tenant";
+import { insertAuditInTx } from "./audit";
 import { DEFAULT_LOCATION_CODE, resolveDefaultLocationIdInTx } from "./locations";
 import { listConversationHelpers, listSystemEvents } from "./inbox";
 import { listShipments, MARKETPLACE_CHANNELS } from "./shipping";
@@ -123,6 +124,10 @@ export type CreateOrderInput = {
   pointsToRedeem?: number | null;
   items: OrderItemInput[];
   editorId?: string | number | null;
+  /** Server-derived provenance for a reorder, never accepted from a public request. */
+  auditSourceOrderId?: string | null;
+  /** Internal inbox conversation provenance supplied by the server-side AI runtime. */
+  auditConversationId?: string | null;
   couponCode?: string | null;
   /**
    * Carrier the customer asked for. A *preference* only — the carrier actually used is
@@ -1701,6 +1706,22 @@ export async function createOrder(
       if (result.status !== "CREATED") {
         await client.query("ROLLBACK");
       } else {
+        const staffId = typeof input.editorId === "string" &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.editorId)
+          ? input.editorId : null;
+        await insertAuditInTx(client, {
+          tenantId: input.tenantId,
+          actor: staffId ?? (input.customerRef ? `customer:${input.channel}` : "system:order"),
+          actorKind: staffId ? "STAFF" : input.customerRef ? "CUSTOMER" : "SYSTEM",
+          actorUserId: staffId,
+          action: input.auditSourceOrderId ? "order.reorder" : "order.create",
+          target: result.orderId, targetKind: "ORDER", source: "ORDER_SERVICE",
+          eventKey: `order.create:${result.orderId}`,
+          meta: { channel: input.channel, itemCount: result.items.length,
+            total: result.total, discount: result.discount,
+            sourceOrderId: input.auditSourceOrderId ?? null,
+            ...(input.auditConversationId ? { conversationId: input.auditConversationId } : {}) },
+        });
         await client.query("COMMIT");
       }
       return result;
@@ -1858,7 +1879,8 @@ export async function reorderFromOrder(
   tenantId: string,
   orderId: string,
   editorId?: string | number | null,
-  currentIdentity?: CustomerChannelIdentity | null
+  currentIdentity?: CustomerChannelIdentity | null,
+  auditConversationId?: string | null
 ): Promise<ReorderResult> {
   const src = await query<{ channel: Channel; customer_ref: string | null; preferred_carrier: string | null }>(
     `SELECT channel, customer_ref, preferred_carrier FROM bms_orders WHERE tenant_id = $1 AND id = $2`,
@@ -1883,6 +1905,8 @@ export async function reorderFromOrder(
     customerRef: targetIdentity.customerRef,
     items: itemsRes.rows.map((r) => ({ sku: r.product_sku, size: r.size, qty: Number(r.qty) })),
     editorId,
+    auditSourceOrderId: orderId,
+    auditConversationId,
     // Same customer reordering — keep the carrier they asked for last time.
     preferredCarrier: src.rows[0].preferred_carrier,
   });

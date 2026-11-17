@@ -2,7 +2,6 @@ import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
-import { audit } from "@/lib/bms/audit";
 import {
   isCapabilityEnabledInTx,
   listStoreCapabilities,
@@ -188,7 +187,6 @@ export const bmsStockCapabilityResolvers = {
       const actorId = tenantAdminId(ctx);
       try {
         const result = await upsertStoreCapability(getTenantId(ctx), args, actorId);
-        await audit(ctx, "store.capability_upsert", result.capability, { enabled: result.enabled });
         return result;
       } catch (error) {
         badInput(error, "บันทึกความสามารถร้านไม่สำเร็จ");
@@ -199,7 +197,6 @@ export const bmsStockCapabilityResolvers = {
       const actorId = tenantAdminId(ctx);
       try {
         const result = await resetStoreCapability(getTenantId(ctx), args.capability, actorId);
-        await audit(ctx, "store.capability_reset", result.capability, {});
         return result;
       } catch (error) {
         badInput(error, "คืนค่า preset ไม่สำเร็จ");
@@ -215,7 +212,6 @@ export const bmsStockCapabilityResolvers = {
         const result = await upsertProductStockPolicy(
           getTenantId(ctx), args.input, String(requireAuth(ctx).author_id)
         );
-        await audit(ctx, "product.stock_policy_upsert", result.productSku, { stockPolicy: result.stockPolicy });
         return result;
       } catch (error) {
         badInput(error, "บันทึกนโยบาย Stock ไม่สำเร็จ");
@@ -244,7 +240,6 @@ export const bmsStockCapabilityResolvers = {
         const result = await setProductBundleItems(
           getTenantId(ctx), args.bundleSku, args.items ?? [], String(requireAuth(ctx).author_id)
         );
-        await audit(ctx, "product.bundle_items_set", args.bundleSku, { components: result.length });
         return result;
       } catch (error) {
         badInput(error, "บันทึกส่วนประกอบของชุดไม่สำเร็จ");
@@ -256,9 +251,6 @@ export const bmsStockCapabilityResolvers = {
         const result = await upsertProductModifier(
           getTenantId(ctx), args.input, String(requireAuth(ctx).author_id)
         );
-        await audit(ctx, "product.modifier_upsert", result.id, {
-          sku: result.productSku, size: result.size, code: result.code,
-        });
         return result;
       } catch (error) {
         badInput(error, "บันทึก Modifier ไม่สำเร็จ");
@@ -285,7 +277,6 @@ export const bmsStockCapabilityResolvers = {
       const actorId = tenantAdminId(ctx);
       try {
         const created = await createKitchenStation(getTenantId(ctx), args.input ?? {}, actorId);
-        await audit(ctx, "kitchen.station_create", created.id, { code: created.code, name: created.name });
         return (await getKitchenStation(getTenantId(ctx), created.id)) ?? created;
       } catch (error) {
         badInput(error, "สร้างสถานีครัวไม่สำเร็จ");
@@ -296,7 +287,6 @@ export const bmsStockCapabilityResolvers = {
       const actorId = tenantAdminId(ctx);
       try {
         const saved = await updateKitchenStation(getTenantId(ctx), args.id, args.input ?? {}, actorId);
-        await audit(ctx, "kitchen.station_update", saved.id, { code: saved.code, name: saved.name, active: saved.active });
         return (await getKitchenStation(getTenantId(ctx), saved.id)) ?? saved;
       } catch (error) {
         badInput(error, "บันทึกสถานีครัวไม่สำเร็จ");
@@ -309,7 +299,6 @@ export const bmsStockCapabilityResolvers = {
         const saved = await archiveKitchenStation(getTenantId(ctx), args.id, actorId, {
           force: args.force === true,
         });
-        await audit(ctx, "kitchen.station_archive", saved.id, { code: saved.code, forced: args.force === true });
         return (await getKitchenStation(getTenantId(ctx), saved.id)) ?? saved;
       } catch (error) {
         badInput(error, "ปิดใช้งานสถานีครัวไม่สำเร็จ");

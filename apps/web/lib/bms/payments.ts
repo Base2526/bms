@@ -15,6 +15,7 @@ import sharp from "sharp";
 import crypto from "crypto";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { insertAuditInTx } from "./audit";
 import { readStoredFile } from "@/lib/storage";
 import { finalizeAiUsageEvent } from "./aiUsage";
 import { notifyOrderStatusEmail } from "./orderNotify";
@@ -46,6 +47,7 @@ export type SubmitPaymentInput = {
   slipRef?: string | null;
   note?: string | null;
   actor?: string | null;
+  actorUserId?: string | null;
 };
 
 export type SubmitResult =
@@ -117,7 +119,7 @@ async function submitPaymentInternal(
 
   const client = await getClient();
   try {
-    await beginTenantTx(client, tenantId);
+    await beginTenantTx(client, tenantId, { editorId: input.actorUserId });
 
     const ord = await client.query<{ total_amount: string; shipping_fee: string; rounding_amount: string; status: string }>(
       `SELECT total_amount, shipping_fee, rounding_amount, status
@@ -176,6 +178,16 @@ async function submitPaymentInternal(
        RETURNING id`,
       [tenantId, input.orderId, input.method, amount, input.slipUrl ?? null, input.slipRef ?? null, input.note ?? null]
     );
+
+    await insertAuditInTx(client, {
+      tenantId, actor: input.actor ?? (input.actorUserId ?? "system"),
+      actorKind: input.actorUserId ? "STAFF" : input.actor?.startsWith("customer:") ? "CUSTOMER" : "SYSTEM",
+      actorUserId: input.actorUserId ?? null,
+      action: "payment.submit", target: ins.rows[0].id, targetKind: "PAYMENT",
+      source: reuseActive ? "PUBLIC_CHECKOUT" : "PAYMENT_SERVICE",
+      eventKey: `payment.submit:${ins.rows[0].id}`,
+      meta: { orderId: input.orderId, amount, method: input.method },
+    });
 
     await client.query("COMMIT");
     return { status: "SUBMITTED", paymentId: ins.rows[0].id, amount };
@@ -912,7 +924,9 @@ async function loadSlipImage(
   }
 }
 
-export async function verifyPaymentSlip(tenantId: string, paymentId: string): Promise<SlipVerification | null> {
+export async function verifyPaymentSlip(
+  tenantId: string, paymentId: string, actorUserId?: string | null
+): Promise<SlipVerification | null> {
   const pay = await query<{ amount: string; slip_url: string | null }>(
     `SELECT amount, slip_url FROM bms_payments WHERE tenant_id = $1 AND id = $2`,
     [tenantId, paymentId]
@@ -985,9 +999,32 @@ export async function verifyPaymentSlip(tenantId: string, paymentId: string): Pr
     };
   }
 
-  await query(
-    `UPDATE bms_payments SET verify_result = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, paymentId, JSON.stringify(result)]
-  );
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorUserId });
+    const updated = await client.query(
+      `UPDATE bms_payments SET verify_result = $3, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 RETURNING id`,
+      [tenantId, paymentId, JSON.stringify(result)]
+    );
+    if (updated.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    await insertAuditInTx(client, {
+      tenantId, actor: actorUserId ?? "system:slip-verification",
+      actorKind: actorUserId ? "STAFF" : "AI",
+      actorUserId: actorUserId ?? null,
+      action: "payment.verify", target: paymentId, targetKind: "PAYMENT",
+      source: "SLIP_VERIFICATION",
+      meta: { method: result.method, verified: result.verified },
+    });
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
   return result;
 }
