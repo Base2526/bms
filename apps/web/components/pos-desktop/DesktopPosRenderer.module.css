@@ -515,6 +515,71 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+.contentWithQueue { grid-template-rows: auto minmax(0, 1fr); }
+.queueBar {
+  min-width: 0;
+  grid-column: 1 / -1;
+  padding: 7px 12px;
+  border: 1px solid #e2e6ec;
+  border-radius: 12px;
+  background: #fff;
+}
+.queueBar :global([data-pickup-queue-main]) {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(130px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+.queueBar :global([data-pickup-queue-summary]),
+.queueBar :global([data-pickup-queue-current]),
+.queueBar :global([data-pickup-queue-actions]) {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.queueBar :global([data-pickup-queue-summary] span) { color: #64748b; font-size: 12px; }
+.queueBar :global([data-pickup-queue-current]) {
+  min-height: 38px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: #eefbf2;
+  color: #166534;
+}
+.queueBar :global([data-pickup-queue-current][data-state="preparing"]) { background: #fff7e6; color: #874d00; }
+.queueBar :global([data-pickup-queue-current][data-state="empty"]) { background: #f4f6f9; color: #64748b; }
+.queueBar :global([data-pickup-queue-current] b) { font-size: 21px; font-variant-numeric: tabular-nums; }
+.queueBar :global([data-pickup-queue-actions]) { justify-content: flex-end; }
+.queueBar :global([data-pickup-queue-actions] .pos-btn) {
+  min-height: 38px;
+  padding: 6px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #1e293b;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.queueBar :global([data-pickup-queue-actions] [data-action="call"]),
+.queueBar :global([data-pickup-queue-actions] [data-action="collect"]) {
+  border-color: #1677ff;
+  background: #1677ff;
+  color: #fff;
+}
+.queueBar :global([data-pickup-queue-actions] .pos-btn:disabled) { opacity: .55; cursor: not-allowed; }
+.queueBar :global([data-pickup-queue-error]) { color: #b91c1c; font-size: 12px; }
+
+@media (max-width: 1050px) {
+  .queueBar :global([data-pickup-queue-main]) { grid-template-columns: minmax(0, 1fr) auto; }
+  .queueBar :global([data-pickup-queue-summary]) { grid-column: 1 / -1; }
+}
+@media (max-width: 600px) {
+  .queueBar :global([data-pickup-queue-main]) { grid-template-columns: minmax(0, 1fr); }
+  .queueBar :global([data-pickup-queue-summary]) { grid-column: auto; flex-wrap: wrap; }
+  .queueBar :global([data-pickup-queue-actions]) { justify-content: flex-start; flex-wrap: wrap; }
+}
+
 .moduleContentError {
   grid-template-rows: auto minmax(0, 1fr);
 }
@@ -1164,6 +1229,7 @@
   .shell { grid-template-columns: 68px minmax(0, 1fr); }
   .workspace { padding: 8px; }
   .content { grid-template-columns: 1fr; overflow-y: auto; }
+  .contentWithQueue { grid-template-rows: auto auto auto; }
   .catalogPane { min-height: 620px; }
   .checkoutPane { min-height: 680px; }
   .accountMenu > summary { min-width: 52px; grid-template-columns: 34px auto; }
