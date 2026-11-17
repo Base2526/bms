@@ -45,6 +45,7 @@ per entry in [status-log.md](docs/status-log.md)):
 | Area | Migrations | Doc |
 | --- | --- | --- |
 | POS sale/return/tax, loyalty, shifts, transfers/counts, Scan Manager | `7.84`–`7.98`, `8.0`–`9.6` | [pos.md](docs/business/pos.md) · [inventory.md](docs/business/inventory.md) |
+| Retail cash sale of an uncatalogued physical item (Web/Desktop/Mobile POS; append-only sale/return evidence, no stock movement) | `10.129`–`10.130` — **branch implementation; throwaway-DB and browser verified, production deployment unverified** | [pos.md § สินค้าชั่วคราว](docs/business/pos.md) · [database.md](docs/architecture/database.md) |
 | Credit sales / AR | `9.30` | [agent-invariants § POS and tax](docs/agent-invariants.md#pos-and-tax) |
 | Decision intelligence (Action Center, purchasing, retention) | `9.12`–`9.14` | [dashboard.md](docs/ui/dashboard.md) · [retention-engine.md](docs/ui/retention-engine.md) |
 | Catalog variants, sales surfaces, stock policies, archetypes | `9.40`–`9.43`, `9.51`–`9.52` | [inventory.md](docs/business/inventory.md) |
@@ -78,6 +79,11 @@ per entry in [status-log.md](docs/status-log.md)):
 
 Migrations not yet applied to production: [CLAUDE.local.md](CLAUDE.local.md) § ก่อน production —
 check the target DB; several features need their migration first.
+The open-item POS build needs `10.129` and `10.130` applied in order before rollout. The full
+`npm run gate` check on 2026-11-17 still had three pre-existing failures: duplicate migration
+numbers `10.122`/`10.123`, the Retail Local `10.121` checksum contract, and the dependent contract
+runner check. Targeted open-item DB tests, mobile tests, Web typecheck/build, and desktop/mobile-width
+browser smoke passed; this does not establish production deployment.
 
 ## AI rules (non-negotiable)
 
