@@ -425,7 +425,8 @@ obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or s
   enter receipts, tax and sale evidence. Returns write `bms_pos_return_open_items` in the
   same transaction as the refund and never move stock. Missing cost is explicit. No
   restaurant/board-game/pharmacy, deposit, coupon, points redemption, manual discount or
-  emergency-offline path may accept an open item.
+  emergency-offline path may accept an open item. `10.130` removes app-role UPDATE/DELETE
+  on sale and return open-item rows; corrections append a return/void instead.
 
 - Back-office payment confirmation needs `payment.confirm` and an explicit `confirmed: true` at
   GraphQL or REST after the human sees the payment identity, amount and method. The API refuses an

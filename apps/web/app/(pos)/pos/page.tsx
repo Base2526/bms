@@ -2867,7 +2867,7 @@ export default function PosPage() {
   function openBlindReturn() {
     if (blindOpen) return;
     if (
-      cart.length > 0
+      (cart.length > 0 || openItems.length > 0 || extraLines.length > 0)
       && !window.confirm(posText("การเปิดโหมดคืนไม่มีใบเสร็จจะล้างตะกร้าปัจจุบันและข้อมูลลูกค้าของบิลนี้ ต้องการเริ่มใหม่หรือไม่?"))
     ) {
       return;
@@ -3339,7 +3339,7 @@ export default function PosPage() {
   }
 
   async function doResumeParked(parkedId: string) {
-    if (cart.length > 0) {
+    if (cart.length > 0 || openItems.length > 0 || extraLines.length > 0) {
       setNotice({ type: "error", text: posText("ตะกร้ายังมีของ — ปิดบิลหรือพักบิลปัจจุบันก่อน") });
       return;
     }
@@ -3409,6 +3409,7 @@ export default function PosPage() {
   async function requestPharmacyReviewFromPos() {
     if (!session?.shift) { setNotice({ type: "error", text: posText("ยังไม่ได้เปิดกะ") }); return; }
     if (!cashierId || !pin) { setNotice({ type: "error", text: posText("เลือกผู้ขายและใส่ PIN ก่อน") }); focusCashierOrPin(); return; }
+    if (openItems.length > 0) { setNotice({ type: "error", text: posText("บิลส่งเภสัชกรไม่รองรับสินค้าชั่วคราว — ปิดหรือลบรายการชั่วคราวก่อน") }); return; }
     if (cart.length === 0) { setNotice({ type: "error", text: posText("ตะกร้าว่าง") }); return; }
     setPharmacyReviewBusy(true);
     setNotice(null);
@@ -3928,6 +3929,10 @@ export default function PosPage() {
 
   async function createDepositFromCart() {
     if (!session?.shift || cart.length === 0 || !cashierId || !pin || busy || hasPendingSale) return;
+    if (openItems.length > 0) {
+      setNotice({ type: "error", text: posText("บิลมัดจำไม่รองรับสินค้าชั่วคราว — ปิดหรือลบรายการชั่วคราวก่อน") });
+      return;
+    }
     // เหมือนหน้าขาย: เภสัชกรอนุมัติที่เครื่องแล้วไม่ต้องรอคิว (9.29)
     if (pharmacyReviewLink && pharmacyReviewLink.status !== "APPROVED" && !pharmacistAuth) {
       setNotice({ type: "error", text: posText("รอเภสัชกรอนุมัติเคส {v0} ก่อนสร้างบิลมัดจำ", { v0: pharmacyReviewLink.caseCode }) });
@@ -4088,6 +4093,10 @@ export default function PosPage() {
   }
 
   async function doDepositAction(action: "take" | "add" | "settle" | "close") {
+    if (action === "settle" && openItems.length > 0) {
+      setNotice({ type: "error", text: posText("บิลมัดจำไม่รองรับสินค้าชั่วคราว — ปิดหรือลบรายการชั่วคราวก่อน") });
+      return;
+    }
     if (!cashierId || !pin) { setNotice({ type: "error", text: posText("เลือกพนักงานและใส่ PIN ก่อน") }); focusCashierOrPin(); return; }
     if (!depositOrderId.trim()) { setNotice({ type: "error", text: posText("เลือกบิลที่ต้องการทำรายการมัดจำ") }); return; }
     const amount = Number(depositAmount);
@@ -4836,6 +4845,7 @@ export default function PosPage() {
   const cartDepositBlockedReason: string | null = (() => {
     if (hasPendingDepositSale) return null; // ปุ่มเปลี่ยนหน้าที่เป็น "ตรวจรายการมัดจำเดิม"
     if (hasPendingSale) return posText("มีบิลขายรอตรวจสอบ — ปิดให้จบก่อน");
+    if (openItems.length > 0) return posText("บิลมัดจำไม่รองรับสินค้าชั่วคราว — ปิดหรือลบรายการชั่วคราวก่อน");
     if (cart.length === 0) return posText("ยังไม่มีสินค้าในบิล");
     if (!session?.shift) return posText("ยังไม่ได้เปิดกะ");
     if (!cashierId) return posText("เลือกผู้ขายก่อน");
@@ -5814,7 +5824,7 @@ export default function PosPage() {
       if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       if (event.key === "F2") {
-        if (tab === "boardgame" || cart.length === 0 || hasPendingOrderWrite) return;
+        if (tab === "boardgame" || (cart.length === 0 && openItems.length === 0) || hasPendingOrderWrite) return;
         event.preventDefault();
         setParkOpen(true);
         return;
@@ -6648,7 +6658,7 @@ export default function PosPage() {
       setNotice({ type: "error", text: posText("มีบิลที่ผลลัพธ์ยังไม่แน่ชัด — กู้บิลนั้นให้เสร็จก่อนทำรายการเปลี่ยนสินค้า") });
       return;
     }
-    const replacingSaleCart = !blindOpen && cart.length > 0;
+    const replacingSaleCart = !blindOpen && (cart.length > 0 || openItems.length > 0 || extraLines.length > 0);
     if (!confirmDiscardBlindReturnDraft(posText("ทำบิลเปลี่ยนสินค้าจากใบเสร็จใบนี้"))) return;
 
     const note = buildReturnNote(row.orderId);
@@ -6660,6 +6670,10 @@ export default function PosPage() {
     const lines = selectedReturnLines(row.lines, returnDrafts[row.orderId] ?? {});
     if (lines.length === 0) {
       setNotice({ type: "error", text: posText("เลือกจำนวนสินค้าที่ต้องการเปลี่ยนอย่างน้อย 1 รายการ") });
+      return;
+    }
+    if (lines.some((line) => line.orderItemId < 0)) {
+      setNotice({ type: "error", text: posText("สินค้าชั่วคราวทำบิลเปลี่ยนต่ออัตโนมัติไม่ได้ — คืนรายการก่อน แล้วเปิดบิลขายใหม่") });
       return;
     }
     const refundPaymentOptions = getRefundPaymentOptions(row);
@@ -6675,7 +6689,7 @@ export default function PosPage() {
       return;
     }
     if (replacingSaleCart && !window.confirm(
-      posText("ตะกร้าขายปัจจุบันมี {v0} รายการและจะถูกแทนที่ด้วยบิลเปลี่ยนสินค้า ต้องการทำต่อหรือไม่?", { v0: cart.length })
+      posText("ตะกร้าขายปัจจุบันมี {v0} รายการและจะถูกแทนที่ด้วยบิลเปลี่ยนสินค้า ต้องการทำต่อหรือไม่?", { v0: cart.length + openItems.length + extraLines.length })
     )) return;
     if (!window.confirm(
       posText("ยืนยันรับคืนสินค้าที่เลือกก่อนเปิดบิลเปลี่ยน? เงินสดจะถือว่าคืนแล้ว ส่วนบัตร/QR/วอลเล็ทต้องยืนยันคืนเงินจริงอีกครั้ง")
@@ -8834,7 +8848,7 @@ export default function PosPage() {
                   <div className="pos-shift-close pos-shift-panel">
                     <div className="pos-block-title">{posText("ปิดกะ")}</div>
                     {/* ปิดกะขณะมีของค้างในตะกร้าไม่ได้ — บิลที่ยังไม่จบจะหายไปกับกะ */}
-                  {cart.length > 0 ? (
+                  {cart.length > 0 || openItems.length > 0 ? (
                     <PosDismissibleAlert className="pos-note pos-note--warn">
                       {posText("ยังมีสินค้าค้างในตะกร้า — ปิดบิลให้จบหรือล้างบิลก่อนปิดกะ") + " "}</PosDismissibleAlert>
                   ) : (

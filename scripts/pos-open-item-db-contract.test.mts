@@ -100,6 +100,22 @@ test("RLS hides open lines for another tenant under bms_app", async () => {
   } finally { await client.query("ROLLBACK"); client.release(); }
 });
 
+test("app role can append but cannot rewrite sale or return open-item evidence", async () => {
+  const rights = await query<{ sale_insert: boolean; sale_update: boolean; sale_delete: boolean;
+    return_insert: boolean; return_update: boolean; return_delete: boolean }>(
+    `SELECT has_table_privilege('bms_app','bms_order_open_items','INSERT') AS sale_insert,
+            has_table_privilege('bms_app','bms_order_open_items','UPDATE') AS sale_update,
+            has_table_privilege('bms_app','bms_order_open_items','DELETE') AS sale_delete,
+            has_table_privilege('bms_app','bms_pos_return_open_items','INSERT') AS return_insert,
+            has_table_privilege('bms_app','bms_pos_return_open_items','UPDATE') AS return_update,
+            has_table_privilege('bms_app','bms_pos_return_open_items','DELETE') AS return_delete`
+  );
+  assert.deepEqual(rights.rows[0], {
+    sale_insert: true, sale_update: false, sale_delete: false,
+    return_insert: true, return_update: false, return_delete: false,
+  });
+});
+
 test("receipt history and sales evidence retain the open item without a catalog SKU", async () => {
   const receipts = await listRecentPosSales(tenantId, deviceId, 20, { query: `${tag} scarf` });
   const receipt = receipts.find(row => row.orderId === orderId);

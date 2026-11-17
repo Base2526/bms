@@ -7,7 +7,9 @@
 `bms_order_open_items` stores tenant/order FK, immutable sale label, integer qty,
 unit/line amount and `V`/`N` VAT category. It has no SKU or inventory link.
 `bms_pos_return_open_items` stores tenant/return/open-line FK, returned qty and
-allocated refund. Both tables have tenant RLS, `bms_app` grants and sequence grants.
+allocated refund. Both tables have tenant RLS and `bms_app` SELECT/INSERT and
+sequence grants. Migration `10.130` revokes UPDATE/DELETE from `bms_app` so a
+return or void adds evidence without rewriting the sale or an earlier return.
 The Manager role gains `pos.open_item.sell`; existing permissions and cashier PIN
 still apply. Negative open-line IDs in POS return and financial-snapshot APIs are
 an adapter namespace for these positive DB IDs; they are never inventory IDs.

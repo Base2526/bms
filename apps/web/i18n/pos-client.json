@@ -3717,5 +3717,9 @@
   "ข้อมูลสินค้าชั่วคราวไม่ถูกต้อง": "Invalid open item",
   "กรอกชื่อ จำนวนเต็ม ราคาบวกไม่เกินสองตำแหน่ง และเลือก VAT (สูงสุด 10 รายการ)": "Enter a name, whole quantity, positive price with up to two decimals and a VAT category (10 items maximum)",
   "ขายสินค้าชั่วคราวไม่ได้": "Cannot sell open item",
-  "สินค้าชั่วคราวขายได้เฉพาะร้านทั่วไป รับเงินสดเต็มจำนวน และไม่ใช้มัดจำ คูปอง แต้ม หรือส่วนลดพิเศษ": "Open items require a general retail cash sale without deposits, coupons, points or manual discounts"
+  "สินค้าชั่วคราวขายได้เฉพาะร้านทั่วไป รับเงินสดเต็มจำนวน และไม่ใช้มัดจำ คูปอง แต้ม หรือส่วนลดพิเศษ": "Open items require a general retail cash sale without deposits, coupons, points or manual discounts",
+  "เปลี่ยนสินค้าไม่ได้": "Cannot exchange item",
+  "สินค้าชั่วคราวทำบิลเปลี่ยนต่ออัตโนมัติไม่ได้ — คืนรายการก่อน แล้วเปิดบิลขายใหม่": "An open item cannot start an automatic exchange bill. Return it, then start a new sale.",
+  "บิลส่งเภสัชกรไม่รองรับสินค้าชั่วคราว — ปิดหรือลบรายการชั่วคราวก่อน": "Pharmacy review does not support open items. Complete or remove them first.",
+  "บิลมัดจำไม่รองรับสินค้าชั่วคราว — ปิดหรือลบรายการชั่วคราวก่อน": "Deposit bills do not support open items. Complete or remove them first."
 }

@@ -6093,6 +6093,9 @@ export async function processPosReturn(input: {
     // ถ้าไม่แปลงให้เป็นชนิดเดียวกัน byId.get(978) จะไม่เจอ "978" แล้วการคืนสินค้า
     // แบบระบุรายการจะตอบ ITEM_NOT_FOUND ทุกครั้ง (คืนทั้งบิลไม่โดนเพราะสร้าง
     // requestedMap จาก row.id เอง ชนิดจึงตรงกันโดยบังเอิญ)
+    // The order row is already locked for this return. Open sale lines are append-only
+    // under bms_app, so no second row lock is needed (SELECT FOR SHARE requires UPDATE
+    // privilege and would defeat the immutable-table grant).
     const openRes = await client.query<{
       id: string; label: string; qty: number; unit_amount: string; line_amount: string;
       vat_category: string; returned_pack_qty: string; returned_refund_amount: string;
@@ -6107,7 +6110,7 @@ export async function processPosReturn(input: {
                         WHERE ri.tenant_id=oi.tenant_id AND ri.order_open_item_id=oi.id
                           AND pr.order_id=oi.order_id),0) AS returned_refund_amount
          FROM bms_order_open_items oi
-        WHERE oi.tenant_id=$1 AND oi.order_id=$2 ORDER BY oi.id FOR UPDATE`,
+        WHERE oi.tenant_id=$1 AND oi.order_id=$2 ORDER BY oi.id`,
       [input.tenantId, input.orderId]
     );
     const orderItems = [

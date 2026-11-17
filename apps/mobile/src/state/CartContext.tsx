@@ -612,6 +612,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     async (id: string) => {
       const parked = parkedBills.find(bill => bill.id === id);
       if (!parked) return posText("ไม่พบบิลพัก");
+      if (lines.length > 0 || openItems.length > 0 || extraLines.length > 0) {
+        return posText("ตะกร้ายังมีของ — ปิดบิลหรือพักบิลปัจจุบันก่อน");
+      }
       const failure = await mutatePark({ action: 'resume', parkedId: id });
       if (!failure) {
         setLines(await refreshParkedLines(parked.lines));
@@ -625,7 +628,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       }
       return failure;
     },
-    [mutatePark, parkedBills, refreshParkedLines],
+    [extraLines.length, lines.length, mutatePark, openItems.length, parkedBills, refreshParkedLines],
   );
 
   const deleteParkedBill = useCallback(

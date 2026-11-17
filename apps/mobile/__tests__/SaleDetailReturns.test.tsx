@@ -25,7 +25,7 @@ jest.mock('@apollo/client', () => ({
   useQuery: () => ({ data: { bmsPosSession: { approvers: [{ id: 'manager', name: 'Manager', hasPin: true, approvals: ['pos.void'] }] } } }),
 }));
 jest.mock('../src/state/SalesContext', () => ({ useSales: () => ({ findSale: () => mockSale, refresh: mockRefresh, loading: false }) }));
-jest.mock('../src/state/CartContext', () => ({ useCart: () => ({ lines: [], replaceForExchange: mockReplace }) }));
+jest.mock('../src/state/CartContext', () => ({ useCart: () => ({ lines: [], openItems: [], extraLines: [], replaceForExchange: mockReplace }) }));
 jest.mock('../src/state/CatalogContext', () => ({ useCatalog: () => ({ resolveVariant: mockResolve }) }));
 jest.mock('../src/state/SessionContext', () => ({ useSession: () => ({ session: {
   cashier: { id: 'cashier' }, credentials: { cashierUserId: 'cashier', pin: '1234' },
@@ -106,6 +106,19 @@ test('VOIDED closes the void action after an approved mutation', async () => {
   expect(mockRefresh).toHaveBeenCalledTimes(1);
   expect(Alert.alert).toHaveBeenCalledWith('Void สำเร็จ', expect.any(String));
   expect(renderer.root.findByType(Modal).props.visible).toBe(false);
+});
+
+test('an open item cannot start an exchange return before a replacement SKU exists', async () => {
+  const originalId = mockSale.lines[0].orderItemId;
+  mockSale.lines[0].orderItemId = -1;
+  try {
+    await openAction('เปลี่ยนสินค้า');
+    await act(async () => { await button('รับคืนและเปิดบิลใหม่').props.onPress(); });
+    expect(mockReturn).not.toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledWith('เปลี่ยนสินค้าไม่ได้', expect.stringContaining('สินค้าชั่วคราว'));
+  } finally {
+    mockSale.lines[0].orderItemId = originalId;
+  }
 });
 
 test('stock rejection keeps the return form open and displays the server reason', async () => {
