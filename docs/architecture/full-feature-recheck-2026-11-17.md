@@ -7,10 +7,11 @@ provider contract, signed native build or human professional approval is represe
 
 ## Source and evidence identity
 
-- Source baseline: `develop` commit `ddfd8483679d77b4243031c7c41927f7f0de8bf0` plus the changes in
-  this review branch. The initial full DB run used the dirty original workspace; the worktree
-  contains separate documentation/PDF/test changes. **Do not treat either as an exact clean
-  release-commit result.**
+- Source baseline: `develop` commit `ddfd8483679d77b4243031c7c41927f7f0de8bf0`; review
+  branch clean commit `30d6d8fa832cdc2d3d691f6be687fc2faa12f7e1`. A clean source manifest
+  was generated for that commit, but the Web/native/DB checks below ran just before the commit;
+  the full DB run used the dirty original workspace. **Do not treat those checks as an exact
+  clean-commit release result.**
 - Test Postgres: isolated `bms-realtime-test` Docker Compose instance on `127.0.0.1:5433`.
   `bms_realtime_test` is a restored BMS schema; the named freemium, requisition and operations
   databases are disposable tests on the same instance. Restaurant pickup uses a temporary
@@ -19,6 +20,9 @@ provider contract, signed native build or human professional approval is represe
 - Registry: `88` **known code capabilities**; `2` without direct workflow test links;
   `scope=baseline-in-progress`. The missing IDs are `settings.marketplaces` and
   `shipping.carrier-integrations`. A linked test is a map, not a passing result.
+- The blank release evidence form for the clean manifest was intentionally checked and returned
+  `INCOMPLETE` with 98 missing items: artifact digest, deployment target, 8 gates and 88 feature
+  outcomes. It must not be filled with source-test filenames as if they were target results.
 
 ## Checks actually run
 
@@ -46,8 +50,8 @@ Docker recovers, on the exact clean commit selected for release.
 ## Findings by priority
 
 - **P0:** Schema and transaction contracts run on the restored local database, including money,
-  stock, tenant/RBAC and rollback paths. The inventory is still a baseline; a clean-commit
-  manifest, backup restore to another instance, target flag/migration snapshot, authenticated
+  stock, tenant/RBAC and rollback paths. A clean-commit source manifest exists, but the inventory
+  is still a baseline. Backup restore to another instance, target flag/migration snapshot, authenticated
   browser, realtime recovery and load targets remain open. Tax-point changes await an accountant.
 - **P1:** Retail cart, scheduled branch pricing and transfer-lot code exist, but no end-to-end
   target tenant pilot is recorded. Retail-specific Click & Collect is a separate unfinished
