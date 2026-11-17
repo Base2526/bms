@@ -26,6 +26,7 @@ import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 import { isPosPinValid } from "@pos-core/posPin";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { insertAuditInTx } from "./audit";
 import { assertManageablePosAccountInTx } from "./userAdmin";
 import { buildReturnFinancialSnapshot } from "./returnFinancialSnapshot";
 import { resetMenuAvailabilityForLocationInTx } from "./menuAvailability";
@@ -1593,17 +1594,18 @@ export async function openPosShift(input: {
       [tenantId, device.rows[0].location_id, deviceId, input.openedBy,
         openingFloat, input.pharmacistUserId ?? null]
     );
-    await client.query(
-      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
-       VALUES ($1, $2, 'pos.shift.open', $3, $4)`,
-      [tenantId, input.openedBy, res.rows[0].id, JSON.stringify({
+    await insertAuditInTx(client, {
+      tenantId, actor: input.openedBy, actorKind: "STAFF", actorUserId: input.openedBy,
+      action: "pos.shift.open", target: res.rows[0].id, targetKind: "POS_SHIFT",
+      source: "POS_SERVICE", eventKey: `pos.shift.open:${res.rows[0].id}`,
+      meta: {
         deviceId,
         locationId: device.rows[0].location_id,
         openingFloat,
         pharmacistUserId: input.pharmacistUserId ?? null,
         reopenedMenuCount,
-      })]
-    );
+      },
+    });
     await client.query("COMMIT");
     return { status: "OPENED", shift: mapShift(res.rows[0]) };
   } catch (err) {
@@ -2318,18 +2320,19 @@ export async function closePosShift(input: {
     // ปิดกะคือจังหวะที่ผู้จัดการเซ็นรับเงินจากแคชเชียร์ — เงินขาด/เกินต้องมีบรรทัด
     // ของตัวเองใน audit log ไม่ใช่อยู่แค่ในคอลัมน์ของกะที่ต้องรู้ก่อนว่าจะไปหาที่ไหน
     const counted = Math.max(0, Number(input.countedCash));
-    await client.query(
-      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
-       VALUES ($1, $2, 'pos.shift.close', $3, $4)`,
-      [input.tenantId, input.closedBy, input.shiftId, JSON.stringify({
+    await insertAuditInTx(client, {
+      tenantId: input.tenantId, actor: input.closedBy, actorKind: "STAFF", actorUserId: input.closedBy,
+      action: "pos.shift.close", target: input.shiftId, targetKind: "POS_SHIFT",
+      source: "POS_SERVICE", eventKey: `pos.shift.close:${input.shiftId}`,
+      meta: {
         expectedCash: expected,
         countedCash: counted,
         variance: Math.round((counted - expected) * 100) / 100,
         cashIn,
         cashOut,
         partialReturnCashOut,
-      })]
-    );
+      },
+    });
 
     await client.query("COMMIT");
     return { status: "CLOSED", shift: mapShift(res.rows[0]), partialReturnCashOut, cashIn, cashOut };

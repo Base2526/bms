@@ -5,6 +5,7 @@ import { getArShiftSummary } from "@/lib/bms/ar";
 import { getPosShiftExportData } from "@/lib/bms/pos";
 import { buildPosShiftWorkbook } from "@/lib/bms/posShiftExport";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { recordSecurityEvent } from "@/lib/bms/securityEvents";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +40,12 @@ async function handlePOST(req: NextRequest) {
   const workbook = buildPosShiftWorkbook(data, receivables);
   const opened = data.report.openedAt.slice(0, 10);
   const filename = `pos-shift-${data.report.deviceCode.replace(/[^a-zA-Z0-9_-]/g, "-")}-${opened}.xlsx`;
+
+  await recordSecurityEvent({
+    tenantId: auth.tenantId, actorUserId: String(auth.adminId),
+    event: "access.sensitive_read", outcome: "SUCCESS", source: "ADMIN_POS_SHIFT_EXPORT",
+    meta: { resourceKind: "pos_shift", resourceId: shiftId },
+  });
 
   return new Response(new Uint8Array(workbook), {
     status: 200,

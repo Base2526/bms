@@ -2,22 +2,59 @@
 // BMS audit log — บันทึกการกระทำของ admin (tenant-scoped)
 // =============================================================
 
+import type { PoolClient } from "pg";
 import { query } from "@/lib/db";
 import { getTenantId } from "./tenant";
+
+export type AuditActorKind = "STAFF" | "CUSTOMER" | "AI" | "SYSTEM" | "PROVIDER";
+
+/** Required audit for a business write: call on the same client before COMMIT. */
+export async function insertAuditInTx(client: PoolClient, input: {
+  tenantId: string;
+  actor: string;
+  action: string;
+  target?: string | null;
+  meta?: Record<string, unknown>;
+  actorKind?: AuditActorKind;
+  actorUserId?: string | null;
+  targetKind?: string | null;
+  source?: string | null;
+  requestId?: string | null;
+  eventKey?: string | null;
+}): Promise<void> {
+  await client.query(
+    `INSERT INTO bms_audit_log
+       (tenant_id, actor, action, target, meta, actor_kind, actor_user_id,
+        target_kind, source, request_id, event_key)
+     VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11)
+     ON CONFLICT (tenant_id, event_key) WHERE event_key IS NOT NULL DO NOTHING`,
+    [input.tenantId, input.actor, input.action, input.target ?? null,
+      JSON.stringify(input.meta ?? {}), input.actorKind ?? null,
+      input.actorUserId ?? null, input.targetKind ?? null, input.source ?? null,
+      input.requestId ?? null, input.eventKey ?? null]
+  );
+}
 
 /** บันทึก audit จาก resolver (ไม่ throw — ไม่ให้ล้ม mutation หลัก) */
 export async function audit(
   ctx: any,
   action: string,
   target?: string | null,
-  meta?: Record<string, unknown>
+  meta?: Record<string, unknown>,
+  attribution?: { actorKind?: AuditActorKind; source?: string; targetKind?: string }
 ): Promise<void> {
   try {
     const actor = ctx?.admin?.email || ctx?.admin?.id || "system";
+    const actorUserId = typeof ctx?.admin?.id === "string" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ctx.admin.id)
+      ? ctx.admin.id : null;
     await query(
-      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [getTenantId(ctx), String(actor), action, target ?? null, JSON.stringify(meta ?? {})]
+      `INSERT INTO bms_audit_log
+         (tenant_id, actor, action, target, meta, actor_kind, actor_user_id, source, target_kind)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)`,
+      [getTenantId(ctx), String(actor), action, target ?? null, JSON.stringify(meta ?? {}),
+        attribution?.actorKind ?? (actorUserId ? "STAFF" : null), actorUserId,
+        attribution?.source ?? null, attribution?.targetKind ?? null]
     );
   } catch (e) {
     console.error("[BMS] audit failed:", e);

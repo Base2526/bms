@@ -422,12 +422,6 @@ export const bmsAssistantResolvers = {
       const tenantId = getTenantId(ctx);
       const result = await createPharmacyLabOrder(tenantId, args.items ?? [], ctx?.admin?.id ?? null);
       if (result.status === "CREATED") {
-        await audit(ctx, "order.create", result.orderId, {
-          itemCount: Array.isArray(args.items) ? args.items.length : 0,
-          total: result.total,
-          source: "pharmacy-intake-lab",
-          customerRef: "customerRef" in result ? result.customerRef ?? null : null,
-        });
         return {
           status: result.status,
           orderId: result.orderId,

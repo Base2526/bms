@@ -507,6 +507,32 @@ type BmsAuditEntry {
   target: String
 }
 
+type BmsAuditTimelineEvent {
+  action: String!
+  actor: String
+  actorUserId: ID
+  created_at: String!
+  id: ID!
+  meta: JSON
+  outcome: String
+  source: String!
+  target: String
+}
+
+input BmsAuditTimelineFilter {
+  actorUserId: ID
+  cursor: String
+  from: String
+  limit: Int
+  q: String
+  to: String
+}
+
+type BmsAuditTimelinePage {
+  nextCursor: String
+  nodes: [BmsAuditTimelineEvent!]!
+}
+
 type BmsBankAccount {
   accountLast4: String!
   bankCode: String!
@@ -11009,6 +11035,7 @@ type Query {
   bmsArOutstanding: BmsArOutstanding!
   bmsAssignableStaff: [BmsStaffRef!]!
   bmsAuditLog(limit: Int = 100): [BmsAuditEntry!]!
+  bmsAuditTimeline(filter: BmsAuditTimelineFilter, platformGlobal: Boolean = false): BmsAuditTimelinePage!
   bmsBankAccounts(includeArchived: Boolean): [BmsBankAccount!]!
   bmsBankMatchCandidates(entryId: ID!): [BmsBankMatchCandidate!]!
   bmsBankReconciliationLinks(entryId: ID!): [BmsBankReconciliationLink!]!

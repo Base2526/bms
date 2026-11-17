@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { ADMIN_COOKIE, verifyTokenString } from "@/lib/auth/token";
 import { revokeAdminSession } from "@/lib/redisSession";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { recordSecurityEventBestEffort } from "@/lib/bms/securityEvents";
 
 const isProd = process.env.NODE_ENV === "production";
 async function handlePOST() {
@@ -15,6 +16,16 @@ async function handlePOST() {
   // failure here must not block logout — the cookie clear below still happens.
   try {
     const payload = verifyTokenString(cookies().get(ADMIN_COOKIE)?.value);
+    if (payload) {
+      await recordSecurityEventBestEffort({
+        tenantId: payload.tenant_id ?? null,
+        actorUserId: String(payload.id),
+        event: "auth.logout",
+        outcome: "SUCCESS",
+        source: "ADMIN_COOKIE",
+        sessionId: payload.jti,
+      });
+    }
     if (payload?.jti) await revokeAdminSession(payload.jti);
   } catch (err: any) {
     console.error("[logout-admin] session revoke failed (ignored)", err?.message ?? err);

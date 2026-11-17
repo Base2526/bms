@@ -3,7 +3,6 @@
 import { listCoupons, upsertCoupon, deleteCoupon, listCouponRedemptions, assignCouponToCustomer, type UpsertCouponInput } from "@/lib/bms/coupons";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
-import { audit } from "@/lib/bms/audit";
 import { requireAuth } from "@/lib/auth";
 import { GraphQLError } from "graphql/error";
 import { resolveActiveCustomerId } from "@/lib/bms/customers";
@@ -45,7 +44,6 @@ export const bmsCouponsResolvers = {
           }
         }
         const coupon = await upsertCoupon(tenantId, args.input, auth.author_id);
-        await audit(ctx, "coupon.upsert", coupon.id, { code: coupon.code });
         return coupon;
       } catch (e: any) {
         throw new GraphQLError(e?.message || "บันทึกโค้ดส่วนลดไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
@@ -53,8 +51,7 @@ export const bmsCouponsResolvers = {
     },
     async bmsDeleteCoupon(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "coupon.manage");
-      const ok = await deleteCoupon(getTenantId(ctx), args.id);
-      if (ok) await audit(ctx, "coupon.delete", args.id);
+      const ok = await deleteCoupon(getTenantId(ctx), args.id, String(requireAuth(ctx).author_id));
       return ok;
     },
     async bmsAssignCouponToCustomer(

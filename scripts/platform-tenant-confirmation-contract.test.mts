@@ -19,6 +19,7 @@ test("platform tenant suspension and plan change require explicit confirmation b
     "@/lib/bms/plans": { changePlan: async () => { calls.push("plan"); return true; } },
     "@/lib/bms/featureAccess": {}, "@/lib/bms/entitlements": {},
     "@/lib/bms/packageMetrics": {}, "@/lib/bms/signup": {}, "@/lib/bms/audit": {},
+    "@/lib/bms/securityEvents": {},
     "@/lib/bms/platform": {
       requirePlatformAdmin: async () => { if (!platformAuthorized) throw new Error("FORBIDDEN"); },
       setTenantActive: async () => { calls.push("active"); return true; },

@@ -383,9 +383,7 @@ export const bmsPosResolvers = {
         openingFloat: args.openingFloat ?? 0,
         pharmacistUserId: args.pharmacistUserId ?? null,
       });
-      if (result.status === "OPENED") {
-        await audit(ctx, "pos.shift.open", result.shift.id, { deviceId: args.deviceId });
-      }
+      // openPosShift commits the shift and its audit on one client.
       return result;
     },
 
@@ -426,14 +424,7 @@ export const bmsPosResolvers = {
         countedCash: args.countedCash,
         note: args.note ?? null,
       });
-      if (result.status === "CLOSED") {
-        // ส่วนต่างเงินสดคือสิ่งที่ต้องตามได้ย้อนหลัง — เก็บลง audit เสมอ
-        await audit(ctx, "pos.shift.close", result.shift.id, {
-          expectedCash: result.shift.expectedCash,
-          countedCash: result.shift.countedCash,
-          cashVariance: result.shift.cashVariance,
-        });
-      }
+      // closePosShift commits cash variance and audit in the shift transaction.
       return result;
     },
   },

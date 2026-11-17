@@ -112,7 +112,8 @@ test("team audit is written through the caller transaction and a failure propaga
     if (params[3] === "fail") throw new Error("audit unavailable");
   } } as any;
   await auditUserChangeInTx(client, T1, T2, "user.create", "ok", { role: "Sales" });
-  assert.deepEqual(calls[0], [T1, T2, "user.create", "ok", '{"role":"Sales"}']);
+  assert.deepEqual(calls[0].slice(0, 5), [T1, T2, "user.create", "ok", '{"role":"Sales"}']);
+  assert.deepEqual(calls[0].slice(5, 9), ["STAFF", T2, "USER", "USER_ADMIN"]);
   await assert.rejects(auditUserChangeInTx(client, T1, T2, "user.delete", "fail", {}), /audit unavailable/);
 });
 

@@ -17,7 +17,7 @@ async function handlePOST(_req: NextRequest, { params }: { params: { id: string 
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
   const id = params.id?.trim();
   if (!id) return NextResponse.json({ error: "payment id required" }, { status: 400 });
-  const result = await verifyPaymentSlip(auth.tenantId, id);
+  const result = await verifyPaymentSlip(auth.tenantId, id, String(auth.adminId));
   if (!result) return NextResponse.json({ error: "not found" }, { status: 404 });
   return NextResponse.json(result);
 }

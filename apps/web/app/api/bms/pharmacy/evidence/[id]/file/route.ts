@@ -16,6 +16,7 @@ import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { getEvidenceFileForStreaming } from "@/lib/bms/pharmacy/clinicalEvidence";
 import { openStoredFileStream, statStoredFile } from "@/lib/storage";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { recordSecurityEvent } from "@/lib/bms/securityEvents";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,6 +51,11 @@ async function handleGET(_req: NextRequest, { params }: { params: { id: string }
   const disposition = INLINE_SAFE.has(mime) ? "inline" : "attachment";
   const name = (found.name || `evidence-${id}`).replace(/[\/\\?%*:|"<>]/g, "_");
 
+  await recordSecurityEvent({
+    tenantId: auth.tenantId, actorUserId: String(auth.adminId),
+    event: "access.sensitive_read", outcome: "SUCCESS", source: "PHARMACY_EVIDENCE",
+    meta: { resourceKind: "pharmacy_evidence", resourceId: id },
+  });
   const nodeStream = await openStoredFileStream(found.relpath);
   return new NextResponse(Readable.toWeb(nodeStream) as any, {
     status: 200,

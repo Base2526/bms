@@ -235,6 +235,7 @@ for (const failPurge of [false, true]) test(`tenant purge detaches only its rest
       return { rows: [{ slug: "test-snapshot", name: "fixture" }], rowCount: 1 };
     } };
     if (name === "./tenant") return { DEFAULT_TENANT_ID: "default-tenant" };
+    if (name === "./securityEvents") return { insertSecurityEventInTx: async () => {} };
     if (["graphql/error", "@/lib/auth"].includes(name)) return {};
     throw new Error(`Unexpected dependency: ${name}`);
   }, exports);
