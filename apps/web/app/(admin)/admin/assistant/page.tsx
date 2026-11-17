@@ -15,6 +15,7 @@ import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import { useI18n } from "@/lib/i18nContext";
 import { WORK_ASSISTANT_CONFIRM_MUTATIONS } from "@/components/work-assistant/confirmMutations";
 import CustomerMergeReviewModal from "@/components/CustomerMergeReviewModal";
+import { AssistantImageAttachmentControls, AssistantSentImage, useAssistantImageAttachment } from "@/components/work-assistant/AssistantImageAttachment";
 
 const { Text, Paragraph } = Typography;
 
@@ -126,6 +127,9 @@ type TraceEntry = { tool: string; ok: boolean; summary: string };
 type Bubble = {
   role: "user" | "assistant";
   text: string;
+  imageName?: string;
+  imagePreviewUrl?: string;
+  imageFile?: File;
   /** ISO timestamp — บับเบิลเก่าที่เคยเซฟไว้ก่อนมี field นี้จะไม่มีค่า ให้ render ข้ามเวลาไปเฉยๆ */
   createdAt?: string;
   proposals?: Proposal[];
@@ -224,6 +228,7 @@ export default function Page() {
   const isMobile = useIsMobile();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const image = useAssistantImageAttachment(lang === "en");
   const [chat, setChat] = useState<Bubble[]>([]);
   const [chatLoaded, setChatLoaded] = useState(false);
   const [examplesOpen, setExamplesOpen] = useState(false);
@@ -282,7 +287,7 @@ export default function Page() {
   useEffect(() => {
     if (!chatLoaded) return;
     try {
-      localStorage.setItem(chatStorageKey, JSON.stringify(chat));
+      localStorage.setItem(chatStorageKey, JSON.stringify(chat.map(({ imagePreviewUrl, imageFile, ...bubble }) => bubble)));
     } catch {
       // เต็ม/ปิด storage ไว้ — ปล่อยผ่าน ไม่ใช่ error ที่ควรขัดจังหวะการคุย
     }
@@ -315,6 +320,7 @@ export default function Page() {
 
   const clearChat = () => {
     setChat([]);
+    image.releaseAll();
     try {
       localStorage.removeItem(chatStorageKey);
     } catch {
@@ -330,16 +336,18 @@ export default function Page() {
 
   const send = async (msg?: string) => {
     const m = (msg ?? text).trim();
-    if (!m || sending) return;
+    if (!m || sending || image.capturing) return;
+    const attached = image.takeDraft();
     setSending(true);
     // history = สายก่อนหน้า ไม่รวมข้อความใหม่ และไม่รวมบับเบิล error (ไม่ใช่คำตอบจริงของ AI ครั้งก่อน)
     const history = chat.filter((b) => !b.error).map((b) => ({ role: b.role, text: b.text }));
-    setChat((c) => [...c, { role: "user", text: m, createdAt: new Date().toISOString() }]);
+    setChat((c) => [...c, { role: "user", text: m, imageName: attached?.file.name,
+      imagePreviewUrl: attached?.previewUrl, imageFile: attached?.file, createdAt: new Date().toISOString() }]);
     setText("");
     try {
       const { data } = await client.mutate({
         mutation: M_ASSISTANT,
-        variables: { input: { message: m, history, currentPath: "/admin/assistant", pageId: "assistant", locale: lang === "en" ? "en" : "th" } },
+        variables: { input: { message: m, image: attached?.file, history, currentPath: "/admin/assistant", pageId: "assistant", locale: lang === "en" ? "en" : "th" } },
       });
       const res = data?.bmsWorkAssistant;
       setChat((c) => [
@@ -376,13 +384,20 @@ export default function Page() {
     const bubble = chat[idx];
     if (!bubble?.retryText || sending) return;
     const m = bubble.retryText;
+    const priorImage = chat[idx - 1];
+    if (priorImage?.imageName && !priorImage.imageFile) {
+      setText(m);
+      inputRef.current?.focus?.();
+      message.warning(lang === "en" ? "The previous image is no longer available. Attach it again before sending." : "ภาพเดิมไม่ได้เก็บไว้ กรุณาแนบภาพใหม่ก่อนส่ง");
+      return;
+    }
     setSending(true);
     // ประวัติที่ถูกต้องคือทุกอย่างก่อนข้อความผู้ใช้ที่ทำให้เกิด error นี้ (อยู่ตำแหน่ง idx-1 เสมอ ตาม send())
     const history = chat.slice(0, Math.max(idx - 1, 0)).filter((b) => !b.error).map((b) => ({ role: b.role, text: b.text }));
     try {
       const { data } = await client.mutate({
         mutation: M_ASSISTANT,
-        variables: { input: { message: m, history, currentPath: "/admin/assistant", pageId: "assistant", locale: lang === "en" ? "en" : "th" } },
+        variables: { input: { message: m, image: priorImage?.imageFile, history, currentPath: "/admin/assistant", pageId: "assistant", locale: lang === "en" ? "en" : "th" } },
       });
       const res = data?.bmsWorkAssistant;
       setChat((c) =>
@@ -689,6 +704,7 @@ export default function Page() {
                           <Paragraph style={{ margin: 0, whiteSpace: "pre-wrap" }}>
                             {renderAssistantText(b.text, t)}
                           </Paragraph>
+                          {b.role === "user" && b.imageName ? <AssistantSentImage name={b.imageName} previewUrl={b.imagePreviewUrl} en={lang === "en"} /> : null}
                         </div>
                         {b.role === "assistant" && !b.error && (
                           <Tooltip title={copiedIdx === i ? t("admin_assistant.copied") : t("admin_assistant.copy_this")}>
@@ -943,25 +959,35 @@ export default function Page() {
 
         {/* composer เย็บเป็นส่วนเดียวกับการ์ดแชท (เส้นแบ่ง + พื้นหลังต่างเฉด) ไม่ใช่แถบลอยแยกที่มีช่องว่างเหมือนเดิม */}
         <div
+          onDrop={image.dropImage}
+          onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
           style={{
             display: "flex",
+            flexDirection: "column",
             gap: 8,
             padding: 12,
             borderTop: "1px solid var(--app-border)",
             background: "var(--app-surface-2)",
           }}
         >
-          <Input
-            ref={inputRef}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onPressEnter={() => send()}
-            placeholder={t("admin_assistant.input_placeholder")}
-            disabled={sending}
-          />
-          <Button type="primary" icon={<SendOutlined />} loading={sending} onClick={() => send()}>
-            {t("admin_assistant.btn_send")}
-          </Button>
+          <AssistantImageAttachmentControls en={lang === "en"} draft={image.draft} error={image.error}
+            capturing={image.capturing} disabled={sending || image.capturing} onSelect={image.selectFile}
+            onRemove={image.removeDraft} onCapture={image.captureScreen} />
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end", minWidth: 0 }}>
+            <Input.TextArea
+              ref={inputRef}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onPaste={image.pasteImage}
+              onPressEnter={(event) => { if (!event.shiftKey) { event.preventDefault(); send(); } }}
+              autoSize={{ minRows: 1, maxRows: 4 }}
+              placeholder={t("admin_assistant.input_placeholder")}
+              disabled={sending}
+            />
+            <Button type="primary" icon={<SendOutlined />} loading={sending} disabled={!text.trim() || image.capturing} onClick={() => send()}>
+              {t("admin_assistant.btn_send")}
+            </Button>
+          </div>
         </div>
 
       </Card>

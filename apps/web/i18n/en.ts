@@ -7311,7 +7311,7 @@ const en = {
     ai_key_current: "(current: {masked} — leave blank to keep it)",
     ai_key_placeholder_empty: "Paste the selected provider's API key",
     ai_model_label: "Model (blank = provider default)",
-    ai_model_placeholder: "claude-haiku-4-5-20251001 or deepseek-v4-flash",
+    ai_model_placeholder: "claude-haiku-4-5-20251001 or deepseek-flash",
     save_ai_key_btn: "Save AI key",
     ai_encrypted_note: "API keys are encrypted (AES-256-GCM) before storage, same as other channel tokens",
   },

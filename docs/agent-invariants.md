@@ -630,7 +630,8 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   unloading the register; only the initiating cashier frame may complete that navigation, with a
   bounded fallback for a crashed renderer. A stale local-server probe
   cannot start recovery after unpair; display hotplug cannot reopen a customer window without a
-  cashier window. Direct ESC/POS printing, cash-drawer
+  cashier window. Managed displays retry HTTP 5xx main documents as well as network load failures;
+  subresource failures never restart a working display. Direct ESC/POS printing, cash-drawer
   control and offline
   tender are not in the shell. OS-driver receipt printing is supported: a cashier-main-frame-only
   IPC snapshots the existing server-backed receipt into an isolated, no-preload print window and

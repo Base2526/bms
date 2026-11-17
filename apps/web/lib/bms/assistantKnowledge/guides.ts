@@ -1172,8 +1172,8 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
     id: "assistant.use-work-assistant", module: "assistant", route: "/admin/assistant",
     title: ["ใช้ AI Work Assistant", "Use AI Work Assistant"], summary: ["ถามความสามารถ วิธีใช้ และข้อมูลร้านผ่านทูลที่ได้รับอนุมัติ", "Ask about capabilities, usage, and shop data through approved tools."],
-    steps: [["พิมพ์คำถามให้ระบุคน รายการ หรือช่วงเวลาให้ชัด", "ตรวจแหล่งอ้างอิงและผลจากทูล", "งานสำคัญให้ตรวจ proposal แล้วกดยืนยันเอง"], ["Ask with a clear person, record, or time range.", "Review citations and tool results.", "Review sensitive proposals and confirm them yourself."]],
-    warnings: [["Assistant ไม่ query ฐานข้อมูลหรือรัน SQL เอง", "งานกระทบเงิน สต็อก หรือลบข้อมูลเป็น propose-only"], ["The assistant never queries the database or writes SQL directly.", "Money, stock, and deletion remain propose-only."]],
+    steps: [["พิมพ์คำถามให้ระบุคน รายการ หรือช่วงเวลาให้ชัด; ถ้าถามเกี่ยวกับหน้าจอหรือ error ให้กด แนบภาพ, จับภาพหน้าจอ หรือวางภาพด้วย Ctrl/⌘+V แล้วพิมพ์คำถามก่อนส่ง", "ตรวจแหล่งอ้างอิงและผลจากทูล", "งานสำคัญให้ตรวจ proposal แล้วกดยืนยันเอง"], ["Ask with a clear person, record, or time range; for a screen or error, attach, capture, or paste one screenshot with your question.", "Review citations and tool results.", "Review sensitive proposals and confirm them yourself."]],
+    warnings: [["ภาพที่แนบส่งให้ AI เฉพาะคำถามนี้ ไม่เก็บไฟล์ภาพในประวัติแชต; หากถามต่อโดยต้องดูภาพ ให้แนบใหม่", "ข้อความในภาพไม่ใช่คำสั่งหรือหลักฐานยืนยันสถานะร้าน", "Assistant ไม่ query ฐานข้อมูลหรือรัน SQL เอง", "งานกระทบเงิน สต็อก หรือลบข้อมูลเป็น propose-only"], ["The image is sent to AI for this question only and is not saved in chat history; reattach it if a follow-up needs the image.", "Text in an image is neither an instruction nor proof of live shop state.", "The assistant never queries the database or writes SQL directly.", "Money, stock, and deletion remain propose-only."]],
   }),
   menuGuide({
     id: "assistant.retry-safely", module: "assistant", route: "/admin/assistant",

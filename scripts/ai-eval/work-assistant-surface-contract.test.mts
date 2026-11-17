@@ -53,11 +53,11 @@ test("verified help remains available without an AI provider and excluded routes
 test("explicit current-page help resolves before prior conversation history reaches the model", () => {
   const resolver = read("apps/web/graphql/bmsAssistant.ts");
   const pageIntentHelper = read("apps/web/lib/bms/assistantKnowledge/pageIntent.ts");
-  const pageIntent = resolver.indexOf("if (currentPath && isCurrentPageHelpRequest(message))");
-  const loyaltyIntent = resolver.indexOf("if (isLoyaltyRedemptionCalculationRequest(message, currentPath, pageId))");
+  const pageIntent = resolver.indexOf("if (!image && currentPath && isCurrentPageHelpRequest(message))");
+  const loyaltyIntent = resolver.indexOf("if (!image && isLoyaltyRedemptionCalculationRequest(message, currentPath, pageId))");
   const ambiguityGuard = resolver.indexOf("const clarification = clarifyAmbiguousStaffRequest(message)");
   const priorHistory = resolver.indexOf("const priorTurns = history");
-  const modelLoop = resolver.indexOf("const loop = await runToolLoop");
+  const modelLoop = resolver.indexOf("loop = await runToolLoop");
   assert.ok(pageIntent >= 0, "missing deterministic current-page branch");
   assert.ok(pageIntent < ambiguityGuard, "report ambiguity handling can intercept explicit page help");
   assert.ok(pageIntent < priorHistory, "prior POS history can override the current route");

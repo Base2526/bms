@@ -10103,6 +10103,7 @@ type BmsVoidExpenseDocumentResult {
 input BmsWorkAssistantInput {
   currentPath: String
   history: [BmsAssistantTurn!]
+  image: Upload
   locale: String
   message: String!
   pageId: String

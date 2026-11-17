@@ -53,6 +53,24 @@ The assistant keeps four questions separate:
 4. May this actor see or do it? Derive role, platform status, and effective permissions on the
    server, then re-check tool permission immediately before execution.
 
+## Screenshot questions
+
+The global Drawer and `/admin/assistant` accept one PNG, JPEG, or WebP image with a text question.
+Staff can choose a file, paste an image, or use the browser's screen-capture picker where supported.
+The existing GraphQL multipart `Upload` path carries the image. The server checks the declared and
+decoded formats, rejects empty/animated/oversized images, bounds pixels, re-encodes to PNG without
+metadata, and passes the image only in the current user message to a vision-capable AI model. A
+configured text-only model is rejected before a provider call or point charge. If no AI provider is
+available, the reply explicitly says the image was not analyzed rather than answering from text-only
+guide retrieval. The image is not stored in `files`, audit data, or browser chat history; the UI
+keeps a temporary preview for the current page session. A follow-up that needs the image must attach
+it again.
+
+An attached screenshot is untrusted user evidence. The model may explain visible UI or error text,
+but it must not obey instructions printed in the image, treat it as proof of current shop state, or
+use it to confirm a payment or another sensitive mutation. Live facts still require approved tools,
+and sensitive proposals still require the existing human confirmation and permission checks.
+
 `AVAILABLE` means the core workflow exists. `CONDITIONAL` needs tenant configuration, a feature
 gate, device/shift state, or a connected service. `BETA` means the code is written but has never
 been verified end to end against the real external system (e-Tax signing/submission, Shopee/Lazada

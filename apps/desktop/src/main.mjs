@@ -102,6 +102,7 @@ let localRuntimeStartup = null;
 let lastOperationalAttentionAt = 0;
 const OPERATIONAL_ATTENTION_COOLDOWN_MS = 5_000;
 const operationalNotifications = new Set();
+const utilityHttpRetries = new Map();
 
 function configPath() {
   return path.join(app.getPath("userData"), "pairing.json");
@@ -452,6 +453,7 @@ function secureUtilityWindow(window, url) {
 
 function loadUtilityWithRetry(window, url, isCurrent) {
   let retryTimer = null;
+  const webContentsId = window.webContents.id;
   const retry = () => {
     if (retryTimer || window.isDestroyed() || !isCurrent()) return;
     retryTimer = setTimeout(() => {
@@ -466,8 +468,24 @@ function loadUtilityWithRetry(window, url, isCurrent) {
   window.on("closed", () => {
     if (retryTimer) clearTimeout(retryTimer);
     retryTimer = null;
+    utilityHttpRetries.delete(webContentsId);
   });
+  utilityHttpRetries.set(webContentsId, { url, retry });
   load();
+}
+
+function handleUtilityHttpResponse(details) {
+  // Chromium resolves loadURL for an HTTP 5xx page. Retry it just as a failed network load,
+  // without treating a failed subresource or another window's response as a display failure.
+  if (details.resourceType !== "mainFrame" || details.statusCode < 500) return;
+  const pending = utilityHttpRetries.get(details.webContentsId);
+  if (!pending) return;
+  try {
+    const expected = new URL(pending.url);
+    const actual = new URL(details.url);
+    if (actual.origin !== expected.origin || actual.pathname !== expected.pathname) return;
+  } catch { return; }
+  pending.retry();
 }
 
 function openAdminBackoffice() {
@@ -957,6 +975,7 @@ function createMainWindow() {
   setupWindowSecurity(window.webContents.session);
   window.webContents.session.webRequest.onCompleted({ urls: ["<all_urls>"] }, (details) => {
     handleMainPosHttpResponse(window, details);
+    handleUtilityHttpResponse(details);
   });
   window.on("move", scheduleCustomerDisplayReconcile);
   window.on("focus", () => window.flashFrame(false));
