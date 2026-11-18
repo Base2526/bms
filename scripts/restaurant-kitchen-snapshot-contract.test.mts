@@ -197,15 +197,21 @@ test("recipes-only shop still completes a frozen round without creating kitchen 
 
 for (const failPurge of [false, true]) test(`tenant purge detaches only its restaurant evidence in the transaction (failure=${failPurge})`, async () => {
   const links = new Map<string, string | null>([["test-tenant", "item-a"], ["other-tenant", "item-b"]]);
-  let backup: typeof links | null = null;
+  const orderLinks = new Map<string, string | null>([["test-tenant", "check-a"], ["other-tenant", "check-b"]]);
+  let backup: { items: typeof links; orders: typeof orderLinks } | null = null;
   let released = false;
-  let detached = false;
+  let itemsDetached = false;
+  let ordersDetached = false;
+  const qrDeletes: string[] = [];
+  let splitLinksDetached = false;
   const client = {
     release() { released = true; },
     async query(sql: string, params: any[] = []) {
-      if (sql === "BEGIN") { backup = new Map(links); return { rows: [], rowCount: 0 }; }
+      if (sql === "BEGIN") { backup = { items: new Map(links), orders: new Map(orderLinks) }; return { rows: [], rowCount: 0 }; }
       if (sql === "ROLLBACK") {
-        assert.ok(backup); links.clear(); for (const [id, link] of backup) links.set(id, link);
+        assert.ok(backup);
+        links.clear(); for (const [id, link] of backup.items) links.set(id, link);
+        orderLinks.clear(); for (const [id, link] of backup.orders) orderLinks.set(id, link);
         backup = null; return { rows: [], rowCount: 0 };
       }
       if (sql === "COMMIT") { backup = null; return { rows: [], rowCount: 0 }; }
@@ -213,11 +219,28 @@ for (const failPurge of [false, true]) test(`tenant purge detaches only its rest
       assert.deepEqual(params, [["test-tenant"]], "only the authorized target tenant may be changed");
       if (sql.includes("SET restaurant_check_item_id = NULL")) {
         assert.match(sql, /WHERE tenant_id = ANY\(\$1::uuid\[\]\) AND restaurant_check_item_id IS NOT NULL/);
-        detached = true; links.set("test-tenant", null);
+        itemsDetached = true; links.set("test-tenant", null);
+      }
+      if (sql.includes("SET restaurant_check_id = NULL")) {
+        assert.match(sql, /WHERE tenant_id = ANY\(\$1::uuid\[\]\) AND restaurant_check_id IS NOT NULL/);
+        ordersDetached = true; orderLinks.set("test-tenant", null);
+      }
+      const qrTable = ["bms_restaurant_service_calls", "bms_restaurant_qr_submissions",
+        "bms_restaurant_qr_sessions", "bms_restaurant_table_qr_tokens", "bms_restaurant_waitlist"]
+        .find((table) => sql.includes(`DELETE FROM ${table}`));
+      if (qrTable) qrDeletes.push(qrTable);
+      if (sql.includes("SET split_from_check_id = NULL, merged_into_check_id = NULL")) {
+        assert.match(sql, /WHERE tenant_id = ANY\(\$1::uuid\[\]\)/);
+        splitLinksDetached = true;
       }
       if (sql.includes("DELETE FROM bms_restaurant_checks")) {
-        assert.ok(detached, "new FK must be released before check-item cascade");
+        assert.ok(itemsDetached, "item FK must be released before check-item cascade");
+        assert.ok(ordersDetached, "order FK must be released before check deletion");
+        assert.deepEqual(qrDeletes, ["bms_restaurant_service_calls", "bms_restaurant_qr_submissions",
+          "bms_restaurant_qr_sessions", "bms_restaurant_table_qr_tokens", "bms_restaurant_waitlist"]);
+        assert.ok(splitLinksDetached, "check self-links must be released before check deletion");
         assert.equal(links.get("test-tenant"), null);
+        assert.equal(orderLinks.get("test-tenant"), null);
         if (failPurge) throw new Error("FAKE later purge failure");
       }
       return { rows: [], rowCount: 1 };
@@ -242,6 +265,8 @@ for (const failPurge of [false, true]) test(`tenant purge detaches only its rest
   if (failPurge) await assert.rejects(exports.deleteTenant("test-tenant"), /FAKE later purge failure/);
   else await exports.deleteTenant("test-tenant");
   assert.equal(links.get("test-tenant"), failPurge ? "item-a" : null);
+  assert.equal(orderLinks.get("test-tenant"), failPurge ? "check-a" : null);
   assert.equal(links.get("other-tenant"), "item-b");
+  assert.equal(orderLinks.get("other-tenant"), "check-b");
   assert.ok(released); assert.equal(backup, null);
 });

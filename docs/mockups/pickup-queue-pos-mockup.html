@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BMS · ตัวอย่างจัดการคิวรับของบน POS</title>
+  <style>
+    :root { font-family: "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif; color: #192334; background: #eef2f7; font-variant-numeric: tabular-nums; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible { outline: 3px solid #80aaff; outline-offset: 2px; }
+    button:disabled { cursor: not-allowed; opacity: .5; }
+    .page { min-height: 100vh; padding: 20px clamp(16px, 2.6vw, 44px) 40px; }
+    .mockup-note { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 auto 12px; max-width: 1500px; color: #63718b; font-size: 13px; }
+    .mockup-note strong { color: #1755c7; letter-spacing: .04em; }
+    .pos { max-width: 1500px; margin: auto; }
+    .shop-head, .queue-strip, .catalog, .bill { background: #fff; border: 1px solid #dbe2ed; border-radius: 18px; box-shadow: 0 8px 24px #183a6810; }
+    .shop-head { display: flex; align-items: center; gap: 16px; padding: 17px 20px; }
+    .shop-mark { width: 55px; height: 55px; display: grid; place-items: center; border-radius: 15px; background: #eee9df; color: #9f765b; font-size: 25px; flex: none; }
+    .shop-title { flex: 1; min-width: 0; }
+    .shop-title strong { display: block; font-size: 22px; line-height: 1.2; }
+    .shop-title span { color: #72819a; font-size: 14px; }
+    .online { padding: 8px 12px; border-radius: 999px; background: #f4f7fa; color: #66748b; font-weight: 700; white-space: nowrap; }
+    .online::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 8px; border-radius: 50%; background: #50c522; }
+    .operator { padding: 9px 13px; border: 1px solid #d4ddea; border-radius: 12px; font-weight: 700; white-space: nowrap; }
+    .operator small { display: block; color: #7b879a; font-size: 11px; font-weight: 500; }
+    .queue-strip { display: flex; gap: 10px; align-items: center; margin-top: 14px; padding: 9px 11px 9px 18px; }
+    .strip-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; white-space: nowrap; }
+    .strip-title b { font-size: 17px; }
+    .strip-title span { color: #64748b; font-size: 13px; }
+    .strip-current { flex: 1; display: flex; align-items: baseline; gap: 10px; min-width: 100px; padding: 9px 13px; border-radius: 10px; background: #ebf9ef; color: #17633a; }
+    .strip-current b { font-size: 26px; line-height: 1; }
+    .strip-current small { font-weight: 700; }
+    .strip-actions { display: flex; gap: 8px; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 42px; padding: 8px 14px; border: 1px solid #cbd5e3; border-radius: 10px; background: #fff; color: #27354d; font-weight: 650; white-space: nowrap; }
+    .btn[hidden] { display: none; }
+    .btn:hover:not(:disabled) { background: #f1f6ff; border-color: #9cbaed; }
+    .btn.primary { background: #196cf0; color: #fff; border-color: #196cf0; }
+    .btn.primary:hover:not(:disabled) { background: #095bdc; }
+    .btn.danger { border-color: #f0bec1; color: #b52533; }
+    .btn.small { min-height: 36px; padding: 6px 10px; font-size: 13px; }
+    .work { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); gap: 14px; margin-top: 14px; }
+    .catalog { min-height: 500px; padding: 19px; }
+    .scan { display: flex; align-items: center; gap: 15px; width: 100%; padding: 20px; border: 1px solid #d9e1ed; border-radius: 13px; color: #9aa5b6; font-size: 20px; }
+    .scan span { color: #196cf0; font-size: 25px; }
+    .catalog h2 { margin: 30px 0 4px; font-size: 26px; }
+    .catalog p { margin: 0; color: #7b8799; }
+    .bill { min-height: 500px; overflow: hidden; }
+    .bill-head { display: flex; justify-content: space-between; align-items: center; padding: 24px; background: #f5faff; }
+    .bill-head b { color: #1658d8; font-size: 42px; }
+    .bill-head small { display: block; color: #7c899f; }
+    .veil { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 18px; background: #0d1d39a8; backdrop-filter: blur(3px); }
+    .veil[hidden] { display: none; }
+    .manager { display: flex; flex-direction: column; width: min(1220px, 100%); max-height: min(830px, calc(100vh - 36px)); overflow: hidden; border: 1px solid #e0e7f1; border-radius: 20px; background: #f7f9fc; box-shadow: 0 25px 80px #091d3f4d; }
+    .manager-head { display: flex; align-items: center; gap: 16px; padding: 17px 22px; background: #fff; border-bottom: 1px solid #e1e7f0; }
+    .manager-head h1 { margin: 0; font-size: 23px; line-height: 1.25; }
+    .manager-head p { margin: 2px 0 0; color: #718098; font-size: 12px; }
+    .manager-head .spacer { flex: 1; }
+    .live { color: #168047; background: #e8f8ed; padding: 7px 11px; border-radius: 999px; font-size: 12px; font-weight: 750; white-space: nowrap; }
+    .live::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: currentColor; }
+    .manager-body { display: grid; grid-template-columns: 260px minmax(0, 1fr); min-height: 0; overflow: auto; }
+    .lookup { padding: 22px 19px; background: #fff; border-right: 1px solid #e1e7f0; }
+    .lookup h2 { margin: 0 0 4px; font-size: 17px; }
+    .lookup p { margin: 0 0 16px; color: #76849a; font-size: 12px; line-height: 1.5; }
+    .number-input { width: 100%; height: 64px; border: 1px solid #cbd8e8; border-radius: 12px; background: #f8fbff; color: #16386f; text-align: center; font-size: 34px; font-weight: 800; letter-spacing: .13em; }
+    .found { min-height: 38px; padding: 10px 1px 6px; color: #63748e; font-size: 12px; }
+    .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+    .keypad button { min-height: 47px; border: 1px solid #d9e2ee; border-radius: 9px; background: #fff; color: #314158; font-size: 19px; font-weight: 700; }
+    .keypad button:hover { background: #edf4ff; }
+    .keypad button.word { font-size: 12px; }
+    .quick-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 11px; }
+    .quick-actions .btn { padding-inline: 6px; }
+    .lookup-note { margin-top: 16px; padding: 12px; border-radius: 10px; background: #f2f6fb; color: #64748b; font-size: 12px; line-height: 1.55; }
+    .queue-content { min-width: 0; padding: 20px 22px 22px; overflow: auto; }
+    .overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+    .metric { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0; padding: 10px 15px; border: 1px solid #e0e7f0; border-radius: 12px; background: #fff; color: #62718a; font-size: 13px; }
+    .metric b { font-size: 26px; line-height: 1; }
+    .metric.ready { background: #e9f8ed; border-color: #c8e9d2; color: #17643c; }
+    .metric.preparing { background: #fff5e4; border-color: #f3dfb3; color: #8b5c0c; }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 15px; }
+    .filters button { padding: 8px 12px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: #67778f; font-size: 13px; font-weight: 700; }
+    .filters button[aria-pressed="true"] { color: #175bd3; background: #e8f0ff; border-color: #bfd3f8; }
+    .filters button:hover { background: #edf3fc; }
+    .filters span { margin-left: auto; color: #8a96a8; font-size: 11px; }
+    .section-label { display: flex; align-items: center; gap: 8px; margin: 13px 0 8px; color: #42516b; font-size: 13px; font-weight: 750; }
+    .section-label i { width: 8px; height: 8px; border-radius: 50%; background: #1b9957; }
+    .section-label.preparing i { background: #e6a222; }
+    .section-label.closed i { background: #93a0b2; }
+    .queue-list { display: grid; gap: 8px; }
+    .queue-card { display: grid; grid-template-columns: 82px minmax(0, 1fr) auto; align-items: center; gap: 13px; min-height: 75px; padding: 10px 13px; border: 1px solid #dce4ef; border-radius: 12px; background: #fff; }
+    .queue-card.featured { border-color: #8bd0a7; box-shadow: 0 0 0 2px #d8f2e2 inset; }
+    .queue-no { font-size: 32px; line-height: 1; font-weight: 800; letter-spacing: -.02em; }
+    .queue-card[data-status="READY"] .queue-no { color: #146b3d; }
+    .queue-card[data-status="PREPARING"] .queue-no { color: #9e690d; }
+    .queue-card[data-status="COLLECTED"] .queue-no, .queue-card[data-status="CANCELLED"] .queue-no { color: #718096; }
+    .queue-detail { min-width: 0; }
+    .queue-detail strong { display: block; font-size: 13px; }
+    .queue-detail small { display: block; margin-top: 3px; color: #7a879b; font-size: 11px; }
+    .queue-card-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .queue-card-actions .btn { min-height: 35px; padding: 5px 9px; font-size: 12px; }
+    .queue-card-actions .more { border: none; background: transparent; color: #65768e; font-weight: 700; }
+    .empty { display: none; padding: 26px; text-align: center; color: #8290a4; border: 1px dashed #cbd6e6; border-radius: 12px; background: #fff; }
+    .confirm { display: none; align-items: center; justify-content: space-between; gap: 10px; margin-top: 13px; padding: 11px 13px; border: 1px solid #f0b8bd; border-radius: 10px; background: #fff2f2; color: #a92833; font-size: 12px; }
+    .confirm[data-open="true"] { display: flex; }
+    .confirm .buttons { display: flex; gap: 7px; }
+    .toast { position: fixed; z-index: 20; right: 28px; bottom: 25px; display: none; max-width: min(440px, calc(100vw - 36px)); padding: 11px 16px; border-radius: 10px; background: #17365e; color: #fff; box-shadow: 0 12px 30px #0c24444d; font-size: 13px; }
+    .toast[data-show="true"] { display: block; }
+    @media (max-width: 1020px) {
+      .queue-strip { flex-wrap: wrap; }
+      .strip-title { width: 100%; }
+      .queue-card { grid-template-columns: 70px minmax(0, 1fr); }
+      .queue-card-actions { grid-column: 1 / -1; justify-content: flex-start; }
+    }
+    @media (max-width: 700px) {
+      .page { padding: 10px; }
+      .shop-head { padding: 11px; }
+      .shop-mark { width: 42px; height: 42px; }
+      .shop-title strong { font-size: 16px; }
+      .online, .operator { display: none; }
+      .strip-current { width: 100%; }
+      .strip-actions { width: 100%; }
+      .strip-actions .btn { flex: 1; min-width: 0; padding-inline: 5px; font-size: 12px; }
+      .work { grid-template-columns: 1fr; }
+      .catalog, .bill { min-height: 260px; }
+      .veil { padding: 0; }
+      .manager { width: 100%; max-height: 100vh; height: 100vh; border-radius: 0; }
+      .manager-head { padding: 13px; gap: 8px; }
+      .manager-head h1 { font-size: 17px; }
+      .manager-head .btn { padding-inline: 8px; }
+      .manager-body { display: flex; flex-direction: column; overflow: auto; }
+      .lookup { padding: 13px; border-right: none; border-bottom: 1px solid #e1e7f0; }
+      .lookup h2, .lookup p, .keypad, .lookup-note { display: none; }
+      .lookup-row { display: flex; gap: 8px; align-items: center; }
+      .number-input { flex: 1; min-width: 0; height: 45px; font-size: 23px; text-align: left; padding-left: 12px; }
+      .found { min-height: 0; padding: 6px 1px 0; }
+      .quick-actions { margin: 0; white-space: nowrap; }
+      .quick-actions .btn { min-height: 45px; }
+      .queue-content { padding: 12px; overflow: visible; }
+      .overview { gap: 5px; margin-bottom: 10px; }
+      .metric { display: block; padding: 8px; font-size: 10px; }
+      .metric b { display: block; margin-top: 3px; font-size: 22px; }
+      .filters { margin-bottom: 9px; }
+      .filters button { padding: 7px 8px; font-size: 11px; }
+      .filters span { display: none; }
+      .queue-card { padding: 10px; gap: 6px; }
+      .queue-no { font-size: 27px; }
+      .queue-card-actions { gap: 4px; }
+      .queue-card-actions .btn { flex: 1; }
+      .confirm { align-items: stretch; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="mockup-note"><strong>BMS / POS · MOCKUP</strong><span>ตัวอย่างหน้าจอ · ไม่มีการเชื่อมต่อคิวจริง</span></div>
+    <main class="pos">
+      <header class="shop-head"><div class="shop-mark">✦</div><div class="shop-title"><strong>Rainny Perfume 2 บางขุนเทียน</strong><span>002 · กะเปิดอยู่</span></div><span class="online">ออนไลน์</span><span class="operator">android_console_test<small>พนักงานขาย</small></span></header>
+      <section class="queue-strip" aria-label="แถบคิวรับของ"><div class="strip-title"><b>คิวรับของ</b><span id="strip-count">กำลังเตรียม 3 · พร้อมรับ 2</span></div><div class="strip-current"><span id="strip-state">พร้อมรับ</span><b id="strip-number">002</b><small id="strip-extra">+1</small></div><div class="strip-actions"><button class="btn primary" type="button" id="strip-primary" data-strip-action="collect">รับแล้ว</button><button class="btn" type="button" id="strip-recall" data-strip-action="call">เรียกซ้ำ</button><button class="btn" type="button" id="open-manager">จัดการคิว</button></div></section>
+      <div class="work"><section class="catalog"><div class="scan"><span>▥</span> ยิงบาร์โค้ด หรือพิมพ์รหัสสินค้า แล้วกด Enter</div><h2>เลือกสินค้า</h2><p>แคตตาล็อกสินค้า · พื้นที่ตัวอย่าง</p></section><section class="bill"><div class="bill-head"><div><strong>บิลปัจจุบัน</strong><small>0 ชิ้น</small></div><b>฿0.00</b></div></section></div>
+    </main>
+  </div>
+  <div class="veil" id="veil">
+    <section class="manager" role="dialog" aria-modal="true" aria-labelledby="manager-title">
+      <header class="manager-head"><div><h1 id="manager-title">จัดการคิวรับของ</h1><p>คิววันนี้ · ตัวเลขและบิลเป็นข้อมูลตัวอย่าง</p></div><div class="spacer"></div><span class="live">ตัวอย่างสถานะสด</span><button class="btn small" type="button" id="close-manager" aria-label="ปิดหน้าจัดการคิว">ปิด ✕</button></header>
+      <div class="manager-body">
+        <aside class="lookup"><h2>ค้นด้วยเลขคิว</h2><p>พิมพ์เลขจากใบเสร็จ เช่น 2 เพื่อค้นหา 002</p><div class="lookup-row"><input class="number-input" id="queue-input" inputmode="numeric" maxlength="4" aria-label="เลขคิว" placeholder="เลขคิว"><div class="quick-actions"><button class="btn small" type="button" data-quick="call">เรียกคิว</button><button class="btn small primary" type="button" data-quick="collect">รับแล้ว</button></div></div><div class="found" id="found">เลือกคิวจากรายการหรือพิมพ์เลข</div><div class="keypad" aria-label="แป้นเลขคิว"><button type="button" data-key="1">1</button><button type="button" data-key="2">2</button><button type="button" data-key="3">3</button><button type="button" data-key="4">4</button><button type="button" data-key="5">5</button><button type="button" data-key="6">6</button><button type="button" data-key="7">7</button><button type="button" data-key="8">8</button><button type="button" data-key="9">9</button><button class="word" type="button" data-key="clear">ล้าง</button><button type="button" data-key="0">0</button><button class="word" type="button" data-key="delete">ลบ</button></div><div class="lookup-note">ตัวอย่างนี้จำลองการเปลี่ยนสถานะในหน้านี้เท่านั้น การใช้งานจริงต้องยืนยันด้วย PIN พนักงานและเซิร์ฟเวอร์</div></aside>
+        <div class="queue-content"><div class="overview"><div class="metric ready"><span>พร้อมรับ</span><b id="count-ready">2</b></div><div class="metric preparing"><span>กำลังเตรียม</span><b id="count-preparing">3</b></div><div class="metric"><span>ปิดแล้ววันนี้</span><b id="count-closed">2</b></div></div><div class="filters" aria-label="กรองสถานะคิว"><button type="button" data-filter="OPEN" aria-pressed="true">คิวที่ยังเปิด</button><button type="button" data-filter="READY" aria-pressed="false">พร้อมรับ</button><button type="button" data-filter="PREPARING" aria-pressed="false">กำลังเตรียม</button><button type="button" data-filter="CLOSED" aria-pressed="false">ปิดแล้ววันนี้</button><span>ข้อมูลตัวอย่าง</span></div><div id="queue-sections"></div><div class="empty" id="empty">ไม่พบคิวในหมวดนี้</div><div class="confirm" id="confirm"><span id="confirm-text">ยกเลิกคิวนี้? เลขจะหายจากจอลูกค้า</span><div class="buttons"><button class="btn small danger" type="button" id="confirm-cancel">ยืนยันยกเลิก</button><button class="btn small" type="button" id="dismiss-cancel">ไม่ยกเลิก</button></div></div></div>
+      </div>
+    </section>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <script>
+    const rows = [
+      { no: '002', status: 'READY', source: 'ครัวกดเสร็จ', issued: '09:12', called: '09:22', bill: 'A81F4C2D' },
+      { no: '004', status: 'READY', source: 'พนักงานเรียก', issued: '09:16', called: '09:20', bill: 'B43D8A10' },
+      { no: '003', status: 'PREPARING', source: 'กำลังเตรียม', issued: '09:14', called: '', bill: 'C58E1D72' },
+      { no: '005', status: 'PREPARING', source: 'กำลังเตรียม', issued: '09:19', called: '', bill: 'D21A90E4' },
+      { no: '006', status: 'PREPARING', source: 'กำลังเตรียม', issued: '09:23', called: '', bill: 'E93F02B1' },
+      { no: '001', status: 'COLLECTED', source: 'ลูกค้ารับแล้ว', issued: '09:05', called: '09:10', bill: 'F18C6A24' },
+      { no: '007', status: 'CANCELLED', source: 'ยกเลิกแล้ว', issued: '09:21', called: '', bill: 'G31A0B8D' },
+    ];
+    const labels = { READY: 'พร้อมรับ', PREPARING: 'กำลังเตรียม', COLLECTED: 'รับแล้ว', CANCELLED: 'ยกเลิกแล้ว' };
+    const sections = [ ['READY', 'พร้อมรับ'], ['PREPARING', 'กำลังเตรียม'], ['CLOSED', 'ปิดแล้ววันนี้'] ];
+    const veil = document.getElementById('veil');
+    const input = document.getElementById('queue-input');
+    let filter = 'OPEN';
+    let pendingCancel = null;
+    let toastTimer;
+    const normal = value => value.replace(/\D/g, '').replace(/^0+(?=\d)/, '').slice(0, 4);
+    const findRow = () => { const value = normal(input.value); return value ? rows.find(row => normal(row.no) === value) : null; };
+    function announce(text) { const toast = document.getElementById('toast'); toast.textContent = text; toast.dataset.show = 'true'; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.dataset.show = 'false'; }, 2800); }
+    function action(row, verb) {
+      if (!row) return announce('ไม่พบคิวของวันนี้ในตัวอย่าง');
+      if (row.status === 'COLLECTED' || row.status === 'CANCELLED') return announce(`คิว ${row.no} ปิดไปแล้ว`);
+      if (verb === 'cancel') { pendingCancel = row.no; draw(); return; }
+      if (verb === 'call') { row.status = 'READY'; row.source = 'พนักงานเรียก'; row.called = 'เพิ่งเรียก'; announce(`เรียกคิว ${row.no} แล้ว · ตัวอย่าง`); }
+      if (verb === 'collect') { row.status = 'COLLECTED'; row.source = 'ลูกค้ารับแล้ว'; announce(`คิว ${row.no} รับแล้ว · ตัวอย่าง`); }
+      if (verb === 'unready') { row.status = 'PREPARING'; row.source = 'กำลังเตรียม'; row.called = ''; announce(`ย้ายคิว ${row.no} กลับไปกำลังเตรียม · ตัวอย่าง`); }
+      pendingCancel = null;
+      draw();
+    }
+    function card(row) {
+      const el = document.createElement('article');
+      el.className = 'queue-card' + (row.no === '002' && row.status === 'READY' ? ' featured' : '');
+      el.dataset.status = row.status;
+      const no = document.createElement('b'); no.className = 'queue-no'; no.textContent = row.no;
+      const detail = document.createElement('div'); detail.className = 'queue-detail';
+      const title = document.createElement('strong'); title.textContent = `${labels[row.status]} · ${row.source}`;
+      const meta = document.createElement('small'); meta.textContent = `ออกเลข ${row.issued}${row.called ? ` · เรียกล่าสุด ${row.called}` : ''} · บิล #${row.bill}`;
+      detail.append(title, meta);
+      const actions = document.createElement('div'); actions.className = 'queue-card-actions';
+      if (row.status === 'READY' || row.status === 'PREPARING') {
+        const add = (verb, label, css = '') => { const btn = document.createElement('button'); btn.type = 'button'; btn.className = `btn ${css}`; btn.textContent = label; btn.addEventListener('click', () => action(row, verb)); actions.append(btn); };
+        add('call', row.status === 'READY' ? 'เรียกซ้ำ' : 'เรียกคิว');
+        add('collect', 'รับแล้ว', 'primary');
+        if (row.status === 'READY') add('unready', 'ย้อน');
+        add('cancel', 'ยกเลิก', 'danger');
+      }
+      el.append(no, detail, actions);
+      return el;
+    }
+    function draw() {
+      const ready = rows.filter(row => row.status === 'READY');
+      const preparing = rows.filter(row => row.status === 'PREPARING');
+      const closed = rows.filter(row => row.status === 'COLLECTED' || row.status === 'CANCELLED');
+      document.getElementById('count-ready').textContent = ready.length;
+      document.getElementById('count-preparing').textContent = preparing.length;
+      document.getElementById('count-closed').textContent = closed.length;
+      document.getElementById('strip-count').textContent = `กำลังเตรียม ${preparing.length} · พร้อมรับ ${ready.length}`;
+      document.getElementById('strip-number').textContent = ready[0]?.no ?? preparing[0]?.no ?? '—';
+      document.getElementById('strip-state').textContent = ready.length ? 'พร้อมรับ' : preparing.length ? 'คิวถัดไป' : 'ไม่มีคิวค้าง';
+      document.getElementById('strip-extra').textContent = ready.length > 1 ? `+${ready.length - 1}` : !ready.length && preparing.length > 1 ? `+${preparing.length - 1}` : '';
+      const stripPrimary = document.getElementById('strip-primary');
+      const stripRecall = document.getElementById('strip-recall');
+      stripPrimary.textContent = ready.length ? 'รับแล้ว' : 'เรียกคิว';
+      stripPrimary.dataset.stripAction = ready.length ? 'collect' : 'call';
+      stripPrimary.disabled = !ready.length && !preparing.length;
+      stripRecall.hidden = !ready.length;
+      document.querySelectorAll('[data-filter]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.filter === filter)));
+      const current = findRow();
+      document.getElementById('found').textContent = input.value ? current ? `คิว ${current.no} · ${labels[current.status]}` : `ไม่พบคิว ${input.value}` : 'เลือกคิวจากรายการหรือพิมพ์เลข';
+      const container = document.getElementById('queue-sections'); container.replaceChildren();
+      let total = 0;
+      for (const [key, title] of sections) {
+        if (filter === 'OPEN' && key === 'CLOSED' || filter !== 'OPEN' && filter !== key) continue;
+        const matching = rows.filter(row => (key === 'CLOSED' ? row.status === 'COLLECTED' || row.status === 'CANCELLED' : row.status === key) && (!input.value || normal(row.no) === normal(input.value)));
+        if (!matching.length) continue;
+        total += matching.length;
+        const label = document.createElement('div'); label.className = `section-label ${key.toLowerCase()}`;
+        const dot = document.createElement('i'); dot.setAttribute('aria-hidden', 'true');
+        const text = document.createElement('span'); text.textContent = `${title} · ${matching.length} คิว`;
+        label.append(dot, text);
+        const list = document.createElement('div'); list.className = 'queue-list';
+        matching.forEach(row => list.append(card(row)));
+        container.append(label, list);
+      }
+      document.getElementById('empty').style.display = total ? 'none' : 'block';
+      const confirm = document.getElementById('confirm'); confirm.dataset.open = String(Boolean(pendingCancel));
+      document.getElementById('confirm-text').textContent = `ยกเลิกคิว ${pendingCancel ?? ''}? เลขจะหายจากจอลูกค้า`;
+    }
+    document.getElementById('open-manager').addEventListener('click', () => { veil.hidden = false; document.getElementById('close-manager').focus(); });
+    document.getElementById('close-manager').addEventListener('click', () => { veil.hidden = true; pendingCancel = null; draw(); document.getElementById('open-manager').focus(); });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && !veil.hidden) { veil.hidden = true; pendingCancel = null; draw(); } });
+    document.querySelectorAll('[data-filter]').forEach(button => button.addEventListener('click', () => { filter = button.dataset.filter; pendingCancel = null; draw(); }));
+    input.addEventListener('input', () => { input.value = input.value.replace(/\D/g, '').slice(0, 4); draw(); });
+    input.addEventListener('keydown', event => { if (event.key === 'Enter') action(findRow(), findRow()?.status === 'READY' ? 'collect' : 'call'); });
+    document.querySelectorAll('[data-key]').forEach(button => button.addEventListener('click', () => { const key = button.dataset.key; input.value = key === 'clear' ? '' : key === 'delete' ? input.value.slice(0, -1) : (input.value + key).slice(0, 4); draw(); }));
+    document.querySelectorAll('[data-quick]').forEach(button => button.addEventListener('click', () => action(findRow(), button.dataset.quick)));
+    document.querySelectorAll('[data-strip-action]').forEach(button => button.addEventListener('click', () => action(rows.find(row => row.status === 'READY') ?? rows.find(row => row.status === 'PREPARING'), button.dataset.stripAction)));
+    document.getElementById('confirm-cancel').addEventListener('click', () => { const row = rows.find(item => item.no === pendingCancel); if (row) { row.status = 'CANCELLED'; row.source = 'ยกเลิกแล้ว'; announce(`ยกเลิกคิว ${row.no} แล้ว · ตัวอย่าง`); } pendingCancel = null; draw(); });
+    document.getElementById('dismiss-cancel').addEventListener('click', () => { pendingCancel = null; draw(); });
+    draw();
+  </script>
+</body>
+</html>
