@@ -1020,14 +1020,15 @@ const LINK_STEPS_TH: LinkStep[] = [
     description: (
       <>
         ในการ์ด <b>ข้อมูลร้าน</b> ที่ {L.settings} แก้ <b>ชื่อร้าน</b> ได้เอง
-        (Administrator · slug เป็นตัวระบุภายใน ระบบกำหนดให้ แก้ไม่ได้) และกรอก <b>ประเภทร้าน</b>,
+        (Administrator · slug เป็นส่วนหนึ่งของลิงก์หน้าร้าน ระบบกำหนดให้ แก้ไม่ได้) และกรอก <b>ประเภทร้าน</b>,
         เวลาเปิด-ปิด, ที่อยู่, อีเมล/เว็บไซต์, โลโก้ รูปพื้นหลังและสไลด์โปรโมชันตอนจอลูกค้าว่าง, บัญชีรับเงิน (ธนาคาร/พร้อมเพย์), ค่าส่ง
         โดยถ้ายังไม่กรอกบัญชีรับเงิน AI จะไม่แนะนำช่องทางชำระเงินให้ลูกค้า,
         ประเทศ/สกุลเงิน — AI จะใช้ตอบลูกค้า เช่น “ร้านชื่ออะไร/เปิดกี่โมง” “โอนเข้าบัญชีไหน” “ค่าส่งเท่าไหร่” และจะยกตัวอย่าง/ถามต่อให้เข้ากับประเภทร้านจากข้อมูลจริง ไม่เดา
         · หน้า <b>/shop-signup</b> มีตัวเลือก <b>archetype ร้าน</b> แบบ optional เพื่อเตรียม
         หมวดสินค้า/ข้อมูลตัวอย่าง/คำแนะนำเริ่มต้นให้เหมาะกับร้าน และใช้ชู flow
         <b> restock subscriptions</b> สำหรับร้านที่เสียยอดขายจากของหมดบ่อย · ระบบบันทึกชื่อร้านกับข้อมูลร้านพร้อมกัน
-        และจะล็อกรูปแบบร้านเมื่อมีออร์เดอร์จริงครั้งแรก
+        และจะล็อกรูปแบบร้านเมื่อมีออร์เดอร์จริงครั้งแรก · กด <b>เปิดหน้าร้านของฉัน</b> ที่หัวหน้า Settings
+        เพื่อเปิดหน้า /shop/{"{slug}"} ของร้านในแท็บใหม่
       </>
     ),
   },
@@ -1059,7 +1060,7 @@ const LINK_STEPS_TH: LinkStep[] = [
     description: (
       <>
         เปิด <Link href={ROUTES.assistant}>ผู้ช่วย AI</Link> เพื่อถามรายงาน/สต็อก/ออร์เดอร์ด้วยภาษาพูด
-        หรือแนบ/วางภาพหน้าจอพร้อมคำถามเพื่อให้ช่วยอธิบายหน้าและข้อความ error
+        หรือแนบ/วางภาพหน้าจอ BMS พร้อมคำถามและยืนยันแหล่งภาพก่อนส่ง เพื่อให้ช่วยอธิบายหน้าและข้อความ error
         หรือพิมพ์ขอ export เช่น "export sales to Excel" / "สร้าง PDF รายงานกำไร" ได้เลย
         — งานที่กระทบเงิน/สต็อกจะต้องกดยืนยันเองก่อนเสมอ
       </>
@@ -2353,7 +2354,7 @@ const LINK_STEPS_EN: LinkStep[] = [
     description: (
       <>
         In the <b>Shop information</b> card on {L.settings} you can edit the <b>shop name</b> yourself (Administrator ·
-        the slug is an internal identifier assigned by the system and cannot be changed) and fill in the{" "}
+        the slug is part of the public shop URL and cannot be changed) and fill in the{" "}
         <b>business type</b>, opening hours, address, email/website, logo, customer-display welcome background, receiving accounts (bank/PromptPay), and shipping
         fees. If no receiving account is filled in, the AI will not suggest payment channels to customers. Country and
         currency matter too — the AI uses all of this to answer questions such as “what is the shop called / what are
@@ -2362,7 +2363,8 @@ const LINK_STEPS_EN: LinkStep[] = [
         has an optional <b>shop archetype</b> that prioritizes suitable product templates, stock capabilities, navigation, sample data, and starter tips while keeping existing or manually enabled capabilities visible,
         and highlights the
         <b> restock subscriptions</b> flow for shops that regularly lose sales to stock-outs. The shop name
-        and profile save together, and the archetype locks after the first real order.
+        and profile save together, and the archetype locks after the first real order. Use <b>Open my shop</b> at the top
+        of Settings to open your /shop/{"{slug}"} page in a new tab.
       </>
     ),
   },

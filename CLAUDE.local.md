@@ -13,10 +13,10 @@
 
 ## สถานะ working tree ล่าสุด (2026-11-18)
 
-- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `44db901a` (#430,
-  จอคิวหลายจอบน Desktop) · สรุป #417–#430 อยู่ท้าย [docs/status-log.md](docs/status-log.md) ·
-  branch `codex/queue-display-settings-audit` = `develop` + ตรวจทานตั้งค่าจอคิว (เลิกเพดาน 3 จอ, ตามรูปแบบ
-  เริ่มต้นรายจอ, รายการคิว staff 500 แถว + ค้นเลขบนเซิร์ฟเวอร์, ออกเลขคิวเฉพาะบิล `COMPLETED`) — ไม่มี migration
+- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `121e19fc` (#431,
+  ตรวจทานตั้งค่าจอคิว) · สรุป #417–#431 อยู่ท้าย [docs/status-log.md](docs/status-log.md) ·
+  branch `codex/assistant-answer-presentation` = `develop` + ตัวแสดงคำตอบผู้ช่วย, ภาพหน้าจอต้องยืนยันว่าเป็น BMS
+  (`imageBmsConfirmed`), แก้ `mimeType` ของ upload, ล้าง Markdown ในคำตอบลูกค้า, ปุ่มเปิดหน้าร้าน — ไม่มี migration
 - **migration ล่าสุด `10.132`** (เลขว่างถัดไป `10.133` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
   `10.122`/`10.123` โรงงานคงเดิม; audit ที่ชนเลขย้ายเป็น `10.131`/`10.132` และมีวิธีจัดการ
   ledger เก่าใน [audit traceability](docs/architecture/audit-traceability.md#verification-and-rollout) ·

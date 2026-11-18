@@ -5,9 +5,9 @@ import { gql, useApolloClient, useQuery } from "@apollo/client";
 import {
   Card, Input, Button, Space, Tag, Typography, Alert, message, Tooltip, Popconfirm, Drawer,
 } from "antd";
-import { useState, useRef, useEffect, Fragment } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
-  SendOutlined, RobotOutlined, CheckOutlined, CloseOutlined, ToolOutlined, DownloadOutlined,
+  SendOutlined, RobotOutlined, CheckOutlined, CloseOutlined, ToolOutlined,
   DeleteOutlined, BulbOutlined, SaveOutlined, DownOutlined, CopyOutlined, ReloadOutlined,
   ArrowDownOutlined, MailOutlined, WarningOutlined, FileExcelOutlined,
 } from "@ant-design/icons";
@@ -16,8 +16,9 @@ import { useI18n } from "@/lib/i18nContext";
 import { WORK_ASSISTANT_CONFIRM_MUTATIONS } from "@/components/work-assistant/confirmMutations";
 import CustomerMergeReviewModal from "@/components/CustomerMergeReviewModal";
 import { AssistantImageAttachmentControls, AssistantSentImage, useAssistantImageAttachment } from "@/components/work-assistant/AssistantImageAttachment";
+import { AssistantAnswer } from "@/components/work-assistant/AssistantAnswer";
 
-const { Text, Paragraph } = Typography;
+const { Text } = Typography;
 
 type TFn = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -41,56 +42,6 @@ function dayLabel(iso: string, t: TFn, uiText: UiTranslator = thaiUiText) {
   if (key === todayKey) return t("admin_assistant.day_today");
   if (key === dayKey(y.toISOString())) return t("admin_assistant.day_yesterday");
   return new Intl.DateTimeFormat(uiText.locale, { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
-}
-
-// ข้อความจาก AI เป็น markdown แบบพูด (**หนา**/`โค้ด`/ลิงก์) แต่โปรเจกต์นี้ไม่มี markdown renderer
-// เต็มรูปแบบติดตั้งอยู่ — parse เท่าที่ต้องใช้จริง (bold/inline code/URL) แทนที่จะโชว์ asterisk ดิบๆ
-// ไม่ใช้ dangerouslySetInnerHTML เลย จึงไม่มีความเสี่ยง XSS จากข้อความที่ AI แต่งขึ้น
-const INLINE_TOKEN_RE = /(\*\*[^*]+\*\*|`[^`]+`|\/api\/bms\/reports\/download\/\d+|https?:\/\/[^\s)]+)/g;
-const REPORT_DOWNLOAD_RE = /^\/api\/bms\/reports\/download\/\d+$/;
-
-function renderAssistantText(text: string, t: TFn) {
-  return text.split(INLINE_TOKEN_RE).map((part, i) => {
-    if (!part) return null;
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={i}>{part.slice(2, -2)}</strong>;
-    }
-    if (part.startsWith("`") && part.endsWith("`")) {
-      // AI มักห่อลิงก์ดาวน์โหลดด้วย backtick เอง เช่น `/api/bms/reports/download/7546` —
-      // ต้องเช็คเนื้อในก่อนตัดสินใจว่าเป็นโค้ดเฉยๆ หรือควรเป็นปุ่มดาวน์โหลดจริง
-      const inner = part.slice(1, -1);
-      if (REPORT_DOWNLOAD_RE.test(inner)) {
-        part = inner;
-      } else {
-        return <Text code key={i}>{inner}</Text>;
-      }
-    }
-    if (REPORT_DOWNLOAD_RE.test(part)) {
-      // route เดิมตั้ง Content-Disposition: attachment ให้แล้ว (ดู
-      // app/api/bms/reports/download/[id]/route.ts) — ลิงก์ปกติกดแล้วดาวน์โหลดได้เลย ไม่ต้องเปิดแท็บใหม่
-      return (
-        <Button
-          key={i}
-          type="primary"
-          ghost
-          size="small"
-          icon={<DownloadOutlined />}
-          href={part}
-          style={{ marginTop: 4, marginBottom: 4 }}
-        >
-          {t("admin_assistant.download_file")}
-        </Button>
-      );
-    }
-    if (/^https?:\/\//.test(part)) {
-      return (
-        <a key={i} href={part} target="_blank" rel="noopener noreferrer">
-          {part}
-        </a>
-      );
-    }
-    return <Fragment key={i}>{part}</Fragment>;
-  });
 }
 
 const M_ASSISTANT = gql`
@@ -336,7 +287,7 @@ export default function Page() {
 
   const send = async (msg?: string) => {
     const m = (msg ?? text).trim();
-    if (!m || sending || image.capturing) return;
+    if (!m || sending || (image.draft && !image.draft.confirmedBms)) return;
     const attached = image.takeDraft();
     setSending(true);
     // history = สายก่อนหน้า ไม่รวมข้อความใหม่ และไม่รวมบับเบิล error (ไม่ใช่คำตอบจริงของ AI ครั้งก่อน)
@@ -347,7 +298,7 @@ export default function Page() {
     try {
       const { data } = await client.mutate({
         mutation: M_ASSISTANT,
-        variables: { input: { message: m, image: attached?.file, history, currentPath: "/admin/assistant", pageId: "assistant", locale: lang === "en" ? "en" : "th" } },
+        variables: { input: { message: m, image: attached?.file, imageBmsConfirmed: attached?.confirmedBms, history, currentPath: "/admin/assistant", pageId: "assistant", locale: lang === "en" ? "en" : "th" } },
       });
       const res = data?.bmsWorkAssistant;
       setChat((c) => [
@@ -397,7 +348,7 @@ export default function Page() {
     try {
       const { data } = await client.mutate({
         mutation: M_ASSISTANT,
-        variables: { input: { message: m, image: priorImage?.imageFile, history, currentPath: "/admin/assistant", pageId: "assistant", locale: lang === "en" ? "en" : "th" } },
+        variables: { input: { message: m, image: priorImage?.imageFile, imageBmsConfirmed: priorImage?.imageFile ? true : undefined, history, currentPath: "/admin/assistant", pageId: "assistant", locale: lang === "en" ? "en" : "th" } },
       });
       const res = data?.bmsWorkAssistant;
       setChat((c) =>
@@ -669,6 +620,13 @@ export default function Page() {
                 const prevDay = i > 0 && chat[i - 1].createdAt ? dayKey(chat[i - 1].createdAt!) : null;
                 const curDay = b.createdAt ? dayKey(b.createdAt) : null;
                 const showDaySep = curDay && curDay !== prevDay;
+                const preceding = chat[i - 1];
+                const answerImage = b.role === "assistant" && !b.error && preceding?.role === "user" &&
+                  preceding.imageName && preceding.imagePreviewUrl
+                  ? { name: preceding.imageName, previewUrl: preceding.imagePreviewUrl } : null;
+                const following = chat[i + 1];
+                const imageShownWithAnswer = b.role === "user" && following?.role === "assistant" &&
+                  !following.error && Boolean(b.imagePreviewUrl);
                 return (
                   <div key={i}>
                     {showDaySep && (
@@ -685,10 +643,14 @@ export default function Page() {
                       onMouseEnter={() => setHoveredIdx(i)}
                       onMouseLeave={() => setHoveredIdx((h) => (h === i ? null : h))}
                     >
-                      <div style={{ display: "inline-flex", alignItems: "flex-end", gap: 6, maxWidth: "88%" }}>
+                      <div style={{ display: "inline-flex", alignItems: "flex-end", gap: 6,
+                        maxWidth: b.role === "assistant" ? "100%" : "88%",
+                        width: answerImage ? "min(100%, 800px)" : undefined }}>
                         <div
                           style={{
                             display: "inline-block",
+                            flex: answerImage ? 1 : undefined,
+                            minWidth: 0,
                             textAlign: "left",
                             background: b.error
                               ? "rgba(255, 77, 79, 0.1)"
@@ -701,10 +663,10 @@ export default function Page() {
                             order: b.role === "user" ? 1 : 0,
                           }}
                         >
-                          <Paragraph style={{ margin: 0, whiteSpace: "pre-wrap" }}>
-                            {renderAssistantText(b.text, t)}
-                          </Paragraph>
-                          {b.role === "user" && b.imageName ? <AssistantSentImage name={b.imageName} previewUrl={b.imagePreviewUrl} en={lang === "en"} /> : null}
+                          <AssistantAnswer text={b.text} downloadLabel={t("admin_assistant.download_file")}
+                            image={answerImage} wide={b.role === "assistant"} />
+                          {b.role === "user" && b.imageName ? <AssistantSentImage name={b.imageName}
+                            previewUrl={imageShownWithAnswer ? undefined : b.imagePreviewUrl} en={lang === "en"} /> : null}
                         </div>
                         {b.role === "assistant" && !b.error && (
                           <Tooltip title={copiedIdx === i ? t("admin_assistant.copied") : t("admin_assistant.copy_this")}>
@@ -971,8 +933,7 @@ export default function Page() {
           }}
         >
           <AssistantImageAttachmentControls en={lang === "en"} draft={image.draft} error={image.error}
-            capturing={image.capturing} disabled={sending || image.capturing} onSelect={image.selectFile}
-            onRemove={image.removeDraft} onCapture={image.captureScreen} />
+            disabled={sending} onSelect={image.selectFile} onConfirmBms={image.confirmBms} onRemove={image.removeDraft} />
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", minWidth: 0 }}>
             <Input.TextArea
               ref={inputRef}
@@ -984,7 +945,7 @@ export default function Page() {
               placeholder={t("admin_assistant.input_placeholder")}
               disabled={sending}
             />
-            <Button type="primary" icon={<SendOutlined />} loading={sending} disabled={!text.trim() || image.capturing} onClick={() => send()}>
+            <Button type="primary" icon={<SendOutlined />} loading={sending} disabled={!text.trim() || Boolean(image.draft && !image.draft.confirmedBms)} onClick={() => send()}>
               {t("admin_assistant.btn_send")}
             </Button>
           </div>

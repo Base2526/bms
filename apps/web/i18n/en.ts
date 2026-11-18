@@ -7196,6 +7196,7 @@ const en = {
     page_title: "Shop settings",
     page_subtitle: "Store info, chat channels, AI key, and sales digest reports",
     tab_store: "Store info",
+    open_my_shop: "Open my shop",
     tab_channels: "Chat channels",
     tab_ai: "AI (BYOK)",
     tab_reports: "Sales digest reports",

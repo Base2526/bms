@@ -16,11 +16,12 @@ export type WorkAssistantImage = {
 };
 
 export type WorkAssistantUpload = {
-  mimetype: string;
+  mimeType: string;
   createReadStream: () => Readable;
 };
 
 const IMAGE_ERRORS = {
+  unconfirmed: ["วิเคราะห์ได้เฉพาะภาพหน้าจอ BMS กรุณายืนยันว่าภาพนี้มาจาก BMS ก่อนส่ง", "Only BMS screenshots can be analyzed. Confirm that this image is from BMS before sending."],
   unsupported: ["รองรับเฉพาะภาพ PNG, JPEG หรือ WebP", "Only PNG, JPEG, and WebP images are supported."],
   read: ["อ่านภาพที่แนบไม่ได้ กรุณาเลือกใหม่", "Could not read the attached image. Please choose it again."],
   large: ["ภาพใหญ่เกิน 10 MB", "The image exceeds 10 MB."],
@@ -35,6 +36,11 @@ export class WorkAssistantImageError extends Error {
   localized(locale: "th" | "en") { return IMAGE_ERRORS[this.code][locale === "en" ? 1 : 0]; }
 }
 
+/** A file has no trustworthy source metadata; require an explicit staff declaration before AI usage. */
+export function requireBmsScreenshotConfirmation(confirmed: unknown): void {
+  if (confirmed !== true) throw new WorkAssistantImageError("unconfirmed");
+}
+
 /** Read one transient GraphQL Upload; never register it in files or an audit payload. */
 export async function readWorkAssistantImage(
   pendingUpload: Promise<WorkAssistantUpload> | WorkAssistantUpload,
@@ -42,7 +48,7 @@ export async function readWorkAssistantImage(
   let upload: WorkAssistantUpload;
   try { upload = await pendingUpload; }
   catch { throw new WorkAssistantImageError("read"); }
-  const expectedFormat = ACCEPTED_IMAGE_TYPES[upload?.mimetype];
+  const expectedFormat = ACCEPTED_IMAGE_TYPES[upload?.mimeType];
   if (!expectedFormat || typeof upload?.createReadStream !== "function") {
     throw new WorkAssistantImageError("unsupported");
   }

@@ -2,7 +2,7 @@
 
 Per-feature decision narrative moved out of [CLAUDE.md](../CLAUDE.md) on 2026-10-13 to keep the
 always-loaded agent context small. The moved text is unchanged; newest entries are at the end.
-Entries were brought up to date on 2026-11-18 (through migration `10.132` and PR #430); the
+Entries were brought up to date on 2026-11-18 (through migration `10.132` and PR #431); the
 detailed 2026-11-16 boundary and log notes are in [feature-log.md](feature-log.md). The compact area index lives in CLAUDE.md
 § Current status; full
 per-domain rules live in [agent-invariants.md](agent-invariants.md).
@@ -1060,3 +1060,19 @@ non-voided bill, and the REST route rejects malformed JSON and non-UUID ids. Des
 Electron smokes cover the policy; real multi-monitor hardware and audio remain unverified. See
 [business/pos.md](business/pos.md#pickup-queue-numbers-and-the-call-screen-10111) and
 [apps/desktop/README.md](../apps/desktop/README.md#external-displays).
+
+**Assistant answer presentation and BMS-only screenshots (no migration).** The global Drawer and
+`/admin/assistant` share a text-only answer renderer (short headings, paragraphs, numbered steps,
+code blocks, links, report download) that never renders arbitrary HTML; copy, history and tool
+evidence still use the original answer string. A screenshot attachment now needs an explicit staff
+confirmation that it shows BMS (`imageBmsConfirmed`, added to `schema.graphql`); the resolver
+rejects an unconfirmed image before decoding it or making any AI provider call or point charge. The
+screen-capture picker was removed (choose or paste only). The image reader now uses the
+`graphql-upload-nextjs` field `mimeType`; the old `mimetype` read rejected every upload. Customer AI
+replies pass through `formatGeneratedCustomerReply()`, which strips stray Markdown headings, bold and
+inline code from model prose but leaves server-composed summaries and approved wording untouched.
+Settings has an **Open my shop** button for `/shop/{slug}`. Pure contracts
+`assistant-answer-presentation` (3/3) and `work-assistant-image-contract` (8/8) passed on
+2026-11-18; the full gate and browser runs were not. See
+[ai/work-assistant-coverage.md](ai/work-assistant-coverage.md#screenshot-questions) and
+[ai/workflow.md](ai/workflow.md).

@@ -1,0 +1,104 @@
+.answer {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.onPrimary a {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.withImage {
+  display: grid;
+  gap: 14px;
+  align-items: start;
+}
+
+.wide.withImage {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.wide.withImage > :first-child {
+  flex: 0 1 180px;
+  min-width: 120px;
+}
+
+.wide.withImage > .blocks {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.imageLink {
+  display: block;
+  min-width: 0;
+  border: 1px solid var(--app-border, #d9e2e5);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--app-surface, #fff);
+}
+
+.image {
+  display: block;
+  width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+}
+
+.imageName {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.blocks > * {
+  margin: 0;
+}
+
+.blocks > * + * {
+  margin-top: 11px;
+}
+
+.heading {
+  font-size: 1.03em;
+  line-height: 1.45;
+  font-weight: 650;
+}
+
+.paragraph,
+.list {
+  white-space: pre-wrap;
+  line-height: 1.65;
+}
+
+.list {
+  padding-inline-start: 1.45em;
+}
+
+.list li + li {
+  margin-top: 4px;
+}
+
+.code {
+  overflow-x: auto;
+  padding: 10px 12px;
+  border-radius: 7px;
+  background: var(--app-surface, #fff);
+  color: var(--app-text, #1f1f1f);
+  white-space: pre;
+  font-size: .88em;
+  line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  .wide.withImage {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wide .imageLink {
+    max-width: 260px;
+  }
+}
