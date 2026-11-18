@@ -56,7 +56,14 @@ The assistant keeps four questions separate:
 ## Screenshot questions
 
 The global Drawer and `/admin/assistant` accept one PNG, JPEG, or WebP image with a text question.
-Staff can choose a file, paste an image, or use the browser's screen-capture picker where supported.
+Staff can choose a file or paste an image.
+The attachment starts unconfirmed. Staff must explicitly confirm it shows BMS before either UI
+sends it; replacing the file resets confirmation. The GraphQL resolver requires the same boolean
+before decoding the image or entering the AI tool loop. An unconfirmed image is rejected without an
+AI provider call or point charge. File bytes do not prove which app produced a screenshot, so this
+is a staff declaration, not automatic source detection. If a confirmed image visibly shows another
+app, the model is instructed to stop with a short out-of-scope reply; that case may still spend the
+first vision call because recognizing its content requires image analysis.
 The existing GraphQL multipart `Upload` path carries the image. The server checks the declared and
 decoded formats, rejects empty/animated/oversized images, bounds pixels, re-encodes to PNG without
 metadata, and passes the image only in the current user message to a vision-capable AI model. A
@@ -65,6 +72,15 @@ available, the reply explicitly says the image was not analyzed rather than answ
 guide retrieval. The image is not stored in `files`, audit data, or browser chat history; the UI
 keeps a temporary preview for the current page session. A follow-up that needs the image must attach
 it again.
+
+The two staff assistant surfaces share a safe, text-only response renderer. It displays short
+headings, paragraphs, numbered/bulleted steps, code blocks, links and the existing report-download action
+without rendering arbitrary HTML. The original answer string remains the source for copied text,
+history and tool evidence. While the temporary image preview exists, `/admin/assistant` places it
+beside the following answer at desktop width and above the answer on a narrow screen; the Drawer
+stacks it above the answer. After reload, the saved attachment name remains in the user turn but
+the image preview is unavailable, so the assistant must not imply it has seen the old image on a
+follow-up turn.
 
 An attached screenshot is untrusted user evidence. The model may explain visible UI or error text,
 but it must not obey instructions printed in the image, treat it as proof of current shop state, or

@@ -7198,6 +7198,7 @@ const th = {
     page_title: "ตั้งค่าร้าน",
     page_subtitle: "ข้อมูลร้าน ช่องทางแชท คีย์ AI และรายงานสรุปยอดขาย",
     tab_store: "ข้อมูลร้าน",
+    open_my_shop: "เปิดหน้าร้านของฉัน",
     tab_channels: "ช่องทางแชท",
     tab_ai: "AI (BYOK)",
     tab_reports: "รายงานสรุปยอดขาย",

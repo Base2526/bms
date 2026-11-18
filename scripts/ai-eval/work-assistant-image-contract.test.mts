@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
   readWorkAssistantImage,
+  requireBmsScreenshotConfirmation,
   WorkAssistantImageError,
   WORK_ASSISTANT_IMAGE_MAX_BYTES,
 } from "../../apps/web/lib/bms/workAssistantImage.ts";
@@ -14,12 +15,63 @@ import { __toolLoopTest, type ToolLoopOptions } from "../../apps/web/lib/bms/too
 
 const require = createRequire(new URL("../../apps/web/package.json", import.meta.url));
 const sharp = require("sharp") as typeof import("../../apps/web/node_modules/sharp");
+const { ApolloServer } = require("@apollo/server") as typeof import("../../apps/web/node_modules/@apollo/server");
+const { makeExecutableSchema } = require("@graphql-tools/schema") as typeof import("../../apps/web/node_modules/@graphql-tools/schema");
+const { GraphQLUpload, uploadProcess } = require("graphql-upload-nextjs") as typeof import("../../apps/web/node_modules/graphql-upload-nextjs");
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const read = (relative: string) => readFileSync(path.join(ROOT, relative), "utf8");
 
-function upload(bytes: Buffer, mimetype = "image/png") {
-  return { mimetype, createReadStream: () => Readable.from([bytes]) };
+function upload(bytes: Buffer, mimeType = "image/png") {
+  // graphql-upload-nextjs resolves Upload with camel-cased `mimeType`.
+  return { mimeType, createReadStream: () => Readable.from([bytes]) };
 }
+
+test("an image without an explicit BMS source declaration stops before AI usage", () => {
+  for (const value of [undefined, null, false, "true", 1]) {
+    assert.throws(() => requireBmsScreenshotConfirmation(value),
+      (error: unknown) => error instanceof WorkAssistantImageError && error.code === "unconfirmed");
+  }
+  assert.doesNotThrow(() => requireBmsScreenshotConfirmation(true));
+});
+
+test("staff screenshot accepts the PNG shape returned by GraphQL Upload", async () => {
+  const png = await sharp({ create: { width: 16, height: 16, channels: 3, background: "#fff" } }).png().toBuffer();
+  const result = await readWorkAssistantImage(upload(png));
+  assert.equal(result.mediaType, "image/png");
+  assert.equal((await sharp(Buffer.from(result.data, "base64")).metadata()).format, "png");
+});
+
+test("real multipart GraphQL Upload passes a PNG into the assistant decoder", async () => {
+  const png = await sharp({ create: { width: 24, height: 16, channels: 3, background: "#fff" } }).png().toBuffer();
+  const form = new FormData();
+  form.set("operations", JSON.stringify({
+    query: "mutation($image: Upload!) { checkImage(image: $image) }",
+    variables: { image: null },
+  }));
+  form.set("map", JSON.stringify({ "0": ["variables.image"] }));
+  form.set("0", new File([png], "screenshot.png", { type: "image/png" }));
+  const schema = makeExecutableSchema({
+    typeDefs: "scalar Upload\ntype Query { health: String }\ntype Mutation { checkImage(image: Upload!): String! }",
+    resolvers: {
+      Upload: GraphQLUpload,
+      Mutation: {
+        checkImage: async (_: unknown, { image }: { image: Promise<import("../../apps/web/lib/bms/workAssistantImage.ts").WorkAssistantUpload> }) =>
+          (await readWorkAssistantImage(image)).mediaType,
+      },
+    },
+  });
+  const server = new ApolloServer({ schema, csrfPrevention: false });
+  try {
+    const response = await uploadProcess({ formData: async () => form, headers: { get: () => null } }, {}, server, {
+      allowedTypes: ["image/png", "image/jpeg", "image/webp"],
+      maxFileSize: WORK_ASSISTANT_IMAGE_MAX_BYTES,
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { data: { checkImage: "image/png" } });
+  } finally {
+    await server.stop();
+  }
+});
 
 test("staff screenshot upload is decoded, resized and re-encoded before provider use", async () => {
   const original = await sharp({ create: {
@@ -95,7 +147,10 @@ test("both staff surfaces send a transient Upload, while the resolver does not b
   const drawer = read("apps/web/components/work-assistant/WorkAssistantDrawer.tsx");
   const page = read("apps/web/app/(admin)/admin/assistant/page.tsx");
   assert.match(schema, /input BmsWorkAssistantInput\s*\{[^}]*image: Upload/);
+  assert.match(schema, /input BmsWorkAssistantInput\s*\{[^}]*imageBmsConfirmed: Boolean/);
   assert.match(artifact, /input BmsWorkAssistantInput\s*\{[^}]*image: Upload/);
+  assert.match(artifact, /input BmsWorkAssistantInput\s*\{[^}]*imageBmsConfirmed: Boolean/);
+  assert.ok(resolver.indexOf("requireBmsScreenshotConfirmation(input.imageBmsConfirmed)") < resolver.indexOf("readWorkAssistantImage(input.image)"));
   assert.match(resolver, /readWorkAssistantImage\(input\.image\)/);
   assert.match(resolver, /requiresVision: Boolean\(image\)/);
   assert.match(resolver, /type: "image", source: \{ type: "base64"/);
@@ -103,7 +158,9 @@ test("both staff surfaces send a transient Upload, while the resolver does not b
   assert.match(resolver, /if \(image\) return \{/);
   for (const surface of [drawer, page]) {
     assert.match(surface, /image: attached\?\.file/);
+    assert.match(surface, /imageBmsConfirmed: attached\?\.confirmedBms/);
     assert.match(surface, /AssistantImageAttachmentControls/);
+    assert.match(surface, /onConfirmBms=\{image\.confirmBms\}/);
     assert.match(surface, /onPaste=\{image\.pasteImage\}/);
     assert.match(surface, /AssistantSentImage/);
   }

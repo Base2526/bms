@@ -1,7 +1,7 @@
 "use client";
 
-import { Button, Space, Typography } from "antd";
-import { CameraOutlined, CloseOutlined, PaperClipOutlined } from "@ant-design/icons";
+import { Button, Checkbox, Space, Typography } from "antd";
+import { CloseOutlined, PaperClipOutlined } from "@ant-design/icons";
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -10,12 +10,12 @@ const ACCEPTED_MIME = new Set(["image/png", "image/jpeg", "image/webp"]);
 export type AssistantDraftImage = {
   file: File;
   previewUrl: string;
+  confirmedBms: boolean;
 };
 
 export function useAssistantImageAttachment(en: boolean) {
   const [draft, setDraft] = useState<AssistantDraftImage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [capturing, setCapturing] = useState(false);
   const urls = useRef(new Set<string>());
 
   useEffect(() => () => {
@@ -47,8 +47,12 @@ export function useAssistantImageAttachment(en: boolean) {
     }
     const previewUrl = URL.createObjectURL(file);
     urls.current.add(previewUrl);
-    setDraft({ file, previewUrl });
+    setDraft({ file, previewUrl, confirmedBms: false });
     setError(null);
+  };
+
+  const confirmBms = (confirmed: boolean) => {
+    setDraft((current) => current ? { ...current, confirmedBms: confirmed } : null);
   };
 
   const takeDraft = () => {
@@ -78,58 +82,19 @@ export function useAssistantImageAttachment(en: boolean) {
     selectFile(event.dataTransfer.files[0]);
   };
 
-  const captureScreen = async () => {
-    if (!navigator.mediaDevices?.getDisplayMedia) {
-      setError(en ? "Screen capture is unavailable in this browser. Paste or attach an image." : "เบราว์เซอร์นี้จับภาพหน้าจอไม่ได้ กรุณาวางหรือแนบภาพแทน");
-      return;
-    }
-    setError(null);
-    setCapturing(true);
-    let stream: MediaStream | null = null;
-    try {
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-      const video = document.createElement("video");
-      video.muted = true;
-      video.playsInline = true;
-      video.srcObject = stream;
-      await video.play();
-      if (!video.videoWidth || !video.videoHeight) throw new Error();
-      const canvas = document.createElement("canvas");
-      const scale = Math.min(1, 2560 / Math.max(video.videoWidth, video.videoHeight));
-      canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
-      canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error();
-      context.drawImage(video, 0, 0);
-      const blob = await new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob((value) => value ? resolve(value) : reject(new Error()), "image/png");
-      });
-      selectFile(new File([blob], `screen-${new Date().toISOString().replace(/[:.]/g, "-")}.png`, { type: "image/png" }));
-      video.srcObject = null;
-    } catch (caught: any) {
-      if (caught?.name !== "NotAllowedError") {
-        setError(en ? "Could not capture the screen. Try pasting a screenshot instead." : "จับภาพหน้าจอไม่สำเร็จ กรุณาลองวางภาพหน้าจอแทน");
-      }
-    } finally {
-      stream?.getTracks().forEach((track) => track.stop());
-      setCapturing(false);
-    }
-  };
-
-  return { draft, error, capturing, selectFile, removeDraft, takeDraft, releaseAll, pasteImage, dropImage, captureScreen };
+  return { draft, error, selectFile, confirmBms, removeDraft, takeDraft, releaseAll, pasteImage, dropImage };
 }
 
 export function AssistantImageAttachmentControls({
-  en, draft, error, capturing, disabled, onSelect, onRemove, onCapture,
+  en, draft, error, disabled, onSelect, onConfirmBms, onRemove,
 }: {
   en: boolean;
   draft: AssistantDraftImage | null;
   error: string | null;
-  capturing: boolean;
   disabled: boolean;
   onSelect: (file: File) => void;
+  onConfirmBms: (confirmed: boolean) => void;
   onRemove: () => void;
-  onCapture: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
@@ -137,9 +102,6 @@ export function AssistantImageAttachmentControls({
       <Space size={8} wrap>
         <Button icon={<PaperClipOutlined />} disabled={disabled} onClick={() => inputRef.current?.click()}>
           {en ? "Attach image" : "แนบภาพ"}
-        </Button>
-        <Button icon={<CameraOutlined />} disabled={disabled} loading={capturing} onClick={onCapture}>
-          {en ? "Capture screen" : "จับภาพหน้าจอ"}
         </Button>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {en ? "Or paste a screenshot (Ctrl/⌘+V)" : "หรือวางภาพหน้าจอ (Ctrl/⌘+V)"}
@@ -160,6 +122,9 @@ export function AssistantImageAttachmentControls({
             aria-label={en ? "Remove attached image" : "ลบภาพที่แนบ"} onClick={onRemove} />
         </div>
       ) : null}
+      {draft ? <Checkbox checked={draft.confirmedBms} disabled={disabled} onChange={(event) => onConfirmBms(event.target.checked)}>
+        {en ? "I confirm this shows a BMS screen. Images from other apps are out of scope." : "ยืนยันว่าภาพนี้เป็นหน้าจอ BMS — ไม่รองรับภาพจากระบบอื่น"}
+      </Checkbox> : null}
       {error ? <Typography.Text type="danger" role="alert">{error}</Typography.Text> : null}
       {draft ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         {en ? "The image is sent to the AI with your question. It is not saved in chat history." : "ภาพจะถูกส่งให้ AI พร้อมคำถาม และไม่บันทึกไฟล์ภาพลงในประวัติแชต"}

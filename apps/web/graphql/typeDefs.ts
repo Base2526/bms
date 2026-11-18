@@ -5416,6 +5416,8 @@ export const typeDefs = /* GraphQL */ `
   input BmsWorkAssistantInput {
     message: String!
     image: Upload
+    # Staff declaration, required with image; file bytes cannot prove which app was captured.
+    imageBmsConfirmed: Boolean
     history: [BmsAssistantTurn!]
     currentPath: String
     pageId: String

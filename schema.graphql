@@ -10104,6 +10104,7 @@ input BmsWorkAssistantInput {
   currentPath: String
   history: [BmsAssistantTurn!]
   image: Upload
+  imageBmsConfirmed: Boolean
   locale: String
   message: String!
   pageId: String

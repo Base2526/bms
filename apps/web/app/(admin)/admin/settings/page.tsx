@@ -184,7 +184,14 @@ export default function Page() {
           <Title level={2} style={{ margin: 0 }}>{t("admin_settings.page_title")}</Title>
           <Text type="secondary">{t("admin_settings.page_subtitle")}</Text>
         </div>
-        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{t("admin_settings.refresh")}</Button>
+        <Space wrap>
+          {tenant?.slug && (
+            <Button href={`/shop/${encodeURIComponent(tenant.slug)}`} target="_blank" rel="noopener noreferrer" icon={<ShopOutlined />}>
+              {t("admin_settings.open_my_shop")}
+            </Button>
+          )}
+          <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{t("admin_settings.refresh")}</Button>
+        </Space>
       </Space>
 
       {tenant && (

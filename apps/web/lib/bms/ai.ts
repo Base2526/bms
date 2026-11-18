@@ -12,6 +12,7 @@ import { AiMeteredOutputError, meteredUsage } from "./aiMetering";
 // =============================================================
 
 import type { StockResult } from "./stock";
+import { formatGeneratedCustomerReply } from "./customerReplyPresentation";
 import { getTenantAiConfig } from "./aiConfig";
 import { finalizeAiUsageEvent, recordAiFallback, recordAiProviderAttempt, recordByokAiUsage, tryConsumeAiQuota, type AiUsageContext } from "./aiUsage";
 import {
@@ -129,7 +130,8 @@ async function generateAiReply(
       system:
         "คุณเป็นแอดมินร้านค้าออนไลน์ ตอบลูกค้าเป็นภาษาไทย สุภาพ กระชับ เป็นกันเอง " +
         "ใช้ข้อมูลสต็อกที่ให้เท่านั้น ห้ามเดา/แต่งตัวเลขสต็อกหรือราคาเอง " +
-        "ถ้ามีของให้ชวนปิดการขาย ถ้าหมดให้เสนอไซซ์อื่น",
+        "ถ้ามีของให้ชวนปิดการขาย ถ้าหมดให้เสนอไซซ์อื่น " +
+        "ตอบเป็นข้อความล้วน เว้นบรรทัดเมื่อเปลี่ยนเรื่อง ไม่ใช้หัวข้อหรือสัญลักษณ์ Markdown",
       messages: [
         {
           role: "user",
@@ -294,7 +296,7 @@ export async function generateResponse(
         cacheCreationInputTokens: parsed.cacheCreationInputTokens,
       });
     }
-    return parsed.text;
+    return formatGeneratedCustomerReply(parsed.text);
   } catch (err) {
     if (creds.usageEventId) {
       await finalizeAiUsageEvent(creds.usageEventId, {

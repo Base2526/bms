@@ -10604,6 +10604,8 @@ export type SchemaBmsVoidExpenseDocumentResult = {
 export type SchemaBmsWorkAssistantInput = {
   currentPath: InputMaybe<Scalars['String']['input']>;
   history: InputMaybe<Array<SchemaBmsAssistantTurn>>;
+  image: InputMaybe<Scalars['Upload']['input']>;
+  imageBmsConfirmed: InputMaybe<Scalars['Boolean']['input']>;
   locale: InputMaybe<Scalars['String']['input']>;
   message: Scalars['String']['input'];
   pageId: InputMaybe<Scalars['String']['input']>;

@@ -473,6 +473,16 @@ Per-channel webhook/verification/reply details now live in [../integrations/](..
 Every channel except `test` calls `logConversation()`, so incoming messages + the AI's reply are
 automatically recorded in the Omnichannel Inbox.
 
+Customer AI replies are plain text across the supported outbound channels. The customer prompt
+asks for short paragraphs and readable numbered steps, while `formatGeneratedCustomerReply()`
+removes stray Markdown decoration from model prose before the reply is saved and delivered. It
+does not rewrite server-composed order summaries, approved pharmacy wording, or the Inbox staff
+`body + one attachment` payload. LINE and Messenger can send an image as a separate message part
+when a staff reply includes one; AI customer replies here remain text-only. LINE media-only turns
+and Meta messages with attachments go to staff review without image analysis by the text pipeline.
+TikTok inbound remains staff-only until an outbound send API is implemented; a saved Inbox reply
+is not customer delivery.
+
 For LINE OA, webhook handling also best-effort syncs the user's LINE display profile after the
 Inbox write/reply path. This profile cache is UI metadata only; it is not available to the AI as an
 authoritative customer fact unless a backend tool explicitly returns it.

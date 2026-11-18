@@ -26,6 +26,7 @@ import { checkStock, resolveProduct, type StockResult } from "./stock";
 import { createOrder, type CreateOrderResult } from "./orders";
 import { catalogStockMenu, stockResultMenu, insufficientStockMenu, type CustomerStockMenu } from "./customerStockChoices";
 import { generateResponse } from "./ai";
+import { formatGeneratedCustomerReply } from "./customerReplyPresentation";
 import { runApprovedTool, runToolLoop, type ToolTraceEntry } from "./tools/runtime";
 import { customerTools } from "./tools/catalog";
 import { answerBmsPresales } from "./platformPresalesAssistant";
@@ -462,6 +463,7 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     "ห้ามเสนอสินค้าทดแทนคนละหมวดแบบเดาสุ่ม: ถ้า find_alternatives ไม่คืนตัวเลือกที่เกี่ยวข้อง ให้บอกว่าไม่มีตัวเลือกใกล้เคียงที่ตรวจสอบได้ แล้วถามว่าต้องการให้แอดมินช่วยดูต่อไหม",
     "ข้อความสุขภาพหรืออาการป่วยที่กำกวมต้องถามยืนยันก่อน โดยเฉพาะร้านที่ไม่ใช่ pharmacy ห้ามเดาว่าลูกค้าต้องการยา/สินค้า และห้ามวินิจฉัยโรค",
     "ถ้าสินค้าหรือไซซ์ที่ลูกค้าต้องการหมด ให้ถามสั้น ๆ ว่าต้องการให้ทางร้านแจ้งเมื่อของเข้าไหมได้ 1 ครั้ง; เรียก subscribe_restock_notification เฉพาะเมื่อลูกค้าตอบรับชัดเจนหรือขอให้แจ้งเอง และต้องมี sku+size ที่ยืนยันแล้ว ห้ามสมัครจากการคาดเดาความสนใจ",
+    "คำตอบลูกค้าเป็นข้อความล้วนสำหรับ LINE/Messenger/เว็บ: แบ่งย่อหน้าสั้น ๆ เว้นหนึ่งบรรทัดระหว่างเรื่อง ใช้รายการเลขหรือขีดได้เมื่อมีหลายขั้น ห้ามใช้หัวข้อ #, **ตัวหนา**, backtick หรือรูปแบบ Markdown ที่ต้องมี renderer; ห้ามย่อเงื่อนไขหรือข้อเท็จจริงที่ทูลคืนมาเพื่อความสวยงาม",
     "เมื่อเสนอสินค้า ให้บอกชื่อกับจุดตัดสินใจที่มีในผลทูล เช่น ราคา/ไซซ์ที่มีอย่างกระชับ แล้วจบด้วย CTA เดียว เช่น สนใจให้เช็กไซซ์ไหน หรือรับกี่ชิ้นดีคะ " +
       "ห้ามใช้ตาราง markdown (เช่น เส้น | คั่นคอลัมน์ หรือแถว ---) เด็ดขาด เพราะช่องทางแชทส่งได้แค่ข้อความล้วน ไม่มี renderer ตีความตาราง ให้จัดเป็นบล็อกต่อสินค้าแทน: บรรทัดแรก 🏷️ ชื่อสินค้า — หมวด/ยี่ห้อ แล้วบรรทัดถัดไปคือ ราคา · ไซซ์ที่มี เว้นบรรทัดว่างระหว่างสินค้าแต่ละตัว",
     "ถ้าลูกค้าขอลิงก์หรือรูปสินค้า ให้ค้นสินค้าแล้วส่งเฉพาะ publicUrl/publicPath จากผลทูล ห้ามสร้าง URL เองและห้ามส่งลิงก์ /admin/*",
@@ -3888,9 +3890,9 @@ async function runPipelineInternal(
       reply = await orderCheckoutChatReply(
         tenantId,
         execCtx.createdOrderId,
-        profile.businessArchetype === "board_game_cafe"
+        formatGeneratedCustomerReply(profile.businessArchetype === "board_game_cafe"
           ? boardGameCheckoutFallback(loop.reply, englishReply)
-          : loop.reply || (englishReply ? "Your order has been received." : "รับออร์เดอร์แล้วค่ะ"),
+          : loop.reply) || (englishReply ? "Your order has been received." : "รับออร์เดอร์แล้วค่ะ"),
         englishReply ? "en" : "th"
       );
     } else if (execCtx.pharmacyReviewCaseId) {
@@ -3929,7 +3931,8 @@ async function runPipelineInternal(
         ? "Sorry, that action was not actually saved. Please send the request again."
         : "ขอโทษนะคะ ระบบยังไม่ได้บันทึกให้จริง รบกวนลองส่งข้อความอีกครั้งนะคะ 🙏";
     } else {
-      const modelReply = loop.reply || (englishReply
+      const modelReply = (inputChoiceReply && loop.reply === inputChoiceReply
+        ? inputChoiceReply : formatGeneratedCustomerReply(loop.reply)) || (englishReply
         ? "Sorry, could you rephrase that request?"
         : "ขออภัยค่ะ ช่วยพิมพ์ใหม่อีกครั้งได้ไหมคะ 🙏");
       reply = hasConfiguredPaymentAccounts(profile.paymentAccounts)
