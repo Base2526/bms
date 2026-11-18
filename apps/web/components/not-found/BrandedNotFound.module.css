@@ -3,13 +3,13 @@
   --not-found-action-bg: #0958d9;
   --not-found-action-text: #fff;
   position: relative;
+  flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(230px, .74fr);
   align-items: center;
-  min-height: clamp(390px, 55vh, 580px);
+  min-height: max(500px, calc(100svh - 140px));
   overflow: hidden;
-  border: 1px solid rgba(var(--app-primary-rgb), .23);
-  border-radius: 20px;
+  border-top: 1px solid rgba(var(--app-primary-rgb), .23);
   background: linear-gradient(115deg, rgba(var(--app-primary-rgb), .11), var(--app-surface) 86%);
   color: var(--app-text);
 }
@@ -177,7 +177,7 @@
 }
 
 @media (max-width: 420px) {
-  .panel { min-height: 0; border-radius: 0; }
+  .panel { min-height: max(600px, calc(100svh - 58px)); }
   .copy { padding: 34px 22px 0; }
   .description { font-size: 15px; }
   .actions { flex-direction: column; }

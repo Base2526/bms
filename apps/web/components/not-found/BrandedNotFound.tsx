@@ -73,7 +73,7 @@ export default function BrandedNotFound({
   actions?: ReactNode;
 }) {
   return (
-    <section className={styles.panel} aria-labelledby={id}>
+    <section className={styles.panel} data-bms-not-found aria-labelledby={id}>
       <span className={styles.watermark} aria-hidden="true">404</span>
       <div className={styles.copy}>
         <p className={styles.eyebrow}>{eyebrow}</p>
