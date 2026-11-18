@@ -12,7 +12,7 @@ import type {
   DesktopQueueDisplayState,
 } from "@/lib/pos/deviceTokenClient";
 import { posDeviceStorageNamespace, readPosDeviceToken } from "@/lib/pos/deviceTokenClient";
-import { QUEUE_BOARD_LAYOUTS, readQueueBoardLayout, writeQueueBoardLayout,
+import { QUEUE_BOARD_LAYOUTS, clearQueueBoardLayoutOverride, readQueueBoardLayoutOverride, writeQueueBoardLayout,
   type QueueBoardLayout } from "@/lib/pos/queueBoardLayoutPreference";
 import QueueBoardPreferenceSettings from "@/components/pos-desktop/QueueBoardPreferenceSettings";
 
@@ -101,6 +101,11 @@ export default function ManagedDisplaySettings() {
 
   const displays = customer?.displays ?? queue?.displays ?? [];
   const externalDisplays = useMemo(() => displays.filter((display) => !display.cashier), [displays]);
+  const freeExternalCount = externalDisplays.filter((display) =>
+    !customer?.open || customer.preview || display.id !== customer.activeDisplayId).length;
+  const autoQueueChoices = Array.from({ length: Math.min(queue?.maxDisplays ?? 32,
+    Math.max(1, freeExternalCount, queue?.mode === "auto" ? queue.displayCount ?? 1 : 1)) },
+  (_, index) => index + 1);
   const cashierDisplayCount = Math.max(1, displays.filter((display) => display.cashier).length);
   const activeCustomerDisplayCount = customer?.open && !customer.preview ? 1 : 0;
   const activeQueueDisplayCount = queue?.activeDisplayIds?.length ?? (queue?.open && !queue.preview ? 1 : 0);
@@ -117,7 +122,9 @@ export default function ManagedDisplaySettings() {
     const mode = change.mode ?? queue.mode;
     let targetDisplayIds = change.targetDisplayIds ?? queue.targetDisplayIds ?? [];
     if (mode === "selected" && targetDisplayIds.length === 0) {
-      const available = externalDisplays.find((display) => display.id !== customer?.activeDisplayId);
+      // A single external screen can be handed over from the customer display.
+      const available = externalDisplays.find((display) => display.id !== customer?.activeDisplayId)
+        ?? externalDisplays[0];
       targetDisplayIds = available ? [available.id] : [];
     }
     if (mode === "selected" && targetDisplayIds.length === 0) {
@@ -129,12 +136,15 @@ export default function ManagedDisplaySettings() {
       : change.audioDisplayId;
     const audioDisplayId = mode === "selected" && preferredAudio && !targetDisplayIds.includes(preferredAudio)
       ? null : preferredAudio;
+    const displayCount = change.displayCount ?? (mode === "auto" && queue.mode !== "auto"
+      ? Math.min(queue.displayCount ?? 1, Math.max(1, freeExternalCount))
+      : queue.displayCount ?? 1);
     setBusy("queue");
     setError("");
     try {
       const result = await window.bmsDesktop.setQueueDisplaysConfig({
         mode,
-        displayCount: change.displayCount ?? queue.displayCount ?? 1,
+        displayCount,
         targetDisplayIds: mode === "selected" ? targetDisplayIds : [],
         audioDisplayId: mode === "off" ? null : audioDisplayId,
       });
@@ -280,10 +290,10 @@ export default function ManagedDisplaySettings() {
             <Select aria-label={posText("จำนวนจอคิวที่ต้องการ")} className="pos-display-select"
               value={queue.displayCount ?? 1} disabled={Boolean(busy)}
               onChange={(value) => void configureQueue({ displayCount: value, audioDisplayId: null })}
-              options={[1, 2, 3].map((count) => ({ value: count, label: posText("{v0} จอ", { v0: count }) }))} />
+              options={autoQueueChoices.map((count) => ({ value: count, label: posText("{v0} จอ", { v0: count }) }))} />
           </label> : <label className="pos-display-select-field">
-            <span className="pos-settings-field-label">{posText("เลือกจอคิวได้สูงสุด 3 จอ")}</span>
-            <Select mode="multiple" maxCount={3} aria-label={posText("เลือกจอคิวได้สูงสุด 3 จอ")}
+            <span className="pos-settings-field-label">{posText("เลือกจอคิวจากจอภายนอกที่ตรวจพบ")}</span>
+            <Select mode="multiple" aria-label={posText("เลือกจอคิวจากจอภายนอกที่ตรวจพบ")}
               className="pos-display-select" value={queue.targetDisplayIds ?? []} disabled={Boolean(busy)}
               onChange={(ids) => void configureQueue(ids.length ? { targetDisplayIds: ids } : { mode: "off" })}
               options={[...externalDisplays.map((display) => ({ value: display.id,
@@ -310,13 +320,15 @@ export default function ManagedDisplaySettings() {
                 ? posText("เปิดอยู่") : screen.connected ? posText("รอเปิดจอ") : posText("รอเชื่อมต่อจอ")}
                 {screen.audio ? ` · ${posText("ประกาศเสียง")}` : ""}</small></span>
               {screen.connected && <Select aria-label={posText("รูปแบบจอ {v0}", { v0: screen.label })}
-                value={storageNamespace ? readQueueBoardLayout(storageNamespace, screen.id) : "SPOTLIGHT"}
+                value={storageNamespace ? readQueueBoardLayoutOverride(storageNamespace, screen.id) ?? "DEFAULT" : "DEFAULT"}
                 disabled={!storageNamespace} style={{ width: 220, maxWidth: "100%" }}
-                onChange={(value: QueueBoardLayout) => {
-                  writeQueueBoardLayout(storageNamespace, value, screen.id);
+                onChange={(value: QueueBoardLayout | "DEFAULT") => {
+                  if (value === "DEFAULT") clearQueueBoardLayoutOverride(storageNamespace, screen.id);
+                  else writeQueueBoardLayout(storageNamespace, value, screen.id);
                   setLayoutRevision((current) => current + 1);
                 }}
-                options={QUEUE_BOARD_LAYOUTS.map((option) => ({ value: option.value, label: posText(option.label) }))} />}
+                options={[{ value: "DEFAULT", label: posText("ตามรูปแบบเริ่มต้น") },
+                  ...QUEUE_BOARD_LAYOUTS.map((option) => ({ value: option.value, label: posText(option.label) }))]} />}
             </div>)}
           </div>
           {(queue.activeDisplayIds?.length ?? 0) < (queue.displayCount ?? 1) &&

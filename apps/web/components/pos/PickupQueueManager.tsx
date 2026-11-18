@@ -11,17 +11,19 @@ import { usePosText, thaiPosText, type PosTranslator } from "@/lib/pos/usePosTex
  * - Cancel needs an explicit second tap: it takes the number off the customer screen for good.
  *
  * Every action goes through the device-token API with the cashier PIN, exactly like the strip.
- * The list is the staff view (`?view=day`); the public call screen never sees order ids.
+ * The list is the staff view (`?view=day`); exact keypad lookup covers older numbers outside
+ * the bounded list. The public call screen never sees order ids.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openPickupQueueBoard, PICKUP_QUEUE_POLL_MS, type PickupQueueRow } from "./PickupQueuePanel";
+import { hasDesktopManagedDisplayBridge } from "@/lib/pos/deviceTokenClient";
 import {
   playPickupQueueAnnouncement,
   preparePickupQueueAnnouncement,
   type PickupQueueVoiceSettings,
 } from "@/lib/pos/pickupQueueVoice";
 
-type DayRow = PickupQueueRow & { orderId: string; closedAt: string | null };
+type DayRow = PickupQueueRow & { orderId: string; queueNo: number; closedAt: string | null };
 type Filter = "OPEN" | "PREPARING" | "READY" | "CLOSED";
 type Action = "call" | "collect" | "unready" | "cancel";
 
@@ -74,6 +76,15 @@ export async function postPickupQueue(token: string, body: Record<string, unknow
   return data as { entry?: { id: string; label: string; status: string } };
 }
 
+async function fetchPickupQueueNumber(token: string, queueNo: number, posText: PosTranslator): Promise<DayRow | null> {
+  const res = await fetch(`/api/pos/pickup-queue?view=day&queueNo=${queueNo}`, {
+    headers: { "x-pos-device-token": token }, cache: "no-store",
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.error ?? posText("โหลดคิวไม่สำเร็จ (HTTP {v0})", { v0: res.status }));
+  return Array.isArray(data?.entries) ? data.entries[0] ?? null : null;
+}
+
 type ManagerProps = {
   token: string;
   cashierUserId: string;
@@ -93,8 +104,10 @@ export function PickupQueueManager({ token, cashierUserId, cashierPin, onClose, 
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [voiceSettings, setVoiceSettings] = useState<PickupQueueVoiceSettings | null>(null);
   const [feedStatus, setFeedStatus] = useState<"CHECKING" | "LIVE" | "STALE">("CHECKING");
+  const [lookup, setLookup] = useState<{ queueNo: number; entry: DayRow | null; error: boolean } | null>(null);
   const loadSequence = useRef(0);
   const actionLock = useRef(false);
+  const lookupActionLock = useRef(false);
 
   const load = useCallback(async (): Promise<boolean> => {
     const sequence = ++loadSequence.current;
@@ -135,6 +148,21 @@ export function PickupQueueManager({ token, cashierUserId, cashierPin, onClose, 
   }, [load, onClose]);
 
   const wanted = normalizeQueueInput(typed);
+  const localExact = wanted ? rows.find((row) => row.queueNo === Number(wanted)) ?? null : null;
+  useEffect(() => {
+    if (!wanted || localExact || feedStatus !== "LIVE") { setLookup(null); return; }
+    let active = true;
+    setLookup(null);
+    const queueNo = Number(wanted);
+    if (queueNo === 0) { setLookup({ queueNo, entry: null, error: false }); return; }
+    const timer = window.setTimeout(() => {
+      void fetchPickupQueueNumber(token, queueNo, posText).then(
+        (entry) => { if (active) setLookup({ queueNo, entry, error: false }); },
+        () => { if (active) setLookup({ queueNo, entry: null, error: true }); },
+      );
+    }, 200);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [feedStatus, localExact, posText, token, wanted]);
   const counts = useMemo(() => ({
     OPEN: rows.filter((row) => row.status === "PREPARING" || row.status === "READY").length,
     PREPARING: rows.filter((row) => row.status === "PREPARING").length,
@@ -147,8 +175,8 @@ export function PickupQueueManager({ token, cashierUserId, cashierPin, onClose, 
         : filter === "CLOSED" ? row.status === "COLLECTED" || row.status === "CANCELLED"
           : row.status === filter)
     .filter((row) => !wanted || row.label.includes(wanted.replace(/^0+/, "") || "0"))
-    .sort((a, b) => (filter === "CLOSED" ? b.label.localeCompare(a.label) : a.label.localeCompare(b.label)));
-  const exact = wanted ? rows.find((row) => row.label === wanted) ?? null : null;
+    .sort((a, b) => (filter === "CLOSED" ? b.queueNo - a.queueNo : a.queueNo - b.queueNo));
+  const exact = localExact ?? (lookup?.queueNo === Number(wanted) ? lookup.entry : null);
   const actionsDisabled = busy != null || feedStatus !== "LIVE";
 
   const act = async (row: DayRow, action: Action) => {
@@ -188,18 +216,33 @@ export function PickupQueueManager({ token, cashierUserId, cashierPin, onClose, 
     actionLock.current = false;
   };
 
-  const actByNumber = (action: "call" | "collect") => {
+  const actByNumber = async (action: "call" | "collect" | "auto") => {
     if (feedStatus !== "LIVE") {
       setNotice({ ok: false, text: posText("ยังยืนยันรายการคิวล่าสุดไม่ได้ · ลองโหลดคิวใหม่ก่อน") });
       return;
     }
     if (!wanted) { setNotice({ ok: false, text: posText("พิมพ์เลขคิวก่อน") }); return; }
-    if (!exact) { setNotice({ ok: false, text: posText("ไม่พบคิว {v0} ของวันนี้", { v0: wanted }) }); return; }
-    if (exact.status === "COLLECTED" || exact.status === "CANCELLED") {
-      setNotice({ ok: false, text: posText("คิว {v0} {v1}ไปแล้ว", { v0: exact.label, v1: STATUS_TEXT(posText)[exact.status] }) });
+    if (Number(wanted) === 0) { setNotice({ ok: false, text: posText("ไม่พบคิว {v0} ของวันนี้", { v0: wanted }) }); return; }
+    let entry = exact;
+    if (!entry) {
+      if (lookupActionLock.current) return;
+      lookupActionLock.current = true;
+      try {
+        entry = await fetchPickupQueueNumber(token, Number(wanted), posText);
+        setLookup({ queueNo: Number(wanted), entry, error: false });
+      } catch (error) {
+        setNotice({ ok: false, text: error instanceof Error ? error.message : posText("โหลดคิวไม่สำเร็จ · ตรวจการเชื่อมต่อ") });
+        return;
+      } finally {
+        lookupActionLock.current = false;
+      }
+    }
+    if (!entry) { setNotice({ ok: false, text: posText("ไม่พบคิว {v0} ของวันนี้", { v0: wanted }) }); return; }
+    if (entry.status === "COLLECTED" || entry.status === "CANCELLED") {
+      setNotice({ ok: false, text: posText("คิว {v0} {v1}ไปแล้ว", { v0: entry.label, v1: STATUS_TEXT(posText)[entry.status] }) });
       return;
     }
-    void act(exact, action);
+    void act(entry, action === "auto" ? entry.status === "READY" ? "collect" : "call" : action);
   };
 
   const press = (key: string) => {
@@ -227,7 +270,8 @@ export function PickupQueueManager({ token, cashierUserId, cashierPin, onClose, 
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 18px",
           borderBottom: "1px solid var(--pos-line, #e2e8f0)" }}>
           <b style={{ fontSize: 20, flex: 1 }}>{posText("จัดการคิวรับของ")}</b>
-          <button type="button" className="pos-btn" style={button} onClick={openPickupQueueBoard}>{posText("เปิดจอเรียกคิว")}</button>
+          {!hasDesktopManagedDisplayBridge() && <button type="button" className="pos-btn" style={button}
+            onClick={openPickupQueueBoard}>{posText("เปิดจอเรียกคิว")}</button>}
           <button type="button" className="pos-btn" style={button} onClick={onClose} aria-label={posText("ปิด")}>{posText("ปิด")}</button>
         </div>
 
@@ -238,12 +282,16 @@ export function PickupQueueManager({ token, cashierUserId, cashierPin, onClose, 
               {posText("พิมพ์เลขคิว") + " "}</label>
             <input id="pickup-queue-number" inputMode="numeric" autoComplete="off" value={typed}
               onChange={(event) => { setNotice(null); setTyped(event.target.value.replace(/\D/g, "").slice(0, 4)); }}
-              onKeyDown={(event) => { if (event.key === "Enter") actByNumber(exact?.status === "READY" ? "collect" : "call"); }}
+              onKeyDown={(event) => { if (event.key === "Enter") void actByNumber("auto"); }}
               placeholder={posText("เช่น 42")}
               style={{ fontSize: 34, fontWeight: 700, textAlign: "center", padding: "6px 8px", borderRadius: 8,
                 border: "1px solid var(--pos-line, #cbd5e1)", fontVariantNumeric: "tabular-nums" }} />
             <div style={{ fontSize: 13, minHeight: 18, color: "var(--pos-muted, #64748b)" }}>
-              {wanted ? (exact ? posText("คิว {v0} · {v1}", { v0: exact.label, v1: STATUS_TEXT(posText)[exact.status] }) : posText("ไม่พบคิว {v0}", { v0: wanted })) : " "}
+              {wanted ? (exact ? posText("คิว {v0} · {v1}", { v0: exact.label, v1: STATUS_TEXT(posText)[exact.status] })
+                : lookup?.queueNo === Number(wanted) && !lookup.error ? posText("ไม่พบคิว {v0}", { v0: wanted })
+                  : lookup?.queueNo === Number(wanted) && lookup.error
+                    ? posText("โหลดคิวไม่สำเร็จ · ตรวจการเชื่อมต่อ")
+                    : posText("กำลังค้นหาคิว {v0}", { v0: wanted })) : " "}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
               {["1", "2", "3", "4", "5", "6", "7", "8", "9", "CLR", "0", "DEL"].map((key) => (
@@ -255,9 +303,9 @@ export function PickupQueueManager({ token, cashierUserId, cashierPin, onClose, 
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
               <button type="button" className="pos-btn" style={{ ...button, fontWeight: 700 }}
-                disabled={actionsDisabled} onClick={() => actByNumber("call")}>{posText("เรียกคิว")}</button>
+                disabled={actionsDisabled} onClick={() => void actByNumber("call")}>{posText("เรียกคิว")}</button>
               <button type="button" className="pos-btn" style={{ ...button, fontWeight: 700 }}
-                disabled={actionsDisabled} onClick={() => actByNumber("collect")}>{posText("รับแล้ว")}</button>
+                disabled={actionsDisabled} onClick={() => void actByNumber("collect")}>{posText("รับแล้ว")}</button>
             </div>
             {notice && (
               <div role="status" style={{ fontSize: 14, color: notice.ok ? "#15803d" : "#b91c1c" }}>{notice.text}</div>

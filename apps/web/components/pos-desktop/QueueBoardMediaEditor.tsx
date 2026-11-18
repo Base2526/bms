@@ -97,7 +97,7 @@ export default function QueueBoardMediaEditor({ location, onClose }: {
   const preview = settings?.enabled
     ? settings.items.find((item) => item.active && (!item.startsAt || Date.parse(item.startsAt) <= now)
       && (!item.endsAt || Date.parse(item.endsAt) > now))?.url ?? settings.defaultUrl
-    : settings?.defaultUrl;
+    : null;
   return <Modal open={!!location} title={`${t("queue_board_media.title")} · ${location?.name ?? ""}`}
     onCancel={onClose} width={820} footer={<Space><Button onClick={onClose}>{t("queue_board_media.close")}</Button>
       <Button type="primary" loading={saving} disabled={!settings || loading || uploading}

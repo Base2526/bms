@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
 import { MAX_QUEUE_DISPLAYS, normalizeCustomerDisplayConfig, normalizeQueueDisplayConfig,
-  selectQueueDisplays } from '../src/display-policy.mjs';
+  queueClaimsCustomerDisplay, selectQueueDisplays } from '../src/display-policy.mjs';
 const source=readFileSync(new URL('../src/main.mjs',import.meta.url),'utf8').replace(/\r\n/g,'\n');
 function body(name) {
   const start=source.indexOf(`function ${name}(`);
@@ -475,10 +475,11 @@ test('multi-queue IPC rejects invalid assignments and atomically releases a conf
   const context=vm.createContext({posText,MAX_QUEUE_DISPLAYS,
     ipcMain:{handle:(name,fn)=>handlers.set(name,fn),on:()=>{}},
     isPairedCashierFrame:()=>authorized,managedDisplayOperationBusy:false,
-    normalizeCustomerDisplayConfig,normalizeQueueDisplayConfig,selectQueueDisplays,
+    normalizeCustomerDisplayConfig,normalizeQueueDisplayConfig,queueClaimsCustomerDisplay,selectQueueDisplays,
     customerDisplayConfig:normalizeCustomerDisplayConfig({mode:'selected',targetDisplayId:'20'}),
     queueDisplayConfig:normalizeQueueDisplayConfig({mode:'off'}),
-    screen:{getAllDisplays:()=>screens},cashierDisplay:()=>screens[0],customerDisplayTargetId:()=> '20',
+    screen:{getAllDisplays:()=>screens},cashierDisplay:()=>screens[0],
+    customerDisplayTargetId:()=>context.customerDisplayConfig.mode === 'off' ? null : '20',
     writeManagedDisplayConfigs:async(...args)=>writes.push(args),
     reconcileCustomerDisplay:()=>{},reconcileQueueDisplay:()=>{},
     currentManagedDisplayState:()=>({})});
@@ -503,6 +504,21 @@ test('multi-queue IPC rejects invalid assignments and atomically releases a conf
   assert.deepEqual(context.queueDisplayConfig.targetDisplayIds,['20','30']);
   assert.equal(context.queueDisplayConfig.audioDisplayId,'30');
   assert.equal(context.customerDisplayConfig.mode,'off');
+  screens.splice(2);
+  context.customerDisplayConfig=normalizeCustomerDisplayConfig({mode:'auto'});
+  assert.equal((await save({}, {mode:'auto',displayCount:1,targetDisplayIds:[],audioDisplayId:null})).ok,true);
+  assert.equal(writes[1][0].mode,'off','auto queue setup hands off the only external screen');
+  context.queueDisplayConfig=normalizeQueueDisplayConfig({mode:'auto',displayCount:2,audioDisplayId:'30'});
+  assert.equal((await save({}, {mode:'auto',displayCount:2,targetDisplayIds:[],audioDisplayId:'30'})).ok,true,
+    'retry keeps a saved audio screen that is temporarily disconnected');
+  assert.equal((await save({}, {mode:'auto',displayCount:2,targetDisplayIds:[],audioDisplayId:'40'})).ok,false,
+    'an unrelated disconnected screen cannot become the audio owner');
+  screens.push({id:30},{id:40},{id:50});
+  assert.equal((await save({}, {mode:'auto',displayCount:4,targetDisplayIds:[],audioDisplayId:null})).ok,true,
+    'four connected external monitors can be requested');
+  assert.equal((await save({}, {mode:'selected',displayCount:4,
+    targetDisplayIds:['20','30','40','50'],audioDisplayId:'50'})).ok,true,
+    'four connected external monitors can be selected with one audio owner');
 });
 
 test('queue window presentation is read-only, frame-scoped and assigns audio to one managed window',()=>{

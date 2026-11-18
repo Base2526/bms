@@ -17,6 +17,14 @@ export function queueBoardLayoutStorageKey(namespace: string, displayId?: string
   return QUEUE_BOARD_LAYOUT_PREFIX + namespace + (displayId ? `.screen.${displayId}` : "");
 }
 
+export function readQueueBoardLayoutOverride(namespace: string, displayId: string): QueueBoardLayout | null {
+  if (!namespace || !displayId || typeof window === "undefined") return null;
+  try {
+    const saved = window.localStorage.getItem(queueBoardLayoutStorageKey(namespace, displayId));
+    return saved && VALID_LAYOUTS.has(saved) ? saved as QueueBoardLayout : null;
+  } catch { return null; }
+}
+
 /** A missing or invalid saved value uses the owner-facing default instead of breaking the board. */
 export function readQueueBoardLayout(namespace: string, displayId?: string | null): QueueBoardLayout {
   if (!namespace || typeof window === "undefined") return DEFAULT_QUEUE_BOARD_LAYOUT;
@@ -39,4 +47,10 @@ export function writeQueueBoardLayout(namespace: string, layout: QueueBoardLayou
   } catch {
     // Blocked storage keeps the safe default. This preference never affects queue authority.
   }
+}
+
+export function clearQueueBoardLayoutOverride(namespace: string, displayId: string): void {
+  if (!namespace || !displayId || typeof window === "undefined") return;
+  try { window.localStorage.removeItem(queueBoardLayoutStorageKey(namespace, displayId)); }
+  catch { /* A blocked preference store leaves the current display as it was. */ }
 }

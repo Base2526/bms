@@ -268,6 +268,7 @@ export default function PickupQueueBoardPage() {
   // calledAt already announced per number; empty until the first load so opening the screen
   // does not replay every number that was called earlier.
   const announcedRef = useRef<Map<string, string> | null>(null);
+  const loadSequence = useRef(0);
 
   useEffect(() => {
     void readPosDeviceToken().then((value) => setToken(value || ""));
@@ -289,8 +290,10 @@ export default function PickupQueueBoardPage() {
   const presentationPending = typeof window !== "undefined"
     && typeof window.bmsDesktop?.getQueueWindowPresentation === "function"
     && !presentationResolved;
+  const desktopPresentationRequired = typeof window !== "undefined"
+    && typeof window.bmsDesktop?.getQueueWindowPresentation === "function";
   const effectiveSoundEnabled = soundEnabled === null || presentationPending
-    ? null : soundEnabled && (presentation?.audioEnabled ?? true);
+    ? null : soundEnabled && (!desktopPresentationRequired || presentation?.audioEnabled === true);
 
   useEffect(() => {
     if (!token) {
@@ -377,12 +380,14 @@ export default function PickupQueueBoardPage() {
 
   const load = useCallback(async () => {
     if (!token) return;
+    const sequence = ++loadSequence.current;
     try {
       const res = await fetch("/api/pos/pickup-queue?view=board", {
         headers: { "x-pos-device-token": token },
         cache: "no-store",
       });
       const data = await res.json().catch(() => null);
+      if (sequence !== loadSequence.current) return;
       if (!res.ok) {
         if (res.status === 401 || res.status === 403) {
           // Keep the stored credential untouched because the cashier window may still need it.
@@ -395,6 +400,7 @@ export default function PickupQueueBoardPage() {
           setSpotlight(null);
           setError(null);
           setOffline(false);
+          loadSequence.current += 1;
           setToken("");
           return;
         }
@@ -442,7 +448,7 @@ export default function PickupQueueBoardPage() {
         }
       }
     } catch {
-      setOffline(true);
+      if (sequence === loadSequence.current) setOffline(true);
     }
   }, [audioStyle, effectiveSoundEnabled, token]);
 
@@ -450,7 +456,7 @@ export default function PickupQueueBoardPage() {
     if (!token) return;
     void load();
     const timer = window.setInterval(() => void load(), POLL_MS);
-    return () => window.clearInterval(timer);
+    return () => { window.clearInterval(timer); loadSequence.current += 1; };
   }, [token, load]);
 
   useEffect(() => {
@@ -474,7 +480,7 @@ export default function PickupQueueBoardPage() {
   const mediaUrls = media?.enabled && Array.isArray(media.items)
     ? media.items.map((item) => item.url).filter((url) => /^\/api\/files\/\d+$/.test(url) && !failedMedia.includes(url))
     : [];
-  const defaultMediaUrl = media?.defaultUrl && /^\/api\/files\/\d+$/.test(media.defaultUrl)
+  const defaultMediaUrl = media?.enabled && media.defaultUrl && /^\/api\/files\/\d+$/.test(media.defaultUrl)
     && !failedMedia.includes(media.defaultUrl) ? media.defaultUrl : null;
   const displayedMediaUrl = mediaUrls.length ? mediaUrls[mediaIndex % mediaUrls.length] : defaultMediaUrl;
   const mediaSignature = [media?.enabled, media?.defaultUrl, ...(media?.items ?? []).map((item) => item.url)].join("|");
@@ -573,6 +579,8 @@ export default function PickupQueueBoardPage() {
           {offline && <span className="pq-warning">{posText("กำลังเชื่อมต่อใหม่…")}</span>}
           {error && <span className="pq-error">{error}</span>}
           {soundEnabled === false && <span className="pq-sound-off">{posText("🔇 ปิดเสียงจากการตั้งค่าเครื่อง")}</span>}
+          {soundEnabled === true && desktopPresentationRequired && presentationResolved && !presentation &&
+            <span className="pq-sound-off">{posText("🔇 ยืนยันจอประกาศเสียงไม่ได้")}</span>}
           {soundEnabled === true && presentation && !presentation.audioEnabled &&
             <span className="pq-sound-off">{posText("🔇 เสียงประกาศออกที่จอคิวอีกจอ")}</span>}
           {effectiveSoundEnabled === true && !soundOn && (

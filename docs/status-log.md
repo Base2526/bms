@@ -2,7 +2,7 @@
 
 Per-feature decision narrative moved out of [CLAUDE.md](../CLAUDE.md) on 2026-10-13 to keep the
 always-loaded agent context small. The moved text is unchanged; newest entries are at the end.
-Entries were brought up to date on 2026-11-16 (through migration `10.121` and PR #416); the
+Entries were brought up to date on 2026-11-18 (through migration `10.132` and PR #430); the
 detailed 2026-11-16 boundary and log notes are in [feature-log.md](feature-log.md). The compact area index lives in CLAUDE.md
 § Current status; full
 per-domain rules live in [agent-invariants.md](agent-invariants.md).
@@ -993,3 +993,70 @@ and IPs before text reaches stdout, Postgres, Slack or the daily triage report. 
 mobile Jest and DB runner passed on 2026-11-16; production and authenticated browser runs remain
 unverified. See [architecture/logging-and-triage.md](architecture/logging-and-triage.md) and
 [feature-log.md](feature-log.md).
+
+**Mobile device settings after unpairing (#417, no migration).** The Android/iOS Device Settings
+screen stays open after unpairing instead of navigating away, unpair and startup-rejection failures
+are covered by Jest, and the QR scan action is an icon button beside the pair button. See
+[apps/mobile/README.md](../apps/mobile/README.md).
+
+**Factory BOM, QC hold, production demand and machine evidence (`10.122`–`10.127`, #418, not
+applied to production).** Twine/straw production can run against a BOM with explicit units, an
+opt-in output QC hold with a recorded reviewer, production demand lines and machine evidence. The Thai demo guide and `/learn` step-by-step flow (#423–#424) describe a controlled
+pilot only. See [business/factory-twine-straw-pilot-th.md](business/factory-twine-straw-pilot-th.md)
+and [business/operation-production.md](business/operation-production.md).
+
+**Owner repair retry in ordered rollout (`10.128`, #419–#420).** The ordered `10.121` file now sets a
+transaction-local lock/statement timeout; `10.128` is the idempotent follow-up for databases that
+applied the pre-timeout `10.121`. A timeout aborts the whole transaction (role change and audit),
+and a rerun promotes no one twice. See
+[architecture/owner-repair-rollout.md](architecture/owner-repair-rollout.md).
+
+**Feature readiness recheck (#421, no migration).** The release manifest was regenerated clean,
+missing release evidence is recorded rather than assumed, and report PDFs render Thai text. See [feature-completion-plan.md](feature-completion-plan.md) and
+[release-feature-control.md](release-feature-control.md).
+
+**Audit traceability (`10.131`–`10.132`, #422 and #427).** `bms_security_events` records logins,
+logouts, password resets and sensitive reads beside the business `bms_audit_log`; `/admin/audit`
+pages both at the server and opens a per-actor event flow only for verified actor UUIDs. The files
+were first committed under factory-colliding numbers and renumbered in #427; environments that ran
+the old filenames follow the ledger steps in
+[architecture/audit-traceability.md](architecture/audit-traceability.md#verification-and-rollout).
+
+**Retail Local `0.2.14-pilot.11` (#423).** Release preparation for the next technical-pilot build;
+Retail Local remains a pilot, not GA. See [business/retail-local.md](business/retail-local.md).
+
+**Open-item cash sales (`10.129`–`10.130`, #425, branch implementation; production deployment
+unverified).** Web, Desktop and Mobile POS can sell a cash line for a physical item that is not yet
+catalogued. Sale and return evidence is append-only, the line never moves stock, and draft baskets
+holding open items are protected. Apply `10.129` then `10.130` before rollout. See
+[business/pos.md § สินค้าชั่วคราว](business/pos.md).
+
+**Work Assistant screenshots (#426, no migration).** Staff can attach one PNG/JPEG/WebP image. The
+server checks the real format, strips metadata, bounds the size and never stores the image; a
+text-only configured model is rejected before any provider call or AI point charge. Screenshots are
+treated as user evidence, never as instructions or proof of shop state. Desktop managed displays now
+retry their own main document on HTTP 5xx. See
+[ai/work-assistant-coverage.md](ai/work-assistant-coverage.md).
+
+**Desktop sell-screen queue strip (#428, no migration).** The compact Desktop sell screen reads the
+same per-device pickup-queue switch as Settings, requests a number with the committed sale, shows
+the queue strip above the catalog, and reloads the saved receipt after a successful retry so the
+number is printed. See [business/pos.md](business/pos.md#pickup-queue-numbers-and-the-call-screen-10111).
+
+**Whole-tenant purge FK order (#429, no migration).** `deleteTenantRows()` now unwinds the table-QR,
+order→check, POS member-enrolment shift and pharmacy protocol foreign-key cycles inside the same
+purge transaction, only for the selected tenants. A failed purge still rolls back everything; the DB
+lifecycle contract passed on the throwaway test database.
+
+**Multiple managed queue displays (#430 and the queue-display settings audit, no migration).** A
+Desktop shell opens one `/pos/queue-board` window per selected external monitor (the former limit
+of three is replaced by the detected monitors; `MAX_QUEUE_DISPLAYS = 32` only guards malformed saved
+input). Each screen may override the layout or follow the workstation default; exactly one active
+window owns announcements. An explicit queue setup claims the only external screen, or a customer
+screen it selects. The staff `?view=day` list returns up to 500 rows (open first) and the keypad
+looks up any service-day number on the server; the customer board applies branch visibility and
+READY auto-hide in SQL before its 200-row limit. Issuing a number now requires a `COMPLETED`,
+non-voided bill, and the REST route rejects malformed JSON and non-UUID ids. Desktop unit tests and
+Electron smokes cover the policy; real multi-monitor hardware and audio remain unverified. See
+[business/pos.md](business/pos.md#pickup-queue-numbers-and-the-call-screen-10111) and
+[apps/desktop/README.md](../apps/desktop/README.md#external-displays).

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
   getPickupQueueBoardSettings,
+  findPickupQueueDayNumber,
   issuePickupQueueNumber,
   listPickupQueue,
   listPickupQueueBoard,
@@ -16,6 +17,7 @@ import { authenticateRestaurantMutation, authenticateRestaurantRead } from "../r
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Pickup queue numbers (`10.111`) — device Bearer only, never public.
@@ -27,8 +29,18 @@ async function handleGET(req: NextRequest) {
   const auth = await authenticateRestaurantRead(req);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const headers = { "Cache-Control": "no-store" };
-  // `?view=day`: the staff manager — every number of today including collected/cancelled.
+  // `?view=day`: up to 500 staff rows, open first; queueNo looks up any service-day number.
   if (req.nextUrl.searchParams.get("view") === "day") {
+    const requestedNo = req.nextUrl.searchParams.get("queueNo");
+    if (requestedNo !== null) {
+      if (!/^[1-9][0-9]{0,3}$/.test(requestedNo)) {
+        return NextResponse.json({ error: "เลขคิวไม่ถูกต้อง" }, { status: 400, headers });
+      }
+      const entry = await findPickupQueueDayNumber(
+        auth.device.tenantId, auth.device.locationId, Number(requestedNo)
+      );
+      return NextResponse.json({ entries: entry ? [entry] : [], serverTime: new Date().toISOString() }, { headers });
+    }
     const [day, settings] = await Promise.all([
       listPickupQueueDay(auth.device.tenantId, auth.device.locationId),
       getPickupQueueBoardSettings(auth.device.tenantId, auth.device.locationId),
@@ -51,7 +63,11 @@ async function handleGET(req: NextRequest) {
 }
 
 async function handlePOST(req: NextRequest) {
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const parsed: unknown = await req.json().catch(() => null);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return NextResponse.json({ error: "คำขอคิวไม่ถูกต้อง" }, { status: 400 });
+  }
+  const body = parsed as Record<string, unknown>;
   // Same gate as the table waitlist: no action here moves money or stock.
   const auth = await authenticateRestaurantMutation(req, body, "pos.sell");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -61,6 +77,7 @@ async function handlePOST(req: NextRequest) {
       // Retry path for a sale whose number could not be issued at checkout.
       const orderId = String(body.orderId ?? "").trim();
       if (!orderId) return NextResponse.json({ error: "ไม่ได้ระบุบิล" }, { status: 400 });
+      if (!UUID.test(orderId)) return NextResponse.json({ error: "รหัสบิลไม่ถูกต้อง" }, { status: 400 });
       const entry = await issuePickupQueueNumber({
         tenantId: auth.device.tenantId,
         locationId: auth.device.locationId,
@@ -75,6 +92,7 @@ async function handlePOST(req: NextRequest) {
     }
     const entryId = String(body.entryId ?? "").trim();
     if (!entryId) return NextResponse.json({ error: "ไม่ได้ระบุคิว" }, { status: 400 });
+    if (!UUID.test(entryId)) return NextResponse.json({ error: "รหัสคิวไม่ถูกต้อง" }, { status: 400 });
     const entry = await updatePickupQueueEntry({
       tenantId: auth.device.tenantId,
       locationId: auth.device.locationId,

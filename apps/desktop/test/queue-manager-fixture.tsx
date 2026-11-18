@@ -5,6 +5,16 @@ import restaurantStyles from "../../web/app/(pos)/pos/restaurant/restaurant.modu
 import { PickupQueueStrip } from "../../web/components/pos/PickupQueuePanel";
 import { PickupQueueRetryButton } from "../../web/components/pos/PickupQueueManager";
 
+if (new URLSearchParams(window.location.search).has("managed")) {
+  const noop = () => undefined;
+  Object.defineProperty(window, "bmsDesktop", { value: {
+    getCustomerDisplayState: noop, setCustomerDisplayConfig: noop,
+    getQueueDisplayState: noop, setQueueDisplayConfig: noop,
+    identifyDisplays: noop, onCustomerDisplayStateChanged: noop,
+    onQueueDisplayStateChanged: noop, setExternalDisplayRole: noop,
+  }, configurable: true });
+}
+
 // The till strip + manager exactly as /pos renders them, inside the real `.pos-root` styles.
 function Till() {
   const compact = new URLSearchParams(window.location.search).get("variant") === "compact";

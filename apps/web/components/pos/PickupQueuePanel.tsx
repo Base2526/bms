@@ -273,7 +273,7 @@ export function PickupQueueStrip({ token, cashierUserId, cashierPin, refreshKey,
             {!currentReady && nextPreparing && <button type="button" className="pos-btn" data-action="call" disabled={actionsDisabled}
               onClick={() => void act(nextPreparing, "call")} title={posText("กดเพื่อเรียกคิวนี้ขึ้นจอ")}>{posText("เรียกคิว")}</button>}
             <button type="button" className="pos-btn" data-action="manage" onClick={() => setManagerOpen(true)}
-              title={posText("ดูคิวทั้งหมดของวันนี้ เรียกด้วยเลข ย้อนสถานะ และยกเลิกคิว")}>{posText("จัดการคิว")}</button>
+              title={posText("ดูคิวที่ยังเปิดและประวัติล่าสุด ค้นเลขคิวเก่าเพื่อจัดการได้")}>{posText("จัดการคิว")}</button>
           </span>
         </div>
         {readyFlash && readyFlash !== currentReady?.label && <span role="status" data-pickup-ready-flash>
@@ -306,7 +306,7 @@ export function PickupQueueStrip({ token, cashierUserId, cashierPin, refreshKey,
             : posText("คิวรับของ · กำลังเตรียม {v0} · พร้อมรับ {v1}", { v0: preparing.length, v1: ready.length })}
         </span>
         <button type="button" className="pos-btn" onClick={() => setManagerOpen(true)}
-          title={posText("ดูคิวทั้งหมดของวันนี้ เรียกด้วยเลข และยกเลิกคิว")}>
+          title={posText("ดูคิวที่ยังเปิดและประวัติล่าสุด ค้นเลขคิวเก่าเพื่อจัดการได้")}>
           {posText("จัดการคิว") + " "}</button>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
