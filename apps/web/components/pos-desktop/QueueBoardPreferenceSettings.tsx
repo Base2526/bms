@@ -29,7 +29,7 @@ import {
   preparePickupQueueAnnouncement,
 } from "@/lib/pos/pickupQueueVoice";
 
-export default function QueueBoardPreferenceSettings() {
+export default function QueueBoardPreferenceSettings({ multiDisplay = false }: { multiDisplay?: boolean }) {
   const posText = usePosText();
   const [storageNamespace, setStorageNamespace] = useState("");
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -101,7 +101,9 @@ export default function QueueBoardPreferenceSettings() {
   return <section data-queue-board-preference-settings className="pos-queue-preference-settings">
     <div style={{ fontWeight: 700 }}>{posText("รูปแบบและเสียงจอเรียกคิว")}</div>
     <div style={{ marginTop: 3, color: "var(--posx-muted, #667085)", fontSize: 12 }}>
-      {posText("ตั้งค่าเฉพาะเครื่องนี้ · ใช้ร่วมกันทั้งจอจริงและหน้าต่างทดสอบ โดยไม่ขึ้นกับการเลือกรูปแบบจอที่สอง") + " "}</div>
+      {multiDisplay
+        ? posText("เสียงใช้ร่วมกันทุกจอคิว · รูปแบบนี้เป็นค่าเริ่มต้น ส่วนรูปแบบรายจอเลือกด้านบน")
+        : posText("ตั้งค่าเฉพาะเครื่องนี้ · ใช้ร่วมกันทั้งจอจริงและหน้าต่างทดสอบ โดยไม่ขึ้นกับการเลือกรูปแบบจอที่สอง")}</div>
 
     <div style={{ fontWeight: 600, marginTop: 12, marginBottom: 6 }}>{posText("รูปแบบหน้าจอเรียกคิว")}</div>
     <Select aria-label={posText("เลือกรูปแบบหน้าจอเรียกคิว")} value={layout}

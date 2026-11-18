@@ -84,11 +84,25 @@ contextBridge.exposeInMainWorld("bmsDesktop", {
     return () => ipcRenderer.removeListener("bms-pos:customer-display-state-changed", handler);
   },
   getQueueDisplayState: () => ipcRenderer.invoke("bms-pos:get-queue-display-state"),
+  getQueueWindowPresentation: () => ipcRenderer.invoke("bms-pos:get-queue-window-presentation"),
+  onQueueWindowPresentationChanged: (listener) => {
+    if (typeof listener !== "function") return () => {};
+    const handler = (_event, state) => listener(state);
+    ipcRenderer.on("bms-pos:queue-window-presentation-changed", handler);
+    return () => ipcRenderer.removeListener("bms-pos:queue-window-presentation-changed", handler);
+  },
   openQueueDisplayPreview: () => ipcRenderer.invoke("bms-pos:open-queue-display-preview"),
   closeQueueDisplayPreview: () => ipcRenderer.invoke("bms-pos:close-queue-display-preview"),
   setQueueDisplayConfig: (input) => ipcRenderer.invoke("bms-pos:set-queue-display-config", {
     mode: typeof input?.mode === "string" ? input.mode : "",
     targetDisplayId: typeof input?.targetDisplayId === "string" ? input.targetDisplayId : null,
+  }),
+  setQueueDisplaysConfig: (input) => ipcRenderer.invoke("bms-pos:set-queue-displays-config", {
+    mode: typeof input?.mode === "string" ? input.mode : "",
+    displayCount: input?.displayCount,
+    targetDisplayIds: Array.isArray(input?.targetDisplayIds)
+      ? input.targetDisplayIds.slice(0, 4).map((id) => typeof id === "string" ? id : "") : null,
+    audioDisplayId: typeof input?.audioDisplayId === "string" ? input.audioDisplayId : null,
   }),
   setExternalDisplayRole: (input) => ipcRenderer.invoke("bms-pos:set-external-display-role", {
     role: input?.role === "customer" || input?.role === "queue" ? input.role : "",

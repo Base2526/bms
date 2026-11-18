@@ -269,7 +269,10 @@ test("desktop manages a dedicated queue display without granting it cashier brid
 test("desktop assigns customer and queue roles from one external-display control", () => {
   assert.match(POS_PAGE, /<ManagedDisplaySettings \/>/);
   assert.match(POS_PAGE, /!hasDesktopManagedDisplayBridge\(\) && <QueueBoardPreferenceSettings \/>/);
-  assert.match(MANAGED_DISPLAY_SETTINGS, /<QueueBoardPreferenceSettings \/>/);
+  assert.match(MANAGED_DISPLAY_SETTINGS, /<QueueBoardPreferenceSettings multiDisplay=\{multiQueueSupported\} \/>/);
+  assert.match(MANAGED_DISPLAY_SETTINGS, /setQueueDisplaysConfig/);
+  assert.match(DESKTOP_PRELOAD, /bms-pos:set-queue-displays-config/);
+  assert.match(DESKTOP_MAIN, /ipcMain\.handle\("bms-pos:set-queue-displays-config"/);
   assert.match(MANAGED_DISPLAY_SETTINGS, /setExternalDisplayRole/);
   assert.match(MANAGED_DISPLAY_SETTINGS, /getCustomerDisplayState/);
   assert.match(MANAGED_DISPLAY_SETTINGS, /getQueueDisplayState/);

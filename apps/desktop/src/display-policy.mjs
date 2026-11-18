@@ -7,9 +7,16 @@ export const DEFAULT_CUSTOMER_DISPLAY_CONFIG = Object.freeze({
   configured: false,
 });
 
-// The pickup call screen follows the same persisted policy as the customer display, but keeps a
-// separate file/state so a three-screen counter can dedicate one monitor to each purpose.
-export const DEFAULT_QUEUE_DISPLAY_CONFIG = DEFAULT_CUSTOMER_DISPLAY_CONFIG;
+export const MAX_QUEUE_DISPLAYS = 3;
+export const DEFAULT_QUEUE_DISPLAY_CONFIG = Object.freeze({
+  version: 2,
+  mode: "off",
+  targetDisplayId: null,
+  targetDisplayIds: [],
+  displayCount: 1,
+  audioDisplayId: null,
+  configured: false,
+});
 
 export function normalizeCustomerDisplayConfig(value) {
   if (!value || typeof value !== "object") return { ...DEFAULT_CUSTOMER_DISPLAY_CONFIG };
@@ -29,7 +36,37 @@ export function normalizeCustomerDisplayConfig(value) {
   };
 }
 
-export const normalizeQueueDisplayConfig = normalizeCustomerDisplayConfig;
+/** Upgrade the existing single-screen file without turning on additional monitors. */
+export function normalizeQueueDisplayConfig(value) {
+  if (!value || typeof value !== "object" || !CUSTOMER_DISPLAY_MODES.has(value.mode)) {
+    return { ...DEFAULT_QUEUE_DISPLAY_CONFIG, targetDisplayIds: [] };
+  }
+  const mode = value.mode;
+  const rawIds = Array.isArray(value.targetDisplayIds)
+    ? value.targetDisplayIds
+    : value.targetDisplayId == null ? [] : [value.targetDisplayId];
+  const ids = [...new Set(rawIds.filter((id) => typeof id === "string")
+    .map((id) => id.trim()).filter(Boolean))].slice(0, MAX_QUEUE_DISPLAYS);
+  if (mode === "selected" && ids.length === 0) {
+    return { ...DEFAULT_QUEUE_DISPLAY_CONFIG, targetDisplayIds: [] };
+  }
+  const rawCount = Number(value.displayCount);
+  const count = Number.isInteger(rawCount) && rawCount >= 1 && rawCount <= MAX_QUEUE_DISPLAYS
+    ? rawCount : 1;
+  const requestedAudioId = typeof value.audioDisplayId === "string"
+    ? value.audioDisplayId.trim() || null : null;
+  const audioDisplayId = mode === "selected" && requestedAudioId && !ids.includes(requestedAudioId)
+    ? null : requestedAudioId;
+  return {
+    version: 2,
+    mode,
+    targetDisplayId: mode === "selected" ? ids[0] : null,
+    targetDisplayIds: mode === "selected" ? ids : [],
+    displayCount: mode === "selected" ? ids.length : count,
+    audioDisplayId,
+    configured: value.configured !== false,
+  };
+}
 
 export function selectCustomerDisplay(displays, cashierDisplayId, config) {
   const normalized = normalizeCustomerDisplayConfig(config);
@@ -45,13 +82,25 @@ export function selectCustomerDisplay(displays, cashierDisplayId, config) {
 }
 
 /** Queue auto-selection also excludes a monitor already owned by the customer display. */
-export function selectQueueDisplay(displays, cashierDisplayId, customerDisplayId, config) {
+export function selectQueueDisplays(displays, cashierDisplayId, customerDisplayId, config) {
+  const normalized = normalizeQueueDisplayConfig(config);
+  if (normalized.mode === "off") return [];
   const reserved = customerDisplayId == null ? null : String(customerDisplayId);
-  return selectCustomerDisplay(
-    displays.filter((display) => String(display.id) !== reserved),
-    cashierDisplayId,
-    config,
-  );
+  const available = displays.filter((display) =>
+    String(display.id) !== String(cashierDisplayId)
+    && String(display.id) !== reserved);
+  if (normalized.mode === "selected") {
+    return normalized.targetDisplayIds.flatMap((id) => {
+      const match = available.find((display) => String(display.id) === id);
+      return match ? [match] : [];
+    });
+  }
+  return available.slice(0, normalized.displayCount);
+}
+
+/** Legacy callers still ask for one screen. */
+export function selectQueueDisplay(displays, cashierDisplayId, customerDisplayId, config) {
+  return selectQueueDisplays(displays, cashierDisplayId, customerDisplayId, config)[0] ?? null;
 }
 
 /**

@@ -28,7 +28,22 @@ export type DesktopCustomerDisplayState = {
   conflict?: boolean;
 };
 
-export type DesktopQueueDisplayState = DesktopCustomerDisplayState;
+export type DesktopQueueDisplayState = DesktopCustomerDisplayState & {
+  /** Present on Desktop builds that can manage several queue windows. */
+  maxDisplays?: number;
+  displayCount?: number;
+  targetDisplayIds?: string[];
+  activeDisplayIds?: string[];
+  audioDisplayId?: string | null;
+  preferredAudioDisplayId?: string | null;
+  screens?: Array<{ id: string; label: string; connected: boolean; open: boolean; audio: boolean }>;
+};
+
+export type DesktopQueueWindowPresentation = {
+  displayId: string | null;
+  audioEnabled: boolean;
+  preview: boolean;
+};
 
 export type DesktopExternalDisplayRole = "customer" | "queue";
 
@@ -129,6 +144,10 @@ declare global {
       ): () => void;
       /** Added with pickup queue display management; optional for older desktop shells. */
       getQueueDisplayState?(): Promise<DesktopQueueDisplayState | null>;
+      getQueueWindowPresentation?(): Promise<DesktopQueueWindowPresentation | null>;
+      onQueueWindowPresentationChanged?(
+        listener: (state: DesktopQueueWindowPresentation) => void,
+      ): () => void;
       openQueueDisplayPreview?(): Promise<{
         ok: boolean; error?: string; state?: DesktopQueueDisplayState;
       }>;
@@ -139,6 +158,12 @@ declare global {
         mode: DesktopCustomerDisplayMode;
         targetDisplayId?: string | null;
       }): Promise<{ ok: boolean; error?: string; state?: DesktopQueueDisplayState }>;
+      setQueueDisplaysConfig?(input: {
+        mode: DesktopCustomerDisplayMode;
+        displayCount: number;
+        targetDisplayIds: string[];
+        audioDisplayId: string | null;
+      }): Promise<{ ok: boolean; error?: string; state?: DesktopManagedDisplayState }>;
       onQueueDisplayStateChanged?(
         listener: (state: DesktopQueueDisplayState) => void,
       ): () => void;

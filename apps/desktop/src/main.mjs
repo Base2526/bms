@@ -14,10 +14,11 @@ import {
   queueDisplayPreviewBounds,
   DEFAULT_CUSTOMER_DISPLAY_CONFIG,
   DEFAULT_QUEUE_DISPLAY_CONFIG,
+  MAX_QUEUE_DISPLAYS,
   normalizeCustomerDisplayConfig,
   normalizeQueueDisplayConfig,
   selectCustomerDisplay,
-  selectQueueDisplay,
+  selectQueueDisplays,
 } from "./display-policy.mjs";
 import { parsePairingHandoff, parsePairingInput } from "./pairing.mjs";
 import { createPairingWriter } from "./pairing-store.mjs";
@@ -79,9 +80,8 @@ let customerDisplayWindow = null;
 let customerDisplayWindowDisplayId = null;
 let customerDisplayWindowKind = null;
 let customerDisplayConfig = { ...DEFAULT_CUSTOMER_DISPLAY_CONFIG };
-let queueDisplayWindow = null;
-let queueDisplayWindowDisplayId = null;
-let queueDisplayWindowKind = null;
+const queueDisplayWindows = new Map();
+let queuePreviewWindow = null;
 let queueDisplayConfig = { ...DEFAULT_QUEUE_DISPLAY_CONFIG };
 let printerConfig = { ...DEFAULT_PRINTER_CONFIG };
 let printerProblem = "";
@@ -416,6 +416,26 @@ function isPairedCashierFrame(event) {
   }
 }
 
+/** Read-only presentation context for a queue window owned by this Desktop process. */
+function queueWindowPresentationForEvent(event) {
+  if (!isPairedPosFrame(event) || event.senderFrame !== event.sender.mainFrame) return null;
+  try {
+    if (new URL(event.senderFrame.url).pathname !== "/pos/queue-board") return null;
+  } catch { return null; }
+  if (queuePreviewWindow && !queuePreviewWindow.isDestroyed()
+    && event.sender === queuePreviewWindow.webContents) {
+    return { displayId: null, audioEnabled: false, preview: true };
+  }
+  for (const [id, window] of queueDisplayWindows) {
+    if (!window.isDestroyed() && event.sender === window.webContents) {
+      return { displayId: id, audioEnabled: currentQueueDisplayState().audioDisplayId === id, preview: false };
+    }
+  }
+  // A legacy cashier-opened call screen remains usable, but stays silent while managed boards
+  // own the announcements. This also avoids leaking managed screen IDs into an arbitrary popup.
+  return { displayId: null, audioEnabled: queueDisplayWindows.size === 0, preview: false };
+}
+
 function isPosPath(pathname) {
   return pathname === "/pos" || pathname.startsWith("/pos/");
 }
@@ -744,21 +764,43 @@ function currentQueueDisplayState() {
   const displays = screen.getAllDisplays();
   const cashier = cashierDisplay();
   const customerTargetId = customerDisplayTargetId(displays, cashier);
-  const target = selectQueueDisplay(displays, cashier.id, customerTargetId, queueDisplayConfig);
+  const targets = selectQueueDisplays(displays, cashier.id, customerTargetId, queueDisplayConfig);
+  const activeIds = [...queueDisplayWindows].filter(([, window]) => !window.isDestroyed()).map(([id]) => id);
+  const preview = Boolean(queuePreviewWindow && !queuePreviewWindow.isDestroyed());
   const selectedConflict = queueDisplayConfig.mode === "selected"
-    && queueDisplayConfig.targetDisplayId != null
-    && queueDisplayConfig.targetDisplayId === customerTargetId;
+    && queueDisplayConfig.targetDisplayIds.includes(customerTargetId);
+  const requestedIds = queueDisplayConfig.mode === "selected"
+    ? queueDisplayConfig.targetDisplayIds
+    : targets.map((display) => String(display.id));
+  const audioDisplayId = activeIds.includes(queueDisplayConfig.audioDisplayId)
+    ? queueDisplayConfig.audioDisplayId
+    : targets.map((display) => String(display.id)).find((id) => activeIds.includes(id)) ?? null;
   return {
     mode: queueDisplayConfig.mode,
     targetDisplayId: queueDisplayConfig.targetDisplayId,
-    activeDisplayId: queueDisplayWindow && !queueDisplayWindow.isDestroyed()
-      ? queueDisplayWindowDisplayId
-      : null,
-    open: Boolean(queueDisplayWindow && !queueDisplayWindow.isDestroyed()),
-    preview: queueDisplayWindowKind === "preview",
+    targetDisplayIds: queueDisplayConfig.targetDisplayIds,
+    displayCount: queueDisplayConfig.displayCount,
+    maxDisplays: MAX_QUEUE_DISPLAYS,
+    audioDisplayId,
+    preferredAudioDisplayId: queueDisplayConfig.audioDisplayId,
+    activeDisplayIds: activeIds,
+    activeDisplayId: activeIds[0] ?? (preview ? String(cashier.id) : null),
+    open: activeIds.length > 0 || preview,
+    preview,
+    screens: requestedIds.map((id) => {
+      const index = displays.findIndex((display) => String(display.id) === id);
+      const display = index < 0 ? null : displays[index];
+      return {
+        id,
+        label: display ? displaySummary(display, index, cashier.id).label : posText("จอที่บันทึกไว้"),
+        connected: Boolean(display),
+        open: activeIds.includes(id),
+        audio: audioDisplayId === id,
+      };
+    }),
     cashierDisplayId: String(cashier.id),
     displays: displays.map((display, index) => displaySummary(display, index, cashier.id)),
-    targetAvailable: Boolean(target),
+    targetAvailable: targets.length > 0,
     conflict: selectedConflict,
     positioningLimited: isWaylandSession(),
   };
@@ -773,34 +815,50 @@ function currentManagedDisplayState() {
 
 function broadcastQueueDisplayState() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send("bms-pos:queue-display-state-changed", currentQueueDisplayState());
+  const state = currentQueueDisplayState();
+  mainWindow.webContents.send("bms-pos:queue-display-state-changed", state);
+  for (const [id, window] of queueDisplayWindows) {
+    if (!window.isDestroyed()) window.webContents.send("bms-pos:queue-window-presentation-changed", {
+      displayId: id, audioEnabled: state.audioDisplayId === id, preview: false,
+    });
+  }
+  if (queuePreviewWindow && !queuePreviewWindow.isDestroyed()) {
+    queuePreviewWindow.webContents.send("bms-pos:queue-window-presentation-changed", {
+      displayId: null, audioEnabled: false, preview: true,
+    });
+  }
+}
+
+function closeManagedQueueDisplayWindow(id) {
+  const window = queueDisplayWindows.get(id);
+  queueDisplayWindows.delete(id);
+  if (window && !window.isDestroyed()) window.destroy();
+}
+
+function closeQueuePreviewWindow() {
+  const window = queuePreviewWindow;
+  queuePreviewWindow = null;
+  if (window && !window.isDestroyed()) window.destroy();
 }
 
 function closeQueueDisplayWindow() {
-  const window = queueDisplayWindow;
-  queueDisplayWindow = null;
-  queueDisplayWindowDisplayId = null;
-  queueDisplayWindowKind = null;
-  if (window && !window.isDestroyed()) window.destroy();
+  for (const id of queueDisplayWindows.keys()) closeManagedQueueDisplayWindow(id);
+  closeQueuePreviewWindow();
 }
 
 function createQueueDisplayWindow(targetDisplay, kind = "managed") {
   if (!activePairing) return;
   const targetId = String(targetDisplay.id);
-  if (
-    queueDisplayWindow
-    && !queueDisplayWindow.isDestroyed()
-    && queueDisplayWindowDisplayId === targetId
-    && queueDisplayWindowKind === kind
-  ) {
-    if (kind === "managed") {
-      try { queueDisplayWindow.setBounds(displayUsableBounds(targetDisplay)); } catch {}
+  const preview = kind === "preview";
+  const existing = preview ? queuePreviewWindow : queueDisplayWindows.get(targetId);
+  if (existing && !existing.isDestroyed()) {
+    if (!preview) {
+      try { existing.setBounds(displayUsableBounds(targetDisplay)); } catch {}
     }
-    queueDisplayWindow.showInactive();
+    existing.showInactive();
     return;
   }
-  closeQueueDisplayWindow();
-  const preview = kind === "preview";
+  if (preview) closeQueuePreviewWindow();
   const window = new BrowserWindow({
     ...(preview ? queueDisplayPreviewBounds(targetDisplay) : displayUsableBounds(targetDisplay)),
     show: false,
@@ -821,9 +879,8 @@ function createQueueDisplayWindow(targetDisplay, kind = "managed") {
       backgroundThrottling: false,
     },
   });
-  queueDisplayWindow = window;
-  queueDisplayWindowDisplayId = targetId;
-  queueDisplayWindowKind = kind;
+  if (preview) queuePreviewWindow = window;
+  else queueDisplayWindows.set(targetId, window);
   setupWindowSecurity(window.webContents.session);
   window.once("ready-to-show", () => {
     if (window.isDestroyed()) return;
@@ -835,16 +892,13 @@ function createQueueDisplayWindow(targetDisplay, kind = "managed") {
     window.showInactive();
   });
   window.on("closed", () => {
-    if (queueDisplayWindow === window) {
-      queueDisplayWindow = null;
-      queueDisplayWindowDisplayId = null;
-      queueDisplayWindowKind = null;
-      broadcastQueueDisplayState();
-    }
+    if (preview && queuePreviewWindow === window) queuePreviewWindow = null;
+    if (!preview && queueDisplayWindows.get(targetId) === window) queueDisplayWindows.delete(targetId);
+    broadcastQueueDisplayState();
   });
   secureUtilityWindow(window, new URL("/pos/queue-board", activePairing.serverUrl).toString());
   const url = new URL("/pos/queue-board?desktop=1", activePairing.serverUrl).toString();
-  loadUtilityWithRetry(window, url, () => queueDisplayWindow === window
+  loadUtilityWithRetry(window, url, () => (preview ? queuePreviewWindow === window : queueDisplayWindows.get(targetId) === window)
     && activePairing?.serverUrl === new URL(url).origin);
 }
 
@@ -855,20 +909,23 @@ function reconcileQueueDisplay() {
     return;
   }
   if (queueDisplayConfig.mode === "off") {
-    if (queueDisplayWindowKind !== "preview") closeQueueDisplayWindow();
+    for (const id of queueDisplayWindows.keys()) closeManagedQueueDisplayWindow(id);
     broadcastQueueDisplayState();
     return;
   }
   const displays = screen.getAllDisplays();
   const cashier = cashierDisplay();
-  const target = selectQueueDisplay(
+  const targets = selectQueueDisplays(
     displays,
     cashier.id,
     customerDisplayTargetId(displays, cashier),
     queueDisplayConfig,
   );
-  if (target) createQueueDisplayWindow(target);
-  else if (queueDisplayWindowKind !== "preview") closeQueueDisplayWindow();
+  const wanted = new Set(targets.map((display) => String(display.id)));
+  for (const id of queueDisplayWindows.keys()) {
+    if (!wanted.has(id)) closeManagedQueueDisplayWindow(id);
+  }
+  for (const target of targets) createQueueDisplayWindow(target);
   broadcastQueueDisplayState();
 }
 
@@ -1647,8 +1704,8 @@ function registerIpc() {
     if (input?.mode !== next.mode) return { ok: false, error: posText("รูปแบบการตั้งค่าจอลูกค้าไม่ถูกต้อง") };
     const queueState = currentQueueDisplayState();
     if (next.mode === "selected" && queueDisplayConfig.mode !== "off"
-      && (next.targetDisplayId === queueState.activeDisplayId
-        || next.targetDisplayId === queueState.targetDisplayId)) {
+      && (queueState.activeDisplayIds.includes(next.targetDisplayId)
+        || queueDisplayConfig.targetDisplayIds.includes(next.targetDisplayId))) {
       return { ok: false, error: posText("จอนี้กำลังใช้เป็นจอเรียกคิว กรุณาเลือกคนละจอ") };
     }
     if (next.mode === "selected") {
@@ -1729,22 +1786,25 @@ function registerIpc() {
     if (requested.mode !== "off") {
       if (input.role === "customer") {
         const desired = selectCustomerDisplay(displays, cashierId, nextCustomer);
-        const queueRawTarget = selectCustomerDisplay(displays, cashierId, nextQueue);
         // Customer display has first choice in the legacy selection policy. Make that hand-off
         // explicit so a queue window is closed before the customer window takes the same screen.
-        if (externalDisplays.length <= 1
-          || (nextQueue.mode === "selected" && desired && queueRawTarget
-            && String(desired.id) === String(queueRawTarget.id))) {
+        if (externalDisplays.length <= 1) {
           nextQueue = normalizeQueueDisplayConfig({ mode: "off" });
+        } else if (nextQueue.mode === "selected" && desired
+          && nextQueue.targetDisplayIds.includes(String(desired.id))) {
+          const remaining = nextQueue.targetDisplayIds.filter((id) => id !== String(desired.id));
+          nextQueue = normalizeQueueDisplayConfig(remaining.length
+            ? { ...nextQueue, targetDisplayIds: remaining }
+            : { mode: "off" });
         }
       } else {
         const customerTarget = selectCustomerDisplay(displays, cashierId, nextCustomer);
-        const requestedRawTarget = selectCustomerDisplay(displays, cashierId, nextQueue);
+        const requestedRawTargets = selectQueueDisplays(displays, cashierId, null, nextQueue);
         // Auto mode can use a second free external monitor. Selected mode, or a machine with only
         // one external monitor, means the operator explicitly chose queue instead of customer.
         if (externalDisplays.length <= 1
-          || (requested.mode === "selected" && customerTarget && requestedRawTarget
-            && String(customerTarget.id) === String(requestedRawTarget.id))) {
+          || (requested.mode === "selected" && customerTarget
+            && requestedRawTargets.some((display) => String(customerTarget.id) === String(display.id)))) {
           nextCustomer = normalizeCustomerDisplayConfig({ mode: "off" });
         }
       }
@@ -1754,7 +1814,7 @@ function registerIpc() {
     try {
       await writeManagedDisplayConfigs(nextCustomer, nextQueue, previousCustomer, previousQueue);
       if (customerDisplayWindowKind === "preview") closeCustomerDisplayWindow();
-      if (queueDisplayWindowKind === "preview") closeQueueDisplayWindow();
+      closeQueuePreviewWindow();
       customerDisplayConfig = nextCustomer;
       queueDisplayConfig = nextQueue;
       // Reconcile in ownership order. Customer has first choice; queue takes another free display.
@@ -1769,6 +1829,10 @@ function registerIpc() {
   ipcMain.handle("bms-pos:get-queue-display-state", async (event) => {
     if (!isPairedCashierFrame(event)) return null;
     return currentQueueDisplayState();
+  });
+
+  ipcMain.handle("bms-pos:get-queue-window-presentation", async (event) => {
+    return queueWindowPresentationForEvent(event);
   });
 
   ipcMain.handle("bms-pos:set-queue-display-config", async (event, input) => {
@@ -1788,7 +1852,7 @@ function registerIpc() {
     managedDisplayOperationBusy = true;
     try {
       await writeQueueDisplayConfig(next);
-      if (queueDisplayWindowKind === "preview") closeQueueDisplayWindow();
+      closeQueuePreviewWindow();
       queueDisplayConfig = next;
       reconcileQueueDisplay();
       return { ok: true, state: currentQueueDisplayState() };
@@ -1797,11 +1861,63 @@ function registerIpc() {
     } finally { managedDisplayOperationBusy = false; }
   });
 
+  ipcMain.handle("bms-pos:set-queue-displays-config", async (event, input) => {
+    if (!isPairedCashierFrame(event)) return { ok: false, error: posText("หน้าต่างนี้ไม่มีสิทธิ์ตั้งค่าจอเรียกคิว") };
+    if (managedDisplayOperationBusy) return { ok: false, error: posText("กำลังบันทึกการตั้งค่าจอ กรุณารอสักครู่") };
+    const next = normalizeQueueDisplayConfig(input);
+    if (input?.mode !== next.mode) return { ok: false, error: posText("รูปแบบการตั้งค่าจอเรียกคิวไม่ถูกต้อง") };
+    if (next.mode === "auto" && (!Number.isInteger(input?.displayCount)
+      || input.displayCount < 1 || input.displayCount > MAX_QUEUE_DISPLAYS)) {
+      return { ok: false, error: posText("จำนวนจอเรียกคิวไม่ถูกต้อง") };
+    }
+    if (next.mode === "selected") {
+      const ids = input?.targetDisplayIds;
+      if (!Array.isArray(ids) || ids.length < 1 || ids.length > MAX_QUEUE_DISPLAYS
+        || ids.some((id) => typeof id !== "string" || !id.trim() || id !== id.trim())
+        || new Set(ids).size !== ids.length) {
+        return { ok: false, error: posText("รายการจอเรียกคิวไม่ถูกต้อง") };
+      }
+      const cashierId = String(cashierDisplay().id);
+      const connected = new Set(screen.getAllDisplays().map((display) => String(display.id)));
+      if (ids.some((id) => id === cashierId
+        || (!connected.has(id) && !queueDisplayConfig.targetDisplayIds.includes(id)))) {
+        return { ok: false, error: posText("ไม่พบจอที่เลือก กรุณาตรวจสายจอแล้วลองใหม่") };
+      }
+    }
+    if (input?.audioDisplayId != null && (typeof input.audioDisplayId !== "string"
+      || !input.audioDisplayId.trim() || input.audioDisplayId !== input.audioDisplayId.trim())) {
+      return { ok: false, error: posText("จอประกาศเสียงไม่ถูกต้อง") };
+    }
+    if (input?.audioDisplayId && next.mode === "selected"
+      && !next.targetDisplayIds.includes(input.audioDisplayId)) {
+      return { ok: false, error: posText("จอประกาศเสียงต้องอยู่ในรายการจอคิว") };
+    }
+    if (next.audioDisplayId && next.mode === "auto"
+      && !selectQueueDisplays(screen.getAllDisplays(), cashierDisplay().id,
+        customerDisplayTargetId(), next).some((display) => String(display.id) === next.audioDisplayId)) {
+      return { ok: false, error: posText("ไม่พบจอประกาศเสียง") };
+    }
+    const previousCustomer = customerDisplayConfig;
+    const previousQueue = queueDisplayConfig;
+    let nextCustomer = previousCustomer;
+    if (next.mode === "selected" && next.targetDisplayIds.includes(customerDisplayTargetId())) {
+      nextCustomer = normalizeCustomerDisplayConfig({ mode: "off" });
+    }
+    managedDisplayOperationBusy = true;
+    try {
+      await writeManagedDisplayConfigs(nextCustomer, next, previousCustomer, previousQueue);
+      customerDisplayConfig = nextCustomer;
+      queueDisplayConfig = next;
+      reconcileCustomerDisplay();
+      reconcileQueueDisplay();
+      return { ok: true, state: currentManagedDisplayState() };
+    } catch {
+      return { ok: false, error: posText("บันทึกการตั้งค่าจอเรียกคิวไม่สำเร็จ") };
+    } finally { managedDisplayOperationBusy = false; }
+  });
+
   ipcMain.handle("bms-pos:open-queue-display-preview", async (event) => {
     if (!isPairedCashierFrame(event)) return { ok: false, error: posText("หน้าต่างนี้ไม่มีสิทธิ์เปิดตัวอย่างจอเรียกคิว") };
-    if (queueDisplayWindow && !queueDisplayWindow.isDestroyed() && queueDisplayWindowKind !== "preview") {
-      return { ok: false, error: posText("จอเรียกคิวจริงกำลังเปิดอยู่แล้ว กรุณาใช้จอนั้นหรือปิดการตั้งค่าจอก่อน") };
-    }
     try {
       createQueueDisplayWindow(cashierDisplay(), "preview");
       broadcastQueueDisplayState();
@@ -1813,7 +1929,7 @@ function registerIpc() {
 
   ipcMain.handle("bms-pos:close-queue-display-preview", async (event) => {
     if (!isPairedCashierFrame(event)) return { ok: false, error: posText("หน้าต่างนี้ไม่มีสิทธิ์ปิดตัวอย่างจอเรียกคิว") };
-    if (queueDisplayWindowKind === "preview") closeQueueDisplayWindow();
+    closeQueuePreviewWindow();
     broadcastQueueDisplayState();
     return { ok: true, state: currentQueueDisplayState() };
   });

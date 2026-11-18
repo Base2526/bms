@@ -13,14 +13,18 @@ const QUEUE_BOARD_LAYOUT_PREFIX = "bms.pos.queueBoardLayout.";
 const DEFAULT_QUEUE_BOARD_LAYOUT: QueueBoardLayout = "SPOTLIGHT";
 const VALID_LAYOUTS = new Set<string>(QUEUE_BOARD_LAYOUTS.map((option) => option.value));
 
-export function queueBoardLayoutStorageKey(namespace: string): string {
-  return QUEUE_BOARD_LAYOUT_PREFIX + namespace;
+export function queueBoardLayoutStorageKey(namespace: string, displayId?: string | null): string {
+  return QUEUE_BOARD_LAYOUT_PREFIX + namespace + (displayId ? `.screen.${displayId}` : "");
 }
 
 /** A missing or invalid saved value uses the owner-facing default instead of breaking the board. */
-export function readQueueBoardLayout(namespace: string): QueueBoardLayout {
+export function readQueueBoardLayout(namespace: string, displayId?: string | null): QueueBoardLayout {
   if (!namespace || typeof window === "undefined") return DEFAULT_QUEUE_BOARD_LAYOUT;
   try {
+    if (displayId) {
+      const specific = window.localStorage.getItem(queueBoardLayoutStorageKey(namespace, displayId));
+      if (specific && VALID_LAYOUTS.has(specific)) return specific as QueueBoardLayout;
+    }
     const saved = window.localStorage.getItem(queueBoardLayoutStorageKey(namespace));
     return saved && VALID_LAYOUTS.has(saved) ? saved as QueueBoardLayout : DEFAULT_QUEUE_BOARD_LAYOUT;
   } catch {
@@ -28,10 +32,10 @@ export function readQueueBoardLayout(namespace: string): QueueBoardLayout {
   }
 }
 
-export function writeQueueBoardLayout(namespace: string, layout: QueueBoardLayout): void {
+export function writeQueueBoardLayout(namespace: string, layout: QueueBoardLayout, displayId?: string | null): void {
   if (!namespace || typeof window === "undefined" || !VALID_LAYOUTS.has(layout)) return;
   try {
-    window.localStorage.setItem(queueBoardLayoutStorageKey(namespace), layout);
+    window.localStorage.setItem(queueBoardLayoutStorageKey(namespace, displayId), layout);
   } catch {
     // Blocked storage keeps the safe default. This preference never affects queue authority.
   }

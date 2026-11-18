@@ -42,8 +42,10 @@ async function run() {
   const js = await readFile(path.join(output, "board.js"));
 
   let token = TOKEN;
+  let presentation = null;
   ipcMain.handle("bms-pos:get-device-token", () => token);
   ipcMain.handle("bms-pos:get-storage-namespace", () => "queue-board-smoke");
+  ipcMain.handle("bms-pos:get-queue-window-presentation", () => presentation);
   const state = { entries: [], status: 200, media: null };
   const promoImage = await readFile(path.resolve(web, "public/sample/starter/food_beverage/04.jpg"));
   const seen = [];
@@ -246,7 +248,22 @@ async function run() {
       "localStorage.removeItem('bms.pos.queueBoardAudio.queue-board-smoke')",
     );
 
-    // 9. A stale/revoked credential never leaks the API error. It stops polling and points the
+    // 9. An individual managed TV reads its own layout and is silent until it receives audio ownership.
+    presentation = { displayId: "30", audioEnabled: false, preview: false };
+    await win.webContents.executeJavaScript(
+      "localStorage.setItem('bms.pos.queueBoardLayout.queue-board-smoke.screen.30', 'MINIMAL')",
+    );
+    await win.reload();
+    await waitFor(win, "document.querySelector('[data-queue-layout=minimal][data-queue-display-id=\"30\"]') && document.body.innerText.includes('เสียงประกาศออกที่จอคิวอีกจอ')");
+    assert.ok(!(await text()).includes("แตะเพื่อเปิดเสียง"), "a secondary TV never asks to enable audio");
+    win.webContents.send("bms-pos:queue-window-presentation-changed",
+      { displayId: "30", audioEnabled: true, preview: false });
+    await waitFor(win, "!document.body.innerText.includes('เสียงประกาศออกที่จอคิวอีกจอ') && (document.body.innerText.includes('voice พร้อม') || document.body.innerText.includes('ใช้เสียงพูดภาษาไทยของเครื่อง'))");
+    win.webContents.send("bms-pos:queue-window-presentation-changed",
+      { displayId: "30", audioEnabled: false, preview: false });
+    await waitFor(win, "document.body.innerText.includes('เสียงประกาศออกที่จอคิวอีกจอ')");
+
+    // 10. A stale/revoked credential never leaks the API error. It stops polling and points the
     //    operator back to the managed display control, which will reopen with the current token.
     token = "STALE-device-token";
     await win.loadURL(origin);
