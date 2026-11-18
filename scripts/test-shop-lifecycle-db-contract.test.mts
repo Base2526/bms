@@ -48,6 +48,95 @@ test("ร้านทดสอบบอร์ดเกม: seed ครบแล�
   await seedFakeMembers(shop.tenantId, 4);
   await seedFakeBoardGameCafe(shop.tenantId, 4);
 
+  // A POS-enrolled member retains non-cascading links to the shift and device.
+  // A table QR session retains a non-cascading link to its restaurant check.
+  // Both must be unwound by the real whole-tenant purge.
+  const pos = (await query<{ location_id: string; device_id: string; user_id: string }>(
+    `SELECT d.location_id, d.id AS device_id,
+            (SELECT id FROM users WHERE tenant_id = $1 LIMIT 1) AS user_id
+       FROM bms_pos_devices d WHERE d.tenant_id = $1 LIMIT 1`, [shop.tenantId]
+  )).rows[0];
+  assert.ok(pos?.device_id && pos.user_id);
+  const shiftId = (await query<{ id: string }>(
+    `INSERT INTO bms_pos_shifts (tenant_id, location_id, device_id, opened_by, opening_float)
+     VALUES ($1,$2,$3,$4,0) RETURNING id`,
+    [shop.tenantId, pos.location_id, pos.device_id, pos.user_id]
+  )).rows[0].id;
+  await query(
+    `UPDATE bms_customers SET enrollment_channel='POS', enrolled_location_id=$2,
+            enrolled_pos_device_id=$3, enrolled_shift_id=$4
+      WHERE tenant_id=$1 AND id=(SELECT id FROM bms_customers WHERE tenant_id=$1 LIMIT 1)`,
+    [shop.tenantId, pos.location_id, pos.device_id, shiftId]
+  );
+  const areaId = (await query<{ id: string }>(
+    `INSERT INTO bms_restaurant_areas (tenant_id, location_id, name)
+     VALUES ($1,$2,'FAKE purge area') RETURNING id`, [shop.tenantId, pos.location_id]
+  )).rows[0].id;
+  const tableId = (await query<{ id: string }>(
+    `INSERT INTO bms_restaurant_tables (tenant_id, location_id, area_id, code, name)
+     VALUES ($1,$2,$3,'FAKE-PURGE','FAKE purge table') RETURNING id`,
+    [shop.tenantId, pos.location_id, areaId]
+  )).rows[0].id;
+  const checkId = (await query<{ id: string }>(
+    `INSERT INTO bms_restaurant_checks
+       (tenant_id, location_id, table_id, pos_device_id, pos_shift_id, opened_by)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+    [shop.tenantId, pos.location_id, tableId, pos.device_id, shiftId, pos.user_id]
+  )).rows[0].id;
+  const attachedOrder = await query<{ id: string }>(
+    `UPDATE bms_orders SET restaurant_check_id=$2
+      WHERE tenant_id=$1 AND id=(
+        SELECT id FROM bms_orders WHERE tenant_id=$1
+          AND board_game_session_id IS NULL AND restaurant_check_id IS NULL LIMIT 1
+      ) RETURNING id`, [shop.tenantId, checkId]
+  );
+  assert.equal(attachedOrder.rowCount, 1, "ไม่มีบิลให้ทดสอบวงรอบ order/check FK");
+  await query(
+    `UPDATE bms_restaurant_checks SET current_order_id=$3
+      WHERE tenant_id=$1 AND id=$2`,
+    [shop.tenantId, checkId, attachedOrder.rows[0].id]
+  );
+  const qrTokenId = (await query<{ id: string }>(
+    `INSERT INTO bms_restaurant_table_qr_tokens
+       (tenant_id, location_id, table_id, public_token, public_token_hash, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+    [shop.tenantId, pos.location_id, tableId, `FAKE-purge-${shop.tenantId}`,
+      shop.tenantId.replaceAll("-", "").repeat(2), pos.user_id]
+  )).rows[0].id;
+  const sessionId = (await query<{ id: string }>(
+    `INSERT INTO bms_restaurant_qr_sessions
+       (tenant_id, location_id, table_id, check_id, qr_token_id, session_token_hash, expires_at)
+     VALUES ($1,$2,$3,$4,$5,$6,now() + interval '1 hour') RETURNING id`,
+    [shop.tenantId, pos.location_id, tableId, checkId, qrTokenId,
+      shop.tenantId.replaceAll("-", "").split("").reverse().join("").repeat(2)]
+  )).rows[0].id;
+  await query(
+    `INSERT INTO bms_restaurant_service_calls
+       (tenant_id, location_id, table_id, check_id, session_id, request_code, idempotency_key)
+     VALUES ($1,$2,$3,$4,$5,'WATER','FAKE-purge-call')`,
+    [shop.tenantId, pos.location_id, tableId, checkId, sessionId]
+  );
+  await query(
+    `INSERT INTO bms_restaurant_qr_submissions
+       (tenant_id, location_id, table_id, check_id, session_id, idempotency_key)
+     VALUES ($1,$2,$3,$4,$5,'FAKE-purge-submission')`,
+    [shop.tenantId, pos.location_id, tableId, checkId, sessionId]
+  );
+
+  // A reviewed pharmacy protocol retains a non-cascading FK to its reviewer.
+  // An assessment also retains a non-cascading FK to that protocol.
+  const protocolId = (await query<{ id: string }>(
+    `INSERT INTO bms_pharmacy_protocols
+       (tenant_id, protocol_key, name, supported_symptom_group, display_label, reviewed_by)
+     VALUES ($1,'FAKE_PURGE','FAKE purge protocol','fake','FAKE purge',$2)
+     RETURNING id`,
+    [shop.tenantId, pos.user_id]
+  )).rows[0].id;
+  await query(
+    `INSERT INTO bms_pharmacy_assessments (tenant_id, protocol_id) VALUES ($1,$2)`,
+    [shop.tenantId, protocolId]
+  );
+
   assert.ok(orders.summary.orders > 0, "seed ไม่ได้สร้างบิลเลย — เทสนี้จะยืนยันอะไรไม่ได้");
   const items = await query<{ n: string; nullish: string; mismatched: string }>(
     `SELECT count(*)::text AS n,
@@ -91,7 +180,7 @@ test("ร้านทดสอบบอร์ดเกม: seed ครบแล�
   // แต่เป็นเคสที่ทำให้ RESTRICT ทั้งสองข้างชนกันจนลบร้านไม่ได้
   const linked = await query(
     `WITH s AS (SELECT id FROM bms_board_game_sessions WHERE tenant_id = $1 LIMIT 1),
-          o AS (SELECT id FROM bms_orders WHERE tenant_id = $1 LIMIT 1)
+          o AS (SELECT id FROM bms_orders WHERE tenant_id = $1 AND restaurant_check_id IS NULL LIMIT 1)
      UPDATE bms_orders SET board_game_session_id = (SELECT id FROM s)
       WHERE tenant_id = $1 AND id = (SELECT id FROM o) AND (SELECT id FROM s) IS NOT NULL
      RETURNING id`,
@@ -163,7 +252,8 @@ test("ร้านทดสอบบอร์ดเกม: seed ครบแล�
     "bms_board_game_session_table_occupancy",
     "bms_board_game_branch_hours",
     "bms_board_game_session_participants", "bms_board_game_titles",
-    "bms_board_game_member_passes", "bms_board_game_identity_holds", "bms_product_promotions", "users"]) {
+    "bms_board_game_member_passes", "bms_board_game_identity_holds", "bms_product_promotions",
+    "bms_pharmacy_assessments", "bms_pharmacy_protocols", "users"]) {
     const rows = await query<{ n: string }>(
       `SELECT count(*)::text AS n FROM ${table} WHERE tenant_id = $1`, [shop.tenantId]);
     assert.equal(rows.rows[0].n, "0", `${table} ยังมีแถวค้างหลังลบร้าน`);

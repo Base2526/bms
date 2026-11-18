@@ -236,6 +236,29 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
       WHERE tenant_id = ANY($1::uuid[]) AND restaurant_check_item_id IS NOT NULL`,
     [tenantIds]
   );
+  // 9.44 also keeps a reverse order -> check FK. Release it before deleting
+  // checks; the check -> current_order FK otherwise forms a deletion cycle.
+  await client.query(
+    `UPDATE bms_orders SET restaurant_check_id = NULL
+      WHERE tenant_id = ANY($1::uuid[]) AND restaurant_check_id IS NOT NULL`,
+    [tenantIds]
+  );
+  // QR submissions and service calls reference sessions, which in turn retain
+  // restrictive check and table FKs. Remove this tenant's entire QR chain first.
+  for (const table of [
+    'bms_restaurant_service_calls','bms_restaurant_qr_submissions',
+    'bms_restaurant_qr_sessions','bms_restaurant_table_qr_tokens',
+    'bms_restaurant_waitlist',
+  ]) await client.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  // Split/merge self-links have a composite SET NULL FK; release only the
+  // selected tenant's references explicitly before deleting its checks.
+  await client.query(
+    `UPDATE bms_restaurant_checks
+        SET split_from_check_id = NULL, merged_into_check_id = NULL
+      WHERE tenant_id = ANY($1::uuid[])
+        AND (split_from_check_id IS NOT NULL OR merged_into_check_id IS NOT NULL)`,
+    [tenantIds]
+  );
   // Delete the restaurant floor while its tenant still exists. Letting the tenant cascade it is
   // too late for the floor DELETE trigger: that trigger emits a realtime outbox event whose
   // tenant FK has already disappeared, rolling back the entire purge. Checks must go first because
@@ -311,6 +334,13 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
   await client.query(`DELETE FROM bms_stock_transfers WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_purchase_orders WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_orders WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  // POS member enrollment keeps a restrictive shift FK (9.38). Customers are
+  // removed later in this same purge, so release only their shift attribution.
+  await client.query(
+    `UPDATE bms_customers SET enrolled_shift_id = NULL
+      WHERE tenant_id = ANY($1::uuid[]) AND enrolled_shift_id IS NOT NULL`,
+    [tenantIds]
+  );
   await client.query(`DELETE FROM bms_pos_shifts WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   // Frozen production sources are gone above; remove catalog rows with a second product FK
   // before deleting products. Cross-SKU promotions cascade from their purchased product, but
@@ -323,6 +353,12 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
   await client.query(`DELETE FROM bms_product_recipes WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_products WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_customers WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  // Pharmacy assessments retain a non-cascading protocol FK, and reviewed protocols
+  // retain a non-cascading reviewer FK to users. Remove only the selected tenants'
+  // clinical rows before their reviewers; any cross-tenant reviewer reference must
+  // still fail closed instead of silently altering another shop's clinical record.
+  await client.query(`DELETE FROM bms_pharmacy_assessments WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_pharmacy_protocols WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM users WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   const deletedTenants = await client.query<{ id: string }>(
     `DELETE FROM bms_tenants WHERE id = ANY($1::uuid[]) RETURNING id`,

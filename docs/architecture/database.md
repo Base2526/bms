@@ -1365,6 +1365,18 @@ The FK intentionally prevents deleting a referenced check item: cleanup deletes 
 The authorized full-tenant purge is the exception: `deleteTenantRows()` nulls only the selected
 tenants' order-item links before deleting checks, inside the existing purge transaction. A failed
 purge restores these links; ordinary check operations cannot detach historical evidence.
+The same purge also nulls those tenants' `bms_orders.restaurant_check_id` links before deleting
+checks, releasing the reverse FK from migration `9.44` in that transaction.
+Before deleting checks, it deletes the selected tenants' QR service calls, proposals, sessions,
+table tokens and waitlist rows in FK order, then releases split/merge self-links. These actions
+remain inside the authorized whole-tenant purge transaction.
+The purge also clears member enrollment's `enrolled_shift_id` for the selected tenants after
+their orders are removed and before their POS shifts are removed (`9.38`); customer rows are
+deleted later in that same transaction.
+Before deleting users, the purge removes the selected tenants' pharmacy assessments and then
+protocols: assessments reference protocols without cascade, and reviewed protocols reference
+their reviewer without cascade. A reviewer still referenced by another tenant's clinical record
+blocks deletion; the purge never alters that other tenant's approval evidence.
 
 The old SKU/size/pack unique index now applies only to non-restaurant lines. Restaurant orders use
 unique `(order_id, restaurant_check_item_id)`, allowing different round snapshots for the same menu.
