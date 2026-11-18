@@ -1,0 +1,189 @@
+.panel {
+  --not-found-accent: #0958d9;
+  --not-found-action-bg: #0958d9;
+  --not-found-action-text: #fff;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, .74fr);
+  align-items: center;
+  min-height: clamp(390px, 55vh, 580px);
+  overflow: hidden;
+  border: 1px solid rgba(var(--app-primary-rgb), .23);
+  border-radius: 20px;
+  background: linear-gradient(115deg, rgba(var(--app-primary-rgb), .11), var(--app-surface) 86%);
+  color: var(--app-text);
+}
+
+:global(html[data-theme="dark"]) .panel {
+  --not-found-accent: #8bb8ff;
+  --not-found-action-bg: #8bb8ff;
+  --not-found-action-text: #0f172a;
+}
+
+.copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  padding: clamp(32px, 5vw, 68px);
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  color: var(--not-found-accent);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .06em;
+}
+
+.title {
+  max-width: 540px;
+  margin: 0;
+  font-size: clamp(30px, 3.6vw, 46px);
+  line-height: 1.23;
+  text-wrap: balance;
+}
+
+.description {
+  max-width: 460px;
+  margin: 16px 0 0;
+  color: var(--app-muted);
+  font-size: 16px;
+  line-height: 1.75;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.panel .primaryAction,
+.panel .secondaryAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0 20px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+}
+
+.panel .primaryAction {
+  border: 1px solid var(--not-found-action-bg);
+  background: var(--not-found-action-bg);
+  color: var(--not-found-action-text);
+}
+
+.panel .primaryAction:hover { filter: brightness(.92); color: var(--not-found-action-text); }
+
+.panel .secondaryAction {
+  border: 1px solid rgba(var(--app-primary-rgb), .35);
+  background: var(--app-surface);
+  color: var(--not-found-accent);
+}
+
+.panel .secondaryAction:hover { border-color: var(--not-found-accent); color: var(--not-found-accent); }
+
+.panel .primaryAction:focus-visible,
+.panel .secondaryAction:focus-visible {
+  outline: 3px solid var(--not-found-accent);
+  outline-offset: 3px;
+}
+
+.illustration {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 310px;
+  padding: 24px;
+}
+
+.orbit {
+  display: grid;
+  place-items: center;
+  width: clamp(165px, 19vw, 230px);
+  aspect-ratio: 1;
+  border: 1px solid rgba(var(--app-primary-rgb), .24);
+  border-radius: 50%;
+  background: rgba(var(--app-primary-rgb), .09);
+}
+
+.orbit::before {
+  position: absolute;
+  width: clamp(205px, 23vw, 280px);
+  aspect-ratio: 1;
+  border: 1px dashed rgba(var(--app-primary-rgb), .25);
+  border-radius: 50%;
+  content: "";
+}
+
+.iconTile {
+  display: grid;
+  place-items: center;
+  width: 62%;
+  aspect-ratio: 1;
+  border: 1px solid var(--app-border);
+  border-radius: 25%;
+  background: var(--app-surface);
+  box-shadow: 0 18px 44px rgba(var(--app-shadow-rgb), .12);
+  color: var(--not-found-accent);
+}
+
+.iconTile svg {
+  width: 60%;
+  height: 60%;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.sparkTop,
+.sparkBottom {
+  position: absolute;
+  color: var(--not-found-accent);
+  font-size: 19px;
+}
+
+.sparkTop { top: 20%; right: 18%; }
+.sparkBottom { bottom: 18%; left: 16%; }
+
+.watermark {
+  position: absolute;
+  right: 4%;
+  bottom: -70px;
+  color: rgba(var(--app-primary-rgb), .12);
+  font-size: clamp(140px, 22vw, 260px);
+  font-weight: 900;
+  letter-spacing: -.12em;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (max-width: 700px) {
+  .panel { grid-template-columns: minmax(0, 1fr); }
+  .copy { padding: 36px 28px 0; }
+  .illustration { min-height: 190px; padding: 14px 24px 30px; }
+  .orbit { width: 120px; }
+  .orbit::before { width: 155px; }
+  .watermark { bottom: -25px; font-size: 130px; }
+}
+
+@media (max-width: 420px) {
+  .panel { min-height: 0; border-radius: 0; }
+  .copy { padding: 34px 22px 0; }
+  .description { font-size: 15px; }
+  .actions { flex-direction: column; }
+  .panel .primaryAction,
+  .panel .secondaryAction { width: 100%; }
+  .illustration { min-height: 155px; }
+  .orbit { width: 95px; }
+  .orbit::before { width: 125px; }
+}

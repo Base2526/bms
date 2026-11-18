@@ -10,7 +10,7 @@ import { breadcrumbJsonLd, learningArticleJsonLd } from "@/lib/seoJsonLd";
 
 type Props = { params: { slug: string }; searchParams: { track?: string; format?: string } };
 export function generateMetadata({ params }: Props) {
-  const lesson = getLesson(params.slug); if (!lesson) return {};
+  const lesson = getLesson(params.slug); if (!lesson) return { robots: { index: false, follow: false } };
   const lang = learningLang();
   return learningMetadata(localize(lesson.title, lang), localize(lesson.summary, lang), `/learn/guides/${lesson.slug}`, lang);
 }
