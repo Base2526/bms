@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
-import { normalizeCustomerDisplayConfig, normalizeQueueDisplayConfig } from '../src/display-policy.mjs';
+import { MAX_QUEUE_DISPLAYS, normalizeCustomerDisplayConfig, normalizeQueueDisplayConfig,
+  selectQueueDisplays } from '../src/display-policy.mjs';
 const source=readFileSync(new URL('../src/main.mjs',import.meta.url),'utf8').replace(/\r\n/g,'\n');
 function body(name) {
   const start=source.indexOf(`function ${name}(`);
@@ -406,12 +407,13 @@ test('display configuration writes exclude overlapping legacy and combined contr
   const context=vm.createContext({posText,ipcMain:{handle:(name,fn)=>handlers.set(name,fn),on:()=>{}},
     isPairedCashierFrame:()=>true,managedDisplayOperationBusy:false,
     normalizeCustomerDisplayConfig,normalizeQueueDisplayConfig,
-    customerDisplayConfig:{mode:'off'},queueDisplayConfig:{mode:'off'},queueDisplayWindowKind:null,
-    writeQueueDisplayConfig:()=>{writes++;return gate.promise;},reconcileQueueDisplay:()=>{},currentQueueDisplayState:()=>({})});
+    customerDisplayConfig:{mode:'off'},queueDisplayConfig:{mode:'off'},
+    writeQueueDisplayConfig:()=>{writes++;return gate.promise;},closeQueuePreviewWindow:()=>{},
+    reconcileQueueDisplay:()=>{},currentQueueDisplayState:()=>({})});
   vm.runInContext(`${body('registerIpc')};registerIpc();`,context);
   const save=handlers.get('bms-pos:set-queue-display-config');
   const first=save({}, {mode:'auto'});
-  for(const name of ['set-queue-display-config','set-customer-display-config','set-external-display-role']) {
+  for(const name of ['set-queue-display-config','set-queue-displays-config','set-customer-display-config','set-external-display-role']) {
     assert.equal((await handlers.get(`bms-pos:${name}`)({}, {mode:'off',role:'queue'})).ok,false);
   }
   assert.equal(writes,1);
@@ -420,6 +422,130 @@ test('display configuration writes exclude overlapping legacy and combined contr
   assert.equal((await save({}, {mode:'off'})).ok,false);
   assert.equal(context.managedDisplayOperationBusy,false);
   assert.equal(context.queueDisplayConfig.mode,'auto');
+});
+
+test('queue reconciliation opens three independent windows, closes only a removed monitor, and preserves preview',()=>{
+  const displays=[{id:10},{id:20},{id:30},{id:40}];
+  const windows=new Map();const opened=[],closed=[];
+  const preview={isDestroyed:()=>false};
+  const context=vm.createContext({activePairing:{},mainWindow:{isDestroyed:()=>false},
+    queueDisplayConfig:normalizeQueueDisplayConfig({mode:'auto',displayCount:3}),
+    queueDisplayWindows:windows,queuePreviewWindow:preview,screen:{getAllDisplays:()=>displays},
+    cashierDisplay:()=>displays[0],customerDisplayTargetId:()=>null,selectQueueDisplays,
+    createQueueDisplayWindow:(display)=>{if (!windows.has(String(display.id))) {
+      opened.push(display.id);windows.set(String(display.id),{isDestroyed:()=>false});}},
+    closeManagedQueueDisplayWindow:(id)=>{closed.push(id);windows.delete(id);},
+    closeQueueDisplayWindow:()=>assert.fail('pairing remains active'),broadcastQueueDisplayState:()=>{}});
+  vm.runInContext(body('reconcileQueueDisplay'),context);
+  context.reconcileQueueDisplay();
+  assert.deepEqual(opened,[20,30,40]);assert.deepEqual(closed,[]);
+  displays.splice(2,1);
+  context.reconcileQueueDisplay();
+  assert.deepEqual(closed,['30']);assert.equal(context.queuePreviewWindow,preview);
+  displays.splice(2,0,{id:30});
+  context.reconcileQueueDisplay();
+  assert.deepEqual(opened,[20,30,40,30]);
+  context.queueDisplayConfig=normalizeQueueDisplayConfig({mode:'off'});
+  context.reconcileQueueDisplay();
+  assert.deepEqual([...windows.keys()],[]);assert.equal(context.queuePreviewWindow,preview);
+});
+
+test('queue state chooses one deterministic audio owner and keeps missing selected screens visible',()=>{
+  const displays=[{id:10},{id:20},{id:30}];
+  const windows=new Map([['30',{isDestroyed:()=>false}],['20',{isDestroyed:()=>false}]]);
+  const context=vm.createContext({posText,MAX_QUEUE_DISPLAYS,queueDisplayWindows:windows,queuePreviewWindow:null,
+    queueDisplayConfig:normalizeQueueDisplayConfig({mode:'selected',targetDisplayIds:['20','30','40'],audioDisplayId:'30'}),
+    screen:{getAllDisplays:()=>displays},cashierDisplay:()=>displays[0],
+    customerDisplayTargetId:()=>null,selectQueueDisplays,
+    displaySummary:(display,index)=>({id:String(display.id),label:`Screen ${index+1}`}),isWaylandSession:()=>false});
+  vm.runInContext(body('currentQueueDisplayState'),context);
+  const initial=context.currentQueueDisplayState();
+  assert.equal(initial.audioDisplayId,'30');
+  assert.equal(initial.screens.filter((screen)=>screen.audio).length,1);
+  assert.equal(initial.screens.find((screen)=>screen.id==='40').connected,false);
+  windows.delete('30');
+  const fallback=context.currentQueueDisplayState();
+  assert.equal(fallback.audioDisplayId,'20');
+  assert.equal(fallback.screens.find((screen)=>screen.id==='20').audio,true);
+});
+
+test('multi-queue IPC rejects invalid assignments and atomically releases a conflicting customer screen',async()=>{
+  const handlers=new Map(),writes=[];let authorized=true;
+  const screens=[{id:10},{id:20},{id:30},{id:40}];
+  const context=vm.createContext({posText,MAX_QUEUE_DISPLAYS,
+    ipcMain:{handle:(name,fn)=>handlers.set(name,fn),on:()=>{}},
+    isPairedCashierFrame:()=>authorized,managedDisplayOperationBusy:false,
+    normalizeCustomerDisplayConfig,normalizeQueueDisplayConfig,selectQueueDisplays,
+    customerDisplayConfig:normalizeCustomerDisplayConfig({mode:'selected',targetDisplayId:'20'}),
+    queueDisplayConfig:normalizeQueueDisplayConfig({mode:'off'}),
+    screen:{getAllDisplays:()=>screens},cashierDisplay:()=>screens[0],customerDisplayTargetId:()=> '20',
+    writeManagedDisplayConfigs:async(...args)=>writes.push(args),
+    reconcileCustomerDisplay:()=>{},reconcileQueueDisplay:()=>{},
+    currentManagedDisplayState:()=>({})});
+  vm.runInContext(`${body('registerIpc')};registerIpc();`,context);
+  const save=handlers.get('bms-pos:set-queue-displays-config');
+  const base={mode:'selected',displayCount:2,targetDisplayIds:['20','30'],audioDisplayId:'30'};
+  authorized=false;
+  assert.equal((await save({},base)).ok,false);
+  authorized=true;
+  for(const input of [
+    {...base,targetDisplayIds:['20','20']},
+    {...base,targetDisplayIds:['10']},
+    {...base,targetDisplayIds:['20','30','40','50']},
+    {...base,targetDisplayIds:['99']},
+    {...base,audioDisplayId:'40'},
+    {...base,mode:'auto',displayCount:4,targetDisplayIds:[]},
+  ]) assert.equal((await save({},input)).ok,false);
+  assert.equal(writes.length,0);
+  assert.equal((await save({},base)).ok,true);
+  assert.equal(writes.length,1);
+  assert.equal(writes[0][0].mode,'off');
+  assert.deepEqual(context.queueDisplayConfig.targetDisplayIds,['20','30']);
+  assert.equal(context.queueDisplayConfig.audioDisplayId,'30');
+  assert.equal(context.customerDisplayConfig.mode,'off');
+});
+
+test('queue window presentation is read-only, frame-scoped and assigns audio to one managed window',()=>{
+  const managedA={isDestroyed:()=>false,webContents:{}};
+  const managedB={isDestroyed:()=>false,webContents:{}};
+  const preview={isDestroyed:()=>false,webContents:{}};
+  const context=vm.createContext({URL,queueDisplayWindows:new Map([['20',managedA],['30',managedB]]),
+    queuePreviewWindow:preview,isPairedPosFrame:()=>true,
+    currentQueueDisplayState:()=>({audioDisplayId:'30'})});
+  vm.runInContext(body('queueWindowPresentationForEvent'),context);
+  const request=(sender,url='https://shop.example/pos/queue-board',subframe=false)=>{
+    const frame={url};sender.mainFrame=subframe?{}:frame;
+    return context.queueWindowPresentationForEvent({sender,senderFrame:frame});
+  };
+  assert.deepEqual({...request(managedA.webContents)}, {displayId:'20',audioEnabled:false,preview:false});
+  assert.deepEqual({...request(managedB.webContents)}, {displayId:'30',audioEnabled:true,preview:false});
+  assert.deepEqual({...request(preview.webContents)}, {displayId:null,audioEnabled:false,preview:true});
+  assert.equal(request(managedB.webContents,'https://shop.example/pos/app'),null);
+  assert.equal(request(managedB.webContents,'https://shop.example/pos/queue-board',true),null);
+  context.isPairedPosFrame=()=>false;
+  assert.equal(request(managedB.webContents),null);
+});
+
+test('assigning a customer monitor releases only that monitor from a three-screen queue',async()=>{
+  const handlers=new Map(),writes=[];
+  const screens=[{id:10},{id:20},{id:30},{id:40}];
+  const context=vm.createContext({posText,ipcMain:{handle:(name,fn)=>handlers.set(name,fn),on:()=>{}},
+    isPairedCashierFrame:()=>true,managedDisplayOperationBusy:false,
+    normalizeCustomerDisplayConfig,normalizeQueueDisplayConfig,selectQueueDisplays,
+    selectCustomerDisplay:(all,cashier,config)=>all.find((display)=>String(display.id)===config.targetDisplayId),
+    customerDisplayConfig:normalizeCustomerDisplayConfig({mode:'off'}),
+    queueDisplayConfig:normalizeQueueDisplayConfig({mode:'selected',targetDisplayIds:['20','30','40'],audioDisplayId:'30'}),
+    screen:{getAllDisplays:()=>screens},cashierDisplay:()=>screens[0],
+    writeManagedDisplayConfigs:async(...args)=>writes.push(args),customerDisplayWindowKind:null,
+    closeQueuePreviewWindow:()=>{},reconcileCustomerDisplay:()=>{},reconcileQueueDisplay:()=>{},
+    currentManagedDisplayState:()=>({})});
+  vm.runInContext(`${body('registerIpc')};registerIpc();`,context);
+  const result=await handlers.get('bms-pos:set-external-display-role')({},
+    {role:'customer',mode:'selected',targetDisplayId:'30'});
+  assert.equal(result.ok,true);assert.equal(writes.length,1);
+  assert.deepEqual(context.queueDisplayConfig.targetDisplayIds,['20','40']);
+  assert.equal(context.queueDisplayConfig.audioDisplayId,null);
+  assert.equal(context.customerDisplayConfig.targetDisplayId,'30');
 });
 
 test('kitchen journal serializes late writes and continues after a disk error',async()=>{

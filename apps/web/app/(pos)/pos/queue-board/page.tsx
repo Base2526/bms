@@ -13,7 +13,7 @@ import { usePosText } from "@/lib/pos/usePosText";
  * screen recovers by itself on the next poll after the shop's internet comes back.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { posDeviceStorageNamespace, readPosDeviceToken } from "@/lib/pos/deviceTokenClient";
+import { posDeviceStorageNamespace, readPosDeviceToken, type DesktopQueueWindowPresentation } from "@/lib/pos/deviceTokenClient";
 import {
   queueBoardSoundStorageKey,
   readQueueBoardSoundEnabled,
@@ -256,11 +256,14 @@ export default function PickupQueueBoardPage() {
   const [spotlight, setSpotlight] = useState<{ label: string; until: number } | null>(null);
   const [soundOn, setSoundOn] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState<boolean | null>(null);
+  const [presentation, setPresentation] = useState<DesktopQueueWindowPresentation | null>(null);
+  const [presentationResolved, setPresentationResolved] = useState(false);
   const [layout, setLayout] = useState<QueueBoardLayout>("SPOTLIGHT");
   const [audioStyle, setAudioStyle] = useState<QueueBoardAudioStyle>("AI_STUDIO");
   const [pageTick, setPageTick] = useState(0);
   const [voiceStatus, setVoiceStatus] = useState<"AI_STUDIO" | "SYSTEM" | "CHIME" | null>(null);
   const audioRef = useRef<AudioContext | null>(null);
+  const audioSessionRef = useRef(0);
   const settingsRef = useRef<BoardSettings | null>(null);
   // calledAt already announced per number; empty until the first load so opening the screen
   // does not replay every number that was called earlier.
@@ -269,6 +272,25 @@ export default function PickupQueueBoardPage() {
   useEffect(() => {
     void readPosDeviceToken().then((value) => setToken(value || ""));
   }, []);
+
+  useEffect(() => {
+    const bridge = window.bmsDesktop;
+    if (!bridge?.getQueueWindowPresentation) return;
+    let active = true;
+    void bridge.getQueueWindowPresentation().then((value) => {
+      if (active) { setPresentation(value); setPresentationResolved(true); }
+    }).catch(() => { if (active) setPresentationResolved(true); });
+    const off = bridge.onQueueWindowPresentationChanged?.((value) => {
+      if (active) { setPresentation(value); setPresentationResolved(true); }
+    });
+    return () => { active = false; off?.(); };
+  }, []);
+
+  const presentationPending = typeof window !== "undefined"
+    && typeof window.bmsDesktop?.getQueueWindowPresentation === "function"
+    && !presentationResolved;
+  const effectiveSoundEnabled = soundEnabled === null || presentationPending
+    ? null : soundEnabled && (presentation?.audioEnabled ?? true);
 
   useEffect(() => {
     if (!token) {
@@ -281,13 +303,16 @@ export default function PickupQueueBoardPage() {
       if (!active) return;
       const soundKey = queueBoardSoundStorageKey(namespace);
       const layoutKey = queueBoardLayoutStorageKey(namespace);
+      const screenLayoutKey = queueBoardLayoutStorageKey(namespace, presentation?.displayId);
       const audioKey = queueBoardAudioStorageKey(namespace);
       setSoundEnabled(readQueueBoardSoundEnabled(namespace));
-      setLayout(readQueueBoardLayout(namespace));
+      setLayout(readQueueBoardLayout(namespace, presentation?.displayId));
       setAudioStyle(readQueueBoardAudioStyle(namespace));
       const onStorage = (event: StorageEvent) => {
         if (event.key === soundKey) setSoundEnabled(event.newValue !== "0");
-        if (event.key === layoutKey) setLayout(readQueueBoardLayout(namespace));
+        if (event.key === layoutKey || event.key === screenLayoutKey) {
+          setLayout(readQueueBoardLayout(namespace, presentation?.displayId));
+        }
         if (event.key === audioKey) setAudioStyle(readQueueBoardAudioStyle(namespace));
       };
       window.addEventListener("storage", onStorage);
@@ -297,9 +322,10 @@ export default function PickupQueueBoardPage() {
       active = false;
       removeStorageListener();
     };
-  }, [token]);
+  }, [token, presentation?.displayId]);
 
   const startSound = useCallback(async (playFeedback: boolean) => {
+    const session = audioSessionRef.current;
     try {
       const Ctor = window.AudioContext
         ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -307,6 +333,7 @@ export default function PickupQueueBoardPage() {
       const context = audioRef.current ?? new Ctor();
       audioRef.current = context;
       await context.resume();
+      if (session !== audioSessionRef.current) return;
       if (context.state !== "running") throw new Error("AUDIO_CONTEXT_BLOCKED");
       const voiceSettings = applyQueueBoardAudioStyle(settings, audioStyle);
       const mode = voiceSettings.voiceMode ?? "AI_STUDIO";
@@ -319,6 +346,7 @@ export default function PickupQueueBoardPage() {
           voiceSettings.voiceLanguage ?? "th",
           voiceSettings.voiceProfile ?? "KORE",
         );
+        if (session !== audioSessionRef.current) return;
         setVoiceStatus(ready ? "AI_STUDIO" : "SYSTEM");
       }
       if (playFeedback) playPickupQueueChime(
@@ -326,15 +354,16 @@ export default function PickupQueueBoardPage() {
         voiceSettings.voiceVolume ?? 80,
         voiceSettings.chimeTone,
       );
-      setSoundOn(true);
+      if (session === audioSessionRef.current) setSoundOn(true);
     } catch {
-      setSoundOn(false);
+      if (session === audioSessionRef.current) setSoundOn(false);
     }
   }, [audioStyle, settings?.voiceLanguage, settings?.voiceMode, settings?.voiceRepeat, settings?.voiceVolume]);
 
   useEffect(() => {
-    if (soundEnabled === null) return;
-    if (soundEnabled) {
+    if (effectiveSoundEnabled === null) return;
+    audioSessionRef.current += 1;
+    if (effectiveSoundEnabled) {
       void startSound(false);
       return;
     }
@@ -344,7 +373,7 @@ export default function PickupQueueBoardPage() {
     if (typeof window.speechSynthesis !== "undefined") window.speechSynthesis.cancel();
     setSoundOn(false);
     setVoiceStatus(null);
-  }, [soundEnabled, startSound]);
+  }, [effectiveSoundEnabled, startSound]);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -403,16 +432,19 @@ export default function PickupQueueBoardPage() {
         setSpotlight({ label: latest.label, until: Date.now() + Math.max(5, nextSettings?.spotlightSeconds ?? 12) * 1000 });
         const context = audioRef.current;
         const voiceSettings = applyQueueBoardAudioStyle(nextSettings, audioStyle);
-        if (context && (voiceSettings.voiceMode ?? "AI_STUDIO") !== "OFF") {
+        if (effectiveSoundEnabled && context && (voiceSettings.voiceMode ?? "AI_STUDIO") !== "OFF") {
+          const session = audioSessionRef.current;
           void playPickupQueueAnnouncement(context, latest.label, voiceSettings).then((result) => {
-            setVoiceStatus(result.played ? "AI_STUDIO" : result.usedSystemVoice ? "SYSTEM" : "CHIME");
+            if (session === audioSessionRef.current) {
+              setVoiceStatus(result.played ? "AI_STUDIO" : result.usedSystemVoice ? "SYSTEM" : "CHIME");
+            }
           });
         }
       }
     } catch {
       setOffline(true);
     }
-  }, [audioStyle, token]);
+  }, [audioStyle, effectiveSoundEnabled, token]);
 
   useEffect(() => {
     if (!token) return;
@@ -526,7 +558,8 @@ export default function PickupQueueBoardPage() {
   }
 
   return (
-    <main className="pq-page" data-queue-layout={layout.toLowerCase()} data-queue-audio={audioStyle.toLowerCase()}>
+    <main className="pq-page" data-queue-layout={layout.toLowerCase()} data-queue-audio={audioStyle.toLowerCase()}
+      data-queue-display-id={presentation?.displayId ?? undefined}>
       <style>{QUEUE_BOARD_CSS}</style>
       <header className="pq-header">
         <div className="pq-brand">
@@ -540,14 +573,16 @@ export default function PickupQueueBoardPage() {
           {offline && <span className="pq-warning">{posText("กำลังเชื่อมต่อใหม่…")}</span>}
           {error && <span className="pq-error">{error}</span>}
           {soundEnabled === false && <span className="pq-sound-off">{posText("🔇 ปิดเสียงจากการตั้งค่าเครื่อง")}</span>}
-          {soundEnabled === true && !soundOn && (
+          {soundEnabled === true && presentation && !presentation.audioEnabled &&
+            <span className="pq-sound-off">{posText("🔇 เสียงประกาศออกที่จอคิวอีกจอ")}</span>}
+          {effectiveSoundEnabled === true && !soundOn && (
             <button type="button" onClick={() => void startSound(true)} className="pq-sound-button">
               {posText("🔊 แตะเพื่อเปิดเสียง") + " "}</button>
           )}
-          {soundEnabled === true && soundOn && effectiveVoiceSettings.voiceMode === "OFF" && (
+          {effectiveSoundEnabled === true && soundOn && effectiveVoiceSettings.voiceMode === "OFF" && (
             <span className="pq-sound-off">{posText("🔇 ปิดเสียงจากการตั้งค่าสาขา")}</span>
           )}
-          {soundEnabled === true && soundOn && effectiveVoiceSettings.voiceMode !== "OFF" && (
+          {effectiveSoundEnabled === true && soundOn && effectiveVoiceSettings.voiceMode !== "OFF" && (
             <span className={voiceStatus === "CHIME" ? "pq-warning" : "pq-sound-state"}>
               {effectiveVoiceSettings.voiceMode === "CHIME"
                 ? chimeReadyLabel

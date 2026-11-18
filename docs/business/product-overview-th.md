@@ -388,7 +388,13 @@ AI เสนอได้เฉพาะเมนูที่พบใน catalog
 | --- | --- |
 | Web | ใช้งาน workflow หลักผ่าน BMS Server; browser ไม่ได้มีคิว Emergency Offline |
 | Mobile iOS/Android | ใช้งาน workflow ที่เชื่อมแล้วผ่าน Server, มี Emergency Offline สำหรับขายปลีกเงินสดพื้นฐาน และพิมพ์ใบเสร็จผ่านเครื่องพิมพ์ ESC/POS แบบ Wi-Fi/LAN (ยังไม่รับรองกับเครื่องพิมพ์จริง) |
-| Desktop Windows/Linux/macOS | Electron เป็นหน้าต่างของ `/pos`; ต้องเชื่อม Server ไม่มี offline tender และแพ็กเกจยัง unsigned/no auto-update |
+| Desktop Windows/Linux/macOS | Electron เป็นหน้าต่างของ `/pos`; ต้องเชื่อม Server ไม่มี offline tender และแพ็กเกจยัง unsigned/no auto-update; มี implementation จอคิวแยก 1–3 จอในโหมดจอขยาย แต่ยังรอทดสอบฮาร์ดแวร์หลายจอจริงก่อนรับรองการขาย |
+
+ข้อความเดโมที่ตรงกับขอบเขตปัจจุบัน: **"เครื่องขาย Desktop เครื่องเดียวเลือกจอเรียกคิวได้สูงสุด 3 จอ
+กำหนดรูปแบบของแต่ละจอและเลือกจอที่ออกเสียงได้ โดยทุกจอแสดงคิวสาขาชุดเดียวกัน"**
+ก่อนใช้เป็นจุดขายที่รับประกันหน้างาน ให้ตรวจจอขยายจริง 2–3 จอ การถอด/เสียบกลับ และเสียงบน
+Windows/Linux/macOS ที่จะติดตั้งตาม [ทะเบียนฟีเจอร์](../feature-inventory.md) ต้องมีจอแคชเชียร์
+และจอคิวภายนอกตามจำนวนที่เลือก; หากใช้จอลูกค้าพร้อมกันต้องมีจอภายนอกเพิ่มอีกหนึ่งจอ
 | Retail Local | ติดตั้ง Web/WS/PostgreSQL/Redis และไฟล์ไว้ในร้าน ใช้ backend ชุดเดียวกับ Cloud |
 
 ## 8. Emergency Offline Mode

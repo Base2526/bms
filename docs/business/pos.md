@@ -2253,11 +2253,18 @@ waiting for an **order**.
   being called.
 - **Voiding a bill takes its number off the screen** in the void transaction.
 - **The call screen** is `/pos/queue-board`. A current Desktop shell configures it together with the
-  customer display under POS Settings → External displays, as Auto, a selected monitor or Off, using
-  the same identify/preview/hot-plug behavior. With one external monitor, choosing one role releases
-  the other before reopening the window; with two, both roles may stay open on different screens.
-  Temporary previews are different: both may stay open together on the cashier display for testing,
-  without changing either saved role.
+  customer display under POS Settings → External displays. The Desktop shell can open **one to three
+  independent queue windows** on extended monitors. Auto mode takes up to the requested count of
+  free external screens; Selected mode keeps an ordered list of up to three specific screens, with
+  missing screens shown as waiting until they reconnect. A cashier screen is never eligible. The
+  customer display keeps its own role; explicitly assigning one of its screens to the queue releases
+  that customer role. Each queue screen can use its own locally saved layout, falling back to the
+  workstation default. All queue screens show the same branch queue and media; they are not separate
+  queue groups. Exactly one active managed queue window owns announcements, chosen automatically or
+  by the operator. This selects among the queue TVs; the cashier's existing immediate local call
+  feedback is separate. If that screen disconnects, the first remaining active queue window takes audio.
+  Temporary previews may stay open together on the cashier display and are muted; they never change
+  the saved roles. Legacy single-screen settings migrate to one screen without enabling more screens.
   Older shells show an update prompt instead of sending the operator to a manual URL. The screen uses the till's device token
   (never a public link) and polls
   `/api/pos/pickup-queue?view=board`, which returns numbers, status and public presentation
@@ -2269,13 +2276,14 @@ waiting for an **order**.
   Until that pack is installed, or if a segment cannot be decoded, the register speaks the same
   full sentence with the OS Thai/English voice; only a missing speech engine falls back to the local
   chime. Call-screen sound defaults on for a new till. POS Settings → External displays has a
-  per-device sound switch shared by the managed and preview queue windows; an explicit off is
+  per-device sound switch shared by the queue windows; an explicit off is
   persisted locally and wins over that default. Desktop permits this trusted managed screen to arm
   Web Audio at startup. A browser that still blocks autoplay shows a tap-to-enable recovery button
   without silently changing the saved preference. Only calls from the last 30 s on the server clock are announced, so a
   screen that reconnects never chimes for numbers called minutes ago. The same card lets the owner
   choose a workstation-local layout: เรียกเด่น, สามโซน, แถบเตรียม, มินิมอลทีวี, ป้ายรายการ or
-  แบ่งครึ่ง. The managed display and temporary preview share the selection and update while open;
+  แบ่งครึ่ง. This is the default layout for the workstation and temporary preview; an individual
+  managed screen may override it and updates while open. The layout
   it is presentation only and cannot change queue status. Dense layouts page numbers every eight
   seconds instead of making them unreadably small, so a busy service never needs scrolling. The
   workstation can also choose four distinct AI Studio voices (Kore polite female, Aoede bright

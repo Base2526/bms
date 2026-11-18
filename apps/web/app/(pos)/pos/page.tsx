@@ -7066,6 +7066,21 @@ export default function PosPage() {
         .pos-display-toggle-copy { color: var(--posx-ink2, #475467); font-size: 13px; }
         .pos-display-select { width: 100%; }
         .pos-display-select .ant-select-selector { min-height: 44px !important; align-items: center; }
+        .pos-display-multi-queue {
+          display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px; margin-top: 18px; padding-top: 18px;
+          border-top: 1px solid var(--posx-line, #e4e7ec);
+        }
+        .pos-display-multi-queue-list, .pos-display-multi-queue > .pos-settings-inline-warning { grid-column: 1 / -1; }
+        .pos-display-multi-queue-list { display: flex; flex-direction: column; gap: 8px; }
+        .pos-display-multi-queue-row {
+          min-width: 0; display: flex; align-items: center; justify-content: space-between;
+          gap: 12px; padding: 10px 12px; border: 1px solid var(--posx-line, #e4e7ec);
+          border-radius: 9px; background: var(--posx-soft, #f8fafc);
+        }
+        .pos-display-multi-queue-row > span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+        .pos-display-multi-queue-row strong { overflow-wrap: anywhere; font-size: 13px; }
+        .pos-display-multi-queue-row small { color: var(--posx-muted, #667085); font-size: 12px; }
         .pos-display-preview-button { width: 100%; min-height: 44px; margin-top: 4px; }
         .pos-display-role-foot {
           min-height: 46px; margin-top: 14px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
@@ -7167,6 +7182,8 @@ export default function PosPage() {
           .pos-display-role-head { min-height: 0; }
           .pos-display-role-controls { grid-template-columns: minmax(0, 1fr); row-gap: 12px; margin-top: 18px; }
           .pos-display-preview-button { width: 100%; }
+          .pos-display-multi-queue { grid-template-columns: minmax(0, 1fr); }
+          .pos-display-multi-queue-row { align-items: stretch; flex-direction: column; }
           .pos-display-role-foot { align-items: flex-start; flex-direction: column; }
           .pos-display-advanced > summary { position: relative; align-items: flex-start; flex-direction: column; gap: 3px; padding-right: 42px; }
           .pos-display-advanced > summary::after { position: absolute; right: 16px; }
