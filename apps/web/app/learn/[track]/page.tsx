@@ -12,7 +12,7 @@ import { localizedPublicPath } from "@/lib/publicSeo";
 import { breadcrumbJsonLd } from "@/lib/seoJsonLd";
 
 export function generateMetadata({ params }: { params: { track: string } }) {
-  if (!isTrack(params.track)) return {};
+  if (!isTrack(params.track)) return { robots: { index: false, follow: false } };
   const lang = learningLang(); const track = tracks[params.track];
   return learningMetadata(localize(track.title, lang), localize(track.description, lang), `/learn/${params.track}`, lang);
 }

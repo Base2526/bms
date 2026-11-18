@@ -1,11 +1,8 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { LanguageControl, MobileNavigation, StoreLink } from "./Controls";
 import s from "./learning.module.css";
 import { localizedPublicPath } from "@/lib/publicSeo";
-
-export const metadata: Metadata = { robots: { index: true, follow: true } };
 
 export default function LearningLayout({ children }: { children: React.ReactNode }) {
   const lang = cookies().get("lang")?.value === "en" ? "en" : "th";

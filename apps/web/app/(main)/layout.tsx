@@ -73,6 +73,7 @@ export default async function MainLayout({
       <HeaderBar isMobile={false} />
 
       <main
+        className="bms-main-layout"
         style={{
           minHeight: "100vh",
           background: "var(--app-bg)",
@@ -114,7 +115,45 @@ export default async function MainLayout({
               padding: 16px;
             }
 
+            .bms-main-layout:has([data-bms-not-found]) {
+              display: flex;
+              flex-direction: column;
+              min-height: calc(100svh - 72px) !important;
+            }
+
+            .bms-main-layout:has([data-bms-not-found]) .jachoei-main-shell {
+              display: flex;
+              flex: 1;
+              flex-direction: column;
+              max-width: none;
+              margin: 0;
+              padding: 0;
+            }
+
+            .bms-main-layout:has([data-bms-not-found]) .jachoei-breadcrumb-wrap {
+              margin: 0;
+              padding: 16px max(24px, 5vw) 12px;
+            }
+
+            .bms-main-layout:has([data-bms-not-found]) .jachoei-main-content {
+              display: flex;
+              flex: 1;
+              flex-direction: column;
+              min-height: 0;
+              border: 0;
+              border-radius: 0;
+              padding: 0;
+              box-shadow: none;
+            }
+
+            .bms-main-layout:has([data-bms-not-found]) + .bms-footer {
+              display: none;
+            }
+
             @media (max-width: 767px) {
+              .bms-main-layout:has([data-bms-not-found]) {
+                min-height: calc(100svh - 58px) !important;
+              }
               .jachoei-main-shell {
                 max-width: 100%;
                 margin: 0 auto;
