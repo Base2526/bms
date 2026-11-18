@@ -17,6 +17,7 @@ import {
   MAX_QUEUE_DISPLAYS,
   normalizeCustomerDisplayConfig,
   normalizeQueueDisplayConfig,
+  queueClaimsCustomerDisplay,
   selectCustomerDisplay,
   selectQueueDisplays,
 } from "./display-policy.mjs";
@@ -1866,8 +1867,15 @@ function registerIpc() {
     if (managedDisplayOperationBusy) return { ok: false, error: posText("กำลังบันทึกการตั้งค่าจอ กรุณารอสักครู่") };
     const next = normalizeQueueDisplayConfig(input);
     if (input?.mode !== next.mode) return { ok: false, error: posText("รูปแบบการตั้งค่าจอเรียกคิวไม่ถูกต้อง") };
+    const displays = screen.getAllDisplays();
+    const cashierId = String(cashierDisplay().id);
+    const customerId = customerDisplayTargetId(displays);
+    const freeExternalCount = displays.filter((display) =>
+      String(display.id) !== cashierId && String(display.id) !== customerId).length;
+    const waitingCount = queueDisplayConfig.mode === "auto" ? queueDisplayConfig.displayCount : 0;
     if (next.mode === "auto" && (!Number.isInteger(input?.displayCount)
-      || input.displayCount < 1 || input.displayCount > MAX_QUEUE_DISPLAYS)) {
+      || input.displayCount < 1 || input.displayCount > Math.min(MAX_QUEUE_DISPLAYS,
+        Math.max(1, freeExternalCount, waitingCount)))) {
       return { ok: false, error: posText("จำนวนจอเรียกคิวไม่ถูกต้อง") };
     }
     if (next.mode === "selected") {
@@ -1894,13 +1902,14 @@ function registerIpc() {
     }
     if (next.audioDisplayId && next.mode === "auto"
       && !selectQueueDisplays(screen.getAllDisplays(), cashierDisplay().id,
-        customerDisplayTargetId(), next).some((display) => String(display.id) === next.audioDisplayId)) {
+        customerDisplayTargetId(), next).some((display) => String(display.id) === next.audioDisplayId)
+      && next.audioDisplayId !== queueDisplayConfig.audioDisplayId) {
       return { ok: false, error: posText("ไม่พบจอประกาศเสียง") };
     }
     const previousCustomer = customerDisplayConfig;
     const previousQueue = queueDisplayConfig;
     let nextCustomer = previousCustomer;
-    if (next.mode === "selected" && next.targetDisplayIds.includes(customerDisplayTargetId())) {
+    if (queueClaimsCustomerDisplay(screen.getAllDisplays(), cashierDisplay().id, previousCustomer, next)) {
       nextCustomer = normalizeCustomerDisplayConfig({ mode: "off" });
     }
     managedDisplayOperationBusy = true;

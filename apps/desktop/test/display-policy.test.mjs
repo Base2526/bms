@@ -8,6 +8,7 @@ import {
   normalizeCustomerDisplayConfig,
   normalizeQueueDisplayConfig,
   queueDisplayPreviewBounds,
+  queueClaimsCustomerDisplay,
   selectQueueDisplay,
   selectQueueDisplays,
   selectCustomerDisplay,
@@ -90,7 +91,7 @@ test("legacy single-screen queue settings migrate without opening extra screens"
 test("auto queue allocation is bounded and leaves the cashier and customer displays alone", () => {
   const monitors = [{ id: 10 }, { id: 20 }, { id: 30 }, { id: 40 }, { id: 50 }];
   const config = normalizeQueueDisplayConfig({ mode: "auto", displayCount: 3 });
-  assert.equal(MAX_QUEUE_DISPLAYS, 3);
+  assert.equal(MAX_QUEUE_DISPLAYS, 32);
   assert.deepEqual(selectQueueDisplays(monitors, 10, 20, config).map((item) => item.id), [30, 40, 50]);
   assert.deepEqual(selectQueueDisplays(monitors.slice(0, 3), 10, 20, config).map((item) => item.id), [30]);
   assert.deepEqual(selectQueueDisplays(monitors, 10, 20, { mode: "auto", displayCount: 99 }).map((item) => item.id), [30]);
@@ -99,12 +100,31 @@ test("auto queue allocation is bounded and leaves the cashier and customer displ
 test("selected queues dedupe IDs, preserve order and reconnect without stealing another role", () => {
   const config = normalizeQueueDisplayConfig({ mode: "selected",
     targetDisplayIds: ["40", "30", "30", "50", "60"], audioDisplayId: "50" });
-  assert.deepEqual(config.targetDisplayIds, ["40", "30", "50"]);
-  assert.equal(config.displayCount, 3);
+  assert.deepEqual(config.targetDisplayIds, ["40", "30", "50", "60"]);
+  assert.equal(config.displayCount, 4);
   assert.deepEqual(selectQueueDisplays([{ id: 10 }, { id: 20 }, { id: 30 }, { id: 40 }], 10, 20, config)
     .map((item) => item.id), [40, 30]);
   assert.deepEqual(selectQueueDisplays([{ id: 10 }, { id: 20 }, { id: 30 }, { id: 40 }, { id: 50 }], 10, 30, config)
     .map((item) => item.id), [40, 50]);
   assert.equal(normalizeQueueDisplayConfig({ ...config, targetDisplayIds: ["40"] }).audioDisplayId, null);
   assert.deepEqual(normalizeQueueDisplayConfig({ mode: "selected" }), DEFAULT_QUEUE_DISPLAY_CONFIG);
+});
+
+test("queue setup hands off a shared screen, including a saved disconnected customer target", () => {
+  assert.equal(queueClaimsCustomerDisplay([{ id: 10 }, { id: 20 }], 10,
+    { mode: "auto" }, { mode: "auto", displayCount: 1 }), true);
+  assert.equal(queueClaimsCustomerDisplay(displays, 10,
+    { mode: "auto" }, { mode: "auto", displayCount: 1 }), false);
+  assert.equal(queueClaimsCustomerDisplay(displays, 10,
+    { mode: "auto" }, { mode: "selected", targetDisplayIds: ["20"] }), true);
+  assert.equal(queueClaimsCustomerDisplay(displays, 10,
+    { mode: "selected", targetDisplayId: "99" },
+    { mode: "selected", targetDisplayIds: ["99"] }), true);
+  assert.equal(queueClaimsCustomerDisplay(displays, 10,
+    { mode: "selected", targetDisplayId: "99" },
+    { mode: "selected", targetDisplayIds: ["30"] }), false);
+  assert.equal(queueClaimsCustomerDisplay([{ id: 10 }, { id: 20 }], 10,
+    { mode: "auto" }, { mode: "selected", targetDisplayIds: ["99"] }), false);
+  assert.equal(queueClaimsCustomerDisplay(displays, 10,
+    { mode: "auto" }, { mode: "off" }), false);
 });

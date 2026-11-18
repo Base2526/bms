@@ -2233,11 +2233,15 @@ waiting for an **order**.
   restaurant floor or the mobile menu screen (เรียกคิว / เรียกซ้ำ / รับแล้ว / ย้อน; GraphQL
   `bmsPosPickupQueue` / `bmsPosPickupQueueAction`), which needs the cashier PIN and `pos.sell`.
 - **Staff queue manager.** The strip stays visible while the till numbers orders and opens
-  **จัดการคิว**: a number keypad ("42" finds `042`) to call or collect by number, filters for
+  **จัดการคิว**: a number keypad ("42" finds `042` or `A042`) to call or collect by number, filters for
   open / preparing / ready / closed today, and per-row เรียกคิว / เรียกซ้ำ / รับแล้ว / ย้อน /
   ยกเลิก. Cancel takes two taps (the first only arms a red confirmation), because it removes the
-  number from the customer screen for good. The list is the staff-only `?view=day` (today's numbers
-  including closed ones, with the bill reference); the public board view is unchanged. The mobile
+  number from the customer screen for good. The staff-only `?view=day` list shows up to 500 numbers,
+  prioritizing open numbers and recent activity before closed history, with the bill reference;
+  keypad input looks up an exact service-day number on the server when it is outside the list.
+  The till strip takes the 200 most recently active open numbers. The customer board applies branch
+  visibility and READY auto-hide before selecting its 200 most recently active visible numbers, so
+  recalling an older number can bring it back on screen. The mobile
   strip has the same actions per tapped number, with a confirmation dialog for cancel.
   The Desktop compact sell screen reads the same per-device queue switch as its Settings workspace,
   requests a number with the committed sale, and shows the strip above the catalog. After a successful
@@ -2246,6 +2250,8 @@ waiting for an **order**.
   (web sell screen, restaurant settlement, mobile receipt screen) a **ออกเลขคิวใหม่** button asks
   again for the same bill (REST `action: "issue"` with `orderId`; GraphQL `bmsPosPickupQueueAction`
   with `action: "issue"`), and the server returns the existing number if one was issued meanwhile.
+  The service verifies that the device's bill is still `COMPLETED` and not voided before issuing or
+  returning a number; a pending or cancelled bill cannot appear on the call screen.
 - **The kitchen sees the number.** Kitchen tickets carry `pickupQueueLabel` (counter orders by
   order, take-away checks through the order that settled the check), and the card header on
   `/admin/kitchen`, the restaurant register's kitchen screen and the mobile kitchen board reads
@@ -2253,13 +2259,13 @@ waiting for an **order**.
   being called.
 - **Voiding a bill takes its number off the screen** in the void transaction.
 - **The call screen** is `/pos/queue-board`. A current Desktop shell configures it together with the
-  customer display under POS Settings → External displays. The Desktop shell can open **one to three
-  independent queue windows** on extended monitors. Auto mode takes up to the requested count of
-  free external screens; Selected mode keeps an ordered list of up to three specific screens, with
+  customer display under POS Settings → External displays. The Desktop shell can open **one queue
+  window per selected external monitor**. Auto mode offers the count of free external monitors and
+  retains a saved count while screens are disconnected. Selected mode keeps the selected screens, with
   missing screens shown as waiting until they reconnect. A cashier screen is never eligible. The
   customer display keeps its own role; explicitly assigning one of its screens to the queue releases
-  that customer role. Each queue screen can use its own locally saved layout, falling back to the
-  workstation default. All queue screens show the same branch queue and media; they are not separate
+  that customer role. Each queue screen can use its own locally saved layout, or select Follow default
+  to remove its override and track later changes to the workstation layout. All queue screens show the same branch queue and media; they are not separate
   queue groups. Exactly one active managed queue window owns announcements, chosen automatically or
   by the operator. This selects among the queue TVs; the cashier's existing immediate local call
   feedback is separate. If that screen disconnects, the first remaining active queue window takes audio.

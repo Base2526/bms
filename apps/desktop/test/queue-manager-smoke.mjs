@@ -40,6 +40,11 @@ async function run() {
     { id: "e35", orderId: "order-035-dddddddd", label: "035", status: "COLLECTED", readySource: "STAFF", createdAt: iso(30), readyAt: iso(20), calledAt: iso(20), closedAt: iso(18) },
     { id: "e36", orderId: "order-036-eeeeeeee", label: "036", status: "CANCELLED", readySource: null, createdAt: iso(28), readyAt: null, calledAt: null, closedAt: iso(25) },
   ];
+  for (const row of entries) row.queueNo = Number(row.label);
+  const olderEntry = { id: "e1", orderId: "order-001-older", queueNo: 1, label: "001",
+    status: "PREPARING", readySource: null, createdAt: iso(120), readyAt: null, calledAt: null, closedAt: null };
+  const olderReady = { id: "e2", orderId: "order-002-older", queueNo: 2, label: "002",
+    status: "READY", readySource: "KITCHEN", createdAt: iso(120), readyAt: iso(110), calledAt: iso(110), closedAt: null };
   const posts = [];
   let getStatus = 200;
   const server = createServer(async (req, res) => {
@@ -57,7 +62,9 @@ async function run() {
         return;
       }
       const day = url.searchParams.get("view") === "day";
-      const rows = day ? entries : entries.filter(e => e.status === "PREPARING" || e.status === "READY");
+      const queueNo = url.searchParams.get("queueNo");
+      const rows = queueNo ? [olderEntry, olderReady, ...entries].filter(e => e.queueNo === Number(queueNo))
+        : day ? entries : entries.filter(e => e.status === "PREPARING" || e.status === "READY");
       res.end(JSON.stringify({
         entries: rows,
         settings: { voiceMode: "AI_STUDIO", voiceLanguage: "th", voiceRepeat: 1, voiceVolume: 80 },
@@ -69,7 +76,7 @@ async function run() {
     const body = JSON.parse(raw || "{}");
     posts.push(body);
     if (body.action === "issue") { res.end(JSON.stringify({ entry: { id: "e50", label: "050", status: "PREPARING" } })); return; }
-    const entry = entries.find(e => e.id === body.entryId);
+    const entry = [olderEntry, olderReady, ...entries].find(e => e.id === body.entryId);
     if (!entry) { res.writeHead(404); res.end(JSON.stringify({ error: "ไม่พบคิวนี้ในสาขานี้" })); return; }
     if (body.action === "call") Object.assign(entry, { status: "READY", readySource: entry.readySource ?? "STAFF", readyAt: entry.readyAt ?? iso(0), calledAt: iso(0) });
     if (body.action === "collect") Object.assign(entry, { status: "COLLECTED", closedAt: iso(0) });
@@ -237,6 +244,35 @@ async function run() {
     assert.deepEqual(posts.at(-1), { action: "issue", orderId: "FAKE-order-retry", cashierUserId: "FAKE-cashier", cashierPin: "0000" });
     await shot("retry-issued-1366");
 
+    // A branch prefix is presentation only: the keypad still finds the unique daily number.
+    entries.push({ id: "e43", orderId: "order-043-ffffffff", queueNo: 43, label: "A043",
+      status: "PREPARING", readySource: null, createdAt: iso(0), readyAt: null, calledAt: null, closedAt: null });
+    await click("จัดการคิว");
+    await waitFor(win, "document.querySelector('[data-pickup-row=\"A043\"]')");
+    assert.deepEqual(await js_("[...document.querySelectorAll('[data-pickup-row]')].map(row => row.dataset.pickupRow)"),
+      ["039", "042", "A043"], "mixed prefixes keep the daily number order");
+    for (const key of ["4", "3"]) await click(key);
+    await waitFor(win, "document.querySelector('[data-pickup-queue-manager]')?.innerText.includes('คิว A043 · กำลังเตรียม')");
+    await click("เรียกคิว");
+    await waitFor(win, "document.querySelector('[data-pickup-queue-manager]')?.innerText.includes('เรียกคิว A043 แล้ว')");
+    assert.deepEqual(posts.at(-1), { action: "call", entryId: "e43", cashierUserId: "FAKE-cashier", cashierPin: "0000" });
+    await click("ปิด");
+
+    // An older number outside the bounded day feed remains searchable by its exact number.
+    await click("จัดการคิว");
+    await waitFor(win, "!!document.querySelector('[data-pickup-queue-manager]')");
+    await click("1");
+    await waitFor(win, "document.querySelector('[data-pickup-queue-manager]')?.innerText.includes('คิว 001 · กำลังเตรียม')");
+    await click("เรียกคิว");
+    await waitFor(win, "document.querySelector('[data-pickup-queue-manager]')?.innerText.includes('เรียกคิว 001 แล้ว')");
+    assert.deepEqual(posts.at(-1), { action: "call", entryId: "e1", cashierUserId: "FAKE-cashier", cashierPin: "0000" });
+    await click("2");
+    await waitFor(win, "document.querySelector('#pickup-queue-number')?.value === '2'");
+    await js_(`document.querySelector('#pickup-queue-number').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))`);
+    await waitFor(win, "document.querySelector('[data-pickup-queue-manager]')?.innerText.includes('บันทึกรับแล้ว 002 แล้ว')");
+    assert.deepEqual(posts.at(-1), { action: "collect", entryId: "e2", cashierUserId: "FAKE-cashier", cashierPin: "0000" });
+    await click("ปิด");
+
     // 8. A failed read is not an empty queue. Existing rows become read-only until a verified
     // refresh succeeds, both in the compact strip and in the full manager.
     getStatus = 502;
@@ -263,6 +299,14 @@ async function run() {
     getStatus = 200;
     await click("ลองโหลดคิวใหม่");
     await waitFor(win, "document.querySelector('[data-pickup-row=\"039\"]')");
+    await click("ปิด");
+
+    await win.loadURL(`${origin}/?managed=1`);
+    await waitFor(win, "document.querySelector('[data-pickup-queue-strip]')?.innerText.includes('จัดการคิว')");
+    await click("จัดการคิว");
+    await waitFor(win, "!!document.querySelector('[data-pickup-queue-manager]')");
+    assert.equal(await js_("[...document.querySelectorAll('[data-pickup-queue-manager] button')].some(button => button.textContent.trim() === 'เปิดจอเรียกคิว')"),
+      false, "managed Desktop keeps queue display launch in External displays settings");
     await click("ปิด");
 
     assert.deepEqual(errors, []);

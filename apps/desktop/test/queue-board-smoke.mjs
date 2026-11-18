@@ -42,14 +42,14 @@ async function run() {
   const js = await readFile(path.join(output, "board.js"));
 
   let token = TOKEN;
-  let presentation = null;
+  let presentation = { displayId: null, audioEnabled: true, preview: false };
   ipcMain.handle("bms-pos:get-device-token", () => token);
   ipcMain.handle("bms-pos:get-storage-namespace", () => "queue-board-smoke");
   ipcMain.handle("bms-pos:get-queue-window-presentation", () => presentation);
-  const state = { entries: [], status: 200, media: null };
+  const state = { entries: [], status: 200, media: null, holdNext: false, heldStarted: null, releaseHeld: null };
   const promoImage = await readFile(path.resolve(web, "public/sample/starter/food_beverage/04.jpg"));
   const seen = [];
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://127.0.0.1");
     if (url.pathname === "/") { res.setHeader("Content-Type", "text/html"); res.end(html); return; }
     if (url.pathname === "/board.js") { res.setHeader("Content-Type", "text/javascript"); res.end(js); return; }
@@ -61,7 +61,13 @@ async function run() {
       res.setHeader("Content-Type", "application/json");
       if (req.headers["x-pos-device-token"] !== TOKEN) { res.writeHead(401); res.end(JSON.stringify({ error: "device token ไม่ถูกต้อง" })); return; }
       if (state.status !== 200) { res.writeHead(state.status); res.end(JSON.stringify({ error: "เซิร์ฟเวอร์ขัดข้อง" })); return; }
-      res.end(JSON.stringify({ entries: state.entries, media: state.media, serverTime: iso() }));
+      const payload = JSON.stringify({ entries: state.entries, media: state.media, serverTime: iso() });
+      if (state.holdNext) {
+        state.holdNext = false;
+        await new Promise((resolve) => { state.releaseHeld = resolve; state.heldStarted?.(); });
+        state.releaseHeld = null;
+      }
+      res.end(payload);
       return;
     }
     res.writeHead(404); res.end();
@@ -106,6 +112,16 @@ async function run() {
     await waitFor(win, "document.body.innerText.includes('AI Studio voice พร้อม') || document.body.innerText.includes('ใช้เสียงพูดภาษาไทยของเครื่อง')");
     body = await text();
     assert.ok(!body.includes("แตะเพื่อเปิดเสียง"), "desktop arms queue-board sound by default");
+    presentation = null;
+    await win.reload();
+    await waitFor(win, "document.body.innerText.includes('พร้อมรับ') && !document.body.innerText.includes('กำลังเตรียมเสียง')");
+    assert.equal((await text()).includes("AI Studio voice พร้อม"), false,
+      "a Desktop window with unresolved presentation authority stays silent");
+    assert.ok((await text()).includes("ยืนยันจอประกาศเสียงไม่ได้"),
+      "a muted board explains why it cannot announce");
+    presentation = { displayId: null, audioEnabled: true, preview: false };
+    await win.reload();
+    await waitFor(win, "document.body.innerText.includes('AI Studio voice พร้อม') || document.body.innerText.includes('ใช้เสียงพูดภาษาไทยของเครื่อง')");
     const font = await win.webContents.executeJavaScript("getComputedStyle(document.querySelector('main')).fontFamily");
     assert.ok(/system-ui|IBM Plex Sans Thai/.test(font), `call screen must not fall back to a serif font (got ${font})`);
     for (const [width, height] of [[1920, 1080], [1440, 900], [1280, 800], [1024, 768], [800, 600], [768, 1024]]) {
@@ -167,6 +183,12 @@ async function run() {
     state.media = { ...state.media, items: [] };
     await win.reload();
     await waitFor(win, "document.querySelector('.pq-media-slot img')?.getAttribute('src') === '/api/files/1'");
+    state.media = { ...state.media, enabled: false };
+    await win.reload();
+    await waitFor(win, "document.body.innerText.includes('พร้อมรับ') && !document.querySelector('.pq-media-slot')");
+    assert.equal(await win.webContents.executeJavaScript("!!document.querySelector('.pq-media-slot img')"), false,
+      "disabling branch media also hides its saved default image");
+    state.media = { ...state.media, enabled: true };
     win.setContentSize(390, 844);
     await win.webContents.executeJavaScript(
       "localStorage.setItem('bms.pos.queueBoardLayout.queue-board-smoke', 'SPOTLIGHT')",
@@ -263,6 +285,20 @@ async function run() {
       { displayId: "30", audioEnabled: false, preview: false });
     await waitFor(win, "document.body.innerText.includes('เสียงประกาศออกที่จอคิวอีกจอ')");
 
+    state.entries = [entry("041", "READY", 60_000)];
+    await waitFor(win, "document.body.innerText.includes('041')", 9000);
+    const heldStarted = new Promise((resolve) => { state.heldStarted = resolve; });
+    state.holdNext = true;
+    void win.reload();
+    await Promise.race([heldStarted, new Promise((_, reject) => setTimeout(() =>
+      reject(new Error(`held queue poll did not start (${seen.length} requests)`)), 8000))]);
+    state.entries = [entry("099", "READY", 0)];
+    await waitFor(win, "document.body.innerText.includes('099')", 9000);
+    state.releaseHeld();
+    await new Promise((done) => setTimeout(done, 150));
+    assert.equal(await win.webContents.executeJavaScript("document.body.innerText.includes('099')"), true,
+      "a delayed older poll must not replace the latest queue state");
+
     // 10. A stale/revoked credential never leaks the API error. It stops polling and points the
     //    operator back to the managed display control, which will reopen with the current token.
     token = "STALE-device-token";
@@ -275,7 +311,9 @@ async function run() {
     assert.deepEqual(errors, []);
     console.log(`Queue board: 6 layouts with media, image rotation/default, phone viewport, sound, calls, paging, recovery, expiry and rejected-token guidance passed. Screenshots: ${output}`);
   } finally {
+    state.releaseHeld?.();
     win.destroy();
+    server.closeAllConnections();
     await new Promise(done => server.close(done));
   }
 }

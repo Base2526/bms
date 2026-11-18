@@ -28,7 +28,7 @@ test("migration checksums still reject SQL content changes", () => {
 
 test("the 10.121 timeout repair accepts only the exact pre-timeout SQL checksum", () => {
   const name = "10.121__bms_verified_shop_owner_administrator.sql";
-  const updated = readFileSync(new URL(`../db/migrations/${name}`, import.meta.url), "utf8");
+  const updated = canonicalizeMigrationSql(readFileSync(new URL(`../db/migrations/${name}`, import.meta.url), "utf8"));
   const operationalBlock = [
     "-- Bound this one repair without changing the session or server defaults.",
     "-- A shorter live statement_timeout previously canceled the historical lookup.",

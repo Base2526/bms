@@ -11,11 +11,12 @@
 > บันทึก 2026-08-17 → 2026-10-23) อยู่ใต้ "ชุดที่ 2" ของ archive — ค้นด้วยเลข migration เช่น
 > `grep -n "9.66" docs/local-notes-archive.md`
 
-## สถานะ working tree ล่าสุด (2026-11-16; เลข migration อัปเดต 2026-11-17)
+## สถานะ working tree ล่าสุด (2026-11-18)
 
-- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `90eb7d3c` (#416,
-  admin session/POS auth/log redaction) · branch `codex/android-device-verify-navigation` = `develop` +
-  แก้ mobile ให้หน้า Device Settings ค้างหลังยกเลิกจับคู่ + ปุ่มสแกน QR เป็นไอคอนข้างปุ่มจับคู่ + อัปเดตเอกสาร 2026-11-16
+- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `44db901a` (#430,
+  จอคิวหลายจอบน Desktop) · สรุป #417–#430 อยู่ท้าย [docs/status-log.md](docs/status-log.md) ·
+  branch `codex/queue-display-settings-audit` = `develop` + ตรวจทานตั้งค่าจอคิว (เลิกเพดาน 3 จอ, ตามรูปแบบ
+  เริ่มต้นรายจอ, รายการคิว staff 500 แถว + ค้นเลขบนเซิร์ฟเวอร์, ออกเลขคิวเฉพาะบิล `COMPLETED`) — ไม่มี migration
 - **migration ล่าสุด `10.132`** (เลขว่างถัดไป `10.133` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
   `10.122`/`10.123` โรงงานคงเดิม; audit ที่ชนเลขย้ายเป็น `10.131`/`10.132` และมีวิธีจัดการ
   ledger เก่าใน [audit traceability](docs/architecture/audit-traceability.md#verification-and-rollout) ·

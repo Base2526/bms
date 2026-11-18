@@ -374,16 +374,24 @@ display** opens the same live customer view as a normal framed, resizable window
 temporary: it is not saved as a second-display choice and never reopens with the app. Closing it has
 no effect on the cashier window or the persisted automatic/selected display setting.
 
-One register supports one cashier display plus one read-only window per external-display role.
+One register supports one cashier display, one read-only customer window, and one read-only queue
+window per selected external monitor. The queue count is limited by the monitors the shell detects,
+not by a fixed cap (`MAX_QUEUE_DISPLAYS = 32` only rejects malformed saved or IPC input). Auto mode
+offers the count of free external monitors and keeps a saved count while screens are disconnected;
+Selected mode keeps the chosen screens and shows a missing one as waiting until it reconnects.
 With one external monitor, enabling customer or queue atomically releases the other role and reuses
-that screen. With two external monitors, both roles may stay open; automatic selection keeps them on
-different screens. Identify, temporary preview, startup reopen and display hot-plug recovery follow
+that screen; an explicit queue setup also claims a customer screen that it selects. With more
+external monitors, both roles may stay open; automatic selection keeps them on different screens.
+All queue windows show the same branch queue and media, and exactly one active queue window owns
+announcements; if it disconnects, the first remaining active queue window takes audio. Identify, temporary preview, startup reopen and display hot-plug recovery follow
 the same policy for both roles. On Linux Wayland the compositor may refuse application-directed positioning;
 the settings page reports that limitation so the operator can move the window manually.
 
 The queue-display card also has a workstation-local presentation selector: Spotlight, Three zones,
-Preparing ticker, Minimal TV, Queue list, or Split. The saved choice is shared by that till's managed
-queue display and temporary preview, updates an already-open window through origin storage events,
+Preparing ticker, Minimal TV, Queue list, or Split. The saved choice is the workstation default for
+that till's managed queue displays and temporary preview. Each queue screen may override it, or pick
+Follow default to remove its override and track later default changes. Changes update an
+already-open window through origin storage events,
 and never changes queue status or branch policy. Dense layouts page visible numbers every eight
 seconds instead of shrinking them beyond across-the-room readability.
 Promotion and default images are configured per branch in Backoffice → Locations → Queue board media;

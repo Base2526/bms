@@ -113,8 +113,8 @@ async function run() {
     await win.webContents.executeJavaScript("document.querySelector('[aria-label=\"วิธีเลือกจอคิว\"] .ant-select-selector').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))");
     await waitFor(win, "!![...document.querySelectorAll('.ant-select-item-option')].find(item => item.textContent.trim() === 'เลือกจอเอง')");
     await win.webContents.executeJavaScript("[...document.querySelectorAll('.ant-select-item-option')].find(item => item.textContent.trim() === 'เลือกจอเอง').click()");
-    await waitFor(win, "!!document.querySelector('[aria-label=\"เลือกจอคิวได้สูงสุด 3 จอ\"]') && document.body.innerText.includes('จอคิวที่เปิด 1/1 จอ')");
-    await win.webContents.executeJavaScript("document.querySelector('[aria-label=\"เลือกจอคิวได้สูงสุด 3 จอ\"] .ant-select-selector').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))");
+    await waitFor(win, "!!document.querySelector('[aria-label=\"เลือกจอคิวจากจอภายนอกที่ตรวจพบ\"]') && document.body.innerText.includes('จอคิวที่เปิด 1/1 จอ')");
+    await win.webContents.executeJavaScript("document.querySelector('[aria-label=\"เลือกจอคิวจากจอภายนอกที่ตรวจพบ\"] .ant-select-selector').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))");
     await waitFor(win, "!![...document.querySelectorAll('.ant-select-item-option')].find(item => item.textContent.includes('TV Pickup'))");
     await win.webContents.executeJavaScript("[...document.querySelectorAll('.ant-select-item-option')].find(item => item.textContent.includes('TV Pickup')).click()");
     await waitFor(win, "document.body.innerText.includes('จอคิวที่เปิด 2/2 จอ')");
@@ -128,6 +128,13 @@ async function run() {
     assert.ok(await win.webContents.executeJavaScript(
       "Object.entries(localStorage).some(([key,value]) => key.endsWith('.screen.40') && value === 'MINIMAL')"),
     "queue screen 40 has its own layout preference");
+    await win.webContents.executeJavaScript("document.querySelector('[aria-label=\"รูปแบบจอ TV Pickup\"] .ant-select-selector').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))");
+    await waitFor(win, "!![...document.querySelectorAll('.ant-select-item-option')].find(item => item.textContent.trim() === 'ตามรูปแบบเริ่มต้น')");
+    await win.webContents.executeJavaScript("[...document.querySelectorAll('.ant-select-item-option')].find(item => item.textContent.trim() === 'ตามรูปแบบเริ่มต้น').click()");
+    await waitFor(win, "document.querySelector('[aria-label=\"รูปแบบจอ TV Pickup\"]')?.innerText.includes('ตามรูปแบบเริ่มต้น')");
+    assert.equal(await win.webContents.executeJavaScript(
+      "Object.keys(localStorage).some(key => key.endsWith('.screen.40'))"), false,
+    "clearing the override lets this queue screen follow later default changes");
     await win.webContents.executeJavaScript("document.querySelector('[data-display-role=queue] h3').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); document.querySelector('[data-display-role=queue]').scrollIntoView({block:'start'})");
     await waitFor(win, "![...document.querySelectorAll('.ant-select-dropdown')].some(item => getComputedStyle(item).display !== 'none')");
     win.setContentSize(1200, 900);
@@ -141,6 +148,34 @@ async function run() {
     await waitFor(win, "!![...document.querySelectorAll('.ant-select-item-option')].find(item => item.textContent.trim() === 'เลือกจอว่างอัตโนมัติ')");
     await win.webContents.executeJavaScript("[...document.querySelectorAll('.ant-select-item-option')].find(item => item.textContent.trim() === 'เลือกจอว่างอัตโนมัติ').click()");
     await waitFor(win, "!!document.querySelector('[aria-label=\"จำนวนจอคิวที่ต้องการ\"]') && !document.querySelector('[role=alert]')");
+    await win.loadURL(`${origin}/?multi=single`);
+    await waitFor(win, "document.querySelector('[data-display-role=queue]')?.innerText.includes('ยังไม่เปิด')");
+    await win.webContents.executeJavaScript("document.querySelector('[aria-label=\"เปิดจอเรียกคิวเมื่อเปิด POS\"]').click()");
+    await waitFor(win, "document.body.innerText.includes('จอคิวที่เปิด 1/1 จอ') && document.querySelector('[data-display-role=customer]')?.innerText.includes('ยังไม่เปิด')");
+    await win.loadURL(`${origin}/?multi=single`);
+    await waitFor(win, "document.querySelector('[data-display-role=queue]')?.innerText.includes('ยังไม่เปิด')");
+    await win.webContents.executeJavaScript("document.querySelector('[aria-label=\"เปิดจอเรียกคิวเมื่อเปิด POS\"]').click()");
+    await waitFor(win, "document.body.innerText.includes('จอคิวที่เปิด 1/1 จอ')");
+    await win.webContents.executeJavaScript("document.querySelector('[aria-label=\"วิธีเลือกจอคิว\"] .ant-select-selector').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))");
+    await waitFor(win, "!![...document.querySelectorAll('.ant-select-item-option')].find(item => item.textContent.trim() === 'เลือกจอเอง')");
+    await win.webContents.executeJavaScript("[...document.querySelectorAll('.ant-select-item-option')].find(item => item.textContent.trim() === 'เลือกจอเอง').click()");
+    await waitFor(win, "document.body.innerText.includes('จอคิวที่เปิด 1/1 จอ') && !!document.querySelector('[aria-label=\"เลือกจอคิวจากจอภายนอกที่ตรวจพบ\"]') && !document.querySelector('[role=alert]')");
+    await win.loadURL(`${origin}/?multi=waiting`);
+    await waitFor(win, "document.body.innerText.includes('จอคิวที่เปิด 0/1 จอ') && document.querySelector('[data-display-role=customer]')?.innerText.includes('เชื่อมต่อแล้ว')");
+    await win.webContents.executeJavaScript("document.querySelector('[aria-label=\"วิธีเลือกจอคิว\"] .ant-select-selector').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))");
+    await waitFor(win, "!![...document.querySelectorAll('.ant-select-item-option')].find(item => item.textContent.trim() === 'เลือกจอเอง')");
+    await win.webContents.executeJavaScript("[...document.querySelectorAll('.ant-select-item-option')].find(item => item.textContent.trim() === 'เลือกจอเอง').click()");
+    await waitFor(win, "document.body.innerText.includes('จอคิวที่เปิด 1/1 จอ') && document.querySelector('[data-display-role=customer]')?.innerText.includes('ยังไม่เปิด') && !document.querySelector('[role=alert]')");
+    await win.loadURL(`${origin}/?multi=many`);
+    await waitFor(win, "document.querySelector('[data-display-role=queue]')?.innerText.includes('ยังไม่เปิด')");
+    await win.webContents.executeJavaScript("document.querySelector('[aria-label=\"เปิดจอเรียกคิวเมื่อเปิด POS\"]').click()");
+    await waitFor(win, "!!document.querySelector('[aria-label=\"จำนวนจอคิวที่ต้องการ\"]')");
+    await win.webContents.executeJavaScript("document.querySelector('[aria-label=\"จำนวนจอคิวที่ต้องการ\"] .ant-select-selector').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))");
+    await waitFor(win, "!![...document.querySelectorAll('.ant-select-item-option')].find(item => item.textContent.trim() === '4 จอ')");
+    assert.equal(await win.webContents.executeJavaScript("[...document.querySelectorAll('.ant-select-item-option')].some(item => item.textContent.trim() === '5 จอ')"), false,
+      "auto mode offers only free external monitors while the customer display is active");
+    await win.webContents.executeJavaScript("[...document.querySelectorAll('.ant-select-item-option')].find(item => item.textContent.trim() === '4 จอ').click()");
+    await waitFor(win, "document.body.innerText.includes('จอคิวที่เปิด 4/4 จอ') && !document.querySelector('[role=alert]')");
     console.log(`Managed displays: role hand-off, simultaneous previews and responsive layout passed. Screenshots: ${output}`);
   } finally {
     win.destroy();

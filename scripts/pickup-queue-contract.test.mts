@@ -179,6 +179,9 @@ test("issuing is idempotent per order and scoped to this device and branch", () 
   const issue = sliceFrom(SERVICE, "export async function issuePickupQueueNumber", 5000);
   assert.match(issue, /o\.pos_device_id = \$3/);
   assert.match(issue, /String\(row\.location_id\) !== input\.locationId/);
+  assert.match(issue, /row\.voided_at \|\| row\.status !== "COMPLETED"/);
+  assert.ok(issue.indexOf('row.status !== "COMPLETED"') < issue.indexOf("getEntryByOrderInTx(client"),
+    "retry must reject an unpaid or voided bill before returning an existing number");
   assert.match(issue, /restaurant_check_id/);
   assert.match(issue, /ON CONFLICT \(tenant_id, order_id\) DO NOTHING/);
   assert.match(issue, /error\?\.code === "23505"/);
@@ -219,6 +222,9 @@ test("queue routes are device-authenticated; mutations need cashier PIN and pos.
   assert.match(QUEUE_ROUTE, /authenticateRestaurantRead\(req\)/);
   assert.match(QUEUE_ROUTE, /authenticateRestaurantMutation\(req, body, "pos\.sell"\)/);
   assert.match(QUEUE_ROUTE, /auth\.device\.locationId/);
+  assert.match(QUEUE_ROUTE, /typeof parsed !== "object" \|\| Array\.isArray\(parsed\)/);
+  assert.match(QUEUE_ROUTE, /UUID\.test\(orderId\)/);
+  assert.match(QUEUE_ROUTE, /UUID\.test\(entryId\)/);
   assert.doesNotMatch(QUEUE_ROUTE, /body\.(tenantId|locationId|deviceId)/);
 });
 
@@ -229,7 +235,7 @@ test("the call screen gets numbers only, never order ids", () => {
   assert.doesNotMatch(board, /orderId|id:/);
   assert.match(QUEUE_ROUTE, /view"\) === "board"[\s\S]*?listPickupQueueBoard\(auth\.device\.tenantId, auth\.device\.locationId\)/);
   const boardList = sliceFrom(SERVICE, "export async function listPickupQueueBoard", 1200);
-  assert.match(boardList, /visible\.map\(toBoardEntry\)/);
+  assert.match(boardList, /result\.rows\.map\(mapEntry\)\.sort\(\(a, b\) => a\.queueNo - b\.queueNo\)\.map\(toBoardEntry\)/);
   assert.match(BOARD_PAGE, /\/api\/pos\/pickup-queue\?view=board/);
   assert.match(BOARD_PAGE, /readPosDeviceToken\(\)/);
 });
@@ -253,8 +259,14 @@ test("branch policy enables every online till and hides stale ready numbers only
   assert.match(GRAPHQL, /allowBranchDefault: !textInput\(input\.offlineTenderedAt\)/);
   const board = sliceFrom(SERVICE, "export async function listPickupQueueBoard", 1500);
   assert.match(board, /settings\.autoHideMinutes/);
+  assert.match(board, /\(\$3::boolean OR q\.status <> 'PREPARING'\)/);
+  assert.match(board, /COALESCE\(q\.called_at, q\.ready_at, q\.created_at\) >= now\(\) - \$4::int \* INTERVAL '1 minute'/);
+  assert.ok(board.indexOf("AND ($3::boolean") < board.indexOf("LIMIT 200"),
+    "board visibility must be applied before limiting its rows");
+  assert.match(board, /ORDER BY q\.updated_at DESC, q\.queue_no DESC\s+LIMIT 200/);
   const day = sliceFrom(SERVICE, "export async function listPickupQueueDay", 900);
   assert.doesNotMatch(day, /autoHideMinutes|auto_hide/);
+  assert.match(day, /ORDER BY CASE WHEN q\.status IN \('PREPARING', 'READY'\) THEN 0 ELSE 1 END,\s+q\.updated_at DESC, q\.queue_no DESC/);
 });
 
 test("desktop manages a dedicated queue display without granting it cashier bridges", () => {
@@ -322,12 +334,20 @@ test("kitchen readiness alerts the till and the paid customer display shows the 
 });
 
 test("staff manager: today's list is device-only and the public board view is unchanged", () => {
+  const open = sliceFrom(SERVICE, "export async function listPickupQueue(", 780);
+  assert.match(open, /ORDER BY q\.updated_at DESC, q\.queue_no DESC\s+LIMIT 200/);
+  assert.match(open, /result\.rows\.map\(mapEntry\)\.sort\(\(a, b\) => a\.queueNo - b\.queueNo\)/);
   assert.match(QUEUE_ROUTE, /view"\) === "day"[\s\S]*?listPickupQueueDay\(auth\.device\.tenantId, auth\.device\.locationId\)/);
   const day = sliceFrom(SERVICE, "export async function listPickupQueueDay", 900);
   assert.match(day, /q\.tenant_id = \$1 AND q\.location_id = \$2/);
   assert.match(day, /q\.service_date = \$\{SERVICE_DATE_SQL\}/);
   assert.doesNotMatch(BOARD_PAGE, /view=day/);
   assert.match(MANAGER, /\/api\/pos\/pickup-queue\?view=day/);
+  assert.match(QUEUE_ROUTE, /findPickupQueueDayNumber\(\s*auth\.device\.tenantId, auth\.device\.locationId, Number\(requestedNo\)/);
+  const exact = sliceFrom(SERVICE, "export async function findPickupQueueDayNumber", 700);
+  assert.match(exact, /q\.tenant_id = \$1 AND q\.location_id = \$2 AND q\.queue_no = \$3/);
+  assert.match(exact, /q\.service_date = \$\{SERVICE_DATE_SQL\}/);
+  assert.match(MANAGER, /fetchPickupQueueNumber\(token, queueNo, posText\)/);
 });
 
 test("restaurant floor keeps queue work in one compact toolbar above the table plan", () => {

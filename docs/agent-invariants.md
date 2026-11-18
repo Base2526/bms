@@ -572,7 +572,7 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   further popups. The main process owns the one `/pos/display` window on a configured non-cashier
   display. That customer window shares the same storage partition only for same-origin
   `BroadcastChannel`, carries no preload/IPC bridge, and never becomes a second register. The
-  shell may own up to three independent `/pos/queue-board` windows on external screens, with one
+  shell may own independent `/pos/queue-board` windows on detected external screens, with one
   read-only audio owner and per-screen local layout. Queue settings and window presentation remain
   shell concerns; queue state and media still come from the server's device-scoped board API. The
   shell may request generic OS-level attention for a newly observed incoming order, but that IPC is

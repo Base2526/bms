@@ -165,11 +165,12 @@ export async function issuePickupQueueNumber(input: {
       await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
       const order = await client.query<{
         location_id: string;
+        status: string;
         voided_at: Date | null;
         restaurant_check_id: string | null;
         service_mode: string | null;
       }>(
-        `SELECT o.location_id, o.voided_at, o.restaurant_check_id, rc.service_mode
+        `SELECT o.location_id, o.status, o.voided_at, o.restaurant_check_id, rc.service_mode
            FROM bms_orders o
            LEFT JOIN bms_restaurant_checks rc
              ON rc.tenant_id = o.tenant_id AND rc.id = o.restaurant_check_id
@@ -182,6 +183,11 @@ export async function issuePickupQueueNumber(input: {
       if (String(row.location_id) !== input.locationId) {
         throw new PickupQueueError("บิลนี้ไม่ได้อยู่ในสาขาของเครื่องขายนี้", 403);
       }
+      // The explicit retry endpoint is callable after a failed checkout. The order can still
+      // be PENDING at that point; a queue number must prove the sale actually completed.
+      if (row.voided_at || row.status !== "COMPLETED") {
+        throw new PickupQueueError("บิลนี้ยังขายไม่สำเร็จหรือถูกยกเลิกแล้ว", 409);
+      }
       // Dine-in checks already have a table number. A take-away check settled at the
       // restaurant register is exactly the "order at the counter, wait for a number" case.
       if (row.restaurant_check_id && row.service_mode !== "TAKEAWAY") {
@@ -193,8 +199,6 @@ export async function issuePickupQueueNumber(input: {
         await client.query("COMMIT");
         return existing;
       }
-      if (row.voided_at) throw new PickupQueueError("บิลนี้ถูกยกเลิกแล้ว", 409);
-
       const inserted = await client.query(
         `WITH day AS (
            SELECT ${SERVICE_DATE_SQL} AS service_date
@@ -288,7 +292,7 @@ export async function issuePickupQueueAfterSale(input: {
   }
 }
 
-/** Open numbers of today's service day for one branch, oldest number first. */
+/** Most recently active open numbers of today's service day, returned in number order. */
 export async function listPickupQueue(tenantId: string, locationId: string): Promise<PickupQueueEntry[]> {
   const result = await query(
     `SELECT ${SELECT_COLUMNS}
@@ -297,34 +301,40 @@ export async function listPickupQueue(tenantId: string, locationId: string): Pro
       WHERE q.tenant_id = $1 AND q.location_id = $2
         AND q.status IN ('PREPARING', 'READY')
         AND q.service_date = ${SERVICE_DATE_SQL}
-      ORDER BY q.queue_no
+      ORDER BY q.updated_at DESC, q.queue_no DESC
       LIMIT 200`,
     [tenantId, locationId]
   );
-  return result.rows.map(mapEntry);
+  return result.rows.map(mapEntry).sort((a, b) => a.queueNo - b.queueNo);
 }
 
-/** Customer board list: branch presentation policy may hide preparing or old ready numbers. */
+/** Customer board list: apply branch visibility before the bounded display selection. */
 export async function listPickupQueueBoard(
   tenantId: string,
   locationId: string,
 ): Promise<{ entries: PickupQueueBoardEntry[]; settings: PickupQueueBoardSettings }> {
   const settings = await getPickupQueueBoardSettings(tenantId, locationId);
-  const entries = await listPickupQueue(tenantId, locationId);
-  const now = Date.now();
-  const visible = entries.filter((entry) => {
-    if (entry.status === "PREPARING") return settings.showPreparing;
-    if (entry.status !== "READY" || settings.autoHideMinutes === 0) return true;
-    const since = Date.parse(entry.calledAt ?? entry.readyAt ?? entry.createdAt);
-    return !Number.isFinite(since) || now - since < settings.autoHideMinutes * 60_000;
-  });
-  return { entries: visible.map(toBoardEntry), settings };
+  const result = await query(
+    `SELECT ${SELECT_COLUMNS}
+       FROM bms_pickup_queue q
+       LEFT JOIN bms_store_profile profile ON profile.tenant_id = q.tenant_id
+      WHERE q.tenant_id = $1 AND q.location_id = $2
+        AND q.status IN ('PREPARING', 'READY')
+        AND q.service_date = ${SERVICE_DATE_SQL}
+        AND ($3::boolean OR q.status <> 'PREPARING')
+        AND ($4::int = 0 OR q.status <> 'READY'
+          OR COALESCE(q.called_at, q.ready_at, q.created_at) >= now() - $4::int * INTERVAL '1 minute')
+      ORDER BY q.updated_at DESC, q.queue_no DESC
+      LIMIT 200`,
+    [tenantId, locationId, settings.showPreparing, settings.autoHideMinutes]
+  );
+  return { entries: result.rows.map(mapEntry).sort((a, b) => a.queueNo - b.queueNo).map(toBoardEntry), settings };
 }
 
 /**
- * Every number of today's service day at one branch, including collected and cancelled ones,
- * for the staff queue manager (find a number, see what happened to it). Device-authenticated
- * staff view only; the public call screen never uses this.
+ * Up to 500 numbers of today's service day at one branch, prioritizing open numbers and recent
+ * activity before collected/cancelled history. Other numbers remain available through exact lookup.
+ * Device-authenticated staff view only; the public call screen never uses this.
  */
 export async function listPickupQueueDay(tenantId: string, locationId: string): Promise<PickupQueueEntry[]> {
   const result = await query(
@@ -333,11 +343,28 @@ export async function listPickupQueueDay(tenantId: string, locationId: string): 
        LEFT JOIN bms_store_profile profile ON profile.tenant_id = q.tenant_id
       WHERE q.tenant_id = $1 AND q.location_id = $2
         AND q.service_date = ${SERVICE_DATE_SQL}
-      ORDER BY q.queue_no DESC
+      ORDER BY CASE WHEN q.status IN ('PREPARING', 'READY') THEN 0 ELSE 1 END,
+               q.updated_at DESC, q.queue_no DESC
       LIMIT 500`,
     [tenantId, locationId]
   );
   return result.rows.map(mapEntry);
+}
+
+/** Exact staff keypad lookup, including numbers outside the bounded day list. */
+export async function findPickupQueueDayNumber(
+  tenantId: string, locationId: string, queueNo: number,
+): Promise<PickupQueueEntry | null> {
+  const result = await query(
+    `SELECT ${SELECT_COLUMNS}
+       FROM bms_pickup_queue q
+       LEFT JOIN bms_store_profile profile ON profile.tenant_id = q.tenant_id
+      WHERE q.tenant_id = $1 AND q.location_id = $2 AND q.queue_no = $3
+        AND q.service_date = ${SERVICE_DATE_SQL}
+      LIMIT 1`,
+    [tenantId, locationId, queueNo]
+  );
+  return result.rows[0] ? mapEntry(result.rows[0]) : null;
 }
 
 const NEXT_STATUS: Record<PickupQueueAction, ReadonlySet<PickupQueueStatus>> = {

@@ -7,7 +7,8 @@ export const DEFAULT_CUSTOMER_DISPLAY_CONFIG = Object.freeze({
   configured: false,
 });
 
-export const MAX_QUEUE_DISPLAYS = 3;
+// Guard malformed saved/IPC input; the operator's choices are limited by detected monitors.
+export const MAX_QUEUE_DISPLAYS = 32;
 export const DEFAULT_QUEUE_DISPLAY_CONFIG = Object.freeze({
   version: 2,
   mode: "off",
@@ -101,6 +102,19 @@ export function selectQueueDisplays(displays, cashierDisplayId, customerDisplayI
 /** Legacy callers still ask for one screen. */
 export function selectQueueDisplay(displays, cashierDisplayId, customerDisplayId, config) {
   return selectQueueDisplays(displays, cashierDisplayId, customerDisplayId, config)[0] ?? null;
+}
+
+/** An explicit queue setup takes the only external screen, or a selected customer screen. */
+export function queueClaimsCustomerDisplay(displays, cashierDisplayId, customerConfig, queueConfig) {
+  const queue = normalizeQueueDisplayConfig(queueConfig);
+  const customer = normalizeCustomerDisplayConfig(customerConfig);
+  if (queue.mode === "off" || customer.mode === "off") return false;
+  const external = displays.filter((display) => String(display.id) !== String(cashierDisplayId));
+  if (external.length === 1 && queue.mode === "auto") return true;
+  if (queue.mode !== "selected") return false;
+  const customerTarget = selectCustomerDisplay(displays, cashierDisplayId, customer);
+  return (customerTarget && queue.targetDisplayIds.includes(String(customerTarget.id)))
+    || (customer.mode === "selected" && queue.targetDisplayIds.includes(customer.targetDisplayId));
 }
 
 /**
