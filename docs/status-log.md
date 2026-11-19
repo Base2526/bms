@@ -2,7 +2,7 @@
 
 Per-feature decision narrative moved out of [CLAUDE.md](../CLAUDE.md) on 2026-10-13 to keep the
 always-loaded agent context small. The moved text is unchanged; newest entries are at the end.
-Entries were brought up to date on 2026-11-18 (through migration `10.132` and PR #431); the
+Entries were brought up to date on 2026-11-19 (through migration `10.137` and PR #436); the
 detailed 2026-11-16 boundary and log notes are in [feature-log.md](feature-log.md). The compact area index lives in CLAUDE.md
 § Current status; full
 per-domain rules live in [agent-invariants.md](agent-invariants.md).
@@ -1075,4 +1075,38 @@ Settings has an **Open my shop** button for `/shop/{slug}`. Pure contracts
 `assistant-answer-presentation` (3/3) and `work-assistant-image-contract` (8/8) passed on
 2026-11-18; the full gate and browser runs were not. See
 [ai/work-assistant-coverage.md](ai/work-assistant-coverage.md#screenshot-questions) and
-[ai/workflow.md](ai/workflow.md).
+[ai/workflow.md](ai/workflow.md). Merged as #432.
+
+**Retail Local `0.2.14-pilot.12` (#433).** Release preparation for the next technical-pilot build;
+Retail Local remains a pilot, not GA. See [business/retail-local.md](business/retail-local.md).
+
+**Branded not-found pages (#434–#435, no migration).** A missing shop slug shows a shop not-found
+state with navigation back, and other unknown routes get a site-wide branded, context-aware
+not-found page instead of the framework default.
+
+**Building-material shop pilot (`10.133`–`10.137`, #436, PILOT / INCOMPLETE, not applied to
+production).** `10.133` adds versioned sales quotations (a submitted revision is immutable; quotes
+never reserve stock or move money; independent approval freezes VAT-inclusive prices; unknown
+freight blocks approval). `10.134` keeps the quote site address and retail pickup decision on the
+converted order. `10.135` stores sourced, variant-specific technical specs whose drafts never reach
+customer tools. `10.136` adds exact per-kilogram VAT-inclusive rates for gram-counted prefix-22
+labels. `10.137` freezes the supplier package and integer base-unit factor on each new PO line.
+`10.134`, `10.136` and `10.137` are declared in `schemaReadiness.mts`: ordinary order inserts,
+every POS scan/price check and every PO create/receipt need them, so apply the migrations before
+deploying this code. Line-level multi-trip delivery, a customer quote tool and tax/hardware
+certification remain open. See
+[business/building-materials-readiness.md](business/building-materials-readiness.md),
+[release evidence](business/building-materials-release-evidence-2026-11-19.md) and
+[คู่มือร้านวัสดุก่อสร้าง](คู่มือร้านวัสดุก่อสร้าง.md).
+
+**Twenty-baht shop pilot guide (branch `codex/twenty-baht-shop-pilot`, no migration).** The
+public, `noindex` `/learn/twenty-baht-shop` page walks one branch through same-price distinct SKUs,
+CSV/XLSX preview, opening count, PO receipt, sale, partial return, shift close and outage recovery
+using fictional data, with five locally hosted Thai narration MP3s (checksum provenance). Product
+import gains an optional `ประเภท VAT` column (`V`/`N`/`UNKNOWN`; blank keeps an existing SKU's
+value, new SKUs stay unknown; invalid values are row errors) and downloaded examples fill
+`UNKNOWN` rather than guessing. Mobile sale detail keeps the original return/void request body
+with its idempotency key and blocks starting a different return or void while a previous result
+is unknown. Real-shop evidence, accountant VAT review and hardware remain go-live gates. See
+[business/twenty-baht-shop-pilot-th.md](business/twenty-baht-shop-pilot-th.md) and
+[ui/learning-center.md](ui/learning-center.md).

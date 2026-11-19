@@ -68,6 +68,23 @@ test("CSV text codes retain leading zeroes and grouped price text is parsed stri
   }
 });
 
+test("VAT column preserves omitted values and rejects invalid classifications in preview", async () => {
+  const [omitted] = parseProductImportWorksheet([["SKU", "ชื่อสินค้า", "ราคาขาย"], ["A", "a", 20]]);
+  assert.ok(!Object.hasOwn(omitted, "vat_category"));
+  const [valid, invalid] = parseProductImportWorksheet([
+    ["SKU", "ชื่อสินค้า", "ราคาขาย", "ประเภท VAT"],
+    ["A", "a", 20, "v"], ["B", "b", 20, "exempt"],
+  ]);
+  assert.equal(valid.vat_category, "V");
+  assert.equal(invalid.vat_category, "EXEMPT");
+  await withPool(async (pool) => {
+    pool.query = async () => ({ rows: [], rowCount: 0 });
+    const preview = await runImport("contract", [valid, invalid], { commit: false });
+    assert.equal(preview.errorCount, 1);
+    assert.match(preview.rows.find((row) => row.rowNumber === 3)?.error ?? "", /ประเภท VAT/);
+  });
+});
+
 test("zero-padding formats work, while unsafe IDs, formulas, dates and Excel errors identify the cell", () => {
   const wb = workbook([headers, [123, "sample", 10, 5, "001"]]);
   wb.Sheets.Products.A2.z = "000000";

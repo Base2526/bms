@@ -27,6 +27,10 @@ import {
   MobilePosVoidDocument,
   PosBootstrapDocument,
 } from '../../graphql/generated';
+import type {
+  MobilePosReturnMutationVariables,
+  MobilePosVoidMutationVariables,
+} from '../../graphql/generated';
 import { createIdempotencyKey, isDecidedRejection } from '../../lib/operation';
 import { paymentMethodLabel } from '../../lib/paymentMath';
 import { exchangeSeedLines, refundPaymentOptions } from '../../lib/returnMath';
@@ -109,6 +113,8 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
   const [secondaryAction, setSecondaryAction] = useState('');
   const returnKey = useRef<string | null>(null);
   const voidKey = useRef<string | null>(null);
+  const returnAttempt = useRef<{ action: Action; input: MobilePosReturnMutationVariables['input'] } | null>(null);
+  const voidAttempt = useRef<MobilePosVoidMutationVariables['input'] | null>(null);
   const deliveryScroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
 
   const selectedLines = useMemo(
@@ -175,6 +181,16 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
   const performSubmit = async () => {
     if (!session || !action || submitting) return;
     const isReturnAction = action !== 'VOID';
+    if (
+      (returnAttempt.current && returnAttempt.current.action !== action) ||
+      (voidAttempt.current && action !== 'VOID')
+    ) {
+      Alert.alert(
+        posText("ผลรายการเดิมยังไม่ชัดเจน"),
+        posText("กรุณากลับไปทำรายการเดิมด้วยคีย์เดิมก่อนเริ่มการคืนหรือ Void แบบอื่น"),
+      );
+      return;
+    }
     const isPartialReturn = action === 'RETURN' || action === 'EXCHANGE';
     if (!reason.trim()) {
       Alert.alert(posText("ต้องระบุเหตุผล"), posText("การคืนสินค้าและ Void ต้องมีเหตุผล"));
@@ -237,29 +253,31 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
             ? 'full-return'
             : 'return',
         );
-        const response = await returnMutation({
-          variables: {
-            input: {
-              cashierUserId: session.credentials.cashierUserId,
-              pin: session.credentials.pin,
-              orderId: sale.id,
-              mode: action === 'RETURN_FULL' ? 'FULL' : 'PARTIAL',
-              note: `[${returnReason}] ${reason.trim()}`,
-              idempotencyKey: returnKey.current,
-              preferredRefundMethod:
-                selectedRefundMethod?.toUpperCase() ?? null,
-              approvalUserId: approverId || null,
-              approvalPin: approverPin || null,
-              lines:
-                action === 'RETURN_FULL'
-                  ? []
-                  : selectedLines.map(selected => ({
-                      orderItemId: selected.line.orderItemId,
-                      packQty: selected.qty,
-                    })),
-            },
-          },
-        });
+        const candidate: MobilePosReturnMutationVariables['input'] = {
+          cashierUserId: session.credentials.cashierUserId,
+          pin: session.credentials.pin,
+          orderId: sale.id,
+          mode: action === 'RETURN_FULL' ? 'FULL' : 'PARTIAL',
+          note: `[${returnReason}] ${reason.trim()}`,
+          idempotencyKey: returnKey.current,
+          preferredRefundMethod: selectedRefundMethod?.toUpperCase() ?? null,
+          approvalUserId: approverId || null,
+          approvalPin: approverPin || null,
+          lines: action === 'RETURN_FULL'
+            ? []
+            : selectedLines.map(selected => ({
+                orderItemId: selected.line.orderItemId,
+                packQty: selected.qty,
+              })),
+        };
+        if (returnAttempt.current && JSON.stringify(returnAttempt.current.input) !== JSON.stringify(candidate)) {
+          if (!(await confirmAction(
+            posText("ตรวจผลรายการคืนเดิม"),
+            posText("คำขอครั้งก่อนอาจบันทึกแล้ว การกดต่อจะส่งรายการเดิมและคีย์เดิมเพื่อตรวจผล ไม่ใช้จำนวนหรือเหตุผลที่เพิ่งแก้"),
+          ))) return;
+        }
+        returnAttempt.current ??= { action, input: candidate };
+        const response = await returnMutation({ variables: { input: returnAttempt.current.input } });
         const result = response.data?.bmsPosReturn;
         if (!result?.status) {
           throw new Error(posText("ยังไม่ได้รับผลยืนยันการคืนสินค้า กรุณาลองอีกครั้งด้วยรายการเดิม"));
@@ -268,10 +286,14 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
           action === 'RETURN_FULL' ? 'RETURNED' : 'PARTIAL_RETURNED';
         if (result?.status !== successStatus) {
           returnKey.current = null;
+          returnAttempt.current = null;
           throw new Error(
             result?.reason ?? result?.status ?? posText("คืนสินค้าไม่สำเร็จ"),
           );
         }
+        // The refund has committed; later exchange preparation must not leave it retryable.
+        returnKey.current = null;
+        returnAttempt.current = null;
         if (action === 'EXCHANGE') {
           const seeds = exchangeSeedLines(
             sale.id,
@@ -279,9 +301,13 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
             result.returnedItems ?? [],
           );
           if (seeds.length === 0) {
-            throw new Error(
+            await refresh().catch(() => undefined);
+            close();
+            Alert.alert(
+              posText("คืนสินค้าสำเร็จ"),
               posText("รับคืนสำเร็จแล้ว แต่ผลจากเซิร์ฟเวอร์ไม่มีรายการสำหรับเปิดบิลเปลี่ยน กรุณาเริ่มบิลขายใหม่จากหน้าเมนู"),
             );
+            return;
           }
           const replacementLines = await Promise.all(
             seeds.map(async seed => {
@@ -364,7 +390,6 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
             }
           }
           cart.replaceForExchange(replacementLines, replacementMember);
-          returnKey.current = null;
           await refresh().catch(() => undefined);
           close();
           navigation.popToTop();
@@ -374,35 +399,40 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
           );
           return;
         }
-        returnKey.current = null;
         Alert.alert(
           posText("คืนสินค้าสำเร็จ"),
           posText("ยอดคืนตามเซิร์ฟเวอร์ ฿{v0}", { v0: (result.refundAmount ?? 0).toFixed(2) }),
         );
       } else {
         voidKey.current ??= createIdempotencyKey('void');
-        const response = await voidMutation({
-          variables: {
-            input: {
-              cashierUserId: session.credentials.cashierUserId,
-              pin: session.credentials.pin,
-              orderId: sale.id,
-              reason: reason.trim(),
-              idempotencyKey: voidKey.current,
-              approverUserId: approverId,
-              approverPin,
-            },
-          },
-        });
+        const candidate: MobilePosVoidMutationVariables['input'] = {
+          cashierUserId: session.credentials.cashierUserId,
+          pin: session.credentials.pin,
+          orderId: sale.id,
+          reason: reason.trim(),
+          idempotencyKey: voidKey.current,
+          approverUserId: approverId,
+          approverPin,
+        };
+        if (voidAttempt.current && JSON.stringify(voidAttempt.current) !== JSON.stringify(candidate)) {
+          if (!(await confirmAction(
+            posText("ตรวจผล Void เดิม"),
+            posText("คำขอครั้งก่อนอาจบันทึกแล้ว การกดต่อจะส่งเหตุผลและคีย์เดิมเพื่อตรวจผล ไม่ใช้ข้อมูลที่เพิ่งแก้"),
+          ))) return;
+        }
+        voidAttempt.current ??= candidate;
+        const response = await voidMutation({ variables: { input: voidAttempt.current } });
         const result = response.data?.bmsPosVoid;
         if (!result?.status) {
           throw new Error(posText("ยังไม่ได้รับผลยืนยัน Void กรุณาลองอีกครั้งด้วยรายการเดิม"));
         }
         if (result?.status !== 'VOIDED') {
           voidKey.current = null;
+          voidAttempt.current = null;
           throw new Error(result?.reason ?? result?.status ?? posText("Void ไม่สำเร็จ"));
         }
         voidKey.current = null;
+        voidAttempt.current = null;
         Alert.alert(
           posText("Void สำเร็จ"),
           posText("ยอดคืน ฿{v0}", { v0: (result.refundAmount ?? 0).toFixed(2) }),
@@ -412,8 +442,13 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
       close();
     } catch (error) {
       if (isDecidedRejection(error)) {
-        if (isReturnAction) returnKey.current = null;
-        else voidKey.current = null;
+        if (isReturnAction) {
+          returnKey.current = null;
+          returnAttempt.current = null;
+        } else {
+          voidKey.current = null;
+          voidAttempt.current = null;
+        }
       }
       Alert.alert(
         action === 'VOID'

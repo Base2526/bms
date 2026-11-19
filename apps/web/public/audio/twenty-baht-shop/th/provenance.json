@@ -1,0 +1,37 @@
+{
+  "7b0fce72e968e6433e68dcfe": {
+    "file": "/audio/twenty-baht-shop/th/7b0fce72e968e6433e68dcfe.mp3",
+    "duration": 4.2,
+    "sha256": "ac9fb2ddac51d2ed0e80ca890ab183f0812663d1f60a7e969478e424dafc8351",
+    "spoken": "เริ่ม จาก ร้านค้าปลีก หนึ่ง สาขา ตั้ง พนักงาน สิทธิ์ และ เครื่อง ขาย ก่อน รับเงิน จริง",
+    "track": "twenty-baht-shop"
+  },
+  "a118e70c2f47a74d35f1d239": {
+    "file": "/audio/twenty-baht-shop/th/a118e70c2f47a74d35f1d239.mp3",
+    "duration": 5.568,
+    "sha256": "a9cef491f7f19962597d32855064ca7ddc6dbe4b891904789b59cd85772bd181",
+    "spoken": "น้ำขวด และ สบู่ ราคา อย่าง ละ ยี่สิบ บาท แต่ ต้อง ใช้ คนละ เอส เค ยู เพื่อ นับ สต็อก และ ต้นทุน แยกกัน",
+    "track": "twenty-baht-shop"
+  },
+  "f702b3a0eb1608221f243dad": {
+    "file": "/audio/twenty-baht-shop/th/f702b3a0eb1608221f243dad.mp3",
+    "duration": 6.888,
+    "sha256": "532601047b9a412ca629c2194b231dfc69100493610c504219fc1af8b7195f8c",
+    "spoken": "นำเข้า ไฟล์ สินค้า แล้ว ตรวจ ตัวอย่าง ก่อน ยืนยัน จากนั้น นับ สต็อก ตั้งต้น แยก ต่างหาก การ นำเข้า สินค้า ไม่ เพิ่ม ยอด คงเหลือ",
+    "track": "twenty-baht-shop"
+  },
+  "0d819e0fb7b121ed42d63a66": {
+    "file": "/audio/twenty-baht-shop/th/0d819e0fb7b121ed42d63a66.mp3",
+    "duration": 6.288,
+    "sha256": "240d5efe41ed00fd6423b4488dd8548e4f99e59a3467a30b1f1e5573087506e8",
+    "spoken": "สแกน แต่ละ เอส เค ยู ตรวจ จำนวน และ ยอดรวม รับ ชำระ ตาม วิธี ที่ ร้าน ตั้ง ไว้ แล้ว ตรวจ ใบเสร็จ ที่ บันทึก สำเร็จ",
+    "track": "twenty-baht-shop"
+  },
+  "8081201ae2ff66461180ff7d": {
+    "file": "/audio/twenty-baht-shop/th/8081201ae2ff66461180ff7d.mp3",
+    "duration": 5.688,
+    "sha256": "42d4bf31588e6c8a78f2c6c73677ff4a3a763e33ed2e171250f3f00c944f1839",
+    "spoken": "คืน บางส่วน ด้วย บิล เดิม ตรวจ เงิน คืน และ สต็อก แล้ว ปิด กะ พร้อม เทียบ เงินสด ยอดขาย และ ราย การเคลื่อนไหว",
+    "track": "twenty-baht-shop"
+  }
+}

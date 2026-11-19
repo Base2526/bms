@@ -7,6 +7,32 @@ import { businessTrackIds, getTrackLessons, isRestaurantFormat, isRetailFormat, 
 import { inventoryNarrationCues } from "../apps/web/lib/learning/inventoryNarration.ts";
 import { businessGuideFlows, businessNarrationCues, type BusinessTrackId } from "../apps/web/lib/learning/businessGuideFlow.ts";
 import { factoryNodes } from "../apps/web/lib/learning/factoryGuideFlow.ts";
+import { twentyBahtFlow, twentyBahtSteps } from "../apps/web/lib/learning/twentyBahtGuide.ts";
+
+test("twenty-baht pilot guide ships complete bilingual steps and verified Thai clips", () => {
+  const manifest = JSON.parse(readFileSync(new URL("../apps/web/app/learn/twenty-baht-shop/twentyBahtThaiAudio.json", import.meta.url), "utf8"));
+  const provenance = JSON.parse(readFileSync(new URL("../apps/web/public/audio/twenty-baht-shop/th/provenance.json", import.meta.url), "utf8"));
+  assert.equal(twentyBahtSteps.length, 11);
+  assert.deepEqual(Object.keys(manifest), twentyBahtFlow.map((node) => node.caption.th));
+  for (const node of twentyBahtFlow) {
+    assert.ok(node.title.th && node.title.en && node.caption.th && node.caption.en);
+    const id = createHash("sha256").update(`twenty-baht-shop\0${node.caption.th}`).digest("hex").slice(0, 24);
+    const clip = manifest[node.caption.th];
+    assert.equal(clip.file, `/audio/twenty-baht-shop/th/${id}.mp3`);
+    const file = new URL(`../apps/web/public${clip.file}`, import.meta.url);
+    assert.ok(statSync(file).size > 1000);
+    assert.equal(createHash("sha256").update(readFileSync(file)).digest("hex"), provenance[id].sha256);
+    assert.equal(provenance[id].track, "twenty-baht-shop");
+  }
+  for (const item of twentyBahtSteps) {
+    assert.ok(existsSync(resolve(import.meta.dirname, "../apps/web/app", "(admin)", item.page.slice(1), "page.tsx"))
+      || existsSync(resolve(import.meta.dirname, "../apps/web/app", "(pos)", item.page.slice(1), "page.tsx"))
+      || existsSync(resolve(import.meta.dirname, "../apps/web/app", item.page.slice(1), "page.tsx")), item.page);
+    for (const field of [item.title, item.prepare, item.action, item.check, item.repair, item.limit]) {
+      assert.ok(field.th.trim() && field.en.trim());
+    }
+  }
+});
 
 test("public learning paths resolve unique bilingual lessons and real action destinations", () => {
   assert.equal(new Set(lessons.map((lesson) => lesson.slug)).size, lessons.length);

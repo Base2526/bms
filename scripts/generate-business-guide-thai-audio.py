@@ -14,12 +14,18 @@ import soundfile as sf
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model-dir", required=True)
+parser.add_argument("--requests-file", default=".test-output/business-guide-narration/requests.json")
+parser.add_argument("--output-dir", default="apps/web/public/audio/learning-business/th")
+parser.add_argument("--manifest-file", default="apps/web/app/learn/businessThaiAudio.json")
+parser.add_argument("--checkpoint-file", default=".test-output/business-guide-narration/generated-kokoro.json")
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
-requests = json.loads((root / ".test-output/business-guide-narration/requests.json").read_text(encoding="utf-8"))
-output = root / "apps/web/public/audio/learning-business/th"
+requests = json.loads((root / args.requests_file).read_text(encoding="utf-8"))
+output = root / args.output_dir
 output.mkdir(parents=True, exist_ok=True)
-checkpoint = root / ".test-output/business-guide-narration/generated-kokoro.json"
+public_prefix = "/" + output.relative_to(root / "apps/web/public").as_posix()
+checkpoint = root / args.checkpoint_file
+checkpoint.parent.mkdir(parents=True, exist_ok=True)
 generated = json.loads(checkpoint.read_text(encoding="utf-8")) if checkpoint.exists() else {}
 vocabulary = list("กขคฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรฤลวศษสหฬอฮะัาำิีึืุูเแโใไๅ็่้๊๋์ ")
 indices = {character: index for index, character in enumerate(vocabulary)}
@@ -87,7 +93,7 @@ for index, entry in enumerate(requests):
     sf.write(str(path), audio, 24000, format="MP3", bitrate_mode="CONSTANT", compression_level=0.7)
     decoded, sample_rate = sf.read(str(path))
     generated[text] = {
-        "file": f"/audio/learning-business/th/{identifier}.mp3",
+        "file": f"{public_prefix}/{identifier}.mp3",
         "duration": round(len(decoded) / sample_rate, 3),
         "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "spoken": normalized,
@@ -98,7 +104,9 @@ for index, entry in enumerate(requests):
 
 if any(entry["text"] not in generated for entry in requests):
     raise RuntimeError("Incomplete business-guide narration")
+for entry in requests:
+    generated[entry["text"]]["file"] = f"{public_prefix}/{entry['id']}.mp3"
 manifest = {entry["text"]: {key: generated[entry["text"]][key] for key in ["file", "duration"]} for entry in requests}
-(root / "apps/web/app/learn/businessThaiAudio.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+(root / args.manifest_file).write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 (output / "provenance.json").write_text(json.dumps({entry["id"]: generated[entry["text"]] for entry in requests}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 print(f"Published manifest for {len(manifest)} cues.", flush=True)

@@ -90,6 +90,15 @@ The five business learning flows use that same pinned voice. After editing
 `businessThaiAudio.json`, the MP3 files and their provenance together; the learning-center contract
 checks that every Thai cue has a verified recording.
 
+The twenty-baht shop pilot uses the same recorded player and voice. Export its five public captions
+with `node apps/web/node_modules/tsx/dist/cli.mjs scripts/twenty-baht-narration-export.mts`, then
+run `scripts/generate-business-guide-thai-audio.py --model-dir .test-output/fastthai-model
+--requests-file .test-output/twenty-baht-narration/requests.json --output-dir
+apps/web/public/audio/twenty-baht-shop/th --manifest-file
+apps/web/app/learn/twenty-baht-shop/twentyBahtThaiAudio.json --checkpoint-file
+.test-output/twenty-baht-narration/generated-kokoro.json` with the pinned Python environment.
+Commit only the completed manifest, recordings, provenance and attribution.
+
 The factory pilot's 15 Thai captions can be recorded with Google AI Studio's
 `gemini-3.8-flash-tts` model. In a shell with `GEMINI_API_KEY` set, run
 `node scripts/generate-factory-guide-tts.mts` from the repository root. The script stages and

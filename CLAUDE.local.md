@@ -11,13 +11,13 @@
 > บันทึก 2026-08-17 → 2026-10-23) อยู่ใต้ "ชุดที่ 2" ของ archive — ค้นด้วยเลข migration เช่น
 > `grep -n "9.66" docs/local-notes-archive.md`
 
-## สถานะ working tree ล่าสุด (2026-11-18)
+## สถานะ working tree ล่าสุด (2026-11-19)
 
-- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `121e19fc` (#431,
-  ตรวจทานตั้งค่าจอคิว) · สรุป #417–#431 อยู่ท้าย [docs/status-log.md](docs/status-log.md) ·
-  branch `codex/assistant-answer-presentation` = `develop` + ตัวแสดงคำตอบผู้ช่วย, ภาพหน้าจอต้องยืนยันว่าเป็น BMS
-  (`imageBmsConfirmed`), แก้ `mimeType` ของ upload, ล้าง Markdown ในคำตอบลูกค้า, ปุ่มเปิดหน้าร้าน — ไม่มี migration
-- **migration ล่าสุด `10.132`** (เลขว่างถัดไป `10.133` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
+- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `9d6ee933` (#436,
+  pilot ร้านวัสดุก่อสร้าง `10.133`–`10.137`) · สรุป #417–#436 อยู่ท้าย [docs/status-log.md](docs/status-log.md) ·
+  branch `codex/twenty-baht-shop-pilot` = `develop` + หน้า `/learn/twenty-baht-shop` (noindex, เสียงไทย 5 ไฟล์),
+  คอลัมน์ `ประเภท VAT` ในไฟล์นำเข้าสินค้า, mobile คืน/void ใช้ body เดิมกับคีย์เดิม — ไม่มี migration
+- **migration ล่าสุด `10.137`** (เลขว่างถัดไป `10.138` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
   `10.122`/`10.123` โรงงานคงเดิม; audit ที่ชนเลขย้ายเป็น `10.131`/`10.132` และมีวิธีจัดการ
   ledger เก่าใน [audit traceability](docs/architecture/audit-traceability.md#verification-and-rollout) ·
   คิวรับของคือ `10.112`–`10.113` (ไม่ใช่ `10.111` = ใบอนุญาตเภสัชกร)
@@ -182,6 +182,9 @@ node scripts/run-contract-tests.mjs db <name-filter>     # ต้องมี PO
   `apps/ws` พร้อมกันเสมอ · migration อย่างเดียวไม่เปิดฟีเจอร์ ต้อง deploy โค้ดตาม
 - ลำดับช่วงท้าย: `10.105` → `10.106` (lead erasure) → `10.107` → `10.108` → `10.109` → `10.110` → `10.111`
   → `10.112` → `10.113` → `10.114` → `10.115` → `10.116` → `10.117` → `10.118` → `10.119` → `10.120` → `10.121`
+  → `10.122`–`10.127` (โรงงาน) → `10.128` (owner repair retry) → `10.129` → `10.130` (สินค้าชั่วคราว)
+  → `10.131` → `10.132` (audit) → `10.133`–`10.137` (ร้านวัสดุก่อสร้าง; `10.134`/`10.136`/`10.137` อยู่ใน readiness
+  — โค้ด `develop` ใช้ทุกบิล/ทุกการสแกน/ทุก PO จึงต้อง apply ก่อน deploy)
 - **`10.107` ผูกกับโค้ด `develop` แล้ว** — `stockTransfers.ts` อ่าน `bms_stock_transfer_item_lots` และ
   readiness ระบุว่าการโอนทุกหน้าล้มถ้าไม่มีตาราง → deploy `develop` = ตัดสินใจ rollout `10.107` ไปด้วย
   ต้องได้การยืนยันก่อน
