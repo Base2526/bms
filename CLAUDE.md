@@ -27,7 +27,7 @@ full per-domain rules: [docs/agent-invariants.md](docs/agent-invariants.md) · p
 | [apps/mobile/README.md](apps/mobile/README.md) · [apps/desktop/README.md](apps/desktop/README.md) | Native RN POS (scanner, Wi-Fi printing) · Electron POS shell |
 | [scripts/README.md](scripts/README.md) · [scripts/ai-eval/README.md](scripts/ai-eval/README.md) | How to run every suite, exit codes, live-model evals |
 | Thai manuals: [inbox](docs/manual/inbox.md) · [restaurant POS](docs/restaurant-pos-guide.md) · [ร้านอาหาร](docs/คู่มือร้านอาหาร.md) · [ร้านยา](docs/คู่มือร้านขายยา.md) · [ร้านวัสดุก่อสร้าง (pilot)](docs/คู่มือร้านวัสดุก่อสร้าง.md) · [product examples](docs/shop-product-examples.md) | Operator guides |
-| [Public learning center](docs/ui/learning-center.md) | `/learn`: bilingual public learning paths including the building-materials pilot, searchable lessons, narrated flows and reading checklists |
+| [Public learning center](docs/ui/learning-center.md) · [public POS guides](docs/public-pos-guides/README.md) | `/learn`: bilingual public learning paths including the building-materials pilot and `/learn/getting-started`, searchable lessons, narrated flows and reading checklists · source and regeneration of the five Thai Word/PDF POS handbooks in `apps/web/public/guides/pos/` |
 
 ## Current status (2026-11)
 

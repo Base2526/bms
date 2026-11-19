@@ -1,6 +1,7 @@
 "use client";
 
 import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
+import GuideLinks from "@/components/learning/GuideLinks";
 
 import { gql, useMutation, useQuery, useSubscription } from "@apollo/client";
 import {
@@ -508,6 +509,7 @@ export default function Page() {
 
   return (
     <div style={{ maxWidth: 1500 }}>
+      <GuideLinks slugs={["verify-inbox-channels", "logs-diagnostics-guide"]} />
       <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 16 }} wrap>
         <Space direction="vertical" size={2}>
           <h2 style={{ margin: 0 }}>

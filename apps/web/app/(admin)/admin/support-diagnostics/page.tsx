@@ -5,6 +5,7 @@ import { DownloadOutlined, CustomerServiceOutlined } from "@ant-design/icons";
 import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
 import { useI18n } from "@/lib/i18nContext";
 import { useSessionCtx } from "@/lib/session-context";
+import GuideLinks from "@/components/learning/GuideLinks";
 
 const { Paragraph, Text, Title } = Typography;
 type WindowKey = "1h" | "24h" | "7d";
@@ -64,6 +65,7 @@ export default function Page() {
     finally { setWorking(null); }
   }
   return <Space direction="vertical" size={16} style={{ width: "100%", maxWidth: 900 }}>
+    <GuideLinks slugs={["logs-diagnostics-guide"]} />
     <div><Title level={2}>{t("admin_support_diagnostics.title")}</Title><Paragraph>{t("admin_support_diagnostics.intro")}</Paragraph></div>
     <Alert closable type="info" showIcon message={t("admin_support_diagnostics.privacy_title")} description={t("admin_support_diagnostics.privacy_desc")} />
     {ticket && <Alert closable type="success" showIcon message={t("admin_support_diagnostics.ticket_created", { ticket })} />}

@@ -70,7 +70,7 @@ export function StoreLink({ lang, action }: { lang: Lang; action?: string }) {
   if (loading) return <span className={s.disabled}>{lang === "th" ? "กำลังตรวจบัญชี…" : "Checking account…"}</span>;
   const signedIn = Boolean(admin);
   // Authentication and permission are rechecked by the destination. This is navigation only.
-  const href = signedIn ? action || "/admin/dashboard" : action ? "/admin/login" : error ? "/admin/login" : "/shop-signup";
+  const href = signedIn ? action || "/admin/dashboard" : action?.startsWith("/admin/") ? `/admin/login?next=${encodeURIComponent(action)}` : action ? "/admin/login" : error ? "/admin/login" : "/shop-signup";
   const label = signedIn
     ? (lang === "th" ? action ? "เปิดหน้าทำรายการ" : "จัดการร้านของฉัน" : action ? "Open workspace" : "Manage my shop")
     : (lang === "th" ? action || error ? "เข้าสู่ระบบเพื่อทำตาม" : "เริ่มใช้ฟรี" : action || error ? "Sign in to follow along" : "Start free");

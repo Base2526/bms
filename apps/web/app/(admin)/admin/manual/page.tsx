@@ -40,6 +40,7 @@ import { SYSTEM_LIMITS } from "@/lib/bms/assistantKnowledge/limits";
 import { useI18n } from "@/lib/i18nContext";
 import { resolveBilingual, type Bilingual } from "@/lib/static-page-i18n";
 import styles from "./manual.module.css";
+import GuideLinks from "@/components/learning/GuideLinks";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -3347,6 +3348,7 @@ export default function Page() {
 
   return (
     <div className={styles.page}>
+      <GuideLinks start slugs={["bms-overview", "shop-team-users", "channel-setup-overview", "pos-pin-readiness", "logs-diagnostics-guide"]} />
       <Alert
         type="warning"
         showIcon

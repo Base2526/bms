@@ -10,6 +10,7 @@ import StoreProfileCard from "./StoreProfileCard";
 import EmergencyFacilitiesCard from "./EmergencyFacilitiesCard";
 import ReportSubscriptionCard from "./ReportSubscriptionCard";
 import { useI18n } from "@/lib/i18nContext";
+import GuideLinks from "@/components/learning/GuideLinks";
 
 const { Text, Paragraph, Title } = Typography;
 
@@ -179,6 +180,7 @@ export default function Page() {
 
   return (
     <div style={{ maxWidth: 1200 }}>
+      <GuideLinks slugs={["shop-profile-setup", "channel-setup-overview", "opening-payments-products"]} />
       <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 20 }} wrap align="start">
         <div>
           <Title level={2} style={{ margin: 0 }}>{t("admin_settings.page_title")}</Title>
@@ -397,6 +399,7 @@ function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, m
       )}
 
       <Paragraph type="secondary" style={{ marginTop: -4 }}>{ch.hint}</Paragraph>
+      <GuideLinks slugs={[ch.key === "line" ? "channel-line-oa" : ch.key === "facebook" || ch.key === "instagram" ? "channel-meta-messaging" : ch.key === "tiktok" ? "channel-tiktok-inbound" : ch.key === "web" ? "channel-web-chat" : "channel-setup-overview"]} />
 
       {badge.action && (
         <Alert closable

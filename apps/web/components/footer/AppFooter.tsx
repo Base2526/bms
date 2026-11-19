@@ -56,6 +56,7 @@ const COPY = {
     costPricing: "คำนวณต้นทุนและราคาขาย",
     resources: "เรียนรู้และช่วยเหลือ",
     learn: "ศูนย์เรียนรู้และคู่มือ",
+    gettingStartedGuide: "เริ่มต้นใช้งานและตั้งค่าร้าน",
     retailGuide: "คู่มือร้านค้าปลีกและค้าส่ง",
     restaurantGuide: "คู่มือร้านอาหารและคาเฟ่",
     boardGameGuide: "คู่มือร้านบอร์ดเกม",
@@ -104,6 +105,7 @@ const COPY = {
     costPricing: "Costs and selling prices",
     resources: "Learn and support",
     learn: "Learning center & guides",
+    gettingStartedGuide: "Getting started & shop setup",
     retailGuide: "Retail & wholesale guide",
     restaurantGuide: "Restaurant & cafe guide",
     boardGameGuide: "Board-game cafe guide",
@@ -182,6 +184,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
 
   const resourceLinks = [
     { href: localizedPublicPath("/learn", locale), label: t.learn, icon: <BookOutlined /> },
+    { href: localizedPublicPath("/learn/getting-started", locale), label: t.gettingStartedGuide, icon: <BookOutlined /> },
     { href: localizedPublicPath("/learn/retail", locale), label: t.retailGuide, icon: <ShopOutlined /> },
     { href: localizedPublicPath("/learn/restaurant", locale), label: t.restaurantGuide, icon: <ShopOutlined /> },
     { href: localizedPublicPath("/learn/board-game", locale), label: t.boardGameGuide, icon: <ShopOutlined /> },

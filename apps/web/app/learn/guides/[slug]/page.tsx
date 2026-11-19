@@ -26,7 +26,7 @@ export default function ArticlePage({ params, searchParams }: Props) {
   const trackHref = localizedPublicPath(`/learn/${track}${format ? `?format=${format}` : ""}`, lang);
   const lessonHref = (slug: string) => localizedPublicPath(`/learn/guides/${slug}?track=${track}${format ? `&format=${format}` : ""}`, lang);
   const txt = (value: Parameters<typeof localize>[0]) => localize(value, lang);
-  const anchors = [["prepare", th ? "ก่อนเริ่ม" : "Before you begin"], ["steps", th ? "ขั้นตอนใช้งาน" : "Steps"], ["verify", th ? "ตรวจผลลัพธ์" : "Verify the result"], ["limits", th ? "ข้อจำกัดและกรณีติดขัด" : "Limits & troubleshooting"]];
+  const anchors = [["prepare", th ? "ก่อนเริ่ม" : "Before you begin"], ["steps", th ? "ขั้นตอนใช้งาน" : "Steps"], ...(lesson.example ? [["example", th ? "ตัวอย่างข้อมูลสมมติ" : "Fictional example"]] : []), ["verify", th ? "ตรวจผลลัพธ์" : "Verify the result"], ["limits", th ? "ข้อจำกัดและกรณีติดขัด" : "Limits & troubleshooting"]];
   return <>
     <StructuredData id="learning-article-jsonld" data={learningArticleJsonLd({
       locale: lang,
@@ -51,6 +51,7 @@ export default function ArticlePage({ params, searchParams }: Props) {
         <h2 id="prepare">{th ? "ก่อนเริ่ม" : "Before you begin"}</h2><p>{txt(lesson.prerequisite)}</p>
         <div className={s.callout}><strong>{th ? "เมนูที่ใช้" : "Where to go"}</strong><p>{txt(lesson.menu)}</p><span className={s.muted}>{th ? "ชื่อและรายการที่เห็นอาจต่างตามภาษา สิทธิ์ รุ่นแอป และการตั้งค่าร้าน" : "Visible menus may vary with language, permissions, app version and shop configuration."}</span></div>
         <h2 id="steps">{th ? "ทำตามทีละขั้น" : "Follow these steps"}</h2><ol className={s.steps}>{lesson.steps.map((step, i) => <li key={i}>{txt(step)}</li>)}</ol>
+        {lesson.example && <><h2 id="example">{th ? "ตัวอย่างข้อมูลสมมติ" : "Fictional example"}</h2><p>{txt(lesson.example)}</p></>}
         <h2 id="verify">{th ? "รู้ได้อย่างไรว่าทำสำเร็จ" : "How to verify success"}</h2><p>{txt(lesson.check)}</p>
         <h2 id="limits">{th ? "ข้อจำกัดและสิ่งที่ต้องตรวจ" : "Limits & things to check"}</h2><div className={s.callout}><p>{txt(lesson.caution)}</p></div>
         <section className={`${s.callout} ${s.practiceCallout} ${s.noPrint}`}><div><h2>{track === "building-materials" ? (th ? "ทดลองในร้านทดสอบก่อน" : "Rehearse in a test shop first") : (th ? "พร้อมลองทำในร้านของคุณ" : "Ready to try it in your shop")}</h2><p>{track === "building-materials" ? (th ? "คู่มือนี้เป็น pilot การทำรายการต้องเข้าสู่ระบบและมีสิทธิ์ ใช้ข้อมูลสมมติและตรวจข้อจำกัดก่อนทดลองในร้านจริง" : "This is a pilot guide. Actions require sign-in and permission. Use fictional data and review gaps before a real-shop trial.") : (th ? "อ่านบทเรียนได้ฟรี การทำรายการจริงต้องเข้าสู่ระบบและมีสิทธิ์ของเมนูนั้น สำหรับฝึกงานให้ใช้ข้อมูลทดสอบ" : "Lessons are free to read. Actual operations require sign-in and the appropriate permission. Use test data for training.")}</p></div>

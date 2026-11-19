@@ -1,5 +1,9 @@
 // i18n/th.ts
 const th = {
+  guide_links: {
+    label: "คู่มือที่เกี่ยวข้อง",
+    start: "ดูเส้นทางเริ่มต้นใช้งาน",
+  },
   admin_ui: {
     delivery_pending: "รอดำเนินการ",
     delivery_sending: "กำลังส่ง",

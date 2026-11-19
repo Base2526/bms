@@ -13,11 +13,10 @@
 
 ## สถานะ working tree ล่าสุด (2026-11-19)
 
-- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `5d2b2415` (#437,
-  คู่มือร้าน 20 บาท) · สรุป #417–#437 อยู่ท้าย [docs/status-log.md](docs/status-log.md) ·
-  branch `codex/backend-desktop-mobile-audit` = `develop` + จับคู่เครื่องต้อง HTTPS, offline ส่งซ้ำเฉพาะกะเดิม,
-  คืนบางรายการปฏิเสธทั้งคำขอถ้ามีบรรทัดเสีย + replay ต้องตรงรายการเดิม, Inbox แยก list/detail + mark-read
-  ไม่ล้าง unread ถ้ามีข้อความเข้าใหม่ — ไม่มี migration
+- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `db41135f` (#439,
+  แก้ query ความผิดปกติของการโอนค้างทาง) · สรุป #417–#439 อยู่ท้าย [docs/status-log.md](docs/status-log.md) ·
+  branch `codex/public-pos-guides` = `develop` + คู่มือ POS สาธารณะ Word/PDF 5 ประเภทร้าน
+  (ต้นฉบับ `docs/public-pos-guides/`), เส้นทาง `/learn/getting-started` 16 บทความ, `GuideLinks` ในหน้าแอดมิน — ไม่มี migration
 - **migration ล่าสุด `10.137`** (เลขว่างถัดไป `10.138` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
   `10.122`/`10.123` โรงงานคงเดิม; audit ที่ชนเลขย้ายเป็น `10.131`/`10.132` และมีวิธีจัดการ
   ledger เก่าใน [audit traceability](docs/architecture/audit-traceability.md#verification-and-rollout) ·

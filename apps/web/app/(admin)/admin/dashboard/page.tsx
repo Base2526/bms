@@ -21,6 +21,7 @@ import {
   WarningOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
+import GuideLinks from "@/components/learning/GuideLinks";
 import { useI18n } from "@/lib/i18nContext";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import styles from "./dashboard.module.css";
@@ -401,6 +402,7 @@ export default function Page() {
 
   return (
     <div>
+      <GuideLinks slugs={["dashboard-first-read"]} />
       <div className={styles.pageHead}>
         <div className={styles.pageHeadMain}>
           <Title level={2} className={styles.pageTitle}>{t("admin_dashboard.page_heading")}</Title>

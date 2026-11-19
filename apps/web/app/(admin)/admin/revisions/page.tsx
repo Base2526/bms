@@ -9,6 +9,7 @@ import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useIsMobile, panelWidth } from "@/app/hooks/useMediaQuery";
 import { useI18n } from "@/lib/i18nContext";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import GuideLinks from "@/components/learning/GuideLinks";
 import { AdminMobileList, AdminRecordCard } from "@/components/admin/AdminMobileList";
 
 const KIND_OPTIONS = (uiText: UiTranslator = thaiUiText) => ([
@@ -194,6 +195,7 @@ export default function Page() {
 
   return (
     <div>
+      <GuideLinks slugs={["logs-diagnostics-guide"]} />
       <AdminPageHeader title={t("admin_revisions.title")}>
         <Select
           value={kind}

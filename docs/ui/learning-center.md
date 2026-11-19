@@ -8,13 +8,34 @@ preserves previous/next navigation. Unknown tracks/articles render a not-found p
 
 ## Content and maintenance
 
-`apps/web/lib/learning/catalog.ts` is an explicitly authored, bilingual public catalogue: 89 unique
+The five business cards offer an anonymous Thai Word download. Each matching track page
+offers both Thai Word and PDF beside the title, with the review date and an explicit
+Thai-language label on English pages. The building-materials download is marked PILOT.
+The handbooks are authored in `docs/public-pos-guides/`, generated into
+`apps/web/public/guides/pos/`, and link back to their online track. See
+`docs/public-pos-guides/README.md` for regeneration and visual review. Keep the online
+path and downloadable content aligned; a dated file can be forwarded after the site
+changes, so the online path remains the latest reference.
+
+`apps/web/lib/learning/catalog.ts` is an explicitly authored, bilingual public catalogue: 105 unique
 articles, reused in the board-game, restaurant and building-materials paths. Every article has
 audience, menu, prerequisites, steps, success check and relevant limitations. It does not expose
 internal documentation, assistant tool metadata, permissions catalogues or tenant data. Content is
 reviewed against board-game-cafe.md, the restaurant manuals, pos.md, the in-app manual, desktop
 README and implemented routes. Update both languages and the reviewed date when behavior changes.
 Do not publish a capability just because it was in a proposed manual outline.
+
+The `/learn/getting-started` path is the public, cross-business entry point. Its 16 bilingual
+articles live in `apps/web/lib/learning/gettingStartedLessons.ts` and reuse the existing lesson
+renderer, GET search, review dates, canonical article URLs, previous/next links, and local reading
+checklist. It starts with signup and sign-in, then shop profile, Dashboard, shop staff, channel
+setup, receiving accounts/products, POS, inbound verification, diagnostics and go-live review.
+The article action link is a convenience: `/admin/*` still requires the existing session and
+permission. `GuideLinks` connects the relevant article from signup/login, Getting Started,
+the in-app manual, Settings, Dashboard, Users, POS Devices, Audit, Revisions, Support and
+Realtime Diagnostics, and platform System Health. Keep article labels and the actual form names,
+roles and provider capability in sync. A connection/token check is distinct from receiving a
+real inbound webhook; TikTok remains inbound-only and staff reply in TikTok.
 
 The 2026-10-28 board-game review added 16 detailed lessons and corrected existing guidance against
 the services and actual Admin/POS forms. See [the evidence matrix](board-game-manual-review.md)

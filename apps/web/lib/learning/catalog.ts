@@ -1,8 +1,9 @@
 import { resolveBilingual, type Bilingual } from "@/lib/static-page-i18n";
 import { buildingMaterialsLessons } from "./buildingMaterialsLessons";
+import { gettingStartedLessons } from "./gettingStartedLessons";
 
 export const LEARNING_REVIEWED_AT = "2026-10-28";
-export type TrackId = "retail" | "board-game" | "restaurant" | "pharmacy" | "building-materials" | "inventory";
+export type TrackId = "getting-started" | "retail" | "board-game" | "restaurant" | "pharmacy" | "building-materials" | "inventory";
 export type RestaurantFormat = "dine-in" | "counter-kitchen" | "pickup-delivery";
 export type RetailFormat = "general" | "variants" | "food-counter" | "wholesale";
 export type TrackFormat = RestaurantFormat | RetailFormat;
@@ -25,6 +26,7 @@ export type Lesson = {
   action: string;
   prerequisite: Localized;
   steps: Localized[];
+  example?: Localized;
   check: Localized;
   caution: Localized;
 };
@@ -50,6 +52,7 @@ const all: Role[] = ["owner", "manager", "cashier", "pharmacist"];
 const managers: Role[] = ["owner", "manager"];
 const pharmacyManagers: Role[] = ["owner", "manager", "pharmacist"];
 export const lessons: Lesson[] = [
+  ...gettingStartedLessons,
   {
     slug: "start-here", title: bi("เริ่มต้น: เตรียมร้านและเลือกประเภทธุรกิจ", "Start here: prepare your shop"),
     summary: bi("สิ่งที่ต้องเตรียมก่อนสมัคร เลือกประเภทร้าน และวางแผนย้ายจากระบบเดิม", "Prepare your information, select a business type and plan a migration."),
@@ -1236,6 +1239,7 @@ export const lessons: Lesson[] = [
 ];
 
 export const tracks: Record<TrackId, { title: Localized; description: Localized; icon: string }> = {
+  "getting-started": { title: bi("เริ่มต้นใช้งานและตั้งค่าร้าน", "Getting started & shop setup"), description: bi("จากสมัครร้านและเข้าใช้งาน ไปจนตั้งทีม ช่องทาง POS และตรวจความพร้อมก่อนเปิดจริง อ่านได้โดยไม่ต้องล็อกอิน", "From signup and sign-in through staff, channels, POS and go-live checks. Read without signing in."), icon: "🚀" },
   retail: { title: bi("ร้านค้าปลีกและค้าส่ง", "Retail & wholesale"), description: bi("ขายหน้าร้าน คาเฟ่เคาน์เตอร์ สินค้ามีรุ่น และงานขายส่ง โดยใช้ POS สินค้า สต็อกและการเงินชุดเดียวกัน", "Counter retail, counter cafes, variant goods and wholesale using the shared POS, catalog, stock and finance workflows."), icon: "🛒" },
   "board-game": { title: bi("ร้านบอร์ดเกม", "Board-game cafe"), description: bi("จากโต๊ะว่าง สู่รอบเล่นแรกและปิดกะอย่างมั่นใจ", "From an empty floor to your first session and reconciled shift."), icon: "🎲" },
   restaurant: { title: bi("ร้านอาหารและคาเฟ่", "Restaurants & cafes"), description: bi("สำหรับร้านที่ใช้ Restaurant POS บิลโต๊ะหรือ TAKEAWAY รอบส่งครัว และ Kitchen Board; คาเฟ่ขายหน้าเคาน์เตอร์ทั่วไปอยู่ในคู่มือค้าปลีก", "For shops using Restaurant POS, table or TAKEAWAY checks, kitchen rounds and Kitchen Board; ordinary counter cafes use the retail guide."), icon: "🍽" },
@@ -1245,6 +1249,12 @@ export const tracks: Record<TrackId, { title: Localized; description: Localized;
 };
 
 export const trackOrder: Record<TrackId, string[]> = {
+  "getting-started": [
+    "bms-overview", "shop-signup-verification", "sign-in-account", "shop-profile-setup", "dashboard-first-read",
+    "shop-team-users", "channel-setup-overview", "channel-line-oa", "channel-meta-messaging", "channel-tiktok-inbound",
+    "channel-web-chat", "opening-payments-products", "pos-pin-readiness", "verify-inbox-channels",
+    "logs-diagnostics-guide", "opening-checklist",
+  ],
   retail: [
     "start-here", "branches-hours", "staff-permissions", "products-import", "retail-packs-barcodes", "retail-variants-serials",
     "inventory", "tax-receipts", "pos-devices", "desktop-hardware", "payments-qr", "retail-pos-sale",
@@ -1298,12 +1308,14 @@ export function lessonSupportsRetailFormat(lesson: Lesson, format: RetailFormat)
 }
 export function getTrackLessons(track: TrackId, format?: TrackFormat) {
   const categories = Object.keys(categoryLabels);
-  return trackOrder[track].map((slug) => getLesson(slug)!)
+  const ordered = trackOrder[track].map((slug) => getLesson(slug)!);
+  if (track === "getting-started") return ordered;
+  return ordered
     .filter((lesson) => track !== "restaurant" || !format || !isRestaurantFormat(format) || lessonSupportsRestaurantFormat(lesson, format))
     .filter((lesson) => track !== "retail" || !format || !isRetailFormat(format) || lessonSupportsRetailFormat(lesson, format))
     .sort((a, b) => categories.indexOf(a.category) - categories.indexOf(b.category));
 }
-export function isTrack(value: string): value is TrackId { return value === "retail" || value === "board-game" || value === "restaurant" || value === "pharmacy" || value === "building-materials" || value === "inventory"; }
+export function isTrack(value: string): value is TrackId { return value === "getting-started" || value === "retail" || value === "board-game" || value === "restaurant" || value === "pharmacy" || value === "building-materials" || value === "inventory"; }
 export function isRestaurantFormat(value: string): value is RestaurantFormat {
   return value === "dine-in" || value === "counter-kitchen" || value === "pickup-delivery";
 }
@@ -1343,7 +1355,7 @@ export function searchLessons(query: string, lang: "th" | "en", track?: TrackId,
   return lessons.filter((lesson) => (!track || lesson.tracks.includes(track)) && (!role || lesson.roles.includes(role)))
     .map((lesson) => {
       const title = localize(lesson.title, lang).toLocaleLowerCase();
-      const body = [lesson.title, lesson.summary, lesson.menu, lesson.prerequisite, ...lesson.steps, lesson.check, lesson.caution]
+      const body = [lesson.title, lesson.summary, lesson.menu, lesson.prerequisite, ...lesson.steps, ...(lesson.example ? [lesson.example] : []), lesson.check, lesson.caution]
         .map((text) => `${text.th} ${text.en}`).join(" ").normalize("NFKC").toLocaleLowerCase();
       return { lesson, score: words.reduce((score, word) => score + (title.includes(word) ? 5 : body.includes(word) ? 1 : 0), 0) };
     }).filter(({ score }) => words.length === 0 || score > 0)

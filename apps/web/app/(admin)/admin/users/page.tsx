@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import debounce from "lodash/debounce";
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import GuideLinks from "@/components/learning/GuideLinks";
 import { AdminMobileList, AdminRecordCard } from "@/components/admin/AdminMobileList";
 import { canManageStaffRole } from "@/lib/bms/staffRoles";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
@@ -296,6 +297,7 @@ function UsersList() {
 
   return (
     <div>
+      <GuideLinks slugs={["shop-team-users"]} />
       {error && <Alert closable type="error" showIcon message={t("admin_users.load_error")} description={error.message} style={{ marginBottom: 12 }} />}
       <AdminPageHeader title={t("admin_users.title")}>
         <Input.Search

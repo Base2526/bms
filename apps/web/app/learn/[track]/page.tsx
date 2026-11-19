@@ -10,6 +10,7 @@ import s from "../learning.module.css";
 import StructuredData from "@/components/seo/StructuredData";
 import { localizedPublicPath } from "@/lib/publicSeo";
 import { breadcrumbJsonLd } from "@/lib/seoJsonLd";
+import { isDownloadablePosGuide, posGuideFile, POS_GUIDE_REVIEWED_AT } from "@/lib/learning/downloads";
 
 export function generateMetadata({ params }: { params: { track: string } }) {
   if (!isTrack(params.track)) return { robots: { index: false, follow: false } };
@@ -84,7 +85,9 @@ export default function TrackPage({ params, searchParams }: { params: { track: s
   const items = getTrackLessons(id, format);
   const lessonQuery = `track=${id}${format ? `&format=${format}` : ""}`;
   const categoryIcons = { setup: "◆", daily: "✓", growth: "✦", recovery: "▣" } as const;
-  const heroChecklist = id === "inventory"
+  const heroChecklist = id === "getting-started"
+    ? (th ? ["สมัครและเข้าใช้", "ตั้งร้านและทีม", "เชื่อมช่องทางและ POS", "ตรวจผลก่อนเปิดจริง"] : ["Sign up and sign in", "Set up shop and staff", "Connect channels and POS", "Verify before go-live"])
+    : id === "inventory"
     ? (th ? ["รับสินค้า", "โอนย้ายสาขา", "นับสต็อก", "ตัดสต็อก"] : ["Receive", "Transfer", "Count", "Deduct"])
     : id === "retail"
       ? (th ? ["สินค้า / บาร์โค้ด", "POS", "คืนสินค้า", "รายงาน"] : ["Products / barcodes", "POS", "Returns", "Reports"])
@@ -111,7 +114,12 @@ export default function TrackPage({ params, searchParams }: { params: { track: s
           <span className={s.eyebrow}>{items.length} {id === "building-materials" ? (th ? "บทเรียน · คู่มือทดลอง · ยังไม่พร้อมใช้ครบ" : "lessons · Pilot guide · Incomplete for rollout") : (th ? "บทเรียน · อ่านได้โดยไม่ต้องสมัคร" : "lessons · No signup needed")}</span>
           <h1>{track.icon} {th ? "คู่มือ" : "Guide:"} {localize(track.title, lang)}</h1>
           <p>{localize(track.description, lang)}</p>
-          <Link className={s.button} href={localizedPublicPath(`/learn/guides/${items[0].slug}?${lessonQuery}`, lang)}>{th ? "เริ่มจากบทแรก" : "Start the first lesson"} →</Link>
+          {isDownloadablePosGuide(id) && <div className={s.guideDownloadActions} aria-label={th ? "ดาวน์โหลดคู่มือภาษาไทย" : "Download Thai-language guide"}>
+            <a className={s.button} href={posGuideFile(id, "pdf")} download>{th ? "ดาวน์โหลด PDF" : "Download Thai PDF"} ↓</a>
+            <a className={s.secondary} href={posGuideFile(id, "docx")} download>{th ? "ดาวน์โหลด Word (.docx)" : "Download Thai Word (.docx)"} ↓</a>
+          </div>}
+          {isDownloadablePosGuide(id) && <p className={s.guideDownloadNote}>{id === "building-materials" ? (th ? "PILOT · ยังไม่พร้อมใช้ครบ · " : "PILOT · Incomplete for rollout · ") : ""}{th ? `ไฟล์ภาษาไทย · ทบทวน ${POS_GUIDE_REVIEWED_AT} · หน้าเว็บเป็นฉบับล่าสุด` : `Thai-language files · Reviewed ${POS_GUIDE_REVIEWED_AT} · This page has the latest guidance`}</p>}
+          <Link className={s.guideStartLink} href={localizedPublicPath(`/learn/guides/${items[0].slug}?${lessonQuery}`, lang)}>{th ? "เริ่มจากบทแรก" : "Start the first lesson"} →</Link>
         </div>
         {id === "inventory" ? <div className={s.inventoryHeroVisual} aria-hidden="true">
           <div className={s.inventoryHeroShelf}><span>▰</span><span>▰</span><span>▰</span></div>
@@ -139,14 +147,14 @@ export default function TrackPage({ params, searchParams }: { params: { track: s
         <p className={s.formatNotice}>{formatNotice(format, lang)}</p>
       </section>}
 
-      {id === "inventory" ? <InventoryGuideOverview lang={lang} /> : <BusinessGuideOverview track={id as BusinessTrackId} lang={lang} />}
+      {id === "inventory" ? <InventoryGuideOverview lang={lang} /> : id === "getting-started" ? <section className={s.callout}><h2>{th ? "เดินตามลำดับ แล้วตรวจผลจริง" : "Follow the path and verify real results"}</h2><p>{th ? "ทุกบทอ่านได้โดยไม่ต้องล็อกอิน การตั้งค่าร้านและข้อมูลจริงยังต้องใช้บัญชีและสิทธิ์ของร้าน ใช้ร้านทดสอบและข้อมูลสมมติเมื่อซ้อมงาน" : "Every lesson is public. Shop settings and live records still require an authorized account. Rehearse in a test shop with fictional data."}</p></section> : <BusinessGuideOverview track={id as BusinessTrackId} lang={lang} />}
 
-      {id !== "inventory" && <section className={`${s.callout} ${s.businessInventoryCallout}`}><div><h2>{th ? "ต้องทำงานสต็อกแบบละเอียด?" : "Need the full inventory workflow?"}</h2><p>{th ? "งานรับเข้า โอน ตรวจนับ ยอดจอง ล็อต กักกัน ของเสีย และกระทบยอดอยู่ในคู่มือเฉพาะงาน" : "Receiving, transfers, counts, reservations, lots, quarantine, wastage and reconciliation live in the specialist guide."}</p></div><Link href={localizedPublicPath("/learn/inventory", lang)}>{th ? "เปิดคู่มือสต็อกและคลังสินค้า →" : "Open inventory & warehouse guide →"}</Link></section>}
+      {id !== "inventory" && id !== "getting-started" && <section className={`${s.callout} ${s.businessInventoryCallout}`}><div><h2>{th ? "ต้องทำงานสต็อกแบบละเอียด?" : "Need the full inventory workflow?"}</h2><p>{th ? "งานรับเข้า โอน ตรวจนับ ยอดจอง ล็อต กักกัน ของเสีย และกระทบยอดอยู่ในคู่มือเฉพาะงาน" : "Receiving, transfers, counts, reservations, lots, quarantine, wastage and reconciliation live in the specialist guide."}</p></div><Link href={localizedPublicPath("/learn/inventory", lang)}>{th ? "เปิดคู่มือสต็อกและคลังสินค้า →" : "Open inventory & warehouse guide →"}</Link></section>}
 
       <section className={s.inventoryLessonCatalog} aria-labelledby={`${id}-lessons-title`}>
         <div className={s.inventoryLessonCatalogHeading}><div><span aria-hidden="true">▣</span><h2 id={`${id}-lessons-title`}>{th ? "รายการบทเรียนทั้งหมด" : "All lessons"}</h2></div><strong>{items.length} {th ? "บทเรียน" : "lessons"}</strong></div>
         <div className={s.inventoryLessonGroups}>
-          {(Object.keys(categoryLabels) as (keyof typeof categoryLabels)[]).map((category) => {
+          {(id === "getting-started" ? ["setup", "recovery"] as const : Object.keys(categoryLabels) as (keyof typeof categoryLabels)[]).map((category) => {
             const categoryItems = items.filter((lesson) => lesson.category === category);
             if (!categoryItems.length) return null;
             return <section className={s.inventoryLessonGroup} data-category={category} key={category}>

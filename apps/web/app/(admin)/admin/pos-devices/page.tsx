@@ -19,6 +19,7 @@ import { useEffect, useRef, useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { canManageStaffRole } from "@/lib/bms/staffRoles";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import GuideLinks from "@/components/learning/GuideLinks";
 import { LocalExtraDeviceNotice } from "@/components/retail-local/LocalCommercial";
 import { buildPairingQr } from "@pos-core/pairingQr";
 import {
@@ -252,6 +253,7 @@ export default function PosDevicesPage() {
       <AdminPageHeader title={uiText("admin_ui.pos_devices_b3778")}>
         <Link href="/admin/pos-manual"><Button icon={<ReadOutlined />}>{uiText("admin_ui.cashier_manual_3e8eb")}</Button></Link>
       </AdminPageHeader>
+      <GuideLinks slugs={["pos-pin-readiness"]} />
 
       {canDevices && (
         <Card
