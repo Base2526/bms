@@ -10,6 +10,7 @@ import { getTenantId } from "@/lib/bms/tenant";
 import {
   getArAccountById,
   getArAccountByCustomer,
+  getArStatement,
   getArOutstanding,
   listArAccounts,
   listArInvoices,
@@ -70,6 +71,11 @@ export const bmsArResolvers = {
         accountId: a.accountId ?? null,
         limit: a.limit ?? 200,
       });
+    },
+
+    async bmsArStatement(_p: unknown, a: { accountId: string }, ctx: any) {
+      await requirePermission(ctx, "ar.view");
+      return getArStatement(getTenantId(ctx), a.accountId);
     },
 
     // ยอดลูกหนี้คงค้าง = สินทรัพย์ในงบดุล · ตัวเลขที่ส่งบัญชีก่อนปิดงบ

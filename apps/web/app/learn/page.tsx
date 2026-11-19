@@ -49,7 +49,7 @@ export default function LearnPage({ searchParams }: { searchParams: Params }) {
           <section><h2 className={s.sectionTitle}>{th ? "เริ่มจากร้านของคุณ" : "Start with your business"}</h2>
             <div className={s.grid}>{businessTrackIds.map((id) => <Link className={`${s.card} ${s.businessCard}`} href={localizedPublicPath(`/learn/${id}`, lang)} key={id}>
               <h3><span className={s.icon} aria-hidden="true">{tracks[id].icon}</span> {localize(tracks[id].title, lang)}</h3>
-              <p>{localize(tracks[id].description, lang)}</p><div className={s.businessMeta}><span className={s.tag}>{trackOrder[id].length} {th ? "บทเรียน · ตั้งค่าถึงเปิดจริง" : "lessons · Setup to launch"}</span><span className={s.arrow}>{th ? "เริ่มเรียน" : "Start learning"} →</span></div>
+              <p>{localize(tracks[id].description, lang)}</p><div className={s.businessMeta}><span className={s.tag}>{trackOrder[id].length} {id === "building-materials" ? (th ? "บทเรียน · คู่มือทดลอง ยังไม่พร้อมเปิดใช้ครบ" : "lessons · Pilot guide, incomplete for rollout") : (th ? "บทเรียน · ตั้งค่าถึงเปิดจริง" : "lessons · Setup to launch")}</span><span className={s.arrow}>{th ? "เริ่มเรียน" : "Start learning"} →</span></div>
             </Link>)}</div>
           </section>
           <section><h2 className={s.sectionTitle}>{th ? "คู่มือเฉพาะงาน" : "Specialist guides"}</h2>

@@ -28,6 +28,11 @@ export type Migration = {
 // bms_set_pharmacist_license — เรียกเฉพาะตอน Administrator บันทึกใบอนุญาต และ fail closed) เพราะไม่ใช่
 // สิ่งที่โค้ดอ้างแบบไม่มีเงื่อนไข · ถ้าเปิด flag ของ 10.110 ต้องตรวจตารางของไฟล์นั้นบนฐานเป้าหมายเอง
 export const MIGRATIONS: Migration[] = [
+  {file:'10.136__bms_weighted_kg_prices.sql',impact:'Every POS scan and order price check reads current weighted-kilogram rates; sales fail before this table exists',needs:[{kind:'table',name:'bms_weighted_kg_prices'}]},
+  {file:'10.134__bms_quote_order_fulfillment.sql',impact:'Every order insert and order status read now needs quote site and retail pickup snapshots, including ordinary sales',needs:[
+    {kind:'column',table:'bms_orders',name:'quote_site_address'},
+    {kind:'column',table:'bms_orders',name:'retail_fulfillment_type'},
+  ]},
   {file:'10.129__bms_pos_open_items.sql',impact:'POS receipt, return, tax and sales evidence reads require open-item tables even for ordinary bills',needs:[{kind:'table',name:'bms_order_open_items'},{kind:'table',name:'bms_pos_return_open_items'}]},
   {file:'10.116__bms_branch_price_windows.sql',impact:'Every branch price read checks scheduled price windows; catalog, scans and checkout fail until this table exists',needs:[{kind:'table',name:'bms_branch_price_windows'}]},
   {file:'10.113__bms_pickup_queue_experience.sql',impact:'Branch queue numbering/voice settings and idle customer-display promo slides require the experience columns before the settings, POS session and queue board can load',needs:[
@@ -49,6 +54,7 @@ export const MIGRATIONS: Migration[] = [
   // `10.100` เปลี่ยนแค่ FK, `10.101` แก้ข้อมูลแพ็กเกจ, `10.102` price_yearly ถูกอ่านผ่าน SELECT * พร้อม `?? 0`
   // (ไม่มีอะไรพังถ้าขาด) — สามไฟล์นี้จึงไม่อยู่ในลิสต์
   {file:'10.103__bms_purchase_landed_unit_cost.sql',impact:'Every purchase order create inserts and every receipt selects additional_unit_cost: creating or receiving a PO fails without the columns',needs:[{kind:'column',table:'bms_purchase_order_items',name:'additional_unit_cost'},{kind:'column',table:'bms_purchase_order_items',name:'additional_cost_note'}]},
+  {file:'10.137__bms_purchase_supplier_unit_snapshot.sql',impact:'Every purchase order create/receipt reads and writes the frozen supplier-unit conversion; deploy the columns before the service',needs:[...['supplier_unit_name','supplier_unit_qty_ordered','base_qty_per_supplier_unit','supplier_unit_evidence'].map(name=>({kind:'column' as const,table:'bms_purchase_order_items',name})),{kind:'constraint',table:'bms_purchase_order_items',name:'bms_po_supplier_unit_snapshot_check',contains:'supplier_unit_qty_ordered'}]},
   {file:'10.99__bms_branch_inventory_intelligence.sql',impact:'Action Center and purchasing intelligence read branch demand and branch policies on every load; retried PO creates use the idempotency table',needs:[{kind:'column',table:'bms_inventory_demand_events',name:'location_id'},...['bms_inventory_location_policies','bms_inventory_forecast_runs','bms_inventory_forecast_items','bms_purchase_order_idempotency'].map(name=>({kind:'table' as const,name}))]},
   {file:'10.107__bms_stock_transfer_lots.sql',impact:'Every stock transfer list and receipt reads lot rows: transfers (admin, mobile, branch requests) fail without the table',needs:[{kind:'table',name:'bms_stock_transfer_item_lots'}]},
   {file:'10.106__bms_retail_local_lead_erasure.sql',impact:'The Retail Local leads tab and lead updates read erased_at; PDPA erasure needs the function and frozen-lead trigger',needs:[{kind:'column',table:'bms_retail_local_leads',name:'erased_at'},{kind:'column',table:'bms_retail_local_leads',name:'erased_by'}]},

@@ -21,10 +21,11 @@ async function handlePOST(req: NextRequest, { params }: { params: { id: string }
   const poId = params.id?.trim();
   if (!poId) return NextResponse.json({ error: "po id required" }, { status: 400 });
 
-  const body = ((await req.json().catch(() => ({}))) ?? {}) as { items?: unknown; idempotencyKey?: unknown };
+  const body = ((await req.json().catch(() => ({}))) ?? {}) as { items?: unknown; idempotencyKey?: unknown; locationId?: unknown };
   const rawItems = Array.isArray(body.items) ? body.items : [];
   if (rawItems.some((r: any) => typeof r?.sku !== "string" || typeof r?.size !== "string"
     || typeof r?.qty !== "number"
+    || (r.supplierQty != null && typeof r.supplierQty !== "number")
     || (r.lotNo != null && typeof r.lotNo !== "string")
     || (r.expiryDate != null && typeof r.expiryDate !== "string"))) {
     return NextResponse.json({ status: "INVALID_INPUT" }, { status: 400 });
@@ -33,6 +34,7 @@ async function handlePOST(req: NextRequest, { params }: { params: { id: string }
     sku: String(r?.sku ?? "").trim(),
     size: String(r?.size ?? "").trim(),
     qty: Number(r?.qty),
+    ...(r?.supplierQty == null ? {} : { supplierQty: r.supplierQty }),
     lotNo: r?.lotNo == null ? null : String(r.lotNo).trim() || null,
     expiryDate: r?.expiryDate == null ? null : String(r.expiryDate).trim() || null,
   }));
@@ -42,15 +44,21 @@ async function handlePOST(req: NextRequest, { params }: { params: { id: string }
   }
 
   const key = typeof body.idempotencyKey === "string" ? body.idempotencyKey.trim() : "";
-  if (body.idempotencyKey != null && (key.length < 8 || key.length > 200)) {
+  if (key.length < 8 || key.length > 200) {
+    return NextResponse.json({ status: "INVALID_INPUT", reasonCode: "IDEMPOTENCY_REQUIRED" }, { status: 400 });
+  }
+  if (body.locationId != null && (typeof body.locationId !== "string"
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.locationId))) {
     return NextResponse.json({ status: "INVALID_INPUT" }, { status: 400 });
   }
   const result = await receivePurchaseOrder(auth.tenantId, poId, items, String(auth.adminId), auth.adminId,
-    { staffIdempotency: key ? { actorUserId: String(auth.adminId), key } : null });
+    { ...(body.locationId == null ? {} : { locationId: body.locationId as string }),
+      staffIdempotency: { actorUserId: String(auth.adminId), key } });
 
   const httpStatus =
     result.status === "RECEIVED" || result.status === "PARTIAL"
       ? 200
+      : result.status === "BRANCH_FORBIDDEN" ? 403
       : result.status === "PO_NOT_FOUND" || result.status === "LINE_NOT_FOUND" || result.status === "LOCATION_NOT_FOUND"
       ? 404
       : result.status === "INVALID_STATE" || result.status === "OVER_RECEIVE" || result.status === "IDEMPOTENCY_CONFLICT"

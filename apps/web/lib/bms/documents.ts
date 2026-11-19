@@ -29,10 +29,42 @@ export type BusinessDoc = {
   discount: number;
   couponCode: string | null;
   shippingFee: number | null;
-  total: number;
+  /** Unknown when a quotation's shipping charge cannot yet be calculated. */
+  total: number | null;
   paymentStatus?: string | null;
   note: string;
 };
+
+export type InvoiceDoc = BusinessDoc & { type: "INVOICE"; total: number };
+
+export type QuotationLineIssue = {
+  line: number;
+  sku: string;
+  size: string;
+  code: "INVALID_ITEM" | "PRODUCT_UNAVAILABLE" | "PRICE_UNAVAILABLE";
+};
+
+/** A rejected quotation has no usable partial document. */
+export class QuotationValidationError extends Error {
+  readonly issues: QuotationLineIssue[];
+
+  constructor(issues: QuotationLineIssue[]) {
+    const labels = {
+      INVALID_ITEM: "SKU/ตัวเลือก/จำนวนไม่ถูกต้อง",
+      PRODUCT_UNAVAILABLE: "ไม่พบสินค้าที่เปิดขายและตัวเลือกนี้",
+      PRICE_UNAVAILABLE: "ยังไม่มีราคาขายที่ใช้ได้",
+    };
+    super(issues.map((issue) =>
+      `รายการ ${issue.line} (${issue.sku || "ไม่ระบุ SKU"}/${issue.size || "ไม่ระบุตัวเลือก"}): ${labels[issue.code]}`
+    ).join("; "));
+    this.name = "QuotationValidationError";
+    this.issues = issues;
+  }
+}
+
+export function quotationTotal(subtotal: number, shippingFee: number | null): number | null {
+  return shippingFee === null ? null : Math.round((subtotal + shippingFee) * 100) / 100;
+}
 
 async function storeSummary(tenantId: string): Promise<StoreSummary> {
   const p = await getStoreProfile(tenantId);
@@ -42,7 +74,7 @@ async function storeSummary(tenantId: string): Promise<StoreSummary> {
 }
 
 /** ใบแจ้งหนี้/ใบเสร็จจากออร์เดอร์จริง (ใช้ราคา snapshot ณ ตอนสั่ง) */
-export async function generateInvoice(tenantId: string, orderId: string): Promise<BusinessDoc | null> {
+export async function generateInvoice(tenantId: string, orderId: string): Promise<InvoiceDoc | null> {
   const ord = await query<any>(
     `SELECT id, channel, customer_ref, status, total_amount, discount_amount, coupon_code, shipping_fee, created_at
        FROM bms_orders WHERE tenant_id = $1 AND id::text = $2`,
@@ -93,6 +125,9 @@ export async function generateQuotation(
   items: Array<{ sku: string; size: string; qty: number }>,
   customerRef?: string | null
 ): Promise<BusinessDoc> {
+  if (!Array.isArray(items) || items.length === 0 || items.length > 100) {
+    throw new QuotationValidationError([{ line: 0, sku: "", size: "", code: "INVALID_ITEM" }]);
+  }
   const candidates: Array<{
     sku: string;
     name: string;
@@ -100,27 +135,46 @@ export async function generateQuotation(
     qty: number;
     basePrice: number;
   }> = [];
-  for (const it of items) {
+  const issues: QuotationLineIssue[] = [];
+  for (const [index, it] of items.entries()) {
+    const sku = typeof it?.sku === "string" ? it.sku.trim() : "";
+    const size = typeof it?.size === "string" ? it.size.trim() : "";
+    if (!sku || !size || !Number.isSafeInteger(it?.qty) || it.qty < 1 || it.qty > 2_147_483_647) {
+      issues.push({ line: index + 1, sku, size, code: "INVALID_ITEM" });
+      continue;
+    }
     const p = await query<{ name: string }>(
       `SELECT p.name FROM bms_products p
         WHERE p.tenant_id = $1 AND p.sku = $2 AND p.active
           AND EXISTS (
-            SELECT 1 FROM bms_inventory i
-             WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku AND i.size = $3
+            SELECT 1 FROM bms_product_variants v
+             WHERE v.tenant_id = p.tenant_id AND v.product_sku = p.sku AND v.code = $3 AND v.active
+          )
+          AND EXISTS (
+            SELECT 1 FROM bms_product_sales_surfaces s
+             WHERE s.tenant_id = p.tenant_id AND s.product_sku = p.sku
+               AND s.surface = 'RETAIL_POS' AND s.enabled
           )`,
-      [tenantId, it.sku, it.size]
+      [tenantId, sku, size]
     );
-    if (p.rowCount === 0) continue; // ข้ามสินค้าที่ไม่พบ/ปิดขาย
-    const unitPrice = await getVariantBasePrice(tenantId, it.sku, it.size);
-    if (unitPrice == null) continue;
+    if (p.rowCount === 0) {
+      issues.push({ line: index + 1, sku, size, code: "PRODUCT_UNAVAILABLE" });
+      continue;
+    }
+    const unitPrice = await getVariantBasePrice(tenantId, sku, size);
+    if (unitPrice == null || !Number.isFinite(unitPrice) || unitPrice < 0) {
+      issues.push({ line: index + 1, sku, size, code: "PRICE_UNAVAILABLE" });
+      continue;
+    }
     candidates.push({
-      sku: it.sku,
+      sku,
       name: p.rows[0].name,
-      size: it.size,
+      size,
       qty: it.qty,
       basePrice: unitPrice,
     });
   }
+  if (issues.length) throw new QuotationValidationError(issues);
   const skus = Array.from(new Set(candidates.map((line) => line.sku)));
   const basePriceByVariant = new Map(
     candidates.map((line) => [`${line.sku}\u0000${line.size}`, line.basePrice])
@@ -142,7 +196,7 @@ export async function generateQuotation(
     items: lines.map((l) => ({ sku: l.sku, qty: l.qty })),
   });
   const shippingFee = est.fee;
-  const total = Math.round((subtotal + (shippingFee ?? 0)) * 100) / 100;
+  const total = quotationTotal(subtotal, shippingFee);
 
   return {
     type: "QUOTATION",
@@ -157,6 +211,8 @@ export async function generateQuotation(
     couponCode: null,
     shippingFee,
     total,
-    note: "ใบเสนอราคา (ยังไม่ผูกออร์เดอร์/ยังไม่จองสต็อก) ใช้ราคาปัจจุบันและราคาส่งตามจำนวน อาจเปลี่ยนได้",
+    note: shippingFee === null
+      ? "ใบประเมินราคา: ยังไม่ทราบค่าส่งและยอดรวม ห้ามใช้ยอดสินค้ารวมแทนยอดชำระ; ยังไม่ผูกออร์เดอร์หรือจองสต็อก"
+      : "ใบประเมินราคา (ยังไม่ผูกออร์เดอร์/ยังไม่จองสต็อก) ใช้ราคาปัจจุบันและราคาส่งตามจำนวน อาจเปลี่ยนได้",
   };
 }

@@ -10,6 +10,7 @@ export type PendingPurchaseReceipt = {
     sku: string;
     size: string;
     qty: number;
+    supplierQty?: number;
     lotNo: string | null;
     expiryDate: string | null;
   }>;
@@ -42,6 +43,8 @@ function parse(value: unknown): PendingPurchaseReceipt {
         !Number.isInteger(i.qty) ||
         i.qty <= 0 ||
         i.qty > 2147483647 ||
+        (i.supplierQty !== undefined &&
+          (!Number.isInteger(i.supplierQty) || i.supplierQty <= 0)) ||
         (i.lotNo !== null && typeof i.lotNo !== 'string') ||
         (i.expiryDate !== null && typeof i.expiryDate !== 'string'),
     )
@@ -59,6 +62,7 @@ function parse(value: unknown): PendingPurchaseReceipt {
       sku: i.sku,
       size: i.size,
       qty: i.qty,
+      ...(i.supplierQty === undefined ? {} : { supplierQty: i.supplierQty }),
       lotNo: i.lotNo,
       expiryDate: i.expiryDate,
     })),

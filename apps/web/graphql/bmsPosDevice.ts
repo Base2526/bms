@@ -261,6 +261,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     sku: String!
     size: String!
     qty: Int!
+    supplierQty: Int
     lotNo: String
     expiryDate: String
   }
@@ -4945,6 +4946,7 @@ export const bmsPosDeviceResolvers = {
         sku: typeof raw?.sku === "string" ? raw.sku.trim() : "",
         size: typeof raw?.size === "string" ? raw.size.trim() : "",
         qty: Number(raw?.qty),
+        ...(raw?.supplierQty == null ? {} : { supplierQty: raw.supplierQty }),
         lotNo: typeof raw?.lotNo === "string" ? raw.lotNo.trim() || null : null,
         expiryDate:
           typeof raw?.expiryDate === "string" && isIsoDate(raw.expiryDate)
@@ -4960,6 +4962,7 @@ export const bmsPosDeviceResolvers = {
             item.size.length > 100 ||
             !Number.isInteger(item.qty) ||
             item.qty <= 0 ||
+            (item.supplierQty != null && (!Number.isInteger(item.supplierQty) || item.supplierQty <= 0)) ||
             (item.expiryDate != null && !item.lotNo),
         )
       ) {
@@ -4988,6 +4991,7 @@ export const bmsPosDeviceResolvers = {
       const messages: Record<string, string> = {
         PO_NOT_FOUND: "ไม่พบใบสั่งซื้อ กรุณาโหลดรายการใหม่",
         LOCATION_NOT_FOUND: "ไม่พบสาขาที่รับสินค้า",
+        BRANCH_FORBIDDEN: "ไม่มีสิทธิ์รับสินค้าเข้าสาขานี้",
         INVALID_INPUT: "ตรวจจำนวนรับ เลขล็อต และวันหมดอายุอีกครั้ง",
         INVALID_STATE: "ใบสั่งซื้อนี้รับสินค้าเพิ่มไม่ได้แล้ว กรุณาโหลดรายการใหม่",
         LINE_NOT_FOUND: "ไม่พบสินค้ารายการนี้ในใบสั่งซื้อ",

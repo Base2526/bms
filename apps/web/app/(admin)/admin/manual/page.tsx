@@ -53,12 +53,15 @@ const ROUTES = {
   inbox: "/admin/inbox",
   mentions: "/admin/inbox/mentions",
   products: "/admin/products",
+  productSpecs: "/admin/product-specs",
+  weightedPrices: "/admin/weighted-prices",
   productPacks: "/admin/product-packs",
   productLabels: "/admin/product-labels",
   purchase: "/admin/purchase",
   fishIntake: "/admin/fish-intake",
   fishOwner: "/admin/fish-owner",
   orders: "/admin/orders",
+  quotations: "/admin/quotations",
   payment: "/admin/payment",
   shipment: "/admin/shipment",
   coupons: "/admin/coupons",
@@ -177,6 +180,7 @@ const ARCHETYPE_KEYS = [
   "gadgets_accessories",
   "b2b_wholesale",
   "gifts_seasonal",
+  "building_materials",
   "other",
 ];
 
@@ -440,6 +444,15 @@ const ARCHETYPE_EXAMPLES_TH: ArchetypeExample[] = [
       "ได้ค่ะ เดี๋ยวช่วยคัดสินค้าที่เหมาะกับงบและโอกาสให้ก่อน แล้วค่อยแนะนำชุดที่พร้อมขายจริง พร้อมเช็กสต็อก ค่าจัดส่ง และคูปองที่ใช้ได้ ถ้าของชุดฮิตหมด ระบบควรชวนเข้าคิวรอของเข้า",
     backendFlow: "discover ตาม budget/occasion -> bundle + coupon -> เช็ก stock -> order/payment/shipping หรือ restock",
     whyItFits: "ใช้โชว์ความสามารถ AI ในการคัดสินค้าเชิงบริบทและใช้คูปอง/seasonality ช่วยปิดการขาย",
+  },
+  {
+    label: "Building Materials",
+    focus: "ลูกค้าถามสเปก หน่วยถุง/พาเลท ราคาโครงการ และค่าส่งหน้างาน",
+    customerAsk: "ปูน 50 กก. หนึ่งพาเลทมีเท่าไร ส่งเข้าหน้างานได้ไหม",
+    aiReply:
+      "ขอเช็กแพ็กที่ร้านเผยแพร่ สต็อก และข้อมูลหน้างานก่อนค่ะ ถ้าค่าส่งยังไม่ทราบ จะให้พนักงานสรุปใบเสนอราคาโดยไม่ยืนยันยอดรวมล่วงหน้า",
+    backendFlow: "เช็ก SKU/pack/สต็อกที่เผยแพร่ -> พนักงานทำใบเสนอราคา -> อนุมัติ/รับคำตอบ -> แปลงออร์เดอร์และตรวจสต็อกซ้ำ",
+    whyItFits: "ต้องยืนยันหน่วยและสเปกจากข้อมูลจริง งานตัดม้วน/ส่งหลายเที่ยวยังไม่รองรับครบ",
   },
   {
     label: "Other",
@@ -807,6 +820,7 @@ const SIDEBAR_MAP_GROUPS_TH: SidebarMapGroup[] = [
     items: [
       { label: "งานปฏิบัติการและคุณภาพ", href: ROUTES.operations, note: "ต้นแบบ Checklist งานตามเวลา หลักฐานการตรวจ และงานแก้ไขแยกสาขา" },
       { label: "Orders", href: ROUTES.orders, note: "ติดตามออเดอร์ตั้งแต่ PENDING จนถึงปิดงาน" },
+      { label: "ใบเสนอราคา", href: ROUTES.quotations, note: "สร้างร่างแบบไม่จองสต็อก ให้ผู้มีสิทธิ์อีกคนอนุมัติ บันทึกว่าส่งและลูกค้ายอมรับ แล้วแปลงเป็นออร์เดอร์โดยตรวจสต็อกซ้ำ; ราคาทุกรายการรวม VAT ค่าส่งต้องทราบ และงานส่งต้องมีที่อยู่หน้างานก่อนอนุมัติ; งานรับที่สาขายืนยันส่งมอบแยกจากร้านอาหาร" },
       { label: "Shipping", href: ROUTES.shipment, note: "สร้าง shipment, ใส่ tracking, sync carrier และปิดงาน" },
       { label: "ภาพรวมกะ POS", href: ROUTES.posShifts, note: "กะที่เปิด/ปิด ยอดขายต่อกะ เงินในลิ้นชัก และส่วนต่างตอนนับ" },
       { label: "กระดานครัว", href: ROUTES.kitchen, note: "ตั๋วครัวรวมตามโต๊ะ/รอบ/สถานี พร้อมเกณฑ์เวลาต่อสถานี" },
@@ -820,6 +834,8 @@ const SIDEBAR_MAP_GROUPS_TH: SidebarMapGroup[] = [
     title: "สินค้าและสต็อก",
     items: [
       { label: "Products", href: ROUTES.products, note: "เพิ่มสินค้า, ราคา, stock, รูป, import, และข้อมูลพร้อมขาย" },
+      { label: "สเปกสินค้า", href: ROUTES.productSpecs, note: "บันทึกขนาด น้ำหนัก เกรด มาตรฐานและข้อจำกัดจากเอกสารต้นทาง ให้พนักงานอีกคนอนุมัติก่อนเผยแพร่ให้ AI ลูกค้า" },
+      { label: "ราคาสินค้าชั่ง", href: ROUTES.weightedPrices, note: "ตั้งราคารวม VAT ต่อกิโลกรัมบนสินค้าที่นับสต็อกเป็นกรัมและใช้ฉลากเครื่องชั่ง prefix 22 ยอดบิลคำนวณจากกรัมที่ server ตรวจซ้ำ" },
       { label: "รูปแบบสต็อก", href: ROUTES.stockModels, note: "ตั้งว่าสินค้าถูกตัดออกจากชั้นแบบไหน (ตรง/สูตร/ชั่ง/ไม่คุมสต็อก) และความสามารถของร้าน" },
       { label: "Product packs", href: ROUTES.productPacks, note: "เพิ่มหน่วยขาย/บาร์โค้ดเสริม เช่น pack หรือหลายชิ้นต่อหน่วย" },
       { label: "Product labels", href: ROUTES.productLabels, note: "พิมพ์สติกเกอร์บาร์โค้ดจากสินค้าและ pack ที่ตั้งไว้แล้ว" },
@@ -848,7 +864,7 @@ const SIDEBAR_MAP_GROUPS_TH: SidebarMapGroup[] = [
     title: "การเงินและรายงาน",
     items: [
       { label: "Payment", href: ROUTES.payment, note: "ตรวจสลิป, confirm/reject และ refund ตามสิทธิ์" },
-      { label: "ลูกหนี้การค้า", href: ROUTES.receivables, note: "ยอดค้างต่อลูกค้า อายุหนี้ และการรับชำระที่เคาน์เตอร์" },
+      { label: "ลูกหนี้การค้า", href: ROUTES.receivables, note: "ยอดค้างต่อลูกค้า อายุหนี้ ใบแจ้งยอดจาก ledger และการรับชำระที่เคาน์เตอร์; ใบแจ้งยอดเป็นตัวอย่างภายใน ไม่ส่งลูกค้า" },
       { label: "ภาษีขาย", href: ROUTES.taxDocuments, note: "ใบกำกับภาษีรายเดือน รายงานภาษีขายประกอบ ภ.พ.30 และรายการที่ต้องตรวจก่อนส่งนักบัญชี — เลือกทุกสถานประกอบการจะเพิ่มช่องสำนักงานใหญ่/สาขาของร้านเราในฐานะผู้ขายในหน้าพิมพ์และไฟล์ส่งออก แยกจากสาขาลูกค้า โดยยังแยกหน้า/ชีตและยอดรวมรายสาขา; เลือกสาขาเดียวใช้รูปแบบเดิม" },
       { label: "รายจ่ายและภาษีซื้อ", href: ROUTES.expenses, note: "บันทึกหลักฐานรายจ่าย ภาษีซื้อ และหัก ณ ที่จ่าย โดยยกเลิกเป็นประวัติแทนการลบ — เลือกทุกสถานประกอบการจะเพิ่มช่องสำนักงานใหญ่/สาขาของร้านเราในฐานะผู้ซื้อในหน้าพิมพ์และไฟล์ส่งออก แยกจากสาขาซัพพลายเออร์ โดยยังแยกหน้า/ชีตและยอดรวมรายสาขา; เลือกสาขาเดียวใช้รูปแบบเดิม" },
       { label: "กระทบยอดธนาคาร", href: ROUTES.bankReconciliation, note: "นำเข้า CSV/Excel แบบ private ตรวจคำแนะนำ แล้วให้ผู้มีสิทธิ์ยืนยันการจับคู่เอง ระบบไม่แก้ยอดขาย รายจ่าย ภาษี หรือลูกหนี้ และปิดเดือนได้เมื่อไม่มีรายการค้าง" },
@@ -1773,6 +1789,15 @@ const ARCHETYPE_EXAMPLES_EN: ArchetypeExample[] = [
       "Good for showing off contextual product curation, with coupons and seasonality helping to close the sale.",
   },
   {
+    label: "Building Materials",
+    focus: "Customers ask about specifications, bag and pallet units, project prices and site freight.",
+    customerAsk: "How many 50 kg cement bags are in a pallet, and can you deliver to our site?",
+    aiReply:
+      "Let me check the shop's published pack, stock and site details. If freight is still unknown, staff can prepare a quotation without presenting an unconfirmed total.",
+    backendFlow: "check published SKU/pack/stock -> staff quotation -> approval and acceptance -> convert to an order with a fresh stock check",
+    whyItFits: "Units and specs need verified facts. Roll cutting and multi-trip delivery remain incomplete.",
+  },
+  {
     label: "Other",
     focus: "Use this when the shop does not clearly fit one category yet, or mixes several models",
     customerAsk: "What does this shop sell? And how do I order?",
@@ -2148,6 +2173,7 @@ const SIDEBAR_MAP_GROUPS_EN: SidebarMapGroup[] = [
     items: [
       { label: "Operations & Quality", href: ROUTES.operations, note: "Branch checklist templates, scheduled work, evidence and corrective actions" },
       { label: "Orders", href: ROUTES.orders, note: "Track orders from PENDING through completion" },
+      { label: "Quotations", href: ROUTES.quotations, note: "Draft without reserving stock, get approval from a second staff member, record sending and acceptance, then convert with a fresh stock check; prices include VAT, freight must be known, and delivery needs a site address before approval; branch pickup uses a separate handover" },
       { label: "Shipping", href: ROUTES.shipment, note: "Create shipments, save tracking, sync carriers, and close delivery work" },
       { label: "POS shift overview", href: ROUTES.posShifts, note: "Open and closed shifts, sales per shift, drawer cash and counting variance" },
       { label: "Kitchen Board", href: ROUTES.kitchen, note: "Kitchen tickets grouped by table, round and station with per-station timings" },
@@ -2161,6 +2187,8 @@ const SIDEBAR_MAP_GROUPS_EN: SidebarMapGroup[] = [
     title: "Products & stock",
     items: [
       { label: "Products", href: ROUTES.products, note: "Products, price, stock, images, import, and sellable catalog data" },
+      { label: "Product specifications", href: ROUTES.productSpecs, note: "Record dimensions, weight, grade, standards and use limits from a source document; a second staff member approves before customer AI can use them" },
+      { label: "Weighed prices", href: ROUTES.weightedPrices, note: "Publish a VAT-inclusive price per kilogram for gram-counted products using prefix-22 scale labels. The server rechecks the label at settlement." },
       { label: "Stock Models", href: ROUTES.stockModels, note: "How each product leaves the shelf (direct, recipe, weighed, non-stock) plus shop capabilities" },
       { label: "Product packs", href: ROUTES.productPacks, note: "Extra selling units and alternate barcodes such as packs" },
       { label: "Product labels", href: ROUTES.productLabels, note: "Barcode sticker printing from product and pack data already configured" },
@@ -2189,7 +2217,7 @@ const SIDEBAR_MAP_GROUPS_EN: SidebarMapGroup[] = [
     title: "Finance & reports",
     items: [
       { label: "Payment", href: ROUTES.payment, note: "Review slips, confirm/reject payments, and handle refunds when allowed" },
-      { label: "Receivables", href: ROUTES.receivables, note: "Outstanding balance per customer, ageing, and counter collections" },
+      { label: "Receivables", href: ROUTES.receivables, note: "Customer balances, ageing, an internal ledger-backed statement, and counter collections. The statement sends nothing to the customer." },
       { label: "Sales tax", href: ROUTES.taxDocuments, note: "Monthly tax invoices, the sales tax report for PP.30, and checks before sending to the accountant. All establishments adds our shop's seller head-office/branch columns to print and exports, separately from the customer's branch. Pages/sheets and totals remain per establishment; selecting one branch keeps the compact form." },
       { label: "Expenses & input VAT", href: ROUTES.expenses, note: "Record expense evidence, input VAT and withholding tax; voiding preserves history. All establishments adds our shop's buyer head-office/branch columns to print and exports, separately from the supplier's branch. Pages/sheets and totals remain per establishment; selecting one branch keeps the compact form." },
       { label: "Bank reconciliation", href: ROUTES.bankReconciliation, note: "Import private CSV/Excel statements, review deterministic suggestions, and require an authorized person to confirm every link. It never changes sales, expenses, tax, or receivables; month close requires no unresolved entries." },
@@ -3319,6 +3347,14 @@ export default function Page() {
 
   return (
     <div className={styles.page}>
+      <Alert
+        type="warning"
+        showIcon
+        closable
+        message={<Link href="/admin/manual/building-materials">{lang === "en" ? "Building materials operator guide (pilot)" : "คู่มือร้านวัสดุก่อสร้างสำหรับพนักงาน (pilot)"}</Link>}
+        description={lang === "en" ? "Cement packs, sourced specs, project quotations, weighed labels and contractor credit, with current limits." : "แพ็กปูน สเปกที่มีแหล่งอ้างอิง ใบเสนอราคา ฉลากชั่ง และขายเชื่อ พร้อมข้อจำกัดปัจจุบัน"}
+        style={{ marginBottom: 16 }}
+      />
       <Alert
         type="info"
         showIcon

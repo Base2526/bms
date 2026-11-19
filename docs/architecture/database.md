@@ -2446,6 +2446,26 @@ reallocating prior receipts. Existing received stock and historical value entrie
 backfilled. The PO UI and GraphQL reader expose base, additional and landed unit costs plus the
 allocation evidence separately.
 
+### 10.137 — supplier package snapshot on purchase orders
+
+`bms_purchase_order_items` adds nullable `supplier_unit_name`,
+`supplier_unit_qty_ordered`, `base_qty_per_supplier_unit` and
+`supplier_unit_evidence`. All four are null for legacy/base-unit lines. A check constraint requires
+a complete sourced package snapshot and enforces `supplier_unit_qty_ordered ×
+base_qty_per_supplier_unit = qty_ordered`. Existing tenant RLS and `bms_app` grants apply to the
+columns. The PO creation service validates this before writing, freezes the values with the line,
+and includes them in the request fingerprint only when a conversion is supplied so legacy retries
+retain their old hash. Converted lines require an explicit base-unit cost and a stable create key.
+Receipts of converted lines require a stable staff/device retry key and supply integer supplier package count and base
+quantity; the service checks the frozen factor under the PO/line locks before stock, lot and
+`STOCK_IN` movement commit. Staff and POS receipt idempotency hashes include the package count;
+GraphQL POS, REST POS and Admin adapters forward it without trusting their own quantity preview.
+Staff receipt transactions lock the actor's allowed-location rows and return `BRANCH_FORBIDDEN`
+before stock changes when the default receiving branch is outside that scope. POS keeps the
+device-derived branch. Admin branch selection is not yet available for a differently scoped user.
+The quantity and cost ledger still use integer base units and per-base-unit cost. Supplier invoice,
+AP and fractional cost allocation are separate, unimplemented contracts.
+
 ## Restaurant pickup checkout audit (2026-10-22; no schema change)
 
 Existing `bms_orders.fulfillment_type = 'PICKUP'` (9.56) waives the shipping-address
@@ -2560,3 +2580,42 @@ other customers/branches, unrelated SKU/size and over-committed grams. The ordin
 shipment, payment and AR tables remain authoritative. New rows have composite tenant foreign
 keys, forced tenant RLS and `bms_app` grants. Both creation and linking audit in the same tenant
 transaction. The sidecar has no implicit stock or money mutation.
+
+## Project quotations (`10.133`)
+
+`bms_sales_quotations` stores one immutable revision per row with `(tenant_id, quote_no,
+revision_no)` uniqueness, a root id, request-key/hash retry guard, branch/customer identity,
+human state transitions, VAT-inclusive money totals and a VAT settings snapshot. The current
+revision is unique per tenant/root; old revisions are `SUPERSEDED`. `bms_sales_quotation_lines`
+stores each exact SKU, variant, selling-pack quantity, integer base quantity, price and VAT
+category. Composite tenant FKs, forced tenant RLS and `bms_app` grants protect both tables.
+The additional `users.is_platform_admin` column-level read grant supports branch validation
+inside `beginTenantTx()` without exposing password columns. Approval, revision and conversion
+audit in their own transaction. `CONVERTED` links to a real order, whose ordinary stock,
+payment and tax rows remain authoritative; quotations never move or reserve stock.
+
+`10.134` adds `bms_orders.quote_site_address` and `retail_fulfillment_type` as conversion
+snapshots. The retail field is separate from restaurant `fulfillment_type`, so packing a
+retail order does not enqueue kitchen work. Delivery uses the stored site rather than a CRM
+default; pickup stock handover requires a separate confirmed operation. The schema does not
+yet represent line-level dispatch or a structured carrier destination for project sites.
+
+## Exact weighted-kilogram rates (`10.136`)
+
+`10.136` adds `bms_weighted_kg_prices`: one current revision per tenant/SKU/variant,
+with an integer satang rate per 1,000-gram basis, request key/hash, publisher and timestamp.
+A partial unique index selects the current revision. Tenant RLS and `bms_app` grants protect
+reads/writes. Publication locks the product, retires the prior current row, inserts a revision
+and audits in one tenant transaction. Orders snapshot the rate and revalidated prefix-22 labels
+in `bms_order_items.pricing_snapshot`; monetary authority stays `line_amount`. Retail-scale pilot
+only; it does not define a cut-length or web price contract.
+
+## Sourced product technical facts (`10.135`)
+
+`bms_product_technical_specs` has a tenant/variant/revision primary key, composite variant FK,
+forced RLS and `bms_app` grants. A draft and a published revision may coexist; unique partial
+indexes permit one of each per variant. New drafts do not withdraw an older published fact.
+Publication moves the previous published row to `SUPERSEDED` and marks the reviewed draft
+`PUBLISHED` in one tenant transaction with audit. Request key/hash makes staging retry-safe.
+Customer tools project only published facts and omit the source reference; drafts and previous
+revisions remain staff evidence, not customer claims.

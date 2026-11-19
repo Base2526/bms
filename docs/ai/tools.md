@@ -143,7 +143,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `present_customer_choices` | A1/presentation | yes | — | bounded question/options, no business mutation or confirmation authority |
 | `search_staff_users`, `get_staff_user_access` | A1/access | no | `user.view` | bounded current-tenant staff lookup / effective access; excludes platform identities and sensitive account fields |
 | `get_loyalty_program_status` | A1/config | no | `member.view` | tenant loyalty enablement and verified earning/redemption settings, including the before/after-discount earning base; not a customer balance |
-| `search_products`, `browse_catalog`, `list_new_arrivals`, `find_alternatives`, `get_product`, `check_stock`, `list_menu_modifiers`, `recommend_products` | A1 | yes | `product.view` | read |
+| `search_products`, `browse_catalog`, `list_new_arrivals`, `find_alternatives`, `get_product`, `search_product_specs`, `check_stock`, `list_menu_modifiers`, `recommend_products` | A1 | yes | `product.view` | read; technical specs are published sourced facts only |
 | `get_variant_reservations` | A1 | no | `order.view` | bounded tenant-scoped reconstruction of orders holding one SKU/size, including bundle sources and unattributed/over-attributed totals |
 | `list_customer_coupons`, `list_available_coupons`, `check_coupon` | A1 | yes | `coupon.view` | read / backend validation |
 | `get_loyalty_points` | A1 | own `(channel, customer_ref)` only | `member.view` | read; never redeems |
@@ -163,7 +163,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `list_shipments`, `get_shipment_label` | A1 | no | `shipping.view` | read |
 | `list_payments` | A1 | no | `payment.view` | read |
 | `list_purchase_orders`, `get_purchase_order`, `list_suppliers`, `get_supplier_intelligence` | A1 | no | `purchase.view` | bounded evidence-backed read; supplier metrics do not invent an SLA |
-| `generate_invoice`, `generate_quotation` | A1 | no | `order.view` | ephemeral document data |
+| `generate_invoice`, `generate_quotation` | A1 | no | `order.view` | ephemeral document data; quotation rejects all lines if any requested item is unavailable or unpriced, and its total is null when shipping is unknown |
 | `get_inventory_intelligence`, `explain_inventory_risk`, `get_inventory_anomalies`, `find_inventory_transfer_opportunities`, `get_inventory_forecast_accuracy`, `forecast_demand`, `predict_stockout`, `suggest_purchase_order` | A1 | no | `report.view` | branch-aware deterministic/heuristic reads; never move stock |
 | `get_branch_requisitions` | A1 | no | `inventory.requisition.view` (+`inventory.requisition.review` for DEMAND/METRICS; purchases only with `purchase.view`) | branch-scoped request list, consolidated demand and fulfilment metrics; never creates, approves or transfers |
 | `get_production_batches` | A1 | no | `operations.checklist.view` (+`product.view`) | branch-scoped central-kitchen batches (planned/actual yield, status, expiry); never creates, posts or disposes |
@@ -1440,6 +1440,9 @@ Unallocated result lists expose their own truncation flags; a partial list never
 - `search_products(keyword?, category?, maxPrice?)` — ค้น active catalog จากชื่อ/SKU/barcode/alias/
   หมวด/แบรนด์ คืนราคา สต็อกรวม ไซซ์ที่มี วันที่เพิ่ม และ public product path/URL
 - `get_product(sku)` — อ่านรายละเอียด/ราคา/สต็อกทุกไซซ์ของ SKU พร้อม public path/URL ที่ส่งให้
+  ลูกค้า; `technicalFactsStatus` แยกข้อเท็จจริงที่เผยแพร่แล้วออกจากข้อมูลที่ยังไม่พร้อม
+- `search_product_specs(keyword)` — ค้นเฉพาะสเปกตามรุ่นที่พนักงานอีกคนอนุมัติพร้อมแหล่งอ้างอิง
+  ห้ามตีความว่าเป็นการรับรองความปลอดภัยโครงสร้าง/ไฟฟ้าหรือความเข้ากันได้ของวัสดุ
   ลูกค้าได้; ห้ามประกอบ URL หรือส่ง `/admin/*` เอง
 - `browse_catalog(keyword?, category?, minPrice?, maxPrice?, limit?)` — สำหรับคำถามกว้าง คืนเฉพาะ
   สินค้าที่มีของขายจริงแบบ bounded; pipeline ใช้ทูลนี้โดยตรงเมื่อมี follow-up ว่า

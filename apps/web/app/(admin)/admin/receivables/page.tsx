@@ -19,6 +19,7 @@ import {
 } from "antd";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { useI18n } from "@/lib/i18nContext";
 
 const { Text } = Typography;
 
@@ -49,6 +50,17 @@ const Q_INVOICES = gql`
     bmsArInvoices(accountId: $accountId, openOnly: true, overdueOnly: $overdueOnly) {
       id accountId orderId customerName amount settledAmount creditedAmount
       outstanding status issuedAt dueAt docNo overdue daysPastDue
+    }
+  }
+`;
+
+const Q_STATEMENT = gql`
+  query ArStatement($accountId: ID!) {
+    bmsArStatement(accountId: $accountId) {
+      accountId customerName asOf ledgerBalance cachedBalance grossOutstanding
+      creditBalance overdueAmount balanceMismatch hasMoreInvoices hasMoreEntries
+      invoices { id orderId docNo issuedAt dueAt originalAmount payments credits balance overdue }
+      entries { id invoiceId kind amount createdAt receiptId orderId }
     }
   }
 `;
@@ -128,6 +140,7 @@ const STATUS_LABEL = (uiText: UiTranslator = thaiUiText): Record<Account["status
 
 export default function ReceivablesPage() {
   const uiText = useUiText();
+  const { t } = useI18n();
   const { can, loading: permLoading } = useBmsPermissions();
   const [search, setSearch] = useState("");
   const [withBalanceOnly, setWithBalanceOnly] = useState(false);
@@ -136,6 +149,7 @@ export default function ReceivablesPage() {
 
   const [accountModal, setAccountModal] = useState<Account | "new" | null>(null);
   const [receiptFor, setReceiptFor] = useState<Account | null>(null);
+  const [statementFor, setStatementFor] = useState<Account | null>(null);
 
   const outstanding = useQuery(Q_OUTSTANDING, { fetchPolicy: "cache-and-network" });
   const accounts = useQuery(Q_ACCOUNTS, {
@@ -145,6 +159,11 @@ export default function ReceivablesPage() {
   const invoices = useQuery(Q_INVOICES, {
     variables: { accountId: selected?.id ?? null, overdueOnly },
     fetchPolicy: "cache-and-network",
+  });
+  const statement = useQuery(Q_STATEMENT, {
+    variables: { accountId: statementFor?.id ?? "" },
+    skip: statementFor == null,
+    fetchPolicy: "network-only",
   });
 
   const refetchAll = () => {
@@ -174,6 +193,8 @@ export default function ReceivablesPage() {
   const aging = summary?.aging;
   const accountRows: Account[] = accounts.data?.bmsArAccounts ?? [];
   const invoiceRows: Invoice[] = invoices.data?.bmsArInvoices ?? [];
+  const visibleStatement = statement.data?.bmsArStatement?.accountId === statementFor?.id
+    ? statement.data.bmsArStatement : null;
 
   const agingCells = useMemo(
     () => [
@@ -353,6 +374,9 @@ export default function ReceivablesPage() {
               width: 200,
               render: (_v, row) => (
                 <Space size={4} onClick={(e) => e.stopPropagation()}>
+                  <Button size="small" onClick={() => setStatementFor(row)}>
+                    {t("admin_ar_statement.open")}
+                  </Button>
                   {can("ar.collect") && row.balance > 0 && (
                     <Button size="small" type="primary" ghost onClick={() => setReceiptFor(row)}>
                       {uiText("admin_ui.receive_payment_c383e")}</Button>
@@ -491,6 +515,60 @@ export default function ReceivablesPage() {
         onCancel={() => setReceiptFor(null)}
         onSubmit={(values) => recordReceipt({ variables: values })}
       />
+
+      <Modal open={statementFor != null} onCancel={() => setStatementFor(null)} footer={null}
+        width={1050} title={t("admin_ar_statement.title", { customer: statementFor?.customerName ?? "" })}>
+        {statement.loading && <Typography.Text>{t("admin_ar_statement.loading")}</Typography.Text>}
+        {statement.error && <Alert closable type="error" showIcon message={statement.error.message} />}
+        {!statement.loading && !statement.error && statement.data && !visibleStatement &&
+          <Alert closable type="warning" showIcon message={t("admin_ar_statement.not_found")}/>}
+        {visibleStatement && (() => {
+          const s = visibleStatement as {
+            asOf:string;ledgerBalance:number;cachedBalance:number;grossOutstanding:number;
+            creditBalance:number;overdueAmount:number;balanceMismatch:boolean;
+            hasMoreInvoices:boolean;hasMoreEntries:boolean;
+            invoices:Array<{id:string;docNo:string|null;orderId:string;issuedAt:string;dueAt:string;
+              originalAmount:number;payments:number;credits:number;balance:number;overdue:boolean}>;
+            entries:Array<{id:string;kind:string;amount:number;createdAt:string;invoiceId:string;receiptId:string|null}>;
+          };
+          return <Space direction="vertical" style={{width:"100%"}} size="middle">
+            <Typography.Text type="secondary">{t("admin_ar_statement.as_of", {time:new Date(s.asOf).toLocaleString(uiText.locale)})}</Typography.Text>
+            {s.balanceMismatch && <Alert closable type="error" showIcon message={t("admin_ar_statement.mismatch")}/>}
+            <Row gutter={[8,8]}>
+              <Col xs={12} md={6}><Statistic title={t("admin_ar_statement.net_balance")} value={s.ledgerBalance} precision={2} prefix="฿"/></Col>
+              <Col xs={12} md={6}><Statistic title={t("admin_ar_statement.gross_due")} value={s.grossOutstanding} precision={2} prefix="฿"/></Col>
+              <Col xs={12} md={6}><Statistic title={t("admin_ar_statement.credit_balance")} value={s.creditBalance} precision={2} prefix="฿"/></Col>
+              <Col xs={12} md={6}><Statistic title={t("admin_ar_statement.overdue")} value={s.overdueAmount} precision={2} prefix="฿"/></Col>
+            </Row>
+            <Typography.Title level={5}>{t("admin_ar_statement.open_invoices")}</Typography.Title>
+            <Table rowKey="id" size="small" dataSource={s.invoices} pagination={{pageSize:10}}
+              scroll={{x:760}} columns={[
+                {title:t("admin_ar_statement.document"),dataIndex:"docNo",render:(v:string|null,row:{orderId:string})=>v??row.orderId},
+                {title:t("admin_ar_statement.due_at"),dataIndex:"dueAt",render:(v:string)=>day(v,uiText)},
+                {title:t("admin_ar_statement.original"),dataIndex:"originalAmount",align:"right" as const,render:(v:number)=>baht(v)},
+                {title:t("admin_ar_statement.payments"),dataIndex:"payments",align:"right" as const,render:(v:number)=>baht(v)},
+                {title:t("admin_ar_statement.credits"),dataIndex:"credits",align:"right" as const,render:(v:number)=>baht(v)},
+                {title:t("admin_ar_statement.balance"),dataIndex:"balance",align:"right" as const,render:(v:number)=>baht(v)},
+              ]}/>
+            {s.hasMoreInvoices && <Alert closable type="warning" showIcon message={t("admin_ar_statement.invoice_truncated")}/>}
+            <Typography.Title level={5}>{t("admin_ar_statement.recent_activity")}</Typography.Title>
+            <Table rowKey="id" size="small" dataSource={s.entries} pagination={{pageSize:10}}
+              scroll={{x:500}} columns={[
+                {title:t("admin_ar_statement.date"),dataIndex:"createdAt",render:(v:string)=>new Date(v).toLocaleString(uiText.locale)},
+                {title:t("admin_ar_statement.kind"),dataIndex:"kind",render:(v:string,row:{receiptId:string|null})=>{
+                  if(v==="PAYMENT"&&row.receiptId==null)return t("admin_ar_statement.credit_offset");
+                  const labels:Record<string,string>={CHARGE:t("admin_ar_statement.charge"),
+                    PAYMENT:t("admin_ar_statement.payment"),CREDIT_NOTE:t("admin_ar_statement.credit_note"),
+                    WRITE_OFF:t("admin_ar_statement.write_off"),ADJUST:t("admin_ar_statement.adjust")};
+                  return labels[v]??v;
+                }},
+                {title:t("admin_ar_statement.amount"),dataIndex:"amount",align:"right" as const,render:(v:number)=>baht(v)},
+              ]}/>
+            {s.hasMoreEntries && <Alert closable type="warning" showIcon message={t("admin_ar_statement.activity_truncated")}/>}
+            <Typography.Text type="secondary">{t("admin_ar_statement.internal_only")}</Typography.Text>
+          </Space>;
+        })()}
+      </Modal>
     </div>
   );
 }

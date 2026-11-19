@@ -84,7 +84,7 @@ editing `inventoryNarration.ts`, run `inventory-narration-export.mts`, then
 `generate-inventory-thai-audio.py --model-dir .test-output/fastthai-model`. Commit the generated
 Inventory manifest, MP3 files and provenance together; the learning-center contract checks every cue.
 
-The four business learning flows use that same pinned voice. After editing
+The five business learning flows use that same pinned voice. After editing
 `lib/learning/businessGuideFlow.ts`, run `business-guide-narration-export.mts`, then
 `generate-business-guide-thai-audio.py --model-dir .test-output/fastthai-model`. Commit
 `businessThaiAudio.json`, the MP3 files and their provenance together; the learning-center contract
@@ -159,8 +159,12 @@ The browser suite uses guest/admin session fixtures and never writes business da
 It checks exact satang inputs (including 65.10 baht), all seven audio transitions, MP3 download,
 media failure/retry and light/dark layouts at desktop, tablet and mobile widths.
 
-For PO landed costs, `purchase-landed-cost-browser-smoke.mjs` uses mocked API responses to check
-the base/additional/landed columns, required allocation evidence and create payload on desktop/mobile.
+For PO landed costs and supplier units, `purchase-landed-cost-browser-smoke.mjs` uses mocked API
+responses to check base/additional/landed columns, required allocation evidence, supplier
+package factors and unknown-cost rejection, partial package receipt, frozen retry controls,
+tenant/user scoped unresolved creates and storage-write refusal, and
+create/receipt payloads in Thai/English at desktop/mobile widths. Its mocks do not prove stock
+writes; use `purchase-supplier-units-db-contract` on a disposable restored database for that.
 `node scripts/run-contract-tests.mjs db restaurant-actual-costs` requires the disposable restored
 database described in `docs/architecture/realtime-test-database.md`, including migrations 10.99 and
 10.103. It also proves partial receipt valuation, create replay/conflict, tenant isolation and

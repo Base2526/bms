@@ -320,6 +320,13 @@ CLASSIFIED.set("bms_delivery_dispute_evidence",
 
 /** การลบทั้ง tenant ไม่มี subscriber เหลืออยู่ และ outbox ของ tenant ถูก cascade ทิ้ง */
 const OPERATION_EXEMPTIONS = new Map<string, string>([
+  ["bms_sales_quotations:INSERT", "quote drafts are staff-only evidence; the admin list refreshes after a command"],
+  ["bms_sales_quotations:UPDATE", "quote transitions are staff-only and the admin detail/list refresh after a command"],
+  ["bms_product_technical_specs:INSERT", "spec drafts are staff-only; the admin page refreshes after staging"],
+  ["bms_product_technical_specs:UPDATE", "spec publication is staff-confirmed; the admin page refreshes after approval"],
+  ["bms_weighted_kg_prices:INSERT", "staff-published rate revisions are read on register scan; the admin page refreshes after publication"],
+  ["bms_weighted_kg_prices:UPDATE", "retiring the prior rate is part of one staff-confirmed publication; the admin page refreshes after publication"],
+  ["bms_sales_quotation_lines:INSERT", "immutable quote evidence is read with the header; no stock or urgent cross-device action"],
   ["bms_messages:UPDATE", "outbound delivery metadata; conversation invalidation is emitted after delivery"],
   ["bms_orders:DELETE", "platform tenant teardown"],
   ["bms_payments:DELETE", "reservation fixture cleanup and platform tenant teardown"],

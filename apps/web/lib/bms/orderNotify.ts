@@ -29,7 +29,8 @@ export async function notifyOrderStatusEmail(
 ): Promise<void> {
   try {
     const orderRes = await query(
-      `SELECT o.id, o.total_amount, o.shipping_fee, o.fulfillment_type,
+      `SELECT o.id, o.total_amount, o.shipping_fee,
+              COALESCE(o.retail_fulfillment_type, o.fulfillment_type) AS fulfillment_type,
               loc.name AS pickup_location_name,
               cu.name AS customer_name, cu.email AS customer_email, cu.preferred_language
          FROM bms_orders o

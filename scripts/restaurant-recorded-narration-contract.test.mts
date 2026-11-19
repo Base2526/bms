@@ -46,3 +46,24 @@ test("recorded audio starts on the calling gesture, ignores stale callbacks, and
   assert.equal(failed, "not-allowed"); assert.equal(audio.src, ""); assert.ok(pauses > 0);
   player.stop();
 });
+
+test("recorded narration resumes the same cue at its paused position", async () => {
+  let plays = 0;
+  const audio = {
+    src: "", currentTime: 0, paused: true, playbackRate: 1,
+    onended: null, onerror: null, onplaying: null, ontimeupdate: null, onloadedmetadata: null,
+    play() { plays++; this.paused = false; return Promise.resolve(); },
+    pause() { this.paused = true; }, removeAttribute() { this.src = ""; }, load() {},
+  } as unknown as HTMLAudioElement;
+  const player = new RecordedNarration(audio);
+  player.play("cue", "/cue.mp3", 1, () => {}, () => {});
+  audio.currentTime = 1.4;
+  player.pause();
+  assert.equal(audio.paused, true);
+  assert.equal(audio.src, "/cue.mp3");
+  await player.resume();
+  assert.equal(audio.paused, false);
+  assert.equal(audio.currentTime, 1.4);
+  assert.equal(plays, 2);
+  player.stop();
+});

@@ -12,6 +12,7 @@ export default function LearningLayout({ children }: { children: React.ReactNode
     <Link href={localizedPublicPath("/learn/board-game", lang)}>{lang === "th" ? "บอร์ดเกม" : "Board games"}</Link>
     <Link href={localizedPublicPath("/learn/restaurant", lang)}>{lang === "th" ? "ร้านอาหารและคาเฟ่" : "Restaurants & cafes"}</Link>
     <Link href={localizedPublicPath("/learn/pharmacy", lang)}>{lang === "th" ? "ร้านขายยา" : "Pharmacy"}</Link>
+    <Link href={localizedPublicPath("/learn/building-materials", lang)}>{lang === "th" ? "วัสดุก่อสร้าง (ทดลอง)" : "Building materials (pilot)"}</Link>
     <Link href={localizedPublicPath("/learn/inventory", lang)}>{lang === "th" ? "สต็อก" : "Inventory"}</Link>
     <Link href={localizedPublicPath("/learn/factory-twine-straw", lang)}>{lang === "th" ? "โรงงาน (ทดลอง)" : "Factory pilot"}</Link>
     <LanguageControl lang={lang} /><StoreLink lang={lang} />

@@ -271,7 +271,11 @@ function resolveLine(line: PricedCartLine): ResolvedLine {
     baseUnits,
     // บรรทัดชั่งขายถูก canonicalize เป็น packCode BASE ที่ packQty = จำนวนหน่วยฐาน
     soldUnits: scale ? baseUnits : packQty,
-    fixedPack: !scale && isFixedPricePack(line.packCode),
+    // A verified scale label with no tier/promotion is priced per physical label.
+    // Repeated labels round separately; multiplying a fractional per-gram rate
+    // by their combined grams can differ by one satang from the server.
+    fixedPack: (!scale && isFixedPricePack(line.packCode))
+      || (scale && !(line.priceTiers?.length) && !line.promotion),
     tiers: normalizePriceTiers(line.priceTiers),
     promotion: line.promotion ?? null,
   };

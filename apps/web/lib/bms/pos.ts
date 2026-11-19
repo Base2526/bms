@@ -37,6 +37,7 @@ import { resolveStockConsumptionInTx } from "./stockConsumption";
 import { cancelKitchenTicketsForOrderInTx, cancelKitchenTicketsForOrderItemsInTx, enqueueKitchenTicketsInTx } from "./kitchen";
 import { cancelPickupQueueForOrderInTx, formatPickupQueueNo } from "./pickupQueue";
 import { parseScaleBarcode } from "./barcode";
+import { currentWeightedKgRate, weightedKgLineCents, weightedKgMoney } from "./weightedKgPricing";
 import { POS_APPROVAL_PERMISSIONS } from "./posApprovals";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
 import { normalizePosReceiptName } from "./posReceiptDisplay";
@@ -984,8 +985,9 @@ export async function resolvePosScan(
     const override=await readBranchPrice(tenantId,opts.locationId,row.sku,row.size,pack.pack_code);
     if(override!=null) pack.price=String(override);
   }
+  const weightedRate = scaleBarcode ? await currentWeightedKgRate({query},tenantId,row.sku,row.size) : null;
   const packPrice = scaleBarcode
-    ? basePrice * baseQty
+    ? weightedRate ? weightedKgMoney(weightedKgLineCents(weightedRate.rateCents,baseQty)) : basePrice * baseQty
     : resolvedPackCode === "BASE"
     ? basePrice
     : branchPackPrice ?? (row.pack_price != null ? Number(row.pack_price) : basePrice * baseQty);
@@ -997,16 +999,16 @@ export async function resolvePosScan(
     barcode: row.barcode ?? null,
     size: row.size,
     packCode: resolvedPackCode,
-    unitName: scaleUnitName ?? row.unit_name ?? "ชิ้น",
+    unitName: weightedRate ? "กรัม" : scaleUnitName ?? row.unit_name ?? "ชิ้น",
     baseQty,
     packPrice,
     basePrice,
-    priceTiers,
+    priceTiers: weightedRate ? [] : priceTiers,
     serialTracked: row.serial_tracked === true,
     offlineRetailEligible: !row.is_bundle && !row.serial_tracked
       && (row.stock_policy === "DIRECT" || row.stock_policy === "PACK")
       && !scaleBarcode,
-    promotion,
+    promotion: weightedRate ? null : promotion,
     modifiers: modifierRes.rows.map((modifier) => ({
       code: modifier.code,
       name: modifier.name,
@@ -2517,7 +2519,8 @@ async function loadPosReceiptDiscountLines(
       `SELECT o.total_amount,
               o.discount_amount,
               COALESCE((
-                SELECT SUM(COALESCE(oi.pack_qty, oi.qty) * oi.receipt_unit_price)
+                SELECT SUM(CASE WHEN oi.pricing_snapshot ? 'weightedKg' THEN oi.line_amount
+                  ELSE COALESCE(oi.pack_qty, oi.qty) * oi.receipt_unit_price END)
                   FROM bms_order_items oi
                  WHERE oi.tenant_id = o.tenant_id AND oi.order_id = o.id
               ), 0) AS receipt_gross,
@@ -2879,6 +2882,7 @@ async function canonicalizePosSaleLines(
         packUnitName: scaleHit.unitName,
         packQty: baseQuantity,
         packUnitPrice: null,
+        verifiedScaleLabels: [{barcode:rawScaleBarcode,copies:packQty}],
         modifierCodes: line.modifierCodes ?? [],
       });
       continue;
@@ -5127,6 +5131,7 @@ export async function listRecentPosSales(
     pack_unit_price: string | null;
     unit_price: string;
     receipt_unit_price: string;
+    line_amount: string;
     returned_pack_qty: string | null;
     pricing_snapshot: unknown;
   }>(
@@ -5142,6 +5147,7 @@ export async function listRecentPosSales(
             oi.pack_unit_price,
             oi.unit_price,
             oi.receipt_unit_price,
+            oi.line_amount,
             oi.pricing_snapshot,
             COALESCE((
               SELECT SUM(pri.pack_qty)
@@ -5161,6 +5167,9 @@ export async function listRecentPosSales(
   for (const line of linesRes.rows) {
     const packQty = line.pack_qty ?? line.qty;
     const receiptUnitPrice = Number(line.receipt_unit_price);
+    const snapshot = typeof line.pricing_snapshot === "string"
+      ? JSON.parse(line.pricing_snapshot) as {weightedKg?:unknown}
+      : line.pricing_snapshot as {weightedKg?:unknown}|null;
     const mapped = {
       orderItemId: line.id,
       sku: line.product_sku,
@@ -5174,7 +5183,7 @@ export async function listRecentPosSales(
       returnedPackQty: Number(line.returned_pack_qty ?? 0),
       refundablePackQty: Math.max(0, packQty - Number(line.returned_pack_qty ?? 0)),
       unitName: line.pack_unit_name ?? "ชิ้น",
-      lineTotal: packQty * receiptUnitPrice,
+      lineTotal: snapshot?.weightedKg ? Number(line.line_amount) : packQty * receiptUnitPrice,
     };
     const existing = linesByOrder.get(line.order_id) ?? [];
     existing.push(mapped);
@@ -6228,6 +6237,7 @@ export async function processPosReturn(input: {
         receiptUnitPrice: Number(item.receipt_unit_price),
         packUnitPrice: item.pack_unit_price == null ? null : Number(item.pack_unit_price),
         pricingSnapshot: item.pricing_snapshot,
+        lineAmount: Number(item.line_amount),
         promotionGroup: item.restaurant_check_item_id ? JSON.stringify([item.product_sku, item.size]) : undefined,
       }));
     const remainingPricing = priceRemainingLines(returnPricingLines, requestedMap);

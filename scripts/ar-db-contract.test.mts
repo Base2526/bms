@@ -28,6 +28,7 @@ import {
   getArAccountByCustomer,
   getArInvoiceByOrder,
   getArOutstanding,
+  getArStatement,
   getArShiftSummary,
   listArInvoices,
   listArLedger,
@@ -613,6 +614,45 @@ test("อายุหนี้: ใบที่เลยกำหนดต้อ
   assert.ok(refreshed, "ใบที่เลยกำหนดต้องอยู่ในตัวกรอง 'เฉพาะเลยกำหนด'");
   assert.equal(refreshed!.overdue, true);
   assert.ok(refreshed!.daysPastDue >= 44);
+});
+
+test("ใบแจ้งยอดอ่าน ledger จริงและเตือนเมื่อ cache ไม่ตรง โดยไม่เปิดบัญชีข้าม tenant", async () => {
+  const account = await getArAccountByCustomer(tenantId, customerId);
+  assert.ok(account);
+  const statement = await getArStatement(tenantId, account!.id);
+  assert.ok(statement);
+  const ledger = await query<{total:string}>(
+    `SELECT COALESCE(SUM(amount),0) AS total FROM bms_ar_ledger WHERE tenant_id=$1 AND account_id=$2`,
+    [tenantId, account!.id]
+  );
+  assert.equal(statement!.ledgerBalance, Number(ledger.rows[0].total));
+  assert.equal(statement!.balanceMismatch, false);
+  assert.ok(statement!.overdueAmount > 0);
+  assert.ok(statement!.invoices.some((invoice) => invoice.overdue && invoice.balance > 0));
+  assert.ok(statement!.entries.some((entry) => entry.kind === "CHARGE"));
+  for (const invoice of statement!.invoices) {
+    assert.equal(Math.round((invoice.originalAmount-invoice.payments-invoice.credits)*100)/100,
+      invoice.balance);
+  }
+  assert.equal(await getArStatement("00000000-0000-0000-0000-000000000000", account!.id), null);
+
+  const offsetAccount=await getArAccountByCustomer(tenantId,creditOffsetCustomerId);
+  const offsetStatement=await getArStatement(tenantId,offsetAccount!.id);
+  assert.equal(offsetStatement!.ledgerBalance,-1000);
+  assert.equal(offsetStatement!.creditBalance,1000);
+  assert.ok(offsetStatement!.entries.some((entry)=>entry.kind==="PAYMENT"&&entry.receiptId==null),
+    "prior-credit offset is a ledger settlement, not a new cash receipt");
+
+  await query(`UPDATE bms_ar_accounts SET balance=balance+1 WHERE tenant_id=$1 AND id=$2`,
+    [tenantId, account!.id]);
+  try {
+    const drifted = await getArStatement(tenantId, account!.id);
+    assert.equal(drifted!.ledgerBalance, statement!.ledgerBalance);
+    assert.equal(drifted!.balanceMismatch, true);
+  } finally {
+    await query(`UPDATE bms_ar_accounts SET balance=$3 WHERE tenant_id=$1 AND id=$2`,
+      [tenantId, account!.id, statement!.ledgerBalance]);
+  }
 });
 
 test("สรุปกะบอกได้ว่ากะนี้ปล่อยเชื่อไปเท่าไร เก็บกลับมาได้เท่าไร", async () => {

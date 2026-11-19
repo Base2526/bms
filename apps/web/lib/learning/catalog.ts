@@ -1,7 +1,8 @@
 import { resolveBilingual, type Bilingual } from "@/lib/static-page-i18n";
+import { buildingMaterialsLessons } from "./buildingMaterialsLessons";
 
 export const LEARNING_REVIEWED_AT = "2026-10-28";
-export type TrackId = "retail" | "board-game" | "restaurant" | "pharmacy" | "inventory";
+export type TrackId = "retail" | "board-game" | "restaurant" | "pharmacy" | "building-materials" | "inventory";
 export type RestaurantFormat = "dine-in" | "counter-kitchen" | "pickup-delivery";
 export type RetailFormat = "general" | "variants" | "food-counter" | "wholesale";
 export type TrackFormat = RestaurantFormat | RetailFormat;
@@ -11,6 +12,7 @@ export const bi = (th: string, en: string): Localized => ({ th, en });
 export const localize = (value: Localized, lang: "th" | "en") => resolveBilingual(value, lang);
 
 export type Lesson = {
+  reviewedAt?: string;
   slug: string;
   title: Localized;
   summary: Localized;
@@ -41,8 +43,8 @@ export const categoryLabels = {
 };
 
 // Authored public instructions only. Never import internal tool catalogs, tenant records or secrets.
-const everyTrack: TrackId[] = ["retail", "board-game", "restaurant", "pharmacy"];
-export const businessTrackIds = ["retail", "board-game", "restaurant", "pharmacy"] as const;
+const everyTrack: TrackId[] = ["retail", "board-game", "restaurant", "pharmacy", "building-materials"];
+export const businessTrackIds = ["retail", "board-game", "restaurant", "pharmacy", "building-materials"] as const;
 export const specialistTrackIds = ["inventory"] as const;
 const all: Role[] = ["owner", "manager", "cashier", "pharmacist"];
 const managers: Role[] = ["owner", "manager"];
@@ -55,7 +57,7 @@ export const lessons: Lesson[] = [
     prerequisite: bi("เตรียมอีเมลเจ้าของร้าน ชื่อร้าน ที่อยู่ รายชื่อสาขา และผู้รับผิดชอบการเงิน", "Prepare the owner's email, shop name, address, branches and finance contact."),
     steps: [
       bi("สมัครร้านด้วยอีเมลที่เจ้าของควบคุมเอง ทำขั้นตอนยืนยันตัวตนที่หน้าจอกำหนด แล้วตรวจชื่อร้านและบัญชีผู้ดูแล", "Register with an owner-controlled email, complete the identity checks shown and verify the shop and administrator account."),
-      bi("เลือกประเภทร้านให้ตรงกับงานหลักก่อนสร้างออร์เดอร์จริงครั้งแรก: ร้านค้าปลีก/อาหารและเครื่องดื่มสำหรับขายสินค้า, ร้านอาหารสำหรับบิลโต๊ะและงานครัว, ร้านบอร์ดเกมสำหรับค่าเล่นตามเวลา หรือร้านขายยาสำหรับนโยบายสินค้าและการทบทวนโดยเภสัชกร", "Choose the business type before the first real order: retail/food and beverage for product sales, restaurant for table and kitchen workflows, board-game cafe for timed play, or pharmacy for product-policy and licensed-pharmacist review workflows."),
+      bi("เลือกประเภทร้านให้ตรงกับงานหลักก่อนสร้างออร์เดอร์จริงครั้งแรก: ค้าปลีกสำหรับขายสินค้า, ร้านอาหารสำหรับบิลโต๊ะและครัว, บอร์ดเกมสำหรับค่าเล่น, ร้านขายยาสำหรับนโยบายยา หรือวัสดุก่อสร้างสำหรับคู่มือสินค้าและใบเสนอราคา โดย preset ไม่ได้เปิดฟีเจอร์ที่ยังเป็น pilot", "Choose the business type before the first real order: retail for goods, restaurant for tables and kitchen, board games for timed play, pharmacy for medicine policy, or building materials for catalog and quotation guidance. The preset does not enable pilot features automatically."),
       bi("มอบหมายผู้ดูแลข้อมูลสินค้า คลังเกม สมาชิก เงิน และอุปกรณ์ แยกร้านทดสอบออกจากร้านจริง และใช้ข้อมูลสมมติในการฝึก", "Assign owners for products, games, customers, finance and devices. Train with fictional data in a separate test shop."),
       bi("หากย้ายระบบ เลือกวันตัดยอด เก็บรายงานระบบเดิม และรวบรวมสต็อก สมาชิก คะแนน แพ็กเกจ เงินมัดจำ และการจองค้างเพื่อเทียบยอด", "For migration, choose a cutover date, retain old reports and reconcile stock, members, points, passes, deposits and open reservations."),
     ],
@@ -504,7 +506,7 @@ export const lessons: Lesson[] = [
   {
     slug: "launch-checklist", title: bi("ซ้อมครบวงจรและ Checklist ก่อนเปิดจริง", "End-to-end rehearsal & launch checklist"),
     summary: bi("ทดสอบตามบทบาท ทำ Soft Opening และตกลงแผนย้อนกลับ", "Rehearse by role, run a soft opening and agree on rollback ownership."),
-    category: "recovery", roles: managers, tracks: everyTrack, menu: bi("POS Readiness → ร้านทดสอบ → Soft Opening", "POS Readiness → Test shop → Soft opening"), action: "/admin/pos-readiness",
+    category: "recovery", roles: managers, tracks: ["retail", "board-game", "restaurant", "pharmacy"], menu: bi("POS Readiness → ร้านทดสอบ → Soft Opening", "POS Readiness → Test shop → Soft opening"), action: "/admin/pos-readiness",
     prerequisite: bi("อ่านบทตั้งค่าแล้ว มีร้านทดสอบและผู้รับผิดชอบทุกบทบาท", "Setup lessons completed, a test shop and all role owners available."),
     steps: [
       bi("ตรวจยอดตั้งต้นสินค้า สมาชิก สิทธิ์และมัดจำ เลือกวันตัดระบบเดิม กำหนดว่าหากไม่ผ่านจะหยุดรับรายการใหม่และให้ใครกระทบยอด ห้ามใช้สองระบบขายทับกัน", "Reconcile opening stock, members, entitlements and deposits. Choose cutover and define who stops new entries/reconciles on failure. Avoid overlapping sales in two systems."),
@@ -1230,6 +1232,7 @@ export const lessons: Lesson[] = [
     check: bi("ผู้ปฏิบัติงานทำงานครบวงจรและอธิบายส่วนต่างได้ โดยไม่มี movement ซ้ำหรือข้อมูลจริงปะปน", "Operators complete the lifecycle and explain variances without duplicate movements or real data."),
     caution: bi("การทดสอบหน้าเว็บไม่พิสูจน์เครื่องสแกน เครื่องพิมพ์ เครือข่าย หรือฐาน Production ต้องซ้อมอุปกรณ์และแผนย้อนกลับแยก", "Web tests do not prove scanners, printers, networking or production data; rehearse hardware and rollback separately."),
   },
+  ...buildingMaterialsLessons,
 ];
 
 export const tracks: Record<TrackId, { title: Localized; description: Localized; icon: string }> = {
@@ -1237,6 +1240,7 @@ export const tracks: Record<TrackId, { title: Localized; description: Localized;
   "board-game": { title: bi("ร้านบอร์ดเกม", "Board-game cafe"), description: bi("จากโต๊ะว่าง สู่รอบเล่นแรกและปิดกะอย่างมั่นใจ", "From an empty floor to your first session and reconciled shift."), icon: "🎲" },
   restaurant: { title: bi("ร้านอาหารและคาเฟ่", "Restaurants & cafes"), description: bi("สำหรับร้านที่ใช้ Restaurant POS บิลโต๊ะหรือ TAKEAWAY รอบส่งครัว และ Kitchen Board; คาเฟ่ขายหน้าเคาน์เตอร์ทั่วไปอยู่ในคู่มือค้าปลีก", "For shops using Restaurant POS, table or TAKEAWAY checks, kitchen rounds and Kitchen Board; ordinary counter cafes use the retail guide."), icon: "🍽" },
   pharmacy: { title: bi("ร้านขายยา", "Pharmacy"), description: bi("ตั้งสินค้าและนโยบายขาย ทำงานที่เคาน์เตอร์และ Pharmacy Queue โดยให้เภสัชกรมีใบอนุญาตเป็นผู้ตัดสินทุกเรื่องทางคลินิก", "Configure products and sale policy, then operate counter and Pharmacy Queue workflows while every clinical decision remains with a licensed pharmacist."), icon: "⚕️" },
+  "building-materials": { title: bi("ร้านวัสดุก่อสร้าง (ทดลอง)", "Building materials (pilot)"), description: bi("คู่มือทดลองสำหรับสินค้าเป็นถุง/พาเลท ใบเสนอราคา ขายเชื่อ และรับของที่สาขา; งานตัดจากม้วน ส่งหลายเที่ยว และเจ้าหนี้ยังไม่ครบ", "Pilot guide for bags/pallets, quotations, credit sales and branch pickup; roll cutting, multi-trip delivery and payables remain incomplete."), icon: "🧱" },
   inventory: { title: bi("สต็อกและคลังสินค้า", "Inventory & warehouse"), description: bi("คู่มือเฉพาะงานที่ใช้ร่วมทุกประเภทร้าน ตั้ง Catalog รับเข้า เติมสินค้า โอน ตรวจนับ จอง กักกัน ของเสีย และกระทบยอด", "A cross-business specialist guide for catalog, receiving, replenishment, transfers, counts, reservations, quarantine, wastage and reconciliation."), icon: "📦" },
 };
 
@@ -1270,6 +1274,13 @@ export const trackOrder: Record<TrackId, string[]> = {
     "pharmacy-counter-sale", "pharmacy-intake-queue", "pharmacy-evidence-privacy", "expenses-input-vat", "pharmacy-guidance-protocols",
     "returns-recovery", "reports-ai", "pharmacy-emergency-boundary", "outages-support", "pharmacy-rehearsal", "launch-checklist",
   ],
+  "building-materials": [
+    "start-here", "branches-hours", "staff-permissions", "building-materials-packs", "building-materials-variants",
+    "building-materials-specs", "products-import", "inventory", "tax-receipts", "pos-devices", "desktop-hardware",
+    "payments-qr", "members-coupons", "balances-privacy", "shifts", "building-materials-weighted", "building-materials-quotations", "building-materials-credit",
+    "building-materials-purchase-delivery", "building-materials-chat-web", "expenses-input-vat", "returns-recovery",
+    "reports-ai", "outages-support", "building-materials-rehearsal",
+  ],
   inventory: [
     "inventory-overview", "products-import", "inventory-catalog-models", "inventory-branch-balances",
     "inventory", "inventory-purchase-receiving", "inventory-requisitions", "inventory-transfer-control",
@@ -1292,7 +1303,7 @@ export function getTrackLessons(track: TrackId, format?: TrackFormat) {
     .filter((lesson) => track !== "retail" || !format || !isRetailFormat(format) || lessonSupportsRetailFormat(lesson, format))
     .sort((a, b) => categories.indexOf(a.category) - categories.indexOf(b.category));
 }
-export function isTrack(value: string): value is TrackId { return value === "retail" || value === "board-game" || value === "restaurant" || value === "pharmacy" || value === "inventory"; }
+export function isTrack(value: string): value is TrackId { return value === "retail" || value === "board-game" || value === "restaurant" || value === "pharmacy" || value === "building-materials" || value === "inventory"; }
 export function isRestaurantFormat(value: string): value is RestaurantFormat {
   return value === "dine-in" || value === "counter-kitchen" || value === "pickup-delivery";
 }

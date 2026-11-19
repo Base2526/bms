@@ -476,6 +476,48 @@ export type SchemaBmsArReceiptResult = {
   status: Scalars['String']['output'];
 };
 
+export type SchemaBmsArStatement = {
+  __typename?: 'BmsArStatement';
+  accountId: Scalars['ID']['output'];
+  asOf: Scalars['String']['output'];
+  balanceMismatch: Scalars['Boolean']['output'];
+  cachedBalance: Scalars['Float']['output'];
+  creditBalance: Scalars['Float']['output'];
+  customerName: Maybe<Scalars['String']['output']>;
+  entries: Array<SchemaBmsArStatementEntry>;
+  grossOutstanding: Scalars['Float']['output'];
+  hasMoreEntries: Scalars['Boolean']['output'];
+  hasMoreInvoices: Scalars['Boolean']['output'];
+  invoices: Array<SchemaBmsArStatementInvoice>;
+  ledgerBalance: Scalars['Float']['output'];
+  overdueAmount: Scalars['Float']['output'];
+};
+
+export type SchemaBmsArStatementEntry = {
+  __typename?: 'BmsArStatementEntry';
+  amount: Scalars['Float']['output'];
+  createdAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  invoiceId: Scalars['ID']['output'];
+  kind: Scalars['String']['output'];
+  orderId: Maybe<Scalars['ID']['output']>;
+  receiptId: Maybe<Scalars['ID']['output']>;
+};
+
+export type SchemaBmsArStatementInvoice = {
+  __typename?: 'BmsArStatementInvoice';
+  balance: Scalars['Float']['output'];
+  credits: Scalars['Float']['output'];
+  docNo: Maybe<Scalars['String']['output']>;
+  dueAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  issuedAt: Scalars['String']['output'];
+  orderId: Scalars['ID']['output'];
+  originalAmount: Scalars['Float']['output'];
+  overdue: Scalars['Boolean']['output'];
+  payments: Scalars['Float']['output'];
+};
+
 export type SchemaBmsArWriteOffResult = {
   __typename?: 'BmsArWriteOffResult';
   amount: Scalars['Float']['output'];
@@ -955,7 +997,7 @@ export type SchemaBmsBusinessDoc = {
   shippingFee: Maybe<Scalars['Float']['output']>;
   store: SchemaBmsStoreSummary;
   subtotal: Scalars['Float']['output'];
-  total: Scalars['Float']['output'];
+  total: Maybe<Scalars['Float']['output']>;
   type: Scalars['String']['output'];
 };
 
@@ -4229,7 +4271,9 @@ export type SchemaBmsOrder = {
   posShiftId: Maybe<Scalars['ID']['output']>;
   preferred_carrier: Maybe<SchemaBmsCarrier>;
   promisedAt: Maybe<Scalars['String']['output']>;
+  quoteSiteAddress: Maybe<Scalars['String']['output']>;
   registeredPosNo: Maybe<Scalars['String']['output']>;
+  retailFulfillmentType: Maybe<Scalars['String']['output']>;
   shipping_fee: Scalars['Float']['output'];
   status: SchemaBmsOrderStatus;
   total_amount: Scalars['Float']['output'];
@@ -6766,6 +6810,7 @@ export type SchemaBmsPosReceivePurchaseLineInput = {
   qty: Scalars['Int']['input'];
   size: Scalars['String']['input'];
   sku: Scalars['String']['input'];
+  supplierQty: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type SchemaBmsPosRecentReturnSummary = {
@@ -8428,6 +8473,8 @@ export type SchemaBmsPurchaseItem = {
   __typename?: 'BmsPurchaseItem';
   additionalCostNote: Maybe<Scalars['String']['output']>;
   additionalUnitCost: Scalars['Float']['output'];
+  baseQtyPerSupplierUnit: Maybe<Scalars['Int']['output']>;
+  conversionEvidence: Maybe<Scalars['String']['output']>;
   landedUnitCost: Scalars['Float']['output'];
   qtyOrdered: Scalars['Int']['output'];
   qtyReceived: Scalars['Int']['output'];
@@ -8435,12 +8482,16 @@ export type SchemaBmsPurchaseItem = {
   sku: Scalars['String']['output'];
   supplierProductName: Maybe<Scalars['String']['output']>;
   supplierSku: Maybe<Scalars['String']['output']>;
+  supplierUnitName: Maybe<Scalars['String']['output']>;
+  supplierUnitQty: Maybe<Scalars['Int']['output']>;
   unitCost: Scalars['Float']['output'];
 };
 
 export type SchemaBmsPurchaseItemInput = {
   additionalCostNote: InputMaybe<Scalars['String']['input']>;
   additionalUnitCost: InputMaybe<Scalars['Float']['input']>;
+  baseQtyPerSupplierUnit: InputMaybe<Scalars['Int']['input']>;
+  conversionEvidence: InputMaybe<Scalars['String']['input']>;
   leadTimeDays: InputMaybe<Scalars['Int']['input']>;
   minOrderQty: InputMaybe<Scalars['Int']['input']>;
   packQty: InputMaybe<Scalars['Int']['input']>;
@@ -8450,6 +8501,8 @@ export type SchemaBmsPurchaseItemInput = {
   supplierBarcode: InputMaybe<Scalars['String']['input']>;
   supplierProductName: InputMaybe<Scalars['String']['input']>;
   supplierSku: InputMaybe<Scalars['String']['input']>;
+  supplierUnitName: InputMaybe<Scalars['String']['input']>;
+  supplierUnitQty: InputMaybe<Scalars['Int']['input']>;
   unitCost: InputMaybe<Scalars['Float']['input']>;
 };
 
@@ -8565,6 +8618,7 @@ export type SchemaBmsReceiveItemInput = {
   qty: Scalars['Int']['input'];
   size: Scalars['String']['input'];
   sku: Scalars['String']['input'];
+  supplierQty: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type SchemaBmsReceiveStockTransferInput = {
@@ -10964,6 +11018,7 @@ export type SchemaMutation = {
   bmsGenerateInStoreBarcode: Scalars['String']['output'];
   bmsGenerateMedicationSuggestions: SchemaBmsPharmacyAssessment;
   bmsGenerateReport: SchemaBmsGenerateReportResult;
+  bmsHandoverRetailPickup: Scalars['Boolean']['output'];
   bmsIgnoreBankStatementEntry: SchemaBmsBankMutationResult;
   bmsImportProducts: SchemaBmsProductImportResult;
   bmsImprovementCommand: SchemaBmsChecklistCommandResult;
@@ -11776,6 +11831,12 @@ export type SchemaMutationBmsGenerateMedicationSuggestionsArgs = {
 
 export type SchemaMutationBmsGenerateReportArgs = {
   input: SchemaBmsGenerateReportInput;
+};
+
+
+export type SchemaMutationBmsHandoverRetailPickupArgs = {
+  confirmed: Scalars['Boolean']['input'];
+  id: Scalars['ID']['input'];
 };
 
 
@@ -13785,6 +13846,7 @@ export type SchemaQuery = {
   bmsArInvoices: Array<SchemaBmsArInvoice>;
   bmsArLedger: Array<SchemaBmsArLedgerEntry>;
   bmsArOutstanding: SchemaBmsArOutstanding;
+  bmsArStatement: Maybe<SchemaBmsArStatement>;
   bmsAssignableStaff: Array<SchemaBmsStaffRef>;
   bmsAuditLog: Array<SchemaBmsAuditEntry>;
   bmsAuditTimeline: SchemaBmsAuditTimelinePage;
@@ -14246,6 +14308,11 @@ export type SchemaQueryBmsArLedgerArgs = {
   accountId: InputMaybe<Scalars['ID']['input']>;
   invoiceId: InputMaybe<Scalars['ID']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type SchemaQueryBmsArStatementArgs = {
+  accountId: Scalars['ID']['input'];
 };
 
 
@@ -16549,6 +16616,7 @@ export type BmsPosReceivePurchaseLineInput = {
   qty: number;
   size: string;
   sku: string;
+  supplierQty: number | null | undefined;
 };
 
 export type BmsPosRequestPharmacyReviewInput = {
@@ -17176,7 +17244,7 @@ export type MobilePosPurchaseOrdersQueryVariables = Exact<{
 }>;
 
 
-export type MobilePosPurchaseOrdersQuery = { bmsPosPurchaseOrders: { orders: Array<{ id: string, status: BmsPurchaseStatus, qtyOrdered: number, qtyReceived: number, total: number, note: string | null, createdAt: string, updatedAt: string, supplier: { id: string, name: string } | null, items: Array<{ sku: string, size: string, qtyOrdered: number, qtyReceived: number, unitCost: number, supplierSku: string | null, supplierProductName: string | null }> }> } };
+export type MobilePosPurchaseOrdersQuery = { bmsPosPurchaseOrders: { orders: Array<{ id: string, status: BmsPurchaseStatus, qtyOrdered: number, qtyReceived: number, total: number, note: string | null, createdAt: string, updatedAt: string, supplier: { id: string, name: string } | null, items: Array<{ sku: string, size: string, qtyOrdered: number, qtyReceived: number, unitCost: number, supplierSku: string | null, supplierProductName: string | null, supplierUnitName: string | null, baseQtyPerSupplierUnit: number | null }> }> } };
 
 export type MobilePosPurchaseOrderQueryVariables = Exact<{
   credentials: BmsPosCredentialsInput;
@@ -17184,7 +17252,7 @@ export type MobilePosPurchaseOrderQueryVariables = Exact<{
 }>;
 
 
-export type MobilePosPurchaseOrderQuery = { bmsPosPurchaseOrder: { id: string, status: BmsPurchaseStatus, qtyOrdered: number, qtyReceived: number, total: number, note: string | null, createdAt: string, updatedAt: string, supplier: { id: string, name: string } | null, items: Array<{ sku: string, size: string, qtyOrdered: number, qtyReceived: number, unitCost: number, supplierSku: string | null, supplierProductName: string | null }> } | null };
+export type MobilePosPurchaseOrderQuery = { bmsPosPurchaseOrder: { id: string, status: BmsPurchaseStatus, qtyOrdered: number, qtyReceived: number, total: number, note: string | null, createdAt: string, updatedAt: string, supplier: { id: string, name: string } | null, items: Array<{ sku: string, size: string, qtyOrdered: number, qtyReceived: number, unitCost: number, supplierSku: string | null, supplierProductName: string | null, supplierUnitName: string | null, baseQtyPerSupplierUnit: number | null }> } | null };
 
 export type MobileRestaurantQrOrdersQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -17891,8 +17959,8 @@ export const MobilePosDepositsDocument = {"kind":"Document","definitions":[{"kin
 export const MobilePosExpensesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosExpenses"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosExpenses"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"canManagePettyCash"}},{"kind":"Field","name":{"kind":"Name","value":"canUsePersonalFunds"}},{"kind":"Field","name":{"kind":"Name","value":"categories"}},{"kind":"Field","name":{"kind":"Name","value":"pettyCashWallet"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"balance"}},{"kind":"Field","name":{"kind":"Name","value":"entries"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"direction"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}},{"kind":"Field","name":{"kind":"Name","value":"source"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"evidenceRef"}},{"kind":"Field","name":{"kind":"Name","value":"balanceAfter"}},{"kind":"Field","name":{"kind":"Name","value":"actorName"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"expenses"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"kind"}},{"kind":"Field","name":{"kind":"Name","value":"category"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"payee"}},{"kind":"Field","name":{"kind":"Name","value":"receiptRef"}},{"kind":"Field","name":{"kind":"Name","value":"fundingSource"}},{"kind":"Field","name":{"kind":"Name","value":"advancedAmount"}},{"kind":"Field","name":{"kind":"Name","value":"actualAmount"}},{"kind":"Field","name":{"kind":"Name","value":"returnedAmount"}},{"kind":"Field","name":{"kind":"Name","value":"extraCashOut"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"actorName"}},{"kind":"Field","name":{"kind":"Name","value":"approvedByName"}},{"kind":"Field","name":{"kind":"Name","value":"settledByName"}},{"kind":"Field","name":{"kind":"Name","value":"settlementApprovedByName"}},{"kind":"Field","name":{"kind":"Name","value":"pettyCashBalanceAfter"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"settledAt"}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosExpensesQuery, MobilePosExpensesQueryVariables>;
 export const MobilePosArAccountDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosArAccount"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"customerId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosArAccount"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}},{"kind":"Argument","name":{"kind":"Name","value":"customerId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"customerId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"account"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"customerId"}},{"kind":"Field","name":{"kind":"Name","value":"creditLimit"}},{"kind":"Field","name":{"kind":"Name","value":"balance"}},{"kind":"Field","name":{"kind":"Name","value":"availableCredit"}},{"kind":"Field","name":{"kind":"Name","value":"status"}}]}},{"kind":"Field","name":{"kind":"Name","value":"invoices"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"orderId"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}},{"kind":"Field","name":{"kind":"Name","value":"outstanding"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"issuedAt"}},{"kind":"Field","name":{"kind":"Name","value":"dueAt"}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosArAccountQuery, MobilePosArAccountQueryVariables>;
 export const MobilePosStoreCreditDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosStoreCredit"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"code"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosStoreCredit"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}},{"kind":"Argument","name":{"kind":"Name","value":"code"},"value":{"kind":"Variable","name":{"kind":"Name","value":"code"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"credit"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"customerName"}},{"kind":"Field","name":{"kind":"Name","value":"balance"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"expiresAt"}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosStoreCreditQuery, MobilePosStoreCreditQueryVariables>;
-export const MobilePosPurchaseOrdersDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosPurchaseOrders"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosPurchaseOrders"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"orders"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"qtyOrdered"}},{"kind":"Field","name":{"kind":"Name","value":"qtyReceived"}},{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"supplier"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}},{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"qtyOrdered"}},{"kind":"Field","name":{"kind":"Name","value":"qtyReceived"}},{"kind":"Field","name":{"kind":"Name","value":"unitCost"}},{"kind":"Field","name":{"kind":"Name","value":"supplierSku"}},{"kind":"Field","name":{"kind":"Name","value":"supplierProductName"}}]}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosPurchaseOrdersQuery, MobilePosPurchaseOrdersQueryVariables>;
-export const MobilePosPurchaseOrderDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosPurchaseOrder"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"poId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosPurchaseOrder"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}},{"kind":"Argument","name":{"kind":"Name","value":"poId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"poId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"qtyOrdered"}},{"kind":"Field","name":{"kind":"Name","value":"qtyReceived"}},{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"supplier"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}},{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"qtyOrdered"}},{"kind":"Field","name":{"kind":"Name","value":"qtyReceived"}},{"kind":"Field","name":{"kind":"Name","value":"unitCost"}},{"kind":"Field","name":{"kind":"Name","value":"supplierSku"}},{"kind":"Field","name":{"kind":"Name","value":"supplierProductName"}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosPurchaseOrderQuery, MobilePosPurchaseOrderQueryVariables>;
+export const MobilePosPurchaseOrdersDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosPurchaseOrders"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosPurchaseOrders"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"orders"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"qtyOrdered"}},{"kind":"Field","name":{"kind":"Name","value":"qtyReceived"}},{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"supplier"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}},{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"qtyOrdered"}},{"kind":"Field","name":{"kind":"Name","value":"qtyReceived"}},{"kind":"Field","name":{"kind":"Name","value":"unitCost"}},{"kind":"Field","name":{"kind":"Name","value":"supplierSku"}},{"kind":"Field","name":{"kind":"Name","value":"supplierProductName"}},{"kind":"Field","name":{"kind":"Name","value":"supplierUnitName"}},{"kind":"Field","name":{"kind":"Name","value":"baseQtyPerSupplierUnit"}}]}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosPurchaseOrdersQuery, MobilePosPurchaseOrdersQueryVariables>;
+export const MobilePosPurchaseOrderDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosPurchaseOrder"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"poId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosPurchaseOrder"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}},{"kind":"Argument","name":{"kind":"Name","value":"poId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"poId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"qtyOrdered"}},{"kind":"Field","name":{"kind":"Name","value":"qtyReceived"}},{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"supplier"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}},{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"qtyOrdered"}},{"kind":"Field","name":{"kind":"Name","value":"qtyReceived"}},{"kind":"Field","name":{"kind":"Name","value":"unitCost"}},{"kind":"Field","name":{"kind":"Name","value":"supplierSku"}},{"kind":"Field","name":{"kind":"Name","value":"supplierProductName"}},{"kind":"Field","name":{"kind":"Name","value":"supplierUnitName"}},{"kind":"Field","name":{"kind":"Name","value":"baseQtyPerSupplierUnit"}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosPurchaseOrderQuery, MobilePosPurchaseOrderQueryVariables>;
 export const MobileRestaurantQrOrdersDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobileRestaurantQrOrders"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosRestaurantQrOrders"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"submissions"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"checkId"}},{"kind":"Field","name":{"kind":"Name","value":"tableId"}},{"kind":"Field","name":{"kind":"Name","value":"tableCode"}},{"kind":"Field","name":{"kind":"Name","value":"tableName"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"estimatedTotal"}},{"kind":"Field","name":{"kind":"Name","value":"submittedAt"}},{"kind":"Field","name":{"kind":"Name","value":"reviewedAt"}},{"kind":"Field","name":{"kind":"Name","value":"rejectionReason"}},{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"productName"}},{"kind":"Field","name":{"kind":"Name","value":"packCode"}},{"kind":"Field","name":{"kind":"Name","value":"packQty"}},{"kind":"Field","name":{"kind":"Name","value":"estimatedUnitPrice"}},{"kind":"Field","name":{"kind":"Name","value":"modifierCodes"}},{"kind":"Field","name":{"kind":"Name","value":"modifierNames"}},{"kind":"Field","name":{"kind":"Name","value":"kitchenNote"}},{"kind":"Field","name":{"kind":"Name","value":"acceptedCheckItemId"}}]}}]}}]}}]}}]} as unknown as DocumentNode<MobileRestaurantQrOrdersQuery, MobileRestaurantQrOrdersQueryVariables>;
 export const MobileRestaurantServiceCallsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobileRestaurantServiceCalls"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosRestaurantServiceCalls"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"calls"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"tableId"}},{"kind":"Field","name":{"kind":"Name","value":"tableCode"}},{"kind":"Field","name":{"kind":"Name","value":"tableName"}},{"kind":"Field","name":{"kind":"Name","value":"requestCode"}},{"kind":"Field","name":{"kind":"Name","value":"requestNote"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"acknowledgedAt"}},{"kind":"Field","name":{"kind":"Name","value":"completedAt"}}]}}]}}]}}]} as unknown as DocumentNode<MobileRestaurantServiceCallsQuery, MobileRestaurantServiceCallsQueryVariables>;
 export const MobileRestaurantWaitlistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobileRestaurantWaitlist"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosRestaurantWaitlist"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"waitingCount"}},{"kind":"Field","name":{"kind":"Name","value":"waitingGuests"}},{"kind":"Field","name":{"kind":"Name","value":"calledCount"}},{"kind":"Field","name":{"kind":"Name","value":"entries"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"kind"}},{"kind":"Field","name":{"kind":"Name","value":"partySize"}},{"kind":"Field","name":{"kind":"Name","value":"guestName"}},{"kind":"Field","name":{"kind":"Name","value":"guestPhone"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"preferredTableId"}},{"kind":"Field","name":{"kind":"Name","value":"preferredTableCode"}},{"kind":"Field","name":{"kind":"Name","value":"reservedFor"}},{"kind":"Field","name":{"kind":"Name","value":"serviceDate"}},{"kind":"Field","name":{"kind":"Name","value":"queueNo"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"calledAt"}},{"kind":"Field","name":{"kind":"Name","value":"seatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"seatedTableId"}},{"kind":"Field","name":{"kind":"Name","value":"seatedTableCode"}},{"kind":"Field","name":{"kind":"Name","value":"closedAt"}},{"kind":"Field","name":{"kind":"Name","value":"checkId"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]}}]} as unknown as DocumentNode<MobileRestaurantWaitlistQuery, MobileRestaurantWaitlistQueryVariables>;

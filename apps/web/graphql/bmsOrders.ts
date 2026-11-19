@@ -12,6 +12,7 @@ import {
   payOrder,
   packOrder,
   shipOrder,
+  handoverRetailPickup,
   completeOrder,
   cancelOrder,
   returnOrder,
@@ -108,7 +109,8 @@ export const bmsOrdersResolvers = {
                 COALESCE(d.deposit_paid, 0) AS deposit_paid,
                 CASE WHEN d.id IS NULL THEN 0 ELSE GREATEST(d.total_amount - d.deposit_paid, 0) END AS deposit_balance_due,
                 d.status AS deposit_status,
-                o.coupon_code, o.preferred_carrier, o.fulfillment_type, o.promised_at, o.location_id,
+                o.coupon_code, o.preferred_carrier, o.fulfillment_type, o.retail_fulfillment_type,
+                o.quote_site_address, o.promised_at, o.location_id,
                 loc.name AS location_name, loc.branch_code,
                 pd.name AS pos_device_name, pd.registered_pos_no,
                 o.pos_shift_id, o.created_at, o.updated_at,
@@ -165,7 +167,8 @@ export const bmsOrdersResolvers = {
       return rows.map(row => ({ ...row,
         __listItems: items?.get(String(row.id)),
         __listHasShippingAddress: shippingCustomers
-          ? (row.fulfillment_type === "PICKUP" || MARKETPLACE_CHANNELS.has(row.channel) ||
+          ? (row.fulfillment_type === "PICKUP" || row.retail_fulfillment_type === "PICKUP"
+            || Boolean(row.quote_site_address) || MARKETPLACE_CHANNELS.has(row.channel) ||
             (Boolean(row.customer_id) && shippingCustomers.has(String(row.customer_id)))) : undefined,
         __listDiscountLines: discounts?.get(String(row.id)),
       }));
@@ -188,7 +191,8 @@ export const bmsOrdersResolvers = {
                 COALESCE(d.deposit_paid, 0) AS deposit_paid,
                 CASE WHEN d.id IS NULL THEN 0 ELSE GREATEST(d.total_amount - d.deposit_paid, 0) END AS deposit_balance_due,
                 d.status AS deposit_status,
-                o.coupon_code, o.preferred_carrier, o.fulfillment_type, o.promised_at, o.location_id,
+                o.coupon_code, o.preferred_carrier, o.fulfillment_type, o.retail_fulfillment_type,
+                o.quote_site_address, o.promised_at, o.location_id,
                 loc.name AS location_name, loc.branch_code,
                 pd.name AS pos_device_name, pd.registered_pos_no,
                 o.pos_shift_id, o.created_at, o.updated_at,
@@ -257,6 +261,13 @@ export const bmsOrdersResolvers = {
       await assertOrderBranchAccess(ctx, tenantId, args.id);
       const ok = await shipOrder(tenantId, args.id, String(requireAuth(ctx).author_id));
       return ok;
+    },
+    async bmsHandoverRetailPickup(_p: unknown, args: { id: string; confirmed: boolean }, ctx: any) {
+      await requirePermission(ctx, "order.ship");
+      if (args.confirmed !== true) return false;
+      const tenantId = getTenantId(ctx);
+      await assertOrderBranchAccess(ctx, tenantId, args.id);
+      return handoverRetailPickup(tenantId, args.id, String(requireAuth(ctx).author_id));
     },
     async bmsCompleteOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.pay");
@@ -366,9 +377,12 @@ export const bmsOrdersResolvers = {
       return res.rows;
     },
     // External fulfillment platforms keep delivery/rider authority on their side.
-    async hasShippingAddress(parent: { channel: string; customer_id: string | null; fulfillment_type?: string | null; __listHasShippingAddress?: boolean }, _args: unknown, ctx: any) {
+    async hasShippingAddress(parent: { channel: string; customer_id: string | null; fulfillment_type?: string | null;
+      retail_fulfillment_type?: string | null; quote_site_address?: string | null;
+      __listHasShippingAddress?: boolean }, _args: unknown, ctx: any) {
       if (typeof parent.__listHasShippingAddress === "boolean") return parent.__listHasShippingAddress;
-      if (parent.fulfillment_type === "PICKUP") return true;
+      if (parent.fulfillment_type === "PICKUP" || parent.retail_fulfillment_type === "PICKUP"
+        || Boolean(parent.quote_site_address)) return true;
       if (MARKETPLACE_CHANNELS.has(parent.channel)) return true;
       if (!parent.customer_id) return false;
       const res = await query(
@@ -393,7 +407,9 @@ export const bmsOrdersResolvers = {
     deposit_status: (p: any) => p.deposit_status ?? null,
     coupon_code: (p: any) => p.coupon_code ?? null,
     preferred_carrier: (p: any) => p.preferred_carrier ?? null,
-    fulfillmentType: (p: any) => p.fulfillment_type ?? null,
+    fulfillmentType: (p: any) => p.retail_fulfillment_type ?? p.fulfillment_type ?? null,
+    retailFulfillmentType: (p: any) => p.retail_fulfillment_type ?? null,
+    quoteSiteAddress: (p: any) => p.quote_site_address ?? null,
     promisedAt: (p: any) => p.promised_at instanceof Date ? p.promised_at.toISOString() : p.promised_at ?? null,
     pendingRefundCount: (p: any) => Number(p.pending_refund_count ?? 0),
     pendingRefundAmount: (p: any) => Number(p.pending_refund_amount ?? 0),

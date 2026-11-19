@@ -69,6 +69,7 @@ export type CreateShipmentResult =
   | { status: "ORDER_NOT_FOUND" }
   | { status: "BAD_CARRIER" }
   | { status: "PICKUP_ORDER" }
+  | { status: "QUOTE_SITE_DELIVERY_UNSUPPORTED" }
   | { status: "MISSING_SHIPPING_ADDRESS" }
   | { status: "SHIPMENT_EXISTS"; shipmentId: string }
   | { status: "INVALID_STATE"; current: string };
@@ -184,9 +185,9 @@ async function buildCarrierCreateShipmentRequest(
             sp.address AS sender_address,
             sp.shipping_origin_province AS sender_province,
             sp.shipping_origin_postcode AS sender_postcode,
-            a.address,
-            a.province,
-            a.postcode
+            COALESCE(o.quote_site_address, a.address) AS address,
+            CASE WHEN o.quote_site_address IS NULL THEN a.province ELSE NULL END AS province,
+            CASE WHEN o.quote_site_address IS NULL THEN a.postcode ELSE NULL END AS postcode
        FROM bms_orders o
        JOIN bms_tenants t ON t.id = o.tenant_id
        LEFT JOIN bms_store_profile sp ON sp.tenant_id = o.tenant_id
@@ -434,8 +435,9 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
   try {
     await beginTenantTx(client, tenantId);
 
-    const ord = await client.query<{ status: string; channel: string; customer_id: string | null; fulfillment_type: string | null }>(
-      `SELECT status, channel, customer_id, fulfillment_type
+    const ord = await client.query<{ status: string; channel: string; customer_id: string | null;
+      fulfillment_type: string | null; retail_fulfillment_type: string | null; quote_site_address: string | null }>(
+      `SELECT status, channel, customer_id, fulfillment_type, retail_fulfillment_type, quote_site_address
          FROM bms_orders
         WHERE tenant_id = $1 AND id = $2
         FOR UPDATE`,
@@ -445,9 +447,15 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
       await client.query("ROLLBACK");
       return { status: "ORDER_NOT_FOUND" };
     }
-    if (ord.rows[0].fulfillment_type === "PICKUP") {
+    if (ord.rows[0].fulfillment_type === "PICKUP" || ord.rows[0].retail_fulfillment_type === "PICKUP") {
       await client.query("ROLLBACK");
       return { status: "PICKUP_ORDER" };
+    }
+    // Quote site addresses are free text. Carrier booking requires a structured destination;
+    // the own-truck delivery workflow must be used until that contract is implemented.
+    if (ord.rows[0].quote_site_address) {
+      await client.query("ROLLBACK");
+      return { status: "QUOTE_SITE_DELIVERY_UNSUPPORTED" };
     }
     const cur = ord.rows[0].status;
     marketplaceManaged = MARKETPLACE_CHANNELS.has(ord.rows[0].channel);

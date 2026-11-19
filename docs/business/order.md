@@ -100,6 +100,49 @@ unset). Edited from the "อีเมลแจ้งสถานะออร์�
 
 ## Staff-created orders and invoices
 
+The staff assistant's `generate_quotation` remains an ephemeral estimate, not an approved
+project quotation. It rejects the entire request with numbered line errors when a requested
+SKU/size is unavailable, inactive, unpriced or has an invalid quantity; it never drops a line
+and presents the remainder as a complete quotation. When the store cannot calculate shipping,
+both `shippingFee` and `total` are null. The product subtotal is not a confirmed payable total.
+The estimate reserves no stock and does not freeze prices, customer terms or a document revision.
+It checks the active catalog variant and the retail sales surface; an empty stock row does not
+make an otherwise sellable product disappear from a non-reserving estimate.
+
+### Project quotations (`10.133`–`10.134`, pilot)
+
+`/admin/quotations` uses `lib/bms/salesQuotations.ts` through staff-only REST routes. A draft
+records a CRM customer, branch, project/site, VAT-inclusive selling unit, integer base-unit
+conversion, list and agreed unit prices, line discount and authoritative line amount. A quote is
+never a stock reservation. An unknown delivery fee keeps the total null and blocks approval;
+PICKUP explicitly has zero fee. Product status, catalog variant, retail sales surface, pack
+factor and price are read on the server. A line that is missing or invalid rejects the entire
+draft, with line numbers. Duplicate SKU/variant/pack lines are rejected rather than merged.
+
+State is `DRAFT → APPROVED → SENT → ACCEPTED → CONVERTED`, with `SENT → REJECTED` and a new
+`DRAFT` revision from a draft, approved, sent or rejected revision. The prior revision becomes
+`SUPERSEDED`; its lines remain immutable. The preparer cannot approve their own revision.
+Approval requires resolved VAT categories, known shipping, a site address for delivery and an eligible VAT-inclusive shop
+price setting. `SENT` means a staff member recorded that state; it does not send a customer
+message. `ACCEPTED` requires a staff-entered evidence reference to the customer's agreement.
+The approval freezes the quoted price and tax-settings snapshot until its stated expiry.
+
+Conversion locks the accepted revision, validates the same customer/branch and expiry, then calls
+`createOrderInTx()` in the same tenant transaction. That service revalidates active packs and
+stock, reserves only the requested base units, and applies the quote's frozen line prices and
+shipping fee. Promotions, member price discounts, coupons, points redemption, manual discounts,
+extra/open items cannot alter the agreed total. A rejected order rolls everything back and the
+quote remains `ACCEPTED`. A successful conversion links the order and is repeat-safe. The order's
+`line_amount` and pricing snapshot preserve the quote prices for receipts and partial-return
+arithmetic. `10.134` snapshots the quote's delivery site on the order, and stores retail pickup
+separately from restaurant pickup. Retail pickup uses a confirmed handover that consumes reserved
+stock once; ordinary shipping refuses it. A free-text site is not a structured carrier address,
+so automated carrier booking rejects quote site deliveries. Staff can confirm whole-order delivery
+from the order page after checking the site. Neither path supports partial dispatch yet.
+The resulting order still follows the ordinary payment, shipping, cancellation,
+return and tax-document services. Staff must review the actual tax-document form with an
+accountant before claiming it is ready for statutory filing.
+
 Inbox Customer 360 exposes a **สร้างออเดอร์** Quick Action for staff with `order.create`.
 `bmsCreateOrder(channel, customerRef, items)` derives the tenant from the authenticated context and
 calls the same `createOrder()` service used by the customer/AI pipeline. It resolves the CRM identity,

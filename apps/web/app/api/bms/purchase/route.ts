@@ -48,7 +48,7 @@ async function handlePOST(req: NextRequest) {
     sku: String(r?.sku ?? "").trim(),
     size: String(r?.size ?? "").trim(),
     qty: Number(r?.qty),
-    unitCost: Number(r?.unitCost ?? 0),
+    unitCost: r?.supplierUnitName != null && r?.unitCost == null ? undefined : Number(r?.unitCost ?? 0),
     additionalUnitCost: Number(r?.additionalUnitCost ?? 0),
     additionalCostNote: typeof r?.additionalCostNote === "string" ? r.additionalCostNote : null,
     supplierSku: typeof r?.supplierSku === "string" ? r.supplierSku : null,
@@ -57,6 +57,10 @@ async function handlePOST(req: NextRequest) {
     packQty: r?.packQty == null ? null : Number(r.packQty),
     minOrderQty: r?.minOrderQty == null ? null : Number(r.minOrderQty),
     leadTimeDays: r?.leadTimeDays == null ? null : Number(r.leadTimeDays),
+    supplierUnitName: r?.supplierUnitName == null ? null : r.supplierUnitName,
+    supplierUnitQty: r?.supplierUnitQty == null ? null : r.supplierUnitQty,
+    baseQtyPerSupplierUnit: r?.baseQtyPerSupplierUnit == null ? null : r.baseQtyPerSupplierUnit,
+    conversionEvidence: r?.conversionEvidence == null ? null : r.conversionEvidence,
   }));
 
   if (items.length === 0) {

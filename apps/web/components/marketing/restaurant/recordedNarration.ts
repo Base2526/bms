@@ -13,7 +13,7 @@ export class RecordedNarration {
     const current = () => generation === this.generation && this.activeKey === key;
     const fail = (reason: string) => { if (current()) { this.stop(); failed(reason); } };
     const watch = () => {
-      if (!current()) return;
+      if (!current() || this.audio.paused) return;
       clearTimeout(this.timer);
       this.timer = setTimeout(() => fail("timeout"), 15000);
     };
@@ -36,6 +36,17 @@ export class RecordedNarration {
     // Called synchronously by Play on the first step (important for mobile autoplay rules).
     try { void this.audio.play().catch(error => fail(error?.name === "NotAllowedError" ? "not-allowed" : "file")); }
     catch { fail("file"); }
+  }
+
+  pause() {
+    if (!this.activeKey) return;
+    clearTimeout(this.timer);
+    this.audio.pause();
+  }
+
+  resume(): Promise<void> {
+    if (!this.activeKey) return Promise.reject();
+    return this.audio.play();
   }
 
   stop() {

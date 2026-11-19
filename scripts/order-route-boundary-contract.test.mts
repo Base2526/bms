@@ -11,6 +11,7 @@ const ts = require("typescript") as typeof import("typescript");
 for (const [route, service, permission] of [
   ["pack", "packOrder", "order.ship"],
   ["ship", "shipOrder", "order.ship"],
+  ["retail-pickup-handover", "handoverRetailPickup", "order.ship"],
   ["complete", "completeOrder", "order.pay"],
   ["cancel", "cancelOrder", "order.cancel"],
   ["return", "returnOrder", "order.return"],
@@ -48,7 +49,7 @@ for (const [route, service, permission] of [
     assert.equal((await post(request(), { params: { id: "order-a" } })).status, 403);
     assert.deepEqual(calls, []);
     authenticated = true;
-    if (route === "cancel" || route === "return") {
+    if (route === "cancel" || route === "return" || route === "retail-pickup-handover") {
       const unconfirmed = new Request(`https://bms.example.invalid/api/bms/order/order-a/${route}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirmed: false }),
       });
@@ -65,10 +66,11 @@ for (const [route, service, permission] of [
   });
 }
 
-test("GraphQL cancellation and return reject missing confirmation before the order service", () => {
+test("GraphQL cancellation, return and retail handover reject missing confirmation before the order service", () => {
   const resolvers = readFileSync(path.join(root, "apps/web/graphql/bmsOrders.ts"), "utf8");
   const schema = readFileSync(path.join(root, "schema.graphql"), "utf8");
-  for (const [name, service] of [["bmsCancelOrder", "cancelOrder"], ["bmsReturnOrder", "returnOrder"]] as const) {
+  for (const [name, service] of [["bmsCancelOrder", "cancelOrder"], ["bmsReturnOrder", "returnOrder"],
+    ["bmsHandoverRetailPickup", "handoverRetailPickup"]] as const) {
     const body = resolvers.split(`async ${name}(`)[1]?.split("\n    async ")[0] ?? "";
     assert.ok(body.indexOf("args.confirmed !== true") > -1);
     assert.ok(body.indexOf("args.confirmed !== true") < body.indexOf(`${service}(`));
@@ -76,8 +78,10 @@ test("GraphQL cancellation and return reject missing confirmation before the ord
   }
   const page = readFileSync(path.join(root, "apps/web/app/(admin)/admin/orders/page.tsx"), "utf8");
   const assistant = readFileSync(path.join(root, "apps/web/components/work-assistant/confirmMutations.ts"), "utf8");
-  for (const name of ["bmsCancelOrder", "bmsReturnOrder"]) {
+  for (const name of ["bmsCancelOrder", "bmsReturnOrder", "bmsHandoverRetailPickup"]) {
     assert.match(page, new RegExp(`${name}\\(id: \\$id, confirmed: true\\)`));
+  }
+  for (const name of ["bmsCancelOrder", "bmsReturnOrder"]) {
     assert.match(assistant, new RegExp(`${name}\\(id: \\$id, confirmed: true\\)`));
   }
 });

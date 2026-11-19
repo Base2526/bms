@@ -23,6 +23,18 @@ test("every actual customer tool, including factory-created tools, has an explic
   assert.deepEqual([...PUBLIC_EVIDENCE_TOOLS, ...STATUS_EVIDENCE_TOOLS].sort(), registry);
 });
 
+test("published technical facts retain revision and quantities without source document text", () => {
+  const projected = projectToolEvidence("search_product_specs", { keyword: "FAKE C35" }, {
+    verifiedAt: "2026-11-19T00:00:00Z", technicalFactsStatus: "VERIFIED",
+    products: [{ sku: "FAKE-STEEL", name: "FAKE steel", variantCode: "STD", revisionNo: 2,
+      lengthMm: 6000, diameterMm: 12.5, grade: "C35", standardCode: "FAKE-STD",
+      sourceReference: "PRIVATE supplier file", usageLimitations: "indoor only" }],
+  });
+  assert.equal((projected.output as any).products[0].diameterMm, 12.5);
+  assert.equal((projected.output as any).products[0].revisionNo, 2);
+  assert.doesNotMatch(JSON.stringify(projected), /PRIVATE supplier file|sourceReference/);
+});
+
 test("restaurant, board-game and parking snapshots preserve actual counts, branch, time and publication limits", () => {
   for (const tool of ["get_board_game_availability", "get_restaurant_availability", "get_store_info"]) {
     const facts = { status: "OK", observedAt: "2026-10-08T12:00:00Z", branch: { name: "FAKE main" },

@@ -1402,6 +1402,15 @@ Prefix `21` labels embed a price rather than a weight and are refused. Deriving 
 rounded label price by the current unit price would corrupt stock when price or rounding changes.
 Configure the physical scale to print prefix `22` labels for BMS.
 
+For a gram-counted retail product with a published `10.136` rate, a Manager sets a VAT-inclusive
+price per kilogram in **Weighed prices**. Publication requires the product's web/storefront/customer
+AI sales surfaces to be off. The backend re-parses each label and computes satang with integer
+arithmetic, rounding half up per physical label; the scanned `packPrice` is only a cashier preview.
+The sale freezes rate revision, 1,000-gram basis, label quantities and rounding rule in the order
+line. Receipt totals use frozen `line_amount`; a rounded per-gram display price is not money
+authority. A rate change after a sale cannot reprice its return. The current pilot has no
+per-meter cut workflow or hardware certification.
+
 ### Receiving a purchase order at the register (`9.6`)
 
 The Receive tab is a thin POS workflow over the existing purchase service. A cashier selects an

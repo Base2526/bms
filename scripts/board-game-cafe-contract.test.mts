@@ -129,8 +129,8 @@ test("board-game payment reuses POS and atomically links the paid bill", () => {
   assert.match(orders, /FROM bms_board_game_group_items[\s\S]{0,200}status = 'ACTIVE'/);
   assert.match(orders, /Board game time \/ ค่าเล่นบอร์ดเกม/);
   // order เก็บทั้งกลุ่มที่ถูกเก็บเงิน และโต๊ะที่บิลนั้นมาจาก — โต๊ะเป็นประวัติ กลุ่มคือสิ่งที่จ่าย
-  assert.match(orders, /boardGameSessionId, boardGameBillingGroupId\]\s*\)/);
-  assert.match(orders, /board_game_session_id,\s*\n\s*board_game_billing_group_id\)/);
+  assert.match(orders, /boardGameSessionId, boardGameBillingGroupId(?:,[^\]]+)?\]\s*\)/);
+  assert.match(orders, /board_game_session_id,\s*\n\s*board_game_billing_group_id\b/);
   assert.match(pos, /UPDATE bms_board_game_billing_groups\s*\n\s*SET status = 'PAID', current_order_id = \$3/);
   assert.match(pos, /board_game\.billing_group_paid/);
   assert.match(pos, /บิลบอร์ดเกมไม่พร้อมรับชำระหรือถูกบิลอื่นชำระแล้ว/);
