@@ -150,9 +150,108 @@ test("REST PO receipt forwards lot evidence and the authenticated actor", async 
     lotNo: " A ", expiryDate: "2027-01-01" }] }) }, { params: { id: "po" } })).status, 200);
 });
 
+test("staff REST receipt reports a denied receiving branch as 403", async () => {
+  const route=load("../../app/api/bms/purchase/[id]/receive/route", {
+    "next/server": { NextResponse: { json: (body: unknown, options: any) => ({ body, ...options }) } },
+    "@/lib/bms/adminRouteAuth": { authorizeAdminRoute: async () => ({ok:true,tenantId:"tenant",adminId:"actor"}) },
+    "@/lib/log/routeError": { withRouteErrorLog: (_label: string, fn: any) => fn },
+    "@/lib/bms/purchase": { receivePurchaseOrder: async () => ({status:"BRANCH_FORBIDDEN"}) },
+  });
+  const response=await route.POST({json:async()=>({idempotencyKey:"receipt-key",
+    items:[{sku:"SKU",size:"BASE",qty:40,supplierQty:1}]})},{params:{id:"po"}});
+  assert.equal(response.status,403);
+  assert.equal(response.body.status,"BRANCH_FORBIDDEN");
+});
+
+test("staff REST receipt validates and forwards an explicitly selected branch", async () => {
+  const locationId="00000000-0000-4000-8000-000000000001";
+  const route=load("../../app/api/bms/purchase/[id]/receive/route", {
+    "next/server": { NextResponse: { json: (body: unknown, options: any) => ({ body, ...options }) } },
+    "@/lib/bms/adminRouteAuth": { authorizeAdminRoute: async () => ({ok:true,tenantId:"tenant",adminId:"actor"}) },
+    "@/lib/log/routeError": { withRouteErrorLog: (_label: string, fn: any) => fn },
+    "@/lib/bms/purchase": { receivePurchaseOrder: async (...args: unknown[]) => {
+      assert.equal((args[5] as any).locationId,locationId);
+      assert.equal((args[5] as any).staffIdempotency.key,"receipt-key");
+      return {status:"PARTIAL"};
+    } },
+  });
+  const input={idempotencyKey:"receipt-key",locationId,
+    items:[{sku:"SKU",size:"BASE",qty:40,supplierQty:1}]};
+  const missingKey=await route.POST({json:async()=>({...input,idempotencyKey:undefined})},{params:{id:"po"}});
+  assert.equal(missingKey.status,400);
+  assert.equal(missingKey.body.reasonCode,"IDEMPOTENCY_REQUIRED");
+  assert.equal((await route.POST({json:async()=>input},{params:{id:"po"}})).status,200);
+  for (const invalid of [true,"wrong-branch",0]) {
+    const response=await route.POST({json:async()=>({...input,locationId:invalid})},{params:{id:"po"}});
+    assert.equal(response.status,400);
+  }
+});
+
+test("staff GraphQL receiving branches require permission and derive tenant and actor", async () => {
+  const locationId="00000000-0000-4000-8000-000000000021";
+  let permitted=false, reads=0, writes=0;
+  const resolver=load("../../graphql/bmsPurchase", {
+    "@/lib/bms/purchase": { receivePurchaseOrder: async (...args: unknown[]) => {
+      writes++;
+      assert.equal(args[0],"tenant-from-session");
+      assert.equal((args[5] as any).locationId,locationId);
+      return {status:"PARTIAL",poId:"po"};
+    } },
+    "@/lib/bms/permissions": { requirePermission: async (_ctx: unknown, permission: string) => {
+      assert.equal(permission,"purchase.receive");
+      if (!permitted) throw new Error("forbidden");
+    } },
+    "@/lib/bms/tenant": { getTenantId: () => "tenant-from-session" },
+    "@/lib/auth": { requireAuth: () => ({author_id:"actor-from-session"}) },
+    "@/lib/bms/locations": { listLocationsForUser: async (tenant: string, actor: string) => {
+      reads++;
+      assert.deepEqual([tenant,actor],["tenant-from-session","actor-from-session"]);
+      return [{id:locationId,active:true},{id:"inactive",active:false}];
+    } },
+  }).bmsPurchaseResolvers;
+  await assert.rejects(resolver.Query.bmsPurchaseReceivingLocations(null,{},{}),/forbidden/);
+  assert.equal(reads,0);
+  permitted=true;
+  assert.deepEqual(await resolver.Query.bmsPurchaseReceivingLocations(null,{},{}),[{id:locationId,active:true}]);
+  assert.equal(reads,1);
+  const missingKey=await resolver.Mutation.bmsReceivePurchaseOrder(null,{id:"po",locationId,
+    items:[{sku:"SKU",size:"BASE",qty:40,supplierQty:1}]},{});
+  assert.equal(missingKey.status,"INVALID_INPUT");
+  assert.equal(missingKey.reasonCode,"IDEMPOTENCY_REQUIRED");
+  assert.equal(writes,0);
+  assert.equal((await resolver.Mutation.bmsReceivePurchaseOrder(null,{id:"po",locationId:"wrong",
+    idempotencyKey:"receipt-key",items:[{sku:"SKU",size:"BASE",qty:40,supplierQty:1}]},{})).status,"INVALID_INPUT");
+  assert.equal(writes,0);
+  const result=await resolver.Mutation.bmsReceivePurchaseOrder(null,{id:"po",locationId,
+    idempotencyKey:"receipt-key",items:[{sku:"SKU",size:"BASE",qty:40,supplierQty:1}]},{});
+  assert.equal(result.status,"PARTIAL");
+  assert.equal(writes,1);
+});
+
+test("POS REST receipt forwards supplier package count with the device branch and stable key", async () => {
+  const id="00000000-0000-4000-8000-000000000001";
+  const route=load("../../app/api/pos/purchase/route", {
+    "next/server": { NextResponse: { json: (body: unknown, options: any) => ({ body, ...options }) } },
+    "@/lib/bms/pos": { authenticatePosDevice: async () => ({tenantId:"tenant",id,locationId:id}),
+      verifyCashierPin: async () => ({ok:true,userId:id}), cashierHasPermission: async () => true },
+    "@/lib/log/routeError": { withRouteErrorLog: (_label: string, fn: any) => fn },
+    "@/lib/bms/purchase": { receivePurchaseOrder: async (...args: unknown[]) => {
+      assert.deepEqual(args[2], [{sku:"SKU",size:"BASE",qty:40,supplierQty:1,lotNo:"PALLET-A",expiryDate:null}]);
+      assert.deepEqual((args[5] as any).idempotency,{deviceId:id,actorUserId:id,key:"receipt-key"});
+      assert.equal((args[5] as any).locationId,id);
+      return {status:"PARTIAL"};
+    } },
+  });
+  const response=await route.POST({headers:{get:()=>"FAKE-token"},json:async()=>({action:"receive",poId:id,
+    cashierUserId:id,pin:"1234",idempotencyKey:"receipt-key",
+    items:[{sku:"SKU",size:"BASE",qty:40,supplierQty:1,lotNo:"PALLET-A"}]})},{params:{id}});
+  assert.equal(response.status,200);
+});
+
 test("receipt rejects malformed quantity and lot types before any database access", async () => {
   const service = load("purchase", {});
   for (const patch of [{qty:true}, {qty:[1]}, {qty:"1"}, {qty:2147483648}, {qty:1.5},
+    {supplierQty:true}, {supplierQty:"1"}, {supplierQty:1.5},
     {qty:NaN}, {qty:Infinity}, {lotNo:123}, {expiryDate:20270101}, {sku:123}, {size:1}]) {
     const result = await service.receivePurchaseOrderInTx({ query: () => assert.fail("invalid input accessed DB") },
       "tenant", "po", [{sku:"SKU",size:"BASE",qty:1,...patch}]);
@@ -170,7 +269,8 @@ for (const surface of ["staff", "pos"]) test(`${surface} REST receipt refuses JS
     "@/lib/log/routeError": { withRouteErrorLog: (_label: string, fn: any) => fn },
     "@/lib/bms/purchase": { receivePurchaseOrder: () => assert.fail("invalid input reached mutation") },
   });
-  for (const patch of [{qty:true}, {qty:[1]}, {qty:"1"}, {lotNo:123}, {expiryDate:20270101}, {sku:123}, {size:1}]) {
+  for (const patch of [{qty:true}, {qty:[1]}, {qty:"1"}, {supplierQty:true}, {supplierQty:"1"},
+    {lotNo:123}, {expiryDate:20270101}, {sku:123}, {size:1}]) {
     const response=await route.POST({ headers:{get:()=>"FAKE-token"}, json:async()=>({action:"receive",poId:id,
       cashierUserId:id,pin:"1234",idempotencyKey:"receipt-key",items:[{sku:"SKU",size:"BASE",qty:1,...patch}]}) },{params:{id}});
     assert.equal(response.status,400,JSON.stringify(patch));

@@ -1237,6 +1237,45 @@ export const typeDefs = /* GraphQL */ `
     createdAt: String!
   }
 
+  type BmsArStatementInvoice {
+    id: ID!
+    orderId: ID!
+    docNo: String
+    issuedAt: String!
+    dueAt: String!
+    originalAmount: Float!
+    payments: Float!
+    credits: Float!
+    balance: Float!
+    overdue: Boolean!
+  }
+
+  type BmsArStatementEntry {
+    id: ID!
+    invoiceId: ID!
+    kind: String!
+    amount: Float!
+    createdAt: String!
+    receiptId: ID
+    orderId: ID
+  }
+
+  type BmsArStatement {
+    accountId: ID!
+    customerName: String
+    asOf: String!
+    ledgerBalance: Float!
+    cachedBalance: Float!
+    grossOutstanding: Float!
+    creditBalance: Float!
+    overdueAmount: Float!
+    balanceMismatch: Boolean!
+    hasMoreInvoices: Boolean!
+    hasMoreEntries: Boolean!
+    invoices: [BmsArStatementInvoice!]!
+    entries: [BmsArStatementEntry!]!
+  }
+
   type BmsArAging {
     current: Float!
     d1to30: Float!
@@ -1351,6 +1390,7 @@ export const typeDefs = /* GraphQL */ `
     bmsArAccount(id: ID, customerId: ID): BmsArAccount
     bmsArInvoices(accountId: ID, openOnly: Boolean, overdueOnly: Boolean, limit: Int = 200): [BmsArInvoice!]!
     bmsArLedger(invoiceId: ID, accountId: ID, limit: Int = 200): [BmsArLedgerEntry!]!
+    bmsArStatement(accountId: ID!): BmsArStatement
     bmsArOutstanding: BmsArOutstanding!
 
     bmsProductPacks(productSku: String!): BmsProductPackList!
@@ -1492,6 +1532,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS Purchase (admin) =====
     bmsPurchaseOrders(search: String, limit: Int = 50, offset: Int = 0): [BmsPurchaseOrder!]!
+    bmsPurchaseReceivingLocations: [BmsLocation!]!
     bmsPurchaseOrder(id: ID!): BmsPurchaseOrder
     bmsSuppliers: [BmsSupplier!]!
     bmsSupplierProducts(supplierId: ID!, search: String, limit: Int = 200): [BmsSupplierProduct!]!
@@ -1745,6 +1786,8 @@ export const typeDefs = /* GraphQL */ `
     coupon_code: String
     preferred_carrier: BmsCarrier   # ขนส่งที่ลูกค้าแจ้งไว้ตอนสั่ง — เป็นความต้องการ ไม่ใช่ขนส่งจริงที่ใช้ส่ง (7.46)
     fulfillmentType: String
+    retailFulfillmentType: String
+    quoteSiteAddress: String
     promisedAt: String
     pendingRefundCount: Int!
     pendingRefundAmount: Float!
@@ -1851,7 +1894,7 @@ export const typeDefs = /* GraphQL */ `
     discount: Float!
     couponCode: String
     shippingFee: Float
-    total: Float!
+    total: Float
     paymentStatus: String
     note: String!
   }
@@ -1883,6 +1926,10 @@ export const typeDefs = /* GraphQL */ `
     additionalUnitCost: Float!
     landedUnitCost: Float!
     additionalCostNote: String
+    supplierUnitName: String
+    supplierUnitQty: Int
+    baseQtyPerSupplierUnit: Int
+    conversionEvidence: String
   }
 
   type BmsPurchaseOrder {
@@ -1912,6 +1959,10 @@ export const typeDefs = /* GraphQL */ `
     packQty: Int
     minOrderQty: Int
     leadTimeDays: Int
+    supplierUnitName: String
+    supplierUnitQty: Int
+    baseQtyPerSupplierUnit: Int
+    conversionEvidence: String
   }
 
   type BmsSupplierProduct {
@@ -1935,6 +1986,7 @@ export const typeDefs = /* GraphQL */ `
     sku: String!
     size: String!
     qty: Int!
+    supplierQty: Int
     lotNo: String
     expiryDate: String
   }
@@ -5673,6 +5725,7 @@ export const typeDefs = /* GraphQL */ `
     bmsPayOrder(id: ID!): Boolean!        # Legacy adapter returns false; use bmsSubmitPayment + bmsConfirmPayment
     bmsPackOrder(id: ID!): Boolean!       # PAID → PACKING
     bmsShipOrder(id: ID!): Boolean!       # PACKING → SHIPPED (ตัดสต็อก)
+    bmsHandoverRetailPickup(id: ID!, confirmed: Boolean!): Boolean! # retail pickup handover only
     bmsCompleteOrder(id: ID!): Boolean!   # SHIPPED → COMPLETED
     bmsCancelOrder(id: ID!, confirmed: Boolean!): Boolean!     # (PENDING/PAID/PACKING) → CANCELLED (คืน reserved)
     bmsReturnOrder(id: ID!, confirmed: Boolean!): Boolean!     # (SHIPPED/COMPLETED) → RETURNED (คืนสต็อก)
@@ -5697,7 +5750,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS purchase (admin) — PO lifecycle =====
     bmsCreatePurchaseOrder(requestId: String, supplierId: ID, supplierName: String, note: String, items: [BmsPurchaseItemInput!]!): BmsPurchaseResult!
-    bmsReceivePurchaseOrder(id: ID!, items: [BmsReceiveItemInput!]!, idempotencyKey: String): BmsPurchaseResult!  # OPEN/PARTIAL → PARTIAL/RECEIVED (STOCK_IN)
+    bmsReceivePurchaseOrder(id: ID!, items: [BmsReceiveItemInput!]!, idempotencyKey: String, locationId: ID): BmsPurchaseResult!  # OPEN/PARTIAL → PARTIAL/RECEIVED (STOCK_IN)
     bmsCancelPurchaseOrder(id: ID!): Boolean!                                            # OPEN/PARTIAL → CANCELLED
 
     # ===== BMS payment (admin) =====

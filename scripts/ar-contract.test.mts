@@ -220,3 +220,11 @@ test("รับชำระซ้ำต้องล็อกคีย์ tenant-
     "ต้องล็อกคีย์ก่อนอ่าน replay ไม่ใช่หลังแตะ state ไปแล้ว"
   );
 });
+
+test("ใบแจ้งยอดเป็น staff read ที่ใช้ ar.view และ tenant จาก session", () => {
+  const resolver = read("apps/web/graphql/bmsAr.ts");
+  const section = resolver.slice(resolver.indexOf("async bmsArStatement("), resolver.indexOf("// ยอดลูกหนี้คงค้าง"));
+  assert.match(section, /requirePermission\(ctx, "ar\.view"\)/);
+  assert.match(section, /getArStatement\(getTenantId\(ctx\), a\.accountId\)/);
+  assert.doesNotMatch(section, /a\.tenantId|ctx\.body/);
+});

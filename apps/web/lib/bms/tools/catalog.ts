@@ -38,6 +38,7 @@ import {
   type SellableProduct,
 } from "../products";
 import { listProductModifiers } from "../productRecipes";
+import { publishedTechnicalSpecsForTool, searchPublishedTechnicalSpecs } from "../productTechnicalSpecs";
 import { customerFoodProfile } from "../productFoodSafety";
 import { getPharmacyCustomerServiceStatus, getCustomerPharmacyCaseStatus, getPharmacyProductFacts } from "../pharmacyCustomer";
 import { listRestaurantOrderLocations } from "../restaurantOrdering";
@@ -127,7 +128,7 @@ import {
   supportsCustomerPaymentMethod,
 } from "../paymentConfiguration";
 import { getTenantName, getTenantSlug } from "../platform";
-import { generateInvoice, generateQuotation } from "../documents";
+import { generateInvoice, generateQuotation, QuotationValidationError } from "../documents";
 import { understand } from "../nlu";
 import { checkCouponForCustomer, listAvailableCouponsForCustomer, listCustomerCouponWallet } from "../coupons";
 import { recordSynonymCandidate } from "../aiSynonyms";
@@ -294,7 +295,8 @@ function safeCatalogProduct(product: SellableProduct, tenantSlug: string | null)
   return {
     sku: product.sku,
     name: product.name,
-    price: product.price,
+    price: product.stockPolicy === "WEIGHTED" ? null : product.price,
+    priceBasis: product.stockPolicy === "WEIGHTED" ? "NOT_VERIFIED_FOR_CUSTOMER" : "CATALOG_BASE_UNIT",
     description: product.description?.slice(0, 400) ?? null,
     category: product.category,
     brand: product.brand,
@@ -800,7 +802,7 @@ const findAlternativesTool: BmsTool = {
 const getProduct: BmsTool = {
   name: "get_product",
   description:
-    "Get one product by sku, including every size, remaining stock, and its customer-safe publicPath/publicUrl for sharing.",
+    "Get one product by sku, including every size, remaining stock, and published sourced technical facts. Never infer dimensions, material grade, standards or structural/electrical suitability from free text; unprovided facts are unknown.",
   surfaces: ["customer", "staff"],
   permission: "product.view",
   inputSchema: {
@@ -820,9 +822,10 @@ const getProduct: BmsTool = {
     ]);
     const p = items.find((x) => x.sku.toLowerCase() === sku.toLowerCase());
     if (!p) return { ok: false, error: `ไม่พบสินค้า sku ${sku}` };
-    const [variants, sellableResult] = await Promise.all([
+    const [variants, sellableResult, technicalSpecs] = await Promise.all([
       listVariants(ec.tenantId, p.sku),
       listSellableProducts(ec.tenantId, { search: p.sku, limit: 5 }),
+      publishedTechnicalSpecsForTool(ec.tenantId, p.sku),
     ]);
     const sellable = sellableResult.items.find((item) => item.sku.toLowerCase() === p.sku.toLowerCase()) ?? null;
     if (ec.surface === "customer" && !sellable) return { ok: false, error: `ไม่พบสินค้า sku ${sku}` };
@@ -834,11 +837,26 @@ const getProduct: BmsTool = {
         verifiedAt: new Date().toISOString(),
         sku: p.sku,
         name: p.name,
-        price: variantPrices.length ? Math.min(...variantPrices) : Number(p.price),
-        maxPrice: variantPrices.length ? Math.max(...variantPrices) : Number(p.price),
+        price: sellable?.stockPolicy === "WEIGHTED" ? null
+          : variantPrices.length ? Math.min(...variantPrices) : Number(p.price),
+        maxPrice: sellable?.stockPolicy === "WEIGHTED" ? null
+          : variantPrices.length ? Math.max(...variantPrices) : Number(p.price),
         description: p.description?.slice(0, 800) ?? null,
         category: p.category,
         brand: p.brand,
+        technicalFactsStatus: technicalSpecs.status,
+        technicalFacts: technicalSpecs.items.map((spec) => ({
+          variantCode: spec.variant_code,
+          revisionNo: spec.revision_no,
+          publishedAt: spec.published_at,
+          lengthMm: spec.length_mm == null ? null : Number(spec.length_mm),
+          widthMm: spec.width_mm == null ? null : Number(spec.width_mm),
+          diameterMm: spec.diameter_mm == null ? null : Number(spec.diameter_mm),
+          thicknessMm: spec.thickness_mm == null ? null : Number(spec.thickness_mm),
+          nominalWeightG: spec.nominal_weight_g == null ? null : Number(spec.nominal_weight_g),
+          grade: spec.grade, standardCode: spec.standard_code,
+          usageLimitations: spec.usage_limitations,
+        })),
         foodProfile: customerFoodProfile({
           allergenCodes: p.allergen_codes,
           allergenInformationProvided: p.allergen_information_provided,
@@ -867,6 +885,34 @@ const getProduct: BmsTool = {
         })),
       },
     };
+  },
+};
+
+const searchProductSpecs: BmsTool = {
+  name: "search_product_specs",
+  description: "Search only published, sourced technical facts by product, variant, grade or standard. Results do not certify structural/electrical safety, suitability or compatibility. Unknown facts stay unknown.",
+  surfaces: ["customer", "staff"],
+  permission: "product.view",
+  whenToUse: "The customer asks for a stated dimension, grade, standard or documented use limit, including when they do not know the SKU.",
+  whenNotToUse: "Do not infer engineering suitability, load capacity, electrical safety or compatibility; hand those questions to qualified staff.",
+  inputSchema: { type: "object", properties: { keyword: { type: "string", description: "Product, grade, standard or variant to look up." } }, required: ["keyword"] },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const keyword = reqString(args, "keyword");
+    if (keyword.length > 100) return { ok: false, error: "Search term is too long" };
+    const result = await searchPublishedTechnicalSpecs(ec.tenantId, keyword);
+    return { ok: true, data: { verifiedAt: new Date().toISOString(),
+      technicalFactsStatus: result.status,
+      products: result.items.map((row) => ({
+        sku: row.product_sku, name: row.product_name, variantCode: row.variant_code,
+        revisionNo: row.revision_no, publishedAt: row.published_at,
+        lengthMm: row.length_mm == null ? null : Number(row.length_mm),
+        widthMm: row.width_mm == null ? null : Number(row.width_mm),
+        diameterMm: row.diameter_mm == null ? null : Number(row.diameter_mm),
+        thicknessMm: row.thickness_mm == null ? null : Number(row.thickness_mm),
+        nominalWeightG: row.nominal_weight_g == null ? null : Number(row.nominal_weight_g),
+        grade: row.grade, standardCode: row.standard_code,
+        usageLimitations: row.usage_limitations,
+      })) } };
   },
 };
 
@@ -3409,7 +3455,7 @@ const generateInvoiceTool: BmsTool = {
 const generateQuotationTool: BmsTool = {
   name: "generate_quotation",
   description:
-    "Generate a quotation from a list of items (priced at current prices plus estimated shipping; it is not tied to any order and reserves no stock).",
+    "Generate a provisional staff quotation from current catalog prices. Every requested line must be valid; unavailable lines reject the whole quotation. Unknown shipping makes total null. This reserves no stock, fixes no price, and is not an approved project quote.",
   surfaces: ["staff"],
   permission: "order.view",
   inputSchema: {
@@ -3428,9 +3474,15 @@ const generateQuotationTool: BmsTool = {
     required: ["items"],
   },
   execute: async (args, ec): Promise<ToolResult> => {
-    const items = reqItems(args);
-    const doc = await generateQuotation(ec.tenantId, items, optString(args, "customerRef") ?? null);
-    return { ok: true, data: doc };
+    // Let the service report all invalid lines together, including malformed model output.
+    const items = args.items as Array<{ sku: string; size: string; qty: number }>;
+    try {
+      const doc = await generateQuotation(ec.tenantId, items, optString(args, "customerRef") ?? null);
+      return { ok: true, data: doc };
+    } catch (error) {
+      if (error instanceof QuotationValidationError) return { ok: false, error: error.message };
+      throw error;
+    }
   },
 };
 
@@ -3888,6 +3940,7 @@ export const ALL_TOOLS: BmsTool[] = [
   listNewArrivalsTool,
   findAlternativesTool,
   getProduct,
+  searchProductSpecs,
   checkStockTool,
   listMenuModifiersTool,
   listRestaurantOrderLocationsTool,

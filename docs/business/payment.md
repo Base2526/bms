@@ -91,3 +91,13 @@ record the accepted goods and restored stock; `bms_pos_refund_allocations` alloc
 against the original confirmed payments. Cash completes immediately. Non-cash methods stay pending
 until a user with `payment.refund` records an external reference, and the register shift cannot close
 while one of its allocations is pending. Full workflow: [pos.md](pos.md).
+
+## Internal receivables statement
+
+`bmsArStatement(accountId)` requires `ar.view` and derives the tenant from the authenticated
+session. `getArStatement()` reads the account, nonzero invoice balances, overdue amounts and recent
+events from `bms_ar_ledger` in one SQL snapshot. It compares the cached account/invoice amounts
+with that ledger and displays a mismatch warning. The result is bounded to 200 invoices and 200
+entries, with explicit truncation flags. This is an internal preview: it does not issue a tax
+document, send a reminder or alter AR. Credit after a paid return remains a negative balance rather
+than an invented incoming payment. See [construction-material release evidence](building-materials-release-evidence-2026-11-19.md).

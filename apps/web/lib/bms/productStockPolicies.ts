@@ -113,6 +113,15 @@ export async function upsertProductStockPolicy(
       [tenantId, input.productSku]
     );
     if (!product.rowCount) throw new Error("ไม่พบสินค้านี้ในร้าน");
+    const publishedRate = await client.query<{size:string}>(
+      `SELECT size FROM bms_weighted_kg_prices WHERE tenant_id=$1 AND product_sku=$2 AND is_current`,
+      [tenantId,input.productSku]
+    );
+    if (publishedRate.rowCount && (stockPolicy !== "WEIGHTED" || baseUnit !== "GRAM"
+      || !scaleItemCode || publishedRate.rows.some((row) => row.size !== scaleSize)
+      || scaleItemCode !== current?.scaleItemCode)) {
+      throw new Error("WEIGHTED_KG_POLICY_LOCKED_UNTIL_RATE_WITHDRAWN");
+    }
     if (stockPolicy === "BUNDLE" && !product.rows[0].is_bundle) {
       throw new Error("ต้องกำหนดส่วนประกอบของชุดก่อน (หน้า Stock models → ส่วนประกอบของชุด)");
     }

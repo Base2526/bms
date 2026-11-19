@@ -143,6 +143,10 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
     section: "sales", workspace: "SHOP", visible: (ctx) => ctx.can("order.view"),
   },
   {
+    id: "sales.quotations", route: "/admin/quotations", labelKey: "admin_nav.quotations",
+    section: "sales", workspace: "SHOP", visible: (ctx) => ctx.can("quotation.view"),
+  },
+  {
     id: "sales.shipment", route: "/admin/shipment", labelKey: "admin_nav.shipment",
     section: "sales", workspace: "SHOP", visible: (ctx) => ctx.can("shipping.view"),
   },
@@ -181,6 +185,14 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
   // ---- สินค้าและสต็อก ----
   {
     id: "inventory.products", route: "/admin/products", labelKey: "admin_nav.products",
+    section: "inventory", workspace: "SHOP", visible: (ctx) => ctx.can("product.view"),
+  },
+  {
+    id: "inventory.product-specs", route: "/admin/product-specs", labelKey: "admin_nav.product_specs",
+    section: "inventory", workspace: "SHOP", visible: (ctx) => ctx.can("product.view"),
+  },
+  {
+    id: "inventory.weighted-prices", route: "/admin/weighted-prices", labelKey: "admin_nav.weighted_prices",
     section: "inventory", workspace: "SHOP", visible: (ctx) => ctx.can("product.view"),
   },
   {
@@ -548,8 +560,8 @@ const ARCHETYPE_EMPHASIS: Record<string, readonly string[]> = {
   mini_mart: ["sales.pos-shifts", "inventory.products", "inventory.product-packs", "inventory.purchase", "inventory.stock-counts"],
   fashion: ["sales.orders", "inventory.products", "sales.shipment", "customers.customers"],
   pharmacy: ["inventory.products", "sales.pos-shifts", "settings.pos-readiness"],
-  b2b_wholesale: ["sales.orders", "inventory.product-packs", "finance.receivables", "inventory.purchase", "sales.shipment"],
-  building_materials: ["sales.orders", "inventory.product-packs", "finance.receivables", "inventory.purchase", "sales.shipment"],
+  b2b_wholesale: ["sales.quotations", "sales.orders", "inventory.product-packs", "finance.receivables", "inventory.purchase", "sales.shipment"],
+  building_materials: ["sales.quotations", "sales.orders", "inventory.product-specs", "inventory.weighted-prices", "inventory.product-packs", "finance.receivables", "inventory.purchase", "sales.shipment"],
   food_beverage: ["sales.pos-shifts", "inventory.products", "inventory.stock-models", "inventory.wastage"],
   beauty_personal_care: ["sales.orders", "inventory.products", "customers.customers"],
   gadgets_accessories: ["sales.orders", "inventory.products", "sales.shipment"],

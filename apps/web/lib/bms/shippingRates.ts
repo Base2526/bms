@@ -30,7 +30,7 @@ import {
   type WeightTier,
 } from "./shippingZones";
 
-export type ShippingFeeSource = "carrier" | "zone" | "flat" | "none";
+export type ShippingFeeSource = "carrier" | "zone" | "flat" | "none" | "quote";
 
 // Parsers live in shippingZones.ts (which imports nothing) so storeProfile.ts can
 // validate with them without a circular import back through this module.

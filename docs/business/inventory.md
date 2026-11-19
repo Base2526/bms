@@ -355,11 +355,12 @@ from integer-quantity PO receiving and does not create a PO, payable, cash payme
 The fish/size selector also lists active products that cannot yet be selected, with the missing
 stock-policy, gram-unit, lot-tracking or active-variant setting and a link to that product's stock
 model. The catalog selling price is separate from the reviewed bill rate. The current order/POS
-path multiplies integer grams by a catalog price stored to two decimal places **per gram**. It
-cannot exactly quote or charge a rate such as 43.17 THB/kg for arbitrary weights (that would
-require 0.04317 THB/gram). Operators may receive and value fish but must not open sales at a
-per-kg rate that cannot be represented exactly per gram until a separate per-kg selling-price
-contract is implemented across all sales channels. Neither the fish bill rate nor its lot value
+path multiplies integer grams by a catalog price stored to two decimal places **per gram** unless
+the product has a published retail prefix-22 rate from `10.136`. That pilot stores an exact
+VAT-inclusive baht/kg rate and computes satang from integer grams with a frozen sale snapshot;
+it does not enable web orders, cut products or a full fish sales rollout. Operators may receive
+and value fish, but should open per-kg sales only after a physical scale and refund pilot.
+Neither the fish bill rate nor its lot value
 automatically becomes a selling price.
 
 For example, a **new receipt** for one fish/size can have bill weight 12.500 kg, actual received
@@ -1689,6 +1690,24 @@ cost in the same transaction; existing received stock is not rewritten. Allocati
 input rather than an automatic split of a supplier invoice, so a source/basis note is mandatory on
 each line whose additional acquisition cost is positive.
 
+Supplier package receipts (`10.137`, pilot): a PO line may freeze a supplier unit name, integer
+package count, integer base units per package and a staff-reviewed source reference. The ordered
+base quantity must equal package count × factor. Partial receipts of that line require the actual
+integer package count and matching base quantity; a mismatch or missing package count rolls back
+before stock, lot or movement changes. Inventory and valuation continue to use integer base units
+and the existing per-base-unit cost. Converted lines require an explicit cost and stable create/
+receipt keys; an omitted cost cannot become zero, and a changed retry cannot add stock again.
+Legacy PO lines remain base-unit lines. Admin, POS REST and native GraphQL receiving pass the
+supplier count to the same service; the screens expose the frozen factor and the server rechecks it.
+Staff receipt retries also check the actor's allowed receiving branch in the transaction.
+Staff REST and GraphQL receipt boundaries require a stable request key before invoking the
+service, so an omitted key cannot bypass that branch check or duplicate an ambiguous receipt.
+The Admin form lists only active receiving branches available to the user, requires a choice
+when several are available and freezes it with the retry key. The service rechecks branch access
+inside the stock transaction and returns `BRANCH_FORBIDDEN` before any stock or movement write.
+This does not turn a supplier's per-pallet invoice into an AP payable or allocate a fractional
+per-base-unit invoice cost; that needs the separate AP and three-way-match workflow.
+
 - **Actual valuation:** moving weighted average per SKU/variant/branch, using authoritative PO item
   cost on receipt. Review unknown opening inventory at Reports > Actual costs and menu engineering,
   with evidence, current quantity/version and explicit confirmation. It never rewrites old sales.
@@ -1802,3 +1821,15 @@ Each product pack may optionally reference a UN/ECE Recommendation 20 `unit_code
 `bms_master_units`. `unit_name` remains the tenant-owned receipt/display snapshot. New sales freeze
 the selected code on the order item for e-Tax; changing or retiring a master unit never rewrites an
 old bill. Missing mappings are warnings on POS readiness, not sale blockers.
+## Variant technical specifications (`10.135`, pilot)
+
+`bms_product_technical_specs` stores sourced, typed length/width/diameter/thickness in millimetres,
+nominal weight in grams, grade, stated standard and documented use limits per SKU and catalog variant.
+It does not convert physically distinct paint containers into divisible packs or assert structural
+or electrical fitness. A staff member with `product.edit` stages a new immutable revision with a
+source reference and request key. A different staff member with `product.spec.publish` publishes
+it. The prior published revision remains customer-visible while a new draft is reviewed; publication
+supersedes it atomically. Customer AI tools read only published revisions and never receive the
+source reference or draft facts. Missing fields are unknown. All writes use a tenant transaction,
+RLS and same-transaction audit. Search covers published grade, standard, product and variant on
+the online sales surface; it is not a stock or engineering-safety assertion.

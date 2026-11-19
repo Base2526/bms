@@ -1,4 +1,88 @@
 {
+  "05096e4032de0410fcbf4a9a": {
+    "file": "/audio/learning-business/th/05096e4032de0410fcbf4a9a.mp3",
+    "duration": 3.792,
+    "sha256": "8ea1ddd42bbcfe11f44e00d430664c4fea35685b2857959a698b49f90827155c",
+    "spoken": "เริ่ม จาก สาขา พนักงาน สิทธิ์ และ ภาษี ที่ ตรวจ แล้ว ก่อน ทำ รายการ จริง",
+    "track": "building-materials"
+  },
+  "2a411c683c2bd8b64acaf233": {
+    "file": "/audio/learning-business/th/2a411c683c2bd8b64acaf233.mp3",
+    "duration": 6.624,
+    "sha256": "4a52170f9f37a029b4b797790a43729b6b50bc81b2c320a93f6947c48880e3ec",
+    "spoken": "ปูน ถุง กับ พา เลท ใช้ ตัวคูณ แพ็ก ที่ ตรวจ ได้ สี ต่าง ขนาด แยก สต็อก และ เครื่องมือ ที่ ติดตาม ราย ชิ้น ต้อง มี เลขประจำตัว",
+    "track": "building-materials"
+  },
+  "032ddd6d83dd1b9b308cc603": {
+    "file": "/audio/learning-business/th/032ddd6d83dd1b9b308cc603.mp3",
+    "duration": 5.352,
+    "sha256": "feac1c8cead9cd28093cde300210c0d31cc939b5d26f7769d59fdaee7ca9a553",
+    "spoken": "ขนาด เกรด และ มาตรฐาน เผยแพร่ ได้ เมื่อ มี เอกสารอ้างอิง และ ผู้ มีสิทธิ์ ตรวจ ห้าม เดา จาก ชื่อ สินค้า",
+    "track": "building-materials"
+  },
+  "082a505fedb46ca3d0333d43": {
+    "file": "/audio/learning-business/th/082a505fedb46ca3d0333d43.mp3",
+    "duration": 6.504,
+    "sha256": "636e81e70beb6e0c8b5415081669053812ec837318319ba875aa27a4b04eb102",
+    "spoken": "ฝ่ายขาย สร้าง ใบเสนอราคา ที่ มี รายการ หน่วย ราคา ภาษี และ ค่า ส่ง ที่ ทราบ ถ้า ค่า ส่ง ไม่ ทราบ จะ ไม่ แสดง ยอด ยืนยัน",
+    "track": "building-materials"
+  },
+  "f8384dbb99d4a5ae8c12ba8b": {
+    "file": "/audio/learning-business/th/f8384dbb99d4a5ae8c12ba8b.mp3",
+    "duration": 5.064,
+    "sha256": "cc12f2bef358c11ef562273648478e2ae7c439e2e5946e8b5d8cd662670682b0",
+    "spoken": "ผู้ มีสิทธิ์ อีก คน อนุมัติ บันทึก การ ส่ง และ หลักฐาน ยอมรับ การ แก้ ใบ ที่ ส่ง แล้ว สร้าง รุ่นใหม่",
+    "track": "building-materials"
+  },
+  "9cd87e71acc860f2e51f5056": {
+    "file": "/audio/learning-business/th/9cd87e71acc860f2e51f5056.mp3",
+    "duration": 5.472,
+    "sha256": "21dd62152306cbeeb929ac2087b597934b4be6de0f719e0a823cfef8d84c947d",
+    "spoken": "ใบเสนอราคา ไม่ จอง สินค้า เมื่อ แปลง เป็น ออร์เดอร์ ระบบ ตรวจ อายุ ราคา และ สต็อก อีก ครั้งก่อน จอง",
+    "track": "building-materials"
+  },
+  "11d4c0e52e09be56dbd9d29a": {
+    "file": "/audio/learning-business/th/11d4c0e52e09be56dbd9d29a.mp3",
+    "duration": 6.36,
+    "sha256": "15e77bc5e255fe5e88c361d9e61ed5fd4bba3dbacb0899d18010e9685405a82a",
+    "spoken": "พนักงานขาย ผ่าน เครื่อง ที่ มีสิทธิ์ ยอด ชำระ และ การ ขายเชื่อ บันทึก ตาม บิล จริง โดย ลูกหนี้ ไม่ ใช่ เงินสด ใน ลิ้นชัก",
+    "track": "building-materials"
+  },
+  "aca26462abf768679cc91f5c": {
+    "file": "/audio/learning-business/th/aca26462abf768679cc91f5c.mp3",
+    "duration": 5.88,
+    "sha256": "7809cf78ee5475bb8c0825781254b3c308bea3bb15b4b3ee6de79cf2a90a1025",
+    "spoken": "ใบสั่งซื้อ รับ ของ ได้ บางส่วน แต่ ต้อง ตรวจ หน่วย จาก ผู้ขาย กับ หน่วย สต็อก และ บันทึก การเคลื่อนไหว ตาม ของจริง",
+    "track": "building-materials"
+  },
+  "2aaeaaf298624d1db294c287": {
+    "file": "/audio/learning-business/th/2aaeaaf298624d1db294c287.mp3",
+    "duration": 6.36,
+    "sha256": "b7f7a50215220245145437e09a661ad4f263cdb7974c3971101c9cd8a59367a4",
+    "spoken": "การ ส่งมอบ ปัจจุบัน ทำ ระดับ ทั้ง บิล หรือ รับ สินค้า ที่ สาขา ยัง ไม่ มี การ ส่ง บิล เดียว หลาย เที่ยว พร้อม รายการ ย่อย",
+    "track": "building-materials"
+  },
+  "1c06ce2fd2339f2d56ff535d": {
+    "file": "/audio/learning-business/th/1c06ce2fd2339f2d56ff535d.mp3",
+    "duration": 5.448,
+    "sha256": "a501cf740db7a86120332609eb5caf8ea319cb7bdfd8d2a5ef451d6a6f31ca08",
+    "spoken": "การคืน บางส่วน อ้าง บิล เดิม ตรวจ สินค้า ล็อต หรือ เลขประจำตัว เงิน คืน และ ภาษี ก่อน เปลี่ยน สต็อก",
+    "track": "building-materials"
+  },
+  "8b544eb0d1e23e18ea83477e": {
+    "file": "/audio/learning-business/th/8b544eb0d1e23e18ea83477e.mp3",
+    "duration": 6.672,
+    "sha256": "35c95ca5cf9d813fe8853a64820910d73d7ea47403776e9cbdbe40a278730f78",
+    "spoken": "เอ ไอ ลูกค้า ตอบ ราคา หน่วย สต็อก และ สเปก ที่ เผยแพร่ จริง เมื่อ ไม่ ทราบ ค่า ส่ง หรือ ข้อจำกัด การ ใช้ ต้อง ส่งต่อ พนักงาน",
+    "track": "building-materials"
+  },
+  "b806b3d3c81c8b488e0fcab7": {
+    "file": "/audio/learning-business/th/b806b3d3c81c8b488e0fcab7.mp3",
+    "duration": 10.56,
+    "sha256": "f75fd7e19b4b8c017dc4bb6af20f8ea5e1a1ee51f4f15bc05a0187efb3a8b31d",
+    "spoken": "เจ้าของ ตรวจ ยอดขาย และ สต็อก จาก รายงาน ส่วน ลูกหนี้ กับ ของ คืน ตรวจ หน้าที่ เกี่ยวข้อง เอ ไอ สรุป เฉพาะ ข้อมูล ที่ มี เครื่องมือ อนุญาต การ เปลี่ยน ราคา เครดิต คืนเงิน และ สต็อก ต้อง ให้ คน มีสิทธิ์ ยืนยัน",
+    "track": "building-materials"
+  },
   "a7f63aee4ae5bd63bdd83df7": {
     "file": "/audio/learning-business/th/a7f63aee4ae5bd63bdd83df7.mp3",
     "duration": 4.728,

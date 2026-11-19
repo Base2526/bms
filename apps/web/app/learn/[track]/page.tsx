@@ -92,6 +92,8 @@ export default function TrackPage({ params, searchParams }: { params: { track: s
         ? (th ? ["Walk-in และคิว", "จองโต๊ะ", "เล่นเป็นกลุ่ม", "คลังเกม"] : ["Walk-in & queue", "Bookings", "Group play", "Game library"])
         : id === "restaurant"
           ? (th ? ["เมนูและสูตร", "โต๊ะ / QR", "รอบครัว", "เคลียร์บิล"] : ["Menu & recipes", "Tables / QR", "Kitchen rounds", "Settlement"])
+          : id === "building-materials"
+            ? (th ? ["สินค้า / แพ็ก", "ใบเสนอราคา", "ขายเชื่อ", "ข้อจำกัด Pilot"] : ["Products / packs", "Quotations", "Credit sales", "Pilot limits"])
           : (th ? ["ใบอนุญาต", "เภสัชกร", "ล็อต / วันหมดอายุ", "หลักฐาน"] : ["Licences", "Pharmacist", "Lot / expiry", "Evidence"]);
 
   return <>
@@ -106,7 +108,7 @@ export default function TrackPage({ params, searchParams }: { params: { track: s
       <nav className={s.breadcrumb} aria-label="Breadcrumb"><Link href={localizedPublicPath("/learn", lang)}>{th ? "ศูนย์เรียนรู้" : "Learning center"}</Link><span>/</span><span>{localize(track.title, lang)}</span></nav>
       <section className={`${s.trackHero} ${s.inventoryTrackHero} ${id === "inventory" ? "" : s.businessTrackHero}`} data-track={id}>
         <div className={s.inventoryHeroCopy}>
-          <span className={s.eyebrow}>{items.length} {th ? "บทเรียน · อ่านได้โดยไม่ต้องสมัคร" : "lessons · No signup needed"}</span>
+          <span className={s.eyebrow}>{items.length} {id === "building-materials" ? (th ? "บทเรียน · คู่มือทดลอง · ยังไม่พร้อมใช้ครบ" : "lessons · Pilot guide · Incomplete for rollout") : (th ? "บทเรียน · อ่านได้โดยไม่ต้องสมัคร" : "lessons · No signup needed")}</span>
           <h1>{track.icon} {th ? "คู่มือ" : "Guide:"} {localize(track.title, lang)}</h1>
           <p>{localize(track.description, lang)}</p>
           <Link className={s.button} href={localizedPublicPath(`/learn/guides/${items[0].slug}?${lessonQuery}`, lang)}>{th ? "เริ่มจากบทแรก" : "Start the first lesson"} →</Link>
@@ -148,7 +150,7 @@ export default function TrackPage({ params, searchParams }: { params: { track: s
             const categoryItems = items.filter((lesson) => lesson.category === category);
             if (!categoryItems.length) return null;
             return <section className={s.inventoryLessonGroup} data-category={category} key={category}>
-              <h2 className={s.sectionTitle}><span aria-hidden="true">{categoryIcons[category]}</span>{localize(categoryLabels[category], lang)}<small>{categoryItems.length} {th ? "บทเรียน" : "lessons"}</small></h2>
+              <h2 className={s.sectionTitle}><span aria-hidden="true">{categoryIcons[category]}</span>{id === "building-materials" && category === "recovery" ? (th ? "แก้ปัญหาและซ้อมก่อน pilot" : "Recovery & pilot rehearsal") : localize(categoryLabels[category], lang)}<small>{categoryItems.length} {th ? "บทเรียน" : "lessons"}</small></h2>
               <ol className={`${s.lessonList} ${s.compactLessons}`}>{categoryItems.map((lesson) => <li key={lesson.slug}>
                 <Link className={s.lessonRow} href={localizedPublicPath(`/learn/guides/${lesson.slug}?${lessonQuery}`, lang)}><span>{String(items.indexOf(lesson) + 1).padStart(2, "0")}</span><div><h3>{localize(lesson.title, lang)}</h3><p>{localize(lesson.summary, lang)}</p></div><b aria-hidden="true">›</b></Link>
               </li>)}</ol>

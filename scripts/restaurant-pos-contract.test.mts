@@ -884,8 +884,8 @@ test("restaurant register keeps settlement receipts and counter screens on the s
   );
   assert.match(
     pos,
-    /SUM\(COALESCE\(oi\.pack_qty, oi\.qty\) \* oi\.receipt_unit_price\)/,
-    "ฝั่ง receipt_gross ต้องยังคูณ receipt_unit_price ด้วยจำนวนหน่วยขายเหมือนกัน",
+    /SUM\(CASE WHEN oi\.pricing_snapshot \? 'weightedKg' THEN oi\.line_amount[\s\S]*?ELSE COALESCE\(oi\.pack_qty, oi\.qty\) \* oi\.receipt_unit_price END\)/,
+    "receipt_gross ต้องใช้ยอดตรึงของฉลากชั่ง และคูณราคากับจำนวนเฉพาะรายการปกติ",
   );
   assert.match(
     service,

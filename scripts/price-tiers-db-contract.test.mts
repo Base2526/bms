@@ -30,7 +30,7 @@ import { listProductPacks, upsertProductPack } from "../apps/web/lib/bms/product
 import { unitPriceForQty } from "../apps/web/lib/bms/pricing.ts";
 import { listSellableProducts, upsertProduct } from "../apps/web/lib/bms/products.ts";
 import { listProductPriceTiers, replaceProductPriceTiers } from "../apps/web/lib/bms/productPriceTiers.ts";
-import { generateQuotation } from "../apps/web/lib/bms/documents.ts";
+import { generateQuotation, QuotationValidationError } from "../apps/web/lib/bms/documents.ts";
 import { getInventorySummary } from "../apps/web/lib/bms/reports.ts";
 
 const TAG = "pricetier-test";
@@ -107,6 +107,20 @@ test("setup: one product at ฿100 with wholesale steps at 3 / 10 / 50", async (
       [tenantId, SKU, minQty, price]
     );
   }
+});
+
+test("a missing quoted product rejects the whole otherwise valid basket", async () => {
+  await assert.rejects(
+    generateQuotation(tenantId, [
+      { sku: SKU, size: SIZE_S, qty: 2 },
+      { sku: `FAKE-${TAG}-UNKNOWN`, size: SIZE_S, qty: 1 },
+    ]),
+    (error: unknown) => {
+      assert.ok(error instanceof QuotationValidationError);
+      assert.deepEqual(error.issues.map((issue) => [issue.line, issue.code]), [[2, "PRODUCT_UNAVAILABLE"]]);
+      return true;
+    }
+  );
 });
 
 test("below the first step the shelf price still applies", async () => {

@@ -1184,6 +1184,8 @@ query MobilePosPurchaseOrders($credentials: BmsPosCredentialsInput!) {
         unitCost
         supplierSku
         supplierProductName
+        supplierUnitName
+        baseQtyPerSupplierUnit
       }
     }
   }
@@ -1214,6 +1216,8 @@ query MobilePosPurchaseOrder(
       unitCost
       supplierSku
       supplierProductName
+      supplierUnitName
+      baseQtyPerSupplierUnit
     }
   }
 }

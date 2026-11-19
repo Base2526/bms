@@ -75,6 +75,8 @@ type Order = {
   updated_at: string;
   items: OrderItem[];
   hasShippingAddress: boolean;
+  retailFulfillmentType: string | null;
+  quoteSiteAddress: string | null;
 };
 
 // ---- GraphQL ------------------------------------------------
@@ -82,7 +84,7 @@ const Q_ORDERS = gql`
   query BmsOrders($search: String, $status: BmsOrderStatus, $locationId: ID, $limit: Int, $offset: Int) {
     bmsOrders(search: $search, status: $status, locationId: $locationId, limit: $limit, offset: $offset) {
       id channel customer_ref status total_amount discount_amount shipping_fee amount_due deposit_paid deposit_balance_due deposit_status coupon_code
-      locationId locationName branchCode posDeviceName registeredPosNo posShiftId fulfillmentType promisedAt pendingRefundCount pendingRefundAmount pendingRefundSince created_at updated_at hasShippingAddress
+      locationId locationName branchCode posDeviceName registeredPosNo posShiftId fulfillmentType retailFulfillmentType quoteSiteAddress promisedAt pendingRefundCount pendingRefundAmount pendingRefundSince created_at updated_at hasShippingAddress
       discountLines { source label amount pointsUsed }
       items { product_sku product_name size qty unit_price line_amount }
     }
@@ -95,6 +97,7 @@ const Q_LOCATIONS = gql`
 `;
 const M_PACK = gql`mutation ($id: ID!) { bmsPackOrder(id: $id) }`;
 const M_SHIP = gql`mutation ($id: ID!) { bmsShipOrder(id: $id) }`;
+const M_RETAIL_HANDOVER = gql`mutation ($id: ID!) { bmsHandoverRetailPickup(id: $id, confirmed: true) }`;
 const M_COMPLETE = gql`mutation ($id: ID!) { bmsCompleteOrder(id: $id) }`;
 const M_CANCEL = gql`mutation ($id: ID!) { bmsCancelOrder(id: $id, confirmed: true) }`;
 const M_RETURN = gql`mutation ($id: ID!) { bmsReturnOrder(id: $id, confirmed: true) }`;
@@ -186,10 +189,11 @@ function OrdersManagement() {
 
   const [pack, { loading: l2 }] = useMutation(M_PACK, opts(t("admin_orders.packing_success")));
   const [ship, { loading: l3 }] = useMutation(M_SHIP, opts(t("admin_orders.shipped_success")));
+  const [handoverRetail, { loading: lRetailHandover }] = useMutation(M_RETAIL_HANDOVER, opts(t("admin_orders.shipped_success")));
   const [complete, { loading: l4 }] = useMutation(M_COMPLETE, opts(t("admin_orders.completed_success")));
   const [cancel, { loading: l5 }] = useMutation(M_CANCEL, opts(t("admin_orders.cancelled_success")));
   const [ret, { loading: l6 }] = useMutation(M_RETURN, opts(t("admin_orders.returned_success")));
-  const busy = l2 || l3 || l4 || l5 || l6;
+  const busy = l2 || l3 || lRetailHandover || l4 || l5 || l6;
 
   const fetchedOrders: Order[] = data?.bmsOrders || [];
   const orders = fetchedOrders.slice(0, 100);
@@ -210,9 +214,9 @@ function OrdersManagement() {
     const payBtn = <Link key="pay" href={`/admin/payment?orderId=${encodeURIComponent(r.id)}`}>
       <Button type="link" size="small" icon={<DollarOutlined />} disabled={busy}>{t("admin_orders.btn_pay")}</Button>
     </Link>;
-    const packBtn = <Button key="pack" type="link" size="small" icon={<InboxOutlined />} disabled={busy} onClick={() => pack(v)}>{r.fulfillmentType ? t("admin_orders.btn_accept") : t("admin_orders.btn_pack")}</Button>;
+    const packBtn = <Button key="pack" type="link" size="small" icon={<InboxOutlined />} disabled={busy} onClick={() => pack(v)}>{r.fulfillmentType && !r.retailFulfillmentType ? t("admin_orders.btn_accept") : t("admin_orders.btn_pack")}</Button>;
     const shipBtn = r.hasShippingAddress ? (
-      <Popconfirm key="ship" title={r.fulfillmentType === "PICKUP" ? t("admin_orders.pickup_confirm_title") : t("admin_orders.ship_confirm_title")} description={r.fulfillmentType === "PICKUP" ? t("admin_orders.pickup_confirm_desc") : t("admin_orders.ship_confirm_desc")} okText={r.fulfillmentType === "PICKUP" ? t("admin_orders.btn_handover") : t("admin_orders.ship_ok_text")} cancelText={t("admin_orders.cancel_text")} disabled={busy} onConfirm={() => ship(v)}>
+      <Popconfirm key="ship" title={r.fulfillmentType === "PICKUP" ? t("admin_orders.pickup_confirm_title") : t("admin_orders.ship_confirm_title")} description={r.quoteSiteAddress ? `${t("admin_orders.quote_site_address")}: ${r.quoteSiteAddress} · ${t("admin_orders.ship_confirm_desc")}` : r.fulfillmentType === "PICKUP" ? t("admin_orders.pickup_confirm_desc") : t("admin_orders.ship_confirm_desc")} okText={r.fulfillmentType === "PICKUP" ? t("admin_orders.btn_handover") : t("admin_orders.ship_ok_text")} cancelText={t("admin_orders.cancel_text")} disabled={busy || lRetailHandover} onConfirm={() => r.fulfillmentType === "PICKUP" ? handoverRetail(v) : ship(v)}>
         <Button type="link" size="small" icon={<CarOutlined />} disabled={busy}>{r.fulfillmentType === "PICKUP" ? t("admin_orders.btn_handover") : t("admin_orders.btn_ship")}</Button>
       </Popconfirm>
     ) : (
@@ -475,6 +479,7 @@ function OrderDetails({ order: r }: { order: Order }) {
         {r.fulfillmentType && <Tag color="purple">
           {r.fulfillmentType === "PICKUP" ? t("admin_orders.fulfillment_pickup") : t("admin_orders.fulfillment_delivery")}
         </Tag>}
+        {r.quoteSiteAddress && <Typography.Text>{t("admin_orders.quote_site_address")}: {r.quoteSiteAddress}</Typography.Text>}
         {r.promisedAt && <Tag>{t("admin_orders.promised_at")}: {new Date(r.promisedAt).toLocaleString(uiText.locale)}</Tag>}
       </div>
       <div>
@@ -551,6 +556,7 @@ function MobileOrderCard({ order: r, actions }: { order: Order; actions: React.R
       fields={[
         { label: t("admin_orders.customer_label"), value: r.customer_ref || <span style={{ color: "#999" }}>—</span> },
         { label: t("admin_orders.sale_branch"), value: r.locationName ? `${r.locationName}${r.branchCode ? ` (${r.branchCode})` : ""}` : "—" },
+        ...(r.quoteSiteAddress ? [{ label: t("admin_orders.quote_site_address"), value: r.quoteSiteAddress }] : []),
         { label: t("admin_orders.items_short_label"), value: t("admin_orders.col_items", { qty: r.items.reduce((n, it) => n + it.qty, 0), count: r.items.length }) },
         {
           label: t("admin_orders.col_amount_due"),

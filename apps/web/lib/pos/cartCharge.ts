@@ -78,7 +78,9 @@ export function cartLineCharge(
   // แยกก้อนตัวเลือกออกมาเพราะบรรทัดที่เข้าโปรคิดยอดสินค้าครั้งเดียวต่อ SKU+ไซซ์
   // แต่ตัวเลือกยังบวกทุกบรรทัดตามจำนวนหน่วยขาย — ตรงกับ modifierTotal ของ createOrderInTx
   const modifierAmount = round2(modifierUnitPrice * chargedQty);
-  const productAmount = round2(productUnitPrice * chargedQty);
+  const productAmount = line.scaleBarcode && tierPrice == null
+    ? round2(line.packPrice * line.packQty)
+    : round2(productUnitPrice * chargedQty);
   return {
     shelfUnitPrice,
     modifierUnitPrice,

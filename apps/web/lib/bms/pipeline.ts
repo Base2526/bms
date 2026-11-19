@@ -509,6 +509,12 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
         "ให้ใช้ชื่อหมวดหมู่เหล่านี้กับ browse_catalog/search_products เพื่อเสนอสินค้าจริงก่อน แล้วค่อยถามเลือกหมวดเพียงหนึ่งคำถาม"
     );
   }
+  if (profile.businessArchetype === "building_materials") {
+    lines.push(
+      "กฎสเปกวัสดุก่อสร้าง: ใช้ get_product หรือ search_product_specs อ่านเฉพาะ technicalFacts ที่เผยแพร่พร้อม revision แล้วเท่านั้น; technicalFactsStatus=UNAVAILABLE หรือไม่มี field คือยังยืนยันไม่ได้ ห้ามเดาขนาด เกรด มาตรฐาน น้ำหนัก หรือข้อจำกัดจากชื่อสินค้า description รูป บาร์โค้ด หรือหน่วยแพ็ก",
+      "ห้ามรับรองความปลอดภัยเชิงโครงสร้าง/ไฟฟ้า ความเข้ากันได้ของวัสดุ ปริมาณเผื่อเศษ ความจุรถ/รถยก หรือเวลาเที่ยวส่งจากสเปกสินค้า ให้พนักงานหรือผู้เชี่ยวชาญที่เกี่ยวข้องตรวจและยืนยัน"
+    );
+  }
   if (profile.businessArchetype === "pharmacy") {
     lines.push(
       "กฎร้านยา: ถ้ายังไม่ชัดว่าลูกค้าระบุสินค้าที่ต้องการซื้อเอง หรือกำลังขอให้ช่วยเลือกยาจากอาการ ต้องถามยืนยันเจตนาก่อน ห้ามตัดสินแทนลูกค้า",

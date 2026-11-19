@@ -7,6 +7,7 @@ import { getClient, query } from "@/lib/db";
 import { recordMovement } from "./movements";
 import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 import { beginTenantTx } from "./tenant";
+import { assertWeightedKgSalesSurfacesSupportedInTx } from "./weightedKgPricing";
 import { insertAuditInTx } from "./audit";
 import { assertNoQualityHold, usableStockSql } from "./lotQuality";
 import { resolveDefaultLocationIdInTx } from "./locations";
@@ -1756,6 +1757,7 @@ export async function upsertProduct(
 
     const surfaces = requestedSurfaces ?? (isNew ? templateDefaults.surfaces : null);
     if (surfaces) {
+      await assertWeightedKgSalesSurfacesSupportedInTx(client, tenantId, sku, surfaces);
       await client.query(
         `UPDATE bms_product_sales_surfaces
             SET enabled = FALSE, updated_at = now()

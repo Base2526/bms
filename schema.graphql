@@ -436,6 +436,45 @@ type BmsArReceiptResult {
   status: String!
 }
 
+type BmsArStatement {
+  accountId: ID!
+  asOf: String!
+  balanceMismatch: Boolean!
+  cachedBalance: Float!
+  creditBalance: Float!
+  customerName: String
+  entries: [BmsArStatementEntry!]!
+  grossOutstanding: Float!
+  hasMoreEntries: Boolean!
+  hasMoreInvoices: Boolean!
+  invoices: [BmsArStatementInvoice!]!
+  ledgerBalance: Float!
+  overdueAmount: Float!
+}
+
+type BmsArStatementEntry {
+  amount: Float!
+  createdAt: String!
+  id: ID!
+  invoiceId: ID!
+  kind: String!
+  orderId: ID
+  receiptId: ID
+}
+
+type BmsArStatementInvoice {
+  balance: Float!
+  credits: Float!
+  docNo: String
+  dueAt: String!
+  id: ID!
+  issuedAt: String!
+  orderId: ID!
+  originalAmount: Float!
+  overdue: Boolean!
+  payments: Float!
+}
+
 type BmsArWriteOffResult {
   amount: Float!
   balanceAfter: Float!
@@ -877,7 +916,7 @@ type BmsBusinessDoc {
   shippingFee: Float
   store: BmsStoreSummary!
   subtotal: Float!
-  total: Float!
+  total: Float
   type: String!
 }
 
@@ -3964,7 +4003,9 @@ type BmsOrder {
   posShiftId: ID
   preferred_carrier: BmsCarrier
   promisedAt: String
+  quoteSiteAddress: String
   registeredPosNo: String
+  retailFulfillmentType: String
   shipping_fee: Float!
   status: BmsOrderStatus!
   total_amount: Float!
@@ -6407,6 +6448,7 @@ input BmsPosReceivePurchaseLineInput {
   qty: Int!
   size: String!
   sku: String!
+  supplierQty: Int
 }
 
 type BmsPosRecentReturnSummary {
@@ -8029,6 +8071,8 @@ input BmsPublishPriceInput {
 type BmsPurchaseItem {
   additionalCostNote: String
   additionalUnitCost: Float!
+  baseQtyPerSupplierUnit: Int
+  conversionEvidence: String
   landedUnitCost: Float!
   qtyOrdered: Int!
   qtyReceived: Int!
@@ -8036,12 +8080,16 @@ type BmsPurchaseItem {
   sku: String!
   supplierProductName: String
   supplierSku: String
+  supplierUnitName: String
+  supplierUnitQty: Int
   unitCost: Float!
 }
 
 input BmsPurchaseItemInput {
   additionalCostNote: String
   additionalUnitCost: Float
+  baseQtyPerSupplierUnit: Int
+  conversionEvidence: String
   leadTimeDays: Int
   minOrderQty: Int
   packQty: Int
@@ -8051,6 +8099,8 @@ input BmsPurchaseItemInput {
   supplierBarcode: String
   supplierProductName: String
   supplierSku: String
+  supplierUnitName: String
+  supplierUnitQty: Int
   unitCost: Float
 }
 
@@ -8164,6 +8214,7 @@ input BmsReceiveItemInput {
   qty: Int!
   size: String!
   sku: String!
+  supplierQty: Int
 }
 
 input BmsReceiveStockTransferInput {
@@ -10451,6 +10502,7 @@ type Mutation {
   bmsGenerateInStoreBarcode: String!
   bmsGenerateMedicationSuggestions(assessmentId: ID!): BmsPharmacyAssessment!
   bmsGenerateReport(input: BmsGenerateReportInput!): BmsGenerateReportResult!
+  bmsHandoverRetailPickup(confirmed: Boolean!, id: ID!): Boolean!
   bmsIgnoreBankStatementEntry(confirmed: Boolean!, id: ID!, reason: String!): BmsBankMutationResult!
   bmsImportProducts(commit: Boolean = false, items: [BmsProductImportRowInput!]!): BmsProductImportResult!
   bmsImprovementCommand(input: BmsImprovementInput!): BmsChecklistCommandResult!
@@ -10573,7 +10625,7 @@ type Mutation {
   bmsPublishProduct(sku: String!): BmsProductReadiness!
   bmsQualityCommand(input: BmsQualityInput!): BmsChecklistCommandResult!
   bmsReadAiLimitNotification(id: ID!): Boolean!
-  bmsReceivePurchaseOrder(id: ID!, idempotencyKey: String, items: [BmsReceiveItemInput!]!): BmsPurchaseResult!
+  bmsReceivePurchaseOrder(id: ID!, idempotencyKey: String, items: [BmsReceiveItemInput!]!, locationId: ID): BmsPurchaseResult!
   bmsReceiveStockTransfer(input: BmsReceiveStockTransferInput!): BmsMobileStockTransferActionResult!
 
   """
@@ -11051,6 +11103,7 @@ type Query {
   bmsArInvoices(accountId: ID, limit: Int = 200, openOnly: Boolean, overdueOnly: Boolean): [BmsArInvoice!]!
   bmsArLedger(accountId: ID, invoiceId: ID, limit: Int = 200): [BmsArLedgerEntry!]!
   bmsArOutstanding: BmsArOutstanding!
+  bmsArStatement(accountId: ID!): BmsArStatement
   bmsAssignableStaff: [BmsStaffRef!]!
   bmsAuditLog(limit: Int = 100): [BmsAuditEntry!]!
   bmsAuditTimeline(filter: BmsAuditTimelineFilter, platformGlobal: Boolean = false): BmsAuditTimelinePage!
@@ -11309,6 +11362,7 @@ type Query {
   bmsPublicPlans: [BmsPlan!]!
   bmsPurchaseOrder(id: ID!): BmsPurchaseOrder
   bmsPurchaseOrders(limit: Int = 50, offset: Int = 0, search: String): [BmsPurchaseOrder!]!
+  bmsPurchaseReceivingLocations: [BmsLocation!]!
   bmsQualityDetail(id: ID!): JSON!
   bmsQualityForRun(id: ID!): JSON
   bmsQualityLots(locationId: ID!, search: String): JSON!

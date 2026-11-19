@@ -25,7 +25,7 @@ export const replyDigest = (reply: string) => createHash("sha256").update(reply)
 // Only public catalog/branch facts are eligible for structural projection. All other tools use
 // their own narrow status/completeness projection. Unknown/new fields always fail closed.
 export const PUBLIC_EVIDENCE_TOOLS = new Set([
-  "search_products", "browse_catalog", "list_new_arrivals", "find_alternatives", "get_product",
+  "search_products", "browse_catalog", "list_new_arrivals", "find_alternatives", "get_product", "search_product_specs",
   "check_stock", "list_menu_modifiers", "list_restaurant_order_locations", "get_restaurant_availability",
   "get_board_game_rates", "search_board_game_library", "get_board_game_availability", "get_store_info",
   "get_board_game_pass_plans", "get_board_game_offers",
@@ -56,7 +56,8 @@ const PUBLIC_KEYS = new Set((
   "foodProfile allergenCodes allergenInformationProvided dietaryTags minSelect maxSelect " +
   "type minOrderAmount remainingRedemptions subtotalOk discountPreview reason state warnings " +
   "plans offers durationDays includedMinutes percentOff fixedPrice buyMinutes freeMinutes requiresProductPurchase " +
-  "weekdays startsLocalTime endsLocalTime validFrom validUntil startsInFuture"
+  "weekdays startsLocalTime endsLocalTime validFrom validUntil startsInFuture " +
+  "technicalFactsStatus technicalFacts variantCode revisionNo publishedAt lengthMm widthMm diameterMm thicknessMm nominalWeightG grade standardCode usageLimitations"
 ).split(/\s+/));
 const STATUS_KEYS = new Set((
   "status configured marketplaceManaged hasRecipientName hasPhone hasAddress missingFields " +
@@ -88,10 +89,10 @@ export const STATUS_EVIDENCE_TOOLS = new Set([
   "present_customer_choices", "detect_language", "get_pharmacy_product_facts",
   "get_pharmacy_service_status", "get_pharmacy_case_status",
 ]);
-const CONTAINER_KEYS = new Set(("products variants sizes branch branches locations branchParking parking tableDetails groups rates games titles booking offers " +
+const CONTAINER_KEYS = new Set(("products variants sizes branch branches locations branchParking parking tableDetails groups rates games titles booking offers technicalFacts " +
   "options modifierGroups coupons requested alternatives fields requests orders items tier tables queue reservations kitchen configuredSlaMinutes " +
   "availableSizes packs candidates foodProfile matches plans").split(/\s+/));
-const ARRAY_KEYS = new Set(("products variants sizes branches locations tableDetails groups rates games titles tags options modifierGroups offers weekdays " +
+const ARRAY_KEYS = new Set(("products variants sizes branches locations tableDetails groups rates games titles tags options modifierGroups offers weekdays technicalFacts " +
   "coupons alternatives requests orders items enabledCarriers missingFields omittedFields availableSizes packs candidates allergenCodes dietaryTags warnings matches plans feature_keys topicIds").split(/\s+/));
 const SCALAR_ARRAY_KEYS = new Set("sizes tags enabledCarriers missingFields omittedFields availableSizes allergenCodes dietaryTags warnings feature_keys topicIds weekdays".split(/\s+/));
 export function redactEvidenceText(value: string): string {

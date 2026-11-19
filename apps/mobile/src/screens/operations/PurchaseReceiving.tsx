@@ -21,7 +21,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 
 type Order =
   MobilePosPurchaseOrdersQuery['bmsPosPurchaseOrders']['orders'][number];
-type Draft = Record<string, { qty: string; lotNo: string; expiryDate: string }>;
+type Draft = Record<string, { qty: string; supplierQty: string; lotNo: string; expiryDate: string }>;
 const lineKey = (sku: string, size: string) => JSON.stringify([sku, size]);
 const rejections = new Set([
   'PO_NOT_FOUND',
@@ -136,6 +136,9 @@ export function PurchaseReceiving({
       const items = order.items.flatMap(item => {
         const draft = drafts[order.id]?.[lineKey(item.sku, item.size)];
         const qty = Number(draft?.qty ?? item.qtyOrdered - item.qtyReceived);
+        const supplierQty = item.baseQtyPerSupplierUnit
+          ? Number(draft?.supplierQty ?? (item.qtyOrdered - item.qtyReceived) / item.baseQtyPerSupplierUnit)
+          : undefined;
         return qty === 0
           ? []
           : [
@@ -143,6 +146,7 @@ export function PurchaseReceiving({
                 sku: item.sku,
                 size: item.size,
                 qty,
+                ...(supplierQty === undefined ? {} : { supplierQty }),
                 lotNo: draft?.lotNo.trim() || null,
                 expiryDate: draft?.expiryDate.trim() || null,
               },
@@ -151,7 +155,8 @@ export function PurchaseReceiving({
       if (
         !items.length ||
         items.some(
-          i => !Number.isInteger(i.qty) || i.qty <= 0 || i.qty > 2147483647,
+          i => !Number.isInteger(i.qty) || i.qty <= 0 || i.qty > 2147483647
+            || (i.supplierQty !== undefined && (!Number.isInteger(i.supplierQty) || i.supplierQty <= 0)),
         )
       ) {
         setNotice(posText("กรุณาระบุจำนวนรับเป็นจำนวนเต็มมากกว่าศูนย์"));
@@ -183,7 +188,7 @@ export function PurchaseReceiving({
           variables: {
             input: {
               poId: receipt.poId,
-              items: receipt.items,
+              items: receipt.items.map(item => ({ ...item, supplierQty: item.supplierQty ?? null })),
               idempotencyKey: receipt.idempotencyKey,
               ...session.credentials,
             },
@@ -314,6 +319,8 @@ export function PurchaseReceiving({
               const key = lineKey(item.sku, item.size),
                 draft = drafts[order.id]?.[key] ?? {
                   qty: String(item.qtyOrdered - item.qtyReceived),
+                  supplierQty: item.baseQtyPerSupplierUnit
+                    ? String((item.qtyOrdered - item.qtyReceived) / item.baseQtyPerSupplierUnit) : '',
                   lotNo: '',
                   expiryDate: '',
                 };
@@ -332,10 +339,24 @@ export function PurchaseReceiving({
                     accessibilityLabel={posText("จำนวนรับ {v0} {v1}", { v0: item.sku, v1: item.size })}
                     value={draft.qty}
                     keyboardType="number-pad"
-                    editable={!disabled}
+                    editable={!disabled && !item.baseQtyPerSupplierUnit}
                     onChangeText={qty => patch({ qty })}
                     style={inputStyle}
                   />
+                  {item.baseQtyPerSupplierUnit ? <>
+                    <Text style={{ color: colors.text }}>{posText("รับเป็นหน่วยผู้ขาย {v0}: 1 หน่วย = {v1} หน่วยฐาน", {
+                      v0: item.supplierUnitName ?? '', v1: item.baseQtyPerSupplierUnit,
+                    })}</Text>
+                    <TextInput
+                      accessibilityLabel={posText("จำนวนหน่วยผู้ขายที่รับ {v0} {v1}", { v0: item.sku, v1: item.size })}
+                      value={draft.supplierQty}
+                      keyboardType="number-pad"
+                      editable={!disabled}
+                      onChangeText={supplierQty => patch({ supplierQty,
+                        qty: String(Number(supplierQty) * item.baseQtyPerSupplierUnit!) })}
+                      style={inputStyle}
+                    />
+                  </> : null}
                   <TextInput
                     accessibilityLabel={posText("เลขล็อต {v0} {v1}", { v0: item.sku, v1: item.size })}
                     placeholder={posText("เลขล็อตตามฉลาก (สินค้าติดตามล็อตต้องกรอก)")}

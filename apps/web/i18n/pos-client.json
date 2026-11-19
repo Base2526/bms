@@ -1145,6 +1145,8 @@
   "รับแล้ว {v0} จาก {v1} หน่วย": "Received {v0} of {v1} units",
   "{v0}/{v1} · ค้างรับ {v2}": "{v0}/{v1} · Outstanding {v2}",
   "จำนวนรับ {v0} {v1}": "Receiving quantity {v0} {v1}",
+  "รับเป็นหน่วยผู้ขาย {v0}: 1 หน่วย = {v1} หน่วยฐาน": "Receive supplier unit {v0}: 1 unit = {v1} base units",
+  "จำนวนหน่วยผู้ขายที่รับ {v0} {v1}": "Supplier units received {v0} {v1}",
   "เลขล็อต {v0} {v1}": "Lot number {v0} {v1}",
   "เลขล็อตตามฉลาก (สินค้าติดตามล็อตต้องกรอก)": "Label lot number (required for lot-tracked products)",
   "วันหมดอายุ {v0} {v1}": "Expiry date {v0} {v1}",
