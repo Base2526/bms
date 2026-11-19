@@ -73,7 +73,8 @@ ENV NEXT_BUILD_CPUS=$NEXT_BUILD_CPUS
 ENV NODE_OPTIONS=--max-old-space-size=$NODE_BUILD_MAX_OLD_SPACE_SIZE
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN npm run build
+# Webpack's compilation cache is only useful while building; keep it out of the runtime image.
+RUN npm run build && rm -rf .next/cache/webpack
 
 # Scheduler uses this Dockerfile but does not compile Next.js or carry database code.
 # Node 22 runs the shared Redis client's erasable TypeScript directly.
@@ -100,7 +101,6 @@ ENV NODE_ENV=production
 
 COPY --from=builder /app/apps/web ./
 COPY --from=builder /app/packages /app/packages
-COPY --from=builder /app/apps/web/node_modules ./node_modules
 COPY db /app/db
 
 EXPOSE 3000
