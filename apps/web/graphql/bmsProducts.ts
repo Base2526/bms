@@ -47,9 +47,7 @@ function toGqlError(err: any): never {
   // ต้องเหลือร่องรอยจริงไว้ใน log ของ server ไม่งั้นเหลือแค่ 400 เปล่า ๆ ให้ไล่
   if (err?.code || err?.detail || err?.stack) {
     console.error("[bmsProducts] resolver error", {
-      code: err?.code ?? null,          // SQLSTATE ถ้ามาจาก pg
-      detail: err?.detail ?? null,
-      message: err?.message ?? null,
+      sqlstate: typeof err?.code === "string" && /^[0-9A-Z]{5}$/.test(err.code) ? err.code : null,
     });
   }
   throw new GraphQLError(err?.message || "operation failed", {
@@ -224,7 +222,6 @@ export const bmsProductsResolvers = {
       const auth = requireAuth(ctx);
       try {
         const p = await upsertProduct(getTenantId(ctx), args.input, auth.author_id);
-        await audit(ctx, "product.upsert", args.input?.sku, { name: args.input?.name });
         return p;
       } catch (err) {
         toGqlError(err);
@@ -277,7 +274,6 @@ export const bmsProductsResolvers = {
       const ok = args.active
         ? true
         : await setProductActive(getTenantId(ctx), args.sku, false, auth.author_id);
-      if (ok) await audit(ctx, "product.active", args.sku, { active: args.active });
       return ok;
     },
     async bmsPublishProduct(_p: unknown, args: { sku: string }, ctx: any) {
@@ -391,9 +387,6 @@ export const bmsProductsResolvers = {
           auth.author_id,
           args.locationId
         );
-        await audit(ctx, "stock.adjust", args.sku, {
-          locationId: args.locationId, size: args.size, delta: args.delta,
-        });
         return shapeVariant(row);
       } catch (err) {
         toGqlError(err);

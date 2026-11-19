@@ -23,6 +23,13 @@ test("nullable GraphQL input cannot write null into store-profile NOT NULL colum
     "the upsert must use the guarded merge");
   assert.match(form, /input\.restaurantOrdersPaused = v\.restaurantOrdersPaused[\s\S]*?bmsStoreProfile\?\.restaurantOrdersPaused[\s\S]*?false/,
     "the form must always submit a concrete pause state");
+  assert.match(form, /input\.tenantName = v\.name\?\.trim\(\) \|\| null/,
+    "the form must send the name in the same mutation as the profile");
+  assert.doesNotMatch(form, /saveTenant\(/,
+    "the form must not partially save a tenant name before profile validation");
+  assert.match(service, /UPDATE bms_tenants SET name = \$2 WHERE id = \$1/);
+  assert.match(service, /if \(merged\.businessArchetype\) merged\.businessType = archetypeToBusinessType/,
+    "the server must derive legacy AI classification from the selected archetype");
 });
 
 test("store settings can decode a shop-owned payment QR image into the bounded payload field", async () => {

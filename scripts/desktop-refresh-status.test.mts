@@ -1,3 +1,5 @@
+import { createPosTranslator } from "../apps/web/i18n/posClient.ts";
+const posText = createPosTranslator("th");
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -19,7 +21,7 @@ function harness(options: { initial?: string; busy?: boolean; submitting?: boole
   const request = new Promise((yes, no) => { resolve = yes; reject = no; });
   const refreshingRef = { current: false };
   const attempt = { current: options.pending ? { payload: { input: { idempotencyKey: "original-key" } } } : null };
-  const deps = {
+  const deps = { posText,
     useCallback: (fn: unknown) => fn,
     tokenRef: { current: options.token === undefined ? "FAKE-token" : options.token },
     contentRefreshingRef: refreshingRef, busy: options.busy ?? false,
@@ -93,6 +95,6 @@ test("refresh cannot interrupt a pending sale, a submitted sale or another opera
 test("initial connection checking and native refresh shortcut remain wired separately", () => {
   assert.match(source, /const bootstrapDevice = useCallback\(async \(\) => \{\s*setConnection\("checking"\)/);
   assert.match(source, /onRefreshRequested\(\(\) => \{ void refreshDesktopContent\(\); \}\)/);
-  assert.match(source, /contentRefreshing \? "กำลังอัปเดตข้อมูล…" : ""/);
+  assert.match(source, /contentRefreshing \? posText\("กำลังอัปเดตข้อมูล…"\) : ""/);
   assert.equal((source.match(/"กำลังอัปเดตข้อมูล…"/g) ?? []).length, 1);
 });

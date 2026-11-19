@@ -96,7 +96,7 @@ try {
       assert.equal(await details.getByRole("button", { name: saveLabel }).isDisabled(), true); assert.equal(savedInput, undefined);
       await details.getByRole("checkbox").check(); writeFailure = true;
       await details.getByRole("button", { name: saveLabel }).click();
-      await page.getByText(/COST_ALLOCATION_PREVIEW_STALE/).waitFor();
+      await page.getByText(label("ข้อมูลเปลี่ยนหลังตรวจตัวอย่าง กรุณาโหลดข้อมูลใหม่ ตรวจยอดอีกครั้ง แล้วจึงยืนยัน", "The data changed after preview. Reload it, review the totals again, then confirm."), { exact: true }).waitFor();
       assert.equal(await details.getByRole("checkbox").count(), 0);
       assert.equal(await details.locator("#reason").inputValue(), "FAKE latest allocation");
       writeFailure = false;
@@ -107,8 +107,8 @@ try {
       assert.equal(savedInput.tenantId, undefined); assert.equal(savedInput.amount, undefined);
       await page.screenshot({ path: `${output}/${lang}-${width}-saved.png`, animations: "disabled" });
       readFailure = true;
-      await worksheet.getByRole("button", { name: /Refresh/ }).click();
-      await worksheet.getByText("COST_ALLOCATION_CURRENCY_REVIEW_REQUIRED", { exact: true }).waitFor();
+      await worksheet.getByRole("button", { name: label("รีเฟรช", "Refresh"), exact: true }).click();
+      await worksheet.getByText(label("ร้านยังไม่ได้ตั้งสกุลเงินเป็นบาท (THB) ให้ Administrator ไปที่ตั้งค่า → ข้อมูลร้าน บันทึก THB แล้วโหลดหน้านี้ใหม่", "Set the store currency to Thai baht (THB) in Settings → Store profile, save, then reload this page."), { exact: true }).waitFor();
       assert.equal(await worksheet.getByText(/฿100\.00/).count(), 0);
       readFailure = false; permissions = permissions.filter(p => p !== "expense.manage");
       await page.reload({ waitUntil: "domcontentloaded" }); await page.getByRole("button", { name: open, exact: true }).click();

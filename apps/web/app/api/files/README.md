@@ -4,6 +4,12 @@
 
 # วิธีแนะนำ (ปลอดภัยสุด): เสิร์ฟผ่าน API `/api/files/:id`
 
+> Security contract: `GET /api/files/:id` เปิดได้โดยไม่ล็อกอินเฉพาะแถวที่
+> `visibility = 'public'`; ไฟล์ private ตรวจ session และ tenant เจ้าของก่อนเสิร์ฟ
+> ส่วน `GET/POST /api/files` สำหรับ Files panel ต้องล็อกอิน, จำกัดรายการตาม tenant,
+> ผูก tenant ตอนอัปโหลด, ไม่ส่ง storage key (`relpath`) ให้ client และจำกัดไฟล์ไม่เกิน
+> 25 MB ห้ามสร้าง route ใหม่ที่ข้าม guard นี้
+
 ให้ตาราง `files` เก็บอย่างน้อย: `id (uuid)`, `relpath` (เช่น `2025/11/07/xxx.png`), `mime`, `size`.
 
 ### 1) helper สร้าง URL ไปหน้าเว็บ

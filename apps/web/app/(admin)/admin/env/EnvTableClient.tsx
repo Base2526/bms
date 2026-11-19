@@ -1,6 +1,8 @@
 // app/admin/env/EnvTableClient.tsx
 "use client";
 
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
+
 import React, { useMemo, useState } from "react";
 import { gql, useMutation } from "@apollo/client";
 import { Alert, Button, Card, Descriptions, Input, Space, Table, Tag, Typography, message } from "antd";
@@ -39,7 +41,7 @@ const M_CHECK_ALL_AI_PROVIDER_HEALTH = gql`
 `;
 
 const { Text } = Typography;
-const PLATFORM_AI_PROVIDERS = [
+const PLATFORM_AI_PROVIDERS = (uiText: UiTranslator = thaiUiText) => ([
   {
     key: "anthropic",
     title: "Anthropic Chat",
@@ -48,7 +50,7 @@ const PLATFORM_AI_PROVIDERS = [
   },
   {
     key: "anthropic-ocr",
-    title: "Anthropic OCR Fallback",
+    title: uiText("admin_ui.en_anthropic_ocr_fallback_9bf1a"),
     envKey: "ANTHROPIC_API_KEY",
     noteKey: "provider_note_anthropic_ocr",
   },
@@ -64,8 +66,8 @@ const PLATFORM_AI_PROVIDERS = [
     envKey: "QWEN_OCR_API_KEY",
     noteKey: "provider_note_qwen",
   },
-] as const;
-type PlatformAiProviderKey = (typeof PLATFORM_AI_PROVIDERS)[number]["key"];
+] as const);
+type PlatformAiProviderKey = ReturnType<typeof PLATFORM_AI_PROVIDERS>[number]["key"];
 
 type Meta = {
   nodeEnv: string;
@@ -85,19 +87,19 @@ type Props = {
   configDiagnostics: ConfigDiagnostic[];
 };
 
-function healthStatusTag(status: AiProviderHealth["status"]) {
-  if (status === "connected") return <Tag color="green">CONNECTED</Tag>;
-  if (status === "unconfigured") return <Tag>UNCONFIGURED</Tag>;
-  if (status === "token_expired") return <Tag color="red">TOKEN EXPIRED</Tag>;
-  if (status === "rate_limited") return <Tag color="gold">RATE LIMITED</Tag>;
-  if (status === "stale") return <Tag color="orange">STALE</Tag>;
-  return <Tag color="red">SEND FAILED</Tag>;
+function healthStatusTag(status: AiProviderHealth["status"], uiText: UiTranslator = thaiUiText) {
+  if (status === "connected") return <Tag color="green">{uiText("admin_ui.en_connected_073af")}</Tag>;
+  if (status === "unconfigured") return <Tag>{uiText("admin_ui.en_unconfigured_89d31")}</Tag>;
+  if (status === "token_expired") return <Tag color="red">{uiText("admin_ui.en_token_expired_f9123")}</Tag>;
+  if (status === "rate_limited") return <Tag color="gold">{uiText("admin_ui.en_rate_limited_2a15c")}</Tag>;
+  if (status === "stale") return <Tag color="orange">{uiText("admin_ui.en_stale_600a5")}</Tag>;
+  return <Tag color="red">{uiText("admin_ui.en_send_failed_67518")}</Tag>;
 }
 
-function statusTag(status: ActiveProviderSummary["status"]) {
-  if (status === "active") return <Tag color="green">ACTIVE</Tag>;
-  if (status === "fallback") return <Tag color="gold">FALLBACK</Tag>;
-  return <Tag color="red">MISSING</Tag>;
+function statusTag(status: ActiveProviderSummary["status"], uiText: UiTranslator = thaiUiText) {
+  if (status === "active") return <Tag color="green">{uiText("admin_ui.en_active_c7263")}</Tag>;
+  if (status === "fallback") return <Tag color="gold">{uiText("admin_ui.en_fallback_50a0a")}</Tag>;
+  return <Tag color="red">{uiText("admin_ui.en_missing_04077")}</Tag>;
 }
 
 function providerTag(provider: string) {
@@ -128,11 +130,11 @@ function healthUsageNote(
   return t("admin_env_table.used_when_default");
 }
 
-function formatDateTime(value: string | null) {
+function formatDateTime(value: string | null, uiText: UiTranslator = thaiUiText) {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("th-TH", {
+  return date.toLocaleString(uiText.locale, {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -170,6 +172,7 @@ export default function EnvTableClient({
   providerHealth,
   configDiagnostics,
 }: Props) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [q, setQ] = useState("");
   const [testResults, setTestResults] = useState<
@@ -215,7 +218,7 @@ export default function EnvTableClient({
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      message.success("Copied");
+      message.success(uiText("admin_ui.en_copied_8e3df"));
     } catch {
       // fallback
       try {
@@ -225,9 +228,9 @@ export default function EnvTableClient({
         el.select();
         document.execCommand("copy");
         document.body.removeChild(el);
-        message.success("Copied");
+        message.success(uiText("admin_ui.en_copied_8e3df"));
       } catch {
-        message.error("Copy failed");
+        message.error(uiText("admin_ui.en_copy_failed_bd5ac"));
       }
     }
   };
@@ -261,7 +264,7 @@ export default function EnvTableClient({
 
   const columns: ColumnsType<EnvRow> = [
     {
-      title: "Key",
+      title: uiText("admin_ui.en_key_c67dd"),
       dataIndex: "key",
       key: "key",
       width: 360,
@@ -275,22 +278,22 @@ export default function EnvTableClient({
       defaultSortOrder: "ascend",
     },
     {
-      title: "Value",
+      title: uiText("admin_ui.en_value_8dce1"),
       dataIndex: "value",
       key: "value",
       render: (v: string) => (
         <Text code style={{ wordBreak: "break-all" }}>
-          {v || "(empty)"}
+          {v || uiText("admin_ui.en_empty_48b2f")}
         </Text>
       ),
     },
     {
-      title: "Masked",
+      title: uiText("admin_ui.en_masked_3c7ed"),
       dataIndex: "masked",
       key: "masked",
       width: 110,
       align: "center",
-      render: (m: boolean) => (m ? <Tag color="gold">MASKED</Tag> : <Tag>OK</Tag>),
+      render: (m: boolean) => (m ? <Tag color="gold">{uiText("admin_ui.en_masked_63dc7")}</Tag> : <Tag>OK</Tag>),
       filters: [
         { text: "Masked", value: "masked" },
         { text: "Not masked", value: "ok" },
@@ -301,43 +304,41 @@ export default function EnvTableClient({
       },
     },
     {
-      title: "Actions",
+      title: uiText("admin_ui.en_actions_c3cd6"),
       key: "actions",
       width: 220,
       render: (_, record) => (
         <Space>
           <Button icon={<CopyOutlined />} onClick={() => copy(record.key)}>
-            Copy Key
-          </Button>
+            {uiText("admin_ui.en_copy_key_89dcf")}</Button>
           <Button icon={<CopyOutlined />} onClick={() => copy(record.value)}>
-            Copy Value
-          </Button>
+            {uiText("admin_ui.en_copy_value_8ef1d")}</Button>
         </Space>
       ),
     },
   ];
   const usageColumns: ColumnsType<RecentAiUsageEvent> = [
     {
-      title: "When",
+      title: uiText("admin_ui.en_when_769bb"),
       key: "createdAt",
       width: 190,
-      render: (_, record) => formatDateTime(record.createdAt),
+      render: (_, record) => formatDateTime(record.createdAt, uiText),
     },
     {
-      title: "Tenant",
+      title: uiText("admin_ui.en_tenant_3ca93"),
       key: "tenant",
       width: 180,
       render: (_, record) => record.tenantName || record.tenantId.slice(0, 8),
     },
     {
-      title: "Feature",
+      title: uiText("admin_ui.en_feature_ad565"),
       dataIndex: "feature",
       key: "feature",
       width: 180,
       render: (value: string) => <Text code>{value}</Text>,
     },
     {
-      title: "Provider",
+      title: uiText("admin_ui.en_provider_7ceee"),
       key: "provider",
       width: 150,
       render: (_, record) => (
@@ -350,14 +351,14 @@ export default function EnvTableClient({
       ),
     },
     {
-      title: "Source",
+      title: uiText("admin_ui.en_source_6da13"),
       dataIndex: "source",
       key: "source",
       width: 110,
       render: (value: string) => <Tag>{value}</Tag>,
     },
     {
-      title: "Routing",
+      title: uiText("admin_ui.en_routing_7d15d"),
       key: "routing",
       width: 220,
       render: (_, record) => (
@@ -365,14 +366,14 @@ export default function EnvTableClient({
           <Text code>{record.routingReason || "-"}</Text>
           {record.fallbackFrom ? (
             <Text type="secondary" style={{ fontSize: 12 }}>
-              fallback from {record.fallbackFrom}
+              {uiText("admin_ui.en_fallback_from_42701")} {record.fallbackFrom}
             </Text>
           ) : null}
         </Space>
       ),
     },
     {
-      title: "Status",
+      title: uiText("admin_ui.en_status_bae7d"),
       dataIndex: "status",
       key: "status",
       width: 110,
@@ -383,25 +384,24 @@ export default function EnvTableClient({
       ),
     },
     {
-      title: "Cost",
+      title: uiText("admin_ui.en_cost_64ae4"),
       key: "cost",
       width: 120,
       render: (_, record) => formatMoney(record.actualCostUsd),
     },
     {
-      title: "Usage",
+      title: uiText("admin_ui.en_usage_0bb18"),
       key: "usage",
       width: 150,
       render: (_, record) => (
         <Space direction="vertical" size={0}>
-          <Text>{record.billableCredits} point · {record.providerCalls} call</Text>
+          <Text>{record.billableCredits}  {uiText("admin_ui.en_point_8a520")} {record.providerCalls}  {uiText("admin_ui.en_call_bc8d8")}</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>
             {formatTokens(record.inputTokens ?? null, record.outputTokens ?? null)}
           </Text>
           {record.unpricedProviderCalls > 0 && (
             <Text type="warning" style={{ fontSize: 12 }}>
-              {record.unpricedProviderCalls} unpriced call
-            </Text>
+              {record.unpricedProviderCalls}  {uiText("admin_ui.en_unpriced_call_d54e3")}</Text>
           )}
         </Space>
       ),
@@ -411,21 +411,21 @@ export default function EnvTableClient({
   return (
     <div style={{ padding: 24 }}>
       <Space direction="vertical" size={16} style={{ width: "100%" }}>
-        <Card title="System ENV" bordered>
+        <Card title={uiText("admin_ui.en_system_env_7a4e1")} bordered>
           <Descriptions size="small" column={2}>
             <Descriptions.Item label="NODE_ENV">{meta.nodeEnv}</Descriptions.Item>
-            <Descriptions.Item label="Runtime">{meta.runtime}</Descriptions.Item>
-            <Descriptions.Item label="Hostname">{meta.hostname}</Descriptions.Item>
+            <Descriptions.Item label={uiText("admin_ui.en_runtime_c4740")}>{meta.runtime}</Descriptions.Item>
+            <Descriptions.Item label={uiText("admin_ui.en_hostname_c983a")}>{meta.hostname}</Descriptions.Item>
             <Descriptions.Item label="PID">{meta.pid}</Descriptions.Item>
-            <Descriptions.Item label="Uptime (sec)">{meta.uptimeSec}</Descriptions.Item>
-            <Descriptions.Item label="Now">{meta.now}</Descriptions.Item>
+            <Descriptions.Item label={uiText("admin_ui.en_uptime_sec_f72a2")}>{meta.uptimeSec}</Descriptions.Item>
+            <Descriptions.Item label={uiText("admin_ui.en_now_e3b82")}>{meta.now}</Descriptions.Item>
           </Descriptions>
           <div style={{ marginTop: 12, opacity: 0.75 }}>
             * {t("admin_env_table.secret_masked_note")}
           </div>
         </Card>
 
-        <Card title="Config Doctor" bordered>
+        <Card title={uiText("admin_ui.en_config_doctor_b678f")} bordered>
           <Space direction="vertical" size={10} style={{ width: "100%" }}>
             <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
               {t("admin_env_table.env_restart_note_1")} <Text code>.env</Text>{" "}
@@ -449,21 +449,21 @@ export default function EnvTableClient({
           </Space>
         </Card>
 
-        <Card title="Active Runtime" bordered>
+        <Card title={uiText("admin_ui.en_active_runtime_b2031")} bordered>
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             {activeProviders.map((summary) => (
               <Card key={summary.scope} size="small" title={summary.label}>
                 <Descriptions size="small" column={2}>
-                  <Descriptions.Item label="Status">
-                    {statusTag(summary.status)}
+                  <Descriptions.Item label={uiText("admin_ui.en_status_bae7d")}>
+                    {statusTag(summary.status, uiText)}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Configured">
+                  <Descriptions.Item label={uiText("admin_ui.en_configured_668c5")}>
                     {providerTag(summary.configuredProvider)}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Effective">
-                    {summary.effectiveProvider ? providerTag(summary.effectiveProvider) : <Tag color="red">None</Tag>}
+                  <Descriptions.Item label={uiText("admin_ui.en_effective_b0346")}>
+                    {summary.effectiveProvider ? providerTag(summary.effectiveProvider) : <Tag color="red">{uiText("admin_ui.en_none_6eef6")}</Tag>}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Model">
+                  <Descriptions.Item label={uiText("admin_ui.en_model_68c2c")}>
                     <Text code>{summary.model || "-"}</Text>
                   </Descriptions.Item>
                 </Descriptions>
@@ -475,13 +475,13 @@ export default function EnvTableClient({
           </Space>
         </Card>
 
-        <Card title="Recent Actual Usage" bordered>
+        <Card title={uiText("admin_ui.en_recent_actual_usage_81f66")} bordered>
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
               {t("admin_env_table.usage_desc_1")} <Text code>bms_ai_usage_events</Text>
             </Typography.Paragraph>
             <Descriptions size="small" column={2}>
-              <Descriptions.Item label="Latest Chat">
+              <Descriptions.Item label={uiText("admin_ui.en_latest_chat_8bd5e")}>
                 {latestChatUsage ? (
                   <Space wrap>
                     {providerTag(latestChatUsage.provider)}
@@ -492,7 +492,7 @@ export default function EnvTableClient({
                   <Text type="secondary">{t("admin_env_table.no_event")}</Text>
                 )}
               </Descriptions.Item>
-              <Descriptions.Item label="Latest OCR">
+              <Descriptions.Item label={uiText("admin_ui.en_latest_ocr_11ef9")}>
                 {latestOcrUsage ? (
                   <Space wrap>
                     {providerTag(latestOcrUsage.provider)}
@@ -517,7 +517,7 @@ export default function EnvTableClient({
         </Card>
 
         <Card
-          title="AI Provider Health"
+          title={uiText("admin_ui.en_ai_provider_health_e40f3")}
           bordered
           extra={
             <Button
@@ -532,8 +532,8 @@ export default function EnvTableClient({
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
               {t("admin_env_table.health_desc_1")} <Text code>bms_ai_provider_health</Text>{" "}
-              {t("admin_env_table.health_desc_2")} <Text code>Active Runtime</Text>{" "}
-              {t("admin_env_table.health_desc_3")} <Text code>Used When</Text>
+              {t("admin_env_table.health_desc_2")} <Text code>{uiText("admin_ui.en_active_runtime_b2031")}</Text>{" "}
+              {t("admin_env_table.health_desc_3")} <Text code>{uiText("admin_ui.en_used_when_7b17c")}</Text>
               {t("admin_env_table.health_desc_4")}
             </Typography.Paragraph>
             <Table<AiProviderHealth>
@@ -544,26 +544,26 @@ export default function EnvTableClient({
               locale={{ emptyText: t("admin_env_table.no_data") }}
               columns={[
                 {
-                  title: "Provider",
+                  title: uiText("admin_ui.en_provider_7ceee"),
                   key: "provider",
                   width: 150,
                   render: (_, r) => providerTag(r.provider),
                 },
                 {
-                  title: "Purpose",
+                  title: uiText("admin_ui.en_purpose_a0fb8"),
                   dataIndex: "purpose",
                   key: "purpose",
                   width: 100,
                   render: (v: string) => <Tag>{v}</Tag>,
                 },
                 {
-                  title: "Status",
+                  title: uiText("admin_ui.en_status_bae7d"),
                   key: "status",
                   width: 150,
-                  render: (_, r) => healthStatusTag(r.status),
+                  render: (_, r) => healthStatusTag(r.status, uiText),
                 },
                 {
-                  title: "Used When",
+                  title: uiText("admin_ui.en_used_when_7b17c"),
                   key: "used_when",
                   width: 360,
                   render: (_, r) => (
@@ -573,7 +573,7 @@ export default function EnvTableClient({
                   ),
                 },
                 {
-                  title: "Detail",
+                  title: uiText("admin_ui.en_detail_7c9a7"),
                   dataIndex: "status_detail",
                   key: "status_detail",
                   render: (v: string | null) => (
@@ -583,22 +583,22 @@ export default function EnvTableClient({
                   ),
                 },
                 {
-                  title: "Last Success",
+                  title: uiText("admin_ui.en_last_success_7094f"),
                   key: "last_success_at",
                   width: 190,
-                  render: (_, r) => formatDateTime(r.last_success_at),
+                  render: (_, r) => formatDateTime(r.last_success_at, uiText),
                 },
                 {
-                  title: "Last Error",
+                  title: uiText("admin_ui.en_last_error_44cc8"),
                   key: "last_error_at",
                   width: 190,
-                  render: (_, r) => formatDateTime(r.last_error_at),
+                  render: (_, r) => formatDateTime(r.last_error_at, uiText),
                 },
                 {
-                  title: "Last Checked",
+                  title: uiText("admin_ui.en_last_checked_40b64"),
                   key: "last_checked_at",
                   width: 190,
-                  render: (_, r) => formatDateTime(r.last_checked_at),
+                  render: (_, r) => formatDateTime(r.last_checked_at, uiText),
                 },
               ]}
               scroll={{ x: 1460 }}
@@ -610,8 +610,7 @@ export default function EnvTableClient({
           title={
             <Space>
               <KeyOutlined />
-              Shared AI Providers
-            </Space>
+              {uiText("admin_ui.en_shared_ai_providers_d5657")}</Space>
           }
           bordered
         >
@@ -620,7 +619,7 @@ export default function EnvTableClient({
               {t("admin_env_table.test_desc_1")}{" "}
               <Text code>.env</Text> {t("admin_env_table.test_desc_2")}
             </Typography.Paragraph>
-            {PLATFORM_AI_PROVIDERS.map((provider) => {
+            {PLATFORM_AI_PROVIDERS(uiText).map((provider) => {
               const result = testResults[provider.key];
               const loading = testingAiKey && activeProvider === provider.key;
               return (
@@ -658,10 +657,9 @@ export default function EnvTableClient({
           title={
             <Space>
               <SearchOutlined />
-              ENV List
-            </Space>
+              {uiText("admin_ui.en_env_list_962ab")}</Space>
           }
-          extra={<Tag>{filtered.length} items</Tag>}
+          extra={<Tag>{filtered.length}  {uiText("admin_ui.en_items_7316c")}</Tag>}
           bordered
         >
           <Input

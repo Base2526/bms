@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 /* eslint-disable no-bitwise -- ESC/POS status is a documented bit mask. */
 import type Socket from 'react-native-tcp-socket/lib/types/Socket';
 
@@ -33,17 +34,17 @@ export function validatePrinterConfig(value: PrinterConfig): PrinterConfig {
     octets.some(n => n > 255) ||
     !local
   ) {
-    throw new Error('กรุณาระบุ IPv4 ของเครื่องพิมพ์ในเครือข่ายภายใน');
+    throw new Error(posText("กรุณาระบุ IPv4 ของเครื่องพิมพ์ในเครือข่ายภายใน"));
   }
   if (
     !Number.isInteger(value.port) ||
     value.port < 1024 ||
     value.port > 65535
   ) {
-    throw new Error('พอร์ตต้องเป็นจำนวนเต็มระหว่าง 1024–65535');
+    throw new Error(posText("พอร์ตต้องเป็นจำนวนเต็มระหว่าง 1024–65535"));
   }
   if (value.paperWidth !== 58 && value.paperWidth !== 80) {
-    throw new Error('กรุณาเลือกกระดาษ 58 หรือ 80 มม.');
+    throw new Error(posText("กรุณาเลือกกระดาษ 58 หรือ 80 มม."));
   }
   return { host, port: value.port, paperWidth: value.paperWidth };
 }
@@ -51,7 +52,7 @@ export function validatePrinterConfig(value: PrinterConfig): PrinterConfig {
 export class NetworkPrinter {
   private state: PrinterState = {
     status: 'disconnected',
-    message: 'ยังไม่ได้เชื่อมต่อเครื่องพิมพ์',
+    get message() { return posText("ยังไม่ได้เชื่อมต่อเครื่องพิมพ์"); },
     config: null,
   };
   private socket: PrinterSocket | null = null;
@@ -71,7 +72,7 @@ export class NetworkPrinter {
     this.state = { ...this.state, status, message };
     this.listeners.forEach(listener => listener());
   }
-  disconnect = (message = 'ยังไม่ได้เชื่อมต่อเครื่องพิมพ์') => {
+  disconnect = (message = posText("ยังไม่ได้เชื่อมต่อเครื่องพิมพ์")) => {
     const socket = this.socket;
     this.socket = null;
     this.pending.forEach(reject => reject(new Error(message)));
@@ -81,13 +82,13 @@ export class NetworkPrinter {
   private fail(socket: PrinterSocket, error: unknown) {
     if (this.socket !== socket) return;
     const message =
-      error instanceof Error ? error.message : 'เชื่อมต่อเครื่องพิมพ์ไม่ได้';
+      error instanceof Error ? error.message : posText("เชื่อมต่อเครื่องพิมพ์ไม่ได้");
     this.disconnect(message);
     this.update('error', message);
   }
   private assertConnected(socket: PrinterSocket) {
     if (this.socket !== socket || socket.destroyed)
-      throw new Error('การเชื่อมต่อเครื่องพิมพ์ถูกยกเลิก');
+      throw new Error(posText("การเชื่อมต่อเครื่องพิมพ์ถูกยกเลิก"));
   }
   private wait<T>(
     start: (
@@ -113,7 +114,7 @@ export class NetworkPrinter {
         () =>
           cancel(
             new Error(
-              'เครื่องพิมพ์ไม่ตอบกลับ ตรวจ Wi-Fi, IP และสิทธิ์เครือข่ายภายใน',
+              posText("เครื่องพิมพ์ไม่ตอบกลับ ตรวจ Wi-Fi, IP และสิทธิ์เครือข่ายภายใน"),
             ),
           ),
         ms,
@@ -150,17 +151,17 @@ export class NetworkPrinter {
     const cause = await this.statusByte(socket, 2);
     const paper = await this.statusByte(socket, 4);
     this.assertConnected(socket);
-    if (cause & 0x04) throw new Error('ฝาเครื่องพิมพ์เปิดอยู่');
-    if (paper & 0x60 || cause & 0x20) throw new Error('กระดาษเครื่องพิมพ์หมด');
+    if (cause & 0x04) throw new Error(posText("ฝาเครื่องพิมพ์เปิดอยู่"));
+    if (paper & 0x60 || cause & 0x20) throw new Error(posText("กระดาษเครื่องพิมพ์หมด"));
     if (online & 0x68 || cause & 0x48)
-      throw new Error('เครื่องพิมพ์ออฟไลน์หรือมีข้อผิดพลาด');
+      throw new Error(posText("เครื่องพิมพ์ออฟไลน์หรือมีข้อผิดพลาด"));
   }
   async connect(input: PrinterConfig) {
-    if (this.operating) throw new Error('เครื่องพิมพ์กำลังทำงาน');
+    if (this.operating) throw new Error(posText("เครื่องพิมพ์กำลังทำงาน"));
     const config = validatePrinterConfig(input);
     this.disconnect();
     this.state = { ...this.state, config };
-    this.update('connecting', 'กำลังเชื่อมต่อและตรวจสถานะเครื่องพิมพ์');
+    this.update('connecting', posText("กำลังเชื่อมต่อและตรวจสถานะเครื่องพิมพ์"));
     this.operating = true;
     let socket: PrinterSocket | undefined;
     try {
@@ -171,11 +172,11 @@ export class NetworkPrinter {
       socket.on('close', () =>
         this.fail(
           current,
-          new Error('การเชื่อมต่อเครื่องพิมพ์หลุด กรุณาเชื่อมต่อใหม่'),
+          new Error(posText("การเชื่อมต่อเครื่องพิมพ์หลุด กรุณาเชื่อมต่อใหม่")),
         ),
       );
       socket.on('end', () =>
-        this.fail(current, new Error('เครื่องพิมพ์ปิดการเชื่อมต่อ')),
+        this.fail(current, new Error(posText("เครื่องพิมพ์ปิดการเชื่อมต่อ"))),
       );
       await this.wait<void>(resolve => {
         current.connect(
@@ -184,13 +185,13 @@ export class NetworkPrinter {
         );
       }, 6000);
       await this.health(socket);
-      this.update('ready', 'เชื่อมต่อเครื่องพิมพ์แล้ว');
+      this.update('ready', posText("เชื่อมต่อเครื่องพิมพ์แล้ว"));
     } catch (error) {
       if (socket) this.fail(socket, error);
       else
         this.update(
           'error',
-          'โมดูลเครื่องพิมพ์ไม่พร้อม กรุณาติดตั้งแอปเวอร์ชันใหม่',
+          posText("โมดูลเครื่องพิมพ์ไม่พร้อม กรุณาติดตั้งแอปเวอร์ชันใหม่"),
         );
       throw error;
     } finally {
@@ -211,13 +212,13 @@ export class NetworkPrinter {
   }
   async print(render: (config: PrinterConfig) => Promise<Uint8Array>) {
     if (this.operating)
-      throw new Error('กำลังตรวจสถานะเครื่องพิมพ์ กรุณาลองอีกครั้ง');
+      throw new Error(posText("กำลังตรวจสถานะเครื่องพิมพ์ กรุณาลองอีกครั้ง"));
     if (this.state.status !== 'ready' || !this.socket || !this.state.config) {
-      throw new Error('ยังไม่ได้เชื่อมต่อเครื่องพิมพ์');
+      throw new Error(posText("ยังไม่ได้เชื่อมต่อเครื่องพิมพ์"));
     }
     this.operating = true;
     const socket = this.socket;
-    this.update('printing', 'กำลังส่งงานพิมพ์');
+    this.update('printing', posText("กำลังส่งงานพิมพ์"));
     let wrote = false;
     try {
       const config = this.state.config;
@@ -225,13 +226,13 @@ export class NetworkPrinter {
         render(config).then(resolve, reject);
       }, 15000);
       if (!bytes.length || bytes.length > 2_000_000)
-        throw new Error('ขนาดงานพิมพ์เกินขอบเขตที่รองรับ');
+        throw new Error(posText("ขนาดงานพิมพ์เกินขอบเขตที่รองรับ"));
       await this.health(socket);
       const deadline = Date.now() + 45000;
       for (let offset = 0; offset < bytes.length; offset += 4096) {
         this.assertConnected(socket);
         if (Date.now() > deadline)
-          throw new Error('ส่งงานพิมพ์เกินเวลาที่กำหนด');
+          throw new Error(posText("ส่งงานพิมพ์เกินเวลาที่กำหนด"));
         wrote = true;
         await this.wait<void>((resolve, reject) => {
           socket.write(
@@ -242,11 +243,11 @@ export class NetworkPrinter {
         }, 5000);
       }
       this.assertConnected(socket);
-      this.update('ready', 'ส่งข้อมูลแล้ว กรุณาตรวจใบเสร็จที่เครื่องพิมพ์');
+      this.update('ready', posText("ส่งข้อมูลแล้ว กรุณาตรวจใบเสร็จที่เครื่องพิมพ์"));
     } catch (error) {
       const failure = wrote
         ? new Error(
-            'ส่งงานพิมพ์ไม่ครบหรือไม่ทราบผล กรุณาตรวจกระดาษก่อนพิมพ์ซ้ำ',
+            posText("ส่งงานพิมพ์ไม่ครบหรือไม่ทราบผล กรุณาตรวจกระดาษก่อนพิมพ์ซ้ำ"),
           )
         : error;
       this.fail(socket, failure);

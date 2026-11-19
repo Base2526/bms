@@ -77,6 +77,22 @@ describe('ServerHealthProvider pairing isolation', () => {
     expect(health.status).toBe('online');
   });
 
+  test('a body that ignores abort times out and a later health check can recover', async () => {
+    const stuckBody = deferred<unknown>();
+    const fetchMock = jest.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => stuckBody.promise } as Response)
+      .mockResolvedValue(response(onlineBody));
+    await act(async () => { tree = ReactTestRenderer.create(render()); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(3_001); });
+    expect(health.status).toBe('offline');
+    await act(async () => { expect(await health.checkNow()).toBe(true); });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(health.status).toBe('online');
+    await act(async () => { stuckBody.resolve({ errors: [{ extensions: { code: 'UNAUTHENTICATED' } }] }); });
+    expect(mockReject).not.toHaveBeenCalled();
+    expect(health.status).toBe('online');
+  });
+
   test('does not probe a rejected token and clears previous online evidence on unpair', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(response(onlineBody));
     await act(async () => { tree = ReactTestRenderer.create(render()); });

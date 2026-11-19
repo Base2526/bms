@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
+
 import * as React from "react";
 import { Modal, Typography, Checkbox, Input, Space, Tag, Divider, Button } from "antd";
 
@@ -27,15 +29,16 @@ type Props = {
   onUndo?: () => void;
 };
 
-const TEL_CATEGORIES: Array<{ label: string; value: TelReportCategory }> = [
-  { label: "Spam", value: "SPAM" },
-  { label: "Scam", value: "SCAM" },
-  { label: "Sales/Ads", value: "SALES" },
-  { label: "Harassment", value: "HARASS" },
-  { label: "Other", value: "OTHER" },
-];
+const TEL_CATEGORIES = (uiText: UiTranslator = thaiUiText): Array<{ label: string; value: TelReportCategory }> => ([
+  { label: uiText("admin_ui.en_spam_d8628"), value: "SPAM" },
+  { label: uiText("admin_ui.en_scam_de94a"), value: "SCAM" },
+  { label: uiText("admin_ui.en_sales_ads_320e6"), value: "SALES" },
+  { label: uiText("admin_ui.en_harassment_8fddd"), value: "HARASS" },
+  { label: uiText("admin_ui.en_other_6e6a6"), value: "OTHER" },
+]);
 
 export function TelBlockDialog({ open, tel, blocked, defaultDontAskAgain, initialWantReport, initialCategory, initialNote, confirmLoading, undoLoading, onCancel, onConfirm, onUndo }: Props) {
+  const uiText = useUiText();
   const [wantReport, setWantReport] = React.useState<boolean>(true);
   const [category, setCategory] = React.useState<TelReportCategory>("SCAM");
   const [note, setNote] = React.useState<string>("");
@@ -62,7 +65,7 @@ export function TelBlockDialog({ open, tel, blocked, defaultDontAskAgain, initia
     >
       <Space direction="vertical" size={12} style={{ width: "100%" }}>
         <div>
-          <Typography.Text type="secondary">Number</Typography.Text>
+          <Typography.Text type="secondary">{uiText("admin_ui.en_number_b7baa")}</Typography.Text>
           <div style={{ marginTop: 4 }}>
             <Typography.Text strong>{tel || "-"}</Typography.Text>
           </div>
@@ -72,16 +75,15 @@ export function TelBlockDialog({ open, tel, blocked, defaultDontAskAgain, initia
           <Divider style={{ margin: "6px 0" }} />
 
           <Checkbox checked={wantReport} onChange={(e) => setWantReport(e.target.checked)}>
-            Report to help others
-          </Checkbox>
+            {uiText("admin_ui.en_report_to_help_others_015d4")}</Checkbox>
 
           {wantReport ? (
             <>
               <div>
-                <Typography.Text type="secondary">Category</Typography.Text>
+                <Typography.Text type="secondary">{uiText("admin_ui.en_category_a3c68")}</Typography.Text>
                 <div style={{ marginTop: 6 }}>
                   <Space size={[6, 6]} wrap>
-                    {TEL_CATEGORIES.map((c) => (
+                    {TEL_CATEGORIES(uiText).map((c) => (
                       <Tag.CheckableTag
                         key={c.value}
                         checked={category === c.value}
@@ -95,11 +97,11 @@ export function TelBlockDialog({ open, tel, blocked, defaultDontAskAgain, initia
               </div>
 
               <div>
-                <Typography.Text type="secondary">Note (optional)</Typography.Text>
+                <Typography.Text type="secondary">{uiText("admin_ui.en_note_optional_4e395")}</Typography.Text>
                 <Input.TextArea
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
-                  placeholder="e.g. sales call / scam / harassment..."
+                  placeholder={uiText("admin_ui.en_e_g_sales_call_scam_harassment_2bf5a")}
                   maxLength={120}
                   showCount
                   autoSize={{ minRows: 3, maxRows: 5 }}
@@ -113,11 +115,10 @@ export function TelBlockDialog({ open, tel, blocked, defaultDontAskAgain, initia
         <Divider style={{ margin: "6px 0" }} />
 
         <Checkbox checked={dontAskAgain} onChange={(e) => setDontAskAgain(e.target.checked)}>
-          Don&apos;t ask again for this number
-        </Checkbox>
+          {uiText("admin_ui.en_don_apos_t_ask_again_for_this_number_9dba4")}</Checkbox>
 
         <Space style={{ width: "100%", justifyContent: "flex-end" }}>
-          <Button onClick={onCancel}>Cancel</Button>
+          <Button onClick={onCancel}>{uiText("admin_ui.en_cancel_77dfd")}</Button>
           {blocked ? (
             <Button
               danger
@@ -125,8 +126,7 @@ export function TelBlockDialog({ open, tel, blocked, defaultDontAskAgain, initia
               disabled={!!confirmLoading || !!undoLoading}
               onClick={() => onUndo?.()}
             >
-              Unblock
-            </Button>
+              {uiText("admin_ui.en_unblock_12aab")}</Button>
           ) : null}
           <Button
             type="primary"

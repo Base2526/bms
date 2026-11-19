@@ -25,22 +25,25 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
+const require = createRequire(new URL("../apps/web/package.json", import.meta.url));
+const ts = require("typescript");
 
-import { getMessage } from "../apps/web/i18n/index.ts";
+import { getMessage, messages } from "../apps/web/i18n/index.ts";
 
 const WEB = path.resolve(import.meta.dirname, "../apps/web");
 const LANGS = ["th", "en"] as const;
 
 /** ไฟล์ที่มีการเรียก t("...") — เดินด้วย Node เพื่อให้ merge gate ใช้ได้ทั้ง Linux/Windows */
 const sourceFiles = () => {
-  const pending = ["app", "lib", "components"];
+  const pending = ["app", "lib", "components", "i18n"];
   const found: string[] = [];
   while (pending.length) {
     const relative = pending.pop()!;
     for (const entry of readdirSync(path.join(WEB, relative), { withFileTypes: true })) {
       const child = path.join(relative, entry.name);
       if (entry.isDirectory()) pending.push(child);
-      else if (/\.[jt]sx?$/.test(entry.name) && readFileSync(path.join(WEB, child), "utf8").includes('t("')) {
+      else if (/\.[jt]sx?$/.test(entry.name) ) {
         found.push(child);
       }
     }
@@ -49,10 +52,19 @@ const sourceFiles = () => {
 };
 
 /** คีย์ที่เขียนตรง ๆ เท่านั้น — คีย์ที่ประกอบตอนรันตรวจที่นี่ไม่ได้ */
-const literalKeys = (src: string) =>
-  [...src.matchAll(/\bt\(\s*"([A-Za-z0-9_.]+)"/g)]
-    .map((m) => m[1])
-    .filter((key) => key.includes("."));
+const literalKeys = (src: string) => {
+  const ast = ts.createSourceFile("ui.tsx", src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const keys: string[] = [];
+  function visit(node: any) {
+    if (ts.isCallExpression(node) && /^(t|uiText)$/.test(node.expression.getText(ast))) {
+      const arg = node.arguments[0];
+      if (arg && (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) && arg.text.includes(".")) keys.push(arg.text);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(ast);
+  return keys;
+};
 
 test("every literal t() key resolves in th and en", () => {
   const files = sourceFiles();
@@ -79,37 +91,26 @@ test("every literal t() key resolves in th and en", () => {
 });
 
 test("th and en carry the same keys in every section", () => {
-  // section ที่มีคีย์ครบเท่ากันแต่คนละชุดคือกับดักถัดไป: หน้าจอภาษาหนึ่งใช้ได้
-  // อีกภาษาโชว์ key ดิบ และเทสข้างบนจับได้เฉพาะคีย์ที่ถูกใช้แล้วเท่านั้น
-  const sections = (file: string) => {
-    const src = readFileSync(path.join(WEB, file), "utf8");
-    const found = new Map<string, Set<string>>();
-    const re = /^  ([a-z_0-9]+): \{$/gm;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(src))) {
-      const start = m.index;
-      const end = src.indexOf("\n  },", start);
-      const body = src.slice(start, end === -1 ? undefined : end);
-      found.set(m[1], new Set([...body.matchAll(/^    ([a-z_0-9]+):/gm)].map((k) => k[1])));
-    }
-    return found;
-  };
-
-  const th = sections("i18n/th.ts");
-  const en = sections("i18n/en.ts");
-  assert.ok(th.size > 20 && en.size > 20, "อ่าน section ไม่ได้ — โครงไฟล์ i18n เปลี่ยนไปแล้ว");
-
-  const drift: string[] = [];
-  for (const [name, thKeys] of th) {
-    const enKeys = en.get(name);
-    if (!enKeys) {
-      drift.push(`${name}: มีใน th ไม่มีใน en`);
-      continue;
-    }
-    for (const key of thKeys) if (!enKeys.has(key)) drift.push(`${name}.${key}: ขาดใน en`);
-    for (const key of enKeys) if (!thKeys.has(key)) drift.push(`${name}.${key}: ขาดใน th`);
+  function leaves(value: unknown, prefix = ""): string[] {
+    if (typeof value === "string") return [prefix];
+    assert.ok(value && typeof value === "object", prefix);
+    return Object.entries(value).flatMap(([key, child]) => leaves(child, prefix ? `${prefix}.${key}` : key));
   }
-  for (const name of en.keys()) if (!th.has(name)) drift.push(`${name}: มีใน en ไม่มีใน th`);
+  assert.deepEqual(leaves(messages.th).sort(), leaves(messages.en).sort());
+});
 
-  assert.deepEqual(drift.sort(), [], "คีย์ที่มีแค่ภาษาเดียว");
+test("literal key discovery handles both quote styles and excludes comments", () => {
+  assert.deepEqual(literalKeys(`t('admin.title'); uiText("admin.subtitle"); t(\`admin.footer\`); // t("not.real")`),
+    ["admin.title", "admin.subtitle", "admin.footer"]);
+});
+
+test("admin UI translations preserve placeholders and interpolate values once", () => {
+  const placeholders = (value: string) => [...value.matchAll(/\{(\w+)\}/g)].map(m => m[1]).sort();
+  for (const [key, th] of Object.entries(messages.th.admin_ui)) {
+    const en = getMessage("en", `admin_ui.${key}`);
+    assert.ok(th.trim() && en.trim(), key);
+    assert.deepEqual(placeholders(th), placeholders(en), key);
+  }
+  const entry = Object.entries(messages.en.admin_ui).find(([, value]) => value.includes("{v0}"))!;
+  assert.equal(getMessage("en", `admin_ui.${entry[0]}`, { v0: "{v1}" }), entry[1].replaceAll("{v0}", "{v1}"));
 });

@@ -117,7 +117,7 @@ export const BMS_PRESALES_FAQ: readonly PresalesKnowledgeEntry[] = [
     "มีโปรโมชั่นตามกติกาที่ระบบรองรับ รวมซื้อสินค้า A แถมสินค้า B และข้อเสนอที่กำหนดช่วงเวลาได้ค่ะ ของแถมเป็นรายการสินค้าที่มีสต็อกจริง เงื่อนไขสาขา ตัวเลือก หน่วยขาย และเวลาใช้ตามที่บันทึกไว้ ไม่ถือว่าโปรโมชั่นทุกแบบซ้อนกันได้ การคืนสินค้าใช้เงื่อนไขที่บันทึกตอนขายค่ะ",
     "Supported promotions include buying product A to receive product B and time-window offers. Gifts are real stock lines, with saved branch, variant, pack and time scope. Do not assume every offer stacks. Returns use the frozen sale-time rules."),
   faq("inventory", "สต็อก จองสินค้า และการตรวจนับ", "Stock, reservations and counts",
-    ["คงเหลือแยก", "ถูกจอง", "พร้อมขาย", "ใกล้หมด", "ตรวจนับ", "สต็อกเปลี่ยน", "ชิ้นสุดท้าย", "สต็อกคงเหลือ"],
+    ["คงเหลือแยก", "สต็อกหลายสาขา", "ถูกจอง", "พร้อมขาย", "ใกล้หมด", "ตรวจนับ", "สต็อกเปลี่ยน", "ชิ้นสุดท้าย", "สต็อกคงเหลือ"],
     ["stock by branch", "reserved stock", "low stock", "stock count", "stock movement", "last item"],
     "ระบบแยกสต็อกคงเหลือ จอง และพร้อมขายตามสาขา มีรายงานสินค้าใกล้หมดและประวัติ movement ค่ะ ตรวจนับใช้ผลต่างจาก snapshot ที่นับ ไม่เขียนทับยอดที่เปลี่ยนระหว่างทำงาน การขายและจองตรวจใน transaction เพื่อลดการขายเกิน แม้หลายเครื่องทำงานพร้อมกัน ผลจริงต้องยืนยันจาก server ค่ะ",
     "Inventory distinguishes on-hand, reserved and sellable stock by branch, with low-stock reports and movement history. Counts apply a delta against their snapshot instead of overwriting intervening activity. Sales and reservations validate transactionally to prevent overselling across registers; the server's result remains authoritative."),

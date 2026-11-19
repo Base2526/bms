@@ -70,6 +70,38 @@ test("Starter Catalog creates only inactive, zero-stock, non-online examples and
   )).rows[0].count), 0);
 });
 
+test("pet food weighed in grams starts as an unchanged sample and can be cleaned up", async () => {
+  const petTenantId = (await query<{ id: string }>(
+    `INSERT INTO bms_tenants (name, slug) VALUES ($1,$2) RETURNING id`,
+    [`FAKE ${tag} pet`, `fake-${tag}-pet`]
+  )).rows[0].id;
+  try {
+    await query(
+      `INSERT INTO bms_store_profile (tenant_id, business_type, business_archetype)
+       VALUES ($1,'general','pet_supply')`,
+      [petTenantId]
+    );
+    await query(
+      `INSERT INTO bms_locations (tenant_id, code, name, is_head_office)
+       VALUES ($1,'MAIN',$2,TRUE)`,
+      [petTenantId, `FAKE ${tag} pet main`]
+    );
+    const sample = await createStarterCatalog(petTenantId);
+    assert.equal(sample.archetype, "pet_supply");
+    assert.equal(sample.blocked, false);
+    assert.ok(sample.products.every((product) => !product.modified));
+    assert.equal((await query<{ unit_name: string }>(
+      `SELECT pack.unit_name FROM bms_product_packs pack
+        WHERE pack.tenant_id = $1 AND pack.product_sku = 'SAMPLE-PET-SUPPLY-PET-FOOD-WEIGHT'`,
+      [petTenantId]
+    )).rows[0]?.unit_name, "กรัม");
+    assert.equal((await deleteSampleData(petTenantId)).deletedProducts, 4);
+  } finally {
+    await query(`DELETE FROM bms_products WHERE tenant_id = $1`, [petTenantId]);
+    await query(`DELETE FROM bms_tenants WHERE id = $1`, [petTenantId]);
+  }
+});
+
 test("cleanup refuses all deletion after one sample product becomes real data", async () => {
   const sample = await createStarterCatalog(tenantId);
   const changedSku = sample.products[0].sku;

@@ -199,7 +199,7 @@ function buildActiveProviderSummary(t: (key: string, vars?: Record<string, strin
   return [
     {
       scope: "chat",
-      label: "Chat / Tool Calling",
+      label: t("admin_ui.en_chat_tool_calling_a07ff"),
       configuredProvider: configuredChat,
       effectiveProvider: effectiveChat?.provider ?? null,
       model: effectiveChat?.model ?? null,
@@ -216,7 +216,7 @@ function buildActiveProviderSummary(t: (key: string, vars?: Record<string, strin
     },
     {
       scope: "sensitive",
-      label: "Sensitive / Baseline",
+      label: t("admin_ui.en_sensitive_baseline_9b1d4"),
       configuredProvider: configuredSensitive,
       effectiveProvider: effectiveSensitive?.provider ?? null,
       model: effectiveSensitive?.model ?? null,
@@ -233,7 +233,7 @@ function buildActiveProviderSummary(t: (key: string, vars?: Record<string, strin
     },
     {
       scope: "ocr",
-      label: "Slip OCR",
+      label: t("admin_ui.en_slip_ocr_d0c22"),
       configuredProvider: configuredOcr,
       effectiveProvider: effectiveOcr?.provider ?? null,
       model: effectiveOcr?.model ?? null,

@@ -2,7 +2,6 @@ import React from 'react';
 import { Alert, Platform } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import { PairingScannerButton } from '../src/components/PairingScannerButton';
-import { Button } from '../src/components/Button';
 import { ThemeProvider } from '../src/theme/ThemeProvider';
 import { buildPairingQr } from '../../../packages/pos-client-core/src/pairingQr';
 import type { PairingTarget } from '../src/lib/pairing';
@@ -60,10 +59,10 @@ async function mount(previous: PairingTarget | null = null) {
   });
   return {
     props,
-    busy: () => tree.root.findByType(Button).props.loading,
+    busy: () => tree.root.findByProps({ accessibilityLabel: 'สแกน QR เพื่อจับคู่' }).props.accessibilityState.busy,
     press: async (twice = false) =>
       act(async () => {
-        const press = tree.root.findByType(Button).props.onPress;
+        const press = tree.root.findByProps({ accessibilityLabel: 'สแกน QR เพื่อจับคู่' }).props.onPress;
         press();
         if (twice) press();
       }),

@@ -120,6 +120,7 @@ test("every SQL statement touching a tenant-scoped stock table filters by tenant
  */
 const ROUTE_GUARDS = [
   "authorizeAdminRoute",        // แอดมินที่ล็อกอิน + RBAC + tenant จาก session
+  "authorizeTenantSettingsAdminRoute", // Administrator ของร้านหรือ platform admin ที่ยืนยันจาก DB
   "authorizePlatformAdminRoute", // platform admin เท่านั้น สำหรับข้อมูลข้ามร้าน
   "verifyAdminSession",         // role-based gate ที่ไม่ได้ใช้ permission catalog (onboarding/sample-data)
   // จงใจไม่รับ `requireAdminOrInternal` เป็นการ์ดที่ยอมรับได้: มันแค่ยืนยันว่าล็อกอินแล้ว
@@ -127,11 +128,11 @@ const ROUTE_GUARDS = [
   "requirePlatformAdminSeeder", // seeder ระดับแพลตฟอร์ม
   "authorizeCronRequest",       // helper ที่ fail closed (lib/bms/cronRouteAuth.ts)
   "CRON_SECRET",                // job ที่ cron ยิง
-  "BMS_JOB_TOKEN",
   "verifyMetaSignature",        // webhook ที่ verify ลายเซ็น (fail-closed)
   "verifyLineSignature",
   "channel_secret",
   "getCheckoutByToken",         // ลิงก์ checkout ที่เซ็นไว้ (ลูกค้าเปิดเอง ไม่มี session)
+  "verifyInboxMedia",            // capability เฉพาะ tenant/file พร้อม expiry; route มี rateLimit
   "ingestRetailLocalLicenseEvidence", // issued bearer token + signed device evidence; license id from token binding
   "getRetailLocalHostLicenseStatus", // validates issued bearer hash; installation join is scoped to that token's license
   "mockWebhookDisabled",        // mock ยุคร้านเดียว — 404 ใน production ยิงได้แค่ dev
@@ -143,6 +144,7 @@ const ROUTE_GUARDS = [
 const PUBLIC_BY_DESIGN = new Map([
   ["app/api/bms/checkout/route.ts", "Signed checkout token; IP/token rate limits before order reads or delivery edits"],
   ["app/api/bms/checkout/payment/route.ts", "Signed checkout token; IP/token rate limits before slip processing"],
+  ["app/api/bms/retail-cart/route.ts", "Public retail preview by active shop slug and confirmed order by signed quote; bounded body and IP/token rate limits"],
   ["app/api/bms/tax-invoice-request/route.ts", "Cloud receipt-only capability for submission; independent private tracking secret; bounded body and IP/token rate limits"],
   ["app/api/bms/web/webhook/[tenantId]/route.ts", "วิดเจ็ตแชทบนเว็บของร้าน — ฝั่ง client ไม่มีความลับให้เซ็น"],
   ["app/api/bms/demo-chat/route.ts", "เดโมหน้าขายของ — ใครก็ลองได้โดยตั้งใจ"],
@@ -183,6 +185,29 @@ test("every /api/bms route is guarded, or public by design with a rate limit", (
     [],
     "route เหล่านี้ยิงได้โดยไม่ต้องล็อกอิน — middleware ไม่ได้กัน /api/** ให้"
   );
+});
+
+// `/api/public/**`, `/api/retail-local/**` และ `/api/geocode/**` เปิดสาธารณะโดยตั้งใจทั้งโฟลเดอร์
+// (หน้าเว็บสาธารณะ, ตัวติดตั้ง, เดสก์ท็อปที่ไม่มี session, proxy ไป Nominatim) จึงไม่อยู่ในเทสข้างบน
+// — แต่ทุก route ต้องมีเพดานการใช้ (เจอ 2026-11-09: desktop-update, releases, download/[id] และ
+// geocode ทั้งสองตัวไม่มี rateLimit เลย) · `/api/pos/**` คุมโดย pos-route-guard-contract
+// ห้ามยอมรับชื่อการ์ดแทนเพดาน: download/[id] เรียก authorizePlatformAdminRoute แค่เพื่อเลือกว่าจะรวม
+// ตัวติดตั้งที่ล็อกไว้หรือไม่ คนไม่ล็อกอินก็ยังโหลดได้ — ถ้าเช็กแค่ชื่อการ์ด เทสจะเขียวลอย
+test("every /api/public, /api/retail-local and /api/geocode route calls rateLimit()", () => {
+  const routes = ["app/api/public", "app/api/retail-local", "app/api/geocode"]
+    .flatMap((dir) => walk(path.join(WEB, dir)))
+    .filter((f) => f.endsWith("route.ts"));
+  assert.ok(routes.length >= 9, `เจอ route แค่ ${routes.length} — การเดิน tree คงพลาด`);
+  // ตัดคอมเมนต์ก่อน — คอมเมนต์ที่พูดถึง rateLimit( ต้องไม่ทำให้เทสเขียว (กับดักข้อ 12 ใน CLAUDE.local.md)
+  const code = (file: string) => readFileSync(file, "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    // ทั้งบรรทัดคอมเมนต์และคอมเมนต์ท้ายบรรทัด (ยกเว้น `://` ของ URL ในสตริง)
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const unlimited = routes
+    .filter((file) => !/\brateLimit\(/.test(code(file)))
+    .map(relPosix)
+    .sort();
+  assert.deepEqual(unlimited, [], "route สาธารณะที่ไม่มีเพดานการใช้");
 });
 
 // การ์ดที่ "ข้ามได้เมื่อไม่ตั้ง env" ไม่ใช่การ์ด

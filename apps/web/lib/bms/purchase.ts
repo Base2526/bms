@@ -35,6 +35,10 @@ export type PoItemInput = {
   packQty?: number | null;
   minOrderQty?: number | null;
   leadTimeDays?: number | null;
+  supplierUnitName?: string | null;
+  supplierUnitQty?: number | null;
+  baseQtyPerSupplierUnit?: number | null;
+  conversionEvidence?: string | null;
 };
 
 export type CreatePOInput = {
@@ -59,6 +63,10 @@ export type PoLine = {
   additionalUnitCost: number;
   landedUnitCost: number;
   additionalCostNote: string | null;
+  supplierUnitName: string | null;
+  supplierUnitQty: number | null;
+  baseQtyPerSupplierUnit: number | null;
+  conversionEvidence: string | null;
 };
 
 export type CreatePOResult =
@@ -92,6 +100,8 @@ export type ReceiveInput = {
   sku: string;
   size: string;
   qty: number;
+  /** Number of intact supplier packages received. Required for a converted PO line. */
+  supplierQty?: number | null;
   /** เลข lot จากผู้ผลิต — ร้านยาต้องมี ร้านอื่นเว้นได้ (7.85) */
   lotNo?: string | null;
   /** YYYY-MM-DD */
@@ -103,7 +113,8 @@ export type ReceivePOResult =
   | { status: "RECEIVED" | "PARTIAL"; poId: string; items: PoLine[]; replayed?: boolean }
   | { status: "PO_NOT_FOUND" }
   | { status: "LOCATION_NOT_FOUND" }
-  | { status: "INVALID_INPUT"; reason?: string; reasonCode?: "LOT_REQUIRED" | "EXPIRY_REQUIRED" | "LOT_REVIEW_REQUIRED"; sku?: string; size?: string }
+  | { status: "BRANCH_FORBIDDEN" }
+  | { status: "INVALID_INPUT"; reason?: string; reasonCode?: "LOT_REQUIRED" | "EXPIRY_REQUIRED" | "LOT_REVIEW_REQUIRED" | "SUPPLIER_UNIT_MISMATCH" | "IDEMPOTENCY_REQUIRED"; sku?: string; size?: string }
   | { status: "INVALID_STATE"; current: string }
   | { status: "LINE_NOT_FOUND"; sku: string; size: string }
   | { status: "OVER_RECEIVE"; sku: string; size: string; remaining: number; requested: number }
@@ -286,6 +297,16 @@ export async function createPurchaseOrderInTx(
     (typeof it.additionalCostNote !== "string" || it.additionalCostNote.trim().length > 500))) {
     return { status: "INVALID_INPUT" };
   }
+  if (input.items.some(it => (it.supplierUnitName != null && typeof it.supplierUnitName !== "string")
+    || (it.conversionEvidence != null && typeof it.conversionEvidence !== "string")
+    || (it.supplierUnitQty != null && typeof it.supplierUnitQty !== "number")
+    || (it.baseQtyPerSupplierUnit != null && typeof it.baseQtyPerSupplierUnit !== "number"))) {
+    return { status: "INVALID_INPUT" };
+  }
+  // A converted PO must not turn an unknown supplier cost into an apparent zero-cost receipt.
+  if (input.items.some(it => it.supplierUnitName != null && it.unitCost == null)) {
+    return { status: "INVALID_INPUT" };
+  }
   const normalized = input.items.map((it) => ({
     ...it,
     sku: String(it.sku ?? "").trim(),
@@ -297,6 +318,10 @@ export async function createPurchaseOrderInTx(
     supplierSku: optionalText(it.supplierSku, 200),
     supplierProductName: optionalText(it.supplierProductName, 500),
     supplierBarcode: optionalText(it.supplierBarcode, 200),
+    supplierUnitName: it.supplierUnitName == null ? undefined : it.supplierUnitName.trim(),
+    supplierUnitQty: it.supplierUnitQty == null ? undefined : it.supplierUnitQty,
+    baseQtyPerSupplierUnit: it.baseQtyPerSupplierUnit == null ? undefined : it.baseQtyPerSupplierUnit,
+    conversionEvidence: it.conversionEvidence == null ? undefined : it.conversionEvidence.trim(),
   }));
   if (
     normalized.some(
@@ -307,6 +332,7 @@ export async function createPurchaseOrderInTx(
         it.size.length > 100 ||
         !Number.isInteger(it.qty) ||
         it.qty <= 0 ||
+        it.qty > 2147483647 ||
         !validCost(it.unitCost) ||
         !validCost(it.additionalUnitCost) ||
         it.unitCost + it.additionalUnitCost > 9999999999.99 ||
@@ -319,17 +345,31 @@ export async function createPurchaseOrderInTx(
             Number(it.minOrderQty) <= 0)) ||
         (it.leadTimeDays != null &&
           (!Number.isInteger(Number(it.leadTimeDays)) ||
-            Number(it.leadTimeDays) < 0)),
+            Number(it.leadTimeDays) < 0)) ||
+        ([it.supplierUnitName, it.supplierUnitQty, it.baseQtyPerSupplierUnit, it.conversionEvidence]
+          .some(value => value !== undefined) && (
+            !it.supplierUnitName || it.supplierUnitName.length > 100
+            || !it.conversionEvidence || it.conversionEvidence.length > 500
+            || !Number.isInteger(it.supplierUnitQty) || Number(it.supplierUnitQty) <= 0
+            || !Number.isInteger(it.baseQtyPerSupplierUnit) || Number(it.baseQtyPerSupplierUnit) <= 1
+            || BigInt(Number(it.supplierUnitQty) || 0) * BigInt(Number(it.baseQtyPerSupplierUnit) || 0) !== BigInt(it.qty)
+          )),
     )
   )
     return { status: "INVALID_INPUT" };
+  if (normalized.some(it => it.supplierUnitName) &&
+    !input.supplierId && !input.supplierName?.trim()) return { status: "INVALID_INPUT" };
 
   const identity = new Map<string, string>();
   for (const item of normalized) {
     const key = `${item.sku}\u0000${item.size}`;
     const lineIdentity = JSON.stringify([item.supplierSku?.toLocaleLowerCase() ?? "",
-      item.unitCost, item.additionalUnitCost, item.additionalCostNote]);
+      item.unitCost, item.additionalUnitCost, item.additionalCostNote,
+      item.supplierUnitName, item.baseQtyPerSupplierUnit, item.conversionEvidence]);
     const prior = identity.get(key);
+    // A converted line has one immutable supplier-unit quantity. Do not merge it while
+    // leaving the supplier package count unchanged.
+    if (prior != null && item.supplierUnitName) return { status: "INVALID_INPUT" };
     if (prior != null && prior !== lineIdentity)
       return { status: "INVALID_INPUT" };
     identity.set(key, lineIdentity);
@@ -339,6 +379,7 @@ export async function createPurchaseOrderInTx(
 
   let requestHash: string | null = null;
   const requestId = input.requestId?.trim() || null;
+  if (items.some(it => it.supplierUnitName) && !requestId) return { status: "INVALID_INPUT" };
   if (requestId) {
     if (requestId.length < 8 || requestId.length > 200) return { status:"INVALID_INPUT" };
     requestHash = crypto.createHash("sha256").update(JSON.stringify({supplierId:input.supplierId??null,
@@ -358,11 +399,15 @@ export async function createPurchaseOrderInTx(
       if (prior.rows[0]?.request_hash!==requestHash) throw new IdempotencyConflictError(IDEMPOTENCY_CONFLICT_MESSAGE,"purchase.create");
       if (prior.rows[0]?.po_id) {
         const replay=await client.query<any>(`SELECT supplier_id,total_amount FROM bms_purchase_orders WHERE tenant_id=$1 AND id=$2`,[tenantId,prior.rows[0].po_id]);
-        const replayItems=await client.query<any>(`SELECT product_sku,size,supplier_sku,supplier_product_name,qty_ordered,qty_received,unit_cost,additional_unit_cost,additional_cost_note FROM bms_purchase_order_items WHERE tenant_id=$1 AND po_id=$2 ORDER BY id`,[tenantId,prior.rows[0].po_id]);
+        const replayItems=await client.query<any>(`SELECT product_sku,size,supplier_sku,supplier_product_name,qty_ordered,qty_received,unit_cost,additional_unit_cost,additional_cost_note,
+          supplier_unit_name,supplier_unit_qty_ordered,base_qty_per_supplier_unit,supplier_unit_evidence
+          FROM bms_purchase_order_items WHERE tenant_id=$1 AND po_id=$2 ORDER BY id`,[tenantId,prior.rows[0].po_id]);
         return {status:"CREATED",poId:prior.rows[0].po_id,total:Number(replay.rows[0].total_amount),supplierId:replay.rows[0].supplier_id??null,replayed:true,
           items:replayItems.rows.map((row:any)=>({sku:row.product_sku,size:row.size,supplierSku:row.supplier_sku??null,
             supplierProductName:row.supplier_product_name??null,qtyOrdered:Number(row.qty_ordered),qtyReceived:Number(row.qty_received),unitCost:Number(row.unit_cost),
-            additionalUnitCost:Number(row.additional_unit_cost),landedUnitCost:Number(row.unit_cost)+Number(row.additional_unit_cost),additionalCostNote:row.additional_cost_note??null}))};
+            additionalUnitCost:Number(row.additional_unit_cost),landedUnitCost:Number(row.unit_cost)+Number(row.additional_unit_cost),additionalCostNote:row.additional_cost_note??null,
+            supplierUnitName:row.supplier_unit_name??null,supplierUnitQty:row.supplier_unit_qty_ordered??null,
+            baseQtyPerSupplierUnit:row.base_qty_per_supplier_unit??null,conversionEvidence:row.supplier_unit_evidence??null}))};
       }
     }
   }
@@ -432,8 +477,9 @@ export async function createPurchaseOrderInTx(
     await client.query(
       `INSERT INTO bms_purchase_order_items
            (tenant_id, po_id, product_sku, size, supplier_sku, supplier_product_name,
-            qty_ordered, unit_cost, additional_unit_cost, additional_cost_note)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            qty_ordered, unit_cost, additional_unit_cost, additional_cost_note,
+            supplier_unit_name, supplier_unit_qty_ordered, base_qty_per_supplier_unit, supplier_unit_evidence)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [
         tenantId,
         poId,
@@ -445,6 +491,10 @@ export async function createPurchaseOrderInTx(
         it.unitCost,
         it.additionalUnitCost,
         it.additionalCostNote,
+        it.supplierUnitName ?? null,
+        it.supplierUnitQty ?? null,
+        it.baseQtyPerSupplierUnit ?? null,
+        it.conversionEvidence ?? null,
       ],
     );
     lines.push({
@@ -458,6 +508,10 @@ export async function createPurchaseOrderInTx(
       additionalUnitCost: it.additionalUnitCost,
       landedUnitCost: it.unitCost + it.additionalUnitCost,
       additionalCostNote: it.additionalCostNote,
+      supplierUnitName: it.supplierUnitName ?? null,
+      supplierUnitQty: it.supplierUnitQty ?? null,
+      baseQtyPerSupplierUnit: it.baseQtyPerSupplierUnit ?? null,
+      conversionEvidence: it.conversionEvidence ?? null,
     });
   }
 
@@ -508,12 +562,14 @@ export async function receivePurchaseOrderInTx(
   // JSON coercion must never turn true/[1] into one received unit or discard bad lot evidence.
   if (received.some(it => typeof it?.sku !== "string" || typeof it?.size !== "string"
     || typeof it?.qty !== "number" || it.qty > 2147483647
+    || (it.supplierQty != null && typeof it.supplierQty !== "number")
     || (it.lotNo != null && typeof it.lotNo !== "string")
     || (it.expiryDate != null && typeof it.expiryDate !== "string"))) return { status: "INVALID_INPUT" };
   const normalized = received.map((it) => ({
     sku: String(it?.sku ?? "").trim(),
     size: String(it?.size ?? "").trim(),
     qty: Number(it?.qty),
+    supplierQty: it?.supplierQty == null ? undefined : Number(it.supplierQty),
     lotNo: it?.lotNo == null ? null : String(it.lotNo).trim() || null,
     expiryDate: it?.expiryDate == null ? null : String(it.expiryDate).trim() || null,
   }));
@@ -521,13 +577,20 @@ export async function receivePurchaseOrderInTx(
     !it.sku || it.sku.length > 200
     || !it.size || it.size.length > 100
     || !Number.isInteger(it.qty) || it.qty <= 0
+    || (it.supplierQty !== undefined && (!Number.isInteger(it.supplierQty) || it.supplierQty <= 0))
     || (it.lotNo != null && it.lotNo.length > 100)
     || (it.expiryDate != null && (!it.lotNo || !isIsoDate(it.expiryDate)))
   )) {
     return { status: "INVALID_INPUT" };
   }
   const lotExpiry = new Map<string, string | null>();
+  const supplierReceiptKeys = new Map<string, boolean>();
   for (const item of normalized) {
+    const receiptKey = JSON.stringify([item.sku, item.size, item.lotNo ?? ""]);
+    // A package receipt must not merge duplicate lines and lose the second package count.
+    if (supplierReceiptKeys.has(receiptKey) &&
+      (item.supplierQty !== undefined || supplierReceiptKeys.get(receiptKey))) return { status: "INVALID_INPUT" };
+    supplierReceiptKeys.set(receiptKey, item.supplierQty !== undefined);
     if (!item.lotNo) continue;
     const key = `${item.sku}\u0000${item.size}\u0000${item.lotNo}`;
     const expiry = item.expiryDate ?? null;
@@ -561,6 +624,16 @@ export async function receivePurchaseOrderInTx(
     // requiring it to remain active must not turn a saved receipt into a failure.
     // POS adapters supply the authenticated device branch, still included in the hash.
     const locationId = options.locationId || await resolveDefaultLocationIdInTx(client, tenantId);
+    if (staffRequest) {
+      const allowed = await client.query<{ location_id: string }>(
+        `SELECT location_id FROM bms_user_allowed_locations
+          WHERE tenant_id = $1 AND user_id = $2 FOR SHARE`,
+        [tenantId, options.staffIdempotency!.actorUserId],
+      );
+      if (allowed.rows.length && !allowed.rows.some(row => row.location_id === locationId)) {
+        return { status: "BRANCH_FORBIDDEN" };
+      }
+    }
     let receiptId: string | null = null;
     if (options.idempotency) {
       const stableKey = options.idempotency.key.trim();
@@ -575,6 +648,7 @@ export async function receivePurchaseOrderInTx(
           sku: line.sku,
           size: line.size,
           qty: line.qty,
+          ...(line.supplierQty === undefined ? {} : { supplierQty: line.supplierQty }),
           lotNo: line.lotNo ?? null,
           expiryDate: line.expiryDate ?? null,
         })),
@@ -622,15 +696,32 @@ export async function receivePurchaseOrderInTx(
 
     for (const ln of lines) {
       // ล็อกรายการ PO ที่ตรง sku+size
-      const item = await client.query<{ id: string; qty_ordered: number; qty_received: number; unit_cost: string; additional_unit_cost: string }>(
-        `SELECT id, qty_ordered, qty_received, unit_cost, additional_unit_cost FROM bms_purchase_order_items
+      const item = await client.query<{ id: string; qty_ordered: number; qty_received: number; unit_cost: string; additional_unit_cost: string;
+        base_qty_per_supplier_unit: number | null; supplier_unit_name: string | null }>(
+        `SELECT id, qty_ordered, qty_received, unit_cost, additional_unit_cost,
+                base_qty_per_supplier_unit, supplier_unit_name FROM bms_purchase_order_items
           WHERE tenant_id = $1 AND po_id = $2 AND product_sku = $3 AND size = $4 FOR UPDATE`,
         [tenantId, poId, ln.sku, ln.size]
       );
       if (item.rowCount === 0) {
         return { status: "LINE_NOT_FOUND", sku: ln.sku, size: ln.size };
       }
-      const { id: itemId, qty_ordered, qty_received, unit_cost, additional_unit_cost } = item.rows[0];
+      const { id: itemId, qty_ordered, qty_received, unit_cost, additional_unit_cost,
+        base_qty_per_supplier_unit, supplier_unit_name } = item.rows[0];
+      if (base_qty_per_supplier_unit != null) {
+        if (!staffRequest && !options.idempotency) {
+          return { status: "INVALID_INPUT", reasonCode: "IDEMPOTENCY_REQUIRED", sku: ln.sku, size: ln.size,
+            reason: `${ln.sku}/${ln.size}: stable receipt idempotency key required` };
+        }
+        if (ln.supplierQty === undefined ||
+          BigInt(ln.supplierQty) * BigInt(base_qty_per_supplier_unit) !== BigInt(ln.qty)) {
+          return { status: "INVALID_INPUT", reasonCode: "SUPPLIER_UNIT_MISMATCH", sku: ln.sku, size: ln.size,
+            reason: `${ln.sku}/${ln.size}: received ${supplier_unit_name} count does not match the PO base-unit factor` };
+        }
+      } else if (ln.supplierQty !== undefined) {
+        return { status: "INVALID_INPUT", reasonCode: "SUPPLIER_UNIT_MISMATCH", sku: ln.sku, size: ln.size,
+          reason: `${ln.sku}/${ln.size}: this PO line is recorded in base units` };
+      }
       const remaining = qty_ordered - qty_received;
       if (ln.qty > remaining) {
         return { status: "OVER_RECEIVE", sku: ln.sku, size: ln.size, remaining, requested: ln.qty };
@@ -722,9 +813,12 @@ export async function receivePurchaseOrderInTx(
     const items = await client.query<{
       product_sku: string; size: string; supplier_sku: string | null;
       supplier_product_name: string | null; qty_ordered: number; qty_received: number; unit_cost: string; additional_unit_cost: string; additional_cost_note: string | null;
+      supplier_unit_name: string | null; supplier_unit_qty_ordered: number | null;
+      base_qty_per_supplier_unit: number | null; supplier_unit_evidence: string | null;
     }>(
       `SELECT product_sku, size, supplier_sku, supplier_product_name,
-              qty_ordered, qty_received, unit_cost, additional_unit_cost, additional_cost_note
+              qty_ordered, qty_received, unit_cost, additional_unit_cost, additional_cost_note,
+              supplier_unit_name, supplier_unit_qty_ordered, base_qty_per_supplier_unit, supplier_unit_evidence
          FROM bms_purchase_order_items WHERE po_id = $1 ORDER BY product_sku, size`,
       [poId]
     );
@@ -741,6 +835,10 @@ export async function receivePurchaseOrderInTx(
         additionalUnitCost: Number(r.additional_unit_cost),
         landedUnitCost: Number(r.unit_cost) + Number(r.additional_unit_cost),
         additionalCostNote: r.additional_cost_note,
+        supplierUnitName: r.supplier_unit_name ?? null,
+        supplierUnitQty: r.supplier_unit_qty_ordered ?? null,
+        baseQtyPerSupplierUnit: r.base_qty_per_supplier_unit ?? null,
+        conversionEvidence: r.supplier_unit_evidence ?? null,
       })),
     };
 
@@ -936,6 +1034,10 @@ export async function getPurchaseOrder(tenantId: string, poId: string) {
       additionalUnitCost: Number(r.additional_unit_cost),
       landedUnitCost: Number(r.unit_cost) + Number(r.additional_unit_cost),
       additionalCostNote: r.additional_cost_note,
+      supplierUnitName: r.supplier_unit_name ?? null,
+      supplierUnitQty: r.supplier_unit_qty_ordered ?? null,
+      baseQtyPerSupplierUnit: r.base_qty_per_supplier_unit ?? null,
+      conversionEvidence: r.supplier_unit_evidence ?? null,
     })),
   };
 }

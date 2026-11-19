@@ -3,16 +3,15 @@
 // -------------------------------------------------------------
 //   curl -X POST http://localhost:3000/api/bms/tiktok/webhook \
 //     -H "content-type: application/json" \
-//     -d '{"messages":[{"user_id":"u123","content":{"text":"Adidas XL มีไหม"}}]}'
-// โครงสร้าง event ต่างจาก LINE จึง parse คนละแบบ แต่เข้า pipeline เดียวกัน
+//     -d '{"messages":[{"id":"dev-1","user_id":"u123","content":{"text":"Adidas XL มีไหม"}}]}'
+// โครงสร้าง event ต่างจาก LINE; TikTok ยังไม่มีช่องทางตอบกลับจาก BMS
 // =============================================================
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { runPipeline } from "@/lib/bms/pipeline";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
-import { claimInboundEvent } from "@/lib/bms/inboundEvents";
-import { logConversation, logInboundMessage } from "@/lib/bms/inbox";
+import { claimInboundEvent, releaseUnprocessedInboundEvent } from "@/lib/bms/inboundEvents";
+import { logInboundMessage } from "@/lib/bms/inbox";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -22,7 +21,7 @@ export const dynamic = "force-dynamic";
  * mock ยุคร้านเดียว — ไม่มี signature ให้ verify และเขียนเข้าร้าน default ตายตัว
  *
  * ปล่อยไว้ใน production คือให้ใครก็ยิงข้อความปลอมเข้ากล่องข้อความของร้าน default
- * **และเรียก AI ให้ตอบทุกครั้ง** (ค่า token เป็นของเจ้าของระบบ ไม่ใช่ของผู้ยิง)
+ * การบันทึกข้อความปลอมจะรบกวน Inbox ของร้าน default แม้ไม่เรียก AI
  * ทางจริงคือ webhook ต่อร้านที่ verify ลายเซ็นแบบ fail-closed:
  * `/api/bms/{channel}/webhook/[tenantId]` — ตัวนี้เหลือไว้ให้ curl ตอน dev เท่านั้น
  */
@@ -55,26 +54,27 @@ async function handlePOST(req: NextRequest) {
 
   const replies = [];
   for (const m of messages) {
+    const customerRef = m?.user_id;
+    const eventId = m?.message_id ?? m?.id;
+    if (typeof customerRef !== "string" || !customerRef.trim() ||
+      typeof eventId !== "string" || !eventId.trim() ||
+      (m.content?.text != null && typeof m.content.text !== "string")) {
+      return NextResponse.json({ error: "invalid message event" }, { status: 400 });
+    }
     const text = m.content?.text?.trim() ?? "";
-    if (!(await claimInboundEvent(DEFAULT_TENANT_ID, "tiktok", m.message_id ?? m.id))) {
-      replies.push({ userId: m.user_id, duplicate: true });
+    if (!(await claimInboundEvent(DEFAULT_TENANT_ID, "tiktok", eventId))) {
+      replies.push({ userId: customerRef, duplicate: true });
       continue;
     }
-
-    const customerRef = m.user_id ?? null;
-    if (!text) {
-      await logInboundMessage(DEFAULT_TENANT_ID, "tiktok", customerRef, {
-        body: `[ข้อความ TikTok ชนิด ${tiktokMessageType(m)}]`,
-        meta: { type: tiktokMessageType(m), providerMessageId: m.message_id ?? m.id ?? null, unsupportedForAi: true },
-      });
-      replies.push({ userId: m.user_id, logged: tiktokMessageType(m) });
-      continue;
+    const saved = await logInboundMessage(DEFAULT_TENANT_ID, "tiktok", customerRef, {
+      body: text || `[ข้อความ TikTok ชนิด ${tiktokMessageType(m)}]`,
+      meta: { type: text ? "text" : tiktokMessageType(m), providerMessageId: eventId, unsupportedForAi: true },
+    });
+    if (!saved) {
+      await releaseUnprocessedInboundEvent(DEFAULT_TENANT_ID, "tiktok", eventId);
+      throw new Error("TIKTOK_INBOUND_PERSIST_FAILED");
     }
-
-    const result = await runPipeline(text, "tiktok", DEFAULT_TENANT_ID, customerRef);
-    await logConversation(DEFAULT_TENANT_ID, "tiktok", customerRef, text, result.reply, result.quality);
-    // TODO(prod): ยิงกลับผ่าน TikTok Business Messaging API
-    replies.push({ userId: m.user_id, reply: result.reply });
+    replies.push({ userId: customerRef, logged: text ? "text" : tiktokMessageType(m) });
   }
 
   return NextResponse.json({ ok: true, replies });

@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 /** Client rendering mode derived from the paired device's server bootstrap. */
 export type PreviewStoreMode =
   | 'general'
@@ -12,23 +13,23 @@ export const PREVIEW_STORE_MODES: ReadonlyArray<{
 }> = [
   {
     value: 'general',
-    label: 'ร้านทั่วไป',
-    description: 'ขายสินค้าและจัดการกะ',
+    get label() { return posText("ร้านทั่วไป"); },
+    get description() { return posText("ขายสินค้าและจัดการกะ"); },
   },
   {
     value: 'pharmacy',
-    label: 'ร้านขายยา',
-    description: 'หน้าขายแบบร้านยาตามกฎจากเซิร์ฟเวอร์',
+    get label() { return posText("ร้านขายยา"); },
+    get description() { return posText("หน้าขายแบบร้านยาตามกฎจากเซิร์ฟเวอร์"); },
   },
   {
     value: 'restaurant',
-    label: 'ร้านอาหาร',
-    description: 'เมนู ผังโต๊ะ ครัว และกะ',
+    get label() { return posText("ร้านอาหาร"); },
+    get description() { return posText("เมนู ผังโต๊ะ ครัว และกะ"); },
   },
   {
     value: 'board_game_cafe',
-    label: 'ร้านบอร์ดเกม',
-    description: 'ขายสินค้า จับเวลา โต๊ะ เกม และกะ',
+    get label() { return posText("ร้านบอร์ดเกม"); },
+    get description() { return posText("ขายสินค้า จับเวลา โต๊ะ เกม และกะ"); },
   },
 ];
 

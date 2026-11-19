@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Descriptions, Avatar, Tag, Space, Alert, Button, Row, Col, Empty, Upload, Form, Input, Select, message } from "antd";
 import { UserOutlined, ReloadOutlined, CrownOutlined, ShopOutlined, SafetyOutlined, UploadOutlined, SaveOutlined } from "@ant-design/icons";
@@ -42,10 +44,11 @@ const M_UPDATE_ME = gql`
   }
 `;
 
-const fmtDate = (v?: string | null) =>
-  v ? new Date(v).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-";
+const fmtDate = (v?: string | null, uiText: UiTranslator = thaiUiText) =>
+  v ? new Date(v).toLocaleString(uiText.locale, { dateStyle: "medium", timeStyle: "short" }) : "-";
 
 export default function Page() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [form] = Form.useForm();
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
@@ -238,8 +241,8 @@ export default function Page() {
                 </Row>
 
                 <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small" style={{ marginBottom: 16 }}>
-                  <Descriptions.Item label={t("admin_profile.member_since")} span={2}>{fmtDate(me.created_at)}</Descriptions.Item>
-                  <Descriptions.Item label="User ID" span={2}>
+                  <Descriptions.Item label={t("admin_profile.member_since")} span={2}>{fmtDate(me.created_at, uiText)}</Descriptions.Item>
+                  <Descriptions.Item label={uiText("admin_ui.en_user_id_23bf4")} span={2}>
                     <span style={{ fontFamily: "monospace", fontSize: 12 }}>{me.id}</span>
                   </Descriptions.Item>
                 </Descriptions>
@@ -259,9 +262,9 @@ export default function Page() {
               {me.tenant ? (
                 <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
                   <Descriptions.Item label={t("admin_profile.tenant_name")}>{me.tenant.name}</Descriptions.Item>
-                  <Descriptions.Item label="Slug">/{me.tenant.slug}</Descriptions.Item>
+                  <Descriptions.Item label={uiText("admin_ui.en_slug_094da")}>/{me.tenant.slug}</Descriptions.Item>
                   <Descriptions.Item label={t("admin_profile.tenant_plan")}><Tag color="green">{me.tenant.plan}</Tag></Descriptions.Item>
-                  <Descriptions.Item label="Tenant ID">
+                  <Descriptions.Item label={uiText("admin_ui.en_tenant_id_3422c")}>
                     <span style={{ fontFamily: "monospace", fontSize: 12 }}>{me.tenant.id}</span>
                   </Descriptions.Item>
                 </Descriptions>

@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useQuery } from "@apollo/client";
 import {
   Card, Input, Button, Space, Tag, Select, Segmented, Typography, Divider, Empty, Alert, message,
@@ -9,15 +11,16 @@ import { SendOutlined, ReloadOutlined, ShoppingCartOutlined } from "@ant-design/
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
+import { operatorMessage } from "@/lib/operatorMessage";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
-const { Text } = Typography;
+const { Text, Paragraph } = Typography;
 
 const CHANNELS = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada", "test"];
 
 // สต็อกสด (ไว้ดูเปลี่ยนแปลงหลังสั่ง)
 const Q_PRODUCTS = gql`
-  query { bmsProducts { sku name variants { size available reserved_stock } } }
+  query { bmsProducts(limit: 50) { total items { sku name variants { size available reserved_stock } } } }
 `;
 
 type Bubble = {
@@ -42,6 +45,7 @@ const INTENT_COLOR: Record<string, string> = {
 };
 
 export default function Page() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const { can } = useBmsPermissions();
@@ -73,21 +77,31 @@ export default function Page() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ message: message_, channel, customerRef }),
       });
-      const data = await res.json();
-      setChat((c) => [...c, { from: "bot", text: data.reply || t("admin_playground.no_reply"), trace: data }]);
-      if (data?.order?.status === "CREATED") {
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(res.status === 401 ? t("operator_message.sign_in")
+          : res.status === 403 ? t("operator_message.permission")
+          : res.status === 413 ? t("admin_playground.input_too_large")
+          : res.status === 400 ? t("admin_playground.invalid_request")
+          : t("operator_message.write_unknown"));
+      }
+      if (!data || typeof data.reply !== "string" || !data.reply.trim())
+        throw new Error(t("operator_message.write_unknown"));
+      setChat((c) => [...c, { from: "bot", text: data.reply, trace: data }]);
+      if (data?.order?.status === "CREATED" && typeof data.order.orderId === "string" && data.order.orderId.trim()) {
         setLastOrderId(data.order.orderId);
         message.success(t("admin_playground.order_created", { id: data.order.orderId.slice(0, 8) }));
       }
       refetchStock();
     } catch (e: any) {
-      message.error(e?.message || t("admin_playground.send_error"));
+      message.error(operatorMessage(e, t, "write"));
     } finally {
       setSending(false);
     }
   };
 
-  const products = stockData?.bmsProducts || [];
+  const products = stockData?.bmsProducts?.items || [];
+  const productTotal = stockData?.bmsProducts?.total ?? 0;
 
   // เดิมหน้านี้ไม่มี permission gate เลย (Sales/Warehouse เข้าตรง URL แล้วยิง AI chat จริงได้
   // โดยไม่มีใครเห็น) — ใช้ ai_quality.view (Manager/Administrator) เพราะเป็นคนกลุ่มเดียวกันที่
@@ -183,6 +197,7 @@ export default function Page() {
         <Card title={t("admin_playground.live_stock_title")} style={{ flex: "1 1 320px", minWidth: isMobile ? 0 : 280, width: isMobile ? "100%" : undefined }}
           extra={<Button size="small" icon={<ReloadOutlined />} onClick={() => refetchStock()}>{t("admin_playground.refresh")}</Button>}
         >
+          {productTotal > products.length && <Paragraph type="secondary">{uiText("admin_ui.playground_stock_limit", { shown: products.length, total: productTotal })}</Paragraph>}
           {products.length === 0 && <Empty />}
           {products.map((p: any) => (
             <div key={p.sku} style={{ marginBottom: 12 }}>
@@ -207,6 +222,7 @@ export default function Page() {
 
 // แสดง trace ย่อใต้บับเบิลบอท
 function TraceLine({ trace }: { trace: any }) {
+  const uiText = useUiText();
   const intent = trace?.understanding?.intent;
   const order = trace?.order;
   const data = trace?.data;
@@ -214,11 +230,11 @@ function TraceLine({ trace }: { trace: any }) {
     <div style={{ marginTop: 4, fontSize: 12 }}>
       <Space wrap size={4}>
         {intent && <Tag color={INTENT_COLOR[intent] || "default"}>{intent}</Tag>}
-        {trace?.tool && trace.tool !== "none" && <Tag>tool: {trace.tool}</Tag>}
-        {data?.status && data.status !== "NOT_FOUND" && <Tag color="cyan">stock: {data.status}</Tag>}
+        {trace?.tool && trace.tool !== "none" && <Tag>{uiText("admin_ui.en_tool_25dfe")} {trace.tool}</Tag>}
+        {data?.status && data.status !== "NOT_FOUND" && <Tag color="cyan">{uiText("admin_ui.en_stock_395fd")} {data.status}</Tag>}
         {order?.status && (
           <Tag color={order.status === "CREATED" ? "green" : "red"}>
-            order: {order.status}{order.total ? ` · ${order.total.toLocaleString()}฿` : ""}
+            {uiText("admin_ui.en_order_6b3d6")} {order.status}{order.total ? ` · ${order.total.toLocaleString()}฿` : ""}
           </Tag>
         )}
       </Space>

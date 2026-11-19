@@ -100,6 +100,20 @@ if (schema.status === 0) {
   console.log(quote(schemaOut));
 }
 
+// Schema checks cannot detect missing, unpublished, disabled or empty seed rows.
+// Pickup status mail selects these templates without a fallback to parcel copy.
+const pickupMail = runChild(["tsx", path.join(ROOT, "scripts", "check-order-email-readiness.mts")]);
+const pickupMailOut = `${pickupMail.stdout ?? ""}${pickupMail.stderr ?? ""}`;
+if (pickupMail.status === 0) {
+  pass("เทมเพลตอีเมลรับเองภาษาไทยและอังกฤษเผยแพร่และเปิดใช้งานแล้ว");
+} else if (pickupMail.status === 1) {
+  block("เทมเพลตอีเมลรับเองยังไม่พร้อม", "ใช้ migration 10.114 หรือเผยแพร่เวอร์ชันที่เปิดใช้งานก่อน deploy");
+  console.log(quote(pickupMailOut));
+} else {
+  unknown("ตรวจเทมเพลตอีเมลรับเองไม่ได้", "ต้องตรวจฐานเป้าหมายก่อน deploy");
+  console.log(quote(pickupMailOut));
+}
+
 // ---- 2. ความลับที่ production ต้องมี (env เท่านั้น ไม่แตะฐาน) ----
 // ตั้งแต่ 2026-08-27 production throw ถ้าไม่มีสองตัวแรก = แอปไม่ขึ้นเลย
 const HEX64 = /^[0-9a-f]{64}$/i;

@@ -1,44 +1,64 @@
 # BMS status log
 
 Per-feature decision narrative moved out of [CLAUDE.md](../CLAUDE.md) on 2026-10-13 to keep the
-always-loaded agent context small. Text is unchanged; newest entries are at the end. The compact
-area index lives in CLAUDE.md § Current status; full per-domain rules live in
-[agent-invariants.md](agent-invariants.md).
+always-loaded agent context small. The moved text is unchanged; newest entries are at the end.
+Entries were brought up to date on 2026-11-19 (through migration `10.137` and PR #437); the
+detailed 2026-11-16 boundary and log notes are in [feature-log.md](feature-log.md). The compact area index lives in CLAUDE.md
+§ Current status; full
+per-domain rules live in [agent-invariants.md](agent-invariants.md).
 
-## Current status summary (as written 2026-10)
+## Current status summary (as written 2026-11)
 
-Fully built except: **Shopee/Lazada** (🧪 beta, signatures unverified) · **Flash/Kerry carriers**
-(🧪 safety layer done, adapters await a real merchant contract) · **AI Pharmacy Intake** (🧪
-flag-gated off) · **e-Tax submission**
-(🧪 built, gated off by default, no signing/submission provider verified yet) · **POS ESC/POS
-printing/cash-drawer** (🧪 written, never run against real hardware; the native app's Wi-Fi/LAN
-raster receipt printing is unit-tested but not yet certified on a real printer) · **Windows/Linux/macOS desktop
-POS client** (🧪 MVP shell — every package is unsigned, with no auto-update and no offline tender)
-· **Delivery platforms** (🧪 foodpanda sandbox/shadow only; GrabFood and LINE MAN contract-blocked;
-no provider is live-ready) · **Retail Local** (🧪 technical pilot, not Commercial/GA — installers are
-unsigned and clean-machine/restore/failure drills are still open).
-POS counter sale/return/refund
-and Thai tax invoicing (migrations `7.84`–`7.95`), membership/tiers/loyalty points (`7.96`), parked
-bills + drawer movements + void + shift report (`7.97`, hardened through `9.5` with idempotent
-drawer cash movements, whole-bill serial checks, and shift-report correctness fixes), inter-branch
-stock transfers + stock counts (`7.98`), and a keyboard-wedge Scan Manager plus retry-safe PO
-receiving at the register (`9.6`) are otherwise fully built — see
-[business/pos.md](business/pos.md) and [business/inventory.md](business/inventory.md).
-The native iOS/Android register now has one-shot camera scanning and an explicitly opened,
-focused Bluetooth/USB HID mode. It remembers camera versus hardware input on the device, keeps the
-modal open for consecutive scans, suppresses CR+LF duplicates, and preserves the existing
-modifier/pack selection flow. Global hardware-key capture outside that modal and real-device scanner
-certification remain rollout work; this is not the browser Scan Manager's global PREFIX mode.
+Not production-ready (🧪): **Shopee/Lazada** (beta, signatures unverified) · **Flash/Kerry carriers**
+(safety layer done, adapters await a real merchant contract) · **AI Pharmacy Intake** (flag-gated
+off) · **e-Tax submission** (built, gated off by default, no signing/submission provider verified) ·
+**ESC/POS printing and cash drawer** (browser WebUSB code and the native app's Wi-Fi/LAN raster
+receipt printing are written and unit-tested but never certified on real hardware) ·
+**Windows/Linux/macOS desktop POS client** (MVP shell — every package is unsigned, with no
+auto-update and no offline tender) · **Delivery platforms** (foodpanda sandbox/shadow only; GrabFood
+and LINE MAN contract-blocked; no provider is live-ready) · **Retail Local** (technical pilot, not
+Commercial/GA — installers are unsigned and clean-machine/restore/failure drills are still open) ·
+**Tax-invoice PDF email and the SMTP relay** (built, not yet sent through a real provider) ·
+**Automated AI plan billing** (none; plan prices are catalogue evidence, not payment) · **Q4
+profit/growth simulation** (planned). Pharmacy guidance texts have not been clinically reviewed by a
+licensed pharmacist.
+
+Built but explicitly not rolled out: lot identity through branch transfers (`10.107` — committed and
+clone-DB verified, WIP for rollout, production deployment unverified); bank reconciliation
+(`10.110`, both feature flags off by default, migration-first controlled pilot); branch requisitions
+and store operations (`10.87`–`10.88`, `10.91`–`10.98`, code built, not piloted); platform master
+data (`10.76`–`10.86`, pilot data review pending). A migration file in the repository is not
+evidence that a target database has it — check the target before claiming a feature there.
+
+Everything else in the CLAUDE.md area index is built. POS counter sale/return/refund and Thai tax
+invoicing (migrations `7.84`–`7.95`), membership/tiers/loyalty points (`7.96`), parked bills +
+drawer movements + void + shift report (`7.97`, hardened through `9.5` with idempotent drawer cash
+movements, whole-bill serial checks, and shift-report correctness fixes), inter-branch stock
+transfers + stock counts (`7.98`), and a keyboard-wedge Scan Manager plus retry-safe PO receiving at
+the register (`9.6`) are fully built — see [business/pos.md](business/pos.md) and
+[business/inventory.md](business/inventory.md). The `8.0`–`9.4` POS additions — blind close/no-sale
+(`8.0`), wholesale price tiers (`8.1`), blind returns (`8.2`), serials (`8.3`), commission (`8.5`),
+non-stock charge lines (`8.6`), promotions (`8.7`), bundles and scale barcodes (`8.8`), gift
+cards/store credit (`8.9`), deposits (`9.0`, `9.2`) and branch management (`9.1`, repairs
+`9.3`–`9.4`) — each have their own section in those two documents. Their per-migration build/verify
+narrative, like that of later migrations, is archived in
+[local-notes-archive.md](local-notes-archive.md); search it by migration number (for example
+`grep -n "8.7" docs/local-notes-archive.md`).
+
+The native iOS/Android register has one-shot camera scanning and an explicitly opened, focused
+Bluetooth/USB HID mode. It remembers camera versus hardware input on the device, keeps the modal
+open for consecutive scans, suppresses CR+LF duplicates, and preserves the existing modifier/pack
+selection flow. Global hardware-key capture outside that modal and real-device scanner certification
+remain rollout work; this is not the browser Scan Manager's global PREFIX mode.
+
 The commercial intelligence roadmap is built through **Q3**: Phase 1 bundles the daily Action Center
-and inventory purchasing intelligence (`9.12`–`9.13`), while Phase 2 adds the monthly customer
-retention engine (`9.14`) with RFM/risk scoring, verified next-product evidence, a propose-only
-comeback queue, deterministic holdout, and bounded 30-day conversion attribution. See
-[ui/dashboard.md](ui/dashboard.md), [ui/retention-engine.md](ui/retention-engine.md), and
-[business/crm.md](business/crm.md). Q4 profit/growth simulation remains planned.
-Migrations `8.0`–`9.4` add further POS features (blind close/no-sale, price tiers, blind returns,
-serials, commission, non-stock charge lines, promotions, bundles, store credit, deposits, branch
-creation) not yet reflected in this summary — see [CLAUDE.local.md](../CLAUDE.local.md) for the
-per-migration build/verify/production status of each.
+and inventory purchasing intelligence (`9.12`–`9.13`, extended per branch by `10.99`–`10.100`),
+while Phase 2 adds the monthly customer retention engine (`9.14`) with RFM/risk scoring, verified
+next-product evidence, a propose-only comeback queue, deterministic holdout, and bounded 30-day
+conversion attribution. See [ui/dashboard.md](ui/dashboard.md),
+[ui/retention-engine.md](ui/retention-engine.md), and [business/crm.md](business/crm.md). Q4
+profit/growth simulation remains planned. The commit-bound release inventory is
+[release-feature-control.md](release-feature-control.md).
 
 
 ## Feature entries
@@ -143,7 +163,8 @@ end-to-end, including a query ordering by a `bms_locations` column that does not
 online order failed to create), a migration that could drop the wrong `bms_order_discounts` check
 constraint, and the same "read `bms_inventory` instead of the catalog variant" mistake called out
 above — see [business/restaurant-chat-delivery.md](business/restaurant-chat-delivery.md) for
-the full brief and [CLAUDE.local.md](../CLAUDE.local.md) for the incident-by-incident record.
+the full brief and [local-notes-archive.md](local-notes-archive.md) § Restaurant chat delivery rollout
+(2026-09-04) for the incident-by-incident record.
 
 **Pharmacy non-clinical customer assistance (`10.44`, 2026-10-07)** — fixed medication-advice
 handoff remains active with intake disabled. Pharmacy-only reads expose shop-transcribed label
@@ -415,7 +436,7 @@ Pricing excluding VAT is no longer configurable. Expense documents (`10.11`, `/a
 document number and a checksum-valid payee tax id, record withholding tax, are corrected by `VOID`
 with a reason, and the duplicate-invoice key is the normalised number + branch. `VAT_SALES`,
 `VAT_PURCHASE` and `STOCK_LEDGER` are persisted report types. `10.13` has **not** been verified
-against a database — see [CLAUDE.local.md](../CLAUDE.local.md) § Tax leak guards — and
+against a database — see [local-notes-archive.md](local-notes-archive.md) § Tax leak guards — and
 [business/pos.md](business/pos.md).
 
 **Delivery platforms are capability-gated, never guessed (`10.12`, `10.14`, `10.21`).** Webhooks write a
@@ -557,3 +578,561 @@ the `DLE EOT` online/cover/paper checks pass; receipts, PINs and tokens are neve
 the printer. No Bluetooth/USB/AirPrint, no cash-drawer kick, and no certification on real hardware
 yet. See [apps/mobile/README.md](../apps/mobile/README.md).
 
+**Pickup queue numbers and the call screen (`10.112`).** A manager can turn on pickup numbers for a
+whole branch (with a device-local opt-in still available), choose the customer-board message,
+PREPARING visibility and READY auto-hide window. Counter sales then get a per-branch,
+per-service-day number issued
+after the sale commits (a queue failure never fails the sale), printed on the receipt and on
+reprints, called from the till/floor/mobile strip or automatically when the kitchen finishes every
+ticket, and shown on `/pos/queue-board`, a device-token call screen that sees numbers only (opens
+inside a managed Desktop second-display window with identify, preview and hot-plug recovery).
+Kitchen readiness also rings the till and the completed-sale customer display shows the issued
+number. Covers web, restaurant take-away checks and the native register (GraphQL
+`pickupQueue`, `bmsPosPickupQueue[Action]`); polling, not realtime push, by design. See
+[business/pos.md](business/pos.md#pickup-queue-numbers-and-the-call-screen-10111).
+
+**Queue experience, customer display and Desktop kitchen printing (`10.113`).** Branch queue policy
+now includes a snapshotted prefix, first number for an empty service day, spotlight duration and
+announcement settings. The call screen treats an AI Studio-generated static voice pack as primary
+and falls back to its local chime without making provider calls at runtime. Store Profile adds an
+idle-only bounded promotion slideshow, Settings can publish a fixed-payload Messenger greeting and
+conversation starters, and the Desktop pilot maps server kitchen stations to explicit OS printers.
+Kitchen jobs are journalled per server ticket; uncertain outcomes require a tray check and explicit
+retry. Central printer profiles and offline-first restaurant service remain out of scope.
+
+**Pickup queue migration renumbering.** The unmerged queue branch originally used `10.111` and
+`10.112`; after `develop` assigned `10.111` to the pharmacist licence write, the queue migrations
+became `10.112` and `10.113`. A pilot or test database that ran either old queue filename may safely
+re-run the corresponding idempotent file under its new name, then record the new filename in any
+external migration ledger. Do not mark the new names applied without first verifying the queue table
+and experience columns on that target database.
+
+**A tax correction is a new reviewed document, never an edit (`10.60`).** Tax documents and counters
+accept `DEBIT_NOTE`; newly issued full/credit/debit documents freeze a `print_snapshot` (lines,
+seller/buyer identity, amounts, calendar era) and record buyer VAT registration separately, without
+backfilling old documents with today's identity. `bms_tax_document_actions` records
+substitute/correct/credit/debit actions with an idempotency key, evidence reference and reason, and
+`bms_tax_period_snapshots` freezes versioned monthly sales/input-VAT reports per establishment; both
+are append-only (SELECT/INSERT grants only). `tax.document.adjust` and `tax.period.close` are seeded
+to Manager. Current/future months and reports with unresolved exceptions cannot close, later drift
+is shown as a warning on the archive rather than rewriting it, and paper `PRICE`/`CORRECTION`
+workflows are excluded from the e-Tax provider queue. The tax-point decisions are **pending
+accounting confirmation**, and the migration was not exercised against a database in that round —
+see [business/tax-accounting-review.md](business/tax-accounting-review.md) and
+[architecture/database.md](architecture/database.md) § Tax document controls.
+
+**Restaurant costing reads recorded evidence, never today's catalog (`10.61`–`10.66`).** `10.61`
+freezes a stock/cost snapshot on each restaurant check item at first kitchen send and links order
+items to it (`stock_consumption_version = 2`); apply it before deploying, because common order
+inserts read the column. `10.62` adds pinned subrecipes compiled into a leaf BOM with exact integer
+arithmetic plus SOP steps, as copy-on-write recipe versions that never create production inventory.
+`10.63` stores labour/electricity/gas assumptions on a recipe version (null is unknown, not zero),
+`10.64` records human operating-cost reviews, `10.65` freezes a trigger-guarded financial snapshot
+on each POS return, and `10.66` appends versioned monthly cost allocations by branch/channel. The
+phase-9 recorded net-profit read composes these on one serializable snapshot, keeps unknown cost
+unknown and uses `CATALOG_AT_SALE` cost, so it is management profit before income tax, not actual
+purchase-lot valuation or a statutory statement. `10.61`–`10.66` were installed and re-run on a
+restored local Docker clone in the 2026-10-15 DB follow-up; production query plans remain a rollout
+check. See [business/inventory.md](business/inventory.md) § Restaurant phases 1–9 and
+[architecture/database.md](architecture/database.md).
+
+**Actual cost is a moving weighted average frozen with the stock movement, and a price changes only
+through a confirmed publication (`10.67`–`10.72`).** `bms_inventory_values` keeps the current
+weighted average per branch/SKU/size and `bms_inventory_value_entries` freezes each movement's value
+in the stock transaction (transfers carry value, transit loss is expensed); unknown opening value
+stays NULL until an evidence-backed, explicitly confirmed opening, and `10.69` ties the balance to
+its exact inventory row. `bms_price_plan_publications` records a confirmed price plan while the
+shared pack/promotion writers run in the same transaction; stale observations, VAT mismatches and
+branch-restricted actors are rejected. `10.70` scopes N-for-price rules to a variant and sales
+surface. `10.71` adds explicit branch prices (absence inherits the catalog) and replaces the
+one-active-promotion index with a GiST exclusion, so future windows can be scheduled without
+ambiguity at checkout. `10.72` adds append-only reviewed menu-profit allocations that reconcile to
+the recorded net-profit report, and publishes a mixed-menu bundle as a pinned `RECIPE` product.
+Material contribution is not per-menu net profit, and existing unvalued sales are never repriced.
+See [business/inventory.md](business/inventory.md) §§ Completed restaurant costing workflow /
+Costing completeness follow-up / Operating completion.
+
+**A package limits what a shop may add, never what it may sell (`10.73`–`10.75`,
+`10.101`–`10.102`).** The Cloud catalogue is Free/Pro/Growth/Business/Enterprise Factory at THB
+0/990/1,990/4,900/29,900 per month (`10.101`/`10.102`; Enterprise is sales-led, not self-serve) with
+enforced product and total-user limits (the owner counts) and, for shops created after `10.75`
+(`capacity_policy_version = 2`), branch/device/channel limits that count disabled rows too.
+`feature_policy_version` (`10.74`) keeps existing shops on the legacy policy permanently; new shops
+get `REPORT_SCHEDULE` on Pro and above and `RETENTION_ENGINE` on Business. Quota checks reject
+additions only: existing rows stay editable, and checkout, POS sales, device pairing, webhooks,
+order volume, existing jobs and Retail Local are never gated. Plan changes commit with their audit,
+platform admins edit the catalogue through a preview/confirm flow (`10.83`), and
+`bms_package_events`/`bmsPackageMetrics` report plan conversion, not payment or revenue. Prices are
+catalogue evidence — there is no recurring billing. Dev fake seeders use the same quota authority
+(#355). Rehearse `10.75` on a restored throwaway database before any production rollout. See
+[architecture/database.md](architecture/database.md) and
+[architecture/system.md](architecture/system.md).
+
+**Platform reference data is shared, read-only to shops, and copied into tenant rows as snapshots
+(`10.76`–`10.86`).** Banks, units, the Thai address hierarchy, carriers and shipping zones, tax
+reference tables, starter categories/holidays/emergency numbers, a reviewed barcode cache, drug
+suggestions, countries/currencies/timezones and an effective-dated AI rate card are global tables
+with no `tenant_id`; `bms_app` only reads them, and every platform-admin write goes through a narrow
+`SECURITY DEFINER` function (`10.86`) with revision and audit in one transaction. Tenant rows keep
+their own snapshots (addresses, tax buyers, pack unit codes, shipment carrier names) and printing
+never joins master data. Nothing is copied into a shop without an explicit action; master drugs ship
+only an inactive `SAMPLE-DO-NOT-USE` row and stay suggestions that a shop pharmacist must approve;
+the VAT reference is advisory while `bms_store_profile.vat_rate` stays the sale-time authority;
+AU/GB locality tables stay empty until a licence/residency review. Code is built; pilot data review
+is pending. See [architecture/database.md](architecture/database.md) § Platform master data
+foundation and the sections after it.
+
+**A branch requisition is a planning document; stock moves only through a transfer or PO
+(`10.87`–`10.88`).** `/admin/branch-requisitions` adds draft → submitted → approved/rejected →
+closed/cancelled requests with integer requested/approved quantities, optimistic versions and a
+Bangkok-day `REQ-` number. Approved quantities are fulfilled by linked transfers, where only good
+received units count as delivered, or allocated to PO items, which are procurement evidence and
+never proof of delivery; creating the linked document and recording the allocation share one
+transaction and audit. `inventory.requisition.view/create/review` are seeded to Manager (Warehouse
+gets view/create) and transfers/POs still need their own permissions. `10.88` adds the review queue,
+filters and best-effort post-commit notices to current eligible reviewers/requesters. Code is built
+but not piloted. See [business/inventory.md](business/inventory.md) § Branch requisitions and
+[business/branch-requisitions-plan.md](business/branch-requisitions-plan.md).
+
+**Board-game profitability uses frozen money and recorded occupancy (`10.89`).** The Analytics tab
+on `/admin/board-game` (`report.view`; editing branch hours also needs `board_game.floor.manage`)
+reports utilization as occupied over available table-minutes, from effective-dated
+`bms_board_game_branch_hours` and an occupancy ledger written in the same transaction as
+open/move/merge/detach/close. Play revenue comes only from frozen paid billing-group snapshots and
+tab revenue from immutable `line_amount`; RevPATH, seat utilization and an XLSX export
+(`BOARD_GAME_ANALYTICS`) build on them. Missing hours, VAT allocation or cost stay unknown with a
+visible issue, never zero; pre-ledger occupancy is backfilled and flagged approximate; fixed costs
+are excluded and nothing is forecast. See [business/board-game-cafe.md](business/board-game-cafe.md)
+§ Profit and table utilization.
+
+**The customer display shows a per-tender Dynamic PromptPay QR only from a verified bank-issued base
+(`10.90`).** When a QR tender is selected, the customer display (`/pos/display`) renders a Dynamic
+PromptPay QR carrying that tender's amount (Tag 54, recomputed CRC), built only from an amount-free
+static QR saved in Settings → Receiving accounts whose embedded recipient matches the configured
+PromptPay ID. It is never synthesized from a PromptPay ID, there is no static fallback, and the
+cashier still confirms funds manually. `10.90` adds an optional idle welcome background
+(`bms_store_profile.customer_display_background_url`), decoded and re-encoded server-side; cart,
+payment and QR phases keep the solid background. See [business/pos.md](business/pos.md) § Customer
+display and receipt delivery.
+
+**Store operations record evidence; only an explicit post moves stock (`10.91`–`10.98`).** One admin
+page, `/admin/operations`, delivers Releases A–H: checklists and food-safety evidence with private
+image evidence (`10.91`), supervisor follow-up and escalation (`10.92`), rosters, handovers and a
+daily manager review (`10.93`), production batches (`10.94`), SOP standards, learning evidence and
+improvement reviews (`10.95`–`10.96`), material plans with inspected receiving (`10.97`), and
+quality cases with lot holds (`10.98`). Releases A–D write no stock or money, and a roster is not a
+POS shift, payroll or proof of presence. A production batch posts `PRODUCTION_OUT`/`PRODUCTION_IN`
+only on an explicit post; materials planning leaves `purchase.ts` as the stock authority; a lot hold
+restricts usable availability for POS, menus and transfers but never moves quantity or value, and an
+approved disposal (different proposer and reviewer) moves stock, value and audit in one transaction.
+History tables are append-only under forced RLS, and 20 `operations.*` permissions gate the page.
+Code is built but not piloted. See
+[business/operation-checklists.md](business/operation-checklists.md),
+[business/operation-production.md](business/operation-production.md) and
+[business/operation-improvement.md](business/operation-improvement.md).
+
+**Branch inventory intelligence never spreads unattributed demand, and landed cost never rewrites
+the supplier price (`10.99`–`10.100`, `10.103`).** `inventoryIntelligence.ts` is the shared read
+model for the Dashboard and staff AI tools, keyed by tenant/branch/SKU/size: a
+`bms_inventory_location_policies` row overrides tenant policy for one branch, and demand or open PO
+quantity without a verified branch stays in separate unallocated lists. Reconciliation, stale
+transfer/PO, repeated adjustment and loss signals are review signals, not fraud verdicts. AI tools
+may only propose a transfer or PO (a fresh idempotency key per proposal;
+`bms_purchase_order_idempotency` makes confirmation retries replay) through the shared human
+confirmation UI, and receiving a PO is not an AI tool. A daily job records forecast snapshots and
+evaluates matured ones (method `2.1`); forecasts never write stock. `10.100` makes branch deletion
+clear only the demand row's branch. `10.103` adds a reviewed per-unit `additional_unit_cost`
+(freight, duty, non-recoverable tax) with a mandatory note on PO lines; receiving freezes
+`unit_cost + additional_unit_cost` into lot cost and valuation, and earlier receipts are never
+backfilled. See [business/inventory.md](business/inventory.md) §§ Branch-aware inventory copilot /
+Completed restaurant costing workflow.
+
+**Stock writes refuse drift instead of carrying it (#362, #365, #396, no migration).** Since the
+quality-hold release (#362), sellable availability for reservations, POS scan, menus and restock
+notices excludes held or expired lots, and a lot-total mismatch blocks new reservations until
+reconciled. Staff transfers enforce assigned branch scope on REST and staff GraphQL — create needs
+both branches, send/cancel the source, receive the destination — with retry-safe commands (#365).
+Stock integrity (#396) tightens the shared services: PO receipts enforce lot/expiry tracking even on
+the first receipt into an empty branch, manual adjustments refuse lot/expiry policies, back-office
+full returns reconcile the original lot allocation or roll back with `STOCK_REVIEW_REQUIRED`, and
+counts need an explicit non-negative integer (missing is not zero). Mobile Operations gains purchase
+receiving with an immutable pending receipt in secure storage, and the desktop shell gains ordered
+unpair and window-lifecycle handling. Covered by `stock-integrity-contract` and
+`stock-integrity-db-contract` (restored disposable database only). See
+[business/inventory.md](business/inventory.md).
+
+**Lot identity travels with a branch transfer (`10.107`) — committed and clone-DB verified, WIP for
+rollout, production deployment unverified.** SEND allocates unexpired, not-held source lots FEFO
+inside the transaction that lowers `current_stock` and is refused when lot totals do not match
+physical stock; `bms_stock_transfer_item_lots` snapshots lot number, expiry and cost per line and
+source lot. RECEIVE recreates good units as the same lot number and expiry at the destination with
+cost carried over; damaged units go to quarantine, a shortfall on a multi-lot line lands on the
+latest-expiry lot as a deterministic estimate rather than evidence, and a quality hold placed after
+sending blocks the receipt. PO receipts, wastage, counts and POS returns apply the same
+reconciliation. On 2026-11-05 the final code passed `npm run gate` and eight PostgreSQL suites
+(81/81) on a clone with `10.107` applied only to that clone — verification evidence, not a
+production deployment. Do not describe lot transfers as available in production before confirming
+the target database and rollout. See [business/inventory.md](business/inventory.md) § Lot transfers
+and [architecture/system.md](architecture/system.md).
+
+**A Meta webhook is bound to one Page and processed from a durable queue (`10.104`, `10.108`).** The
+Facebook/Instagram route takes the tenant from the path, verifies the raw body, binds `entry.id` to
+the saved account ID (`external_account_id`) and uses a webhook verify token distinct from the App
+Secret. Each message is stored in `bms_channel_inbound_jobs` under its unique `message.mid` before
+any AI or Graph API call; once `effects_started_at` is stamped, an uncertain outcome becomes `DEAD`
+for manual review instead of replaying a possible order or reservation. `10.108` keeps only bounded
+reply-target, quick-reply and ad-referral identifiers (`event_meta`), never the raw signed payload.
+Business Suite echoes are timeline evidence only, delivery/read events advance outbound status, and
+replies go out only inside Meta's 24-hour window. Customer names and pictures are cached best-effort
+from the User Profile API (LINE profiles refresh through the same `channel-profile-sync` job) and
+never overwrite a staff-maintained CRM name; reading profiles of non-role users needs Meta Advanced
+Access first. Apply both migrations before deploying; existing Meta channels need a Page ID and a
+verify token. See [integrations/facebook-messenger.md](integrations/facebook-messenger.md).
+
+**BMS's own sales chat answers only from approved public material (#352, #390, no migration).** A
+server-selected `bms_presales` mode serves BMS's own verified LINE OA and, only when both
+`BMS_FACEBOOK_PRESALES_TENANT_ID` and `BMS_FACEBOOK_PRESALES_PAGE_ID` match the signed webhook,
+BMS's own Facebook Page; customer text, button payloads and tenant labels can never select it, and
+shop Pages stay in shop-commerce mode. It reads at most eight messages of its own conversation as
+untrusted context, uses only `search_bms_presales` and `list_bms_public_plans`, and the server
+composes the approved answers. Its one deterministic write is an explicit request for Sales to call
+back: the conversation, `sales-callback`/`hot-lead` tags, Sales-first assignment, internal mention
+and `presales.callback_request` audit commit before the assistant acknowledges the queue (#390
+queues Facebook requests the same way). No subscription payment or activation is promised. The
+corpus and presales suites are DB-free contracts, not measured live-model accuracy. See
+[ai/prompts.md](ai/prompts.md) and [agent-invariants.md](agent-invariants.md).
+
+**An Inbox AI reply is "sent" only after the channel accepted it (#406, no migration).**
+LINE/Facebook/Instagram AI replies are saved `PENDING` and become `SENT` or `FAILED` after the
+channel call; Inbox retry is server-gated to `FAILED` push messages and locks the message row during
+the attempt. Channel-health telemetry is best-effort after provider acceptance, so a health write
+failure cannot relabel an accepted reply `FAILED` and invite a duplicate resend.
+Web/TikTok/Shopee/Lazada do not push yet and are marked `SENT` once persisted. Meta messages with
+attachments, including captioned ones, go to Inbox for staff review instead of the text-only AI
+pipeline, which must not guess unseen media. See [business/crm.md](business/crm.md).
+
+**Retail Local collects leads only with consent, can erase them, and prices service rather than
+permission (`10.105`–`10.106`).** The public `/retail-local` page has an optional,
+unchecked-by-default consent form; `bms_submit_retail_local_lead(...)` is the only public write and
+returns no PII or id. Platform admins work the Leads tab of `/admin/retail-local-licenses` with
+revisions and redacted change events, and contact/consent fields are immutable. `10.106` adds a
+platform-admin `bms_erase_retail_local_lead()` that clears the contact fields and every history
+snapshot holding them and freezes the row — always re-apply `10.106` after re-running `10.105`. Lead
+capture is Cloud-only (the endpoint answers 404 on a shop's own install), and the linked privacy
+policy still needs legal review before leads are collected in production. The proposed pricing (free
+use without expiry, a one-time Local Plus licence and an installation-help offer) lives only in
+`retailLocalPricing.ts`, is still pending owner, EULA and accounting approval, and never blocks
+transactions, backup, recovery or corrective updates. Release housekeeping added deletion of one
+managed-runtime release target and a purge of hidden, non-latest installer files (tombstone plus
+audit in one transaction); release prep reached `0.2.14-pilot.7`. Retail Local remains a technical
+pilot. See [business/retail-local.md](business/retail-local.md).
+
+**A private file has an owner, and a chat attachment follows chat membership (`10.109`, #402).**
+`files.visibility` defaults to private, and `/api/files/[id]` serves a file without a session only
+when it is `public` (storefront/post/avatar images). `10.109` adds `owner_user_id`, so personal
+uploads are listed, renamed and deleted only by their owner; chat image/audio rows are backfilled to
+private with the sender as owner and stream only to current chat members. Legacy
+key/database/config/script/installer artifacts are reclassified private and denied by the generic
+route, while clinical, operations, support-bundle and release files keep their dedicated routes. A
+tenant mismatch answers 404, not 403, and no owner or tenant is taken from request input. The same
+hardening rejects GraphQL operations beyond depth 30, 2,500 fields or 200 aliases before resolvers
+run, enables CSRF/origin/body-size defenses, caps multipart bodies at the proxy, requires current
+membership for every community-chat operation, binds dev database tools to loopback and logs
+parameter shape instead of credentials or PII on database failures. See
+[architecture/database.md](architecture/database.md) § Stored-file ownership.
+
+**Bank reconciliation matches a statement to recorded facts; it never posts (`10.110`).** Phases 1–6
+add bank accounts (only an HMAC fingerprint and the last four digits of the account number),
+immutable statement staging for CSV/XLS/XLSX (10 MB / 50,000 entries, formulas rejected, SHA-256
+dedupe, explicit commit), deterministic candidates against confirmed payments, AR receipts, paid
+expense documents, completed refunds, delivery settlements and opposite bank entries, human
+confirm/partial/ignore/void with transactional audit, and versioned month close/reopen with XLSX/CSV
+export. A confirmed link never changes its source row; a changed source makes the link stale for
+review. `10.110` adds sidecar tables only (no trigger or constraint on sales, payment, AR, expense,
+refund, delivery, tax or stock tables), denies access without tenant context, and seeds the four
+`bank_reconciliation.*` permissions to Manager. Both feature flags default off, rollout is
+migration-first with a controlled pilot, matching is THB-only, and Open Banking reports
+`NOT_CONFIGURED`. See [business/bank-reconciliation.md](business/bank-reconciliation.md).
+
+**Recording a pharmacist licence is an audited, database-checked Administrator action
+(`10.111`, #400, #405).** Licences are edited at `/admin/pharmacy-protocols/licenses`: save, then
+confirm the exact person and new state. `10.111` adds `bms_set_pharmacist_license()`, a narrow
+`SECURITY DEFINER` helper that checks the transaction tenant and a same-tenant Administrator actor,
+locks that actor through commit and updates only the target's licence columns; `bms_app` gets no
+general licence UPDATE grant, and a missing helper fails closed. The flag and number are
+shop-recorded evidence — the software checks no external licence registry. Clinical protocol and
+Product Policy draft/submit/review/enable writes now commit their audit in the same tenant
+transaction, review holds the `10.47` licence-row lock through commit, and concurrent enables of one
+protocol are serialized. AI Pharmacy Intake stays flag-gated off, and the guidance texts are still
+not clinically reviewed. See [pharmacy README](../apps/web/lib/bms/pharmacy/README.md).
+
+**A register pairs by an Admin QR, and a desktop or native client never loses a pending sale
+(#353, #394, #395, no migration).** Admin POS Devices shows a locally generated pairing QR (HTTPS
+origin plus device credential) right after token issuance, and the mobile app's dedicated scan
+verifies and stores it through the existing flow. The QR is a bearer credential, not a one-use
+ticket: closing the modal does not revoke it, only the token hash is stored, reissuing invalidates
+the old token, HTTP/loopback origins are never advertised, and product/stock scanners reject pairing
+codes before SKU lookup; token rotation and its audit commit in one transaction. Desktop and native
+checkout keep the whole pending request and its idempotency key across `PAYMENT_FAILED`,
+`SERVER_ERROR` or a missing result (#353). The iOS/Android audit (#394) forwards running-app deep
+links on iOS, leaves Android release builds unsigned instead of debug-signed when upload credentials
+are absent, rechecks pending offline cash immediately before unpair and keeps or clears idempotency
+keys by outcome; the desktop shell keeps an unreadable pairing file for recovery. These are code and
+automated-test results, not physical-device certification or a published signed build. See
+[apps/mobile/README.md](../apps/mobile/README.md),
+[apps/desktop/README.md](../apps/desktop/README.md) and [business/pos.md](business/pos.md).
+
+**Public and staff search answer only from verified catalogs
+(#372–#374, #377, #380–#381, #399, #401, #404, no migration).** `/learn` is a bilingual public
+learning center authored in `lib/learning/catalog.ts` (board-game and restaurant paths) with GET
+search over that catalogue only — no public LLM endpoint or tenant query — and reading progress
+stays in the browser. Public SEO adds stable `/th` and `/en` URLs, canonical/alternate links, one
+root sitemap with a robots policy that excludes private surfaces, and JSON-LD only where the visible
+page supports it. `/features` (#399) answers a prospect's free-text question with one reviewed
+presales topic, says when no verified answer exists instead of claiming absence, and points Cloud
+prices to the current packages and Retail Local prices to the team. `/admin/search` and the header
+search (#401) open Work Assistant knowledge deterministically without an AI call; admin display
+identity and avatars refresh from Postgres instead of the JWT, and platform admins carry a "Super
+Admin" tag on `/admin/users` (#404). See [ui/learning-center.md](ui/learning-center.md),
+[ui/public-seo.md](ui/public-seo.md) and
+[business/product-overview-th.md](business/product-overview-th.md).
+
+**A release is identified by an exact commit and its feature manifest, not by a migration filename
+(release-manifest commits, 2026-11-09).** `scripts/release-features.mts` builds a commit-bound
+manifest from the Work Assistant capability catalog plus `scripts/release-feature-registry.json`
+(stable IDs, source and test paths); a dirty tree is refused unless explicitly marked as a local
+draft, and `--previous` adds an added/changed/removed diff. `npm run gate` now also checks the
+registry and the regression-file inventory (`check-regression-inventory.mjs`, including mutation and
+live-model drivers), and the GitHub gate uploads a candidate manifest. The registry scope is
+`baseline-in-progress`: its count is not the number of BMS features, `AVAILABLE` is a code status
+rather than production enablement, and `inventory.transfer-lots` stays WIP. Production availability
+still needs the deployed artifact, target schema, flags, configuration, entitlements and rollout
+evidence. See [release-feature-control.md](release-feature-control.md).
+
+**Pickup status emails and branch queue-board media (`10.114`–`10.115`, not yet applied to
+production).** Orders whose persisted `fulfillment_type` is `PICKUP` now use separate Thai/English
+`order.pickup.*` status templates, so "paid" no longer reads as "ready to collect"; apply `10.114`
+before deploying the `orderEmailTemplateKey()` caller. `10.115` gives each branch's call screen an
+ordered playlist of at most eight public images with interval, transition and optional time
+windows; publication and its audit commit in one tenant transaction. See
+[business/order.md](business/order.md) and [business/pos.md](business/pos.md).
+
+**Thai/English operator language on Mobile, Desktop and the web POS (#412, no migration).** Each
+client keeps its own saved language (Mobile in Keychain/Keystore, Desktop in its language store,
+the web POS in settings) and switching rerenders without clearing PIN, cart or pairing. Contract
+tests pin every catalog key in both languages. Physical device and installed Windows/Linux runs are
+still open. See [apps/mobile/README.md](../apps/mobile/README.md) and
+[apps/desktop/README.md](../apps/desktop/README.md).
+
+**Scheduled branch base/pack prices (`10.116`, source candidate, not deployed).** Branch
+prices can now have a future half-open window that temporarily overrides the current branch
+price. Overlapping windows are rejected by the database. Staff preview the exact price and
+scope, confirm publication, and can confirm cancellation of a window; sale and return snapshots
+remain unchanged. The shared price reader applies the same window to catalog, scan and order
+paths. Isolated database, authenticated browser and target-migration proof remain open.
+
+**Server-reviewed public retail cart, retry-safe shipments and lot-aware shipping (no migration).**
+Public storefront pages offer a 10-line variant/pack cart; `POST /api/bms/retail-cart` simulates
+`createOrderInTx()` and rolls back, and a 10-minute signed review token carries the basket and a
+digest of that calculation. Pack size/price always reload from `bms_product_packs`; any change in
+price, discount, shipping or stock rejects confirmation, and a repeated confirm returns the same
+order by its idempotency key. Restaurant tenants are excluded. Shipment creation replays an
+identical request without a second audit, stock movement or carrier call, refuses `PICKUP`, and
+books a carrier only after the local commit with the shipment UUID as the carrier idempotency key.
+Live DB and browser validation remain open. See [business/order.md](business/order.md) and
+[business/inventory.md](business/inventory.md).
+
+**Board-game passes and offers reach customer chat only when published (`10.117`).** A per-row
+`publish_to_chat` switch (default off, including existing rows) controls what the AI may quote; it
+reads only active, same-branch, in-date rows and states the label price and published conditions,
+never final eligibility or the amount due. The switch is audited with the offer. After applying
+`10.117` a manager must opt each pass/offer back in. See
+[business/board-game-cafe.md](business/board-game-cafe.md).
+
+**Inbox, settings and follow-up hardening (`10.118`, recheck 2026-11-14).** Sales staff can no
+longer read or act on another owner's conversation by ID: owner/helper scope is checked in the same
+SQL statement that returns data and rechecked under a conversation lock for every write, with the
+audit in that transaction. Inbound messages, notes and auto-assignment commit atomically; staff,
+follow-up and pharmacy replies persist before provider I/O, and timeouts stay `PENDING` for human
+reconciliation. Inbox attachments use a tenant/file-scoped 30-day media capability instead of
+session URLs. Channel credentials, AI keys and store identity now require the tenant Administrator
+or a DB-verified platform admin, and platform tenant suspension/plan changes need an explicit
+server-checked confirmation. `10.118` replaces direct `users` updates with the narrow
+`bms_set_own_inbox_availability` function (verified on throwaway databases). Live provider sends,
+full-schema RLS/trigger runs and device hardware stay unverified. See
+[architecture/system-recheck-2026-11-14.md](architecture/system-recheck-2026-11-14.md) and
+[business/crm.md](business/crm.md#omnichannel-inbox).
+
+**Fish-dock receipts, history and owner view (`10.119`–`10.120`, not yet applied to production).**
+`/admin/fish-intake` records live receipts by actual grams with reviewed THB into moving-average
+valuation, imports reviewed historical Excel as evidence only (no stock, lot or payable), and takes
+a one-time opening count into empty balances. `/admin/fish-owner` shows the day's receipts, lot
+placement counts (READY/COLD_ROOM/OTHER, invalidated when the lot changes), production use, an
+estimated line margin by fish/lot/customer and an explicit monthly management estimate, plus
+delivery commitments that link ordinary orders. These sidecars never move stock or money
+themselves and reuse existing purchase/inventory/report permissions. See
+[business/inventory.md](business/inventory.md) and
+[architecture/database.md](architecture/database.md).
+
+**Verified shop owner is the shop Administrator (`10.121`, #414).** Email-verified and social
+`/shop-signup` create the first user as `Administrator` (`users.role` and `role_id` agree; missing
+role setup aborts signup). `10.121` promotes only email-verified signup owners still on `Manager`
+whose shop has no Administrator and no later `user.update` audit; other Managers stay unchanged.
+The role change, audit row and session-version bump are atomic and a rerun promotes no one twice.
+Earlier social signups have no verified pending-email record and need individual review. Admin
+screens show translated operator messages (`operatorMessage()`) instead of raw GraphQL errors.
+See [architecture/database.md](architecture/database.md) and [feature-log.md](feature-log.md).
+
+**Operational boundaries, admin sessions and log redaction (#415–#416, no migration).** Bare
+order-pay adapters can no longer mark an order `PAID` without a confirmed payment; signed inbound
+routes bound bodies and reject malformed JSON before claiming an event; lock-screen notifications
+show generic text. Every admin request re-applies the live login gates (session version, POS-only,
+unverified email, subscriber role, inactive tenant); POS send-receipt and device-location routes
+authenticate explicitly. `lib/log/sanitize.ts` bounds and redacts credentials, tokens, contact data
+and IPs before text reaches stdout, Postgres, Slack or the daily triage report. Local web gate,
+mobile Jest and DB runner passed on 2026-11-16; production and authenticated browser runs remain
+unverified. See [architecture/logging-and-triage.md](architecture/logging-and-triage.md) and
+[feature-log.md](feature-log.md).
+
+**Mobile device settings after unpairing (#417, no migration).** The Android/iOS Device Settings
+screen stays open after unpairing instead of navigating away, unpair and startup-rejection failures
+are covered by Jest, and the QR scan action is an icon button beside the pair button. See
+[apps/mobile/README.md](../apps/mobile/README.md).
+
+**Factory BOM, QC hold, production demand and machine evidence (`10.122`–`10.127`, #418, not
+applied to production).** Twine/straw production can run against a BOM with explicit units, an
+opt-in output QC hold with a recorded reviewer, production demand lines and machine evidence. The Thai demo guide and `/learn` step-by-step flow (#423–#424) describe a controlled
+pilot only. See [business/factory-twine-straw-pilot-th.md](business/factory-twine-straw-pilot-th.md)
+and [business/operation-production.md](business/operation-production.md).
+
+**Owner repair retry in ordered rollout (`10.128`, #419–#420).** The ordered `10.121` file now sets a
+transaction-local lock/statement timeout; `10.128` is the idempotent follow-up for databases that
+applied the pre-timeout `10.121`. A timeout aborts the whole transaction (role change and audit),
+and a rerun promotes no one twice. See
+[architecture/owner-repair-rollout.md](architecture/owner-repair-rollout.md).
+
+**Feature readiness recheck (#421, no migration).** The release manifest was regenerated clean,
+missing release evidence is recorded rather than assumed, and report PDFs render Thai text. See [feature-completion-plan.md](feature-completion-plan.md) and
+[release-feature-control.md](release-feature-control.md).
+
+**Audit traceability (`10.131`–`10.132`, #422 and #427).** `bms_security_events` records logins,
+logouts, password resets and sensitive reads beside the business `bms_audit_log`; `/admin/audit`
+pages both at the server and opens a per-actor event flow only for verified actor UUIDs. The files
+were first committed under factory-colliding numbers and renumbered in #427; environments that ran
+the old filenames follow the ledger steps in
+[architecture/audit-traceability.md](architecture/audit-traceability.md#verification-and-rollout).
+
+**Retail Local `0.2.14-pilot.11` (#423).** Release preparation for the next technical-pilot build;
+Retail Local remains a pilot, not GA. See [business/retail-local.md](business/retail-local.md).
+
+**Open-item cash sales (`10.129`–`10.130`, #425, branch implementation; production deployment
+unverified).** Web, Desktop and Mobile POS can sell a cash line for a physical item that is not yet
+catalogued. Sale and return evidence is append-only, the line never moves stock, and draft baskets
+holding open items are protected. Apply `10.129` then `10.130` before rollout. See
+[business/pos.md § สินค้าชั่วคราว](business/pos.md).
+
+**Work Assistant screenshots (#426, no migration).** Staff can attach one PNG/JPEG/WebP image. The
+server checks the real format, strips metadata, bounds the size and never stores the image; a
+text-only configured model is rejected before any provider call or AI point charge. Screenshots are
+treated as user evidence, never as instructions or proof of shop state. Desktop managed displays now
+retry their own main document on HTTP 5xx. See
+[ai/work-assistant-coverage.md](ai/work-assistant-coverage.md).
+
+**Desktop sell-screen queue strip (#428, no migration).** The compact Desktop sell screen reads the
+same per-device pickup-queue switch as Settings, requests a number with the committed sale, shows
+the queue strip above the catalog, and reloads the saved receipt after a successful retry so the
+number is printed. See [business/pos.md](business/pos.md#pickup-queue-numbers-and-the-call-screen-10111).
+
+**Whole-tenant purge FK order (#429, no migration).** `deleteTenantRows()` now unwinds the table-QR,
+order→check, POS member-enrolment shift and pharmacy protocol foreign-key cycles inside the same
+purge transaction, only for the selected tenants. A failed purge still rolls back everything; the DB
+lifecycle contract passed on the throwaway test database.
+
+**Multiple managed queue displays (#430 and the queue-display settings audit, no migration).** A
+Desktop shell opens one `/pos/queue-board` window per selected external monitor (the former limit
+of three is replaced by the detected monitors; `MAX_QUEUE_DISPLAYS = 32` only guards malformed saved
+input). Each screen may override the layout or follow the workstation default; exactly one active
+window owns announcements. An explicit queue setup claims the only external screen, or a customer
+screen it selects. The staff `?view=day` list returns up to 500 rows (open first) and the keypad
+looks up any service-day number on the server; the customer board applies branch visibility and
+READY auto-hide in SQL before its 200-row limit. Issuing a number now requires a `COMPLETED`,
+non-voided bill, and the REST route rejects malformed JSON and non-UUID ids. Desktop unit tests and
+Electron smokes cover the policy; real multi-monitor hardware and audio remain unverified. See
+[business/pos.md](business/pos.md#pickup-queue-numbers-and-the-call-screen-10111) and
+[apps/desktop/README.md](../apps/desktop/README.md#external-displays).
+
+**Assistant answer presentation and BMS-only screenshots (no migration).** The global Drawer and
+`/admin/assistant` share a text-only answer renderer (short headings, paragraphs, numbered steps,
+code blocks, links, report download) that never renders arbitrary HTML; copy, history and tool
+evidence still use the original answer string. A screenshot attachment now needs an explicit staff
+confirmation that it shows BMS (`imageBmsConfirmed`, added to `schema.graphql`); the resolver
+rejects an unconfirmed image before decoding it or making any AI provider call or point charge. The
+screen-capture picker was removed (choose or paste only). The image reader now uses the
+`graphql-upload-nextjs` field `mimeType`; the old `mimetype` read rejected every upload. Customer AI
+replies pass through `formatGeneratedCustomerReply()`, which strips stray Markdown headings, bold and
+inline code from model prose but leaves server-composed summaries and approved wording untouched.
+Settings has an **Open my shop** button for `/shop/{slug}`. Pure contracts
+`assistant-answer-presentation` (3/3) and `work-assistant-image-contract` (8/8) passed on
+2026-11-18; the full gate and browser runs were not. See
+[ai/work-assistant-coverage.md](ai/work-assistant-coverage.md#screenshot-questions) and
+[ai/workflow.md](ai/workflow.md). Merged as #432.
+
+**Retail Local `0.2.14-pilot.12` (#433).** Release preparation for the next technical-pilot build;
+Retail Local remains a pilot, not GA. See [business/retail-local.md](business/retail-local.md).
+
+**Branded not-found pages (#434–#435, no migration).** A missing shop slug shows a shop not-found
+state with navigation back, and other unknown routes get a site-wide branded, context-aware
+not-found page instead of the framework default.
+
+**Building-material shop pilot (`10.133`–`10.137`, #436, PILOT / INCOMPLETE, not applied to
+production).** `10.133` adds versioned sales quotations (a submitted revision is immutable; quotes
+never reserve stock or move money; independent approval freezes VAT-inclusive prices; unknown
+freight blocks approval). `10.134` keeps the quote site address and retail pickup decision on the
+converted order. `10.135` stores sourced, variant-specific technical specs whose drafts never reach
+customer tools. `10.136` adds exact per-kilogram VAT-inclusive rates for gram-counted prefix-22
+labels. `10.137` freezes the supplier package and integer base-unit factor on each new PO line.
+`10.134`, `10.136` and `10.137` are declared in `schemaReadiness.mts`: ordinary order inserts,
+every POS scan/price check and every PO create/receipt need them, so apply the migrations before
+deploying this code. Line-level multi-trip delivery, a customer quote tool and tax/hardware
+certification remain open. See
+[business/building-materials-readiness.md](business/building-materials-readiness.md),
+[release evidence](business/building-materials-release-evidence-2026-11-19.md) and
+[คู่มือร้านวัสดุก่อสร้าง](คู่มือร้านวัสดุก่อสร้าง.md).
+
+**Twenty-baht shop pilot guide (#437, no migration).** The
+public, `noindex` `/learn/twenty-baht-shop` page walks one branch through same-price distinct SKUs,
+CSV/XLSX preview, opening count, PO receipt, sale, partial return, shift close and outage recovery
+using fictional data, with five locally hosted Thai narration MP3s (checksum provenance). Product
+import gains an optional `ประเภท VAT` column (`V`/`N`/`UNKNOWN`; blank keeps an existing SKU's
+value, new SKUs stay unknown; invalid values are row errors) and downloaded examples fill
+`UNKNOWN` rather than guessing. Mobile sale detail keeps the original return/void request body
+with its idempotency key and blocks starting a different return or void while a previous result
+is unknown. Real-shop evidence, accountant VAT review and hardware remain go-live gates. See
+[business/twenty-baht-shop-pilot-th.md](business/twenty-baht-shop-pilot-th.md) and
+[ui/learning-center.md](ui/learning-center.md).
+
+**Backend, Desktop and Mobile audit (branch `codex/backend-desktop-mobile-audit`, no migration).**
+- **Pairing:** Desktop and Mobile reject a pairing link whose remote server is invalid or cleartext
+  (production needs HTTPS); a bare token may still use the server entered in Settings.
+- **Emergency Offline:** a queued cash sale replays only into the shift that originally accepted
+  its tender (`canReplayOfflineSaleInShift`). Legacy rows without an original shift ID stay in
+  manager review when recovery finds no committed bill.
+- **POS returns:** REST and GraphQL partial returns reject the whole request when any line is
+  malformed (`parsePosReturnLines`) instead of refunding the valid subset. A retry with the same
+  idempotency key must select the same item IDs and quantities, including negative IDs for open
+  items (`matchesPosReturnReplayLines`). A changed selection returns `IDEMPOTENCY_CONFLICT` without
+  another refund, and a key cannot be reused across return and void.
+- **Inbox:** list and detail are separate reads. The detail event query compares
+  `bms_audit_log.target` (text) with the conversation UUID cast to text, and a selected chat shows
+  loading, error/Retry or not-found states and keeps `?c=<id>` across refreshes.
+  `bmsMarkConversationRead` takes an optional `observedLatestMessageId` (`schema.graphql` updated)
+  and leaves unread intact when a newer inbound message committed first; older callers are
+  unchanged.
+
+Pure contracts `pos-contract` (98/98), `return-financial-snapshot-contract` (37/37),
+`inbox-conversation-access-contract` (6/6), `inbox-read-tenant-scope-contract` (1/1) and the Desktop
+pairing unit test (8/8) passed on 2026-11-19. The new DB contract `inbox-read-db-contract`, the Inbox
+browser smokes, mobile Jest, typecheck and build were not run in that pass. See
+[business/pos.md](business/pos.md), [business/cloud-hybrid-pos.md](business/cloud-hybrid-pos.md),
+[business/crm.md](business/crm.md#omnichannel-inbox) and
+[ui/inbox-diagnostics.md](ui/inbox-diagnostics.md).

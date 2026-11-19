@@ -29,6 +29,8 @@ export type AppStackParamList = {
     saleId: string;
     source: 'retail' | 'restaurant' | 'board_game';
     mode?: 'preview';
+    /** เลขคิวรับของออกไม่สำเร็จหลังขาย (10.111) — หน้าใบเสร็จแสดงปุ่มออกเลขใหม่ */
+    pickupQueueError?: string;
   };
   SalesHistory: undefined;
   PrinterSettings: undefined;

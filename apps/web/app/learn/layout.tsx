@@ -1,11 +1,8 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { LanguageControl, MobileNavigation, StoreLink } from "./Controls";
 import s from "./learning.module.css";
 import { localizedPublicPath } from "@/lib/publicSeo";
-
-export const metadata: Metadata = { robots: { index: true, follow: true } };
 
 export default function LearningLayout({ children }: { children: React.ReactNode }) {
   const lang = cookies().get("lang")?.value === "en" ? "en" : "th";
@@ -15,7 +12,10 @@ export default function LearningLayout({ children }: { children: React.ReactNode
     <Link href={localizedPublicPath("/learn/board-game", lang)}>{lang === "th" ? "บอร์ดเกม" : "Board games"}</Link>
     <Link href={localizedPublicPath("/learn/restaurant", lang)}>{lang === "th" ? "ร้านอาหารและคาเฟ่" : "Restaurants & cafes"}</Link>
     <Link href={localizedPublicPath("/learn/pharmacy", lang)}>{lang === "th" ? "ร้านขายยา" : "Pharmacy"}</Link>
+    <Link href={localizedPublicPath("/learn/building-materials", lang)}>{lang === "th" ? "วัสดุก่อสร้าง (ทดลอง)" : "Building materials (pilot)"}</Link>
     <Link href={localizedPublicPath("/learn/inventory", lang)}>{lang === "th" ? "สต็อก" : "Inventory"}</Link>
+    <Link href={localizedPublicPath("/learn/twenty-baht-shop", lang)}>{lang === "th" ? "ร้าน 20 บาท (ทดลอง)" : "Twenty-baht shop (pilot)"}</Link>
+    <Link href={localizedPublicPath("/learn/factory-twine-straw", lang)}>{lang === "th" ? "โรงงาน (ทดลอง)" : "Factory pilot"}</Link>
     <LanguageControl lang={lang} /><StoreLink lang={lang} />
   </>;
   return <div className={s.shell}>

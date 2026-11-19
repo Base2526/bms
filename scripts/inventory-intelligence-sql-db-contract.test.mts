@@ -25,6 +25,7 @@ test("inventory PostgreSQL SQL, RLS, partial receipts, migrations and exact fore
       CREATE TABLE users(id uuid PRIMARY KEY);
       CREATE TABLE bms_locations(tenant_id uuid, id uuid, name text, active boolean DEFAULT true, PRIMARY KEY(tenant_id,id));
       CREATE TABLE bms_products(tenant_id uuid, sku text, name text, active boolean DEFAULT true, PRIMARY KEY(tenant_id,sku));
+      CREATE TABLE bms_product_stock_policies(tenant_id uuid, product_sku text, lot_tracking boolean DEFAULT false, expiry_tracking boolean DEFAULT false);
       CREATE TABLE bms_inventory(tenant_id uuid, location_id uuid, product_sku text, size text, current_stock int, reserved_stock int, quarantine_stock int, reorder_point int);
       CREATE TABLE bms_inventory_lots(id uuid, tenant_id uuid, location_id uuid, product_sku text, size text, lot_no text, qty int, expiry_date date);
       CREATE TABLE bms_operation_lot_holds(tenant_id uuid, lot_id uuid, status text);
@@ -67,6 +68,8 @@ test("inventory PostgreSQL SQL, RLS, partial receipts, migrations and exact fore
     }
     await client.query("INSERT INTO bms_purchase_orders VALUES($1,$2,NULL,'PARTIAL',now(),now())", [tenant,po]);
     await client.query("INSERT INTO bms_purchase_order_items VALUES($1,1,$2,'TEST','M',100,30,10)", [tenant,po]);
+    const staleTransfer = randomUUID();
+    await client.query("INSERT INTO bms_stock_transfers VALUES($1,$2,$3,$4,'IN_TRANSIT',now()-interval '49 hours')", [tenant,staleTransfer,a,b]);
     for (const [location, item, qty] of [[a,1,60],[b,2,40]] as const) {
       const requisition = randomUUID();
       await client.query("INSERT INTO bms_branch_requisitions VALUES($1,$2,$3,'APPROVED')", [tenant,requisition,location]);
@@ -98,7 +101,9 @@ test("inventory PostgreSQL SQL, RLS, partial receipts, migrations and exact fore
     const scoped = await service.getInventoryIntelligence({ tenantId: tenant, allowedLocationIds: [a] });
     assert.deepEqual(scoped.items.map((i: any) => i.locationId), [a]);
     assert.deepEqual(scoped.unallocatedIncoming, []);
-    await load("inventoryAnomalies", deps).getInventoryAnomalies({ tenantId: tenant });
+    const anomalies = await load("inventoryAnomalies", deps).getInventoryAnomalies({ tenantId: tenant });
+    assert.ok(anomalies.items.some((item: any) => item.code === "STALE_TRANSFER" && item.locationId === b
+      && item.evidence.transferId === staleTransfer));
     await load("supplierIntelligence", deps).getSupplierIntelligence({ tenantId: tenant });
     const snapshot = await service.recordInventoryForecastSnapshot({ tenantId: tenant, horizonDays: 1 });
     assert.equal(snapshot.itemCount, 2);

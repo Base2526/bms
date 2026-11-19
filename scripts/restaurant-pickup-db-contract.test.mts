@@ -21,6 +21,14 @@ const { beginTenantTx } = loadService("tenant", { crypto });
 const q = (sql: string, values?: unknown[]) => pool.query(sql, values);
 let quoteHook: null | (() => Promise<void>) = null;
 let quotes = 0;
+const movementWriter = { recordOrderMovements: async (client: any, ids: string[], type: string, actor: string) => {
+  await client.query(`INSERT INTO test_movements(tenant_id,order_id,type,actor)
+    SELECT tenant_id,id,$2,$3 FROM bms_orders WHERE id=ANY($1::uuid[])`, [ids, type, actor]);
+} };
+const shippingStock = loadService("orderShippingStock", {
+  "./orderLots": { consumeOrderLotsInTx: async () => {} },
+  "./movements": movementWriter,
+});
 const service = loadService("orders", {
   "@/lib/db": { query: q, getClient: () => pool.connect() },
   "./tenant": { beginTenantTx },
@@ -30,10 +38,8 @@ const service = loadService("orders", {
     if (quoteHook) await quoteHook();
     return { fee: 40, source: "flat" };
   } },
-  "./movements": { recordOrderMovements: async (client: any, ids: string[], type: string, actor: string) => {
-    await client.query(`INSERT INTO test_movements(tenant_id,order_id,type,actor)
-      SELECT tenant_id,id,$2,$3 FROM bms_orders WHERE id=ANY($1::uuid[])`, [ids, type, actor]);
-  } },
+  "./movements": movementWriter,
+  "./orderShippingStock": shippingStock,
   "./orderNotify": { notifyOrderStatusEmail: async () => {} },
 }, true);
 

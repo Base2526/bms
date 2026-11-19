@@ -1,5 +1,7 @@
 "use client";
 
+import { usePosText } from "@/lib/pos/usePosText";
+
 import { useState } from "react";
 import { ArrowLeftOutlined, CheckCircleOutlined, PictureOutlined, PlusOutlined } from "@ant-design/icons";
 import type { PosScanHit, PosVariantSelection } from "@/lib/pos/mobileFlowGraphql";
@@ -17,6 +19,7 @@ export default function ScannedProductPanel({ result, busy, onSelect, onClose }:
   onSelect: (code: string, size: string) => void;
   onClose: () => void;
 }) {
+  const posText = usePosText();
   const [choice, setChoice] = useState<{ selection: PosVariantSelection; size: string } | null>(null);
   const selection = result.kind === "selection" ? result.selection : null;
   const product = result.kind === "product" ? result.product : null;
@@ -29,39 +32,39 @@ export default function ScannedProductPanel({ result, busy, onSelect, onClose }:
     setChoice({ selection: selection!, size: variant.size });
     onSelect(selection!.scanCode, variant.size);
   };
-  return <section className={styles.scannedProduct} aria-label="สินค้าที่สแกน">
+  return <section className={styles.scannedProduct} aria-label={posText("สินค้าที่สแกน")}>
     <div className={styles.scannedProductBody}>
       <header>
         <h2>{item.productName}</h2>
-        <button type="button" onClick={onClose} disabled={busy} title="กลับแคตตาล็อก" aria-label="กลับแคตตาล็อก"><ArrowLeftOutlined /></button>
+        <button type="button" onClick={onClose} disabled={busy} title={posText("กลับแคตตาล็อก")} aria-label={posText("กลับแคตตาล็อก")}><ArrowLeftOutlined /></button>
       </header>
       <div className={styles.scannedImage}>
-        {item.imageUrl ? <img src={item.imageUrl} alt={item.productName} /> : <span><PictureOutlined /> ไม่มีรูปสินค้า</span>}
+        {item.imageUrl ? <img src={item.imageUrl} alt={item.productName} /> : <span><PictureOutlined /> {" " + posText("ไม่มีรูปสินค้า")}</span>}
       </div>
       <p className={styles.scannedSku}>{item.sku}</p>
       {selection ? (
         <fieldset className={styles.scanVariants} disabled={busy}>
-          <legend>เลือกไซส์</legend>
+          <legend>{posText("เลือกไซส์")}</legend>
           {selection.variants.map(variant => {
             const unavailable = variant.stockTracked && variant.available <= 0;
             return <label key={variant.size} data-disabled={unavailable}>
-              <input type="radio" name="scanned-product-size" aria-label={`ไซส์ ${variant.size}`} checked={size === variant.size}
+              <input type="radio" name="scanned-product-size" aria-label={posText("ไซส์ {v0}", { v0: variant.size })} checked={size === variant.size}
                 disabled={unavailable} onChange={() => choose(variant)} />
               <strong>{variant.size}</strong>
               <span>{money(variant.price)}</span>
-              <small>{variant.stockTracked ? unavailable ? "หมด" : `เหลือ ${variant.available}` : "พร้อมขาย"}</small>
+              <small>{variant.stockTracked ? unavailable ? posText("หมด") : posText("เหลือ {v0}", { v0: variant.available }) : posText("พร้อมขาย")}</small>
             </label>;
           })}
         </fieldset>
       ) : product ? <div className={styles.scannedSummary}>
-        <strong>ไซส์ {product.size} · {product.unitName} · {money(product.packPrice)}</strong>
-        <span>{product.stockTracked ? `เหลือ ${product.available} หน่วยฐาน` : "พร้อมขาย"}</span>
-        {result.kind === "product" && result.added ? <span className={styles.stockOk} role="status"><CheckCircleOutlined /> เพิ่มลงบิลแล้ว</span> : null}
+        <strong>{posText("ไซส์") + " "}{product.size} · {product.unitName} · {money(product.packPrice)}</strong>
+        <span>{product.stockTracked ? posText("เหลือ {v0} หน่วยฐาน", { v0: product.available }) : posText("พร้อมขาย")}</span>
+        {result.kind === "product" && result.added ? <span className={styles.stockOk} role="status"><CheckCircleOutlined /> {" " + posText("เพิ่มลงบิลแล้ว")}</span> : null}
       </div> : null}
     </div>
     {selection ? <button type="button" className={styles.primaryButton} disabled={busy || !canAdd}
       onClick={() => { if (canAdd) onSelect(selection.scanCode, selected.size); }}>
-      <PlusOutlined /> {busy ? "กำลังเพิ่ม…" : "เพิ่มไซส์ที่เลือกลงบิล"}
+      <PlusOutlined /> {busy ? posText("กำลังเพิ่ม…") : posText("เพิ่มไซส์ที่เลือกลงบิล")}
     </button> : null}
   </section>;
 }

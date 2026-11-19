@@ -1,6 +1,6 @@
 'use client';
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { Card, Checkbox, Button, Space, Tag, message, Alert, Typography, Divider } from "antd";
+import { Card, Checkbox, Button, Space, Tag, message, Alert, Typography, Divider, Modal } from "antd";
 import { useState, useEffect } from "react";
 import { ReloadOutlined, SaveOutlined, CrownOutlined } from "@ant-design/icons";
 import { Q_MY_PERMS } from "@/app/hooks/useBmsPermissions";
@@ -16,8 +16,8 @@ const Q = gql`
   }
 `;
 const M_SET = gql`
-  mutation ($roleId: ID!, $permissions: [String!]!) {
-    bmsSetRolePermissions(roleId: $roleId, permissions: $permissions)
+  mutation ($roleId: ID!, $permissions: [String!]!, $confirmed: Boolean!) {
+    bmsSetRolePermissions(roleId: $roleId, permissions: $permissions, confirmed: $confirmed)
   }
 `;
 
@@ -105,6 +105,25 @@ export default function Page() {
           const setRole = (perms: string[]) => setDraft((d) => ({ ...d, [role.id]: perms }));
           const toggle = (perm: string, checked: boolean) =>
             setRole(checked ? [...current, perm] : current.filter((p) => p !== perm));
+          const confirmSave = () => {
+            const previous = new Set<string>(role.permissions);
+            const next = new Set<string>(current);
+            const added = current.filter((p: string) => !previous.has(p));
+            const removed = role.permissions.filter((p: string) => !next.has(p));
+            Modal.confirm({
+              title: t("admin_permissions.confirm_title", { role: role.name }),
+              content: (
+                <div>
+                  <p>{t("admin_permissions.confirm_scope", { shop: data?.bmsMyTenant?.name || data?.bmsMyTenant?.id || "-" })}</p>
+                  <p>{t("admin_permissions.confirm_added")}: {added.length ? added.join(", ") : t("admin_permissions.confirm_none")}</p>
+                  <p>{t("admin_permissions.confirm_removed")}: {removed.length ? removed.join(", ") : t("admin_permissions.confirm_none")}</p>
+                </div>
+              ),
+              okText: t("admin_permissions.confirm_ok"),
+              cancelText: t("admin_permissions.confirm_cancel"),
+              onOk: async () => { await setPerms({ variables: { roleId: role.id, permissions: current, confirmed: true } }); },
+            });
+          };
 
           return (
             <Card key={role.id} size="small"
@@ -112,7 +131,7 @@ export default function Page() {
               extra={
                 !role.is_super && (
                   <Button type="primary" size="small" icon={<SaveOutlined />} disabled={!dirty}
-                    onClick={() => setPerms({ variables: { roleId: role.id, permissions: current } })}>
+                    onClick={confirmSave}>
                     {t("admin_permissions.save")}
                   </Button>
                 )

@@ -52,8 +52,8 @@ test("every operator POS uses one compact connection status instead of a blockin
   assert.match(desktopRenderer, /useRealtimeStatus\(\)/);
   assert.match(desktopRenderer, /realtimeStatus === "connected"/);
   assert.match(desktopRenderer, /<PosConnectionStatus apiStatus=\{connection\}/);
-  assert.match(restaurantPos, /<PosConnectionStatus\s*\/>/);
-  assert.match(retailPos, /!embedded && <PosConnectionStatus\s*\/>/);
+  assert.match(restaurantPos, /<PosConnectionStatus apiStatus=\{incomingApiStatus\}\s*\/>/);
+  assert.match(retailPos, /!embedded && <PosConnectionStatus apiStatus=\{incomingApiStatus\}\s*\/>/);
   assert.match(provider, /pos_realtime\.fallback/);
   assert.match(provider, /pos_realtime\.fallback_title/);
   assert.match(posRealtimeCss, /\.posConnectionFallback\s*\{[\s\S]*?background:\s*#fffbe6/);
@@ -199,6 +199,9 @@ test("React Native POS uses generated operations through Apollo and graphql-ws",
   assert.match(mobileApp, /<RealtimeProvider>/);
   assert.doesNotMatch(mobileTabs, /<RealtimeProvider>/);
   assert.match(mobileRootNavigator, /verify\.kind === 'REJECTED'/);
-  assert.match(mobileRootNavigator, /if \(authenticationRejected\) signOut\(\)/);
-  assert.match(mobileRootNavigator, /key=\{authenticationRejected/);
+  // A rejected paired credential signs out exactly once and resets the root stack
+  // (Main removed from history; Settings keeps its route key and unsaved input).
+  assert.match(mobileRootNavigator, /if \(!authenticationRejected \|\| rejectionHandled\.current[^\n]*\) return;\s*rejectionHandled\.current = true;\s*signOut\(\);/);
+  assert.match(mobileRootNavigator, /navigationRef\.resetRoot\(/);
+  assert.match(mobileRootNavigator, /else handleAuthenticationRejected\(\)/);
 });

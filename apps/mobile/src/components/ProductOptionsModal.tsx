@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Modal,
@@ -37,6 +38,7 @@ export function ProductOptionsModal({
   onClose,
   onConfirm,
 }: Props) {
+  usePosLanguage();
   const { colors, spacing, typography, radius } = useTheme();
   const [resolved, setResolved] = useState<PosMenuItem | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
@@ -87,7 +89,7 @@ export function ProductOptionsModal({
       .catch(cause => {
         if (cancelled) return;
         setError(
-          cause instanceof Error ? cause.message : 'โหลดราคาล่าสุดไม่สำเร็จ',
+          cause instanceof Error ? cause.message : posText("โหลดราคาล่าสุดไม่สำเร็จ"),
         );
       })
       .finally(() => {
@@ -115,7 +117,7 @@ export function ProductOptionsModal({
       setResolved(next);
       setSelected(next.modifiers?.filter(modifier => modifier.defaultSelected).map(modifier => modifier.code) ?? []);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'โหลดตัวเลือกไม่สำเร็จ');
+      setError(cause instanceof Error ? cause.message : posText("โหลดตัวเลือกไม่สำเร็จ"));
     } finally {
       setLoading(false);
     }
@@ -144,8 +146,8 @@ export function ProductOptionsModal({
   const validate = (): string | null => {
     for (const group of groups) {
       const count = group.filter(modifier => selected.includes(modifier.code)).length;
-      if (count < group[0].minSelect) return `กรุณาเลือก ${group[0].groupName} อย่างน้อย ${group[0].minSelect}`;
-      if (group[0].maxSelect != null && count > group[0].maxSelect) return `${group[0].groupName} เลือกได้ไม่เกิน ${group[0].maxSelect}`;
+      if (count < group[0].minSelect) return posText("กรุณาเลือก {v0} อย่างน้อย {v1}", { v0: group[0].groupName, v1: group[0].minSelect });
+      if (group[0].maxSelect != null && count > group[0].maxSelect) return posText("{v0} เลือกได้ไม่เกิน {v1}", { v0: group[0].groupName, v1: group[0].maxSelect });
     }
     return null;
   };
@@ -160,12 +162,12 @@ export function ProductOptionsModal({
             <Text style={[typography.title, { color: colors.text }]}>{item.name}</Text>
             {(item.availableSizes ?? []).length > 1 ? (
               <>
-                <Text style={[typography.captionStrong, { color: colors.textMuted }]}>ขนาด</Text>
+                <Text style={[typography.captionStrong, { color: colors.textMuted }]}>{posText("ขนาด")}</Text>
                 <View style={styles.wrap}>
                   {item.availableSizes?.map(option => (
                     <Button
                       key={option.size}
-                      label={`${option.size}${option.price != null ? ` · ฿${option.price.toFixed(2)}` : ''}`}
+                      label={`${option.size}${option.price != null ? posText(" · ฿{v0}", { v0: option.price.toFixed(2) }) : ''}`}
                       variant={resolved?.size === option.size ? 'primary' : 'secondary'}
                       disabled={loading || (option.available <= 0 && resolved?.stockTracked !== false)}
                       onPress={() => chooseVariant(option.size, null)}
@@ -176,12 +178,12 @@ export function ProductOptionsModal({
             ) : null}
             {(resolved?.packs ?? []).length > 1 ? (
               <>
-                <Text style={[typography.captionStrong, { color: colors.textMuted }]}>หน่วยขาย</Text>
+                <Text style={[typography.captionStrong, { color: colors.textMuted }]}>{posText("หน่วยขาย")}</Text>
                 <View style={styles.wrap}>
                   {resolved?.packs?.map(pack => (
                     <Button
                       key={pack.code}
-                      label={`${pack.unitName} · ฿${pack.price.toFixed(2)}`}
+                      label={posText("{v0} · ฿{v1}", { v0: pack.unitName, v1: pack.price.toFixed(2) })}
                       variant={resolved.packCode === pack.code ? 'primary' : 'secondary'}
                       disabled={loading}
                       onPress={() => chooseVariant(resolved.size, pack.code)}
@@ -193,14 +195,14 @@ export function ProductOptionsModal({
             {groups.map(group => (
               <View key={group[0].groupCode} style={{ gap: spacing.sm }}>
                 <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-                  {group[0].groupName} · เลือก {group[0].minSelect}
+                  {group[0].groupName} {" " + posText("· เลือก") + " "}{group[0].minSelect}
                   {group[0].maxSelect == null ? '+' : `-${group[0].maxSelect}`}
                 </Text>
                 <View style={styles.wrap}>
                   {group.map(modifier => (
                     <Button
                       key={modifier.code}
-                      label={`${modifier.name}${modifier.priceDelta ? ` +฿${modifier.priceDelta.toFixed(2)}` : ''}`}
+                      label={`${modifier.name}${modifier.priceDelta ? posText(" +฿{v0}", { v0: modifier.priceDelta.toFixed(2) }) : ''}`}
                       variant={selected.includes(modifier.code) ? 'primary' : 'secondary'}
                       onPress={() => toggleModifier(modifier)}
                     />
@@ -212,7 +214,7 @@ export function ProductOptionsModal({
               <TextInput
                 value={note}
                 onChangeText={setNote}
-                placeholder="หมายเหตุถึงครัว"
+                placeholder={posText("หมายเหตุถึงครัว")}
                 placeholderTextColor={colors.textSoft}
                 multiline
                 style={[styles.input, { borderColor: colors.border, color: colors.text }]}
@@ -220,7 +222,7 @@ export function ProductOptionsModal({
             ) : null}
             {error ? <Text style={[typography.captionStrong, { color: colors.danger }]}>{error}</Text> : null}
             <Button
-              label={loading ? 'กำลังโหลด…' : 'เพิ่มรายการ'}
+              label={loading ? posText("กำลังโหลด…") : posText("เพิ่มรายการ")}
               fullWidth
               disabled={loading || !resolved}
               onPress={() => {
@@ -249,7 +251,7 @@ export function ProductOptionsModal({
                 });
               }}
             />
-            <Button label="ยกเลิก" variant="secondary" fullWidth onPress={onClose} />
+            <Button label={posText("ยกเลิก")} variant="secondary" fullWidth onPress={onClose} />
           </ScrollView>
         </View>
       </View>

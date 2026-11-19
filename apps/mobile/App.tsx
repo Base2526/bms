@@ -5,7 +5,8 @@
  * @format
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
+import { loadPosLanguage } from './src/i18n/language';
 import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from './src/theme/ThemeProvider';
@@ -29,6 +30,7 @@ function ThemedStatusBar() {
 }
 
 export default function App() {
+  useEffect(() => { loadPosLanguage(); }, []);
   return (
     <SafeAreaProvider>
       <ThemeProvider>

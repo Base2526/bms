@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import Link from "next/link";
 import { useState } from "react";
 import { gql, useQuery, useMutation } from "@apollo/client";
@@ -197,6 +199,7 @@ function LocalAiUsage() {
 }
 
 function CloudBilling() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [modal, modalContext] = Modal.useModal();
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
@@ -242,8 +245,8 @@ function CloudBilling() {
       {modalContext}
       <div style={{ marginBottom: 16 }}>
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-          <h2 style={{ margin: 0 }}>Billing & Plan</h2>
-          <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+          <h2 style={{ margin: 0 }}>{uiText("admin_ui.en_billing_plan_c8f15")}</h2>
+          <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{uiText("admin_ui.en_refresh_56e3b")}</Button>
         </Space>
       </div>
 
@@ -263,7 +266,7 @@ function CloudBilling() {
               <Progress percent={pct(usage.orders_month, cur.max_orders_month)} format={() => `${usage.orders_month}/${lim(cur.max_orders_month, t)}`} />
             </Col>
             <Col xs={24} md={6}>
-              <Text type="secondary">Staff</Text>
+              <Text type="secondary">{uiText("admin_ui.en_staff_a4730")}</Text>
               <Progress percent={pct(usage.users, cur.max_users)} format={() => `${usage.users}/${lim(cur.max_users, t)}`} status={cur.max_users>=0 && usage.users>=cur.max_users ? "exception":"active"} />
             </Col>
           </Row>
@@ -284,7 +287,7 @@ function CloudBilling() {
             <Col xs={24} lg={16}>
               <Space direction="vertical" size={8} style={{ width: "100%" }}>
                 <Space wrap>
-                  <Tag color="purple" style={{ borderRadius: 999, paddingInline: 10 }}>AI points</Tag>
+                  <Tag color="purple" style={{ borderRadius: 999, paddingInline: 10 }}>{uiText("admin_ui.en_ai_points_afd1d")}</Tag>
                   {hasByok && <Tag color="green" style={{ borderRadius: 999, paddingInline: 10 }}>BYOK</Tag>}
                   {!hasByok && <Tag color={aiStatus === "warning" ? "gold" : aiStatus === "exhausted" ? "red" : "blue"} style={{ borderRadius: 999, paddingInline: 10 }}>{aiUsage?.planName ?? "-"}</Tag>}
                 </Space>
@@ -293,7 +296,7 @@ function CloudBilling() {
                     <RobotOutlined style={{ fontSize: 24 }} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.15 }}>AI point</div>
+                    <div style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.15 }}>{uiText("admin_ui.en_ai_point_c97bb")}</div>
                     <Text type="secondary" style={{ fontSize: 15 }}>
                   {hasByok ? t("admin_billing.byok_note") : t("admin_billing.credits_note")}
                     </Text>
@@ -383,7 +386,7 @@ function CloudBilling() {
 
         <Row gutter={[16, 16]}>
           <Col xs={24} lg={15}>
-            <Card size="small" title="AI point usage" style={{ borderRadius: 16 }}>
+            <Card size="small" title={uiText("admin_ui.en_ai_point_usage_b9388")} style={{ borderRadius: 16 }}>
               {hasByok ? (
                 <Alert closable type="success" showIcon style={{ borderRadius: 14 }} message={t("admin_billing.byok_alert_title")} description={t("admin_billing.byok_alert_desc")} />
               ) : (
@@ -405,7 +408,7 @@ function CloudBilling() {
                   />
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginTop: 12 }}>
                     <Card size="small" style={{ borderRadius: 14 }}>
-                      <Text type="secondary">Alert threshold</Text>
+                      <Text type="secondary">{uiText("admin_ui.en_alert_threshold_f9620")}</Text>
                       <div style={{ fontWeight: 700, fontSize: 20, marginTop: 6 }}>80%</div>
                     </Card>
                     <Card size="small" style={{ borderRadius: 14 }}>
@@ -414,7 +417,7 @@ function CloudBilling() {
                     </Card>
                     <Card size="small" style={{ borderRadius: 14 }}>
                       <Text type="secondary">{t("admin_billing.when_exhausted")}</Text>
-                      <div style={{ fontWeight: 700, fontSize: 20, marginTop: 6 }}>{aiUsage?.unlimited ? t("admin_billing.unlimited") : 'Fallback / Upgrade'}</div>
+                      <div style={{ fontWeight: 700, fontSize: 20, marginTop: 6 }}>{aiUsage?.unlimited ? t("admin_billing.unlimited") : uiText("admin_ui.en_fallback_upgrade_5b62f")}</div>
                     </Card>
                   </div>
                 </>
@@ -422,7 +425,7 @@ function CloudBilling() {
             </Card>
           </Col>
           <Col xs={24} lg={9}>
-            <Card size="small" title="Usage split" style={{ borderRadius: 16 }}>
+            <Card size="small" title={uiText("admin_ui.en_usage_split_90a70")} style={{ borderRadius: 16 }}>
               <List
                 size="small"
                 dataSource={split}
@@ -435,10 +438,10 @@ function CloudBilling() {
                           <span style={{ width: 8, height: 8, borderRadius: 999, background: item.color, display: "inline-block" }} />
                           <span>{item.label}</span>
                         </Space>
-                        <Text strong>{formatNumber(item.value)} point</Text>
+                        <Text strong>{formatNumber(item.value)}  {uiText("admin_ui.en_point_71a7c")}</Text>
                       </Space>
                       <Text type="secondary" style={{ fontSize: 12 }}>
-                        {formatNumber(item.requests)} requests · {formatNumber(item.providerCalls)} provider calls · {formatNumber(item.tokens)} tokens · ${Number(item.actualCostUsd).toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 8 })}
+                        {formatNumber(item.requests)}  {uiText("admin_ui.en_requests_1df5a")} {formatNumber(item.providerCalls)}  {uiText("admin_ui.en_provider_calls_cf495")} {formatNumber(item.tokens)}  {uiText("admin_ui.en_tokens_08732")}{Number(item.actualCostUsd).toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 8 })}
                       </Text>
                       {item.unpricedProviderCalls > 0 && <Text type="warning" style={{ display: "block", fontSize: 12 }}>{t("admin_billing.unpriced_calls", { count: item.unpricedProviderCalls })}</Text>}
                       <div style={{ height: 6, background: "#f5f5f5", borderRadius: 999, marginTop: 8, overflow: "hidden" }}>
@@ -456,7 +459,7 @@ function CloudBilling() {
 
         <Row gutter={[16, 16]}>
           <Col xs={24} lg={14}>
-            <Card size="small" title={<Space><ThunderboltOutlined /> AI point plans</Space>} style={{ borderRadius: 16 }}>
+            <Card size="small" title={<Space><ThunderboltOutlined />  {uiText("admin_ui.en_ai_point_plans_e8d0a")}</Space>} style={{ borderRadius: 16 }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))", gap: 12 }}>
                 {[
                   ...plans.map((plan: any) => ({ code: plan.code, name: plan.name,
@@ -492,7 +495,7 @@ function CloudBilling() {
             </Card>
           </Col>
           <Col xs={24} lg={10}>
-            <Card size="small" title={<Space><BarChartOutlined /> Point ledger</Space>} style={{ borderRadius: 16 }}>
+            <Card size="small" title={<Space><BarChartOutlined />  {uiText("admin_ui.en_point_ledger_705c7")}</Space>} style={{ borderRadius: 16 }}>
               <List<BillingLedgerRow>
                 size="small"
                 dataSource={ledger}
@@ -505,7 +508,7 @@ function CloudBilling() {
                         <Text>{typeof item.amount === "number" && item.amount > 0 ? `+${formatNumber(item.amount)}` : formatNumber(item.amount)}</Text>
                       </Space>
                       <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-                        <Text type="secondary">{item.createdAt ? new Date(item.createdAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : item.date}</Text>
+                        <Text type="secondary">{item.createdAt ? new Date(item.createdAt).toLocaleString(uiText.locale, { dateStyle: "medium", timeStyle: "short" }) : item.date}</Text>
                         <Text type="secondary">{t("admin_billing.balance_after", { value: formatNumber(item.balanceAfter ?? item.balance ?? 0) })}</Text>
                       </Space>
                       {(item.note || item.referenceType) && <Text type="secondary" style={{ fontSize: 12 }}>{item.note || item.referenceType}</Text>}
@@ -553,7 +556,7 @@ function CloudBilling() {
                     disabled={!adjustAmount}
                     onClick={() => modal.confirm({
                       title: t("admin_billing.confirm_adjust"),
-                      content: `${adjustAmount > 0 ? '+' : ''}${adjustAmount} point · ${adjustNote || '—'}`,
+                      content: uiText("admin_ui.en_point_33674", { v0: adjustAmount > 0 ? '+' : '', v1: adjustAmount, v2: adjustNote || '—' }),
                       onOk: async () => { await adjustCredits({ variables: { amount: adjustAmount, note: adjustNote || null } }); },
                     })}
                   >
@@ -582,7 +585,7 @@ function CloudBilling() {
                   { label: t("admin_billing.row_bonus"), value: aiUsage?.bonusCredits ?? 0 },
                   { label: t("admin_billing.row_shared"), value: aiUsage?.sharedRequests ?? 0 },
                   { label: t("admin_billing.row_byok"), value: aiUsage?.byokRequests ?? 0 },
-                  { label: "blocked / fallback", value: aiUsage?.blockedRequests ?? 0 },
+                  { label: uiText("admin_ui.en_blocked_fallback_4bb7f"), value: aiUsage?.blockedRequests ?? 0 },
                 ]}
                 renderItem={(item) => (
                   <List.Item>
@@ -633,7 +636,7 @@ function CloudBilling() {
                 <Space direction="vertical" size={4} style={{ marginBottom: 16 }}>
                   <div><CheckOutlined style={{ color: "#52c41a" }} /> {t("admin_billing.feat_products")} {lim(p.max_products, t)}</div>
                   <div><CheckOutlined style={{ color: "#52c41a" }} /> {t("admin_billing.feat_orders_month")} {lim(p.max_orders_month, t)}</div>
-                  <div><CheckOutlined style={{ color: "#52c41a" }} /> Staff {lim(p.max_users, t)}</div>
+                  <div><CheckOutlined style={{ color: "#52c41a" }} />  {uiText("admin_ui.en_staff_a4730")} {lim(p.max_users, t)}</div>
                   <div>{t("package_metrics.branches")}: {lim(p.max_branches, t)} · {t("package_metrics.devices")}: {lim(p.max_devices, t)} · {t("package_metrics.channels")}: {lim(p.max_channels, t)}</div>
                   <div><CheckOutlined style={{ color: "#52c41a" }} /> {p.ai_credits_monthly < 0 ? t("admin.ai_unlimited") : t("admin_billing.points_per_month", { count: formatNumber(p.ai_credits_monthly) })}</div>
                   <PlanAiChangeNotice plan={p} />
@@ -642,7 +645,7 @@ function CloudBilling() {
                 <Button type={isCurrent ? "default" : "primary"} block disabled={!canManageEntitlements || isCurrent || changing}
                   onClick={() => modal.confirm({
                     title: t("admin_billing.confirm_plan"),
-                    content: <>{`${p.name} · ${p.price_monthly} THB/month · ${p.ai_credits_monthly < 0 ? t("admin.ai_unlimited") : `${formatNumber(p.ai_credits_monthly)} point/month`}`}<PlanAiChangeNotice plan={p} /></>,
+                    content: <>{uiText("admin_ui.en_thb_month_3dd66", { v0: p.name, v1: p.price_monthly, v2: p.ai_credits_monthly < 0 ? t("admin.ai_unlimited") : uiText("admin_ui.en_point_month_ccaa3", { v0: formatNumber(p.ai_credits_monthly) }) })}<PlanAiChangeNotice plan={p} /></>,
                     onOk: async () => { await changePlan({ variables: { planCode: p.code } }); },
                   })}>
                   {isCurrent ? t("admin_billing.btn_current_plan") : canManageEntitlements ? t("admin_billing.btn_select_plan") : t("admin_billing.contact_platform")}

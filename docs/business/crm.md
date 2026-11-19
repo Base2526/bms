@@ -160,14 +160,31 @@ migration or new required configuration is introduced.
 Every conversation belongs to exactly one customer and is **never deleted**. Internal notes are
 never visible to the customer.
 
-**Implemented** (`bms_conversations` / `bms_messages` / `bms_conversation_notes`): every message
-from every channel — plus the AI's replies — is logged automatically via `logConversation()`.
+**Implemented** (`bms_conversations` / `bms_messages` / `bms_conversation_notes`): accepted
+text turns and supported media events are logged by the channel adapter when Inbox persistence succeeds.
 One conversation = `(tenant, channel, customer_ref)`. Staff can assign conversations, set status
 (`OPEN`/`PENDING`/`CLOSED`), tag, add internal notes (`inbox.manage` only), reply directly
 (`sendStaffMessage`, with image/file attachments), and view a merged timeline of
 messages + notes + orders. Since this session, a dedicated "ลูกค้า" tab also surfaces purchase
 history, lifetime spend, tags, and notes the moment a conversation is opened — see
 [../ui/customer360.md](../ui/customer360.md).
+Sales reads enforce owner/helper scope in each service SQL statement, including nested GraphQL
+messages, notes, helpers, events and each timeline source; an adapter check alone is not sufficient
+when another staff member can reassign the conversation. New-conversation auto-assignment locks an
+unassigned row and commits the owner and `inbox.assign` audit together; a human assignment wins if
+it committed first. Pipeline conversation creation also uses a tenant transaction; an assignment
+failure after creation does not make the created conversation disappear from the caller's result.
+The self-availability switch requires `inbox.view` and the signed-in user's own ID. Migration
+`10.118` provides a narrow `bms_app` function that checks the acting tenant and editor inside the
+transaction before updating the legacy `users` table; it does not grant direct table UPDATE.
+
+The list and selected detail use separate reads. Detail includes bounded message, note and system
+event fields; `bms_audit_log.target` is text, so the event query compares it to the conversation
+UUID converted to text. A selected chat shows loading, error/Retry, or not-found/access-denied
+states instead of the unselected prompt. Its link keeps `?c=<id>` across refreshes. The page
+marks unread as read only after a current message has loaded, and passes that message ID to
+`bmsMarkConversationRead`. The server leaves unread intact if a newer inbound message committed
+before the mark-read transaction. The optional ID keeps older callers compatible.
 
 **Incoming-message alerts (2026-09):** `GlobalInboxNotifier` is mounted for every admin session with
 `inbox.view`, not only on the Inbox route. A committed unread customer message outside the chat the
@@ -177,7 +194,9 @@ message source so staff replies and automated outbound follow-ups never alert th
 delivery of the same message is deduplicated by its stable message id, including across several
 open tabs on the same device. Diagnostic messages update the Inbox without ringing every coworker's
 device. Browser autoplay restrictions are surfaced through the single global sound-recovery banner
-shared with order alerts rather than failing silently.
+shared with order alerts rather than failing silently. The in-app toast can show the conversation
+context; the browser/OS notification uses a generic title without customer or message details so
+the lock screen does not reveal them.
 
 **@mention in internal notes (2026-07):** typing `@name` while writing a note opens a picker over
 `bmsAssignableStaff` (Sales/Manager/Administrator only, same list used for assign/helper); selecting
@@ -188,29 +207,59 @@ free text, so a duplicate/misspelled name can't misfire. Each valid mention is b
 a future "my mentions" view) and pushed through the existing generic `notifications` table/
 `notificationCreated` subscription — no new realtime channel. `GlobalMentionNotifier` (mounted
 alongside `GlobalInboxNotifier`) turns that into a browser notification deep-linking to
-`/admin/inbox?c=<id>`. Gated by the existing `inbox.manage` permission (creating a mention) and
+`/admin/inbox?c=<id>` without putting note text on the lock screen. Gated by the existing
+`inbox.manage` permission (creating a mention) and
 `inbox.view` (reading your own); no new permission was added. A sidebar badge next to a dedicated
 "เมนชันของฉัน" page (`/admin/inbox/mentions`, `bmsMyMentionsUnreadCount`/`bmsMyMentions`) lists a
 user's own mentions, filterable by unread, with mark-read/mark-all-read actions
 (`bmsMarkMentionRead`/`bmsMarkAllMentionsRead`) that use the `read_at` column reserved when the
-mentions table was first created.
+mentions table was first created. These updates and the AI handoff counter use tenant transactions;
+mention list joins bind note, conversation and customer rows to the same tenant.
 
 The desktop right-hand Customer 360 panel also provides permission-gated Quick Actions: staff can
 create a `PENDING` order for the active identity through the shared order service and can preview/
 print an ephemeral invoice from an existing order. These actions do not move CRM or order business
 rules into the frontend.
 
-**Outbound message status (Phase 1):** capability-gated per channel. LINE/Facebook/Instagram can
-actually push and actually fail (`SENT`/`FAILED` + a "ส่งใหม่" retry button); Web/TikTok/Shopee/Lazada
-don't push at all yet, so they're just marked `SENT` once persisted (no fake failure state). Read
+**Outbound message status (Phase 1):** capability-gated per channel. LINE/Facebook/Instagram AI replies
+start `PENDING` when saved, then become `SENT` or `FAILED` after the channel call. `FAILED` shows a
+"ส่งใหม่" retry button; the server permits retry only while the message is still failed. Web/TikTok/
+Shopee/Lazada don't push at all yet, so they're marked `SENT` once persisted (no fake failure state). Read
 receipts are not implemented on channels that can't genuinely report them (LINE, TikTok).
+
+The Inbox composer reads `supportsOutboundPush` from the backend. For web/TikTok/Shopee/Lazada it
+labels the action as **Save in Inbox** and warns that the text will only be visible to staff. A
+failed LINE/Meta push keeps the saved message, shows a failure, and permits a server-checked retry
+only for an explicit `FAILED` status. An uncertain or partly accepted provider request is held for
+manual review. If the provider accepted a staff reply but its status write failed, the mutation
+reports the acceptance with `needsReview`; the stored row stays `PENDING` and the UI asks staff to
+check the channel before replying again. Shopee and Lazada webhook payload/signature mappings
+remain unverified scaffolds;
+their Inbox presence is not evidence of a production chat integration. TikTok has no outbound send
+API in BMS yet. Inbound text on TikTok/Shopee/Lazada is saved for staff without running AI or
+committing an unseen business action. Web chat returns an AI reply in the widget's HTTP response; staff Inbox drafts are
+not pushed back to the widget.
+
+Meta messages that contain an attachment and a text caption are saved together as an inbound Inbox
+message for staff. The AI text pipeline does not inspect attachments, so it does not answer those
+messages as if it had seen the media.
+If LINE media cannot be downloaded, Inbox records a clear unavailable-file note so staff can ask
+the customer to send it again; the attachment is never shown as if it were stored.
 
 **Diagnostics:** `/admin/inbox/realtime-diagnostics` is not a customer channel. `Emit` proves only
 that realtime invalidation reaches the browser; it does not create a conversation. `Create Msg`
 creates a tenant-scoped diagnostic conversation/message with `customer_ref =
 diagnostic:{channel}:{adminId}` and `sender = diagnostic` so staff can verify that the Inbox list
 updates immediately. It does not call the AI pipeline and does not send anything to external
-platforms.
+platforms. Conversation/message/audit commit together, so a failed diagnostic write leaves no
+partial test message. Non-AI inbound media likewise commits its conversation unread update with
+its message; failure rolls both back. Post-commit auto-assignment failure does not misreport a
+persisted message as lost.
+If a LINE/TikTok/Shopee/Lazada non-text event cannot be saved, its pre-effect idempotency claim is
+released and the webhook fails so a provider retry can try again. A missing LINE user identity is
+reported and never enters the AI or Inbox path. Meta's durable worker marks an unsaved media turn
+or an unsaved AI turn for manual review instead of recording a false success; a text turn may already
+have performed an action or sent a reply, so it is never replayed automatically.
 
 Permissions: `inbox.view` / `inbox.reply` / `inbox.manage` · `customer.view` / `customer.edit`.
 
@@ -225,7 +274,16 @@ Sale/Recover Abandoned Cart) and is stored in `bms_messages` like a normal AI re
 already replied, conversation closed, retry limit reached, customer opted out, rule disabled — are
 **always enforced by the scheduler**, not something a rule can turn off. Managed at
 `/admin/followup-rules` (`followup.manage`) and observed at `/admin/followup-queue`
-(`followup.view`, seeded to Sales as read-only). As of 2026-08-11, the queue page also includes a
+(`followup.view`, seeded to Sales as read-only). A completed job is not silently scheduled again for
+the same inbound customer message; a later inbound message can start a new round. An outbound row
+is committed before provider I/O; a confirmed
+delivery failure leaves failed work for staff, while an uncertain or partial result stops subsequent
+automatic rounds until staff checks the actual channel. An accepted provider send whose final DB
+status cannot be written also stops later rounds for manual review. Each job outcome, history row and audit row
+commit in one tenant transaction.
+New jobs are scheduled only for LINE/Facebook/Instagram, the channels with an outbound API.
+Older jobs on Web/TikTok/Shopee/Lazada stop as `channel_no_outbound` before generating AI text.
+As of 2026-08-11, the queue page also includes a
 **heuristic opportunity score** (`HOT/WARM/COOL`) per job plus a lightweight analytics summary for
 the last 30 days: sent/skipped/failed counts, reply rate after follow-up, order-after-follow-up
 rate, top goals/intents, and a 7-day trend. These v2 metrics are intentionally heuristic and

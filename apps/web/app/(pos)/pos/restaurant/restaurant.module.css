@@ -299,16 +299,23 @@
 .shell :global(.ant-spin-nested-loading),
 .shell :global(.ant-spin-container) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
-/* ---------- แถบบน: หนึ่งแถว ---------- */
-.topbar { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
+/* ---------- แถบบน: กะทัดรัด ----------
+   สถานะระบบอยู่กลุ่มเดียว ชื่อพนักงานเต็มอยู่ใน popover และ aria-label ไม่กินพื้นที่หัวจอ */
+.topbar { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; margin-inline-end: auto; }
 .brandMark { width: 34px; height: 34px; border-radius: 5px; background: var(--accent); color: var(--on-solid); display: grid; place-items: center; font-weight: 700; font-size: 17px; flex: none; }
 .title { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.2; }
 .subtitle { margin: 0; font-size: 12px; color: var(--ink-3); line-height: 1.2; }
-.topActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.topActions { min-width: 0; display: flex; align-items: center; gap: 7px; flex-wrap: nowrap; justify-content: flex-end; }
 .desktopUpdate { --update-size: 40px; --update-radius: 6px; }
+.topStatusGroup { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.connectionStatus { display: flex; align-items: center; }
+.connectionStatus > :global(span[data-pos-connection]),
+.connectionStatus > :global(details[data-pos-connection]) > summary {
+  min-height: 32px; padding: 6px 9px; font-size: 12px;
+}
 .shiftStatus {
-  display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 10px;
+  display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 9px;
   border-radius: 18px; background: var(--quiet); color: var(--ink-2); font-size: 12px; font-weight: 600;
   white-space: nowrap;
 }
@@ -318,19 +325,19 @@
 
 .accountMenu { position: relative; }
 .accountMenu > summary {
-  min-width: 190px; min-height: 44px; padding: 5px 9px; border: 1px solid var(--line);
+  width: 52px; min-width: 52px; min-height: 44px; padding: 4px 6px; border: 1px solid var(--line);
   border-radius: 8px; background: var(--panel); color: var(--ink); cursor: pointer;
-  display: grid; grid-template-columns: 34px minmax(0, 1fr) 16px; align-items: center; gap: 8px;
+  display: grid; grid-template-columns: 32px 10px; align-items: center; gap: 2px;
   list-style: none;
 }
 .accountMenu > summary::-webkit-details-marker { display: none; }
 .accountMenu > summary:hover { background: var(--panel-2); border-color: var(--ink-3); }
 .accountMenu > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .accountAvatar {
-  width: 34px; height: 34px; border-radius: 50%; background: var(--green-bg); color: var(--accent);
+  width: 32px; height: 32px; border-radius: 50%; background: var(--green-bg); color: var(--accent);
   display: grid; place-items: center; font-weight: 700; font-size: 15px;
 }
-.accountCopy { min-width: 0; display: grid; line-height: 1.2; text-align: left; }
+.accountCopy { display: none; }
 .accountCopy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .accountCopy small { color: var(--ink-3); font-size: 10.5px; }
 .accountChevron { color: var(--ink-3); transition: transform .16s ease; }
@@ -367,16 +374,22 @@
    หดเหลือ 28px ซึ่งเป็นปุ่มที่ถือ "ย้ายโต๊ะ/ยกเลิกบิล" ไว้ — เป้าแตะที่นิ้วกดไม่โดนเท่ากับไม่มีปุ่ม */
 .page .btnIcon{ flex: none; width: 40px; height: 40px; min-height: 40px; padding: 0; justify-content: center; font-size: 16px; }
 .page .incomingBell {
-  position: relative; font-weight: 700; border-color: var(--line); background: var(--panel);
+  position: relative; height: 40px; min-height: 40px; padding-inline: 11px;
+  font-weight: 700; border-color: var(--line); background: var(--panel);
 }
 .page .incomingBellUrgent {
   border-color: var(--red); background: var(--red-bg); color: var(--red);
 }
 .page .incomingBellUrgent:hover:not(:disabled) { background: var(--red-bg); filter: brightness(1.04); }
+.page .incomingBellUnknown {
+  border-color: var(--amber); background: var(--amber-bg); color: var(--amber);
+}
+.page .incomingBellUnknown:hover:not(:disabled) { background: var(--amber-bg); filter: brightness(1.04); }
 .incomingBellBadge {
   min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-grid; place-items: center;
   background: var(--red); color: var(--on-solid); font-size: 11px; font-variant-numeric: tabular-nums;
 }
+.incomingBellHealthBadge { background: var(--amber); }
 .incomingAttention { flex: none; border-radius: 0; border-inline: 0; }
 
 /* ---------- สรุปหน้าร้าน: บรรทัดเดียว ---------- */
@@ -390,6 +403,44 @@
 .stripSep { color: var(--line); }
 .stripWarn { color: var(--red); }
 .baht { margin-inline-end: .14em; }
+
+/* ผังโต๊ะ + คิวรับของ: แบบแถบกะทัดรัดจาก mockup 2026-11-08
+   รวมงานที่แคชเชียร์ต้องกดกับตัวเลขหน้าร้านไว้ในพื้นที่เดียว แล้วคืนความสูงให้ผังโต๊ะ */
+.floorStatusDashboard {
+  flex: none; display: grid; gap: 7px; padding: 8px 12px 7px;
+  background: var(--quiet); border-bottom: 1px solid var(--line);
+}
+.floorStatusDashboard :global([data-pickup-queue-strip][data-variant="compact"]) { min-width: 0; display: grid; gap: 6px; }
+.floorStatusDashboard :global([data-pickup-queue-main]) {
+  min-width: 0; display: grid; grid-template-columns: auto minmax(130px, 1fr) auto;
+  align-items: center; gap: 10px; padding: 7px 9px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+}
+.floorStatusDashboard :global([data-pickup-queue-summary]) {
+  min-width: 0; display: inline-flex; align-items: baseline; gap: 7px; white-space: nowrap;
+}
+.floorStatusDashboard :global([data-pickup-queue-summary] b) { font-size: 14px; }
+.floorStatusDashboard :global([data-pickup-queue-summary] span) { color: var(--ink-3); font-size: 11.5px; }
+.floorStatusDashboard :global([data-pickup-queue-current]) {
+  min-width: 0; min-height: 38px; padding: 5px 10px; border-radius: 7px;
+  display: inline-flex; align-items: baseline; gap: 7px; justify-content: flex-start;
+  background: var(--green-bg); color: var(--green); white-space: nowrap;
+}
+.floorStatusDashboard :global([data-pickup-queue-current][data-state="preparing"]) { background: var(--amber-bg); color: var(--amber); }
+.floorStatusDashboard :global([data-pickup-queue-current][data-state="empty"]) { background: var(--quiet); color: var(--ink-3); }
+.floorStatusDashboard :global([data-pickup-queue-current] b) { font-size: 21px; font-variant-numeric: tabular-nums; }
+.floorStatusDashboard :global([data-pickup-queue-current] small) { font-size: 11px; }
+.floorStatusDashboard :global([data-pickup-queue-actions]) { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.floorStatusDashboard :global([data-pickup-queue-actions] .pos-btn) { min-height: 38px; padding: 6px 11px; white-space: nowrap; }
+.floorStatusDashboard :global([data-pickup-queue-actions] [data-action="collect"]),
+.floorStatusDashboard :global([data-pickup-queue-actions] [data-action="call"]) {
+  background: var(--accent); border-color: var(--accent); color: var(--on-solid); font-weight: 700;
+}
+.floorStatusDashboard :global([data-pickup-ready-flash]) {
+  padding: 5px 9px; border-radius: 6px; background: var(--green-bg); color: var(--green); font-size: 12px; font-weight: 700;
+}
+.floorStatusDashboard :global([data-pickup-queue-error]) { color: var(--red); font-size: 12px; }
+.floorStatusStrip { padding: 0 2px; border: 0; background: transparent; font-size: 12.5px; }
 
 /* ---------- พื้นที่ทำงาน ---------- */
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 360px; flex: 1; min-height: 0; }
@@ -761,6 +812,29 @@
 .empty { flex: 1; min-height: 200px; display: grid; place-items: center; text-align: center; color: var(--ink-2); padding: 24px; }
 .empty h3 { margin: 10px 0 4px; font-size: 16px; font-weight: 700; color: var(--ink); }
 .empty p { margin: 0; font-size: 13px; }
+.serviceModeEmpty {
+  flex: 1; min-height: 320px; display: grid; align-content: center; justify-items: center; gap: 18px;
+  padding: 28px; text-align: center;
+}
+.serviceModeIntro { display: grid; justify-items: center; gap: 5px; }
+.serviceModeIntro h3 { margin: 0; color: var(--ink); font-size: 23px; font-weight: 700; }
+.serviceModeIntro p, .serviceModeHelp { margin: 0; color: var(--ink-2); font-size: 13px; }
+.serviceModeGrid { width: min(640px, 100%); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.page .serviceModeCard {
+  min-width: 0; min-height: 180px; display: grid; align-content: center; justify-items: center; gap: 8px;
+  padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink);
+  font: inherit; text-align: center; cursor: pointer;
+}
+.page .serviceModeCard:hover:not(:disabled) { border-color: var(--accent); background: var(--green-bg); box-shadow: inset 0 0 0 1px var(--accent); }
+.page .serviceModeCard:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.page .serviceModeCard:disabled { opacity: .58; cursor: not-allowed; }
+.serviceModeIcon {
+  width: 46px; height: 46px; display: grid; place-items: center; border-radius: 10px;
+  background: var(--green-bg); color: var(--accent); font-size: 22px;
+}
+.serviceModeCard strong { font-size: 18px; font-weight: 700; }
+.serviceModeCard > span:not(.serviceModeIcon) { color: var(--ink-2); font-size: 12.5px; line-height: 1.4; }
+.serviceModeCard small { color: var(--accent); font-size: 11.5px; line-height: 1.4; }
 .setup { flex: 1; min-height: 400px; display: grid; place-items: center; text-align: center; padding: 32px; }
 .setupIcon { width: 64px; height: 64px; border-radius: 8px; display: grid; place-items: center; margin: 0 auto 14px; font-size: 28px; background: var(--quiet); border: 1px solid var(--line); color: var(--accent); }
 
@@ -803,6 +877,29 @@
 .kitchenLiveSlow .kitchenLiveDot { background: var(--amber); }
 .kitchenLiveStale { color: var(--red); font-weight: 800; }
 .kitchenLiveStale .kitchenLiveDot { background: var(--red); }
+.kitchenPickupBar {
+  flex: none; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px;
+  margin-bottom: 10px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--panel);
+}
+.kitchenPickupTitle { font-size: 13px; font-weight: 700; white-space: nowrap; }
+.kitchenPickupList {
+  min-width: 0; display: flex; gap: 7px; overflow-x: auto; overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+}
+.kitchenPickupItem {
+  flex: 1 0 160px; min-width: 0; display: flex; align-items: baseline; gap: 7px; padding: 7px 9px;
+  border-radius: 6px; background: var(--quiet); color: var(--ink-2);
+}
+.kitchenPickupItem b {
+  color: var(--accent); font-size: 19px; line-height: 1; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.kitchenPickupItem span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.kitchenPickupReady { background: var(--green-bg); color: var(--green); }
+.ticketQueueBadge {
+  flex: none; padding: 2px 7px; border-radius: 4px; background: var(--green-bg); color: var(--green);
+  font-size: 12.5px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
 .sheetRow { display: flex; align-items: center; gap: 8px; }
 .sheetRowText { flex: 1; min-width: 0; font-weight: 600; }
 .sheetNote { color: var(--ink-2); font-size: 12.5px; }
@@ -875,7 +972,7 @@
    แถบสีซ้ายบอกเลนที่ใบนั้นอยู่ อ่านได้จากระยะยืนทำงานโดยไม่ต้องหาหัวคอลัมน์ */
 .ticket { background: var(--panel); border: 1px solid var(--line-2); border-left: 4px solid var(--lane-color);
   border-radius: 6px; padding: 9px 10px 10px; margin-bottom: 8px; }
-.ticketHead { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.ticketHead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 2px; }
 .ticketAge { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; border-radius: 4px;
   padding: 2px 7px; background: var(--quiet); color: var(--ink-2); font-size: 13px; font-weight: 700;
   font-variant-numeric: tabular-nums; }
@@ -1082,6 +1179,8 @@
   background: var(--green-bg); color: var(--green); font-size: 12px; font-weight: 700; white-space: nowrap;
 }
 .incomingIntakePaused { background: var(--amber-bg); color: var(--amber); }
+.incomingIntakeChecking { background: var(--quiet); color: var(--ink-2); }
+.incomingIntakeUnknown { background: var(--red-bg); color: var(--red); }
 .incomingProviderWarning { flex: none; border-radius: 0; border-inline: 0; }
 .otherWorkHost { flex: 1; min-height: 0; overflow: hidden; padding: 10px; }
 .otherWorkHost :global(.pos-page--embedded) { height: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--ground); overflow: hidden; }
@@ -1235,9 +1334,13 @@
   .page { height: auto; min-height: 100dvh; overflow: visible; grid-template-rows: auto; }
   .rail { position: sticky; top: 0; align-self: start; height: 100dvh; }
   .shell { overflow: visible; }
+  .topbar { flex-wrap: wrap; }
+  .topActions { width: 100%; flex-wrap: wrap; justify-content: flex-start; }
   .panelScroll, .items, .openList, .kitchenBoard, .laneScroll { overflow: visible; }
   .lane { min-height: 460px; }
   .workspace { grid-template-columns: 1fr; }
+  .floorStatusDashboard :global([data-pickup-queue-main]) { grid-template-columns: 1fr auto; }
+  .floorStatusDashboard :global([data-pickup-queue-summary]) { grid-column: 1 / -1; }
   .counterGrid { grid-template-columns: 1fr; }
   .qrWorkspace { grid-template-columns: 1fr; }
   .reportCard { grid-column: auto; }
@@ -1262,17 +1365,23 @@
   .queueCard { grid-template-columns: 48px minmax(0, 1fr); }
   .queueActions { grid-column: 1 / -1; }
   .queueActions .btn { flex: 1 1 0; justify-content: center; }
-  .topbar { padding: 8px; }
+  .topbar { padding: 6px 8px; }
   .subtitle { display: none; }
   .brand { margin-inline-end: 0; }
-  .topbar .btn { flex: 1 1 auto; }
+  .topStatusGroup { flex: 1 1 100%; }
+  .topbar .btn { flex: 0 0 auto; }
   .topbar .btnIcon { flex: 0 0 40px; }
-  .topbar .incomingBell { flex: 1 1 100%; justify-content: center; }
-  .shiftStatus { display: none; }
-  .accountMenu { flex: 1 1 100%; }
-  .accountMenu > summary { width: 100%; }
+  .topbar .incomingBell { flex: 1 1 auto; justify-content: center; }
+  .accountMenu { flex: 0 0 52px; }
+  .accountMenu > summary { width: 52px; }
   .accountPopover { position: fixed; left: 62px; right: 8px; top: 70px; width: auto; }
   .strip { gap: 4px 14px; font-size: 13.5px; }
+  .floorStatusDashboard { padding: 7px 8px; }
+  .floorStatusDashboard :global([data-pickup-queue-main]) { grid-template-columns: minmax(0, 1fr); }
+  .floorStatusDashboard :global([data-pickup-queue-summary]) { white-space: normal; flex-wrap: wrap; }
+  .floorStatusDashboard :global([data-pickup-queue-actions]) { justify-content: flex-start; flex-wrap: wrap; }
+  .floorStatusDashboard :global([data-pickup-queue-actions] .pos-btn) { flex: 1 1 auto; }
+  .kitchenPickupBar { grid-template-columns: minmax(0, 1fr); gap: 5px; }
 
   /* บนมือถือ แถบซ้าย 64px กินพื้นที่ ~17% ของจอ — บีบลงแล้วคืนให้กริดเมนู
      ป้ายยังอยู่ (คนกดต้องรู้ว่าปุ่มไหนคืออะไร) แค่เล็กลงพอดีความกว้างใหม่ */
@@ -1343,6 +1452,9 @@
    · 460px มาจากการวัด: ที่ความกว้างนี้คอลัมน์ชื่อได้ ~196px ซึ่งยังพออ่านชื่อเมนูจบในบรรทัดเดียว
      กว้างกว่านี้จึงคงแบบแถวเดียวไว้ เพราะการซ้อนสองแถวกินความสูง ~38px ต่อรายการ */
 @media (max-width: 460px) {
+  .serviceModeEmpty { align-content: start; padding: 20px 8px; }
+  .serviceModeGrid { grid-template-columns: minmax(0, 1fr); }
+  .page .serviceModeCard { min-height: 142px; padding: 16px 12px; }
   .item { grid-template-columns: 28px minmax(0, 1fr); }
   .itemSide { grid-column: 1 / -1; justify-content: flex-end; }
 }

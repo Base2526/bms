@@ -1,3 +1,4 @@
+import { posText, usePosLanguage, posLocale } from '../i18n/language';
 import React, { useCallback } from 'react';
 import { Alert, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
@@ -23,20 +24,21 @@ const STATE_LABEL: Record<
   OfflineSaleRecord['state'],
   { label: string; tone: StatusTone }
 > = {
-  STAGED: { label: 'เตรียมส่ง', tone: 'warning' },
-  UNKNOWN: { label: 'รอตรวจผล', tone: 'warning' },
-  SYNCING: { label: 'กำลังซิงก์', tone: 'neutral' },
-  NEEDS_REVIEW: { label: 'ต้องตรวจสอบ', tone: 'danger' },
+  STAGED: { get label() { return posText("เตรียมส่ง"); }, tone: 'warning' },
+  UNKNOWN: { get label() { return posText("รอตรวจผล"); }, tone: 'warning' },
+  SYNCING: { get label() { return posText("กำลังซิงก์"); }, tone: 'neutral' },
+  NEEDS_REVIEW: { get label() { return posText("ต้องตรวจสอบ"); }, tone: 'danger' },
 };
 
 function reportFailure(error: unknown) {
   Alert.alert(
-    'ซิงก์ไม่สำเร็จ',
-    error instanceof Error ? error.message : 'กรุณาตรวจการเชื่อมต่อแล้วลองใหม่',
+    posText("ซิงก์ไม่สำเร็จ"),
+    error instanceof Error ? error.message : posText("กรุณาตรวจการเชื่อมต่อแล้วลองใหม่"),
   );
 }
 
 export function OfflineSyncCenter({ visible, onClose }: Props) {
+  usePosLanguage();
   const { colors, spacing, typography } = useTheme();
   const health = useServerHealth();
   const shift = useShift();
@@ -64,8 +66,8 @@ export function OfflineSyncCenter({ visible, onClose }: Props) {
     >
       <ScreenContainer edges={['top', 'bottom', 'left', 'right']}>
         <ScreenHeader
-          title="ศูนย์ซิงก์รายการออฟไลน์"
-          subtitle={`${queue.records.length} รายการที่ยังไม่จบ`}
+          title={posText("ศูนย์ซิงก์รายการออฟไลน์")}
+          subtitle={posText("{v0} รายการที่ยังไม่จบ", { v0: queue.records.length })}
           onBack={onClose}
         />
 
@@ -81,18 +83,14 @@ export function OfflineSyncCenter({ visible, onClose }: Props) {
           ]}
         >
           <Text style={[typography.bodyStrong, { color: colors.warning }]}>
-            เงินสดถูกรับที่หน้าร้านแล้ว
-            แต่รายการรอซิงก์ยังไม่ใช่ใบเสร็จหรือเอกสารภาษี
-          </Text>
+            {posText("เงินสดถูกรับที่หน้าร้านแล้ว แต่รายการรอซิงก์ยังไม่ใช่ใบเสร็จหรือเอกสารภาษี") + " "}</Text>
           <Text
             style={[
               typography.caption,
               { color: colors.textMuted, marginTop: spacing.xs },
             ]}
           >
-            ระบบจะตรวจผลด้วยเลขอ้างอิงเดิมก่อนส่งซ้ำ และ Server จะตรวจราคา สต็อก
-            ภาษี กะ และสิทธิ์อีกครั้ง
-          </Text>
+            {posText("ระบบจะตรวจผลด้วยเลขอ้างอิงเดิมก่อนส่งซ้ำ และ Server จะตรวจราคา สต็อก ภาษี กะ และสิทธิ์อีกครั้ง") + " "}</Text>
         </View>
 
         {queue.storageError ? (
@@ -108,8 +106,7 @@ export function OfflineSyncCenter({ visible, onClose }: Props) {
             ]}
           >
             <Text style={[typography.bodyStrong, { color: colors.danger }]}>
-              เปิดคิวออฟไลน์ไม่ได้
-            </Text>
+              {posText("เปิดคิวออฟไลน์ไม่ได้") + " "}</Text>
             <Text
               style={[
                 typography.caption,
@@ -123,7 +120,7 @@ export function OfflineSyncCenter({ visible, onClose }: Props) {
 
         <View style={[styles.actions, { gap: spacing.sm }]}>
           <Button
-            label={queue.syncing ? 'กำลังซิงก์…' : 'ซิงก์รายการรอส่ง'}
+            label={queue.syncing ? posText("กำลังซิงก์…") : posText("ซิงก์รายการรอส่ง")}
             onPress={syncPending}
             loading={queue.syncing}
             disabled={!canSync || queue.pendingCount === 0}
@@ -132,7 +129,7 @@ export function OfflineSyncCenter({ visible, onClose }: Props) {
           />
           {queue.records.some(canRetryOfflineSale) ? (
             <Button
-              label="ลองใหม่เฉพาะรายการที่แก้สาเหตุได้"
+              label={posText("ลองใหม่เฉพาะรายการที่แก้สาเหตุได้")}
               onPress={retryReview}
               disabled={!canSync || queue.syncing}
               variant="secondary"
@@ -155,9 +152,9 @@ export function OfflineSyncCenter({ visible, onClose }: Props) {
           >
             {!serverOnline
               ? offline
-                ? 'เครื่องยังออฟไลน์ — รายการจะอยู่ในคิวเข้ารหัสจนเชื่อมต่อได้'
-                : 'กำลังตรวจการเชื่อมต่อ — ระบบจะเปิดการซิงก์เมื่อ Server พร้อม'
-              : 'ตรวจผลรายการเดิมได้ แต่ถ้า Server ยังไม่มีบิล ระบบจะหยุดไว้ให้ผู้จัดการตรวจสอบและจะไม่ลงยอดเข้ากะใหม่'}
+                ? posText("เครื่องยังออฟไลน์ — รายการจะอยู่ในคิวเข้ารหัสจนเชื่อมต่อได้")
+                : posText("กำลังตรวจการเชื่อมต่อ — ระบบจะเปิดการซิงก์เมื่อ Server พร้อม")
+              : posText("ตรวจผลรายการเดิมได้ แต่ถ้า Server ยังไม่มีบิล ระบบจะหยุดไว้ให้ผู้จัดการตรวจสอบและจะไม่ลงยอดเข้ากะใหม่")}
           </Text>
         ) : null}
 
@@ -171,8 +168,7 @@ export function OfflineSyncCenter({ visible, onClose }: Props) {
           {queue.records.length === 0 ? (
             <Card elevated={false}>
               <Text style={[typography.body, { color: colors.textMuted }]}>
-                ไม่มีรายการออฟไลน์ค้างอยู่ในสาขานี้
-              </Text>
+                {posText("ไม่มีรายการออฟไลน์ค้างอยู่ในสาขานี้") + " "}</Text>
             </Card>
           ) : (
             queue.records.map(record => (
@@ -201,12 +197,13 @@ function OfflineSaleCard({
   retryDisabled: boolean;
   onRetry: () => void;
 }) {
+  usePosLanguage();
   const { colors, spacing, typography } = useTheme();
   const state = STATE_LABEL[record.state];
   const retryable = canRetryOfflineSale(record);
   const tenderedAt = new Date(record.tenderedAt);
   const tenderedLabel = Number.isFinite(tenderedAt.getTime())
-    ? tenderedAt.toLocaleString('th-TH', {
+    ? tenderedAt.toLocaleString(posLocale(), {
         day: '2-digit',
         month: 'short',
         year: 'numeric',
@@ -220,10 +217,10 @@ function OfflineSaleCard({
       <View style={[styles.cardHeader, { gap: spacing.sm }]}>
         <View style={styles.cardTitle}>
           <Text style={[typography.subtitle, { color: colors.text }]}>
-            ฿{record.total.toFixed(2)}
+            {posText("฿")}{record.total.toFixed(2)}
           </Text>
           <Text style={[typography.caption, { color: colors.textMuted }]}>
-            อ้างอิง …{record.id.slice(-10)}
+            {posText("อ้างอิง …")}{record.id.slice(-10)}
           </Text>
         </View>
         <StatusPill label={state.label} tone={state.tone} />
@@ -232,7 +229,7 @@ function OfflineSaleCard({
       <Text
         style={[typography.body, { color: colors.text, marginTop: spacing.md }]}
       >
-        {tenderedLabel} · แคชเชียร์ {record.cashierName ?? 'คนเดิม'}
+        {tenderedLabel} {" " + posText("· แคชเชียร์") + " "}{record.cashierName ?? posText("คนเดิม")}
       </Text>
       <Text
         style={[
@@ -240,9 +237,8 @@ function OfflineSaleCard({
           { color: colors.textMuted, marginTop: spacing.xs },
         ]}
       >
-        {record.payload.lines.length} รายการสินค้า · ลองซิงก์แล้ว{' '}
-        {record.attempts} ครั้ง
-      </Text>
+        {record.payload.lines.length} {" " + posText("รายการสินค้า · ลองซิงก์แล้ว")}{' '}
+        {record.attempts} {" " + posText("ครั้ง") + " "}</Text>
 
       {record.lastError ? (
         <View
@@ -263,7 +259,7 @@ function OfflineSaleCard({
 
       {retryable ? (
         <Button
-          label="แก้สาเหตุแล้ว ลองรายการนี้ใหม่"
+          label={posText("แก้สาเหตุแล้ว ลองรายการนี้ใหม่")}
           onPress={onRetry}
           disabled={retryDisabled}
           variant="secondary"
@@ -277,9 +273,7 @@ function OfflineSaleCard({
             { color: colors.danger, marginTop: spacing.md },
           ]}
         >
-          Server ตัดสินรายการนี้แล้ว ห้ามส่งซ้ำหรือรับเงินซ้ำ
-          กรุณาให้ผู้จัดการกระทบยอด
-        </Text>
+          {posText("Server ตัดสินรายการนี้แล้ว ห้ามส่งซ้ำหรือรับเงินซ้ำ กรุณาให้ผู้จัดการกระทบยอด") + " "}</Text>
       ) : null}
     </Card>
   );

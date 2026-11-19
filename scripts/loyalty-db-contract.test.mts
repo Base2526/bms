@@ -38,7 +38,8 @@ import {
 } from "../apps/web/lib/bms/membership.ts";
 import { deleteCustomer, mergeCustomers } from "../apps/web/lib/bms/customers.ts";
 import { fakeCustomerMergeReview } from "./testing/customerMerge.mts";
-import { cancelOrder, createOrder, payOrder, returnOrder } from "../apps/web/lib/bms/orders.ts";
+import { cancelOrder, createOrder, returnOrder } from "../apps/web/lib/bms/orders.ts";
+import { submitPayment, confirmPayment } from "../apps/web/lib/bms/payments.ts";
 import { upsertCoupon } from "../apps/web/lib/bms/coupons.ts";
 import { listOrderDiscounts } from "../apps/web/lib/bms/membership.ts";
 import { DECLARE_FAKE_SALES_SURFACES_SQL } from "./testing/salesSurfaces.mts";
@@ -571,7 +572,14 @@ test("createOrder: tier + coupon + points stack, and the parts sum to discount_a
   assert.equal((await getMember(tenantId, id))?.pointsUsable, 120);
 
   // จ่ายเงินแล้วต้องได้แต้มจากยอดหลังส่วนลด (830) — ไม่ใช่ 1000
-  assert.equal(await payOrder(tenantId, created.orderId), true);
+  const submitted = await submitPayment({ tenantId, orderId: created.orderId, method: "CASH" });
+  assert.equal(submitted.status, "SUBMITTED");
+  if (submitted.status !== "SUBMITTED") return;
+  const actorId = (await query<{ id: string }>(
+    `SELECT id FROM users WHERE tenant_id=$1 ORDER BY created_at LIMIT 1`, [tenantId]
+  )).rows[0]?.id;
+  assert.ok(actorId);
+  assert.equal((await confirmPayment(tenantId, submitted.paymentId, actorId)).status, "CONFIRMED");
   await new Promise((r) => setTimeout(r, 250)); // reviewMemberTierForOrder ยิงหลัง commit
   assert.equal((await getMember(tenantId, id))?.pointsUsable, 950, "120 + 830");
 
@@ -667,6 +675,8 @@ test("teardown: remove every row this suite created", async () => {
   const orderIds = orders.rows.map((r) => r.id);
 
   if (orderIds.length) {
+    await query(`DELETE FROM bms_payments WHERE tenant_id = $1 AND order_id = ANY($2::uuid[])`,
+      [tenantId, orderIds]);
     await query(`DELETE FROM bms_pos_returns WHERE tenant_id = $1 AND order_id = ANY($2::uuid[])`,
       [tenantId, orderIds]);
     await query(`DELETE FROM bms_loyalty_ledger WHERE tenant_id = $1 AND order_id = ANY($2::uuid[])`,

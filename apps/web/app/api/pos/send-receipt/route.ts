@@ -10,7 +10,8 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { authenticatePosDevice, isPosOrderOwnedByDevice, verifyCashierPin } from "@/lib/bms/pos";
+import { authenticatePosDevice, cashierHasPermission, isPosOrderOwnedByDevice, verifyCashierPin } from "@/lib/bms/pos";
+import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import { sendReceipt } from "@/lib/bms/receiptDelivery";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -32,6 +33,9 @@ async function handlePOST(req: NextRequest) {
 
   const auth = await verifyCashierPin(device.tenantId, cashierUserId, pin);
   if (!auth.ok) return NextResponse.json({ error: "PIN ไม่ถูกต้อง", reason: auth.reason }, { status: 403 });
+  if (!(await cashierHasPermission(device.tenantId, auth.userId, "pos.sell"))) {
+    return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "pos.sell") }, { status: 403 });
+  }
 
   if (!(await isPosOrderOwnedByDevice(device.tenantId, orderId, device.id))) {
     return NextResponse.json({ error: "ไม่พบบิลนี้ของเครื่องนี้" }, { status: 404 });

@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { gql, useLazyQuery, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Checkbox, Drawer, Input, Modal, Select, Space, Table, Tag, Typography, message, Descriptions } from "antd";
 import { useMemo, useState } from "react";
@@ -9,15 +11,15 @@ import { useI18n } from "@/lib/i18nContext";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { AdminMobileList, AdminRecordCard } from "@/components/admin/AdminMobileList";
 
-const KIND_OPTIONS = [
-  { value: "products", label: "Products" },
-  { value: "orders", label: "Orders" },
-  { value: "payments", label: "Payments" },
-  { value: "shipments", label: "Shipments" },
-  { value: "purchase", label: "Purchase Orders" },
-  { value: "purchaseItems", label: "Purchase Order Items" },
-  { value: "coupons", label: "Coupons" },
-];
+const KIND_OPTIONS = (uiText: UiTranslator = thaiUiText) => ([
+  { value: "products", label: uiText("admin_ui.en_products_fe0a0") },
+  { value: "orders", label: uiText("admin_ui.en_orders_cded0") },
+  { value: "payments", label: uiText("admin_ui.en_payments_44357") },
+  { value: "shipments", label: uiText("admin_ui.en_shipments_7a70b") },
+  { value: "purchase", label: uiText("admin_ui.en_purchase_orders_1ea7e") },
+  { value: "purchaseItems", label: uiText("admin_ui.en_purchase_order_items_70748") },
+  { value: "coupons", label: uiText("admin_ui.en_coupons_97a3b") },
+]);
 
 const Q_HISTORY = gql`
   query ($kind: BmsRevisionKind!, $entityId: ID!, $limit: Int) {
@@ -41,13 +43,13 @@ const Q_COMPARE = gql`
   }
 `;
 
-const fmtDT = (v?: string | number | null) => {
+const fmtDT = (v?: string | number | null, uiText: UiTranslator = thaiUiText) => {
   if (v == null || v === "") return "—";
   const date = typeof v === "number" || (typeof v === "string" && /^\d+$/.test(v))
     ? new Date(Number(v))
     : new Date(v);
   if (Number.isNaN(date.getTime())) return String(v);
-  return date.toLocaleString("th-TH", { timeZone: "Asia/Bangkok" });
+  return date.toLocaleString(uiText.locale, { timeZone: "Asia/Bangkok" });
 };
 
 function summarizeSnapshot(snapshot: any) {
@@ -77,6 +79,7 @@ function entityLabel(kind: string, snapshot: any): string {
 }
 
 export default function Page() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { can } = useBmsPermissions();
   const isMobile = useIsMobile();
@@ -173,12 +176,12 @@ export default function Page() {
         ? <Space size={8}><Typography.Text strong>{row.label}</Typography.Text><Tag>{row.count} {t("admin_revisions.versions_suffix")}</Tag><Typography.Text type="secondary" code style={{ fontSize: 11 }}>{String(row.entityId).slice(0, 8)}</Typography.Text></Space>
         : <Typography.Text code>{v.slice(0, 8)}</Typography.Text>,
     },
-    { title: t("admin_revisions.col_when"), dataIndex: "created_at", width: 180, render: (v: string, row: any) => row.isGroup ? <Typography.Text type="secondary">{t("admin_revisions.latest_edit_prefix")} {fmtDT(v)}</Typography.Text> : fmtDT(v) },
-    { title: t("admin_revisions.col_editor"), dataIndex: "editorLabel", width: 200, render: (v: string | null) => v ? <Typography.Text>{v}</Typography.Text> : <Tag>system</Tag> },
+    { title: t("admin_revisions.col_when"), dataIndex: "created_at", width: 180, render: (v: string, row: any) => row.isGroup ? <Typography.Text type="secondary">{t("admin_revisions.latest_edit_prefix")} {fmtDT(v, uiText)}</Typography.Text> : fmtDT(v, uiText) },
+    { title: t("admin_revisions.col_editor"), dataIndex: "editorLabel", width: 200, render: (v: string | null) => v ? <Typography.Text>{v}</Typography.Text> : <Tag>{uiText("admin_ui.en_system_317f1")}</Tag> },
     { title: t("admin_revisions.col_revision_id"), dataIndex: "revision_id", width: 200, render: (v: string | null, row: any) => row.isGroup ? null : (v ? <Typography.Text code>{v.slice(0, 8)}</Typography.Text> : <span style={{ color: "#999" }}>—</span>) },
     { title: t("admin_revisions.col_snapshot"), dataIndex: "snapshot", render: (v: any, row: any) => row.isGroup ? null : <span>{summarizeSnapshot(v)}</span> },
     { title: t("admin_revisions.col_action"), width: 110, render: (_: any, row: any) => row.isGroup ? null : <Button size="small" icon={<FileTextOutlined />} onClick={() => openDetail(row)}>{t("admin_revisions.btn_detail")}</Button> },
-  ], [kind, t]);
+  ], [uiText, kind, t]);
 
   if (!can("product.view") && !can("order.view") && !can("payment.view") && !can("shipping.view") && !can("purchase.view") && !can("coupon.view")) {
     return <Alert closable type="error" message={t("admin_revisions.no_permission")} showIcon />;
@@ -194,7 +197,7 @@ export default function Page() {
       <AdminPageHeader title={t("admin_revisions.title")}>
         <Select
           value={kind}
-          options={KIND_OPTIONS}
+          options={KIND_OPTIONS(uiText)}
           onChange={(v) => { setKind(v); setSelectedIds([]); setDetail(null); setSearchInput(""); setSearch(""); }}
           style={{ width: isMobile ? "100%" : 200 }}
         />
@@ -271,10 +274,10 @@ export default function Page() {
                       />
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                          <Typography.Text style={{ fontSize: 12 }}>{fmtDT(rev.created_at)}</Typography.Text>
+                          <Typography.Text style={{ fontSize: 12 }}>{fmtDT(rev.created_at, uiText)}</Typography.Text>
                           {rev.editorLabel
                             ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>{rev.editorLabel}</Typography.Text>
-                            : <Tag style={{ marginInlineEnd: 0 }}>system</Tag>}
+                            : <Tag style={{ marginInlineEnd: 0 }}>{uiText("admin_ui.en_system_317f1")}</Tag>}
                         </div>
                         <Typography.Paragraph
                           type="secondary"
@@ -328,8 +331,8 @@ export default function Page() {
               <Descriptions.Item label={t("admin_revisions.detail_revision_id")}><Typography.Text code>{String(detailRow.id)}</Typography.Text></Descriptions.Item>
               <Descriptions.Item label={t("admin_revisions.detail_entity_id")}><Typography.Text code>{String(detailRow.entityId ?? detailRow.snapshot?.id ?? detailRow.snapshot?.sku ?? "—")}</Typography.Text></Descriptions.Item>
               <Descriptions.Item label={t("admin_revisions.detail_kind")}>{detailRow.kindLabel ?? kind}</Descriptions.Item>
-              <Descriptions.Item label={t("admin_revisions.detail_created_at")}>{fmtDT(detailRow.created_at)}</Descriptions.Item>
-              <Descriptions.Item label={t("admin_revisions.detail_editor")}>{detailRow.editorLabel ? <Typography.Text>{String(detailRow.editorLabel)}</Typography.Text> : <Tag>system</Tag>}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_revisions.detail_created_at")}>{fmtDT(detailRow.created_at, uiText)}</Descriptions.Item>
+              <Descriptions.Item label={t("admin_revisions.detail_editor")}>{detailRow.editorLabel ? <Typography.Text>{String(detailRow.editorLabel)}</Typography.Text> : <Tag>{uiText("admin_ui.en_system_317f1")}</Tag>}</Descriptions.Item>
               <Descriptions.Item label={t("admin_revisions.detail_revision_ref")}>{detailRow.revision_id ? <Typography.Text code>{String(detailRow.revision_id)}</Typography.Text> : "—"}</Descriptions.Item>
             </Descriptions>
             <pre style={{ margin: 0, padding: 16, background: "#f6f7f9", borderRadius: 12, overflow: "auto" }}>

@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../../i18n/language';
 import React, { useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -20,6 +21,7 @@ import { MenuGrid } from '../../components/MenuGrid';
 import { QtyStepper } from '../../components/QtyStepper';
 import { BarcodeScannerModal } from '../../components/BarcodeScannerModal';
 import { OrderAlertBanner } from '../../components/OrderAlertBanner';
+import { PickupQueueStrip } from '../../components/PickupQueueStrip';
 import { ProductOptionsModal } from '../../components/ProductOptionsModal';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
@@ -146,10 +148,13 @@ export const CART_PANEL_WIDTH = 320;
 // แท็บ "เมนูอาหาร" = ขายที่ไม่ผูกโต๊ะ (กลับบ้าน/สั่งที่เคาน์เตอร์)
 // การสั่งให้โต๊ะอยู่ที่แท็บ "ผังโต๊ะ" และเขียนเข้า restaurant check บน server
 export default function MenuScreen({ navigation }: Props) {
+  usePosLanguage();
   const { colors, spacing, typography } = useTheme();
   const { width, isTablet } = useResponsive();
   const {
     lines,
+    openItems,
+    setOpenItems,
     addItem,
     decrementItem,
     decrementSku,
@@ -180,6 +185,11 @@ export default function MenuScreen({ navigation }: Props) {
   const [configuringFromHardwareScan, setConfiguringFromHardwareScan] =
     useState(false);
   const [parkOpen, setParkOpen] = useState(false);
+  const [openItemModal, setOpenItemModal] = useState(false);
+  const [openLabel, setOpenLabel] = useState('');
+  const [openQty, setOpenQty] = useState('1');
+  const [openPrice, setOpenPrice] = useState('');
+  const [openVat, setOpenVat] = useState<'V' | 'N' | ''>('');
   const [parkName, setParkName] = useState('');
   const [parkNote, setParkNote] = useState('');
   const [lastScanned, setLastScanned] = useState('');
@@ -187,10 +197,10 @@ export default function MenuScreen({ navigation }: Props) {
 
   const screenTitle =
     mode === 'restaurant'
-      ? 'เมนูอาหาร'
+      ? posText("เมนูอาหาร")
       : mode === 'pharmacy'
-      ? 'ขายยาและสินค้า'
-      : 'ขายสินค้า';
+      ? posText("ขายยาและสินค้า")
+      : posText("ขายสินค้า");
 
   // การ์ดใบเดียวแทนทุกไซซ์/หน่วยขายของ sku นั้น เลขบนการ์ดจึงต้องเป็น "ผลรวมของทุกบรรทัด"
   // ⚠️ เดิมเขียนทับด้วยบรรทัดสุดท้าย: ตะกร้ามี S/M/L อย่างละ 1 แล้วการ์ดโชว์ 1 ทั้งที่มี 3
@@ -200,7 +210,28 @@ export default function MenuScreen({ navigation }: Props) {
     return map;
   }, [lines]);
 
-  const cartCount = lines.reduce((n, l) => n + l.qty, 0);
+  const cartCount = lines.reduce((n, l) => n + l.qty, 0) + openItems.reduce((n, l) => n + l.qty, 0);
+  const addOpenItem = () => {
+    const label = openLabel.trim();
+    const qty = Number(openQty);
+    const unitAmount = Number(openPrice);
+    if (!label || label.length > 120 || /[\u0000-\u001f\u007f]/u.test(label) ||
+      !Number.isInteger(qty) || qty < 1 || qty > 9999 ||
+      !Number.isFinite(unitAmount) || unitAmount <= 0 || unitAmount > 9999999.99 ||
+      Math.abs(unitAmount * 100 - Math.round(unitAmount * 100)) > 0.000001 ||
+      qty * unitAmount > 9999999999.99 || (openVat !== 'V' && openVat !== 'N') ||
+      openItems.reduce((sum, item) => sum + item.qty * item.unitAmount, 0) + qty * unitAmount > 9999999999.99 ||
+      openItems.length >= 10) {
+      Alert.alert(posText("ข้อมูลสินค้าชั่วคราวไม่ถูกต้อง"), posText("กรอกชื่อ จำนวนเต็ม ราคาบวกไม่เกินสองตำแหน่ง และเลือก VAT (สูงสุด 10 รายการ)"));
+      return;
+    }
+    setOpenItems([...openItems, { id: `open-${Date.now()}-${openItems.length}`, label, qty, unitAmount, vatCategory: openVat }]);
+    setOpenLabel('');
+    setOpenQty('1');
+    setOpenPrice('');
+    setOpenVat('');
+    setOpenItemModal(false);
+  };
   const continueSale = () => {
     const appNavigation = getAppNavigation(navigation);
     if (!isShiftOpen) {
@@ -243,6 +274,7 @@ export default function MenuScreen({ navigation }: Props) {
               getTabNavigation(navigation).navigate('OrdersTab')
             }
           />
+          <PickupQueueStrip />
           <View style={styles.menuHeader}>
             <View style={{ flex: 1 }}>
               <Text
@@ -253,34 +285,32 @@ export default function MenuScreen({ navigation }: Props) {
               </Text>
               {catalogLoading ? (
                 <Text style={[typography.caption, { color: colors.textMuted }]}>
-                  กำลังโหลดรายการจากเซิร์ฟเวอร์…
-                </Text>
+                  {posText("กำลังโหลดรายการจากเซิร์ฟเวอร์…") + " "}</Text>
               ) : catalogError ? (
                 <Pressable onPress={() => refetch().catch(() => undefined)}>
                   <Text style={[typography.caption, { color: colors.danger }]}>
-                    {catalogError} · แตะเพื่อลองใหม่
-                  </Text>
+                    {catalogError} {" " + posText("· แตะเพื่อลองใหม่") + " "}</Text>
                 </Pressable>
               ) : null}
               {lastScanned ? (
                 <Text
                   style={[typography.captionStrong, { color: colors.success }]}
                 >
-                  เพิ่มจากบาร์โค้ดแล้ว · {lastScanned}
+                  {posText("เพิ่มจากบาร์โค้ดแล้ว ·") + " "}{lastScanned}
                 </Text>
               ) : null}
             </View>
             {isTablet ? (
               <>
                 <Button
-                  label="▥ สแกนบาร์โค้ด"
-                  accessibilityLabel="เปิดหน้าต่างสแกนบาร์โค้ด"
+                  label={posText("▥ สแกนบาร์โค้ด")}
+                  accessibilityLabel={posText("เปิดหน้าต่างสแกนบาร์โค้ด")}
                   variant="secondary"
                   onPress={openScanner}
                 />
                 <Button
-                  label="ประวัติ"
-                  accessibilityLabel="เปิดประวัติการขายล่าสุด"
+                  label={posText("ประวัติ")}
+                  accessibilityLabel={posText("เปิดประวัติการขายล่าสุด")}
                   variant="secondary"
                   onPress={() =>
                     getAppNavigation(navigation).navigate('SalesHistory')
@@ -291,12 +321,12 @@ export default function MenuScreen({ navigation }: Props) {
               <View style={styles.menuActions}>
                 <MenuActionButton
                   kind="scan"
-                  label="เปิดหน้าต่างสแกนบาร์โค้ด"
+                  label={posText("เปิดหน้าต่างสแกนบาร์โค้ด")}
                   onPress={openScanner}
                 />
                 <MenuActionButton
                   kind="history"
-                  label="เปิดประวัติการขายล่าสุด"
+                  label={posText("เปิดประวัติการขายล่าสุด")}
                   onPress={() =>
                     getAppNavigation(navigation).navigate('SalesHistory')
                   }
@@ -304,6 +334,7 @@ export default function MenuScreen({ navigation }: Props) {
               </View>
             )}
           </View>
+          {mode === 'general' && <Button label={posText("เพิ่มสินค้าชั่วคราว")} variant="secondary" onPress={() => setOpenItemModal(true)} />}
         </>
       }
     />
@@ -327,7 +358,7 @@ export default function MenuScreen({ navigation }: Props) {
           { color: colors.text, marginBottom: spacing.md },
         ]}
       >
-        ตะกร้า {cartCount > 0 ? `· ${cartCount} รายการ` : ''}
+        {posText("ตะกร้า") + " "}{cartCount > 0 ? posText("· {v0} รายการ", { v0: cartCount }) : ''}
       </Text>
 
       <FlatList
@@ -349,14 +380,12 @@ export default function MenuScreen({ navigation }: Props) {
           <View style={styles.emptyCartState}>
             <EmptyCartGlyph color={colors.textSoft} />
             <Text style={[typography.bodyStrong, { color: colors.textMuted }]}>
-              ยังไม่มีรายการ
-            </Text>
+              {posText("ยังไม่มีรายการ") + " "}</Text>
             <Text
               style={[typography.caption, { color: colors.textSoft }]}
               numberOfLines={2}
             >
-              เพิ่มสินค้าลงในตะกร้าเพื่อเริ่มขาย
-            </Text>
+              {posText("เพิ่มสินค้าลงในตะกร้าเพื่อเริ่มขาย") + " "}</Text>
           </View>
         }
         renderItem={({ item, index }) => (
@@ -410,26 +439,33 @@ export default function MenuScreen({ navigation }: Props) {
                     modifierUnitPrice: item.modifierUnitPrice,
                     priceTiers: item.priceTiers,
                     promotion: item.promotion,
-                    category: 'สินค้า',
-                    station: 'สินค้า',
+                    category: posText("สินค้า"),
+                    station: posText("สินค้า"),
                     sellable: true,
                     imageUrl: item.imageUrl,
                     size: item.size,
                     packCode: item.packCode,
                     unitName: item.unitName,
                     baseQty: item.baseQty,
+                    offlineRetailEligible: item.offlineRetailEligible,
                     selectedModifierCodes: item.modifierCodes,
                   })
                 }
                 onDecrement={() => decrementItem(item.key)}
               />
               <Text style={[typography.caption, { color: colors.textSoft }]}>
-                ฿{item.unitPrice.toFixed(2)} / หน่วย
-              </Text>
+                {posText("฿")}{item.unitPrice.toFixed(2)} {" " + posText("/ หน่วย") + " "}</Text>
             </View>
           </View>
         )}
       />
+
+      {openItems.map(item => (
+        <View key={item.id} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xs }}>
+          <Text style={[typography.body, { color: colors.text, flex: 1 }]}>{item.label} × {item.qty} · ฿{(item.qty * item.unitAmount).toFixed(2)} ({item.vatCategory})</Text>
+          <Button label={posText("ลบ")} variant="secondary" onPress={() => setOpenItems(openItems.filter(row => row.id !== item.id))} />
+        </View>
+      ))}
 
       <View
         style={{
@@ -445,25 +481,23 @@ export default function MenuScreen({ navigation }: Props) {
             marginBottom: spacing.md,
           }}
         >
-          <Text style={[typography.subtitle, { color: colors.text }]}>รวม</Text>
+          <Text style={[typography.subtitle, { color: colors.text }]}>{posText("รวม")}</Text>
           <Text style={[typography.subtitle, { color: colors.text }]}>
-            ฿{total.toFixed(2)}
+            {posText("฿")}{total.toFixed(2)}
           </Text>
         </View>
         <Button
-          label={isShiftOpen ? 'ไปหน้าชำระเงิน' : 'ไปเปิดกะ'}
+          label={isShiftOpen ? posText("ไปหน้าชำระเงิน") : posText("ไปเปิดกะ")}
           accessibilityLabel={
-            isShiftOpen ? 'ไปหน้าชำระเงินตะกร้าปัจจุบัน' : 'ไปหน้าเปิดกะก่อนขาย'
+            isShiftOpen ? posText("ไปหน้าชำระเงินตะกร้าปัจจุบัน") : posText("ไปหน้าเปิดกะก่อนขาย")
           }
           fullWidth
           disabled={cartCount === 0 || shiftLoading}
           onPress={continueSale}
         />
         <Button
-          label={`บิลพัก${
-            parkedBills.length ? ` (${parkedBills.length})` : ''
-          }`}
-          accessibilityLabel="เปิดบิลพักหรือพักตะกร้าปัจจุบัน"
+          label={posText("บิลพัก{v0}", { v0: parkedBills.length ? ` (${parkedBills.length})` : '' })}
+          accessibilityLabel={posText("เปิดบิลพักหรือพักตะกร้าปัจจุบัน")}
           variant="secondary"
           fullWidth
           disabled={cartCount === 0 && parkedBills.length === 0}
@@ -498,9 +532,9 @@ export default function MenuScreen({ navigation }: Props) {
           >
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`เปิดบิลพักหรือพักตะกร้าปัจจุบัน · ${cartCount} รายการ · ${total.toFixed(
+              accessibilityLabel={posText("เปิดบิลพักหรือพักตะกร้าปัจจุบัน · {v0} รายการ · {v1} บาท", { v0: cartCount, v1: total.toFixed(
                 2,
-              )} บาท`}
+              ) })}
               disabled={cartCount === 0 && parkedBills.length === 0}
               hitSlop={8}
               onPress={() => setParkOpen(true)}
@@ -509,15 +543,15 @@ export default function MenuScreen({ navigation }: Props) {
                 style={[typography.subtitle, { color: colors.text }]}
                 numberOfLines={1}
               >
-                {cartCount} รายการ · ฿{total.toFixed(2)}
+                {cartCount} {" " + posText("รายการ · ฿")}{total.toFixed(2)}
               </Text>
             </Pressable>
             <Button
-              label={isShiftOpen ? 'ชำระเงิน' : 'เปิดกะ'}
+              label={isShiftOpen ? posText("ชำระเงิน") : posText("เปิดกะ")}
               accessibilityLabel={
                 isShiftOpen
-                  ? 'ไปหน้าชำระเงินตะกร้าปัจจุบัน'
-                  : 'ไปหน้าเปิดกะก่อนขาย'
+                  ? posText("ไปหน้าชำระเงินตะกร้าปัจจุบัน")
+                  : posText("ไปหน้าเปิดกะก่อนขาย")
               }
               disabled={cartCount === 0 || shiftLoading}
               onPress={continueSale}
@@ -547,6 +581,22 @@ export default function MenuScreen({ navigation }: Props) {
           setScannerOpen(false);
         }}
       />
+      <Modal transparent visible={openItemModal} animationType="fade" onRequestClose={() => setOpenItemModal(false)}>
+        <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
+          <View style={[styles.parkModal, { backgroundColor: colors.surface, borderColor: colors.border, padding: spacing.lg }]}>
+            <Text style={[typography.subtitle, { color: colors.text }]}>{posText("สินค้าชั่วคราว · เงินสด · ไม่ตัดสต็อก")}</Text>
+            <TextInput value={openLabel} onChangeText={setOpenLabel} maxLength={120} placeholder={posText("ชื่อสินค้าบนใบเสร็จ")} placeholderTextColor={colors.textSoft} style={[styles.input, { color: colors.text, borderColor: colors.border }]} />
+            <TextInput value={openQty} onChangeText={setOpenQty} keyboardType="number-pad" placeholder={posText("จำนวน")} placeholderTextColor={colors.textSoft} style={[styles.input, { color: colors.text, borderColor: colors.border }]} />
+            <TextInput value={openPrice} onChangeText={setOpenPrice} keyboardType="decimal-pad" placeholder={posText("ราคาต่อหน่วย")} placeholderTextColor={colors.textSoft} style={[styles.input, { color: colors.text, borderColor: colors.border }]} />
+            <View style={{ flexDirection: 'row', gap: spacing.sm, marginVertical: spacing.sm }}>
+              <Button label={posText("คิด VAT")} variant={openVat === 'V' ? 'primary' : 'secondary'} onPress={() => setOpenVat('V')} />
+              <Button label={posText("ไม่คิด VAT")} variant={openVat === 'N' ? 'primary' : 'secondary'} onPress={() => setOpenVat('N')} />
+            </View>
+            <Button label={posText("เพิ่มรายการ")} fullWidth onPress={addOpenItem} />
+            <Button label={posText("ยกเลิก")} variant="secondary" fullWidth style={{ marginTop: spacing.sm }} onPress={() => setOpenItemModal(false)} />
+          </View>
+        </View>
+      </Modal>
       <ProductOptionsModal
         item={configuring}
         restaurant={mode === 'restaurant'}
@@ -592,17 +642,15 @@ export default function MenuScreen({ navigation }: Props) {
           >
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={[typography.subtitle, { color: colors.text }]}>
-                พักบิล
-              </Text>
+                {posText("พักบิล") + " "}</Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                เก็บบนเซิร์ฟเวอร์และเรียกต่อได้จากเครื่องขายที่ได้รับสิทธิ์
-              </Text>
+                {posText("เก็บบนเซิร์ฟเวอร์และเรียกต่อได้จากเครื่องขายที่ได้รับสิทธิ์") + " "}</Text>
               {cartCount > 0 ? (
                 <>
                   <TextInput
                     value={parkName}
                     onChangeText={setParkName}
-                    placeholder="ชื่อบิล เช่น ลูกค้าเสื้อแดง"
+                    placeholder={posText("ชื่อบิล เช่น ลูกค้าเสื้อแดง")}
                     placeholderTextColor={colors.textSoft}
                     style={[
                       styles.input,
@@ -612,7 +660,7 @@ export default function MenuScreen({ navigation }: Props) {
                   <TextInput
                     value={parkNote}
                     onChangeText={setParkNote}
-                    placeholder="หมายเหตุ"
+                    placeholder={posText("หมายเหตุ")}
                     placeholderTextColor={colors.textSoft}
                     style={[
                       styles.input,
@@ -620,13 +668,13 @@ export default function MenuScreen({ navigation }: Props) {
                     ]}
                   />
                   <Button
-                    label="ยืนยันพักบิล"
-                    accessibilityLabel="ยืนยันพักบิล"
+                    label={posText("ยืนยันพักบิล")}
+                    accessibilityLabel={posText("ยืนยันพักบิล")}
                     fullWidth
                     onPress={async () => {
                       const failure = await parkCurrentBill(parkName, parkNote);
                       if (failure) {
-                        Alert.alert('พักบิลไม่สำเร็จ', failure);
+                        Alert.alert(posText("พักบิลไม่สำเร็จ"), failure);
                         return;
                       }
                       setParkName('');
@@ -641,8 +689,7 @@ export default function MenuScreen({ navigation }: Props) {
                     { color: colors.textMuted, marginTop: spacing.md },
                   ]}
                 >
-                  ตะกร้าว่าง — เลือกบิลพักด้านล่างเพื่อเรียกกลับ
-                </Text>
+                  {posText("ตะกร้าว่าง — เลือกบิลพักด้านล่างเพื่อเรียกกลับ") + " "}</Text>
               )}
               {parkedBills.length > 0 && (
                 <View style={{ marginTop: spacing.lg, gap: spacing.sm }}>
@@ -652,21 +699,16 @@ export default function MenuScreen({ navigation }: Props) {
                       { color: colors.textMuted },
                     ]}
                   >
-                    เรียกบิลพัก
-                  </Text>
+                    {posText("เรียกบิลพัก") + " "}</Text>
                   {parkedBills.map(bill => (
                     <View key={bill.id} style={{ gap: spacing.xs }}>
                       <Button
-                        label={`${bill.name} · ${bill.lines.length} รายการ${
-                          bill.pharmacyReview
-                            ? ` · เคส ${bill.pharmacyReview.caseCode} ${
-                                bill.pharmacyReview.canResume
-                                  ? 'อนุมัติแล้ว'
-                                  : bill.pharmacyReview.status ?? 'รอตรวจ'
-                              }`
-                            : ''
-                        }`}
-                        accessibilityLabel={`เรียกบิลพัก ${bill.name}`}
+                        label={posText("{v0} · {v1} รายการ{v2}", { v0: bill.name, v1: bill.lines.length, v2: bill.pharmacyReview
+                            ? posText(" · เคส {v0} {v1}", { v0: bill.pharmacyReview.caseCode, v1: bill.pharmacyReview.canResume
+                                  ? posText("อนุมัติแล้ว")
+                                  : bill.pharmacyReview.status ?? posText("รอตรวจ") })
+                            : '' })}
+                        accessibilityLabel={posText("เรียกบิลพัก {v0}", { v0: bill.name })}
                         variant="secondary"
                         fullWidth
                         disabled={
@@ -676,25 +718,25 @@ export default function MenuScreen({ navigation }: Props) {
                         onPress={async () => {
                           const failure = await resumeParkedBill(bill.id);
                           if (failure)
-                            Alert.alert('เรียกบิลไม่สำเร็จ', failure);
+                            Alert.alert(posText("เรียกบิลไม่สำเร็จ"), failure);
                           else setParkOpen(false);
                         }}
                       />
                       <Button
-                        label="ลบบิลพัก"
-                        accessibilityLabel={`ลบบิลพัก ${bill.name}`}
+                        label={posText("ลบบิลพัก")}
+                        accessibilityLabel={posText("ลบบิลพัก {v0}", { v0: bill.name })}
                         variant="danger"
                         fullWidth
                         onPress={() =>
-                          Alert.alert('ยืนยันลบบิลพัก', bill.name, [
-                            { text: 'ยกเลิก', style: 'cancel' },
+                          Alert.alert(posText("ยืนยันลบบิลพัก"), bill.name, [
+                            { text: posText("ยกเลิก"), style: 'cancel' },
                             {
-                              text: 'ลบ',
+                              text: posText("ลบ"),
                               style: 'destructive',
                               onPress: () => {
                                 deleteParkedBill(bill.id).then(failure => {
                                   if (failure)
-                                    Alert.alert('ลบบิลไม่สำเร็จ', failure);
+                                    Alert.alert(posText("ลบบิลไม่สำเร็จ"), failure);
                                 });
                               },
                             },
@@ -706,7 +748,7 @@ export default function MenuScreen({ navigation }: Props) {
                 </View>
               )}
               <Button
-                label="ปิด"
+                label={posText("ปิด")}
                 variant="ghost"
                 fullWidth
                 style={{ marginTop: spacing.md }}

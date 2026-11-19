@@ -1,3 +1,5 @@
+import desktopLocale from '../renderer/locale.cjs';
+const { posText } = desktopLocale;
 import { readFile, writeFile, rename, rm } from "node:fs/promises";
 import { parsePairingInput } from "./pairing.mjs";
 import { cachedPosEntryPath } from "./renderer-route.mjs";
@@ -18,9 +20,10 @@ export function createPairingWriter(file, encrypt, io = { readFile, writeFile, r
       // A reopened window must observe preceding writes/removal, not a half-finished transition.
       return enqueue(() => readSavedPairing(file, decrypt, io.readFile));
     },
-    write(pairing) {
+    write(pairing, isCurrent = () => true) {
       const snapshot = { ...pairing };
       return enqueue(async () => {
+        if (!isCurrent()) throw new Error("Pairing request is no longer current");
         const payload = JSON.stringify({
           version: PAIRING_CONFIG_VERSION,
           serverUrl: snapshot.serverUrl,
@@ -28,6 +31,10 @@ export function createPairingWriter(file, encrypt, io = { readFile, writeFile, r
           posEntryPath: cachedPosEntryPath(snapshot.posEntryPath),
         });
         await io.writeFile(`${file}.tmp`, payload, { encoding: "utf8", mode: 0o600 });
+        if (!isCurrent()) {
+          await io.rm(`${file}.tmp`, { force: true });
+          throw new Error("Pairing request is no longer current");
+        }
         await io.rename(`${file}.tmp`, file);
       });
     },
@@ -37,7 +44,7 @@ export function createPairingWriter(file, encrypt, io = { readFile, writeFile, r
   };
 }
 
-const RECOVERY_MESSAGE = "พบข้อมูลจับคู่เดิม แต่ยังอ่านหรือถอดรหัสไม่ได้ ไม่ได้แปลว่า token หมดอายุ กรุณาปลดล็อกที่เก็บข้อมูลของระบบและใช้บัญชีระบบปฏิบัติการเดิม แล้วกดลองใหม่ ข้อมูลจับคู่เดิมยังไม่ถูกลบ";
+const RECOVERY_MESSAGE = posText("พบข้อมูลจับคู่เดิม แต่ยังอ่านหรือถอดรหัสไม่ได้ ไม่ได้แปลว่า token หมดอายุ กรุณาปลดล็อกที่เก็บข้อมูลของระบบและใช้บัญชีระบบปฏิบัติการเดิม แล้วกดลองใหม่ ข้อมูลจับคู่เดิมยังไม่ถูกลบ");
 
 export class PairingRestoreError extends Error {
   constructor() {

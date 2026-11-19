@@ -30,13 +30,14 @@ import { writeLogServer } from "./writeLog.server";
 import { ERROR_WINDOW_MS, shouldLog } from "./logThrottle";
 import { isRestaurantCheckError } from "@/lib/bms/restaurantPosErrors";
 import { withScheduledJobTrace } from "@/lib/bms/scheduledJobTrace";
+import { recordRequestMetric } from "@/lib/bms/requestMetrics";
+import { sanitizeLogText } from "./sanitize";
 
 type RouteHandler<Args extends any[]> = (...args: Args) => Promise<Response> | Response;
 
-const SECRET_TEXT = /(Bearer\s+[A-Za-z0-9._~+\/-]+=*|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/g;
 function safeErrorText(value: unknown, max = 2_000): string | null {
   if (value == null) return null;
-  return String(value).replace(SECRET_TEXT, "[REDACTED]").slice(0, max);
+  return sanitizeLogText(value, max);
 }
 
 function errorSourceKey(args: unknown[]) {
@@ -68,7 +69,12 @@ export function withRouteErrorLog<Args extends any[]>(
   routeName: string,
   handler: RouteHandler<Args>
 ): (...args: Args) => Promise<Response> {
-  return (...args: Args): Promise<Response> => withScheduledJobTrace(args[0], async () => {
+  // This is a static route label supplied by the handler, never the request URL.
+  // Keep the suffix distinct when long labels exceed the Redis metric field limit.
+  const rawMetricName = `rest:${routeName.replace(/\s+/, ":")}`;
+  const metricName = rawMetricName.length <= 60 ? rawMetricName
+    : `${rawMetricName.slice(0, 51)}:${crypto.createHash("sha256").update(rawMetricName).digest("hex").slice(0, 8)}`;
+  const handled = (...args: Args): Promise<Response> => withScheduledJobTrace(args[0], async () => {
     try {
       return await handler(...args);
     } catch (error: any) {
@@ -85,7 +91,6 @@ export function withRouteErrorLog<Args extends any[]>(
       const detail = {
         code: safeErrorText(error?.code, 80),             // SQLSTATE ถ้ามาจาก pg
         constraint: safeErrorText(error?.constraint, 160),
-        detail: safeErrorText(error?.detail),
         message: safeErrorText(error?.message),
       };
       // console เขียนทุกครั้งเสมอ ไม่ throttle — เป็นทางถอยเดียวตอนฐานล่มจนเขียน
@@ -97,7 +102,7 @@ export function withRouteErrorLog<Args extends any[]>(
       // จำนวนครั้งยังนับครบที่ requestMetrics อยู่แล้ว
       const sourceKey = errorSourceKey(args);
       if (!shouldLog(`api|${sourceKey}|${routeName}|${detail.code ?? detail.message ?? ""}`, ERROR_WINDOW_MS)) {
-        return errorResponse(detail.message);
+        return errorResponse(detail.message, routeName, args);
       }
 
       // ไม่ await — ถ้าต้นเหตุคือฐานล่ม การรอเขียน log จะหน่วง response เปล่า ๆ
@@ -114,19 +119,49 @@ export function withRouteErrorLog<Args extends any[]>(
           stack: safeStack,
           sqlstate: detail.code,
           constraint: detail.constraint,
-          detail: detail.detail,
           tenantId,
         }
       ));
 
-      return errorResponse(detail.message);
+      return errorResponse(detail.message, routeName, args);
     }
   });
+  return async (...args: Args): Promise<Response> => {
+    const startedAt = performance.now();
+    let status = 500;
+    try {
+      const response = await handled(...args);
+      status = response.status;
+      return response;
+    } finally {
+      // Apollo already records its own operation names; avoid counting it twice.
+      // Metric failure must never change the handler's response.
+      if (routeName !== "/api/graphql") {
+        try {
+          recordRequestMetric({
+            name: metricName,
+            durationMs: performance.now() - startedAt,
+            ok: status < 400,
+            errorCode: status >= 400 ? `HTTP_${status}` : null,
+          });
+        } catch {
+          // Observability is fail-open, including synchronous Redis failures.
+        }
+      }
+    }
+  };
 }
 
-function errorResponse(message: string | null) {
+function errorResponse(message: string | null, routeName: string, args: unknown[]) {
+  const request = args[0] as NextRequest | undefined;
+  const english = /^en\b/i.test(request?.headers?.get?.("accept-language") ?? "");
+  const read = /^GET\s/i.test(routeName);
   const publicMessage = process.env.NODE_ENV === "production"
-    ? "เซิร์ฟเวอร์ผิดพลาด"
+    ? read
+      ? english ? "Could not load data. Refresh this page. If the problem continues, contact support."
+        : "โหลดข้อมูลไม่ได้ กรุณารีเฟรชหน้า หากยังไม่หายให้แจ้งผู้ดูแลระบบ"
+      : english ? "The result of this action is unknown. Check the latest record before trying again. If the problem continues, contact support."
+        : "ยังยืนยันผลของรายการนี้ไม่ได้ กรุณาตรวจรายการล่าสุดก่อนกดซ้ำ หากยังไม่หายให้แจ้งผู้ดูแลระบบ"
     : (message ? String(message) : "เซิร์ฟเวอร์ผิดพลาด");
   return NextResponse.json(
     { status: "SERVER_ERROR", error: publicMessage },

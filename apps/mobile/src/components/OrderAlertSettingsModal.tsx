@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React from 'react';
 import {
   Modal,
@@ -15,11 +16,11 @@ import { ORDER_ALERT_KINDS, type OrderAlertKind } from '../lib/orderAlert';
 import { fireOrderAlert } from '../state/OrderAlertContext';
 
 const KIND_LABEL: Record<OrderAlertKind, string> = {
-  incoming_order: 'ออร์เดอร์เข้าจากแชท/ออนไลน์',
-  kitchen_ticket: 'ตั๋วครัวใบใหม่',
-  qr_order: 'คำสั่งใหม่จาก QR โต๊ะ',
-  service_call: 'ลูกค้าเรียกพนักงาน',
-  waitlist: 'คิวหรือการจองโต๊ะใหม่',
+  get incoming_order() { return posText("ออร์เดอร์เข้าจากแชท/ออนไลน์"); },
+  get kitchen_ticket() { return posText("ตั๋วครัวใบใหม่"); },
+  get qr_order() { return posText("คำสั่งใหม่จาก QR โต๊ะ"); },
+  get service_call() { return posText("ลูกค้าเรียกพนักงาน"); },
+  get waitlist() { return posText("คิวหรือการจองโต๊ะใหม่"); },
 };
 
 const REPEAT_CHOICES = [0, 15, 30, 60];
@@ -37,6 +38,7 @@ interface Props {
  * (ซึ่งค่าปริยายคือ "เปิด" จึงไม่ใช่การเงียบ)
  */
 export function OrderAlertSettingsModal({ visible, onClose }: Props) {
+  usePosLanguage();
   const { colors, spacing, typography } = useTheme();
   const { settings, setSettings, soundAvailable, vibrationSupported } =
     useOrderAlerts();
@@ -58,19 +60,17 @@ export function OrderAlertSettingsModal({ visible, onClose }: Props) {
         >
           <ScrollView keyboardShouldPersistTaps="handled">
             <Text style={[typography.subtitle, { color: colors.text }]}>
-              การแจ้งเตือนออร์เดอร์
-            </Text>
+              {posText("การแจ้งเตือนออร์เดอร์") + " "}</Text>
             <Text
               style={[
                 typography.caption,
                 { color: colors.textMuted, marginBottom: spacing.md },
               ]}
             >
-              ตั้งค่าต่อเครื่องนี้เท่านั้น · ปิดแอปแล้วกลับเป็นค่าปริยาย (เปิด)
-            </Text>
+              {posText("ตั้งค่าต่อเครื่องนี้เท่านั้น · ปิดแอปแล้วกลับเป็นค่าปริยาย (เปิด)") + " "}</Text>
 
             <Row
-              label="เปิดแจ้งเตือน"
+              label={posText("เปิดแจ้งเตือน")}
               value={settings.enabled}
               onChange={enabled => setSettings({ enabled })}
             />
@@ -96,7 +96,7 @@ export function OrderAlertSettingsModal({ visible, onClose }: Props) {
             />
 
             <Row
-              label="เสียง"
+              label={posText("เสียง")}
               value={settings.sound}
               disabled={!settings.enabled}
               onChange={sound => setSettings({ sound })}
@@ -105,18 +105,18 @@ export function OrderAlertSettingsModal({ visible, onClose }: Props) {
               note={
                 soundAvailable
                   ? undefined
-                  : 'เครื่องนี้ยังไม่มีโมดูลเสียง (ดู README)'
+                  : posText("เครื่องนี้ยังไม่มีโมดูลเสียง (ดู README)")
               }
             />
             <Row
-              label="สั่น"
+              label={posText("สั่น")}
               value={settings.vibrate}
               disabled={!settings.enabled}
               onChange={vibrate => setSettings({ vibrate })}
               note={
                 vibrationSupported
-                  ? 'แท็บเล็ตหน้าร้านหลายรุ่นไม่มีมอเตอร์สั่น'
-                  : 'แพลตฟอร์มนี้สั่นไม่ได้'
+                  ? posText("แท็บเล็ตหน้าร้านหลายรุ่นไม่มีมอเตอร์สั่น")
+                  : posText("แพลตฟอร์มนี้สั่นไม่ได้")
               }
             />
 
@@ -125,8 +125,7 @@ export function OrderAlertSettingsModal({ visible, onClose }: Props) {
             />
 
             <Text style={[typography.captionStrong, { color: colors.text }]}>
-              ย้ำซ้ำจนกว่าจะมีคนรับทราบ
-            </Text>
+              {posText("ย้ำซ้ำจนกว่าจะมีคนรับทราบ") + " "}</Text>
             <View style={styles.chips}>
               {REPEAT_CHOICES.map(seconds => {
                 const selected = settings.repeatSeconds === seconds;
@@ -136,7 +135,7 @@ export function OrderAlertSettingsModal({ visible, onClose }: Props) {
                     accessibilityRole="button"
                     accessibilityState={{ selected }}
                     accessibilityLabel={
-                      seconds === 0 ? 'ไม่ย้ำซ้ำ' : `ย้ำทุก ${seconds} วินาที`
+                      seconds === 0 ? posText("ไม่ย้ำซ้ำ") : posText("ย้ำทุก {v0} วินาที", { v0: seconds })
                     }
                     onPress={() => setSettings({ repeatSeconds: seconds })}
                     style={{
@@ -156,7 +155,7 @@ export function OrderAlertSettingsModal({ visible, onClose }: Props) {
                         },
                       ]}
                     >
-                      {seconds === 0 ? 'ไม่ย้ำ' : `${seconds} วิ`}
+                      {seconds === 0 ? posText("ไม่ย้ำ") : posText("{v0} วิ", { v0: seconds })}
                     </Text>
                   </Pressable>
                 );
@@ -164,15 +163,15 @@ export function OrderAlertSettingsModal({ visible, onClose }: Props) {
             </View>
 
             <Button
-              label="ทดสอบแจ้งเตือน"
-              accessibilityLabel="ทดสอบการแจ้งเตือนหนึ่งครั้ง"
+              label={posText("ทดสอบแจ้งเตือน")}
+              accessibilityLabel={posText("ทดสอบการแจ้งเตือนหนึ่งครั้ง")}
               variant="secondary"
               fullWidth
               style={{ marginTop: spacing.lg }}
               onPress={() => fireOrderAlert('incoming_order')}
             />
             <Button
-              label="ปิด"
+              label={posText("ปิด")}
               fullWidth
               style={{ marginTop: spacing.sm }}
               onPress={onClose}

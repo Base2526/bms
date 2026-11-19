@@ -205,10 +205,15 @@ test("drawer movements land in the drawer and refuse to overdraw it", async () =
   });
   assert.equal(putReplay.status, "RECORDED");
   assert.equal(putReplay.status === "RECORDED" ? putReplay.replayed : false, true);
+  const changedReplay = await recordCashMovement({
+    tenantId, deviceId, shiftId, direction: "IN", amount: 501,
+    reason: "แลกเหรียญมาเพิ่ม", actorUserId: cashierId, idempotencyKey: key("cash-in"),
+  });
+  assert.equal(changedReplay.status, "INVALID", "key เดิมกับยอดใหม่ต้องไม่ตอบว่าสำเร็จ");
 
   const take = await recordCashMovement({
     tenantId, deviceId, shiftId, direction: "OUT", amount: 300,
-    reason: "นำส่งธนาคาร", actorUserId: cashierId, approvedByUserId: cashierId,
+    reason: "นำส่งธนาคาร", actorUserId: cashierId, approvedByUserId: approverId,
     idempotencyKey: key("cash-out"),
   });
   assert.equal(take.status, "RECORDED");
@@ -217,7 +222,7 @@ test("drawer movements land in the drawer and refuse to overdraw it", async () =
   // พิมพ์ 99999 แทน 999 — รายการที่ทำให้ยอดที่ควรมีติดลบคือรายการที่กรอกผิดแน่นอน
   const tooMuch = await recordCashMovement({
     tenantId, deviceId, shiftId, direction: "OUT", amount: 99999,
-    reason: "พิมพ์ผิด", actorUserId: cashierId, approvedByUserId: cashierId,
+    reason: "พิมพ์ผิด", actorUserId: cashierId, approvedByUserId: approverId,
     idempotencyKey: key("cash-overdraw"),
   });
   assert.equal(tooMuch.status, "WOULD_OVERDRAW");
@@ -232,6 +237,17 @@ test("a movement with no reason is refused", async () => {
     reason: "  ", actorUserId: cashierId, idempotencyKey: key("cash-no-reason"),
   });
   assert.equal(res.status, "INVALID");
+});
+
+test("drawer cash-out service refuses a missing or identical second person before DB access", async () => {
+  for (const approvedByUserId of [undefined, cashierId, ` ${cashierId.toUpperCase()} `]) {
+    const result = await recordCashMovement({
+      tenantId, deviceId, shiftId, direction: "OUT", amount: 1,
+      reason: "ต้องมีผู้อนุมัติคนละคน", actorUserId: cashierId, approvedByUserId,
+      idempotencyKey: key("cash-self-approval"),
+    });
+    assert.equal(result.status, "INVALID");
+  }
 });
 
 // ---- ค่าใช้จ่ายเงินสดย่อย --------------------------------------------
@@ -489,7 +505,7 @@ test("void puts the stock back, cancels the tax document, and leaves the sales f
 
   const res = await voidPosSale({
     tenantId, deviceId, shiftId, orderId: soldOrderId,
-    actorUserId: cashierId, approvedByUserId: cashierId,
+    actorUserId: cashierId, approvedByUserId: approverId,
     reason: "สแกนซ้ำ", idempotencyKey: key("void"),
   });
   assert.equal(res.status, "VOIDED", JSON.stringify(res));
@@ -541,14 +557,14 @@ test("a voided bill is flagged as a void, not as a customer return", async () =>
 test("voiding twice is safe, and a void with no reason is refused", async () => {
   const again = await voidPosSale({
     tenantId, deviceId, shiftId, orderId: soldOrderId,
-    actorUserId: cashierId, approvedByUserId: cashierId,
+    actorUserId: cashierId, approvedByUserId: approverId,
     reason: "กดซ้ำเพราะเน็ตหลุด", idempotencyKey: key("void-2"),
   });
   assert.equal(again.status, "VOIDED", "ยิงซ้ำต้องตอบว่าสำเร็จ ไม่ใช่ error");
 
   const noReason = await voidPosSale({
     tenantId, deviceId, shiftId, orderId: soldOrderId,
-    actorUserId: cashierId, approvedByUserId: cashierId,
+    actorUserId: cashierId, approvedByUserId: approverId,
     reason: "   ", idempotencyKey: key("void-3"),
   });
   assert.equal(noReason.status, "NOT_VOIDABLE");
@@ -708,7 +724,7 @@ test("blind close hides expected cash while the shift is open, everywhere it cou
   // ถอนเกินยังต้องถูกปฏิเสธ แต่ห้ามบอกว่าเหลือเท่าไร
   const over = await recordCashMovement({
     tenantId, deviceId, shiftId, direction: "OUT", amount: 99999,
-    reason: "ทดสอบ", actorUserId: cashierId, approvedByUserId: cashierId,
+    reason: "ทดสอบ", actorUserId: cashierId, approvedByUserId: approverId,
     idempotencyKey: key("cash-blind-overdraw"),
   });
   assert.equal(over.status, "WOULD_OVERDRAW");

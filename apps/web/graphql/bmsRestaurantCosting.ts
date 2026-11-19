@@ -7,6 +7,7 @@ import { getTenantId } from "@/lib/bms/tenant";
 import { inventoryValuation, confirmInventoryValue } from "@/lib/bms/inventoryValuation";
 import { getRestaurantMenuActual } from "@/lib/bms/restaurantMenuActual";
 import { previewPricePublication, publishPricePlan, type PublishPriceInput } from "@/lib/bms/restaurantPricePublishing";
+import { cancelBranchPriceWindow } from "@/lib/bms/branchPrices";
 async function result<T>(work:()=>Promise<T>) {
   try { return await work(); } catch(e) {
     const code=e instanceof Error ? e.message : '';
@@ -58,6 +59,10 @@ export const bmsRestaurantCostingResolvers = {
     async bmsPublishPricePlan(_p:unknown,args:{input:PublishPriceInput;review:Parameters<typeof publishPricePlan>[3]},ctx:any) {
       await requirePermission(ctx,'product.edit'); await requirePermission(ctx,'report.view');
       return result(()=>publishPricePlan(getTenantId(ctx),String(requireAuth(ctx).author_id),args.input,args.review));
+    },
+    async bmsCancelBranchPriceWindow(_p:unknown,args:{id:string;confirmed:boolean},ctx:any) {
+      await requirePermission(ctx,'product.edit'); await requirePermission(ctx,'report.view');
+      return result(()=>cancelBranchPriceWindow(getTenantId(ctx),String(requireAuth(ctx).author_id),args.id,args.confirmed));
     },
   },
 };

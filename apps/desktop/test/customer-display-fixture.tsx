@@ -18,7 +18,7 @@ const fixtures = {
   cart,
   payment: { ...cart, checkout: true, paymentQr: { payload: staticPromptPayQr, amount: 68, accountName: "FAKE Shop B", promptpayId: null } },
   cash: { ...cart, checkout: true },
-  finished: { ...cart, pointsEarned: 3, pointsBalance: 123, finished: { id: "FAKE-1", total: 168, tendered: 200, change: 32, taxRequestUrl: "https://example.com/FAKE-tax-request" } },
+  finished: { ...cart, pointsEarned: 3, pointsBalance: 123, finished: { id: "FAKE-1", total: 168, tendered: 200, change: 32, taxRequestUrl: "https://example.com/FAKE-tax-request", pickupQueueLabel: "042" } },
   finishedMaskedMember: { ...cart, memberName: null, pointsEarned: 3, pointsBalance: 123,
     finished: { id: "FAKE-masked", total: 168, tendered: 200, change: 32 } },
   finishedSimple: { ...cart, memberAttached: false, memberName: null, pointsBalance: null, pointsWillEarn: null, pointsEarned: null,

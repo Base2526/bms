@@ -17,6 +17,7 @@ import { rateLimit } from "@/lib/bms/rateLimit";
 import { logConversation } from "@/lib/bms/inbox";
 import { claimInboundEvent } from "@/lib/bms/inboundEvents";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { readBoundedWebhookText } from "@/lib/bms/webhookBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,7 +45,9 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
   const cfg = await getChannel(tenantId, CHANNEL);
   if (cfg && !cfg.active) return NextResponse.json({ error: "web chat disabled" }, { status: 403, headers: CORS });
 
-  const parsed = await req.json().catch(() => null);
+  const payload = await readBoundedWebhookText(req, 64 * 1024);
+  if (!payload.ok) return NextResponse.json({ error: payload.error }, { status: payload.status, headers: CORS });
+  const parsed = (() => { try { return JSON.parse(payload.text); } catch { return null; } })();
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return NextResponse.json({ error: "JSON object required" }, { status: 400, headers: CORS });
   }

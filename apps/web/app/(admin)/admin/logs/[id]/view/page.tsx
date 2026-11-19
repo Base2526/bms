@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import React, { useEffect, useState } from 'react';
 import { Card, Space, Tag, Button, message, Descriptions, Divider } from 'antd';
 import Link from 'next/link';
@@ -38,6 +40,7 @@ function levelTag(level: string){
 }
 
 export default function LogDetailPage(){
+  const uiText = useUiText();
   const { id } = useParams<{id:string}>()!;
   const router = useRouter();
   const [row, setRow] = useState<LogRow | null>(null);
@@ -84,11 +87,11 @@ export default function LogDetailPage(){
             // }
 
             // 3️⃣ ใช้ API ใหม่สำเร็จ
-            if (!res.ok) throw new Error('Load failed');
+            if (!res.ok) throw new Error(uiText("admin_ui.en_load_failed_1dc60"));
             const j = await res.json();
             setRow(j);
         } catch (e: any) {
-            message.error(e.message || 'Load failed');
+            message.error(e.message || uiText("admin_ui.en_load_failed_1dc60"));
         } finally {
             setLoading(false);
         }
@@ -97,61 +100,61 @@ export default function LogDetailPage(){
 
   async function remove(){
     const res = await fetch(`${ADMIN_API_PREFIX}/logs/${id}`, { method:'DELETE' });
-    if(res.ok){ message.success('Deleted'); router.push('/admin/logs'); }
-    else { const j = await res.json().catch(()=> ({})); message.error(j.error||'Delete failed'); }
+    if(res.ok){ message.success(uiText("admin_ui.en_deleted_441bd")); router.push('/admin/logs'); }
+    else { const j = await res.json().catch(()=> ({})); message.error(j.error||uiText("admin_ui.en_delete_failed_64513")); }
   }
 
   useEffect(()=>{ load(); /* eslint-disable-next-line */ }, [id]);
 
-  if (!row) return <Card loading title="Log detail" />;
+  if (!row) return <Card loading title={uiText("admin_ui.en_log_detail_5a128")} />;
 
   return (
     <Card
-      title={`Log #${row.id}`}
+      title={uiText("admin_ui.en_log_25e1d", { v0: row.id })}
       extra={
         <Space>
           {row.created_by ? (
             <Link href={`/admin/logs?user_id=${encodeURIComponent(String(row.created_by))}`}>
-              <Button>Filter user</Button>
+              <Button>{uiText("admin_ui.en_filter_user_9b7ad")}</Button>
             </Link>
           ) : null}
           {row.session_id ? (
             <Link href={`/admin/logs/timeline?session_id=${encodeURIComponent(String(row.session_id))}`}>
-              <Button>Timeline (session)</Button>
+              <Button>{uiText("admin_ui.en_timeline_session_3f932")}</Button>
             </Link>
           ) : null}
           {row.correlation_id ? (
             <Link href={`/admin/logs/timeline?correlation_id=${encodeURIComponent(String(row.correlation_id))}`}>
-              <Button>Timeline (correlation)</Button>
+              <Button>{uiText("admin_ui.en_timeline_correlation_22ca7")}</Button>
             </Link>
           ) : null}
-          <Button danger onClick={remove}>Delete</Button>
+          <Button danger onClick={remove}>{uiText("admin_ui.en_delete_f6fdb")}</Button>
         </Space>
       }
       loading={loading}
     >
       <Descriptions column={1} bordered size="small">
-        <Descriptions.Item label="Level">{levelTag(row.level)}</Descriptions.Item>
-        <Descriptions.Item label="Category"><Tag>{row.category}</Tag></Descriptions.Item>
-        {row.status ? <Descriptions.Item label="Status"><Tag>{row.status}</Tag></Descriptions.Item> : null}
-        {row.action ? <Descriptions.Item label="Action"><Tag color="geekblue">{row.action}</Tag></Descriptions.Item> : null}
-        <Descriptions.Item label="Message"><strong>{row.message}</strong></Descriptions.Item>
-        <Descriptions.Item label="Created At">{new Date(row.created_at).toLocaleString()}</Descriptions.Item>
-        <Descriptions.Item label="Created By">{row.created_by ?? '-'}</Descriptions.Item>
+        <Descriptions.Item label={uiText("admin_ui.en_level_7c7f5")}>{levelTag(row.level)}</Descriptions.Item>
+        <Descriptions.Item label={uiText("admin_ui.en_category_a3c68")}><Tag>{row.category}</Tag></Descriptions.Item>
+        {row.status ? <Descriptions.Item label={uiText("admin_ui.en_status_bae7d")}><Tag>{row.status}</Tag></Descriptions.Item> : null}
+        {row.action ? <Descriptions.Item label={uiText("admin_ui.en_action_97c89")}><Tag color="geekblue">{row.action}</Tag></Descriptions.Item> : null}
+        <Descriptions.Item label={uiText("admin_ui.en_message_68f41")}><strong>{row.message}</strong></Descriptions.Item>
+        <Descriptions.Item label={uiText("admin_ui.en_created_at_5db15")}>{new Date(row.created_at).toLocaleString(uiText.locale)}</Descriptions.Item>
+        <Descriptions.Item label={uiText("admin_ui.en_created_by_43de2")}>{row.created_by ?? '-'}</Descriptions.Item>
 
-        {row.platform ? <Descriptions.Item label="Platform">{row.platform}</Descriptions.Item> : null}
-        {row.app_version ? <Descriptions.Item label="App Version">{row.app_version}</Descriptions.Item> : null}
-        {row.route_name ? <Descriptions.Item label="Route">{row.route_name}</Descriptions.Item> : null}
-        {row.screen_name ? <Descriptions.Item label="Screen">{row.screen_name}</Descriptions.Item> : null}
-        {row.session_id ? <Descriptions.Item label="Session ID">{row.session_id}</Descriptions.Item> : null}
-        {row.correlation_id ? <Descriptions.Item label="Correlation ID">{row.correlation_id}</Descriptions.Item> : null}
-        {typeof row.duration_ms === 'number' ? <Descriptions.Item label="Duration">{row.duration_ms}ms</Descriptions.Item> : null}
-        {row.error_message ? <Descriptions.Item label="Error">{row.error_message}</Descriptions.Item> : null}
+        {row.platform ? <Descriptions.Item label={uiText("admin_ui.en_platform_123a7")}>{row.platform}</Descriptions.Item> : null}
+        {row.app_version ? <Descriptions.Item label={uiText("admin_ui.en_app_version_055c4")}>{row.app_version}</Descriptions.Item> : null}
+        {row.route_name ? <Descriptions.Item label={uiText("admin_ui.en_route_49995")}>{row.route_name}</Descriptions.Item> : null}
+        {row.screen_name ? <Descriptions.Item label={uiText("admin_ui.en_screen_5cc84")}>{row.screen_name}</Descriptions.Item> : null}
+        {row.session_id ? <Descriptions.Item label={uiText("admin_ui.en_session_id_25e4f")}>{row.session_id}</Descriptions.Item> : null}
+        {row.correlation_id ? <Descriptions.Item label={uiText("admin_ui.en_correlation_id_805ca")}>{row.correlation_id}</Descriptions.Item> : null}
+        {typeof row.duration_ms === 'number' ? <Descriptions.Item label={uiText("admin_ui.en_duration_13700")}>{row.duration_ms}ms</Descriptions.Item> : null}
+        {row.error_message ? <Descriptions.Item label={uiText("admin_ui.en_error_7f2f6")}>{row.error_message}</Descriptions.Item> : null}
       </Descriptions>
 
       <Divider />
 
-      <h4>Meta</h4>
+      <h4>{uiText("admin_ui.en_meta_8d546")}</h4>
       <pre style={{ whiteSpace:'pre-wrap', margin:0 }}>
         {JSON.stringify(row.meta || {}, null, 2)}
       </pre>
@@ -159,7 +162,7 @@ export default function LogDetailPage(){
       {row.stack ? (
         <>
           <Divider />
-          <h4>Stack</h4>
+          <h4>{uiText("admin_ui.en_stack_83e5a")}</h4>
           <pre style={{ whiteSpace:'pre-wrap', margin:0 }}>
             {String(row.stack)}
           </pre>

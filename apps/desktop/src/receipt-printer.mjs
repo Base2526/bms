@@ -1,3 +1,5 @@
+import desktopLocale from '../renderer/locale.cjs';
+const { posText } = desktopLocale;
 import { readFileSync } from "node:fs";
 import { printerHealth } from "./printer-health.mjs";
 
@@ -34,14 +36,14 @@ export function normalizePrinterConfig(value) {
 }
 
 export function receiptPrintOptions(config, printers, heightPx) {
-  if (!config.deviceName) throw new Error("กรุณาเลือกเครื่องพิมพ์ที่ ตั้งค่า > เครื่องพิมพ์ใบเสร็จ");
+  if (!config.deviceName) throw new Error(posText("กรุณาเลือกเครื่องพิมพ์ที่ ตั้งค่า > เครื่องพิมพ์ใบเสร็จ"));
   if (!printers.some((printer) => printer.name === config.deviceName)) {
-    throw new Error("ไม่พบเครื่องพิมพ์ที่บันทึกไว้ กรุณาตรวจการเชื่อมต่อหรือตั้งค่าเครื่องพิมพ์ใหม่");
+    throw new Error(posText("ไม่พบเครื่องพิมพ์ที่บันทึกไว้ กรุณาตรวจการเชื่อมต่อหรือตั้งค่าเครื่องพิมพ์ใหม่"));
   }
   const health = printerHealth(printers.find(printer => printer.name === config.deviceName));
   if (health.status === "blocked") throw new Error(health.message);
   if (!Number.isFinite(heightPx) || heightPx <= 0 || heightPx > 100_000) {
-    throw new Error("ไม่สามารถจัดหน้าใบเสร็จได้");
+    throw new Error(posText("ไม่สามารถจัดหน้าใบเสร็จได้"));
   }
   return {
     silent: true, deviceName: config.deviceName, printBackground: true,
@@ -111,20 +113,20 @@ export const TEST_RECEIPT_HTML = `<div id="pos-receipt" style="font-family:monos
 export function createReceiptPrinter({ createWindow, getPrinters, getConfig, timeoutMs = 30_000 }) {
   let busy = false;
   return async function printReceipt(source, testPage = false, authorized = () => true) {
-    if (busy) return { ok: false, error: "กำลังส่งใบเสร็จไปเครื่องพิมพ์ กรุณารอสักครู่" };
+    if (busy) return { ok: false, error: posText("กำลังส่งใบเสร็จไปเครื่องพิมพ์ กรุณารอสักครู่") };
     busy = true;
     let printWindow;
     let timer;
     let cancelled = false;
     const check = () => {
-      if (cancelled || !authorized()) throw new Error("หน้าขายเปลี่ยนแล้ว กรุณาเปิดใบเสร็จและลองใหม่");
+      if (cancelled || !authorized()) throw new Error(posText("หน้าขายเปลี่ยนแล้ว กรุณาเปิดใบเสร็จและลองใหม่"));
     };
     try {
       const job = (async () => {
         check();
         const config = getConfig();
         const html = testPage ? TEST_RECEIPT_HTML : await source.executeJavaScript(RECEIPT_SNAPSHOT_SCRIPT);
-        if (typeof html !== "string" || html.length > 2_000_000) throw new Error("ใบเสร็จมีขนาดใหญ่เกินไป");
+        if (typeof html !== "string" || html.length > 2_000_000) throw new Error(posText("ใบเสร็จมีขนาดใหญ่เกินไป"));
         const printers = await getPrinters();
         check();
         receiptPrintOptions(config, printers, 1);
@@ -135,18 +137,25 @@ export function createReceiptPrinter({ createWindow, getPrinters, getConfig, tim
         const options = receiptPrintOptions(config, await getPrinters(), height);
         check();
         await new Promise((resolve, reject) => {
-          printWindow.webContents.print(options, (ok) => ok ? resolve() : reject(new Error("ส่งใบเสร็จไม่สำเร็จ กรุณาตรวจเครื่องพิมพ์และคิวพิมพ์")));
+          printWindow.webContents.print(options, (ok) => ok ? resolve() : reject(new Error(posText("ส่งใบเสร็จไม่สำเร็จ กรุณาตรวจเครื่องพิมพ์และคิวพิมพ์"))));
         });
       })();
       await Promise.race([job, new Promise((_, reject) => {
         timer = setTimeout(() => {
           cancelled = true;
-          reject(new Error("เครื่องพิมพ์ไม่ตอบกลับ กรุณาตรวจคิวพิมพ์ก่อนพิมพ์ซ้ำ"));
+          reject(new Error(posText("เครื่องพิมพ์ไม่ตอบกลับ กรุณาตรวจคิวพิมพ์ก่อนพิมพ์ซ้ำ")));
         }, timeoutMs);
       })]);
       return { ok: true };
     } catch (error) {
-      return { ok: false, error: error?.message || "พิมพ์ใบเสร็จไม่สำเร็จ" };
+      // executeJavaScript wraps errors with an Electron prefix. Only these two authored
+      // renderer failures are localized; OS diagnostics remain verbatim.
+      const scriptFailure = [
+        "ไม่พบใบเสร็จสำหรับพิมพ์",
+        "โหลดรูปบนใบเสร็จไม่สำเร็จ กรุณาตรวจโลโก้ร้านแล้วลองใหม่",
+      ].find((message) => error?.message?.endsWith(message));
+      if (scriptFailure) return { ok: false, error: posText(scriptFailure) };
+      return { ok: false, error: error?.message || posText("พิมพ์ใบเสร็จไม่สำเร็จ") };
     } finally {
       clearTimeout(timer);
       if (printWindow && !printWindow.isDestroyed()) printWindow.destroy();

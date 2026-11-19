@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../../i18n/language';
 import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -30,7 +31,7 @@ import {
   MobileRestaurantSetOrderingPausedDocument,
   PosBootstrapDocument,
 } from '../../graphql/generated';
-import { createIdempotencyKey } from '../../lib/operation';
+import { createIdempotencyKey, isDecidedRejection } from '../../lib/operation';
 import { useSession } from '../../state/SessionContext';
 import { useRestaurantOperations } from '../../state/RestaurantOperationsContext';
 import type { OrdersStackParamList } from '../../navigation/types';
@@ -39,13 +40,14 @@ import { getAppNavigation } from '../../navigation/parentNavigation';
 const CHANNEL_LABEL: Record<string, string> = {
   LINE: 'LINE',
   FACEBOOK: 'Facebook',
-  WEB: 'เว็บไซต์',
-  QR_TABLE: 'QR ที่โต๊ะ',
+  get WEB() { return posText("เว็บไซต์"); },
+  get QR_TABLE() { return posText("QR ที่โต๊ะ"); },
 };
 
 type Props = NativeStackScreenProps<OrdersStackParamList, 'IncomingOrders'>;
 
 export default function IncomingOrdersScreen({ navigation }: Props) {
+  usePosLanguage();
   const { colors, spacing, typography } = useTheme();
   const { isTablet } = useResponsive();
   const { visible: offlineBannerVisible } = useOfflineStatusBannerState();
@@ -67,6 +69,7 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
     useRestaurantOperations();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workingId, setWorkingId] = useState<string | null>(null);
+  const operationInFlight = useRef(false);
   const [managerId, setManagerId] = useState('');
   const [managerPin, setManagerPin] = useState('');
   const [cancelNote, setCancelNote] = useState('');
@@ -79,7 +82,8 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
   );
 
   const togglePaused = async () => {
-    if (!session || workingId) return;
+    if (!session || operationInFlight.current) return;
+    operationInFlight.current = true;
     setWorkingId('pause');
     try {
       const response = await setPaused({
@@ -93,14 +97,15 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
       });
       const result = response.data?.bmsPosRestaurantSetOrderingPaused;
       if (!result || result.reason)
-        throw new Error(result?.reason ?? 'เปลี่ยนสถานะรับออร์เดอร์ไม่สำเร็จ');
-      await refresh();
+        throw new Error(result?.reason ?? posText("เปลี่ยนสถานะรับออร์เดอร์ไม่สำเร็จ"));
+      await refresh().catch(() => undefined);
     } catch (cause) {
       Alert.alert(
-        'ทำรายการไม่สำเร็จ',
-        cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
+        posText("ทำรายการไม่สำเร็จ"),
+        cause instanceof Error ? cause.message : posText("กรุณาลองใหม่"),
       );
     } finally {
+      operationInFlight.current = false;
       setWorkingId(null);
     }
   };
@@ -110,7 +115,8 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
     orderItemId: number,
     qty: number,
   ) => {
-    if (!session || workingId) return;
+    if (!session || operationInFlight.current) return;
+    operationInFlight.current = true;
     const intent = `${order.id}:${orderItemId}`;
     const idempotencyKey =
       cancelKeys.current[intent] ??
@@ -140,42 +146,48 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
         },
       });
       const result = response.data?.bmsPosRestaurantCancelOrderLines;
+      if (!result || typeof result.status !== 'string' || !result.status.trim()) {
+        throw new Error(posText("ยังไม่ได้รับผลยืนยันการยกเลิก กรุณาตรวจสถานะก่อนทำซ้ำ"));
+      }
       if (
-        !result ||
         result.reason ||
         !['RETURNED', 'CANCELLED', 'COMPLETED'].includes(result.status ?? '')
       ) {
         delete cancelKeys.current[intent];
         throw new Error(
-          result?.reason ?? result?.status ?? 'ยกเลิกรายการไม่สำเร็จ',
+          result?.reason ?? result?.status ?? posText("ยกเลิกรายการไม่สำเร็จ"),
         );
       }
       delete cancelKeys.current[intent];
-      await refresh();
+      await refresh().catch(() => undefined);
     } catch (cause) {
+      if (isDecidedRejection(cause)) delete cancelKeys.current[intent];
       Alert.alert(
-        'ยกเลิกรายการไม่สำเร็จ',
-        cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
+        posText("ยกเลิกรายการไม่สำเร็จ"),
+        cause instanceof Error ? cause.message : posText("กรุณาลองใหม่"),
       );
     } finally {
+      operationInFlight.current = false;
       setWorkingId(null);
     }
   };
 
   const onAccept = async (order: PosIncomingOrder) => {
-    if (workingId) return;
+    if (operationInFlight.current) return;
+    operationInFlight.current = true;
     setWorkingId(order.id);
-    const result = await acceptOrder(order.id);
-    setWorkingId(null);
-    if (typeof result === 'string') {
-      Alert.alert('รับออร์เดอร์ไม่สำเร็จ', result);
-      return;
+    try {
+      const result = await acceptOrder(order.id);
+      if (typeof result === 'string') {
+        Alert.alert(posText("รับออร์เดอร์ไม่สำเร็จ"), result);
+        return;
+      }
+      acknowledge();
+      Alert.alert(posText("รับออร์เดอร์แล้ว"), posText("ส่งเข้าครัว {v0} ตั๋ว", { v0: result.ticketsCreated }));
+    } finally {
+      operationInFlight.current = false;
+      setWorkingId(null);
     }
-    acknowledge();
-    Alert.alert(
-      'รับออร์เดอร์แล้ว',
-      `ส่งเข้าครัว ${result.ticketsCreated} ตั๋ว`,
-    );
   };
 
   return (
@@ -191,19 +203,18 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
       >
         <View style={styles.headerText}>
           <Text style={[typography.title, { color: colors.text }]}>
-            ออร์เดอร์เข้า
-          </Text>
+            {posText("ออร์เดอร์เข้า") + " "}</Text>
           <Text style={[typography.caption, { color: colors.textMuted }]}>
             {loading
-              ? 'กำลังโหลด…'
-              : `รอรับ ${pending.length} ใบ · ทั้งหมด ${orders.length} ใบ`}
+              ? posText("กำลังโหลด…")
+              : posText("รอรับ {v0} ใบ · ทั้งหมด {v1} ใบ", { v0: pending.length, v1: orders.length })}
           </Text>
         </View>
         <View style={styles.headerTools}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={
-              settings.enabled ? 'ตั้งค่าการแจ้งเตือน' : 'เปิดการแจ้งเตือน'
+              settings.enabled ? posText("ตั้งค่าการแจ้งเตือน") : posText("เปิดการแจ้งเตือน")
             }
             onPress={() => setSettingsOpen(true)}
             style={({ pressed }) => [
@@ -220,12 +231,11 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
               size={22}
             />
             <Text style={[styles.toolLabel, { color: colors.text }]}>
-              แจ้งเตือน
-            </Text>
+              {posText("แจ้งเตือน") + " "}</Text>
           </Pressable>
           <Pressable
             accessibilityRole="switch"
-            accessibilityLabel="พักรับออร์เดอร์ออนไลน์"
+            accessibilityLabel={posText("พักรับออร์เดอร์ออนไลน์")}
             accessibilityState={{
               checked: orderingPaused,
               disabled: Boolean(workingId),
@@ -258,15 +268,13 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
               />
             )}
             <Text style={[styles.toolLabel, { color: colors.text }]}>
-              พักรับออนไลน์
-            </Text>
+              {posText("พักรับออนไลน์") + " "}</Text>
           </Pressable>
         </View>
       </View>
       {orderingPaused ? (
         <Text style={[typography.captionStrong, { color: colors.warning }]}>
-          หยุดรับออร์เดอร์ออนไลน์ชั่วคราว
-        </Text>
+          {posText("หยุดรับออร์เดอร์ออนไลน์ชั่วคราว") + " "}</Text>
       ) : null}
       {/* คิว · QR · เรียกพนักงาน · คำขอจากแชท เป็นงานชนิดเดียวกับออร์เดอร์เข้า — "มีคนรอเราตอบ"
           จึงอยู่ใต้แท็บเดียวกัน · เลขบนปุ่มคือเลขเดียวกับที่รวมเป็น badge บนแถบล่าง
@@ -290,7 +298,7 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
           ]}
         >
           <Text style={[typography.bodyStrong, { color: colors.text }]}>
-            คิว {activeWaitlistCount}
+            {posText("คิว") + " "}{activeWaitlistCount}
           </Text>
         </Pressable>
         <Pressable
@@ -326,7 +334,7 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
           ]}
         >
           <Text style={[typography.bodyStrong, { color: colors.text }]}>
-            เรียก {pendingServiceCallCount}
+            {posText("คำขอเรียกพนักงาน") + " "}{pendingServiceCallCount}
           </Text>
         </Pressable>
       </View>
@@ -334,7 +342,7 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
         <TextInput
           value={cancelNote}
           onChangeText={setCancelNote}
-          placeholder="หมายเหตุกรณียกเลิกรายการออนไลน์"
+          placeholder={posText("หมายเหตุกรณียกเลิกรายการออนไลน์")}
           placeholderTextColor={colors.textSoft}
           style={[
             styles.input,
@@ -355,7 +363,7 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
           <TextInput
             value={managerPin}
             onChangeText={setManagerPin}
-            placeholder="PIN ผู้จัดการ"
+            placeholder={posText("PIN ผู้จัดการ")}
             keyboardType="number-pad"
             secureTextEntry
             placeholderTextColor={colors.textSoft}
@@ -368,7 +376,7 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
       </View>
       {error ? (
         <Button
-          label={`${error} · ลองใหม่`}
+          label={posText("{v0} · ลองใหม่", { v0: error })}
           variant="danger"
           fullWidth
           onPress={() => refresh()}
@@ -376,8 +384,7 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
       ) : null}
       {!soundAvailable && settings.sound ? (
         <Text style={[typography.caption, { color: colors.warning }]}>
-          เครื่องนี้แจ้งเตือนด้วยการสั่นและแถบบนจอ
-        </Text>
+          {posText("เครื่องนี้แจ้งเตือนด้วยการสั่นและแถบบนจอ") + " "}</Text>
       ) : null}
       <FlatList
         data={orders}
@@ -394,11 +401,9 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
           <View style={styles.emptyState}>
             <OrdersIcon color={colors.textMuted} size={46} />
             <Text style={[typography.subtitle, { color: colors.text }]}>
-              ไม่มีออร์เดอร์ออนไลน์ในคิว
-            </Text>
+              {posText("ไม่มีออร์เดอร์ออนไลน์ในคิว") + " "}</Text>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
-              รายการใหม่จะแสดงที่นี่
-            </Text>
+              {posText("รายการใหม่จะแสดงที่นี่") + " "}</Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -408,7 +413,7 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
                 {item.customerName}
               </Text>
               <StatusPill
-                label={item.status === 'PAID' ? 'รอรับ' : item.status}
+                label={item.status === 'PAID' ? posText("รอรับ") : item.status}
                 tone={item.status === 'PAID' ? 'warning' : 'success'}
               />
             </View>
@@ -427,7 +432,7 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
                   </Text>
                   {item.status !== 'PAID' ? (
                     <Button
-                      label="หมด / ยกเลิก"
+                      label={posText("หมด / ยกเลิก")}
                       variant="danger"
                       loading={workingId === `cancel-${line.orderItemId}`}
                       onPress={() =>
@@ -450,13 +455,13 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
               ]}
             >
               <Text style={[typography.subtitle, { color: colors.text }]}>
-                ฿{item.amountDue.toFixed(2)}
+                {posText("฿")}{item.amountDue.toFixed(2)}
               </Text>
             </View>
             {item.status === 'PAID' ? (
               <Button
                 label={
-                  workingId === item.id ? 'กำลังรับ…' : 'รับออร์เดอร์และส่งครัว'
+                  workingId === item.id ? posText("กำลังรับ…") : posText("รับออร์เดอร์และส่งครัว")
                 }
                 fullWidth
                 disabled={Boolean(workingId)}

@@ -12,14 +12,17 @@ import { AiMeteredOutputError, meteredUsage } from "./aiMetering";
 // =============================================================
 
 import type { StockResult } from "./stock";
+import { formatGeneratedCustomerReply } from "./customerReplyPresentation";
 import { getTenantAiConfig } from "./aiConfig";
 import { finalizeAiUsageEvent, recordAiFallback, recordAiProviderAttempt, recordByokAiUsage, tryConsumeAiQuota, type AiUsageContext } from "./aiUsage";
 import {
+  AiVisionModelError,
   callAnthropicCompatibleMessages,
   isSensitiveAiRoutingContext,
   resolveSharedAiProvider,
   resolveSharedAiProviderDecision,
   resolveTenantByokProvider,
+  supportsAiImageInput,
   type AiProvider,
 } from "./aiProvider";
 
@@ -127,7 +130,8 @@ async function generateAiReply(
       system:
         "คุณเป็นแอดมินร้านค้าออนไลน์ ตอบลูกค้าเป็นภาษาไทย สุภาพ กระชับ เป็นกันเอง " +
         "ใช้ข้อมูลสต็อกที่ให้เท่านั้น ห้ามเดา/แต่งตัวเลขสต็อกหรือราคาเอง " +
-        "ถ้ามีของให้ชวนปิดการขาย ถ้าหมดให้เสนอไซซ์อื่น",
+        "ถ้ามีของให้ชวนปิดการขาย ถ้าหมดให้เสนอไซซ์อื่น " +
+        "ตอบเป็นข้อความล้วน เว้นบรรทัดเมื่อเปลี่ยนเรื่อง ไม่ใช้หัวข้อหรือสัญลักษณ์ Markdown",
       messages: [
         {
           role: "user",
@@ -198,6 +202,9 @@ export async function resolveAiCredentials(tenantId: string, usageCtx?: AiUsageC
       own.model,
       own.provider
     );
+    if (usageCtx?.requiresVision && !supportsAiImageInput(byok.provider, byok.model)) {
+      throw new AiVisionModelError("โมเดล AI ที่ร้านตั้งค่าไว้ไม่รองรับการอ่านภาพ กรุณาให้ผู้ดูแลเลือกโมเดลที่รองรับภาพ");
+    }
     const eventId = await recordByokAiUsage(tenantId, {
       surface: usageCtx?.surface,
       feature: usageCtx?.feature,
@@ -237,6 +244,9 @@ export async function resolveAiCredentials(tenantId: string, usageCtx?: AiUsageC
     );
   }
   if (shared) {
+    if (usageCtx?.requiresVision && !supportsAiImageInput(shared.provider, shared.model)) {
+      throw new AiVisionModelError("โมเดล AI ส่วนกลางยังไม่รองรับการอ่านภาพ กรุณาแจ้งผู้ดูแลระบบ");
+    }
     const withinQuota = await tryConsumeAiQuota(tenantId, {
       surface: usageCtx?.surface,
       feature: usageCtx?.feature,
@@ -286,7 +296,7 @@ export async function generateResponse(
         cacheCreationInputTokens: parsed.cacheCreationInputTokens,
       });
     }
-    return parsed.text;
+    return formatGeneratedCustomerReply(parsed.text);
   } catch (err) {
     if (creds.usageEventId) {
       await finalizeAiUsageEvent(creds.usageEventId, {

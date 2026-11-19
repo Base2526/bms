@@ -105,11 +105,16 @@ Receive → Detect Intent → Extract Entities → Select Tool
 | **Purchase** ✅ | Supplier POs, receive / partial receive, supplier history — `OPEN → PARTIAL → RECEIVED` (stock-in on receive) |
 | **Payment** ✅ | Bank transfer, QR, card, TikTok Pay, cash — payment records + confirm/reject/refund + AI slip verification (`verifyPaymentSlip`, advisory only) |
 | **POS** ✅ | Browser, Mobile, and Desktop surfaces share one server settlement path; Mobile adds bounded Emergency Offline Mode for plain retail cash sales |
-| **Shipping** ✅ | Flash, Kerry, DHL, Australia Post, NZ Post — shipments, tracking, status flow, label (`createShipment`/`updateTracking`); `DELIVERED → order COMPLETED` |
+| **Shipping** ✅ | Shipments, tracking numbers, status flow and labels for Flash, Kerry, DHL, Australia Post, NZ Post or other carriers (`createShipment`/`updateTracking`); `DELIVERED → order COMPLETED`. 🧪 Flash/Kerry live booking adapters are mock-ready only — no verified merchant API contract yet ([carriers.md](docs/integrations/carriers.md)) |
 | **Reports** ✅ | Dashboard + date-range **sales summary** (by day/status/channel), **inventory summary** (stock value, low/out-of-stock), **top sellers** — `/admin/reports` |
 
 > ⚠️ **Every stock change must create a Stock Movement record.** Never update
 > stock without logging the movement.
+
+This table is a short overview. The current build status (including restaurant, board-game cafe,
+Thai tax documents, Retail Local and bank reconciliation, and what is still 🧪 not
+production-ready) is kept in [CLAUDE.md § Current status](CLAUDE.md) and
+[docs/feature-inventory.md](docs/feature-inventory.md).
 
 ---
 
@@ -378,10 +383,14 @@ Pipeline ของ AI ใช้ร่วมกันได้ทุกช่อ�
 | **Purchase** ✅ | ใบสั่งซื้อผู้ขาย, รับของ / รับบางส่วน, ประวัติซัพพลายเออร์ — `OPEN → PARTIAL → RECEIVED` (สต็อกเข้าตอนรับของ) |
 | **Payment** ✅ | โอน, QR, บัตร, TikTok Pay, เงินสด — บันทึกการชำระ + ยืนยัน/ปฏิเสธ/คืนเงิน + ตรวจสลิปด้วย AI (`verifyPaymentSlip` แนะนำเท่านั้น) |
 | **POS** ✅ | หน้า Browser, Mobile และ Desktop ใช้ Server settlement เดียวกัน; Mobile เพิ่ม Emergency Offline Mode แบบจำกัดสำหรับการขายปลีกธรรมดาที่รับเงินสด |
-| **Shipping** ✅ | Flash, Kerry, DHL, Australia Post, NZ Post — จัดส่ง, tracking, สถานะ, label (`createShipment`/`updateTracking`); `DELIVERED → order COMPLETED` |
+| **Shipping** ✅ | บันทึกการจัดส่ง เลข tracking สถานะ และ label ของ Flash, Kerry, DHL, Australia Post, NZ Post หรือขนส่งอื่น (`createShipment`/`updateTracking`); `DELIVERED → order COMPLETED` · 🧪 การจองขนส่งอัตโนมัติของ Flash/Kerry ยังเป็น adapter แบบ mock — ยังไม่มีสัญญา merchant API ที่ยืนยันแล้ว ([carriers.md](docs/integrations/carriers.md)) |
 | **Reports** ✅ | Dashboard + รายงานยอดขายตามช่วงวันที่ (รายวัน/สถานะ/ช่องทาง), สรุปสต็อก (มูลค่า, ใกล้หมด/หมด), สินค้าขายดี — `/admin/reports` |
 
 > ⚠️ **ทุกการเปลี่ยนสต็อกต้องสร้าง Stock Movement** ห้ามอัปเดตสต็อกโดยไม่บันทึก
+
+ตารางนี้เป็นภาพรวมย่อ สถานะการสร้างฟีเจอร์ปัจจุบัน (รวมร้านอาหาร ร้านบอร์ดเกม เอกสารภาษีไทย Retail Local
+การกระทบยอดธนาคาร และรายการ 🧪 ที่ยังไม่พร้อม production) อยู่ที่ [CLAUDE.md § Current status](CLAUDE.md)
+และ [docs/feature-inventory.md](docs/feature-inventory.md)
 
 ---
 

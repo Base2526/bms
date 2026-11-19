@@ -9,6 +9,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18nContext";
 import { WORK_ASSISTANT_CONFIRM_MUTATIONS } from "./confirmMutations";
 import CustomerMergeReviewModal from "@/components/CustomerMergeReviewModal";
+import { AssistantImageAttachmentControls, AssistantSentImage, useAssistantImageAttachment } from "./AssistantImageAttachment";
+import { AssistantAnswer } from "./AssistantAnswer";
 
 const WORK_ASSISTANT = gql`
   mutation BmsWorkAssistant($input: BmsWorkAssistantInput!) {
@@ -39,6 +41,8 @@ type AssistantLink = { label: string; path: string };
 type ChatMessage = {
   role: "user" | "assistant";
   text: string;
+  imageName?: string;
+  imagePreviewUrl?: string;
   createdAt?: string;
   answerType?: string;
   citations?: Citation[];
@@ -62,7 +66,7 @@ function pageIdFromPath(pathname: string): string | null {
 }
 
 function persisted(messages: ChatMessage[]): ChatMessage[] {
-  return messages.map(({ role, text, createdAt, answerType, citations, links }) => ({ role, text, createdAt, answerType, citations, links }));
+  return messages.map(({ role, text, imageName, createdAt, answerType, citations, links }) => ({ role, text, imageName, createdAt, answerType, citations, links }));
 }
 
 function dateTimeLabel(value: string | undefined, en: boolean): string {
@@ -78,13 +82,14 @@ function dateTimeLabel(value: string | undefined, en: boolean): string {
 export default function WorkAssistantDrawer() {
   const pathname = usePathname()!;
   const excluded = pathname === "/admin/login" || pathname === "/admin/assistant";
-  const { lang } = useI18n();
+  const { lang, t } = useI18n();
   const en = lang === "en";
   const client = useApolloClient();
   const { data: actorData } = useQuery(Q_WORK_ASSISTANT_ACTOR, { fetchPolicy: "cache-first", skip: excluded });
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const image = useAssistantImageAttachment(en);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [emailEdits, setEmailEdits] = useState<Record<string, string>>({});
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
@@ -122,16 +127,19 @@ export default function WorkAssistantDrawer() {
 
   const send = async (preset?: string) => {
     const text = String(preset ?? input).trim();
-    if (!text || sending) return;
+    if (!text || sending || (image.draft && !image.draft.confirmedBms)) return;
+    const attached = image.draft;
     const history = messages.map((item) => ({ role: item.role, text: item.text })).slice(-10);
-    setMessages((current) => [...current, { role: "user", text, createdAt: new Date().toISOString() }]);
-    setInput("");
+    setMessages((current) => [...current, { role: "user", text, imageName: attached?.file.name,
+      imagePreviewUrl: attached?.previewUrl, createdAt: new Date().toISOString() }]);
+    if (!attached) setInput("");
     setSending(true);
     try {
       const { data } = await client.mutate({
         mutation: WORK_ASSISTANT,
-        variables: { input: { message: text, history, currentPath: pathname, pageId, locale: en ? "en" : "th" } },
+        variables: { input: { message: text, image: attached?.file, imageBmsConfirmed: attached?.confirmedBms, history, currentPath: pathname, pageId, locale: en ? "en" : "th" } },
       });
+      if (attached) { image.takeDraft(); setInput(""); }
       const result = data?.bmsWorkAssistant;
       setMessages((current) => [...current, {
         role: "assistant",
@@ -144,7 +152,16 @@ export default function WorkAssistantDrawer() {
       }]);
     } catch (error: any) {
       const fallback = error?.message || (en ? "The assistant is temporarily unavailable." : "ผู้ช่วยใช้งานไม่ได้ชั่วคราว");
-      setMessages((current) => [...current, { role: "assistant", text: fallback, createdAt: new Date().toISOString() }]);
+      if (attached) {
+        setMessages((current) => {
+          const last = current.at(-1);
+          return last?.role === "user" && last.text === text && last.imagePreviewUrl === attached.previewUrl
+            ? current.slice(0, -1) : current;
+        });
+        toast.error(fallback);
+      } else {
+        setMessages((current) => [...current, { role: "assistant", text: fallback, createdAt: new Date().toISOString() }]);
+      }
     } finally {
       setSending(false);
     }
@@ -152,6 +169,7 @@ export default function WorkAssistantDrawer() {
 
   const clearChat = () => {
     setMessages([]);
+    image.releaseAll();
     setEmailEdits({});
     if (!storageKey) return;
     try {
@@ -299,7 +317,7 @@ export default function WorkAssistantDrawer() {
               okText={en ? "Clear" : "ล้าง"}
               cancelText={en ? "Cancel" : "ยกเลิก"}
               onConfirm={clearChat}
-              disabled={messages.length === 0}
+              disabled={messages.length === 0 || sending}
             >
               <Tooltip title={en ? "Clear chat" : "ล้างแชท"}>
                 <Button
@@ -307,7 +325,7 @@ export default function WorkAssistantDrawer() {
                   shape="circle"
                   icon={<DeleteOutlined />}
                   aria-label={en ? "Clear assistant chat" : "ล้างแชทผู้ช่วย"}
-                  disabled={messages.length === 0}
+                  disabled={messages.length === 0 || sending}
                 />
               </Tooltip>
             </Popconfirm>
@@ -326,10 +344,20 @@ export default function WorkAssistantDrawer() {
               </Button>
             </Space>
           ) : null}
-          {messages.map((item, messageIndex) => (
-            <div key={messageIndex} style={{ display: "flex", justifyContent: item.role === "user" ? "flex-end" : "flex-start", marginBottom: 12 }}>
+          {messages.map((item, messageIndex) => {
+            const preceding = messages[messageIndex - 1];
+            const answerImage = item.role === "assistant" && preceding?.role === "user" &&
+              preceding.imageName && preceding.imagePreviewUrl
+              ? { name: preceding.imageName, previewUrl: preceding.imagePreviewUrl } : null;
+            const following = messages[messageIndex + 1];
+            const imageShownWithAnswer = item.role === "user" && following?.role === "assistant" &&
+              Boolean(item.imagePreviewUrl);
+            return <div key={messageIndex} style={{ display: "flex", justifyContent: item.role === "user" ? "flex-end" : "flex-start", marginBottom: 12 }}>
               <div style={{ maxWidth: "92%", borderRadius: 14, padding: "10px 12px", background: item.role === "user" ? "var(--app-primary, #1677ff)" : "var(--app-surface-muted, #f5f5f5)", color: item.role === "user" ? "#fff" : "var(--app-text)", whiteSpace: "pre-wrap" }}>
-                <div>{item.text}</div>
+                <AssistantAnswer text={item.text} downloadLabel={t("admin_assistant.download_file")}
+                  image={answerImage} onPrimary={item.role === "user"} />
+                {item.role === "user" && item.imageName ? <AssistantSentImage name={item.imageName}
+                  previewUrl={imageShownWithAnswer ? undefined : item.imagePreviewUrl} en={en} /> : null}
                 {item.createdAt ? (
                   <div style={{ marginTop: 6, fontSize: 11, opacity: item.role === "user" ? 0.78 : 0.65, textAlign: item.role === "user" ? "right" : "left" }}>
                     {dateTimeLabel(item.createdAt, en)}
@@ -417,20 +445,26 @@ export default function WorkAssistantDrawer() {
                   );
                 })}
               </div>
-            </div>
-          ))}
+            </div>;
+          })}
           {sending ? <Typography.Text type="secondary">{en ? "Checking verified information…" : "กำลังตรวจข้อมูลที่ยืนยันได้…"}</Typography.Text> : null}
         </div>
-        <div style={{ padding: 12, borderTop: "1px solid var(--app-border, #ddd)" }}>
+        <div onDrop={image.dropImage} onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
+          style={{ padding: 12, borderTop: "1px solid var(--app-border, #ddd)", display: "flex", flexDirection: "column", gap: 8 }}>
+          <AssistantImageAttachmentControls en={en} draft={image.draft} error={image.error}
+            disabled={sending} onSelect={image.selectFile} onConfirmBms={image.confirmBms} onRemove={image.removeDraft} />
           <Space.Compact style={{ width: "100%" }}>
             <Input.TextArea
               value={input}
               onChange={(event) => setInput(event.target.value)}
+              onPaste={image.pasteImage}
               onPressEnter={(event) => { if (!event.shiftKey) { event.preventDefault(); send(); } }}
               autoSize={{ minRows: 1, maxRows: 4 }}
+              disabled={sending}
               placeholder={en ? "Ask about this page or the whole system" : "ถามเกี่ยวกับหน้านี้หรือทั้งระบบ"}
             />
-            <Button type="primary" icon={<SendOutlined />} loading={sending} onClick={() => send()} />
+            <Button type="primary" icon={<SendOutlined />} loading={sending} disabled={!input.trim() || Boolean(image.draft && !image.draft.confirmedBms)}
+              aria-label={en ? "Send question" : "ส่งคำถาม"} onClick={() => send()} />
           </Space.Compact>
         </div>
       </Drawer>

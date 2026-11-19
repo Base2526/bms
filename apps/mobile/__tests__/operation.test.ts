@@ -70,3 +70,31 @@ describe('operation keys and server verdicts', () => {
     ).rejects.toThrow('เซิร์ฟเวอร์ไม่ตอบภายใน 1 วินาที');
   });
 });
+
+describe('deadline independent of the HTTP transport', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  test('rejects even when transport ignores abort, and discards a late success', async () => {
+    let finish!: (value: string) => void;
+    let signal!: AbortSignal;
+    const work = jest.fn((requestSignal: AbortSignal) => {
+      signal = requestSignal;
+      return new Promise<string>(resolve => {
+        finish = resolve;
+      });
+    });
+    const outcome = jest.fn();
+    const pending = runWithOperationTimeout(work, 100).then(outcome, outcome);
+    await jest.advanceTimersByTimeAsync(100);
+    expect(signal.aborted).toBe(true);
+    expect(outcome).toHaveBeenCalledTimes(1);
+    expect(outcome.mock.calls[0][0].name).toBe('PosConnectionError');
+    expect(isDecidedRejection(outcome.mock.calls[0][0])).toBe(false);
+    finish('late server result');
+    await pending;
+    expect(outcome).toHaveBeenCalledTimes(1);
+    expect(work).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+});

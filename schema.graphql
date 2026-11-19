@@ -436,6 +436,45 @@ type BmsArReceiptResult {
   status: String!
 }
 
+type BmsArStatement {
+  accountId: ID!
+  asOf: String!
+  balanceMismatch: Boolean!
+  cachedBalance: Float!
+  creditBalance: Float!
+  customerName: String
+  entries: [BmsArStatementEntry!]!
+  grossOutstanding: Float!
+  hasMoreEntries: Boolean!
+  hasMoreInvoices: Boolean!
+  invoices: [BmsArStatementInvoice!]!
+  ledgerBalance: Float!
+  overdueAmount: Float!
+}
+
+type BmsArStatementEntry {
+  amount: Float!
+  createdAt: String!
+  id: ID!
+  invoiceId: ID!
+  kind: String!
+  orderId: ID
+  receiptId: ID
+}
+
+type BmsArStatementInvoice {
+  balance: Float!
+  credits: Float!
+  docNo: String
+  dueAt: String!
+  id: ID!
+  issuedAt: String!
+  orderId: ID!
+  originalAmount: Float!
+  overdue: Boolean!
+  payments: Float!
+}
+
 type BmsArWriteOffResult {
   amount: Float!
   balanceAfter: Float!
@@ -505,6 +544,149 @@ type BmsAuditEntry {
   id: ID!
   meta: JSON
   target: String
+}
+
+type BmsAuditTimelineEvent {
+  action: String!
+  actor: String
+  actorUserId: ID
+  created_at: String!
+  id: ID!
+  meta: JSON
+  outcome: String
+  source: String!
+  target: String
+}
+
+input BmsAuditTimelineFilter {
+  actorUserId: ID
+  cursor: String
+  from: String
+  limit: Int
+  q: String
+  to: String
+}
+
+type BmsAuditTimelinePage {
+  nextCursor: String
+  nodes: [BmsAuditTimelineEvent!]!
+}
+
+type BmsBankAccount {
+  accountLast4: String!
+  bankCode: String!
+  createdAt: String
+  currency: String!
+  defaultLocationId: ID
+  displayName: String!
+  id: ID!
+  status: String!
+}
+
+input BmsBankEntryListInput {
+  accountId: ID
+  limit: Int
+  month: String
+  offset: Int
+  status: String
+}
+
+type BmsBankMatchCandidate {
+  amount: String!
+  confidence: Int!
+  label: String!
+  reference: String
+  ruleCode: String!
+  sourceDate: String!
+  sourceFingerprint: String!
+  sourceKey: String!
+  sourceType: String!
+}
+
+type BmsBankMutationResult {
+  id: ID!
+  replayed: Boolean
+  status: String!
+}
+
+type BmsBankPeriodMutationResult {
+  bankAccountId: ID!
+  periodMonth: String!
+  status: String!
+  version: Int!
+}
+
+type BmsBankReconciliationLink {
+  confidence: Int!
+  confirmedAt: String!
+  id: ID!
+  matchedAmount: String!
+  ruleCode: String!
+  sourceKey: String!
+  stale: Boolean!
+  status: String!
+  voidReason: String
+  voidedAt: String
+}
+
+type BmsBankReconciliationPeriod {
+  bankAccountId: ID!
+  closedAt: String
+  closingBalance: String
+  openingBalance: String
+  periodMonth: String!
+  reopenReason: String
+  reopenedAt: String
+  status: String!
+  version: Int!
+}
+
+type BmsBankReconciliationReadiness {
+  deterministicMatching: Boolean!
+  enabled: Boolean!
+  fileImport: Boolean!
+  humanConfirmationRequired: Boolean!
+  openBanking: String!
+  sourceMutation: Boolean!
+  supportedFormats: [String!]!
+}
+
+type BmsBankReconciliationSummary {
+  matchedAmount: String!
+  matchedCount: Int!
+  netMovement: String!
+  totalCount: Int!
+  unresolvedCount: Int!
+}
+
+type BmsBankStatementEntry {
+  amount: String!
+  balanceAfter: String
+  bankAccountId: ID!
+  counterpartyMasked: String
+  description: String!
+  direction: String!
+  id: ID!
+  importId: ID!
+  matchedAmount: String!
+  postedOn: String!
+  reference: String
+  status: String!
+}
+
+type BmsBankStatementImport {
+  accountLast4: String!
+  accountName: String!
+  bankAccountId: ID!
+  committedAt: String
+  createdAt: String!
+  id: ID!
+  originalFilename: String!
+  periodEnd: String!
+  periodStart: String!
+  rowCount: Int!
+  status: String!
+  voidReason: String
 }
 
 type BmsBilling {
@@ -734,7 +916,7 @@ type BmsBusinessDoc {
   shippingFee: Float
   store: BmsStoreSummary!
   subtotal: Float!
-  total: Float!
+  total: Float
   type: String!
 }
 
@@ -1173,6 +1355,13 @@ input BmsCommissionRuleInput {
   scope: String
 }
 
+input BmsConfirmBankMatchInput {
+  entryId: ID!
+  matchedAmount: String!
+  sourceFingerprint: String!
+  sourceKey: String!
+}
+
 type BmsControlReport {
   absoluteCashVariance: Float!
   cashIn: Float!
@@ -1210,6 +1399,7 @@ type BmsConversation {
   sourceDisplayName: String
   sourceHandle: String
   status: BmsConvStatus!
+  supportsOutboundPush: Boolean!
   systemEvents(limit: Int): [BmsSystemEvent!]!
   tags: [String!]!
   unread: Int!
@@ -1388,6 +1578,14 @@ type BmsCouponSummary {
   discountThisMonth: Float!
   redemptionsThisMonth: Int!
   topCoupons: [BmsTopCoupon!]!
+}
+
+input BmsCreateBankAccountInput {
+  accountNumber: String!
+  bankCode: String!
+  currency: String
+  defaultLocationId: ID
+  displayName: String!
 }
 
 input BmsCreateExpenseDocumentInput {
@@ -1985,6 +2183,55 @@ type BmsExpiringPointsRow {
   memberNo: String
   name: String!
   phone: String
+}
+
+input BmsFactoryBomInput {
+  confirmed: Boolean!
+  expectedActiveVersion: Int!
+  idempotencyKey: String!
+  ingredients: [BmsProductionIngredient!]!
+  outputQty: Int!
+  outputSize: String!
+  outputSku: String!
+  sopSteps: [String!]!
+}
+
+input BmsFactoryDemandInput {
+  action: String!
+  confirmed: Boolean!
+  customerId: ID
+  dueAt: String
+  id: ID
+  idempotencyKey: String!
+  locationId: ID
+  note: String
+  outputSize: String
+  outputSku: String
+  qty: Int
+  version: Int
+}
+
+input BmsFactoryMachineInput {
+  active: Boolean!
+  code: String!
+  confirmed: Boolean!
+  id: ID
+  idempotencyKey: String!
+  locationId: ID!
+  name: String!
+  version: Int
+}
+
+input BmsFactoryQcPolicyInput {
+  confirmed: Boolean!
+  dueMinutes: Int!
+  idempotencyKey: String!
+  locationId: ID!
+  required: Boolean!
+  reviewerId: ID
+  size: String!
+  sku: String!
+  version: Int!
 }
 
 type BmsFeatureAccess {
@@ -2588,6 +2835,11 @@ type BmsKitchenTicket {
   orderId: ID
   orderItemId: ID!
   packQty: Int
+
+  """
+  Pickup queue number of a counter/take-away sale (10.111), e.g. 042; null when none was issued.
+  """
+  pickupQueueLabel: String
   productName: String!
   productSku: String!
   qty: Int!
@@ -2648,6 +2900,7 @@ type BmsLocation {
   pharmacistName: String
   pharmacyLicenseNo: String
   phone: String
+  pickupQueue: BmsLocationPickupQueueSettings!
   postcode: String
   province: String
   provinceCode: String
@@ -2666,6 +2919,7 @@ input BmsLocationInput {
   name: String!
   parking: BmsLocationParkingInput
   phone: String
+  pickupQueue: BmsLocationPickupQueueSettingsInput
   postcode: String
   provinceCode: String
   subdistrictCode: String
@@ -2687,6 +2941,34 @@ input BmsLocationParkingInput {
   motorcycleSpaces: Int
   published: Boolean!
   status: BmsParkingStatus!
+}
+
+type BmsLocationPickupQueueSettings {
+  autoHideMinutes: Int!
+  boardMessage: String
+  enabled: Boolean!
+  prefix: String!
+  showPreparing: Boolean!
+  spotlightSeconds: Int!
+  startNo: Int!
+  voiceLanguage: String!
+  voiceMode: String!
+  voiceRepeat: Int!
+  voiceVolume: Int!
+}
+
+input BmsLocationPickupQueueSettingsInput {
+  autoHideMinutes: Int!
+  boardMessage: String
+  enabled: Boolean!
+  prefix: String!
+  showPreparing: Boolean!
+  spotlightSeconds: Int!
+  startNo: Int!
+  voiceLanguage: String!
+  voiceMode: String!
+  voiceRepeat: Int!
+  voiceVolume: Int!
 }
 
 type BmsLotMismatch {
@@ -3306,6 +3588,19 @@ type BmsMessageAttachment {
   url: String!
 }
 
+type BmsMessengerProfile {
+  greeting: String!
+  lastError: String
+  publishedAt: String
+  starterPayloads: [String!]!
+  status: String!
+}
+
+input BmsMessengerProfileInput {
+  greeting: String!
+  starterPayloads: [String!]!
+}
+
 type BmsMobileCommissionReport {
   from: String!
   noRulesConfigured: Boolean!
@@ -3708,7 +4003,9 @@ type BmsOrder {
   posShiftId: ID
   preferred_carrier: BmsCarrier
   promisedAt: String
+  quoteSiteAddress: String
   registeredPosNo: String
+  retailFulfillmentType: String
   shipping_fee: Float!
   status: BmsOrderStatus!
   total_amount: Float!
@@ -5644,6 +5941,7 @@ type BmsPosLocationSummary {
   id: ID!
   name: String!
   pharmacistName: String
+  pickupQueue: BmsLocationPickupQueueSettings!
   vatCode: String
 }
 
@@ -5754,6 +6052,13 @@ type BmsPosNoSalesResult {
   noSales: [BmsPosNoSale!]!
 }
 
+input BmsPosOpenItemInput {
+  label: String!
+  qty: Int!
+  unitAmount: Float!
+  vatCategory: String!
+}
+
 type BmsPosOperationalReadiness {
   activeDevices: Int!
   activeLocations: Int!
@@ -5804,6 +6109,7 @@ type BmsPosParkedCart {
   extraLines: [BmsPosParkedExtraLine!]
   lines: [BmsPosParkedCartLine!]!
   member: BmsPosParkedCartMember
+  openItems: [BmsPosParkedOpenItem!]
   pharmacyReview: BmsPosParkedCartPharmacyReview
   pointsToRedeem: String
   version: Int!
@@ -5852,6 +6158,13 @@ type BmsPosParkedCartPharmacyReview {
 type BmsPosParkedExtraLine {
   label: String!
   unitAmount: String!
+}
+
+type BmsPosParkedOpenItem {
+  label: String!
+  qty: Int!
+  unitAmount: Float!
+  vatCategory: String!
 }
 
 type BmsPosParkedPharmacyReview {
@@ -5936,6 +6249,43 @@ type BmsPosPharmacyReviewResult {
   status: String!
 }
 
+input BmsPosPickupQueueActionInput {
+  """
+  call | unready | collect | cancel — or issue (with orderId) to retry a number a committed sale did not get
+  """
+  action: String!
+  cashierUserId: ID!
+
+  """Required for call/unready/collect/cancel."""
+  entryId: ID
+
+  """
+  Required for issue: the committed sale of this till that should get a pickup number.
+  """
+  orderId: ID
+  pin: String!
+}
+
+"""
+One open pickup number at this till's branch. Carries no customer identity.
+"""
+type BmsPosPickupQueueEntry {
+  calledAt: String
+  createdAt: String!
+  id: ID!
+  label: String!
+  readyAt: String
+  readySource: String
+  status: String!
+}
+
+"""Pickup queue number issued after a committed sale (10.111)."""
+type BmsPosPickupQueueNumber {
+  id: ID!
+  label: String!
+  queueNo: Int!
+}
+
 type BmsPosPriceTier {
   discountPct: Float
   minQty: Int!
@@ -5982,6 +6332,9 @@ type BmsPosReceipt {
   paymentMethod: String
   paymentRef: String
   payments: [BmsPosReceiptPayment!]!
+
+  """Pickup queue number printed on the original receipt (10.111)."""
+  pickupQueueLabel: String
   pointsBalance: Float
   pointsEarned: Float
   pointsExpireAt: String
@@ -6095,6 +6448,7 @@ input BmsPosReceivePurchaseLineInput {
   qty: Int!
   size: String!
   sku: String!
+  supplierQty: Int
 }
 
 type BmsPosRecentReturnSummary {
@@ -6244,6 +6598,11 @@ input BmsPosRestaurantCheckActionInput {
   packCode: String
   packQty: Int
   payments: [BmsPosPaymentInput!]
+
+  """
+  Settle only: ask for a pickup number for a take-away check (10.111); branch policy may also enable it.
+  """
+  pickupQueue: Boolean
   pin: String!
   pointsToRedeem: Float
   reason: String
@@ -6265,6 +6624,8 @@ type BmsPosRestaurantCheckActionResult {
   kitchenTickets: Int
   movedItems: Int
   orderId: ID
+  pickupQueue: BmsPosPickupQueueNumber
+  pickupQueueError: String
   pointsBalance: Float
   pointsEarned: Float
   reason: String
@@ -6652,6 +7013,11 @@ input BmsPosRestaurantSettleCheckInput {
   discountReason: String
   manualDiscount: Float
   payments: [BmsPosPaymentInput!]!
+
+  """
+  Ask for a pickup number for a take-away check (10.111); branch policy may also enable it and dine-in checks never get one.
+  """
+  pickupQueue: Boolean
   pin: String!
   pointsToRedeem: Float
 }
@@ -6832,12 +7198,18 @@ input BmsPosSaleInput {
   manualDiscount: Float
   mode: String
   offlineTenderedAt: String
+  openItems: [BmsPosOpenItemInput!]
   payments: [BmsPosPaymentInput!]!
   pharmacistAuthorizationNote: String
   pharmacistAuthorizerPin: String
   pharmacistAuthorizerUserId: ID
   pharmacyApprovedAssessmentId: ID
   pharmacyReviewAssessmentId: ID
+
+  """
+  Ask for a pickup queue number (10.111) after the sale commits. Branch policy may also enable it.
+  """
+  pickupQueue: Boolean
   pin: String!
   pointsToRedeem: Float
 }
@@ -6885,6 +7257,16 @@ type BmsPosSaleResult {
   maxQuantity: Int
   orderId: ID
   packCode: String
+
+  """
+  Present only when the sale asked for a pickup number and it was issued.
+  """
+  pickupQueue: BmsPosPickupQueueNumber
+
+  """
+  The sale succeeded but the number could not be issued; staff can retry with bmsPosPickupQueueAction issue.
+  """
+  pickupQueueError: String
   pointsBalance: Float
   pointsEarned: Float
   pointsUsed: Float
@@ -6918,6 +7300,11 @@ type BmsPosScanResult {
   baseQty: Float!
   imageUrl: String
   modifiers: [BmsPosModifier!]!
+
+  """
+  Server-derived: this product may be queued as a plain cash sale on native POS.
+  """
+  offlineRetailEligible: Boolean!
   packCode: String!
   packPrice: Float!
   packs: [BmsPosPackOption!]!
@@ -7163,6 +7550,8 @@ type BmsPosStoreReceiptSettings {
   address: String
   businessHours: String
   customerDisplayBackgroundUrl: String
+  customerDisplayPromoIntervalSeconds: Int!
+  customerDisplayPromoSlides: [String!]!
   logoUrl: String
   name: String
   paymentQr: BmsPosPaymentQr
@@ -7312,6 +7701,7 @@ input BmsProductImportRowInput {
   sku: String!
   stock_policy: String
   variant_codes: [String!]
+  vat_category: String
 }
 
 type BmsProductImportRowResult {
@@ -7606,11 +7996,17 @@ input BmsProductionInput {
   confirmed: Boolean!
   dueAt: String
   dutyKey: String
+  endedAt: String
+  energyKwh: Float
   expiryDate: String
+  factoryBomId: ID
+  factoryDemandId: ID
   id: ID
   idempotencyKey: String!
   ingredients: [BmsProductionIngredient!]
+  laborMinutes: Int
   locationId: ID
+  machineId: ID
   note: String
   outputSize: String
   outputSku: String
@@ -7618,16 +8014,19 @@ input BmsProductionInput {
   producedOn: String
   qty: Int
   recipeId: ID
+  rejectedQty: Int
+  startedAt: String
   templateId: ID
   version: Int
 }
 
 input BmsProductionPreviewInput {
+  factoryBomId: ID
   locationId: ID!
   outputSize: String!
   outputSku: String!
   plannedQty: Int!
-  recipeId: ID!
+  recipeId: ID
 }
 
 type BmsProfitDay {
@@ -7673,6 +8072,8 @@ input BmsPublishPriceInput {
 type BmsPurchaseItem {
   additionalCostNote: String
   additionalUnitCost: Float!
+  baseQtyPerSupplierUnit: Int
+  conversionEvidence: String
   landedUnitCost: Float!
   qtyOrdered: Int!
   qtyReceived: Int!
@@ -7680,12 +8081,16 @@ type BmsPurchaseItem {
   sku: String!
   supplierProductName: String
   supplierSku: String
+  supplierUnitName: String
+  supplierUnitQty: Int
   unitCost: Float!
 }
 
 input BmsPurchaseItemInput {
   additionalCostNote: String
   additionalUnitCost: Float
+  baseQtyPerSupplierUnit: Int
+  conversionEvidence: String
   leadTimeDays: Int
   minOrderQty: Int
   packQty: Int
@@ -7695,6 +8100,8 @@ input BmsPurchaseItemInput {
   supplierBarcode: String
   supplierProductName: String
   supplierSku: String
+  supplierUnitName: String
+  supplierUnitQty: Int
   unitCost: Float
 }
 
@@ -7808,6 +8215,7 @@ input BmsReceiveItemInput {
   qty: Int!
   size: String!
   sku: String!
+  supplierQty: Int
 }
 
 input BmsReceiveStockTransferInput {
@@ -8782,6 +9190,7 @@ type BmsSendReportResult {
 type BmsSendResult {
   delivered: Boolean!
   message: String
+  needsReview: Boolean!
   status: String!
 }
 
@@ -9046,6 +9455,8 @@ type BmsStoreProfile {
   country: String
   currency: String
   customerDisplayBackgroundUrl: String
+  customerDisplayPromoIntervalSeconds: Int!
+  customerDisplayPromoSlides: [String!]!
   district: String
   districtCode: String
   emailFooterText: String
@@ -9096,6 +9507,8 @@ input BmsStoreProfileInput {
   country: String
   currency: String
   customerDisplayBackgroundUrl: String
+  customerDisplayPromoIntervalSeconds: Int
+  customerDisplayPromoSlides: [String!]
   districtCode: String
   emailFooterText: String
   emailThemeColor: String
@@ -9122,6 +9535,7 @@ input BmsStoreProfileInput {
   shippingZoneRates: [BmsShippingZoneRateInput!]
   subdistrictCode: String
   taxId: String
+  tenantName: String
   timezone: String
   website: String
 }
@@ -9741,6 +10155,8 @@ type BmsVoidExpenseDocumentResult {
 input BmsWorkAssistantInput {
   currentPath: String
   history: [BmsAssistantTurn!]
+  image: Upload
+  imageBmsConfirmed: Boolean
   locale: String
   message: String!
   pageId: String
@@ -10015,6 +10431,7 @@ type Mutation {
   Licensed pharmacist only (users.is_licensed_pharmacist); version pins the text that was read
   """
   bmsApprovePharmacyGuidance(id: ID!, version: Int!): BmsPharmacyGuidanceTemplate!
+  bmsArchiveBankAccount(id: ID!): BmsBankMutationResult!
 
   """ปิดใช้งาน ไม่ใช่ลบ — force = ปิดทั้งที่ยังมีสินค้าเปิดขายผูกอยู่"""
   bmsArchiveKitchenStation(force: Boolean = false, id: ID!): BmsKitchenStation!
@@ -10025,7 +10442,8 @@ type Mutation {
   bmsBackfillEtaxQueue(limit: Int = 500): Int!
   bmsBookShipmentLive(id: ID!): BmsCarrierBookingResult!
   bmsBranchRequisitionCommand(input: BmsRequisitionCommandInput!): BmsRequisitionResult!
-  bmsCancelOrder(id: ID!): Boolean!
+  bmsCancelBranchPriceWindow(confirmed: Boolean!, id: ID!): BmsCostingActionResult!
+  bmsCancelOrder(confirmed: Boolean!, id: ID!): Boolean!
   bmsCancelPurchaseOrder(id: ID!): Boolean!
   bmsCancelRestockSubscription(id: ID!): Boolean!
   bmsCancelShipment(id: ID!): Boolean!
@@ -10036,12 +10454,16 @@ type Mutation {
   bmsChecklistCommand(input: BmsChecklistCommandInput!): BmsChecklistCommandResult!
   bmsChecklistFollowup(input: BmsChecklistFollowupInput!): BmsChecklistCommandResult!
   bmsClearKitchenStationSla(station: String!): Boolean!
+  bmsCloseBankReconciliationPeriod(accountId: ID!, confirmed: Boolean!, month: String!): BmsBankPeriodMutationResult!
   bmsClosePosShift(countedCash: Float!, note: String, shiftId: ID!): BmsCloseShiftResult!
   bmsCommissionRule(input: BmsCommissionRuleInput!): BmsMobileCommissionRuleActionResult!
+  bmsCommitBankStatementImport(confirmed: Boolean!, id: ID!): BmsBankMutationResult!
   bmsCompleteOrder(id: ID!): Boolean!
+  bmsConfirmBankMatch(confirmed: Boolean!, input: BmsConfirmBankMatchInput!): BmsBankMutationResult!
   bmsConfirmInventoryValue(input: BmsInventoryOpeningInput!): BmsCostingActionResult!
   bmsConfirmMenuNetProfit(input: BmsMenuProfitInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
-  bmsConfirmPayment(id: ID!): BmsPaymentResult!
+  bmsConfirmPayment(confirmed: Boolean!, id: ID!): BmsPaymentResult!
+  bmsCreateBankAccount(input: BmsCreateBankAccountInput!): BmsBankAccount!
   bmsCreateExpenseDocument(input: BmsCreateExpenseDocumentInput!): BmsExpenseDocument!
   bmsCreateInboxDiagnosticMessage(body: String, channel: String!): BmsInboxDiagnosticMessageResult!
   bmsCreateKitchenStation(input: BmsKitchenStationInput!): BmsKitchenStation!
@@ -10077,9 +10499,12 @@ type Mutation {
   bmsEscalateAssessmentToEmergency(assessmentId: ID!, reason: String!): BmsPharmacyAssessment!
   bmsExitTenant: Boolean!
   bmsExpireLoyaltyPoints: BmsLoyaltyExpireResult!
+  bmsFactoryDemandCommand(input: BmsFactoryDemandInput!): BmsChecklistCommandResult!
   bmsGenerateInStoreBarcode: String!
   bmsGenerateMedicationSuggestions(assessmentId: ID!): BmsPharmacyAssessment!
   bmsGenerateReport(input: BmsGenerateReportInput!): BmsGenerateReportResult!
+  bmsHandoverRetailPickup(confirmed: Boolean!, id: ID!): Boolean!
+  bmsIgnoreBankStatementEntry(confirmed: Boolean!, id: ID!, reason: String!): BmsBankMutationResult!
   bmsImportProducts(commit: Boolean = false, items: [BmsProductImportRowInput!]!): BmsProductImportResult!
   bmsImprovementCommand(input: BmsImprovementInput!): BmsChecklistCommandResult!
   bmsIssueFullTaxInvoice(buyer: BmsTaxInvoiceBuyerInput!, orderId: ID!): BmsIssueFullTaxInvoiceResult!
@@ -10088,7 +10513,7 @@ type Mutation {
   bmsIssueStoreCredit(input: BmsIssueStoreCreditInput!): BmsMobileStoreCreditActionResult!
   bmsManualFillAssessmentFields(assessmentId: ID!, fields: JSON!): BmsPharmacyAssessment!
   bmsMarkAllMentionsRead: Boolean!
-  bmsMarkConversationRead(id: ID!): Boolean!
+  bmsMarkConversationRead(id: ID!, observedLatestMessageId: ID): Boolean!
   bmsMarkMentionRead(id: ID!): Boolean!
   bmsMaterialCommand(input: BmsMaterialInput!): BmsChecklistCommandResult!
   bmsMergeCustomers(keepId: ID!, mergeId: ID!, review: BmsCustomerMergeReviewInput): Boolean!
@@ -10142,6 +10567,7 @@ type Mutation {
   bmsPosNoSale(input: BmsPosNoSaleInput!): BmsPosSimpleActionResult!
   bmsPosOpenBoardGameSession(input: BmsPosBoardGameOpenInput!): BmsPosBoardGameSessionSummary!
   bmsPosPark(input: BmsPosParkInput!): BmsPosParkActionResult!
+  bmsPosPickupQueueAction(input: BmsPosPickupQueueActionInput!): BmsPosPickupQueueEntry!
   bmsPosReceivePurchase(input: BmsPosReceivePurchaseInput!): BmsPurchaseResult!
   bmsPosReceiveStockTransfer(input: BmsPosStockTransferReceiveInput!): BmsMobileStockTransferActionResult!
   bmsPosRecordStockCountItem(input: BmsPosStockCountItemInput!): BmsMobileStockCountActionResult!
@@ -10195,11 +10621,12 @@ type Mutation {
   bmsPosVoid(input: BmsPosVoidInput!): BmsPosReturnActionResult!
   bmsProductionCommand(input: BmsProductionInput!): BmsChecklistCommandResult!
   bmsPublishMenuBundle(input: BmsMenuBundlePublicationInput!, review: BmsPricePublicationReview!): BmsPricePublicationResult!
+  bmsPublishMessengerProfile(input: BmsMessengerProfileInput!): BmsMessengerProfile!
   bmsPublishPricePlan(input: BmsPublishPriceInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
   bmsPublishProduct(sku: String!): BmsProductReadiness!
   bmsQualityCommand(input: BmsQualityInput!): BmsChecklistCommandResult!
   bmsReadAiLimitNotification(id: ID!): Boolean!
-  bmsReceivePurchaseOrder(id: ID!, idempotencyKey: String, items: [BmsReceiveItemInput!]!): BmsPurchaseResult!
+  bmsReceivePurchaseOrder(id: ID!, idempotencyKey: String, items: [BmsReceiveItemInput!]!, locationId: ID): BmsPurchaseResult!
   bmsReceiveStockTransfer(input: BmsReceiveStockTransferInput!): BmsMobileStockTransferActionResult!
 
   """
@@ -10220,6 +10647,7 @@ type Mutation {
   bmsRemoveConversationHelper(id: ID!, userId: ID!): Boolean!
   bmsRenameProductCategory(id: ID!, name: String!): BmsProductCategory!
   bmsRenameRestaurantArea(areaId: ID!, name: String!): BmsRestaurantArea!
+  bmsReopenBankReconciliationPeriod(accountId: ID!, confirmed: Boolean!, month: String!, reason: String!): BmsBankPeriodMutationResult!
   bmsReorderFromOrder(id: ID!): BmsReorderResult!
   bmsReorderRestaurantAreas(locationId: ID!, orderedAreaIds: [ID!]!): [BmsRestaurantArea!]!
   bmsReplaceProductPriceTiers(input: BmsReplacePriceTiersInput!): [BmsProductPriceTier!]!
@@ -10227,7 +10655,7 @@ type Mutation {
   bmsResetStoreCapability(capability: String!): BmsStoreCapability!
   bmsRetirePharmacyGuidance(id: ID!): BmsPharmacyGuidanceTemplate!
   bmsRetryMessage(id: ID!): BmsSendResult!
-  bmsReturnOrder(id: ID!): Boolean!
+  bmsReturnOrder(confirmed: Boolean!, id: ID!): Boolean!
   bmsReviewAiQualityCase(category: String!, id: ID!, note: String, verdict: String!): BmsAiQualityCaseDetail!
   bmsReviewAiSynonymCandidate(decision: String!, id: ID!, productSku: String): BmsAiSynonymCandidate!
   bmsReviewMasterBarcode(input: BmsMasterBarcodeReviewInput!): BmsMasterBarcode!
@@ -10242,6 +10670,8 @@ type Mutation {
   bmsRunSandboxedJs(code: String!): BmsJsConsoleResult!
   bmsRunSql(sql: String!): BmsSqlResult!
   bmsSaveCostAllocation(input: BmsCostAllocationSaveInput!): BmsCostAllocationSaveResult!
+  bmsSaveFactoryBom(input: BmsFactoryBomInput!): BmsChecklistCommandResult!
+  bmsSaveFactoryMachine(input: BmsFactoryMachineInput!): BmsChecklistCommandResult!
   bmsSavePharmacyGuidanceDraft(body: String!, code: String!, locale: String!): BmsPharmacyGuidanceTemplate!
   bmsSaveRestaurantFloorLayout(locationId: ID!, positions: [BmsRestaurantTablePositionInput!]!): Boolean!
   bmsSeedPharmacyGuidanceDrafts: Int!
@@ -10263,8 +10693,9 @@ type Mutation {
   bmsSetConversationTags(id: ID!, tags: [String!]!): Boolean!
   bmsSetCustomerTags(id: ID!, tags: [String!]!): Boolean!
   bmsSetDefaultCustomerAddress(addressId: ID!): BmsCustomerAddress!
+  bmsSetFactoryQcPolicy(input: BmsFactoryQcPolicyInput!): BmsChecklistCommandResult!
   bmsSetMyAvailability(available: Boolean!): Boolean!
-  bmsSetPharmacistLicense(isLicensedPharmacist: Boolean!, licenseNo: String, userId: ID!): Boolean!
+  bmsSetPharmacistLicense(confirmed: Boolean!, isLicensedPharmacist: Boolean!, licenseNo: String, userId: ID!): Boolean!
 
   """
   ตั้งค่าการอนุมัติของเภสัชกรที่เคาน์เตอร์ (9.29) — ไม่ส่งฟิลด์ไหน = ไม่แตะฟิลด์นั้น
@@ -10276,11 +10707,11 @@ type Mutation {
   bmsSetProductSalesSurfaces(productSku: String!, surfaces: [String!]!): [String!]!
   bmsSetReorderPoint(locationId: ID!, reorderPoint: Int!, size: String!, sku: String!): BmsVariant!
   bmsSetRestaurantCustomerTableDetails(locationId: ID!, publish: Boolean!): Boolean!
-  bmsSetRolePermissions(permissions: [String!]!, roleId: ID!): Boolean!
+  bmsSetRolePermissions(confirmed: Boolean!, permissions: [String!]!, roleId: ID!): Boolean!
   bmsSetShipmentStatus(id: ID!, status: BmsShipmentStatus!): Boolean!
   bmsSetShippingZoneOverride(provinceCode: String!, zone: String): Boolean!
-  bmsSetTenantActive(active: Boolean!, tenantId: ID!): Boolean!
-  bmsSetTenantPlan(planCode: String!, tenantId: ID!): Boolean!
+  bmsSetTenantActive(active: Boolean!, confirm: Boolean!, tenantId: ID!): Boolean!
+  bmsSetTenantPlan(confirm: Boolean!, planCode: String!, tenantId: ID!): Boolean!
   bmsSetVatCategoryForUnknown(activeOnly: Boolean, vatCategory: String!): Int!
   bmsShipOrder(id: ID!): Boolean!
   bmsSignup(businessArchetype: String, email: String!, name: String, password: String!, shopName: String!): BmsSignupResult!
@@ -10344,6 +10775,8 @@ type Mutation {
   bmsUpsertStoreProfile(input: BmsStoreProfileInput!): BmsStoreProfile!
   bmsVerifyPaymentSlip(id: ID!): BmsSlipVerification
   bmsVerifyShopSignup(token: String!): BmsVerifyShopSignupResult!
+  bmsVoidBankMatch(confirmed: Boolean!, id: ID!, reason: String!): BmsBankMutationResult!
+  bmsVoidBankStatementImport(confirmed: Boolean!, id: ID!, reason: String!): BmsBankMutationResult!
   bmsVoidExpenseDocument(id: ID!, reason: String!): BmsVoidExpenseDocumentResult!
   bmsWorkAssistant(input: BmsWorkAssistantInput!): BmsWorkAssistantResult!
   bmsWriteOffArInvoice(invoiceId: ID!, reason: String!): BmsArWriteOffResult!
@@ -10357,6 +10790,7 @@ type Mutation {
   deleteFile(id: ID!): Boolean!
   deleteFiles(ids: [ID!]!): Boolean!
   deleteMessage(message_id: ID!): Boolean!
+  deleteNotification(id: ID!): Boolean!
   deletePost(id: ID!): Boolean!
   deletePosts(ids: [ID!]!): Boolean!
   deleteRole(id: ID!): Boolean!
@@ -10389,6 +10823,7 @@ type Mutation {
   resetPassword(newPassword: String!, token: String!): Boolean
   send(text: String!): Boolean!
   sendMessage(audio: Upload, audio_duration_sec: Int, chat_id: ID!, client_message_id: String, images: [Upload!], location: MessageLocationInput, reply_to_id: ID, text: String!, to_user_ids: [ID!]!): Message!
+  setNotificationRead(id: ID!, isRead: Boolean!): Boolean!
   setRoleActive(id: ID!, is_active: Boolean!): Role!
   toggleBookmark(postId: ID!): ToggleBookmarkResult!
   unblockNumber(phoneNumber: String!): PhoneCenterActionPayload!
@@ -10669,8 +11104,18 @@ type Query {
   bmsArInvoices(accountId: ID, limit: Int = 200, openOnly: Boolean, overdueOnly: Boolean): [BmsArInvoice!]!
   bmsArLedger(accountId: ID, invoiceId: ID, limit: Int = 200): [BmsArLedgerEntry!]!
   bmsArOutstanding: BmsArOutstanding!
+  bmsArStatement(accountId: ID!): BmsArStatement
   bmsAssignableStaff: [BmsStaffRef!]!
   bmsAuditLog(limit: Int = 100): [BmsAuditEntry!]!
+  bmsAuditTimeline(filter: BmsAuditTimelineFilter, platformGlobal: Boolean = false): BmsAuditTimelinePage!
+  bmsBankAccounts(includeArchived: Boolean): [BmsBankAccount!]!
+  bmsBankMatchCandidates(entryId: ID!): [BmsBankMatchCandidate!]!
+  bmsBankReconciliationLinks(entryId: ID!): [BmsBankReconciliationLink!]!
+  bmsBankReconciliationPeriods(accountId: ID): [BmsBankReconciliationPeriod!]!
+  bmsBankReconciliationReadiness: BmsBankReconciliationReadiness!
+  bmsBankReconciliationSummary(accountId: ID, month: String): BmsBankReconciliationSummary!
+  bmsBankStatementEntries(input: BmsBankEntryListInput!): [BmsBankStatementEntry!]!
+  bmsBankStatementImports(accountId: ID, limit: Int): [BmsBankStatementImport!]!
   bmsBilling: BmsBilling!
   bmsBoardGameAnalytics(input: BmsBoardGameAnalyticsInput!): BmsBoardGameAnalyticsResult!
   bmsBoardGameBranchHours(locationId: ID!): BmsBoardGameBranchHoursResult!
@@ -10720,6 +11165,11 @@ type Query {
   bmsExpenseSuppliers: [BmsSupplier!]!
   bmsExpenseTaxSummary(from: String!, locationId: ID, to: String!): BmsExpenseTaxSummary!
   bmsExpiringLots(withinDays: Int = 90): [BmsInventoryLot!]!
+  bmsFactoryBomDetail(id: ID!): JSON!
+  bmsFactoryDemandCustomers(search: String!): JSON!
+  bmsFactoryDemandWorkspace(locationId: ID, offset: Int, search: String): JSON!
+  bmsFactoryMachines(locationId: ID!, search: String): JSON!
+  bmsFactoryQcPolicy(locationId: ID!, size: String!, sku: String!): JSON!
   bmsFeatureAccess: [BmsFeatureAccess!]!
   bmsFollowupAnalytics(windowDays: Int): BmsFollowupAnalytics!
   bmsFollowupHistory(conversationId: ID, limit: Int): [BmsFollowupHistoryEntry!]!
@@ -10785,6 +11235,7 @@ type Query {
   bmsMembersExpiringPoints(days: Int, limit: Int): [BmsExpiringPointsRow!]!
   bmsMembershipTiers(activeOnly: Boolean): [BmsMembershipTier!]!
   bmsMenuNetProfit(locationId: ID, month: String!): BmsPricePublicationResult!
+  bmsMessengerProfile: BmsMessengerProfile!
   bmsMobileRestaurantRequests: BmsMobileRestaurantRequestsResult!
   bmsMyMentions(limit: Int, unreadOnly: Boolean): [BmsMention!]!
   bmsMyMentionsUnreadCount: Int!
@@ -10831,7 +11282,7 @@ type Query {
   Pharmacist-approved guidance for clinical customer questions (10.45) — pharmacy.assessment.read
   """
   bmsPharmacyGuidanceTemplates: [BmsPharmacyGuidanceTemplate!]!
-  bmsPharmacyLicenseCandidates: [BmsPharmacyLicenseUser!]!
+  bmsPharmacyLicenseCandidates(search: String): [BmsPharmacyLicenseUser!]!
   bmsPharmacyPolicyReadiness: BmsPharmacyPolicyReadiness!
   bmsPharmacyProductPolicies(limit: Int = 20, offset: Int = 0, search: String): BmsPharmacyProductPolicyPage!
   bmsPharmacyProtocol(id: ID!): BmsPharmacyProtocol
@@ -10858,6 +11309,11 @@ type Query {
   bmsPosOpenShift(deviceId: ID!): BmsPosShift
   bmsPosOperationalReadiness: BmsPosOperationalReadiness!
   bmsPosParkedSales: BmsPosParkedSalesResult!
+
+  """
+  Open pickup numbers of today's service day at this till's branch (10.111).
+  """
+  bmsPosPickupQueue: [BmsPosPickupQueueEntry!]!
   bmsPosPurchaseOrder(credentials: BmsPosCredentialsInput!, poId: ID!): BmsPurchaseOrder
   bmsPosPurchaseOrders(credentials: BmsPosCredentialsInput!): BmsPosPurchaseOrdersResult!
   bmsPosRecentSales(deviceOnly: Boolean = false, limit: Int = 5, q: String): BmsPosRecentSalesResult!
@@ -10907,6 +11363,7 @@ type Query {
   bmsPublicPlans: [BmsPlan!]!
   bmsPurchaseOrder(id: ID!): BmsPurchaseOrder
   bmsPurchaseOrders(limit: Int = 50, offset: Int = 0, search: String): [BmsPurchaseOrder!]!
+  bmsPurchaseReceivingLocations: [BmsLocation!]!
   bmsQualityDetail(id: ID!): JSON!
   bmsQualityForRun(id: ID!): JSON
   bmsQualityLots(locationId: ID!, search: String): JSON!
@@ -11381,7 +11838,7 @@ type User {
   role_id: ID
   tenantName: String
   themePreference: String
-  username: String!
+  username: String
 }
 
 type UserConnection {

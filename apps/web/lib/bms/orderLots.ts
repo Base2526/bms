@@ -20,7 +20,16 @@ export async function consumeOrderLotsInTx(
         [tenant, it.location_id, it.product_sku, it.size],
       )
     ).rows;
-    if (!all.length) continue;
+    if (!all.length) {
+      const policy = await c.query<{ requires_lots: boolean }>(
+        `SELECT (lot_tracking OR expiry_tracking) AS requires_lots
+           FROM bms_product_stock_policies
+          WHERE tenant_id=$1 AND product_sku=$2 FOR SHARE`,
+        [tenant, it.product_sku],
+      );
+      if (policy.rows[0]?.requires_lots) throw new Error("INSUFFICIENT_USABLE_LOTS");
+      continue;
+    }
     const day = (
       await c.query(
         `SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date::text AS day`,

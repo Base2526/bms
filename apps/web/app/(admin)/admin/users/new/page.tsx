@@ -1,4 +1,5 @@
-'use client';
+"use client";
+
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Card, Form, Input, Select, Button, message, Alert } from "antd";
 import React from "react";
@@ -23,8 +24,6 @@ const Q_ME = gql`query { bmsMe { id role is_platform_admin } }`;
 function FormNew(){
   const { t } = useI18n();
   const [form] = Form.useForm();
-  const watchName = Form.useWatch('name', form);   // 👈 debug helper
-  const watchEmail = Form.useWatch('email', form); // 👈 debug helper
 
   const { data: rolesData, loading: rolesLoading, error: rolesError } = useQuery(Q_ROLES);
   const allRoles: { id: string; name: string; is_active?: boolean }[] =
@@ -43,7 +42,7 @@ function FormNew(){
   );
   const roles = myRole ? allRoles.filter((r) => assignable.has(r.name)) : allRoles;
   const noAssignableRoles = Boolean(myRole) && !rolesLoading && roles.length === 0;
-  const readOnly = Boolean(meData) && !canWrite;
+  const readOnly = !canWrite;
 
   const [save,{loading}] = useMutation(M_UPSERT,{
     onCompleted:()=>{ message.success(t("admin_users_new.create_success")); window.location.href='/admin/users'; },
@@ -147,10 +146,6 @@ function FormNew(){
         <Button type="primary" htmlType="submit" loading={loading} disabled={readOnly || noAssignableRoles}>{t("admin_users_new.submit")}</Button>
       </Form>
 
-      {/* debug ดูค่าในฟอร์ม */}
-      <pre style={{marginTop:16, opacity:.6}}>
-        name: {String(watchName || '')} | email: {String(watchEmail || '')}
-      </pre>
     </Card>
   );
 }

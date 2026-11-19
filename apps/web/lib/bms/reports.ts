@@ -362,12 +362,20 @@ export async function getProfitSummary(
        )
        SELECT COALESCE((SELECT SUM(total_amount) FROM eligible_orders), 0) AS revenue,
               COALESCE(SUM(oi.cost_amount_snapshot) FILTER (WHERE oi.cost_amount_snapshot IS NOT NULL), 0) AS known_cost,
-              COUNT(oi.id) FILTER (WHERE oi.cost_amount_snapshot IS NULL)::int AS missing_cost_line_count,
-              COUNT(DISTINCT oi.product_sku) FILTER (WHERE oi.cost_amount_snapshot IS NULL)::int AS missing_cost_sku_count,
-              COALESCE(ARRAY_AGG(DISTINCT oi.product_sku) FILTER (
+              (COUNT(oi.id) FILTER (WHERE oi.cost_amount_snapshot IS NULL)
+                + (SELECT COUNT(*) FROM bms_order_open_items x JOIN eligible_orders e ON e.id=x.order_id
+                    WHERE x.tenant_id=$1))::int AS missing_cost_line_count,
+              (COUNT(DISTINCT oi.product_sku) FILTER (WHERE oi.cost_amount_snapshot IS NULL)
+                + (SELECT COUNT(*) FROM bms_order_open_items x JOIN eligible_orders e ON e.id=x.order_id
+                    WHERE x.tenant_id=$1))::int AS missing_cost_sku_count,
+              (COALESCE(ARRAY_AGG(DISTINCT oi.product_sku) FILTER (
                 WHERE oi.id IS NOT NULL AND oi.cost_amount_snapshot IS NULL
-              ), ARRAY[]::text[]) AS missing_cost_skus,
-              COALESCE(SUM(oi.line_amount) FILTER (WHERE oi.cost_amount_snapshot IS NULL), 0) AS missing_cost_revenue,
+              ), ARRAY[]::text[]) || ARRAY(SELECT 'OPEN:'||x.id::text
+                   FROM bms_order_open_items x JOIN eligible_orders e ON e.id=x.order_id
+                  WHERE x.tenant_id=$1)) AS missing_cost_skus,
+              (COALESCE(SUM(oi.line_amount) FILTER (WHERE oi.cost_amount_snapshot IS NULL), 0)
+                + COALESCE((SELECT SUM(x.line_amount) FROM bms_order_open_items x
+                            JOIN eligible_orders e ON e.id=x.order_id WHERE x.tenant_id=$1),0)) AS missing_cost_revenue,
               COUNT(oi.id) FILTER (WHERE oi.cost_snapshot_source='LEGACY_CURRENT')::int AS legacy_cost_line_count
          FROM eligible_orders o
          LEFT JOIN bms_order_items oi ON oi.tenant_id=$1 AND oi.order_id=o.id`,
@@ -385,7 +393,9 @@ export async function getProfitSummary(
        ), order_cost AS (
          SELECT o.id, o.day, o.total_amount,
                 COALESCE(SUM(oi.cost_amount_snapshot) FILTER (WHERE oi.cost_amount_snapshot IS NOT NULL),0) AS known_cost,
-                COUNT(oi.id) FILTER (WHERE oi.cost_amount_snapshot IS NULL)::int AS missing_cost_line_count
+                (COUNT(oi.id) FILTER (WHERE oi.cost_amount_snapshot IS NULL)
+                  + (SELECT COUNT(*) FROM bms_order_open_items x
+                      WHERE x.tenant_id=$1 AND x.order_id=o.id))::int AS missing_cost_line_count
            FROM eligible_orders o
            LEFT JOIN bms_order_items oi ON oi.tenant_id=$1 AND oi.order_id=o.id
           GROUP BY o.id, o.day, o.total_amount
@@ -454,6 +464,14 @@ export async function getProfitSummary(
              ON pri.tenant_id=pr.tenant_id AND pri.pos_return_id=pr.id
            JOIN bms_order_items oi
              ON oi.tenant_id=pri.tenant_id AND oi.id=pri.order_item_id
+         UNION ALL
+         SELECT pr.occurred_at, pr.return_location_id, 'OPEN:'||oi.id::text,
+                NULL::numeric, NULL::numeric, ri.refund_amount
+           FROM settled_pos_returns pr
+           JOIN bms_pos_return_open_items ri
+             ON ri.tenant_id=pr.tenant_id AND ri.pos_return_id=pr.id
+           JOIN bms_order_open_items oi
+             ON oi.tenant_id=ri.tenant_id AND oi.id=ri.order_open_item_id
          UNION ALL
          -- The web/back-office flow returns a whole order and creates no
          -- bms_pos_returns row. Exclude POS-linked orders to avoid reversing a

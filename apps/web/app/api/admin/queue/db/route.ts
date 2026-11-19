@@ -1,13 +1,11 @@
 // apps/web/app/api/admin/queue/db/route.ts
 import { NextResponse } from "next/server";
-import pg from "pg";
+import { query } from "@/lib/db";
 import { authorizeCronRequest } from "@/lib/bms/cronRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const { Pool } = pg;
 
 // เดิม `if (expected && ...)` = ไม่ตั้ง ADMIN_TOKEN ก็ผ่านทุกคำขอ · route นี้เปิด
 // connection pool ของตัวเองไปอ่านคิวในฐานข้อมูล จึงต้อง fail closed เหมือน cron
@@ -15,14 +13,6 @@ function requireAdmin(req: Request): NextResponse | null {
   const cron = authorizeCronRequest(req, "x-admin-token", "ADMIN_TOKEN");
   return cron.ok ? null : cron.response;
 }
-
-const pool = new Pool({
-  host: process.env.POSTGRES_HOST ?? "postgres",
-  port: Number(process.env.POSTGRES_PORT ?? "5432"),
-  database: process.env.POSTGRES_DB ?? "appdb",
-  user: process.env.POSTGRES_USER ?? "app",
-  password: process.env.POSTGRES_PASSWORD ?? "app",
-});
 
 async function handleGET(req: Request) {
   try {
@@ -32,7 +22,7 @@ async function handleGET(req: Request) {
     const url = new URL(req.url);
     const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 80), 1), 200);
 
-    const { rows } = await pool.query(
+    const { rows } = await query(
       `
       SELECT
         sp.post_id,

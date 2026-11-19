@@ -1,5 +1,11 @@
 # AI points policy — updated 2026-11-02 (`10.56`, `10.73`, `10.101`, `10.102`)
 
+Recheck 2026-11-16: tool-loop and pharmacy retries now send per-provider token evidence to the
+finalizer. The effective-dated database rate card prices each response at the event start time;
+the caller's code-rate estimate no longer overrides it. A failed or incomplete attempt remains
+unpriced while known responses contribute their cost subtotal. Historical finalized events are
+unchanged. This is accounting attribution, not a provider invoice or a change to AI points.
+
 Current entitlement replaces the historical USD budget described below. The catalogue lives in the
 `bms_plans` rows (seeded by `10.101`/`10.102`) and platform admins can edit it at runtime through
 `/admin/master-data` → Plans, so a deployed database may differ — read `bmsPlanCatalog` or

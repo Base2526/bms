@@ -4,10 +4,11 @@
 
 export type { LogLevel, LogMeta } from "./types";
 import type { LogLevel, LogMeta } from "./types";
+import { sanitizeLogValue } from "./sanitize";
 
 function getApiBaseUrl() {
   // On the browser we can use relative URL.
-  if (typeof window !== "undefined") return process.env.NEXT_PUBLIC_BASE_URL || "";
+  if (typeof window !== "undefined") return "";
 
   // On the server, Node's fetch requires an absolute URL.
   const raw =
@@ -55,7 +56,7 @@ export async function addLog(
 
     return true;
   } catch (err) {
-    console.error('[addLog] error', err);
+    console.error('[addLog] error', sanitizeLogValue(err));
     return false;
   }
 }

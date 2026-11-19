@@ -21,7 +21,7 @@ test("new business archetypes normalize and select stock-focused presets", () =>
   }
   assert.deepEqual(
     [...presetCapabilitiesForArchetype("pet_supply")].sort(),
-    ["EXPIRY_TRACKING", "LOT_TRACKING", "MULTI_BARCODE", "PACK", "WEIGHTED_PRODUCT"].sort()
+    ["EXPIRY_TRACKING", "FEFO", "LOT_TRACKING", "MULTI_BARCODE", "PACK", "WEIGHTED_PRODUCT"].sort()
   );
   assert.ok(presetCapabilitiesForArchetype("building_materials").has("UNIT_CONVERSION"));
   assert.ok(presetCapabilitiesForArchetype("building_materials").has("SERIAL_TRACKING"));

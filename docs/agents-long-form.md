@@ -48,21 +48,22 @@ are in [agent-invariants.md](agent-invariants.md). Update this file when a rule 
   crash on a machine without runtime env, and any importer could read the unchecked value. Never
   write `process.env.X || "literal"` for a key, and never export the resolved secret. Enforced by
   `scripts/secret-fallback-contract.test.mts`.
-- **A private file belongs to one shop (9.27).** `files.tenant_id` is derived from whichever BMS
-  table references the file; `/api/files/[id]` compares it against the acting tenant from
-  `authorizeAdminRoute(null)` (so a signed drill-down cookie works) and answers **404, not 403**, on a
-  mismatch — 403 would confirm to an outsider that the id exists. `NULL` means "not owned by a shop"
-  (legacy community uploads) and still needs only a session. Every BMS upload path binds the owner
-  from a trusted source: the session, the authenticated device, or the signed checkout token — never
-  the request body.
-- **`files.visibility` decides who may read an upload (9.26).** `/api/files/[id]` serves a `public`
-  row with no session (storefront product images, the legacy community uploads) and demands one for
-  `private`; a missing or unknown value is treated as private, so the route fails closed. Listing and
-  uploading (`GET`/`POST /api/files`) always require a session — the listing returned every file's
-  `relpath` to anyone. `persistWebFile`/`persistBuffer` default to `private` and only
-  `persistUploadStream` stays `public`; a new upload path that forgets to choose gets the safe one.
-  Slips, Inbox attachments, generated reports and prescription images are `private`. Enforced by
-  `scripts/file-visibility-contract.test.mts`.
+- **A private file has an authoritative owner (9.27, 10.109).** `files.tenant_id` is derived from
+  whichever BMS table references the file; `/api/files/[id]` compares it against the acting tenant
+  from `authorizeAdminRoute(null)` (so a signed drill-down cookie works) and answers **404, not 403**,
+  on a mismatch. Personal uploads also bind `owner_user_id` from the authenticated session; users
+  list/rename/delete only their own unreferenced scratch files. Community chat images/audio are
+  private and stream only to a current `chat_members` row. Platform file inventory is platform-admin
+  only. No owner or tenant ever comes from request input.
+- **`files.visibility` decides who may read an upload (9.26, 10.109).** `/api/files/[id]` serves a
+  `public` row with no session only for content that must render publicly (storefront/post/avatar
+  images); a missing or unknown value is private. All storage helpers, including streamed GraphQL
+  uploads, default to private. Public callers must opt in and GraphQL media callers set explicit MIME
+  and byte limits. Chat, slips, Inbox attachments, generated reports and clinical evidence are
+  private; clinical/operations/support/release assets remain inaccessible through the generic
+  sequential-id route because their dedicated routes enforce narrower authority. Legacy database,
+  key, config, script, installer and path-like artifacts are reclassified private and denied by the
+  generic route. Enforced by `file-visibility-contract` and `graphql-request-security-contract`.
 - **Clinical evidence is health data.** Prescription images never go through
   `/api/files/[id]` (no auth, sequential ids); they stream from
   `/api/bms/pharmacy/evidence/[id]/file` behind a session, `pharmacy.evidence.read`, and a tenant
@@ -470,6 +471,26 @@ are in [agent-invariants.md](agent-invariants.md). Update this file when a rule 
 
 ## i18n (long form, including dictionary count history)
 
+**2026-11-12 admin recount:** 113 namespaces / 9,542 string leaves per language at exact parity;
+1,454 keys in `admin_ui` cover the back-office audit. `useUiText()` delegates to the same shared
+dictionary and context. The audit now includes English-only legacy admin screens, UI dates,
+paired bank/province names and the page-error boundary. `admin-client-i18n-contract` scans 205
+reachable UI files with reviewed exact-source exceptions; `i18n-keys-contract` uses an AST for
+literal `t()`/`uiText()` keys and recursive parity instead of quote/indentation assumptions.
+Earlier counts below are historical snapshots. Data, customer-message templates, clinical content,
+official printed tax text and technical identifiers retain their own language policy.
+
+POS Mobile/Desktop operator copy also uses explicit source/English pairs under
+`apps/web/i18n/pos-client.json` with `posClient.ts`; it is not included in the historical namespace
+counts below. Web POS uses the existing context, Mobile subscribes without remounting and keeps a
+separate Keychain language preference, and Electron persists its shell language separately from
+pairing. See [coverage and invariants](agent-invariants.md#i18n-coverage-what-bilingual-actually-means-today)
+and the two app READMEs. Store receipt language, queue voice, customer/product text and server
+evidence are independent of operator language. Customer/queue UI follows the register through a
+language-only same-origin channel. `pos-client-i18n-contract` rejects unwrapped operator copy and
+covers source keys, placeholder parity and unchanged payment results; app tests cover persistence,
+rapid selection and retained input.
+
 Operational scripts on Windows, Linux, and macOS use English for prompts, progress, warnings,
 errors, and completion messages, including PowerShell, shell entrypoints, and shared release tools.
 Keep authored console text ASCII where practical so it remains readable across code pages and fonts.
@@ -571,10 +592,12 @@ cd apps/web && npm run gate
 ```
 
 `npm run test:pure` runs only the suites (fast, no database); `npm run test:db` runs the
-`-db-contract` suites and refuses a non-local host. The runner walks `scripts/` **and**
-`scripts/ai-eval/`, so a contract test placed in either directory runs in CI — a suite that only
-runs by hand does not run. `.github/workflows/gate.yml` runs typecheck + pure + build on every
-PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own `npm run build`.)
+`-db-contract` suites and refuses a non-local host. The runner walks `scripts/`,
+`scripts/ai-eval/` and `scripts/infra/`, plus the Retail Local migration-checksum `.test.mjs`.
+`npm run regression:inventory` accounts for the other test/smoke files and fails on an unknown
+path or a mismatch with the contract runner. A suite that only
+runs by hand does not run. `.github/workflows/gate.yml` runs the same steps as `npm run gate`
+(release features → regression inventory → typecheck → pure → build) on every PR, never DB mode. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own `npm run build`.)
 
 - Never claim a check passed unless it was run successfully.
 - Schema changes: migration ordering, idempotency, RLS, grants, tenant isolation.
@@ -601,7 +624,8 @@ PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own
 | `file-visibility-contract` | `/api/files` guards, fail-closed visibility check, tenant match on owned files, and every upload site's public/private + owner choice |
 | `secret-fallback-contract` | every secret resolver throws in production, none is a module-level const with a string fallback |
 | `infra/multi-instance-contract` | storage driver, fleet-wide state, cron claim-before-act |
-| `i18n-keys-contract` | every literal `t()` key resolves in th+en; per-section key parity |
+| `i18n-keys-contract` | literal `t()`/`uiText()` keys resolve in th+en; recursive key and admin placeholder parity |
+| `admin-client-i18n-contract` | admin/shared UI authored-copy coverage and reviewed data/identifier exceptions |
 | `board-game-cafe-contract` · `board-game-register-contract` · `board-game-pos-parity-contract` | table/seating/billing-group source contracts and derived table status · the register's phone geometry and the money a running table may print · browser REST and native GraphQL reach the same command set through one permission table |
 | `board-game-pass-contract` · `board-game-identity-contract` · `board-game-offers-renewals-contract` | pass coverage math and quota spend at close · identity-hold purge/reveal gating · offer selection vs pass coverage, and renewal as one atomic entitlement + payment + credit-ledger write |
 | `board-game-waitlist-contract` · `board-game-service-call-contract` · `board-game-readiness-scope-contract` | queue/reservation state before a session, seating in one transaction · the guest bell moves nothing but staff attention · every table path is declared in `schemaReadiness` |
@@ -666,13 +690,13 @@ PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own
   and build that platform's packages on its own runner — NSIS on Windows, AppImage/DEB on Linux,
   the two DMGs on macOS — then upload a 14-day artifact. None signs, notarizes or publishes.
 
-  The contract runner only picks up `*.test.mts`. `.github/workflows/retail-local-managed-runtime.yml`
+  The contract runner picks up `*.test.mts` in its declared directories and
+  `retail-local-migration-checksum.test.mjs`. `.github/workflows/retail-local-managed-runtime.yml`
   runs the Go agent tests (`apps/retail-local-agent`) and the Retail Local shell/Node suites on
   Ubuntu, Windows and macOS runners: `retail-local-bootstrap-behavior.test.mjs`,
   `retail-local-unix-diagnostics.test.mjs`, `retail-local-update-transaction.test.sh` and
   `retail-local-uninstall-container.test.sh`. `retail-local-setup-diagnostics.test.ps1`,
-  `retail-local-migration-checksum.test.mjs` and `installer-reports-browser-smoke.mjs` run only by
-  hand.
+  and `installer-reports-browser-smoke.mjs` run only by hand.
 
   The **live-model** suite (`scripts/ai-eval/run.mjs`) writes real data — development/sandbox tenants
   only. See [scripts/ai-eval/README.md](../scripts/ai-eval/README.md).

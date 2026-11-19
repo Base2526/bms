@@ -309,7 +309,7 @@ test("the browser register reaches every board-game command that writes", () => 
 
 test("the board-game tab belongs to the cafe archetype and never steals the scanner", () => {
   const clean = withoutComments(registerPage);
-  assert.match(clean, /\{ key: "boardgame", label: "[^"]+" \}/);
+  assert.match(clean, /\{ key: "boardgame", label: posText\("[^"]+"\) \}/);
   assert.match(
     clean,
     /item\.key === "boardgame"\) return archetype === "board_game_cafe"/,

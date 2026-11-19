@@ -33,6 +33,14 @@ export type RetailLocalReleaseAsset = {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  purged_at: string | null;
+};
+
+export type PurgedRetailLocalReleaseFile = {
+  releaseId: string;
+  freedBytes: number;
+  purgedAt: string;
+  alreadyPurged: boolean;
 };
 
 export class RetailLocalReleaseError extends Error {
@@ -53,6 +61,7 @@ const PACKAGE_TYPES = new Set<RetailLocalPackageType>(["server-pos", "server", "
 const STATUSES = new Set<RetailLocalReleaseStatus>(["latest", "supported", "legacy", "deprecated", "hidden"]);
 const CHANNELS = new Set<RetailLocalReleaseChannel>(["pilot", "stable", "internal"]);
 const ACCESS_LEVELS = new Set<RetailLocalReleaseAccessLevel>(["public", "trial"]);
+const RELEASE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function assertPlatform(value: unknown): RetailLocalPlatform {
   if (typeof value === "string" && PLATFORMS.has(value as RetailLocalPlatform)) return value as RetailLocalPlatform;
@@ -108,6 +117,11 @@ function serialize(row: any): RetailLocalReleaseAsset {
     created_by: row.created_by == null ? null : String(row.created_by),
     created_at: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
     updated_at: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
+    purged_at: row.purged_at == null
+      ? null
+      : row.purged_at instanceof Date
+        ? row.purged_at.toISOString()
+        : String(row.purged_at),
   };
 }
 
@@ -157,11 +171,13 @@ function validateFileName(filename: string, platform: RetailLocalPlatform, packa
 export async function listRetailLocalReleaseAssets(options: { includeHidden?: boolean } = {}) {
   const { rows } = await query(
     `
-    SELECT id, platform, package_type, version, channel, status, is_latest, file_id, original_name,
-           access_level, size_bytes, sha256, min_os, release_notes, created_by, created_at, updated_at
-      FROM bms_retail_local_release_assets
-     WHERE ($1::boolean OR (status <> 'hidden' AND access_level = 'public'))
-     ORDER BY platform ASC, package_type ASC, is_latest DESC, created_at DESC, version DESC
+    SELECT a.id, a.platform, a.package_type, a.version, a.channel, a.status, a.is_latest, a.file_id,
+           a.original_name, a.access_level, a.size_bytes, a.sha256, a.min_os, a.release_notes,
+           a.created_by, a.created_at, a.updated_at, f.deleted_at AS purged_at
+      FROM bms_retail_local_release_assets a
+      JOIN files f ON f.id = a.file_id
+     WHERE ($1::boolean OR (a.status <> 'hidden' AND a.access_level = 'public' AND f.deleted_at IS NULL))
+     ORDER BY a.platform ASC, a.package_type ASC, a.is_latest DESC, a.created_at DESC, a.version DESC
     `,
     [options.includeHidden === true]
   );
@@ -300,22 +316,35 @@ export async function updateRetailLocalReleaseAsset(id: string, input: {
   minOs?: unknown;
   releaseNotes?: unknown;
 }) {
-  const current = await getRetailLocalReleaseAsset(id, { includeHidden: true });
-  if (!current) throw new RetailLocalReleaseError("release asset not found", 404);
-
-  const status = input.status == null ? current.status : assertStatus(input.status);
-  const accessLevel = input.accessLevel == null ? current.access_level : assertAccessLevel(input.accessLevel);
-  const isLatest = input.isLatest == null ? current.is_latest : input.isLatest === true;
-  const nextLatest = status === "hidden" ? false : isLatest || status === "latest";
-  const nextStatus: RetailLocalReleaseStatus = status === "hidden" ? "hidden" : nextLatest ? "latest" : status;
-  const minOs = input.minOs == null ? current.min_os : trimRequired(input.minOs, "minimum OS", 200);
-  const releaseNotes = input.releaseNotes == null
-    ? current.release_notes
-    : String(input.releaseNotes || "").trim().slice(0, 5000);
-
   const client = await getClient();
   try {
     await client.query("BEGIN");
+    const currentResult = await client.query(
+      `SELECT a.id, a.platform, a.package_type, a.version, a.channel, a.status, a.is_latest, a.file_id,
+              a.original_name, a.access_level, a.size_bytes, a.sha256, a.min_os, a.release_notes,
+              a.created_by, a.created_at, a.updated_at, f.deleted_at AS purged_at
+         FROM bms_retail_local_release_assets a
+         JOIN files f ON f.id = a.file_id
+        WHERE a.id = $1
+        FOR UPDATE OF a, f`,
+      [id]
+    );
+    if (!currentResult.rows[0]) throw new RetailLocalReleaseError("release asset not found", 404);
+    const current = serialize(currentResult.rows[0]);
+    if (current.purged_at) {
+      throw new RetailLocalReleaseError("release file was permanently deleted", 409);
+    }
+
+    const status = input.status == null ? current.status : assertStatus(input.status);
+    const accessLevel = input.accessLevel == null ? current.access_level : assertAccessLevel(input.accessLevel);
+    const isLatest = input.isLatest == null ? current.is_latest : input.isLatest === true;
+    const nextLatest = status === "hidden" ? false : isLatest || status === "latest";
+    const nextStatus: RetailLocalReleaseStatus = status === "hidden" ? "hidden" : nextLatest ? "latest" : status;
+    const minOs = input.minOs == null ? current.min_os : trimRequired(input.minOs, "minimum OS", 200);
+    const releaseNotes = input.releaseNotes == null
+      ? current.release_notes
+      : String(input.releaseNotes || "").trim().slice(0, 5000);
+
     if (nextLatest) {
       await client.query(
         `UPDATE bms_retail_local_release_assets
@@ -352,16 +381,110 @@ export async function updateRetailLocalReleaseAsset(id: string, input: {
 export async function getRetailLocalReleaseAsset(id: string, options: { includeHidden?: boolean } = {}) {
   const { rows } = await query(
     `
-    SELECT id, platform, package_type, version, channel, status, is_latest, file_id, original_name,
-           access_level, size_bytes, sha256, min_os, release_notes, created_by, created_at, updated_at
-      FROM bms_retail_local_release_assets
-     WHERE id = $1
-       AND ($2::boolean OR status <> 'hidden')
+    SELECT a.id, a.platform, a.package_type, a.version, a.channel, a.status, a.is_latest, a.file_id,
+           a.original_name, a.access_level, a.size_bytes, a.sha256, a.min_os, a.release_notes,
+           a.created_by, a.created_at, a.updated_at, f.deleted_at AS purged_at
+      FROM bms_retail_local_release_assets a
+      JOIN files f ON f.id = a.file_id
+     WHERE a.id = $1
+       AND ($2::boolean OR (a.status <> 'hidden' AND f.deleted_at IS NULL))
      LIMIT 1
     `,
     [id, options.includeHidden === true]
   );
   return rows[0] ? serialize(rows[0]) : null;
+}
+
+/**
+ * Permanently remove installer bytes while retaining the release/file rows as a
+ * small audit tombstone. Requiring `hidden` makes an operator revoke every
+ * download path before this irreversible storage mutation.
+ */
+export async function purgeRetailLocalReleaseFile(input: {
+  releaseId: string;
+  tenantId: string;
+  adminId: string | number;
+}): Promise<PurgedRetailLocalReleaseFile> {
+  if (!RELEASE_ID_PATTERN.test(input.releaseId)) {
+    throw new RetailLocalReleaseError("release asset not found", 404);
+  }
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(
+      `SELECT a.id, a.platform, a.package_type, a.version, a.channel, a.status, a.is_latest,
+              a.original_name, a.size_bytes, a.sha256, f.id AS file_id, f.relpath, f.deleted_at
+         FROM bms_retail_local_release_assets a
+         JOIN files f ON f.id = a.file_id
+        WHERE a.id = $1
+        FOR UPDATE OF a, f`,
+      [input.releaseId]
+    );
+    const row = result.rows[0];
+    if (!row) throw new RetailLocalReleaseError("release asset not found", 404);
+    if (row.is_latest === true || row.status === "latest") {
+      throw new RetailLocalReleaseError("latest release cannot be deleted", 409);
+    }
+    if (row.status !== "hidden") {
+      throw new RetailLocalReleaseError("hide the release before deleting its file", 409);
+    }
+
+    const alreadyPurged = row.deleted_at != null;
+    // The storage drivers make delete idempotent. Retrying therefore also
+    // repairs a lost/ambiguous response without recreating a public download.
+    const relpath = String(row.relpath);
+    const storedBeforeDelete = await statStoredFile(relpath);
+    await deleteStoredFile(relpath);
+    if (await statStoredFile(relpath)) {
+      throw new RetailLocalReleaseError("release file deletion could not be verified", 503);
+    }
+
+    const purged = await client.query<{ deleted_at: Date | string }>(
+      `UPDATE files
+          SET deleted_at = COALESCE(deleted_at, now()), updated_at = now()
+        WHERE id = $1
+        RETURNING deleted_at`,
+      [row.file_id]
+    );
+    const purgedAtValue = purged.rows[0]?.deleted_at ?? row.deleted_at;
+    const purgedAt = purgedAtValue instanceof Date
+      ? purgedAtValue.toISOString()
+      : String(purgedAtValue);
+
+    if (!alreadyPurged) {
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+         VALUES ($1,$2,'platform.retail_local_release_file.purge',$3,$4::jsonb)`,
+        [
+          input.tenantId,
+          String(input.adminId),
+          String(row.id),
+          JSON.stringify({
+            version: String(row.version),
+            platform: String(row.platform),
+            packageType: String(row.package_type),
+            channel: String(row.channel),
+            fileName: String(row.original_name),
+            sizeBytes: Number(row.size_bytes || 0),
+            freedBytes: Number(storedBeforeDelete?.size || 0),
+            sha256: String(row.sha256),
+          }),
+        ]
+      );
+    }
+    await client.query("COMMIT");
+    return {
+      releaseId: String(row.id),
+      freedBytes: Number(storedBeforeDelete?.size || 0),
+      purgedAt,
+      alreadyPurged,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function openRetailLocalReleaseDownload(id: string, options: { includeTrialLocked?: boolean } = {}) {

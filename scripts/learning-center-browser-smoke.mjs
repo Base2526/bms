@@ -21,7 +21,7 @@ try {
     page.on("request", (request) => { if (request.url().includes("/api/")) requests.push(new URL(request.url()).pathname); });
     for (const width of [1440, 1024, 390, 320]) {
       await page.setViewportSize({ width, height: 950 });
-      for (const path of ["/learn", "/learn/retail", "/learn/board-game", "/learn/restaurant", "/learn/pharmacy", "/learn/inventory", "/learn/guides/retail-pos-sale", "/learn/guides/board-game-move-split", "/learn/guides/desktop-hardware", "/learn/guides/restaurant-service", "/learn/guides/restaurant-rehearsal", "/learn/guides/pharmacy-counter-sale", "/learn/guides/pharmacy-rehearsal", "/learn/guides/inventory-transfer-control", "/learn/guides/inventory-rehearsal", "/learn/guides/board-game-deposits", "/learn/guides/board-game-rehearsal"]) {
+      for (const path of ["/learn", "/learn/retail", "/learn/board-game", "/learn/restaurant", "/learn/pharmacy", "/learn/building-materials", "/learn/inventory", "/learn/guides/retail-pos-sale", "/learn/guides/board-game-move-split", "/learn/guides/desktop-hardware", "/learn/guides/restaurant-service", "/learn/guides/restaurant-rehearsal", "/learn/guides/pharmacy-counter-sale", "/learn/guides/pharmacy-rehearsal", "/learn/guides/building-materials-quotations", "/learn/guides/building-materials-weighted", "/learn/guides/inventory-transfer-control", "/learn/guides/inventory-rehearsal", "/learn/guides/board-game-deposits", "/learn/guides/board-game-rehearsal"]) {
         const response = await page.goto(`${baseURL}${path}`, { waitUntil: "networkidle" });
         assert.equal(response.status(), 200, path);
         await page.locator("h1").waitFor();
@@ -37,7 +37,7 @@ try {
     }
     // Every business flow and the specialist inventory flow share the same focused full-screen
     // viewer. It must preserve the current cue, support zoom/navigation and restore trigger focus.
-    for (const track of ["retail", "board-game", "restaurant", "pharmacy", "inventory"]) {
+    for (const track of ["retail", "board-game", "restaurant", "pharmacy", "building-materials", "inventory"]) {
       await page.setViewportSize({ width: 1440, height: 950 });
       await page.goto(`${baseURL}/learn/${track}`, { waitUntil: "networkidle" });
       const fullscreenName = lang === "th" ? "ดู Flow เต็มจอ" : "View flow full screen";
@@ -65,7 +65,7 @@ try {
     // Follow the actual contents page: every board-game article must render in both languages,
     // including all numbered steps, without clipping at the narrowest supported width.
     await page.goto(`${baseURL}/learn/board-game`);
-    const articlePaths = await page.locator('main ol a[href^="/learn/guides/"]').evaluateAll((links) =>
+    const articlePaths = await page.locator('main ol a[href*="/learn/guides/"]').evaluateAll((links) =>
       [...new Set(links.map((link) => link.getAttribute("href")))]);
     assert.ok(articlePaths.length >= 40, "Board-game path is missing reviewed lessons");
     for (const articlePath of articlePaths) {
@@ -78,7 +78,7 @@ try {
     }
     console.log(`Verified ${articlePaths.length} board-game articles in ${lang}`);
     await page.goto(`${baseURL}/learn/pharmacy`);
-    const pharmacyPaths = await page.locator('main ol a[href^="/learn/guides/pharmacy-"]').evaluateAll((links) =>
+    const pharmacyPaths = await page.locator('main ol a[href*="/learn/guides/pharmacy-"]').evaluateAll((links) =>
       [...new Set(links.map((link) => link.getAttribute("href")))]);
     assert.ok(pharmacyPaths.length >= 8, "Pharmacy path is missing reviewed lessons");
     for (const articlePath of pharmacyPaths) {
@@ -88,6 +88,79 @@ try {
       assert.ok((await page.locator("article").innerText()).length > 600, `${articlePath}: missing content`);
     }
     console.log(`Verified ${pharmacyPaths.length} pharmacy articles in ${lang}`);
+    await page.goto(`${baseURL}/learn`);
+    assert.ok(await page.locator('main a[class*="businessCard"][href$="/learn/building-materials"]').isVisible(), "Building-materials home card is missing");
+    await page.goto(`${baseURL}/learn/building-materials`);
+    assert.match(await page.locator("main").innerText(), lang === "th" ? /คู่มือทดลอง/ : /Pilot guide/);
+    assert.ok(await page.locator('header a[href$="/learn/building-materials"]').count());
+    assert.ok(await page.locator('nav[aria-label="Guide categories"] a[href$="/learn/building-materials"], nav[aria-label="หมวดคู่มือ"] a[href$="/learn/building-materials"]').count());
+    const buildingPaths = await page.locator('main ol a[href*="/learn/guides/building-materials-"]').evaluateAll((links) =>
+      [...new Set(links.map((link) => link.getAttribute("href")))]);
+    assert.equal(buildingPaths.length, 9, "Building-materials path is missing pilot lessons");
+    for (const articlePath of buildingPaths) {
+      const response = await page.goto(`${baseURL}${articlePath}`);
+      assert.equal(response.status(), 200, articlePath);
+      assert.ok(await page.locator("article ol li").count() >= 4, `${articlePath}: missing steps`);
+      const size = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth }));
+      assert.ok(size.scroll <= size.width + 1, `${articlePath}: mobile overflow`);
+    }
+    console.log(`Verified ${buildingPaths.length} building-materials articles in ${lang}`);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${baseURL}/learn/building-materials`);
+    await page.locator('header summary').click();
+    assert.ok(await page.locator('header details a[href$="/learn/building-materials"]').isVisible(), "Mobile guide menu is missing building materials");
+    await page.locator('header summary').click();
+    if (lang === "th") {
+      const audio = page.locator('audio[data-business-recorded-narration="building-materials"]');
+      await page.getByRole("button", { name: /เล่นพร้อมภาพ/ }).click();
+      await page.waitForFunction(() => document.querySelector('audio[data-business-recorded-narration="building-materials"]')?.currentTime > 0.2);
+      assert.equal(await page.locator('[data-track="building-materials"] [data-flow-active="true"]').first().count(), 1);
+      assert.equal(await audio.evaluate((element) => element.paused), false);
+      await page.getByRole("button", { name: "หยุดชั่วคราว" }).first().click();
+      assert.equal(await audio.evaluate((element) => element.paused), true);
+      const pausedAt = await audio.evaluate((element) => element.currentTime);
+      await page.getByRole("button", { name: /เล่นพร้อมภาพ/ }).click();
+      await page.waitForFunction((position) => { const element = document.querySelector('audio[data-business-recorded-narration="building-materials"]'); return element && !element.paused && element.currentTime >= position; }, pausedAt);
+      await page.getByRole("button", { name: "หยุดชั่วคราว" }).first().click();
+      await page.locator('[data-playing] button:has-text("ถัดไป")').click();
+      assert.match(await page.locator('[data-playing] span').first().innerText(), /2 \/ 12/);
+      await page.locator('[data-playing] button:has-text("ก่อนหน้า")').click();
+      await page.locator('[data-playing] button:has-text("เริ่มใหม่")').click();
+      await page.locator('[data-playing] select').selectOption("1.25");
+      await page.getByRole("button", { name: /เล่นพร้อมภาพ/ }).click();
+      await page.waitForFunction(() => document.querySelector('audio[data-business-recorded-narration="building-materials"]')?.currentTime > 0.2);
+      const before = await audio.evaluate((element) => element.currentTime);
+      await page.getByRole("button", { name: "ดู Flow เต็มจอ" }).click();
+      assert.equal(await page.getByRole("dialog").locator('[data-flow-active="true"]').count(), 1);
+      assert.ok(await audio.evaluate((element, beforeTime) => !element.paused && element.currentTime >= beforeTime, before));
+      await page.getByRole("dialog").getByRole("button", { name: "ออกจากโหมดเต็มจอ" }).click();
+      await page.getByRole("button", { name: "หยุดชั่วคราว" }).first().click();
+    } else {
+      await page.getByRole("button", { name: /Play with visual/ }).click();
+      await page.waitForFunction(() => window.speechSynthesis.speaking);
+      assert.equal(await page.locator('[data-track="building-materials"] [data-flow-active="true"]').first().count(), 1);
+      await page.getByRole("button", { name: "Pause" }).first().click();
+      await page.waitForFunction(() => document.querySelector('button[aria-pressed]')?.getAttribute("aria-pressed") === "false");
+      const pausedStep = await page.locator('[data-playing] span').first().innerText();
+      await page.waitForTimeout(1200);
+      assert.equal(await page.locator('[data-playing] span').first().innerText(), pausedStep, "English cue advanced while paused");
+      await page.getByRole("button", { name: /Play with visual/ }).click();
+      await page.waitForFunction(() => document.querySelector('button[aria-pressed]')?.getAttribute("aria-pressed") === "true");
+      await page.getByRole("button", { name: "Pause" }).first().click();
+      await page.waitForFunction(() => document.querySelector('button[aria-pressed]')?.getAttribute("aria-pressed") === "false");
+      await page.locator('[data-playing] button:has-text("Next")').click();
+      assert.match(await page.locator('[data-playing] span').first().innerText(), /2 \/ 12/);
+      await page.locator('[data-playing] button:has-text("Previous")').click();
+      await page.locator('[data-playing] button:has-text("Restart")').click();
+      await page.locator('[data-playing] select').selectOption("1.25");
+      await page.getByRole("button", { name: /Play with visual/ }).click();
+      await page.waitForFunction(() => window.speechSynthesis.speaking);
+      await page.getByRole("button", { name: "View flow full screen" }).click();
+      assert.equal(await page.getByRole("dialog").locator('[data-flow-active="true"]').count(), 1);
+      assert.equal(await page.evaluate(() => window.speechSynthesis.speaking), true);
+      await page.getByRole("dialog").getByRole("button", { name: "Exit full screen" }).click();
+      await page.getByRole("button", { name: "Pause" }).first().click();
+    }
     await page.goto(`${baseURL}/learn/inventory`);
     const inventoryPaths = await page.locator('main ol a[href*="track=inventory"]').evaluateAll((links) =>
       [...new Set(links.map((link) => link.getAttribute("href")))]);
@@ -106,7 +179,7 @@ try {
     await page.waitForURL(/q=/);
     assert.ok(await page.locator('main a[href*="board-game-move-split"]').count());
     await page.getByRole("link", { name: lang === "th" ? "ล้างตัวกรอง" : "Clear filters" }).click();
-    await page.waitForURL(`${baseURL}/learn`);
+    await page.waitForURL(/\/learn$/);
     assert.equal(await page.getByRole("searchbox").inputValue(), "");
     await page.goto(`${baseURL}/learn?q=unmatched-example-987654321`);
     await page.getByText(lang === "th" ? "ยังไม่พบบทเรียนที่ตรงกัน" : "No matching lesson").waitFor();
@@ -155,6 +228,7 @@ try {
   const sitemap = await context.request.get(`${baseURL}/learn/sitemap.xml`);
   assert.equal(sitemap.status(), 200);
   assert.match(await sitemap.text(), /\/learn\/guides\/board-game-checkout/);
+  assert.match(await sitemap.text(), /\/learn\/building-materials/);
   await context.close();
   const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const mobile = await mobileContext.newPage();
@@ -172,8 +246,8 @@ try {
   await mobile.locator("main").click({ position: { x: 2, y: 2 } });
   assert.equal(await menu.getAttribute("open"), null);
   await toggle.click();
-  await menu.locator('a[href="/learn/restaurant"]').click();
-  await mobile.waitForURL(`${baseURL}/learn/restaurant`);
+  await menu.locator('a[href$="/learn/restaurant"]').click();
+  await mobile.waitForURL(/\/learn\/restaurant$/);
   assert.equal(await menu.getAttribute("open"), null);
   await toggle.click();
   await mobile.setViewportSize({ width: 1440, height: 950 });
@@ -185,8 +259,8 @@ try {
   const noJsMobile = await noJsMobileContext.newPage();
   await noJsMobile.goto(`${baseURL}/learn`);
   await noJsMobile.locator("header summary").click();
-  await noJsMobile.locator('header details a[href="/learn/board-game"]').click();
-  await noJsMobile.waitForURL(`${baseURL}/learn/board-game`);
+  await noJsMobile.locator('header details a[href$="/learn/board-game"]').click();
+  await noJsMobile.waitForURL(/\/learn\/board-game$/);
   await noJsMobileContext.close();
   const navigationContext = await browser.newContext();
   await navigationContext.route("**/api/auth/me", (route) => route.fulfill({ json: { user: null, admin: null, isAuthenticated: false } }));
@@ -197,14 +271,14 @@ try {
   await navigation.getByRole("heading", { name: /ไม่พบบทเรียนนี้|Lesson not found/ }).waitFor();
   for (const width of [1440, 1024, 390]) {
     await navigation.setViewportSize({ width, height: 950 });
-    await navigation.goto(`${baseURL}/`);
-    await navigation.locator('footer a[href="/learn"]').waitFor();
-    await navigation.locator('footer a[href="/learn/retail"]').waitFor();
-    await navigation.locator('footer a[href="/learn/restaurant"]').waitFor();
-    await navigation.locator('footer a[href="/learn/board-game"]').waitFor();
-    await navigation.locator('footer a[href="/learn/pharmacy"]').waitFor();
-    await navigation.locator('footer a[href="/learn/inventory"]').waitFor();
-    if (width >= 940) await navigation.locator('header nav a[href="/learn"]').waitFor();
+    await navigation.goto(`${baseURL}/`, { waitUntil: "domcontentloaded" });
+    await navigation.locator('footer a[href$="/learn"]').waitFor();
+    await navigation.locator('footer a[href$="/learn/retail"]').waitFor();
+    await navigation.locator('footer a[href$="/learn/restaurant"]').waitFor();
+    await navigation.locator('footer a[href$="/learn/board-game"]').waitFor();
+    await navigation.locator('footer a[href$="/learn/pharmacy"]').waitFor();
+    await navigation.locator('footer a[href$="/learn/inventory"]').waitFor();
+    if (width >= 940) await navigation.locator('header nav a[href$="/learn"]').waitFor();
     else {
       await navigation.locator('header button:has(.anticon-more)').click();
       await navigation.getByRole("menuitem", { name: /ศูนย์เรียนรู้|Learning center/ }).waitFor();

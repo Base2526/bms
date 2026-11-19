@@ -1,5 +1,31 @@
 # Point of Sale (POS)
 
+## สินค้าชั่วคราวที่ยังไม่มีในแค็ตตาล็อก (`10.129`)
+
+POS ขายปลีกบนเว็บ, Desktop และมือถือรับ **สินค้าจริงที่ยังไม่มี SKU** ได้จากปุ่ม
+“ขายสินค้าชั่วคราว” พนักงานกรอกชื่อบนใบเสร็จ จำนวน ราคาต่อหน่วย และประเภท VAT
+(`V` คิด VAT หรือ `N` ยกเว้น VAT) ได้สูงสุด 10 บรรทัดต่อบิล
+บิลหนึ่งใบมีทั้งสินค้าในแค็ตตาล็อกและสินค้าชั่วคราวได้ หรือมีแต่สินค้าชั่วคราวก็ได้
+ชื่อและจำนวนที่รับชำระจะเก็บกับบิลถาวร ไม่สร้างสินค้า/ล็อต ไม่จองหรือตัดสต็อก
+และไม่เป็นค่าบริการใน `bms_order_extra_lines`.
+
+ต้องใช้กะที่เปิด, PIN ของผู้ขาย, `pos.sell` และ `pos.open_item.sell` (ให้ Manager
+ผ่าน migration) รับเงินสดเต็มจำนวนเท่านั้น ไม่มีมัดจำ ขายเชื่อ บิลร้านอาหาร/บอร์ดเกม/
+ร้านยา คูปอง แต้มแลก หรือส่วนลดมือ ยอดสินค้าปกติยังได้ส่วนลดสมาชิกตามกฎเดิม
+ส่วนสินค้าชั่วคราวไม่ลดราคา โหมด Emergency Offline ไม่รับรายการชนิดนี้
+เมื่อมีสินค้าชั่วคราว จอไม่แสดงแต้มคาดการณ์ก่อนขาย; แต้มที่ได้รับจริงดูจากใบเสร็จหลังขาย
+บิลพักเก็บรายละเอียดไว้ แต่ยังไม่ถือว่าได้รับเงินและไม่มี stock reservation.
+
+ใบเสร็จ ใบกำกับ และหลักฐานยอดขายแสดงบรรทัดนี้จากราคาตอนขาย
+การคืนบางส่วน/ทั้งบิลและ void ใช้ POS return เดิม คืนเงินตามจำนวนที่ขาย
+โดยไม่เพิ่มสต็อก ต้นทุนยัง **ไม่ทราบ** และไม่ควรถูกสมมติเป็นศูนย์ในรายงานกำไร
+ถ้าจะเปลี่ยนสินค้าชั่วคราว ให้คืนรายการก่อนแล้วเปิดบิลขายใหม่; ระบบไม่สร้าง
+บิลเปลี่ยนสินค้าอัตโนมัติจากรายการที่ไม่มี SKU.
+migration `10.130` ล็อกหลักฐานรายการขายและคืนไม่ให้ role ของแอปแก้หรือลบย้อนหลัง
+อันดับสินค้าขายดีที่อิง SKU ไม่นับบรรทัดนี้ เจ้าของร้านควรลงสินค้าในแค็ตตาล็อกก่อนขายครั้งถัดไป
+การ deploy ต้องใช้ migration `10.129` และ `10.130` ก่อนเริ่ม Web/POS รุ่นนี้ เพราะ receipt/history
+อ่านตารางใหม่แม้บิลธรรมดา.
+
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · Payments: [payment.md](payment.md) · Inventory: [inventory.md](inventory.md)
 
 The BMS POS at `/pos` is an online, general-retail checkout surface. A device token identifies the
@@ -13,6 +39,25 @@ capability currently available only in the native mobile POS for plain retail ca
 browser and every richer workflow still require the Cloud. See
 [Cloud + Hybrid POS product contract](cloud-hybrid-pos.md).
 
+### Selling screen by shop archetype
+
+`business_archetype` chooses onboarding defaults and the initial screen; it is not a universal
+permission or an inventory rule. The actual sellability of a product still comes from its active
+variant, sales surface, stock policy, branch stock and the sale service's permission checks.
+
+| Archetype | Counter workflow today |
+| --- | --- |
+| `restaurant` | Dedicated `/pos/restaurant` table, rounds, kitchen and settlement flow; native restaurant floor/menu. |
+| `board_game_cafe` | General counter plus board-game sessions, loans and billing group; native board-game tab. |
+| `pharmacy` | General counter with pharmacy approval and product-policy gates; a licensed pharmacist retains every clinical decision. |
+| `mini_mart`, `fashion`, `home_kitchen`, `beauty_personal_care`, `food_beverage`, `gadgets_accessories`, `b2b_wholesale`, `gifts_seasonal`, `pet_supply`, `building_materials`, `other` | General retail counter; product capabilities and configuration determine packs, weighed sale, serials and other behavior. |
+
+Online customer orders, channel messages and AI order creation use their own authenticated order
+pipeline, not the counter UI. A configured archetype does not by itself enable a channel, a
+provider integration, a product capability, a payment method or emergency offline sales. Restaurant,
+pharmacy and board-game archetypes are excluded from native emergency offline cash; the remaining
+archetypes still require each scanned product to pass the ordinary DIRECT/PACK eligibility check.
+
 ### GraphQL mobile contract and REST compatibility
 
 Normal counter workflows have device-scoped GraphQL queries and mutations in
@@ -21,6 +66,12 @@ Normal counter workflows have device-scoped GraphQL queries and mutations in
 tenant, branch and device. Mutations still verify a cashier PIN and the action permission, and
 discounts, voids and money leaving the drawer still require a distinct second person's PIN. A
 device principal is never promoted into a user principal.
+
+Partial-return adapters reject the whole request when any selected line is malformed; they never
+refund only the valid subset. A retry with the same return idempotency key must select the same
+item IDs and quantities, including negative IDs for uncatalogued open items. A replay returns all
+committed lines, while a changed selection reports `IDEMPOTENCY_CONFLICT` without another refund.
+The key also cannot be reused across return and void actions.
 
 The existing `/api/pos/*` routes remain compatibility adapters for the browser POS while its callers
 migrate. Both transports call the same `lib/bms/*.ts` services; neither transport owns business
@@ -70,6 +121,29 @@ incoming orders, kitchen tickets, board-game timed sessions and game loans, and 
 transfers/counts. Runtime screens and state providers import no mock data.
 GraphQL WS carries named invalidations only; Apollo refetches the authoritative snapshot.
 
+Native HTTP GraphQL operations share the existing 15-second deadline. Expiry aborts the request and
+reports an unknown outcome, without automatically retrying a mutation. The shared timeout helper
+rejects independently when a transport or response parser ignores abort, and ignores late completion.
+Stock/count and incoming-line
+cancellation retain their idempotency key when the result has no usable status. In-flight guards
+prevent overlapping taps in stock, shift, restaurant, kitchen and board-game actions. A confirmed
+mutation remains successful if its follow-up read fails; a newly opened restaurant bill retains its
+ID before those reads. Cash movement forms cannot discard their draft/key while saving. Kitchen
+cards retain server-provided size, modifier codes and kitchen notes, and exclude cancelled/unknown
+ticket statuses from actionable work. Opening float, counted shift cash and stock-count quantities
+require an explicit value: blank/whitespace is not zero, while an entered `0` is valid.
+
+Connection errors share the presentation contract in `packages/pos-client-core/src/connectionFailure.ts`
+between native Apollo and Desktop compact GraphQL: connection/timeout, authentication, permission,
+rate limit, server, incompatible API and malformed response each have recovery guidance and a safe
+`POS_*` category code. Failed reads warn that visible data may be stale; uncertain writes require
+checking the original result before accepting money again or creating a replacement transaction.
+Domain rejection messages/codes and variant-selection metadata remain server-owned. No connection
+error retries a business mutation automatically. Mixed decided/unknown GraphQL errors retain uncertainty.
+Native pairing verification, realtime-ticket minting and diagnostic sends have deadlines independent
+of abort support. The restaurant REST adapter also bounds JSON reads and rejects proxy HTML with
+HTTP 200. Diagnostics retain the category and operation, never request PINs or raw proxy bodies.
+
 The app accepts a full POS link, a bare `pos_...` token plus server, or a
 `bmspos://pair?t=...&h=...` deep link. The long-lived device token lives in
 `react-native-keychain`, is masked on screen, and authenticates both GraphQL and ticket minting.
@@ -87,8 +161,14 @@ context. The Admin page blocks overlapping issuance requests and fetches only fi
 the operator's permissions; it retains the credential only in the one-time modal, not Apollo cache.
 Mobile rejects malformed bootstrap identities before secure-storage writes, redacts credentials in
 error/status/diagnostic text (including restored diagnostic queues), and preserves Settings after a
-rejected first-pair candidate. Sale/stock scanners reject pairing QRs and issued-format device tokens
+rejected first-pair candidate. If a saved token is rejected, the app clears the cashier session and
+removes the register from navigation; an open Settings screen stays visible so the operator can read
+the result and pair again. Its Back button leads to Login. A connection or server failure does not
+invalidate the token. Sale/stock scanners reject pairing QRs and issued-format device tokens
 before SKU resolution, clear their input and direct the operator to Settings.
+Confirmed unpairing clears the local token and cashier, then leaves Device Settings open for the
+next pairing QR; Back leads to Login, never to the previous register. Unresolved offline cash or a
+failed queue read still blocks unpairing before any navigation change.
 Tenant, branch, device, shift and store archetype are always server-derived. Cashier and
 second-person PINs live only in React memory and are rechecked with action-specific RBAC on every
 sensitive mutation. Manual discount, void and cash-out selectors filter the server approver list by
@@ -116,7 +196,7 @@ pricing or required choices.
 
 This is explicit focused input, not global native key capture and not a certified scanner adapter.
 Native `pressesBegan`/`UIKeyCommand` or Android key-event capture outside the open modal, physical
-camera/HID model verification, printing, customer-display hardware, background push, and pharmacy
+camera/HID model verification, printer-model certification, customer-display hardware, background push, and pharmacy
 review/evidence remain separate platform/specialist work. Unsupported approval-gated sales fail
 closed on the server. Do not port money, stock, refund, pharmacy or tax rules into the client.
 
@@ -129,7 +209,8 @@ local setup and current exclusions live in [the mobile README](../../apps/mobile
 ## Desktop POS client (Windows, Linux and macOS)
 
 `apps/desktop/` is an Electron shell around the POS surface the browser register already uses —
-`/pos`, `/pos/restaurant`, `/pos/display` and `/pos/manual`, served by the paired backend. It ships
+`/pos/app` (with legacy `/pos` fallback), `/pos/restaurant`, `/pos/display`, `/pos/queue-board`
+and `/pos/manual`, served by the paired backend. It ships
 as a Windows NSIS installer, a Linux AppImage/DEB (x64), and a macOS disk image built for both Apple
 Silicon and Intel. The shell holds no database, no price list and no settlement path. A sale rung up in it is the same `recordPosSale()` transaction as one rung up in
 Chrome, and the app grants a cashier nothing extra.
@@ -144,20 +225,31 @@ Secret Service or KWallet on Linux, Keychain on macOS. The encrypted file is wri
 paired on one platform cannot be read on another — the register has to pair again, which is
 expected, not a fault.
 
+Pairing persistence rechecks that the initiating setup frame/revision is current before committing
+the encrypted temporary file. Closing/replacing setup before that check preserves the previous
+credential. If the atomic rename was already submitted when setup closed, the saved verified
+credential can be restored later, but the old request cannot navigate a replacement window.
+
 The renderer never sees the file. `apps/web/lib/pos/deviceTokenClient.ts` reads the token through
 `window.bmsDesktop` when the bridge is present and falls back to `localStorage` otherwise, so the
-same POS page runs in both shells. Every IPC handler re-checks which frame is calling: `pair` and
-`app-info` answer only the local setup page, while `get-device-token`, `get-storage-namespace` and
-`unpair` answer only a `/pos*` frame on the paired origin. The window runs with context isolation, a
+same POS page runs in both shells. Every IPC handler re-checks which frame is calling: `pair` answers
+only the local setup page; `app-info` also supports paired POS pages. `get-device-token` and
+`get-storage-namespace` answer only a `/pos*` frame on the paired origin. Unpairing, native attention
+and display controls require the cashier's main frame; utility windows and subframes cannot invoke
+them. The window runs with context isolation, a
 sandboxed renderer and no Node integration; navigation away from the paired origin is handed to the
-system browser and the cashier manual is the only renderer-created child window. The main process
+system browser. Renderer-created children are limited to the cashier manual and pickup queue board;
+their navigation and redirects stay on their original utility route and they cannot open more windows.
+The main process
 owns at most one `/pos/display` window, places it on an automatically chosen or explicitly selected
 non-cashier display, remembers that choice, and reconciles display hot-plug changes. Its partition is
 shared so the existing same-origin `BroadcastChannel` works, but it deliberately has no preload or
 IPC bridge. The `/pos/app` renderer publishes its active cart and the server-confirmed final/change
 figures into that channel; embedded legacy settings are not a second publisher. Camera permission is
 granted only for video on the paired origin. "Unpair" closes the customer window, clears the stored
-pairing and returns the cashier window to setup.
+pairing and returns the cashier window to setup. Managed customer and queue windows retry failed
+main-document loads, including HTTP 5xx, every five seconds while the pairing and window remain
+current; a failed subresource does not reload the display.
 
 Native order attention stays deliberately narrower than the web workflow. The restaurant surface
 polls its existing device-scoped incoming-order read on every operational screen, even before a
@@ -192,9 +284,15 @@ and DEB on Linux, `.github/workflows/desktop-macos.yml` builds the two DMGs on m
 tests, lint and the Electron setup smoke test, and both upload a 14-day workflow artifact without
 signing, notarizing or publishing anything.
 
-Direct ESC/POS USB/LAN printing, cash-drawer control and offline tender are not part of the shell:
-it registers no USB or serial device handler, so the register's WebUSB path is unavailable inside it
-and receipts print through the same browser print dialog the web register falls back to. Linux
+Direct ESC/POS USB/LAN printing, cash-drawer control and offline tender are not part of the shell.
+Current Desktop builds support OS-driver receipt printing to an explicitly saved printer, and
+station-routed kitchen tickets with a local duplicate/uncertain-job journal. Receipt printing
+captures the existing server-backed receipt; kitchen printing formats the existing server ticket.
+Neither creates business records. Kitchen preparation and driver submission have a bounded wait;
+late work cannot submit after timeout, navigation or unpairing. Pre-submission failures can be retried,
+while an uncertain driver outcome requires an explicit retry after inspecting the tray. Missing
+printers never cause selection of another printer. The browser print-dialog fallback remains for
+older shells without the native bridge. Linux
 release acceptance still needs a distro matrix (GNOME/KDE, Wayland/X11), CUPS receipt printing,
 keyboard-wedge scanners, a second customer display, suspend/reconnect, and the keyring-locked
 states; a macOS rollout additionally needs an Apple Developer ID, notarization, and a decision about
@@ -211,6 +309,13 @@ Verification for the shell is `npm run lint` and `npm test` (pairing and keystor
    one-time token, and pairs the browser.
 2. Staff PINs and RBAC are configured. Selling, opening/closing a shift, returning goods, and
    confirming a non-cash refund each have independent server-side permission checks.
+   In `/admin/pos-devices`, `pos.pin.manage` can read the staff list needed to set or clear PINs;
+   setting/clearing another person's PIN also follows the Users role-rank rule and cannot target a
+   platform-admin account; an authorized staff member can change their own PIN.
+   changing a staff account's POS-only mode requires `pos.staff.manage` and is available to roles
+   that hold only that permission. Both clearing a PIN and changing POS-only mode require a visible
+   confirmation. A role with only
+   `support.logs.view` can read POS device events there without device-management permission.
 3. The cashier opens a shift with the drawer float, scans a barcode/SKU or searches the live catalog,
    and can sell base units or configured packs.
    In the compact desktop register, a product-level code with multiple variants opens one product
@@ -439,7 +544,7 @@ the accountant this figure at period end; it is not an optional dashboard number
 
 ### Where points are earned
 
-Earning is hooked to every path that moves an order to `PAID` — `payOrder()`, `confirmPayment()`, the
+Earning is hooked to payment-confirmed paths that move an order to `PAID` — `confirmPayment()`, the
 split-payment confirm, and `finalizePosSale()` — not just the counter, so a customer who orders over
 LINE and transfers the money earns the same as one who walks in. Redemption and tier discount already
 worked everywhere because they live in `createOrder()`.
@@ -932,7 +1037,9 @@ in a framed, resizable window centered inside the cashier display, so a develope
 exercise the full item/payment/Dynamic-QR flow without connecting another monitor. Preview state is
 process-local only: it does not change or persist the `off`/`auto`/`selected` display configuration,
 never reopens at startup, and yields to the configured non-cashier display when one becomes
-available. The real managed customer display remains restricted to a display other than the cashier.
+available. The customer and queue previews are independent and may remain open together for a
+one-screen comparison; the queue preview is cascaded so both native title bars remain reachable.
+The real managed customer display remains restricted to a display other than the cashier.
 
 When a QR tender is selected, the customer display creates a new Dynamic PromptPay QR containing the
 amount assigned to that tender. Its receiving authority still comes only from the exact static QR
@@ -1301,6 +1408,15 @@ Prefix `21` labels embed a price rather than a weight and are refused. Deriving 
 rounded label price by the current unit price would corrupt stock when price or rounding changes.
 Configure the physical scale to print prefix `22` labels for BMS.
 
+For a gram-counted retail product with a published `10.136` rate, a Manager sets a VAT-inclusive
+price per kilogram in **Weighed prices**. Publication requires the product's web/storefront/customer
+AI sales surfaces to be off. The backend re-parses each label and computes satang with integer
+arithmetic, rounding half up per physical label; the scanned `packPrice` is only a cashier preview.
+The sale freezes rate revision, 1,000-gram basis, label quantities and rounding rule in the order
+line. Receipt totals use frozen `line_amount`; a rounded per-gram display price is not money
+authority. A rate change after a sale cannot reprice its return. The current pilot has no
+per-meter cut workflow or hardware certification.
+
 ### Receiving a purchase order at the register (`9.6`)
 
 The Receive tab is a thin POS workflow over the existing purchase service. A cashier selects an
@@ -1440,8 +1556,9 @@ as QR on browser/desktop print previews, ESC/POS byte output, and native mobile 
 receipts include a PNG QR attachment and link; text-only LINE receipts include the same tappable link.
 Deposits, unconfirmed Emergency Offline references, non-VAT receipts, voids and returned bills are not
 invoice-claimable. Reprints use the same link; the server always rechecks eligibility when scanned.
-Native hardware printing remains outside the current RN integration, and physical printers still need
-per-model QR scan verification before rollout.
+Native manual Wi-Fi/LAN ESC/POS printing sends the server-backed receipt raster only after the
+printer's online/cover/paper checks. Physical printers still need per-model QR scan verification before
+rollout; USB, Bluetooth, AirPrint and IPP printer transports are not implemented.
 
 The customer scans without signing in and selects Individual, Company or Foreigner. The form collects
 buyer name, a checksum-valid Thai 13-digit tax ID (required for Company, optional for Individual and
@@ -1581,9 +1698,9 @@ background queue (`bms_etax_submissions`, migration `7.94`), gated off by defaul
 `ETAX_ENABLED`/`bms_store_profile.etax_enabled`. When enabled, `processEtaxQueue()` drives each
 submission through `PENDING → BUILT → SIGNED → SENT → ACCEPTED/REJECTED/FAILED` with bounded
 retry/backoff; `POST /api/bms/jobs/etax` runs one pass. That route authenticates with
-`x-job-token`/`BMS_JOB_TOKEN` (not the `x-cron-secret` the other cron routes use — see
-[api.md](../architecture/api.md)) and does not yet record into `bms_job_runs`, so it has no run
-history on `/admin/operations-schedule` today. Until a real signing/submission provider is wired up
+`x-cron-secret`/`BMS_CRON_SECRET` like the other cron routes (see
+[api.md](../architecture/api.md)) and records into `bms_job_runs` for
+`/admin/operations-schedule`. Until a real signing/submission provider is wired up
 and verified, leave `ETAX_ENABLED` off and rely on locally generated documents plus the accountant's
 own filing process.
 
@@ -1926,6 +2043,10 @@ a single due date per invoice, and no credit-limit approval workflow — a manag
 
 ## Failure and retry behavior
 
+- A read-only refresh (`GET`/`HEAD`) that receives a proxy/network failure reports that current data
+  could not be loaded and asks the operator to refresh. It must not claim that a bill may have been
+  written. A mutating request that loses a `502`/`503`/`504` response remains an unknown outcome:
+  refresh authoritative state first and never invite an immediate retry with a fresh key.
 - Every sale has a UUID idempotency key. A lost response or network interruption leaves a recovery
   record in browser storage; pressing Pay again reuses the same key and cannot create a second bill.
 - A `PENDING` or `PAID` sale can resume its settlement transaction. A completed key replays the
@@ -1933,7 +2054,12 @@ a single due date per invoice, and no credit-limit approval workflow — a manag
 - Returns also require an idempotency key based on the receipt and cumulative returned quantities.
 - This is not a general offline POS. Native POS may queue only a plain retail sale paid entirely in
   cash, with no member, points, coupon, manual discount, serial/weighted/modifier item, pharmacy
-  approval, credit, deposit, restaurant check, or board-game billing group. The encrypted device
+  approval, credit, deposit, restaurant check, or board-game billing group. The signed-in scan
+  supplies a server-derived offline eligibility flag; a missing flag fails closed. At sync the
+  server rechecks the product's current stock policy and bundle/serial status: only ordinary
+  DIRECT and PACK products are accepted. RECIPE, WEIGHTED, BUNDLE, SERIALIZED and NON_STOCK
+  products require an online sale even when entered by SKU rather than a special barcode.
+  The encrypted device
   queue stores no PIN, recovers by the original idempotency key before retrying, flushes serially
   under the original cashier while that device shift remains open,
   and blocks shift close while unresolved. A rejected sync remains visible for review and can be
@@ -2008,8 +2134,9 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   separate background queue (`bms_etax_submissions`, migration `7.94`), gated off unless
   `ETAX_ENABLED`/`bms_store_profile.etax_enabled` is turned on — see "e-Tax submission queue" below.
 - A `pos_only` cashier account (migration `7.92`) is hard-blocked from `/admin` login by `loginAdmin`
-  itself, not just a hidden menu item; it also cannot toggle its own `pos_only` flag or an
-  Administrator's.
+  itself. Changing the flag increments the admin session version, and admin identity refresh rejects
+  an already-open session while `pos_only` is true; it also cannot toggle its own `pos_only` flag or
+  any Administrator/platform-admin account's.
 - Pair the actual scanner (keyboard-wedge input), receipt printer, paper size, cash drawer process,
   and payment terminals. Printing falls back to the browser print dialog; the ESC/POS path over
   WebUSB (receipt, barcode, drawer kick) is written but has never been run against real hardware, so
@@ -2084,6 +2211,147 @@ At the counter:
   observation, not a hold or reservation guarantee.
 - Customers still cannot take a walk-in queue number themselves and there is no SMS/LINE
   notification when a party is called; both remain staff screen actions.
+
+<a id="pickup-queue-numbers-and-the-call-screen-10111"></a>
+
+### Pickup queue numbers and the call screen (`10.112`–`10.113`)
+
+A cafe or food stall hands the customer a number at the counter and calls it on a screen when the
+order is ready. `9.64` numbers people waiting for a **table**; this is the separate number for people
+waiting for an **order**.
+
+- **Per branch, with a per-till override.** Locations → เลขคิวรับของ enables numbering for every
+  eligible online sale in that branch. The same branch form controls whether PREPARING numbers are
+  public, the board message and how many minutes a READY number remains on the customer board
+  (`0` keeps it until staff closes it). POS → ตั้งค่า → เลขคิวรับของ remains a device-local opt-in
+  for a cafe counter in a branch that is otherwise off (web/desktop uses `localStorage`, native uses
+  the Keychain). Dine-in checks keep their table number; **take-away checks** settled at the
+  restaurant register (web or mobile) get a pickup number at payment. Offline cash replay never
+  creates a number even when the branch policy is on: the customer has already left.
+- **Issued after the sale commits, never inside it.** Every adapter (`/api/pos/sale`, the
+  restaurant settle route, GraphQL `bmsPosSale` and `bmsPosRestaurantSettleCheck` with
+  `pickupQueue: true`) calls `issuePickupQueueAfterSale()` only after the sale returned `SOLD`, in
+  its own transaction. It never throws: a queue failure answers `SOLD` with `pickupQueueError`,
+  because the money is already in. One number per order (`UNIQUE (tenant_id, order_id)`), so a
+  replayed sale gets the same number. Mobile offline cash sales synced later never ask for one:
+  the customer already left with the goods.
+- **Numbers run per branch per service day**, using the same shop-timezone boundary as the table
+  queue. A branch can set a short prefix and the first number for a new empty service day; issued rows
+  snapshot that prefix and a later setting change never renames old receipts. Numbers keep at least
+  three digits (`A042`) at the top of the receipt in double size. Receipt history and reprints (web,
+  restaurant, mobile `BmsPosReceipt.pickupQueueLabel`) read the same stored label.
+- **Ready comes from the kitchen or the cashier.** When every live kitchen ticket of the order (or
+  of the take-away check) is `READY`/`SERVED`, the number moves to ready inside the kitchen ticket
+  transaction; a number issued after the kitchen already finished starts as ready. A kitchen undo
+  withdraws only readiness the kitchen set (`ready_source = 'KITCHEN'`); a number a cashier called by
+  hand stays called. Shops without a kitchen board call numbers from the strip on the sell tab, the
+  restaurant floor or the mobile menu screen (เรียกคิว / เรียกซ้ำ / รับแล้ว / ย้อน; GraphQL
+  `bmsPosPickupQueue` / `bmsPosPickupQueueAction`), which needs the cashier PIN and `pos.sell`.
+- **Staff queue manager.** The strip stays visible while the till numbers orders and opens
+  **จัดการคิว**: a number keypad ("42" finds `042` or `A042`) to call or collect by number, filters for
+  open / preparing / ready / closed today, and per-row เรียกคิว / เรียกซ้ำ / รับแล้ว / ย้อน /
+  ยกเลิก. Cancel takes two taps (the first only arms a red confirmation), because it removes the
+  number from the customer screen for good. The staff-only `?view=day` list shows up to 500 numbers,
+  prioritizing open numbers and recent activity before closed history, with the bill reference;
+  keypad input looks up an exact service-day number on the server when it is outside the list.
+  The till strip takes the 200 most recently active open numbers. The customer board applies branch
+  visibility and READY auto-hide before selecting its 200 most recently active visible numbers, so
+  recalling an older number can bring it back on screen. The mobile
+  strip has the same actions per tapped number, with a confirmation dialog for cancel.
+  The Desktop compact sell screen reads the same per-device queue switch as its Settings workspace,
+  requests a number with the committed sale, and shows the strip above the catalog. After a successful
+  retry it reloads the saved receipt before printing, so the new number appears on the paper too.
+- **Retry a number that failed to issue.** Where a committed sale reported `pickupQueueError`
+  (web sell screen, restaurant settlement, mobile receipt screen) a **ออกเลขคิวใหม่** button asks
+  again for the same bill (REST `action: "issue"` with `orderId`; GraphQL `bmsPosPickupQueueAction`
+  with `action: "issue"`), and the server returns the existing number if one was issued meanwhile.
+  The service verifies that the device's bill is still `COMPLETED` and not voided before issuing or
+  returning a number; a pending or cancelled bill cannot appear on the call screen.
+- **The kitchen sees the number.** Kitchen tickets carry `pickupQueueLabel` (counter orders by
+  order, take-away checks through the order that settled the check), and the card header on
+  `/admin/kitchen`, the restaurant register's kitchen screen and the mobile kitchen board reads
+  `คิว 042` instead of the bill or "Take away #…" label, so the food on the pass matches the number
+  being called.
+- **Voiding a bill takes its number off the screen** in the void transaction.
+- **The call screen** is `/pos/queue-board`. A current Desktop shell configures it together with the
+  customer display under POS Settings → External displays. The Desktop shell can open **one queue
+  window per selected external monitor**. Auto mode offers the count of free external monitors and
+  retains a saved count while screens are disconnected. Selected mode keeps the selected screens, with
+  missing screens shown as waiting until they reconnect. A cashier screen is never eligible. The
+  customer display keeps its own role; explicitly assigning one of its screens to the queue releases
+  that customer role. Each queue screen can use its own locally saved layout, or select Follow default
+  to remove its override and track later changes to the workstation layout. All queue screens show the same branch queue and media; they are not separate
+  queue groups. Exactly one active managed queue window owns announcements, chosen automatically or
+  by the operator. This selects among the queue TVs; the cashier's existing immediate local call
+  feedback is separate. If that screen disconnects, the first remaining active queue window takes audio.
+  Temporary previews may stay open together on the cashier display and are muted; they never change
+  the saved roles. Legacy single-screen settings migrate to one screen without enabling more screens.
+  Older shells show an update prompt instead of sending the operator to a manual URL. The screen uses the till's device token
+  (never a public link) and polls
+  `/api/pos/pickup-queue?view=board`, which returns numbers, status and public presentation
+  references only: no order ids, names, phones, items or amounts. The branch chooses the spotlight duration. A newly called number is
+  highlighted inside the ready panel, so the preparing and ready lists remain visible instead of
+  being pushed below a full-width overlay. Pressing **เรียกคิว** or **เรียกซ้ำ** at the till unlocks
+  Web Audio in that cashier click and announces the successful call from the configured Thai/English
+  release-time voice pack generated by Google AI Studio; the browser makes no Gemini/provider request.
+  Until that pack is installed, or if a segment cannot be decoded, the register speaks the same
+  full sentence with the OS Thai/English voice; only a missing speech engine falls back to the local
+  chime. Call-screen sound defaults on for a new till. POS Settings → External displays has a
+  per-device sound switch shared by the queue windows; an explicit off is
+  persisted locally and wins over that default. Desktop permits this trusted managed screen to arm
+  Web Audio at startup. A browser that still blocks autoplay shows a tap-to-enable recovery button
+  without silently changing the saved preference. Only calls from the last 30 s on the server clock are announced, so a
+  screen that reconnects never chimes for numbers called minutes ago. The same card lets the owner
+  choose a workstation-local layout: เรียกเด่น, สามโซน, แถบเตรียม, มินิมอลทีวี, ป้ายรายการ or
+  แบ่งครึ่ง. This is the default layout for the workstation and temporary preview; an individual
+  managed screen may override it and updates while open. The layout
+  it is presentation only and cannot change queue status. Dense layouts page numbers every eight
+  seconds instead of making them unreadably small, so a busy service never needs scrolling. The
+  workstation can also choose four distinct AI Studio voices (Kore polite female, Aoede bright
+  female, Puck friendly male and Charon male announcer), Kore speech plus a counter bell, counter bell, double beep or
+  soft ping and preview queue `001`. The release generator builds one immutable pack per profile;
+  until a profile pack is installed, the deterministic OS fallback varies voice selection, rate and
+  pitch to preserve a useful distinction between profiles. This local choice never overrides a
+  branch-wide `OFF`; missing speech support still falls back to the local chime. `npm run test:queue-board` in
+  `apps/desktop` renders it in Electron with the real desktop preload and saves screenshots. The desktop app opens it inside its own POS partition (so it can read the
+  paired token) but never treats it as a cashier frame: it cannot print or change display settings.
+  Opening the URL directly in Chrome is unsupported; a missing, expired or revoked device token is
+  replaced by instructions to reopen it from POS Settings and is never shown as a raw token error.
+- **Branch media on the call screen (`10.115`).** Locations → สื่อจอคิว publishes up to eight
+  public PNG/JPG/WebP images per branch. Staff can order them, enable them individually, set start/end
+  times in the shop timezone, choose a 4–30 second rotation and fade/slide/cut transition, and set
+  one default image. The default appears when no promotion is eligible; without it the queue keeps
+  its normal background. The call screen filters unavailable images and keeps numbers visible in all
+  six layouts. Publishing needs `location.manage` and branch access, validates tenant-owned files,
+  and records an audit row with the settings in one transaction. The board read falls back to an
+  empty media configuration if this presentation migration is absent, preserving the queue itself.
+  Video upload is not enabled. Deployment of this optional media feature requires migration `10.115`
+  and verification on the target display.
+- **The till and customer display share the hand-off.** A kitchen-sourced transition to READY plays
+  the device's configured `PICKUP_READY` sound and shows a short banner at the selling screen; the
+  first load is silent so old work does not chime again. After payment, the read-only customer
+  display shows the issued number prominently alongside the verified settlement result.
+- **Idle customer-display promotions never cover a sale.** Store Profile can hold up to eight
+  tenant-owned public image URLs plus a 4–30 second interval. The read-only display preloads and rotates them only
+  in its idle state; cart, payment, settlement and queue hand-off screens take precedence, and a
+  failed image falls back to the configured welcome background.
+- **Queue-board media (`10.115`) belongs to the branch.** Locations → สื่อจอคิว manages up to
+  eight ordered, individually enabled images with optional start/end instants, one default image,
+  a 4–30 second interval and fade/short-slide/cut transitions. Images are validated, resized and
+  stored as tenant-owned public files immediately on upload, so operators must use non-confidential
+  artwork; only `location.manage` staff with access to that branch
+  can publish. The board API still requires its paired device token and returns only queue numbers,
+  status and public media references. An unavailable or expired image falls back to the next image,
+  then the branch default, then the normal board background. Calls pause rotation and dim the media;
+  the queue and its announcement always remain visible. The branch setting starts disabled on
+  migration, preserving existing call screens. Media publication is audited in the same tenant
+  transaction as the settings/playlist change. An image uploaded and then discarded before
+  publication remains a public file; this release does not yet purge such unused uploads.
+  Video is not enabled in `10.115`: the current image
+  upload and generic file response do not establish a verified, cross-platform inline-video path.
+- **Polling, not realtime push, by design.** The strip polls every 5 s and the screen every 3 s
+  through the device-token API. "Your order is ready" tolerates a few seconds, and a screen that lost
+  the shop's internet recovers on the next poll without a socket to re-authenticate.
 
 ### Splitting and merging bills (`9.63`)
 
@@ -2178,7 +2446,12 @@ What matters at the counter:
 - **Deactivating is not deleting.** Old tickets and history stay, a deactivated station that still
   has food in the kitchen keeps its button on the board, and deactivating one that selling menu items
   still point at asks for confirmation first.
-- **Per-station printer routing is not built.** The schema reserves a column for it; nothing reads it.
+- **Desktop has a local station-printer pilot.** Each workstation explicitly maps a server station
+  id to an installed OS printer, 58/80 mm width and optional auto-print. The main process receives
+  bounded structured ticket data (never HTML/URL), prints one journalled job per server ticket and
+  suppresses successful duplicates. An unknown/timeout result requires the operator to inspect the
+  tray before confirming retry. Routes are not stored in `printer_profile_id`, not shared between
+  workstations and do not add browser-only/mobile printing.
 
 A dine-in check is settled by the same `recordPosSale()` engine as a retail bill, so the line
 re-validation inside that engine takes the **bill's own** sales surface: `RESTAURANT_POS` when a
@@ -2503,8 +2776,8 @@ does not.
 
 Known boundaries remain: delivery aggregators such as GrabFood require their official API/webhook
 contracts and credentials; no mock adapter is presented as live. Reservations/queue numbers,
-split/merge **checks** (payment split is supported), station-printer
-routing and offline-first sync are separate modules. Receipt and kitchen hardware remain browser/OS
+split/merge **checks** (payment split is supported), centrally managed station-printer profiles
+and offline-first sync are separate modules. Receipt and kitchen hardware remain browser/OS
 driven. If re-reserving fails while
 a later round is being sent, the replacement now rolls back as one transaction: the previous PENDING
 order, its idempotency key, the ingredient reservation and the already-sent kitchen lines remain

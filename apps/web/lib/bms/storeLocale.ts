@@ -13,7 +13,7 @@ export function isValidTimeZone(value: string): boolean {
 export async function resolveStoreTimezone(tenantId: string): Promise<string> {
   try {
     const result = await query<{ timezone: string | null }>(
-      `SELECT COALESCE(to_jsonb(sp)->>'timezone_code',sp.timezone) AS timezone
+      `SELECT COALESCE(NULLIF(btrim(to_jsonb(sp)->>'timezone_code'), ''), NULLIF(btrim(sp.timezone), '')) AS timezone
          FROM bms_store_profile sp WHERE tenant_id=$1`,[tenantId]);
     const value = result.rows[0]?.timezone?.trim();
     return value && isValidTimeZone(value) ? value : DEFAULT_STORE_TIMEZONE;

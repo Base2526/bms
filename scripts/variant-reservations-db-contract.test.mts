@@ -33,7 +33,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
-import { cancelOrder, createOrder, payOrder, packOrder, shipOrder } from "../apps/web/lib/bms/orders.ts";
+import { cancelOrder, createOrder, packOrder, shipOrder } from "../apps/web/lib/bms/orders.ts";
+import { submitPayment, confirmPayment } from "../apps/web/lib/bms/payments.ts";
 import { listVariantReservations } from "../apps/web/lib/bms/stock.ts";
 import { DECLARE_FAKE_SALES_SURFACES_SQL } from "./testing/salesSurfaces.mts";
 
@@ -67,6 +68,7 @@ const dropOrdersTouching = async (skus: string[]) => {
   );
   if (!stale.rowCount) return;
   const ids = stale.rows.map((r) => r.order_id);
+  await query(`DELETE FROM bms_payments WHERE tenant_id = $1 AND order_id = ANY($2::uuid[])`, [tenantId, ids]);
   await query(`DELETE FROM bms_order_item_lots WHERE order_item_id IN (
                  SELECT id FROM bms_order_items WHERE order_id = ANY($1::uuid[]))`, [ids]);
   await query(`DELETE FROM bms_order_items WHERE order_id = ANY($1::uuid[])`, [ids]);
@@ -242,7 +244,14 @@ test("a shipped bill stops holding stock and stops being listed", async () => {
       WHERE o.tenant_id = $1 AND o.id = $2 AND o.customer_id IS NOT NULL`,
     [tenantId, orderId, `FAKE ${TAG}`, `FAKE ${TAG} address`]
   );
-  assert.equal(await payOrder(tenantId, orderId), true);
+  const submitted = await submitPayment({ tenantId, orderId, method: "CASH" });
+  assert.equal(submitted.status, "SUBMITTED");
+  if (submitted.status !== "SUBMITTED") return;
+  const actorId = (await query<{ id: string }>(
+    `SELECT id FROM users WHERE tenant_id=$1 ORDER BY created_at LIMIT 1`, [tenantId]
+  )).rows[0]?.id;
+  assert.ok(actorId);
+  assert.equal((await confirmPayment(tenantId, submitted.paymentId, actorId)).status, "CONFIRMED");
   assert.equal(await packOrder(tenantId, orderId), true);
 
   const whilePacking = await listVariantReservations(tenantId, PLAIN, SIZE);

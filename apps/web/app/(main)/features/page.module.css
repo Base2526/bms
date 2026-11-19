@@ -1,0 +1,23 @@
+.page { display: grid; gap: 24px; margin: 0 auto; max-width: 760px; min-height: 55vh; padding: 56px 16px 72px; }
+.page h1 { color: var(--app-text); font-size: clamp(28px, 5vw, 42px); line-height: 1.35; margin: 0; }
+.search { display: grid; gap: 12px; }
+.search label { color: var(--app-text); font-size: 18px; font-weight: 700; }
+.row { display: flex; gap: 10px; min-width: 0; }
+.row input { background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 10px; color: var(--app-text); flex: 1; font: inherit; min-width: 0; padding: 14px; }
+.row button, .contact { background: var(--app-primary); border: 0; border-radius: 10px; color: white; cursor: pointer; font: inherit; font-weight: 700; padding: 14px 22px; text-align: center; text-decoration: none; }
+.row input:focus-visible, .row button:focus-visible, .contact:focus-visible, .priceLink:focus-visible, .examples a:focus-visible { outline: 3px solid var(--app-primary); outline-offset: 3px; }
+.result { background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 16px; color: var(--app-text); display: grid; gap: 12px; padding: 24px; }
+.result h2 { font-size: 23px; line-height: 1.4; margin: 0; }
+.result p { line-height: 1.7; margin: 0; }
+.priceLink { color: var(--app-primary); font-weight: 700; justify-self: start; }
+.examples { color: var(--app-muted); display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.examples a { color: var(--app-primary); text-decoration: underline; }
+.result details { color: var(--app-muted); line-height: 1.7; }
+.result summary { cursor: pointer; }
+.result details p { margin-top: 12px; }
+.contact { justify-self: start; margin-top: 8px; }
+@media (max-width: 600px) {
+  .page { gap: 20px; padding: 36px 16px 56px; }
+  .row button { padding: 14px 16px; }
+  .result { padding: 20px; }
+}

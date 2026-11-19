@@ -1,3 +1,5 @@
+import { createPosTranslator, type PosTranslator } from "../../i18n/posClient";
+
 export type PosPaymentDraft = {
   id: string;
   method: string;
@@ -84,20 +86,21 @@ export function rebalanceSplitPayments(
 export function checkoutBlockReason(
   payments: readonly PosPaymentDraft[],
   amountDue: number,
+  posText: PosTranslator = createPosTranslator("th"),
 ): string | null {
-  if (payments.length === 0) return "ต้องระบุช่องทางชำระเงิน";
+  if (payments.length === 0) return posText("ต้องระบุช่องทางชำระเงิน");
   const total = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
   if (Math.abs(total - amountDue) > 0.009) {
     return total < amountDue
-      ? `ยอดชำระรวมยังขาด ฿${(amountDue - total).toFixed(2)}`
-      : `ยอดชำระรวมเกินไป ฿${(total - amountDue).toFixed(2)}`;
+      ? posText("ยอดชำระรวมยังขาด ฿{v0}", { v0: (amountDue - total).toFixed(2) })
+      : posText("ยอดชำระรวมเกินไป ฿{v0}", { v0: (total - amountDue).toFixed(2) });
   }
   for (const payment of payments) {
-    if (!(Number(payment.amount) > 0)) return "ทุกช่องทางต้องระบุยอดที่มากกว่า 0";
+    if (!(Number(payment.amount) > 0)) return posText("ทุกช่องทางต้องระบุยอดที่มากกว่า 0");
     // เว้นว่าง = รับมาพอดี (server ยอมรับ) · ใส่มาแล้วน้อยกว่ายอด = ทอนติดลบ ซึ่งไม่มีอยู่จริง
     if (payment.method === "CASH" && payment.tendered.trim()
       && Number(payment.tendered) < Number(payment.amount)) {
-      return "เงินสดที่รับมาน้อยกว่ายอดของช่องทางเงินสด";
+      return posText("เงินสดที่รับมาน้อยกว่ายอดของช่องทางเงินสด");
     }
   }
   return null;

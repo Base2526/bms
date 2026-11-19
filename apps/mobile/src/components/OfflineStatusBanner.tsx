@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -14,6 +15,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { OfflineSyncCenter } from './OfflineSyncCenter';
 
 export function OfflineStatusBanner() {
+  usePosLanguage();
   const [syncCenterOpen, setSyncCenterOpen] = useState(false);
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -33,15 +35,15 @@ export function OfflineStatusBanner() {
     : colors.text;
   const parts = [
     offline
-      ? 'ออฟไลน์'
+      ? posText("ออฟไลน์")
       : checking
-      ? 'กำลังตรวจการเชื่อมต่อ'
+      ? posText("กำลังตรวจการเชื่อมต่อ")
       : degraded
-      ? 'ข้อมูลสดขัดข้อง'
-      : 'ออนไลน์',
-    queue.pendingCount > 0 ? `รอซิงก์ ${queue.pendingCount} รายการ` : null,
-    queue.reviewCount > 0 ? `ต้องตรวจสอบ ${queue.reviewCount} รายการ` : null,
-    queue.storageError ? 'คิวออฟไลน์ผิดพลาด' : null,
+      ? posText("ข้อมูลสดขัดข้อง")
+      : posText("ออนไลน์"),
+    queue.pendingCount > 0 ? posText("รอซิงก์ {v0} รายการ", { v0: queue.pendingCount }) : null,
+    queue.reviewCount > 0 ? posText("ต้องตรวจสอบ {v0} รายการ", { v0: queue.reviewCount }) : null,
+    queue.storageError ? posText("คิวออฟไลน์ผิดพลาด") : null,
   ].filter(Boolean);
   return (
     <>
@@ -56,7 +58,7 @@ export function OfflineStatusBanner() {
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="เปิดศูนย์ซิงก์รายการออฟไลน์"
+          accessibilityLabel={posText("เปิดศูนย์ซิงก์รายการออฟไลน์")}
           onPress={() => setSyncCenterOpen(true)}
           style={[styles.row, { backgroundColor, borderColor: color }]}
         >

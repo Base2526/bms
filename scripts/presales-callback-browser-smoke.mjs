@@ -20,7 +20,7 @@ try {
       ["FAKE-ordinary", "FAKE Ordinary", "OPEN", []],
       ["FAKE-closed", "FAKE Closed", "CLOSED", ["sales-callback"]],
     ].map(([id, customerName, status, tags]) => ({
-      id, customerName, status, tags, channel: "line", customerRef: id,
+      id, customerName, status, tags, channel: "line", supportsOutboundPush: true, customerRef: id,
       customerAvatar: null, sourceDisplayName: "FAKE BMS", sourceHandle: "@fake",
       sourceAvatar: null, unread: 0, lastMessage: "FAKE prospect message",
       lastMessageAt: "2026-10-28T10:00:00Z", assignedStaff: null,

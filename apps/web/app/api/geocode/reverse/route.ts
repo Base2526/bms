@@ -1,9 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit } from "@/lib/bms/rateLimit";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = "force-dynamic";
 
 async function handleGET(req: NextRequest) {
+  // Same Nominatim budget as /api/geocode/search (shared "geocode:*" keys): per IP and overall.
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    || req.headers.get("x-real-ip")?.trim()
+    || "unknown";
+  const perIp = await rateLimit(`geocode:${ip.slice(0, 128)}`, 30, 60_000);
+  const overall = perIp.ok ? await rateLimit("geocode:all", 60, 60_000) : perIp;
+  if (!perIp.ok || !overall.ok) {
+    return NextResponse.json(
+      { placeName: null, error: "RATE_LIMITED" },
+      { status: 429, headers: { "Retry-After": String((perIp.ok ? overall : perIp).retryAfter) } },
+    );
+  }
   try {
     const url = new URL(req.url);
     const lat = Number(url.searchParams.get("lat"));

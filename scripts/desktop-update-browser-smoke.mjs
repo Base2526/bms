@@ -98,13 +98,13 @@ async function openRegister({ arch = "arm64", desktop = true, missingInfo = fals
   const page = await context.newPage();
   page.setDefaultTimeout(15_000);
   const firstCheck = desktop && !missingInfo
-    ? page.waitForResponse((response) => response.url().includes("/api/retail-local/desktop-update"), { timeout: 120_000 })
+    ? page.waitForResponse((response) => response.url().includes("/api/retail-local/desktop-update"), { timeout: 120_000 }).catch(() => null)
     : null;
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${baseUrl}${entry}`, { waitUntil: "domcontentloaded", timeout: 120_000 });
   if (entry === "/pos/app") {
-    await page.getByLabel("PIN พนักงาน 4–8 หลัก").fill("1234");
-    await page.getByRole("button", { name: "เข้าสู่ระบบ", exact: true }).click();
+    await page.getByLabel(lang === "th" ? "PIN พนักงาน 4–8 หลัก" : "Employee PIN, 4–8 digits").fill("1234");
+    await page.getByRole("button", { name: lang === "th" ? "เข้าสู่ระบบ" : "Sign in", exact: true }).click();
   }
   if (businessArchetype === "restaurant") {
     await page.getByRole("heading", { name: "BMS Restaurant", exact: true }).waitFor();
@@ -114,7 +114,11 @@ async function openRegister({ arch = "arm64", desktop = true, missingInfo = fals
   } else {
     await page.locator(".pos-topbar").waitFor();
   }
-  if (firstCheck) await (await firstCheck).finished();
+  if (firstCheck) {
+    const response = await firstCheck;
+    assert.ok(response, "desktop update request did not complete");
+    await response.finished();
+  }
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   return { context, page, errors, setStatus: (value) => { status = value; }, checks: () => checks, downloads: () => downloads };
 }

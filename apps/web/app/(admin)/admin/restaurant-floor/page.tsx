@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/useUiText";
+
 import { gql, useMutation, useQuery } from "@apollo/client";
 import {
   Alert, Button, Card, Empty, Form, Input, InputNumber, Modal, Popconfirm,
@@ -109,6 +111,7 @@ function errorMessage(error: unknown, fallback: string) {
 }
 
 export default function RestaurantFloorPage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { can, loading: permissionsLoading } = useBmsPermissions();
   const canManage = can("restaurant.floor.manage");
@@ -396,7 +399,7 @@ export default function RestaurantFloorPage() {
     image.addEventListener("load", () => popup.print(), { once: true });
     image.src = qrImage;
     main.appendChild(image);
-    appendText("h2", "สแกนเพื่อสั่งอาหาร");
+    appendText("h2", uiText("admin_ui.scan_to_order_food_1ff09"));
     appendText("p", "Scan to order");
     doc.body.replaceChildren(main);
   }

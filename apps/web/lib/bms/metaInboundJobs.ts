@@ -9,7 +9,7 @@ import {
   logConversation,
   logInboundMessage,
   notifyInboxConversationChanged,
-  recordProviderMessageIds,
+  recordAiReplyDelivery,
   type Attachment,
 } from "./inbox";
 import { fallbackEvidenceQuality } from "./customerAnswerEvidence";
@@ -279,9 +279,9 @@ export async function processMetaInboundJob(job: MetaInboundJob): Promise<void> 
     effectsClient.release();
   }
   const attachment = firstAttachment(job);
-  if (!job.messageText) {
-    await logInboundMessage(job.tenantId, job.channel, job.customerRef, {
-      body: "",
+  if (!job.messageText || job.attachments.length > 0) {
+    const savedConversationId = await logInboundMessage(job.tenantId, job.channel, job.customerRef, {
+      body: job.messageText ?? "",
       attachment,
       meta: {
         type: job.attachments[0]?.type ?? "attachment",
@@ -290,6 +290,7 @@ export async function processMetaInboundJob(job: MetaInboundJob): Promise<void> 
         raw: { attachmentCount: job.attachments.length, ...job.eventMeta },
       },
     });
+    if (!savedConversationId) throw new Error("META_INBOUND_PERSIST_FAILED");
     await syncFacebookProfileBestEffort(job, cfg.access_token);
     await recordInboundEvent(job.tenantId, job.channel);
     return;
@@ -334,10 +335,22 @@ export async function processMetaInboundJob(job: MetaInboundJob): Promise<void> 
   // Start optional enrichment alongside delivery so a slow profile read does not add to reply latency.
   const profileSync = syncFacebookProfileBestEffort(job, cfg.access_token);
   const delivery = await deliverToChannelTracked(job.tenantId, job.channel, job.customerRef, result.reply);
-  await profileSync;
-  if (persisted?.outboundMessageId && delivery.providerMessageIds.length) {
-    await recordProviderMessageIds(job.tenantId, persisted.outboundMessageId, delivery.providerMessageIds);
+  if (persisted?.outboundMessageId) {
+    try {
+      await recordAiReplyDelivery(job.tenantId, persisted.outboundMessageId, delivery);
+    } catch (error) {
+      // The provider has already answered. A status write failure cannot replay it.
+      console.error("[BMS] Meta reply delivery status write failed:", error);
+      await reportBmsFailure({ tenantId: job.tenantId, code: "channel.push_failed", error,
+        surface: "customer", channel: job.channel, customerRef: job.customerRef,
+        meta: { eventId: job.eventId } }).catch(() => undefined);
+    }
   }
+  await profileSync;
+  // The AI may already have committed a business action and the provider may
+  // already have accepted the reply. Keep this job for human review rather
+  // than marking an absent Inbox turn as successfully processed.
+  if (!persisted) throw new Error("META_INBOUND_PERSIST_FAILED");
   if (!delivery.delivered) {
     await reportBmsFailure({
       tenantId: job.tenantId,
@@ -348,6 +361,11 @@ export async function processMetaInboundJob(job: MetaInboundJob): Promise<void> 
       customerRef: job.customerRef,
       meta: { eventId: job.eventId },
     });
+    // A timeout or partially accepted send must not replay the entire reply.
+    if (delivery.uncertain || delivery.partial) {
+      await recordInboundEvent(job.tenantId, job.channel);
+      return;
+    }
     throw new Error("META_REPLY_DELIVERY_FAILED");
   }
   await recordInboundEvent(job.tenantId, job.channel);

@@ -1,6 +1,8 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { Table, Input, Space, Button, Tag, Popconfirm, Modal, message, Avatar, Typography, Tooltip } from "antd";
+import { Table, Input, Space, Button, Tag, Popconfirm, Modal, message, Avatar, Typography, Tooltip, Pagination, Alert } from "antd";
 import { PlusOutlined, DeleteOutlined, ReloadOutlined, EditOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
 import debounce from "lodash/debounce";
@@ -46,14 +48,13 @@ const ROLE_COLOR: Record<string, string> = {
   Warehouse: "gold",
 };
 const roleTag = (v: string) => <Tag color={ROLE_COLOR[v] ?? "default"}>{v}</Tag>;
-
 // created_at เดิมมาเป็น epoch string (ดู bug note ใน CLAUDE.local.md) — parse ให้ทนทั้ง 2 แบบ
-function formatDate(d: string | null) {
+function formatDate(d: string | null, uiText: UiTranslator = thaiUiText) {
   if (!d) return <span style={{ color: "var(--app-muted)" }}>—</span>;
   const asNumber = Number(d);
   const date = Number.isFinite(asNumber) && String(asNumber) === d ? new Date(asNumber) : new Date(d);
   if (Number.isNaN(date.getTime())) return <span style={{ color: "var(--app-muted)" }}>—</span>;
-  return date.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+  return date.toLocaleString(uiText.locale, { dateStyle: "medium", timeStyle: "short" });
 }
 
 function UserAvatar({ name, avatar }: { name: string; avatar: string | null }) {
@@ -115,6 +116,7 @@ function UserNameLink({ href, label, disabledReason }: { href: string; label: st
 }
 
 function UsersList() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const [searchInput, setSearchInput] = useState("");
@@ -125,14 +127,23 @@ function UsersList() {
   const limit = pageSize;
   const offset = (page - 1) * pageSize;
 
-  const { data, refetch, loading } = useQuery(Q_USERS, {
-    variables: { search: "", limit, offset },
+  const { data, refetch, loading, error } = useQuery(Q_USERS, {
+    variables: { search, limit, offset },
     fetchPolicy: "cache-and-network",
   });
   // ใช้เช็คว่าแถวไหนคือบัญชีตัวเอง — ห้ามลบตัวเองทั้ง UI (ปุ่ม/checkbox) และ backend (deleteUser/deleteUsers)
   const { data: meData } = useQuery(Q_ME);
   const myId: string | undefined = meData?.bmsMe?.id;
   const myRole: string | undefined = meData?.bmsMe?.role;
+
+  // role ใน users เป็นแค่ role ของร้าน — platform admin (users.is_platform_admin) มีสิทธิ์เหนือทุกร้าน
+  // จึงแสดงป้าย Super Admin นำหน้า role ร้าน ไม่งั้นดูเหมือน Administrator ธรรมดา
+  const userRoleTags = (r: UserRow) => (
+    <Space size={4} wrap>
+      {r.is_platform_admin ? <Tag color="purple">{t("admin_users.platform_admin_tag")}</Tag> : null}
+      {roleTag(r.role)}
+    </Space>
+  );
 
   // สิทธิ์เขียน: platform admin / Administrator ผ่านเสมอ (server ก็ short-circuit ให้)
   // ส่วน role อื่นต้องมี `user.manage` — role ที่มีแค่ `user.view` จะเห็นรายชื่อแบบอ่านอย่างเดียว
@@ -173,14 +184,13 @@ function UsersList() {
       debounce(async (v: string) => {
         setPage(1);
         setSelectedRowKeys([]);
-        await refetch({ search: v, limit: pageSize, offset: 0 });
+        setSearch(v);
       }, 300),
-    [refetch, pageSize]
+    []
   );
   useEffect(() => () => debouncedSearch.cancel(), [debouncedSearch]);
   const onSearchChange = (v: string) => {
     setSearchInput(v);
-    setSearch(v);
     debouncedSearch(v);
   };
 
@@ -257,9 +267,9 @@ function UsersList() {
       },
       { title: t("admin_users.col_email"), dataIndex: "email" },
       { title: t("admin_users.col_phone"), dataIndex: "phone", render: (v: string | null) => v || <span style={{ color: "var(--app-muted)" }}>—</span> },
-      { title: t("admin_users.col_role"), dataIndex: "role", render: roleTag },
-      { title: t("admin_users.col_created"), dataIndex: "created_at", render: formatDate },
-      { title: t("admin_users.col_last_login"), dataIndex: "lastLoginAt", render: (d: string | null) => d ? formatDate(d) : <span style={{ color: "var(--app-muted)" }}>{t("admin_users.never_logged_in")}</span> },
+      { title: t("admin_users.col_role"), dataIndex: "role", render: (_: string, r: UserRow) => userRoleTags(r) },
+      { title: t("admin_users.col_created"), dataIndex: "created_at", render: (value: string | null) => formatDate(value, uiText) },
+      { title: t("admin_users.col_last_login"), dataIndex: "lastLoginAt", render: (d: string | null) => d ? formatDate(d, uiText) : <span style={{ color: "var(--app-muted)" }}>{t("admin_users.never_logged_in")}</span> },
       {
         title: t("admin_users.col_actions"),
         render: (_: any, r: UserRow) => (
@@ -272,7 +282,7 @@ function UsersList() {
     ],
     // canWrite/meData อยู่ใน closure ของ blockedReason ที่ render ใช้ → ต้องอยู่ใน deps
     // ไม่งั้นปุ่มจะค้างสถานะเดิมตอนสิทธิ์โหลดเสร็จทีหลัง
-    [search, refetch, page, pageSize, total, myId, myRole, canWrite, meData, t]
+    [uiText, search, refetch, page, pageSize, total, myId, myRole, canWrite, meData, t]
   );
 
   const rowSelection = {
@@ -286,6 +296,7 @@ function UsersList() {
 
   return (
     <div>
+      {error && <Alert closable type="error" showIcon message={t("admin_users.load_error")} description={error.message} style={{ marginBottom: 12 }} />}
       <AdminPageHeader title={t("admin_users.title")}>
         <Input.Search
           placeholder={t("admin_users.search_placeholder")}
@@ -307,8 +318,9 @@ function UsersList() {
         <AdminMobileList
           loading={loading}
           dataSource={items}
+          pageSize={pageSize}
           rowKey={(r) => r.id}
-          totalText={(n) => t("admin_users.mobile_total", { n })}
+          totalText={() => t("admin_users.mobile_total", { n: total })}
           emptyText={
             search.trim()
               ? t("admin_users.empty_search")
@@ -329,12 +341,12 @@ function UsersList() {
                   </Space>
                 </Space>
               }
-              extra={roleTag(r.role)}
+              extra={userRoleTags(r)}
               fields={[
                 { label: t("admin_users.col_phone"), value: r.phone || "—" },
                 { label: t("admin_users.field_shop"), value: r.tenantName || "—", hidden: !r.tenantName },
-                { label: t("admin_users.col_created"), value: formatDate(r.created_at) },
-                { label: t("admin_users.col_last_login"), value: r.lastLoginAt ? formatDate(r.lastLoginAt) : t("admin_users.never_logged_in") },
+                { label: t("admin_users.col_created"), value: formatDate(r.created_at, uiText) },
+                { label: t("admin_users.col_last_login"), value: r.lastLoginAt ? formatDate(r.lastLoginAt, uiText) : t("admin_users.never_logged_in") },
               ]}
               actions={
                 <>
@@ -374,13 +386,22 @@ function UsersList() {
               setPageSize(finalSize);
               setSelectedRowKeys([]);
 
-              await refetch({
-                search,
-                limit: finalSize,
-                offset: (finalPage - 1) * finalSize,
-              });
             },
           }}
+        />
+      )}
+      {isMobile && total > pageSize && (
+        <Pagination
+          simple
+          size="small"
+          current={page}
+          pageSize={pageSize}
+          total={total}
+          onChange={(nextPage) => {
+            setPage(nextPage);
+            setSelectedRowKeys([]);
+          }}
+          style={{ display: "flex", justifyContent: "center", marginTop: 12 }}
         />
       )}
     </div>

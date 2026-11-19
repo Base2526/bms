@@ -72,21 +72,40 @@ SELECT e.key, e.kind, e.order_id AS "orderId", e.location_id AS "locationId", e.
     'net',o.total_amount::text,'discount',o.discount_amount::text,'shipping',o.shipping_fee::text,
     'rounding',o.rounding_amount::text,'taxable',o.taxable_amount::text,'exempt',o.exempt_amount::text,'vat',o.vat_amount::text,
     'extras',(SELECT COALESCE(SUM(x.qty*x.unit_amount),0)::text FROM bms_order_extra_lines x WHERE x.tenant_id=o.tenant_id AND x.order_id=o.id),
-    'lines',(SELECT COALESCE(jsonb_agg(jsonb_build_object('id',i.id::text,'sku',i.product_sku,'size',i.size,
+    'lines',(SELECT COALESCE(jsonb_agg(jsonb_build_object('id',i.id,'sku',i.product_sku,'size',i.size,
       'vatCategory',i.vat_category,'qty',i.qty::text,'amount',i.line_amount::text,'cost',i.cost_amount_snapshot::text,'costSource',i.cost_snapshot_source) ORDER BY i.id),'[]'::jsonb)
-      FROM (SELECT * FROM bms_order_items WHERE tenant_id=$1 AND order_id=e.order_id ORDER BY id LIMIT 1001) i))
+      FROM (SELECT id::text AS id, product_sku, size, vat_category, qty, line_amount, cost_amount_snapshot, cost_snapshot_source
+              FROM bms_order_items WHERE tenant_id=$1 AND order_id=e.order_id
+            UNION ALL
+            SELECT '-'||id::text, 'OPEN:'||id::text, ''::text, vat_category, qty, line_amount,
+                   NULL::numeric, 'MISSING'::text
+              FROM bms_order_open_items WHERE tenant_id=$1 AND order_id=e.order_id
+            LIMIT 1001) i))
     FROM bms_orders o WHERE o.tenant_id=$1 AND o.id=e.order_id)
   WHEN 'RETURN' THEN (SELECT jsonb_build_object('amount',r.refund_amount::text,
     'financialSnapshot',CASE WHEN jsonb_typeof(r.financial_snapshot->'lines')='array'
       THEN CASE WHEN jsonb_array_length(r.financial_snapshot->'lines')<=1000 THEN r.financial_snapshot END END,
-    'lines',(SELECT COALESCE(jsonb_agg(jsonb_build_object('id',ri.id::text,'qty',ri.qty::text,'amount',ri.refund_amount::text,
+    'lines',(SELECT COALESCE(jsonb_agg(jsonb_build_object('id',ri.id,'qty',ri.qty::text,'amount',ri.refund_amount::text,
       'orderItemId',ri.order_item_id::text,'sku',i.product_sku,'size',i.size,'vatCategory',i.vat_category,
       'soldQty',i.qty::text,'cost',i.cost_amount_snapshot::text,'costSource',i.cost_snapshot_source,
       'cancellationCause',ri.cancellation_cause,
-      'priorQty',(SELECT COALESCE(SUM(prev.qty),0)::text FROM bms_pos_return_items prev
-        WHERE prev.tenant_id=ri.tenant_id AND prev.order_item_id=ri.order_item_id AND prev.id<ri.id)) ORDER BY ri.id),'[]'::jsonb)
-      FROM (SELECT * FROM bms_pos_return_items WHERE tenant_id=$1 AND pos_return_id=r.id ORDER BY id LIMIT 1001) ri
-      LEFT JOIN bms_order_items i ON i.tenant_id=ri.tenant_id AND i.id=ri.order_item_id AND i.order_id=r.order_id))
+      'priorQty',ri.prior_qty) ORDER BY ri.id),'[]'::jsonb)
+      FROM (SELECT id::text AS id, tenant_id, order_item_id, qty, refund_amount, cancellation_cause,
+                   (SELECT COALESCE(SUM(prev.qty),0)::text FROM bms_pos_return_items prev
+                     WHERE prev.tenant_id=base.tenant_id AND prev.order_item_id=base.order_item_id AND prev.id<base.id) AS prior_qty
+              FROM bms_pos_return_items base WHERE tenant_id=$1 AND pos_return_id=r.id
+            UNION ALL
+            SELECT '-'||base.id::text, base.tenant_id, -base.order_open_item_id, base.qty, base.refund_amount,
+                   NULL::text,
+                   (SELECT COALESCE(SUM(prev.qty),0)::text FROM bms_pos_return_open_items prev
+                     WHERE prev.tenant_id=base.tenant_id AND prev.order_open_item_id=base.order_open_item_id AND prev.id<base.id)
+              FROM bms_pos_return_open_items base WHERE tenant_id=$1 AND pos_return_id=r.id
+            LIMIT 1001) ri
+      LEFT JOIN LATERAL (SELECT product_sku,size,vat_category,qty,cost_amount_snapshot,cost_snapshot_source
+                           FROM bms_order_items WHERE tenant_id=ri.tenant_id AND id=ri.order_item_id AND order_id=r.order_id
+                         UNION ALL
+                         SELECT 'OPEN:'||id::text,''::text,vat_category,qty,NULL::numeric,'MISSING'::text
+                           FROM bms_order_open_items WHERE tenant_id=ri.tenant_id AND id=-ri.order_item_id AND order_id=r.order_id) i ON TRUE))
     FROM bms_pos_returns r WHERE r.tenant_id=$1 AND r.id=e.source_id::uuid)
   WHEN 'REFUND' THEN (SELECT jsonb_build_object('amount',a.amount::text,'method',a.method) FROM bms_pos_refund_allocations a WHERE a.tenant_id=$1 AND a.id=e.source_id::uuid)
   WHEN 'PAYMENT_REFUND' THEN (SELECT jsonb_build_object('amount',p.amount::text,'legacyDate',e.legacy_date) FROM bms_payments p WHERE p.tenant_id=$1 AND p.id=e.source_id::uuid)

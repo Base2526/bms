@@ -11,7 +11,7 @@ import type { ChannelConfig } from "./channels";
 import { createHash } from "node:crypto";
 
 // These buttons start a conversation; they never authorize checkout, payment or other writes.
-const STARTER_MESSAGES: Readonly<Record<string, string>> = {
+export const META_STARTER_MESSAGES: Readonly<Record<string, string>> = {
   BMS_CHAT_PRICE: "ขอทราบราคา",
   BMS_CHAT_DETAILS: "ขอรายละเอียดสินค้าและบริการ",
   BMS_CHAT_INTERESTED: "สนใจซื้อ ขอทราบขั้นตอนและรายละเอียดก่อนตัดสินใจ",
@@ -122,8 +122,8 @@ export function parseMetaEvents(
       const senderId = ev?.sender?.id;
       if (expectedObject === "page" && ev?.postback && !ev?.message) {
         const payload = ev.postback.payload;
-        const text = typeof payload === "string" && Object.hasOwn(STARTER_MESSAGES, payload)
-          ? STARTER_MESSAGES[payload] : null;
+        const text = typeof payload === "string" && Object.hasOwn(META_STARTER_MESSAGES, payload)
+          ? META_STARTER_MESSAGES[payload] : null;
         const timestamp = ev.timestamp;
         if (!text || typeof senderId !== "string" || !/^\d{5,64}$/.test(senderId) ||
             !Number.isSafeInteger(timestamp) || timestamp <= 0 ||

@@ -20,6 +20,8 @@ test('phase two migration and real services on an isolated PostgreSQL schema', a
       CREATE ROLE bms_app NOLOGIN NOBYPASSRLS; END IF; END $$`);
     await pool.query(`CREATE SCHEMA ${schema}; GRANT USAGE ON SCHEMA ${schema} TO bms_app;
       CREATE TABLE bms_tenants(id uuid PRIMARY KEY,plan text NOT NULL);
+      CREATE TABLE bms_plans(code text PRIMARY KEY);
+      INSERT INTO bms_plans(code) VALUES('free'),('pro'),('business');
       CREATE TABLE users(id uuid PRIMARY KEY);
       CREATE TABLE roles(id uuid PRIMARY KEY,name text);
       CREATE TABLE bms_role_permissions(tenant_id uuid,role_id uuid,permission text,UNIQUE(tenant_id,role_id,permission));

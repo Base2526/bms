@@ -14,7 +14,11 @@ async function handlePOST(_req: NextRequest, { params }: { params: { id: string 
   const orderId = params.id?.trim();
   if (!orderId) return NextResponse.json({ error: "order id required" }, { status: 400 });
   const ok = await payOrder(auth.tenantId, orderId);
-  if (!ok) return NextResponse.json({ status: "INVALID_TRANSITION", orderId }, { status: 409 });
+  if (!ok) return NextResponse.json({
+    status: "PAYMENT_CONFIRMATION_REQUIRED",
+    message: "Record the payment and confirm it in the payment workflow before marking this order paid.",
+    orderId,
+  }, { status: 409 });
   return NextResponse.json({ ok: true, orderId });
 }
 

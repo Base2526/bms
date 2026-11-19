@@ -3,9 +3,11 @@
 // จากนั้น client เรียก bmsSendMessage(..., attachment) เพื่อส่งจริง (gate inbox.reply ที่ resolver)
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { persistWebFile, buildFileUrlById } from "@/lib/storage";
+import { persistWebFile } from "@/lib/storage";
+import { assertInboxMediaSigningConfigured, inboxMediaPath } from "@/lib/bms/inboxMedia";
 import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { randomUUID } from "node:crypto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,10 +26,11 @@ async function handlePOST(req: NextRequest) {
   if (file.size > MAX_BYTES) return NextResponse.json({ error: "ไฟล์ใหญ่เกิน 10MB" }, { status: 413 });
 
   try {
+    assertInboxMediaSigningConfigured();
     // ไฟล์แนบในบทสนทนาลูกค้า — ต้องมี session จึงเปิดดูได้ (9.26)
-    const row = await persistWebFile(file, undefined, "private", auth.tenantId);
+    const row = await persistWebFile(file, `bms-inbox-${randomUUID()}`, "private", auth.tenantId, String(auth.adminId));
     return NextResponse.json({
-      url: buildFileUrlById(row.id),
+      url: inboxMediaPath(auth.tenantId, row.id),
       name: row.original_name ?? file.name ?? null,
       mimeType: row.mimetype ?? file.type ?? null,
     });

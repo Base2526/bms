@@ -1,15 +1,20 @@
+import { createPosTranslator } from '@/i18n/posClient';
+import { getLangCookie } from '@/lib/lang';
 import { PosConnectionError, runWithOperationTimeout } from "@pos-core/operation";
+import { describePosConnectionFailure, isPosBusinessError, posTransportError } from "@pos-core/connectionFailure";
+import { getOperationAST } from "graphql/utilities/getOperationAST";
+import { parse } from "graphql/language/parser";
 
 export const POS_BOOTSTRAP_QUERY = `
   query PosBootstrap {
     bmsPosSession {
       device { id code name registeredPosNo scanner { mode prefixKey suffixKey maxGapMs } }
-      location { id name branchCode vatCode pharmacistName }
+      location { id name branchCode vatCode pharmacistName pickupQueue { enabled autoHideMinutes showPreparing boardMessage } }
       shift { id locationId deviceId status openedBy openedAt openingFloat countedCash expectedCash cashVariance closedAt pharmacistUserId }
       shiftReturnSummary { returnCount returnTotal settledTotal pendingTotal pendingCount }
       cashiers { id name email role isPharmacist hasPin posOnly }
       approvers { id name email role isPharmacist hasPin posOnly approvals }
-      store { name businessHours website taxId receiptLanguageMode address phone logoUrl customerDisplayBackgroundUrl paymentQr { payload accountName promptpayId } }
+      store { name businessHours website taxId receiptLanguageMode address phone logoUrl customerDisplayBackgroundUrl customerDisplayPromoSlides customerDisplayPromoIntervalSeconds paymentQr { payload accountName promptpayId } }
       surface
       businessArchetype
       vat { registered priceIncludesVat rate calendarEra cashRounding }
@@ -59,6 +64,8 @@ export const POS_SALE_MUTATION = `
       status reason orderId receiptNo billNo subtotal discount total cashTendered cashChange
       pointsUsed pointsEarned pointsBalance code available requested serial roundingAmount replayed
       blockers { sku status salePolicy requested maxQuantity }
+      pickupQueue { id queueNo label }
+      pickupQueueError
     }
   }
 `;
@@ -66,7 +73,7 @@ export const POS_SALE_MUTATION = `
 export const POS_LAST_SALE_QUERY = `
   query DesktopPosLastSale {
     bmsPosLastSale {
-      orderId receiptNo billNo docNo taxRequestUrl taxRequestUnavailableReason soldAt total cashierName branchCode locationName posLabel
+      orderId receiptNo billNo docNo taxRequestUrl taxRequestUnavailableReason soldAt total cashierName branchCode locationName posLabel pickupQueueLabel
       posDeviceId shiftId saleLocationId roundingAmount paymentMethod paymentRef cashTendered
       cashChange memberName memberNo
       pointsEarned pointsBalance pointsExpiring pointsExpireAt promotionNotes
@@ -142,7 +149,9 @@ export type PosBootstrap = {
     registeredPosNo: string | null;
     scanner: { mode: string; prefixKey: string; suffixKey: string; maxGapMs: number };
   };
-  location: { id: string; name: string; branchCode: string } | null;
+  location: { id: string; name: string; branchCode: string; pickupQueue?: {
+    enabled: boolean; autoHideMinutes: number; showPreparing: boolean; boardMessage: string | null;
+  } } | null;
   shift: PosShift | null;
   cashiers: PosCashier[];
   approvers: Array<PosCashier & { approvals: string[] }>;
@@ -154,6 +163,8 @@ export type PosBootstrap = {
     receiptLanguageMode: string;
     logoUrl: string | null;
     customerDisplayBackgroundUrl: string | null;
+    customerDisplayPromoSlides: string[];
+    customerDisplayPromoIntervalSeconds: number;
     address: string | null;
     phone: string | null;
     paymentQr: { payload: string; accountName: string | null; promptpayId: string | null } | null;
@@ -295,7 +306,10 @@ export async function posGraphqlRequest<T>(
   query: string,
   variables: Record<string, unknown> = {},
 ): Promise<T> {
-  return runWithOperationTimeout(async (signal) => {
+  const posText = createPosTranslator(getLangCookie() ?? "th");
+  let mutation = true;
+  try { mutation = getOperationAST(parse(query))?.operation !== 'query'; } catch { /* fail conservatively */ }
+  try { return await runWithOperationTimeout(async (signal) => {
     const response = await fetch("/api/graphql", {
       method: "POST",
       cache: "no-store",
@@ -314,15 +328,28 @@ export async function posGraphqlRequest<T>(
       data?: T;
       errors?: Array<{ message?: string; extensions?: Record<string, unknown> & { code?: string } }>;
     } | null;
-    if (!response.ok || body?.errors?.length || !body?.data) {
-      const first = body?.errors?.[0];
+    const validErrors = body?.errors == null || (Array.isArray(body.errors)
+      && body.errors.every(error => error && typeof error.message === 'string'));
+    const errors = validErrors && Array.isArray(body?.errors) ? body.errors : [];
+    const validData = body?.data != null && typeof body.data === 'object' && !Array.isArray(body.data)
+      && Object.keys(body.data).length > 0;
+    if (!response.ok || errors.length || !validData || !validErrors) {
+      // Prefer uncertainty over a decided rejection if several fields failed differently.
+      const first = errors.find(error => !isPosBusinessError(error.extensions?.code)) ?? errors[0];
+      const code = response.status === 408 || response.status === 504 ? 'POS_TIMEOUT'
+        : response.status >= 500 ? 'INTERNAL_SERVER_ERROR'
+          : first?.extensions?.code ?? (response.ok ? 'INVALID_RESPONSE' : null);
+      const failure = describePosConnectionFailure({ code, httpStatus: response.status }, mutation, posText);
       throw new PosGraphqlError(
-        first?.message ?? `เซิร์ฟเวอร์ตอบ HTTP ${response.status}`,
-        first?.extensions?.code ?? null,
+        response.ok && isPosBusinessError(code) ? first!.message! : failure.message,
+        code,
         response.status,
         readVariantSelection(first?.extensions),
       );
     }
-    return body.data;
-  });
+    return body!.data!;
+  }); } catch (error) {
+    if (error instanceof PosGraphqlError) throw error;
+    throw posTransportError(error, mutation, posText);
+  }
 }

@@ -6,6 +6,7 @@
 
 import { query } from "@/lib/db";
 import { getInventoryIntelligence } from "@/lib/bms/inventoryIntelligence";
+import { resolveStoreTimezone } from "@/lib/bms/storeLocale";
 
 const PAID = ["PAID", "PACKING", "SHIPPED", "COMPLETED"];
 
@@ -16,6 +17,7 @@ const RESERVATION_EXPIRE_MINUTES = 30;       // matches release-expired-orders d
 const RESERVATION_WARN_MINUTES = 20;          // warn window: 20–30 min old, not yet auto-released
 
 export async function getDashboard(tenantId: string) {
+  const timeZone = await resolveStoreTimezone(tenantId);
   const [summary, byStatus, low, custCount, topProducts, topCustomers, daily, couponMonth, topCoupons, couponUsages] =
     await Promise.all([
       query(
@@ -23,12 +25,12 @@ export async function getDashboard(tenantId: string) {
            COALESCE(SUM(total_amount) FILTER (WHERE status = ANY($1)), 0) AS revenue_total,
            COALESCE(SUM(total_amount) FILTER (
              WHERE status = ANY($1)
-               AND COALESCE(paid_at,created_at) >= (((now() AT TIME ZONE 'Asia/Bangkok')::date)::timestamp AT TIME ZONE 'Asia/Bangkok')
-               AND COALESCE(paid_at,created_at) < ((((now() AT TIME ZONE 'Asia/Bangkok')::date + 1)::timestamp) AT TIME ZONE 'Asia/Bangkok')
+               AND COALESCE(paid_at,created_at) >= (((now() AT TIME ZONE $3)::date)::timestamp AT TIME ZONE $3)
+               AND COALESCE(paid_at,created_at) < ((((now() AT TIME ZONE $3)::date + 1)::timestamp) AT TIME ZONE $3)
            ), 0) AS revenue_today,
            COUNT(*) AS order_count
          FROM bms_orders WHERE tenant_id = $2`,
-        [PAID, tenantId]
+        [PAID, tenantId, timeZone]
       ),
       query(`SELECT status, COUNT(*)::int AS count FROM bms_orders WHERE tenant_id = $1 GROUP BY status`, [tenantId]),
       query(
@@ -61,20 +63,25 @@ export async function getDashboard(tenantId: string) {
         [PAID, tenantId]
       ),
       query(
-        `SELECT d::date AS day,
-                COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = ANY($1)), 0) AS revenue,
-                COUNT(o.id) FILTER (WHERE o.status = ANY($1))::int AS orders
+        `WITH daily AS (
+           SELECT (COALESCE(paid_at, created_at) AT TIME ZONE $3)::date AS day,
+                  SUM(total_amount) AS revenue, COUNT(*)::int AS orders
+             FROM bms_orders
+            WHERE tenant_id = $2 AND status = ANY($1)
+              AND COALESCE(paid_at, created_at) >= (((now() AT TIME ZONE $3)::date - 6)::timestamp AT TIME ZONE $3)
+              AND COALESCE(paid_at, created_at) < ((((now() AT TIME ZONE $3)::date + 1)::timestamp) AT TIME ZONE $3)
+            GROUP BY 1
+         )
+         SELECT d::date AS day, COALESCE(daily.revenue, 0) AS revenue,
+                COALESCE(daily.orders, 0) AS orders
            FROM generate_series(
-             (now() AT TIME ZONE 'Asia/Bangkok')::date - 6,
-             (now() AT TIME ZONE 'Asia/Bangkok')::date,
+             (now() AT TIME ZONE $3)::date - 6,
+             (now() AT TIME ZONE $3)::date,
              interval '1 day'
            ) d
-           LEFT JOIN bms_orders o
-             ON o.tenant_id = $2
-            AND COALESCE(o.paid_at,o.created_at) >= (d::timestamp AT TIME ZONE 'Asia/Bangkok')
-            AND COALESCE(o.paid_at,o.created_at) < ((d + interval '1 day')::timestamp AT TIME ZONE 'Asia/Bangkok')
-          GROUP BY day ORDER BY day`,
-        [PAID, tenantId]
+           LEFT JOIN daily ON daily.day = d::date
+          ORDER BY day`,
+        [PAID, tenantId, timeZone]
       ),
       // ส่วนลดที่แจกไปเดือนนี้ — ไม่กรองตาม status (เหมือน bms_coupons.redemptions_count เดิมที่ไม่
       // ลดตอน cancel/return ก็ตาม เพื่อให้เลขตรงกับ "ใช้ไปแล้ว" ที่โชว์ใน /admin/coupons)

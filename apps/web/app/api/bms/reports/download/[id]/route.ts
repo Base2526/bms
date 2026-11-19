@@ -16,6 +16,7 @@ import { query } from "@/lib/db";
 import { openStoredFileStream, statStoredFile } from "@/lib/storage";
 import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { recordSecurityEvent } from "@/lib/bms/securityEvents";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,6 +47,11 @@ async function handleGET(req: NextRequest, { params }: { params: { id: string } 
 
   const downloadName = (row.original_name || row.filename || `report-${fileId}`).replace(/[\/\\?%*:|"<>]/g, "_");
 
+  await recordSecurityEvent({
+    tenantId: auth.tenantId, actorUserId: String(auth.adminId),
+    event: "access.sensitive_read", outcome: "SUCCESS", source: "REPORT_DOWNLOAD",
+    meta: { resourceKind: "generated_report", resourceId: String(owned.id) },
+  });
   const nodeStream = await openStoredFileStream(row.relpath);
   const webStream = Readable.toWeb(nodeStream) as any;
 

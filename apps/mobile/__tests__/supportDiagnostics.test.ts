@@ -1,6 +1,29 @@
 import * as Keychain from 'react-native-keychain';
 import { recordPosDiagnosticEvent } from '../src/lib/supportDiagnostics';
 
+test('a transport ignoring abort cannot block later diagnostic batches', async () => {
+  jest.useFakeTimers();
+  (Keychain.getGenericPassword as jest.Mock).mockResolvedValue(false);
+  const fetchMock = jest.spyOn(globalThis, 'fetch')
+    .mockImplementationOnce(() => new Promise(() => {}))
+    .mockResolvedValue({ ok: true, status: 200 } as Response);
+  const target = { serverUrl: 'https://shop.example.test', token: 'FAKE' };
+  try {
+    recordPosDiagnosticEvent(target, { category: 'pos', action: 'first', status: 'error' });
+    await jest.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    recordPosDiagnosticEvent(target, { category: 'pos', action: 'second', status: 'info' });
+    await jest.advanceTimersByTimeAsync(5001);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][1]?.signal?.aborted).toBe(true);
+  } finally {
+    jest.clearAllTimers();
+    jest.useRealTimers();
+    fetchMock.mockRestore();
+    jest.clearAllMocks();
+  }
+});
+
 jest.mock('react-native-keychain', () => ({
   ACCESSIBLE: { AFTER_FIRST_UNLOCK: 'AfterFirstUnlock' },
   getGenericPassword: jest.fn().mockResolvedValue(false),

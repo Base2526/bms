@@ -360,10 +360,21 @@ test("shipping a menu bill deducts ingredients, not the zero row of the menu its
   await query(`UPDATE bms_orders SET status = 'PACKING' WHERE tenant_id = $1 AND id = $2`,
     [tenantId, order.orderId]);
 
-  const shipment = await createShipment({
+  const shipments = await Promise.all([0, 1].map(() => createShipment({
     tenantId, orderId: order.orderId, carrier: "OTHER", trackingNo: `FAKE-${TAG}-TRK`,
+  } as any)));
+  assert.ok(shipments.every((shipment) => shipment.status === "CREATED"), JSON.stringify(shipments));
+  assert.deepEqual(shipments.map((shipment) => shipment.status === "CREATED" && shipment.replayed).sort(), [false, true]);
+  assert.equal(shipments[0].status === "CREATED" && shipments[0].shipmentId,
+    shipments[1].status === "CREATED" && shipments[1].shipmentId);
+  assert.equal(Number((await query<{ count: string }>(
+    `SELECT count(*)::text AS count FROM bms_shipments WHERE tenant_id=$1 AND order_id=$2`,
+    [tenantId, order.orderId]
+  )).rows[0].count), 1, "two concurrent requests must attach only one parcel");
+  const changed = await createShipment({
+    tenantId, orderId: order.orderId, carrier: "KERRY", trackingNo: `FAKE-${TAG}-OTHER`,
   } as any);
-  assert.equal(shipment.status, "CREATED", JSON.stringify(shipment));
+  assert.equal(changed.status, "SHIPMENT_EXISTS");
 
   assert.equal(await onHand(RICE), riceOnHand - 200, "ingredients must leave the shelf");
   assert.equal(await reserved(RICE), riceReserved - 200, "the reservation must be consumed, not stranded");
@@ -408,7 +419,7 @@ test("one unreleasable bill no longer blocks the rest of the sweep", async () =>
   assert.deepEqual(swept.orderIds, [healthy.orderId], "the healthy bill must still be released");
   assert.equal(swept.failed.length, 1, "the drifted bill must be reported, not thrown");
   assert.equal(swept.failed[0].orderId, broken.orderId);
-  assert.ok(swept.failed[0].reason.includes("reserved_stock"), swept.failed[0].reason);
+  assert.ok(swept.failed[0].reason.includes("STOCK_REVIEW_REQUIRED"), swept.failed[0].reason);
   assert.equal(await reserved(RICE), riceReserved - 200, "its ingredients came back");
 
   const statuses = await query<{ id: string; status: string }>(

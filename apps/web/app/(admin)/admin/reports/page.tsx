@@ -1,10 +1,13 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Statistic, Row, Col, Table, Tag, Button, Alert, DatePicker, Typography, Select, Space, message, Switch } from "antd";
 import { DollarOutlined, ShoppingCartOutlined, ReloadOutlined, InboxOutlined, WarningOutlined, FileExcelOutlined, DownloadOutlined } from "@ant-design/icons";
 import { useState } from "react";
 import { useEffect } from "react";
 import dayjs, { type Dayjs } from "dayjs";
+import { useSearchParams } from "next/navigation";
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useI18n } from "@/lib/i18nContext";
@@ -32,6 +35,7 @@ const M_GENERATE_REPORT = gql`
 `;
 
 function ReportGeneratorCard({ from, to, locationId, archetype }: { from: string; to: string; locationId?: string; archetype?: string | null }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { can } = useBmsPermissions();
   const REPORT_TYPE_OPTIONS = [
@@ -113,7 +117,7 @@ function ReportGeneratorCard({ from, to, locationId, archetype }: { from: string
             render: (v: string | null) => v ? <Typography.Text style={{ maxWidth: 320 }} ellipsis={{ tooltip: v }}>{v}</Typography.Text> : "—",
           },
           { title: t("admin_reports.col_generated_by"), dataIndex: "generatedBy" },
-          { title: t("admin_reports.col_generated_at"), dataIndex: "createdAt", render: (v: string) => new Date(v).toLocaleString() },
+          { title: t("admin_reports.col_generated_at"), dataIndex: "createdAt", render: (v: string) => new Date(v).toLocaleString(uiText.locale) },
           {
             title: "", key: "download",
             render: (_: any, r: any) => r.fileUrl
@@ -230,13 +234,33 @@ const baht = (v: number) => `${Number(v).toLocaleString()} ฿`;
 const changeColor = (value: number | null | undefined) => value == null ? undefined : value >= 0 ? "#389e0d" : "#cf1322";
 const changePrefix = (value: number | null | undefined) => value == null ? "—" : value >= 0 ? "+" : "";
 
+function rangeFromUrl(params: { get(name: string): string | null } | null): [Dayjs, Dayjs] | null {
+  const parseDay = (value: string | null) => {
+    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const parsed = dayjs(value);
+    return parsed.isValid() && parsed.format("YYYY-MM-DD") === value ? parsed : null;
+  };
+  const from = parseDay(params?.get("from") ?? null);
+  const to = parseDay(params?.get("to") ?? null);
+  return from && to && !from.isAfter(to) && to.diff(from, "day") <= 366 ? [from, to] : null;
+}
+
 export default function Page() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const isMobile = useIsMobile();
-  const [range, setRange] = useState<[Dayjs, Dayjs]>([dayjs().subtract(29, "day"), dayjs()]);
+  const searchParams = useSearchParams();
+  const searchKey = searchParams?.toString() ?? "";
+  const [range, setRange] = useState<[Dayjs, Dayjs]>(() => rangeFromUrl(searchParams) ?? [dayjs().subtract(29, "day"), dayjs()]);
+  const fromDashboard = searchParams?.get("source") === "dashboard-kpi";
   const [locationId, setLocationId] = useState<string | undefined>();
+  useEffect(() => {
+    const next = rangeFromUrl(searchParams);
+    if (next) setRange(next);
+  }, [searchKey]);
   const from = range[0].format("YYYY-MM-DD");
   const to = range[1].format("YYYY-MM-DD");
+  const showDashboardNote = fromDashboard && searchParams?.get("from") === from && searchParams?.get("to") === to;
 
   const { data, loading, error, refetch } = useQuery(Q_REPORTS, {
     variables: { from, to, locationId }, fetchPolicy: "cache-and-network",
@@ -331,7 +355,9 @@ export default function Page() {
       />
 
       {/* ---- Sales KPIs ---- */}
-      <Row gutter={[16, 16]}>
+      {showDashboardNote && <Alert closable type="info" showIcon style={{ marginBottom: 12 }}
+        message={t("admin_reports.dashboard_drilldown_note")} />}
+      <Row id="sales-summary" gutter={[16, 16]} style={{ scrollMarginTop: 90 }}>
         <Col xs={24} sm={12} md={8}>
           <Card><Statistic title={t("admin_reports.kpi_sales_range", { from, to })} value={s?.netRevenue ?? 0} precision={0} suffix="฿" prefix={<DollarOutlined />} valueStyle={{ color: "#389e0d" }} /></Card>
         </Col>
@@ -465,7 +491,7 @@ export default function Page() {
               dataSource={posReturns?.recent || []}
               scroll={{ x: "max-content" }}
               columns={[
-                { title: t("admin_reports.col_when"), dataIndex: "createdAt", render: (v: string) => new Date(v).toLocaleString() },
+                { title: t("admin_reports.col_when"), dataIndex: "createdAt", render: (v: string) => new Date(v).toLocaleString(uiText.locale) },
                 { title: t("admin_reports.col_order"), dataIndex: "orderId" },
                 { title: t("admin_reports.col_channel"), dataIndex: "sourceChannel" },
                 {

@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -64,9 +65,9 @@ function scanWasCancelled(error: unknown): boolean {
 function scannerFailureMessage(error: unknown): string {
   const message = errorMessage(error);
   if (/NitroModules|Turbo\/Native-Module|could not be found/i.test(message)) {
-    return 'แอปที่ติดตั้งอยู่ยังไม่มีโมดูลกล้อง กรุณาติดตั้งแอปเวอร์ชันล่าสุด แล้วเปิดใหม่อีกครั้ง';
+    return posText("แอปที่ติดตั้งอยู่ยังไม่มีโมดูลกล้อง กรุณาติดตั้งแอปเวอร์ชันล่าสุด แล้วเปิดใหม่อีกครั้ง");
   }
-  return 'เปิดกล้องสแกนไม่ได้ อุปกรณ์นี้อาจไม่รองรับกล้องสแกน หรือยังไม่ได้อนุญาตสิทธิ์กล้อง กรุณาตรวจสิทธิ์แล้วลองใหม่';
+  return posText("เปิดกล้องสแกนไม่ได้ อุปกรณ์นี้อาจไม่รองรับกล้องสแกน หรือยังไม่ได้อนุญาตสิทธิ์กล้อง กรุณาตรวจสิทธิ์แล้วลองใหม่");
 }
 
 export function BarcodeScannerModal<T extends ScannerResolvedItem>({
@@ -77,6 +78,7 @@ export function BarcodeScannerModal<T extends ScannerResolvedItem>({
   onScanned,
   completedHardwareScan,
 }: Props<T>) {
+  usePosLanguage();
   const { colors, spacing, radius, typography } = useTheme();
   const { isTablet } = useResponsive();
   const insets = useSafeAreaInsets();
@@ -126,7 +128,7 @@ export function BarcodeScannerModal<T extends ScannerResolvedItem>({
         setCode('');
         setSelection(undefined);
         setView('manual');
-        setError('นี่คือ QR หรือ token จับคู่เครื่อง กรุณาไปที่ตั้งค่าเครื่อง → สแกน QR เพื่อจับคู่');
+        setError(posText("นี่คือ QR หรือ token จับคู่เครื่อง กรุณาไปที่ตั้งค่าเครื่อง → สแกน QR เพื่อจับคู่"));
         return;
       }
       if (source === 'hardware' && containsThaiCharacters(normalized)) {
@@ -137,8 +139,8 @@ export function BarcodeScannerModal<T extends ScannerResolvedItem>({
         setSelection({ start: 0, end: normalized.length });
         setError(
           Platform.OS === 'ios'
-            ? 'รหัสมีอักษรไทย กรุณาเปลี่ยนคีย์บอร์ดฮาร์ดแวร์เป็น English (US) ที่ ตั้งค่า > ทั่วไป > คีย์บอร์ด'
-            : 'รหัสมีอักษรไทย กรุณาเปลี่ยนภาษาคีย์บอร์ดจริงเป็น English (US) ในการตั้งค่าคีย์บอร์ดของอุปกรณ์',
+            ? posText("รหัสมีอักษรไทย กรุณาเปลี่ยนคีย์บอร์ดฮาร์ดแวร์เป็น English (US) ที่ ตั้งค่า > ทั่วไป > คีย์บอร์ด")
+            : posText("รหัสมีอักษรไทย กรุณาเปลี่ยนภาษาคีย์บอร์ดจริงเป็น English (US) ในการตั้งค่าคีย์บอร์ดของอุปกรณ์"),
         );
         requestAnimationFrame(() => manualInputRef.current?.focus());
         return;
@@ -149,7 +151,7 @@ export function BarcodeScannerModal<T extends ScannerResolvedItem>({
       try {
         const item = await resolveCodeRef.current(normalized);
         if (!item.sellable) {
-          throw new Error(item.unavailableNote ?? 'ขายสินค้านี้ไม่ได้ตอนนี้');
+          throw new Error(item.unavailableNote ?? posText("ขายสินค้านี้ไม่ได้ตอนนี้"));
         }
         if (!visibleRef.current || attempt !== attemptRef.current) return;
         onScannedRef.current(item, source);
@@ -166,7 +168,7 @@ export function BarcodeScannerModal<T extends ScannerResolvedItem>({
         setCode(normalized);
         setView('manual');
         setSelection({ start: 0, end: normalized.length });
-        setError(errorMessage(resolveError) || 'อ่านรหัสสินค้าไม่สำเร็จ');
+        setError(errorMessage(resolveError) || posText("อ่านรหัสสินค้าไม่สำเร็จ"));
         requestAnimationFrame(() => manualInputRef.current?.focus());
       } finally {
         if (visibleRef.current && attempt === attemptRef.current) {
@@ -334,8 +336,8 @@ export function BarcodeScannerModal<T extends ScannerResolvedItem>({
           accessibilityViewIsModal
           accessibilityLabel={
             view === 'opening-camera'
-              ? 'กำลังเปิดกล้องสแกนบาร์โค้ด'
-              : 'กรอกบาร์โค้ดหรือ SKU เอง'
+              ? posText("กำลังเปิดกล้องสแกนบาร์โค้ด")
+              : posText("กรอกบาร์โค้ดหรือ SKU เอง")
           }
           style={[
             styles.card,
@@ -358,18 +360,16 @@ export function BarcodeScannerModal<T extends ScannerResolvedItem>({
             <View style={styles.openingCamera}>
               <ActivityIndicator size="large" color={colors.primary} />
               <Text style={[typography.title, { color: colors.text }]}>
-                กำลังเปิดกล้อง…
-              </Text>
+                {posText("กำลังเปิดกล้อง…") + " "}</Text>
               <Text
                 style={[
                   typography.caption,
                   { color: colors.textMuted, textAlign: 'center' },
                 ]}
               >
-                หันกล้องไปที่บาร์โค้ด ระบบจะอ่านและตรวจสินค้าให้อัตโนมัติ
-              </Text>
+                {posText("หันกล้องไปที่บาร์โค้ด ระบบจะอ่านและตรวจสินค้าให้อัตโนมัติ") + " "}</Text>
               <Button
-                label="ใช้เครื่องสแกน"
+                label={posText("ใช้เครื่องสแกน")}
                 variant="secondary"
                 fullWidth
                 onPress={() => enterHardwareScannerMode()}
@@ -379,12 +379,11 @@ export function BarcodeScannerModal<T extends ScannerResolvedItem>({
             <>
               <Text style={[typography.title, { color: colors.text }]}>
                 {inputMode === 'hardware'
-                  ? 'สแกนด้วยเครื่องสแกน'
-                  : 'กรอกบาร์โค้ดหรือ SKU'}
+                  ? posText("สแกนด้วยเครื่องสแกน")
+                  : posText("กรอกบาร์โค้ดหรือ SKU")}
               </Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                ใช้กรณีกล้องอ่านไม่ได้ หรือรับรหัสจากเครื่องสแกน USB/Bluetooth
-              </Text>
+                {posText("ใช้กรณีกล้องอ่านไม่ได้ หรือรับรหัสจากเครื่องสแกน USB/Bluetooth") + " "}</Text>
               <TextInput
                 ref={manualInputRef}
                 value={code}
@@ -396,7 +395,7 @@ export function BarcodeScannerModal<T extends ScannerResolvedItem>({
                 }}
                 onSubmitEditing={submitManualCode}
                 selection={selection}
-                placeholder="บาร์โค้ดหรือ SKU"
+                placeholder={posText("บาร์โค้ดหรือ SKU")}
                 placeholderTextColor={colors.textSoft}
                 autoCapitalize="characters"
                 autoCorrect={false}
@@ -435,17 +434,17 @@ export function BarcodeScannerModal<T extends ScannerResolvedItem>({
                     { color: colors.success, marginTop: spacing.sm },
                   ]}
                 >
-                  เพิ่มแล้ว · {lastAdded}
+                  {posText("เพิ่มแล้ว ·") + " "}{lastAdded}
                 </Text>
               ) : null}
               <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
                 <Button
                   label={
                     loading
-                      ? 'กำลังตรวจสินค้า…'
+                      ? posText("กำลังตรวจสินค้า…")
                       : purpose === 'lookup'
-                      ? 'ค้นหาสต็อกจากรหัส'
-                      : 'เพิ่มสินค้าจากรหัส'
+                      ? posText("ค้นหาสต็อกจากรหัส")
+                      : posText("เพิ่มสินค้าจากรหัส")
                   }
                   fullWidth
                   loading={loading}
@@ -453,7 +452,7 @@ export function BarcodeScannerModal<T extends ScannerResolvedItem>({
                   onPress={submitManualCode}
                 />
                 <Button
-                  label="ใช้เครื่องสแกน"
+                  label={posText("ใช้เครื่องสแกน")}
                   variant={
                     inputMode === 'hardware' ? 'primary' : 'secondary'
                   }
@@ -462,14 +461,14 @@ export function BarcodeScannerModal<T extends ScannerResolvedItem>({
                   onPress={() => enterHardwareScannerMode()}
                 />
                 <Button
-                  label="เปิดกล้องอีกครั้ง"
+                  label={posText("เปิดกล้องอีกครั้ง")}
                   variant="secondary"
                   fullWidth
                   disabled={loading}
                   onPress={() => openCamera()}
                 />
                 <Button
-                  label={inputMode === 'hardware' ? 'เสร็จ' : 'ยกเลิก'}
+                  label={inputMode === 'hardware' ? posText("เสร็จ") : posText("ยกเลิก")}
                   variant="ghost"
                   fullWidth
                   disabled={loading}

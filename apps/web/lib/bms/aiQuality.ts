@@ -249,8 +249,10 @@ export async function listAiQualityCases(
   return result.rows.map(mapCase);
 }
 
-export async function getAiQualityCase(tenantId: string, id: string) {
-  const result = await query<any>(
+type QualityCaseReader = (sql: string, params: unknown[]) => Promise<{ rows: any[] }>;
+
+async function loadAiQualityCase(tenantId: string, id: string, read: QualityCaseReader) {
+  const result = await read(
     `${QUALITY_CASE_SELECT}
       WHERE r.tenant_id = $1 AND r.id = $2`,
     [tenantId, id]
@@ -258,7 +260,7 @@ export async function getAiQualityCase(tenantId: string, id: string) {
   const row = result.rows[0];
   if (!row) return null;
 
-  const messages = await query<any>(
+  const messages = await read(
     `SELECT id, direction, sender, body, created_at
        FROM (
          SELECT m.id, m.direction, m.sender, m.body, m.created_at
@@ -283,6 +285,10 @@ export async function getAiQualityCase(tenantId: string, id: string) {
       createdAt: new Date(message.created_at).toISOString(),
     })),
   };
+}
+
+export async function getAiQualityCase(tenantId: string, id: string) {
+  return loadAiQualityCase(tenantId, id, (sql, params) => query<any>(sql, params));
 }
 
 export async function getAiQualityMetrics(tenantId: string, days = 30) {
@@ -379,7 +385,7 @@ export async function reviewAiQualityCase(
     verdict: AiQualityVerdict;
     category: AiQualityCategory;
     note?: string | null;
-    reviewerId?: string | null;
+    reviewerId: string;
   }
 ) {
   const note = String(input.note || "").trim();
@@ -391,9 +397,11 @@ export async function reviewAiQualityCase(
     throw new Error("ผล FAIL ต้องระบุหมวดปัญหา");
   }
 
+  if (!input.reviewerId?.trim()) throw new Error("ไม่พบผู้ตรวจ");
   const client = await getClient();
+  let result: Awaited<ReturnType<typeof getAiQualityCase>> = null;
   try {
-    await beginTenantTx(client, tenantId, input.reviewerId ? { editorId: input.reviewerId } : undefined);
+    await beginTenantTx(client, tenantId, { editorId: input.reviewerId });
     const updated = await client.query<{ id: string }>(
       `UPDATE bms_ai_quality_reviews
           SET status = 'REVIEWED',
@@ -405,9 +413,15 @@ export async function reviewAiQualityCase(
               updated_at = now()
         WHERE tenant_id = $1 AND id = $2
         RETURNING id`,
-      [tenantId, id, input.verdict, input.category, note, input.reviewerId ?? null]
+      [tenantId, id, input.verdict, input.category, note, input.reviewerId]
     );
     if (!updated.rowCount) throw new Error("ไม่พบ AI quality case");
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'ai_quality.review', $3, $4::jsonb)`,
+      [tenantId, input.reviewerId, id, JSON.stringify({ verdict: input.verdict, category: input.category })]
+    );
+    result = await loadAiQualityCase(tenantId, id, (sql, params) => client.query(sql, params));
     await client.query("COMMIT");
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
@@ -415,17 +429,19 @@ export async function reviewAiQualityCase(
   } finally {
     client.release();
   }
-  return getAiQualityCase(tenantId, id);
+  return result;
 }
 
 export async function dismissAiQualityCase(
   tenantId: string,
   id: string,
-  reviewerId: string | null
+  reviewerId: string
 ) {
+  if (!reviewerId?.trim()) throw new Error("ไม่พบผู้ตรวจ");
   const client = await getClient();
+  let result: Awaited<ReturnType<typeof getAiQualityCase>> = null;
   try {
-    await beginTenantTx(client, tenantId, reviewerId ? { editorId: reviewerId } : undefined);
+    await beginTenantTx(client, tenantId, { editorId: reviewerId });
     const updated = await client.query<{ id: string }>(
       `UPDATE bms_ai_quality_reviews
           SET status = 'DISMISSED',
@@ -440,6 +456,12 @@ export async function dismissAiQualityCase(
       [tenantId, id, reviewerId]
     );
     if (!updated.rowCount) throw new Error("ไม่พบ AI quality case");
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'ai_quality.dismiss', $3, $4::jsonb)`,
+      [tenantId, reviewerId, id, JSON.stringify({})]
+    );
+    result = await loadAiQualityCase(tenantId, id, (sql, params) => client.query(sql, params));
     await client.query("COMMIT");
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
@@ -447,5 +469,5 @@ export async function dismissAiQualityCase(
   } finally {
     client.release();
   }
-  return getAiQualityCase(tenantId, id);
+  return result;
 }

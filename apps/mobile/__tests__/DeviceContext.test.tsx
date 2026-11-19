@@ -27,6 +27,31 @@ const pairingWriteCount = () =>
   ).length;
 
 describe('DeviceProvider', () => {
+  test('a stuck response body times out without saving pairing or publishing its late response', async () => {
+    jest.useFakeTimers();
+    let finish!: (value: unknown) => void;
+    jest.spyOn(globalThis, 'fetch').mockImplementation(async url => {
+      if (!String(url).endsWith('/api/graphql')) return { ok: true, status: 200 } as Response;
+      return { ok: true, status: 200, json: () => new Promise(resolve => { finish = resolve; }) } as Response;
+    });
+    let device!: ReturnType<typeof useDevice>;
+    function Probe() { device = useDevice(); return null; }
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    try {
+      await act(async () => { tree = ReactTestRenderer.create(<DeviceProvider><Probe /></DeviceProvider>); });
+      let pending!: Promise<unknown>;
+      await act(async () => { pending = device.pair(TARGET).catch(error => error); });
+      await act(async () => { await jest.advanceTimersByTimeAsync(10_001); await pending; });
+      expect(device.verify.kind).toBe('OFFLINE');
+      expect(pairingWriteCount()).toBe(0);
+      await act(async () => { finish({ data: { bmsPosSession: { device: { id: 'late' }, cashiers: [] } } }); });
+      expect(device.verify.kind).toBe('OFFLINE');
+      expect(pairingWriteCount()).toBe(0);
+    } finally {
+      await act(async () => tree?.unmount());
+      jest.useRealTimers();
+    }
+  });
   beforeEach(() => {
     jest.clearAllMocks();
     (Keychain.getGenericPassword as jest.Mock).mockResolvedValue(false);

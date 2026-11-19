@@ -130,6 +130,7 @@ async function reserve(stock: number | null, lots: any[], qty: number, failMovem
       if (sql === "COMMIT") return rows();
       assert.equal(params?.[0], scope.tenantId);
       if (sql.startsWith("SELECT current_stock,reserved_stock")) return rows(stock === null ? [] : [{ current_stock: stock, reserved_stock: reserved }]);
+      if (sql.includes("FROM bms_product_stock_policies")) return rows([{ requires_lots: false }]);
       if (sql.includes("FROM bms_inventory_lots")) return rows(lots);
       if (sql.includes("SET reserved_stock")) { reserved += qty; return rows([{ available_after: stock! - reserved }]); }
       throw new Error(`Unexpected SQL: ${sql}`);

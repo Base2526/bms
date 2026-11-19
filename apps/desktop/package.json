@@ -1,7 +1,7 @@
 {
   "name": "@bms/desktop-pos",
   "desktopName": "bms-pos.desktop",
-  "version": "0.2.14-pilot.7",
+  "version": "0.2.14-pilot.12",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -16,20 +16,27 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
-    "lint": "node --check src/main.mjs && node --check src/local-runtime.mjs && node --check src/pairing.mjs && node --check src/pairing-store.mjs && node --check src/pairing-server.mjs && node --check src/renderer-route.mjs && node --check src/secure-storage.mjs && node --check src/zoom-policy.mjs && node --check src/launch-at-login.mjs && node --check src/preload.cjs && node --check renderer/setup.js && node --check renderer/startup.js",
-    "test": "node --test test/display-policy.test.mjs test/launch-at-login.test.mjs test/local-admin.test.mjs test/local-runtime.test.mjs test/operational-attention.test.mjs test/packaging.test.mjs test/packaged-source.test.mjs test/pairing.test.mjs test/pairing-server.test.mjs test/receipt-printer.test.mjs test/renderer-route.test.mjs test/secure-storage.test.mjs test/window-lifecycle.test.mjs test/zoom-policy.test.mjs",
+    "lint": "node --check src/language-store.mjs && node --check renderer/locale.cjs && node --check renderer/language-control.js && node --check src/main.mjs && node --check src/kitchen-printer.mjs && node --check src/local-runtime.mjs && node --check src/pairing.mjs && node --check src/pairing-store.mjs && node --check src/pairing-server.mjs && node --check src/renderer-route.mjs && node --check src/secure-storage.mjs && node --check src/zoom-policy.mjs && node --check src/launch-at-login.mjs && node --check src/preload.cjs && node --check renderer/setup.js && node --check renderer/startup.js",
+    "test": "node --test test/language.test.mjs test/display-policy.test.mjs test/kitchen-printer.test.mjs test/launch-at-login.test.mjs test/local-admin.test.mjs test/local-runtime.test.mjs test/operational-attention.test.mjs test/packaging.test.mjs test/packaged-source.test.mjs test/pairing.test.mjs test/pairing-server.test.mjs test/receipt-printer.test.mjs test/renderer-route.test.mjs test/secure-storage.test.mjs test/window-lifecycle.test.mjs test/zoom-policy.test.mjs",
     "test:receipt": "node --test test/receipt-printer.test.mjs",
     "test:receipt-smoke": "electron test/receipt-smoke.mjs",
     "test:restaurant-hover": "electron test/restaurant-hover-smoke.mjs",
+    "test:restaurant-kitchen": "electron test/restaurant-kitchen-smoke.mjs",
+    "test:restaurant-service-mode": "electron test/restaurant-service-mode-smoke.mjs",
+    "test:restaurant-header": "electron test/restaurant-header-smoke.mjs",
     "test:customer-display": "electron test/customer-display-smoke.mjs",
+    "test:managed-displays": "electron test/managed-display-smoke.mjs",
+    "test:queue-board": "electron test/queue-board-smoke.mjs",
+    "test:queue-manager": "electron test/queue-manager-smoke.mjs",
     "test:smoke": "electron test/smoke-main.mjs",
-    "pack:win": "electron-builder --win nsis",
+    "test:keystore-smoke": "electron test/keystore-smoke.mjs",
+    "pack:win": "electron-builder --win nsis --x64",
     "pack:win32": "electron-builder --win nsis --ia32",
     "pack:linux": "electron-builder --linux AppImage deb --x64",
     "pack:mac": "electron-builder --mac dmg --x64 --arm64"
   },
   "devDependencies": {
-    "electron": "43.7.2",
+    "electron": "43.8.8",
     "electron-builder": "26.15.3"
   },
   "engines": {

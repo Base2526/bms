@@ -61,12 +61,13 @@ async function run() {
         assert.equal(bounds.bridge, false);
         assert.ok(!bounds.text.includes("PrivateSurname"));
         if (phase === "payment") assert.ok(bounds.text.includes("68.00") && bounds.text.includes("168.00"));
-        if (phase === "finished") assert.ok(bounds.text.includes("32.00") && bounds.text.includes("123"));
+        if (phase === "finished") assert.ok(bounds.text.includes("32.00") && bounds.text.includes("123") && bounds.text.includes("042"));
       }
     }
     win.setContentSize(1024, 768);
+    await waitFor(win, "innerWidth === 1024 && innerHeight === 768");
     await win.webContents.executeJavaScript("window.displayFixture('long')");
-    await waitFor(win, "document.body.textContent.includes('และอีก 4 รายการ')");
+    await waitFor(win, "/และอีก\\s+4\\s+รายการก่อนหน้า/.test(document.body.textContent)");
     await writeFile(path.join(output, "long-1024.png"), (await win.webContents.capturePage()).toPNG());
     assert.equal(await win.webContents.executeJavaScript("document.documentElement.scrollHeight > innerHeight + 2"), false, "recent rows fit POS monitor");
     await win.webContents.executeJavaScript("window.displayFixture('pending')");
@@ -122,7 +123,7 @@ async function run() {
       await writeFile(path.join(output, "live-next-cart.png"), (await win.webContents.capturePage()).toPNG());
     }
     assert.deepEqual(errors, []);
-    console.log(`Customer display: 4 phases x 6 viewports, logos, QR, privacy, member/guest completion, split tender, pricing/approval guards, expiry and reconnect passed. Screenshots: ${output}`);
+    console.log(`Customer display: 4 phases x 6 viewports, logos, QR, privacy, pickup number, member/guest completion, split tender, pricing/approval guards, expiry and reconnect passed. Screenshots: ${output}`);
   } finally { win.destroy(); await new Promise(done => server.close(done)); }
 }
 

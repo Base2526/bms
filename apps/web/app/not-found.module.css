@@ -1,0 +1,17 @@
+.headerPlaceholder {
+  height: 72px;
+  background: var(--app-surface);
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100svh - 72px);
+  background: var(--app-bg);
+  color: var(--app-text);
+}
+
+@media (max-width: 767px) {
+  .headerPlaceholder { height: 58px; }
+  .page { min-height: calc(100svh - 58px); }
+}

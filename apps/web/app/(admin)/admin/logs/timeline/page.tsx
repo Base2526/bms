@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Space, Input, Button, List, Tag, message } from 'antd';
 import Link from 'next/link';
@@ -35,6 +37,7 @@ function levelTag(level: string){
 }
 
 export default function LogsTimelinePage() {
+  const uiText = useUiText();
   const [sessionId, setSessionId] = useState('');
   const [correlationId, setCorrelationId] = useState('');
   const [loading, setLoading] = useState(false);
@@ -50,7 +53,7 @@ export default function LogsTimelinePage() {
     const sid = sessionId.trim();
     const cid = correlationId.trim();
     if (!sid && !cid) {
-      message.warning('Enter a sessionId or correlationId');
+      message.warning(uiText("admin_ui.en_enter_a_sessionid_or_correlationid_e4c48"));
       return;
     }
 
@@ -62,13 +65,13 @@ export default function LogsTimelinePage() {
       qs.set('page', '1');
       qs.set('pageSize', '200');
       const res = await fetch(`${ADMIN_API_PREFIX}/logs?` + qs.toString(), { cache: 'no-store' });
-      if (!res.ok) throw new Error('Failed to load logs');
+      if (!res.ok) throw new Error(uiText("admin_ui.en_failed_to_load_logs_9448b"));
       const j = await res.json();
       const items: LogRow[] = Array.isArray(j.items) ? j.items : [];
       // API is newest-first; show oldest-first for timeline.
       setData([...items].reverse());
     } catch (e: any) {
-      message.error(e?.message || 'Load failed');
+      message.error(e?.message || uiText("admin_ui.en_load_failed_1dc60"));
     } finally {
       setLoading(false);
     }
@@ -84,21 +87,21 @@ export default function LogsTimelinePage() {
       extra={
         <Space wrap>
           <Input
-            placeholder="Session ID"
+            placeholder={uiText("admin_ui.en_session_id_25e4f")}
             value={sessionId}
             onChange={(e) => setSessionId(e.target.value)}
             style={{ width: 220 }}
             allowClear
           />
           <Input
-            placeholder="Correlation ID"
+            placeholder={uiText("admin_ui.en_correlation_id_805ca")}
             value={correlationId}
             onChange={(e) => setCorrelationId(e.target.value)}
             style={{ width: 220 }}
             allowClear
           />
-          <Button type="primary" onClick={load} loading={loading}>Load</Button>
-          <Link href="/admin/logs"><Button>Back</Button></Link>
+          <Button type="primary" onClick={load} loading={loading}>{uiText("admin_ui.en_load_ddcb7")}</Button>
+          <Link href="/admin/logs"><Button>{uiText("admin_ui.en_back_b52b3")}</Button></Link>
         </Space>
       }
       styles={{ body: { paddingTop: 12 } }}
@@ -114,13 +117,13 @@ export default function LogsTimelinePage() {
                 {levelTag(item.level)}
                 {item.status ? <Tag>{item.status}</Tag> : null}
                 {item.action ? <Tag color="geekblue">{item.action}</Tag> : null}
-                <span style={{ fontSize: 12, color: 'var(--app-muted)' }}>{new Date(item.created_at).toLocaleString()}</span>
+                <span style={{ fontSize: 12, color: 'var(--app-muted)' }}>{new Date(item.created_at).toLocaleString(uiText.locale)}</span>
                 <span style={{ flex: 1 }} />
-                <Link href={`/admin/logs/${item.id}/view`}>View</Link>
+                <Link href={`/admin/logs/${item.id}/view`}>{uiText("admin_ui.en_view_69bd4")}</Link>
               </div>
               <div style={{ fontWeight: 600 }}>{item.message}</div>
               <div style={{ fontSize: 12, color: 'var(--app-muted)' }}>
-                user={item.created_by ?? '-'} route={item.route_name ?? '-'} screen={item.screen_name ?? '-'} platform={item.platform ?? '-'} v={item.app_version ?? '-'}
+                {uiText("admin_ui.en_user_d63cd")}{item.created_by ?? '-'}  {uiText("admin_ui.en_route_71a65")}{item.route_name ?? '-'}  {uiText("admin_ui.en_screen_e47f9")}{item.screen_name ?? '-'}  {uiText("admin_ui.en_platform_5f041")}{item.platform ?? '-'} v={item.app_version ?? '-'}
                 {item.duration_ms ? ` • ${item.duration_ms}ms` : ''}
               </div>
               {item.error_message ? (

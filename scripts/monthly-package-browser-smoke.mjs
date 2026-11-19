@@ -5,16 +5,18 @@ const { chromium } = await import(process.env.BMS_PLAYWRIGHT_MODULE || 'playwrig
 const base = process.env.BMS_SMOKE_URL || 'http://localhost:3007';
 assert.ok(['localhost', '127.0.0.1'].includes(new URL(base).hostname));
 // The local server must use the same test-only JWT secret and a disposable DB
-// with users(id='1', is_platform_admin=true) for the real server layout guard.
+// with a platform admin and an ordinary user for the real server layout guard.
 // All browser APIs and WebSockets below are mocked; no catalogue mutation reaches DB.
 // BMS_ALLOW_FAKE_SEED=1 enables the read-only auth/retirement checks below.
 assert.ok(process.env.BMS_SMOKE_JWT_SECRET, 'provide the isolated local server test secret');
-const adminToken = jwt.sign({ id: '1', role: 'Administrator', email: 'fake@example.test' },
+const adminId = process.env.BMS_SMOKE_PLATFORM_ADMIN_ID || '1';
+const staffId = process.env.BMS_SMOKE_SHOP_ADMIN_ID || '2';
+const adminToken = jwt.sign({ id: adminId, role: 'Administrator', email: 'fake@example.test' },
   process.env.BMS_SMOKE_JWT_SECRET, { expiresIn: '10m' });
 const output = '.test-output/monthly-package-browser';
 await mkdir(output, { recursive: true });
 assert.equal((await fetch(`${base}/api/dev/fake/package`)).status, 401);
-const staffToken = jwt.sign({ id: '2', role: 'Administrator' }, process.env.BMS_SMOKE_JWT_SECRET, { expiresIn: '10m' });
+const staffToken = jwt.sign({ id: staffId, role: 'Administrator' }, process.env.BMS_SMOKE_JWT_SECRET, { expiresIn: '10m' });
 assert.equal((await fetch(`${base}/api/dev/fake/package`, { headers: { cookie: `ADMIN_COOKIE=${staffToken}` } })).status, 403);
 const retired = await fetch(`${base}/api/dev/fake/bms-ai-usage`, { method: 'POST', headers: { cookie: `ADMIN_COOKIE=${adminToken}` } });
 assert.equal(retired.status, 410);
@@ -42,6 +44,7 @@ try {
       const path = new URL(route.request().url()).pathname;
       if (path === '/api/auth/me') return route.fulfill({ json: { isAuthenticated: true,
         admin: { id: 1, role: 'Administrator', email: 'fake@example.test', language: lang } } });
+      if (path === '/api/bms/realtime/ticket') return route.fulfill({ json: { ticket: 'FAKE-browser-fixture' } });
       if (path === '/api/dev/fake/package') return route.fulfill({ json: {
         plan, plans: [plan, { ...plan, code: 'pro', name: 'Pro', price_monthly: 990, price_yearly: 9900 }, { ...plan, code: 'growth', name: 'Growth', price_monthly: 1990, price_yearly: 19900 }, { ...plan, code: 'business', name: 'Business', price_monthly: 4900, price_yearly: 49000 }],
         products: { used: fakeProductUsage, limit: 100, remaining: 100 - fakeProductUsage },
@@ -120,8 +123,14 @@ try {
     const layout = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2), false);
     try {
       await page.goto(`${base}/admin/master-data`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('tab', { name: lang === 'th' ? 'แพ็กเกจ' : 'Plans', exact: true }).click();
-      await page.getByRole('button', { name: lang === 'th' ? 'แก้ไข' : 'Edit', exact: true }).click();
+      const plansTab = page.getByRole('tab', { name: lang === 'th' ? 'แพ็กเกจ' : 'Plans', exact: true });
+      const editPlan = page.getByRole('button', { name: lang === 'th' ? 'แก้ไข' : 'Edit', exact: true });
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await plansTab.click();
+        await editPlan.waitFor({ timeout: 3000 }).catch(() => undefined);
+        if (await editPlan.isVisible()) break;
+      }
+      await editPlan.click();
       const modal = page.locator('.ant-modal-content');
       await modal.locator('#aiCreditsMonthly').fill('777');
       assert.equal(await modal.locator('#maxAiMessagesMonth, #maxOrdersMonth').count(), 0);
@@ -149,11 +158,13 @@ try {
       await layout();
       await page.goto(`${base}/admin/dev/fake`, { waitUntil: 'domcontentloaded' });
       await page.getByTestId('fake-package').getByText(/99\/100/).waitFor();
-      assert.equal(await page.locator('button').filter({ hasText: /^Create$/ }).isDisabled(), true);
+      const createLabel = lang === 'th' ? 'สร้าง' : 'Create';
+      const create = page.locator('button').filter({ hasText: new RegExp(`^${createLabel}$`) }).first();
+      assert.equal(await create.isDisabled(), true);
       await page.getByRole('spinbutton').fill('1');
-      await page.getByRole('button', { name: 'Create', exact: true }).click();
+      await create.click();
       await page.getByTestId('fake-package').getByText(/100\/100/).waitFor();
-      assert.equal(await page.locator('button').filter({ hasText: /^Create$/ }).isDisabled(), true);
+      assert.equal(await create.isDisabled(), true);
       const packageSelect = page.getByRole('combobox', { name: lang === 'th' ? 'แพ็กเกจร้านใหม่' : 'New shop package' }).first();
       await packageSelect.press('ArrowDown');
       await page.locator('.ant-select-item-option').filter({ hasText: /^Pro$/ }).click();

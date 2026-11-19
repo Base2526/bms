@@ -19,7 +19,9 @@ It must **not**:
 - change tenant permissions;
 - hide system features;
 - become the source of truth for operational business rules; or
-- lock the tenant into one permanent business model.
+- replace the product-level stock and sales-surface configuration. After the first real order,
+  the selected archetype is locked by migration `9.43` to preserve historical meaning; other
+  product capabilities remain configurable.
 
 ## Product position
 
@@ -71,6 +73,8 @@ Validation rules:
 - trimmed before validation;
 - blank string normalizes to `null`;
 - must be one of the allowed archetype ids below when present.
+- email is normalized with the shared NFKC identity rule, and passwords follow the shared
+  minimum of 8 characters and maximum of 72 UTF-8 bytes.
 
 ### Service input
 
@@ -127,7 +131,8 @@ Reason:
 Validation:
 
 - application-level validation against the canonical archetype ids above;
-- no DB enum required, to match the repository's existing preference for app-level catalogs.
+- migration `7.43` also enforces the shared allowlist with a database CHECK constraint;
+  `9.79` extends it for Board Game Cafe.
 
 ### Store profile
 
@@ -209,7 +214,7 @@ hiding an existing recipe or weakening a route/resolver permission check.
 When `bmsVerifyShopSignup` creates the tenant:
 
 1. read `business_archetype` from `bms_pending_shop_signups`;
-2. create the tenant + Manager exactly as today;
+2. create the tenant + Administrator owner;
 3. create or upsert `bms_store_profile` in the same transaction with:
    - `business_archetype` from signup;
    - mapped `business_type`;

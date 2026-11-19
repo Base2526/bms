@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import type { QueryResult, QueryResultRow } from "pg";
 import { beginTenantTx } from "./tenant";
+import { assertWeightedKgSalesSurfacesSupportedInTx } from "./weightedKgPricing";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
 import { enforceProductQuota } from "./plans";
 import {
@@ -221,6 +222,7 @@ export async function setProductSalesSurfaces(
       [tenantId, productSku]
     );
     if (!owned.rowCount) throw new Error("ไม่พบสินค้านี้ในร้าน");
+    await assertWeightedKgSalesSurfacesSupportedInTx(client, tenantId, productSku, surfaces);
     await client.query(
       `UPDATE bms_product_sales_surfaces
           SET enabled = FALSE, updated_at = now()

@@ -6,10 +6,8 @@
 //
 // ป้องกันด้วย header x-cron-secret = env BMS_CRON_SECRET (บังคับ — ไม่ตั้ง env = ปฏิเสธทุกคำขอ) — pattern
 // เดียวกับ /api/bms/channels/check-health และ /api/bms/ai/check-health
-// ตั้ง cron ให้ยิง endpoint นี้ทุกชั่วโมงพอ (idempotency มาจาก last_period_key
-// ใน bms_report_subscriptions ไม่ใช่ความถี่ cron — ยิงถี่กว่านี้ก็ไม่ส่งซ้ำ)
-// ยังไม่ได้ตั้ง cron schedule จริง (เหมือน channels/ai check-health เดิม) —
-// endpoint พร้อมแล้วแค่ยังไม่มีตัวยิงอัตโนมัติ
+// Docker/GitHub scheduler ยิงทุกชั่วโมง (idempotency มาจาก last_period_key
+// ใน bms_report_subscriptions ไม่ใช่ความถี่ cron)
 // =============================================================
 
 import { NextResponse } from "next/server";

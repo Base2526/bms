@@ -93,12 +93,34 @@ test('receipt forwards entered quantity and lot evidence and shows plain status'
       sku: 'SKU',
       size: 'BASE',
       qty: 1,
+      supplierQty: null,
       lotNo: 'LOT-A',
       expiryDate: '2027-01-01',
     },
   ]);
   expect(mockSaved).toBeNull();
   expect(text()).toContain('บันทึกรับสินค้าแล้ว');
+});
+test('supplier package receipt derives base stock quantity and freezes both quantities for retry', async () => {
+  props.orders = [{ ...order, qtyOrdered: 80, items: [{
+    sku: 'SKU', size: 'BASE', qtyOrdered: 80, qtyReceived: 0,
+    supplierUnitName: 'pallet', baseQtyPerSupplierUnit: 40,
+  }] }];
+  await act(async () => tree.update(render()));
+  const packageInput = tree.root.findAllByType(TextInput).find(n =>
+    n.props.accessibilityLabel === 'จำนวนหน่วยผู้ขายที่รับ SKU BASE')!;
+  await act(async () => packageInput.props.onChangeText('1'));
+  expect(tree.root.findAllByType(TextInput).find(n =>
+    n.props.accessibilityLabel === 'จำนวนรับ SKU BASE')!.props.value).toBe('40');
+  mockReceive.mockRejectedValueOnce(new Error('network'));
+  await press(confirm);
+  const first = mockReceive.mock.calls[0][0].variables;
+  expect(first.input.items).toEqual([{ sku: 'SKU', size: 'BASE', qty: 40, supplierQty: 1,
+    lotNo: null, expiryDate: null }]);
+  expect(mockSaved?.items).toEqual(first.input.items);
+  mockReceive.mockResolvedValueOnce({ data: { bmsPosReceivePurchase: { status: 'PARTIAL' } } });
+  await press(retry);
+  expect(mockReceive.mock.calls[1][0].variables).toEqual(first);
 });
 test('lost response survives remount, changed PO and auth rejection with the original payload/key', async () => {
   mockReceive.mockRejectedValue(new Error('network'));

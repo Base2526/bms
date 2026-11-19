@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/useUiText";
+
 import React, { useMemo, useState } from "react";
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Checkbox, Radio, Space, Table, Tag, Typography, Input } from "antd";
@@ -72,6 +74,7 @@ type TestEmailResult = {
 };
 
 export default function SqlConsoleClient() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [mode, setMode] = useState<"read" | "write">("read");
   const [confirmWrite, setConfirmWrite] = useState(false);
@@ -142,14 +145,14 @@ add(2, 3)`);
           message={t("admin_sql_console.warning_banner")}
         />
 
-        <Card title="SQL Console" bordered>
+        <Card title={uiText("admin_ui.en_sql_console_24fbc")} bordered>
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             <Radio.Group
               value={mode}
               onChange={(e) => { setMode(e.target.value); setConfirmWrite(false); setResult(null); }}
               options={[
-                { label: "Read-only (SELECT/WITH)", value: "read" },
-                { label: `Write-mode ${writeEnabled ? "" : t("admin_sql_console.mode_write_disabled_suffix")}`, value: "write", disabled: !writeEnabled },
+                { label: uiText("admin_ui.en_read_only_select_with_57324"), value: "read" },
+                { label: uiText("admin_ui.en_write_mode_787ff", { v0: writeEnabled ? "" : t("admin_sql_console.mode_write_disabled_suffix") }), value: "write", disabled: !writeEnabled },
               ]}
               optionType="button"
             />
@@ -176,7 +179,7 @@ add(2, 3)`);
               disabled={!sql.trim() || (mode === "write" && !confirmWrite)}
               onClick={handleRun}
             >
-              {mode === "read" ? "Run (read-only)" : "Run (write)"}
+              {mode === "read" ? uiText("admin_ui.en_run_read_only_2d473") : uiText("admin_ui.en_run_write_a8e58")}
             </Button>
           </Space>
         </Card>
@@ -188,11 +191,11 @@ add(2, 3)`);
               result.ok ? (
                 <Space>
                   <Tag color="green">OK</Tag>
-                  <Tag>{result.rowCount} rows</Tag>
+                  <Tag>{result.rowCount}  {uiText("admin_ui.en_rows_6c30d")}</Tag>
                   <Tag>{result.durationMs} ms</Tag>
                 </Space>
               ) : (
-                <Tag color="red">ERROR</Tag>
+                <Tag color="red">{uiText("admin_ui.en_error_0b99c")}</Tag>
               )
             }
           >
@@ -216,8 +219,8 @@ add(2, 3)`);
         )}
 
         <Card
-          title="JavaScript Function Console"
-          extra={jsEnabled ? <Tag color="orange">NON-PRODUCTION</Tag> : <Tag>DISABLED</Tag>}
+          title={uiText("admin_ui.en_javascript_function_console_8d266")}
+          extra={jsEnabled ? <Tag color="orange">{uiText("admin_ui.en_non_production_58c81")}</Tag> : <Tag>{uiText("admin_ui.en_disabled_bb2d0")}</Tag>}
           bordered
         >
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
@@ -245,12 +248,11 @@ add(2, 3)`);
                 runJs({ variables: { code: jsCode } });
               }}
             >
-              Run JavaScript
-            </Button>
+              {uiText("admin_ui.en_run_javascript_b0469")}</Button>
           </Space>
         </Card>
 
-        <Card title="Test Email" bordered>
+        <Card title={uiText("admin_ui.en_test_email_ce48b")} bordered>
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             <Alert closable
               type="info"
@@ -280,15 +282,14 @@ add(2, 3)`);
                 sendTestEmail({ variables: { to: testEmailTo, html: testEmailHtml } });
               }}
             >
-              Send test email
-            </Button>
+              {uiText("admin_ui.en_send_test_email_fc552")}</Button>
           </Space>
         </Card>
 
         {testEmailResult && (
           <Card
-            title="Test email result"
-            extra={testEmailResult.ok ? <Tag color="green">OK</Tag> : <Tag color="red">ERROR</Tag>}
+            title={uiText("admin_ui.en_test_email_result_6b14c")}
+            extra={testEmailResult.ok ? <Tag color="green">OK</Tag> : <Tag color="red">{uiText("admin_ui.en_error_0b99c")}</Tag>}
           >
             <Space direction="vertical" size={12} style={{ width: "100%" }}>
               <Alert closable
@@ -316,7 +317,7 @@ add(2, 3)`);
 
         {jsResult && (
           <Card
-            title="JavaScript output"
+            title={uiText("admin_ui.en_javascript_output_eaf9e")}
             extra={
               jsResult.ok ? (
                 <Space>
@@ -324,7 +325,7 @@ add(2, 3)`);
                   <Tag>{jsResult.durationMs} ms</Tag>
                 </Space>
               ) : (
-                <Tag color="red">ERROR</Tag>
+                <Tag color="red">{uiText("admin_ui.en_error_0b99c")}</Tag>
               )
             }
           >
@@ -361,7 +362,7 @@ add(2, 3)`);
               )}
               {jsResult.ok && (
                 <div>
-                  <Text type="secondary">Return value</Text>
+                  <Text type="secondary">{uiText("admin_ui.en_return_value_232f3")}</Text>
                   <pre
                     style={{
                       background: "#f5f5f5",
@@ -381,7 +382,7 @@ add(2, 3)`);
 
         <Card size="small" title={t("admin_sql_console.limits_title")}>
           <ul style={{ margin: 0, paddingLeft: 20 }}>
-            <li>{t("admin_sql_console.limit_read_only_1")} <Text code>READ ONLY</Text> {t("admin_sql_console.limit_read_only_2")}</li>
+            <li>{t("admin_sql_console.limit_read_only_1")} <Text code>{uiText("admin_ui.en_read_only_9af25")}</Text> {t("admin_sql_console.limit_read_only_2")}</li>
             <li>{t("admin_sql_console.limit_single_statement")}</li>
             <li>{t("admin_sql_console.limit_timeout")}</li>
             <li>{t("admin_sql_console.limit_write_prod")}</li>

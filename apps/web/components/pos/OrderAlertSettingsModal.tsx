@@ -1,10 +1,15 @@
 "use client";
 
+import { useState } from "react";
 import { Alert, Button, Modal, Select, Slider, Switch } from "antd";
 import { PlayCircleOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 import type { OrderAlertsApi } from "@/app/hooks/useOrderAlerts";
 import { ALERT_TONE_IDS, type AlertKind, type AlertToneId } from "@/lib/pos/orderAlertSound";
+import {
+  playPickupQueueAnnouncement,
+  preparePickupQueueAnnouncement,
+} from "@/lib/pos/pickupQueueVoice";
 
 /**
  * หน้าตั้งค่าเสียงเตือนของ "เครื่องนี้" — ใช้ร่วมกันระหว่างจอครัวที่เครื่องขายกับจอครัวหลังบ้าน
@@ -28,12 +33,27 @@ export default function OrderAlertSettingsModal({
 }) {
   const { t } = useI18n();
   const { settings } = alerts;
+  const [pickupVoiceStatus, setPickupVoiceStatus] = useState<"AI_STUDIO" | "SYSTEM" | "CHIME" | null>(null);
+  const canTestPickupVoice = kinds.includes("PICKUP_READY");
 
   const toneOptions = ALERT_TONE_IDS.map((id) => ({ value: id, label: t(`pos_alerts.tone_${id.toLowerCase()}`) }));
   const repeatOptions = [0, 10, 20, 30, 60, 120].map((seconds) => ({
     value: seconds,
     label: seconds === 0 ? t("pos_alerts.repeat_off") : t("pos_alerts.repeat_every", { seconds }),
   }));
+
+  const previewPickupVoice = async () => {
+    const voiceSettings = {
+      voiceMode: "AI_STUDIO" as const,
+      voiceLanguage: "th" as const,
+      voiceRepeat: 1,
+      voiceVolume: Math.round(settings.volume * 100),
+    };
+    // Construct/resume Web Audio inside the button gesture before the first await.
+    const context = preparePickupQueueAnnouncement("001", voiceSettings);
+    const result = await playPickupQueueAnnouncement(context, "001", voiceSettings);
+    setPickupVoiceStatus(result.played ? "AI_STUDIO" : result.usedSystemVoice ? "SYSTEM" : "CHIME");
+  };
 
   return <Modal
     open={open}
@@ -95,6 +115,21 @@ export default function OrderAlertSettingsModal({
         />
       </div>)}
     </div>
+
+    {canTestPickupVoice && <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", marginTop: 12, paddingTop: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div>{t("pos_alerts.pickup_voice_test")}</div>
+          <div style={{ marginTop: 2, opacity: 0.7, fontSize: 12 }}>{t("pos_alerts.pickup_voice_example")}</div>
+        </div>
+        <Button icon={<PlayCircleOutlined />} onClick={() => void previewPickupVoice()}>
+          {t("pos_alerts.pickup_voice_play")}
+        </Button>
+      </div>
+      {pickupVoiceStatus && <div role="status" style={{ marginTop: 8, fontSize: 12, color: "#1677ff" }}>
+        {t(`pos_alerts.pickup_voice_status_${pickupVoiceStatus.toLowerCase()}`)}
+      </div>}
+    </div>}
 
     <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", marginTop: 12, paddingTop: 12, opacity: settings.enabled ? 1 : 0.45 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

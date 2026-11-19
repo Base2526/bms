@@ -11,14 +11,16 @@ export function learningMetadata(title: string, description: string, path: strin
     openGraph: { title, description, url: localizedPublicPath(path, lang), type: "website", siteName: "BMS", locale: lang === "th" ? "th_TH" : "en_US", images: [{ url: "/og.png", width: 1200, height: 630, alt: "BMS learning center" }] },
     twitter: { card: "summary_large_image", title, description, images: ["/og.png"] } };
 }
-export function Sidebar({ lang, track }: { lang: "th" | "en"; track?: TrackId }) {
+export function Sidebar({ lang, track, factoryGuide = false, twentyBahtGuide = false }: { lang: "th" | "en"; track?: TrackId; factoryGuide?: boolean; twentyBahtGuide?: boolean }) {
   return <nav className={s.sidebar} aria-label={lang === "th" ? "หมวดคู่มือ" : "Guide categories"}>
     <h2>{lang === "th" ? "เลือกคู่มือ" : "Explore"}</h2>
-    <Link href={localizedPublicPath("/learn", lang)} aria-current={!track ? "page" : undefined}>{lang === "th" ? "ศูนย์เรียนรู้" : "Learning center"}</Link>
+    <Link href={localizedPublicPath("/learn", lang)} aria-current={!track && !factoryGuide && !twentyBahtGuide ? "page" : undefined}>{lang === "th" ? "ศูนย์เรียนรู้" : "Learning center"}</Link>
     {businessTrackIds.map((id) => <Link key={id} href={localizedPublicPath(`/learn/${id}`, lang)} aria-current={track === id ? "page" : undefined}>{tracks[id].icon} {localize(tracks[id].title, lang)}</Link>)}
     <hr />
     <h2>{lang === "th" ? "คู่มือเฉพาะงาน" : "Specialist guides"}</h2>
     {specialistTrackIds.map((id) => <Link key={id} href={localizedPublicPath(`/learn/${id}`, lang)} aria-current={track === id ? "page" : undefined}>{tracks[id].icon} {localize(tracks[id].title, lang)}</Link>)}
+    <Link href={localizedPublicPath("/learn/twenty-baht-shop", lang)} aria-current={twentyBahtGuide ? "page" : undefined}>🏷️ {lang === "th" ? "ร้าน 20 บาท (ทดลอง)" : "Twenty-baht shop (pilot)"}</Link>
+    <Link href={localizedPublicPath("/learn/factory-twine-straw", lang)} aria-current={factoryGuide ? "page" : undefined}>🏭 {lang === "th" ? "โรงงานเชือกและหลอด (ทดลอง)" : "Twine & straw factory (pilot)"}</Link>
     <hr />
     <Link href={localizedPublicPath("/learn/guides/pos-devices", lang)}>{lang === "th" ? "POS และอุปกรณ์" : "POS & hardware"}</Link>
     <Link href={localizedPublicPath("/learn/guides/line-ai-booking", lang)}>LINE OA + AI</Link>

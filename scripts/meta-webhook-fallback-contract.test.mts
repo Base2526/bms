@@ -36,6 +36,23 @@ for (const channel of ["facebook", "instagram"] as const) {
     }
   });
 
+  test(`${channel} rejects signed malformed JSON before enqueueing`, async () => {
+    const h = webhookHarness(channel);
+    for (const raw of ["{", "null"]) {
+      assert.equal((await h.post([], async () => raw)).status, 400);
+    }
+    assert.equal(h.calls.claims.length, 0);
+    assert.equal(h.calls.pipeline.length, 0);
+  });
+
+  test(`${channel} refuses a large signed event batch before enqueueing or AI`, async () => {
+    const h = webhookHarness(channel);
+    const events = Array.from({ length: 201 }, (_, index) => h.event("hello", `FAKE-${index}`));
+    assert.equal((await h.post(events)).status, 413);
+    assert.equal(h.calls.claims.length, 0);
+    assert.equal(h.calls.pipeline.length, 0);
+  });
+
   test(`${channel} duplicate event does not send again`, async () => {
     const h = webhookHarness(channel, { claim: async () => false });
     assert.equal((await h.post()).status, 200);

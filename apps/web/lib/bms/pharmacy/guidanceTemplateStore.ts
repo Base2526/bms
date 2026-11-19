@@ -8,7 +8,6 @@
 import { query, getClient } from "@/lib/db";
 import { beginTenantTx } from "../tenant";
 import { pharmacyClinicalHandoffReply } from "./customerAssistancePolicy";
-import { getStoreProfile } from "../storeProfile";
 import {
   PHARMACY_GUIDANCE_DEFAULT_DRAFTS,
   PHARMACY_GUIDANCE_MAX_BODY,
@@ -336,8 +335,15 @@ export async function pharmacyClinicalGuidanceReply(
 /** Shop facts a template may reference. A failed read leaves every placeholder line out. */
 export async function pharmacyGuidanceShopValues(tenantId: string): Promise<PharmacyGuidanceValues> {
   try {
-    const profile = await getStoreProfile(tenantId);
-    return { shop_phone: profile.phone, business_hours: profile.businessHours, shop_address: profile.address };
+    // This read is inside the 500 ms customer response budget. A cache connection
+    // outage must not consume the budget before PostgreSQL can provide these facts.
+    const result = await query<{ phone: string | null; business_hours: string | null; address: string | null }>(
+      `SELECT phone, business_hours, address FROM bms_store_profile WHERE tenant_id = $1`,
+      [tenantId],
+    );
+    const profile = result.rows[0];
+    return { shop_phone: profile?.phone ?? null, business_hours: profile?.business_hours ?? null,
+      shop_address: profile?.address ?? null };
   } catch (error) {
     console.error("[BMS] pharmacy guidance shop values failed:", (error as { code?: string })?.code ?? error);
     return {};

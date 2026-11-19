@@ -10,7 +10,7 @@ import { breadcrumbJsonLd, learningArticleJsonLd } from "@/lib/seoJsonLd";
 
 type Props = { params: { slug: string }; searchParams: { track?: string; format?: string } };
 export function generateMetadata({ params }: Props) {
-  const lesson = getLesson(params.slug); if (!lesson) return {};
+  const lesson = getLesson(params.slug); if (!lesson) return { robots: { index: false, follow: false } };
   const lang = learningLang();
   return learningMetadata(localize(lesson.title, lang), localize(lesson.summary, lang), `/learn/guides/${lesson.slug}`, lang);
 }
@@ -22,6 +22,7 @@ export default function ArticlePage({ params, searchParams }: Props) {
   const items = getTrackLessons(track, format); const index = items.findIndex((item) => item.slug === lesson.slug);
   const prev = items[index - 1]; const next = items[index + 1];
   const lang = learningLang(); const th = lang === "th";
+  const reviewedAt = lesson.reviewedAt ?? LEARNING_REVIEWED_AT;
   const trackHref = localizedPublicPath(`/learn/${track}${format ? `?format=${format}` : ""}`, lang);
   const lessonHref = (slug: string) => localizedPublicPath(`/learn/guides/${slug}?track=${track}${format ? `&format=${format}` : ""}`, lang);
   const txt = (value: Parameters<typeof localize>[0]) => localize(value, lang);
@@ -32,7 +33,7 @@ export default function ArticlePage({ params, searchParams }: Props) {
       path: `/learn/guides/${lesson.slug}`,
       title: txt(lesson.title),
       description: txt(lesson.summary),
-      reviewedAt: LEARNING_REVIEWED_AT,
+      reviewedAt,
     })} />
     <StructuredData id="learning-article-breadcrumb-jsonld" data={breadcrumbJsonLd(lang, [
       { name: th ? "หน้าหลัก" : "Home", path: "/" },
@@ -45,14 +46,14 @@ export default function ArticlePage({ params, searchParams }: Props) {
       <article className={s.article}>
         <span className={s.eyebrow}>{th ? "บทที่" : "Lesson"} {index + 1} / {items.length}</span>
         <h1>{txt(lesson.title)}</h1><p className={s.lead}>{txt(lesson.summary)}</p>
-        <div className={`${s.muted} ${s.articleMeta}`}><span>{th ? "จัดทำโดย " : "Prepared by "}<Link href={localizedPublicPath("/about", lang)}>BMS</Link></span><span>{lesson.roles.map((role) => txt(roleLabels[role])).join(" · ")}</span><span>{th ? "ทบทวนเนื้อหา" : "Content reviewed"} <time dateTime={LEARNING_REVIEWED_AT}>{LEARNING_REVIEWED_AT}</time></span></div>
+        <div className={`${s.muted} ${s.articleMeta}`}><span>{th ? "จัดทำโดย " : "Prepared by "}<Link href={localizedPublicPath("/about", lang)}>BMS</Link></span><span>{lesson.roles.map((role) => txt(roleLabels[role])).join(" · ")}</span><span>{th ? "ทบทวนเนื้อหา" : "Content reviewed"} <time dateTime={reviewedAt}>{reviewedAt}</time></span></div>
         <details className={`${s.mobileContents} ${s.noPrint}`}><summary>{th ? "ในบทนี้ · ข้ามไปยังหัวข้อ" : "On this page · Jump to a section"}</summary><nav aria-label={th ? "หัวข้อในบทเรียน" : "Lesson sections"}>{anchors.map(([id, label]) => <a key={id} href={`#${id}`}>{label}</a>)}</nav></details>
         <h2 id="prepare">{th ? "ก่อนเริ่ม" : "Before you begin"}</h2><p>{txt(lesson.prerequisite)}</p>
         <div className={s.callout}><strong>{th ? "เมนูที่ใช้" : "Where to go"}</strong><p>{txt(lesson.menu)}</p><span className={s.muted}>{th ? "ชื่อและรายการที่เห็นอาจต่างตามภาษา สิทธิ์ รุ่นแอป และการตั้งค่าร้าน" : "Visible menus may vary with language, permissions, app version and shop configuration."}</span></div>
         <h2 id="steps">{th ? "ทำตามทีละขั้น" : "Follow these steps"}</h2><ol className={s.steps}>{lesson.steps.map((step, i) => <li key={i}>{txt(step)}</li>)}</ol>
         <h2 id="verify">{th ? "รู้ได้อย่างไรว่าทำสำเร็จ" : "How to verify success"}</h2><p>{txt(lesson.check)}</p>
         <h2 id="limits">{th ? "ข้อจำกัดและสิ่งที่ต้องตรวจ" : "Limits & things to check"}</h2><div className={s.callout}><p>{txt(lesson.caution)}</p></div>
-        <section className={`${s.callout} ${s.practiceCallout} ${s.noPrint}`}><div><h2>{th ? "พร้อมลองทำในร้านของคุณ" : "Ready to try it in your shop"}</h2><p>{th ? "อ่านบทเรียนได้ฟรี การทำรายการจริงต้องเข้าสู่ระบบและมีสิทธิ์ของเมนูนั้น สำหรับฝึกงานให้ใช้ข้อมูลทดสอบ" : "Lessons are free to read. Actual operations require sign-in and the appropriate permission. Use test data for training."}</p></div>
+        <section className={`${s.callout} ${s.practiceCallout} ${s.noPrint}`}><div><h2>{track === "building-materials" ? (th ? "ทดลองในร้านทดสอบก่อน" : "Rehearse in a test shop first") : (th ? "พร้อมลองทำในร้านของคุณ" : "Ready to try it in your shop")}</h2><p>{track === "building-materials" ? (th ? "คู่มือนี้เป็น pilot การทำรายการต้องเข้าสู่ระบบและมีสิทธิ์ ใช้ข้อมูลสมมติและตรวจข้อจำกัดก่อนทดลองในร้านจริง" : "This is a pilot guide. Actions require sign-in and permission. Use fictional data and review gaps before a real-shop trial.") : (th ? "อ่านบทเรียนได้ฟรี การทำรายการจริงต้องเข้าสู่ระบบและมีสิทธิ์ของเมนูนั้น สำหรับฝึกงานให้ใช้ข้อมูลทดสอบ" : "Lessons are free to read. Actual operations require sign-in and the appropriate permission. Use test data for training.")}</p></div>
           {lesson.action.startsWith("/admin/") ? <StoreLink lang={lang} action={lesson.action} /> : <Link href={localizedPublicPath(lesson.action, lang)} className={s.button}>{th ? "ไปหน้าที่เกี่ยวข้อง" : "Open related page"} →</Link>}
         </section>
         <ArticleTools slug={lesson.slug} lang={lang} />

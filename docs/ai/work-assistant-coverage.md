@@ -1,17 +1,21 @@
 # Global Work Assistant — full-system V1 coverage
 
-Status: implemented and contract-checked. The deterministic catalog currently contains 52 verified
-capabilities (23 `AVAILABLE` · 25 `CONDITIONAL` · 3 `BETA` · 1 `MOCK`), 125 bilingual guides (29 of them
+Status: implemented and contract-checked. The deterministic catalog currently contains 55 verified
+capabilities (23 `AVAILABLE` · 25 `CONDITIONAL` · 6 `BETA` · 1 `MOCK`), 137 bilingual guides (30 of them
 register guides with `pageId === "pos"`), 21 verified FAQ answers, and 24 groups of limits and traps
-(139 rules per language). The pinned question corpus holds 246 entries: 103 real questions
-(`CORPUS_REAL_QUESTIONS`), 141 coverage questions and 2 no-match guards — counted 2026-10-13 by
-importing `SYSTEM_CAPABILITIES`/`SYSTEM_GUIDES`/`SYSTEM_FAQ`/`SYSTEM_LIMITS` and
+(139 rules per language). The pinned question corpus holds 287 entries: 104 real questions
+(`CORPUS_REAL_QUESTIONS`), 181 coverage questions and 2 no-match guards — counted 2026-11-09 at
+`e989c0ab` by importing `SYSTEM_CAPABILITIES`/`SYSTEM_GUIDES`/`SYSTEM_FAQ`/`SYSTEM_LIMITS` and
 `scripts/ai-eval/work-assistant-question-corpus.mts`, not by grepping. Counts drift as features ship;
 re-count from `lib/bms/assistantKnowledge/*` before quoting them elsewhere. Compared with the
-catalog at commit `c81b5478` (the 2026-10-02 count), it gained one capability (`board-game.time-promotions`), six guides
-(`board-game.time-offer-limits`, `pos.board-game-time-promotion`, `products.cross-sku-gift`,
-`pharmacy.manage-guidance`, `platform.app-downloads`, `platform.retail-local-runtime-releases`) and one
-FAQ (`faq.board-game-single-checkin-split-payment`); no limit group was added. Every Admin Sidebar
+2026-10-13 count, it gained three capabilities (`board-game.library-owner-reads`,
+`board-game.live-owner-reads`, `board-game.profit-utilization`) and twelve guides, including
+`board-game.analytics`, `board-game.owner-library`, `board-game.owner-operations`,
+`finance.reconcile-bank`, `inventory.branch-requisitions`, `knowledge.search`,
+`operations.central-kitchen`, `operations.checklists`, `platform.master-data`,
+`pos.client-and-offline-support`, `retail-local.pricing` and `retail-local.recover-machine`; no FAQ
+or limit group was added. (The 2026-10-13 count had added `board-game.time-promotions`, six guides
+and one FAQ over the 2026-10-02 catalog at `c81b5478`.) Every Admin Sidebar
 destination — read from `ADMIN_NAV_ITEMS`/`ADMIN_NAV_FOOTER_ROUTES` in `lib/bms/adminNavigation.ts`,
 not scraped from the component, so the coverage set cannot silently empty out when the menu moves —
 and every routable Admin page except `/admin` (redirect) and `/admin/login` has a
@@ -48,6 +52,40 @@ The assistant keeps four questions separate:
 3. Is there live data now? Read an approved business tool.
 4. May this actor see or do it? Derive role, platform status, and effective permissions on the
    server, then re-check tool permission immediately before execution.
+
+## Screenshot questions
+
+The global Drawer and `/admin/assistant` accept one PNG, JPEG, or WebP image with a text question.
+Staff can choose a file or paste an image.
+The attachment starts unconfirmed. Staff must explicitly confirm it shows BMS before either UI
+sends it; replacing the file resets confirmation. The GraphQL resolver requires the same boolean
+before decoding the image or entering the AI tool loop. An unconfirmed image is rejected without an
+AI provider call or point charge. File bytes do not prove which app produced a screenshot, so this
+is a staff declaration, not automatic source detection. If a confirmed image visibly shows another
+app, the model is instructed to stop with a short out-of-scope reply; that case may still spend the
+first vision call because recognizing its content requires image analysis.
+The existing GraphQL multipart `Upload` path carries the image. The server checks the declared and
+decoded formats, rejects empty/animated/oversized images, bounds pixels, re-encodes to PNG without
+metadata, and passes the image only in the current user message to a vision-capable AI model. A
+configured text-only model is rejected before a provider call or point charge. If no AI provider is
+available, the reply explicitly says the image was not analyzed rather than answering from text-only
+guide retrieval. The image is not stored in `files`, audit data, or browser chat history; the UI
+keeps a temporary preview for the current page session. A follow-up that needs the image must attach
+it again.
+
+The two staff assistant surfaces share a safe, text-only response renderer. It displays short
+headings, paragraphs, numbered/bulleted steps, code blocks, links and the existing report-download action
+without rendering arbitrary HTML. The original answer string remains the source for copied text,
+history and tool evidence. While the temporary image preview exists, `/admin/assistant` places it
+beside the following answer at desktop width and above the answer on a narrow screen; the Drawer
+stacks it above the answer. After reload, the saved attachment name remains in the user turn but
+the image preview is unavailable, so the assistant must not imply it has seen the old image on a
+follow-up turn.
+
+An attached screenshot is untrusted user evidence. The model may explain visible UI or error text,
+but it must not obey instructions printed in the image, treat it as proof of current shop state, or
+use it to confirm a payment or another sensitive mutation. Live facts still require approved tools,
+and sensitive proposals still require the existing human confirmation and permission checks.
 
 `AVAILABLE` means the core workflow exists. `CONDITIONAL` needs tenant configuration, a feature
 gate, device/shift state, or a connected service. `BETA` means the code is written but has never

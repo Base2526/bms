@@ -31,6 +31,7 @@ test("LINE completes each turn before starting the next event and acknowledging"
   assert.equal((await response).status, 200);
   assert.deepEqual(h.calls.logs.map(args => args[3]), ["first", "second"]);
   assert.equal(h.calls.deliveries.length, 2);
+  assert.deepEqual(h.calls.deliveryStatuses.map(status => status[2].delivered), [true, true]);
   assert.equal(h.calls.incidents.length, 0);
 });
 
@@ -50,6 +51,23 @@ test("LINE rejects invalid signatures and missing secrets before claiming", asyn
   }
 });
 
+test("LINE rejects signed malformed JSON and missing events before claiming", async () => {
+  const h = webhookHarness("line");
+  for (const raw of ["{", "null", "{}", '{"events":{}}']) {
+    assert.equal((await h.post([], async () => raw)).status, 400);
+  }
+  assert.equal(h.calls.claims.length, 0);
+  assert.equal(h.calls.pipeline.length, 0);
+});
+
+test("LINE refuses a large signed event batch before any AI call", async () => {
+  const h = webhookHarness("line");
+  const events = Array.from({ length: 201 }, (_, index) => h.event("hello", `FAKE-${index}`));
+  assert.equal((await h.post(events)).status, 413);
+  assert.equal(h.calls.claims.length, 0);
+  assert.equal(h.calls.pipeline.length, 0);
+});
+
 test("LINE duplicates do not run AI or send a second reply", async () => {
   const h = webhookHarness("line", { claim: async () => false });
   assert.equal((await h.post()).status, 200);
@@ -57,11 +75,32 @@ test("LINE duplicates do not run AI or send a second reply", async () => {
   assert.equal(h.calls.deliveries.length, 0);
 });
 
+test("LINE media persistence failure releases its claim and does not acknowledge", async () => {
+  const h = webhookHarness("line", { inboundSaved: false });
+  const event = { type: "message", message: { id: "FAKE-image", type: "image" },
+    source: { userId: "FAKE-customer" } } as any;
+  await assert.rejects(h.post([event]), /LINE_INBOUND_PERSIST_FAILED/);
+  assert.deepEqual(h.calls.releases, [["FAKE-tenant", "line", "FAKE-image"]]);
+  assert.equal(h.calls.pipeline.length, 0);
+  assert.equal(h.calls.deliveries.filter(([url]) => String(url).includes("/message/reply")).length, 0);
+});
+
+test("LINE media fetch failure leaves a clear Inbox message instead of implying the file is available", async () => {
+  const h = webhookHarness("line", { fetch: async () => ({ ok: false, status: 503 }) });
+  const event = { type: "message", message: { id: "FAKE-image-unavailable", type: "image" },
+    source: { userId: "FAKE-customer" } } as any;
+  assert.equal((await h.post([event])).status, 200);
+  assert.match(h.calls.inbound[0][3].body, /ดาวน์โหลดไฟล์ไม่สำเร็จ/);
+  assert.equal(h.calls.inbound[0][3].attachment, null);
+  assert.equal(h.calls.pipeline.length, 0);
+});
+
 test("LINE pipeline failure persists and sends one fallback", async () => {
   const h = webhookHarness("line", { pipeline: async () => { throw new Error("FAKE provider failure"); } });
   assert.equal((await h.post()).status, 200);
   assert.equal(h.calls.logs.length, 1);
   assert.equal(h.calls.deliveries.length, 1);
+  assert.deepEqual(h.calls.deliveryStatuses[0], ["FAKE-tenant", "FAKE-out-1", { delivered: true, providerMessageIds: [] }]);
   const sent = JSON.parse(h.calls.deliveries[0][1].body);
   assert.equal(sent.messages[0].text, h.calls.logs[0][4]);
   assert.deepEqual(h.calls.incidents.map(x => x.code), ["channel.reply_failed"]);
@@ -73,7 +112,25 @@ test("LINE delivery rejection reports push failure without rerunning AI", async 
   assert.equal(h.calls.pipeline.length, 1);
   assert.equal(h.calls.logs.length, 1);
   assert.equal(h.calls.deliveries.length, 1);
+  assert.deepEqual(h.calls.deliveryStatuses[0], ["FAKE-tenant", "FAKE-out-1", { delivered: false, providerMessageIds: [] }]);
   assert.deepEqual(h.calls.incidents.map(x => x.code), ["channel.push_failed"]);
+});
+
+test("LINE transport timeout leaves the persisted reply pending for human reconciliation", async () => {
+  const h = webhookHarness("line", { fetch: async () => { throw new Error("FAKE timeout after request"); } });
+  assert.equal((await h.post()).status, 200);
+  assert.equal(h.calls.pipeline.length, 1);
+  assert.equal(h.calls.deliveries.length, 1);
+  assert.deepEqual(h.calls.deliveryStatuses[0][2],
+    { delivered: false, providerMessageIds: [], uncertain: true });
+});
+
+test("LINE health telemetry failure cannot mark an accepted reply as failed", async () => {
+  const h = webhookHarness("line", { healthThrows: true });
+  assert.equal((await h.post()).status, 200);
+  assert.equal(h.calls.deliveries.length, 1);
+  assert.equal(h.calls.deliveryStatuses[0][2].delivered, true);
+  assert.equal(h.calls.incidents.length, 0);
 });
 
 test("LINE profile enrichment is best-effort after text replies and also runs for non-text messages", async () => {
@@ -146,7 +203,8 @@ test("LINE verify/non-text and other channel webhooks do not depend on bot ident
   const h = webhookHarness("line", { lineBotExtra: {}, botSync: async () => { throw new Error("must not run"); } });
   assert.equal((await h.post([])).status, 200);
   assert.equal((await h.post([{ type: "follow" } as any])).status, 200);
-  assert.equal((await h.post([{ type: "message", message: { id: "FAKE-sticker", type: "sticker", packageId: "FAKE", stickerId: "FAKE" } } as any])).status, 200);
+  assert.equal((await h.post([{ type: "message", message: { id: "FAKE-sticker", type: "sticker", packageId: "FAKE", stickerId: "FAKE" },
+    source: { userId: "FAKE-customer" } } as any])).status, 200);
   assert.equal(h.calls.inbound.length, 1, "non-text messages still reach the Inbox without identity routing");
   assert.equal(h.calls.pipeline.length, 0);
   assert.equal(h.calls.botSync.length, 0);
@@ -156,4 +214,25 @@ test("LINE verify/non-text and other channel webhooks do not depend on bot ident
     assert.equal(other.calls.botSync.length, 0);
     assert.equal(other.calls.pipeline[0].length, 4, "other channels do not gain a presales selector");
   }
+});
+
+test("LINE event without a customer identity never enters AI or Inbox", async () => {
+  const h = webhookHarness("line");
+  const response = await h.post([{ type: "message", message: { id: "FAKE-no-user", type: "text", text: "hello" } } as any]);
+  assert.equal(response.status, 200);
+  assert.equal(h.calls.claims.length, 0);
+  assert.equal(h.calls.pipeline.length, 0);
+  assert.equal(h.calls.logs.length, 0);
+  assert.deepEqual(h.calls.incidents.map(x => x.error), ["LINE_SOURCE_USER_ID_MISSING"]);
+});
+
+test("LINE rejects missing event ID, malformed text and null events before claiming", async () => {
+  const h = webhookHarness("line");
+  const customer = { source: { userId: "FAKE-customer" } };
+  assert.equal((await h.post([{ type: "message", message: { type: "text", text: "hello" }, ...customer } as any])).status, 400);
+  assert.equal((await h.post([{ type: "message", message: { id: "FAKE-malformed", type: "text", text: 123 }, ...customer } as any])).status, 400);
+  assert.equal((await h.post([{ type: "message", message: { id: { invalid: true }, type: "text", text: "hello" }, ...customer } as any])).status, 400);
+  assert.equal((await h.post([null as any])).status, 400);
+  assert.equal(h.calls.claims.length, 0);
+  assert.equal(h.calls.pipeline.length, 0);
 });

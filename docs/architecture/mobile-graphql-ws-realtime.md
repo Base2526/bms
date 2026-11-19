@@ -94,6 +94,8 @@ These REST routes stay compatible while clients move to the named GraphQL operat
 
 The existence of a similarly named operation does not yet prove response-shape parity. Phase 9 adds
 fixture-driven REST-versus-GraphQL contract tests before moving each caller.
+The legacy REST/GraphQL bare order-pay adapters now reject payment without a confirmed payment
+record. Cancellation and whole-order return require explicit confirmation and branch access.
 
 ### BMS REST gaps and implemented GraphQL equivalents
 

@@ -56,7 +56,7 @@ test("จอต้องปิดปุ่มและบอกว่าต้�
   const src = await readFile(new URL("../apps/web/app/(pos)/pos/restaurant/page.tsx", import.meta.url), "utf8");
   assert.match(src, /okButtonProps=\{\{ disabled: unmetModifiers\.length > 0 \}\}/,
     "ปุ่มเพิ่มในบิลต้องกดไม่ได้เมื่อกลุ่มบังคับยังว่าง");
-  assert.match(src, /describeUnmetModifierGroups\(unmetModifiers\)/,
+  assert.match(src, /describeUnmetModifierGroups\(unmetModifiers, posText\)/,
     "ต้องบอกชื่อกลุ่มที่ยังไม่ได้เลือก ไม่ใช่แค่ปิดปุ่มเงียบ ๆ");
   assert.match(src, /needsPick && <span className=\{styles\.fieldNeeded\}/,
     "เมนูที่มีหลายกลุ่มต้องรู้ว่ากลุ่มไหน");

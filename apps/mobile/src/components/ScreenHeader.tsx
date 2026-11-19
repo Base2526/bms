@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
@@ -22,6 +23,7 @@ export function ScreenHeader({
   roundBackButton = false,
   right,
 }: Props) {
+  usePosLanguage();
   const { colors, spacing, radius, typography, minTouchTarget } = useTheme();
 
   return (
@@ -29,7 +31,7 @@ export function ScreenHeader({
       {onBack && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="ย้อนกลับ"
+          accessibilityLabel={posText("ย้อนกลับ")}
           onPress={onBack}
           style={({ pressed }) => [
             styles.back,

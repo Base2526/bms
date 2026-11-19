@@ -34,10 +34,11 @@ if (!["pure", "db", "all"].includes(mode)) {
   console.error(`ไม่รู้จักโหมด "${mode}" — ใช้ pure | db | all`);
   process.exit(2);
 }
-const filter = (process.argv[3] ?? "").trim();
+const listOnly = process.argv[3] === "--list";
+const filter = listOnly ? "" : (process.argv[3] ?? "").trim();
 
 /**
- * เดินทั้ง `scripts/` และ `scripts/ai-eval/`
+ * เดิน `scripts/`, `scripts/ai-eval/` และ `scripts/infra/`
  *
  * ชุด ai-eval (deterministic contract ไม่ต่อ provider/DB) เคยอยู่นอกประตูนี้ เพราะตัวเดินไฟล์
  * อ่านเฉพาะชั้นบนสุด — README ของมันบอกให้ "รันมือทีละไฟล์" ซึ่งแปลว่าไม่มีใครรัน (บทเรียนเดียวกับ
@@ -48,10 +49,10 @@ const filter = (process.argv[3] ?? "").trim();
 const collect = (dir, prefix = "") =>
   readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
     entry.isDirectory()
-      ? entry.name === "ai-eval"
+      ? ["ai-eval", "infra"].includes(entry.name)
         ? collect(path.join(dir, entry.name), `${entry.name}/`)
         : []
-      : entry.name.endsWith(".test.mts")
+      : entry.name.endsWith(".test.mts") || (prefix === "" && entry.name === "retail-local-migration-checksum.test.mjs")
         ? [`${prefix}${entry.name}`]
         : []
   );
@@ -66,6 +67,10 @@ if (inMode.length === 0) {
 
 // ตัวกรองที่ไม่ตรงอะไรเลยต้องดัง ไม่ใช่ "ผ่าน 0 ไฟล์" ซึ่งอ่านเหมือนเทสเขียว
 const files = filter ? inMode.filter((f) => f.includes(filter)) : inMode;
+if (listOnly) {
+  console.log(JSON.stringify(files.map(f => `scripts/${f}`)));
+  process.exit(0);
+}
 if (files.length === 0) {
   console.error(`ตัวกรอง "${filter}" ไม่ตรงไฟล์ไหนในโหมด ${mode} (${inMode.length} ไฟล์)`);
   console.error("ตัวอย่างชื่อที่มี: " + inMode.slice(0, 4).map((f) => f.replace(".test.mts", "")).join(", "));

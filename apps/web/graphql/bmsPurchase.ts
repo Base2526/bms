@@ -6,7 +6,6 @@
 // permission enforce ทุก field + audit ทุก mutation ที่สำเร็จ
 // =============================================================
 
-import { query } from "@/lib/db";
 import {
   createPurchaseOrder,
   receivePurchaseOrder,
@@ -22,11 +21,18 @@ import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
 import { requireAuth } from "@/lib/auth";
+import { listLocationsForUser } from "@/lib/bms/locations";
 
 const toISO = (d: any) => (d instanceof Date ? d.toISOString() : String(d));
 
 export const bmsPurchaseResolvers = {
   Query: {
+    async bmsPurchaseReceivingLocations(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "purchase.receive");
+      const auth = requireAuth(ctx);
+      return (await listLocationsForUser(getTenantId(ctx), String(auth.author_id)))
+        .filter((location) => location.active);
+    },
     async bmsPurchaseOrders(
       _p: unknown,
       args: { search?: string; limit?: number; offset?: number },
@@ -115,11 +121,19 @@ export const bmsPurchaseResolvers = {
 
     async bmsReceivePurchaseOrder(
       _p: unknown,
-      args: { id: string; items: ReceiveInput[]; idempotencyKey?: string },
+      args: { id: string; items: ReceiveInput[]; idempotencyKey?: string; locationId?: string | null },
       ctx: any
     ) {
       await requirePermission(ctx, "purchase.receive");
       const auth = requireAuth(ctx);
+      const key = typeof args.idempotencyKey === "string" ? args.idempotencyKey.trim() : "";
+      if (key.length < 8 || key.length > 200) {
+        return { status: "INVALID_INPUT", poId: args.id, reasonCode: "IDEMPOTENCY_REQUIRED",
+          message: "ต้องมีรหัสคำขอรับของที่ใช้ซ้ำได้" };
+      }
+      if (args.locationId != null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(args.locationId)) {
+        return { status: "INVALID_INPUT", poId: args.id, message: "รหัสสาขาที่รับสินค้าไม่ถูกต้อง" };
+      }
       const result = await receivePurchaseOrder(
         getTenantId(ctx),
         args.id,
@@ -127,7 +141,8 @@ export const bmsPurchaseResolvers = {
         `admin:${ctx?.admin?.email ?? ctx?.admin?.id ?? "?"}`,
         auth.author_id,
         {
-          staffIdempotency: args.idempotencyKey ? { actorUserId: String(auth.author_id), key: args.idempotencyKey } : null,
+          locationId: args.locationId ?? null,
+          staffIdempotency: { actorUserId: String(auth.author_id), key },
           audit: {
             actor: String(ctx?.admin?.email ?? ctx?.admin?.id ?? auth.author_id),
             action: "purchase.receive",
@@ -147,6 +162,7 @@ export const bmsPurchaseResolvers = {
       const msg: Record<string, string> = {
         PO_NOT_FOUND: "ไม่พบใบสั่งซื้อ",
         LOCATION_NOT_FOUND: "ไม่พบสาขาที่รับสินค้า",
+        BRANCH_FORBIDDEN: "ไม่มีสิทธิ์รับสินค้าเข้าสาขานี้",
         INVALID_INPUT: result.status === "INVALID_INPUT" ? result.reason ?? "รายการรับสินค้าไม่ถูกต้อง" : "รายการรับสินค้าไม่ถูกต้อง",
         INVALID_STATE: "สถานะไม่อนุญาตให้รับของ",
         LINE_NOT_FOUND: "ไม่พบรายการสินค้าในใบสั่งซื้อ",
@@ -179,23 +195,7 @@ export const bmsPurchaseResolvers = {
     updatedAt: (p: any) => toISO(p.updatedAt ?? p.updated_at),
     async items(p: any, _a: unknown, ctx: any) {
       if (p.items) return p.items;
-      const res = await query(
-        `SELECT product_sku, size, supplier_sku, supplier_product_name,
-                qty_ordered, qty_received, unit_cost, additional_unit_cost, additional_cost_note
-           FROM bms_purchase_order_items WHERE tenant_id = $1 AND po_id = $2
-          ORDER BY product_sku, size`,
-        [getTenantId(ctx), p.id]
-      );
-      return res.rows.map((r: any) => ({
-        sku: r.product_sku, size: r.size,
-        supplierSku: r.supplier_sku,
-        supplierProductName: r.supplier_product_name,
-        qtyOrdered: r.qty_ordered, qtyReceived: r.qty_received,
-        unitCost: Number(r.unit_cost),
-        additionalUnitCost: Number(r.additional_unit_cost),
-        landedUnitCost: Number(r.unit_cost) + Number(r.additional_unit_cost),
-        additionalCostNote: r.additional_cost_note,
-      }));
+      return (await getPurchaseOrder(getTenantId(ctx), p.id))?.items ?? [];
     },
   },
 };

@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import { Table, Tag, Button, Space, Alert, message, Typography, Tabs, Row, Col, Card, Statistic, Progress } from "antd";
 import { ReloadOutlined, ThunderboltOutlined } from "@ant-design/icons";
@@ -45,6 +47,7 @@ const HISTORY_OUTCOME_COLOR: Record<string, string> = {
 };
 
 export default function FollowupQueuePage() {
+  const uiText = useUiText();
   const { t, lang } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const canManage = can("followup.manage");
@@ -95,6 +98,26 @@ export default function FollowupQueuePage() {
     return "default";
   };
 
+  const reasonText = (value: string | null): string => {
+    switch (value) {
+      case "channel_no_outbound": return t("admin_followup_queue.reason_channel_no_outbound");
+      case "delivery_status_unconfirmed": return t("admin_followup_queue.reason_delivery_status_unconfirmed");
+      case "delivery_unknown": return t("admin_followup_queue.reason_delivery_unknown");
+      case "partial_delivery": return t("admin_followup_queue.reason_partial_delivery");
+      case "delivery_failed": return t("admin_followup_queue.reason_delivery_failed");
+      case "conversation_not_found": return t("admin_followup_queue.reason_conversation_not_found");
+      case "conversation_closed": return t("admin_followup_queue.reason_conversation_closed");
+      case "rule_disabled": return t("admin_followup_queue.reason_rule_disabled");
+      case "customer_replied": return t("admin_followup_queue.reason_customer_replied");
+      case "staff_replied": return t("admin_followup_queue.reason_staff_replied");
+      case "opted_out": return t("admin_followup_queue.reason_opted_out");
+      case "max_retry_exceeded": return t("admin_followup_queue.reason_max_retry_exceeded");
+      case "exception": return t("admin_followup_queue.reason_exception");
+      case "sent": return t("admin_followup_queue.reason_sent");
+      default: return value ? t("admin_followup_queue.reason_unknown", { code: value }) : "—";
+    }
+  };
+
   const jobColumns = [
     {
       title: t("admin_followup_queue.col_conversation"), dataIndex: "conversationId", key: "conversationId",
@@ -108,7 +131,7 @@ export default function FollowupQueuePage() {
     { title: t("admin_followup_queue.col_intent"), dataIndex: "intent", key: "intent" },
     { title: t("admin_followup_queue.col_goal"), dataIndex: "messageGoal", key: "messageGoal" },
     {
-      title: "Score", dataIndex: "score", key: "score",
+      title: uiText("admin_ui.en_score_489f4"), dataIndex: "score", key: "score",
       render: (v: number, row: any) => (
         <Space direction="vertical" size={2}>
           <Space size={6}>
@@ -129,9 +152,9 @@ export default function FollowupQueuePage() {
       title: t("admin_followup_queue.col_idle"), dataIndex: "idleMinutes", key: "idleMinutes",
       render: (v: number | null) => v == null ? "—" : `${v} ${t("admin_followup_queue.idle_minutes_suffix")}`,
     },
-    { title: t("admin_followup_queue.col_next_run"), dataIndex: "nextRunAt", key: "nextRunAt", render: (v: string) => new Date(v).toLocaleString() },
+    { title: t("admin_followup_queue.col_next_run"), dataIndex: "nextRunAt", key: "nextRunAt", render: (v: string) => new Date(v).toLocaleString(uiText.locale) },
     { title: t("admin_followup_queue.col_retry_count"), dataIndex: "retryCount", key: "retryCount", align: "right" as const },
-    { title: t("admin_followup_queue.col_last_result"), dataIndex: "lastResult", key: "lastResult", render: (v: string | null) => v || "—" },
+    { title: t("admin_followup_queue.col_last_result"), dataIndex: "lastResult", key: "lastResult", render: reasonText },
   ];
 
   const historyColumns = [
@@ -141,12 +164,12 @@ export default function FollowupQueuePage() {
       render: (v: string) => <Tag color={HISTORY_OUTCOME_COLOR[v] || "default"}>{v}</Tag>,
     },
     { title: t("admin_followup_queue.col_goal"), dataIndex: "goal", key: "goal" },
-    { title: t("admin_followup_queue.col_reason"), dataIndex: "reason", key: "reason", render: (v: string | null) => v || "—" },
+    { title: t("admin_followup_queue.col_reason"), dataIndex: "reason", key: "reason", render: reasonText },
     {
       title: t("admin_followup_queue.col_message_body"), dataIndex: "messageBody", key: "messageBody",
       render: (v: string | null) => v ? <Text style={{ maxWidth: 320 }} ellipsis={{ tooltip: v }}>{v}</Text> : "—",
     },
-    { title: t("admin_followup_queue.col_created_at"), dataIndex: "createdAt", key: "createdAt", render: (v: string) => new Date(v).toLocaleString() },
+    { title: t("admin_followup_queue.col_created_at"), dataIndex: "createdAt", key: "createdAt", render: (v: string) => new Date(v).toLocaleString(uiText.locale) },
   ];
   const retentionColumns=[
     {title:t("admin_followup_queue.retention_customer"),render:(_:any,r:any)=><Space direction="vertical" size={0}><Text strong>{r.customerName}</Text><Text type="secondary">{r.recommendedChannel||"—"} · {r.cohort}</Text></Space>},

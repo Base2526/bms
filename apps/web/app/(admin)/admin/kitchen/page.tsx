@@ -6,6 +6,7 @@ import { ReloadOutlined, SettingOutlined, SoundOutlined, AudioMutedOutlined } fr
 import { useEffect, useRef, useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
+import { operatorMessage } from "@/lib/operatorMessage";
 import {
   formatKitchenElapsed,
   groupKitchenTickets,
@@ -42,6 +43,7 @@ const Q_TICKETS = gql`
     bmsKitchenTickets(status: $status, limit: 200) {
       id source orderId checkId tableCode tableName roundNo kitchenNote
       stationId station status modifierCodes productSku productName size packQty qty createdAt updatedAt
+      pickupQueueLabel
     }
   }
 `;
@@ -60,7 +62,7 @@ const M_STATUS = gql`
     bmsUpdateKitchenTicketsStatus(ids: $ids, status: $status) { id status updatedAt }
   }
 `;
-type Ticket = { id: string; source: string; orderId: string | null; checkId: string | null; tableCode: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; stationId: string | null; station: string | null; status: string; modifierCodes: string[]; productSku: string; productName: string; size: string; packQty: number | null; qty: number; createdAt: string; updatedAt?: string | null };
+type Ticket = { id: string; source: string; orderId: string | null; checkId: string | null; tableCode: string | null; tableName: string | null; roundNo: number | null; kitchenNote: string | null; stationId: string | null; station: string | null; status: string; modifierCodes: string[]; productSku: string; productName: string; size: string; packQty: number | null; qty: number; createdAt: string; updatedAt?: string | null; pickupQueueLabel?: string | null };
 const LANES = [
   { status: "NEW", color: "#c65b35", next: "PREPARING" },
   { status: "PREPARING", color: "#d89b24", next: "READY" },
@@ -239,7 +241,7 @@ export default function KitchenPage() {
         <Button icon={<ReloadOutlined />} onClick={() => feed.refreshNow()} loading={tickets.loading}>{t("admin_kitchen.refresh")}</Button>
       </Space>
     </Space>
-    {tickets.error && <Alert closable type="error" showIcon message={tickets.error.message} />}
+    {tickets.error && <Alert closable type="error" showIcon message={operatorMessage(tickets.error,t)} />}
     <Spin spinning={tickets.loading || moveState.loading}>
       <div className={styles.board}>
         {LANES.map((lane) => {

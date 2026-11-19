@@ -24,6 +24,7 @@ export type BoardGameOffer = {
   startsLocalTime: string | null;
   endsLocalTime: string | null;
   active: boolean;
+  publishToChat: boolean;
   sortOrder: number;
   note: string | null;
 };
@@ -154,6 +155,7 @@ function mapOffer(row: any): BoardGameOffer {
     startsLocalTime: row.starts_local_time == null ? null : String(row.starts_local_time).slice(0, 5),
     endsLocalTime: row.ends_local_time == null ? null : String(row.ends_local_time).slice(0, 5),
     active: Boolean(row.active),
+    publishToChat: Boolean(row.publish_to_chat),
     sortOrder: Number(row.sort_order),
     note: row.note ?? null,
   };
@@ -161,7 +163,7 @@ function mapOffer(row: any): BoardGameOffer {
 
 const OFFER_COLUMNS = `id, location_id, code, name, kind, percent_off, fixed_price,
   min_players, max_players, minimum_minutes, required_product_sku, valid_from, valid_until,
-  weekdays, starts_local_time, ends_local_time, active, sort_order, note, buy_minutes, free_minutes`;
+  weekdays, starts_local_time, ends_local_time, active, publish_to_chat, sort_order, note, buy_minutes, free_minutes`;
 
 export async function listBoardGameOffers(
   tenantId: string,
@@ -198,6 +200,7 @@ export async function upsertBoardGameOffer(
     maxPlayers?: number | null; minimumMinutes?: number | null; requiredProductSku?: string | null;
     validFrom?: string | null; validUntil?: string | null; weekdays?: number[] | null;
     startsLocalTime?: string | null; endsLocalTime?: string | null; active?: boolean | null;
+    publishToChat?: boolean | null;
     sortOrder?: number | null; note?: string | null;
   },
   actorUserId?: string | null,
@@ -219,6 +222,7 @@ export async function upsertBoardGameOffer(
   const validFrom = date(input.validFrom, "วันเริ่ม");
   const validUntil = date(input.validUntil, "วันสิ้นสุด");
   if (validFrom && validUntil && validUntil <= validFrom) throw new Error("วันสิ้นสุดต้องอยู่หลังวันเริ่ม");
+  if (input.weekdays != null && !Array.isArray(input.weekdays)) throw new Error("วันใช้งานไม่ถูกต้อง");
   const weekdays = [...new Set(input.weekdays ?? [0, 1, 2, 3, 4, 5, 6])]
     .map((day) => integer(day, "วันใช้งาน", 0, 6)).sort();
   if (!weekdays.length) throw new Error("ต้องเลือกวันใช้งานอย่างน้อยหนึ่งวัน");
@@ -228,7 +232,10 @@ export async function upsertBoardGameOffer(
   if (startsLocalTime && endsLocalTime && endsLocalTime <= startsLocalTime) {
     throw new Error("ช่วงเวลาโปรโมชันต้องจบภายในวันเดียวกันและหลังเวลาเริ่ม");
   }
-  const active = input.active == null ? true : Boolean(input.active);
+  if (input.active != null && typeof input.active !== "boolean") throw new Error("สถานะโปรโมชันไม่ถูกต้อง");
+  const active = input.active ?? true;
+  if (input.publishToChat != null && typeof input.publishToChat !== "boolean") throw new Error("เผยแพร่ในแชทไม่ถูกต้อง");
+  const publishToChat = input.publishToChat ?? null;
   const sortOrder = integer(input.sortOrder ?? 0, "ลำดับ", -100000, 100000);
   const note = optionalText(input.note, "หมายเหตุ", 500);
 
@@ -248,25 +255,35 @@ export async function upsertBoardGameOffer(
     }
     const params = [tenantId, id, locationId, offerCode, name, offerKind, percentOff, fixedPrice,
       minPlayers, maxPlayers, minimumMinutes, requiredProductSku, validFrom, validUntil, weekdays,
-      startsLocalTime, endsLocalTime, active, sortOrder, note, buyMinutes, freeMinutes];
+      startsLocalTime, endsLocalTime, active, sortOrder, note, buyMinutes, freeMinutes, publishToChat];
     const result = await client.query(
       id
         ? `UPDATE bms_board_game_offers SET location_id=$3, code=$4, name=$5, kind=$6,
              percent_off=$7, fixed_price=$8, min_players=$9, max_players=$10,
              minimum_minutes=$11, required_product_sku=$12, valid_from=$13, valid_until=$14,
              weekdays=$15, starts_local_time=$16, ends_local_time=$17, active=$18,
-             sort_order=$19, note=$20, buy_minutes=$21, free_minutes=$22, version=version+1, updated_at=now()
+             sort_order=$19, note=$20, buy_minutes=$21, free_minutes=$22,
+             publish_to_chat=COALESCE($23::boolean, publish_to_chat), version=version+1, updated_at=now()
            WHERE tenant_id=$1 AND id=$2 RETURNING ${OFFER_COLUMNS}`
         : `INSERT INTO bms_board_game_offers
              (tenant_id, location_id, code, name, kind, percent_off, fixed_price, min_players,
               max_players, minimum_minutes, required_product_sku, valid_from, valid_until,
-              weekdays, starts_local_time, ends_local_time, active, sort_order, note, buy_minutes, free_minutes)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+              weekdays, starts_local_time, ends_local_time, active, sort_order, note, buy_minutes, free_minutes, publish_to_chat)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
            RETURNING ${OFFER_COLUMNS}`,
       // An insert has no offer id; do not leave an unused, untyped $2 parameter.
-      id ? params : [tenantId, ...params.slice(2)],
+      id ? params : [tenantId, ...params.slice(2, -1), publishToChat ?? false],
     );
     if (!result.rowCount) throw new Error("ไม่พบโปรโมชันที่ต้องการแก้ไข");
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1,$2,$3,$4,$5::jsonb)`,
+      [tenantId, actorUserId ? `user:${actorUserId}` : "system", "board_game.offer_upsert",
+        result.rows[0].id, JSON.stringify({
+          code: offerCode, kind: offerKind, active,
+          publishToChat: Boolean(result.rows[0].publish_to_chat),
+        })],
+    );
     await client.query("COMMIT");
     return mapOffer(result.rows[0]);
   } catch (error) {

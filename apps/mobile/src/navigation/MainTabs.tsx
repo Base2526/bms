@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -139,6 +140,7 @@ export function MainTabs() {
 }
 
 function TabsShell() {
+  usePosLanguage();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { isTablet } = useResponsive();
@@ -148,7 +150,7 @@ function TabsShell() {
     useRestaurantOperations();
   const { pendingCount: boardGameServiceCallCount } = useBoardGameService();
   const sellTitle =
-    mode === 'restaurant' ? 'เมนู' : mode === 'pharmacy' ? 'ขายยา' : 'ขาย';
+    mode === 'restaurant' ? posText("เมนู") : mode === 'pharmacy' ? posText("ขายยา") : posText("ขาย");
   // badge เดียวต้องเป็นผลรวมจริงของทุกถังที่กดเข้าไปถึงได้จากแท็บนี้ —
   // นับไม่ครบคือบอกว่าไม่มีงานทั้งที่มี · นับเกินคือส่งคนไปหาของที่ไม่มีอยู่
   const inboxCount = pendingCount + restaurantPendingCount;
@@ -205,7 +207,7 @@ function TabsShell() {
           name="FloorTab"
           component={FloorNavigator}
           options={{
-            title: 'ผังโต๊ะ',
+            title: posText("ผังโต๊ะ"),
             tabBarIcon: ({ color, size }) => (
               <FloorIcon color={color} size={size} />
             ),
@@ -227,7 +229,7 @@ function TabsShell() {
           name="OrdersTab"
           component={OrdersNavigator}
           options={{
-            title: 'งานเข้า',
+            title: posText("งานเข้า"),
             tabBarBadge: inboxCount > 0 ? inboxCount : undefined,
             tabBarIcon: ({ color, size }) => (
               <OrdersIcon color={color} size={size} />
@@ -240,7 +242,7 @@ function TabsShell() {
           name="KitchenTab"
           component={KitchenNavigator}
           options={{
-            title: 'ครัว',
+            title: posText("ครัว"),
             tabBarIcon: ({ color, size }) => (
               <KitchenIcon color={color} size={size} />
             ),
@@ -252,7 +254,7 @@ function TabsShell() {
           name="BoardGameTab"
           component={BoardGameNavigator}
           options={{
-            title: 'โต๊ะ/เวลา',
+            title: posText("โต๊ะ/เวลา"),
             tabBarBadge:
               boardGameServiceCallCount > 0
                 ? boardGameServiceCallCount
@@ -270,7 +272,7 @@ function TabsShell() {
           name="InventoryTab"
           component={InventoryTabNavigator}
           options={{
-            title: 'สต็อก',
+            title: posText("สต็อก"),
             tabBarIcon: ({ color, size }) => (
               <InventoryIcon color={color} size={size} />
             ),
@@ -281,7 +283,7 @@ function TabsShell() {
         name="OperationsTab"
         component={OperationsNavigator}
         options={{
-          title: mode === 'restaurant' ? 'เพิ่มเติม' : 'งาน',
+          title: mode === 'restaurant' ? posText("เพิ่มเติม") : posText("งาน"),
           tabBarIcon: ({ color, size }) => (
             <MoreIcon color={color} size={size} />
           ),
@@ -294,7 +296,7 @@ function TabsShell() {
           name="ShiftTab"
           component={ShiftNavigator}
           options={{
-            title: 'กะ',
+            title: posText("กะ"),
             tabBarIcon: ({ color, size }) => (
               <ShiftIcon color={color} size={size} />
             ),

@@ -2,12 +2,21 @@ import { DEFAULT_AI_MODEL } from "./aiConfig";
 
 export const DEFAULT_AI_PROVIDER = "deepseek";
 export const DEFAULT_SENSITIVE_AI_PROVIDER = "anthropic";
-export const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash";
+export const DEFAULT_DEEPSEEK_MODEL = "deepseek-flash";
 export const DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 export const DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com/anthropic";
 export const ANTHROPIC_API_VERSION = "2023-06-01";
 
 export type AiProvider = "anthropic" | "deepseek";
+
+/** DeepSeek Pro silently replaces image blocks with text; reject it before spending a point. */
+export function supportsAiImageInput(provider: AiProvider, model: string): boolean {
+  if (provider === "anthropic") return /^claude-(?:3|4|5|haiku|sonnet|opus)(?:-|\.)/i.test(model);
+  return ["deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp"]
+    .includes(model.trim().toLowerCase());
+}
+
+export class AiVisionModelError extends Error {}
 
 export type ResolvedAiProvider = {
   provider: AiProvider;

@@ -1,3 +1,4 @@
+import { posText, usePosLanguage, posLocale } from '../../i18n/language';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   Alert,
@@ -78,10 +79,10 @@ type RegisterView =
   | 'PURCHASES';
 
 const LOCKED_TITLE: Record<Section, string> = {
-  OVERVIEW: 'งานหน้าร้าน',
-  RESTAURANT: 'งานเข้า',
-  REGISTER: 'เคาน์เตอร์',
-  SUPPORT: 'สถานะระบบ',
+  get OVERVIEW() { return posText("งานหน้าร้าน"); },
+  get RESTAURANT() { return posText("งานเข้า"); },
+  get REGISTER() { return posText("เคาน์เตอร์"); },
+  get SUPPORT() { return posText("สถานะระบบ"); },
 };
 
 class BusinessResultError extends Error {}
@@ -110,6 +111,7 @@ export default function OperationsScreen({
   initialRestaurantView,
   onBack,
 }: Props) {
+  usePosLanguage();
   const navigation =
     useNavigation<NativeStackNavigationProp<OperationsStackParamList>>();
   const { colors, spacing, typography } = useTheme();
@@ -274,7 +276,7 @@ export default function OperationsScreen({
   ) => {
     if (!result || typeof result.status !== 'string' || !result.status.trim()) {
       // An incomplete result is unknown, not an authoritative rejection. Keep the retry key.
-      throw new Error('ไม่ได้รับผลยืนยันจากเซิร์ฟเวอร์');
+      throw new Error(posText("ไม่ได้รับผลยืนยันจากเซิร์ฟเวอร์"));
     }
     if (
       result.reason ||
@@ -284,7 +286,7 @@ export default function OperationsScreen({
       )
     ) {
       throw new BusinessResultError(
-        result.reason ?? result.message ?? result.status ?? 'ทำรายการไม่สำเร็จ',
+        result.reason ?? result.message ?? result.status ?? posText("ทำรายการไม่สำเร็จ"),
       );
     }
   };
@@ -313,8 +315,8 @@ export default function OperationsScreen({
         delete operationKeys.current[key];
       }
       Alert.alert(
-        'ทำรายการไม่สำเร็จ',
-        cause instanceof Error ? cause.message : 'กรุณาลองใหม่',
+        posText("ทำรายการไม่สำเร็จ"),
+        cause instanceof Error ? cause.message : posText("กรุณาลองใหม่"),
       );
     } finally {
       operationInFlight.current = false;
@@ -337,7 +339,7 @@ export default function OperationsScreen({
       bootstrap.data?.bmsPosSession.location?.name &&
       !bootstrap.error,
   );
-  const branchName = session?.branch.name ?? 'ไม่พบสาขา';
+  const branchName = session?.branch.name ?? posText("ไม่พบสาขา");
   const branchLabel = branchName.replace(/^BOOM\s+/, 'BOOM · ');
   const pettyCashBalance =
     expenses.data?.bmsPosExpenses.pettyCashWallet.balance ?? 0;
@@ -360,17 +362,17 @@ export default function OperationsScreen({
   const sectionNavigation = (
     <View style={styles.phoneSectionNav}>
       <SectionTab
-        label="ภาพรวม"
+        label={posText("ภาพรวม")}
         selected={section === 'OVERVIEW'}
         onPress={() => setSection('OVERVIEW')}
       />
       <SectionTab
-        label="เคาน์เตอร์"
+        label={posText("เคาน์เตอร์")}
         selected={section === 'REGISTER'}
         onPress={() => openRegister('MENU')}
       />
       <SectionTab
-        label="สถานะระบบ"
+        label={posText("สถานะระบบ")}
         selected={section === 'SUPPORT'}
         onPress={() => setSection('SUPPORT')}
       />
@@ -405,7 +407,7 @@ export default function OperationsScreen({
           ) : (
             <View style={styles.workflowBack}>
               <Button
-                label="← งานเคาน์เตอร์"
+                label={posText("← งานเคาน์เตอร์")}
                 variant="secondary"
                 onPress={() => setRegisterView('MENU')}
               />
@@ -416,14 +418,14 @@ export default function OperationsScreen({
               display: registerView === 'NO_SALE' ? 'flex' : 'none',
             }}
           >
-            <Heading text="เปิดลิ้นชักโดยไม่มีการขาย" />
+            <Heading text={posText("เปิดลิ้นชักโดยไม่มีการขาย")} />
             <Field
               value={reason}
               onChangeText={setReason}
-              placeholder="เหตุผล"
+              placeholder={posText("เหตุผล")}
             />
             <Button
-              label="บันทึก No sale"
+              label={posText("บันทึก No sale")}
               disabled={!reason.trim()}
               loading={working === 'no-sale'}
               onPress={() =>
@@ -451,7 +453,7 @@ export default function OperationsScreen({
                   detail={
                     (item.actorName ?? '-') +
                     ' · ' +
-                    new Date(item.createdAt).toLocaleString('th-TH')
+                    new Date(item.createdAt).toLocaleString(posLocale())
                   }
                 />
               ))}
@@ -461,30 +463,30 @@ export default function OperationsScreen({
               display: registerView === 'BLIND_RETURN' ? 'flex' : 'none',
             }}
           >
-            <Heading text="คืนสินค้าไม่มีใบเสร็จ" />
+            <Heading text={posText("คืนสินค้าไม่มีใบเสร็จ")} />
             <Field
               value={sku}
               onChangeText={setSku}
               placeholder="SKU"
               autoCapitalize="characters"
             />
-            <Field value={size} onChangeText={setSize} placeholder="ขนาด" />
+            <Field value={size} onChangeText={setSize} placeholder={posText("ขนาด")} />
             <Field
               value={qty}
               onChangeText={setQty}
-              placeholder="จำนวน"
+              placeholder={posText("จำนวน")}
               keyboardType="number-pad"
             />
             <Field
               value={amount}
               onChangeText={setAmount}
-              placeholder="ยอดคืนต่อหน่วย"
+              placeholder={posText("ยอดคืนต่อหน่วย")}
               keyboardType="decimal-pad"
             />
             <Field
               value={reason}
               onChangeText={setReason}
-              placeholder="เหตุผล"
+              placeholder={posText("เหตุผล")}
             />
             <Approvers
               people={approvers.filter(person =>
@@ -496,12 +498,12 @@ export default function OperationsScreen({
             <Field
               value={approverPin}
               onChangeText={setApproverPin}
-              placeholder="PIN ผู้อนุมัติ"
+              placeholder={posText("PIN ผู้อนุมัติ")}
               secureTextEntry
               keyboardType="number-pad"
             />
             <Button
-              label="ยืนยันคืนสินค้า"
+              label={posText("ยืนยันคืนสินค้า")}
               disabled={
                 !sku.trim() ||
                 !size.trim() ||
@@ -549,26 +551,26 @@ export default function OperationsScreen({
               display: registerView === 'DEPOSITS' ? 'flex' : 'none',
             }}
           >
-            <Heading text="มัดจำ / รับของ" />
+            <Heading text={posText("มัดจำ / รับของ")} />
             <Field
               value={amount}
               onChangeText={setAmount}
-              placeholder="ยอดรับเพิ่ม"
+              placeholder={posText("ยอดรับเพิ่ม")}
               keyboardType="decimal-pad"
             />
             {(deposits.data?.bmsPosDeposits.deposits ?? []).map(item => (
               <View key={item.id} style={styles.block}>
                 <Info
                   title={
-                    (item.customerName ?? 'ลูกค้า') +
-                    ' · ฿' +
+                    (item.customerName ?? posText("ลูกค้า")) +
+                    posText(" · ฿") +
                     item.balanceDue.toFixed(2)
                   }
-                  detail={item.status + (item.overdue ? ' · เกินกำหนด' : '')}
+                  detail={item.status + (item.overdue ? posText(" · เกินกำหนด") : '')}
                 />
                 <View style={styles.wrap}>
                   <Button
-                    label="รับเพิ่ม"
+                    label={posText("รับเพิ่ม")}
                     variant="secondary"
                     disabled={!(Number(amount) > 0)}
                     onPress={() =>
@@ -601,7 +603,7 @@ export default function OperationsScreen({
                     }
                   />
                   <Button
-                    label="รับของและชำระ"
+                    label={posText("รับของและชำระ")}
                     onPress={() =>
                       run(
                         'deposit-settle-' + item.id,
@@ -638,7 +640,7 @@ export default function OperationsScreen({
                     }
                   />
                   <Button
-                    label="ยกเลิก"
+                    label={posText("ยกเลิก")}
                     variant="danger"
                     onPress={() =>
                       run(
@@ -656,7 +658,7 @@ export default function OperationsScreen({
                                 payments: null,
                                 lines: null,
                                 outcome: 'CANCELLED',
-                                reason: reason.trim() || 'ยกเลิกจาก POS Mobile',
+                                reason: reason.trim() || posText("ยกเลิกจาก POS Mobile"),
                                 customerNote: null,
                                 dueAt: null,
                               },
@@ -680,28 +682,27 @@ export default function OperationsScreen({
               display: registerView === 'EXPENSES' ? 'flex' : 'none',
             }}
           >
-            <Heading text="ค่าใช้จ่าย / เงินสดย่อย" />
+            <Heading text={posText("ค่าใช้จ่าย / เงินสดย่อย")} />
             <Text style={[typography.body, { color: colors.text }]}>
-              เงินสดย่อย ฿
-              {(
+              {posText("เงินสดย่อย ฿") + " "}{(
                 expenses.data?.bmsPosExpenses.pettyCashWallet.balance ?? 0
               ).toFixed(2)}
             </Text>
             <Field
               value={reason}
               onChangeText={setReason}
-              placeholder="รายละเอียด"
+              placeholder={posText("รายละเอียด")}
             />
             <Field
               value={amount}
               onChangeText={setAmount}
-              placeholder="จำนวนเงิน"
+              placeholder={posText("จำนวนเงิน")}
               keyboardType="decimal-pad"
             />
             <Field
               value={evidenceRef}
               onChangeText={setEvidenceRef}
-              placeholder="เลขที่ใบเสร็จ / หลักฐาน"
+              placeholder={posText("เลขที่ใบเสร็จ / หลักฐาน")}
             />
             <Approvers
               people={approvers.filter(person =>
@@ -713,7 +714,7 @@ export default function OperationsScreen({
             <Field
               value={approverPin}
               onChangeText={setApproverPin}
-              placeholder="PIN ผู้อนุมัติ (เมื่อตัดลิ้นชัก)"
+              placeholder={posText("PIN ผู้อนุมัติ (เมื่อตัดลิ้นชัก)")}
               secureTextEntry
               keyboardType="number-pad"
             />
@@ -723,10 +724,10 @@ export default function OperationsScreen({
                   key={source}
                   label={
                     source === 'DRAWER'
-                      ? 'ลิ้นชัก'
+                      ? posText("ลิ้นชัก")
                       : source === 'PERSONAL'
-                      ? 'เงินส่วนตัว'
-                      : 'เงินสดย่อย'
+                      ? posText("เงินส่วนตัว")
+                      : posText("เงินสดย่อย")
                   }
                   variant="secondary"
                   disabled={
@@ -777,7 +778,7 @@ export default function OperationsScreen({
               ))}
             </View>
             <Button
-              label="สร้างเงินทดรอง"
+              label={posText("สร้างเงินทดรอง")}
               variant="secondary"
               disabled={
                 !reason.trim() ||
@@ -824,7 +825,7 @@ export default function OperationsScreen({
             {expenses.data?.bmsPosExpenses.canManagePettyCash ? (
               <View style={styles.wrap}>
                 <Button
-                  label="เติมเงินสดย่อย: เจ้าของ"
+                  label={posText("เติมเงินสดย่อย: เจ้าของ")}
                   variant="secondary"
                   disabled={
                     !reason.trim() ||
@@ -866,7 +867,7 @@ export default function OperationsScreen({
                   }
                 />
                 <Button
-                  label="เติมเงินสดย่อย: บัญชีร้าน"
+                  label={posText("เติมเงินสดย่อย: บัญชีร้าน")}
                   variant="secondary"
                   disabled={
                     !reason.trim() ||
@@ -912,7 +913,7 @@ export default function OperationsScreen({
             <Field
               value={actualAmount}
               onChangeText={setActualAmount}
-              placeholder="ยอดใช้จริงสำหรับปิดเงินทดรอง"
+              placeholder={posText("ยอดใช้จริงสำหรับปิดเงินทดรอง")}
               keyboardType="decimal-pad"
             />
             {(expenses.data?.bmsPosExpenses.expenses ?? [])
@@ -921,13 +922,13 @@ export default function OperationsScreen({
                 <View key={item.id} style={styles.block}>
                   <Info
                     title={
-                      item.description + ' · ฿' + item.advancedAmount.toFixed(2)
+                      item.description + posText(" · ฿") + item.advancedAmount.toFixed(2)
                     }
                     detail={item.fundingSource + ' · ' + item.status}
                   />
                   {item.kind === 'ADVANCE' && item.status !== 'SETTLED' ? (
                     <Button
-                      label="ปิดเงินทดรอง"
+                      label={posText("ปิดเงินทดรอง")}
                       variant="secondary"
                       disabled={
                         !(Number(actualAmount) >= 0) ||
@@ -974,11 +975,11 @@ export default function OperationsScreen({
               ))}
           </Card>
           <Card style={{ display: registerView === 'AR' ? 'flex' : 'none' }}>
-            <Heading text="ลูกหนี้ / เครดิตร้าน" />
+            <Heading text={posText("ลูกหนี้ / เครดิตร้าน")} />
             <Field
               value={memberSearch}
               onChangeText={setMemberSearch}
-              placeholder="ค้นหาสมาชิก"
+              placeholder={posText("ค้นหาสมาชิก")}
             />
             <View style={styles.wrap}>
               {(members.data?.bmsPosMemberSearch.members ?? [])
@@ -998,18 +999,18 @@ export default function OperationsScreen({
               <>
                 <Info
                   title={
-                    'วงเงินคงเหลือ ฿' +
+                    posText("วงเงินคงเหลือ ฿") +
                     arAccount.data.bmsPosArAccount.account.availableCredit.toFixed(
                       2,
                     )
                   }
                   detail={
-                    'ยอดลูกหนี้ ฿' +
+                    posText("ยอดลูกหนี้ ฿") +
                     arAccount.data.bmsPosArAccount.account.balance.toFixed(2)
                   }
                 />
                 <Button
-                  label="รับชำระลูกหนี้"
+                  label={posText("รับชำระลูกหนี้")}
                   disabled={!(Number(amount) > 0) || !customerId}
                   onPress={() =>
                     run(
@@ -1042,13 +1043,13 @@ export default function OperationsScreen({
             <Field
               value={storeCreditCode}
               onChangeText={setStoreCreditCode}
-              placeholder="รหัสเครดิตร้าน"
+              placeholder={posText("รหัสเครดิตร้าน")}
               autoCapitalize="characters"
             />
             {storeCredit.data?.bmsPosStoreCredit.credit ? (
               <Info
                 title={
-                  'เครดิตร้าน ฿' +
+                  posText("เครดิตร้าน ฿") +
                   storeCredit.data.bmsPosStoreCredit.credit.balance.toFixed(2)
                 }
                 detail={
@@ -1077,12 +1078,12 @@ export default function OperationsScreen({
         <>
           <View style={styles.restaurantNav}>
             <Button
-              label="ภาพรวม"
+              label={posText("ภาพรวม")}
               variant={restaurantView === 'OVERVIEW' ? 'primary' : 'secondary'}
               onPress={() => setRestaurantView('OVERVIEW')}
             />
             <Button
-              label={`คิว ${activeWaitlistCount}`}
+              label={posText("คิว {v0}", { v0: activeWaitlistCount })}
               variant={restaurantView === 'QUEUE' ? 'primary' : 'secondary'}
               onPress={() => setRestaurantView('QUEUE')}
             />
@@ -1092,14 +1093,12 @@ export default function OperationsScreen({
               onPress={() => setRestaurantView('QR')}
             />
             <Button
-              label={`เรียก ${pendingServiceCallCount}`}
+              label={posText("เรียก {v0}", { v0: pendingServiceCallCount })}
               variant={restaurantView === 'CALLS' ? 'primary' : 'secondary'}
               onPress={() => setRestaurantView('CALLS')}
             />
             <Button
-              label={`คำขอ ${
-                requests.data?.bmsPosRestaurantRequests.requests.length ?? 0
-              }`}
+              label={posText("คำขอ {v0}", { v0: requests.data?.bmsPosRestaurantRequests.requests.length ?? 0 })}
               variant={restaurantView === 'REQUESTS' ? 'primary' : 'secondary'}
               onPress={() => setRestaurantView('REQUESTS')}
             />
@@ -1109,21 +1108,21 @@ export default function OperationsScreen({
               display: restaurantView === 'OVERVIEW' ? 'flex' : 'none',
             }}
           >
-            <Heading text="ผังโต๊ะและสถานะเมนู" />
+            <Heading text={posText("ผังโต๊ะและสถานะเมนู")} />
             <Info
-              title={`${activeWaitlistCount} คิว · ${waitingGuests} คน`}
-              detail={`${pendingQrCount} QR รอตรวจ · ${pendingServiceCallCount} คำเรียกค้าง`}
+              title={posText("{v0} คิว · {v1} คน", { v0: activeWaitlistCount, v1: waitingGuests })}
+              detail={posText("{v0} QR รอตรวจ · {v1} คำเรียกค้าง", { v0: pendingQrCount, v1: pendingServiceCallCount })}
             />
             {!(floor.data?.bmsPosRestaurantFloor.tables.length ?? 0) ? (
               <>
                 <Field
                   value={tableCount}
                   onChangeText={setTableCount}
-                  placeholder="จำนวนโต๊ะเริ่มต้น"
+                  placeholder={posText("จำนวนโต๊ะเริ่มต้น")}
                   keyboardType="number-pad"
                 />
                 <Button
-                  label="สร้างผังเริ่มต้น"
+                  label={posText("สร้างผังเริ่มต้น")}
                   onPress={() =>
                     run(
                       'floor-setup',
@@ -1137,7 +1136,7 @@ export default function OperationsScreen({
                           },
                         });
                         if (!response.data?.bmsPosRestaurantFloorSetup.tables)
-                          throw new Error('สร้างผังไม่สำเร็จ');
+                          throw new Error(posText("สร้างผังไม่สำเร็จ"));
                       },
                       () => floor.refetch(),
                     )
@@ -1148,10 +1147,10 @@ export default function OperationsScreen({
               <Info
                 title={
                   (floor.data?.bmsPosRestaurantFloor.tables.length ?? 0) +
-                  ' โต๊ะ'
+                  posText(" โต๊ะ")
                 }
                 detail={
-                  (floor.data?.bmsPosRestaurantFloor.areas.length ?? 0) + ' โซน'
+                  (floor.data?.bmsPosRestaurantFloor.areas.length ?? 0) + posText(" โซน")
                 }
               />
             )}
@@ -1164,7 +1163,7 @@ export default function OperationsScreen({
                     detail={item.unavailableReason ?? item.availability}
                   />
                   <Button
-                    label={item.unavailableReason ? 'กลับมาขาย' : 'หมดวันนี้'}
+                    label={item.unavailableReason ? posText("กลับมาขาย") : posText("หมดวันนี้")}
                     variant={item.unavailableReason ? 'primary' : 'secondary'}
                     onPress={() =>
                       run(
@@ -1177,7 +1176,7 @@ export default function OperationsScreen({
                                 productSku: item.sku,
                                 unavailable: !item.unavailableReason,
                                 reason: !item.unavailableReason
-                                  ? reason.trim() || 'หมดวันนี้'
+                                  ? reason.trim() || posText("หมดวันนี้")
                                   : null,
                               },
                             },
@@ -1194,24 +1193,24 @@ export default function OperationsScreen({
               ))}
           </Card>
           <Card style={{ display: restaurantView === 'QR' ? 'flex' : 'none' }}>
-            <Heading text={'QR จากโต๊ะ (' + pendingQrCount + ')'} />
+            <Heading text={posText("QR จากโต๊ะ (") + pendingQrCount + ')'} />
             {qrSubmissions.length === 0 ? (
               <Info
-                title="ไม่มีคำสั่งจาก QR รอตรวจ"
-                detail="ข้อมูลเป็นปัจจุบัน"
+                title={posText("ไม่มีคำสั่งจาก QR รอตรวจ")}
+                detail={posText("ข้อมูลเป็นปัจจุบัน")}
               />
             ) : null}
             {qrSubmissions.map(item => (
               <View key={item.id} style={styles.block}>
                 <Info
                   title={
-                    item.tableCode + ' · ฿' + item.estimatedTotal.toFixed(2)
+                    item.tableCode + posText(" · ฿") + item.estimatedTotal.toFixed(2)
                   }
-                  detail={item.items.length + ' รายการ · ' + item.status}
+                  detail={item.items.length + posText(" รายการ · ") + item.status}
                 />
                 <View style={styles.wrap}>
                   <Button
-                    label="รับและส่งครัว"
+                    label={posText("รับและส่งครัว")}
                     onPress={() =>
                       run(
                         'qr-a-' + item.id,
@@ -1234,7 +1233,7 @@ export default function OperationsScreen({
                     }
                   />
                   <Button
-                    label="ปฏิเสธ"
+                    label={posText("ปฏิเสธ")}
                     variant="danger"
                     onPress={() =>
                       run(
@@ -1245,7 +1244,7 @@ export default function OperationsScreen({
                               input: {
                                 ...inputCredentials,
                                 submissionId: item.id,
-                                reason: reason.trim() || 'ปฏิเสธโดยพนักงาน',
+                                reason: reason.trim() || posText("ปฏิเสธโดยพนักงาน"),
                               },
                             },
                           });
@@ -1267,11 +1266,11 @@ export default function OperationsScreen({
               display: restaurantView === 'CALLS' ? 'flex' : 'none',
             }}
           >
-            <Heading text={'เรียกพนักงาน (' + pendingServiceCallCount + ')'} />
+            <Heading text={posText("เรียกพนักงาน (") + pendingServiceCallCount + ')'} />
             {serviceCalls.length === 0 ? (
               <Info
-                title="ไม่มีคำเรียกค้าง"
-                detail="ทุกโต๊ะได้รับการดูแลแล้ว"
+                title={posText("ไม่มีคำเรียกค้าง")}
+                detail={posText("ทุกโต๊ะได้รับการดูแลแล้ว")}
               />
             ) : null}
             {serviceCalls.map(call => (
@@ -1281,7 +1280,7 @@ export default function OperationsScreen({
                   detail={call.requestNote ?? call.status}
                 />
                 <Button
-                  label={call.status === 'PENDING' ? 'รับทราบ' : 'เสร็จแล้ว'}
+                  label={call.status === 'PENDING' ? posText("รับทราบ") : posText("เสร็จแล้ว")}
                   onPress={() =>
                     run(
                       'call-' + call.id,
@@ -1321,26 +1320,26 @@ export default function OperationsScreen({
               display: restaurantView === 'QUEUE' ? 'flex' : 'none',
             }}
           >
-            <Heading text={'คิว / จองโต๊ะ (' + activeWaitlistCount + ')'} />
+            <Heading text={posText("คิว / จองโต๊ะ (") + activeWaitlistCount + ')'} />
             <Field
               value={guestName}
               onChangeText={setGuestName}
-              placeholder="ชื่อลูกค้า"
+              placeholder={posText("ชื่อลูกค้า")}
             />
             <Field
               value={guestPhone}
               onChangeText={setGuestPhone}
-              placeholder="เบอร์โทร"
+              placeholder={posText("เบอร์โทร")}
               keyboardType="phone-pad"
             />
             <Field
               value={partySize}
               onChangeText={setPartySize}
-              placeholder="จำนวนคน"
+              placeholder={posText("จำนวนคน")}
               keyboardType="number-pad"
             />
             <Button
-              label="เพิ่มคิว"
+              label={posText("เพิ่มคิว")}
               onPress={() =>
                 run(
                   'wait-add',
@@ -1367,8 +1366,8 @@ export default function OperationsScreen({
             />
             {waitlistEntries.length === 0 ? (
               <Info
-                title="ยังไม่มีคิวรอ"
-                detail="เพิ่มลูกค้าได้จากแบบฟอร์มด้านบน"
+                title={posText("ยังไม่มีคิวรอ")}
+                detail={posText("เพิ่มลูกค้าได้จากแบบฟอร์มด้านบน")}
               />
             ) : null}
             {waitlistEntries.map(entry => (
@@ -1378,17 +1377,17 @@ export default function OperationsScreen({
                     '#' +
                     (entry.queueNo ?? '-') +
                     ' · ' +
-                    (entry.guestName ?? 'ลูกค้า') +
+                    (entry.guestName ?? posText("ลูกค้า")) +
                     ' · ' +
                     entry.partySize +
-                    ' คน'
+                    posText(" คน")
                   }
                   detail={entry.status}
                 />
                 <View style={styles.wrap}>
                   {entry.status === 'WAITING' ? (
                     <Button
-                      label="เรียกคิว"
+                      label={posText("เรียกคิว")}
                       onPress={() =>
                         run(
                           'wait-call-' + entry.id,
@@ -1413,7 +1412,7 @@ export default function OperationsScreen({
                   {['WAITING', 'CALLED'].includes(entry.status) ? (
                     <>
                       <Button
-                        label="ไม่มา"
+                        label={posText("ไม่มา")}
                         variant="secondary"
                         onPress={() =>
                           run(
@@ -1424,7 +1423,7 @@ export default function OperationsScreen({
                                   input: {
                                     ...inputCredentials,
                                     entryId: entry.id,
-                                    reason: 'ไม่มาตามคิว',
+                                    reason: posText("ไม่มาตามคิว"),
                                   },
                                 },
                               });
@@ -1438,7 +1437,7 @@ export default function OperationsScreen({
                         }
                       />
                       <Button
-                        label="ยกเลิก"
+                        label={posText("ยกเลิก")}
                         variant="danger"
                         onPress={() =>
                           run(
@@ -1449,7 +1448,7 @@ export default function OperationsScreen({
                                   input: {
                                     ...inputCredentials,
                                     entryId: entry.id,
-                                    reason: reason.trim() || 'ยกเลิกคิว',
+                                    reason: reason.trim() || posText("ยกเลิกคิว"),
                                   },
                                 },
                               });
@@ -1470,7 +1469,7 @@ export default function OperationsScreen({
                     {freeTables.map(table => (
                       <Button
                         key={table.id}
-                        label={'นั่ง ' + table.code}
+                        label={posText("นั่ง ") + table.code}
                         variant="secondary"
                         onPress={() =>
                           run(
@@ -1513,7 +1512,7 @@ export default function OperationsScreen({
           >
             <Heading
               text={
-                'คำขอร้านอาหาร (' +
+                posText("คำขอร้านอาหาร (") +
                 (requests.data?.bmsPosRestaurantRequests.requests.length ?? 0) +
                 ')'
               }
@@ -1521,14 +1520,14 @@ export default function OperationsScreen({
             <Field
               value={reason}
               onChangeText={setReason}
-              placeholder="บันทึกผลการตรวจ / ติดต่อ"
+              placeholder={posText("บันทึกผลการตรวจ / ติดต่อ")}
             />
             {(requests.data?.bmsPosRestaurantRequests.requests ?? []).map(
               item => (
                 <View key={item.id} style={styles.block}>
                   <Info
                     title={
-                      (item.customerName ?? 'ลูกค้า') +
+                      (item.customerName ?? posText("ลูกค้า")) +
                       ' · ' +
                       item.fulfillmentType
                     }
@@ -1542,7 +1541,7 @@ export default function OperationsScreen({
                   />
                   <View style={styles.wrap}>
                     <Button
-                      label="ติดต่อแล้ว"
+                      label={posText("ติดต่อแล้ว")}
                       variant="secondary"
                       disabled={!reason.trim()}
                       onPress={() =>
@@ -1572,7 +1571,7 @@ export default function OperationsScreen({
                       }
                     />
                     <Button
-                      label="ยืนยัน"
+                      label={posText("ยืนยัน")}
                       disabled={!reason.trim()}
                       onPress={() =>
                         run(
@@ -1601,7 +1600,7 @@ export default function OperationsScreen({
                       }
                     />
                     <Button
-                      label="ยกเลิก"
+                      label={posText("ยกเลิก")}
                       variant="danger"
                       onPress={() =>
                         run(
@@ -1614,7 +1613,7 @@ export default function OperationsScreen({
                                   id: item.id,
                                   version: item.version,
                                   quantities: null,
-                                  note: reason.trim() || 'ยกเลิกคำขอ',
+                                  note: reason.trim() || posText("ยกเลิกคำขอ"),
                                   kitchenNote: null,
                                   confirmed: true,
                                 },
@@ -1639,35 +1638,35 @@ export default function OperationsScreen({
 
       {section === 'SUPPORT' ? (
         <Card>
-          <Heading text="สถานะเครื่องและการเชื่อมต่อ" />
+          <Heading text={posText("สถานะเครื่องและการเชื่อมต่อ")} />
           <Info
             title="Device"
-            detail={bootstrap.data?.bmsPosSession.device.code ?? 'ยังไม่พร้อม'}
+            detail={bootstrap.data?.bmsPosSession.device.code ?? posText("ยังไม่พร้อม")}
           />
           <Info
-            title="สาขา"
-            detail={bootstrap.data?.bmsPosSession.location?.name ?? 'ไม่พบสาขา'}
+            title={posText("สาขา")}
+            detail={bootstrap.data?.bmsPosSession.location?.name ?? posText("ไม่พบสาขา")}
           />
           <Info
-            title="กะ"
-            detail={bootstrap.data?.bmsPosSession.shift?.status ?? 'ยังไม่เปิด'}
+            title={posText("กะ")}
+            detail={bootstrap.data?.bmsPosSession.shift?.status ?? posText("ยังไม่เปิด")}
           />
           <Info
-            title="โหมด"
+            title={posText("โหมด")}
             detail={bootstrap.data?.bmsPosSession.businessArchetype ?? 'retail'}
           />
           <Info
             title="VAT"
             detail={
               (bootstrap.data?.bmsPosSession.vat.registered
-                ? 'จด VAT'
-                : 'ไม่จด VAT') +
+                ? posText("จด VAT")
+                : posText("ไม่จด VAT")) +
               ' · ' +
               (bootstrap.data?.bmsPosSession.vat.rate ?? 0) +
               '%'
             }
           />
-          <Button label="ตรวจใหม่" onPress={() => bootstrap.refetch()} />
+          <Button label={posText("ตรวจใหม่")} onPress={() => bootstrap.refetch()} />
         </Card>
       ) : null}
     </ScrollView>
@@ -1681,27 +1680,27 @@ export default function OperationsScreen({
         {onBack ? (
           <ScreenHeader title={LOCKED_TITLE[section]} onBack={onBack} />
         ) : (
-          <ScreenHeader title="เพิ่มเติม" subtitle={branchLabel} />
+          <ScreenHeader title={posText("เพิ่มเติม")} subtitle={branchLabel} />
         )}
         {locked ? null : (
           <View style={styles.wrap}>
             <Button
-              label="เคาน์เตอร์"
+              label={posText("เคาน์เตอร์")}
               variant={section === 'REGISTER' ? 'primary' : 'secondary'}
               onPress={() => openRegister('MENU')}
             />
             <Button
-              label="สถานะระบบ"
+              label={posText("สถานะระบบ")}
               variant={section === 'SUPPORT' ? 'primary' : 'secondary'}
               onPress={() => setSection('SUPPORT')}
             />
             <Button
-              label="สต็อกสาขา"
+              label={posText("สต็อกสาขา")}
               variant="secondary"
               onPress={openInventory}
             />
             <Button
-              label="กะ/ลิ้นชัก"
+              label={posText("กะ/ลิ้นชัก")}
               variant="secondary"
               onPress={() =>
                 getAppNavigation(navigation).navigate('ShiftDetail')
@@ -1717,7 +1716,7 @@ export default function OperationsScreen({
   if (!isTablet) {
     return (
       <ScreenContainer>
-        <OperationsPageHeader title="งานหน้าร้าน" subtitle={branchLabel} />
+        <OperationsPageHeader title={posText("งานหน้าร้าน")} subtitle={branchLabel} />
         {section === 'OVERVIEW' ? null : sectionNavigation}
         {body}
       </ScreenContainer>
@@ -1725,7 +1724,7 @@ export default function OperationsScreen({
   }
 
   const tabletTitle =
-    section === 'OVERVIEW' ? 'ภาพรวมงานหน้าร้าน' : LOCKED_TITLE[section];
+    section === 'OVERVIEW' ? posText("ภาพรวมงานหน้าร้าน") : LOCKED_TITLE[section];
 
   return (
     <ScreenContainer padded={false}>
@@ -1738,8 +1737,7 @@ export default function OperationsScreen({
         >
           <View style={styles.sidebarHeader}>
             <Text style={[typography.title, { color: colors.text }]}>
-              งานหน้าร้าน
-            </Text>
+              {posText("งานหน้าร้าน") + " "}</Text>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
               {branchLabel}
             </Text>
@@ -1747,9 +1745,9 @@ export default function OperationsScreen({
 
           <View style={styles.sidebarSections}>
             {[
-              { key: 'OVERVIEW' as const, glyph: '▦', label: 'ภาพรวม' },
-              { key: 'REGISTER' as const, glyph: '▣', label: 'เคาน์เตอร์' },
-              { key: 'SUPPORT' as const, glyph: '◉', label: 'สถานะระบบ' },
+              { key: 'OVERVIEW' as const, glyph: '▦', label: posText("ภาพรวม") },
+              { key: 'REGISTER' as const, glyph: '▣', label: posText("เคาน์เตอร์") },
+              { key: 'SUPPORT' as const, glyph: '◉', label: posText("สถานะระบบ") },
             ].map(item => (
               <SidebarSectionButton
                 key={item.key}
@@ -1765,7 +1763,7 @@ export default function OperationsScreen({
             ))}
             <SidebarSectionButton
               glyph="◇"
-              label="สต็อกสาขา"
+              label={posText("สต็อกสาขา")}
               selected={false}
               onPress={() =>
                 getAppNavigation(navigation).navigate('Tabs', {
@@ -1782,25 +1780,24 @@ export default function OperationsScreen({
             <Text
               style={[typography.captionStrong, { color: colors.textSoft }]}
             >
-              สถานะงาน
-            </Text>
+              {posText("สถานะงาน") + " "}</Text>
             <SidebarStatus
-              label="งานค้าง"
+              label={posText("งานค้าง")}
               value={pendingWorkCount}
               color={colors.danger}
             />
             <SidebarStatus
-              label="รออนุมัติ"
+              label={posText("รออนุมัติ")}
               value={openAdvances.length}
               color={colors.warning}
             />
             <SidebarStatus
-              label="กำลังดำเนินการ"
+              label={posText("กำลังดำเนินการ")}
               value={0}
               color={colors.primary}
             />
             <SidebarStatus
-              label="เสร็จสิ้นวันนี้"
+              label={posText("เสร็จสิ้นวันนี้")}
               value={0}
               color={colors.success}
             />
@@ -1820,7 +1817,7 @@ export default function OperationsScreen({
             title={tabletTitle}
             subtitle={
               section === 'OVERVIEW'
-                ? `${branchLabel} · ${new Date().toLocaleString('th-TH', {
+                ? `${branchLabel} · ${new Date().toLocaleString(posLocale(), {
                     dateStyle: 'medium',
                     timeStyle: 'short',
                   })}`
@@ -1829,7 +1826,7 @@ export default function OperationsScreen({
             right={
               section === 'OVERVIEW' ? (
                 <Button
-                  label="↻ รีเฟรช"
+                  label={posText("↻ รีเฟรช")}
                   variant="secondary"
                   onPress={refreshOverview}
                 />
@@ -1887,43 +1884,43 @@ const REGISTER_ACTIONS: RegisterAction[] = [
   {
     key: 'NO_SALE',
     glyph: '▤',
-    title: 'เปิดลิ้นชัก',
-    detail: 'บันทึกเหตุผลโดยไม่มีการขาย',
+    get title() { return posText("เปิดลิ้นชัก"); },
+    get detail() { return posText("บันทึกเหตุผลโดยไม่มีการขาย"); },
     tone: 'primary',
   },
   {
     key: 'BLIND_RETURN',
     glyph: '↩',
-    title: 'คืนสินค้าไม่มีใบเสร็จ',
-    detail: 'ต้องใช้ผู้อนุมัติและ PIN คนที่สอง',
+    get title() { return posText("คืนสินค้าไม่มีใบเสร็จ"); },
+    get detail() { return posText("ต้องใช้ผู้อนุมัติและ PIN คนที่สอง"); },
     tone: 'danger',
   },
   {
     key: 'DEPOSITS',
     glyph: '▣',
-    title: 'มัดจำ / รับของ',
-    detail: 'รับเพิ่ม ส่งมอบ หรือปิดรายการ',
+    get title() { return posText("มัดจำ / รับของ"); },
+    get detail() { return posText("รับเพิ่ม ส่งมอบ หรือปิดรายการ"); },
     tone: 'success',
   },
   {
     key: 'EXPENSES',
-    glyph: '฿',
-    title: 'ค่าใช้จ่าย / เงินสดย่อย',
-    detail: 'บันทึกจ่าย เติมเงิน และปิดเงินทดรอง',
+    get glyph() { return posText("฿"); },
+    get title() { return posText("ค่าใช้จ่าย / เงินสดย่อย"); },
+    get detail() { return posText("บันทึกจ่าย เติมเงิน และปิดเงินทดรอง"); },
     tone: 'warning',
   },
   {
     key: 'AR',
     glyph: '◎',
-    title: 'ลูกหนี้ / เครดิตร้าน',
-    detail: 'ค้นหาสมาชิกและรับชำระยอดค้าง',
+    get title() { return posText("ลูกหนี้ / เครดิตร้าน"); },
+    get detail() { return posText("ค้นหาสมาชิกและรับชำระยอดค้าง"); },
     tone: 'primary',
   },
   {
     key: 'PURCHASES',
     glyph: '⇥',
-    title: 'รับสินค้า PO',
-    detail: 'ตรวจรับจำนวนคงเหลือเข้าสต็อกสาขา',
+    get title() { return posText("รับสินค้า PO"); },
+    get detail() { return posText("ตรวจรับจำนวนคงเหลือเข้าสต็อกสาขา"); },
     tone: 'success',
   },
 ];
@@ -1967,38 +1964,39 @@ function OperationsOverview({
   onOpenSupport,
   navigation,
 }: OperationsOverviewProps) {
+  usePosLanguage();
   const { colors, spacing, typography } = useTheme();
   const summaries = [
     {
-      label: 'งานค้าง',
+      label: posText("งานค้าง"),
       value: String(pendingWorkCount),
-      note: 'รายการที่ต้องดำเนินการ',
+      note: posText("รายการที่ต้องดำเนินการ"),
       glyph: '▣',
       ink: colors.danger,
       background: colors.dangerBg,
     },
     {
-      label: 'รออนุมัติ',
+      label: posText("รออนุมัติ"),
       value: String(approvalCount),
-      note: 'รายการรอการอนุมัติ',
+      note: posText("รายการรอการอนุมัติ"),
       glyph: '◷',
       ink: colors.warning,
       background: colors.warningBg,
     },
     {
-      label: 'เงินสดย่อย',
-      value: `฿${pettyCashBalance.toLocaleString('th-TH', {
+      label: posText("เงินสดย่อย"),
+      value: posText("฿{v0}", { v0: pettyCashBalance.toLocaleString('th-TH', {
         maximumFractionDigits: 2,
-      })}`,
-      note: 'ยอดคงเหลือปัจจุบัน',
+      }) }),
+      note: posText("ยอดคงเหลือปัจจุบัน"),
       glyph: '▰',
       ink: colors.primary,
       background: `${colors.primary}0e`,
     },
     {
-      label: 'สถานะระบบ',
-      value: systemReady ? 'ปกติ' : 'ตรวจสอบ',
-      note: systemReady ? 'ทุกระบบใช้งานได้' : 'มีรายการที่ต้องตรวจสอบ',
+      label: posText("สถานะระบบ"),
+      value: systemReady ? posText("ปกติ") : posText("ตรวจสอบ"),
+      note: systemReady ? posText("ทุกระบบใช้งานได้") : posText("มีรายการที่ต้องตรวจสอบ"),
       glyph: '✓',
       ink: systemReady ? colors.success : colors.danger,
       background: systemReady ? colors.successBg : colors.dangerBg,
@@ -2009,41 +2007,37 @@ function OperationsOverview({
       key: `deposit-${item.id}`,
       glyph: '↓',
       title: item.customerName
-        ? `มัดจำ / รับของ · ${item.customerName}`
-        : 'มัดจำ / รับของ',
-      detail: `${
-        item.itemQty
-      } รายการ · คงเหลือ ฿${item.balanceDue.toLocaleString('th-TH')}`,
+        ? posText("มัดจำ / รับของ · {v0}", { v0: item.customerName })
+        : posText("มัดจำ / รับของ"),
+      detail: posText("{v0} รายการ · คงเหลือ ฿{v1}", { v0: item.itemQty, v1: item.balanceDue.toLocaleString('th-TH') }),
       timestamp: item.createdAt,
-      badge: item.overdue ? 'เกินกำหนด' : 'รอดำเนินการ',
+      badge: item.overdue ? posText("เกินกำหนด") : posText("รอดำเนินการ"),
       tone: item.overdue ? ('danger' as const) : ('warning' as const),
-      actionLabel: 'ทำรายการ',
+      actionLabel: posText("ทำรายการ"),
       action: () => onOpenRegister('DEPOSITS'),
     })),
     ...advances.map(item => ({
       key: `advance-${item.id}`,
-      glyph: '฿',
-      title: 'ปิดเงินทดรอง',
-      detail: `${item.description} · ฿${item.advancedAmount.toLocaleString(
+      glyph: posText("฿"),
+      title: posText("ปิดเงินทดรอง"),
+      detail: posText("{v0} · ฿{v1}", { v0: item.description, v1: item.advancedAmount.toLocaleString(
         'th-TH',
-      )}`,
+      ) }),
       timestamp: item.createdAt,
-      badge: 'รอปิดยอด',
+      badge: posText("รอปิดยอด"),
       tone: 'warning' as const,
-      actionLabel: 'ทำรายการ',
+      actionLabel: posText("ทำรายการ"),
       action: () => onOpenRegister('EXPENSES'),
     })),
     ...purchaseOrders.map(order => ({
       key: `purchase-${order.id}`,
       glyph: '◇',
-      title: 'รับสินค้าเข้า',
-      detail: `${order.supplier?.name ?? 'Supplier'} · ${
-        order.qtyOrdered - order.qtyReceived
-      } ชิ้นรอตรวจรับ`,
+      title: posText("รับสินค้าเข้า"),
+      detail: posText("{v0} · {v1} ชิ้นรอตรวจรับ", { v0: order.supplier?.name ?? 'Supplier', v1: order.qtyOrdered - order.qtyReceived }),
       timestamp: order.createdAt,
-      badge: 'พร้อมทำ',
+      badge: posText("พร้อมทำ"),
       tone: 'primary' as const,
-      actionLabel: 'ไปสต็อก',
+      actionLabel: posText("ไปสต็อก"),
       action: () => onOpenRegister('PURCHASES'),
     })),
   ]
@@ -2105,11 +2099,9 @@ function OperationsOverview({
             <Text
               style={[typography.subtitle, { color: colors.text, flex: 1 }]}
             >
-              งานที่ต้องทำ
-            </Text>
+              {posText("งานที่ต้องทำ") + " "}</Text>
             <Text style={[typography.bodyStrong, { color: colors.primary }]}>
-              ดูทั้งหมด ›
-            </Text>
+              {posText("ดูทั้งหมด ›") + " "}</Text>
           </View>
           {tasks.length ? (
             tasks.map(item => (
@@ -2121,19 +2113,16 @@ function OperationsOverview({
                 ✓
               </Text>
               <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                ไม่มีงานค้างในขณะนี้
-              </Text>
+                {posText("ไม่มีงานค้างในขณะนี้") + " "}</Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                งานใหม่จากมัดจำ เงินทดรอง และ PO จะขึ้นที่นี่
-              </Text>
+                {posText("งานใหม่จากมัดจำ เงินทดรอง และ PO จะขึ้นที่นี่") + " "}</Text>
             </View>
           )}
         </Card>
 
         <Card style={styles.dashboardSecondaryCard}>
           <Text style={[typography.subtitle, { color: colors.text }]}>
-            ทางลัดเคาน์เตอร์
-          </Text>
+            {posText("ทางลัดเคาน์เตอร์") + " "}</Text>
           <CounterShortcuts onOpen={onOpenRegister} />
           <Pressable
             accessibilityRole="button"
@@ -2155,12 +2144,12 @@ function OperationsOverview({
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[typography.bodyStrong, { color: colors.success }]}>
-                {systemReady ? 'ระบบพร้อมใช้งาน' : 'ตรวจสอบระบบ'}
+                {systemReady ? posText("ระบบพร้อมใช้งาน") : posText("ตรวจสอบระบบ")}
               </Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
                 {systemReady
-                  ? 'อุปกรณ์และการเชื่อมต่อปกติ'
-                  : 'แตะเพื่อดูรายละเอียดสถานะ'}
+                  ? posText("อุปกรณ์และการเชื่อมต่อปกติ")
+                  : posText("แตะเพื่อดูรายละเอียดสถานะ")}
               </Text>
             </View>
           </Pressable>
@@ -2217,7 +2206,7 @@ function OverviewTaskRow({
           </Text>
           <Text style={[typography.caption, { color: colors.textSoft }]}>
             ◷{' '}
-            {new Date(item.timestamp).toLocaleString('th-TH', {
+            {new Date(item.timestamp).toLocaleString(posLocale(), {
               day: '2-digit',
               month: 'short',
               hour: '2-digit',
@@ -2252,27 +2241,28 @@ function CounterShortcuts({
 }: {
   onOpen: (view: RegisterView) => void;
 }) {
+  usePosLanguage();
   const { colors, radius, typography } = useTheme();
   const shortcuts = [
     {
       key: 'deposit',
       glyph: '↓',
-      title: 'มัดจำ / รับของ',
-      detail: 'รับมัดจำและส่งมอบสินค้า',
+      title: posText("มัดจำ / รับของ"),
+      detail: posText("รับมัดจำและส่งมอบสินค้า"),
       action: () => onOpen('DEPOSITS'),
     },
     {
       key: 'expense',
       glyph: '▤',
-      title: 'ค่าใช้จ่าย',
-      detail: 'บันทึกค่าใช้จ่ายต่าง ๆ',
+      title: posText("ค่าใช้จ่าย"),
+      detail: posText("บันทึกค่าใช้จ่ายต่าง ๆ"),
       action: () => onOpen('EXPENSES'),
     },
     {
       key: 'petty',
-      glyph: '฿',
-      title: 'เงินสดย่อย',
-      detail: 'จัดการเงินสดย่อย',
+      glyph: posText("฿"),
+      title: posText("เงินสดย่อย"),
+      detail: posText("จัดการเงินสดย่อย"),
       action: () => onOpen('EXPENSES'),
     },
   ];
@@ -2322,16 +2312,15 @@ function CounterActionMenu({
 }: {
   onOpen: (view: RegisterView) => void;
 }) {
+  usePosLanguage();
   const { colors, spacing, typography } = useTheme();
   return (
     <Card style={{ gap: spacing.lg }}>
       <View style={{ gap: 2 }}>
         <Text style={[typography.subtitle, { color: colors.text }]}>
-          งานเคาน์เตอร์
-        </Text>
+          {posText("งานเคาน์เตอร์") + " "}</Text>
         <Text style={[typography.caption, { color: colors.textMuted }]}>
-          เปิดทีละงานเพื่อลดความผิดพลาดและไม่ต้องเลื่อนผ่านแบบฟอร์มที่ไม่เกี่ยวข้อง
-        </Text>
+          {posText("เปิดทีละงานเพื่อลดความผิดพลาดและไม่ต้องเลื่อนผ่านแบบฟอร์มที่ไม่เกี่ยวข้อง") + " "}</Text>
       </View>
       <ActionGrid onOpen={onOpen} />
     </Card>

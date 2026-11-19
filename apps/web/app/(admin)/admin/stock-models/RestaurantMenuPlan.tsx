@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 import MenuBundlePublish from "./MenuBundlePublish";
 import RecipeCostBasis, {costSelection} from "./RecipeCostBasis";
 import { useI18n } from "@/lib/i18nContext";
+import { operatorMessage } from "@/lib/operatorMessage";
 const QUERY = gql`query RestaurantMenuPlan($input: BmsRestaurantMenuPlanInput!) {
   bmsRestaurantMenuPlan(input: $input) { status errorCode
     estimates { recipeId recipeVersion calculatedAt status totalUnitCost }
@@ -79,8 +80,8 @@ export default function RestaurantMenuPlan({ recipeSelect }: { recipeSelect: () 
       const response = await client.query({query:QUERY,fetchPolicy:"no-cache",variables:{input}});
       if (!isCurrent()) return;
       const data = response.data.bmsRestaurantMenuPlan;
-      if (data.status !== "OK") setError(data.errorCode ?? data.status); else setResult({...data,publicationInput:input});
-    } catch (e) { if (isCurrent()) setError(e instanceof Error ? e.message : "ERROR"); }
+      if (data.status !== "OK") setError(operatorMessage(data.errorCode,t)); else setResult({...data,publicationInput:input});
+    } catch (e) { if (isCurrent()) setError(operatorMessage(e,t)); }
     finally { if (revision === requestRevision.current) setLoading(false); }
   }
   const figures = (rows: [string, any][]) => <dl style={{ overflowWrap: "anywhere" }}>{rows.map(([label, value]) => <div key={label} style={{ marginBlock: 8 }}>

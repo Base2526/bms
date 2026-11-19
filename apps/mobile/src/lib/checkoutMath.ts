@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 interface DiscountMember {
   tierDiscountPct: number;
 }
@@ -88,9 +89,9 @@ export function couponEligibilityError(
   subtotal: number,
   hasMember: boolean,
 ): string | null {
-  if (coupon.memberOnly && !hasMember) return 'คูปองนี้ใช้ได้เฉพาะสมาชิก';
+  if (coupon.memberOnly && !hasMember) return posText("คูปองนี้ใช้ได้เฉพาะสมาชิก");
   if (subtotal < coupon.minimumSubtotal) {
-    return `ยอดสินค้าต้องครบ ฿${coupon.minimumSubtotal.toFixed(2)}`;
+    return posText("ยอดสินค้าต้องครบ ฿{v0}", { v0: coupon.minimumSubtotal.toFixed(2) });
   }
   return null;
 }

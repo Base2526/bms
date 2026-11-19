@@ -156,16 +156,16 @@ test("plan updates are version-checked and callable by bms_app only through the 
     const row = plan.rows[0];
     await client.query("SET LOCAL ROLE bms_app");
     const args = [
-      row.code, row.version, row.name, row.price_monthly, row.max_products,
+      row.code, row.version, row.name, row.price_monthly, row.price_yearly, row.max_products,
       row.max_channels, row.max_orders_month, row.max_users, row.max_branches,
       row.max_devices, row.max_ai_messages_month, row.ai_credits_monthly, row.feature_keys,
     ];
     const updated = await client.query(`SELECT * FROM public.update_bms_plan_catalog(
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::text[])`, args);
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::text[])`, args);
     assert.equal(updated.rowCount, 1);
     assert.equal(updated.rows[0].version, row.version + 1);
     const stale = await client.query(`SELECT * FROM public.update_bms_plan_catalog(
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::text[])`, args);
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::text[])`, args);
     assert.equal(stale.rowCount, 0);
     await assert.rejects(
       () => client.query(`UPDATE bms_plans SET name=name WHERE code=$1`, [row.code]),

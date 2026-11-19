@@ -1,8 +1,10 @@
-'use client';
-import { gql, useApolloClient, useQuery, useLazyQuery, useMutation, useSubscription } from "@apollo/client";
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
+import { gql, useQuery, useLazyQuery, useMutation, useSubscription } from "@apollo/client";
 import {
   List, Input, Button, Space, Tag, Segmented, message, Alert, Badge,
-  Typography, Avatar, Select, Tabs, Empty, Divider, Popover, Tooltip, Switch, Statistic, Modal,
+  Typography, Avatar, Select, Tabs, Empty, Divider, Popover, Tooltip, Switch, Statistic, Modal, Spin,
 } from "antd";
 import { memo, useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import Link from "next/link";
@@ -101,7 +103,7 @@ const Q_LIST = gql`
 const Q_CONV = gql`
   query ($id: ID!, $messageLimit: Int, $eventLimit: Int, $noteLimit: Int) {
     bmsConversation(id: $id) {
-      id channel customerRef customerId customerName customerAvatar sourceDisplayName sourceHandle sourceAvatar status tags unread lastMessageAt createdAt
+      id channel supportsOutboundPush customerRef customerId customerName customerAvatar sourceDisplayName sourceHandle sourceAvatar status tags unread lastMessageAt createdAt
       assignedStaff { ${STAFF_FIELDS} }
       helpers { ${STAFF_FIELDS} }
       messages(limit: $messageLimit) { id direction body sender createdAt attachment { url name mimeType isImage } status canReportDelivery }
@@ -147,15 +149,17 @@ const Q_COUPONS_PICKER = gql`
     }
   }
 `;
-const M_SEND = gql`mutation ($id: ID!, $body: String, $attachment: BmsAttachmentInput) { bmsSendMessage(id: $id, body: $body, attachment: $attachment) { status delivered message } }`;
-const M_RETRY = gql`mutation ($id: ID!) { bmsRetryMessage(id: $id) { status delivered message } }`;
+const M_SEND = gql`mutation ($id: ID!, $body: String, $attachment: BmsAttachmentInput) { bmsSendMessage(id: $id, body: $body, attachment: $attachment) { status delivered needsReview message } }`;
+const M_RETRY = gql`mutation ($id: ID!) { bmsRetryMessage(id: $id) { status delivered needsReview message } }`;
 const M_ASSIGN = gql`mutation ($id: ID!, $userId: ID!) { bmsAssignConversation(id: $id, userId: $userId) }`;
 const M_HELPER_ADD = gql`mutation ($id: ID!, $userId: ID!) { bmsAddConversationHelper(id: $id, userId: $userId) }`;
 const M_HELPER_REMOVE = gql`mutation ($id: ID!, $userId: ID!) { bmsRemoveConversationHelper(id: $id, userId: $userId) }`;
 const M_AVAILABILITY = gql`mutation ($available: Boolean!) { bmsSetMyAvailability(available: $available) }`;
 const M_STATUS = gql`mutation ($id: ID!, $status: BmsConvStatus!) { bmsSetConversationStatus(id: $id, status: $status) }`;
 const M_TAGS = gql`mutation ($id: ID!, $tags: [String!]!) { bmsSetConversationTags(id: $id, tags: $tags) }`;
-const M_READ = gql`mutation ($id: ID!) { bmsMarkConversationRead(id: $id) }`;
+const M_READ = gql`mutation ($id: ID!, $observedLatestMessageId: ID) {
+  bmsMarkConversationRead(id: $id, observedLatestMessageId: $observedLatestMessageId)
+}`;
 const M_NOTE = gql`mutation ($id: ID!, $body: String!, $mentionedUserIds: [ID!]) { bmsAddConversationNote(id: $id, body: $body, mentionedUserIds: $mentionedUserIds) { id author body createdAt mentionedUserIds } }`;
 const M_REORDER = gql`mutation ($id: ID!) { bmsReorderFromOrder(id: $id) { status orderId total message } }`;
 
@@ -168,17 +172,17 @@ function staffLabel(s: StaffRef, t: Translate) {
 const BKK = "Asia/Bangkok";
 const dayKey = (iso: string) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: BKK, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
-const timeLabel = (iso: string) =>
-  new Intl.DateTimeFormat("th-TH", { timeZone: BKK, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+const timeLabel = (iso: string, uiText: UiTranslator = thaiUiText) =>
+  new Intl.DateTimeFormat(uiText.locale, { timeZone: BKK, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 const baht = (value: number | null | undefined, t: Translate) => `${Number(value ?? 0).toLocaleString("th-TH")} ${t("admin_inbox.baht_suffix")}`;
-function dayLabel(iso: string, t: Translate) {
+function dayLabel(iso: string, t: Translate, uiText: UiTranslator = thaiUiText) {
   const key = dayKey(iso);
   const now = new Date();
   const todayKey = dayKey(now.toISOString());
   const y = new Date(now); y.setDate(y.getDate() - 1);
   if (key === todayKey) return t("admin_inbox.today_label");
   if (key === dayKey(y.toISOString())) return t("admin_inbox.yesterday_label");
-  return new Intl.DateTimeFormat("th-TH", { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
+  return new Intl.DateTimeFormat(uiText.locale, { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
 }
 
 function eventIcon(kind: SystemEvent["kind"]) {
@@ -356,10 +360,10 @@ function parseCouponShare(body: string): CouponShare | null {
   return { code, discount, minOrder, expires, usage, walletUrl };
 }
 
-function fileKind(attachment: Attachment) {
+function fileKind(attachment: Attachment, uiText: UiTranslator = thaiUiText) {
   const extension = attachment.name?.split(".").pop()?.toUpperCase();
   if (attachment.mimeType?.toLowerCase().includes("pdf") || extension === "PDF") return { label: "PDF", pdf: true };
-  return { label: extension || attachment.mimeType?.split("/").pop()?.toUpperCase() || "FILE", pdf: false };
+  return { label: extension || attachment.mimeType?.split("/").pop()?.toUpperCase() || uiText("admin_ui.en_file_b4915"), pdf: false };
 }
 
 function suggestedReply(conv: any, gender?: string | null) {
@@ -397,6 +401,7 @@ const ConversationListItem = memo(function ConversationListItem({
   collapsed: boolean;
   onOpen: (conversationId: string) => void;
 }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const priority = convPriority(c, t);
   const source = sourceLabel(c, t);
@@ -471,7 +476,7 @@ const ConversationListItem = memo(function ConversationListItem({
                 {priority.label}
               </Tag>
               <Typography.Text type="secondary" style={{ fontSize: 9, marginLeft: "auto", flexShrink: 0 }}>
-                {c.lastMessageAt ? timeLabel(c.lastMessageAt) : ""}
+                {c.lastMessageAt ? timeLabel(c.lastMessageAt, uiText) : ""}
               </Typography.Text>
             </div>
           </div>
@@ -482,7 +487,7 @@ const ConversationListItem = memo(function ConversationListItem({
 });
 
 function Inbox() {
-  const apollo = useApolloClient();
+  const uiText = useUiText();
   const { t } = useI18n();
   const { can } = useBmsPermissions();
   const isMobile = useMediaQuery(MOBILE_QUERY);
@@ -518,10 +523,6 @@ function Inbox() {
   }, []);
   // แจ้ง GlobalInboxNotifier ว่ากำลังเปิดแชทไหนอยู่ (กันแจ้ง notification ซ้ำกับแชทที่เห็นอยู่ตรงหน้า)
   const setActiveConversationGlobal = useGlobalInboxStore((s) => s.setActiveConversation);
-  useEffect(() => {
-    setActiveConversationGlobal(activeId);
-    return () => setActiveConversationGlobal(null);
-  }, [activeId, setActiveConversationGlobal]);
   const [mobilePane, setMobilePane] = useState<"list" | "chat">(() => {
     if (typeof window === "undefined") return "list";
     return new URLSearchParams(window.location.search).get("c") ? "chat" : "list";
@@ -581,8 +582,13 @@ function Inbox() {
   const showListPane = !isMobile || mobilePane === "list";
   const showConversationPane = !isMobile || mobilePane === "chat";
 
-  const [loadConv, { data: convData, refetch: refetchConv }] = useLazyQuery(Q_CONV, { fetchPolicy: "cache-first" });
-  const conv = convData?.bmsConversation;
+  const { data: convData, loading: convLoading, error: convError, refetch: refetchConv } = useQuery(Q_CONV, {
+    variables: convVariables(activeId || ""),
+    skip: !activeId,
+    fetchPolicy: "network-only",
+    notifyOnNetworkStatusChange: true,
+  });
+  const conv = convData?.bmsConversation?.id === activeId ? convData.bmsConversation : null;
   const showCustomer360Pane = Boolean(conv && !isMobile && !isTablet);
   const selectedCouponCode = useMemo(
     () => latestCouponCodeFromMessages(conv?.messages || []),
@@ -598,39 +604,9 @@ function Inbox() {
     pending: false,
   });
   const convRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const readStateRef = useRef(new Map<string, { running: boolean; pending: boolean }>());
+  const readStateRef = useRef(new Map<string, { running: boolean; pending: boolean; latestMessageId: string }>());
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
-
-  const clearUnreadInCache = useCallback((conversationId: string) => {
-    const list = apollo.cache.readQuery<any>({
-      query: Q_LIST,
-      variables: listVariables,
-    });
-    if (list?.bmsConversations) {
-      apollo.cache.writeQuery({
-        query: Q_LIST,
-        variables: listVariables,
-        data: {
-          bmsConversations: list.bmsConversations.map((c: Conversation) =>
-            c.id === conversationId ? { ...c, unread: 0 } : c
-          ),
-        },
-      });
-    }
-
-    const detail = apollo.cache.readQuery<any>({
-      query: Q_CONV,
-      variables: convVariables(conversationId),
-    });
-    if (detail?.bmsConversation) {
-      apollo.cache.writeQuery({
-        query: Q_CONV,
-        variables: convVariables(conversationId),
-        data: { bmsConversation: { ...detail.bmsConversation, unread: 0 } },
-      });
-    }
-  }, [apollo, listVariables, convVariables]);
 
   // Refresh the first event immediately, then cap sustained bursts at two list
   // queries per second while guaranteeing one trailing refresh is not lost.
@@ -656,37 +632,35 @@ function Inbox() {
 
   const markActiveConversationRead = useCallback(async (
     conversationId: string,
-    options?: { queueIfRunning?: boolean }
+    latestMessageId: string,
   ) => {
-    clearUnreadInCache(conversationId);
-
     const current = readStateRef.current.get(conversationId);
     if (current?.running) {
-      if (options?.queueIfRunning) current.pending = true;
+      current.latestMessageId = latestMessageId;
+      current.pending = true;
       return;
     }
 
-    const state = { running: true, pending: false };
+    const state = { running: true, pending: false, latestMessageId };
     readStateRef.current.set(conversationId, state);
     try {
       do {
         state.pending = false;
-        await markRead({
-          variables: { id: conversationId },
-          optimisticResponse: { bmsMarkConversationRead: true },
-          update: () => clearUnreadInCache(conversationId),
+        const result = await markRead({
+          variables: { id: conversationId, observedLatestMessageId: state.latestMessageId },
         });
-        clearUnreadInCache(conversationId);
+        void refetch();
+        if (result.data?.bmsMarkConversationRead === false && activeIdRef.current === conversationId) {
+          void refetchConv(convVariables(conversationId)).catch(() => undefined);
+        }
       } while (state.pending);
     } catch (error) {
       console.warn("[BMS Inbox] mark active conversation read failed", error);
-      // Restore authoritative unread state only on failure. Successful writes
-      // are already reflected in both caches and via READ_CHANGED realtime.
       void refetch();
     } finally {
       readStateRef.current.delete(conversationId);
     }
-  }, [clearUnreadInCache, markRead, refetch]);
+  }, [markRead, refetch, refetchConv, convVariables]);
 
   // The event contains no customer data; authoritative rows are fetched
   // through RBAC-scoped queries.
@@ -695,21 +669,9 @@ function Inbox() {
     if (!event?.conversationId) return;
 
     const isActiveEvent = event.conversationId === activeIdRef.current;
-    const isReadEvent = event.kind === "READ_CHANGED";
-    const isActiveMessageEvent = isActiveEvent && event.kind === "MESSAGES_CHANGED";
-    if (isReadEvent) {
-      // READ_CHANGED carries the complete state transition; no list/detail
-      // query is needed, including for events from another operator.
-      clearUnreadInCache(event.conversationId);
-    } else if (isActiveMessageEvent) {
-      // The operator is already looking at this thread: clear its badge now,
-      // then persist read state without starting another list/detail fetch.
-      void markActiveConversationRead(event.conversationId, { queueIfRunning: true });
-    } else {
-      triggerListRefresh();
-    }
+    triggerListRefresh();
 
-    if (isActiveEvent && !isReadEvent && !convRefreshTimer.current) {
+    if (isActiveEvent && !convRefreshTimer.current) {
       convRefreshTimer.current = setTimeout(() => {
         convRefreshTimer.current = null;
         if (activeIdRef.current === event.conversationId) {
@@ -717,7 +679,7 @@ function Inbox() {
         }
       }, 150);
     }
-  }, [inboxChangedData, clearUnreadInCache, refetchConv, triggerListRefresh, markActiveConversationRead, convVariables]);
+  }, [inboxChangedData, refetchConv, triggerListRefresh, convVariables]);
 
   useEffect(() => () => {
     if (listRefreshState.current.timer) clearTimeout(listRefreshState.current.timer);
@@ -725,12 +687,6 @@ function Inbox() {
     listRefreshState.current.pending = false;
     if (convRefreshTimer.current) clearTimeout(convRefreshTimer.current);
   }, []);
-
-  useEffect(() => {
-    if (activeId) {
-      loadConv({ variables: convVariables(activeId) });
-    }
-  }, [activeId]); // eslint-disable-line
 
   // If the socket misses an event, the existing 20s list poll detects a newer
   // message and refreshes only the active pane instead of polling every pane.
@@ -741,41 +697,48 @@ function Inbox() {
   const activeListMessageAt = activeListConversation?.lastMessageAt;
   const activeListUnread = activeListConversation?.unread ?? 0;
 
-  // Apollo normalizes the list and detail query to the same Conversation
-  // entity. Consequently lastMessageAt can change on both queries at once and
-  // is not sufficient to detect every missed socket event. The active card's
-  // unread value is the authoritative UI trigger: whenever it rises above zero,
-  // clear and persist it without waiting for another click or scroll action.
+  // A list poll can discover a message while the socket is down. Refresh the
+  // selected detail before marking it read; the list alone is not proof that
+  // the operator has seen the message.
+  const lastPolledRefreshRef = useRef<string | null>(null);
   useEffect(() => {
-    if (activeId && activeListUnread > 0) {
-      void markActiveConversationRead(activeId);
-    }
-  }, [activeId, activeListUnread, markActiveConversationRead]);
-
-  useEffect(() => {
-    if (!activeId || !activeListMessageAt || !conv?.lastMessageAt) return;
-    if (activeListMessageAt !== conv.lastMessageAt && !convRefreshTimer.current) {
-      void markActiveConversationRead(activeId);
-      convRefreshTimer.current = setTimeout(() => {
-        convRefreshTimer.current = null;
-        if (activeIdRef.current === activeId) {
-          void refetchConv(convVariables(activeId));
-        }
-      }, 150);
-    }
-  }, [activeId, activeListMessageAt, conv?.lastMessageAt, refetchConv, markActiveConversationRead]);
+    if (!activeId || !activeListMessageAt || activeListUnread <= 0) return;
+    const refreshKey = `${activeId}:${activeListMessageAt}`;
+    if (lastPolledRefreshRef.current === refreshKey) return;
+    lastPolledRefreshRef.current = refreshKey;
+    if (!convLoading) void refetchConv(convVariables(activeId)).catch(() => undefined);
+  }, [activeId, activeListMessageAt, activeListUnread, convLoading, refetchConv, convVariables]);
 
   // Final guard: whenever a newly fetched message is actually rendered in the
   // selected thread, its unread state must be cleared without another click.
-  const renderedLatestMessageId = conv?.messages?.[conv.messages.length - 1]?.id ?? null;
+  const renderedLatestMessage = conv?.messages?.[conv.messages.length - 1] ?? null;
   useEffect(() => {
-    if (activeId && conv?.id === activeId && conv.unread > 0 && renderedLatestMessageId) {
-      void markActiveConversationRead(activeId);
+    const listMessageAt = conversations.find((item) => item.id === activeId)?.lastMessageAt;
+    const latestVisibleAt = renderedLatestMessage?.createdAt;
+    const isCurrentMessageVisible = Boolean(activeId && !convLoading && !convError && conv?.id === activeId &&
+      latestVisibleAt && (!listMessageAt || new Date(latestVisibleAt).getTime() >= new Date(listMessageAt).getTime()));
+    // Suppress a global customer alert only while the latest message is visible.
+    // A selected ID alone can be loading, forbidden or stale after a list poll.
+    setActiveConversationGlobal(isCurrentMessageVisible ? activeId : null);
+    return () => setActiveConversationGlobal(null);
+  }, [activeId, convLoading, convError, conv?.id, conversations, renderedLatestMessage?.createdAt,
+    setActiveConversationGlobal]);
+  useEffect(() => {
+    if (activeId && !convLoading && !convError && conv?.id === activeId && conv.unread > 0 &&
+        renderedLatestMessage && (!conv.lastMessageAt ||
+          new Date(renderedLatestMessage.createdAt).getTime() >= new Date(conv.lastMessageAt).getTime())) {
+      void markActiveConversationRead(activeId, String(renderedLatestMessage.id));
     }
-  }, [activeId, conv?.id, conv?.unread, renderedLatestMessageId, markActiveConversationRead]);
+  }, [activeId, convLoading, convError, conv?.id, conv?.unread, conv?.lastMessageAt,
+    renderedLatestMessage?.id, renderedLatestMessage?.createdAt, markActiveConversationRead]);
 
   const openConversation = useCallback((conversationId: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("c", conversationId);
+    url.searchParams.delete("tab");
+    window.history.replaceState(null, "", url);
     setActiveId(conversationId);
+    setInitialTab(null);
     if (isMobile) setMobilePane("chat");
   }, [isMobile]);
   const showConversationList = useCallback(() => setMobilePane("list"), []);
@@ -792,7 +755,7 @@ function Inbox() {
       <div style={{ marginBottom: isMobile ? 8 : 10, flexShrink: 0 }}>
         <Space style={{ width: "100%", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center" }} wrap>
           <Space direction="vertical" size={0}>
-            <h2 style={{ margin: 0, fontSize: isMobile ? 22 : 15, fontWeight: 800, lineHeight: 1.15 }}>BMS Inbox (Omnichannel)</h2>
+            <h2 style={{ margin: 0, fontSize: isMobile ? 22 : 15, fontWeight: 800, lineHeight: 1.15 }}>{uiText("admin_ui.en_bms_inbox_omnichannel_d4f6c")}</h2>
             <Typography.Text type="secondary" style={{ fontSize: isMobile ? 12 : 10.5 }}>
               {t("admin_inbox.page_subtitle")}
             </Typography.Text>
@@ -816,7 +779,7 @@ function Inbox() {
                 </Space>
               </Tooltip>
             )}
-            <Button size={isMobile ? "middle" : "small"} icon={<ReloadOutlined />} onClick={() => { refetch(); if (activeId) refetchConv(convVariables(activeId)); }} loading={loading}>Refresh</Button>
+            <Button size={isMobile ? "middle" : "small"} icon={<ReloadOutlined />} onClick={() => { refetch(); if (activeId) refetchConv(convVariables(activeId)); }} loading={loading}>{uiText("admin_ui.en_refresh_56e3b")}</Button>
           </Space>
         </Space>
       </div>
@@ -970,8 +933,20 @@ function Inbox() {
         {/* ---- middle: active conversation ---- */}
         {showConversationPane && (
         <div style={{ flex: "1 1 0", width: isMobile ? "100%" : undefined, minWidth: 0, minHeight: 0, overflow: "hidden", border: "1px solid var(--app-border, #eee)", borderRadius: 10, padding: isMobile ? 7 : 10, background: PANEL_SURFACE }}>
-          {!conv ? (
+          {!activeId ? (
             <Empty description={t("admin_inbox.empty_select_conversation")} style={{ marginTop: 120 }} />
+          ) : convLoading ? (
+            <div style={{ display: "flex", justifyContent: "center", paddingTop: 120 }}><Spin /></div>
+          ) : convError ? (
+            <Alert
+              closable
+              type="error"
+              showIcon
+              message={t("admin_inbox.conversation_load_failed")}
+              action={<Button size="small" onClick={() => { void refetchConv(convVariables(activeId)).catch(() => undefined); }}>{t("admin_inbox.retry_load")}</Button>}
+            />
+          ) : !conv ? (
+            <Empty description={t("admin_inbox.conversation_not_found")} style={{ marginTop: 120 }} />
           ) : (
             <MemoConversationPane key={conv.id} conv={conv} can={can} isMobile={isMobile} onBack={isMobile ? showConversationList : undefined}
               gender={me?.gender} tenantSlug={tenantSlug} initialTab={initialTab} onChanged={handleConversationChanged} />
@@ -987,6 +962,7 @@ function Inbox() {
 }
 
 function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gender, tenantSlug, initialTab }: { conv: any; can: (p: string) => boolean; onChanged: () => void; isMobile?: boolean; onBack?: () => void; gender?: string | null; tenantSlug?: string | null; initialTab?: string | null }) {
+  const uiText = useUiText();
   const { t } = useI18n();
   // ควบคุม tab เอง (เดิม uncontrolled, default "แชท" เสมอ) เพื่อรองรับ deep-link ?tab=notes
   // จาก mention notification — ใช้ initialTab แค่ตอนเปิดแชทนี้ครั้งแรก ไม่บังคับทับถ้า staff สลับแท็บเอง
@@ -1052,7 +1028,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     onCompleted: (d: any) => {
       const r = d?.bmsSendMessage;
       if (r?.status === "SENT") {
-        message.success(r.message);
+        (r.needsReview || !r.delivered ? message.warning : message.success)(r.message);
         setReply("");
         setDraftAttachment(null);
         onChanged();
@@ -1067,7 +1043,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const [retry, { loading: retrying }] = useMutation(M_RETRY, {
     onCompleted: (d: any) => {
       const r = d?.bmsRetryMessage;
-      if (r?.status === "SENT") { (r.delivered ? message.success : message.warning)(r.message); onChanged(); }
+      if (r?.status === "SENT") { (r.needsReview || !r.delivered ? message.warning : message.success)(r.message); onChanged(); }
       else onErr({ message: r?.message });
     }, onError: onErr,
   });
@@ -1361,6 +1337,8 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   // OUT only: Meta webhooks can advance SENT → DELIVERED → READ.
   const statusNode = (m: Msg) => {
     if (m.direction !== "OUT" || !m.status) return null;
+    if (m.status === "PENDING") return <>{" · "}<span>{t("admin_inbox.send_pending_label")}</span></>;
+    if (m.status === "PARTIAL") return <>{" · "}<span style={{ color: "#d48806" }}>{t("admin_inbox.send_partial_label")}</span></>;
     if (m.status === "FAILED") return (
       <>{" · "}<span style={{ color: "#ff4d4f" }}>✗ {t("admin_inbox.send_failed_label")}</span>{" "}
         <Button type="link" size="small" style={{ padding: 0, height: "auto", fontSize: 11 }}
@@ -1494,7 +1472,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       ? `${Number(coupon.value).toLocaleString("th-TH")}%`
       : `${Number(coupon.value).toLocaleString("th-TH")} บาท`;
   const couponExpiresText = (expiresAt?: string | null) =>
-    expiresAt ? new Date(expiresAt).toLocaleDateString("th-TH", { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }) : "ไม่มีกำหนด";
+    expiresAt ? new Date(expiresAt).toLocaleDateString(uiText.locale, { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }) : "ไม่มีกำหนด";
   const insertCouponIntoChat = (coupon: CouponPickerItem) => {
     const usageLeft = coupon.maxRedemptions == null ? "ไม่จำกัดจำนวนครั้ง" : `เหลือ ${Math.max(0, coupon.maxRedemptions - coupon.redemptionsCount).toLocaleString("th-TH")} ครั้ง`;
     const minOrder = coupon.minOrderAmount ? `${Number(coupon.minOrderAmount).toLocaleString("th-TH")} บาท` : "ไม่มีขั้นต่ำ";
@@ -1594,7 +1572,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       content = (
         <div className={`${cardClass} ${messageStyles.mediaCard}`} data-message-kind="image">
           <button type="button" className={messageStyles.imageButton} onClick={openImage} aria-label={t("admin_inbox.view_image_aria", { name: m.attachment.name || t("admin_inbox.preview_image") })}>
-            <img src={m.attachment.url} alt={m.attachment.name || "image"} />
+            <img src={m.attachment.url} alt={m.attachment.name || uiText("admin_ui.en_image_0e762")} />
           </button>
           <div className={messageStyles.mediaFooter}>
             <div className={messageStyles.mediaCaption}>{m.body || m.attachment.name || t("admin_inbox.preview_image")}</div>
@@ -1605,7 +1583,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
         </div>
       );
     } else if (m.attachment) {
-      const kind = fileKind(m.attachment);
+      const kind = fileKind(m.attachment, uiText);
       content = (
         <div className={`${cardClass} ${messageStyles.fileCard}`} data-message-kind="file">
           <div className={`${messageStyles.fileIcon} ${kind.pdf ? messageStyles.pdfIcon : ""}`} aria-hidden="true">
@@ -1630,7 +1608,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       <div key={`m-${m.id}`} className={rowClass} style={{ maxWidth: isMobile ? "94%" : "62%" }}>
         {content}
         <Typography.Text type="secondary" className={messageStyles.meta}>
-          {m.sender} · {timeLabel(m.createdAt)}{statusNode(m)}
+          {m.sender} · {timeLabel(m.createdAt, uiText)}{statusNode(m)}
         </Typography.Text>
       </div>
     );
@@ -1645,13 +1623,13 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       feedNodes.push(
         <div key={`d-${key}`} style={{ alignSelf: "center", margin: "4px 0" }}>
           <span style={{ fontSize: 11, color: "var(--app-muted, #888)", background: "rgba(148,163,184,0.16)", padding: "2px 10px", borderRadius: 10 }}>
-            {dayLabel(item.at, t)}
+            {dayLabel(item.at, t, uiText)}
           </span>
         </div>
       );
     }
-    if (item.t === "start") feedNodes.push(centerRow("start", <>{t("admin_inbox.conversation_start_label", { channel: conv.channel })} · {timeLabel(item.at)}</>));
-    else if (item.t === "event") feedNodes.push(centerRow(`e-${item.ev.id}`, <>{eventIcon(item.ev.kind)} {eventText(item.ev, t)} · {timeLabel(item.at)}</>));
+    if (item.t === "start") feedNodes.push(centerRow("start", <>{t("admin_inbox.conversation_start_label", { channel: conv.channel })} · {timeLabel(item.at, uiText)}</>));
+    else if (item.t === "event") feedNodes.push(centerRow(`e-${item.ev.id}`, <>{eventIcon(item.ev.kind)} {eventText(item.ev, t)} · {timeLabel(item.at, uiText)}</>));
     else feedNodes.push(renderMsg(item.msg));
   }
 
@@ -1749,6 +1727,9 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       {/* กล่องพิมพ์ — ปักล่างสุด + toolbar */}
       {can("inbox.reply") && (
         <div style={{ borderTop: "1px solid var(--app-border, #303030)", paddingTop: 8, marginTop: 6, flexShrink: 0 }}>
+          {!conv.supportsOutboundPush && (
+            <Alert closable type="warning" showIcon message={t("admin_inbox.save_only_notice")} style={{ marginBottom: 8 }} />
+          )}
           <input ref={imgInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onPickFile} />
           <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={onPickFile} />
           <Modal
@@ -1948,7 +1929,8 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
               onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); submitReply(); } }}
             />
             <Button type="primary" icon={<SendOutlined />} loading={sending} disabled={uploading || (!reply.trim() && !draftAttachment)}
-              style={{ minWidth: isMobile ? 40 : 60, fontSize: 12, fontWeight: 700, borderRadius: 8 }} onClick={submitReply}>{isMobile ? "" : t("admin_inbox.send_button")}</Button>
+              aria-label={conv.supportsOutboundPush ? t("admin_inbox.send_button") : t("admin_inbox.save_only_button")}
+              style={{ minWidth: isMobile ? 40 : 60, fontSize: 12, fontWeight: 700, borderRadius: 8 }} onClick={submitReply}>{isMobile ? "" : conv.supportsOutboundPush ? t("admin_inbox.send_button") : t("admin_inbox.save_only_button")}</Button>
           </div>
         </div>
       )}
@@ -2030,7 +2012,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
       <List size="small" dataSource={conv.notes || []} locale={{ emptyText: t("admin_inbox.no_notes_yet") }}
         renderItem={(n: Note) => (
           <List.Item>
-            <List.Item.Meta title={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{n.author} · {dayLabel(n.createdAt, t)} {timeLabel(n.createdAt)}</Typography.Text>} description={renderNoteBody(n.body)} />
+            <List.Item.Meta title={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{n.author} · {dayLabel(n.createdAt, t, uiText)} {timeLabel(n.createdAt, uiText)}</Typography.Text>} description={renderNoteBody(n.body)} />
           </List.Item>
         )} />
     </div>
@@ -2081,7 +2063,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                       <span>{Number(o.total_amount).toLocaleString()} ฿</span>
                     </Space>
                   }
-                  description={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{new Date(o.created_at).toLocaleString()}</Typography.Text>}
+                  description={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{new Date(o.created_at).toLocaleString(uiText.locale)}</Typography.Text>}
                 />
               </List.Item>
             )}
@@ -2129,14 +2111,14 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
               {showDay && (
                 <div style={{ textAlign: "center", margin: "10px 0 8px" }}>
                   <Typography.Text type="secondary" style={{ fontSize: 11.5, background: "rgba(0,0,0,0.04)", padding: "2px 10px", borderRadius: 10 }}>
-                    {dayLabel(row.at, t)}
+                    {dayLabel(row.at, t, uiText)}
                   </Typography.Text>
                 </div>
               )}
               <div style={{ position: "relative", borderInlineStart: "1px solid rgba(0,0,0,0.08)", marginInlineStart: 5, paddingInlineStart: 14, paddingBottom: 12 }}>
                 <span style={{ position: "absolute", inlineSize: 9, blockSize: 9, borderRadius: "50%", background: dot, insetInlineStart: -5, insetBlockStart: 5 }} />
                 <Space size={4} wrap style={{ lineHeight: 1.4 }}>
-                  <Typography.Text type="secondary" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}>{timeLabel(row.at)}</Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}>{timeLabel(row.at, uiText)}</Typography.Text>
                   <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>{meta.label}</Tag>
                   {isOrder && row.channel && (
                     <Tag color={crossChannel ? CHANNEL_COLOR[row.channel] || "default" : "default"} style={{ marginInlineEnd: 0 }}>
@@ -2153,7 +2135,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                       {row.status && (
                         <Typography.Text type="secondary" style={{ fontSize: 11.5 }}>
                           {t("admin_inbox.status_now_label")} <Typography.Text style={{ fontSize: 11.5 }}>{row.status}</Typography.Text>
-                          {row.statusAt ? ` · ${dayLabel(row.statusAt, t)} ${timeLabel(row.statusAt)}` : ""}
+                          {row.statusAt ? ` · ${dayLabel(row.statusAt, t, uiText)} ${timeLabel(row.statusAt, uiText)}` : ""}
                         </Typography.Text>
                       )}
                     </Space>
@@ -2264,7 +2246,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
                   fontSize: 10.5, fontWeight: 600, color: "rgba(255,255,255,0.9)",
                   background: "rgba(8,13,24,0.55)", backdropFilter: "blur(6px)", borderRadius: 999, padding: "4px 10px",
                 }}>
-                  {chatImages[imagePreviewIndex].sender} · {timeLabel(chatImages[imagePreviewIndex].createdAt)}
+                  {chatImages[imagePreviewIndex].sender} · {timeLabel(chatImages[imagePreviewIndex].createdAt, uiText)}
                 </div>
               </div>
               <Button

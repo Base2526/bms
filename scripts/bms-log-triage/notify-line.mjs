@@ -1,4 +1,6 @@
 // =============================================================
+
+import { redactLogReportText } from "./report-format.mjs";
 // BMS log triage — LINE notification (Messaging API push)
 // -------------------------------------------------------------
 // แจ้งเตือนทีมผ่าน LINE เมื่อ triage เปิด draft PR
@@ -32,11 +34,11 @@ try {
     body: JSON.stringify({ to, messages: [{ type: "text", text: message.slice(0, 4900) }] }),
   });
   if (!resp.ok) {
-    console.error(`⚠️ LINE push failed ${resp.status}: ${await resp.text()}`);
+    console.error(`⚠️ LINE push failed ${resp.status}: ${redactLogReportText(await resp.text(), 500)}`);
     process.exit(0); // ไม่ fail workflow เพราะแจ้งเตือนพลาด
   }
   console.log("✅ LINE notified");
 } catch (e) {
-  console.error("⚠️ LINE push error:", e?.message || e);
+  console.error("⚠️ LINE push error:", redactLogReportText(e?.message || e, 500));
   process.exit(0);
 }

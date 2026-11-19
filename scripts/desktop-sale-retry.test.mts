@@ -1,3 +1,5 @@
+import { createPosTranslator } from "../apps/web/i18n/posClient.ts";
+const posText = createPosTranslator("th");
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -22,7 +24,7 @@ function harness(options: { scan?: () => Promise<boolean>; responses?: unknown[]
   const benefits = { member: { name: "FAKE Member" } as { name: string } | null };
   let sequence = 0;
   const responses = [...(options.responses ?? [{ bmsPosSale: { status: "SOLD", orderId: "FAKE-order" } }])];
-  const deps = {
+  const deps = { posText,
     cashier: { id: "FAKE-cashier" }, busy: false, canConfirmPayment: true, boardGameCheckout: null,
     cart: [{}], token: "FAKE-token", POS_SALE_MUTATION: "sale", saleAttemptRef: attempt, saleSubmittingRef: submitting,
     benefits, displayMemberName,
@@ -192,8 +194,8 @@ test("leaving checkout or changing cashier cannot discard an unresolved payment"
   const end = source.indexOf("  const legacy =", start);
   const js = ts.transpileModule(source.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   for (const flags of [[false, false, false], [true, false, false], [false, true, false], [false, false, true]]) {
-    const guard = new Function("useCallback", "saleSubmittingRef", "saleAttemptRef", "receiptPrintingRef", "setError",
-      `${js};return paymentNavigationBlocked;`)((fn: unknown) => fn, { current: flags[0] }, { current: flags[1] }, { current: flags[2] }, () => {});
+    const guard = new Function("posText", "useCallback", "saleSubmittingRef", "saleAttemptRef", "receiptPrintingRef", "setError",
+      `${js};return paymentNavigationBlocked;`)(posText, (fn: unknown) => fn, { current: flags[0] }, { current: flags[1] }, { current: flags[2] }, () => {});
     assert.equal(guard(), flags.some(Boolean));
   }
   for (const name of ["legacy", "openModule", "unpair", "signOutCashier", "backFromCheckout"]) {

@@ -395,7 +395,7 @@ test("unsupported owner questions have deterministic bilingual boundaries withou
   assert.equal(boardGameUnsupportedOwnerReply("กำไรสุทธิ", "/admin/products"), null);
   assert.match(boardGameUnsupportedOwnerReply("แล้วคืนทุนหรือยัง", "/admin/assistant", "th", ["เกมบอร์ดเกมนี้ราคาเท่าไร"])!, /ยังไม่รองรับ/);
   const source = readFileSync(new URL("../apps/web/graphql/bmsAssistant.ts", import.meta.url), "utf8");
-  assert.ok(source.indexOf("if (unsupportedBoardGame)") < source.indexOf("const loop = await runToolLoop"));
+  assert.ok(source.indexOf("if (unsupportedBoardGame)") < source.indexOf("loop = await runToolLoop"));
   assert.match(source, /BOARD_GAME_OWNER_LIMITS/);
 });
 

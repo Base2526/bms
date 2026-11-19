@@ -14,6 +14,7 @@ export const PUBLIC_MARKETING_PATHS = [
   "/board-game",
   "/retail-local",
   "/demo",
+  "/features",
   "/about",
   "/ai-business-system",
   "/help",

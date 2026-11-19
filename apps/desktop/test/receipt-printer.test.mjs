@@ -80,7 +80,8 @@ test("printer bridge accepts only paired cashier main frames", () => {
     assert.equal(isReceiptPrinterCaller(event, window, "https://shop.example"), true);
   }
   for (const url of ["https://other.example/pos", "https://shop.example/pos/display",
-    "https://shop.example/pos/manual", "https://shop.example/admin", "file:///setup.html"]) {
+    "https://shop.example/pos/manual", "https://shop.example/pos/queue-board",
+    "https://shop.example/admin", "file:///setup.html"]) {
     frame.url = url;
     assert.equal(isReceiptPrinterCaller(event, window, "https://shop.example"), false);
   }

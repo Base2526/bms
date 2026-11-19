@@ -60,55 +60,19 @@ export function insertCommentIntoTree(
   return deepInsert(prevComments);
 }
 
-export function formatTimeAgo(createdAt: any) {
-  if (!createdAt) return '';
-
-  // parse timestamp
-  const timestamp = typeof createdAt === 'string'
-    ? Date.parse(createdAt)
-    : createdAt;
-
-  const date = new Date(timestamp);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-
-  // ===== FUTURE TIME (diffMs < 0) =====
-  if (diffMs < 0) {
-    const sec = Math.floor(Math.abs(diffMs) / 1000);
-    if (sec < 60) return 'in a few seconds';
-
-    const min = Math.floor(sec / 60);
-    if (min < 60) return `in ${min} minute${min > 1 ? 's' : ''}`;
-
-    const hour = Math.floor(min / 60);
-    if (hour < 24) return `in ${hour} hour${hour > 1 ? 's' : ''}`;
-
-    const day = Math.floor(hour / 24);
-    if (day < 30) return `in ${day} day${day > 1 ? 's' : ''}`;
-
-    const month = Math.floor(day / 30);
-    if (month < 12) return `in ${month} month${month > 1 ? 's' : ''}`;
-
-    const year = Math.floor(month / 12);
-    return `in ${year} year${year > 1 ? 's' : ''}`;
-  }
-
-  // ===== PAST TIME =====
-  const sec = Math.floor(diffMs / 1000);
-  if (sec < 60) return 'just now';
-
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} minute${min > 1 ? 's' : ''} ago`;
-
-  const hour = Math.floor(min / 60);
-  if (hour < 24) return `${hour} hour${hour > 1 ? 's' : ''} ago`;
-
-  const day = Math.floor(hour / 24);
-  if (day < 30) return `${day} day${day > 1 ? 's' : ''} ago`;
-
-  const month = Math.floor(day / 30);
-  if (month < 12) return `${month} month${month > 1 ? 's' : ''} ago`;
-
-  const year = Math.floor(month / 12);
-  return `${year} year${year > 1 ? 's' : ''} ago`;
+/** Relative operator time; stored timestamps and the comment body remain unchanged. */
+export function formatTimeAgo(createdAt: string | number | Date | null | undefined, language: "th" | "en" = "en", now = Date.now()) {
+  if (createdAt === null || createdAt === undefined || createdAt === "") return "";
+  const timestamp = new Date(createdAt).getTime();
+  if (!Number.isFinite(timestamp)) return "";
+  const seconds = Math.abs(now - timestamp) / 1000;
+  const direction = timestamp > now ? 1 : -1;
+  const formatter = new Intl.RelativeTimeFormat(language === "th" ? "th-TH" : "en-GB", { numeric: "auto" });
+  if (seconds < 60) return formatter.format(0, "second");
+  const units: Array<[number, Intl.RelativeTimeFormatUnit]> = [
+    [60, "minute"], [3600, "hour"], [86400, "day"], [2592000, "month"], [31104000, "year"],
+  ];
+  const index = units.findIndex(([size], i) => i === units.length - 1 || seconds < units[i + 1][0]);
+  const [size, unit] = units[index];
+  return formatter.format(direction * Math.floor(seconds / size), unit);
 }

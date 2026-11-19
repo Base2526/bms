@@ -62,13 +62,12 @@ type FileRow = {
   mimetype: string | null;
   size: number;
   checksum: string;
-  relpath: string;
   created_at: string;
   updated_at: string;
 };
 
 type LogRow = {
-  id: number;
+  id: string | number;
   level: 'debug' | 'info' | 'warn' | 'error' | string;
   category: string;
   message: string;
@@ -80,7 +79,7 @@ type LogRow = {
 /* ================= GraphQL ================= */
 
 // Users
-const Q_USERS = gql`query($search:String){ users(search:$search){ id name email phone role created_at avatar } }`;
+const Q_USERS = gql`query($search:String){ users(search:$search){ items { id name email phone role created_at avatar } total } }`;
 const Q_USER  = gql`query($id:ID!){ user(id:$id){ id name email phone avatar role } }`;
 const M_DELETE_USER = gql`mutation($id:ID!){ deleteUser(id:$id) }`;
 const M_UPSERT_USER = gql`mutation($id:ID, $data:UserInput!){ upsertUser(id:$id, data:$data){ id } }`;
@@ -306,7 +305,7 @@ function UsersList({ onNew, onEdit }: { onNew: () => void; onEdit: (id: string) 
     >
       <Table
         rowKey="id"
-        dataSource={data?.users || []}
+        dataSource={data?.users?.items || []}
         columns={cols as any}
         pagination={{ pageSize: 10, showSizeChanger: true }}
         scroll={{ x: 'max-content' }}
@@ -853,7 +852,7 @@ function LogsPanel() {
     if (level) qs.set('level', level);
     if (category) qs.set('category', category);
     if (q) qs.set('q', q);
-    const res = await fetch('/api/logs?' + qs.toString(), { method: 'DELETE' });
+    const res = await fetch('/api/logs?' + qs.toString(), { method: 'DELETE', headers: { 'x-bms-confirmed': 'true' } });
     const j = await res.json();
     if (res.ok) { message.success(`Deleted ${j.deleted} logs`); load(); } else { message.error(j.error || 'Purge failed'); }
   }

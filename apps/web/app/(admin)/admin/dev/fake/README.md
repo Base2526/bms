@@ -2,7 +2,8 @@
 > โค้ดตัวอย่างข้างล่างล้าสมัยแล้วหลายจุด — อย่า copy ไปใช้ตรง ๆ โดยเฉพาะ:
 >
 > - guard ในตัวอย่างคือ `requireAdminOrInternal(req)` ซึ่ง **ผ่านทุก role ที่ล็อกอิน** · ของจริงตอนนี้
->   ทุก route ใช้ `await requirePlatformAdminSeeder()` (platform admin เท่านั้น) และหน้าเว็บถูกกันด้วย
+>   ทุก route ใช้ `await requirePlatformAdminSeeder()` ซึ่งตรวจ session ที่ยังใช้งานได้,
+>   role ปัจจุบัน และ platform admin จากฐานข้อมูลก่อนเริ่มสร้าง/ลบข้อมูล หน้าเว็บถูกกันด้วย
 >   `layout.tsx` → `requirePlatformAdminPage()`
 > - `DELETE FROM posts WHERE fake_test = true` ในตัวอย่างไม่มี tenant scope · ของจริง scope ผ่าน
 >   `author_id` → `users.tenant_id` แล้ว

@@ -62,9 +62,29 @@ const pool = process.env.NODE_ENV === "production"
   ? createPool()
   : (databaseGlobal.__bmsPostgresPool ??= createPool());
 
-function formatParams(params?: any[]): string {
+function formatParamMetadata(params?: any[]): string {
   if (!params) return "";
-  return params.map((p, i) => `$${i + 1}=${JSON.stringify(p)}`).join(", ");
+  return params.map((value, index) => {
+    let shape: string;
+    if (value === null || value === undefined) shape = String(value);
+    else if (Buffer.isBuffer(value)) shape = `buffer(${value.byteLength}B)`;
+    else if (Array.isArray(value)) shape = `array(${value.length})`;
+    else if (typeof value === "string") shape = `string(${Buffer.byteLength(value, "utf8")}B)`;
+    else if (value instanceof Date) shape = "date";
+    else shape = typeof value;
+    return `$${index + 1}=<${shape}>`;
+  }).join(", ");
+}
+
+function formatDatabaseError(err: any): string {
+  const fields = [
+    err?.name,
+    err?.code ? `code=${err.code}` : null,
+    err?.constraint ? `constraint=${err.constraint}` : null,
+    err?.table ? `table=${err.table}` : null,
+    err?.column ? `column=${err.column}` : null,
+  ].filter(Boolean);
+  return fields.join(" ") || "DatabaseError";
 }
 
 export async function query<T extends QueryResultRow = QueryResultRow>(
@@ -77,7 +97,7 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
     return res;
   } catch (err: any) {
     console.error(
-      `[SQL ERROR] ${err.message}\n${text.trim()}\nParams: ${formatParams(params)}`
+      `[SQL ERROR] ${formatDatabaseError(err)}\n${text.trim()}\nParams: ${formatParamMetadata(params)}`
     );
     throw err;
   }

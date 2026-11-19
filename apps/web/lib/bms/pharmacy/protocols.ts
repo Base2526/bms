@@ -3,12 +3,13 @@
 // -------------------------------------------------------------
 // bms_pharmacy_protocols (db/migrations/7.58) is the data-driven source of
 // truth for the question/red-flag/completion/escalation rules
-// lib/bms/pharmacy/ruleEngine.ts walks. This file is plain CRUD over that
-// table — no clinical logic lives here.
+// lib/bms/pharmacy/ruleEngine.ts walks. Review and activation remain human
+// decisions, recorded with their audit in tenant-scoped transactions.
 // =============================================================
 
 import { query } from "@/lib/db";
 import { enabledPharmacyProtocolKeys } from "./config";
+import { auditPharmacyWriteInTx, withPharmacyWriteTx } from "./writeTx";
 import type {
   ProtocolCompletionRules,
   ProtocolConditionalQuestion,
@@ -243,21 +244,50 @@ export function validatePharmacyProtocolInput(input: UpsertPharmacyProtocolInput
 
 export async function upsertPharmacyProtocol(
   tenantId: string,
-  input: UpsertPharmacyProtocolInput
+  input: UpsertPharmacyProtocolInput,
+  actorId: string
 ): Promise<PharmacyProtocolRow> {
   input = validatePharmacyProtocolInput(input);
-  if (input.id) {
-    const res = await query(
-      `UPDATE bms_pharmacy_protocols
+  return withPharmacyWriteTx(tenantId, actorId, async (client) => {
+    if (input.id) {
+      const res = await client.query(
+        `UPDATE bms_pharmacy_protocols
           SET name = $3, supported_symptom_group = $4, display_label = $5, trigger_terms = $6,
               required_fields = $7::jsonb, conditional_questions = $8::jsonb, red_flag_rules = $9::jsonb,
               completion_rules = $10::jsonb, escalation_rules = $11::jsonb, updated_at = now()
         WHERE tenant_id = $1 AND id = $2 AND status = 'DRAFT' AND enabled = FALSE
         RETURNING *`,
+        [
+          tenantId,
+          input.id,
+          input.name,
+          input.supportedSymptomGroup,
+          input.displayLabel,
+          input.triggerTerms,
+          JSON.stringify(input.requiredFields),
+          JSON.stringify(input.conditionalQuestions),
+          JSON.stringify(input.redFlagRules),
+          JSON.stringify(input.completionRules),
+          JSON.stringify(input.escalationRules),
+        ]
+      );
+      if (!res.rowCount) throw new Error("แก้ไขได้เฉพาะ protocol สถานะ DRAFT ที่ยังไม่เปิดใช้");
+      const protocol = mapRow(res.rows[0]);
+      await auditPharmacyWriteInTx(client, tenantId, actorId, "pharmacy.protocol.draft_saved", `pharmacy_protocol:${protocol.id}`);
+      return protocol;
+    }
+    const res = await client.query(
+      `INSERT INTO bms_pharmacy_protocols
+       (tenant_id, protocol_key, name, version, supported_symptom_group, display_label, trigger_terms,
+        required_fields, conditional_questions, red_flag_rules, completion_rules, escalation_rules,
+        status, clinically_approved, enabled)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, 'DRAFT', FALSE, FALSE)
+     RETURNING *`,
       [
         tenantId,
-        input.id,
+        input.protocolKey,
         input.name,
+        input.version ?? 1,
         input.supportedSymptomGroup,
         input.displayLabel,
         input.triggerTerms,
@@ -268,104 +298,105 @@ export async function upsertPharmacyProtocol(
         JSON.stringify(input.escalationRules),
       ]
     );
-    if (!res.rowCount) throw new Error("แก้ไขได้เฉพาะ protocol สถานะ DRAFT ที่ยังไม่เปิดใช้");
-    return mapRow(res.rows[0]);
-  }
-  const res = await query(
-    `INSERT INTO bms_pharmacy_protocols
-       (tenant_id, protocol_key, name, version, supported_symptom_group, display_label, trigger_terms,
-        required_fields, conditional_questions, red_flag_rules, completion_rules, escalation_rules,
-        status, clinically_approved, enabled)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, 'DRAFT', FALSE, FALSE)
-     RETURNING *`,
-    [
-      tenantId,
-      input.protocolKey,
-      input.name,
-      input.version ?? 1,
-      input.supportedSymptomGroup,
-      input.displayLabel,
-      input.triggerTerms,
-      JSON.stringify(input.requiredFields),
-      JSON.stringify(input.conditionalQuestions),
-      JSON.stringify(input.redFlagRules),
-      JSON.stringify(input.completionRules),
-      JSON.stringify(input.escalationRules),
-    ]
-  );
-  return mapRow(res.rows[0]);
+    const protocol = mapRow(res.rows[0]);
+    await auditPharmacyWriteInTx(client, tenantId, actorId, "pharmacy.protocol.draft_saved", `pharmacy_protocol:${protocol.id}`);
+    return protocol;
+  });
 }
 
 /**
  * Enabling a protocol that hasn't been clinically approved is rejected
- * server-side — a pharmacist can review/toggle, but cannot flip a DRAFT
- * sample protocol "live" by accident. `clinically_approved` itself is not
- * settable through this function on purpose (see § MVP scope: no path sets
- * it true yet — that's a deliberate future review workflow, not this pass).
+ * server-side. Review sets clinically_approved, but never enables the row;
+ * activation is a separate authorized action after clinical approval.
  */
 export async function setPharmacyProtocolEnabled(
   tenantId: string,
   id: string,
-  enabled: boolean
+  enabled: boolean,
+  actorId: string
 ): Promise<PharmacyProtocolRow> {
-  let current: PharmacyProtocolRow | null = null;
-  if (enabled) {
-    current = await getPharmacyProtocol(tenantId, id);
-    if (!current) throw new Error("ไม่พบ protocol");
-    if (!current.clinicallyApproved || current.status !== "APPROVED") {
-      throw new Error("Protocol นี้ยังไม่ผ่านการรับรองทางคลินิก (clinically_approved=false) เปิดใช้งานไม่ได้");
-    }
-  }
-  const res = enabled && current
-    ? await query(
-        `WITH disabled AS (
-           UPDATE bms_pharmacy_protocols SET enabled = FALSE, updated_at = now()
-            WHERE tenant_id = $1 AND protocol_key = $3 AND id <> $2
-         )
-         UPDATE bms_pharmacy_protocols SET enabled = TRUE, updated_at = now()
-          WHERE tenant_id = $1 AND id = $2 RETURNING *`,
-        [tenantId, id, current.protocolKey]
-      )
-    : await query(
-        `UPDATE bms_pharmacy_protocols SET enabled = FALSE, updated_at = now()
-          WHERE tenant_id = $1 AND id = $2 RETURNING *`,
+  return withPharmacyWriteTx(tenantId, actorId, async (client) => {
+    if (enabled) {
+      const candidate = await client.query<{ protocol_key: string }>(
+        `SELECT protocol_key FROM bms_pharmacy_protocols WHERE tenant_id = $1 AND id = $2`,
         [tenantId, id]
       );
-  if (!res.rowCount) throw new Error("ไม่พบ protocol");
-  return mapRow(res.rows[0]);
+      if (!candidate.rowCount) throw new Error("ไม่พบ protocol");
+      // Serialise enables of different versions of the same protocol.
+      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+        [`pharmacy-protocol:${tenantId}:${candidate.rows[0].protocol_key}`]);
+      const current = await client.query<{ status: string; clinically_approved: boolean; protocol_key: string }>(
+        `SELECT status, clinically_approved, protocol_key FROM bms_pharmacy_protocols
+          WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+        [tenantId, id]
+      );
+      if (!current.rowCount || current.rows[0].protocol_key !== candidate.rows[0].protocol_key) {
+        throw new Error("ไม่พบ protocol");
+      }
+      if (current.rows[0].status !== "APPROVED" || current.rows[0].clinically_approved !== true) {
+        throw new Error("Protocol นี้ยังไม่ผ่านการรับรองทางคลินิก (clinically_approved=false) เปิดใช้งานไม่ได้");
+      }
+      await client.query(
+        `UPDATE bms_pharmacy_protocols SET enabled = FALSE, updated_at = now()
+          WHERE tenant_id = $1 AND protocol_key = $2 AND id <> $3 AND enabled = TRUE`,
+        [tenantId, current.rows[0].protocol_key, id]
+      );
+    }
+    const res = await client.query(
+      `UPDATE bms_pharmacy_protocols SET enabled = $3, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2
+          AND ($3 = FALSE OR (status = 'APPROVED' AND clinically_approved = TRUE))
+        RETURNING *`,
+      [tenantId, id, enabled]
+    );
+    if (!res.rowCount) throw new Error("ไม่พบ protocol ที่เปิดใช้งานได้");
+    const protocol = mapRow(res.rows[0]);
+    await auditPharmacyWriteInTx(client, tenantId, actorId, enabled ? "pharmacy.protocol.enabled" : "pharmacy.protocol.disabled", `pharmacy_protocol:${id}`);
+    return protocol;
+  });
 }
 
-export async function submitPharmacyProtocolForReview(tenantId: string, id: string): Promise<PharmacyProtocolRow> {
-  const current = await getPharmacyProtocol(tenantId, id);
-  if (!current || current.status !== "DRAFT") throw new Error("ส่งตรวจได้เฉพาะ protocol สถานะ DRAFT");
-  validatePharmacyProtocolInput({
-    id: current.id,
-    protocolKey: current.protocolKey,
-    name: current.name,
-    version: current.version,
-    supportedSymptomGroup: current.supportedSymptomGroup,
-    displayLabel: current.displayLabel,
-    triggerTerms: current.triggerTerms,
-    requiredFields: current.requiredFields,
-    conditionalQuestions: current.conditionalQuestions,
-    redFlagRules: current.redFlagRules,
-    completionRules: current.completionRules,
-    escalationRules: current.escalationRules,
+export async function submitPharmacyProtocolForReview(tenantId: string, id: string, actorId: string): Promise<PharmacyProtocolRow> {
+  return withPharmacyWriteTx(tenantId, actorId, async (client) => {
+    // Two different drafts may have overlapping terms; inspect them under one tenant lock.
+    await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`pharmacy-trigger-review:${tenantId}`]);
+    const currentResult = await client.query(
+      `SELECT * FROM bms_pharmacy_protocols WHERE tenant_id = $1 AND id = $2 AND status = 'DRAFT' FOR UPDATE`,
+      [tenantId, id]
+    );
+    if (!currentResult.rowCount) throw new Error("ส่งตรวจได้เฉพาะ protocol สถานะ DRAFT");
+    const current = mapRow(currentResult.rows[0]);
+    validatePharmacyProtocolInput({
+      id: current.id,
+      protocolKey: current.protocolKey,
+      name: current.name,
+      version: current.version,
+      supportedSymptomGroup: current.supportedSymptomGroup,
+      displayLabel: current.displayLabel,
+      triggerTerms: current.triggerTerms,
+      requiredFields: current.requiredFields,
+      conditionalQuestions: current.conditionalQuestions,
+      redFlagRules: current.redFlagRules,
+      completionRules: current.completionRules,
+      escalationRules: current.escalationRules,
+    });
+    const collision = await client.query<{ protocol_key: string }>(
+      `SELECT protocol_key FROM bms_pharmacy_protocols
+        WHERE tenant_id = $1 AND id <> $2 AND protocol_key <> $4 AND status <> 'RETIRED'
+          AND trigger_terms && $3::text[] LIMIT 1`,
+      [tenantId, id, current.triggerTerms, current.protocolKey]
+    );
+    if (collision.rows[0]) throw new Error(`triggerTerms ซ้ำกับ protocol: ${collision.rows[0].protocol_key}`);
+    const res = await client.query(
+      `UPDATE bms_pharmacy_protocols SET status = 'PENDING_REVIEW', enabled = FALSE, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND status = 'DRAFT' RETURNING *`,
+      [tenantId, id]
+    );
+    if (!res.rowCount) throw new Error("ส่งตรวจได้เฉพาะ protocol สถานะ DRAFT");
+    const protocol = mapRow(res.rows[0]);
+    await auditPharmacyWriteInTx(client, tenantId, actorId, "pharmacy.protocol.review_requested", `pharmacy_protocol:${id}`);
+    return protocol;
   });
-  const collision = await query<{ protocol_key: string }>(
-    `SELECT protocol_key FROM bms_pharmacy_protocols
-      WHERE tenant_id = $1 AND id <> $2 AND protocol_key <> $4 AND status <> 'RETIRED'
-        AND trigger_terms && $3::text[] LIMIT 1`,
-    [tenantId, id, current.triggerTerms, current.protocolKey]
-  );
-  if (collision.rows[0]) throw new Error(`triggerTerms ซ้ำกับ protocol: ${collision.rows[0].protocol_key}`);
-  const res = await query(
-    `UPDATE bms_pharmacy_protocols SET status = 'PENDING_REVIEW', enabled = FALSE, updated_at = now()
-      WHERE tenant_id = $1 AND id = $2 AND status = 'DRAFT' RETURNING *`,
-    [tenantId, id]
-  );
-  if (!res.rowCount) throw new Error("ส่งตรวจได้เฉพาะ protocol สถานะ DRAFT");
-  return mapRow(res.rows[0]);
 }
 
 export async function reviewPharmacyProtocol(
@@ -374,22 +405,26 @@ export async function reviewPharmacyProtocol(
   reviewerId: string,
   decision: "APPROVE" | "REJECT"
 ): Promise<PharmacyProtocolRow> {
-  const licensed = await query<{ ok: boolean }>(
-    `SELECT public.bms_is_licensed_pharmacist($1, $2) AS ok`,
-    [tenantId, reviewerId]
-  );
-  if (licensed.rows[0]?.ok !== true) throw new Error("ผู้อนุมัติต้องเป็นเภสัชกรที่มีใบประกอบวิชาชีพ");
-  const approved = decision === "APPROVE";
-  const res = await query(
-    `UPDATE bms_pharmacy_protocols
-        SET status = $4, clinically_approved = $5, enabled = FALSE,
-            reviewed_by = $3, reviewed_at = now(), updated_at = now()
-      WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING_REVIEW'
-      RETURNING *`,
-    [tenantId, id, reviewerId, approved ? "APPROVED" : "DRAFT", approved]
-  );
-  if (!res.rowCount) throw new Error("ตรวจได้เฉพาะ protocol สถานะ PENDING_REVIEW");
-  return mapRow(res.rows[0]);
+  return withPharmacyWriteTx(tenantId, reviewerId, async (client) => {
+    const licensed = await client.query<{ ok: boolean }>(
+      `SELECT ok FROM public.bms_lock_guidance_pharmacist_license($1, $2)`,
+      [tenantId, reviewerId]
+    );
+    if (licensed.rows[0]?.ok !== true) throw new Error("ผู้อนุมัติต้องเป็นเภสัชกรที่มีใบประกอบวิชาชีพ");
+    const approved = decision === "APPROVE";
+    const res = await client.query(
+      `UPDATE bms_pharmacy_protocols
+          SET status = $4, clinically_approved = $5, enabled = FALSE,
+              reviewed_by = $3, reviewed_at = now(), updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING_REVIEW'
+        RETURNING *`,
+      [tenantId, id, reviewerId, approved ? "APPROVED" : "DRAFT", approved]
+    );
+    if (!res.rowCount) throw new Error("ตรวจได้เฉพาะ protocol สถานะ PENDING_REVIEW");
+    const protocol = mapRow(res.rows[0]);
+    await auditPharmacyWriteInTx(client, tenantId, reviewerId, `pharmacy.protocol.${decision.toLowerCase()}`, `pharmacy_protocol:${id}`);
+    return protocol;
+  });
 }
 
 export type PharmacyTriggerDefinition = { protocolKey: string; displayLabel: string; triggerTerms: string[] };

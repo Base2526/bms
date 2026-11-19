@@ -12,7 +12,7 @@ import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
 import { verifyLineSignature } from "@/lib/bms/crypto";
 import { rateLimit } from "@/lib/bms/rateLimit";
-import { logConversation, notifyInboxConversationChanged, logInboundMessage, type Attachment } from "@/lib/bms/inbox";
+import { logConversation, notifyInboxConversationChanged, logInboundMessage, recordAiReplyDelivery, type Attachment, type ChannelDeliveryResult } from "@/lib/bms/inbox";
 import { fallbackEvidenceQuality } from "@/lib/bms/customerAnswerEvidence";
 import { persistBuffer, buildFileUrlById } from "@/lib/storage";
 import { syncLineBotInfo, syncLineUserProfile } from "@/lib/bms/lineProfile";
@@ -26,9 +26,10 @@ import {
   recordOutboundError,
   formatOutboundErrorDetail,
 } from "@/lib/bms/channelHealth";
-import { claimInboundEvent } from "@/lib/bms/inboundEvents";
+import { claimInboundEvent, releaseUnprocessedInboundEvent } from "@/lib/bms/inboundEvents";
 import { reportBmsFailure } from "@/lib/bms/failureAlert";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { readBoundedBodyBytes, readBoundedWebhookText } from "@/lib/bms/webhookBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,6 +61,7 @@ const LINE_MEDIA_DEFAULTS: Record<string, { mimeType: string; extension: string;
   file: { mimeType: "application/octet-stream", extension: "bin", label: "ไฟล์จาก LINE" },
 };
 const LINE_INBOUND_MAX_BYTES = 10 * 1024 * 1024;
+const LINE_WEBHOOK_MAX_BYTES = 1024 * 1024;
 
 type LineChannelConfig = NonNullable<Awaited<ReturnType<typeof getChannel>>>;
 
@@ -78,7 +80,8 @@ function lineInboundBody(message: NonNullable<LineEvent["message"]>, hasAttachme
   }
   if (hasAttachment) return "";
   const defaults = LINE_MEDIA_DEFAULTS[message.type];
-  return defaults ? `[${defaults.label}]` : `[ข้อความ LINE ชนิด ${message.type}]`;
+  return defaults ? `[${defaults.label}: ดาวน์โหลดไฟล์ไม่สำเร็จ กรุณาขอให้ลูกค้าส่งใหม่]`
+    : `[ข้อความ LINE ชนิด ${message.type}]`;
 }
 
 async function fetchLineInboundAttachment(
@@ -93,10 +96,9 @@ async function fetchLineInboundAttachment(
       headers: { authorization: `Bearer ${accessToken}` },
     });
     if (!resp.ok) return null;
-    const len = Number(resp.headers.get("content-length") || "0");
-    if (Number.isFinite(len) && len > LINE_INBOUND_MAX_BYTES) return null;
-    const buf = Buffer.from(await resp.arrayBuffer());
-    if (buf.length > LINE_INBOUND_MAX_BYTES) return null;
+    const media = await readBoundedBodyBytes(resp, LINE_INBOUND_MAX_BYTES);
+    if (!media.ok) return null;
+    const buf = Buffer.from(media.bytes);
     const mimeType = resp.headers.get("content-type")?.split(";", 1)[0]?.trim() || defaults.mimeType;
     const filename = message.fileName || `line-${message.type}-${message.id}.${defaults.extension}`;
     const row = await persistBuffer(buf, filename, mimeType, "private", tenantId);
@@ -113,7 +115,7 @@ async function pushLineReply(
   replyToken: string,
   text: string,
   customerRef?: string | null
-) {
+): Promise<ChannelDeliveryResult> {
   try {
     const resp = await fetch("https://api.line.me/v2/bot/message/reply", {
       method: "POST",
@@ -121,10 +123,11 @@ async function pushLineReply(
       body: JSON.stringify({ replyToken, messages: [{ type: "text", text }] }),
     });
     if (resp.ok) {
-      await recordOutboundSuccess(tenantId, "line");
+      await recordLineHealthBestEffort(tenantId, () => recordOutboundSuccess(tenantId, "line"));
+      return { delivered: true, providerMessageIds: [] };
     } else {
       const detail = formatOutboundErrorDetail(resp, await resp.text().catch(() => ""));
-      await recordOutboundError(tenantId, "line", resp.status, detail);
+      await recordLineHealthBestEffort(tenantId, () => recordOutboundError(tenantId, "line", resp.status, detail));
       // channel health บอกได้แค่ว่า "ช่องทางส่งไม่ออก" — ต้องแจ้งร้านด้วยเพราะ
       // ลูกค้ารายนี้ไม่ได้รับคำตอบเลย และต้องมีคนตามส่งซ้ำให้
       await reportBmsFailure({
@@ -136,6 +139,7 @@ async function pushLineReply(
         customerRef: customerRef ?? null,
         meta: { httpStatus: resp.status },
       });
+      return { delivered: false, providerMessageIds: [] };
     }
   } catch (e) {
     const detail = e instanceof Error ? e.message : "LINE reply request failed";
@@ -149,6 +153,27 @@ async function pushLineReply(
       channel: "line",
       customerRef: customerRef ?? null,
     });
+    return { delivered: false, providerMessageIds: [], uncertain: true };
+  }
+}
+
+async function recordLineHealthBestEffort(tenantId: string, write: () => Promise<void>): Promise<void> {
+  try {
+    await write();
+  } catch (error) {
+    // Provider acceptance is authoritative; a failed health write must not offer a duplicate resend.
+    console.error("[BMS] LINE outbound health write failed:", { tenantId,
+      error: error instanceof Error ? error.message : "unknown error" });
+  }
+}
+
+async function recordLineReplyDelivery(tenantId: string, messageId: string | undefined, delivery: ChannelDeliveryResult): Promise<void> {
+  if (!messageId) return;
+  try {
+    await recordAiReplyDelivery(tenantId, messageId, delivery);
+  } catch (error) {
+    // A status write must never cause a second fallback reply after LINE accepted the first one.
+    console.error("[BMS] LINE reply delivery status write failed:", { tenantId, messageId, error });
   }
 }
 
@@ -188,14 +213,20 @@ async function processLineEvent(
   assistantMode: CustomerAssistantMode
 ): Promise<{ replyToken?: string | null; handled?: boolean; duplicate?: boolean; logged?: string; reply?: string; error?: string }> {
   if (ev.type !== "message" || !ev.message) return { replyToken: ev.replyToken, handled: false };
-  if (!(await claimInboundEvent(tenantId, "line", ev.message.id ?? ev.replyToken))) {
+  const userId = ev.source?.userId ?? null;
+  if (!userId) {
+    await reportBmsFailure({ tenantId, code: "channel.reply_failed", error: "LINE_SOURCE_USER_ID_MISSING",
+      surface: "customer", channel: "line", meta: { messageId: ev.message.id ?? null } });
+    return { replyToken: ev.replyToken, handled: false, error: "LINE_SOURCE_USER_ID_MISSING" };
+  }
+  const eventId = ev.message.id ?? ev.replyToken;
+  if (!(await claimInboundEvent(tenantId, "line", eventId))) {
     return { replyToken: ev.replyToken, duplicate: true, handled: true };
   }
 
-  const userId = ev.source?.userId ?? null;
   if (ev.message.type !== "text") {
     const attachment = await fetchLineInboundAttachment(tenantId, cfg.access_token, ev.message);
-    await logInboundMessage(tenantId, "line", userId, {
+    const savedConversationId = await logInboundMessage(tenantId, "line", userId, {
       body: lineInboundBody(ev.message, Boolean(attachment)),
       attachment,
       meta: {
@@ -211,6 +242,12 @@ async function processLineEvent(
         },
       },
     });
+    if (!savedConversationId) {
+      // No AI or provider action has run, so a LINE retry may safely try to
+      // persist this media event again. Do not acknowledge a lost Inbox turn.
+      await releaseUnprocessedInboundEvent(tenantId, "line", eventId);
+      throw new Error("LINE_INBOUND_PERSIST_FAILED");
+    }
     await refreshLineUserProfile(tenantId, userId, cfg.access_token);
     return { replyToken: ev.replyToken, logged: ev.message.type, handled: true };
   }
@@ -221,11 +258,17 @@ async function processLineEvent(
     const result = await runPipeline(text, "line", tenantId, userId, { assistantMode });
 
     // บันทึกลง inbox (เข้า+ออก) — best-effort
-    await logConversation(tenantId, "line", userId, text, result.reply, result.quality);
+    const persisted = await logConversation(tenantId, "line", userId, text, result.reply, result.quality);
 
     // ตอบกลับด้วย token ของร้าน (ถ้ามี)
-    if (cfg.access_token && ev.replyToken) {
-      await pushLineReply(tenantId, cfg.access_token, ev.replyToken, result.reply, userId);
+    const delivery = cfg.access_token && ev.replyToken
+      ? await pushLineReply(tenantId, cfg.access_token, ev.replyToken, result.reply, userId)
+      : { delivered: false, providerMessageIds: [] };
+    await recordLineReplyDelivery(tenantId, persisted?.outboundMessageId, delivery);
+    if (!cfg.access_token || !ev.replyToken) {
+      await reportBmsFailure({ tenantId, code: "channel.push_failed", error: "LINE_REPLY_CREDENTIAL_OR_TOKEN_UNAVAILABLE",
+        surface: "customer", channel: "line", customerRef: userId,
+        meta: { messageId: ev.message.id ?? null } });
     }
 
     // Best-effort LINE profile cache. This is intentionally after the
@@ -250,10 +293,11 @@ async function processLineEvent(
       customerRef: userId,
       meta: { messageId: ev.message?.id ?? null },
     });
-    await logConversation(tenantId, "line", userId, text, fallbackReply, fallbackEvidenceQuality(error, fallbackReply));
-    if (cfg.access_token && ev.replyToken) {
-      await pushLineReply(tenantId, cfg.access_token, ev.replyToken, fallbackReply, userId);
-    }
+    const persisted = await logConversation(tenantId, "line", userId, text, fallbackReply, fallbackEvidenceQuality(error, fallbackReply));
+    const delivery = cfg.access_token && ev.replyToken
+      ? await pushLineReply(tenantId, cfg.access_token, ev.replyToken, fallbackReply, userId)
+      : { delivered: false, providerMessageIds: [] };
+    await recordLineReplyDelivery(tenantId, persisted?.outboundMessageId, delivery);
     return {
       replyToken: ev.replyToken,
       reply: fallbackReply,
@@ -280,7 +324,9 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
   }
 
   // ต้องอ่าน raw body เพื่อ verify signature
-  const raw = await req.text();
+  const payload = await readBoundedWebhookText(req, LINE_WEBHOOK_MAX_BYTES);
+  if (!payload.ok) return NextResponse.json({ error: payload.error }, { status: payload.status });
+  const raw = payload.text;
   // fail-closed: channel active ต้องมี channel_secret เสมอ ไม่งั้นใครก็ปลอม request เข้ามาได้
   // (เดิมข้ามการ verify ไปเลยถ้าไม่มี secret — เป็นช่องโหว่ ไม่ใช่ fallback ที่ตั้งใจ)
   if (!cfg.channel_secret) {
@@ -293,14 +339,25 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
-  const body = (() => {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return {};
-    }
-  })() as { events?: LineEvent[] };
-  const events = Array.isArray(body.events) ? body.events : [];
+  let body: { events?: LineEvent[] };
+  try { body = JSON.parse(raw); }
+  catch { return NextResponse.json({ error: "invalid JSON payload" }, { status: 400 }); }
+  if (!body || typeof body !== "object" || !Array.isArray(body.events)) {
+    return NextResponse.json({ error: "events array required" }, { status: 400 });
+  }
+  const events = body.events;
+  if (events.length > 200) return NextResponse.json({ error: "too many events" }, { status: 413 });
+  if (events.some((ev) => {
+    if (!ev || typeof ev !== "object") return true;
+    if (ev.type !== "message") return false;
+    if (!ev.message || typeof ev.message !== "object" ||
+      (ev.message.type === "text" && typeof ev.message.text !== "string")) return true;
+    const eventId = ev.message.id ?? ev.replyToken;
+    return (typeof eventId !== "string" && typeof eventId !== "number") || !String(eventId).trim() ||
+      (ev.source?.userId != null && typeof ev.source.userId !== "string");
+  })) {
+    return NextResponse.json({ error: "invalid message event" }, { status: 400 });
+  }
 
   // The BMS prospect assistant is selected only from LINE's bot identity, never from
   // message content or a caller-provided tenant/body field. Refresh before processing so

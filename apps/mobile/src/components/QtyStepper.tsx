@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
@@ -21,6 +22,7 @@ export function QtyStepper({
   itemName,
   variant = 'solid',
 }: Props) {
+  usePosLanguage();
   const { colors, radius, typography, minTouchTarget } = useTheme();
   const solid = variant === 'solid';
 
@@ -34,7 +36,7 @@ export function QtyStepper({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={
-          qty > 1 ? `ลดจำนวน ${itemName}` : `เอา ${itemName} ออกจากตะกร้า`
+          qty > 1 ? posText("ลดจำนวน {v0}", { v0: itemName }) : posText("เอา {v0} ออกจากตะกร้า", { v0: itemName })
         }
         onPress={onDecrement}
         style={({ pressed }) => [
@@ -52,7 +54,7 @@ export function QtyStepper({
 
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`เพิ่มจำนวน ${itemName}`}
+        accessibilityLabel={posText("เพิ่มจำนวน {v0}", { v0: itemName })}
         onPress={onIncrement}
         style={({ pressed }) => [
           styles.btn,

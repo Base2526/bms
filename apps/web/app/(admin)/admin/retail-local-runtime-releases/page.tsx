@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -67,7 +69,7 @@ function formatBytes(value: number) {
   return `${(value / 1024 ** index).toFixed(index < 2 ? 1 : 2)} ${units[index]}`;
 }
 
-function uploadRelease(body: FormData, onProgress: (value: number) => void): Promise<ReleaseSummary> {
+function uploadRelease(body: FormData, onProgress: (value: number) => void, uiText: UiTranslator = thaiUiText): Promise<ReleaseSummary> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open("POST", "/api/admin/retail-local/runtime-release-upload");
@@ -75,8 +77,8 @@ function uploadRelease(body: FormData, onProgress: (value: number) => void): Pro
     request.upload.onprogress = (event) => {
       if (event.lengthComputable && event.total > 0) onProgress(Math.round((event.loaded / event.total) * 100));
     };
-    request.onerror = () => reject(new Error("เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ"));
-    request.onabort = () => reject(new Error("การอัปโหลดถูกยกเลิก"));
+    request.onerror = () => reject(new Error(uiText("admin_ui.could_not_connect_to_the_server_8ae9f")));
+    request.onabort = () => reject(new Error(uiText("admin_ui.upload_cancelled_fe2e4")));
     request.onload = () => {
       const payload = request.response || {};
       if (request.status < 200 || request.status >= 300) {
@@ -90,6 +92,7 @@ function uploadRelease(body: FormData, onProgress: (value: number) => void): Pro
 }
 
 export default function RetailLocalRuntimeReleasesPage() {
+  const uiText = useUiText();
   const [rows, setRows] = useState<ReleaseSummary[]>([]);
   const [baseUrl, setBaseUrl] = useState("");
   const [readiness, setReadiness] = useState<ReleaseReadiness | null>(null);
@@ -125,11 +128,11 @@ export default function RetailLocalRuntimeReleasesPage() {
   const submit = async () => {
     const values = await form.validateFields();
     const originals = files.map((item) => item.originFileObj).filter(Boolean) as File[];
-    if (!originals.length) return message.error("เลือกโฟลเดอร์ release ก่อน");
-    if (missing.length) return message.error(`ไฟล์ยังไม่ครบ: ${missing.join(", ")}`);
+    if (!originals.length) return message.error(uiText("admin_ui.select_a_release_folder_first_111be"));
+    if (missing.length) return message.error(uiText("admin_ui.missing_files_76a02", { v0: missing.join(", ") }));
     const names = new Set<string>();
     for (const file of originals) {
-      if (names.has(file.name)) return message.error(`ชื่อไฟล์ซ้ำ: ${file.name}`);
+      if (names.has(file.name)) return message.error(uiText("admin_ui.duplicate_filenames_5b190", { v0: file.name }));
       names.add(file.name);
     }
     const body = new FormData();
@@ -137,16 +140,16 @@ export default function RetailLocalRuntimeReleasesPage() {
     body.set("platformTarget", values.platformTarget);
     for (const file of originals) body.append("files", file, file.name);
     Modal.confirm({
-      title: `Publish ${values.releaseVersion.trim()} / ${values.platformTarget}?`,
-      content: `ระบบจะตรวจ ${originals.length} ไฟล์ (${formatBytes(totalUploadBytes)}) แล้วเผยแพร่เป็นชุด immutable ซึ่งแก้ทับ version/target เดิมไม่ได้`,
-      okText: "ตรวจสอบและ Publish",
-      cancelText: "ยกเลิก",
+      title: uiText("admin_ui.en_publish_80452", { v0: values.releaseVersion.trim(), v1: values.platformTarget }),
+      content: uiText("admin_ui.the_system_will_verify_files_and_publish_an_36f4a", { v0: originals.length, v1: formatBytes(totalUploadBytes) }),
+      okText: uiText("admin_ui.verify_and_publish_5221a"),
+      cancelText: uiText("admin_ui.cancelled_fba6e"),
       onOk: async () => {
         setUploading(true);
         setProgress(0);
         try {
-          await uploadRelease(body, setProgress);
-          message.success("ตรวจสอบและเผยแพร่ Managed Runtime release แล้ว");
+          await uploadRelease(body, setProgress, uiText);
+          message.success(uiText("admin_ui.managed_runtime_release_verified_and_published_97deb"));
           setFiles([]);
           form.resetFields();
           await load();
@@ -162,11 +165,11 @@ export default function RetailLocalRuntimeReleasesPage() {
   const deleteRelease = (row: ReleaseSummary) => {
     const key = `${row.releaseVersion}:${row.platformTarget}`;
     Modal.confirm({
-      title: `ลบ ${row.releaseVersion} / ${row.platformTarget}?`,
-      content: `จะลบ manifest และไฟล์ component ทั้งชุด (${formatBytes(row.totalBytes)}) ออกจาก release host ผู้ใช้ที่กำลังดาวน์โหลด release นี้อาจได้รับผลกระทบ`,
-      okText: "ลบ release และไฟล์ทั้งหมด",
+      title: uiText("admin_ui.delete_47ef4", { v0: row.releaseVersion, v1: row.platformTarget }),
+      content: uiText("admin_ui.this_removes_the_manifest_and_all_component_files_1691e", { v0: formatBytes(row.totalBytes) }),
+      okText: uiText("admin_ui.delete_release_and_all_files_6d032"),
       okType: "danger",
-      cancelText: "ยกเลิก",
+      cancelText: uiText("admin_ui.cancelled_fba6e"),
       onOk: async () => {
         setDeleting(key);
         try {
@@ -177,7 +180,7 @@ export default function RetailLocalRuntimeReleasesPage() {
           });
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-          message.success(`ลบ ${row.releaseVersion} / ${row.platformTarget} และไฟล์แล้ว`);
+          message.success(uiText("admin_ui.deleted_and_its_files_81fd0", { v0: row.releaseVersion, v1: row.platformTarget }));
           await load();
         } catch (error) {
           message.error(error instanceof Error ? error.message : String(error), 8);
@@ -194,15 +197,14 @@ export default function RetailLocalRuntimeReleasesPage() {
       <Space direction="vertical" size={20} style={{ width: "100%" }}>
         <Row justify="space-between" align="middle" gutter={[16, 16]}>
           <Col>
-            <Typography.Title level={2} style={{ marginBottom: 4 }}>Managed Runtime Releases</Typography.Title>
+            <Typography.Title level={2} style={{ marginBottom: 4 }}>{uiText("admin_ui.en_managed_runtime_releases_bd22a")}</Typography.Title>
             <Typography.Text type="secondary">
-              อัปโหลด signed manifest และ component artifacts เป็นหนึ่งชุด แล้วเผยแพร่แบบ immutable
-            </Typography.Text>
+              {uiText("admin_ui.upload_a_signed_manifest_and_component_artifacts_together_9bd71")}</Typography.Text>
           </Col>
           <Col>
             <Space wrap>
-              <Link href="/admin/retail-local-releases"><Button icon={<DownloadOutlined />}>Installer releases</Button></Link>
-              <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>รีเฟรช</Button>
+              <Link href="/admin/retail-local-releases"><Button icon={<DownloadOutlined />}>{uiText("admin_ui.en_installer_releases_8ddf9")}</Button></Link>
+              <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>{uiText("admin_ui.refresh_78a47")}</Button>
             </Space>
           </Col>
         </Row>
@@ -211,44 +213,44 @@ export default function RetailLocalRuntimeReleasesPage() {
           type="warning"
           showIcon
           closable
-          message="หน้านี้ไม่เซ็น release และไม่รับ private key"
-          description="เลือกเฉพาะโฟลเดอร์ที่สร้างและเซ็นจาก isolated release process แล้ว ระบบจะตรวจ public-key signature, version, target, component URL, byte size และ SHA-256 ก่อน publish ทั้งชุด ห้ามแก้ไฟล์หลังเซ็น"
+          message={uiText("admin_ui.this_page_does_not_sign_releases_or_accept_82073")}
+          description={uiText("admin_ui.select_only_a_folder_built_and_signed_by_7c3d3")}
         />
         <Alert
           type="info"
           showIcon
           closable
-          message="Online Bootstrap ใช้ไฟล์หน้านี้ แต่ปุ่ม Update ใน Desktop ใช้ Installer releases"
-          description="หลัง publish ให้เปิด Manifest link จากตารางเพื่อตรวจว่า release host มองเห็น storage แล้ว ส่วนตัวติดตั้ง .exe/.deb/.pkg/.dmg และแจ้งเตือนอัปเดตใน Desktop ยังจัดการที่หน้า Installer releases"
+          message={uiText("admin_ui.online_bootstrap_uses_these_files_desktop_s_update_b8937")}
+          description={uiText("admin_ui.after_publishing_open_the_manifest_link_in_the_02e6e")}
         />
         {readiness ? (
           <Alert
             type={readiness.ready ? "success" : "error"}
             showIcon
             closable
-            message={readiness.ready ? "Release verifier พร้อมใช้งาน" : "Release verifier ยังไม่พร้อม — ยังไม่ส่งไฟล์ขึ้น server"}
+            message={readiness.ready ? uiText("admin_ui.release_verifier_ready_aa5c1") : uiText("admin_ui.release_verifier_not_ready_files_have_not_been_947b0")}
             description={readiness.ready
-              ? `${readiness.message} · trusted key: ${readiness.keyIds.join(", ")}`
+              ? uiText("admin_ui.en_trusted_key_6ac88", { v0: readiness.message, v1: readiness.keyIds.join(", ") })
               : readiness.message}
           />
         ) : null}
 
-        <Card title={<Space><CloudUploadOutlined />Publish component set</Space>}>
+        <Card title={<Space><CloudUploadOutlined />{uiText("admin_ui.en_publish_component_set_3e4d3")}</Space>}>
           <Form form={form} layout="vertical">
             <Row gutter={16}>
               <Col xs={24} md={10}>
-                <Form.Item name="releaseVersion" label="Release version" rules={[
+                <Form.Item name="releaseVersion" label={uiText("admin_ui.en_release_version_03553")} rules={[
                   { required: true },
-                  { pattern: /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[A-Za-z0-9.-]+)?$/, message: "ใช้ version จริง เช่น 0.2.14-pilot.2" },
+                  { pattern: /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[A-Za-z0-9.-]+)?$/, message: uiText("admin_ui.use_an_actual_version_e_g_0_2_871c8") },
                 ]}>
                   <Input placeholder="0.2.14-pilot.2" disabled={uploading} />
                 </Form.Item>
               </Col>
               <Col xs={24} md={10}>
-                <Form.Item name="platformTarget" label="Platform target" rules={[{ required: true }]}>
+                <Form.Item name="platformTarget" label={uiText("admin_ui.en_platform_target_a8c70")} rules={[{ required: true }]}>
                   <Select disabled={uploading} options={MANAGED_RUNTIME_TARGETS.map((value) => ({
                     value,
-                    label: value === "windows-10-x86" ? `${value} (POS-only)` : value,
+                    label: value === "windows-10-x86" ? uiText("admin_ui.en_pos_only_a422b", { v0: value }) : value,
                   }))} />
                 </Form.Item>
               </Col>
@@ -267,16 +269,16 @@ export default function RetailLocalRuntimeReleasesPage() {
               }}
             >
               <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-              <p className="ant-upload-text">เลือกหรือลากโฟลเดอร์ platform เช่น macos-15-x64</p>
-              <p className="ant-upload-hint">เผยแพร่เฉพาะ release.jws.json, SHA256SUMS และ *.artifact — build descriptor/private key จะไม่ถูกอัปโหลด</p>
+              <p className="ant-upload-text">{uiText("admin_ui.select_or_drag_a_platform_folder_e_g_17937")}</p>
+              <p className="ant-upload-hint">{uiText("admin_ui.only_release_jws_json_sha256sums_and_artifact_are_cc3cd")}</p>
             </Upload.Dragger>
 
             {files.length ? (
               <Space direction="vertical" style={{ width: "100%", marginTop: 16 }}>
-                <Typography.Text>เลือก {files.length} ไฟล์ · {formatBytes(totalUploadBytes)}</Typography.Text>
+                <Typography.Text>{uiText("admin_ui.select_d0690")} {files.length}  {uiText("admin_ui.files_34e34")} {formatBytes(totalUploadBytes)}</Typography.Text>
                 {missing.length
-                  ? <Alert type="error" showIcon closable message={`ไฟล์ยังไม่ครบ: ${missing.join(", ")}`} />
-                  : <Alert type="success" showIcon closable message="พบไฟล์หลักครบ ระบบจะตรวจ signature และ checksum อีกครั้งบน server" />}
+                  ? <Alert type="error" showIcon closable message={uiText("admin_ui.missing_files_76a02", { v0: missing.join(", ") })} />
+                  : <Alert type="success" showIcon closable message={uiText("admin_ui.all_required_files_found_the_server_will_verify_a9691")} />}
               </Space>
             ) : null}
 
@@ -284,31 +286,30 @@ export default function RetailLocalRuntimeReleasesPage() {
             <Button type="primary" size="large" icon={<CloudUploadOutlined />}
               loading={uploading} disabled={!readiness?.ready || !files.length || missing.length > 0}
               onClick={() => void submit()} style={{ marginTop: 16 }}>
-              ตรวจสอบและ Publish
-            </Button>
+              {uiText("admin_ui.verify_and_publish_5221a")}</Button>
           </Form>
         </Card>
 
-        <Card title="Published component sets" extra={baseUrl ? <Typography.Text type="secondary">{baseUrl}</Typography.Text> : null}>
+        <Card title={uiText("admin_ui.en_published_component_sets_fb8fe")} extra={baseUrl ? <Typography.Text type="secondary">{baseUrl}</Typography.Text> : null}>
           <Table
             rowKey={(row) => `${row.releaseVersion}:${row.platformTarget}`}
             loading={loading}
             dataSource={rows}
             scroll={{ x: 960 }}
             columns={[
-              { title: "Version", dataIndex: "releaseVersion", width: 180, render: (value) => <Typography.Text strong>{value}</Typography.Text> },
-              { title: "Target", dataIndex: "platformTarget", width: 210 },
-              { title: "Channel", dataIndex: "channel", width: 100, render: (value) => value ? <Tag color={value === "stable" ? "green" : "gold"}>{value}</Tag> : "-" },
-              { title: "Components", dataIndex: "componentCount", width: 110 },
-              { title: "Size", dataIndex: "totalBytes", width: 120, render: formatBytes },
-              { title: "Managed", dataIndex: "managed", width: 150, render: (value) => value ? <Tag color="green">Verified at publish</Tag> : <Tag color="orange">Existing folder</Tag> },
-              { title: "Published", dataIndex: "publishedAt", width: 180, render: (value) => value ? new Date(value).toLocaleString() : "-" },
-              { title: "Actions", key: "actions", width: 155, fixed: "right", render: (_, row) => <Space>
-                <Button size="small" href={row.manifestUrl} target="_blank">เปิด</Button>
+              { title: uiText("admin_ui.en_version_2da60"), dataIndex: "releaseVersion", width: 180, render: (value) => <Typography.Text strong>{value}</Typography.Text> },
+              { title: uiText("admin_ui.en_target_61ad5"), dataIndex: "platformTarget", width: 210 },
+              { title: uiText("admin_ui.en_channel_879f0"), dataIndex: "channel", width: 100, render: (value) => value ? <Tag color={value === "stable" ? "green" : "gold"}>{value}</Tag> : "-" },
+              { title: uiText("admin_ui.en_components_92894"), dataIndex: "componentCount", width: 110 },
+              { title: uiText("admin_ui.en_size_b7152"), dataIndex: "totalBytes", width: 120, render: formatBytes },
+              { title: uiText("admin_ui.en_managed_7f0ca"), dataIndex: "managed", width: 150, render: (value) => value ? <Tag color="green">{uiText("admin_ui.en_verified_at_publish_7b454")}</Tag> : <Tag color="orange">{uiText("admin_ui.en_existing_folder_4e720")}</Tag> },
+              { title: uiText("admin_ui.en_published_483bf"), dataIndex: "publishedAt", width: 180, render: (value) => value ? new Date(value).toLocaleString(uiText.locale) : "-" },
+              { title: uiText("admin_ui.en_actions_c3cd6"), key: "actions", width: 155, fixed: "right", render: (_, row) => <Space>
+                <Button size="small" href={row.manifestUrl} target="_blank">{uiText("admin_ui.open_22aad")}</Button>
                 <Button size="small" danger icon={<DeleteOutlined />}
                   loading={deleting === `${row.releaseVersion}:${row.platformTarget}`}
                   disabled={uploading || deleting !== null}
-                  onClick={() => deleteRelease(row)}>ลบ</Button>
+                  onClick={() => deleteRelease(row)}>{uiText("admin_ui.remove_f535f")}</Button>
               </Space> },
             ]}
           />

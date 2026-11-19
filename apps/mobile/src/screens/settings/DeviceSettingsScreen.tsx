@@ -1,3 +1,5 @@
+import { LanguageSelector } from '../../components/LanguageSelector';
+import { posText, usePosLanguage } from '../../i18n/language';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -18,6 +20,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
 import { useDevice } from '../../state/DeviceContext';
 import { useStoreMode } from '../../state/StoreModeContext';
+import { useSession } from '../../state/SessionContext';
 import {
   displayHost,
   maskToken,
@@ -25,6 +28,7 @@ import {
   parsePairingInput,
 } from '../../lib/pairing';
 import { loadOfflineSales } from '../../lib/offlineSales';
+import { savePickupQueueEnabled, usePickupQueueEnabled } from '../../lib/pickupQueuePreference';
 import type { RootStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
@@ -38,9 +42,9 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 function formatCheckedAt(at: number): string {
   const time = new Date(at);
   const pad = (value: number) => String(value).padStart(2, '0');
-  return `${pad(time.getHours())}:${pad(time.getMinutes())}:${pad(
+  return posText("{v0}:{v1}:{v2} น.", { v0: pad(time.getHours()), v1: pad(time.getMinutes()), v2: pad(
     time.getSeconds(),
-  )} น.`;
+  ) });
 }
 
 /** แผงขวาบนแท็บเล็ต — เท่ากับแผงตะกร้า/แผงบิลของหน้าอื่น ให้ความกว้างของแอปเป็นภาษาเดียวกัน */
@@ -52,7 +56,11 @@ const STATUS_PANEL_WIDTH = 360;
 // มาจากเซิร์ฟเวอร์ตอนกด "ทดสอบการเชื่อมต่อ" เท่านั้น (`bmsPosSession`)
 // ห้ามเพิ่มช่องให้เลือกร้าน/สาขาเองเด็ดขาด — เป็นกฎของทั้งระบบว่า tenant มาจาก token ฝั่ง server
 export default function DeviceSettingsScreen({ route, navigation }: Props) {
+  usePosLanguage();
   const { colors, spacing, typography, radius, minTouchTarget } = useTheme();
+  const pickupQueueEnabled = usePickupQueueEnabled();
+  const { session, signOut } = useSession();
+  const branchPickupQueueEnabled = session?.branch.pickupQueue?.enabled === true;
   const { isTablet } = useResponsive();
   const {
     status,
@@ -102,7 +110,7 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
       // pair() ทดสอบ token ใหม่กับ server ให้เสร็จในตัว — จึงไม่เสี่ยงอ่าน target
       // รอบเก่าจาก React state และไม่ปล่อยให้คนเดินจากไปโดยคิดว่า token ใช้ได้แล้ว
     } catch (e: any) {
-      Alert.alert('บันทึกไม่สำเร็จ', String(e?.message ?? e));
+      Alert.alert(posText("บันทึกไม่สำเร็จ"), String(e?.message ?? e));
     } finally {
       setSaving(false);
     }
@@ -117,34 +125,40 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
       const pending = await loadOfflineSales();
       if (pending.length > 0) {
         Alert.alert(
-          'ยังเลิกจับคู่ไม่ได้',
-          `มีรายการรับเงินออฟไลน์ค้าง ${pending.length} รายการ กรุณาซิงก์หรือตรวจสอบให้เสร็จก่อน เพื่อไม่ให้ยอดขายหายจากเครื่องเดิม`,
+          posText("ยังเลิกจับคู่ไม่ได้"),
+          posText("มีรายการรับเงินออฟไลน์ค้าง {v0} รายการ กรุณาซิงก์หรือตรวจสอบให้เสร็จก่อน เพื่อไม่ให้ยอดขายหายจากเครื่องเดิม", { v0: pending.length }),
         );
         return;
       }
     } catch (error) {
       Alert.alert(
-        'ยังเลิกจับคู่ไม่ได้',
+        posText("ยังเลิกจับคู่ไม่ได้"),
         error instanceof Error
-          ? `${error.message} · ต้องตรวจคิวให้ได้ก่อน`
-          : 'ตรวจคิวออฟไลน์ไม่ได้ กรุณาให้ผู้ดูแลตรวจสอบเครื่อง',
+          ? posText("{v0} · ต้องตรวจคิวให้ได้ก่อน", { v0: error.message })
+          : posText("ตรวจคิวออฟไลน์ไม่ได้ กรุณาให้ผู้ดูแลตรวจสอบเครื่อง"),
       );
       return;
     }
     Alert.alert(
-      'เลิกจับคู่เครื่องนี้?',
-      'เครื่องจะลืม token และใช้ขายไม่ได้จนกว่าจะจับคู่ใหม่ · token เดิมที่หน้าแอดมินยังใช้ได้อยู่ (ถ้ายังไม่ได้ออกใหม่)',
+      posText("เลิกจับคู่เครื่องนี้?"),
+      posText("เครื่องจะลืม token และใช้ขายไม่ได้จนกว่าจะจับคู่ใหม่ · token เดิมที่หน้าแอดมินยังใช้ได้อยู่ (ถ้ายังไม่ได้ออกใหม่)"),
       [
-        { text: 'ยกเลิก', style: 'cancel' },
+        { text: posText("ยกเลิก"), style: 'cancel' },
         {
-          text: 'เลิกจับคู่',
+          text: posText("เลิกจับคู่"),
           style: 'destructive',
           onPress: async () => {
             try {
               await unpair();
-              navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+              signOut();
+              // Leave Settings open for the next QR. Remove any signed-in register
+              // beneath it so Android Back cannot return to an unpaired POS.
+              navigation.reset({
+                index: 1,
+                routes: [{ name: 'Login' }, { name: 'Settings' }],
+              });
             } catch (e: any) {
-              Alert.alert('เลิกจับคู่ไม่สำเร็จ', String(e?.message ?? e));
+              Alert.alert(posText("เลิกจับคู่ไม่สำเร็จ"), String(e?.message ?? e));
             }
           },
         },
@@ -170,23 +184,54 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
   const statusPanel = (
     <View style={{ gap: spacing.md }}>
       <Button
-        label="เครื่องพิมพ์ใบเสร็จ"
+        label={posText("เครื่องพิมพ์ใบเสร็จ")}
         variant="secondary"
         fullWidth
         onPress={() => navigation.navigate('PrinterSettings')}
       />
       <Card>
+        <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
+          {posText("เลขคิวรับของ") + " "}</Text>
+        <Text
+          style={[
+            typography.caption,
+            { color: colors.textSoft, marginTop: spacing.xs, marginBottom: spacing.sm },
+          ]}
+        >
+          {branchPickupQueueEnabled
+            ? posText("สาขานี้เปิดออกเลขคิวทุกเครื่องจากหลังบ้านแล้ว จึงปิดจากโทรศัพท์เครื่องนี้ไม่ได้")
+            : posText("ตั้งค่าเฉพาะเครื่องนี้ · บิลขายหน้าร้านและบิลกลับบ้านจะได้เลขคิว พิมพ์บนใบเสร็จ และขึ้นจอเรียกคิว")}
+          {' '}{posText("(เปิดจอเรียกคิวจากเครื่องขายบนเว็บหรือแอปเดสก์ท็อป)") + " "}</Text>
+        <Button
+          label={branchPickupQueueEnabled
+            ? posText("ออกเลขคิว: เปิดทั้งสาขา")
+            : pickupQueueEnabled
+            ? posText("ออกเลขคิวของเครื่องนี้: เปิด · กดเพื่อปิด")
+            : posText("ออกเลขคิวของเครื่องนี้: ปิด · กดเพื่อเปิด")}
+          variant={branchPickupQueueEnabled || pickupQueueEnabled ? 'primary' : 'secondary'}
+          disabled={branchPickupQueueEnabled}
+          fullWidth
+          onPress={() => {
+            savePickupQueueEnabled(!pickupQueueEnabled).catch(error =>
+              Alert.alert(
+                posText("บันทึกไม่สำเร็จ"),
+                error instanceof Error ? error.message : posText("ลองใหม่อีกครั้ง"),
+              ),
+            );
+          }}
+        />
+      </Card>
+      <Card>
         <View style={styles.rowBetween}>
           <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-            ประเภทร้านจากเซิร์ฟเวอร์
-          </Text>
+            {posText("ประเภทร้านจากเซิร์ฟเวอร์") + " "}</Text>
           <StatusPill
             label={
               mode === 'restaurant'
-                ? 'ร้านอาหาร'
+                ? posText("ร้านอาหาร")
                 : mode === 'pharmacy'
-                ? 'ร้านขายยา'
-                : 'ร้านทั่วไป'
+                ? posText("ร้านขายยา")
+                : posText("ร้านทั่วไป")
             }
             tone="success"
           />
@@ -197,25 +242,22 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
             { color: colors.textSoft, marginTop: spacing.xs },
           ]}
         >
-          แอปอ่านค่านี้จากเครื่องที่จับคู่ไว้ ไม่รับ tenant สาขา
-          หรือประเภทร้านจากผู้ใช้
-        </Text>
+          {posText("แอปอ่านค่านี้จากเครื่องที่จับคู่ไว้ ไม่รับ tenant สาขา หรือประเภทร้านจากผู้ใช้") + " "}</Text>
       </Card>
 
       <Card>
         <View style={styles.rowBetween}>
           <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-            สถานะเครื่อง
-          </Text>
+            {posText("สถานะเครื่อง") + " "}</Text>
           <StatusPill
             label={
               status === 'LOADING'
-                ? 'กำลังอ่าน'
+                ? posText("กำลังอ่าน")
                 : status === 'PAIRED'
-                ? 'จับคู่แล้ว'
+                ? posText("จับคู่แล้ว")
                 : status === 'UNAVAILABLE'
-                ? 'อ่านค่าไม่ได้'
-                : 'ยังไม่จับคู่'
+                ? posText("อ่านค่าไม่ได้")
+                : posText("ยังไม่จับคู่")
             }
             tone={
               status === 'PAIRED'
@@ -234,15 +276,13 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
               { color: colors.danger, marginTop: spacing.sm },
             ]}
           >
-            อ่านค่าจากที่เก็บปลอดภัยของเครื่องไม่ได้ ({storeError}) —
-            ยังไม่ต้องสรุปว่าเครื่องไม่เคยจับคู่
-          </Text>
+            {posText("อ่านค่าจากที่เก็บปลอดภัยของเครื่องไม่ได้ (")}{storeError}{posText(") — ยังไม่ต้องสรุปว่าเครื่องไม่เคยจับคู่") + " "}</Text>
         )}
 
         {target ? (
           <View style={{ marginTop: spacing.md, gap: spacing.xs }}>
             <FieldRow
-              label="เซิร์ฟเวอร์"
+              label={posText("เซิร์ฟเวอร์")}
               value={displayHost(target.serverUrl)}
             />
             {/* ห้ามโชว์ token เต็มตัว — จอนี้อยู่กลางร้าน และ token ไม่มีวันหมดอายุ */}
@@ -256,8 +296,7 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
                 { color: colors.textMuted, marginTop: spacing.sm },
               ]}
             >
-              เครื่องนี้ยังไม่ได้ผูกกับร้านไหน — วางลิงก์จับคู่ทางขวาเพื่อเริ่ม
-            </Text>
+              {posText("เครื่องนี้ยังไม่ได้ผูกกับร้านไหน — วางลิงก์จับคู่ทางขวาเพื่อเริ่ม") + " "}</Text>
           )
         )}
       </Card>
@@ -270,50 +309,46 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
               { color: colors.textMuted, marginBottom: spacing.sm },
             ]}
           >
-            เครื่องนี้เป็นของร้านไหน
-          </Text>
+            {posText("เครื่องนี้เป็นของร้านไหน") + " "}</Text>
 
           {verify.kind === 'IDLE' && (
             <Text style={[typography.body, { color: colors.textMuted }]}>
-              ยังไม่ได้ถามเซิร์ฟเวอร์ — ค่าที่เก็บไว้บอกได้แค่ว่า
-              “จะไปถามที่ไหน” ไม่ได้บอกว่า token ยังใช้ได้
-            </Text>
+              {posText("ยังไม่ได้ถามเซิร์ฟเวอร์ — ค่าที่เก็บไว้บอกได้แค่ว่า “จะไปถามที่ไหน” ไม่ได้บอกว่า token ยังใช้ได้") + " "}</Text>
           )}
           {verify.kind === 'CHECKING' && (
             <Text style={[typography.body, { color: colors.textMuted }]}>
-              กำลังถามเซิร์ฟเวอร์…
-            </Text>
+              {posText("กำลังถามเซิร์ฟเวอร์…") + " "}</Text>
           )}
           {verify.kind === 'OK' && (
             <View style={{ gap: spacing.xs }}>
-              <FieldRow label="สาขา" value={verify.info.branchName ?? '—'} />
+              <FieldRow label={posText("สาขา")} value={verify.info.branchName ?? '—'} />
               <FieldRow
-                label="รหัสสาขา"
+                label={posText("รหัสสาขา")}
                 value={verify.info.branchCode ?? '—'}
               />
               <FieldRow
-                label="เครื่อง"
+                label={posText("เครื่อง")}
                 value={`${verify.info.deviceCode}${
                   verify.info.deviceName ? ` · ${verify.info.deviceName}` : ''
                 }`}
               />
               <FieldRow
-                label="ประเภทจากเซิร์ฟเวอร์"
+                label={posText("ประเภทจากเซิร์ฟเวอร์")}
                 value={
                   verify.info.businessArchetype === 'pharmacy'
-                    ? 'ร้านขายยา'
+                    ? posText("ร้านขายยา")
                     : verify.info.surface === 'restaurant'
-                    ? 'ร้านอาหาร'
-                    : 'ร้านทั่วไป/ค้าปลีก'
+                    ? posText("ร้านอาหาร")
+                    : posText("ร้านทั่วไป/ค้าปลีก")
                 }
               />
               <FieldRow
-                label="กะที่เปิดอยู่"
-                value={verify.info.shiftOpen ? 'มี' : 'ยังไม่เปิดกะ'}
+                label={posText("กะที่เปิดอยู่")}
+                value={verify.info.shiftOpen ? posText("มี") : posText("ยังไม่เปิดกะ")}
               />
               <FieldRow
-                label="ผู้ปฏิบัติงานที่ขายได้"
-                value={`${verify.info.cashierCount} คน`}
+                label={posText("ผู้ปฏิบัติงานที่ขายได้")}
+                value={posText("{v0} คน", { v0: verify.info.cashierCount })}
               />
               {/* ชื่อร้าน (tenant) ไม่อยู่ใน bmsPosSession — payload มีแค่สาขา/เครื่อง/เลขผู้เสียภาษี
                   ถ้าอยากให้จอบอก "ร้านชื่ออะไร" ต้องเพิ่มฟิลด์ที่ route ฝั่งเว็บก่อน */}
@@ -323,9 +358,7 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
                   { color: colors.textSoft, marginTop: spacing.xs },
                 ]}
               >
-                (เซิร์ฟเวอร์ยังไม่ส่งชื่อร้านมาให้ —
-                ระบุตัวร้านได้จากเซิร์ฟเวอร์ + สาขา)
-              </Text>
+                {posText("(เซิร์ฟเวอร์ยังไม่ส่งชื่อร้านมาให้ — ระบุตัวร้านได้จากเซิร์ฟเวอร์ + สาขา)") + " "}</Text>
             </View>
           )}
           {verify.kind === 'REJECTED' && (
@@ -343,8 +376,7 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
               {verify.message}
               {'\n'}
               <Text style={typography.caption}>
-                ต่อไม่ได้ ≠ token ผิด — ยังไม่ต้องเลิกจับคู่
-              </Text>
+                {posText("ต่อไม่ได้ ≠ token ผิด — ยังไม่ต้องเลิกจับคู่") + " "}</Text>
             </Text>
           )}
 
@@ -359,10 +391,10 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
               ]}
             >
               {verify.kind === 'CHECKING'
-                ? `กำลังถามใหม่ · คำตอบก่อนหน้าเมื่อ ${formatCheckedAt(
+                ? posText("กำลังถามใหม่ · คำตอบก่อนหน้าเมื่อ {v0}", { v0: formatCheckedAt(
                     lastCheckedAt,
-                  )}`
-                : `ตรวจล่าสุด ${formatCheckedAt(lastCheckedAt)}`}
+                  ) })
+                : posText("ตรวจล่าสุด {v0}", { v0: formatCheckedAt(lastCheckedAt) })}
             </Text>
           )}
 
@@ -375,14 +407,14 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
             }}
           >
             <Button
-              label="ทดสอบการเชื่อมต่อ"
+              label={posText("ทดสอบการเชื่อมต่อ")}
               variant="secondary"
               loading={verify.kind === 'CHECKING'}
               disabled={scanning || saving}
               onPress={runVerify}
             />
             <Button
-              label="เลิกจับคู่"
+              label={posText("เลิกจับคู่")}
               variant="danger"
               disabled={scanning || saving}
               onPress={onUnpair}
@@ -398,36 +430,20 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
     <View style={{ gap: spacing.md }}>
       <Card>
         <Text style={[typography.captionStrong, { color: colors.textMuted }]}>
-          ลิงก์จับคู่
-        </Text>
+          {posText("ลิงก์จับคู่") + " "}</Text>
         <Text
           style={[
             typography.caption,
             { color: colors.textSoft, marginTop: spacing.xs },
           ]}
         >
-          เอามาจากระบบหลังบ้าน → เครื่องขาย (POS) → ปุ่ม “ออก token”
-          แล้วสแกน QR เพื่อเพิ่ม token อัตโนมัติ หรือคัดลอกลิงก์มาวาง
-        </Text>
-
-        <View style={{ marginTop: spacing.md }}>
-          <PairingScannerButton
-            target={target}
-            disabled={saving || status === 'LOADING' || status === 'UNAVAILABLE'}
-            pair={pair}
-            onBusyChange={setScanning}
-            onPaired={() => {
-              setInput('');
-              setServerInput('');
-            }}
-          />
-        </View>
+          {posText("เอามาจากระบบหลังบ้าน → เครื่องขาย (POS) → ปุ่ม “ออก token” แล้วสแกน QR เพื่อเพิ่ม token อัตโนมัติ หรือคัดลอกลิงก์มาวาง") + " "}</Text>
 
         <TextInput
           value={input}
           onChangeText={setInput}
           placeholder={
-            'bmspos://pair?t=pos_...\nหรือ https://ร้านของคุณ/pos?t=pos_...\nหรือวาง token ที่ขึ้นต้นด้วย pos_'
+            posText("bmspos://pair?t=pos_...\nหรือ https://ร้านของคุณ/pos?t=pos_...\nหรือวาง token ที่ขึ้นต้นด้วย pos_")
           }
           placeholderTextColor={colors.textSoft}
           multiline
@@ -456,15 +472,15 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
         {parsed?.ok && (
           <View style={{ marginTop: spacing.sm, gap: spacing.xs }}>
             <FieldRow
-              label="token ที่อ่านได้"
+              label={posText("token ที่อ่านได้")}
               value={maskToken(parsed.token)}
             />
             <FieldRow
-              label="เซิร์ฟเวอร์จากลิงก์"
+              label={posText("เซิร์ฟเวอร์จากลิงก์")}
               value={
                 parsedServer
                   ? displayHost(parsedServer)
-                  : 'ลิงก์นี้ไม่ได้พกมา — กรอกด้านล่าง'
+                  : posText("ลิงก์นี้ไม่ได้พกมา — กรอกด้านล่าง")
               }
             />
           </View>
@@ -480,8 +496,7 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
                 { color: colors.textMuted, marginBottom: spacing.xs },
               ]}
             >
-              ที่อยู่เซิร์ฟเวอร์
-            </Text>
+              {posText("ที่อยู่เซิร์ฟเวอร์") + " "}</Text>
             <TextInput
               value={serverInput}
               onChangeText={setServerInput}
@@ -499,20 +514,37 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
                 { color: colors.textSoft, marginTop: spacing.xs },
               ]}
             >
-              ไม่ต้องพิมพ์ https:// — เติมให้เอง (แอปไม่ยอมต่อแบบไม่เข้ารหัส
-              เพราะ token วิ่งไปกับทุกคำขอ)
-            </Text>
+              {posText("ไม่ต้องพิมพ์ https:// — เติมให้เอง (แอปไม่ยอมต่อแบบไม่เข้ารหัส เพราะ token วิ่งไปกับทุกคำขอ)") + " "}</Text>
           </View>
         )}
 
-        <Button
-          label={target ? 'บันทึกและใช้ token ใหม่นี้' : 'จับคู่เครื่อง'}
-          fullWidth
-          disabled={!canSave || scanning}
-          loading={saving}
-          style={{ marginTop: spacing.lg }}
-          onPress={onSave}
-        />
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'stretch',
+            gap: spacing.sm,
+            marginTop: spacing.lg,
+          }}
+        >
+          <Button
+            label={target ? posText("บันทึกและใช้ token ใหม่นี้") : posText("จับคู่เครื่อง")}
+            fullWidth
+            disabled={!canSave || scanning}
+            loading={saving}
+            style={{ flex: 1 }}
+            onPress={onSave}
+          />
+          <PairingScannerButton
+            target={target}
+            disabled={saving || status === 'LOADING' || status === 'UNAVAILABLE'}
+            pair={pair}
+            onBusyChange={setScanning}
+            onPaired={() => {
+              setInput('');
+              setServerInput('');
+            }}
+          />
+        </View>
       </Card>
 
       <Card>
@@ -522,23 +554,15 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
             { color: colors.textMuted, marginBottom: spacing.sm },
           ]}
         >
-          ข้อควรรู้
-        </Text>
+          {posText("ข้อควรรู้") + " "}</Text>
         <Bullet>
-          1 อุปกรณ์ = 1 เครื่องขายในระบบ · ห้ามใช้ token เดียวกันหลายเครื่อง
-          เลขใบเสร็จรันต่อเครื่อง และเปิดกะค้างได้เครื่องละกะเดียว
-        </Bullet>
+          {posText("1 อุปกรณ์ = 1 เครื่องขายในระบบ · ห้ามใช้ token เดียวกันหลายเครื่อง เลขใบเสร็จรันต่อเครื่อง และเปิดกะค้างได้เครื่องละกะเดียว") + " "}</Bullet>
         <Bullet>
-          ออก token ใหม่ที่หน้าแอดมินเมื่อไร ตัวเก่าใช้ไม่ได้ทันที —
-          เป็นวิธีตัดเครื่องที่หายออกจากระบบ
-        </Bullet>
+          {posText("ออก token ใหม่ที่หน้าแอดมินเมื่อไร ตัวเก่าใช้ไม่ได้ทันที — เป็นวิธีตัดเครื่องที่หายออกจากระบบ") + " "}</Bullet>
         <Bullet>
-          สาขาเป็นของเครื่อง ไม่ใช่ของคน — เปลี่ยนสาขาต้องไปแก้ที่หน้าแอดมิน
-          ไม่ใช่ที่เครื่อง
-        </Bullet>
+          {posText("สาขาเป็นของเครื่อง ไม่ใช่ของคน — เปลี่ยนสาขาต้องไปแก้ที่หน้าแอดมิน ไม่ใช่ที่เครื่อง") + " "}</Bullet>
         <Bullet>
-          เครื่องจำ token ไว้จนกว่าจะกดเลิกจับคู่ ไม่ต้องใส่ใหม่ทุกวัน
-        </Bullet>
+          {posText("เครื่องจำ token ไว้จนกว่าจะกดเลิกจับคู่ ไม่ต้องใส่ใหม่ทุกวัน") + " "}</Bullet>
       </Card>
     </View>
   );
@@ -546,10 +570,11 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
   return (
     <ScreenContainer>
       <ScreenHeader
-        title="ตั้งค่าเครื่อง"
-        subtitle="ผูกอุปกรณ์เครื่องนี้เข้ากับร้าน/สาขาในระบบ"
+        title={posText("ตั้งค่าเครื่อง")}
+        subtitle={posText("ผูกอุปกรณ์เครื่องนี้เข้ากับร้าน/สาขาในระบบ")}
         onBack={navigation.canGoBack() ? () => navigation.goBack() : undefined}
       />
+      <LanguageSelector />
       {isTablet ? (
         <View style={{ flex: 1, flexDirection: 'row', gap: spacing.lg }}>
           <ScrollView

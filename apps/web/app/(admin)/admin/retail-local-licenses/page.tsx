@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/useUiText";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -86,6 +88,7 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export default function RetailLocalLicensesPage() {
+  const uiText = useUiText();
   const { lang } = useI18n();
   const th = lang === "th";
   const [rows, setRows] = useState<LicenseRow[]>([]);
@@ -362,7 +365,7 @@ export default function RetailLocalLicensesPage() {
                 : "Any older unused activation code will stop working immediately.",
               okText: th ? "ออก Code ใหม่" : "Issue new code",
               onOk: () => issueActivation(row),
-            })}>Activation</Button>
+            })}>{uiText("admin_ui.en_activation_b9d36")}</Button>
           <Button size="small" icon={<SettingOutlined />} onClick={() => {
             setActionTarget(row);
             setAction(["CANCELLED", "PAYMENT_REVIEW"].includes(row.commercial_status)
@@ -418,7 +421,7 @@ export default function RetailLocalLicensesPage() {
             <Input placeholder="customer-001" />
           </Form.Item>
           <Form.Item name="licenseType" label={copy.type} rules={[{ required: true }]}>
-            <Select options={[{ value: "TRIAL", label: "TRIAL · 30 days" }, { value: "PAID", label: "PAID" }]} />
+            <Select options={[{ value: "TRIAL", label: uiText("admin_ui.en_trial_30_days_8eb4f") }, { value: uiText("admin_ui.en_paid_f3534"), label: uiText("admin_ui.en_paid_f3534") }]} />
           </Form.Item>
           <Form.Item name="maxActiveInstallations" label={th ? "จำนวนเครื่องสูงสุด" : "Maximum active installations"}
             rules={[{ required: true }]}>
@@ -431,8 +434,8 @@ export default function RetailLocalLicensesPage() {
         footer={<Button type="primary" onClick={() => setIssued(null)}>OK</Button>}>
         <Alert type="warning" showIcon closable message={copy.tokenWarning} style={{ marginBottom: 12 }} />
         <Descriptions column={1} size="small" bordered>
-          <Descriptions.Item label="License"><Typography.Text copyable>{issued?.licenseCode}</Typography.Text></Descriptions.Item>
-          <Descriptions.Item label="Activation Code">
+          <Descriptions.Item label={uiText("admin_ui.en_license_32296")}><Typography.Text copyable>{issued?.licenseCode}</Typography.Text></Descriptions.Item>
+          <Descriptions.Item label={uiText("admin_ui.en_activation_code_cd994")}>
             <Typography.Paragraph code copyable={{ icon: <CopyOutlined /> }} style={{ wordBreak: "break-all", margin: 0 }}>
               {issued?.activationCode}
             </Typography.Paragraph>
@@ -473,7 +476,7 @@ export default function RetailLocalLicensesPage() {
             rules={[{ required: true, min: 3, max: 500 }]}>
             <Input.TextArea rows={3} maxLength={500} showCount />
           </Form.Item>
-          <Typography.Text type="secondary">Confirmation: <Typography.Text code>{CONFIRMATIONS[action]}</Typography.Text></Typography.Text>
+          <Typography.Text type="secondary">{uiText("admin_ui.en_confirmation_91f95")} <Typography.Text code>{CONFIRMATIONS[action]}</Typography.Text></Typography.Text>
         </Form>
       </Modal>
 
@@ -481,7 +484,7 @@ export default function RetailLocalLicensesPage() {
         {detail && (
           <Space direction="vertical" size="large" style={{ width: "100%" }}>
             <Descriptions column={1} bordered size="small">
-              <Descriptions.Item label="License"><Typography.Text copyable>{detail.license.license_code}</Typography.Text></Descriptions.Item>
+              <Descriptions.Item label={uiText("admin_ui.en_license_32296")}><Typography.Text copyable>{detail.license.license_code}</Typography.Text></Descriptions.Item>
               <Descriptions.Item label={copy.customer}>{detail.license.customer_reference || "—"}</Descriptions.Item>
               <Descriptions.Item label={copy.status}><Tag color={STATUS_COLOR[detail.license.effective_commercial_status as EffectiveStatus]}>{detail.license.effective_commercial_status}</Tag></Descriptions.Item>
               <Descriptions.Item label={copy.expiry}>{formatDate(detail.license.trial_expires_at)}</Descriptions.Item>
@@ -490,7 +493,7 @@ export default function RetailLocalLicensesPage() {
             <div>
               <Typography.Title level={5}>{th ? "เครื่องที่ผูกกับ License" : "Linked installations"}</Typography.Title>
               <Table rowKey="installation_id" size="small" pagination={false} scroll={{ x: 760 }} dataSource={detail.installations || []} columns={[
-                { title: "Installation ID", dataIndex: "installation_id", width: 180, render: (value: string) => <Typography.Text style={{ overflowWrap: "anywhere" }}>{value}</Typography.Text> },
+                { title: uiText("admin_ui.en_installation_id_51a22"), dataIndex: "installation_id", width: 180, render: (value: string) => <Typography.Text style={{ overflowWrap: "anywhere" }}>{value}</Typography.Text> },
                 { title: th ? "ร้าน/tenant จากเครื่อง" : "Tenant reference", dataIndex: "tenant_reference", render: (value: string | null) => value || "—" },
                 { title: th ? "POS device" : "POS device", dataIndex: "pos_device_reference", render: (value: string | null) => value || "—" },
                 { title: th ? "สถานะ" : "Status", dataIndex: "status", render: (value: string) => <Tag>{value}</Tag> },
@@ -503,7 +506,7 @@ export default function RetailLocalLicensesPage() {
             <div>
               <Typography.Title level={5}>{th ? "ประวัติการตรวจสอบเครื่อง" : "Installation reviews"}</Typography.Title>
               <Table rowKey="id" size="small" pagination={false} scroll={{ x: 680 }} dataSource={detail.reviews || []} columns={[
-                { title: "Installation ID", dataIndex: "installation_id" },
+                { title: uiText("admin_ui.en_installation_id_51a22"), dataIndex: "installation_id" },
                 { title: th ? "สาเหตุ" : "Reason", dataIndex: "reason" },
                 { title: copy.status, dataIndex: "status" },
                 { title: th ? "ผลการตรวจสอบ" : "Resolution", dataIndex: "resolution" },

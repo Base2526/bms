@@ -1,3 +1,4 @@
+import { getMessage } from "../apps/web/i18n/index.ts";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -64,6 +65,20 @@ test("ingestion allowlists context and never trusts a tenant from the body", asy
   assert.doesNotMatch(route, /tenantId:\s*body/);
 });
 
+test("diagnostic export preserves PostgreSQL timestamps as ISO strings", async () => {
+  const service = code(await read("apps/web/lib/bms/supportDiagnostics.ts"));
+  const sanitizer = service.slice(
+    service.indexOf("function safeDiagnosticValue"),
+    service.indexOf("function safeContext"),
+  );
+  assert.match(sanitizer, /value instanceof Date/);
+  assert.match(sanitizer, /value\.toISOString\(\)/);
+  assert.ok(
+    sanitizer.indexOf("value instanceof Date") < sanitizer.indexOf('typeof value !== "object"'),
+    "Date must be serialized before the generic object branch turns it into an empty object",
+  );
+});
+
 test("export and send are separately authorised, audited and consent gated", async () => {
   const service = code(await read("apps/web/lib/bms/supportDiagnostics.ts"));
   const exportRoute = code(await read("apps/web/app/api/bms/support-diagnostics/export/route.ts"));
@@ -101,13 +116,16 @@ test("legacy fleet logs are no longer an unauthenticated read surface", async ()
   const detail = code(await read("apps/web/app/api/logs/[id]/route.ts"));
   const categories = code(await read("apps/web/app/api/admin/log-categories/route.ts"));
   const writer = code(await read("apps/web/lib/log/writeLog.server.ts"));
+  const sanitizer = code(await read("apps/web/lib/log/sanitize.ts"));
   assert.match(list, /authorizePlatformAdminRoute\(\)/);
   assert.match(detail, /authorizePlatformAdminRoute\(\)/);
   assert.match(categories, /authorizePlatformAdminRoute\(\)/);
   assert.match(list, /rateLimit\(`client-logs:/);
   assert.match(list, /tenantId,/);
-  assert.match(writer, /SENSITIVE_KEY/);
-  assert.match(writer, /SENSITIVE_TEXT/);
+  assert.match(writer, /sanitizeLogText/);
+  assert.match(writer, /sanitizeLogValue/);
+  assert.match(sanitizer, /SENSITIVE_KEY/);
+  assert.match(sanitizer, /CREDENTIAL/);
 });
 
 test("browser queue is scoped, idempotent and standalone POS can export/send", async () => {
@@ -146,15 +164,18 @@ test("native POS diagnostics are device-attributed and visible by server-side de
   assert.match(admin, /bmsPosDeviceDiagnostics\(deviceId: \$diagnosticDeviceId, limit: 50\)/);
   assert.match(admin, /expandedRowRender/);
   assert.match(admin, /DIAGNOSTIC_CONTEXT_LABELS/);
-  assert.match(admin, /Correlation ID/);
-  assert.match(admin, /พนักงานที่เลือก/);
+  assert.ok(admin.includes('uiText("admin_ui.en_correlation_id_805ca")'));
+  assert.match(getMessage("en", "admin_ui.en_correlation_id_805ca"), /Correlation ID/);
+  assert.ok(admin.includes('uiText("admin_ui.selected_staff_member_bb086")'));
+  assert.equal(getMessage("th", "admin_ui.selected_staff_member_bb086"), "พนักงานที่เลือก");
   assert.doesNotMatch(mobile, /body:\s*JSON\.stringify\([^)]*(pin|token)/i);
   assert.match(mobile, /Keychain\.setGenericPassword/);
   assert.match(mobile, /MAX_QUEUE_EVENTS/);
   assert.match(mobile, /scheduleRetry\(target\)/);
-  assert.match(mobile, /signal:\s*controller\.signal/);
-  assert.match(mobile, /clearTimeout\(timeout\)/);
-  assert.match(login, /message:\s*'เริ่มตรวจ PIN พนักงาน'/);
+  assert.match(mobile, /runWithOperationTimeout\(signal => fetch/);
+  assert.match(mobile, /signal,/);
+  assert.match(mobile, /\}\), SEND_TIMEOUT_MS\)/);
+  assert.match(login, /message:\s*posText\("เริ่มตรวจ PIN พนักงาน"\)/);
   assert.match(login, /cashierUserId: cashier\.id/);
   assert.match(login, /PIN_VERIFY_TIMEOUT/);
 });

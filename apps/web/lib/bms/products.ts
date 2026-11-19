@@ -7,9 +7,12 @@ import { getClient, query } from "@/lib/db";
 import { recordMovement } from "./movements";
 import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 import { beginTenantTx } from "./tenant";
+import { assertWeightedKgSalesSurfacesSupportedInTx } from "./weightedKgPricing";
+import { insertAuditInTx } from "./audit";
 import { assertNoQualityHold, usableStockSql } from "./lotQuality";
 import { resolveDefaultLocationIdInTx } from "./locations";
-import { resolveDefaultLocationId } from "./locations";
+import { findDefaultLocationId, resolveDefaultLocationId } from "./locations";
+import { getVariantBasePrice } from "./productPacks";
 import { isMenuSellable, type MenuStockPolicy } from "./menuAvailability";
 import { resolveKitchenStationForProductInTx } from "./kitchenStations";
 import { enforceProductQuota } from "./plans";
@@ -35,6 +38,11 @@ import {
   resolveStoredVariantCodeInTx,
   type ProductSalesSurface,
 } from "./productConfiguration";
+
+function auditUserId(value: string | number | null | undefined): string | null {
+  const id = value == null ? "" : String(value);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ? id : null;
+}
 
 export type ProductRowFull = {
   tenant_id?: string;
@@ -89,6 +97,8 @@ export type PublicProduct = {
     food_safety_note: string | null;
     images: string[];
     variants: Array<{ size: string; available: number; price: number }>;
+    orderable: boolean;
+    packs: Array<{ size: string | null; packCode: string; unitName: string; baseQty: number }>;
     updatedAt: string | null;
   };
 };
@@ -125,6 +135,7 @@ export type PublicShop = {
   currency: string;
   productCount: number;
   updatedAt: string | null;
+  retailCartEnabled: boolean;
 };
 
 export type VariantRow = {
@@ -362,9 +373,26 @@ export async function listSellableProducts(
   const maxPriceParam = params.length;
   params.push(limit);
   const limitParam = params.length;
+  // Branch price windows may be installed after the web release. Use the same
+  // active-window precedence as settlement without referencing an absent table.
+  const windowsReady = (await query<{ present: boolean }>(
+    "SELECT to_regclass('bms_branch_price_windows') IS NOT NULL AS present"
+  )).rows[0]?.present === true;
+  const branchBasePrice = (sizeExpr: string, locationExpr: string) => `(
+    SELECT bp.price FROM (
+      SELECT tenant_id,location_id,product_sku,size,pack_code,price,1 AS priority
+        FROM bms_branch_prices
+      ${windowsReady ? `UNION ALL
+      SELECT tenant_id,location_id,product_sku,size,pack_code,price,0 AS priority
+        FROM bms_branch_price_windows
+       WHERE cancelled_at IS NULL AND starts_at <= transaction_timestamp()
+         AND (ends_at IS NULL OR ends_at > transaction_timestamp())` : ""}
+    ) bp WHERE bp.tenant_id=p.tenant_id AND bp.product_sku=p.sku
+      AND bp.size=${sizeExpr} AND bp.pack_code='BASE' AND bp.location_id=${locationExpr}
+    ORDER BY bp.priority LIMIT 1)`.trim();
   const variantPriceRangeSql = `
-    SELECT MIN(COALESCE((SELECT bp.price FROM bms_branch_prices bp WHERE bp.tenant_id=p.tenant_id AND bp.product_sku=p.sku AND bp.size=variants.size AND bp.pack_code='BASE' AND bp.location_id=$${locationParam}),sized.price, shared.price, p.price)) AS min_price,
-           MAX(COALESCE((SELECT bp.price FROM bms_branch_prices bp WHERE bp.tenant_id=p.tenant_id AND bp.product_sku=p.sku AND bp.size=variants.size AND bp.pack_code='BASE' AND bp.location_id=$${locationParam}),sized.price, shared.price, p.price)) AS max_price
+    SELECT MIN(COALESCE(${branchBasePrice("variants.size", `$${locationParam}`)},sized.price, shared.price, p.price)) AS min_price,
+           MAX(COALESCE(${branchBasePrice("variants.size", `$${locationParam}`)},sized.price, shared.price, p.price)) AS max_price
       FROM (
         SELECT DISTINCT price_i.size
           FROM bms_inventory price_i
@@ -521,7 +549,7 @@ export async function listSellableProducts(
     ? { rows: [] as Array<{ product_sku: string; size: string; price: string }> }
     : await query<{ product_sku: string; size: string; price: string }>(
         `SELECT i.product_sku, i.size,
-                COALESCE((SELECT bp.price FROM bms_branch_prices bp WHERE bp.tenant_id=p.tenant_id AND bp.product_sku=p.sku AND bp.size=i.size AND bp.pack_code='BASE' AND bp.location_id=$3),sized.price, shared.price, p.price)::text AS price
+                COALESCE(${branchBasePrice("i.size", "$3")},sized.price, shared.price, p.price)::text AS price
            FROM (
              SELECT tenant_id,product_sku,size FROM bms_inventory WHERE tenant_id=$1 AND product_sku=ANY($2::text[])
              UNION
@@ -1030,7 +1058,11 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
             p.category, p.brand, p.allergen_codes, p.allergen_information_provided,
             p.dietary_tags, p.food_safety_note, p.updated_at,
             t.name AS tenant_name, t.slug AS tenant_slug,
-            sp.logo_url, sp.website, sp.phone, sp.currency
+            sp.logo_url, sp.website, sp.phone, sp.currency,
+            COALESCE(sp.business_archetype, '') <> 'restaurant'
+              AND EXISTS (SELECT 1 FROM bms_product_sales_surfaces order_surface
+              WHERE order_surface.tenant_id = p.tenant_id AND order_surface.product_sku = p.sku
+                AND order_surface.surface = 'ONLINE_ORDER' AND order_surface.enabled) AS orderable
        FROM bms_products p
        JOIN bms_tenants t ON t.id = p.tenant_id
        LEFT JOIN bms_store_profile sp ON sp.tenant_id = p.tenant_id
@@ -1049,10 +1081,29 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
   const row = res.rows[0];
   if (!row) return null;
 
-  const [gallery, variants] = await Promise.all([
+  const requestedOrderable = row.orderable === true;
+  const [gallery, allVariants, packs, orderLocationId] = await Promise.all([
     listProductImages(row.tenant_id, row.sku),
     listVariants(row.tenant_id, row.sku),
+    query<{ size: string | null; pack_code: string; unit_name: string; base_qty: number }>(
+      `SELECT size, pack_code, unit_name, base_qty FROM bms_product_packs
+        WHERE tenant_id=$1 AND product_sku=$2 AND active AND upper(pack_code) <> 'BASE'
+        ORDER BY size NULLS FIRST, base_qty, pack_code LIMIT 40`, [row.tenant_id, row.sku]
+    ),
+    requestedOrderable ? findDefaultLocationId(row.tenant_id) : Promise.resolve(null),
   ]);
+  const orderable = requestedOrderable && Boolean(orderLocationId);
+  // Retail orders reserve the default branch. Show that branch's availability
+  // and current base price for products that can enter this cart.
+  const branchVariants = requestedOrderable
+    ? allVariants.filter((variant) => variant.location_id === orderLocationId)
+    : allVariants;
+  const variants = await Promise.all(branchVariants.map(async (variant) => ({
+    ...variant,
+    price: orderLocationId
+      ? (await getVariantBasePrice(row.tenant_id, row.sku, variant.size, orderLocationId)) ?? Number(variant.price)
+      : Number(variant.price),
+  })));
   const variantPrices = variants.map((variant) => Number(variant.price));
   const minPrice = variantPrices.length ? Math.min(...variantPrices) : Number(row.price);
   const maxPrice = variantPrices.length ? Math.max(...variantPrices) : Number(row.price);
@@ -1089,6 +1140,9 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
         available: variant.usable_stock ?? 0,
         price: Number(variant.price),
       })),
+      orderable,
+      packs: packs.rows.map((pack) => ({ size: pack.size, packCode: pack.pack_code,
+        unitName: pack.unit_name, baseQty: Number(pack.base_qty) })),
       updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : (row.updated_at ?? null),
     },
   };
@@ -1143,9 +1197,17 @@ export async function listPublicRelatedProducts(
               COALESCE(SUM(${usableStockSql('i')}), 0)::text AS available
          FROM bms_products p
          JOIN bms_tenants t ON t.id = p.tenant_id
+         LEFT JOIN bms_store_profile sp ON sp.tenant_id = p.tenant_id
+         LEFT JOIN LATERAL (
+           SELECT id FROM bms_locations
+            WHERE tenant_id = p.tenant_id AND active
+            ORDER BY (code = 'MAIN') DESC, is_head_office DESC, created_at
+            LIMIT 1
+         ) order_location ON TRUE
          LEFT JOIN bms_inventory i
            ON i.tenant_id = p.tenant_id
           AND i.product_sku = p.sku
+          AND (sp.business_archetype = 'restaurant' OR i.location_id = order_location.id)
         WHERE ${where}
         GROUP BY p.tenant_id, p.sku, p.name, p.price, p.image_url, p.category, p.brand
         ORDER BY COALESCE(SUM(${usableStockSql('i')}), 0) DESC, p.name
@@ -1230,6 +1292,8 @@ export async function getPublicShop(tenantSlug: string): Promise<PublicShop | nu
     currency: string | null;
     product_count: string;
     updated_at: Date | string | null;
+    business_archetype: string | null;
+    has_active_location: boolean;
   }>(
     `SELECT t.slug,
             t.name,
@@ -1237,6 +1301,8 @@ export async function getPublicShop(tenantSlug: string): Promise<PublicShop | nu
             sp.website,
             sp.phone,
             sp.currency,
+            sp.business_archetype,
+            EXISTS (SELECT 1 FROM bms_locations loc WHERE loc.tenant_id=t.id AND loc.active) AS has_active_location,
             COUNT(p.sku)::text AS product_count,
             MAX(p.updated_at) AS updated_at
        FROM bms_tenants t
@@ -1252,7 +1318,7 @@ export async function getPublicShop(tenantSlug: string): Promise<PublicShop | nu
         )
       WHERE t.slug = $1
         AND t.active = TRUE
-      GROUP BY t.slug, t.name, sp.logo_url, sp.website, sp.phone, sp.currency
+      GROUP BY t.id, t.slug, t.name, sp.logo_url, sp.website, sp.phone, sp.currency, sp.business_archetype
       LIMIT 1`,
     [slug]
   );
@@ -1268,6 +1334,7 @@ export async function getPublicShop(tenantSlug: string): Promise<PublicShop | nu
     currency: normalizeCurrency(row.currency),
     productCount: Math.max(0, Number(row.product_count) || 0),
     updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : (row.updated_at ?? null),
+    retailCartEnabled: row.business_archetype !== "restaurant" && row.has_active_location,
   };
 }
 
@@ -1300,9 +1367,17 @@ export async function listPublicProducts(
        FROM bms_products p
        JOIN bms_tenants t
          ON t.id = p.tenant_id
+       LEFT JOIN bms_store_profile sp ON sp.tenant_id = p.tenant_id
+       LEFT JOIN LATERAL (
+         SELECT id FROM bms_locations
+          WHERE tenant_id = p.tenant_id AND active
+          ORDER BY (code = 'MAIN') DESC, is_head_office DESC, created_at
+          LIMIT 1
+       ) order_location ON TRUE
        LEFT JOIN bms_inventory i
          ON i.tenant_id = p.tenant_id
         AND i.product_sku = p.sku
+        AND (sp.business_archetype = 'restaurant' OR i.location_id = order_location.id)
       WHERE t.slug = $1
         AND t.active = TRUE
         AND p.active = TRUE
@@ -1424,6 +1499,10 @@ export function validateProductFields(input: UpsertProductInput): NormalizedProd
   if (!sku) throw new Error("คอลัมน์ SKU ห้ามว่าง — กรอกรหัสสินค้าที่ไม่ซ้ำกันในไฟล์");
   if (!name) throw new Error("คอลัมน์ ชื่อสินค้า ห้ามว่าง");
   if (!Number.isFinite(price) || price < 0) throw new Error("คอลัมน์ ราคาขาย ต้องเป็นตัวเลข 0 ขึ้นไป และไม่ใส่สัญลักษณ์เงินตรา");
+  // bms_products.price is NUMERIC(12,2). Reject sub-satang values before Postgres rounds them.
+  if (Math.abs(price * 100 - Math.round(price * 100)) > 1e-8) {
+    throw new Error("คอลัมน์ ราคาขาย รองรับทศนิยมไม่เกิน 2 ตำแหน่ง (สตางค์)");
+  }
 
   const keywords = (input.keywords ?? []).map((k) => k.trim().toLowerCase()).filter(Boolean);
   // Omitted active is resolved inside the upsert: new products are safe drafts,
@@ -1446,6 +1525,9 @@ export function validateProductFields(input: UpsertProductInput): NormalizedProd
   if (input.cost_price != null && input.cost_price !== ("" as any)) {
     costPrice = Number(input.cost_price);
     if (!Number.isFinite(costPrice) || costPrice < 0) throw new Error("คอลัมน์ ต้นทุน ต้องเป็นตัวเลข 0 ขึ้นไป หรือเว้นว่าง");
+    if (Math.abs(costPrice * 100 - Math.round(costPrice * 100)) > 1e-8) {
+      throw new Error("คอลัมน์ ต้นทุน รองรับทศนิยมไม่เกิน 2 ตำแหน่ง (สตางค์)");
+    }
   }
 
   // น้ำหนัก (กรัม) — ไม่บังคับ; null = ยังไม่ได้กรอก (ต่างจาก 0) → ค่าส่งตามน้ำหนัก
@@ -1675,6 +1757,7 @@ export async function upsertProduct(
 
     const surfaces = requestedSurfaces ?? (isNew ? templateDefaults.surfaces : null);
     if (surfaces) {
+      await assertWeightedKgSalesSurfacesSupportedInTx(client, tenantId, sku, surfaces);
       await client.query(
         `UPDATE bms_product_sales_surfaces
             SET enabled = FALSE, updated_at = now()
@@ -1795,6 +1878,14 @@ export async function upsertProduct(
       confirmed: input.confirm_barcode_master === true,
     });
 
+    if (!transaction && !options.importMode) {
+      await insertAuditInTx(client, {
+        tenantId, actor: editorId == null ? "system" : String(editorId),
+        actorKind: editorId == null ? "SYSTEM" : "STAFF", actorUserId: auditUserId(editorId),
+        action: "product.upsert", target: sku, targetKind: "PRODUCT", source: "PRODUCT_SERVICE",
+        meta: { fields: providedFields },
+      });
+    }
     if (!transaction) await client.query("COMMIT");
     return res.rows[0];
   } catch (error) {
@@ -1820,6 +1911,14 @@ export async function setProductActive(
       `UPDATE bms_products SET active = $3, updated_at = now() WHERE tenant_id = $1 AND sku = $2`,
       [tenantId, sku, active]
     );
+    if (res.rowCount) {
+      await insertAuditInTx(client, {
+        tenantId, actor: editorId == null ? "system" : String(editorId),
+        actorKind: editorId == null ? "SYSTEM" : "STAFF", actorUserId: auditUserId(editorId),
+        action: "product.active", target: sku, targetKind: "PRODUCT", source: "PRODUCT_SERVICE",
+        meta: { active },
+      });
+    }
     await client.query("COMMIT");
     return (res.rowCount ?? 0) > 0;
   } catch (err) {
@@ -1856,6 +1955,12 @@ export async function setReorderPoint(
                  0::integer AS in_transit_qty, 0::integer AS transfer_lost_qty, reorder_point`,
       [tenantId, sku, size.trim().toUpperCase(), rp, locationId]
     );
+    await insertAuditInTx(client, {
+      tenantId, actor: editorId == null ? "system" : String(editorId),
+      actorKind: editorId == null ? "SYSTEM" : "STAFF", actorUserId: auditUserId(editorId),
+      action: "inventory.reorder_point.set", target: sku, targetKind: "INVENTORY",
+      source: "PRODUCT_SERVICE", meta: { locationId, size: size.trim().toUpperCase(), reorderPoint: rp },
+    });
     await client.query("COMMIT");
     return res.rows[0];
   } catch (err) {
@@ -1995,6 +2100,13 @@ export async function adjustStock(
       tenantId, locationId, sku, size: sizeUp,
       type: delta > 0 ? "STOCK_IN" : "STOCK_OUT",
       qty: Math.abs(delta), note: note ?? null, actor: actor ?? "admin",
+    });
+
+    await insertAuditInTx(client, {
+      tenantId, actor: actor ?? (editorId == null ? "system" : String(editorId)),
+      actorKind: editorId == null ? "SYSTEM" : "STAFF", actorUserId: auditUserId(editorId),
+      action: "stock.adjust", target: sku, targetKind: "INVENTORY", source: "PRODUCT_SERVICE",
+      meta: { locationId, size: sizeUp, delta },
     });
 
     await client.query("COMMIT");

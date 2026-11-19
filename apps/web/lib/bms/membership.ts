@@ -1065,6 +1065,23 @@ export async function listOrderDiscounts(tenantId: string, orderId: string): Pro
   }));
 }
 
+/** Order list reads discounts for up to 200 bills with one tenant-scoped query. */
+export async function listOrderDiscountsBatch(tenantId: string, orderIds: readonly string[]): Promise<Map<string, OrderDiscountLine[]>> {
+  const grouped = new Map<string, OrderDiscountLine[]>();
+  if (!orderIds.length) return grouped;
+  for (const id of orderIds) grouped.set(String(id), []);
+  const res = await query(
+    `SELECT order_id, source, label, amount, points_used FROM bms_order_discounts
+      WHERE tenant_id = $1 AND order_id = ANY($2::uuid[]) ORDER BY order_id, id`,
+    [tenantId, orderIds]
+  );
+  for (const row of res.rows) grouped.get(String(row.order_id))?.push({
+    source: row.source, label: row.label, amount: Number(row.amount),
+    pointsUsed: Number(row.points_used ?? 0),
+  });
+  return grouped;
+}
+
 // ---------------------------------------------------------------
 // ปรับแต้มด้วยมือ / ประวัติ / รายงาน
 // ---------------------------------------------------------------

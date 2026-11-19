@@ -91,7 +91,7 @@ try {
       await details.locator('#confirmed').check();
       writeFailure = true;
       await details.locator('.ant-modal-footer .ant-btn-primary').click();
-      await page.getByText(/COST_REVIEW_CONFLICT/).waitFor();
+      await page.getByText(lang === "th" ? /ข้อมูลเปลี่ยนหลังตรวจตัวอย่าง/ : /The data changed after preview/).waitFor();
       assert.equal(await details.locator('#reason').inputValue(), "FAKE reviewed rent receipt", "retry preserves evidence");
       writeFailure = false;
       await details.locator('.ant-modal-footer .ant-btn-primary').click();
@@ -100,8 +100,8 @@ try {
         disposition: "OPERATING", reason: "FAKE reviewed rent receipt", duplicateKey: null, startMonth: null, lifeMonths: null, residual: null, confirmed: true });
       await page.screenshot({ path: `${output}/${lang}-${width}-reviewed.png`, animations: "disabled" });
       readFailure = true;
-      await worksheet.getByRole('button', { name: /Refresh/ }).click();
-      await worksheet.getByText("COST_ALL_BRANCH_ACCESS_REQUIRED", { exact: true }).waitFor();
+      await worksheet.getByRole('button', { name: lang === "th" ? "รีเฟรช" : "Refresh" }).click();
+      await worksheet.getByText(lang === "th" ? /รายงานนี้ต้องใช้สิทธิ์เข้าถึงทุกสาขา/ : /This report requires access to every branch/).waitFor();
       assert.equal(await worksheet.getByText(/฿100\.00/).count(), 0, "error hides stale totals");
       readFailure = false; permissions = permissions.filter(p => p !== "expense.manage");
       await page.reload({ waitUntil: "domcontentloaded" });

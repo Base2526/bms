@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 
 import { gql, useMutation, useQuery, useSubscription } from "@apollo/client";
 import {
@@ -113,7 +115,7 @@ type ChannelModel = {
   color: string;
 };
 
-const CHANNELS: ChannelModel[] = [
+const CHANNELS = (uiText: UiTranslator = thaiUiText): ChannelModel[] => ([
   {
     key: "line",
     label: "LINE OA",
@@ -140,7 +142,7 @@ const CHANNELS: ChannelModel[] = [
   },
   {
     key: "web",
-    label: "Website Live Chat",
+    label: uiText("admin_ui.en_website_live_chat_ca8de"),
     tokenSource: "BMS widget",
     inbound: "owned",
     outbound: "response",
@@ -170,7 +172,7 @@ const CHANNELS: ChannelModel[] = [
     outbound: "beta",
     color: "volcano",
   },
-];
+]);
 
 const HEALTH_META: Record<string, { color: string; weight: number }> = {
   connected: { color: "green", weight: 100 },
@@ -235,9 +237,9 @@ function productionNoteFor(key: ChannelKey, t: TFunc) {
   return t(`admin_inbox_diagnostics.production_note_${key}`);
 }
 
-function fmtDate(v?: string | null) {
+function fmtDate(v?: string | null, uiText: UiTranslator = thaiUiText) {
   if (!v) return "-";
-  return new Date(v).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+  return new Date(v).toLocaleString(uiText.locale, { dateStyle: "medium", timeStyle: "short" });
 }
 
 function channelPath(channel: string, tenantId?: string) {
@@ -285,6 +287,7 @@ function EventAge({ occurredAt }: { occurredAt?: string | null }) {
 }
 
 export default function Page() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { data: meData, loading: loadingMe, error: meError } = useQuery(Q_ME, { fetchPolicy: "cache-and-network" });
   const me = meData?.bmsMe;
@@ -382,14 +385,14 @@ export default function Page() {
   const diagnosticLatest: Record<string, any> = Object.fromEntries(
     ((data?.bmsInboxDiagnosticLatest || []) as any[]).map((row) => [row.channel, row])
   );
-  const score = useMemo(() => readinessScore(CHANNELS, configs, health), [configs, health]);
-  const healthyCount = CHANNELS.filter((ch) => {
+  const score = useMemo(() => readinessScore(CHANNELS(uiText), configs, health), [uiText, configs, health]);
+  const healthyCount = CHANNELS(uiText).filter((ch) => {
     const cfg = configFor(ch.key, configs);
     const h = healthFor(ch.key, health);
     if (ch.key === "web") return cfg?.active !== false;
     return cfg?.active && cfg?.has_token && (h?.status ?? "connected") === "connected";
   }).length;
-  const betaCount = CHANNELS.filter((ch) => ch.inbound === "beta").length;
+  const betaCount = CHANNELS(uiText).filter((ch) => ch.inbound === "beta").length;
 
   if (meError) {
     return <Alert closable type="error" showIcon message={t("admin_inbox_diagnostics.load_permission_error")} description={meError.message} />;
@@ -459,11 +462,11 @@ export default function Page() {
         const diag = localDiagnosticLatest[row.key] || diagnosticLatest[row.key];
         return (
           <Space direction="vertical" size={2}>
-            <Text style={{ fontSize: 12 }}>{t("admin_inbox_diagnostics.in_real_label")} {fmtDate(h?.last_inbound_event_at)}</Text>
-            <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_inbox_diagnostics.out_real_label")} {fmtDate(h?.last_outbound_success_at)}</Text>
+            <Text style={{ fontSize: 12 }}>{t("admin_inbox_diagnostics.in_real_label")} {fmtDate(h?.last_inbound_event_at, uiText)}</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>{t("admin_inbox_diagnostics.out_real_label")} {fmtDate(h?.last_outbound_success_at, uiText)}</Text>
             <Space size={4} wrap>
               <Text type={diag?.lastInboundAt ? undefined : "secondary"} style={{ fontSize: 12 }}>
-                {t("admin_inbox_diagnostics.in_diag_label")} {fmtDate(diag?.lastInboundAt)}
+                {t("admin_inbox_diagnostics.in_diag_label")} {fmtDate(diag?.lastInboundAt, uiText)}
               </Text>
               {diag?.conversationId && (
                 <Link href={`/admin/inbox?c=${diag.conversationId}`}>
@@ -541,7 +544,7 @@ export default function Page() {
         </Col>
         <Col xs={24} md={8}>
           <Card>
-            <Statistic title={t("admin_inbox_diagnostics.stat_ready_channels_title")} value={healthyCount} suffix={`/ ${CHANNELS.length}`} prefix={<ThunderboltOutlined />} />
+            <Statistic title={t("admin_inbox_diagnostics.stat_ready_channels_title")} value={healthyCount} suffix={`/ ${CHANNELS(uiText).length}`} prefix={<ThunderboltOutlined />} />
             <Text type="secondary">{t("admin_inbox_diagnostics.stat_ready_channels_desc")}</Text>
           </Card>
         </Col>
@@ -564,7 +567,7 @@ export default function Page() {
               size="small"
               pagination={false}
               columns={columns}
-              dataSource={CHANNELS}
+              dataSource={CHANNELS(uiText)}
               scroll={{ x: 980 }}
             />
           </Card>
@@ -643,7 +646,7 @@ export default function Page() {
                         <Text code>{String(event.conversationId).slice(0, 8)}</Text>
                         {typeof event.latencyMs === "number" && <Tag color="green">{event.latencyMs}ms</Tag>}
                       </Space>
-                      <Text type="secondary" style={{ fontSize: 12 }}>{fmtDate(event.occurredAt)}</Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>{fmtDate(event.occurredAt, uiText)}</Text>
                     </Space>
                   ),
                 }))}

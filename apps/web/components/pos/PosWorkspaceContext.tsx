@@ -48,6 +48,16 @@ export type PosIncomingOrdersSnapshot = {
   deliveryPauseNeedsManualAction: boolean;
 };
 
+/**
+ * Health of the authoritative incoming-order read. Keep this separate from the order snapshot:
+ * when a refresh fails, the last snapshot may still be useful for reference but must not be
+ * presented as current or used to enable state-changing controls.
+ */
+export type PosIncomingFeedHealth = {
+  status: "CHECKING" | "LIVE" | "STALE";
+  error: string | null;
+};
+
 export type PosWorkspaceOptions = {
   embedded: boolean;
   initialTab: PosTab;
@@ -70,6 +80,8 @@ export type PosWorkspaceOptions = {
   onServiceCallsChange?: (calls: PosServiceCallNotice[]) => void;
   /** Feeds the restaurant shell bell/intake state while the embedded incoming workspace owns polling. */
   onIncomingOrdersChange?: (snapshot: PosIncomingOrdersSnapshot) => void;
+  /** Prevents the restaurant shell from presenting a stale/failed feed as online and accepting. */
+  onIncomingFeedHealthChange?: (health: PosIncomingFeedHealth) => void;
 };
 
 export const PosWorkspaceContext = createContext<PosWorkspaceOptions>({

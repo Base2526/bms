@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React, { useRef } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
@@ -23,6 +24,7 @@ export function SearchField({
   showSearchIcon = false,
   soft = false,
 }: Props) {
+  usePosLanguage();
   const { colors, spacing, radius, typography, minTouchTarget } = useTheme();
   // RN 0.87 เปลี่ยนชนิด instance ของ TextInput (ไม่ใช่คลาส TextInput แล้ว) — ใช้ ComponentRef
   // เพื่อให้ตามชนิดจริงของเวอร์ชันที่ติดตั้งอยู่เสมอ ไม่ต้องมาแก้ทุกครั้งที่อัปเกรด
@@ -80,7 +82,7 @@ export function SearchField({
       {value.length > 0 && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="ล้างคำค้น"
+          accessibilityLabel={posText("ล้างคำค้น")}
           hitSlop={4}
           onPress={() => {
             onChangeText('');

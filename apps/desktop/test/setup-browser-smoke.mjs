@@ -13,12 +13,29 @@ const appRoot = process.env.BMS_DESKTOP_SMOKE_APP_ROOT
 const { version } = JSON.parse(await readFile(new URL("package.json", appRoot), "utf8"));
 const output = new URL("../dist-smoke/", import.meta.url);
 await mkdir(output, { recursive: true });
+async function waitFor(check) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (await check()) return;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  throw new Error('UI condition timed out');
+}
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 try {
   for (const platform of ["win32", "linux", "darwin"]) {
     const page = await browser.newPage({ viewport: { width: 1035, height: 702 } });
     await page.addInitScript(({ platform, version }) => {
+      let language = localStorage.getItem('test-language') || 'th';
+      let onLanguageChanged = () => {};
       window.bmsDesktop = {
+        getLanguage: async () => language,
+        setLanguage: async value => {
+          language = value;
+          localStorage.setItem('test-language', value);
+          onLanguageChanged(value);
+          return { ok: true };
+        },
+        onLanguageChanged: listener => { onLanguageChanged = listener; return () => {}; },
         getAppInfo: async () => ({ platform, version, clientLabel: `${platform} Client`, secureStorageReady: true }),
         getSetupAdminTarget: async () => ({ kind: "local" }),
         openSetupAdmin: async () => { await new Promise(resolve => setTimeout(resolve, 100)); return { ok: true, kind: "local", serverUrl: "http://127.0.0.1:3100" }; },
@@ -31,11 +48,11 @@ try {
     await page.getByText("สร้างจากระบบหลังบ้านบนเครื่องนี้", { exact: true }).waitFor();
     assert.ok(await button.isVisible());
     await button.click();
-    await page.waitForFunction(() => document.querySelector("#server-url").value === "http://127.0.0.1:3100");
+    await waitFor(async () => await page.locator("#server-url").inputValue() === "http://127.0.0.1:3100");
     assert.equal(await button.isEnabled(), true);
     await page.locator("#server-url").fill("https://shop.example.com");
     await button.click();
-    await page.waitForFunction(() => !document.querySelector("#admin-link").disabled);
+    await waitFor(() => button.isEnabled());
     assert.equal(await page.locator("#server-url").inputValue(), "https://shop.example.com");
     await page.screenshot({ path: fileURLToPath(new URL(`setup-${platform}.png`, output)), fullPage: true });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
@@ -44,9 +61,18 @@ try {
     await page.getByText("Local server unavailable", { exact: true }).waitFor();
     assert.equal(await button.isEnabled(), true);
     await page.locator("#status-close").click();
+    await page.locator("#pairing-input").fill("FAKE pairing draft");
+    await page.locator("#language").selectOption("en");
+    await page.getByRole("heading", { name: "Connect your register" }).waitFor();
+    await page.getByText("Create from local back office", { exact: true }).waitFor();
+    assert.equal(await page.locator("#pairing-input").inputValue(), "FAKE pairing draft");
+    assert.equal(await page.locator("#server-url").inputValue(), "https://shop.example.com");
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: fileURLToPath(new URL(`setup-${platform}-compact.png`, output)), fullPage: true });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.reload();
+    await page.getByRole("heading", { name: "Connect your register" }).waitFor();
+    assert.equal(await page.locator("#language").inputValue(), "en");
     await page.close();
   }
   // A POS-only machine (no Retail Local server) is pointed at the cloud back office and keeps its URL field untouched.
@@ -63,9 +89,9 @@ try {
   await cloud.goto(new URL("renderer/setup.html", appRoot).href);
   await cloud.getByText("สร้างจากระบบหลังบ้าน BMS", { exact: true }).waitFor();
   await cloud.locator("#admin-link").click();
-  await cloud.waitForFunction(() => window.__opened === 1);
+  await waitFor(() => cloud.evaluate(() => window.__opened === 1));
   assert.equal(await cloud.locator("#server-url").inputValue(), "");
   await cloud.screenshot({ path: fileURLToPath(new URL("setup-cloud.png", output)), fullPage: true });
   await cloud.close()
-  console.log("Setup admin link: win32/linux/darwin local + cloud target, visibility, success, offline recovery, URL preservation and responsive screenshots passed.");
+  console.log("Setup: win32/linux/darwin local + cloud targets, recovery, TH/EN persistence, retained inputs and responsive screenshots passed.");
 } finally { await browser.close(); }

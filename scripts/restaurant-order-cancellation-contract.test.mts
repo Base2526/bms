@@ -57,7 +57,7 @@ test("POS owns both cancellation and refund-queue controls while admin mirrors p
   assert.match(posPage, /data\?\.status === "APPROVAL_REQUIRED"/);
   assert.match(posPage, /restaurant\.floor\.manage/);
   assert.match(posPage, /managerUserId: manager\.id, managerPin/);
-  assert.match(posPage, /ปิดเมนู “\$\{item\.name\}” เป็นหมดวันนี้ที่สาขานี้ด้วยหรือไม่/);
+  assert.match(posPage, /posText\("ปิดเมนู “\{v0\}” เป็นหมดวันนี้ที่สาขานี้ด้วยหรือไม่\?", \{ v0: item\.name \}\)/);
   assert.match(posPage, /productSku: item\.sku[\s\S]{0,120}unavailable: true/);
   assert.match(adminPage, /pendingRefundAmount/);
 });
@@ -94,7 +94,9 @@ test("releasing a reservation refuses a fractional quantity instead of letting P
   // malformed consumption snapshot would silently round stock and leave untraceable drift.
   const pos = withoutComments(read("apps/web/lib/bms/pos.ts"));
   const online = pos.slice(pos.indexOf("if (onlineCancellation) {"));
-  const branch = online.slice(0, online.indexOf("returnedItems.push"));
+  // The first push can now be a stock-free open item. Inspect through the stocked-line release.
+  const firstPush = online.indexOf("returnedItems.push");
+  const branch = online.slice(0, online.indexOf("returnedItems.push", firstPush + 1));
   assert.match(branch, /Number\.isInteger\(exactQty\)/);
   assert.match(branch, /reserved_stock = reserved_stock - \$5/);
 });

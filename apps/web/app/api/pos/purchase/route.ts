@@ -75,6 +75,7 @@ async function handlePOST(req: NextRequest) {
   const rawItems = Array.isArray(body.items) ? body.items : [];
   if (rawItems.some((raw: any) => typeof raw?.sku !== "string" || typeof raw?.size !== "string"
     || typeof raw?.qty !== "number"
+    || (raw.supplierQty != null && typeof raw.supplierQty !== "number")
     || (raw.lotNo != null && typeof raw.lotNo !== "string")
     || (raw.expiryDate != null && typeof raw.expiryDate !== "string"))) {
     return NextResponse.json({ status: "INVALID_INPUT", error: "จำนวนรับต้องเป็นตัวเลข เลขล็อตและวันหมดอายุต้องเป็นข้อความ" }, { status: 400 });
@@ -92,6 +93,7 @@ async function handlePOST(req: NextRequest) {
     sku: typeof raw?.sku === "string" ? raw.sku.trim() : "",
     size: typeof raw?.size === "string" ? raw.size.trim() : "",
     qty: Number(raw?.qty),
+    ...(raw?.supplierQty == null ? {} : { supplierQty: raw.supplierQty }),
     lotNo: typeof raw?.lotNo === "string" ? raw.lotNo.trim() || null : null,
     expiryDate: typeof raw?.expiryDate === "string" && isIsoDate(raw.expiryDate)
       ? raw.expiryDate
@@ -101,6 +103,7 @@ async function handlePOST(req: NextRequest) {
     !item.sku || item.sku.length > 200
     || !item.size || item.size.length > 100
     || !Number.isInteger(item.qty) || item.qty <= 0
+    || (item.supplierQty != null && (!Number.isInteger(item.supplierQty) || item.supplierQty <= 0))
     || (item.expiryDate != null && !item.lotNo)
   )) {
     return NextResponse.json({ error: "รายการรับสินค้าไม่ถูกต้อง" }, { status: 400 });
@@ -120,6 +123,7 @@ async function handlePOST(req: NextRequest) {
   );
   const status = result.status === "RECEIVED" || result.status === "PARTIAL"
     ? 200
+    : result.status === "BRANCH_FORBIDDEN" ? 403
     : result.status === "PO_NOT_FOUND" || result.status === "LINE_NOT_FOUND" || result.status === "LOCATION_NOT_FOUND"
       ? 404
       : result.status === "INVALID_STATE" || result.status === "OVER_RECEIVE" || result.status === "IDEMPOTENCY_CONFLICT"

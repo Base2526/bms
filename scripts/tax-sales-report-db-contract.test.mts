@@ -94,7 +94,7 @@ async function posReturn(orderId: string, amount: number, key: string): Promise<
 
 test("setup: a VAT-registered shop with documents at two establishments", async () => {
   tenantId = (await query<{ id: string }>(
-    `INSERT INTO bms_tenants (name, slug) VALUES ($1,$2) RETURNING id`,
+    `INSERT INTO bms_tenants (name, slug, plan) VALUES ($1,$2,'business') RETURNING id`,
     [`FAKE ${TAG}`, `fake-${TAG}-${process.pid}`]
   )).rows[0].id;
   await query(

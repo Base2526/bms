@@ -33,8 +33,11 @@ import {
   locationOfBoardGameMemberPass,
   locationOfBoardGamePassPlan,
   openBoardGameSession,
+  upsertBoardGamePublicLocationProfile,
   upsertBoardGamePassPlan,
 } from "../apps/web/lib/bms/boardGameCafe.ts";
+import { listBoardGameOffers, upsertBoardGameOffer } from "../apps/web/lib/bms/boardGameOffers.ts";
+import { readBoardGameCustomerCatalog } from "../apps/web/lib/bms/boardGameCustomerInfo.ts";
 import { recordPosSale } from "../apps/web/lib/bms/pos.ts";
 
 const TAG = "bg-pass-test";
@@ -144,6 +147,10 @@ test("setup: a throwaway board-game cafe with one member and one walk-in", async
      RETURNING id`,
     [tenantId, `FAKE ${TAG} staff`, `fake-${TAG}-staff-${Date.now()}@example.invalid`]
   )).rows[0].id;
+  await upsertBoardGamePublicLocationProfile(tenantId, {
+    locationId, publicVisible: false, displayName: `FAKE ${TAG} branch`,
+    publishRates: false, publishAvailability: false,
+  }, staffId);
   deviceId = (await query<{ id: string }>(
     `INSERT INTO bms_pos_devices (tenant_id, location_id, code, name)
      VALUES ($1,$2,'POS-1',$3) RETURNING id`, [tenantId, locationId, `FAKE ${TAG} device`]
@@ -212,6 +219,91 @@ test("the plan catalogue refuses a shape nobody can explain", async () => {
     /ชนิดแพ็กเกจ/,
   );
   assert.equal((await listBoardGamePassPlans(tenantId)).length, 2);
+});
+
+test("chat publication is explicit, keeps an omitted edit value, audits changes and rolls back duplicates", async () => {
+  const original = (await listBoardGamePassPlans(tenantId)).find((plan) => plan.kind === "UNLIMITED")!;
+  assert.equal(original.publishToChat, false);
+  const base = { id: original.id, code: original.code, name: original.name, kind: original.kind,
+    price: original.price, durationDays: original.durationDays, includedMinutes: null };
+  assert.equal((await upsertBoardGamePassPlan(tenantId, { ...base, publishToChat: true }, staffId)).publishToChat, true);
+  assert.equal((await upsertBoardGamePassPlan(tenantId, base, staffId)).publishToChat, true,
+    "an older caller that omits the new field cannot silently unpublish a plan");
+  assert.equal((await upsertBoardGamePassPlan(tenantId, { ...base, publishToChat: false }, staffId)).publishToChat, false);
+  await assert.rejects(() => upsertBoardGamePassPlan(
+    tenantId, { ...base, publishToChat: "true" } as any, staffId
+  ), /เผยแพร่ในแชท/);
+  await assert.rejects(() => upsertBoardGamePassPlan(
+    tenantId, { ...base, id: null }, staffId
+  ), /duplicate key/);
+  assert.equal((await listBoardGamePassPlans(tenantId)).find((plan) => plan.id === original.id)?.publishToChat, false);
+  assert.equal((await listBoardGamePassPlans(tenantId)).length, 2);
+  const audited = await query<{ actor: string; published: string }>(
+    `SELECT actor, meta->>'publishToChat' AS published
+       FROM bms_audit_log
+      WHERE tenant_id = $1 AND action = 'board_game.pass_plan_upsert' AND target = $2`,
+    [tenantId, original.id]
+  );
+  assert.ok(audited.rows.some((row) => row.actor === `user:${staffId}` && row.published === "true"));
+  assert.ok(audited.rows.some((row) => row.actor === `user:${staffId}` && row.published === "false"));
+});
+
+test("offer chat publication is explicit, audited and keeps failed writes out", async () => {
+  const base = { code: `FAKE_CHAT_OFFER_${Date.now()}`, name: "FAKE chat offer", kind: "TIME_PERCENT",
+    percentOff: 10, minPlayers: 2, minimumMinutes: 60, weekdays: [1, 2, 3, 4, 5], active: false };
+  const created = await upsertBoardGameOffer(tenantId, { ...base, publishToChat: true }, staffId);
+  assert.equal(created.publishToChat, true);
+  assert.equal((await listBoardGameOffers(tenantId)).find((offer) => offer.id === created.id)?.publishToChat, true);
+  assert.equal((await upsertBoardGameOffer(tenantId, { ...base, id: created.id }, staffId)).publishToChat, true,
+    "an omitted field must not silently unpublish an existing offer");
+  assert.equal((await upsertBoardGameOffer(tenantId, { ...base, id: created.id, publishToChat: false }, staffId)).publishToChat, false);
+  await assert.rejects(() => upsertBoardGameOffer(
+    tenantId, { ...base, id: created.id, publishToChat: "true" } as any, staffId
+  ), /เผยแพร่ในแชท/);
+  await assert.rejects(() => upsertBoardGameOffer(
+    tenantId, { ...base, id: created.id, active: "false" } as any, staffId
+  ), /สถานะโปรโมชัน/);
+  await assert.rejects(() => upsertBoardGameOffer(
+    tenantId, { ...base, id: created.id, weekdays: "123" } as any, staffId
+  ), /วันใช้งาน/);
+  await assert.rejects(() => upsertBoardGameOffer(tenantId, base, staffId), /duplicate key/);
+  assert.equal((await listBoardGameOffers(tenantId)).filter((offer) => offer.code === base.code).length, 1);
+  const audited = await query<{ actor: string; published: string }>(
+    `SELECT actor, meta->>'publishToChat' AS published
+       FROM bms_audit_log
+      WHERE tenant_id = $1 AND action = 'board_game.offer_upsert' AND target = $2`,
+    [tenantId, created.id]
+  );
+  assert.ok(audited.rows.some((row) => row.actor === `user:${staffId}` && row.published === "true"));
+  assert.ok(audited.rows.some((row) => row.actor === `user:${staffId}` && row.published === "false"));
+});
+
+test("customer catalog reads only active, published plans and offers from the saved branch", async () => {
+  assert.equal((await readBoardGameCustomerCatalog(tenantId, "plans")).status, "NOT_PUBLISHED");
+  assert.equal((await readBoardGameCustomerCatalog(tenantId, "offers")).status, "NOT_PUBLISHED");
+  const plan = (await listBoardGamePassPlans(tenantId)).find((row) => row.kind === "UNLIMITED")!;
+  const offer = (await listBoardGameOffers(tenantId)).find((row) => row.name === "FAKE chat offer")!;
+  const planBase = { id: plan.id, code: plan.code, name: plan.name, kind: plan.kind,
+    price: plan.price, durationDays: plan.durationDays, includedMinutes: null };
+  const offerBase = { id: offer.id, code: offer.code, name: offer.name, kind: offer.kind,
+    percentOff: offer.percentOff, fixedPrice: offer.fixedPrice, minPlayers: offer.minPlayers,
+    maxPlayers: offer.maxPlayers, minimumMinutes: offer.minimumMinutes, weekdays: offer.weekdays };
+  try {
+    await upsertBoardGamePassPlan(tenantId, { ...planBase, publishToChat: true }, staffId);
+    await upsertBoardGameOffer(tenantId, { ...offerBase, active: true, publishToChat: true }, staffId);
+    const plans = await readBoardGameCustomerCatalog(tenantId, "plans");
+    const offers = await readBoardGameCustomerCatalog(tenantId, "offers");
+    assert.equal(plans.status, "OK");
+    assert.deepEqual((plans as any).plans.map((row: any) => row.name), [plan.name]);
+    assert.equal(offers.status, "OK");
+    assert.deepEqual((offers as any).offers.map((row: any) => row.name), [offer.name]);
+    assert.doesNotMatch(JSON.stringify({ plans, offers }), new RegExp(`${plan.id}|${offer.id}|requiredProductSku`));
+  } finally {
+    await upsertBoardGameOffer(tenantId, { ...offerBase, active: false, publishToChat: false }, staffId);
+    await upsertBoardGamePassPlan(tenantId, { ...planBase, publishToChat: false }, staffId);
+  }
+  assert.equal((await readBoardGameCustomerCatalog(tenantId, "plans")).status, "NOT_PUBLISHED");
+  assert.equal((await readBoardGameCustomerCatalog(tenantId, "offers")).status, "NOT_PUBLISHED");
 });
 
 test("an unlimited pass makes the frozen bill exactly zero and records what it covered", async () => {
@@ -597,6 +689,8 @@ test("teardown: the throwaway cafe leaves nothing behind", async () => {
     "bms_board_game_pass_ledger",
     "bms_board_game_member_passes",
     "bms_board_game_pass_plans",
+    "bms_board_game_offers",
+    "bms_board_game_public_locations",
     "bms_board_game_session_games",
     "bms_board_game_session_participants",
     "bms_board_game_group_items",

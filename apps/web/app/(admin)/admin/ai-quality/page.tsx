@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { useI18n } from "@/lib/i18nContext";
@@ -127,9 +129,9 @@ const CATEGORY_KEYS: [string, string][] = [
   ["OTHER", "cat_other"],
 ];
 
-const fmt = (iso?: string | null) =>
+const fmt = (iso?: string | null, uiText: UiTranslator = thaiUiText) =>
   iso
-    ? new Date(iso).toLocaleString("th-TH", {
+    ? new Date(iso).toLocaleString(uiText.locale, {
         timeZone: "Asia/Bangkok",
         dateStyle: "medium",
         timeStyle: "short",
@@ -172,6 +174,7 @@ function CategoryChips({
 }
 
 export default function AiQualityPage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const { can, loading: permissionsLoading } = useBmsPermissions();
@@ -351,8 +354,8 @@ export default function AiQualityPage() {
           onChange={setSource}
           style={{ width: 165 }}
           options={[
-            { value: "AUTO_FAILURE", label: "Failure cases" },
-            { value: "AUTO_SAMPLE", label: "Sampled QA (5%)" },
+            { value: "AUTO_FAILURE", label: uiText("admin_ui.en_failure_cases_0add3") },
+            { value: "AUTO_SAMPLE", label: uiText("admin_ui.en_sampled_qa_5_df146") },
           ]}
         />
         <Select
@@ -386,14 +389,14 @@ export default function AiQualityPage() {
                 <span className={styles.rowTop}>
                   <OutcomeTag value={row.signalOutcome} />
                   <Tag>{row.channel}</Tag>
-                  <Tag>{row.source === "AUTO_SAMPLE" ? "sample" : row.severity}</Tag>
+                  <Tag>{row.source === "AUTO_SAMPLE" ? uiText("admin_ui.en_sample_81513") : row.severity}</Tag>
                   {row.status === "REVIEWED" ? (
                     <Tag color={row.verdict === "FAIL" ? "red" : row.verdict === "PASS" ? "green" : "blue"}>{row.verdict}</Tag>
                   ) : null}
                 </span>
                 <p className={styles.rowText}>{row.customerPreview || "—"}</p>
                 <span className={styles.rowMeta}>
-                  <span>{fmt(row.createdAt)}</span>
+                  <span>{fmt(row.createdAt, uiText)}</span>
                 </span>
               </span>
             </button>
@@ -413,7 +416,7 @@ export default function AiQualityPage() {
     <>
       <div className={styles.caseHead}>
         <div style={{ flex: "1 1 260px", minWidth: 0 }}>
-          <span className={styles.caseId}>{fmt(detail.createdAt)}</span>
+          <span className={styles.caseId}>{fmt(detail.createdAt, uiText)}</span>
           <div className={styles.caseFacts}>
             <OutcomeTag value={detail.signalOutcome} />
             <Tag>{detail.channel}</Tag>
@@ -447,7 +450,7 @@ export default function AiQualityPage() {
               className={`${item.direction === "IN" ? styles.messageCustomer : styles.messageAi} ${flagged ? styles.messageFlagged : ""}`}
             >
               <Text type="secondary" style={{ fontSize: 11 }}>
-                {item.direction === "IN" ? "Customer" : item.sender === "ai" ? "AI" : item.sender || "Staff"} · {fmt(item.createdAt)}
+                {item.direction === "IN" ? uiText("admin_ui.en_customer_0e857") : item.sender === "ai" ? "AI" : item.sender || uiText("admin_ui.en_staff_a4730")} · {fmt(item.createdAt, uiText)}
               </Text>
               <div>{item.body}</div>
             </div>
@@ -514,11 +517,11 @@ export default function AiQualityPage() {
             <Popconfirm
               title={t("admin_ai_quality.dismiss_confirm_title")}
               description={t("admin_ai_quality.dismiss_confirm_desc")}
-              okText="Dismiss"
+              okText={uiText("admin_ui.en_dismiss_70afe")}
               cancelText={t("admin_ai_quality.cancel")}
               onConfirm={() => activeId && dismiss({ variables: { id: activeId } })}
             >
-              <Button loading={dismissing}>Dismiss</Button>
+              <Button loading={dismissing}>{uiText("admin_ui.en_dismiss_70afe")}</Button>
             </Popconfirm>
             <span className={styles.hint}>{t("admin_ai_quality.save_and_next", { count: remaining })}</span>
           </Space>
@@ -541,7 +544,7 @@ export default function AiQualityPage() {
     <div className={styles.page}>
       <div className={styles.bar}>
         <div>
-          <h1 className={styles.barTitle}>AI Quality Control</h1>
+          <h1 className={styles.barTitle}>{uiText("admin_ui.en_ai_quality_control_7cdd1")}</h1>
           <p className={styles.barCopy}>{t("admin_ai_quality.hero_copy")}</p>
         </div>
         <span className={styles.barSpacer} />
@@ -555,7 +558,7 @@ export default function AiQualityPage() {
             { value: 90, label: t("admin_ai_quality.days_90") },
           ]}
         />
-        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{uiText("admin_ui.en_refresh_56e3b")}</Button>
       </div>
 
       <AnswerEvidenceSearch days={days} />
@@ -568,19 +571,19 @@ export default function AiQualityPage() {
           </span>
         </div>
         <div className={styles.cell}>
-          <span className={styles.cellKey}><CheckCircleOutlined /> Success rate</span>
+          <span className={styles.cellKey}><CheckCircleOutlined />  {uiText("admin_ui.en_success_rate_12374")}</span>
           <span className={`${styles.cellValue} ${styles.valuePass}`}>{metrics?.successRate ?? 0}%</span>
           <span className={styles.cellNote}>
             {t("admin_ai_quality.success_note", { count: metrics?.successCount ?? 0, total: metrics?.totalTurns ?? 0 })}
           </span>
         </div>
         <div className={styles.cell}>
-          <span className={styles.cellKey}><WarningOutlined /> Handoff rate</span>
+          <span className={styles.cellKey}><WarningOutlined />  {uiText("admin_ui.en_handoff_rate_4e764")}</span>
           <span className={`${styles.cellValue} ${styles.valueHandoff}`}>{metrics?.handoffRate ?? 0}%</span>
           <span className={styles.cellNote}>{t("admin_ai_quality.handoff_note", { count: metrics?.handoffCount ?? 0 })}</span>
         </div>
         <div className={styles.cell}>
-          <span className={styles.cellKey}><ExclamationCircleOutlined /> Unresolved rate</span>
+          <span className={styles.cellKey}><ExclamationCircleOutlined />  {uiText("admin_ui.en_unresolved_rate_75f3b")}</span>
           <span className={`${styles.cellValue} ${styles.valueFail}`}>{metrics?.unresolvedRate ?? 0}%</span>
           <span className={styles.cellNote}>{t("admin_ai_quality.unresolved_note", { count: metrics?.unresolvedCount ?? 0 })}</span>
         </div>
@@ -593,7 +596,7 @@ export default function AiQualityPage() {
                   <div
                     className={styles.sparkDay}
                     key={row.day}
-                    title={`${row.day}: success ${row.successCount}, handoff ${row.handoffCount}, unresolved ${row.unresolvedCount}`}
+                    title={uiText("admin_ui.en_success_handoff_unresolved_3e31f", { v0: row.day, v1: row.successCount, v2: row.handoffCount, v3: row.unresolvedCount })}
                   >
                     <div className={styles.trendUnresolved} style={{ height: `${(row.unresolvedCount / maxDaily) * 44}px` }} />
                     <div className={styles.trendHandoff} style={{ height: `${(row.handoffCount / maxDaily) * 44}px` }} />
@@ -602,9 +605,9 @@ export default function AiQualityPage() {
                 ))}
               </div>
               <div className={styles.legend}>
-                <span style={{ color: "#30a46c" }}>■ Success</span>
-                <span style={{ color: "#f0a020" }}>■ Handoff</span>
-                <span style={{ color: "#d84a4a" }}>■ Unresolved</span>
+                <span style={{ color: "#30a46c" }}>{uiText("admin_ui.en_success_fbb2b")}</span>
+                <span style={{ color: "#f0a020" }}>{uiText("admin_ui.en_handoff_e35c3")}</span>
+                <span style={{ color: "#d84a4a" }}>{uiText("admin_ui.en_unresolved_e5b3a")}</span>
               </div>
             </>
           ) : (

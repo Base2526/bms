@@ -172,6 +172,8 @@ export type ReceiptPayload = {
   referenceDocNo?: string | null;
   /** ค่าที่เข้ารหัสเป็น barcode; แยกจาก docNo เพื่อให้สลิปคืนสแกนกลับไปหาบิลเดิม */
   barcodeValue?: string | null;
+  /** เลขคิวรับของ (10.111) — พิมพ์ตัวใหญ่หัวบิล เพราะลูกค้าต้องจำเลขนี้ ไม่ใช่เลขบิล */
+  pickupQueueLabel?: string | null;
   /** เลขที่บิลที่คนอ่าน (ต่างจาก docNo ซึ่งเป็นเลขใบกำกับ) */
   billNo?: string | null;
   /** Restaurant service label printed on both preview and ESC/POS receipts. */
@@ -268,6 +270,13 @@ export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}):
   b.line(payload.docTitle);
   if (payload.referenceDocNo) b.line(`${label("อ้างอิงบิลเดิม", "Original bill")} ${payload.referenceDocNo}`);
   if (payload.relatedDocNo) b.line(`${label("ใบลดหนี้", "Credit note")} ${payload.relatedDocNo}`);
+
+  if (payload.pickupQueueLabel) {
+    b.divider();
+    b.line(label("คิวของคุณ", "Your number"));
+    b.bold(true).size(2, 2).line(payload.pickupQueueLabel).size(1, 1).bold(false);
+    b.divider();
+  }
 
   b.align(0);
   if (payload.billNo) b.columnsLine(label("เลขที่บิล", "Bill No"), payload.billNo);

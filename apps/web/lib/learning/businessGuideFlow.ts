@@ -51,6 +51,50 @@ const node = (
 ): BusinessFlowNode => ({ target, icon, title, description, narration, ...options });
 
 export const businessGuideFlows: Record<BusinessTrackId, BusinessGuideConfig> = {
+  "building-materials": {
+    eyebrow: "PILOT · BUILDING MATERIALS",
+    heading: bi("จากสินค้าและสเปก สู่ใบเสนอราคาและการส่งมอบ", "From catalog and specs to quotations and handoff"),
+    description: bi("เดินตามงานร้านวัสดุก่อสร้างที่ตรวจสอบได้ พร้อมระบุส่วนที่ยังต้องทดสอบในร้านจริง", "Follow verified building-material workflows and see what still needs a real-shop pilot."),
+    flowTitle: bi("Flow ร้านวัสดุก่อสร้าง · ทดลอง", "Building-materials pilot flow"),
+    flowNote: bi("ใบเสนอราคาไม่จองสินค้า การแปลงเป็นออร์เดอร์ตรวจสต็อกซ้ำ; งานตัดจากม้วน ส่งหลายเที่ยว และเจ้าหนี้ยังไม่ครบ", "Quotes do not reserve stock; conversion rechecks it. Roll cutting, multi-trip delivery and payables remain incomplete."),
+    lanes: [
+      [
+        node("shop", "▣", bi("ตั้งร้าน / สาขา", "Shop / branch"), bi("คน สิทธิ์ และภาษี", "People, permissions, VAT"), bi("เริ่มจากสาขา พนักงาน สิทธิ์ และภาษีที่ตรวจแล้วก่อนทำรายการจริง", "Start with verified branches, staff permissions and tax settings before real transactions.")),
+        node("catalog", "◆", bi("สินค้า / หน่วย", "Products / units"), bi("ถุง พาเลท สี และเลขเครื่องมือ", "Bags, pallets, paint, serials"), bi("ปูนถุงกับพาเลทใช้ตัวคูณแพ็กที่ตรวจได้ สีต่างขนาดแยกสต็อก และเครื่องมือที่ติดตามรายชิ้นต้องมีเลขประจำตัว", "Cement bags and pallets need verified pack factors; paint sizes keep separate stock, and tracked tools need serials.")),
+        node("specs", "▤", bi("สเปกมีที่มา", "Sourced specs"), bi("ผู้ตรวจเผยแพร่", "Reviewed publication"), bi("ขนาด เกรด และมาตรฐานเผยแพร่ได้เมื่อมีเอกสารอ้างอิงและผู้มีสิทธิ์ตรวจ ห้ามเดาจากชื่อสินค้า", "Publish dimensions, grades and standards only with a source and authorized review; never infer them from a product name.")),
+        node("quote", "▧", bi("เสนอราคา", "Quote"), bi("รายการและค่าส่งที่ทราบ", "Verified lines and freight"), bi("ฝ่ายขายสร้างใบเสนอราคาที่มีรายการ หน่วย ราคา ภาษี และค่าส่งที่ทราบ ถ้าค่าส่งไม่ทราบจะไม่แสดงยอดยืนยัน", "Sales drafts a quote with checked lines, units, price, tax and known freight; unknown freight cannot become a confirmed total.")),
+        node("approval", "✓", bi("อนุมัติ / ยอมรับ", "Approve / accept"), bi("แยกผู้ตรวจและเก็บหลักฐาน", "Separate reviewer and evidence"), bi("ผู้มีสิทธิ์อีกคนอนุมัติ บันทึกการส่งและหลักฐานยอมรับ การแก้ใบที่ส่งแล้วสร้างรุ่นใหม่", "A separate authorized person approves; sending and acceptance are recorded, and a sent quote is revised as a new version."), { tone: "purple" }),
+      ],
+      [
+        node("order", "▰", bi("แปลงเป็นออร์เดอร์", "Convert to order"), bi("ตรวจอายุและสต็อกซ้ำ", "Recheck validity and stock"), bi("ใบเสนอราคาไม่จองสินค้า เมื่อแปลงเป็นออร์เดอร์ ระบบตรวจอายุ ราคา และสต็อกอีกครั้งก่อนจอง", "A quote holds no goods. Conversion checks validity, prices and stock again before reservation.")),
+        node("sale", "▥", bi("ขาย / ชำระ / เชื่อ", "Sale / payment / credit"), bi("ยอดจริงและลูกหนี้", "Real money and receivables"), bi("พนักงานขายผ่านเครื่องที่มีสิทธิ์ ยอดชำระและการขายเชื่อบันทึกตามบิลจริง โดยลูกหนี้ไม่ใช่เงินสดในลิ้นชัก", "Authorized staff settle through POS; payments and credit follow the bill, and receivables are not drawer cash.")),
+        node("purchase", "⬢", bi("ซื้อเข้า / รับบางส่วน", "PO / partial receipt"), bi("หน่วยและยอดที่รับจริง", "Verified units and quantity"), bi("ใบสั่งซื้อรับของได้บางส่วน แต่ต้องตรวจหน่วยจากผู้ขายกับหน่วยสต็อก และบันทึกการเคลื่อนไหวตามของจริง", "A PO can be received partially; verify supplier-to-stock units and post movements for actual goods.")),
+        node("handoff", "▰", bi("ส่งมอบ", "Handoff"), bi("ส่งทั้งบิลหรือรับที่สาขา", "Whole order or branch pickup"), bi("การส่งมอบปัจจุบันทำระดับทั้งบิลหรือรับสินค้าที่สาขา ยังไม่มีการส่งบิลเดียวหลายเที่ยวพร้อมรายการย่อย", "Current delivery handles a whole order or branch pickup; line-level multi-trip shipping is not yet complete."), { tone: "orange" }),
+      ],
+      [
+        node("return", "↶", bi("คืน / ภาษี", "Return / VAT"), bi("อ้างบิลและตรวจสินค้า", "Original bill and inspection"), bi("การคืนบางส่วนอ้างบิลเดิม ตรวจสินค้า ล็อตหรือเลขประจำตัว เงินคืนและภาษี ก่อนเปลี่ยนสต็อก", "Partial returns use the original bill and check product identity, refund and VAT before stock changes."), { tone: "red" }),
+        node("customer", "●", bi("แชท / เว็บ", "Chat / web"), bi("ข้อเท็จจริงที่เผยแพร่", "Published facts only"), bi("เอไอลูกค้าตอบราคา หน่วย สต็อก และสเปกที่เผยแพร่จริง เมื่อไม่ทราบค่าส่งหรือข้อจำกัดการใช้ต้องส่งต่อพนักงาน", "Customer AI answers only published prices, units, stock and specs; unknown freight or use limits require staff handoff."), { ai: "customer" }),
+        node("owner", "▥", bi("รายงาน / ตัดสินใจ", "Reports / decisions"), bi("คนมีสิทธิ์ยืนยัน", "Authorized human confirms"), bi("เจ้าของตรวจยอดขายและสต็อกจากรายงาน ส่วนลูกหนี้กับของคืนตรวจหน้าที่เกี่ยวข้อง เอไอสรุปเฉพาะข้อมูลที่มีเครื่องมืออนุญาต การเปลี่ยนราคา เครดิต คืนเงินและสต็อกต้องให้คนมีสิทธิ์ยืนยัน", "Owners review sales and stock reports, while receivables and returns are checked in their own screens. AI summarizes only approved-tool facts; authorized people confirm price, credit, refund and stock changes."), { ai: "owner" }),
+      ],
+    ],
+    customer: {
+      title: bi("ลูกค้าถามสินค้าที่ร้านเผยแพร่", "Customers ask about published products"),
+      question: bi("ปูนรุ่นนี้ขายเป็นพาเลทไหม และส่งหน้างานได้เมื่อไร?", "Is this cement sold by pallet, and when can it reach my site?"),
+      answer: bi("AI ตรวจแพ็ก ราคา และสต็อกที่เผยแพร่ได้ แต่เวลาส่งและค่าส่งที่ยังไม่ยืนยันต้องให้พนักงานตรวจ", "AI can check published packs, prices and stock; staff must confirm unverified delivery time and freight."),
+      capabilities: { th: ["ตรวจราคาและหน่วยที่เผยแพร่", "ตรวจสต็อกตามข้อมูลที่อนุญาต", "ตอบสเปกที่มีแหล่งอ้างอิง", "แนะนำให้ขอใบเสนอราคาจากพนักงาน"], en: ["Check published price and units", "Check permitted stock facts", "Answer sourced specs", "Direct quotation requests to staff"] },
+      limit: bi("AI ไม่รับรองความปลอดภัย ความเข้ากันได้ รถยก หรือเที่ยวส่ง และไม่อนุมัติราคา/เครดิต", "AI cannot certify safety, compatibility, lifting or delivery trips, or approve price or credit."), focusTarget: "customer",
+    },
+    owner: {
+      title: bi("เจ้าของตรวจข้อมูลหลังบ้าน", "Owners review back-office facts"),
+      question: bi("เดือนนี้ยอดขายปูนเท่าไร และสินค้าตัวไหนเสี่ยงหมด?", "What are cement sales this month, and which products risk stocking out?"),
+      metrics: { th: [{ label: "ยอดขาย", value: "จากบิลจริง" }, { label: "ขายดี", value: "ตามช่วงที่เลือก" }, { label: "เสี่ยงหมด", value: "จากสต็อกจริง" }], en: [{ label: "Sales", value: "Actual bills" }, { label: "Top products", value: "Selected period" }, { label: "Stockout risk", value: "Verified stock" }] },
+      analyses: { th: ["เปรียบเทียบยอดขายตามสาขาและช่วงเวลา", "ตรวจสินค้าขายดีจากบิลที่ยืนยัน", "ตรวจสินค้าที่เสี่ยงหมดจากสต็อกจริง", "ตรวจคำเตือนความผิดปกติของสต็อก"], en: ["Compare branch sales over time", "Review top products from confirmed bills", "Check stockout risk from verified balances", "Review inventory integrity warnings"] },
+      limit: bi("ตัวอย่างนี้ไม่มีตัวเลขจริง; ลูกหนี้ต้องตรวจหน้า Receivables โดยตรง AI ไม่อนุมัติใบเสนอราคา เครดิต คืนเงิน หรือเปลี่ยนสต็อก", "These examples contain no live figures; review receivables in the Receivables screen. AI does not approve quotes, credit, refunds or stock changes."), focusTarget: "owner", formats: ["XLSX", "CSV", "PDF"],
+    },
+    authority: { th: ["preset ร้านวัสดุก่อสร้างไม่ได้เปิดทุกฟีเจอร์", "ใบเสนอราคาไม่จองสต็อกและต้องตรวจใหม่ก่อนแปลง", "งานตัดจากม้วน ส่งหลายเที่ยว และเจ้าหนี้ยังไม่ครบ", "เอกสารภาษีต้องให้นักบัญชีตรวจรูปแบบก่อนใช้ยื่นจริง"], en: ["The building-materials preset does not enable every feature", "Quotes hold no stock and conversion rechecks it", "Roll cutting, multi-trip delivery and payables remain incomplete", "An accountant must review tax documents before filing"] },
+    architecture: { th: ["ร้าน / สาขา", "สินค้าและสเปก", "ใบเสนอราคา", "ออร์เดอร์ / เงิน / สต็อก", "รายงานที่ตรวจได้"], en: ["Shop / branch", "Catalog and specs", "Quotation", "Order / money / stock", "Verified reports"] },
+    guideSlug: "building-materials-quotations",
+  },
   retail: {
     eyebrow: "AI · RETAIL",
     heading: bi("ตั้งแต่สแกนสินค้าไปจนถึงรายงานเจ้าของร้าน", "From product scan to the owner's report"),

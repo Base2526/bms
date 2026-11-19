@@ -4,12 +4,33 @@ Bare React Native POS client (`react-native@0.87.1`, no Expo). The app uses HTTP
 authoritative reads and commands and GraphQL WS only for scoped invalidation. The database and BMS
 services remain the source of truth.
 
+## Operator language (Thai / English)
+
+Choose Thai or English on the sign-in screen or under Device settings. Thai is the default.
+The preference is saved separately from pairing in Keychain/Keystore (`com.bms.pos.language.v1`)
+and restored on launch. A storage failure leaves the selected language active for the session and
+shows a message. Changing language rerenders the current screen without clearing PIN, cart,
+pending payment or offline queue state.
+
+Authored operator copy uses `src/i18n/catalog.ts` and the explicit paired catalog
+`apps/web/i18n/pos-client.json`; React screens subscribe through `usePosLanguage()`. Keep business
+helpers React-free. Server errors, product/customer names, pharmacist evidence and user-entered
+text remain verbatim. Receipt language follows the store's receipt configuration independently.
+Language tests cover persistence races, failed writes, retaining entered state and refreshing cached
+shift timestamps. Action copy distinguishes **Cancel** from **Cancelled/Voided** status labels.
+iOS bundles `en.lproj/InfoPlist.strings` and `th.lproj/InfoPlist.strings` for camera/local-network
+permission explanations, registered in the Xcode target. These prompts follow the **iOS app/system
+language**, separately from the in-app operator preference. Android native date/time pickers follow
+the system locale; their OK/Cancel buttons use the selected operator language. Native layout,
+OS dialogs and printer output still require Android/iOS device QA.
+
 ## Pairing by Admin QR (Android / iOS)
 
 Open Admin **POS Devices** through a device-reachable HTTPS origin, select the register and confirm
 **Issue token**. The one-time display now includes a locally generated QR containing the HTTPS
 origin and the issued device credential (`bmspos://pair?t=...&h=...`). No external QR service is used.
-In the mobile app, open **Device Settings > Scan QR to pair**. A valid scan calls the existing
+In the mobile app, open **Device Settings** and tap the square QR icon beside **Pair device**
+(its accessibility label is "Scan QR to pair"; it shows a spinner while scanning). A valid scan calls the existing
 server verification and secure-storage flow automatically; a different existing credential requires
 confirmation first. Cashier PIN/RBAC and unresolved offline-cash guards still apply.
 
@@ -18,7 +39,8 @@ does not revoke its token. Do not share screenshots. Only the token hash is reta
 an existing token cannot be redisplayed. Issuing another token invalidates the old one immediately.
 HTTP/loopback Admin origins do not offer a mobile QR. Both devices must reach the advertised HTTPS
 origin and trust its certificate. Manual link/token entry remains available; externally opened deep
-links still only prefill Settings and require Save.
+links still only prefill Settings and require Save. A pairing link with an invalid or cleartext
+remote server is rejected; a bare token may still use the server entered separately in Settings.
 
 The QR action uses the existing native QR scanner separately from product lookup. Invalid QR,
 cancelled scans and late results after leaving Settings do not change pairing. The native scanner
@@ -35,8 +57,11 @@ Detailed recheck on `codex/mobile-qr-pairing` (2026-11-03) also covers:
 - malformed bootstrap identities/errors, HTTP 401 versus 403/5xx, failed secure-storage writes and
   incompatible pending cash; only a verified, stored token reports success;
 - credential redaction before status display, diagnostic persistence and restored-queue delivery;
-- navigation remaining on Settings after a rejected first-pair candidate, while a revoked saved
-  credential still clears the cashier and resets navigation;
+- navigation remaining on Settings after a rejected first-pair candidate; a revoked saved
+  credential clears the cashier and removes the register from the back stack while keeping an
+  open Settings screen visible with its verification result and unsaved pairing input;
+- confirmed unpairing leaves Device Settings open for a new QR or pairing link, with Login beneath
+  it and no register on the back stack;
 - rejecting pairing QR/token inputs on product/stock scanners before calling a SKU resolver.
 
 The three previously failing source-text contracts were updated to verify the current safeguards:
@@ -64,6 +89,99 @@ attempt or clear its busy state. Four additional regression tests reproduce thes
 validation passed Mobile TypeScript, **390 tests / 48 suites**, targeted scanner ESLint, and
 production-mode Android/iOS Metro bundles. The native/device/PostgreSQL limitations above remain;
 Web gate, Desktop tests and Android native build results refer to the preceding recheck.
+
+## Feature recheck 2026-11-12
+
+Reviewed the implemented native feature inventory against the screens/providers, generated GraphQL
+operations, shared services and existing contracts: pairing/PIN and permissions; catalog/scanners;
+cart, payment, receipts and returns; shifts/drawer; offline recovery and realtime; restaurant floor,
+checks, incoming orders and kitchen; board-game sessions/queues; inventory transfers/counts; settings
+and LAN printing. This is source/build/regression coverage, not physical-device acceptance or a claim
+that every backend database transition has been exercised.
+
+| Gap found | Correction |
+| --- | --- |
+| Kitchen tickets dropped the server's size/modifier codes; cancelled or unknown statuses became new work | Preserve and display size/options/notes, and show only the supported ticket statuses |
+| Rapid taps could overlap stock, kitchen, shift, restaurant and board-game commands before React rerendered | Synchronous in-flight guards, released on success or failure |
+| Missing/null/blank stock-count or incoming-order cancellation status discarded the retry key | Treat an incomplete result as unknown; keep the same request identity for a retry |
+| Successful shift, kitchen, restaurant or board-game service-call commands could appear to fail if a follow-up read failed | Keep the confirmed server outcome; query errors still belong to the read surface |
+| A newly opened table bill depended on a successful refresh to retain its ID | Retain the committed ID and route parameters before adding items; reuse that bill on the next action |
+| Cash movement modal could close and clear its key while saving | Keep the modal and fields locked until the pending command finishes; failed attempts retain the draft/key |
+| Only selected flows bounded their GraphQL operations | Apply the existing 15-second deadline to all HTTP GraphQL operations, abort the transport and discard late results, with no automatic mutation retry; WS subscriptions are unchanged |
+| Shared operation timeout could wait forever when a transport/body parser ignored abort | Reject on an independent deadline and ignore late completion, preserving an unknown mutation outcome |
+| Blank or whitespace cash/count fields became numeric zero | Require an explicit value for opening float, counted shift cash and stock-count quantities; an entered `0` remains valid |
+
+New regression suites exercise the actual providers/screens and Apollo link, including duplicate taps,
+incomplete responses, failed post-commit reads, pending-modal dismissal and transport cancellation.
+
+The dependency follow-up refreshes compatible versions in the lockfile while keeping React Native
+**0.87.1**, React **19.2.3** and the native dependency declarations unchanged. This includes
+`shell-quote` **1.12.0**, GraphQL Codegen CLI **7.4.6**, navigation core **7.24.0**, and patched
+compatible parser/validation dependencies. Navigation core no longer pulls the vulnerable
+`query-string`/`decode-uri-component` chain. The checks below were rerun after this refresh.
+
+Verification on this Windows checkout:
+
+| Check | Result |
+| --- | --- |
+| Mobile `npm test -- --runInBand` | **443 tests / 58 suites passed** (baseline 405 / 51; 38 added regressions) |
+| Mobile `npm run typecheck` and `npm run lint` | Passed |
+| Web `npm run gate` in the original checkout | Passed typecheck, **3,529 DB-free tests (6 skipped)** and production build; installed Next.js was 14.2.5, so locked dependencies are checked separately |
+| Web `npm run gate` in an isolated worktree with clean locked Web/realtime dependencies | Passed typecheck, **3,529 DB-free tests (6 skipped)** and production build on **Next.js 14.2.35** |
+| Android `:app:assembleDebug` | Passed; development APK, not a signed store release |
+| Android and iOS production-mode Metro bundles | Passed after the final screen changes |
+| `git diff --check` | Passed |
+| Physical device and native iOS checks | Not run: `adb devices` listed no devices; Windows has no Xcode |
+
+Local logs are under repository-root `.test-output/mobile-audit-*` and `.test-output/cross-app-*`;
+build output is ignored.
+Existing hardware/platform exclusions below remain explicit: physical camera/HID/printer verification,
+native iOS compilation on macOS, signed store builds, suspended-app push, global HID capture and
+pharmacy evidence capture are not supplied by this audit. No production deployment or database write
+was performed.
+
+A read-only GraphQL regeneration validated every native operation against `schema.graphql`, but
+the full generated-file comparison is **not clean**: the unused Admin helper
+`SchemaMutationBmsSetPharmacistLicenseArgs` lacks `confirmed`, and
+`SchemaQueryBmsPharmacyLicenseCandidatesArgs` is absent. No native operation uses these helpers.
+The committed generated file was left unchanged under the repository instruction prohibiting changes
+to generated artifacts; the comparison is saved in `.test-output/cross-app-codegen-diff.log`.
+It is a remaining codegen maintenance item, not a passing drift check.
+
+The Mobile dependency audit improves from **40 findings (1 critical, 20 high)** to **20 findings
+(0 critical, 1 high, 10 moderate, 9 low)**. The remaining high item is the `image-size` parser used by
+Metro at build time: Metro **0.87.0** requires `image-size ^1.0.2`, while the advisories are fixed
+outside that range. It requires a supported Metro/RN migration rather than forcing a different
+parser API into the current build. Remaining moderate/low findings are in the codegen, lint, test
+and RN CLI tool chains. These are dependency findings, not proof of an exploitable installed app;
+they remain unresolved. No forced dependency downgrade or override was applied. Before/after audit
+JSON is saved under `.test-output/cross-app-mobile-dependency-audit*.json`.
+
+The shared Web server also has unresolved dependency advisories, including a critical Next.js
+finding. See the [Desktop release findings](../desktop/README.md#remaining-release-findings) for the
+locked dependency audit and isolated verification. Native test/build results do not certify the
+server's production security or exercise live database settlement/stock transitions.
+
+## Backend connection recheck (2026-11-12)
+
+Native HTTP GraphQL now shares a connection-error presentation contract with the Desktop compact
+renderer. Messages separate failed reads from unknown writes, include a safe `POS_*` category and
+HTTP status when known, and explain the next step. Raw network/parser/internal-server messages and
+proxy bodies are not displayed. Server-composed PIN, permission, validation and business-rejection
+messages remain intact; code, reason, path and variant-selection metadata remain available to callers.
+HTTP 403 is not a logout, and no connection failure automatically repeats a business command.
+
+Malformed successful GraphQL data is rejected rather than treated as confirmation. Mixed
+decided/unknown GraphQL errors keep the idempotency key. Pairing body reads, WS-ticket minting and
+diagnostic sends use independent deadlines even if the transport ignores abort; late pairing data
+cannot save credentials. A stuck diagnostic batch no longer blocks later queued events.
+
+Verification: **461 tests / 59 suites**, TypeScript, ESLint, and Android/iOS production Metro bundles
+passed. The new tests cover auth/denial, rate limits, server errors, malformed responses, read/write
+timeout guidance, privacy, late pairing responses and stalled diagnostic sends.
+Logs: `.test-output/connection-*`. This does not exercise live
+database commits, physical devices or native iOS compilation. Previous dependency and generated-type
+maintenance findings above remain outstanding.
 
 ## Product Positioning
 
@@ -96,7 +214,8 @@ The in-repository RN workflows are connected to the generated GraphQL contract:
 - shift open/close, shift report, cash in/out, no-sale, expenses, deposits, petty cash, purchase
   receiving, AR collection, store-credit lookup, and required second-person approval;
 - pharmacy counter authorization and parked pharmacist-review handoff/resume;
-- bounded GraphQL operations so a dropped connection cannot leave scan or payment spinning forever;
+- bounded HTTP GraphQL operations so a dropped connection cannot leave native workflows spinning
+  forever; uncertain mutations are never automatically retried;
 - Emergency Offline Mode: an encrypted native queue for plain retail cash sales, with a persisted
   unknown/syncing/review state machine, device/branch/shift-bound request-integrity fingerprint,
   full-screen Sync Center, per-item/manual retry, original-cashier attribution, fail-closed secure
@@ -105,6 +224,12 @@ The in-repository RN workflows are connected to the generated GraphQL contract:
 - restaurant dine-in and takeaway checks, variants/modifiers, floor/check operations, kitchen rounds,
   settlement, incoming-order review, QR queue, service calls, waitlist, and menu availability; the
   QR/call/waitlist reads stay active across tabs and drive the `คิว/QR` badge and alerts;
+- pickup queue numbers for retail sales and restaurant takeaway: the branch policy or per-device
+  switch requests a number only after a successful online settlement, prints it on the receipt,
+  exposes PIN/RBAC-protected call/recall/collect/undo/cancel actions in the Sell screen, and offers a
+  same-order retry when a committed sale could not issue its number. A failed queue read is never
+  shown as an empty queue: stale actions pause until a successful refresh. Emergency Offline sales
+  deliberately do not issue a number until the server owns the completed sale;
 - board-game floor and timed sessions, fixed-duration alerts, member lookup, participant bill groups,
   one-group-at-a-time close while others keep playing, moving a party to a free table or merging two
   occupied tables without touching a bill, playable-copy checkout/return/issue handling,
@@ -244,6 +369,7 @@ automated-test audit, not real-device certification or proof of every backend da
 | Unpair checked pending offline cash only before the confirmation dialog | Recheck in `DeviceProvider.unpair()` immediately before removing credentials; storage-read failure also blocks removal | Pending cash and unavailable secure-storage tests |
 | A socket stuck connecting/reconnecting did not receive HTTP fallback refreshes | Reconcile active reads every 30 seconds in these states as well as offline/degraded | Fake-timer tests for all connection states and cleanup |
 | Counter actions and returns retained spent keys after decided GraphQL rejections; return/void also dropped keys on missing results | Clear keys on decided errors; preserve them for network/internal-server uncertainty and absent business results | Deposit, return and void tests covering decided errors, unknown failures and missing results |
+| A return/void with an unknown result could reuse its key after the cashier edited quantity, reason or approval | Keep the original request body with the key; disclose and confirm a retry of that original body, and block switching to another return/void action until it resolves | `SaleDetailReturns.test.tsx` covers changed partial-return and void forms plus switching actions |
 | A successful counter action/return could be reported as failed when its follow-up read failed | Keep the committed outcome; do not reopen a completed return as a retryable failure | Successful deposit and partial-return tests with a rejected refresh |
 | Sale-history search only filtered the latest 50 locally and could discard barcode matches | Send the search through the existing branch-scoped GraphQL service; retain its matches and 50-row bound | Search query, old receipt, barcode and clear-search tests |
 | Secure storage unavailable at launch stayed unavailable after unlocking; incomplete saved credentials looked unpaired | Retry the same Keychain service on foreground, distinguish corrupt records from absent records, and ignore a late restore after explicit pairing changes | Locked/unlocked, corrupt/absent, unchanged token and late-restore tests |

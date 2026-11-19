@@ -1,4 +1,6 @@
 "use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { useRef, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
@@ -12,9 +14,10 @@ import GuideLauncher from "./GuideLauncher";
 
 const endpoint = "/api/admin/retail-local/local-license";
 function useLocalLicense() {
+  const uiText = useUiText();
   const { can } = useBmsPermissions();
   const result = useSWR<LocalLicenseView>(can("retail_local.license.view") ? endpoint : null,
-    async url => { const response = await fetch(url, { cache: "no-store" }); if (!response.ok) throw new Error("unavailable"); return response.json(); },
+    async url => { const response = await fetch(url, { cache: "no-store" }); if (!response.ok) throw new Error(uiText("admin_ui.en_unavailable_1d5ee")); return response.json(); },
     { refreshInterval: 10_000, dedupingInterval: 5_000, shouldRetryOnError: false });
   return { ...result, canManage: can("retail_local.license.manage"), canView: can("retail_local.license.view") };
 }
@@ -30,6 +33,7 @@ export function LocalLicenseBadge() {
   </div>;
 }
 export default function LocalLicensePage() {
+  const uiText = useUiText();
   const { data, error, mutate, canManage, canView } = useLocalLicense();
   const { lang } = useI18n(); const th = lang === "th";
   const L = (thai: string, english: string) => th ? thai : english;
@@ -80,7 +84,7 @@ export default function LocalLicensePage() {
         {badge && <Tag color={badge.color} style={{ whiteSpace: "normal", marginInlineEnd: 0 }}>{badge.label}</Tag>}
       </div>} loading={!data && !error}>
         {data && <Descriptions column={1} size="small">
-          <Descriptions.Item label="License">{data.licenseCode ? `LIC-••••${data.licenseCode.slice(-6)}` : "—"}</Descriptions.Item>
+          <Descriptions.Item label={uiText("admin_ui.en_license_32296")}>{data.licenseCode ? `LIC-••••${data.licenseCode.slice(-6)}` : "—"}</Descriptions.Item>
           <Descriptions.Item label={L("ประเภท", "Type")}>{data.licenseType ?? "—"}</Descriptions.Item>
           <Descriptions.Item label={L("วันหมดอายุ Trial", "Trial expiry")}>{date(data.trialExpiresAt)}</Descriptions.Item>
           <Descriptions.Item label={L("ตรวจสอบกับ BMS ล่าสุด", "Last checked with BMS")}>{date(data.checkedAt)}</Descriptions.Item>
@@ -97,7 +101,7 @@ export default function LocalLicensePage() {
       {canManage && <Card title={data?.registered ? L("ลงทะเบียน License เดิม / กู้คืนเครื่อง", "Re-register / restore installation") : L("ลงทะเบียน License", "Register license")}>
         <Typography.Paragraph>{L("กรอก Activation Code ที่ขึ้นต้นด้วย bmsla_ เลข LIC- เป็นเลขอ้างอิงและใช้กรอกแทนไม่ได้", "Enter the Activation Code beginning with bmsla_. A LIC- reference cannot be used as an activation code.")}</Typography.Paragraph>
         <Form form={form} layout="vertical" onFinish={submit}>
-          <Form.Item name="code" label="Activation Code" rules={[{ required: true, message: L("กรุณากรอก Code", "Enter a code") }, { pattern: /^\s*bmsla_[A-Za-z0-9_-]{43}\s*$/, message: L("รูปแบบ Activation Code ไม่ถูกต้อง", "Invalid Activation Code format") }]}>
+          <Form.Item name="code" label={uiText("admin_ui.en_activation_code_cd994")} rules={[{ required: true, message: L("กรุณากรอก Code", "Enter a code") }, { pattern: /^\s*bmsla_[A-Za-z0-9_-]{43}\s*$/, message: L("รูปแบบ Activation Code ไม่ถูกต้อง", "Invalid Activation Code format") }]}>
             <Input.Password autoComplete="off" disabled={busy || pending || !!error || !data?.available} placeholder="bmsla_…" />
           </Form.Item>
           <Button type="primary" htmlType="submit" loading={busy} disabled={pending || !!error || !data?.available}>{L("ลงทะเบียน License", "Register license")}</Button>

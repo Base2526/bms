@@ -1,3 +1,4 @@
+import { posText, usePosLanguage, posLocale } from '../i18n/language';
 import React from 'react';
 import {
   Modal,
@@ -55,6 +56,7 @@ export function SaleConfirmationModal({
   onCancel,
   onConfirm,
 }: Props) {
+  usePosLanguage();
   const { colors, spacing, radius, typography } = useTheme();
   const { isTablet } = useResponsive();
   const insets = useSafeAreaInsets();
@@ -81,14 +83,14 @@ export function SaleConfirmationModal({
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="ปิดหน้าต่างยืนยันการขาย"
+          accessibilityLabel={posText("ปิดหน้าต่างยืนยันการขาย")}
           style={StyleSheet.absoluteFill}
           onPress={onCancel}
         />
 
         <View
           accessibilityViewIsModal
-          accessibilityLabel="ยืนยันการขาย"
+          accessibilityLabel={posText("ยืนยันการขาย")}
           style={[
             styles.card,
             {
@@ -127,8 +129,7 @@ export function SaleConfirmationModal({
                 { color: colors.text, marginTop: spacing.md },
               ]}
             >
-              ยืนยันการขาย
-            </Text>
+              {posText("ยืนยันการขาย") + " "}</Text>
             <Text
               style={[
                 typography.body,
@@ -136,8 +137,7 @@ export function SaleConfirmationModal({
                 { color: colors.textMuted, marginTop: spacing.xs },
               ]}
             >
-              ตรวจสอบสินค้าและยอดเงินก่อนบันทึกการขาย
-            </Text>
+              {posText("ตรวจสอบสินค้าและยอดเงินก่อนบันทึกการขาย") + " "}</Text>
 
             <View
               style={[
@@ -151,17 +151,16 @@ export function SaleConfirmationModal({
             >
               <View style={[styles.itemsHeader, { padding: spacing.md }]}>
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                  รายการขาย
-                </Text>
+                  {posText("รายการขาย") + " "}</Text>
                 <Text
                   style={[
                     typography.captionStrong,
                     { color: colors.textMuted },
                   ]}
                 >
-                  {`${items.length} รายการ · รวม ${formatQuantity(
+                  {posText("{v0} รายการ · รวม {v1} หน่วย", { v0: items.length, v1: formatQuantity(
                     totalQuantity,
-                  )} หน่วย`}
+                  ) })}
                 </Text>
               </View>
               {items.map((item, index) => (
@@ -194,9 +193,9 @@ export function SaleConfirmationModal({
                       <Text
                         style={[typography.caption, { color: colors.textSoft }]}
                       >
-                        {`${formatQuantity(
+                        {posText("{v0} × ฿{v1}", { v0: formatQuantity(
                           item.qty,
-                        )} × ฿${item.unitPrice.toFixed(2)}`}
+                        ), v1: item.unitPrice.toFixed(2) })}
                       </Text>
                     </View>
                     <CartLineAmount
@@ -221,15 +220,15 @@ export function SaleConfirmationModal({
               {discountTotal > 0 && (
                 <>
                   <SummaryRow
-                    label="ยอดสินค้า"
-                    value={`฿${subtotal.toFixed(2)}`}
+                    label={posText("ยอดสินค้า")}
+                    value={posText("฿{v0}", { v0: subtotal.toFixed(2) })}
                   />
                   <View
                     style={[styles.divider, { backgroundColor: colors.border }]}
                   />
                   <SummaryRow
-                    label="ส่วนลดรวม"
-                    value={`−฿${discountTotal.toFixed(2)}`}
+                    label={posText("ส่วนลดรวม")}
+                    value={posText("−฿{v0}", { v0: discountTotal.toFixed(2) })}
                     valueColor={colors.success}
                   />
                   <View
@@ -238,8 +237,8 @@ export function SaleConfirmationModal({
                 </>
               )}
               <SummaryRow
-                label="ยอดสุทธิ"
-                value={`฿${total.toFixed(2)}`}
+                label={posText("ยอดสุทธิ")}
+                value={posText("฿{v0}", { v0: total.toFixed(2) })}
                 strong
               />
               <View
@@ -248,22 +247,22 @@ export function SaleConfirmationModal({
               {payments.map((payment, index) => (
                 <React.Fragment key={payment.id}>
                   <SummaryRow
-                    label={`ชำระ ${index + 1}`}
-                    value={`${paymentMethodLabel(
+                    label={posText("ชำระ {v0}", { v0: index + 1 })}
+                    value={posText("{v0} ฿{v1}", { v0: paymentMethodLabel(
                       payment.method,
-                    )} ฿${payment.amount.toFixed(2)}`}
+                    ), v1: payment.amount.toFixed(2) })}
                   />
                   {payment.method === 'cash' ? (
                     <SummaryRow
-                      label="เงินทอน"
-                      value={`฿${calculateCashChange(
+                      label={posText("เงินทอน")}
+                      value={posText("฿{v0}", { v0: calculateCashChange(
                         payment.amount,
                         payment.tendered ?? 0,
-                      ).toFixed(2)}`}
+                      ).toFixed(2) })}
                     />
                   ) : (
                     <SummaryRow
-                      label="เลขอ้างอิง"
+                      label={posText("เลขอ้างอิง")}
                       value={payment.reference?.trim() || '-'}
                     />
                   )}
@@ -273,7 +272,7 @@ export function SaleConfirmationModal({
                 </React.Fragment>
               ))}
               {memberName ? (
-                <SummaryRow label="สมาชิก" value={memberName} />
+                <SummaryRow label={posText("สมาชิก")} value={memberName} />
               ) : null}
             </View>
 
@@ -294,8 +293,7 @@ export function SaleConfirmationModal({
                   { color: colors.warning, flex: 1 },
                 ]}
               >
-                เมื่อยืนยันแล้ว หากต้องแก้ไขต้องทำรายการคืน
-              </Text>
+                {posText("เมื่อยืนยันแล้ว หากต้องแก้ไขต้องทำรายการคืน") + " "}</Text>
             </View>
           </ScrollView>
 
@@ -310,14 +308,14 @@ export function SaleConfirmationModal({
             ]}
           >
             <Button
-              label="กลับไปแก้ไข"
+              label={posText("กลับไปแก้ไข")}
               variant="secondary"
               fullWidth
               style={isTablet ? styles.flexButton : undefined}
               onPress={onCancel}
             />
             <Button
-              label="ยืนยันและออกใบเสร็จ"
+              label={posText("ยืนยันและออกใบเสร็จ")}
               fullWidth
               style={isTablet ? styles.flexButton : undefined}
               onPress={onConfirm}
@@ -332,7 +330,7 @@ export function SaleConfirmationModal({
 function formatQuantity(value: number): string {
   return Number.isInteger(value)
     ? String(value)
-    : value.toLocaleString('th-TH');
+    : value.toLocaleString(posLocale());
 }
 
 function SummaryRow({

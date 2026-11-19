@@ -42,7 +42,7 @@ dispatch, pharmacist-roster or enrollment claim is made without a supporting too
 `generateResponse()` in [`lib/bms/ai.ts`](../../apps/web/lib/bms/ai.ts) is the older single-shot path
 used by the deterministic fallback. The primary customer path is now the tool-calling prompt in the
 next section. Tenant BYOK supports Anthropic (default `claude-haiku-4-5-20251001`) or DeepSeek
-(default `deepseek-v4-flash`); shared customer text defaults to DeepSeek via `BMS_AI_PROVIDER`, while sensitive/baseline staff turns use
+(default `deepseek-flash`); shared customer text defaults to DeepSeek via `BMS_AI_PROVIDER`, while sensitive/baseline staff turns use
 `BMS_AI_SENSITIVE_PROVIDER` (default Anthropic). This legacy call still goes through the same
 anthropic-compatible messages interface with `max_tokens: 256`.
 

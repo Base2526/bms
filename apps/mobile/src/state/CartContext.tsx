@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React, {
   createContext,
   useCallback,
@@ -19,6 +20,7 @@ import type {
   PosManualDiscount,
   PosMember,
   PosMenuItem,
+  PosOpenItem,
 } from '../types/pos';
 import { cartLineKey } from '../lib/cartLine';
 import {
@@ -42,6 +44,7 @@ export interface ParkedBill {
   pointsUsed: number;
   manualDiscount: null;
   extraLines: PosExtraLine[];
+  openItems: PosOpenItem[];
   pharmacyReview: PosPharmacyReview | null;
 }
 
@@ -79,6 +82,8 @@ interface CartContextValue {
   setPointsToRedeem: (points: number) => void;
   extraLines: PosExtraLine[];
   setExtraLines: (lines: PosExtraLine[]) => void;
+  openItems: PosOpenItem[];
+  setOpenItems: (items: PosOpenItem[]) => void;
   pharmacyReview: PosPharmacyReview | null;
   parkedBills: ParkedBill[];
   parkCurrentBill: (name: string, note: string) => Promise<string | null>;
@@ -105,6 +110,7 @@ interface CartContextValue {
 const CartContext = createContext<CartContextValue | null>(null);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
+  const language = usePosLanguage();
   const { session } = useSession();
   const { isOpen: isShiftOpen } = useShift();
   const { resolveVariant } = useCatalog();
@@ -115,6 +121,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     useState<PosManualDiscount | null>(null);
   const [pointsToRedeem, setPointsToRedeem] = useState(0);
   const [extraLines, setExtraLines] = useState<PosExtraLine[]>([]);
+  const [openItems, setOpenItems] = useState<PosOpenItem[]>([]);
   const [pharmacyReview, setPharmacyReview] =
     useState<PosPharmacyReview | null>(null);
   // ⚠️ ห้ามกลับไปเป็น `qty × unitPrice` — ยอดนี้ต้องเท่ากับที่ createOrderInTx คิดตอน commit
@@ -134,8 +141,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       lines: null,
       extraLines: null,
     }),
-    [
-      coupon?.code,
+    [coupon?.code,
       manualDiscount?.amount,
       member?.id,
       pointsToRedeem,
@@ -191,6 +197,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             packBasePrice: item.packBasePrice ?? item.price,
             modifierUnitPrice: item.modifierUnitPrice ?? 0,
             unitName: item.unitName,
+            offlineRetailEligible: item.offlineRetailEligible,
           } : line,
         );
       }
@@ -214,6 +221,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           modifierCodes,
           modifierNames,
           serialTracked: item.serialTracked,
+          offlineRetailEligible: item.offlineRetailEligible,
           scaleBarcode: item.scaleBarcode,
           serials: [],
           imageUrl: item.imageUrl,
@@ -273,6 +281,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setManualDiscount(null);
     setPointsToRedeem(0);
     setExtraLines([]);
+    setOpenItems([]);
     setPharmacyReview(null);
   }, []);
   const replaceForExchange = useCallback(
@@ -283,6 +292,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setManualDiscount(null);
       setPointsToRedeem(0);
       setExtraLines([]);
+      setOpenItems([]);
       setPharmacyReview(null);
     },
     [],
@@ -343,7 +353,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               name:
                 parked.cart.member.name ??
                 parked.cart.member.memberNo ??
-                'สมาชิก',
+                posText("สมาชิก", undefined, language),
               phone: parked.cart.member.phone,
               tier: null,
               tierDiscountPct: 0,
@@ -362,6 +372,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           qty: 1,
           unitAmount: Number(line.unitAmount ?? 0),
         })),
+        openItems: (parked.cart?.openItems ?? []).map((line, index) => ({
+          id: `parked-open-${parked.id}-${index}`,
+          label: line.label,
+          qty: line.qty,
+          unitAmount: line.unitAmount,
+          vatCategory: line.vatCategory as 'V' | 'N',
+        })),
         pharmacyReview: parked.pharmacyReview
           ? {
               assessmentId: parked.pharmacyReview.assessmentId,
@@ -372,13 +389,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             }
           : null,
       })),
-    [parkedQuery.data],
+    [language, parkedQuery.data],
   );
 
   const mutatePark = useCallback(
     async (input: Record<string, unknown>) => {
-      if (!session) return 'กรุณาเข้าใช้งานใหม่';
-      if (!isShiftOpen) return 'กรุณาเปิดกะก่อนจัดการบิลพัก';
+      if (!session) return posText("กรุณาเข้าใช้งานใหม่");
+      if (!isShiftOpen) return posText("กรุณาเปิดกะก่อนจัดการบิลพัก");
       try {
         const response = await parkMutation({
           variables: {
@@ -393,12 +410,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           !result ||
           !['PARKED', 'RESUMED', 'DROPPED'].includes(result.status)
         ) {
-          return result?.reason ?? result?.status ?? 'จัดการบิลพักไม่สำเร็จ';
+          return result?.reason ?? result?.status ?? posText("จัดการบิลพักไม่สำเร็จ");
         }
         await parkedQuery.refetch();
         return null;
       } catch (error) {
-        return error instanceof Error ? error.message : 'จัดการบิลพักไม่สำเร็จ';
+        return error instanceof Error ? error.message : posText("จัดการบิลพักไม่สำเร็จ");
       }
     },
     [isShiftOpen, parkMutation, parkedQuery, session],
@@ -406,13 +423,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const parkCurrentBill = useCallback(
     async (name: string, note: string) => {
-      if (!lines.length) return 'ยังไม่มีรายการในบิล';
+      if (!lines.length && !openItems.length) return posText("ยังไม่มีรายการในบิล");
       const failure = await mutatePark({
         action: 'park',
         label:
-          [name.trim(), note.trim()].filter(Boolean).join(' - ') || 'บิลพัก',
-        itemCount: lines.reduce((sum, line) => sum + line.qty, 0),
-        subtotalHint: subtotal,
+          [name.trim(), note.trim()].filter(Boolean).join(' - ') || posText("บิลพัก"),
+        itemCount: lines.reduce((sum, line) => sum + line.qty, 0) + openItems.reduce((sum, item) => sum + item.qty, 0),
+        subtotalHint: subtotal + openItems.reduce((sum, item) => sum + item.qty * item.unitAmount, 0),
         cart: {
           version: 2,
           couponCode: coupon?.code ?? null,
@@ -428,6 +445,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                   : `${line.label.trim()} × ${line.qty}`,
               unitAmount: String(line.qty * line.unitAmount),
             })),
+          openItems: openItems.map(({ label, qty, unitAmount, vatCategory }) => ({
+            label, qty, unitAmount, vatCategory,
+          })),
           member: member
             ? {
                 customerId: member.id,
@@ -467,6 +487,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       coupon?.code,
       extraLines,
       lines,
+      openItems,
       member,
       mutatePark,
       pharmacyReview,
@@ -500,7 +521,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         ) {
           return {
             line,
-            error: `หน่วยขายหรือรุ่นของ ${line.name} เปลี่ยนแล้ว กรุณาลบรายการและเพิ่มใหม่`,
+            error: posText("หน่วยขายหรือรุ่นของ {v0} เปลี่ยนแล้ว กรุณาลบรายการและเพิ่มใหม่", { v0: line.name }),
           };
         }
         const allowed = new Set((latest.modifiers ?? []).map(m => m.code));
@@ -508,7 +529,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         if (closed) {
           return {
             line,
-            error: `ตัวเลือก ${closed} ของ ${line.name} ถูกปิดแล้ว กรุณาลบรายการและเพิ่มใหม่`,
+            error: posText("ตัวเลือก {v0} ของ {v1} ถูกปิดแล้ว กรุณาลบรายการและเพิ่มใหม่", { v0: closed, v1: line.name }),
           };
         }
         const selected = (latest.modifiers ?? []).filter(modifier =>
@@ -529,6 +550,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             modifierUnitPrice,
             priceTiers: latest.priceTiers,
             promotion: latest.promotion ?? null,
+            offlineRetailEligible: latest.offlineRetailEligible,
             // ชื่อตัวเลือกไม่ได้ถูกเก็บลงบิลพัก — ประกอบใหม่จากรหัสที่เก็บไว้
             modifierNames: selected.map(modifier => modifier.name),
           } satisfies PosCartLine,
@@ -539,7 +561,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           error:
             cause instanceof Error
               ? cause.message
-              : `ตรวจราคาล่าสุดของ ${line.name} ไม่สำเร็จ`,
+              : posText("ตรวจราคาล่าสุดของ {v0} ไม่สำเร็จ", { v0: line.name }),
         };
       }
     },
@@ -589,7 +611,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const resumeParkedBill = useCallback(
     async (id: string) => {
       const parked = parkedBills.find(bill => bill.id === id);
-      if (!parked) return 'ไม่พบบิลพัก';
+      if (!parked) return posText("ไม่พบบิลพัก");
+      if (lines.length > 0 || openItems.length > 0 || extraLines.length > 0) {
+        return posText("ตะกร้ายังมีของ — ปิดบิลหรือพักบิลปัจจุบันก่อน");
+      }
       const failure = await mutatePark({ action: 'resume', parkedId: id });
       if (!failure) {
         setLines(await refreshParkedLines(parked.lines));
@@ -598,11 +623,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         setManualDiscount(null);
         setPointsToRedeem(parked.pointsUsed);
         setExtraLines(parked.extraLines);
+        setOpenItems(parked.openItems);
         setPharmacyReview(parked.pharmacyReview);
       }
       return failure;
     },
-    [mutatePark, parkedBills, refreshParkedLines],
+    [extraLines.length, lines.length, mutatePark, openItems.length, parkedBills, refreshParkedLines],
   );
 
   const deleteParkedBill = useCallback(
@@ -621,7 +647,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   // ผลรอบก่อนระหว่างกำลังโหลดรอบใหม่ ถ้าเอา netTotal มาใช้ ยอดจะเป็นของตะกร้าใบก่อน
   // (แคชเชียร์กดเพิ่มของแล้วกดรับเงินทันทีจะเก็บเงินตามยอดเก่า)
   const total = round2(
-    Math.max(0, round2(subtotal - discountTotal)) + extraTotal,
+    Math.max(0, round2(subtotal - discountTotal)) + extraTotal
+      + openItems.reduce((sum, item) => sum + item.qty * item.unitAmount, 0),
   );
 
   const value = useMemo<CartContextValue>(
@@ -645,6 +672,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setPointsToRedeem,
       extraLines,
       setExtraLines,
+      openItems,
+      setOpenItems,
       pharmacyReview,
       parkedBills,
       parkCurrentBill,
@@ -663,8 +692,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       previewError:
         preview.error?.message ?? serverPreview?.couponError ?? null,
     }),
-    [
-      addItem,
+    [addItem,
       appliedManualDiscount,
       clear,
       coupon,
@@ -677,6 +705,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       manualDiscount,
       pointsToRedeem,
       extraLines,
+      openItems,
       pharmacyReview,
       extraTotal,
       member,

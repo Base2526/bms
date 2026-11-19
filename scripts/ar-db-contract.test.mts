@@ -28,6 +28,7 @@ import {
   getArAccountByCustomer,
   getArInvoiceByOrder,
   getArOutstanding,
+  getArStatement,
   getArShiftSummary,
   listArInvoices,
   listArLedger,
@@ -56,6 +57,7 @@ let tenantId = "";
 let locationId = "";
 let deviceId = "";
 let cashierId = "";
+let approverId = "";
 let shiftId = "";
 let customerId = "";
 /** ลูกค้าคนที่สอง — ใช้กับเคสที่ต้องแยกบัญชีออกจากกันจริง ๆ */
@@ -138,6 +140,12 @@ test("setup: สินค้า ฿1,000 · เครื่องขาย · �
     `SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id
       WHERE u.tenant_id = $1 AND r.name = 'Administrator' ORDER BY u.created_at LIMIT 1`,
     [tenantId]
+  )).rows[0].id;
+  approverId = (await query<{ id: string }>(
+    `INSERT INTO users (name, email, role, role_id, tenant_id, password_hash, fake_test)
+     SELECT $2, $3, role, role_id, tenant_id, password_hash, TRUE
+       FROM users WHERE tenant_id=$1 AND id=$4 RETURNING id`,
+    [tenantId, `FAKE ${TAG} approver`, `${TAG}-${process.pid}@example.invalid`, cashierId]
   )).rows[0].id;
   await setCashierPin(tenantId, cashierId, PIN);
   const opened = await openPosShift({ tenantId, deviceId, openedBy: cashierId, openingFloat: 5000 });
@@ -463,12 +471,10 @@ test("ยกเลิกบิลเชื่อ: หนี้หายทั้
   const balanceBefore = (await getArAccountByCustomer(tenantId, customerId))!.balance;
   const voided = await voidPosSale({
     tenantId, deviceId, shiftId, orderId: sold.orderId, actorUserId: cashierId,
+    approvedByUserId: approverId,
     reason: "กดผิดบิล", idempotencyKey: key("void-credit"),
-  } as any);
-  assert.ok(
-    String((voided as any).status).includes("VOID") || (voided as any).status === "PARTIAL_RETURNED",
-    JSON.stringify(voided)
-  );
+  });
+  assert.equal(voided.status, "VOIDED", JSON.stringify(voided));
 
   const invoice = await getArInvoiceByOrder(tenantId, sold.orderId);
   assert.equal(invoice!.outstanding, 0);
@@ -497,12 +503,10 @@ test("ยอดเครดิตจากคืนของหลังจ่�
 
   const voided = await voidPosSale({
     tenantId, deviceId, shiftId, orderId: first.orderId, actorUserId: cashierId,
+    approvedByUserId: approverId,
     reason: "ทดสอบยอดเครดิตคงเหลือ", idempotencyKey: key("void-offset-source"),
-  } as any);
-  assert.ok(
-    String((voided as any).status).includes("VOID") || (voided as any).status === "PARTIAL_RETURNED",
-    JSON.stringify(voided)
-  );
+  });
+  assert.equal(voided.status, "VOIDED", JSON.stringify(voided));
   assert.equal(
     (await getArAccountByCustomer(tenantId, creditOffsetCustomerId))!.balance,
     -2000,
@@ -612,6 +616,45 @@ test("อายุหนี้: ใบที่เลยกำหนดต้อ
   assert.ok(refreshed!.daysPastDue >= 44);
 });
 
+test("ใบแจ้งยอดอ่าน ledger จริงและเตือนเมื่อ cache ไม่ตรง โดยไม่เปิดบัญชีข้าม tenant", async () => {
+  const account = await getArAccountByCustomer(tenantId, customerId);
+  assert.ok(account);
+  const statement = await getArStatement(tenantId, account!.id);
+  assert.ok(statement);
+  const ledger = await query<{total:string}>(
+    `SELECT COALESCE(SUM(amount),0) AS total FROM bms_ar_ledger WHERE tenant_id=$1 AND account_id=$2`,
+    [tenantId, account!.id]
+  );
+  assert.equal(statement!.ledgerBalance, Number(ledger.rows[0].total));
+  assert.equal(statement!.balanceMismatch, false);
+  assert.ok(statement!.overdueAmount > 0);
+  assert.ok(statement!.invoices.some((invoice) => invoice.overdue && invoice.balance > 0));
+  assert.ok(statement!.entries.some((entry) => entry.kind === "CHARGE"));
+  for (const invoice of statement!.invoices) {
+    assert.equal(Math.round((invoice.originalAmount-invoice.payments-invoice.credits)*100)/100,
+      invoice.balance);
+  }
+  assert.equal(await getArStatement("00000000-0000-0000-0000-000000000000", account!.id), null);
+
+  const offsetAccount=await getArAccountByCustomer(tenantId,creditOffsetCustomerId);
+  const offsetStatement=await getArStatement(tenantId,offsetAccount!.id);
+  assert.equal(offsetStatement!.ledgerBalance,-1000);
+  assert.equal(offsetStatement!.creditBalance,1000);
+  assert.ok(offsetStatement!.entries.some((entry)=>entry.kind==="PAYMENT"&&entry.receiptId==null),
+    "prior-credit offset is a ledger settlement, not a new cash receipt");
+
+  await query(`UPDATE bms_ar_accounts SET balance=balance+1 WHERE tenant_id=$1 AND id=$2`,
+    [tenantId, account!.id]);
+  try {
+    const drifted = await getArStatement(tenantId, account!.id);
+    assert.equal(drifted!.ledgerBalance, statement!.ledgerBalance);
+    assert.equal(drifted!.balanceMismatch, true);
+  } finally {
+    await query(`UPDATE bms_ar_accounts SET balance=$3 WHERE tenant_id=$1 AND id=$2`,
+      [tenantId, account!.id, statement!.ledgerBalance]);
+  }
+});
+
 test("สรุปกะบอกได้ว่ากะนี้ปล่อยเชื่อไปเท่าไร เก็บกลับมาได้เท่าไร", async () => {
   const summary = await getArShiftSummary(tenantId, shiftId);
   assert.ok(summary.creditSalesCount > 0, "กะนี้ขายเชื่อไปแล้วแต่สรุปกะบอกว่าไม่มี");
@@ -676,6 +719,7 @@ test("teardown: ลบทุกแถวที่ชุดนี้สร้า�
   await query(`DELETE FROM bms_inventory WHERE tenant_id = $1 AND product_sku = $2`, [tenantId, SKU]);
   await query(`DELETE FROM bms_products WHERE tenant_id = $1 AND sku = $2`, [tenantId, SKU]);
   await query(`DELETE FROM bms_customers WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
-    [tenantId, [customerId, otherCustomerId]]);
+    [tenantId, [customerId, otherCustomerId, creditOffsetCustomerId]]);
+  await query(`DELETE FROM users WHERE tenant_id=$1 AND id=$2`, [tenantId, approverId]);
   await query(`UPDATE bms_loyalty_settings SET enabled = TRUE WHERE tenant_id = $1`, [tenantId]);
 });

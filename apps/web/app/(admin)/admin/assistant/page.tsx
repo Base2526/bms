@@ -1,11 +1,13 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { gql, useApolloClient, useQuery } from "@apollo/client";
 import {
   Card, Input, Button, Space, Tag, Typography, Alert, message, Tooltip, Popconfirm, Drawer,
 } from "antd";
-import { useState, useRef, useEffect, Fragment } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
-  SendOutlined, RobotOutlined, CheckOutlined, CloseOutlined, ToolOutlined, DownloadOutlined,
+  SendOutlined, RobotOutlined, CheckOutlined, CloseOutlined, ToolOutlined,
   DeleteOutlined, BulbOutlined, SaveOutlined, DownOutlined, CopyOutlined, ReloadOutlined,
   ArrowDownOutlined, MailOutlined, WarningOutlined, FileExcelOutlined,
 } from "@ant-design/icons";
@@ -13,8 +15,10 @@ import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import { useI18n } from "@/lib/i18nContext";
 import { WORK_ASSISTANT_CONFIRM_MUTATIONS } from "@/components/work-assistant/confirmMutations";
 import CustomerMergeReviewModal from "@/components/CustomerMergeReviewModal";
+import { AssistantImageAttachmentControls, AssistantSentImage, useAssistantImageAttachment } from "@/components/work-assistant/AssistantImageAttachment";
+import { AssistantAnswer } from "@/components/work-assistant/AssistantAnswer";
 
-const { Text, Paragraph } = Typography;
+const { Text } = Typography;
 
 type TFn = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -28,66 +32,16 @@ const INFO_NOTICE_DISMISSED_STORAGE_KEY = "bms-assistant-info-notice-dismissed-v
 const BKK = "Asia/Bangkok";
 const dayKey = (iso: string) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: BKK, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
-const timeLabel = (iso: string) =>
-  new Intl.DateTimeFormat("th-TH", { timeZone: BKK, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
-function dayLabel(iso: string, t: TFn) {
+const timeLabel = (iso: string, uiText: UiTranslator = thaiUiText) =>
+  new Intl.DateTimeFormat(uiText.locale, { timeZone: BKK, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+function dayLabel(iso: string, t: TFn, uiText: UiTranslator = thaiUiText) {
   const key = dayKey(iso);
   const now = new Date();
   const todayKey = dayKey(now.toISOString());
   const y = new Date(now); y.setDate(y.getDate() - 1);
   if (key === todayKey) return t("admin_assistant.day_today");
   if (key === dayKey(y.toISOString())) return t("admin_assistant.day_yesterday");
-  return new Intl.DateTimeFormat("th-TH", { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
-}
-
-// ข้อความจาก AI เป็น markdown แบบพูด (**หนา**/`โค้ด`/ลิงก์) แต่โปรเจกต์นี้ไม่มี markdown renderer
-// เต็มรูปแบบติดตั้งอยู่ — parse เท่าที่ต้องใช้จริง (bold/inline code/URL) แทนที่จะโชว์ asterisk ดิบๆ
-// ไม่ใช้ dangerouslySetInnerHTML เลย จึงไม่มีความเสี่ยง XSS จากข้อความที่ AI แต่งขึ้น
-const INLINE_TOKEN_RE = /(\*\*[^*]+\*\*|`[^`]+`|\/api\/bms\/reports\/download\/\d+|https?:\/\/[^\s)]+)/g;
-const REPORT_DOWNLOAD_RE = /^\/api\/bms\/reports\/download\/\d+$/;
-
-function renderAssistantText(text: string, t: TFn) {
-  return text.split(INLINE_TOKEN_RE).map((part, i) => {
-    if (!part) return null;
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={i}>{part.slice(2, -2)}</strong>;
-    }
-    if (part.startsWith("`") && part.endsWith("`")) {
-      // AI มักห่อลิงก์ดาวน์โหลดด้วย backtick เอง เช่น `/api/bms/reports/download/7546` —
-      // ต้องเช็คเนื้อในก่อนตัดสินใจว่าเป็นโค้ดเฉยๆ หรือควรเป็นปุ่มดาวน์โหลดจริง
-      const inner = part.slice(1, -1);
-      if (REPORT_DOWNLOAD_RE.test(inner)) {
-        part = inner;
-      } else {
-        return <Text code key={i}>{inner}</Text>;
-      }
-    }
-    if (REPORT_DOWNLOAD_RE.test(part)) {
-      // route เดิมตั้ง Content-Disposition: attachment ให้แล้ว (ดู
-      // app/api/bms/reports/download/[id]/route.ts) — ลิงก์ปกติกดแล้วดาวน์โหลดได้เลย ไม่ต้องเปิดแท็บใหม่
-      return (
-        <Button
-          key={i}
-          type="primary"
-          ghost
-          size="small"
-          icon={<DownloadOutlined />}
-          href={part}
-          style={{ marginTop: 4, marginBottom: 4 }}
-        >
-          {t("admin_assistant.download_file")}
-        </Button>
-      );
-    }
-    if (/^https?:\/\//.test(part)) {
-      return (
-        <a key={i} href={part} target="_blank" rel="noopener noreferrer">
-          {part}
-        </a>
-      );
-    }
-    return <Fragment key={i}>{part}</Fragment>;
-  });
+  return new Intl.DateTimeFormat(uiText.locale, { timeZone: BKK, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
 }
 
 const M_ASSISTANT = gql`
@@ -124,6 +78,9 @@ type TraceEntry = { tool: string; ok: boolean; summary: string };
 type Bubble = {
   role: "user" | "assistant";
   text: string;
+  imageName?: string;
+  imagePreviewUrl?: string;
+  imageFile?: File;
   /** ISO timestamp — บับเบิลเก่าที่เคยเซฟไว้ก่อนมี field นี้จะไม่มีค่า ให้ render ข้ามเวลาไปเฉยๆ */
   createdAt?: string;
   proposals?: Proposal[];
@@ -215,12 +172,14 @@ const QUICK_START: Array<{ labelKey: string; fillKey: string }> = [
 ];
 
 export default function Page() {
+  const uiText = useUiText();
   const { t, lang } = useI18n();
   const client = useApolloClient();
   const { data: meData, loading: meLoading } = useQuery(Q_ME);
   const isMobile = useIsMobile();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const image = useAssistantImageAttachment(lang === "en");
   const [chat, setChat] = useState<Bubble[]>([]);
   const [chatLoaded, setChatLoaded] = useState(false);
   const [examplesOpen, setExamplesOpen] = useState(false);
@@ -279,7 +238,7 @@ export default function Page() {
   useEffect(() => {
     if (!chatLoaded) return;
     try {
-      localStorage.setItem(chatStorageKey, JSON.stringify(chat));
+      localStorage.setItem(chatStorageKey, JSON.stringify(chat.map(({ imagePreviewUrl, imageFile, ...bubble }) => bubble)));
     } catch {
       // เต็ม/ปิด storage ไว้ — ปล่อยผ่าน ไม่ใช่ error ที่ควรขัดจังหวะการคุย
     }
@@ -312,6 +271,7 @@ export default function Page() {
 
   const clearChat = () => {
     setChat([]);
+    image.releaseAll();
     try {
       localStorage.removeItem(chatStorageKey);
     } catch {
@@ -327,16 +287,18 @@ export default function Page() {
 
   const send = async (msg?: string) => {
     const m = (msg ?? text).trim();
-    if (!m || sending) return;
+    if (!m || sending || (image.draft && !image.draft.confirmedBms)) return;
+    const attached = image.takeDraft();
     setSending(true);
     // history = สายก่อนหน้า ไม่รวมข้อความใหม่ และไม่รวมบับเบิล error (ไม่ใช่คำตอบจริงของ AI ครั้งก่อน)
     const history = chat.filter((b) => !b.error).map((b) => ({ role: b.role, text: b.text }));
-    setChat((c) => [...c, { role: "user", text: m, createdAt: new Date().toISOString() }]);
+    setChat((c) => [...c, { role: "user", text: m, imageName: attached?.file.name,
+      imagePreviewUrl: attached?.previewUrl, imageFile: attached?.file, createdAt: new Date().toISOString() }]);
     setText("");
     try {
       const { data } = await client.mutate({
         mutation: M_ASSISTANT,
-        variables: { input: { message: m, history, currentPath: "/admin/assistant", pageId: "assistant", locale: lang === "en" ? "en" : "th" } },
+        variables: { input: { message: m, image: attached?.file, imageBmsConfirmed: attached?.confirmedBms, history, currentPath: "/admin/assistant", pageId: "assistant", locale: lang === "en" ? "en" : "th" } },
       });
       const res = data?.bmsWorkAssistant;
       setChat((c) => [
@@ -373,13 +335,20 @@ export default function Page() {
     const bubble = chat[idx];
     if (!bubble?.retryText || sending) return;
     const m = bubble.retryText;
+    const priorImage = chat[idx - 1];
+    if (priorImage?.imageName && !priorImage.imageFile) {
+      setText(m);
+      inputRef.current?.focus?.();
+      message.warning(lang === "en" ? "The previous image is no longer available. Attach it again before sending." : "ภาพเดิมไม่ได้เก็บไว้ กรุณาแนบภาพใหม่ก่อนส่ง");
+      return;
+    }
     setSending(true);
     // ประวัติที่ถูกต้องคือทุกอย่างก่อนข้อความผู้ใช้ที่ทำให้เกิด error นี้ (อยู่ตำแหน่ง idx-1 เสมอ ตาม send())
     const history = chat.slice(0, Math.max(idx - 1, 0)).filter((b) => !b.error).map((b) => ({ role: b.role, text: b.text }));
     try {
       const { data } = await client.mutate({
         mutation: M_ASSISTANT,
-        variables: { input: { message: m, history, currentPath: "/admin/assistant", pageId: "assistant", locale: lang === "en" ? "en" : "th" } },
+        variables: { input: { message: m, image: priorImage?.imageFile, imageBmsConfirmed: priorImage?.imageFile ? true : undefined, history, currentPath: "/admin/assistant", pageId: "assistant", locale: lang === "en" ? "en" : "th" } },
       });
       const res = data?.bmsWorkAssistant;
       setChat((c) =>
@@ -651,13 +620,20 @@ export default function Page() {
                 const prevDay = i > 0 && chat[i - 1].createdAt ? dayKey(chat[i - 1].createdAt!) : null;
                 const curDay = b.createdAt ? dayKey(b.createdAt) : null;
                 const showDaySep = curDay && curDay !== prevDay;
+                const preceding = chat[i - 1];
+                const answerImage = b.role === "assistant" && !b.error && preceding?.role === "user" &&
+                  preceding.imageName && preceding.imagePreviewUrl
+                  ? { name: preceding.imageName, previewUrl: preceding.imagePreviewUrl } : null;
+                const following = chat[i + 1];
+                const imageShownWithAnswer = b.role === "user" && following?.role === "assistant" &&
+                  !following.error && Boolean(b.imagePreviewUrl);
                 return (
                   <div key={i}>
                     {showDaySep && (
                       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "10px 0" }}>
                         <div style={{ flex: 1, height: 1, background: "var(--app-border)" }} />
                         <Text style={{ fontSize: 11, fontWeight: 700, color: "var(--text-soft, var(--text-secondary))", whiteSpace: "nowrap" }}>
-                          {dayLabel(b.createdAt!, t)}
+                          {dayLabel(b.createdAt!, t, uiText)}
                         </Text>
                         <div style={{ flex: 1, height: 1, background: "var(--app-border)" }} />
                       </div>
@@ -667,10 +643,14 @@ export default function Page() {
                       onMouseEnter={() => setHoveredIdx(i)}
                       onMouseLeave={() => setHoveredIdx((h) => (h === i ? null : h))}
                     >
-                      <div style={{ display: "inline-flex", alignItems: "flex-end", gap: 6, maxWidth: "88%" }}>
+                      <div style={{ display: "inline-flex", alignItems: "flex-end", gap: 6,
+                        maxWidth: b.role === "assistant" ? "100%" : "88%",
+                        width: answerImage ? "min(100%, 800px)" : undefined }}>
                         <div
                           style={{
                             display: "inline-block",
+                            flex: answerImage ? 1 : undefined,
+                            minWidth: 0,
                             textAlign: "left",
                             background: b.error
                               ? "rgba(255, 77, 79, 0.1)"
@@ -683,9 +663,10 @@ export default function Page() {
                             order: b.role === "user" ? 1 : 0,
                           }}
                         >
-                          <Paragraph style={{ margin: 0, whiteSpace: "pre-wrap" }}>
-                            {renderAssistantText(b.text, t)}
-                          </Paragraph>
+                          <AssistantAnswer text={b.text} downloadLabel={t("admin_assistant.download_file")}
+                            image={answerImage} wide={b.role === "assistant"} />
+                          {b.role === "user" && b.imageName ? <AssistantSentImage name={b.imageName}
+                            previewUrl={imageShownWithAnswer ? undefined : b.imagePreviewUrl} en={lang === "en"} /> : null}
                         </div>
                         {b.role === "assistant" && !b.error && (
                           <Tooltip title={copiedIdx === i ? t("admin_assistant.copied") : t("admin_assistant.copy_this")}>
@@ -705,7 +686,7 @@ export default function Page() {
                       </div>
                       <div style={{ marginTop: 2 }}>
                         <Text style={{ fontSize: 11, color: "var(--text-soft, var(--text-secondary))" }}>
-                          {b.createdAt ? timeLabel(b.createdAt) : ""}
+                          {b.createdAt ? timeLabel(b.createdAt, uiText) : ""}
                           {b.error && (
                             <Text style={{ fontSize: 11, color: "#ff4d4f", fontWeight: 600, marginInlineStart: 6 }}>
                               {t("admin_assistant.send_failed_note")}
@@ -940,25 +921,34 @@ export default function Page() {
 
         {/* composer เย็บเป็นส่วนเดียวกับการ์ดแชท (เส้นแบ่ง + พื้นหลังต่างเฉด) ไม่ใช่แถบลอยแยกที่มีช่องว่างเหมือนเดิม */}
         <div
+          onDrop={image.dropImage}
+          onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
           style={{
             display: "flex",
+            flexDirection: "column",
             gap: 8,
             padding: 12,
             borderTop: "1px solid var(--app-border)",
             background: "var(--app-surface-2)",
           }}
         >
-          <Input
-            ref={inputRef}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onPressEnter={() => send()}
-            placeholder={t("admin_assistant.input_placeholder")}
-            disabled={sending}
-          />
-          <Button type="primary" icon={<SendOutlined />} loading={sending} onClick={() => send()}>
-            {t("admin_assistant.btn_send")}
-          </Button>
+          <AssistantImageAttachmentControls en={lang === "en"} draft={image.draft} error={image.error}
+            disabled={sending} onSelect={image.selectFile} onConfirmBms={image.confirmBms} onRemove={image.removeDraft} />
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end", minWidth: 0 }}>
+            <Input.TextArea
+              ref={inputRef}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onPaste={image.pasteImage}
+              onPressEnter={(event) => { if (!event.shiftKey) { event.preventDefault(); send(); } }}
+              autoSize={{ minRows: 1, maxRows: 4 }}
+              placeholder={t("admin_assistant.input_placeholder")}
+              disabled={sending}
+            />
+            <Button type="primary" icon={<SendOutlined />} loading={sending} disabled={!text.trim() || Boolean(image.draft && !image.draft.confirmedBms)} onClick={() => send()}>
+              {t("admin_assistant.btn_send")}
+            </Button>
+          </div>
         </div>
 
       </Card>

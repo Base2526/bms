@@ -11,6 +11,7 @@ import { AppState } from 'react-native';
 import { print } from 'graphql';
 import { PosBootstrapDocument } from '../graphql/generated';
 import { graphqlHttpUrl } from '../lib/realtime';
+import { runWithOperationTimeout } from '../lib/operation';
 import { useDevice } from './DeviceContext';
 
 export type ServerHealthStatus = 'checking' | 'online' | 'offline';
@@ -54,19 +55,25 @@ export function ServerHealthProvider({
     const probe = (async () => {
       const controller = new AbortController();
       probeController.current = controller;
-      const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
       try {
-        const response = await fetch(graphqlHttpUrl(target.serverUrl), {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            authorization: `Bearer ${target.token}`,
-            'x-pos-device-token': target.token,
-            'x-scope': 'pos',
-          },
-          body: JSON.stringify({ query: print(PosBootstrapDocument) }),
-          signal: controller.signal,
-        });
+        const { response, body } = await runWithOperationTimeout(async signal => {
+          const probeResponse = await fetch(graphqlHttpUrl(target.serverUrl), {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              authorization: `Bearer ${target.token}`,
+              'x-pos-device-token': target.token,
+              'x-scope': 'pos',
+            },
+            body: JSON.stringify({ query: print(PosBootstrapDocument) }),
+            signal,
+          });
+          const probeBody = probeResponse.ok ? (await probeResponse.json().catch(() => null)) as {
+            data?: { bmsPosSession?: unknown };
+            errors?: Array<{ extensions?: { code?: string } }>;
+          } | null : null;
+          return { response: probeResponse, body: probeBody };
+        }, PROBE_TIMEOUT_MS, controller.signal);
         if (!isCurrent()) return false;
         if (response.status === 401) {
           markAuthenticationRejected();
@@ -77,10 +84,6 @@ export function ServerHealthProvider({
           setStatus('offline');
           return false;
         }
-        const body = (await response.json().catch(() => null)) as {
-          data?: { bmsPosSession?: unknown };
-          errors?: Array<{ extensions?: { code?: string } }>;
-        } | null;
         if (!isCurrent()) return false;
         if (
           body?.errors?.some(
@@ -102,7 +105,6 @@ export function ServerHealthProvider({
         if (isCurrent()) setStatus('offline');
         return false;
       } finally {
-        clearTimeout(timer);
         if (isCurrent()) {
           activeProbe.current = null;
           probeController.current = null;

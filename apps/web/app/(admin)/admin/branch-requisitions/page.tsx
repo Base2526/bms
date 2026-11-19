@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/useUiText";
+
 import { gql, useMutation, useQuery } from "@apollo/client";
 import {
   Alert,
@@ -312,6 +314,7 @@ const STATES = [
 ];
 
 export default function BranchRequisitionsPage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const view = can("inventory.requisition.view"),
@@ -544,7 +547,7 @@ export default function BranchRequisitionsPage() {
       cancelText: tr("back"),
       onOk: async () => {
         if (!(await execute({ ...input, confirmed: true })))
-          throw new Error("Refused");
+          throw new Error(uiText("admin_ui.en_refused_735ec"));
       },
     });
   }
@@ -580,7 +583,7 @@ export default function BranchRequisitionsPage() {
               <Button type="link" onClick={() => setSelected(n.requestId)}>
                 {n.requestNo} · {tr(n.kind)}
               </Button>
-              <small>{new Date(n.at).toLocaleString()}</small>
+              <small>{new Date(n.at).toLocaleString(uiText.locale)}</small>
             </div>
           ))}
         </details>
@@ -1027,7 +1030,7 @@ export default function BranchRequisitionsPage() {
                     <>
                       <strong>{tr(e.action)}</strong>
                       <p>
-                        {e.actor} · {new Date(e.at).toLocaleString()}
+                        {e.actor} · {new Date(e.at).toLocaleString(uiText.locale)}
                       </p>
                       <p>{e.note}</p>
                     </>

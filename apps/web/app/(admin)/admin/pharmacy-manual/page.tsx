@@ -198,7 +198,7 @@ const LIFECYCLE_STAGES: LifecycleStage[] = [
   { status: "DRAFT", tone: "slate", label: "บันทึกร่าง", desc: "ทีมงานสร้างหรือแก้ Protocol ที่หน้า Pharmacy Protocols — แก้ไขได้เสรี ยังไม่มีผลกับระบบจริง" },
   { status: "PENDING_REVIEW", tone: "amber", label: "ส่งตรวจ", desc: "ส่ง Protocol เข้าสู่ขั้นตอนตรวจสอบเมื่อพร้อมแล้ว ระหว่างนี้แก้ไขไม่ได้จนกว่าจะถูกตีกลับ", cond: "รอเภสัชกรที่มีใบอนุญาตตรวจเนื้อหาทางคลินิก" },
   { status: "APPROVED", tone: "green", label: "อนุมัติแล้ว (ยังปิดอยู่)", desc: "เภสัชกรที่มีใบอนุญาตเป็นคนเดียวที่กด Approve ได้ — บันทึกว่าใครอนุมัติและเมื่อไร", cond: "ยังไม่เปิดใช้งานจริงจนกว่าผู้ดูแลระบบจะเปิด" },
-  { status: "ENABLED", tone: "blue", label: "เปิดใช้งาน", desc: "ผู้ดูแลระบบเปิดใช้งาน — Protocol พร้อมรับลูกค้าจริงผ่านทุกช่องทาง", cond: "คำกระตุ้น (trigger words) ต้องไม่ชนกับ Protocol ที่เปิดอยู่ตัวอื่น" },
+  { status: "ENABLED", tone: "blue", label: "เปิดใช้งาน", desc: "ผู้มีสิทธิ์เปิดใช้งาน — Protocol จะรับลูกค้าเมื่อร้านเปิด Intake และค่า PHARMACY_PROTOCOLS_ENABLED อนุญาต", cond: "คำกระตุ้น (trigger words) ต้องไม่ชนกับ Protocol ที่ส่งตรวจอื่น" },
   { status: "DISABLED", tone: "red", label: "ปิดใช้งาน", desc: "ปิด Protocol ได้ทุกเมื่อ — หยุดรับเคสใหม่ทันที เคสที่กำลังดำเนินอยู่ไม่ได้รับผลกระทบ และเปิดกลับมาใหม่ได้" },
 ];
 
@@ -387,7 +387,7 @@ const LIFECYCLE_STAGES_EN: LifecycleStage[] = [
   { status: "DRAFT", tone: "slate", label: "Saved as a draft", desc: "The team creates or edits a protocol on the Pharmacy Protocols page — freely editable, has no effect on production yet." },
   { status: "PENDING_REVIEW", tone: "amber", label: "Submitted for review", desc: "Submitted once ready — it cannot be edited again until sent back to draft.", cond: "Waiting on a licensed pharmacist to review the clinical content" },
   { status: "APPROVED", tone: "green", label: "Approved (still off)", desc: "Only a licensed pharmacist can press Approve — who approved it and when is recorded.", cond: "Still not live until an administrator enables it" },
-  { status: "ENABLED", tone: "blue", label: "Enabled", desc: "An administrator enables it — the protocol is now live for real customers on every channel.", cond: "Its trigger words must not collide with another already-active protocol" },
+  { status: "ENABLED", tone: "blue", label: "Enabled", desc: "Authorized staff enable it; customer intake also requires the shop intake switch and PHARMACY_PROTOCOLS_ENABLED allowlist.", cond: "Its trigger words must not collide with another protocol submitted for review" },
   { status: "DISABLED", tone: "red", label: "Disabled", desc: "Can be disabled at any time — stops taking new cases immediately, cases already in progress are unaffected, and it can be re-enabled later." },
 ];
 
@@ -408,10 +408,10 @@ const EN: PharmacyManualContent = {
   roleColManager: "Manager",
   roleColAdmin: "Admin",
   roleRows: ROLE_ROWS_EN,
-  roleStarNote: "★ = requires this permission AND a verified pharmacist license, both at once",
+  roleStarNote: "★ = requires this permission AND a pharmacist licence recorded by the shop Administrator, both at once",
   roleDangerTitle: "🔒 The Administrator exception",
   roleDangerBody:
-    "Even though Administrator gets every permission automatically, approving / rejecting / referring a clinical case is blocked to anyone without a verified pharmacist license — no role can ever bypass this.",
+    "Even though Administrator gets every permission automatically, approving / rejecting / referring a clinical case is blocked to anyone without the shop's recorded pharmacist licence flag — no role can bypass this gate. The shop must verify the licence itself.",
   queueEyebrow: "Daily work",
   queueTitle: "Pharmacy Queue and case states",
   queueLead: "The Pharmacy Queue page is where a pharmacist works from — every case waiting for review, in time order.",

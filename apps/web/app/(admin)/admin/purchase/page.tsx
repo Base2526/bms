@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import {
   Table,
@@ -40,6 +42,10 @@ type POItem = {
   additionalUnitCost: number;
   landedUnitCost: number;
   additionalCostNote: string | null;
+  supplierUnitName: string | null;
+  supplierUnitQty: number | null;
+  baseQtyPerSupplierUnit: number | null;
+  conversionEvidence: string | null;
 };
 type Supplier = { id: string; name: string };
 type SupplierProduct = {
@@ -77,7 +83,7 @@ const Q_POS = gql`
     bmsPurchaseOrders(search: $search, limit: $limit, offset: $offset) {
       id status total landedTotal note qtyOrdered qtyReceived createdAt updatedAt
       supplier { id name }
-      items { sku size supplierSku supplierProductName qtyOrdered qtyReceived unitCost additionalUnitCost landedUnitCost additionalCostNote }
+      items { sku size supplierSku supplierProductName qtyOrdered qtyReceived unitCost additionalUnitCost landedUnitCost additionalCostNote supplierUnitName supplierUnitQty baseQtyPerSupplierUnit conversionEvidence }
     }
   }
 `;
@@ -91,11 +97,13 @@ const Q_LINKED_PO = gql`
     bmsPurchaseOrder(id: $id) {
       id status total landedTotal note qtyOrdered qtyReceived createdAt updatedAt
       supplier { id name }
-      items { sku size supplierSku supplierProductName qtyOrdered qtyReceived unitCost additionalUnitCost landedUnitCost additionalCostNote }
+      items { sku size supplierSku supplierProductName qtyOrdered qtyReceived unitCost additionalUnitCost landedUnitCost additionalCostNote supplierUnitName supplierUnitQty baseQtyPerSupplierUnit conversionEvidence }
     }
   }
 `;
 const Q_SUPPLIERS = gql`query { bmsSuppliers { id name } }`;
+const Q_RECEIVING_LOCATIONS = gql`query BmsPurchaseReceivingLocations { bmsPurchaseReceivingLocations { id name branchCode active } }`;
+const Q_RETRY_SCOPE = gql`query BmsPurchaseRetryScope { bmsMe { id tenant { id } } bmsActingTenant { id } }`;
 const Q_SUPPLIER_PRODUCTS = gql`
   query BmsSupplierProducts($supplierId: ID!) {
     bmsSupplierProducts(supplierId: $supplierId, limit: 500) {
@@ -105,13 +113,13 @@ const Q_SUPPLIER_PRODUCTS = gql`
   }
 `;
 const M_CREATE = gql`
-  mutation ($supplierId: ID, $supplierName: String, $note: String, $items: [BmsPurchaseItemInput!]!) {
-    bmsCreatePurchaseOrder(supplierId: $supplierId, supplierName: $supplierName, note: $note, items: $items) { status poId message }
+  mutation ($supplierId: ID, $supplierName: String, $note: String, $requestId: String, $items: [BmsPurchaseItemInput!]!) {
+    bmsCreatePurchaseOrder(supplierId: $supplierId, supplierName: $supplierName, note: $note, requestId: $requestId, items: $items) { status poId message }
   }
 `;
 const M_RECEIVE = gql`
-  mutation ($id: ID!, $items: [BmsReceiveItemInput!]!, $idempotencyKey: String) {
-    bmsReceivePurchaseOrder(id: $id, items: $items, idempotencyKey: $idempotencyKey) { status poId message reasonCode sku size replayed }
+  mutation ($id: ID!, $items: [BmsReceiveItemInput!]!, $idempotencyKey: String, $locationId: ID) {
+    bmsReceivePurchaseOrder(id: $id, items: $items, idempotencyKey: $idempotencyKey, locationId: $locationId) { status poId message reasonCode sku size replayed }
   }
 `;
 const M_CANCEL = gql`mutation ($id: ID!) { bmsCancelPurchaseOrder(id: $id) }`;
@@ -132,6 +140,7 @@ function statusLabels(t: (key: string) => string): Record<POStatus, string> {
 type ProductOpt = { sku: string; name: string; variants: { size: string }[] };
 
 function PurchaseManagement() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const STATUS_LABEL = statusLabels(t);
   const { can } = useBmsPermissions();
@@ -160,6 +169,10 @@ function PurchaseManagement() {
   const {loading,error,refetch}=linkedId?linkedQuery:listQuery;
   const data=linkedId?{bmsPurchaseOrders:linkedQuery.data?.bmsPurchaseOrder?[linkedQuery.data.bmsPurchaseOrder]:[]}:listQuery.data;
   const { data: supplierData } = useQuery(Q_SUPPLIERS, { fetchPolicy: "cache-and-network" });
+  const { data: retryScopeData } = useQuery(Q_RETRY_SCOPE, { fetchPolicy: "network-only" });
+  const retryTenantId = retryScopeData?.bmsActingTenant?.id ?? retryScopeData?.bmsMe?.tenant?.id;
+  const retryScope = retryTenantId && retryScopeData?.bmsMe?.id
+    ? `${retryTenantId}:${retryScopeData.bmsMe.id}` : null;
   const suppliers: Supplier[] = supplierData?.bmsSuppliers || [];
 
   const onErr = (e: any) => message.error(e?.message || t("admin_purchase.action_failed"));
@@ -205,7 +218,7 @@ function PurchaseManagement() {
     () => [
       { title: "PO", dataIndex: "id", key: "id", width: 100,
         render: (id: string) => <Typography.Text code>{id.slice(0, 8)}</Typography.Text> },
-      { title: "Supplier", key: "supplier",
+      { title: uiText("admin_ui.en_supplier_55edd"), key: "supplier",
         render: (_: any, r: PO) => r.supplier?.name || <span style={{ color: "#999" }}>—</span> },
       { title: t("admin_purchase.col_progress"), key: "progress", width: 130,
         render: (_: any, r: PO) => t("admin_purchase.col_progress_value", { received: r.qtyReceived, ordered: r.qtyOrdered }) },
@@ -216,18 +229,18 @@ function PurchaseManagement() {
       { title: t("admin_purchase.col_status"), dataIndex: "status", key: "status", width: 140,
         render: (s: POStatus) => <Tag color={STATUS_COLOR[s]}>{STATUS_LABEL[s] ?? s}</Tag> },
       { title: t("admin_purchase.col_created"), dataIndex: "createdAt", key: "createdAt", width: 160,
-        render: (d: string) => new Date(d).toLocaleString() },
-      { title: "Actions", key: "actions", width: 180,
+        render: (d: string) => new Date(d).toLocaleString(uiText.locale) },
+      { title: uiText("admin_ui.en_actions_c3cd6"), key: "actions", width: 180,
         render: (_: any, r: PO) => <Space size="small">{actionsFor(r)}</Space> },
     ],
-    [canceling, can, STATUS_LABEL]
+    [uiText, canceling, can, STATUS_LABEL]
   );
 
   const itemColumns = [
     { title: "SKU", dataIndex: "sku", key: "sku" },
     { title: t("admin_purchase.item_col_supplier_sku"), dataIndex: "supplierSku", key: "supplierSku",
       render: (value: string | null) => value || <Typography.Text type="secondary">—</Typography.Text> },
-    { title: "Size", dataIndex: "size", key: "size", width: 80 },
+    { title: uiText("admin_ui.en_size_b7152"), dataIndex: "size", key: "size", width: 80 },
     { title: t("admin_purchase.item_col_received"), dataIndex: "qtyReceived", key: "qr", width: 90, align: "right" as const },
     { title: t("admin_purchase.item_col_remaining"), key: "rem", width: 90, align: "right" as const,
       render: (_: any, it: POItem) => it.qtyOrdered - it.qtyReceived },
@@ -248,7 +261,7 @@ function PurchaseManagement() {
       <div style={{ marginBottom: 16 }}>
         {linkedId && <Button onClick={()=>{setLinkedId(null);setExpandedKeys([]);}}>{t("branch_requisitions.all_documents")}</Button>}
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-          <h2 style={{ margin: 0 }}>BMS Purchase (PO)</h2>
+          <h2 style={{ margin: 0 }}>{uiText("admin_ui.en_bms_purchase_po_6bb47")}</h2>
           <Space wrap>
             <Input.Search
               placeholder={t("admin_purchase.search_placeholder")}
@@ -258,9 +271,11 @@ function PurchaseManagement() {
               onChange={(e) => {setLinkedId(null);setSearchInput(e.target.value);}}
             />
             {can("purchase.edit") && (
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>{t("admin_purchase.btn_create")}</Button>
+              <Button type="primary" icon={<PlusOutlined />} disabled={!retryScope}
+                title={!retryScope ? t("admin_purchase.retry_scope_unavailable") : undefined}
+                onClick={() => setCreateOpen(true)}>{t("admin_purchase.btn_create")}</Button>
             )}
-            <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+            <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{uiText("admin_ui.en_refresh_56e3b")}</Button>
           </Space>
         </Space>
       </div>
@@ -280,11 +295,11 @@ function PurchaseManagement() {
             <Table rowKey={(it) => `${it.sku}-${it.size}`} dataSource={r.items} columns={itemColumns} pagination={false} size="small" scroll={{ x: "max-content" }} />
           ),
         }}
-        pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Total ${t} PO(s)` }}
+        pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => uiText("admin_ui.en_total_po_s_560cc", { v0: t }) }}
       />
 
       <CreatePOModal
-        open={createOpen} suppliers={suppliers}
+        open={createOpen} suppliers={suppliers} retryScope={retryScope}
         onClose={() => setCreateOpen(false)}
         onDone={() => { setCreateOpen(false); refetch(); }}
       />
@@ -299,15 +314,27 @@ function PurchaseManagement() {
 
 // ---- Create PO modal ----------------------------------------
 function CreatePOModal({
-  open, suppliers, onClose, onDone,
+  open, suppliers, retryScope, onClose, onDone,
 }: {
   open: boolean;
   suppliers: Supplier[];
+  retryScope: string | null;
   onClose: () => void;
   onDone: () => void;
 }) {
   const { t } = useI18n();
   const [form] = Form.useForm();
+  const [pendingCreate, setPendingCreate] = useState<{scope: string; variables: Record<string, unknown>} | null>(null);
+  const pendingCreateKey = retryScope ? `bms.purchase.create.pending:${retryScope}` : "";
+  useEffect(() => {
+    setPendingCreate(null);
+    if (!open || !retryScope) return;
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem(pendingCreateKey) ?? "null");
+      if (saved?.scope === retryScope && saved?.variables?.requestId && Array.isArray(saved.variables.items))
+        setPendingCreate(saved);
+    } catch { /* Invalid local retry evidence is ignored; the server still owns idempotency. */ }
+  }, [open, retryScope, pendingCreateKey]);
   const [productSearch, setProductSearch] = useState("");
   const deferredProductSearch = useDeferredValue(productSearch.trim());
   const { data: prodData, loading: productsLoading } = useQuery(Q_PRODUCTS, {
@@ -329,6 +356,10 @@ function CreatePOModal({
   const [create, { loading }] = useMutation(M_CREATE, {
     onCompleted: (d: any) => {
       const res = d?.bmsCreatePurchaseOrder;
+      if (res?.status) {
+        try { window.sessionStorage.removeItem(pendingCreateKey); } catch {}
+        setPendingCreate(null);
+      }
       if (res?.status === "CREATED") { message.success(res.message || t("admin_purchase.create_success")); form.resetFields(); onDone(); }
       else message.error(res?.message || t("admin_purchase.create_failed"));
     },
@@ -336,6 +367,11 @@ function CreatePOModal({
   });
 
   const submit = async () => {
+    if (pendingCreate) {
+      if (pendingCreate.scope === retryScope) await create({ variables: pendingCreate.variables });
+      return;
+    }
+    if (!retryScope) return;
     // AntD displays field errors; a rejected validation is not an unhandled page error.
     let v;
     try { v = await form.validateFields(); } catch { return; }
@@ -343,21 +379,29 @@ function CreatePOModal({
       sku: it.sku,
       size: it.size,
       qty: Number(it.qty),
-      unitCost: Number(it.unitCost ?? 0),
+      unitCost: it.supplierUnitName && it.unitCost == null ? null : Number(it.unitCost ?? 0),
       additionalUnitCost: Number(it.additionalUnitCost ?? 0),
       additionalCostNote: it.additionalUnitCost > 0 ? String(it.additionalCostNote ?? "").trim() : null,
       supplierSku: it.supplierSku || null,
       supplierProductName: it.supplierProductName || null,
       supplierBarcode: it.supplierBarcode || null,
+      supplierUnitName: it.supplierUnitName || null,
+      supplierUnitQty: it.supplierUnitQty == null ? null : Number(it.supplierUnitQty),
+      baseQtyPerSupplierUnit: it.baseQtyPerSupplierUnit == null ? null : Number(it.baseQtyPerSupplierUnit),
+      conversionEvidence: it.conversionEvidence || null,
     }));
-    create({
-      variables: {
+    const variables = {
         supplierId: selectedSupplier?.id ?? null,
         supplierName: selectedSupplier ? null : v.supplierName || null,
         note: v.note || null,
+        requestId: crypto.randomUUID(),
         items,
-      },
-    });
+    };
+    const pending = { scope: retryScope, variables };
+    try { window.sessionStorage.setItem(pendingCreateKey, JSON.stringify(pending)); }
+    catch { message.error(t("admin_purchase.create_retry_storage_failed")); return; }
+    setPendingCreate(pending);
+    await create({ variables });
   };
 
   const fillMapping = (index: number, sku: string, size?: string) => {
@@ -402,10 +446,14 @@ function CreatePOModal({
 
   return (
     <Modal
-      title={t("admin_purchase.create_modal_title")} open={open} onCancel={onClose} onOk={submit}
+      title={t("admin_purchase.create_modal_title")} open={open} onCancel={() => { if (!pendingCreate) onClose(); }} onOk={submit}
+      closable={!pendingCreate} maskClosable={!pendingCreate} keyboard={!pendingCreate}
+      cancelButtonProps={{ disabled: !!pendingCreate }}
       confirmLoading={loading} okText={t("admin_purchase.create_ok_text")} cancelText={t("admin_purchase.btn_cancel")} width={1100} destroyOnClose
     >
-      <Form form={form} layout="vertical" initialValues={{ items: [{ additionalUnitCost: 0 }] }}>
+      <Form form={form} layout="vertical" disabled={!!pendingCreate} initialValues={{ items: [{ additionalUnitCost: 0 }] }}>
+        <Alert closable type="info" showIcon message={t("admin_purchase.supplier_unit_hint")} style={{ marginBottom: 16 }} />
+        {pendingCreate && <Alert closable type="warning" showIcon message={t("admin_purchase.create_retry_pending")} />}
         <Form.Item name="supplierName" label={t("admin_purchase.supplier_label")}>
           <AutoComplete
             allowClear
@@ -502,7 +550,23 @@ function CreatePOModal({
                   <Form.Item {...rest} name={[name, "qty"]} rules={[{ required: true, message: t("admin_purchase.qty_required") }]}>
                     <InputNumber placeholder={t("admin_purchase.qty_placeholder")} min={1} style={{ width: 100 }} />
                   </Form.Item>
-                  <Form.Item {...rest} name={[name, "unitCost"]}>
+                  <Form.Item {...rest} name={[name, "supplierUnitName"]}>
+                    <Input placeholder={t("admin_purchase.supplier_unit_name")} maxLength={100} style={{ width: 125 }} />
+                  </Form.Item>
+                  <Form.Item {...rest} name={[name, "supplierUnitQty"]}>
+                    <InputNumber placeholder={t("admin_purchase.supplier_unit_qty")} min={1} precision={0} style={{ width: 125 }} />
+                  </Form.Item>
+                  <Form.Item {...rest} name={[name, "baseQtyPerSupplierUnit"]}>
+                    <InputNumber placeholder={t("admin_purchase.base_qty_per_supplier_unit")} min={2} precision={0} style={{ width: 145 }} />
+                  </Form.Item>
+                  <Form.Item {...rest} name={[name, "conversionEvidence"]}>
+                    <Input placeholder={t("admin_purchase.conversion_evidence")} maxLength={500} style={{ width: 180 }} />
+                  </Form.Item>
+                  <Form.Item {...rest} name={[name, "unitCost"]} dependencies={[["items", name, "supplierUnitName"]]}
+                    rules={[({ getFieldValue }) => ({ validator: async (_, value) => {
+                      if (getFieldValue(["items", name, "supplierUnitName"]) && value == null)
+                        throw new Error(t("admin_purchase.supplier_unit_cost_required"));
+                    } })]}>
                     <InputNumber placeholder={t("admin_purchase.unit_cost_placeholder")} min={0} precision={2} style={{ width: 120 }} />
                   </Form.Item>
                   <Form.Item {...rest} name={[name, "additionalUnitCost"]} initialValue={0}>
@@ -534,29 +598,41 @@ function ReceivePOModal({
 }: { po: PO | null; onClose: () => void; onDone: () => void }) {
   const { t } = useI18n();
   const [form] = Form.useForm();
-  const [pendingReceipt, setPendingReceipt] = useState<{ id: string; items: any[]; idempotencyKey: string } | null>(null);
+  const [pendingReceipt, setPendingReceipt] = useState<{ id: string; items: any[]; idempotencyKey: string; locationId?: string | null } | null>(null);
   const submitting = useRef(false);
   const pendingKey = po ? `bms.purchase.pending:${po.id}` : "";
+  const receivingLocations = useQuery<{ bmsPurchaseReceivingLocations: Array<{ id: string; name: string; branchCode: string; active: boolean }> }>(Q_RECEIVING_LOCATIONS, {
+    skip: !po,
+    fetchPolicy: "network-only",
+  });
+  const locations = receivingLocations.data?.bmsPurchaseReceivingLocations ?? [];
   useEffect(() => {
     if (!po) return;
+    setPendingReceipt(null);
+    form.resetFields();
     try {
       const saved = JSON.parse(window.sessionStorage.getItem(pendingKey) ?? "null");
       if (saved?.id === po.id && Array.isArray(saved.items) && typeof saved.idempotencyKey === "string") {
         setPendingReceipt(saved);
-        const values: Record<string, unknown> = { lots: [] };
+        const values: Record<string, unknown> = { lots: [], locationId: saved.locationId ?? null };
         po.items.filter(item => item.qtyReceived < item.qtyOrdered).forEach((item, index) => {
           const original = saved.items.find((line: any) => line.sku === item.sku && line.size === item.size);
           values[`${item.sku}__${item.size}`] = original?.qty ?? 0;
+          if (item.baseQtyPerSupplierUnit) values[`${item.sku}__${item.size}__supplier`] = original?.supplierQty ?? 0;
           (values.lots as any[])[index] = { lotNo: original?.lotNo, expiryDate: original?.expiryDate };
         });
         form.setFieldsValue(values);
       }
     } catch { message.error(t("admin_purchase.receive_unknown")); }
   }, [po?.id, pendingKey, form]);
+  useEffect(() => {
+    if (!po || !receivingLocations.data || pendingReceipt) return;
+    if (locations.length === 1 && !form.getFieldValue("locationId")) form.setFieldValue("locationId", locations[0].id);
+  }, [po?.id, receivingLocations.data, pendingReceipt, locations, form]);
   const [receive, { loading }] = useMutation(M_RECEIVE, {
     onCompleted: (d: any) => {
       const res = d?.bmsReceivePurchaseOrder;
-      if (!["RECEIVED", "PARTIAL", "PO_NOT_FOUND", "LOCATION_NOT_FOUND", "INVALID_INPUT", "INVALID_STATE", "LINE_NOT_FOUND", "OVER_RECEIVE", "IDEMPOTENCY_CONFLICT", "EMPTY"].includes(res?.status)) {
+      if (!["RECEIVED", "PARTIAL", "PO_NOT_FOUND", "LOCATION_NOT_FOUND", "BRANCH_FORBIDDEN", "INVALID_INPUT", "INVALID_STATE", "LINE_NOT_FOUND", "OVER_RECEIVE", "IDEMPOTENCY_CONFLICT", "EMPTY"].includes(res?.status)) {
         message.error(t("admin_purchase.receive_unknown")); return;
       }
       try { window.sessionStorage.removeItem(pendingKey); } catch {}
@@ -569,10 +645,13 @@ function ReceivePOModal({
           LOT_REQUIRED: "admin_purchase.receive_lot_required",
           EXPIRY_REQUIRED: "admin_purchase.receive_expiry_required",
           LOT_REVIEW_REQUIRED: "admin_purchase.receive_lot_review_required",
+          SUPPLIER_UNIT_MISMATCH: "admin_purchase.receive_supplier_unit_mismatch",
+          IDEMPOTENCY_REQUIRED: "admin_purchase.receive_idempotency_required",
         };
         const failures: Record<string, string> = {
           PO_NOT_FOUND: "admin_purchase.receive_po_not_found",
           LOCATION_NOT_FOUND: "admin_purchase.receive_location_not_found",
+          BRANCH_FORBIDDEN: "admin_purchase.receive_branch_forbidden",
           INVALID_INPUT: "admin_purchase.receive_invalid_input",
           INVALID_STATE: "admin_purchase.receive_invalid_state",
           LINE_NOT_FOUND: "admin_purchase.receive_line_not_found",
@@ -602,13 +681,19 @@ function ReceivePOModal({
     const items = pending
       .map((it, index) => ({
         sku: it.sku, size: it.size, qty: Number(v[`${it.sku}__${it.size}`] ?? 0),
+        ...(it.baseQtyPerSupplierUnit ? { supplierQty: Number(v[`${it.sku}__${it.size}__supplier`] ?? 0) } : {}),
         lotNo: v.lots?.[index]?.lotNo?.trim() || null,
         expiryDate: v.lots?.[index]?.expiryDate || null,
       }))
       .filter((it) => it.qty > 0);
     if (items.length === 0) { message.warning(t("admin_purchase.receive_qty_warning")); return; }
-    const variables = { id: po.id, items, idempotencyKey: crypto.randomUUID() };
-    window.sessionStorage.setItem(pendingKey, JSON.stringify(variables));
+    const locationId = String(v.locationId ?? "");
+    if (!locations.some((location) => location.id === locationId)) {
+      message.error(t("admin_purchase.receive_location_required")); return;
+    }
+    const variables = { id: po.id, items, idempotencyKey: crypto.randomUUID(), locationId };
+    try { window.sessionStorage.setItem(pendingKey, JSON.stringify(variables)); }
+    catch { message.error(t("admin_purchase.receive_retry_storage_failed")); return; }
     setPendingReceipt(variables);
     await receive({ variables, context: { fetchOptions: { signal: AbortSignal.timeout(20_000) } } });
     } catch (error: any) {
@@ -628,6 +713,11 @@ function ReceivePOModal({
       {pendingReceipt && !loading && <Alert closable type="warning" showIcon message={t("admin_purchase.receive_unknown")}
         description={pendingReceipt.items.map(item => `${item.sku}/${item.size}: ${item.qty}${item.lotNo ? ` · ${item.lotNo}` : ""}`).join(", ")} />}
       <Form form={form} layout="vertical" preserve={false} disabled={!!pendingReceipt}>
+        <Form.Item name="locationId" label={t("admin_purchase.receive_location_label")}
+          rules={[{ required: true, message: t("admin_purchase.receive_location_required") }]}>
+          <Select loading={receivingLocations.loading} placeholder={t("admin_purchase.receive_location_required")}
+            options={locations.map((location) => ({ value: location.id, label: `${location.branchCode} · ${location.name}` }))} />
+        </Form.Item>
         {pending.length === 0 && <Typography.Text type="secondary">{t("admin_purchase.no_pending_items")}</Typography.Text>}
         {pending.map((it, index) => {
           const rem = it.qtyOrdered - it.qtyReceived;
@@ -639,8 +729,21 @@ function ReceivePOModal({
               initialValue={rem}
               rules={[{ type: "number", min: 0, max: rem, message: t("admin_purchase.receive_item_max_error", { rem }) }]}
             >
-              <InputNumber min={0} max={rem} precision={0} style={{ width: 160 }} />
+              <InputNumber min={0} max={rem} precision={0} disabled={!!pendingReceipt || !!it.baseQtyPerSupplierUnit} style={{ width: 160 }} />
             </Form.Item>
+            {it.baseQtyPerSupplierUnit && <Form.Item
+              name={`${it.sku}__${it.size}__supplier`}
+              label={t("admin_purchase.receive_supplier_unit_label", {
+                unit: it.supplierUnitName ?? "", factor: it.baseQtyPerSupplierUnit,
+              })}
+              initialValue={rem / it.baseQtyPerSupplierUnit}
+              rules={[{ type: "number", min: 0, max: rem / it.baseQtyPerSupplierUnit,
+                message: t("admin_purchase.receive_supplier_unit_mismatch") }]}
+            >
+              <InputNumber min={0} max={rem / it.baseQtyPerSupplierUnit} precision={0} disabled={!!pendingReceipt} style={{ width: 160 }}
+                onChange={(value) => form.setFieldValue(`${it.sku}__${it.size}`,
+                  Number(value ?? 0) * it.baseQtyPerSupplierUnit!)} />
+            </Form.Item>}
             <Form.Item name={["lots", index, "lotNo"]} label={t("admin_purchase.receive_lot_no")}>
               <Input maxLength={100} />
             </Form.Item>

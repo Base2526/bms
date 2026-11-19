@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="./setup.css" />
   </head>
   <body>
+
     <main class="setup-shell">
       <section class="setup-panel" aria-labelledby="setup-title">
         <aside class="setup-aside">
@@ -31,6 +32,10 @@
           </ol>
         </aside>
         <div class="setup-content">
+    <div class="language-control"><label for="language">Language / ภาษา</label>
+      <select id="language"><option value="th">ไทย</option><option value="en">English</option></select>
+      <span id="language-status" role="status"></span>
+    </div>
           <div class="intro">
             <div class="eyebrow">ขั้นตอนที่ 1 จาก 3</div>
             <h1 id="setup-title">เชื่อมต่อเครื่องแคชเชียร์</h1>
@@ -68,6 +73,8 @@
         </div>
       </section>
     </main>
+    <script src="./locale.cjs"></script>
+    <script src="./language-control.js"></script>
     <script src="./setup.js"></script>
   </body>
 </html>

@@ -39,7 +39,7 @@ test("10.89 preserves move history, tenant scope, uniqueness and effective hours
       `INSERT INTO bms_locations(tenant_id,code,name,branch_code) VALUES($1,'MAIN',$2,'00000') RETURNING id`,
       [tenantId, `FAKE analytics branch ${suffix}`],
     )).rows[0].id;
-    await query(`INSERT INTO bms_store_profile(tenant_id,business_archetype,timezone) VALUES($1,'board_game_cafe','Asia/Bangkok')`, [tenantId]);
+    await query(`INSERT INTO bms_store_profile(tenant_id,business_archetype,timezone,currency) VALUES($1,'board_game_cafe','Asia/Bangkok','THB')`, [tenantId]);
     actorId = (await query<{ id: string }>(
       `INSERT INTO users(name,username,email,role,role_id,tenant_id,password_hash,fake_test)
        SELECT $2,$3,$3,'Administrator',r.id,$1,'x',TRUE FROM roles r WHERE r.name='Administrator' LIMIT 1 RETURNING id`,

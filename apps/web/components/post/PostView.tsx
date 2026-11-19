@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 
 import React from 'react';
 
@@ -114,6 +116,7 @@ function TelChipRow({
   blocked: boolean;
   onAction: (telRaw: string) => void;
 }) {
+  const uiText = useUiText();
   const { token } = theme.useToken();
   const telRaw = String(tel ?? '');
 
@@ -141,9 +144,9 @@ function TelChipRow({
           {telRaw}
         </Typography.Text>
 
-        <Tooltip title="Copy">
+        <Tooltip title={uiText("admin_ui.en_copy_af74f")}>
           <Button
-            aria-label={`Copy tel ${telRaw}`}
+            aria-label={uiText("admin_ui.en_copy_tel_eedbe", { v0: telRaw })}
             type="text"
             size="small"
             icon={<CopyOutlined />}
@@ -153,9 +156,9 @@ function TelChipRow({
 
               try {
                 await copyToClipboard(telRaw);
-                message.success('Copied');
+                message.success(uiText("admin_ui.en_copied_8e3df"));
               } catch {
-                message.error('Copy failed');
+                message.error(uiText("admin_ui.en_copy_failed_bd5ac"));
               }
             }}
           />
@@ -180,12 +183,12 @@ function TelChipRow({
             }}
           >
             <LockOutlined />
-            <span>บล็อกแล้ว</span>
+            <span>{uiText("admin_ui.blocked_2992d")}</span>
           </div>
         ) : null}
 
         <Button
-          aria-label={blocked ? `Manage tel ${telRaw}` : `Block tel ${telRaw}`}
+          aria-label={blocked ? uiText("admin_ui.en_manage_tel_80cf6", { v0: telRaw }) : uiText("admin_ui.en_block_tel_cb3f6", { v0: telRaw })}
           type="text"
           size="small"
           onClick={(e) => {
@@ -201,7 +204,7 @@ function TelChipRow({
             background: token.colorBgContainer,
           }}
         >
-          {blocked ? 'จัดการ' : 'บล็อก'}
+          {blocked ? uiText("admin_ui.manage_82285") : uiText("admin_ui.block_7c74b")}
         </Button>
       </Space>
     </div>
@@ -219,6 +222,7 @@ function BankChipRow({
   reported: boolean;
   onAction: (bankName: string | null | undefined, accountRaw: string) => void;
 }) {
+  const uiText = useUiText();
   const { token } = theme.useToken();
   const bankLabel = String(bankName ?? '').trim();
   const accountRaw = String(account ?? '').trim();
@@ -249,9 +253,9 @@ function BankChipRow({
           {displayText || '-'}
         </Typography.Text>
 
-        <Tooltip title="Copy">
+        <Tooltip title={uiText("admin_ui.en_copy_af74f")}>
           <Button
-            aria-label={`Copy bank account ${accountRaw}`}
+            aria-label={uiText("admin_ui.en_copy_bank_account_c6458", { v0: accountRaw })}
             type="text"
             size="small"
             icon={<CopyOutlined />}
@@ -261,9 +265,9 @@ function BankChipRow({
 
               try {
                 await copyToClipboard(accountRaw);
-                message.success('Copied');
+                message.success(uiText("admin_ui.en_copied_8e3df"));
               } catch {
-                message.error('Copy failed');
+                message.error(uiText("admin_ui.en_copy_failed_bd5ac"));
               }
             }}
           />
@@ -288,12 +292,12 @@ function BankChipRow({
             }}
           >
             <CheckCircleOutlined />
-            <span>รายงานแล้ว</span>
+            <span>{uiText("admin_ui.reported_3d09e")}</span>
           </div>
         ) : null}
 
         <Button
-          aria-label={reported ? `Undo report bank account ${accountRaw}` : `Report bank account ${accountRaw}`}
+          aria-label={reported ? uiText("admin_ui.en_undo_report_bank_account_9c67b", { v0: accountRaw }) : uiText("admin_ui.en_report_bank_account_d0a45", { v0: accountRaw })}
           type="text"
           size="small"
           onClick={(e) => {
@@ -309,7 +313,7 @@ function BankChipRow({
             background: token.colorBgContainer,
           }}
         >
-          {reported ? 'ยกเลิกรายงาน' : 'รายงาน'}
+          {reported ? uiText("admin_ui.cancel_report_a9fb1") : uiText("admin_ui.reports_9ca63")}
         </Button>
       </Space>
     </div>
@@ -325,6 +329,7 @@ function ShareActionButton({
   baseUrl: string;
   isMobile: boolean;
 }) {
+  const uiText = useUiText();
   const [open, setOpen] = React.useState(false);
 
   const payload = React.useMemo(() => buildSharePayload(post, baseUrl), [post, baseUrl]);
@@ -362,7 +367,7 @@ function ShareActionButton({
 
   return (
     <>
-      <Tooltip title="Share">
+      <Tooltip title={uiText("admin_ui.en_share_09ca5")}>
         <Button
           type="text"
           size={isMobile ? 'small' : 'middle'}
@@ -374,7 +379,7 @@ function ShareActionButton({
       <Modal
         open={open}
         onCancel={() => setOpen(false)}
-        title="Share post"
+        title={uiText("admin_ui.en_share_post_25b0d")}
         footer={null}
         destroyOnClose
       >
@@ -394,45 +399,40 @@ function ShareActionButton({
               onClick={async () => {
                 try {
                   await copyToClipboard(payload.url);
-                  message.success('Copied link');
+                  message.success(uiText("admin_ui.en_copied_link_11a16"));
                 } catch {
-                  message.error('Copy failed');
+                  message.error(uiText("admin_ui.en_copy_failed_bd5ac"));
                 }
               }}
             >
-              Copy link
-            </Button>
+              {uiText("admin_ui.en_copy_link_2f84e")}</Button>
 
             <Button
               icon={<CopyOutlined />}
               onClick={async () => {
                 try {
                   await copyToClipboard(`${payload.title}\n${payload.url}`);
-                  message.success('Copied text');
+                  message.success(uiText("admin_ui.en_copied_text_4523f"));
                 } catch {
-                  message.error('Copy failed');
+                  message.error(uiText("admin_ui.en_copy_failed_bd5ac"));
                 }
               }}
             >
-              Copy text
-            </Button>
+              {uiText("admin_ui.en_copy_text_06a76")}</Button>
 
             <Button icon={<FacebookFilled />} onClick={() => openFacebookShare(payload.url)}>
-              Share to Facebook
-            </Button>
+              {uiText("admin_ui.en_share_to_facebook_628be")}</Button>
 
             <Button
               onClick={() => {
                 window.open(payload.url, '_blank', 'noopener,noreferrer');
               }}
             >
-              Open link
-            </Button>
+              {uiText("admin_ui.en_open_link_d2de1")}</Button>
           </Space>
 
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            Tip: บนมือถือจะเปิด native share ให้เองถ้าเครื่องรองรับ
-          </Typography.Text>
+            {uiText("admin_ui.tip_on_supported_phones_the_native_share_sheet_5c54d")}</Typography.Text>
         </div>
       </Modal>
     </>
@@ -466,6 +466,7 @@ export default function PostView({
   onClone,
   cloning,
 }: Props) {
+  const uiText = useUiText();
   // ✅ Hooks MUST be called unconditionally (before any return)
   const { user } = useSessionCtx();
   const router = useRouter();
@@ -569,7 +570,7 @@ export default function PostView({
             });
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : 'Report failed';
-            message.warning(`Blocked, but report failed: ${msg}`);
+            message.warning(uiText("admin_ui.en_blocked_but_report_failed_87554", { v0: msg }));
           }
         }
 
@@ -580,7 +581,7 @@ export default function PostView({
           tags: reportPayload?.tags ?? optimisticEntry.tags,
         });
 
-        message.success(wasBlocked ? 'Updated' : 'Blocked');
+        message.success(wasBlocked ? uiText("admin_ui.en_updated_f2f85") : uiText("admin_ui.en_blocked_99613"));
         return true;
       } catch (err: unknown) {
         if (prevEntry) jachoei.setBlockedTelEntry(tel, prevEntry);
@@ -591,7 +592,7 @@ export default function PostView({
         return false;
       }
     },
-    [jachoei, jachoeiMut, requireAuthOrRedirect]
+    [uiText, jachoei, jachoeiMut, requireAuthOrRedirect]
   );
 
   const performTelUndo = React.useCallback(
@@ -607,7 +608,7 @@ export default function PostView({
 
       try {
         await jachoeiMut.unblockPhone({ phone: tel });
-        message.success('Unblocked');
+        message.success(uiText("admin_ui.en_unblocked_1a9fa"));
         return true;
       } catch (err: unknown) {
         if (prevEntry) jachoei.setBlockedTelEntry(tel, prevEntry);
@@ -618,7 +619,7 @@ export default function PostView({
         return false;
       }
     },
-    [jachoei, jachoeiMut, requireAuthOrRedirect]
+    [uiText, jachoei, jachoeiMut, requireAuthOrRedirect]
   );
 
   const performBankConfirm = React.useCallback(
@@ -657,7 +658,7 @@ export default function PostView({
           tags: payload.tags ?? optimisticEntry.tags,
         });
 
-        message.success(wasReported ? 'Updated report' : 'Reported');
+        message.success(wasReported ? uiText("admin_ui.en_updated_report_3cd2d") : uiText("admin_ui.en_reported_73c20"));
         return true;
       } catch (err: unknown) {
         if (prevEntry) jachoei.setReportedBankEntry(account, prevEntry);
@@ -668,7 +669,7 @@ export default function PostView({
         return false;
       }
     },
-    [jachoei, jachoeiMut, requireAuthOrRedirect]
+    [uiText, jachoei, jachoeiMut, requireAuthOrRedirect]
   );
 
   const performBankUndo = React.useCallback(
@@ -689,7 +690,7 @@ export default function PostView({
           category: prevEntry?.category,
           reason: prevEntry?.note ?? null,
         });
-        message.success('Unreported');
+        message.success(uiText("admin_ui.en_unreported_30c44"));
         return true;
       } catch (err: unknown) {
         if (prevEntry) jachoei.setReportedBankEntry(account, prevEntry);
@@ -700,7 +701,7 @@ export default function PostView({
         return false;
       }
     },
-    [jachoei, jachoeiMut, requireAuthOrRedirect]
+    [uiText, jachoei, jachoeiMut, requireAuthOrRedirect]
   );
 
   const openTelBlockFlow = React.useCallback(
@@ -735,17 +736,15 @@ export default function PostView({
   // ✅ Early returns AFTER hooks are defined
   if (!post) {
     return (
-      <Card loading={loading} title={title ?? 'Post [x]'}>
-        No data.
-      </Card>
+      <Card loading={loading} title={title ?? uiText("admin_ui.en_post_x_b670a")}>
+        {uiText("admin_ui.en_no_data_944a5")}</Card>
     );
   }
 
   if (!p) {
     return (
-      <Card loading={loading} title={title ?? 'Post [x]'}>
-        Invalid post.
-      </Card>
+      <Card loading={loading} title={title ?? uiText("admin_ui.en_post_x_b670a")}>
+        {uiText("admin_ui.en_invalid_post_10f39")}</Card>
     );
   }
 
@@ -765,7 +764,7 @@ export default function PostView({
 
   return (
     <Card
-      title={title ?? 'รายละเอียดโพสต์'}
+      title={title ?? uiText("admin_ui.post_details_3ab25")}
       loading={loading}
       headStyle={{
         padding: isMobile ? '8px 12px' : '12px 16px',
@@ -776,7 +775,7 @@ export default function PostView({
       extra={
         <Space size={isMobile ? 4 : 8} wrap>
           <Tooltip
-            title={isFbPublished ? 'Open Facebook post' : `Facebook: ${fbStatus || 'NOT PUBLISHED'}`}
+            title={isFbPublished ? uiText("admin_ui.en_open_facebook_post_5e183") : `Facebook: ${fbStatus || uiText("admin_ui.en_not_published_9ba52")}`}
           >
             {isFbPublished ? (
               <a href={fbPermalinkUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex' }}>
@@ -793,13 +792,13 @@ export default function PostView({
 
           {userId !== authorId && authorId && (
             <Link href={`/chat?to=${authorId}`} prefetch={false}>
-              <Button type="text" size={isMobile ? 'small' : 'middle'} icon={<MessageOutlined />} title="Chat with" />
+              <Button type="text" size={isMobile ? 'small' : 'middle'} icon={<MessageOutlined />} title={uiText("admin_ui.en_chat_with_5acf9")} />
             </Link>
           )}
 
           {userId === authorId && (
             <>
-              <Tooltip title="Clone">
+              <Tooltip title={uiText("admin_ui.en_clone_d8cdb")}>
                 <Button
                   type="text"
                   size={isMobile ? 'small' : 'middle'}
@@ -809,14 +808,14 @@ export default function PostView({
                 />
               </Tooltip>
 
-              <Tooltip title="Edit">
+              <Tooltip title={uiText("admin_ui.en_edit_53016")}>
                 <Link href={`/post/${postId}/edit`} prefetch={false}>
                   <Button type="text" size={isMobile ? 'small' : 'middle'} icon={<EditOutlined />} />
                 </Link>
               </Tooltip>
 
-              <Popconfirm title="Confirm delete?" okText="Yes" cancelText="No" onConfirm={() => onDelete?.(postId)}>
-                <Tooltip title="Delete">
+              <Popconfirm title={uiText("admin_ui.en_confirm_delete_32a98")} okText={uiText("admin_ui.en_yes_5397e")} cancelText={uiText("admin_ui.en_no_816c5")} onConfirm={() => onDelete?.(postId)}>
+                <Tooltip title={uiText("admin_ui.en_delete_f6fdb")}>
                   <Button
                     type="text"
                     size={isMobile ? 'small' : 'middle'}
@@ -910,25 +909,25 @@ export default function PostView({
               color: token.colorText,
             }}
           >
-            <Descriptions.Item label="สินค้า/บริการ ที่สั่งซื้อ">{p.title || '-'}</Descriptions.Item>
-            <Descriptions.Item label="รายละเอียดเพิ่มเติม">{p.detail || '-'}</Descriptions.Item>
-            <Descriptions.Item label="ชื่อ-นามสกุล คนขาย">{p.first_last_name || '-'}</Descriptions.Item>
-            <Descriptions.Item label="เลขบัตรประชาชน / พาสปอร์ต">
+            <Descriptions.Item label={uiText("admin_ui.product_service_ordered_35370")}>{p.title || '-'}</Descriptions.Item>
+            <Descriptions.Item label={uiText("admin_ui.additional_details_4b4f2")}>{p.detail || '-'}</Descriptions.Item>
+            <Descriptions.Item label={uiText("admin_ui.seller_s_full_name_b92fe")}>{p.first_last_name || '-'}</Descriptions.Item>
+            <Descriptions.Item label={uiText("admin_ui.national_id_passport_96646")}>
               {p.id_card ? <Typography.Text copyable>{p.id_card}</Typography.Text> : '-'}
             </Descriptions.Item>
-            <Descriptions.Item label="ยอดโอน">
+            <Descriptions.Item label={uiText("admin_ui.transferred_amount_997eb")}>
               {p.transfer_amount != null
                 ? Number(p.transfer_amount).toLocaleString('th-TH', { minimumFractionDigits: 2 })
                 : '-'}
             </Descriptions.Item>
-            <Descriptions.Item label="วันโอนเงิน">{p.transfer_date ? formatDate(p.transfer_date) : '-'}</Descriptions.Item>
-            <Descriptions.Item label="เว็บประกาศขายของ">{p.website || '-'}</Descriptions.Item>
-            <Descriptions.Item label="จังหวัดของคนสร้างรายงาน">{p.province_name || p.province_id || '-'}</Descriptions.Item>
+            <Descriptions.Item label={uiText("admin_ui.transfer_date_d4ee4")}>{p.transfer_date ? formatDate(p.transfer_date) : '-'}</Descriptions.Item>
+            <Descriptions.Item label={uiText("admin_ui.sales_listing_website_4833d")}>{p.website || '-'}</Descriptions.Item>
+            <Descriptions.Item label={uiText("admin_ui.reporter_s_province_b294c")}>{p.province_name || p.province_id || '-'}</Descriptions.Item>
 
             <Descriptions.Item label="Facebook">
               {isFbPublished ? (
                 <Space size={8} wrap>
-                  <Typography.Text>Published</Typography.Text>
+                  <Typography.Text>{uiText("admin_ui.en_published_483bf")}</Typography.Text>
                   {p.fb_published_at ? (
                     <Typography.Text type="secondary">{formatDate(p.fb_published_at)}</Typography.Text>
                   ) : null}
@@ -937,7 +936,7 @@ export default function PostView({
                   </Typography.Text>
                 </Space>
               ) : (
-                <Typography.Text type="secondary">{fbStatus || 'NOT PUBLISHED'}</Typography.Text>
+                <Typography.Text type="secondary">{fbStatus || uiText("admin_ui.en_not_published_9ba52")}</Typography.Text>
               )}
             </Descriptions.Item>
           </Descriptions>
@@ -946,8 +945,7 @@ export default function PostView({
           {telNumbers.length > 0 && (
             <>
               <Divider orientation="left" style={{ margin: isMobile ? '12px 0' : '16px 0' }}>
-                เบอร์โทรศัพท์ / ไอดีไลน์
-              </Divider>
+                {uiText("admin_ui.phone_line_id_f51b2")}</Divider>
               <Space direction="vertical" size={8} style={{ width: '100%' }}>
                 {telNumbers.map((t: { id?: string | number | null; tel?: string | null }, i: number) => {
                   const telRaw = String(t?.tel ?? '').trim();
@@ -974,8 +972,7 @@ export default function PostView({
           {sellerAccounts.length > 0 && (
             <>
               <Divider orientation="left" style={{ margin: isMobile ? '12px 0' : '16px 0' }}>
-                บัญชีคนขาย
-              </Divider>
+                {uiText("admin_ui.seller_accounts_a0555")}</Divider>
               <Space direction="vertical" size={8} style={{ width: '100%' }}>
                 {sellerAccounts.map(
                   (
@@ -1008,8 +1005,7 @@ export default function PostView({
           {(post.images || []).length > 0 && (
             <>
               <Divider orientation="left" style={{ margin: isMobile ? '12px 0' : '16px 0' }}>
-                ไฟล์แนบ / รูปภาพ
-              </Divider>
+                {uiText("admin_ui.attachments_images_d0fd4")}</Divider>
               <div
                 style={{
                   marginTop: 8,
@@ -1035,8 +1031,7 @@ export default function PostView({
         {/* Comments */}
         <Col xs={24} md={10} style={{ marginTop: isMobile ? 16 : 0 }}>
           <Divider orientation="left" style={{ margin: isMobile ? '0 0 8px' : '0 0 12px' }}>
-            ความคิดเห็น
-          </Divider>
+            {uiText("admin_ui.comments_185ba")}</Divider>
           <CommentsSection postId={postId} currentUserId={user?.id} />
         </Col>
       </Row>

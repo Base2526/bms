@@ -1,3 +1,4 @@
+import { posText } from '../i18n/catalog';
 import type React from 'react';
 import {
   PixelRatio,
@@ -15,11 +16,11 @@ export async function captureReceipt(
   config: PrinterConfig,
 ) {
   if (!ref.current || !layout?.width || !layout.height)
-    throw new Error('ใบเสร็จยังไม่พร้อมพิมพ์');
+    throw new Error(posText("ใบเสร็จยังไม่พร้อมพิมพ์"));
   const width = config.paperWidth === 58 ? 384 : 576;
   const height = Math.ceil((layout.height * width) / layout.width);
   if (height > MAX_RECEIPT_HEIGHT)
-    throw new Error('ใบเสร็จยาวเกินขนาดที่รองรับ');
+    throw new Error(posText("ใบเสร็จยาวเกินขนาดที่รองรับ"));
   // View-shot's iOS renderer uses points at device scale; Android's target is already pixels.
   const scale = Platform.OS === 'ios' ? PixelRatio.get() : 1;
   const png = await captureRef(ref, {

@@ -81,11 +81,11 @@ D เพิ่มตารางกะ, งานตามหน้าที่,
 
 - foodpanda ยังเป็น sandbox/shadow; GrabFood และ LINE MAN ยังติด contract
   ห้ามสื่อว่าเชื่อม production พร้อมใช้แล้ว
-- ยังไม่มีการเลือกเครื่องพิมพ์แยก station แบบครบ flow หรือ offline dine-in sync
+- Desktop มี pilot เลือกเครื่องพิมพ์ OS แยก station ของ workstation นั้นแล้ว แต่ยังไม่มี routing กลางข้ามเครื่อง, browser/mobile printing หรือผลรับรองเครื่องจริง; offline dine-in sync ยังไม่มี
   Emergency Offline เป็น plain-retail cash queue ตามข้อจำกัดเดิม
-- ยังไม่มีระบบบัตรคิวลูกค้าและเรียกคิวผ่าน SMS/LINE ที่ครบวงจร
-- อีเมลสถานะใช้ template กลาง `order.packing/order.shipped` ยังไม่มี template รับเองแยก
-  ร้านที่เปิดอีเมลแจ้งสถานะต้องตรวจ wording ของ template ก่อนใช้กับ pickup
+- มีเลขคิวรับของและจอเรียกคิวใน source (`10.112`–`10.115`); การเรียกผ่าน SMS/LINE และผลรับรองจอจริงยังไม่มี
+- อีเมลรับเองมี template เฉพาะหลัง migration `10.114`; ต้อง apply ก่อน deploy caller
+  และตรวจการส่งจริงกับผู้ให้บริการอีเมลของร้านก่อนเปิดใช้
 - จองโต๊ะในแชตไม่ควรใช้คำว่า “จองสำเร็จทันที” หรือ “การันตีโต๊ะ”
 - ต้องทดลองกับ printer/payment/provider ที่จะใช้จริง และทดสอบรับออเดอร์จนส่งมอบ
   ของร้านนำร่องก่อนเปิดแคมเปญขาย ข้อความด้านภาษีไม่ควรสื่อว่าเป็น e-Tax อัตโนมัติ

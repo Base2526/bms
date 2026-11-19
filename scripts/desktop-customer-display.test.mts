@@ -12,14 +12,16 @@ const effect = source.slice(source.indexOf("  useEffect(() => {\n    const finis
 assert.ok(effect.includes("customerDisplayPayloadRef.current = payload"));
 const compiled = ts.transpileModule(effect, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
-function publish({ ready = true, total = 68, receipt = null, receiptPaper = null }: { ready?: boolean; total?: number; receipt?: any; receiptPaper?: any } = {}) {
+function publish({ ready = true, total = 68, receipt = null, receiptPaper = null, openItems = [] }:
+  { ready?: boolean; total?: number; receipt?: any; receiptPaper?: any; openItems?: Array<{ label: string; qty: number; unitAmount: number }> } = {}) {
   const messages: any[] = [];
   const payments = [{ id: "qr", method: "qr" as const, amount: 68 }];
   const deps = {
     useEffect: (fn: () => void) => fn(),
     desktopOwnsCustomerDisplay: true, token: "FAKE", cashier: {}, shownModule: "mobile_sell",
     boardGameBenefitAmount: 0, boardGameCheckout: null, boardGameTotalDiscountAmount: 0,
-    cart: [{ name: "FAKE product", qty: 1, unitName: "piece", unitPrice: 100 }],
+    cart: [{ name: "FAKE product", qty: 1, unitName: "piece", unitPrice: 100 }], openItems,
+    openItemTotal: openItems.reduce((sum, item) => sum + item.qty * item.unitAmount, 0),
     bootstrap: { shift: {}, location: null, store: { name: "FAKE shop", paymentQr: { payload: "FAKE-base", accountName: null, promptpayId: null } } },
     flow: { stage: receipt ? "RECEIPT" : "CHECKOUT" }, itemCount: 1, payments,
     payableBeforeRounding: total, pricingSavings: 0, receipt, receiptPaper, retailListSubtotal: 100, total,
@@ -38,6 +40,14 @@ test("desktop suppresses old QR and expected points while benefits are pending o
   assert.equal(state.paymentQr, null);
   assert.equal(state.pointsWillEarn, null);
   assert.equal(displayPhase(state), "cart");
+});
+
+test("desktop includes open items in the customer total without QR or estimated points", () => {
+  const state = publish({ total: 88, openItems: [{ label: "FAKE open", qty: 2, unitAmount: 10 }] });
+  assert.equal(state.total, 120);
+  assert.equal(state.lines.find((line: any) => line.name === "FAKE open")?.amount, 20);
+  assert.equal(state.pointsWillEarn, null);
+  assert.equal(state.paymentQr, null);
 });
 
 test("desktop waits for tender reconciliation before publishing the new amount", () => {

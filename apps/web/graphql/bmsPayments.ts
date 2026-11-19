@@ -21,9 +21,13 @@ import {
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
+import { requireAuth } from "@/lib/auth";
+import { GraphQLError } from "graphql/error";
 
 const toISO = (d: any) => (d instanceof Date ? d.toISOString() : d == null ? null : String(d));
-const actorOf = (ctx: any) => ctx?.admin?.email || ctx?.admin?.id || "admin";
+// The payment service passes this actor into the loyalty ledger's UUID user column.
+// An email/display label here rolls back confirmation for member orders.
+const actorOf = (ctx: any) => String(requireAuth(ctx).author_id);
 
 export const bmsPaymentsResolvers = {
   Query: {
@@ -67,9 +71,9 @@ export const bmsPaymentsResolvers = {
         slipRef: args.slipRef ?? null,
         note: args.note ?? null,
         actor: actorOf(ctx),
+        actorUserId: actorOf(ctx),
       });
       if (res.status === "SUBMITTED") {
-        await audit(ctx, "payment.submit", res.paymentId, { orderId: args.orderId, amount: res.amount });
         return { status: "SUBMITTED", paymentId: res.paymentId, message: "บันทึกการชำระแล้ว (รอยืนยัน)" };
       }
       const msg: Record<string, string> = {
@@ -80,8 +84,11 @@ export const bmsPaymentsResolvers = {
       return { status: res.status, paymentId: null, message: msg[res.status] ?? "ทำรายการไม่ได้" };
     },
 
-    async bmsConfirmPayment(_p: unknown, args: { id: string }, ctx: any) {
+    async bmsConfirmPayment(_p: unknown, args: { id: string; confirmed: boolean }, ctx: any) {
       await requirePermission(ctx, "payment.confirm");
+      if (args.confirmed !== true) {
+        throw new GraphQLError("ต้องยืนยันการรับชำระ", { extensions: { code: "BAD_USER_INPUT" } });
+      }
       const res = await confirmPayment(getTenantId(ctx), args.id, actorOf(ctx));
       if (res.status === "CONFIRMED") {
         return { status: "CONFIRMED", paymentId: args.id, message: res.orderPaid ? "ยืนยันแล้ว · ออร์เดอร์เป็น PAID" : "ยืนยันการชำระแล้ว" };
@@ -109,9 +116,8 @@ export const bmsPaymentsResolvers = {
 
     async bmsVerifyPaymentSlip(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "payment.confirm");
-      const res = await verifyPaymentSlip(getTenantId(ctx), args.id);
+      const res = await verifyPaymentSlip(getTenantId(ctx), args.id, actorOf(ctx));
       if (!res) return null;
-      await audit(ctx, "payment.verify", args.id, { method: res.method, verified: res.verified });
       return res;
     },
   },

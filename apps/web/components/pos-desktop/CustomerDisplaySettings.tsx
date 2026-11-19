@@ -1,5 +1,7 @@
 "use client";
 
+import { usePosText, thaiPosText, type PosTranslator } from "@/lib/pos/usePosText";
+
 import { useEffect, useMemo, useState } from "react";
 import { Button, Select, Switch } from "antd";
 import { CloseOutlined, DesktopOutlined, EyeOutlined, ReloadOutlined } from "@ant-design/icons";
@@ -8,19 +10,20 @@ import type {
   DesktopCustomerDisplayState,
 } from "@/lib/pos/deviceTokenClient";
 
-function statusText(state: DesktopCustomerDisplayState): string {
-  if (state.preview && state.open) return "กำลังทดสอบบนจอนี้";
-  if (state.mode === "off") return "ปิดอยู่";
+function statusText(state: DesktopCustomerDisplayState, posText: PosTranslator = thaiPosText): string {
+  if (state.preview && state.open) return posText("กำลังทดสอบบนจอนี้");
+  if (state.mode === "off") return posText("ปิดอยู่");
   if (state.open) {
     const display = state.displays.find((item) => item.id === state.activeDisplayId);
-    return `เชื่อมต่อแล้ว · ${display?.label ?? "จอลูกค้า"}`;
+    return posText("เชื่อมต่อแล้ว · {v0}", { v0: display?.label ?? posText("จอลูกค้า") });
   }
-  if (state.displays.length < 2) return "ยังไม่พบจอที่สอง";
-  if (state.mode === "selected" && !state.targetAvailable) return "จอที่เลือกไม่ได้เชื่อมต่อ";
-  return "ยังไม่สามารถเปิดจอลูกค้าได้";
+  if (state.displays.length < 2) return posText("ยังไม่พบจอที่สอง");
+  if (state.mode === "selected" && !state.targetAvailable) return posText("จอที่เลือกไม่ได้เชื่อมต่อ");
+  return posText("ยังไม่สามารถเปิดจอลูกค้าได้");
 }
 
 export default function CustomerDisplaySettings() {
+  const posText = usePosText();
   const [state, setState] = useState<DesktopCustomerDisplayState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -29,7 +32,7 @@ export default function CustomerDisplaySettings() {
     try {
       const next = await window.bmsDesktop?.getCustomerDisplayState?.();
       if (next) setState(next);
-    } catch { setError("ตรวจสอบจอลูกค้าไม่สำเร็จ"); }
+    } catch { setError(posText("ตรวจสอบจอลูกค้าไม่สำเร็จ")); }
   };
 
   useEffect(() => {
@@ -52,11 +55,11 @@ export default function CustomerDisplaySettings() {
     setError("");
     try {
       const result = await configureDisplay({ mode, targetDisplayId });
-      if (!result.ok) throw new Error(result.error ?? "ตั้งค่าจอลูกค้าไม่สำเร็จ");
+      if (!result.ok) throw new Error(result.error ?? posText("ตั้งค่าจอลูกค้าไม่สำเร็จ"));
       if (result.state) setState(result.state);
       else await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "ตั้งค่าจอลูกค้าไม่สำเร็จ");
+      setError(cause instanceof Error ? cause.message : posText("ตั้งค่าจอลูกค้าไม่สำเร็จ"));
     } finally {
       setBusy(false);
     }
@@ -72,18 +75,18 @@ export default function CustomerDisplaySettings() {
     setError("");
     try {
       const result = await action();
-      if (!result.ok) throw new Error(result.error ?? "เปิดหน้าต่างทดสอบจอลูกค้าไม่สำเร็จ");
+      if (!result.ok) throw new Error(result.error ?? posText("เปิดหน้าต่างทดสอบจอลูกค้าไม่สำเร็จ"));
       if (result.state) setState(result.state);
       else await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "เปิดหน้าต่างทดสอบจอลูกค้าไม่สำเร็จ");
+      setError(cause instanceof Error ? cause.message : posText("เปิดหน้าต่างทดสอบจอลูกค้าไม่สำเร็จ"));
     } finally {
       setBusy(false);
     }
   };
 
   if (!state) {
-    return <div style={{ color: "var(--posx-muted, #667085)", fontSize: 13 }}>{error || "กำลังตรวจสอบจอที่เชื่อมต่อ…"}</div>;
+    return <div style={{ color: "var(--posx-muted, #667085)", fontSize: 13 }}>{error || posText("กำลังตรวจสอบจอที่เชื่อมต่อ…")}</div>;
   }
 
   return (
@@ -92,10 +95,9 @@ export default function CustomerDisplaySettings() {
     }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div>
-          <div style={{ fontWeight: 700 }}>จอลูกค้า</div>
+          <div style={{ fontWeight: 700 }}>{posText("จอลูกค้า")}</div>
           <div style={{ marginTop: 4, color: "var(--posx-muted, #667085)", fontSize: 12 }}>
-            เครื่องขายนี้ใช้จอแคชเชียร์ 1 จอ และจอลูกค้าได้สูงสุด 1 จอ · ตรวจพบ {state.displays.length} จอ
-          </div>
+            {posText("เครื่องขายนี้ใช้จอแคชเชียร์ 1 จอ และจอลูกค้าได้สูงสุด 1 จอ · ตรวจพบ") + " "}{state.displays.length} {" " + posText("จอ") + " "}</div>
         </div>
         <span style={{
           padding: "4px 9px",
@@ -105,16 +107,16 @@ export default function CustomerDisplaySettings() {
           fontSize: 12,
           fontWeight: 600,
         }}>
-          {statusText(state)}
+          {statusText(state, posText)}
         </span>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
         <label style={{ display: "inline-flex", alignItems: "center", minHeight: 44, gap: 12, cursor: busy ? "wait" : "pointer" }}>
-          <Switch aria-label="เปิดจอลูกค้าเมื่อเปิด POS" checked={state.mode !== "off"} loading={busy}
+          <Switch aria-label={posText("เปิดจอลูกค้าเมื่อเปิด POS")} checked={state.mode !== "off"} loading={busy}
             style={{ flex: "0 0 auto" }}
             onChange={(checked) => void configure(checked ? "auto" : "off")} />
-          <span>เปิดจอลูกค้าเมื่อเปิด POS</span>
+          <span>{posText("เปิดจอลูกค้าเมื่อเปิด POS")}</span>
         </label>
         {state.mode !== "off" && !state.open && state.targetAvailable && (
           <Button
@@ -122,11 +124,10 @@ export default function CustomerDisplaySettings() {
             disabled={busy}
             onClick={() => void configure(state.mode, state.targetDisplayId)}
           >
-            เปิดจอลูกค้าอีกครั้ง
-          </Button>
+            {posText("เปิดจอลูกค้าอีกครั้ง") + " "}</Button>
         )}
         <Select
-          aria-label="เลือกจอลูกค้า"
+          aria-label={posText("เลือกจอลูกค้า")}
           style={{ width: "100%", maxWidth: 400 }}
           value={state.mode === "selected" ? state.targetDisplayId : "auto"}
           disabled={busy || state.mode === "off"}
@@ -134,9 +135,9 @@ export default function CustomerDisplaySettings() {
             void configure(value === "auto" ? "auto" : "selected", value === "auto" ? null : value);
           }}
           options={[
-            { value: "auto", label: "เลือกจออื่นอัตโนมัติ" },
+            { value: "auto", label: posText("เลือกจออื่นอัตโนมัติ") },
             ...selectableDisplays.map((display) => ({ value: display.id, label: `${display.label} · ${display.width}×${display.height}` })),
-            ...(state.mode === "selected" && !state.targetAvailable ? [{ value: state.targetDisplayId!, label: "จอที่บันทึกไว้ (ไม่ได้เชื่อมต่อ)", disabled: true }] : []),
+            ...(state.mode === "selected" && !state.targetAvailable ? [{ value: state.targetDisplayId!, label: posText("จอที่บันทึกไว้ (ไม่ได้เชื่อมต่อ)"), disabled: true }] : []),
           ]}
         />
         <Button
@@ -144,16 +145,14 @@ export default function CustomerDisplaySettings() {
           disabled={busy}
           onClick={() => void window.bmsDesktop?.identifyDisplays?.()}
         >
-          ระบุหมายเลขจอ
-        </Button>
+          {posText("ระบุหมายเลขจอ") + " "}</Button>
       </div>
 
       {typeof window.bmsDesktop?.openCustomerDisplayPreview === "function" && (
         <div style={{ marginTop: 12, padding: 12, border: "1px dashed var(--posx-line, #d9e2ef)", borderRadius: 10 }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>มีจอเดียวก็ทดสอบได้</div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{posText("มีจอเดียวก็ทดสอบได้")}</div>
           <div style={{ marginTop: 3, color: "var(--posx-muted, #667085)", fontSize: 12 }}>
-            เปิดจอลูกค้าเป็นหน้าต่างย่อบนจอนี้เพื่อดูรายการและทดสอบ Dynamic QR การทดสอบนี้ไม่บันทึกเป็นค่าจอที่สองและไม่เปิดเองเมื่อเริ่มโปรแกรม
-          </div>
+            {posText("เปิดจอลูกค้าเป็นหน้าต่างย่อบนจอนี้เพื่อดูรายการและทดสอบ Dynamic QR การทดสอบนี้ไม่บันทึกเป็นค่าจอที่สองและไม่เปิดเองเมื่อเริ่มโปรแกรม") + " "}</div>
           <Button
             icon={state.preview ? <CloseOutlined /> : <EyeOutlined />}
             danger={state.preview}
@@ -161,12 +160,11 @@ export default function CustomerDisplaySettings() {
             onClick={() => void togglePreview()}
             style={{ marginTop: 10 }}
           >
-            {state.preview ? "ปิดหน้าต่างทดสอบ" : "เปิดหน้าต่างทดสอบบนจอนี้"}
+            {state.preview ? posText("ปิดหน้าต่างทดสอบ") : posText("เปิดหน้าต่างทดสอบบนจอนี้")}
           </Button>
           {state.open && !state.preview && (
             <span style={{ marginLeft: 10, color: "var(--posx-muted, #667085)", fontSize: 12 }}>
-              จอลูกค้าจริงกำลังเปิดอยู่แล้ว
-            </span>
+              {posText("จอลูกค้าจริงกำลังเปิดอยู่แล้ว") + " "}</span>
           )}
         </div>
       )}
@@ -181,16 +179,15 @@ export default function CustomerDisplaySettings() {
             color: "var(--posx-ink2, #475467)",
             fontSize: 12,
           }}>
-            จอ {index + 1}: {display.label} · {display.width}×{display.height}
-            {display.cashier ? " · แคชเชียร์" : display.id === state.activeDisplayId ? " · ลูกค้า" : ""}
+            {posText("จอ") + " "}{index + 1}: {display.label} · {display.width}×{display.height}
+            {display.cashier ? posText(" · แคชเชียร์") : display.id === state.activeDisplayId ? posText(" · ลูกค้า") : ""}
           </span>
         ))}
       </div>
 
       {state.positioningLimited && (
         <div style={{ marginTop: 10, color: "var(--posx-warn-text, #ad6800)", fontSize: 12 }}>
-          Linux Wayland อาจไม่ยอมให้แอปย้ายหน้าต่างอัตโนมัติ หากเปิดผิดจอให้ลากหน้าต่างไปยังจอลูกค้าด้วยระบบปฏิบัติการ
-        </div>
+          {posText("Linux Wayland อาจไม่ยอมให้แอปย้ายหน้าต่างอัตโนมัติ หากเปิดผิดจอให้ลากหน้าต่างไปยังจอลูกค้าด้วยระบบปฏิบัติการ") + " "}</div>
       )}
       {error && <div role="alert" style={{ marginTop: 10, color: "var(--posx-danger-text, #cf1322)", fontSize: 12 }}>{error}</div>}
     </section>

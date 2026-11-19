@@ -1,6 +1,8 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { Table, Tag, Switch, Select, Button, Space, Alert, message, Statistic, Row, Col, Card, Popconfirm } from "antd";
+import { Table, Tag, Switch, Select, Button, Space, Alert, message, Statistic, Row, Col, Card, Popconfirm, Modal } from "antd";
 import { ReloadOutlined, ShopOutlined, LoginOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 import PackageMetricsCard from "@/components/billing/PackageMetricsCard";
@@ -15,14 +17,15 @@ const Q = gql`
     bmsBilling { plans { code name } }
   }
 `;
-const M_ACTIVE = gql`mutation ($tenantId: ID!, $active: Boolean!) { bmsSetTenantActive(tenantId: $tenantId, active: $active) }`;
-const M_PLAN = gql`mutation ($tenantId: ID!, $planCode: String!) { bmsSetTenantPlan(tenantId: $tenantId, planCode: $planCode) }`;
+const M_ACTIVE = gql`mutation ($tenantId: ID!, $active: Boolean!, $confirm: Boolean!) { bmsSetTenantActive(tenantId: $tenantId, active: $active, confirm: $confirm) }`;
+const M_PLAN = gql`mutation ($tenantId: ID!, $planCode: String!, $confirm: Boolean!) { bmsSetTenantPlan(tenantId: $tenantId, planCode: $planCode, confirm: $confirm) }`;
 const M_ENTER = gql`mutation ($tenantId: ID!) { bmsEnterTenant(tenantId: $tenantId) }`;
 const M_DELETE = gql`mutation ($tenantId: ID!) { bmsDeleteTenant(tenantId: $tenantId) }`;
 
 const baht = (n: number) => `${Number(n || 0).toLocaleString()} ฿`;
 
 export default function Page() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [setActive] = useMutation(M_ACTIVE, {
@@ -68,7 +71,12 @@ export default function Page() {
         <Select
           size="small" style={{ width: 140 }} value={plan}
           options={plans.map((p: any) => ({ value: p.code, label: p.name }))}
-          onChange={(planCode) => setPlan({ variables: { tenantId: r.id, planCode } })}
+          onChange={(planCode) => Modal.confirm({
+            title: t("admin_tenants.plan_confirm_title"),
+            content: `${r.name}: ${plan} → ${planCode}`,
+            okText: t("admin_tenants.confirm_yes"), cancelText: t("admin_tenants.confirm_cancel"),
+            onOk: () => setPlan({ variables: { tenantId: r.id, planCode, confirm: true } }),
+          })}
         />
       ),
     },
@@ -85,7 +93,13 @@ export default function Page() {
         <Space>
           <Switch
             size="small" checked={active}
-            onChange={(v) => setActive({ variables: { tenantId: r.id, active: v } })}
+            onChange={(v) => Modal.confirm({
+              title: t(v ? "admin_tenants.activate_confirm_title" : "admin_tenants.suspend_confirm_title"),
+              content: r.name,
+              okText: t("admin_tenants.confirm_yes"), cancelText: t("admin_tenants.confirm_cancel"),
+              okButtonProps: { danger: !v },
+              onOk: () => setActive({ variables: { tenantId: r.id, active: v, confirm: true } }),
+            })}
           />
           <Tag color={active ? "green" : "red"}>{active ? t("admin_tenants.status_on") : t("admin_tenants.status_off")}</Tag>
         </Space>
@@ -93,7 +107,7 @@ export default function Page() {
     },
     {
       title: t("admin_tenants.col_created_at"), dataIndex: "created_at", key: "created_at", width: 120,
-      render: (v: string) => (v ? new Date(v).toLocaleDateString("th-TH") : "-"),
+      render: (v: string) => (v ? new Date(v).toLocaleDateString(uiText.locale) : "-"),
     },
     {
       title: "", key: "act", width: 180, fixed: "right" as const,

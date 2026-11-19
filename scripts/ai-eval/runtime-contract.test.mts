@@ -408,6 +408,7 @@ test("shared DeepSeek timeout falls back once before tools under the same usage 
   assert.equal(usage[0]?.payload.unpricedProviderCalls, 1);
   assert.equal(usage[0]?.payload.meta.runtime_fallback_used, true);
   assert.equal(usage[0]?.payload.meta.providers_attempted, "deepseek,anthropic");
+  assert.deepEqual(usage[0]?.payload.providerUsages.map((item: any) => item.provider), ["anthropic"]);
   assert.deepEqual(
     usage[0]?.payload.providerOutcomes.map((item: any) => [item.provider, item.status]),
     [["deepseek", "failed"], ["anthropic", "completed"]]
@@ -503,6 +504,11 @@ test("cached usage stores total input tokens and cache-adjusted estimated cost",
   // input_tokens เป็นผลรวม จึงบอกไม่ได้ว่า prompt cache hit จริงไหมถ้าไม่มีสองค่านี้
   assert.equal(usage[0]?.payload.cacheReadInputTokens, 300);
   assert.equal(usage[0]?.payload.cacheCreationInputTokens, 200);
+  assert.deepEqual(usage[0]?.payload.providerUsages[0], {
+    provider: "anthropic", model: CREDS.model,
+    inputTokens: 100, outputTokens: 10,
+    cacheCreationInputTokens: 200, cacheReadInputTokens: 300,
+  });
 });
 
 test("usage breakdown is reported as zero, not omitted, when a cache breakpoint is sent but never hits", async () => {
@@ -588,6 +594,7 @@ test("partial provider usage keeps known cost while flagging the call as unprice
   assert.equal(usage[0]?.payload.unpricedProviderCalls, 1);
   assert.equal(usage[0]?.payload.costMeasured, true);
   assert.equal(usage[0]?.payload.estimatedCost, 0.0003);
+  assert.equal(usage[0]?.payload.providerUsages[0].outputTokens, null);
 });
 
 test("unknown tool is rejected, audited, and returned to the model as an error", async () => {

@@ -26,6 +26,7 @@ import { checkStock, resolveProduct, type StockResult } from "./stock";
 import { createOrder, type CreateOrderResult } from "./orders";
 import { catalogStockMenu, stockResultMenu, insufficientStockMenu, type CustomerStockMenu } from "./customerStockChoices";
 import { generateResponse } from "./ai";
+import { formatGeneratedCustomerReply } from "./customerReplyPresentation";
 import { runApprovedTool, runToolLoop, type ToolTraceEntry } from "./tools/runtime";
 import { customerTools } from "./tools/catalog";
 import { answerBmsPresales } from "./platformPresalesAssistant";
@@ -172,6 +173,8 @@ const PRICE_PATTERN = /(\d{1,3}(,\d{3})*|\d+)\s*(บาท|฿|baht)/i;
 const STOCK_PATTERN = /(มี|เหลือ)\s*(\d+)\s*(ชิ้น|ตัว|อัน|คู่|ชุด)/i;
 const PRICE_FACT_TOOLS = new Set([
   "get_board_game_rates",
+  "get_board_game_pass_plans",
+  "get_board_game_offers",
   "get_board_game_availability",
   "search_products",
   "browse_catalog",
@@ -440,10 +443,13 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     ...(profile.businessArchetype === "board_game_cafe" ? [
       BOARD_GAME_CUSTOMER_GUARD_POLICY,
       "บริการเล่นบอร์ดเกมเป็นคนละเรื่องกับสินค้าขาย: ค่าเล่นใช้ get_board_game_rates เกมให้เล่น/แนะนำเกมตามจำนวนคนใช้ search_board_game_library โต๊ะว่าง/การมาเล่น/การจอง/ข้อมูลสาขาใช้ get_board_game_availability; ใช้ catalog เฉพาะสินค้า เครื่องดื่ม ขนม หรือเกมที่ลูกค้าต้องการซื้อ",
+      "ลูกค้าถามแพ็กเวลาเล่นของตัวเองหรือวันหมดอายุให้ใช้ get_board_game_my_passes ซึ่งอ่านเฉพาะตัวตนช่องทางนี้ ถ้า REVIEW_REQUIRED ให้พนักงานตรวจยอด; remainingMinutes=null ไม่ใช่ศูนย์ ห้ามใช้ทูลนี้อ้างราคาแพ็กใหม่ โปรโมชั่น หรือสิทธิ์ที่ยังไม่ได้ซื้อ",
+      "ราคาแพ็กเวลาเล่นใหม่ใช้ get_board_game_pass_plans และโปรโมชั่นค่าเล่นใช้ get_board_game_offers เฉพาะรายการที่ร้านเปิดเผยให้แชท ถ้ามีหลายสาขาถามสาขาก่อน แสดงเงื่อนไขที่ทูลส่งกลับครบ; ไม่พบรายการที่เผยแพร่ไม่ใช่ข้อสรุปว่าร้านไม่มีแพ็กหรือโปร ห้ามรับรองสิทธิ์ ส่วนลดสุดท้าย หรือการใช้ซ้อนกับแพ็กก่อนปิดบิล",
       "เมื่อ businessHours ของข้อมูลร้านว่าง ให้ตรวจ openingHours ของสาขาผ่าน get_board_game_availability ก่อนบอกว่าไม่มีเวลาทำการ ถ้ามีหลายสาขาให้ลูกค้าเลือกชื่อสาขาจากผลทูล ห้ามเลือกแทน",
       "การจอง: อ่าน get_board_game_availability ก่อน เมื่อ canSubmitViaChat=true เก็บสาขา วัน เวลา ระยะเวลา จำนวนคนทีละข้อ ห้ามเดาวัน/เวลาหรือเวลาเปิดปิด ใช้ get_customer_checkout และ save_customer_checkout_details เก็บเฉพาะชื่อ/เบอร์ที่ขาด แล้วเรียก request_board_game_reservation ให้ server แสดงสรุปก่อนลูกค้าตกลง ถ้า autoConfirm=true ระบบตรวจและจองโต๊ะจริงได้เมื่อผลเป็น CONFIRMED; REQUESTED ยังรอร้านตรวจ โต๊ะว่างตอนนี้ไม่ใช่ของวันที่จอง ถ้าปิดรับหรือเก็บมัดจำให้ติดต่อร้าน ติดตามด้วย get_board_game_reservation_status",
       "ยกเลิก/เลื่อนจอง: อ่าน get_board_game_reservation_status และใช้ reference ที่ระบบผูกกับตัวเลือกของลูกค้า ห้ามให้ลูกค้าพิมพ์รหัสซ้ำหรือเดา reference แล้วใช้ manage_board_game_booking action CANCEL หรือ RESCHEDULE; เวลาใหม่ต้องมาจากลูกค้า แต่ถ้าลูกค้าไม่ได้เปลี่ยนระยะเวลาหรือจำนวนคนให้ละ field นั้นเพื่อคงค่าปัจจุบัน ระบบแสดงสรุปและรอลูกค้ายืนยัน คืนเงิน/ลดราคา/ต่อเวลา/ร้องเรียน/เรียกพนักงาน ใช้ action REFUND/DISCOUNT/EXTEND_TIME/STAFF พร้อม note ตามที่ลูกค้าขอ เป็นคำขอให้พนักงานอนุมัติ ไม่มีการเปลี่ยนเงิน ราคา หรือเวลาเล่นทันที ห้ามอ้างว่าพนักงานรับงานหรือทำเสร็จแล้วจากการส่งคำขอ",
-      "โปรโมชัน รายละเอียดแพ็ก และยอดคงเหลือแพ็กยังไม่มีทูลฝั่งลูกค้า ห้ามแปลว่าไม่มีโปรหรือไม่มีแพ็ก กติกาเกมให้พนักงานช่วยอธิบายจนกว่าจะมีแหล่งกติกาที่อนุมัติ ห้ามอธิบายจากความจำของโมเดล",
+      "ของหายหรือชิ้นส่วนเกมเสียหาย: ห้ามบอกว่าพบของหรือระบุค่าเสียหายโดยไม่มีข้อมูลจริง หากลูกค้าต้องการให้ร้านตรวจ ให้ใช้ manage_board_game_booking action STAFF พร้อม note สั้น ๆ ที่ไม่มีข้อมูลติดต่อ/เลขบัตร ระบบแสดงสรุปและรอลูกค้ายืนยันก่อนส่งเข้า Inbox; การส่งคำขอไม่ใช่การตรวจพบของหรือประเมินราคาแล้ว บัตรประชาชนที่ฝากไว้ต้องให้พนักงานตรวจตัวตนที่ร้าน ห้ามอ่านชื่อหรือเลขบัตรผ่านแชท",
+      "หากร้านยังไม่เปิดเผยโปรโมชันหรือแพ็กในแชท ห้ามแปลว่าร้านไม่มีรายการนั้น; ยอดแพ็กของลูกค้าให้ยึดผล get_board_game_my_passes เท่านั้น กติกาเกมให้พนักงานช่วยอธิบายจนกว่าจะมีแหล่งกติกาที่อนุมัติ ห้ามอธิบายจากความจำของโมเดล",
       "คำถามสั้น มี Catan ไหม หรือ มีเกมอื่นไหม ในร้านบอร์ดเกมหมายถึงเกมให้เล่นก่อน เว้นแต่ลูกค้าระบุซื้อ/ขาย/กลับบ้าน เมื่อถาม 8–10 คนให้ค้น players=8, playersTo=10; เกมง่ายหรือมือใหม่ใช้ difficulty=LIGHT ส่วนมีคนสอนหรือไม่ต้องดูนโยบายร้าน ห้ามสัญญาว่ามีพนักงานสอนจากความยากของเกม",
       "อาหาร/เครื่องดื่มที่ขายอ่าน catalog แต่นำขนมมาเอง ยอดสั่งขั้นต่ำ จัดงาน เหมาร้าน แยกบิล การทิ้งบัตรหรือมัดจำยืมเกม เป็นนโยบายร้าน: ตรวจ about และ summary สาขา ถ้าไม่ระบุให้บอกเฉพาะเรื่องนั้นว่าต้องติดต่อพนักงาน อย่าใช้ค่ามัดจำจองโต๊ะตอบแทนมัดจำเกมหรือบัตรประชาชน",
       "ค้นเกมตามชื่อ/แนวแล้วไม่พบ ให้ลองรายการคลังเกมที่ไม่กรอง keyword ก่อนสรุป หากแท็กภาษาไม่ตรงกันให้เลือกจาก metadata ที่คืนมาจริงเท่านั้น ห้ามแนะนำชื่อเกมจากความจำ",
@@ -457,6 +463,7 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     "ห้ามเสนอสินค้าทดแทนคนละหมวดแบบเดาสุ่ม: ถ้า find_alternatives ไม่คืนตัวเลือกที่เกี่ยวข้อง ให้บอกว่าไม่มีตัวเลือกใกล้เคียงที่ตรวจสอบได้ แล้วถามว่าต้องการให้แอดมินช่วยดูต่อไหม",
     "ข้อความสุขภาพหรืออาการป่วยที่กำกวมต้องถามยืนยันก่อน โดยเฉพาะร้านที่ไม่ใช่ pharmacy ห้ามเดาว่าลูกค้าต้องการยา/สินค้า และห้ามวินิจฉัยโรค",
     "ถ้าสินค้าหรือไซซ์ที่ลูกค้าต้องการหมด ให้ถามสั้น ๆ ว่าต้องการให้ทางร้านแจ้งเมื่อของเข้าไหมได้ 1 ครั้ง; เรียก subscribe_restock_notification เฉพาะเมื่อลูกค้าตอบรับชัดเจนหรือขอให้แจ้งเอง และต้องมี sku+size ที่ยืนยันแล้ว ห้ามสมัครจากการคาดเดาความสนใจ",
+    "คำตอบลูกค้าเป็นข้อความล้วนสำหรับ LINE/Messenger/เว็บ: แบ่งย่อหน้าสั้น ๆ เว้นหนึ่งบรรทัดระหว่างเรื่อง ใช้รายการเลขหรือขีดได้เมื่อมีหลายขั้น ห้ามใช้หัวข้อ #, **ตัวหนา**, backtick หรือรูปแบบ Markdown ที่ต้องมี renderer; ห้ามย่อเงื่อนไขหรือข้อเท็จจริงที่ทูลคืนมาเพื่อความสวยงาม",
     "เมื่อเสนอสินค้า ให้บอกชื่อกับจุดตัดสินใจที่มีในผลทูล เช่น ราคา/ไซซ์ที่มีอย่างกระชับ แล้วจบด้วย CTA เดียว เช่น สนใจให้เช็กไซซ์ไหน หรือรับกี่ชิ้นดีคะ " +
       "ห้ามใช้ตาราง markdown (เช่น เส้น | คั่นคอลัมน์ หรือแถว ---) เด็ดขาด เพราะช่องทางแชทส่งได้แค่ข้อความล้วน ไม่มี renderer ตีความตาราง ให้จัดเป็นบล็อกต่อสินค้าแทน: บรรทัดแรก 🏷️ ชื่อสินค้า — หมวด/ยี่ห้อ แล้วบรรทัดถัดไปคือ ราคา · ไซซ์ที่มี เว้นบรรทัดว่างระหว่างสินค้าแต่ละตัว",
     "ถ้าลูกค้าขอลิงก์หรือรูปสินค้า ให้ค้นสินค้าแล้วส่งเฉพาะ publicUrl/publicPath จากผลทูล ห้ามสร้าง URL เองและห้ามส่งลิงก์ /admin/*",
@@ -500,6 +507,12 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     lines.push(
       `ร้านนี้จัดหมวดหมู่สินค้าไว้ดังนี้: ${categories.join(", ")} — ถ้าลูกค้าถามกว้าง ๆ (เช่น "มีอะไรบ้าง") ` +
         "ให้ใช้ชื่อหมวดหมู่เหล่านี้กับ browse_catalog/search_products เพื่อเสนอสินค้าจริงก่อน แล้วค่อยถามเลือกหมวดเพียงหนึ่งคำถาม"
+    );
+  }
+  if (profile.businessArchetype === "building_materials") {
+    lines.push(
+      "กฎสเปกวัสดุก่อสร้าง: ใช้ get_product หรือ search_product_specs อ่านเฉพาะ technicalFacts ที่เผยแพร่พร้อม revision แล้วเท่านั้น; technicalFactsStatus=UNAVAILABLE หรือไม่มี field คือยังยืนยันไม่ได้ ห้ามเดาขนาด เกรด มาตรฐาน น้ำหนัก หรือข้อจำกัดจากชื่อสินค้า description รูป บาร์โค้ด หรือหน่วยแพ็ก",
+      "ห้ามรับรองความปลอดภัยเชิงโครงสร้าง/ไฟฟ้า ความเข้ากันได้ของวัสดุ ปริมาณเผื่อเศษ ความจุรถ/รถยก หรือเวลาเที่ยวส่งจากสเปกสินค้า ให้พนักงานหรือผู้เชี่ยวชาญที่เกี่ยวข้องตรวจและยืนยัน"
     );
   }
   if (profile.businessArchetype === "pharmacy") {
@@ -1460,7 +1473,7 @@ function isShippingEstimateQuestion(message: string): boolean {
   );
 }
 
-function shippingEstimateReply(
+export function shippingEstimateReply(
   estimate: {
     configured?: boolean;
     fee?: number | null;
@@ -1493,13 +1506,18 @@ function shippingEstimateReply(
         ? `Estimated delivery time: ${estimate.estDaysMin ?? estimate.estDaysMax}-${estimate.estDaysMax ?? estimate.estDaysMin} day(s)`
         : `ระยะเวลาจัดส่งโดยประมาณ: ${estimate.estDaysMin ?? estimate.estDaysMax}-${estimate.estDaysMax ?? estimate.estDaysMin} วัน`
       : null;
-  const warning = estimate.warnings?.[0];
-  const warningText = warning
-    ? english
-      ? `Please note: ${warning}`
-      : `หมายเหตุ: ${warning}`
+  const warningText = estimate.warnings?.length
+    ? `${english ? "Please note" : "หมายเหตุ"}: ${estimate.warnings.slice(0, 4).join("; ")}`
     : null;
-  return [feeText, dayText, warningText].filter(Boolean).join("\n");
+  // This deterministic route calls get_shipping_estimate without basket lines or subtotal.
+  // Its fee is the configured base quote, not a verified quote for the customer's basket:
+  // weight tiers and free-shipping thresholds may change the final amount.
+  const basketCaveat = estimate.fee == null
+    ? null
+    : english
+      ? "This is the shop's base estimate. The final fee needs the items, quantities and destination checked."
+      : "นี่เป็นค่าส่งตั้งต้นของร้าน ยอดจริงต้องตรวจสินค้า จำนวน และปลายทางก่อนค่ะ";
+  return [feeText, dayText, basketCaveat, warningText].filter(Boolean).join("\n");
 }
 
 function couponCheckReply(
@@ -3878,9 +3896,9 @@ async function runPipelineInternal(
       reply = await orderCheckoutChatReply(
         tenantId,
         execCtx.createdOrderId,
-        profile.businessArchetype === "board_game_cafe"
+        formatGeneratedCustomerReply(profile.businessArchetype === "board_game_cafe"
           ? boardGameCheckoutFallback(loop.reply, englishReply)
-          : loop.reply || (englishReply ? "Your order has been received." : "รับออร์เดอร์แล้วค่ะ"),
+          : loop.reply) || (englishReply ? "Your order has been received." : "รับออร์เดอร์แล้วค่ะ"),
         englishReply ? "en" : "th"
       );
     } else if (execCtx.pharmacyReviewCaseId) {
@@ -3919,7 +3937,8 @@ async function runPipelineInternal(
         ? "Sorry, that action was not actually saved. Please send the request again."
         : "ขอโทษนะคะ ระบบยังไม่ได้บันทึกให้จริง รบกวนลองส่งข้อความอีกครั้งนะคะ 🙏";
     } else {
-      const modelReply = loop.reply || (englishReply
+      const modelReply = (inputChoiceReply && loop.reply === inputChoiceReply
+        ? inputChoiceReply : formatGeneratedCustomerReply(loop.reply)) || (englishReply
         ? "Sorry, could you rephrase that request?"
         : "ขออภัยค่ะ ช่วยพิมพ์ใหม่อีกครั้งได้ไหมคะ 🙏");
       reply = hasConfiguredPaymentAccounts(profile.paymentAccounts)

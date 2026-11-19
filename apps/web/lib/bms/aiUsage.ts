@@ -88,6 +88,7 @@ export type AiUsage = {
 export type AiUsageContext = {
   surface?: "customer" | "staff" | "system";
   feature?: string;
+  requiresVision?: boolean;
   channel?: string | null;
   provider?: string;
   model?: string | null;
@@ -205,6 +206,16 @@ type AiTokenRate = { inputPerMillionUsd: number; outputPerMillionUsd: number; ca
 
 type ResolvedAiTokenRate = AiTokenRate & { version: string; source: "DATABASE" | "CODE_FALLBACK" };
 
+export type AiProviderUsage = {
+  provider: string;
+  model: string;
+  /** Regular input tokens; cache tokens are separate provider-reported fields. */
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheCreationInputTokens?: number | null;
+  cacheReadInputTokens?: number | null;
+};
+
 function priceForModel(
   model?: string | null,
   provider?: string | null
@@ -283,13 +294,17 @@ async function resolveAiRateForEvent(model:string|null,provider:string|null,even
   }
 }
 
-function estimateCachedCostWithRate(usage:{inputTokens?:number|null;cacheCreationInputTokens?:number|null;cacheReadInputTokens?:number|null;outputTokens?:number|null},price:AiTokenRate|null) {
+function rawCachedCostWithRate(usage:{inputTokens?:number|null;cacheCreationInputTokens?:number|null;cacheReadInputTokens?:number|null;outputTokens?:number|null},price:AiTokenRate|null) {
   if (!price) return 0;
   const inputTokens=Math.max(0,Number(usage.inputTokens??0));
   const cacheCreationInputTokens=Math.max(0,Number(usage.cacheCreationInputTokens??0));
   const cacheReadInputTokens=Math.max(0,Number(usage.cacheReadInputTokens??0));
   const outputTokens=Math.max(0,Number(usage.outputTokens??0));
-  return Number(((((inputTokens+cacheCreationInputTokens*price.cacheCreationMultiplier+cacheReadInputTokens*price.cacheReadMultiplier)/1_000_000)*price.inputPerMillionUsd)+(outputTokens/1_000_000)*price.outputPerMillionUsd).toFixed(8));
+  return (((inputTokens+cacheCreationInputTokens*price.cacheCreationMultiplier+cacheReadInputTokens*price.cacheReadMultiplier)/1_000_000)*price.inputPerMillionUsd)+(outputTokens/1_000_000)*price.outputPerMillionUsd;
+}
+
+function estimateCachedCostWithRate(usage:{inputTokens?:number|null;cacheCreationInputTokens?:number|null;cacheReadInputTokens?:number|null;outputTokens?:number|null},price:AiTokenRate|null) {
+  return Number(rawCachedCostWithRate(usage, price).toFixed(8));
 }
 
 /** Legacy API compatibility: -1 means no USD cap. Entitlement is monthly AI points. */
@@ -938,6 +953,8 @@ export async function finalizeAiUsageEvent(
     costMeasured?: boolean;
     /** False when any metered provider response used a model absent from the rate card. */
     costRateKnown?: boolean;
+    /** Per-response evidence lets effective-dated rates price retries and provider fallback correctly. */
+    providerUsages?: AiProviderUsage[];
     /** Bounded operational metadata only; never prompts, tool args, or customer data. */
     meta?: Record<string, string | number | boolean | null>;
     /** Per-attempt health result when one logical event crossed providers. */
@@ -1003,7 +1020,22 @@ export async function finalizeAiUsageEvent(
       `SELECT tenant_id,year_month,model,provider,created_at FROM bms_ai_usage_events WHERE id = $1`, [eventId]
     );
     if (!owner.rows[0]) return;
-    const resolvedRate = await resolveAiRateForEvent(owner.rows[0].model,owner.rows[0].provider,owner.rows[0].created_at);
+    const providerUsages = result.providerUsages;
+    const resolvedRate = providerUsages?.length
+      ? null
+      : await resolveAiRateForEvent(owner.rows[0].model,owner.rows[0].provider,owner.rows[0].created_at);
+    const rateByModel = new Map<string, Promise<ResolvedAiTokenRate | null>>();
+    const ratedUsages = providerUsages?.length
+      ? await Promise.all(providerUsages.map(async (usage) => {
+          const key = JSON.stringify([usage.provider.toLowerCase(), usage.model.toLowerCase()]);
+          let rate = rateByModel.get(key);
+          if (!rate) {
+            rate = resolveAiRateForEvent(usage.model, usage.provider, owner.rows[0].created_at);
+            rateByModel.set(key, rate);
+          }
+          return { usage, rate: await rate };
+        }))
+      : null;
     current = await transaction<FinalizedEvent | null>(owner.rows[0].tenant_id, async (client) => {
     await lockUsageMonth(client, owner.rows[0].tenant_id, owner.rows[0].year_month);
     const event = await client.query<FinalizedEvent & {
@@ -1024,7 +1056,7 @@ export async function finalizeAiUsageEvent(
 
     // Admission persists every attempt before I/O. A failed admission made no
     // provider call; late/incorrect cleanup must never erase a persisted attempt.
-    const providerCalls = Math.max(Number(row.provider_calls), result.providerCalls == null
+    const providerCalls = Math.max(Number(row.provider_calls), providerUsages?.length ?? 0, result.providerCalls == null
       ? Number(row.provider_calls)
       : Number.isFinite(result.providerCalls) ? Math.min(2_147_483_647, Math.max(0, Math.floor(result.providerCalls))) : Number(row.provider_calls));
     const rawUnpricedProviderCalls = Number(result.unpricedProviderCalls ??
@@ -1033,16 +1065,30 @@ export async function finalizeAiUsageEvent(
       ? Math.min(providerCalls, Math.max(0, Math.floor(rawUnpricedProviderCalls)))
       : providerCalls;
 
-    const rateKnown =
-      providerCalls === 0 ||
-      (result.costRateKnown ?? resolvedRate !== null);
-    const unpricedProviderCalls = rateKnown || (hasValidExplicitCost && explicitEstimatedCost > 0)
-      ? Math.min(providerCalls, Math.max(rateKnown ? 0 : 1, result.unpricedProviderCalls == null
-          ? (providerCalls === 0 || hasCompleteUsage ? 0 : providerCalls)
-          : reportedUnpricedProviderCalls))
-      : providerCalls;
+    const ratedCompleteCalls = ratedUsages?.filter(({ usage, rate }) =>
+      rate !== null && tokenCount(usage.inputTokens) !== null && tokenCount(usage.outputTokens) !== null
+    ).length;
+    const ratedKnownSubtotal = ratedUsages?.some(({ usage, rate }) => rate !== null &&
+      (tokenCount(usage.inputTokens) !== null || tokenCount(usage.outputTokens) !== null));
+    const rateKnown = providerCalls === 0 || (ratedUsages
+      ? ratedUsages.every(({ rate }) => rate !== null)
+      : (result.costRateKnown ?? resolvedRate !== null));
+    const unpricedProviderCalls = ratedUsages
+      ? Math.max(0, providerCalls - (ratedCompleteCalls ?? 0))
+      : rateKnown || (hasValidExplicitCost && explicitEstimatedCost > 0)
+        ? Math.min(providerCalls, Math.max(rateKnown ? 0 : 1, result.unpricedProviderCalls == null
+            ? (providerCalls === 0 || hasCompleteUsage ? 0 : providerCalls)
+            : reportedUnpricedProviderCalls))
+        : providerCalls;
+    const ratedCost = ratedUsages?.reduce((sum, { usage, rate }) => sum +
+      rawCachedCostWithRate({
+        inputTokens: tokenCount(usage.inputTokens),
+        outputTokens: tokenCount(usage.outputTokens),
+        cacheCreationInputTokens: tokenCount(usage.cacheCreationInputTokens),
+        cacheReadInputTokens: tokenCount(usage.cacheReadInputTokens),
+      }, rate), 0);
     const rawEstimatedCost = Number(
-      (hasValidExplicitCost ? explicitEstimatedCost : null) ??
+      ratedCost ?? (hasValidExplicitCost ? explicitEstimatedCost : null) ??
         estimateCachedCostWithRate({
           inputTokens: Math.max(0, (inputTokens ?? 0) - (cacheReadInputTokens ?? 0) - (cacheCreationInputTokens ?? 0)),
           cacheReadInputTokens, cacheCreationInputTokens, outputTokens,
@@ -1057,7 +1103,7 @@ export async function finalizeAiUsageEvent(
     const actualCostUsd =
       providerCalls === 0
         ? 0
-        : hasAnyMeteredUsage && (rateKnown || (hasValidExplicitCost && explicitEstimatedCost > 0))
+        : (ratedUsages ? ratedKnownSubtotal : hasAnyMeteredUsage && (rateKnown || (hasValidExplicitCost && explicitEstimatedCost > 0)))
           ? estimatedCost
           : null;
     const refundCredits = providerCalls === 0 ? Number(row.billable_credits ?? 0) : 0;
@@ -1065,8 +1111,12 @@ export async function finalizeAiUsageEvent(
       provider_calls: providerCalls,
       credit_policy: "logical_request",
       cost_basis: "provider_usage_rate_card",
-      rate_card_version: resolvedRate?.version??null,
-      rate_card_source: resolvedRate?.source??"UNPRICED",
+      rate_card_version: ratedUsages
+        ? [...new Set(ratedUsages.map(({ rate }) => rate?.version).filter(Boolean))].join(",") || null
+        : resolvedRate?.version??null,
+      rate_card_source: ratedUsages
+        ? [...new Set(ratedUsages.map(({ rate }) => rate?.source ?? "UNPRICED"))].join(",")
+        : hasValidExplicitCost ? "CALLER_ESTIMATE" : resolvedRate?.source??"UNPRICED",
       ...(row.provider === "deepseek" || result.providerOutcomes?.some(o => o.provider === "deepseek")
         ? { deepseek_pricing: "conservative_peak_list_rate" } : {}),
       cost_status:

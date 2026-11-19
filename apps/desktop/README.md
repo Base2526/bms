@@ -8,10 +8,39 @@ surface within it; **Emergency Offline Mode is mobile-only**. The shell must not
 server or full-offline register until it has an encrypted queue, the same server revalidation and
 recovery guarantees, and its own failure-mode evidence.
 
+## Operator language (Thai / English)
+
+Choose Thai or English in setup, the native Language menu, or POS Settings → Display → Language.
+The cashier PIN screen also has a small Device settings entry for changing language before sign-in. The shell
+stores a validated preference in `userData/language.json`, separately from encrypted pairing.
+Hosted POS uses the existing `I18nProvider` and a persistent `lang` cookie, with an origin-checked
+IPC bridge to keep the shell and register language in sync. Old hosted deployments without this
+bridge retain their existing language behaviour until the web app is updated.
+
+Setup, startup recovery, custom and standard native menus, register checkout/settings and the embedded legacy
+return/receiving/deposit/shift tools, board-game workspace, customer display and queue board use
+bilingual authored copy. Restaurant keeps its existing dictionary under the same provider. Switching language
+does not reload the register or clear PIN, cart, tender or pending transaction keys. Standard menu
+roles (File/Edit/View/Window, Copy/Paste, Quit and related actions) are relabelled after Electron
+expands its default menus, preserving native actions and shortcuts. OS-provided service entries,
+external admin pages and raw server/user text retain their own language; receipt language and queue
+announcement voice remain separate store/device settings.
+
+The shared operator catalog is `apps/web/i18n/pos-client.json`; the dependency-free shell catalog is
+`renderer/locale.cjs`. Keep interpolation data verbatim. Tests cover persistence and native labels;
+browser smokes cover setup at desktop/compact widths, language changes and retained inputs.
+
+The customer display and queue board follow the register language while already open, using a
+same-origin language-only channel without extra credential IPC. Queue voice language and receipt
+language retain their separate settings. Rapid language changes keep the latest selection even if an
+earlier preference write fails.
+
 ## Current milestone (0.2)
 
 - first-run server and device pairing;
 - pairing verification through the existing device-scoped `/api/pos/session` endpoint;
+- pairing links with an invalid or cleartext remote server are rejected; a bare token may still
+  use the server entered separately;
 - device token encrypted at rest with Electron `safeStorage` (Windows DPAPI, Linux Secret Service
   or KWallet, and macOS Keychain); Linux refuses Electron's insecure `basic_text` fallback;
 - locked-down Electron window with context isolation, renderer sandboxing, origin checks, and a small
@@ -111,6 +140,12 @@ renderer stops responding; older clients retain the original immediate setup flo
 
 Server rejection text identifies HTTP 401 without claiming expiry; HTTP 403 asks for permission
 review without recommending re-pairing. Neither response automatically removes the saved token.
+If the cashier page later fails to reload because the server or network is unavailable, or its main
+document returns HTTP 5xx, Desktop shows its bundled recovery screen with Retry and Change server
+instead of leaving Chromium's blank page. Cancelled navigations and failed subresources do not replace a working register; Retry retains
+the existing pairing and device token. If Retry is pressed while the failed navigation is still
+settling, Desktop waits for it before trying again and ignores the queued retry after the cashier
+page, pairing, or main window has changed.
 Record the exact message/status, old/new versions, server host, OS and whether installation was in
 place when investigating an upgrade. Never include the token, encrypted record or cashier PIN.
 
@@ -180,6 +215,119 @@ member search and board-game copy selection on that real route using browser-onl
 including light/dark/system preferences, desktop/mobile widths and portalled dropdowns.
 It uses the same dev-server and Playwright environment as the update smoke above.
 
+## Desktop window recheck (2026-11-14)
+
+The cashier window now discards navigation/recovery/refresh work from a destroyed predecessor
+before opening its replacement. A late `closed` event from that predecessor no longer closes the
+replacement's customer or queue display windows. Regression tests cover both races; the Desktop
+Node suite passes 153/153, source syntax checks pass, and the native macOS setup/recovery,
+managed-display and Keychain smokes pass. Windows and Linux window and keystore behavior remain
+covered by platform-specific unit cases and their native CI workflows; those installers and OS
+keystores were not run on this macOS host.
+
+## Desktop feature recheck (2026-11-12)
+
+The recheck covers pairing/recovery, local-server handoff, startup/login integration, POS route
+handoffs, checkout contracts, receipt/kitchen printing, customer/queue displays, notifications,
+manual update discovery and packaging. Fixes bound the entire kitchen-print preparation (including
+font/page loading), cancel stale work before submission, preserve uncertain jobs when journal writes
+fail, and allow recovery from a missing printer without claiming a job was submitted. The Windows
+kitchen fixture now uses Winspool status instead of a CUPS status value.
+
+Unpair, attention and display controls now require the cashier main frame. Manual/queue utility
+windows cannot navigate or redirect into another register or open nested windows. Display settings
+and kitchen-printer configuration reject overlapping writes; a failed save preserves the live
+display preview. Display smoke selectors follow the current accessible controls, and the button
+hover test measures final CSS values instead of sampling an in-progress theme transition. The managed
+display fixture loads the shipped POS/settings CSS so its width checks exercise the real layout.
+
+The follow-up cross-app recheck also prevents a setup frame that closed during a queued disk write
+from replacing the saved credential. Frame validity is checked before the atomic rename; if the
+rename was already submitted when the frame closed, its valid saved credential remains restorable,
+but the old request cannot navigate a replacement window. The shared POS operation deadline now
+rejects independently of transport abort, including a transport or body parser that ignores abort.
+Late completions do not turn the timed-out request into success or trigger an automatic retry.
+
+The dependency review also updates Electron **43.7.2 → 43.8.8** within the existing major release,
+including the upstream [TLS certificate mitigation](https://github.com/electron/electron/security/advisories/GHSA-jr5w-w6x2-84p9).
+Compatible `fast-uri` and both `undici` dependency versions were refreshed in the lockfile.
+Desktop's audit falls from **9 findings (2 high)** to **6 moderate findings**, all in the
+electron-builder/minimatch build-tool chain; zero high/critical findings remain in this audit.
+The Node tests, all ten UI smokes, native Windows keystore smoke and Windows x64 unpacked package
+were rerun successfully on Electron 43.8.8. The resulting package is under
+`dist/recheck-20261112-secure/win-unpacked`; it is not a signed installer/upgrade acceptance test.
+
+Verification on Windows: **135/135 Desktop Node tests**, syntax checks, Web typecheck and **3,529
+passing DB-free web tests (six skipped)**. All ten Electron smoke commands passed: setup/recovery,
+receipt, customer display, managed displays, queue board, queue manager, restaurant hover, kitchen,
+service mode and header. These use isolated API/bridge fixtures, not live-shop transactions.
+A Windows x64 unpacked build passed the packaged-source/version check using the locally installed
+Electron distribution; the initial ZIP-extraction build hit a Windows file-lock error. This is not
+an NSIS installation/upgrade test or a published release.
+
+`npm run test:keystore-smoke` also passed real Windows `safeStorage` encryption/decryption with
+synthetic text and an isolated Electron profile. It does not read the register's pairing or prove an
+installed-client upgrade. Logs for the follow-up are under repository-root `.test-output/cross-app-*`.
+
+These are source changes; installed clients need a rebuilt package. Native keystore upgrade tests,
+physical printers/displays and Linux/macOS installation acceptance remain separate checks.
+
+### Remaining release findings
+
+The existing Web installation was Next.js **14.2.5**, while the committed lockfile specifies
+**14.2.35**. The original checkout's Web gate passed, but that alone does not verify the lockfile.
+A separate detached worktree with the changed sources and clean locked Web/realtime dependencies
+also passed the complete Web gate on **Next.js 14.2.35**, including **3,529 tests (six skipped)** and
+the production build. The original Web environment was not modified.
+
+The locked Web dependency audit on 2026-11-12 reports **17 affected packages: 1 critical, 9 high,
+3 moderate and 4 low**. Next.js 14.2.35 remains affected; a passing build is not security clearance.
+Upstream advisories include [Windows-hosted server RCE](https://github.com/vercel/next.js/security/advisories/GHSA-p293-qw3h-jr36)
+and [Linux image optimization RCE](https://github.com/vercel/next.js/security/advisories/GHSA-2464-fhr4-w9xw).
+These concern the Web server and its deployment conditions, not proof that an Electron Windows
+client is exploitable. The audit recommends Next.js 16.4.6, a major upgrade; the framework/image
+dependency migration and its compatibility/security verification remain outstanding. No force-upgrade
+or deployment was performed. The audit JSON is `.test-output/cross-app-dependency-audit.json`.
+The six remaining Desktop build-tool advisories require a compatible upstream builder/minimatch
+solution; npm's proposed forced downgrade of electron-builder is not applied. Desktop audit evidence
+is `.test-output/cross-app-desktop-dependency-audit-after.json`.
+
+## Backend connection recheck (2026-11-12)
+
+The compact renderer and native app share `packages/pos-client-core/src/connectionFailure.ts`:
+safe category/HTTP codes, recovery steps, and separate failed-read/unknown-write messages.
+GraphQL preserves domain rejection/variant metadata, rejects malformed success data, and treats
+HTTP 5xx/408 and mixed decided/unknown errors as uncertain. Raw internal errors and proxy bodies
+are not shown. The restaurant REST adapter bounds headers plus JSON parsing and refuses HTML 200
+as a successful response. Required floor/waitlist/menu/kitchen arrays are checked before replacing
+the last snapshot; malformed boards cannot crash rendering or silently become an empty board.
+The POS error boundary also avoids claiming that a failed screen proves no write occurred.
+The compact startup gate stops its spinner on failure and retains retry controls when its detail
+banner is dismissed. Before the first valid restaurant floor snapshot, tables/bills show unavailable
+rather than fabricated zero counts or an empty-floor setup action; existing snapshots survive failed reads.
+An offline indicator never proves that a submitted write was unsent.
+Pairing probes now describe HTTP 408/429 as temporary failures instead of an incompatible server.
+
+Desktop Node tests: **137 passed**, syntax checks passed. The shared transport contract tests cover
+401/403/429/5xx, malformed bodies, preserved business results, external cancellation, and uncertain
+idempotency handling. The operator manual has matching Thai/English recovery guidance. Logs and
+browser screenshots are kept under `.test-output/connection-*`. Physical hardware, live backend
+commit/rollback and installed-client upgrade acceptance remain separate checks.
+
+The isolated locked-dependency Web gate passed **3,542 tests (six skipped)** and the production
+build. The subsequent board-response/error-boundary hardening passed **15 focused connection
+contracts** and a fresh production build; those focused tests overlap the gate inventory.
+The final UI changes also passed the Desktop, restaurant and i18n contract filters. Browser smoke
+passed **18 cases** across `/pos/app` and `/pos/restaurant` at **1440 px and 390 px**, using mocked
+HTML-200, HTTP 503/403, network failures and malformed floor responses. It checks visible recovery,
+no raw proxy body, no page exceptions or horizontal overflow, stopped startup spinners, and unknown
+floor data instead of false empty counts. These browser cases make no live business API calls;
+WebSockets are intercepted as unavailable, so this is not a live gateway/reconnect test.
+The Electron setup/recovery smoke and a Windows unpacked build passed; the latter is not a signed
+installer or an install/upgrade test. Re-run the browser smoke with `BMS_SMOKE_URL` pointing to a
+local production server and `node scripts/pos-connection-errors-browser-smoke.mjs` from the repo root
+(Playwright with Chrome is required; `BMS_PLAYWRIGHT_MODULE` can select an isolated module).
+
 ## Develop
 
 ```powershell
@@ -213,11 +361,12 @@ a restart or an update:
 - Unpackaged `npm run dev` builds show the checkbox disabled, so a dev machine never registers the
   bare Electron binary at login.
 
-## Customer display
+## External displays
 
-Connect the customer monitor as an **extended** desktop, not a mirrored screen. In the register,
-open **Settings → Customer display**, enable **เปิดจอลูกค้าเมื่อเปิด POS**, and choose automatic
-or a specific connected display. On an unconfigured installation, the shell offers to enable the
+Connect customer-facing monitors as an **extended** desktop, not mirrored screens. In the register,
+open **Settings → External displays** and configure the customer display and pickup queue display
+from the same card. Each role can use automatic selection, one specific connected display, Off or a
+temporary same-screen preview. On an unconfigured installation, the shell offers to enable the
 customer display once after detecting a second monitor. Both acceptance and refusal are remembered;
 an existing explicit off setting is never overridden. Enabled displays reopen on app startup.
 "Identify displays" places a temporary number on every screen. The shell detects display
@@ -227,21 +376,47 @@ display** opens the same live customer view as a normal framed, resizable window
 temporary: it is not saved as a second-display choice and never reopens with the app. Closing it has
 no effect on the cashier window or the persisted automatic/selected display setting.
 
-One register supports one cashier display plus at most one read-only customer display. Kitchen,
-queue and menu-board screens are separate devices/surfaces rather than third and fourth windows of
-the register. On Linux Wayland the compositor may refuse application-directed positioning; the
-settings page reports that limitation so the operator can move the window manually.
+One register supports one cashier display, one read-only customer window, and one read-only queue
+window per selected external monitor. The queue count is limited by the monitors the shell detects,
+not by a fixed cap (`MAX_QUEUE_DISPLAYS = 32` only rejects malformed saved or IPC input). Auto mode
+offers the count of free external monitors and keeps a saved count while screens are disconnected;
+Selected mode keeps the chosen screens and shows a missing one as waiting until it reconnects.
+With one external monitor, enabling customer or queue atomically releases the other role and reuses
+that screen; an explicit queue setup also claims a customer screen that it selects. With more
+external monitors, both roles may stay open; automatic selection keeps them on different screens.
+All queue windows show the same branch queue and media, and exactly one active queue window owns
+announcements; if it disconnects, the first remaining active queue window takes audio. Identify, temporary preview, startup reopen and display hot-plug recovery follow
+the same policy for both roles. On Linux Wayland the compositor may refuse application-directed positioning;
+the settings page reports that limitation so the operator can move the window manually.
 
-The web renderer capability-checks these IPC methods. Older installed shells therefore keep the
-manual customer-display button instead of crashing when a newer server is deployed; automatic
-display selection appears after the desktop app itself is updated to 0.2.3 or newer.
+The queue-display card also has a workstation-local presentation selector: Spotlight, Three zones,
+Preparing ticker, Minimal TV, Queue list, or Split. The saved choice is the workstation default for
+that till's managed queue displays and temporary preview. Each queue screen may override it, or pick
+Follow default to remove its override and track later default changes. Changes update an
+already-open window through origin storage events,
+and never changes queue status or branch policy. Dense layouts page visible numbers every eight
+seconds instead of shrinking them beyond across-the-room readability.
+Promotion and default images are configured per branch in Backoffice → Locations → Queue board media;
+the workstation setting controls only layout and sound. Customer and queue windows keep rendering
+while the cashier has focus and retry a failed page load, including an HTTP 5xx main document,
+every five seconds until the configured window closes or the pairing changes. Failed subresources
+and unrelated windows do not trigger a display reload.
+The same card chooses AI Studio speech, AI Studio speech plus a counter bell, counter bell only,
+double beep, or soft ping, with a queue-001 preview button. A branch-wide `OFF` policy still wins;
+the workstation choice cannot silently re-enable announcements disabled by the owner for the branch.
+
+The web renderer capability-checks these IPC methods. Older installed shells keep the customer
+display control and show an update prompt for the managed queue display instead of asking the
+operator to open a credential-bearing URL manually.
 
 When the cashier selects QR payment, the display turns the verified, reusable amount-free PromptPay QR
 configured under **Admin → Settings → Receiving accounts** into a new Dynamic QR containing the
 amount assigned to that QR tender. A PromptPay ID by itself is display text, not authority to invent
 an EMV payload, so no QR is generated until the shop supplies the real base from its bank/provider.
 
-The web-owned display uses a branded welcome, recent items, payment and completed-sale layout.
+The web-owned display uses a branded welcome, recent items, payment and completed-sale layout. A
+completed sale with an issued pickup number shows that number prominently without exposing order or
+customer details.
 It clears completed bills after ten seconds and hides sensitive data after eight seconds without
 a valid cashier snapshot. No shell rebuild is needed for these web layouts. Run
 `npm run test:customer-display` for a sandboxed Electron check of all four states, responsive
@@ -417,7 +592,8 @@ cd apps/desktop
 npm run pack:win
 ```
 
-The unsigned installer is written to `apps/desktop/dist/`. Production distribution still requires a
+`pack:win` pins x64 explicitly, including when invoked on an ARM build host. The unsigned installer
+is written to `apps/desktop/dist/`. Production distribution still requires a
 Windows code-signing certificate and a release/update policy; the Linux AppImage/DEB and the macOS
 DMGs are unsigned for the same reason and have no update channel either. A signed macOS release
 additionally needs an Apple Developer ID and notarization — the macOS workflow runs with

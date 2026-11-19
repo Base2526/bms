@@ -1,5 +1,6 @@
 // GraphQL resolver — BMS settings / channel connections (admin, per-tenant)
 import { GraphQLError } from "graphql/error";
+import { requireTenantSettingsAdministrator } from "./tenantSettingsAuth";
 import { requireAuth } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { publishRealtimeHint } from "@/lib/pubsub";
@@ -9,6 +10,7 @@ import { listChannelHealth, countUnhealthyChannels, testChannelConnection } from
 import { audit } from "@/lib/bms/audit";
 import { isPlatformAdmin } from "@/lib/bms/platform";
 import { topicBmsInboxChanged, type BmsInboxChangedPayload } from "../../../packages/graphql-core/src/bmsInboxSync";
+import { getMessengerProfile, publishMessengerProfile } from "@/lib/bms/messengerProfile";
 
 /** pg คืน timestamp เป็น Date object — ต้อง toISOString() ก่อนคืนใน field ที่เป็น String (ดู CLAUDE.local.md) */
 function toISO(v: unknown): string | null {
@@ -62,6 +64,10 @@ export const bmsChannelsResolvers = {
       requireTenantAdmin(ctx);
       return countUnhealthyChannels(getTenantId(ctx));
     },
+    async bmsMessengerProfile(_p: unknown, _a: unknown, ctx: any) {
+      requireTenantAdmin(ctx);
+      return getMessengerProfile(getTenantId(ctx));
+    },
   },
   Mutation: {
     async bmsUpsertChannel(
@@ -69,7 +75,7 @@ export const bmsChannelsResolvers = {
       args: { channel: string; accessToken?: string; channelSecret?: string; webhookVerifyToken?: string; externalAccountId?: string; active?: boolean },
       ctx: any
     ) {
-      requireTenantAdmin(ctx);
+      await requireTenantSettingsAdministrator(ctx);
       if (!ALLOWED.includes(args.channel)) {
         throw new GraphQLError("channel ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
       }
@@ -88,13 +94,31 @@ export const bmsChannelsResolvers = {
       return ok;
     },
     async bmsTestChannel(_p: unknown, args: { channel: string }, ctx: any) {
-      requireTenantAdmin(ctx);
+      await requireTenantSettingsAdministrator(ctx);
       if (!ALLOWED.includes(args.channel)) {
         throw new GraphQLError("channel ไม่ถูกต้อง", { extensions: { code: "BAD_USER_INPUT" } });
       }
       const result = await testChannelConnection(getTenantId(ctx), args.channel);
       await audit(ctx, "channel.test", args.channel, { ok: result.ok });
       return result;
+    },
+    async bmsPublishMessengerProfile(
+      _p: unknown,
+      args: { input: { greeting?: unknown; starterPayloads?: unknown } },
+      ctx: any,
+    ) {
+      await requireTenantSettingsAdministrator(ctx);
+      try {
+        return await publishMessengerProfile(
+          getTenantId(ctx),
+          String(requireAuth(ctx).author_id),
+          args.input,
+        );
+      } catch (error: any) {
+        throw new GraphQLError(error?.message || "เผยแพร่ Messenger profile ไม่สำเร็จ", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
     },
     async bmsEmitInboxDiagnosticEvent(_p: unknown, args: { channel: string; probeId: string }, ctx: any) {
       await requireRealtimeDiagnosticsAdmin(ctx);

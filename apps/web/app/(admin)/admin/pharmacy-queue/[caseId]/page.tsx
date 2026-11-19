@@ -1,4 +1,7 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
+import { pharmacyReviewValue, pharmacyReviewStatus, pharmacyCaseStatus, pharmacyRiskLabel } from "@/i18n/pharmacyReview";
 
 import { gql, useQuery, useMutation } from "@apollo/client";
 import {
@@ -41,7 +44,6 @@ import {
   getCompletenessTagMeta,
   getCustomerConfirmationTagMeta,
   formatCustomerConfirmationClipboardText,
-  formatCustomerConfirmationValue,
   normalizeCustomerConfirmationLines,
 } from "@/lib/bms/pharmacy/customerConfirmation";
 
@@ -185,6 +187,7 @@ type ManualMedicationRow = {
 };
 
 export default function PharmacyCaseDetailPage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const params = useParams<{ caseId: string }>()!;
   const router = useRouter();
@@ -226,14 +229,14 @@ export default function PharmacyCaseDetailPage() {
   const evidence = evidenceData?.bmsPharmacyClinicalEvidence ?? [];
   const [addEvidence, { loading: addingEvidence }] = useMutation(M_ADD_EVIDENCE, {
     onCompleted: () => {
-      message.success("บันทึกหลักฐานแล้ว");
+      message.success(uiText("admin_ui.evidence_saved_808d6"));
       setEvidenceText("");
       refetchEvidence();
     },
     onError: (e) => message.error(e.message),
   });
   const [removeEvidence] = useMutation(M_DELETE_EVIDENCE, {
-    onCompleted: () => { message.success("ลบแล้ว"); refetchEvidence(); },
+    onCompleted: () => { message.success(uiText("admin_ui.deleted_9dfa7")); refetchEvidence(); },
     onError: (e) => message.error(e.message),
   });
 
@@ -246,7 +249,7 @@ export default function PharmacyCaseDetailPage() {
       const res = await fetch("/api/bms/pharmacy/evidence/upload", { method: "POST", body: form });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
-      message.success("แนบรูปแล้ว");
+      message.success(uiText("admin_ui.image_attached_06ba3"));
       refetchEvidence();
     } catch (e: any) {
       message.error(String(e?.message ?? e));
@@ -306,15 +309,15 @@ export default function PharmacyCaseDetailPage() {
   ]);
   const symptomConfirmationLines = confirmationLines
     .filter((line) => !confirmationSafetyKeys.has(line.fieldKey))
-    .map((line) => ({ ...line, valueText: formatCustomerConfirmationValue(line.valueText) }));
+    .map((line) => ({ ...line, valueText: pharmacyReviewValue(line.valueText, uiText) }));
   const patientConfirmationLines = [
-    { fieldKey: "patient_relationship", label: t("admin_pharmacy_case.f_relationship"), valueText: formatCustomerConfirmationValue(c?.patientRelationship) },
+    { fieldKey: "patient_relationship", label: t("admin_pharmacy_case.f_relationship"), valueText: pharmacyReviewValue(c?.patientRelationship, uiText) },
     { fieldKey: "patient_age_years", label: t("admin_pharmacy_case.f_age"), valueText: c?.patientAgeYears == null ? t("admin_pharmacy_case.f_age_unknown") : t("admin_pharmacy_case.f_age_years", { n: c.patientAgeYears }) },
-    { fieldKey: "biological_sex", label: t("admin_pharmacy_case.f_sex"), valueText: formatCustomerConfirmationValue(c?.biologicalSex) },
-    { fieldKey: "allergies", label: t("admin_pharmacy_case.f_allergies"), valueText: formatCustomerConfirmationValue(c?.structuredAnswers?.allergies) },
-    { fieldKey: "current_medications", label: t("admin_pharmacy_case.f_current_meds"), valueText: formatCustomerConfirmationValue(c?.structuredAnswers?.current_medications) },
-    { fieldKey: "pregnancy_status", label: t("admin_pharmacy_case.f_pregnancy"), valueText: formatCustomerConfirmationValue(c?.pregnancyStatus) },
-    { fieldKey: "breastfeeding_status", label: t("admin_pharmacy_case.f_breastfeeding"), valueText: formatCustomerConfirmationValue(c?.breastfeedingStatus) },
+    { fieldKey: "biological_sex", label: t("admin_pharmacy_case.f_sex"), valueText: pharmacyReviewValue(c?.biologicalSex, uiText) },
+    { fieldKey: "allergies", label: t("admin_pharmacy_case.f_allergies"), valueText: pharmacyReviewValue(c?.structuredAnswers?.allergies, uiText) },
+    { fieldKey: "current_medications", label: t("admin_pharmacy_case.f_current_meds"), valueText: pharmacyReviewValue(c?.structuredAnswers?.current_medications, uiText) },
+    { fieldKey: "pregnancy_status", label: t("admin_pharmacy_case.f_pregnancy"), valueText: pharmacyReviewValue(c?.pregnancyStatus, uiText) },
+    { fieldKey: "breastfeeding_status", label: t("admin_pharmacy_case.f_breastfeeding"), valueText: pharmacyReviewValue(c?.breastfeedingStatus, uiText) },
   ];
   const redFlags: any[] = c?.detectedRedFlags || [];
   const completenessMeta = getCompletenessTagMeta(c?.completenessStatus);
@@ -651,10 +654,10 @@ export default function PharmacyCaseDetailPage() {
                 border: `1px solid ${riskColor}45`,
               }}
             >
-              Risk: {c.riskLevel}
+              {uiText("admin_ui.en_risk_95117")} {pharmacyRiskLabel(c.riskLevel, uiText)}
             </span>
           </Space>
-          <Text type="secondary">{t("admin_pharmacy_case.status_line", { status: c.status })}{history?.customerName || history?.customerRef ? t("admin_pharmacy_case.customer_line", { name: history.customerName || history.customerRef }) : ""}</Text>
+          <Text type="secondary">{t("admin_pharmacy_case.status_line", { status: pharmacyCaseStatus(c.status, uiText) })}{history?.customerName || history?.customerRef ? t("admin_pharmacy_case.customer_line", { name: history.customerName || history.customerRef }) : ""}</Text>
         </div>
         <Button onClick={() => router.push("/admin/pharmacy-queue")}>{t("admin_pharmacy_case.btn_back_queue")}</Button>
       </Space>
@@ -697,15 +700,15 @@ export default function PharmacyCaseDetailPage() {
 
       <Card size="small" style={{ marginBottom: 16, borderRadius: 10 }}>
         <Space wrap size={12}>
-          <Tag color={completenessMeta.color}>Completeness: {completenessMeta.text}</Tag>
-          <Tag color={confirmationMeta.color}>Confirmation: {confirmationMeta.text}</Tag>
-          <Tag color={c.needsManualIntake ? "red" : "blue"}>{c.needsManualIntake ? "AI degraded path" : "AI normal path"}</Tag>
-          <Tag color="purple">AI summary v{c.aiSummaryVersion}</Tag>
-          <Tag color="gold">Medication candidates: {medicationSuggestions.length}</Tag>
+          <Tag color={completenessMeta.color}>{uiText("admin_ui.en_completeness_32449")} {pharmacyReviewStatus(completenessMeta.text, uiText)}</Tag>
+          <Tag color={confirmationMeta.color}>{uiText("admin_ui.en_confirmation_91f95")} {pharmacyReviewStatus(confirmationMeta.text, uiText)}</Tag>
+          <Tag color={c.needsManualIntake ? "red" : "blue"}>{c.needsManualIntake ? uiText("admin_ui.en_ai_degraded_path_619b4") : uiText("admin_ui.en_ai_normal_path_d0211")}</Tag>
+          <Tag color="purple">{uiText("admin_ui.en_ai_summary_v_2db02")}{c.aiSummaryVersion}</Tag>
+          <Tag color="gold">{uiText("admin_ui.en_medication_candidates_485ce")} {medicationSuggestions.length}</Tag>
           <Tag color={c.conversationId ? "green" : "default"}>
             {c.conversationId
-              ? `Linked to conversation${history?.channel ? ` (${history.channel})` : ""}`
-              : "No customer conversation"}
+              ? uiText("admin_ui.en_linked_to_conversation_bd8dc", { v0: history?.channel ? ` (${history.channel})` : "" })
+              : uiText("admin_ui.en_no_customer_conversation_7efcf")}
           </Tag>
         </Space>
       </Card>
@@ -727,7 +730,7 @@ export default function PharmacyCaseDetailPage() {
             title={
               <Space>
                 <UserOutlined />
-                <span>Customer Confirmation Snapshot</span>
+                <span>{uiText("admin_ui.en_customer_confirmation_snapshot_41e81")}</span>
               </Space>
             }
             extra={
@@ -752,15 +755,15 @@ export default function PharmacyCaseDetailPage() {
                 }}
               >
                 <Space wrap>
-                  <Tag color={completenessMeta.color}>{t("admin_pharmacy_case.tag_completeness", { text: completenessMeta.text })}</Tag>
-                  <Tag color={confirmationMeta.color}>{t("admin_pharmacy_case.tag_confirmation", { text: confirmationMeta.text })}</Tag>
+                  <Tag color={completenessMeta.color}>{t("admin_pharmacy_case.tag_completeness", { text: pharmacyReviewStatus(completenessMeta.text, uiText) })}</Tag>
+                  <Tag color={confirmationMeta.color}>{t("admin_pharmacy_case.tag_confirmation", { text: pharmacyReviewStatus(confirmationMeta.text, uiText) })}</Tag>
                   {events.some((event: any) => event.action === "assessment.manual_answer_recorded") ? (
                     <Tag color="blue">{t("admin_pharmacy_case.tag_manual_data")}</Tag>
                   ) : null}
                 </Space>
                 <Text type="secondary">
                   {c.customerConfirmedAt
-                    ? t("admin_pharmacy_case.confirmed_at", { when: new Date(c.customerConfirmedAt).toLocaleString("th-TH") })
+                    ? t("admin_pharmacy_case.confirmed_at", { when: new Date(c.customerConfirmedAt).toLocaleString(uiText.locale) })
                     : t("admin_pharmacy_case.no_confirm_time")}
                 </Text>
               </div>
@@ -812,7 +815,7 @@ export default function PharmacyCaseDetailPage() {
             </Space>
           </Card>
 
-          <Card size="small" title="Structured Intake + Patient Memory" style={{ marginBottom: 12, borderRadius: 10 }}>
+          <Card size="small" title={uiText("admin_ui.en_structured_intake_patient_memory_93505")} style={{ marginBottom: 12, borderRadius: 10 }}>
             <Descriptions size="small" column={2} bordered>
               <Descriptions.Item label={t("admin_pharmacy_case.d_fever")}>{String(structuredAnswers.has_fever ?? "UNKNOWN")}</Descriptions.Item>
               <Descriptions.Item label={t("admin_pharmacy_case.d_temp")}>{String(structuredAnswers.fever_temp ?? "UNKNOWN")}</Descriptions.Item>
@@ -820,7 +823,7 @@ export default function PharmacyCaseDetailPage() {
               <Descriptions.Item label={t("admin_pharmacy_case.d_severity")}>{String(structuredAnswers.severity ?? "UNKNOWN")}</Descriptions.Item>
               <Descriptions.Item label={t("admin_pharmacy_case.d_sputum")}>{String(structuredAnswers.sputum ?? "UNKNOWN")}</Descriptions.Item>
               <Descriptions.Item label={t("admin_pharmacy_case.d_comorbidities")}>{String(structuredAnswers.comorbidities ?? "UNKNOWN")}</Descriptions.Item>
-              <Descriptions.Item label="patient memory / prior context" span={2}>
+              <Descriptions.Item label={uiText("admin_ui.en_patient_memory_prior_context_179ee")} span={2}>
                 {String(structuredAnswers.patient_memory ?? t("admin_pharmacy_case.no_patient_memory"))}
               </Descriptions.Item>
             </Descriptions>
@@ -886,7 +889,7 @@ export default function PharmacyCaseDetailPage() {
             title={
               <Space>
                 <RobotOutlined />
-                <span>AI Analysis Summary</span>
+                <span>{uiText("admin_ui.en_ai_analysis_summary_c6a5d")}</span>
               </Space>
             }
             style={{ marginBottom: 12, borderRadius: 10 }}
@@ -920,7 +923,7 @@ export default function PharmacyCaseDetailPage() {
             title={
               <Space>
                 <MedicineBoxOutlined />
-                <span>AI Draft Medication Plan</span>
+                <span>{uiText("admin_ui.en_ai_draft_medication_plan_31a0d")}</span>
               </Space>
             }
             style={{ marginBottom: 12, borderColor: "#d48806", borderRadius: 10 }}
@@ -988,10 +991,10 @@ export default function PharmacyCaseDetailPage() {
                                   <Text strong style={{ fontSize: 16 }}>
                                     {primaryMatch?.name || row.drugName || t("admin_pharmacy_case.unknown_product")}
                                   </Text>
-                                  <Tag color={row.manual ? "cyan" : "purple"}>{row.manual ? "manual" : "ai"}</Tag>
+                                  <Tag color={row.manual ? "cyan" : "purple"}>{row.manual ? uiText("admin_ui.en_manual_b3637") : "ai"}</Tag>
                                   {/* ป้ายนี้ต้องเห็นก่อนกดอนุมัติ ไม่ใช่ไปรู้ตอนบิลถูกปฏิเสธ */}
                                   {primaryMatch && isPrescriptionItem(primaryMatch) ? (
-                                    <Tag color="volcano">ต้องมีใบสั่งแพทย์</Tag>
+                                    <Tag color="volcano">{uiText("admin_ui.prescription_required_f97dc")}</Tag>
                                   ) : null}
                                   {row.excluded ? <Tag color="red">{t("admin_pharmacy_case.tag_excluded")}</Tag> : null}
                                 </Space>
@@ -1022,10 +1025,10 @@ export default function PharmacyCaseDetailPage() {
                           </div>
 
                           <Descriptions size="small" column={2} bordered>
-                            <Descriptions.Item label="AI suggestion" span={2}>
+                            <Descriptions.Item label={uiText("admin_ui.en_ai_suggestion_9d6e4")} span={2}>
                               {row.drugName} {row.strength}
                             </Descriptions.Item>
-                            <Descriptions.Item label="AI draft dosage" span={2}>
+                            <Descriptions.Item label={uiText("admin_ui.en_ai_draft_dosage_444cc")} span={2}>
                               {row.dosageInstruction || <Text type="secondary">{t("admin_pharmacy_case.no_dosage")}</Text>}
                             </Descriptions.Item>
                             <Descriptions.Item label={t("admin_pharmacy_case.label_product_to_dispense")} span={2}>
@@ -1124,7 +1127,7 @@ export default function PharmacyCaseDetailPage() {
             title={
               <Space>
                 <EditOutlined />
-                <span>Pharmacist Summary Draft</span>
+                <span>{uiText("admin_ui.en_pharmacist_summary_draft_db326")}</span>
               </Space>
             }
             style={{ marginBottom: 12, borderRadius: 10 }}
@@ -1172,7 +1175,7 @@ export default function PharmacyCaseDetailPage() {
         </Col>
 
         <Col xs={24} xl={8}>
-          <Card size="small" title="Conversation" style={{ marginBottom: 12, borderRadius: 10 }}>
+          <Card size="small" title={uiText("admin_ui.en_conversation_2a20c")} style={{ marginBottom: 12, borderRadius: 10 }}>
             {history ? (
               <Space direction="vertical" style={{ width: "100%" }} size="middle">
                 <Text type="secondary">
@@ -1187,13 +1190,13 @@ export default function PharmacyCaseDetailPage() {
                       <List.Item>
                         <Space direction="vertical" size={4} style={{ width: "100%" }}>
                           <Space wrap size={8}>
-                            <Tag color={m.direction === "IN" ? "blue" : "green"}>{m.direction === "IN" ? "customer" : "staff/outbound"}</Tag>
+                            <Tag color={m.direction === "IN" ? "blue" : "green"}>{m.direction === "IN" ? uiText("admin_ui.en_customer_b39f0") : uiText("admin_ui.en_staff_outbound_6cf60")}</Tag>
                             {m.sender ? <Text type="secondary">{m.sender}</Text> : null}
                             {m.status ? <Tag>{m.status}</Tag> : null}
-                            <Text type="secondary">{new Date(m.createdAt).toLocaleString()}</Text>
+                            <Text type="secondary">{new Date(m.createdAt).toLocaleString(uiText.locale)}</Text>
                           </Space>
                           <div style={{ background: m.direction === "IN" ? "#f0f5ff" : "#f6ffed", borderRadius: 12, padding: 12 }}>
-                            <Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}>{m.body || "(empty message)"}</Paragraph>
+                            <Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}>{m.body || uiText("admin_ui.en_empty_message_59d2e")}</Paragraph>
                           </div>
                         </Space>
                       </List.Item>
@@ -1222,7 +1225,7 @@ export default function PharmacyCaseDetailPage() {
 
             {(!history || showRawConversation) && (c.rawMessages || []).length > 0 ? (
               <div style={{ maxHeight: 360, overflowY: "auto", paddingRight: 4 }}>
-                <Divider orientation="left" plain>Intake snapshot</Divider>
+                <Divider orientation="left" plain>{uiText("admin_ui.en_intake_snapshot_11663")}</Divider>
                 <List
                   size="small"
                   dataSource={c.rawMessages || []}
@@ -1239,7 +1242,7 @@ export default function PharmacyCaseDetailPage() {
             ) : null}
           </Card>
 
-          <Card size="small" title="Action workspace" style={{ marginBottom: 12, borderRadius: 10 }}>
+          <Card size="small" title={uiText("admin_ui.en_action_workspace_c5e42")} style={{ marginBottom: 12, borderRadius: 10 }}>
             <Space direction="vertical" style={{ width: "100%" }} size={12}>
               <Descriptions size="small" column={1} bordered>
                 <Descriptions.Item label={t("admin_pharmacy_case.label_selected_count")}>{t("admin_pharmacy_case.count_items", { n: selectedMedicationSummary.count })}</Descriptions.Item>
@@ -1309,13 +1312,13 @@ export default function PharmacyCaseDetailPage() {
                   showIcon
                   message={
                     hasPrescriptionEvidence
-                      ? "รายการนี้มียาที่ต้องมีใบสั่งแพทย์ — มีหลักฐานใบสั่งแนบไว้ในเคสแล้ว"
-                      : "รายการนี้มียาที่ต้องมีใบสั่งแพทย์ แต่ยังไม่มีรูปหรือเลขใบสั่งแนบไว้ในเคส"
+                      ? uiText("admin_ui.this_case_includes_prescription_only_medicine_and_already_091ed")
+                      : uiText("admin_ui.this_case_includes_prescription_only_medicine_but_has_76780")
                   }
                   description={
                     hasPrescriptionEvidence
-                      ? "การอนุมัติของคุณคือการตัดสินว่าใบสั่งนี้ใช้ได้ · ระบบไม่ตรวจเนื้อหาใบสั่งให้"
-                      : "อนุมัติได้ แต่เคสที่ไม่มีหลักฐานจะอธิบายย้อนหลังไม่ได้ — แนบได้ที่การ์ดหลักฐานทางคลินิกด้านล่าง"
+                      ? uiText("admin_ui.your_approval_determines_whether_the_prescription_is_valid_0e469")
+                      : uiText("admin_ui.approval_is_possible_but_a_case_without_evidence_d9ed7")
                   }
                 />
               )}
@@ -1337,14 +1340,11 @@ export default function PharmacyCaseDetailPage() {
                     })
                   }
                 >
-                  Approve and send
-                </Button>
+                  {uiText("admin_ui.en_approve_and_send_74dd3")}</Button>
                 <Button danger disabled={!canDecide || !reason.trim()} loading={rejecting} onClick={() => reject({ variables: { id: c.id, v: c.version, reason } })}>
-                  Reject
-                </Button>
+                  {uiText("admin_ui.en_reject_2b03b")}</Button>
                 <Button disabled={!canDecide || !reason.trim()} loading={referring} onClick={() => refer({ variables: { id: c.id, v: c.version, reason } })}>
-                  Refer to doctor
-                </Button>
+                  {uiText("admin_ui.en_refer_to_doctor_ce9c6")}</Button>
               </Space>
 
               <Text type="secondary">
@@ -1355,7 +1355,7 @@ export default function PharmacyCaseDetailPage() {
               {c.status !== "CLOSED" && c.status !== "EMERGENCY_REFERRAL" && can("pharmacy.assessment.review") && (
                 <>
                   <Divider style={{ margin: "8px 0" }} />
-                  <Text strong type="danger">Emergency referral</Text>
+                  <Text strong type="danger">{uiText("admin_ui.en_emergency_referral_f3241")}</Text>
                   <Space.Compact style={{ width: "100%" }}>
                     <Input
                       placeholder={t("admin_pharmacy_case.emergency_reason_placeholder")}
@@ -1363,8 +1363,7 @@ export default function PharmacyCaseDetailPage() {
                       onChange={(e) => setEmergencyReason(e.target.value)}
                     />
                     <Button danger loading={escalating} disabled={!emergencyReason.trim()} onClick={() => escalate({ variables: { id: c.id, reason: emergencyReason } })}>
-                      Emergency referral
-                    </Button>
+                      {uiText("admin_ui.en_emergency_referral_f3241")}</Button>
                   </Space.Compact>
                 </>
               )}
@@ -1376,12 +1375,12 @@ export default function PharmacyCaseDetailPage() {
           {canReadEvidence && (
             <Card
               size="small"
-              title="หลักฐานทางคลินิก"
-              extra={<Typography.Text type="secondary" style={{ fontSize: 12 }}>เก็บไว้จนกว่าจะลบเอง</Typography.Text>}
+              title={uiText("admin_ui.clinical_evidence_4cfe2")}
+              extra={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{uiText("admin_ui.retained_until_manually_deleted_527d2")}</Typography.Text>}
               style={{ marginBottom: 12, borderRadius: 10 }}
             >
               {evidence.length === 0 ? (
-                <Typography.Text type="secondary">ยังไม่มีหลักฐานแนบในเคสนี้</Typography.Text>
+                <Typography.Text type="secondary">{uiText("admin_ui.no_evidence_attached_to_this_case_13070")}</Typography.Text>
               ) : (
                 <List
                   size="small"
@@ -1395,15 +1394,14 @@ export default function PharmacyCaseDetailPage() {
                           danger
                           type="text"
                           onClick={() => Modal.confirm({
-                            title: "ลบหลักฐานนี้?",
-                            content: "ระบบยังเก็บร่องรอยว่าใครลบเมื่อไร แต่จะไม่แสดงในรายการอีก",
-                            okText: "ลบ",
-                            cancelText: "ยกเลิก",
+                            title: uiText("admin_ui.delete_this_evidence_9dd89"),
+                            content: uiText("admin_ui.the_system_retains_an_audit_record_of_who_f9a80"),
+                            okText: uiText("admin_ui.remove_f535f"),
+                            cancelText: uiText("admin_ui.cancelled_fba6e"),
                             onOk: () => removeEvidence({ variables: { id: item.id } }),
                           })}
                         >
-                          ลบ
-                        </Button>,
+                          {uiText("admin_ui.remove_f535f")}</Button>,
                       ] : []}
                     >
                       <List.Item.Meta
@@ -1413,20 +1411,20 @@ export default function PharmacyCaseDetailPage() {
                               item.kind === "PRESCRIPTION_IMAGE" ? "purple"
                               : item.kind === "PRESCRIPTION_REF" ? "blue" : "green"
                             }>
-                              {item.kind === "PRESCRIPTION_IMAGE" ? "รูปใบสั่งยา"
-                                : item.kind === "PRESCRIPTION_REF" ? "เลขอ้างอิงใบสั่งยา" : "บันทึกคำแนะนำ"}
+                              {item.kind === "PRESCRIPTION_IMAGE" ? uiText("admin_ui.prescription_image_760df")
+                                : item.kind === "PRESCRIPTION_REF" ? uiText("admin_ui.prescription_reference_791e3") : uiText("admin_ui.counselling_note_b4ad0")}
                             </Tag>
                             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              {item.source === "pos" ? "จากเคาน์เตอร์" : "จากหน้าคิว"}
+                              {item.source === "pos" ? uiText("admin_ui.from_the_counter_6cff3") : uiText("admin_ui.from_the_queue_page_3df43")}
                               {item.createdByName ? ` · ${item.createdByName}` : ""}
-                              {" · "}{new Date(item.createdAt).toLocaleString("th-TH")}
+                              {" · "}{new Date(item.createdAt).toLocaleString(uiText.locale)}
                             </Typography.Text>
                           </Space>
                         }
                         description={
                           item.fileUrl ? (
                             <a href={item.fileUrl} target="_blank" rel="noreferrer">
-                              เปิดดู {item.fileName || "ไฟล์"}
+                              {uiText("admin_ui.open_fcdea")} {item.fileName || uiText("admin_ui.files_3b8cb")}
                             </a>
                           ) : (
                             <Typography.Text style={{ whiteSpace: "pre-wrap" }}>{item.textValue}</Typography.Text>
@@ -1448,8 +1446,8 @@ export default function PharmacyCaseDetailPage() {
                         onChange={setEvidenceKind}
                         style={{ width: 200 }}
                         options={[
-                          { value: "COUNSELING_NOTE", label: "บันทึกคำแนะนำ" },
-                          { value: "PRESCRIPTION_REF", label: "เลขอ้างอิงใบสั่งยา" },
+                          { value: "COUNSELING_NOTE", label: uiText("admin_ui.counselling_note_b4ad0") },
+                          { value: "PRESCRIPTION_REF", label: uiText("admin_ui.prescription_reference_791e3") },
                         ]}
                       />
                       <Button
@@ -1464,16 +1462,15 @@ export default function PharmacyCaseDetailPage() {
                           },
                         })}
                       >
-                        บันทึก
-                      </Button>
+                        {uiText("admin_ui.save_f658a")}</Button>
                     </Space>
                     <Input.TextArea
                       rows={2}
                       value={evidenceText}
                       onChange={(e) => setEvidenceText(e.target.value)}
                       placeholder={evidenceKind === "PRESCRIPTION_REF"
-                        ? "เช่น RX-2569-0001"
-                        : "คำแนะนำที่ให้ลูกค้า"}
+                        ? uiText("admin_ui.e_g_rx_2569_0001_c5641")
+                        : uiText("admin_ui.advice_given_to_the_customer_3410c")}
                       maxLength={4000}
                     />
                     <Space wrap>
@@ -1492,11 +1489,9 @@ export default function PharmacyCaseDetailPage() {
                         loading={uploadingEvidence}
                         onClick={() => document.getElementById("rx-evidence-file")?.click()}
                       >
-                        แนบรูปใบสั่งยา
-                      </Button>
+                        {uiText("admin_ui.attach_prescription_image_61afc")}</Button>
                       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        PNG/JPEG/WebP/GIF หรือ PDF ไม่เกิน 10MB
-                      </Typography.Text>
+                        {uiText("admin_ui.png_jpeg_webp_gif_or_pdf_up_to_e5349")}</Typography.Text>
                     </Space>
                   </Space>
                 </>
@@ -1504,7 +1499,7 @@ export default function PharmacyCaseDetailPage() {
             </Card>
           )}
 
-          <Card size="small" title="Audit Timeline" style={{ borderRadius: 10 }}>
+          <Card size="small" title={uiText("admin_ui.en_audit_timeline_11fb4")} style={{ borderRadius: 10 }}>
             <div style={{ maxHeight: 420, overflowY: "auto", padding: "4px 8px 0 4px" }}>
               <Timeline
                 items={events.map((e: any) => ({
@@ -1514,7 +1509,7 @@ export default function PharmacyCaseDetailPage() {
                       <Text strong>{e.action}</Text> — {e.actor}
                       {e.previousState && e.nextState ? ` (${e.previousState} → ${e.nextState})` : ""}
                       <br />
-                      <Text type="secondary">{new Date(e.createdAt).toLocaleString()}</Text>
+                      <Text type="secondary">{new Date(e.createdAt).toLocaleString(uiText.locale)}</Text>
                     </div>
                   ),
                 }))}
@@ -1569,7 +1564,7 @@ export default function PharmacyCaseDetailPage() {
                         {product.sku} · ฿{Number(product.price || 0).toLocaleString()}{t("admin_pharmacy_case.remaining_suffix", { n: availableTotal })}
                       </Text>
                       <Space wrap size={4}>
-                        <Tag color={product.policyStatus === "APPROVED" ? "green" : "red"}>Policy: {product.policyStatus}</Tag>
+                        <Tag color={product.policyStatus === "APPROVED" ? "green" : "red"}>{uiText("admin_ui.en_policy_d5a70")} {product.policyStatus}</Tag>
                         <Tag color="orange">{product.salePolicy}</Tag>
                         {product.category ? <Tag>{product.category}</Tag> : null}
                         {product.brand ? <Tag color="blue">{product.brand}</Tag> : null}

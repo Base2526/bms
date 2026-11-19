@@ -3,7 +3,7 @@
 .shell a{color:inherit;text-decoration:none}
 .shell a:hover{color:var(--learn-accent)}
 .shell :is(a,button,input,select):focus-visible{outline:3px solid var(--learn-accent);outline-offset:4px}
-.header{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px max(24px,calc((100vw - 1200px)/2));border-bottom:1px solid var(--app-border);background:var(--app-surface);flex-wrap:wrap}
+.header{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px max(24px,calc((100vw - 1400px)/2));border-bottom:1px solid var(--app-border);background:var(--app-surface);flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:12px;font-weight:700;font-size:19px}
 .brand small{border-left:1px solid var(--app-border);padding-left:12px;font-size:14px;font-weight:400;color:var(--app-text-secondary)}
 .nav{display:flex;align-items:center;gap:20px;flex-wrap:wrap;font-size:14px}
@@ -119,10 +119,12 @@ a.card:hover{border-color:var(--learn-accent);box-shadow:0 5px 18px rgba(var(--a
 .businessTrackHero[data-track=board-game]{background:linear-gradient(110deg,#fff 0%,#faf8ff 58%,#f0edff 100%)}
 .businessTrackHero[data-track=restaurant]{background:linear-gradient(110deg,#fff 0%,#fffaf5 58%,#fff0e2 100%)}
 .businessTrackHero[data-track=pharmacy]{background:linear-gradient(110deg,#fff 0%,#f6fffb 58%,#e7f8ef 100%)}
+.businessTrackHero[data-track=building-materials]{background:linear-gradient(110deg,#fff 0%,#fffaf1 58%,#f7e7c6 100%)}
 .businessHeroVisual{position:absolute;right:18px;top:18px;width:34%;height:184px;border-radius:12px;background:linear-gradient(135deg,rgba(219,234,254,.25),rgba(191,219,254,.55));overflow:hidden}
 .businessHeroVisual[data-track=board-game]{background:linear-gradient(135deg,#f5f3ff,#ddd6fe)}
 .businessHeroVisual[data-track=restaurant]{background:linear-gradient(135deg,#fff7ed,#fed7aa)}
 .businessHeroVisual[data-track=pharmacy]{background:linear-gradient(135deg,#ecfdf5,#bbf7d0)}
+.businessHeroVisual[data-track=building-materials]{background:linear-gradient(135deg,#fff7ed,#f2cf9f)}
 .businessHeroIcon{position:absolute;left:46px;top:42px;z-index:2;font-size:68px;filter:drop-shadow(0 10px 12px rgba(15,23,42,.13))}
 .businessHeroBlocks{position:absolute;left:24px;right:82px;bottom:25px;display:flex;align-items:flex-end;gap:8px;height:55px;padding:0 12px 8px;border-bottom:8px solid rgba(30,79,146,.55)}
 .businessHeroBlocks i{display:block;width:30px;height:28px;border-radius:5px;background:#60a5fa;box-shadow:inset 0 -5px rgba(30,64,175,.13)}
@@ -384,5 +386,11 @@ a.card:hover{border-color:var(--learn-accent);box-shadow:0 5px 18px rgba(var(--a
 @media(max-width:850px){.articleAside{display:none}.mobileContents{display:block;border-top:1px solid var(--app-border);border-bottom:1px solid var(--app-border);margin-top:12px;padding:0 2px}.mobileContents summary{cursor:pointer;font-size:13px;font-weight:600;min-height:44px;padding:11px 0;line-height:1.7}.mobileContents summary:focus-visible{outline:3px solid var(--learn-accent);outline-offset:3px}.mobileContents nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 12px;padding-bottom:8px}.mobileContents a{display:flex;align-items:center;min-height:44px;font-size:13px;line-height:1.6;color:var(--learn-accent)}}
 @media(max-width:520px){.article h1{font-size:26px}.article h2{font-size:20px;margin-top:20px}.article p,.steps li{font-size:16px}.steps li{padding-left:36px}.article .callout{padding:12px}.article .practiceCallout{display:block}.practiceCallout>.button{margin-top:10px}.articleMeta{gap:2px 12px}}
 @media print{.homeSearch{display:none!important}}
-@media(max-width:850px){.header{flex-wrap:nowrap;align-items:center;gap:12px;padding:8px 16px}.header .brand{min-width:0;gap:8px;font-size:18px}.header .brand small{padding-left:8px;font-size:12px;line-height:1.5}.header .desktopNav{display:none}.mobileMenu{display:block;position:relative;flex:none}.mobileMenu>summary{display:flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:8px 12px;border:1px solid var(--app-border);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;list-style:none}.mobileMenu>summary::-webkit-details-marker{display:none}.mobileMenu>summary:focus-visible{outline:3px solid var(--learn-accent);outline-offset:3px}.mobileMenu[open]>summary{background:var(--learn-soft);color:var(--learn-accent)}.mobileMenu>.mobileNav{position:absolute;right:0;top:calc(100% + 8px);width:min(300px,calc(100vw - 32px));z-index:30}}
+@media(max-width:1100px){.header{flex-wrap:nowrap;align-items:center;gap:12px;padding:8px 16px}.header .brand{min-width:0;gap:8px;font-size:18px}.header .brand small{padding-left:8px;font-size:12px;line-height:1.5}.header .desktopNav{display:none}.mobileMenu{display:block;position:relative;flex:none}.mobileMenu>summary{display:flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:8px 12px;border:1px solid var(--app-border);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;list-style:none}.mobileMenu>summary::-webkit-details-marker{display:none}.mobileMenu>summary:focus-visible{outline:3px solid var(--learn-accent);outline-offset:3px}.mobileMenu[open]>summary{background:var(--learn-soft);color:var(--learn-accent)}.mobileMenu>.mobileNav{position:absolute;right:0;top:calc(100% + 8px);width:min(300px,calc(100vw - 32px));z-index:30}}
 @media print{.header,.footer,.sidebar,.articleAside,.toolbar,.pager,.skip,.search,.filters,.noPrint{display:none!important}.shell{background:#fff;color:#111}.main{--app-text:#111;--app-text-secondary:#444;--app-surface:#fff;--learn-soft:#f3f3f3;--learn-accent:#134e98;--app-border:#bbb;max-width:none;padding:0;color:#111}.articleLayout,.layout{display:block}.article{max-width:none}.callout{background:#f3f3f3;border:1px solid #bbb;break-inside:avoid}.steps li{break-inside:avoid}.article h1{font-size:26pt}.article h2{font-size:17pt}.article p,.steps li{font-size:11pt}.muted,.lead{color:#444}}
+
+.shell:has([data-bms-not-found]){display:flex;flex-direction:column;min-height:100svh}
+.shell:has([data-bms-not-found]) .main{display:flex;flex:1;flex-direction:column;width:100%;max-width:none;margin:0;padding:0}
+.shell:has([data-bms-not-found]) .main>.breadcrumb{margin:0;padding:16px max(24px,5vw) 12px}
+.shell:has([data-bms-not-found]) .footer{display:none}
+@media(max-width:520px){.shell:has([data-bms-not-found]) .main>.breadcrumb{padding:14px 20px 12px}}

@@ -1,3 +1,4 @@
+import { posText, usePosLanguage, posLocale } from '../../i18n/language';
 import React, { useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -26,6 +27,10 @@ import {
   MobilePosVoidDocument,
   PosBootstrapDocument,
 } from '../../graphql/generated';
+import type {
+  MobilePosReturnMutationVariables,
+  MobilePosVoidMutationVariables,
+} from '../../graphql/generated';
 import { createIdempotencyKey, isDecidedRejection } from '../../lib/operation';
 import { paymentMethodLabel } from '../../lib/paymentMath';
 import { exchangeSeedLines, refundPaymentOptions } from '../../lib/returnMath';
@@ -48,12 +53,12 @@ type ReturnReason =
   | 'OTHER';
 
 const RETURN_REASONS: Array<{ code: ReturnReason; label: string }> = [
-  { code: 'DAMAGED', label: 'สินค้าเสียหาย' },
-  { code: 'WRONG_ITEM', label: 'สินค้าผิด' },
-  { code: 'CUSTOMER_CHANGE', label: 'ลูกค้าเปลี่ยนใจ' },
-  { code: 'PRICE_ERROR', label: 'ราคาผิด' },
-  { code: 'QUALITY_ISSUE', label: 'ปัญหาคุณภาพ' },
-  { code: 'OTHER', label: 'อื่น ๆ' },
+  { code: 'DAMAGED', get label() { return posText("สินค้าเสียหาย"); } },
+  { code: 'WRONG_ITEM', get label() { return posText("สินค้าผิด"); } },
+  { code: 'CUSTOMER_CHANGE', get label() { return posText("ลูกค้าเปลี่ยนใจ"); } },
+  { code: 'PRICE_ERROR', get label() { return posText("ราคาผิด"); } },
+  { code: 'QUALITY_ISSUE', get label() { return posText("ปัญหาคุณภาพ"); } },
+  { code: 'OTHER', get label() { return posText("อื่น ๆ"); } },
 ];
 
 function confirmAction(title: string, message: string): Promise<boolean> {
@@ -62,8 +67,8 @@ function confirmAction(title: string, message: string): Promise<boolean> {
       title,
       message,
       [
-        { text: 'ยกเลิก', style: 'cancel', onPress: () => resolve(false) },
-        { text: 'ยืนยัน', onPress: () => resolve(true) },
+        { text: posText("ยกเลิก"), style: 'cancel', onPress: () => resolve(false) },
+        { text: posText("ยืนยัน"), onPress: () => resolve(true) },
       ],
       { cancelable: false },
     );
@@ -71,6 +76,7 @@ function confirmAction(title: string, message: string): Promise<boolean> {
 }
 
 export default function SaleDetailScreen({ route, navigation }: Props) {
+  usePosLanguage();
   const { colors, spacing, typography } = useTheme();
   const { session } = useSession();
   const cart = useCart();
@@ -107,6 +113,8 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
   const [secondaryAction, setSecondaryAction] = useState('');
   const returnKey = useRef<string | null>(null);
   const voidKey = useRef<string | null>(null);
+  const returnAttempt = useRef<{ action: Action; input: MobilePosReturnMutationVariables['input'] } | null>(null);
+  const voidAttempt = useRef<MobilePosVoidMutationVariables['input'] | null>(null);
   const deliveryScroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
 
   const selectedLines = useMemo(
@@ -141,8 +149,8 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
       await actionFn();
     } catch (error) {
       Alert.alert(
-        'ทำรายการไม่สำเร็จ',
-        error instanceof Error ? error.message : 'กรุณาลองใหม่',
+        posText("ทำรายการไม่สำเร็จ"),
+        error instanceof Error ? error.message : posText("กรุณาลองใหม่"),
       );
     } finally {
       setSecondaryAction('');
@@ -153,7 +161,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
     return (
       <ScreenContainer>
         <ScreenHeader
-          title={loading ? 'กำลังโหลดใบเสร็จ…' : 'ไม่พบใบเสร็จ'}
+          title={loading ? posText("กำลังโหลดใบเสร็จ…") : posText("ไม่พบใบเสร็จ")}
           onBack={() => navigation.goBack()}
         />
       </ScreenContainer>
@@ -173,13 +181,23 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
   const performSubmit = async () => {
     if (!session || !action || submitting) return;
     const isReturnAction = action !== 'VOID';
+    if (
+      (returnAttempt.current && returnAttempt.current.action !== action) ||
+      (voidAttempt.current && action !== 'VOID')
+    ) {
+      Alert.alert(
+        posText("ผลรายการเดิมยังไม่ชัดเจน"),
+        posText("กรุณากลับไปทำรายการเดิมด้วยคีย์เดิมก่อนเริ่มการคืนหรือ Void แบบอื่น"),
+      );
+      return;
+    }
     const isPartialReturn = action === 'RETURN' || action === 'EXCHANGE';
     if (!reason.trim()) {
-      Alert.alert('ต้องระบุเหตุผล', 'การคืนสินค้าและ Void ต้องมีเหตุผล');
+      Alert.alert(posText("ต้องระบุเหตุผล"), posText("การคืนสินค้าและ Void ต้องมีเหตุผล"));
       return;
     }
     if (isPartialReturn && selectedLines.length === 0) {
-      Alert.alert('ยังไม่ได้เลือกรายการ', 'เลือกจำนวนสินค้าที่ต้องการคืน');
+      Alert.alert(posText("ยังไม่ได้เลือกรายการ"), posText("เลือกจำนวนสินค้าที่ต้องการคืน"));
       return;
     }
     const selectedRefundMethod =
@@ -190,29 +208,36 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
         : null;
     if (isReturnAction && refundOptions.length > 1 && !selectedRefundMethod) {
       Alert.alert(
-        'ต้องเลือกช่องทางคืนเงิน',
-        'บิลนี้จ่ายหลายช่องทาง กรุณาเลือกช่องทางคืนเงินก่อน',
+        posText("ต้องเลือกช่องทางคืนเงิน"),
+        posText("บิลนี้จ่ายหลายช่องทาง กรุณาเลือกช่องทางคืนเงินก่อน"),
       );
       return;
     }
     if (action === 'VOID' && (!approverId || !approverPin)) {
-      Alert.alert('ต้องมีผู้อนุมัติ', 'Void ต้องใช้ PIN ของผู้อนุมัติคนที่สอง');
+      Alert.alert(posText("ต้องมีผู้อนุมัติ"), posText("Void ต้องใช้ PIN ของผู้อนุมัติคนที่สอง"));
       return;
     }
     if (action === 'EXCHANGE') {
+      if (selectedLines.some(selected => selected.line.orderItemId < 0)) {
+        Alert.alert(
+          posText("เปลี่ยนสินค้าไม่ได้"),
+          posText("สินค้าชั่วคราวทำบิลเปลี่ยนต่ออัตโนมัติไม่ได้ — คืนรายการก่อน แล้วเปิดบิลขายใหม่"),
+        );
+        return;
+      }
       if (
-        cart.lines.length > 0 &&
+        (cart.lines.length > 0 || cart.openItems.length > 0 || cart.extraLines.length > 0) &&
         !(await confirmAction(
-          'แทนที่ตะกร้าปัจจุบัน',
-          `ตะกร้ามี ${cart.lines.length} รายการและจะถูกแทนที่ด้วยบิลเปลี่ยนสินค้า`,
+          posText("แทนที่ตะกร้าปัจจุบัน"),
+          posText("ตะกร้ามี {v0} รายการและจะถูกแทนที่ด้วยบิลเปลี่ยนสินค้า", { v0: cart.lines.length + cart.openItems.length + cart.extraLines.length }),
         ))
       ) {
         return;
       }
       if (
         !(await confirmAction(
-          'ยืนยันรับคืนก่อนเปลี่ยนสินค้า',
-          'ระบบจะรับคืนสินค้าที่เลือกก่อน แล้วเปิดบิลขายใหม่ เงินสดถือว่าคืนแล้ว ส่วนช่องทางอื่นอาจต้องยืนยันคืนเงินจริงภายหลัง',
+          posText("ยืนยันรับคืนก่อนเปลี่ยนสินค้า"),
+          posText("ระบบจะรับคืนสินค้าที่เลือกก่อน แล้วเปิดบิลขายใหม่ เงินสดถือว่าคืนแล้ว ส่วนช่องทางอื่นอาจต้องยืนยันคืนเงินจริงภายหลัง"),
         ))
       ) {
         return;
@@ -228,41 +253,47 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
             ? 'full-return'
             : 'return',
         );
-        const response = await returnMutation({
-          variables: {
-            input: {
-              cashierUserId: session.credentials.cashierUserId,
-              pin: session.credentials.pin,
-              orderId: sale.id,
-              mode: action === 'RETURN_FULL' ? 'FULL' : 'PARTIAL',
-              note: `[${returnReason}] ${reason.trim()}`,
-              idempotencyKey: returnKey.current,
-              preferredRefundMethod:
-                selectedRefundMethod?.toUpperCase() ?? null,
-              approvalUserId: approverId || null,
-              approvalPin: approverPin || null,
-              lines:
-                action === 'RETURN_FULL'
-                  ? []
-                  : selectedLines.map(selected => ({
-                      orderItemId: selected.line.orderItemId,
-                      packQty: selected.qty,
-                    })),
-            },
-          },
-        });
+        const candidate: MobilePosReturnMutationVariables['input'] = {
+          cashierUserId: session.credentials.cashierUserId,
+          pin: session.credentials.pin,
+          orderId: sale.id,
+          mode: action === 'RETURN_FULL' ? 'FULL' : 'PARTIAL',
+          note: `[${returnReason}] ${reason.trim()}`,
+          idempotencyKey: returnKey.current,
+          preferredRefundMethod: selectedRefundMethod?.toUpperCase() ?? null,
+          approvalUserId: approverId || null,
+          approvalPin: approverPin || null,
+          lines: action === 'RETURN_FULL'
+            ? []
+            : selectedLines.map(selected => ({
+                orderItemId: selected.line.orderItemId,
+                packQty: selected.qty,
+              })),
+        };
+        if (returnAttempt.current && JSON.stringify(returnAttempt.current.input) !== JSON.stringify(candidate)) {
+          if (!(await confirmAction(
+            posText("ตรวจผลรายการคืนเดิม"),
+            posText("คำขอครั้งก่อนอาจบันทึกแล้ว การกดต่อจะส่งรายการเดิมและคีย์เดิมเพื่อตรวจผล ไม่ใช้จำนวนหรือเหตุผลที่เพิ่งแก้"),
+          ))) return;
+        }
+        returnAttempt.current ??= { action, input: candidate };
+        const response = await returnMutation({ variables: { input: returnAttempt.current.input } });
         const result = response.data?.bmsPosReturn;
         if (!result?.status) {
-          throw new Error('ยังไม่ได้รับผลยืนยันการคืนสินค้า กรุณาลองอีกครั้งด้วยรายการเดิม');
+          throw new Error(posText("ยังไม่ได้รับผลยืนยันการคืนสินค้า กรุณาลองอีกครั้งด้วยรายการเดิม"));
         }
         const successStatus =
           action === 'RETURN_FULL' ? 'RETURNED' : 'PARTIAL_RETURNED';
         if (result?.status !== successStatus) {
           returnKey.current = null;
+          returnAttempt.current = null;
           throw new Error(
-            result?.reason ?? result?.status ?? 'คืนสินค้าไม่สำเร็จ',
+            result?.reason ?? result?.status ?? posText("คืนสินค้าไม่สำเร็จ"),
           );
         }
+        // The refund has committed; later exchange preparation must not leave it retryable.
+        returnKey.current = null;
+        returnAttempt.current = null;
         if (action === 'EXCHANGE') {
           const seeds = exchangeSeedLines(
             sale.id,
@@ -270,9 +301,13 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
             result.returnedItems ?? [],
           );
           if (seeds.length === 0) {
-            throw new Error(
-              'รับคืนสำเร็จแล้ว แต่ผลจากเซิร์ฟเวอร์ไม่มีรายการสำหรับเปิดบิลเปลี่ยน กรุณาเริ่มบิลขายใหม่จากหน้าเมนู',
+            await refresh().catch(() => undefined);
+            close();
+            Alert.alert(
+              posText("คืนสินค้าสำเร็จ"),
+              posText("รับคืนสำเร็จแล้ว แต่ผลจากเซิร์ฟเวอร์ไม่มีรายการสำหรับเปิดบิลเปลี่ยน กรุณาเริ่มบิลขายใหม่จากหน้าเมนู"),
             );
+            return;
           }
           const replacementLines = await Promise.all(
             seeds.map(async seed => {
@@ -301,6 +336,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                   baseQty: latest.baseQty,
                   modifierCodes: latest.selectedModifierCodes ?? [],
                   serialTracked: latest.serialTracked,
+                  offlineRetailEligible: latest.offlineRetailEligible,
                   scaleBarcode: latest.scaleBarcode,
                   serials: [],
                   imageUrl: latest.imageUrl,
@@ -354,66 +390,73 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
             }
           }
           cart.replaceForExchange(replacementLines, replacementMember);
-          returnKey.current = null;
           await refresh().catch(() => undefined);
           close();
           navigation.popToTop();
           Alert.alert(
-            'เปิดบิลเปลี่ยนสินค้าแล้ว',
-            `รับคืน ฿${(result.refundAmount ?? 0).toFixed(2)} และนำ ${
-              replacementLines.length
-            } รายการมาเริ่มบิลใหม่`,
+            posText("เปิดบิลเปลี่ยนสินค้าแล้ว"),
+            posText("รับคืน ฿{v0} และนำ {v1} รายการมาเริ่มบิลใหม่", { v0: (result.refundAmount ?? 0).toFixed(2), v1: replacementLines.length }),
           );
           return;
         }
-        returnKey.current = null;
         Alert.alert(
-          'คืนสินค้าสำเร็จ',
-          `ยอดคืนตามเซิร์ฟเวอร์ ฿${(result.refundAmount ?? 0).toFixed(2)}`,
+          posText("คืนสินค้าสำเร็จ"),
+          posText("ยอดคืนตามเซิร์ฟเวอร์ ฿{v0}", { v0: (result.refundAmount ?? 0).toFixed(2) }),
         );
       } else {
         voidKey.current ??= createIdempotencyKey('void');
-        const response = await voidMutation({
-          variables: {
-            input: {
-              cashierUserId: session.credentials.cashierUserId,
-              pin: session.credentials.pin,
-              orderId: sale.id,
-              reason: reason.trim(),
-              idempotencyKey: voidKey.current,
-              approverUserId: approverId,
-              approverPin,
-            },
-          },
-        });
+        const candidate: MobilePosVoidMutationVariables['input'] = {
+          cashierUserId: session.credentials.cashierUserId,
+          pin: session.credentials.pin,
+          orderId: sale.id,
+          reason: reason.trim(),
+          idempotencyKey: voidKey.current,
+          approverUserId: approverId,
+          approverPin,
+        };
+        if (voidAttempt.current && JSON.stringify(voidAttempt.current) !== JSON.stringify(candidate)) {
+          if (!(await confirmAction(
+            posText("ตรวจผล Void เดิม"),
+            posText("คำขอครั้งก่อนอาจบันทึกแล้ว การกดต่อจะส่งเหตุผลและคีย์เดิมเพื่อตรวจผล ไม่ใช้ข้อมูลที่เพิ่งแก้"),
+          ))) return;
+        }
+        voidAttempt.current ??= candidate;
+        const response = await voidMutation({ variables: { input: voidAttempt.current } });
         const result = response.data?.bmsPosVoid;
         if (!result?.status) {
-          throw new Error('ยังไม่ได้รับผลยืนยัน Void กรุณาลองอีกครั้งด้วยรายการเดิม');
+          throw new Error(posText("ยังไม่ได้รับผลยืนยัน Void กรุณาลองอีกครั้งด้วยรายการเดิม"));
         }
         if (result?.status !== 'VOIDED') {
           voidKey.current = null;
-          throw new Error(result?.reason ?? result?.status ?? 'Void ไม่สำเร็จ');
+          voidAttempt.current = null;
+          throw new Error(result?.reason ?? result?.status ?? posText("Void ไม่สำเร็จ"));
         }
         voidKey.current = null;
+        voidAttempt.current = null;
         Alert.alert(
-          'Void สำเร็จ',
-          `ยอดคืน ฿${(result.refundAmount ?? 0).toFixed(2)}`,
+          posText("Void สำเร็จ"),
+          posText("ยอดคืน ฿{v0}", { v0: (result.refundAmount ?? 0).toFixed(2) }),
         );
       }
       await refresh().catch(() => undefined);
       close();
     } catch (error) {
       if (isDecidedRejection(error)) {
-        if (isReturnAction) returnKey.current = null;
-        else voidKey.current = null;
+        if (isReturnAction) {
+          returnKey.current = null;
+          returnAttempt.current = null;
+        } else {
+          voidKey.current = null;
+          voidAttempt.current = null;
+        }
       }
       Alert.alert(
         action === 'VOID'
-          ? 'Void ไม่สำเร็จ'
+          ? posText("Void ไม่สำเร็จ")
           : action === 'EXCHANGE'
-          ? 'เปลี่ยนสินค้าไม่สำเร็จ'
-          : 'คืนสินค้าไม่สำเร็จ',
-        error instanceof Error ? error.message : 'กรุณาลองใหม่',
+          ? posText("เปลี่ยนสินค้าไม่สำเร็จ")
+          : posText("คืนสินค้าไม่สำเร็จ"),
+        error instanceof Error ? error.message : posText("กรุณาลองใหม่"),
       );
     } finally {
       setSubmitting(false);
@@ -435,11 +478,11 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
     <ScreenContainer edges={['top', 'left', 'right', 'bottom']}>
       <ScreenHeader
         title={sale.receiptNo}
-        subtitle={`${new Date(sale.createdAt).toLocaleString('th-TH')}${
+        subtitle={`${new Date(sale.createdAt).toLocaleString(posLocale())}${
           sale.restaurantServiceMode === 'TAKEAWAY'
-            ? ' · กลับบ้าน'
+            ? posText(" · กลับบ้าน")
             : sale.restaurantServiceMode === 'DINE_IN'
-            ? ' · กินในร้าน'
+            ? posText(" · กินในร้าน")
             : ''
         }`}
         onBack={() => navigation.goBack()}
@@ -454,7 +497,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
           contentContainerStyle={{ paddingBottom: spacing.lg }}
         >
           <Button
-            label="ดูตัวอย่างใบเสร็จ"
+            label={posText("ดูตัวอย่างใบเสร็จ")}
             variant="secondary"
             fullWidth
             style={{ marginBottom: spacing.md }}
@@ -478,16 +521,15 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                   {item.name} × {item.qty}
                 </Text>
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                  ฿{(item.qty * item.unitPrice).toFixed(2)}
+                  {posText("฿")}{(item.qty * item.unitPrice).toFixed(2)}
                 </Text>
               </View>
             ))}
             <View style={[styles.row, { marginTop: spacing.md }]}>
               <Text style={[typography.subtitle, { color: colors.text }]}>
-                รวม
-              </Text>
+                {posText("รวม") + " "}</Text>
               <Text style={[typography.subtitle, { color: colors.text }]}>
-                ฿{sale.total.toFixed(2)}
+                {posText("฿")}{sale.total.toFixed(2)}
               </Text>
             </View>
             {sale.payments.map(payment => (
@@ -495,15 +537,14 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                 key={payment.id}
                 style={[typography.caption, { color: colors.textMuted }]}
               >
-                {paymentMethodLabel(payment.method)} ฿
-                {payment.amount.toFixed(2)}
+                {paymentMethodLabel(payment.method)} {" " + posText("฿") + " "}{payment.amount.toFixed(2)}
               </Text>
             ))}
           </Card>
           {sale.returns.map(record => (
             <Card key={record.id} style={{ marginTop: spacing.md }}>
               <Text style={[typography.bodyStrong, { color: colors.warning }]}>
-                {record.type} · ฿{record.total.toFixed(2)}
+                {record.type} {" " + posText("· ฿")}{record.total.toFixed(2)}
               </Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
                 {record.reason} · {record.settlementStatus}
@@ -513,8 +554,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
           {pendingRefunds.length > 0 ? (
             <Card style={{ marginTop: spacing.md }}>
               <Text style={[typography.bodyStrong, { color: colors.warning }]}>
-                คืนเงินที่ยังไม่เสร็จ
-              </Text>
+                {posText("คืนเงินที่ยังไม่เสร็จ") + " "}</Text>
               {pendingRefunds.map((allocation, index) => {
                 const allocationId = allocation.id ?? '';
                 return (
@@ -523,8 +563,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                     style={{ gap: spacing.sm, marginTop: spacing.md }}
                   >
                     <Text style={[typography.body, { color: colors.text }]}>
-                      {paymentMethodLabel(allocation.method)} · ฿
-                      {allocation.amount.toFixed(2)}
+                      {paymentMethodLabel(allocation.method)} {" " + posText("· ฿") + " "}{allocation.amount.toFixed(2)}
                     </Text>
                     <TextInput
                       value={refundRefs[allocationId] ?? ''}
@@ -534,7 +573,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                           [allocationId]: value,
                         }))
                       }
-                      placeholder="เลขอ้างอิงการคืนเงิน"
+                      placeholder={posText("เลขอ้างอิงการคืนเงิน")}
                       placeholderTextColor={colors.textSoft}
                       style={[
                         styles.input,
@@ -542,7 +581,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                       ]}
                     />
                     <Button
-                      label="ยืนยันคืนเงินสำเร็จ"
+                      label={posText("ยืนยันคืนเงินสำเร็จ")}
                       disabled={
                         !allocationId || !refundRefs[allocationId]?.trim()
                       }
@@ -568,7 +607,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                             throw new Error(
                               result?.reason ??
                                 result?.status ??
-                                'ยืนยันคืนเงินไม่สำเร็จ',
+                                posText("ยืนยันคืนเงินไม่สำเร็จ"),
                             );
                           await refresh();
                         })
@@ -589,27 +628,27 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
           </Card>
           <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
             <Button
-              label="คืนบางรายการ"
+              label={posText("คืนบางรายการ")}
               fullWidth
               disabled={!sale.returnEligible || sale.voided}
               onPress={() => setAction('RETURN')}
             />
             <Button
-              label="คืนทั้งบิล"
+              label={posText("คืนทั้งบิล")}
               variant="secondary"
               fullWidth
               disabled={!sale.returnEligible || sale.voided}
               onPress={() => setAction('RETURN_FULL')}
             />
             <Button
-              label="เปลี่ยนสินค้า"
+              label={posText("เปลี่ยนสินค้า")}
               variant="secondary"
               fullWidth
               disabled={!sale.returnEligible || sale.voided}
               onPress={() => setAction('EXCHANGE')}
             />
             <Button
-              label="Void ทั้งบิล"
+              label={posText("Void ทั้งบิล")}
               variant="danger"
               fullWidth
               disabled={!sale.returnEligible || sale.voided}
@@ -640,12 +679,12 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={[typography.title, { color: colors.text }]}>
                 {action === 'VOID'
-                  ? 'Void ทั้งบิล'
+                  ? posText("Void ทั้งบิล")
                   : action === 'EXCHANGE'
-                  ? 'เปลี่ยนสินค้า'
+                  ? posText("เปลี่ยนสินค้า")
                   : action === 'RETURN_FULL'
-                  ? 'คืนทั้งบิล'
-                  : 'คืนสินค้า'}
+                  ? posText("คืนทั้งบิล")
+                  : posText("คืนสินค้า")}
               </Text>
               {action === 'RETURN' || action === 'EXCHANGE'
                 ? sale.lines.map(line => (
@@ -691,8 +730,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                       { color: colors.textMuted, marginTop: spacing.sm },
                     ]}
                   >
-                    ประมาณการ ฿
-                    {(action === 'RETURN_FULL'
+                    {posText("ประมาณการ ฿") + " "}{(action === 'RETURN_FULL'
                       ? sale.lines.reduce(
                           (sum, line) =>
                             sum + line.refundablePackQty * line.unitPrice,
@@ -700,16 +738,14 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                         )
                       : estimatedRefund
                     ).toFixed(2)}{' '}
-                    · ยอดจริงคำนวณจาก snapshot และนโยบายคืนสินค้าที่เซิร์ฟเวอร์
-                  </Text>
+                    {posText("· ยอดจริงคำนวณจาก snapshot และนโยบายคืนสินค้าที่เซิร์ฟเวอร์") + " "}</Text>
                   <Text
                     style={[
                       typography.captionStrong,
                       { color: colors.textMuted },
                     ]}
                   >
-                    ประเภทเหตุผล
-                  </Text>
+                    {posText("ประเภทเหตุผล") + " "}</Text>
                   <View style={styles.reasonGrid}>
                     {RETURN_REASONS.map(option => (
                       <Button
@@ -730,15 +766,14 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                           { color: colors.textMuted, marginTop: spacing.md },
                         ]}
                       >
-                        ช่องทางคืนเงิน
-                      </Text>
+                        {posText("ช่องทางคืนเงิน") + " "}</Text>
                       <View style={styles.reasonGrid}>
                         {refundOptions.map(option => (
                           <Button
                             key={option.method}
-                            label={`${paymentMethodLabel(
+                            label={posText("{v0} · ฿{v1}", { v0: paymentMethodLabel(
                               option.method,
-                            )} · ฿${option.available.toFixed(2)}`}
+                            ), v1: option.available.toFixed(2) })}
                             variant={
                               preferredRefundMethod === option.method
                                 ? 'primary'
@@ -757,7 +792,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
               <TextInput
                 value={reason}
                 onChangeText={setReason}
-                placeholder="เหตุผล"
+                placeholder={posText("เหตุผล")}
                 placeholderTextColor={colors.textSoft}
                 style={[
                   styles.input,
@@ -767,14 +802,14 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
               <Text
                 style={[typography.captionStrong, { color: colors.textMuted }]}
               >
-                ผู้อนุมัติ {action === 'VOID' ? '(บังคับ)' : '(เมื่อกฎกำหนด)'}
+                {posText("ผู้อนุมัติ") + " "}{action === 'VOID' ? posText("(บังคับ)") : posText("(เมื่อกฎกำหนด)")}
               </Text>
               <View style={{ gap: spacing.sm }}>
                 {approvers.map(approver => (
                   <Button
                     key={approver.id}
                     label={`${approver.name ?? approver.id}${
-                      approver.hasPin ? '' : ' · ยังไม่ได้ตั้ง PIN'
+                      approver.hasPin ? '' : posText(" · ยังไม่ได้ตั้ง PIN")
                     }`}
                     variant={
                       approverId === approver.id ? 'primary' : 'secondary'
@@ -788,7 +823,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
               <TextInput
                 value={approverPin}
                 onChangeText={setApproverPin}
-                placeholder="PIN ผู้อนุมัติ"
+                placeholder={posText("PIN ผู้อนุมัติ")}
                 placeholderTextColor={colors.textSoft}
                 keyboardType="number-pad"
                 secureTextEntry
@@ -800,10 +835,10 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
               <Button
                 label={
                   submitting
-                    ? 'กำลังบันทึก…'
+                    ? posText("กำลังบันทึก…")
                     : action === 'EXCHANGE'
-                    ? 'รับคืนและเปิดบิลใหม่'
-                    : 'ยืนยัน'
+                    ? posText("รับคืนและเปิดบิลใหม่")
+                    : posText("ยืนยัน")
                 }
                 variant={action === 'VOID' ? 'danger' : 'primary'}
                 fullWidth
@@ -811,7 +846,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
                 onPress={submit}
               />
               <Button
-                label="ยกเลิก"
+                label={posText("ยกเลิก")}
                 variant="secondary"
                 fullWidth
                 onPress={close}

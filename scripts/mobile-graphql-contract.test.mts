@@ -428,7 +428,7 @@ test("the merged HTTP schema still builds with the mobile and POS operations ins
   }
 });
 
-test("all 97 mobile/POS input arguments are typed", () => {
+test("all 98 mobile/POS input arguments are typed", () => {
   const operations = moduleOperations();
   const inputOperations = operations
     .map((operation) => ({
@@ -439,8 +439,8 @@ test("all 97 mobile/POS input arguments are typed", () => {
 
   assert.equal(
     inputOperations.length,
-    97,
-    "the mobile/POS surface must keep all 97 input-bearing operations",
+    98,
+    "the mobile/POS surface must keep all 98 input-bearing operations",
   );
   assert.deepEqual(
     inputOperations
@@ -451,11 +451,11 @@ test("all 97 mobile/POS input arguments are typed", () => {
   );
 });
 
-test("all 144 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
+test("all 146 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
   const operations = moduleOperations();
   assert.equal(
     operations.length,
-    144,
+    146,
     "the complete mobile/POS output surface must stay in the contract",
   );
   const jsonRoots = operations
@@ -1054,7 +1054,7 @@ test("RN Board Game covers floor, time alerts, members, bill groups, library loa
   );
   assert.match(
     boardGame,
-    /`แจ้งเตือนเวลา \$\{pending\.length\} โต๊ะ`[\s\S]{0,300}text: 'ดูผังโต๊ะ'/,
+    /posText\("แจ้งเตือนเวลา \{v0\} โต๊ะ", \{ v0: pending\.length \}\)[\s\S]{0,300}text: posText\("ดูผังโต๊ะ"\)/,
     "the combined time alert must summarize all affected tables and return to the floor",
   );
   assert.match(
@@ -1295,7 +1295,7 @@ test("mobile inventory idempotency is transactional, tenant-scoped, and rejects 
 test("RN expense and petty-cash forms send the evidence required by the shared service", () => {
   assert.match(
     mobileOperationsScreen,
-    /placeholder="เลขที่ใบเสร็จ \/ หลักฐาน"/,
+    /placeholder=\{posText\("เลขที่ใบเสร็จ \/ หลักฐาน"\)\}/,
   );
   assert.match(mobileOperationsScreen, /receiptRef:\s*evidenceRef\.trim\(\)/);
   assert.match(mobileOperationsScreen, /evidenceRef: evidenceRef\.trim\(\)/);

@@ -13,6 +13,9 @@
 - Signature verification: `X-Line-Signature` header, verified with the shop's `channel_secret` via
   `verifyLineSignature()` (`lib/bms/crypto.ts`). Requests failing verification get `401`.
 - Rate limit: 120 req/min per tenant (`rateLimit()`), returns `429` with `retry-after` when exceeded.
+- The signed request body is read with a 1 MiB streaming limit (`413` if exceeded, including
+  chunked requests); malformed UTF-8/JSON returns `400`. LINE media downloads stop at 10 MiB
+  even when the media response omits `Content-Length`.
 - If the channel isn't configured/active for a tenant, the webhook still returns `200 ok` (skipped)
   so LINE doesn't retry-storm an unconfigured shop.
 

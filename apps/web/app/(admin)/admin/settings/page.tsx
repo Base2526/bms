@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Input, Button, Space, Tag, Switch, message, Alert, Typography, Divider, Form, Steps, Table, Select, Tabs, Collapse } from "antd";
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -22,6 +24,7 @@ const Q = gql`
       channel active status status_detail
       last_error_at last_inbound_event_at last_outbound_success_at last_checked_at
     }
+    bmsMessengerProfile { greeting starterPayloads status publishedAt lastError }
     bmsAiConfig { has_key api_key_masked model provider }
     bmsAiUsage { billingMode count limit remaining unlimited planCode planName }
   }
@@ -34,6 +37,11 @@ const M = gql`
 const M_TEST = gql`
   mutation ($channel: String!) {
     bmsTestChannel(channel: $channel) { ok message }
+  }
+`;
+const M_PUBLISH_MESSENGER_PROFILE = gql`
+  mutation ($input: BmsMessengerProfileInput!) {
+    bmsPublishMessengerProfile(input: $input) { greeting starterPayloads status publishedAt lastError }
   }
 `;
 const M_SET_AI_KEY = gql`
@@ -57,28 +65,30 @@ const BADGE_HEX: Record<string, string> = {
 };
 
 function useChannels(t: (key: string, vars?: Record<string, string | number>) => string) {
+  const uiText = useUiText();
   return useMemo(() => [
     { key: "line", label: "LINE Official Account", color: "green",
       hint: t("admin_settings.channel_line_hint"), needs: t("admin_settings.channel_line_needs"), status: "ready" },
-    { key: "tiktok", label: "TikTok", color: "magenta",
-      hint: t("admin_settings.channel_tiktok_hint"), needs: t("admin_settings.channel_tiktok_needs"), status: "ready" },
+    { key: "tiktok", label: t("admin_settings.channel_tiktok_label"), color: "magenta",
+      hint: t("admin_settings.channel_tiktok_hint"), needs: t("admin_settings.channel_tiktok_needs"), status: "inbound-only" },
     { key: "facebook", label: "Facebook Messenger", color: "blue",
       hint: t("admin_settings.channel_facebook_hint"), needs: t("admin_settings.channel_facebook_needs"), status: "ready" },
     { key: "instagram", label: "Instagram DM", color: "purple",
       hint: t("admin_settings.channel_instagram_hint"), needs: t("admin_settings.channel_instagram_needs"), status: "ready" },
-    { key: "web", label: "Website Live Chat", color: "geekblue",
+    { key: "web", label: uiText("admin_ui.en_website_live_chat_ca8de"), color: "geekblue",
       hint: t("admin_settings.channel_web_hint"), needs: t("admin_settings.channel_web_needs"), status: "no-token" },
     { key: "shopee", label: "Shopee (beta)", color: "orange",
       hint: t("admin_settings.channel_shopee_hint"), needs: t("admin_settings.channel_shopee_needs"), status: "beta" },
     { key: "lazada", label: "Lazada (beta)", color: "purple",
       hint: t("admin_settings.channel_lazada_hint"), needs: t("admin_settings.channel_lazada_needs"), status: "beta" },
-  ], [t]);
+  ], [uiText, t]);
 }
 
 function useStatusMeta(t: (key: string) => string): Record<string, { color: string; text: string }> {
   return useMemo(() => ({
     ready: { color: "green", text: t("admin_settings.status_ready") },
     "no-token": { color: "default", text: t("admin_settings.status_no_token") },
+    "inbound-only": { color: "orange", text: t("admin_settings.status_inbound_only") },
     beta: { color: "orange", text: t("admin_settings.status_beta") },
   }), [t]);
 }
@@ -114,12 +124,13 @@ function computeHealthBadge(
   return HEALTH_META[health?.status as string] || HEALTH_META.connected;
 }
 
-function fmtDT(iso: string | null | undefined) {
+function fmtDT(iso: string | null | undefined, uiText: UiTranslator = thaiUiText) {
   if (!iso) return "-";
-  return new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+  return new Date(iso).toLocaleString(uiText.locale, { dateStyle: "medium", timeStyle: "short" });
 }
 
 export default function Page() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const CHANNELS = useChannels(t);
   const STATUS_META = useStatusMeta(t);
@@ -173,7 +184,14 @@ export default function Page() {
           <Title level={2} style={{ margin: 0 }}>{t("admin_settings.page_title")}</Title>
           <Text type="secondary">{t("admin_settings.page_subtitle")}</Text>
         </div>
-        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{t("admin_settings.refresh")}</Button>
+        <Space wrap>
+          {tenant?.slug && (
+            <Button href={`/shop/${encodeURIComponent(tenant.slug)}`} target="_blank" rel="noopener noreferrer" icon={<ShopOutlined />}>
+              {t("admin_settings.open_my_shop")}
+            </Button>
+          )}
+          <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{t("admin_settings.refresh")}</Button>
+        </Space>
       </Space>
 
       {tenant && (
@@ -255,7 +273,7 @@ export default function Page() {
                           <Text style={{ color: BADGE_HEX[badge.color] || undefined, fontWeight: 600, fontSize: 12.5 }}>{badge.text}</Text>
                           {cfg?.has_token && cfg?.active !== false && chHealth?.last_inbound_event_at ? (
                             <Text type="secondary" style={{ fontSize: 11.5 }}>
-                              · {t("admin_settings.last_inbound_event", { time: fmtDT(chHealth.last_inbound_event_at) })}
+                              · {t("admin_settings.last_inbound_event", { time: fmtDT(chHealth.last_inbound_event_at, uiText) })}
                             </Text>
                           ) : null}
                         </Space>
@@ -269,6 +287,7 @@ export default function Page() {
                           tenantId={tenant?.id}
                           origin={origin}
                           focused={focused}
+                          messengerProfile={ch.key === "facebook" ? data?.bmsMessengerProfile : null}
                           onSaved={refetch}
                         />
                       ),
@@ -305,7 +324,8 @@ export default function Page() {
 
 // เนื้อหาฟอร์มของช่องทางเดียว — เดิมเป็นทั้ง <Card> (มี title/extra ของตัวเอง) ตอนนี้เหลือแค่ body
 // เพราะหัวแถว (dot/ชื่อ/สถานะ) ย้ายไปเรนเดอร์ที่ parent เป็น label ของ Collapse.Panel แทนแล้ว
-function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, onSaved }: any) {
+function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, messengerProfile, onSaved }: any) {
+  const uiText = useUiText();
   const { t } = useI18n();
   const [form] = Form.useForm();
   const accessTokenInputRef = useRef<any>(null);
@@ -388,7 +408,7 @@ function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, o
           description={
             <>
               {badge.action}
-              {health?.last_error_at && <div>{t("admin_settings.last_seen_prefix", { time: fmtDT(health.last_error_at) })}</div>}
+              {health?.last_error_at && <div>{t("admin_settings.last_seen_prefix", { time: fmtDT(health.last_error_at, uiText) })}</div>}
             </>
           }
         />
@@ -441,6 +461,12 @@ function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, o
         </Space>
       </Form>
 
+      {ch.key === "facebook" && <MessengerProfileSettings
+        profile={messengerProfile}
+        ready={Boolean(cfg?.has_token && cfg?.active)}
+        onSaved={onSaved}
+      />}
+
       <Divider style={{ margin: "16px 0 0" }} />
       <Text type="secondary" style={{ fontSize: 12 }}>
         {t("admin_settings.encrypted_note")}
@@ -448,15 +474,67 @@ function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, o
       {cfg?.has_token && (
         <div style={{ marginTop: 4 }}>
           <Text type="secondary" style={{ fontSize: 12, display: "block" }}>
-            {t("admin_settings.last_inbound_event", { time: fmtDT(health?.last_inbound_event_at) })}
+            {t("admin_settings.last_inbound_event", { time: fmtDT(health?.last_inbound_event_at, uiText) })}
           </Text>
           <Text type="secondary" style={{ fontSize: 12, display: "block" }}>
-            {t("admin_settings.last_outbound_success", { time: fmtDT(health?.last_outbound_success_at) })}
+            {t("admin_settings.last_outbound_success", { time: fmtDT(health?.last_outbound_success_at, uiText) })}
           </Text>
         </div>
       )}
     </div>
   );
+}
+
+const MESSENGER_STARTERS = [
+  { value: "BMS_CHAT_PRICE", label: "ขอทราบราคา" },
+  { value: "BMS_CHAT_DETAILS", label: "ขอรายละเอียดสินค้าและบริการ" },
+  { value: "BMS_CHAT_INTERESTED", label: "สนใจซื้อ" },
+] as const;
+
+function MessengerProfileSettings({ profile, ready, onSaved }: any) {
+  const uiText = useUiText();
+  const { t } = useI18n();
+  const [form] = Form.useForm();
+  const [publish, { loading }] = useMutation(M_PUBLISH_MESSENGER_PROFILE, {
+    onCompleted: () => { message.success(t("admin_settings.messenger_profile_publish_success")); onSaved(); },
+    onError: (error) => message.error(error?.message || t("admin_settings.messenger_profile_publish_failed")),
+  });
+  useEffect(() => {
+    form.setFieldsValue({
+      greeting: profile?.greeting ?? "สวัสดีค่ะ สนใจสินค้าหรือบริการด้านไหน เลือกหัวข้อด้านล่างได้เลยค่ะ",
+      starterPayloads: profile?.starterPayloads ?? MESSENGER_STARTERS.map((item) => item.value),
+    });
+  }, [form, profile?.greeting, JSON.stringify(profile?.starterPayloads)]);
+
+  const submit = async () => {
+    const values = await form.validateFields();
+    await publish({ variables: { input: values } });
+  };
+
+  return <>
+    <Divider />
+    <Space direction="vertical" size={4} style={{ width: "100%", marginBottom: 12 }}>
+      <Text strong><MessageOutlined /> {t("admin_settings.messenger_profile_title")}</Text>
+      <Text type="secondary">{t("admin_settings.messenger_profile_help")}</Text>
+      {profile?.status && <Space wrap>
+        <Tag color={profile.status === "PUBLISHED" ? "green" : profile.status === "FAILED" ? "red" : "gold"}>{profile.status}</Tag>
+        {profile.publishedAt && <Text type="secondary">{fmtDT(profile.publishedAt, uiText)}</Text>}
+      </Space>}
+    </Space>
+    {profile?.lastError && <Alert closable type="warning" showIcon message={profile.lastError} style={{ marginBottom: 12 }} />}
+    <Form form={form} layout="vertical">
+      <Form.Item name="greeting" label={t("admin_settings.messenger_profile_greeting")} rules={[{ required: true }, { max: 160 }]}>
+        <Input.TextArea rows={3} maxLength={160} showCount />
+      </Form.Item>
+      <Form.Item name="starterPayloads" label={t("admin_settings.messenger_profile_starters")} rules={[{ required: true, type: "array", min: 1 }]}>
+        <Select mode="multiple" maxCount={4} options={MESSENGER_STARTERS.map((item) => ({ ...item }))} />
+      </Form.Item>
+      {!ready && <Alert closable type="info" showIcon message={t("admin_settings.messenger_profile_requires_channel")} style={{ marginBottom: 12 }} />}
+      <Button type="primary" icon={<MessageOutlined />} loading={loading} disabled={!ready} onClick={submit}>
+        {t("admin_settings.messenger_profile_publish")}
+      </Button>
+    </Form>
+  </>;
 }
 
 function AiCard({ aiConfig, aiUsage, onSaved }: any) {
@@ -553,7 +631,7 @@ function AiCard({ aiConfig, aiUsage, onSaved }: any) {
             onChange={(provider) => {
               form.setFieldValue(
                 "model",
-                provider === "deepseek" ? "deepseek-v4-flash" : "claude-haiku-4-5-20251001"
+                provider === "deepseek" ? "deepseek-flash" : "claude-haiku-4-5-20251001"
               );
             }}
           />

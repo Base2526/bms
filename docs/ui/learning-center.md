@@ -1,14 +1,15 @@
 # Public learning center
 
 The public entry point is `/learn`, linked from the public header (including the mobile menu),
-footer and existing `/admin/manual`. `/learn/board-game` and `/learn/restaurant` provide ordered
+footer and existing `/admin/manual`. `/learn/board-game`, `/learn/restaurant` and the pilot
+`/learn/building-materials` provide ordered
 learning paths. Shared articles have a single canonical `/learn/guides/[slug]` URL; `?track=` only
 preserves previous/next navigation. Unknown tracks/articles render a not-found page.
 
 ## Content and maintenance
 
-`apps/web/lib/learning/catalog.ts` is an explicitly authored, bilingual public catalogue: 44 unique
-articles, reused in the 40-lesson board-game path and 20-lesson restaurant path. Every article has
+`apps/web/lib/learning/catalog.ts` is an explicitly authored, bilingual public catalogue: 89 unique
+articles, reused in the board-game, restaurant and building-materials paths. Every article has
 audience, menu, prerequisites, steps, success check and relevant limitations. It does not expose
 internal documentation, assistant tool metadata, permissions catalogues or tenant data. Content is
 reviewed against board-game-cafe.md, the restaurant manuals, pos.md, the in-app manual, desktop
@@ -54,7 +55,7 @@ without hiding lesson content. Desktop keeps the sticky section sidebar; phones 
 a native collapsed section menu after the introduction, operable without JavaScript. Previous/next,
 reading progress, print, copy-link and related lessons remain available with compact controls.
 
-At widths up to 850px the shared header is one 61px row with the brand and a 44px menu control.
+At widths up to 1100px the shared header is one 61px row with the brand and a 44px menu control.
 The native disclosure opens an overlaid navigation panel containing guide links, language and the
 session-aware shop action. It supports keyboard activation, Escape with focus return, outside-click
 dismissal and closes after navigation or switching to desktop. Guide links also work without JS.
@@ -77,21 +78,49 @@ searchable guidance, step-by-step paths and a printable checklist, adapted to ac
 
 ## Narrated workflow overviews
 
-The retail, board-game, restaurant, pharmacy and specialist inventory paths include bilingual
+The retail, board-game, restaurant, pharmacy, building-materials pilot and specialist inventory paths include bilingual
 workflow diagrams with separate customer and owner AI examples. Owner narration covers operational
 analysis and reports, with data completeness and human confirmation boundaries. Board-game analytics
 exports are XLSX; the general report examples show XLSX/CSV/PDF. Pharmacy clinical decisions remain
 with a licensed pharmacist.
 
-Thai narration ships as 64 recorded MP3 cues using the same pinned `thai_som` voice as the Restaurant
-guide; English uses browser speech synthesis when available. The active diagram node follows each
-cue's completion. Previous/next, restart and speed changes stop the current cue. Playing the final
+Thai business narration ships as 61 recorded MP3 cues, including 12 newly recorded building-materials cues, using the same pinned `thai_som` voice as the Restaurant
+guide; English uses browser speech synthesis when available. The generated-audio directory carries
+the FastThaiG2P license alongside provenance. The active diagram node follows each
+cue's completion. Pause keeps the current position for resume; previous/next, restart and speed
+changes stop the current cue. Playing the final
 cue replays that cue rather than resetting the guide. Generation instructions are in `scripts/README.md`.
 
 The shared full-screen viewer is a native modal dialog with keyboard focus containment, Escape and
 focus return, scrollable narration, zoom/pan and optional cue following. Background page scrolling
 is suspended during narration in the dialog. Phones retain a scrollable transcript below the diagram.
 These public examples do not query shop data or execute AI tools.
+
+The building-materials path includes nine dedicated lessons on packs, separately counted paint,
+serials, sourced specs, prefix-22 weighed goods, quotations, credit, procurement/delivery,
+customer channels and a pilot rehearsal. It reuses relevant shared lessons. New articles show their
+2026-11-19 review date; unchanged shared articles retain their earlier review date. The guide labels its
+pilot state on the home card, hero and workflow. It states that quotations do not reserve stock;
+conversion rechecks availability. Roll cutting, multi-trip delivery, accounts payable and
+VAT-exclusive B2B pricing across channels are not presented as live workflows. The public guide
+is linked from the shorter in-app `/admin/manual/building-materials` page. Audio clips were
+generated from the new flow text, while the existing tracks' MP3 files remain unchanged.
+
+The `/learn/twenty-baht-shop` pilot guide is a separate public, bilingual specialist page. It
+walks through one branch, distinct SKUs at the same 20-baht price, CSV/XLSX preview, a separate
+opening stock count, PO receipt, register sale, partial return, shift reconciliation and outage
+recovery. Its fictional 30/20/10 opening quantities become 28/25/9 after a five-unit soap receipt,
+one 95-baht sale and a 20-baht soap return. It is `noindex` until real-shop pilot evidence exists.
+The five Thai flow captions have locally hosted MP3s with checksum provenance; English uses device
+speech. Neither a public visit nor playback performs a business mutation. Hardware, accountant
+tax review and production migration state are separate go-live gates.
+
+The factory pilot flow narrates its 15 bilingual captions. Thai first uses complete, locally hosted
+Gemini 3.8 Flash TTS recordings when its `factoryThaiAudio.json` manifest is populated; until then,
+and for English, it uses the browser's speech engine when available. Playback advances after each
+spoken cue ends, and selecting a step or changing speed stops the current cue. The site does not
+send guide text or shop data to a TTS provider at runtime. The factory recordings are built with
+`scripts/generate-factory-guide-tts.mts` after connecting an AI Studio API key.
 
 ## Verification commands
 

@@ -160,10 +160,12 @@ const CHILD_OF_AGGREGATE = [
   "bms_shipment_tracking_events", "bms_stock_count_items", "bms_stock_transfer_items",
   "bms_stock_transfer_item_lots",
   "bms_support_events", "bms_order_discounts", "bms_order_extra_lines",
+  "bms_order_open_items", "bms_pos_return_open_items", // Order/return aggregate publishes after commit.
   "bms_order_item_stock_consumption", "bms_stock_movements",
   "bms_board_game_reservation_deposit_applications", "bms_board_game_pass_renewal_runs",
   "bms_delivery_order_lines", "bms_delivery_order_modifiers", "bms_delivery_order_events",
   "bms_delivery_handoffs", "bms_delivery_settlement_lines",
+  "bms_factory_bom_items", // Immutable child of a versioned factory BOM.
 ];
 
 /** ร่องรอย/ตัวชี้วัดของระบบ ไม่ใช่สถานะธุรกิจที่จอไหนเฝ้าดูอยู่ */
@@ -171,7 +173,8 @@ const OPS_TELEMETRY = [
   "bms_package_events", // Platform package pilot refreshes on demand; no operational subscriber.
   "bms_ai_turn_evidence", "bms_ai_tool_evidence", // QA snapshots refresh on inspection, never business authority.
   "bms_ai_provider_health", "bms_ai_provider_health_log", "bms_ai_usage_monthly",
-  "bms_audit_log", "bms_channel_health_log", "bms_channel_inbound_jobs", "bms_failure_incidents",
+  "bms_audit_log", "bms_security_events", // Append-only evidence is read on demand; no realtime audience.
+  "bms_channel_health_log", "bms_channel_inbound_jobs", "bms_failure_incidents",
   "bms_fake_eval_cases", "bms_fake_eval_results", "bms_fake_eval_runs", "bms_job_runs",
   "bms_mail_log", "bms_onboarding_seed_runs", "bms_support_bundles",
   "bms_ai_credit_ledger", "bms_ai_quality_reviews", "bms_ai_synonym_candidates",
@@ -208,6 +211,7 @@ const CONFIGURATION = [
   "bms_pharmacy_guidance_templates", "bms_pharmacy_protocols", "bms_product_categories", "bms_product_images",
   "bms_product_modifier_groups", "bms_product_modifiers", "bms_product_packs",
   "bms_branch_prices", // Shared catalog price configuration, resolved on scan and revalidated at settlement.
+  "bms_branch_price_windows", // Scheduled catalog price configuration; reads select the active window and sales revalidate at settlement.
   "bms_product_price_tiers", "bms_product_promotions", "bms_product_recipes",
   "bms_product_recipe_subrecipes", // Immutable recipe definition; Stock Models reads on open and refetches after save.
   "bms_operating_cost_reviews", // Human report classification; monthly view reads on open and refetches after each decision, no live money mutation.
@@ -232,6 +236,17 @@ const CONFIGURATION = [
 
 /** Operational state whose owning surface performs bounded polling plus post-write refresh. */
 const POLLED_OPERATIONAL_SURFACE = [
+  // Fish intake page refreshes its bounded recent list after confirmed writes;
+  // live/opening stock itself uses the canonical inventory movement path.
+  "bms_fish_intakes", "bms_fish_intake_lines",
+  // Fish owner view loads bounded evidence on open and refreshes after each confirmed count/plan/link.
+  // These sidecars never move stock or money; canonical order/stock paths emit their own events.
+  "bms_fish_storage_counts", "bms_fish_storage_count_lines",
+  "bms_fish_delivery_plans", "bms_fish_delivery_plan_lines", "bms_fish_delivery_plan_orders",
+  // 10.115: queue board polls media with its queue; admin editor refreshes after publishing.
+  "bms_queue_board_media",
+  // 10.111: the till strip and the call screen poll the device-token API every few seconds.
+  "bms_pickup_queue",
   // H evidence refreshes on demand; HOLD/RELEASE explicitly enqueue inventory.changed in their tenant tx.
   "bms_operation_quality_cases", "bms_operation_lot_holds", "bms_operation_quality_decisions", "bms_operation_quality_events",
   // Release G: explicit/refetch-on-write readiness; canonical task inbox polls. Receipt stock uses purchase events.
@@ -242,6 +257,9 @@ const POLLED_OPERATIONAL_SURFACE = [
   "bms_operation_policies", "bms_operation_notices", "bms_operation_escalations",
   "bms_operation_rosters", "bms_operation_handovers", "bms_operation_team_events", "bms_operation_team_notices", "bms_operation_daily_reviews",
   "bms_operation_production", "bms_operation_production_inputs", "bms_operation_production_events", "bms_operation_production_waste",
+  // Factory settings/demand/machines refresh on open and after writes. A QC hold also emits
+  // the existing inventory.changed event in the posting transaction.
+  "bms_factory_boms", "bms_factory_demands", "bms_factory_machines", "bms_factory_qc_policies",
   // Release F is polled on view/refetch; actionable work reuses canonical checklist notifications.
   "bms_operation_standards", "bms_operation_learning", "bms_operation_issues", "bms_operation_issue_sources", "bms_operation_weekly_reviews", "bms_operation_improvements", "bms_operation_improvement_events",
   "bms_ai_limit_notices", // Personal admin bell: 30-second/focus/mutation refresh; no shop-wide broadcast of recipients.
@@ -270,11 +288,25 @@ const ARCHIVED_FINANCIAL_EVIDENCE = ["bms_tax_document_actions", "bms_tax_period
   "bms_menu_profit_allocations", // Confirmed report evidence; explicit refresh and stale fingerprint checks.
   "bms_cost_allocations", // Append-only management allocation; explicit report refresh, stale preview/version checks, no live money change.
 ];
+
+/**
+ * Operator-owned bank-reconciliation workflow. The page reads with cache-and-network on open,
+ * exposes a manual reload, and refetches after every mutation. These rows are financial evidence,
+ * not POS/accounting authorities, and deliberately have no cross-device realtime subscriber.
+ */
+const BANK_RECONCILIATION_EVIDENCE = [
+  "bms_bank_accounts",
+  "bms_bank_statement_imports",
+  "bms_bank_statement_entries",
+  "bms_bank_reconciliation_links",
+  "bms_bank_reconciliation_periods",
+];
 const CLASSIFIED = new Map<string, string>();
 for (const table of ["bms_branch_requisitions", "bms_branch_requisition_items", "bms_branch_requisition_events", "bms_branch_requisition_transfers", "bms_branch_requisition_purchases"]) {
   CLASSIFIED.set(table, "Requisition planning uses explicit/post-write refresh and optimistic versions; stock transfers retain their existing events. No realtime subscriber in this release.");
 }
 for (const [reason, tables] of [
+  ["bank-reconciliation evidence; cache-and-network on open plus manual/post-write refresh", BANK_RECONCILIATION_EVIDENCE],
   ["immutable financial archive; explicit read and post-write refresh", ARCHIVED_FINANCIAL_EVIDENCE],
   ["child of an aggregate that already emits", CHILD_OF_AGGREGATE],
   ["ops/telemetry, not a mobile-visible business state", OPS_TELEMETRY],
@@ -283,9 +315,18 @@ for (const [reason, tables] of [
 ] as const) {
   for (const table of tables) CLASSIFIED.set(table, reason);
 }
+CLASSIFIED.set("bms_delivery_dispute_evidence",
+  "private dispute evidence; Finance reads on open and refetches after upload; no POS realtime audience");
 
 /** การลบทั้ง tenant ไม่มี subscriber เหลืออยู่ และ outbox ของ tenant ถูก cascade ทิ้ง */
 const OPERATION_EXEMPTIONS = new Map<string, string>([
+  ["bms_sales_quotations:INSERT", "quote drafts are staff-only evidence; the admin list refreshes after a command"],
+  ["bms_sales_quotations:UPDATE", "quote transitions are staff-only and the admin detail/list refresh after a command"],
+  ["bms_product_technical_specs:INSERT", "spec drafts are staff-only; the admin page refreshes after staging"],
+  ["bms_product_technical_specs:UPDATE", "spec publication is staff-confirmed; the admin page refreshes after approval"],
+  ["bms_weighted_kg_prices:INSERT", "staff-published rate revisions are read on register scan; the admin page refreshes after publication"],
+  ["bms_weighted_kg_prices:UPDATE", "retiring the prior rate is part of one staff-confirmed publication; the admin page refreshes after publication"],
+  ["bms_sales_quotation_lines:INSERT", "immutable quote evidence is read with the header; no stock or urgent cross-device action"],
   ["bms_messages:UPDATE", "outbound delivery metadata; conversation invalidation is emitted after delivery"],
   ["bms_orders:DELETE", "platform tenant teardown"],
   ["bms_payments:DELETE", "reservation fixture cleanup and platform tenant teardown"],
@@ -346,9 +387,11 @@ test("operation exemptions stay explicit, exercised, and uncovered", () => {
 });
 
 test("message delivery metadata keeps its explicit conversation invalidation", () => {
+  const finalizer = INBOX.slice(INBOX.indexOf("async function finalizeInboxOutbound"),
+    INBOX.indexOf("export async function sendStaffMessage"));
   assert.match(
-    INBOX,
-    /UPDATE bms_messages SET meta[\s\S]{0,500}publishInboxChanged\(tenantId, row\.conversation_id, "CONVERSATION_CHANGED"\)/,
+    finalizer,
+    /UPDATE bms_messages SET meta[\s\S]*await client\.query\("COMMIT"\)[\s\S]*publishInboxChanged\(tenantId, conversationId, "MESSAGES_CHANGED", source, messageId\)/,
   );
 });
 
@@ -362,6 +405,16 @@ test("tax request email coverage is backed by authoritative polling and post-act
   assert.match(panel, /message\.success\([\s\S]*?await load\(\)/);
   assert.match(service, /FROM bms_tax_request_emails e WHERE e\.tenant_id=r\.tenant_id AND e\.request_id=r\.id/);
   assert.match(service, /ORDER BY e\.created_at DESC,e\.id DESC LIMIT 1/);
+});
+
+test("bank reconciliation coverage is backed by open/manual/post-write refresh", () => {
+  const page = read("apps/web/app/(admin)/admin/bank-reconciliation/page.tsx");
+  assert.match(page, /fetchPolicy: "cache-and-network"/);
+  assert.match(page, /const refresh = async \(\) => \{[\s\S]*boot\.refetch\(\)[\s\S]*entries\.refetch\(\)/);
+  assert.match(page, /<Button icon=\{<ReloadOutlined \/>\} onClick=\{\(\) => void refresh\(\)\} \/>/);
+  for (const table of BANK_RECONCILIATION_EVIDENCE) {
+    assert.equal(CLASSIFIED.get(table), "bank-reconciliation evidence; cache-and-network on open plus manual/post-write refresh");
+  }
 });
 
 test("a table that gained a trigger is removed from the exclusion lists", () => {

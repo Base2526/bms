@@ -20,6 +20,6 @@ test("operational attention is cashier-frame only, throttled, and carries no ren
   );
   assert.match(main, /backgroundThrottling: false/);
   assert.match(main, /mainWindow\.flashFrame\(true\)/);
-  assert.match(main, /body: "มีงานออร์เดอร์รอดำเนินการ"/);
+  assert.match(main, /body: posText\("มีงานออร์เดอร์รอดำเนินการ"\)/);
   assert.doesNotMatch(main, /new Notification\(\{[\s\S]{0,300}(customer|provider|orderId)/i);
 });

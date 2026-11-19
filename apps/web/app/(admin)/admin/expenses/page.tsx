@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Col, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Statistic, Switch, Table, Tag, message } from "antd";
@@ -8,6 +10,7 @@ import { useState } from "react";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
+import { operatorMessage } from "@/lib/operatorMessage";
 
 const Q_BOOT = gql`query ExpenseBoot { bmsExpenseEstablishments { locationId code name branchCode isHeadOffice } bmsExpenseSuppliers { id name taxId branchCode address entityType } }`;
 const Q_LIST = gql`query ExpenseDocuments($input:BmsExpenseDocumentListInput!,$from:String!,$to:String!,$locationId:ID){
@@ -23,6 +26,7 @@ const whtTypes = ["RENT","SERVICE","PROFESSIONAL","TRANSPORT","ADVERTISING","OTH
 const baht = (n:number) => Number(n ?? 0).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2});
 
 export default function ExpensesPage(){
+  const uiText = useUiText();
   const { t } = useI18n();
   const { can, loading: permLoading } = useBmsPermissions();
   const allowed = can("expense.view"), canManage = can("expense.manage"), canReport = can("report.view");
@@ -59,14 +63,14 @@ export default function ExpensesPage(){
   return <div>
     <AdminPageHeader title={t("admin_expenses.page_title")}>
       <DatePicker picker="month" allowClear={false} value={month} onChange={v=>v&&setMonth(v.startOf("month"))}/>
-      <Select allowClear style={{width:230}} placeholder={t("admin_expenses.all_branches")} value={locationId} onChange={setLocationId} options={establishments.map((e:any)=>({value:e.locationId,label:`${e.isHeadOffice?"HQ":e.branchCode} · ${e.name}`}))}/>
+      <Select allowClear style={{width:230}} placeholder={t("admin_expenses.all_branches")} value={locationId} onChange={setLocationId} options={establishments.map((e:any)=>({value:e.locationId,label:`${e.isHeadOffice?uiText("admin_ui.en_hq_2c06b"):e.branchCode} · ${e.name}`}))}/>
       <Button icon={<ReloadOutlined/>} onClick={()=>void docs.refetch()}/>
       {canReport&&<Button icon={<FileExcelOutlined/>} loading={generating} onClick={()=>void exportInputVat()}>{t("admin_expenses.export_input_vat")}</Button>}
       {canReport&&<Button target="_blank" rel="noopener noreferrer" href={`/api/bms/reports/tax-print?${new URLSearchParams({reportType:"VAT_PURCHASE",from,to,...(locationId?{locationId}:{})})}`}>{t("admin_expenses.print_report")}</Button>}
       {canManage&&<Button type="primary" icon={<PlusOutlined/>} onClick={()=>{setCreateKey(crypto.randomUUID());setOpen(true);}}>{t("admin_expenses.add")}</Button>}
     </AdminPageHeader>
     <Alert closable showIcon type="info" style={{marginBottom:16}} message={t("admin_expenses.intro")}/>
-    {docs.error&&<Alert closable showIcon type="error" style={{marginBottom:16}} message={t("admin_expenses.load_error")} description={docs.error.message}/>}
+    {docs.error&&<Alert closable showIcon type="error" style={{marginBottom:16}} message={t("admin_expenses.load_error")} description={operatorMessage(docs.error,t)}/>}
     <Row gutter={[16,16]} style={{marginBottom:16}}>
       <Col xs={12} md={6}><Card><Statistic title={t("admin_expenses.expense_base")} value={total?.expenseBase??0} precision={2} suffix="฿"/></Card></Col>
       <Col xs={12} md={6}><Card><Statistic title={t("admin_expenses.vat_purchase")} value={total?.vatPurchase??0} precision={2} suffix="฿"/></Card></Col>

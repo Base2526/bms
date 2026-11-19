@@ -10,6 +10,7 @@
 
 import { useEffect } from "react";
 import { addLog } from "@/lib/log/log";
+import { useUiText } from "@/lib/useUiText";
 
 export default function GlobalPageError({
   error,
@@ -18,6 +19,7 @@ export default function GlobalPageError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const uiText = useUiText();
   useEffect(() => {
     void addLog("error", "ui", `render error: ${error.message}`, {
       action: "ui.render_error",
@@ -32,10 +34,10 @@ export default function GlobalPageError({
 
   return (
     <div style={{ padding: 32, fontFamily: "inherit" }}>
-      <h2 style={{ marginBottom: 8 }}>หน้านี้ทำงานผิดพลาด</h2>
+      <h2 style={{ marginBottom: 8 }}>{uiText("admin_ui.page_error_title")}</h2>
       <p style={{ marginBottom: 16, color: "#666" }}>
-        ระบบบันทึกข้อผิดพลาดไว้แล้ว{error.digest ? ` (รหัสอ้างอิง ${error.digest})` : ""} — ลองใหม่อีกครั้ง
-        ถ้ายังไม่หายให้แจ้งทีมงานพร้อมรหัสอ้างอิงนี้
+        {uiText("admin_ui.page_error_description")}
+        {error.digest ? ` (${uiText("admin_ui.page_error_reference", { reference: error.digest })})` : ""}
       </p>
       <button
         onClick={reset}
@@ -48,7 +50,7 @@ export default function GlobalPageError({
           cursor: "pointer",
         }}
       >
-        ลองใหม่
+        {uiText("admin_ui.page_error_retry")}
       </button>
     </div>
   );

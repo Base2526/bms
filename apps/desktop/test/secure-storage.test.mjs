@@ -140,6 +140,25 @@ test("the saved pairing survives relaunch/app-version changes without reissuing 
   assert.equal(nextLaunch.token, savedToken);
 });
 
+test("a setup frame lost during the disk write cannot replace the saved credential", async () => {
+  let stored = savedPairing, current = true;
+  const writing = deferred(), release = deferred();
+  const paths = [];
+  const writer = createPairingWriter("fixture/pairing.json", () => "new-encrypted", {
+    writeFile: async () => { writing.resolve(); await release.promise; },
+    rename: async () => { stored = 'replaced'; },
+    rm: async file => { paths.push(file); },
+  });
+  const pending = writer.write({serverUrl:'https://new.example',token:'FAKE'}, () => current);
+  const result = pending.then(() => 'saved', () => 'cancelled');
+  await writing.promise;
+  current = false;
+  release.resolve();
+  assert.equal(await result, 'cancelled');
+  assert.equal(stored, savedPairing);
+  assert.deepEqual(paths, ['fixture/pairing.json.tmp']);
+});
+
 test("only ENOENT means unpaired; unreadable files are recoverable failures", async () => {
   assert.equal(await readSavedPairing("pairing.json", () => null, async () => { throw { code: "ENOENT" }; }), null);
   await assert.rejects(readSavedPairing("pairing.json", () => null, async () => { throw { code: "EACCES" }; }), PairingRestoreError);

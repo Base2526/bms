@@ -1,5 +1,6 @@
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { insertAuditInTx } from "./audit";
 import { assertReadinessAllowsSaveOfActiveProduct, getProductReadinessInTx } from "./productConfiguration";
 import { resolveKitchenStationForProductInTx } from "./kitchenStations";
 
@@ -112,6 +113,15 @@ export async function upsertProductStockPolicy(
       [tenantId, input.productSku]
     );
     if (!product.rowCount) throw new Error("ไม่พบสินค้านี้ในร้าน");
+    const publishedRate = await client.query<{size:string}>(
+      `SELECT size FROM bms_weighted_kg_prices WHERE tenant_id=$1 AND product_sku=$2 AND is_current`,
+      [tenantId,input.productSku]
+    );
+    if (publishedRate.rowCount && (stockPolicy !== "WEIGHTED" || baseUnit !== "GRAM"
+      || !scaleItemCode || publishedRate.rows.some((row) => row.size !== scaleSize)
+      || scaleItemCode !== current?.scaleItemCode)) {
+      throw new Error("WEIGHTED_KG_POLICY_LOCKED_UNTIL_RATE_WITHDRAWN");
+    }
     if (stockPolicy === "BUNDLE" && !product.rows[0].is_bundle) {
       throw new Error("ต้องกำหนดส่วนประกอบของชุดก่อน (หน้า Stock models → ส่วนประกอบของชุด)");
     }
@@ -197,6 +207,12 @@ export async function upsertProductStockPolicy(
       const readiness = await getProductReadinessInTx(client, tenantId, input.productSku);
       assertReadinessAllowsSaveOfActiveProduct(readiness);
     }
+    await insertAuditInTx(client, {
+      tenantId, actor: editorId ?? "system", actorKind: editorId ? "STAFF" : "SYSTEM",
+      actorUserId: editorId ?? null, action: "product.stock_policy_upsert",
+      target: input.productSku, targetKind: "PRODUCT", source: "STOCK_POLICY_SERVICE",
+      meta: { stockPolicy },
+    });
     await client.query("COMMIT");
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}

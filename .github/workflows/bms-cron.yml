@@ -24,12 +24,14 @@ on:
   schedule:
     # ทุก 15 นาที: งานที่ค้างไว้นานแล้วลูกค้าเห็นผลทันที
     - cron: "*/15 * * * *"
+    # ทุกต้นชั่วโมง: รายงานสรุปยอดมีชั่วโมงส่งให้แต่ละร้านเลือกเอง
+    - cron: "0 * * * *"
     # ทุกวัน 20:00 UTC (~03:00 ตามเวลาไทย): งานกวาดข้อมูล/สรุป
     - cron: "0 20 * * *"
   workflow_dispatch:
     inputs:
       group:
-        description: "กลุ่มที่จะยิง (frequent | daily | all)"
+        description: "กลุ่มที่จะยิง (frequent | hourly | daily | all)"
         required: false
         default: "all"
 
@@ -108,6 +110,33 @@ jobs:
                -X POST "$BASE_URL${{ matrix.job.path }}" \
                -H "x-cron-secret: $CRON_SECRET"
 
+  hourly:
+    if: >-
+      (vars.BMS_CRON_RUNNER == 'github' && github.event.schedule == '0 * * * *') ||
+      (vars.BMS_CRON_RUNNER != 'docker' && github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.group == 'all' || github.event.inputs.group == 'hourly'))
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          - name: report-digest
+            path: /api/bms/reports/send-digest
+    steps:
+      - name: POST ${{ matrix.job.name }}
+        env:
+          BASE_URL: ${{ secrets.BMS_APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.BMS_CRON_SECRET }}
+        run: |
+          if [ -z "$BASE_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::error::Missing BMS_APP_BASE_URL / BMS_CRON_SECRET"
+            exit 1
+          fi
+          curl --silent --show-error --fail-with-body \
+               --max-time 300 --retry 2 --retry-delay 15 \
+               -X POST "$BASE_URL${{ matrix.job.path }}" \
+               -H "x-cron-secret: $CRON_SECRET"
+
   daily:
     if: >-
       (vars.BMS_CRON_RUNNER == 'github' && github.event.schedule == '0 20 * * *') ||
@@ -125,8 +154,6 @@ jobs:
             path: /api/bms/channels/check-health
           - name: ai-health
             path: /api/bms/ai/check-health
-          - name: report-digest
-            path: /api/bms/reports/send-digest
           - name: inventory-intelligence-maintenance
             path: /api/bms/inventory-intelligence/maintain
           - name: ai-answer-evidence-retention

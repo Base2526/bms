@@ -131,7 +131,10 @@ the product's existing conversation-retention policy.
 Human reviewers record `PASS`, `FAIL`, or `UNCLEAR`, a bounded category, and an optional note.
 Irrelevant samples can be marked `DISMISSED` and remain available through the status filter.
 Review metadata is audited as `ai_quality.review` or `ai_quality.dismiss`; raw message text is not
-copied into the audit log.
+copied into the audit log. The case update and actor audit commit in the same tenant transaction;
+an audit failure rolls the verdict or dismissal back. The raw reviewer note also stays out of audit.
+The response case is loaded through the same tenant transaction before commit, so a failed case
+read cannot make a committed review appear to have failed and invite a misleading retry.
 
 ## Access control
 

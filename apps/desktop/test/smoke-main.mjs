@@ -1,12 +1,16 @@
 import electronMain from "electron/main";
+import { createServer } from "node:http";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+import assert from "node:assert/strict";
+import locale from "../renderer/locale.cjs";
+import { desktopMenuTemplate, localizeNativeMenu } from "../src/zoom-policy.mjs";
 import { platformClientLabel, platformSecurityNote } from "../src/secure-storage.mjs";
 import { PairingRestoreError } from "../src/pairing-store.mjs";
 
-const { app, BrowserWindow, ipcMain } = electronMain;
+const { app, BrowserWindow, ipcMain, Menu } = electronMain;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outputDir = path.join(__dirname, "../dist-smoke");
@@ -15,6 +19,16 @@ const compactScreenshotPath = path.join(outputDir, "setup-compact.png");
 const startupScreenshotPath = path.join(outputDir, "startup-error.png");
 
 async function run() {
+  const menuItems = menu => menu.items.flatMap(item => [item, ...(item.submenu ? menuItems(item.submenu) : [])]);
+  for (const language of ["en", "th"]) {
+    locale.applyAppLanguage(language);
+    const menu = localizeNativeMenu(Menu.buildFromTemplate(desktopMenuTemplate(process.platform, false, { language })));
+    Menu.setApplicationMenu(menu);
+    const copy = menuItems(menu).find(item => item.role === "copy");
+    assert.equal(copy?.label, language === "en" ? "Copy" : "คัดลอก");
+    assert.equal(menu.items.find(item => item.id === "view")?.label, language === "en" ? "View" : "มุมมอง");
+  }
+  console.log("smoke: native menu roles follow TH/EN");
   const { version } = JSON.parse(await readFile(path.join(__dirname, "../package.json"), "utf8"));
   // Use the host's labels, but keep pairing/storage stubbed: never read a real device token.
   ipcMain.handle("smoke:app-info", () => ({
@@ -237,6 +251,7 @@ async function run() {
     try {
       vm.runInNewContext(`${reopenSource};reopenMainWindow();`, {
         app, mainWindow:oldCashier, activePairing:{},
+        pendingRefreshRequest:null, startupNavigation:Promise.resolve(), mainLoadRecovery:Promise.resolve(),
         createMainWindow:()=>{reopened=new BrowserWindow({show:false});return reopened;},
         startPosNavigation:()=>{opened++;},
       });
@@ -262,7 +277,7 @@ async function run() {
         handle: (name, handler) => { registered.push(name); ipcMain.handle(name, handler); },
         on: () => {},
       },
-      isPairedPosFrame: () => true,
+      isPairedCashierFrame: () => true,
       removePairing: async () => { removed = true; unpairContext.activePairing = null; return { ok: true }; },
       showSetup: async target => {
         const outcome = { removed, title: target.webContents.getTitle() };
@@ -284,6 +299,33 @@ async function run() {
       if (unpairContext.pendingUnpair) clearTimeout(unpairContext.pendingUnpair.timer);
       for (const name of registered) ipcMain.removeHandler(name);
       if (!pairedWindow.isDestroyed()) pairedWindow.destroy();
+    }
+    // Chromium can finish an HTTP error document without emitting did-fail-load. Check the
+    // native webRequest fields that the cashier recovery handler uses for this case.
+    const failedPageServer = createServer((_request, response) => {
+      response.writeHead(503, { "content-type": "text/html" });
+      response.end("<html><body></body></html>");
+    });
+    await new Promise(resolve => failedPageServer.listen(0, "127.0.0.1", resolve));
+    try {
+      const failedUrl = `http://127.0.0.1:${failedPageServer.address().port}/pos/app`;
+      const completed = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("HTTP 503 main-frame event missing")), 5_000);
+        window.webContents.session.webRequest.onCompleted({ urls: ["<all_urls>"] }, details => {
+          if (details.url !== failedUrl || details.resourceType !== "mainFrame") return;
+          clearTimeout(timer);
+          resolve(details);
+        });
+      });
+      await window.loadURL(failedUrl).catch(() => {});
+      const details = await completed;
+      if (details.statusCode !== 503 || details.webContentsId !== window.webContents.id) {
+        throw new Error(`HTTP failure was not attributed to the cashier: ${JSON.stringify(details)}`);
+      }
+      console.log("smoke: HTTP 503 main-frame response is attributable to the cashier");
+    } finally {
+      window.webContents.session.webRequest.onCompleted(null);
+      await new Promise(resolve => failedPageServer.close(resolve));
     }
     console.log(JSON.stringify({ ok: true, platform: process.platform, version, cashierReopened:true, screenshotPath, compactScreenshotPath, startupScreenshotPath, state, compactState, loadingState, localRuntimeState, startupState }));
   } finally {

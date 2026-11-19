@@ -44,6 +44,7 @@ import {
   recordAiProviderAttempt,
   tryConsumeAiQuota,
   type AiUsageContext,
+  type AiProviderUsage,
 } from "../aiUsage";
 import { pharmacyAiModelOverride, pharmacyAiProviderOverride, MAX_AI_VALIDATION_RETRIES } from "./config";
 import { recordPharmacyEvent } from "./events";
@@ -429,6 +430,7 @@ async function callWithValidation<T>(
   let providerCalls = 0;
   let pricedProviderCalls = 0;
   let hasAnyMeteredUsage = false;
+  const providerUsages: AiProviderUsage[] = [];
   let validatedResult: T | null = null;
 
   const usagePayload = () => ({
@@ -444,6 +446,7 @@ async function callWithValidation<T>(
       creds.model,
       creds.provider
     ),
+    providerUsages,
   });
 
   for (let attempt = 0; attempt <= MAX_AI_VALIDATION_RETRIES; attempt++) {
@@ -471,28 +474,26 @@ async function callWithValidation<T>(
           cache_read_input_tokens?: number;
         };
       };
-      if (
-        Number.isFinite(json.usage?.input_tokens) &&
-        Number.isFinite(json.usage?.output_tokens)
-      ) {
+      const count = (value: unknown): number | null =>
+        typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : null;
+      providerUsages.push({
+        provider: creds.provider,
+        model: creds.model,
+        inputTokens: count(json.usage?.input_tokens),
+        outputTokens: count(json.usage?.output_tokens),
+        cacheCreationInputTokens: count(json.usage?.cache_creation_input_tokens),
+        cacheReadInputTokens: count(json.usage?.cache_read_input_tokens),
+      });
+      if (count(json.usage?.input_tokens) !== null && count(json.usage?.output_tokens) !== null) {
         pricedProviderCalls += 1;
       }
-      if (
-        Number.isFinite(json.usage?.input_tokens) ||
-        Number.isFinite(json.usage?.output_tokens)
-      ) {
+      if (count(json.usage?.input_tokens) !== null || count(json.usage?.output_tokens) !== null) {
         hasAnyMeteredUsage = true;
       }
-      inputTokens += Math.max(0, Number(json.usage?.input_tokens ?? 0));
-      outputTokens += Math.max(0, Number(json.usage?.output_tokens ?? 0));
-      cacheCreationInputTokens += Math.max(
-        0,
-        Number(json.usage?.cache_creation_input_tokens ?? 0)
-      );
-      cacheReadInputTokens += Math.max(
-        0,
-        Number(json.usage?.cache_read_input_tokens ?? 0)
-      );
+      inputTokens += count(json.usage?.input_tokens) ?? 0;
+      outputTokens += count(json.usage?.output_tokens) ?? 0;
+      cacheCreationInputTokens += count(json.usage?.cache_creation_input_tokens) ?? 0;
+      cacheReadInputTokens += count(json.usage?.cache_read_input_tokens) ?? 0;
       const responseText = (json.content ?? [])
         .map((block) => (typeof block?.text === "string" ? block.text : ""))
         .join("")

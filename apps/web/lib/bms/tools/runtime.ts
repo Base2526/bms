@@ -21,6 +21,7 @@ import {
   AiUsageAdmissionError,
   hasAiCostRate,
   recordAiProviderAttempt,
+  type AiProviderUsage,
 } from "../aiUsage";
 import { audit } from "../audit";
 import { reportBmsFailure, type BmsFailureCode } from "../failureAlert";
@@ -306,7 +307,8 @@ async function auditToolCall(
     sensitive: Boolean(tool?.sensitive),
     channel: ec.surface === "customer" ? ec.channel ?? null : null,
     customerMode: ec.surface === "customer" ? ec.customerMode ?? "shop_commerce" : null,
-  });
+    conversationId: ec.conversationId ?? null,
+  }, { actorKind: "AI", source: ec.surface === "customer" ? "CUSTOMER_AI" : "STAFF_AI", targetKind: "AI_TOOL" });
 }
 
 async function callProviderMessages(
@@ -365,6 +367,8 @@ function isRetryableProviderError(err: unknown): boolean {
 
 export type ToolLoopOptions = {
   tenantId: string;
+  /** Reject a text-only configured model before the provider call or quota charge. */
+  requiresVision?: boolean;
   /** ส่วนที่ต้อง byte-identical ทุก request ของร้านเดียวกัน — เป็น prefix ที่ถูก cache */
   system: string;
   /**
@@ -500,6 +504,7 @@ async function runToolLoopInternal(
   const creds = await resolveCredentials(opts.tenantId, {
     surface: opts.execCtx.surface,
     feature: opts.execCtx.surface === "staff" ? "staff_assistant" : "customer_tool_loop",
+    requiresVision: opts.requiresVision,
     channel: opts.execCtx.surface === "customer" ? opts.execCtx.channel ?? null : null,
     meta: {
       actor: opts.execCtx.actor,
@@ -571,6 +576,7 @@ async function runToolLoopInternal(
   let hasAnyMeteredUsage = false;
   let allMeteredRatesKnown = true;
   let estimatedCost = 0;
+  const providerUsages: AiProviderUsage[] = [];
   const providerOutcomes: Array<{
     provider: string;
     status: "completed" | "failed";
@@ -590,6 +596,7 @@ async function runToolLoopInternal(
       costMeasured: hasAnyMeteredUsage,
       costRateKnown: hasAnyMeteredUsage ? allMeteredRatesKnown : undefined,
       estimatedCost,
+      providerUsages,
       meta: {
         providers_attempted: attemptedProviders.join(","),
         runtime_fallback_used: runtimeFallbackUsed,
@@ -646,14 +653,16 @@ async function runToolLoopInternal(
       }
       if (
         Number.isFinite(resp?.usage?.input_tokens) &&
+        resp.usage.input_tokens >= 0 &&
         Number.isFinite(resp?.usage?.output_tokens) &&
+        resp.usage.output_tokens >= 0 &&
         hasAiCostRate(activeCreds.model, activeCreds.provider)
       ) {
         pricedProviderCalls += 1;
       }
       if (
-        Number.isFinite(resp?.usage?.input_tokens) ||
-        Number.isFinite(resp?.usage?.output_tokens)
+        (Number.isFinite(resp?.usage?.input_tokens) && resp.usage.input_tokens >= 0) ||
+        (Number.isFinite(resp?.usage?.output_tokens) && resp.usage.output_tokens >= 0)
       ) {
         hasAnyMeteredUsage = true;
         if (!hasAiCostRate(activeCreds.model, activeCreds.provider)) {
@@ -666,6 +675,18 @@ async function runToolLoopInternal(
       );
       cacheReadInputTokens += tokenCount(resp?.usage?.cache_read_input_tokens);
       outputTokens += tokenCount(resp?.usage?.output_tokens);
+      providerUsages.push({
+        provider: activeCreds.provider,
+        model: activeCreds.model,
+        inputTokens: Number.isFinite(resp?.usage?.input_tokens) && resp.usage.input_tokens >= 0
+          ? tokenCount(resp.usage.input_tokens) : null,
+        outputTokens: Number.isFinite(resp?.usage?.output_tokens) && resp.usage.output_tokens >= 0
+          ? tokenCount(resp.usage.output_tokens) : null,
+        cacheCreationInputTokens: Number.isFinite(resp?.usage?.cache_creation_input_tokens) && resp.usage.cache_creation_input_tokens >= 0
+          ? tokenCount(resp.usage.cache_creation_input_tokens) : null,
+        cacheReadInputTokens: Number.isFinite(resp?.usage?.cache_read_input_tokens) && resp.usage.cache_read_input_tokens >= 0
+          ? tokenCount(resp.usage.cache_read_input_tokens) : null,
+      });
       estimatedCost += estimateCachedAiCostUsd(
         {
           inputTokens: tokenCount(resp?.usage?.input_tokens),

@@ -1,5 +1,7 @@
 // apps/web/app/(admin)/admin/posts/[id]/edit/page.tsx
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import PostForm, { PostRecord } from '@/components/post/PostForm';
@@ -50,23 +52,24 @@ const Q_POST = gql`
 `;
 
 export default function Page(){
+  const uiText = useUiText();
   const { id } = useParams<{id:string}>()!;
   const router = useRouter();
 
   const { data, loading, error } = useQuery(Q_POST, { variables: { id } });
 
-  if (loading) return <div>Loading...</div>;
-  if (error)   return <div>Error: {String(error.message)}</div>;
+  if (loading) return <div>{uiText("admin_ui.en_loading_b04ba")}</div>;
+  if (error)   return <div>{uiText("admin_ui.en_error_787aa")} {String(error.message)}</div>;
 
   const post = data?.post;
-  if (!post) return <div>Not found</div>
+  if (!post) return <div>{uiText("admin_ui.en_not_found_475c8")}</div>
 
   return (
     <PostForm
       apiBase="/admin"
       initialData={post!}
       onSaved={()=> router.refresh()}
-      title="Edit Post (Admin)"
+      title={uiText("admin_ui.en_edit_post_admin_51157")}
     />
   );
 }

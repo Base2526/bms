@@ -130,7 +130,9 @@ The catalog also covers store profile (`lib/bms/storeProfile.ts`, migrations `6.
 is a single source: `bms_tenants.name` via `getTenantName()` (the `store_name` column is deprecated — do
 not reintroduce it), and a shop Administrator renames their own tenant name through
 `bmsUpdateMyTenant` (`updateTenantIdentity()` in `platform.ts`, slug validated + unique); `bms_tenants`
-has no revision trigger so the rename is safe, while plan/active stay platform-admin only. Slug is
+has no revision trigger so the rename is safe, while plan/active stay platform-admin only and require
+an explicit GraphQL confirmation. The active-state write and audit commit in one tenant transaction.
+Slug is
 read-only in the Settings UI and is now the stable public-shop handle used by
 `/shop/[tenantSlug]/products/[sku]`; the mutation still accepts it for controlled future changes.
 Also documents (`lib/bms/documents.ts` —
@@ -152,9 +154,11 @@ Generated report exports (`lib/bms/reportEngine.ts`, `lib/bms/documentGenerator.
 shape: date-range validation, report assembly, optional AI executive summary, file persistence, DB row,
 and audit all belong in `generateReport()`, while API layers stay thin. Downloaded files must go through
 the tenant-gated `/api/bms/reports/download/[id]` route, never the bare `/api/files/[id]` path, because
-generated reports may contain revenue/profit/customer data. Current PDF output deliberately uses English
-labels only: `pdfkit`'s built-in fonts do not render Thai glyphs correctly until a Thai-capable TTF is
-embedded, so do not "translate" PDF headings into Thai without adding font embedding in the generator.
+generated reports may contain revenue/profit/customer data. General PDF output embeds the bundled
+OFL Sarabun font for Thai values, but the report builders still supply English labels and have no
+viewer-language parameter. Statutory VAT/stock-ledger reports remain XLSX/CSV-only until their
+preamble, grouped headings and totals have a complete PDF layout. PDF rejects more than 10,000
+rows instead of silently dropping rows.
 Report field completeness is a two-step contract, not one: a summary query (e.g. `getSalesSummary()`,
 `listLowStock()` in `lib/bms/reports.ts`/`products.ts`) can return a field that never reaches any
 output, because each `build*ReportDoc()` function in `documentGenerator.ts` explicitly lists which
@@ -228,11 +232,52 @@ shop-placeholder reads too, not only the approved-body query.
 Guidance approval (`10.47`) must acquire the licence helper's user-row SHARE lock after
 `beginTenantTx`; licence evidence, version-checked update and audit commit together. Never reuse
 the editor's licence hint as approval authority or grant general user-update access to `bms_app`.
+Product Policy draft/submit/review writes likewise require tenant RLS and an audit in the same
+transaction. Review uses the same `10.47` licence-row lock before changing the policy.
+Clinical protocol draft/submit/review/enable writes have the same transaction and audit boundary;
+review holds the licence lock through commit. Licence flag writes use the narrow `10.111` helper,
+which rechecks the transaction tenant and Administrator actor without granting `bms_app` broad
+UPDATE access to `users`. The API requires an explicit confirmation argument.
 Preview uses recorded shop facts; malformed placeholders omit lines, never expose template tokens.
 Built-in drafts are not instructions to start/stop/compensate medicine and never overwrite a shop's
 approved text. Approval remains per tenant, not a platform-wide publication decision.
 
 ## Authentication identity and registration
+
+- Migration `10.131` adds an append-only security-event stream. Successful login and password
+  reset must record evidence before returning success; the legacy session insert and reset update
+  commit with that evidence. Failed anonymous attempts and logout are best-effort so audit storage
+  cannot disclose account existence or prevent sign-out. Never store a raw session token in an
+  event: hash its opaque identifier. Platform drill-down and test-shop deletion use global security
+  events; deletion evidence commits in the deletion transaction. See
+  [audit traceability](architecture/audit-traceability.md) for coverage and rollout.
+- A verified `/shop-signup` creates the new tenant's first user as an active tenant
+  `Administrator`, for both email and social signup. A missing Administrator role aborts
+  provisioning. Never use the Manager permissions as a substitute for shop ownership.
+  Migration `10.121` repairs only a verified email signup owner who is still Manager,
+  has no later user-update audit, and belongs to a shop with no Administrator; it bumps
+  the admin session version and audits the repair in the same transaction. `10.128` is
+  an idempotent retry with the same eligibility rules. The ordered `10.121` file has
+  transaction-local timeouts; the Retail Local runner recognizes only its exact
+  pre-timeout checksums for already-applied installations. Clear a failed transaction
+  before retrying either file.
+- Admin identity refresh applies the current account gates to existing sessions. A switch to
+  `users.pos_only` increments `admin_session_version` in the same tenant transaction and rejects
+  already-open admin sessions; unverified, Subscriber, and inactive-tenant accounts are also denied.
+  Team edits preserve omitted optional phone/avatar fields; an explicit `null` clears them.
+  Avatar changes write a tenant audit row in the account transaction and clean up a new upload if
+  that transaction fails. Profile logs record changed field names, never contact values.
+  Demoting or deleting a tenant Administrator must leave another tenant Administrator; the check
+  serializes concurrent removals and bulk deletion enforces it per tenant.
+  POS PIN changes use the same target-role boundary as Users: staff may change their own PIN,
+  but cannot reset a higher-ranked or platform-admin account. The legacy login mutation also
+  checks email verification before creating a session.
+- Editing a tenant's role permission matrix is Administrator-only. Validate requested permission
+  names against `BMS_PERMISSIONS`; show the exact grant/revoke diff to the human and require
+  `confirmed: true` at GraphQL; lock the tenant and replace the matrix inside `beginTenantTx()`
+  with the actor's `rbac.set` audit before commit. An insert or audit failure must preserve the old
+  matrix, and another tenant's rows must never be touched. Effective permission and role-matrix reads
+  also establish tenant RLS context.
 
 - `apps/web/lib/auth/identity.ts` is the shared normalization/validation source for public login and
   registration. Username and email identity is trim + Unicode NFKC + lowercase; never add a new auth
@@ -270,6 +315,15 @@ approved text. Approval remains per tenant, not a platform-wide publication deci
   cannot turn a new surface on while runtime configuration is incomplete.
 
 ## Public customer checkout (signed link)
+
+The public retail cart is a separate intake before this signed checkout. Browser pack selection
+sends only a code and count; `bms_product_packs` supplies the conversion and price. Its preview calls
+`createOrderInTx()` inside a tenant transaction that is always rolled back; the confirm endpoint
+accepts only the purpose-bound 10-minute quote token, rechecks publication and the server-calculated
+review under a nonce lock, and commits once with an idempotency key. A stale review creates no order.
+The confirmation response supplies the existing signed checkout URL; it never accepts a browser
+total, tenant ID or customer identity as authority. Retail cart remains excluded for restaurant
+tenants. The review shipping fee is provisional until the checkout address recalculation.
 
 A successful customer `create_order`/`reorder` no longer ends in chat prose. The tool stores the
 verified order id on the server-only `ExecCtx.createdOrderId` (`tools/types.ts`), and `pipeline.ts`
@@ -328,6 +382,14 @@ obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or s
 - **A carrier call never runs inside the fulfillment transaction.** `createShipment()` commits the
   local order/stock/movement work and releases its locks first, then books. A network call holding a
   `bms_orders`/`bms_inventory` row lock is the failure mode this design exists to prevent.
+- **Both shipping paths consume the same reserved stock and source lots.** `shipOrder()` and
+  `createShipment()` call `consumeReservedOrderStockInTx()`, which refuses a missing or short
+  inventory row before writing lot allocations and `SHIP` movements. Failure rolls back the order
+  status and parcel row with the stock transition.
+- **One create call attaches at most one parcel to an order.** The locked order is checked for an
+  existing tenant-scoped shipment before stock or parcel writes. Matching retries return that row;
+  changed carrier/tracking/note or legacy duplicate rows are conflicts for staff review. An order
+  already shipped by another workflow may attach its first parcel without moving stock again.
 - **The shipment UUID is the idempotency key.** It is passed as
   `CarrierCreateShipmentRequest.idempotencyKey` and must stay stable across retries; a live adapter
   must forward it through the carrier's own idempotency/reference mechanism so a retry returns the
@@ -356,6 +418,20 @@ obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or s
   `carrier-tracking-sync`. It is ready but unscheduled; recommended cadence is every 15 minutes.
 
 ## POS and tax
+
+- Open-item retail sales (`10.129`) use `bms_order_open_items`, not a fake SKU or
+  `bms_order_extra_lines`. Require cash-only settlement, `pos.open_item.sell`, cashier PIN,
+  and the existing POS idempotency key. The immutable sale label/qty/price/VAT category
+  enter receipts, tax and sale evidence. Returns write `bms_pos_return_open_items` in the
+  same transaction as the refund and never move stock. Missing cost is explicit. No
+  restaurant/board-game/pharmacy, deposit, coupon, points redemption, manual discount or
+  emergency-offline path may accept an open item. `10.130` removes app-role UPDATE/DELETE
+  on sale and return open-item rows; corrections append a return/void instead.
+
+- Back-office payment confirmation needs `payment.confirm` and an explicit `confirmed: true` at
+  GraphQL or REST after the human sees the payment identity, amount and method. The API refuses an
+  omitted or false confirmation before `confirmPayment()`; that service keeps the payment, order
+  and audit changes atomic. Slip analysis remains advisory.
 
 - **Cross-SKU gifts (`10.41`) are real inventory lines.** `BUY_A_GET_B` applies only to direct-stock
   RETAIL_POS variants, with no overlapping/chained product deals. The shared pure basket engine
@@ -488,12 +564,17 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   Electron `safeStorage` (DPAPI on Windows, Secret Service/KWallet on Linux, Keychain on macOS) in a
   `0600` file written atomically, and the web renderer reads it through `window.bmsDesktop` instead
   of `localStorage` (`apps/web/lib/pos/deviceTokenClient.ts`). Every IPC handler re-checks the
-  calling frame: `pair` and `app-info` answer only the local setup page, while `get-device-token`,
-  `get-storage-namespace` and `unpair` answer only a `/pos*` frame on the paired origin. Navigation
-  off that origin is handed to the system browser, `/pos/manual` is the only renderer-created child
-  window, and the main process owns the one `/pos/display` window on a configured non-cashier
+  calling frame: `pair` answers only the local setup page; `app-info` also supports paired POS pages.
+  `get-device-token` and `get-storage-namespace` answer only a `/pos*` frame on the paired origin.
+  Unpair, attention and display controls require the cashier main frame, never a utility or subframe.
+  Navigation off that origin is handed to the system browser. Renderer-created children are limited
+  to `/pos/manual` and `/pos/queue-board`, locked to that utility route including redirects and denied
+  further popups. The main process owns the one `/pos/display` window on a configured non-cashier
   display. That customer window shares the same storage partition only for same-origin
   `BroadcastChannel`, carries no preload/IPC bridge, and never becomes a second register. The
+  shell may own independent `/pos/queue-board` windows on detected external screens, with one
+  read-only audio owner and per-screen local layout. Queue settings and window presentation remain
+  shell concerns; queue state and media still come from the server's device-scoped board API. The
   shell may request generic OS-level attention for a newly observed incoming order, but that IPC is
   cashier-frame-only, throttled and accepts no renderer-supplied notification text or order data;
   the web surface still owns the badge, sound, accept/reject/ready/handoff and pause/resume flow.
@@ -541,7 +622,9 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   unknown CPU architecture requires a choice instead of a guessed download. It never installs,
   restarts, changes server runtime/schema or blocks sales. Pairing/startup probes bound both headers
   and session-body reads to five seconds; HTTP 200 without a device id/code is not a verified
-  pairing. A closed/replaced setup frame cannot finish pairing, and late startup work cannot
+  pairing. Recheck setup-frame/revision validity before committing the encrypted temporary file.
+  If an atomic rename was already submitted when setup closed, its verified credential may remain
+  restorable, but the old request must not navigate a replacement window. Late startup work cannot
   replace a newer window or pairing. Reopen the cashier by its own window identity, not the count
   of all Electron windows (a manual/print window may survive). Serialize pairing reads with writes
   and removal; apply restore results only to the current pairing revision/window, and share a
@@ -550,7 +633,8 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   unloading the register; only the initiating cashier frame may complete that navigation, with a
   bounded fallback for a crashed renderer. A stale local-server probe
   cannot start recovery after unpair; display hotplug cannot reopen a customer window without a
-  cashier window. Direct ESC/POS printing, cash-drawer
+  cashier window. Managed displays retry HTTP 5xx main documents as well as network load failures;
+  subresource failures never restart a working display. Direct ESC/POS printing, cash-drawer
   control and offline
   tender are not in the shell. OS-driver receipt printing is supported: a cashier-main-frame-only
   IPC snapshots the existing server-backed receipt into an isolated, no-preload print window and
@@ -560,7 +644,11 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   keyboard actions and native preflight; a failed health read also disables test printing rather than
   trusting an earlier `canTest`. A queued test still needs cashier confirmation of readable
   paper. Unknown driver status needs a confirmed test and a known fault cannot be overridden by that
-  confirmation. Printer trouble never blocks a sale or settlement. Customer-display first-run detection asks once,
+  confirmation. Kitchen tickets use explicit station routes and a durable pre-submission journal;
+  timeout and authorization checks cover preparation as well as driver submission. A late result
+  cannot submit a cancelled job, and an uncertain submission never retries automatically. Concurrent
+  display configuration writes are excluded across both legacy and combined controls.
+  Printer trouble never blocks a sale or settlement. Customer-display first-run detection asks once,
   preserves explicit off choices, and restores an enabled display on startup/reconnect. See
   [apps/desktop/README.md](../apps/desktop/README.md) and
   [business/pos.md § Desktop POS client](business/pos.md#desktop-pos-client-windows-linux-and-macos).
@@ -630,6 +718,13 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   The actor holds `pos.expense.create`; a distinct approver with `pos.cash.movement` enters a second
   PIN. An advance settles to actual cost, returning change as `IN` or paying the shortfall as `OUT`,
   and an open advance blocks closing the shift.
+- **Drawer cash-out rejects self-approval in the service as well as at REST/GraphQL.**
+  `recordCashMovement()` requires a nonempty, distinct approver id for `OUT` before opening a
+  transaction; the route/resolver still verify that person's PIN and permission on every attempt.
+  `voidPosSale()` also rejects a missing or identical approver before reading a bill; its
+  route/resolver still enforce the second person's PIN and permission on every retry.
+  A cash-movement idempotency key reused with different shift, device, direction, amount, reason,
+  actor or approver returns `INVALID`, never the earlier movement as a false success.
 - **Sole-owner mode (`9.8`) never self-approves drawer cash.** An Administrator holding
   `pos.expense.personal` may record a `DIRECT` expense funded personally, with mandatory evidence.
   It creates no `bms_pos_cash_movements` row and leaves expected cash unchanged. Any later
@@ -751,10 +846,10 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
 - **e-Tax submission (`7.94`) is a separate, gated background queue** — issuing a tax document does
   not submit it to the Revenue Department by itself. `processEtaxQueue()` drives
   `PENDING → BUILT → SIGNED → SENT → ACCEPTED/REJECTED/FAILED` with bounded retry/backoff, gated by
-  `ETAX_ENABLED`/`bms_store_profile.etax_enabled`. `POST /api/bms/jobs/etax` runs it, but — unlike
-  every other cron endpoint — auths with `x-job-token`/`BMS_JOB_TOKEN` (not `x-cron-secret`) and does
-  **not** call `recordJobRun()`, so it has no run history on `/admin/operations-schedule`. Don't copy
-  that inconsistency into a new cron route; treat it as a known gap.
+  `ETAX_ENABLED`/`bms_store_profile.etax_enabled`. `POST /api/bms/jobs/etax` uses the shared
+  `x-cron-secret`/`BMS_CRON_SECRET` guard and `recordJobRun()`; enabled runs appear on
+  `/admin/operations-schedule`. It remains unscheduled and flag-off until a verified signing and
+  submission provider is available. A skipped disabled run writes no job history.
 - **ESC/POS printing (`lib/pos/{escpos,printerClient}.ts`) is unverified against real hardware** —
   written over WebUSB for receipt/barcode/drawer-kick, with the browser print dialog as fallback.
   Treat it as untested per printer model until run against one.
@@ -820,7 +915,12 @@ deployment profile. The operator contract and remaining release gates live in
   writes through the storage driver's stream API, and derives size/SHA-256 on that path. Local
   storage cleans a failed partial write; S3 uses bounded multipart parts and aborts a failed upload.
   The private `files` row and release row commit together, and a validation/pre-commit failure
-  removes the unreferenced object.
+  removes the unreferenced object. Purging an installer is a separate irreversible platform-admin,
+  same-origin, explicitly confirmed action: the release must already be `hidden` and must not be
+  `latest`. Delete the object through the configured storage driver, verify it is absent, mark the
+  file deleted and audit the actor/version/platform/package/size/checksum in one transaction. Keep
+  the release/file rows as a small tombstone; never turn generic `/api/files/[id]` deletion into an
+  alternate release purge path.
 - **Managed Runtime components publish as one signed immutable set, not as installer rows.**
   `/admin/retail-local-runtime-releases` uploads `release.jws.json`, `SHA256SUMS` and the referenced
   `*.artifact` files through the raw Pages API
@@ -1035,8 +1135,12 @@ own dine-in service. Operator detail:
   the board because of a settings change is worse than a ticket on a station being retired. Names
   arriving through the old free-text path (product form, file import, sample data) are promoted into
   master rows in the same transaction; an orphan name cannot be ordered, renamed or given SLA
-  thresholds. Reads use `product.view`, management uses `product.edit`. Per-station printer routing
-  is **not** built.
+  thresholds. Reads use `product.view`, management uses `product.edit`. The Desktop pilot may map
+  these server station ids to explicit OS printer names in workstation-local configuration. It
+  accepts structured ticket fields only, owns no menu/routing rule, and journals one job per server
+  ticket. A timeout/unknown print result is never retried automatically: staff must check the tray
+  and explicitly confirm a retry. The schema's `printer_profile_id` remains unused; there is still no
+  cloud, browser-only or mobile station-printer router.
 - **The kitchen display polls; it is not an event queue.** The register KDS refreshes its
   branch-scoped queue every five seconds while that screen is visible, and `/admin/kitchen` keeps its
   bounded ten-second poll. A failed poll shows stale data and never invents a state transition.
@@ -1083,9 +1187,10 @@ own dine-in service. Operator detail:
   scope; the branch picker reads the same scoped list so the UI cannot offer what the server refuses.
   Rotating another branch's QR invalidates the sticker physically on its table and cuts the guests
   seated at it, which is the widest blast radius on this surface.
-- **Not built, and not to be faked**: per-station printer routing and offline-first dine-in sync.
-  Split/merge and the queue/reservation board are implemented above; delivery-platform support is
-  governed separately by the provider-contract gates below.
+- **Not built, and not to be faked**: offline-first dine-in sync and central printer-profile
+  distribution. Split/merge, the queue/reservation board and the explicitly labelled Desktop-local
+  station-printer pilot are implemented above; delivery-platform support is governed separately by
+  the provider-contract gates below.
 
 ## Board game cafe
 
@@ -1142,6 +1247,12 @@ seat capacity only; never expose table numbers/ids, occupants, sessions or custo
 Both readers share one SQL projection for rates, current seating counts and game highlights;
 the public reader alone retains the directory visibility and optional-tenant predicates.
 Customer tool results must continue to omit internal branch/table/copy identifiers.
+Pass plans and offers are a separate per-row chat publication choice (`10.117`): existing rows
+default to private, and customer reads require active rows plus `publish_to_chat` in the selected
+active branch or tenant-wide scope. An empty published list is `NOT_PUBLISHED`, not proof the shop
+has no plan or offer. Listed terms are not eligibility or a final bill; never expose an internal
+required-product SKU or staff note. A purchased-pass balance comes only from the channel-bound
+customer and a matching ledger, not from the current plan catalog.
 Both restaurant and board-game table detail lists are bounded to 100 groups, with a 101st group
 used to detect truncation. `tableDetailsTruncated=true` must be explained as partial coverage;
 never derive a whole-branch total or an absence claim from the partial list. Unpublished details
@@ -1467,6 +1578,18 @@ it, how its stock is consumed) independently of how many units are on a shelf.
   prior snapshots/buckets stay unknown. Keep post-commit credit-note issuance separate and never
   change the financial refund/stock calculation to make reporting evidence look complete.
 
+- **Bank reconciliation (`10.110`) is an evidence sidecar, not a posting engine.** It is disabled
+  unless both server and public rollout flags are explicitly enabled. Statement files are private,
+  tenant-owned, size/row bounded, formula-free, hash-deduplicated and downloadable only through the
+  dedicated `bank_reconciliation.view` route; the generic sequential file route must fail closed.
+  Imported rows become reviewable only after explicit commit and are immutable thereafter. Candidate
+  matching is deterministic, bounded and propose-only; a reviewer with `bank_reconciliation.review`
+  confirms the exact source fingerprint and amount. Never mutate or infer authority over payment,
+  AR, expense, refund, delivery-settlement, tax, stock or accounting rows. Ignore, void, close and
+  reopen require a reason/confirmation where applicable and audit in the same tenant transaction.
+  Month close rejects unresolved/stale/partial rows and known balance differences. Open Banking
+  remains `NOT_CONFIGURED` until a real provider contract and credentials exist; do not simulate it.
+
 - **Operating-cost review (`10.64`) is not a ledger.** Require report.view + expense.view +
   delivery.settlement.view and unrestricted all-branch access; writes also require expense.manage,
   human confirmation and reason. Source-derived amounts, fingerprints, optimistic versions, exact
@@ -1597,6 +1720,23 @@ expiry is explicit, not safety certification. Details: [production](business/ope
 Disposal revalidates the frozen output unit/policy; detail reads share one serializable snapshot.
 Recipe/output selectors search independently on the server. A denied retry after a lost response
 must release the retry-only UI while keeping the original outcome explicitly unverified.
+
+Factory extension (`10.122`–`10.127`): `bms_factory_qc_policies` may hold a newly posted output
+lot with case/hold/audit/realtime in the production transaction; the assigned QC owner must retain
+quality-view access. Policy edits compare the last-read version, and both edits and output posting
+serialize on the tenant/branch/output QC key so a concurrent enable cannot leave a newly posted
+lot unheld. Disabling the policy does not
+release an existing hold. `bms_factory_boms` are versioned direct-stock conversion definitions;
+`10.127` pins output/component units in the definition and deactivates older unitless BOMs; a
+changed catalog unit blocks new batches until an operator reviews and saves a new version.
+the production row references exactly one legacy recipe or factory BOM, and the frozen snapshot
+remains authoritative. Factory demand is planning evidence, never a reservation or fixed quote;
+conversion reuses `createOrderInTx()` inside the same tenant transaction and succeeds only after
+linked posted output and live customer/usable stock checks. Machine time and rejected/labor/energy
+figures are explicit evidence, not inventory or actual conversion-cost postings. Optional output
+expiry is allowed only when the product policy does not track expiry. Disabled catalog products
+cannot enter a new BOM, demand or production post; existing output lots remain disposable. See
+[factory workflow](business/operation-production.md#factory-extension-for-plastic-twine-and-straws-1012210127).
 
 - `/admin/operations` is an admin-session surface, not a POS/PIN or offline workflow. Both
   reads and mutations require checklist permission plus server-resolved tenant/branch scope.
@@ -1872,6 +2012,28 @@ an operator note, and the audit preserves those per-line facts. Never add damage
 - **Counting and accepting variance are separate jobs.** `inventory.count` may create/edit/cancel a
   draft; `inventory.count.apply` signs the stock change. Transfers use `inventory.transfer`. The REST
   routes derive tenant and actor from the signed admin session and drill-down cookie, never the body.
+- **Fish-dock intake (`10.119`) keeps history separate from stock.** The historical Excel path
+  requires review of ambiguous dates, likely duplicate rows and totals before confirmation, and
+  writes no stock, lot, movement or valuation. Live and opening intake convert kg to integer grams,
+  require weighted/GRAM products with lots and the applicable permission, and commit stock, lot,
+  reviewed line value and audit in one tenant transaction. A blank lot ID generates a distinct lot
+  per receipt line; receipt details are read-only evidence and use the same tenant/branch scope as
+  the list (`purchase.view` for live/history, `inventory.count` for opening). Opening accepts only an empty SKU/size
+  balance. Fish receipt is not a payment or payable posting. The selling catalog price remains
+  a separate two-decimal per-gram amount. Arbitrary per-kg fish rates such as 43.17 THB/kg are
+  not yet exact across order/POS/customer channels; do not describe fish receipt as a complete
+  weighed-fish sales pricing workflow.
+- **Fish-owner evidence (`10.120`) does not replace stock or money authority.** Zone counts lock a
+  fish lot, must sum to its actual grams, and become stale on any later lot update. Delivery plans
+  bind one customer/branch and weighted fish SKU/size to multiple ordinary orders; only an order's
+  shipped/completed status counts as delivered grams. A plan or link does not ship stock, confirm a
+  payment or create AR. The owner read separates pending order payment from credit-sale AR, and
+  labels proportional physical inventory COGS allocation by lot as gross profit rather than actual purchase-lot
+  margin or net profit. All writes are tenant-scoped, branch-authorized and audited in one transaction.
+  The optional profit-after-allocation estimate requires complete all-branch monthly net-profit
+  evidence and the financial read permissions. It distributes reviewed shared costs and valued
+  stock losses using recorded merchandise revenue before order-wide discounts/VAT; missing
+  evidence returns unavailable rather than a made-up zero.
 - **Every decision audit commits with its write.** Create/send/receive/cancel and count
   create/apply/cancel insert one `bms_audit_log` row inside the service transaction. Individual count
   lines are intentionally not audited. A future AI tool must wrap the service in
@@ -1912,6 +2074,43 @@ The rules that follow from it:
   hand-built object. The helper exists because this sequence was copy-pasted into eight routes, and
   each copy was a chance to drop the acting-tenant check that keeps one shop's admin out of another's
   data.
+- Inbox Sales scope applies to GraphQL single-conversation reads, timeline and actions, plus REST
+  list/reply: the caller must be the assigned owner or helper. Each conversation, nested message,
+  note, helper, event and timeline source read applies that owner/helper check in the same SQL
+  statement, so a reassignment between GraphQL field reads does not expose later data. A newly
+  created conversation's auto-assignment locks the still-unassigned row, selects staff under the
+  tenant GUC, and commits assignment with audit; it never overwrites a human assignment.
+  Non-AI inbound conversation/message writes share a tenant transaction, while diagnostic
+  conversation/message/audit share one transaction; failure cannot leave an unread count without
+  a message or diagnostic evidence without its audit. A later assignment failure does not undo
+  or misreport a committed message. Pipeline conversation creation, the AI handoff counter and
+  mention-read updates also use tenant transactions; mention list joins bind their related rows
+  to the same tenant. Self-availability requires `inbox.view` and uses migration `10.118`'s
+  tenant/editor-checked function inside a tenant transaction, without a direct `users` UPDATE grant.
+  Assignment/helper targets must be eligible staff in the same tenant. A user selected automatically
+  for new or reassigned conversations must be available, not POS-only
+  or a platform identity, and must currently have both `inbox.view` and `inbox.reply` (Administrator
+  uses the established super-role rule). Deleting the sole eligible assignee fails and leaves the
+  account and conversations untouched. Team-account create/update/delete audit commits inside the
+  same user transaction; bulk deletion rejects a missing or foreign-tenant id rather than silently
+  deleting a subset. Managers may manage lower-ranked Cashiers, but not protected Pharmacist accounts.
+  Account deletion checks live checklist runs/actions, recurring schedules, rosters, handovers,
+  supervisor policies, escalations, and quality cases before Inbox reassignment. Historical foreign
+  keys may still prevent deletion; return a user-facing reason and keep the transaction unchanged.
+  Public social user lookup excludes tenant staff and platform identities and omits private contact
+  fields; an authenticated user may still read their own profile. Global social search applies the
+  same staff exclusion. Role lists require `user.view`; role user counts use the acting tenant unless
+  the caller is a platform admin outside drill-down.
+  The assignment service locks the conversation, rechecks a
+  Sales owner/helper within the transaction, and commits the owner change, duplicate-helper
+  removal and audit together. Helper add/remove uses the same lock and scope, with its audit in
+  the same transaction. Status/tag writes and unread clearing also recheck the scope after locking;
+  status/tag audit commits with those writes. A note, its validated mentions and audit commit
+  together; notifications are best-effort after commit. AI staff tools pass the same server-derived Sales
+  scope. Store
+  configuration writes (channel credentials, AI key,
+  store profile/identity and branding uploads) require the shop Administrator or a DB-verified
+  platform admin; an admin session by itself is insufficient.
 - **The tenant never comes from the request body.** Accepting it rebuilds the original hole behind a
   login. A _branch_ may come from the body — one shop legitimately has several — because an id
   belonging to another shop matches no row and returns `NOT_FOUND`.
@@ -1926,7 +2125,12 @@ The rules that follow from it:
   `NODE_ENV=production`.
 - **Public by design still means bounded.** `/api/bms/demo-chat` and the web-widget webhook are open
   on purpose, and both carry a `rateLimit()` ceiling. An open endpoint that calls a model is an open
-  invoice.
+  invoice. The web-widget body is capped at 64 KiB while streaming. Signed LINE, Meta,
+  TikTok, Shopee and Lazada webhook bodies are capped at 1 MiB, delivery-platform webhooks
+  at 256 KiB, and Retail Local license evidence at 64 KiB. Limits apply even when
+  `Content-Length` is absent or incorrect; malformed UTF-8/JSON is rejected before any
+  claim, Inbox write or AI call. Signed LINE/Meta event batches are limited to 200 entries
+  before processing. LINE inbound media is capped at 10 MiB while downloading.
 - `onboarding/sample-data` now uses `authorizeAdminRoute("product.edit")` (it previously gated on
   the role read from the database). What it may delete is decided by the `10.26` run ledger
   (`bms_sample_runs`/`bms_sample_records`), never by a `FAKE-`/`SAMPLE-` name prefix.
@@ -2072,8 +2276,36 @@ their provider independently:
   it never throws, and callers must keep it out of the transaction that produced the failure.
   `logConversation()` reports `inbox.message_lost` at its own persistence catch before swallowing
   the error; a caller's `.catch()` cannot observe it. Failure after message insertion (for example,
-  assignment) must not label the saved messages lost. Meta webhook replies also check the boolean
-  from `deliverToChannel()` and report `channel.push_failed` when it is false.
+  assignment) must not label the saved messages lost. Meta webhook replies inspect the tracked
+  delivery result and report `channel.push_failed` when the reply is not confirmed.
+  All staff, follow-up and pharmacy-intake outbound rows commit as `PENDING` before provider I/O;
+  the reply audit (and any coupon-wallet assignment) commits with the staff row. A failed draft or
+  audit cannot reach the provider. Delivery records `SENT`/`FAILED` afterward; a transport timeout
+  remains `PENDING` because the provider might have accepted the request. Inbox retry is
+  server-gated to `FAILED` push messages and atomically claims them as `PENDING` before provider I/O.
+  A failed final status write leaves `PENDING` for human reconciliation, never a retryable `FAILED`.
+  A reclaimed follow-up lease must reuse the committed outbound row for its `(jobId, retryIndex)`;
+  a later scheduled follow-up has a different retry index and may send normally.
+  LINE and Meta AI replies apply the same uncertainty rule. Meta text/image sends that only partly
+  succeed record `PARTIAL` and require manual review before
+  any fresh response, since resending the whole payload would duplicate the accepted part. Meta
+  echo/delivery/read callbacks must preserve `PARTIAL` and must not promote explicit `PENDING` or
+  `FAILED` rows into a delivered state from a broad watermark.
+  Channel-health telemetry is best-effort after provider acceptance: a health DB failure cannot
+  relabel an accepted reply `FAILED` and invite a duplicate resend.
+  Meta messages with attachments, including text captions, enter Inbox for staff review without
+  running the text-only AI pipeline; the model must not guess unseen image/file contents.
+  A Meta job with no confirmed Inbox message is marked for manual review, not SUCCEEDED.
+  TikTok/Shopee/Lazada inbound text and media are staff-only until an outbound send API exists;
+  never run their AI pipeline and commit a business action the customer cannot see or confirm.
+  A LINE media-only or TikTok/Shopee/Lazada inbound webhook may release its event claim only when
+  Inbox persistence failed before AI, business writes, or provider delivery; a retry may then save it.
+  Never release a text turn claim after the AI pipeline starts because its business outcome may
+  already be committed.
+  Staff Inbox uploads are tenant-private and owner-bound. External LINE/Meta fetches use a
+  purpose-bound, tenant/file-scoped signed media URL (30-day expiry); the sender checks the
+  upload proof and file's tenant before using it. Do not turn Inbox uploads into public files or
+  send `/api/files/{id}` to providers: that route needs a staff session.
   Three rules an agent must not get wrong:
   - **Never hook alerting off a tool's audit `outcome`.** `auditAttempt()` in `tools/runtime.ts` looks
     like the perfect choke point, but its `outcome === "error"` merges a genuine thrown exception, a
@@ -2125,6 +2357,8 @@ Analytics dashboard are intentionally not built yet (see `CLAUDE.local.md` § Fo
   max retry exceeded, customer opted out, rule disabled. These six are **unconditionally enforced**,
   not something a rule can opt out of; `bms_followup_rules.stop_conditions` is validated and stored
   only for a future workflow engine and must not be read as a gate today.
+- Schedule only channels in `OUTBOUND_PUSH_CHANNELS`; stop an older job with
+  `channel_no_outbound` before generating AI text when the channel cannot deliver a follow-up.
 - `bms_conversation_intents` uses its own 10-value intent set (`ASK_PRICE`/`PRODUCT_INFORMATION`/…).
   Do not reuse or extend `nlu.ts`'s `Intent` type for this — that type is load-bearing for the live
   chat pipeline's deterministic fallback and has a different shape (`CHECK_STOCK`/`CONFIRM_ORDER`/
@@ -2134,6 +2368,19 @@ Analytics dashboard are intentionally not built yet (see `CLAUDE.local.md` § Fo
   `followup.manage` grant firing a cross-tenant background job (even one whose data it can't read
   back) is a tenancy leak. This is the general rule, not just this feature: a manual trigger over an
   otherwise cross-tenant cron/service function must always be scoped to the caller's tenant.
+- Follow-up rule create/update/delete writes and their audit rows share one tenant transaction;
+  an audit failure rolls the rule change back. Worker reads of rules, conversations, customers,
+  intents and history must bind the tenant from the claimed job, even when a globally unique ID
+  is present. The fleet cron discovers due tenants read-only, then claims each tenant's work under
+  its own GUC with `SKIP LOCKED`. A job outcome, history and audit commit together with a retry-index
+  compare-and-swap guard; a late worker cannot overwrite a later result. A reclaimed send round
+  uses the existing outbound row and its original body. An uncertain/partial provider result ends
+  later automatic rounds for that job and requires human review; so does provider acceptance when
+  its final Inbox status write is unconfirmed. A confirmed delivery failure is
+  failed work, not a sent retry round. Scheduling compares existing jobs against the latest inbound
+  customer message: cron cannot recreate a completed job for the same message, but a new inbound
+  message can start a new round. The worker compares the latest tenant-scoped inbound message
+  timestamp with job creation, so a later AI reply cannot hide the customer's response.
 - AI-drafted follow-up text is generated by a direct `resolveAiCredentials()`/provider call in
   `followups.ts`, the same pattern `generateResponse()` in `ai.ts` already uses for the customer
   stock-reply template — this is a system-initiated text generation, not a model-selected tool call,
@@ -2170,7 +2417,7 @@ reuse `sharedRedisClient` exported from `lib/cache.ts` and namespace your own ke
   its real work in `recordJobRun(jobName, "cron", () => ...)`, not call the underlying function
   directly, or that job has no run history on `/admin/operations-schedule`.
 - **Request metrics** (`apps/web/lib/bms/requestMetrics.ts`, 2026-08) — latency histograms + error
-  counts per GraphQL operation, read by `/admin/system-health`. Deliberately **not** a Postgres table:
+  counts per GraphQL operation and wrapped REST route, read by `/admin/system-health`. Deliberately **not** a Postgres table:
   one row per request would add write load to the very database the page exists to diagnose. Stored as
   fixed-width histogram buckets (not raw samples) so memory is bounded and counters merge across
   instances for free via `HINCRBY` — an in-process `Map` would report per-instance numbers the moment
@@ -2180,8 +2427,9 @@ reuse `sharedRedisClient` exported from `lib/cache.ts` and namespace your own ke
   restart (TTL 4h, no cron cleanup) — this is monitoring data, not a system of record. The one Apollo
   plugin registered for this (`graphql/metricsPlugin.ts`, wired once in `app/api/graphql/route.ts`)
   covers admin UI, AI assistant, and eval traffic — `uploadProcess` multipart requests included, since
-  they route through `server.executeOperation()` — but not REST routes; see § Observability below for
-  what to do when instrumenting one.
+  they route through `server.executeOperation()`. `withRouteErrorLog()` records its static REST
+  route label after the handler returns, counts HTTP 4xx/5xx as errors, and skips `/api/graphql`
+  to avoid double counting Apollo. REST routes without that wrapper are not measured.
 
 Redis auth is opt-in as of 2026-08: set `REDIS_PASSWORD` and the compose redis service starts with
 `requirepass` (leave it unset and nothing changes) — `REDIS_URL` must then carry the credential as
@@ -2246,6 +2494,9 @@ Production migration state, recovery/load proof, and bounded replay remain separ
 
 - Realtime is an invalidation hint. PostgreSQL and the existing service/API reads remain the source
   of truth; event payloads never become a second business-state store.
+- Admin realtime tickets use the refreshed identity on every mint. An acting-tenant cookie is
+  honored only while that identity is still a platform administrator; a demotion must fall back to
+  the user's own tenant, even when the previously signed cookie has not expired.
 - **`apps/ws` and `apps/web` are one deployable unit.** The gateway accepts exactly one connection
   parameter shape (`{ ticket }`); any other shape closes the socket with `4403`, and `graphql-ws`
   treats 4403 as retryable, so an older client reconnects every ≤30s forever while realtime stays
@@ -2405,6 +2656,13 @@ per-screen examples: [architecture/react-native-graphql-client.md](architecture/
 
 ## Observability (`/admin/system-health`)
 
+Operational logging is a separate evidence path: redact metadata and free text before stdout,
+Postgres or alerts; never log GraphQL argument values. Client log submissions must bind actor and
+tenant from live server identity, be bounded, and never trigger a server-failure Slack alert.
+Deleting system logs requires platform authority, explicit confirmation and a same-transaction
+deletion record. Daily AI triage treats log content as untrusted data and sends only redacted,
+bounded fields to the model.
+
 Platform-admin-only page (`requirePlatformAdminPage()` in its own `layout.tsx`, same gate as
 `/admin/env`) that answers "how is the system doing right now" in one place instead of across four.
 It is **read-only** — it must never gain a button that writes, restarts, or mutates anything.
@@ -2424,10 +2682,10 @@ What it does **not** answer yet, so don't assume it does:
 - **Which SQL query is slow.** That needs `pg_stat_statements`, which is preloaded in
   `docker-compose.yml` but requires a Postgres restart plus `CREATE EXTENSION` per database before any
   data exists. Until both are done there is no slow-query card.
-- **REST route latency/errors.** Only GraphQL is instrumented (see the Request metrics item above).
-  Next App Router has no central place to time a route handler, so REST needs per-route wrapping. Pass
-  `rest:/api/bms/...` as the metric name when that happens; the prefix is the namespace, and
-  `recordRequestMetric()` needs no change.
+- **REST route latency/errors outside `withRouteErrorLog()`.** Wrapped REST handlers are now
+  instrumented with a static `rest:METHOD:/api/...` label. Next App Router still has no central
+  handler hook, so routes that do not use the wrapper are absent. Timing ends when the handler
+  returns a `Response`; streamed body transfer and client network time are not included.
 - **CPU/memory of the container.** Deliberately skipped: reading it would mean giving the app access
   to the Docker socket, which is a real privilege escalation surface. That is a decision to take
   explicitly, not a feature to add quietly.
@@ -2439,6 +2697,50 @@ Full history/rationale, including the percentile-math test approach and what sti
 live browser: § System Health + request metrics in [CLAUDE.local.md](../CLAUDE.local.md).
 
 ## i18n coverage (what "bilingual" actually means today)
+
+**Admin audit (2026-11-12, supersedes the historical percentages below):** The shared dictionaries
+contain **113 namespaces / 9,542 string leaves per language**, including **1,454 `admin_ui` keys**.
+The sidebar account menu offers Thai/English on desktop and in the mobile drawer, using the
+existing cookie and router refresh without signing out or clearing forms. Back-office branch/device setup, POS readiness, stock counts/transfers, receivables, commission,
+product packs/labels, pharmacy review chrome, diagnostics, roles, files, logs, posts and scheduler
+chrome now use Thai/English operator copy. Remaining English headings on previously bilingual
+pages were included. `useUiText()` is a facade over the existing `useI18n()`/`getMessage()` dictionary,
+not another translation store. Pass its translator into pure format/label helpers; never freeze
+translated arrays at module initialization. UI dates use the selected locale; Thai Dayjs names are
+registered for Ant Design's per-picker locale. Stored timestamps, tax calculations, workflow
+identifiers and payload values do not change with language. Paired bank/province names select the
+existing English name when available. The shared page-error boundary is bilingual too. The playground stock preview also reads the
+current bounded product connection (`items`/`total`), with a bilingual partial-list notice.
+The follow-up recheck covers comment relative times, loyalty month names, order timeline labels,
+delivery-attempt statuses and pharmacy queue/case status filters; unknown status codes retain their
+original value. UI labels never rewrite stored statuses or clinical evidence.
+The dictionary-content pass also replaces 84 English-only values in the Thai dictionary (actions,
+headings, workflow tabs and diagnostics); key parity alone does not verify a translation's content.
+
+`admin-client-i18n-contract` scans 205 admin/shared UI files and rejects new unreviewed Thai literals
+or English UI labels. Its exact-source exception inventory documents customer-message templates,
+Thai input/parsing examples, CRM values, official printed tax text, brands and protocol identifiers.
+It does not translate data returned by servers, clinical guidance, arbitrary logs, customer text or
+OS dialogs. Runtime-built labels still need targeted review. `i18n-keys-contract` parses both quote
+styles for literal `t()`/`uiText()` calls and checks full recursive dictionary parity plus `admin_ui`
+placeholder parity. A translated shell is not evidence that every possible server error or every
+native hardware dialog has been localized. Keep new operator copy in the shared dictionary.
+
+**POS operator language (2026-11-12):** Mobile and Desktop now select `th`/`en` independently of
+receipt language. Explicit authored copy is paired in `apps/web/i18n/pos-client.json` and translated
+by the pure `posClient.ts` helper (shared with React Native); this extends the shared i18n directory,
+not the dead `lib/i18n.ts`. Web POS wraps the existing `I18nProvider`, persists its cookie and syncs
+with Desktop's origin-checked language IPC. Mobile keeps a separate Keychain preference, while the
+shell keeps a validated `userData/language.json` and its dependency-free `renderer/locale.cjs`.
+Switch in place: never reload/remount the register, clear cashier/cart/tender/pending keys, or touch
+pairing to change language. Do not translate arbitrary server/user data, clinical guidance or receipt
+payloads with the operator catalog. A failed preference write must not block selling. The
+`pos-client-i18n-contract` checks explicit call coverage, placeholders and payment outcome parity;
+Mobile and Desktop have their own persistence tests, including rapid selection and stale-save failures.
+Customer and queue displays follow the register through a same-origin language-only BroadcastChannel
+(handshake plus changes); do not grant these utility windows new credential IPC. Board-game controls,
+queue layout/audio labels and camera/printer validation use the same operator catalog. Queue speech
+and official tax-document copy retain their own language policy. Native hardware/OS dialogs are separate QA.
 
 There are **four i18n mechanisms in this codebase; treat the first three as real, the fourth as dead**:
 
@@ -2479,7 +2781,7 @@ There are **four i18n mechanisms in this codebase; treat the first three as real
   `useTranslation(` outside its own definition returns zero hits anywhere in the app. Do not extend
   this; if you're touching it, delete it instead.
 
-**Real coverage, as of 2026-08**: every public marketing/legal page, every auth form (login/register/
+**Historical coverage, as of 2026-08 (superseded by the admin audit above)**: every public marketing/legal page, every auth form (login/register/
 forgot/reset/verify-email — verify-email is now fully migrated, not partial), `/checkout`, the public
 product storefront (`/shop/**`), and a long tail of previously-Thai-only public utility pages —
 `/shop-signup`, `/settings` (the reachable Profile & Account/Security/My Posts/My Bookmarks panels;
@@ -2537,9 +2839,9 @@ converted, on purpose). Separately, `components/AppLayout.tsx` has **zero import
 repo** — it is dead code carrying its own untranslated PDPA bar and app-download section; the live
 footer/consent bar is `components/footer/AppFooter.tsx`, which is already bilingual via a page-local
 `COPY.th/en`. Delete `AppLayout.tsx` rather than translating it. Generated report files
-(`lib/bms/documentGenerator.ts`) have no language parameter and are English-label-only regardless of
-the viewer's language (deliberate for PDF, due to `pdfkit`'s font gap; not deliberate for XLSX/CSV,
-just not done).
+(`lib/bms/documentGenerator.ts`) have no language parameter and retain English labels regardless
+of the viewer's language; PDF now embeds Sarabun for Thai data values. Translating report labels
+still requires bilingual report builders across PDF, XLSX and CSV.
 
 If you're asked to "make X bilingual," check which of the mechanisms above (if any) the file already
 uses before adding translated strings — most _admin_ files use none, and adding real 2-language
@@ -2692,3 +2994,11 @@ bucket. It is not complete if actual costs are unknown. Changed evidence invalid
 All sources are read in one tenant transaction. Bundle publication composes shared product, recipe
 and readiness services in one transaction, requires product.edit + product.delete + report.view,
 and never creates opening valuation or modifies existing SKUs.
+
+10.116: a future branch BASE/PACK price window supersedes the current branch price only in its
+half-open interval. It never changes pack quantity or historical sale snapshots. Overlap is denied
+by the database; cancellation requires product.edit, branch scope, explicit confirmation and an
+audit in the same transaction. Until the migration is installed, `branchPrice()` reads existing
+branch overrides only; scheduled windows remain unavailable. Apply the migration before publishing
+or cancelling a window. Catalog price ranges, branch product cards, stock checks, POS scans and
+settlement must all show the active window price for the same branch and instant.

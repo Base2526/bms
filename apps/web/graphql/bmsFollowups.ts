@@ -67,8 +67,7 @@ export const bmsFollowupsResolvers = {
     async bmsUpsertFollowupRule(_p: unknown, args: { input: FollowupRuleInput }, ctx: any) {
       await requirePermission(ctx, "followup.manage");
       try {
-        const rule = await upsertFollowupRule(getTenantId(ctx), args.input);
-        await audit(ctx, "followup.rule_upsert", rule.id, { intent: rule.intent, goal: rule.messageGoal, enabled: rule.enabled });
+        const rule = await upsertFollowupRule(getTenantId(ctx), args.input, String(requireAuth(ctx).author_id));
         return rule;
       } catch (err: any) {
         throw new GraphQLError(err?.message || "บันทึกไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
@@ -76,8 +75,7 @@ export const bmsFollowupsResolvers = {
     },
     async bmsDeleteFollowupRule(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "followup.manage");
-      const ok = await deleteFollowupRule(getTenantId(ctx), args.id);
-      if (ok) await audit(ctx, "followup.rule_delete", args.id, {});
+      const ok = await deleteFollowupRule(getTenantId(ctx), args.id, String(requireAuth(ctx).author_id));
       return ok;
     },
     // manual trigger for testing — same idea as bmsSendTestReportNow

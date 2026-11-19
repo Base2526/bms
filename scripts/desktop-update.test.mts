@@ -8,7 +8,7 @@ const release = (changes: Partial<RetailLocalReleaseAsset> = {}): RetailLocalRel
   channel: "pilot", status: "latest", access_level: "public", is_latest: true,
   file_id: 42, original_name: "FAKE.dmg", size_bytes: 10, sha256: "fake",
   min_os: "macOS 13+", release_notes: "Release notes", created_by: "private-admin-id",
-  created_at: "", updated_at: "", ...changes,
+  created_at: "", updated_at: "", purged_at: null, ...changes,
 });
 const client = { platform: "darwin", arch: "arm64", version: "0.2.14-pilot.2" };
 

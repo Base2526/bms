@@ -426,6 +426,91 @@ export async function listArLedger(
   }));
 }
 
+/** Staff-only, point-in-time account statement. All figures come from the ledger in one SQL snapshot. */
+export async function getArStatement(tenantId: string, accountId: string): Promise<{
+  accountId: string; customerName: string | null; asOf: string;
+  ledgerBalance: number; cachedBalance: number; grossOutstanding: number;
+  creditBalance: number; overdueAmount: number; balanceMismatch: boolean;
+  hasMoreInvoices: boolean; hasMoreEntries: boolean;
+  invoices: Array<{id:string;orderId:string;docNo:string|null;issuedAt:string;dueAt:string;
+    originalAmount:number;payments:number;credits:number;balance:number;overdue:boolean}>;
+  entries: Array<{id:string;invoiceId:string;kind:string;amount:number;createdAt:string;
+    receiptId:string|null;orderId:string|null}>;
+} | null> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(accountId)) return null;
+  const res = await query<any>(
+    `WITH invoice_balances AS (
+       SELECT i.id, i.order_id, i.issued_at, i.due_at, i.amount,
+              i.credited_amount, i.settled_amount,
+              COALESCE(SUM(l.amount), 0) AS balance,
+              COALESCE(SUM(-l.amount) FILTER (WHERE l.kind = 'PAYMENT'), 0) AS payments,
+              COALESCE(SUM(-l.amount) FILTER (WHERE l.kind IN ('CREDIT_NOTE','WRITE_OFF','ADJUST')), 0) AS credits,
+              COALESCE(SUM(l.amount) FILTER (WHERE l.kind = 'CHARGE'), 0) AS charges
+         FROM bms_ar_invoices i
+         LEFT JOIN bms_ar_ledger l ON l.tenant_id = i.tenant_id AND l.invoice_id = i.id
+        WHERE i.tenant_id = $1 AND i.account_id = $2
+        GROUP BY i.id
+     ), account_rollup AS (
+       SELECT COALESCE(SUM(balance), 0) AS balance,
+              COALESCE(SUM(GREATEST(balance, 0)), 0) AS gross_outstanding,
+              COALESCE(SUM(GREATEST(-balance, 0)), 0) AS credit_balance,
+              COALESCE(SUM(GREATEST(balance, 0)) FILTER (WHERE due_at < now()), 0) AS overdue_amount,
+              COUNT(*) FILTER (WHERE charges <> amount OR amount - credited_amount - settled_amount <> balance)::int AS mismatch_count
+         FROM invoice_balances
+     )
+     SELECT a.id AS account_id, c.name AS customer_name, now() AS as_of,
+            a.balance AS cached_balance,
+            COALESCE((SELECT SUM(l.amount) FROM bms_ar_ledger l
+                       WHERE l.tenant_id = a.tenant_id AND l.account_id = a.id), 0) AS ledger_balance,
+            r.balance AS invoice_balance, r.gross_outstanding, r.credit_balance,
+            r.overdue_amount, r.mismatch_count,
+            (SELECT COALESCE(jsonb_agg(to_jsonb(p) ORDER BY p.due_at, p.id), '[]'::jsonb)
+               FROM (SELECT ib.id, ib.order_id, ib.issued_at, ib.due_at,
+                            ib.amount, ib.payments, ib.credits, ib.balance,
+                            ib.due_at < now() AND ib.balance > 0 AS overdue,
+                            (SELECT d.doc_no FROM bms_tax_documents d
+                              WHERE d.tenant_id = a.tenant_id AND d.order_id = ib.order_id
+                                AND d.doc_type IN ('FULL','ABBREVIATED') AND d.cancelled_at IS NULL
+                              ORDER BY (d.doc_type = 'FULL') DESC, d.issued_at DESC LIMIT 1) AS doc_no
+                       FROM invoice_balances ib WHERE ib.balance <> 0
+                       ORDER BY ib.due_at, ib.id LIMIT 201) p) AS invoices,
+            (SELECT COALESCE(jsonb_agg(to_jsonb(e) ORDER BY e.created_at DESC, e.id DESC), '[]'::jsonb)
+               FROM (SELECT l.id::text AS id, l.invoice_id, l.kind, l.amount, l.created_at,
+                            l.receipt_id, l.order_id
+                       FROM bms_ar_ledger l
+                      WHERE l.tenant_id = a.tenant_id AND l.account_id = a.id
+                      ORDER BY l.created_at DESC, l.id DESC LIMIT 201) e) AS entries
+       FROM bms_ar_accounts a
+       JOIN bms_customers c ON c.tenant_id = a.tenant_id AND c.id = a.customer_id
+       CROSS JOIN account_rollup r
+      WHERE a.tenant_id = $1 AND a.id = $2`,
+    [tenantId, accountId]
+  );
+  const row = res.rows[0];
+  if (!row) return null;
+  const invoiceRows = (row.invoices ?? []) as any[];
+  const entryRows = (row.entries ?? []) as any[];
+  const ledgerBalance = Number(row.ledger_balance);
+  return {
+    accountId: row.account_id, customerName: row.customer_name ?? null, asOf: toISO(row.as_of),
+    ledgerBalance, cachedBalance: Number(row.cached_balance),
+    grossOutstanding: Number(row.gross_outstanding), creditBalance: Number(row.credit_balance),
+    overdueAmount: Number(row.overdue_amount),
+    balanceMismatch: Number(row.cached_balance) !== ledgerBalance
+      || Number(row.invoice_balance) !== ledgerBalance || Number(row.mismatch_count) > 0,
+    hasMoreInvoices: invoiceRows.length > 200, hasMoreEntries: entryRows.length > 200,
+    invoices: invoiceRows.slice(0,200).map((i) => ({
+      id:i.id,orderId:i.order_id,docNo:i.doc_no??null,issuedAt:toISO(i.issued_at),dueAt:toISO(i.due_at),
+      originalAmount:Number(i.amount),payments:Number(i.payments),credits:Number(i.credits),
+      balance:Number(i.balance),overdue:i.overdue===true,
+    })),
+    entries: entryRows.slice(0,200).map((e) => ({
+      id:String(e.id),invoiceId:e.invoice_id,kind:e.kind,amount:Number(e.amount),
+      createdAt:toISO(e.created_at),receiptId:e.receipt_id??null,orderId:e.order_id??null,
+    })),
+  };
+}
+
 export type ArAging = {
   /** ยังไม่ถึงกำหนด */
   current: number;

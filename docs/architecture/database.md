@@ -2,6 +2,20 @@
 
 ## POS device credential issuance (existing tables)
 
+### Open retail sale lines (`10.129`)
+
+`bms_order_open_items` stores tenant/order FK, immutable sale label, integer qty,
+unit/line amount and `V`/`N` VAT category. It has no SKU or inventory link.
+`bms_pos_return_open_items` stores tenant/return/open-line FK, returned qty and
+allocated refund. Both tables have tenant RLS and `bms_app` SELECT/INSERT and
+sequence grants. Migration `10.130` revokes UPDATE/DELETE from `bms_app` so a
+return or void adds evidence without rewriting the sale or an earlier return.
+The Manager role gains `pos.open_item.sell`; existing permissions and cashier PIN
+still apply. Negative open-line IDs in POS return and financial-snapshot APIs are
+an adapter namespace for these positive DB IDs; they are never inventory IDs.
+Apply this migration before the application because ordinary POS receipts, history,
+tax and sales evidence query these tables unconditionally.
+
 `issuePosDeviceToken()` updates `bms_pos_devices.token_hash/token_issued_at` and inserts the
 `pos.device.token.issue` row in `bms_audit_log` on the same client inside `beginTenantTx()`.
 The authenticated Admin supplies editor/audit attribution; device lookup is constrained by both
@@ -85,6 +99,27 @@ bms_app grants; only batch state fields are mutable. Dependencies: 10.91–10.93
 and 10.67 valuation tables. New movement kinds PRODUCTION_OUT/PRODUCTION_IN transfer material value
 without counting conversion as expense. No new realtime triggers; inventory's existing triggers fire.
 Read details and rollback in [production workflow](../business/operation-production.md).
+
+### Factory production extension (`10.122`–`10.127`)
+
+`10.122` creates tenant/branch/output `bms_factory_qc_policies` (required/due minutes/version).
+`10.123` creates immutable-version `bms_factory_boms` and `bms_factory_bom_items`, adds nullable
+`factory_bom_id` to production, and makes `recipe_id` nullable with an exactly-one-source check.
+`10.124` creates `bms_factory_demands` (OPEN/ORDERED/CANCELLED, required CRM customer, output,
+quantity/due, linked order), plus nullable production `factory_demand_id`. `10.125` creates
+`bms_factory_machines` and optional machine/time/rejected/labor/energy evidence on production.
+`10.126` adds an explicit eligible QC case owner to policy settings; existing legacy rows may be
+null and are checked against the posting actor before use.
+`10.127` pins output and component base units on BOM versions. It deactivates older unitless BOMs
+because their original units cannot be reconstructed safely; existing production snapshots remain
+unchanged. New active versions require pinned units, and planning refuses catalog unit drift.
+New tables have tenant FKs, FORCE RLS, missing-GUC denial, bms_app read/insert and narrow update
+grants. BOM items and posted production evidence have no app DELETE/UPDATE authority. Factory
+machine actual intervals are guarded in the service under a per-machine transaction lock. Demand
+conversion calls the existing order writer in the demand transaction; no order/stock state is
+inferred from planning demand. Apply all six migrations after `10.98` before new app code; a
+rollout must never deploy a writer that reads the policy/BOM tables before they exist. No destructive
+down migration or historical backfill. [Operator flow](../business/operation-production.md#factory-extension-for-plastic-twine-and-straws-1012210127).
 
 ## Operations checklists / food-safety evidence (`10.91`–`10.93`)
 
@@ -202,7 +237,70 @@ adds canonical lowercase/trim checks and unique indexes for both email and usern
 historical case-insensitive duplicates exist rather than merging security principals automatically;
 operators must resolve those records before retrying the migration.
 
+### Stored-file ownership (`9.26`, `9.27`, `10.109`)
+
+`files.visibility` is the anonymous-read boundary and defaults to `private`; `tenant_id` identifies
+the owning shop for BMS artifacts. Migration `10.109` adds nullable `owner_user_id → users.id` for
+personal/community uploads because tenant equality alone does not authorize one user to list or
+change another user's file. The generic settings panel lists only the signed-in user's unreferenced
+files. Global file inventory and its rename/delete operations are platform-admin only.
+
+Chat image/audio rows are backfilled to private and their owner is recovered from the sending
+message where available. Streaming also checks current chat membership, so ownership alone does not
+grant a former/non-member access. Public storefront/post/avatar images remain public. Identifiable
+legacy key, database, config, script, installer and path-like artifacts are reclassified private and
+the generic sequential-id route denies them; supported release artifacts continue through the
+platform-admin release download route. Clinical, operation, support-bundle and release references
+likewise cannot use the generic route.
+
 ## Tables by module
+
+### Bank reconciliation sidecar (`10.110`)
+
+Five tenant-owned tables, each `tenant_id NOT NULL → bms_tenants ON DELETE CASCADE` with composite
+`(tenant_id, …)` foreign keys between them: `bms_bank_accounts` (bank code, display name, last four
+digits and a tenant-scoped HMAC-SHA-256 `account_fingerprint` — never the full account number —
+unique per tenant; optional default branch; `ACTIVE`/`ARCHIVED`), `bms_bank_statement_imports`
+(account, private `files` row, file SHA-256, parser key/version, period, balances, 1–50,000 rows,
+`VALIDATED`/`COMMITTED`/`VOID`, tenant-unique `idempotency_key` + request hash, unique per account/file
+hash; a void needs a reason), `bms_bank_statement_entries` (dated `IN`/`OUT` positive
+`NUMERIC(18,2)` amounts, reference/description/masked counterparty, row fingerprint unique per
+account, `UNMATCHED`/`SUGGESTED`/`PARTIAL`/`MATCHED`/`IGNORED`/`STALE`; ignore needs a reason),
+`bms_bank_reconciliation_links` (human-confirmed `CONFIRMED`/`VOID` links from an entry to a
+polymorphic `source_key` — `PAYMENT`, `AR_RECEIPT`, `EXPENSE_DOCUMENT`, `REFUND`,
+`DELIVERY_SETTLEMENT` or `BANK_ENTRY` + UUID — with matched amount, source fingerprint, rule,
+confidence and version; one active link per entry/source) and `bms_bank_reconciliation_periods`
+(per account/month `OPEN`/`READY`/`CLOSED`/`REOPENED`, versioned; reopen needs a reason).
+
+All five use ENABLE + FORCE RLS with a strict policy: an unset `bms.tenant_id` matches nothing
+(no `COALESCE` fallback). `bms_app` gets SELECT/INSERT, UPDATE/DELETE is revoked, and UPDATE is
+re-granted only on workflow columns (status, commit/void/ignore/close/reopen actors and timestamps,
+period balances, version) — imported dates, amounts, fingerprints, account identity and the source
+file cannot be rewritten. `create_revision_trigger()` adds a `_revisions` table per table; those
+revision tables get the same strict tenant policy and are append-only for `bms_app`. The migration
+adds no trigger or constraint to existing sales/payment/AR/expense/refund/delivery/tax/stock tables
+and seeds the four `bank_reconciliation.*` permissions to Manager for every tenant. It is additive
+and idempotent (it also repairs an earlier draft's commit-shape CHECK). Rollback is operational —
+turn the flags off; do not drop evidence tables after links have been confirmed. Not declared in
+schema readiness: nothing on the order path reads it. `realtime-domain-coverage-contract` classifies
+the five tables as evidence with no realtime subscriber (the page refreshes on open, on manual
+reload and after each mutation). Verify with the `pg_class` RLS and
+`bms_role_permissions` queries at the end of the file. No DB contract exists yet. See
+[../business/bank-reconciliation.md](../business/bank-reconciliation.md).
+
+### Transfer-lot provenance (`10.107`) — WIP for rollout
+
+**Committed and clone-DB verified; production deployment unverified.** Do not describe lot
+transfers as available on a target database before confirming it has `10.107`.
+`bms_stock_transfer_item_lots` stores one row per (transfer line, source lot): composite FKs to
+`bms_stock_transfer_items`, source/destination `bms_inventory_lots` and optional supplier (the
+migration adds the `UNIQUE (tenant_id, id)` keys those FKs need), plus lot number, expiry, unit cost,
+sent quantity and the receipt split (`received_qty + damaged_qty <= qty`). RLS is enabled and forced
+with the older `COALESCE(current_setting('bms.tenant_id'), tenant_id)` policy shape, and `bms_app`
+holds SELECT/INSERT/UPDATE/DELETE plus the sequence. It is declared in `scripts/schemaReadiness.mts`:
+the current transfer list/receipt code reads this table, so deploying that code without `10.107`
+breaks stock transfers (admin, mobile and branch requests). Rollback is only possible before
+dependent transfers exist. Behaviour: [../business/inventory.md § Lot transfers](../business/inventory.md#lot-transfers-10107).
 
 ### Mail log provider (`7.40`, `10.59`)
 
@@ -304,6 +402,13 @@ execute it; only `bms_app` is granted EXECUTE, with no new users-table grants.
 Apply `10.47` before new approvals; a missing helper fails closed. Existing customer reads and
 checkout do not depend on it. SQL execution/idempotency/locking/RLS have **not been DB-verified**.
 
+`10.111` adds `bms_set_pharmacist_license(tenant,user,flag,number)`, a narrow SECURITY DEFINER
+helper for the Administrator licence form. It checks the transaction tenant and `app.editor_id`
+against a same-tenant Administrator and locks that actor row through commit, then updates only
+the target's licence columns. The service
+commits this call and its audit in one tenant transaction. No general licence-column UPDATE grant
+is added to `bms_app`; a missing helper fails closed.
+
 ### Optional emergency directory (`10.46`)
 
 `bms_emergency_facilities` stores tenant, optional shop branch, public name/phone/address/HTTPS map,
@@ -323,6 +428,14 @@ response budget. Migration idempotency and real RLS/CRUD remain unverified until
 apply after normal billing-time rounding, as repeating paid/free cycles; the winning offer is
 chosen server-side at group close and frozen into the charge snapshot, so already-frozen bills are
 never repriced. Declared in schema readiness.
+
+`10.117` adds `publish_to_chat BOOLEAN NOT NULL DEFAULT FALSE` to existing
+`bms_board_game_pass_plans` and `bms_board_game_offers`. Existing rows stay private until a
+staff member with the relevant manage permission opts in per row. Customer chat reads use the
+tenant transaction/RLS context, require a chat-visible active branch, and include only active,
+published rows scoped to that branch (plus tenant-wide rows); expired offers are excluded.
+The flag controls disclosure only. It does not affect offer evaluation, pass sales, billing,
+or an already-frozen charge. Apply the migration before enabling the new reader/UI.
 
 ### Supplier VAT adjustment notes (`10.37`)
 
@@ -347,16 +460,19 @@ debit note increases it (`lib/bms/expenseAdjustments.ts`).
 | Payment | `bms_payments` | `5.3` |
 | POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_stock_transfer_item_lots`, `bms_product_packs`, `bms_product_price_tiers`, `bms_pos_devices`, `bms_pos_shifts`, `bms_pos_purchase_receipts`, `bms_pos_expenses`, `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_store_credits`, `bms_store_credit_ledger`, `bms_pos_deposits`, `bms_ar_accounts`, `bms_ar_invoices`, `bms_ar_receipts`, `bms_ar_ledger`, `bms_tax_documents`, `bms_expense_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions`, `bms_tax_invoice_requests`, `bms_tax_request_submissions`, `bms_tax_request_emails` (+ supplier credit/debit-note columns on expense documents; `users.pos_only`, per-size pack and wholesale-price columns, cross-size wholesale scope/percentage, credit-note/cash-rounding columns; scanner protocol columns on POS devices; deposit, drawer-movement, expense, and PO-receipt idempotency; `CREDIT` added to payment/refund methods; preferred split-refund method; return/refund event-shift attribution; sale/receiving branch and source/destination lot attribution for returns and transfers) | `7.84`–`10.11` (`9.4` repair), `10.37` (supplier VAT notes), `10.38`–`10.39` (receipt-QR tax-invoice requests), `10.58` (tax-request email outbox), `10.107` (transfer-lot provenance) |
 | Shipping | `bms_shipments`, `bms_shipment_tracking_events` | `5.4`, `7.76`, `7.77` |
-| Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes`, `bms_conversation_note_mentions` | `5.5`, `7.18`, `7.51` (read/search indexes) |
+| Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes`, `bms_conversation_note_mentions`, `bms_channel_inbound_jobs` (Facebook/Instagram durable inbound queue) | `5.5`, `7.18`, `7.51` (read/search indexes), `10.104` (inbound jobs + `bms_tenant_channels.webhook_verify_token`/`external_account_id`), `10.108` (bounded `event_meta`), `10.118` (tenant/editor-checked self-availability function) |
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8`, `7.78` |
 | Channel Health | `bms_channel_health_log` (+ columns on `bms_tenant_channels`) | `6.4` |
 | Store profile / AI policy | `bms_store_profile`, `bms_store_capabilities` | `6.9`, `7.17`, `7.30`, `9.39` (receipt language), `9.40`, `9.43`, `10.90` (customer-display welcome background) |
 | Branch customer facts | `bms_locations.parking_info`, `bms_locations.publish_restaurant_table_details` | `10.51`, `10.52` |
 | Customer AI answer evidence | `bms_ai_turn_evidence`, `bms_ai_tool_evidence` | `10.53` |
-| Pharmacy guidance & emergency directory | `bms_pharmacy_guidance_templates`, `bms_emergency_facilities` (+ `bms_lock_guidance_pharmacist_license()`) | `10.45`–`10.47` |
+| Pharmacy guidance, licence and emergency directory | `bms_pharmacy_guidance_templates`, `bms_emergency_facilities` (+ `bms_lock_guidance_pharmacist_license()`, `bms_set_pharmacist_license()`) | `10.45`–`10.47`, `10.111` |
 | Product promotions | `bms_product_promotions` (per-branch scope; `BUY_A_GET_B` gift columns) | `8.7`, `9.61`, `10.41` |
 | Board game cafe | `bms_board_game_*` (floor, sessions, billing groups, library, passes, offers, waitlist/reservations, public locations) | `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`–`10.7`; `10.40` (time buy/get), `10.42` (title images), `10.48`–`10.49` (chat reservations/actions), `10.50` (public table details) |
+| Bank reconciliation | `bms_bank_accounts`, `bms_bank_statement_imports`, `bms_bank_statement_entries`, `bms_bank_reconciliation_links`, `bms_bank_reconciliation_periods` (+ `_revisions`; strict tenant RLS, workflow-column UPDATE only) | `10.110` |
+| Stored files / community chat | `files.owner_user_id`, `files.visibility` (chat media private) | `9.26`, `9.27`, `10.109` |
+| Retail Local leads (platform-global) | `bms_retail_local_leads`, `bms_retail_local_leads_revisions`, `bms_retail_local_lead_events` (+ `bms_submit_retail_local_lead()`, `bms_erase_retail_local_lead()`) | `10.105`, `10.106` |
 | Mail log | `bms_mail_log` (platform-wide, nullable `tenant_id`) | `7.40`, `10.59` (`smtp` provider) |
 | Homepage app downloads | `bms_app_download_settings` (platform-global singleton, no `tenant_id`) | `10.57` |
 | AI usage / credits | `bms_tenant_ai_config`, `bms_ai_usage_monthly`, `bms_ai_usage_events`, `bms_ai_credit_ledger`, `bms_ai_limit_notices` | `6.8`, `7.27`, `7.35`, `7.82` (billing/provider/cost split), `10.54` (shared cost reservations, historical since `10.56`), `10.55` (owner notices and refusal status), `10.56` (monthly AI point packages on `bms_plans`; no USD cap) |
@@ -711,6 +827,13 @@ conversation previews, customer refs, message bodies, CRM names, and cached chan
 Keep list/detail GraphQL queries bounded; do not reintroduce unbounded message/note/event reads on
 the initial inbox view.
 
+**Inbox self-availability (`10.118`)** — `bms_set_own_inbox_availability(tenant, user, available)`
+is a narrow security-definer update of the legacy `users.is_available` field. It rejects missing
+input and a transaction whose `bms.tenant_id` or `app.editor_id` differs from the requested tenant
+or user, updates only that tenant/user row, and returns whether it found one. Only `bms_app` receives
+EXECUTE; it receives no direct `users` UPDATE grant. Apply this migration before deploying the
+service change that calls the function.
+
 Explicit BMS presales callback requests reuse this existing work queue rather than creating a
 parallel lead table. The transaction reopens the conversation, adds `sales-callback` and `hot-lead`
 tags and ensures at least one unread marker. It preserves an eligible assignee, otherwise chooses
@@ -956,10 +1079,30 @@ they belong to ops/support, not a specific shop's business data.
 **`bms_role_permissions`** — composite key `(tenant_id, role_id, permission)`; `permission` is a
 free-text string validated against the `BMS_PERMISSIONS` catalog in `lib/bms/permissions.ts`, not a
 DB-level enum. Administrator role bypasses this table entirely (hardcoded super-access in code).
+Verified self-serve shop signup creates the shop's first user with the active `Administrator`
+role; both `users.role` and `users.role_id` must agree, and missing role setup aborts signup.
+Migration `10.121` upgrades only email-verified signup owners still on `Manager` when that shop
+has no Administrator and no later `user.update` audit for the owner. Other Manager accounts are
+left unchanged. The role change and its audit row are atomic, and the session version is bumped.
+The ordered `10.121` file now uses a transaction-local two-minute statement limit, five-second
+lock limit, and advisory lock. Retail Local accepts only the exact pre-timeout `10.121` checksums
+for installations that already applied it, preserving their ledger evidence; fresh installs run
+the bounded file in order. Migration `10.128` repeats the same guarded repair after `10.121`
+for older installations and is idempotent. After a failed HeidiSQL attempt, run `ROLLBACK;`
+alone in the same connection before rerunning the ordered sequence; see
+[the owner-repair runbook](owner-repair-rollout.md). A zero-row retry is valid when no eligible
+owner remains.
 Migration `7.78` seeds `user.view`/`user.manage` here for `Manager` in every tenant, which is what
 lets a shop owner manage their own staff; *which* users they may touch is a separate code-level role
 rank (`lib/bms/staffRoles.ts`) and is not stored in this table — see the RBAC section of
 [api.md](api.md) before changing either half.
+`setRolePermissions()` validates every requested permission, locks the tenant row, replaces that
+tenant's role matrix, and writes the actor's `rbac.set` audit in one tenant transaction. A failed
+insert or audit rolls the prior matrix back; the GraphQL resolver checks Administrator before calling
+the service and requires an explicit `confirmed` argument. The UI shows the exact grants and
+revocations before sending that argument. Effective permission and matrix reads also establish
+tenant RLS context. The pure
+contract covers rollback; verify grants and RLS on an isolated database.
 
 **Shared AI budget (`10.54__bms_ai_cost_budget.sql`)** — adds nonnegative
 `budget_reserved_usd NUMERIC(16,8) NOT NULL DEFAULT 0` to `bms_ai_usage_events` and a partial
@@ -1110,8 +1253,20 @@ request authentication compares it with the live user row. `password_reset_token
 stores only a SHA-256 digest of the bearer token. The legacy plaintext `token` column remains
 nullable for migration compatibility but new code never writes or queries it.
 
-**`bms_audit_log`** — append-only, written via `audit(ctx, action, target, meta)`
-(`lib/bms/audit.ts`); failures to write are swallowed (never blocks the mutation that triggered it).
+**`bms_audit_log`** — append-only business audit. Required decisions use `insertAuditInTx()`
+(`lib/bms/audit.ts`) and roll back with the business write if audit fails. Legacy resolver
+`audit(ctx, action, target, meta)` remains best-effort and swallows failures.
+Migration `10.131` adds stable `actor_user_id`, actor/source/target classification, request and
+idempotency keys, and removes `UPDATE`/`DELETE` grants from `bms_app`. Required business audits use
+`insertAuditInTx()` on the same transaction; `audit(ctx)` remains best-effort for diagnostics.
+Migration `10.132` adds a tenant/legacy-text-actor/time index for exact UUID-text history lookups;
+`listAuditTimeline()` limits each source before merging them, then uses keyset cursors rather than
+offsets. This bounds the final merge even when the audit tables are large. The tables themselves
+are still unpartitioned and have no retention/archive policy; see the audit traceability capacity
+section before claiming ten-year operating readiness.
+`bms_security_events` records auth and sensitive-read events, including platform/unknown-tenant
+events that cannot fit `bms_audit_log.tenant_id NOT NULL`. See
+[audit traceability](audit-traceability.md) for guarantees and known gaps.
 The AI runtime writes `ai.tool_call` for every tool success, failure, denial, or proposal. Its meta
 contains only surface/outcome/permission/sensitivity/channel—not raw args, prompts, or customer PII.
 Successful AI writes also retain their normal domain action, while confirmed sensitive proposals
@@ -1139,7 +1294,9 @@ Signup/onboarding extension (`7.42`) — the current store-profile `business_typ
 AI-facing classification, while the separate optional `business_archetype` field captures richer
 onboarding/demo defaults. `bms_pending_shop_signups.business_archetype` stores the value until email
 verification, then `verifyPendingShopSignup()` copies it into the first `bms_store_profile` row in
-the same transaction that creates the tenant and Manager account. See
+the same transaction that creates the tenant and Administrator owner. Email/password signup uses
+the shared NFKC email identity and password rules (at least 8 characters, at most 72 UTF-8 bytes).
+See
 [../ui/shop-signup-archetype-spec.md](../ui/shop-signup-archetype-spec.md).
 
 Migration `7.43` enforces the shared archetype allowlist at the database boundary (while allowing
@@ -1159,6 +1316,11 @@ the same rule for every write path. Both sides lock the tenant row before checki
 because `bms_orders.tenant_id` references that row, a concurrent first order and archetype change
 are serialized rather than both passing on stale snapshots. Demo-seed orders identified by the
 reserved `FAKE-*` customer marker do not establish this lock.
+When an archetype is selected, the profile service derives the legacy `business_type` from it even
+if a GraphQL caller submits a conflicting type. Shops without an archetype retain their editable
+legacy type. The settings form submits `tenantName` with the profile in one tenant transaction, so
+a rejected profile cannot leave a renamed `bms_tenants` row behind. Both writes and their audit
+entries commit or roll back together.
 
 Migration `7.30` also adds validated AI language/ordering/required-field/short-reply/handoff policy.
 `bms_inbound_events` is the tenant/channel/platform-event idempotency ledger, while
@@ -1203,6 +1365,18 @@ The FK intentionally prevents deleting a referenced check item: cleanup deletes 
 The authorized full-tenant purge is the exception: `deleteTenantRows()` nulls only the selected
 tenants' order-item links before deleting checks, inside the existing purge transaction. A failed
 purge restores these links; ordinary check operations cannot detach historical evidence.
+The same purge also nulls those tenants' `bms_orders.restaurant_check_id` links before deleting
+checks, releasing the reverse FK from migration `9.44` in that transaction.
+Before deleting checks, it deletes the selected tenants' QR service calls, proposals, sessions,
+table tokens and waitlist rows in FK order, then releases split/merge self-links. These actions
+remain inside the authorized whole-tenant purge transaction.
+The purge also clears member enrollment's `enrolled_shift_id` for the selected tenants after
+their orders are removed and before their POS shifts are removed (`9.38`); customer rows are
+deleted later in that same transaction.
+Before deleting users, the purge removes the selected tenants' pharmacy assessments and then
+protocols: assessments reference protocols without cascade, and reviewed protocols reference
+their reviewer without cascade. A reviewer still referenced by another tenant's clinical record
+blocks deletion; the purge never alters that other tenant's approval evidence.
 
 The old SKU/size/pack unique index now applies only to non-restaurant lines. Restaurant orders use
 unique `(order_id, restaurant_check_item_id)`, allowing different round snapshots for the same menu.
@@ -1389,8 +1563,10 @@ Codes are unique per scope through two partial indexes — a plain `UNIQUE (tena
 code)` would not constrain the store-wide rows at all, since NULL never conflicts with NULL. The
 `9.54` backfill promotes every station name still present in stock policies, SLA rows and both ticket
 tables into a store-wide master row, and never drops the legacy text columns: readers that predate
-`9.54` keep working through a deploy. `printer_profile_id` is a placeholder with no table behind it,
-no reader and no writer — per-station printer routing is not built.
+`9.54` keep working through a deploy. `printer_profile_id` remains a placeholder with no table
+behind it, no reader and no writer. The Desktop pilot added later keeps station-to-OS-printer routes
+in that workstation's local configuration; it does not turn this column into authority and does not
+create cloud/browser/mobile printer routing.
 
 `9.45` adds non-negative `bms_product_modifiers.price_delta`. It is a surcharge per sold menu unit,
 resolved from active tenant catalog rows during order creation and copied into the order item's
@@ -2159,6 +2335,11 @@ never revisits a completed event. Environment overrides keep precedence for the 
 deployment settings. `10.84` serializes each provider/model timeline and closes adjacent periods so
 future rates cannot overlap even when admins add them out of chronological order. Unknown model cost
 remains `NULL`; this table never grants AI entitlement.
+Tool-loop and pharmacy retries pass each provider response's token breakdown to finalization, so a
+multi-provider event uses the effective rate for each provider/model. A call with incomplete usage
+remains in `unpriced_provider_calls`; known costs from other calls remain a subtotal. Older callers
+that supply an explicit cost without per-response evidence retain that estimate and are labelled
+`CALLER_ESTIMATE` in event metadata.
 
 Operational reports, scheduled digests, restaurant ordering hours, menu reset boundaries, waitlist
 service dates, customer reservations, and pharmacy lot dates prefer the validated `timezone_code`.
@@ -2225,6 +2406,14 @@ nonnegative price; absence inherits the shared catalog. It changes no physical s
 Tenant RLS is fail-closed, with bms_app read/write grants. Writes go through confirmed publication
 with branch authorization and atomic publication/audit history.
 
+Migration `10.116` adds `bms_branch_price_windows` for future branch base/pack prices. An active
+half-open window supersedes the current `bms_branch_prices` row only within its interval; after
+expiry or confirmed cancellation the current row applies again. A GiST exclusion prevents two
+uncancelled windows for the same tenant/branch/SKU/size/pack from overlapping. The table is
+tenant-scoped with forced RLS and `bms_app` grants. Publication and cancellation each commit an
+audit in the same tenant transaction. The reader falls back to current branch overrides when this
+table is absent; deploy the migration before publishing or cancelling windows.
+
 Promotion active-SKU partial indexes are replaced by `bms_promotion_windows_exclusive`, a GiST
 exclusion on tenant/SKU/coalesced branch and `[starts_at,ends_at)` for active rows. Requires btree_gist.
 This permits multiple future windows while forbidding ambiguity at checkout. Old/current rule start
@@ -2256,6 +2445,26 @@ physical `STOCK_IN`. Partial receipts therefore carry the same frozen per-unit a
 reallocating prior receipts. Existing received stock and historical value entries are never
 backfilled. The PO UI and GraphQL reader expose base, additional and landed unit costs plus the
 allocation evidence separately.
+
+### 10.137 — supplier package snapshot on purchase orders
+
+`bms_purchase_order_items` adds nullable `supplier_unit_name`,
+`supplier_unit_qty_ordered`, `base_qty_per_supplier_unit` and
+`supplier_unit_evidence`. All four are null for legacy/base-unit lines. A check constraint requires
+a complete sourced package snapshot and enforces `supplier_unit_qty_ordered ×
+base_qty_per_supplier_unit = qty_ordered`. Existing tenant RLS and `bms_app` grants apply to the
+columns. The PO creation service validates this before writing, freezes the values with the line,
+and includes them in the request fingerprint only when a conversion is supplied so legacy retries
+retain their old hash. Converted lines require an explicit base-unit cost and a stable create key.
+Receipts of converted lines require a stable staff/device retry key and supply integer supplier package count and base
+quantity; the service checks the frozen factor under the PO/line locks before stock, lot and
+`STOCK_IN` movement commit. Staff and POS receipt idempotency hashes include the package count;
+GraphQL POS, REST POS and Admin adapters forward it without trusting their own quantity preview.
+Staff receipt transactions lock the actor's allowed-location rows and return `BRANCH_FORBIDDEN`
+before stock changes when the default receiving branch is outside that scope. POS keeps the
+device-derived branch. Admin branch selection is not yet available for a differently scoped user.
+The quantity and cost ledger still use integer base units and per-base-unit cost. Supplier invoice,
+AP and fractional cost allocation are separate, unimplemented contracts.
 
 ## Restaurant pickup checkout audit (2026-10-22; no schema change)
 
@@ -2305,3 +2514,108 @@ and its `purchase.cancel` audit also commit or roll back together.
 Receipt replay precedes mutable branch availability checks, including default-branch resolution
 for staff, so disabling a branch cannot misreport an already committed stock movement as failed.
 New receipts still require an active branch; the device branch and actor remain part of the POS hash.
+
+## Pickup queue numbers and branch experience (`10.112`–`10.115`)
+
+`bms_pickup_queue` holds one pickup number per counter POS order (`UNIQUE (tenant_id, order_id)`),
+unique per branch per service day (`tenant_id, location_id, service_date, queue_no`). Status is
+`PREPARING → READY → COLLECTED`, or `CANCELLED`; `ready_source` (`KITCHEN`/`STAFF`) records who
+made it ready. Rows are tenant-isolated with forced RLS, cascade from their order and branch, and
+hold no customer identity or amounts. The row is written after the sale commits, never by
+`createOrderInTx()`; kitchen status changes and bill voids update it in their own transactions, so
+`bms_locations` holds the branch policy (`pickup_queue_enabled`, customer-board PREPARING
+visibility, READY auto-hide minutes and an optional 120-character board message). Auto-hide is a
+read-time customer-board filter; it never deletes the queue row or hides staff history.
+
+`10.113` adds the branch prefix/start number, spotlight duration and announcement preferences. Each
+queue row snapshots `queue_prefix`, so changing a branch from `A` to `B` never renames already-issued
+numbers or receipt history. The service still serializes issue under the branch/service-day lock and
+starts an empty day at `pickup_queue_start_no`; a start-number change never rewinds a day that already
+has rows. Voice mode/language/repeat/volume are presentation settings only. The call screen plays
+release-time AI Studio assets from the same origin and falls back to its local chime; it never sends
+customer or order data to a speech provider at runtime.
+
+The same migration adds `customer_display_promo_slides` (a bounded JSON array of tenant-owned public file API
+URLs) and `customer_display_promo_interval_seconds` to `bms_store_profile`. Slides run only while the
+display is idle; sale/payment state always wins. Therefore `10.113` is a deployment requirement
+declared in `scripts/schemaReadiness.mts`. See
+[business/pos.md](../business/pos.md#pickup-queue-numbers-and-the-call-screen-10111).
+
+`10.114` seeds Thai/English `order.pickup.*` status email templates for orders whose persisted
+`fulfillment_type` is `PICKUP` (apply before deploying the `orderEmailTemplateKey()` caller; see
+[business/order.md](../business/order.md)).
+
+`10.115` adds branch queue-board presentation columns to `bms_locations`: media enabled,
+default public file ID, 4–30 second interval, transition and optimistic version. The new
+`bms_queue_board_media` table stores at most eight ordered image file IDs per tenant/branch,
+per-item active state and optional `[starts_at, ends_at)` instants. Composite tenant/branch
+and tenant/file foreign keys, tenant RLS and `bms_app` grants keep the playlist isolated.
+Publication replaces the bounded playlist and inserts its audit row in one `beginTenantTx()`.
+No queue number, order, stock or payment row is changed by publishing media.
+
+## Fish-dock intake evidence (`10.119`)
+
+`bms_fish_intakes` is the tenant-scoped, idempotent header for `HISTORICAL`, `LIVE` and
+`OPENING` batches. `bms_fish_intake_lines` stores source-row/date, supplier, vessel,
+fish/size/quality, bill and actual grams, reviewed THB amounts and optional stock identity.
+Both tables use forced tenant RLS and `bms_app` grants. `(tenant_id, kind, request_key)`
+is unique; a payload hash rejects reuse of a key with changed facts. Historical rows have
+no SKU, location or movement and never enter stock. Confirmed live/opening lines bind to
+one `bms_stock_movements` row and one lot receipt. `bms_inventory_value_entries` gains a
+nullable `fish_intake_line_id` FK to preserve the source of its reviewed amount. The stock,
+lot, movement, value entry and decision audit use one tenant transaction. The app stores
+integer grams because the existing inventory and movement quantities are integers; kg
+input is accepted to three decimal places without changing shared quantity columns.
+
+## Fish-dock owner evidence (`10.120`)
+
+`bms_fish_storage_counts` and its lines hold a human-confirmed READY/COLD_ROOM/OTHER split of
+one lot. Its grams must match the locked lot. The stored `lot_updated_at_count` and quantity
+identify a current placement snapshot; any later lot write marks it stale in reads. These rows
+are evidence only and never change `bms_inventory`, lots or movements.
+
+`bms_fish_delivery_plans` and lines store customer/branch fish commitments in integer grams.
+`bms_fish_delivery_plan_orders` links multiple ordinary orders to one plan; the service rejects
+other customers/branches, unrelated SKU/size and over-committed grams. The ordinary order,
+shipment, payment and AR tables remain authoritative. New rows have composite tenant foreign
+keys, forced tenant RLS and `bms_app` grants. Both creation and linking audit in the same tenant
+transaction. The sidecar has no implicit stock or money mutation.
+
+## Project quotations (`10.133`)
+
+`bms_sales_quotations` stores one immutable revision per row with `(tenant_id, quote_no,
+revision_no)` uniqueness, a root id, request-key/hash retry guard, branch/customer identity,
+human state transitions, VAT-inclusive money totals and a VAT settings snapshot. The current
+revision is unique per tenant/root; old revisions are `SUPERSEDED`. `bms_sales_quotation_lines`
+stores each exact SKU, variant, selling-pack quantity, integer base quantity, price and VAT
+category. Composite tenant FKs, forced tenant RLS and `bms_app` grants protect both tables.
+The additional `users.is_platform_admin` column-level read grant supports branch validation
+inside `beginTenantTx()` without exposing password columns. Approval, revision and conversion
+audit in their own transaction. `CONVERTED` links to a real order, whose ordinary stock,
+payment and tax rows remain authoritative; quotations never move or reserve stock.
+
+`10.134` adds `bms_orders.quote_site_address` and `retail_fulfillment_type` as conversion
+snapshots. The retail field is separate from restaurant `fulfillment_type`, so packing a
+retail order does not enqueue kitchen work. Delivery uses the stored site rather than a CRM
+default; pickup stock handover requires a separate confirmed operation. The schema does not
+yet represent line-level dispatch or a structured carrier destination for project sites.
+
+## Exact weighted-kilogram rates (`10.136`)
+
+`10.136` adds `bms_weighted_kg_prices`: one current revision per tenant/SKU/variant,
+with an integer satang rate per 1,000-gram basis, request key/hash, publisher and timestamp.
+A partial unique index selects the current revision. Tenant RLS and `bms_app` grants protect
+reads/writes. Publication locks the product, retires the prior current row, inserts a revision
+and audits in one tenant transaction. Orders snapshot the rate and revalidated prefix-22 labels
+in `bms_order_items.pricing_snapshot`; monetary authority stays `line_amount`. Retail-scale pilot
+only; it does not define a cut-length or web price contract.
+
+## Sourced product technical facts (`10.135`)
+
+`bms_product_technical_specs` has a tenant/variant/revision primary key, composite variant FK,
+forced RLS and `bms_app` grants. A draft and a published revision may coexist; unique partial
+indexes permit one of each per variant. New drafts do not withdraw an older published fact.
+Publication moves the previous published row to `SUPERSEDED` and marks the reviewed draft
+`PUBLISHED` in one tenant transaction with audit. Request key/hash makes staging retry-safe.
+Customer tools project only published facts and omit the source reference; drafts and previous
+revisions remain staff evidence, not customer claims.

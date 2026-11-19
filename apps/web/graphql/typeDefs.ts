@@ -23,7 +23,7 @@ export const typeDefs = /* GraphQL */ `
     role_id: ID # New normalized field
     roleDetails: Role # Related role object
     created_at: String!
-    username: String!
+    username: String
     language: String!
     themePreference: String
     notifications_enabled: Boolean!
@@ -593,6 +593,32 @@ export const typeDefs = /* GraphQL */ `
     details: String
     mapUrl: String
   }
+  type BmsLocationPickupQueueSettings {
+    enabled: Boolean!
+    autoHideMinutes: Int!
+    showPreparing: Boolean!
+    boardMessage: String
+    prefix: String!
+    startNo: Int!
+    spotlightSeconds: Int!
+    voiceMode: String!
+    voiceLanguage: String!
+    voiceRepeat: Int!
+    voiceVolume: Int!
+  }
+  input BmsLocationPickupQueueSettingsInput {
+    enabled: Boolean!
+    autoHideMinutes: Int!
+    showPreparing: Boolean!
+    boardMessage: String
+    prefix: String!
+    startNo: Int!
+    spotlightSeconds: Int!
+    voiceMode: String!
+    voiceLanguage: String!
+    voiceRepeat: Int!
+    voiceVolume: Int!
+  }
   type BmsLocation {
     id: ID!
     code: String!
@@ -613,6 +639,7 @@ export const typeDefs = /* GraphQL */ `
     pharmacistName: String
     pharmacistLicenseNo: String
     parking: BmsLocationParking
+    pickupQueue: BmsLocationPickupQueueSettings!
     active: Boolean!
   }
 
@@ -678,6 +705,7 @@ export const typeDefs = /* GraphQL */ `
     phone: String
     active: Boolean
     parking: BmsLocationParkingInput
+    pickupQueue: BmsLocationPickupQueueSettingsInput
   }
 
   type BmsPosDevice {
@@ -1209,6 +1237,45 @@ export const typeDefs = /* GraphQL */ `
     createdAt: String!
   }
 
+  type BmsArStatementInvoice {
+    id: ID!
+    orderId: ID!
+    docNo: String
+    issuedAt: String!
+    dueAt: String!
+    originalAmount: Float!
+    payments: Float!
+    credits: Float!
+    balance: Float!
+    overdue: Boolean!
+  }
+
+  type BmsArStatementEntry {
+    id: ID!
+    invoiceId: ID!
+    kind: String!
+    amount: Float!
+    createdAt: String!
+    receiptId: ID
+    orderId: ID
+  }
+
+  type BmsArStatement {
+    accountId: ID!
+    customerName: String
+    asOf: String!
+    ledgerBalance: Float!
+    cachedBalance: Float!
+    grossOutstanding: Float!
+    creditBalance: Float!
+    overdueAmount: Float!
+    balanceMismatch: Boolean!
+    hasMoreInvoices: Boolean!
+    hasMoreEntries: Boolean!
+    invoices: [BmsArStatementInvoice!]!
+    entries: [BmsArStatementEntry!]!
+  }
+
   type BmsArAging {
     current: Float!
     d1to30: Float!
@@ -1323,6 +1390,7 @@ export const typeDefs = /* GraphQL */ `
     bmsArAccount(id: ID, customerId: ID): BmsArAccount
     bmsArInvoices(accountId: ID, openOnly: Boolean, overdueOnly: Boolean, limit: Int = 200): [BmsArInvoice!]!
     bmsArLedger(invoiceId: ID, accountId: ID, limit: Int = 200): [BmsArLedgerEntry!]!
+    bmsArStatement(accountId: ID!): BmsArStatement
     bmsArOutstanding: BmsArOutstanding!
 
     bmsProductPacks(productSku: String!): BmsProductPackList!
@@ -1464,6 +1532,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS Purchase (admin) =====
     bmsPurchaseOrders(search: String, limit: Int = 50, offset: Int = 0): [BmsPurchaseOrder!]!
+    bmsPurchaseReceivingLocations: [BmsLocation!]!
     bmsPurchaseOrder(id: ID!): BmsPurchaseOrder
     bmsSuppliers: [BmsSupplier!]!
     bmsSupplierProducts(supplierId: ID!, search: String, limit: Int = 200): [BmsSupplierProduct!]!
@@ -1535,6 +1604,7 @@ export const typeDefs = /* GraphQL */ `
     bmsMyTenant: BmsTenantInfo!
     bmsChannels: [BmsChannelConfig!]!
     bmsChannelHealth: [BmsChannelHealth!]!
+    bmsMessengerProfile: BmsMessengerProfile!
     bmsChannelHealthCount: Int!   # จำนวนช่องทาง active ที่สถานะไม่ปกติ — badge sidebar (poll เหมือน bmsInboxUnreadCount)
     bmsReportSubscription: BmsReportSubscription!         # ค่าตั้งของร้านตัวเอง (default ถ้ายังไม่เคยตั้ง)
     bmsReportDeliveries(limit: Int): [BmsReportDelivery!]! # ประวัติส่งของร้านตัวเอง
@@ -1562,7 +1632,7 @@ export const typeDefs = /* GraphQL */ `
     bmsPharmacyGuidanceEditorContext: BmsPharmacyGuidanceEditorContext!
     bmsPharmacyProductPolicies(search: String, limit: Int = 20, offset: Int = 0): BmsPharmacyProductPolicyPage!
     bmsPharmacyProtocol(id: ID!): BmsPharmacyProtocol
-    bmsPharmacyLicenseCandidates: [BmsPharmacyLicenseUser!]!
+    bmsPharmacyLicenseCandidates(search: String): [BmsPharmacyLicenseUser!]!
     bmsAiConfig: BmsAiConfig!     # BYOK key ของร้าน (mask แล้ว)
     bmsAiUsage: BmsAiUsage!       # การใช้งาน AI ผ่าน shared key เดือนนี้ + quota
     bmsAiLimitNotifications: BmsAiLimitInbox!
@@ -1668,6 +1738,7 @@ export const typeDefs = /* GraphQL */ `
     bmsPermissionCatalog: [String!]!      # รายการสิทธิ์ทั้งหมด
     bmsRolePermissions: [BmsRolePermissions!]!
     bmsAuditLog(limit: Int = 100): [BmsAuditEntry!]!
+    bmsAuditTimeline(filter: BmsAuditTimelineFilter, platformGlobal: Boolean = false): BmsAuditTimelinePage!
     bmsRevisionHistory(kind: BmsRevisionKind!, entityId: ID!, limit: Int = 50): [BmsRevisionEntry!]!
     bmsRevisionDetail(kind: BmsRevisionKind!, revisionId: ID!): BmsRevisionEntry
     bmsRevisionCompare(kind: BmsRevisionKind!, fromRevisionId: ID!, toRevisionId: ID!): BmsRevisionComparison
@@ -1715,6 +1786,8 @@ export const typeDefs = /* GraphQL */ `
     coupon_code: String
     preferred_carrier: BmsCarrier   # ขนส่งที่ลูกค้าแจ้งไว้ตอนสั่ง — เป็นความต้องการ ไม่ใช่ขนส่งจริงที่ใช้ส่ง (7.46)
     fulfillmentType: String
+    retailFulfillmentType: String
+    quoteSiteAddress: String
     promisedAt: String
     pendingRefundCount: Int!
     pendingRefundAmount: Float!
@@ -1821,7 +1894,7 @@ export const typeDefs = /* GraphQL */ `
     discount: Float!
     couponCode: String
     shippingFee: Float
-    total: Float!
+    total: Float
     paymentStatus: String
     note: String!
   }
@@ -1853,6 +1926,10 @@ export const typeDefs = /* GraphQL */ `
     additionalUnitCost: Float!
     landedUnitCost: Float!
     additionalCostNote: String
+    supplierUnitName: String
+    supplierUnitQty: Int
+    baseQtyPerSupplierUnit: Int
+    conversionEvidence: String
   }
 
   type BmsPurchaseOrder {
@@ -1882,6 +1959,10 @@ export const typeDefs = /* GraphQL */ `
     packQty: Int
     minOrderQty: Int
     leadTimeDays: Int
+    supplierUnitName: String
+    supplierUnitQty: Int
+    baseQtyPerSupplierUnit: Int
+    conversionEvidence: String
   }
 
   type BmsSupplierProduct {
@@ -1905,6 +1986,7 @@ export const typeDefs = /* GraphQL */ `
     sku: String!
     size: String!
     qty: Int!
+    supplierQty: Int
     lotNo: String
     expiryDate: String
   }
@@ -2112,7 +2194,7 @@ export const typeDefs = /* GraphQL */ `
     sender: String          # customer | ai | staff:<email>
     createdAt: String!
     attachment: BmsMessageAttachment
-    status: String          # (OUT only) SENT | DELIVERED | READ | FAILED · null = ไม่มีสถานะ
+    status: String          # (OUT only) PENDING | SENT | DELIVERED | READ | FAILED · null = legacy ไม่มีสถานะ
     canReportDelivery: Boolean!   # ช่องนี้ push/รายงานผลได้ไหม (LINE/FB/IG=true · web/tiktok=false)
   }
 
@@ -2161,6 +2243,7 @@ export const typeDefs = /* GraphQL */ `
   type BmsConversation {
     id: ID!
     channel: String!
+    supportsOutboundPush: Boolean!
     customerRef: String
     customerId: ID
     customerName: String
@@ -2283,6 +2366,7 @@ export const typeDefs = /* GraphQL */ `
   type BmsSendResult {
     status: String!
     delivered: Boolean!
+    needsReview: Boolean!
     message: String
   }
   type BmsInboxDiagnosticMessageResult {
@@ -2469,6 +2553,7 @@ export const typeDefs = /* GraphQL */ `
     barcode: String
     description: String
     cost_price: Float
+    vat_category: String
     category: String
     brand: String
     creation_template: String
@@ -3406,6 +3491,32 @@ export const typeDefs = /* GraphQL */ `
     created_at: String!
   }
 
+  input BmsAuditTimelineFilter {
+    actorUserId: ID
+    q: String
+    from: String
+    to: String
+    cursor: String
+    limit: Int
+  }
+
+  type BmsAuditTimelineEvent {
+    id: ID!
+    source: String!
+    actor: String
+    actorUserId: ID
+    action: String!
+    target: String
+    meta: JSON
+    outcome: String
+    created_at: String!
+  }
+
+  type BmsAuditTimelinePage {
+    nodes: [BmsAuditTimelineEvent!]!
+    nextCursor: String
+  }
+
   enum BmsRevisionKind {
     products
     orders
@@ -3549,6 +3660,17 @@ export const typeDefs = /* GraphQL */ `
     last_inbound_event_at: String
     last_outbound_success_at: String
     last_checked_at: String
+  }
+  type BmsMessengerProfile {
+    greeting: String!
+    starterPayloads: [String!]!
+    status: String!
+    publishedAt: String
+    lastError: String
+  }
+  input BmsMessengerProfileInput {
+    greeting: String!
+    starterPayloads: [String!]!
   }
 
   type BmsTestChannelResult { ok: Boolean!  message: String! }
@@ -4534,6 +4656,8 @@ export const typeDefs = /* GraphQL */ `
     website: String
     logoUrl: String
     customerDisplayBackgroundUrl: String
+    customerDisplayPromoSlides: [String!]!
+    customerDisplayPromoIntervalSeconds: Int!
     taxId: String
     timezone: String
     country: String
@@ -4999,6 +5123,8 @@ export const typeDefs = /* GraphQL */ `
     qty: Int!
     createdAt: String!
     updatedAt: String!
+    "Pickup queue number of a counter/take-away sale (10.111), e.g. 042; null when none was issued."
+    pickupQueueLabel: String
   }
   input BmsInventoryWastageInput {
     locationId: ID!
@@ -5023,6 +5149,7 @@ export const typeDefs = /* GraphQL */ `
   }
   type BmsInventoryWastageResult { id: ID! }
   input BmsStoreProfileInput {
+    tenantName: String
     businessArchetype: String
     businessType: String
     aiLanguage: String
@@ -5042,6 +5169,8 @@ export const typeDefs = /* GraphQL */ `
     website: String
     logoUrl: String
     customerDisplayBackgroundUrl: String
+    customerDisplayPromoSlides: [String!]
+    customerDisplayPromoIntervalSeconds: Int
     taxId: String
     timezone: String
     country: String
@@ -5339,6 +5468,9 @@ export const typeDefs = /* GraphQL */ `
   }
   input BmsWorkAssistantInput {
     message: String!
+    image: Upload
+    # Staff declaration, required with image; file bytes cannot prove which app was captured.
+    imageBmsConfirmed: Boolean
     history: [BmsAssistantTurn!]
     currentPath: String
     pageId: String
@@ -5404,6 +5536,7 @@ export const typeDefs = /* GraphQL */ `
     bmsConfirmMenuNetProfit(input: BmsMenuProfitInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
     bmsPublishMenuBundle(input: BmsMenuBundlePublicationInput!, review: BmsPricePublicationReview!): BmsPricePublicationResult!
     bmsPublishPricePlan(input: BmsPublishPriceInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
+    bmsCancelBranchPriceWindow(id: ID!, confirmed: Boolean!): BmsCostingActionResult!
 
     bmsRefreshActions: Int!
     bmsTransitionAction(id: ID!, status: BmsActionStatus!, reason: String, ownerId: ID, measuredOutcome: JSON): BmsAction!
@@ -5545,7 +5678,9 @@ export const typeDefs = /* GraphQL */ `
     updateMe(data: MeInput!): User!
 
     markNotificationRead(id: ID!): Boolean!
+    setNotificationRead(id: ID!, isRead: Boolean!): Boolean!
     markAllNotificationsRead: Boolean!
+    deleteNotification(id: ID!): Boolean!
 
     addComment(post_id: ID!, content: String!): Comment!
     replyComment(comment_id: ID!, content: String!): Comment!
@@ -5588,12 +5723,13 @@ export const typeDefs = /* GraphQL */ `
     setRoleActive(id: ID!, is_active: Boolean!): Role!
 
     # ===== BMS orders (admin) — OMS state machine =====
-    bmsPayOrder(id: ID!): Boolean!        # PENDING → PAID
+    bmsPayOrder(id: ID!): Boolean!        # Legacy adapter returns false; use bmsSubmitPayment + bmsConfirmPayment
     bmsPackOrder(id: ID!): Boolean!       # PAID → PACKING
     bmsShipOrder(id: ID!): Boolean!       # PACKING → SHIPPED (ตัดสต็อก)
+    bmsHandoverRetailPickup(id: ID!, confirmed: Boolean!): Boolean! # retail pickup handover only
     bmsCompleteOrder(id: ID!): Boolean!   # SHIPPED → COMPLETED
-    bmsCancelOrder(id: ID!): Boolean!     # (PENDING/PAID/PACKING) → CANCELLED (คืน reserved)
-    bmsReturnOrder(id: ID!): Boolean!     # (SHIPPED/COMPLETED) → RETURNED (คืนสต็อก)
+    bmsCancelOrder(id: ID!, confirmed: Boolean!): Boolean!     # (PENDING/PAID/PACKING) → CANCELLED (คืน reserved)
+    bmsReturnOrder(id: ID!, confirmed: Boolean!): Boolean!     # (SHIPPED/COMPLETED) → RETURNED (คืนสต็อก)
     bmsReorderFromOrder(id: ID!): BmsReorderResult!   # "ซื้อซ้ำ" — สร้างออร์เดอร์ใหม่จากรายการเดิม
     bmsCreateOrder(channel: String, customerRef: String, items: [BmsOrderItemInput!]!, couponCode: String, preferredCarrier: BmsCarrier, locationId: ID): BmsReorderResult!  # แอดมิน/staff สร้างออร์เดอร์เอง (จองสต็อก atomic เหมือน AI create_order)
 
@@ -5615,12 +5751,12 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS purchase (admin) — PO lifecycle =====
     bmsCreatePurchaseOrder(requestId: String, supplierId: ID, supplierName: String, note: String, items: [BmsPurchaseItemInput!]!): BmsPurchaseResult!
-    bmsReceivePurchaseOrder(id: ID!, items: [BmsReceiveItemInput!]!, idempotencyKey: String): BmsPurchaseResult!  # OPEN/PARTIAL → PARTIAL/RECEIVED (STOCK_IN)
+    bmsReceivePurchaseOrder(id: ID!, items: [BmsReceiveItemInput!]!, idempotencyKey: String, locationId: ID): BmsPurchaseResult!  # OPEN/PARTIAL → PARTIAL/RECEIVED (STOCK_IN)
     bmsCancelPurchaseOrder(id: ID!): Boolean!                                            # OPEN/PARTIAL → CANCELLED
 
     # ===== BMS payment (admin) =====
     bmsSubmitPayment(orderId: ID!, method: BmsPaymentMethod!, amount: Float, slipUrl: String, slipRef: String, note: String): BmsPaymentResult!
-    bmsConfirmPayment(id: ID!): BmsPaymentResult!   # PENDING → CONFIRMED + order → PAID
+    bmsConfirmPayment(id: ID!, confirmed: Boolean!): BmsPaymentResult!   # PENDING → CONFIRMED + order → PAID
     bmsRejectPayment(id: ID!, note: String): Boolean!
     bmsRefundPayment(id: ID!): Boolean!             # CONFIRMED → REFUNDED (manager)
     bmsVerifyPaymentSlip(id: ID!): BmsSlipVerification   # OCR/AI แนะนำ (ไม่เปลี่ยนสถานะ)
@@ -5642,7 +5778,7 @@ export const typeDefs = /* GraphQL */ `
     bmsSetMyAvailability(available: Boolean!): Boolean!              # ปิด/เปิดรับแชทใหม่ (ไม่กระทบแชทที่ถืออยู่แล้ว)
     bmsSetConversationStatus(id: ID!, status: BmsConvStatus!): Boolean!
     bmsSetConversationTags(id: ID!, tags: [String!]!): Boolean!
-    bmsMarkConversationRead(id: ID!): Boolean!
+    bmsMarkConversationRead(id: ID!, observedLatestMessageId: ID): Boolean!
     bmsAddConversationNote(id: ID!, body: String!, mentionedUserIds: [ID!]): BmsConversationNote
     bmsMarkMentionRead(id: ID!): Boolean!
     bmsMarkAllMentionsRead: Boolean!
@@ -5714,11 +5850,12 @@ export const typeDefs = /* GraphQL */ `
     bmsExpireLoyaltyPoints: BmsLoyaltyExpireResult!                 # ยังไม่มี cron จริง ต้องกดเอง
 
     # ===== BMS RBAC (admin) =====
-    bmsSetRolePermissions(roleId: ID!, permissions: [String!]!): Boolean!
+    bmsSetRolePermissions(roleId: ID!, permissions: [String!]!, confirmed: Boolean!): Boolean!
 
     # ===== BMS settings / channels (admin) =====
     bmsUpsertChannel(channel: String!, accessToken: String, channelSecret: String, webhookVerifyToken: String, externalAccountId: String, active: Boolean): Boolean!
     bmsTestChannel(channel: String!): BmsTestChannelResult!
+    bmsPublishMessengerProfile(input: BmsMessengerProfileInput!): BmsMessengerProfile!
     bmsUpsertReportSubscription(input: BmsUpsertReportSubscriptionInput!): BmsReportSubscription!
     bmsSendTestReportNow: BmsSendReportResult!
 
@@ -5744,7 +5881,7 @@ export const typeDefs = /* GraphQL */ `
     bmsManualFillAssessmentFields(assessmentId: ID!, fields: JSON!): BmsPharmacyAssessment!
     bmsGenerateMedicationSuggestions(assessmentId: ID!): BmsPharmacyAssessment!
     bmsSoftDeleteAssessment(assessmentId: ID!): Boolean!
-    bmsSetPharmacistLicense(userId: ID!, isLicensedPharmacist: Boolean!, licenseNo: String): Boolean!
+    bmsSetPharmacistLicense(userId: ID!, isLicensedPharmacist: Boolean!, licenseNo: String, confirmed: Boolean!): Boolean!
     bmsRecordPharmacyConsent(assessmentId: ID!, status: String!, consentVersion: String!): BmsPharmacyAssessment!
     bmsUpsertPharmacyProtocol(input: BmsPharmacyProtocolInput!): BmsPharmacyProtocol!
     bmsSubmitPharmacyProtocolForReview(id: ID!): BmsPharmacyProtocol!
@@ -5783,8 +5920,8 @@ export const typeDefs = /* GraphQL */ `
     bmsChangePlan(planCode: String!): Boolean!
 
     # ===== BMS platform admin (ข้ามร้าน) =====
-    bmsSetTenantActive(tenantId: ID!, active: Boolean!): Boolean!
-    bmsSetTenantPlan(tenantId: ID!, planCode: String!): Boolean!
+    bmsSetTenantActive(tenantId: ID!, active: Boolean!, confirm: Boolean!): Boolean!
+    bmsSetTenantPlan(tenantId: ID!, planCode: String!, confirm: Boolean!): Boolean!
     bmsUpdateSocialAuthSetting(input: BmsSocialAuthSettingInput!, confirm: Boolean!): BmsSocialAuthSetting!
     bmsEnterTenant(tenantId: ID!): Boolean!   # drill-down เข้ามุมร้าน
     bmsExitTenant: Boolean!                   # ออกจากมุมร้าน

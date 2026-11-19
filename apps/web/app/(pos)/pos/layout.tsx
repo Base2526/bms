@@ -7,6 +7,7 @@
 //
 // สไตล์อยู่ใน pos.css — ใช้ token/visual language ของ Ant Design แต่คง element เบา ๆ
 // ที่มีเป้ากดขนาดนิ้วโป้งสำหรับแท็บเล็ตหน้าร้าน (ดูเหตุผลเต็มในหัวไฟล์ CSS)
+import { PosLanguageProvider } from "@/components/pos/PosLanguageProvider";
 import type { ReactNode } from "react";
 import { IBM_Plex_Sans_Thai } from "next/font/google";
 import "./pos.css";
@@ -25,11 +26,12 @@ const posFont = IBM_Plex_Sans_Thai({
 });
 
 export const metadata = {
-  title: "POS — ขายหน้าร้าน",
+  title: "BMS POS",
 };
 
 export default function PosLayout({ children }: { children: ReactNode }) {
   return (
+    <PosLanguageProvider>
     <PosOperatorSessionProvider>
       <PosStartupPreparationProvider>
         <div className={`pos-root ${posFont.variable}`}>
@@ -38,5 +40,6 @@ export default function PosLayout({ children }: { children: ReactNode }) {
         </div>
       </PosStartupPreparationProvider>
     </PosOperatorSessionProvider>
+    </PosLanguageProvider>
   );
 }

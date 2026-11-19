@@ -39,7 +39,8 @@ test("order-created alert runs only after the owning transaction releases its cl
 test("paid handoff and kitchen handoff both produce staff notifications", async () => {
   const orders = await read("../apps/web/lib/bms/orders.ts");
   const payments = await read("../apps/web/lib/bms/payments.ts");
-  assert.match(orders, /kind: "ORDER_PAID"/);
+  assert.doesNotMatch(orders, /kind: "ORDER_PAID"/,
+    "a bare order-pay command must not announce a payment without verified payment evidence");
   assert.match(orders, /createdKitchenTickets[\s\S]{0,500}kind: "KITCHEN_TICKETS_CREATED"/);
   assert.equal((payments.match(/kind: "ORDER_PAID"/g) ?? []).length, 2,
     "both single-payment and split-payment confirmation paths must announce the paid order");
@@ -85,7 +86,13 @@ test("Inbox alerts only for unread inbound work outside the active chat", async 
   assert.match(schema, /messageId: ID/);
   assert.match(inbox, /"MESSAGES_CHANGED", "customer"/);
   assert.match(inbox, /"MESSAGES_CHANGED", "staff"/);
-  assert.equal((inbox.match(/"MESSAGES_CHANGED", "ai"/g) ?? []).length, 2);
+  const aiReplyDelivery = inbox.slice(inbox.indexOf("export async function recordAiReplyDelivery"),
+    inbox.indexOf("async function finalizeInboxOutbound"));
+  const automatedReply = inbox.slice(inbox.indexOf("async function sendAutomatedInboxMessage"),
+    inbox.indexOf("export async function sendFollowupMessage"));
+  assert.match(aiReplyDelivery, /publishInboxChanged\([^;]+"ai"/);
+  assert.match(automatedReply, /publishInboxChanged\([^;]+"ai"/,
+    "automated reply drafts refresh Inbox without creating an inbound alert");
   assert.match(component, /if \(ev\.messageSource !== "customer"\) return/);
   assert.doesNotMatch(component, /messageSource !== "diagnostic"/,
     "diagnostic messages must not ring every coworker's device");

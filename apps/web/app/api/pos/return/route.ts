@@ -10,6 +10,7 @@ import {
   verifyCashierPin,
 } from "@/lib/bms/pos";
 import { PAYMENT_METHODS, type PaymentMethod } from "@/lib/bms/payments";
+import { parsePosReturnLines } from "@/lib/bms/posRouteHelpers";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -84,15 +85,10 @@ async function handlePOST(req: NextRequest) {
   }
 
   const rawLines = Array.isArray(body.lines) ? body.lines : [];
-  const partialLines = rawLines
-    .map((line: any) => ({
-      orderItemId: Number(line?.orderItemId),
-      packQty: Number(line?.packQty),
-    }))
-    .filter((line) => Number.isInteger(line.orderItemId) && Number.isInteger(line.packQty) && line.packQty > 0);
+  const partialLines = parsePosReturnLines(rawLines);
 
-  if (mode === "PARTIAL" && partialLines.length === 0) {
-    return badRequest("การคืนบางรายการต้องมี lines ที่ถูกต้องอย่างน้อย 1 รายการ");
+  if (mode === "PARTIAL" && (!partialLines || partialLines.length === 0)) {
+    return badRequest("การคืนบางรายการต้องมี lines ที่ถูกต้องทุกบรรทัด");
   }
   if (mode === "FULL" && rawLines.length > 0) {
     return badRequest("การคืนทั้งบิลต้องไม่ส่ง lines");
@@ -110,7 +106,7 @@ async function handlePOST(req: NextRequest) {
           shiftId,
           orderId,
           actorUserId: auth.userId,
-          lines: partialLines,
+          lines: partialLines ?? [],
           note,
           approvedByUserId,
           preferredRefundMethod,

@@ -31,6 +31,8 @@ their dedicated server summaries. Staff confirmation continues through the exist
 | `request_board_game_reservation` | `order.create` | Board-game archetype only. Branch name, branch-local date/time, duration 30–720 minutes, party 1–500 and non-contact note ≤300 characters. First call is a read-only preview, never an insert. Pipeline saves a 15-minute fingerprint and displays its own summary. Exact latest-summary consent is server-only in ExecCtx; changed fields/config require confirmation again. Inserts CHAT/REQUESTED only, using CRM name/phone and a server retry key. |
 | `get_board_game_reservation_status` | `order.view` | No arguments. Latest five CHAT requests of the channel-derived CRM customer, scoped to the acting tenant. Short reference, branch/time/timezone, party, duration, status and bounded rejection reason; no table, staff or customer identity. Pipeline composes the reply. |
 | `get_board_game_availability` | Read | `booking.canSubmitViaChat = bookingEnabled && reservationDepositPolicy === 'NONE'`; directory listing is independent. May return opt-in area/floor and capacity-grouped counts, never table numbers or occupants. Current free tables are not future availability. |
+| `get_board_game_my_passes` | `order.view` | Board-game customer only. No arguments; identity comes from the server-established channel binding. Returns up to 10 own purchased passes with expiry and ledger-verified remaining minutes. A mismatch suppresses the balance and requires staff review. No current plan prices or offers. |
+| `get_board_game_pass_plans`, `get_board_game_offers` | Read | Board-game customer only. Active per-row chat opt-in, selected active branch or tenant-wide scope, at most 20 rows with truncation. Offers exclude expired dates and disclose conditions, not guaranteed eligibility or a final bill. |
 
 Contact completeness uses `get_customer_checkout`; missing name/phone use the existing
 `save_customer_checkout_details`. Neither customer/tenant IDs nor a confirmation flag are model
@@ -141,7 +143,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `present_customer_choices` | A1/presentation | yes | — | bounded question/options, no business mutation or confirmation authority |
 | `search_staff_users`, `get_staff_user_access` | A1/access | no | `user.view` | bounded current-tenant staff lookup / effective access; excludes platform identities and sensitive account fields |
 | `get_loyalty_program_status` | A1/config | no | `member.view` | tenant loyalty enablement and verified earning/redemption settings, including the before/after-discount earning base; not a customer balance |
-| `search_products`, `browse_catalog`, `list_new_arrivals`, `find_alternatives`, `get_product`, `check_stock`, `list_menu_modifiers`, `recommend_products` | A1 | yes | `product.view` | read |
+| `search_products`, `browse_catalog`, `list_new_arrivals`, `find_alternatives`, `get_product`, `search_product_specs`, `check_stock`, `list_menu_modifiers`, `recommend_products` | A1 | yes | `product.view` | read; technical specs are published sourced facts only |
 | `get_variant_reservations` | A1 | no | `order.view` | bounded tenant-scoped reconstruction of orders holding one SKU/size, including bundle sources and unattributed/over-attributed totals |
 | `list_customer_coupons`, `list_available_coupons`, `check_coupon` | A1 | yes | `coupon.view` | read / backend validation |
 | `get_loyalty_points` | A1 | own `(channel, customer_ref)` only | `member.view` | read; never redeems |
@@ -161,7 +163,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `list_shipments`, `get_shipment_label` | A1 | no | `shipping.view` | read |
 | `list_payments` | A1 | no | `payment.view` | read |
 | `list_purchase_orders`, `get_purchase_order`, `list_suppliers`, `get_supplier_intelligence` | A1 | no | `purchase.view` | bounded evidence-backed read; supplier metrics do not invent an SLA |
-| `generate_invoice`, `generate_quotation` | A1 | no | `order.view` | ephemeral document data |
+| `generate_invoice`, `generate_quotation` | A1 | no | `order.view` | ephemeral document data; quotation rejects all lines if any requested item is unavailable or unpriced, and its total is null when shipping is unknown |
 | `get_inventory_intelligence`, `explain_inventory_risk`, `get_inventory_anomalies`, `find_inventory_transfer_opportunities`, `get_inventory_forecast_accuracy`, `forecast_demand`, `predict_stockout`, `suggest_purchase_order` | A1 | no | `report.view` | branch-aware deterministic/heuristic reads; never move stock |
 | `get_branch_requisitions` | A1 | no | `inventory.requisition.view` (+`inventory.requisition.review` for DEMAND/METRICS; purchases only with `purchase.view`) | branch-scoped request list, consolidated demand and fulfilment metrics; never creates, approves or transfers |
 | `get_production_batches` | A1 | no | `operations.checklist.view` (+`product.view`) | branch-scoped central-kitchen batches (planned/actual yield, status, expiry); never creates, posts or disposes |
@@ -756,6 +758,7 @@ carrier adapter (`lib/bms/carriers/`): FLASH/KERRY = mock-ready scaffold เท�
 
 ผูก carrier/tracking + ship จริง: order PACKING → SHIPPED + ตัดสต็อก + SHIP movement (atomic)
 ถ้า order = SHIPPED อยู่แล้ว จะแค่แนบ shipment (ไม่ตัดสต็อกซ้ำ)
+ออเดอร์ `PICKUP` ต้องยืนยันส่งมอบจาก Orders; service คืน `PICKUP_ORDER` โดยไม่สร้าง shipment
 
 ก่อนส่งออเดอร์ของ LINE/Facebook/Instagram/Web/TikTok Chat ต้องมี CRM shipping address;
 Lazada/Shopee exempt เพราะที่อยู่อยู่ Seller Center ถ้าไม่ครบ service คืน
@@ -910,11 +913,12 @@ Permission: shipping.view
 ✅ Implemented — service `lib/bms/inbox.ts`, migration `5.5__bms_inbox.sql`,
 REST `/api/bms/inbox*`, GraphQL `bmsConversation*` / `bmsSendMessage`, admin UI `/admin/inbox`.
 
-ทุกข้อความจาก webhook (LINE/TikTok) + คำตอบ AI ถูกบันทึกอัตโนมัติผ่าน
-`logConversation()` (hook ใน webhook) — 1 บทสนทนา = (tenant, channel, customer_ref)
+ข้อความ LINE ที่ AI ตอบได้บันทึกคำถามและคำตอบผ่าน `logConversation()`;
+TikTok/Shopee/Lazada บันทึกข้อความเข้า Inbox ให้พนักงานตรวจผ่าน `logInboundMessage()`
+โดยไม่เรียก AI เพราะยังไม่มี API ส่งคำตอบกลับลูกค้า — 1 บทสนทนา = (tenant, channel, customer_ref)
 
 **Shopee/Lazada 🧪 beta:** `app/api/bms/{shopee,lazada}/webhook/[tenantId]/route.ts` มีโครงรับ webhook
-แบบเดียวกับ TikTok (rate limit + HMAC verify + parse → pipeline → `logConversation()`) และต่อ config/UI
+แบบเดียวกับ TikTok (rate limit + HMAC verify + parse → `logInboundMessage()`) และต่อ config/UI
 (settings, `Channel` type, `CHANNEL_COLOR`) ครบเหมือน channel อื่นแล้ว — **แต่** signature verify scheme
 กับชื่อ field ใน payload (`parseShopeeMessages()`/`parseLazadaMessages()`) เป็น placeholder ที่ยังไม่ตรวจกับ
 เอกสาร Shopee/Lazada Open Platform จริง (ดู `TODO(prod)` ในไฟล์) ต้องแก้ก่อนใช้ production · ยังไม่มี send API
@@ -1180,7 +1184,7 @@ Permission: report.view
   แทนการตีต้นทุนเป็นศูนย์ ต้องแสดง `disclaimer`/evidence state ในไฟล์เสมอ
 - `OPERATIONS` รวม previous-period comparison, reconciliation, inventory activity aging/cover และ discount signals;
   `PURCHASES` รวม supplier fill rate/approximate lead time; `CUSTOMERS` รวม paid-customer segments
-- PDF ใช้ `pdfkit` font มาตรฐาน จึงยังไม่รองรับ Thai glyphs ครบ; heading/label ของเอกสารจงใจเป็น English
+- PDF รายงานทั่วไปฝัง Sarabun จึงแสดงข้อมูลภาษาไทยได้ แต่ heading/label ยังเป็น English; PDF จำกัด 10,000 แถวและปฏิเสธเมื่อเกิน (ไม่ตัดข้อมูลเงียบ ๆ). รายงานภาษี/บัญชีสต็อกยังออกเฉพาะ XLSX/CSV จนกว่าจะจัดรูปแบบตาราง PDF ครบ
 - ดาวน์โหลดต้องผ่าน `/api/bms/reports/download/<id>` ซึ่งเช็ค tenant ownership ของ `bms_generated_reports`
   ก่อนเสมอ ไม่ใช้ `/api/files/<id>` ตรง ๆ
 
@@ -1245,7 +1249,7 @@ Confidence
   on keyword routing or the model remembering to request shop context. No payment accounts,
   credentials, customer data, or private settings are included in this prefetched projection.
 - `get_board_game_rates` — customer-only for `board_game_cafe`; published hourly rates by
-  participant type plus minimum, rounding and grace minutes. Offers, pass balances and final-bill
+  participant type plus minimum, rounding and grace minutes. Final-bill
   quotes are not exposed. Requires a published branch with `publish_rates` enabled.
 - Staff analytics (not customer discovery): `list_board_game_report_branches` returns up to 100
   branches allowed to the authenticated actor, a truncation flag, `allBranchesAllowed`, timezone
@@ -1335,6 +1339,16 @@ Confidence
   These three tools use `boardGameCustomerInfo.ts` inside tenant/RLS transactions. Branch selection
   accepts a published name, never an operational id. Multiple/mismatched branches return
   `BRANCH_REQUIRED`; unpublished data returns `NOT_PUBLISHED`, not zero or proof of absence.
+- `get_board_game_my_passes` — customer-only read of the channel-derived CRM customer's purchased
+  pass snapshots, capped at 10 with a truncation flag. Reads in a tenant/RLS transaction; compares
+  cached remaining minutes with the pass ledger and suppresses a mismatched balance. Inactive,
+  unlimited and mismatched passes have `remainingMinutes: null`, never an inferred zero. This does
+  not publish pass plans or offers from the customer's entitlement record.
+- `get_board_game_pass_plans` / `get_board_game_offers` — explicit per-row opt-in from `10.117`,
+  off by default, plus active row and branch scope. Plans expose listed name, price, duration and
+  included minutes; offers expose stated conditions without internal SKU/note. Both cap at 20 with
+  truncation. No visible rows return `NOT_PUBLISHED`, which is not proof the shop has no plans or
+  offers. Neither tool claims a purchase, offer eligibility, benefit stacking or final amount.
 - `request_board_game_reservation` — board-game customer-only, `order.create`; previews exact
   branch-local date/time, duration and party size for fresh customer confirmation. Backend derives
   CRM identity/contact. Default is `REQUESTED`; branch `chatAutoConfirm=true` with no deposit
@@ -1381,7 +1395,7 @@ Confidence
   names an actual table/check.
 - `get_payment_info` — บัญชีรับเงินของร้านที่กรอกข้อมูลใช้งานได้จริง (ธนาคาร/พร้อมเพย์) พร้อม
   `configured`; แถวว่างถูกตัดออก และเมื่อ `configured=false` AI ห้ามยกตัวอย่างช่องทางเอง
-- `get_shipping_estimate` — ประเมินค่าส่ง/ระยะเวลา (flat rate + ส่งฟรีเมื่อถึงยอดขั้นต่ำ)
+- `get_shipping_estimate` — ประเมินค่าส่ง/ระยะเวลาจากเรตที่ร้านตั้ง (flat/zone + เกณฑ์ส่งฟรี) เมื่อระบุ `items` เพื่อคำนวณน้ำหนัก ต้องมี SKU และจำนวนเต็มบวกของแต่ละรายการจริง; จำนวนที่ขาด ผิดรูปแบบ หรือมากกว่า 20 รายการถูกปฏิเสธ ไม่สมมติเป็น 1 หรือทิ้งรายการเงียบ ๆ ฝั่งลูกค้าไม่รับ `subtotal` ที่โมเดลส่งมา เพราะอาจทำให้ลดค่าส่งเป็นศูนย์ผิด; เกณฑ์ส่งฟรีตรวจจากยอดจริงใน checkout เท่านั้น ส่วน staff ใช้ยอด what-if ที่ตรวจแล้วได้ เส้นทางตอบอัตโนมัติที่ถาม “ค่าส่งเท่าไร” แบบไม่มีตะกร้าจะได้เพียงเรตตั้งต้นและต้องระบุว่าราคาจริงต้องตรวจสินค้า จำนวน และปลายทาง
 
 ข้อมูลมาจาก migration `6.9__bms_store_profile.sql` (1 แถวต่อร้าน) กรอกที่ `/admin/settings` (การ์ด
 "ข้อมูลร้าน") ผ่าน `bmsStoreProfile`/`bmsUpsertStoreProfile` (gate `requireTenantAdmin`, ไม่มี permission ใหม่)
@@ -1426,6 +1440,9 @@ Unallocated result lists expose their own truncation flags; a partial list never
 - `search_products(keyword?, category?, maxPrice?)` — ค้น active catalog จากชื่อ/SKU/barcode/alias/
   หมวด/แบรนด์ คืนราคา สต็อกรวม ไซซ์ที่มี วันที่เพิ่ม และ public product path/URL
 - `get_product(sku)` — อ่านรายละเอียด/ราคา/สต็อกทุกไซซ์ของ SKU พร้อม public path/URL ที่ส่งให้
+  ลูกค้า; `technicalFactsStatus` แยกข้อเท็จจริงที่เผยแพร่แล้วออกจากข้อมูลที่ยังไม่พร้อม
+- `search_product_specs(keyword)` — ค้นเฉพาะสเปกตามรุ่นที่พนักงานอีกคนอนุมัติพร้อมแหล่งอ้างอิง
+  ห้ามตีความว่าเป็นการรับรองความปลอดภัยโครงสร้าง/ไฟฟ้าหรือความเข้ากันได้ของวัสดุ
   ลูกค้าได้; ห้ามประกอบ URL หรือส่ง `/admin/*` เอง
 - `browse_catalog(keyword?, category?, minPrice?, maxPrice?, limit?)` — สำหรับคำถามกว้าง คืนเฉพาะ
   สินค้าที่มีของขายจริงแบบ bounded; pipeline ใช้ทูลนี้โดยตรงเมื่อมี follow-up ว่า
@@ -1467,8 +1484,8 @@ Claude วิเคราะห์ + เสนอแพตช์ → เปิ�
 
 ✅ **Fake Data Seeder (dev)** — `/admin/dev/fake` + `app/api/dev/fake/*` สร้างข้อมูลทดสอบทีละมากๆ
 (products/customers/orders+pay+ship/conversations/purchase) · marker `FAKE-`/tag `fake` → cleanup ลบทีเดียว
-· **seed ลง tenant ของผู้ล็อกอิน** (ร้านค้าเทสเองได้ · เมนูโชว์ให้คนมีสิทธิ์ `product.edit`) · cleanup scope เฉพาะร้านตัวเอง
-· ปิดใน production default · เปิดเครื่อง demo ด้วย env `BMS_ALLOW_FAKE_SEED=1` (`lib/dev-guards.ts` → `fakeSeedDisabled()`) · posts/users fixture ยังปิด production
+· เฉพาะ platform admin ที่มี session/role ปัจจุบันจากฐานข้อมูล และยังต้อง scope การสร้าง/ลบตาม tenant ที่เลือก
+· ปิดใน production default · `BMS_ALLOW_FAKE_SEED=1` เปิดใช้ได้เฉพาะเมื่อผ่าน platform-admin guard (`lib/dev-guards.ts`); posts fixture ปิดใน production เสมอ ส่วน users fixture ใช้ flag นี้
 
 The explicit onboarding action `/api/bms/onboarding/sample-data` is separate from these dev routes:
 it is Administrator/Manager-only, accepts only the current empty tenant, and uses a resumable
@@ -1486,7 +1503,7 @@ tenant-scoped seed ledger, so it is intentionally available in production withou
 
 ## bmsSignup() — public
 สมัครใช้งานเอง → เก็บ pending signup และส่งลิงก์ยืนยันอีเมลก่อน โดยยังไม่สร้างร้าน; เมื่อเจ้าของอีเมล
-กดลิงก์จึงสร้าง tenant (plan free) + owner (role Manager) แบบ atomic. ไม่ต้อง auth. (`lib/bms/signup.ts`)
+กดลิงก์จึงสร้าง tenant (plan free) + owner (role Administrator ของร้าน) แบบ atomic. ไม่ต้อง auth. เส้นทางสมัครด้วยโซเชียลใช้บทบาทเดียวกันหลังตรวจตัวตนจากผู้ให้บริการแล้ว (`lib/bms/signup.ts`)
 
 ## bmsTenants() / bmsIsPlatformAdmin()
 list ทุกร้าน + สถิติ (users/products/orders/revenue). `bmsIsPlatformAdmin` ใช้ gate เมนู/หน้า UI.

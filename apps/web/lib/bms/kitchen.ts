@@ -4,6 +4,7 @@ import { beginTenantTx } from "./tenant";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
 import { kitchenStationColumnsSql } from "./kitchenStations";
 import { lockCheckScopeForKitchenTicketsInTx } from "./restaurantCheckLock";
+import { formatPickupQueueNo, syncPickupQueueFromKitchenInTx, syncPickupQueueFromRestaurantCheckInTx } from "./pickupQueue";
 
 function mapKitchenTicket(row: any) {
   return {
@@ -32,6 +33,13 @@ function mapKitchenTicket(row: any) {
     qty: Number(row.qty),
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
     updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
+    /**
+     * เลขคิวรับของ (10.111) — ครัวต้องรู้ว่าจานนี้ของคิวเลขอะไร ไม่งั้นคนหน้าร้านเรียก 042 แต่
+     * ครัววางอาหารของ 043 ไว้ · null = บิลนี้ไม่ได้ออกเลข (บิลโต๊ะ/เครื่องที่ไม่เปิดโหมดคิว)
+     * หรือเป็นผลจากการเลื่อนสถานะ (จอดึงรายการใหม่หลังกดอยู่แล้ว)
+     */
+    pickupQueueLabel: row.pickup_queue_no == null ? null
+      : formatPickupQueueNo(Number(row.pickup_queue_no), String(row.pickup_queue_prefix ?? "")),
   };
 }
 
@@ -114,12 +122,15 @@ export async function listKitchenTickets(
                 NULL::uuid AS check_id, NULL::text AS table_code, NULL::text AS table_name,
                 NULL::integer AS round_no, o.restaurant_request_instructions AS kitchen_note,
                 kt.station, kt.station_id, kt.status, kt.modifier_codes, kt.created_at, kt.updated_at,
-                oi.product_sku, oi.product_name, oi.size, oi.pack_qty, oi.qty
+                oi.product_sku, oi.product_name, oi.size, oi.pack_qty, oi.qty,
+                pq.queue_no AS pickup_queue_no, pq.queue_prefix AS pickup_queue_prefix
            FROM bms_kitchen_tickets kt
            JOIN bms_order_items oi
              ON oi.tenant_id = kt.tenant_id AND oi.id = kt.order_item_id
            JOIN bms_orders o
              ON o.tenant_id = kt.tenant_id AND o.id = kt.order_id
+           LEFT JOIN bms_pickup_queue pq
+             ON pq.tenant_id = kt.tenant_id AND pq.order_id = kt.order_id AND pq.status <> 'CANCELLED'
           WHERE kt.tenant_id = $1
             AND ($5::uuid IS NULL OR o.location_id = $5)
             AND ($2::text IS NULL OR kt.status = $2)
@@ -134,7 +145,8 @@ export async function listKitchenTickets(
                 COALESCE(tb.name, CASE WHEN rc.service_mode = 'TAKEAWAY' THEN 'Take away #' || left(rt.check_id::text, 8) END) AS table_name,
                 ci.round_no, ci.kitchen_note,
                 rt.station, rt.station_id, rt.status, ci.modifier_codes, rt.created_at, rt.updated_at,
-                ci.product_sku, ci.product_name, ci.size, ci.pack_qty, ci.pack_qty
+                ci.product_sku, ci.product_name, ci.size, ci.pack_qty, ci.pack_qty,
+                pq.queue_no AS pickup_queue_no, pq.queue_prefix AS pickup_queue_prefix
            FROM bms_restaurant_kitchen_tickets rt
            JOIN bms_restaurant_check_items ci
              ON ci.tenant_id = rt.tenant_id AND ci.id = rt.check_item_id
@@ -142,6 +154,16 @@ export async function listKitchenTickets(
              ON rc.tenant_id = rt.tenant_id AND rc.id = rt.check_id
            LEFT JOIN bms_restaurant_tables tb
              ON tb.tenant_id = rc.tenant_id AND tb.id = rc.table_id
+           -- บิลกลับบ้านได้เลขตอนรับเงิน ซึ่งมักเกิดหลังส่งครัวแล้ว: อ่านเลขจากออร์เดอร์ที่ปิดบิลนี้
+           LEFT JOIN LATERAL (
+             SELECT q.queue_no, q.queue_prefix
+               FROM bms_orders so
+               JOIN bms_pickup_queue q ON q.tenant_id = so.tenant_id AND q.order_id = so.id
+              WHERE so.tenant_id = rt.tenant_id AND so.restaurant_check_id = rt.check_id
+                AND rc.service_mode = 'TAKEAWAY' AND q.status <> 'CANCELLED'
+              ORDER BY q.created_at DESC
+              LIMIT 1
+           ) pq ON TRUE
           WHERE rt.tenant_id = $1
             AND ($5::uuid IS NULL OR rc.location_id = $5)
             AND ($2::text IS NULL OR rt.status = $2)
@@ -329,6 +351,16 @@ async function updateKitchenTicketStatusInTx(client: PoolClient, input: UpdateKi
           actorUserId: input.actorUserId,
         });
       }
+    }
+    // Counter sales with a pickup number (`10.111`): the number moves to "ready" on the call
+    // screen when the last live ticket of the order reaches READY/SERVED, in this same
+    // transaction, so the screen never announces food the kitchen has just taken back.
+    if (source === "ORDER") {
+      const orderId = (updated.rows[0] as { order_id?: string | null }).order_id;
+      if (orderId) await syncPickupQueueFromKitchenInTx(client, input.tenantId, String(orderId));
+    } else {
+      const checkId = (updated.rows[0] as { check_id?: string | null }).check_id;
+      if (checkId) await syncPickupQueueFromRestaurantCheckInTx(client, input.tenantId, String(checkId));
     }
     await client.query(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)

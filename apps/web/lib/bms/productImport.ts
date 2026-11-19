@@ -56,6 +56,9 @@ export async function runImport(
 
   for (const row of rows) {
     try {
+      if (row.vat_category != null && !["V", "N", "UNKNOWN"].includes(String(row.vat_category).trim().toUpperCase())) {
+        throw new Error("คอลัมน์ ประเภท VAT ต้องเป็น V, N หรือ UNKNOWN");
+      }
       const fields = validateProductFields(row);
       validateProductConfigurationFields(row);
       const firstRow = seenSku.get(fields.sku);

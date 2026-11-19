@@ -38,6 +38,7 @@ import {
   type SellableProduct,
 } from "../products";
 import { listProductModifiers } from "../productRecipes";
+import { publishedTechnicalSpecsForTool, searchPublishedTechnicalSpecs } from "../productTechnicalSpecs";
 import { customerFoodProfile } from "../productFoodSafety";
 import { getPharmacyCustomerServiceStatus, getCustomerPharmacyCaseStatus, getPharmacyProductFacts } from "../pharmacyCustomer";
 import { listRestaurantOrderLocations } from "../restaurantOrdering";
@@ -46,7 +47,7 @@ import {
   listCustomerRestaurantReservations,
   requestRestaurantReservation,
 } from "../restaurantCustomer";
-import { readBoardGameCustomerInfo, type BoardGameCustomerRead } from "../boardGameCustomerInfo";
+import { readBoardGameCustomerInfo, readBoardGameCustomerPasses, readBoardGameCustomerCatalog, type BoardGameCustomerRead } from "../boardGameCustomerInfo";
 import { executeBoardGameReservationRequest } from "../boardGameReservationPolicy";
 import { BOARD_GAME_CHAT_ACTIONS, executeBoardGameChatAction } from "../boardGameChatActionPolicy";
 import { previewBoardGameChatAction, commitBoardGameChatAction, validateBoardGameChatAction } from "../boardGameChatActions";
@@ -55,6 +56,7 @@ import { isIdempotencyConflictError } from "../idempotencyErrors";
 import { checkStock, listVariantReservations } from "../stock";
 import { CARRIER_CODES } from "../carriers/constants";
 import { quoteShipping } from "../shippingRates";
+import { shippingEstimateItems } from "./shippingEstimateInput";
 import {
   createOrder,
   recalculateOrderShipping,
@@ -126,7 +128,7 @@ import {
   supportsCustomerPaymentMethod,
 } from "../paymentConfiguration";
 import { getTenantName, getTenantSlug } from "../platform";
-import { generateInvoice, generateQuotation } from "../documents";
+import { generateInvoice, generateQuotation, QuotationValidationError } from "../documents";
 import { understand } from "../nlu";
 import { checkCouponForCustomer, listAvailableCouponsForCustomer, listCustomerCouponWallet } from "../coupons";
 import { recordSynonymCandidate } from "../aiSynonyms";
@@ -246,7 +248,9 @@ function auditCtxOf(ec: ExecCtx): any {
   return ec.ctx ?? { tenant_id: ec.tenantId, admin: { email: ec.actor } };
 }
 async function auditWrite(ec: ExecCtx, action: string, target: string | null, meta: Record<string, unknown>) {
-  await audit(auditCtxOf(ec), action, target, { ...meta, via: `ai:${ec.surface}` });
+  await audit(auditCtxOf(ec), action, target, {
+    ...meta, via: `ai:${ec.surface}`, conversationId: ec.conversationId ?? null,
+  }, { actorKind: "AI", source: ec.surface === "customer" ? "CUSTOMER_AI" : "STAFF_AI" });
 }
 
 async function inventoryToolScope(ec: ExecCtx, locationId?: string | null) {
@@ -291,7 +295,8 @@ function safeCatalogProduct(product: SellableProduct, tenantSlug: string | null)
   return {
     sku: product.sku,
     name: product.name,
-    price: product.price,
+    price: product.stockPolicy === "WEIGHTED" ? null : product.price,
+    priceBasis: product.stockPolicy === "WEIGHTED" ? "NOT_VERIFIED_FOR_CUSTOMER" : "CATALOG_BASE_UNIT",
     description: product.description?.slice(0, 400) ?? null,
     category: product.category,
     brand: product.brand,
@@ -797,7 +802,7 @@ const findAlternativesTool: BmsTool = {
 const getProduct: BmsTool = {
   name: "get_product",
   description:
-    "Get one product by sku, including every size, remaining stock, and its customer-safe publicPath/publicUrl for sharing.",
+    "Get one product by sku, including every size, remaining stock, and published sourced technical facts. Never infer dimensions, material grade, standards or structural/electrical suitability from free text; unprovided facts are unknown.",
   surfaces: ["customer", "staff"],
   permission: "product.view",
   inputSchema: {
@@ -817,9 +822,10 @@ const getProduct: BmsTool = {
     ]);
     const p = items.find((x) => x.sku.toLowerCase() === sku.toLowerCase());
     if (!p) return { ok: false, error: `ไม่พบสินค้า sku ${sku}` };
-    const [variants, sellableResult] = await Promise.all([
+    const [variants, sellableResult, technicalSpecs] = await Promise.all([
       listVariants(ec.tenantId, p.sku),
       listSellableProducts(ec.tenantId, { search: p.sku, limit: 5 }),
+      publishedTechnicalSpecsForTool(ec.tenantId, p.sku),
     ]);
     const sellable = sellableResult.items.find((item) => item.sku.toLowerCase() === p.sku.toLowerCase()) ?? null;
     if (ec.surface === "customer" && !sellable) return { ok: false, error: `ไม่พบสินค้า sku ${sku}` };
@@ -831,11 +837,26 @@ const getProduct: BmsTool = {
         verifiedAt: new Date().toISOString(),
         sku: p.sku,
         name: p.name,
-        price: variantPrices.length ? Math.min(...variantPrices) : Number(p.price),
-        maxPrice: variantPrices.length ? Math.max(...variantPrices) : Number(p.price),
+        price: sellable?.stockPolicy === "WEIGHTED" ? null
+          : variantPrices.length ? Math.min(...variantPrices) : Number(p.price),
+        maxPrice: sellable?.stockPolicy === "WEIGHTED" ? null
+          : variantPrices.length ? Math.max(...variantPrices) : Number(p.price),
         description: p.description?.slice(0, 800) ?? null,
         category: p.category,
         brand: p.brand,
+        technicalFactsStatus: technicalSpecs.status,
+        technicalFacts: technicalSpecs.items.map((spec) => ({
+          variantCode: spec.variant_code,
+          revisionNo: spec.revision_no,
+          publishedAt: spec.published_at,
+          lengthMm: spec.length_mm == null ? null : Number(spec.length_mm),
+          widthMm: spec.width_mm == null ? null : Number(spec.width_mm),
+          diameterMm: spec.diameter_mm == null ? null : Number(spec.diameter_mm),
+          thicknessMm: spec.thickness_mm == null ? null : Number(spec.thickness_mm),
+          nominalWeightG: spec.nominal_weight_g == null ? null : Number(spec.nominal_weight_g),
+          grade: spec.grade, standardCode: spec.standard_code,
+          usageLimitations: spec.usage_limitations,
+        })),
         foodProfile: customerFoodProfile({
           allergenCodes: p.allergen_codes,
           allergenInformationProvided: p.allergen_information_provided,
@@ -864,6 +885,34 @@ const getProduct: BmsTool = {
         })),
       },
     };
+  },
+};
+
+const searchProductSpecs: BmsTool = {
+  name: "search_product_specs",
+  description: "Search only published, sourced technical facts by product, variant, grade or standard. Results do not certify structural/electrical safety, suitability or compatibility. Unknown facts stay unknown.",
+  surfaces: ["customer", "staff"],
+  permission: "product.view",
+  whenToUse: "The customer asks for a stated dimension, grade, standard or documented use limit, including when they do not know the SKU.",
+  whenNotToUse: "Do not infer engineering suitability, load capacity, electrical safety or compatibility; hand those questions to qualified staff.",
+  inputSchema: { type: "object", properties: { keyword: { type: "string", description: "Product, grade, standard or variant to look up." } }, required: ["keyword"] },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const keyword = reqString(args, "keyword");
+    if (keyword.length > 100) return { ok: false, error: "Search term is too long" };
+    const result = await searchPublishedTechnicalSpecs(ec.tenantId, keyword);
+    return { ok: true, data: { verifiedAt: new Date().toISOString(),
+      technicalFactsStatus: result.status,
+      products: result.items.map((row) => ({
+        sku: row.product_sku, name: row.product_name, variantCode: row.variant_code,
+        revisionNo: row.revision_no, publishedAt: row.published_at,
+        lengthMm: row.length_mm == null ? null : Number(row.length_mm),
+        widthMm: row.width_mm == null ? null : Number(row.width_mm),
+        diameterMm: row.diameter_mm == null ? null : Number(row.diameter_mm),
+        thicknessMm: row.thickness_mm == null ? null : Number(row.thickness_mm),
+        nominalWeightG: row.nominal_weight_g == null ? null : Number(row.nominal_weight_g),
+        grade: row.grade, standardCode: row.standard_code,
+        usageLimitations: row.usage_limitations,
+      })) } };
   },
 };
 
@@ -2376,6 +2425,7 @@ const createOrderTool: BmsTool = {
       customerRef,
       items,
       editorId: ec.surface === "staff" ? ec.ctx?.admin?.id ?? null : null,
+      auditConversationId: ec.conversationId ?? null,
       couponCode: optString(args, "couponCode") ?? null,
       preferredCarrier: requestedCarrier ?? null,
       locationId: requestedLocationId,
@@ -2419,7 +2469,6 @@ const createOrderTool: BmsTool = {
     }
     if (r.status === "CREATED") {
       if (ec.surface === "customer") ec.createdOrderId = r.orderId;
-      await auditWrite(ec, "order.create", r.orderId, { itemCount: items.length, total: r.total });
       if (ec.surface === "customer" && ec.channel && ec.customerRef) {
         return {
           ok: true,
@@ -2657,11 +2706,11 @@ const reorderTool: BmsTool = {
       ec.surface === "staff" ? ec.ctx?.admin?.id ?? null : null,
       ec.surface === "customer" && ec.channel && ec.customerRef
         ? { channel: ec.channel, customerRef: ec.customerRef }
-        : null
+        : null,
+      ec.conversationId ?? null
     );
     if ((r as any).status === "CREATED") {
       if (ec.surface === "customer") ec.createdOrderId = (r as any).orderId;
-      await auditWrite(ec, "order.create", (r as any).orderId, { reorderFrom: orderId });
     }
     return { ok: true, data: r };
   },
@@ -2670,7 +2719,7 @@ const reorderTool: BmsTool = {
 const createShipmentTool: BmsTool = {
   name: "create_shipment",
   description:
-    "Create a shipment with its carrier and tracking number and actually dispatch it (order PACKING → SHIPPED, and stock is deducted).",
+    "Create a carrier shipment for a delivery order and dispatch it (order PACKING → SHIPPED, stock deducted). Pickup orders use order handover instead.",
   surfaces: ["staff"],
   permission: "shipping.create",
   inputSchema: {
@@ -2693,8 +2742,8 @@ const createShipmentTool: BmsTool = {
       trackingNo: optString(args, "trackingNo") ?? null,
       note: optString(args, "note") ?? null,
       actor: ec.actor,
+      auditVia: "ai:staff",
     });
-    if (r.status === "CREATED") await auditWrite(ec, "shipping.create", r.shipmentId, { orderId, carrier });
     return { ok: true, data: r };
   },
 };
@@ -2845,6 +2894,13 @@ const setCustomerTagsTool: BmsTool = {
   },
 };
 
+function staffInboxMutationOptions(ec: ExecCtx): { actor: string; restrictedUserId?: string } {
+  const actorId = ec.ctx?.admin?.id ? String(ec.ctx.admin.id) : null;
+  if (!actorId) throw new ToolArgError("ต้องมีบัญชีพนักงานเพื่อจัดการแชท");
+  return { actor: ec.actor,
+    ...(ec.ctx?.admin?.role === "Sales" ? { restrictedUserId: actorId } : {}) };
+}
+
 const assignConversationTool: BmsTool = {
   name: "assign_conversation",
   description: "Assign a conversation to one staff member (as its primary owner).",
@@ -2857,8 +2913,7 @@ const assignConversationTool: BmsTool = {
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const id = reqString(args, "conversationId");
-    const ok = await assignConversation(ec.tenantId, id, reqString(args, "userId"));
-    if (ok) await auditWrite(ec, "inbox.assign", id, {});
+    const ok = await assignConversation(ec.tenantId, id, reqString(args, "userId"), staffInboxMutationOptions(ec));
     return { ok: true, data: { updated: ok } };
   },
 };
@@ -2879,8 +2934,7 @@ const setConversationStatusTool: BmsTool = {
   execute: async (args, ec): Promise<ToolResult> => {
     const id = reqString(args, "conversationId");
     const status = enumVal(args, "status", CONV_STATUSES)!;
-    const ok = await setConversationStatus(ec.tenantId, id, status);
-    if (ok) await auditWrite(ec, "inbox.manage", id, { status });
+    const ok = await setConversationStatus(ec.tenantId, id, status, staffInboxMutationOptions(ec));
     return { ok: true, data: { updated: ok } };
   },
 };
@@ -2901,8 +2955,7 @@ const setConversationTagsTool: BmsTool = {
   execute: async (args, ec): Promise<ToolResult> => {
     const id = reqString(args, "conversationId");
     const tags = Array.isArray(args.tags) ? args.tags.map(String) : [];
-    const ok = await setConversationTags(ec.tenantId, id, tags);
-    if (ok) await auditWrite(ec, "inbox.manage", id, { kind: "tags" });
+    const ok = await setConversationTags(ec.tenantId, id, tags, staffInboxMutationOptions(ec));
     return { ok: true, data: { updated: ok } };
   },
 };
@@ -2919,8 +2972,9 @@ const addNoteTool: BmsTool = {
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const id = reqString(args, "conversationId");
-    const note = await addNote(ec.tenantId, id, ec.actor, reqString(args, "body"));
-    if (note) await auditWrite(ec, "inbox.manage", id, { kind: "note" });
+    const scope = staffInboxMutationOptions(ec);
+    const note = await addNote(ec.tenantId, id, ec.actor, reqString(args, "body"), null,
+      scope.restrictedUserId ? { restrictedUserId: scope.restrictedUserId } : {});
     return { ok: true, data: note ?? { added: false } };
   },
 };
@@ -2937,7 +2991,9 @@ const verifyPaymentSlipTool: BmsTool = {
     required: ["paymentId"],
   },
   execute: async (args, ec): Promise<ToolResult> => {
-    const v = await verifyPaymentSlip(ec.tenantId, reqString(args, "paymentId"));
+    const v = await verifyPaymentSlip(
+      ec.tenantId, reqString(args, "paymentId"), ec.ctx?.admin?.id ? String(ec.ctx.admin.id) : null
+    );
     if (!v) return { ok: false, error: "ไม่พบการชำระเงิน หรือไม่มีสลิปให้ตรวจ" };
     return { ok: true, data: v };
   },
@@ -3114,6 +3170,8 @@ const BOARD_GAME_CUSTOMER_TOOLS = new Set([
   "manage_board_game_booking",
   "request_board_game_reservation", "get_board_game_reservation_status",
   "get_board_game_rates", "search_board_game_library", "get_board_game_availability",
+  "get_board_game_my_passes",
+  "get_board_game_pass_plans", "get_board_game_offers",
 ]);
 
 
@@ -3233,6 +3291,35 @@ const searchBoardGameLibraryTool = boardGameCustomerReadTool("search_board_game_
 const getBoardGameAvailabilityTool = boardGameCustomerReadTool("get_board_game_availability", "availability",
   "Read this shop's branch information/hours, current aggregate table counts, opt-in customer-safe area/floor and capacity groups, and booking/deposit policy. Table details contain public area labels, seat capacity and grouped counts only—never table numbers, ids, occupants or sessions. When booking.canSubmitViaChat is true, use request_board_game_reservation for a customer-confirmed booking; booking.autoConfirm determines automatic confirmation versus staff review. This read never submits or confirms a booking. Use manage_board_game_booking for changes or staff requests. Cannot predict waiting time or guarantee future availability. NOT_PUBLISHED or null fields mean not enabled for chat, not zero.");
 
+const getBoardGameMyPassesTool: BmsTool = {
+  name: "get_board_game_my_passes", surfaces: ["customer"], permission: "order.view",
+  description: "Read this channel-verified customer's purchased board-game time passes, remaining minutes and expiry. No arguments or customer identifiers. A null remainingMinutes is not zero: unlimited, inactive, or a ledger discrepancy; for REVIEW_REQUIRED ask staff to check the balance. This is not the catalog of passes for sale and does not reveal current prices, promotions, or eligibility. Do not treat loyalty points as play-time minutes.",
+  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  execute: async (args, ec) => {
+    if (Object.keys(args).length) throw new ToolArgError("This tool accepts no arguments");
+    if (!ec.channel || !ec.customerRef) return { ok: false, error: "CUSTOMER_IDENTITY_REQUIRED" };
+    const customerId = await findCustomerIdByIdentity(ec.tenantId, ec.channel, ec.customerRef);
+    if (!customerId) return { ok: true, data: { status: "NO_CUSTOMER", passes: [], truncated: false } };
+    return { ok: true, data: await readBoardGameCustomerPasses(ec.tenantId, customerId) };
+  },
+};
+
+function boardGamePublishedCatalogTool(kind: "plans" | "offers"): BmsTool {
+  return {
+    name: kind === "plans" ? "get_board_game_pass_plans" : "get_board_game_offers",
+    surfaces: ["customer"],
+    description: kind === "plans"
+      ? "Read active board-game play-time pass plans explicitly published to customer chat for a branch. Listed price and duration are not proof that the customer bought a pass. A 30-day pass is not necessarily a calendar-month subscription. Ask which branch if ambiguous; do not infer unpublished plans are unavailable."
+      : "Read active, unexpired board-game play-time offers explicitly published to customer chat for a branch. Return stated conditions only: dates, local weekday/time, party size, minimum play time and whether a product purchase is required. Never guarantee eligibility, stacking with a pass or a final bill. Ask which branch if ambiguous; no listed offers means none published to chat, not no promotions in the shop.",
+    inputSchema: { type: "object", additionalProperties: false, properties: {
+      branch: { type: "string", maxLength: 120, description: "Exact branch name returned by shop chat tools; omit if the customer has not selected one." },
+    } },
+    execute: async (args, ec) => ({ ok: true, data: await readBoardGameCustomerCatalog(ec.tenantId, kind, optString(args, "branch")) }),
+  };
+}
+const getBoardGamePassPlansTool = boardGamePublishedCatalogTool("plans");
+const getBoardGameOffersTool = boardGamePublishedCatalogTool("offers");
+
 const getStoreInfoTool: BmsTool = {
   name: "get_store_info",
   description:
@@ -3299,47 +3386,50 @@ const getPaymentInfoTool: BmsTool = {
 const getShippingEstimateTool: BmsTool = {
   name: "get_shipping_estimate",
   description:
-    "Estimate shipping cost and delivery time from the rates the shop configured. Pass the order subtotal so any free-shipping threshold is applied, " +
-    "and pass province when the customer has stated their destination so the zone rate is used instead of the shop's flat rate. " +
-    "Read `warnings` before answering: if it says the province was guessed or product weights are missing, tell the customer the fee is an estimate to be confirmed.",
+    "Estimate shipping cost and delivery time from the rates the shop configured. Customer chat cannot supply a subtotal; the final free-shipping threshold is checked at checkout. Staff may pass a verified what-if subtotal. " +
+    "Pass province when the customer has stated their destination so the zone rate is used instead of the shop's flat rate. " +
+    "Read `warnings` before answering: an unknown destination or missing product weights makes this an estimate to be confirmed. Never invent a province or item quantity.",
   surfaces: ["customer", "staff"],
   inputSchema: {
     type: "object",
     properties: {
       subtotal: {
         type: "number",
-        description: "Order subtotal, if known, used to check free shipping.",
+        description: "Staff-only verified what-if subtotal; never pass from customer chat.",
       },
       province: {
         type: "string",
+        maxLength: 200,
         description: "Destination province, only when the customer stated it. Never invent one.",
       },
       items: {
         type: "array",
-        description: "Line items, if known, so parcel weight can be summed for weight-based rates.",
+        maxItems: 20,
+        description: "Verified SKU and explicit positive whole-unit quantity for each known line, up to 20. Omit items if quantity is unknown; never assume one.",
         items: {
           type: "object",
-          properties: { sku: { type: "string" }, qty: { type: "integer" } },
+          additionalProperties: false,
+          properties: { sku: { type: "string", minLength: 1, maxLength: 200 }, qty: { type: "integer", minimum: 1 } },
           required: ["sku", "qty"],
         },
       },
     },
   },
   execute: async (args, ec): Promise<ToolResult> => {
-    const subtotal = typeof args.subtotal === "number" ? args.subtotal : null;
-    const rawItems = Array.isArray(args.items) ? args.items : null;
-    const items = rawItems
-      ? rawItems
-          .map((r: any) => ({ sku: String(r?.sku ?? "").trim(), qty: Number(r?.qty) || 1 }))
-          .filter((r) => r.sku)
-      : null;
+    const subtotal = optMoney(args, "subtotal");
+    if (ec.surface === "customer" && subtotal !== null) {
+      throw new ToolArgError('"subtotal" ต้องตรวจจากยอดออร์เดอร์ของเซิร์ฟเวอร์ก่อน ไม่รับยอดที่โมเดลส่งมา');
+    }
+    const items = shippingEstimateItems(args.items);
+    const province = optString(args, "province") ?? null;
+    if (province && province.length > 200) throw new ToolArgError('"province" ยาวเกินไป');
     return {
       ok: true,
       data: await quoteShipping({
         tenantId: ec.tenantId,
         subtotal,
-        province: optString(args, "province") ?? null,
-        items: items && items.length ? items : null,
+        province,
+        items,
       }),
     };
   },
@@ -3365,7 +3455,7 @@ const generateInvoiceTool: BmsTool = {
 const generateQuotationTool: BmsTool = {
   name: "generate_quotation",
   description:
-    "Generate a quotation from a list of items (priced at current prices plus estimated shipping; it is not tied to any order and reserves no stock).",
+    "Generate a provisional staff quotation from current catalog prices. Every requested line must be valid; unavailable lines reject the whole quotation. Unknown shipping makes total null. This reserves no stock, fixes no price, and is not an approved project quote.",
   surfaces: ["staff"],
   permission: "order.view",
   inputSchema: {
@@ -3384,9 +3474,15 @@ const generateQuotationTool: BmsTool = {
     required: ["items"],
   },
   execute: async (args, ec): Promise<ToolResult> => {
-    const items = reqItems(args);
-    const doc = await generateQuotation(ec.tenantId, items, optString(args, "customerRef") ?? null);
-    return { ok: true, data: doc };
+    // Let the service report all invalid lines together, including malformed model output.
+    const items = args.items as Array<{ sku: string; size: string; qty: number }>;
+    try {
+      const doc = await generateQuotation(ec.tenantId, items, optString(args, "customerRef") ?? null);
+      return { ok: true, data: doc };
+    } catch (error) {
+      if (error instanceof QuotationValidationError) return { ok: false, error: error.message };
+      throw error;
+    }
   },
 };
 
@@ -3844,6 +3940,7 @@ export const ALL_TOOLS: BmsTool[] = [
   listNewArrivalsTool,
   findAlternativesTool,
   getProduct,
+  searchProductSpecs,
   checkStockTool,
   listMenuModifiersTool,
   listRestaurantOrderLocationsTool,
@@ -3909,6 +4006,9 @@ export const ALL_TOOLS: BmsTool[] = [
   getBoardGameReservationStatusTool,
   searchBoardGameLibraryTool,
   getBoardGameAvailabilityTool,
+  getBoardGameMyPassesTool,
+  getBoardGamePassPlansTool,
+  getBoardGameOffersTool,
   getPaymentInfoTool,
   getShippingEstimateTool,
   // B2 — documents

@@ -14,6 +14,8 @@ import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import type { NextRequest } from "next/server";
 import { authenticatePosDevice, cashierHasPermission, recordPosSale, verifyCashierPin } from "@/lib/bms/pos";
 import { isDistinctPosApprover, isPosUuid, parsePosExtraLines, parsePosPayments, parsePosSaleLines } from "@/lib/bms/posRouteHelpers";
+import { parsePosOpenItems } from "@/lib/bms/posOpenItems";
+import { issuePickupQueueAfterSale } from "@/lib/bms/pickupQueue";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -63,10 +65,16 @@ async function handlePOST(req: NextRequest) {
   }
 
   const lines = parsePosSaleLines(body.lines);
+  const parsedOpenItems = parsePosOpenItems(body.openItems);
+  if (!parsedOpenItems.ok) return badRequest(parsedOpenItems.reason);
+  const openItems = parsedOpenItems.items;
+  if (openItems.length && !(await cashierHasPermission(device.tenantId, auth.userId, "pos.open_item.sell"))) {
+    return NextResponse.json({ error: await posPermissionDeniedMessage(device.tenantId, "pos.open_item.sell") }, { status: 403 });
+  }
   const boardGameBillingGroupId = typeof body.boardGameBillingGroupId === "string"
     ? body.boardGameBillingGroupId.trim()
     : "";
-  if (lines.length === 0 && !boardGameBillingGroupId) {
+  if (lines.length === 0 && !boardGameBillingGroupId && !openItems.length) {
     return badRequest("ต้องมีรายการสินค้าหรือ session บอร์ดเกมอย่างน้อย 1 รายการ");
   }
   if (mode === "DEPOSIT" && boardGameBillingGroupId) {
@@ -205,6 +213,7 @@ async function handlePOST(req: NextRequest) {
     idempotencyKey,
     mode,
     lines,
+    openItems,
     boardGameBillingGroupId: boardGameBillingGroupId || null,
     payments,
     couponCode: typeof body.couponCode === "string" ? body.couponCode : null,
@@ -245,6 +254,25 @@ async function handlePOST(req: NextRequest) {
         ? body.pharmacyReviewAssessmentId.trim()
         : null,
   });
+
+  // เลขคิวรับของ (10.111) — ออก **หลัง** บิล commit แล้วในทรานแซกชันของตัวเอง เมื่อเครื่อง
+  // ขอเองหรือสาขาเปิดให้ทุกเครื่อง · ออกเลขไม่ได้ต้องไม่ทำให้การขายดูเหมือนล้ม: เงินเข้า
+  // แล้ว จึงตอบ SOLD พร้อม `pickupQueueError` ให้แคชเชียร์กดออกเลขซ้ำจากแผงคิวได้ · บิลที่
+  // ยิงซ้ำได้เลขเดิม (หนึ่งบิลหนึ่งเลข)
+  if (result.status === "SOLD") {
+    const queue = await issuePickupQueueAfterSale({
+      tenantId: device.tenantId,
+      locationId: device.locationId,
+      deviceId: device.id,
+      orderId: String(result.orderId),
+      actorUserId: auth.userId,
+      requested: body.pickupQueue === true,
+      allowBranchDefault: true,
+    });
+    if (queue.pickupQueue || queue.pickupQueueError) {
+      return NextResponse.json({ ...result, ...queue }, { status: 200 });
+    }
+  }
 
   // ขายซ้ำด้วยคีย์เดิม → 200 พร้อม replayed: true (ไม่ใช่ error — เครื่องแค่ยิงซ้ำ)
   if (result.status === "SOLD" || result.status === "DEPOSIT_TAKEN") {

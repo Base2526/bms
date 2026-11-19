@@ -20,6 +20,8 @@ import {
 } from "./receiptI18n";
 
 export type PosSaleReceiptRow = {
+  /** เลขคิวรับของ (10.111) */
+  pickupQueueLabel?: string | null;
   extraLines?: Array<{ label: string; qty: number; amount: number }>;
   pointsEarned?: number | null;
   pointsBalance?: number | null;
@@ -49,7 +51,7 @@ export type PosSaleReceiptRow = {
   cashChange: number | null;
   memberName: string | null;
   memberNo: string | null;
-  lines: Array<{ receiptName: string; size: string | null; packQty: number; packPrice: number }>;
+  lines: Array<{ receiptName: string; size: string | null; packQty: number; packPrice: number; lineTotal?: number }>;
   payments: Array<{
     method: string;
     amount: number;
@@ -105,7 +107,7 @@ export function receiptPayloadFromPosSale(
   const lines = row.lines.map((line) => ({
     name: line.receiptName + (line.size && line.size !== "-" ? ` (${line.size})` : ""),
     qty: line.packQty,
-    amount: line.packPrice * line.packQty,
+    amount: line.lineTotal ?? line.packPrice * line.packQty,
   }));
   const rounding = Number(row.roundingAmount ?? row.vat?.roundingAmount ?? 0);
   const extraLines = (row.extraLines ?? []).map((line) => ({
@@ -129,6 +131,7 @@ export function receiptPayloadFromPosSale(
     docTitle: receiptDocumentTitle(mode, "sale", store.vatRegistered),
     docNo: row.docNo,
     orderId: row.orderId,
+    pickupQueueLabel: row.pickupQueueLabel ?? null,
     relatedDocNo: null,
     referenceDocNo: null,
     barcodeValue: row.billNo ?? row.receiptNo ?? row.docNo,

@@ -547,6 +547,16 @@ Release status controls the website:
   diagnostics.
 - `hidden` is not listed and cannot be downloaded from the Retail Local endpoint.
 
+To reclaim installer storage, a platform administrator must first change the asset to `hidden` and
+then explicitly confirm **Delete file**. The purge is same-origin and platform-admin guarded, locks
+the release and file rows against a concurrent re-publish, physically deletes the object through the
+configured local/S3 storage driver, and records the actor plus version/platform/package/size/checksum
+in the tenant audit log in the same transaction that marks `files.deleted_at`. It never permits a
+`latest` asset. The small release and file rows remain as a tombstone so the operator can still see
+what was published and when; a purged asset cannot be edited, restored, or downloaded. Existing
+installers pinned to that release URL will fail after purge, so retain the rollback versions required
+by the support policy rather than deleting every non-latest build.
+
 The older env-based URL knobs remain as a temporary **server-only** fallback for deployments that
 have not migrated to managed release uploads yet:
 

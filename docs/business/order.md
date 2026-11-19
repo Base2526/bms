@@ -35,14 +35,18 @@ reserved unit, so "who is holding this piece" is rebuilt from those three status
 | RETURNED | Stock returned to inventory (`current_stock += qty`) — refund handled separately at Payment (`REFUNDED`) |
 
 Every transition is **atomic** (single DB transaction) to prevent oversell or double-deduction —
-see `lib/bms/orders.ts`.
+see `lib/bms/orders.ts`. Packing, shipping, completion, cancellation and whole-order return write
+their actor audit in that transaction; an audit failure rolls back the status and stock change.
+REST and GraphQL staff transitions check the same tenant and allowed branch before changing the
+order. Cancellation and whole-order return also require an explicit confirmation flag at the API
+boundary; the admin page and assistant send it only after the operator confirms the action.
 
 Migration `9.15` keeps `paid_at`, `cancelled_at`, and `returned_at` separately from row creation and
 generic updates. Report periods therefore follow the actual business event in `Asia/Bangkok`,
 including cancellation or return after midnight. Legacy rows are backfilled from the best evidence
 available; new writes set the event timestamp in the state-change transaction.
 
-**Order status emails (2026-07):** every status transition — `payOrder`/`packOrder`/`shipOrder`/
+**Order status emails (2026-07):** every successful status transition — `packOrder`/`shipOrder`/
 `completeOrder`/`cancelOrder`/`returnOrder` in `lib/bms/orders.ts`, plus the two other places an
 order can reach `PAID`/`SHIPPED`/`COMPLETED` outside those functions (`confirmPayment()` in
 `lib/bms/payments.ts`, and `createShipment()`/`setShipmentStatus()` in `lib/bms/shipping.ts`) —
@@ -56,13 +60,32 @@ roll back an order-status change. Templates live in the existing global `email_t
 `order.returned`, seeded in both `th`/`en` locale by migration `7.19`), personalized per tenant at
 render time via `getStoreProfile()`/`getTenantName()`.
 
+Back-office payment confirmation requires `payment.confirm` plus an explicit confirmation flag at
+GraphQL or REST. The admin payment page shows the payment ID, amount and method before sending it;
+the work assistant sends the flag only from its human Confirm action. The service still owns the
+atomic payment/order/audit transition. An AI slip result never confirms payment.
+Orders links pending bills to the Payment page with the order ID preselected for review or
+submission. The old bare `order.pay` transition refuses to mark an order paid without a confirmed
+payment; older GraphQL/REST callers receive a failed transition and must use the payment workflow.
+
+For a persisted `fulfillment_type = 'PICKUP'`, migration `10.114` supplies separate Thai/English
+templates for paid, packing, shipped and completed. The paid email says the order is being
+processed, not ready for collection; packing says to wait for the shop's confirmation; `SHIPPED`
+means the existing pickup handover has been recorded, without a parcel or tracking claim. The
+notification service selects these keys from the stored order and suppresses shipment lookup for
+pickup. `createShipment()` refuses `PICKUP` even when the customer has a saved shipping address;
+handover uses the locked order stock transition without creating a parcel. Cancellation and return
+retain the shared templates. Apply `10.114` before deploying the
+new caller; as with all mail, real-provider delivery still needs an environment-specific check.
+
 **Staff action alerts (2026-09):** a committed non-POS order creates a persistent, user-scoped
 notification for staff with `order.view`; reaching `PAID` notifies the staff who hold `order.ship`,
 and an accepted restaurant online order that creates kitchen tickets notifies staff with
 `restaurant.kitchen.update`. Recipient selection is server-side, tenant-scoped, honours each user's
 opt-in branch restrictions, excludes `pos_only` accounts (their operating screens already have
 their own live alerts), and carries no customer PII. The admin listener turns the notification into
-an in-app toast, browser notification and device-local sound; `/admin/orders` refreshes immediately
+an in-app toast, generic browser notification without order/customer details on the lock screen,
+and device-local sound; `/admin/orders` refreshes immediately
 from the event and also polls every 15 seconds as recovery if realtime delivery is missed. All of
 this runs after commit and is best-effort: an alert failure is logged but never rolls back or changes
 the order.
@@ -76,6 +99,49 @@ unset). Edited from the "อีเมลแจ้งสถานะออร์�
 `/admin/settings`.
 
 ## Staff-created orders and invoices
+
+The staff assistant's `generate_quotation` remains an ephemeral estimate, not an approved
+project quotation. It rejects the entire request with numbered line errors when a requested
+SKU/size is unavailable, inactive, unpriced or has an invalid quantity; it never drops a line
+and presents the remainder as a complete quotation. When the store cannot calculate shipping,
+both `shippingFee` and `total` are null. The product subtotal is not a confirmed payable total.
+The estimate reserves no stock and does not freeze prices, customer terms or a document revision.
+It checks the active catalog variant and the retail sales surface; an empty stock row does not
+make an otherwise sellable product disappear from a non-reserving estimate.
+
+### Project quotations (`10.133`–`10.134`, pilot)
+
+`/admin/quotations` uses `lib/bms/salesQuotations.ts` through staff-only REST routes. A draft
+records a CRM customer, branch, project/site, VAT-inclusive selling unit, integer base-unit
+conversion, list and agreed unit prices, line discount and authoritative line amount. A quote is
+never a stock reservation. An unknown delivery fee keeps the total null and blocks approval;
+PICKUP explicitly has zero fee. Product status, catalog variant, retail sales surface, pack
+factor and price are read on the server. A line that is missing or invalid rejects the entire
+draft, with line numbers. Duplicate SKU/variant/pack lines are rejected rather than merged.
+
+State is `DRAFT → APPROVED → SENT → ACCEPTED → CONVERTED`, with `SENT → REJECTED` and a new
+`DRAFT` revision from a draft, approved, sent or rejected revision. The prior revision becomes
+`SUPERSEDED`; its lines remain immutable. The preparer cannot approve their own revision.
+Approval requires resolved VAT categories, known shipping, a site address for delivery and an eligible VAT-inclusive shop
+price setting. `SENT` means a staff member recorded that state; it does not send a customer
+message. `ACCEPTED` requires a staff-entered evidence reference to the customer's agreement.
+The approval freezes the quoted price and tax-settings snapshot until its stated expiry.
+
+Conversion locks the accepted revision, validates the same customer/branch and expiry, then calls
+`createOrderInTx()` in the same tenant transaction. That service revalidates active packs and
+stock, reserves only the requested base units, and applies the quote's frozen line prices and
+shipping fee. Promotions, member price discounts, coupons, points redemption, manual discounts,
+extra/open items cannot alter the agreed total. A rejected order rolls everything back and the
+quote remains `ACCEPTED`. A successful conversion links the order and is repeat-safe. The order's
+`line_amount` and pricing snapshot preserve the quote prices for receipts and partial-return
+arithmetic. `10.134` snapshots the quote's delivery site on the order, and stores retail pickup
+separately from restaurant pickup. Retail pickup uses a confirmed handover that consumes reserved
+stock once; ordinary shipping refuses it. A free-text site is not a structured carrier address,
+so automated carrier booking rejects quote site deliveries. Staff can confirm whole-order delivery
+from the order page after checking the site. Neither path supports partial dispatch yet.
+The resulting order still follows the ordinary payment, shipping, cancellation,
+return and tax-document services. Staff must review the actual tax-document form with an
+accountant before claiming it is ready for statutory filing.
 
 Inbox Customer 360 exposes a **สร้างออเดอร์** Quick Action for staff with `order.create`.
 `bmsCreateOrder(channel, customerRef, items)` derives the tenant from the authenticated context and
@@ -113,6 +179,25 @@ signed `/checkout?t=...` link from the persisted order; the AI model cannot repl
 generic admin handoff. The checkout is read-only for order lines, prices, discount, and total. It
 reuses existing CRM delivery data without requiring re-entry, and shows shipment/tracking data only
 when those records exist. See [Customer Checkout & Payment Wireframe](../ui/customer-checkout-wireframe.md).
+
+Public retail storefront product pages now offer a 10-line local variant/pack cart and `/shop/[tenantSlug]/cart`
+review. `POST /api/bms/retail-cart` simulates the real `createOrderInTx()` in a tenant transaction
+and rolls it back, so the review shows server-calculated lines, discounts, shipping estimate and
+stock availability without reserving stock. A purpose-bound, 10-minute signed review token carries
+the basket and a digest of that calculation. Pack size and price are loaded again from
+`bms_product_packs`; a browser-supplied pack price or conversion is never trusted. Customer
+confirmation takes a transaction advisory lock
+on the token nonce, rechecks that every product is active and published for both
+`PUBLIC_STOREFRONT` and `ONLINE_ORDER`, then runs the same order service. A changed price, discount,
+shipping estimate or stock rejects the confirmation and requires a fresh review. A repeated confirm
+returns the existing order via its unique idempotency key, then derives the existing signed checkout
+URL from the persisted order. The customer enters delivery and submits a pending payment through the
+existing checkout; the cart cannot confirm payment. Restaurant tenants are excluded from this retail
+cart, including its public links, because their online ordering requires branch, fulfillment and
+hours policy. Retail catalog cards and product details show the default order branch's usable stock;
+product details show its current base price;
+the review remains authoritative if either changes. Live DB and browser
+validation remain required before production rollout.
 
 ## Coupons (discount codes)
 
@@ -259,9 +344,18 @@ PENDING → SHIPPED → IN_TRANSIT → DELIVERED
 ```
 
 `createShipment()` moves the order from `PACKING` → `SHIPPED`, deducts stock, and records a `SHIP`
-movement — all atomic. If the order is already `SHIPPED`, it just attaches the shipment without
-deducting stock again. A tracking number is optional at shipment creation and can be added later;
-an order cannot reach `COMPLETED` before it's `SHIPPED`. When a configured carrier client supports
+movement and source-lot allocation — all atomic. It and `shipOrder()` use the same reserved-stock
+transition. A missing inventory row or short reservation aborts the order and parcel transaction;
+it cannot silently omit a movement. An order already `SHIPPED` can attach its first shipment without
+deducting stock again. The order lock serializes concurrent creates: repeating the same carrier,
+tracking number and note returns the original shipment without another audit, stock movement or
+carrier call (`replayed: true`); different details or legacy duplicate rows return
+`SHIPMENT_EXISTS` for staff review. Use the tracking editor for a deliberate change. A tracking
+number is optional at shipment creation and can be added later;
+an order cannot reach `COMPLETED` before it's `SHIPPED`. `PICKUP` orders are refused before stock
+or parcel writes. The `shipping.create` audit row commits with the shipment for REST, GraphQL and
+confirmed AI-tool calls; audit failure rolls the local shipment and stock transition back. When a
+configured carrier client supports
 shipment creation, BMS first commits the local fulfillment transaction, releases its database locks,
 and then attempts carrier booking with the shipment UUID as a stable idempotency key. A failed,
 unconfigured, or unavailable carrier no longer looks like a successful booking: its typed status and

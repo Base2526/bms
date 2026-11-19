@@ -2,19 +2,14 @@ import "server-only";
 
 import { query } from "@/lib/db";
 import type { JWTPayload } from "./token";
-import { isSessionVersionCurrent } from "./sessionVersion";
+import { canUseAdminSession, type AdminAccountState } from "./adminSessionEligibility";
 
-type AdminIdentityRow = {
+type AdminIdentityRow = AdminAccountState & {
   id: string;
   email: string;
-  role: string;
   name: string | null;
   username: string | null;
   avatar: string | null;
-  tenant_id: string | null;
-  is_platform_admin: boolean;
-  admin_session_version: string | number;
-  tenant_active: boolean | null;
 };
 
 /**
@@ -30,7 +25,8 @@ export async function refreshAdminIdentity(session: JWTPayload | null): Promise<
   const res = await query<AdminIdentityRow>(
     `SELECT u.id, u.email, u.role, u.name, u.username, u.avatar,
             u.tenant_id, u.is_platform_admin,
-            u.admin_session_version, t.active AS tenant_active
+            u.admin_session_version, u.pos_only, u.is_email_verified,
+            t.active AS tenant_active
        FROM users u
        LEFT JOIN bms_tenants t ON t.id = u.tenant_id
       WHERE u.id = $1
@@ -40,9 +36,8 @@ export async function refreshAdminIdentity(session: JWTPayload | null): Promise<
   const row = res.rows[0];
   if (!row) return null;
 
+  if (!canUseAdminSession(session.session_version, row)) return null;
   const currentVersion = Number(row.admin_session_version ?? 0);
-  if (!isSessionVersionCurrent(session.session_version, currentVersion)) return null;
-  if (!row.is_platform_admin && row.tenant_id && row.tenant_active === false) return null;
 
   return {
     ...session,

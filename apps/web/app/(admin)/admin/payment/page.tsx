@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import {
   Table, Button, Space, Tag, message, Alert, Popconfirm,
@@ -39,7 +41,9 @@ const Q_PAYMENTS = gql`
   }
 `;
 const Q_PENDING_ORDERS = gql`
-  query { bmsOrders(status: PENDING, limit: 200) { id customer_ref total_amount shipping_fee amount_due } }
+  query PendingPaymentOrders($search: String) {
+    bmsOrders(status: PENDING, search: $search, limit: 200) { id customer_ref total_amount shipping_fee amount_due }
+  }
 `;
 const M_SUBMIT = gql`
   mutation ($orderId: ID!, $method: BmsPaymentMethod!, $amount: Float, $slipUrl: String, $slipRef: String, $note: String) {
@@ -48,7 +52,7 @@ const M_SUBMIT = gql`
     }
   }
 `;
-const M_CONFIRM = gql`mutation ($id: ID!) { bmsConfirmPayment(id: $id) { status message } }`;
+const M_CONFIRM = gql`mutation ($id: ID!) { bmsConfirmPayment(id: $id, confirmed: true) { status message } }`;
 const M_REJECT = gql`mutation ($id: ID!, $note: String) { bmsRejectPayment(id: $id, note: $note) }`;
 const M_REFUND = gql`mutation ($id: ID!) { bmsRefundPayment(id: $id) }`;
 const M_VERIFY = gql`
@@ -113,6 +117,7 @@ function PaymentAmountBreakdown({ payment }: { payment: Payment }) {
 }
 
 function PaymentManagement() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const STATUS_LABEL = statusLabels(t);
   const METHOD_LABEL = methodLabels(t);
@@ -120,8 +125,17 @@ function PaymentManagement() {
   const isMobile = useIsMobile();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("ALL");
   const [submitOpen, setSubmitOpen] = useState(false);
+  const [linkedOrderId, setLinkedOrderId] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    const orderId = new URLSearchParams(window.location.search).get("orderId")?.trim();
+    if (orderId && /^[0-9a-f-]{36}$/i.test(orderId)) {
+      setLinkedOrderId(orderId);
+      setSearchInput(orderId);
+    }
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput.trim()), 300);
@@ -179,7 +193,14 @@ function PaymentManagement() {
       if (can("payment.confirm")) {
         btns.push(<Button key="verify" type="link" size="small" icon={<ScanOutlined />} disabled={busy} onClick={() => verify(v)}>{t("admin_payment.btn_verify")}</Button>);
         btns.push(
-          <Popconfirm key="confirm" title={t("admin_payment.confirm_confirm_title")} description={t("admin_payment.confirm_confirm_desc")} okText={t("admin_payment.confirm_ok_text")} cancelText={t("admin_payment.no_text")} disabled={busy} onConfirm={() => confirm(v)}>
+          <Popconfirm key="confirm" title={t("admin_payment.confirm_confirm_title")}
+            description={<div>
+              <p>{t("admin_payment.confirm_confirm_desc")}</p>
+              <p>ID: {r.id}</p>
+              <p>{t("admin_payment.col_amount")}: {baht(r.amount)}</p>
+              <p>{t("admin_payment.col_method")}: {METHOD_LABEL[r.method]}</p>
+            </div>}
+            okText={t("admin_payment.confirm_ok_text")} cancelText={t("admin_payment.no_text")} disabled={busy} onConfirm={() => confirm(v)}>
             <Button type="link" size="small" icon={<CheckCircleOutlined />} disabled={busy}>{t("admin_payment.btn_confirm")}</Button>
           </Popconfirm>
         );
@@ -204,7 +225,7 @@ function PaymentManagement() {
 
   const columns = useMemo(
     () => [
-      { title: "Payment", dataIndex: "id", key: "id", width: 100,
+      { title: uiText("admin_ui.en_payment_b41a9"), dataIndex: "id", key: "id", width: 100,
         render: (id: string) => <Typography.Text code>{id.slice(0, 8)}</Typography.Text> },
       { title: t("admin_payment.col_target"), key: "target", width: 150,
         render: (_: unknown, r: Payment) => <Typography.Text code>
@@ -227,18 +248,18 @@ function PaymentManagement() {
       { title: t("admin_payment.col_verified_by"), dataIndex: "verifiedBy", key: "verifiedBy",
         render: (v: string | null) => v || <span style={{ color: "#999" }}>—</span> },
       { title: t("admin_payment.col_created"), dataIndex: "createdAt", key: "createdAt", width: 160,
-        render: (d: string) => new Date(d).toLocaleString() },
-      { title: "Actions", key: "actions", width: 220,
+        render: (d: string) => new Date(d).toLocaleString(uiText.locale) },
+      { title: uiText("admin_ui.en_actions_c3cd6"), key: "actions", width: 220,
         render: (_: any, r: Payment) => <Space size="small">{actionsFor(r)}</Space> },
     ],
-    [busy, can, STATUS_LABEL, METHOD_LABEL, t]
+    [uiText, busy, can, STATUS_LABEL, METHOD_LABEL, t]
   );
 
   if (error) return <Alert closable type="error" message={t("admin_payment.load_error")} description={error.message} showIcon />;
 
   return (
     <div>
-      <AdminPageHeader title="BMS Payment">
+      <AdminPageHeader title={uiText("admin_ui.en_bms_payment_e20c2")}>
         <Input.Search
           placeholder={t("admin_payment.search_placeholder")}
           allowClear
@@ -255,7 +276,7 @@ function PaymentManagement() {
         {can("payment.submit") && (
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setSubmitOpen(true)}>{t("admin_payment.btn_submit_payment")}</Button>
         )}
-        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
+        <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{uiText("admin_ui.en_refresh_56e3b")}</Button>
       </AdminPageHeader>
 
       <Alert
@@ -298,7 +319,7 @@ function PaymentManagement() {
                     : (r.slipRef || <span style={{ color: "#999" }}>—</span>),
                 },
                 { label: t("admin_payment.col_verified_by"), value: r.verifiedBy || <span style={{ color: "#999" }}>—</span> },
-                { label: t("admin_payment.col_created"), value: new Date(r.createdAt).toLocaleString() },
+                { label: t("admin_payment.col_created"), value: new Date(r.createdAt).toLocaleString(uiText.locale) },
               ]}
               actions={actionsFor(r)}
             />
@@ -307,22 +328,32 @@ function PaymentManagement() {
       ) : (
         <Table rowKey="id" loading={loading} dataSource={payments} columns={columns}
           scroll={{ x: "max-content" }}
-          pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Total ${t} payment(s)` }}
+          pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => uiText("admin_ui.en_total_payment_s_e61ae", { v0: t }) }}
         />
       )}
 
-      <SubmitPaymentModal open={submitOpen} onClose={() => setSubmitOpen(false)} onDone={() => { setSubmitOpen(false); refetch(); }} />
+      <SubmitPaymentModal open={submitOpen} initialOrderId={linkedOrderId}
+        onClose={() => setSubmitOpen(false)} onDone={() => { setSubmitOpen(false); refetch(); }} />
     </div>
   );
 }
 
 // ---- Submit payment modal -----------------------------------
-function SubmitPaymentModal({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: () => void }) {
+function SubmitPaymentModal({ open, initialOrderId, onClose, onDone }: {
+  open: boolean; initialOrderId: string | null; onClose: () => void; onDone: () => void;
+}) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const [form] = Form.useForm();
-  const { data } = useQuery(Q_PENDING_ORDERS, { fetchPolicy: "cache-and-network", skip: !open });
+  const { data } = useQuery(Q_PENDING_ORDERS, {
+    variables: { search: initialOrderId }, fetchPolicy: "cache-and-network", skip: !open,
+  });
   const orders: { id: string; customer_ref: string | null; total_amount: number; shipping_fee: number; amount_due: number }[] = data?.bmsOrders || [];
+  useEffect(() => {
+    if (open && initialOrderId && orders.some((order) => order.id === initialOrderId)) {
+      form.setFieldValue("orderId", initialOrderId);
+    }
+  }, [open, initialOrderId, orders, form]);
   const methodLabelMap = methodLabels(t);
 
   const [submit, { loading }] = useMutation(M_SUBMIT, {

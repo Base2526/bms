@@ -13,7 +13,8 @@ import { GraphQLError } from "graphql/error";
 import type { PoolClient } from "pg";
 import { requireAuth } from "@/lib/auth";
 import { query, getClient } from "@/lib/db";
-import { DEFAULT_TENANT_ID } from "./tenant";
+import { beginTenantTx, DEFAULT_TENANT_ID } from "./tenant";
+import { insertSecurityEventInTx } from "./securityEvents";
 
 /** platform admin หรือไม่ — อ่านสด ๆ จาก DB ด้วย id ใน session */
 export async function isPlatformAdmin(ctx: any): Promise<boolean> {
@@ -85,9 +86,24 @@ export async function listTenants(): Promise<TenantRow[]> {
 }
 
 /** เปิด/ปิดร้าน (ปิด = ระงับการใช้งาน) */
-export async function setTenantActive(tenantId: string, active: boolean): Promise<boolean> {
-  const res = await query(`UPDATE bms_tenants SET active = $2 WHERE id = $1`, [tenantId, active]);
-  return (res.rowCount ?? 0) > 0;
+export async function setTenantActive(tenantId: string, active: boolean, actorId: string): Promise<boolean> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorId });
+    const res = await client.query(`UPDATE bms_tenants SET active = $2 WHERE id = $1`, [tenantId, active]);
+    if (res.rowCount) {
+      await client.query(
+        `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
+         VALUES($1,$2,$3,$1::uuid::text,$4::jsonb)`,
+        [tenantId, actorId, active ? "tenant.activate" : "tenant.suspend", JSON.stringify({ active })]
+      );
+    }
+    await client.query("COMMIT");
+    return (res.rowCount ?? 0) > 0;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally { client.release(); }
 }
 
 /** ชื่อร้าน (bms_tenants.name) จาก tenantId — ใช้เป็นชื่อร้านชื่อเดียวทั้งระบบ (AI/เอกสาร) */
@@ -121,7 +137,8 @@ function normalizeSlug(raw: string): string {
  */
 export async function updateTenantIdentity(
   tenantId: string,
-  patch: { name?: string | null; slug?: string | null }
+  patch: { name?: string | null; slug?: string | null },
+  actorId: string
 ): Promise<{ id: string; name: string; slug: string }> {
   const name = typeof patch.name === "string" && patch.name.trim() ? patch.name.trim() : null;
 
@@ -129,20 +146,35 @@ export async function updateTenantIdentity(
   if (typeof patch.slug === "string" && patch.slug.trim()) {
     slug = normalizeSlug(patch.slug);
     if (!slug) throw new Error("slug ไม่ถูกต้อง (ใช้ได้เฉพาะ a-z, 0-9, -)");
-    const dup = await query(`SELECT 1 FROM bms_tenants WHERE slug = $1 AND id <> $2 LIMIT 1`, [slug, tenantId]);
-    if ((dup.rowCount ?? 0) > 0) throw new Error(`slug "${slug}" ถูกใช้แล้วโดยร้านอื่น`);
   }
-
-  const res = await query<{ id: string; name: string; slug: string }>(
-    `UPDATE bms_tenants
-        SET name = COALESCE($2, name),
-            slug = COALESCE($3, slug)
-      WHERE id = $1
-      RETURNING id, name, slug`,
-    [tenantId, name, slug]
-  );
-  if (res.rowCount === 0) throw new Error("ไม่พบร้าน");
-  return res.rows[0];
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorId });
+    if (slug) {
+      const dup = await client.query(`SELECT 1 FROM bms_tenants WHERE slug = $1 AND id <> $2 LIMIT 1`, [slug, tenantId]);
+      if ((dup.rowCount ?? 0) > 0) throw new Error(`slug "${slug}" ถูกใช้แล้วโดยร้านอื่น`);
+    }
+    const res = await client.query<{ id: string; name: string; slug: string }>(
+      `UPDATE bms_tenants
+          SET name = COALESCE($2, name), slug = COALESCE($3, slug)
+        WHERE id = $1
+        RETURNING id, name, slug`,
+      [tenantId, name, slug]
+    );
+    if (res.rowCount === 0) throw new Error("ไม่พบร้าน");
+    await client.query(
+      `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
+       VALUES($1,$2,'tenant.identity_update',$1::uuid::text,$3::jsonb)`,
+      [tenantId, actorId, JSON.stringify({ name: res.rows[0].name, slug: res.rows[0].slug })]
+    );
+    await client.query("COMMIT");
+    return res.rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -202,6 +234,29 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
   await client.query(
     `UPDATE bms_order_items SET restaurant_check_item_id = NULL
       WHERE tenant_id = ANY($1::uuid[]) AND restaurant_check_item_id IS NOT NULL`,
+    [tenantIds]
+  );
+  // 9.44 also keeps a reverse order -> check FK. Release it before deleting
+  // checks; the check -> current_order FK otherwise forms a deletion cycle.
+  await client.query(
+    `UPDATE bms_orders SET restaurant_check_id = NULL
+      WHERE tenant_id = ANY($1::uuid[]) AND restaurant_check_id IS NOT NULL`,
+    [tenantIds]
+  );
+  // QR submissions and service calls reference sessions, which in turn retain
+  // restrictive check and table FKs. Remove this tenant's entire QR chain first.
+  for (const table of [
+    'bms_restaurant_service_calls','bms_restaurant_qr_submissions',
+    'bms_restaurant_qr_sessions','bms_restaurant_table_qr_tokens',
+    'bms_restaurant_waitlist',
+  ]) await client.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  // Split/merge self-links have a composite SET NULL FK; release only the
+  // selected tenant's references explicitly before deleting its checks.
+  await client.query(
+    `UPDATE bms_restaurant_checks
+        SET split_from_check_id = NULL, merged_into_check_id = NULL
+      WHERE tenant_id = ANY($1::uuid[])
+        AND (split_from_check_id IS NOT NULL OR merged_into_check_id IS NOT NULL)`,
     [tenantIds]
   );
   // Delete the restaurant floor while its tenant still exists. Letting the tenant cascade it is
@@ -279,6 +334,13 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
   await client.query(`DELETE FROM bms_stock_transfers WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_purchase_orders WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_orders WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  // POS member enrollment keeps a restrictive shift FK (9.38). Customers are
+  // removed later in this same purge, so release only their shift attribution.
+  await client.query(
+    `UPDATE bms_customers SET enrolled_shift_id = NULL
+      WHERE tenant_id = ANY($1::uuid[]) AND enrolled_shift_id IS NOT NULL`,
+    [tenantIds]
+  );
   await client.query(`DELETE FROM bms_pos_shifts WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   // Frozen production sources are gone above; remove catalog rows with a second product FK
   // before deleting products. Cross-SKU promotions cascade from their purchased product, but
@@ -291,6 +353,12 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
   await client.query(`DELETE FROM bms_product_recipes WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_products WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_customers WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  // Pharmacy assessments retain a non-cascading protocol FK, and reviewed protocols
+  // retain a non-cascading reviewer FK to users. Remove only the selected tenants'
+  // clinical rows before their reviewers; any cross-tenant reviewer reference must
+  // still fail closed instead of silently altering another shop's clinical record.
+  await client.query(`DELETE FROM bms_pharmacy_assessments WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_pharmacy_protocols WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM users WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   const deletedTenants = await client.query<{ id: string }>(
     `DELETE FROM bms_tenants WHERE id = ANY($1::uuid[]) RETURNING id`,
@@ -301,7 +369,7 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
   }
 }
 
-export async function deleteTenant(tenantId: string): Promise<{ slug: string; name: string }> {
+export async function deleteTenant(tenantId: string, actorUserId?: string | null): Promise<{ slug: string; name: string }> {
   if (tenantId === DEFAULT_TENANT_ID) {
     throw new Error("ห้ามลบร้าน default");
   }
@@ -319,6 +387,11 @@ export async function deleteTenant(tenantId: string): Promise<{ slug: string; na
   try {
     await client.query("BEGIN");
     await deleteTenantRows(client, [tenantId]);
+    await insertSecurityEventInTx(client, {
+      tenantId: null, actorUserId: actorUserId ?? null,
+      event: "tenant.delete", outcome: "SUCCESS", source: actorUserId ? "PLATFORM_ADMIN" : "SYSTEM",
+      meta: { targetTenantId: tenantId, slug },
+    });
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});

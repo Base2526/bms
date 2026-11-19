@@ -1,3 +1,5 @@
+import { posText } from "./clientText";
+
 // =============================================================
 // สแกน QR/บาร์โค้ดจากกล้องมือถือ (โหมดเทส)
 // -------------------------------------------------------------
@@ -98,7 +100,7 @@ export async function startCameraScan({
   const noop: CameraScanHandle = { stop: () => {} };
 
   if (!navigator.mediaDevices?.getUserMedia) {
-    onError("เบราว์เซอร์นี้เปิดกล้องไม่ได้ — ใช้เครื่องสแกนหรือพิมพ์รหัสแทน");
+    onError(posText("เบราว์เซอร์นี้เปิดกล้องไม่ได้ — ใช้เครื่องสแกนหรือพิมพ์รหัสแทน"));
     return noop;
   }
 
@@ -109,7 +111,7 @@ export async function startCameraScan({
       audio: false,
     });
   } catch {
-    onError("ขอสิทธิ์กล้องไม่สำเร็จ — ตรวจสอบการอนุญาตกล้องของเบราว์เซอร์/อุปกรณ์");
+    onError(posText("ขอสิทธิ์กล้องไม่สำเร็จ — ตรวจสอบการอนุญาตกล้องของเบราว์เซอร์/อุปกรณ์"));
     return noop;
   }
 
@@ -132,7 +134,7 @@ export async function startCameraScan({
     decode = await buildDecoder();
   } catch {
     cleanup();
-    onError("โหลดตัวถอดรหัสไม่สำเร็จ — ตรวจสอบการเชื่อมต่อแล้วลองใหม่");
+    onError(posText("โหลดตัวถอดรหัสไม่สำเร็จ — ตรวจสอบการเชื่อมต่อแล้วลองใหม่"));
     return noop;
   }
   // ผู้ใช้ปิด modal ระหว่างรอไลบรารีโหลด — อย่าเพิ่งเริ่มวน

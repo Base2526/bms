@@ -27,7 +27,7 @@
 | รับสินค้า PO โอนสาขา นับสต็อก | มีในโค้ด | [Inventory](inventory.md), `stockTransfers.ts`, `stockCounts.ts`; โอนเป็นส่งแล้วรับ นับเป็นส่วนต่าง |
 | ขายหลายรายการผ่านแชท | มีในโค้ด ต้องตั้งช่องทาง/AI | `pipeline.ts`, `tools/catalog.ts`, `requestedItems.ts`; ลูกค้ายืนยันสรุปก่อนสร้าง order และต้องทดสอบโมเดล/ช่องทางจริงก่อนโฆษณาประสิทธิภาพ |
 | CRM และ Inbox รวมงานขาย | มีในโค้ด | `customers.ts`, `inbox.ts`; ความสามารถตอบกลับแตกต่างกันตามช่องทาง |
-| แค็ตตาล็อกเว็บร้าน/หน้าสินค้า | มีในโค้ด | `/shop/[tenantSlug]/products`, `getPublicProduct()`; แสดงสินค้า แชร์ โทร/ลิงก์เว็บไซต์ร้าน ยังไม่มีตะกร้าและการสั่งซื้อเองจากหน้านี้ |
+| แค็ตตาล็อกเว็บร้าน/หน้าสินค้า | มีในโค้ด; ตะกร้าเป็น pilot หลังวันที่ตรวจเอกสารนี้ | `/shop/[tenantSlug]/products`, `getPublicProduct()` และ `/shop/[tenantSlug]/cart`; ตะกร้าค้าปลีกตรวจราคา/สต็อกฝั่ง server ก่อนสร้างออร์เดอร์ แต่ยังต้องพิสูจน์ DB/browser และ rollout ตาม [แผน](../feature-completion-plan.md#retail-web-cart-and-click--collect) |
 | ลิงก์ checkout หลังสั่งผ่านแชท | มีในโค้ด | `checkout.ts`, `/checkout`, `/api/bms/checkout`; ลงชื่อผู้รับ/ที่อยู่ ส่งสลิป ดูสถานะและเลขพัสดุที่บันทึกแล้ว |
 | รับเงินออนไลน์ | โอน/PromptPay ที่ร้านตั้งค่า + คนยืนยัน | `paymentConfiguration.ts`, `submitPaymentOnce()`; checkout รับเฉพาะ BANK_TRANSFER/QR และสร้าง PENDING ไม่ใช่ตรวจเงินเข้าบัญชีอัตโนมัติ |
 | คูปอง/โปรโมชัน | มี แต่ไม่เท่ากันทุกช่องทาง | [Orders](order.md#coupons-discount-codes), [POS](pos.md); ซื้อ A แถม B ข้าม SKU (`10.41`) เฉพาะ RETAIL_POS และสินค้าตัดสต็อกตรง |
@@ -46,7 +46,7 @@
 | LINE | มี receive/reply/push และตรวจ identity ของ OA; ต้องตั้งค่าบัญชีร้านและทดสอบ webhook จริง | “เปิดใช้ได้ทันทีโดยไม่ต้องตั้งค่า” |
 | Facebook/Instagram | มี webhook และเส้นทางส่งผ่าน Meta; ขึ้นกับ token/permission/account ของร้าน | “ทุกบัญชีเชื่อมสำเร็จแน่นอน” |
 | Web chat | มี public webhook endpoint; client/widget ต้องเชื่อม endpoint | “มีเว็บตะกร้าซื้อเองครบแล้ว” |
-| TikTok | webhook เข้า pipeline ได้ แต่ `TODO(prod)` ที่จุดส่งกลับ และ `channelSupportsPush()` ไม่รวม TikTok | “AI ตอบและปิดการขายกลับไปใน TikTok อัตโนมัติแล้ว” |
+| TikTok | webhook บันทึกข้อความเข้า Inbox ให้พนักงานตรวจ แต่ไม่เรียก AI หรือส่งกลับ; `channelSupportsPush()` ไม่รวม TikTok | “AI ตอบและปิดการขายกลับไปใน TikTok อัตโนมัติแล้ว” |
 | Shopee/Lazada | scaffold/beta และการชำระ/จัดส่งอยู่ใน Seller Center | “ซิงก์ marketplace production ครบทั้งออร์เดอร์ สต็อก แชท และคืนเงิน” |
 
 หลักฐาน: [LINE](../integrations/line.md), [TikTok](../integrations/tiktok.md),

@@ -36,6 +36,7 @@ query PosBootstrap {
       branchCode
       vatCode
       pharmacistName
+      pickupQueue { enabled autoHideMinutes showPreparing boardMessage }
     }
     shift {
       id
@@ -120,6 +121,7 @@ mutation VerifyPosCashier($input: BmsPosCredentialsInput!) {
 
 fragment MobilePosReceiptFields on BmsPosReceipt {
   orderId
+  pickupQueueLabel
   taxRequestUrl
   receiptNo
   billNo
@@ -260,6 +262,7 @@ fragment MobileRestaurantCheckFields on BmsPosRestaurantCheck {
 
 fragment MobileKitchenTicketFields on BmsKitchenTicket {
   id
+  pickupQueueLabel
   checkId
   orderId
   orderItemId
@@ -324,6 +327,7 @@ query MobilePosScan(
     available
     stockTracked
     serialTracked
+    offlineRetailEligible
     scaleBarcode
     imageUrl
     # ราคาส่ง (8.1) และโปร (8.7) — เครื่องขายต้องพรีวิวยอดด้วยกฎเดียวกับ createOrder
@@ -411,6 +415,12 @@ query MobilePosParkedSales {
         extraLines {
           label
           unitAmount
+        }
+        openItems {
+          label
+          qty
+          unitAmount
+          vatCategory
         }
         pharmacyReview {
           assessmentId
@@ -766,6 +776,12 @@ mutation MobilePosSale($input: BmsPosSaleInput!) {
     serial
     roundingAmount
     replayed
+    pickupQueue {
+      id
+      queueNo
+      label
+    }
+    pickupQueueError
   }
 }
 
@@ -944,6 +960,12 @@ mutation MobileRestaurantSettleCheck(
   $input: BmsPosRestaurantSettleCheckInput!
 ) {
   bmsPosRestaurantSettleCheck(checkId: $checkId, input: $input) {
+    pickupQueue {
+      id
+      queueNo
+      label
+    }
+    pickupQueueError
     status
     reason
     orderId
@@ -1162,6 +1184,8 @@ query MobilePosPurchaseOrders($credentials: BmsPosCredentialsInput!) {
         unitCost
         supplierSku
         supplierProductName
+        supplierUnitName
+        baseQtyPerSupplierUnit
       }
     }
   }
@@ -1192,6 +1216,8 @@ query MobilePosPurchaseOrder(
       unitCost
       supplierSku
       supplierProductName
+      supplierUnitName
+      baseQtyPerSupplierUnit
     }
   }
 }
@@ -2752,5 +2778,27 @@ subscription MobilePaymentChanged {
 subscription MobileOrderChanged {
   bmsOrderChanged {
     ...MobileRealtimeEventFields
+  }
+}
+
+fragment MobilePickupQueueEntryFields on BmsPosPickupQueueEntry {
+  id
+  label
+  status
+  readySource
+  createdAt
+  readyAt
+  calledAt
+}
+
+query MobilePosPickupQueue {
+  bmsPosPickupQueue {
+    ...MobilePickupQueueEntryFields
+  }
+}
+
+mutation MobilePosPickupQueueAction($input: BmsPosPickupQueueActionInput!) {
+  bmsPosPickupQueueAction(input: $input) {
+    ...MobilePickupQueueEntryFields
   }
 }

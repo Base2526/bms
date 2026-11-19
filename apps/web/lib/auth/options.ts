@@ -53,8 +53,6 @@ export const authOptions: NextAuthOptions = {
         ((token as any).picture as string) ?? (session.user as any).image ?? null;
 
       (session as any).provider = (token as any).provider;
-      (session as any).accessToken = (token as any).accessToken;
-      (session as any).accessTokenExpires = (token as any).accessTokenExpires;
 
       return session;
     },

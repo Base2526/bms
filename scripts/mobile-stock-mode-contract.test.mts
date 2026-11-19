@@ -101,15 +101,15 @@ test("stock lookup keeps sellable, reserved, quarantine, incoming, and operation
     assert.match(operations, new RegExp(field));
   }
   assert.match(screen, /ค้นด้วยชื่อ SKU หรือบาร์โค้ด/);
-  assert.match(screen, /พร้อมใช้ \{item\.available\}/);
+  assert.match(screen, /posText\("พร้อมใช้"\) \+ " "\}\{item\.available\}/);
   assert.match(screen, /BarcodeScannerModal<StockScanResult>/);
   assert.match(
     screen,
-    /label="เพิ่มลงใบโอน"[\s\S]*disabled=\{loading \|\| failed \|\| !item\.transferSupported\}/
+    /label=\{posText\("เพิ่มลงใบโอน"\)\}[\s\S]*disabled=\{loading \|\| failed \|\| !item\.transferSupported\}/
   );
   assert.match(
     screen,
-    /label="เพิ่มลงใบนับ"[\s\S]*disabled=\{loading \|\| failed \|\| !item\.countSupported\}/
+    /label=\{posText\("เพิ่มลงใบนับ"\)\}[\s\S]*disabled=\{loading \|\| failed \|\| !item\.countSupported\}/
   );
 });
 

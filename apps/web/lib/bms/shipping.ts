@@ -3,7 +3,7 @@
 // -------------------------------------------------------------
 // createShipment    : ผูก carrier/tracking + ship จริง (order PACKING → SHIPPED
 //                     + ตัดสต็อก + SHIP movement) atomic; ถ้า order SHIPPED แล้ว
-//                     แค่แนบ shipment ไม่ตัดสต็อกซ้ำ
+//                     แนบได้ครั้งแรกเท่านั้น คำขอซ้ำคืน shipment เดิม
 // updateTracking    : แก้เลขพัสดุ / carrier
 // setShipmentStatus : เปลี่ยนสถานะ shipment; DELIVERED → order → COMPLETED
 // getShipmentLabel  : ข้อมูลสำหรับพิมพ์ label (จาก order + customer + address)
@@ -12,7 +12,7 @@
 // =============================================================
 
 import { getClient, query } from "@/lib/db";
-import { recordOrderMovements } from "./movements";
+import { consumeReservedOrderStockInTx } from "./orderShippingStock";
 import { beginTenantTx } from "./tenant";
 import { notifyOrderStatusEmail } from "./orderNotify";
 import { getCarrierClient } from "./carriers";
@@ -50,12 +50,14 @@ export type CreateShipmentInput = {
   trackingNo?: string | null;
   note?: string | null;
   actor?: string | null;
+  auditVia?: "ai:staff";
 };
 
 export type CreateShipmentResult =
   | {
       status: "CREATED";
       shipmentId: string;
+      replayed: boolean;
       orderShipped: boolean;
       trackingNo: string | null;
       labelUrl: string | null;
@@ -66,7 +68,10 @@ export type CreateShipmentResult =
     }
   | { status: "ORDER_NOT_FOUND" }
   | { status: "BAD_CARRIER" }
+  | { status: "PICKUP_ORDER" }
+  | { status: "QUOTE_SITE_DELIVERY_UNSUPPORTED" }
   | { status: "MISSING_SHIPPING_ADDRESS" }
+  | { status: "SHIPMENT_EXISTS"; shipmentId: string }
   | { status: "INVALID_STATE"; current: string };
 
 export type SyncShipmentLiveResult =
@@ -180,9 +185,9 @@ async function buildCarrierCreateShipmentRequest(
             sp.address AS sender_address,
             sp.shipping_origin_province AS sender_province,
             sp.shipping_origin_postcode AS sender_postcode,
-            a.address,
-            a.province,
-            a.postcode
+            COALESCE(o.quote_site_address, a.address) AS address,
+            CASE WHEN o.quote_site_address IS NULL THEN a.province ELSE NULL END AS province,
+            CASE WHEN o.quote_site_address IS NULL THEN a.postcode ELSE NULL END AS postcode
        FROM bms_orders o
        JOIN bms_tenants t ON t.id = o.tenant_id
        LEFT JOIN bms_store_profile sp ON sp.tenant_id = o.tenant_id
@@ -430,8 +435,9 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
   try {
     await beginTenantTx(client, tenantId);
 
-    const ord = await client.query<{ status: string; channel: string; customer_id: string | null }>(
-      `SELECT status, channel, customer_id
+    const ord = await client.query<{ status: string; channel: string; customer_id: string | null;
+      fulfillment_type: string | null; retail_fulfillment_type: string | null; quote_site_address: string | null }>(
+      `SELECT status, channel, customer_id, fulfillment_type, retail_fulfillment_type, quote_site_address
          FROM bms_orders
         WHERE tenant_id = $1 AND id = $2
         FOR UPDATE`,
@@ -441,11 +447,53 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
       await client.query("ROLLBACK");
       return { status: "ORDER_NOT_FOUND" };
     }
+    if (ord.rows[0].fulfillment_type === "PICKUP" || ord.rows[0].retail_fulfillment_type === "PICKUP") {
+      await client.query("ROLLBACK");
+      return { status: "PICKUP_ORDER" };
+    }
+    // Quote site addresses are free text. Carrier booking requires a structured destination;
+    // the own-truck delivery workflow must be used until that contract is implemented.
+    if (ord.rows[0].quote_site_address) {
+      await client.query("ROLLBACK");
+      return { status: "QUOTE_SITE_DELIVERY_UNSUPPORTED" };
+    }
     const cur = ord.rows[0].status;
     marketplaceManaged = MARKETPLACE_CHANNELS.has(ord.rows[0].channel);
     if (cur !== "PACKING" && cur !== "SHIPPED") {
       await client.query("ROLLBACK");
       return { status: "INVALID_STATE", current: cur };
+    }
+
+    // The order lock serializes concurrent creates, including an order shipped by another
+    // workflow before its first parcel was attached. Existing legacy duplicates need staff
+    // review; another create must never silently add a third parcel.
+    const existing = await client.query<{
+      id: string; carrier: Carrier; tracking_no: string | null; note: string | null;
+      label_url: string | null; external_shipment_id: string | null;
+      carrier_tracking_source: "manual" | "live" | "mock";
+      carrier_booking_status: string;
+    }>(
+      `SELECT id, carrier, tracking_no, note, label_url, external_shipment_id,
+              carrier_tracking_source, carrier_booking_status
+         FROM bms_shipments
+        WHERE tenant_id = $1 AND order_id = $2
+        ORDER BY created_at, id LIMIT 2 FOR UPDATE`,
+      [tenantId, input.orderId]
+    );
+    if (existing.rows.length) {
+      const row = existing.rows[0];
+      await client.query("ROLLBACK");
+      if (cur !== "SHIPPED" || existing.rows.length !== 1 || row.carrier !== input.carrier
+        || row.tracking_no !== manualTrackingNo || row.note !== (input.note ?? null)) {
+        return { status: "SHIPMENT_EXISTS", shipmentId: row.id };
+      }
+      return {
+        status: "CREATED", shipmentId: row.id, replayed: true, orderShipped: false,
+        trackingNo: row.tracking_no, labelUrl: row.label_url,
+        externalShipmentId: row.external_shipment_id,
+        carrierIntegration: row.carrier_tracking_source ?? "manual",
+        carrierBookingStatus: row.carrier_booking_status ?? "manual", carrierWarning: null,
+      };
     }
 
     if (cur === "PACKING" && !MARKETPLACE_CHANNELS.has(ord.rows[0].channel)) {
@@ -471,27 +519,7 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
           WHERE tenant_id = $1 AND id = $2`,
         [tenantId, input.orderId]
       );
-      await client.query(
-        // view ไม่ใช่ตารางตรง ๆ — เส้นทางนี้เคยอ่าน bms_order_items โดยตรง ซึ่งเป็นจุดที่ห้า
-        // ที่ขยับสต็อก (เอกสารนับไว้แค่สี่) · บิลที่ซื้อเซ็ต (8.8) หรือเมนูที่มีสูตร (9.40)
-        // จะไปลดสต็อกของ "SKU แม่" ซึ่งแถวคาไว้ที่ 0 ตลอด แล้วชน CHECK (current_stock >= 0)
-        // = ส่งของไม่ได้เลย ส่วนส่วนประกอบที่ถูกจองไว้จริงก็ไม่เคยถูกตัด
-        `UPDATE bms_inventory inv
-            SET current_stock  = current_stock  - oi.qty,
-                reserved_stock = reserved_stock - oi.qty,
-                updated_at = now()
-           FROM (
-             SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
-               FROM bms_order_stock_lines WHERE order_id = $1
-              GROUP BY tenant_id, location_id, product_sku, size
-           ) oi
-          WHERE inv.tenant_id = oi.tenant_id
-            AND inv.location_id = oi.location_id
-            AND inv.product_sku = oi.product_sku
-            AND inv.size = oi.size`,
-        [input.orderId]
-      );
-      await recordOrderMovements(client, [input.orderId], "SHIP", input.actor ?? "system");
+      await consumeReservedOrderStockInTx(client, tenantId, input.orderId, input.actor ?? "system");
       orderShipped = true;
     }
 
@@ -518,6 +546,15 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
     );
     shipmentId = ins.rows[0].id;
 
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'shipping.create', $3, $4::jsonb)`,
+      [tenantId, input.actor || "system", shipmentId, JSON.stringify({
+        orderId: input.orderId, orderShipped, carrier: input.carrier,
+        ...(input.auditVia ? { via: input.auditVia } : {}),
+      })]
+    );
+
     await client.query("COMMIT");
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
@@ -534,6 +571,7 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
     return {
       status: "CREATED",
       shipmentId,
+      replayed: false,
       orderShipped,
       trackingNo: manualTrackingNo,
       labelUrl: null,
@@ -549,6 +587,7 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
     return {
       status: "CREATED",
       shipmentId,
+      replayed: false,
       orderShipped,
       trackingNo: booking.trackingNo,
       labelUrl: booking.labelUrl,
@@ -562,6 +601,7 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
   return {
     status: "CREATED",
     shipmentId,
+    replayed: false,
     orderShipped,
     trackingNo: null,
     labelUrl: null,

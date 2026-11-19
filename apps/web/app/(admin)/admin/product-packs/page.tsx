@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 // หน่วยขาย + บาร์โค้ดต่อไซซ์
 // -------------------------------------------------------------
 // หลังจาก 7.93 บาร์โค้ดผูกกับ "หน่วยขาย" ไม่ใช่ "สินค้า" — แผง 10 เม็ดกับ
@@ -46,6 +48,7 @@ type Pack = {
 };
 
 export default function ProductPacksPage() {
+  const uiText = useUiText();
   const { can, loading: permsLoading } = useBmsPermissions();
   const canView = can("product.view");
   const canEdit = can("product.edit");
@@ -61,7 +64,7 @@ export default function ProductPacksPage() {
   const [remove] = useMutation(M_DELETE);
 
   if (!permsLoading && !canView) {
-    return <Alert closable type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี product.view)" />;
+    return <Alert closable type="error" showIcon message={uiText("admin_ui.you_do_not_have_permission_to_view_this_17b55")} />;
   }
 
   const packs: Pack[] = packsQuery.data?.bmsProductPacks?.packs ?? [];
@@ -103,7 +106,7 @@ export default function ProductPacksPage() {
           },
         },
       });
-      message.success("บันทึกหน่วยขายแล้ว");
+      message.success(uiText("admin_ui.sales_unit_saved_18ce6"));
       setOpen(false);
       setEditing(null);
       form.resetFields();
@@ -111,43 +114,42 @@ export default function ProductPacksPage() {
       await audit.refetch();
     } catch (e: any) {
       if (e?.errorFields) return;
-      message.error(e?.message ?? "บันทึกไม่สำเร็จ");
+      message.error(e?.message ?? uiText("admin_ui.could_not_save_2fe23"));
     }
   }
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <AdminPageHeader title="หน่วยขาย + บาร์โค้ด">
-        <Link href="/admin/pos-manual"><Button icon={<ReadOutlined />}>คู่มือแคชเชียร์</Button></Link>
+      <AdminPageHeader title={uiText("admin_ui.units_and_barcodes_6a81a")}>
+        <Link href="/admin/pos-manual"><Button icon={<ReadOutlined />}>{uiText("admin_ui.cashier_manual_3e8eb")}</Button></Link>
       </AdminPageHeader>
 
       <Alert closable
         type="info"
         showIcon
-        message="บาร์โค้ด 1 อัน = หน่วยขาย 1 อย่าง"
-        description="แผง 10 เม็ดกับกล่อง 100 เม็ดต้องเป็นคนละบาร์โค้ด และตั้งราคาแยกกันได้ · ไซซ์ที่ไม่มีบาร์โค้ดของตัวเองจะยิงไม่เจอที่หน้าร้าน ต้องค้นชื่อแล้วเลือกไซซ์เอง"
+        message={uiText("admin_ui.one_barcode_one_sales_unit_efad6")}
+        description={uiText("admin_ui.a_strip_of_10_tablets_and_a_box_96aaa")}
       />
 
-      <Card title="เปิดสินค้าเพื่อตั้งหน่วยขาย">
+      <Card title={uiText("admin_ui.open_a_product_to_configure_sales_units_60953")}>
         <Space.Compact style={{ width: "100%", maxWidth: 520 }}>
           <Input
             value={sku}
             onChange={(e) => setSku(e.target.value)}
             onPressEnter={() => sku.trim() && loadPacks({ variables: { productSku: sku.trim() } })}
-            placeholder="ใส่ SKU แล้วกด Enter"
+            placeholder={uiText("admin_ui.enter_a_sku_and_press_enter_28069")}
           />
           <Button
             type="primary"
             onClick={() => sku.trim() && loadPacks({ variables: { productSku: sku.trim() } })}
           >
-            เปิด
-          </Button>
+            {uiText("admin_ui.open_22aad")}</Button>
         </Space.Compact>
 
         {loadedSku && (
           <div style={{ marginTop: 16 }}>
             <Typography.Paragraph style={{ marginBottom: 8 }}>
-              <b>{loadedSku}</b> · ไซซ์ที่มีสต็อก: {sizes.length === 0 ? "—" : sizes.join(" / ")}
+              <b>{loadedSku}</b>  {uiText("admin_ui.sizes_with_stock_c4536")} {sizes.length === 0 ? "—" : sizes.join(" / ")}
             </Typography.Paragraph>
 
             {sizes.map((sz) => {
@@ -160,14 +162,14 @@ export default function ProductPacksPage() {
                   style={{ marginBottom: 10 }}
                   title={
                     <Space>
-                      <span>ไซซ์ {sz}</span>
-                      {noBarcode && <Tag color="red">ยังไม่มีบาร์โค้ด</Tag>}
+                      <span>{uiText("admin_ui.size_ff4b6")} {sz}</span>
+                      {noBarcode && <Tag color="red">{uiText("admin_ui.no_barcode_yet_be4ed")}</Tag>}
                     </Space>
                   }
-                  extra={canEdit && <Button size="small" onClick={() => openFor(sz)}>เพิ่มหน่วยขาย</Button>}
+                  extra={canEdit && <Button size="small" onClick={() => openFor(sz)}>{uiText("admin_ui.add_sales_unit_d5956")}</Button>}
                 >
                   {rows.length === 0 ? (
-                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="ยังไม่มีหน่วยขายของไซซ์นี้" />
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={uiText("admin_ui.no_sales_units_for_this_size_c6f6d")} />
                   ) : (
                     <Table
                       size="small"
@@ -176,31 +178,31 @@ export default function ProductPacksPage() {
                       pagination={false}
                       columns={[
                         {
-                          title: "หน่วย",
+                          title: uiText("admin_ui.unit_92540"),
                           render: (_: unknown, p: Pack) => (
                             <Space>
                               <b>{p.unitName}</b>
                               <Tag>{p.packCode}</Tag>
-                              {p.unitCode ? <Tag color="green">UN/ECE {p.unitCode}</Tag> : <Tag color="orange">ยังไม่ map หน่วย e-Tax</Tag>}
-                              {p.isBase && <Tag color="blue">หน่วยฐาน</Tag>}
-                              {!p.active && <Tag>ปิด</Tag>}
+                              {p.unitCode ? <Tag color="green">UN/ECE {p.unitCode}</Tag> : <Tag color="orange">{uiText("admin_ui.e_tax_unit_not_mapped_4ba44")}</Tag>}
+                              {p.isBase && <Tag color="blue">{uiText("admin_ui.base_unit_e09e7")}</Tag>}
+                              {!p.active && <Tag>{uiText("admin_ui.close_96d79")}</Tag>}
                             </Space>
                           ),
                         },
-                        { title: "= กี่หน่วยฐาน", dataIndex: "baseQty", width: 120 },
+                        { title: uiText("admin_ui.base_units_86609"), dataIndex: "baseQty", width: 120 },
                         {
-                          title: "บาร์โค้ด",
+                          title: uiText("admin_ui.barcodes_75bc4"),
                           dataIndex: "barcode",
                           width: 190,
                           render: (v: string | null) =>
-                            v ? <code>{v}</code> : <Tag color="red">ยังไม่ตั้ง</Tag>,
+                            v ? <code>{v}</code> : <Tag color="red">{uiText("admin_ui.not_configured_00436")}</Tag>,
                         },
                         {
-                          title: "ราคา",
+                          title: uiText("admin_ui.price_90f83"),
                           dataIndex: "price",
                           width: 130,
                           render: (v: number | null) =>
-                            v == null ? <span style={{ color: "#999" }}>ตามราคาสินค้า</span> : `฿${v.toLocaleString()}`,
+                            v == null ? <span style={{ color: "#999" }}>{uiText("admin_ui.use_product_price_2d224")}</span> : `฿${v.toLocaleString()}`,
                         },
                         ...(canEdit
                           ? [
@@ -209,19 +211,19 @@ export default function ProductPacksPage() {
                                 width: 140,
                                 render: (_: unknown, p: Pack) => (
                                   <Space>
-                                    <Button size="small" onClick={() => openFor(p.size, p)}>แก้ไข</Button>
+                                    <Button size="small" onClick={() => openFor(p.size, p)}>{uiText("admin_ui.edit_e7eca")}</Button>
                                     <Popconfirm
-                                      title="ลบหน่วยขายนี้?"
-                                      description="บาร์โค้ดของหน่วยนี้จะยิงไม่เจออีก"
-                                      okText="ลบ"
-                                      cancelText="ยกเลิก"
+                                      title={uiText("admin_ui.delete_this_sales_unit_f8f58")}
+                                      description={uiText("admin_ui.this_unit_s_barcode_will_no_longer_be_63c41")}
+                                      okText={uiText("admin_ui.remove_f535f")}
+                                      cancelText={uiText("admin_ui.cancelled_fba6e")}
                                       onConfirm={async () => {
                                         await remove({ variables: { id: p.id } });
                                         await packsQuery.refetch?.();
                                         await audit.refetch();
                                       }}
                                     >
-                                      <Button size="small" danger>ลบ</Button>
+                                      <Button size="small" danger>{uiText("admin_ui.remove_f535f")}</Button>
                                     </Popconfirm>
                                   </Space>
                                 ),
@@ -238,9 +240,9 @@ export default function ProductPacksPage() {
         )}
       </Card>
 
-      <Card title="สินค้าหลายไซซ์ที่บาร์โค้ดยังไม่ครบ" loading={audit.loading}>
+      <Card title={uiText("admin_ui.multi_size_products_with_missing_barcodes_855f3")} loading={audit.loading}>
         {auditRows.length === 0 ? (
-          <Empty description="ครบทุกไซซ์แล้ว" />
+          <Empty description={uiText("admin_ui.all_sizes_have_barcodes_7f5f7")} />
         ) : (
           <Table
             size="small"
@@ -249,10 +251,10 @@ export default function ProductPacksPage() {
             pagination={{ pageSize: 15, showSizeChanger: false }}
             columns={[
               { title: "SKU", dataIndex: "sku", width: 170 },
-              { title: "ชื่อสินค้า", dataIndex: "name" },
-              { title: "ไซซ์", dataIndex: "sizes", width: 80 },
+              { title: uiText("admin_ui.product_name_c9863"), dataIndex: "name" },
+              { title: uiText("admin_ui.size_ff4b6"), dataIndex: "sizes", width: 80 },
               {
-                title: "ไซซ์ที่ยังไม่มีบาร์โค้ด",
+                title: uiText("admin_ui.sizes_without_barcodes_0c103"),
                 dataIndex: "sizesWithoutBarcode",
                 render: (v: string[]) => (
                   <Space wrap>
@@ -268,8 +270,7 @@ export default function ProductPacksPage() {
                     size="small"
                     onClick={() => { setSku(r.sku); loadPacks({ variables: { productSku: r.sku } }); }}
                   >
-                    เปิด
-                  </Button>
+                    {uiText("admin_ui.open_22aad")}</Button>
                 ),
               },
             ]}
@@ -279,32 +280,32 @@ export default function ProductPacksPage() {
 
       <Modal
         open={open}
-        title={editing ? `แก้ไขหน่วยขาย · ${editing.unitName}` : "เพิ่มหน่วยขาย"}
+        title={editing ? uiText("admin_ui.edit_sales_unit_9fdee", { v0: editing.unitName }) : uiText("admin_ui.add_sales_unit_d5956")}
         onCancel={() => { setOpen(false); setEditing(null); }}
         onOk={() => void save()}
         confirmLoading={saving}
-        okText="บันทึก"
-        cancelText="ยกเลิก"
+        okText={uiText("admin_ui.save_f658a")}
+        cancelText={uiText("admin_ui.cancelled_fba6e")}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="size" label="ไซซ์" rules={[{ required: true, message: "ต้องเลือกไซซ์" }]}>
+          <Form.Item name="size" label={uiText("admin_ui.size_ff4b6")} rules={[{ required: true, message: uiText("admin_ui.select_a_size_0f0f2") }]}>
             <Select options={sizes.map((s) => ({ value: s, label: s }))} />
           </Form.Item>
           <Form.Item
             name="packCode"
-            label="รหัสหน่วยขาย"
-            extra="ตัวย่อภายใน เช่น BASE (หน่วยฐาน) · STRIP (แผง) · BOX (กล่อง)"
-            rules={[{ required: true, message: "ต้องระบุรหัส" }]}
+            label={uiText("admin_ui.sales_unit_code_c69bb")}
+            extra={uiText("admin_ui.internal_abbreviation_e_g_base_base_unit_strip_d4338")}
+            rules={[{ required: true, message: uiText("admin_ui.enter_a_code_ef870") }]}
           >
             <Input placeholder="BOX" />
           </Form.Item>
-          <Form.Item name="unitName" label="ชื่อหน่วยที่พิมพ์บนใบเสร็จ" rules={[{ required: true, message: "ต้องระบุชื่อหน่วย" }]}>
-            <Input placeholder="กล่อง" />
+          <Form.Item name="unitName" label={uiText("admin_ui.unit_name_printed_on_receipts_2c04e")} rules={[{ required: true, message: uiText("admin_ui.enter_a_unit_name_ff08a") }]}>
+            <Input placeholder={uiText("admin_ui.box_817e4")} />
           </Form.Item>
           <Form.Item
             name="unitCode"
-            label="รหัสหน่วยมาตรฐาน UN/ECE"
-            extra="ใช้ใน XML e-Tax · เว้นว่างได้ ระบบจะ fallback เป็นชื่อหน่วยเดิม"
+            label={uiText("admin_ui.un_ece_standard_unit_code_12707")}
+            extra={uiText("admin_ui.used_in_e_tax_xml_leave_blank_to_c11f8")}
           >
             <Select
               allowClear
@@ -318,35 +319,35 @@ export default function ProductPacksPage() {
           </Form.Item>
           <Form.Item
             name="baseQty"
-            label="1 หน่วยนี้ = กี่หน่วยฐาน"
-            extra="กล่องบรรจุ 10 แผง → ใส่ 10 · ขายกล่องหนึ่งจะตัดสต็อก 10"
-            rules={[{ required: true, message: "ต้องระบุจำนวน" }]}
+            label={uiText("admin_ui.base_units_in_one_of_these_units_7f06c")}
+            extra={uiText("admin_ui.a_box_containing_10_strips_enter_10_selling_a3dc0")}
+            rules={[{ required: true, message: uiText("admin_ui.enter_a_quantity_10971") }]}
           >
             <InputNumber min={1} precision={0} style={{ width: "100%" }} />
           </Form.Item>
           <Form.Item
             name="barcode"
-            label="บาร์โค้ด"
-            extra="ต้องไม่ซ้ำกับหน่วยขายอื่นในร้าน · เว้นว่างได้แต่จะยิงไม่เจอ"
+            label={uiText("admin_ui.barcodes_75bc4")}
+            extra={uiText("admin_ui.must_be_unique_among_this_store_s_sales_4fe10")}
           >
             <Input placeholder="8850000000123" />
           </Form.Item>
           <Form.Item
             name="price"
-            label="ราคาต่อหน่วยนี้"
-            extra="เว้นว่าง = ราคาสินค้า × จำนวนหน่วยฐาน (ไม่มีส่วนลดยกกล่อง)"
+            label={uiText("admin_ui.price_per_unit_52501")}
+            extra={uiText("admin_ui.blank_product_price_base_unit_quantity_no_bulk_c880c")}
           >
             <InputNumber min={0} style={{ width: "100%" }} placeholder="230" />
           </Form.Item>
           <Form.Item
             name="isBase"
-            label="เป็นหน่วยฐานของไซซ์นี้"
+            label={uiText("admin_ui.base_unit_for_this_size_0ae56")}
             valuePropName="checked"
-            extra="หน่วยที่สต็อกนับเป็น — มีได้ตัวเดียวต่อไซซ์ และต้องมีจำนวน = 1"
+            extra={uiText("admin_ui.the_unit_used_to_count_stock_only_one_fcba9")}
           >
             <Switch />
           </Form.Item>
-          <Form.Item name="active" label="เปิดใช้งาน" valuePropName="checked">
+          <Form.Item name="active" label={uiText("admin_ui.active_79476")} valuePropName="checked">
             <Switch />
           </Form.Item>
         </Form>

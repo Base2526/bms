@@ -1,4 +1,6 @@
 "use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 import {
@@ -223,6 +225,7 @@ const newItem = () => ({
 });
 
 export default function OperationsPage() {
+  const uiText = useUiText();
   const { t, lang } = useI18n(),
     { can, loading: permissionsLoading } = useBmsPermissions();
   const tr = (k: string) => t(`operation_checklists.${k}`);
@@ -401,7 +404,7 @@ export default function OperationsPage() {
         if (!(await command({ ...input, confirmed: true }))) {
           // The higher retry dialog owns this exact command while its outcome is unknown.
           if (pending.current) confirmation.destroy();
-          else throw new Error("not committed");
+          else throw new Error(uiText("admin_ui.en_not_committed_3ab1a"));
         }
       },
     });

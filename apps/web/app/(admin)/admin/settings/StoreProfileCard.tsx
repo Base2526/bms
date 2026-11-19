@@ -18,7 +18,9 @@ const Q = gql`
     bmsStoreProfile {
       businessArchetype businessArchetypeLocked businessType aiLanguage aiOrderingStyle aiRequiredFields aiInterpretShortReplies aiHandoffAfterFailedTurns
       receiptLanguageMode
-      about address provinceCode districtCode subdistrictCode province district subdistrict postcode phone contactEmail website logoUrl customerDisplayBackgroundUrl taxId timezone country currency
+      about address provinceCode districtCode subdistrictCode province district subdistrict postcode phone contactEmail website logoUrl
+      customerDisplayBackgroundUrl customerDisplayPromoSlides customerDisplayPromoIntervalSeconds
+      taxId timezone country currency
       businessHours restaurantOrderHours restaurantOrdersPaused restaurantMerchantAbsorbLimit shippingPolicy returnPolicy
       paymentAccounts { type bankCode bankName accountName accountNo promptpayId qrPayload note }
       shippingFlatRate shippingFreeThreshold shippingEstDaysMin shippingEstDaysMax
@@ -33,11 +35,6 @@ const Q = gql`
   }
 `;
 
-const M_TENANT = gql`
-  mutation ($name: String, $slug: String) {
-    bmsUpdateMyTenant(name: $name, slug: $slug) { id name slug }
-  }
-`;
 const M_PROFILE = gql`
   mutation ($input: BmsStoreProfileInput!) {
     bmsUpsertStoreProfile(input: $input) { about }
@@ -48,7 +45,8 @@ const PROFILE_KEYS = [
   "businessType", "aiLanguage", "aiOrderingStyle", "aiRequiredFields", "aiInterpretShortReplies",
   "receiptLanguageMode",
   "businessArchetype",
-  "aiHandoffAfterFailedTurns", "about", "address", "phone", "contactEmail", "website", "logoUrl", "customerDisplayBackgroundUrl", "taxId",
+  "aiHandoffAfterFailedTurns", "about", "address", "phone", "contactEmail", "website", "logoUrl", "customerDisplayBackgroundUrl",
+  "customerDisplayPromoSlides", "customerDisplayPromoIntervalSeconds", "taxId",
   "provinceCode", "districtCode", "subdistrictCode", "postcode",
   "timezone", "country", "currency", "businessHours", "restaurantOrderHours", "restaurantOrdersPaused", "restaurantMerchantAbsorbLimit", "shippingPolicy", "returnPolicy",
   "shippingFlatRate", "shippingFreeThreshold", "shippingEstDaysMin", "shippingEstDaysMax",
@@ -120,10 +118,10 @@ export default function StoreProfileCard() {
   const [form] = Form.useForm();
   const { data, loading, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const masterBanks: Array<{ code: string; nameTh: string; nameEn: string; active: boolean }> = data?.bmsMasterBanks ?? [];
-  const [saveTenant, { loading: savingT }] = useMutation(M_TENANT);
   const [saveProfile, { loading: savingP }] = useMutation(M_PROFILE);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingCustomerDisplayBackground, setUploadingCustomerDisplayBackground] = useState(false);
+  const [uploadingCustomerDisplayPromo, setUploadingCustomerDisplayPromo] = useState(false);
   const [showLogoUrlInput, setShowLogoUrlInput] = useState(false);
   const [logoUrlDraft, setLogoUrlDraft] = useState("");
   const [decodingPaymentQrKey, setDecodingPaymentQrKey] = useState<number | null>(null);
@@ -171,7 +169,10 @@ export default function StoreProfileCard() {
         about: p?.about, address: p?.address, provinceCode:p?.provinceCode,districtCode:p?.districtCode,
         subdistrictCode:p?.subdistrictCode,postcode:p?.postcode, phone: p?.phone,
         contactEmail: p?.contactEmail, website: p?.website, logoUrl: p?.logoUrl,
-        customerDisplayBackgroundUrl: p?.customerDisplayBackgroundUrl, taxId: p?.taxId,
+        customerDisplayBackgroundUrl: p?.customerDisplayBackgroundUrl,
+        customerDisplayPromoSlides: p?.customerDisplayPromoSlides || [],
+        customerDisplayPromoIntervalSeconds: Number(p?.customerDisplayPromoIntervalSeconds ?? 8),
+        taxId: p?.taxId,
         timezone: p?.timezone, country: p?.country || undefined, currency: p?.currency || undefined,
         businessHours: p?.businessHours,
         restaurantOrderHours: p?.restaurantOrderHours || [],
@@ -196,11 +197,10 @@ export default function StoreProfileCard() {
   const onFinish = async (v: any) => {
     if (decodingPaymentQrRef.current) return;
     try {
-      // 1) ชื่อร้าน → bms_tenants (slug ปิดไม่ให้แก้ ส่ง null = คงค่าเดิม)
-      await saveTenant({ variables: { name: v.name?.trim() || null, slug: null } });
-      // 2) ข้อมูลร้านที่เหลือ → bms_store_profile
+      // Save the tenant name and profile in one server transaction.
       const input: any = {};
       for (const k of PROFILE_KEYS) input[k] = v[k] ?? null;
+      input.tenantName = v.name?.trim() || null;
       // This field is a NOT NULL boolean. Conditional form rendering may omit it while the
       // archetype data is loading, so preserve the server value instead of sending null.
       input.restaurantOrdersPaused = v.restaurantOrdersPaused
@@ -319,6 +319,39 @@ export default function StoreProfileCard() {
 
   const removeCustomerDisplayBackground = () => {
     form.setFieldValue("customerDisplayBackgroundUrl", null);
+  };
+
+  const uploadCustomerDisplayPromo = async (file: File, add: (value: string) => void) => {
+    if (!ALLOWED_LOGO_TYPES.has(file.type)) {
+      message.error(t("admin_store_profile.customer_display_background_type_error"));
+      return false;
+    }
+    if (file.size > MAX_CUSTOMER_DISPLAY_BACKGROUND_BYTES) {
+      message.error(t("admin_store_profile.customer_display_background_size_error"));
+      return false;
+    }
+    const existing = form.getFieldValue("customerDisplayPromoSlides") ?? [];
+    if (existing.length >= 8) {
+      message.warning(t("admin_store_profile.customer_display_promo_limit"));
+      return false;
+    }
+    setUploadingCustomerDisplayPromo(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const response = await fetch("/api/bms/store-profile/customer-display-background/upload", {
+        method: "POST", body, credentials: "include",
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.url) throw new Error(result?.error || t("admin_store_profile.customer_display_promo_upload_failed"));
+      add(result.url);
+      message.success(t("admin_store_profile.customer_display_promo_upload_success"));
+    } catch (error: any) {
+      message.error(error?.message || t("admin_store_profile.customer_display_promo_upload_failed"));
+    } finally {
+      setUploadingCustomerDisplayPromo(false);
+    }
+    return false;
   };
 
   const readPaymentQrImage = async (file: File, fieldName: number, fieldKey: number) => {
@@ -707,6 +740,36 @@ export default function StoreProfileCard() {
                           </Space>
                         </Form.Item>
                       </Col>
+                      <Col span={24}>
+                        <Form.Item label={t("admin_store_profile.customer_display_promo_label")} extra={t("admin_store_profile.customer_display_promo_hint")}>
+                          <Form.List name="customerDisplayPromoSlides">
+                            {(fields, { add, remove, move }) => <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                              {fields.length > 0 && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
+                                {fields.map((field, index) => <div key={field.key} style={{ border: "1px solid var(--border-color, #d9d9d9)", borderRadius: 8, overflow: "hidden", background: "#16191c" }}>
+                                  <Form.Item name={field.name} hidden><Input /></Form.Item>
+                                  <img src={form.getFieldValue(["customerDisplayPromoSlides", field.name])} alt={`${t("admin_store_profile.customer_display_promo_preview_alt")} ${index + 1}`} style={{ width: "100%", aspectRatio: "16 / 9", objectFit: "cover", display: "block" }} />
+                                  <Space size={4} style={{ padding: 8 }}>
+                                    <Button size="small" disabled={index === 0} onClick={() => move(index, index - 1)}>↑</Button>
+                                    <Button size="small" disabled={index === fields.length - 1} onClick={() => move(index, index + 1)}>↓</Button>
+                                    <Button size="small" danger icon={<DeleteOutlined />} onClick={() => remove(index)}>{t("admin_store_profile.customer_display_background_remove")}</Button>
+                                  </Space>
+                                </div>)}
+                              </div>}
+                              <Space wrap>
+                                <Upload accept="image/png,image/jpeg,image/webp" showUploadList={false}
+                                  beforeUpload={(file) => uploadCustomerDisplayPromo(file, add)}>
+                                  <Button icon={<PlusOutlined />} loading={uploadingCustomerDisplayPromo} disabled={fields.length >= 8}>
+                                    {t("admin_store_profile.customer_display_promo_add")}
+                                  </Button>
+                                </Upload>
+                                <Form.Item name="customerDisplayPromoIntervalSeconds" label={t("admin_store_profile.customer_display_promo_interval")} style={{ marginBottom: 0 }}>
+                                  <InputNumber min={4} max={30} precision={0} addonAfter={t("admin_store_profile.seconds")} />
+                                </Form.Item>
+                              </Space>
+                            </Space>}
+                          </Form.List>
+                        </Form.Item>
+                      </Col>
                     </Row>
                     <Row gutter={16}>
                       <Col xs={24} md={12}><Form.Item name="about" label={t("admin_store_profile.about_label")} style={{ marginBottom: 12 }}><Input.TextArea rows={3} /></Form.Item></Col>
@@ -1077,7 +1140,7 @@ export default function StoreProfileCard() {
           />
 
           <Divider style={{ margin: "4px 0 16px" }} />
-          <Button type="primary" htmlType="submit" icon={<SaveOutlined />} size="large" loading={savingT || savingP}>
+          <Button type="primary" htmlType="submit" icon={<SaveOutlined />} size="large" loading={savingP}>
             {t("admin_store_profile.save_btn")}
           </Button>
         </Form>

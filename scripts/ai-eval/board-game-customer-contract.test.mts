@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import * as cafeService from "../../apps/web/lib/bms/boardGameCafe.ts";
-import { readBoardGameCustomerInfoInTx } from "../../apps/web/lib/bms/boardGameCustomerInfo.ts";
+import { readBoardGameCustomerInfoInTx, readBoardGameCustomerPassesInTx, readBoardGameCustomerCatalogInTx } from "../../apps/web/lib/bms/boardGameCustomerInfo.ts";
 import { listPublicBoardGameCafes, type PublicBoardGameCafe } from "../../apps/web/lib/bms/boardGameCafe.ts";
 import { customerTools, ALL_TOOLS } from "../../apps/web/lib/bms/tools/catalog.ts";
 import { __toolLoopTest } from "../../apps/web/lib/bms/tools/runtime.ts";
@@ -19,9 +19,51 @@ test("customer question corpus references real approved tools and covers unsuppo
   for (const item of BOARD_GAME_CUSTOMER_CORPUS.flatMap((item) => [item, ...(item.followUps ?? [])])) {
     for (const tool of [...item.tools, ...(item.anyTools ?? [])]) assert.ok(names.has(tool), `${item.id}: ${tool}`);
   }
-  for (const id of ["booking-disabled", "booking-deposit-staff", "lost-id", "membership", "monthly-pass", "pass-balance", "queue", "rules"]) {
+  for (const id of ["booking-disabled", "booking-deposit-staff", "lost-id", "queue", "rules"]) {
     assert.equal(BOARD_GAME_CUSTOMER_CORPUS.find((item) => item.id === id)?.abstain, true);
   }
+});
+
+test("own-pass tool is board-game customer only and cannot accept a supplied identity", () => {
+  const tool = customerTools("board_game_cafe").find((entry) => entry.name === "get_board_game_my_passes")!;
+  assert.ok(tool);
+  assert.deepEqual(tool.surfaces, ["customer"]);
+  assert.deepEqual(tool.inputSchema.properties, {});
+  assert.equal(tool.inputSchema.additionalProperties, false);
+  for (const archetype of ["retail", "restaurant", "pharmacy"]) {
+    assert.ok(!customerTools(archetype).some((entry) => entry.name === tool.name));
+  }
+});
+
+test("own-pass read scopes every query and suppresses a ledger mismatch", async () => {
+  const sql: string[] = [];
+  const client = { query: async (statement: string, params?: unknown[]) => {
+    sql.push(statement);
+    if (statement.includes("SELECT business_archetype")) return { rows: [{ business_archetype: "board_game_cafe" }] };
+    assert.deepEqual(params, [CHAT_TENANT, "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"]);
+    return { rows: [
+      { plan_name: "FAKE Hours", kind: "MINUTES", included_minutes: 600, remaining_minutes: 540,
+        ledger_minutes: "-120", starts_at: "2025-01-01T00:00:00Z", expires_at: "2099-01-01T00:00:00Z",
+        status: "ACTIVE", location_name: "FAKE Main", is_current: true },
+      { plan_name: "FAKE Unlimited", kind: "UNLIMITED", included_minutes: null, remaining_minutes: null,
+        ledger_minutes: null, starts_at: "2025-01-01T00:00:00Z", expires_at: "2099-01-01T00:00:00Z",
+        status: "ACTIVE", location_name: null, is_current: true },
+      { plan_name: "FAKE Verified", kind: "MINUTES", included_minutes: 600, remaining_minutes: 480,
+        ledger_minutes: "-120", starts_at: "2025-01-01T00:00:00Z", expires_at: "2099-01-01T00:00:00Z",
+        status: "ACTIVE", location_name: "FAKE Main", is_current: true },
+    ] };
+  } } as any;
+  const result = await readBoardGameCustomerPassesInTx(client, CHAT_TENANT, "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa");
+  assert.equal(result.status, "OK");
+  assert.equal(result.passes[0].balanceStatus, "REVIEW_REQUIRED");
+  assert.equal(result.passes[0].remainingMinutes, null);
+  assert.equal(result.passes[1].kind, "UNLIMITED");
+  assert.equal(result.passes[1].remainingMinutes, null);
+  assert.equal(result.passes[2].balanceStatus, "VERIFIED");
+  assert.equal(result.passes[2].remainingMinutes, 480);
+  assert.match(sql.at(-1)!, /p\.tenant_id = \$1 AND p\.customer_id = \$2/);
+  assert.match(sql.at(-1)!, /l\.tenant_id = p\.tenant_id AND l\.pass_id = p\.id/);
+  assert.doesNotMatch(JSON.stringify(result), /customer_id|aaaaaaaa-aaaa/);
 });
 
 function bookingHarness() {
@@ -143,12 +185,70 @@ function harness(cafes: PublicBoardGameCafe[] = [cafe], archetype = "board_game_
     assert.equal(scope.client, client);
     return cafes;
   };
-  return { client, calls, read: (kind: "rates" | "availability" | "library", input = {}) =>
+  return { client, calls, readCafes, read: (kind: "rates" | "availability" | "library", input = {}) =>
     readBoardGameCustomerInfoInTx(client, "tenant-a", kind, input, readCafes) };
 }
 
-test("only board-game customer models see the three read-only tools", () => {
-  for (const name of ["get_board_game_rates", "search_board_game_library", "get_board_game_availability"]) {
+test("chat plan and offer reads require per-row opt-in, active state and a selected branch", async () => {
+  const h = harness();
+  const plans = await readBoardGameCustomerCatalogInTx(h.client, "tenant-a", "plans", undefined, h.readCafes);
+  const planSql = h.calls.at(-1)!;
+  assert.equal(plans.status, "NOT_PUBLISHED");
+  assert.deepEqual((plans as any).plans, []);
+  assert.match(planSql.sql, /active AND publish_to_chat/);
+  assert.match(planSql.sql, /location_id IS NULL OR location_id = \$2/);
+  assert.deepEqual(planSql.params, ["tenant-a", cafe.locationId]);
+  const offers = await readBoardGameCustomerCatalogInTx(h.client, "tenant-a", "offers", undefined, h.readCafes);
+  const offerSql = h.calls.at(-1)!;
+  assert.equal(offers.status, "NOT_PUBLISHED");
+  assert.deepEqual((offers as any).offers, []);
+  assert.match(offerSql.sql, /active AND publish_to_chat AND \(valid_until IS NULL OR valid_until > now\(\)\)/);
+  assert.deepEqual(offerSql.params, ["tenant-a", cafe.locationId]);
+  assert.doesNotMatch(JSON.stringify({ plans, offers }), /private-branch-id/);
+  const ambiguous = harness([cafe, { ...cafe, locationId: "another-private-id", displayName: "FAKE West" }]);
+  const before = ambiguous.calls.length;
+  assert.equal((await readBoardGameCustomerCatalogInTx(ambiguous.client, "tenant-a", "plans", undefined, ambiguous.readCafes)).status, "BRANCH_REQUIRED");
+  assert.equal(ambiguous.calls.length, before + 1, "only archetype check, no catalog read");
+  const wrongTenantKind = harness([cafe], "retail");
+  await assert.rejects(readBoardGameCustomerCatalogInTx(
+    wrongTenantKind.client, "tenant-a", "plans", undefined, wrongTenantKind.readCafes
+  ));
+  assert.equal(wrongTenantKind.calls.length, 1, "non-board-game tenant cannot reach catalog SQL");
+  const invalidBranch = harness();
+  await assert.rejects(readBoardGameCustomerCatalogInTx(
+    invalidBranch.client, "tenant-a", "offers", "x".repeat(121), invalidBranch.readCafes
+  ), /Invalid board-game search text/);
+  assert.equal(invalidBranch.calls.length, 0, "invalid input is rejected before a DB read");
+});
+
+test("chat publication migration keeps existing plans and offers private", () => {
+  const sql = readFileSync(new URL("../../db/migrations/10.117__bms_board_game_chat_catalog_publication.sql", import.meta.url), "utf8");
+  for (const table of ["bms_board_game_pass_plans", "bms_board_game_offers"]) {
+    assert.match(sql, new RegExp(`ALTER TABLE ${table}\\s+ADD COLUMN IF NOT EXISTS publish_to_chat BOOLEAN NOT NULL DEFAULT FALSE`));
+  }
+  assert.doesNotMatch(sql.replace(/--[^\n]*/g, ""), /UPDATE\s+bms_board_game_(?:pass_plans|offers)/i);
+});
+
+test("chat catalog projects bounded public terms without internal offer SKU or notes", async () => {
+  const planRow = { name: "FAKE 30 days", kind: "MINUTES", price: "499.00", duration_days: 30, included_minutes: 600 };
+  const offerRow = { name: "FAKE weekday", kind: "TIME_PERCENT", percent_off: "10", fixed_price: null,
+    buy_minutes: null, free_minutes: null, min_players: 2, max_players: 4, minimum_minutes: 60,
+    required_product_sku: "PRIVATE-SKU", valid_from: null, valid_until: null, weekdays: [1, 2, 3, 4, 5],
+    starts_local_time: "12:00:00", ends_local_time: "17:00:00", note: "PRIVATE-NOTE" };
+  const plans = harness([cafe], "board_game_cafe", [planRow]);
+  const planResult = await readBoardGameCustomerCatalogInTx(plans.client, "tenant-a", "plans", undefined, plans.readCafes);
+  assert.equal((planResult as any).plans[0].price, 499);
+  assert.equal((planResult as any).plans[0].durationDays, 30);
+  const offers = harness([cafe], "board_game_cafe", [offerRow]);
+  const offerResult = await readBoardGameCustomerCatalogInTx(offers.client, "tenant-a", "offers", undefined, offers.readCafes);
+  assert.equal((offerResult as any).offers[0].requiresProductPurchase, true);
+  assert.deepEqual((offerResult as any).offers[0].weekdays, [1, 2, 3, 4, 5]);
+  assert.match((offerResult as any).note, /0=Sunday, 1=Monday/);
+  assert.doesNotMatch(JSON.stringify(offerResult), /PRIVATE-SKU|PRIVATE-NOTE|private-branch-id/);
+});
+
+test("only board-game customer models see the read-only tools", () => {
+  for (const name of ["get_board_game_rates", "search_board_game_library", "get_board_game_availability", "get_board_game_my_passes", "get_board_game_pass_plans", "get_board_game_offers"]) {
     const tool = customerTools("board_game_cafe").find((t) => t.name === name)!;
     assert.ok(tool);
     assert.equal(tool.sensitive, undefined);
@@ -319,16 +419,18 @@ test("runtime rejects model consent and identity injection into the booking writ
   }
 });
 
-test("runtime rejects caller-supplied tenant and operational identifiers before executing a real read tool", async () => {
-  const tool = ALL_TOOLS.find((t) => t.name === "get_board_game_availability")!;
-  let executed = false;
-  const result = await __toolLoopTest.runApproved({
-    tool: { ...tool, execute: async () => { executed = true; return { ok: true }; } },
-    input: { tenantId: "tenant-b", tableId: "private" },
-    execCtx: { tenantId: "tenant-a", surface: "customer", actor: "ai:test" },
-  }, { auditAttempt: async () => undefined, reportFailure: async () => undefined });
-  assert.equal(result.result.ok, false);
-  assert.equal(executed, false);
+test("runtime rejects caller-supplied tenant and operational identifiers before executing read tools", async () => {
+  for (const name of ["get_board_game_availability", "get_board_game_my_passes", "get_board_game_pass_plans", "get_board_game_offers"]) {
+    const tool = ALL_TOOLS.find((t) => t.name === name)!;
+    let executed = false;
+    const result = await __toolLoopTest.runApproved({
+      tool: { ...tool, execute: async () => { executed = true; return { ok: true }; } },
+      input: { tenantId: "tenant-b", tableId: "private" },
+      execCtx: { tenantId: "tenant-a", surface: "customer", actor: "ai:test" },
+    }, { auditAttempt: async () => undefined, reportFailure: async () => undefined });
+    assert.equal(result.result.ok, false, name);
+    assert.equal(executed, false, name);
+  }
 });
 
 

@@ -91,6 +91,7 @@ export type AdminNavigation = {
 };
 
 const always = () => true;
+const bankReconciliationEnabled = process.env.NEXT_PUBLIC_BMS_BANK_RECONCILIATION_ENABLED === "true";
 
 /**
  * `followup-queue` renders for followup.view OR retention.view — the retention board is a separate
@@ -142,6 +143,10 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
     section: "sales", workspace: "SHOP", visible: (ctx) => ctx.can("order.view"),
   },
   {
+    id: "sales.quotations", route: "/admin/quotations", labelKey: "admin_nav.quotations",
+    section: "sales", workspace: "SHOP", visible: (ctx) => ctx.can("quotation.view"),
+  },
+  {
     id: "sales.shipment", route: "/admin/shipment", labelKey: "admin_nav.shipment",
     section: "sales", workspace: "SHOP", visible: (ctx) => ctx.can("shipping.view"),
   },
@@ -164,7 +169,8 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
   {
     id: "sales.delivery-platforms", route: "/admin/delivery-platforms", labelKey: "admin_nav.delivery_platforms",
     section: "sales", workspace: "SHOP",
-    visible: (ctx) => ctx.archetype === "restaurant" && ctx.can("delivery.integration.view"),
+    visible: (ctx) => ctx.archetype === "restaurant"
+      && (ctx.can("delivery.integration.view") || ctx.can("delivery.settlement.view")),
   },
   {
     id: "sales.board-game", route: "/admin/board-game", labelKey: "admin_nav.board_game",
@@ -179,6 +185,14 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
   // ---- สินค้าและสต็อก ----
   {
     id: "inventory.products", route: "/admin/products", labelKey: "admin_nav.products",
+    section: "inventory", workspace: "SHOP", visible: (ctx) => ctx.can("product.view"),
+  },
+  {
+    id: "inventory.product-specs", route: "/admin/product-specs", labelKey: "admin_nav.product_specs",
+    section: "inventory", workspace: "SHOP", visible: (ctx) => ctx.can("product.view"),
+  },
+  {
+    id: "inventory.weighted-prices", route: "/admin/weighted-prices", labelKey: "admin_nav.weighted_prices",
     section: "inventory", workspace: "SHOP", visible: (ctx) => ctx.can("product.view"),
   },
   {
@@ -198,6 +212,17 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
   {
     id: "inventory.purchase", route: "/admin/purchase", labelKey: "admin_nav.purchase",
     section: "inventory", workspace: "SHOP", visible: (ctx) => ctx.can("purchase.view"),
+  },
+  {
+    id: "inventory.fish-intake", route: "/admin/fish-intake", labelKey: "admin_nav.fish_intake",
+    section: "inventory", workspace: "SHOP",
+    visible: (ctx) => ctx.can("purchase.view") || ctx.can("inventory.count"),
+  },
+  {
+    id: "inventory.fish-owner", route: "/admin/fish-owner", labelKey: "admin_nav.fish_owner",
+    section: "inventory", workspace: "SHOP",
+    visible: (ctx) => ctx.can("report.view") && ctx.can("purchase.view") && ctx.can("product.view")
+      && ctx.can("shipping.view") && ctx.can("ar.view"),
   },
   {
     id: "inventory.stock-transfers", route: "/admin/stock-transfers", labelKey: "admin_nav.stock_transfers",
@@ -284,6 +309,11 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
     section: "finance", workspace: "SHOP", visible: (ctx) => ctx.can("expense.view"),
   },
   {
+    id: "finance.bank-reconciliation", route: "/admin/bank-reconciliation", labelKey: "admin_nav.bank_reconciliation",
+    section: "finance", workspace: "SHOP",
+    visible: (ctx) => bankReconciliationEnabled && ctx.can("bank_reconciliation.view"),
+  },
+  {
     id: "finance.commission", route: "/admin/commission", labelKey: "admin_nav.commission",
     section: "finance", workspace: "SHOP", visible: (ctx) => ctx.can("commission.view"),
   },
@@ -344,7 +374,7 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
   {
     id: "settings.pos-devices", route: "/admin/pos-devices", labelKey: "admin_nav.pos_devices",
     section: "settings", workspace: "SHOP",
-    visible: (ctx) => ctx.can("pos.device.manage") || ctx.can("pos.pin.manage") || ctx.can("pos.staff.manage"),
+    visible: (ctx) => ctx.can("pos.device.manage") || ctx.can("pos.pin.manage") || ctx.can("pos.staff.manage") || ctx.can("support.logs.view"),
   },
   {
     id: "settings.pos-readiness", route: "/admin/pos-readiness", labelKey: "admin_nav.pos_readiness",
@@ -530,8 +560,8 @@ const ARCHETYPE_EMPHASIS: Record<string, readonly string[]> = {
   mini_mart: ["sales.pos-shifts", "inventory.products", "inventory.product-packs", "inventory.purchase", "inventory.stock-counts"],
   fashion: ["sales.orders", "inventory.products", "sales.shipment", "customers.customers"],
   pharmacy: ["inventory.products", "sales.pos-shifts", "settings.pos-readiness"],
-  b2b_wholesale: ["sales.orders", "inventory.product-packs", "finance.receivables", "inventory.purchase", "sales.shipment"],
-  building_materials: ["sales.orders", "inventory.product-packs", "finance.receivables", "inventory.purchase", "sales.shipment"],
+  b2b_wholesale: ["sales.quotations", "sales.orders", "inventory.product-packs", "finance.receivables", "inventory.purchase", "sales.shipment"],
+  building_materials: ["sales.quotations", "sales.orders", "inventory.product-specs", "inventory.weighted-prices", "inventory.product-packs", "finance.receivables", "inventory.purchase", "sales.shipment"],
   food_beverage: ["sales.pos-shifts", "inventory.products", "inventory.stock-models", "inventory.wastage"],
   beauty_personal_care: ["sales.orders", "inventory.products", "customers.customers"],
   gadgets_accessories: ["sales.orders", "inventory.products", "sales.shipment"],

@@ -85,8 +85,12 @@ POSTGRES_USER=app POSTGRES_PASSWORD=realtime_test_only \
   npm run test:db
 ```
 
-**จดจำนวนที่ผ่าน/แดงไว้เป็น baseline** · ชุด DB 38 ไฟล์นี้ยังไม่เคยรันเลย จึงต้องถือว่าตัวที่แดง
-อาจแดงมาก่อนอยู่แล้ว การเทียบกับ baseline คือวิธีเดียวที่แยก regression ออกจากของเดิม
+**จดจำนวนที่ผ่าน/แดงไว้เป็น baseline** · runner ปัจจุบันมีหลายชุดที่บังคับชื่อฐานทดสอบเฉพาะ
+(`bms_freemium_test`, `bms_requisition_test`, `bms_operations_test`,
+`bms_restaurant_readiness_test`) และจะ fail ตาม guard เมื่อชี้มาที่ `bms_realtime_test`.
+รันชุดเหล่านั้นแยกกับฐานที่ถูกต้องตาม [คู่มือ scripts](../../scripts/README.md) และเทียบ baseline
+เฉพาะฐาน/ชุดเดียวกัน. ตัวที่แดงก่อนและหลังอาจเป็นปัญหาเดิม; ตัวที่เปลี่ยนจากเขียวเป็นแดงจึง
+เป็นหลักฐานของ regression.
 
 ### 5. รัน migration ตามลำดับ — ห้ามสลับ
 

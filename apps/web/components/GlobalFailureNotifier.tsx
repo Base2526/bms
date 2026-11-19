@@ -2,6 +2,7 @@
 
 import { gql, useSubscription } from "@apollo/client";
 import { notify } from "@/lib/notify";
+import { useI18n } from "@/lib/i18nContext";
 
 const SUB_NOTIFICATION_CREATED = gql`
   subscription { notificationCreated { id title message entity_type data } }
@@ -19,16 +20,14 @@ const SUB_NOTIFICATION_CREATED = gql`
  * เช็คซ้ำด้วย inbox.view จะทำให้ platform admin ที่ไม่มีสิทธิ์ในร้านนั้นไม่ได้รับแจ้ง
  */
 export function GlobalFailureNotifier() {
+  const { t } = useI18n();
   useSubscription(SUB_NOTIFICATION_CREATED, {
     onData: async ({ data }: any) => {
       const n = data?.data?.notificationCreated;
       if (!n || n.entity_type !== "bms_failure_incident") return;
 
       const conversationId = n.data?.conversationId;
-      const result = await notify(n.title || "ระบบขัดข้อง", {
-        body: n.message || "",
-        tag: `bms-failure-${n.id}`,
-      });
+      const result = await notify(t("order_notifications.failure_private_title"), { tag: "bms-failure" });
       if (!result) return;
 
       // platform admin ได้ incident ของร้านอื่นด้วย — ลิงก์เข้า Inbox ของร้านนั้น

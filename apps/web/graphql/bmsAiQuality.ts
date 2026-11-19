@@ -12,7 +12,6 @@ import {
   type AiQualityCategory,
   type AiQualityVerdict,
 } from "@/lib/bms/aiQuality";
-import { audit } from "@/lib/bms/audit";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { getAnswerEvidence, getAnswerEvidenceCoverage } from "@/lib/bms/answerEvidenceStore";
@@ -100,7 +99,6 @@ export const bmsAiQualityResolvers = {
           note: args.note,
           reviewerId: String(auth.author_id),
         });
-        await audit(ctx, "ai_quality.review", args.id, { verdict, category });
         return result;
       } catch (error) {
         badInput(error);
@@ -115,7 +113,6 @@ export const bmsAiQualityResolvers = {
           args.id,
           String(auth.author_id)
         );
-        await audit(ctx, "ai_quality.dismiss", args.id);
         return result;
       } catch (error) {
         badInput(error);

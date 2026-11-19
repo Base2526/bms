@@ -1,5 +1,6 @@
 import * as Keychain from 'react-native-keychain';
 import { redactDeviceToken, type PairingTarget } from './pairing';
+import { runWithOperationTimeout } from './operation';
 
 type DiagnosticStatus = 'success' | 'error' | 'warning' | 'info';
 
@@ -125,25 +126,21 @@ async function sendBatch(
   target: PairingTarget,
   events: DiagnosticEvent[],
 ): Promise<'sent' | 'retry' | 'drop'> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
   try {
-    const response = await fetch(diagnosticsUrl(target.serverUrl), {
+    const response = await runWithOperationTimeout(signal => fetch(diagnosticsUrl(target.serverUrl), {
       method: 'POST',
-      signal: controller.signal,
+      signal,
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${target.token}`,
         'x-pos-device-token': target.token,
       },
       body: JSON.stringify({ events }),
-    });
+    }), SEND_TIMEOUT_MS);
     if (response.ok) return 'sent';
     return response.status === 429 || response.status >= 500 ? 'retry' : 'drop';
   } catch {
     return 'retry';
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

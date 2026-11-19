@@ -13,6 +13,21 @@
 
 import { crossSkuGiftPricing, normalizeCrossSkuPromotion, type CrossSkuPromotion, type GiftSaleEvidence } from "@pos-core/crossSkuPromotion";
 
+type WeightedKgSnapshot = { rateCents: string; basisGrams: 1000; revisionNo: number;
+  labels: Array<{barcode:string;copies:number;grams:number}>; rounding: "HALF_UP_PER_LABEL" };
+
+function readWeightedKgSnapshot(raw: unknown): WeightedKgSnapshot | null {
+  let value = raw;
+  if (typeof value === "string") { try { value = JSON.parse(value); } catch { return null; } }
+  const item = value && typeof value === "object" ? (value as Record<string,unknown>).weightedKg : null;
+  if (!item || typeof item !== "object") return null;
+  const snapshot = item as Record<string,unknown>;
+  if (snapshot.basisGrams !== 1000 || snapshot.rounding !== "HALF_UP_PER_LABEL"
+    || typeof snapshot.rateCents !== "string" || !/^\d+$/.test(snapshot.rateCents)
+    || !Array.isArray(snapshot.labels)) return null;
+  return snapshot as WeightedKgSnapshot;
+}
+
 export type PriceTier = {
   /** ซื้อครบกี่หน่วยฐานถึงได้ราคานี้ */
   minQty: number;
@@ -117,6 +132,8 @@ export type RemainingPricingLine = {
   receiptUnitPrice: number;
   packUnitPrice: number | null;
   pricingSnapshot: unknown;
+  /** Frozen line_amount is the return allocation authority for measured sales. */
+  lineAmount?: number;
   /** Server-owned restaurant line group; ordinary retail return behavior is unchanged. */
   promotionGroup?: string;
 };
@@ -178,6 +195,17 @@ export function priceRemainingLines(
     }
   }
   const priced = remaining.map((line) => {
+    const weighted = readWeightedKgSnapshot(line.pricingSnapshot);
+    if (weighted) {
+      if (line.lineAmount == null || !Number.isSafeInteger(Math.round(line.lineAmount * 100))) {
+        throw new Error("WEIGHTED_RETURN_SNAPSHOT_INVALID");
+      }
+      const originalCents = BigInt(Math.round(line.lineAmount * 100));
+      const keptCents = (originalCents * BigInt(line.remainingPackQty) + BigInt(line.packQty) / 2n)
+        / BigInt(line.packQty);
+      const amount = Number(keptCents) / 100;
+      return {id:line.id,remainingPackQty:line.remainingPackQty,amount,shelfAmount:amount};
+    }
     const shelfAmount = round2(line.receiptUnitPrice * line.remainingPackQty);
     if (line.packUnitPrice != null) {
       return {
@@ -204,7 +232,8 @@ export function priceRemainingLines(
   });
   const giftRules = remaining.flatMap((l) => normalizePricingSnapshot(l.pricingSnapshot).crossSkuGifts?.map((e) => e.rule) ?? []);
   const gifts = crossSkuGiftPricing(remaining.map((l) => ({ sku: l.sku, size: l.size,
-    qty: l.remainingBaseQty, unitPrice: l.receiptUnitPrice, eligible: l.packUnitPrice == null })), giftRules);
+    qty: l.remainingBaseQty, unitPrice: l.receiptUnitPrice,
+    eligible: l.packUnitPrice == null && !readWeightedKgSnapshot(l.pricingSnapshot) })), giftRules);
   priced.forEach((l, index) => { l.amount = round2(Math.max(0, l.amount - gifts.discounts[index])); });
   const pricingSubtotal = round2(priced.reduce((sum, line) => sum + line.amount, 0));
   const shelfSubtotal = round2(priced.reduce((sum, line) => sum + line.shelfAmount, 0));

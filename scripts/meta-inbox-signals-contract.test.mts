@@ -67,5 +67,31 @@ test("signal writes are tenant-scoped, idempotent and publish conversation refre
   assert.deepEqual(result, { echoes: 1, deliveries: 1, reads: 1 });
   assert.deepEqual(calls.tenants, ["tenant-1"]);
   assert.equal(calls.sql.at(-1), "COMMIT");
+  const deliveryWrite = calls.sql.find(sql => sql.includes("'deliveredAt'"));
+  const readWrite = calls.sql.find(sql => sql.includes("'readAt'"));
+  assert.match(deliveryWrite ?? "", /'PARTIAL'/);
+  assert.match(readWrite ?? "", /'PARTIAL'/);
+  assert.match(deliveryWrite ?? "", /NOT IN \('PENDING','FAILED'\)/);
+  assert.match(readWrite ?? "", /NOT IN \('PENDING','FAILED'\)/);
   assert.deepEqual(calls.notifications, [["tenant-1", "conversation-1", "MESSAGES_CHANGED"]]);
+});
+
+test("matched Meta echo preserves an uncertain or partial outbound state", async () => {
+  const sql: string[] = [];
+  const client = { release() {}, query: async (statement: string) => {
+    sql.push(statement);
+    if (statement.includes("SELECT m.id,m.conversation_id"))
+      return { rows: [{ id: "message-1", conversation_id: "conversation-1" }], rowCount: 1 };
+    return { rows: [], rowCount: 1 };
+  } };
+  const service = loadWithStubs("apps/web/lib/bms/metaInboxSignals.ts", {
+    "@/lib/db": { getClient: async () => client },
+    "./tenant": { beginTenantTx: async () => {} },
+    "./customers": {}, "./inbox": { notifyInboxConversationChanged: () => {} },
+  });
+  const signal = parseMetaInboxSignals(envelope([{ sender: { id: pageId }, recipient: { id: customerRef },
+    timestamp: 1790000000000, message: { mid: "echo-mid", text: "done", is_echo: true } }]), pageId);
+  await service.applyMetaInboxSignals("tenant-1", "facebook", signal);
+  assert.match(sql.find(statement => statement.includes("'echoedAt'")) ?? "",
+    /'PARTIAL','PENDING','FAILED'/);
 });

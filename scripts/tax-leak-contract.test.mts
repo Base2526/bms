@@ -20,7 +20,8 @@ test("promotion-exact line_amount is the tax/refund/commission authority", () =>
   const returns = read("apps/web/lib/bms/pos.ts");
   const commission = read("apps/web/lib/bms/commission.ts");
   assert.match(orders, /promoLineAmountByIndex/);
-  assert.match(orders, /const productLineAmount = promoLineAmountByIndex\.get\(itemIndex\)/);
+  assert.match(orders, /const productLineAmount = weightedLineAmount != null \? weightedLineAmount : agreedQuote != null[\s\S]*?promoLineAmountByIndex\.get\(itemIndex\)/,
+    "verified weighed amounts, approved quotes and ordinary promotions must use their respective exact line amounts");
   assert.match(orders, /line_amount[\s\S]*ln\.lineAmount/);
   assert.match(tax, /line_amount AS amount/);
   assert.match(returns, /grossTotal[\s\S]*Number\(item\.line_amount\)/);

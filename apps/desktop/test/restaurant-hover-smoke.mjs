@@ -30,13 +30,16 @@ async function run() {
   const posCss = await readFile(path.join(web, "app/(pos)/pos/pos.css"), "utf8");
   const moduleCss = await readFile(path.join(output, "fixture.css"), "utf8");
   const win = new BrowserWindow({ show: false, width: 1100, height: 900,
-    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
   try {
     win.webContents.debugger.attach("1.3");
     const cdp = (method, params = {}) => win.webContents.debugger.sendCommand(method, params);
     for (const reverse of [false, true]) {
       await writeFile(path.join(output, "fixture.html"), `<!doctype html><html lang="th"><meta charset="utf-8">
-        <style>${reverse ? moduleCss + posCss : posCss + moduleCss}</style>
+        <style>${reverse ? moduleCss + posCss : posCss + moduleCss}
+          /* Check final cascade values, not an intermediate theme-transition frame. */
+          *, *::before, *::after { transition: none !important; }
+        </style>
         <body style="margin:0"><main class="pos-root"><div id="fixture"></div></main><script src="fixture.js"></script></body></html>`);
       await win.loadFile(path.join(output, "fixture.html"));
       await win.webContents.executeJavaScript(`(() => {

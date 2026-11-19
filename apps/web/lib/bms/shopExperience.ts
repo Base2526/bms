@@ -38,7 +38,7 @@ export type ProductFormFieldVisibility = {
 const RETAIL_SURFACES = ["RETAIL_POS", "PUBLIC_STOREFRONT", "CUSTOMER_AI", "ONLINE_ORDER"] as const;
 const GENERAL_TEMPLATE = ["GENERAL"] as const;
 
-const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
+const RAW_EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
   mini_mart: {
     archetype: "mini_mart",
     recommendedTemplates: GENERAL_TEMPLATE,
@@ -172,7 +172,7 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
   pet_supply: {
     archetype: "pet_supply",
     recommendedTemplates: GENERAL_TEMPLATE,
-    recommendedCapabilities: ["PACK", "MULTI_BARCODE", "LOT_TRACKING", "EXPIRY_TRACKING", "WEIGHTED_PRODUCT"],
+    recommendedCapabilities: ["PACK", "MULTI_BARCODE", "LOT_TRACKING", "EXPIRY_TRACKING", "FEFO", "WEIGHTED_PRODUCT"],
     primarySalesSurfaces: RETAIL_SURFACES,
     recommendedStockSections: ["LOT_EXPIRY", "SCALE"],
     restockEmphasis: true,
@@ -180,7 +180,7 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     specialMode: "NONE",
     descriptionKey: "shop_archetypes.description_pet_supply",
     importExamples: [
-      ["PET-CAT-FOOD", inStoreBarcode(9), "อาหารแมว", "อาหารสัตว์หลายขนาด ควรตั้ง lot และวันหมดอายุ", "220", "145", "อาหารสัตว์", "แบรนด์ตัวอย่าง", "อาหารแมว|cat food", "GENERAL", "DIRECT", "PIECE", "1KG|3KG", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+      ["PET-CAT-FOOD", inStoreBarcode(9), "อาหารแมว 1 กก.", "ขนาด 1 กก. ควรตั้งล็อตและวันหมดอายุ; ขนาดอื่นต้องกำหนดราคาแยก", "220", "145", "อาหารสัตว์", "แบรนด์ตัวอย่าง", "อาหารแมว|cat food", "GENERAL", "DIRECT", "PIECE", "1KG", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
     ],
   },
   building_materials: {
@@ -244,6 +244,14 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     ],
   },
 };
+
+// Downloaded examples have no accountant-reviewed VAT classification. Populate the
+// new optional import column explicitly as UNKNOWN rather than suggesting V or N.
+const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = { ...RAW_EXPERIENCES };
+for (const key of Object.keys(EXPERIENCES) as ShopArchetype[]) {
+  const profile = EXPERIENCES[key];
+  EXPERIENCES[key] = { ...profile, importExamples: profile.importExamples.map((row) => [...row, "UNKNOWN"]) };
+}
 
 export function shopExperienceForArchetype(value: string | null | undefined): ShopExperienceProfile {
   return EXPERIENCES[normalizeShopArchetype(value) ?? "other"];

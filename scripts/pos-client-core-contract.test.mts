@@ -19,6 +19,29 @@ import {
 } from "../packages/pos-client-core/src/posPin.ts";
 import { receiptPayloadFromPosSale } from "../apps/web/lib/pos/posSaleReceipt.ts";
 import { buildReceipt } from "../apps/web/lib/pos/escpos.ts";
+import { runWithOperationTimeout, PosConnectionError } from "../packages/pos-client-core/src/operation.ts";
+
+test("shared Desktop/native deadline rejects a non-aborting transport and ignores its late completion", { timeout: 1000 }, async () => {
+  let complete!: (value: string) => void;
+  let signal!: AbortSignal;
+  let calls = 0;
+  const pending = runWithOperationTimeout(requestSignal => {
+    calls++;
+    signal = requestSignal;
+    return new Promise<string>(resolve => { complete = resolve; });
+  }, 10);
+  await assert.rejects(pending, PosConnectionError);
+  assert.equal(signal.aborted, true);
+  complete('late success');
+  await assert.rejects(pending, PosConnectionError);
+  assert.equal(calls, 1);
+});
+
+test("shared deadline preserves success and synchronous validation failures", async () => {
+  assert.equal(await runWithOperationTimeout(async () => 'server result', 10), 'server result');
+  const failure = new Error('invalid local input');
+  await assert.rejects(runWithOperationTimeout(() => { throw failure; }, 10), error => error === failure);
+});
 
 const desktopRenderer = readFileSync(
   new URL("../apps/web/components/pos-desktop/DesktopPosRenderer.tsx", import.meta.url),
@@ -226,7 +249,7 @@ test("desktop refresh status stays in the header without a workspace overlay", (
   const header = desktopRenderer.slice(desktopRenderer.indexOf("<header className={styles.topbar}>"),
     desktopRenderer.indexOf("</header>", desktopRenderer.indexOf("<header className={styles.topbar}>")));
   assert.match(header, /styles\.refreshStatus[\s\S]*?role="status"[\s\S]*?aria-live="polite"/);
-  assert.match(header, /contentRefreshing \? "กำลังอัปเดตข้อมูล…" : ""/);
+  assert.match(header, /contentRefreshing \? posText\("กำลังอัปเดตข้อมูล…"\) : ""/);
   assert.match(header, /contentRefreshing \? <div className=\{styles\.refreshProgress\} aria-hidden="true"/);
   assert.doesNotMatch(desktopRenderer, /contentRefreshOverlay|เมนู ผู้ปฏิบัติงาน และกะจะยังคงอยู่/);
   const css = readFileSync(new URL("../apps/web/components/pos-desktop/DesktopPosRenderer.module.css", import.meta.url), "utf8");
@@ -349,7 +372,7 @@ test("desktop POS alerts expose a close control on every operating surface", () 
   assert.match(desktopRenderer, /serviceCalls\.length > 0/);
   assert.match(desktopRenderer, /\/api\/pos\/restaurant\/service-calls/);
   assert.match(desktopRenderer, /action: completing \? "service\.complete" : "service\.acknowledge"/);
-  assert.match(desktopRenderer, /call\.status === "PENDING" \? "รับเรื่อง" : "เสร็จสิ้น"/);
+  assert.match(desktopRenderer, /call\.status === "PENDING" \? posText\("รับเรื่อง"\) : posText\("เสร็จสิ้น"\)/);
   assert.doesNotMatch(
     desktopRenderer,
     /setServiceCalls\(calls\.filter\(\(call\) => call\.status === "PENDING"\)\)/,

@@ -99,7 +99,9 @@ before changing that domain.
 - Secrets resolve in a function that throws in production when missing; never `process.env.X ||
   "literal"`, never a module-level const, never exported.
 - Files: `files.tenant_id` mismatch answers 404; `visibility` missing = private; uploads bind the
-  owner from session/device/signed token only.
+  owner from session/device/signed token only. Personal uploads carry `owner_user_id` (`10.109`);
+  community-chat images/audio are private and stream only to members of the referencing chat (a
+  session alone is not enough); key/config/script-like artifacts are never generic public downloads.
 - Nothing touches `bms_inventory` without `tenant_id` (+ branch); every stock change writes a
   movement in the same transaction. Who holds reserved stock is derived from `bms_order_stock_lines`.
 - A manual "run now" of a fleet-wide job passes the caller's own tenant. Redis has five separate
@@ -119,11 +121,22 @@ before changing that domain.
 - A return reconciles lot identity before refunding in the same transaction. Unknown source lots,
   mixed tracked/untracked stock, conflicting expiry, or a no-receipt return into existing/tracked
   lots fails closed with `STOCK_REVIEW_REQUIRED`; no stock/refund/return evidence may partially land.
+- Open-item retail sales (`10.129`–`10.130`) are cash-only, PIN/`pos.sell`/`pos.open_item.sell`
+  gated, and record app-role append-only `bms_order_open_items` instead of creating a SKU, stock
+  movement, or `bms_order_extra_lines` service fee. Freeze label, quantity, amount, and `V`/`N`
+  tax choice at sale;
+  cost stays unknown. Return/void appends `bms_pos_return_open_items` without adding stock; an
+  exchange needs a separate new sale. Reject open items in deposit, pharmacy, restaurant, board-game,
+  coupon, points redemption, manual-discount, and Emergency Offline flows. Preserve an open-item basket when
+  switching or resuming workflows.
 - Money authority is `bms_order_items.line_amount` (`10.13`), never `unit_price × qty`. Tax documents
   are immutable; a full invoice issues only for a completed, never-voided/returned bill; back office
   refuses cancel/return/refund with an active tax document.
 - Expenses (`10.11`): input VAT only on a valid `TAX_INVOICE`; corrections are `VOID`. Supplier
   notes (`10.37`) store positive differences, claim in the month received, move no cash/stock.
+- Bank reconciliation (`10.110`) is a feature-flagged evidence sidecar: statement import and
+  human-confirmed links never update payment, AR, expense, refund, settlement, tax or ledger rows.
+  Generic file download must not bypass its dedicated tenant/RBAC route.
 - Receipt-QR invoice requests (`10.38`–`10.39`): tenant/order from the signature, hashed tracking
   secret, 3 submissions within 168 h, staff issue with `tax.document.issue` + branch + reviewed
   version. PDF email (`10.58`) is an outbox committed with the invoice; failure never undoes issuance;
@@ -311,11 +324,13 @@ Platform-admin, **read-only** page answering "how is the system doing right now"
 never add a button here that writes, restarts, or mutates anything. `lib/bms/systemHealth.ts` is a
 **composition layer, not a new subsystem**: reuse an existing service if one exists, and every read
 returns `{ok:false, error}` instead of throwing (an unapplied migration must degrade to one warning
-card, not a 500). GraphQL latency/error-rate metrics live in Redis histograms
+card, not a 500). GraphQL and wrapped REST latency/error-rate metrics live in Redis histograms
 (`lib/bms/requestMetrics.ts`), not Postgres, on purpose — do not add a per-request DB write here or a
-process-local `Map`. Full rationale, what it does not answer yet (slow-query, REST latency,
+process-local `Map`. Full rationale, what it does not answer yet (slow-query, unwrapped REST latency,
 container CPU/memory), and the request-metrics design tradeoffs:
 [agent-invariants.md § Observability](docs/agent-invariants.md#observability-adminsystem-health).
+For incident triage, distinguish `system_logs.level` from structured `status`; use
+[the log runbook](docs/architecture/logging-and-triage.md) before classifying a row as a server fault.
 
 ## Working method
 
@@ -333,12 +348,13 @@ dumps. Never commit `.env*`, tokens, customer data, or credentials.
 ## Testing and verification
 
 ```bash
-cd apps/web && npm run gate   # typecheck → every DB-free contract suite → production build
+cd apps/web && npm run gate   # release features → regression inventory → typecheck → every DB-free contract suite → production build
 ```
 
 - `npm run test:pure` (no DB) · `npm run test:db` (`-db-contract`, local host only, writes data —
-  never production). The runner walks `scripts/` and `scripts/ai-eval/` (`*.test.mts` only);
-  `gate.yml` runs typecheck + pure + build, never DB mode, so "pure green" ≠ DB path exercised.
+  never production). The runner walks `scripts/`, `scripts/ai-eval/`, and `scripts/infra/`
+  (`*.test.mts`, plus the Retail Local migration-checksum `.test.mjs`);
+  `gate.yml` runs the same steps as `npm run gate`, never DB mode, so "pure green" ≠ DB path exercised.
 - One file from `apps/web`: `node ../../scripts/run-contract-tests.mjs <pure|db> <name-filter>`
   (a filter matching nothing exits 2). From the repository root, omit the leading `../../`.
 - Never claim a check passed unless it ran. Cover what you touched: schema (ordering, idempotency,

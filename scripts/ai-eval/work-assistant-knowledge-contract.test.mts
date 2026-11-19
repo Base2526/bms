@@ -8,6 +8,7 @@ import { BMS_PERMISSIONS } from "../../apps/web/lib/bms/permissions.ts";
 import {
   SYSTEM_CAPABILITIES,
   SYSTEM_GUIDES,
+  SYSTEM_LIMITS,
   guideCoversCurrentPath,
   isComprehensiveCurrentPageHelpRequest,
   isCurrentPageHelpRequest,
@@ -17,6 +18,18 @@ import {
 
 const WEB = path.resolve(import.meta.dirname, "../../apps/web");
 const validPermissions = new Set<string>(BMS_PERMISSIONS);
+
+test("kitchen printer guidance states the exact Desktop pilot boundary", () => {
+  const restaurant = SYSTEM_CAPABILITIES.find(entry => entry.id === "restaurant.dine-in");
+  const stations = SYSTEM_LIMITS.find(entry => entry.id === "limits.kitchen-stations");
+  assert.ok(restaurant && stations);
+  for (const language of ["th", "en"] as const) {
+    assert.match(restaurant.limitations[language], /Desktop/);
+    assert.match(restaurant.limitations[language], /pilot/);
+    assert.match(stations.items[language].at(-1) ?? "", /Desktop/);
+    assert.match(stations.items[language].at(-1) ?? "", /pilot/);
+  }
+});
 
 test("promotion questions retrieve verified product and recurring-time rules", () => {
   for (const [query, id] of [

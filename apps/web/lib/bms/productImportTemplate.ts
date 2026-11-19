@@ -3,7 +3,7 @@ import type { UpsertProductInput } from "./products";
 export type ProductImportTemplateField =
   | "sku" | "barcode" | "name" | "description" | "price" | "cost_price"
   | "category" | "brand" | "keywords" | "creation_template" | "stock_policy"
-  | "base_unit" | "variant_codes" | "sales_surfaces";
+  | "base_unit" | "variant_codes" | "sales_surfaces" | "vat_category";
 
 export type ParsedProductImportRow = UpsertProductInput & { rowNumber: number };
 
@@ -35,6 +35,7 @@ export const PRODUCT_IMPORT_TEMPLATE_COLUMNS = [
   { header: "หน่วยฐาน", field: "base_unit", required: false },
   { header: "ตัวเลือก", field: "variant_codes", required: false },
   { header: "ช่องทางขาย", field: "sales_surfaces", required: false },
+  { header: "ประเภท VAT", field: "vat_category", required: false },
 ] as const satisfies readonly {
   header: string;
   field: ProductImportTemplateField;
@@ -111,6 +112,7 @@ export function parseProductImportWorksheet(aoa: readonly (readonly unknown[])[]
       // Never use NaN: JSON turns it into null and GraphQL rejects the entire batch.
       price: parseImportNumber(get("price")),
       cost_price: cost ? parseImportNumber(cost) : null,
+      vat_category: get("vat_category") ? get("vat_category").toUpperCase() as UpsertProductInput["vat_category"] : undefined,
       category: get("category") || null,
       brand: get("brand") || null,
       keywords: split(get("keywords"), (value) => value.toLowerCase()),

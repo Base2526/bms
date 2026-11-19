@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import ts from "../apps/web/node_modules/typescript/lib/typescript.js";
 import { buildReturnFinancialSnapshot as build, readReturnFinancialSnapshot as parse } from "../apps/web/lib/bms/returnFinancialSnapshot.ts";
 import { inspectSalesEvidence } from "../apps/web/lib/bms/salesEvidenceMath.ts";
+import { matchesPosReturnReplayLines } from "../apps/web/lib/bms/posReturnReplay.ts";
 import { MIGRATIONS } from "./schemaReadiness.mts";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
@@ -168,6 +169,7 @@ function harness() {
       product_sku: "MEAL", size: "BOWL", unit_price: "100.00", receipt_unit_price: "100.00", line_amount: "300.00", pricing_snapshot: {}, vat_category: "V",
       stock_consumption_version: 2, restaurant_check_item_id: "check-item", returned_pack_qty: String(state.items.reduce((a: number, r: any) => a + r.pack_qty, 0)),
       returned_refund_amount: String(state.items.reduce((a: number, r: any) => a + r.refund_amount, 0)) }]);
+    if (sql.includes("FROM bms_order_open_items oi") && sql.includes("ORDER BY oi.id")) return result();
     if (sql.includes("FROM bms_product_menu_unavailability")) return result();
     if (sql.includes("financial_snapshot AS snapshot")) {
       assert.deepEqual(p, ["tenant-a", "order-a"]); assert.match(sql, /LIMIT 1001/);
@@ -175,7 +177,7 @@ function harness() {
     }
     if (sql.includes("INSERT INTO bms_pos_returns")) {
       if (controls.fail === "snapshot") throw new Error("snapshot write failed");
-      const r = { id: `return-${state.returns.length + 1}`, key: p[8], order_id: p[1], pos_device_id: p[2], shift_id: p[3], return_mode: p[6], refund_amount: p[7],
+      const r = { id: `return-${state.returns.length + 1}`, key: p[8], order_id: p[1], pos_device_id: p[2], shift_id: p[3], return_mode: p[6], is_void: p[10], refund_amount: p[7],
         created_at: "2026-10-15T00:00:00Z", preferred_refund_method: p[14], sale_location_id: p[16], return_location_id: p[17], cross_branch: p[18], financial_snapshot: JSON.parse(p[19]) };
       assert.ok(backup); assert.ok(parse(r.financial_snapshot, r.refund_amount.toFixed(2))); state.returns.push(r); return result([r]);
     }
@@ -185,6 +187,7 @@ function harness() {
       state.items.push(r); return result([r]);
     }
     if (sql.includes("SELECT order_item_id, pack_qty, refund_amount FROM bms_pos_return_items")) return result(state.items.filter((r: any) => r.pos_return_id === p[1]));
+    if (sql.includes("FROM bms_pos_return_open_items") && sql.includes("AS order_item_id")) return result();
     if (sql.includes("FROM bms_pos_refund_allocations") && !sql.includes("FROM bms_payments")) return result(state.allocations.filter((r: any) => r.pos_return_id === p[1]));
     if (sql.includes("FROM bms_order_stock_lines")) return result([{ product_sku: "INGREDIENT", size: "BASE", qty: 3 }]);
     if (sql.includes("FROM bms_order_item_lots")) return result(controls.sourceLots);
@@ -233,9 +236,10 @@ function harness() {
     inheritQualityHold: async (_c: any, ...args: any[]) => { assert.ok(backup); state.inheritedHolds.push(args); },
     reversePointsForReturnInTx: async () => ({ earnedReversed: 0, redeemedReturned: 0 }), reverseCreditForReturnInTx: async () => {}, reduceArForReturnInTx: async () => {},
     cancelKitchenTicketsForOrderInTx: async () => {}, cancelKitchenTicketsForOrderItemsInTx: async () => {},
+    cancelPickupQueueForOrderInTx: async () => {},
     RESTAURANT_CANCELLATION_CAUSES: ["CUSTOMER_CHANGED_MIND"],
     ensurePosReturnCreditNote: async () => { assert.equal(backup, null); assert.equal(calls.at(-1), "RELEASE"); credits++; return null; },
-    toISO: (v: any) => v,
+    toISO: (v: any) => v, matchesPosReturnReplayLines,
   };
   const source = read("apps/web/lib/bms/pos.ts");
   const start = source.indexOf("export async function processPosReturn(");
@@ -336,6 +340,8 @@ test("cross-branch return keeps sale and receiving branches, requires distinct a
 test("replay conflicts cannot replace persisted evidence", async () => {
   const h = harness(); await h.run(); const before = structuredClone(h.state());
   assert.equal((await h.run({ orderId: "foreign-order" })).status, "IDEMPOTENCY_CONFLICT");
+  assert.equal((await h.run({ lines: [{ orderItemId: 1, packQty: 2 }] })).status, "IDEMPOTENCY_CONFLICT");
+  assert.equal((await h.run({ isVoid: true })).status, "IDEMPOTENCY_CONFLICT");
   assert.deepEqual(h.state(), before);
 });
 

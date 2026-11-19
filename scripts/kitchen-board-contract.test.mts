@@ -22,6 +22,7 @@ import {
   slaForStationRef,
   ticketMatchesStation,
   pickReferenceAt,
+  summarizeKitchenPickupQueues,
   slaForStation,
   DEFAULT_KITCHEN_SLA,
   PREVIOUS_KITCHEN_STATUS,
@@ -160,6 +161,45 @@ test("ใบของบิลค้าปลีกที่ไม่มีโ�
     "บิล #9f8e7d6c"
   );
   assert.equal(kitchenGroupLabel(ticket({ tableName: "  ", tableCode: null, checkId: null, orderId: null })), null);
+});
+
+test("a pickup queue number (10.111) heads the card instead of the bill or take-away label", () => {
+  assert.equal(
+    kitchenGroupLabel(ticket({ tableName: null, tableCode: null, checkId: null, orderId: "9f8e7d6c-1234", pickupQueueLabel: "042" })),
+    "คิว 042",
+  );
+  assert.equal(
+    kitchenGroupLabel(ticket({ tableName: "Take away #ab12cd34", tableCode: "TAKEAWAY", pickupQueueLabel: "007" })),
+    "คิว 007",
+  );
+  // No number (dine-in, or a till without queue numbers): the old labels stay exactly as before.
+  assert.equal(kitchenGroupLabel(ticket({ tableName: "โต๊ะ 1", pickupQueueLabel: null })), "โต๊ะ 1");
+  assert.equal(kitchenGroupLabel(ticket({ tableName: null, tableCode: "T07", pickupQueueLabel: "  " })), "T07");
+  // The number labels the card; it never merges two bills into one card.
+  const cards = groupKitchenTickets([
+    ticket({ id: "a", orderId: "order-a", checkId: null, tableName: null, tableCode: null, pickupQueueLabel: "041" }),
+    ticket({ id: "b", orderId: "order-b", checkId: null, tableName: null, tableCode: null, pickupQueueLabel: "042" }),
+  ]);
+  assert.deepEqual(cards.map((card) => card.tableLabel).sort(), ["คิว 041", "คิว 042"]);
+});
+
+test("the quick pickup strip merges stations and reports the slowest unfinished status", () => {
+  const summaries = summarizeKitchenPickupQueues(groupKitchenTickets([
+    ticket({ id: "q41-bar", checkId: null, orderId: "order-41", station: "บาร์", status: "READY", pickupQueueLabel: "041", qty: 1, createdAt: minutesAgo(10), updatedAt: minutesAgo(1) }),
+    ticket({ id: "q41-hot", checkId: null, orderId: "order-41", station: "ครัวร้อน", status: "PREPARING", pickupQueueLabel: "041", qty: 2, createdAt: minutesAgo(10), updatedAt: minutesAgo(6) }),
+    ticket({ id: "q42", checkId: null, orderId: "order-42", station: "ครัวร้อน", status: "NEW", pickupQueueLabel: "042", qty: 1, createdAt: minutesAgo(4), updatedAt: minutesAgo(4) }),
+    ticket({ id: "q40-served", checkId: null, orderId: "order-40", status: "SERVED", pickupQueueLabel: "040" }),
+    ticket({ id: "dine-in", tableName: "โต๊ะ 3", pickupQueueLabel: null }),
+  ]));
+  assert.deepEqual(summaries.map((queue) => queue.label), ["042", "041"], "new queues come before preparing queues");
+  assert.equal(summaries[0].status, "NEW");
+  assert.deepEqual(summaries[1], {
+    label: "041",
+    status: "PREPARING",
+    referenceAt: minutesAgo(10),
+    totalQty: 3,
+  });
+  assert.equal(summaries.some((queue) => queue.label === "040"), false, "served queues leave the quick strip");
 });
 
 test("รายชื่อสถานีมาจากงานที่ค้างจริง และไม่ซ้ำ", () => {

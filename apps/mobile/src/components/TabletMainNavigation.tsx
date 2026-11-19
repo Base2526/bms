@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { ViewStyle } from 'react-native';
@@ -25,11 +26,11 @@ type NavigationItem = {
 };
 
 const ITEMS: NavigationItem[] = [
-  { key: 'SellTab', label: 'ขาย', Icon: SellIcon },
-  { key: 'BoardGameTab', label: 'โต๊ะ/เวลา', Icon: FloorIcon },
-  { key: 'InventoryTab', label: 'สต็อก', Icon: InventoryIcon },
-  { key: 'OperationsTab', label: 'งาน', Icon: MoreIcon },
-  { key: 'ShiftTab', label: 'กะ', Icon: ShiftIcon },
+  { key: 'SellTab', get label() { return posText("ขาย"); }, Icon: SellIcon },
+  { key: 'BoardGameTab', get label() { return posText("โต๊ะ/เวลา"); }, Icon: FloorIcon },
+  { key: 'InventoryTab', get label() { return posText("สต็อก"); }, Icon: InventoryIcon },
+  { key: 'OperationsTab', get label() { return posText("งาน"); }, Icon: MoreIcon },
+  { key: 'ShiftTab', get label() { return posText("กะ"); }, Icon: ShiftIcon },
 ];
 
 export const TABLET_SIDEBAR_WIDTH = 252;
@@ -51,6 +52,7 @@ export function TabletMainNavigation({
   showBoardGame = true,
   style,
 }: Props) {
+  usePosLanguage();
   const { colors, typography } = useTheme();
   const items = showBoardGame
     ? ITEMS
@@ -59,8 +61,7 @@ export function TabletMainNavigation({
   return (
     <View style={[styles.root, style]}>
       <Text style={[typography.caption, { color: colors.textSoft }]}>
-        เมนูหลัก
-      </Text>
+        {posText("เมนูหลัก") + " "}</Text>
       {items.map(({ key, label, Icon }) => {
         const selected = key === activeTab;
         const ink = selected ? colors.primary : colors.textMuted;
@@ -68,7 +69,7 @@ export function TabletMainNavigation({
           <Pressable
             key={key}
             accessibilityRole="button"
-            accessibilityLabel={`ไปหน้า${label}`}
+            accessibilityLabel={posText("ไปหน้า{v0}", { v0: label })}
             accessibilityState={{ selected }}
             onPress={() => onNavigate(key)}
             style={({ pressed }) => [

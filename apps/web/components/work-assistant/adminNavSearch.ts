@@ -18,7 +18,11 @@ import type { AdminNavItem } from "@/lib/bms/adminNavigation";
 type AssistantCatalogModule = typeof import("@/lib/bms/assistantKnowledge");
 let catalogPromise: Promise<AssistantCatalogModule> | null = null;
 function loadAssistantCatalog(): Promise<AssistantCatalogModule> {
-  if (!catalogPromise) catalogPromise = import("@/lib/bms/assistantKnowledge");
+  if (!catalogPromise) catalogPromise = import("@/lib/bms/assistantKnowledge").catch((error) => {
+    // A transient chunk failure must not poison every later search until the tab is refreshed.
+    catalogPromise = null;
+    throw error;
+  });
   return catalogPromise;
 }
 

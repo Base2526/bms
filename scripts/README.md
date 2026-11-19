@@ -1,5 +1,35 @@
 # scripts/ — ชุดเทสและเครื่องมือตรวจของ repo นี้
 
+- `node scripts/playground-denial-browser-smoke.mjs`: local synthetic AI Playground smoke at
+  `BMS_SMOKE_URL` (default `http://127.0.0.1:3000`), with optional `BMS_PLAYWRIGHT_MODULE`.
+  Chrome and Firefox at 1280/390 px verify 403 and 413 show useful errors without inventing an
+  AI reply, then a verified fixture reply renders. Every API is intercepted; no provider call,
+  customer message or business write occurs. Screenshots go to `.test-output/playground-denial-browser/`.
+
+- `node scripts/admin-language-browser-smoke.mjs`: local synthetic admin smoke with all APIs
+  intercepted. Set `BMS_ADMIN_SMOKE_ORIGIN` and `BMS_PLAYWRIGHT_PACKAGE` as needed. Checks language
+  persistence, retained SKU input, Thai/English calendar months, role dialogs, stock transfers,
+  bounded playground stock, pharmacy review/status, loyalty months, report delivery status and
+  shared comment relative times at desktop/mobile widths; screenshots go to `.test-output/admin-language/`.
+  Shared post/comments are exercised through the public route; the admin post route requires a
+  DB-verified platform admin and is outside this synthetic fixture.
+
+- `admin-client-i18n-contract.test.mts`: scans admin routes, reachable shared UI and page errors
+  for untranslated authored copy. Reviewed data/brand/protocol exceptions live in
+  `fixtures/admin-ui-copy-exceptions.json`; do not add UI labels there to bypass translation.
+  `i18n-keys-contract.test.mts` validates literal keys in either quote style, recursive th/en parity
+  and admin interpolation placeholders. These checks do not claim arbitrary server data is bilingual.
+
+- `node scripts/pos-language-browser-smoke.mjs`: local web at `BMS_POS_SMOKE_ORIGIN` (default
+  `http://localhost:3000`), optional `BMS_PLAYWRIGHT_PACKAGE`. Intercepted synthetic APIs check
+  Thai/English shell persistence, stale-save races, retained pairing input/PIN/cart, and register
+  returns/restaurant/board-game/customer/queue screens at desktop and mobile widths, including
+  live cross-window language changes. Screenshots go to `.test-output/pos-language/`; no sale is submitted.
+  `pos-client-i18n-contract.test.mts` rejects untranslated operator copy and checks authored
+  keys, placeholders, verbatim data and unchanged payment/failure outcomes. Native persistence/receipt tests live in `apps/mobile/__tests__`; shell
+  persistence/menu tests and the setup smoke live in `apps/desktop/test`.
+- `mobile-native-i18n-contract.test.mts`: checks the iOS English/Thai permission strings and their
+  Xcode resource wiring. OS prompts follow the system/app language, independently of the POS preference.
 - `node scripts/pos-stock-rejection-browser-smoke.mjs`: local web at `BMS_SMOKE_URL` (default
   port 3100), intercepted API fixtures only. Checks the Desktop POS return workflow displays
   `STOCK_REVIEW_REQUIRED` reasons without a successful return receipt, and opens the updated manual
@@ -54,11 +84,28 @@ editing `inventoryNarration.ts`, run `inventory-narration-export.mts`, then
 `generate-inventory-thai-audio.py --model-dir .test-output/fastthai-model`. Commit the generated
 Inventory manifest, MP3 files and provenance together; the learning-center contract checks every cue.
 
-The four business learning flows use that same pinned voice. After editing
+The five business learning flows use that same pinned voice. After editing
 `lib/learning/businessGuideFlow.ts`, run `business-guide-narration-export.mts`, then
 `generate-business-guide-thai-audio.py --model-dir .test-output/fastthai-model`. Commit
 `businessThaiAudio.json`, the MP3 files and their provenance together; the learning-center contract
 checks that every Thai cue has a verified recording.
+
+The twenty-baht shop pilot uses the same recorded player and voice. Export its five public captions
+with `node apps/web/node_modules/tsx/dist/cli.mjs scripts/twenty-baht-narration-export.mts`, then
+run `scripts/generate-business-guide-thai-audio.py --model-dir .test-output/fastthai-model
+--requests-file .test-output/twenty-baht-narration/requests.json --output-dir
+apps/web/public/audio/twenty-baht-shop/th --manifest-file
+apps/web/app/learn/twenty-baht-shop/twentyBahtThaiAudio.json --checkpoint-file
+.test-output/twenty-baht-narration/generated-kokoro.json` with the pinned Python environment.
+Commit only the completed manifest, recordings, provenance and attribution.
+
+The factory pilot's 15 Thai captions can be recorded with Google AI Studio's
+`gemini-3.8-flash-tts` model. In a shell with `GEMINI_API_KEY` set, run
+`node scripts/generate-factory-guide-tts.mts` from the repository root. The script stages and
+checksum-verifies WAV clips under ignored `.test-output/`, then publishes the complete
+`factoryThaiAudio.json` manifest, public WAVs and provenance together. Never commit the API key.
+Without a complete recorded pack, the factory guide uses the device speech engine; the public
+runtime makes no Google API call. Regenerate the pack when a Thai caption changes.
 - `node scripts/restaurant-public-browser-smoke.mjs`: local web at `BMS_SMOKE_URL` (default port
   3107); TH/EN at 1440/390 px, every diagram, zoom/pan, deep links/history, text transcript,
   light/dark themes, session-aware CTA, homepage/footer links and page overflow. Uses intercepted
@@ -121,8 +168,12 @@ The browser suite uses guest/admin session fixtures and never writes business da
 It checks exact satang inputs (including 65.10 baht), all seven audio transitions, MP3 download,
 media failure/retry and light/dark layouts at desktop, tablet and mobile widths.
 
-For PO landed costs, `purchase-landed-cost-browser-smoke.mjs` uses mocked API responses to check
-the base/additional/landed columns, required allocation evidence and create payload on desktop/mobile.
+For PO landed costs and supplier units, `purchase-landed-cost-browser-smoke.mjs` uses mocked API
+responses to check base/additional/landed columns, required allocation evidence, supplier
+package factors and unknown-cost rejection, partial package receipt, frozen retry controls,
+tenant/user scoped unresolved creates and storage-write refusal, and
+create/receipt payloads in Thai/English at desktop/mobile widths. Its mocks do not prove stock
+writes; use `purchase-supplier-units-db-contract` on a disposable restored database for that.
 `node scripts/run-contract-tests.mjs db restaurant-actual-costs` requires the disposable restored
 database described in `docs/architecture/realtime-test-database.md`, including migrations 10.99 and
 10.103. It also proves partial receipt valuation, create replay/conflict, tenant isolation and
@@ -253,6 +304,17 @@ still required before production use.
   disposal. Set `BMS_PLAYWRIGHT_MODULE` to the installed Playwright module if not locally resolvable.
 - Regression: `restaurant-actual-costs` DB filter on :5433; `operation-checklists` on its separate
   synthetic `bms_operations_test` DB. Never run either against an active shop database.
+
+### Factory extension — plastic twine and straws (`10.122`–`10.127`)
+
+- The same `operation-production` pure/DB filters now cover optional output expiry, versioned
+  factory BOM, staged stock units, customer demand to order, branch machine intervals, automatic
+  QC hold and permission/idempotency/rollback boundaries. DB mode requires the disposable
+  restored `bms_realtime_test` instance and all six factory migrations.
+- The production browser fixture also opens the factory BOM, demand, machine and QC policy
+  controls at English/Thai × desktop/mobile widths. It mocks auth/GraphQL and takes screenshots;
+  it is not a real-account or production deployment check.
+- Pilot setup and explicit scope limits: [factory-twine-straw-pilot-th.md](../docs/business/factory-twine-straw-pilot-th.md).
 
 ## Board-game owner assistant reads
 
@@ -668,8 +730,8 @@ Use `BMS_SMOKE_URL` for a local server and `BMS_PLAYWRIGHT_MODULE` for an extern
 | `*.test.mts` อื่น ๆ (รวม `ai-eval/`) | เทส pure — อ่านซอร์ส/ตรรกะ/fake provider | ไม่ต้อง |
 | `check-*.mts`, `rotate-*.mts` | เครื่องมือตรวจ/ซ่อมของจริง (อ่านอย่างเดียว ยกเว้น rotate) | แล้วแต่ตัว |
 | `preflight-deploy.mts`, `export-graphql-schema.mts` | เครื่องมือก่อน deploy · เรนเดอร์ SDL artifact | preflight ต้องมี · export ไม่ต้อง |
-| `retail-local-*.test.{mjs,sh,ps1}`, `installer-reports-browser-smoke.mjs` | เทสของตัวติดตั้ง Retail Local — **ตัวรันกลางไม่หยิบ** (หยิบเฉพาะ `*.test.mts`) ดู § 9 | ไม่ต้อง |
-| `*-browser-smoke.mjs`, `tax-invoice-pdf-smoke.mts`, `testing/*-mutations.mjs`, `testing/scheduler-smoke.mjs`, `infra/*.test.mts` | สโมคเบราว์เซอร์/คอนเทนเนอร์และตัวขับ mutation — **ตัวรันกลางไม่หยิบ** ดู § 10 | ไม่ต้อง (บางตัวต้องมี dev server/Docker) |
+| `retail-local-*.test.{mjs,sh,ps1}`, `installer-reports-browser-smoke.mjs` | เทสของตัวติดตั้ง Retail Local — ตัวรันกลางหยิบเฉพาะ `retail-local-migration-checksum.test.mjs`; ที่เหลือดู § 9 | ไม่ต้อง |
+| `*-browser-smoke.mjs`, `tax-invoice-pdf-smoke.mts`, `testing/*-mutations.mjs`, `testing/scheduler-smoke.mjs` | สโมคเบราว์เซอร์/คอนเทนเนอร์และตัวขับ mutation — ตัวรันกลางไม่หยิบ ดู § 10 | ไม่ต้อง (บางตัวต้องมี dev server/Docker) |
 
 Tax review checks (2026-10-14): `node scripts/run-contract-tests.mjs pure tax` includes
 `tax-invoice-eligibility-contract` (executes service guards with a fake query client, no database).
@@ -682,20 +744,22 @@ feature enabled with a test-only secret and HTTPS public origin. Both smokes blo
 These checks do not prove SQL execution: run `db tax-sales-report` and `db tax-backoffice-guards`
 against a restored disposable local database before deploying.
 
-ตอนนี้ (นับ 2026-10-13 ที่ `676a38a7`): **287 ไฟล์เทส** = pure **220 ไฟล์** (194 ใน `scripts/` +
-26 ใน `scripts/ai-eval/`) + DB **67 ไฟล์** (ทั้งหมดอยู่ชั้นบนสุดของ `scripts/`)
+ตอนนี้ (นับ 2026-11-16 บน `codex/android-device-verify-navigation`): **491 ไฟล์ที่ตัวรันหยิบ** = pure **381 ไฟล์** (345 ชั้นบนสุดของ
+`scripts/` รวม `retail-local-migration-checksum.test.mjs` + 35 ใน `scripts/ai-eval/` + 1 ใน `scripts/infra/`)
++ DB **110 ไฟล์** (ทั้งหมดอยู่ชั้นบนสุดของ `scripts/`)
 
-ผลรัน `npm run test:pure` วันเดียวกัน: **2,609 เทส — 2,602 ผ่าน · 1 แดง · 6 ข้าม (skip)** ใช้เวลา ~51 วินาที
-· ตัวที่แดงคือ `ai-eval/restaurant-customer-assistance-contract` → *restaurant availability exposes only
-opt-in capacity groups, never table or guest identities* (บรรทัด 79): regex
-`/tableCode|tableName|checkId|occupant/` ไปเจอคำว่า `occupant` ใน **ข้อความ note ที่บอกโมเดลว่า "never
-identify a table or occupant"** ของ `return {...}` ใน service — ยังไม่ได้ตัดสินว่าแก้ที่เทสหรือที่ข้อความ
-**ห้ามอ่านว่าชุด pure เขียว** · จำนวนเทสของชุด DB ยังไม่ได้นับใหม่ (เครื่องที่นับไม่มี Postgres ให้รัน)
+ผลรัน `npm run gate` 2026-11-16 ชุด pure: **3,826 เทส** (แดง 1 = `realtime-client-contract` ที่ยังตรวจรูปโค้ดเก่าของ
+`RootNavigator` — แก้เทสให้ตรวจ sign-out ครั้งเดียว + `resetRoot` แล้ว) · ผลรัน 2026-11-14 (macOS): **3,718 เทส — 3,708 ผ่าน · 0 แดง · 10 ข้าม (skip)** · build 151 หน้า · `exit=0` ·
+รอบก่อน (2026-11-09): 3,480 เทส — 3,474 ผ่าน · 6 ข้าม ·
+ใช้เวลา ~4 นาทีบนเครื่อง Windows ที่รัน (เครื่อง Linux/CI เร็วกว่า) · ตัวแดงของรอบ 2026-10-13
+(`ai-eval/restaurant-customer-assistance-contract`) ไม่แดงแล้ว · **ชุด DB ไม่ได้รันในรอบนี้** (เครื่องที่นับ
+ไม่มี Postgres) — จำนวนเทสของชุด DB ต้องนับจากรอบที่รันบนฐาน restore จริง
 
-ตัวรัน `scripts/run-contract-tests.mjs` เดินหาไฟล์เอง: ชั้นบนสุดของ `scripts/` + โฟลเดอร์ย่อย `ai-eval/`
-**โฟลเดอร์เดียว** (`scripts/infra/`, `scripts/testing/` ไม่ถูกเดิน) · ชื่อมี `-db-contract` = โหมด db
-ที่เหลือ = โหมด pure · ตัวรันพิมพ์จำนวนไฟล์ของโหมดเป็นบรรทัดแรก (`[gate] โหมด pure — 220 ไฟล์`) และ
-`run-contract-tests.mjs <mode> zzz-nope` บอกจำนวนไฟล์ของโหมดนั้นตอนกรองไม่ตรง
+ตัวรัน `scripts/run-contract-tests.mjs` เดินหาไฟล์เอง: `*.test.mts` ชั้นบนสุดของ `scripts/` +
+โฟลเดอร์ย่อย `ai-eval/` และ `infra/` + `retail-local-migration-checksum.test.mjs` (`scripts/testing/`
+ไม่ถูกเดิน) · ชื่อมี `-db-contract` = โหมด db ที่เหลือ = โหมด pure · ตัวรันพิมพ์จำนวนไฟล์ของโหมดเป็น
+บรรทัดแรก (`[gate] โหมด pure — 381 ไฟล์`) · `run-contract-tests.mjs <mode> --list` พิมพ์รายชื่อไฟล์ของ
+โหมดนั้นเป็น JSON และ `run-contract-tests.mjs <mode> zzz-nope` บอกจำนวนไฟล์ของโหมดนั้นตอนกรองไม่ตรง
 
 > **ตัวเลขนี้เก่าได้เร็ว** — นับใหม่ก่อนอ้าง (ตรงกับวิธีที่ตัวรันแยกโหมด):
 >
@@ -714,13 +778,28 @@ identify a table or occupant"** ของ `return {...}` ใน service — ย�
 
 ---
 
+## Release feature manifest
+
+`npm run regression:inventory` ตรวจทุกไฟล์เทส/สโมคใน `scripts/`, `apps/` และ `packages/`
+แล้วเทียบรายชื่อ `web-pure`/`web-db` กับตัวรันจริง ถ้าไฟล์ใหม่ไม่ถูกจัดกลุ่มจะล้มทันที
+ผล JSON สร้างด้วย `node scripts/check-regression-inventory.mjs --output .test-output/regression-inventory.json`.
+กลุ่ม `browser-manual`, `desktop-manual`, `special-manual`, `mutation-manual` และ
+`live-model-manual` ยังต้องรันในสภาพแวดล้อมเฉพาะ;
+การถูกนับใน inventory **ไม่ได้แปลว่ารันผ่าน**
+
+`npm run release:features:check` (จาก `apps/web`) ตรวจ ID, source/test paths และเพดานรายการที่ยัง
+ไม่ผูกเทสระดับฟีเจอร์ โดย `npm run gate` เรียกด่านนี้ด้วย หลัง gate ผ่านบน clean commit ให้สร้าง
+JSON/Markdown สำหรับ release และเทียบ manifest รุ่นก่อนด้วย `--previous` ตาม
+[release-feature-control.md](../docs/release-feature-control.md). รายการนี้ยังเป็น baseline ที่ไม่ครบ
+ทุกฟีเจอร์ และไม่ได้ยืนยันว่า production/แต่ละร้านเปิดใช้แล้ว
+
 ## ประตูเดียวที่ต้องจำ: `npm run gate`
 
 ```bash
 cd apps/web && npm run gate
 ```
 
-`gate` = `typecheck` → `test:pure` → `build` (นิยามอยู่ใน `apps/web/package.json`)
+`gate` = `release:features:check` → `regression:inventory` → `typecheck` → `test:pure` → `build` (นิยามอยู่ใน `apps/web/package.json`)
 **รันก่อน merge ทุกครั้ง** · CI (`.github/workflows/gate.yml`) รันชุดเดียวกันนี้ต่อ PR
 **ไม่มี job ของเทส DB ใน CI** เพราะสร้างฐานใหม่จาก `db/migrations` ไม่ได้ (ดู `CLAUDE.local.md`)
 
@@ -737,7 +816,7 @@ cd apps/web && npm run test:pure
 ### ผ่าน (สิ่งที่จะได้เห็นบนจอ)
 
 ตัวอย่างนี้มาจากรอบ 2026-09-07 ตอนชุดยังมี 80 ไฟล์ — **รูปแบบยังเหมือนเดิม แต่ตัวเลขปัจจุบันดูหัวไฟล์นี้**
-(รอบปัจจุบันใช้ราว 50 วินาที):
+(รอบ 2026-11-16 มี 381 ไฟล์):
 
 ```
 [gate] โหมด pure — 80 ไฟล์
@@ -902,12 +981,18 @@ diff /tmp/before /tmp/after
 (เช่น `product-vat-category` ที่แก้ประเภทภาษีของสินค้าทั้งร้าน) รันผิดฐาน = แก้ข้อมูลลูกค้า
 
 ```bash
-cd apps/web && POSTGRES_HOST=localhost POSTGRES_DB=bms POSTGRES_USER=app \
-  POSTGRES_PASSWORD="$(grep -E '^POSTGRES_PASSWORD=' ../../.env.dev | cut -d= -f2-)" \
-  REDIS_URL=redis://127.0.0.1:6379 npm run test:db
+cd apps/web && POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5433 \
+  POSTGRES_DB=bms_realtime_test POSTGRES_USER=app \
+  POSTGRES_PASSWORD="$BMS_TEST_DB_PASSWORD" \
+  REDIS_URL=redis://127.0.0.1:6380 npm run test:db
 ```
 
-`POSTGRES_HOST=localhost` เพราะ `.env.dev` ชี้ host ชื่อ `postgres` (ชื่อใน docker network)
+ตั้ง `BMS_TEST_DB_PASSWORD` จากฐานทดสอบแยกก่อนรัน ห้ามนำรหัสของฐานใช้งานจริงมาใช้.
+`test:db` ทั้งชุดมีบางไฟล์ที่บังคับฐานเฉพาะ เช่น `bms_freemium_test`,
+`bms_requisition_test`, `bms_operations_test` และ `bms_restaurant_readiness_test`;
+เมื่อรันบน `bms_realtime_test` ไฟล์เหล่านี้จะ fail ตาม guard โดยตั้งใจ ให้รันแยกกับฐานที่ชื่อ
+ถูกต้องและอ่านผลของชุดที่เหลือแยกจากกัน. `restaurant-pickup` บังคับพอร์ต `5547` ด้วย
+(ดูคำสั่งในหัวข้อ Restaurant pickup checkout). `npm run gate` ไม่รวม DB mode.
 
 ### ด่านกันรันผิดฐาน — ทั้งสองแบบออก exit `2` และ **ยังไม่รันเทสสักตัว**
 
@@ -931,8 +1016,8 @@ host ที่ถือว่าท้องถิ่น: `localhost` · `127.0.
 ### ผ่านด่านแล้วจะพิมพ์ว่ากำลังรันกับฐานไหน
 
 ```
-[gate] เทส DB จะรันกับ localhost/bms
-[gate] โหมด db — 67 ไฟล์
+[gate] เทส DB จะรันกับ 127.0.0.1/bms_realtime_test
+[gate] โหมด db — จำนวนไฟล์ที่ runner พบในวันนั้น
 ```
 
 **อ่านบรรทัดนี้ก่อนปล่อยให้รันต่อทุกครั้ง**
@@ -950,7 +1035,7 @@ not ok 1 - restaurant intake -> callback -> atomic order; original demand, retri
 **แยกให้ออก**: exit `2` = ด่านปฏิเสธ ยังไม่ได้แตะฐาน · exit `1` = รันแล้วมีอะไรแดง
 (รวมกรณีต่อฐานไม่ได้) — อย่างหลังไม่ได้แปลว่าโค้ดผิด ให้ดูว่า Postgres ขึ้นอยู่หรือยัง
 
-### `npm run test:all` = pure + db (287 ไฟล์) ใช้ด่านและ env ชุดเดียวกับ `test:db`
+### `npm run test:all` = pure + db ใช้ด่านและ env ชุดเดียวกับ `test:db`
 
 ---
 
@@ -1188,7 +1273,10 @@ resolve ว่า "ฐานเป้าหมายคือใบไหน" �
 ต่อให้ลูกทุกตัวแบบระบุชัด** — เดิมรันสองเครื่องมือจากเครื่องเดียวกันแล้วอาจตรวจฐานคนละใบโดยไม่มี
 อะไรบอก
 
-ด่านที่บล็อก: `check-schema-readiness` · `JWT_SECRET`/`BMS_SECRET_KEY` (hex 64) ·
+ด่านที่บล็อก: `check-schema-readiness` · `check-order-email-readiness` (อ่านเฉพาะ
+`email_templates` เพื่อตรวจว่า `order.pickup.*` ทั้งไทยและอังกฤษมีเวอร์ชันล่าสุดที่เผยแพร่,
+เปิดใช้ และมีหัวเรื่อง/เนื้อหา; ขาด ปิด หรือว่างต้อง apply `10.114` หรือเผยแพร่เวอร์ชันใหม่) ·
+`JWT_SECRET`/`BMS_SECRET_KEY` (hex 64) ·
 `check-bms-secret-key` · GRANT ของ `bms_app` (เรียกไฟล์เทสตัวเดิม **และตรวจว่าบรรทัดประกาศ
 read-only ยังอยู่ก่อนเรียก**) · `NODE_ENV=production` ต้องไม่มี `BMS_ALLOW_FAKE_SEED=1` ·
 **env ของ realtime/WS** (`WS_ALLOWED_ORIGINS` ต้องตั้งและต้องไม่ใช่ localhost · `JWT_SECRET`
@@ -1208,7 +1296,7 @@ seed permission ใหม่ครบทุกร้าน) **จงใจเป
 
 ## 9. เทสของตัวติดตั้ง Retail Local ที่อยู่นอกตัวรันกลาง
 
-`run-contract-tests.mjs` หยิบเฉพาะ `*.test.mts` ไฟล์พวกนี้จึง **ไม่อยู่ใน `npm run gate`**:
+`run-contract-tests.mjs` หยิบ `*.test.mts` ใน `scripts/`, `ai-eval/`, `infra/` และ `retail-local-migration-checksum.test.mjs` ไฟล์อื่นด้านล่างจึง **ไม่อยู่ใน `npm run gate`**:
 
 | ไฟล์ | รันที่ไหน |
 | --- | --- |
@@ -1217,7 +1305,7 @@ seed permission ใหม่ครบทุกร้าน) **จงใจเป
 | `retail-local-update-transaction.test.sh` | workflow เดียวกัน (Ubuntu) |
 | `retail-local-uninstall-container.test.sh` | workflow เดียวกัน — ใน container `ubuntu:24.04` |
 | `retail-local-license-container.test.mjs` | workflow เดียวกัน (job ของ licensing) — `node --test` · **ต้องมี Docker** (probe mailbox ใน container แยก ไม่แตะ stack ของร้าน) |
-| `retail-local-setup-diagnostics.test.ps1` · `retail-local-migration-checksum.test.mjs` · `installer-reports-browser-smoke.mjs` | **รันมือเท่านั้น** — ไม่มี workflow ไหนเรียก |
+| `retail-local-setup-diagnostics.test.ps1` · `installer-reports-browser-smoke.mjs` | **รันมือเท่านั้น** — ไม่มี workflow ไหนเรียก |
 
 workflow เดียวกันรัน `go test` ของ `apps/retail-local-agent` และสร้างตัวติดตั้งแบบ unsigned เพื่อตรวจ
 (smoke) — **ผลของ CI ไม่ใช่หลักฐานการติดตั้งจริงบนเครื่องสะอาด** ดู
@@ -1273,8 +1361,9 @@ workflow เดียวกันรัน `go test` ของ `apps/retail-loca
   ชั่วคราวแล้วดูว่าเทสที่ควรแดงแดงจริง จากนั้นคืนไบต์เดิม · **รันหลัง gate หยุดแล้วเท่านั้น** · บางตัวบังคับ
   ให้ส่ง SHA ของ backup stash ที่มีงานปัจจุบันครบเป็นอาร์กิวเมนต์ บางตัวปฏิเสธไฟล์เป้าหมายที่ยังไม่ commit ·
   ห้ามใช้ `git checkout`/`reset` คืนไฟล์ (อ่านหัวไฟล์ก่อนรันทุกครั้ง)
-- **`infra/multi-instance-contract.test.mts`** — ชื่อเป็น `.test.mts` แต่อยู่ใน `scripts/infra/` ซึ่งตัวรันกลาง
-  **ไม่เดิน** จึงไม่อยู่ในชุด pure · ต้องมี Redis + MinIO จริง ดู
+- **`infra/multi-instance-contract.test.mts`** — ตัวรันกลางเดิน `scripts/infra/` แล้ว (ตั้งแต่ `7fbcd619`)
+  จึงอยู่ในชุด pure · เคส local storage/pure logic รันเสมอ ส่วนเคส Redis และ S3 จะ **SKIP** (ไม่ผ่านลอย)
+  เมื่อไม่มี `REDIS_URL`/`S3_*` ที่ต่อได้ — จะพิสูจน์หลาย instance จริงต้องเปิด Redis + MinIO ก่อน ดู
   [docs/architecture/multi-instance-readiness.md](../docs/architecture/multi-instance-readiness.md)
 
 ## ตารางสรุป exit code
@@ -1557,6 +1646,20 @@ The browser also asserts exact due-time preservation on findings-only edits and 
   (`BMS_PLAYWRIGHT_MODULE` may override its import). `BMS_SMOKE_URL` must be a local dev server
   (default `http://127.0.0.1:3000`). Screenshots contain fake credentials only and are written under
   `.test-output/pos-pairing-qr/`. This is not physical-camera or live backend verification.
+
+## Fish dock
+
+- `node ../../scripts/run-contract-tests.mjs pure fish-intake-contract` and `fish-owner-contract`
+  from `apps/web` check import validation, intake math, placement input and cost allocation.
+- `POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5433 POSTGRES_DB=bms_realtime_test
+  POSTGRES_USER=app POSTGRES_PASSWORD=realtime_test_only node ../../scripts/run-contract-tests.mjs
+  db fish-dock-db-contract` from `apps/web` writes only to the restored disposable test database.
+  It checks history versus stock, lot/valuation/audit, retries, branch and tenant isolation,
+  stale placement, and delivery plans linked to ordinary orders.
+- `BMS_PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs node scripts/fish-dock-browser-smoke.mjs`
+  from the repo root checks the compiled local admin page with synthetic API responses in
+  Playwright Firefox at 1280/390 px. Set `BMS_SMOKE_URL` for a local server other than port 3018.
+  No customer message or production write occurs. Screenshots are under `.test-output/fish-dock-browser/`.
 
 ## Retail Local commercial integration
 

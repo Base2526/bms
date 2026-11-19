@@ -77,7 +77,7 @@ try {
       await dialog.screenshot({ path: `${output}/${lang}-${width}-complete.png`, animations: "disabled" });
       holdNext = true;
       const pending = page.waitForRequest(r => r.postData()?.includes("query NetProfitReport"));
-      await dialog.getByRole("button", { name: /Refresh/ }).click(); await pending;
+      await dialog.getByRole("button", { name: label("รีเฟรช", "Refresh") }).click(); await pending;
       assert.equal(await profit.count(), 0, "loading hides old result");
       const nextMonth = initialMonth === "2026-09" ? "2026-08" : "2026-09";
       const monthInput = dialog.locator("input").first(); await monthInput.fill(nextMonth); await monthInput.press("Enter");
@@ -89,7 +89,7 @@ try {
       // An old rejected request must not replace a newer successful month either.
       mode = "error"; holdNext = true;
       const oldError = page.waitForRequest(r => r.postData()?.includes("query NetProfitReport"));
-      await dialog.getByRole("button", { name: /Refresh/ }).click(); await oldError;
+      await dialog.getByRole("button", { name: label("รีเฟรช", "Refresh") }).click(); await oldError;
       mode = "complete"; await monthInput.fill(initialMonth); await monthInput.press("Enter");
       await profit.getByText("฿75.00", { exact: true }).waitFor();
       held.release(); await held.completion;
@@ -97,15 +97,15 @@ try {
       assert.equal(await profit.textContent(), "฿75.00");
       assert.equal(await dialog.getByText("NET_PROFIT_CURRENCY_REVIEW_REQUIRED", { exact: true }).count(), 0);
       mode = "incomplete";
-      await dialog.getByRole("button", { name: /Refresh/ }).click();
+      await dialog.getByRole("button", { name: label("รีเฟรช", "Refresh") }).click();
       await profit.getByText(label("ยังไม่ทราบ", "Unknown"), { exact: true }).waitFor();
-      await dialog.getByText("RETURN_COST_REVERSAL_UNVERIFIED", { exact: true }).first().waitFor();
+      await dialog.locator('[title="RETURN_COST_REVERSAL_UNVERIFIED"]').first().waitFor();
       await dialog.screenshot({ path: `${output}/${lang}-${width}-incomplete.png`, animations: "disabled" });
       await profit.scrollIntoViewIfNeeded();
       await dialog.screenshot({ path: `${output}/${lang}-${width}-profit-detail.png`, animations: "disabled" });
-      mode = "error"; await dialog.getByRole("button", { name: /Refresh/ }).click();
-      await dialog.getByText("NET_PROFIT_CURRENCY_REVIEW_REQUIRED", { exact: true }).waitFor(); assert.equal(await profit.count(), 0);
-      mode = "complete"; await dialog.getByRole("button", { name: /Refresh/ }).click(); await profit.getByText("฿75.00", { exact: true }).waitFor();
+      mode = "error"; await dialog.getByRole("button", { name: label("รีเฟรช", "Refresh") }).click();
+      await dialog.getByText(label("ร้านยังไม่ได้ตั้งสกุลเงินเป็นบาท", "Set the store currency to Thai baht"), { exact: false }).waitFor(); assert.equal(await profit.count(), 0);
+      mode = "complete"; await dialog.getByRole("button", { name: label("รีเฟรช", "Refresh") }).click(); await profit.getByText("฿75.00", { exact: true }).waitFor();
       await dialog.locator(".ant-modal-close").click();
       permissions = permissions.filter(p => p !== "tax.document.view");
       await page.reload({ waitUntil: "domcontentloaded" }); await page.getByRole("heading", { name: /^(Reports|รายงาน)$/ }).first().waitFor();

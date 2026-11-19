@@ -17,6 +17,9 @@ import { createUploadLink } from 'apollo-upload-client';
 import { addLog } from './log/log';
 import { readPosDeviceToken } from "./pos/deviceTokenClient";
 import { aiUsageRefreshLink, refreshAiUsage } from "./aiUsageClient";
+import { getMessage } from "@/i18n";
+import { getLangCookie } from "./lang";
+import { operatorMessage } from "./operatorMessage";
 
 function backendLogout(reason?: string) {
   const time = new Date().toISOString();
@@ -91,7 +94,7 @@ function serverErrorMessage(networkError: any): string | null {
 }
 
 // -------- Error link (จับหมดอายุ/ไม่มีสิทธิ์)
-const errorLink = onError(({ graphQLErrors, networkError }) => {
+const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
   // GraphQL error พร้อม code
   if (graphQLErrors?.length) {
     for (const err of graphQLErrors) {
@@ -120,8 +123,20 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
   const serverMsg = serverErrorMessage(networkError);
   if (serverMsg) {
     addLog("error", "graphql", serverMsg, { status: status ?? null });
+  }
+  // Proxy 502/503/504 often returns HTML, so Apollo's default text is a protocol
+  // error. Read and write operations need different recovery instructions.
+  const definition = getMainDefinition(operation.query);
+  const action = definition.kind === "OperationDefinition" && definition.operation === "mutation" ? "write" : "read";
+  const lang = getLangCookie() ?? "th";
+  const displayMessage = serverMsg
+    ? operatorMessage(serverMsg, (key, vars) => getMessage(lang, key, vars), action)
+    : networkError && (status == null || status >= 500)
+      ? operatorMessage(networkError, (key, vars) => getMessage(lang, key, vars), action)
+      : null;
+  if (displayMessage) {
     try {
-      (networkError as any).message = serverMsg;
+      (networkError as any).message = displayMessage;
     } catch {
       // message เป็น read-only ในบาง environment → ปล่อยข้อความเดิม
     }

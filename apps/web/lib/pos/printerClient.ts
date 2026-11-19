@@ -1,3 +1,5 @@
+import { posText } from "./clientText";
+
 // =============================================================
 // ต่อเครื่องพิมพ์ใบเสร็จจากเบราว์เซอร์ (WebUSB)
 // -------------------------------------------------------------
@@ -73,7 +75,7 @@ export async function findRememberedPrinter(): Promise<UsbDeviceLike | null> {
  * filter class 7 = Printer เพื่อไม่ให้รายชื่อเต็มไปด้วยเมาส์กับคีย์บอร์ด
  */
 export async function requestPrinter(): Promise<UsbDeviceLike | null> {
-  if (!isWebUsbSupported()) throw new Error("เบราว์เซอร์นี้ไม่รองรับ WebUSB — ใช้ Chrome หรือ Edge");
+  if (!isWebUsbSupported()) throw new Error(posText("เบราว์เซอร์นี้ไม่รองรับ WebUSB — ใช้ Chrome หรือ Edge"));
   const device: UsbDeviceLike = await (navigator as any).usb.requestDevice({
     filters: [{ classCode: 7 }],
   });
@@ -101,21 +103,21 @@ function findOutEndpoint(device: UsbDeviceLike): { interfaceNumber: number; endp
  */
 export async function sendToPrinter(bytes: Uint8Array, device?: UsbDeviceLike | null): Promise<void> {
   const target = device ?? (await findRememberedPrinter());
-  if (!target) throw new Error("ยังไม่ได้เลือกเครื่องพิมพ์ — กด “ตั้งค่าเครื่องพิมพ์” ก่อน");
+  if (!target) throw new Error(posText("ยังไม่ได้เลือกเครื่องพิมพ์ — กด “ตั้งค่าเครื่องพิมพ์” ก่อน"));
 
   const opened = target.opened;
   if (!opened) await target.open();
   try {
     if (!target.configuration) await target.selectConfiguration(1);
     const ep = findOutEndpoint(target);
-    if (!ep) throw new Error("เครื่องนี้ไม่มีช่องรับข้อมูลแบบเครื่องพิมพ์ (USB class 7)");
+    if (!ep) throw new Error(posText("เครื่องนี้ไม่มีช่องรับข้อมูลแบบเครื่องพิมพ์ (USB class 7)"));
     await target.claimInterface(ep.interfaceNumber);
     // คัดลอกลง ArrayBuffer ใหม่ — Uint8Array อาจอิง SharedArrayBuffer ซึ่ง
     // WebUSB ไม่รับ และ TS ก็แยกสองชนิดนี้ออกจากกัน
     const buf = new Uint8Array(bytes.length);
     buf.set(bytes);
     const res = await target.transferOut(ep.endpoint, buf);
-    if (res.status !== "ok") throw new Error(`ส่งข้อมูลไม่สำเร็จ (${res.status})`);
+    if (res.status !== "ok") throw new Error(posText("ส่งข้อมูลไม่สำเร็จ ({v0})", { v0: res.status }));
   } finally {
     if (!opened) await target.close().catch(() => {});
   }

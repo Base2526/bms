@@ -524,7 +524,7 @@ export default function HeaderBar({
         items.push(
           {
             key: "help",
-            label: t("header.help") || "Help",
+            label: t("header.help"),
             icon: <QuestionCircleOutlined />,
             onClick: () => router.push(localizedPublicPath("/help", currentLang)),
           },
@@ -569,7 +569,7 @@ export default function HeaderBar({
       if (SHOW_HEADER_HELP) items.push(
         {
           key: "help",
-          label: t("header.help") || "Help",
+          label: t("header.help"),
           icon: <QuestionCircleOutlined />,
           onClick: () => router.push(localizedPublicPath("/help", currentLang)),
         },
@@ -787,7 +787,7 @@ export default function HeaderBar({
 
               {userSession && (
                 <>
-                  <Tooltip title={t("header.newPost") || "New post"}>
+                  <Tooltip title={t("header.newPost")}>
                     <Button
                       type="text"
                       style={iconButtonStyle}

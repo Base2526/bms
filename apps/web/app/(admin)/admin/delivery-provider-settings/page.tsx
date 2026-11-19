@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import {
@@ -22,6 +24,7 @@ async function jsonFetch(url: string, init?: RequestInit) {
 }
 
 export default function DeliveryProviderSettingsPage() {
+  const uiText = useUiText();
   const { lang } = useI18n();
   const L = (th: string, en: string) => lang === "th" ? th : en;
   const [rows, setRows] = useState<Setting[]>([]);
@@ -65,7 +68,7 @@ export default function DeliveryProviderSettingsPage() {
     try {
       const values = await form.validateFields();
       const config = values.configJson?.trim() ? JSON.parse(values.configJson) : {};
-      if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("config must be an object");
+      if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error(uiText("admin_ui.en_config_must_be_an_object_b8fc1"));
       await jsonFetch("/api/admin/delivery-providers", {
         method: "POST", body: JSON.stringify({ ...values, config }),
       });
@@ -88,14 +91,14 @@ export default function DeliveryProviderSettingsPage() {
       description={L("เก็บ Partner contract และ credential ส่วนกลางครั้งเดียว เจ้าของร้านใช้ /admin/delivery-platforms เพื่อเชื่อมร้านและ mapping เท่านั้น Secret เข้ารหัสและอ่านค่าจริงกลับไม่ได้", "Store the platform Partner contract and credentials once. Shop owners use /admin/delivery-platforms only for shop authorization and mappings. Secrets are encrypted and never returned in plaintext.")} />
     <Card>
       <Table rowKey="id" loading={loading} dataSource={rows} pagination={false} columns={[
-        { title: "Provider", dataIndex: "provider" },
+        { title: uiText("admin_ui.en_provider_7ceee"), dataIndex: "provider" },
         { title: L("ระบบ", "Environment"), dataIndex: "environment" },
         { title: L("สถานะ", "Status"), dataIndex: "onboardingStatus", render: (value) => <Tag color={value === "ACTIVE" ? "green" : value === "SUSPENDED" ? "red" : "orange"}>{value}</Tag> },
         { title: L("เจ้าของ credential", "Credential authority"), dataIndex: "credentialAuthority" },
         { title: L("การยืนยัน", "Authentication"), dataIndex: "authenticationMode" },
         { title: L("Credential", "Credential"), render: (_, row) => [row.clientSecretMasked, row.accessTokenMasked, row.webhookSecretMasked].filter(Boolean).join(" · ") || "—" },
         { title: L("เปิดให้ร้านเชื่อม", "Tenant connections"), dataIndex: "tenantConnectionsEnabled", render: (value) => <Tag color={value ? "green" : "default"}>{value ? L("เปิด", "Enabled") : L("ปิด", "Disabled")}</Tag> },
-        { title: L("Adapter", "Adapter"), dataIndex: "activationReady", render: (value) => <Tag color={value ? "green" : "red"}>{value ? "VERIFIED" : "CONTRACT_BLOCKED"}</Tag> },
+        { title: L("Adapter", "Adapter"), dataIndex: "activationReady", render: (value) => <Tag color={value ? "green" : "red"}>{value ? uiText("admin_ui.en_verified_597bc") : uiText("admin_ui.en_contract_blocked_a6442")}</Tag> },
         { title: "", render: (_, row) => <Button size="small" onClick={() => start(row)}>{L("ตั้งค่า", "Configure")}</Button> },
       ]} />
     </Card>
@@ -105,8 +108,8 @@ export default function DeliveryProviderSettingsPage() {
       <Form form={form} layout="vertical">
         <Form.Item name="id" hidden><Input /></Form.Item>
         <Row gutter={12}>
-          <Col span={8}><Form.Item name="provider" label="Provider" rules={[{ required: true }]}><Select disabled={Boolean(editingId)} options={["LINEMAN","GRABFOOD","FOODPANDA"].map((value) => ({ value }))} /></Form.Item></Col>
-          <Col span={8}><Form.Item name="environment" label="Environment" rules={[{ required: true }]}><Select disabled={Boolean(editingId)} options={["SANDBOX","LIVE"].map((value) => ({ value }))} /></Form.Item></Col>
+          <Col span={8}><Form.Item name="provider" label={uiText("admin_ui.en_provider_7ceee")} rules={[{ required: true }]}><Select disabled={Boolean(editingId)} options={["LINEMAN","GRABFOOD","FOODPANDA"].map((value) => ({ value }))} /></Form.Item></Col>
+          <Col span={8}><Form.Item name="environment" label={uiText("admin_ui.en_environment_d443a")} rules={[{ required: true }]}><Select disabled={Boolean(editingId)} options={["SANDBOX","LIVE"].map((value) => ({ value }))} /></Form.Item></Col>
           <Col span={8}><Form.Item name="onboardingStatus" label={L("สถานะ onboarding", "Onboarding status")} rules={[{ required: true }]}><Select options={["DRAFT","CONTRACT_REVIEW","SANDBOX","CERTIFIED","ACTIVE","SUSPENDED"].map((value) => ({ value, disabled: !activationReady && ["CERTIFIED","ACTIVE"].includes(value) }))} /></Form.Item></Col>
         </Row>
         {!activationReady && <Alert closable showIcon type="warning" style={{ marginBottom: 16 }} message={L("Adapter ยังไม่ VERIFIED", "Adapter is not VERIFIED")} description={L("บันทึก contract และ credential เตรียมไว้ได้ แต่เปิด CERTIFIED/ACTIVE หรือให้ร้านเชื่อมไม่ได้จนกว่าโค้ด adapter จะผ่าน contract tests", "You may save the contract and credentials, but CERTIFIED/ACTIVE and tenant connections remain blocked until the adapter passes contract tests.")} />}
@@ -115,10 +118,10 @@ export default function DeliveryProviderSettingsPage() {
           <Col span={12}><Form.Item name="authenticationMode" label={L("วิธี authentication", "Authentication mode")} rules={[{ required: true }]}><Select options={["UNCONFIRMED","OAUTH_CLIENT_CREDENTIALS","API_KEY","BEARER_TOKEN","SIGNED_REQUEST","CUSTOM"].map((value) => ({ value }))} /></Form.Item></Col>
         </Row>
         <Form.Item name="tenantConnectionsEnabled" label={L("เปิดให้ร้านเชื่อมต่อ", "Enable tenant connections")} valuePropName="checked"><Switch disabled={!activationReady} /></Form.Item>
-        <Row gutter={12}><Col span={12}><Form.Item name="partnerId" label="Partner / Program ID"><Input /></Form.Item></Col><Col span={12}><Form.Item name="clientId" label="Client ID"><Input /></Form.Item></Col></Row>
+        <Row gutter={12}><Col span={12}><Form.Item name="partnerId" label={uiText("admin_ui.en_partner_program_id_c1499")}><Input /></Form.Item></Col><Col span={12}><Form.Item name="clientId" label={uiText("admin_ui.en_client_id_a766c")}><Input /></Form.Item></Col></Row>
         <Row gutter={12}><Col span={12}><Form.Item name="clientSecret" label={L("Client Secret (เว้นว่างเพื่อคงเดิม)", "Client Secret (blank keeps current)")}><Input.Password /></Form.Item></Col><Col span={12}><Form.Item name="accessToken" label={L("Access Token (เว้นว่างเพื่อคงเดิม)", "Access Token (blank keeps current)")}><Input.Password /></Form.Item></Col></Row>
         <Row gutter={12}><Col span={12}><Form.Item name="refreshToken" label={L("Refresh Token (เว้นว่างเพื่อคงเดิม)", "Refresh Token (blank keeps current)")}><Input.Password /></Form.Item></Col><Col span={12}><Form.Item name="webhookSecret" label={L("Webhook Secret (เว้นว่างเพื่อคงเดิม)", "Webhook Secret (blank keeps current)")}><Input.Password /></Form.Item></Col></Row>
-        <Row gutter={12}><Col span={16}><Form.Item name="apiBaseUrl" label="API Base URL"><Input placeholder="https://provider.example/api" /></Form.Item></Col><Col span={8}><Form.Item name="apiVersion" label="API Version"><Input /></Form.Item></Col></Row>
+        <Row gutter={12}><Col span={16}><Form.Item name="apiBaseUrl" label={uiText("admin_ui.en_api_base_url_51cdd")}><Input placeholder="https://provider.example/api" /></Form.Item></Col><Col span={8}><Form.Item name="apiVersion" label={uiText("admin_ui.en_api_version_05bdc")}><Input /></Form.Item></Col></Row>
         <Form.Item name="webhookAuthHeader" label={L("ชื่อ Header สำหรับ webhook", "Webhook authentication header")}><Input /></Form.Item>
         <Row gutter={12}><Col span={16}><Form.Item name="contractUrl" label={L("URL เอกสาร Partner contract", "Partner contract URL")}><Input placeholder="https://..." /></Form.Item></Col><Col span={8}><Form.Item name="contractVersion" label={L("เวอร์ชัน contract", "Contract version")}><Input /></Form.Item></Col></Row>
         <Row gutter={12}><Col span={12}><Form.Item name="contractReviewedAt" label={L("วันที่ตรวจ contract", "Contract reviewed at")}><Input placeholder="2026-09-27T12:00:00+07:00" /></Form.Item></Col><Col span={12}><Form.Item name="credentialExpiresAt" label={L("Credential หมดอายุ", "Credential expires at")}><Input placeholder="2027-09-27T12:00:00+07:00" /></Form.Item></Col></Row>

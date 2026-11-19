@@ -1,4 +1,6 @@
 "use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import { Form, Input, Select, Space } from "antd";
 import { useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18nContext";
@@ -13,9 +15,9 @@ type Props = {
   postcodeName?: string;
 };
 
-async function load(params: URLSearchParams): Promise<Row[]> {
+async function load(params: URLSearchParams, uiText: UiTranslator = thaiUiText): Promise<Row[]> {
   const response = await fetch(`/api/public/thai-addresses?${params}`, { cache: "force-cache" });
-  if (!response.ok) throw new Error("โหลดข้อมูลที่อยู่ไม่สำเร็จ");
+  if (!response.ok) throw new Error(uiText("admin_ui.could_not_load_address_data_9fcbe"));
   return (await response.json()).rows ?? [];
 }
 
@@ -23,20 +25,21 @@ export default function ThaiAddressFields({
   form, required = false, provinceName = "provinceCode", districtName = "districtCode",
   subdistrictName = "subdistrictCode", postcodeName = "postcode",
 }: Props) {
+  const uiText = useUiText();
   const { t, lang } = useI18n();
   const provinceCode = Form.useWatch(provinceName, form);
   const districtCode = Form.useWatch(districtName, form);
   const [provinces, setProvinces] = useState<Row[]>([]);
   const [districts, setDistricts] = useState<Row[]>([]);
   const [subdistricts, setSubdistricts] = useState<Row[]>([]);
-  useEffect(() => { void load(new URLSearchParams({ level: "PROVINCE" })).then(setProvinces).catch(() => setProvinces([])); }, []);
+  useEffect(() => { void load(new URLSearchParams({ level: "PROVINCE" }), uiText).then(setProvinces).catch(() => setProvinces([])); }, []);
   useEffect(() => {
     if (!provinceCode) return void setDistricts([]);
-    void load(new URLSearchParams({ level: "DISTRICT", provinceCode })).then(setDistricts).catch(() => setDistricts([]));
+    void load(new URLSearchParams({ level: "DISTRICT", provinceCode }), uiText).then(setDistricts).catch(() => setDistricts([]));
   }, [provinceCode]);
   useEffect(() => {
     if (!districtCode) return void setSubdistricts([]);
-    void load(new URLSearchParams({ level: "SUBDISTRICT", districtCode })).then(setSubdistricts).catch(() => setSubdistricts([]));
+    void load(new URLSearchParams({ level: "SUBDISTRICT", districtCode }), uiText).then(setSubdistricts).catch(() => setSubdistricts([]));
   }, [districtCode]);
   const rules = required ? [{ required: true, message: t("admin_master_data.address_required") }] : undefined;
   return <Space wrap align="start">

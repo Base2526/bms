@@ -1,3 +1,4 @@
+import { posText } from '../i18n/language';
 import React, {
   createContext,
   useCallback,
@@ -13,6 +14,7 @@ export interface PosSessionBranch {
   id: string;
   name: string;
   code: string;
+  pickupQueue?: { enabled: boolean; autoHideMinutes: number; showPreparing: boolean; boardMessage?: string | null };
 }
 
 export interface PosSessionCashier {
@@ -93,9 +95,9 @@ export function useSession(): SessionContextValue {
 }
 
 export function sessionCashierName(session: PosSession | null): string {
-  return session?.cashier.name ?? 'ยังไม่ได้เข้าใช้งาน';
+  return session?.cashier.name ?? posText("ยังไม่ได้เข้าใช้งาน");
 }
 
 export function sessionBranchName(session: PosSession | null): string {
-  return session?.branch.name ?? 'ยังไม่ทราบสาขา';
+  return session?.branch.name ?? posText("ยังไม่ทราบสาขา");
 }

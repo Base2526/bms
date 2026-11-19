@@ -1,0 +1,3 @@
+// System permission copy follows the iOS app language.
+"NSCameraUsageDescription" = "Use the camera to scan product barcodes and register-pairing QR codes from the back office.";
+"NSLocalNetworkUsageDescription" = "Connect to receipt printers on the shop network to check their status and send print jobs.";

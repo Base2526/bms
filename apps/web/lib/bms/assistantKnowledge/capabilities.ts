@@ -315,8 +315,8 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
       "Kitchen tickets require the KITCHEN_WORKFLOW store capability.",
     ],
     limitations: both(
-      "ยังไม่มีการส่งงานเข้าเครื่องพิมพ์ครัวแยกสถานี — ใช้จอครัวเป็นแหล่งงานจริง",
-      "Per-station kitchen printer routing is not supported; the kitchen display remains the work source of truth."
+      "Desktop มี pilot ให้แต่ละเครื่องจับคู่สถานีกับเครื่องพิมพ์ครัวของเครื่องนั้นได้ ยังไม่มีการจัดการเส้นทางพิมพ์ส่วนกลางหรือการพิมพ์จากมือถือ/เบราว์เซอร์ จอครัวยังเป็นแหล่งงานจริง",
+      "Desktop has a local pilot that maps each kitchen station to that workstation's printer. Central routing and mobile/browser printing are not available; the kitchen display remains the work source of truth."
     ),
   },
   {

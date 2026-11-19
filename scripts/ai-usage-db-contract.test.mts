@@ -40,7 +40,9 @@ test('AI usage accounting: fractional cost, one-shot finalize, refunds and quota
     'local test DB required'
   );
   const tenantIds: string[] = [];
+  const rateIds: string[] = [];
   t.after(async () => {
+    if (rateIds.length) await query('DELETE FROM bms_master_ai_rates WHERE id = ANY($1::uuid[])', [rateIds]);
     if (!tenantIds.length) return;
     // notifications ถูกสร้างให้ platform admin *ตัวจริง* เมื่อมี incident — ต้องล้างด้วย
     // ไม่งั้นเทสไปขึ้นกระดิ่งแจ้งเตือนของผู้ใช้จริงบนฐาน dev
@@ -136,6 +138,56 @@ test('AI usage accounting: fractional cost, one-shot finalize, refunds and quota
     );
     // ตัวชี้ที่ตรงที่สุดว่าบั๊กกลับมา: finalize ที่ throw จะทิ้ง incident ไว้แล้วแถวค้าง started
     assert.equal((await incidents('ai.usage_finalize_failed')).length, 0);
+  });
+
+  await t.test('effective-dated rates price each provider response instead of the caller estimate', async () => {
+    const model = `fake-ai-rate-${crypto.randomUUID()}`;
+    for (const [provider, inputRate, outputRate, version] of [
+      ['fake-test-provider', 2, 10, 'fake-v1'],
+      ['fake-second-provider', 4, 20, 'fake-v2'],
+    ] as const) {
+      const inserted = await query(
+        `INSERT INTO bms_master_ai_rates
+          (provider,model,input_usd_per_million,output_usd_per_million,effective_from,source,source_version)
+         VALUES ($1,$2,$3,$4,now()-interval '1 second','FAKE contract rate',$5)
+         RETURNING id`, [provider, model, inputRate, outputRate, version]
+      );
+      rateIds.push(inserted.rows[0].id);
+    }
+    const before = Number((await monthly()).estimated_cost);
+    const id = await reserve('fake_rate_override', model);
+    await recordAiProviderAttempt(id);
+    await recordAiProviderAttempt(id);
+    await finalizeAiUsageEvent(id, {
+      status: 'completed', inputTokens: 1500, outputTokens: 150,
+      estimatedCost: 0.000001, unpricedProviderCalls: 2,
+      providerUsages: [
+        { provider: 'fake-test-provider', model, inputTokens: 1000, outputTokens: 100 },
+        { provider: 'fake-second-provider', model, inputTokens: 500, outputTokens: 50 },
+      ],
+    });
+    const row = await event(id);
+    assert.equal(Number(row.actual_cost_usd), 0.006);
+    assert.equal(Number(row.unpriced_provider_calls), 0);
+    assert.equal(row.meta.rate_card_source, 'DATABASE');
+    assert.equal(row.meta.rate_card_version, 'fake-v1,fake-v2');
+    assert.ok(Math.abs(Number((await monthly()).estimated_cost) - before - 0.006) < 1e-10);
+
+    const partial = await reserve('fake_rate_partial', model);
+    await recordAiProviderAttempt(partial);
+    await recordAiProviderAttempt(partial);
+    await finalizeAiUsageEvent(partial, {
+      status: 'failed', inputTokens: 1000, outputTokens: 100,
+      estimatedCost: 999,
+      providerUsages: [
+        { provider: 'fake-test-provider', model, inputTokens: 1000, outputTokens: 100 },
+        { provider: 'fake-unknown-provider', model, inputTokens: null, outputTokens: null },
+      ],
+    });
+    const partialRow = await event(partial);
+    assert.equal(Number(partialRow.actual_cost_usd), 0.003);
+    assert.equal(Number(partialRow.unpriced_provider_calls), 1);
+    assert.equal(partialRow.meta.cost_status, 'partial_or_unavailable');
   });
 
   await t.test('finalize is one-shot: a second call cannot double-count cost', async () => {

@@ -5,7 +5,7 @@
 // device token เพราะเปิดค้างทั้งวันและใช้ session cookie ของ admin ไม่ได้
 import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
-import { requirePermission } from "@/lib/bms/permissions";
+import { loadPermissions, requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
 import { listLocations, listLocationsForUser, upsertLocation } from "@/lib/bms/locations";
@@ -57,7 +57,8 @@ export const bmsPosResolvers = {
       return listLocationsForUser(getTenantId(ctx), String(auth.author_id));
     },
     async bmsLocations(_p: unknown, _a: unknown, ctx: any) {
-      await requirePermission(ctx, "product.view");
+      const perms = await loadPermissions(ctx);
+      if (!perms.has("pos.device.manage")) await requirePermission(ctx, "product.view");
       return listLocations(getTenantId(ctx));
     },
 
@@ -75,10 +76,11 @@ export const bmsPosResolvers = {
       });
     },
 
-    /** พนักงานในร้าน + สถานะ PIN — ใช้ในหน้าตั้งค่า POS ฝั่งแอดมิน */
-    /** พนักงานทุกคนในร้าน — สำหรับหน้าจัดการ ไม่ใช่ dropdown ที่เคาน์เตอร์ */
+    /** ผู้จัดการ PIN ต้องเห็นรายชื่อผู้ที่จะตั้ง PIN ได้; การแก้โหมดบัญชียังใช้ pos.staff.manage */
     async bmsPosStaff(_p: unknown, _a: unknown, ctx: any) {
-      await requirePermission(ctx, "pos.staff.manage");
+      if (!(await loadPermissions(ctx)).has("pos.pin.manage")) {
+        await requirePermission(ctx, "pos.staff.manage");
+      }
       return listTenantStaff(getTenantId(ctx));
     },
 
@@ -312,6 +314,7 @@ export const bmsPosResolvers = {
         if (args.pin) await setCashierPin(tenantId, args.userId, args.pin, actorUserId);
         else await clearCashierPin(tenantId, args.userId, actorUserId);
       } catch (e: any) {
+        if (e instanceof GraphQLError) throw e;
         throw new GraphQLError(e?.message || "ตั้ง PIN ไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
       }
       return true;
@@ -325,6 +328,7 @@ export const bmsPosResolvers = {
           getTenantId(ctx), args.userId, args.posOnly, String(requireAuth(ctx).author_id)
         );
       } catch (e: any) {
+        if (e instanceof GraphQLError) throw e;
         throw new GraphQLError(e?.message || "ตั้งค่าบัญชีไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
       }
       return true;
@@ -379,9 +383,7 @@ export const bmsPosResolvers = {
         openingFloat: args.openingFloat ?? 0,
         pharmacistUserId: args.pharmacistUserId ?? null,
       });
-      if (result.status === "OPENED") {
-        await audit(ctx, "pos.shift.open", result.shift.id, { deviceId: args.deviceId });
-      }
+      // openPosShift commits the shift and its audit on one client.
       return result;
     },
 
@@ -422,14 +424,7 @@ export const bmsPosResolvers = {
         countedCash: args.countedCash,
         note: args.note ?? null,
       });
-      if (result.status === "CLOSED") {
-        // ส่วนต่างเงินสดคือสิ่งที่ต้องตามได้ย้อนหลัง — เก็บลง audit เสมอ
-        await audit(ctx, "pos.shift.close", result.shift.id, {
-          expectedCash: result.shift.expectedCash,
-          countedCash: result.shift.countedCash,
-          cashVariance: result.shift.cashVariance,
-        });
-      }
+      // closePosShift commits cash variance and audit in the shift transaction.
       return result;
     },
   },

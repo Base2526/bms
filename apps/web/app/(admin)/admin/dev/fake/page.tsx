@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 import React, { useEffect, useState } from 'react';
 import { Card, InputNumber, Select, Button, Space, Table, message, Divider, Tag, Alert, Popconfirm, Input, Modal, Descriptions, Typography } from 'antd';
 import { gql, useQuery, useMutation } from '@apollo/client';
@@ -96,25 +98,26 @@ const DEMO_SHOP_OPTIONS = DEMO_SCENARIO_SHOPS.map((shop) => ({
 
 type CreatedRow = any;
 
-const KINDS = [
-  { label: 'BMS Staff (users)', value: 'users' },
-  { label: 'BMS Products', value: 'bms-products' },
-  { label: 'BMS Customers', value: 'bms-customers' },
-  { label: 'BMS Orders (+pay/ship)', value: 'bms-orders' },
-  { label: 'BMS Conversations', value: 'bms-conversations' },
-  { label: 'BMS Restock Subscriptions', value: 'bms-restock-subscriptions' },
-  { label: 'BMS Purchase (PO)', value: 'bms-purchase' },
-  { label: 'BMS Coupons', value: 'bms-coupons' },
+const KINDS = (uiText: UiTranslator = thaiUiText) => ([
+  { label: uiText("admin_ui.en_bms_staff_users_50be6"), value: 'users' },
+  { label: uiText("admin_ui.en_bms_products_e866a"), value: 'bms-products' },
+  { label: uiText("admin_ui.en_bms_customers_92bb4"), value: 'bms-customers' },
+  { label: uiText("admin_ui.en_bms_orders_pay_ship_9e510"), value: 'bms-orders' },
+  { label: uiText("admin_ui.en_bms_conversations_a87d9"), value: 'bms-conversations' },
+  { label: uiText("admin_ui.en_bms_restock_subscriptions_a5dd9"), value: 'bms-restock-subscriptions' },
+  { label: uiText("admin_ui.en_bms_purchase_po_6bb47"), value: 'bms-purchase' },
+  { label: uiText("admin_ui.en_bms_coupons_e74f7"), value: 'bms-coupons' },
   // ต้อง seed Customers (และควร Orders) ก่อน — ปุ่มนี้ยกลูกค้าเดิมขึ้นเป็นสมาชิก
-  { label: 'BMS Members + Points', value: 'bms-members' },
-  { label: 'BMS Board Game Cafe', value: 'bms-board-game' },
-  { label: 'BMS Pharmacy Assessments', value: 'bms-pharmacy-assessments' },
-  { label: 'Support Tickets', value: 'support-tickets' },
-];
+  { label: uiText("admin_ui.en_bms_members_points_fed6e"), value: 'bms-members' },
+  { label: uiText("admin_ui.en_bms_board_game_cafe_e5135"), value: 'bms-board-game' },
+  { label: uiText("admin_ui.en_bms_pharmacy_assessments_859ef"), value: 'bms-pharmacy-assessments' },
+  { label: uiText("admin_ui.en_support_tickets_6564b"), value: 'support-tickets' },
+]);
 
 type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-restock-subscriptions' | 'bms-purchase' | 'bms-coupons' | 'bms-members' | 'bms-board-game' | 'bms-pharmacy-assessments' | 'support-tickets';
 
 export default function DevFakePage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const archetypeOptions = localizedShopArchetypeOptions(t);
   const [kind, setKind] = useState<FakeKind>('bms-products');
@@ -143,7 +146,7 @@ export default function DevFakePage() {
     setPackageInfo(null);
     setPackageError('');
     fetch(`/api/dev/fake/package?tenantId=${encodeURIComponent(selectedTenantId)}`, { signal: controller.signal, credentials: 'include' })
-      .then(async res => { const json = await res.json(); if (!res.ok) throw new Error(json.error || 'Failed'); return json; })
+      .then(async res => { const json = await res.json(); if (!res.ok) throw new Error(json.error || uiText("admin_ui.en_failed_09fef")); return json; })
       .then(info => { if (!controller.signal.aborted) setPackageInfo(info); })
       .catch(error => { if (!controller.signal.aborted) setPackageError(error.message); });
     return () => controller.abort();
@@ -196,13 +199,13 @@ export default function DevFakePage() {
         credentials: 'include',
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j?.error || 'Failed');
+      if (!res.ok) throw new Error(j?.error || uiText("admin_ui.en_failed_09fef"));
       message.success(t('admin_dev_fake.shop_created', { name: j.tenant.name, slug: j.tenant.slug }));
       setProvisioned(j);
       setShopName('');
       await refetchTenants();
     } catch (e: any) {
-      message.error(e.message || 'Error');
+      message.error(e.message || uiText("admin_ui.en_error_7f2f6"));
     } finally { setProvisioning(false); setPackageRefresh(value => value + 1); }
   }
 
@@ -220,7 +223,7 @@ export default function DevFakePage() {
         credentials: 'include',
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j?.error || 'Failed');
+      if (!res.ok) throw new Error(j?.error || uiText("admin_ui.en_failed_09fef"));
       message.success(t('admin_dev_fake.demo_created', { count: j.created?.length || 0 }));
       setDemoProvisioned((current) => {
         const createdRows: DemoProvisionResult[] = j.created || [];
@@ -229,7 +232,7 @@ export default function DevFakePage() {
       });
       await refetchTenants();
     } catch (e: any) {
-      message.error(e.message || 'Error');
+      message.error(e.message || uiText("admin_ui.en_error_7f2f6"));
     } finally {
       setProvisioningDemo(false);
       setPackageRefresh(value => value + 1);
@@ -244,7 +247,7 @@ export default function DevFakePage() {
         credentials: 'include',
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j?.error || 'Delete failed');
+      if (!res.ok) throw new Error(j?.error || uiText("admin_ui.en_delete_failed_64513"));
       message.success(t('admin_dev_fake.scenario_delete_success', { count: j.deletedCount ?? 0 }));
       setDemoProvisioned([]);
       setCreated([]);
@@ -259,7 +262,7 @@ export default function DevFakePage() {
       }
       await refetchTenants();
     } catch (e: any) {
-      message.error(e.message || 'Error');
+      message.error(e.message || uiText("admin_ui.en_error_7f2f6"));
     } finally {
       setDeletingScenarios(false);
     }
@@ -279,12 +282,12 @@ export default function DevFakePage() {
         credentials: 'include',
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j?.error || 'Failed');
-      message.success(`Created ${j.created?.length || 0} ${kind}`);
+      if (!res.ok) throw new Error(j?.error || uiText("admin_ui.en_failed_09fef"));
+      message.success(uiText("admin_ui.en_created_c8af2", { v0: j.created?.length || 0, v1: kind }));
       setCreated(prev => [...(j.created || []), ...prev].slice(0, 300));
       setGroundTruth((current) => current ? { ...current, stale: true } : current);
     } catch (e: any) {
-      message.error(e.message || 'Error');
+      message.error(e.message || uiText("admin_ui.en_error_7f2f6"));
     } finally { setLoading(false); setPackageRefresh(value => value + 1); }
   }
 
@@ -298,11 +301,11 @@ export default function DevFakePage() {
       const params = new URLSearchParams({ tenantId: selectedTenantId });
       const res = await fetch(`/api/dev/fake/ground-truth?${params}`, { credentials: 'include' });
       const j = await res.json();
-      if (!res.ok) throw new Error(j?.error || 'Load ground truth failed');
+      if (!res.ok) throw new Error(j?.error || uiText("admin_ui.en_load_ground_truth_failed_09d29"));
       setGroundTruth(j.run || null);
       if (!j.run) message.info(t('admin_dev_fake.ground_truth_not_found'));
     } catch (e: any) {
-      message.error(e.message || 'Error');
+      message.error(e.message || uiText("admin_ui.en_error_7f2f6"));
     } finally {
       setGroundTruthLoading(false);
     }
@@ -322,11 +325,11 @@ export default function DevFakePage() {
         credentials: 'include',
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j?.error || 'Generate ground truth failed');
+      if (!res.ok) throw new Error(j?.error || uiText("admin_ui.en_generate_ground_truth_failed_1bccd"));
       setGroundTruth(j.run);
       message.success(t('admin_dev_fake.ground_truth_created', { count: j.run?.cases?.length ?? 0 }));
     } catch (e: any) {
-      message.error(e.message || 'Error');
+      message.error(e.message || uiText("admin_ui.en_error_7f2f6"));
     } finally {
       setGroundTruthLoading(false);
     }
@@ -357,30 +360,30 @@ export default function DevFakePage() {
         credentials: 'include',
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j?.error || 'Cleanup failed');
+      if (!res.ok) throw new Error(j?.error || uiText("admin_ui.en_cleanup_failed_2700e"));
       message.success(
-        `Deleted ${j.deleted} — restock:${j.bmsRestockSubscriptions ?? 0} orders:${j.bmsOrders ?? 0} conv:${j.bmsConversations ?? 0} PO:${j.bmsPurchaseOrders ?? 0} coupons:${j.bmsCoupons ?? 0} suppliers:${j.bmsSuppliers ?? 0} products:${j.bmsProducts ?? 0} customers:${j.bmsCustomers ?? 0} support:${j.supportTickets ?? 0}`
+        uiText("admin_ui.en_deleted_restock_orders_conv_po_coupons_suppliers_products_dc232", { v0: j.deleted, v1: j.bmsRestockSubscriptions ?? 0, v2: j.bmsOrders ?? 0, v3: j.bmsConversations ?? 0, v4: j.bmsPurchaseOrders ?? 0, v5: j.bmsCoupons ?? 0, v6: j.bmsSuppliers ?? 0, v7: j.bmsProducts ?? 0, v8: j.bmsCustomers ?? 0, v9: j.supportTickets ?? 0 })
       );
       setCreated([]);
       setGroundTruth(null);
     } catch (e: any) {
-      message.error(e.message || 'Error');
+      message.error(e.message || uiText("admin_ui.en_error_7f2f6"));
     } finally { setLoading(false); setPackageRefresh(value => value + 1); }
   }
 
   const cols = [
-    { title: 'id / sku / code', key: 'id', width: 200, render: (_: any, r: any) => r.sku || r.code || r.id },
-    { title: 'name', dataIndex: 'name', key: 'name', render: (_: any, r: any) => r.name || r.title || r.type },
+    { title: uiText("admin_ui.en_id_sku_code_37f29"), key: 'id', width: 200, render: (_: any, r: any) => r.sku || r.code || r.id },
+    { title: uiText("admin_ui.en_name_6ae99"), dataIndex: uiText("admin_ui.en_name_6ae99"), key: uiText("admin_ui.en_name_6ae99"), render: (_: any, r: any) => r.name || r.title || r.type },
     {
-      title: 'price / value', dataIndex: 'price', key: 'price', width: 110,
+      title: uiText("admin_ui.en_price_value_602ea"), dataIndex: 'price', key: 'price', width: 110,
       render: (v: any, r: any) => {
         const n = v ?? r.value;
         if (n == null) return '—';
         return r.value != null && r.type === 'PERCENT' ? `${Number(n)}%` : `${Number(n).toLocaleString()} ฿`;
       },
     },
-    { title: 'phone', dataIndex: 'phone', key: 'phone' },
-    { title: 'tags', dataIndex: 'tags', key: 'tags', render: (t: string[]) => (t || []).map((x) => <Tag key={x}>{x}</Tag>) },
+    { title: uiText("admin_ui.en_phone_f6be6"), dataIndex: uiText("admin_ui.en_phone_f6be6"), key: uiText("admin_ui.en_phone_f6be6") },
+    { title: uiText("admin_ui.en_tags_9b6ef"), dataIndex: uiText("admin_ui.en_tags_9b6ef"), key: uiText("admin_ui.en_tags_9b6ef"), render: (t: string[]) => (t || []).map((x) => <Tag key={x}>{x}</Tag>) },
   ];
 
   return (
@@ -461,7 +464,7 @@ export default function DevFakePage() {
               showIcon
               style={{ marginTop: 8 }}
               message={`${row.tenant.name} /${row.tenant.slug} · ${row.tenant.plan}`}
-              description={`archetype: ${row.businessArchetype} · staff ${row.summary.staff ?? 0} · POS devices ${row.summary.posDevices ?? 0} · products ${row.summary.products ?? 0} · orders ${row.summary.orders ?? 0} (${channelOrderSummary(row.summary)}) · inbox chats ${row.summary.conversations ?? 0} · customers ${row.summary.customers ?? 0} · ground truth ${row.groundTruth?.cases ?? 0} cases`}
+              description={uiText("admin_ui.en_archetype_staff_pos_devices_products_orders_inbox_chats_ebf5d", { v0: row.businessArchetype, v1: row.summary.staff ?? 0, v2: row.summary.posDevices ?? 0, v3: row.summary.products ?? 0, v4: row.summary.orders ?? 0, v5: channelOrderSummary(row.summary), v6: row.summary.conversations ?? 0, v7: row.summary.customers ?? 0, v8: row.groundTruth?.cases ?? 0 })}
             />
           ))}
         </div>
@@ -484,10 +487,10 @@ export default function DevFakePage() {
         <>
           <Descriptions column={1} size="small" bordered>
             <Descriptions.Item label={t('admin_dev_fake.label_shop')}>{provisioned.tenant.name} <span style={{ opacity: 0.7 }}>/{provisioned.tenant.slug}</span></Descriptions.Item>
-            <Descriptions.Item label="Archetype">{(provisioned as any).businessArchetype || '—'}</Descriptions.Item>
+            <Descriptions.Item label={uiText("admin_ui.en_archetype_85e8a")}>{(provisioned as any).businessArchetype || '—'}</Descriptions.Item>
             <Descriptions.Item label={t('admin_dev_fake.package_label')}>{provisioned.tenant.plan}</Descriptions.Item>
-            <Descriptions.Item label="Admin email">{provisioned.admin.email}</Descriptions.Item>
-            <Descriptions.Item label="Admin password">
+            <Descriptions.Item label={uiText("admin_ui.en_admin_email_f0fee")}>{provisioned.admin.email}</Descriptions.Item>
+            <Descriptions.Item label={uiText("admin_ui.en_admin_password_b2cee")}>
               <Typography.Text code copyable>{provisioned.admin.password}</Typography.Text>
             </Descriptions.Item>
           </Descriptions>
@@ -560,7 +563,7 @@ export default function DevFakePage() {
       {groundTruth && (
         <>
           <Descriptions size="small" bordered column={{ xs: 1, sm: 2, lg: 4 }} style={{ marginBottom: 12 }}>
-            <Descriptions.Item label="Run ID"><Typography.Text code copyable>{groundTruth.id}</Typography.Text></Descriptions.Item>
+            <Descriptions.Item label={uiText("admin_ui.en_run_id_79adb")}><Typography.Text code copyable>{groundTruth.id}</Typography.Text></Descriptions.Item>
             <Descriptions.Item label={t('admin_dev_fake.ground_truth_version')}>{groundTruth.generatorVersion}</Descriptions.Item>
             <Descriptions.Item label={t('admin_dev_fake.ground_truth_cases')}>{groundTruth.cases.length}</Descriptions.Item>
             <Descriptions.Item label={t('admin_dev_fake.ground_truth_status')}>
@@ -597,7 +600,7 @@ export default function DevFakePage() {
     </Card>
 
     <Card
-      title="Dev: Fake Data Generator"
+      title={uiText("admin_ui.en_dev_fake_data_generator_a0de0")}
     >
       <Space wrap style={{ marginBottom: 12 }}>
         <Select
@@ -619,18 +622,18 @@ export default function DevFakePage() {
           if (next === 'bms-restock-subscriptions') setCount(20);
           else if (next === 'bms-pharmacy-assessments') setCount(5);
         }}
-        options={KINDS}
+        options={KINDS(uiText)}
         style={{ width: 180 }}
       />
         <InputNumber min={1} max={10000} value={count} onChange={(v) => setCount(v || 1)} />
-        <Button type="primary" onClick={doFake} loading={loading} disabled={!packageInfo || overQuota}>Create</Button>
+        <Button type="primary" onClick={doFake} loading={loading} disabled={!packageInfo || overQuota}>{uiText("admin_ui.en_create_6e157")}</Button>
         <Popconfirm
           title={t('admin_dev_fake.cleanup_confirm_title')}
           description={<>{t('admin_dev_fake.cleanup_confirm_desc_1')} <b>{tenantOptions.find((x: any) => x.value === selectedTenantId)?.label || '…'}</b></>}
           okText={t('admin_dev_fake.cleanup_ok')} okButtonProps={{ danger: true }} cancelText={t('admin_dev_fake.cleanup_cancel')}
           onConfirm={cleanup}
         >
-          <Button danger disabled={loading || !selectedTenantId}>Cleanup</Button>
+          <Button danger disabled={loading || !selectedTenantId}>{uiText("admin_ui.en_cleanup_11c1c")}</Button>
         </Popconfirm>
       </Space>
       {packageError && <Alert closable type="error" showIcon message={packageError} />}
@@ -652,14 +655,14 @@ export default function DevFakePage() {
       <Alert closable
         type="warning" showIcon style={{ marginBottom: 12 }}
         message={t('admin_dev_fake.dev_only_title')}
-        description={<>{t('admin_dev_fake.seed_desc_p1')}<b>Staff → Products → Customers → Coupons → Orders → Conversations → Purchase</b>{t('admin_dev_fake.seed_desc_p2')}
-          <b>Orders</b>{t('admin_dev_fake.seed_desc_p3')}
-          <b>Conversations</b>{t('admin_dev_fake.seed_desc_p4')}<b>Coupons</b>{t('admin_dev_fake.seed_desc_p5')}<code>FAKE-</code> / tag <code>fake</code> / note <code>FAKE</code> ·
-          <b>Restock Subscriptions</b>{t('admin_dev_fake.seed_desc_p6')}
-          <b>Pharmacy Assessments</b>{t('admin_dev_fake.seed_desc_p7')}
-          <b>Board Game Cafe</b>{t('admin_dev_fake.seed_desc_board_game')}
-          <b>AI point</b>{t('admin_dev_fake.seed_desc_p8')}<code>/admin/billing</code>{t('admin_dev_fake.seed_desc_p9')}
-          <b>Cleanup</b>{t('admin_dev_fake.seed_desc_p10')}</>}
+        description={<>{t('admin_dev_fake.seed_desc_p1')}<b>{uiText("admin_ui.en_staff_products_customers_coupons_orders_conversations_purchase_2c6ac")}</b>{t('admin_dev_fake.seed_desc_p2')}
+          <b>{uiText("admin_ui.en_orders_cded0")}</b>{t('admin_dev_fake.seed_desc_p3')}
+          <b>{uiText("admin_ui.en_conversations_07c59")}</b>{t('admin_dev_fake.seed_desc_p4')}<b>{uiText("admin_ui.en_coupons_97a3b")}</b>{t('admin_dev_fake.seed_desc_p5')}<code>FAKE-</code>  {uiText("admin_ui.en_tag_8ce75")} <code>fake</code>  {uiText("admin_ui.en_note_1f21a")} <code>FAKE</code> ·
+          <b>{uiText("admin_ui.en_restock_subscriptions_d51f6")}</b>{t('admin_dev_fake.seed_desc_p6')}
+          <b>{uiText("admin_ui.en_pharmacy_assessments_5aaad")}</b>{t('admin_dev_fake.seed_desc_p7')}
+          <b>{uiText("admin_ui.en_board_game_cafe_bdd22")}</b>{t('admin_dev_fake.seed_desc_board_game')}
+          <b>{uiText("admin_ui.en_ai_point_c97bb")}</b>{t('admin_dev_fake.seed_desc_p8')}<code>/admin/billing</code>{t('admin_dev_fake.seed_desc_p9')}
+          <b>{uiText("admin_ui.en_cleanup_11c1c")}</b>{t('admin_dev_fake.seed_desc_p10')}</>}
       />
       {data && isPlatformAdmin === false && (
         <Alert closable

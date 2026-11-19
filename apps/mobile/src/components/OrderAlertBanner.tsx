@@ -1,3 +1,4 @@
+import { posText, usePosLanguage } from '../i18n/language';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Button } from './Button';
@@ -18,6 +19,7 @@ interface Props {
  * ที่ไม่มีใครรู้ว่าเข้ามา · แถบนี้จึงขึ้นตราบใดที่ยังมีใบที่ไม่มีใครรับ ไม่ว่าเสียงจะดังหรือไม่
  */
 export function OrderAlertBanner({ onOpenQueue }: Props) {
+  usePosLanguage();
   const { colors, spacing, typography, radius } = useTheme();
   const { pendingCount } = useIncomingOrders();
   const { blockedNotice, acknowledged, acknowledge } = useOrderAlerts();
@@ -27,7 +29,7 @@ export function OrderAlertBanner({ onOpenQueue }: Props) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`มีออร์เดอร์เข้า ${pendingCount} ใบ แตะเพื่อเปิดคิว`}
+      accessibilityLabel={posText("มีออร์เดอร์เข้า {v0} ใบ แตะเพื่อเปิดคิว", { v0: pendingCount })}
       onPress={onOpenQueue}
       style={[
         styles.wrap,
@@ -46,8 +48,7 @@ export function OrderAlertBanner({ onOpenQueue }: Props) {
             { color: acknowledged ? colors.warning : colors.primaryText },
           ]}
         >
-          มีออร์เดอร์เข้า {pendingCount} ใบรอรับ
-        </Text>
+          {posText("มีออร์เดอร์เข้า") + " "}{pendingCount} {" " + posText("ใบรอรับ") + " "}</Text>
         {blockedNotice ? (
           <Text
             style={[
@@ -61,8 +62,8 @@ export function OrderAlertBanner({ onOpenQueue }: Props) {
       </View>
       {!acknowledged && (
         <Button
-          label="รับทราบ"
-          accessibilityLabel="รับทราบการแจ้งเตือน หยุดการย้ำซ้ำจนกว่าจะมีใบใหม่"
+          label={posText("รับทราบ")}
+          accessibilityLabel={posText("รับทราบการแจ้งเตือน หยุดการย้ำซ้ำจนกว่าจะมีใบใหม่")}
           variant="secondary"
           onPress={acknowledge}
         />

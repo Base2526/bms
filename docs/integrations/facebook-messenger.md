@@ -114,11 +114,16 @@ the mode. The presales path reuses verified public BMS plans, capabilities and e
 intake; it does not create subscription payments or promise automatic activation. Do not put a shop
 Page on the presales tenant. LINE routing remains unchanged; Instagram remains shop commerce.
 
-## Ads with Send message and conversation starters
+## Messenger profile and Ads with Send message
+
+Settings → Channels → Facebook Messenger can publish the Page-level greeting, Get Started button and
+one to four ice breakers through the Messenger Profile API. BMS stores the draft before the provider
+call, records success/failure without exposing the Page token, and permits only the fixed postback
+payloads listed below. Publishing a profile does not send a customer message and does not run AI.
 
 Create a Messenger-destination ad in Meta Ads Manager using the same connected Page. Configure its
-greeting and starter questions in the ad's message template. This repository does not publish ads
-or create their templates. Preview on Meta, send each starter and check BMS Inbox plus the Messenger
+ad-specific greeting and starter questions in the ad's message template. BMS does not publish ads
+or create ad templates. Preview on Meta, send each starter and check BMS Inbox plus the Messenger
 reply before publishing. A greeting shown when the chat opens does not itself trigger BMS AI.
 
 For suggested questions/quick replies, send full text such as “ขอราคาแพ็กเกจ BMS” on the BMS Page,

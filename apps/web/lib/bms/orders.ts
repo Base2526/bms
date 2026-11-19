@@ -1,6 +1,7 @@
 import { branchPrice } from "./branchPrices";
 import { qualityStock } from "./lotQuality";
-import { consumeOrderLotsInTx, restoreOrderLotsInTx } from "./orderLots";
+import { restoreOrderLotsInTx } from "./orderLots";
+import { consumeReservedOrderStockInTx } from "./orderShippingStock";
 import { promotionForVariant } from "./pricing";
 // =============================================================
 // BMS Orders — สร้าง order + reserve สต็อกแบบ atomic
@@ -19,6 +20,7 @@ import { recordOrderMovements } from "./movements";
 import { resolveOrCreateCustomer } from "./customers";
 import { cancelKitchenTicketsForOrderInTx, enqueueKitchenTicketsInTx } from "./kitchen";
 import { beginTenantTx } from "./tenant";
+import { insertAuditInTx } from "./audit";
 import { DEFAULT_LOCATION_CODE, resolveDefaultLocationIdInTx } from "./locations";
 import { listConversationHelpers, listSystemEvents } from "./inbox";
 import { listShipments, MARKETPLACE_CHANNELS } from "./shipping";
@@ -28,16 +30,14 @@ import type { PoolClient } from "pg";
 import { restaurantOrderItemsInTx, readRestaurantItemSnapshot, type RestaurantItemSnapshot } from "./restaurantItemSnapshots";
 import { notifyOrderStatusEmail } from "./orderNotify";
 import { notifyOrderActionCommitted } from "./orderActionNotify";
-import { applyCouponInTx, releaseCouponForOrdersInTx, redeemCustomerCouponForOrderInTx, releaseCustomerCouponReservationsInTx, reserveCustomerCouponInTx } from "./coupons";
+import { applyCouponInTx, releaseCouponForOrdersInTx, releaseCustomerCouponReservationsInTx, reserveCustomerCouponInTx } from "./coupons";
 import {
   composeDiscounts,
-  earnPointsForOrderInTx,
   getLoyaltySettings,
   getMemberForOrderInTx,
   recordOrderDiscountsInTx,
   redeemPointsInTx,
   releasePointsForOrdersInTx,
-  reviewMemberTierForOrder,
   type OrderDiscountLine,
 } from "./membership";
 import {
@@ -54,11 +54,13 @@ import {
   type ScopedPromotion,
 } from "./pricing";
 import { getVariantBasePriceInTx } from "./productPacks";
+import { currentWeightedKgRate, weightedKgLineCents, weightedKgMoney } from "./weightedKgPricing";
+import { parseScaleBarcode } from "./barcode";
 import type { VatCategory } from "./vat";
+import { parsePosOpenItems, type PosOpenItem } from "./posOpenItems";
 import { reverseCreditForOrderInTx } from "./storeCredit";
 import {
   markRestockSubscriptionsOrdered,
-  markRestockSubscriptionsPurchasedForOrder,
   reopenRestockSubscriptionsForOrders,
   markRestockSubscriptionsReadyForOrders,
 } from "./restockSubscriptions";
@@ -79,6 +81,7 @@ import {
 } from "./customerIdentity";
 import { validateOrderItems } from "./orderValidation";
 import { restaurantOrderingStateInTx } from "./restaurantOrdering";
+import { getVatSettings } from "./taxDocuments";
 import { RestaurantCheckError } from "./restaurantPosErrors";
 import { assertNoActiveSalesTaxDocumentInTx } from "./taxDocumentGuards";
 import {
@@ -104,6 +107,8 @@ export type OrderItemInput = {
   packUnitCode?: string | null;
   packQty?: number | null;
   packUnitPrice?: number | null;
+  /** Internal POS evidence, re-parsed in the order transaction. Public adapters never set this. */
+  verifiedScaleLabels?: Array<{ barcode: string; copies: number }>;
   /** Server-validated menu modifier codes. They affect stock, never price authority. */
   modifierCodes?: string[] | null;
   /** Internal only: discarded by mergeItems; populated from locked check rows, never adapters. */
@@ -125,6 +130,10 @@ export type CreateOrderInput = {
   pointsToRedeem?: number | null;
   items: OrderItemInput[];
   editorId?: string | number | null;
+  /** Server-derived provenance for a reorder, never accepted from a public request. */
+  auditSourceOrderId?: string | null;
+  /** Internal inbox conversation provenance supplied by the server-side AI runtime. */
+  auditConversationId?: string | null;
   couponCode?: string | null;
   /**
    * Carrier the customer asked for. A *preference* only — the carrier actually used is
@@ -163,6 +172,8 @@ export type CreateOrderInput = {
   posShiftId?: string | null;
   cashierUserId?: string | null;
   idempotencyKey?: string | null;
+  /** Server workflow only. Accepted, locked quote rows are the sole price authority. */
+  approvedQuoteId?: string | null;
   /** POS catalog surface chosen by the server-side POS caller. */
   posSalesSurface?: "RETAIL_POS" | "RESTAURANT_POS" | null;
   /** Server-validated restaurant check settled by this order. */
@@ -203,6 +214,8 @@ export type CreateOrderInput = {
    * อยู่ในฐาน VAT เหมือนบรรทัดสินค้า ไม่ใช่ยอดบวกท้ายบิล
    */
   extraLines?: Array<{ label: string; qty?: number; unitAmount: number; vatCategory?: VatCategory | null }> | null;
+  /** Retail POS only; an open item is not a catalog product or stock movement. */
+  openItems?: PosOpenItem[] | null;
   manualDiscount?: number | null;
   /** ส่วนลดหน้าร้านต้องมีหัวหน้าอนุมัติ */
   discountApprovedBy?: string | null;
@@ -226,6 +239,9 @@ export type CreatedLine = {
     promotion: Promotion | null;
     modifierUnitPrice: number;
     crossSkuGifts?: GiftSaleEvidence[];
+    quotation?: { quoteId: string; agreedUnitPrice: number; packQty: number };
+    weightedKg?: { rateCents: string; basisGrams: 1000; revisionNo: number;
+      labels: Array<{ barcode: string; copies: number; grams: number }>; rounding: string };
   };
   /** null means this menu intentionally does not expose a counted stock number. */
   availableAfter: number | null;
@@ -308,6 +324,7 @@ function mergeItems(items: OrderItemInput[]): OrderItemInput[] {
       if (cur.packQty != null && it.packQty != null) {
         cur.packQty += it.packQty;
       }
+      cur.verifiedScaleLabels = [...(cur.verifiedScaleLabels ?? []), ...(it.verifiedScaleLabels ?? [])];
     } else {
       map.set(key, {
         sku: it.sku,
@@ -317,6 +334,7 @@ function mergeItems(items: OrderItemInput[]): OrderItemInput[] {
         packUnitName: it.packUnitName ?? null,
         packQty: it.packQty ?? null,
         packUnitPrice: it.packUnitPrice ?? null,
+        verifiedScaleLabels: it.verifiedScaleLabels ?? [],
         modifierCodes,
       });
     }
@@ -550,10 +568,18 @@ export async function createOrderInTx(
 ): Promise<CreateOrderResult> {
   const tenantId = input.tenantId;
   const boardGameBillingGroupId = input.boardGameBillingGroupId?.trim() || null;
+  const parsedOpenItems = parsePosOpenItems(input.openItems);
+  if (!parsedOpenItems.ok) return { status: "INVALID_ITEM", index: -1, reason: parsedOpenItems.reason };
+  const openItems = parsedOpenItems.items;
+  if (openItems.length && (input.channel !== "pos" || (input.posSalesSurface ?? "RETAIL_POS") !== "RETAIL_POS"
+    || input.restaurantCheckId || boardGameBillingGroupId || !input.posDeviceId || !input.posShiftId
+    || !input.cashierUserId || input.pharmacyApprovedAssessmentId || input.pharmacistCounterAuthorization)) {
+    return { status: "INVALID_ITEM", index: -1, reason: "ขายสินค้าชั่วคราวได้เฉพาะ POS ขายปลีก" };
+  }
   let boardGameSessionId: string | null = null;
   const validation = validateOrderItems(input.items);
   if (!validation.ok) {
-    if (validation.index === -1 && !boardGameBillingGroupId) return { status: "EMPTY" };
+    if (validation.index === -1 && !boardGameBillingGroupId && !openItems.length) return { status: "EMPTY" };
     if (validation.index === -1) {
       // A frozen board-game session is a billable service and may be the only
       // line on a POS bill. Its amount is loaded below; the caller cannot use
@@ -751,7 +777,7 @@ export async function createOrderInTx(
         unitAmount: amountDue,
         vatCategory: "V",
       }];
-    } else if (!items.length) {
+    } else if (!items.length && !openItems.length) {
       // กลุ่มที่ยังเล่นอยู่และไม่มีอะไรบน tab ไม่มีอะไรให้จอง — ใบจองเปล่าคือบิล ฿0 ที่ไม่มีใครตั้งใจ
       return { status: "INVALID_ITEM", index: -1, reason: "บิลบอร์ดเกมนี้ยังไม่มีรายการให้จอง" };
     }
@@ -785,7 +811,7 @@ export async function createOrderInTx(
   }
   const mergedValidation = validateOrderItems(items);
   if (!mergedValidation.ok) {
-    if (mergedValidation.index === -1 && boardGameBillingGroupId) {
+    if (mergedValidation.index === -1 && (boardGameBillingGroupId || openItems.length)) {
       // The server-validated session charge is the order's service line.
     } else {
     return {
@@ -840,6 +866,74 @@ export async function createOrderInTx(
       }
     }
     items = canonicalPacks.items;
+
+    // Only a server-accepted, unexpired quote may replace catalog pricing. Read it
+    // inside the order transaction; the converter holds its header FOR UPDATE.
+    const quotePrices = new Map<string, { agreedUnitPrice: number; packQty: number }>();
+    let quoteShippingFee: number | null = null;
+    let quoteSiteAddress: string | null = null;
+    let retailFulfillmentType: "PICKUP" | "DELIVERY" | null = null;
+    if (input.approvedQuoteId) {
+      if (input.channel !== "web" || !input.customerId || input.couponCode || input.pointsToRedeem
+        || input.manualDiscount || input.extraLines?.length || input.openItems?.length
+        || input.restaurantCheckId || input.boardGameBillingGroupId) {
+        return { status: "INVALID_ITEM", index: -1, reason: "QUOTE_COMBINATION_NOT_ALLOWED" };
+      }
+      const quote = await client.query<{
+        customer_id: string; location_id: string; shipping_fee: string | null;
+        delivery_terms: "PICKUP" | "DELIVERY"; site_address: string | null;
+        vat_snapshot: { settings?: Record<string, unknown> } | null;
+      }>(
+        `SELECT customer_id,location_id,shipping_fee,delivery_terms,site_address,vat_snapshot
+           FROM bms_sales_quotations
+          WHERE tenant_id=$1 AND id=$2 AND status='ACCEPTED' AND expires_at>now()`,
+        [tenantId, input.approvedQuoteId]
+      );
+      const header = quote.rows[0];
+      if (!header || header.customer_id !== input.customerId || header.location_id !== locationId
+        || header.shipping_fee == null || !header.vat_snapshot?.settings) {
+        return { status: "INVALID_ITEM", index: -1, reason: "QUOTE_NOT_ACCEPTED_OR_EXPIRED" };
+      }
+      if (header.delivery_terms === "DELIVERY" && !header.site_address?.trim()) {
+        return { status: "INVALID_ITEM", index: -1, reason: "QUOTE_SITE_ADDRESS_MISSING" };
+      }
+      retailFulfillmentType = header.delivery_terms;
+      quoteSiteAddress = header.delivery_terms === "DELIVERY" ? header.site_address!.trim() : null;
+      const currentVat = await getVatSettings(tenantId, client);
+      const frozenVat = header.vat_snapshot.settings;
+      if (frozenVat.vatRegistered !== currentVat.vatRegistered
+        || frozenVat.priceIncludesVat !== currentVat.priceIncludesVat
+        || frozenVat.vatRate !== currentVat.vatRate
+        || frozenVat.vatRounding !== currentVat.vatRounding) {
+        return { status: "INVALID_ITEM", index: -1, reason: "QUOTE_TAX_SETTINGS_CHANGED" };
+      }
+      const quoted = await client.query<{
+        product_sku: string; size: string; pack_code: string; pack_qty: number;
+        base_qty: number; agreed_unit_price: string;
+      }>(
+        `SELECT product_sku,size,pack_code,pack_qty,base_qty,agreed_unit_price
+           FROM bms_sales_quotation_lines WHERE tenant_id=$1 AND quote_id=$2`,
+        [tenantId, input.approvedQuoteId]
+      );
+      if (quoted.rows.length !== items.length) {
+        return { status: "INVALID_ITEM", index: -1, reason: "QUOTE_LINES_CHANGED" };
+      }
+      for (const line of quoted.rows) {
+        const key = JSON.stringify([line.product_sku, line.size, normalizePackCode(line.pack_code)]);
+        quotePrices.set(key, { agreedUnitPrice: Number(line.agreed_unit_price), packQty: Number(line.pack_qty) });
+      }
+      for (const [index, item] of items.entries()) {
+        const key = JSON.stringify([item.sku, item.size, normalizePackCode(item.packCode)]);
+        const agreed = quotePrices.get(key);
+        if (!agreed || item.qty !== Number(quoted.rows.find((line) =>
+          line.product_sku === item.sku && line.size === item.size
+          && normalizePackCode(line.pack_code) === normalizePackCode(item.packCode))?.base_qty)
+          || (item.packQty ?? item.qty) !== agreed.packQty) {
+          return { status: "INVALID_ITEM", index, reason: "QUOTE_UNIT_OR_QUANTITY_CHANGED" };
+        }
+      }
+      quoteShippingFee = Number(header.shipping_fee);
+    }
 
     // Enforce pharmacy sale policy before reserving any inventory. The model,
     // UI and channel adapters are not regulatory authority.
@@ -1264,7 +1358,46 @@ export async function createOrderInTx(
         : null;
       // line_amount is the exact monetary authority. unit_price remains a rounded
       // per-unit reference because a 3-for-100 line cannot fit exactly in NUMERIC(12,2).
-      const productLineAmount = promoLineAmountByIndex.get(itemIndex)
+      const agreedQuote = quotePrices.get(JSON.stringify([it.sku, it.size, normalizePackCode(it.packCode)]));
+      const weightedRate = await currentWeightedKgRate(client, tenantId, it.sku, it.size, true);
+      let weightedEvidence: { rateCents: string; basisGrams: 1000; revisionNo: number;
+        labels: Array<{ barcode: string; copies: number; grams: number }>; rounding: string } | null = null;
+      let weightedLineAmount: number | null = null;
+      if (weightedRate) {
+        if (input.channel !== "pos" || input.posSalesSurface === "RESTAURANT_POS"
+          || normalizePackCode(it.packCode) !== "BASE"
+          || agreedQuote != null || (it.modifierCodes ?? []).length || !it.verifiedScaleLabels?.length) {
+          return { status: "INVALID_ITEM", index: itemIndex, reason: "WEIGHTED_SCALE_LABEL_REQUIRED" };
+        }
+        const mapping = await client.query<{scale_item_code:string;scale_size:string}>(
+          `SELECT scale_item_code,scale_size FROM bms_product_stock_policies
+            WHERE tenant_id=$1 AND product_sku=$2 AND stock_policy='WEIGHTED' AND base_unit='GRAM'`,
+          [tenantId,it.sku]);
+        const mapped = mapping.rows[0];
+        let grams = 0;
+        let amountCents = 0n;
+        const labels: Array<{barcode:string;copies:number;grams:number}> = [];
+        for (const label of it.verifiedScaleLabels) {
+          const parsed = parseScaleBarcode(label.barcode);
+          if (!parsed || parsed.kind !== "WEIGHT" || !mapped
+            || parsed.itemCode !== mapped.scale_item_code || it.size !== mapped.scale_size
+            || !Number.isSafeInteger(label.copies) || label.copies < 1) {
+            return {status:"INVALID_ITEM",index:itemIndex,reason:"WEIGHTED_SCALE_LABEL_INVALID"};
+          }
+          grams += parsed.grams * label.copies;
+          amountCents += weightedKgLineCents(weightedRate.rateCents,parsed.grams) * BigInt(label.copies);
+          labels.push({barcode:label.barcode,copies:label.copies,grams:parsed.grams});
+        }
+        if (grams !== it.qty || amountCents < 1n) {
+          return {status:"INVALID_ITEM",index:itemIndex,reason:"WEIGHTED_SCALE_QUANTITY_INVALID"};
+        }
+        weightedLineAmount = weightedKgMoney(amountCents);
+        weightedEvidence = {rateCents:weightedRate.rateCents,basisGrams:1000,
+          revisionNo:weightedRate.revisionNo,labels,rounding:"HALF_UP_PER_LABEL"};
+      }
+      const productLineAmount = weightedLineAmount != null ? weightedLineAmount : agreedQuote != null
+        ? agreedQuote.agreedUnitPrice * agreedQuote.packQty
+        : promoLineAmountByIndex.get(itemIndex)
         ?? (basePackUnitPrice != null && packQty != null
           ? basePackUnitPrice * packQty
           : baseUnitPrice * it.qty);
@@ -1273,7 +1406,9 @@ export async function createOrderInTx(
         (it.qty > 0 ? productLineAmount / it.qty : 0)
         + (it.qty > 0 ? modifierTotal / it.qty : 0)
       ) * 100) / 100;
-      const packUnitPrice = basePackUnitPrice == null
+      const packUnitPrice = agreedQuote != null && isFixedPricePack(it.packCode)
+        ? agreedQuote.agreedUnitPrice
+        : basePackUnitPrice == null
         ? null
         : basePackUnitPrice + modifierUnitPrice;
       const unitCodeRow = await client.query<{ unit_code: string | null }>(
@@ -1288,7 +1423,7 @@ export async function createOrderInTx(
 
       // โปรคิดครั้งเดียวต่อ SKU+ไซซ์ เพื่อไม่ให้ราคา/จำนวนของคนละไซซ์ปนกัน
       // บรรทัดที่ขายเป็น pack ไม่เข้าโปร ด้วยเหตุผลเดียวกับขั้นราคาส่ง
-      const promo = packUnitPrice != null ? null : promotionForVariant(promoBySku.get(it.sku) ?? null,it.size);
+      const promo = packUnitPrice != null || weightedRate ? null : promotionForVariant(promoBySku.get(it.sku) ?? null,it.size);
       total += lineAmount;
       lines.push({
         sku: it.sku,
@@ -1297,12 +1432,18 @@ export async function createOrderInTx(
         qty: it.qty,
         unitPrice,
         lineAmount,
-        receiptUnitPrice: (basePackUnitPrice ?? listPrice) + modifierUnitPrice,
+        receiptUnitPrice: weightedRate ? unitPrice
+          : agreedQuote != null
+          ? agreedQuote.agreedUnitPrice
+          : (basePackUnitPrice ?? listPrice) + modifierUnitPrice,
         pricingSnapshot: {
           source: "SALE",
-          priceTiers: canonicalPriceTiers(tiersBySku.get(it.sku) ?? []),
-          promotion: promo?.kind === "BUY_A_GET_B" ? null : promo,
+          priceTiers: agreedQuote == null && !weightedRate ? canonicalPriceTiers(tiersBySku.get(it.sku) ?? []) : [],
+          promotion: agreedQuote == null && promo?.kind !== "BUY_A_GET_B" ? promo : null,
           modifierUnitPrice,
+          ...(weightedEvidence ? { weightedKg: weightedEvidence } : {}),
+          ...(agreedQuote == null ? {} : { quotation: { quoteId: input.approvedQuoteId!,
+            agreedUnitPrice: agreedQuote.agreedUnitPrice, packQty: agreedQuote.packQty } }),
         },
         availableAfter: resolvedConsumption[itemIndex].derived
           ? resolvedConsumption[itemIndex].lines.length === 0 ? null : Math.min(...resolvedConsumption[itemIndex].lines.map((line) =>
@@ -1321,8 +1462,8 @@ export async function createOrderInTx(
       });
     }
 
-    const giftRules = [...promoBySku.values()].filter((p): p is CrossSkuPromotion => p.kind === "BUY_A_GET_B")
-      .filter((rule) => lines.some((line) => line.packUnitPrice == null && !line.modifierCodes?.length
+    const giftRules = (input.approvedQuoteId ? [] : [...promoBySku.values()]).filter((p): p is CrossSkuPromotion => p.kind === "BUY_A_GET_B")
+      .filter((rule) => lines.some((line) => line.packUnitPrice == null && !line.modifierCodes?.length && !line.pricingSnapshot.weightedKg
         && ((line.sku === rule.buySku && line.size === rule.buySize)
           || (line.sku === rule.giftSku && line.size === rule.giftSize))));
     for (const rule of giftRules) {
@@ -1330,10 +1471,10 @@ export async function createOrderInTx(
       catch (error) { return { status: "INVALID_ITEM", index: 0, reason: error instanceof Error ? error.message : "สินค้าไม่ร่วมโปรของแถม" }; }
     }
     const gifts = crossSkuGiftPricing(lines.map((l) => ({ sku: l.sku, size: l.size, qty: l.qty,
-      unitPrice: l.receiptUnitPrice, eligible: l.packUnitPrice == null && !l.modifierCodes?.length })), giftRules);
+      unitPrice: l.receiptUnitPrice, eligible: l.packUnitPrice == null && !l.modifierCodes?.length && !l.pricingSnapshot.weightedKg })), giftRules);
     const giftEvidence = giftRules.map((rule) => ({ rule, awardedQty: gifts.awarded.get(rule.id) ?? 0 }));
     lines.forEach((line, index) => {
-      if (line.packUnitPrice != null || line.modifierCodes?.length) return;
+      if (line.packUnitPrice != null || line.modifierCodes?.length || line.pricingSnapshot.weightedKg) return;
       const related = giftEvidence.filter(({ rule }) =>
         (line.sku === rule.buySku && line.size === rule.buySize) || (line.sku === rule.giftSku && line.size === rule.giftSize));
       if (!related.length) return;
@@ -1409,7 +1550,10 @@ export async function createOrderInTx(
       (sum, extra) => sum + extra.unitAmount * extra.qty,
       0
     ) * 100) / 100;
-    const grossSubtotal = Math.round((productSubtotal + extraTotal) * 100) / 100;
+    const openTotal = Math.round(openItems.reduce(
+      (sum, item) => sum + item.unitAmount * item.qty, 0
+    ) * 100) / 100;
+    const grossSubtotal = Math.round((productSubtotal + extraTotal + openTotal) * 100) / 100;
 
     // ส่วนลดมือ: ไม่มีหลักฐานว่าใครอนุมัติ = ไม่รับ ห้าม fallback เป็น 0 เงียบ ๆ
     // เพราะจอบอกลูกค้าไปแล้วว่าลดให้ ถ้าเงียบ ๆ ไม่ลด ยอดที่เตรียมจ่ายจะไม่ตรงกับบิล
@@ -1422,7 +1566,7 @@ export async function createOrderInTx(
       settings: loyaltySettings,
       subtotal: productSubtotal,
       // ส่วนลดชั้นสมาชิกให้เฉพาะคนที่สมัครแล้ว ไม่ใช่ทุก record ในระบบ CRM
-      tier: member?.memberNo ? member.tier : null,
+      tier: !input.approvedQuoteId && member?.memberNo ? member.tier : null,
       couponDiscount,
       pointsRequested: requestedPoints,
       pointsAvailable: member?.pointsUsable ?? 0,
@@ -1456,7 +1600,7 @@ export async function createOrderInTx(
 
     const discount = breakdown.totalDiscount;
     const discountedProductTotal = Math.max(0, productSubtotal - discount);
-    const finalTotal = Math.round((discountedProductTotal + extraTotal) * 100) / 100;
+    const finalTotal = Math.round((discountedProductTotal + extraTotal + openTotal) * 100) / 100;
 
     // ขนส่งที่ลูกค้าอยากได้ — เก็บเฉพาะโค้ดที่รู้จัก ที่เหลือทิ้งเป็น null (ไม่ทำให้ออร์เดอร์ล้ม)
     const preferredCarrier: Carrier | null = isCarrier(input.preferredCarrier) ? input.preferredCarrier : null;
@@ -1467,7 +1611,9 @@ export async function createOrderInTx(
     //   recalculateOrderShipping() ใน saveCustomerCheckoutDetails
     // ลูกค้ารับของที่เคาน์เตอร์เอง ช่องทาง POS ต้องไม่มีค่าส่ง แม้ร้านจะตั้ง
     // flat shipping สำหรับออร์เดอร์ออนไลน์ไว้ก็ตาม
-    const shippingFee = input.channel === "pos" || fulfillmentType === "PICKUP"
+    const shippingFee = quoteShippingFee != null
+      ? { fee: quoteShippingFee, source: "quote" as ShippingFeeSource }
+      : input.channel === "pos" || fulfillmentType === "PICKUP"
       || MARKETPLACE_CHANNELS.has(input.channel)
       ? { fee: 0, source: "none" as ShippingFeeSource }
       : await computeOrderShippingFeeInTx(client, {
@@ -1487,14 +1633,14 @@ export async function createOrderInTx(
       `INSERT INTO bms_orders (tenant_id, location_id, channel, customer_ref, customer_id, status, total_amount, discount_amount, coupon_code, coupon_id, preferred_carrier, shipping_fee, shipping_fee_source,
                                pos_device_id, pos_shift_id, cashier_user_id, idempotency_key, discount_approved_by, discount_reason, restaurant_check_id,
                                fulfillment_type, promised_at, restaurant_service_mode, board_game_session_id,
-                               board_game_billing_group_id)
-       VALUES ($1, $12, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9, $10, $11, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+                               board_game_billing_group_id, retail_fulfillment_type, quote_site_address)
+       VALUES ($1, $12, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9, $10, $11, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
        RETURNING id`,
       [tenantId, input.channel, input.customerRef ?? null, customerId, finalTotal, discount, appliedCouponCode, appliedCouponId, preferredCarrier, shippingFee.fee, shippingFee.source,
         locationId, input.posDeviceId ?? null, input.posShiftId ?? null, input.cashierUserId ?? null,
         input.idempotencyKey ?? null, input.discountApprovedBy ?? null, input.discountReason ?? null,
         input.restaurantCheckId ?? null, fulfillmentType, promisedAtDate, restaurantServiceMode,
-        boardGameSessionId, boardGameBillingGroupId]
+        boardGameSessionId, boardGameBillingGroupId, retailFulfillmentType, quoteSiteAddress]
     );
     const orderId = ord.rows[0].id;
 
@@ -1622,6 +1768,16 @@ export async function createOrderInTx(
       );
     }
 
+    for (const item of openItems) {
+      await client.query(
+        `INSERT INTO bms_order_open_items
+           (tenant_id, order_id, label, qty, unit_amount, line_amount, vat_category)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [tenantId, orderId, item.label, item.qty, item.unitAmount,
+          Math.round(item.qty * item.unitAmount * 100) / 100, item.vatCategory]
+      );
+    }
+
     for (const [lineIndex, ln] of lines.entries()) {
       const insertedItem = await client.query<{ id: string }>(
         `INSERT INTO bms_order_items (tenant_id, location_id, order_id, product_sku, product_name, size, qty, unit_price, line_amount,
@@ -1703,6 +1859,22 @@ export async function createOrder(
       if (result.status !== "CREATED") {
         await client.query("ROLLBACK");
       } else {
+        const staffId = typeof input.editorId === "string" &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.editorId)
+          ? input.editorId : null;
+        await insertAuditInTx(client, {
+          tenantId: input.tenantId,
+          actor: staffId ?? (input.customerRef ? `customer:${input.channel}` : "system:order"),
+          actorKind: staffId ? "STAFF" : input.customerRef ? "CUSTOMER" : "SYSTEM",
+          actorUserId: staffId,
+          action: input.auditSourceOrderId ? "order.reorder" : "order.create",
+          target: result.orderId, targetKind: "ORDER", source: "ORDER_SERVICE",
+          eventKey: `order.create:${result.orderId}`,
+          meta: { channel: input.channel, itemCount: result.items.length,
+            total: result.total, discount: result.discount,
+            sourceOrderId: input.auditSourceOrderId ?? null,
+            ...(input.auditConversationId ? { conversationId: input.auditConversationId } : {}) },
+        });
         await client.query("COMMIT");
       }
       return result;
@@ -1860,7 +2032,8 @@ export async function reorderFromOrder(
   tenantId: string,
   orderId: string,
   editorId?: string | number | null,
-  currentIdentity?: CustomerChannelIdentity | null
+  currentIdentity?: CustomerChannelIdentity | null,
+  auditConversationId?: string | null
 ): Promise<ReorderResult> {
   const src = await query<{ channel: Channel; customer_ref: string | null; preferred_carrier: string | null }>(
     `SELECT channel, customer_ref, preferred_carrier FROM bms_orders WHERE tenant_id = $1 AND id = $2`,
@@ -1885,59 +2058,46 @@ export async function reorderFromOrder(
     customerRef: targetIdentity.customerRef,
     items: itemsRes.rows.map((r) => ({ sku: r.product_sku, size: r.size, qty: Number(r.qty) })),
     editorId,
+    auditSourceOrderId: orderId,
+    auditConversationId,
     // Same customer reordering — keep the carrier they asked for last time.
     preferredCarrier: src.rows[0].preferred_carrier,
   });
 }
 
-// ---- transition แบบไม่ขยับสต็อก (pay / pack / complete) — tenant-scoped -----
-async function transition(
-  tenantId: string,
-  orderId: string,
-  from: string[],
-  to: string
-): Promise<boolean> {
-  const res = await query(
-    `UPDATE bms_orders SET status = $4, updated_at = now()
-      WHERE tenant_id = $1 AND id = $2 AND status = ANY($3)`,
-    [tenantId, orderId, from, to]
+// Keep REST and GraphQL on the same branch boundary. A missing order is never authorized.
+export async function canAccessOrderBranch(tenantId: string, orderId: string, userId: string): Promise<boolean> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId)) return false;
+  const res = await query<{ allowed: boolean }>(
+    `SELECT (NOT EXISTS (
+       SELECT 1 FROM bms_user_allowed_locations al WHERE al.tenant_id = $1 AND al.user_id = $3
+     ) OR EXISTS (
+       SELECT 1 FROM bms_user_allowed_locations al
+        WHERE al.tenant_id = o.tenant_id AND al.user_id = $3 AND al.location_id = o.location_id
+     )) AS allowed
+       FROM bms_orders o WHERE o.tenant_id = $1 AND o.id = $2`,
+    [tenantId, orderId, userId],
   );
-  return (res.rowCount ?? 0) > 0;
+  return res.rows[0]?.allowed === true;
 }
 
-/** จ่ายเงินแล้ว: PENDING → PAID */
-export async function payOrder(tenantId: string, orderId: string): Promise<boolean> {
-  const client = await getClient();
-  try {
-    await beginTenantTx(client, tenantId);
-    const ord = await client.query(
-      `UPDATE bms_orders SET status = 'PAID', paid_at = COALESCE(paid_at, now()), updated_at = now()
-        WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`,
-      [tenantId, orderId]
-    );
-    if ((ord.rowCount ?? 0) === 0) {
-      await client.query("ROLLBACK");
-      return false;
-    }
-    await redeemCustomerCouponForOrderInTx(client, tenantId, orderId);
-    // แต้มสะสม (7.96) — ให้ทุกช่องทางที่บิลถึงสถานะ PAID ไม่ใช่แค่หน้าร้าน
-    // ลูกค้าสั่งทาง LINE/TikTok แล้วโอนเงิน ต้องได้แต้มเหมือนเดินมาซื้อเอง
-    await earnPointsForOrderInTx(client, { tenantId, orderId });
-    await markRestockSubscriptionsPurchasedForOrder({ tenantId, orderId, client });
-    await client.query("COMMIT");
-  } catch (err) {
-    try { await client.query("ROLLBACK"); } catch {}
-    throw err;
-  } finally {
-    client.release();
-  }
-  void reviewMemberTierForOrder(tenantId, orderId);
-  void notifyOrderStatusEmail(tenantId, orderId, "paid");
-  await notifyOrderActionCommitted({ tenantId, orderId, kind: "ORDER_PAID" });
-  return true;
+async function auditOrderTransitionInTx(client: PoolClient, tenantId: string, actor: string, action: string, orderId: string): Promise<void> {
+  await client.query(
+    `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta, event_key)
+     VALUES ($1, $2, $3, $4, '{}'::jsonb, $5)`,
+    [tenantId, actor, action, orderId,
+      action === "order.retail_pickup_handover" ? `order.retail_pickup_handover:${orderId}` : null],
+  );
+}
+
+/** Legacy order.pay adapter: a bare order ID is not payment evidence or human confirmation. */
+export async function payOrder(_tenantId: string, _orderId: string): Promise<boolean> {
+  // Payment submission + confirmPayment() own the audited PENDING -> PAID transaction.
+  // Keep the old Boolean API fail-closed for older clients instead of silently marking paid.
+  return false;
 }
 /** แพ็คของ: PAID → PACKING */
-export async function packOrder(tenantId: string, orderId: string): Promise<boolean> {
+export async function packOrder(tenantId: string, orderId: string, actor = "system"): Promise<boolean> {
   const client = await getClient();
   let ok = false;
   let createdKitchenTickets = false;
@@ -1960,6 +2120,7 @@ export async function packOrder(tenantId: string, orderId: string): Promise<bool
       await enqueueKitchenTicketsInTx(client, tenantId, orderId);
       createdKitchenTickets = true;
     }
+    await auditOrderTransitionInTx(client, tenantId, actor, "order.pack", orderId);
     await client.query("COMMIT");
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
@@ -1974,8 +2135,26 @@ export async function packOrder(tenantId: string, orderId: string): Promise<bool
   return true;
 }
 /** ปิดงาน: SHIPPED → COMPLETED */
-export async function completeOrder(tenantId: string, orderId: string): Promise<boolean> {
-  const ok = await transition(tenantId, orderId, ["SHIPPED"], "COMPLETED");
+export async function completeOrder(tenantId: string, orderId: string, actor = "system"): Promise<boolean> {
+  const client = await getClient();
+  let ok = false;
+  try {
+    await beginTenantTx(client, tenantId);
+    const updated = await client.query(
+      `UPDATE bms_orders SET status = 'COMPLETED', updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND status = 'SHIPPED'`,
+      [tenantId, orderId],
+    );
+    ok = Boolean(updated.rowCount);
+    if (!ok) { await client.query("ROLLBACK"); return false; }
+    await auditOrderTransitionInTx(client, tenantId, actor, "order.complete", orderId);
+    await client.query("COMMIT");
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
   if (ok) void notifyOrderStatusEmail(tenantId, orderId, "completed");
   return ok;
 }
@@ -1988,19 +2167,24 @@ export async function shipOrderInTx(
   tenantId: string,
   orderId: string,
   actor = "system",
+  retailPickupHandover = false,
 ): Promise<boolean> {
-  const info = await client.query<{ channel: string; customer_id: string | null; fulfillment_type: string | null }>(
-      `SELECT channel, customer_id, fulfillment_type FROM bms_orders
+  const info = await client.query<{ channel: string; customer_id: string | null; fulfillment_type: string | null;
+    retail_fulfillment_type: string | null; quote_site_address: string | null }>(
+      `SELECT channel, customer_id, fulfillment_type, retail_fulfillment_type, quote_site_address FROM bms_orders
         WHERE tenant_id = $1 AND id = $2 AND status = 'PACKING' FOR UPDATE`,
       [tenantId, orderId]
     );
   if (info.rowCount === 0) return false;
 
   // ช่องทางที่ร้านต้องเก็บที่อยู่เอง (ไม่ใช่มาร์เก็ตเพลส) ต้องมีที่อยู่จัดส่งของลูกค้าก่อนถึงจัดส่งได้จริง
-  const { channel, customer_id, fulfillment_type } = info.rows[0];
+  const { channel, customer_id, fulfillment_type, retail_fulfillment_type, quote_site_address } = info.rows[0];
+  if ((retail_fulfillment_type === "PICKUP") !== retailPickupHandover) return false;
   // PICKUP uses the same stock handover transaction, without a delivery address.
-  if (fulfillment_type !== "PICKUP" && !MARKETPLACE_CHANNELS.has(channel)) {
-    const addr = customer_id
+  if (fulfillment_type !== "PICKUP" && retail_fulfillment_type !== "PICKUP" && !MARKETPLACE_CHANNELS.has(channel)) {
+    const addr = quote_site_address?.trim()
+      ? { rowCount: 1 }
+      : retail_fulfillment_type === "DELIVERY" ? null : customer_id
       ? await client.query(
           `SELECT 1 FROM bms_customer_addresses
             WHERE tenant_id = $1 AND customer_id = $2 AND address_type = 'shipping' LIMIT 1`,
@@ -2017,35 +2201,17 @@ export async function shipOrderInTx(
   );
   if (ord.rowCount === 0) return false;
 
-  await client.query(
-    `UPDATE bms_inventory inv
-        SET current_stock  = current_stock  - oi.qty,
-            reserved_stock = reserved_stock - oi.qty,
-            updated_at = now()
-       FROM (
-         -- view ไม่ใช่ตารางตรง ๆ (8.8) — สินค้าชุดถูกแทนด้วยส่วนประกอบแล้ว
-         SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
-           FROM bms_order_stock_lines WHERE tenant_id = $2 AND order_id = $1
-          GROUP BY tenant_id, location_id, product_sku, size
-       ) oi
-      WHERE TRUE
-        AND inv.tenant_id = oi.tenant_id
-        AND inv.location_id = oi.location_id
-        AND inv.product_sku = oi.product_sku
-        AND inv.size = oi.size`,
-    [orderId, tenantId]
-  );
-
-  await consumeOrderLotsInTx(client, tenantId, orderId);
-  await recordOrderMovements(client, [orderId], "SHIP", actor);
+  await consumeReservedOrderStockInTx(client, tenantId, orderId, actor);
+  await auditOrderTransitionInTx(client, tenantId, actor,
+    retailPickupHandover ? "order.retail_pickup_handover" : "order.ship", orderId);
   return true;
 }
 
-export async function shipOrder(tenantId: string, orderId: string): Promise<boolean> {
+export async function shipOrder(tenantId: string, orderId: string, actor = "system"): Promise<boolean> {
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId);
-    const shipped = await shipOrderInTx(client, tenantId, orderId);
+    const shipped = await shipOrderInTx(client, tenantId, orderId, actor);
     if (!shipped) {
       await client.query("ROLLBACK");
       return false;
@@ -2061,8 +2227,39 @@ export async function shipOrder(tenantId: string, orderId: string): Promise<bool
   }
 }
 
+/** Retail pickup is a stock handover, separate from restaurant kitchen pickup. */
+export async function handoverRetailPickup(tenantId: string, orderId: string, actor: string): Promise<boolean> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const replay = await client.query(
+      `SELECT 1 FROM bms_orders o JOIN bms_audit_log a
+         ON a.tenant_id=o.tenant_id AND a.event_key='order.retail_pickup_handover:' || o.id::text
+        WHERE o.tenant_id=$1 AND o.id=$2 AND o.retail_fulfillment_type='PICKUP' LIMIT 1`,
+      [tenantId, orderId]
+    );
+    if (replay.rowCount) { await client.query("COMMIT"); return true; }
+    const handedOver = await shipOrderInTx(client, tenantId, orderId, actor, true);
+    if (!handedOver) {
+      // A concurrent request may have committed while this transaction waited on the order lock.
+      const committed = await client.query(
+        `SELECT 1 FROM bms_audit_log WHERE tenant_id=$1 AND event_key=$2 LIMIT 1`,
+        [tenantId, `order.retail_pickup_handover:${orderId}`]
+      );
+      await client.query("ROLLBACK");
+      return Boolean(committed.rowCount);
+    }
+    await client.query("COMMIT");
+    void notifyOrderStatusEmail(tenantId, orderId, "shipped");
+    return true;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally { client.release(); }
+}
+
 /** คืนสินค้า: (SHIPPED/COMPLETED) → RETURNED → คืนสต็อก (current += qty) */
-export async function returnOrder(tenantId: string, orderId: string): Promise<boolean> {
+export async function returnOrder(tenantId: string, orderId: string, actor = "system"): Promise<boolean> {
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId);
@@ -2083,25 +2280,31 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
       return false;
     }
 
-    await client.query(
-      `UPDATE bms_inventory inv
-          SET current_stock = current_stock + oi.qty, updated_at = now()
-         FROM (
+    const returnedStock = await client.query<{ expected_count: string; updated_count: string }>(
+      `WITH expected AS (
            -- view ไม่ใช่ตารางตรง ๆ (8.8) — สินค้าชุดถูกแทนด้วยส่วนประกอบแล้ว
            SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
-             FROM bms_order_stock_lines WHERE order_id = $1
+             FROM bms_order_stock_lines WHERE tenant_id = $2 AND order_id = $1
             GROUP BY tenant_id, location_id, product_sku, size
-         ) oi
-        WHERE TRUE
-          AND inv.tenant_id = oi.tenant_id
-          AND inv.location_id = oi.location_id
-          AND inv.product_sku = oi.product_sku
-          AND inv.size = oi.size`,
-      [orderId]
+         ), updated AS (
+           UPDATE bms_inventory inv
+              SET current_stock = inv.current_stock + expected.qty, updated_at = now()
+             FROM expected
+            WHERE inv.tenant_id = $2 AND inv.tenant_id = expected.tenant_id
+              AND inv.location_id = expected.location_id
+              AND inv.product_sku = expected.product_sku AND inv.size = expected.size
+           RETURNING inv.product_sku
+         )
+         SELECT (SELECT count(*)::text FROM expected) AS expected_count,
+                (SELECT count(*)::text FROM updated) AS updated_count`,
+      [orderId, tenantId]
     );
+    if (!returnedStock.rows[0] || Number(returnedStock.rows[0].expected_count) !== Number(returnedStock.rows[0].updated_count)) {
+      throw new Error("STOCK_REVIEW_REQUIRED: order return inventory is incomplete");
+    }
 
     await restoreOrderLotsInTx(client, tenantId, orderId);
-    await recordOrderMovements(client, [orderId], "RETURN", "system");
+    await recordOrderMovements(client, [orderId], "RETURN", actor);
     // คืนทั้งบิล = แต้มต้องกลับไปเป็นเหมือนก่อนบิลนี้ (7.96) — ดึงแต้มที่ได้คืน
     // และคืนแต้มที่ลูกค้าแลกไป · ไม่ทำ = ซื้อ→ได้แต้ม→คืนของ ได้แต้มฟรี และ
     // แต้มที่แลกไปหายไปเลยทั้งที่ของถูกคืนแล้ว
@@ -2111,6 +2314,7 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
     // ที่จ่ายด้วยบัตรไปเปล่า ๆ ทั้งที่ของกลับมาแล้ว
     await reverseCreditForOrderInTx(client, tenantId, orderId);
     await reopenRestockSubscriptionsForOrders({ orderIds: [orderId], client });
+    await auditOrderTransitionInTx(client, tenantId, actor, "order.return", orderId);
 
     await client.query("COMMIT");
     await markRestockSubscriptionsReadyForOrders([orderId]);
@@ -2131,7 +2335,8 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
 export async function cancelOrderInTx(
   client: PoolClient,
   tenantId: string,
-  orderId: string
+  orderId: string,
+  actor = "system",
 ): Promise<boolean> {
     await assertNoActiveSalesTaxDocumentInTx(client, tenantId, orderId);
     const ord = await client.query(
@@ -2142,24 +2347,31 @@ export async function cancelOrderInTx(
     if (ord.rowCount === 0) return false;
 
     // คืน reserved ตามรายการใน order
-    await client.query(
-      `UPDATE bms_inventory inv
-          SET reserved_stock = reserved_stock - oi.qty, updated_at = now()
-         FROM (
+    const releasedStock = await client.query<{ expected_count: string; updated_count: string }>(
+      `WITH expected AS (
            -- view ไม่ใช่ตารางตรง ๆ (8.8) — สินค้าชุดถูกแทนด้วยส่วนประกอบแล้ว
            SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
-             FROM bms_order_stock_lines WHERE order_id = $1
+             FROM bms_order_stock_lines WHERE tenant_id = $2 AND order_id = $1
             GROUP BY tenant_id, location_id, product_sku, size
-         ) oi
-        WHERE TRUE
-          AND inv.tenant_id = oi.tenant_id
-          AND inv.location_id = oi.location_id
-          AND inv.product_sku = oi.product_sku
-          AND inv.size = oi.size`,
-      [orderId]
+         ), updated AS (
+           UPDATE bms_inventory inv
+              SET reserved_stock = inv.reserved_stock - expected.qty, updated_at = now()
+             FROM expected
+            WHERE inv.tenant_id = $2 AND inv.tenant_id = expected.tenant_id
+              AND inv.location_id = expected.location_id
+              AND inv.product_sku = expected.product_sku AND inv.size = expected.size
+              AND inv.reserved_stock >= expected.qty
+           RETURNING inv.product_sku
+         )
+         SELECT (SELECT count(*)::text FROM expected) AS expected_count,
+                (SELECT count(*)::text FROM updated) AS updated_count`,
+      [orderId, tenantId]
     );
+    if (!releasedStock.rows[0] || Number(releasedStock.rows[0].expected_count) !== Number(releasedStock.rows[0].updated_count)) {
+      throw new Error("STOCK_REVIEW_REQUIRED: order cancellation reservation is incomplete");
+    }
 
-    await recordOrderMovements(client, [orderId], "RELEASE", "system");
+    await recordOrderMovements(client, [orderId], "RELEASE", actor);
     // บิลที่ยกเลิกแล้วต้องไม่ค้างเป็นงานบนกระดานครัว (9.40) — ตั๋วที่เปิดอยู่หลังยกเลิก
     // คืออาหารที่ยังถูกทำและถูกทิ้ง โดยไม่มีบิลไหนอธิบายได้ว่าทำเพื่อใคร
     await cancelKitchenTicketsForOrderInTx(client, tenantId, orderId);
@@ -2170,6 +2382,7 @@ export async function cancelOrderInTx(
     // เครดิตร้าน (8.9) — บิลที่ถูกยกเลิกต้องไม่กินยอดบัตรของลูกค้าไป
     await reverseCreditForOrderInTx(client, tenantId, orderId);
     await reopenRestockSubscriptionsForOrders({ orderIds: [orderId], client });
+    await auditOrderTransitionInTx(client, tenantId, actor, "order.cancel", orderId);
 
     return true;
 }
@@ -2188,7 +2401,7 @@ export async function afterOrderCancellationCommitted(tenantId: string, orderId:
  * ทางที่ถูกคือยกเลิกบิลที่เครื่องขาย (`cancelRestaurantCheck`) ซึ่งปิดตั๋วครัว คืนโต๊ะ
  * และเขียนเหตุผล + audit ให้ครบในทรานแซกชันเดียว
  */
-export async function cancelOrder(tenantId: string, orderId: string): Promise<boolean> {
+export async function cancelOrder(tenantId: string, orderId: string, actor = "system"): Promise<boolean> {
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId);
@@ -2210,7 +2423,7 @@ export async function cancelOrder(tenantId: string, orderId: string): Promise<bo
       );
     }
 
-    const cancelled = await cancelOrderInTx(client, tenantId, orderId);
+    const cancelled = await cancelOrderInTx(client, tenantId, orderId, actor);
     if (!cancelled) {
       await client.query("ROLLBACK");
       return false;
@@ -2315,21 +2528,29 @@ export async function releaseExpiredOrders(
       }
       const ids = [row.id];
 
-      await client.query(
-        `UPDATE bms_inventory inv
-            SET reserved_stock = reserved_stock - oi.qty, updated_at = now()
-           FROM (
+      const releasedStock = await client.query<{ expected_count: string; updated_count: string }>(
+        `WITH expected AS (
              -- view ไม่ใช่ตารางตรง ๆ (8.8 / 9.40) — เซ็ตและเมนูจองที่ส่วนประกอบ
              SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
                FROM bms_order_stock_lines WHERE tenant_id = $2 AND order_id = ANY($1::uuid[])
               GROUP BY tenant_id, location_id, product_sku, size
-           ) oi
-          WHERE inv.tenant_id = oi.tenant_id
-            AND inv.location_id = oi.location_id
-            AND inv.product_sku = oi.product_sku
-            AND inv.size = oi.size`,
+           ), updated AS (
+             UPDATE bms_inventory inv
+                SET reserved_stock = inv.reserved_stock - expected.qty, updated_at = now()
+               FROM expected
+              WHERE inv.tenant_id = $2 AND inv.tenant_id = expected.tenant_id
+                AND inv.location_id = expected.location_id
+                AND inv.product_sku = expected.product_sku AND inv.size = expected.size
+                AND inv.reserved_stock >= expected.qty
+             RETURNING inv.product_sku
+           )
+           SELECT (SELECT count(*)::text FROM expected) AS expected_count,
+                  (SELECT count(*)::text FROM updated) AS updated_count`,
         [ids, row.tenant_id]
       );
+      if (!releasedStock.rows[0] || Number(releasedStock.rows[0].expected_count) !== Number(releasedStock.rows[0].updated_count)) {
+        throw new Error("STOCK_REVIEW_REQUIRED: expired order reservation is incomplete");
+      }
 
       await recordOrderMovements(client, ids, "RELEASE", "system:auto-release");
       await releaseCouponForOrdersInTx(client, ids);
@@ -2341,6 +2562,7 @@ export async function releaseExpiredOrders(
           WHERE tenant_id = $2 AND id = ANY($1::uuid[])`,
         [ids, row.tenant_id]
       );
+      await auditOrderTransitionInTx(client, row.tenant_id, "system:auto-release", "order.cancel", row.id);
 
       await client.query("COMMIT");
       released.push(row.id);

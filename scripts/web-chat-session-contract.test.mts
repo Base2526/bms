@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 import { resolveWebChatSession } from "../apps/web/lib/bms/webChatSession.ts";
 import { signCustomerToken } from "../apps/web/lib/bms/customerSecurityToken.ts";
+import { readBoundedWebhookText } from "../apps/web/lib/bms/webhookBody.ts";
 
 test("web sessions are server-issued, tenant-scoped and stable across messages", () => {
   const first = resolveWebChatSession("tenant-a", undefined);
@@ -64,6 +65,7 @@ test("real route keeps reply/sessionId contract, rejects forgery before pipeline
     "@/lib/bms/pipeline": { runPipeline: async (...args: any[]) => { calls.push(args); return { reply: "FAKE reply", quality: {} }; } },
     "@/lib/bms/channels": { getChannel: async () => null },
     "@/lib/bms/rateLimit": { rateLimit: async () => ({ ok: true }) },
+    "@/lib/bms/webhookBody": { readBoundedWebhookText },
     "@/lib/bms/inbox": { logConversation: async (...args: any[]) => { calls.push(args); } },
     "@/lib/bms/inboundEvents": { claimInboundEvent: async (_tenant: string, _channel: string, key: string | null) => {
       if (!key) return true;
@@ -77,7 +79,9 @@ test("real route keeps reply/sessionId contract, rejects forgery before pipeline
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText,
     { exports, require: (name: string) => { assert.ok(name in mocks, name); return mocks[name]; } });
   const post = (body: unknown, tenantId = "tenant-a", headers: Record<string, string> = {}) =>
-    exports.POST({ json: async () => body, headers: new Headers(headers) }, { params: { tenantId } });
+    exports.POST(new Request("https://example.test/api/bms/web/webhook/tenant-a", {
+      method: "POST", headers, body: JSON.stringify(body),
+    }), { params: { tenantId } });
   const first = await post({ message: "hello", sessionId: "legacy", messageId: "one" });
   assert.equal(first.data.reply, "FAKE reply");
   assert.equal(first.data.sessionReset, true);
@@ -122,5 +126,6 @@ test("real route keeps reply/sessionId contract, rejects forgery before pipeline
     const invalid = await post(body);
     assert.equal(invalid.options.status, 400);
   }
+  assert.equal((await post({ message: "x".repeat(64 * 1024) })).options.status, 413);
   assert.equal(calls.length, beforeInvalid);
 });

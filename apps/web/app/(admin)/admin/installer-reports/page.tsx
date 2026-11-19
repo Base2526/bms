@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button, Descriptions, Drawer, Input, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { DownloadOutlined, ReloadOutlined, SearchOutlined, SaveOutlined, LinkOutlined } from "@ant-design/icons";
@@ -12,7 +14,7 @@ type Installation = { installation_id: string; package_type: string; platform: s
 type InstallationGroup = { platform: string; architecture: string; package_type: string; release_version: string; count: number };
 type InstallationResults = { installations: Installation[]; groups: InstallationGroup[]; counts: { total: number; active: number; seen_30d: number; unregistered: number; pos: number; server: number; server_pos: number } };
 const statuses = ["NEW", "INVESTIGATING", "RESOLVED"];
-async function request(url: string, options?: RequestInit) {
+async function request(url: string, options?: RequestInit, uiText: UiTranslator = thaiUiText) {
   const controller = new AbortController();
   const abort = () => controller.abort();
   const timer = setTimeout(abort, 30_000);
@@ -21,12 +23,13 @@ async function request(url: string, options?: RequestInit) {
   try {
     const response = await fetch(url, { cache: "no-store", ...options, signal: controller.signal });
     const data = await response.json();
-    if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? "unauthorized" : data.error || "reports_unavailable");
+    if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? uiText("admin_ui.en_unauthorized_9d9f2") : data.error || "reports_unavailable");
     return data;
   } finally { clearTimeout(timer); options?.signal?.removeEventListener("abort", abort); }
 }
 
 export default function InstallerReports() {
+  const uiText = useUiText();
   const { t } = useI18n(); const tr = (key: string) => t(`installer_reports.${key}`);
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [page, setPage] = useState(1);
@@ -45,21 +48,21 @@ export default function InstallerReports() {
     setBusy(true); setError("");
     try {
       const [result, installs] = await Promise.all([
-        request(`/api/admin/installer-reports?${new URLSearchParams({ ...filters, page: String(page) })}`, { signal }),
-        request("/api/admin/retail-local/installations?page=1", { signal }),
+        request(`/api/admin/installer-reports?${new URLSearchParams({ ...filters, page: String(page) })}`, { signal }, uiText),
+        request("/api/admin/retail-local/installations?page=1", { signal }, uiText),
       ]);
       if (!signal?.aborted && sequence === listSequence.current) { setData(result); setInstallations(installs); }
     }
     catch (e) { if (!signal?.aborted && sequence === listSequence.current) { setData(null); setError(e instanceof Error ? e.message : "reports_unavailable"); } }
     finally { if (!signal?.aborted && sequence === listSequence.current) setBusy(false); }
-  }, [filters, page]);
+  }, [uiText, filters, page]);
   useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort(); }, [load]);
   const filter = (key: string, value?: string) => { setPage(1); setFilters(previous => ({ ...previous, [key]: value || "" })); };
   async function open(id: string) {
     if (saving) return;
     const sequence = ++detailSequence.current;
     setDetail(null); setDetailBusy(true); setError("");
-    try { const result = await request(`/api/admin/installer-reports/${id}`); if (sequence === detailSequence.current) { setDetail(result); setNote(result.note); setStatus(result.status); } }
+    try { const result = await request(`/api/admin/installer-reports/${id}`, undefined, uiText); if (sequence === detailSequence.current) { setDetail(result); setNote(result.note); setStatus(result.status); } }
     catch (e) { if (sequence === detailSequence.current) setError(e instanceof Error ? e.message : "reports_unavailable"); }
     finally { if (sequence === detailSequence.current) setDetailBusy(false); }
   }
@@ -67,7 +70,7 @@ export default function InstallerReports() {
     if (!detail) return;
     setSaving(true); setError("");
     try {
-      const result = await request(`/api/admin/installer-reports/${detail.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status, note, revision: detail.revision }) });
+      const result = await request(`/api/admin/installer-reports/${detail.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status, note, revision: detail.revision }) }, uiText);
       setDetail(result); setNote(result.note); await load();
     } catch (e) { setError(e instanceof Error ? e.message : "reports_unavailable"); }
     finally { setSaving(false); }
@@ -79,7 +82,7 @@ export default function InstallerReports() {
   }
   const options = (values: string[]) => [...new Set(values)].map(value => ({ value, label: value }));
   const columns = [
-    { title: tr("received"), dataIndex: "received_at", width: 170, render: (value: string) => new Date(value).toLocaleString() },
+    { title: tr("received"), dataIndex: "received_at", width: 170, render: (value: string) => new Date(value).toLocaleString(uiText.locale) },
     { title: tr("platform"), key: "platform", width: 130, render: (_: unknown, row: Row) => `${row.platform} / ${row.architecture}` },
     { title: tr("product"), dataIndex: "product", width: 120 },
     { title: tr("version"), dataIndex: "installer_version", width: 150 },
@@ -101,7 +104,7 @@ export default function InstallerReports() {
       <Tag color="green">{tr("active_installs")}: {installations.counts.active}</Tag>
       <Tag color="blue">{tr("seen_30d")}: {installations.counts.seen_30d}</Tag>
       <Tag color="gold">{tr("unregistered_installs")}: {installations.counts.unregistered}</Tag>
-      <Tag>POS: {installations.counts.pos}</Tag><Tag>Server: {installations.counts.server}</Tag><Tag>Server + POS: {installations.counts.server_pos}</Tag>
+      <Tag>{uiText("admin_ui.en_pos_d616e")} {installations.counts.pos}</Tag><Tag>{uiText("admin_ui.en_server_05a15")} {installations.counts.server}</Tag><Tag>{uiText("admin_ui.en_server_pos_c453a")} {installations.counts.server_pos}</Tag>
     </Space>}
     <Table<Installation> rowKey="installation_id" loading={busy} dataSource={installations?.installations || []} size="small" pagination={false} scroll={{ x: 1150 }} columns={[
       { title: tr("install_id"), dataIndex: "installation_id", width: 180, render: (value: string) => <Typography.Text copyable>{value.slice(0, 8)}…</Typography.Text> },
@@ -111,8 +114,8 @@ export default function InstallerReports() {
       { title: tr("version"), dataIndex: "release_version", width: 130 },
       { title: tr("license"), dataIndex: "license_reference", width: 160, render: (value: string | null) => value || "—" },
       { title: tr("status"), dataIndex: "status", width: 110, render: (value: string) => <Tag color={value === "ACTIVE" ? "green" : "default"}>{value}</Tag> },
-      { title: tr("installed_at"), dataIndex: "installed_at", width: 180, render: (value: string) => new Date(value).toLocaleString() },
-      { title: tr("last_seen"), dataIndex: "last_seen_at", width: 180, render: (value: string) => new Date(value).toLocaleString() },
+      { title: tr("installed_at"), dataIndex: "installed_at", width: 180, render: (value: string) => new Date(value).toLocaleString(uiText.locale) },
+      { title: tr("last_seen"), dataIndex: "last_seen_at", width: 180, render: (value: string) => new Date(value).toLocaleString(uiText.locale) },
     ]} />
     <Typography.Title level={5} style={{ marginTop: 20 }}>{tr("install_breakdown")}</Typography.Title>
     <Table<InstallationGroup> rowKey={row => `${row.platform}:${row.architecture}:${row.package_type}:${row.release_version}`} size="small" pagination={false} dataSource={installations?.groups || []} scroll={{ x: 650 }} columns={[
@@ -156,7 +159,7 @@ export default function InstallerReports() {
           { key: "version", label: tr("version"), children: detail.installer_version },
           { key: "os", label: tr("platform"), children: `${detail.report.osName} ${detail.os_version} (${detail.report.osBuild}) / ${detail.architecture}` },
           { key: "stage", label: tr("stage"), children: detail.stage },
-          { key: "time", label: tr("received"), children: new Date(detail.received_at).toLocaleString() },
+          { key: "time", label: tr("received"), children: new Date(detail.received_at).toLocaleString(uiText.locale) },
           { key: "error", label: tr("error"), children: <span style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>{detail.report.failure?.message}</span> },
         ]} />
         <Tooltip title={tr("download")}><Button icon={<DownloadOutlined />} onClick={download}>{tr("download")}</Button></Tooltip>

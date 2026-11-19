@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "@/lib/useUiText";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Button, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
@@ -45,6 +47,7 @@ function toLocalDateTime(value: string | null) {
 }
 
 export default function RetailLocalLeadsPanel() {
+  const uiText = useUiText();
   const { lang } = useI18n();
   const th = lang === "th";
   const [rows, setRows] = useState<LeadRow[]>([]);
@@ -165,7 +168,7 @@ export default function RetailLocalLeadsPanel() {
             : <div><b>{row.shop_name || "—"}</b><br /><Typography.Text type="secondary">{row.contact_name || "—"}</Typography.Text></div> },
           { title: th ? "ช่องทาง" : "Contact", width: 180, render: (_: unknown, row: LeadRow) => <div>{row.phone || "—"}<br />{row.line_id ? `LINE: ${row.line_id}` : "—"}</div> },
           { title: th ? "ประเภทร้าน" : "Business", dataIndex: "business_type", width: 150, render: (value: string | null) => value || "—" },
-          { title: "Platform", dataIndex: "platform", width: 110, render: (value: string) => <Tag>{value}</Tag> },
+          { title: uiText("admin_ui.en_platform_123a7"), dataIndex: "platform", width: 110, render: (value: string) => <Tag>{value}</Tag> },
           { title: th ? "สถานะ" : "Status", dataIndex: "status", width: 140, render: (value: string) => <Tag color={value === "PAID" ? "green" : value === "NEW" ? "blue" : "default"}>{value}</Tag> },
           { title: th ? "โทรตาม" : "Follow up", dataIndex: "follow_up_at", width: 190, render: formatDate },
           { title: th ? "ยินยอมเมื่อ" : "Consented", dataIndex: "consent_at", width: 190, render: formatDate },

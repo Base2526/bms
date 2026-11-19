@@ -30,6 +30,9 @@ import {
 } from '../lib/realtime';
 import type { PairingTarget } from '../lib/pairing';
 import { recordPosDiagnosticEvent } from '../lib/supportDiagnostics';
+import { operationTimeoutLink } from './operationTimeoutLink';
+import { connectionErrorLink } from './connectionErrorLink';
+import { runWithOperationTimeout } from '../lib/operation';
 
 interface BmsGraphqlTransportValue {
   realtimeStatus: MobileRealtimeStatus;
@@ -49,16 +52,14 @@ class BmsNativeWebSocket extends WebSocket {
 async function mintRealtimeTicket(
   target: PairingTarget,
 ): Promise<RealtimeTicketResponse> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TICKET_TIMEOUT_MS);
-  try {
+  return runWithOperationTimeout(async signal => {
     const response = await fetch(realtimeTicketUrl(target.serverUrl), {
       method: 'POST',
       headers: {
         authorization: `Bearer ${target.token}`,
         'x-pos-device-token': target.token,
       },
-      signal: controller.signal,
+      signal,
     });
     if (!response.ok) {
       const error = new Error(
@@ -68,13 +69,12 @@ async function mintRealtimeTicket(
       throw error;
     }
     const body = (await response.json()) as Partial<RealtimeTicketResponse>;
-    if (typeof body.ticket !== 'string' || typeof body.expiresAt !== 'number') {
+    if (!body || typeof body.ticket !== 'string' || !body.ticket.trim()
+      || typeof body.expiresAt !== 'number' || !Number.isFinite(body.expiresAt)) {
       throw new Error('realtime ticket response is malformed');
     }
     return body as RealtimeTicketResponse;
-  } finally {
-    clearTimeout(timer);
-  }
+  }, TICKET_TIMEOUT_MS);
 }
 
 function makeClient(
@@ -155,7 +155,9 @@ function makeClient(
           cashierUserId,
           route: 'ApolloLink.error',
           errorName: networkError.name || 'NetworkError',
-          errorCode: unauthenticated ? 'UNAUTHENTICATED' : 'NETWORK_ERROR',
+          errorCode: unauthenticated ? 'UNAUTHENTICATED'
+            : 'code' in networkError && typeof networkError.code === 'string'
+              && /^POS_[A-Z_]+$/.test(networkError.code) ? networkError.code : 'NETWORK_ERROR',
           httpStatus: networkStatus,
         },
       });
@@ -166,7 +168,13 @@ function makeClient(
   const httpLink = new HttpLink({
     uri: target ? graphqlHttpUrl(target.serverUrl) : '/graphql',
   });
-  const http = ApolloLink.from([errorLink, authLink, httpLink]);
+  const http = ApolloLink.from([
+    errorLink,
+    authLink,
+    connectionErrorLink(),
+    operationTimeoutLink(),
+    httpLink,
+  ]);
 
   let ws: Client | null = null;
   let link: ApolloLink = http;

@@ -1,7 +1,7 @@
 import crypto, { randomUUID }  from "crypto";
 import { GraphQLError } from "graphql/error";
 import bcrypt from 'bcryptjs';
-import { query, runInTransaction } from "@/lib/db";
+import { getClient, query, runInTransaction } from "@/lib/db";
 import { publishRealtimeHint } from "@/lib/pubsub";
 import * as jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
@@ -24,10 +24,11 @@ import {
   RESET_TOKEN_TTL_MIN,
   sendPasswordResetEmail,
 } from "@/lib/passwordReset";
-import { buildFileUrlById, persistUploadStream } from "@/lib/storage";
+import { buildFileUrlById, deleteStoredFile, persistUploadStream, type StoredFileRow } from "@/lib/storage";
 import { requireAuth, sha256Hex, generateRawToken } from "@/lib/auth"
 import { getTenantName } from "@/lib/bms/platform";
 import { addLog } from "@/lib/log/log.server";
+import { sanitizeLogText, sanitizeLogValue } from "@/lib/log/sanitize";
 import { v4 as uuidv4 } from 'uuid';
 
 import { verifySocialIdentity, type VerifiedSocialIdentity } from "@/lib/auth/social";
@@ -82,6 +83,7 @@ import { bmsProductPriceTiersResolvers } from "@/graphql/bmsProductPriceTiers";
 import { bmsProductPromotionsResolvers } from "@/graphql/bmsProductPromotions";
 import { bmsTaxReportsResolvers } from "@/graphql/bmsTaxReports";
 import { bmsExpenseDocumentsResolvers } from "@/graphql/bmsExpenseDocuments";
+import { bmsBankReconciliationResolvers } from "@/graphql/bmsBankReconciliation";
 import { bmsMembershipResolvers } from "@/graphql/bmsMembership";
 import { bmsPosResolvers } from "@/graphql/bmsPos";
 import { bmsPosDeviceResolvers } from "@/graphql/bmsPosDevice";
@@ -102,8 +104,14 @@ import { enforceUserQuota } from "@/lib/bms/plans";
 import { reassignStaffConversations } from "@/lib/bms/inbox";
 import { requirePermission } from "@/lib/bms/permissions";
 import { audit } from "@/lib/bms/audit";
+import { insertSecurityEventInTx, recordSecurityEvent, recordSecurityEventBestEffort } from "@/lib/bms/securityEvents";
 import { assertSocialAuthAvailable } from "@/lib/bms/socialAuthSettings";
 import {
+  assertNoActiveStaffAssignments,
+  assertAdministratorRemains,
+  auditUserChangeInTx,
+  canReadStaffContact,
+  explainUserDeleteFailure,
   requireManageableTarget,
   requireManageableTargets,
   resolveAssignableRole,
@@ -111,6 +119,7 @@ import {
 } from "@/lib/bms/userAdmin";
 
 import { logAsync } from "@/lib/logger";
+import { isExpectedGraphqlError } from "./expectedErrorCodes";
 
 // =============================================================
 // Authz helpers — จัดการผู้ใช้/สิทธิ์ ใน BMS admin
@@ -179,11 +188,37 @@ const isDev = process.env.NODE_ENV !== "production";
 const useSecureCookie = process.env.COOKIE_SECURE === "true";
 
 type GraphQLUploadFile = {
-  filename: string;
+  filename?: string | null;
+  fileName?: string | null;
   mimetype?: string | null;
+  mimeType?: string | null;
+  fileSize?: number | null;
   encoding?: string | null;
   createReadStream: () => NodeJS.ReadableStream;
 };
+
+const SAFE_IMAGE_UPLOAD_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/avif",
+  "image/bmp",
+  "image/tiff",
+  "image/heic",
+  "image/heif",
+] as const;
+
+const SAFE_AUDIO_UPLOAD_MIME_TYPES = [
+  "audio/webm",
+  "audio/ogg",
+  "audio/mpeg",
+  "audio/wav",
+  "audio/mp4",
+  "audio/aac",
+] as const;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // setInterval(() => {
 //   const now = new Date().toISOString();
@@ -212,6 +247,14 @@ function normalizeStr(input: string): string {
 async function passwordMatches(password: string, user: any): Promise<boolean> {
   const valid = await bcrypt.compare(password, user?.password_hash || DUMMY_PASSWORD_HASH);
   return !!user?.password_hash && valid;
+}
+
+async function recordDeniedLogin(source: string, user?: any, reasonCode = "BAD_CREDENTIALS") {
+  await recordSecurityEventBestEffort({
+    tenantId: user?.tenant_id ?? null,
+    actorUserId: user?.id ? String(user.id) : null,
+    event: "auth.login_denied", outcome: "DENIED", source, reasonCode,
+  });
 }
 
 async function findAndLinkSocialUser(identity: VerifiedSocialIdentity, email: string) {
@@ -528,34 +571,8 @@ function serializeError(err: unknown): { name?: string; message?: string } {
   }
 }
 
-function redactSecrets(value: unknown, depth = 0): unknown {
-  if (depth > 6) return "[MaxDepth]";
-  if (value == null) return value;
-  if (typeof value !== "object") return value;
-
-  if (Array.isArray(value)) {
-    return value.map((v) => redactSecrets(v, depth + 1));
-  }
-
-  const obj = value as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (/password|token|secret|authorization|cookie/i.test(k)) {
-      out[k] = "[REDACTED]";
-      continue;
-    }
-    out[k] = redactSecrets(v, depth + 1);
-  }
-  return out;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function pickValue(source: unknown, key: string): unknown {
-  if (!isRecord(source)) return undefined;
-  return source[key];
 }
 
 function buildResolverMeta(kind: "Query" | "Mutation", name: string, args: unknown, ctx: unknown) {
@@ -564,25 +581,10 @@ function buildResolverMeta(kind: "Query" | "Mutation", name: string, args: unkno
   const user_id = (ctxUser?.id ?? ctxRec?.author_id ?? null) as unknown;
 
   const argsRec = isRecord(args) ? args : undefined;
-  const input = argsRec && isRecord(argsRec.input) ? (argsRec.input as Record<string, unknown>) : undefined;
-  const source: unknown = input ?? argsRec ?? {};
-
-  const client_id = pickValue(source, "client_id") ?? pickValue(source, "clientId");
-  const phone = pickValue(source, "phone");
-  const bank_name = pickValue(source, "bank_name") ?? pickValue(source, "bankName");
-  const account = pickValue(source, "account") ?? pickValue(source, "account_no") ?? pickValue(source, "account_norm");
-  const postId = pickValue(source, "postId") ?? pickValue(source, "post_id");
-  const id = pickValue(source, "id");
-
   const meta: Record<string, unknown> = {
     resolver: `${kind}.${name}`,
     user_id,
-    client_id,
-    phone,
-    bank_name,
-    account,
-    postId,
-    id,
+    argumentKeys: argsRec ? Object.keys(argsRec).slice(0, 30) : [],
   };
 
   // strip null/undefined to keep logs tidy
@@ -608,10 +610,7 @@ function wrapResolverMap(kind: "Query" | "Mutation", map: Record<string, unknown
       const meta = buildResolverMeta(kind, name, args, ctx);
 
       void logAsync("info", "graphql", `${kind}.${name} called`, meta);
-      void logAsync("debug", "graphql", `${kind}.${name} args`, {
-        ...meta,
-        args: redactSecrets(args),
-      });
+      void logAsync("debug", "graphql", `${kind}.${name} args`, meta);
 
       try {
         const result = await Promise.resolve((fn as (...a: unknown[]) => unknown)(...resolverArgs));
@@ -621,7 +620,7 @@ function wrapResolverMap(kind: "Query" | "Mutation", map: Record<string, unknown
         });
         return result;
       } catch (err) {
-        void logAsync("error", "graphql", `${kind}.${name} failed`, {
+        void logAsync(isExpectedGraphqlError(err) ? "warn" : "error", "graphql", `${kind}.${name} failed`, {
           ...meta,
           duration_ms: Date.now() - start,
           error: serializeError(err),
@@ -792,23 +791,26 @@ const rawResolvers = {
   JSON: GraphQLJSON,
   Upload: GraphQLUpload,
   Role: {
-    user_count: async (parent: any) => {
+    user_count: async (parent: any, _: any, ctx: any) => {
       const roleId = parent?.id;
       if (!roleId) return 0;
-      
+      const { platform, tenantId } = await requireUserAdmin(ctx, "user.view");
       try {
         const { rows } = await query(
-          `SELECT COUNT(*)::int AS count FROM users WHERE role_id = $1`,
-          [roleId]
+          `SELECT COUNT(*)::int AS count FROM users WHERE role_id = $1
+             ${platform ? "" : "AND tenant_id = $2 AND is_platform_admin = FALSE"}`,
+          platform ? [roleId] : [roleId, tenantId]
         );
         return rows[0]?.count || 0;
       } catch (err) {
-        console.error('[Role.user_count] Error counting users:', err);
+        console.error('[Role.user_count] Error counting users:', sanitizeLogValue(err));
         return 0;
       }
     },
   },
   User: {
+    email: (parent: any, _: any, ctx: any) => canReadStaffContact(parent, ctx) ? parent?.email ?? null : null,
+    phone: (parent: any, _: any, ctx: any) => canReadStaffContact(parent, ctx) ? parent?.phone ?? null : null,
     themePreference: (parent: any) => parent?.themePreference ?? parent?.theme_preference ?? null,
     roleDetails: async (parent: any) => {
       const roleId = parent?.role_id;
@@ -821,18 +823,18 @@ const rawResolvers = {
         );
         return rows[0] || null;
       } catch (err) {
-        console.error('[User.roleDetails] Error fetching role:', err);
+        console.error('[User.roleDetails] Error fetching role:', sanitizeLogValue(err));
         return null;
       }
     },
     // ให้ platform admin เห็นว่า user นี้เป็นของร้านไหน (หน้า /admin/users แสดง user ข้ามร้านได้
     // แต่ไม่เคยบอกว่า user เป็นของร้านไหนเลย) — user ที่ไม่มี tenant_id (เช่นบัญชีระบบเก่า) คืน null
     tenantName: async (parent: any) => {
-      if (!parent?.tenant_id) return null;
+      if (!parent?.tenant_id || !parent?.__staffContactVisible) return null;
       try {
         return await getTenantName(parent.tenant_id);
       } catch (err) {
-        console.error('[User.tenantName] Error fetching tenant name:', err);
+        console.error('[User.tenantName] Error fetching tenant name:', sanitizeLogValue(err));
         return null;
       }
     },
@@ -1288,24 +1290,58 @@ const rawResolvers = {
     },
     getOrCreateDm: async (_:any, { user_id }:{user_id:string}, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      console.log("[Query] getOrCreateDm :", ctx, author_id);
+      console.log("[Query] getOrCreateDm :", author_id);
 
       if (!author_id) throw new Error("No demo user found");
-      const { rows:exist } = await query(
-        `SELECT c.* FROM chats c
-         JOIN chat_members m1 ON m1.chat_id=c.id AND m1.user_id=$1
-         JOIN chat_members m2 ON m2.chat_id=c.id AND m2.user_id=$2
-         WHERE c.is_group=false LIMIT 1`, [author_id, user_id]
-      );
-      if (exist[0]) return exist[0];
-      const { rows:crows } = await query(
-        `INSERT INTO chats(is_group, created_by) VALUES(false, $1) RETURNING *`, [author_id]
-      );
-      const chat = crows[0];
+      const actorId = String(author_id);
+      const peerId = String(user_id || "");
+      if (!UUID_RE.test(peerId) || peerId === actorId) {
+        throw new GraphQLError("Invalid direct-message recipient", {
+          extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+        });
+      }
 
-      console.log("[getOrCreateDm]" , chat.id, author_id, user_id);
-      // await query(`INSERT INTO chat_members(chat_id, user_id) VALUES ($1,$2),($1,$3)`, [chat.id, meId, user_id]);
-      return chat;
+      // Serialize the unordered pair and create the room + both memberships in
+      // one transaction. Invalid peers and concurrent first messages cannot
+      // leave orphan/duplicate DM rows behind.
+      const pairKey = [actorId, peerId].sort().join(":");
+      const { result } = await runInTransaction(actorId, async (client) => {
+        await client.query(
+          `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+          [`community-dm:${pairKey}`]
+        );
+
+        const peer = await client.query(`SELECT 1 FROM users WHERE id = $1 LIMIT 1`, [peerId]);
+        if (!peer.rowCount) {
+          throw new GraphQLError("Direct-message recipient not found", {
+            extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+          });
+        }
+
+        const existing = await client.query(
+          `SELECT c.* FROM chats c
+           JOIN chat_members m1 ON m1.chat_id = c.id AND m1.user_id = $1
+           JOIN chat_members m2 ON m2.chat_id = c.id AND m2.user_id = $2
+           WHERE c.is_group = false
+           LIMIT 1`,
+          [actorId, peerId]
+        );
+        if (existing.rows[0]) return existing.rows[0];
+
+        const created = await client.query(
+          `INSERT INTO chats(is_group, created_by) VALUES(false, $1) RETURNING *`,
+          [actorId]
+        );
+        const chat = created.rows[0];
+        await client.query(
+          `INSERT INTO chat_members(chat_id, user_id)
+           VALUES ($1,$2),($1,$3)
+           ON CONFLICT DO NOTHING`,
+          [chat.id, actorId, peerId]
+        );
+        return chat;
+      });
+      return result;
     },
     myChats: async (_: any, { }: {}, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
@@ -1551,7 +1587,12 @@ const rawResolvers = {
 
         FROM messages m
         LEFT JOIN users u ON u.id = m.sender_id
-        WHERE m.chat_id = $1 ${filter}
+        WHERE m.chat_id = $1
+          AND EXISTS (
+            SELECT 1 FROM chat_members cm
+             WHERE cm.chat_id = m.chat_id AND cm.user_id = $2
+          )
+          ${filter}
         ORDER BY m.created_at DESC, m.id DESC
         LIMIT $3 OFFSET $4
         `,
@@ -1636,7 +1677,12 @@ const rawResolvers = {
 
         FROM messages m
         LEFT JOIN users u ON u.id = m.sender_id
-        WHERE m.chat_id = $1 ${filter}
+        WHERE m.chat_id = $1
+          AND EXISTS (
+            SELECT 1 FROM chat_members cm
+             WHERE cm.chat_id = m.chat_id AND cm.user_id = $2
+          )
+          ${filter}
         ${cursorSql}
         ORDER BY m.created_at DESC, m.id DESC
         LIMIT $3
@@ -1656,8 +1702,7 @@ const rawResolvers = {
       };
     },
     roles: async (_: any, __: any, ctx: any) => {
-      const { author_id } = requireAuth(ctx, { optionalWeb: true, optionalAndroid: true });
-      console.log('[Query] roles:', author_id);
+      await requireUserAdmin(ctx, "user.view");
 
       try {
         const { rows } = await query(
@@ -1667,13 +1712,12 @@ const rawResolvers = {
         );
         return rows;
       } catch (err) {
-        console.error('[Query.roles] Error fetching roles:', err);
+        console.error('[Query.roles] Error fetching roles:', sanitizeLogValue(err));
         return [];
       }
     },
     role: async (_: any, { id }: { id: string }, ctx: any) => {
-      const { author_id } = requireAuth(ctx, { optionalWeb: true, optionalAndroid: true });
-      console.log('[Query] role:', author_id, id);
+      await requireUserAdmin(ctx, "user.view");
 
       try {
         const { rows } = await query(
@@ -1685,7 +1729,7 @@ const rawResolvers = {
         );
         return rows[0] || null;
       } catch (err) {
-        console.error('[Query.role] Error fetching role:', err);
+        console.error('[Query.role] Error fetching role:', sanitizeLogValue(err));
         return null;
       }
     },
@@ -1695,7 +1739,6 @@ const rawResolvers = {
       ctx: any
     ) => {
       const auth = requireAuth(ctx);
-      console.log("[Query] users :", auth.author_id, { search, limit, offset });
 
       // กัน limit โหด ๆ
       const safeLimit = Math.min(Math.max(limit || 10, 1), 100);
@@ -1707,11 +1750,12 @@ const rawResolvers = {
       if (search) {
         params.push(`%${search}%`);
         const p = `$${params.length}`;
-        conds.push(`(name ILIKE ${p} OR phone ILIKE ${p} OR email ILIKE ${p})`);
+        conds.push(auth.scope === "admin"
+          ? `(name ILIKE ${p} OR phone ILIKE ${p} OR email ILIKE ${p})`
+          : `name ILIKE ${p}`);
       }
 
-      // scope=admin → หน้าจัดการผู้ใช้ BMS: บังคับสิทธิ์ + กรองตามร้าน
-      //   (scope=web/android = ค้นหาคนในแอป social → คงเดิม ไม่กรอง)
+      // Public social discovery cannot enumerate shop staff or their contact data.
       if (auth.scope === "admin") {
         const { platform, tenantId } = await requireUserAdmin(ctx, "user.view");
         if (!platform) {
@@ -1719,6 +1763,8 @@ const rawResolvers = {
           conds.push(`tenant_id = $${params.length}`);
           conds.push(`is_platform_admin = FALSE`);
         }
+      } else {
+        conds.push(`tenant_id IS NULL AND is_platform_admin = FALSE`);
       }
 
       const where = conds.length ? `WHERE ${conds.join(" AND ")}` : ``;
@@ -1736,7 +1782,8 @@ const rawResolvers = {
 
       const itemsRes = await query(
         `
-        SELECT *
+        SELECT ${auth.scope === "admin" ? "*" :
+          "id, name, avatar, role, role_id, created_at, username, language, notifications_enabled, is_platform_admin"}
         FROM users
         ${where}
         ORDER BY created_at DESC
@@ -1745,7 +1792,9 @@ const rawResolvers = {
         [...params, safeLimit, safeOffset]
       );
 
-      return { items: itemsRes.rows, total };
+      return { items: auth.scope === "admin"
+        ? itemsRes.rows.map((row: any) => ({ ...row, __staffContactVisible: true }))
+        : itemsRes.rows, total };
     },
     user: async (_: any, { id }: { id: string }, ctx: any) => {
       const { author_id, scope } = requireAuth(ctx, {  optionalWeb: true, optionalAndroid: true });
@@ -1760,11 +1809,21 @@ const rawResolvers = {
               LIMIT 1`,
             [id, tenantId]
           );
-          return rows[0] ?? null;
+          return rows[0] ? { ...rows[0], __staffContactVisible: true } : null;
         }
+        const row = await getUserById(id);
+        return row ? { ...row, __staffContactVisible: true } : null;
       }
 
-      return await getUserById(id);
+      if (String(id) === String(author_id)) return await getUserById(id);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) return null;
+      const { rows } = await query(
+        `SELECT id, name, avatar, role, role_id, created_at, username, language,
+                notifications_enabled, is_platform_admin
+           FROM users WHERE id=$1 AND tenant_id IS NULL AND is_platform_admin=FALSE LIMIT 1`,
+        [id]
+      );
+      return rows[0] ?? null;
     },
     postsByUserId: async (_: any, { user_id }: { user_id: string }, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx, {  optionalWeb: true, optionalAndroid: true });
@@ -1996,23 +2055,30 @@ const rawResolvers = {
       };
     },
     filesPaged: async (_: any, { search, limit, offset }: any, ctx: any) => {
-      const { author_id, scope, isAuthenticated } = requireAuth(ctx);
-      console.log("[Query] pending :", author_id);
+      const { author_id } = requireAuth(ctx);
+      await requirePlatformOnly(ctx);
+      console.log("[Query] filesPaged :", author_id);
 
       const params: any[] = [];
-      let where = "WHERE f.filename NOT LIKE '%operation-evidence-%'";
+      const conditions = [
+        "f.deleted_at IS NULL",
+        "f.filename NOT LIKE '%operation-evidence-%'",
+      ];
       if (search && search.trim()) {
         params.push(`%${search}%`);
-        where += ` AND (f.original_name ILIKE $${params.length} OR f.filename ILIKE $${params.length})`;
+        conditions.push(`(f.original_name ILIKE $${params.length} OR f.filename ILIKE $${params.length})`);
       }
-      params.push(limit, offset);
+      const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20));
+      const safeOffset = Math.max(0, Number(offset) || 0);
+      params.push(safeLimit, safeOffset);
 
       const sql = `
         SELECT
           COUNT(*) OVER() AS total,
-          f.*
+          f.id, f.filename, f.original_name, f.mimetype, f.size,
+          f.created_at, f.updated_at
         FROM files f
-        ${where}
+        WHERE ${conditions.join(" AND ")}
         ORDER BY f.created_at DESC
         LIMIT $${params.length-1} OFFSET $${params.length}
       `;
@@ -2021,6 +2087,9 @@ const rawResolvers = {
 
       const items = rows.map((r: any) => ({
         ...r,
+        // Kept only for backwards-compatible GraphQL shape. Storage keys are
+        // server internals and must not be exposed to the browser.
+        relpath: "",
         url: buildFileUrlById(r.id),
         thumb: r.mimetype && r.mimetype.startsWith('image/')
           ? buildFileUrlById(r.id)
@@ -2039,8 +2108,8 @@ const rawResolvers = {
       const user = ctx.user; // สมมติ auth middleware ใส่มาแล้ว
       if (!user) throw new Error('Unauthorized');
 
-      const limit = args.limit ?? 20;
-      const offset = args.offset ?? 0;
+      const limit = Number.isInteger(args.limit) ? Math.min(Math.max(args.limit!, 1), 100) : 20;
+      const offset = Number.isInteger(args.offset) ? Math.min(Math.max(args.offset!, 0), 10_000) : 0;
 
       const { rows } = await query(
         `
@@ -2143,7 +2212,6 @@ const rawResolvers = {
     },
     globalSearch: async (_: any, { q }: { q: string }, ctx: any) => {
       const { author_id, scope, isAuthenticated } = requireAuth(ctx, {  optionalWeb: true, optionalAndroid: true });
-      console.log("[Query] globalSearch (pro) :", author_id, q);
 
       const term = (q || "").trim();
       if (!term) {
@@ -2236,7 +2304,7 @@ const rawResolvers = {
               similarity(coalesce(u.phone,          ''), $1)
             ) AS sim
           FROM users u
-          WHERE
+          WHERE u.tenant_id IS NULL AND u.is_platform_admin = FALSE AND (
                 tsvector_concat(
                   setweight(to_tsvector('simple', coalesce(u.name_unaccent,  '')), 'A'),
                   setweight(to_tsvector('simple', coalesce(u.email_unaccent, '')), 'B')
@@ -2244,6 +2312,7 @@ const rawResolvers = {
              OR u.name_unaccent  ILIKE unaccent($2)
              OR u.email_unaccent ILIKE unaccent($2)
              OR u.phone ILIKE $2
+          )
         ) AS s
         ORDER BY
           (s.ft_rank * 2.5 + s.sim * 4.0) DESC
@@ -2404,7 +2473,6 @@ const rawResolvers = {
       }: { cursor?: string | null; limit: number; sinceVersion: string },
       ctx: any
     ) => {
-      console.log("[Query] scamPhonesDelta", { cursor, sinceVersion, limit });
 
       // เลือก source ก่อน: cursor > sinceVersion
       const rawSince = cursor || sinceVersion;
@@ -2506,7 +2574,6 @@ const rawResolvers = {
       { q, limit = 20 }: { q: string; limit: number },
       ctx: any
     ) => {
-      console.log("[Query] searchBankAccounts", { q, limit });
 
       const term = String(q || "").trim();
       if (!term) return [];
@@ -2514,7 +2581,6 @@ const rawResolvers = {
       const safeLimit = Math.min(Math.max(limit || 20, 1), 50);
       const qNorm = normalizeAccountNo(term);
 
-      console.log("[Query][qNorm] searchBankAccounts", qNorm);
 
       const mapRow = async (r: any) => {
         const masked = maskAccount(r.account_no || r.account_norm);
@@ -2878,6 +2944,7 @@ const rawResolvers = {
     ...bmsProductPromotionsResolvers.Query,
     ...bmsTaxReportsResolvers.Query,
     ...bmsExpenseDocumentsResolvers.Query,
+    ...bmsBankReconciliationResolvers.Query,
     ...bmsMembershipResolvers.Query,
     ...bmsPosResolvers.Query,
     ...bmsPosDeviceResolvers.Query,
@@ -2911,6 +2978,7 @@ const rawResolvers = {
   Mutation: {
     ...bmsRestaurantCostingResolvers.Mutation,
     ...bmsExpenseDocumentsResolvers.Mutation,
+    ...bmsBankReconciliationResolvers.Mutation,
     ...bmsOperatingCostResolvers.Mutation,
     ...bmsCostAllocationResolvers.Mutation,
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
@@ -2926,7 +2994,7 @@ const rawResolvers = {
       await enforceAuthRateLimit(ctx, "login", identifier, 10, 60, 15 * 60_000);
       const { rows } = await query(
         `
-        SELECT id, name, username, email, role, avatar, phone, password_hash
+        SELECT id, tenant_id, name, username, email, role, avatar, phone, password_hash, is_email_verified
         FROM users
         WHERE ${email ? "lower(btrim(email))" : "lower(btrim(username))"} = $1
         LIMIT 1
@@ -2936,8 +3004,13 @@ const rawResolvers = {
 
       const user = rows[0];
       if (!(await passwordMatches(password, user))) {
+        await recordDeniedLogin("LEGACY_SESSION", user);
         // ป้องกันการเดารหัส/บัญชี โดยไม่บอกว่า email หรือ password ผิด
         return { ok: false, message: "Invalid credentials" };
+      }
+      if (user.is_email_verified === false) {
+        await recordDeniedLogin("LEGACY_SESSION", user, "EMAIL_UNVERIFIED");
+        return { ok: false, message: "Please verify your email before signing in" };
       }
 
       // // สร้าง token อย่างง่าย (ควรเปลี่ยนเป็น JWT/Session จริงในงานจริง)
@@ -2962,14 +3035,27 @@ const rawResolvers = {
       // (ทางเลือก) ยกเลิก session เดิมของผู้ใช้ (ให้มี 1 session ต่อคน)
       // await query(`DELETE FROM sessions WHERE user_id=$1`, [user.id]);
 
-      // แทรก session ใหม่
-      await query(
-        `
-        INSERT INTO sessions (token, user_id, user_agent, ip, expired_at)
-        VALUES ($1, $2, $3, $4, NOW() + ($5 || ' days')::interval)
-        `,
-        [token, user.id, ua, ip, String(ttlDays)]
-      );
+      // Session and its login evidence commit together.
+      const sessionClient = await getClient();
+      try {
+        await sessionClient.query("BEGIN");
+        await sessionClient.query(
+          `INSERT INTO sessions (token, user_id, user_agent, ip, expired_at)
+           VALUES ($1, $2, $3, $4, NOW() + ($5 || ' days')::interval)`,
+          [token, user.id, ua, ip, String(ttlDays)]
+        );
+        await insertSecurityEventInTx(sessionClient, {
+          tenantId: user.tenant_id ?? null, actorUserId: String(user.id),
+          event: "auth.login", outcome: "SUCCESS", source: "LEGACY_SESSION",
+          sessionId: token,
+        });
+        await sessionClient.query("COMMIT");
+      } catch (error) {
+        await sessionClient.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      } finally {
+        sessionClient.release();
+      }
 
       // (ทางเลือกแนะนำ) ตั้ง httpOnly cookie ที่ชั้น Route/Handler
       // ctx.res?.setHeader("Set-Cookie", `token=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${ttlDays*86400}`);
@@ -2999,8 +3085,14 @@ const rawResolvers = {
       const user = rows[0];
 
       const valid = await passwordMatches(password, user);
-      if (!valid) throw new Error("Invalid credentials");
-      if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
+      if (!valid) {
+        await recordDeniedLogin("USER_PASSWORD", user);
+        throw new Error("Invalid credentials");
+      }
+      if (user.is_email_verified === false) {
+        await recordDeniedLogin("USER_PASSWORD", user, "EMAIL_UNVERIFIED");
+        throw new Error("Please verify your email before signing in");
+      }
 
       const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role },
@@ -3008,6 +3100,10 @@ const rawResolvers = {
         { expiresIn: "7d" }
       );
 
+      await recordSecurityEvent({
+        tenantId: user.tenant_id ?? null, actorUserId: String(user.id),
+        event: "auth.login", outcome: "SUCCESS", source: "USER_PASSWORD",
+      });
       cookies().set(USER_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
       return {
         ok: true,
@@ -3031,9 +3127,11 @@ const rawResolvers = {
       const socialData = await verifySocialIdentity(normalizedProvider, accessToken);
 
       if (!socialData) {
+        await recordDeniedLogin("USER_SOCIAL", null, "TOKEN_INVALID");
         throw new GraphQLError("Social token invalid");
       }
       if (socialData.email_verified !== true) {
+        await recordDeniedLogin("USER_SOCIAL", null, "EMAIL_UNVERIFIED");
         throw new GraphQLError("Social account email is not verified");
       }
 
@@ -3070,6 +3168,10 @@ const rawResolvers = {
         { expiresIn: "7d" }
       );
 
+      await recordSecurityEvent({
+        tenantId: user.tenant_id ?? null, actorUserId: String(user.id),
+        event: "auth.login", outcome: "SUCCESS", source: "USER_SOCIAL",
+      });
       cookies().set(USER_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
 
       return {
@@ -3099,25 +3201,34 @@ const rawResolvers = {
       const user = rows[0];
 
       if (!(await passwordMatches(password, user))) {
+        await recordDeniedLogin("ADMIN_PASSWORD", user);
         throw new Error("Invalid credentials");
       }
       // บัญชีเฉพาะหน้าร้าน (7.92): ยืนยันตัวตนด้วย PIN ที่เครื่องขายเท่านั้น
       // ปฏิเสธที่นี่ ไม่ใช่แค่ไม่ให้สิทธิ์ — แคชเชียร์ที่รู้รหัสผ่านตัวเองต้องเข้า
       // หลังบ้านไม่ได้เลย ไม่ใช่เข้าได้แต่เห็นหน้าว่าง
       if (user.pos_only === true) {
+        await recordDeniedLogin("ADMIN_PASSWORD", user, "POS_ONLY");
         throw new Error("บัญชีนี้ใช้ได้เฉพาะที่เครื่องขายหน้าร้าน (เข้าด้วย PIN ที่เครื่อง)");
       }
       if (!user.is_platform_admin && (!user.tenant_id || String(user.role).toLowerCase() === "subscriber")) {
+        await recordDeniedLogin("ADMIN_PASSWORD", user, "ACCOUNT_INELIGIBLE");
         throw new Error("Invalid credentials");
       }
-      if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
-      if (user.tenant_id && user.tenant_active === false) throw new Error("Shop is not active");
+      if (user.is_email_verified === false) {
+        await recordDeniedLogin("ADMIN_PASSWORD", user, "EMAIL_UNVERIFIED");
+        throw new Error("Please verify your email before signing in");
+      }
+      if (user.tenant_id && user.tenant_active === false) {
+        await recordDeniedLogin("ADMIN_PASSWORD", user, "TENANT_INACTIVE");
+        throw new Error("Shop is not active");
+      }
 
-      const token = await issueAdminSession(user);
+      const token = await issueAdminSession(user, "ADMIN_PASSWORD");
 
       // best-effort — พลาดตรงนี้ต้องไม่ทำให้ login ล้มเหลว (แค่แสดง last login ไม่ได้)
       query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]).catch((err) => {
-        console.error("[loginAdmin] update last_login_at failed:", err);
+        console.error("[loginAdmin] update last_login_at failed:", sanitizeLogValue(err));
       });
 
       return {
@@ -3142,6 +3253,7 @@ const rawResolvers = {
 
       const socialData = await verifySocialIdentity(normalizedProvider, accessToken);
       if (!socialData?.email_verified) {
+        await recordDeniedLogin("ADMIN_SOCIAL", null, "TOKEN_INVALID");
         throw new GraphQLError("Social token invalid");
       }
       const emailResult = validateEmail(socialData.email);
@@ -3156,18 +3268,26 @@ const rawResolvers = {
         throw new Error("Invalid credentials");
       }
       if (user.pos_only === true) {
+        await recordDeniedLogin("ADMIN_SOCIAL", user, "POS_ONLY");
         throw new Error("บัญชีนี้ใช้ได้เฉพาะที่เครื่องขายหน้าร้าน (เข้าด้วย PIN ที่เครื่อง)");
       }
       if (!user.is_platform_admin && (!user.tenant_id || String(user.role).toLowerCase() === "subscriber")) {
+        await recordDeniedLogin("ADMIN_SOCIAL", user, "ACCOUNT_INELIGIBLE");
         throw new Error("Invalid credentials");
       }
-      if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
-      if (user.tenant_id && user.tenant_active === false) throw new Error("Shop is not active");
+      if (user.is_email_verified === false) {
+        await recordDeniedLogin("ADMIN_SOCIAL", user, "EMAIL_UNVERIFIED");
+        throw new Error("Please verify your email before signing in");
+      }
+      if (user.tenant_id && user.tenant_active === false) {
+        await recordDeniedLogin("ADMIN_SOCIAL", user, "TENANT_INACTIVE");
+        throw new Error("Shop is not active");
+      }
 
-      const token = await issueAdminSession(user);
+      const token = await issueAdminSession(user, "ADMIN_SOCIAL");
 
       query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]).catch((err) => {
-        console.error("[loginAdminWithSocial] update last_login_at failed:", err);
+        console.error("[loginAdminWithSocial] update last_login_at failed:", sanitizeLogValue(err));
       });
 
       return {
@@ -3186,13 +3306,23 @@ const rawResolvers = {
         [emailNorm]
       );
       const user = rows[0];
-      if (!(await passwordMatches(password, user))) throw new Error("Invalid credentials");
-      if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
+      if (!(await passwordMatches(password, user))) {
+        await recordDeniedLogin("MOBILE_PASSWORD", user);
+        throw new Error("Invalid credentials");
+      }
+      if (user.is_email_verified === false) {
+        await recordDeniedLogin("MOBILE_PASSWORD", user, "EMAIL_UNVERIFIED");
+        throw new Error("Please verify your email before signing in");
+      }
       const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role },
         jwtSecret(),
         { expiresIn: "7d" }
       );
+      await recordSecurityEvent({
+        tenantId: user.tenant_id ?? null, actorUserId: String(user.id),
+        event: "auth.login", outcome: "SUCCESS", source: "MOBILE_PASSWORD",
+      });
       return { ok: true, message: "Login success", token, user };
     },
     registerUser: async(_: any, { input }: any, ctx: any) => {
@@ -3260,7 +3390,7 @@ const rawResolvers = {
         );
       } catch (tokenError) {
         await cleanupUnverifiedRegistration().catch((cleanupError) => {
-          console.error("[registerUser] cleanup after verification-token failure failed:", cleanupError);
+          console.error("[registerUser] cleanup after verification-token failure failed:", sanitizeLogValue(cleanupError));
         });
         throw tokenError;
       }
@@ -3293,7 +3423,7 @@ const rawResolvers = {
       } catch (mailError) {
         // Do not leave a newly-created, unusable account that makes the retry look like a duplicate.
         await cleanupUnverifiedRegistration().catch((cleanupError) => {
-          console.error("[registerUser] cleanup after verification-email failure failed:", cleanupError);
+          console.error("[registerUser] cleanup after verification-email failure failed:", sanitizeLogValue(cleanupError));
         });
         throw mailError;
       }
@@ -3331,7 +3461,7 @@ const rawResolvers = {
         }
       } catch (e) {
         // ไม่ throw — การสมัครสำเร็จแม้สร้าง chat ไม่ได้
-        console.error('[registerUser] failed to create admin chat', e);
+        console.error('[registerUser] failed to create admin chat', sanitizeLogValue(e));
       }
 
       return true;
@@ -3384,7 +3514,7 @@ const rawResolvers = {
         // Preserve the non-enumerating response and make the unsent token
         // unusable. The mailer already records the provider failure.
         await invalidateResetToken(token).catch(() => void 0);
-        console.error("[requestPasswordReset] email delivery failed", err);
+        console.error("[requestPasswordReset] email delivery failed", sanitizeLogValue(err));
       }
 
       return true;
@@ -3394,22 +3524,37 @@ const rawResolvers = {
       const passwordResult = validateNewPassword(newPassword);
       if (!passwordResult.ok) throw new Error("Invalid new password");
       const password_hash = await bcrypt.hash(passwordResult.value, 10);
-      const claimed = await query(
-        `WITH claimed AS (
-           UPDATE password_reset_tokens
-              SET used = true
-            WHERE token_hash = $1 AND used = false AND expires_at > now()
-            RETURNING user_id
-         )
-         UPDATE users u
-            SET password_hash = $2,
-                admin_session_version = admin_session_version + 1
-           FROM claimed c
-          WHERE u.id = c.user_id
-         RETURNING u.id`,
-        [sha256Hex(token), password_hash]
-      );
-      if (!claimed.rowCount) throw new Error("Invalid or expired token");
+      const client = await getClient();
+      try {
+        await client.query("BEGIN");
+        const claimed = await client.query<{ id: string; tenant_id: string | null }>(
+          `WITH claimed AS (
+             UPDATE password_reset_tokens
+                SET used = true
+              WHERE token_hash = $1 AND used = false AND expires_at > now()
+              RETURNING user_id
+           )
+           UPDATE users u
+              SET password_hash = $2,
+                  admin_session_version = admin_session_version + 1
+             FROM claimed c
+            WHERE u.id = c.user_id
+           RETURNING u.id, u.tenant_id`,
+          [sha256Hex(token), password_hash]
+        );
+        if (!claimed.rowCount) throw new Error("Invalid or expired token");
+        const user = claimed.rows[0];
+        await insertSecurityEventInTx(client, {
+          tenantId: user.tenant_id, actorUserId: user.id,
+          event: "auth.password_reset", outcome: "SUCCESS", source: "RESET_TOKEN",
+        });
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
 
       // (ออปชัน) revoke sessions อื่นๆ ของ user นี้
 
@@ -3458,7 +3603,7 @@ const rawResolvers = {
       // (apps/web/i18n) ไม่รู้จัก ซึ่งจะ getMessage() แล้วได้ key เปล่ากลับมาแทนข้อความจริง
       const languageVal = language === "th" || language === "en" ? language : null;
 
-      console.log("[Mutation] updateMe :", author_id, name, phone, username, languageVal, gender, themePreferenceVal, notifications_enabled );
+      console.log("[Mutation] updateMe :", author_id, { fields: Object.keys(data) });
       const { rows } = await query(
         `UPDATE users SET
           name = COALESCE($1, name),
@@ -3712,7 +3857,6 @@ const rawResolvers = {
       }
       const author_id = String(auth.author_id);
 
-      console.log("[Mutation] upsertPost :", author_id, data, image_ids_delete);
 
       // ✅ ให้เก็บ postId ไว้ใช้ emit หลัง commit
       let finalPostId: string | null = null;
@@ -3795,30 +3939,22 @@ const rawResolvers = {
             const phone = tel.tel;
             const post = postId;
 
-            console.log(`[TEL_SYNC] mode=${mode} | id=${telId} | tel="${phone}" | postId=${post}`);
 
             if (mode === "deleted") {
-              console.log(`[TEL_DELETE] DELETE FROM post_tel_numbers WHERE id=${telId} AND post_id=${post}`);
               await client.query(`DELETE FROM post_tel_numbers WHERE id=$1 AND post_id=$2`, [telId, post]);
-              console.log(`[TEL_DELETE] success id=${telId}`);
             } else if (mode === "edited") {
-              console.log(`[TEL_UPDATE] UPDATE post_tel_numbers SET tel="${phone}" WHERE id=${telId} AND post_id=${post}`);
               await client.query(`UPDATE post_tel_numbers SET tel=$1 WHERE id=$2 AND post_id=$3`, [
                 phone,
                 telId,
                 post,
               ]);
-              console.log(`[TEL_UPDATE] success id=${telId}, newTel="${phone}"`);
             } else if (mode === "new") {
-              console.log(`[TEL_INSERT] INSERT INTO post_tel_numbers (post_id, tel) VALUES (${post}, "${phone}")`);
               await client.query(
                 `INSERT INTO post_tel_numbers (post_id, tel)
                 VALUES ($1,$2) ON CONFLICT DO NOTHING`,
                 [post, phone]
               );
-              console.log(`[TEL_INSERT] success tel="${phone}"`);
             } else {
-              console.warn(`[TEL_SYNC] Unknown mode="${mode}" for id=${telId}`);
             }
           }
         }
@@ -3881,10 +4017,15 @@ const rawResolvers = {
 
           for (const pf of images) {
             const upload = await pf; // GraphQLUploadFile
-            const ext = path.extname(upload.filename || "");
+            const ext = path.extname(upload.filename || upload.fileName || "");
             const renameTo = `post-${postId}-${Date.now()}${ext || ""}`;
 
-            const row = await persistUploadStream(upload, renameTo);
+            const row = await persistUploadStream(upload, renameTo, {
+              visibility: "public",
+              ownerUserId: author_id,
+              maxBytes: 10 * 1024 * 1024,
+              allowedMimeTypes: SAFE_IMAGE_UPLOAD_MIME_TYPES,
+            });
             fileRows.push(row);
           }
 
@@ -3947,7 +4088,6 @@ const rawResolvers = {
         return out;
       });
 
-      console.log("[upsertPost] = ", result);
 
       // ============================================================
       // ✅ EMIT EVENT (หลัง commit เท่านั้น)
@@ -4397,9 +4537,22 @@ const rawResolvers = {
       }
       const author_id = String(auth.author_id);
 
-      console.log("[Mutation] addMember :", ctx, author_id);
+      console.log("[Mutation] addMember :", author_id);
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
+        const membership = await client.query(
+          `SELECT c.is_group
+             FROM chats c
+             JOIN chat_members mine ON mine.chat_id = c.id AND mine.user_id = $2
+            WHERE c.id = $1
+            FOR UPDATE OF c`,
+          [chat_id, author_id]
+        );
+        if (!membership.rows[0]?.is_group) {
+          throw new GraphQLError("Chat membership required", {
+            extensions: { code: "FORBIDDEN", http: { status: 403 } },
+          });
+        }
         await client.query(
           `INSERT INTO chat_members (chat_id, user_id)
            VALUES ($1, $2)
@@ -4687,6 +4840,46 @@ const rawResolvers = {
 
       console.info("[sendMessage] =", author_id, chat_id, to_user_ids);
 
+      if (!UUID_RE.test(String(chat_id))) {
+        throw new GraphQLError("Invalid chat id", {
+          extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+        });
+      }
+
+      // The room, recipients and sender are server-authoritative. A logged-in
+      // user cannot send into an enumerated chat id or notify arbitrary users.
+      const rawTo = (to_user_ids || [])
+        .filter(Boolean)
+        .map((id) => String(id));
+      if (
+        rawTo.some((id) => !UUID_RE.test(id)) ||
+        (reply_to_id && !UUID_RE.test(String(reply_to_id)))
+      ) {
+        throw new GraphQLError("Invalid message reference", {
+          extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+        });
+      }
+      const cleanTo = Array.from(
+        new Set(
+          rawTo.filter((id) => id !== author_id)
+        )
+      );
+      const memberRows = await query<{ user_id: string }>(
+        `SELECT user_id FROM chat_members WHERE chat_id = $1`,
+        [chat_id]
+      );
+      const memberIds = new Set(memberRows.rows.map((row) => String(row.user_id)));
+      if (!memberIds.has(author_id)) {
+        throw new GraphQLError("Chat membership required", {
+          extensions: { code: "FORBIDDEN", http: { status: 403 } },
+        });
+      }
+      if (cleanTo.some((id) => !memberIds.has(id))) {
+        throw new GraphQLError("Message recipients must be chat members", {
+          extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+        });
+      }
+
       if (normalizedClientMessageId) {
         const existingRes = await query(
           `
@@ -4706,15 +4899,6 @@ const rawResolvers = {
           if (existingMessage) return existingMessage;
         }
       }
-
-      // กรอง to_user_ids ให้ไม่ซ้ำ + ไม่รวมตัวเอง
-      const cleanTo = Array.from(
-        new Set(
-          (to_user_ids || [])
-            .filter(Boolean)
-            .filter((id) => id !== author_id)
-        )
-      );
 
       // ===== Step 1: Pre-upload images (no transaction) =====
       let uploadedFiles: {
@@ -4740,7 +4924,12 @@ const rawResolvers = {
 
             const uploadName = upload?.filename || upload?.fileName || "image";
             const renameTo = `chat_${chat_id}_${Date.now()}_${uploadName}`;
-            const fileRow = await persistUploadStream(upload, renameTo);
+            const fileRow = await persistUploadStream(upload, renameTo, {
+              visibility: "private",
+              ownerUserId: author_id,
+              maxBytes: 10 * 1024 * 1024,
+              allowedMimeTypes: SAFE_IMAGE_UPLOAD_MIME_TYPES,
+            });
 
             return {
               id: fileRow.id,
@@ -4807,7 +4996,12 @@ const rawResolvers = {
 
         const uploadName = upload?.filename || upload?.fileName || "voice";
         const renameTo = `voice_${chat_id}_${Date.now()}_${uploadName}`;
-        const fileRow = await persistUploadStream(upload, renameTo);
+        const fileRow = await persistUploadStream(upload, renameTo, {
+          visibility: "private",
+          ownerUserId: author_id,
+          maxBytes: 25 * 1024 * 1024,
+          allowedMimeTypes: SAFE_AUDIO_UPLOAD_MIME_TYPES,
+        });
         uploadedAudio = {
           id: fileRow.id,
           relpath: fileRow.relpath,
@@ -4837,6 +5031,34 @@ const rawResolvers = {
         existingId: string | null;
         fullMessage: SendMessagePayload | null;
       }>(author_id, async (client, ctx) => {
+        const requiredMembers = [author_id, ...cleanTo];
+        const lockedMembers = await client.query<{ user_id: string }>(
+          `SELECT user_id
+             FROM chat_members
+            WHERE chat_id = $1 AND user_id = ANY($2::uuid[])
+            FOR SHARE`,
+          [chat_id, requiredMembers]
+        );
+        const lockedMemberIds = new Set(
+          lockedMembers.rows.map((row) => String(row.user_id))
+        );
+        if (requiredMembers.some((id) => !lockedMemberIds.has(id))) {
+          throw new GraphQLError("Chat membership changed", {
+            extensions: { code: "FORBIDDEN", http: { status: 403 } },
+          });
+        }
+        if (reply_to_id) {
+          const reply = await client.query(
+            `SELECT 1 FROM messages WHERE id = $1 AND chat_id = $2 LIMIT 1`,
+            [reply_to_id, chat_id]
+          );
+          if (!reply.rowCount) {
+            throw new GraphQLError("Reply message is not in this chat", {
+              extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+            });
+          }
+        }
+
         // 1) Insert message (เพิ่ม reply_to_id เข้าไป)
         const msgRes = await client.query(
           `
@@ -5244,7 +5466,7 @@ const rawResolvers = {
             }
           }
         } catch (e) {
-          if (isDev) console.warn("[FCM] push send failed", e);
+          if (isDev) console.warn("[FCM] push send failed", sanitizeLogValue(e));
         }
       })();
 
@@ -5281,8 +5503,10 @@ const rawResolvers = {
 
       // 2️⃣ ทำความสะอาดข้อมูล
       const name = (data.name ?? '').trim();
-      const avatar = data.avatar ?? null;
-      const phone = data.phone ?? null;
+      // GraphQL distinguishes an omitted optional field from an explicit null.
+      // An edit that only changes a role/password must preserve existing contact data.
+      const avatar = data.avatar;
+      const phone = data.phone;
       if (!name) throw new GraphQLError("name is required");
       const emailResult = data.email ? validateEmail(String(data.email)) : null;
       if (!id && (!emailResult || !emailResult.ok)) throw new GraphQLError("valid email is required");
@@ -5302,19 +5526,28 @@ const rawResolvers = {
       // ✅ ใช้ transaction wrapper เพื่อ ensure COMMIT/ROLLBACK และ SET LOCAL app.editor_id
       const { revisionId, result } = await runInTransaction(author_id, async (client) => {
         let resultUser = null;
+        const target = id
+          ? await requireManageableTarget(ctx, gate, String(id), client, true)
+          : null;
         const resolvedRole = await resolveAssignableRole(
           ctx,
           gate,
           { role_id: data.role_id, role: data.role },
-          id ? {} : { fallbackName: "Subscriber" },
+          id
+            ? { unchangedSelfRoleName: target?.id === gate.actorId ? target.role ?? undefined : undefined }
+            : { fallbackName: "Subscriber" },
           client
         );
         const roleId = resolvedRole?.roleId ?? null;
 
+        if (target?.tenant_id && !target.is_platform_admin && target.role === "Administrator" &&
+            resolvedRole && resolvedRole.roleName !== "Administrator") {
+          await assertAdministratorRemains(client, target.tenant_id, [target.id]);
+        }
+
         if (id) {
-          const target = await requireManageableTarget(ctx, gate, String(id), client, true);
           if (String(id) === gate.actorId && !platform && !gate.isSuper &&
-              resolvedRole && resolvedRole.roleName !== gate.actorRole) {
+              resolvedRole && resolvedRole.roleName !== target?.role) {
             throw new GraphQLError("เปลี่ยนบทบาทของตัวเองไม่ได้", {
               extensions: { code: "FORBIDDEN", http: { status: 403 } },
             });
@@ -5329,13 +5562,17 @@ const rawResolvers = {
           updateValues.push(name);
           paramIndex++;
 
-          updateFields.push(`avatar = $${paramIndex}`);
-          updateValues.push(avatar);
-          paramIndex++;
+          if (avatar !== undefined) {
+            updateFields.push(`avatar = $${paramIndex}`);
+            updateValues.push(avatar);
+            paramIndex++;
+          }
 
-          updateFields.push(`phone = $${paramIndex}`);
-          updateValues.push(phone);
-          paramIndex++;
+          if (phone !== undefined) {
+            updateFields.push(`phone = $${paramIndex}`);
+            updateValues.push(phone);
+            paramIndex++;
+          }
 
           // เขียนเฉพาะ `role_id` — เลิกเขียน `role` เป็น text (trigger sync ชื่อให้เองอยู่แล้ว)
           // path text เป็นทางเดียวที่ทำให้เกิด role ใหม่ในตารางกลางโดยไม่ตั้งใจ
@@ -5351,7 +5588,7 @@ const rawResolvers = {
             paramIndex++;
           }
 
-          const roleChanged = Boolean(resolvedRole && target.role !== resolvedRole.roleName);
+          const roleChanged = Boolean(resolvedRole && target?.role !== resolvedRole.roleName);
           if (roleChanged || passwordHash) {
             updateFields.push(`admin_session_version = admin_session_version + 1`);
           }
@@ -5394,7 +5631,7 @@ const rawResolvers = {
           const { rows } = await client.query(
             `INSERT INTO users (name, avatar, phone, email, role_id, password_hash, tenant_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-            [name, avatar, phone, email, roleId, passwordHash, newTenantId]
+            [name, avatar ?? null, phone ?? null, email, roleId, passwordHash, newTenantId]
           );
           resultUser = rows[0] || null;
 
@@ -5408,21 +5645,17 @@ const rawResolvers = {
           }
         }
 
+        if (resultUser?.id) {
+          await auditUserChangeInTx(
+            client, resultUser.tenant_id ?? tenantId, author_id,
+            id ? "user.update" : "user.create", String(resultUser.id),
+            { role: resolvedRole?.roleName ?? null, passwordChanged: Boolean(passwordHash) }
+          );
+        }
         return { user: resultUser, roleName: resolvedRole?.roleName ?? null };
       });
 
       const resultUser = result.user;
-
-      // audit ลง bms_audit_log (คนละที่กับ addLog/system_logs ด้านบน) — Administrator ของร้าน
-      // อ่านได้ที่ /admin/audit จึงตามได้ว่า Manager แก้ใครไปบ้าง
-      // ⚠️ เรียกหลัง transaction เสมอ (audit() ใช้ pool ธรรมดา ถ้าอยู่ในนั้นจะติด rollback ไปด้วย)
-      // ⚠️ ห้ามใส่ password hash ลง meta
-      if (resultUser?.id) {
-        await audit(ctx, id ? "user.update" : "user.create", String(resultUser.id), {
-          role: result.roleName,
-          passwordChanged: Boolean(passwordHash),
-        });
-      }
 
       return resultUser;
     },
@@ -5438,45 +5671,66 @@ const rawResolvers = {
 
       console.log("[Mutation] uploadAvatar :", author_id);
 
-      // เปลี่ยนรูปคนอื่นต้องมี rank สูงกว่า (รูปตัวเองแก้ได้เสมอ)
-      if (String(user_id) !== gate.actorId) {
-        await requireManageableTarget(ctx, gate, String(user_id));
-      }
+      // Self-edit still needs a tenant match (notably during platform drill-down).
+      await requireManageableTarget(ctx, gate, String(user_id), undefined, true);
 
-      const { revisionId, result } = await runInTransaction(author_id, async (client) => {
-        // Repeat the row guard under lock. The target may have been promoted
-        // after the early UX check but before this transaction started.
-        if (String(user_id) !== gate.actorId) {
-          await requireManageableTarget(ctx, gate, String(user_id), client);
-        }
-        const f = await file; // { filename, mimetype, encoding, createReadStream }
+      const uploaded: { row: StoredFileRow | null } = { row: null };
+      try {
+        const { result } = await runInTransaction(author_id, async (client) => {
+          // Repeat the row guard under lock. The target may have been promoted
+          // after the early UX check but before this transaction started.
+          const target = await requireManageableTarget(ctx, gate, String(user_id), client, true);
+          const f = await file; // { filename, mimetype, encoding, createReadStream }
 
-        // สร้างชื่อใหม่ เช่น avatar-<user_id>.ext
-        const ext = path.extname(f.filename || "");
-        const renameTo = `avatar-${user_id}${ext || ""}`;
+          const ext = path.extname(f.filename || f.fileName || "");
+          const renameTo = `avatar-${user_id}${ext || ""}`;
 
-        const row = await persistUploadStream(f, renameTo); // 👈 ใช้ stream
-
-        const avatarUrl = buildFileUrlById(row.id);
-
-        const updateRes = platform
-          ? await client.query(`UPDATE users SET avatar=$1 WHERE id=$2`, [avatarUrl, user_id])
-          : await client.query(`UPDATE users SET avatar=$1 WHERE id=$2 AND tenant_id=$3`, [avatarUrl, user_id, tenantId]);
-        if (updateRes.rowCount !== 1) {
-          throw new GraphQLError("user not found in current tenant", {
-            extensions: { code: "NOT_FOUND" },
+          const row = await persistUploadStream(f, renameTo, {
+            visibility: "public",
+            tenantId: platform ? null : tenantId,
+            ownerUserId: String(user_id),
+            maxBytes: 5 * 1024 * 1024,
+            allowedMimeTypes: SAFE_IMAGE_UPLOAD_MIME_TYPES,
           });
-        }
+          uploaded.row = row;
 
-        await addLog("info", "upload-avatar", "Upload avatar", {
-          userId: user_id,
-          fileId: row.id,
+          const avatarUrl = buildFileUrlById(row.id);
+
+          const updateRes = platform
+            ? await client.query(`UPDATE users SET avatar=$1 WHERE id=$2`, [avatarUrl, user_id])
+            : await client.query(`UPDATE users SET avatar=$1 WHERE id=$2 AND tenant_id=$3`, [avatarUrl, user_id, tenantId]);
+          if (updateRes.rowCount !== 1) {
+            throw new GraphQLError("user not found in current tenant", {
+              extensions: { code: "NOT_FOUND" },
+            });
+          }
+
+          await auditUserChangeInTx(client, target.tenant_id ?? tenantId, author_id,
+            "user.avatar", String(user_id), { fileId: row.id });
+
+          await addLog("info", "upload-avatar", "Upload avatar", {
+            userId: user_id,
+            fileId: row.id,
+          });
+
+          return avatarUrl;
         });
 
-        return avatarUrl;
-      });
-
-      return result;
+        return result;
+      } catch (error) {
+        // Storage/file metadata is written outside the user transaction. If the
+        // account write or audit rolls back, remove only this new orphan.
+        if (uploaded.row) {
+          try {
+            const removed = await query(`DELETE FROM files WHERE id = $1 AND owner_user_id = $2`,
+              [uploaded.row.id, String(user_id)]);
+            if (removed.rowCount === 1) await deleteStoredFile(uploaded.row.relpath);
+          } catch (cleanupError) {
+            console.error("[uploadAvatar] orphan cleanup failed:", sanitizeLogValue(cleanupError));
+          }
+        }
+        throw error;
+      }
     },
     deleteUser: async (_: any, { id }: { id: string }, ctx: any) => {
       // gate: platform admin ลบได้ทุกร้าน · Administrator ร้านตัวเอง · role ที่มี user.manage
@@ -5496,9 +5750,13 @@ const rawResolvers = {
 
       const { revisionId, result } = await runInTransaction(author_id, async (client) => {
         const target = await requireManageableTarget(ctx, gate, String(id), client);
+        if (target.tenant_id && !target.is_platform_admin && target.role === "Administrator") {
+          await assertAdministratorRemains(client, target.tenant_id, [target.id]);
+        }
         // Reassignment and deletion are atomic: a failed delete must not leave
         // conversations moved as a partial side effect.
         if (target.tenant_id) {
+          await assertNoActiveStaffAssignments(client, target.tenant_id, id);
           await reassignStaffConversations(target.tenant_id, id, client);
         }
         const res = platform
@@ -5507,6 +5765,8 @@ const rawResolvers = {
         const ok = res.rowCount === 1;
 
         if (ok) {
+          await auditUserChangeInTx(client, target.tenant_id ?? tenantId, author_id,
+            "user.delete", String(id), { role: target.role });
           await addLog('info', 'user-delete', 'User deleted', {
             deletedId: id,
             author_id,
@@ -5514,11 +5774,7 @@ const rawResolvers = {
         }
 
         return { ok, role: target.role };
-      });
-
-      if (result.ok) {
-        await audit(ctx, "user.delete", String(id), { role: result.role });
-      }
+      }).catch(explainUserDeleteFailure);
 
       return result.ok;
     },
@@ -5534,9 +5790,12 @@ const rawResolvers = {
 
       const uuidPattern =
         /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      // กรองบัญชีตัวเองออกเสมอ (เหมือน deleteUser) แทนที่จะปฏิเสธทั้ง batch — เลือกหลายคนรวมตัวเอง
-      // มาด้วยได้ แค่ตัวเองไม่โดนลบ ที่เหลือยังลบตามปกติ
-      const uuidIds = [...new Set(ids.filter((i) => uuidPattern.test(i) && String(i) !== author_id))].sort();
+      if (ids.length > 100 || ids.some((i) => !uuidPattern.test(i) || String(i) === author_id)) {
+        throw new GraphQLError("รายการผู้ใช้ที่เลือกไม่ถูกต้องหรือมีบัญชีของตัวเอง", {
+          extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+        });
+      }
+      const uuidIds = [...new Set(ids)].sort();
 
       if (uuidIds.length === 0) return false;
 
@@ -5545,8 +5804,20 @@ const rawResolvers = {
         if (targets.length === 0) return { ok: false, ids: [] as string[] };
         const deletableIds = targets.map((t) => t.id);
 
+        const administratorIdsByTenant = new Map<string, string[]>();
+        for (const target of targets) {
+          if (target.tenant_id && !target.is_platform_admin && target.role === "Administrator") {
+            administratorIdsByTenant.set(target.tenant_id,
+              [...(administratorIdsByTenant.get(target.tenant_id) ?? []), target.id]);
+          }
+        }
+        for (const tenant of [...administratorIdsByTenant.keys()].sort()) {
+          await assertAdministratorRemains(client, tenant, administratorIdsByTenant.get(tenant)!);
+        }
+
         for (const t of targets) {
           if (t.tenant_id) {
+            await assertNoActiveStaffAssignments(client, t.tenant_id, t.id);
             await reassignStaffConversations(t.tenant_id, t.id, client, deletableIds);
           }
         }
@@ -5557,6 +5828,15 @@ const rawResolvers = {
         const affected = res.rowCount ?? 0; // กัน null ที่นี่
 
         if (affected > 0) {
+          const byTenant = new Map<string, string[]>();
+          for (const target of targets) {
+            const scope = target.tenant_id ?? tenantId;
+            byTenant.set(scope, [...(byTenant.get(scope) ?? []), target.id]);
+          }
+          for (const [scope, deletedIds] of byTenant) {
+            await auditUserChangeInTx(client, scope, author_id,
+              "user.delete_bulk", deletedIds.join(","), { ids: deletedIds, count: deletedIds.length });
+          }
           await addLog(
             "info",
             "user-delete",
@@ -5566,11 +5846,7 @@ const rawResolvers = {
         }
 
         return { ok: affected > 0, ids: deletableIds };
-      });
-
-      if (result.ok) {
-        await audit(ctx, "user.delete_bulk", null, { ids: result.ids, count: result.ids.length });
-      }
+      }).catch(explainUserDeleteFailure);
 
       return result.ok;
     },
@@ -5582,7 +5858,7 @@ const rawResolvers = {
       }
       const author_id = String(auth.author_id);
 
-      console.log("[Mutation] updateMyProfile :", author_id, data);
+      console.log("[Mutation] updateMyProfile :", author_id, { fields: Object.keys(data) });
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         const { rows } = await client.query(
@@ -5617,13 +5893,24 @@ const rawResolvers = {
       }
       const author_id = String(auth.author_id);
 
-      console.log('[Mutation] renameChat :', chat_id, name, author_id);
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
-        await client.query(
-          `UPDATE chats SET name=$1 WHERE id=$2`,
-          [name || null, chat_id]
+        const renamed = await client.query(
+          `UPDATE chats c
+              SET name = $1
+            WHERE c.id = $2
+              AND EXISTS (
+                SELECT 1 FROM chat_members cm
+                 WHERE cm.chat_id = c.id AND cm.user_id = $3
+              )
+          RETURNING c.id`,
+          [name || null, chat_id, author_id]
         );
+        if (!renamed.rowCount) {
+          throw new GraphQLError("Chat membership required", {
+            extensions: { code: "FORBIDDEN", http: { status: 403 } },
+          });
+        }
 
         await addLog('info', 'chat-rename', 'Chat renamed', {
           chatId: chat_id,
@@ -5646,8 +5933,17 @@ const rawResolvers = {
 
       const { revisionId, result } = await runInTransaction(author_id, async (client, ctx) => {
         const { rows: [chat] } = await client.query(
-          `SELECT is_undeletable FROM chats WHERE id = $1`, [chat_id]
+          `SELECT is_undeletable
+             FROM chats
+            WHERE id = $1 AND created_by = $2
+            FOR UPDATE`,
+          [chat_id, author_id]
         );
+        if (!chat) {
+          throw new GraphQLError("Only the chat creator can delete this chat", {
+            extensions: { code: "FORBIDDEN", http: { status: 403 } },
+          });
+        }
         if (chat?.is_undeletable) {
           throw new Error("ไม่สามารถลบ chat นี้ได้");
         }
@@ -5794,20 +6090,20 @@ const rawResolvers = {
         throw new Error("Unauthenticated");
       }
       const author_id = String(auth.author_id);
-      console.log("[Mutation] deleteMessage :", ctx, author_id);
+      console.log("[Mutation] deleteMessage :", author_id);
 
       let deletedChatId: string | null = null;
       const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
         const { rows } = await client.query(
-          `SELECT id, chat_id, sender_id, deleted_at FROM messages WHERE id=$1 LIMIT 1`,
-          [message_id]
+          `SELECT id, chat_id, sender_id, deleted_at
+             FROM messages
+            WHERE id = $1 AND sender_id = $2
+            LIMIT 1
+            FOR UPDATE`,
+          [message_id, author_id]
         );
         const msg = rows[0];
         if (!msg) return false;
-
-        // 2️⃣ ตรวจสิทธิ์ (optional)
-        // const canDelete = (msg.sender_id === author_id) || ctx?.admin?.role === 'Administrator';
-        // if (!canDelete) throw new GraphQLError('FORBIDDEN', { extensions: { code: 'FORBIDDEN' } });
 
         // 3️⃣ ลบ (soft delete)
         const { rowCount } = await client.query(
@@ -5849,7 +6145,6 @@ const rawResolvers = {
         });
       }
 
-      console.log("revisionId =", revisionId, "result =", result);
       return result;
     },
     deleteFile: async (_: any, { id }: { id: string }, ctx: any) => {
@@ -5858,12 +6153,20 @@ const rawResolvers = {
       if (!auth.isAuthenticated || !auth.author_id) {
         throw new Error("Unauthenticated");
       }
+      await requirePlatformOnly(ctx);
       const author_id = String(auth.author_id);
+      const fileId = Number.parseInt(String(id), 10);
+      if (!Number.isSafeInteger(fileId) || fileId <= 0) return false;
 
       console.log("[Mutation] deleteFile :", { id, author_id });
 
       const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
-        const res = await client.query(`DELETE FROM files WHERE id = $1`, [id]);
+        const res = await client.query(
+          `UPDATE files
+              SET deleted_at = NOW(), updated_at = NOW()
+            WHERE id = $1 AND deleted_at IS NULL`,
+          [fileId]
+        );
 
         if (res.rowCount === 1) {
           await addLog(
@@ -5878,7 +6181,6 @@ const rawResolvers = {
         }
       });
 
-      console.log("revisionId =", revisionId, "result =", result);
 
       return result;
     },
@@ -5888,6 +6190,7 @@ const rawResolvers = {
       if (!auth.isAuthenticated || !auth.author_id) {
         throw new Error("Unauthenticated");
       }
+      await requirePlatformOnly(ctx);
       const author_id = String(auth.author_id);
 
       console.log("[Mutation] deleteFiles :", ids, "by", author_id);
@@ -5896,13 +6199,15 @@ const rawResolvers = {
 
       const intIds = ids
         .map((n) => parseInt(String(n), 10))
-        .filter((n) => !isNaN(n));
+        .filter((n) => Number.isSafeInteger(n) && n > 0);
 
       if (!intIds.length) return false;
 
       const { revisionId, result } =  await runInTransaction(author_id, async (client, ctx) => {
         const res = await client.query(
-          `DELETE FROM files WHERE id = ANY($1::int[])`,
+          `UPDATE files
+              SET deleted_at = NOW(), updated_at = NOW()
+            WHERE id = ANY($1::int[]) AND deleted_at IS NULL`,
           [intIds]
         );
 
@@ -5921,7 +6226,6 @@ const rawResolvers = {
         return deleted;
       });
 
-      console.log("revisionId =", revisionId, "result =", result);
 
       return result;
     },
@@ -5931,7 +6235,17 @@ const rawResolvers = {
       if (!auth.isAuthenticated || !auth.author_id) {
         throw new Error("Unauthenticated");
       }
+      await requirePlatformOnly(ctx);
       const author_id = String(auth.author_id);
+      const fileId = Number.parseInt(String(id), 10);
+      const safeName = String(name || "").normalize("NFKC").trim();
+      if (
+        !Number.isSafeInteger(fileId) ||
+        fileId <= 0 ||
+        !safeName ||
+        safeName.length > 180 ||
+        /[\u0000-\u001f\u007f]/.test(safeName)
+      ) return false;
       console.log("[Mutation] renameFile by:", author_id);
 
       // ✅ ใช้ transaction helper
@@ -5939,8 +6253,8 @@ const rawResolvers = {
         const res = await client.query(
           `UPDATE files 
              SET original_name = $1, updated_at = NOW()
-           WHERE id = $2`,
-          [name, id]
+           WHERE id = $2 AND deleted_at IS NULL`,
+          [safeName, fileId]
         );
 
         return res.rowCount === 1;
@@ -5952,7 +6266,7 @@ const rawResolvers = {
           'info',
           'file-rename',
           'User renamed a file',
-          { author_id, fileId: id, newName: name }
+          { author_id, fileId, newName: safeName }
         );
       }
 
@@ -6019,7 +6333,7 @@ const rawResolvers = {
           myBookmarkStatusChanged: payload,
         });
       } catch (e) {
-        console.warn("[toggleBookmark] publish myBookmarkStatusChanged failed", e);
+        console.warn("[toggleBookmark] publish myBookmarkStatusChanged failed", sanitizeLogValue(e));
       }
 
       // ✅ หลัง transaction commit → addLog สำหรับ external service (optional)
@@ -6075,7 +6389,7 @@ const rawResolvers = {
           myBookmarkStatusChanged: payload,
         });
       } catch (e) {
-        console.warn("[bookmark] publish myBookmarkStatusChanged failed", e);
+        console.warn("[bookmark] publish myBookmarkStatusChanged failed", sanitizeLogValue(e));
       }
 
       return {
@@ -6123,7 +6437,7 @@ const rawResolvers = {
           myBookmarkStatusChanged: payload,
         });
       } catch (e) {
-        console.warn("[unbookmark] publish myBookmarkStatusChanged failed", e);
+        console.warn("[unbookmark] publish myBookmarkStatusChanged failed", sanitizeLogValue(e));
       }
 
       return {
@@ -6148,6 +6462,16 @@ const rawResolvers = {
 
       return rows.length > 0;
     },
+    setNotificationRead: async (_: any, args: { id: string; isRead: boolean }, ctx: any) => {
+      const user = ctx.user;
+      if (!user) throw new Error('Unauthorized');
+      const { rows } = await query(
+        `UPDATE notifications SET is_read = $3
+          WHERE id = $1 AND user_id = $2 RETURNING id`,
+        [args.id, user.id, args.isRead]
+      );
+      return rows.length > 0;
+    },
     markAllNotificationsRead: async (_: any, __: any, ctx: any) => {
       const user = ctx.user;
       if (!user) throw new Error('Unauthorized');
@@ -6164,6 +6488,15 @@ const rawResolvers = {
 
       return true;
     },
+    deleteNotification: async (_: any, args: { id: string }, ctx: any) => {
+      const user = ctx.user;
+      if (!user) throw new Error('Unauthorized');
+      const { rows } = await query(
+        `DELETE FROM notifications WHERE id = $1 AND user_id = $2 RETURNING id`,
+        [args.id, user.id]
+      );
+      return rows.length > 0;
+    },
     addComment: async (_: any, { post_id, content }: any, ctx: any) => {
       // const { author_id, scope, isAuthenticated } = requireAuth(ctx); 
 
@@ -6175,7 +6508,6 @@ const rawResolvers = {
       
       const user = await getUserById(author_id); // { id, name, avatar, ... }
 
-      console.log("[Mutation] addComment:", author_id, user);
 
       const id = uuidv4();
 
@@ -6190,7 +6522,6 @@ const rawResolvers = {
       );
       const comment = rows[0];
 
-      console.log("[Mutation] addComment-comment", comment);
 
       // หาเจ้าของโพสต์เพื่อแจ้งเตือน
       const postRes = await query(
@@ -6247,7 +6578,6 @@ const rawResolvers = {
 
       const user = await getUserById(author_id);
 
-      console.log("[replyComment]", author_id, user);
 
       const id = uuidv4();
 
@@ -6369,7 +6699,6 @@ const rawResolvers = {
         app_version,
       } = input;
 
-      console.log("[reportScamPhone] input:", input);
 
       const auth = requireAuth(ctx);
       if (!auth.isAuthenticated || !auth.author_id) throw new Error("Unauthenticated");
@@ -6577,7 +6906,7 @@ const rawResolvers = {
           { category: "support", triggeredBy: "resolvers:createSupportTicket" }
         );
       } catch (e: any) {
-        console.error("[support] email notification failed", e?.message || e);
+        console.error("[support] email notification failed", sanitizeLogValue(e));
       }
 
       return { ok: true, message: "Received. We will reply soon.", ticketId };
@@ -6736,7 +7065,7 @@ const rawResolvers = {
       } catch (err: any) {
         console.error("[uploadDiagnostics] failed", {
           uploadId,
-          message: err?.message || "unknown",
+          message: sanitizeLogText(err?.message || "unknown"),
         });
 
         await addLog("error", "diagnostics-upload", "Mobile diagnostics upload failed", {
@@ -7228,7 +7557,7 @@ const rawResolvers = {
           myBankBlockStatusChanged: payload,
         });
       } catch (e) {
-        console.warn("[reportScamBankAccount] publish myBankBlockStatusChanged failed", e);
+        console.warn("[reportScamBankAccount] publish myBankBlockStatusChanged failed", sanitizeLogValue(e));
       }
 
       return result;
@@ -7341,7 +7670,7 @@ const rawResolvers = {
           myBankBlockStatusChanged: payload,
         });
       } catch (e) {
-        console.warn("[unreportScamBankAccount] publish myBankBlockStatusChanged failed", e);
+        console.warn("[unreportScamBankAccount] publish myBankBlockStatusChanged failed", sanitizeLogValue(e));
       }
 
       return result;
@@ -7353,7 +7682,6 @@ const rawResolvers = {
     createRole: async (_: any, { input }: { input: any }, ctx: any) => {
       await requirePlatformOnly(ctx); // role = นิยามกลางทั้งระบบ → platform admin เท่านั้น
       const { author_id } = requireAuth(ctx);
-      console.log('[Mutation] createRole:', author_id, input);
 
       const { name, description, is_active } = input;
 
@@ -7386,10 +7714,9 @@ const rawResolvers = {
           [trimmedName, description || null, is_active !== false]
         );
 
-        console.log('[Mutation] createRole success:', rows[0]);
         return rows[0];
       } catch (err: any) {
-        console.error('[Mutation] createRole error:', err);
+        console.error('[Mutation] createRole error:', sanitizeLogValue(err));
         throw new Error(err.message || 'Failed to create role');
       }
     },
@@ -7397,7 +7724,6 @@ const rawResolvers = {
     updateRole: async (_: any, { id, input }: { id: string; input: any }, ctx: any) => {
       await requirePlatformOnly(ctx); // role = นิยามกลางทั้งระบบ → platform admin เท่านั้น
       const { author_id } = requireAuth(ctx);
-      console.log('[Mutation] updateRole:', author_id, id, input);
 
       const { name, description, is_active } = input;
 
@@ -7474,10 +7800,9 @@ const rawResolvers = {
           params
         );
 
-        console.log('[Mutation] updateRole success:', rows[0]);
         return rows[0];
       } catch (err: any) {
-        console.error('[Mutation] updateRole error:', err);
+        console.error('[Mutation] updateRole error:', sanitizeLogValue(err));
         throw new Error(err.message || 'Failed to update role');
       }
     },
@@ -7519,7 +7844,7 @@ const rawResolvers = {
         console.log('[Mutation] deleteRole success:', id);
         return true;
       } catch (err: any) {
-        console.error('[Mutation] deleteRole error:', err);
+        console.error('[Mutation] deleteRole error:', sanitizeLogValue(err));
         throw new Error(err.message || 'Failed to delete role');
       }
     },
@@ -7551,7 +7876,7 @@ const rawResolvers = {
         console.log('[Mutation] setRoleActive success:', rows[0]);
         return rows[0];
       } catch (err: any) {
-        console.error('[Mutation] setRoleActive error:', err);
+        console.error('[Mutation] setRoleActive error:', sanitizeLogValue(err));
         throw new Error(err.message || 'Failed to set role active status');
       }
     },

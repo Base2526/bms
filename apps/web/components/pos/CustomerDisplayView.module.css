@@ -8,8 +8,12 @@
 .screen *, .screen *::before, .screen *::after { box-sizing: border-box; letter-spacing: 0; }
 .screen > :not(.welcomeBackground) { position: relative; z-index: 1; }
 .welcomeBackground { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
-.welcomeBackground img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.welcomeBackground img { width: 100%; height: 100%; display: block; object-fit: cover; animation: promoFade .45s ease-out; }
 .welcomeBackground span { position: absolute; inset: 0; background: rgba(10, 13, 16, .64); }
+.promoDots { position: absolute; z-index: 1; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; gap: 8px; }
+.promoDots i { width: 9px; height: 9px; border-radius: 999px; background: rgba(255,255,255,.38); box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.promoDots i[data-active="true"] { width: 28px; background: rgba(255,255,255,.92); }
+@keyframes promoFade { from { opacity: .25; transform: scale(1.01); } to { opacity: 1; transform: scale(1); } }
 .screen[data-phase="idle"] .welcome h1,
 .screen[data-phase="idle"] .welcome p,
 .screen[data-phase="idle"] .header,
@@ -79,6 +83,8 @@
 .thanksCopy > p { color: var(--muted); }
 .finishedSummary { min-width: 0; min-height: 220px; display: grid; grid-template-columns: minmax(220px, 1.15fr) 1px minmax(160px, .72fr) 1px minmax(230px, .85fr); gap: clamp(16px, 2vw, 28px); align-items: stretch; padding: 24px 28px; border: 1px solid var(--line); border-radius: 20px; background: #1d2326; box-shadow: 0 16px 38px rgba(0, 0, 0, .16); }
 .finishedSummaryNoChange { grid-template-columns: minmax(240px, 1.15fr) 1px minmax(260px, .85fr); }
+.finishedSummaryQueue { grid-template-columns: minmax(190px, 1fr) 1px minmax(150px, .65fr) 1px minmax(150px, .7fr) 1px minmax(210px, .85fr); }
+.finishedSummaryQueue.finishedSummaryNoChange { grid-template-columns: minmax(220px, 1fr) 1px minmax(170px, .7fr) 1px minmax(240px, .9fr); }
 .finishedDivider { width: 1px; align-self: stretch; background: var(--line); }
 .settlement { min-width: 0; display: grid; align-content: center; gap: 14px; }
 .settlement .row { align-items: baseline; margin: 0; }
@@ -87,6 +93,10 @@
 .change { color: var(--gold); display: grid; place-content: center; gap: 10px; text-align: center; }
 .change p { color: #e6cc8b; font-size: 18px; }
 .change .amount { color: var(--gold); font-size: 48px !important; }
+.pickupQueue { display: grid; place-content: center; gap: 4px; text-align: center; color: var(--green); }
+.pickupQueue p { color: #bbf7d0; font-size: 17px; }
+.pickupQueue strong { font-size: clamp(52px, 7vw, 88px); line-height: 1; font-variant-numeric: tabular-nums; }
+.pickupQueue small { color: var(--muted); font-size: 13px; }
 .finishAside { min-width: 0; display: grid; align-content: center; gap: 18px; }
 .finishAside .member { padding: 0; border-bottom: 0; }
 .guest strong { color: var(--ink); }
@@ -121,7 +131,7 @@
   .thanks { text-align: left; }
   .thanks h1 { font-size: 32px; }
   .checkBadge { width: 64px; height: 64px; font-size: 32px; }
-  .finishedSummary, .finishedSummaryNoChange { grid-template-columns: 1fr; min-height: auto; }
+  .finishedSummary, .finishedSummaryNoChange, .finishedSummaryQueue, .finishedSummaryQueue.finishedSummaryNoChange { grid-template-columns: 1fr; min-height: auto; }
   .finishedDivider { width: auto; height: 1px; }
   .finishAside { justify-items: stretch; }
   .change .amount { font-size: 38px !important; }
@@ -129,6 +139,9 @@
 @media (min-width: 701px) and (max-width: 1000px) {
   .finished { padding-inline: 0; }
   .finishedSummary, .finishedSummaryNoChange { grid-template-columns: minmax(0, 1.3fr) 1px minmax(0, 1fr); }
+  .finishedSummaryQueue, .finishedSummaryQueue.finishedSummaryNoChange { grid-template-columns: 1fr; }
+  .finishedSummaryQueue .finishedDivider { display: block; width: auto; height: 1px; }
+  .finishedSummaryQueue .finishAside { grid-column: auto; display: grid; border-top: 0; padding-top: 0; }
   .finishedDivider:last-of-type { display: none; }
   .finishedSummaryNoChange .settlement { grid-column: 1 / -1; }
   .finishAside { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-top: 1px solid var(--line); padding-top: 16px; }

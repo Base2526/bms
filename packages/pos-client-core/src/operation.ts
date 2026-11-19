@@ -3,7 +3,7 @@ let operationSequence = 0;
 export const POS_OPERATION_TIMEOUT_MS = 15_000;
 
 export class PosConnectionError extends Error {
-  constructor(message: string) {
+  constructor(message: string, public readonly code = 'POS_NETWORK') {
     super(message);
     this.name = "PosConnectionError";
   }
@@ -16,6 +16,7 @@ export function posErrorConnectionStatus(error: unknown): "online" | "offline" |
     serverResponded?: boolean; code?: unknown; httpStatus?: number | null;
     graphQLErrors?: unknown[]; networkError?: { statusCode?: number } | null;
   } | null;
+  if (typeof value?.code === 'string' && ['POS_NETWORK', 'POS_TIMEOUT', 'POS_CANCELLED'].includes(value.code)) return 'offline';
   if (value?.httpStatus === 408 || (value?.httpStatus != null && value.httpStatus >= 500)) return "offline";
   if (value?.serverResponded || value?.graphQLErrors?.length) return "online";
   if (value?.httpStatus != null) return "online";
@@ -32,19 +33,33 @@ export function posErrorConnectionStatus(error: unknown): "online" | "offline" |
 export async function runWithOperationTimeout<T>(
   work: (signal: AbortSignal) => Promise<T>,
   timeoutMs = POS_OPERATION_TIMEOUT_MS,
+  externalSignal?: AbortSignal | null,
 ): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancel: (() => void) | undefined;
   try {
-    return await work(controller.signal);
-  } catch (error) {
-    if (controller.signal.aborted) {
-      const seconds = Math.max(1, Math.ceil(timeoutMs / 1000));
-      throw new PosConnectionError(`เซิร์ฟเวอร์ไม่ตอบภายใน ${seconds} วินาที`);
-    }
-    throw error;
+    const cancellation = new Promise<never>((_resolve, reject) => {
+      cancel = () => {
+        reject(new PosConnectionError('การรอคำตอบถูกยกเลิก', 'POS_CANCELLED'));
+        controller.abort();
+      };
+      if (externalSignal?.aborted) cancel();
+      else externalSignal?.addEventListener('abort', cancel, { once: true });
+    });
+    if (externalSignal?.aborted) return await cancellation;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        const seconds = Math.max(1, Math.ceil(timeoutMs / 1000));
+        // Reject independently: response parsing/native transports may ignore abort.
+        reject(new PosConnectionError(`เซิร์ฟเวอร์ไม่ตอบภายใน ${seconds} วินาที`, 'POS_TIMEOUT'));
+        controller.abort();
+      }, timeoutMs);
+    });
+    return await Promise.race([work(controller.signal), deadline, cancellation]);
   } finally {
     clearTimeout(timer);
+    if (cancel) externalSignal?.removeEventListener('abort', cancel);
   }
 }
 
@@ -84,6 +99,10 @@ const DECIDED_ERROR_CODES = [
 ];
 
 export function isDecidedRejection(error: unknown): boolean {
-  const code = graphqlErrorCode(error);
-  return code != null && DECIDED_ERROR_CODES.includes(code);
+  const value = error as GraphqlErrorShape & { networkError?: unknown } | null;
+  const errors = value?.graphQLErrors;
+  // One decided field cannot prove a different field did not commit before failing.
+  return !value?.networkError && Array.isArray(errors) && errors.length > 0
+    && errors.every(item => typeof item?.extensions?.code === 'string'
+      && DECIDED_ERROR_CODES.includes(item.extensions.code));
 }

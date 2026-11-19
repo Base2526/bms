@@ -1,3 +1,5 @@
+import { posText } from "./clientText";
+
 export type DesktopCustomerDisplayMode = "off" | "auto" | "selected";
 
 export type DesktopDisplay = {
@@ -22,6 +24,32 @@ export type DesktopCustomerDisplayState = {
   displays: DesktopDisplay[];
   targetAvailable: boolean;
   positioningLimited: boolean;
+  /** The selected monitor is already assigned to another managed POS display. */
+  conflict?: boolean;
+};
+
+export type DesktopQueueDisplayState = DesktopCustomerDisplayState & {
+  /** Present on Desktop builds that can manage several queue windows. */
+  maxDisplays?: number;
+  displayCount?: number;
+  targetDisplayIds?: string[];
+  activeDisplayIds?: string[];
+  audioDisplayId?: string | null;
+  preferredAudioDisplayId?: string | null;
+  screens?: Array<{ id: string; label: string; connected: boolean; open: boolean; audio: boolean }>;
+};
+
+export type DesktopQueueWindowPresentation = {
+  displayId: string | null;
+  audioEnabled: boolean;
+  preview: boolean;
+};
+
+export type DesktopExternalDisplayRole = "customer" | "queue";
+
+export type DesktopManagedDisplayState = {
+  customer: DesktopCustomerDisplayState;
+  queue: DesktopQueueDisplayState;
 };
 
 export type DesktopAppInfo = {
@@ -49,10 +77,37 @@ export type DesktopPrinterState = {
   printers: Array<{ name: string; displayName: string; isDefault: boolean }>;
 };
 
+export type DesktopKitchenPrinterRoute = {
+  stationKey: string;
+  stationName: string;
+  deviceName: string;
+  paperWidth: 58 | 80;
+  autoPrint: boolean;
+};
+
+export type DesktopKitchenPrinterState = {
+  version: 1;
+  routes: DesktopKitchenPrinterRoute[];
+  printers: Array<{ name: string; displayName: string; isDefault: boolean }>;
+};
+
+export type DesktopKitchenPrintJob = {
+  jobId: string;
+  stationId: string | null;
+  stationName: string | null;
+  label: string;
+  roundNo: number | null;
+  createdAt: string;
+  items: Array<{ name: string; size: string | null; qty: number; modifiers: string[]; note: string | null }>;
+};
+
 declare global {
   interface Window {
     bmsDesktop?: {
       isDesktop: true;
+      getLanguage?(): Promise<"th" | "en">;
+      setLanguage?(language: "th" | "en"): Promise<{ ok: boolean }>;
+      onLanguageChanged?(listener: (language: "th" | "en") => void): () => void;
       getDeviceToken(): Promise<string | null>;
       getStorageNamespace(): Promise<string | null>;
       getAppInfo?(): Promise<DesktopAppInfo | null>;
@@ -65,6 +120,12 @@ declare global {
       printReceipt?(): Promise<{ ok: boolean; error?: string }>;
       testReceiptPrinter?(): Promise<{ ok: boolean; error?: string }>;
       confirmPrinterTest?(printed: boolean): Promise<{ ok: boolean; error?: string }>;
+      getKitchenPrinterState?(): Promise<DesktopKitchenPrinterState | null>;
+      setKitchenPrinterConfig?(input: { routes: DesktopKitchenPrinterRoute[] }): Promise<{ ok: boolean; error?: string }>;
+      testKitchenPrinter?(stationKey: string): Promise<{ ok: boolean; error?: string; uncertain?: boolean }>;
+      printKitchenTicket?(job: DesktopKitchenPrintJob, options?: { auto?: boolean; retry?: boolean }): Promise<{
+        ok: boolean; error?: string; duplicate?: boolean; skipped?: boolean; uncertain?: boolean; retrySafe?: boolean;
+      }>;
       /** Added in desktop 0.2.3; optional so a newer server remains usable from an older shell. */
       getCustomerDisplayState?(): Promise<DesktopCustomerDisplayState | null>;
       openCustomerDisplayPreview?(): Promise<{
@@ -81,6 +142,37 @@ declare global {
       onCustomerDisplayStateChanged?(
         listener: (state: DesktopCustomerDisplayState) => void,
       ): () => void;
+      /** Added with pickup queue display management; optional for older desktop shells. */
+      getQueueDisplayState?(): Promise<DesktopQueueDisplayState | null>;
+      getQueueWindowPresentation?(): Promise<DesktopQueueWindowPresentation | null>;
+      onQueueWindowPresentationChanged?(
+        listener: (state: DesktopQueueWindowPresentation) => void,
+      ): () => void;
+      openQueueDisplayPreview?(): Promise<{
+        ok: boolean; error?: string; state?: DesktopQueueDisplayState;
+      }>;
+      closeQueueDisplayPreview?(): Promise<{
+        ok: boolean; error?: string; state?: DesktopQueueDisplayState;
+      }>;
+      setQueueDisplayConfig?(input: {
+        mode: DesktopCustomerDisplayMode;
+        targetDisplayId?: string | null;
+      }): Promise<{ ok: boolean; error?: string; state?: DesktopQueueDisplayState }>;
+      setQueueDisplaysConfig?(input: {
+        mode: DesktopCustomerDisplayMode;
+        displayCount: number;
+        targetDisplayIds: string[];
+        audioDisplayId: string | null;
+      }): Promise<{ ok: boolean; error?: string; state?: DesktopManagedDisplayState }>;
+      onQueueDisplayStateChanged?(
+        listener: (state: DesktopQueueDisplayState) => void,
+      ): () => void;
+      /** Atomically assigns a physical display role and releases the conflicting role if needed. */
+      setExternalDisplayRole?(input: {
+        role: DesktopExternalDisplayRole;
+        mode: DesktopCustomerDisplayMode;
+        targetDisplayId?: string | null;
+      }): Promise<{ ok: boolean; error?: string; state?: DesktopManagedDisplayState }>;
       /** Desktop Command/Ctrl+R requests an authoritative data refresh without destroying React. */
       onRefreshRequested?(listener: () => void): () => void;
       /** Generic OS-level attention only; accepts no order/customer payload by design. */
@@ -123,9 +215,9 @@ export async function clearPosDeviceToken(afterRemoval?: () => void): Promise<vo
     let result;
     try { result = await window.bmsDesktop.unpair(cleanup); }
     catch { throw new Error(removalConfirmed
-      ? "เลิกจับคู่แล้ว แต่ล้างข้อมูลหน้าขายไม่สำเร็จ กรุณาปิดแอปแล้วเปิดใหม่"
-      : "เลิกจับคู่เครื่องไม่สำเร็จ กรุณาลองใหม่ ข้อมูลหน้าขายยังอยู่"); }
-    if (!result?.ok) throw new Error(result?.error || "เลิกจับคู่เครื่องไม่สำเร็จ กรุณาลองใหม่ ข้อมูลหน้าขายยังอยู่");
+      ? posText("เลิกจับคู่แล้ว แต่ล้างข้อมูลหน้าขายไม่สำเร็จ กรุณาปิดแอปแล้วเปิดใหม่")
+      : posText("เลิกจับคู่เครื่องไม่สำเร็จ กรุณาลองใหม่ ข้อมูลหน้าขายยังอยู่")); }
+    if (!result?.ok) throw new Error(result?.error || posText("เลิกจับคู่เครื่องไม่สำเร็จ กรุณาลองใหม่ ข้อมูลหน้าขายยังอยู่"));
     cleanup(); // Older preload clients do not support the pre-navigation callback.
     return;
   }
@@ -186,6 +278,25 @@ export function hasDesktopCustomerDisplayBridge(): boolean {
     && typeof bridge.identifyDisplays === "function"
     && typeof bridge.onCustomerDisplayStateChanged === "function"
   );
+}
+
+export function hasDesktopQueueDisplayBridge(): boolean {
+  if (typeof window === "undefined") return false;
+  const bridge = window.bmsDesktop;
+  return Boolean(
+    bridge
+    && typeof bridge.getQueueDisplayState === "function"
+    && typeof bridge.setQueueDisplayConfig === "function"
+    && typeof bridge.identifyDisplays === "function"
+    && typeof bridge.onQueueDisplayStateChanged === "function"
+  );
+}
+
+export function hasDesktopManagedDisplayBridge(): boolean {
+  if (typeof window === "undefined") return false;
+  return hasDesktopCustomerDisplayBridge()
+    && hasDesktopQueueDisplayBridge()
+    && typeof window.bmsDesktop?.setExternalDisplayRole === "function";
 }
 
 export {};

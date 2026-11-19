@@ -5,6 +5,7 @@ import { useState } from "react";
 import dayjs from "dayjs";
 import { useI18n } from "@/lib/i18nContext";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { operatorMessage } from "@/lib/operatorMessage";
 
 const REPORT = gql`query OperatingCosts($month: String!) {
   bmsOperatingCosts(month: $month) { month currency scope complete truncated unresolvedCount duplicateCount
@@ -57,7 +58,7 @@ function CostWorksheet() {
         lifeMonths: values.disposition === "DEPRECIATION" ? values.lifeMonths : null,
         residual: values.disposition === "DEPRECIATION" ? values.residual : null, confirmed: values.confirmed === true } } });
       setSelected(null); await report.refetch(); message.success(t("admin_reports.cost_saved"));
-    } catch (error) { message.error(`${t("admin_reports.cost_save_error")} ${error instanceof Error ? error.message : ""}`); }
+    } catch (error) { message.error(`${t("admin_reports.cost_save_error")} ${operatorMessage(error,t,"write")}`); }
   }
   return <>
     <Alert closable type="info" showIcon message={t("admin_reports.cost_scope")} description={t("admin_reports.cost_basis")} />
@@ -67,7 +68,7 @@ function CostWorksheet() {
       <Button onClick={() => void report.refetch().catch(() => undefined)} loading={report.loading}>{t("admin_reports.refresh")}</Button>
     </Space>
     {report.loading ? <Spin /> : report.error ? <Alert closable type="error" showIcon message={t("admin_reports.cost_load_error")}
-      description={report.error.message} /> : data && <>
+      description={operatorMessage(report.error,t)} /> : data && <>
       <Tag color={data.complete ? "green" : "orange"}>{data.complete ? t("admin_reports.cost_reviewed") : t("admin_reports.cost_incomplete")}</Tag>
       {data.truncated && <Alert closable type="warning" showIcon message={t("admin_reports.cost_truncated")} />}
       <Typography.Paragraph>{t("admin_reports.cost_unreviewed")}: {data.unresolvedCount} · {t("admin_reports.cost_duplicate")}: {data.duplicateCount}</Typography.Paragraph>

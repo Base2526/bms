@@ -1,6 +1,8 @@
 import "server-only";
 
+import crypto from "crypto";
 import { query } from "@/lib/db";
+import { sanitizeLogValue } from "./sanitize";
 
 type SlackLogSignal = {
   level: string;
@@ -16,10 +18,9 @@ type SlackLogSignal = {
 };
 
 function buildDedupeKey(s: SlackLogSignal) {
-  const action = (s.action || "").trim() || "UNKNOWN_ACTION";
-  const platform = (s.platform || "").trim() || "unknown";
-  const app = (s.app_version || "").trim() || "unknown";
-  return ["critical", action, platform, app].join("::");
+  const fingerprint = [s.action, s.category, s.error_message || s.message, s.platform, s.app_version]
+    .map((value) => String(value ?? "")).join("\u0000");
+  return `critical::${crypto.createHash("sha256").update(fingerprint).digest("hex")}`;
 }
 
 function isCritical(s: SlackLogSignal) {
@@ -37,27 +38,23 @@ function isCritical(s: SlackLogSignal) {
   return false;
 }
 
-async function shouldSendSlack(dedupeKey: string, windowSeconds: number) {
+async function claimSlackAlert(dedupeKey: string): Promise<string | null> {
   const { rows } = await query<{ last_sent_at: string }>(
-    `SELECT last_sent_at
-       FROM slack_alert_dedupe
-      WHERE dedupe_key = $1
-      LIMIT 1`,
-    [dedupeKey]
-  );
-
-  if (!rows[0]?.last_sent_at) return true;
-  const last = new Date(rows[0].last_sent_at).getTime();
-  return Date.now() - last > windowSeconds * 1000;
-}
-
-async function markSlackSent(dedupeKey: string) {
-  await query(
     `INSERT INTO slack_alert_dedupe(dedupe_key, last_sent_at)
      VALUES ($1, now())
      ON CONFLICT (dedupe_key)
-     DO UPDATE SET last_sent_at = EXCLUDED.last_sent_at`,
+     DO UPDATE SET last_sent_at = EXCLUDED.last_sent_at
+       WHERE slack_alert_dedupe.last_sent_at < now() - interval '10 minutes'
+     RETURNING last_sent_at`,
     [dedupeKey]
+  );
+  return rows[0]?.last_sent_at ?? null;
+}
+
+async function releaseSlackAlert(dedupeKey: string, claimedAt: string) {
+  await query(
+    `DELETE FROM slack_alert_dedupe WHERE dedupe_key = $1 AND last_sent_at = $2::timestamptz`,
+    [dedupeKey, claimedAt]
   );
 }
 
@@ -67,12 +64,10 @@ export async function maybeAlertSlackForLog(signal: SlackLogSignal) {
     if (!webhook) return;
     if (!isCritical(signal)) return;
 
-    const dedupeKey = buildDedupeKey(signal);
-    const okToSend = await shouldSendSlack(dedupeKey, 10 * 60);
-    if (!okToSend) return;
-
     // Threshold: only alert if repeated in last 10 minutes.
     const action = (signal.action || "").trim() || null;
+    const category = (signal.category || "").trim();
+    const diagnostic = signal.error_message || signal.message || "";
     const platform = (signal.platform || "").trim() || null;
     const appVersion = (signal.app_version || "").trim() || null;
 
@@ -80,15 +75,20 @@ export async function maybeAlertSlackForLog(signal: SlackLogSignal) {
       `SELECT COUNT(*)::int AS count
          FROM system_logs
         WHERE level = 'error'
-          AND ($1::text IS NULL OR (action = $1 OR meta->>'action' = $1))
-          AND ($2::text IS NULL OR (platform = $2 OR meta->>'platform' = $2))
-          AND ($3::text IS NULL OR (app_version = $3 OR meta->>'appVersion' = $3))
+          AND category = $1
+          AND COALESCE(NULLIF(error_message, ''), message) = $2
+          AND ($3::text IS NULL OR (action = $3 OR meta->>'action' = $3))
+          AND ($4::text IS NULL OR (platform = $4 OR meta->>'platform' = $4))
+          AND ($5::text IS NULL OR (app_version = $5 OR meta->>'appVersion' = $5))
           AND created_at > (now() - interval '10 minutes')`,
-      [action, platform, appVersion]
+      [category, diagnostic, action, platform, appVersion]
     );
 
     const count = rows?.[0]?.count ?? 0;
     if (count < 3) return;
+    const dedupeKey = buildDedupeKey(signal);
+    const claimedAt = await claimSlackAlert(dedupeKey);
+    if (!claimedAt) return;
 
     const env = process.env.NODE_ENV || "unknown";
     const title = `CRITICAL: ${action || signal.category || "error"} (${platform || "unknown"} v${appVersion || "?"})`;
@@ -115,14 +115,19 @@ export async function maybeAlertSlackForLog(signal: SlackLogSignal) {
       ],
     };
 
-    await fetch(webhook, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    await markSlackSent(dedupeKey);
+    try {
+      const response = await fetch(webhook, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!response.ok) throw new Error(`Slack webhook returned HTTP ${response.status}`);
+    } catch (error) {
+      await releaseSlackAlert(dedupeKey, claimedAt);
+      throw error;
+    }
   } catch (e) {
-    console.error("[maybeAlertSlackForLog] failed", e);
+    console.error("[maybeAlertSlackForLog] failed", sanitizeLogValue(e));
   }
 }

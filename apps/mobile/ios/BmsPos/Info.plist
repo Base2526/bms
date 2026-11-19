@@ -50,9 +50,9 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
 	<key>NSCameraUsageDescription</key>
-	<string>ใช้กล้องเพื่อสแกนบาร์โค้ดสินค้าและ QR จับคู่เครื่องขายจากระบบหลังบ้าน</string>
+	<string>Use the camera to scan product barcodes and register-pairing QR codes from the back office.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>เชื่อมต่อเครื่องพิมพ์ใบเสร็จในเครือข่ายร้านเพื่อตรวจสถานะและส่งงานพิมพ์</string>
+	<string>Connect to receipt printers on the shop network to check their status and send print jobs.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

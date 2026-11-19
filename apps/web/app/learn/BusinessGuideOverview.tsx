@@ -16,8 +16,8 @@ const recordings: Record<string, Recording> = audioManifest;
 const ui = {
   th: {
     play: "▶ เล่นพร้อมภาพ", pause: "หยุดชั่วคราว", previous: "ก่อนหน้า", next: "ถัดไป", restart: "เริ่มใหม่",
-    step: "ขั้น", speed: "ความเร็ว", recorded: "เสียงไทยใช้เสียงชุดเดียวกับคู่มือ Restaurant และจุดใน Flow จะ Focus ตามคำบรรยาย",
-    unavailable: "เล่นเสียงไม่ได้ แต่ยังเลือกดูแต่ละขั้นได้", overview: "ภาพรวม", customer: "สำหรับลูกค้า", owner: "สำหรับเจ้าของร้าน",
+    step: "ขั้น", speed: "ความเร็ว", recorded: "เสียงบรรยายไทยสร้างสำหรับแต่ละคู่มือ และจุดใน Flow จะ Focus ตามคำบรรยาย",
+    unavailable: "โหลดเสียงไม่ได้หรือเบราว์เซอร์ไม่รองรับ ยังอ่านคำบรรยายและเลือกดูแต่ละขั้นได้", overview: "ภาพรวม", customer: "สำหรับลูกค้า", owner: "สำหรับเจ้าของร้าน",
     aiTitle: "AI ช่วยลูกค้าและเจ้าของร้านคนละขอบเขต", connected: "ต้องเชื่อมต่อและเปิดใช้งาน", permission: "ตรวจสิทธิ์ก่อนอ่านข้อมูล",
     customerAsks: "ลูกค้าถาม", aiTools: "AI เรียกเครื่องมือ", approvedFacts: "ตอบข้อมูลที่อนุญาต", canDo: "สิ่งที่ AI ทำได้",
     sample: "ตัวอย่างโครงสร้างคำตอบ", sampleNotice: "เมื่อใช้งานจริง ตัวเลขมาจากข้อมูลที่ตรวจสอบแล้ว", export: "Export report",
@@ -26,8 +26,8 @@ const ui = {
   },
   en: {
     play: "▶ Play with visual", pause: "Pause", previous: "Previous", next: "Next", restart: "Restart",
-    step: "Step", speed: "Speed", recorded: "Thai uses the same recorded voice as the Restaurant guide; each spoken cue focuses its flow node.",
-    unavailable: "Audio is unavailable, but every step remains selectable.", overview: "Overview", customer: "For customers", owner: "For owners",
+    step: "Step", speed: "Speed", recorded: "Each guide has its own recorded Thai cues; narration follows the focused flow node.",
+    unavailable: "Audio could not load or the browser does not support it. The transcript and flow remain available.", overview: "Overview", customer: "For customers", owner: "For owners",
     aiTitle: "AI helps customers and owners within different boundaries", connected: "Must be connected and enabled", permission: "Permission checked before every read",
     customerAsks: "Customer asks", aiTools: "AI calls a tool", approvedFacts: "Approved facts only", canDo: "What AI can do",
     sample: "Sample answer structure", sampleNotice: "Live use replaces these labels with verified system data.", export: "Export report",
@@ -42,12 +42,14 @@ export function BusinessGuideOverview({ track, lang }: { track: BusinessTrackId;
   const cues = useMemo(() => businessNarrationCues(track, lang), [lang, track]);
   const [speechSupported, setSpeechSupported] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const [paused, setPaused] = useState(false);
   const [step, setStep] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const audioElement = useRef<HTMLAudioElement>(null);
   const audioPlayer = useRef<RecordedNarration>();
   const recorded = lang === "th";
+  const activePlayback = playing && !paused;
   const cue = cues[step];
 
   const stopAudio = useCallback(() => {
@@ -78,6 +80,7 @@ export function BusinessGuideOverview({ track, lang }: { track: BusinessTrackId;
       : typeof window !== "undefined" && "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
     setSpeechSupported(supported);
     setPlaying(false);
+    setPaused(false);
     setStep(0);
     setVoiceError(null);
     return stopAudio;
@@ -121,17 +124,29 @@ export function BusinessGuideOverview({ track, lang }: { track: BusinessTrackId;
   function toggleNarration() {
     if (!speechSupported || voiceError) return;
     if (playing) {
-      stopAudio();
-      setPlaying(false);
+      if (paused) {
+        if (recorded) {
+          const player = audioPlayer.current;
+          if (!player) { setVoiceError("file"); setPlaying(false); setPaused(false); return; }
+          void player.resume().then(() => setPaused(false)).catch(() => { setVoiceError("file"); setPlaying(false); setPaused(false); });
+        }
+        else { window.speechSynthesis.resume(); setPaused(false); }
+      } else {
+        if (recorded) audioPlayer.current?.pause();
+        else window.speechSynthesis.pause();
+        setPaused(true);
+      }
       return;
     }
     if (recorded) startRecorded(step);
+    setPaused(false);
     setPlaying(true);
   }
 
   function move(next: number) {
     stopAudio();
     setPlaying(false);
+    setPaused(false);
     setVoiceError(null);
     setStep(Math.min(Math.max(next, 0), cues.length - 1));
   }
@@ -151,7 +166,7 @@ export function BusinessGuideOverview({ track, lang }: { track: BusinessTrackId;
               data-tone={item.tone}
               aria-current={active ? "step" : undefined}
             >
-              {active && playing && <span className={s.inventoryFlowSpeaker} aria-hidden="true">♪</span>}
+              {active && activePlayback && <span className={s.inventoryFlowSpeaker} aria-hidden="true">♪</span>}
               {item.ai && <span className={s.inventoryFlowAiBadge}><b aria-hidden="true">✦</b> {item.ai === "customer" ? (lang === "th" ? "AI ลูกค้า" : "Customer AI") : (lang === "th" ? "AI เจ้าของร้าน" : "Owner AI")}</span>}
               <span className={s.inventoryFlowIcon} aria-hidden="true">{item.icon}</span>
               <div><strong>{item.title[lang]}</strong><small>{item.description[lang]}</small></div>
@@ -171,7 +186,7 @@ export function BusinessGuideOverview({ track, lang }: { track: BusinessTrackId;
         <p>{config.description[lang]}</p>
       </div>
       <div className={s.inventoryNarration}>
-        <button type="button" onClick={toggleNarration} disabled={!speechSupported || Boolean(voiceError)} aria-pressed={playing}>{playing ? t.pause : t.play}</button>
+        <button type="button" onClick={toggleNarration} disabled={!speechSupported || Boolean(voiceError)} aria-pressed={activePlayback}>{activePlayback ? t.pause : t.play}</button>
         <span role="status">{!speechSupported || voiceError ? t.unavailable : t.recorded}</span>
       </div>
     </div>
@@ -190,7 +205,7 @@ export function BusinessGuideOverview({ track, lang }: { track: BusinessTrackId;
           cueText={cue.text}
           step={step}
           total={cues.length}
-          playing={playing}
+          playing={activePlayback}
           canPlay={speechSupported && !voiceError}
           onTogglePlaying={toggleNarration}
           onPrevious={() => move(step - 1)}
@@ -198,17 +213,17 @@ export function BusinessGuideOverview({ track, lang }: { track: BusinessTrackId;
           renderDiagram={() => renderDiagram(true)}
         />
       </div>
-      <div className={s.inventoryPlayback} data-playing={playing}>
+      <div className={s.inventoryPlayback} data-playing={activePlayback}>
         <div className={s.inventoryPlaybackHeading}>
           <span>{t.step} {step + 1} / {cues.length}</span>
           <div className={s.inventoryPlaybackControls}>
             <button type="button" onClick={() => move(step - 1)} disabled={step === 0}>{t.previous}</button>
             <button type="button" onClick={() => move(step + 1)} disabled={step === cues.length - 1}>{t.next}</button>
             <button type="button" onClick={() => move(0)}>{t.restart}</button>
-            <label>{t.speed}<select value={speed} onChange={(event) => { stopAudio(); setPlaying(false); setSpeed(Number(event.target.value)); }}><option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option></select></label>
+            <label>{t.speed}<select value={speed} onChange={(event) => { stopAudio(); setPlaying(false); setPaused(false); setSpeed(Number(event.target.value)); }}><option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option></select></label>
           </div>
         </div>
-        <p aria-live={playing ? "off" : "polite"}>{cue.text}</p>
+        <p aria-live={activePlayback ? "off" : "polite"}>{cue.text}</p>
       </div>
       {renderDiagram()}
       <p className={s.inventoryFlowNote}><span aria-hidden="true">▣</span> {config.flowNote[lang]}</p>

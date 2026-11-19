@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { useUiText } from "@/lib/useUiText";
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Empty, Input, Modal, Popconfirm, Space, Tag, Typography, message } from "antd";
 import { useMemo, useState } from "react";
@@ -48,6 +50,7 @@ const LOCALES: PharmacyGuidanceLocale[] = ["th", "en"];
 const STATUS_COLOR: Record<Template["status"], string> = { DRAFT: "gold", APPROVED: "green", RETIRED: "default" };
 
 export default function PharmacyGuidancePage() {
+  const uiText = useUiText();
   const { t } = useI18n();
   const { can } = useBmsPermissions();
   const canManage = can("pharmacy.protocol.manage");
@@ -116,7 +119,7 @@ export default function PharmacyGuidancePage() {
                       {t("admin_pharmacy_guidance.approved_by", {
                         name: row.approvedByName ?? "—",
                         license: row.approvedLicenseNo ?? "—",
-                        at: row.approvedAt ? new Date(row.approvedAt).toLocaleString() : "—",
+                        at: row.approvedAt ? new Date(row.approvedAt).toLocaleString(uiText.locale) : "—",
                       })}
                     </Typography.Text>
                   ) : null}

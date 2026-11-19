@@ -6,20 +6,25 @@
 // =============================================================
 
 import { query } from "@/lib/db";
+import type { GraphQLResolveInfo } from "graphql/type/definition";
+import type { SelectionSetNode } from "graphql/language/ast";
 import {
   payOrder,
   packOrder,
   shipOrder,
+  handoverRetailPickup,
   completeOrder,
   cancelOrder,
   returnOrder,
   getOrderJourney,
   reorderFromOrder,
   createOrder,
+  canAccessOrderBranch,
 } from "@/lib/bms/orders";
 import { restaurantCancellationLossReport } from "@/lib/bms/restaurantOrdering";
 import { MARKETPLACE_CHANNELS } from "@/lib/bms/shipping";
-import { listOrderDiscounts } from "@/lib/bms/membership";
+import { listOrderDiscounts, listOrderDiscountsBatch } from "@/lib/bms/membership";
+import { loadOrderListItems, loadOrderListShippingAddresses } from "@/lib/bms/orderListRead";
 import { generateInvoice } from "@/lib/bms/documents";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
@@ -35,28 +40,26 @@ type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 const VALID_ORDER_CHANNELS = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada"] as const;
 
+function requestedOrderListFields(info: GraphQLResolveInfo): Set<string> {
+  const names = new Set<string>();
+  const seenFragments = new Set<string>();
+  const walk = (set: SelectionSetNode | undefined) => {
+    for (const selection of set?.selections ?? []) {
+      if (selection.kind === "Field") names.add(selection.name.value);
+      else if (selection.kind === "InlineFragment") walk(selection.selectionSet);
+      else if (!seenFragments.has(selection.name.value)) {
+        seenFragments.add(selection.name.value);
+        walk(info.fragments[selection.name.value]?.selectionSet);
+      }
+    }
+  };
+  for (const field of info.fieldNodes) walk(field.selectionSet);
+  return names;
+}
+
 async function assertOrderBranchAccess(ctx: any, tenantId: string, orderId: string): Promise<void> {
   const userId = String(requireAuth(ctx).author_id || "");
-  if (!userId) return;
-  const res = await query<{ allowed: boolean }>(
-    `SELECT (
-        NOT EXISTS (
-          SELECT 1 FROM bms_user_allowed_locations al
-           WHERE al.tenant_id = $1 AND al.user_id = $2
-        )
-        OR EXISTS (
-          SELECT 1
-            FROM bms_orders o
-            JOIN bms_user_allowed_locations al
-              ON al.tenant_id = o.tenant_id
-             AND al.user_id = $2
-             AND al.location_id = o.location_id
-           WHERE o.tenant_id = $1 AND o.id = $3
-        )
-      ) AS allowed`,
-    [tenantId, userId, orderId]
-  );
-  if (!res.rows[0]?.allowed) {
+  if (!userId || !(await canAccessOrderBranch(tenantId, orderId, userId))) {
     throw new GraphQLError("ไม่มีสิทธิ์จัดการออเดอร์ของสาขานี้", {
       extensions: { code: "FORBIDDEN", http: { status: 403 } },
     });
@@ -87,7 +90,8 @@ export const bmsOrdersResolvers = {
     async bmsOrders(
       _p: unknown,
       args: { search?: string; status?: OrderStatus; limit?: number; offset?: number; locationId?: string | null },
-      ctx: any
+      ctx: any,
+      info: GraphQLResolveInfo
     ) {
       await requirePermission(ctx, "order.view");
       const tid = getTenantId(ctx);
@@ -105,7 +109,8 @@ export const bmsOrdersResolvers = {
                 COALESCE(d.deposit_paid, 0) AS deposit_paid,
                 CASE WHEN d.id IS NULL THEN 0 ELSE GREATEST(d.total_amount - d.deposit_paid, 0) END AS deposit_balance_due,
                 d.status AS deposit_status,
-                o.coupon_code, o.preferred_carrier, o.fulfillment_type, o.promised_at, o.location_id,
+                o.coupon_code, o.preferred_carrier, o.fulfillment_type, o.retail_fulfillment_type,
+                o.quote_site_address, o.promised_at, o.location_id,
                 loc.name AS location_name, loc.branch_code,
                 pd.name AS pos_device_name, pd.registered_pos_no,
                 o.pos_shift_id, o.created_at, o.updated_at,
@@ -150,7 +155,23 @@ export const bmsOrdersResolvers = {
           LIMIT $2 OFFSET $3`,
         [status, limit, offset, tid, search, locationId, userId]
       );
-      return res.rows;
+      const rows = res.rows;
+      if (!rows.length) return rows;
+      const selected = requestedOrderListFields(info);
+      const orderIds = rows.map(row => String(row.id));
+      const [items, shippingCustomers, discounts] = await Promise.all([
+        selected.has("items") ? loadOrderListItems(tid, rows as { id: string; customer_id: string | null }[]) : Promise.resolve(null),
+        selected.has("hasShippingAddress") ? loadOrderListShippingAddresses(tid, rows as { id: string; customer_id: string | null }[]) : Promise.resolve(null),
+        selected.has("discountLines") ? listOrderDiscountsBatch(tid, orderIds) : Promise.resolve(null),
+      ]);
+      return rows.map(row => ({ ...row,
+        __listItems: items?.get(String(row.id)),
+        __listHasShippingAddress: shippingCustomers
+          ? (row.fulfillment_type === "PICKUP" || row.retail_fulfillment_type === "PICKUP"
+            || Boolean(row.quote_site_address) || MARKETPLACE_CHANNELS.has(row.channel) ||
+            (Boolean(row.customer_id) && shippingCustomers.has(String(row.customer_id)))) : undefined,
+        __listDiscountLines: discounts?.get(String(row.id)),
+      }));
     },
 
     async bmsOrderLocations(_p: unknown, _a: unknown, ctx: any) {
@@ -170,7 +191,8 @@ export const bmsOrdersResolvers = {
                 COALESCE(d.deposit_paid, 0) AS deposit_paid,
                 CASE WHEN d.id IS NULL THEN 0 ELSE GREATEST(d.total_amount - d.deposit_paid, 0) END AS deposit_balance_due,
                 d.status AS deposit_status,
-                o.coupon_code, o.preferred_carrier, o.fulfillment_type, o.promised_at, o.location_id,
+                o.coupon_code, o.preferred_carrier, o.fulfillment_type, o.retail_fulfillment_type,
+                o.quote_site_address, o.promised_at, o.location_id,
                 loc.name AS location_name, loc.branch_code,
                 pd.name AS pos_device_name, pd.registered_pos_no,
                 o.pos_shift_id, o.created_at, o.updated_at,
@@ -230,40 +252,48 @@ export const bmsOrdersResolvers = {
       await requirePermission(ctx, "order.ship");
       const tenantId = getTenantId(ctx);
       await assertOrderBranchAccess(ctx, tenantId, args.id);
-      const ok = await packOrder(tenantId, args.id);
-      if (ok) await audit(ctx, "order.pack", args.id);
+      const ok = await packOrder(tenantId, args.id, String(requireAuth(ctx).author_id));
       return ok;
     },
     async bmsShipOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.ship");
       const tenantId = getTenantId(ctx);
       await assertOrderBranchAccess(ctx, tenantId, args.id);
-      const ok = await shipOrder(tenantId, args.id);
-      if (ok) await audit(ctx, "order.ship", args.id);
+      const ok = await shipOrder(tenantId, args.id, String(requireAuth(ctx).author_id));
       return ok;
+    },
+    async bmsHandoverRetailPickup(_p: unknown, args: { id: string; confirmed: boolean }, ctx: any) {
+      await requirePermission(ctx, "order.ship");
+      if (args.confirmed !== true) return false;
+      const tenantId = getTenantId(ctx);
+      await assertOrderBranchAccess(ctx, tenantId, args.id);
+      return handoverRetailPickup(tenantId, args.id, String(requireAuth(ctx).author_id));
     },
     async bmsCompleteOrder(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "order.pay");
       const tenantId = getTenantId(ctx);
       await assertOrderBranchAccess(ctx, tenantId, args.id);
-      const ok = await completeOrder(tenantId, args.id);
-      if (ok) await audit(ctx, "order.complete", args.id);
+      const ok = await completeOrder(tenantId, args.id, String(requireAuth(ctx).author_id));
       return ok;
     },
-    async bmsCancelOrder(_p: unknown, args: { id: string }, ctx: any) {
+    async bmsCancelOrder(_p: unknown, args: { id: string; confirmed: boolean }, ctx: any) {
       await requirePermission(ctx, "order.cancel");
+      if (args.confirmed !== true) throw new GraphQLError("ต้องยืนยันการยกเลิกออร์เดอร์ก่อน", {
+        extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+      });
       const tenantId = getTenantId(ctx);
       await assertOrderBranchAccess(ctx, tenantId, args.id);
-      const ok = await cancelOrder(tenantId, args.id);
-      if (ok) await audit(ctx, "order.cancel", args.id);
+      const ok = await cancelOrder(tenantId, args.id, String(requireAuth(ctx).author_id));
       return ok;
     },
-    async bmsReturnOrder(_p: unknown, args: { id: string }, ctx: any) {
+    async bmsReturnOrder(_p: unknown, args: { id: string; confirmed: boolean }, ctx: any) {
       await requirePermission(ctx, "order.return");
+      if (args.confirmed !== true) throw new GraphQLError("ต้องยืนยันการคืนสินค้าออร์เดอร์ก่อน", {
+        extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
+      });
       const tenantId = getTenantId(ctx);
       await assertOrderBranchAccess(ctx, tenantId, args.id);
-      const ok = await returnOrder(tenantId, args.id);
-      if (ok) await audit(ctx, "order.return", args.id);
+      const ok = await returnOrder(tenantId, args.id, String(requireAuth(ctx).author_id));
       return ok;
     },
     async bmsReorderFromOrder(_p: unknown, args: { id: string }, ctx: any) {
@@ -272,7 +302,6 @@ export const bmsOrdersResolvers = {
       await assertOrderBranchAccess(ctx, tenantId, args.id);
       const r = await reorderFromOrder(tenantId, args.id, ctx?.admin?.id ?? null);
       if (r.status === "CREATED") {
-        await audit(ctx, "order.reorder", r.orderId, { sourceOrderId: args.id });
         return { status: r.status, orderId: r.orderId, total: r.total, message: `สร้างออร์เดอร์ใหม่แล้ว ยอดรวม ${r.total.toLocaleString()} ฿` };
       }
       const messages: Record<string, string> = {
@@ -313,7 +342,6 @@ export const bmsOrdersResolvers = {
         locationId,
       });
       if (r.status === "CREATED") {
-        await audit(ctx, "order.create", r.orderId, { itemCount: (args.items ?? []).length, total: r.total, discount: r.discount, couponCode: r.couponCode });
         const discountNote = r.discount > 0 ? ` (ใช้โค้ดส่วนลด ${r.couponCode} -${r.discount.toLocaleString()} ฿)` : "";
         return { status: r.status, orderId: r.orderId, total: r.total, message: `สร้างออร์เดอร์แล้ว ยอดรวม ${r.total.toLocaleString()} ฿${discountNote}` };
       }
@@ -338,7 +366,8 @@ export const bmsOrdersResolvers = {
 
   // field resolver: ดึงรายการสินค้าในออร์เดอร์
   BmsOrder: {
-    async items(parent: { id: string }, _args: unknown, ctx: any) {
+    async items(parent: { id: string; __listItems?: unknown[] }, _args: unknown, ctx: any) {
+      if (parent.__listItems) return parent.__listItems;
       const res = await query(
         `SELECT product_sku, product_name, size, qty, unit_price, line_amount
            FROM bms_order_items WHERE tenant_id = $2 AND order_id = $1
@@ -348,8 +377,12 @@ export const bmsOrdersResolvers = {
       return res.rows;
     },
     // External fulfillment platforms keep delivery/rider authority on their side.
-    async hasShippingAddress(parent: { channel: string; customer_id: string | null; fulfillment_type?: string | null }, _args: unknown, ctx: any) {
-      if (parent.fulfillment_type === "PICKUP") return true;
+    async hasShippingAddress(parent: { channel: string; customer_id: string | null; fulfillment_type?: string | null;
+      retail_fulfillment_type?: string | null; quote_site_address?: string | null;
+      __listHasShippingAddress?: boolean }, _args: unknown, ctx: any) {
+      if (typeof parent.__listHasShippingAddress === "boolean") return parent.__listHasShippingAddress;
+      if (parent.fulfillment_type === "PICKUP" || parent.retail_fulfillment_type === "PICKUP"
+        || Boolean(parent.quote_site_address)) return true;
       if (MARKETPLACE_CHANNELS.has(parent.channel)) return true;
       if (!parent.customer_id) return false;
       const res = await query(
@@ -360,7 +393,8 @@ export const bmsOrdersResolvers = {
       return (res.rowCount ?? 0) > 0;
     },
     // ส่วนลดแยกที่มา (7.96) — บิลก่อน 7.96 และบิลที่ไม่มีส่วนลดจะได้ [] ปกติ
-    async discountLines(parent: { id: string }, _args: unknown, ctx: any) {
+    async discountLines(parent: { id: string; __listDiscountLines?: unknown[] }, _args: unknown, ctx: any) {
+      if (parent.__listDiscountLines) return parent.__listDiscountLines;
       return listOrderDiscounts(getTenantId(ctx), parent.id);
     },
     // normalize ให้ตรง schema (String! สำหรับ timestamps, Float สำหรับ numeric)
@@ -373,7 +407,9 @@ export const bmsOrdersResolvers = {
     deposit_status: (p: any) => p.deposit_status ?? null,
     coupon_code: (p: any) => p.coupon_code ?? null,
     preferred_carrier: (p: any) => p.preferred_carrier ?? null,
-    fulfillmentType: (p: any) => p.fulfillment_type ?? null,
+    fulfillmentType: (p: any) => p.retail_fulfillment_type ?? p.fulfillment_type ?? null,
+    retailFulfillmentType: (p: any) => p.retail_fulfillment_type ?? null,
+    quoteSiteAddress: (p: any) => p.quote_site_address ?? null,
     promisedAt: (p: any) => p.promised_at instanceof Date ? p.promised_at.toISOString() : p.promised_at ?? null,
     pendingRefundCount: (p: any) => Number(p.pending_refund_count ?? 0),
     pendingRefundAmount: (p: any) => Number(p.pending_refund_amount ?? 0),

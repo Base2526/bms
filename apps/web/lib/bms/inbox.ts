@@ -22,13 +22,14 @@ import {
 import { getChannel } from "./channels";
 import { recordOutboundSuccess, recordOutboundError, formatOutboundErrorDetail } from "./channelHealth";
 import { createNotification } from "@/lib/notifications/service";
-import { assignCouponToCustomer, couponCodeFromShareText, createCouponWalletToken } from "./coupons";
+import { assignCouponToCustomerInTx, couponCodeFromShareText, createCouponWalletToken } from "./coupons";
 import { beginTenantTx } from "./tenant";
 import { enqueueAiQualityReview, type AiTurnQuality } from "./aiQuality";
 import { ensureCustomerForIdentity } from "./customers";
 import { reportBmsFailure } from "./failureAlert";
 import { evidenceForQuality } from "./customerAnswerEvidence";
 import { persistAnswerEvidence } from "./answerEvidenceStore";
+import { outboundInboxMediaUrl, safeInboxAttachmentUrl } from "./inboxMedia";
 
 export type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
 
@@ -89,9 +90,10 @@ export function messagePreview(body: string | null | undefined, att?: Attachment
 }
 
 // ช่องที่ push ออกได้จริง (มี API ส่ง) → FAILED มีความหมาย
-// web/tiktok/test = ไม่ push (widget poll / ยังไม่มี API) → ถือว่า SENT เมื่อ persist สำเร็จ
+// web/tiktok/shopee/lazada/test = บันทึกใน Inbox เท่านั้น; ไม่มีช่องทางส่งคำตอบของ staff กลับลูกค้า
+export const OUTBOUND_PUSH_CHANNELS = ["line", "facebook", "instagram"] as const;
 export function channelSupportsPush(channel: string): boolean {
-  return channel === "line" || channel === "facebook" || channel === "instagram";
+  return (OUTBOUND_PUSH_CHANNELS as readonly string[]).includes(channel);
 }
 
 /** สถานะ outbound (Phase 1): push channel → delivered?SENT:FAILED · อื่น → SENT (บันทึกแล้ว) */
@@ -183,7 +185,8 @@ export async function logConversation(
 
     const inboundMeta = JSON.stringify({
       ...(incomingMeta ? { inbound: incomingMeta } : {}),
-      ...(incomingAttachment ? { attachment: incomingAttachment } : {}),
+      ...(incomingAttachment && safeInboxAttachmentUrl(incomingAttachment.url)
+        ? { attachment: incomingAttachment } : {}),
     });
     const messages = await client.query<{ id: string; direction: "IN" | "OUT" }>(
       `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
@@ -196,7 +199,9 @@ export async function logConversation(
         convId,
         incoming,
         reply,
-        JSON.stringify(quality ? { aiQuality: quality } : {}),
+        JSON.stringify({ ...(quality ? { aiQuality: quality } : {}),
+          delivered: !channelSupportsPush(channel),
+          status: channelSupportsPush(channel) ? "PENDING" : "SENT" }),
         inboundMeta,
       ]
     );
@@ -294,8 +299,10 @@ export async function logInboundMessage(
 ): Promise<string | null> {
   if (!customerRef || (channel === "test" && !isPersistedPharmacyLabConversation(channel, customerRef))) return null;
   const body = (input.body ?? "").trim();
-  const attachment = input.attachment?.url ? input.attachment : null;
+  const attachment = input.attachment?.url && safeInboxAttachmentUrl(input.attachment.url) ? input.attachment : null;
   const preview = messagePreview(body, attachment) || "[ข้อความที่ระบบยังไม่รองรับ]";
+  let client: PoolClient | null = null;
+  let persistedConversationId: string | null = null;
   try {
     const cust = await query<{ customer_id: string }>(
       `SELECT customer_id FROM bms_customer_identities
@@ -312,7 +319,9 @@ export async function logInboundMessage(
       }
     }
 
-    const conv = await query<{ id: string; inserted: boolean }>(
+    client = await getClient();
+    await beginTenantTx(client, tenantId);
+    const conv = await client.query<{ id: string; inserted: boolean }>(
       `INSERT INTO bms_conversations
          (tenant_id, channel, customer_ref, customer_id, status, unread, last_message, last_message_at, last_sender_type)
        VALUES ($1, $2, $3, $4, 'OPEN', 1, $5, now(), 'customer')
@@ -328,7 +337,7 @@ export async function logInboundMessage(
       [tenantId, channel, customerRef, customerId, preview.slice(0, 500)]
     );
     const conversationId = conv.rows[0].id;
-    const inserted = await query<{ id: string }>(
+    const inserted = await client.query<{ id: string }>(
       `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
        VALUES ($1, $2, 'IN', $3, 'customer', $4::jsonb)
        RETURNING id`,
@@ -342,15 +351,27 @@ export async function logInboundMessage(
         }),
       ]
     );
+    await client.query("COMMIT");
+    persistedConversationId = conversationId;
+    client.release();
+    client = null;
 
     if (conv.rows[0].inserted) {
-      await autoAssignConversation(tenantId, conversationId);
+      try {
+        await autoAssignConversation(tenantId, conversationId);
+      } catch (error) {
+        // The inbound message already committed. Assignment can be retried by staff.
+        console.error("[BMS] logInboundMessage auto-assignment failed:", error);
+      }
     }
     publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED", "customer", inserted.rows[0]?.id);
     return conversationId;
   } catch (error) {
+    if (client) await client.query("ROLLBACK").catch(() => undefined);
     console.error("[BMS] logInboundMessage failed:", error);
-    return null;
+    return persistedConversationId;
+  } finally {
+    client?.release();
   }
 }
 
@@ -382,41 +403,66 @@ export async function createDiagnosticInboxMessage(
   const customerRef = `diagnostic:${channel}:${actorId}`;
   const messageBody = (body || "").trim() || `[DIAGNOSTIC] ข้อความทดสอบจาก ${channel} ${new Date().toLocaleString("th-TH")}`;
 
-  const conv = await query<{ id: string; inserted: boolean }>(
-    `INSERT INTO bms_conversations
-       (tenant_id, channel, customer_ref, customer_id, status, unread, last_message, last_message_at)
-     VALUES ($1, $2, $3, NULL, 'OPEN', 1, $4, now())
-     ON CONFLICT (tenant_id, channel, customer_ref) DO UPDATE
-       SET unread = bms_conversations.unread + 1,
-           last_message = EXCLUDED.last_message,
-           last_message_at = now(),
-           status = CASE WHEN bms_conversations.status = 'CLOSED' THEN 'OPEN' ELSE bms_conversations.status END,
-           updated_at = now()
-     RETURNING id, (xmax = 0) AS inserted`,
-    [tenantId, channel, customerRef, messageBody.slice(0, 500)]
-  );
+  const client = await getClient();
+  let conversationId: string;
+  let messageId: string;
+  let occurredAt: string;
+  let newlyInserted: boolean;
+  try {
+    await beginTenantTx(client, tenantId);
+    const conv = await client.query<{ id: string; inserted: boolean }>(
+      `INSERT INTO bms_conversations
+         (tenant_id, channel, customer_ref, customer_id, status, unread, last_message, last_message_at)
+       VALUES ($1, $2, $3, NULL, 'OPEN', 1, $4, now())
+       ON CONFLICT (tenant_id, channel, customer_ref) DO UPDATE
+         SET unread = bms_conversations.unread + 1,
+             last_message = EXCLUDED.last_message,
+             last_message_at = now(),
+             status = CASE WHEN bms_conversations.status = 'CLOSED' THEN 'OPEN' ELSE bms_conversations.status END,
+             updated_at = now()
+       RETURNING id, (xmax = 0) AS inserted`,
+      [tenantId, channel, customerRef, messageBody.slice(0, 500)]
+    );
 
-  const conversationId = conv.rows[0].id;
-  const msg = await query<{ id: string; created_at: Date | string }>(
-    `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
-     VALUES ($1, $2, 'IN', $3, 'diagnostic', $4)
-     RETURNING id, created_at`,
-    [tenantId, conversationId, messageBody, JSON.stringify({ diagnostic: true, channel, actorId })]
-  );
+    conversationId = conv.rows[0].id;
+    newlyInserted = conv.rows[0].inserted;
+    const msg = await client.query<{ id: string; created_at: Date | string }>(
+      `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
+       VALUES ($1, $2, 'IN', $3, 'diagnostic', $4)
+       RETURNING id, created_at`,
+      [tenantId, conversationId, messageBody, JSON.stringify({ diagnostic: true, channel, actorId })]
+    );
 
-  if (conv.rows[0].inserted) {
-    await autoAssignConversation(tenantId, conversationId);
+    messageId = String(msg.rows[0].id);
+    occurredAt = msg.rows[0].created_at instanceof Date
+      ? msg.rows[0].created_at.toISOString()
+      : String(msg.rows[0].created_at);
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'inbox.diagnostic_message', $3, $4::jsonb)`,
+      [tenantId, actorId, conversationId,
+        JSON.stringify({ channel, messageId, customerRef })]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
   }
 
-  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED", "diagnostic", msg.rows[0].id);
+  if (newlyInserted) {
+    try {
+      await autoAssignConversation(tenantId, conversationId);
+    } catch (error) {
+      console.error("[BMS] diagnostic Inbox auto-assignment failed:", error);
+    }
+  }
 
-  const occurredAt = msg.rows[0].created_at instanceof Date
-    ? msg.rows[0].created_at.toISOString()
-    : String(msg.rows[0].created_at);
+  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED", "diagnostic", messageId);
 
   return {
     conversationId,
-    messageId: msg.rows[0].id,
+    messageId,
     channel,
     customerRef,
     occurredAt,
@@ -455,7 +501,7 @@ export async function pickAutoAssignee(
   tenantId: string,
   excludeUserIds: string[] = [],
   client?: PoolClient,
-  requiredPermissions: string[] = []
+  requiredPermissions: string[] = ["inbox.view", "inbox.reply"]
 ): Promise<string | null> {
   const run = client ? client.query.bind(client) : query;
   for (const roleName of ["Sales", "Manager", "Administrator"]) {
@@ -464,6 +510,7 @@ export async function pickAutoAssignee(
          FROM users u
          JOIN roles r ON r.id = u.role_id
         WHERE u.tenant_id = $1 AND r.name = $2 AND u.is_available = true
+          AND u.pos_only = FALSE AND u.is_platform_admin = FALSE
           AND (cardinality($3::uuid[]) = 0 OR u.id <> ALL($3::uuid[]))
           AND (r.name = 'Administrator' OR NOT EXISTS (
             SELECT 1 FROM unnest($4::text[]) AS needed(permission)
@@ -486,6 +533,12 @@ export async function listAutoAssignPool(tenantId: string): Promise<string[]> {
     const res = await query<{ id: string }>(
       `SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id
         WHERE u.tenant_id = $1 AND r.name = $2 AND u.is_available = true
+          AND u.pos_only = FALSE AND u.is_platform_admin = FALSE
+          AND (r.name = 'Administrator' OR NOT EXISTS (
+            SELECT 1 FROM unnest(ARRAY['inbox.view','inbox.reply']::text[]) AS needed(permission)
+             WHERE NOT EXISTS (SELECT 1 FROM bms_role_permissions rp
+               WHERE rp.tenant_id = $1 AND rp.role_id = u.role_id AND rp.permission = needed.permission)
+          ))
         ORDER BY u.created_at`,
       [tenantId, roleName]
     );
@@ -550,17 +603,38 @@ export async function reassignStaffConversations(
 }
 
 async function autoAssignConversation(tenantId: string, conversationId: string): Promise<void> {
-  const staffId = await pickAutoAssignee(tenantId);
-  if (!staffId) return; // ร้านนี้ยังไม่มี staff เลยสักคน — ปล่อยว่างไว้ก่อน (edge case ร้านเพิ่งสมัคร)
-  await query(
-    `UPDATE bms_conversations SET assigned_to_user_id = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, conversationId, staffId]
-  );
-  await query(
-    `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
-     VALUES ($1, 'system:auto-assign', 'inbox.assign', $2, $3)`,
-    [tenantId, conversationId, JSON.stringify({ toUserId: staffId, auto: true })]
-  );
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const conversation = await client.query<{ assigned_to_user_id: string | null }>(
+      `SELECT assigned_to_user_id FROM bms_conversations
+        WHERE tenant_id = $1 AND id = $2 FOR UPDATE`, [tenantId, conversationId]);
+    // A staff member may have claimed the new conversation after its insert.
+    if (!conversation.rows[0] || conversation.rows[0].assigned_to_user_id) {
+      await client.query("COMMIT");
+      return;
+    }
+    const staffId = await pickAutoAssignee(tenantId, [], client);
+    if (!staffId) {
+      await client.query("COMMIT");
+      return; // No available staff yet; the Inbox can keep the conversation unassigned.
+    }
+    const updated = await client.query(
+      `UPDATE bms_conversations SET assigned_to_user_id = $3, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND assigned_to_user_id IS NULL`,
+      [tenantId, conversationId, staffId]);
+    if (updated.rowCount !== 1) throw new Error("Inbox auto-assignment lost its conversation lock");
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, 'system:auto-assign', 'inbox.assign', $2, $3::jsonb)`,
+      [tenantId, conversationId, JSON.stringify({ toUserId: staffId, auto: true })]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // ---- read ----------------------------------------------------
@@ -582,16 +656,17 @@ export async function listConversations(
             tc.extra->>'botBasicId' AS source_handle,
             tc.extra->>'botPictureUrl' AS source_avatar
        FROM bms_conversations c
-       LEFT JOIN bms_customers cu ON cu.id = c.customer_id
+       LEFT JOIN bms_customers cu ON cu.tenant_id = c.tenant_id AND cu.id = c.customer_id
        LEFT JOIN bms_customer_identities ci
          ON ci.tenant_id = c.tenant_id AND ci.channel = c.channel AND ci.external_ref = c.customer_ref
        LEFT JOIN bms_tenant_channels tc
          ON tc.tenant_id = c.tenant_id AND tc.channel = c.channel
-       LEFT JOIN users au ON au.id = c.assigned_to_user_id
+       LEFT JOIN users au ON au.tenant_id = c.tenant_id AND au.id = c.assigned_to_user_id
       WHERE c.tenant_id = $1
         AND ($2::text IS NULL OR c.status = $2)
         AND ($3::uuid IS NULL OR c.assigned_to_user_id = $3
-             OR EXISTS (SELECT 1 FROM bms_conversation_helpers h WHERE h.conversation_id = c.id AND h.user_id = $3))
+             OR EXISTS (SELECT 1 FROM bms_conversation_helpers h
+                         WHERE h.tenant_id = c.tenant_id AND h.conversation_id = c.id AND h.user_id = $3))
         AND ($4::text IS NULL OR $4 = ANY(c.tags))
         AND (
           $5::text IS NULL
@@ -625,13 +700,24 @@ export async function countUnreadConversations(tenantId: string, assignedTo?: st
         AND c.status IN ('OPEN','PENDING')
         AND c.unread > 0
         AND ($2::uuid IS NULL OR c.assigned_to_user_id = $2
-             OR EXISTS (SELECT 1 FROM bms_conversation_helpers h WHERE h.conversation_id = c.id AND h.user_id = $2))`,
+             OR EXISTS (SELECT 1 FROM bms_conversation_helpers h
+                         WHERE h.tenant_id = c.tenant_id AND h.conversation_id = c.id AND h.user_id = $2))`,
     [tenantId, assignedTo ?? null]
   );
   return Number(res.rows[0]?.total ?? 0);
 }
 
-export async function getConversation(tenantId: string, id: string) {
+// A read must enforce Sales ownership in the same SQL statement that returns data.
+// Adapter-only checks can become stale when a conversation is reassigned between
+// the check and a nested GraphQL field or timeline read.
+function inboxReadScopeSql(parameter: number): string {
+  return `($${parameter}::uuid IS NULL OR c.assigned_to_user_id = $${parameter}::uuid
+    OR EXISTS (SELECT 1 FROM bms_conversation_helpers h
+      WHERE h.tenant_id = c.tenant_id AND h.conversation_id = c.id
+        AND h.user_id = $${parameter}::uuid))`;
+}
+
+export async function getConversation(tenantId: string, id: string, restrictedUserId?: string) {
   const res = await query(
     `SELECT c.id, c.channel, c.customer_ref, c.customer_id, c.status,
             c.assigned_to_user_id, au.name AS assigned_name, au.avatar AS assigned_avatar, au.email AS assigned_email,
@@ -642,31 +728,66 @@ export async function getConversation(tenantId: string, id: string) {
             tc.extra->>'botBasicId' AS source_handle,
             tc.extra->>'botPictureUrl' AS source_avatar
        FROM bms_conversations c
-       LEFT JOIN bms_customers cu ON cu.id = c.customer_id
+       LEFT JOIN bms_customers cu ON cu.tenant_id = c.tenant_id AND cu.id = c.customer_id
        LEFT JOIN bms_customer_identities ci
          ON ci.tenant_id = c.tenant_id AND ci.channel = c.channel AND ci.external_ref = c.customer_ref
        LEFT JOIN bms_tenant_channels tc
          ON tc.tenant_id = c.tenant_id AND tc.channel = c.channel
-       LEFT JOIN users au ON au.id = c.assigned_to_user_id
-      WHERE c.tenant_id = $1 AND c.id = $2`,
-    [tenantId, id]
+       LEFT JOIN users au ON au.tenant_id = c.tenant_id AND au.id = c.assigned_to_user_id
+      WHERE c.tenant_id = $1 AND c.id = $2 AND ${inboxReadScopeSql(3)}`,
+    [tenantId, id, restrictedUserId ?? null]
   );
   return res.rows[0] ?? null;
 }
 
-export async function listMessages(tenantId: string, conversationId: string, limit = 200) {
+/** Sales may open or act on conversations assigned to them as owner or helper. */
+export async function canAccessInboxConversation(tenantId: string, conversationId: string, userId: string): Promise<boolean> {
+  const res = await query<{ allowed: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM bms_conversations c
+        WHERE c.tenant_id = $1 AND c.id = $2
+          AND (c.assigned_to_user_id = $3::uuid OR EXISTS (
+            SELECT 1 FROM bms_conversation_helpers h
+             WHERE h.tenant_id = c.tenant_id AND h.conversation_id = c.id AND h.user_id = $3::uuid
+          ))
+     ) AS allowed`,
+    [tenantId, conversationId, userId]
+  );
+  return res.rows[0]?.allowed === true;
+}
+
+export async function canAccessInboxMessage(tenantId: string, messageId: string, userId: string): Promise<boolean> {
+  const res = await query<{ allowed: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM bms_messages m
+       JOIN bms_conversations c ON c.tenant_id = m.tenant_id AND c.id = m.conversation_id
+        WHERE m.tenant_id = $1 AND m.id = $2
+          AND (c.assigned_to_user_id = $3::uuid OR EXISTS (
+            SELECT 1 FROM bms_conversation_helpers h
+             WHERE h.tenant_id = c.tenant_id AND h.conversation_id = c.id AND h.user_id = $3::uuid
+          ))
+     ) AS allowed`,
+    [tenantId, messageId, userId]
+  );
+  return res.rows[0]?.allowed === true;
+}
+
+export async function listMessages(
+  tenantId: string, conversationId: string, limit = 200, restrictedUserId?: string,
+) {
   const lim = Math.min(Math.max(limit, 1), 500);
   const res = await query(
     `SELECT id, direction, body, sender, meta, created_at
        FROM (
-         SELECT id, direction, body, sender, meta, created_at
-           FROM bms_messages
-          WHERE tenant_id = $1 AND conversation_id = $2
-          ORDER BY created_at DESC, id DESC
+         SELECT m.id, m.direction, m.body, m.sender, m.meta, m.created_at
+           FROM bms_messages m
+           JOIN bms_conversations c ON c.tenant_id = m.tenant_id AND c.id = m.conversation_id
+          WHERE m.tenant_id = $1 AND m.conversation_id = $2 AND ${inboxReadScopeSql(4)}
+          ORDER BY m.created_at DESC, m.id DESC
           LIMIT $3
        ) recent
       ORDER BY created_at, id`,
-    [tenantId, conversationId, lim]
+    [tenantId, conversationId, lim, restrictedUserId ?? null]
   );
   return res.rows;
 }
@@ -710,20 +831,36 @@ export async function ensureConversationForPipeline(
     [tenantId, channel, customerRef]
   );
   const customerId = cust.rows[0]?.customer_id ?? null;
-  const conv = await query<{ id: string; inserted: boolean }>(
-    `INSERT INTO bms_conversations
-       (tenant_id, channel, customer_ref, customer_id, status, unread, last_message, last_message_at, last_sender_type)
-     VALUES ($1, $2, $3, $4, 'OPEN', 0, $5, now(), 'customer')
-     ON CONFLICT (tenant_id, channel, customer_ref) DO UPDATE
-       SET customer_id = COALESCE(bms_conversations.customer_id, EXCLUDED.customer_id),
-           status = CASE WHEN bms_conversations.status = 'CLOSED' THEN 'OPEN' ELSE bms_conversations.status END,
-           updated_at = now()
-     RETURNING id, (xmax = 0) AS inserted`,
-    [tenantId, channel, customerRef, customerId, incoming.slice(0, 500)]
-  );
+  const client = await getClient();
+  let conv: { rows: { id: string; inserted: boolean }[] };
+  try {
+    await beginTenantTx(client, tenantId);
+    conv = await client.query<{ id: string; inserted: boolean }>(
+      `INSERT INTO bms_conversations
+         (tenant_id, channel, customer_ref, customer_id, status, unread, last_message, last_message_at, last_sender_type)
+       VALUES ($1, $2, $3, $4, 'OPEN', 0, $5, now(), 'customer')
+       ON CONFLICT (tenant_id, channel, customer_ref) DO UPDATE
+         SET customer_id = COALESCE(bms_conversations.customer_id, EXCLUDED.customer_id),
+             status = CASE WHEN bms_conversations.status = 'CLOSED' THEN 'OPEN' ELSE bms_conversations.status END,
+             updated_at = now()
+       RETURNING id, (xmax = 0) AS inserted`,
+      [tenantId, channel, customerRef, customerId, incoming.slice(0, 500)]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
   const convId = conv.rows[0]?.id ?? null;
   if (conv.rows[0]?.inserted && convId) {
-    await autoAssignConversation(tenantId, convId);
+    try {
+      await autoAssignConversation(tenantId, convId);
+    } catch (error) {
+      // The conversation was committed; assignment failure is a separate concern.
+      console.error("[BMS] pipeline conversation auto-assignment failed:", error);
+    }
   }
   return convId;
 }
@@ -881,34 +1018,88 @@ export async function consumeAiConversationChoice(
  * reset=false → +1 (AI ตอบไปแต่ไม่คืบหน้า) คืนค่าใหม่หลังอัปเดตให้ caller เทียบ threshold เอง
  */
 export async function bumpAiTurnCounter(tenantId: string, convId: string, reset: boolean): Promise<number> {
-  const res = await query<{ ai_consecutive_askbacks: number }>(
-    `UPDATE bms_conversations
-        SET ai_consecutive_askbacks = CASE WHEN $3 THEN 0 ELSE ai_consecutive_askbacks + 1 END,
-            updated_at = now()
-      WHERE tenant_id = $1 AND id = $2
-      RETURNING ai_consecutive_askbacks`,
-    [tenantId, convId, reset]
-  );
-  return res.rows[0]?.ai_consecutive_askbacks ?? 0;
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const res = await client.query<{ ai_consecutive_askbacks: number }>(
+      `UPDATE bms_conversations
+          SET ai_consecutive_askbacks = CASE WHEN $3 THEN 0 ELSE ai_consecutive_askbacks + 1 END,
+              updated_at = now()
+        WHERE tenant_id = $1 AND id = $2
+        RETURNING ai_consecutive_askbacks`,
+      [tenantId, convId, reset]
+    );
+    await client.query("COMMIT");
+    return res.rows[0]?.ai_consecutive_askbacks ?? 0;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // ---- manage --------------------------------------------------
+async function lockConversationForScopedWrite(
+  client: PoolClient, tenantId: string, id: string, restrictedUserId?: string,
+): Promise<{ assigned_to_user_id: string | null; unread: number } | null> {
+  const current = await client.query<{ assigned_to_user_id: string | null; unread: number }>(
+    `SELECT assigned_to_user_id, unread FROM bms_conversations
+      WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, [tenantId, id]);
+  const row = current.rows[0];
+  if (!row) return null;
+  if (restrictedUserId && row.assigned_to_user_id !== restrictedUserId) {
+    const helper = await client.query(
+      `SELECT 1 FROM bms_conversation_helpers
+        WHERE tenant_id=$1 AND conversation_id=$2 AND user_id=$3 FOR SHARE`,
+      [tenantId, id, restrictedUserId]);
+    if (!helper.rowCount) return null;
+  }
+  return row;
+}
+
 // เปลี่ยน staff หลัก — ต้องมี user จริงเสมอ (ทุก conversation ห้ามไม่มี staff)
 // ถ้า user คนนี้เคยเป็นผู้ช่วยตอบอยู่ → ถอดออก (เลื่อนขึ้นเป็นเจ้าของแล้ว ห้ามซ้ำสองบทบาท)
-export async function assignConversation(tenantId: string, id: string, userId: string): Promise<boolean> {
-  const res = await query(
-    `UPDATE bms_conversations SET assigned_to_user_id = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, id, userId]
-  );
-  const ok = (res.rowCount ?? 0) > 0;
-  if (ok) {
-    await query(
-      `DELETE FROM bms_conversation_helpers WHERE tenant_id = $1 AND conversation_id = $2 AND user_id = $3`,
-      [tenantId, id, userId]
-    );
+export async function assignConversation(
+  tenantId: string, id: string, userId: string,
+  options: { actor: string; restrictedUserId?: string },
+): Promise<boolean> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const current = await lockConversationForScopedWrite(client, tenantId, id, options.restrictedUserId);
+    if (!current) {
+      await client.query("COMMIT");
+      return false;
+    }
+    const target = await client.query(
+      `SELECT u.id FROM users u JOIN roles r ON r.id=u.role_id
+        WHERE u.tenant_id=$1 AND u.id=$2 AND r.name IN ('Sales','Manager','Administrator')
+        FOR SHARE OF u`, [tenantId, userId]);
+    if (!target.rowCount) {
+      await client.query("COMMIT");
+      return false;
+    }
+    await client.query(
+      `UPDATE bms_conversations SET assigned_to_user_id=$3, updated_at=now()
+        WHERE tenant_id=$1 AND id=$2`, [tenantId, id, userId]);
+    await client.query(
+      `DELETE FROM bms_conversation_helpers
+        WHERE tenant_id=$1 AND conversation_id=$2 AND user_id=$3`, [tenantId, id, userId]);
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id,actor,action,target,meta)
+       VALUES ($1,$2,'inbox.assign',$3,$4::jsonb)`,
+      [tenantId, options.actor, id,
+        JSON.stringify({ fromUserId: current.assigned_to_user_id, toUserId: userId })]);
+    await client.query("COMMIT");
     publishInboxChanged(tenantId, id, "CONVERSATION_CHANGED");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
   }
-  return ok;
 }
 
 // ---- staff picker + คนช่วยตอบ (helpers) -----------------------
@@ -918,7 +1109,8 @@ const WORKLOAD_COUNT_SQL = `(
   SELECT COUNT(*) FROM bms_conversations c
    WHERE c.tenant_id = $1 AND c.status IN ('OPEN','PENDING')
      AND (c.assigned_to_user_id = u.id
-          OR EXISTS (SELECT 1 FROM bms_conversation_helpers h WHERE h.conversation_id = c.id AND h.user_id = u.id))
+          OR EXISTS (SELECT 1 FROM bms_conversation_helpers h
+                      WHERE h.tenant_id = c.tenant_id AND h.conversation_id = c.id AND h.user_id = u.id))
 )`;
 
 /** รายชื่อ staff ที่มอบหมาย/เพิ่มเป็นคนช่วยตอบได้ (Sales/Manager/Administrator — ไม่รวม Warehouse)
@@ -936,42 +1128,113 @@ export async function listAssignableStaff(tenantId: string) {
   return res.rows;
 }
 
-export async function addConversationHelper(tenantId: string, id: string, userId: string, addedBy: string | null): Promise<boolean> {
-  const res = await query(
-    `INSERT INTO bms_conversation_helpers (tenant_id, conversation_id, user_id, added_by)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (conversation_id, user_id) DO NOTHING`,
-    [tenantId, id, userId, addedBy]
-  );
-  if ((res.rowCount ?? 0) > 0) publishInboxChanged(tenantId, id, "CONVERSATION_CHANGED");
-  return true;
+export async function addConversationHelper(
+  tenantId: string, id: string, userId: string, addedBy: string,
+  options: { restrictedUserId?: string } = {},
+): Promise<boolean> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const current = await lockConversationForScopedWrite(client, tenantId, id, options.restrictedUserId);
+    if (!current || current.assigned_to_user_id === userId) {
+      await client.query("COMMIT");
+      return false;
+    }
+    const target = await client.query(
+      `SELECT u.id FROM users u JOIN roles r ON r.id=u.role_id
+        WHERE u.tenant_id=$1 AND u.id=$2 AND r.name IN ('Sales','Manager','Administrator')
+        FOR SHARE OF u`, [tenantId, userId]);
+    if (!target.rowCount) {
+      await client.query("COMMIT");
+      return false;
+    }
+    const inserted = await client.query(
+      `INSERT INTO bms_conversation_helpers (tenant_id,conversation_id,user_id,added_by)
+       VALUES ($1,$2,$3,$4) ON CONFLICT (conversation_id,user_id) DO NOTHING`,
+      [tenantId, id, userId, addedBy]);
+    if (!inserted.rowCount) {
+      await client.query("COMMIT");
+      return false;
+    }
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id,actor,action,target,meta)
+       VALUES ($1,$2,'inbox.helper_add',$3,$4::jsonb)`,
+      [tenantId, addedBy, id, JSON.stringify({ userId })]);
+    await client.query("COMMIT");
+    publishInboxChanged(tenantId, id, "CONVERSATION_CHANGED");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
-export async function removeConversationHelper(tenantId: string, id: string, userId: string): Promise<boolean> {
-  const res = await query(
-    `DELETE FROM bms_conversation_helpers WHERE tenant_id = $1 AND conversation_id = $2 AND user_id = $3`,
-    [tenantId, id, userId]
-  );
-  const ok = (res.rowCount ?? 0) > 0;
-  if (ok) publishInboxChanged(tenantId, id, "CONVERSATION_CHANGED");
-  return ok;
+export async function removeConversationHelper(
+  tenantId: string, id: string, userId: string, actor: string,
+  options: { restrictedUserId?: string } = {},
+): Promise<boolean> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const current = await lockConversationForScopedWrite(client, tenantId, id, options.restrictedUserId);
+    if (!current) {
+      await client.query("COMMIT");
+      return false;
+    }
+    const removed = await client.query(
+      `DELETE FROM bms_conversation_helpers
+        WHERE tenant_id=$1 AND conversation_id=$2 AND user_id=$3`,
+      [tenantId, id, userId]);
+    if (!removed.rowCount) {
+      await client.query("COMMIT");
+      return false;
+    }
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id,actor,action,target,meta)
+       VALUES ($1,$2,'inbox.helper_remove',$3,$4::jsonb)`,
+      [tenantId, actor, id, JSON.stringify({ userId })]);
+    await client.query("COMMIT");
+    publishInboxChanged(tenantId, id, "CONVERSATION_CHANGED");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
-export async function listConversationHelpers(tenantId: string, id: string) {
+export async function listConversationHelpers(tenantId: string, id: string, restrictedUserId?: string) {
   const res = await query(
     `SELECT u.id, u.name, u.avatar, u.email
        FROM bms_conversation_helpers h
-       JOIN users u ON u.id = h.user_id
-      WHERE h.tenant_id = $1 AND h.conversation_id = $2
+       JOIN bms_conversations c ON c.tenant_id = h.tenant_id AND c.id = h.conversation_id
+       JOIN users u ON u.id = h.user_id AND u.tenant_id = h.tenant_id
+      WHERE h.tenant_id = $1 AND h.conversation_id = $2 AND ${inboxReadScopeSql(3)}
       ORDER BY h.added_at`,
-    [tenantId, id]
+    [tenantId, id, restrictedUserId ?? null]
   );
   return res.rows;
 }
 
-export async function setUserAvailability(userId: string, available: boolean): Promise<boolean> {
-  const res = await query(`UPDATE users SET is_available = $2 WHERE id = $1`, [userId, available]);
-  return (res.rowCount ?? 0) > 0;
+export async function setUserAvailability(tenantId: string, userId: string, available: boolean): Promise<boolean> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: userId });
+    const res = await client.query<{ changed: boolean }>(
+      `SELECT bms_set_own_inbox_availability($1::uuid, $2::uuid, $3::boolean) AS changed`,
+      [tenantId, userId, available]
+    );
+    await client.query("COMMIT");
+    return res.rows[0]?.changed === true;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // ---- system events (แทรกในสายแชท) ----------------------------
@@ -987,20 +1250,24 @@ export type SystemEvent = {
   auto: boolean;
 };
 
-export async function listSystemEvents(tenantId: string, conversationId: string, limit = 50): Promise<SystemEvent[]> {
+export async function listSystemEvents(
+  tenantId: string, conversationId: string, limit = 50, restrictedUserId?: string,
+): Promise<SystemEvent[]> {
   const lim = Math.min(Math.max(Number(limit || 50), 1), 200);
   const res = await query<{ id: string; actor: string | null; action: string; meta: any; created_at: any }>(
     `SELECT id, actor, action, meta, created_at
        FROM (
-         SELECT id, actor, action, meta, created_at
-           FROM bms_audit_log
-          WHERE tenant_id = $1 AND target = $2
-            AND action IN ('inbox.assign','inbox.helper_add','inbox.helper_remove','inbox.status')
-          ORDER BY created_at DESC, id DESC
+         SELECT a.id, a.actor, a.action, a.meta, a.created_at
+           FROM bms_audit_log a
+           JOIN bms_conversations c ON c.tenant_id = a.tenant_id AND c.id = $2::uuid
+          WHERE a.tenant_id = $1 AND a.target = c.id::text
+            AND a.action IN ('inbox.assign','inbox.helper_add','inbox.helper_remove','inbox.status')
+            AND ${inboxReadScopeSql(4)}
+          ORDER BY a.created_at DESC, a.id DESC
           LIMIT $3
        ) recent
       ORDER BY created_at, id`,
-    [tenantId, conversationId, lim]
+    [tenantId, conversationId, lim, restrictedUserId ?? null]
   );
   if (res.rowCount === 0) return [];
 
@@ -1016,13 +1283,15 @@ export async function listSystemEvents(tenantId: string, conversationId: string,
   const nameByEmail = new Map<string, string>();
   if (userIds.size) {
     const u = await query<{ id: string; name: string | null; email: string | null }>(
-      `SELECT id, name, email FROM users WHERE id = ANY($1::uuid[])`, [[...userIds]]
+      `SELECT id, name, email FROM users WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+      [tenantId, [...userIds]]
     );
     u.rows.forEach((x) => nameById.set(x.id, x.name || x.email || x.id));
   }
   if (emails.size) {
     const u = await query<{ email: string; name: string | null }>(
-      `SELECT email, name FROM users WHERE email = ANY($1::text[])`, [[...emails]]
+      `SELECT email, name FROM users WHERE tenant_id = $1 AND email = ANY($2::text[])`,
+      [tenantId, [...emails]]
     );
     u.rows.forEach((x) => nameByEmail.set(x.email, x.name || x.email));
   }
@@ -1045,19 +1314,29 @@ export async function listSystemEvents(tenantId: string, conversationId: string,
   });
 }
 
-export async function setConversationStatus(tenantId: string, id: string, status: ConvStatus): Promise<boolean> {
+export async function setConversationStatus(
+  tenantId: string, id: string, status: ConvStatus,
+  options: { actor: string; restrictedUserId?: string },
+): Promise<boolean> {
   if (!["OPEN", "PENDING", "CLOSED"].includes(status)) return false;
   const client = await getClient();
   let ok = false;
   try {
     await beginTenantTx(client, tenantId);
-    const res = await client.query(
-      `UPDATE bms_conversations SET status = $3,
-         tags = CASE WHEN $3 = 'CLOSED' THEN array_remove(tags, 'sales-callback') ELSE tags END,
-         updated_at = now() WHERE tenant_id = $1 AND id = $2`,
-      [tenantId, id, status]
-    );
-    ok = (res.rowCount ?? 0) > 0;
+    const current = await lockConversationForScopedWrite(client, tenantId, id, options.restrictedUserId);
+    if (current) {
+      const res = await client.query(
+        `UPDATE bms_conversations SET status = $3,
+           tags = CASE WHEN $3 = 'CLOSED' THEN array_remove(tags, 'sales-callback') ELSE tags END,
+           updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+        [tenantId, id, status]
+      );
+      ok = (res.rowCount ?? 0) > 0;
+      if (ok) await client.query(
+        `INSERT INTO bms_audit_log (tenant_id,actor,action,target,meta)
+         VALUES ($1,$2,'inbox.status',$3,$4::jsonb)`,
+        [tenantId, options.actor, id, JSON.stringify({ status })]);
+    }
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
@@ -1069,34 +1348,76 @@ export async function setConversationStatus(tenantId: string, id: string, status
   return ok;
 }
 
-export async function setConversationTags(tenantId: string, id: string, tags: string[]): Promise<boolean> {
+export async function setConversationTags(
+  tenantId: string, id: string, tags: string[],
+  options: { actor: string; restrictedUserId?: string },
+): Promise<boolean> {
   const clean = Array.from(new Set(tags.map((t) => t.trim()).filter(Boolean))).slice(0, 30);
-  const res = await query(
-    `UPDATE bms_conversations SET tags = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, id, clean]
-  );
-  const ok = (res.rowCount ?? 0) > 0;
+  const client = await getClient();
+  let ok = false;
+  try {
+    await beginTenantTx(client, tenantId);
+    const current = await lockConversationForScopedWrite(client, tenantId, id, options.restrictedUserId);
+    if (current) {
+      const res = await client.query(
+        `UPDATE bms_conversations SET tags=$3, updated_at=now()
+          WHERE tenant_id=$1 AND id=$2`, [tenantId, id, clean]);
+      ok = (res.rowCount ?? 0) > 0;
+      if (ok) await client.query(
+        `INSERT INTO bms_audit_log (tenant_id,actor,action,target,meta)
+         VALUES ($1,$2,'inbox.tags',$3,'{}'::jsonb)`,
+        [tenantId, options.actor, id]);
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
   if (ok) publishInboxChanged(tenantId, id, "CONVERSATION_CHANGED");
   return ok;
 }
 
-export async function markRead(tenantId: string, id: string): Promise<boolean> {
-  const res = await query<{ found: boolean; changed: boolean }>(
-    `WITH target AS (
-       SELECT id FROM bms_conversations WHERE tenant_id = $1 AND id = $2
-     ), updated AS (
-       UPDATE bms_conversations c
-          SET unread = 0, updated_at = now()
-         FROM target
-        WHERE c.tenant_id = $1 AND c.id = target.id AND c.unread > 0
-       RETURNING c.id
-     )
-     SELECT EXISTS (SELECT 1 FROM target) AS found,
-            EXISTS (SELECT 1 FROM updated) AS changed`,
-    [tenantId, id]
-  );
-  if (res.rows[0]?.changed) publishInboxChanged(tenantId, id, "READ_CHANGED");
-  return res.rows[0]?.found === true;
+export async function markRead(
+  tenantId: string, id: string, options: { restrictedUserId?: string; observedLatestMessageId?: string | null } = {},
+): Promise<boolean> {
+  const observedId = options.observedLatestMessageId ?? null;
+  if (observedId && (!/^[1-9]\d{0,18}$/.test(observedId) || BigInt(observedId) > 9223372036854775807n))
+    return false;
+  const client = await getClient();
+  let changed = false;
+  let currentUnread = 0;
+  try {
+    await beginTenantTx(client, tenantId);
+    const current = await lockConversationForScopedWrite(client, tenantId, id, options.restrictedUserId);
+    if (!current) {
+      await client.query("COMMIT");
+      return false;
+    }
+    currentUnread = current.unread;
+    const updated = await client.query(
+      `UPDATE bms_conversations SET unread=0, updated_at=now()
+        WHERE tenant_id=$1 AND id=$2 AND unread>0
+          AND ($3::bigint IS NULL OR (
+            EXISTS (SELECT 1 FROM bms_messages seen
+                     WHERE seen.tenant_id=bms_conversations.tenant_id
+                       AND seen.conversation_id=bms_conversations.id AND seen.id=$3::bigint)
+            AND NOT EXISTS (SELECT 1 FROM bms_messages newer
+                            WHERE newer.tenant_id=bms_conversations.tenant_id
+                              AND newer.conversation_id=bms_conversations.id
+                              AND newer.direction='IN' AND newer.id>$3::bigint)
+          ))`, [tenantId, id, observedId]);
+    changed = Boolean(updated.rowCount);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+  if (changed) publishInboxChanged(tenantId, id, "READ_CHANGED");
+  return !observedId || changed || currentUnread === 0;
 }
 
 // ---- notes (internal) ----------------------------------------
@@ -1107,80 +1428,92 @@ export async function addNote(
   id: string,
   author: string | null,
   body: string,
-  mentionedUserIds?: string[] | null
+  mentionedUserIds?: string[] | null,
+  options: { restrictedUserId?: string } = {},
 ) {
   const text = body.trim();
   if (!text) return null;
-  const res = await query(
-    `INSERT INTO bms_conversation_notes (tenant_id, conversation_id, author, body)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id, author, body, created_at`,
-    [tenantId, id, author, text]
-  );
-  const note = res.rows[0];
-  note.mentionedUserIds = note && mentionedUserIds?.length
-    ? await notifyMentionedStaff(tenantId, id, note as { id: string | number; body: string }, mentionedUserIds, author)
-    : [];
+  const client = await getClient();
+  let note: { id: string | number; author: string | null; body: string; created_at: Date | string;
+    mentionedUserIds: string[] } | null = null;
+  try {
+    await beginTenantTx(client, tenantId);
+    const current = await lockConversationForScopedWrite(client, tenantId, id, options.restrictedUserId);
+    if (!current) {
+      await client.query("COMMIT");
+      return null;
+    }
+    const res = await client.query<{
+      id: string | number; author: string | null; body: string; created_at: Date | string;
+    }>(
+      `INSERT INTO bms_conversation_notes (tenant_id,conversation_id,author,body)
+       VALUES ($1,$2,$3,$4) RETURNING id,author,body,created_at`,
+      [tenantId, id, author, text]);
+    if (!res.rows[0]) throw new Error("Inbox note was not saved");
+    note = { ...res.rows[0], mentionedUserIds: [] };
+    const requestedIds = [...new Set(mentionedUserIds ?? [])];
+    if (requestedIds.length) {
+      const valid = await client.query<{ id: string }>(
+        `SELECT u.id FROM users u JOIN roles r ON r.id=u.role_id
+          WHERE u.tenant_id=$1 AND u.id=ANY($2::uuid[])
+            AND (r.name IN ('Sales','Manager','Administrator') OR u.is_licensed_pharmacist=TRUE)`,
+        [tenantId, requestedIds]);
+      note.mentionedUserIds = valid.rows.map(row => row.id);
+      for (const userId of note.mentionedUserIds) {
+        await client.query(
+          `INSERT INTO bms_conversation_note_mentions
+            (tenant_id,note_id,conversation_id,mentioned_user_id) VALUES ($1,$2,$3,$4)`,
+          [tenantId, note.id, id, userId]);
+      }
+    }
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id,actor,action,target,meta)
+       VALUES ($1,$2,'inbox.note',$3,$4::jsonb)`,
+      [tenantId, author ?? "system:inbox", id,
+        JSON.stringify({ mentionedCount: note.mentionedUserIds.length })]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+  if (!note) return null;
   publishInboxChanged(tenantId, id, "CONVERSATION_CHANGED");
-  return note;
-}
-
-// รับ mentionedUserIds ตรงจากไคลเอนต์ (ไม่เชื่อว่าเป็นของจริง) — เช็คซ้ำว่าอยู่
-// tenant เดียวกัน + role ที่ mention ได้ (เหมือน listAssignableStaff) ก่อนเสมอ
-async function notifyMentionedStaff(
-  tenantId: string,
-  conversationId: string,
-  note: { id: string | number; body: string },
-  mentionedUserIds: string[],
-  authorLabel: string | null
-): Promise<string[]> {
-  const validRes = await query(
-    `SELECT u.id FROM users u
-       JOIN roles r ON r.id = u.role_id
-      WHERE u.tenant_id = $1 AND u.id = ANY($2::uuid[])
-        AND (r.name IN ('Sales','Manager','Administrator') OR u.is_licensed_pharmacist = TRUE)`,
-    [tenantId, mentionedUserIds]
-  );
-  const validIds: string[] = validRes.rows.map((r: any) => r.id);
-  if (!validIds.length) return [];
-
-  for (const userId of validIds) {
-    await query(
-      `INSERT INTO bms_conversation_note_mentions (tenant_id, note_id, conversation_id, mentioned_user_id)
-       VALUES ($1, $2, $3, $4)`,
-      [tenantId, note.id, conversationId, userId]
-    );
-    // best-effort — การแจ้งเตือนล้มเหลวไม่ควรทำให้บันทึกโน้ตล้ม (เหมือน publishInboxChanged)
+  for (const userId of note.mentionedUserIds) {
+    // Notifications are best-effort after the note and mention evidence commit.
     try {
       await createNotification({
         user_id: userId,
         type: "bms_mention",
-        title: `${authorLabel || "เพื่อนร่วมทีม"} กล่าวถึงคุณในแชท`,
+        title: `${author || "เพื่อนร่วมทีม"} กล่าวถึงคุณในแชท`,
         message: note.body.slice(0, 200),
         entity_type: "bms_conversation_note_mention",
-        entity_id: conversationId, // conversation_id เป็น UUID ตรงกับคอลัมน์ entity_id — note.id เป็น bigint ใส่ตรงไม่ได้
-        data: { tenantId, conversationId, noteId: note.id },
+        entity_id: id, // conversation_id เป็น UUID ตรงกับคอลัมน์ entity_id — note.id เป็น bigint ใส่ตรงไม่ได้
+        data: { tenantId, conversationId: id, noteId: note.id },
       });
     } catch (error) {
       console.error("[BMS] mention notification failed:", error);
     }
   }
-  return validIds;
+  return note;
 }
 
-export async function listNotes(tenantId: string, id: string, limit = 50) {
+export async function listNotes(tenantId: string, id: string, limit = 50, restrictedUserId?: string) {
   const lim = Math.min(Math.max(Number(limit || 50), 1), 200);
   const res = await query(
     `SELECT n.id, n.author, n.body, n.created_at,
             COALESCE(
-              (SELECT array_agg(m.mentioned_user_id) FROM bms_conversation_note_mentions m WHERE m.note_id = n.id),
+              (SELECT array_agg(m.mentioned_user_id) FROM bms_conversation_note_mentions m
+                WHERE m.tenant_id = n.tenant_id AND m.note_id = n.id),
               '{}'
             ) AS mentioned_user_ids
        FROM bms_conversation_notes n
-      WHERE n.tenant_id = $1 AND n.conversation_id = $2
+       JOIN bms_conversations c ON c.tenant_id = n.tenant_id AND c.id = n.conversation_id
+      WHERE n.tenant_id = $1 AND n.conversation_id = $2 AND ${inboxReadScopeSql(4)}
       ORDER BY n.created_at DESC, n.id DESC
       LIMIT $3`,
-    [tenantId, id, lim]
+    [tenantId, id, lim, restrictedUserId ?? null]
   );
   return res.rows;
 }
@@ -1207,9 +1540,9 @@ export async function listMyMentions(
             c.channel,
             COALESCE(NULLIF(cu.name, c.customer_ref), ci.display_name) AS customer_name
        FROM bms_conversation_note_mentions m
-       JOIN bms_conversation_notes n ON n.id = m.note_id
-       JOIN bms_conversations c ON c.id = m.conversation_id
-       LEFT JOIN bms_customers cu ON cu.id = c.customer_id
+       JOIN bms_conversation_notes n ON n.tenant_id = m.tenant_id AND n.id = m.note_id
+       JOIN bms_conversations c ON c.tenant_id = m.tenant_id AND c.id = m.conversation_id
+       LEFT JOIN bms_customers cu ON cu.tenant_id = c.tenant_id AND cu.id = c.customer_id
        LEFT JOIN bms_customer_identities ci
          ON ci.tenant_id = c.tenant_id AND ci.channel = c.channel AND ci.external_ref = c.customer_ref
       WHERE m.tenant_id = $1 AND m.mentioned_user_id = $2
@@ -1222,25 +1555,39 @@ export async function listMyMentions(
 }
 
 export async function markMentionRead(tenantId: string, userId: string, mentionId: string): Promise<boolean> {
-  const res = await query(
-    `UPDATE bms_conversation_note_mentions SET read_at = now()
-      WHERE id = $1 AND tenant_id = $2 AND mentioned_user_id = $3 AND read_at IS NULL`,
-    [mentionId, tenantId, userId]
-  );
-  return (res.rowCount ?? 0) > 0;
+  return (await markMentionsReadInTenant(tenantId, userId, mentionId)) > 0;
 }
 
 export async function markAllMentionsRead(tenantId: string, userId: string): Promise<number> {
-  const res = await query(
-    `UPDATE bms_conversation_note_mentions SET read_at = now()
-      WHERE tenant_id = $1 AND mentioned_user_id = $2 AND read_at IS NULL`,
-    [tenantId, userId]
-  );
-  return res.rowCount ?? 0;
+  return markMentionsReadInTenant(tenantId, userId);
+}
+
+async function markMentionsReadInTenant(
+  tenantId: string, userId: string, mentionId?: string,
+): Promise<number> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const res = await client.query(
+      `UPDATE bms_conversation_note_mentions SET read_at = now()
+        WHERE tenant_id = $1 AND mentioned_user_id = $2 AND read_at IS NULL
+          AND ($3::bigint IS NULL OR id = $3::bigint)`,
+      [tenantId, userId, mentionId ?? null]
+    );
+    await client.query("COMMIT");
+    return res.rowCount ?? 0;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // ---- staff reply (persist + ยิงกลับช่องทาง) ------------------
-export type SendResult = { status: "SENT"; delivered: boolean; messageId?: string } | { status: "NOT_FOUND" } | { status: "EMPTY" };
+export type SendResult = { status: "SENT"; delivered: boolean; partial?: boolean; uncertain?: boolean;
+  deliveryFailed?: boolean; statusUnconfirmed?: boolean;
+  messageId?: string; messageBody?: string } | { status: "NOT_FOUND" } | { status: "EMPTY" } | { status: "NOT_RETRYABLE" };
 
 const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || "v26.0";
 
@@ -1255,7 +1602,17 @@ export function isFakeCustomerRef(customerRef: string | null | undefined): boole
  *   • web               → ไม่ต้อง push (ตอบผ่าน HTTP response ของ widget)
  *   • tiktok            → ยังไม่ผูก send API — persist อย่างเดียว
  */
-export type ChannelDeliveryResult = { delivered: boolean; providerMessageIds: string[] };
+export type ChannelDeliveryResult = { delivered: boolean; providerMessageIds: string[]; partial?: boolean; uncertain?: boolean };
+
+async function recordOutboundHealthBestEffort(tenantId: string, channel: string, write: () => Promise<void>): Promise<void> {
+  try {
+    await write();
+  } catch (error) {
+    // Channel telemetry cannot turn a provider-accepted message into a retryable failure.
+    console.error("[BMS] outbound channel health write failed:", { tenantId, channel,
+      error: error instanceof Error ? error.message : "unknown error" });
+  }
+}
 
 export async function deliverToChannelTracked(
   tenantId: string, channel: string, to: string | null, text: string, attachment?: Attachment | null
@@ -1263,9 +1620,15 @@ export async function deliverToChannelTracked(
   if (!to) return { delivered: false, providerMessageIds: [] };
   // Fake-data conversations must exercise the Inbox flow without contacting real channel APIs.
   if (isFakeCustomerRef(to)) return { delivered: true, providerMessageIds: [] };
-  const img = attachment && isImageMime(attachment.mimeType) ? absoluteUrl(attachment.url) : null;
+  const mediaUrl = attachment ? absoluteUrl(await outboundInboxMediaUrl(tenantId, attachment.url)) : null;
+  if (attachment?.url.startsWith("/api/bms/inbox/media/") && !/^https:\/\//i.test(mediaUrl || "")) {
+    await recordOutboundHealthBestEffort(tenantId, channel,
+      () => recordOutboundError(tenantId, channel, 400, "Public HTTPS base URL is not configured for Inbox media"));
+    return { delivered: false, providerMessageIds: [] };
+  }
+  const img = attachment && isImageMime(attachment.mimeType) ? mediaUrl : null;
   // ไฟล์ที่ไม่ใช่รูป → แนบเป็นลิงก์ท้ายข้อความ (channel ส่วนใหญ่ไม่มี generic file message)
-  const fileLink = attachment && !img ? absoluteUrl(attachment.url) : null;
+  const fileLink = attachment && !img ? mediaUrl : null;
   const outText = [text, fileLink].filter(Boolean).join(fileLink ? "\n" : "");
 
   if (channel === "line") {
@@ -1278,19 +1641,21 @@ export async function deliverToChannelTracked(
     try {
       const resp = await fetch("https://api.line.me/v2/bot/message/push", {
         method: "POST",
+        signal: AbortSignal.timeout(15_000),
         headers: { "content-type": "application/json", authorization: `Bearer ${cfg.access_token}` },
         body: JSON.stringify({ to, messages }),
       });
       if (resp.ok) {
-        await recordOutboundSuccess(tenantId, "line");
+        await recordOutboundHealthBestEffort(tenantId, "line", () => recordOutboundSuccess(tenantId, "line"));
       } else {
         const detail = formatOutboundErrorDetail(resp, await resp.text().catch(() => ""));
-        await recordOutboundError(tenantId, "line", resp.status, detail);
+        await recordOutboundHealthBestEffort(tenantId, "line", () => recordOutboundError(tenantId, "line", resp.status, detail));
       }
       return { delivered: resp.ok, providerMessageIds: [] };
     } catch (e) {
       console.error("[BMS] LINE push failed:", e);
-      return { delivered: false, providerMessageIds: [] };
+      // A transport failure does not prove that LINE rejected the request.
+      return { delivered: false, providerMessageIds: [], uncertain: true };
     }
   }
 
@@ -1310,13 +1675,15 @@ export async function deliverToChannelTracked(
       [tenantId, channel, to, cfg.external_account_id],
     );
     if (!window.rows[0]?.allowed) {
-      await recordOutboundError(tenantId, channel, 400, "Meta 24-hour messaging window is closed");
+      await recordOutboundHealthBestEffort(tenantId, channel,
+        () => recordOutboundError(tenantId, channel, 400, "Meta 24-hour messaging window is closed"));
       return { delivered: false, providerMessageIds: [] };
     }
     const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(cfg.external_account_id)}/messages`;
     const send = async (msg: any) => {
       const response = await fetch(url, {
-        method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${cfg.access_token}` },
+        method: "POST", signal: AbortSignal.timeout(15_000),
+        headers: { "content-type": "application/json", authorization: `Bearer ${cfg.access_token}` },
         body: JSON.stringify({ recipient: { id: to }, messaging_type: "RESPONSE", message: msg }),
       });
       const bodyText = typeof response.text === "function" ? await response.text().catch(() => "") : "";
@@ -1329,32 +1696,38 @@ export async function deliverToChannelTracked(
       }
       return { response, bodyText, providerMessageId };
     };
+    let ok = true;
+    let acceptedParts = 0;
+    let lastFailed: { response: Response; bodyText: string } | null = null;
+    const providerMessageIds: string[] = [];
     try {
-      let ok = true;
-      let lastFailed: { response: Response; bodyText: string } | null = null;
-      const providerMessageIds: string[] = [];
       if (outText) {
         const sent = await send({ text: outText });
         if (!sent.response.ok) lastFailed = sent;
+        if (sent.response.ok) acceptedParts++;
         if (sent.providerMessageId) providerMessageIds.push(sent.providerMessageId);
         ok = sent.response.ok && ok;
       }
       if (img) {
         const sent = await send({ attachment: { type: "image", payload: { url: img, is_reusable: true } } });
         if (!sent.response.ok) lastFailed = sent;
+        if (sent.response.ok) acceptedParts++;
         if (sent.providerMessageId) providerMessageIds.push(sent.providerMessageId);
         ok = sent.response.ok && ok;
       }
       if (lastFailed) {
-        const detail = formatOutboundErrorDetail(lastFailed.response, lastFailed.bodyText);
-        await recordOutboundError(tenantId, channel, lastFailed.response.status, detail);
+        const failure = lastFailed;
+        const detail = formatOutboundErrorDetail(failure.response, failure.bodyText);
+        await recordOutboundHealthBestEffort(tenantId, channel,
+          () => recordOutboundError(tenantId, channel, failure.response.status, detail));
       } else {
-        await recordOutboundSuccess(tenantId, channel);
+        await recordOutboundHealthBestEffort(tenantId, channel, () => recordOutboundSuccess(tenantId, channel));
       }
-      return { delivered: ok, providerMessageIds };
+      return { delivered: ok, providerMessageIds, partial: !ok && acceptedParts > 0 };
     } catch (e) {
       console.error(`[BMS] ${channel} send failed:`, e);
-      return { delivered: false, providerMessageIds: [] };
+      return { delivered: false, providerMessageIds,
+        ...(acceptedParts > 0 ? { partial: true } : { uncertain: true }) };
     }
   }
 
@@ -1368,23 +1741,31 @@ export async function deliverToChannel(
   return (await deliverToChannelTracked(tenantId, channel, to, text, attachment)).delivered;
 }
 
-export async function recordProviderMessageIds(
+export async function recordAiReplyDelivery(
   tenantId: string,
   messageId: string,
-  providerMessageIds: string[],
+  delivery: ChannelDeliveryResult,
 ): Promise<void> {
-  const bounded = [...new Set(providerMessageIds.filter(Boolean).map((id) => id.slice(0, 500)))].slice(0, 10);
-  if (!bounded.length) return;
+  const bounded = [...new Set(delivery.providerMessageIds.filter(Boolean).map((id) => id.slice(0, 500)))].slice(0, 10);
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId);
-    await client.query(
+    const updated = await client.query<{ conversation_id: string }>(
       `UPDATE bms_messages
-          SET meta=meta || jsonb_build_object('providerMessageIds',$3::jsonb)
-        WHERE tenant_id=$1 AND id=$2`,
-      [tenantId, messageId, JSON.stringify(bounded)],
+          SET meta=meta || jsonb_build_object('delivered',
+            CASE WHEN meta->>'status' IN ('DELIVERED','READ') THEN true ELSE $3::boolean END,'status',
+            CASE WHEN meta->>'status' IN ('DELIVERED','READ') THEN meta->>'status'
+                 WHEN $5::boolean THEN 'PARTIAL'
+                 WHEN $6::boolean THEN 'PENDING'
+                 WHEN $3::boolean THEN 'SENT' ELSE 'FAILED' END,
+            'providerMessageIds',CASE WHEN jsonb_array_length($4::jsonb)>0 THEN $4::jsonb
+              ELSE COALESCE(meta->'providerMessageIds','[]'::jsonb) END)
+        WHERE tenant_id=$1 AND id=$2 AND direction='OUT' AND sender='ai'
+        RETURNING conversation_id`,
+      [tenantId, messageId, delivery.delivered, JSON.stringify(bounded), Boolean(delivery.partial), Boolean(delivery.uncertain)],
     );
     await client.query("COMMIT");
+    if (updated.rows[0]) publishInboxChanged(tenantId, updated.rows[0].conversation_id, "MESSAGES_CHANGED", "ai", messageId);
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
@@ -1393,71 +1774,222 @@ export async function recordProviderMessageIds(
   }
 }
 
+async function finalizeInboxOutbound(
+  tenantId: string, conversationId: string, messageId: string,
+  delivery: ChannelDeliveryResult, channel: string, source: "staff" | "ai"
+): Promise<boolean> {
+  let client: PoolClient | null = null;
+  try {
+    client = await getClient();
+    await beginTenantTx(client, tenantId);
+    await client.query(
+      `UPDATE bms_messages SET meta = meta || $3::jsonb || jsonb_build_object(
+          'delivered', CASE WHEN meta->>'status' IN ('DELIVERED','READ') THEN true
+                            WHEN meta->>'status'='PARTIAL' THEN false
+                            ELSE ($3::jsonb->>'delivered')::boolean END,
+          'status', CASE WHEN meta->>'status' IN ('DELIVERED','READ','PARTIAL') THEN meta->>'status'
+                         ELSE $3::jsonb->>'status' END)
+        WHERE tenant_id = $1 AND id = $2 AND direction = 'OUT'`,
+      [tenantId, messageId, JSON.stringify({ delivered: delivery.delivered,
+        status: delivery.partial ? "PARTIAL" : delivery.uncertain ? "PENDING" : outboundStatus(channel, delivery.delivered),
+        providerMessageIds: delivery.providerMessageIds })]
+    );
+    await client.query("COMMIT");
+    publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED", source, messageId);
+    return true;
+  } catch (error) {
+    await client?.query("ROLLBACK").catch(() => undefined);
+    // The provider may already have accepted the message. Leave the durable
+    // PENDING row for reconciliation instead of making it retryable.
+    console.error("[BMS] Inbox outbound delivery state update failed:", error);
+    return false;
+  } finally {
+    client?.release();
+  }
+}
+
 export async function sendStaffMessage(
   tenantId: string,
   conversationId: string,
   body: string,
   staff: string | null,
-  attachment?: Attachment | null
+  attachment?: Attachment | null,
+  options: { restrictedUserId?: string } = {}
 ): Promise<SendResult> {
   const text = (body || "").trim();
   const att = attachment?.url ? attachment : null;
   if (!text && !att) return { status: "EMPTY" };
-
-  const conv = await query<{ channel: string; customer_ref: string | null; customer_id: string | null }>(
-    `SELECT channel, customer_ref, customer_id FROM bms_conversations WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, conversationId]
-  );
-  if (conv.rowCount === 0) return { status: "NOT_FOUND" };
-
-  const channel = conv.rows[0].channel;
-  const simulated = isFakeCustomerRef(conv.rows[0].customer_ref);
-  const customerId = conv.rows[0].customer_id ?? null;
-  const couponCode = couponCodeFromShareText(text);
+  let channel = "";
+  let customerRef: string | null = null;
+  let messageId = "";
   let outgoingText = text;
   let couponWalletLink: string | null = null;
-
-  if (couponCode && customerId && !/\/coupon\/wallet\?t=/i.test(text)) {
-    try {
-      const assigned = await assignCouponToCustomer(tenantId, customerId, couponCode, {
-        actor: staff,
-        source: "MANUAL_CHAT",
-        note: "Assigned from Inbox coupon share",
-      });
-      if (assigned) {
-        const token = createCouponWalletToken({ tenantId, customerId });
-        couponWalletLink = absoluteUrl(`/coupon/wallet?t=${encodeURIComponent(token)}`);
-        outgoingText = `${text}\n\nดูคูปองของคุณ / View your coupons:\n${couponWalletLink}`;
-      }
-    } catch (error) {
-      console.error("[BMS] assign customer coupon wallet failed:", error);
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: staff });
+    // The row lock serializes an assignment change with the Sales access check.
+    const conv = await client.query<{ channel: string; customer_ref: string | null; customer_id: string | null }>(
+      `SELECT c.channel, c.customer_ref, c.customer_id
+         FROM bms_conversations c
+        WHERE c.tenant_id = $1 AND c.id = $2
+          AND ($3::uuid IS NULL OR c.assigned_to_user_id = $3::uuid OR EXISTS (
+            SELECT 1 FROM bms_conversation_helpers h
+             WHERE h.tenant_id = c.tenant_id AND h.conversation_id = c.id AND h.user_id = $3::uuid
+          ))
+        FOR UPDATE OF c`,
+      [tenantId, conversationId, options.restrictedUserId ?? null]
+    );
+    if (!conv.rows[0]) {
+      await client.query("COMMIT");
+      return { status: "NOT_FOUND" };
     }
+    // Check conversation access before revealing whether an attachment exists.
+    if (att) await outboundInboxMediaUrl(tenantId, att.url);
+    channel = conv.rows[0].channel;
+    customerRef = conv.rows[0].customer_ref;
+    const customerId = conv.rows[0].customer_id ?? null;
+    const couponCode = couponCodeFromShareText(text);
+    // A locally saved reply on web/TikTok/marketplaces never reaches the customer.
+    // Do not assign a coupon wallet based on a message that was not delivered.
+    if (channelSupportsPush(channel) && couponCode && customerId && !/\/coupon\/wallet\?t=/i.test(text)) {
+      await client.query("SAVEPOINT inbox_coupon_assign");
+      try {
+        const assigned = await assignCouponToCustomerInTx(client, tenantId, customerId, couponCode, {
+          actor: staff, source: "MANUAL_CHAT", note: "Assigned from Inbox coupon share",
+        });
+        if (assigned) {
+          const token = createCouponWalletToken({ tenantId, customerId });
+          couponWalletLink = absoluteUrl(`/coupon/wallet?t=${encodeURIComponent(token)}`);
+          outgoingText = `${text}\n\nดูคูปองของคุณ / View your coupons:\n${couponWalletLink}`;
+        }
+        await client.query("RELEASE SAVEPOINT inbox_coupon_assign");
+      } catch (error) {
+        await client.query("ROLLBACK TO SAVEPOINT inbox_coupon_assign");
+        await client.query("RELEASE SAVEPOINT inbox_coupon_assign");
+        console.error("[BMS] assign customer coupon wallet failed:", error);
+      }
+    }
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
+       VALUES ($1, $2, 'OUT', $3, $4, $5) RETURNING id`,
+      [tenantId, conversationId, outgoingText, `staff:${staff ?? "admin"}`, JSON.stringify({
+        delivered: false, status: channelSupportsPush(channel) ? "PENDING" : "SENT",
+        simulated: isFakeCustomerRef(customerRef), attachment: att, couponWalletLink,
+        providerMessageIds: [],
+      })]
+    );
+    messageId = String(inserted.rows[0].id);
+    await client.query(
+      `UPDATE bms_conversations SET last_message = $3, last_message_at = now(),
+         last_sender_type = 'staff', updated_at = now()
+       WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, conversationId, messagePreview(outgoingText, att).slice(0, 500)]
+    );
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'inbox.reply', $3, $4::jsonb)`,
+      [tenantId, staff ?? "system", conversationId, JSON.stringify({ messageId })]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
   }
-
-  const delivery = await deliverToChannelTracked(tenantId, channel, conv.rows[0].customer_ref, outgoingText, att);
+  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED", "staff", messageId);
+  let delivery: ChannelDeliveryResult;
+  try {
+    delivery = await deliverToChannelTracked(tenantId, channel, customerRef, outgoingText, att);
+  } catch (error) {
+    // We cannot prove whether an external request was accepted. Keep PENDING so
+    // a second click cannot automatically send the same message again.
+    console.error("[BMS] Inbox outbound delivery outcome is unknown:", error);
+    return { status: "SENT", delivered: false, uncertain: true, messageId };
+  }
   const delivered = delivery.delivered;
-  const status = outboundStatus(channel, delivered);
+  const statusSaved = await finalizeInboxOutbound(tenantId, conversationId, messageId, delivery, channel, "staff");
+  return { status: "SENT", delivered, ...(delivery.partial ? { partial: true } : {}),
+    ...(delivery.uncertain ? { uncertain: true } : {}),
+    ...(!statusSaved ? { statusUnconfirmed: true } : {}),
+    ...(!delivered && !delivery.partial && !delivery.uncertain && channelSupportsPush(channel)
+      ? { deliveryFailed: true } : {}), messageId };
+}
 
-  // body NOT NULL — เก็บข้อความ (อาจว่างถ้าเป็น attachment ล้วน)
-  const inserted = await query<{ id: string }>(
-    `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
-     VALUES ($1, $2, 'OUT', $3, $4, $5)
-     RETURNING id`,
-    [tenantId, conversationId, outgoingText, `staff:${staff ?? "admin"}`, JSON.stringify({
-      delivered, status, simulated, attachment: att, couponWalletLink,
-      providerMessageIds: delivery.providerMessageIds,
-    })]
-  );
-  // preview: ข้อความ · ถ้าไม่มีข้อความใช้ [รูปภาพ]/[ไฟล์]
-  const preview = messagePreview(outgoingText, att);
-  await query(
-    `UPDATE bms_conversations SET last_message = $3, last_message_at = now(), last_sender_type = 'staff', updated_at = now()
-      WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, conversationId, preview.slice(0, 500)]
-  );
-  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED", "staff", inserted.rows[0]?.id);
-
-  return { status: "SENT", delivered, messageId: inserted.rows[0]?.id };
+async function sendAutomatedInboxMessage(
+  tenantId: string, conversationId: string, text: string, meta: Record<string, unknown>
+): Promise<SendResult> {
+  if (!text) return { status: "EMPTY" };
+  let channel = "";
+  let customerRef: string | null = null;
+  let messageId = "";
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const conv = await client.query<{ channel: string; customer_ref: string | null }>(
+      `SELECT channel, customer_ref FROM bms_conversations
+        WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+      [tenantId, conversationId]
+    );
+    if (!conv.rows[0]) {
+      await client.query("COMMIT");
+      return { status: "NOT_FOUND" };
+    }
+    channel = conv.rows[0].channel;
+    customerRef = conv.rows[0].customer_ref;
+    if (meta.followup === true && typeof meta.jobId === "string" &&
+        Number.isSafeInteger(meta.retryIndex) && Number(meta.retryIndex) >= 0) {
+      // A leased follow-up can run again after a crash. The conversation lock
+      // serializes same-round attempts, and a committed draft is the send claim.
+      const existing = await client.query<{ id: string; body: string; meta: { status?: string; delivered?: boolean } }>(
+        `SELECT id, body, meta FROM bms_messages
+          WHERE tenant_id=$1 AND conversation_id=$2 AND direction='OUT' AND sender='ai'
+            AND meta->>'jobId'=$3 AND meta->>'retryIndex'=$4
+          LIMIT 1`,
+        [tenantId, conversationId, meta.jobId, String(meta.retryIndex)]
+      );
+      if (existing.rows[0]) {
+        await client.query("COMMIT");
+        return { status: "SENT", delivered: existing.rows[0].meta?.delivered === true,
+          ...(existing.rows[0].meta?.status === "PENDING" ? { uncertain: true } : {}),
+          ...(existing.rows[0].meta?.status === "PARTIAL" ? { partial: true } : {}),
+          messageId: String(existing.rows[0].id), messageBody: existing.rows[0].body };
+      }
+    }
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
+       VALUES ($1, $2, 'OUT', $3, 'ai', $4) RETURNING id`,
+      [tenantId, conversationId, text, JSON.stringify({ delivered: false,
+        status: channelSupportsPush(channel) ? "PENDING" : "SENT",
+        simulated: isFakeCustomerRef(customerRef), providerMessageIds: [], ...meta })]
+    );
+    messageId = String(inserted.rows[0].id);
+    await client.query(
+      `UPDATE bms_conversations SET last_message = $3, last_message_at = now(),
+         last_sender_type = 'ai', updated_at = now()
+       WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, conversationId, messagePreview(text).slice(0, 500)]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED", "ai", messageId);
+  let delivery: ChannelDeliveryResult;
+  try {
+    delivery = await deliverToChannelTracked(tenantId, channel, customerRef, text);
+  } catch (error) {
+    console.error("[BMS] Inbox automated delivery outcome is unknown:", error);
+    return { status: "SENT", delivered: false, uncertain: true, messageId };
+  }
+  const statusSaved = await finalizeInboxOutbound(tenantId, conversationId, messageId, delivery, channel, "ai");
+  return { status: "SENT", delivered: delivery.delivered,
+    ...(delivery.partial ? { partial: true } : {}), ...(delivery.uncertain ? { uncertain: true } : {}),
+    ...(!statusSaved ? { statusUnconfirmed: true } : {}),
+    messageId, messageBody: text };
 }
 
 /**
@@ -1470,38 +2002,10 @@ export async function sendFollowupMessage(
   tenantId: string,
   conversationId: string,
   body: string,
-  followupMeta: { ruleId: string; jobId: string; goal: string }
+  followupMeta: { ruleId: string; jobId: string; retryIndex: number; goal: string }
 ): Promise<SendResult> {
   const text = (body || "").trim();
-  if (!text) return { status: "EMPTY" };
-
-  const conv = await query<{ channel: string; customer_ref: string | null }>(
-    `SELECT channel, customer_ref FROM bms_conversations WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, conversationId]
-  );
-  if (conv.rowCount === 0) return { status: "NOT_FOUND" };
-
-  const channel = conv.rows[0].channel;
-  const simulated = isFakeCustomerRef(conv.rows[0].customer_ref);
-  const delivery = await deliverToChannelTracked(tenantId, channel, conv.rows[0].customer_ref, text);
-  const delivered = delivery.delivered;
-  const status = outboundStatus(channel, delivered);
-
-  const inserted = await query<{ id: string }>(
-    `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
-     VALUES ($1, $2, 'OUT', $3, 'ai', $4)
-     RETURNING id`,
-    [tenantId, conversationId, text, JSON.stringify({ delivered, status, simulated, followup: true,
-      providerMessageIds: delivery.providerMessageIds, ...followupMeta })]
-  );
-  await query(
-    `UPDATE bms_conversations SET last_message = $3, last_message_at = now(), last_sender_type = 'ai', updated_at = now()
-      WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, conversationId, messagePreview(text).slice(0, 500)]
-  );
-  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED", "ai", inserted.rows[0]?.id);
-
-  return { status: "SENT", delivered, messageId: inserted.rows[0]?.id };
+  return sendAutomatedInboxMessage(tenantId, conversationId, text, { followup: true, ...followupMeta });
 }
 
 export type PharmacyIntakeMessageMeta = { kind: string; caseId: string | null };
@@ -1518,68 +2022,83 @@ export async function sendPharmacyIntakeMessage(
   meta: PharmacyIntakeMessageMeta
 ): Promise<SendResult> {
   const text = (body || "").trim();
-  if (!text) return { status: "EMPTY" };
-
-  const conv = await query<{ channel: string; customer_ref: string | null }>(
-    `SELECT channel, customer_ref FROM bms_conversations WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, conversationId]
-  );
-  if (conv.rowCount === 0) return { status: "NOT_FOUND" };
-
-  const channel = conv.rows[0].channel;
-  const simulated = isFakeCustomerRef(conv.rows[0].customer_ref);
-  const delivery = await deliverToChannelTracked(tenantId, channel, conv.rows[0].customer_ref, text);
-  const delivered = delivery.delivered;
-  const status = outboundStatus(channel, delivered);
-
-  const inserted = await query<{ id: string }>(
-    `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
-     VALUES ($1, $2, 'OUT', $3, 'ai', $4)
-     RETURNING id`,
-    [tenantId, conversationId, text, JSON.stringify({ delivered, status, simulated,
-      providerMessageIds: delivery.providerMessageIds, pharmacyIntake: meta })]
-  );
-  await query(
-    `UPDATE bms_conversations SET last_message = $3, last_message_at = now(), last_sender_type = 'ai', updated_at = now()
-      WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, conversationId, messagePreview(text).slice(0, 500)]
-  );
-  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED", "ai", inserted.rows[0]?.id);
-
-  return { status: "SENT", delivered, messageId: inserted.rows[0]?.id };
+  return sendAutomatedInboxMessage(tenantId, conversationId, text, { pharmacyIntake: meta });
 }
 
-/** ส่งข้อความเดิมซ้ำ (retry จากสถานะ FAILED) — ยิงช่องทางใหม่ + อัปเดต meta.status ในแถวเดิม */
-export async function retryMessage(tenantId: string, messageId: string): Promise<SendResult> {
-  const m = await query<{ conversation_id: string; body: string; meta: any }>(
-    `SELECT conversation_id, body, meta FROM bms_messages
-      WHERE tenant_id = $1 AND id = $2 AND direction = 'OUT'`,
-    [tenantId, messageId]
-  );
-  if (m.rowCount === 0) return { status: "NOT_FOUND" };
-  const row = m.rows[0];
+/** Claim FAILED as PENDING before calling a provider; an uncertain outcome is never automatically retried. */
+export async function retryMessage(
+  tenantId: string, messageId: string, actor: string | null = null,
+  options: { restrictedUserId?: string } = {}
+): Promise<SendResult> {
+  const client = await getClient();
+  let conversationId = "";
+  let channel = "";
+  let customerRef: string | null = null;
+  let body = "";
+  let att: Attachment | null = null;
+  try {
+    await beginTenantTx(client, tenantId);
+    // The row lock serializes claims; the PENDING state survives a provider or DB outage.
+    const m = await client.query<{ conversation_id: string; body: string; meta: any }>(
+      `SELECT conversation_id, body, meta FROM bms_messages
+        WHERE tenant_id = $1 AND id = $2 AND direction = 'OUT' FOR UPDATE`,
+      [tenantId, messageId]
+    );
+    if (m.rowCount === 0) { await client.query("COMMIT"); return { status: "NOT_FOUND" }; }
+    const row = m.rows[0];
+    const conv = await client.query<{ channel: string; customer_ref: string | null }>(
+      `SELECT channel, customer_ref FROM bms_conversations
+        WHERE tenant_id = $1 AND id = $2
+          AND ($3::uuid IS NULL OR assigned_to_user_id = $3::uuid OR EXISTS (
+            SELECT 1 FROM bms_conversation_helpers h
+             WHERE h.tenant_id = bms_conversations.tenant_id
+               AND h.conversation_id = bms_conversations.id AND h.user_id = $3::uuid
+          ))
+        FOR UPDATE`,
+      [tenantId, row.conversation_id, options.restrictedUserId ?? null]
+    );
+    if (conv.rowCount === 0) { await client.query("COMMIT"); return { status: "NOT_FOUND" }; }
+    channel = conv.rows[0].channel;
+    const currentStatus = row.meta?.status ?? (typeof row.meta?.delivered === "boolean"
+      ? outboundStatus(channel, row.meta.delivered) : null);
+    if (!channelSupportsPush(channel) || currentStatus !== "FAILED") {
+      await client.query("COMMIT");
+      return { status: "NOT_RETRYABLE" };
+    }
 
-  const conv = await query<{ channel: string; customer_ref: string | null }>(
-    `SELECT channel, customer_ref FROM bms_conversations WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, row.conversation_id]
-  );
-  if (conv.rowCount === 0) return { status: "NOT_FOUND" };
-
-  const att: Attachment | null = row.meta?.attachment ?? null;
-  const channel = conv.rows[0].channel;
-  const simulated = isFakeCustomerRef(conv.rows[0].customer_ref);
-  const delivery = await deliverToChannelTracked(tenantId, channel, conv.rows[0].customer_ref, row.body || "", att);
-  const delivered = delivery.delivered;
-  const status = outboundStatus(channel, delivered);
-
-  // merge เข้า meta เดิม (คง attachment ไว้)
-  await query(
-    `UPDATE bms_messages SET meta = meta || $3::jsonb WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, messageId, JSON.stringify({ delivered, status, simulated,
-      providerMessageIds: delivery.providerMessageIds })]
-  );
-  publishInboxChanged(tenantId, row.conversation_id, "CONVERSATION_CHANGED");
-  return { status: "SENT", delivered };
+    conversationId = row.conversation_id;
+    customerRef = conv.rows[0].customer_ref;
+    body = row.body || "";
+    att = row.meta?.attachment ?? null;
+    await client.query(
+      `UPDATE bms_messages SET meta = meta || '{"status":"PENDING"}'::jsonb
+        WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, messageId]
+    );
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'inbox.retry', $3, '{}'::jsonb)`,
+      [tenantId, actor ?? "system", messageId]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+  publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED", "staff", messageId);
+  let delivery: ChannelDeliveryResult;
+  try {
+    delivery = await deliverToChannelTracked(tenantId, channel, customerRef, body, att);
+  } catch (error) {
+    console.error("[BMS] Inbox retry delivery outcome is unknown:", error);
+    return { status: "SENT", delivered: false, uncertain: true };
+  }
+  const statusSaved = await finalizeInboxOutbound(tenantId, conversationId, messageId, delivery, channel, "staff");
+  return { status: "SENT", delivered: delivery.delivered,
+    ...(delivery.partial ? { partial: true } : {}), ...(delivery.uncertain ? { uncertain: true } : {}),
+    ...(!statusSaved ? { statusUnconfirmed: true } : {}) };
 }
 
 // ---- timeline (message + note + order) -----------------------
@@ -1602,30 +2121,40 @@ export const TIMELINE_MAX_PER_SOURCE = 200;
 export async function getTimeline(
   tenantId: string,
   conversationId: string,
-  limitPerSource = TIMELINE_MAX_PER_SOURCE
+  limitPerSource = TIMELINE_MAX_PER_SOURCE,
+  restrictedUserId?: string,
 ): Promise<TimelineEntry[]> {
   const conv = await query<{ customer_id: string | null }>(
-    `SELECT customer_id FROM bms_conversations WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, conversationId]
+    `SELECT c.customer_id FROM bms_conversations c
+      WHERE c.tenant_id = $1 AND c.id = $2 AND ${inboxReadScopeSql(3)}`,
+    [tenantId, conversationId, restrictedUserId ?? null]
   );
   if (conv.rowCount === 0) return [];
   const customerId = conv.rows[0].customer_id;
   const cap = Math.max(1, Math.min(limitPerSource, TIMELINE_MAX_PER_SOURCE));
 
   const [msgs, notes, orders, systemEvents] = await Promise.all([
-    query(`SELECT direction, body, sender, meta, created_at FROM bms_messages
-             WHERE tenant_id = $1 AND conversation_id = $2
-             ORDER BY created_at DESC, id DESC LIMIT $3`, [tenantId, conversationId, cap]),
-    query(`SELECT author, body, created_at FROM bms_conversation_notes
-             WHERE tenant_id = $1 AND conversation_id = $2
-             ORDER BY created_at DESC, id DESC LIMIT $3`, [tenantId, conversationId, cap]),
+    query(`SELECT m.direction, m.body, m.sender, m.meta, m.created_at FROM bms_messages m
+             JOIN bms_conversations c ON c.tenant_id = m.tenant_id AND c.id = m.conversation_id
+             WHERE m.tenant_id = $1 AND m.conversation_id = $2 AND ${inboxReadScopeSql(4)}
+             ORDER BY m.created_at DESC, m.id DESC LIMIT $3`,
+      [tenantId, conversationId, cap, restrictedUserId ?? null]),
+    query(`SELECT n.author, n.body, n.created_at FROM bms_conversation_notes n
+             JOIN bms_conversations c ON c.tenant_id = n.tenant_id AND c.id = n.conversation_id
+             WHERE n.tenant_id = $1 AND n.conversation_id = $2 AND ${inboxReadScopeSql(4)}
+             ORDER BY n.created_at DESC, n.id DESC LIMIT $3`,
+      [tenantId, conversationId, cap, restrictedUserId ?? null]),
     customerId
-      ? query(`SELECT id, channel, status, total_amount, created_at, updated_at FROM bms_orders
-                 WHERE tenant_id = $1 AND customer_id = $2
-                 ORDER BY created_at DESC LIMIT $3`, [tenantId, customerId, cap])
+      ? query(`SELECT o.id, o.channel, o.status, o.total_amount, o.created_at, o.updated_at
+                 FROM bms_orders o
+                 JOIN bms_conversations c ON c.tenant_id = o.tenant_id AND c.customer_id = o.customer_id
+                 WHERE o.tenant_id = $1 AND o.customer_id = $2 AND c.id = $3
+                   AND ${inboxReadScopeSql(5)}
+                 ORDER BY o.created_at DESC LIMIT $4`,
+        [tenantId, customerId, conversationId, cap, restrictedUserId ?? null])
       : Promise.resolve({ rows: [] as any[] }),
     // มอบหมาย/ช่วยตอบ/เปลี่ยนสถานะ — reuse listSystemEvents เพื่อได้ "ชื่อคน" ไม่ใช่ UUID/email ดิบ
-    listSystemEvents(tenantId, conversationId),
+    listSystemEvents(tenantId, conversationId, 50, restrictedUserId),
   ]);
 
   const toISO = (d: any) => (d instanceof Date ? d.toISOString() : String(d));

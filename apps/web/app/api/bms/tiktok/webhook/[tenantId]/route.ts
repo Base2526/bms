@@ -1,20 +1,19 @@
 // =============================================================
 // POST /api/bms/tiktok/webhook/[tenantId] — TikTok webhook ต่อร้าน
 // -------------------------------------------------------------
-// verify signature ด้วย channel_secret ของร้าน (ถ้าตั้งไว้)
-// โครง event ต่างจาก LINE จึง parse คนละแบบ แต่เข้า pipeline เดียวกัน
+// verify signature ด้วย channel_secret ของร้าน; บันทึก Inbox เพื่อให้คนตอบใน TikTok เอง
 // =============================================================
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
 import { rateLimit } from "@/lib/bms/rateLimit";
-import { logConversation, logInboundMessage, type Attachment } from "@/lib/bms/inbox";
+import { logInboundMessage, type Attachment } from "@/lib/bms/inbox";
 import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
 import crypto from "crypto";
-import { claimInboundEvent } from "@/lib/bms/inboundEvents";
+import { claimInboundEvent, releaseUnprocessedInboundEvent } from "@/lib/bms/inboundEvents";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { readBoundedWebhookText } from "@/lib/bms/webhookBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -65,7 +64,9 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
     return NextResponse.json({ ok: true, skipped: "channel not configured" });
   }
 
-  const raw = await req.text();
+  const payload = await readBoundedWebhookText(req, 1024 * 1024);
+  if (!payload.ok) return NextResponse.json({ error: payload.error }, { status: payload.status });
+  const raw = payload.text;
   // TikTok: HMAC-SHA256 hex ใน header — fail-closed: channel active ต้องมี channel_secret เสมอ
   // ไม่งั้นใครก็ปลอม request เข้ามาได้ (เดิมข้ามการ verify ไปเลยถ้าไม่มี secret — เป็นช่องโหว่)
   if (!cfg.channel_secret) {
@@ -79,40 +80,57 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
-  const body = (() => { try { return JSON.parse(raw); } catch { return {}; } })() as { messages?: TikTokMessage[] };
-  const messages = Array.isArray(body.messages) ? body.messages : [];
+  let body: { messages?: TikTokMessage[] };
+  try { body = JSON.parse(raw); }
+  catch { return NextResponse.json({ error: "invalid JSON payload" }, { status: 400 }); }
+  if (!body || typeof body !== "object" || !Array.isArray(body.messages)) {
+    return NextResponse.json({ error: "messages array required" }, { status: 400 });
+  }
+  const messages = body.messages;
+  if (messages.length > 200) return NextResponse.json({ error: "too many messages" }, { status: 413 });
+
+  // Validate the complete batch before claiming any event. A malformed later item
+  // must not leave earlier messages committed behind a 400 provider retry.
+  for (const m of messages) {
+    const sender = m?.user_id;
+    if ((typeof sender !== "string" && typeof sender !== "number") || !String(sender).trim())
+      return NextResponse.json({ error: "sender required" }, { status: 400 });
+    if (m.content?.text != null && typeof m.content.text !== "string")
+      return NextResponse.json({ error: "invalid message text" }, { status: 400 });
+    const eventId = m.message_id ?? m.id;
+    if ((typeof eventId !== "string" && typeof eventId !== "number") || !String(eventId).trim())
+      return NextResponse.json({ error: "message id required" }, { status: 400 });
+  }
 
   const replies = [];
   for (const m of messages) {
+    const sender = m.user_id!;
     const text = m.content?.text?.trim() ?? "";
-    if (!(await claimInboundEvent(tenantId, "tiktok", m.message_id ?? m.id))) {
-      replies.push({ userId: m.user_id, duplicate: true });
+    const eventId = m.message_id ?? m.id;
+    if (!(await claimInboundEvent(tenantId, "tiktok", eventId))) {
+      replies.push({ userId: String(sender), duplicate: true });
       continue;
     }
-    const userId = m.user_id ?? null;
-    if (!text) {
-      const attachment = tiktokAttachment(m);
-      await logInboundMessage(tenantId, "tiktok", userId, {
-        body: attachment ? "" : `[ข้อความ TikTok ชนิด ${tiktokMessageType(m)}]`,
-        attachment,
-        meta: {
-          type: tiktokMessageType(m),
-          providerMessageId: m.message_id ?? m.id ?? null,
-          unsupportedForAi: true,
-          raw: { hasAttachment: Boolean(attachment) },
-        },
-      });
-      replies.push({ userId: m.user_id, logged: tiktokMessageType(m) });
-      continue;
+    const userId = String(sender);
+    // No outbound API is implemented. Running AI here could commit a business
+    // action that the customer never sees or confirms, so staff handle all turns.
+    // A caption can accompany media; preserve both for staff review.
+    const attachment = tiktokAttachment(m);
+    const savedConversationId = await logInboundMessage(tenantId, "tiktok", userId, {
+      body: text || (attachment ? "" : `[ข้อความ TikTok ชนิด ${tiktokMessageType(m)}]`),
+      attachment,
+      meta: {
+        type: text ? "text" : tiktokMessageType(m),
+        providerMessageId: eventId,
+        unsupportedForAi: true,
+        raw: { hasAttachment: Boolean(attachment) },
+      },
+    });
+    if (!savedConversationId) {
+      await releaseUnprocessedInboundEvent(tenantId, "tiktok", eventId);
+      throw new Error("TIKTOK_INBOUND_PERSIST_FAILED");
     }
-
-    const result = await runPipeline(text, "tiktok", tenantId, userId);
-
-    // บันทึกลง inbox (เข้า+ออก) — best-effort
-    await logConversation(tenantId, "tiktok", userId, text, result.reply, result.quality);
-
-    // TODO(prod): ยิงกลับผ่าน TikTok Business Messaging API ด้วย cfg.access_token
-    replies.push({ userId: m.user_id, reply: result.reply });
+    replies.push({ userId, logged: text ? "text" : tiktokMessageType(m) });
   }
   if (replies.length > 0) await recordInboundEvent(tenantId, "tiktok");
 

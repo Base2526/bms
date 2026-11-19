@@ -52,6 +52,24 @@ LINE/Meta/TikTok/Shopee/Lazada.
 
 Use it when the question is: "Will a real DB write appear in Inbox immediately?"
 
+## When the list appears but the conversation does not
+
+The list and detail are separate GraphQL reads. Open a conversation and check the
+detail request, including its nested `messages`, `notes`, `helpers`, and
+`systemEvents` fields; a successful list request does not prove that detail works.
+An audit event uses `bms_audit_log.target` (`text`) while the conversation ID is a
+`uuid`, so the detail query must compare the target with the ID converted to text.
+The page shows a loading state, then an error with Retry if the detail request
+fails. It asks the server to clear unread only after the latest message has
+loaded, passing that message ID; the write leaves unread intact if a newer
+inbound message committed meanwhile. The selected `?c=` link survives a browser
+refresh.
+
+If `Create Msg` appears but real customer messages do not, check the signed
+webhook route and `IN real` separately. `IN diag` does not prove that a provider
+delivered a webhook. Use a disposable environment for write tests; do not send
+test messages to real customers.
+
 ## Security and performance
 
 - The route has a server-side layout gate via `requireTenantAdministratorPage()`.

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit } from "@/lib/bms/rateLimit";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +11,19 @@ type PlaceResult = {
 };
 
 async function handleGET(req: NextRequest) {
+  // Public proxy to Nominatim, whose usage policy allows ~1 request/second and bans abusive IPs —
+  // one caller looping here would cost every shop its location lookup. Bound per IP and overall.
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    || req.headers.get("x-real-ip")?.trim()
+    || "unknown";
+  const perIp = await rateLimit(`geocode:${ip.slice(0, 128)}`, 30, 60_000);
+  const overall = perIp.ok ? await rateLimit("geocode:all", 60, 60_000) : perIp;
+  if (!perIp.ok || !overall.ok) {
+    return NextResponse.json(
+      { results: [] satisfies PlaceResult[], error: "RATE_LIMITED" },
+      { status: 429, headers: { "Retry-After": String((perIp.ok ? overall : perIp).retryAfter) } },
+    );
+  }
   try {
     const url = new URL(req.url);
     const q = String(url.searchParams.get("q") ?? "").trim();
