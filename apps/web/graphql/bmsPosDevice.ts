@@ -90,6 +90,7 @@ import {
   parsePosExtraLines,
   parsePosPayments,
   parsePosSaleLines,
+  parsePosReturnLines,
   normalizePosSearchQuery,
   isPosUuid,
 } from "@/lib/bms/posRouteHelpers";
@@ -4650,20 +4651,10 @@ export const bmsPosDeviceResolvers = {
         input.approvalPin,
       );
       const rawLines = Array.isArray(input.lines) ? input.lines : [];
-      const lines = rawLines
-        .map((line: any) => ({
-          orderItemId: Number(line?.orderItemId),
-          packQty: Number(line?.packQty),
-        }))
-        .filter(
-          (line) =>
-            Number.isInteger(line.orderItemId) &&
-            Number.isInteger(line.packQty) &&
-            line.packQty > 0,
-        );
+      const lines = parsePosReturnLines(rawLines);
       if (
         mode === "PARTIAL" &&
-        (lines.length === 0 || lines.length !== rawLines.length)
+        (!lines || lines.length === 0)
       ) {
         return badPosInput("การคืนบางรายการต้องมี lines ที่ถูกต้องทุกบรรทัด");
       }
@@ -4685,7 +4676,7 @@ export const bmsPosDeviceResolvers = {
         idempotencyKey,
       };
       return mode === "PARTIAL"
-        ? partiallyReturnPosSale({ ...common, lines })
+        ? partiallyReturnPosSale({ ...common, lines: lines ?? [] })
         : returnPosSale(common);
     },
 

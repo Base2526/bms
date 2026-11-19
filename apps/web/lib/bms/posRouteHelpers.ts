@@ -102,6 +102,21 @@ export function parsePosSaleLines(rawLines: unknown): ParsedPosSaleLine[] {
     .filter((line) => line.sku && line.size && Number.isInteger(line.packQty) && line.packQty > 0);
 }
 
+/** A partial return must never refund only the valid subset of a submitted request. */
+export function parsePosReturnLines(rawLines: unknown): Array<{ orderItemId: number; packQty: number }> | null {
+  if (!Array.isArray(rawLines)) return null;
+  const lines = rawLines.map((line: any) => ({
+    orderItemId: Number(line?.orderItemId),
+    packQty: Number(line?.packQty),
+  }));
+  return lines.every((line) => Number.isSafeInteger(line.orderItemId)
+    && line.orderItemId !== 0
+    && Number.isSafeInteger(line.packQty)
+    && line.packQty > 0)
+    ? lines
+    : null;
+}
+
 /**
  * แยกรายการชำระเงินจาก body
  *

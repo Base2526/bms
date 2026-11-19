@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(new URL("../apps/web/package.json", import.meta.url));
 const { chromium } = require(process.env.BMS_PLAYWRIGHT_PACKAGE || "playwright");
@@ -67,7 +68,7 @@ try {
       assert.equal(await page.getByText("This channel cannot send messages from Inbox yet.").count(), 0);
     }
     assert.deepEqual(errors, []);
-    await page.screenshot({ path: new URL(`${channel}-${width}.png`, out).pathname });
+    await page.screenshot({ path: fileURLToPath(new URL(`${channel}-${width}.png`, out)) });
     console.log(`PASS Inbox ${channel} state at ${width}px`);
     await context.close();
   }

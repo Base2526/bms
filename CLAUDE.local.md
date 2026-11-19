@@ -13,10 +13,11 @@
 
 ## สถานะ working tree ล่าสุด (2026-11-19)
 
-- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `9d6ee933` (#436,
-  pilot ร้านวัสดุก่อสร้าง `10.133`–`10.137`) · สรุป #417–#436 อยู่ท้าย [docs/status-log.md](docs/status-log.md) ·
-  branch `codex/twenty-baht-shop-pilot` = `develop` + หน้า `/learn/twenty-baht-shop` (noindex, เสียงไทย 5 ไฟล์),
-  คอลัมน์ `ประเภท VAT` ในไฟล์นำเข้าสินค้า, mobile คืน/void ใช้ body เดิมกับคีย์เดิม — ไม่มี migration
+- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `5d2b2415` (#437,
+  คู่มือร้าน 20 บาท) · สรุป #417–#437 อยู่ท้าย [docs/status-log.md](docs/status-log.md) ·
+  branch `codex/backend-desktop-mobile-audit` = `develop` + จับคู่เครื่องต้อง HTTPS, offline ส่งซ้ำเฉพาะกะเดิม,
+  คืนบางรายการปฏิเสธทั้งคำขอถ้ามีบรรทัดเสีย + replay ต้องตรงรายการเดิม, Inbox แยก list/detail + mark-read
+  ไม่ล้าง unread ถ้ามีข้อความเข้าใหม่ — ไม่มี migration
 - **migration ล่าสุด `10.137`** (เลขว่างถัดไป `10.138` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
   `10.122`/`10.123` โรงงานคงเดิม; audit ที่ชนเลขย้ายเป็น `10.131`/`10.132` และมีวิธีจัดการ
   ledger เก่าใน [audit traceability](docs/architecture/audit-traceability.md#verification-and-rollout) ·

@@ -8,12 +8,14 @@ import {
   normalizePosSearchQuery,
   parsePosExtraLines,
   parsePosPayments,
+  parsePosReturnLines,
   parsePosSaleLines,
 } from "../apps/web/lib/bms/posRouteHelpers.ts";
 import { cashRoundingDelta, isCashRounding } from "../apps/web/lib/pos/cashRounding.ts";
 import { calculatePettyCashSettlement } from "../apps/web/lib/pos/pettyCash.ts";
 import { buildReceipt } from "../apps/web/lib/pos/escpos.ts";
 import { orderRefundPaymentsForAllocation } from "../apps/web/lib/pos/refundAllocation.ts";
+import { matchesPosReturnReplayLines } from "../apps/web/lib/bms/posReturnReplay.ts";
 import { appendSplitPaymentRow } from "../apps/web/lib/pos/paymentDraft.ts";
 import {
   isReceiptLanguageMode,
@@ -57,6 +59,41 @@ test("POS sale line parser keeps only valid positive integer pack quantities", (
       scaleBarcode: null,
     },
   ]);
+});
+
+test("POS partial return rejects a mixed valid and malformed request instead of refunding a subset", () => {
+  assert.deepEqual(parsePosReturnLines([
+    { orderItemId: 42, packQty: 1 },
+    { orderItemId: 43, packQty: 0 },
+  ]), null);
+  assert.deepEqual(parsePosReturnLines([
+    { orderItemId: -7, packQty: 2 },
+    { orderItemId: 42, packQty: 1 },
+  ]), [
+    { orderItemId: -7, packQty: 2 },
+    { orderItemId: 42, packQty: 1 },
+  ], "open-item receipt lines use negative IDs");
+  assert.equal(parsePosReturnLines([{ orderItemId: 42, packQty: "invalid" }]), null);
+  assert.equal(parsePosReturnLines([{ orderItemId: "9007199254740993", packQty: 1 }]), null);
+  assert.equal(parsePosReturnLines(null), null);
+});
+
+test("POS return replay binds a key to the original line quantities including open items", () => {
+  const committed = [
+    { orderItemId: 42, packQty: 1 },
+    { orderItemId: -7, packQty: 2 },
+  ];
+  assert.equal(matchesPosReturnReplayLines("PARTIAL", committed, committed), true);
+  assert.equal(matchesPosReturnReplayLines("PARTIAL", [...committed].reverse(), committed), true);
+  assert.equal(matchesPosReturnReplayLines("PARTIAL", [
+    { orderItemId: 42, packQty: 1 },
+    { orderItemId: -7, packQty: 1 },
+  ], committed), false);
+  assert.equal(matchesPosReturnReplayLines("PARTIAL", [
+    { orderItemId: 42, packQty: 1 },
+    { orderItemId: -8, packQty: 2 },
+  ], committed), false);
+  assert.equal(matchesPosReturnReplayLines("FULL", [], committed), true);
 });
 
 /**

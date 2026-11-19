@@ -44,6 +44,13 @@ describe('pairing input', () => {
       ok: false,
     });
   });
+
+  test('rejects a linked server that is not an allowed HTTPS origin', () => {
+    expect(parsePairingInput(`http://shop.example.com/pos?t=${TOKEN}`)).toMatchObject({ ok: false });
+    expect(parsePairingInput(
+      `bmspos://pair?t=${TOKEN}&h=${encodeURIComponent('http://shop.example.com')}`,
+    )).toMatchObject({ ok: false });
+  });
 });
 
 describe('pairing display helpers', () => {

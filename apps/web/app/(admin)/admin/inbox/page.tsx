@@ -1,10 +1,10 @@
 "use client";
 
 import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
-import { gql, useApolloClient, useQuery, useLazyQuery, useMutation, useSubscription } from "@apollo/client";
+import { gql, useQuery, useLazyQuery, useMutation, useSubscription } from "@apollo/client";
 import {
   List, Input, Button, Space, Tag, Segmented, message, Alert, Badge,
-  Typography, Avatar, Select, Tabs, Empty, Divider, Popover, Tooltip, Switch, Statistic, Modal,
+  Typography, Avatar, Select, Tabs, Empty, Divider, Popover, Tooltip, Switch, Statistic, Modal, Spin,
 } from "antd";
 import { memo, useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import Link from "next/link";
@@ -157,7 +157,9 @@ const M_HELPER_REMOVE = gql`mutation ($id: ID!, $userId: ID!) { bmsRemoveConvers
 const M_AVAILABILITY = gql`mutation ($available: Boolean!) { bmsSetMyAvailability(available: $available) }`;
 const M_STATUS = gql`mutation ($id: ID!, $status: BmsConvStatus!) { bmsSetConversationStatus(id: $id, status: $status) }`;
 const M_TAGS = gql`mutation ($id: ID!, $tags: [String!]!) { bmsSetConversationTags(id: $id, tags: $tags) }`;
-const M_READ = gql`mutation ($id: ID!) { bmsMarkConversationRead(id: $id) }`;
+const M_READ = gql`mutation ($id: ID!, $observedLatestMessageId: ID) {
+  bmsMarkConversationRead(id: $id, observedLatestMessageId: $observedLatestMessageId)
+}`;
 const M_NOTE = gql`mutation ($id: ID!, $body: String!, $mentionedUserIds: [ID!]) { bmsAddConversationNote(id: $id, body: $body, mentionedUserIds: $mentionedUserIds) { id author body createdAt mentionedUserIds } }`;
 const M_REORDER = gql`mutation ($id: ID!) { bmsReorderFromOrder(id: $id) { status orderId total message } }`;
 
@@ -486,7 +488,6 @@ const ConversationListItem = memo(function ConversationListItem({
 
 function Inbox() {
   const uiText = useUiText();
-  const apollo = useApolloClient();
   const { t } = useI18n();
   const { can } = useBmsPermissions();
   const isMobile = useMediaQuery(MOBILE_QUERY);
@@ -522,10 +523,6 @@ function Inbox() {
   }, []);
   // แจ้ง GlobalInboxNotifier ว่ากำลังเปิดแชทไหนอยู่ (กันแจ้ง notification ซ้ำกับแชทที่เห็นอยู่ตรงหน้า)
   const setActiveConversationGlobal = useGlobalInboxStore((s) => s.setActiveConversation);
-  useEffect(() => {
-    setActiveConversationGlobal(activeId);
-    return () => setActiveConversationGlobal(null);
-  }, [activeId, setActiveConversationGlobal]);
   const [mobilePane, setMobilePane] = useState<"list" | "chat">(() => {
     if (typeof window === "undefined") return "list";
     return new URLSearchParams(window.location.search).get("c") ? "chat" : "list";
@@ -585,8 +582,13 @@ function Inbox() {
   const showListPane = !isMobile || mobilePane === "list";
   const showConversationPane = !isMobile || mobilePane === "chat";
 
-  const [loadConv, { data: convData, refetch: refetchConv }] = useLazyQuery(Q_CONV, { fetchPolicy: "cache-first" });
-  const conv = convData?.bmsConversation;
+  const { data: convData, loading: convLoading, error: convError, refetch: refetchConv } = useQuery(Q_CONV, {
+    variables: convVariables(activeId || ""),
+    skip: !activeId,
+    fetchPolicy: "network-only",
+    notifyOnNetworkStatusChange: true,
+  });
+  const conv = convData?.bmsConversation?.id === activeId ? convData.bmsConversation : null;
   const showCustomer360Pane = Boolean(conv && !isMobile && !isTablet);
   const selectedCouponCode = useMemo(
     () => latestCouponCodeFromMessages(conv?.messages || []),
@@ -602,39 +604,9 @@ function Inbox() {
     pending: false,
   });
   const convRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const readStateRef = useRef(new Map<string, { running: boolean; pending: boolean }>());
+  const readStateRef = useRef(new Map<string, { running: boolean; pending: boolean; latestMessageId: string }>());
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
-
-  const clearUnreadInCache = useCallback((conversationId: string) => {
-    const list = apollo.cache.readQuery<any>({
-      query: Q_LIST,
-      variables: listVariables,
-    });
-    if (list?.bmsConversations) {
-      apollo.cache.writeQuery({
-        query: Q_LIST,
-        variables: listVariables,
-        data: {
-          bmsConversations: list.bmsConversations.map((c: Conversation) =>
-            c.id === conversationId ? { ...c, unread: 0 } : c
-          ),
-        },
-      });
-    }
-
-    const detail = apollo.cache.readQuery<any>({
-      query: Q_CONV,
-      variables: convVariables(conversationId),
-    });
-    if (detail?.bmsConversation) {
-      apollo.cache.writeQuery({
-        query: Q_CONV,
-        variables: convVariables(conversationId),
-        data: { bmsConversation: { ...detail.bmsConversation, unread: 0 } },
-      });
-    }
-  }, [apollo, listVariables, convVariables]);
 
   // Refresh the first event immediately, then cap sustained bursts at two list
   // queries per second while guaranteeing one trailing refresh is not lost.
@@ -660,37 +632,35 @@ function Inbox() {
 
   const markActiveConversationRead = useCallback(async (
     conversationId: string,
-    options?: { queueIfRunning?: boolean }
+    latestMessageId: string,
   ) => {
-    clearUnreadInCache(conversationId);
-
     const current = readStateRef.current.get(conversationId);
     if (current?.running) {
-      if (options?.queueIfRunning) current.pending = true;
+      current.latestMessageId = latestMessageId;
+      current.pending = true;
       return;
     }
 
-    const state = { running: true, pending: false };
+    const state = { running: true, pending: false, latestMessageId };
     readStateRef.current.set(conversationId, state);
     try {
       do {
         state.pending = false;
-        await markRead({
-          variables: { id: conversationId },
-          optimisticResponse: { bmsMarkConversationRead: true },
-          update: () => clearUnreadInCache(conversationId),
+        const result = await markRead({
+          variables: { id: conversationId, observedLatestMessageId: state.latestMessageId },
         });
-        clearUnreadInCache(conversationId);
+        void refetch();
+        if (result.data?.bmsMarkConversationRead === false && activeIdRef.current === conversationId) {
+          void refetchConv(convVariables(conversationId)).catch(() => undefined);
+        }
       } while (state.pending);
     } catch (error) {
       console.warn("[BMS Inbox] mark active conversation read failed", error);
-      // Restore authoritative unread state only on failure. Successful writes
-      // are already reflected in both caches and via READ_CHANGED realtime.
       void refetch();
     } finally {
       readStateRef.current.delete(conversationId);
     }
-  }, [clearUnreadInCache, markRead, refetch]);
+  }, [markRead, refetch, refetchConv, convVariables]);
 
   // The event contains no customer data; authoritative rows are fetched
   // through RBAC-scoped queries.
@@ -699,21 +669,9 @@ function Inbox() {
     if (!event?.conversationId) return;
 
     const isActiveEvent = event.conversationId === activeIdRef.current;
-    const isReadEvent = event.kind === "READ_CHANGED";
-    const isActiveMessageEvent = isActiveEvent && event.kind === "MESSAGES_CHANGED";
-    if (isReadEvent) {
-      // READ_CHANGED carries the complete state transition; no list/detail
-      // query is needed, including for events from another operator.
-      clearUnreadInCache(event.conversationId);
-    } else if (isActiveMessageEvent) {
-      // The operator is already looking at this thread: clear its badge now,
-      // then persist read state without starting another list/detail fetch.
-      void markActiveConversationRead(event.conversationId, { queueIfRunning: true });
-    } else {
-      triggerListRefresh();
-    }
+    triggerListRefresh();
 
-    if (isActiveEvent && !isReadEvent && !convRefreshTimer.current) {
+    if (isActiveEvent && !convRefreshTimer.current) {
       convRefreshTimer.current = setTimeout(() => {
         convRefreshTimer.current = null;
         if (activeIdRef.current === event.conversationId) {
@@ -721,7 +679,7 @@ function Inbox() {
         }
       }, 150);
     }
-  }, [inboxChangedData, clearUnreadInCache, refetchConv, triggerListRefresh, markActiveConversationRead, convVariables]);
+  }, [inboxChangedData, refetchConv, triggerListRefresh, convVariables]);
 
   useEffect(() => () => {
     if (listRefreshState.current.timer) clearTimeout(listRefreshState.current.timer);
@@ -729,12 +687,6 @@ function Inbox() {
     listRefreshState.current.pending = false;
     if (convRefreshTimer.current) clearTimeout(convRefreshTimer.current);
   }, []);
-
-  useEffect(() => {
-    if (activeId) {
-      loadConv({ variables: convVariables(activeId) });
-    }
-  }, [activeId]); // eslint-disable-line
 
   // If the socket misses an event, the existing 20s list poll detects a newer
   // message and refreshes only the active pane instead of polling every pane.
@@ -745,41 +697,48 @@ function Inbox() {
   const activeListMessageAt = activeListConversation?.lastMessageAt;
   const activeListUnread = activeListConversation?.unread ?? 0;
 
-  // Apollo normalizes the list and detail query to the same Conversation
-  // entity. Consequently lastMessageAt can change on both queries at once and
-  // is not sufficient to detect every missed socket event. The active card's
-  // unread value is the authoritative UI trigger: whenever it rises above zero,
-  // clear and persist it without waiting for another click or scroll action.
+  // A list poll can discover a message while the socket is down. Refresh the
+  // selected detail before marking it read; the list alone is not proof that
+  // the operator has seen the message.
+  const lastPolledRefreshRef = useRef<string | null>(null);
   useEffect(() => {
-    if (activeId && activeListUnread > 0) {
-      void markActiveConversationRead(activeId);
-    }
-  }, [activeId, activeListUnread, markActiveConversationRead]);
-
-  useEffect(() => {
-    if (!activeId || !activeListMessageAt || !conv?.lastMessageAt) return;
-    if (activeListMessageAt !== conv.lastMessageAt && !convRefreshTimer.current) {
-      void markActiveConversationRead(activeId);
-      convRefreshTimer.current = setTimeout(() => {
-        convRefreshTimer.current = null;
-        if (activeIdRef.current === activeId) {
-          void refetchConv(convVariables(activeId));
-        }
-      }, 150);
-    }
-  }, [activeId, activeListMessageAt, conv?.lastMessageAt, refetchConv, markActiveConversationRead]);
+    if (!activeId || !activeListMessageAt || activeListUnread <= 0) return;
+    const refreshKey = `${activeId}:${activeListMessageAt}`;
+    if (lastPolledRefreshRef.current === refreshKey) return;
+    lastPolledRefreshRef.current = refreshKey;
+    if (!convLoading) void refetchConv(convVariables(activeId)).catch(() => undefined);
+  }, [activeId, activeListMessageAt, activeListUnread, convLoading, refetchConv, convVariables]);
 
   // Final guard: whenever a newly fetched message is actually rendered in the
   // selected thread, its unread state must be cleared without another click.
-  const renderedLatestMessageId = conv?.messages?.[conv.messages.length - 1]?.id ?? null;
+  const renderedLatestMessage = conv?.messages?.[conv.messages.length - 1] ?? null;
   useEffect(() => {
-    if (activeId && conv?.id === activeId && conv.unread > 0 && renderedLatestMessageId) {
-      void markActiveConversationRead(activeId);
+    const listMessageAt = conversations.find((item) => item.id === activeId)?.lastMessageAt;
+    const latestVisibleAt = renderedLatestMessage?.createdAt;
+    const isCurrentMessageVisible = Boolean(activeId && !convLoading && !convError && conv?.id === activeId &&
+      latestVisibleAt && (!listMessageAt || new Date(latestVisibleAt).getTime() >= new Date(listMessageAt).getTime()));
+    // Suppress a global customer alert only while the latest message is visible.
+    // A selected ID alone can be loading, forbidden or stale after a list poll.
+    setActiveConversationGlobal(isCurrentMessageVisible ? activeId : null);
+    return () => setActiveConversationGlobal(null);
+  }, [activeId, convLoading, convError, conv?.id, conversations, renderedLatestMessage?.createdAt,
+    setActiveConversationGlobal]);
+  useEffect(() => {
+    if (activeId && !convLoading && !convError && conv?.id === activeId && conv.unread > 0 &&
+        renderedLatestMessage && (!conv.lastMessageAt ||
+          new Date(renderedLatestMessage.createdAt).getTime() >= new Date(conv.lastMessageAt).getTime())) {
+      void markActiveConversationRead(activeId, String(renderedLatestMessage.id));
     }
-  }, [activeId, conv?.id, conv?.unread, renderedLatestMessageId, markActiveConversationRead]);
+  }, [activeId, convLoading, convError, conv?.id, conv?.unread, conv?.lastMessageAt,
+    renderedLatestMessage?.id, renderedLatestMessage?.createdAt, markActiveConversationRead]);
 
   const openConversation = useCallback((conversationId: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("c", conversationId);
+    url.searchParams.delete("tab");
+    window.history.replaceState(null, "", url);
     setActiveId(conversationId);
+    setInitialTab(null);
     if (isMobile) setMobilePane("chat");
   }, [isMobile]);
   const showConversationList = useCallback(() => setMobilePane("list"), []);
@@ -974,8 +933,20 @@ function Inbox() {
         {/* ---- middle: active conversation ---- */}
         {showConversationPane && (
         <div style={{ flex: "1 1 0", width: isMobile ? "100%" : undefined, minWidth: 0, minHeight: 0, overflow: "hidden", border: "1px solid var(--app-border, #eee)", borderRadius: 10, padding: isMobile ? 7 : 10, background: PANEL_SURFACE }}>
-          {!conv ? (
+          {!activeId ? (
             <Empty description={t("admin_inbox.empty_select_conversation")} style={{ marginTop: 120 }} />
+          ) : convLoading ? (
+            <div style={{ display: "flex", justifyContent: "center", paddingTop: 120 }}><Spin /></div>
+          ) : convError ? (
+            <Alert
+              closable
+              type="error"
+              showIcon
+              message={t("admin_inbox.conversation_load_failed")}
+              action={<Button size="small" onClick={() => { void refetchConv(convVariables(activeId)).catch(() => undefined); }}>{t("admin_inbox.retry_load")}</Button>}
+            />
+          ) : !conv ? (
+            <Empty description={t("admin_inbox.conversation_not_found")} style={{ marginTop: 120 }} />
           ) : (
             <MemoConversationPane key={conv.id} conv={conv} can={can} isMobile={isMobile} onBack={isMobile ? showConversationList : undefined}
               gender={me?.gender} tenantSlug={tenantSlug} initialTab={initialTab} onChanged={handleConversationChanged} />

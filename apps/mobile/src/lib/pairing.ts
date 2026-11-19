@@ -96,10 +96,13 @@ export function parsePairingInput(raw: string): ParsedPairing {
         error: posText("ค่า t= ในลิงก์ไม่ใช่ token ของเครื่องขาย (ต้องขึ้นต้นด้วย pos_)"),
       };
     const host = queryParam(input, ['h', 'host', 'server']);
+    const serverUrl = host ? normalizeServerUrl(host) : null;
+    if (host && !serverUrl)
+      return { ok: false, error: posText("Server URL ไม่ถูกต้อง ระบบจริงต้องใช้ HTTPS") };
     return {
       ok: true,
       token,
-      serverUrl: host ? normalizeServerUrl(host) : null,
+      serverUrl,
     };
   }
 
@@ -119,7 +122,10 @@ export function parsePairingInput(raw: string): ParsedPairing {
         error:
           posText("ค่า t= ในลิงก์ไม่ใช่ token ของเครื่องขาย (ต้องขึ้นต้นด้วย pos_)"),
       };
-    return { ok: true, token, serverUrl: normalizeServerUrl(input) };
+    const serverUrl = normalizeServerUrl(input);
+    if (!serverUrl)
+      return { ok: false, error: posText("Server URL ไม่ถูกต้อง ระบบจริงต้องใช้ HTTPS") };
+    return { ok: true, token, serverUrl };
   }
 
   // 3) token เปล่า

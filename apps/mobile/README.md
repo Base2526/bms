@@ -39,7 +39,8 @@ does not revoke its token. Do not share screenshots. Only the token hash is reta
 an existing token cannot be redisplayed. Issuing another token invalidates the old one immediately.
 HTTP/loopback Admin origins do not offer a mobile QR. Both devices must reach the advertised HTTPS
 origin and trust its certificate. Manual link/token entry remains available; externally opened deep
-links still only prefill Settings and require Save.
+links still only prefill Settings and require Save. A pairing link with an invalid or cleartext
+remote server is rejected; a bare token may still use the server entered separately in Settings.
 
 The QR action uses the existing native QR scanner separately from product lookup. Invalid QR,
 cancelled scans and late results after leaving Settings do not change pairing. The native scanner

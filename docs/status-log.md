@@ -2,7 +2,7 @@
 
 Per-feature decision narrative moved out of [CLAUDE.md](../CLAUDE.md) on 2026-10-13 to keep the
 always-loaded agent context small. The moved text is unchanged; newest entries are at the end.
-Entries were brought up to date on 2026-11-19 (through migration `10.137` and PR #436); the
+Entries were brought up to date on 2026-11-19 (through migration `10.137` and PR #437); the
 detailed 2026-11-16 boundary and log notes are in [feature-log.md](feature-log.md). The compact area index lives in CLAUDE.md
 § Current status; full
 per-domain rules live in [agent-invariants.md](agent-invariants.md).
@@ -1099,7 +1099,7 @@ certification remain open. See
 [release evidence](business/building-materials-release-evidence-2026-11-19.md) and
 [คู่มือร้านวัสดุก่อสร้าง](คู่มือร้านวัสดุก่อสร้าง.md).
 
-**Twenty-baht shop pilot guide (branch `codex/twenty-baht-shop-pilot`, no migration).** The
+**Twenty-baht shop pilot guide (#437, no migration).** The
 public, `noindex` `/learn/twenty-baht-shop` page walks one branch through same-price distinct SKUs,
 CSV/XLSX preview, opening count, PO receipt, sale, partial return, shift close and outage recovery
 using fictional data, with five locally hosted Thai narration MP3s (checksum provenance). Product
@@ -1110,3 +1110,29 @@ with its idempotency key and blocks starting a different return or void while a 
 is unknown. Real-shop evidence, accountant VAT review and hardware remain go-live gates. See
 [business/twenty-baht-shop-pilot-th.md](business/twenty-baht-shop-pilot-th.md) and
 [ui/learning-center.md](ui/learning-center.md).
+
+**Backend, Desktop and Mobile audit (branch `codex/backend-desktop-mobile-audit`, no migration).**
+- **Pairing:** Desktop and Mobile reject a pairing link whose remote server is invalid or cleartext
+  (production needs HTTPS); a bare token may still use the server entered in Settings.
+- **Emergency Offline:** a queued cash sale replays only into the shift that originally accepted
+  its tender (`canReplayOfflineSaleInShift`). Legacy rows without an original shift ID stay in
+  manager review when recovery finds no committed bill.
+- **POS returns:** REST and GraphQL partial returns reject the whole request when any line is
+  malformed (`parsePosReturnLines`) instead of refunding the valid subset. A retry with the same
+  idempotency key must select the same item IDs and quantities, including negative IDs for open
+  items (`matchesPosReturnReplayLines`). A changed selection returns `IDEMPOTENCY_CONFLICT` without
+  another refund, and a key cannot be reused across return and void.
+- **Inbox:** list and detail are separate reads. The detail event query compares
+  `bms_audit_log.target` (text) with the conversation UUID cast to text, and a selected chat shows
+  loading, error/Retry or not-found states and keeps `?c=<id>` across refreshes.
+  `bmsMarkConversationRead` takes an optional `observedLatestMessageId` (`schema.graphql` updated)
+  and leaves unread intact when a newer inbound message committed first; older callers are
+  unchanged.
+
+Pure contracts `pos-contract` (98/98), `return-financial-snapshot-contract` (37/37),
+`inbox-conversation-access-contract` (6/6), `inbox-read-tenant-scope-contract` (1/1) and the Desktop
+pairing unit test (8/8) passed on 2026-11-19. The new DB contract `inbox-read-db-contract`, the Inbox
+browser smokes, mobile Jest, typecheck and build were not run in that pass. See
+[business/pos.md](business/pos.md), [business/cloud-hybrid-pos.md](business/cloud-hybrid-pos.md),
+[business/crm.md](business/crm.md#omnichannel-inbox) and
+[ui/inbox-diagnostics.md](ui/inbox-diagnostics.md).

@@ -1565,6 +1565,7 @@
   "ต้องเปิดกะก่อนรับเงินออฟไลน์": "Open a shift before accepting offline cash",
   "ตรวจแล้ว Server ยังไม่มีบิล และกะเดิมไม่ได้เปิดอยู่ ห้ามลงยอดเข้ากะใหม่ กรุณาให้ผู้จัดการตรวจสอบ": "Server has no bill and the original shift is closed. Do not post to a new shift. Ask a manager to review.",
   "รายการนี้รับเงินในกะเดิมที่ปิดไปแล้ว ห้ามลงยอดเข้ากะใหม่ กรุณาให้ผู้จัดการตรวจสอบ": "Cash was accepted in a shift that is now closed. Do not post to a new shift. Ask a manager to review.",
+  "รายการออฟไลน์รุ่นเก่าไม่มีรหัสกะเดิม ห้ามลงยอดเข้ากะปัจจุบัน กรุณาให้ผู้จัดการตรวจสอบ": "This older offline sale has no original shift ID. Do not post it to the current shift. Ask a manager to review.",
   "ต้องให้แคชเชียร์ {v0} เข้าสู่ระบบเพื่อซิงก์รายการนี้": "Cashier {v0} must sign in to sync this transaction",
   "Server ไม่ส่งผลการขายกลับมา ยังไม่ทราบผลรายการ": "Server returned no sale result. Outcome is unknown.",
   "Server ปฏิเสธรายการออฟไลน์": "Server rejected offline transaction",

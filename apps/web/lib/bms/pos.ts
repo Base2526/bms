@@ -41,6 +41,7 @@ import { currentWeightedKgRate, weightedKgLineCents, weightedKgMoney } from "./w
 import { POS_APPROVAL_PERMISSIONS } from "./posApprovals";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
 import { normalizePosReceiptName } from "./posReceiptDisplay";
+import { matchesPosReturnReplayLines } from "./posReturnReplay";
 import { boardGameReceiptNotes } from "./boardGameReceiptNotes";
 import { type PaymentMethod } from "./payments";
 import { orderRefundPaymentsForAllocation } from "@/lib/pos/refundAllocation";
@@ -5807,8 +5808,11 @@ export async function processPosReturn(input: {
 }): Promise<PosPartialReturnResult> {
   const requestedMap = new Map<number, number>();
   for (const line of input.lines) {
-    if (!Number.isInteger(line.orderItemId) || !Number.isInteger(line.packQty) || line.packQty <= 0) continue;
-    requestedMap.set(line.orderItemId, (requestedMap.get(line.orderItemId) ?? 0) + line.packQty);
+    if (!Number.isSafeInteger(line.orderItemId) || line.orderItemId === 0
+      || !Number.isSafeInteger(line.packQty) || line.packQty <= 0) return { status: "EMPTY" };
+    const quantity = (requestedMap.get(line.orderItemId) ?? 0) + line.packQty;
+    if (!Number.isSafeInteger(quantity)) return { status: "EMPTY" };
+    requestedMap.set(line.orderItemId, quantity);
   }
   if (input.mode === "PARTIAL" && requestedMap.size === 0) return { status: "EMPTY" };
 
@@ -5826,6 +5830,7 @@ export async function processPosReturn(input: {
       order_id: string;
       pos_device_id: string | null;
       return_mode: "FULL" | "PARTIAL";
+      is_void: boolean;
       refund_amount: string;
       settlement_status: "PENDING" | "COMPLETED";
       created_at: unknown;
@@ -5837,7 +5842,7 @@ export async function processPosReturn(input: {
       return_location_id: string | null;
       cross_branch: boolean;
     }>(
-      `SELECT id, order_id, pos_device_id, return_mode, refund_amount, settlement_status,
+      `SELECT id, order_id, pos_device_id, return_mode, is_void, refund_amount, settlement_status,
               created_at, pricing_adjustment_amount, remaining_amount_after_return,
               preferred_refund_method, shift_id, sale_location_id, return_location_id, cross_branch
          FROM bms_pos_returns
@@ -5850,15 +5855,22 @@ export async function processPosReturn(input: {
       if (existing.order_id !== input.orderId
           || existing.pos_device_id !== input.deviceId
           || existing.return_mode !== input.mode
+          || existing.is_void !== (input.isVoid === true)
           || existing.preferred_refund_method !== (input.preferredRefundMethod ?? null)
           || (input.restaurantCancellation
             && existing.sale_location_id !== input.restaurantCancellation.expectedLocationId)) {
         await client.query("ROLLBACK");
         return { status: "IDEMPOTENCY_CONFLICT" };
       }
-      const [items, refunds] = await Promise.all([
+      const [items, openItems, refunds] = await Promise.all([
         client.query<{ order_item_id: string; pack_qty: number; refund_amount: string }>(
           `SELECT order_item_id, pack_qty, refund_amount FROM bms_pos_return_items
+            WHERE tenant_id = $1 AND pos_return_id = $2 ORDER BY id`,
+          [input.tenantId, existing.id]
+        ),
+        client.query<{ order_item_id: string; pack_qty: number; refund_amount: string }>(
+          `SELECT -order_open_item_id AS order_item_id, qty AS pack_qty, refund_amount
+             FROM bms_pos_return_open_items
             WHERE tenant_id = $1 AND pos_return_id = $2 ORDER BY id`,
           [input.tenantId, existing.id]
         ),
@@ -5869,16 +5881,20 @@ export async function processPosReturn(input: {
           [input.tenantId, existing.id]
         ),
       ]);
+      const returnedItems = [...items.rows, ...openItems.rows].map((row) => ({
+        orderItemId: Number(row.order_item_id),
+        packQty: Number(row.pack_qty),
+        refundAmount: Number(row.refund_amount),
+      }));
+      if (!matchesPosReturnReplayLines(input.mode, input.lines, returnedItems)) {
+        await client.query("ROLLBACK");
+        return { status: "IDEMPOTENCY_CONFLICT" };
+      }
       await client.query("ROLLBACK");
       // issueCreditNote เปิด tenant transaction ของตัวเอง จึงคืน connection นี้ก่อน
       // ป้องกัน deadlock เมื่อ instance ตั้ง POSTGRES_POOL_MAX=1
       client.release();
       clientReleased = true;
-      const returnedItems = items.rows.map((row) => ({
-        orderItemId: Number(row.order_item_id),
-        packQty: Number(row.pack_qty),
-        refundAmount: Number(row.refund_amount),
-      }));
       const creditNoteNo = input.isVoid
         ? null
         : await ensurePosReturnCreditNote({
