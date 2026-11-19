@@ -7701,6 +7701,7 @@ input BmsProductImportRowInput {
   sku: String!
   stock_policy: String
   variant_codes: [String!]
+  vat_category: String
 }
 
 type BmsProductImportRowResult {

@@ -141,6 +141,16 @@ test('a failed refresh cannot turn a committed partial return into a retryable f
   expect(Alert.alert).not.toHaveBeenCalledWith('คืนสินค้าไม่สำเร็จ', expect.anything());
 });
 
+test('an exchange return with no replacement lines stays committed and closes the retry form', async () => {
+  mockReturn.mockResolvedValue({ data: { bmsPosReturn: { status: 'PARTIAL_RETURNED', refundAmount: 50, returnedItems: [] } } });
+  await openAction('เปลี่ยนสินค้า');
+  await act(async () => { await button('รับคืนและเปิดบิลใหม่').props.onPress(); });
+  expect(mockReturn).toHaveBeenCalledTimes(1);
+  expect(mockRefresh).toHaveBeenCalledTimes(1);
+  expect(renderer.root.findByType(Modal).props.visible).toBe(false);
+  expect(Alert.alert).toHaveBeenCalledWith('คืนสินค้าสำเร็จ', expect.stringContaining('เริ่มบิลขายใหม่'));
+});
+
 test.each(['CONFLICT', 'FORBIDDEN', 'INTERNAL_SERVER_ERROR', 'NETWORK'])(
   'return retry rotates a decided %s key but preserves an unknown result', async code => {
     const error = code === 'NETWORK' ? new Error('connection lost') : {
@@ -171,4 +181,44 @@ test.each(['คืนบางรายการ', 'Void ทั้งบิล']
   expect(keys).toHaveLength(2);
   expect(keys[1]).toBe(keys[0]);
   expect(mockRefresh).not.toHaveBeenCalled();
+});
+
+test('an uncertain partial return retries the original quantity and reason under its original key', async () => {
+  mockReturn.mockResolvedValue({ data: {} });
+  await openAction('คืนบางรายการ');
+  await act(async () => { await button('ยืนยัน').props.onPress(); });
+  await act(() => renderer.root.findByType(QtyStepper).props.onIncrement());
+  await act(() => input('เหตุผล').props.onChangeText('Changed after timeout'));
+  await act(async () => { await button('ยืนยัน').props.onPress(); });
+  expect(mockReturn).toHaveBeenCalledTimes(2);
+  expect(mockReturn.mock.calls[1][0].variables.input).toEqual(mockReturn.mock.calls[0][0].variables.input);
+  expect(mockReturn.mock.calls[1][0].variables.input.lines[0].packQty).toBe(1);
+  expect(Alert.alert).toHaveBeenCalledWith('ตรวจผลรายการคืนเดิม', expect.stringContaining('คีย์เดิม'), expect.any(Array), expect.any(Object));
+});
+
+test('an uncertain void retries its original approval and reason despite later edits', async () => {
+  mockVoid.mockResolvedValue({ data: {} });
+  await openAction('Void ทั้งบิล');
+  await act(() => button('Manager').props.onPress());
+  await act(() => input('PIN ผู้อนุมัติ').props.onChangeText('5678'));
+  await act(async () => { await button('ยืนยัน').props.onPress(); });
+  await act(() => input('เหตุผล').props.onChangeText('Changed after timeout'));
+  await act(async () => { await button('ยืนยัน').props.onPress(); });
+  expect(mockVoid).toHaveBeenCalledTimes(2);
+  expect(mockVoid.mock.calls[1][0].variables.input).toEqual(mockVoid.mock.calls[0][0].variables.input);
+  expect(Alert.alert).toHaveBeenCalledWith('ตรวจผล Void เดิม', expect.stringContaining('คีย์เดิม'), expect.any(Array), expect.any(Object));
+});
+
+test('an uncertain return blocks switching to void before the original result is recovered', async () => {
+  mockReturn.mockResolvedValue({ data: {} });
+  await openAction('คืนบางรายการ');
+  await act(async () => { await button('ยืนยัน').props.onPress(); });
+  await act(() => button('ยกเลิก').props.onPress());
+  await openAction('Void ทั้งบิล');
+  await act(() => button('Manager').props.onPress());
+  await act(() => input('PIN ผู้อนุมัติ').props.onChangeText('5678'));
+  await act(async () => { await button('ยืนยัน').props.onPress(); });
+  expect(mockReturn).toHaveBeenCalledTimes(1);
+  expect(mockVoid).not.toHaveBeenCalled();
+  expect(Alert.alert).toHaveBeenCalledWith('ผลรายการเดิมยังไม่ชัดเจน', expect.any(String));
 });

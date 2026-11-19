@@ -2553,6 +2553,7 @@ export const typeDefs = /* GraphQL */ `
     barcode: String
     description: String
     cost_price: Float
+    vat_category: String
     category: String
     brand: String
     creation_template: String

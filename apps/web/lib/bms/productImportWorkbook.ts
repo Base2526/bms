@@ -44,7 +44,8 @@ export function buildProductImportWorkbook(examples: readonly (readonly string[]
   // Products is intentionally ready for customer data, without importable sample records.
   const products = XLSX.utils.aoa_to_sheet([PRODUCT_IMPORT_TEMPLATE_HEADERS]);
   products["!cols"] = columnWidths;
-  products["!autofilter"] = { ref: "A1:N1" };
+  const lastColumn = XLSX.utils.encode_col(PRODUCT_IMPORT_TEMPLATE_HEADERS.length - 1);
+  products["!autofilter"] = { ref: `A1:${lastColumn}1` };
 
   const toWorkbookRow = (example: readonly string[]) => example.map((value, index) => {
     if ((index === 4 || index === 5) && value !== "") return Number(value);
@@ -61,7 +62,7 @@ export function buildProductImportWorkbook(examples: readonly (readonly string[]
       if (cell) cell.z = "@"; // Copying an example row also copies the safe identifier format.
     }
   }
-  exampleSheet["!autofilter"] = { ref: `A1:N${examples.length + 1}` };
+  exampleSheet["!autofilter"] = { ref: `A1:${lastColumn}${examples.length + 1}` };
 
   const guide = XLSX.utils.aoa_to_sheet([
     ["คู่มือ / Guide", `Template: ${archetype}`],
@@ -75,6 +76,7 @@ export function buildProductImportWorkbook(examples: readonly (readonly string[]
     ["สูตร / วันที่", "ไม่รับสูตรหรือวันที่ในช่องสินค้า ให้ Paste Special > Values แล้วตรวจค่าก่อนนำเข้า"],
     ["ชื่อสินค้า *", "ห้ามว่าง"],
     ["ราคาขาย *", "ตัวเลข 0 ขึ้นไป ไม่ใส่สัญลักษณ์เงินตรา"],
+    ["ประเภท VAT", "V = มี VAT, N = ยกเว้น, UNKNOWN = ยังไม่ระบุ; ช่องว่างคงค่าของ SKU เดิม ตรวจผู้ทำบัญชีก่อนเปิดขาย"],
     ["อัปเดต SKU เดิม", "SKU ที่มีแล้วคืออัปเดต ไม่ใช่สร้างซ้ำ; คอลัมน์ที่ไม่ส่งมาคงค่าเดิม แต่ช่องว่างในคอลัมน์ข้อมูลทั่วไปจะล้างค่าเดิม"],
     ["รูป / น้ำหนัก / สต็อก", "ไฟล์นี้ไม่เปลี่ยนรูป น้ำหนัก หรือยอดสต็อก; สูตร แพ็ก ส่วนประกอบ ล็อต serial และราคาแยกตัวเลือกต้องตั้งในหน้าที่เกี่ยวข้อง"],
     ["รูปแบบสต็อกเดิม", "Stock Policy / หน่วยฐาน ใช้สร้างสินค้าใหม่; เปลี่ยนของ SKU เดิมที่หน้ารูปแบบสต็อก ไม่ใช่ Excel"],

@@ -303,7 +303,10 @@ Mutation.bmsImportProducts(items: [BmsProductImportRowInput!]!, commit: Boolean 
 Template columns (Thai headers, matched by trimmed/case-insensitive text so a reordered or
 hand-edited sheet still parses): `SKU` / `บาร์โค้ด` / `ชื่อสินค้า` / `รายละเอียด` / `ราคาขาย` /
 `ต้นทุน` / `หมวดหมู่` / `ยี่ห้อ` / `คีย์เวิร์ด` / `รูปแบบสินค้า` / `Stock Policy` / `หน่วยฐาน` /
-`ตัวเลือก` / `ช่องทางขาย`. Lists use `|` (or `,`); variant spelling is preserved.
+`ตัวเลือก` / `ช่องทางขาย` / `ประเภท VAT`. Lists use `|` (or `,`); variant spelling is preserved.
+`ประเภท VAT` is an optional column: `V`, `N`, or `UNKNOWN`; a blank cell preserves an existing
+SKU's VAT category, while a new SKU remains unknown until reviewed. Invalid values are per-row
+preview errors, not silently coerced. The tax classification must be confirmed by an accountant.
 `SKU`/`ชื่อสินค้า`/`ราคาขาย` are required. Missing, duplicate and unknown headers are rejected
 with the exact column names. There is no `เปิดขาย` column: new products always remain Draft.
 

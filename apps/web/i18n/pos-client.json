@@ -3743,5 +3743,11 @@
   "🔇 เสียงประกาศออกที่จอคิวอีกจอ": "🔇 Announcements play on another queue screen",
   "เช็กขนาดตัวเลขโดยไม่บันทึกหรือเปิดเองครั้งถัดไป · หน้าต่างทดสอบปิดเสียง และเปิดคู่กับจอลูกค้าได้": "Check number sizing without saving or reopening later. The muted preview can stay open beside the customer preview.",
   "จอเสียงที่บันทึกไว้ (ไม่ได้เปิด)": "Saved announcement screen (not open)",
-  "ยังไม่มีจอภายนอกให้เลือก": "No external screen is available to select"
+  "ยังไม่มีจอภายนอกให้เลือก": "No external screen is available to select",
+  "ผลรายการเดิมยังไม่ชัดเจน": "The previous operation's result is uncertain",
+  "กรุณากลับไปทำรายการเดิมด้วยคีย์เดิมก่อนเริ่มการคืนหรือ Void แบบอื่น": "Retry the original operation with its original key before starting another return or void.",
+  "ตรวจผลรายการคืนเดิม": "Check the previous return",
+  "คำขอครั้งก่อนอาจบันทึกแล้ว การกดต่อจะส่งรายการเดิมและคีย์เดิมเพื่อตรวจผล ไม่ใช้จำนวนหรือเหตุผลที่เพิ่งแก้": "The previous request may already be saved. Continue to retry its original items and key; recent quantity or reason edits will not be sent.",
+  "ตรวจผล Void เดิม": "Check the previous void",
+  "คำขอครั้งก่อนอาจบันทึกแล้ว การกดต่อจะส่งเหตุผลและคีย์เดิมเพื่อตรวจผล ไม่ใช้ข้อมูลที่เพิ่งแก้": "The previous request may already be saved. Continue to retry its original reason and key; recent edits will not be sent."
 }

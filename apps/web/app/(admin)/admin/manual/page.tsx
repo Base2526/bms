@@ -974,7 +974,7 @@ const LINK_STEPS_TH: LinkStep[] = [
     title: "นำเข้าสินค้าจำนวนมากด้วย CSV/XLSX",
     description: (
       <>
-        ใน {L.products} กด นำเข้า · ดาวน์โหลดเทมเพลตแล้วกรอก SKU / ชื่อสินค้า / ราคาขาย และคอลัมน์เสริม รูปแบบสินค้า / Stock Policy / ตัวเลือก / ช่องทางขาย · อัปโหลดแล้วระบบจะแสดงตัวอย่างว่าจะ สร้างใหม่ / อัปเดต / ข้าม ก่อนยืนยัน · รายการใหม่เป็น Draft, ไม่ต้องใส่รูปในไฟล์ และจำกัดสูงสุด 500 แถวต่อครั้ง
+        ใน {L.products} กด นำเข้า · ดาวน์โหลดเทมเพลตแล้วกรอก SKU / ชื่อสินค้า / ราคาขาย และคอลัมน์เสริม รูปแบบสินค้า / Stock Policy / ตัวเลือก / ช่องทางขาย / ประเภท VAT (V, N หรือ UNKNOWN) · ให้ผู้ทำบัญชีตรวจประเภท VAT; ช่องว่างคงค่าเดิม · ตรวจตัวอย่างและข้อผิดพลาดก่อนยืนยัน · รายการใหม่เป็น Draft, ไฟล์ไม่เพิ่มสต็อกตั้งต้นหรือรูป และจำกัดสูงสุด 500 แถวต่อครั้ง
       </>
     ),
   },
@@ -2317,8 +2317,7 @@ const LINK_STEPS_EN: LinkStep[] = [
     description: (
       <>
         In {L.products} press Import · download the template and fill it in following the column headers (SKU / product
-        name / price are required) · after uploading, the system previews what will be created / updated / skipped before
-        you press Confirm import · images are not part of the file (add them afterwards on the edit form), and each
+        name / price are required). The optional VAT category is V, N or UNKNOWN; have an accountant review it, and leave it blank to preserve an existing value · inspect preview errors before confirming · new items are Draft, and images and opening stock are not imported · each
         import is limited to 500 rows
       </>
     ),

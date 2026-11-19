@@ -20,6 +20,7 @@ full per-domain rules: [docs/agent-invariants.md](docs/agent-invariants.md) · p
 | [support-diagnostics.md](docs/business/support-diagnostics.md) · [app-downloads.md](docs/business/app-downloads.md) · [product-barcode-autofill.md](docs/business/product-barcode-autofill.md) | Diagnostics to Support · homepage app links · barcode lookup |
 | [product-overview-th.md](docs/business/product-overview-th.md) · [feature-inventory.md](docs/feature-inventory.md) · [feature-log.md](docs/feature-log.md) · [release-feature-control.md](docs/release-feature-control.md) | Thai sales overview + allowed claims · what is proven · why features work as they do · commit-bound release inventory |
 | [factory-twine-straw-pilot-th.md](docs/business/factory-twine-straw-pilot-th.md) · [operation-production.md](docs/business/operation-production.md) | Thai factory demo, unit/SKU choices, controlled-pilot workflow and production limits |
+| [twenty-baht-shop-pilot-th.md](docs/business/twenty-baht-shop-pilot-th.md) | One-branch twenty-baht-shop pilot scope, code evidence, plan fit and external Go/No-Go gates |
 | [feature-completion-plan.md](docs/feature-completion-plan.md) · [system-recheck-2026-11-14.md](docs/architecture/system-recheck-2026-11-14.md) | Ordered completion backlog, release evidence and external rollout gates · Inbox/Desktop/Mobile/Admin evidence ledger and what stays unverified |
 | [AI_GUIDELINES.md](docs/AI_GUIDELINES.md) · [ai/](docs/ai/) ([workflow](docs/ai/workflow.md) · [tools](docs/ai/tools.md) · [prompts](docs/ai/prompts.md) · [quality](docs/ai/quality.md) · [usage-cost-audit](docs/ai/usage-cost-audit.md) · [work-assistant-coverage](docs/ai/work-assistant-coverage.md) · [customer-inbox coverage audit](docs/ai/customer-inbox-coverage-audit-th.md) · [question bank](docs/ai/customer-inbox-question-bank-th.md)) | AI rules, pipeline, tools, evidence, AI points, staff assistant catalog, customer-inbox question coverage |
 | [pharmacy/README.md](apps/web/lib/bms/pharmacy/README.md) | Pharmacy intake, guidance (`10.45`/`10.47`), emergency directory (`10.46`) — read before touching `lib/bms/pharmacy/` |
@@ -72,6 +73,8 @@ per entry in [status-log.md](docs/status-log.md)):
 | Inbox scope/transaction hardening (Sales owner/helper scope, atomic audit, private media capability) · self-availability | `10.118` | [system-recheck-2026-11-14.md](docs/architecture/system-recheck-2026-11-14.md) · [crm.md](docs/business/crm.md#omnichannel-inbox) |
 | Fish-dock intake (live/opening receipts, historical Excel evidence) · owner day view, storage counts, delivery plans | `10.119`–`10.120` — **new; not yet applied to production** | [inventory.md](docs/business/inventory.md) · [database.md](docs/architecture/database.md) · [api.md](docs/architecture/api.md) |
 | Factory BOM, opt-in output QC hold, production demand, machine evidence | `10.122`–`10.127` — **branch implementation; not applied to production** | [factory-twine-straw-pilot-th.md](docs/business/factory-twine-straw-pilot-th.md) · [operation-production.md](docs/business/operation-production.md) · [database.md](docs/architecture/database.md) |
+| Building-material shop pilot: versioned sales quotations, quote site/pickup on orders, sourced technical specs, per-kg weighed prices, supplier-unit PO snapshots | `10.133`–`10.137` — **PILOT / INCOMPLETE; not applied to production** | [building-materials-readiness.md](docs/business/building-materials-readiness.md) · [release evidence](docs/business/building-materials-release-evidence-2026-11-19.md) · [คู่มือร้านวัสดุก่อสร้าง](docs/คู่มือร้านวัสดุก่อสร้าง.md) |
+| Twenty-baht shop pilot guide (`/learn/twenty-baht-shop`, `noindex`), product-import `ประเภท VAT` column, mobile return/void original-body retry | no migration — **pilot guide; real-shop evidence pending** | [twenty-baht-shop-pilot-th.md](docs/business/twenty-baht-shop-pilot-th.md) · [learning-center.md](docs/ui/learning-center.md) |
 | Lot identity through branch transfers | `10.107` — **WIP for rollout; committed and clone-DB verified, production deployment unverified** | [system.md](docs/architecture/system.md) · [inventory.md](docs/business/inventory.md) |
 | File ownership + private community-chat media (personal uploads bound to a user; chat media needs membership) | `10.109` | [database.md](docs/architecture/database.md) · [files API README](apps/web/app/api/files/README.md) |
 | Bank reconciliation (imported statements are evidence only; a match exists only after a reviewer confirms it) | `10.110` | [bank-reconciliation.md](docs/business/bank-reconciliation.md) |
@@ -82,7 +85,9 @@ check the target DB; several features need their migration first.
 The open-item POS build needs `10.129` and `10.130` applied in order before rollout. Audit
 traceability now uses `10.131`/`10.132`; the factory migrations retain `10.122`–`10.127`. See
 [audit traceability rollout](docs/architecture/audit-traceability.md#verification-and-rollout)
-for handling environments that ran the old audit filenames. `npm run gate` passed on 2026-11-17;
+for handling environments that ran the old audit filenames. The building-material pilot needs
+`10.133`–`10.137` before its code is deployed: `10.134`, `10.136` and `10.137` are read by every
+order insert, POS price check and PO create/receipt (declared in schema-readiness). `npm run gate` passed on 2026-11-17;
 this does not establish production deployment or DB migration verification.
 
 ## AI rules (non-negotiable)

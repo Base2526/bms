@@ -106,6 +106,15 @@ VAT-exclusive B2B pricing across channels are not presented as live workflows. T
 is linked from the shorter in-app `/admin/manual/building-materials` page. Audio clips were
 generated from the new flow text, while the existing tracks' MP3 files remain unchanged.
 
+The `/learn/twenty-baht-shop` pilot guide is a separate public, bilingual specialist page. It
+walks through one branch, distinct SKUs at the same 20-baht price, CSV/XLSX preview, a separate
+opening stock count, PO receipt, register sale, partial return, shift reconciliation and outage
+recovery. Its fictional 30/20/10 opening quantities become 28/25/9 after a five-unit soap receipt,
+one 95-baht sale and a 20-baht soap return. It is `noindex` until real-shop pilot evidence exists.
+The five Thai flow captions have locally hosted MP3s with checksum provenance; English uses device
+speech. Neither a public visit nor playback performs a business mutation. Hardware, accountant
+tax review and production migration state are separate go-live gates.
+
 The factory pilot flow narrates its 15 bilingual captions. Thai first uses complete, locally hosted
 Gemini 3.8 Flash TTS recordings when its `factoryThaiAudio.json` manifest is populated; until then,
 and for English, it uses the browser's speech engine when available. Playback advances after each
