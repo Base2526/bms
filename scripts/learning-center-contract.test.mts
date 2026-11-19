@@ -47,12 +47,42 @@ test("public learning paths resolve unique bilingual lessons and real action des
   }
   for (const lesson of lessons) {
     assert.match(lesson.slug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/);
-    assert.ok(lesson.steps.length >= 4);
+    assert.ok(lesson.steps.length >= (lesson.tracks.includes("getting-started") ? 3 : 4));
     for (const field of [lesson.title, lesson.summary, lesson.menu, lesson.prerequisite, ...lesson.steps, lesson.check, lesson.caution]) {
       assert.ok(field.th.trim() && field.en.trim(), `${lesson.slug}: missing translation`);
       assert.doesNotMatch(`${field.th} ${field.en}`, /TODO|bms_\w+|BMS_SECRET|sk-[a-zA-Z0-9]+/);
     }
-    assert.ok(["", "(main)", "(admin)", "(pos)"].some((group) => existsSync(resolve(import.meta.dirname, "../apps/web/app", group, lesson.action.slice(1), "page.tsx"))), `Missing destination: ${lesson.action}`);
+    assert.ok(["", "(main)", "(admin)", "(auth)", "(pos)"].some((group) => existsSync(resolve(import.meta.dirname, "../apps/web/app", group, lesson.action.slice(1), "page.tsx")))
+      || (lesson.action === "/learn/getting-started" && isTrack("getting-started") && existsSync(resolve(import.meta.dirname, "../apps/web/app/learn/[track]/page.tsx"))), `Missing destination: ${lesson.action}`);
+  }
+});
+
+test("getting-started path is ordered, public, bilingual and linked from task pages", () => {
+  assert.equal(isTrack("getting-started"), true);
+  const path = getTrackLessons("getting-started");
+  assert.deepEqual(path.map((lesson) => lesson.slug), trackOrder["getting-started"]);
+  assert.equal(path[0].slug, "bms-overview");
+  assert.equal(path.at(-1)?.slug, "opening-checklist");
+  for (const lesson of path) {
+    assert.ok(lesson.reviewedAt);
+    assert.ok(lesson.example?.th && lesson.example?.en, `${lesson.slug}: missing fictional example`);
+    assert.equal(lesson.tracks.includes("getting-started"), true);
+    for (const copy of [lesson.title, lesson.summary, lesson.menu, lesson.prerequisite, ...lesson.steps, lesson.example, lesson.check, lesson.caution]) {
+      assert.ok(copy.th.trim() && copy.en.trim(), lesson.slug);
+    }
+    assert.doesNotMatch(JSON.stringify(lesson), /(?:sk-[a-zA-Z0-9]{16}|Bearer\s+[a-zA-Z0-9]{16}|\b\d{6}\b)/);
+  }
+  const links = [
+    ["(auth)/shop-signup/page.tsx", "shop-signup-verification"],
+    ["(admin)/admin/login/page.tsx", "sign-in-account"],
+    ["(admin)/admin/getting-started/page.tsx", "channel-setup-overview"],
+    ["(admin)/admin/settings/page.tsx", "channel-tiktok-inbound"],
+    ["(admin)/admin/users/page.tsx", "shop-team-users"],
+    ["(admin)/admin/pos-devices/page.tsx", "pos-pin-readiness"],
+    ["(admin)/admin/audit/page.tsx", "logs-diagnostics-guide"],
+  ];
+  for (const [page, slug] of links) {
+    assert.match(readFileSync(resolve(import.meta.dirname, "../apps/web/app", page), "utf8"), new RegExp(slug));
   }
 });
 

@@ -1,6 +1,6 @@
 import type { TrackId } from "./catalog";
 
-export type BusinessTrackId = Exclude<TrackId, "inventory">;
+export type BusinessTrackId = Exclude<TrackId, "inventory" | "getting-started">;
 export type GuideLang = "th" | "en";
 export type GuideCopy = Record<GuideLang, string>;
 export type GuideTone = "green" | "orange" | "red" | "purple";

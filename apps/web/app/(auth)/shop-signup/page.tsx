@@ -12,6 +12,7 @@ import { localizedShopArchetypeOptions } from "@/lib/bms/shopArchetypes";
 import { shopExperienceForArchetype } from "@/lib/bms/shopExperience";
 import { useI18n } from "@/lib/i18nContext";
 import { runSignupRequest, SignupRequestTimeout } from "@/lib/auth/signupRequest";
+import GuideLinks from "@/components/learning/GuideLinks";
 import SocialLogin from "@/components/auth/SocialLogin";
 import { validateEmail, validateNewPassword } from "@/lib/auth/identity";
 
@@ -154,6 +155,7 @@ export default function Page() {
             subTitle={t("shopSignup.done_subtitle")}
             extra={[<Link key="login" href="/admin/login"><Button>{t("shopSignup.back_to_login")}</Button></Link>]}
           />
+          <GuideLinks slugs={["shop-signup-verification", "sign-in-account"]} />
         </div>
       </div>
     );
@@ -163,6 +165,7 @@ export default function Page() {
     <div className={styles.page} data-shop-signup-page>
       <div className={styles.formPanel}>
         <Card className={styles.card} title={<><ShopOutlined /> {t("shopSignup.heading")}</>}>
+          <GuideLinks slugs={["shop-signup-verification"]} start />
           <Paragraph type="secondary">
             {t("shopSignup.tagline")}
           </Paragraph>

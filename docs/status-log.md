@@ -2,7 +2,7 @@
 
 Per-feature decision narrative moved out of [CLAUDE.md](../CLAUDE.md) on 2026-10-13 to keep the
 always-loaded agent context small. The moved text is unchanged; newest entries are at the end.
-Entries were brought up to date on 2026-11-19 (through migration `10.137` and PR #437); the
+Entries were brought up to date on 2026-11-19 (through migration `10.137` and PR #439); the
 detailed 2026-11-16 boundary and log notes are in [feature-log.md](feature-log.md). The compact area index lives in CLAUDE.md
 § Current status; full
 per-domain rules live in [agent-invariants.md](agent-invariants.md).
@@ -1111,7 +1111,7 @@ is unknown. Real-shop evidence, accountant VAT review and hardware remain go-liv
 [business/twenty-baht-shop-pilot-th.md](business/twenty-baht-shop-pilot-th.md) and
 [ui/learning-center.md](ui/learning-center.md).
 
-**Backend, Desktop and Mobile audit (branch `codex/backend-desktop-mobile-audit`, no migration).**
+**Backend, Desktop and Mobile audit (#438, no migration).**
 - **Pairing:** Desktop and Mobile reject a pairing link whose remote server is invalid or cleartext
   (production needs HTTPS); a bare token may still use the server entered in Settings.
 - **Emergency Offline:** a queued cash sale replays only into the shift that originally accepted
@@ -1136,3 +1136,27 @@ browser smokes, mobile Jest, typecheck and build were not run in that pass. See
 [business/pos.md](business/pos.md), [business/cloud-hybrid-pos.md](business/cloud-hybrid-pos.md),
 [business/crm.md](business/crm.md#omnichannel-inbox) and
 [ui/inbox-diagnostics.md](ui/inbox-diagnostics.md).
+
+**Stale in-transit anomaly query (#439, no migration).** The inventory anomaly check for stale
+in-transit transfers selected `*_location_id` columns that `bms_stock_transfers` (`7.98`) does not
+have and failed with SQLSTATE `42703`; it now uses the real `from_location`/`to_location` columns.
+
+**Public POS guides and getting-started path (branch `codex/public-pos-guides`, no migration).**
+- **Downloads:** each of the five business tracks (retail, restaurant, pharmacy, board game,
+  building materials) offers an anonymous Thai Word and PDF handbook under
+  `apps/web/public/guides/pos/`. The building-materials book is marked PILOT on every page.
+- **Source:** the handbooks are generated from `docs/public-pos-guides/` by
+  `scripts/build-public-pos-guides.py` (python-docx). `scripts/export-public-pos-guides-pdf.ps1`
+  converts them to PDF through Microsoft Word on Windows.
+- **Content rules:** the handbooks use invented data only. The online `/learn` track remains the
+  latest reference, and the review date is shared by `downloads.ts` and the build script.
+- **Getting started:** `/learn/getting-started` adds 16 bilingual articles, from signup and sign-in
+  through shop profile, staff, channels, products, POS, inbound verification, diagnostics and
+  go-live review. `GuideLinks` puts the relevant article on signup/login, the manual, Settings,
+  Dashboard, Users, POS Devices, Audit, Revisions, Support, Realtime Diagnostics and System Health.
+- **Access:** article action links still require the normal `/admin` session and permission.
+
+Pure `learning-center-contract` (12/12), `regression:inventory` and `release:features:check`
+passed on 2026-11-19. The getting-started browser smoke, a visual DOCX/PDF pair review, typecheck
+and build were not run in that pass. See [ui/learning-center.md](ui/learning-center.md) and
+[public-pos-guides/README.md](public-pos-guides/README.md).

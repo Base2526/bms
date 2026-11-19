@@ -23,6 +23,7 @@ import {
   shopArchetypeHasStarterCatalog,
 } from "@/lib/bms/shopArchetypes";
 import { useI18n } from "@/lib/i18nContext";
+import GuideLinks from "@/components/learning/GuideLinks";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -274,6 +275,7 @@ export default function Page() {
 
   return (
     <div style={{ maxWidth: 1120 }}>
+      <GuideLinks start slugs={["shop-team-users", "pos-pin-readiness", "opening-checklist"]} />
       <Card loading={loading} style={{ marginBottom: 16 }}>
         <Space direction="vertical" size={4} style={{ width: "100%" }}>
           <Title level={2} style={{ margin: 0 }}>{t("admin_getting_started.page_title")}</Title>
@@ -436,6 +438,7 @@ export default function Page() {
               style={{ height: "100%" }}
             >
               <Paragraph>{step.description}</Paragraph>
+              <GuideLinks slugs={step.key === "shop" ? ["shop-profile-setup"] : step.key === "payment" || step.key === "products" ? ["opening-payments-products"] : step.key === "channels" ? ["channel-setup-overview", "verify-inbox-channels"] : ["opening-checklist"]} />
               <Space wrap>
                 <Link href={step.href}>
                   <Button type={step.done ? "default" : "primary"}>{step.buttonLabel}</Button>

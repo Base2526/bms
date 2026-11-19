@@ -8,6 +8,7 @@ export default function LearningLayout({ children }: { children: React.ReactNode
   const lang = cookies().get("lang")?.value === "en" ? "en" : "th";
   const links = <>
     <Link href={localizedPublicPath("/learn", lang)}>{lang === "th" ? "คู่มือทั้งหมด" : "All guides"}</Link>
+    <Link href={localizedPublicPath("/learn/getting-started", lang)}>{lang === "th" ? "เริ่มต้นใช้งาน" : "Getting started"}</Link>
     <Link href={localizedPublicPath("/learn/retail", lang)}>{lang === "th" ? "ค้าปลีกและค้าส่ง" : "Retail & wholesale"}</Link>
     <Link href={localizedPublicPath("/learn/board-game", lang)}>{lang === "th" ? "บอร์ดเกม" : "Board games"}</Link>
     <Link href={localizedPublicPath("/learn/restaurant", lang)}>{lang === "th" ? "ร้านอาหารและคาเฟ่" : "Restaurants & cafes"}</Link>

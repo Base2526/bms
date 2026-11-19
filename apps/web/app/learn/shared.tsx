@@ -15,6 +15,7 @@ export function Sidebar({ lang, track, factoryGuide = false, twentyBahtGuide = f
   return <nav className={s.sidebar} aria-label={lang === "th" ? "หมวดคู่มือ" : "Guide categories"}>
     <h2>{lang === "th" ? "เลือกคู่มือ" : "Explore"}</h2>
     <Link href={localizedPublicPath("/learn", lang)} aria-current={!track && !factoryGuide && !twentyBahtGuide ? "page" : undefined}>{lang === "th" ? "ศูนย์เรียนรู้" : "Learning center"}</Link>
+    <Link href={localizedPublicPath("/learn/getting-started", lang)} aria-current={track === "getting-started" ? "page" : undefined}>🚀 {lang === "th" ? "เริ่มต้นใช้งานและตั้งค่าร้าน" : "Getting started & shop setup"}</Link>
     {businessTrackIds.map((id) => <Link key={id} href={localizedPublicPath(`/learn/${id}`, lang)} aria-current={track === id ? "page" : undefined}>{tracks[id].icon} {localize(tracks[id].title, lang)}</Link>)}
     <hr />
     <h2>{lang === "th" ? "คู่มือเฉพาะงาน" : "Specialist guides"}</h2>

@@ -7,6 +7,7 @@ import type { CredentialResponse } from "@react-oauth/google";
 import type { FailResponse, SuccessResponse } from "@greatsumini/react-facebook-login";
 import { useI18n } from "@/lib/i18nContext";
 import SocialLogin from "@/components/auth/SocialLogin";
+import GuideLinks from "@/components/learning/GuideLinks";
 
 const LOGIN = gql`
   mutation Login($input: LoginInput!) {
@@ -132,6 +133,7 @@ export default function AdminLoginPage(){
         boxSizing: 'border-box',
       }}>
         <Card title={t("admin_login.title")} style={{width: '100%', maxWidth: 420}}>
+          <GuideLinks slugs={["sign-in-account"]} start />
           <SocialLogin
             surface="ADMIN_LOGIN"
             dividerLabel={t("admin_login.or_login_with_email")}

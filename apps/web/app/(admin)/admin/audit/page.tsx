@@ -6,6 +6,7 @@ import { Table, Tag, Typography, Alert, Button, Space, Input, Tooltip, Modal, Ti
 import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { useMemo, useState } from "react";
 import { useI18n } from "@/lib/i18nContext";
+import GuideLinks from "@/components/learning/GuideLinks";
 
 const { Text } = Typography;
 
@@ -213,6 +214,7 @@ export default function Page() {
 
   return (
     <div>
+      <GuideLinks slugs={["logs-diagnostics-guide"]} />
       <div style={{ marginBottom: 16 }}>
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
           <h2 style={{ margin: 0 }}>{t("admin_audit.title")}</h2>

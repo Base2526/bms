@@ -20,6 +20,7 @@ import { listLatestJobRunPerJob } from "@/lib/bms/jobRuns";
 import { listOperationSchedules } from "@/lib/bms/operationsSchedule";
 import { getRequestMetrics } from "@/lib/bms/requestMetrics";
 import SystemHealthClient from "./SystemHealthClient";
+import GuideLinks from "@/components/learning/GuideLinks";
 
 // อ่านสดทุกครั้ง — หน้านี้คือสถานะ ณ ตอนนี้ ห้ามให้ Next cache ค้าง
 export const dynamic = "force-dynamic";
@@ -50,6 +51,8 @@ export default async function SystemHealthPage({
   const jobNameByKey = new Map(jobDefs.map((d) => [d.key, d.name]));
 
   return (
+    <>
+    <GuideLinks slugs={["logs-diagnostics-guide"]} />
     <SystemHealthClient
       generatedAt={new Date().toISOString()}
       db={db}
@@ -66,5 +69,6 @@ export default async function SystemHealthPage({
       windowMinutes={windowMinutes}
       windowOptions={ALLOWED_WINDOWS}
     />
+    </>
   );
 }

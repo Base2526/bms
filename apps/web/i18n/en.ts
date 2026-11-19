@@ -1,5 +1,9 @@
 // i18n/en.ts
 const en = {
+  guide_links: {
+    label: "Related guides",
+    start: "View the getting-started path",
+  },
   admin_ui: {
     delivery_pending: "Pending",
     delivery_sending: "Sending",
