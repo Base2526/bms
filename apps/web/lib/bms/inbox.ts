@@ -1042,9 +1042,9 @@ export async function bumpAiTurnCounter(tenantId: string, convId: string, reset:
 // ---- manage --------------------------------------------------
 async function lockConversationForScopedWrite(
   client: PoolClient, tenantId: string, id: string, restrictedUserId?: string,
-): Promise<{ assigned_to_user_id: string | null } | null> {
-  const current = await client.query<{ assigned_to_user_id: string | null }>(
-    `SELECT assigned_to_user_id FROM bms_conversations
+): Promise<{ assigned_to_user_id: string | null; unread: number } | null> {
+  const current = await client.query<{ assigned_to_user_id: string | null; unread: number }>(
+    `SELECT assigned_to_user_id, unread FROM bms_conversations
       WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, [tenantId, id]);
   const row = current.rows[0];
   if (!row) return null;
@@ -1260,7 +1260,7 @@ export async function listSystemEvents(
          SELECT a.id, a.actor, a.action, a.meta, a.created_at
            FROM bms_audit_log a
            JOIN bms_conversations c ON c.tenant_id = a.tenant_id AND c.id = $2::uuid
-          WHERE a.tenant_id = $1 AND a.target = $2
+          WHERE a.tenant_id = $1 AND a.target = c.id::text
             AND a.action IN ('inbox.assign','inbox.helper_add','inbox.helper_remove','inbox.status')
             AND ${inboxReadScopeSql(4)}
           ORDER BY a.created_at DESC, a.id DESC
@@ -1380,10 +1380,14 @@ export async function setConversationTags(
 }
 
 export async function markRead(
-  tenantId: string, id: string, options: { restrictedUserId?: string } = {},
+  tenantId: string, id: string, options: { restrictedUserId?: string; observedLatestMessageId?: string | null } = {},
 ): Promise<boolean> {
+  const observedId = options.observedLatestMessageId ?? null;
+  if (observedId && (!/^[1-9]\d{0,18}$/.test(observedId) || BigInt(observedId) > 9223372036854775807n))
+    return false;
   const client = await getClient();
   let changed = false;
+  let currentUnread = 0;
   try {
     await beginTenantTx(client, tenantId);
     const current = await lockConversationForScopedWrite(client, tenantId, id, options.restrictedUserId);
@@ -1391,9 +1395,19 @@ export async function markRead(
       await client.query("COMMIT");
       return false;
     }
+    currentUnread = current.unread;
     const updated = await client.query(
       `UPDATE bms_conversations SET unread=0, updated_at=now()
-        WHERE tenant_id=$1 AND id=$2 AND unread>0`, [tenantId, id]);
+        WHERE tenant_id=$1 AND id=$2 AND unread>0
+          AND ($3::bigint IS NULL OR (
+            EXISTS (SELECT 1 FROM bms_messages seen
+                     WHERE seen.tenant_id=bms_conversations.tenant_id
+                       AND seen.conversation_id=bms_conversations.id AND seen.id=$3::bigint)
+            AND NOT EXISTS (SELECT 1 FROM bms_messages newer
+                            WHERE newer.tenant_id=bms_conversations.tenant_id
+                              AND newer.conversation_id=bms_conversations.id
+                              AND newer.direction='IN' AND newer.id>$3::bigint)
+          ))`, [tenantId, id, observedId]);
     changed = Boolean(updated.rowCount);
     await client.query("COMMIT");
   } catch (error) {
@@ -1403,7 +1417,7 @@ export async function markRead(
     client.release();
   }
   if (changed) publishInboxChanged(tenantId, id, "READ_CHANGED");
-  return true;
+  return !observedId || changed || currentUnread === 0;
 }
 
 // ---- notes (internal) ----------------------------------------

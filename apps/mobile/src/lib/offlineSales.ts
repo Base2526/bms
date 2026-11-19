@@ -67,6 +67,14 @@ export interface OfflineSaleRecord {
   updatedAt: string;
 }
 
+/** A cash sale may be submitted only to the shift that originally accepted its tender. */
+export function canReplayOfflineSaleInShift(
+  record: Pick<OfflineSaleRecord, 'shiftId'>,
+  currentShiftId: string | null,
+): boolean {
+  return Boolean(record.shiftId && currentShiftId && record.shiftId === currentShiftId);
+}
+
 interface OfflineSaleEnvelope {
   version: 1 | 2 | typeof OFFLINE_QUEUE_SCHEMA_VERSION;
   records: OfflineSaleRecord[];

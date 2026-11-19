@@ -18,6 +18,8 @@ BMS, not a second edition, price plan, database, settlement engine, or source of
   failures fail closed. Shift close, unpair, and pairing replacement cannot strand accepted cash.
   The Sync Center can recover a committed bill without an open shift, but it never replays an unsold
   row into a new shift and does not offer a discard action after cash has been accepted.
+  Legacy queue rows without an original shift ID remain in manager review after recovery finds no
+  committed bill; the app cannot safely attribute their cash to the current shift.
 - Both Mobile eligibility and the authoritative settlement service reject pharmacy, restaurant, and
   board-game archetypes from this retail outage path. The server also refuses to attribute a tender
   timestamp from before the current shift to a newly opened shift.

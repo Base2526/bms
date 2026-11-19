@@ -29,6 +29,17 @@ test("does not accept credentials embedded in a server URL", () => {
   assert.equal(normalizeServerUrl("https://operator@shop.example.com"), null);
 });
 
+test("a malformed linked server cannot silently fall back to the entered server", () => {
+  assert.equal(parsePairingInput({
+    serverUrl: "shop.example.com",
+    pairingInput: `http://other.example.com/pos?t=${TOKEN}`,
+  }).ok, false);
+  assert.equal(parsePairingInput({
+    serverUrl: "shop.example.com",
+    pairingInput: `bmspos://pair?t=${TOKEN}&h=${encodeURIComponent("http://other.example.com")}`,
+  }).ok, false);
+});
+
 test("rejects malformed device tokens", () => {
   assert.equal(parsePairingInput({ serverUrl: "shop.example.com", pairingInput: "pos_short" }).ok, false);
 });

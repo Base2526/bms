@@ -67,6 +67,12 @@ tenant, branch and device. Mutations still verify a cashier PIN and the action p
 discounts, voids and money leaving the drawer still require a distinct second person's PIN. A
 device principal is never promoted into a user principal.
 
+Partial-return adapters reject the whole request when any selected line is malformed; they never
+refund only the valid subset. A retry with the same return idempotency key must select the same
+item IDs and quantities, including negative IDs for uncatalogued open items. A replay returns all
+committed lines, while a changed selection reports `IDEMPOTENCY_CONFLICT` without another refund.
+The key also cannot be reused across return and void actions.
+
 The existing `/api/pos/*` routes remain compatibility adapters for the browser POS while its callers
 migrate. Both transports call the same `lib/bms/*.ts` services; neither transport owns business
 rules. Uploads, exports and support diagnostics remain REST because they are HTTP-native. Realtime

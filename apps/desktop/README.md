@@ -39,6 +39,8 @@ earlier preference write fails.
 
 - first-run server and device pairing;
 - pairing verification through the existing device-scoped `/api/pos/session` endpoint;
+- pairing links with an invalid or cleartext remote server are rejected; a bare token may still
+  use the server entered separately;
 - device token encrypted at rest with Electron `safeStorage` (Windows DPAPI, Linux Secret Service
   or KWallet, and macOS Keychain); Linux refuses Electron's insecure `basic_text` fallback;
 - locked-down Electron window with context isolation, renderer sandboxing, origin checks, and a small

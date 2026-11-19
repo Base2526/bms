@@ -15,6 +15,7 @@ function graphqlHarness(allowed: boolean, role = "Sales") {
   const assignmentScopes: Array<string | undefined> = [];
   const helperScopes: Array<string | undefined> = [];
   const stateScopes: Array<string | undefined> = [];
+  const observedMessageIds: Array<string | null | undefined> = [];
   const readScopes: Array<string | undefined> = [];
   const inbox = {
     canAccessInboxConversation: async () => allowed,
@@ -55,8 +56,11 @@ function graphqlHarness(allowed: boolean, role = "Sales") {
       options: { restrictedUserId?: string }) => {
       stateScopes.push(options.restrictedUserId); calls.push("tags"); return true;
     },
-    markRead: async (_tenant: string, _id: string, options: { restrictedUserId?: string }) => {
-      stateScopes.push(options.restrictedUserId); calls.push("read"); return true;
+    markRead: async (_tenant: string, _id: string,
+      options: { restrictedUserId?: string; observedLatestMessageId?: string | null }) => {
+      stateScopes.push(options.restrictedUserId);
+      observedMessageIds.push(options.observedLatestMessageId);
+      calls.push("read"); return true;
     },
     addNote: async (_tenant: string, _id: string, _actor: string, _body: string, _mentions: string[],
       options: { restrictedUserId?: string }) => {
@@ -73,7 +77,8 @@ function graphqlHarness(allowed: boolean, role = "Sales") {
     "@/lib/bms/platform": { isPlatformAdmin: async () => false },
     "graphql/error": { GraphQLError: FakeGraphQLError },
   });
-  return { resolvers: loaded.bmsInboxResolvers, calls, assignmentScopes, helperScopes, stateScopes, readScopes,
+  return { resolvers: loaded.bmsInboxResolvers, calls, assignmentScopes, helperScopes, stateScopes,
+    observedMessageIds, readScopes,
     ctx: { admin: { id: "sales-1", role } } };
 }
 
@@ -125,13 +130,15 @@ test("GraphQL passes Sales scope into Inbox mutation transactions", async () => 
     await h.resolvers.Mutation.bmsRemoveConversationHelper(null, { id: "chat-1", userId: "sales-2" }, h.ctx);
     await h.resolvers.Mutation.bmsSetConversationStatus(null, { id: "chat-1", status: "CLOSED" }, h.ctx);
     await h.resolvers.Mutation.bmsSetConversationTags(null, { id: "chat-1", tags: ["VIP"] }, h.ctx);
-    await h.resolvers.Mutation.bmsMarkConversationRead(null, { id: "chat-1" }, h.ctx);
+    await h.resolvers.Mutation.bmsMarkConversationRead(null,
+      { id: "chat-1", observedLatestMessageId: "42" }, h.ctx);
     await h.resolvers.Mutation.bmsAddConversationNote(null, { id: "chat-1", body: "hello",
       mentionedUserIds: [] }, h.ctx);
     assert.deepEqual(h.assignmentScopes, [role === "Sales" ? "sales-1" : undefined]);
     assert.deepEqual(h.helperScopes, [role === "Sales" ? "sales-1" : undefined,
       role === "Sales" ? "sales-1" : undefined]);
     assert.deepEqual(h.stateScopes, Array(4).fill(role === "Sales" ? "sales-1" : undefined));
+    assert.deepEqual(h.observedMessageIds, ["42"]);
   }
 });
 

@@ -197,9 +197,9 @@ test('order actions enforce branch access and audit rollback; pack, ship and com
     await query(`UPDATE bms_orders SET fulfillment_type='PICKUP' WHERE tenant_id=$1 AND id=$2`, [tenant,id]);
     assert.equal(await shipOrder(tenant,id,actor),true);
     assert.equal(await completeOrder(tenant,id,actor),true);
-    const actions = (await query(`SELECT action,actor FROM bms_audit_log WHERE tenant_id=$1 AND target=$2
+    const actions = (await query<{ action: string; actor: string }>(`SELECT action,actor FROM bms_audit_log WHERE tenant_id=$1 AND target=$2
       AND action IN ('order.pack','order.ship','order.complete') ORDER BY id`, [tenant,id])).rows;
-    assert.deepEqual(actions.map((r:{action:string;actor:string})=>[r.action,r.actor]),
+    assert.deepEqual(actions.map(r=>[r.action,r.actor]),
       [['order.pack',actor],['order.ship',actor],['order.complete',actor]]);
   } finally {
     await query(`DELETE FROM bms_user_allowed_locations WHERE tenant_id=$1 AND user_id=$2`, [tenant,actor]);

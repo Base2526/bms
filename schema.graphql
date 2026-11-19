@@ -10513,7 +10513,7 @@ type Mutation {
   bmsIssueStoreCredit(input: BmsIssueStoreCreditInput!): BmsMobileStoreCreditActionResult!
   bmsManualFillAssessmentFields(assessmentId: ID!, fields: JSON!): BmsPharmacyAssessment!
   bmsMarkAllMentionsRead: Boolean!
-  bmsMarkConversationRead(id: ID!): Boolean!
+  bmsMarkConversationRead(id: ID!, observedLatestMessageId: ID): Boolean!
   bmsMarkMentionRead(id: ID!): Boolean!
   bmsMaterialCommand(input: BmsMaterialInput!): BmsChecklistCommandResult!
   bmsMergeCustomers(keepId: ID!, mergeId: ID!, review: BmsCustomerMergeReviewInput): Boolean!

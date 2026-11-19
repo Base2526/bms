@@ -243,11 +243,13 @@ export const bmsInboxResolvers = {
       });
     },
 
-    async bmsMarkConversationRead(_p: unknown, args: { id: string }, ctx: any) {
+    async bmsMarkConversationRead(_p: unknown, args: { id: string; observedLatestMessageId?: string | null }, ctx: any) {
       await requirePermission(ctx, "inbox.view");
       await requireConversationAccess(ctx, args.id);
-      return markRead(getTenantId(ctx), args.id,
-        isRestrictedToOwn(ctx) ? { restrictedUserId: String(ctx.admin.id) } : {});
+      return markRead(getTenantId(ctx), args.id, {
+        ...(isRestrictedToOwn(ctx) ? { restrictedUserId: String(ctx.admin.id) } : {}),
+        observedLatestMessageId: args.observedLatestMessageId,
+      });
     },
 
     async bmsAddConversationNote(_p: unknown, args: { id: string; body: string; mentionedUserIds?: string[] }, ctx: any) {

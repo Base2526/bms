@@ -14,6 +14,7 @@ import {
   MobilePosSaleRecoveryDocument,
 } from '../graphql/generated';
 import {
+  canReplayOfflineSaleInShift,
   canRetryOfflineSale,
   loadOfflineSales,
   patchOfflineSale,
@@ -253,13 +254,14 @@ export function OfflineSalesProvider({
             );
             continue;
           }
-          if (record.shiftId && record.shiftId !== shift.id) {
+          if (!canReplayOfflineSaleInShift(record, shift.id)) {
             setRecords(
               await patchOfflineSale(record.id, {
                 state: 'NEEDS_REVIEW',
-                failureCode: 'SHIFT_MISMATCH',
-                lastError:
-                  posText("รายการนี้รับเงินในกะเดิมที่ปิดไปแล้ว ห้ามลงยอดเข้ากะใหม่ กรุณาให้ผู้จัดการตรวจสอบ"),
+                failureCode: record.shiftId ? 'SHIFT_MISMATCH' : 'SHIFT_ID_UNKNOWN',
+                lastError: record.shiftId
+                  ? posText("รายการนี้รับเงินในกะเดิมที่ปิดไปแล้ว ห้ามลงยอดเข้ากะใหม่ กรุณาให้ผู้จัดการตรวจสอบ")
+                  : posText("รายการออฟไลน์รุ่นเก่าไม่มีรหัสกะเดิม ห้ามลงยอดเข้ากะปัจจุบัน กรุณาให้ผู้จัดการตรวจสอบ"),
               }),
             );
             continue;

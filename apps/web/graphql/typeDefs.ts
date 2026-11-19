@@ -5778,7 +5778,7 @@ export const typeDefs = /* GraphQL */ `
     bmsSetMyAvailability(available: Boolean!): Boolean!              # ปิด/เปิดรับแชทใหม่ (ไม่กระทบแชทที่ถืออยู่แล้ว)
     bmsSetConversationStatus(id: ID!, status: BmsConvStatus!): Boolean!
     bmsSetConversationTags(id: ID!, tags: [String!]!): Boolean!
-    bmsMarkConversationRead(id: ID!): Boolean!
+    bmsMarkConversationRead(id: ID!, observedLatestMessageId: ID): Boolean!
     bmsAddConversationNote(id: ID!, body: String!, mentionedUserIds: [ID!]): BmsConversationNote
     bmsMarkMentionRead(id: ID!): Boolean!
     bmsMarkAllMentionsRead: Boolean!

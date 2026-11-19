@@ -178,6 +178,14 @@ The self-availability switch requires `inbox.view` and the signed-in user's own 
 `10.118` provides a narrow `bms_app` function that checks the acting tenant and editor inside the
 transaction before updating the legacy `users` table; it does not grant direct table UPDATE.
 
+The list and selected detail use separate reads. Detail includes bounded message, note and system
+event fields; `bms_audit_log.target` is text, so the event query compares it to the conversation
+UUID converted to text. A selected chat shows loading, error/Retry, or not-found/access-denied
+states instead of the unselected prompt. Its link keeps `?c=<id>` across refreshes. The page
+marks unread as read only after a current message has loaded, and passes that message ID to
+`bmsMarkConversationRead`. The server leaves unread intact if a newer inbound message committed
+before the mark-read transaction. The optional ID keeps older callers compatible.
+
 **Incoming-message alerts (2026-09):** `GlobalInboxNotifier` is mounted for every admin session with
 `inbox.view`, not only on the Inbox route. A committed unread customer message outside the chat the
 operator is currently viewing produces a local two-beep sound, an in-app toast and (when permitted)

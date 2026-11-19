@@ -29,6 +29,10 @@ test("Inbox helper, workload and audit-name reads bind users to the active tenan
   await inbox.listConversationHelpers("FAKE-tenant", "FAKE-chat");
   const events = await inbox.listSystemEvents("FAKE-tenant", "FAKE-chat");
   assert.equal(events[0].targetName, "ผู้ใช้ที่ถูกลบ");
+  const eventRead = statements.find(({ sql }) => sql.includes("FROM bms_audit_log a"));
+  // Audit targets are text while conversation IDs are UUIDs. Reusing $2 after
+  // c.id = $2::uuid makes an uncast a.target = $2 fail in PostgreSQL.
+  assert.match(eventRead?.sql ?? "", /a\.target = c\.id::text/);
 
   const conversations = statements.find(({ sql }) => sql.includes("FROM bms_conversations c") &&
     sql.includes("LEFT JOIN bms_customers cu"));

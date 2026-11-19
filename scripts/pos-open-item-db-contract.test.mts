@@ -4,7 +4,7 @@ import test from "node:test";
 import { randomUUID } from "node:crypto";
 import { getClient, query } from "../apps/web/lib/db.ts";
 import { cashierHasPermission, issuePosDeviceToken, openPosShift, recordPosSale,
-  listRecentPosSales, partiallyReturnPosSale, returnPosSale, setCashierPin, upsertPosDevice } from "../apps/web/lib/bms/pos.ts";
+  listRecentPosSales, partiallyReturnPosSale, processPosReturn, returnPosSale, setCashierPin, upsertPosDevice } from "../apps/web/lib/bms/pos.ts";
 import { getSalesEvidence } from "../apps/web/lib/bms/salesEvidence.ts";
 import { getProfitSummary } from "../apps/web/lib/bms/reports.ts";
 import { DECLARE_FAKE_SALES_SURFACES_SQL } from "./testing/salesSurfaces.mts";
@@ -163,6 +163,30 @@ test("partial return of an open line refunds only the selected quantity", async 
   if (returned.status === "PARTIAL_RETURNED") assert.equal(returned.refundAmount, 10);
   const replay = await partiallyReturnPosSale(input);
   assert.equal(replay.status, "PARTIAL_RETURNED");
+  if (replay.status === "PARTIAL_RETURNED") {
+    assert.equal(replay.replayed, true);
+    assert.deepEqual(replay.returnedItems, returned.status === "PARTIAL_RETURNED" ? returned.returnedItems : []);
+  }
+  const changedLines = await partiallyReturnPosSale({
+    ...input,
+    lines: [{ orderItemId: -Number(line.id), packQty: 2 }],
+  });
+  assert.equal(changedLines.status, "IDEMPOTENCY_CONFLICT");
+  const changedAction = await processPosReturn({
+    ...input,
+    mode: "PARTIAL",
+    isVoid: true,
+  });
+  assert.equal(changedAction.status, "IDEMPOTENCY_CONFLICT");
+  const malformedSelection = await partiallyReturnPosSale({
+    ...input,
+    idempotencyKey: key("malformed-return"),
+    lines: [
+      { orderItemId: -Number(line.id), packQty: 1 },
+      { orderItemId: 0, packQty: 1 },
+    ],
+  });
+  assert.equal(malformedSelection.status, "EMPTY");
   const rows = await query<{ qty: number }>(`SELECT qty FROM bms_pos_return_open_items WHERE tenant_id=$1 AND order_open_item_id=$2`,
     [tenantId, line.id]);
   assert.equal(rows.rowCount, 1);

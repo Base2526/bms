@@ -1,5 +1,6 @@
 import * as Keychain from 'react-native-keychain';
 import {
+  canReplayOfflineSaleInShift,
   canRetryOfflineSale,
   loadOfflineSales,
   patchOfflineSale,
@@ -79,6 +80,13 @@ describe('offline sale secure queue', () => {
   beforeEach(() => {
     mockStoredPassword = null;
     jest.clearAllMocks();
+  });
+
+  test('legacy cash with no original shift cannot be posted into a later shift', () => {
+    expect(canReplayOfflineSaleInShift(record(), 'shift-1')).toBe(true);
+    expect(canReplayOfflineSaleInShift(record(), 'shift-2')).toBe(false);
+    expect(canReplayOfflineSaleInShift({ ...record(), shiftId: undefined }, 'shift-2')).toBe(false);
+    expect(canReplayOfflineSaleInShift(record(), null)).toBe(false);
   });
 
   test('persists, updates and removes a replayable request without a PIN', async () => {

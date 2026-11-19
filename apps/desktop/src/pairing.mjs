@@ -37,6 +37,7 @@ export function parsePairingInput({ serverUrl, pairingInput }) {
     }
     token = parsed.searchParams.get("t") ?? parsed.searchParams.get("token") ?? "";
     serverFromLink = normalizeServerUrl(parsed.origin);
+    if (!serverFromLink) return { ok: false, error: posText("Server URL ไม่ถูกต้อง ระบบจริงต้องใช้ HTTPS") };
     if (!token) return { ok: false, error: posText("ลิงก์นี้ไม่มี token กรุณาคัดลอกลิงก์จับคู่จากหน้าจัดการเครื่อง POS") };
   } else if (/^bmspos:\/\//i.test(input)) {
     let parsed;
@@ -48,6 +49,7 @@ export function parsePairingInput({ serverUrl, pairingInput }) {
     token = parsed.searchParams.get("t") ?? parsed.searchParams.get("token") ?? "";
     const host = parsed.searchParams.get("h") ?? parsed.searchParams.get("host") ?? parsed.searchParams.get("server");
     serverFromLink = host ? normalizeServerUrl(host) : null;
+    if (host && !serverFromLink) return { ok: false, error: posText("Server URL ไม่ถูกต้อง ระบบจริงต้องใช้ HTTPS") };
   }
 
   if (!TOKEN_SHAPE.test(token)) return { ok: false, error: posText("token ไม่ถูกต้อง ต้องขึ้นต้นด้วย pos_ และคัดลอกมาให้ครบ") };
