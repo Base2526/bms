@@ -55,7 +55,8 @@ export default function LearnPage({ searchParams }: { searchParams: Params }) {
                 <h3><span className={s.icon} aria-hidden="true">{tracks[id].icon}</span> {localize(tracks[id].title, lang)}</h3>
                 <p>{localize(tracks[id].description, lang)}</p><div className={s.businessMeta}><span className={s.tag}>{trackOrder[id].length} {id === "building-materials" ? (th ? "บทเรียน · คู่มือทดลอง ยังไม่พร้อมเปิดใช้ครบ" : "lessons · Pilot guide, incomplete for rollout") : (th ? "บทเรียน · ตั้งค่าถึงเปิดจริง" : "lessons · Setup to launch")}</span><span className={s.arrow}>{th ? "เริ่มเรียน" : "Start learning"} →</span></div>
               </Link>
-              <a className={s.businessDownload} href={posGuideFile(id, "docx")} download>{th ? "ดาวน์โหลด Word (.docx)" : "Download Thai Word (.docx)"}{id === "building-materials" ? (th ? " · PILOT" : " · PILOT") : ""} ↓</a>
+              <a className={s.businessDownload} href={posGuideFile(id, "docx")} download>{th ? "ดาวน์โหลด Word ภาษาไทย (.docx)" : "Download Thai Word (.docx)"}{id === "building-materials" ? " · PILOT" : ""} ↓</a>
+              <a className={s.businessDownload} href={posGuideFile(id, "pdf")} download>{th ? "ดาวน์โหลด PDF ภาษาไทย" : "Download Thai PDF"}{id === "building-materials" ? " · PILOT" : ""} ↓</a>
             </article>)}</div>
           </section>
           <section><h2 className={s.sectionTitle}>{th ? "คู่มือเฉพาะงาน" : "Specialist guides"}</h2>

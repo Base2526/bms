@@ -115,8 +115,8 @@ export default function TrackPage({ params, searchParams }: { params: { track: s
           <h1>{track.icon} {th ? "คู่มือ" : "Guide:"} {localize(track.title, lang)}</h1>
           <p>{localize(track.description, lang)}</p>
           {isDownloadablePosGuide(id) && <div className={s.guideDownloadActions} aria-label={th ? "ดาวน์โหลดคู่มือภาษาไทย" : "Download Thai-language guide"}>
-            <a className={s.button} href={posGuideFile(id, "pdf")} download>{th ? "ดาวน์โหลด PDF" : "Download Thai PDF"} ↓</a>
-            <a className={s.secondary} href={posGuideFile(id, "docx")} download>{th ? "ดาวน์โหลด Word (.docx)" : "Download Thai Word (.docx)"} ↓</a>
+            <a className={s.button} href={posGuideFile(id, "pdf")} download>{th ? "ดาวน์โหลด PDF ภาษาไทย" : "Download Thai PDF"}{id === "building-materials" ? " · PILOT" : ""} ↓</a>
+            <a className={s.secondary} href={posGuideFile(id, "docx")} download>{th ? "ดาวน์โหลด Word ภาษาไทย (.docx)" : "Download Thai Word (.docx)"}{id === "building-materials" ? " · PILOT" : ""} ↓</a>
           </div>}
           {isDownloadablePosGuide(id) && <p className={s.guideDownloadNote}>{id === "building-materials" ? (th ? "PILOT · ยังไม่พร้อมใช้ครบ · " : "PILOT · Incomplete for rollout · ") : ""}{th ? `ไฟล์ภาษาไทย · ทบทวน ${POS_GUIDE_REVIEWED_AT} · หน้าเว็บเป็นฉบับล่าสุด` : `Thai-language files · Reviewed ${POS_GUIDE_REVIEWED_AT} · This page has the latest guidance`}</p>}
           <Link className={s.guideStartLink} href={localizedPublicPath(`/learn/guides/${items[0].slug}?${lessonQuery}`, lang)}>{th ? "เริ่มจากบทแรก" : "Start the first lesson"} →</Link>
