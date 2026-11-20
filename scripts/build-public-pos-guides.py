@@ -20,7 +20,7 @@ from docx.shared import Inches, Pt, RGBColor
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "docs" / "public-pos-guides"
 OUTPUT = ROOT / "apps" / "web" / "public" / "guides" / "pos"
-DATE = "19 พฤศจิกายน 2026"
+DATE = "20 พฤศจิกายน 2026"
 GUIDES = {
     "retail": ("ร้านค้าปลีกและค้าส่ง", False),
     "board-game": ("ร้านบอร์ดเกม", False),
@@ -30,7 +30,7 @@ GUIDES = {
 }
 
 
-def set_font(run, name="Tahoma"):
+def set_font(run, name="Sarabun"):
     run.font.name = name
     run._element.get_or_add_rPr().get_or_add_rFonts().set(qn("w:eastAsia"), name)
 
@@ -146,13 +146,13 @@ def configure(doc, pilot, label):
         ("Heading 2", 12, True, 4),
     ):
         style = styles[name]
-        style.font.name = "Tahoma"
+        style.font.name = "Sarabun"
         style.font.size = Pt(size)
         style.font.bold = bold
         style.font.color.rgb = RGBColor(0, 0, 0)
         style.paragraph_format.space_after = Pt(after)
         style.paragraph_format.line_spacing = 1.18
-        style._element.get_or_add_rPr().get_or_add_rFonts().set(qn("w:eastAsia"), "Tahoma")
+        style._element.get_or_add_rPr().get_or_add_rFonts().set(qn("w:eastAsia"), "Sarabun")
     title_ppr = styles["Title"]._element.get_or_add_pPr()
     for border in title_ppr.findall(qn("w:pBdr")):
         title_ppr.remove(border)
@@ -244,7 +244,7 @@ def build_one(slug, label, pilot):
     intro = doc.add_paragraph()
     add_inline(intro, f"ฉบับทบทวน {DATE} · ภาษาไทย · ข้อมูลสินค้า ราคา และบุคคลในตัวอย่างเป็นข้อมูลสมมติ")
     link = doc.add_paragraph()
-    add_inline(link, f"ฉบับออนไลน์ล่าสุด: [BMS ศูนย์เรียนรู้](https://jachoei.com/th/learn/{slug})")
+    add_inline(link, f"ฉบับออนไลน์ล่าสุด: [BMS ศูนย์เรียนรู้](https://bms.jachoei.com/th/learn/{slug})")
     headings = [line[3:].strip() for line in lines if line.startswith("## ")]
     doc.add_heading("สารบัญ", level=1)
     for number, heading in enumerate(headings, 1):
@@ -267,6 +267,16 @@ def build_one(slug, label, pilot):
             add_bookmark(p, f"section_{headings.index(heading) + 1}", headings.index(heading) + 1)
         elif stripped.startswith("### "):
             doc.add_heading(stripped[4:], level=2)
+        elif stripped.startswith("!["):
+            match = re.fullmatch(r"!\[([^\]]+)\]\((images/[a-z0-9-]+\.(?:png|jpg|jpeg))\)", stripped)
+            if not match:
+                raise ValueError(f"invalid guide image: {stripped}")
+            image_path = SOURCE / match.group(2)
+            if not image_path.is_file():
+                raise FileNotFoundError(image_path)
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.add_run().add_picture(str(image_path), width=Inches(6.5))
         elif stripped.startswith("- "):
             p = doc.add_paragraph(style="List Bullet")
             add_inline(p, stripped[2:])

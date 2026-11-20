@@ -18,6 +18,9 @@ type ImportPreview={previewHash:string;rowCount:number;readyCount:number;issues:
   fishNames:Array<{name:string;count:number}>;
   sample:Array<{row:number;billDate:string;receivedDate:string;supplierName:string;fishName:string;receivedKg:string;purchaseAmount:string}>};
 type Saved={status:"SAVED"|"REPLAYED";intakeId:string;lineCount:number;billGrams:number;receivedGrams:number;purchaseAmount:string;extraAmount:string};
+type LateCostPreview={status:"PREVIEW";previewHash:string;lineNo:number;originalExtraAmount:string;
+  priorAdjustments:string;currentExtraCost:string;addedAmount:string;newExtraCost:string;
+  valuationBefore:string;valuationAfter:string;stockQty:number};
 type IntakeDetail={id:string;kind:FishIntakeKind;locationName:string|null;sourceName:string|null;
   sourceSheet:string|null;sourceYear:number|null;note:string|null;createdAt:string;lines:Array<{
     lineNo:number;sourceRow:number|null;billDate:string|null;receivedDate:string|null;
@@ -25,7 +28,8 @@ type IntakeDetail={id:string;kind:FishIntakeKind;locationName:string|null;source
     actualSize:string|null;sku:string|null;size:string|null;billGrams:number|null;
     receivedGrams:number;unitPricePerKg:string|null;purchaseAmount:string;extraAmount:string;
     quality:string|null;note:string|null;lotNo:string|null;expiryDate:string|null;
-  }>};
+  }>;adjustments:Array<{id:string;lineNo:number;category:string;amount:string;reason:string;
+    reference:string|null;actorId:string;actorName:string|null;createdAt:string}>};
 
 async function readJson(response:Response, lang:string, action:"read"|"write"="read") {
   const parsed=await response.json().catch(()=>null);
@@ -44,6 +48,9 @@ async function readJson(response:Response, lang:string, action:"read"|"write"="r
   return result;
 }
 const formatKg=(grams:number)=>`${(grams/1000).toLocaleString(undefined,{maximumFractionDigits:3})} kg`;
+const moneyCents=(amount:string)=>{const [whole,fraction=""]=amount.split(".");
+  return BigInt(whole)*100n+BigInt(fraction.padEnd(2,"0"));};
+const formatCents=(amount:bigint)=>`${(amount/100n).toLocaleString("en-US")}.${String(amount%100n).padStart(2,"0")}`;
 
 function HistoryImport({onSaved,onOpenDetail,canCommit}:{onSaved:()=>void;onOpenDetail:(id:string)=>void;canCommit:boolean}) {
   const {lang,t}=useI18n();
@@ -326,6 +333,8 @@ function StockEntry({kind,options,onSaved,onOpenDetail,onSearchProducts,canCommi
 export default function FishIntakePage() {
   const {lang,t}=useI18n();
   const L=(th:string,en:string)=>lang==="en"?en:th;
+  const costCategoryLabel=(category:string)=>({TRANSPORT:L("ค่าขนส่ง","Transport"),ICE:L("ค่าน้ำแข็ง","Ice"),
+    HANDLING:L("ค่าขนถ่าย","Handling"),OTHER:L("อื่น ๆ","Other")})[category as "TRANSPORT"|"ICE"|"HANDLING"|"OTHER"]??category;
   const {can,loading:permissionsLoading}=useBmsPermissions();
   const [options,setOptions]=useState<Options>({locations:[],products:[],unreadyProducts:[],currency:null});
   const [recent,setRecent]=useState<Array<{id:string;kind:FishIntakeKind;createdAt:string;lineCount:number;receivedGrams:number;purchaseAmount:string;sourceName:string|null}>>([]);
@@ -335,14 +344,79 @@ export default function FishIntakePage() {
   const [detail,setDetail]=useState<IntakeDetail|null>(null);
   const [detailLoading,setDetailLoading]=useState(false);
   const [detailError,setDetailError]=useState<string|null>(null);
-  async function openDetail(id:string) {
+  const [costOpen,setCostOpen]=useState(false);
+  const [costLine,setCostLine]=useState<number|null>(null);
+  const [costCategory,setCostCategory]=useState("TRANSPORT");
+  const [costAmount,setCostAmount]=useState("");
+  const [costReason,setCostReason]=useState("");
+  const [costReference,setCostReference]=useState("");
+  const [costKey,setCostKey]=useState(()=>crypto.randomUUID());
+  const [costPreview,setCostPreview]=useState<LateCostPreview|null>(null);
+  const [costBusy,setCostBusy]=useState(false);
+  const [costError,setCostError]=useState<string|null>(null);
+  const [costResult,setCostResult]=useState<string|null>(null);
+  async function openDetail(id:string,resetCost=true) {
+    if (resetCost) {setCostOpen(false);setCostPreview(null);setCostError(null);setCostResult(null);
+      setCostAmount("");setCostReason("");setCostReference("");setCostKey(crypto.randomUUID());}
     setDetailId(id);setDetail(null);setDetailError(null);setDetailLoading(true);
     try {
       const item=await readJson(await fetch(`/api/bms/fish-intake/${encodeURIComponent(id)}`,{credentials:"include"}),lang) as IntakeDetail;
-      setDetail(item);
+      setDetail(item);setCostLine(item.lines[0]?.lineNo??null);
     } catch(e) {setDetailError(operatorMessage(e,t));}
     finally {setDetailLoading(false);}
   }
+  async function sendLateCost(action:"preview"|"commit",confirmed=false) {
+    if (!detail || costLine==null) return;
+    setCostBusy(true);setCostError(null);setCostResult(null);
+    try {
+      const response=await fetch(`/api/bms/fish-intake/${encodeURIComponent(detail.id)}/late-cost`,{
+        method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action,confirmed,previewHash:costPreview?.previewHash,
+          input:{lineNo:costLine,category:costCategory,amount:costAmount,reason:costReason,
+            reference:costReference,requestKey:costKey}}),
+      });
+      const result=await response.json().catch(()=>null);
+      if (!response.ok) {
+        if (response.status===401) throw new Error(L("กรุณาเข้าสู่ระบบอีกครั้ง","Please sign in again"));
+        if (response.status===403) throw new Error(L("ไม่มีสิทธิ์เพิ่มต้นทุน","You cannot add receipt cost"));
+        if (result?.code==="PREVIEW_STALE") {setCostPreview(null);throw new Error(L("ยอดต้นทุนเปลี่ยนแล้ว กรุณาตรวจยอดอีกครั้ง","Cost changed. Preview again."));}
+        if (result?.code==="IDEMPOTENCY_CONFLICT") throw new Error(L("รหัสคำขอนี้เคยใช้กับข้อมูลอื่นแล้ว","This request key was used for different details."));
+        if (result?.code==="LATER_STOCK_ACTIVITY_REVIEW_REQUIRED") throw new Error(L(
+          "มีการขาย คืน รับเพิ่ม หรือปรับสต็อกหลังใบนี้ จึงยังเพิ่มต้นทุนย้อนหลังอัตโนมัติไม่ได้",
+          "Stock moved after this receipt. A manual cost review is required."));
+        if (result?.code==="STOCK_ALREADY_CONSUMED") throw new Error(L("สต็อกขายหรือใช้หมดแล้ว ต้องตรวจต้นทุนย้อนหลัง","Stock is fully consumed. Historical cost review is required."));
+        if (lang==="en") {
+          const errors:Record<string,string>={INVALID_LINE:"Choose a valid receipt line.",INVALID_CATEGORY:"Choose a valid cost category.",
+            INVALID_AMOUNT:"Enter more than 0 THB with at most two decimal places.",INVALID_REASON:"Enter a reason of at most 1,000 characters.",
+            INVALID_REFERENCE:"The evidence reference must be at most 200 characters.",INVALID_KEY:"Invalid request key.",
+            INVALID_INTAKE:"Invalid receipt ID.",INTAKE_LINE_NOT_FOUND:"This LIVE receipt line is unavailable.",
+            VALUATION_UNKNOWN:"Inventory value is unknown. Cost cannot be added.",
+            STOCK_REVIEW_REQUIRED:"Inventory and valuation quantities differ. Review them first.",
+            LOT_REVIEW_REQUIRED:"Lot and stock quantities differ. Review them first.",
+            MOVEMENT_REVIEW_REQUIRED:"Receipt stock evidence is incomplete.",
+            VALUATION_SOURCE_REVIEW_REQUIRED:"Original receipt valuation evidence is incomplete."};
+          errors.STORE_CURRENCY_REQUIRED="Set the store currency to THB before adding fish cost.";
+          if (typeof result?.code==="string"&&errors[result.code]) throw new Error(errors[result.code]);
+        }
+        throw new Error(result?.error??L("บันทึกไม่สำเร็จ","Could not save"));
+      }
+      if (result.status==="REPLAYED") {
+        setCostResult(L("คำขอนี้เคยบันทึกแล้ว ไม่เพิ่มต้นทุนซ้ำ","Already saved. No duplicate cost added."));
+        setCostPreview(null);setCostKey(crypto.randomUUID());setCostOpen(false);
+        setCostAmount("");setCostReason("");setCostReference("");
+        await openDetail(detail.id,false);
+      } else if (action==="preview") setCostPreview(result as LateCostPreview);
+      else {
+        setCostResult(result.status==="REPLAYED"?L("คำขอนี้เคยบันทึกแล้ว ไม่เพิ่มต้นทุนซ้ำ","Already saved. No duplicate cost added."):
+          L("เพิ่มต้นทุนสำเร็จ","Cost added"));
+        setCostPreview(null);setCostKey(crypto.randomUUID());setCostOpen(false);
+        setCostAmount("");setCostReason("");setCostReference("");
+        await openDetail(detail.id,false);
+      }
+    } catch(e) {setCostError(e instanceof Error?e.message:String(e));}
+    finally {setCostBusy(false);}
+  }
+  function changeCost(update:()=>void) {update();setCostPreview(null);setCostError(null);}
   async function searchProducts(search:string) {
     if (search.trim().length<2) return;
     try {
@@ -401,6 +475,51 @@ export default function FishIntakePage() {
       {detailLoading && <Card loading/>}
       {detail && <Space direction="vertical" size="middle" style={{width:"100%"}}>
         <Typography.Text copyable>{detail.id}</Typography.Text>
+        {detail.kind==="LIVE"&&can("purchase.view")&&can("purchase.edit")&&
+          <Button onClick={()=>{setCostOpen(value=>!value);setCostError(null);setCostResult(null);}}>
+            {L("เพิ่มค่าใช้จ่ายที่ลืมลง","Add forgotten cost")}</Button>}
+        {detail.kind==="LIVE"&&can("purchase.view")&&!can("purchase.edit")&&
+          <Typography.Text type="secondary">{L("การเพิ่มค่าใช้จ่ายต้องมีสิทธิ์ purchase.edit","Adding cost requires purchase.edit permission")}</Typography.Text>}
+        {costResult&&<Alert type="success" showIcon closable message={costResult}/>}
+        {costOpen&&detail.kind==="LIVE"&&<Card size="small" title={L("เพิ่มค่าใช้จ่ายในใบรับปลา","Add receipt cost")}>
+          <Space direction="vertical" style={{width:"100%"}}>
+            <Typography.Text>{L("รายการรับปลา / ล็อต","Receipt line / lot")}</Typography.Text>
+            <Select aria-label={L("รายการรับปลา / ล็อต","Receipt line / lot")} style={{width:"100%"}} value={costLine} onChange={v=>changeCost(()=>setCostLine(v))}
+              options={detail.lines.map(line=>({value:line.lineNo,label:`${L("รายการ","Line")} ${line.lineNo} · ${line.fishName} · ${line.lotNo??"—"}`}))}/>
+            <Typography.Text>{L("ประเภทค่าใช้จ่าย","Cost category")}</Typography.Text>
+            <Select aria-label={L("ประเภทค่าใช้จ่าย","Cost category")} style={{width:"100%"}} value={costCategory} onChange={v=>changeCost(()=>setCostCategory(v))}
+              options={[["TRANSPORT",L("ค่าขนส่ง","Transport")],["ICE",L("ค่าน้ำแข็ง","Ice")],
+                ["HANDLING",L("ค่าขนถ่าย","Handling")],["OTHER",L("อื่น ๆ","Other")]].map(([value,label])=>({value,label}))}/>
+            <Typography.Text>{L("จำนวนเงินที่เพิ่ม (บาท)","Added amount (THB)")}</Typography.Text>
+            <Input aria-label={L("จำนวนเงินที่เพิ่ม (บาท)","Added amount (THB)")} value={costAmount} onChange={e=>changeCost(()=>setCostAmount(e.target.value))}
+              placeholder={L("จำนวนเงินเพิ่ม (บาท)","Added amount (THB)")} inputMode="decimal"/>
+            <Typography.Text>{L("เหตุผล (บังคับ)","Reason (required)")}</Typography.Text>
+            <Input.TextArea aria-label={L("เหตุผล (บังคับ)","Reason (required)")} value={costReason} onChange={e=>changeCost(()=>setCostReason(e.target.value))}
+              maxLength={1000} placeholder={L("เหตุผลที่เพิ่มค่าใช้จ่าย (บังคับ)","Reason (required)")}/>
+            <Typography.Text>{L("หลักฐานอ้างอิง (ถ้ามี)","Evidence reference (optional)")}</Typography.Text>
+            <Input aria-label={L("หลักฐานอ้างอิง (ถ้ามี)","Evidence reference (optional)")} value={costReference} onChange={e=>changeCost(()=>setCostReference(e.target.value))}
+              maxLength={200} placeholder={L("เลขที่ใบเสร็จหรือหลักฐานอ้างอิง (ถ้ามี)","Receipt or evidence reference (optional)")}/>
+            {costError&&<Alert type="error" showIcon closable message={costError}/>}
+            {costPreview&&<Alert type="info" showIcon closable message={L("ผลตรวจยอดก่อนยืนยัน","Review before confirmation")}
+              description={<Space direction="vertical">
+                <span>{L("ต้นทุนเพิ่มเดิม","Original extra cost")}: {costPreview.originalExtraAmount} ฿</span>
+                <span>{L("ปรับปรุงก่อนหน้า","Prior adjustments")}: {costPreview.priorAdjustments} ฿</span>
+                <span>{L("ต้นทุนเพิ่มปัจจุบัน","Current extra cost")}: {costPreview.currentExtraCost} ฿</span>
+                <span>{L("เพิ่มครั้งนี้","Add now")}: {costPreview.addedAmount} ฿</span>
+                <strong>{L("ต้นทุนเพิ่มใหม่","New extra cost")}: {costPreview.newExtraCost} ฿</strong>
+                <span>{L("มูลค่าสต็อกก่อน → หลัง","On-hand value before → after")}: {costPreview.valuationBefore} → {costPreview.valuationAfter} ฿</span>
+                <span>{L("ปริมาณสต็อกไม่เปลี่ยน","Stock quantity unchanged")}</span>
+                <span>{L("ต้นทุนขายในอนาคตจะใช้มูลค่าเฉลี่ยใหม่","Future COGS uses the new moving-average value")}</span>
+              </Space>}/>}
+            <Space wrap><Button loading={costBusy} onClick={()=>void sendLateCost("preview")}>{L("ตรวจยอดก่อนยืนยัน","Preview totals")}</Button>
+              <Button type="primary" disabled={!costPreview||costBusy} onClick={()=>Modal.confirm({
+                title:L("ยืนยันเพิ่มต้นทุนปลา","Confirm added fish cost"),
+                content:L(`เพิ่ม ${costPreview?.addedAmount} บาทในรายการ ${costLine} โดยไม่บันทึกการจ่ายเงินหรือเจ้าหนี้`,
+                  `Add ${costPreview?.addedAmount} THB to line ${costLine} without creating payment or payable?`),
+                okText:L("ยืนยัน","Confirm"),onOk:()=>sendLateCost("commit",true),
+              })}>{L("ยืนยันเพิ่มค่าใช้จ่าย","Confirm added cost")}</Button></Space>
+          </Space>
+        </Card>}
         <Descriptions size="small" column={{xs:1,sm:2}} items={[
           {key:"kind",label:L("ประเภท","Type"),children:detail.kind==="HISTORICAL"?L("ประวัติ","History"):detail.kind==="OPENING"?L("ยอดตั้งต้น","Opening"):L("รับปลา","Receipt")},
           {key:"created",label:L("เวลาบันทึก","Saved at"),children:new Date(detail.createdAt).toLocaleString(lang==="en"?"en-GB":"th-TH")},
@@ -416,6 +535,14 @@ export default function FishIntakePage() {
         {detail.kind!=="HISTORICAL" && <Alert closable type="info" showIcon
           message={L("เลขล็อตด้านล่างเป็นเลขที่บันทึกตอนรับเข้า น้ำหนักคงเหลืออาจเปลี่ยนหลังมีการขายหรือปรับสต็อก",
             "Lot IDs below are from this receipt. Current balances may have changed after sales or stock adjustments.")}/>}
+        {detail.kind==="LIVE"&&<Card size="small" title={L("ประวัติการเพิ่มค่าใช้จ่าย","Cost adjustment history")}>
+          {detail.adjustments.length===0?<Typography.Text type="secondary">{L("ยังไม่มีรายการปรับปรุง","No adjustments yet")}</Typography.Text>:
+            <List dataSource={detail.adjustments} renderItem={adjustment=><List.Item>
+              <Space direction="vertical"><strong>{`${L("รายการ","Line")} ${adjustment.lineNo} · ${adjustment.amount} ฿ · ${costCategoryLabel(adjustment.category)}`}</strong>
+                <span>{adjustment.reason}{adjustment.reference?` · ${adjustment.reference}`:""}</span>
+                <Typography.Text type="secondary">{adjustment.actorName??adjustment.actorId} · {new Date(adjustment.createdAt).toLocaleString(lang==="en"?"en-GB":"th-TH")}</Typography.Text>
+              </Space></List.Item>}/>}
+        </Card>}
         <List dataSource={detail.lines} pagination={{pageSize:10,hideOnSinglePage:true}}
           renderItem={line=><List.Item style={{display:"block",paddingInline:0}}>
             <Card size="small" title={`${L("รายการ","Line")} ${line.lineNo} · ${line.fishName}`}>
@@ -433,7 +560,9 @@ export default function FishIntakePage() {
                 {key:"receivedKg",label:L("น้ำหนักรับจริง","Received weight"),children:formatKg(line.receivedGrams)},
                 {key:"rate",label:L("ราคาตามบิล / กก.","Bill rate / kg"),children:line.unitPricePerKg==null?"—":`${Number(line.unitPricePerKg).toLocaleString()} ฿`},
                 {key:"amount",label:L("ยอดค่าปลา / มูลค่า","Fish amount / value"),children:`${Number(line.purchaseAmount).toLocaleString()} ฿`},
-                {key:"extra",label:L("ต้นทุนเพิ่ม","Additional cost"),children:`${Number(line.extraAmount).toLocaleString()} ฿`},
+                {key:"extra",label:L("ต้นทุนเพิ่มตอนรับ","Original additional cost"),children:`${Number(line.extraAmount).toLocaleString()} ฿`},
+                {key:"late",label:L("เพิ่มภายหลัง","Added later"),children:`${formatCents(detail.adjustments.filter(a=>a.lineNo===line.lineNo).reduce((sum,a)=>sum+moneyCents(a.amount),0n))} ฿`},
+                {key:"totalExtra",label:L("ต้นทุนเพิ่มรวม","Total additional cost"),children:`${formatCents(detail.adjustments.filter(a=>a.lineNo===line.lineNo).reduce((sum,a)=>sum+moneyCents(a.amount),moneyCents(line.extraAmount)))} ฿`},
                 {key:"expiry",label:L("วันหมดอายุ","Expiry date"),children:line.expiryDate??"—"},
                 {key:"quality",label:L("สภาพ / เกรด","Quality / grade"),children:line.quality??"—"},
                 {key:"note",label:L("หมายเหตุ","Note"),children:line.note??"—"},

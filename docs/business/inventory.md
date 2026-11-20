@@ -364,6 +364,20 @@ receipt requires `purchase.view`, `purchase.edit`, `purchase.receive`, an active
 branch, and the `WEIGHTED_PRODUCT` capability. Products must be weighted/GRAM with an
 active variant and lot tracking; expiry is required when configured. This path is separate
 from integer-quantity PO receiving and does not create a PO, payable, cash payment or tax document.
+For a confirmed LIVE receipt, staff with `purchase.view` and `purchase.edit` may use
+**Add forgotten cost** on a chosen receipt line. Category, positive THB amount (up to two
+decimals), reason and optional evidence reference are reviewed before explicit confirmation.
+Each adjustment is append-only and appears in the receipt timeline with actor and time; the
+original `extra_amount` and `purchase_amount` remain unchanged. A stable request key prevents
+duplicate cost on retry, and a stale preview must be reviewed again. The adjustment increases
+the current branch/SKU/size moving-average inventory value without changing stock grams, lot
+balance or stock movements. This is allowed only when no physical valuation movement follows
+the original receipt batch, so the whole added amount is still attributable to on-hand stock.
+After a sale, return, transfer, later receipt, production or stock adjustment, the route refuses
+the correction with `LATER_STOCK_ACTIVITY_REVIEW_REQUIRED`; it does not guess how much belongs
+to historical COGS. Future physical SHIP entries and the fish-owner COGS view use the revised
+moving-average value. General sales-margin reports based on frozen order cost snapshots keep
+their existing independent cost basis. No payment, payable, or accounting expense is created automatically.
 The fish/size selector also lists active products that cannot yet be selected, with the missing
 stock-policy, gram-unit, lot-tracking or active-variant setting and a link to that product's stock
 model. The catalog selling price is separate from the reviewed bill rate. The current order/POS

@@ -2567,6 +2567,18 @@ lot, movement, value entry and decision audit use one tenant transaction. The ap
 integer grams because the existing inventory and movement quantities are integers; kg
 input is accepted to three decimal places without changing shared quantity columns.
 
+Migration `10.138` adds `bms_fish_late_cost_adjustments`, an append-only tenant-scoped value-only
+ledger for confirmed LIVE intake lines. The row stores the original line link, request key/hash,
+category, reviewed THB amount, reason/reference, actor/time, on-hand valuation before/after and
+quantity snapshot. Forced RLS and `bms_app` SELECT/INSERT grants apply; UPDATE/DELETE are revoked.
+On commit, the service locks the branch/SKU/size `bms_inventory_values` row and increases only
+its value/version if no later physical stock movement exists after the intake batch. The
+adjustment, value update and `fish.cost.adjust` audit are atomic. Existing intake rows, physical
+movements, lots and stock quantities remain unchanged. This records a current-value correction;
+historic SHIP/RETURN COGS entries are not rewritten. Deploy `10.138` before the application code.
+General sales reports that use frozen `bms_order_items.cost_amount_snapshot` remain a separate
+cost basis; this value-only correction flows to future physical valuation movements instead.
+
 ## Fish-dock owner evidence (`10.120`)
 
 `bms_fish_storage_counts` and its lines hold a human-confirmed READY/COLD_ROOM/OTHER split of

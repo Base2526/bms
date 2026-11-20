@@ -2023,6 +2023,12 @@ an operator note, and the audit preserves those per-line facts. Never add damage
   a separate two-decimal per-gram amount. Arbitrary per-kg fish rates such as 43.17 THB/kg are
   not yet exact across order/POS/customer channels; do not describe fish receipt as a complete
   weighed-fish sales pricing workflow.
+- **Late fish cost (`10.138`) is append-only and value-only.** A confirmed LIVE line may receive a
+  reviewed extra cost only while no physical stock movement for its branch/SKU/size follows
+  the original receipt batch. The adjustment, current moving-average value, and audit commit in
+  one tenant transaction. Quantity, lot, movement, original receipt values, payment, payable and
+  accounting expense never change. A later sale, return, transfer, new receipt, production or
+  adjustment fails closed: historical COGS cannot be reconstructed from the current balance alone.
 - **Fish-owner evidence (`10.120`) does not replace stock or money authority.** Zone counts lock a
   fish lot, must sum to its actual grams, and become stale on any later lot update. Delivery plans
   bind one customer/branch and weighted fish SKU/size to multiple ordinary orders; only an order's

@@ -14,6 +14,9 @@ try {
   for (const width of [1280,390]) {
     const context=await browser.newContext({viewport:{width,height:width===1280?1200:900},serviceWorkers:"block"});
     let previewRequest=null;
+    const lateAdjustments=[];
+    let lateMode="normal";
+    let fixtureLang="th";
     context.setDefaultTimeout(20000);
     await context.addCookies([
       {name:"ADMIN_COOKIE",value:"FAKE-fish-ui",url:base},
@@ -29,7 +32,7 @@ try {
       // that request with fixture data too; never let it reach the remote host.
       if (url.origin!==new URL(base).origin && !isApi) return route.abort();
       if (!isApi) return route.continue();
-      if (url.pathname==="/api/auth/me") return route.fulfill({json:{isAuthenticated:true,admin:{id:"FAKE",role:"Administrator",name:"FAKE fish tester",language:"th"}}});
+      if (url.pathname==="/api/auth/me") return route.fulfill({json:{isAuthenticated:true,admin:{id:"FAKE",role:"Administrator",name:"FAKE fish tester",language:fixtureLang}}});
       if (url.pathname==="/api/bms/realtime/ticket") return route.fulfill({json:{ticket:"FAKE-local-ticket"}});
       if (url.pathname.endsWith("/graphql")) {
         const q=req.postDataJSON()?.query??"";
@@ -47,7 +50,7 @@ try {
       }]}});
       if (url.pathname===`/api/bms/fish-intake/${fixtureIntakeId}`) return route.fulfill({json:{
         id:fixtureIntakeId,kind:"LIVE",locationName:"FAKE branch",sourceName:null,sourceSheet:null,
-        sourceYear:null,note:null,createdAt:"2026-11-16T13:40:18.000Z",lines:[
+        sourceYear:null,note:null,createdAt:"2026-11-16T13:40:18.000Z",adjustments:lateAdjustments,lines:[
           {lineNo:1,sourceRow:null,billDate:"2026-11-16",receivedDate:"2026-11-16",
             supplierName:"FAKE supplier",vesselRegistration:null,fishName:"FAKE fish",billSize:null,
             actualSize:"L",sku:"FAKE-READY",size:"L",billGrams:98000,receivedGrams:98000,
@@ -60,6 +63,23 @@ try {
             note:null,lotNo:"FAKE-LOT-2",expiryDate:null},
         ],
       }});
+      if (url.pathname===`/api/bms/fish-intake/${fixtureIntakeId}/late-cost` && req.method()==="POST") {
+        const body=req.postDataJSON();
+        if (lateMode==="denied") return route.fulfill({status:403,json:{error:"forbidden"}});
+        if (!body.input.reason.trim()) return route.fulfill({status:400,json:{code:"INVALID_REASON",error:"ระบุเหตุผล"}});
+        if (body.action==="preview") return route.fulfill({json:{status:"PREVIEW",previewHash:"FAKE-cost-preview",
+          lineNo:body.input.lineNo,originalExtraAmount:"0.00",priorAdjustments:"0.00",currentExtraCost:"0.00",
+          addedAmount:body.input.amount,newExtraCost:body.input.amount,valuationBefore:"4170.250000",
+          valuationAfter:"4182.590000",stockQty:105000}});
+        assert.equal(body.confirmed,true);
+        assert.equal(body.previewHash,"FAKE-cost-preview");
+        if (lateMode==="conflict") return route.fulfill({status:409,json:{code:"IDEMPOTENCY_CONFLICT",error:"conflict"}});
+        if (lateMode==="replay") return route.fulfill({json:{status:"REPLAYED",adjustmentId:"FAKE-adjustment"}});
+        lateAdjustments.push({id:"FAKE-adjustment",lineNo:body.input.lineNo,category:body.input.category,
+          amount:body.input.amount,reason:body.input.reason,reference:body.input.reference,
+          actorId:"FAKE",actorName:"FAKE fish tester",createdAt:"2026-11-20T13:00:00.000Z"});
+        return route.fulfill({status:201,json:{status:"SAVED",adjustmentId:"FAKE-adjustment"}});
+      }
       if (url.pathname==="/api/bms/fish-intake" && req.method()==="POST") {
         previewRequest=req.postDataJSON();
         return route.fulfill({json:{previewHash:"FAKE-preview",totals:{lineCount:1,billGrams:98000,
@@ -111,7 +131,50 @@ try {
     if (width<500) await page.getByText("FAKE-LOT-2").scrollIntoViewIfNeeded();
     await page.screenshot({path:`${output}/${browserType.name()}-${width}-detail.png`});
     await page.screenshot({path:`${output}/mockup-detail-${width===1280?"desktop":"mobile-second"}.png`});
-    console.log(`${browserType.name()} ${width}px: form validation and separate receipt lots visible`);
+    await dialog.getByRole("button",{name:"เพิ่มค่าใช้จ่ายที่ลืมลง"}).click();
+    await dialog.getByPlaceholder("จำนวนเงินเพิ่ม (บาท)").fill("12.34");
+    await dialog.getByRole("button",{name:"ตรวจยอดก่อนยืนยัน"}).click();
+    await dialog.getByText("ระบุเหตุผล").waitFor();
+    await dialog.getByPlaceholder("เหตุผลที่เพิ่มค่าใช้จ่าย (บังคับ)").fill("FAKE transport receipt");
+    await dialog.getByPlaceholder("เลขที่ใบเสร็จหรือหลักฐานอ้างอิง (ถ้ามี)").fill("FAKE-RC-1");
+    await dialog.getByRole("button",{name:"ตรวจยอดก่อนยืนยัน"}).click();
+    await dialog.getByText("ผลตรวจยอดก่อนยืนยัน").waitFor();
+    await page.screenshot({path:`${output}/${browserType.name()}-${width}-late-cost-preview.png`});
+    await dialog.getByRole("button",{name:"ยืนยันเพิ่มค่าใช้จ่าย"}).click();
+    await page.getByRole("button",{name:"ยืนยัน",exact:true}).last().click();
+    await dialog.getByText("เพิ่มต้นทุนสำเร็จ").waitFor();
+    await page.locator(".ant-modal-confirm-title").waitFor({state:"hidden"});
+    await dialog.getByText("FAKE transport receipt").waitFor();
+    await page.screenshot({path:`${output}/${browserType.name()}-${width}-late-cost-history.png`});
+    await dialog.getByRole("button",{name:"เพิ่มค่าใช้จ่ายที่ลืมลง"}).click();
+    await dialog.getByPlaceholder("จำนวนเงินเพิ่ม (บาท)").fill("5.00");
+    await dialog.getByPlaceholder("เหตุผลที่เพิ่มค่าใช้จ่าย (บังคับ)").fill("FAKE second cost");
+    await dialog.getByRole("button",{name:"ตรวจยอดก่อนยืนยัน"}).click();
+    await dialog.getByText("ผลตรวจยอดก่อนยืนยัน").waitFor();
+    lateMode="conflict";
+    await dialog.getByRole("button",{name:"ยืนยันเพิ่มค่าใช้จ่าย"}).click();
+    await page.getByRole("button",{name:"ยืนยัน",exact:true}).last().click();
+    await dialog.getByText("รหัสคำขอนี้เคยใช้กับข้อมูลอื่นแล้ว").waitFor();
+    await page.locator(".ant-modal-confirm-title").waitFor({state:"hidden"});
+    lateMode="replay";
+    await dialog.getByRole("button",{name:"ยืนยันเพิ่มค่าใช้จ่าย"}).click();
+    await page.getByRole("button",{name:"ยืนยัน",exact:true}).last().click();
+    await dialog.getByText("คำขอนี้เคยบันทึกแล้ว ไม่เพิ่มต้นทุนซ้ำ").waitFor();
+    await page.locator(".ant-modal-confirm-title").waitFor({state:"hidden"});
+    await dialog.getByRole("button",{name:"เพิ่มค่าใช้จ่ายที่ลืมลง"}).click();
+    lateMode="denied";
+    await dialog.getByRole("button",{name:"ตรวจยอดก่อนยืนยัน"}).click();
+    await dialog.getByText("ไม่มีสิทธิ์เพิ่มต้นทุน").waitFor();
+    fixtureLang="en";
+    await context.addCookies([{name:"lang",value:"en",url:base}]);
+    await page.reload({waitUntil:"domcontentloaded"});
+    await page.getByRole("button",{name:"View lines / lots"}).first().click();
+    const englishDialog=page.getByRole("dialog");
+    await englishDialog.getByText("Cost adjustment history").waitFor();
+    await englishDialog.getByRole("button",{name:"Add forgotten cost"}).click();
+    await englishDialog.getByPlaceholder("Added amount (THB)").waitFor();
+    await page.screenshot({path:`${output}/${browserType.name()}-${width}-late-cost-en.png`});
+    console.log(`${browserType.name()} ${width}px: receipt, late-cost preview/history, conflict, replay and denial visible`);
     await context.close();
   }
 } finally {await browser.close();}
