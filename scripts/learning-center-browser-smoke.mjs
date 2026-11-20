@@ -19,16 +19,16 @@ try {
     page.on("pageerror", (error) => failures.push(error.message));
     const requests = [];
     page.on("request", (request) => { if (request.url().includes("/api/")) requests.push(new URL(request.url()).pathname); });
-    for (const width of [1440, 1024, 390, 320]) {
+    for (const width of [1440, 1100, 390, 320]) {
       await page.setViewportSize({ width, height: 950 });
-      for (const path of ["/learn", "/learn/retail", "/learn/board-game", "/learn/restaurant", "/learn/pharmacy", "/learn/building-materials", "/learn/inventory", "/learn/guides/retail-pos-sale", "/learn/guides/board-game-move-split", "/learn/guides/desktop-hardware", "/learn/guides/restaurant-service", "/learn/guides/restaurant-rehearsal", "/learn/guides/pharmacy-counter-sale", "/learn/guides/pharmacy-rehearsal", "/learn/guides/building-materials-quotations", "/learn/guides/building-materials-weighted", "/learn/guides/inventory-transfer-control", "/learn/guides/inventory-rehearsal", "/learn/guides/board-game-deposits", "/learn/guides/board-game-rehearsal"]) {
+      for (const path of ["/learn", "/learn/getting-started", "/learn/retail", "/learn/board-game", "/learn/restaurant", "/learn/pharmacy", "/learn/building-materials", "/learn/inventory", "/learn/twenty-baht-shop", "/learn/factory-twine-straw", "/learn/guides/sign-in-account", "/learn/guides/retail-pos-sale", "/learn/guides/board-game-move-split", "/learn/guides/desktop-hardware", "/learn/guides/restaurant-service", "/learn/guides/restaurant-rehearsal", "/learn/guides/pharmacy-counter-sale", "/learn/guides/pharmacy-rehearsal", "/learn/guides/building-materials-quotations", "/learn/guides/building-materials-weighted", "/learn/guides/inventory-transfer-control", "/learn/guides/inventory-rehearsal", "/learn/guides/board-game-deposits", "/learn/guides/board-game-rehearsal"]) {
         const response = await page.goto(`${baseURL}${path}`, { waitUntil: "networkidle" });
         assert.equal(response.status(), 200, path);
         await page.locator("h1").waitFor();
         assert.equal(await page.locator("h1").count(), 1);
-        if (width < 851) {
-          assert.ok((await page.locator("header").boundingBox()).height <= 64, "Mobile header must stay on one row");
-          assert.equal(await page.locator("header details").getAttribute("open"), null);
+        if (width <= 1100) {
+          assert.ok((await page.locator("header").first().boundingBox()).height <= 64, "Mobile header must stay on one row");
+          assert.equal(await page.locator('header details[data-learning-header-menu="mobile"]').getAttribute("open"), null);
         }
         const sizes = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: window.innerWidth }));
         assert.ok(sizes.scroll <= sizes.width + 1, `${path} at ${width}: overflow ${sizes.scroll}`);
@@ -107,9 +107,9 @@ try {
     console.log(`Verified ${buildingPaths.length} building-materials articles in ${lang}`);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${baseURL}/learn/building-materials`);
-    await page.locator('header summary').click();
-    assert.ok(await page.locator('header details a[href$="/learn/building-materials"]').isVisible(), "Mobile guide menu is missing building materials");
-    await page.locator('header summary').click();
+    await page.locator('header details[data-learning-header-menu="mobile"] summary').click();
+    assert.ok(await page.locator('header details[data-learning-header-menu="mobile"] a[href$="/learn/building-materials"]').isVisible(), "Mobile guide menu is missing building materials");
+    await page.locator('header details[data-learning-header-menu="mobile"] summary').click();
     if (lang === "th") {
       const audio = page.locator('audio[data-business-recorded-narration="building-materials"]');
       await page.getByRole("button", { name: /เล่นพร้อมภาพ/ }).click();
@@ -212,7 +212,7 @@ try {
     await page.emulateMedia({ media: "screen" });
     await context.route("**/api/auth/me", (route) => route.fulfill({ json: { admin: { id: "FAKE-owner" }, user: null, isAuthenticated: true } }));
     await page.reload();
-    await page.locator("header summary").click();
+    await page.locator('header details[data-learning-header-menu="mobile"] summary').click();
     await page.locator('header a[href="/admin/dashboard"]:visible').waitFor();
     assert.equal(await page.locator('a[href="/shop-signup"]').count(), 0);
     await page.getByRole("button", { name: lang === "th" ? "Switch to English" : "เปลี่ยนเป็นภาษาไทย" }).click();
@@ -233,7 +233,7 @@ try {
   const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const mobile = await mobileContext.newPage();
   await mobile.goto(`${baseURL}/learn/guides/start-here`);
-  const menu = mobile.locator("header details");
+  const menu = mobile.locator('header details[data-learning-header-menu="mobile"]');
   const toggle = menu.locator("summary");
   await toggle.focus();
   await mobile.keyboard.press("Enter");
@@ -251,17 +251,56 @@ try {
   assert.equal(await menu.getAttribute("open"), null);
   await toggle.click();
   await mobile.setViewportSize({ width: 1440, height: 950 });
-  await mobile.waitForFunction(() => !document.querySelector("header details").open);
+  await mobile.waitForFunction(() => !document.querySelector('header details[data-learning-header-menu="mobile"]').open);
   await mobile.setViewportSize({ width: 390, height: 844 });
   assert.equal(await menu.getAttribute("open"), null);
   await mobileContext.close();
   const noJsMobileContext = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 320, height: 844 } });
   const noJsMobile = await noJsMobileContext.newPage();
   await noJsMobile.goto(`${baseURL}/learn`);
-  await noJsMobile.locator("header summary").click();
-  await noJsMobile.locator('header details a[href$="/learn/board-game"]').click();
+  await noJsMobile.locator('header details[data-learning-header-menu="mobile"] summary').click();
+  await noJsMobile.locator('header details[data-learning-header-menu="mobile"] a[href$="/learn/board-game"]').click();
   await noJsMobile.waitForURL(/\/learn\/board-game$/);
+  await noJsMobile.setViewportSize({ width: 1440, height: 844 });
+  await noJsMobile.goto(`${baseURL}/learn`);
+  const noJsDesktopMenu = noJsMobile.locator('header details[data-learning-header-menu="desktop"]').first();
+  await noJsDesktopMenu.locator("summary").click();
+  await noJsDesktopMenu.locator('a[href$="/learn/retail"]').click();
+  await noJsMobile.waitForURL(/\/learn\/retail$/);
   await noJsMobileContext.close();
+  const headerDestinations = [
+    "/", "/learn", "/learn/getting-started", "/learn/retail", "/learn/board-game",
+    "/learn/restaurant", "/learn/pharmacy", "/learn/building-materials", "/learn/inventory",
+    "/learn/twenty-baht-shop", "/learn/factory-twine-straw", "/learn/guides/pos-devices",
+    "/learn/guides/line-ai-booking", "/learn/guides/outages-support", "/learn/guides/launch-checklist",
+  ];
+  for (const lang of ["th", "en"]) {
+    const headerContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    await headerContext.addCookies([{ name: "lang", value: lang, url: baseURL }]);
+    await headerContext.route("**/api/auth/me", (route) => route.fulfill({ json: { user: null, admin: null, isAuthenticated: false } }));
+    const headerPage = await headerContext.newPage();
+    await headerPage.goto(`${baseURL}/${lang}/learn/getting-started`, { waitUntil: "networkidle" });
+    const hrefs = await headerPage.locator("header a[href]").evaluateAll((links) => links.map((link) => new URL(link.href).pathname));
+    for (const path of headerDestinations) {
+      const localized = `/${lang}${path === "/" ? "" : path}`;
+      assert.ok(hrefs.includes(localized), `${lang}: missing header destination ${path}`);
+    }
+    const desktopMenu = headerPage.locator('header details[data-learning-header-menu="desktop"]').first();
+    const desktopSummary = desktopMenu.locator("summary");
+    await desktopSummary.focus();
+    await headerPage.keyboard.press("Enter");
+    assert.equal(await desktopMenu.getAttribute("open"), "");
+    await headerPage.keyboard.press("Escape");
+    assert.equal(await desktopMenu.getAttribute("open"), null);
+    assert.equal(await desktopSummary.evaluate((element) => element === document.activeElement), true);
+    await desktopSummary.click();
+    await headerPage.locator("main").click({ position: { x: 2, y: 2 } });
+    assert.equal(await desktopMenu.getAttribute("open"), null);
+    await desktopSummary.click();
+    await headerPage.setViewportSize({ width: 1100, height: 900 });
+    await headerPage.waitForFunction(() => [...document.querySelectorAll('header details[data-learning-header-menu="desktop"]')].every((menu) => !menu.open));
+    await headerContext.close();
+  }
   const navigationContext = await browser.newContext();
   await navigationContext.route("**/api/auth/me", (route) => route.fulfill({ json: { user: null, admin: null, isAuthenticated: false } }));
   await navigationContext.addInitScript(() => localStorage.setItem("pdpa_consent_v1", JSON.stringify({ value: "reject", at: new Date().toISOString() })));

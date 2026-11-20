@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>BMS · Mockup หน้าเข้าสู่ระบบผู้ดูแล</title>
+  <style>
+    :root {
+      font-family: -apple-system, BlinkMacSystemFont, "Noto Sans Thai", "Thonburi", "Segoe UI", sans-serif;
+      color: #17243b;
+      background: #f5f8fc;
+      font-synthesis: none;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    a { color: #1261cf; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    :focus-visible { outline: 3px solid #86b9ff; outline-offset: 3px; }
+    .mockup-ribbon {
+      position: fixed;
+      z-index: 3;
+      top: 14px;
+      right: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 11px;
+      border: 1px solid #c9daf6;
+      border-radius: 999px;
+      background: #fff;
+      box-shadow: 0 6px 22px #123c6b16;
+      color: #23568f;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .015em;
+    }
+    .mockup-ribbon::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #2c83e6; }
+    .layout { display: grid; grid-template-columns: minmax(0, 48%) minmax(0, 52%); min-height: 100dvh; }
+    .brand-panel {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-height: 100dvh;
+      padding: clamp(28px, 4vw, 58px) clamp(32px, 5.4vw, 88px) 36px;
+      background: radial-gradient(circle at 95% 20%, #174f8d 0, transparent 38%), radial-gradient(circle at -15% 90%, #174771 0, transparent 40%), #0a2441;
+      color: #fff;
+    }
+    .brand-panel::after {
+      position: absolute;
+      right: -170px;
+      bottom: -215px;
+      width: 650px;
+      height: 650px;
+      border: 1px solid #8fc7ff24;
+      border-radius: 50%;
+      box-shadow: 0 0 0 95px #8fc7ff08, 0 0 0 190px #8fc7ff06;
+      content: "";
+      pointer-events: none;
+    }
+    .brand, .brand-copy, .flow-card, .brand-foot { position: relative; z-index: 1; }
+    .brand { display: flex; align-items: center; gap: 13px; }
+    .brand-mark { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 13px; background: #eaf3fa; box-shadow: 0 6px 20px #04162a45; }
+    .brand-mark svg { width: 29px; height: 29px; }
+    .brand-word { display: block; font-size: 23px; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+    .brand-caption { display: block; margin-top: 4px; color: #b1d0ed; font-size: 11px; letter-spacing: .11em; text-transform: uppercase; }
+    .brand-copy { margin-top: auto; padding-top: 95px; }
+    .eyebrow { display: inline-flex; align-items: center; gap: 9px; color: #89c9ff; font-size: 12px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+    .eyebrow::before { content: ""; width: 24px; height: 2px; background: #64bdff; }
+    .brand-copy h1 { max-width: 570px; margin: 19px 0 16px; font-size: clamp(39px, 3.9vw, 62px); line-height: 1.17; letter-spacing: -.055em; font-weight: 760; }
+    .brand-copy h1 span { color: #8ccaff; }
+    .brand-copy p { max-width: 500px; margin: 0; color: #b9d0e5; font-size: 16px; line-height: 1.85; }
+    .flow-card { max-width: 555px; margin-top: 42px; padding: 23px 24px 24px; border: 1px solid #9ac4e934; border-radius: 20px; background: linear-gradient(145deg, #ffffff13, #ffffff08); backdrop-filter: blur(16px); box-shadow: 0 20px 45px #02182b30; }
+    .flow-title { color: #b7d5ed; font-size: 12px; font-weight: 650; }
+    .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 15px; }
+    .flow span { padding: 7px 10px; border: 1px solid #b2d8fa38; border-radius: 8px; background: #b8dcff12; color: #e8f5ff; font-size: 11px; font-weight: 650; white-space: nowrap; }
+    .flow b { color: #75b8ef; font-size: 12px; font-weight: 400; }
+    .brand-foot { margin-top: auto; padding-top: 52px; color: #91b5d3; font-size: 12px; }
+    .entry-panel { display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 0; padding: 80px clamp(26px, 6vw, 112px) 52px; background: radial-gradient(circle at 105% -15%, #e5f2ff 0, transparent 40%), #f9fbfd; }
+    .entry { width: min(100%, 450px); }
+    .entry-head { margin-bottom: 32px; }
+    .entry-head .pill { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; border: 1px solid #cfe5f7; border-radius: 999px; background: #edf7ff; color: #206394; font-size: 12px; font-weight: 700; }
+    .entry-head .pill svg { width: 15px; height: 15px; }
+    .entry-head h2 { margin: 17px 0 9px; font-size: clamp(30px, 3vw, 38px); line-height: 1.3; letter-spacing: -.04em; font-weight: 760; }
+    .entry-head p { margin: 0; color: #65778b; font-size: 15px; line-height: 1.7; }
+    .form-card { padding: 31px 32px 27px; border: 1px solid #e0e9f2; border-radius: 20px; background: #fff; box-shadow: 0 20px 60px #1b436a0e, 0 3px 12px #1b436a08; }
+    .field { margin-bottom: 21px; }
+    .field label { display: block; margin-bottom: 9px; color: #243348; font-size: 14px; font-weight: 700; }
+    .field label span { color: #e24856; }
+    .field input { display: block; width: 100%; height: 48px; padding: 0 14px; border: 1px solid #cbd8e5; border-radius: 10px; outline: none; background: #fff; color: #18283c; transition: border-color .15s, box-shadow .15s; }
+    .field input::placeholder { color: #9aa8b8; }
+    .field input:focus { border-color: #2883e3; box-shadow: 0 0 0 3px #dbeeff; }
+    .password-wrap { position: relative; }
+    .password-wrap input { padding-right: 53px; }
+    .eye-button { position: absolute; top: 0; right: 3px; display: grid; place-items: center; width: 45px; height: 48px; border: 0; border-radius: 9px; background: transparent; color: #7c8b9d; }
+    .eye-button:hover { color: #2868aa; }
+    .eye-button svg { width: 20px; height: 20px; }
+    .helper-row { display: flex; justify-content: flex-end; margin: -7px 0 24px; font-size: 13px; font-weight: 650; }
+    .submit { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 49px; border: 1px solid #1267d7; border-radius: 10px; background: #176fdf; box-shadow: 0 6px 14px #176fdf2b; color: #fff; font-weight: 750; transition: background .15s, transform .15s; }
+    .submit:hover { background: #0e5ec5; transform: translateY(-1px); }
+    .submit svg { width: 17px; height: 17px; }
+    .admin-notice { display: flex; gap: 9px; align-items: flex-start; margin-top: 23px; padding: 13px 14px; border: 1px solid #e1eaf3; border-radius: 10px; background: #f7fafd; color: #65778b; font-size: 12px; line-height: 1.7; }
+    .admin-notice svg { flex: none; width: 16px; height: 16px; margin-top: 2px; color: #638db6; }
+    .guide { margin-top: 22px; padding: 0 3px; }
+    .guide strong { display: block; margin-bottom: 7px; color: #41556d; font-size: 12px; }
+    .guide a { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 650; }
+    .entry-foot { margin: 27px 0 0; color: #8998aa; font-size: 12px; text-align: center; }
+    .toast { position: fixed; z-index: 5; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(12px); opacity: 0; pointer-events: none; max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: 10px; background: #193858; box-shadow: 0 12px 30px #0b1e353d; color: #fff; font-size: 13px; text-align: center; transition: opacity .2s, transform .2s; }
+    .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: minmax(0, 42%) minmax(0, 58%); }
+      .brand-panel { padding-inline: 30px; }
+      .brand-copy h1 { font-size: 38px; }
+      .flow-card { padding: 17px; }
+      .entry-panel { padding-inline: 28px; }
+    }
+    @media (max-width: 700px) {
+      .layout { display: block; }
+      .brand-panel { min-height: 0; padding: 27px 24px 33px; }
+      .brand-panel::after { right: -300px; bottom: -520px; }
+      .brand-copy { padding-top: 38px; }
+      .brand-copy h1 { max-width: 430px; margin: 12px 0 0; font-size: clamp(27px, 7vw, 37px); }
+      .brand-copy p, .flow-card, .brand-foot { display: none; }
+      .entry-panel { min-height: 0; padding: 35px 20px 42px; }
+      .entry { max-width: 480px; }
+      .entry-head { margin-bottom: 23px; }
+      .entry-head h2 { margin-top: 13px; font-size: 27px; }
+      .form-card { padding: 25px 21px 23px; border-radius: 16px; }
+      .mockup-ribbon { top: 19px; right: 17px; font-size: 10px; }
+    }
+    @media (max-width: 390px) {
+      .brand-panel { padding-inline: 19px; }
+      .entry-panel { padding-inline: 14px; }
+      .mockup-ribbon { top: 82px; right: 18px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; } }
+  </style>
+</head>
+<body>
+  <div class="mockup-ribbon">MOCKUP · ยังไม่เชื่อมต่อระบบ</div>
+  <main class="layout">
+    <section class="brand-panel" aria-label="BMS">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 100 100" fill="#3C8DBC"><rect x="17" y="43" width="17" height="36" rx="8.5"/><rect x="42" y="55" width="17" height="24" rx="8.5"/><rect x="67" y="28" width="17" height="51" rx="8.5"/></svg>
+        </div>
+        <div><span class="brand-word">BMS</span><span class="brand-caption">Business Management System</span></div>
+      </div>
+      <div class="brand-copy">
+        <span class="eyebrow">พื้นที่ทำงานของผู้ดูแล</span>
+        <h1>จัดการธุรกิจ<br><span>ในภาพเดียวกัน</span></h1>
+        <p>เชื่อมงานลูกค้า คำสั่งซื้อ สต็อก และการชำระเงิน เพื่อให้ทีมเห็นข้อมูลชุดเดียวกันทุกขั้นตอน</p>
+        <div class="flow-card" aria-label="ภาพรวมขั้นตอนงาน BMS">
+          <div class="flow-title">ภาพรวมการทำงาน</div>
+          <div class="flow"><span>ลูกค้า</span><b>→</b><span>AI</span><b>→</b><span>CRM</span><b>→</b><span>คำสั่งซื้อ</span><b>→</b><span>สต็อก</span><b>→</b><span>ชำระเงิน</span></div>
+        </div>
+      </div>
+      <div class="brand-foot">BMS · ระบบจัดการธุรกิจสำหรับทีมของคุณ</div>
+    </section>
+    <section class="entry-panel" aria-label="เข้าสู่ระบบผู้ดูแล">
+      <div class="entry">
+        <header class="entry-head">
+          <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg> พื้นที่ผู้ดูแล</span>
+          <h2>เข้าสู่ระบบผู้ดูแล</h2>
+          <p>กรอกบัญชีของคุณเพื่อเข้าสู่พื้นที่จัดการ BMS</p>
+        </header>
+        <div class="form-card">
+          <form id="login-form" autocomplete="off">
+            <div class="field">
+              <label for="identifier"><span aria-hidden="true">* </span>ชื่อผู้ใช้หรืออีเมล</label>
+              <input id="identifier" name="identifier" type="text" placeholder="กรอกชื่อผู้ใช้หรืออีเมล" autocomplete="username" required>
+            </div>
+            <div class="field">
+              <label for="password"><span aria-hidden="true">* </span>รหัสผ่าน</label>
+              <div class="password-wrap">
+                <input id="password" name="password" type="password" placeholder="กรอกรหัสผ่าน" autocomplete="current-password" required>
+                <button class="eye-button" type="button" id="toggle-password" aria-label="แสดงรหัสผ่าน" aria-pressed="false">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="3"/><path id="eye-slash" d="M3 21 21 3"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="helper-row"><a href="#" data-demo-link>ลืมรหัสผ่านหรือมีผู้อื่นใช้อีเมลของคุณ?</a></div>
+            <button class="submit" type="submit">เข้าสู่ระบบ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button>
+          </form>
+          <div class="admin-notice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg><span>สำหรับผู้ดูแลระบบเท่านั้น — ต้องมีบทบาท Administrator</span></div>
+        </div>
+        <div class="guide"><strong>คู่มือที่เกี่ยวข้อง</strong><a href="#" data-demo-link>ดูคู่มือเริ่มต้นใช้งาน <span aria-hidden="true">↗</span></a></div>
+        <p class="entry-foot">ตัวอย่างงานออกแบบ · ไม่มีการส่งข้อมูลเข้าสู่ระบบ</p>
+      </div>
+    </section>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite">นี่เป็น mockup สำหรับดูงานออกแบบ ยังไม่เชื่อมต่อระบบ</div>
+  <script>
+    const password = document.getElementById('password');
+    const toggle = document.getElementById('toggle-password');
+    const toast = document.getElementById('toast');
+    let toastTimer;
+    function showToast() {
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 3200);
+    }
+    toggle.addEventListener('click', () => {
+      const shown = password.type === 'password';
+      password.type = shown ? 'text' : 'password';
+      toggle.setAttribute('aria-label', shown ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน');
+      toggle.setAttribute('aria-pressed', String(shown));
+      document.getElementById('eye-slash').style.display = shown ? 'none' : '';
+    });
+    document.getElementById('login-form').addEventListener('submit', (event) => { event.preventDefault(); showToast(); });
+    document.querySelectorAll('[data-demo-link]').forEach(link => link.addEventListener('click', (event) => { event.preventDefault(); showToast(); }));
+  </script>
+</body>
+</html>

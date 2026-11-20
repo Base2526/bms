@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>BMS · Mockup คู่มือเริ่มต้นใช้งาน</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Noto Sans Thai", "Thonburi", "Segoe UI", sans-serif; color: #14233c; background: #f7f9fc; font-synthesis: none; }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; }
+    button { font: inherit; cursor: pointer; }
+    button:focus-visible, a:focus-visible { outline: 3px solid #8fc0ff; outline-offset: 3px; }
+    a { color: inherit; text-decoration: none; }
+    .mockup-flag { padding: 6px 10px; border: 1px solid #bcd4ef; border-radius: 999px; background: #f4f9ff; color: #1557a3; font-size: 10px; font-weight: 750; white-space: nowrap; }
+    .mockup-flag::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: #2679dc; vertical-align: 1px; }
+    .site-header { height: 78px; border-bottom: 1px solid #e4eaf3; background: #fff; }
+    .header-inner { display: flex; align-items: center; gap: 25px; max-width: 1320px; height: 100%; margin: auto; padding: 0 40px; }
+    .logo { display: flex; flex: none; align-items: center; gap: 10px; }
+    .logo-mark { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: #eaf3fa; }
+    .logo-mark svg { width: 24px; height: 24px; }
+    .logo strong { font-size: 20px; letter-spacing: -.04em; }
+    .header-divider { width: 1px; height: 24px; background: #d9e2ee; }
+    .header-label { color: #475d78; font-size: 14px; font-weight: 700; white-space: nowrap; }
+    .header-space { flex: 1; }
+    .top-links { display: flex; align-items: center; gap: 28px; color: #415370; font-size: 14px; font-weight: 650; }
+    .top-links a:hover, .breadcrumb a:hover { color: #176fe2; }
+    .language { display: grid; place-items: center; min-width: 44px; height: 38px; border: 1px solid #d9e3ef; border-radius: 9px; background: #fff; color: #263b55; font-size: 13px; font-weight: 750; }
+    .header-cta { display: grid; place-items: center; height: 39px; padding: 0 16px; border-radius: 9px; background: #196fe2; color: #fff; font-size: 13px; font-weight: 750; white-space: nowrap; }
+    .header-cta:hover, .primary:hover { background: #105ec7; }
+    .page { max-width: 1112px; margin: auto; padding: 32px 24px 92px; }
+    .breadcrumb { display: flex; align-items: center; gap: 10px; margin: 0 0 22px; color: #76869e; font-size: 13px; }
+    .breadcrumb strong { color: #415775; font-weight: 700; }
+    .hero { position: relative; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1.28fr) minmax(295px, .72fr); gap: 45px; padding: 49px 54px; border: 1px solid #c9dbf2; border-radius: 24px; background: linear-gradient(112deg, #fdfefe 0%, #f4f9ff 58%, #e8f3ff 100%); box-shadow: 0 17px 45px #284e7b0b; }
+    .hero::after { position: absolute; right: -130px; top: -155px; width: 440px; height: 440px; border: 1px solid #a9cef73d; border-radius: 50%; box-shadow: 0 0 0 66px #bddbfa20, 0 0 0 132px #bddbfa12; content: ""; pointer-events: none; }
+    .hero-copy, .hero-path { position: relative; z-index: 1; }
+    .eyebrow { display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid #cde1f9; border-radius: 999px; background: #eaf4ff; color: #1766c0; font-size: 12px; font-weight: 750; }
+    .eyebrow svg { width: 14px; height: 14px; }
+    h1 { margin: 19px 0 12px; font-size: clamp(32px, 3.5vw, 45px); line-height: 1.25; letter-spacing: -.045em; }
+    .hero-copy > p { max-width: 555px; margin: 0; color: #5d718d; font-size: 16px; line-height: 1.85; }
+    .hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 13px; margin-top: 27px; }
+    .primary, .secondary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 9px 17px; border-radius: 10px; font-size: 14px; font-weight: 750; }
+    .primary { border: 1px solid #196fe2; background: #196fe2; box-shadow: 0 7px 16px #196fe22b; color: #fff; }
+    .secondary { border: 1px solid #cfdded; background: #fff; color: #25527e; }
+    .secondary:hover { border-color: #9ec3f1; background: #f7fbff; }
+    .hero-path { align-self: center; padding: 21px 22px 19px; border: 1px solid #dbe8f6; border-radius: 17px; background: #ffffffd9; box-shadow: 0 10px 26px #2c59830c; }
+    .hero-path > strong { display: block; margin-bottom: 14px; color: #36516e; font-size: 13px; }
+    .hero-path ol { margin: 0; padding: 0; list-style: none; }
+    .hero-path li { display: flex; align-items: center; gap: 11px; padding: 8px 0; color: #465f7c; font-size: 13px; font-weight: 650; }
+    .hero-path li + li { border-top: 1px solid #edf2f8; }
+    .hero-path li b { display: grid; flex: none; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: #e8f2ff; color: #2775d8; font-size: 11px; }
+    .notice { display: flex; align-items: flex-start; gap: 10px; margin-top: 17px; padding: 12px 16px; border: 1px solid #e3e9f1; border-radius: 11px; background: #fff; color: #64758c; font-size: 13px; line-height: 1.7; }
+    .notice svg { flex: none; width: 17px; height: 17px; margin-top: 2px; color: #517eae; }
+    .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin: 53px 0 19px; }
+    .section-head h2 { margin: 0 0 5px; font-size: 26px; line-height: 1.3; letter-spacing: -.025em; }
+    .section-head p { margin: 0; color: #75849a; font-size: 14px; line-height: 1.6; }
+    .lesson-count { flex: none; color: #647994; font-size: 13px; font-weight: 700; }
+    .stages { display: grid; gap: 12px; }
+    .stage { overflow: hidden; border: 1px solid #dbe5f0; border-radius: 16px; background: #fff; box-shadow: 0 4px 16px #1d42630a; }
+    .stage[data-open="true"] { border-color: #b7d3f3; box-shadow: 0 12px 30px #164c810d; }
+    .stage-toggle { display: flex; align-items: center; gap: 18px; width: 100%; min-height: 92px; padding: 18px 23px; border: 0; background: transparent; color: #14233c; text-align: left; }
+    .stage-toggle:hover { background: #f8fbff; }
+    .stage-number { display: grid; flex: none; place-items: center; width: 47px; height: 47px; border-radius: 14px; background: #eaf3ff; color: #1867ce; font-size: 17px; font-weight: 800; }
+    .stage[data-open="true"] .stage-number { background: #196fe2; color: #fff; }
+    .stage-text { flex: 1; min-width: 0; }
+    .stage-text strong { display: block; font-size: 17px; line-height: 1.4; }
+    .stage-text small { display: block; margin-top: 3px; color: #77889d; font-size: 13px; line-height: 1.5; }
+    .stage-meta { flex: none; color: #66809d; font-size: 12px; font-weight: 700; white-space: nowrap; }
+    .chevron { flex: none; display: grid; place-items: center; width: 25px; height: 25px; color: #66809d; font-size: 21px; line-height: 1; transform: rotate(0); transition: transform .2s; }
+    .stage[data-open="true"] .chevron { transform: rotate(180deg); }
+    .stage-body { padding: 0 24px 22px 88px; }
+    .stage-body[hidden] { display: none; }
+    .lesson { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 15px; width: 100%; min-height: 73px; padding: 13px 8px 13px 0; border: 0; border-top: 1px solid #e9eef5; background: #fff; color: #243753; text-align: left; }
+    .lesson:hover { color: #1266d2; }
+    .lesson-number { color: #2775d8; font-size: 12px; font-weight: 800; }
+    .lesson-title { display: block; font-size: 14px; font-weight: 700; line-height: 1.45; }
+    .lesson-summary { display: block; margin-top: 3px; color: #8290a3; font-size: 12px; line-height: 1.5; }
+    .lesson-arrow { color: #3f89e7; font-size: 22px; font-weight: 400; }
+    .footer-note { margin: 24px 0 0; color: #8896a9; font-size: 12px; text-align: center; }
+    .toast { position: fixed; z-index: 6; left: 50%; bottom: 25px; max-width: calc(100vw - 32px); padding: 11px 17px; border-radius: 10px; background: #173754; box-shadow: 0 12px 30px #09233c3f; color: #fff; font-size: 13px; opacity: 0; pointer-events: none; text-align: center; transform: translate(-50%, 12px); transition: opacity .2s, transform .2s; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    @media (max-width: 850px) {
+      .header-inner { padding-inline: 24px; }
+      .top-links { display: none; }
+      .hero { grid-template-columns: minmax(0, 1fr) minmax(235px, .65fr); gap: 23px; padding: 37px; }
+    }
+    @media (max-width: 700px) {
+      .site-header { height: 64px; }
+      .header-inner { gap: 12px; padding-inline: 18px; }
+      .header-divider, .header-label, .header-cta { display: none; }
+      .header-space { flex: 1; }
+      .page { padding: 22px 16px 70px; }
+      .breadcrumb { margin-bottom: 16px; font-size: 12px; }
+      .hero { grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 30px 23px; border-radius: 18px; }
+      h1 { margin-top: 15px; font-size: 31px; }
+      .hero-copy > p { font-size: 14px; line-height: 1.75; }
+      .hero-actions { margin-top: 22px; }
+      .hero-path { padding: 16px; }
+      .hero-path ol { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; }
+      .hero-path li + li { border-top: 0; }
+      .hero-path li { padding: 4px 0; font-size: 12px; }
+      .section-head { align-items: flex-start; margin-top: 39px; }
+      .section-head h2 { font-size: 23px; }
+      .stage-toggle { gap: 12px; min-height: 82px; padding: 15px 14px; }
+      .stage-number { width: 38px; height: 38px; border-radius: 11px; font-size: 14px; }
+      .stage-text strong { font-size: 14px; }
+      .stage-text small { font-size: 11px; }
+      .stage-meta { display: none; }
+      .stage-body { padding: 0 16px 15px 64px; }
+      .lesson { gap: 8px; grid-template-columns: 25px minmax(0, 1fr) auto; }
+    }
+    @media (max-width: 360px) { .hero-path ol { grid-template-columns: 1fr; } .hero-actions { align-items: stretch; flex-direction: column; } .primary, .secondary { width: 100%; } }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { transition-duration: .01ms !important; } }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="#" data-demo-link aria-label="BMS ศูนย์เรียนรู้"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 100 100" fill="#3C8DBC"><rect x="17" y="43" width="17" height="36" rx="8.5"/><rect x="42" y="55" width="17" height="24" rx="8.5"/><rect x="67" y="28" width="17" height="51" rx="8.5"/></svg></span><strong>BMS</strong></a>
+      <span class="header-divider" aria-hidden="true"></span>
+      <span class="header-label">ศูนย์เรียนรู้</span>
+      <span class="mockup-flag">MOCKUP</span>
+      <span class="header-space"></span>
+      <nav class="top-links" aria-label="เมนูหลัก"><a href="#" data-demo-link>คู่มือทั้งหมด</a><a href="#" data-demo-link>คู่มือตามประเภทร้าน</a></nav>
+      <button class="language" type="button" id="lang-button" aria-label="เปลี่ยนภาษา">EN</button>
+      <a class="header-cta" href="#" data-demo-link>เริ่มใช้ฟรี →</a>
+    </div>
+  </header>
+  <main class="page">
+    <nav class="breadcrumb" aria-label="ตำแหน่งหน้า"><a href="#" data-demo-link>ศูนย์เรียนรู้</a><span>/</span><strong>เริ่มต้นใช้งานและตั้งค่าร้าน</strong></nav>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <span class="eyebrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 6 13h5l-1 9 8-12h-5l1-8Z"/></svg> คู่มือเริ่มต้น · 16 บทเรียน</span>
+        <h1 id="hero-title">เริ่มต้น BMS<br>แบบทีละขั้น</h1>
+        <p>จากสมัครร้านไปจนตรวจความพร้อมก่อนเปิดจริง อ่านได้โดยไม่ต้องเข้าสู่ระบบ แล้วเลือกทำตามขั้นตอนที่เกี่ยวกับร้านของคุณ</p>
+        <div class="hero-actions"><button class="primary" type="button" data-demo-button>เริ่มบทแรก <span aria-hidden="true">→</span></button><a class="secondary" href="#lessons">ดูเส้นทางทั้งหมด <span aria-hidden="true">↓</span></a></div>
+      </div>
+      <div class="hero-path" aria-label="เส้นทางการเรียนรู้ 4 ช่วง"><strong>เส้นทางนี้มี 4 ช่วง</strong><ol><li><b>01</b> รู้จักระบบและสมัคร</li><li><b>02</b> ตั้งค่าร้านและทีม</li><li><b>03</b> ช่องทางและ POS</li><li><b>04</b> ตรวจผลก่อนเปิดจริง</li></ol></div>
+    </section>
+    <div class="notice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg><span>ทุกบทอ่านได้โดยไม่ต้องล็อกอิน การตั้งค่าจริงยังต้องใช้บัญชีและสิทธิ์ของร้าน และควรใช้ข้อมูลสมมติเมื่อซ้อมงาน</span></div>
+    <div id="lessons" class="section-head"><div><h2>เลือกช่วงที่ต้องการเริ่ม</h2><p>ถ้าเพิ่งรู้จัก BMS เริ่มจากช่วงที่ 01 แล้วค่อยไล่ตามลำดับ</p></div><span class="lesson-count">ทั้งหมด 16 บทเรียน</span></div>
+    <div class="stages">
+      <section class="stage" data-open="true">
+        <button class="stage-toggle" type="button" aria-expanded="true" aria-controls="stage-1"><span class="stage-number">01</span><span class="stage-text"><strong>รู้จักระบบและสมัคร</strong><small>เข้าใจภาพรวม เปิดร้าน และเข้าใช้บัญชี</small></span><span class="stage-meta">3 บทเรียน</span><span class="chevron" aria-hidden="true">⌄</span></button>
+        <div class="stage-body" id="stage-1">
+          <button class="lesson" type="button" data-demo-button><span class="lesson-number">01</span><span><span class="lesson-title">BMS คืออะไร และเริ่มจากบทไหน</span><span class="lesson-summary">ดูภาพรวมก่อนเลือกเส้นทางของร้าน</span></span><span class="lesson-arrow" aria-hidden="true">›</span></button>
+          <button class="lesson" type="button" data-demo-button><span class="lesson-number">02</span><span><span class="lesson-title">สมัครร้านและยืนยันอีเมล</span><span class="lesson-summary">เตรียมบัญชีเจ้าของร้านให้พร้อมใช้งาน</span></span><span class="lesson-arrow" aria-hidden="true">›</span></button>
+          <button class="lesson" type="button" data-demo-button><span class="lesson-number">03</span><span><span class="lesson-title">เข้าใช้งาน ออกจากระบบ และดูบัญชีของตน</span><span class="lesson-summary">เข้าใช้หลังบ้านและจัดการบัญชีของคุณ</span></span><span class="lesson-arrow" aria-hidden="true">›</span></button>
+        </div>
+      </section>
+      <section class="stage" data-open="false">
+        <button class="stage-toggle" type="button" aria-expanded="false" aria-controls="stage-2"><span class="stage-number">02</span><span class="stage-text"><strong>ตั้งค่าร้านและทีม</strong><small>ข้อมูลร้าน สาขา Dashboard และสิทธิ์พนักงาน</small></span><span class="stage-meta">3 บทเรียน</span><span class="chevron" aria-hidden="true">⌄</span></button>
+        <div class="stage-body" id="stage-2" hidden>
+          <button class="lesson" type="button" data-demo-button><span class="lesson-number">04</span><span class="lesson-title">กรอกข้อมูลร้านและสาขา</span><span class="lesson-arrow" aria-hidden="true">›</span></button>
+          <button class="lesson" type="button" data-demo-button><span class="lesson-number">05</span><span class="lesson-title">อ่าน Dashboard ของร้าน</span><span class="lesson-arrow" aria-hidden="true">›</span></button>
+          <button class="lesson" type="button" data-demo-button><span class="lesson-number">06</span><span class="lesson-title">เพิ่มผู้ใช้งานทีมร้านและกำหนดสิทธิ์</span><span class="lesson-arrow" aria-hidden="true">›</span></button>
+        </div>
+      </section>
+      <section class="stage" data-open="false">
+        <button class="stage-toggle" type="button" aria-expanded="false" aria-controls="stage-3"><span class="stage-number">03</span><span class="stage-text"><strong>ช่องทางและ POS</strong><small>เชื่อมข้อความ ตั้งบัญชีรับเงิน สินค้า และเครื่องขาย</small></span><span class="stage-meta">7 บทเรียน</span><span class="chevron" aria-hidden="true">⌄</span></button>
+        <div class="stage-body" id="stage-3" hidden>
+          <button class="lesson" type="button" data-demo-button><span class="lesson-number">07</span><span class="lesson-title">เข้าใจสถานะช่องทางก่อนเชื่อมต่อ</span><span class="lesson-arrow" aria-hidden="true">›</span></button>
+          <button class="lesson" type="button" data-demo-button><span class="lesson-number">08</span><span class="lesson-title">เชื่อม LINE Official Account</span><span class="lesson-arrow" aria-hidden="true">›</span></button>
+          <button class="lesson" type="button" data-demo-button><span class="lesson-number">09</span><span class="lesson-title">เชื่อม Facebook Messenger และ Instagram DM</span><span class="lesson-arrow" aria-hidden="true">›</span></button>
+          <button class="lesson" type="button" data-demo-button><span class="lesson-number">10</span><span class="lesson-title">ตั้ง TikTok สำหรับรับข้อความเข้า</span><span class="lesson-arrow" aria-hidden="true">›</span></button>
+          <button class="lesson" type="button" data-demo-button><span class="lesson-number">11</span><span class="lesson-title">เปิดช่องทางแชทบนเว็บ</span><span class="lesson-arrow" aria-hidden="true">›</span></button>
+          <button class="lesson" type="button" data-demo-button><span class="lesson-number">12</span><span class="lesson-title">ตั้งบัญชีรับเงินและสินค้าเริ่มต้น</span><span class="lesson-arrow" aria-hidden="true">›</span></button>
+          <button class="lesson" type="button" data-demo-button><span class="lesson-number">13</span><span class="lesson-title">ตั้งเครื่อง POS, PIN และตรวจความพร้อม</span><span class="lesson-arrow" aria-hidden="true">›</span></button>
+        </div>
+      </section>
+      <section class="stage" data-open="false">
+        <button class="stage-toggle" type="button" aria-expanded="false" aria-controls="stage-4"><span class="stage-number">04</span><span class="stage-text"><strong>ตรวจผลก่อนเปิดจริง</strong><small>ลองรับข้อความ ตรวจประวัติ และทบทวน checklist</small></span><span class="stage-meta">3 บทเรียน</span><span class="chevron" aria-hidden="true">⌄</span></button>
+        <div class="stage-body" id="stage-4" hidden>
+          <button class="lesson" type="button" data-demo-button><span class="lesson-number">14</span><span class="lesson-title">ตรวจว่าช่องทางรับข้อความเข้าได้จริง</span><span class="lesson-arrow" aria-hidden="true">›</span></button>
+          <button class="lesson" type="button" data-demo-button><span class="lesson-number">15</span><span class="lesson-title">ดูประวัติและไล่ปัญหา</span><span class="lesson-arrow" aria-hidden="true">›</span></button>
+          <button class="lesson" type="button" data-demo-button><span class="lesson-number">16</span><span class="lesson-title">Checklist ก่อนเปิดใช้งานจริง</span><span class="lesson-arrow" aria-hidden="true">›</span></button>
+        </div>
+      </section>
+    </div>
+    <p class="footer-note">ตัวอย่างการจัดหน้าใหม่ · บทเรียนทั้ง 16 อ้างอิงจากคู่มือในโปรเจกต์</p>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite">นี่เป็น mockup สำหรับดูรูปแบบหน้า ยังไม่เชื่อมต่อปุ่มนำทาง</div>
+  <script>
+    const toast = document.getElementById('toast');
+    let toastTimer;
+    function showToast() { toast.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove('show'), 3000); }
+    document.querySelectorAll('[data-demo-button], [data-demo-link], #lang-button').forEach(el => el.addEventListener('click', event => { event.preventDefault(); showToast(); }));
+    document.querySelectorAll('.stage-toggle').forEach(button => button.addEventListener('click', () => {
+      const stage = button.closest('.stage');
+      const open = stage.dataset.open !== 'true';
+      document.querySelectorAll('.stage').forEach(other => { other.dataset.open = 'false'; other.querySelector('.stage-toggle').setAttribute('aria-expanded', 'false'); other.querySelector('.stage-body').hidden = true; });
+      stage.dataset.open = String(open);
+      button.setAttribute('aria-expanded', String(open));
+      stage.querySelector('.stage-body').hidden = !open;
+    }));
+  </script>
+</body>
+</html>

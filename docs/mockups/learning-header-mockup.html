@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BMS · Mockup เมนูศูนย์เรียนรู้</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Noto Sans Thai", "Thonburi", "Segoe UI", sans-serif; color: #14243d; background: #f7f9fc; font-synthesis: none; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    button { font: inherit; cursor: pointer; }
+    a { color: inherit; text-decoration: none; }
+    :focus-visible { outline: 3px solid #8fc2ff; outline-offset: 3px; }
+    .header { position: relative; z-index: 5; height: 76px; border-bottom: 1px solid #e0e8f2; background: #fff; box-shadow: 0 3px 16px #1a3c6408; }
+    .header-inner { display: flex; align-items: center; gap: 28px; max-width: 1380px; height: 100%; margin: auto; padding: 0 30px; }
+    .brand { display: flex; flex: none; align-items: center; gap: 11px; white-space: nowrap; }
+    .brand-icon { display: grid; place-items: center; width: 37px; height: 37px; border-radius: 10px; background: #eaf3fa; }
+    .brand-icon svg { width: 23px; height: 23px; }
+    .brand strong { font-size: 22px; font-weight: 800; letter-spacing: -.04em; }
+    .brand-divider { width: 1px; height: 25px; margin: 0 3px; background: #d9e2ee; }
+    .brand-label { color: #61748e; font-size: 14px; font-weight: 700; }
+    .mockup-badge { padding: 5px 9px; border: 1px solid #c8dafa; border-radius: 999px; background: #f2f8ff; color: #2366bb; font-size: 10px; font-weight: 800; letter-spacing: .05em; }
+    .desktop-nav { display: flex; align-items: center; justify-content: center; gap: 7px; flex: 1; height: 100%; }
+    .nav-link, .nav-trigger { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 0 13px; border: 0; border-radius: 9px; background: transparent; color: #334966; font-size: 13px; font-weight: 700; white-space: nowrap; }
+    .nav-link:hover, .nav-trigger:hover, .nav-trigger[aria-expanded="true"] { background: #f1f6ff; color: #1266d6; }
+    .nav-link.current { background: #eaf3ff; color: #1267d8; }
+    .chevron { width: 7px; height: 7px; margin-top: -3px; border-right: 1.7px solid currentColor; border-bottom: 1.7px solid currentColor; transform: rotate(45deg); transition: transform .15s; }
+    .nav-trigger[aria-expanded="true"] .chevron { transform: translateY(3px) rotate(225deg); }
+    .header-actions { display: flex; flex: none; align-items: center; gap: 10px; }
+    .lang { display: grid; place-items: center; width: 43px; height: 39px; border: 1px solid #d8e1ec; border-radius: 9px; background: #fff; color: #293d59; font-size: 13px; font-weight: 750; }
+    .cta { display: grid; place-items: center; min-width: 119px; height: 39px; padding: 0 15px; border-radius: 9px; background: #1c70e4; color: #fff; font-size: 13px; font-weight: 750; white-space: nowrap; }
+    .cta:hover { background: #0e5fc7; }
+    .menu-toggle { display: none; align-items: center; justify-content: center; width: 42px; height: 42px; border: 1px solid #d8e1ec; border-radius: 10px; background: #fff; color: #243c58; }
+    .menu-toggle svg { width: 20px; height: 20px; }
+    .dropdown { position: absolute; top: calc(100% - 1px); left: 50%; width: min(700px, calc(100vw - 36px)); padding: 20px; border: 1px solid #d8e4f1; border-radius: 0 0 16px 16px; background: #fff; box-shadow: 0 22px 42px #132d4f20; transform: translateX(-50%); }
+    .dropdown[hidden], .mobile-menu[hidden] { display: none; }
+    .dropdown-head { display: flex; justify-content: space-between; align-items: baseline; gap: 15px; margin-bottom: 15px; }
+    .dropdown-head strong { font-size: 16px; }
+    .dropdown-head span { color: #8190a5; font-size: 12px; }
+    .dropdown-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .dropdown-grid a { display: flex; align-items: center; gap: 11px; min-height: 56px; padding: 11px 12px; border: 1px solid transparent; border-radius: 10px; color: #2d4462; font-size: 13px; font-weight: 650; }
+    .dropdown-grid a:hover { border-color: #d8e6fa; background: #f5f9ff; color: #1162cc; }
+    .menu-icon { display: grid; flex: none; place-items: center; width: 31px; height: 31px; border-radius: 9px; background: #edf5ff; color: #176bd8; font-size: 15px; }
+    .mobile-menu { display: none; }
+    .page { max-width: 1050px; margin: auto; padding: 36px 24px 80px; }
+    .breadcrumb { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; color: #7b8da4; font-size: 13px; }
+    .breadcrumb strong { color: #45617f; }
+    .hero { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(230px, .8fr); align-items: center; gap: 35px; padding: 47px 50px; border: 1px solid #c9dcf3; border-radius: 20px; background: linear-gradient(115deg, #fff, #eaf4ff); }
+    .eyebrow { display: inline-flex; padding: 7px 11px; border-radius: 999px; background: #e7f2ff; color: #1768d3; font-size: 12px; font-weight: 750; }
+    .hero h1 { margin: 15px 0 10px; font-size: clamp(31px, 3.2vw, 43px); letter-spacing: -.045em; line-height: 1.25; }
+    .hero p { max-width: 500px; margin: 0; color: #637994; font-size: 15px; line-height: 1.8; }
+    .hero-button { display: inline-flex; margin-top: 24px; padding: 11px 17px; border: 0; border-radius: 10px; background: #1c70e4; color: #fff; font-weight: 750; }
+    .preview { display: grid; gap: 10px; padding: 20px; border: 1px solid #dce9f6; border-radius: 16px; background: #ffffffc9; }
+    .preview strong { margin-bottom: 3px; color: #395372; font-size: 13px; }
+    .preview-row { display: flex; align-items: center; gap: 10px; color: #456382; font-size: 12px; font-weight: 650; }
+    .preview-row b { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 7px; background: #e7f2ff; color: #1c70e4; font-size: 10px; }
+    .section-head { margin: 42px 0 17px; }
+    .section-head h2 { margin: 0 0 6px; font-size: 23px; }
+    .section-head p { margin: 0; color: #7589a2; font-size: 14px; }
+    .stage-row { display: flex; align-items: center; gap: 16px; min-height: 78px; margin-top: 10px; padding: 15px 20px; border: 1px solid #dce6f2; border-radius: 13px; background: #fff; }
+    .stage-row b { display: grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 11px; background: #ebf4ff; color: #1768d7; }
+    .stage-row div { min-width: 0; flex: 1; }
+    .stage-row strong { display: block; font-size: 14px; }
+    .stage-row small { display: block; margin-top: 3px; color: #8291a6; font-size: 12px; }
+    .stage-row span { color: #6681a0; font-size: 12px; font-weight: 700; }
+    .toast { position: fixed; z-index: 20; left: 50%; bottom: 24px; max-width: calc(100vw - 32px); padding: 11px 16px; border-radius: 10px; background: #193b5f; box-shadow: 0 14px 28px #132b4b42; color: #fff; font-size: 13px; opacity: 0; pointer-events: none; text-align: center; transform: translate(-50%, 12px); transition: opacity .2s, transform .2s; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    @media (max-width: 1080px) { .desktop-nav, .header-actions .cta { display: none; } .header-inner { gap: 16px; } .header-actions { margin-left: auto; } .menu-toggle { display: inline-flex; } }
+    @media (max-width: 1080px) {
+      .mobile-menu { position: absolute; top: calc(100% - 1px); right: 0; left: 0; display: block; max-height: calc(100dvh - 76px); overflow: auto; padding: 16px 24px 23px; border-bottom: 1px solid #dce6f2; background: #fff; box-shadow: 0 18px 28px #132d4f18; }
+      .mobile-menu a { display: block; padding: 11px 12px; border-radius: 9px; color: #2b4563; font-size: 14px; font-weight: 650; }
+      .mobile-menu a:hover, .mobile-menu a.current { background: #eaf3ff; color: #1269d8; }
+      .mobile-menu h2 { margin: 16px 12px 6px; color: #8a99ac; font-size: 11px; letter-spacing: .07em; }
+      .mobile-menu hr { border: 0; border-top: 1px solid #e7edf5; }
+      .mobile-menu .mobile-cta { margin-top: 15px; background: #1c70e4; color: #fff; text-align: center; }
+    }
+    @media (max-width: 700px) {
+      .header { height: 64px; }
+      .header-inner { padding-inline: 16px; }
+      .brand { gap: 8px; }
+      .brand strong { font-size: 19px; }
+      .brand-icon { width: 33px; height: 33px; }
+      .brand-divider, .brand-label { display: none; }
+      .mockup-badge { font-size: 9px; }
+      .header-actions { gap: 8px; }
+      .lang { width: 38px; height: 38px; }
+      .mobile-menu { max-height: calc(100dvh - 64px); padding-inline: 14px; }
+      .page { padding: 22px 16px 60px; }
+      .breadcrumb { margin-bottom: 16px; font-size: 12px; }
+      .hero { grid-template-columns: 1fr; gap: 24px; padding: 29px 23px; border-radius: 17px; }
+      .hero h1 { font-size: 31px; }
+      .hero p { font-size: 14px; }
+      .preview { padding: 15px; }
+      .section-head { margin-top: 32px; }
+      .stage-row { gap: 11px; padding: 13px; }
+      .stage-row span { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; } }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="#" data-demo-link aria-label="BMS ศูนย์เรียนรู้"><span class="brand-icon" aria-hidden="true"><svg viewBox="0 0 100 100" fill="#3C8DBC"><rect x="17" y="43" width="17" height="36" rx="8.5"/><rect x="42" y="55" width="17" height="24" rx="8.5"/><rect x="67" y="28" width="17" height="51" rx="8.5"/></svg></span><strong>BMS</strong><span class="brand-divider" aria-hidden="true"></span><span class="brand-label">ศูนย์เรียนรู้</span></a>
+      <span class="mockup-badge">MOCKUP</span>
+      <nav class="desktop-nav" aria-label="คู่มือ"><a class="nav-link" href="#" data-demo-link>คู่มือทั้งหมด</a><a class="nav-link current" href="#" data-demo-link aria-current="page">เริ่มต้นใช้งาน</a><button class="nav-trigger" type="button" data-menu="business" aria-expanded="false" aria-controls="business-menu">ประเภทร้าน <span class="chevron" aria-hidden="true"></span></button><button class="nav-trigger" type="button" data-menu="specialist" aria-expanded="false" aria-controls="specialist-menu">งานเฉพาะทาง <span class="chevron" aria-hidden="true"></span></button></nav>
+      <div class="header-actions"><button class="lang" type="button" data-demo-button aria-label="เปลี่ยนภาษา">EN</button><a class="cta" href="#" data-demo-link>เริ่มใช้ฟรี →</a><button class="menu-toggle" type="button" id="mobile-toggle" aria-label="เปิดเมนูคู่มือ" aria-expanded="false" aria-controls="mobile-menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button></div>
+    </div>
+    <div class="dropdown" id="business-menu" hidden><div class="dropdown-head"><strong>คู่มือตามประเภทร้าน</strong><span>เลือกงานที่ตรงกับร้านของคุณ</span></div><div class="dropdown-grid"><a href="#" data-demo-link><span class="menu-icon">▦</span>ค้าปลีกและค้าส่ง</a><a href="#" data-demo-link><span class="menu-icon">♟</span>บอร์ดเกม</a><a href="#" data-demo-link><span class="menu-icon">☕</span>ร้านอาหารและคาเฟ่</a><a href="#" data-demo-link><span class="menu-icon">✚</span>ร้านขายยา</a><a href="#" data-demo-link><span class="menu-icon">▰</span>วัสดุก่อสร้าง (ทดลอง)</a></div></div>
+    <div class="dropdown" id="specialist-menu" hidden><div class="dropdown-head"><strong>คู่มือเฉพาะงาน</strong><span>เปิดดูเมื่อต้องทำงานส่วนนั้น</span></div><div class="dropdown-grid"><a href="#" data-demo-link><span class="menu-icon">▣</span>สต็อกและคลังสินค้า</a><a href="#" data-demo-link><span class="menu-icon">▤</span>POS และอุปกรณ์</a><a href="#" data-demo-link><span class="menu-icon">◉</span>LINE OA + AI</a><a href="#" data-demo-link><span class="menu-icon">◇</span>แก้ปัญหาหน้างาน</a><a href="#" data-demo-link><span class="menu-icon">✓</span>Checklist ก่อนเปิดจริง</a><a href="#" data-demo-link><span class="menu-icon">20</span>ร้าน 20 บาท (ทดลอง)</a><a href="#" data-demo-link><span class="menu-icon">▥</span>โรงงานเชือกและหลอด (ทดลอง)</a></div></div>
+    <nav class="mobile-menu" id="mobile-menu" aria-label="เมนูคู่มือมือถือ" hidden><a href="#" data-demo-link>คู่มือทั้งหมด</a><a class="current" href="#" data-demo-link aria-current="page">เริ่มต้นใช้งาน</a><h2>คู่มือตามประเภทร้าน</h2><a href="#" data-demo-link>ค้าปลีกและค้าส่ง</a><a href="#" data-demo-link>บอร์ดเกม</a><a href="#" data-demo-link>ร้านอาหารและคาเฟ่</a><a href="#" data-demo-link>ร้านขายยา</a><a href="#" data-demo-link>วัสดุก่อสร้าง (ทดลอง)</a><hr><h2>คู่มือเฉพาะงาน</h2><a href="#" data-demo-link>สต็อกและคลังสินค้า</a><a href="#" data-demo-link>POS และอุปกรณ์</a><a href="#" data-demo-link>LINE OA + AI</a><a href="#" data-demo-link>แก้ปัญหาหน้างาน</a><a href="#" data-demo-link>Checklist ก่อนเปิดจริง</a><a href="#" data-demo-link>ร้าน 20 บาท (ทดลอง)</a><a href="#" data-demo-link>โรงงานเชือกและหลอด (ทดลอง)</a><a class="mobile-cta" href="#" data-demo-link>เริ่มใช้ฟรี →</a></nav>
+  </header>
+  <main class="page"><nav class="breadcrumb" aria-label="ตำแหน่งหน้า"><span>ศูนย์เรียนรู้</span><span>/</span><strong>เริ่มต้นใช้งานและตั้งค่าร้าน</strong></nav><section class="hero"><div><span class="eyebrow">คู่มือเริ่มต้น · 16 บทเรียน</span><h1>เริ่มต้น BMS<br>แบบทีละขั้น</h1><p>จากสมัครร้านไปจนตรวจความพร้อมก่อนเปิดจริง อ่านได้โดยไม่ต้องเข้าสู่ระบบ แล้วเลือกทำตามขั้นตอนที่เกี่ยวกับร้านของคุณ</p><button class="hero-button" type="button" data-demo-button>เริ่มบทแรก →</button></div><div class="preview"><strong>เส้นทางการเรียนรู้</strong><span class="preview-row"><b>01</b> รู้จักระบบและสมัคร</span><span class="preview-row"><b>02</b> ตั้งค่าร้านและทีม</span><span class="preview-row"><b>03</b> ช่องทางและ POS</span><span class="preview-row"><b>04</b> ตรวจผลก่อนเปิดจริง</span></div></section><div class="section-head"><h2>เลือกช่วงที่ต้องการเริ่ม</h2><p>บทเรียนทั้ง 16 เรียงตามลำดับ แต่เลือกอ่านเรื่องที่ต้องใช้ก่อนได้</p></div><div class="stage-row"><b>01</b><div><strong>รู้จักระบบและสมัคร</strong><small>ภาพรวม สมัครร้าน และบัญชีของคุณ</small></div><span>3 บทเรียน</span></div><div class="stage-row"><b>02</b><div><strong>ตั้งค่าร้านและทีม</strong><small>ข้อมูลร้าน สาขา Dashboard และสิทธิ์พนักงาน</small></div><span>3 บทเรียน</span></div></main>
+  <div class="toast" id="toast" role="status" aria-live="polite">นี่เป็น mockup สำหรับดูรูปแบบเมนู ยังไม่เชื่อมต่อปลายทางจริง</div>
+  <script>
+    const triggers = [...document.querySelectorAll('.nav-trigger')];
+    const mobileToggle = document.getElementById('mobile-toggle');
+    const mobileMenu = document.getElementById('mobile-menu');
+    const toast = document.getElementById('toast');
+    let toastTimer;
+    function showToast() { toast.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove('show'), 3000); }
+    function closeDesktop() { triggers.forEach(button => { button.setAttribute('aria-expanded', 'false'); document.getElementById(button.getAttribute('aria-controls')).hidden = true; }); }
+    function closeMobile() { mobileToggle.setAttribute('aria-expanded', 'false'); mobileToggle.setAttribute('aria-label', 'เปิดเมนูคู่มือ'); mobileMenu.hidden = true; }
+    triggers.forEach(button => button.addEventListener('click', () => { const menu = document.getElementById(button.getAttribute('aria-controls')); const open = button.getAttribute('aria-expanded') !== 'true'; closeDesktop(); closeMobile(); button.setAttribute('aria-expanded', String(open)); menu.hidden = !open; }));
+    mobileToggle.addEventListener('click', () => { const open = mobileToggle.getAttribute('aria-expanded') !== 'true'; closeDesktop(); mobileToggle.setAttribute('aria-expanded', String(open)); mobileToggle.setAttribute('aria-label', open ? 'ปิดเมนูคู่มือ' : 'เปิดเมนูคู่มือ'); mobileMenu.hidden = !open; });
+    document.querySelectorAll('[data-demo-link], [data-demo-button]').forEach(el => el.addEventListener('click', event => { event.preventDefault(); closeDesktop(); closeMobile(); showToast(); }));
+    document.addEventListener('click', event => { if (!event.target.closest('.header')) { closeDesktop(); closeMobile(); } });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') { const desktopOpen = triggers.find(button => button.getAttribute('aria-expanded') === 'true'); const mobileOpen = mobileToggle.getAttribute('aria-expanded') === 'true'; closeDesktop(); closeMobile(); if (desktopOpen) desktopOpen.focus(); else if (mobileOpen) mobileToggle.focus(); } });
+    window.addEventListener('resize', () => { closeDesktop(); closeMobile(); });
+  </script>
+</body>
+</html>
