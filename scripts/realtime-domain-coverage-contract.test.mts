@@ -239,6 +239,9 @@ const POLLED_OPERATIONAL_SURFACE = [
   // Fish intake page refreshes its bounded recent list after confirmed writes;
   // live/opening stock itself uses the canonical inventory movement path.
   "bms_fish_intakes", "bms_fish_intake_lines",
+  // Value-only fish cost evidence refreshes with the receipt detail after confirmation;
+  // no physical stock event is emitted because quantity and lots do not change.
+  "bms_fish_late_cost_adjustments",
   // Fish owner view loads bounded evidence on open and refreshes after each confirmed count/plan/link.
   // These sidecars never move stock or money; canonical order/stock paths emit their own events.
   "bms_fish_storage_counts", "bms_fish_storage_count_lines",

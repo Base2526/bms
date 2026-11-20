@@ -365,7 +365,7 @@ export async function listFishIntakes(tenantId: string, actorId: string, limit =
   finally { client.release(); }
 }
 
-/** Immutable receipt evidence, scoped exactly like the recent list. */
+/** Original receipt evidence plus append-only later cost evidence, scoped like the recent list. */
 export async function getFishIntake(tenantId: string, actorId: string, intakeId: string,
   allowedKinds: FishIntakeKind[] = ["HISTORICAL","LIVE","OPENING"]) {
   const client = await getClient();
@@ -400,11 +400,24 @@ export async function getFishIntake(tenantId: string, actorId: string, intakeId:
                extra_amount::text,quality,note,lot_no,expiry_date::text
           FROM bms_fish_intake_lines
          WHERE tenant_id=$1 AND intake_id=$2 ORDER BY line_no`,[tenantId,intakeId])).rows;
+    const adjustments=header.kind==="LIVE" ? (await client.query<{
+      id:string;line_no:number;category:string;amount:string;reason:string;reference:string|null;
+      created_by:string;actor_name:string|null;created_at:Date;
+    }>(`SELECT a.id,l.line_no,a.category,a.amount::text,a.reason,a.reference,
+               a.created_by::text,u.name AS actor_name,a.created_at
+          FROM bms_fish_late_cost_adjustments a
+          JOIN bms_fish_intake_lines l ON l.tenant_id=a.tenant_id AND l.id=a.intake_line_id
+          LEFT JOIN users u ON u.id=a.created_by AND u.tenant_id=a.tenant_id
+         WHERE a.tenant_id=$1 AND a.intake_id=$2
+         ORDER BY a.created_at,a.id`,[tenantId,intakeId])).rows : [];
     await client.query("COMMIT");
     return {id:header.id,kind:header.kind,locationId:header.location_id,
       locationName:header.location_name,sourceName:header.source_name,sourceSheet:header.source_sheet,
       sourceYear:header.source_year,note:header.note,
       createdAt:header.created_at instanceof Date?header.created_at.toISOString():String(header.created_at),
+      adjustments:adjustments.map(a=>({id:a.id,lineNo:a.line_no,category:a.category,amount:a.amount,
+        reason:a.reason,reference:a.reference,actorId:a.created_by,actorName:a.actor_name,
+        createdAt:a.created_at instanceof Date?a.created_at.toISOString():String(a.created_at)})),
       lines:lines.map(line=>({lineNo:line.line_no,sourceRow:line.source_row,billDate:line.bill_date,
         receivedDate:line.received_date,supplierName:line.supplier_name,
         vesselRegistration:line.vessel_registration,fishName:line.fish_name,billSize:line.bill_size,
