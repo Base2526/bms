@@ -76,11 +76,58 @@ without hiding lesson content. Desktop keeps the sticky section sidebar; phones 
 a native collapsed section menu after the introduction, operable without JavaScript. Previous/next,
 reading progress, print, copy-link and related lessons remain available with compact controls.
 
-At widths up to 1100px the shared header is one 61px row with the brand and a 44px menu control.
-The native disclosure opens an overlaid navigation panel containing guide links, language and the
-session-aware shop action. It supports keyboard activation, Escape with focus return, outside-click
-dismissal and closes after navigation or switching to desktop. Guide links also work without JS.
-Desktop keeps the expanded navigation; the menu does not push article content down when opened.
+The shared header now keeps four desktop choices: All guides, Getting started, Business types and
+Specialist guides. The latter two are native disclosure menus, so their server-rendered links remain
+available without JavaScript. The Business types menu contains the five business tracks; Specialist
+guides contains inventory, both pilot paths, POS and hardware, LINE OA + AI, troubleshooting and the
+launch checklist. The brand still goes home, and the original sidebar and footer stay available.
+LanguageControl remains in the header and preserves the current path, query and hash. StoreLink
+continues to determine its destination from the account state; it appears beside the desktop menu
+and inside the mobile disclosure.
+
+At widths up to 1100px the header stays on one row with the brand, language control and a 44px
+menu control. The native mobile disclosure opens an overlaid scrollable panel with the same links.
+Both desktop and mobile disclosures support keyboard activation, Escape with focus return,
+outside-click dismissal, link selection and viewport resize dismissal. They do not push article
+content down or widen the page. The skip link and print behavior remain unchanged.
+
+Header navigation parity (all destinations are localized with `localizedPublicPath()`):
+
+| Destination | Before | Desktop now | Mobile now |
+| --- | --- | --- | --- |
+| `/` | Brand | Brand | Brand |
+| `/learn` | Flat header link; sidebar link | Direct choice; sidebar link | First menu link; sidebar link |
+| `/learn/getting-started` | Flat header link; sidebar link | Direct choice; sidebar link | Second menu link; sidebar link |
+| `/learn/retail` | Flat header link; sidebar link | Business types; sidebar link | Business guides group; sidebar link |
+| `/learn/board-game` | Flat header link; sidebar link | Business types; sidebar link | Business guides group; sidebar link |
+| `/learn/restaurant` | Flat header link; sidebar link | Business types; sidebar link | Business guides group; sidebar link |
+| `/learn/pharmacy` | Flat header link; sidebar link | Business types; sidebar link | Business guides group; sidebar link |
+| `/learn/building-materials` | Flat header link; sidebar link, pilot label | Business types; sidebar link, pilot label | Business guides group; sidebar link, pilot label |
+| `/learn/inventory` | Flat header link; sidebar link | Specialist guides; sidebar link | Specialist guides group; sidebar link |
+| `/learn/twenty-baht-shop` | Flat header link; sidebar link, pilot label | Specialist guides; sidebar link, pilot label | Specialist guides group; sidebar link, pilot label |
+| `/learn/factory-twine-straw` | Flat header link; sidebar link, pilot label | Specialist guides; sidebar link, pilot label | Specialist guides group; sidebar link, pilot label |
+| `/learn/guides/pos-devices` | Sidebar link | Also in Specialist guides | Also in Specialist guides group |
+| `/learn/guides/line-ai-booking` | Sidebar link | Also in Specialist guides | Also in Specialist guides group |
+| `/learn/guides/outages-support` | Sidebar link | Also in Specialist guides | Also in Specialist guides group |
+| `/learn/guides/launch-checklist` | Sidebar link | Also in Specialist guides | Also in Specialist guides group |
+| `/support` | Footer link | Footer link | Footer link |
+| `/help` | Footer link | Footer link | Footer link |
+| `/privacy` | Footer link | Footer link | Footer link |
+
+The existing LanguageControl moves from duplicated navigation lists to one always-visible header
+button. The existing StoreLink still appears on desktop and inside the mobile menu, including its
+loading and error states. The sidebar, search and filters, reading checklist, article content,
+metadata and canonical URLs are unchanged.
+
+| Behavior | Before | Now |
+| --- | --- | --- |
+| Language | Shared `LanguageControl` in both navigation layouts | Same control beside the brand/actions; preserves path, query and hash |
+| Shop action | Shared `StoreLink` in both navigation layouts | Same control beside desktop choices and in the mobile panel; preserves anonymous, signed-in, loading and error destinations/states |
+| Mobile navigation | Native disclosure with guide links | Native scrollable overlay, grouped links, keyboard activation, Escape/focus return, outside click, link and resize dismissal |
+| Desktop navigation | Flat links | Two direct links and two native disclosure overlays with the same dismissal behavior |
+| No JavaScript | Server-rendered links and native mobile disclosure | Server-rendered links and native desktop/mobile disclosures |
+| Accessibility and layout | Skip link, sidebar, footer, print styles | Same skip link, sidebar, footer and print styles; overlays do not shift or widen content |
+| Learning pages | Lessons, search/filter, checklist and SEO | Same pages and behavior; no lesson content changed |
 
 `/learn` skips SessionLayer (not the auth-route gate) so the article HTML remains server-rendered and
 does not initialize global chat/realtime. A small session-aware CTA reads `/api/auth/me` only.
@@ -152,7 +199,7 @@ send guide text or shop data to a TTS provider at runtime. The factory recording
 - `cd apps/web && npm run build`
 
 The browser smoke uses read-only routes and isolated auth fixtures. It checks Thai/light and
-English/dark at 1440, 390 and 320px; search/no-match; progress persistence; print; article language
+English/dark at 1440, 1100, 390 and 320px; search/no-match; progress persistence; print; article language
 switching; signed-in CTAs; no public business API calls; JavaScript-disabled SSR; canonical links;
 sitemap and missing articles. Screenshots go to a fresh OS temporary directory.
 It also follows every board-game contents link in both languages and checks rendered steps and

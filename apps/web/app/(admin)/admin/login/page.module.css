@@ -1,0 +1,394 @@
+.page {
+  --login-surface: #fff;
+  --login-field: #fff;
+  --login-text: #17243b;
+  --login-muted: #65778b;
+  --login-border: #dce7f1;
+  --login-notice: #f7fafd;
+  display: grid;
+  grid-template-columns: minmax(0, 48%) minmax(0, 52%);
+  min-height: 100dvh;
+  color: var(--login-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Noto Sans Thai", "Thonburi", "Segoe UI", sans-serif;
+}
+
+.brandPanel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  padding: clamp(28px, 4vw, 58px) clamp(32px, 5.4vw, 88px) 36px;
+  background: radial-gradient(circle at 95% 20%, #174f8d 0, transparent 38%),
+    radial-gradient(circle at -15% 90%, #174771 0, transparent 40%), #0a2441;
+  color: #fff;
+}
+
+.brandPanel::after {
+  position: absolute;
+  right: -170px;
+  bottom: -215px;
+  width: 650px;
+  height: 650px;
+  border: 1px solid #8fc7ff24;
+  border-radius: 50%;
+  box-shadow: 0 0 0 95px #8fc7ff08, 0 0 0 190px #8fc7ff06;
+  content: "";
+  pointer-events: none;
+}
+
+.brand,
+.brandCopy,
+.brandFoot {
+  position: relative;
+  z-index: 1;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.brandMark {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  box-shadow: 0 6px 20px #04162a45;
+}
+
+.brandName,
+.brandCaption {
+  display: block;
+}
+
+.brandName {
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  line-height: 1;
+}
+
+.brandCaption {
+  margin-top: 4px;
+  color: #b1d0ed;
+  font-size: 11px;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.brandCopy {
+  margin-top: auto;
+  padding-top: 95px;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: #89c9ff;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: .1em;
+}
+
+.eyebrow::before {
+  width: 24px;
+  height: 2px;
+  background: #64bdff;
+  content: "";
+}
+
+.brandTitle {
+  max-width: 570px;
+  margin: 19px 0 16px;
+  color: #fff;
+  font-size: clamp(39px, 3.9vw, 62px);
+  font-weight: 760;
+  letter-spacing: -.055em;
+  line-height: 1.17;
+}
+
+.brandTitle span {
+  color: #8ccaff;
+}
+
+.brandCopy p {
+  max-width: 500px;
+  margin: 0;
+  color: #b9d0e5;
+  font-size: 16px;
+  line-height: 1.85;
+}
+
+.flowCard {
+  max-width: 555px;
+  margin-top: 42px;
+  padding: 23px 24px 24px;
+  border: 1px solid #9ac4e934;
+  border-radius: 20px;
+  background: linear-gradient(145deg, #ffffff13, #ffffff08);
+  box-shadow: 0 20px 45px #02182b30;
+}
+
+.flowTitle {
+  color: #b7d5ed;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 15px;
+}
+
+.flowStep {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.flowArrow {
+  color: #75b8ef;
+  font-size: 12px;
+}
+
+.flowLabel {
+  padding: 7px 10px;
+  border: 1px solid #b2d8fa38;
+  border-radius: 8px;
+  background: #b8dcff12;
+  color: #e8f5ff;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.brandFoot {
+  margin: auto 0 0;
+  padding-top: 52px;
+  color: #91b5d3;
+  font-size: 12px;
+}
+
+.entryPanel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 80px clamp(26px, 6vw, 112px) 52px;
+  background: radial-gradient(circle at 105% -15%, #e5f2ff 0, transparent 40%), #f9fbfd;
+}
+
+.entry {
+  width: min(100%, 450px);
+}
+
+.entryHead {
+  margin-bottom: 32px;
+}
+
+.areaBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border: 1px solid #cfe5f7;
+  border-radius: 999px;
+  background: #edf7ff;
+  color: #206394;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.entryHead h2 {
+  margin: 17px 0 9px;
+  color: var(--login-text);
+  font-size: clamp(30px, 3vw, 38px);
+  font-weight: 760;
+  letter-spacing: -.04em;
+  line-height: 1.3;
+}
+
+.entryHead p {
+  margin: 0;
+  color: var(--login-muted);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.formCard {
+  padding: 31px 32px 27px;
+  border: 1px solid var(--login-border);
+  border-radius: 20px;
+  background: var(--login-surface);
+  box-shadow: 0 20px 60px #1b436a0e, 0 3px 12px #1b436a08;
+}
+
+.formCard :global(.ant-form-item) {
+  margin-bottom: 21px;
+}
+
+.formCard :global(.ant-form-item-label) {
+  padding-bottom: 9px;
+}
+
+.formCard :global(.ant-form-item-label > label) {
+  color: var(--login-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.formCard :global(.ant-input),
+.formCard :global(.ant-input-affix-wrapper) {
+  min-height: 48px;
+  border-color: #cbd8e5;
+  border-radius: 10px;
+  background: var(--login-field);
+  color: var(--login-text);
+}
+
+.formCard :global(.ant-input-affix-wrapper .ant-input) {
+  min-height: 0;
+  border: 0;
+  background: transparent;
+}
+
+.formCard :global(.ant-input::placeholder) {
+  color: #9aa8b8;
+}
+
+.formCard :global(.ant-input:focus),
+.formCard :global(.ant-input-affix-wrapper-focused) {
+  border-color: #2883e3;
+  box-shadow: 0 0 0 3px #dbeeff;
+}
+
+.forgotLink {
+  margin: -7px 0 24px;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: right;
+}
+
+.forgotLink a,
+.guide a {
+  color: #1261cf;
+}
+
+.submitButton:global(.ant-btn) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 49px;
+  border-radius: 10px;
+  background: #176fdf;
+  box-shadow: 0 6px 14px #176fdf2b;
+  font-weight: 750;
+}
+
+.submitButton:global(.ant-btn):hover {
+  background: #0e5ec5;
+}
+
+.adminNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 23px 0 0;
+  padding: 13px 14px;
+  border: 1px solid var(--login-border);
+  border-radius: 10px;
+  background: var(--login-notice);
+  color: var(--login-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.adminNotice :global(.anticon) {
+  flex: none;
+  margin-top: 2px;
+  color: #638db6;
+  font-size: 16px;
+}
+
+.guide {
+  margin-top: 22px;
+  padding: 0 3px;
+  color: var(--login-muted);
+  font-size: 13px;
+}
+
+.guide :global(nav) {
+  align-items: baseline !important;
+}
+
+.guide :global(nav > span) {
+  color: var(--login-text);
+  font-weight: 700;
+}
+
+:global(html.dark) .page {
+  --login-surface: #172335;
+  --login-field: #1d2b3f;
+  --login-text: #f1f5fb;
+  --login-muted: #acbdd0;
+  --login-border: #34465d;
+  --login-notice: #1d2d42;
+}
+
+:global(html.dark) .entryPanel {
+  background: radial-gradient(circle at 105% -15%, #1b3555 0, transparent 40%), #101b2b;
+}
+
+:global(html.dark) .areaBadge {
+  border-color: #31587c;
+  background: #19324d;
+  color: #9fcfff;
+}
+
+:global(html.dark) .formCard {
+  box-shadow: 0 20px 60px #020b1690;
+}
+
+:global(html.dark) .formCard :global(.ant-input),
+:global(html.dark) .formCard :global(.ant-input-affix-wrapper) {
+  border-color: var(--login-border);
+}
+
+:global(html.dark) .forgotLink a,
+:global(html.dark) .guide a {
+  color: #80b8ff;
+}
+
+@media (max-width: 900px) {
+  .page { grid-template-columns: minmax(0, 42%) minmax(0, 58%); }
+  .brandPanel { padding-inline: 30px; }
+  .brandTitle { font-size: 38px; }
+  .flowCard { padding: 17px; }
+  .entryPanel { padding-inline: 28px; }
+}
+
+@media (max-width: 700px) {
+  .page { display: block; }
+  .brandPanel { padding: 27px 24px 33px; }
+  .brandPanel::after { right: -300px; bottom: -520px; }
+  .brandCopy { margin-top: 0; padding-top: 38px; }
+  .brandTitle { max-width: 430px; margin: 12px 0 0; font-size: clamp(27px, 7vw, 37px); }
+  .brandCopy p, .flowCard, .brandFoot { display: none; }
+  .entryPanel { padding: 35px 20px 42px; }
+  .entry { max-width: 480px; }
+  .entryHead { margin-bottom: 23px; }
+  .entryHead h2 { margin-top: 13px; font-size: 27px; }
+  .formCard { padding: 25px 21px 23px; border-radius: 16px; }
+}
+
+@media (max-width: 390px) {
+  .brandPanel { padding-inline: 19px; }
+  .entryPanel { padding-inline: 14px; }
+}

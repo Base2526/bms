@@ -10,30 +10,47 @@ import s from "./learning.module.css";
 import { localizedPublicPath, localeFromPublicPath, stripPublicLocale } from "@/lib/publicSeo";
 
 type Lang = "th" | "en";
-export function MobileNavigation({ lang, children }: { lang: Lang; children: React.ReactNode }) {
+function HeaderDetails({ lang, label, mobile, children }: { lang: Lang; label: string; mobile: boolean; children: React.ReactNode }) {
   const ref = useRef<HTMLDetailsElement>(null);
   const pathname = usePathname();
-  useEffect(() => { if (ref.current) ref.current.open = false; }, [pathname, lang]);
+  const lastRoute = useRef({ pathname, lang });
+  useEffect(() => {
+    const changed = lastRoute.current.pathname !== pathname || lastRoute.current.lang !== lang;
+    lastRoute.current = { pathname, lang };
+    if (changed && ref.current) ref.current.open = false;
+  }, [pathname, lang]);
   useEffect(() => {
     const closeOutside = (event: PointerEvent) => {
       if (event.target instanceof Node && ref.current && !ref.current.contains(event.target)) ref.current.open = false;
     };
-    const desktop = window.matchMedia("(min-width: 851px)");
-    const closeOnDesktop = () => { if (desktop.matches && ref.current) ref.current.open = false; };
+    const closeOnResize = () => { if (ref.current) ref.current.open = false; };
     document.addEventListener("pointerdown", closeOutside);
-    desktop.addEventListener("change", closeOnDesktop);
-    return () => { document.removeEventListener("pointerdown", closeOutside); desktop.removeEventListener("change", closeOnDesktop); };
+    window.addEventListener("resize", closeOnResize);
+    return () => { document.removeEventListener("pointerdown", closeOutside); window.removeEventListener("resize", closeOnResize); };
   }, []);
-  return <details ref={ref} className={s.mobileMenu} onKeyDown={(event) => {
+  return <details ref={ref} data-learning-header-menu={mobile ? "mobile" : "desktop"} className={mobile ? s.mobileMenu : s.headerDropdown} onToggle={() => {
+    if (!ref.current?.open) return;
+    document.querySelectorAll<HTMLDetailsElement>('header details[data-learning-header-menu]').forEach((other) => {
+      if (other !== ref.current) other.open = false;
+    });
+  }} onKeyDown={(event) => {
     if (event.key === "Escape" && ref.current?.open) {
       ref.current.open = false; ref.current.querySelector("summary")?.focus(); event.preventDefault();
     }
   }} onClick={(event) => {
-    if (event.target instanceof Element && event.target.closest("a,button") && ref.current) ref.current.open = false;
+    if (event.target instanceof Element && event.target.closest("a") && ref.current) ref.current.open = false;
   }}>
-    <summary><span aria-hidden="true">☰</span> {lang === "th" ? "เมนู" : "Menu"}</summary>
+    <summary>{mobile && <span aria-hidden="true">☰</span>}{label}{!mobile && <span className={s.menuChevron} aria-hidden="true" />}</summary>
     {children}
   </details>;
+}
+
+export function MobileNavigation({ lang, children }: { lang: Lang; children: React.ReactNode }) {
+  return <HeaderDetails lang={lang} label={lang === "th" ? "เมนู" : "Menu"} mobile>{children}</HeaderDetails>;
+}
+
+export function HeaderDropdown({ lang, label, children }: { lang: Lang; label: string; children: React.ReactNode }) {
+  return <HeaderDetails lang={lang} label={label} mobile={false}>{children}</HeaderDetails>;
 }
 
 const STORAGE_KEY = "bms.learning.read.v1";
