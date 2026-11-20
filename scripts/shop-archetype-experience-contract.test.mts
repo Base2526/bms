@@ -100,6 +100,10 @@ test("import examples model the archetype-specific product structure", () => {
   assert.equal(input("pet_supply").name, "อาหารแมว 1 กก.");
   assert.throws(() => validateProductFields({ ...input("pet_supply"), price: 0.035 }), /ราคาขาย.*2 ตำแหน่ง/);
   assert.throws(() => validateProductFields({ ...input("pet_supply"), cost_price: 0.035 }), /ต้นทุน.*2 ตำแหน่ง/);
+  assert.equal(validateProductFields({ ...input("pet_supply"), weight_grams: 0 }).weightGrams, 0);
+  assert.equal(validateProductFields({ ...input("pet_supply"), weight_grams: 1250 }).weightGrams, 1250);
+  assert.throws(() => validateProductFields({ ...input("pet_supply"), weight_grams: 12.9 }), /จำนวนเต็มกรัม/);
+  assert.throws(() => validateProductFields({ ...input("pet_supply"), weight_grams: -1 }), /จำนวนเต็มกรัม/);
   assert.equal(input("building_materials").base_unit, "BAG");
   assert.deepEqual(input("board_game_cafe").variant_codes, ["STANDARD", "JAPANESE"]);
 

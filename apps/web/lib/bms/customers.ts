@@ -1074,43 +1074,83 @@ export type UpsertCustomerInput = {
   name: string;
   phone?: string | null;
   note?: string | null;
-  tags?: string[];
+  tags?: string[] | null;
 };
 
-export async function upsertCustomer(tenantId: string, input: UpsertCustomerInput) {
-  const name = input.name.trim();
-  if (!name) throw new Error("ชื่อลูกค้าห้ามว่าง");
-  const phone = input.phone?.trim() || null;
-  const note = input.note?.trim() || null;
-  const tags = (input.tags ?? []).map((t) => t.trim()).filter(Boolean);
-
-  if (input.id) {
-    const res = await query(
-      `UPDATE bms_customers SET name=$3, phone=$4, note=$5, tags=$6, updated_at=now()
-        WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL
-        RETURNING id, name, phone, note, tags, created_at`,
-      [tenantId, input.id, name, phone, note, tags]
-    );
-    if (res.rowCount === 0) throw new Error("ไม่พบลูกค้า");
-    return res.rows[0];
-  }
-  const res = await query(
-    `INSERT INTO bms_customers (tenant_id, name, phone, note, tags)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, name, phone, note, tags, created_at`,
-    [tenantId, name, phone, note, tags]
+async function auditCustomerWrite(
+  client: PoolClient, tenantId: string, actorId: string, action: string, target: string,
+): Promise<void> {
+  if (!actorId) throw new Error("FORBIDDEN");
+  await client.query(
+    `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
+     VALUES($1,$2,$3,$4,'{}'::jsonb)`,
+    [tenantId, actorId, action, target],
   );
-  return res.rows[0];
 }
 
-export async function setCustomerTags(tenantId: string, id: string, tags: string[]) {
+export async function upsertCustomer(tenantId: string, input: UpsertCustomerInput, actorId: string) {
+  const name = input.name.trim();
+  if (!name) throw new Error("ชื่อลูกค้าห้ามว่าง");
+  const phone = input.phone === undefined ? undefined : input.phone?.trim() || null;
+  const note = input.note === undefined ? undefined : input.note?.trim() || null;
+  const tags = input.tags === undefined ? undefined : (input.tags ?? []).map((t) => t.trim()).filter(Boolean);
+
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorId });
+    if (input.id) {
+      const res = await client.query(
+      `UPDATE bms_customers SET name=$3,
+          phone=CASE WHEN $4::boolean THEN $5 ELSE phone END,
+          note=CASE WHEN $6::boolean THEN $7 ELSE note END,
+          tags=CASE WHEN $8::boolean THEN $9 ELSE tags END,
+          updated_at=now()
+        WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL
+        RETURNING id, name, phone, note, tags, created_at`,
+      [tenantId, input.id, name, phone !== undefined, phone ?? null,
+        note !== undefined, note ?? null, tags !== undefined, tags ?? null]
+      );
+      if (res.rowCount === 0) throw new Error("ไม่พบลูกค้า");
+      await auditCustomerWrite(client, tenantId, actorId, "customer.update", input.id);
+      await client.query("COMMIT");
+      return res.rows[0];
+    }
+    const res = await client.query(
+      `INSERT INTO bms_customers (tenant_id, name, phone, note, tags)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, name, phone, note, tags, created_at`,
+      [tenantId, name, phone ?? null, note ?? null, tags ?? []]
+    );
+    await auditCustomerWrite(client, tenantId, actorId, "customer.create", res.rows[0].id);
+    await client.query("COMMIT");
+    return res.rows[0];
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function setCustomerTags(tenantId: string, id: string, tags: string[], actorId: string) {
   const clean = (tags ?? []).map((t) => t.trim()).filter(Boolean);
-  const res = await query(
-    `UPDATE bms_customers SET tags=$3, updated_at=now()
-      WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL RETURNING id`,
-    [tenantId, id, clean]
-  );
-  return (res.rowCount ?? 0) > 0;
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorId });
+    const res = await client.query(
+      `UPDATE bms_customers SET tags=$3, updated_at=now()
+        WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL RETURNING id`,
+      [tenantId, id, clean]
+    );
+    if (res.rowCount) await auditCustomerWrite(client, tenantId, actorId, "customer.tags", id);
+    await client.query("COMMIT");
+    return (res.rowCount ?? 0) > 0;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 type CustomerAddressCodes = ThaiAddressCodes;
@@ -1121,13 +1161,16 @@ async function validateAddressCodes(client: PoolClient, codes: CustomerAddressCo
 
 export async function addCustomerAddress(
   tenantId: string, customerId: string, label: string | null, address: string, isDefault: boolean,
-  codes: CustomerAddressCodes = {}
+  actorId: string, codes: CustomerAddressCodes = {},
 ) {
   const addr = address.trim();
   if (!addr) throw new Error("ที่อยู่ห้ามว่าง");
   const client=await getClient();
-  try { await beginTenantTx(client,tenantId); const normalized=await validateAddressCodes(client,codes);
-    if(isDefault) await client.query(`UPDATE bms_customer_addresses SET is_default=false WHERE tenant_id=$1 AND customer_id=$2`,[tenantId,customerId]);
+  try { await beginTenantTx(client,tenantId,{ editorId: actorId }); const normalized=await validateAddressCodes(client,codes);
+    if(isDefault) {
+      await client.query(`SELECT id FROM bms_customers WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, [tenantId, customerId]);
+      await client.query(`UPDATE bms_customer_addresses SET is_default=false WHERE tenant_id=$1 AND customer_id=$2`,[tenantId,customerId]);
+    }
     const res=await client.query(`INSERT INTO bms_customer_addresses
       (tenant_id,customer_id,label,address,is_default,province,district,subdistrict,postcode,province_code,district_code,subdistrict_code)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
@@ -1135,55 +1178,96 @@ export async function addCustomerAddress(
       [tenantId,customerId,label?.trim()||null,addr,isDefault,normalized?.province??null,normalized?.district??null,
         normalized?.subdistrict??null,normalized?.postcode??codes.postcode??null,normalized?.provinceCode??null,
         normalized?.districtCode??null,normalized?.subdistrictCode??null]);
+    await auditCustomerWrite(client, tenantId, actorId, "customer.address.add", String(res.rows[0].id));
     await client.query("COMMIT");return res.rows[0];
   } catch(error){await client.query("ROLLBACK");throw error;} finally{client.release();}
 }
 
 export async function updateCustomerAddress(
   tenantId: string, addressId: string, label: string | null, address: string,
-  codes: CustomerAddressCodes = {}
+  actorId: string, codes: CustomerAddressCodes = {},
 ) {
   const addr = address.trim();
   if (!addr) throw new Error("ที่อยู่ห้ามว่าง");
   const client=await getClient();
-  try { await beginTenantTx(client,tenantId); const normalized=await validateAddressCodes(client,codes);
+  try { await beginTenantTx(client,tenantId,{ editorId: actorId }); const normalized=await validateAddressCodes(client,codes);
+    const hasStructuredInput = ["provinceCode", "districtCode", "subdistrictCode"]
+      .some(key => Object.prototype.hasOwnProperty.call(codes, key));
+    const hasPostcode = Object.prototype.hasOwnProperty.call(codes, "postcode");
     const res=await client.query(`UPDATE bms_customer_addresses SET label=$3,address=$4,
-      province=COALESCE($5,province),district=COALESCE($6,district),subdistrict=COALESCE($7,subdistrict),
-      postcode=COALESCE($8,postcode),province_code=COALESCE($9,province_code),
-      district_code=COALESCE($10,district_code),subdistrict_code=COALESCE($11,subdistrict_code)
+      province=CASE WHEN $12 THEN $5 ELSE province END,
+      district=CASE WHEN $12 THEN $6 ELSE district END,
+      subdistrict=CASE WHEN $12 THEN $7 ELSE subdistrict END,
+      postcode=CASE WHEN $12 OR $13 THEN $8 ELSE postcode END,
+      province_code=CASE WHEN $12 THEN $9 ELSE province_code END,
+      district_code=CASE WHEN $12 THEN $10 ELSE district_code END,
+      subdistrict_code=CASE WHEN $12 THEN $11 ELSE subdistrict_code END
       WHERE tenant_id=$1 AND id=$2 RETURNING id,label,address,is_default,province,postcode,province_code,district_code,subdistrict_code`,
       [tenantId,addressId,label?.trim()||null,addr,normalized?.province??null,normalized?.district??null,
-        normalized?.subdistrict??null,normalized?.postcode??codes.postcode??null,normalized?.provinceCode??null,
-        normalized?.districtCode??null,normalized?.subdistrictCode??null]);
-    if(!res.rowCount)throw new Error("ไม่พบที่อยู่");await client.query("COMMIT");return res.rows[0];
+        normalized?.subdistrict??null,(normalized?.postcode??codes.postcode?.trim())||null,normalized?.provinceCode??null,
+        normalized?.districtCode??null,normalized?.subdistrictCode??null,hasStructuredInput,hasPostcode]);
+    if(!res.rowCount)throw new Error("ไม่พบที่อยู่");
+    await auditCustomerWrite(client, tenantId, actorId, "customer.address.update", addressId);
+    await client.query("COMMIT");return res.rows[0];
   }catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
 }
 
-/** ตั้งที่อยู่นี้เป็นค่าเริ่มต้น — เคลียร์ default เดิมของลูกค้าคนนี้ก่อน (ทำใน tx เดียวกันผ่าน query เดียวต่อกัน) */
-export async function setDefaultCustomerAddress(tenantId: string, addressId: string) {
-  const target = await query<{ customer_id: string }>(
-    `SELECT customer_id FROM bms_customer_addresses WHERE tenant_id=$1 AND id=$2`,
-    [tenantId, addressId]
-  );
-  if (target.rowCount === 0) throw new Error("ไม่พบที่อยู่");
-  const customerId = target.rows[0].customer_id;
-
-  await query(`UPDATE bms_customer_addresses SET is_default=false WHERE tenant_id=$1 AND customer_id=$2`, [tenantId, customerId]);
-  const res = await query(
-    `UPDATE bms_customer_addresses SET is_default=true
-      WHERE tenant_id=$1 AND id=$2
-      RETURNING id, label, address, is_default`,
-    [tenantId, addressId]
-  );
-  return res.rows[0];
+/** Clear the old default and select the new one in one tenant transaction. */
+export async function setDefaultCustomerAddress(tenantId: string, addressId: string, actorId: string) {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorId });
+    const target = await client.query<{ customer_id: string }>(
+      `SELECT customer_id FROM bms_customer_addresses WHERE tenant_id=$1 AND id=$2`,
+      [tenantId, addressId]
+    );
+    if (target.rowCount === 0) throw new Error("ไม่พบที่อยู่");
+    const customerId = target.rows[0].customer_id;
+    await client.query(`SELECT id FROM bms_customers WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, [tenantId, customerId]);
+    const lockedTarget = await client.query<{ customer_id: string }>(
+      `SELECT customer_id FROM bms_customer_addresses WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,
+      [tenantId, addressId]
+    );
+    if (lockedTarget.rows[0]?.customer_id !== customerId) throw new Error("ไม่พบที่อยู่");
+    await client.query(
+      `UPDATE bms_customer_addresses SET is_default=false WHERE tenant_id=$1 AND customer_id=$2`,
+      [tenantId, customerId]
+    );
+    const res = await client.query(
+      `UPDATE bms_customer_addresses SET is_default=true
+        WHERE tenant_id=$1 AND id=$2 AND customer_id=$3
+        RETURNING id, label, address, is_default`,
+      [tenantId, addressId, customerId]
+    );
+    if (!res.rowCount) throw new Error("ไม่พบที่อยู่");
+    await auditCustomerWrite(client, tenantId, actorId, "customer.address.default", addressId);
+    await client.query("COMMIT");
+    return res.rows[0];
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
-export async function deleteCustomerAddress(tenantId: string, addressId: string) {
-  const res = await query(
-    `DELETE FROM bms_customer_addresses WHERE tenant_id=$1 AND id=$2`,
-    [tenantId, addressId]
-  );
-  return (res.rowCount ?? 0) > 0;
+export async function deleteCustomerAddress(tenantId: string, addressId: string, actorId: string) {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorId });
+    const res = await client.query(
+      `DELETE FROM bms_customer_addresses WHERE tenant_id=$1 AND id=$2 RETURNING id`,
+      [tenantId, addressId]
+    );
+    if (res.rowCount) await auditCustomerWrite(client, tenantId, actorId, "customer.address.delete", addressId);
+    await client.query("COMMIT");
+    return (res.rowCount ?? 0) > 0;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -1195,27 +1279,45 @@ export async function deleteCustomerAddress(tenantId: string, addressId: string)
  * ถ้าจะลบจริงต้องปรับแต้มเป็น 0 ด้วยเหตุผลก่อน ผ่าน /admin/loyalty
  * ยอดติดลบไม่กัน — นั่นคือหนี้ของลูกค้า ไม่ใช่ของร้าน
  */
-export async function deleteCustomer(tenantId: string, id: string) {
-  const points = await query<{ usable: string }>(
-    `SELECT COALESCE(SUM(l.points - l.consumed_points), 0) AS usable
-       FROM bms_loyalty_ledger l
-       JOIN bms_customers c ON c.tenant_id = l.tenant_id AND c.id = l.customer_id
-      WHERE l.tenant_id = $1 AND l.customer_id = $2
-        AND c.member_no IS NOT NULL
-        AND l.points > 0 AND (l.expires_at IS NULL OR l.expires_at > now())`,
-    [tenantId, id]
-  );
-  const usable = Number(points.rows[0]?.usable ?? 0);
-  if (usable > 0) {
-    throw new Error(
-      `ลบไม่ได้: สมาชิกคนนี้มีแต้มใช้ได้ค้างอยู่ ${usable} แต้ม — ปรับแต้มเป็น 0 พร้อมระบุเหตุผลที่หน้าสมาชิกก่อน`
+export async function deleteCustomer(tenantId: string, id: string, actorId: string) {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorId, serializable: true });
+    const customer = await client.query(
+      `SELECT id FROM bms_customers WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL FOR UPDATE`,
+      [tenantId, id]
     );
+    if (!customer.rowCount) {
+      await client.query("COMMIT");
+      return false;
+    }
+    const points = await client.query<{ usable: string }>(
+      `SELECT COALESCE(SUM(l.points - l.consumed_points), 0) AS usable
+         FROM bms_loyalty_ledger l
+         JOIN bms_customers c ON c.tenant_id = l.tenant_id AND c.id = l.customer_id
+        WHERE l.tenant_id = $1 AND l.customer_id = $2
+          AND c.member_no IS NOT NULL
+          AND l.points > 0 AND (l.expires_at IS NULL OR l.expires_at > now())`,
+      [tenantId, id]
+    );
+    const usable = Number(points.rows[0]?.usable ?? 0);
+    if (usable > 0) {
+      throw new Error(
+        `ลบไม่ได้: สมาชิกคนนี้มีแต้มใช้ได้ค้างอยู่ ${usable} แต้ม — ปรับแต้มเป็น 0 พร้อมระบุเหตุผลที่หน้าสมาชิกก่อน`
+      );
+    }
+    const res = await client.query(
+      `UPDATE bms_customers SET deleted_at=now(), updated_at=now()
+        WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL RETURNING id`,
+      [tenantId, id]
+    );
+    if (res.rowCount) await auditCustomerWrite(client, tenantId, actorId, "customer.delete", id);
+    await client.query("COMMIT");
+    return (res.rowCount ?? 0) > 0;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
   }
-
-  const res = await query(
-    `UPDATE bms_customers SET deleted_at=now(), updated_at=now()
-      WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`,
-    [tenantId, id]
-  );
-  return (res.rowCount ?? 0) > 0;
 }

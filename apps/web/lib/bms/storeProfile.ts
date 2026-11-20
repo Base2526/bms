@@ -19,6 +19,7 @@ import { normalizeRestaurantOrderHours, type RestaurantOrderInterval } from "./r
 import { resolveThaiAddressCodesInTx } from "./thaiAddress";
 import { FALLBACK_COUNTRIES, FALLBACK_CURRENCIES, FALLBACK_TIMEZONES } from "./platformSettings";
 import { promptPayRecipientId, validateReusablePromptPayQrPayload } from "./promptPayQr";
+import { validateStoreProfileShippingFields } from "./storeProfileShippingValidation";
 
 // Read on every AI tool call (get_store_info/get_payment_info/get_shipping_estimate),
 // every checkout page load, and the public storefront — but written only from
@@ -290,6 +291,7 @@ export async function upsertStoreProfile(
     // an unrelated concurrent save can write a stale archetype back over the locked value.
     const cur = await fetchStoreProfileWithClient(tenantId, client);
     const merged = mergeStoreProfileInput(cur, input);
+    validateStoreProfileShippingFields(input, cur);
 
     // Validate explicit locale changes against the platform catalogue. During a
     // rolling deploy the catalogue may not exist yet, so the code fallback is

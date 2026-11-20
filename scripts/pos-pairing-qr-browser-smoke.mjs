@@ -58,7 +58,9 @@ try {
             const include = field.directives.find(node => node.name.value === 'include');
             if (include && !variables[include.arguments[0].value.name.value]) continue;
             const permission = { bmsLocations: 'product.view', bmsPosDevices: 'pos.device.manage', bmsPosStaff: 'pos.staff.manage', bmsPosDeviceDiagnostics: 'support.logs.view' }[field.name.value];
-            assert.ok(!permission || permissions.includes(permission), `Unauthorized GraphQL field: ${field.name.value}`);
+            assert.ok(!permission || permissions.includes(permission)
+              || (field.name.value === 'bmsLocations' && permissions.includes('pos.device.manage')),
+            `Unauthorized GraphQL field: ${field.name.value}`);
           }
         }
         return route.fulfill({ json: { data: { myBmsPermissions: permissions, bmsMe: null, ...(variables.includeLocations ? { bmsLocations: [{ id: '1', name: 'Fixture branch', branchCode: 'F', isHeadOffice: true }] } : {}), ...(variables.includeDevices ? { bmsPosDevices: [device] } : {}), ...(variables.includeStaff ? { bmsPosStaff: [] } : {}) } } });

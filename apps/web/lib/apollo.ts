@@ -20,6 +20,7 @@ import { aiUsageRefreshLink, refreshAiUsage } from "./aiUsageClient";
 import { getMessage } from "@/i18n";
 import { getLangCookie } from "./lang";
 import { operatorMessage } from "./operatorMessage";
+import { configuredRealtimeWsUrl } from "./realtimeWsUrl";
 
 function backendLogout(reason?: string) {
   const time = new Date().toISOString();
@@ -191,6 +192,11 @@ async function loadWsLink(scope: WsScope): Promise<ApolloLink> {
   if (wsLinkLoading[scope]) return wsLinkLoading[scope]!;
 
   wsLinkLoading[scope] = (async () => {
+    const wsUrl = configuredRealtimeWsUrl(process.env.NEXT_PUBLIC_GRAPHQL_WS);
+    if (!wsUrl) {
+      emitRealtimeStatus(navigator.onLine ? "degraded" : "offline", scope);
+      throw new Error("REALTIME_WS_URL_UNCONFIGURED");
+    }
     emitRealtimeStatus(navigator.onLine ? "connecting" : "offline", scope);
     const [{ GraphQLWsLink }, { createClient }] = await Promise.all([
       import("@apollo/client/link/subscriptions"),
@@ -198,7 +204,7 @@ async function loadWsLink(scope: WsScope): Promise<ApolloLink> {
     ]);
 
     const wsClient = createClient({
-        url: process.env.NEXT_PUBLIC_GRAPHQL_WS as string,
+        url: wsUrl,
         lazy: true,
         retryAttempts: Infinity,
         // ⚠️ ค่าปริยายของ graphql-ws คือ "รอ ack ตลอดกาล" · gateway ตอบ ack หลังตรวจ ticket

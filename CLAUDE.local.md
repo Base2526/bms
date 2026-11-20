@@ -11,12 +11,13 @@
 > บันทึก 2026-08-17 → 2026-10-23) อยู่ใต้ "ชุดที่ 2" ของ archive — ค้นด้วยเลข migration เช่น
 > `grep -n "9.66" docs/local-notes-archive.md`
 
-## สถานะ working tree ล่าสุด (2026-11-19)
+## สถานะ working tree ล่าสุด (2026-11-20)
 
-- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `db41135f` (#439,
-  แก้ query ความผิดปกติของการโอนค้างทาง) · สรุป #417–#439 อยู่ท้าย [docs/status-log.md](docs/status-log.md) ·
-  branch `codex/public-pos-guides` = `develop` + คู่มือ POS สาธารณะ Word/PDF 5 ประเภทร้าน
-  (ต้นฉบับ `docs/public-pos-guides/`), เส้นทาง `/learn/getting-started` 16 บทความ, `GuideLinks` ในหน้าแอดมิน — ไม่มี migration
+- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `5bb7d241` (commit ตรง:
+  ลดดิสก์ตอน export Docker image ของ web; ก่อนหน้าคือ #440 คู่มือ POS สาธารณะ) · สรุป #417–#440 อยู่ท้าย
+  [docs/status-log.md](docs/status-log.md) · branch `codex/retail-small-shop-readiness` = `develop` + จัดการผู้ขาย
+  (`bmsUpsertSupplier`), เขียนลูกค้าในทรานแซกชันเดียว, ตรวจค่าส่ง, น้ำหนักกรัมเต็ม, WebSocket เฉพาะ URL ที่ตั้งไว้ +
+  [ตารางความพร้อมร้านปลีกเล็ก](docs/business/small-retail-readiness-2026-11-20.md) — ไม่มี migration
 - **migration ล่าสุด `10.137`** (เลขว่างถัดไป `10.138` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
   `10.122`/`10.123` โรงงานคงเดิม; audit ที่ชนเลขย้ายเป็น `10.131`/`10.132` และมีวิธีจัดการ
   ledger เก่าใน [audit traceability](docs/architecture/audit-traceability.md#verification-and-rollout) ·

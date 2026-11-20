@@ -2,7 +2,7 @@
 
 Per-feature decision narrative moved out of [CLAUDE.md](../CLAUDE.md) on 2026-10-13 to keep the
 always-loaded agent context small. The moved text is unchanged; newest entries are at the end.
-Entries were brought up to date on 2026-11-19 (through migration `10.137` and PR #439); the
+Entries were brought up to date on 2026-11-20 (through migration `10.137`, PR #440 and `5bb7d241`); the
 detailed 2026-11-16 boundary and log notes are in [feature-log.md](feature-log.md). The compact area index lives in CLAUDE.md
 § Current status; full
 per-domain rules live in [agent-invariants.md](agent-invariants.md).
@@ -1141,7 +1141,7 @@ browser smokes, mobile Jest, typecheck and build were not run in that pass. See
 in-transit transfers selected `*_location_id` columns that `bms_stock_transfers` (`7.98`) does not
 have and failed with SQLSTATE `42703`; it now uses the real `from_location`/`to_location` columns.
 
-**Public POS guides and getting-started path (branch `codex/public-pos-guides`, no migration).**
+**Public POS guides and getting-started path (#440, no migration).**
 - **Downloads:** each of the five business tracks (retail, restaurant, pharmacy, board game,
   building materials) offers an anonymous Thai Word and PDF handbook under
   `apps/web/public/guides/pos/`. The building-materials book is marked PILOT on every page.
@@ -1160,3 +1160,38 @@ Pure `learning-center-contract` (12/12), `regression:inventory` and `release:fea
 passed on 2026-11-19. The getting-started browser smoke, a visual DOCX/PDF pair review, typecheck
 and build were not run in that pass. See [ui/learning-center.md](ui/learning-center.md) and
 [public-pos-guides/README.md](public-pos-guides/README.md).
+
+**Web Docker image export (`5bb7d241`, direct to `develop`, no migration).** `apps/web/Dockerfile`
+now deletes `.next/cache/webpack` after `npm run build` and drops a second `COPY` of
+`apps/web/node_modules`; the runner's `COPY --from=builder /app/apps/web ./` already includes it.
+A built image was not started from this repository record; check `/` and `/api/graphql` after the
+next image build.
+
+**Small-retail readiness (branch `codex/retail-small-shop-readiness`, no migration).**
+- **Suppliers:** the Purchase page's **Manage suppliers** action (`purchase.edit`) creates or
+  edits supplier master data through the new `bmsUpsertSupplier` mutation (`BmsSupplierInput`,
+  `schema.graphql` updated). Fields are name, phone, email, individual/company type, 13-digit tax
+  ID, 5-digit branch code, address and note, all existing `5.2`/`10.11` columns. Validation,
+  tenant transaction and actor audit commit together. Omitted optional fields keep their value and
+  explicit null clears it. Existing POs and issued expense documents are not rewritten.
+- **Customers:** profile, tags, address, default-address and soft-delete writes run in one tenant
+  transaction with the editor and audit row. Choosing a new default clears the old one atomically.
+  Omitted phone/note/tags/Thai-address codes are preserved. The staff AI `upsert_customer` tool
+  uses the same service.
+- **Store profile shipping:** flat rate, free-shipping threshold and delivery days are validated
+  as nonnegative satang/whole days with min ≤ max. An older invalid flat rate returns an
+  unavailable fee plus a warning instead of a negative charge.
+- **Product weight:** stored in whole grams; fractional input is rejected rather than truncated.
+- **Realtime:** the admin client opens a WebSocket only for a configured `ws://`/`wss://`
+  `NEXT_PUBLIC_GRAPHQL_WS` (`realtimeWsUrl.ts`). Otherwise it marks realtime degraded or offline and
+  keeps polling/refetch, never a relative `/admin/undefined` socket.
+- **Readiness ledger:** [business/small-retail-readiness-2026-11-20.md](business/small-retail-readiness-2026-11-20.md)
+  separates code paths from real DB/device/provider evidence for a one-branch DIRECT-stock shop.
+
+Pure `supplier-master-contract` (4/4), `store-profile-shipping-contract` (3/3),
+`realtime-ws-url-contract` (1/1), `customer-master-transaction-contract` (7/7) and
+`shop-archetype-experience-contract` (17/17), `regression:inventory` and `release:features:check`
+passed on 2026-11-20. Not run in that pass: the supplier/customer browser smokes, DB suites,
+typecheck and build. See [business/crm.md](business/crm.md),
+[business/inventory.md](business/inventory.md), [business/order.md](business/order.md) and
+[ai/tools.md](ai/tools.md).

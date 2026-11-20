@@ -13,6 +13,7 @@ import {
   listPurchaseOrders,
   getPurchaseOrder,
   listSuppliers,
+  upsertSupplier,
   listSupplierProducts,
   type PoItemInput,
   type ReceiveInput,
@@ -68,6 +69,15 @@ export const bmsPurchaseResolvers = {
   },
 
   Mutation: {
+    async bmsUpsertSupplier(_p: unknown, args: { input: {
+      id?: string | null; name?: string; phone?: string | null; email?: string | null;
+      note?: string | null; taxId?: string | null; branchCode?: string | null;
+      address?: string | null; entityType?: "INDIVIDUAL" | "JURISTIC" | null;
+    } }, ctx: any) {
+      await requirePermission(ctx, "purchase.edit");
+      const auth = requireAuth(ctx);
+      return upsertSupplier(getTenantId(ctx), args.input ?? {}, String(auth.author_id));
+    },
     async bmsCreatePurchaseOrder(
       _p: unknown,
       args: {

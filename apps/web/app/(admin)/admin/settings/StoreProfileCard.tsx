@@ -872,10 +872,10 @@ export default function StoreProfileCard() {
                       </Col>
                     </Row>
                     <Row gutter={16}>
-                      <Col xs={12} md={6}><Form.Item name="shippingFlatRate" label={t("admin_store_profile.flat_rate_label")}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col>
-                      <Col xs={12} md={6}><Form.Item name="shippingFreeThreshold" label={t("admin_store_profile.free_threshold_label")}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col>
-                      <Col xs={12} md={6}><Form.Item name="shippingEstDaysMin" label={t("admin_store_profile.est_days_min_label")}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col>
-                      <Col xs={12} md={6}><Form.Item name="shippingEstDaysMax" label={t("admin_store_profile.est_days_max_label")}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col>
+                      <Col xs={12} md={6}><Form.Item name="shippingFlatRate" label={t("admin_store_profile.flat_rate_label")}><InputNumber min={0} precision={2} style={{ width: "100%" }} /></Form.Item></Col>
+                      <Col xs={12} md={6}><Form.Item name="shippingFreeThreshold" label={t("admin_store_profile.free_threshold_label")}><InputNumber min={0} precision={2} style={{ width: "100%" }} /></Form.Item></Col>
+                      <Col xs={12} md={6}><Form.Item name="shippingEstDaysMin" label={t("admin_store_profile.est_days_min_label")}><InputNumber min={0} precision={0} style={{ width: "100%" }} /></Form.Item></Col>
+                      <Col xs={12} md={6}><Form.Item name="shippingEstDaysMax" label={t("admin_store_profile.est_days_max_label")}><InputNumber min={0} precision={0} style={{ width: "100%" }} /></Form.Item></Col>
                     </Row>
                     <Form.Item
                       label={t("admin_store_profile.zone_rates_label")}

@@ -178,7 +178,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `update_tracking`, `set_shipment_status` | A2 | no | `shipping.update` | execute + domain audit |
 | `create_purchase_order` | A3 | no | `purchase.edit` | proposal only; stable request id makes confirmation retry-safe |
 | `propose_stock_transfer` | A3 | no | `inventory.transfer` | proposal for a draft only; send and receive remain separate human actions |
-| `upsert_customer`, `set_customer_tags` | A2 | no | `customer.edit` | execute + domain audit |
+| `upsert_customer`, `set_customer_tags` | A2 | no | `customer.edit` | same tenant service transaction + domain audit; upsert preserves omitted phone/note/tags, tags change through the separate tool |
 | `assign_conversation` | A2 | no | `inbox.assign` | execute + domain audit |
 | `set_conversation_status`, `set_conversation_tags`, `add_note` | A2 | no | `inbox.manage` | execute + domain audit |
 | `verify_payment_slip` | advisory | no | `payment.confirm` | read/advisory only |

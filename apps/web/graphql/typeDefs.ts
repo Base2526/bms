@@ -1914,6 +1914,17 @@ export const typeDefs = /* GraphQL */ `
     email: String
     note: String
   }
+  input BmsSupplierInput {
+    id: ID
+    name: String
+    phone: String
+    email: String
+    note: String
+    taxId: String
+    branchCode: String
+    address: String
+    entityType: String
+  }
 
   type BmsPurchaseItem {
     sku: String!
@@ -5751,6 +5762,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS purchase (admin) — PO lifecycle =====
     bmsCreatePurchaseOrder(requestId: String, supplierId: ID, supplierName: String, note: String, items: [BmsPurchaseItemInput!]!): BmsPurchaseResult!
+    bmsUpsertSupplier(input: BmsSupplierInput!): BmsSupplier!
     bmsReceivePurchaseOrder(id: ID!, items: [BmsReceiveItemInput!]!, idempotencyKey: String, locationId: ID): BmsPurchaseResult!  # OPEN/PARTIAL → PARTIAL/RECEIVED (STOCK_IN)
     bmsCancelPurchaseOrder(id: ID!): Boolean!                                            # OPEN/PARTIAL → CANCELLED
 

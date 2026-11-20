@@ -47,6 +47,15 @@ order can move from `PACKING` to `SHIPPED`; `shipOrder()` and `createShipment()`
 Lazada/Shopee are exempt because the shipping address stays in Seller Center. Customers are **never
 hard deleted** — only soft-deleted (`deleted_at`).
 
+Customer profile, tags, address, default-address and soft-delete writes use a tenant transaction with
+the authenticated staff editor and an audit row before commit. Choosing a new default clears the old
+one in that same transaction; two choices for one customer serialize on the customer row. A failed
+audit or second update rolls back the entire change. Soft delete rechecks usable member points in
+its serializable transaction. An API update that omits phone, note or tags preserves the saved value;
+explicit null clears it. Address updates likewise preserve omitted Thai-address codes and clear
+the saved codes/text/postcode when the editor explicitly clears the structured fields. The staff
+AI customer tool uses the same service and never supplies a model-selected tenant or editor.
+
 The customer chat checkout reads delivery completeness through `getCustomerCheckoutStatus()`, scoped
 to the channel identity. Its AI tool returns only booleans/counts, an optional address label, and
 ordered missing-field names; raw CRM PII is not sent merely to decide whether a form is needed.
