@@ -11,6 +11,7 @@ import { PlusOutlined, EditOutlined, ReloadOutlined, EnvironmentOutlined, Delete
 import { useI18n } from "@/lib/i18nContext";
 import { useVisibleQueryRefresh } from "@/lib/useVisibleQueryRefresh";
 import CustomerOrderDetail from "@/components/customers/CustomerOrderDetail";
+import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 
 const { Text } = Typography;
 
@@ -148,6 +149,7 @@ function enrollmentChannelLabel(channel: string | null, t: TFn) {
 function CustomersManagement() {
   const uiText = useUiText();
   const { t } = useI18n();
+  const { can } = useBmsPermissions();
   const [form] = Form.useForm();
   const [addrForm] = Form.useForm();
   const selectedProvinceCode = Form.useWatch("provinceCode", addrForm);
@@ -224,7 +226,7 @@ function CustomersManagement() {
     const v = await form.validateFields();
     await upsert({ variables: { input: { id: editing?.id, name: v.name.trim(), phone: v.phone?.trim() || null, note: v.note?.trim() || null, tags: v.tags || [] } } });
   };
-  const openAddAddress = (c: Customer) => { setAddrFor(c); setEditingAddr(null); addrForm.resetFields(); };
+  const openAddAddress = (c: Customer) => { setAddrFor(c); setEditingAddr(null); addrForm.resetFields(); addrForm.setFieldValue("isDefault", false); };
   const openEditAddress = (c: Customer, a: Address) => {
     setAddrFor(c);
     setEditingAddr(a);
@@ -325,15 +327,17 @@ function CustomersManagement() {
     { title: "", key: "actions", width: 180,
       render: (_: any, c: Customer) => (
         <Space size="small">
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(c)}>{t("admin_customers.btn_edit")}</Button>
-          <Button type="link" size="small" icon={<EnvironmentOutlined />} onClick={() => openAddAddress(c)}>{t("admin_customers.btn_address")}</Button>
-          <Button type="link" size="small" icon={<MergeCellsOutlined />} onClick={() => openMerge(c)}>{t("admin_customers.btn_merge")}</Button>
-          <Popconfirm title={t("admin_customers.delete_confirm")} okText={t("admin_customers.delete_ok")} okButtonProps={{ danger: true }} cancelText={t("admin_customers.delete_cancel")} onConfirm={() => del({ variables: { id: c.id } })}>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
+          {can("customer.edit") && <>
+            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(c)}>{t("admin_customers.btn_edit")}</Button>
+            <Button type="link" size="small" icon={<EnvironmentOutlined />} onClick={() => openAddAddress(c)}>{t("admin_customers.btn_address")}</Button>
+            <Button type="link" size="small" icon={<MergeCellsOutlined />} onClick={() => openMerge(c)}>{t("admin_customers.btn_merge")}</Button>
+            <Popconfirm title={t("admin_customers.delete_confirm")} okText={t("admin_customers.delete_ok")} okButtonProps={{ danger: true }} cancelText={t("admin_customers.delete_cancel")} onConfirm={() => del({ variables: { id: c.id } })}>
+              <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+            </Popconfirm>
+          </>}
         </Space>
       ) },
-  ], [uiText, ]);
+  ], [uiText, can, t]);
 
   if (error) return <Alert closable type="error" message={t("admin_customers.load_error")} description={error.message} showIcon />;
 
@@ -357,7 +361,7 @@ function CustomersManagement() {
               }))}
             />
             <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>{uiText("admin_ui.en_refresh_56e3b")}</Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>{t("admin_customers.btn_add_customer")}</Button>
+            {can("customer.edit") && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>{t("admin_customers.btn_add_customer")}</Button>}
           </Space>
         </Space>
       </div>
@@ -373,6 +377,8 @@ function CustomersManagement() {
           expandedRowRender: (c: Customer, _index, _indent, expanded) => expanded ? (
             <CustomerDetail
               c={c}
+              canEdit={can("customer.edit")}
+              canReorder={can("order.create")}
               onAddAddress={() => openAddAddress(c)}
               onEditAddress={(a) => openEditAddress(c, a)}
               onSetDefaultAddress={(a) => setDefaultAddr({ variables: { addressId: a.id } })}
@@ -436,8 +442,8 @@ function CustomersManagement() {
             <Form.Item label={t("admin_master_data.postcode")} name="postcode"><Input readOnly style={{width:140}}/></Form.Item>
           </Space>
           {!editingAddr && (
-            <Form.Item name="isDefault" valuePropName="checked" label={t("admin_customers.form_is_default")}>
-              <Select options={[{ value: false, label: t("admin_customers.opt_no") }, { value: true, label: t("admin_customers.opt_yes") }]} defaultValue={false} />
+            <Form.Item name="isDefault" label={t("admin_customers.form_is_default")}>
+              <Select options={[{ value: false, label: t("admin_customers.opt_no") }, { value: true, label: t("admin_customers.opt_yes") }]} />
             </Form.Item>
           )}
         </Form>
@@ -483,9 +489,11 @@ function CustomersManagement() {
 }
 
 function CustomerDetail({
-  c, onAddAddress, onEditAddress, onSetDefaultAddress, onDeleteAddress, reorderingId, onReorder,
+  c, canEdit, canReorder, onAddAddress, onEditAddress, onSetDefaultAddress, onDeleteAddress, reorderingId, onReorder,
 }: {
   c: Customer;
+  canEdit: boolean;
+  canReorder: boolean;
   onAddAddress: () => void;
   onEditAddress: (a: Address) => void;
   onSetDefaultAddress: (a: Address) => void;
@@ -532,15 +540,15 @@ function CustomerDetail({
     { title: uiText("admin_ui.en_status_bae7d"), dataIndex: "status", key: "st", width: 120, render: (s: string) => <Tag color={STATUS_COLOR[s] || "default"}>{s}</Tag> },
     { title: t("admin_customers.col_amount"), dataIndex: "total_amount", key: "amt", width: 110, align: "right" as const, render: (v: number) => `${Number(v).toLocaleString()} ฿` },
     { title: t("admin_customers.col_date"), dataIndex: "created_at", key: "d", render: (d: string) => new Date(d).toLocaleString(uiText.locale) },
-    { title: "", key: "actions", width: 90, render: (_: any, o: Order) => (
+    { title: "", key: "actions", width: 90, render: (_: any, o: Order) => canReorder ? (
       <Button type="link" size="small" loading={reorderingId === o.id} onClick={() => onReorder(o.id)}>{t("admin_customers.btn_reorder")}</Button>
-    ) },
+    ) : null },
   ];
   return (
     <div>
       <Space style={{ width: "100%", justifyContent: "space-between" }}>
         <Text strong><EnvironmentOutlined /> {t("admin_customers.section_addresses")}</Text>
-        <Button size="small" type="link" icon={<PlusOutlined />} onClick={onAddAddress}>{t("admin_customers.btn_add_address")}</Button>
+        {canEdit && <Button size="small" type="link" icon={<PlusOutlined />} onClick={onAddAddress}>{t("admin_customers.btn_add_address")}</Button>}
       </Space>
       <div style={{ marginTop: 6, marginBottom: 12 }}>
         {c.addresses?.length ? (
@@ -552,7 +560,7 @@ function CustomerDetail({
                   {a.label && <Text strong>[{a.label}] </Text>}
                   <Text>{a.address}</Text>
                 </div>
-                <Space size={4} style={{ flexShrink: 0 }}>
+                {canEdit && <Space size={4} style={{ flexShrink: 0 }}>
                   <Button size="small" type="link" icon={<EditOutlined />} onClick={() => onEditAddress(a)} />
                   {!a.is_default && (
                     <Button size="small" type="link" onClick={() => onSetDefaultAddress(a)}>{t("admin_customers.btn_set_default")}</Button>
@@ -561,7 +569,7 @@ function CustomerDetail({
                     onConfirm={() => onDeleteAddress(a)}>
                     <Button size="small" type="link" danger icon={<DeleteOutlined />} />
                   </Popconfirm>
-                </Space>
+                </Space>}
               </div>
             ))}
           </Space>

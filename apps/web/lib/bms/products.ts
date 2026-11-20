@@ -1534,8 +1534,8 @@ export function validateProductFields(input: UpsertProductInput): NormalizedProd
   // จะไม่ถูกคิดและ quoteShipping() จะเตือนแทนการเดาน้ำหนัก
   let weightGrams: number | null = null;
   if (input.weight_grams != null && input.weight_grams !== ("" as any)) {
-    weightGrams = Math.trunc(Number(input.weight_grams));
-    if (!Number.isFinite(weightGrams) || weightGrams < 0) throw new Error("น้ำหนักไม่ถูกต้อง");
+    weightGrams = Number(input.weight_grams);
+    if (!Number.isSafeInteger(weightGrams) || weightGrams < 0) throw new Error("น้ำหนักต้องเป็นจำนวนเต็มกรัมตั้งแต่ 0 ขึ้นไป");
     if (weightGrams > 2_000_000) throw new Error("น้ำหนักเกินความเป็นจริง (สูงสุด 2,000 กก.)");
   }
 

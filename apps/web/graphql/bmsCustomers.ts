@@ -86,14 +86,14 @@ export const bmsCustomersResolvers = {
     async bmsUpsertCustomer(_p: unknown, args: { input: any }, ctx: any) {
       await requirePermission(ctx, "customer.edit");
       try {
-        return await upsertCustomer(getTenantId(ctx), args.input);
+        return await upsertCustomer(getTenantId(ctx), args.input, String(requireAuth(ctx).author_id));
       } catch (err) {
         toGqlError(err);
       }
     },
     async bmsSetCustomerTags(_p: unknown, args: { id: string; tags: string[] }, ctx: any) {
       await requirePermission(ctx, "customer.edit");
-      return setCustomerTags(getTenantId(ctx), args.id, args.tags);
+      return setCustomerTags(getTenantId(ctx), args.id, args.tags, String(requireAuth(ctx).author_id));
     },
     async bmsAddCustomerAddress(
       _p: unknown,
@@ -102,7 +102,8 @@ export const bmsCustomersResolvers = {
     ) {
       await requirePermission(ctx, "customer.edit");
       try {
-        return await addCustomerAddress(getTenantId(ctx), args.id, args.label ?? null, args.address, !!args.isDefault, args);
+        return await addCustomerAddress(getTenantId(ctx), args.id, args.label ?? null, args.address,
+          !!args.isDefault, String(requireAuth(ctx).author_id), args);
       } catch (err) {
         toGqlError(err);
       }
@@ -114,7 +115,8 @@ export const bmsCustomersResolvers = {
     ) {
       await requirePermission(ctx, "customer.edit");
       try {
-        return await updateCustomerAddress(getTenantId(ctx), args.addressId, args.label ?? null, args.address, args);
+        return await updateCustomerAddress(getTenantId(ctx), args.addressId, args.label ?? null, args.address,
+          String(requireAuth(ctx).author_id), args);
       } catch (err) {
         toGqlError(err);
       }
@@ -122,18 +124,18 @@ export const bmsCustomersResolvers = {
     async bmsSetDefaultCustomerAddress(_p: unknown, args: { addressId: string }, ctx: any) {
       await requirePermission(ctx, "customer.edit");
       try {
-        return await setDefaultCustomerAddress(getTenantId(ctx), args.addressId);
+        return await setDefaultCustomerAddress(getTenantId(ctx), args.addressId, String(requireAuth(ctx).author_id));
       } catch (err) {
         toGqlError(err);
       }
     },
     async bmsDeleteCustomerAddress(_p: unknown, args: { addressId: string }, ctx: any) {
       await requirePermission(ctx, "customer.edit");
-      return deleteCustomerAddress(getTenantId(ctx), args.addressId);
+      return deleteCustomerAddress(getTenantId(ctx), args.addressId, String(requireAuth(ctx).author_id));
     },
     async bmsDeleteCustomer(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "customer.edit");
-      return deleteCustomer(getTenantId(ctx), args.id);
+      return deleteCustomer(getTenantId(ctx), args.id, String(requireAuth(ctx).author_id));
     },
     async bmsMergeCustomers(_p: unknown, args: { keepId: string; mergeId: string; review?: CustomerMergeReview }, ctx: any) {
       await requirePermission(ctx, "customer.edit");

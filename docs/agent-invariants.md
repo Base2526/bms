@@ -2589,6 +2589,10 @@ Production migration state, recovery/load proof, and bounded replay remain separ
   and production recovery/load proof are still incomplete. The shared
   `realtimeInvalidation.ts` must have an entry for every event domain or that domain refetches
   nothing and reads on screen exactly like realtime being switched off.
+- The Web Apollo client accepts only an absolute `ws://` or `wss://` value for the build-time
+  `NEXT_PUBLIC_GRAPHQL_WS`. Missing/malformed values mark realtime degraded (or offline) and let
+  existing polling/refetch paths continue; never open a relative `/admin/undefined` socket against
+  the Web server. A configured gateway is still required for live invalidation.
 - POS device authentication updates `bms_pos_devices.last_seen_at` as throttled bookkeeping. Keep
   that column and `receipt_seq` out of the `device.session.changed` trigger (`9.84`): otherwise an RN
   GraphQL request can emit an invalidation whose response is to verify and refetch GraphQL again.

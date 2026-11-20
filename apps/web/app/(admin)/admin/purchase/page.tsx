@@ -47,7 +47,10 @@ type POItem = {
   baseQtyPerSupplierUnit: number | null;
   conversionEvidence: string | null;
 };
-type Supplier = { id: string; name: string };
+type Supplier = {
+  id: string; name: string; phone: string | null; email: string | null; note: string | null;
+  taxId: string | null; branchCode: string | null; address: string | null; entityType: string | null;
+};
 type SupplierProduct = {
   id: string;
   supplierId: string;
@@ -101,7 +104,10 @@ const Q_LINKED_PO = gql`
     }
   }
 `;
-const Q_SUPPLIERS = gql`query { bmsSuppliers { id name } }`;
+const Q_SUPPLIERS = gql`query { bmsSuppliers { id name phone email note taxId branchCode address entityType } }`;
+const M_SUPPLIER = gql`mutation BmsUpsertSupplier($input: BmsSupplierInput!) {
+  bmsUpsertSupplier(input: $input) { id name phone email note taxId branchCode address entityType }
+}`;
 const Q_RECEIVING_LOCATIONS = gql`query BmsPurchaseReceivingLocations { bmsPurchaseReceivingLocations { id name branchCode active } }`;
 const Q_RETRY_SCOPE = gql`query BmsPurchaseRetryScope { bmsMe { id tenant { id } } bmsActingTenant { id } }`;
 const Q_SUPPLIER_PRODUCTS = gql`
@@ -145,6 +151,7 @@ function PurchaseManagement() {
   const STATUS_LABEL = statusLabels(t);
   const { can } = useBmsPermissions();
   const [createOpen, setCreateOpen] = useState(false);
+  const [suppliersOpen, setSuppliersOpen] = useState(false);
   const [receivePO, setReceivePO] = useState<PO | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -168,7 +175,7 @@ function PurchaseManagement() {
   const linkedQuery=useQuery(Q_LINKED_PO,{variables:{id:linkedId},skip:!linkedId,fetchPolicy:"network-only"});
   const {loading,error,refetch}=linkedId?linkedQuery:listQuery;
   const data=linkedId?{bmsPurchaseOrders:linkedQuery.data?.bmsPurchaseOrder?[linkedQuery.data.bmsPurchaseOrder]:[]}:listQuery.data;
-  const { data: supplierData } = useQuery(Q_SUPPLIERS, { fetchPolicy: "cache-and-network" });
+  const { data: supplierData, refetch: refetchSuppliers } = useQuery(Q_SUPPLIERS, { fetchPolicy: "cache-and-network" });
   const { data: retryScopeData } = useQuery(Q_RETRY_SCOPE, { fetchPolicy: "network-only" });
   const retryTenantId = retryScopeData?.bmsActingTenant?.id ?? retryScopeData?.bmsMe?.tenant?.id;
   const retryScope = retryTenantId && retryScopeData?.bmsMe?.id
@@ -263,6 +270,7 @@ function PurchaseManagement() {
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
           <h2 style={{ margin: 0 }}>{uiText("admin_ui.en_bms_purchase_po_6bb47")}</h2>
           <Space wrap>
+            {can("purchase.edit") && <Button onClick={() => setSuppliersOpen(true)}>{t("admin_purchase.manage_suppliers")}</Button>}
             <Input.Search
               placeholder={t("admin_purchase.search_placeholder")}
               allowClear
@@ -303,6 +311,8 @@ function PurchaseManagement() {
         onClose={() => setCreateOpen(false)}
         onDone={() => { setCreateOpen(false); refetch(); }}
       />
+      <SupplierManager open={suppliersOpen} suppliers={suppliers} onClose={() => setSuppliersOpen(false)}
+        onSaved={() => refetchSuppliers()} />
       <ReceivePOModal
         po={receivePO}
         onClose={() => setReceivePO(null)}
@@ -313,6 +323,74 @@ function PurchaseManagement() {
 }
 
 // ---- Create PO modal ----------------------------------------
+function SupplierManager({ open, suppliers, onClose, onSaved }: {
+  open: boolean; suppliers: Supplier[]; onClose: () => void; onSaved: () => void;
+}) {
+  const { t } = useI18n();
+  const [form] = Form.useForm();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [save, { loading }] = useMutation(M_SUPPLIER);
+  const edit = (supplier?: Supplier) => {
+    setEditingId(supplier?.id ?? null);
+    form.resetFields();
+    form.setFieldsValue(supplier ?? { entityType: null });
+  };
+  const submit = async (values: any) => {
+    const input = {
+      ...(editingId ? { id: editingId } : {}),
+      name: String(values.name ?? "").trim(),
+      phone: values.phone?.trim() || null,
+      email: values.email?.trim() || null,
+      note: values.note?.trim() || null,
+      taxId: values.taxId?.trim() || null,
+      branchCode: values.branchCode?.trim() || null,
+      address: values.address?.trim() || null,
+      entityType: values.entityType || null,
+    };
+    try {
+      await save({ variables: { input } });
+      message.success(t("admin_purchase.supplier_saved"));
+      onSaved();
+      edit();
+    } catch (error: any) {
+      message.error(error?.message || t("admin_purchase.action_failed"));
+    }
+  };
+  return <Modal open={open} title={t("admin_purchase.manage_suppliers")} footer={null} width={760}
+    onCancel={() => { edit(); onClose(); }} destroyOnClose>
+    <Table rowKey="id" size="small" dataSource={suppliers} pagination={{ pageSize: 5 }} scroll={{ x: 560 }}
+      columns={[
+        { title: t("admin_purchase.supplier_name"), dataIndex: "name", key: "name" },
+        { title: t("admin_purchase.supplier_phone"), dataIndex: "phone", key: "phone" },
+        { title: t("admin_purchase.supplier_tax_id"), dataIndex: "taxId", key: "taxId" },
+        { title: "", key: "edit", render: (_: unknown, supplier: Supplier) =>
+          <Button type="link" onClick={() => edit(supplier)}>{t("admin_purchase.supplier_edit")}</Button> },
+      ]} />
+    <Button onClick={() => edit()} style={{ marginBottom: 12 }}>{t("admin_purchase.supplier_new")}</Button>
+    <Form form={form} layout="vertical" onFinish={submit}>
+      <Form.Item name="name" label={t("admin_purchase.supplier_name")}
+        rules={[{ required: true, message: t("admin_purchase.supplier_name_required") }]}>
+        <Input maxLength={120} />
+      </Form.Item>
+      <Space wrap align="start" style={{ width: "100%" }}>
+        <Form.Item name="phone" label={t("admin_purchase.supplier_phone")}><Input maxLength={30} /></Form.Item>
+        <Form.Item name="email" label={t("admin_purchase.supplier_email")}><Input maxLength={254} type="email" /></Form.Item>
+        <Form.Item name="entityType" label={t("admin_purchase.supplier_entity_type")}>
+          <Select allowClear style={{ minWidth: 170 }} options={[
+            { value: "INDIVIDUAL", label: t("admin_purchase.supplier_individual") },
+            { value: "JURISTIC", label: t("admin_purchase.supplier_juristic") },
+          ]} />
+        </Form.Item>
+        <Form.Item name="taxId" label={t("admin_purchase.supplier_tax_id")}><Input maxLength={13} /></Form.Item>
+        <Form.Item name="branchCode" label={t("admin_purchase.supplier_branch_code")}><Input maxLength={5} /></Form.Item>
+      </Space>
+      <Form.Item name="address" label={t("admin_purchase.supplier_address")}><Input.TextArea rows={2} maxLength={500} /></Form.Item>
+      <Form.Item name="note" label={t("admin_purchase.supplier_note")}><Input.TextArea rows={2} maxLength={1000} /></Form.Item>
+      <Button type="primary" htmlType="submit" loading={loading}>{t("admin_purchase.supplier_save")}</Button>
+    </Form>
+  </Modal>;
+}
+
 function CreatePOModal({
   open, suppliers, retryScope, onClose, onDone,
 }: {

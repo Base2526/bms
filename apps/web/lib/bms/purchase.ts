@@ -20,6 +20,7 @@ import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 import { enqueueRealtimeEventInTx, realtimeEvent } from "./realtimeOutbox";
 import { IDEMPOTENCY_CONFLICT_MESSAGE, IdempotencyConflictError } from "./idempotencyErrors";
 import { inventoryIdempotency, replayInventoryResult, storeInventoryResult } from "./inventoryIdempotency";
+import { normalizeSupplierFields, type SupplierFields, type SupplierInput } from "./supplierFields";
 
 // ---- types ---------------------------------------------------
 export type PoItemInput = {
@@ -1043,6 +1044,60 @@ export async function getPurchaseOrder(tenantId: string, poId: string) {
 }
 
 // ---- suppliers ----------------------------------------------
+/** Supplier master data used by purchase orders and expense-document suggestions. */
+export async function upsertSupplier(
+  tenantId: string,
+  input: SupplierInput & { id?: string | null },
+  actorId: string,
+): Promise<SupplierFields & { id: string }> {
+  if (input.id != null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.id)) {
+    throw new Error("รหัสผู้ขายไม่ถูกต้อง");
+  }
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorId });
+    let current: SupplierFields | undefined;
+    if (input.id) {
+      const existing = await client.query<SupplierFields>(
+        `SELECT name, phone, email, note, tax_id AS "taxId", branch_code AS "branchCode",
+                address, entity_type AS "entityType"
+           FROM bms_suppliers WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+        [tenantId, input.id],
+      );
+      if (!existing.rowCount) throw new Error("ไม่พบผู้ขายในร้านนี้");
+      current = existing.rows[0];
+    }
+    const fields = normalizeSupplierFields(input, current);
+    const params = [tenantId, fields.name, fields.phone, fields.email, fields.note,
+      fields.taxId, fields.branchCode, fields.address, fields.entityType];
+    const saved = input.id
+      ? await client.query<{ id: string }>(
+        `UPDATE bms_suppliers SET name=$2, phone=$3, email=$4, note=$5, tax_id=$6,
+                branch_code=$7, address=$8, entity_type=$9, updated_at=now()
+          WHERE tenant_id=$1 AND id=$10 RETURNING id`, [...params, input.id])
+      : await client.query<{ id: string }>(
+        `INSERT INTO bms_suppliers
+           (tenant_id,name,phone,email,note,tax_id,branch_code,address,entity_type)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, params);
+    const id = saved.rows[0]?.id;
+    if (!id) throw new Error("บันทึกผู้ขายไม่สำเร็จ");
+    await client.query(
+      `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
+       VALUES($1,$2,$3,$4,$5::jsonb)`,
+      [tenantId, actorId, input.id ? "supplier.update" : "supplier.create", id,
+        JSON.stringify({ fields: Object.keys(input).filter((key) => key !== "id") })],
+    );
+    await client.query("COMMIT");
+    return { id, ...fields };
+  } catch (error: any) {
+    try { await client.query("ROLLBACK"); } catch {}
+    if (error?.code === "23505") throw new Error("ชื่อผู้ขายซ้ำในร้านนี้");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function listSuppliers(tenantId: string) {
   const res = await query(
     `SELECT id, name, phone, email, note, tax_id AS "taxId", branch_code AS "branchCode",

@@ -7,6 +7,7 @@ confirmation or role permission (see [../ai/prompts.md](../ai/prompts.md)).
 
 ## Order lifecycle
 
+
 **Implemented statuses** (`bms_orders.status`):
 
 ```
@@ -462,7 +463,13 @@ formula between "shown to the customer" and "actually charged".
   has a weight-in-grams field next to cost price. `/checkout` shows a "ค่าจัดส่ง" line (free = "ฟรี").
   The chat order-confirmation message breaks out product total / shipping / grand total whenever
   shipping is non-zero, so the customer doesn't see a total higher than what was discussed without
-  explanation.
+  explanation. Product weight is stored in whole grams; fractional input is rejected instead of
+  being truncated.
+- Store profile shipping inputs are checked on save: flat rate and free-shipping threshold must be
+  nonnegative satang amounts; estimated days must be nonnegative whole numbers with minimum no
+  greater than maximum. An older invalid flat rate is not quoted as a negative charge: the estimate
+  returns an unavailable fee and a warning until an Administrator corrects the settings. An invalid
+  free-shipping threshold is ignored with a warning. Unrelated profile edits preserve old values.
 - `get_shipping_estimate` accepts `province`/`items` and its description tells the model to read
   `warnings` before answering (guessed province/incomplete weight must be disclosed as an estimate).
   `save_customer_checkout_details` accepts `province`/`postcode` and is told never to guess a province

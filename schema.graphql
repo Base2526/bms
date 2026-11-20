@@ -9559,6 +9559,18 @@ type BmsSupplier {
   taxId: String
 }
 
+input BmsSupplierInput {
+  address: String
+  branchCode: String
+  email: String
+  entityType: String
+  id: ID
+  name: String
+  note: String
+  phone: String
+  taxId: String
+}
+
 type BmsSupplierPerformance {
   avgLeadDays: Float!
   fillRate: Float!
@@ -10773,6 +10785,7 @@ type Mutation {
   bmsUpsertReportSubscription(input: BmsUpsertReportSubscriptionInput!): BmsReportSubscription!
   bmsUpsertStoreCapability(capability: String!, config: JSON, enabled: Boolean!): BmsStoreCapability!
   bmsUpsertStoreProfile(input: BmsStoreProfileInput!): BmsStoreProfile!
+  bmsUpsertSupplier(input: BmsSupplierInput!): BmsSupplier!
   bmsVerifyPaymentSlip(id: ID!): BmsSlipVerification
   bmsVerifyShopSignup(token: String!): BmsVerifyShopSignupResult!
   bmsVoidBankMatch(confirmed: Boolean!, id: ID!, reason: String!): BmsBankMutationResult!

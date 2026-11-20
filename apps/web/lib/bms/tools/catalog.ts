@@ -2847,7 +2847,7 @@ const createPurchaseOrderTool: BmsTool = {
 const upsertCustomerTool: BmsTool = {
   name: "upsert_customer",
   description:
-    "Create or edit a customer (name, phone, note, tags) — pass customerId to edit an existing one; omit it to create a new one.",
+    "Create or edit a customer (name, phone, note). Omitted phone/note keep their saved values; use set_customer_tags for tags. Pass customerId to edit; omit it to create.",
   surfaces: ["staff"],
   permission: "customer.edit",
   inputSchema: {
@@ -2861,13 +2861,14 @@ const upsertCustomerTool: BmsTool = {
     required: ["name"],
   },
   execute: async (args, ec): Promise<ToolResult> => {
+    const actorId = ec.ctx?.admin?.id ? String(ec.ctx.admin.id) : null;
+    if (!actorId) throw new ToolArgError("ต้องมีบัญชีพนักงานเพื่อแก้ข้อมูลลูกค้า");
     const c = await upsertCustomer(ec.tenantId, {
       id: optString(args, "customerId") ?? null,
       name: reqString(args, "name"),
-      phone: optString(args, "phone") ?? null,
-      note: optString(args, "note") ?? null,
-    });
-    await auditWrite(ec, "customer.edit", (c as any)?.id ?? null, { kind: "upsert" });
+      ...(args.phone === undefined ? {} : { phone: optString(args, "phone") }),
+      ...(args.note === undefined ? {} : { note: optString(args, "note") }),
+    }, actorId);
     return { ok: true, data: c };
   },
 };
@@ -2886,10 +2887,11 @@ const setCustomerTagsTool: BmsTool = {
     required: ["customerId", "tags"],
   },
   execute: async (args, ec): Promise<ToolResult> => {
+    const actorId = ec.ctx?.admin?.id ? String(ec.ctx.admin.id) : null;
+    if (!actorId) throw new ToolArgError("ต้องมีบัญชีพนักงานเพื่อแก้ข้อมูลลูกค้า");
     const id = reqString(args, "customerId");
     const tags = Array.isArray(args.tags) ? args.tags.map(String) : [];
-    const ok = await setCustomerTags(ec.tenantId, id, tags);
-    if (ok) await auditWrite(ec, "customer.edit", id, { kind: "tags" });
+    const ok = await setCustomerTags(ec.tenantId, id, tags, actorId);
     return { ok: true, data: { updated: ok } };
   },
 };

@@ -223,10 +223,12 @@ export async function quoteShipping(input: ShippingQuoteInput): Promise<Shipping
   }
 
   // ---- 3) flat ----
-  if (source === "none" && p.shippingFlatRate != null) {
+  if (source === "none" && p.shippingFlatRate != null && Number.isFinite(p.shippingFlatRate) && p.shippingFlatRate >= 0) {
     source = "flat";
     baseFee = p.shippingFlatRate;
     breakdown.push(`ค่าส่งเหมา: ${p.shippingFlatRate.toLocaleString()} ${currency}`);
+  } else if (source === "none" && p.shippingFlatRate != null) {
+    warnings.push("ค่าส่งเหมาที่บันทึกไว้ไม่ถูกต้อง — ไม่สามารถเสนอราคาค่าส่งได้");
   }
 
   // ---- ค่าน้ำหนักส่วนเพิ่ม (ใช้กับ zone/flat เท่านั้น — carrier คิดน้ำหนักมาให้แล้ว) ----
@@ -240,7 +242,11 @@ export async function quoteShipping(input: ShippingQuoteInput): Promise<Shipping
   let fee = baseFee === null ? null : baseFee + weightSurcharge;
 
   // ---- ส่งฟรีเมื่อยอดถึงเกณฑ์ (ทับทุกแหล่งราคา) ----
-  const threshold = p.shippingFreeThreshold;
+  const threshold = p.shippingFreeThreshold != null && Number.isFinite(p.shippingFreeThreshold)
+    && p.shippingFreeThreshold >= 0 ? p.shippingFreeThreshold : null;
+  if (p.shippingFreeThreshold != null && threshold === null) {
+    warnings.push("ยอดขั้นต่ำส่งฟรีที่บันทึกไว้ไม่ถูกต้อง — ไม่ใช้เงื่อนไขส่งฟรีนี้");
+  }
   const subtotal = num(input.subtotal);
   let freeShippingApplied = false;
   if (threshold != null && subtotal != null && subtotal >= threshold && fee !== null && fee > 0) {

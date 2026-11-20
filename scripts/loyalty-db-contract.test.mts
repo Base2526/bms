@@ -474,10 +474,10 @@ test("delete: a member holding usable points cannot be soft-deleted", async () =
   const id = r.member.customerId;
   await adjustPoints({ tenantId, customerId: id, points: 120, note: "block delete" });
 
-  await assert.rejects(() => deleteCustomer(tenantId, id), /แต้มใช้ได้ค้างอยู่/);
+  await assert.rejects(() => deleteCustomer(tenantId, id, id), /แต้มใช้ได้ค้างอยู่/);
 
   await adjustPoints({ tenantId, customerId: id, points: -120, note: "clear before delete" });
-  assert.equal(await deleteCustomer(tenantId, id), true, "เคลียร์แต้มแล้วต้องลบได้");
+  assert.equal(await deleteCustomer(tenantId, id, id), true, "เคลียร์แต้มแล้วต้องลบได้");
 });
 
 test("the outstanding report never disagrees with the ledger", async () => {

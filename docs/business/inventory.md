@@ -336,6 +336,15 @@ fix failed rows and upload them again. A quota-blocked batch is never shown as s
 
 ## Purchase Orders (supplier replenishment)
 
+The Purchase page's **Manage suppliers** action (requires `purchase.edit`) creates or edits the
+tenant's supplier master data: name, phone, email, individual/company type, 13-digit tax ID,
+5-digit branch code, address and note. The GraphQL mutation calls `upsertSupplier()`; validation,
+tenant transaction and actor audit commit together. Omitted optional fields on an API update keep
+their old values; explicit null clears them. The list read uses `purchase.view` and returns the
+saved fields to the editor. Supplier details help prefill later expense documents. Existing POs
+keep their supplier ID and display its current name; their amounts and receipts do not change.
+Previously issued expense documents keep their recorded details.
+
 ### Fish-dock receipts and historical Excel (`10.119`)
 
 `/admin/fish-intake` has three explicit actions. A live receipt records the supplier/แพ,

@@ -512,6 +512,7 @@ const MENU_CARDS_TH: MenuCard[] = [
     title: "Purchase",
     desc: "สร้าง PO, เลือกผู้ขาย, รับของเข้าคลัง และอ้างอิงต้นทุนล่าสุดได้จาก workflow เดิม",
     bullets: [
+      "ปุ่ม จัดการผู้ขาย ใช้เพิ่มหรือแก้ชื่อ เบอร์ อีเมล ประเภท เลขผู้เสียภาษี รหัสสาขา ที่อยู่ และหมายเหตุ ต้องมีสิทธิ์ purchase.edit; PO เดิมยังผูกผู้ขายคนเดิมแต่แสดงชื่อปัจจุบัน ยอด/การรับของและเอกสารรายจ่ายเดิมไม่เปลี่ยน",
       "เลือก supplier ก่อนสร้าง PO เพื่อค้นได้ทั้ง SKU ร้านและ SKU ผู้ขาย",
       "แยกราคาซื้อออกจากค่าจัดหาเพิ่มต่อหน่วย เช่น ค่าขนส่ง อากร หรือภาษีที่ขอคืนไม่ได้ ระบบแสดงทุนถึงร้านและใช้ผลรวมเป็นมูลค่าสต็อกเมื่อรับของ โดยไม่ย้อนแก้ของที่รับแล้ว",
       "ครั้งแรกให้จับคู่ SKU ผู้ขายกับ SKU ร้าน + ไซซ์ แล้วระบบจะจำ mapping ไปใช้ครั้งถัดไป",
@@ -548,6 +549,7 @@ const MENU_CARDS_TH: MenuCard[] = [
       "Customers ใช้ค้นหาลูกค้าและผสานรายการซ้ำตามสิทธิ์ ก่อนรวมต้องตรวจผลกระทบสองฝั่ง ระบุเหตุผล วิธีตรวจสอบ และรหัสหลักฐาน แล้วกดยืนยัน หากข้อมูลเปลี่ยนหรือหมดเวลาให้โหลดผลกระทบใหม่",
       "สมาชิกที่สมัครจาก POS จะแสดงสาขา เครื่อง กะ และพนักงานต้นทางใน Customers พร้อมกรองตามสาขาที่สมัครได้; สมาชิกเก่าแสดงว่าไม่ทราบสาขาแทนการเดาจากบิลแรก",
       "หนึ่งลูกค้ามีหลายที่อยู่ได้ และที่อยู่จัดส่งต้องพร้อมก่อนใช้ Shipping กับช่องทางแชททั่วไป",
+      "สิทธิ์ customer.edit ใช้เพิ่ม/แก้ลูกค้าและที่อยู่ ตั้งที่อยู่เริ่มต้น หรือลบแบบเก็บประวัติ; การตั้งที่อยู่เริ่มต้นเปลี่ยนสองแถวในธุรกรรมเดียว และการลบลูกค้าถูกปฏิเสธเมื่อยังมีแต้มที่ใช้ได้",
       "Loyalty ใช้ตั้งคะแนน, tier, ledger แต้ม, และปรับแต้มด้วยมือเมื่อมีสิทธิ์",
       "Customer 360 ใน Inbox เชื่อมกับ CRM เดิมโดยตรง จึงควรทำความสะอาดข้อมูลลูกค้าที่นี่ด้วย",
     ],
@@ -1039,6 +1041,7 @@ const LINK_STEPS_TH: LinkStep[] = [
         ในการ์ด <b>ข้อมูลร้าน</b> ที่ {L.settings} แก้ <b>ชื่อร้าน</b> ได้เอง
         (Administrator · slug เป็นส่วนหนึ่งของลิงก์หน้าร้าน ระบบกำหนดให้ แก้ไม่ได้) และกรอก <b>ประเภทร้าน</b>,
         เวลาเปิด-ปิด, ที่อยู่, อีเมล/เว็บไซต์, โลโก้ รูปพื้นหลังและสไลด์โปรโมชันตอนจอลูกค้าว่าง, บัญชีรับเงิน (ธนาคาร/พร้อมเพย์), ค่าส่ง
+        (จำนวนเงินต้องไม่ติดลบและมีทศนิยมไม่เกิน 2 ตำแหน่ง; วันส่งขั้นต่ำต้องไม่เกินวันสูงสุด)
         โดยถ้ายังไม่กรอกบัญชีรับเงิน AI จะไม่แนะนำช่องทางชำระเงินให้ลูกค้า,
         ประเทศ/สกุลเงิน — AI จะใช้ตอบลูกค้า เช่น “ร้านชื่ออะไร/เปิดกี่โมง” “โอนเข้าบัญชีไหน” “ค่าส่งเท่าไหร่” และจะยกตัวอย่าง/ถามต่อให้เข้ากับประเภทร้านจากข้อมูลจริง ไม่เดา
         · หน้า <b>/shop-signup</b> มีตัวเลือก <b>archetype ร้าน</b> แบบ optional เพื่อเตรียม
@@ -1875,6 +1878,7 @@ const MENU_CARDS_EN: MenuCard[] = [
     title: "Purchase",
     desc: "Create POs, choose suppliers, receive goods into inventory, and reuse supplier mappings and last costs",
     bullets: [
+      "Manage suppliers lets staff with purchase.edit add or update the name, phone, email, type, tax ID, branch code, address, and note. Existing POs keep their supplier ID but display its current name; their amounts/receipts and issued expense documents do not change.",
       "Choose the supplier before creating a PO so search works by either the shop SKU or the supplier SKU",
       "Keep the supplier goods price separate from per-unit freight, duty or other non-recoverable acquisition cost; the displayed landed cost is frozen into inventory value on receipt without rewriting prior receipts",
       "On the first PO, map the supplier SKU to the shop SKU + size, then the system reuses that mapping later",
@@ -1911,6 +1915,7 @@ const MENU_CARDS_EN: MenuCard[] = [
       "Customers lets authorized staff find and merge duplicates. Review both records and their impacts, enter a reason, verification method and evidence reference, then confirm. Refresh the preview if data changes or the review expires.",
       "POS-enrolled members show their enrollment branch, register, shift, and employee in Customers and can be filtered by enrollment branch; legacy members show unknown instead of guessing from their first bill",
       "One customer can hold multiple addresses, and shipping addresses must be complete before using Shipping for chat channels",
+      "customer.edit is required to add or edit customers and addresses, choose a default address, or soft-delete a customer. Default-address changes commit together, and deletion refuses customers with usable points.",
       "Loyalty manages member numbers, tiers, point settings, ledgers, and manual point adjustments",
       "Customer 360 inside Inbox reuses the same CRM records, so cleaning data here improves the whole workflow",
     ],
