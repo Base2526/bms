@@ -406,8 +406,8 @@ export default function HomePage() {
 
       <BmsFlowDiagram variant="compact" />
       <Space wrap size={10} style={{ display: "flex", justifyContent: "center", margin: "24px 0" }}>
-        <Link href={localizedPublicPath("/about", lang)}><Button size="large">{lang === "th" ? "BMS คืออะไร" : "What is BMS?"}</Button></Link>
-        <Link href={localizedPublicPath("/ai-business-system", lang)}><Button size="large">{lang === "th" ? "AI ใน BMS ทำงานอย่างไร" : "How AI works in BMS"}</Button></Link>
+        <Link href={localizedPublicPath("/about", lang)}><Button size="large">{lang === "th" ? "BMS POS+ คืออะไร" : "What is BMS POS+?"}</Button></Link>
+        <Link href={localizedPublicPath("/ai-business-system", lang)}><Button size="large">{lang === "th" ? "AI ใน BMS POS+ ทำงานอย่างไร" : "How AI works in BMS POS+"}</Button></Link>
         <Link href={localizedPublicPath("/restaurant", lang)}><Button size="large">{t("landing.restaurantGuideCta")}</Button></Link>
       </Space>
 

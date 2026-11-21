@@ -86,7 +86,7 @@ hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$source_dmg" -quiet
 mounted=true
 desktop_app=$(find "$mount" -maxdepth 2 -type d -name 'BMS POS.app' -print -quit)
 [[ -n $desktop_app && -x $desktop_app/Contents/MacOS/BMS\ POS ]] || {
-  echo "Source DMG does not contain BMS POS.app" >&2; exit 1;
+  echo "Source DMG does not contain the BMS POS+ app" >&2; exit 1;
 }
 desktop_file=$(file "$desktop_app/Contents/MacOS/BMS POS")
 if [[ $architecture == arm64 ]]; then

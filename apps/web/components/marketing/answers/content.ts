@@ -11,12 +11,12 @@ export const publicAnswers: Record<"restaurant" | "cost-pricing", Record<PublicS
   restaurant: {
     th: {
       title: "เลือกระบบร้านอาหารจากขั้นตอนที่ร้านใช้จริง",
-      summary: "เริ่มจากรูปแบบบริการของร้าน: ขายหน้าเคาน์เตอร์ รับประทานที่โต๊ะ หรือรับกลับบ้าน แล้วตรวจว่าออร์เดอร์ไปถึงครัว การรับเงิน และสต็อกอย่างไร BMS มีคู่มือแยกแต่ละงาน พร้อมขอบเขตที่ควรตรวจสอบก่อนเริ่มใช้",
+      summary: "เริ่มจากรูปแบบบริการของร้าน: ขายหน้าเคาน์เตอร์ รับประทานที่โต๊ะ หรือรับกลับบ้าน แล้วตรวจว่าออร์เดอร์ไปถึงครัว การรับเงิน และสต็อกอย่างไร BMS POS+ มีคู่มือแยกแต่ละงาน พร้อมขอบเขตที่ควรตรวจสอบก่อนเริ่มใช้",
       faq: [
-        { question: "ร้านอาหารควรเตรียมอะไร ก่อนเริ่มใช้ BMS?", answer: "เตรียมเมนู ราคา สูตรและหน่วยวัตถุดิบ สถานีครัว ผังโต๊ะถ้ามี และสิทธิ์ของพนักงาน จากนั้นซ้อมเปิดบิล ส่งครัว รับชำระ และตรวจรายงานก่อนเปิดใช้กับลูกค้าจริง" },
+        { question: "ร้านอาหารควรเตรียมอะไร ก่อนเริ่มใช้ BMS POS+?", answer: "เตรียมเมนู ราคา สูตรและหน่วยวัตถุดิบ สถานีครัว ผังโต๊ะถ้ามี และสิทธิ์ของพนักงาน จากนั้นซ้อมเปิดบิล ส่งครัว รับชำระ และตรวจรายงานก่อนเปิดใช้กับลูกค้าจริง" },
         { question: "คาเฟ่ขายหน้าเคาน์เตอร์ต้องใช้ระบบโต๊ะและครัวทุกส่วนไหม?", answer: "ไม่จำเป็น ร้านที่รับเงินและส่งสินค้าทันทีเริ่มจากคู่มือ Retail POS สำหรับคาเฟ่หน้าเคาน์เตอร์ได้ ส่วนร้านที่ต้องส่งงานไปครัวหรือเปิดบิลค้างที่โต๊ะควรดูคู่มือร้านอาหาร เลือกตามงานจริงของร้าน" },
-        { question: "รับชำระเงินแล้ว ออร์เดอร์จะถูกส่งเข้าครัวเองหรือไม่?", answer: "การชำระเงินกับการส่งงานเข้าครัวเป็นคนละขั้นตอนใน BMS ต้องตรวจออร์เดอร์และทำขั้นตอนส่งครัวตาม workflow ของร้าน การรับเงินอย่างเดียวไม่สร้างงานครัว" },
-        { question: "เชื่อม GrabFood และ LINE MAN ได้แล้วหรือยัง?", answer: "ยังไม่ควรถือว่าพร้อมเชื่อมใช้งานจริง การเชื่อม GrabFood และ LINE MAN ยังติดเงื่อนไขสัญญาและสิทธิ์จากผู้ให้บริการ กรุณาตรวจสอบความพร้อมกับทีม BMS ก่อนวางแผนใช้ ส่วน foodpanda อยู่ในขอบเขต sandbox/shadow" },
+        { question: "รับชำระเงินแล้ว ออร์เดอร์จะถูกส่งเข้าครัวเองหรือไม่?", answer: "การชำระเงินกับการส่งงานเข้าครัวเป็นคนละขั้นตอนใน BMS POS+ ต้องตรวจออร์เดอร์และทำขั้นตอนส่งครัวตาม workflow ของร้าน การรับเงินอย่างเดียวไม่สร้างงานครัว" },
+        { question: "เชื่อม GrabFood และ LINE MAN ได้แล้วหรือยัง?", answer: "ยังไม่ควรถือว่าพร้อมเชื่อมใช้งานจริง การเชื่อม GrabFood และ LINE MAN ยังติดเงื่อนไขสัญญาและสิทธิ์จากผู้ให้บริการ กรุณาตรวจสอบความพร้อมกับทีม BMS POS+ ก่อนวางแผนใช้ ส่วน foodpanda อยู่ในขอบเขต sandbox/shadow" },
       ],
       links: [
         { path: "/learn/guides/restaurant-menu", label: "จัดเมนู สูตร และสถานีครัว" },
@@ -27,12 +27,12 @@ export const publicAnswers: Record<"restaurant" | "cost-pricing", Record<PublicS
     },
     en: {
       title: "Choose restaurant software around the work your shop does",
-      summary: "Start with counter service, table service or pickup, then trace how orders reach the kitchen, payment and inventory. BMS provides guides for each workflow, including boundaries to check before going live.",
+      summary: "Start with counter service, table service or pickup, then trace how orders reach the kitchen, payment and inventory. BMS POS+ provides guides for each workflow, including boundaries to check before going live.",
       faq: [
-        { question: "What should a restaurant prepare before using BMS?", answer: "Prepare menus, prices, recipes and ingredient units, kitchen stations, a floor plan where needed, and staff permissions. Rehearse opening a check, sending kitchen work, taking payment and checking reports before serving real customers." },
+        { question: "What should a restaurant prepare before using BMS POS+?", answer: "Prepare menus, prices, recipes and ingredient units, kitchen stations, a floor plan where needed, and staff permissions. Rehearse opening a check, sending kitchen work, taking payment and checking reports before serving real customers." },
         { question: "Does a counter-service cafe need every table and kitchen feature?", answer: "No. A shop that takes payment and hands over products immediately can start with the Retail POS food-counter guide. Shops that send work to a kitchen or keep table checks open should follow the restaurant guide. Choose the workflow that matches the shop." },
-        { question: "Does taking payment automatically send an order to the kitchen?", answer: "Payment and kitchen dispatch are separate BMS steps. Review the order and submit kitchen work through the restaurant workflow. Taking payment alone does not create kitchen work." },
-        { question: "Are GrabFood and LINE MAN integrations ready to use?", answer: "Do not assume live availability. GrabFood and LINE MAN connections remain blocked by provider contracts and access requirements. Check readiness with the BMS team before planning a rollout. The foodpanda adapter is limited to sandbox/shadow use." },
+        { question: "Does taking payment automatically send an order to the kitchen?", answer: "Payment and kitchen dispatch are separate BMS POS+ steps. Review the order and submit kitchen work through the restaurant workflow. Taking payment alone does not create kitchen work." },
+        { question: "Are GrabFood and LINE MAN integrations ready to use?", answer: "Do not assume live availability. GrabFood and LINE MAN connections remain blocked by provider contracts and access requirements. Check readiness with the BMS POS+ team before planning a rollout. The foodpanda adapter is limited to sandbox/shadow use." },
       ],
       links: [
         { path: "/learn/guides/restaurant-menu", label: "Menus, recipes and kitchen stations" },

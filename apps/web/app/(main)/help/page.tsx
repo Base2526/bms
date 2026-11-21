@@ -113,9 +113,9 @@ function faqBody(text: React.ReactNode): React.ReactNode {
 const HELP: Bilingual<HelpContent> = {
   en: {
     badge: 'Mockup /help for the new system',
-    heroTitle: 'BMS Help Center',
+    heroTitle: 'BMS POS+ Help Center',
     heroLead:
-      'This page has been reworked for BMS to explain "when a customer messages in, how does the system carry that through to an order, payment, and shipping" instead of the old generic help page.',
+      'This page has been reworked for BMS POS+ to explain "when a customer messages in, how does the system carry that through to an order, payment, and shipping" instead of the old generic help page.',
     heroAlertDesc:
       'Use this as a starting point for anyone who wants to understand the system overview before diving into the admin manual.',
     ctaPrimary: 'Keep reading this mockup',
@@ -237,7 +237,7 @@ const HELP: Bilingual<HelpContent> = {
     ],
     archetypesTitle: 'Conversations by shop archetype',
     archetypesIntro:
-      "This section shows that BMS doesn't reply with one script for every business — it adjusts its tone to the shop's context while still relying on real product and stock data from the backend.",
+      "This section shows that BMS POS+ doesn't reply with one script for every business — it adjusts its tone to the shop's context while still relying on real product and stock data from the backend.",
     customerLabel: 'Customer asks',
     assistantLabel: 'AI should reply along these lines',
     whyLabel: 'What this example illustrates',
@@ -371,9 +371,9 @@ const HELP: Bilingual<HelpContent> = {
   },
   th: {
     badge: 'Mockup /help สำหรับระบบใหม่',
-    heroTitle: 'BMS Help Center',
+    heroTitle: 'BMS POS+ Help Center',
     heroLead:
-      'หน้านี้ถูกปรับใหม่ให้เข้ากับ BMS โดยสรุปว่า "ลูกค้าทักมาแล้วระบบพาไปถึงออเดอร์ การชำระเงิน และการจัดส่งอย่างไร" แทน help page แบบ generic เดิม',
+      'หน้านี้ถูกปรับใหม่ให้เข้ากับ BMS POS+ โดยสรุปว่า "ลูกค้าทักมาแล้วระบบพาไปถึงออเดอร์ การชำระเงิน และการจัดส่งอย่างไร" แทน help page แบบ generic เดิม',
     heroAlertDesc: 'ใช้เป็นหน้าเริ่มต้นสำหรับคนที่อยากเข้าใจภาพรวมระบบก่อนลงลึกในคู่มือฝั่งแอดมิน',
     ctaPrimary: 'ดู mockup นี้ต่อ',
     ctaSecondary: 'ไปที่คู่มือแอดมินจริง',
@@ -493,7 +493,7 @@ const HELP: Bilingual<HelpContent> = {
     ],
     archetypesTitle: 'บทสนทนาตาม archetype ของร้าน',
     archetypesIntro:
-      'ส่วนนี้ใช้สื่อว่า BMS ไม่ได้ตอบแบบสคริปต์เดียวทุกธุรกิจ แต่ปรับน้ำหนักการตอบตามบริบทร้าน โดยยังต้องยึดข้อมูลสินค้าและสต็อกจริงจาก backend เหมือนเดิม',
+      'ส่วนนี้ใช้สื่อว่า BMS POS+ ไม่ได้ตอบแบบสคริปต์เดียวทุกธุรกิจ แต่ปรับน้ำหนักการตอบตามบริบทร้าน โดยยังต้องยึดข้อมูลสินค้าและสต็อกจริงจาก backend เหมือนเดิม',
     customerLabel: 'ลูกค้าถาม',
     assistantLabel: 'AI ควรตอบในแนวนี้',
     whyLabel: 'สิ่งที่ตัวอย่างนี้สื่อ',

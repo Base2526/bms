@@ -13,7 +13,7 @@ command -v sha256sum >/dev/null 2>&1 || die "sha256sum was not found"
 install_embedded_pos() {
   if [[ -f $BMS_PAYLOAD_ROOT/BMS-POS.deb ]] && \
      ! dpkg-query -W -f='${Status}' bms-pos 2>/dev/null | grep -q 'install ok installed'; then
-    printf 'Installing BMS POS...\n'
+    printf 'Installing BMS POS+...\n'
     dpkg --install "$BMS_PAYLOAD_ROOT/BMS-POS.deb" || \
       die "POS installation failed. Run sudo apt install -f, then run setup again"
   fi
@@ -167,7 +167,7 @@ install_embedded_pos
 
 systemctl enable bms-retail-local.service >/dev/null 2>&1 || true
 
-printf '\nBMS Retail Local is ready: http://127.0.0.1:3100\n'
+printf '\nBMS POS+ Retail Local is ready: http://127.0.0.1:3100\n'
 printf 'Admin: %s\n' "$admin_email"
 printf 'Shop type: %s\n' "$(printf '%s' "$result" | jq -r '.businessArchetype')"
 sample_status=$(printf '%s' "$result" | jq -r '.sample.status // "SKIPPED"')
@@ -181,6 +181,6 @@ fi
 device_token=$(printf '%s' "$result" | jq -r '.deviceToken // empty')
 if [[ -n $device_token ]]; then
   printf '\nPOS pairing token (shown once):\n%s\n' "$device_token"
-  printf 'Use the token to pair BMS POS, then securely store or destroy any record of it\n'
+  printf 'Use the token to pair BMS POS+, then securely store or destroy any record of it\n'
 fi
 printf 'Check system: sudo bms-retail-local-doctor\n'

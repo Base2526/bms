@@ -118,9 +118,9 @@ if ($Target -in @("All", "Windows")) {
 
 $qualifier = if ($testBuild) { "-SMOKE-ONLY" } else { "" }
 $outputs = [ordered]@{
-  windowsX64 = Join-Path $outputRoot "BMS-Retail-Local-POS-$Version-windows-x64$qualifier.exe"
-  windowsX86 = Join-Path $outputRoot "BMS-Retail-Local-POS-$Version-windows-x86-legacy$qualifier.exe"
-  linuxX64 = Join-Path $outputRoot "BMS-Retail-Local-POS-$Version-linux-x64$qualifier.deb"
+  windowsX64 = Join-Path $outputRoot "BMS-POS-Plus-Retail-Local-POS-$Version-windows-x64$qualifier.exe"
+  windowsX86 = Join-Path $outputRoot "BMS-POS-Plus-Retail-Local-POS-$Version-windows-x86-legacy$qualifier.exe"
+  linuxX64 = Join-Path $outputRoot "BMS-POS-Plus-Retail-Local-POS-$Version-linux-x64$qualifier.deb"
 }
 $targetOutputs = @()
 if ($Target -in @("All", "Windows")) { $targetOutputs += @($outputs.windowsX64, $outputs.windowsX86) }

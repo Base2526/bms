@@ -89,7 +89,7 @@ type RoadmapPageContent = {
 const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
   en: {
     labels: {
-      pageTitle: "BMS Product Roadmap",
+      pageTitle: "BMS POS+ Product Roadmap",
       subtitle:
         "A delivery roadmap connecting POS, online commerce, inventory, and CRM into a digital business advisor that tells each store what to do next.",
       done: "Done",
@@ -111,7 +111,7 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
         "Start with deterministic rules and verified data; add model-generated explanations only after the recommendation can be reproduced.",
       tip2:
         "Measure action acceptance, completion, and business impact so recommendations improve instead of becoming another alert feed.",
-      availableNow: "Available in BMS today",
+      availableNow: "Available in BMS POS+ today",
       availableNowNote:
         "These capabilities are already built. Items marked limited have a feature flag, beta integration, hardware dependency, or production verification still outstanding.",
       available: "Available",
@@ -181,7 +181,7 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
           "Cashier PIN permissions, shifts, drawer movements, and X/Z reports",
           "Member lookup, loyalty, PO receiving, barcode scanning, product packs, FEFO lots, and serial controls",
           "VAT invoices, credit notes, cash rounding, whole-bill serial checks, and idempotent settlement",
-          "One BMS product: Cloud is authoritative, with mobile Emergency Offline Mode for plain retail cash sales",
+          "One BMS POS+ product: Cloud is authoritative, with mobile Emergency Offline Mode for plain retail cash sales",
         ],
       },
       {
@@ -370,12 +370,12 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
       {
         id: "q7",
         quarter: "Q7 - Insurance module",
-        title: "Insurance sales inbox (new BMS module)",
+        title: "Insurance sales inbox (new BMS POS+ module)",
         status: "planned",
         tags: ["insurance", "inbox", "crm", "new-module"],
         goals: [
-          "Add a new BMS module for selling insurance policies, reusing the existing omnichannel inbox, CRM, and AI pipeline instead of building a parallel system",
-          "Keep every policy-binding action human-confirmed by a licensed agent, matching BMS's existing sensitive-action guardrails",
+          "Add a new BMS POS+ module for selling insurance policies, reusing the existing omnichannel inbox, CRM, and AI pipeline instead of building a parallel system",
+          "Keep every policy-binding action human-confirmed by a licensed agent, matching BMS POS+'s existing sensitive-action guardrails",
         ],
         deliverables: [
           "Policy, premium, payment-schedule, claim, and renewal schema with tenant-scoped RBAC and audit history, following the standard new-module checklist",
@@ -388,7 +388,7 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
   },
   th: {
     labels: {
-      pageTitle: "Roadmap การพัฒนาระบบ BMS",
+      pageTitle: "Roadmap การพัฒนาระบบ BMS POS+",
       subtitle:
         "แผนส่งมอบที่เชื่อม POS, Online commerce, Inventory และ CRM ให้เป็น Digital Business Advisor ที่บอกเจ้าของร้านได้ว่าวันนี้ควรทำอะไร",
       done: "เสร็จแล้ว",
@@ -410,7 +410,7 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
         "เริ่มจากกฎที่ตรวจสอบซ้ำได้และข้อมูลจริงก่อน แล้วค่อยใช้ AI ช่วยอธิบายเมื่อระบบพิสูจน์ที่มาของคำแนะนำได้",
       tip2:
         "วัดการยอมรับ การทำสำเร็จ และผลลัพธ์ของ Action เพื่อให้ระบบเรียนรู้ ไม่กลายเป็นแค่กล่องแจ้งเตือนอีกใบ",
-      availableNow: "ความสามารถที่ BMS มีแล้ววันนี้",
+      availableNow: "ความสามารถที่ BMS POS+ มีแล้ววันนี้",
       availableNowNote:
         "รายการเหล่านี้สร้างในระบบแล้ว ส่วนรายการที่ระบุว่าจำกัดยังมี Feature flag, การเชื่อมต่อแบบ beta, ข้อจำกัดด้าน Hardware หรือรอการตรวจสอบก่อนใช้งาน Production",
       available: "พร้อมใช้งาน",
@@ -480,7 +480,7 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
           "Cashier PIN, กะ, เงินเข้าออกลิ้นชัก และรายงาน X/Z",
           "ค้นสมาชิก, Loyalty, รับ PO, Scan barcode, Product pack, FEFO lot และ Serial number",
           "ใบกำกับภาษี VAT, Credit note, Cash rounding และ Settlement แบบ Atomic/Idempotent",
-          "ผลิตภัณฑ์ BMS เดียว: Cloud เป็นระบบหลัก พร้อม Emergency Offline Mode บน Mobile สำหรับการขายปลีกธรรมดาที่รับเงินสด",
+          "ผลิตภัณฑ์ BMS POS+ เดียว: Cloud เป็นระบบหลัก พร้อม Emergency Offline Mode บน Mobile สำหรับการขายปลีกธรรมดาที่รับเงินสด",
         ],
       },
       {
@@ -669,12 +669,12 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
       {
         id: "q7",
         quarter: "Q7 - โมดูลประกันภัย",
-        title: "Inbox ขายประกันภัย (โมดูลใหม่ใน BMS)",
+        title: "Inbox ขายประกันภัย (โมดูลใหม่ใน BMS POS+)",
         status: "planned",
         tags: ["insurance", "inbox", "crm", "new-module"],
         goals: [
-          "เพิ่มโมดูลขายประกันภัยใน BMS โดยใช้ Omnichannel Inbox, CRM และ AI pipeline เดิมที่มีอยู่แล้ว ไม่สร้างระบบคู่ขนานแยกต่างหาก",
-          "Action ที่ผูกมัดกรมธรรม์ต้องให้ตัวแทนที่มีใบอนุญาตยืนยันเสมอ ตาม Guardrail เดิมของ BMS สำหรับ Action ที่อ่อนไหว",
+          "เพิ่มโมดูลขายประกันภัยใน BMS POS+ โดยใช้ Omnichannel Inbox, CRM และ AI pipeline เดิมที่มีอยู่แล้ว ไม่สร้างระบบคู่ขนานแยกต่างหาก",
+          "Action ที่ผูกมัดกรมธรรม์ต้องให้ตัวแทนที่มีใบอนุญาตยืนยันเสมอ ตาม Guardrail เดิมของ BMS POS+ สำหรับ Action ที่อ่อนไหว",
         ],
         deliverables: [
           "Schema กรมธรรม์ เบี้ยประกัน งวดชำระ การเคลม และวันต่ออายุ พร้อม RBAC ต่อ Tenant และ Audit history ตาม Checklist มาตรฐานของการเพิ่มโมดูลใหม่",

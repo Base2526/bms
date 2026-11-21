@@ -12,11 +12,11 @@ chmod -R go-w "$root" "$app"
 chmod 0755 "$root/control/bms-retail-local" "/usr/local/bin/bms-retail-local" \
   "$app/Contents/MacOS/BMS Retail Local" \
   "$app/Contents/Resources/BMS Retail Local Setup.command" \
-  "/Applications/BMS Retail Local Uninstall.command"
+  "/Applications/BMS POS+ Retail Local Uninstall.command"
 package_type=$(cat "$root/payload/PACKAGE_TYPE" 2>/dev/null || true)
 if [ "$package_type" = server-pos ]; then
   if [ ! -d "$pos_app" ]; then
-    printf '%s\n' 'BMS Retail Local Server + POS installation is missing /Applications/BMS POS.app' >&2
+    printf '%s\n' 'BMS POS+ Retail Local Server + POS installation is missing /Applications/BMS POS.app' >&2
     exit 1
   fi
   chown -R root:wheel "$pos_app"
@@ -24,6 +24,9 @@ if [ "$package_type" = server-pos ]; then
   chmod 0755 "$pos_app/Contents/MacOS/BMS POS"
 fi
 if [ -f "$legacy" ]; then unlink "$legacy"; fi
+if [ -f "/Applications/BMS Retail Local Uninstall.command" ]; then
+  unlink "/Applications/BMS Retail Local Uninstall.command"
+fi
 touch "$app"
 console_user=$(stat -f %Su /dev/console 2>/dev/null || true)
 if [ -n "$console_user" ] && [ "$console_user" != root ]; then
@@ -33,4 +36,4 @@ if [ -n "$console_user" ] && [ "$console_user" != root ]; then
       /usr/bin/open -a "$app" >/dev/null 2>&1 || true
   fi
 fi
-printf '%s\n' 'BMS Retail Local installed. Setup should open automatically; if it does not, open Applications/BMS Retail Local.app to provision or start the server.'
+printf '%s\n' 'BMS POS+ Retail Local installed. Setup should open automatically; if it does not, open Applications/BMS POS+ Retail Local.app to provision or start the server.'

@@ -16,7 +16,7 @@ const Breadcrumbs = dynamic(() => import("@/components/Breadcrumbs"), {
   loading: () => null,
 });
 
-const SITE_NAME = "BMS";
+const SITE_NAME = "BMS POS+";
 const SITE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://jachoei.com";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -25,12 +25,12 @@ export async function generateMetadata(): Promise<Metadata> {
 
   const seo = {
     th: {
-      title: "BMS — AI ช่วยขายของออนไลน์ ตอบแชทและเปิดออเดอร์อัตโนมัติ",
-      desc: "รวมแชทจาก LINE, TikTok, Facebook, Instagram และ Website ไว้ที่เดียว ให้ AI ตอบลูกค้า เช็คสต็อก สร้างออเดอร์ ครบวงจรตั้งแต่แชทแรกจนของถึงมือ",
+      title: "BMS POS+ — ขายหน้าร้านและบริหารธุรกิจด้วย AI",
+      desc: "ระบบขายหน้าร้านที่เชื่อมสต็อก ลูกค้า ออร์เดอร์ การชำระเงิน รายงาน และงานขายผ่านแชท โดยข้อมูลธุรกิจยึดบริการและฐานข้อมูลของระบบ",
     },
     en: {
-      title: "BMS — AI sales assistant for online sellers",
-      desc: "Unify chats from LINE, TikTok, Facebook, Instagram and your website — let AI handle stock checks, orders, and fulfillment end to end.",
+      title: "BMS POS+ — Point of sale and business operations with AI",
+      desc: "Point of sale connected to inventory, customers, orders, payments, reporting and customer chat, with backend services and the database as the source of truth.",
     },
   }[lang];
 

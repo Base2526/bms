@@ -166,8 +166,8 @@ $packageSpecs = @($packageTypes | ForEach-Object {
   $label = if ($_ -eq "server") { "Server" } else { "Server-POS" }
   [pscustomobject]@{
     PackageType = $_
-    WindowsArtifact = Join-Path $outputRoot "BMS-Retail-Local-$label-$Version-windows-x64$artifactQualifier.exe"
-    LinuxArtifact = Join-Path $outputRoot "BMS-Retail-Local-$label-$Version-linux-x64$artifactQualifier.deb"
+    WindowsArtifact = Join-Path $outputRoot "BMS-POS-Plus-Retail-Local-$label-$Version-windows-x64$artifactQualifier.exe"
+    LinuxArtifact = Join-Path $outputRoot "BMS-POS-Plus-Retail-Local-$label-$Version-linux-x64$artifactQualifier.deb"
   }
 })
 $artifacts = @()

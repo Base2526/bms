@@ -48,7 +48,7 @@ export default function LocalLicensePage() {
       title: L("ยืนยันลงทะเบียนเครื่องนี้", "Register this installation?"),
       content: <Space direction="vertical">
         <span>{L("ลงทะเบียนเครื่องและร้านปัจจุบันด้วย Activation Code ลงท้าย", "Register the current shop and installation using the code ending in")} …{trimmed.slice(-4)}</span>
-        {data?.registered && <span>{L("ใช้ Code ของ License เดิมเท่านั้น หากกู้คืนร้านมายังเครื่องใหม่ ระบบจะส่งคำขอย้ายให้ BMS ตรวจสอบ การเปลี่ยน Trial เป็น Paid ทำผ่าน BMS โดยไม่ต้องกรอก Code ใหม่", "Use a code for the same license. A restored shop on a new computer requests transfer review. BMS converts Trial to Paid without another code.")}</span>}
+        {data?.registered && <span>{L("ใช้ Code ของ License เดิมเท่านั้น หากกู้คืนร้านมายังเครื่องใหม่ ระบบจะส่งคำขอย้ายให้ BMS POS+ ตรวจสอบ การเปลี่ยน Trial เป็น Paid ทำผ่าน BMS POS+ โดยไม่ต้องกรอก Code ใหม่", "Use a code for the same license. A restored shop on a new computer requests transfer review. BMS POS+ converts Trial to Paid without another code.")}</span>}
       </Space>,
       okText: L("ยืนยันลงทะเบียน", "Confirm registration"), cancelText: L("ยกเลิก", "Cancel"),
       onOk: async () => {
@@ -70,14 +70,14 @@ export default function LocalLicensePage() {
   if (!canView) return <Alert closable type="warning" message={L("ไม่มีสิทธิ์ดู License", "License access is not permitted")} />;
   return <div style={{ maxWidth: 960, margin: "0 auto" }}>
     <Typography.Title level={2}>{L("การลงทะเบียน Retail Local", "Retail Local registration")}</Typography.Title>
-    <Typography.Paragraph>{L("ดูสถานะ License และลงทะเบียนเครื่องนี้เมื่อได้รับ Activation Code จาก BMS", "View the license status and register this installation with an Activation Code from BMS.")}</Typography.Paragraph>
+    <Typography.Paragraph>{L("ดูสถานะ License และลงทะเบียนเครื่องนี้เมื่อได้รับ Activation Code จาก BMS POS+", "View the license status and register this installation with an Activation Code from BMS POS+.")}</Typography.Paragraph>
     <GuideLauncher />
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <LocalPlanCard view={error ? undefined : data} />
       <Card id="backup" title={L("ตั้ง backup นอกเครื่อง", "Set up off-host backup")}>
-        <p>{L("Windows: Start > BMS Retail Local > Configure Off-host Backup เลือก USB/NAS ที่แยกจาก disk ระบบ", "Windows: Start > BMS Retail Local > Configure Off-host Backup. Choose USB/NAS separate from the system disk.")}</p>
+        <p>{L("Windows: Start > BMS POS+ Retail Local > Configure Off-host Backup เลือก USB/NAS ที่แยกจาก disk ระบบ", "Windows: Start > BMS POS+ Retail Local > Configure Off-host Backup. Choose USB/NAS separate from the system disk.")}</p>
         <p>Ubuntu: <code>sudo bms-retail-local-configure-backup AGE_RECIPIENT /mnt/OFF_HOST</code></p>
-        <p>{L("เก็บ recovery identity แยกจากเครื่องร้าน แล้วทดสอบ restore; BMS ไม่ host backup ให้ macOS ยังไม่มี scheduled off-host backup", "Keep the recovery identity away from the shop host and test restore. BMS does not host backups. Scheduled off-host backup is not available on macOS.")}</p>
+        <p>{L("เก็บ recovery identity แยกจากเครื่องร้าน แล้วทดสอบ restore; BMS POS+ ไม่ host backup ให้ macOS ยังไม่มี scheduled off-host backup", "Keep the recovery identity away from the shop host and test restore. BMS POS+ does not host backups. Scheduled off-host backup is not available on macOS.")}</p>
       </Card>
       <Card title={<div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "space-between", alignItems: "center", padding: "12px 0", whiteSpace: "normal" }}>
         <span>{L("License ของเครื่องนี้", "This installation’s license")}</span>
@@ -87,17 +87,17 @@ export default function LocalLicensePage() {
           <Descriptions.Item label={uiText("admin_ui.en_license_32296")}>{data.licenseCode ? `LIC-••••${data.licenseCode.slice(-6)}` : "—"}</Descriptions.Item>
           <Descriptions.Item label={L("ประเภท", "Type")}>{data.licenseType ?? "—"}</Descriptions.Item>
           <Descriptions.Item label={L("วันหมดอายุ Trial", "Trial expiry")}>{date(data.trialExpiresAt)}</Descriptions.Item>
-          <Descriptions.Item label={L("ตรวจสอบกับ BMS ล่าสุด", "Last checked with BMS")}>{date(data.checkedAt)}</Descriptions.Item>
+          <Descriptions.Item label={L("ตรวจสอบกับ BMS POS+ ล่าสุด", "Last checked with BMS POS+")}>{date(data.checkedAt)}</Descriptions.Item>
           {!data.online && data.commercialStatus && <Descriptions.Item label={L("สถานะที่ยืนยันล่าสุด", "Last confirmed status")}>{localLicenseBadge({ ...data, available: true, online: true }, th).label}</Descriptions.Item>}
         </Descriptions>}
         {(error || data && !data.available) && <Alert closable showIcon type="warning" message={L("ติดต่อระบบลงทะเบียนบนเครื่องไม่ได้", "Registration service is unavailable")} description={L("เปิด Retail Local และตรวจว่าใช้ runtime รุ่นที่รองรับหน้านี้ จากนั้นลองใหม่ ร้านยังใช้งานได้ตามปกติ", "Start Retail Local and check that the runtime supports this page, then retry. The shop remains available.")} />}
-        {data?.registered && !data.online && data.available && <Alert closable showIcon type="info" message={L("ยังตรวจสอบสถานะล่าสุดกับ BMS ไม่ได้ ข้อมูลด้านบนเป็นผลตรวจครั้งก่อน", "BMS is unavailable. The details above are the last confirmed result.")} />}
+        {data?.registered && !data.online && data.available && <Alert closable showIcon type="info" message={L("ยังตรวจสอบสถานะล่าสุดกับ BMS POS+ ไม่ได้ ข้อมูลด้านบนเป็นผลตรวจครั้งก่อน", "BMS POS+ is unavailable. The details above are the last confirmed result.")} />}
         <Button onClick={() => void mutate()} style={{ marginTop: 16 }}>{L("โหลดสถานะอีกครั้ง", "Reload status")}</Button>
       </Card>
-      <Alert closable showIcon type="info" message={L("ร้านยังใช้งานได้ แม้ยังไม่ลงทะเบียนหรือ Trial หมดอายุ", "The shop remains available before registration and after trial expiry")} description={L("การติดตั้งไม่ได้เริ่ม Trial 30 วัน ระยะ Trial เริ่มเมื่อ BMS ออก Trial License ให้", "Installation does not start a 30-day trial. The trial begins when BMS issues a trial license.")} />
+      <Alert closable showIcon type="info" message={L("ร้านยังใช้งานได้ แม้ยังไม่ลงทะเบียนหรือ Trial หมดอายุ", "The shop remains available before registration and after trial expiry")} description={L("การติดตั้งไม่ได้เริ่ม Trial 30 วัน ระยะ Trial เริ่มเมื่อ BMS POS+ ออก Trial License ให้", "Installation does not start a 30-day trial. The trial begins when BMS POS+ issues a trial license.")} />
       {pending && <Alert closable showIcon type="info" message={L("กำลังลงทะเบียน", "Registration in progress")} description={L("ระบบจะรับคำขอภายในประมาณ 1 นาที หากอินเทอร์เน็ตขัดข้องจะลองต่อให้อัตโนมัติ ไม่ต้องกรอก Code ซ้ำ", "The runtime normally picks up the request within one minute. Connection failures are retried automatically; do not re-enter the code.")} />}
-      {data?.requestStatus === "FAILED" && <Alert closable showIcon type="warning" message={L("ลงทะเบียนไม่สำเร็จ", "Registration failed")} description={data.errorCode === "LICENSE_MISMATCH" ? L("Code เป็นของ License อื่น จึงไม่ได้เปลี่ยนการลงทะเบียนเดิม กรุณาขอ Code ของ License เดิมจาก BMS", "This code belongs to another license. The existing registration was kept. Request a code for the original license from BMS.") : data.errorCode === "REQUEST_EXPIRED" ? L("คำขอรอระบบบนเครื่องนานเกินไป กรุณาตรวจว่า runtime ทำงานแล้วกรอก Code อีกครั้ง", "The request waited too long for the host runtime. Check that it is running and enter the code again.") : L("Code ไม่ถูกต้อง หมดอายุ หรือถูกใช้แล้ว กรุณาขอ Code ใหม่จาก BMS", "The code is invalid, expired, or already used. Request a new code from BMS.")} />}
-      {data?.requestStatus === "SUCCEEDED" && <Alert closable showIcon type="success" message={L("บันทึกการลงทะเบียนบนเครื่องแล้ว", "Registration saved on this installation")} description={L("สถานะ Trial / Licensed แสดงด้านบนเมื่อ BMS ยืนยันข้อมูลแล้ว", "Trial / Licensed is shown above once BMS confirms the status.")} />}
+      {data?.requestStatus === "FAILED" && <Alert closable showIcon type="warning" message={L("ลงทะเบียนไม่สำเร็จ", "Registration failed")} description={data.errorCode === "LICENSE_MISMATCH" ? L("Code เป็นของ License อื่น จึงไม่ได้เปลี่ยนการลงทะเบียนเดิม กรุณาขอ Code ของ License เดิมจาก BMS POS+", "This code belongs to another license. The existing registration was kept. Request a code for the original license from BMS POS+.") : data.errorCode === "REQUEST_EXPIRED" ? L("คำขอรอระบบบนเครื่องนานเกินไป กรุณาตรวจว่า runtime ทำงานแล้วกรอก Code อีกครั้ง", "The request waited too long for the host runtime. Check that it is running and enter the code again.") : L("Code ไม่ถูกต้อง หมดอายุ หรือถูกใช้แล้ว กรุณาขอ Code ใหม่จาก BMS POS+", "The code is invalid, expired, or already used. Request a new code from BMS POS+.")} />}
+      {data?.requestStatus === "SUCCEEDED" && <Alert closable showIcon type="success" message={L("บันทึกการลงทะเบียนบนเครื่องแล้ว", "Registration saved on this installation")} description={L("สถานะ Trial / Licensed แสดงด้านบนเมื่อ BMS POS+ ยืนยันข้อมูลแล้ว", "Trial / Licensed is shown above once BMS POS+ confirms the status.")} />}
       {canManage && <Card title={data?.registered ? L("ลงทะเบียน License เดิม / กู้คืนเครื่อง", "Re-register / restore installation") : L("ลงทะเบียน License", "Register license")}>
         <Typography.Paragraph>{L("กรอก Activation Code ที่ขึ้นต้นด้วย bmsla_ เลข LIC- เป็นเลขอ้างอิงและใช้กรอกแทนไม่ได้", "Enter the Activation Code beginning with bmsla_. A LIC- reference cannot be used as an activation code.")}</Typography.Paragraph>
         <Form form={form} layout="vertical" onFinish={submit}>

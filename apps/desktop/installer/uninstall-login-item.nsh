@@ -1,4 +1,4 @@
-; Remove the "open BMS POS at login" entry when the app is uninstalled, so Windows does not keep a
+; Remove the "open BMS POS+ at login" entry when the app is uninstalled, so Windows does not keep a
 ; startup item pointing at a deleted program. Skipped during updates: electron-builder runs the old
 ; uninstaller before installing the new version, and the operator's choice must survive that.
 ; The value name must match WINDOWS_LOGIN_ITEM_NAME in src/launch-at-login.mjs.

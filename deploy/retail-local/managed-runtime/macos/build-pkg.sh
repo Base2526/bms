@@ -8,7 +8,7 @@ usage: build-pkg.sh [--version VERSION] [--architecture arm64|x64] [--package-ty
 
 Builds a full, unsigned macOS Retail Local technical-pilot installer. The package
 contains Lima, an architecture-matched Ubuntu cloud image, a private Moby engine, Compose, age, and
-all BMS service images. `server-pos` also embeds the matching BMS POS app and performs a one-time secure
+all BMS service images. `server-pos` also embeds the matching BMS POS+ app and performs a one-time secure
 pairing handoff. Docker Desktop is used only as a build engine on this workstation and is not
 required by the target Mac.
 EOF
@@ -134,7 +134,7 @@ else
     --build-arg NEXT_PUBLIC_BASE_URL=http://127.0.0.1:3100 \
     --build-arg NEXT_PUBLIC_GRAPHQL_HTTP=http://127.0.0.1:3100/api/graphql \
     --build-arg NEXT_PUBLIC_GRAPHQL_WS=ws://127.0.0.1:3101/graphql \
-    --build-arg COOKIE_SECURE=0 --build-arg 'WEB_NAME=BMS Retail Local' \
+    --build-arg COOKIE_SECURE=0 --build-arg 'WEB_NAME=BMS POS+ Retail Local' \
     -f "$repo_root/apps/web/Dockerfile" -t "$web_ref" "$repo_root"
   echo "Build WS image: $ws_ref"
   docker buildx build --platform "$linux_platform" --provenance=false --load \
@@ -159,11 +159,11 @@ if [[ $package_type == server-pos ]]; then
   [[ -x $desktop_builder ]] || {
     echo "electron-builder was not found; run npm install in apps/desktop first" >&2; exit 1;
   }
-  echo "Build $architecture BMS POS app"
+  echo "Build $architecture BMS POS+ app"
   (cd "$desktop_root" && CSC_IDENTITY_AUTO_DISCOVERY=false "$desktop_builder" \
     --mac "--$electron_arch" --dir --config.directories.output="$work/desktop-dist")
   desktop_app="$work/desktop-dist/$electron_dir/BMS POS.app"
-  [[ -d $desktop_app ]] || { echo "BMS POS.app was not found after the build" >&2; exit 1; }
+  [[ -d $desktop_app ]] || { echo "BMS POS+ app was not found after the build" >&2; exit 1; }
   ditto "$desktop_app" "$package_root/Applications/BMS POS.app"
 fi
 
@@ -204,14 +204,14 @@ chmod 0644 "$install_root/control/BOOTSTRAP_VERSION"
 cp "$macos_root/bms-retail-local" "$package_root/usr/local/bin/bms-retail-local"
 cp "$macos_root/bms-retail-local-app" "$app_contents/MacOS/BMS Retail Local"
 cp "$macos_root/bms-retail-local-setup.command" "$app_contents/Resources/BMS Retail Local Setup.command"
-cp "$macos_root/BMS Retail Local Uninstall.command" "$package_root/Applications/BMS Retail Local Uninstall.command"
+cp "$macos_root/BMS POS+ Retail Local Uninstall.command" "$package_root/Applications/BMS POS+ Retail Local Uninstall.command"
 cp "$macos_root/BMSRetailLocal.icns" "$app_contents/Resources/BMSRetailLocal.icns"
 cat >"$app_contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleDisplayName</key><string>BMS Retail Local</string>
+  <key>CFBundleDisplayName</key><string>BMS POS+ Retail Local</string>
   <key>CFBundleExecutable</key><string>BMS Retail Local</string>
   <key>CFBundleIconFile</key><string>BMSRetailLocal</string>
   <key>CFBundleIdentifier</key><string>com.base2526.bms.retail-local.app</string>
@@ -236,7 +236,7 @@ chmod 0755 "$payload/bin/bms-runtime-agent" "$payload/bms-localctl" \
   "$install_root/control/bms-retail-local" "$package_root/usr/local/bin/bms-retail-local" \
   "$app_contents/MacOS/BMS Retail Local" \
   "$app_contents/Resources/BMS Retail Local Setup.command" \
-  "$package_root/Applications/BMS Retail Local Uninstall.command"
+  "$package_root/Applications/BMS POS+ Retail Local Uninstall.command"
 chmod -R go-w "$install_root"
 xattr -cr "$package_root"
 checksum_file="$work/SHA256SUMS"
@@ -272,11 +272,11 @@ pkgbuild --root "$package_root" --scripts "$scripts" \
   --identifier com.base2526.bms.retail-local --version "$pkg_version" \
   --install-location / "$component_pkg" >/dev/null
 
-package_title="BMS Retail Local Server"
-package_name="BMS-Retail-Local-Server"
+package_title="BMS POS+ Retail Local Server"
+package_name="BMS-POS-Plus-Retail-Local-Server"
 if [[ $package_type == server-pos ]]; then
-  package_title="BMS Retail Local Server + POS"
-  package_name="BMS-Retail-Local-Server-POS"
+  package_title="BMS POS+ Retail Local Server + POS"
+  package_name="BMS-POS-Plus-Retail-Local-Server-POS"
 fi
 cat >"$work/distribution.xml" <<EOF
 <?xml version="1.0" encoding="utf-8"?>

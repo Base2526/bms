@@ -497,7 +497,7 @@ exit $LASTEXITCODE
     assert.equal(result.error, undefined, String(result.error));
     const success = scenario === 'success';
     assert.equal(result.status === 0, success, result.stdout + result.stderr);
-    assert.equal(result.stdout.includes('BMS POS installation completed.'), success);
+    assert.equal(result.stdout.includes('BMS POS+ installation completed.'), success);
     assert.equal(existsSync(join(root, 'launched')), ['success', 'child-failure', 'cancel'].includes(scenario));
     if (!success) {
       assert.match(readFileSync(errorFile, 'utf8'), /Support report .*\.zip/, 'missing diagnostic report path');

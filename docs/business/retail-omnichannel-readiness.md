@@ -114,7 +114,7 @@ limiter กลางยังมี fallback ต่อ instance เมื่อ 
 - HTTP smoke กับ build เดียวกัน: GET ลิงก์ผิดเป็น 404, PATCH JSON null เป็น 400,
   PATCH เกิน 16 KiB เป็น 413; ทั้งหมดมี JSON error และ no-store ไม่มีการเขียนข้อมูลร้าน
   Redis ไม่ได้เปิด จึงทดสอบเส้นทาง fallback ของ limiter ไม่ใช่เพดานร่วมหลาย instance
-- ยังไม่รัน DB suites: ไม่มี BMS PostgreSQL/Redis stack ที่กำลังทำงานใน Docker ที่ตรวจพบ
+- ยังไม่รัน DB suites: ไม่มี BMS POS+ PostgreSQL/Redis stack ที่กำลังทำงานใน Docker ที่ตรวจพบ
   ไม่ได้ใช้ฐาน production หรือ dump เป็นทางลัด
 - ยังไม่พิสูจน์ provider/hardware/live AI/โหลดจริง จึงยังไม่มีหลักฐานสำหรับคำว่า production-ready ทุกส่วน
 

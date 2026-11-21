@@ -3231,7 +3231,7 @@ export default function PosPage() {
     if (result && order.provider) {
       setNotice({
         type: "ok",
-        text: posText("ปฏิเสธใน BMS แล้ว · ตรวจและยืนยันการปฏิเสธบน provider tablet ด้วยจนกว่า Reject API จะผ่าน live gate"),
+        text: posText("ปฏิเสธใน BMS POS+ แล้ว · ตรวจและยืนยันการปฏิเสธบน provider tablet ด้วยจนกว่า Reject API จะผ่าน live gate"),
       });
     }
   }
@@ -6878,7 +6878,7 @@ export default function PosPage() {
         {desktopClient ? (
           <>
             <p style={{ color: "var(--posx-muted, #666)", fontSize: 14 }}>
-              {posText("กลับไปหน้าตั้งค่า BMS POS Desktop เพื่อเปลี่ยน Server URL หรือจับคู่ด้วย token ใหม่") + " "}</p>
+              {posText("กลับไปหน้าตั้งค่า BMS POS+ Desktop เพื่อเปลี่ยน Server URL หรือจับคู่ด้วย token ใหม่") + " "}</p>
             <button
               onClick={() => { void unpair(); }}
               style={{ width: "100%", padding: 14, fontSize: 16, marginTop: 12 }}
@@ -9324,7 +9324,7 @@ export default function PosPage() {
               <div className="pos-settings-card">
                 {hasDesktopCustomerDisplayBridge() && <CustomerDisplaySettings />}
                 {hasDesktopPosBridge() && <div role="status" className="pos-settings-inline-warning">
-                  {posText("จอเรียกคิวแบบจอที่สองต้องใช้ BMS POS Desktop รุ่นล่าสุด กรุณาอัปเดตแอปแล้วเปิดใหม่") + " "}</div>}
+                  {posText("จอเรียกคิวแบบจอที่สองต้องใช้ BMS POS+ Desktop รุ่นล่าสุด กรุณาอัปเดตแอปแล้วเปิดใหม่") + " "}</div>}
                 {!hasDesktopManagedDisplayBridge() && <QueueBoardPreferenceSettings />}
               </div>
             </section>}

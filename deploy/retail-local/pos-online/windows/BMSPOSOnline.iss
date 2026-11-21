@@ -22,10 +22,10 @@
 
 [Setup]
 AppId={{5E967E02-8865-44C8-8594-BC5990C7B552}
-AppName=BMS POS Online Setup
+AppName=BMS POS+ Online Setup
 AppVersion={#ProductVersion}
 AppPublisher=BMS
-DefaultDirName={tmp}\BMS POS Online Setup
+DefaultDirName={tmp}\BMS POS+ Online Setup
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 OutputDir={#OutputRoot}
@@ -87,7 +87,7 @@ begin
     DirExists(ExpandConstant('{localappdata}\BMS\POSBootstrap\diagnostics'));
   if (CurPageID = wpFinished) and BootstrapFailed then
   begin
-    WizardForm.FinishedHeadingLabel.Caption := 'BMS POS setup did not complete';
+    WizardForm.FinishedHeadingLabel.Caption := 'BMS POS+ setup did not complete';
     WizardForm.FinishedLabel.Caption := BootstrapError + #13#10 + #13#10 +
       'Run this installer again to resume. Details: ' +
       ExpandConstant('{localappdata}\BMS\POSBootstrap\setup-error.txt');
@@ -119,20 +119,20 @@ begin
     ' -AgentPath ' + AddQuotes(ExpandConstant('{tmp}\bms-pos-bootstrap\bms-runtime-agent.exe')) +
     ' -KeyringPath ' + AddQuotes(ExpandConstant('{tmp}\bms-pos-bootstrap\trusted-release-keys.json')) +
     ' -ErrorFile ' + AddQuotes(ErrorPath) + ' -InstallerVersion ' + AddQuotes('{#ProductVersion}');
-  WizardForm.StatusLabel.Caption := 'Downloading and verifying BMS POS...';
+  WizardForm.StatusLabel.Caption := 'Downloading and verifying BMS POS+...';
   if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
     Parameters, '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
   begin
-    ReportBootstrapFailure('Could not start BMS POS setup.');
+    ReportBootstrapFailure('Could not start BMS POS+ setup.');
     exit;
   end;
   if ResultCode <> 0 then
   begin
     ErrorText := '';
     if LoadStringFromFile(ErrorPath, ErrorText) and (Trim(ErrorText) <> '') then
-      ReportBootstrapFailure('BMS POS setup did not complete:' + #13#10 + UTF8Decode(ErrorText))
+      ReportBootstrapFailure('BMS POS+ setup did not complete:' + #13#10 + UTF8Decode(ErrorText))
     else
-      ReportBootstrapFailure('BMS POS setup did not complete. Run this installer again to resume.');
+      ReportBootstrapFailure('BMS POS+ setup did not complete. Run this installer again to resume.');
     exit;
   end;
   BootstrapFailed := False;

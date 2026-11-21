@@ -362,7 +362,7 @@ export default function DeliveryPlatformsPage() {
     </Card>
     <Alert closable showIcon type="info"
       message={L("ยอดขายกับยอดรับจริงเป็นคนละฐาน", "Sales and actual payout use different accounting bases")}
-      description={L("ยอดขาย/คืนเงินนับตามวันเกิดรายการใน BMS ส่วน settlement นับเฉพาะ statement ที่ช่วงเวลาอยู่ภายในวันที่เลือก และไม่แก้ยอดขายย้อนหลัง", "Sales and refunds follow BMS transaction dates. Settlement includes statements whose full period falls inside the selected range and never rewrites historical sales.")} />
+      description={L("ยอดขาย/คืนเงินนับตามวันเกิดรายการใน BMS POS+ ส่วน settlement นับเฉพาะ statement ที่ช่วงเวลาอยู่ภายในวันที่เลือก และไม่แก้ยอดขายย้อนหลัง", "Sales and refunds follow BMS POS+ transaction dates. Settlement includes statements whose full period falls inside the selected range and never rewrites historical sales.")} />
   </Space>;
 
   const integrations = <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -371,7 +371,7 @@ export default function DeliveryPlatformsPage() {
     <Card title={L("ความพร้อม LINE MAN ระดับแพลตฟอร์ม", "LINE MAN platform readiness")}>
       <Space direction="vertical" size="middle" style={{ width: "100%" }}>
         <Alert closable showIcon type="info"
-          message={L("BMS กำลังรอ Partner API contract จาก LINE MAN", "BMS is waiting for the LINE MAN Partner API contract")}
+          message={L("BMS POS+ กำลังรอ Partner API contract จาก LINE MAN", "BMS POS+ is waiting for the LINE MAN Partner API contract")}
           description={L("เจ้าของร้านยังไม่ต้องกรอก Client ID, token หรือ webhook secret หน้านี้จะเปิดการเชื่อมต่อเมื่อทีมแพลตฟอร์มตรวจ authentication, webhook, lifecycle, settlement และสิทธิ์การใช้ credential แล้ว", "Shop owners should not enter a Client ID, token, or webhook secret yet. Connection will open after the platform team verifies authentication, webhooks, lifecycle, settlement, and credential authority.")} />
         <Row gutter={[12, 12]}>
           {[
@@ -423,7 +423,7 @@ export default function DeliveryPlatformsPage() {
     <Card title={L("จับคู่สาขา", "Branch mappings")} extra={canManageMapping && <Button icon={<PlusOutlined />} onClick={() => { locationForm.resetFields(); locationForm.setFieldsValue({ active:true, timezone:"Asia/Bangkok" }); setLocationOpen(true); }}>{L("เพิ่ม", "Add")}</Button>}>
       <Table rowKey="id" dataSource={boot.mappings.locations} pagination={false} columns={[
         { title:uiText("admin_ui.en_provider_7ceee"), dataIndex:"provider" }, { title:L("Provider store", "Provider store"), dataIndex:"provider_store_id" },
-        { title:L("สาขา BMS", "BMS location"), dataIndex:"location_name" }, { title:uiText("admin_ui.en_timezone_d1f7d"), dataIndex:"timezone" },
+        { title:L("สาขา BMS POS+", "BMS POS+ location"), dataIndex:"location_name" }, { title:uiText("admin_ui.en_timezone_d1f7d"), dataIndex:"timezone" },
         { title:L("สถานะ", "Status"), dataIndex:"active", render:(v) => <Tag color={v ? "green" : "default"}>{v ? L("ใช้งาน", "Active") : L("ปิด", "Disabled")}</Tag> },
       ]} />
     </Card>
@@ -431,7 +431,7 @@ export default function DeliveryPlatformsPage() {
       <Table rowKey="id" dataSource={boot.mappings.menus} scroll={{ x: 1000 }} columns={[
         { title:L("ชื่อบน provider", "Provider name"), dataIndex:"provider_name_snapshot" },
         { title:L("ชนิด", "Kind"), dataIndex:"mapping_kind" }, { title:L("Provider ID", "Provider ID"), dataIndex:"provider_item_id" },
-        { title:L("เป้าหมาย BMS", "BMS target"), render:(_,r) => [r.product_sku,r.size,r.modifier_code].filter(Boolean).join(" / ") || "—" },
+        { title:L("เป้าหมาย BMS POS+", "BMS POS+ target"), render:(_,r) => [r.product_sku,r.size,r.modifier_code].filter(Boolean).join(" / ") || "—" },
         { title:L("สถานะ", "Status"), dataIndex:"mapping_status", render:(v) => <Tag color={statusColor(v)}>{v}</Tag> },
       ]} />
     </Card>
@@ -531,7 +531,7 @@ export default function DeliveryPlatformsPage() {
       </Row>
       {!tenantCredentialFieldsAvailable && <Alert closable showIcon type="warning" style={{ marginBottom: 16 }}
         message={L("บันทึกได้เฉพาะรายการเตรียมเชื่อมต่อ", "Only a connection placeholder can be saved")}
-        description={L("Contract ยังไม่บอกว่า credential เป็นของ BMS หรือของร้าน ระบบจึงบังคับ OFF และไม่รับ secret จนกว่าทีมแพลตฟอร์มจะเปิด Partner flow", "The contract has not established whether credentials belong to BMS or the shop, so the server enforces OFF and rejects secrets until the platform team enables the partner flow.")} />}
+        description={L("Contract ยังไม่บอกว่า credential เป็นของ BMS POS+ หรือของร้าน ระบบจึงบังคับ OFF และไม่รับ secret จนกว่าทีมแพลตฟอร์มจะเปิด Partner flow", "The contract has not established whether credentials belong to BMS POS+ or the shop, so the server enforces OFF and rejects secrets until the platform team enables the partner flow.")} />}
       <Row gutter={12}><Col span={12}><Form.Item name="active" label={L("เปิด integration", "Integration enabled")} valuePropName="checked"><Switch disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col><Col span={12}><Form.Item name="outboundCommandsEnabled" label={L("เปิด outbound command", "Outbound commands enabled")} valuePropName="checked"><Switch disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col></Row>
       <Form.Item name="clientId" label={uiText("admin_ui.en_client_id_a766c")}><Input disabled={!tenantCredentialFieldsAvailable} /></Form.Item><Row gutter={12}><Col span={12}><Form.Item name="clientSecret" label={L("Client secret (เว้นว่างเพื่อคงเดิม)", "Client secret (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col><Col span={12}><Form.Item name="accessToken" label={L("Access token (เว้นว่างเพื่อคงเดิม)", "Access token (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col></Row>
       <Row gutter={12}><Col span={12}><Form.Item name="refreshToken" label={L("Refresh token (เว้นว่างเพื่อคงเดิม)", "Refresh token (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col><Col span={12}><Form.Item name="webhookSecret" label={L("Webhook secret (เว้นว่างเพื่อคงเดิม)", "Webhook secret (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col></Row>
@@ -542,7 +542,7 @@ export default function DeliveryPlatformsPage() {
     <Modal open={locationOpen} title={L("จับคู่สาขา", "Map provider store")} onCancel={()=>setLocationOpen(false)} onOk={()=>void saveLocationMapping()} okText={L("บันทึก", "Save")} cancelText={L("ยกเลิก", "Cancel")}>
       <Form form={locationForm} layout="vertical"><Form.Item name="integrationId" label={uiText("admin_ui.en_integration_899e5")} rules={[{required:true}]}><Select options={integrationOptions} /></Form.Item>
       <Form.Item name="providerStoreId" label={uiText("admin_ui.en_provider_store_id_31a1a")} rules={[{required:true}]}><Input /></Form.Item><Form.Item name="providerStoreName" label={uiText("admin_ui.en_provider_store_name_6322b")}><Input /></Form.Item>
-      <Form.Item name="locationId" label={L("สาขา BMS", "BMS location")} rules={[{required:true}]}><Select options={boot.mappings.availableLocations.map(l=>({value:l.id,label:`${l.name} · ${l.code}`}))} /></Form.Item>
+      <Form.Item name="locationId" label={L("สาขา BMS POS+", "BMS POS+ location")} rules={[{required:true}]}><Select options={boot.mappings.availableLocations.map(l=>({value:l.id,label:`${l.name} · ${l.code}`}))} /></Form.Item>
       <Form.Item name="timezone" label={uiText("admin_ui.en_timezone_d1f7d")} rules={[{required:true}]}><Input /></Form.Item><Form.Item name="active" label={L("ใช้งาน", "Active")} valuePropName="checked"><Switch /></Form.Item></Form>
     </Modal>
 
@@ -552,8 +552,8 @@ export default function DeliveryPlatformsPage() {
       <Row gutter={12}><Col span={12}><Form.Item name="mappingKind" label={L("ชนิด", "Kind")} rules={[{required:true}]}><Select options={["ITEM","VARIANT","MODIFIER"].map(value=>({value}))} /></Form.Item></Col><Col span={12}><Form.Item name="mappingStatus" label={L("สถานะ", "Status")} rules={[{required:true}]}><Select options={["UNMAPPED","SUGGESTED","VERIFIED","STALE","DISABLED"].map(value=>({value}))} /></Form.Item></Col></Row>
       <Form.Item name="providerName" label={L("ชื่อบน provider", "Provider name")} rules={[{required:true}]}><Input /></Form.Item><Form.Item name="providerItemId" label={uiText("admin_ui.en_provider_item_id_39664")} rules={[{required:true}]}><Input /></Form.Item>
       <Row gutter={12}><Col span={12}><Form.Item name="providerVariantId" label={uiText("admin_ui.en_provider_variant_id_7c52c")}><Input /></Form.Item></Col><Col span={12}><Form.Item name="providerModifierId" label={uiText("admin_ui.en_provider_modifier_id_c7ce6")}><Input /></Form.Item></Col></Row>
-      <Form.Item name="catalogTarget" label={L("สินค้าและ variant ใน BMS", "BMS product and variant")}><Select showSearch optionFilterProp="label" options={catalogOptions} /></Form.Item>
-      <Form.Item name="modifierCode" label={L("Modifier code ใน BMS", "BMS modifier code")}><Input /></Form.Item><Form.Item name="providerPrice" label={L("ราคา snapshot", "Price snapshot")}><InputNumber min={0} precision={2} style={{width:"100%"}} /></Form.Item>
+      <Form.Item name="catalogTarget" label={L("สินค้าและ variant ใน BMS POS+", "BMS POS+ product and variant")}><Select showSearch optionFilterProp="label" options={catalogOptions} /></Form.Item>
+      <Form.Item name="modifierCode" label={L("Modifier code ใน BMS POS+", "BMS POS+ modifier code")}><Input /></Form.Item><Form.Item name="providerPrice" label={L("ราคา snapshot", "Price snapshot")}><InputNumber min={0} precision={2} style={{width:"100%"}} /></Form.Item>
       <Typography.Text type="secondary">{L("สถานะ VERIFIED จะผ่านได้ต่อเมื่อ product/variant เปิดขายบน ONLINE_ORDER และ modifier code มีจริง", "VERIFIED requires an active ONLINE_ORDER product/variant and an existing modifier code.")}</Typography.Text></Form>
     </Modal>
 

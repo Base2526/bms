@@ -56,8 +56,8 @@ export default function RetailLocalPricing({ leadCaptureEnabled = true }: { lead
     <p>{L(`ทุกราคายังไม่รวม VAT ${p.vatPercent}% · ขอบเขต MA และรุ่นใหญ่ของการต่อซัพพอร์ตรออนุมัติ`, `All prices exclude ${p.vatPercent}% VAT · MA and major-version terms for support renewal await approval`)}</p>
     <table className={styles.table}><caption>{L("ขอบเขตแพ็กเกจฟรี", "Free plan scope")}</caption><tbody>
       <tr><th>{L("ระบบในร้าน", "In-store system")}</th><td>{L("POS สต็อก รายงาน และข้อมูลอยู่ที่ร้าน", "POS, inventory, reports and locally stored data")}</td></tr>
-      <tr><th>{L("ออนไลน์", "Online services")}</th><td>{L("ไม่รวมบริการเชื่อม LINE/แชท/ออเดอร์ออนไลน์ที่ BMS ดูแลให้", "BMS-managed LINE/chat/online-order services are not included")}</td></tr>
-      <tr><th>Backup</th><td>{L("ร้านเก็บที่ USB/NAS เอง BMS ไม่ host backup", "Use your own USB/NAS. BMS does not host backups.")}</td></tr>
+      <tr><th>{L("ออนไลน์", "Online services")}</th><td>{L("ไม่รวมบริการเชื่อม LINE/แชท/ออเดอร์ออนไลน์ที่ BMS POS+ ดูแลให้", "BMS POS+-managed LINE/chat/online-order services are not included")}</td></tr>
+      <tr><th>Backup</th><td>{L("ร้านเก็บที่ USB/NAS เอง BMS POS+ ไม่ host backup", "Use your own USB/NAS. BMS POS+ does not host backups.")}</td></tr>
       <tr><th>Local → Cloud</th><td>{L("ยังไม่มีเครื่องมือย้ายข้อมูล", "Data migration tooling is not available")}</td></tr>
     </tbody></table>
     {leadCaptureEnabled && <Card className={styles.lead} title={p.leadOffer[th ? "th" : "en"]}>
@@ -71,7 +71,7 @@ export default function RetailLocalPricing({ leadCaptureEnabled = true }: { lead
           <Form.Item name="businessType" label={L("ประเภทร้าน", "Business type")}><Input maxLength={80} /></Form.Item>
           <Form.Item name="platform" label={L("ระบบปฏิบัติการ", "Operating system")} rules={[{ required: true }]}><Select options={["windows", "ubuntu", "macos"].map(value => ({ value, label: value }))} /></Form.Item>
         </div>
-        <Form.Item name="consent" valuePropName="checked" rules={[{ validator: (_, v) => v === true ? Promise.resolve() : Promise.reject(new Error(L("กรุณายืนยันความยินยอม", "Consent is required"))) }]}><Checkbox>{L("ยินยอมให้ BMS เก็บและใช้ข้อมูลที่กรอกเพื่อติดต่อเรื่องการติดตั้งและข้อเสนอ Retail Local ตาม", "I consent to BMS storing and using these details to contact me about Retail Local installation and offers under the")} <Link href="/privacy" target="_blank">{L("นโยบายความเป็นส่วนตัว", "privacy policy")}</Link></Checkbox></Form.Item>
+        <Form.Item name="consent" valuePropName="checked" rules={[{ validator: (_, v) => v === true ? Promise.resolve() : Promise.reject(new Error(L("กรุณายืนยันความยินยอม", "Consent is required"))) }]}><Checkbox>{L("ยินยอมให้ BMS POS+ เก็บและใช้ข้อมูลที่กรอกเพื่อติดต่อเรื่องการติดตั้งและข้อเสนอ Retail Local ตาม", "I consent to BMS POS+ storing and using these details to contact me about Retail Local installation and offers under the")} <Link href="/privacy" target="_blank">{L("นโยบายความเป็นส่วนตัว", "privacy policy")}</Link></Checkbox></Form.Item>
         <Button type="primary" htmlType="submit" loading={busy}>{L("ส่งข้อมูลติดต่อ", "Submit contact details")}</Button>
       </Form>
       {result && <Alert closable showIcon type={result === "ok" ? "success" : "error"} message={result === "ok"

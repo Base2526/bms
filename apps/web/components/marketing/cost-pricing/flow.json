@@ -33,7 +33,7 @@
       "title": "Confirm stock receipt",
       "label": "Check quantities and receive stock",
       "sub": "Record value in the receiving branch",
-      "speech": "Staff confirm the quantity actually received. BMS records stock and receipt value. Partial receipts only record the received quantity."
+      "speech": "Staff confirm the quantity actually received. BMS POS+ records stock and receipt value. Partial receipts only record the received quantity."
     },
     "audio": "/audio/cost-pricing/th/step-2.mp3"
   },

@@ -1,11 +1,11 @@
-# BMS Cloud + Hybrid POS product contract
+# BMS POS+ Cloud + Hybrid POS product contract
 
-BMS Cloud and BMS Hybrid POS are **one product**. “Hybrid POS” describes a continuity capability of
-BMS, not a second edition, price plan, database, settlement engine, or source of truth.
+BMS POS+ Cloud and BMS POS+ Hybrid POS are **one product**. “Hybrid POS” describes a continuity capability of
+BMS POS+, not a second edition, price plan, database, settlement engine, or source of truth.
 
 ## What can be sold today
 
-- **BMS Cloud** is the normal operating mode. PostgreSQL and the existing backend services remain
+- **BMS POS+ Cloud** is the normal operating mode. PostgreSQL and the existing backend services remain
   authoritative for price, stock, permission, payment, tax document, audit, and reporting.
 - **Emergency Offline Mode** is included as a bounded resilience capability on Mobile POS. During a
   network outage it may accept only a plain retail cash sale into the encrypted device queue.
@@ -28,7 +28,7 @@ BMS, not a second edition, price plan, database, settlement engine, or source of
 
 Recommended customer-facing phrase:
 
-> BMS is one cloud business platform with Emergency Offline Mode for basic retail cash continuity on
+> BMS POS+ is one cloud business platform with Emergency Offline Mode for basic retail cash continuity on
 > Mobile POS.
 
 ## Plain-language explanation and examples
@@ -53,11 +53,11 @@ to a bounded retail cash path rather than advertised as full offline POS.
 Restaurant tables/kitchen rounds, pharmacy intake/approval, and board-game clocks/groups still need
 the authoritative server and are excluded from this mobile queue. A shop using Retail Local is a
 different case: those workflows may continue while the public internet is down because POS devices
-are still connected to the in-store BMS server. See the Thai product explanation in
+are still connected to the in-store BMS POS+ server. See the Thai product explanation in
 [product-overview-th.md](product-overview-th.md#8-emergency-offline-mode).
 
 Do not claim “works fully offline”, “local server”, “offline restaurant”, or “offline Desktop POS”
-for the Cloud/Hybrid product. `BMS Retail Local` is a separate **deployment mode** of the same
+for the Cloud/Hybrid product. `BMS POS+ Retail Local` is a separate **deployment mode** of the same
 codebase, currently a single-store technical pilot; it is not the Mobile emergency queue and must
 not be used to broaden Cloud/Hybrid claims.
 

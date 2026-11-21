@@ -15,12 +15,12 @@ Assert-RetailLocalDocker
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repoRoot "artifacts\retail-local" }
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
-$zipPath = Join-Path $outputRoot "BMS-Retail-Local-$Version.zip"
+$zipPath = Join-Path $outputRoot "BMS-POS-Plus-Retail-Local-$Version.zip"
 if ((Test-Path -LiteralPath $zipPath) -and -not $Force) { throw "Package already exists: $zipPath (use -Force to replace it intentionally)" }
 
 $stageBase = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $stage = Join-Path $stageBase "bms-retail-local-package-$([Guid]::NewGuid().ToString('N'))"
-$bundle = Join-Path $stage "BMS-Retail-Local-$Version"
+$bundle = Join-Path $stage "BMS-POS-Plus-Retail-Local-$Version"
 $imagesDir = Join-Path $bundle "images"
 New-Item -ItemType Directory -Force -Path $imagesDir | Out-Null
 
@@ -63,7 +63,7 @@ try {
   $runtimeFiles = @(
     ".env.example", "compose.yml", "runtime.ps1", "preflight.ps1", "install.ps1",
     "start.ps1", "stop.ps1", "status.ps1", "doctor.ps1", "backup.ps1", "restore.ps1",
-    "update.ps1", "uninstall.ps1", "Install-BMS-Retail-Local.cmd", "Check-BMS-Retail-Local.cmd",
+    "update.ps1", "uninstall.ps1", "Install-BMS-POS-Plus-Retail-Local.cmd", "Check-BMS-POS-Plus-Retail-Local.cmd",
     "TEST-INSTALL.md"
   )
   foreach ($name in $runtimeFiles) {

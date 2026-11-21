@@ -9,7 +9,7 @@ export async function renderTaxInvoicePdf(invoice: FullTaxInvoiceView): Promise<
   const font = path.join(process.cwd(), "public/fonts/sarabun/Sarabun-Regular.ttf");
   const doc = new PDFDocument({ size: "A4", margin: 40, bufferPages: true,
     font,
-    info: { Title: `Tax invoice copy ${invoice.docNo}`, Author: "BMS" } });
+    info: { Title: `Tax invoice copy ${invoice.docNo}`, Author: "BMS POS+" } });
   const parts: Buffer[] = [];
   const complete = new Promise<Buffer>((resolve, reject) => {
     doc.on("data", chunk => parts.push(chunk));

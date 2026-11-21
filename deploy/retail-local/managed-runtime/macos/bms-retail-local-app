@@ -6,7 +6,7 @@ readonly APP_ROOT
 readonly SETUP_COMMAND="$APP_ROOT/Resources/BMS Retail Local Setup.command"
 
 [[ -x $SETUP_COMMAND ]] || {
-  osascript -e 'display alert "BMS Retail Local" message "Startup files are incomplete. Reinstall the package" as critical'
+  osascript -e 'display alert "BMS POS+ Retail Local" message "Startup files are incomplete. Reinstall the package" as critical'
   exit 1
 }
 

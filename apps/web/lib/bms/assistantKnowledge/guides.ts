@@ -50,7 +50,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     summary: [retailLocalPricingSummary("th"), retailLocalPricingSummary("en")],
     aliases: [["ราคา local plus", "retail local ซื้อขาด", "เครื่องเพิ่ม retail local"], ["local plus pricing", "retail local perpetual price", "extra retail local device"]],
     requiredPermissions: ["retail_local.license.view"],
-    steps: [["อ่านข้อเสนอและขอบเขตบนหน้าราคา", "ขอใบเสนอราคาที่ยืนยันจาก BMS ทาง LINE"], ["Review the proposal and scope on the pricing page.", "Request a confirmed quotation from BMS on LINE."]],
+    steps: [["อ่านข้อเสนอและขอบเขตบนหน้าราคา", "ขอใบเสนอราคาที่ยืนยันจาก BMS POS+ ทาง LINE"], ["Review the proposal and scope on the pricing page.", "Request a confirmed quotation from BMS POS+ on LINE."]],
     warnings: [["ราคาและนโยบายรอเจ้าของอนุมัติ", "ไม่มีการบล็อกธุรกรรมจากสถานะการซื้อ"], ["Prices and policies await owner approval.", "Purchase status does not block shop transactions."]],
   }),
   menuGuide({
@@ -70,9 +70,9 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     title: ["ลงทะเบียน License ของเครื่องนี้", "Register this installation's license"],
     summary: ["ดูสถานะการลงทะเบียน Trial และ Licensed ของ Retail Local และกรอก Activation Code หลังติดตั้ง", "View Retail Local registration, Trial and Licensed status, and enter an Activation Code after installation."],
     requiredPermissions: ["retail_local.license.view"],
-    prerequisites: [["ใช้ได้ใน Retail Local เท่านั้น", "ผู้ลงทะเบียนต้องมี retail_local.license.manage และได้รับ Activation Code จาก BMS"], ["Available only in Retail Local.", "Registration requires retail_local.license.manage and an Activation Code issued by BMS."]],
-    steps: [["เปิดการตั้งค่า > License ของเครื่องนี้ หรือกดป้าย License ด้านบน", "ตรวจสถานะและวันตรวจสอบกับ BMS ล่าสุด", "กรอก Code ที่ขึ้นต้นด้วย bmsla_ ในหน้า License โดยตรง แล้วตรวจและยืนยันลงทะเบียน", "รอระบบบนเครื่องรับคำขอ หากการเชื่อมต่อขัดข้องระบบจะลองต่ออัตโนมัติ"], ["Open Settings > This installation's license or select the header badge.", "Review the status and last BMS check time.", "Enter the bmsla_ code directly on the License page, review, and confirm registration.", "Wait for the host runtime to process the request; connection failures are retried automatically."]],
-    warnings: [["ห้ามส่ง Activation Code ในแชทผู้ช่วย", "เลข LIC- เป็นเลขอ้างอิง ไม่ใช่ Activation Code", "การติดตั้งไม่เริ่ม Trial; Trial เริ่มเมื่อ BMS ออก License", "เมื่อออฟไลน์ให้ดูเวลาตรวจล่าสุด ไม่สรุปสถานะใหม่เอง", "สถานะ License ไม่ได้ปิดกั้นการทำงานของร้าน"], ["Never send an Activation Code to the assistant.", "A LIC- reference is not an Activation Code.", "Installation does not start a trial; BMS license issuance does.", "When offline, use the last check time; do not infer a new status.", "License status does not block shop operations."]],
+    prerequisites: [["ใช้ได้ใน Retail Local เท่านั้น", "ผู้ลงทะเบียนต้องมี retail_local.license.manage และได้รับ Activation Code จาก BMS POS+"], ["Available only in Retail Local.", "Registration requires retail_local.license.manage and an Activation Code issued by BMS POS+."]],
+    steps: [["เปิดการตั้งค่า > License ของเครื่องนี้ หรือกดป้าย License ด้านบน", "ตรวจสถานะและวันตรวจสอบกับ BMS POS+ ล่าสุด", "กรอก Code ที่ขึ้นต้นด้วย bmsla_ ในหน้า License โดยตรง แล้วตรวจและยืนยันลงทะเบียน", "รอระบบบนเครื่องรับคำขอ หากการเชื่อมต่อขัดข้องระบบจะลองต่ออัตโนมัติ"], ["Open Settings > This installation's license or select the header badge.", "Review the status and last BMS POS+ check time.", "Enter the bmsla_ code directly on the License page, review, and confirm registration.", "Wait for the host runtime to process the request; connection failures are retried automatically."]],
+    warnings: [["ห้ามส่ง Activation Code ในแชทผู้ช่วย", "เลข LIC- เป็นเลขอ้างอิง ไม่ใช่ Activation Code", "การติดตั้งไม่เริ่ม Trial; Trial เริ่มเมื่อ BMS POS+ ออก License", "เมื่อออฟไลน์ให้ดูเวลาตรวจล่าสุด ไม่สรุปสถานะใหม่เอง", "สถานะ License ไม่ได้ปิดกั้นการทำงานของร้าน"], ["Never send an Activation Code to the assistant.", "A LIC- reference is not an Activation Code.", "Installation does not start a trial; BMS POS+ license issuance does.", "When offline, use the last check time; do not infer a new status.", "License status does not block shop operations."]],
   }),
   menuGuide({
     id: "retail-local.recover-machine", module: "settings", route: "/admin/retail-local-license",
@@ -82,7 +82,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     requiredPermissions: ["retail_local.license.view"],
     prerequisites: [["ต้องมี encrypted backup และ recovery identity ที่เก็บแยกจากเครื่องเดิม", "ต้องใช้เครื่องทดแทนที่ผ่าน preflight"], ["A complete encrypted backup and separately stored recovery identity are required.", "The replacement host must pass preflight."]],
     steps: [["ติดตั้ง Retail Local บนเครื่องทดแทน", "restore ฐานข้อมูล ไฟล์ และ secret bundle พร้อมกันแล้ว reconcile", "ขอ Activation Code ใหม่สำหรับ License เดิม", "เลือก Activate or Transfer และให้ platform admin ตรวจ TRANSFER_REQUESTED"], ["Install Retail Local on the replacement host.", "Restore the database, files, and secret bundle together, then reconcile.", "Request a fresh Activation Code for the existing license.", "Use Activate or Transfer and have a platform administrator review TRANSFER_REQUESTED."]],
-    warnings: [["BMS ไม่ host backup ของร้าน", "ห้ามคัดลอก live VHDX/data directory แทน logical restore", "activation และ review ต้องไม่หยุดร้าน"], ["BMS does not host the shop's backup.", "Do not copy a live VHDX/data directory instead of a logical restore.", "Activation and review must not stop the shop."]],
+    warnings: [["BMS POS+ ไม่ host backup ของร้าน", "ห้ามคัดลอก live VHDX/data directory แทน logical restore", "activation และ review ต้องไม่หยุดร้าน"], ["BMS POS+ does not host the shop's backup.", "Do not copy a live VHDX/data directory instead of a logical restore.", "Activation and review must not stop the shop."]],
   }),
   {
     id: "reports.create-export", module: "reports", pageId: "reports", route: "/admin/reports",
@@ -612,7 +612,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     summary: ["บันทึก revision ราคาเฉพาะลูกค้า แล้วแปลงเป็นออร์เดอร์หลังตรวจสต็อกซ้ำ", "Record customer-specific price revisions, then recheck stock when converting to an order."],
     aliases: [["ใบเสนอราคา", "ราคาโครงการ", "ราคาผู้รับเหมา"], ["quotation", "project price", "contractor price"]],
     requiredPermissions: ["quotation.view"],
-    prerequisites: [["มีลูกค้าและสินค้าในระบบ", "การอนุมัติต้องใช้ผู้มีสิทธิ์อีกคน"], ["Customer and products exist in BMS.", "Approval requires a second permissioned staff member."]],
+    prerequisites: [["มีลูกค้าและสินค้าในระบบ", "การอนุมัติต้องใช้ผู้มีสิทธิ์อีกคน"], ["Customer and products exist in BMS POS+.", "Approval requires a second permissioned staff member."]],
     steps: [["สร้างร่างพร้อมสาขา ลูกค้า หน่วยขาย และค่าส่ง", "ให้พนักงานอีกคนอนุมัติราคา", "บันทึกสถานะส่งและหลักฐานที่ลูกค้ายอมรับ", "แปลงเป็นออร์เดอร์แล้วตรวจยอดและสต็อก"],
       ["Create a draft with branch, customer, selling units and shipping.", "Have another staff member approve the price.", "Record sending and evidence of customer acceptance.", "Convert to an order and verify money and stock."]],
     warnings: [["ใบเสนอราคาไม่จองสต็อก", "ค่าส่งที่ไม่ทราบทำให้อนุมัติไม่ได้", "การกดส่งเป็นเพียงการบันทึกสถานะ ไม่ส่งข้อความถึงลูกค้า", "ต้องให้นักบัญชีตรวจรูปแบบเอกสารภาษีก่อนใช้ยื่นจริง"],
@@ -649,11 +649,11 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   {
     id: "shipping.booking-troubleshoot", module: "shipping", pageId: "shipping", route: "/admin/shipment",
     title: both("ตรวจปัญหาการจองขนส่ง", "Troubleshoot carrier booking"),
-    summary: both("แยก shipment ภายใน BMS ออกจาก live carrier booking ซึ่ง Flash/Kerry ยังเป็น mock-ready scaffolds", "Separate BMS shipment records from live carrier booking; Flash/Kerry remain mock-ready scaffolds."),
+    summary: both("แยก shipment ภายใน BMS POS+ ออกจาก live carrier booking ซึ่ง Flash/Kerry ยังเป็น mock-ready scaffolds", "Separate BMS POS+ shipment records from live carrier booking; Flash/Kerry remain mock-ready scaffolds."),
     aliases: aliases(["ทำไมจองขนส่งไม่สำเร็จ", "จอง Flash ไม่ได้", "จอง Kerry ไม่ได้"], ["why carrier booking failed", "Flash booking failed", "Kerry booking failed"]),
     requiredPermissions: ["shipping.view"],
     prerequisites: lists(["ระบุ shipment หรือออร์เดอร์และ carrier ที่เลือก"], ["Identify the shipment or order and selected carrier."]),
-    steps: lists(["ตรวจว่า shipment ภายใน BMS ถูกสร้างหรือยัง", "ตรวจที่อยู่และสถานะออร์เดอร์", "ถ้าเป็น Flash/Kerry ให้บันทึก tracking แบบ manual เพราะยังไม่มี live adapter", "เก็บ failure ให้มองเห็นและลองใหม่เมื่อ adapter ที่ยืนยันแล้วพร้อม"], ["Check whether the BMS shipment record exists.", "Verify the address and order status.", "For Flash/Kerry, record tracking manually because no live adapter is connected.", "Keep the failure visible and retry only when a verified adapter is available."]),
+    steps: lists(["ตรวจว่า shipment ภายใน BMS POS+ ถูกสร้างหรือยัง", "ตรวจที่อยู่และสถานะออร์เดอร์", "ถ้าเป็น Flash/Kerry ให้บันทึก tracking แบบ manual เพราะยังไม่มี live adapter", "เก็บ failure ให้มองเห็นและลองใหม่เมื่อ adapter ที่ยืนยันแล้วพร้อม"], ["Check whether the BMS POS+ shipment record exists.", "Verify the address and order status.", "For Flash/Kerry, record tracking manually because no live adapter is connected.", "Keep the failure visible and retry only when a verified adapter is available."]),
     warnings: lists(["ห้ามเดา endpoint หรือ payload ของ carrier", "ห้ามเปลี่ยน failure เป็น manual สำเร็จแบบเงียบ ๆ"], ["Never guess carrier endpoints or payloads.", "Never silently turn a booking failure into a successful manual booking."]), relatedCapabilityIds: ["shipping.fulfillment", "shipping.carrier-integrations"],
   },
   {
@@ -1035,7 +1035,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
       "กระทบยอดเดลิเวอรี", "รองรับ GrabFood หรือ LINE MAN ไหม",
     ], [
       "delivery platforms", "connect foodpanda", "map delivery menu", "stuck provider order",
-      "delivery settlement reconciliation", "does BMS support GrabFood or LINE MAN",
+      "delivery settlement reconciliation", "does BMS POS+ support GrabFood or LINE MAN",
     ]],
     requiredPermissions: ["delivery.integration.view"],
     prerequisites: [["ร้านต้องเป็นประเภทร้านอาหาร", "การแก้ integration, mapping และ settlement ต้องมีสิทธิ์เฉพาะของแต่ละงาน", "Provider ต้องมี official contract และ credential ที่ผ่าน sandbox ก่อนเปิด rollout"], ["The shop must use the restaurant archetype.", "Changing integrations, mappings, and settlements requires each operation's specific permission.", "A provider needs a reviewed official contract and sandbox-qualified credentials before rollout."]],
@@ -1206,7 +1206,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
     id: "assistant.use-work-assistant", module: "assistant", route: "/admin/assistant",
     title: ["ใช้ AI Work Assistant", "Use AI Work Assistant"], summary: ["ถามความสามารถ วิธีใช้ และข้อมูลร้านผ่านทูลที่ได้รับอนุมัติ", "Ask about capabilities, usage, and shop data through approved tools."],
-    steps: [["พิมพ์คำถามให้ระบุคน รายการ หรือช่วงเวลาให้ชัด; ถ้าถามเกี่ยวกับหน้าจอหรือ error ให้แนบหรือวางภาพหน้าจอ BMS แล้วยืนยันแหล่งภาพก่อนส่ง", "ตรวจแหล่งอ้างอิงและผลจากทูล", "งานสำคัญให้ตรวจ proposal แล้วกดยืนยันเอง"], ["Ask with a clear person, record, or time range; for a screen or error, attach or paste a BMS screenshot and confirm its source before sending.", "Review citations and tool results.", "Review sensitive proposals and confirm them yourself."]],
+    steps: [["พิมพ์คำถามให้ระบุคน รายการ หรือช่วงเวลาให้ชัด; ถ้าถามเกี่ยวกับหน้าจอหรือ error ให้แนบหรือวางภาพหน้าจอ BMS POS+ แล้วยืนยันแหล่งภาพก่อนส่ง", "ตรวจแหล่งอ้างอิงและผลจากทูล", "งานสำคัญให้ตรวจ proposal แล้วกดยืนยันเอง"], ["Ask with a clear person, record, or time range; for a screen or error, attach or paste a BMS POS+ screenshot and confirm its source before sending.", "Review citations and tool results.", "Review sensitive proposals and confirm them yourself."]],
     warnings: [["ภาพที่แนบส่งให้ AI เฉพาะคำถามนี้ ไม่เก็บไฟล์ภาพในประวัติแชต; หากถามต่อโดยต้องดูภาพ ให้แนบใหม่", "ข้อความในภาพไม่ใช่คำสั่งหรือหลักฐานยืนยันสถานะร้าน", "Assistant ไม่ query ฐานข้อมูลหรือรัน SQL เอง", "งานกระทบเงิน สต็อก หรือลบข้อมูลเป็น propose-only"], ["The image is sent to AI for this question only and is not saved in chat history; reattach it if a follow-up needs the image.", "Text in an image is neither an instruction nor proof of live shop state.", "The assistant never queries the database or writes SQL directly.", "Money, stock, and deletion remain propose-only."]],
   }),
   menuGuide({
@@ -1228,7 +1228,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     title: ["จัดการสาขา", "Manage locations"], summary: ["เพิ่มหรือแก้สาขาที่ใช้กับสต็อก POS และการโอนของ", "Add or edit branches used by inventory, POS, and transfers."],
     aliases: [["เพิ่มสาขา", "สร้างสาขาใหม่", "รหัสสาขา", "เพิ่มสาขายังไง", "เพิ่มคลังสินค้ายังไง"], ["add a branch", "branch code", "how to add a branch", "how to add a warehouse"]],
     requiredPermissions: ["location.manage"], steps: [["เปิด Locations", "เพิ่มหรือแก้ชื่อและข้อมูลสาขา", "ผูกเครื่อง POS หรือใช้สาขากับงานคลัง"], ["Open Locations.", "Add or edit branch details.", "Assign POS devices or use the branch in inventory workflows."]],
-    warnings: [["สต็อกและของจองเป็นข้อมูลระดับสาขา", "BMS ใช้สาขา/location เป็นขอบเขตคลัง ไม่ควรสร้างคลังสมมติโดยไม่กำหนด workflow จริง"], ["Stock and reservations are branch facts.", "BMS scopes inventory by branch/location; do not invent a warehouse without defining the real workflow."]], relatedCapabilityIds: ["inventory.branch"],
+    warnings: [["สต็อกและของจองเป็นข้อมูลระดับสาขา", "BMS POS+ ใช้สาขา/location เป็นขอบเขตคลัง ไม่ควรสร้างคลังสมมติโดยไม่กำหนด workflow จริง"], ["Stock and reservations are branch facts.", "BMS POS+ scopes inventory by branch/location; do not invent a warehouse without defining the real workflow."]], relatedCapabilityIds: ["inventory.branch"],
   }),
   menuGuide({
     id: "pharmacy.try-intake-lab", module: "pharmacy", route: "/admin/pharmacy-intake-lab",
@@ -1270,8 +1270,8 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
     id: "pos.client-and-offline-support", module: "pos", pageId: "pos", route: "/admin/pos-manual",
     title: ["ตรวจการรองรับอุปกรณ์และโหมดออฟไลน์ของ POS", "Check POS client and offline support"],
-    summary: ["BMS มี Web POS, Mobile POS และ Desktop shell; Emergency Offline บนมือถือรองรับเฉพาะคิวขายปลีกเงินสดพื้นฐานและต้องให้ server ตรวจเมื่อกลับมาออนไลน์", "BMS has Web POS, Mobile POS, and a Desktop shell. Mobile Emergency Offline is limited to a basic retail cash-sale queue that the server revalidates after reconnection."],
-    aliases: [["ใช้งานบนมือถือได้ไหม", "ใช้ตอนอินเทอร์เน็ตล่มได้ไหม", "เครื่อง POS ออฟไลน์ต้องทำอย่างไร", "POS ใช้บนมือถือ", "POS ออฟไลน์"], ["can I use BMS on mobile", "can I use it during an internet outage", "what to do when POS is offline", "mobile POS", "offline POS"]],
+    summary: ["BMS POS+ มี Web POS, Mobile POS และ Desktop shell; Emergency Offline บนมือถือรองรับเฉพาะคิวขายปลีกเงินสดพื้นฐานและต้องให้ server ตรวจเมื่อกลับมาออนไลน์", "BMS POS+ has Web POS, Mobile POS, and a Desktop shell. Mobile Emergency Offline is limited to a basic retail cash-sale queue that the server revalidates after reconnection."],
+    aliases: [["ใช้งานบนมือถือได้ไหม", "ใช้ตอนอินเทอร์เน็ตล่มได้ไหม", "เครื่อง POS ออฟไลน์ต้องทำอย่างไร", "POS ใช้บนมือถือ", "POS ออฟไลน์"], ["can I use BMS POS+ on mobile", "can I use it during an internet outage", "what to do when POS is offline", "mobile POS", "offline POS"]],
     steps: [["ตรวจว่าใช้ Web, Mobile หรือ Desktop", "ถ้าเป็น Mobile และขาดการเชื่อมต่อ ให้ใช้ Emergency Offline เฉพาะรายการที่หน้าจอยืนยันว่ารองรับ", "เก็บเงินสดและรักษาคิวไว้จนกลับมาออนไลน์", "ให้ server replay ด้วย idempotency key เดิมและตรวจใบเสร็จจริงหลัง sync"], ["Identify whether the client is Web, Mobile, or Desktop.", "On Mobile during an outage, use Emergency Offline only for transactions explicitly shown as eligible.", "Keep the cash-sale queue until connectivity returns.", "Replay with the original idempotency key and verify the server-backed receipt after sync."]],
     warnings: [["ไม่ใช่ full offline POS", "ไม่รองรับ offline สำหรับร้านอาหาร ร้านยา หรือร้านบอร์ดเกม", "Desktop shell ต้องเชื่อม server และ Retail Local ยังเป็น technical pilot ไม่ใช่ GA"], ["This is not a full offline POS.", "Offline tender does not cover restaurants, pharmacies, or board-game cafes.", "The Desktop shell requires the server, and Retail Local remains a technical pilot rather than GA."]],
     relatedCapabilityIds: ["pos.operations"],
@@ -1366,9 +1366,9 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   }),
   menuGuide({
     id: "knowledge.search", module: "manual", route: "/admin/search",
-    title: ["ค้นหาความสามารถและคู่มือ BMS", "Search BMS capabilities and guides"],
+    title: ["ค้นหาความสามารถและคู่มือ BMS POS+", "Search BMS POS+ capabilities and guides"],
     summary: ["ค้น capability คู่มือ ขั้นตอนตั้งค่า และข้อจำกัดจาก catalog ที่ตรวจสอบแล้ว", "Search the verified catalog for capabilities, setup guidance, instructions, and limitations."],
-    aliases: [["ค้นเอกสาร", "ค้นความสามารถ", "รองรับระบบอะไรบ้าง", "ค้นคู่มือ BMS", "ฟีเจอร์นี้พร้อมใช้หรือยัง", "ฟีเจอร์ไหนยังเป็น Beta", "ฟีเจอร์นี้ต้องเปิดตั้งค่าก่อนไหม"], ["search documentation", "search capabilities", "what does BMS support", "search BMS guides", "is this feature ready", "which features are beta", "does this feature require configuration"]],
+    aliases: [["ค้นเอกสาร", "ค้นความสามารถ", "รองรับระบบอะไรบ้าง", "ค้นคู่มือ BMS POS+", "ฟีเจอร์นี้พร้อมใช้หรือยัง", "ฟีเจอร์ไหนยังเป็น Beta", "ฟีเจอร์นี้ต้องเปิดตั้งค่าก่อนไหม"], ["search documentation", "search capabilities", "what does BMS POS+ support", "search BMS POS+ guides", "is this feature ready", "which features are beta", "does this feature require configuration"]],
     steps: [["เปิด Search จาก Header", "พิมพ์งานหรือคำถาม", "ตรวจสถานะและข้อจำกัด", "เปิดหน้าที่เกี่ยวข้องเมื่อบัญชีมีสิทธิ์"], ["Open Search from the header.", "Enter a task or question.", "Review status and limitations.", "Open the related page when the account has access."]],
     warnings: [["รายการ capability ไม่ได้ยืนยันว่าร้านปัจจุบันเปิดหรือตั้งค่าไว้แล้ว และผลค้นหาไม่อ่านข้อมูลธุรกิจของร้าน"], ["A capability result does not prove the current shop enabled or configured it, and search does not read live shop data."]],
   }),

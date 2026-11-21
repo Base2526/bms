@@ -26,7 +26,7 @@ const posFont = IBM_Plex_Sans_Thai({
 });
 
 export const metadata = {
-  title: "BMS POS",
+  title: "BMS POS+",
 };
 
 export default function PosLayout({ children }: { children: ReactNode }) {

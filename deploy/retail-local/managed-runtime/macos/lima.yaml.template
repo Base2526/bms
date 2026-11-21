@@ -66,7 +66,7 @@ provision:
     getent group docker >/dev/null || groupadd --system docker
     cat >/etc/systemd/system/docker.service <<'EOF'
     [Unit]
-    Description=BMS Retail Local private container engine
+    Description=BMS POS+ Retail Local private container engine
     After=network-online.target
     Wants=network-online.target
 
@@ -98,4 +98,4 @@ probes:
   hint: Private Moby runtime did not become ready. Inspect /var/log/cloud-init-output.log.
 
 message: |
-  BMS Retail Local private runtime is ready.
+  BMS POS+ Retail Local private runtime is ready.

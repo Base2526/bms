@@ -7,6 +7,15 @@ const read = (path) => readFileSync(new URL(path, root), "utf8");
 const pkg = JSON.parse(read("package.json"));
 const PAGES = ["setup", "startup"];
 
+test("rebranded Desktop keeps the installed identity and paired user data", () => {
+  assert.equal(pkg.build.appId, "com.bms.pos.desktop");
+  assert.equal(pkg.build.productName, "BMS POS+");
+  assert.equal(pkg.build.nsis.shortcutName, "BMS POS+");
+  assert.equal(pkg.build.mac.executableName, "BMS POS", "reuse the existing .app path for in-place macOS upgrades");
+  assert.match(read("src/main.mjs"), /app\.setPath\("userData", path\.join\(app\.getPath\("appData"\), "BMS POS"\)\)/);
+  assert.match(read("src/main.mjs"), /app\.setAppUserModelId\("com\.bms\.pos\.desktop"\)/);
+});
+
 // electron-builder's default Depends: overriding `deb.depends` replaces this list, so every
 // entry must be carried over or the package installs without a library Electron links against.
 const ELECTRON_BUILDER_DEFAULT_DEB_DEPENDS = [

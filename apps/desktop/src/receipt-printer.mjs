@@ -106,7 +106,7 @@ export const RECEIPT_READY_SCRIPT = `(async () => {
 })()`;
 
 export const TEST_RECEIPT_HTML = `<div id="pos-receipt" style="font-family:monospace;font-size:12px;text-align:center;line-height:1.6">
-  <b>BMS POS</b><div>ทดสอบเครื่องพิมพ์ / Print test</div><hr>
+  <b>BMS POS+</b><div>ทดสอบเครื่องพิมพ์ / Print test</div><hr>
   <div>ภาษาไทย · English · 0123456789</div><div>ยอดทดสอบ 123.45</div><hr>
   <div>เอกสารทดสอบ ไม่ใช่ใบเสร็จรับเงิน</div></div>`;
 

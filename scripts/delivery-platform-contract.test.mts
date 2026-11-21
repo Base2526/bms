@@ -71,7 +71,7 @@ test("LINE MAN onboarding separates the one-time platform contract from tenant s
   assert.match(service, /assertTenantDeliveryConfigurationAllowed/);
   assert.match(service, /A placeholder must not preserve guessed credentials/);
   const page = read("apps/web/app\/(admin)\/admin\/delivery-platforms\/page.tsx");
-  assert.match(page, /BMS กำลังรอ Partner API contract จาก LINE MAN/);
+  assert.match(page, /BMS POS\+ กำลังรอ Partner API contract จาก LINE MAN/);
   assert.match(page, /Only a connection placeholder can be saved/);
   assert.match(page, /disabled=\{!tenantCredentialFieldsAvailable\}/);
   assert.match(read("docs/integrations/lineman-partner-intake.md"), /Exact signed bytes and canonicalization/);

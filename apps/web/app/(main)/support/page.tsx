@@ -103,7 +103,7 @@ const SUPPORT: { en: SupportContent; th: SupportContent } = {
         phone: "+66...",
         subject: "Short summary, e.g. LINE webhook is not receiving messages",
         ref: "e.g. shop slug, order id, conversation id, log id",
-        message: "Explain the BMS workflow, what you expected, and what happened.",
+        message: "Explain the BMS POS+ workflow, what you expected, and what happened.",
       },
       validation: {
         nameRequired: "Please enter your name",
@@ -188,7 +188,7 @@ const SUPPORT: { en: SupportContent; th: SupportContent } = {
         phone: "+66...",
         subject: "สรุปสั้น ๆ เช่น LINE webhook ไม่รับข้อความ",
         ref: "เช่น slug ร้าน, เลขออเดอร์, conversation id, log id",
-        message: "อธิบาย workflow ใน BMS, สิ่งที่คาดหวัง, และสิ่งที่เกิดขึ้นจริง",
+        message: "อธิบาย workflow ใน BMS POS+, สิ่งที่คาดหวัง, และสิ่งที่เกิดขึ้นจริง",
       },
       validation: {
         nameRequired: "กรุณากรอกชื่อ",

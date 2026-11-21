@@ -1,4 +1,4 @@
-# BMS Retail Local GA readiness
+# BMS POS+ Retail Local GA readiness
 
 Assessment date: 2026-09-25. This file records the evidence boundary; it is not itself evidence.
 

@@ -20,7 +20,7 @@ from docx.shared import Inches, Pt, RGBColor
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "docs" / "public-pos-guides"
 OUTPUT = ROOT / "apps" / "web" / "public" / "guides" / "pos"
-DATE = "20 พฤศจิกายน 2026"
+DATE = "21 พฤศจิกายน 2026"
 GUIDES = {
     "retail": ("ร้านค้าปลีกและค้าส่ง", False),
     "board-game": ("ร้านบอร์ดเกม", False),
@@ -165,7 +165,7 @@ def configure(doc, pilot, label):
             set_font(run)
     for footer in (section.footer.paragraphs[0], section.even_page_footer.paragraphs[0]):
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = footer.add_run(f"BMS POS | {label} | {DATE}")
+        run = footer.add_run(f"BMS POS+ | {label} | {DATE}")
         run.font.size = Pt(8)
         set_font(run)
         footer.add_run("  |  หน้า ")
@@ -244,7 +244,7 @@ def build_one(slug, label, pilot):
     intro = doc.add_paragraph()
     add_inline(intro, f"ฉบับทบทวน {DATE} · ภาษาไทย · ข้อมูลสินค้า ราคา และบุคคลในตัวอย่างเป็นข้อมูลสมมติ")
     link = doc.add_paragraph()
-    add_inline(link, f"ฉบับออนไลน์ล่าสุด: [BMS ศูนย์เรียนรู้](https://bms.jachoei.com/th/learn/{slug})")
+    add_inline(link, f"ฉบับออนไลน์ล่าสุด: [BMS POS+ ศูนย์เรียนรู้](https://bms.jachoei.com/th/learn/{slug})")
     headings = [line[3:].strip() for line in lines if line.startswith("## ")]
     doc.add_heading("สารบัญ", level=1)
     for number, heading in enumerate(headings, 1):

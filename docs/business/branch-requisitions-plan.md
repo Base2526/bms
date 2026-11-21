@@ -117,7 +117,7 @@ as a primary navigation item.
 
 ## 2. Problem being solved
 
-BMS currently supports:
+BMS POS+ currently supports:
 
 1. supplier PO: `OPEN -> PARTIAL -> RECEIVED` or `CANCELLED`;
 2. branch stock transfer: `DRAFT -> IN_TRANSIT -> RECEIVED` or `CANCELLED`;
@@ -536,7 +536,7 @@ The first release is complete when:
 
 1. an authorised branch user can submit a traceable request without moving stock;
 2. an authorised reviewer can approve exact quantities across authorised branches;
-3. a confirmed action creates ordinary BMS transfer drafts without duplicating stock logic;
+3. a confirmed action creates ordinary BMS POS+ transfer drafts without duplicating stock logic;
 4. shortage evidence can lead to an explicitly confirmed ordinary PO;
 5. request progress is derived from linked authoritative documents;
 6. tenant, branch, permission, idempotency and audit guarantees are covered by tests; and

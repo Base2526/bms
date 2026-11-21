@@ -209,7 +209,7 @@ export default function BmsFlowDiagram({ variant = "full" }: { variant?: Variant
       return <g key={node.id} {...commonProps}><rect className={styles.svgPill} height="58" rx="29" width={width} x={-width / 2} y="-29" /><FlowIcon name={node.icon} size={24} x={-width / 2 + 20} y={-12} /><text className={styles.svgPillLabel} textAnchor="middle" y="-2">{t(node.labelKey)}</text><text className={styles.svgShort} textAnchor="middle" y="18">{t(node.shortKey)}</text>{renderStatus(node)}</g>;
     }
     if (node.id === "bms-core") {
-      return <g key={node.id} {...commonProps}><circle className={styles.svgHubHalo} r="112" /><circle className={styles.svgHub} fill={`url(#bms-flow-hub-${variant})`} r="90" /><FlowIcon name={node.icon} size={30} x={-15} y={-60} /><text className={styles.svgHubTitle} textAnchor="middle" y="5">BMS</text><text className={styles.svgHubShort} textAnchor="middle" y="34">{t(node.shortKey)}</text></g>;
+      return <g key={node.id} {...commonProps}><circle className={styles.svgHubHalo} r="112" /><circle className={styles.svgHub} fill={`url(#bms-flow-hub-${variant})`} r="90" /><FlowIcon name={node.icon} size={30} x={-15} y={-60} /><text className={styles.svgHubTitle} textAnchor="middle" y="5">BMS POS+</text><text className={styles.svgHubShort} textAnchor="middle" y="34">{t(node.shortKey)}</text></g>;
     }
     if (node.group === "module") {
       const left = point.x < 540;
@@ -237,7 +237,7 @@ export default function BmsFlowDiagram({ variant = "full" }: { variant?: Variant
     <section className={`${styles.flowRoot} ${styles[variant]}`} id="workflow">
       <div className={styles.flowHeader}>
         {/* The product name appears once, inside the hub. The eyebrow and the
-            heading say what the reader gets instead of naming BMS again. */}
+            heading say what the reader gets instead of naming BMS POS+ again. */}
         <span className={styles.eyebrow}>{t("bmsFlow.eyebrow")}</span>
         {/* Thai has no spaces between words, so the browser may break inside
             one ("สต็ / อก"). Each space-separated phrase is kept whole. */}

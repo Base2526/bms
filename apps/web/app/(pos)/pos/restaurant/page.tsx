@@ -2183,7 +2183,7 @@ export default function RestaurantPosPage() {
     return {
       taxRequestUrl: result.taxRequestUrl ?? null,
       languageMode: mode,
-      storeName: session?.location?.name ?? "BMS Restaurant",
+      storeName: session?.location?.name ?? "BMS POS+ Restaurant",
       storeAddress: session?.store?.address ?? null,
       storePhone: session?.store?.phone ?? null,
       storeLogoUrl: session?.store?.logoUrl ?? null,
@@ -2789,7 +2789,7 @@ export default function RestaurantPosPage() {
     </nav>
     <div className={styles.shell}>
       <header className={styles.topbar}>
-        <div className={styles.brand}><div><h1 className={styles.title}>BMS Restaurant</h1><p className={styles.subtitle}>{session?.location?.name ?? "-"} · {session?.device.code}</p></div></div>
+        <div className={styles.brand}><div><h1 className={styles.title}>BMS POS+ Restaurant</h1><p className={styles.subtitle}>{session?.location?.name ?? "-"} · {session?.device.code}</p></div></div>
         <div className={styles.topActions}>
           <div className={styles.topStatusGroup}>
             <div className={styles.connectionStatus}><PosConnectionStatus apiStatus={incomingApiStatus} /></div>

@@ -405,7 +405,7 @@ created**. The file hash is the retry key, so re-uploading the same confirmed fi
 not duplicate rows. It requires `purchase.view` to preview and `purchase.edit` to commit.
 Overlapping receipts in a different file with different bytes are not automatically deduplicated;
 the operator must compare source documents before confirming another file.
-The source workbook is retained by the operator; BMS stores its name/hash and parsed rows,
+The source workbook is retained by the operator; BMS POS+ stores its name/hash and parsed rows,
 not a copy of the uploaded file.
 
 Opening stock records the fish physically counted on day one, by branch/SKU/size/lot,
@@ -452,13 +452,13 @@ monthly revenue basis. Return rows retain negative revenue but receive no second
 Its line-revenue weights precede order-wide discounts and VAT, so this
 is an explicit management estimate, not statutory net profit or a purchase-lot cost assertion.
 
-Staff can create a customer/branch delivery commitment and link one ordinary BMS order for each
+Staff can create a customer/branch delivery commitment and link one ordinary BMS POS+ order for each
 delivery trip. The view counts shipped or completed order grams against the agreed weight; an
 order still awaiting shipment does not count as delivered. Non-void partial returns reduce the
 linked order's remaining weight; voided returns do not. It shows pending payment on linked
 `PENDING` orders separately from outstanding linked credit-sale AR invoices. Staff must create,
 pay, pack and ship the ordinary orders through their normal workflows; linking does none of these
-steps. Unlinked orders and payments outside BMS are outside this plan view. The page requires
+steps. Unlinked orders and payments outside BMS POS+ are outside this plan view. The page requires
 report, purchase, product, shipping and AR read permissions; count/plan/link writes need their
 respective stock, order and shipping permissions. This feature requires migration `10.120` in
 the target environment and is not a claim of production rollout.
@@ -576,7 +576,7 @@ For demos and team explanations, position this feature as:
 
 `out-of-stock -> capture demand -> notify when replenished -> recover the sale`
 
-That makes `restock subscriptions` one of the clearest examples that BMS is not just answering
+That makes `restock subscriptions` one of the clearest examples that BMS POS+ is not just answering
 chat, but turning missed demand into an actionable sales pipeline.
 
 ## POS stock and lot handling

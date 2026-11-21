@@ -1,7 +1,7 @@
 # Retail Local: เครื่องพังและการย้ายไปเครื่องทดแทน
 
-เอกสารนี้เป็นคู่มือปฏิบัติสำหรับ BMS Retail Local รุ่นนำร่อง การกู้คืนต้องใช้ backup ที่ร้านเก็บไว้
-นอกเครื่องเดิม BMS ไม่ได้ host backup ให้ และสถานะ license/trial ต้องไม่ขวางการกู้ข้อมูลหรือการขาย
+เอกสารนี้เป็นคู่มือปฏิบัติสำหรับ BMS POS+ Retail Local รุ่นนำร่อง การกู้คืนต้องใช้ backup ที่ร้านเก็บไว้
+นอกเครื่องเดิม BMS POS+ ไม่ได้ host backup ให้ และสถานะ license/trial ต้องไม่ขวางการกู้ข้อมูลหรือการขาย
 
 ## ภาษาไทย
 
@@ -10,7 +10,7 @@
 - ไฟล์ encrypted logical backup ที่รวมฐานข้อมูล ไฟล์ installation metadata และ secret bundle จากรอบเดียวกัน
 - recovery identity/password ที่เก็บแยกจากเครื่องร้าน
 - เครื่องทดแทนที่ผ่าน preflight ของ target ที่รองรับ
-- ผู้ดูแลร้านและผู้ดูแล BMS ที่มีสิทธิออก Activation Code ใหม่
+- ผู้ดูแลร้านและผู้ดูแล BMS POS+ ที่มีสิทธิออก Activation Code ใหม่
 
 อย่ากู้ด้วยการคัดลอก WSL VHDX หรือ data directory จากเครื่องที่กำลังทำงาน และอย่าผสมฐานข้อมูลเก่ากับ
 ไฟล์หรือ secret จากคนละรอบ backup
@@ -44,7 +44,7 @@
   the matching secret bundle.
 - The recovery identity/password stored away from the shop computer.
 - A replacement host that passes preflight for a supported target.
-- An authorized shop operator and a BMS platform administrator who can issue a fresh Activation Code.
+- An authorized shop operator and a BMS POS+ platform administrator who can issue a fresh Activation Code.
 
 Do not recover by copying a live WSL VHDX or data directory. Never mix a database with files or
 secrets from another backup generation.

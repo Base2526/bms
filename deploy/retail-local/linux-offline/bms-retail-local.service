@@ -1,5 +1,5 @@
 [Unit]
-Description=BMS Retail Local
+Description=BMS POS+ Retail Local
 Requires=docker.service
 After=docker.service network-online.target
 

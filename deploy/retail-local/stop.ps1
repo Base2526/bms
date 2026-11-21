@@ -7,4 +7,4 @@ Assert-RetailLocalDocker
 $composeArgs = Get-RetailLocalComposeArgs -Context $ctx
 & docker @composeArgs stop
 if ($LASTEXITCODE -ne 0) { throw "Failed to stop the system" }
-Write-Host "BMS Retail Local stopped. Data is retained in local volumes" -ForegroundColor Yellow
+Write-Host "BMS POS+ Retail Local stopped. Data is retained in local volumes" -ForegroundColor Yellow

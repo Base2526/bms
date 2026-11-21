@@ -1,6 +1,6 @@
 # Bank reconciliation — Phase 1–6
 
-Bank reconciliation compares an imported bank statement with facts already recorded in BMS. It is
+Bank reconciliation compares an imported bank statement with facts already recorded in BMS POS+. It is
 an evidence workflow, not a general ledger and not an automatic posting engine.
 
 ## Safety boundary
@@ -48,7 +48,7 @@ accounts keep a tenant-scoped HMAC-SHA-256 fingerprint and the final four digits
 The HMAC uses `BMS_BANK_FINGERPRINT_SECRET` (falling back to the deployment's `JWT_SECRET`) and
 requires at least 32 bytes. Keep that secret stable; rotating it requires a planned fingerprint
 migration.
-Matching to existing BMS money sources is currently THB-only because those source tables do not yet
+Matching to existing BMS POS+ money sources is currently THB-only because those source tables do not yet
 carry a currency dimension. The review list uses server-side pagination, so imports above 500 rows
 remain fully reviewable.
 

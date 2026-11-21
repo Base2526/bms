@@ -13,8 +13,8 @@ export function generateMetadata() {
     ...learningMetadata(
       lang === "th" ? "คู่มือโรงงานเชือกพลาสติกและหลอดพลาสติก" : "Plastic twine and straw factory guide",
       lang === "th"
-        ? "ตัวอย่างการกรอก BMS ตั้งแต่สมัครกิจการ สร้าง SKU รับวัตถุดิบ ตั้ง BOM ผลิต ตรวจคุณภาพ จนถึงสต็อกคงเหลือ สำหรับ pilot ที่ยังไม่เปิดใช้ production"
-        : "Worked BMS examples from signup and receiving through BOMs, production, quality review and stock balances for a pilot not yet deployed to production.",
+        ? "ตัวอย่างการกรอก BMS POS+ ตั้งแต่สมัครกิจการ สร้าง SKU รับวัตถุดิบ ตั้ง BOM ผลิต ตรวจคุณภาพ จนถึงสต็อกคงเหลือ สำหรับ pilot ที่ยังไม่เปิดใช้ production"
+        : "Worked BMS POS+ examples from signup and receiving through BOMs, production, quality review and stock balances for a pilot not yet deployed to production.",
       path,
       lang,
     ),

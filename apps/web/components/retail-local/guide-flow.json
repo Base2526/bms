@@ -251,11 +251,11 @@
     "audio": "/audio/retail-local/th/step-6.mp3",
     "th": {
       "title": "Activate เมื่อได้รับ Code",
-      "speech": "เมื่อต้องการลงทะเบียนและได้รับ Activation Code จาก BMS ให้ผู้ดูแลเปิดหน้า License ของเครื่องนี้ หรือช่องทาง Activate or Transfer ที่ตรงกับระบบปฏิบัติการ กรอก Code และยืนยัน Code ใช้ครั้งเดียว ไม่ควรส่งในแชตผู้ช่วยหรือบันทึกทั่วไป Code หมดอายุในเจ็ดวัน และเลขอ้างอิง LIC- ใช้แทน Code ไม่ได้",
+      "speech": "เมื่อต้องการลงทะเบียนและได้รับ Activation Code จาก BMS POS+ ให้ผู้ดูแลเปิดหน้า License ของเครื่องนี้ หรือช่องทาง Activate or Transfer ที่ตรงกับระบบปฏิบัติการ กรอก Code และยืนยัน Code ใช้ครั้งเดียว ไม่ควรส่งในแชตผู้ช่วยหรือบันทึกทั่วไป Code หมดอายุในเจ็ดวัน และเลขอ้างอิง LIC- ใช้แทน Code ไม่ได้",
       "nodes": [
         [
           "key-round",
-          "รับ Code จาก BMS",
+          "รับ Code จาก BMS POS+",
           "ใช้ครั้งเดียว · หมดอายุใน 7 วัน"
         ],
         [
@@ -273,11 +273,11 @@
     },
     "en": {
       "title": "Activate after receiving a code",
-      "speech": "When BMS provides an Activation Code, an authorized administrator can register through This installation’s license or the operating system’s Activate or Transfer entry point. Enter the code and confirm. Codes are single-use and expire after seven days; a LIC- reference is not an activation code. Keep codes out of assistant chat and ordinary logs.",
+      "speech": "When BMS POS+ provides an Activation Code, an authorized administrator can register through This installation’s license or the operating system’s Activate or Transfer entry point. Enter the code and confirm. Codes are single-use and expire after seven days; a LIC- reference is not an activation code. Keep codes out of assistant chat and ordinary logs.",
       "nodes": [
         [
           "key-round",
-          "Code from BMS",
+          "Code from BMS POS+",
           "Single-use; expires after 7 days"
         ],
         [
@@ -300,16 +300,16 @@
     "audio": "/audio/retail-local/th/step-7.mp3",
     "th": {
       "title": "จาก Trial ไปเป็น Paid",
-      "speech": "ถ้าเริ่มด้วย Trial ผู้ดูแล BMS จะตรวจหลักฐานการชำระก่อนเปลี่ยนรายการเป็น Paid ภายใต้ License เดิม ไม่ต้องติดตั้งใหม่หรือย้ายข้อมูลเพื่อเปลี่ยนสถานะ แม้ Trial หมดอายุหรือกำลังรอตรวจ ก็ไม่ล็อกการขายและการเข้าถึงข้อมูลร้าน Trial เริ่มเมื่อ BMS ออก Trial ให้ ไม่ใช่ตอนดาวน์โหลด ติดตั้ง หรือ Activate และการแปลงเป็น Paid ไม่ต้องกรอก Code ใหม่",
+      "speech": "ถ้าเริ่มด้วย Trial ผู้ดูแล BMS POS+ จะตรวจหลักฐานการชำระก่อนเปลี่ยนรายการเป็น Paid ภายใต้ License เดิม ไม่ต้องติดตั้งใหม่หรือย้ายข้อมูลเพื่อเปลี่ยนสถานะ แม้ Trial หมดอายุหรือกำลังรอตรวจ ก็ไม่ล็อกการขายและการเข้าถึงข้อมูลร้าน Trial เริ่มเมื่อ BMS POS+ ออก Trial ให้ ไม่ใช่ตอนดาวน์โหลด ติดตั้ง หรือ Activate และการแปลงเป็น Paid ไม่ต้องกรอก Code ใหม่",
       "nodes": [
         [
           "clock",
           "Trial เดิม",
-          "เริ่มเมื่อ BMS ออก Trial ให้"
+          "เริ่มเมื่อ BMS POS+ ออก Trial ให้"
         ],
         [
           "clipboard-check",
-          "BMS ตรวจชำระ",
+          "BMS POS+ ตรวจชำระ",
           "เจ้าหน้าที่ยืนยัน"
         ],
         [
@@ -322,7 +322,7 @@
     },
     "en": {
       "title": "Move from Trial to Paid",
-      "speech": "For a trial license, BMS staff verify payment before converting the existing license to Paid. The trial begins when BMS issues the trial license, not when you download, install or activate. Conversion does not require another installation, fresh code or new shop data. Trial expiry or payment review must not block sales or access to shop data.",
+      "speech": "For a trial license, BMS POS+ staff verify payment before converting the existing license to Paid. The trial begins when BMS POS+ issues the trial license, not when you download, install or activate. Conversion does not require another installation, fresh code or new shop data. Trial expiry or payment review must not block sales or access to shop data.",
       "nodes": [
         [
           "clock",
@@ -331,7 +331,7 @@
         ],
         [
           "clipboard-check",
-          "BMS verifies payment",
+          "BMS POS+ verifies payment",
           "An authorized person confirms"
         ],
         [
@@ -350,7 +350,7 @@
     "audio": "/audio/retail-local/th/step-8.mp3",
     "th": {
       "title": "เตรียม USB / NAS และกุญแจ",
-      "speech": "ข้อมูลอยู่ที่ร้าน จึงต้องมีสำเนาไว้นอกเครื่องหลัก เตรียม USB หรือ NAS และตั้งปลายทางตามคู่มือ เก็บรหัสหรือกุญแจกู้คืนแยกต่างหาก อย่าเก็บสำเนาและกุญแจทั้งหมดไว้ในเครื่องเดียว BMS ไม่ได้ฝากสำรองข้อมูลร้านไว้บนคลาวด์ให้ สำหรับ macOS ยังไม่มีการสำรองนอกเครื่องตามตารางอัตโนมัติ ให้ทำตามคู่มือของรุ่นที่ใช้",
+      "speech": "ข้อมูลอยู่ที่ร้าน จึงต้องมีสำเนาไว้นอกเครื่องหลัก เตรียม USB หรือ NAS และตั้งปลายทางตามคู่มือ เก็บรหัสหรือกุญแจกู้คืนแยกต่างหาก อย่าเก็บสำเนาและกุญแจทั้งหมดไว้ในเครื่องเดียว BMS POS+ ไม่ได้ฝากสำรองข้อมูลร้านไว้บนคลาวด์ให้ สำหรับ macOS ยังไม่มีการสำรองนอกเครื่องตามตารางอัตโนมัติ ให้ทำตามคู่มือของรุ่นที่ใช้",
       "nodes": [
         [
           "monitor",
@@ -372,7 +372,7 @@
     },
     "en": {
       "title": "Prepare USB / NAS and the recovery key",
-      "speech": "Shop data needs a copy outside the main computer. Prepare USB or NAS storage and configure the destination using the instructions for your release. Keep the recovery key or password separately. BMS does not host your shop’s backups. Scheduled off-host backup is not yet available on macOS; follow its manual recovery instructions.",
+      "speech": "Shop data needs a copy outside the main computer. Prepare USB or NAS storage and configure the destination using the instructions for your release. Keep the recovery key or password separately. BMS POS+ does not host your shop’s backups. Scheduled off-host backup is not yet available on macOS; follow its manual recovery instructions.",
       "nodes": [
         [
           "monitor",
@@ -497,7 +497,7 @@
     "audio": "/audio/retail-local/th/step-11.mp3",
     "th": {
       "title": "ย้าย License ไปเครื่องใหม่",
-      "speech": "หลังตรวจข้อมูลที่กู้แล้ว ให้ขอ Code ใหม่สำหรับ License เดิม ลงทะเบียนเครื่องใหม่ผ่าน Activate or Transfer ผู้ดูแล BMS ตรวจต้นทางและปลายทางก่อนยืนยันการย้าย การย้าย License ไม่ได้คัดลอกข้อมูล และระหว่างรอตรวจต้องไม่ล็อกการใช้งานร้าน อย่าคัดลอกกุญแจลงลายเซ็นหรือโทเคนของเครื่องเดิมไปใช้กับเครื่องใหม่",
+      "speech": "หลังตรวจข้อมูลที่กู้แล้ว ให้ขอ Code ใหม่สำหรับ License เดิม ลงทะเบียนเครื่องใหม่ผ่าน Activate or Transfer ผู้ดูแล BMS POS+ ตรวจต้นทางและปลายทางก่อนยืนยันการย้าย การย้าย License ไม่ได้คัดลอกข้อมูล และระหว่างรอตรวจต้องไม่ล็อกการใช้งานร้าน อย่าคัดลอกกุญแจลงลายเซ็นหรือโทเคนของเครื่องเดิมไปใช้กับเครื่องใหม่",
       "nodes": [
         [
           "key-round",
@@ -511,7 +511,7 @@
         ],
         [
           "user-check",
-          "BMS ยืนยันย้าย",
+          "BMS POS+ ยืนยันย้าย",
           "ตรวจเครื่องเก่าและใหม่"
         ]
       ],
@@ -519,7 +519,7 @@
     },
     "en": {
       "title": "Transfer the license to a new host",
-      "speech": "After checking the restored data, request a new code for the existing license. Register the new computer through Activate or Transfer. BMS staff review the old and new installations before confirming the transfer. Do not copy device signing keys or bearer tokens. License transfer does not copy shop data; review must not block the restored shop.",
+      "speech": "After checking the restored data, request a new code for the existing license. Register the new computer through Activate or Transfer. BMS POS+ staff review the old and new installations before confirming the transfer. Do not copy device signing keys or bearer tokens. License transfer does not copy shop data; review must not block the restored shop.",
       "nodes": [
         [
           "key-round",
@@ -533,7 +533,7 @@
         ],
         [
           "user-check",
-          "BMS confirms transfer",
+          "BMS POS+ confirms transfer",
           "Review the old and new hosts"
         ]
       ],

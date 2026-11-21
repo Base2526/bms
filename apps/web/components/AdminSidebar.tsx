@@ -684,7 +684,7 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
         {!mini && (
           <Link href="/admin" style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--app-text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden' }}>
             <ShopOutlined />
-            <span>BMS</span>
+            <span>BMS POS+</span>
           </Link>
         )}
         {!inDrawer && (
@@ -962,7 +962,7 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
             style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--app-text)', fontWeight: 600 }}
           >
             <ShopOutlined />
-            <span>BMS</span>
+            <span>BMS POS+</span>
           </Link>
           {canViewInbox && alerts > 0 && (
             <Link href="/admin/inbox" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>

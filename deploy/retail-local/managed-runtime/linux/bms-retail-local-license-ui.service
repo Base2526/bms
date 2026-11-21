@@ -1,5 +1,5 @@
 [Unit]
-Description=BMS Retail Local license registration mailbox
+Description=BMS POS+ Retail Local license registration mailbox
 After=bms-retail-local.service network-online.target
 ConditionPathExists=/var/lib/bms-retail-local/installation.json
 

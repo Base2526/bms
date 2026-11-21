@@ -85,4 +85,4 @@ rm -rf -- /opt/bms-retail-local
 rm -f /usr/local/bin/bms-localctl /usr/local/sbin/bms-retail-local-uninstall \
   /usr/local/sbin/bms-retail-local-offhost-backup
 progress 4 "System and shop data deleted"
-echo "BMS Retail Local and its local data have been deleted"
+echo "BMS POS+ Retail Local and its local data have been deleted"

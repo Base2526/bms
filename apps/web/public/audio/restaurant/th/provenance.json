@@ -1,44 +1,44 @@
 {
-  "fafd498cc424c4bd17b21e38": {
-    "file": "/audio/restaurant/th/fafd498cc424c4bd17b21e38.mp3",
-    "duration": 2.64,
-    "sha256": "fa318f9a41295cceb9efe8b8eaca8e8ecc5bcb4f31a3386da63a6f77b8dcb825",
-    "spoken": "บี เอ็ม เอส เอ พี ไอ ตรวจ ตัวตน และ สิทธิ์ ใหม่"
+  "dd229e967e249ef9aaf50c7c": {
+    "file": "/audio/restaurant/th/dd229e967e249ef9aaf50c7c.mp3",
+    "duration": 3.168,
+    "sha256": "c1641133cd2320bbcc59386484d56c02061e73f19391ddfa8095ab445fda3e55",
+    "spoken": "บี เอ็ม เอส พี โอ เอส เอ พี ไอ ตรวจ ตัวตน และ สิทธิ์ ใหม่"
   },
-  "4117da1da1cc20ba5cc8935a": {
-    "file": "/audio/restaurant/th/4117da1da1cc20ba5cc8935a.mp3",
-    "duration": 2.52,
-    "sha256": "c3ce0a68888f8a20964d72c87d00a7ccbfa6563c5e63db55d391f769bd032273",
-    "spoken": "บี เอ็ม เอส เอ พี ไอ ตรวจ ผู้ใช้ ร้าน และ สิทธิ์"
+  "4d4831f5a6ea64db95fc37a7": {
+    "file": "/audio/restaurant/th/4d4831f5a6ea64db95fc37a7.mp3",
+    "duration": 3.0,
+    "sha256": "767fe98fe2c04edcb2bff0d85bf93a4f7e6696fd3978fb0f165a58d99a509f96",
+    "spoken": "บี เอ็ม เอส พี โอ เอส เอ พี ไอ ตรวจ ผู้ใช้ ร้าน และ สิทธิ์"
   },
-  "bdc16069a63a06a89c5be60a": {
-    "file": "/audio/restaurant/th/bdc16069a63a06a89c5be60a.mp3",
-    "duration": 2.736,
-    "sha256": "39cf56d2cdcf724e04bc72855b2b526e93d1d9011ea40a8e549e060399cd99f0",
-    "spoken": "บี เอ็ม เอส เอ พี ไอ ส่ง ตัวตน ที่ ยืนยัน แล้ว"
+  "7d0aa41fd3a1758540daacb1": {
+    "file": "/audio/restaurant/th/7d0aa41fd3a1758540daacb1.mp3",
+    "duration": 3.264,
+    "sha256": "38de164cf3de2bedc1834847a2a42632bf39e49c09bbd139fcfe5803c2f80f59",
+    "spoken": "บี เอ็ม เอส พี โอ เอส เอ พี ไอ ส่ง ตัวตน ที่ ยืนยัน แล้ว"
   },
-  "517311b3957bcf291fa55d95": {
-    "file": "/audio/restaurant/th/517311b3957bcf291fa55d95.mp3",
-    "duration": 2.304,
-    "sha256": "b02d689e7a1474a4cbbb1be599115205ea6c288b76bc7fdcaed24d8c79b4ffeb",
-    "spoken": "บี เอ็ม เอส เอ พี ไอ แสดง ผลสำเร็จ"
+  "bf51608bfe21406e4c652a2f": {
+    "file": "/audio/restaurant/th/bf51608bfe21406e4c652a2f.mp3",
+    "duration": 2.76,
+    "sha256": "c3eae150c792efa7a2c30d8c226fba0260655f4a3e2a3f88f2c6d34949031983",
+    "spoken": "บี เอ็ม เอส พี โอ เอส เอ พี ไอ แสดง ผลสำเร็จ"
   },
-  "b7eeef13422a65b9bad8b69e": {
-    "file": "/audio/restaurant/th/b7eeef13422a65b9bad8b69e.mp3",
+  "a1064e134aa1ef034b83f206": {
+    "file": "/audio/restaurant/th/a1064e134aa1ef034b83f206.mp3",
     "duration": 3.48,
-    "sha256": "156aab5b1232f8316bcbdece5207d86142d44a13aa073fbcba573881a02bb102",
+    "sha256": "a01e1967bdd65e0f88dbeaff5cc9d23cb0099f0f6485347ed0e533dc5f6f7412",
     "spoken": "บี เอ็ม เอส พี โอ เอส ตรวจ ความพร้อม ของ สินค้า และ ส่วนประกอบ"
   },
-  "0f127bb2161656045f9a1ce4": {
-    "file": "/audio/restaurant/th/0f127bb2161656045f9a1ce4.mp3",
+  "2844c402662779116c5186f2": {
+    "file": "/audio/restaurant/th/2844c402662779116c5186f2.mp3",
     "duration": 3.24,
-    "sha256": "ed955704735f16da3f53c2150bf44fbd45df88a0c2a48112cc9c78be3c7c2def",
+    "sha256": "5c2b2f06fbbdaab37d1d863c0393bdd851e89b760804d1d7d7e1c9f300b79927",
     "spoken": "บี เอ็ม เอส พี โอ เอส ตรวจ ราคา และ ข้อมูล สินค้า จริง"
   },
-  "bb76191a0556540b8287bbd0": {
-    "file": "/audio/restaurant/th/bb76191a0556540b8287bbd0.mp3",
+  "d14b334ee77b69a609179067": {
+    "file": "/audio/restaurant/th/d14b334ee77b69a609179067.mp3",
     "duration": 2.736,
-    "sha256": "a7f5cdf4f0122668e790589ef5c69e282df25a2e6b7edc613fa4336cc64d25bf",
+    "sha256": "074e7553b20dd4267ff2263b40f7fbe77bc52760623c6d106e6c31f95948599f",
     "spoken": "บี เอ็ม เอส พี โอ เอส แสดง ยอด สุทธิ ให้ ตรวจ"
   },
   "4d42b441f76ce772f1250bd5": {
@@ -539,35 +539,35 @@
     "sha256": "fa7ca7edc6a0cb3b93893b48e734aa47b4c40828931c08558604c1b9759ed80f",
     "spoken": "บอร์ด เกม คาเฟ่ เปิด โต๊ะ จับเวลา และ ปิด บิล กลุ่ม แยก เวลาเล่น กลุ่ม ที่ ชำระเงิน และ สินค้า หรือ เครื่องดื่ม ใน บิล เพื่อ คิด ยอด แต่ละ ส่วน ได้ ถูกต้อง"
   },
-  "906b09dc94f1636daef89636": {
-    "file": "/audio/restaurant/th/906b09dc94f1636daef89636.mp3",
-    "duration": 2.76,
-    "sha256": "19876350d7402b4bb8bce4db700d3d4f15ccadd92f1d418fa68eaa26dc250d40",
-    "spoken": "บิล บี เอ็ม เอส คำนวณ ย้อน สิทธิ์ จาก หลักฐาน เดิม"
+  "7fa2195933fd50a86b5e8e50": {
+    "file": "/audio/restaurant/th/7fa2195933fd50a86b5e8e50.mp3",
+    "duration": 3.216,
+    "sha256": "8c19b618883b1c04c2669b2aa6866eaa01c58e3ca3849123b84a04bc44dddd74",
+    "spoken": "บิล บี เอ็ม เอส พี โอ เอส คำนวณ ย้อน สิทธิ์ จาก หลักฐาน เดิม"
   },
-  "ddd89c4d2f0b2fe3cf7596c3": {
-    "file": "/audio/restaurant/th/ddd89c4d2f0b2fe3cf7596c3.mp3",
-    "duration": 2.856,
-    "sha256": "9ddc74e730f6dd3acbc48870ee006f97932d7990871879104909266d1426bb8b",
-    "spoken": "บิล บี เอ็ม เอส คืน สิทธิ์ ที่ จอง ไว้ ตาม นโยบาย"
+  "5126a3abf1c691a831fadc57": {
+    "file": "/audio/restaurant/th/5126a3abf1c691a831fadc57.mp3",
+    "duration": 3.36,
+    "sha256": "efc2df451d08e15489838c6669b5a8d4af105f9d84165181c9edfd348e13711f",
+    "spoken": "บิล บี เอ็ม เอส พี โอ เอส คืน สิทธิ์ ที่ จอง ไว้ ตาม นโยบาย"
   },
-  "447e2e5702cc1cff5b9f126b": {
-    "file": "/audio/restaurant/th/447e2e5702cc1cff5b9f126b.mp3",
-    "duration": 3.48,
-    "sha256": "88fda8cedec55ee399a30acd6b63e4820ae85a69d860be39d4ffb3a76d300da4",
-    "spoken": "บิล บี เอ็ม เอส ตรวจ ราคา สาขา ช่องทาง เวลา และ จำนวน"
+  "78ce6808bf69af4d336511f1": {
+    "file": "/audio/restaurant/th/78ce6808bf69af4d336511f1.mp3",
+    "duration": 3.984,
+    "sha256": "d9124797484c62b7e4d30ac87846cda64d4f2055b8f442777ba4890629ffcec4",
+    "spoken": "บิล บี เอ็ม เอส พี โอ เอส ตรวจ ราคา สาขา ช่องทาง เวลา และ จำนวน"
   },
-  "c052cda6afae48c964a45baf": {
-    "file": "/audio/restaurant/th/c052cda6afae48c964a45baf.mp3",
-    "duration": 2.64,
-    "sha256": "47650b3679e21860fdda5a5ffb9ea403beb2fc55080356fb24d684a8bd8b5138",
-    "spoken": "บิล บี เอ็ม เอส ตรวจ สิทธิ์ คงเหลือ และ เงื่อนไข"
+  "a9023fc2e2c1999ab277fe17": {
+    "file": "/audio/restaurant/th/a9023fc2e2c1999ab277fe17.mp3",
+    "duration": 3.096,
+    "sha256": "828cff0add0ec84605a7bb90ca793d6956fb22b798f3f9898b18d243efd37275",
+    "spoken": "บิล บี เอ็ม เอส พี โอ เอส ตรวจ สิทธิ์ คงเหลือ และ เงื่อนไข"
   },
-  "dd121712197be4367c7ca124": {
-    "file": "/audio/restaurant/th/dd121712197be4367c7ca124.mp3",
-    "duration": 2.064,
-    "sha256": "9a9423c02342e6f5332c6ab6538ec8f0c4556dd57e1c138e884cc59a1dc1d268",
-    "spoken": "บิล บี เอ็ม เอส แสดง ยอด และ สิทธิ์"
+  "95fe47323e1a47495b02160c": {
+    "file": "/audio/restaurant/th/95fe47323e1a47495b02160c.mp3",
+    "duration": 2.616,
+    "sha256": "497f7dfb55879d9a51e84daa74e984f6c6d0401425094050030427c45728b06b",
+    "spoken": "บิล บี เอ็ม เอส พี โอ เอส แสดง ยอด และ สิทธิ์"
   },
   "8b1b095c8567776530ac8b3f": {
     "file": "/audio/restaurant/th/8b1b095c8567776530ac8b3f.mp3",
@@ -1595,23 +1595,23 @@
     "sha256": "7a598bd8d201e67ba288e2a2267f08f1b841ac1c18f08fa41497b84f84c03fbe",
     "spoken": "วิเคราะห์ ต้นทุน และ ราคา แสดง สาขา ช่องทาง ช่วงเวลา และ ผลกระทบ"
   },
-  "046b4614789c69514175a474": {
-    "file": "/audio/restaurant/th/046b4614789c69514175a474.mp3",
-    "duration": 2.088,
-    "sha256": "c1c023d8056096ef378022c34235074eb04ee9fd3ae888284f3a4e79af1aeb78",
-    "spoken": "สต็อก บี เอ็ม เอส จำนวน พร้อม ใช้"
+  "86cc70d123db513b9d21f7aa": {
+    "file": "/audio/restaurant/th/86cc70d123db513b9d21f7aa.mp3",
+    "duration": 2.64,
+    "sha256": "ccd41461f5848e90ad84a47fe73f147dfe9e5f7d7f056bf4f08742e3b042aee3",
+    "spoken": "สต็อก บี เอ็ม เอส พี โอ เอส จำนวน พร้อม ใช้"
   },
-  "09965aa4769ca78a608ee0a3": {
-    "file": "/audio/restaurant/th/09965aa4769ca78a608ee0a3.mp3",
-    "duration": 3.24,
-    "sha256": "618c6116fb5a26d13fd0a44adadbed2bfd95619bf9954b2f7f27b8d1d80069c1",
-    "spoken": "สต็อก บี เอ็ม เอส บันทึก ราย การเคลื่อนไหว และ ผู้ดำเนินการ"
+  "30e0d3cfbfd73de6a1aa47ed": {
+    "file": "/audio/restaurant/th/30e0d3cfbfd73de6a1aa47ed.mp3",
+    "duration": 3.768,
+    "sha256": "5de435637c34e11a6a9b5ff53555917d60e7240c9b9e1eedd109d1b472962bc2",
+    "spoken": "สต็อก บี เอ็ม เอส พี โอ เอส บันทึก ราย การเคลื่อนไหว และ ผู้ดำเนินการ"
   },
-  "3621bb37e435ab4a7408f9aa": {
-    "file": "/audio/restaurant/th/3621bb37e435ab4a7408f9aa.mp3",
-    "duration": 2.592,
-    "sha256": "d4b2ec0cb5fe4f80ce1c50c13701bf310f973e7e80bb054c0070bad938e149fd",
-    "spoken": "สต็อก บี เอ็ม เอส แสดง ส่วน ต่าง และ เหตุผล"
+  "a3022057f5fd6461c71444c7": {
+    "file": "/audio/restaurant/th/a3022057f5fd6461c71444c7.mp3",
+    "duration": 3.096,
+    "sha256": "42200964b8ae0195a17b1c3642b978e51133cfd162b04a022ecd9bf7cc4079d6",
+    "spoken": "สต็อก บี เอ็ม เอส พี โอ เอส แสดง ส่วน ต่าง และ เหตุผล"
   },
   "919109eadf64618f239b7faa": {
     "file": "/audio/restaurant/th/919109eadf64618f239b7faa.mp3",
@@ -1889,11 +1889,11 @@
     "sha256": "c5d1e19cd0b021ba8550c9ec7f099478c2ae8d7275437012fa39998c2077bcc6",
     "spoken": "เจ้าของ ผู้จัดการ เลือก สูตร และ ฐาน ต้นทุน"
   },
-  "be2045b36adf648d1d859868": {
-    "file": "/audio/restaurant/th/be2045b36adf648d1d859868.mp3",
-    "duration": 2.64,
-    "sha256": "890ccd70de82a7bb5ece5b2ed010cba2619e7ecb492ec97cea8ea0d654d771ba",
-    "spoken": "เมนู และ สูตร บี เอ็ม เอส เก็บ เวอร์ ชันสูตร"
+  "ddd24617ec859152d37272ed": {
+    "file": "/audio/restaurant/th/ddd24617ec859152d37272ed.mp3",
+    "duration": 3.12,
+    "sha256": "c6768379a33cd79820a2fbeecfd445b7faa0914343cc04b00917d95cac7dfb18",
+    "spoken": "เมนู และ สูตร บี เอ็ม เอส พี โอ เอส เก็บ เวอร์ ชันสูตร"
   },
   "fc31f3424fc43745bc38a83f": {
     "file": "/audio/restaurant/th/fc31f3424fc43745bc38a83f.mp3",
@@ -1991,47 +1991,47 @@
     "sha256": "c411d7f3eec2f088a66f0118d2f2d55fbab1188a05fc166fd18c425701a073f6",
     "spoken": "แยก หรือ รวม บิล ใช้กับ รับประทาน ที่ ร้าน และ ไม่ สร้าง งาน ปรุงอาหาร ซ้ำ"
   },
-  "7d357cd579e0e8e226b38fdd": {
-    "file": "/audio/restaurant/th/7d357cd579e0e8e226b38fdd.mp3",
-    "duration": 2.976,
-    "sha256": "98a2fc591411de241dfb20fed82744461b904809f642eadaff3bd9ae3aa52c88",
-    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส จอง สต็อก ตาม รายการ และ สูตร"
-  },
-  "85ca174d6039fcb3d88b4758": {
-    "file": "/audio/restaurant/th/85ca174d6039fcb3d88b4758.mp3",
+  "2c91e734d89dd518400ac16a": {
+    "file": "/audio/restaurant/th/2c91e734d89dd518400ac16a.mp3",
     "duration": 3.48,
-    "sha256": "e18d07ed7463c98ffc784ead8ee19987c18c1d7f4608e54ec4997f3780092521",
-    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส ตรวจ เมนู ตัวเลือก ราคา และ โปรโมชั่น"
+    "sha256": "24f68630f47674871eac2f3165d8aa8cb1b717cfccb5e9a4bc24a3fd75365afa",
+    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส พี โอ เอส จอง สต็อก ตาม รายการ และ สูตร"
   },
-  "2bda03e43661928e57372be4": {
-    "file": "/audio/restaurant/th/2bda03e43661928e57372be4.mp3",
-    "duration": 2.784,
-    "sha256": "8c34d8d7bca132254a8ea3d23570fe1990bf923b3931365ba92700e5dd643505",
-    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส สร้าง งาน ตาม สถานี งาน"
+  "f2a3684cba698d24dfec4b8f": {
+    "file": "/audio/restaurant/th/f2a3684cba698d24dfec4b8f.mp3",
+    "duration": 3.984,
+    "sha256": "d253248d4ef087e419d5dd4e66ca116c842b127a8be8c559542a76a73b2ea2da",
+    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส พี โอ เอส ตรวจ เมนู ตัวเลือก ราคา และ โปรโมชั่น"
   },
-  "bdddbdd96f210faea7593506": {
-    "file": "/audio/restaurant/th/bdddbdd96f210faea7593506.mp3",
+  "731cc67d9ed757fa31ce7750": {
+    "file": "/audio/restaurant/th/731cc67d9ed757fa31ce7750.mp3",
+    "duration": 3.312,
+    "sha256": "3bb10501b046209261d1f73aa8d953233605bf6c2f9a31971f4be7b4e1bdb86a",
+    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส พี โอ เอส สร้าง งาน ตาม สถานี งาน"
+  },
+  "49220fa248a8b1d45bcd5177": {
+    "file": "/audio/restaurant/th/49220fa248a8b1d45bcd5177.mp3",
+    "duration": 3.72,
+    "sha256": "bbda919b7f286939cfe236c9cccc1c824940e4177f342a4d580242c1f7b74166",
+    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส พี โอ เอส สร้าง งาน รอบ ใหม่ เมื่อ ผ่าน การ ตรวจ"
+  },
+  "0ccd785d0a3f482034f0e4ee": {
+    "file": "/audio/restaurant/th/0ccd785d0a3f482034f0e4ee.mp3",
     "duration": 3.168,
-    "sha256": "f04d6f485c2a2ec75cebd1adcb8d640b2fbb00c099df7cd07dd540d6ab4baf66",
-    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส สร้าง งาน รอบ ใหม่ เมื่อ ผ่าน การ ตรวจ"
+    "sha256": "8702a9f088d7ae6b85f963aa15b01e67acfa5c493e42b4bef94ddf018cfb8531",
+    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส พี โอ เอส แจ้ง รายการ ที่ ต้อง แก้"
   },
-  "a024a84b9f96e2a92b80aa0f": {
-    "file": "/audio/restaurant/th/a024a84b9f96e2a92b80aa0f.mp3",
-    "duration": 2.64,
-    "sha256": "de16e46040b458b600f3f318aae325b50d742665f37b6e65792e1320e69689a4",
-    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส แจ้ง รายการ ที่ ต้อง แก้"
+  "0b03b898b69072c608482807": {
+    "file": "/audio/restaurant/th/0b03b898b69072c608482807.mp3",
+    "duration": 3.096,
+    "sha256": "556b8637cf3507d2d64a59169f2f1bef5e7ed07263ee5409372ee74107e4af5e",
+    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส พี โอ เอส แสดง คำ ขอให้ ตรวจ"
   },
-  "1b7575dd8708e0870f51f2b4": {
-    "file": "/audio/restaurant/th/1b7575dd8708e0870f51f2b4.mp3",
-    "duration": 2.568,
-    "sha256": "548e7c33651207cb74bab3237e2db86195eee77cd573a64378eac4dc04f798d3",
-    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส แสดง คำ ขอให้ ตรวจ"
-  },
-  "027c3c73f800226484101818": {
-    "file": "/audio/restaurant/th/027c3c73f800226484101818.mp3",
-    "duration": 1.776,
-    "sha256": "e082a62d73ffea0e8a481040d4924f341478a6bd6aba8561c28b77044afd019d",
-    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส ใบเสร็จ"
+  "87c2c4e170017a453b358a35": {
+    "file": "/audio/restaurant/th/87c2c4e170017a453b358a35.mp3",
+    "duration": 2.328,
+    "sha256": "8b65ff8a7b49311ffa55c8746be357030c38c45a416f2ff208907f6b9cef4c0c",
+    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส พี โอ เอส ใบเสร็จ"
   },
   "3582e116303be8cb5b3bffd1": {
     "file": "/audio/restaurant/th/3582e116303be8cb5b3bffd1.mp3",
@@ -2123,41 +2123,41 @@
     "sha256": "6978db94280ec178a8fd188967f977ec0b040957098be6f494bafbc54c083a2a",
     "spoken": "ใช้ สมาชิก แต้ม คูปอง และ โปรโมชั่น ตรวจ สิทธิ์ และ เงื่อนไข จาก ระบบ ก่อน ชำระ บันทึก แต้ม ที่ ใช้ และ ได้รับ และ คำนวณ ย้อน เมื่อคืน สินค้า"
   },
-  "213f8241a3885d11dc98d691": {
-    "file": "/audio/restaurant/th/213f8241a3885d11dc98d691.mp3",
-    "duration": 3.456,
-    "sha256": "48a5e455e5993317a7797345b7f42798765cb4307d783e076483e28973d4e186",
-    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส ยกเลิก แล้ว โดย คง หลักฐาน ที่ รับ แล้ว"
+  "53aee7a94c89cf2dd1d49334": {
+    "file": "/audio/restaurant/th/53aee7a94c89cf2dd1d49334.mp3",
+    "duration": 3.864,
+    "sha256": "4da3893085a8dc002c1e5f067597191f5778f442c6b9484a1f5d207f070d23e5",
+    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส พี โอ เอส ยกเลิก แล้ว โดย คง หลักฐาน ที่ รับ แล้ว"
   },
-  "dde80b69c52fa54e8c2c7a12": {
-    "file": "/audio/restaurant/th/dde80b69c52fa54e8c2c7a12.mp3",
-    "duration": 1.992,
-    "sha256": "66fcd821dff992403fa381c15c44fcbcba689b16fbc6cfb6ae43a6104c963138",
-    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส เปิด อยู่"
+  "54297a17198b0d570b457557": {
+    "file": "/audio/restaurant/th/54297a17198b0d570b457557.mp3",
+    "duration": 2.52,
+    "sha256": "8a11bd9f1f6d8e872400f46868e29b8981e29a8db82fcde5a7a7bc427b4207be",
+    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส พี โอ เอส เปิด อยู่"
   },
-  "6d6df6d0605f23718ce3e33f": {
-    "file": "/audio/restaurant/th/6d6df6d0605f23718ce3e33f.mp3",
-    "duration": 3.024,
-    "sha256": "871bbee869886301a2ad355f2edeff3272f902f6005a9d3721bc4fb89682c0bd",
-    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส รับ บางส่วน พร้อม ยอด ค้าง รับ"
+  "5de439f257a88035c3c6730e": {
+    "file": "/audio/restaurant/th/5de439f257a88035c3c6730e.mp3",
+    "duration": 3.528,
+    "sha256": "86eef1b1847d460ea05c5aa15b319209179793ce1c810a0f3973effeea734284",
+    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส พี โอ เอส รับ บางส่วน พร้อม ยอด ค้าง รับ"
   },
-  "6bd524cb8413cd7f3aaec418": {
-    "file": "/audio/restaurant/th/6bd524cb8413cd7f3aaec418.mp3",
-    "duration": 2.208,
-    "sha256": "e01863a0e798f2b7118d69695348eff0d8ba0fb68b1c07214a3f9399bcd1cf18",
-    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส รับ ครบ แล้ว"
+  "2455a3e6344c5c2ff3b72985": {
+    "file": "/audio/restaurant/th/2455a3e6344c5c2ff3b72985.mp3",
+    "duration": 2.712,
+    "sha256": "fea994a120e2463eaca156d2741329a4652cf9bc6b5eff31a78a4d64b7fed7fc",
+    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส พี โอ เอส รับ ครบ แล้ว"
   },
-  "b8a4b2dbda7fa44fa38e12e9": {
-    "file": "/audio/restaurant/th/b8a4b2dbda7fa44fa38e12e9.mp3",
-    "duration": 2.808,
-    "sha256": "26974d63d98760fcf2416a4b0ad78afd698b33caee87e0060c0bd3df2ab18078",
-    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส ตรวจ สิทธิ์ และ ยอด ค้าง รับ"
+  "c2fc64e8ed9ef9ed1cf3d09b": {
+    "file": "/audio/restaurant/th/c2fc64e8ed9ef9ed1cf3d09b.mp3",
+    "duration": 3.24,
+    "sha256": "502ae2977dc2a4ffbc397530ac8bd510fd93ea9cd14cf0d682c7a052b3ca4bcf",
+    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส พี โอ เอส ตรวจ สิทธิ์ และ ยอด ค้าง รับ"
   },
-  "5ed64ec5513b86eb722ca85f": {
-    "file": "/audio/restaurant/th/5ed64ec5513b86eb722ca85f.mp3",
-    "duration": 3.6,
-    "sha256": "78efdc616b6d120f96767f9eee0ca60d03f5539611d25356c8c85bd0f63d7213",
-    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส เพิ่มจำนวน มูลค่า และ ราย การเคลื่อนไหว"
+  "4d3fe7cbf48dd12908255a50": {
+    "file": "/audio/restaurant/th/4d3fe7cbf48dd12908255a50.mp3",
+    "duration": 4.008,
+    "sha256": "e427d464168863b35fb72ca6d6c3025e155a10adeed9108f18ebcf6804a78f10",
+    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส พี โอ เอส เพิ่มจำนวน มูลค่า และ ราย การเคลื่อนไหว"
   },
   "7482c0b98527ee14142ea6e0": {
     "file": "/audio/restaurant/th/7482c0b98527ee14142ea6e0.mp3",

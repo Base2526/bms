@@ -11,7 +11,7 @@ finish() {
 trap finish EXIT
 
 clear
-printf 'Uninstall BMS Retail Local\n\n'
+printf 'Uninstall BMS POS+ Retail Local\n\n'
 printf '1) Stop the system and preserve shop data for recovery\n'
 printf '2) Permanently delete the system and shop data from this computer\n'
 printf '3) Cancelled\n\n'

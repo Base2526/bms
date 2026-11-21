@@ -20,8 +20,8 @@ const englishSections = (supportUrl: string): DataDeletionSection[] => [
     title: "Who can request deletion",
     body: (
       <ul>
-        <li>Store owners or administrators can request deletion of their store account, staff accounts, or personal data connected to their BMS POS workspace.</li>
-        <li>Staff users can request deletion of personal account data through their store administrator or by contacting BMS support.</li>
+        <li>Store owners or administrators can request deletion of their store account, staff accounts, or personal data connected to their BMS POS+ workspace.</li>
+        <li>Staff users can request deletion of personal account data through their store administrator or by contacting BMS POS+ support.</li>
         <li>End customers can request deletion of personal data collected by a store. We may first need to verify the request with the relevant store owner because the store controls its own customer records.</li>
       </ul>
     ),
@@ -31,7 +31,7 @@ const englishSections = (supportUrl: string): DataDeletionSection[] => [
     body: (
       <ol>
         <li>
-          Open the <Link href={supportUrl}>BMS support page</Link> and choose the account, privacy, or data deletion topic.
+          Open the <Link href={supportUrl}>BMS POS+ support page</Link> and choose the account, privacy, or data deletion topic.
         </li>
         <li>Include your store name, account email or phone number, and a short description of the data you want deleted.</li>
         <li>If you are requesting deletion for customer records, include enough order, receipt, or contact details for us to identify the correct store record without exposing extra personal data.</li>
@@ -76,8 +76,8 @@ const thaiSections = (supportUrl: string): DataDeletionSection[] => [
     title: "ใครสามารถขอลบข้อมูลได้",
     body: (
       <ul>
-        <li>เจ้าของร้านหรือแอดมินร้านสามารถขอลบบัญชีร้าน บัญชีพนักงาน หรือข้อมูลส่วนบุคคลที่เกี่ยวข้องกับพื้นที่ทำงาน BMS POS ของร้านได้</li>
-        <li>พนักงานร้านสามารถขอลบข้อมูลบัญชีส่วนตัวผ่านแอดมินร้าน หรือส่งคำขอมายังทีมช่วยเหลือของ BMS ได้</li>
+        <li>เจ้าของร้านหรือแอดมินร้านสามารถขอลบบัญชีร้าน บัญชีพนักงาน หรือข้อมูลส่วนบุคคลที่เกี่ยวข้องกับพื้นที่ทำงาน BMS POS+ ของร้านได้</li>
+        <li>พนักงานร้านสามารถขอลบข้อมูลบัญชีส่วนตัวผ่านแอดมินร้าน หรือส่งคำขอมายังทีมช่วยเหลือของ BMS POS+ ได้</li>
         <li>ลูกค้าปลายทางสามารถขอลบข้อมูลส่วนบุคคลที่ร้านเก็บไว้ได้ โดยเราอาจต้องตรวจสอบกับเจ้าของร้านที่เกี่ยวข้องก่อน เพราะร้านเป็นผู้ควบคุมข้อมูลลูกค้าของตนเอง</li>
       </ul>
     ),
@@ -87,7 +87,7 @@ const thaiSections = (supportUrl: string): DataDeletionSection[] => [
     body: (
       <ol>
         <li>
-          เปิด <Link href={supportUrl}>หน้า Support ของ BMS</Link> แล้วเลือกหัวข้อบัญชี ความเป็นส่วนตัว หรือการลบข้อมูล
+          เปิด <Link href={supportUrl}>หน้า Support ของ BMS POS+</Link> แล้วเลือกหัวข้อบัญชี ความเป็นส่วนตัว หรือการลบข้อมูล
         </li>
         <li>ระบุชื่อร้าน อีเมลหรือเบอร์โทรของบัญชี และอธิบายสั้น ๆ ว่าต้องการให้ลบข้อมูลใด</li>
         <li>หากเป็นคำขอลบข้อมูลลูกค้า กรุณาระบุข้อมูลอ้างอิงเท่าที่จำเป็น เช่น เลขออเดอร์ ใบเสร็จ หรือช่องทางติดต่อ เพื่อให้เราระบุรายการที่ถูกต้องโดยไม่เปิดเผยข้อมูลเกินจำเป็น</li>
@@ -136,10 +136,10 @@ export default function DataDeletionPage() {
       <Typography>
         <Title level={1}>Data Deletion Request / การขอลบข้อมูล</Title>
         <Paragraph>
-          This page explains how BMS POS users, store administrators, staff, and end customers can request deletion of personal data.
+          This page explains how BMS POS+ users, store administrators, staff, and end customers can request deletion of personal data.
         </Paragraph>
         <Paragraph>
-          หน้านี้อธิบายวิธีที่ผู้ใช้ BMS POS เจ้าของร้าน แอดมิน พนักงาน และลูกค้าปลายทางสามารถส่งคำขอลบข้อมูลส่วนบุคคลได้
+          หน้านี้อธิบายวิธีที่ผู้ใช้ BMS POS+ เจ้าของร้าน แอดมิน พนักงาน และลูกค้าปลายทางสามารถส่งคำขอลบข้อมูลส่วนบุคคลได้
         </Paragraph>
 
         <Divider />

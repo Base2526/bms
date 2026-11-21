@@ -240,8 +240,8 @@ test("Windows offline pilot produces real EXE variants from a verified server pa
   const readme = read("deploy/retail-local/windows-offline/README.template.md");
   assert.ok(builder.indexOf("Get-FileHash") < builder.indexOf("Expand-Archive"));
   assert.match(builder, /ValidateSet\("server", "server-pos", "all"\)/);
-  assert.match(builder, /BMS-Retail-Local-Server-POS-\$Version-windows-x64/);
-  assert.match(builder, /BMS-Retail-Local-POS-\$Version-windows-x86-legacy/);
+  assert.match(builder, /BMS-POS-Plus-Retail-Local-Server-POS-\$Version-windows-x64/);
+  assert.match(builder, /BMS-POS-Plus-Retail-Local-POS-\$Version-windows-x86-legacy/);
   assert.match(builder, /Set-Content[^\n]+\.sha256/);
   assert.match(inno, /DefaultDirName=\{localappdata\}\\BMS\\Retail Local/);
   assert.match(inno, /Source: "\{#BundleRoot\}\\\*"[^\n]+recursesubdirs/);
@@ -267,8 +267,8 @@ test("Linux offline pilot produces four x64 installers with verified pinned imag
   assert.match(builder, /imageSha256/);
   assert.match(builder, /Replace\("`r`n", "`n"\)\.Replace\("`r", "`n"\)/);
   assert.match(builder, /linuxPackageSourceMount/);
-  assert.match(builder, /BMS-Retail-Local-Server-POS-\$Version-linux-x64\.deb/);
-  assert.match(builder, /BMS-Retail-Local-POS-\$Version-linux-x64\.AppImage/);
+  assert.match(builder, /BMS-POS-Plus-Retail-Local-Server-POS-\$Version-linux-x64\.deb/);
+  assert.match(builder, /BMS-POS-Plus-Retail-Local-POS-\$Version-linux-x64\.AppImage/);
   assert.match(debBuilder, /bms-retail-local-server-pos/);
   assert.match(debBuilder, /bms-retail-local-server/);
   assert.match(setup, /sha256sum --check image\.sha256/);
@@ -300,7 +300,7 @@ test("one release command builds every host-supported installer from a clean ver
   assert.match(builder, /MacX64ManifestUri/);
   assert.match(builder, /npm run pack:mac/);
   assert.match(builder, /foreach \(\$architecture in @\("arm64", "x64"\)\)/);
-  assert.match(builder, /BMS-Retail-Local-Server-POS-\$Version-x64\.pkg/);
+  assert.match(builder, /BMS-POS-Plus-Retail-Local-Server-POS-\$Version-x64\.pkg/);
   assert.match(builder, /Target MacOS must be built on macOS/);
   assert.ok(
     builder.indexOf("Build Windows installers") < builder.indexOf("Build Linux installers"),

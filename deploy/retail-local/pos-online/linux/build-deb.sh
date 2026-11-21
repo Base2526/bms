@@ -43,8 +43,8 @@ Priority: optional
 Architecture: amd64
 Maintainer: BMS
 Depends: bash, ca-certificates, curl, python3
-Description: BMS POS signed online bootstrap
- Downloads and verifies BMS POS during first installation.
+Description: BMS POS+ signed online bootstrap
+ Downloads and verifies BMS POS+ during first installation.
 EOF
 cat >"$stage/DEBIAN/postinst" <<'EOF'
 #!/bin/sh

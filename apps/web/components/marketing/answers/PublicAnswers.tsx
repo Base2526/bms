@@ -22,7 +22,7 @@ export default function PublicAnswers({ topic, locale }: { topic: keyof typeof p
       <aside className={s.references}>
         <h3>{locale === "th" ? "อ่านขั้นตอนและข้อจำกัดเพิ่มเติม" : "Read the steps and boundaries"}</h3>
         <ul>{c.links.map(link => <li key={link.path}><Link href={localizedPublicPath(link.path, locale)}>{link.label} →</Link></li>)}</ul>
-        <p>{locale === "th" ? "จัดทำโดย " : "Prepared by "}<Link href={localizedPublicPath("/about", locale)}>BMS</Link><br />
+        <p>{locale === "th" ? "จัดทำโดย " : "Prepared by "}<Link href={localizedPublicPath("/about", locale)}>BMS POS+</Link><br />
           {locale === "th" ? "ทบทวนเนื้อหา " : "Reviewed "}<time dateTime={ANSWERS_REVIEWED_AT}>{ANSWERS_REVIEWED_AT}</time>
         </p>
         <Link href={localizedPublicPath("/support", locale)}>{locale === "th" ? "แจ้งข้อมูลที่ควรแก้ไข" : "Suggest a correction"}</Link>

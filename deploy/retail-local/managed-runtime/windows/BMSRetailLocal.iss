@@ -17,12 +17,12 @@
   #define PackageType "server-pos"
 #endif
 #ifndef ArtifactBaseFilename
-  #define ArtifactBaseFilename "BMS-Retail-Local-Setup-" + ProductVersion + "-x64"
+  #define ArtifactBaseFilename "BMS-POS-Plus-Retail-Local-Setup-" + ProductVersion + "-x64"
 #endif
 
 [Setup]
 AppId={{D6E7A532-27C1-4A69-A2B1-C73B23323431}
-AppName=BMS Retail Local
+AppName=BMS POS+ Retail Local
 AppVersion={#ProductVersion}
 AppPublisher=BMS
 DefaultDirName={autopf}\BMS Retail Local
@@ -59,35 +59,44 @@ Source: "{#BuildRoot}\..\runtime-rootfs\bms-localctl"; DestDir: "{tmp}\bms-retai
 Source: "{#BuildRoot}\..\runtime-rootfs\bms-update-transaction"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 Source: "{#BuildRoot}\..\runtime-rootfs\bms-wsl-keepalive"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 
+[InstallDelete]
+; Rebrand shortcuts from the previous AppId without touching the installed data directory.
+Type: files; Name: "{commondesktop}\BMS Retail Local Admin.lnk"
+Type: files; Name: "{commondesktop}\BMS Retail Local Check for Updates.lnk"
+Type: files; Name: "{commondesktop}\BMS Retail Local Update.lnk"
+Type: files; Name: "{commondesktop}\BMS Retail Local Backup.lnk"
+Type: files; Name: "{commonprograms}\BMS Retail Local\*.lnk"
+Type: dirifempty; Name: "{commonprograms}\BMS Retail Local"
+
 [Icons]
-Name: "{commondesktop}\BMS Retail Local Admin"; \
+Name: "{commondesktop}\BMS POS+ Retail Local Admin"; \
   Filename: "http://127.0.0.1:3100/admin/login"
-Name: "{commonprograms}\BMS Retail Local\Open Admin"; \
+Name: "{commonprograms}\BMS POS+ Retail Local\Open Admin"; \
   Filename: "http://127.0.0.1:3100/admin/login"
-Name: "{commondesktop}\BMS Retail Local Check for Updates"; \
+Name: "{commondesktop}\BMS POS+ Retail Local Check for Updates"; \
   Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoExit -NoProfile -ExecutionPolicy Bypass -File ""{commonappdata}\BMS\RetailLocal\bootstrap\update-managed-runtime.ps1"" -ManifestUri ""{#ManifestUri}"" -CheckOnly"
-Name: "{commondesktop}\BMS Retail Local Update"; \
+Name: "{commondesktop}\BMS POS+ Retail Local Update"; \
   Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoExit -NoProfile -ExecutionPolicy Bypass -File ""{commonappdata}\BMS\RetailLocal\bootstrap\update-managed-runtime.ps1"" -ManifestUri ""{#ManifestUri}"""
-Name: "{commondesktop}\BMS Retail Local Backup"; \
+Name: "{commondesktop}\BMS POS+ Retail Local Backup"; \
   Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{commonappdata}\BMS\RetailLocal\bootstrap\backup-managed-runtime.ps1"" -Destination ""{userdocs}\BMS-Retail-Local-Backup.age"""
-Name: "{commonprograms}\BMS Retail Local\Configure Off-host Backup"; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{commonappdata}\BMS\RetailLocal\bootstrap\backup-managed-runtime.ps1"" -Destination ""{userdocs}\BMS-POS-Plus-Retail-Local-Backup.age"""
+Name: "{commonprograms}\BMS POS+ Retail Local\Configure Off-host Backup"; \
   Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoExit -NoProfile -ExecutionPolicy Bypass -File ""{commonappdata}\BMS\RetailLocal\bootstrap\configure-offhost-backup.ps1"""
-Name: "{commonprograms}\BMS Retail Local\Off-host Backup Status"; \
+Name: "{commonprograms}\BMS POS+ Retail Local\Off-host Backup Status"; \
   Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoExit -NoProfile -ExecutionPolicy Bypass -File ""{commonappdata}\BMS\RetailLocal\bootstrap\offhost-backup-status.ps1"""; Flags: runmaximized
-Name: "{commonprograms}\BMS Retail Local\Activate or Transfer"; \
+Name: "{commonprograms}\BMS POS+ Retail Local\Activate or Transfer"; \
   Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoExit -NoProfile -ExecutionPolicy Bypass -File ""{commonappdata}\BMS\RetailLocal\bootstrap\activate-managed-runtime.ps1"" -ActivationUri ""{#ActivationUri}"""; Flags: runmaximized; Check: HasActivation
-Name: "{commonprograms}\BMS Retail Local\Uninstall BMS Retail Local"; \
+Name: "{commonprograms}\BMS POS+ Retail Local\Uninstall BMS POS+ Retail Local"; \
   Filename: "{uninstallexe}"
 
 [Run]
 Filename: "http://127.0.0.1:3100/admin/login"; \
-  Description: "Open BMS Retail Local Admin"; \
+  Description: "Open BMS POS+ Retail Local Admin"; \
   Flags: postinstall shellexec runasoriginaluser skipifsilent nowait; Check: CanOpenAdmin
 
 [UninstallRun]
@@ -149,7 +158,7 @@ begin
     DirExists(ExpandConstant('{commonappdata}\BMS\RetailLocal\diagnostics'));
   if (CurPageID = wpFinished) and BootstrapFailed then
   begin
-    WizardForm.FinishedHeadingLabel.Caption := 'BMS Retail Local setup did not complete';
+    WizardForm.FinishedHeadingLabel.Caption := 'BMS POS+ Retail Local setup did not complete';
     WizardForm.FinishedLabel.Caption := BootstrapError + #13#10 + #13#10 +
       'Run this installer again to resume. Details: ' +
       ExpandConstant('{commonappdata}\BMS\RetailLocal\setup-transcript.log');
@@ -159,11 +168,11 @@ begin
     WizardForm.FinishedHeadingLabel.Caption := 'Restart Windows to continue setup';
     WizardForm.FinishedLabel.Caption :=
       'Setup is not finished. Restart Windows and sign in with the same account' + #13#10 + #13#10 +
-      'Setup will resume automatically and show how to open BMS Retail Local Admin when finished';
+      'Setup will resume automatically and show how to open BMS POS+ Retail Local Admin when finished';
   end
   else if (CurPageID = wpFinished) and ('{#PackageType}' = 'server') then
   begin
-    WizardForm.FinishedHeadingLabel.Caption := 'BMS Retail Local Server installation complete';
+    WizardForm.FinishedHeadingLabel.Caption := 'BMS POS+ Retail Local Server installation complete';
     { A scrollable summary keeps all next steps readable at large font sizes. }
     if CompletionText = nil then
     begin
@@ -183,9 +192,9 @@ begin
       'The system runs in the background and starts automatically with Windows. You can close this window' + #13#10 + #13#10 +
       '1. Open Admin: http://127.0.0.1:3100/admin/login' + #13#10 +
       '   Sign in with the administrator email and password created during setup' + #13#10 +
-      '2. Configure backups: Start > BMS Retail Local > Configure Off-host Backup' + #13#10 +
+      '2. Configure backups: Start > BMS POS+ Retail Local > Configure Off-host Backup' + #13#10 +
       '3. Pair POS: Admin > POS Devices > Issue token' + #13#10 + #13#10 +
-      'Open later from Desktop: BMS Retail Local Admin' + #13#10 +
+      'Open later from Desktop: BMS POS+ Retail Local Admin' + #13#10 +
       'You can try the system immediately without an Activation Code' + #13#10 +
       'This URL works only on the server computer. Ask your administrator to configure networking before connecting another POS computer';
     if HasActivation then
@@ -243,7 +252,7 @@ begin
   try
     if not Exec(PowerShellPath, Parameters, '', SW_SHOWMAXIMIZED, ewWaitUntilTerminated, ResultCode) then
     begin
-      ReportBootstrapFailure('Failed to open BMS Retail Local Setup');
+      ReportBootstrapFailure('Failed to open BMS POS+ Retail Local Setup');
       exit;
     end;
   finally
@@ -259,9 +268,9 @@ begin
   begin
     ErrorText := '';
     if LoadStringFromFile(ErrorPath, ErrorText) and (Trim(ErrorText) <> '') then
-      ReportBootstrapFailure('BMS Retail Local Setup did not complete:' + #13#10 + UTF8Decode(ErrorText))
+      ReportBootstrapFailure('BMS POS+ Retail Local Setup did not complete:' + #13#10 + UTF8Decode(ErrorText))
     else
-      ReportBootstrapFailure('BMS Retail Local Setup did not complete. Check ' + LogPath + ' and try again');
+      ReportBootstrapFailure('BMS POS+ Retail Local Setup did not complete. Check ' + LogPath + ' and try again');
     exit;
   end;
   BootstrapFailed := False;

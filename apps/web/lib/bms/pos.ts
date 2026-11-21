@@ -2,7 +2,7 @@ import { readBranchPrice, branchPrice } from "./branchPrices";
 import { usableLotSql, usableStockSql, inheritQualityHold } from "./lotQuality";
 import { validateTransferLotReceiptInTx } from "./lots";
 // =============================================================
-// BMS POS — ขายหน้าร้าน (channel = "pos")
+// BMS POS+ — ขายหน้าร้าน (channel = "pos")
 // -------------------------------------------------------------
 // POS ไม่ใช่ระบบใหม่ — เป็นช่องทางที่ 8 ที่เรียก business logic ตัวเดิม
 // ห้ามไฟล์นี้ INSERT/UPDATE bms_orders / bms_inventory เองนอกจากขั้นตอน

@@ -109,7 +109,7 @@ case "$package_type" in
   server-pos) package_label=Server-POS ;;
   server) package_label=Server ;;
 esac
-package_name="BMS-Retail-Local-$package_label-$version-$architecture$qualifier.pkg"
+package_name="BMS-POS-Plus-Retail-Local-$package_label-$version-$architecture$qualifier.pkg"
 package_path="$output_dir/$package_name"
 for candidate in "$package_path" "$package_path.sha256" "$package_path.json"; do
   [[ ! -e $candidate || $force == true ]] || { echo "Artifact already exists: $candidate" >&2; exit 1; }
@@ -151,7 +151,7 @@ chmod 0644 "$control_root/BOOTSTRAP_VERSION"
 cp "$macos_root/bms-retail-local" "$package_root/usr/local/bin/bms-retail-local"
 cp "$macos_root/bms-retail-local-app" "$app_contents/MacOS/BMS Retail Local"
 cp "$macos_root/bms-retail-local-setup.command" "$app_contents/Resources/BMS Retail Local Setup.command"
-cp "$macos_root/BMS Retail Local Uninstall.command" "$package_root/Applications/BMS Retail Local Uninstall.command"
+cp "$macos_root/BMS POS+ Retail Local Uninstall.command" "$package_root/Applications/BMS POS+ Retail Local Uninstall.command"
 cp "$macos_root/BMSRetailLocal.icns" "$app_contents/Resources/BMSRetailLocal.icns"
 readme_path="$macos_root/README.txt"
 [[ $package_type != server ]] || readme_path="$macos_root/README-Server.txt"
@@ -163,7 +163,7 @@ cat >"$app_contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleDisplayName</key><string>BMS Retail Local</string>
+  <key>CFBundleDisplayName</key><string>BMS POS+ Retail Local</string>
   <key>CFBundleExecutable</key><string>BMS Retail Local</string>
   <key>CFBundleIconFile</key><string>BMSRetailLocal</string>
   <key>CFBundleIdentifier</key><string>com.base2526.bms.retail-local.app</string>
@@ -179,7 +179,7 @@ EOF
 chmod 0755 "$bootstrap_root/bms-runtime-agent" "$control_root/bms-retail-local" \
   "$package_root/usr/local/bin/bms-retail-local" "$app_contents/MacOS/BMS Retail Local" \
   "$app_contents/Resources/BMS Retail Local Setup.command" \
-  "$package_root/Applications/BMS Retail Local Uninstall.command"
+  "$package_root/Applications/BMS POS+ Retail Local Uninstall.command"
 # These files contain only public verification material and bootstrap settings. The setup app
 # runs as the signed-in shop operator after pkg installation, so it must be able to read them even
 # when the package builder's source files were created with a restrictive umask (for example 0600).
@@ -217,7 +217,7 @@ pkgbuild --root "$package_root" --scripts "$scripts" --component-plist "$compone
 cat >"$work/distribution.xml" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-  <title>BMS Retail Local $package_label Online Setup $version</title>
+  <title>BMS POS+ Retail Local $package_label Online Setup $version</title>
   <organization>com.base2526.bms</organization>
   <domains enable_localSystem="true" enable_currentUserHome="false" enable_anywhere="false"/>
   <options customize="never" require-scripts="true" hostArchitectures="$installer_host_arch"/>

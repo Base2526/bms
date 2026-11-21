@@ -28,12 +28,12 @@ migration `10.130` ล็อกหลักฐานรายการขาย�
 
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · Payments: [payment.md](payment.md) · Inventory: [inventory.md](inventory.md)
 
-The BMS POS at `/pos` is an online, general-retail checkout surface. A device token identifies the
+The BMS POS+ at `/pos` is an online, general-retail checkout surface. A device token identifies the
 tenant, branch, and register; a cashier user plus PIN identifies every sale, shift action, return,
 and refund settlement. The browser never supplies authoritative tenant, price, pack conversion, or
 stock values.
 
-Product packaging does not split this into “Cloud” and “Hybrid” editions. BMS is one product: Cloud
+Product packaging does not split this into “Cloud” and “Hybrid” editions. BMS POS+ is one product: Cloud
 is the authoritative operating mode, while **Emergency Offline Mode** is a bounded resilience
 capability currently available only in the native mobile POS for plain retail cash sales. Desktop,
 browser and every richer workflow still require the Cloud. See
@@ -1406,7 +1406,7 @@ on different cart keys, while scanning the exact same label twice increments tha
 
 Prefix `21` labels embed a price rather than a weight and are refused. Deriving grams by dividing a
 rounded label price by the current unit price would corrupt stock when price or rounding changes.
-Configure the physical scale to print prefix `22` labels for BMS.
+Configure the physical scale to print prefix `22` labels for BMS POS+.
 
 For a gram-counted retail product with a published `10.136` rate, a Manager sets a VAT-inclusive
 price per kilogram in **Weighed prices**. Publication requires the product's web/storefront/customer
@@ -2080,7 +2080,7 @@ a single due date per invoice, and no credit-limit approval workflow — a manag
   pairing replacement is refused while its encrypted queue contains incompatible accepted cash. Once committed, recent-sale views
   on both native and web POS identify the bill as an offline tender that has synced;
   payment, stock, audit and tax still commit only in the normal server transaction. Every other
-  search, sale, return, settlement, and shift action requires BMS and PostgreSQL to be reachable.
+  search, sale, return, settlement, and shift action requires BMS POS+ and PostgreSQL to be reachable.
 
 ## Go-live checklist
 
@@ -2130,7 +2130,7 @@ Treat every line below as a blocker unless explicitly marked as a warning:
   skipped and a tracked SKU cannot sell more than its unexpired lots.
 - For VAT-registered tenants, set the tax settings at `/admin/pos-readiness`, fill in the shop tax id
   at `/admin/settings`, and set the tax category on every sellable product. Verify numbering and receipt content with the business's accountant/tax adviser.
-  BMS generates documents locally by default; e-Tax submission to the Revenue Department is a
+  BMS POS+ generates documents locally by default; e-Tax submission to the Revenue Department is a
   separate background queue (`bms_etax_submissions`, migration `7.94`), gated off unless
   `ETAX_ENABLED`/`bms_store_profile.etax_enabled` is turned on — see "e-Tax submission queue" below.
 - A `pos_only` cashier account (migration `7.92`) is hard-blocked from `/admin` login by `loginAdmin`

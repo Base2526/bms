@@ -13,9 +13,9 @@ if ($Version -notmatch '^[A-Za-z0-9._+-]{1,64}$') { throw "Version is invalid" }
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $scriptRoot "..\..\.."))
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repoRoot "artifacts\retail-local" }
-if (-not $ServerZip) { $ServerZip = Join-Path $OutputDirectory "BMS-Retail-Local-$Version.zip" }
-if (-not $PosDeb) { $PosDeb = Join-Path $OutputDirectory "BMS-Retail-Local-POS-$Version-linux-x64.deb" }
-if (-not $PosAppImage) { $PosAppImage = Join-Path $OutputDirectory "BMS-Retail-Local-POS-$Version-linux-x64.AppImage" }
+if (-not $ServerZip) { $ServerZip = Join-Path $OutputDirectory "BMS-POS-Plus-Retail-Local-$Version.zip" }
+if (-not $PosDeb) { $PosDeb = Join-Path $OutputDirectory "BMS-POS-Plus-Retail-Local-POS-$Version-linux-x64.deb" }
+if (-not $PosAppImage) { $PosAppImage = Join-Path $OutputDirectory "BMS-POS-Plus-Retail-Local-POS-$Version-linux-x64.AppImage" }
 
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 $serverZipPath = [IO.Path]::GetFullPath($ServerZip)
@@ -85,10 +85,10 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "Failed to create the Linux DEB" }
 
   $artifacts = @(
-    "BMS-Retail-Local-Server-POS-$Version-linux-x64.deb",
-    "BMS-Retail-Local-Server-$Version-linux-x64.deb",
-    "BMS-Retail-Local-POS-$Version-linux-x64.deb",
-    "BMS-Retail-Local-POS-$Version-linux-x64.AppImage"
+    "BMS-POS-Plus-Retail-Local-Server-POS-$Version-linux-x64.deb",
+    "BMS-POS-Plus-Retail-Local-Server-$Version-linux-x64.deb",
+    "BMS-POS-Plus-Retail-Local-POS-$Version-linux-x64.deb",
+    "BMS-POS-Plus-Retail-Local-POS-$Version-linux-x64.AppImage"
   )
   foreach ($name in $artifacts) {
     $artifact = Join-Path $outputRoot $name
@@ -101,10 +101,10 @@ try {
   $template = Get-Content -LiteralPath (Join-Path $scriptRoot "README.template.md") -Raw
   $readme = $template.Replace("{{VERSION}}", $Version)
   foreach ($item in @{
-    "{{SERVER_POS_SHA256}}" = "BMS-Retail-Local-Server-POS-$Version-linux-x64.deb"
-    "{{SERVER_SHA256}}" = "BMS-Retail-Local-Server-$Version-linux-x64.deb"
-    "{{POS_DEB_SHA256}}" = "BMS-Retail-Local-POS-$Version-linux-x64.deb"
-    "{{POS_APPIMAGE_SHA256}}" = "BMS-Retail-Local-POS-$Version-linux-x64.AppImage"
+    "{{SERVER_POS_SHA256}}" = "BMS-POS-Plus-Retail-Local-Server-POS-$Version-linux-x64.deb"
+    "{{SERVER_SHA256}}" = "BMS-POS-Plus-Retail-Local-Server-$Version-linux-x64.deb"
+    "{{POS_DEB_SHA256}}" = "BMS-POS-Plus-Retail-Local-POS-$Version-linux-x64.deb"
+    "{{POS_APPIMAGE_SHA256}}" = "BMS-POS-Plus-Retail-Local-POS-$Version-linux-x64.AppImage"
   }.GetEnumerator()) {
     $hash = (Get-FileHash -LiteralPath (Join-Path $outputRoot $item.Value) -Algorithm SHA256).Hash.ToLowerInvariant()
     $readme = $readme.Replace($item.Key, $hash)

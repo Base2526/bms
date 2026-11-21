@@ -11,7 +11,7 @@ This field exists to answer:
 
 - what kind of shop the owner is starting;
 - which starter catalog / demo scenarios fit that shop best;
-- which workflows BMS should emphasize first (for example reorder vs quotation vs restock); and
+- which workflows BMS POS+ should emphasize first (for example reorder vs quotation vs restock); and
 - how AI examples and onboarding tips should be framed for that tenant.
 
 It must **not**:
@@ -25,7 +25,7 @@ It must **not**:
 
 ## Product position
 
-BMS is not just a chat responder. It turns customer conversations into business workflows:
+BMS POS+ is not just a chat responder. It turns customer conversations into business workflows:
 
 `chat -> customer identity -> product discovery -> stock decision -> order or restock capture -> payment -> shipping -> follow-up`
 
@@ -279,7 +279,7 @@ The signup/onboarding copy should frame this as revenue recovery:
 
 `ของหมดไม่ควรจบที่เสียยอดขาย ระบบช่วยเก็บลูกค้าที่รอของเข้าไว้ แล้วให้ทีมกลับไปปิดการขายได้เมื่อสต๊อกกลับมา`
 
-This is especially important because BMS's core flow is not just order capture, but also
+This is especially important because BMS POS+'s core flow is not just order capture, but also
 converting stock-out conversations into future sales opportunities.
 
 ## Non-goals

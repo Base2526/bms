@@ -8,8 +8,8 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title:
       lang === "en"
-        ? "Review your order & submit payment | BMS"
-        : "ตรวจสอบออร์เดอร์และชำระเงิน | BMS",
+        ? "Review your order & submit payment | BMS POS+"
+        : "ตรวจสอบออร์เดอร์และชำระเงิน | BMS POS+",
     description:
       lang === "en"
         ? "Review your delivery details and submit payment for your order."

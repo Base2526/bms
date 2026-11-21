@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily BMS Retail Local encrypted off-host backup
+Description=Daily BMS POS+ Retail Local encrypted off-host backup
 
 [Timer]
 OnCalendar=*-*-* 02:00:00

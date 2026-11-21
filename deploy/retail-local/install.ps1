@@ -165,7 +165,7 @@ $composeArgs = Get-RetailLocalComposeArgs -Context $ctx
 if (-not $release) {
   Write-Host "Building from source (this may take several minutes)..." -ForegroundColor Cyan
   & docker @composeArgs build migrate ws
-  if ($LASTEXITCODE -ne 0) { throw "BMS Retail Local build failed" }
+  if ($LASTEXITCODE -ne 0) { throw "BMS POS+ Retail Local build failed" }
 }
 
 & docker @composeArgs config --quiet
@@ -197,18 +197,18 @@ if (-not $resultLine) { throw "Provisioning completed but no readable result was
 $result = $resultLine | ConvertFrom-Json
 
 & docker @composeArgs up -d
-if ($LASTEXITCODE -ne 0) { throw "Failed to start BMS Retail Local" }
+if ($LASTEXITCODE -ne 0) { throw "Failed to start BMS POS+ Retail Local" }
 Wait-RetailLocalHealthy -ComposeArgs $composeArgs
 Test-RetailLocalHttp -WebPort $webPort -WsPort $wsPort
 
 Write-Host ""
-Write-Host "BMS Retail Local is ready: http://127.0.0.1:$webPort" -ForegroundColor Green
+Write-Host "BMS POS+ Retail Local is ready: http://127.0.0.1:$webPort" -ForegroundColor Green
 Write-Host "Admin: $AdminEmail"
 Write-Host "Shop type: $($result.businessArchetype)"
 if ($result.deviceToken) {
   Write-Host "POS pairing token (shown once):" -ForegroundColor Yellow
   Write-Host $result.deviceToken
-  Write-Host "Use the token to pair BMS POS, then securely store or destroy any record containing the token"
+  Write-Host "Use the token to pair BMS POS+, then securely store or destroy any record containing the token"
 } else {
   Write-Host "This shop is already provisioned. Issue a new token from Admin > POS Devices" -ForegroundColor Yellow
 }

@@ -36,7 +36,7 @@ trap {
       [IO.File]::WriteAllText($ErrorFile, $message, [Text.UTF8Encoding]::new($false))
     } catch {}
   }
-  Write-Host "`nBMS Retail Local Setup did not complete" -ForegroundColor Red
+  Write-Host "`nBMS POS+ Retail Local Setup did not complete" -ForegroundColor Red
   Write-Host $message -ForegroundColor Red
   Write-Host "Resolve the issues above, then run the installer again to resume setup" -ForegroundColor Yellow
   if ([Environment]::UserInteractive) { [void](Read-Host "Press Enter to close this window") }
@@ -50,7 +50,7 @@ function Assert-Administrator {
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
   $principal = [Security.Principal.WindowsPrincipal]::new($identity)
   if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    throw "Run BMS Retail Local Setup as Administrator"
+    throw "Run BMS POS+ Retail Local Setup as Administrator"
   }
 }
 
@@ -217,7 +217,7 @@ function Invoke-AgentJson([string[]]$Arguments) {
     }
   }
   $exitCode = $LASTEXITCODE
-  Write-Progress -Id 17 -Activity "BMS Retail Local Setup" -Completed
+  Write-Progress -Id 17 -Activity "BMS POS+ Retail Local Setup" -Completed
   if ($exitCode -ne 0) { throw ($output -join [Environment]::NewLine) }
   return (($output -join [Environment]::NewLine) | ConvertFrom-Json)
 }
@@ -234,7 +234,7 @@ function Invoke-AgentProgress([string[]]$Arguments) {
     }
   }
   $exitCode = $LASTEXITCODE
-  Write-Progress -Id 17 -Activity "BMS Retail Local Setup" -Completed
+  Write-Progress -Id 17 -Activity "BMS POS+ Retail Local Setup" -Completed
   if ($exitCode -ne 0) { throw ($output -join [Environment]::NewLine) }
   foreach ($line in $output) {
     if (-not [string]::IsNullOrWhiteSpace($line)) { Write-Host $line }
@@ -312,7 +312,7 @@ function Show-AgentProgress($Event) {
     $telemetry = " | {0:N1} MiB/s | About {1:hh\:mm\:ss} remaining" -f `
       ($script:progressBytesPerSecond / 1MB), $eta
   }
-  Write-Progress -Id 17 -Activity "BMS Retail Local Setup" `
+  Write-Progress -Id 17 -Activity "BMS POS+ Retail Local Setup" `
     -Status "$status - $size$telemetry ($percent%)" -PercentComplete $percent
 
   $terminalPhase = $phase -in @("retry", "verify", "cached", "staged", "inspect", "loaded")
@@ -430,14 +430,14 @@ function Register-LicenseUIBridge {
 
 function Show-SetupCompletion {
   Write-Step 7 "Installation complete"
-  Write-Host "BMS Retail Local is ready. It runs in the background and starts automatically with Windows" -ForegroundColor Green
+  Write-Host "BMS POS+ Retail Local is ready. It runs in the background and starts automatically with Windows" -ForegroundColor Green
   Write-Host "Open Admin on this computer: http://127.0.0.1:3100/admin/login"
   Write-Host "Sign in with the administrator email and password created during setup"
-  Write-Host "To open later: Desktop > BMS Retail Local Admin or Start > BMS Retail Local > Open Admin"
-  Write-Host "Configure backups: Start > BMS Retail Local > Configure Off-host Backup"
+  Write-Host "To open later: Desktop > BMS POS+ Retail Local Admin or Start > BMS POS+ Retail Local > Open Admin"
+  Write-Host "Configure backups: Start > BMS POS+ Retail Local > Configure Off-host Backup"
   Write-Host "You can try the system immediately without an Activation Code"
   if (-not [string]::IsNullOrWhiteSpace($ActivationUri)) {
-    Write-Host "Register later: Admin > This installation's license (or Start > BMS Retail Local > Activate or Transfer)"
+    Write-Host "Register later: Admin > This installation's license (or Start > BMS POS+ Retail Local > Activate or Transfer)"
   }
   if ($PackageType -eq 'server') {
     Write-Host "Pair POS: Admin > POS Devices > Issue token"
@@ -446,7 +446,7 @@ function Show-SetupCompletion {
   # After reboot there is no Inno wizard to return to. Keep the next steps visible
   # until the operator acknowledges them; a normal installer run uses its Finish page.
   if ($ResumeConfig -and [Environment]::UserInteractive) {
-    [void](Read-Host "Note the URL or open BMS Retail Local Admin, then press Enter to close Setup (the system will keep running)")
+    [void](Read-Host "Note the URL or open BMS POS+ Retail Local Admin, then press Enter to close Setup (the system will keep running)")
   }
 }
 
@@ -851,12 +851,12 @@ do {
     if ($web.StatusCode -eq 200 -and $ws.StatusCode -eq 200) { break }
   } catch {}
   $healthPercent = [Math]::Min(99, [int](($healthAttempt / 80) * 100))
-  Write-Progress -Id 20 -Activity "Checking BMS Retail Local health" `
+  Write-Progress -Id 20 -Activity "Checking BMS POS+ Retail Local health" `
     -Status "Waiting for Web and Realtime services ($healthPercent%)" -PercentComplete $healthPercent
   if ($healthAttempt % 5 -eq 0) { Write-Host "  Still working: waiting for Web and Realtime services ($($healthAttempt * 3) seconds)..." }
   Start-Sleep -Seconds 3
 } while ([DateTime]::UtcNow -lt $healthDeadline)
-Write-Progress -Id 20 -Activity "Checking BMS Retail Local health" -Completed
+Write-Progress -Id 20 -Activity "Checking BMS POS+ Retail Local health" -Completed
 if (-not $web -or -not $ws -or $web.StatusCode -ne 200 -or $ws.StatusCode -ne 200) { throw "Services failed the HTTP health check" }
 
 if ($PackageType -eq 'server-pos') {
@@ -865,13 +865,16 @@ if ($PackageType -eq 'server-pos') {
   Copy-Item -LiteralPath $desktop.path -Destination $desktopInstaller -Force
   $script:BmsSetupStage = 'install-desktop'
   $desktopProcess = Start-Process -FilePath $desktopInstaller -ArgumentList "/S", "/allusers" -Wait -PassThru
-  if ($desktopProcess.ExitCode -ne 0) { throw "Failed to install BMS POS Desktop" }
+  if ($desktopProcess.ExitCode -ne 0) { throw "Failed to install BMS POS+ Desktop" }
   $desktopExecutable = @(
-    (Join-Path $env:ProgramFiles "BMS POS\BMS POS.exe")
-    $(if (${env:ProgramFiles(x86)}) { Join-Path ${env:ProgramFiles(x86)} "BMS POS\BMS POS.exe" })
-    (Join-Path $env:LOCALAPPDATA "Programs\BMS POS\BMS POS.exe")
+    (Join-Path $env:ProgramFiles "BMS POS+\BMS POS+.exe")
+    (Join-Path $env:ProgramFiles "BMS POS\BMS POS+.exe")
+    $(if (${env:ProgramFiles(x86)}) { Join-Path ${env:ProgramFiles(x86)} "BMS POS+\BMS POS+.exe" })
+    $(if (${env:ProgramFiles(x86)}) { Join-Path ${env:ProgramFiles(x86)} "BMS POS\BMS POS+.exe" })
+    (Join-Path $env:LOCALAPPDATA "Programs\BMS POS+\BMS POS+.exe")
+    (Join-Path $env:LOCALAPPDATA "Programs\BMS POS\BMS POS+.exe")
   ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1
-  if (-not $desktopExecutable) { throw "Installation completed but BMS POS.exe was not found" }
+  if (-not $desktopExecutable) { throw "Installation completed but BMS POS+.exe was not found" }
 
   $desktopArguments = ""
   if ($provisionResult.deviceToken -and -not [string]::IsNullOrWhiteSpace($interactiveUser)) {
@@ -890,7 +893,7 @@ if ($PackageType -eq 'server-pos') {
   }
 
   if ([string]::IsNullOrWhiteSpace($interactiveUser)) {
-    Write-Warning "No signed-in Windows user found; open BMS POS from the Public Desktop to pair later"
+    Write-Warning "No signed-in Windows user found; open BMS POS+ from the Public Desktop to pair later"
   } else {
     $pairingTaskName = "BMS Retail Local POS Pairing"
     $pairingAction = if ([string]::IsNullOrWhiteSpace($desktopArguments)) {

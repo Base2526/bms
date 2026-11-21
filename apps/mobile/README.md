@@ -1,7 +1,7 @@
-# BMS POS Mobile
+# BMS POS+ Mobile
 
 Bare React Native POS client (`react-native@0.87.1`, no Expo). The app uses HTTPS GraphQL for
-authoritative reads and commands and GraphQL WS only for scoped invalidation. The database and BMS
+authoritative reads and commands and GraphQL WS only for scoped invalidation. The database and BMS POS+
 services remain the source of truth.
 
 ## Operator language (Thai / English)
@@ -185,7 +185,7 @@ maintenance findings above remain outstanding.
 
 ## Product Positioning
 
-BMS Cloud and BMS Hybrid POS are one product, not separate editions or databases. Cloud is the
+BMS POS+ Cloud and BMS POS+ Hybrid POS are one product, not separate editions or databases. Cloud is the
 authoritative operating mode. The native client's **Emergency Offline Mode** is a bounded continuity
 capability inside that product: today it queues only plain retail cash sales on the paired mobile
 device, then submits them through the normal server settlement path when connectivity returns. It is
@@ -292,7 +292,7 @@ screens, components, and state providers do not import mock data.
 React Native screen
   -> generated Apollo query/mutation over HTTPS
   -> thin GraphQL resolver
-  -> BMS service + PostgreSQL transaction
+  -> BMS POS+ service + PostgreSQL transaction
   -> authoritative response
 
 PostgreSQL transaction -> realtime outbox -> dispatcher -> Redis -> GraphQL WS

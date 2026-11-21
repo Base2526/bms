@@ -61,7 +61,7 @@ else
   export PATH="$RUNTIME_ROOT/lima/bin:$RUNTIME_ROOT/lima/libexec:/usr/bin:/bin:/usr/sbin:/sbin"
 fi
 
-die() { BMS_DIAG_REASON=$*; BMS_DIAG_LINE=${BASH_LINENO[0]}; printf 'BMS Retail Local: %s\n' "$*" >&2; exit 1; }
+die() { BMS_DIAG_REASON=$*; BMS_DIAG_LINE=${BASH_LINENO[0]}; printf 'BMS POS+ Retail Local: %s\n' "$*" >&2; exit 1; }
 note() { printf '[BMS] %s\n' "$*"; }
 step() { BMS_DIAG_STAGE="step-$1-of-7"; printf '\n[BMS %s/7] %s\n' "$1" "$2"; }
 uninstall_step() { printf '\n[BMS Uninstall %s/4] %s\n' "$1" "$2"; }
@@ -292,7 +292,7 @@ activate_license() {
 activate_installed_license() {
   local event=INSTALLATION_REGISTERED runtime_receipt tenant_id device_id target version old_license
   [[ ${1:-} == --transfer || -z ${1:-} ]] || die "usage: bms-retail-local activate [--transfer]"
-  [[ -f $RECEIPT ]] || die "Install BMS Retail Local before registering"
+  [[ -f $RECEIPT ]] || die "Install BMS POS+ Retail Local before registering"
   [[ $INSTALL_MODE == online && -s $BOOTSTRAP_ROOT/activation-url ]] || die "Bootstrap has no Activation URL"
   ensure_runtime
   # Validate the authoritative shop receipt before consuming a one-use code.
@@ -797,8 +797,8 @@ install_pos_desktop() {
   /usr/bin/ditto -x -k "$archive" "$temporary"
   app="$temporary/BMS POS.app"
   [[ -x $app/Contents/MacOS/BMS\ POS && -f $app/Contents/Info.plist ]] || \
-    die "Desktop component does not contain a complete BMS POS.app"
-  note "Installing BMS POS in Applications (macOS may ask for the computer administrator password)"
+    die "BMS POS+ Desktop component is incomplete"
+  note "Installing BMS POS+ in Applications (macOS may ask for the computer administrator password)"
   sudo /usr/bin/ditto "$app" "/Applications/BMS POS.app"
   sudo chown -R root:wheel "/Applications/BMS POS.app"
   sudo chmod -R go-w "/Applications/BMS POS.app"
@@ -983,7 +983,7 @@ setup_runtime() {
   chmod 0700 "$STATE_ROOT"
   step 1 "Checking macOS, CPU, RAM, virtualization, and free disk space"
   note "You can install and try the system without an Activation Code"
-  "$AGENT" preflight --human || die "Cannot install yet. Resolve the preflight issues above, then open BMS Retail Local again"
+  "$AGENT" preflight --human || die "Cannot install yet. Resolve the preflight issues above, then open BMS POS+ Retail Local again"
   activate_license
   if [[ $INSTALL_MODE == online ]]; then
     step 2 "Downloading and verifying the signed release"
@@ -1117,12 +1117,14 @@ uninstall_runtime() {
   fi
   rm -rf -- "$STATE_ROOT" "$LIMA_HOME"
   sudo rm -rf -- "$SYSTEM_ROOT" "/Applications/BMS Retail Local.app"
-  [[ $remove_pos != true ]] || sudo rm -rf -- "/Applications/BMS POS.app"
-  sudo rm -f -- "/Applications/BMS Retail Local Uninstall.command"
+  if [[ $remove_pos == true ]]; then
+    sudo rm -rf -- "/Applications/BMS POS.app"
+  fi
+  sudo rm -f -- "/Applications/BMS POS+ Retail Local Uninstall.command" "/Applications/BMS Retail Local Uninstall.command"
   sudo rm -f -- /usr/local/bin/bms-retail-local
   sudo pkgutil --forget com.base2526.bms.retail-local >/dev/null 2>&1 || true
   uninstall_step 4 "System and shop data deleted"
-  note "BMS Retail Local and local data deleted"
+  note "BMS POS+ Retail Local and local data deleted"
 }
 
 show_status() {

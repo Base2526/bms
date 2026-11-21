@@ -81,13 +81,13 @@ done
 docker info >/dev/null 2>&1 || { echo "Docker build engine is not ready" >&2; exit 1; }
 desktop_executable="$desktop_app/Contents/MacOS/BMS POS"
 [[ -x $desktop_executable && -f $desktop_app/Contents/Info.plist ]] || {
-  echo "Desktop app is not a complete BMS POS.app: $desktop_app" >&2; exit 1;
+  echo "BMS POS+ Desktop app is incomplete: $desktop_app" >&2; exit 1;
 }
 desktop_file=$(file "$desktop_executable")
 if [[ $architecture == arm64 ]]; then
-  [[ $desktop_file == *arm64* ]] || { echo "BMS POS.app is not an Apple Silicon build" >&2; exit 1; }
+  [[ $desktop_file == *arm64* ]] || { echo "BMS POS+ Desktop app is not an Apple Silicon build" >&2; exit 1; }
 else
-  [[ $desktop_file == *x86_64* ]] || { echo "BMS POS.app is not an Intel build" >&2; exit 1; }
+  [[ $desktop_file == *x86_64* ]] || { echo "BMS POS+ Desktop app is not an Intel build" >&2; exit 1; }
 fi
 for name in web ws postgres redis runtime compose desktop shop-archetypes; do
   [[ ! -e $output_dir/$name.artifact ]] || { echo "Artifact already exists: $output_dir/$name.artifact" >&2; exit 1; }
@@ -157,7 +157,7 @@ else
     --build-arg NEXT_PUBLIC_BASE_URL=http://127.0.0.1:3100 \
     --build-arg NEXT_PUBLIC_GRAPHQL_HTTP=http://127.0.0.1:3100/api/graphql \
     --build-arg NEXT_PUBLIC_GRAPHQL_WS=ws://127.0.0.1:3101/graphql \
-    --build-arg COOKIE_SECURE=0 --build-arg 'WEB_NAME=BMS Retail Local' \
+    --build-arg COOKIE_SECURE=0 --build-arg 'WEB_NAME=BMS POS+ Retail Local' \
     -f "$repo_root/apps/web/Dockerfile" -t "$web_ref" "$repo_root"
   docker buildx build --platform "$linux_platform" --provenance=false --load \
     --build-arg BMS_SOURCE_COMMIT="$commit" \

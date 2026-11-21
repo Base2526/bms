@@ -115,7 +115,7 @@ export default function RetailLocalLicensesPage() {
   const [followUpForm] = Form.useForm();
 
   const copy = th ? {
-    title: "License BMS Retail Local",
+    title: "License BMS POS+ Retail Local",
     subtitle: "ออก Trial 30 วันและจัดการสถานะเชิงพาณิชย์ โดยไม่ปิดกั้นการทำงานของร้าน",
     create: "ออก License",
     refresh: "รีเฟรช",
@@ -135,7 +135,7 @@ export default function RetailLocalLicensesPage() {
     failOpen: "Trial หมดอายุหรืออยู่ระหว่างตรวจสอบจะไม่หยุด POS, การชำระเงิน, สต็อก, รายงาน, backup, restore หรือการเข้าถึงข้อมูลของร้าน",
     saved: "บันทึกเรียบร้อย",
   } : {
-    title: "BMS Retail Local licenses",
+    title: "BMS POS+ Retail Local licenses",
     subtitle: "Issue 30-day trials and manage commercial state without blocking store operations",
     create: "Issue license",
     refresh: "Refresh",

@@ -26,7 +26,7 @@ export default function LearningLayout({ children }: { children: React.ReactNode
   return <div className={s.shell}>
     <a className={s.skip} href="#learning-content">{lang === "th" ? "ข้ามไปเนื้อหา" : "Skip to content"}</a>
     <header className={s.header}>
-      <Link href={localizedPublicPath("/", lang)} className={s.brand}><Image src="/icons/app-icon.svg" alt="" width={36} height={36} priority /><span>BMS</span><small>{lang === "th" ? "ศูนย์เรียนรู้" : "Learning center"}</small></Link>
+      <Link href={localizedPublicPath("/", lang)} className={s.brand}><Image src="/icons/app-icon.svg" alt="" width={36} height={36} priority /><span>BMS POS+</span><small>{lang === "th" ? "ศูนย์เรียนรู้" : "Learning center"}</small></Link>
       <nav className={`${s.nav} ${s.desktopNav}`} aria-label={lang === "th" ? "เมนูศูนย์เรียนรู้" : "Learning navigation"}>
         <Link href={localizedPublicPath("/learn", lang)}>{lang === "th" ? "คู่มือทั้งหมด" : "All guides"}</Link>
         <Link href={localizedPublicPath("/learn/getting-started", lang)}>{lang === "th" ? "เริ่มต้นใช้งาน" : "Getting started"}</Link>
@@ -57,7 +57,7 @@ export default function LearningLayout({ children }: { children: React.ReactNode
     </header>
     <main id="learning-content" className={s.main} data-print-root>{children}</main>
     <footer className={s.footer}>
-      <span>BMS · {lang === "th" ? "เรียนรู้ก่อนเริ่ม ใช้ต่อเมื่อเปิดร้าน" : "Learn before signup. Keep learning as you grow."}</span>
+      <span>BMS POS+ · {lang === "th" ? "เรียนรู้ก่อนเริ่ม ใช้ต่อเมื่อเปิดร้าน" : "Learn before signup. Keep learning as you grow."}</span>
       <div className={s.links}><Link href={localizedPublicPath("/support", lang)}>{lang === "th" ? "ติดต่อทีมงาน" : "Contact support"}</Link><Link href={localizedPublicPath("/help", lang)}>{lang === "th" ? "คำถามทั่วไป" : "General help"}</Link><Link href={localizedPublicPath("/privacy", lang)}>{lang === "th" ? "ความเป็นส่วนตัว" : "Privacy"}</Link></div>
     </footer>
   </div>;

@@ -2,7 +2,7 @@
 
 This document is the operating contract for public search surfaces on `jachoei.com`. It covers
 classic search, generative search and discovery by crawlers that cite public pages. It does not
-change any authenticated BMS workflow or make a ranking guarantee.
+change any authenticated BMS POS+ workflow or make a ranking guarantee.
 
 ## Scope and phases
 
@@ -23,7 +23,7 @@ change any authenticated BMS workflow or make a ranking guarantee.
 
 ### Phase 3 — first-party authority
 
-- `/about` answers what BMS is from the product architecture and names the system of record.
+- `/about` answers what BMS POS+ is from the product architecture and names the system of record.
 - `/ai-business-system` explains how AI uses approved tools, permissions, confirmation and verified
   results.
 - Both pages are bilingual, visibly reviewed and avoid invented customers, statistics, integrations
@@ -131,7 +131,7 @@ Use four separate layers; do not combine them into an invented universal AI SEO 
   **unavailable**, not zero, and use the first complete collection window as the starting point.
   GA4 cannot reconstruct visits from before it was enabled.
 - Segment Thai/English, brand/non-brand questions, landing page and source. Brand searches such as
-  “BMS คืออะไร” measure recognition; unbranded questions measure discovery. Exclude staff, QA and
+  “BMS POS+ คืออะไร” measure recognition; unbranded questions measure discovery. Exclude staff, QA and
   development traffic. Track measurement/consent changes as well as product and marketing releases.
 - Review crawl and tagging problems after release, then compare complete 28-day windows. Use a
   second comparable window (roughly days 29–56) and a later review around day 84 to assess persistence.
@@ -146,16 +146,16 @@ reported separately for Thai and English. Candidate questions include:
 - “ระบบจัดการร้านอาหารที่เชื่อมออร์เดอร์ ครัว และสต็อก มีอะไรบ้าง”
 - “คาเฟ่ควรคิดต้นทุนต่อแก้วและจุดคุ้มทุนอย่างไร”
 - “ระบบ AI ช่วยเจ้าของร้านตรวจยอดขายและสต็อกได้อย่างไร”
-- “BMS ต่างจากแชทบอทอย่างไร”
+- “BMS POS+ ต่างจากแชทบอทอย่างไร”
 - “How should a cafe calculate cost per cup and break-even sales?”
 
 For each selected engine, keep the exact question, language, search-enabled mode, region and model
-version recorded. Use fresh conversations without prior BMS context or memory. Repeat each question
+version recorded. Use fresh conversations without prior BMS POS+ context or memory. Repeat each question
 three times per review and retain the date, answer and cited URLs as private evidence. Do not change
 questions because one wording happens to produce a favorable result.
 
-Record separately: (1) BMS mentioned, (2) a `jachoei.com` URL cited, and (3) claims about BMS correct.
-Panel citation rate = answers citing a BMS URL / completed answer runs; failed runs are recorded
+Record separately: (1) BMS POS+ mentioned, (2) a `jachoei.com` URL cited, and (3) claims about BMS POS+ correct.
+Panel citation rate = answers citing a BMS POS+ URL / completed answer runs; failed runs are recorded
 separately. Also report the number of distinct questions that produced a citation. A panel rate
 measures this controlled sample only, not the share of all real AI questions. Provider reports and
 actual visitors are needed to determine whether the sample corresponds to real demand.
@@ -215,7 +215,7 @@ No scheduled monitor has been enabled.
 
 ### Optional GA4 activation (disabled by default)
 
-1. Create a dedicated GA4 web data stream for the public BMS website. **Turn off Enhanced
+1. Create a dedicated GA4 web data stream for the public BMS POS+ website. **Turn off Enhanced
    Measurement entirely**, including history page views, outbound clicks, form interactions, search
    and downloads. `send_page_view: false` alone does not disable enhanced/history measurement.
    Do not install another Google tag or GTM container beside this integration.

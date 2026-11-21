@@ -1,4 +1,4 @@
-# Build BMS Retail Local installers
+# Build BMS POS+ Retail Local installers
 
 Windows setup explicitly returns exit code 0 after successful install or repair. Optional
 installation inventory and license reporting failures must not become the installer's result via
@@ -86,13 +86,18 @@ Activation/inventory still use the separate BMS control-plane URL, not the stati
 Changing the hosting base requires rebuilding bootstraps AND changing component URLs in newly
 signed manifests. Copying files does not change embedded URLs or make unsigned drafts installable.
 
-- `BMS-Retail-Local-Server-POS-<version>-windows-x64.exe`
-- `BMS-Retail-Local-Server-<version>-windows-x64.exe`
-- `BMS-Retail-Local-Server-POS-<version>-linux-x64.deb`
-- `BMS-Retail-Local-Server-<version>-linux-x64.deb`
-- `BMS-Retail-Local-POS-<version>-windows-x64.exe`
-- `BMS-Retail-Local-POS-<version>-windows-x86-legacy.exe`
-- `BMS-Retail-Local-POS-<version>-linux-x64.deb`
+New release artifacts use the `BMS-POS-Plus-Retail-Local-*` prefix. Keep previously signed
+`BMS-Retail-Local-*` manifests and files published for existing installations; the
+updater follows the signed component URL instead of deriving a filename from the product
+name. Installer titles and installed shortcuts display **BMS POS+ Retail Local**.
+
+- `BMS-POS-Plus-Retail-Local-Server-POS-<version>-windows-x64.exe`
+- `BMS-POS-Plus-Retail-Local-Server-<version>-windows-x64.exe`
+- `BMS-POS-Plus-Retail-Local-Server-POS-<version>-linux-x64.deb`
+- `BMS-POS-Plus-Retail-Local-Server-<version>-linux-x64.deb`
+- `BMS-POS-Plus-Retail-Local-POS-<version>-windows-x64.exe`
+- `BMS-POS-Plus-Retail-Local-POS-<version>-windows-x86-legacy.exe`
+- `BMS-POS-Plus-Retail-Local-POS-<version>-linux-x64.deb`
 - `.sha256` และ `.json` metadata ของแต่ละไฟล์
 
 ชื่อ `server-pos` หมายถึง signed manifest มี POS Desktop เป็น component ที่ดาวน์โหลดหลังตรวจสอบ
@@ -156,10 +161,10 @@ Moby หรือ service images ฝังอยู่ จึงมีขนา�
 macOS 32-bit) POS-only รองรับ macOS 12 Monterey ขึ้นไปตาม Electron Desktop shell ส่วน Server และ
 Server + POS ยังคงต้องใช้ macOS 15 ขึ้นไปตาม Managed Runtime support matrix
 
-- `BMS-Retail-Local-Server-POS-<version>-arm64.pkg`
-- `BMS-Retail-Local-Server-POS-<version>-x64.pkg`
-- `BMS-Retail-Local-POS-<version>-macos-arm64.dmg`
-- `BMS-Retail-Local-POS-<version>-macos-x64.dmg`
+- `BMS-POS-Plus-Retail-Local-Server-POS-<version>-arm64.pkg`
+- `BMS-POS-Plus-Retail-Local-Server-POS-<version>-x64.pkg`
+- `BMS-POS-Plus-Retail-Local-POS-<version>-macos-arm64.dmg`
+- `BMS-POS-Plus-Retail-Local-POS-<version>-macos-x64.dmg`
 
 เมื่อต้องสร้าง full offline recovery package ให้ระบุ Offline อย่างชัดเจน:
 

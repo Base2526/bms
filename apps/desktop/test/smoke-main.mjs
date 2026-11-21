@@ -71,7 +71,7 @@ async function run() {
       overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
       overflowY: document.documentElement.scrollHeight > document.documentElement.clientHeight
     })`);
-    if (state.title !== "ตั้งค่า BMS POS" || state.heading !== "เชื่อมต่อเครื่องแคชเชียร์") {
+    if (state.title !== "ตั้งค่า BMS POS+" || state.heading !== "เชื่อมต่อเครื่องแคชเชียร์") {
       throw new Error(`Unexpected setup content: ${JSON.stringify(state)}`);
     }
     if (
@@ -185,7 +185,7 @@ async function run() {
       overflowY: document.documentElement.scrollHeight > document.documentElement.clientHeight
     })`);
     if (
-      startupState.title !== "กำลังเปิด BMS POS"
+      startupState.title !== "กำลังเปิด BMS POS+"
       || startupState.loadingHidden !== true
       || startupState.errorHidden !== false
       || startupState.message !== "ทดสอบการเชื่อมต่อไม่สำเร็จ"

@@ -9,10 +9,10 @@ const REVIEWED_AT = "2026-10-29";
 
 const CONTENT: Record<PublicSeoLocale, AuthorityPageContent> = {
   th: {
-    eyebrow: "AI IN BMS · VERIFIED WORKFLOWS",
+    eyebrow: "AI IN BMS POS+ · VERIFIED WORKFLOWS",
     title: "AI ที่ทำงานผ่านเครื่องมือที่อนุมัติ และตอบจากผลที่ตรวจสอบได้",
-    intro: "AI ใน BMS ช่วยตีความความต้องการ เลือกเครื่องมือที่เหมาะกับสิทธิ์และบริบท แล้วอธิบายผลจากบริการจริง โดยไม่ใช้โมเดลเป็นผู้ตัดสินราคา สต็อก ยอดเงิน หรือสิทธิ์",
-    answerLabel: "AI ใน BMS ทำอะไร",
+    intro: "AI ใน BMS POS+ ช่วยตีความความต้องการ เลือกเครื่องมือที่เหมาะกับสิทธิ์และบริบท แล้วอธิบายผลจากบริการจริง โดยไม่ใช้โมเดลเป็นผู้ตัดสินราคา สต็อก ยอดเงิน หรือสิทธิ์",
+    answerLabel: "AI ใน BMS POS+ ทำอะไร",
     answer: "AI ทำหน้าที่ เข้าใจ → เลือกเครื่องมือ → อธิบายผล ส่วนบริการ backend เป็นผู้ตรวจสิทธิ์ อ่านข้อมูล และทำธุรกรรมที่ได้รับอนุญาต",
     reviewedLabel: "ทบทวนเนื้อหา",
     reviewedAt: REVIEWED_AT,
@@ -45,10 +45,10 @@ const CONTENT: Record<PublicSeoLocale, AuthorityPageContent> = {
       { title: "Propose before mutate", body: "การเปลี่ยนแปลงที่ละเอียดอ่อนแสดงข้อเสนอและ args ที่ server จัดให้ก่อนยืนยัน" },
       { title: "Known limits", body: "เมื่อข้อมูลหาย ไม่พร้อม หรือยังไม่รองรับ ระบบต้องบอกข้อจำกัดแทนการสร้างคำตอบ" },
     ],
-    faqTitle: "คำถามเกี่ยวกับ AI ใน BMS",
+    faqTitle: "คำถามเกี่ยวกับ AI ใน BMS POS+",
     faq: [
-      { question: "AI ใน BMS ต่างจากแชทบอททั่วไปอย่างไร?", answer: "AI ใน BMS เชื่อมกับ workflow และ approved tools ของระบบ จึงสามารถอธิบายข้อมูลที่ตรวจสอบแล้วและเตรียมงานต่อให้บริการ backend ได้ แทนที่จะตอบจากข้อความอย่างเดียว" },
-      { question: "BMS ป้องกัน AI hallucination อย่างไร?", answer: "ข้อเท็จจริงที่มีผลต่อธุรกิจต้องมาจากเครื่องมือและบริการจริง หากข้อมูลไม่มีหรือไม่ครบ คำตอบต้องระบุข้อจำกัด ไม่สร้างราคา สต็อก สถานะ หรือการยืนยันขึ้นเอง" },
+      { question: "AI ใน BMS POS+ ต่างจากแชทบอททั่วไปอย่างไร?", answer: "AI ใน BMS POS+ เชื่อมกับ workflow และ approved tools ของระบบ จึงสามารถอธิบายข้อมูลที่ตรวจสอบแล้วและเตรียมงานต่อให้บริการ backend ได้ แทนที่จะตอบจากข้อความอย่างเดียว" },
+      { question: "BMS POS+ ป้องกัน AI hallucination อย่างไร?", answer: "ข้อเท็จจริงที่มีผลต่อธุรกิจต้องมาจากเครื่องมือและบริการจริง หากข้อมูลไม่มีหรือไม่ครบ คำตอบต้องระบุข้อจำกัด ไม่สร้างราคา สต็อก สถานะ หรือการยืนยันขึ้นเอง" },
       { question: "AI เข้าฐานข้อมูลโดยตรงหรือไม่?", answer: "ไม่เข้าโดยตรง AI ไม่สร้าง SQL และใช้ได้เฉพาะเครื่องมือ backend ที่ผ่าน validation, tenant scope, permission และ audit" },
       { question: "AI ของลูกค้าและ AI ของพนักงานใช้สิทธิ์เท่ากันหรือไม่?", answer: "ไม่เท่ากัน ลูกค้าเห็นเฉพาะเครื่องมือสำหรับลูกค้าที่ไม่มีงานละเอียดอ่อน ส่วนพนักงานได้เครื่องมือตามสิทธิ์ และ server ตรวจสิทธิ์ซ้ำก่อนทำงาน" },
       { question: "งานใดต้องมีคนยืนยัน?", answer: "งานละเอียดอ่อน เช่น การเปลี่ยนข้อมูลหรือธุรกรรมที่มีผล ต้องแสดงสิ่งที่จะเปลี่ยนและให้ผู้มีสิทธิ์ยืนยันอย่างชัดเจนก่อนดำเนินการ" },
@@ -61,10 +61,10 @@ const CONTENT: Record<PublicSeoLocale, AuthorityPageContent> = {
     },
   },
   en: {
-    eyebrow: "AI IN BMS · VERIFIED WORKFLOWS",
+    eyebrow: "AI IN BMS POS+ · VERIFIED WORKFLOWS",
     title: "AI that uses approved tools and answers from verified results",
-    intro: "AI in BMS interprets intent, selects a tool that fits the permission and context, then explains results from real services. The model does not decide prices, stock, money or permissions.",
-    answerLabel: "What AI does in BMS",
+    intro: "AI in BMS POS+ interprets intent, selects a tool that fits the permission and context, then explains results from real services. The model does not decide prices, stock, money or permissions.",
+    answerLabel: "What AI does in BMS POS+",
     answer: "AI interprets → selects a tool → explains the result. Backend services check permissions, read data and perform authorized transactions.",
     reviewedLabel: "Content reviewed",
     reviewedAt: REVIEWED_AT,
@@ -97,10 +97,10 @@ const CONTENT: Record<PublicSeoLocale, AuthorityPageContent> = {
       { title: "Propose before mutate", body: "Sensitive changes show the proposed mutation and server-composed arguments before confirmation." },
       { title: "Known limits", body: "When data is missing, unavailable or unsupported, the system states the limitation instead of creating an answer." },
     ],
-    faqTitle: "Questions about AI in BMS",
+    faqTitle: "Questions about AI in BMS POS+",
     faq: [
-      { question: "How is AI in BMS different from a general chatbot?", answer: "AI in BMS is connected to system workflows and approved tools, so it can explain verified data and prepare work for backend services rather than relying on text alone." },
-      { question: "How does BMS reduce AI hallucinations?", answer: "Business facts must come from real tools and services. If evidence is missing or incomplete, the answer must state the limitation instead of inventing a price, stock level, status or confirmation." },
+      { question: "How is AI in BMS POS+ different from a general chatbot?", answer: "AI in BMS POS+ is connected to system workflows and approved tools, so it can explain verified data and prepare work for backend services rather than relying on text alone." },
+      { question: "How does BMS POS+ reduce AI hallucinations?", answer: "Business facts must come from real tools and services. If evidence is missing or incomplete, the answer must state the limitation instead of inventing a price, stock level, status or confirmation." },
       { question: "Does AI query the database directly?", answer: "No. AI does not generate SQL and can use only backend tools that apply validation, tenant scope, permissions and auditing." },
       { question: "Do customer AI and staff AI have the same authority?", answer: "No. Customers receive only customer-safe tools. Staff tools depend on staff permissions, which the server checks again before execution." },
       { question: "Which actions require a person to confirm?", answer: "Sensitive changes and consequential transactions must show what will change and require explicit confirmation from an authorized person before execution." },
@@ -133,7 +133,7 @@ export default function AiBusinessSystemPage() {
       <StructuredData id="ai-business-faq-jsonld" data={faqPageJsonLd(content.faq)} />
       <StructuredData id="ai-business-breadcrumb-jsonld" data={breadcrumbJsonLd(lang, [
         { name: lang === "th" ? "หน้าหลัก" : "Home", path: "/" },
-        { name: lang === "th" ? "AI ใน BMS" : "AI in BMS", path: "/ai-business-system" },
+        { name: lang === "th" ? "AI ใน BMS POS+" : "AI in BMS POS+", path: "/ai-business-system" },
       ])} />
       <AuthorityPage content={content} locale={lang} />
     </>

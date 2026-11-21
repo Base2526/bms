@@ -73,7 +73,7 @@ Customer-safe own-order status, payment submission, and reorder resolve the chan
 canonical `customer_id` first. After staff merges duplicate LINE/Facebook/etc. records, those reads
 therefore see the combined cross-channel order history. Legacy orders with no `customer_id` remain
 readable only through their exact server-established `(channel, customer_ref)` key. A customer
-reorder creates the new order on the channel currently talking to BMS, even when its source order
+reorder creates the new order on the channel currently talking to BMS POS+, even when its source order
 came from another merged identity.
 
 Payment auto-selection is deliberately narrower: it uses only the latest `PENDING` order whose
@@ -245,7 +245,7 @@ reports the acceptance with `needsReview`; the stored row stays `PENDING` and th
 check the channel before replying again. Shopee and Lazada webhook payload/signature mappings
 remain unverified scaffolds;
 their Inbox presence is not evidence of a production chat integration. TikTok has no outbound send
-API in BMS yet. Inbound text on TikTok/Shopee/Lazada is saved for staff without running AI or
+API in BMS POS+ yet. Inbound text on TikTok/Shopee/Lazada is saved for staff without running AI or
 committing an unseen business action. Web chat returns an AI reply in the widget's HTTP response; staff Inbox drafts are
 not pushed back to the widget.
 

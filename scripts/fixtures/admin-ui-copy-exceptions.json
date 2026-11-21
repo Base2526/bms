@@ -673,7 +673,7 @@
   "apps/web/components/AdminSidebar.tsx": {
     "reason": "Reviewed brand/product names, protocol/status identifiers, sample codes/URLs and technical diagnostics remain verbatim.",
     "strings": [
-      "BMS"
+      "BMS POS+"
     ]
   },
   "apps/web/components/admin/TaxControlDocument.tsx": {
@@ -740,7 +740,7 @@
   "apps/web/components/HeaderBar.tsx": {
     "reason": "Product branding and physical keyboard modifier names are intentionally unchanged across operator languages.",
     "strings": [
-      "BMS",
+      "BMS POS+",
       "Ctrl"
     ]
   }

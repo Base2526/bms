@@ -55,7 +55,7 @@ uses a query-string API key. Lookups are limited per acting shop/admin, with a s
 provider ceiling (30/minute each). No provider payload is cached or written to the database by
 lookup. [Barcode Lookup's current terms](https://www.barcodelookup.com/terms-and-conditions) grant a
 limited, non-sublicensable subscription, retain rights in Product Data, and require cached/backed-up
-Product Data to be deleted when the subscription ends. Therefore BMS never promotes a provider
+Product Data to be deleted when the subscription ends. Therefore BMS POS+ never promotes a provider
 response into the shared master; only a merchant's explicit confirmation or platform-curated data
 can enter it. Only an exact, unambiguous returned
 GTIN is accepted; related products are not guesses.

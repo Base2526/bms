@@ -156,7 +156,7 @@ export default function DesktopUpdateMenu({ className = "" }: { className?: stri
       </summary>
       <section className={styles.popover} aria-label={t("pos_desktop_update.title")}>
         <div className={styles.heading}>
-          <div><strong>{title}</strong><small>BMS POS{info ? ` · v${info.version}` : ""}</small></div>
+          <div><strong>{title}</strong><small>BMS POS+{info ? ` · v${info.version}` : ""}</small></div>
           <button type="button" className={styles.refresh} disabled={checking}
             onClick={() => void check(true)} title={t("pos_desktop_update.check")} aria-label={t("pos_desktop_update.check")}>
             <ReloadOutlined spin={checking} />

@@ -30,12 +30,12 @@ test("Emergency Offline claims stay inside the implemented mobile cash boundary"
 
   assert.match(contract, /plain retail cash sale/);
   assert.match(contract, /not a receipt or tax document/);
-  assert.match(repositoryReadme, /BMS Cloud and BMS Hybrid POS are one product/);
-  assert.match(repositoryReadme, /BMS Cloud และ BMS Hybrid POS เป็นผลิตภัณฑ์เดียวกัน/);
+  assert.match(repositoryReadme, /BMS POS\+ Cloud and Hybrid POS are one product/);
+  assert.match(repositoryReadme, /BMS POS\+ Cloud และ Hybrid POS เป็นผลิตภัณฑ์เดียวกัน/);
   assert.match(mobile, /not a local server or full-offline promise/);
   assert.match(desktop, /Emergency Offline Mode is mobile-only/);
-  assert.match(manual, /BMS เดียว: Cloud \+ Emergency Offline/);
-  assert.match(manual, /One BMS: Cloud \+ Emergency Offline/);
+  assert.match(manual, /BMS POS\+ เดียว: Cloud \+ Emergency Offline/);
+  assert.match(manual, /One BMS POS\+: Cloud \+ Emergency Offline/);
   assert.match(manual, /Restaurant\/board-game\/pharmacy require Cloud/);
   assert.doesNotMatch(manual, /Offline-first sync/);
   assert.doesNotMatch(manual, /This is not an offline POS/);

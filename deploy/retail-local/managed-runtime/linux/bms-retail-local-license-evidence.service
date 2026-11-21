@@ -1,5 +1,5 @@
 [Unit]
-Description=BMS Retail Local best-effort license evidence pulse
+Description=BMS POS+ Retail Local best-effort license evidence pulse
 After=network-online.target bms-retail-local.service
 Wants=network-online.target
 

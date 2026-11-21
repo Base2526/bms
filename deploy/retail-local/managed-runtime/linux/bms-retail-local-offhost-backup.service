@@ -1,5 +1,5 @@
 [Unit]
-Description=BMS Retail Local encrypted off-host backup
+Description=BMS POS+ Retail Local encrypted off-host backup
 After=bms-retail-local.service network-online.target
 Wants=network-online.target
 

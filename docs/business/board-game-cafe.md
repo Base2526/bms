@@ -798,7 +798,7 @@ only from a later authoritative staff-reviewed status read, never the submission
 #### Deployment and rollback (not executed in this task)
 
 1. Back up the target PostgreSQL database and verify that backup can be restored to an isolated test
-   database. Do not rebuild BMS by blindly replaying historical migrations into an empty database.
+   database. Do not rebuild BMS POS+ by blindly replaying historical migrations into an empty database.
 2. Run `psql -v ON_ERROR_STOP=1 -f db/checks/schema-readiness.sql` on that restored test DB. Before
    migration only the three new `10.48` columns should be missing; resolve other gaps separately.
 3. Apply `psql -1 -v ON_ERROR_STOP=1 -f db/migrations/10.48__bms_board_game_chat_reservations.sql`.
@@ -879,7 +879,7 @@ cover every possible wording and does not establish live-provider, live-chat or 
 See [the detailed recheck](../ai/board-game-guards-recheck.md) for literal cases, validation results,
 copy requiring human review and remaining booking-link decisions.
 
-## Reuse Existing BMS
+## Reuse Existing BMS POS+
 
 Staff assistant analytics uses the same report service as the Analytics tab. With `report.view`,
 staff can ask “เกมไหนถูกเล่นมากสุด” (`get_board_game_top_games`) and “ยอดขายแยกตามโต๊ะ”

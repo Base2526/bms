@@ -1,7 +1,7 @@
-# 🤖 BMS — AI Business Management System
+# 🤖 BMS POS+ — AI Business Management System
 
 > Every customer conversation should become an executable business workflow.
-> **BMS is not an AI chatbot — it is an AI Business Operating System.**
+> **BMS POS+ is not an AI chatbot — it is an AI Business Operating System.**
 
 ---
 
@@ -16,10 +16,10 @@
 
 ### 📌 Overview
 
-**BMS** is an AI-first Business Management System that automates business
+**BMS POS+** is an AI-first Business Management System that automates business
 operations from the very first customer message all the way to fulfillment.
 
-Unlike traditional ERP/CRM, BMS treats **the conversation** as the starting
+Unlike traditional ERP/CRM, BMS POS+ treats **the conversation** as the starting
 point of every workflow:
 
 ```
@@ -30,7 +30,7 @@ Customer → AI → CRM → Order → Inventory → Payment → Shipping → Das
 Facebook Messenger, Instagram, Website Live Chat.
 _Roadmap:_ WhatsApp, Email, Voice AI.
 
-**BMS Cloud and BMS Hybrid POS are one product.** Cloud remains the source of truth; Hybrid POS is
+**BMS POS+ Cloud and Hybrid POS are one product.** Cloud remains the source of truth; Hybrid POS is
 the included **Emergency Offline Mode** capability currently limited to plain retail cash sales on
 Mobile POS. Desktop and richer workflows still require Cloud—this is not a local-server or full-
 offline claim. See [the product contract](./docs/business/cloud-hybrid-pos.md).
@@ -132,7 +132,7 @@ production-ready) is kept in [CLAUDE.md § Current status](CLAUDE.md) and
 | AI | Multi-provider: Anthropic Claude and DeepSeek for chat/tool-calling (`BMS_AI_PROVIDER`, per-tenant BYOK), Qwen for payment-slip OCR (`BMS_SLIP_READER_PROVIDER`) — all optional; without credentials the AI layer falls back to deterministic templates |
 | Orchestration | **Docker Compose** |
 
-The BMS business logic lives in [`apps/web/lib/bms/`](./apps/web/lib/bms/)
+The BMS POS+ business logic lives in [`apps/web/lib/bms/`](./apps/web/lib/bms/)
 (`stock`, `orders`, `products`, `customers`, `nlu`, `ai`, `pipeline`,
 `tenant`, `permissions`, `plans`, `channels`, `audit`, …), exposed via the API
 routes under [`apps/web/app/api/bms/`](./apps/web/app/api/bms/).
@@ -144,14 +144,14 @@ routes under [`apps/web/app/api/bms/`](./apps/web/app/api/bms/).
 ```
 /
 ├── apps/
-│   ├── web/                     # Next.js app (UI + GraphQL API + BMS logic)
+│   ├── web/                     # Next.js app (UI + GraphQL API + BMS POS+ logic)
 │   │   ├── app/
 │   │   │   ├── (admin)/         # Admin console: orders, products, customers,
 │   │   │   │                    #   inventory, billing, roles, permissions, audit
 │   │   │   ├── (auth)/          # Login, register, shop signup, verify email
 │   │   │   ├── (main)/          # Public / customer-facing pages
 │   │   │   └── api/
-│   │   │       └── bms/         # BMS endpoints:
+│   │   │       └── bms/         # BMS POS+ endpoints:
 │   │   │           ├── chat/                    # AI conversation pipeline
 │   │   │           ├── line/webhook/[tenantId]/ # per-tenant LINE webhook
 │   │   │           ├── tiktok/webhook/[tenantId]/
@@ -184,7 +184,7 @@ routes under [`apps/web/app/api/bms/`](./apps/web/app/api/bms/).
 
 ### 🏢 Multi-Tenancy
 
-BMS is **multi-tenant** (SaaS). Each shop (tenant) has:
+BMS POS+ is **multi-tenant** (SaaS). Each shop (tenant) has:
 
 - Self-serve signup that auto-creates a tenant + plan/billing
 - Per-tenant webhooks for LINE, TikTok, **Facebook Messenger, Instagram DM**
@@ -283,7 +283,7 @@ by default — set `BMS_ALLOW_FAKE_SEED=1` to enable on a demo box.
 
 | Generator | Fills |
 | --- | --- |
-| BMS Staff (users) | Users — role Sales/Warehouse, bound to your tenant |
+| BMS POS+ Staff (users) | Users — role Sales/Warehouse, bound to your tenant |
 | Products / Customers | Products, Customers |
 | Orders (+ payment/shipment) | Dashboard, Reports, CRM, Payment, Shipping |
 | Conversations (+ messages) | Inbox |
@@ -299,10 +299,10 @@ by default — set `BMS_ALLOW_FAKE_SEED=1` to enable on a demo box.
 
 ### 📌 ภาพรวม
 
-**BMS** คือระบบบริหารธุรกิจแบบ AI-first ที่ทำให้งานตั้งแต่
+**BMS POS+** คือระบบบริหารธุรกิจแบบ AI-first ที่ทำให้งานตั้งแต่
 "ข้อความแรกของลูกค้า" ไปจนถึงการจัดส่ง เป็นอัตโนมัติ
 
-ต่างจาก ERP/CRM ทั่วไป ตรงที่ BMS ถือว่า **บทสนทนา** คือจุดเริ่มต้นของ
+ต่างจาก ERP/CRM ทั่วไป ตรงที่ BMS POS+ ถือว่า **บทสนทนา** คือจุดเริ่มต้นของ
 ทุก workflow:
 
 ```
@@ -312,7 +312,7 @@ by default — set `BMS_ALLOW_FAKE_SEED=1` to enable on a demo box.
 **ช่องทางที่รองรับ:** LINE OA, TikTok Shop / TikTok Chat, Facebook Messenger,
 Instagram, Live Chat หน้าเว็บ — _อนาคต:_ WhatsApp, Email, Voice AI
 
-**BMS Cloud และ BMS Hybrid POS เป็นผลิตภัณฑ์เดียวกัน** โดย Cloud ยังเป็นแหล่งข้อมูลจริง ส่วน
+**BMS POS+ Cloud และ Hybrid POS เป็นผลิตภัณฑ์เดียวกัน** โดย Cloud ยังเป็นแหล่งข้อมูลจริง ส่วน
 Hybrid POS คือความสามารถ **Emergency Offline Mode** ที่รวมอยู่ในระบบ และปัจจุบันจำกัดเฉพาะการ
 ขายปลีกธรรมดาที่รับเงินสดบน Mobile POS; Desktop และ workflow ที่ซับซ้อนยังต้องเชื่อมต่อ Cloud
 จึงไม่ใช่การรับรองว่าเป็น Local Server หรือ Full Offline ดูรายละเอียดใน
@@ -415,7 +415,7 @@ API routes ใน [`apps/web/app/api/bms/`](./apps/web/app/api/bms/)
 
 ### 🏢 Multi-Tenancy
 
-BMS เป็นระบบ **หลายผู้เช่า (SaaS)** — แต่ละร้าน (tenant) มี:
+BMS POS+ เป็นระบบ **หลายผู้เช่า (SaaS)** — แต่ละร้าน (tenant) มี:
 
 - สมัครเองแล้วสร้าง tenant + แพ็กเกจ/บิลลิ่งอัตโนมัติ
 - Webhook แยกต่อร้าน: LINE, TikTok, **Facebook Messenger, Instagram DM**
@@ -509,7 +509,7 @@ cron รายวัน → ดึง+redact log → Claude แก้ → draft 
 
 | Generator | เติมหน้า |
 | --- | --- |
-| BMS Staff (users) | Users — role Sales/Warehouse ผูกร้านตัวเอง |
+| BMS POS+ Staff (users) | Users — role Sales/Warehouse ผูกร้านตัวเอง |
 | Products / Customers | Products, Customers |
 | Orders (+ payment/shipment) | Dashboard, Reports, CRM, Payment, Shipping |
 | Conversations (+ messages) | Inbox |
@@ -526,4 +526,4 @@ cron รายวัน → ดึง+redact log → Claude แก้ → draft 
 > ทุกอย่างเริ่มจากบทสนทนา
 > **Conversation → Intent → Business Function → Business Data → Business Action → Customer Response**
 >
-> BMS ไม่ใช่แชทบอท — แต่คือ **AI Business Operating System**
+> BMS POS+ ไม่ใช่แชทบอท — แต่คือ **AI Business Operating System**

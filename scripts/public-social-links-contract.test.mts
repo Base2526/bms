@@ -16,8 +16,8 @@ test("public footer exposes the verified BMS social destinations safely", () => 
 });
 
 test("public footer keeps the social links bilingual and phone-safe", () => {
-  assert.match(footer, /follow: "ติดตาม BMS"/);
-  assert.match(footer, /follow: "Follow BMS"/);
+  assert.match(footer, /follow: "ติดตาม BMS POS\+"/);
+  assert.match(footer, /follow: "Follow BMS POS\+"/);
 
   const phone = footer.slice(footer.indexOf("@media (max-width: 640px)"));
   assert.match(phone, /\.bms-footer-social-links \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); width: 100%; \}/);

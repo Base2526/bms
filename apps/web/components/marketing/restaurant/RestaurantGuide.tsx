@@ -141,7 +141,7 @@ export default function RestaurantGuide({ children }: { children?: React.ReactNo
     setShareStatus(null);
     if (native && navigator.share) {
       try {
-        await navigator.share({ title: `BMS · ${detail.title}`, text: detail.description, url: url.href });
+        await navigator.share({ title: `BMS POS+ · ${detail.title}`, text: detail.description, url: url.href });
         if (shareRequest.current === request) setShareStatus("shared");
         return;
       } catch (error) {
@@ -155,7 +155,7 @@ export default function RestaurantGuide({ children }: { children?: React.ReactNo
   return <article className={styles.page} data-restaurant-guide>
     <header className={styles.hero}>
       <div className={styles.heroCopy}>
-        <p className={styles.eyebrow}>BMS FOR RESTAURANTS &amp; CAFÉS</p>
+        <p className={styles.eyebrow}>BMS POS+ FOR RESTAURANTS &amp; CAFÉS</p>
         <h1>{copy.titleLines.map((line, index) => <span key={line}>{line}{index === 0 ? " " : ""}</span>)}</h1>
         <p className={styles.intro}>{copy.descriptionLines.map((line, index) => <span key={line}>{line}{index === 0 ? " " : ""}</span>)}</p>
         <div className={styles.actions}>

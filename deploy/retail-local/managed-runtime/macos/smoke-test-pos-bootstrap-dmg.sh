@@ -19,12 +19,12 @@ bootstrap="$app/Contents/Resources/bootstrap"
 [[ -x $app/Contents/MacOS/Install\ BMS\ POS ]] || { echo "DMG is missing the setup app" >&2; exit 1; }
 [[ -x $app/Contents/Resources/BMS\ POS\ Online\ Setup.command ]] || { echo "DMG is missing the setup command" >&2; exit 1; }
 [[ -x $bootstrap/bms-runtime-agent ]] || { echo "DMG is missing the runtime agent" >&2; exit 1; }
-bash -n "$app/Contents/MacOS/Install BMS POS"
-bash -n "$app/Contents/Resources/BMS POS Online Setup.command"
-grep -q 'POSBootstrap/Launchers' "$app/Contents/MacOS/Install BMS POS" || {
+bash -n "$app/Contents/MacOS/Install BMS POS+"
+bash -n "$app/Contents/Resources/BMS POS+ Online Setup.command"
+grep -q 'POSBootstrap/Launchers' "$app/Contents/MacOS/Install BMS POS+" || {
   echo "POS launcher does not protect against App Translocation" >&2; exit 1;
 }
-grep -q 'ditto --noqtn' "$app/Contents/MacOS/Install BMS POS" || {
+grep -q 'ditto --noqtn' "$app/Contents/MacOS/Install BMS POS+" || {
   echo "POS launcher does not create a durable bootstrap copy" >&2; exit 1;
 }
 launcher_test_root=$(mktemp -d "${TMPDIR:-/tmp}/bms-pos-launcher-test.XXXXXX")
@@ -36,7 +36,7 @@ printf '%s\n' "$opened_path" >"$BMS_OPEN_RECORD"
 EOF
 chmod 0755 "$launcher_test_root/bin/open"
 HOME="$launcher_test_root/home" PATH="$launcher_test_root/bin:/usr/bin:/bin" \
-  BMS_OPEN_RECORD="$launcher_test_root/opened-path" "$app/Contents/MacOS/Install BMS POS"
+  BMS_OPEN_RECORD="$launcher_test_root/opened-path" "$app/Contents/MacOS/Install BMS POS+"
 opened_path=$(cat "$launcher_test_root/opened-path")
 [[ $opened_path == "$launcher_test_root/home/Library/Application Support/BMS/POSBootstrap/Launchers/"* ]] || {
   echo "POS launcher still opens files from DMG/App Translocation" >&2; exit 1;

@@ -16,11 +16,11 @@
 
 [Setup]
 AppId={{5A25C92F-6EBB-4EA5-87F7-DCCBE6802C63}
-AppName=BMS Retail Local
+AppName=BMS POS+ Retail Local
 AppVersion={#ProductVersion}
 AppPublisher=BMS
 DefaultDirName={localappdata}\BMS\Retail Local
-DefaultGroupName=BMS Retail Local
+DefaultGroupName=BMS POS+ Retail Local
 DisableProgramGroupPage=yes
 OutputDir={#OutputRoot}
 OutputBaseFilename={#OutputBaseFilename}
@@ -41,15 +41,19 @@ Source: "{#BundleRoot}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 Source: "{#PosInstaller}"; DestDir: "{tmp}\bms-retail-local"; DestName: "BMS-POS-Setup.exe"; Flags: ignoreversion deleteafterinstall
 #endif
 
+[InstallDelete]
+Type: files; Name: "{app}\Install-BMS-Retail-Local.cmd"
+Type: files; Name: "{app}\Check-BMS-Retail-Local.cmd"
+
 [Icons]
-Name: "{group}\Install or repair BMS Retail Local"; Filename: "{app}\Install-BMS-Retail-Local.cmd"; WorkingDir: "{app}"
-Name: "{group}\Check BMS Retail Local"; Filename: "{app}\Check-BMS-Retail-Local.cmd"; WorkingDir: "{app}"
-Name: "{group}\Open BMS Retail Local"; Filename: "http://127.0.0.1:3100"
+Name: "{group}\Install or repair BMS POS+ Retail Local"; Filename: "{app}\Install-BMS-POS-Plus-Retail-Local.cmd"; WorkingDir: "{app}"
+Name: "{group}\Check BMS POS+ Retail Local"; Filename: "{app}\Check-BMS-POS-Plus-Retail-Local.cmd"; WorkingDir: "{app}"
+Name: "{group}\Open BMS POS+ Retail Local"; Filename: "http://127.0.0.1:3100"
 
 [Run]
-Filename: "{app}\Install-BMS-Retail-Local.cmd"; WorkingDir: "{app}"; StatusMsg: "Installing the local BMS server..."; Flags: shellexec waituntilterminated
+Filename: "{app}\Install-BMS-POS-Plus-Retail-Local.cmd"; WorkingDir: "{app}"; StatusMsg: "Installing the local BMS server..."; Flags: shellexec waituntilterminated
 #ifdef PosInstaller
-Filename: "{tmp}\bms-retail-local\BMS-POS-Setup.exe"; StatusMsg: "Installing BMS POS..."; Flags: waituntilterminated; Check: ServerInstallationCompleted
+Filename: "{tmp}\bms-retail-local\BMS-POS-Setup.exe"; StatusMsg: "Installing BMS POS+..."; Flags: waituntilterminated; Check: ServerInstallationCompleted
 #endif
 
 [Code]
@@ -58,7 +62,7 @@ begin
   Result := FileExists(ExpandConstant('{app}\installation.json'));
   if not Result then
     MsgBox(
-      'The BMS Retail Local server did not finish installing. BMS POS was not installed. ' +
+      'The BMS POS+ Retail Local server did not finish installing. BMS POS+ was not installed. ' +
       'Run the Install or repair shortcut after correcting the reported prerequisite.',
       mbError,
       MB_OK

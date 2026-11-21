@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 readonly RUNTIME_ROOT=/var/lib/bms-retail-local
 readonly BOOTSTRAP_ROOT=/opt/bms-retail-local
-die() { printf 'BMS Retail Local Update: %s\n' "$*" >&2; exit 1; }
+die() { printf 'BMS POS+ Retail Local Update: %s\n' "$*" >&2; exit 1; }
 is_https_url() { [[ ${1:-} =~ ^https://[^/@:]+([/:?#]|$) ]] && [[ ${1:-} != *'@'* ]]; }
 artifact_path() {
   local name=$1
@@ -60,7 +60,7 @@ bundle_root=${2:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)}
 mode=${3:-apply}
 is_https_url "$manifest_uri" || die "Specify an HTTPS release-manifest URL without credentials"
 [[ $mode == apply || $mode == check || $mode == yes ]] || die "Update mode is invalid"
-[[ -f $RUNTIME_ROOT/installation.json ]] || die "BMS Retail Local is not installed"
+[[ -f $RUNTIME_ROOT/installation.json ]] || die "BMS POS+ Retail Local is not installed"
 
 agent_source="$bundle_root/bms-runtime-agent"
 keyring_source="$bundle_root/trusted-release-keys.json"
@@ -91,7 +91,7 @@ verify_command=verify-update
 release_json=$($agent "$verify_command" -manifest "$manifest_path" \
   -keyring "$keyring_source" -target "$target" -current-version "$current_version")
 if [[ $mode == check && $(jq -r '.updateAvailable' <<<"$release_json") != true ]]; then
-  printf 'BMS Retail Local is up to date: %s\n' "$current_version"
+  printf 'BMS POS+ Retail Local is up to date: %s\n' "$current_version"
   exit 0
 fi
 version=$(jq -er '.releaseVersion' <<<"$release_json")
@@ -104,7 +104,7 @@ else
   total_bytes=$(jq -er '[.components[] | select(.name != "desktop") | .sizeBytes] | add' <<<"$release_json")
 fi
 rollback_mode=$(jq -r 'if .rollbackSafe then "image-only" else "full database/files/secrets restore" end' <<<"$release_json")
-printf 'A signature-verified BMS Retail Local update is available\n'
+printf 'A signature-verified BMS POS+ Retail Local update is available\n'
 printf '  version: %s -> %s\n' "$current_version" "$version"
 printf '  channel: %s\n' "$channel"
 printf '  schema: %s\n' "$schema_version"
@@ -184,4 +184,4 @@ if [[ -f $profile ]]; then
   BMS_LICENSE_EVIDENCE_TOKEN="$evidence_token" "$agent" "${license_args[@]}" >/dev/null 2>&1 || true
 fi
 
-printf 'BMS Retail Local update completed: %s -> %s\n' "$current_version" "$version"
+printf 'BMS POS+ Retail Local update completed: %s -> %s\n' "$current_version" "$version"

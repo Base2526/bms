@@ -5,7 +5,7 @@ readonly RUNTIME_ROOT=/var/lib/bms-retail-local
 readonly AGENT=/opt/bms-retail-local/bms-runtime-agent
 readonly ACTIVATION_URL_FILE=/etc/bms-retail-local/activation-url
 
-die() { printf 'BMS Retail Local Activation: %s\n' "$*" >&2; exit 1; }
+die() { printf 'BMS POS+ Retail Local Activation: %s\n' "$*" >&2; exit 1; }
 [[ ${EUID} -eq 0 ]] || die "Run this command with sudo"
 [[ -x $AGENT && -f $RUNTIME_ROOT/installation.json ]] || die "Managed Runtime is not installed"
 [[ -f $ACTIVATION_URL_FILE ]] || die "Bootstrap package has no Activation URL"

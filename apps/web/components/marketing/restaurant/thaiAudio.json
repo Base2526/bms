@@ -1,30 +1,30 @@
 {
-  "BMS API. ตรวจตัวตนและสิทธิ์ใหม่": {
-    "file": "/audio/restaurant/th/fafd498cc424c4bd17b21e38.mp3",
-    "duration": 2.64
+  "BMS POS+ API. ตรวจตัวตนและสิทธิ์ใหม่": {
+    "file": "/audio/restaurant/th/dd229e967e249ef9aaf50c7c.mp3",
+    "duration": 3.168
   },
-  "BMS API. ตรวจผู้ใช้ ร้าน และสิทธิ์": {
-    "file": "/audio/restaurant/th/4117da1da1cc20ba5cc8935a.mp3",
-    "duration": 2.52
+  "BMS POS+ API. ตรวจผู้ใช้ ร้าน และสิทธิ์": {
+    "file": "/audio/restaurant/th/4d4831f5a6ea64db95fc37a7.mp3",
+    "duration": 3.0
   },
-  "BMS API. ส่งตัวตนที่ยืนยันแล้ว": {
-    "file": "/audio/restaurant/th/bdc16069a63a06a89c5be60a.mp3",
-    "duration": 2.736
+  "BMS POS+ API. ส่งตัวตนที่ยืนยันแล้ว": {
+    "file": "/audio/restaurant/th/7d0aa41fd3a1758540daacb1.mp3",
+    "duration": 3.264
   },
-  "BMS API. แสดงผลสำเร็จ": {
-    "file": "/audio/restaurant/th/517311b3957bcf291fa55d95.mp3",
-    "duration": 2.304
+  "BMS POS+ API. แสดงผลสำเร็จ": {
+    "file": "/audio/restaurant/th/bf51608bfe21406e4c652a2f.mp3",
+    "duration": 2.76
   },
-  "BMS POS. ตรวจความพร้อมของสินค้าและส่วนประกอบ": {
-    "file": "/audio/restaurant/th/b7eeef13422a65b9bad8b69e.mp3",
+  "BMS POS+. ตรวจความพร้อมของสินค้าและส่วนประกอบ": {
+    "file": "/audio/restaurant/th/a1064e134aa1ef034b83f206.mp3",
     "duration": 3.48
   },
-  "BMS POS. ตรวจราคาและข้อมูลสินค้าจริง": {
-    "file": "/audio/restaurant/th/0f127bb2161656045f9a1ce4.mp3",
+  "BMS POS+. ตรวจราคาและข้อมูลสินค้าจริง": {
+    "file": "/audio/restaurant/th/2844c402662779116c5186f2.mp3",
     "duration": 3.24
   },
-  "BMS POS. แสดงยอดสุทธิให้ตรวจ": {
-    "file": "/audio/restaurant/th/bb76191a0556540b8287bbd0.mp3",
+  "BMS POS+. แสดงยอดสุทธิให้ตรวจ": {
+    "file": "/audio/restaurant/th/d14b334ee77b69a609179067.mp3",
     "duration": 2.736
   },
   "Backend ตรวจราคาและสิทธิ์ตอนบันทึกจริง": {
@@ -359,25 +359,25 @@
     "file": "/audio/restaurant/th/b299b8891535ad7d065bcf34.mp3",
     "duration": 7.68
   },
-  "บิล BMS. คำนวณย้อนสิทธิ์จากหลักฐานเดิม": {
-    "file": "/audio/restaurant/th/906b09dc94f1636daef89636.mp3",
-    "duration": 2.76
+  "บิล BMS POS+. คำนวณย้อนสิทธิ์จากหลักฐานเดิม": {
+    "file": "/audio/restaurant/th/7fa2195933fd50a86b5e8e50.mp3",
+    "duration": 3.216
   },
-  "บิล BMS. คืนสิทธิ์ที่จองไว้ตามนโยบาย": {
-    "file": "/audio/restaurant/th/ddd89c4d2f0b2fe3cf7596c3.mp3",
-    "duration": 2.856
+  "บิล BMS POS+. คืนสิทธิ์ที่จองไว้ตามนโยบาย": {
+    "file": "/audio/restaurant/th/5126a3abf1c691a831fadc57.mp3",
+    "duration": 3.36
   },
-  "บิล BMS. ตรวจราคา สาขา ช่องทาง เวลา และจำนวน": {
-    "file": "/audio/restaurant/th/447e2e5702cc1cff5b9f126b.mp3",
-    "duration": 3.48
+  "บิล BMS POS+. ตรวจราคา สาขา ช่องทาง เวลา และจำนวน": {
+    "file": "/audio/restaurant/th/78ce6808bf69af4d336511f1.mp3",
+    "duration": 3.984
   },
-  "บิล BMS. ตรวจสิทธิ์คงเหลือและเงื่อนไข": {
-    "file": "/audio/restaurant/th/c052cda6afae48c964a45baf.mp3",
-    "duration": 2.64
+  "บิล BMS POS+. ตรวจสิทธิ์คงเหลือและเงื่อนไข": {
+    "file": "/audio/restaurant/th/a9023fc2e2c1999ab277fe17.mp3",
+    "duration": 3.096
   },
-  "บิล BMS. แสดงยอดและสิทธิ์": {
-    "file": "/audio/restaurant/th/dd121712197be4367c7ca124.mp3",
-    "duration": 2.064
+  "บิล BMS POS+. แสดงยอดและสิทธิ์": {
+    "file": "/audio/restaurant/th/95fe47323e1a47495b02160c.mp3",
+    "duration": 2.616
   },
   "บิล Takeaway. จองวัตถุดิบตามรายการและสูตร": {
     "file": "/audio/restaurant/th/8b1b095c8567776530ac8b3f.mp3",
@@ -1063,17 +1063,17 @@
     "file": "/audio/restaurant/th/1c8224a434086a9fc2d132fe.mp3",
     "duration": 3.816
   },
-  "สต็อก BMS. จำนวนพร้อมใช้": {
-    "file": "/audio/restaurant/th/046b4614789c69514175a474.mp3",
-    "duration": 2.088
+  "สต็อก BMS POS+. จำนวนพร้อมใช้": {
+    "file": "/audio/restaurant/th/86cc70d123db513b9d21f7aa.mp3",
+    "duration": 2.64
   },
-  "สต็อก BMS. บันทึก Movement และผู้ดำเนินการ": {
-    "file": "/audio/restaurant/th/09965aa4769ca78a608ee0a3.mp3",
-    "duration": 3.24
+  "สต็อก BMS POS+. บันทึก Movement และผู้ดำเนินการ": {
+    "file": "/audio/restaurant/th/30e0d3cfbfd73de6a1aa47ed.mp3",
+    "duration": 3.768
   },
-  "สต็อก BMS. แสดงส่วนต่างและเหตุผล": {
-    "file": "/audio/restaurant/th/3621bb37e435ab4a7408f9aa.mp3",
-    "duration": 2.592
+  "สต็อก BMS POS+. แสดงส่วนต่างและเหตุผล": {
+    "file": "/audio/restaurant/th/a3022057f5fd6461c71444c7.mp3",
+    "duration": 3.096
   },
   "สต็อก. จองสำเร็จ": {
     "file": "/audio/restaurant/th/919109eadf64618f239b7faa.mp3",
@@ -1259,9 +1259,9 @@
     "file": "/audio/restaurant/th/90dcd11d4df4529199a35b6e.mp3",
     "duration": 2.448
   },
-  "เมนูและสูตร BMS. เก็บเวอร์ชันสูตร": {
-    "file": "/audio/restaurant/th/be2045b36adf648d1d859868.mp3",
-    "duration": 2.64
+  "เมนูและสูตร BMS POS+. เก็บเวอร์ชันสูตร": {
+    "file": "/audio/restaurant/th/ddd24617ec859152d37272ed.mp3",
+    "duration": 3.12
   },
   "เลือกส่งอีเมล": {
     "file": "/audio/restaurant/th/fc31f3424fc43745bc38a83f.mp3",
@@ -1327,33 +1327,33 @@
     "file": "/audio/restaurant/th/ce87aa904b62ae9b38b6c7ce.mp3",
     "duration": 3.888
   },
-  "โต๊ะและบิล BMS. จองสต็อกตามรายการและสูตร": {
-    "file": "/audio/restaurant/th/7d357cd579e0e8e226b38fdd.mp3",
-    "duration": 2.976
-  },
-  "โต๊ะและบิล BMS. ตรวจเมนู ตัวเลือก ราคา และโปรโมชั่น": {
-    "file": "/audio/restaurant/th/85ca174d6039fcb3d88b4758.mp3",
+  "โต๊ะและบิล BMS POS+. จองสต็อกตามรายการและสูตร": {
+    "file": "/audio/restaurant/th/2c91e734d89dd518400ac16a.mp3",
     "duration": 3.48
   },
-  "โต๊ะและบิล BMS. สร้างงานตาม Station": {
-    "file": "/audio/restaurant/th/2bda03e43661928e57372be4.mp3",
-    "duration": 2.784
+  "โต๊ะและบิล BMS POS+. ตรวจเมนู ตัวเลือก ราคา และโปรโมชั่น": {
+    "file": "/audio/restaurant/th/f2a3684cba698d24dfec4b8f.mp3",
+    "duration": 3.984
   },
-  "โต๊ะและบิล BMS. สร้างงานรอบใหม่เมื่อผ่านการตรวจ": {
-    "file": "/audio/restaurant/th/bdddbdd96f210faea7593506.mp3",
+  "โต๊ะและบิล BMS POS+. สร้างงานตาม Station": {
+    "file": "/audio/restaurant/th/731cc67d9ed757fa31ce7750.mp3",
+    "duration": 3.312
+  },
+  "โต๊ะและบิล BMS POS+. สร้างงานรอบใหม่เมื่อผ่านการตรวจ": {
+    "file": "/audio/restaurant/th/49220fa248a8b1d45bcd5177.mp3",
+    "duration": 3.72
+  },
+  "โต๊ะและบิล BMS POS+. แจ้งรายการที่ต้องแก้": {
+    "file": "/audio/restaurant/th/0ccd785d0a3f482034f0e4ee.mp3",
     "duration": 3.168
   },
-  "โต๊ะและบิล BMS. แจ้งรายการที่ต้องแก้": {
-    "file": "/audio/restaurant/th/a024a84b9f96e2a92b80aa0f.mp3",
-    "duration": 2.64
+  "โต๊ะและบิล BMS POS+. แสดงคำขอให้ตรวจ": {
+    "file": "/audio/restaurant/th/0b03b898b69072c608482807.mp3",
+    "duration": 3.096
   },
-  "โต๊ะและบิล BMS. แสดงคำขอให้ตรวจ": {
-    "file": "/audio/restaurant/th/1b7575dd8708e0870f51f2b4.mp3",
-    "duration": 2.568
-  },
-  "โต๊ะและบิล BMS. ใบเสร็จ": {
-    "file": "/audio/restaurant/th/027c3c73f800226484101818.mp3",
-    "duration": 1.776
+  "โต๊ะและบิล BMS POS+. ใบเสร็จ": {
+    "file": "/audio/restaurant/th/87c2c4e170017a453b358a35.mp3",
+    "duration": 2.328
   },
   "โต๊ะและบิล. คำนวณยอดใหม่ผ่านกติกากลาง": {
     "file": "/audio/restaurant/th/3582e116303be8cb5b3bffd1.mp3",
@@ -1415,29 +1415,29 @@
     "file": "/audio/restaurant/th/49d97449c601458fd87044a6.mp3",
     "duration": 7.44
   },
-  "ใบสั่งซื้อ BMS. CANCELLED โดยคงหลักฐานที่รับแล้ว": {
-    "file": "/audio/restaurant/th/213f8241a3885d11dc98d691.mp3",
-    "duration": 3.456
+  "ใบสั่งซื้อ BMS POS+. CANCELLED โดยคงหลักฐานที่รับแล้ว": {
+    "file": "/audio/restaurant/th/53aee7a94c89cf2dd1d49334.mp3",
+    "duration": 3.864
   },
-  "ใบสั่งซื้อ BMS. OPEN": {
-    "file": "/audio/restaurant/th/dde80b69c52fa54e8c2c7a12.mp3",
-    "duration": 1.992
+  "ใบสั่งซื้อ BMS POS+. OPEN": {
+    "file": "/audio/restaurant/th/54297a17198b0d570b457557.mp3",
+    "duration": 2.52
   },
-  "ใบสั่งซื้อ BMS. PARTIAL พร้อมยอดค้างรับ": {
-    "file": "/audio/restaurant/th/6d6df6d0605f23718ce3e33f.mp3",
-    "duration": 3.024
+  "ใบสั่งซื้อ BMS POS+. PARTIAL พร้อมยอดค้างรับ": {
+    "file": "/audio/restaurant/th/5de439f257a88035c3c6730e.mp3",
+    "duration": 3.528
   },
-  "ใบสั่งซื้อ BMS. RECEIVED": {
-    "file": "/audio/restaurant/th/6bd524cb8413cd7f3aaec418.mp3",
-    "duration": 2.208
+  "ใบสั่งซื้อ BMS POS+. RECEIVED": {
+    "file": "/audio/restaurant/th/2455a3e6344c5c2ff3b72985.mp3",
+    "duration": 2.712
   },
-  "ใบสั่งซื้อ BMS. ตรวจสิทธิ์และยอดค้างรับ": {
-    "file": "/audio/restaurant/th/b8a4b2dbda7fa44fa38e12e9.mp3",
-    "duration": 2.808
+  "ใบสั่งซื้อ BMS POS+. ตรวจสิทธิ์และยอดค้างรับ": {
+    "file": "/audio/restaurant/th/c2fc64e8ed9ef9ed1cf3d09b.mp3",
+    "duration": 3.24
   },
-  "ใบสั่งซื้อ BMS. เพิ่มจำนวน มูลค่า และ Movement": {
-    "file": "/audio/restaurant/th/5ed64ec5513b86eb722ca85f.mp3",
-    "duration": 3.6
+  "ใบสั่งซื้อ BMS POS+. เพิ่มจำนวน มูลค่า และ Movement": {
+    "file": "/audio/restaurant/th/4d3fe7cbf48dd12908255a50.mp3",
+    "duration": 4.008
   },
   "ใบสั่งซื้อ. เพิ่มสต็อกและมูลค่ารับเข้า": {
     "file": "/audio/restaurant/th/7482c0b98527ee14142ea6e0.mp3",

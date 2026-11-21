@@ -15,8 +15,8 @@ readonly STATE_ROOT="$HOME/Library/Application Support/BMS/POSBootstrap"
 # shellcheck source=../setup-diagnostics.sh
 source "$BOOTSTRAP_ROOT/setup-diagnostics.sh"
 bms_diagnostics_init pos "$STATE_ROOT" "$BOOTSTRAP_ROOT/BOOTSTRAP_VERSION"
-die() { BMS_DIAG_REASON=$*; BMS_DIAG_LINE=${BASH_LINENO[0]}; printf '\n[FAIL] BMS POS: %s\n' "$*" >&2; exit 1; }
-note() { printf '[BMS POS] %s\n' "$*"; }
+die() { BMS_DIAG_REASON=$*; BMS_DIAG_LINE=${BASH_LINENO[0]}; printf '\n[FAIL] BMS POS+: %s\n' "$*" >&2; exit 1; }
+note() { printf '[BMS POS+] %s\n' "$*"; }
 is_https_url() {
   [[ ${1:-} =~ ^https://[^/@:]+(:[0-9]{1,5})?([/?#].*)?$ && ${1:-} != *'@'* ]]
 }
@@ -29,7 +29,7 @@ finish() {
   bms_diagnostics_finish "$exit_code" || true
   cleanup || true
   if ((exit_code == 0)); then
-    printf '\nBMS POS installation completed and the app was launched\n'
+    printf '\nBMS POS+ installation completed and the app was launched\n'
   else
     printf '\nInstallation did not complete. Completed downloads have been kept for the next attempt\n'
     if [[ -t 0 && -d $STATE_ROOT/diagnostics ]]; then
@@ -45,7 +45,7 @@ trap finish EXIT
 trap 'exit 130' HUP INT TERM
 
 clear
-printf 'BMS POS Online Setup (macOS)\n\n'
+printf 'BMS POS+ Online Setup (macOS)\n\n'
 [[ -x $AGENT && -f $KEYRING && -s $MANIFEST_URI_FILE && -s $PACKAGED_TARGET_FILE ]] || \
   die "Bootstrap files are incomplete. Download the DMG again"
 
@@ -90,7 +90,7 @@ mv -f "$manifest_path.part" "$manifest_path"
 stage_output="$STATE_ROOT/stage-desktop-result.jsonl"
 : >"$stage_output"
 chmod 0600 "$stage_output"
-note "Downloading BMS POS and verifying SHA-256 (downloads can resume)"
+note "Downloading BMS POS+ and verifying SHA-256 (downloads can resume)"
 BMS_DIAG_STAGE=download-desktop
 stage_args=(stage-desktop -manifest "$manifest_path" -keyring "$KEYRING" \
   -target "$host_target" -root "$STATE_ROOT" -progress)
@@ -109,12 +109,12 @@ stage_args=(stage-desktop -manifest "$manifest_path" -keyring "$KEYRING" \
     progress_size="$((completed / 1048576))/$((total / 1048576)) MiB"
     [[ $heartbeat != true ]] || progress_size="$progress_size; Still working; waiting for network data"
     case "$phase" in
-      connect) printf '\r[BMS POS] Connecting %-10s %3s%% (%s)' "$component" "$percent" "$progress_size" ;;
-      download) printf '\r[BMS POS] Downloading %-10s %3s%% (%s)' "$component" "$percent" "$progress_size" ;;
-      retry) printf '\r[BMS POS] Connection interrupted. Retrying %-10s in %ss (%s)\n' "$component" "$retry_after" "$progress_size" ;;
-      cached) printf '\r[BMS POS] Using verified cached file %-10s %3s%%\n' "$component" "$percent" ;;
-      verify) printf '\r[BMS POS] Verifying %-10s %3s%%' "$component" "$percent" ;;
-      staged) printf '\r[BMS POS] Download and verification complete       100%%\n' ;;
+      connect) printf '\r[BMS POS+] Connecting %-10s %3s%% (%s)' "$component" "$percent" "$progress_size" ;;
+      download) printf '\r[BMS POS+] Downloading %-10s %3s%% (%s)' "$component" "$percent" "$progress_size" ;;
+      retry) printf '\r[BMS POS+] Connection interrupted. Retrying %-10s in %ss (%s)\n' "$component" "$retry_after" "$progress_size" ;;
+      cached) printf '\r[BMS POS+] Using verified cached file %-10s %3s%%\n' "$component" "$percent" ;;
+      verify) printf '\r[BMS POS+] Verifying %-10s %3s%%' "$component" "$percent" ;;
+      staged) printf '\r[BMS POS+] Download and verification complete       100%%\n' ;;
     esac
   done
 
@@ -134,9 +134,9 @@ done < <(/usr/bin/zipinfo -1 "$archive")
 /usr/bin/ditto -x -k "$archive" "$temporary"
 downloaded_app="$temporary/BMS POS.app"
 [[ -x $downloaded_app/Contents/MacOS/BMS\ POS && -f $downloaded_app/Contents/Info.plist ]] || \
-  die "Desktop component does not contain a complete BMS POS.app"
+  die "BMS POS+ Desktop component is incomplete"
 
-note "Installing BMS POS in Applications (macOS may ask for the computer administrator password)"
+note "Installing BMS POS+ in Applications (macOS may ask for the computer administrator password)"
 BMS_DIAG_STAGE=install-desktop
 sudo /usr/bin/ditto "$downloaded_app" "/Applications/BMS POS.app"
 sudo chown -R root:wheel "/Applications/BMS POS.app"

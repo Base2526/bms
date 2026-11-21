@@ -189,7 +189,7 @@ export default function PrinterSettingsScreen({
             onLayout={event => setLayout(event.nativeEvent.layout)}
             style={styles.testPaper}
           >
-            <Text style={styles.testTitle}>BMS POS</Text>
+            <Text style={styles.testTitle}>BMS POS+</Text>
             <Text style={styles.testText}>{posText("ทดสอบเครื่องพิมพ์")}</Text>
             <Text style={styles.testText}>ภาษาไทย · ABC 0123456789</Text>
             <Text style={styles.testText}>{posText("ไม่ใช่ใบเสร็จรับเงิน")}</Text>

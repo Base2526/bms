@@ -1,4 +1,4 @@
-# BMS Retail Local {{VERSION}} — Windows installers
+# BMS POS+ Retail Local {{VERSION}} — Windows installers
 
 เอกสารนี้ใช้กับไฟล์ติดตั้งรุ่น `{{VERSION}}` เท่านั้น แพ็กเกจทั้งหมดเป็น **unsigned internal
 technical pilot** สำหรับทดสอบภายใน ยังไม่ใช่รุ่นจำหน่ายทั่วไปและยังไม่มี auto-update อย่าใช้ข้อมูล
@@ -8,17 +8,17 @@ technical pilot** สำหรับทดสอบภายใน ยังไ�
 
 | ไฟล์ | ใช้เมื่อ | มี Server | มี POS | ระบบปฏิบัติการ |
 | --- | --- | ---: | ---: | --- |
-| `BMS-Retail-Local-Server-POS-{{VERSION}}-windows-x64.exe` | ร้านมีคอมพิวเตอร์หลักเครื่องเดียวและต้องการทั้งระบบหลังบ้านกับจุดขาย | ✓ | ✓ x64 | Windows 11 x64 |
-| `BMS-Retail-Local-Server-{{VERSION}}-windows-x64.exe` | เครื่องนี้ทำหน้าที่ Server/หลังบ้านเท่านั้น | ✓ | — | Windows 11 x64 |
-| `BMS-Retail-Local-POS-{{VERSION}}-windows-x64.exe` | เครื่องขาย Windows 64-bit ที่เชื่อมต่อ Server อยู่แล้ว | — | ✓ x64 | Windows 10/11 x64 |
-| `BMS-Retail-Local-POS-{{VERSION}}-windows-x86-legacy.exe` | เครื่องขายเก่า Windows 32-bit; ใช้เมื่อเปลี่ยนเครื่องยังไม่ได้ | — | ✓ x86 | Windows 10 x86 หรือ Windows 10/11 x64 ผ่าน WOW64 |
+| `BMS-POS-Plus-Retail-Local-Server-POS-{{VERSION}}-windows-x64.exe` | ร้านมีคอมพิวเตอร์หลักเครื่องเดียวและต้องการทั้งระบบหลังบ้านกับจุดขาย | ✓ | ✓ x64 | Windows 11 x64 |
+| `BMS-POS-Plus-Retail-Local-Server-{{VERSION}}-windows-x64.exe` | เครื่องนี้ทำหน้าที่ Server/หลังบ้านเท่านั้น | ✓ | — | Windows 11 x64 |
+| `BMS-POS-Plus-Retail-Local-POS-{{VERSION}}-windows-x64.exe` | เครื่องขาย Windows 64-bit ที่เชื่อมต่อ Server อยู่แล้ว | — | ✓ x64 | Windows 10/11 x64 |
+| `BMS-POS-Plus-Retail-Local-POS-{{VERSION}}-windows-x86-legacy.exe` | เครื่องขายเก่า Windows 32-bit; ใช้เมื่อเปลี่ยนเครื่องยังไม่ได้ | — | ✓ x86 | Windows 10 x86 หรือ Windows 10/11 x64 ผ่าน WOW64 |
 
 `POS x86 Legacy` ไม่ได้ติดตั้งฐานข้อมูลหรือ Server และไม่ทำให้เครื่อง 32-bit ขายแบบ offline ได้เอง
 เครื่องนั้นต้องเชื่อมต่อ BMS Server ตลอดเวลา ใช้ x64 แทนเสมอเมื่อฮาร์ดแวร์รองรับ
 
 ## 1. Server + POS x64
 
-ไฟล์: `BMS-Retail-Local-Server-POS-{{VERSION}}-windows-x64.exe`
+ไฟล์: `BMS-POS-Plus-Retail-Local-Server-POS-{{VERSION}}-windows-x64.exe`
 
 - Windows 11 64-bit ที่ยังได้รับอัปเดต
 - CPU x86-64 ที่เปิด Intel VT-x/AMD-V หรือ hardware virtualization ใน BIOS/UEFI
@@ -35,7 +35,7 @@ EXE ฝัง Web, WS, PostgreSQL และ Redis images ไว้แล้ว �
 
 ## 2. Server x64
 
-ไฟล์: `BMS-Retail-Local-Server-{{VERSION}}-windows-x64.exe`
+ไฟล์: `BMS-POS-Plus-Retail-Local-Server-{{VERSION}}-windows-x64.exe`
 
 ใช้ข้อกำหนดเดียวกับ Server + POS ด้านบน แต่ไม่มีโปรแกรม POS Desktop เหมาะกับเครื่องหลังบ้านที่เปิด
 Web Admin ผ่าน `http://127.0.0.1:3100/admin/login`
@@ -46,7 +46,7 @@ security design แยกต่างหาก ห้ามแก้เป็น
 
 ## 3. POS x64
 
-ไฟล์: `BMS-Retail-Local-POS-{{VERSION}}-windows-x64.exe`
+ไฟล์: `BMS-POS-Plus-Retail-Local-POS-{{VERSION}}-windows-x64.exe`
 
 - Windows 10/11 64-bit; ถ้าเป็น Windows 10 ต้องมี ESU/LTSC ที่ยังได้รับ security update
 - ไม่รองรับ Windows 7, 8 หรือ 8.1
@@ -61,7 +61,7 @@ security design แยกต่างหาก ห้ามแก้เป็น
 
 ## 4. POS x86 Legacy
 
-ไฟล์: `BMS-Retail-Local-POS-{{VERSION}}-windows-x86-legacy.exe`
+ไฟล์: `BMS-POS-Plus-Retail-Local-POS-{{VERSION}}-windows-x86-legacy.exe`
 
 - สำหรับ CPU/Windows x86 32-bit หรือ Windows x64 ที่ยังต้องใช้แอป 32-bit
 - รองรับ Windows 10 ที่ยังมี ESU/LTSC security update หรือรันผ่าน WOW64 บน Windows x64 ที่รองรับ
@@ -121,16 +121,16 @@ Desktop POS ไม่มี Emergency Offline Mode หากติดต่อ S
 ## SHA-256
 
 ```text
-{{SERVER_POS_SHA256}}  BMS-Retail-Local-Server-POS-{{VERSION}}-windows-x64.exe
-{{SERVER_SHA256}}  BMS-Retail-Local-Server-{{VERSION}}-windows-x64.exe
-{{POS_X64_SHA256}}  BMS-Retail-Local-POS-{{VERSION}}-windows-x64.exe
-{{POS_X86_SHA256}}  BMS-Retail-Local-POS-{{VERSION}}-windows-x86-legacy.exe
+{{SERVER_POS_SHA256}}  BMS-POS-Plus-Retail-Local-Server-POS-{{VERSION}}-windows-x64.exe
+{{SERVER_SHA256}}  BMS-POS-Plus-Retail-Local-Server-{{VERSION}}-windows-x64.exe
+{{POS_X64_SHA256}}  BMS-POS-Plus-Retail-Local-POS-{{VERSION}}-windows-x64.exe
+{{POS_X86_SHA256}}  BMS-POS-Plus-Retail-Local-POS-{{VERSION}}-windows-x86-legacy.exe
 ```
 
 ตรวจบน PowerShell:
 
 ```powershell
-Get-FileHash .\BMS-Retail-Local-Server-POS-{{VERSION}}-windows-x64.exe -Algorithm SHA256
+Get-FileHash .\BMS-POS-Plus-Retail-Local-Server-POS-{{VERSION}}-windows-x64.exe -Algorithm SHA256
 ```
 
 ## การแจ้งปัญหา

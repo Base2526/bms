@@ -61,7 +61,7 @@ $manifestRoot = Join-Path $stateRoot "manifest"
 New-Item -ItemType Directory -Force -Path $manifestRoot | Out-Null
 $manifestPath = Join-Path $manifestRoot "release.jws.json"
 
-Write-Host "BMS POS Online Setup"
+Write-Host "BMS POS+ Online Setup"
 Write-Host "An internet connection is required for the first installation."
 Write-Host "Downloading the signed release manifest..."
 $script:BmsSetupStage = 'download-manifest'
@@ -78,7 +78,7 @@ $release = Invoke-AgentJson @(
 )
 $lastPercent = -1
 $lastPrintedAt = [DateTime]::MinValue
-Write-Host "Downloading BMS POS. Completed bytes are kept for resume..."
+Write-Host "Downloading BMS POS+. Completed bytes are kept for resume..."
 $script:BmsSetupStage = 'download-desktop'
 & $AgentPath stage-desktop -manifest $manifestPath -keyring $KeyringPath `
   -target $PlatformTarget -root $stateRoot -progress 2>&1 | ForEach-Object {
@@ -109,7 +109,7 @@ $script:BmsSetupStage = 'download-desktop'
         } else { "{0:N1}/{1:N1} MiB" -f ([long]$event.completedBytes / 1MB), ([long]$event.totalBytes / 1MB) }
         $heartbeat = ($properties -contains "heartbeat") -and [bool]$event.heartbeat
         if ($heartbeat) { $details += " - still working; waiting for network data" }
-        Write-Progress -Id 31 -Activity "BMS POS download" `
+        Write-Progress -Id 31 -Activity "BMS POS+ download" `
           -Status "$status - $details ($percent%)" -PercentComplete $percent
         $now = [DateTime]::UtcNow
         if ($percent -gt $lastPercent -or $phase -in @("connect", "retry", "verify", "staged") -or
@@ -125,22 +125,22 @@ $script:BmsSetupStage = 'download-desktop'
     }
   }
 $stageExit = $LASTEXITCODE
-Write-Progress -Id 31 -Activity "BMS POS download" -Completed
-if ($stageExit -ne 0) { throw "BMS POS download or signature verification failed (exit $stageExit)." }
+Write-Progress -Id 31 -Activity "BMS POS+ download" -Completed
+if ($stageExit -ne 0) { throw "BMS POS+ download or signature verification failed (exit $stageExit)." }
 
 $version = [string]$release.releaseVersion
 if ($version -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$') { throw "Release version is invalid." }
 $desktopInstaller = Join-Path $stateRoot "releases\$version\desktop.artifact"
 if (-not (Test-Path -LiteralPath $desktopInstaller -PathType Leaf)) {
-  throw "The signed release does not contain a complete BMS POS installer."
+  throw "The signed release does not contain a complete BMS POS+ installer."
 }
 
-Write-Host "Opening the verified BMS POS installer..."
+Write-Host "Opening the verified BMS POS+ installer..."
 $script:BmsSetupStage = 'install-desktop'
 $executableInstaller = Join-Path $stateRoot "releases\$version\BMS-POS-Setup.exe"
 Copy-Item -LiteralPath $desktopInstaller -Destination $executableInstaller -Force
 $process = Start-Process -FilePath $executableInstaller -Wait -PassThru
-if ($process.ExitCode -ne 0) { throw "BMS POS installer failed (exit $($process.ExitCode))." }
+if ($process.ExitCode -ne 0) { throw "BMS POS+ installer failed (exit $($process.ExitCode))." }
 
 # Best-effort anonymous successful-install inventory; no hardware fingerprint.
 if (-not [string]::IsNullOrWhiteSpace($ControlUri)) {
@@ -152,4 +152,4 @@ if (-not [string]::IsNullOrWhiteSpace($ControlUri)) {
 }
 
 Remove-Item -LiteralPath (Join-Path $stateRoot "releases\$version") -Recurse -Force -ErrorAction SilentlyContinue
-Write-Host "BMS POS installation completed."
+Write-Host "BMS POS+ installation completed."
