@@ -5,7 +5,7 @@
 | เรื่อง | หลักฐาน | ผล |
 | --- | --- | --- |
 | Dashboard ที่ล็อกอิน | `https://bms.jachoei.com/admin/dashboard` | เปิดได้ด้วย session เดิม; ไม่ใส่ภาพลงคู่มือสาธารณะเพราะมีข้อมูลร้าน |
-| BMS POS Desktop ที่ติดตั้งบน macOS | `apps/desktop/renderer/setup.html`, แอป `v0.2.14-pilot.11` | ตรวจ UI และถ่ายภาพก่อนจับคู่ ไม่มี token หรือข้อมูลร้าน |
+| BMS POS+ Desktop ที่ติดตั้งบน macOS | `apps/desktop/renderer/setup.html`, แอป `v0.2.14-pilot.11` | ตรวจ UI และถ่ายภาพก่อนจับคู่ ไม่มี token หรือข้อมูลร้าน |
 | `/pos/app` ผ่านเบราว์เซอร์ | `https://bms.jachoei.com/pos/app` | แสดง “ยังไม่ได้เลือกเซิร์ฟเวอร์” เมื่อไม่มี Electron bridge; ไม่ใช่หลักฐานการขาย |
 | เครื่องขายในร้านทดสอบ | `/admin/pos-devices` (ต้องเข้าสู่ระบบ) | สร้าง `POS-GUIDE-TEST-20261120` ที่ `MAIN` และออกลิงก์จับคู่แล้ว; ยังไม่จับคู่กับแอป |
 | สาขาในร้านทดสอบ | `/admin/locations` (ต้องเข้าสู่ระบบ) | พบ `MAIN` / `Default Shop`; ไม่ใช้ข้อมูลร้านในไฟล์สาธารณะ |
@@ -14,7 +14,7 @@
 | ร้านอาหาร | `apps/web/app/(pos)/pos/restaurant/page.tsx` และ Desktop renderer | ตรวจจากโค้ด: archetype ร้านอาหารส่งไป `/pos/restaurant` หลัง PIN |
 | ร้านยา | `DesktopPosRenderer.tsx` และ pharmacy README | ตรวจจากโค้ด: ใช้หน้าขายเต็มที่ฝังใน Desktop, เภสัชกรผู้มีใบอนุญาตเป็นผู้อนุมัติ |
 | วัสดุก่อสร้าง | `docs/business/building-materials-readiness.md` | PILOT; migration และ production rollout ยังต้องพิสูจน์ |
-| แอป Desktop บน Mac | BMS POS Desktop | หลังสร้างเครื่องทดสอบ พบว่าแอปเปิดร้านอีกแห่งและมีกะเปิดอยู่ จึงไม่เปลี่ยน pairing เดิม |
+| แอป Desktop บน Mac | BMS POS+ Desktop | หลังสร้างเครื่องทดสอบ พบว่าแอปเปิดร้านอีกแห่งและมีกะเปิดอยู่ จึงไม่เปลี่ยน pairing เดิม |
 | ธุรกรรมเปิดกะ → ขาย → คืน → ปิดกะ | — | ยังไม่ทดลองในแอปที่จับคู่กับร้านทดสอบ จึงไม่กล่าวว่า “ทดลองรายการจริง” ในคู่มือ |
 
 ภาพที่เผยแพร่ในคู่มือคือ `images/admin-test-pos-device.jpg` จาก Admin ของร้านทดสอบ

@@ -19,7 +19,7 @@ after(async () => {
 test("installer purge rejects a published row, removes bytes once, and retains one audited tombstone", async () => {
   const marker = randomUUID();
   const relpath = `release-purge-contract/${marker}.exe`;
-  const filename = `BMS-Retail-Local-POS-${marker}.exe`;
+  const filename = `BMS-POS-Plus-Retail-Local-POS-${marker}.exe`;
   const size = 12_345;
   const objects = new Map<string, Buffer>([[relpath, Buffer.alloc(size, 0x42)]]);
   __setStorageDriverForTest({

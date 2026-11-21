@@ -1,9 +1,9 @@
-# BMS POS Desktop
+# BMS POS+ Desktop
 
-Windows, Linux and macOS desktop shell for the existing BMS POS surface. The backend remains
+Windows, Linux and macOS desktop shell for the existing BMS POS+ surface. The backend remains
 authoritative; this app does not contain a database or a second settlement path.
 
-BMS Cloud and BMS Hybrid POS are one product. This desktop shell is currently a cloud-connected POS
+BMS POS+ Cloud and BMS POS+ Hybrid POS are one product. This desktop shell is currently a cloud-connected POS
 surface within it; **Emergency Offline Mode is mobile-only**. The shell must not be sold as a local
 server or full-offline register until it has an encrypted queue, the same server revalidation and
 recovery guarantees, and its own failure-mode evidence.
@@ -65,13 +65,13 @@ earlier preference write fails.
   native window on its background colour when the network or web deployment stalls;
 - first-run setup on **Windows, Linux and macOS** shows a quiet link under the pairing field,
   "ยังไม่มีลิงก์? …", whose target is decided by the main process, never the renderer. When this
-  machine runs BMS Retail Local (macOS installation receipt, or a 1.5-second probe of the fixed
+  machine runs BMS POS+ Retail Local (macOS installation receipt, or a 1.5-second probe of the fixed
   loopback `/admin/login`) it reads **สร้างจากระบบหลังบ้านบนเครื่องนี้**: the app checks the local
   `/admin/login` (eight-second limit, no credentials or redirects) and opens `/admin/pos-devices`
   in the system browser, which still requires the normal admin login. On macOS it first validates
   the receipt/root-owned controller and starts the managed server when needed; Windows/Linux use
   the service already started by the installer, never elevate or execute a user-writable startup
-  script. Otherwise (a POS-only machine) it reads **สร้างจากระบบหลังบ้าน BMS** and opens the cloud
+  script. Otherwise (a POS-only machine) it reads **สร้างจากระบบหลังบ้าน BMS POS+** and opens the cloud
   login `https://bms.jachoei.com/admin/login`. Only the local target fills an empty Server URL, and
   neither ever overwrites a remote URL or pairing link;
 - retail, restaurant, board-game, customer-display, and cashier-manual POS routes remain hosted in
@@ -343,7 +343,7 @@ shell.
 
 ## Start with the computer
 
-The **BMS POS** menu has a checkbox, *เปิดแอปอัตโนมัติเมื่อเปิดเครื่อง*. It is a per-user OS setting,
+The **BMS POS+** menu has a checkbox, *เปิดแอปอัตโนมัติเมื่อเปิดเครื่อง*. It is a per-user OS setting,
 not a server setting. It is **on by default**: the first packaged launch registers the app, and
 `launch-at-login.json` in the user-data folder records the choice so unticking it is never undone by
 a restart or an update:
@@ -485,8 +485,8 @@ npm run test:smoke
 npm run pack:linux
 ```
 
-The build writes both `BMS-POS-<version>-x86_64.AppImage` and
-`BMS-POS-<version>-amd64.deb` to `apps/desktop/dist/`. AppImage is the portable pilot artifact; the
+The build writes both `BMS-POS-Plus-<version>-x86_64.AppImage` and
+`BMS-POS-Plus-<version>-amd64.deb` to `apps/desktop/dist/`. AppImage is the portable pilot artifact; the
 DEB is the managed install for Debian/Ubuntu deployments. Build production Linux artifacts on a
 Linux CI runner even though electron-builder can prepare some Linux targets from other hosts: that
 runner is where executable permissions, desktop integration, dependencies, and launch behaviour
@@ -559,11 +559,13 @@ cd apps/desktop
 npm run pack:mac
 ```
 
-The build writes `BMS-POS-<version>-arm64.dmg` for Apple Silicon and
-`BMS-POS-<version>-x64.dmg` for Intel Macs to `apps/desktop/dist/`.
+The build writes `BMS-POS-Plus-<version>-arm64.dmg` for Apple Silicon and
+`BMS-POS-Plus-<version>-x64.dmg` for Intel Macs to `apps/desktop/dist/`.
+The macOS bundle remains `BMS POS.app` on disk so it replaces an existing installation;
+Finder, Dock, and the application menu display `BMS POS+`.
 
 When this same client is embedded in the Retail Local `server-pos` package and is paired to the exact
-managed origin `http://127.0.0.1:3100`, opening BMS POS also checks the local service. If launchd has
+managed origin `http://127.0.0.1:3100`, opening BMS POS+ also checks the local service. If launchd has
 not started it yet, Desktop invokes only the root-owned `bms-retail-local ensure-running` controller
 and waits for health before opening the register. This behavior never applies to a remote pairing,
 to `localhost`, or to another port, so Desktop cannot silently change a cashier's selected server.

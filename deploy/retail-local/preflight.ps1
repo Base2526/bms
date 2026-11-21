@@ -6,7 +6,7 @@ $localRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $localRoot "runtime.ps1")
 $ctx = Get-RetailLocalContext -ScriptRoot $localRoot
 
-if (-not $IsWindows) { throw "This BMS Retail Local technical pilot supports Windows only" }
+if (-not $IsWindows) { throw "This BMS POS+ Retail Local technical pilot supports Windows only" }
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw "PowerShell 7 or later (pwsh) is required" }
 if (-not [Environment]::Is64BitOperatingSystem) { throw "64-bit Windows is required" }
 if (-not (Test-Path -LiteralPath $ctx.ComposeFile -PathType Leaf)) { throw "Incomplete package: compose.yml was not found" }
@@ -25,7 +25,7 @@ $release = Get-RetailLocalRelease -ReleaseFile $ctx.ReleaseFile
 if ($release) {
   $archive = Join-Path $localRoot "images\$($release.imageArchive)"
   if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) { throw "Incomplete package: $archive was not found" }
-  Write-Host "Package: BMS Retail Local $($release.version)" -ForegroundColor Cyan
+  Write-Host "Package: BMS POS+ Retail Local $($release.version)" -ForegroundColor Cyan
 } else {
   $repoDockerfile = [IO.Path]::GetFullPath((Join-Path $localRoot "..\..\apps\web\Dockerfile"))
   if (-not (Test-Path -LiteralPath $repoDockerfile -PathType Leaf)) {

@@ -88,15 +88,15 @@ build_package() {
   dependencies='bash, ca-certificates, curl, jq, openssl, tar'
   if [[ $kind == server-pos ]]; then
     package_name=bms-retail-local-server-pos
-    output_name="BMS-Retail-Local-Server-POS-$version-linux-x64.deb"
-    description='BMS Retail Local offline server with BMS POS installer'
+    output_name="BMS-POS-Plus-Retail-Local-Server-POS-$version-linux-x64.deb"
+    description='BMS POS+ Retail Local offline server with BMS POS+ installer'
     install -m 0644 "$pos_deb" "$stage/opt/bms-retail-local/BMS-POS.deb"
     dependencies="$dependencies, $pos_dependencies"
     conflicts='bms-retail-local-server'
   else
     package_name=bms-retail-local-server
-    output_name="BMS-Retail-Local-Server-$version-linux-x64.deb"
-    description='BMS Retail Local offline server'
+    output_name="BMS-POS-Plus-Retail-Local-Server-$version-linux-x64.deb"
+    description='BMS POS+ Retail Local offline server'
     conflicts='bms-retail-local-server-pos'
   fi
 

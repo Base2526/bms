@@ -1233,7 +1233,7 @@ function DesktopPosContent() {
   const openAdminBackoffice = useCallback(async () => {
     if (accountMenuRef.current) accountMenuRef.current.open = false;
     if (!await openDesktopAdmin()) {
-      setError(posText("เปิดระบบหลังบ้านไม่สำเร็จ กรุณาลองใหม่จากเมนู BMS POS"));
+      setError(posText("เปิดระบบหลังบ้านไม่สำเร็จ กรุณาลองใหม่จากเมนู BMS POS+"));
     }
   }, [posText]);
 
@@ -1934,7 +1934,7 @@ function DesktopPosContent() {
         {deviceLanguageDialog}
         <section className={styles.gateCard}>
           <div className={styles.brandMark}>B</div>
-          <p className={styles.eyebrow}>BMS POS DESKTOP</p>
+          <p className={styles.eyebrow}>BMS POS+ DESKTOP</p>
           <h1>{posText("ยังไม่ได้เลือกเซิร์ฟเวอร์")}</h1>
           {error ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert> : null}
           <p>{posText("กลับไปหน้าตั้งค่า Electron เพื่อเลือกเซิร์ฟเวอร์และจับคู่เครื่องนี้ก่อน")}</p>
@@ -1973,7 +1973,7 @@ function DesktopPosContent() {
       <main className={`${styles.loginPage} ${styles.lightTheme}`}>
         {deviceLanguageDialog}
         <section className={styles.loginAside}>
-          <div className={styles.logoLockup}><span>B</span><strong>BMS POS</strong></div>
+          <div className={styles.logoLockup}><span>B</span><strong>BMS POS+</strong></div>
           <div>
             <div className={styles.loginShopMark} aria-hidden="true">
               {storeLogoUrl && storeLogoUrl !== failedStoreLogoUrl ? (
@@ -2180,7 +2180,7 @@ function DesktopPosContent() {
             <span aria-hidden="true">?</span>
             <small>{posText("ช่วยเหลือ")}</small>
           </button>
-          <button type="button" onClick={() => openDesktopInfoDialog("about")} title={posText("เกี่ยวกับ BMS POS")}>
+          <button type="button" onClick={() => openDesktopInfoDialog("about")} title={posText("เกี่ยวกับ BMS POS+")}>
             <span aria-hidden="true">i</span>
             <small>{posText("เกี่ยวกับ")}</small>
           </button>
@@ -2673,7 +2673,7 @@ function DesktopPosContent() {
             <header className={styles.infoDialogHead}>
               <div className={styles.infoDialogMark} aria-hidden="true">{desktopInfoDialog === "help" ? "?" : "B"}</div>
               <div>
-                <h2 id="desktop-info-title">{desktopInfoDialog === "help" ? posText("ศูนย์ช่วยเหลือ") : posText("เกี่ยวกับ BMS POS")}</h2>
+                <h2 id="desktop-info-title">{desktopInfoDialog === "help" ? posText("ศูนย์ช่วยเหลือ") : posText("เกี่ยวกับ BMS POS+")}</h2>
                 <p>{desktopInfoDialog === "help" ? posText("คำแนะนำสำหรับงานหน้าร้าน") : posText("ข้อมูลแอปและเครื่องที่กำลังใช้งาน")}</p>
               </div>
               <button autoFocus type="button" className={styles.infoDialogClose} aria-label={posText("ปิด")} onClick={() => setDesktopInfoDialog(null)}>×</button>
@@ -2704,7 +2704,7 @@ function DesktopPosContent() {
               <div className={styles.aboutBody}>
                 <div className={styles.aboutHero}>
                   <span>B</span>
-                  <div><strong>BMS POS</strong><small>{desktopAppInfo
+                  <div><strong>BMS POS+</strong><small>{desktopAppInfo
                     ? `Desktop v${desktopAppInfo.version}`
                     : hasDesktopPosBridge()
                       ? desktopAppInfoLoaded ? posText("ไม่พบข้อมูลเวอร์ชัน") : posText("กำลังอ่านเวอร์ชัน…")
@@ -2721,7 +2721,7 @@ function DesktopPosContent() {
                 <p className={styles.aboutNote}>{posText("ข้อมูลเวอร์ชันนี้ใช้ประกอบการแจ้งปัญหา และไม่มี Device Token หรือข้อมูลการชำระเงิน")}</p>
                 <button type="button" className={styles.infoPrimary} onClick={() => void (async () => {
                   const diagnostic = [
-                    `BMS POS ${desktopAppInfo ? `Desktop v${desktopAppInfo.version}` : hasDesktopPosBridge() ? "Desktop (version unavailable)" : "Browser"}`,
+                    `BMS POS+ ${desktopAppInfo ? `Desktop v${desktopAppInfo.version}` : hasDesktopPosBridge() ? "Desktop (version unavailable)" : "Browser"}`,
                     `Client: ${desktopAppInfo?.clientLabel ?? "Web Browser"}`,
                     `Platform: ${desktopAppInfo?.platform ?? "browser"}`,
                     `Register: ${bootstrap.device.registeredPosNo ?? bootstrap.device.code}`,

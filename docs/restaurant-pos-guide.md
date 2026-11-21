@@ -1,4 +1,4 @@
-# คู่มือใช้งาน POS ร้านอาหาร — BMS
+# คู่มือใช้งาน POS ร้านอาหาร — BMS POS+
 
 > อ้างอิง: `restaurantPos.ts` · `kitchen.ts` · `storeCapabilities.ts` · `docs/business/pos.md`  
 > Archetype: `restaurant` · Capabilities: `RECIPE` · `MODIFIER` · `KITCHEN_WORKFLOW` · `WASTAGE`

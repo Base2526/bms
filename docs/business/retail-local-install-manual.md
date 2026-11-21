@@ -1,10 +1,10 @@
-# BMS Retail Local Installation Manual
+# BMS POS+ Retail Local Installation Manual
 
-คู่มือนี้ใช้สำหรับส่งให้ลูกค้าติดตั้ง BMS Retail Local ด้วยตัวเอง โดย BMS Retail Local คือระบบหลังบ้านและ POS ที่รันบนเครื่องของร้านเอง ข้อมูลร้านอยู่บนเครื่องที่ติดตั้ง และ POS Desktop เป็นหน้าต่างสำหรับใช้งานระบบ ไม่ใช่ฐานข้อมูลอีกชุดหนึ่ง
+คู่มือนี้ใช้สำหรับส่งให้ลูกค้าติดตั้ง BMS POS+ Retail Local ด้วยตัวเอง โดย BMS POS+ Retail Local คือระบบหลังบ้านและ POS ที่รันบนเครื่องของร้านเอง ข้อมูลร้านอยู่บนเครื่องที่ติดตั้ง และ POS Desktop เป็นหน้าต่างสำหรับใช้งานระบบ ไม่ใช่ฐานข้อมูลอีกชุดหนึ่ง
 
-> หมายเหตุ: ถ้าไฟล์ติดตั้งรุ่นที่ได้รับยังเป็นรุ่นทดสอบหรือยังไม่ได้ sign ระบบปฏิบัติการอาจแสดงคำเตือน SmartScreen, Gatekeeper หรือ unknown publisher ให้ติดตั้งเฉพาะไฟล์ที่ได้รับจากช่องทางทางการของ BMS เท่านั้น
+> หมายเหตุ: ถ้าไฟล์ติดตั้งรุ่นที่ได้รับยังเป็นรุ่นทดสอบหรือยังไม่ได้ sign ระบบปฏิบัติการอาจแสดงคำเตือน SmartScreen, Gatekeeper หรือ unknown publisher ให้ติดตั้งเฉพาะไฟล์ที่ได้รับจากช่องทางทางการของ BMS POS+ เท่านั้น
 
-เมื่อการติดตั้งแบบ online สำเร็จ ตัวติดตั้งจะส่งข้อมูลเทคนิคขั้นต่ำเพื่อให้ BMS เห็นจำนวน
+เมื่อการติดตั้งแบบ online สำเร็จ ตัวติดตั้งจะส่งข้อมูลเทคนิคขั้นต่ำเพื่อให้ BMS POS+ เห็นจำนวน
 installation instance ได้แก่รหัสสุ่ม, POS/Server/Server+POS, OS และ architecture, รุ่นโปรแกรม
 และเวลาพบล่าสุด ไม่ส่ง serial เครื่อง, MAC address, hostname, ข้อมูลลูกค้าหรือยอดขาย และทะเบียนนี้
 ไม่บันทึก source IP
@@ -18,16 +18,16 @@ installation instance ได้แก่รหัสสุ่ม, POS/Server/Ser
 (`/admin/retail-local-license`) หรือกด badge License มุมบนของ Admin:
 
 1. ติดตั้งและเปิดร้านได้ก่อนโดยไม่ต้องมี Code สถานะเป็น **ยังไม่ได้ลงทะเบียน**
-2. หากได้รับ Code จาก BMS ให้กรอก `bmsla_...` แล้วกด **ลงทะเบียน License** และยืนยัน
+2. หากได้รับ Code จาก BMS POS+ ให้กรอก `bmsla_...` แล้วกด **ลงทะเบียน License** และยืนยัน
    เลข `LIC-...` เป็นเลขอ้างอิง ใช้กรอกแทน Code ไม่ได้
-3. รอประมาณ 1 นาที ระบบจะบันทึกการลงทะเบียนและแสดง Trial / Licensed เมื่อ BMS ยืนยัน
+3. รอประมาณ 1 นาที ระบบจะบันทึกการลงทะเบียนและแสดง Trial / Licensed เมื่อ BMS POS+ ยืนยัน
    หากเน็ตหลุด ระบบจะลองคำขอเดิมต่อ ไม่ต้องกรอก Code ซ้ำ
 4. Trial แสดงวันที่หมดอายุและจำนวนวันที่เหลือ ณ การตรวจครั้งล่าสุด ระยะ 30 วันเริ่มเมื่อ
-   BMS ออก Trial License ไม่ใช่ตอนติดตั้ง ถ้าติดต่อ BMS ไม่ได้จะแสดงผลยืนยันล่าสุดพร้อมเวลา
-5. Trial หมดอายุหรือสถานะรอตรวจสอบยังใช้ POS และข้อมูลร้านได้ ติดต่อ BMS เพื่อดำเนินการต่อ
+   BMS POS+ ออก Trial License ไม่ใช่ตอนติดตั้ง ถ้าติดต่อ BMS POS+ ไม่ได้จะแสดงผลยืนยันล่าสุดพร้อมเวลา
+5. Trial หมดอายุหรือสถานะรอตรวจสอบยังใช้ POS และข้อมูลร้านได้ ติดต่อ BMS POS+ เพื่อดำเนินการต่อ
 
 หากเครื่องลงทะเบียนแล้ว ให้ใช้ Code ของ **License เดิม** เท่านั้น รวมถึงกรณีกู้คืนร้านบนเครื่องใหม่
-Code ของ License อื่นจะถูกปฏิเสธโดยเก็บการลงทะเบียนเดิมไว้ การแปลง Trial เป็น Paid ทำผ่าน BMS
+Code ของ License อื่นจะถูกปฏิเสธโดยเก็บการลงทะเบียนเดิมไว้ การแปลง Trial เป็น Paid ทำผ่าน BMS POS+
 บน License เดิม ไม่ต้องกรอก Code ใหม่
 
 หน้านี้ใช้สิทธิ์ `retail_local.license.view` และการลงทะเบียนใช้
@@ -36,9 +36,9 @@ Code ของ License อื่นจะถูกปฏิเสธโดยเ
 
 | ต้องการติดตั้ง | Windows | Ubuntu Linux | macOS |
 | --- | --- | --- | --- |
-| เครื่องหลักของร้าน รวม Server + POS | `BMS-Retail-Local-Server-POS-<version>-windows-x64.exe` | `BMS-Retail-Local-Server-POS-<version>-linux-x64.deb` | `BMS-Retail-Local-Server-POS-<version>-arm64.pkg` หรือ `...-x64.pkg` |
-| เครื่อง Server อย่างเดียว | `BMS-Retail-Local-Server-<version>-windows-x64.exe` | `BMS-Retail-Local-Server-<version>-linux-x64.deb` | `BMS-Retail-Local-Server-<version>-arm64.pkg` หรือ `...-x64.pkg` |
-| เครื่อง POS เพิ่มเติม | `BMS-Retail-Local-POS-<version>-windows-x64.exe` หรือ `BMS-Retail-Local-POS-<version>-windows-x86-legacy.exe` สำหรับ Windows 32-bit รุ่นเดิม | `BMS-Retail-Local-POS-<version>-linux-x64.deb` หรือ `.AppImage` | `BMS-Retail-Local-POS-<version>-macos-arm64.dmg` หรือ `...-macos-x64.dmg` |
+| เครื่องหลักของร้าน รวม Server + POS | `BMS-POS-Plus-Retail-Local-Server-POS-<version>-windows-x64.exe` | `BMS-POS-Plus-Retail-Local-Server-POS-<version>-linux-x64.deb` | `BMS-POS-Plus-Retail-Local-Server-POS-<version>-arm64.pkg` หรือ `...-x64.pkg` |
+| เครื่อง Server อย่างเดียว | `BMS-POS-Plus-Retail-Local-Server-<version>-windows-x64.exe` | `BMS-POS-Plus-Retail-Local-Server-<version>-linux-x64.deb` | `BMS-POS-Plus-Retail-Local-Server-<version>-arm64.pkg` หรือ `...-x64.pkg` |
+| เครื่อง POS เพิ่มเติม | `BMS-POS-Plus-Retail-Local-POS-<version>-windows-x64.exe` หรือ `BMS-POS-Plus-Retail-Local-POS-<version>-windows-x86-legacy.exe` สำหรับ Windows 32-bit รุ่นเดิม | `BMS-POS-Plus-Retail-Local-POS-<version>-linux-x64.deb` หรือ `.AppImage` | `BMS-POS-Plus-Retail-Local-POS-<version>-macos-arm64.dmg` หรือ `...-macos-x64.dmg` |
 
 คำแนะนำทั่วไป:
 
@@ -59,9 +59,9 @@ Code ของ License อื่นจะถูกปฏิเสธโดยเ
 
 ตัวอย่างชื่อไฟล์ macOS Intel รุ่น `0.2.12`:
 
-- เครื่องหลักรวม Server + POS: `BMS-Retail-Local-Server-POS-0.2.12-x64.pkg`
+- เครื่องหลักรวม Server + POS: `BMS-POS-Plus-Retail-Local-Server-POS-0.2.12-x64.pkg`
 - เครื่อง Server อย่างเดียวแบบ offline recovery: ติดต่อ Support
-- เครื่อง POS อย่างเดียว: `BMS-Retail-Local-POS-0.2.12-macos-x64.dmg`
+- เครื่อง POS อย่างเดียว: `BMS-POS-Plus-Retail-Local-POS-0.2.12-macos-x64.dmg`
 
 ## 2. สิ่งที่ต้องเตรียมก่อนติดตั้ง
 
@@ -69,7 +69,7 @@ Code ของ License อื่นจะถูกปฏิเสธโดยเ
 - RAM อย่างน้อย 8 GB
 - พื้นที่ว่างอย่างน้อย 15 GB; macOS แนะนำ 30 GB
 - บัญชีผู้ใช้ที่มีสิทธิ์ Administrator หรือ sudo
-- ไม่ต้องมี Activation Code สำหรับติดตั้งและทดลอง หากได้รับ Code จาก BMS ให้ลงทะเบียนหลังติดตั้ง
+- ไม่ต้องมี Activation Code สำหรับติดตั้งและทดลอง หากได้รับ Code จาก BMS POS+ ให้ลงทะเบียนหลังติดตั้ง
 - UPS หรือระบบไฟที่เสถียรสำหรับเครื่องหลักของร้าน
 - พื้นที่ backup แยกจากเครื่องหลัก เช่น NAS, external drive หรือ cloud drive ของร้าน
 
@@ -87,17 +87,17 @@ Code ของ License อื่นจะถูกปฏิเสธโดยเ
 
 1. ดาวน์โหลดไฟล์ `.exe` ที่ตรงกับงานของเครื่องนี้
 2. คลิกขวาที่ไฟล์ แล้วเลือก **Run as administrator**
-3. ถ้า Windows SmartScreen แสดงคำเตือน ให้กด **More info** แล้วเลือก **Run anyway** เฉพาะกรณีที่ไฟล์มาจาก BMS เท่านั้น
+3. ถ้า Windows SmartScreen แสดงคำเตือน ให้กด **More info** แล้วเลือก **Run anyway** เฉพาะกรณีที่ไฟล์มาจาก BMS POS+ เท่านั้น
 4. ทำตามหน้าจอติดตั้งจนเสร็จ
-5. หน้าต่าง Setup จะแสดงความคืบหน้า `[BMS 1/7]` ถึง `[BMS 7/7]`; ถ้า preflight ไม่ผ่าน ระบบจะแสดงค่าที่พบ สาเหตุ และวิธีให้เปิด installer ใหม่หลังแก้ไข
+5. หน้าต่าง Setup จะแสดงความคืบหน้า `[BMS POS+ 1/7]` ถึง `[BMS POS+ 7/7]`; ถ้า preflight ไม่ผ่าน ระบบจะแสดงค่าที่พบ สาเหตุ และวิธีให้เปิด installer ใหม่หลังแก้ไข
 6. ถ้าเป็นเครื่อง `Server` หรือ `Server-POS` ให้รอจนระบบดาวน์โหลด component, สร้าง runtime, migrate database และ health check สำเร็จ
 7. ตั้งค่าร้าน ประเภทร้าน ผู้ดูแล รหัสผ่าน และ PIN โดยยืนยันรหัสผ่าน/PIN ซ้ำ Setup ไม่ถาม Activation Code
 8. เลือกว่าจะสร้าง Starter Catalog หรือไม่ตามตัวเลือกที่ Setup แสดง สินค้าเริ่มเป็น Draft และสต็อก 0
-9. **Server only:** เมื่อ PowerShell ปิด จะกลับมาหน้าจบ Installer พร้อมขั้นตอนถัดไป เลือก **เปิด BMS Retail Local Admin** แล้วกด Finish เพื่อเปิด browser บนเครื่อง Server และ login ด้วยบัญชีที่เพิ่งสร้าง
-10. **Server + POS:** ระบบติดตั้งและเปิด BMS POS เพื่อจับคู่ให้อัตโนมัติ ทดสอบเปิดกะและขายเมื่อเตรียมสินค้า/สต็อกพร้อมแล้ว
-11. ตั้งค่า **Start > BMS Retail Local > Configure Off-host Backup** และตรวจผล backup
+9. **Server only:** เมื่อ PowerShell ปิด จะกลับมาหน้าจบ Installer พร้อมขั้นตอนถัดไป เลือก **เปิด BMS POS+ Retail Local Admin** แล้วกด Finish เพื่อเปิด browser บนเครื่อง Server และ login ด้วยบัญชีที่เพิ่งสร้าง
+10. **Server + POS:** ระบบติดตั้งและเปิด BMS POS+ เพื่อจับคู่ให้อัตโนมัติ ทดสอบเปิดกะและขายเมื่อเตรียมสินค้า/สต็อกพร้อมแล้ว
+11. ตั้งค่า **Start > BMS POS+ Retail Local > Configure Off-host Backup** และตรวจผล backup
 
-เปิด Admin ภายหลังได้จาก **BMS Retail Local Admin** บน Desktop หรือ **Start > BMS Retail Local > Open Admin**
+เปิด Admin ภายหลังได้จาก **BMS POS+ Retail Local Admin** บน Desktop หรือ **Start > BMS POS+ Retail Local > Open Admin**
 ที่ `http://127.0.0.1:3100/admin/login` ระบบทำงานเบื้องหลัง ปิดหน้าต่าง Setup ได้ และเริ่มอัตโนมัติหลังเปิดเครื่อง
 ถ้า Setup ติดตั้งต่อหลัง restart จะมีข้อความสรุปพร้อม URL ค้างไว้จนกด Enter เพราะไม่มีหน้าต่าง Installer เดิมอยู่แล้ว
 
@@ -109,7 +109,7 @@ URL `127.0.0.1` ใช้เฉพาะบนเครื่อง Server; inst
 
 คำสั่ง/เมนูที่ใช้บ่อยบน Windows:
 
-- **BMS Retail Local Admin / Open Admin**: เปิดหน้าผู้ดูแลบนเครื่อง Server
+- **BMS POS+ Retail Local Admin / Open Admin**: เปิดหน้าผู้ดูแลบนเครื่อง Server
 - **Activate or Transfer**: activate license หรือ transfer หลัง restore
 - **Configure Off-host Backup**: ตั้งค่า backup ไปยังปลายทางนอกเครื่อง
 - **Off-host Backup Status**: ตรวจสถานะ backup
@@ -131,13 +131,13 @@ URL `127.0.0.1` ใช้เฉพาะบนเครื่อง Server; inst
 2. ติดตั้ง package:
 
 ```bash
-sudo apt install ./BMS-Retail-Local-Server-POS-<version>-linux-x64.deb
+sudo apt install ./BMS-POS-Plus-Retail-Local-Server-POS-<version>-linux-x64.deb
 ```
 
 หรือถ้าเป็น Server อย่างเดียว:
 
 ```bash
-sudo apt install ./BMS-Retail-Local-Server-<version>-linux-x64.deb
+sudo apt install ./BMS-POS-Plus-Retail-Local-Server-<version>-linux-x64.deb
 ```
 
 3. เริ่ม setup:
@@ -147,7 +147,7 @@ sudo bms-retail-local-setup
 ```
 
 4. ทำตามคำถามบนหน้าจอ เลือกประเภทร้าน และเลือกว่าจะสร้างข้อมูลตัวอย่างตามประเภทร้านหรือไม่ Setup ไม่ถาม Activation Code
-   Setup จะแสดงขั้นตอน `[BMS 1/7]` ถึง `[BMS 7/7]` และให้กรอกข้อมูลใหม่เฉพาะช่องที่ไม่ถูกต้อง
+   Setup จะแสดงขั้นตอน `[BMS POS+ 1/7]` ถึง `[BMS POS+ 7/7]` และให้กรอกข้อมูลใหม่เฉพาะช่องที่ไม่ถูกต้อง
 5. เมื่อติดตั้งเสร็จ ให้ตรวจสถานะ:
 
 ```bash
@@ -209,40 +209,40 @@ macOS มี 2 แบบสำหรับลูกค้าทั่วไป:
 
 | เครื่อง | Apple Silicon | Intel Mac |
 | --- | --- | --- |
-| Server + POS | `BMS-Retail-Local-Server-POS-<version>-arm64.pkg` | `BMS-Retail-Local-Server-POS-<version>-x64.pkg` |
+| Server + POS | `BMS-POS-Plus-Retail-Local-Server-POS-<version>-arm64.pkg` | `BMS-POS-Plus-Retail-Local-Server-POS-<version>-x64.pkg` |
 | Server อย่างเดียว | ติดต่อ Support (offline recovery เท่านั้น) | ติดต่อ Support (offline recovery เท่านั้น) |
-| POS อย่างเดียว | `BMS-Retail-Local-POS-<version>-macos-arm64.dmg` | `BMS-Retail-Local-POS-<version>-macos-x64.dmg` |
+| POS อย่างเดียว | `BMS-POS-Plus-Retail-Local-POS-<version>-macos-arm64.dmg` | `BMS-POS-Plus-Retail-Local-POS-<version>-macos-x64.dmg` |
 
 ### macOS Server+POS online bootstrap
 
-1. ดาวน์โหลดไฟล์ `.pkg` ที่ได้รับจาก BMS
+1. ดาวน์โหลดไฟล์ `.pkg` ที่ได้รับจาก BMS POS+
 2. ดับเบิลคลิกไฟล์ `.pkg`
 3. ถ้า macOS ขึ้นข้อความ **Not Opened** หรือ **Apple could not verify ... is free of malware** ให้กด **Done** ก่อน ห้ามกด **Move to Trash**
 4. เปิด **System Settings > Privacy & Security**
-5. เลื่อนลงมาที่ส่วน Security แล้วกด **Open Anyway** ที่ชื่อไฟล์ `BMS-Retail-Local-...pkg`
+5. เลื่อนลงมาที่ส่วน Security แล้วกด **Open Anyway** ที่ชื่อไฟล์ `BMS-POS-Plus-Retail-Local-...pkg`
 6. ใส่รหัสผ่านเครื่องหรือ Touch ID เพื่อยืนยัน
 7. ถ้ายังเปิดไม่ได้ ให้เปิด Terminal แล้วรันคำสั่งนี้ โดยแก้ชื่อไฟล์ให้ตรงกับไฟล์ที่ดาวน์โหลด:
 
 ```bash
-xattr -dr com.apple.quarantine ~/Downloads/BMS-Retail-Local-Server-POS-<version>-arm64.pkg
-open ~/Downloads/BMS-Retail-Local-Server-POS-<version>-arm64.pkg
+xattr -dr com.apple.quarantine ~/Downloads/BMS-POS-Plus-Retail-Local-Server-POS-<version>-arm64.pkg
+open ~/Downloads/BMS-POS-Plus-Retail-Local-Server-POS-<version>-arm64.pkg
 ```
 
 ถ้าเป็น Intel Mac ให้ใช้ไฟล์ `x64` เช่น:
 
 ```bash
-xattr -dr com.apple.quarantine ~/Downloads/BMS-Retail-Local-Server-POS-0.2.12-x64.pkg
-open ~/Downloads/BMS-Retail-Local-Server-POS-0.2.12-x64.pkg
+xattr -dr com.apple.quarantine ~/Downloads/BMS-POS-Plus-Retail-Local-Server-POS-0.2.12-x64.pkg
+open ~/Downloads/BMS-POS-Plus-Retail-Local-Server-POS-0.2.12-x64.pkg
 ```
 
 8. ตรวจว่าอินเทอร์เน็ตใช้งานได้ แล้วทำตามหน้าจอ Installer ตัว `.pkg` มีเฉพาะโปรแกรมติดตั้งขนาดเล็ก ไม่มี Ubuntu, Docker engine, service image หรือ POS ฝังอยู่
-9. หลังติดตั้งเสร็จ ระบบจะพยายามเปิด `/Applications/BMS Retail Local.app` ให้อัตโนมัติ และเปิด Terminal สำหรับ setup
-10. ถ้า Terminal ไม่เด้งขึ้นมา ให้เปิด `/Applications/BMS Retail Local.app` เอง
-11. ทดลองใช้งานได้ทันทีโดยไม่ต้องมี Activation Code หากได้รับ Code จาก BMS ให้ลงทะเบียนภายหลังด้วย `bms-retail-local activate`
+9. หลังติดตั้งเสร็จ ระบบจะพยายามเปิดแอป **BMS POS+ Retail Local** ใน Applications ให้อัตโนมัติ และเปิด Terminal สำหรับ setup (path ภายในยังเป็น `/Applications/BMS Retail Local.app` เพื่ออัปเดตทับรุ่นเดิม)
+10. ถ้า Terminal ไม่เด้งขึ้นมา ให้เปิด **BMS POS+ Retail Local** เอง
+11. ทดลองใช้งานได้ทันทีโดยไม่ต้องมี Activation Code หากได้รับ Code จาก BMS POS+ ให้ลงทะเบียนภายหลังด้วย `bms-retail-local activate`
 12. อย่าปิดอินเทอร์เน็ตระหว่างครั้งแรก ระบบจะดาวน์โหลด component แบบต่อจากจุดเดิมได้และตรวจ publisher signature กับ SHA-256 ทุกไฟล์ก่อนเริ่ม runtime จากนั้นจึง migrate database และ health check
-13. Setup จะแสดงขั้นตอน `[BMS 1/7]` ถึง `[BMS 7/7]` และแสดงค่า RAM/พื้นที่ว่างจริงเมื่อ preflight ไม่ผ่าน
+13. Setup จะแสดงขั้นตอน `[BMS POS+ 1/7]` ถึง `[BMS POS+ 7/7]` และแสดงค่า RAM/พื้นที่ว่างจริงเมื่อ preflight ไม่ผ่าน
 14. ตั้งค่าร้านครั้งแรก เลือกประเภทร้าน เลือกว่าจะสร้างข้อมูลตัวอย่างตามประเภทร้านหรือไม่ และยืนยันรหัสผ่าน/PIN ซ้ำ
-15. เมื่อระบบพร้อม จะติดตั้ง เปิด และ pair BMS POS ให้อัตโนมัติ หลัง setup สำเร็จ การขายหน้าร้านใน local runtime ไม่ได้บังคับให้ต่ออินเทอร์เน็ตตลอดเวลา
+15. เมื่อระบบพร้อม จะติดตั้ง เปิด และ pair BMS POS+ ให้อัตโนมัติ หลัง setup สำเร็จ การขายหน้าร้านใน local runtime ไม่ได้บังคับให้ต่ออินเทอร์เน็ตตลอดเวลา
 
 คำสั่งที่ใช้บ่อยบน macOS:
 
@@ -262,7 +262,7 @@ bms-retail-local backup ~/Desktop/bms-backup.age age1...
 
 ถอนการติดตั้งบน macOS:
 
-ดับเบิลคลิก `/Applications/BMS Retail Local Uninstall.command` แล้วเลือกว่าจะเก็บข้อมูลสำหรับ recovery หรือลบถาวร หรือใช้คำสั่งด้านล่าง
+ดับเบิลคลิก `/Applications/BMS POS+ Retail Local Uninstall.command` แล้วเลือกว่าจะเก็บข้อมูลสำหรับ recovery หรือลบถาวร หรือใช้คำสั่งด้านล่าง
 
 ```bash
 bms-retail-local uninstall
@@ -280,17 +280,17 @@ bms-retail-local uninstall --erase-data --confirm ERASE-BMS-RETAIL-LOCAL
 
 ### macOS POS Desktop อย่างเดียว
 
-ไฟล์ `.dmg` รุ่น Online เป็นตัวติดตั้งขนาดเล็กและไม่ฝัง Electron/BMS POS ตัวเต็มไว้ในไฟล์
+ไฟล์ `.dmg` รุ่น Online เป็นตัวติดตั้งขนาดเล็กและไม่ฝัง Electron/BMS POS+ ตัวเต็มไว้ในไฟล์
 จึงต้องต่ออินเทอร์เน็ตตอนติดตั้งครั้งแรก ตัว Setup จะตรวจ signed release manifest และ SHA-256
 แล้วดาวน์โหลดเฉพาะ POS ที่ตรงกับ Apple Silicon หรือ Intel ก่อนติดตั้งลง `/Applications/BMS POS.app`
 หากเน็ตหลุดให้เปิด Setup ซ้ำ ระบบจะ resume ไฟล์ที่ดาวน์โหลดไว้
 
 1. เลือกไฟล์ให้ตรงกับเครื่อง:
-   - Apple Silicon: `BMS-Retail-Local-POS-<version>-macos-arm64.dmg`
-   - Intel Mac: `BMS-Retail-Local-POS-<version>-macos-x64.dmg` เช่น `BMS-Retail-Local-POS-0.2.12-macos-x64.dmg`
-2. เปิดไฟล์ `.dmg`
-3. ลาก `BMS POS.app` ไปที่ `Applications`
-4. เปิด `BMS POS.app`
+   - Apple Silicon: `BMS-POS-Plus-Retail-Local-POS-<version>-macos-arm64.dmg`
+   - Intel Mac: `BMS-POS-Plus-Retail-Local-POS-<version>-macos-x64.dmg` เช่น `BMS-POS-Plus-Retail-Local-POS-0.2.12-macos-x64.dmg`
+2. เปิดไฟล์ `.dmg` แล้วเปิดแอป **Install BMS POS+** ในหน้าต่างที่ปรากฏ
+3. ตัวติดตั้งตรวจ release ที่ลงลายเซ็นและดาวน์โหลด Desktop ก่อนวางทับ `/Applications/BMS POS.app` ซึ่งเป็น path เดิมสำหรับอัปเดต
+4. เปิดแอป **BMS POS+** จาก Applications
 5. ถ้า macOS บล็อกครั้งแรก ให้คลิกขวาที่แอปแล้วเลือก **Open**
 6. ถ้ายังเปิดไม่ได้ ให้เปิด **System Settings > Privacy & Security** แล้วกด **Open Anyway**
 7. ถ้ายังติด Gatekeeper ให้เปิด Terminal แล้วรัน:
@@ -309,7 +309,7 @@ open "/Applications/BMS POS.app"
 1. ที่เครื่อง Server ให้ login เข้าระบบหลังบ้าน
 2. ไปที่หน้าอุปกรณ์ POS
 3. สร้าง pairing link หรือ pairing token สำหรับเครื่อง POS ใหม่
-4. ที่เครื่อง POS เปิด BMS POS
+4. ที่เครื่อง POS เปิด BMS POS+
 5. ใส่ Server URL:
 
 ```text
@@ -334,22 +334,22 @@ http://127.0.0.1:3100
 ## 7. Activation และ Trial
 
 Server และ Server + POS ติดตั้งและทดลองใช้งานได้ทันที โดยไม่ถาม Activation Code
-หากได้รับ Code จาก BMS ให้ลงทะเบียนหลังติดตั้ง:
+หากได้รับ Code จาก BMS POS+ ให้ลงทะเบียนหลังติดตั้ง:
 
-- Windows: **Start > BMS Retail Local > Activate or Transfer**
+- Windows: **Start > BMS POS+ Retail Local > Activate or Transfer**
 - Ubuntu: `sudo bms-retail-local-activate`
 - macOS: `bms-retail-local activate` (ใช้บัญชีเดียวกับที่ติดตั้ง ไม่ใช้ sudo)
 
 ช่องนี้รับ Activation Code ที่ขึ้นต้น `bmsla_` ไม่ใช่เลขอ้างอิง License ที่ขึ้นต้น `LIC-`
 การติดตั้งโดยไม่ลงทะเบียนยังไม่สร้าง License บนระบบกลางและไม่เริ่ม Trial 30 วัน
-Trial 30 วันเริ่มเมื่อทีม BMS ออก Trial License ตามระบบปัจจุบัน
+Trial 30 วันเริ่มเมื่อทีม BMS POS+ ออก Trial License ตามระบบปัจจุบัน
 
 หลักการสำคัญ:
 
 - ถ้า Activation Server ติดต่อไม่ได้ ร้านยังใช้งานต่อได้
 - ระบบจะเก็บหลักฐานการใช้งานและส่งภายหลังเมื่อเชื่อมต่อได้
 - Licensing ใช้สำหรับตรวจสอบหลังบ้านและ support ไม่ใช่กลไกหยุดร้านหน้าร้าน
-- ถ้า license/trial มีปัญหา ให้ติดต่อ BMS Support เพื่อแก้สถานะหลังบ้าน
+- ถ้า license/trial มีปัญหา ให้ติดต่อ BMS POS+ Support เพื่อแก้สถานะหลังบ้าน
 - ใบเสร็จ, บิล, ภาษี และข้อมูลลูกค้าไม่ควรถูกล็อกหรือใส่คำว่า Trial จากสถานะ license
 
 ## 8. Backup หลังติดตั้ง
@@ -392,7 +392,7 @@ Trial 30 วันเริ่มเมื่อทีม BMS ออก Trial Li
 
 - ตรวจว่าเครื่องต่อไฟและ internet ปกติ
 - restart เครื่องหนึ่งครั้ง
-- Windows: เปิดเมนู BMS Retail Local แล้วตรวจ backup/status
+- Windows: เปิดเมนู BMS POS+ Retail Local แล้วตรวจ backup/status
 - Ubuntu: รัน `sudo systemctl status bms-retail-local`
 - macOS: รัน `bms-retail-local doctor`
 
@@ -414,7 +414,7 @@ Trial 30 วันเริ่มเมื่อทีม BMS ออก Trial Li
 
 - อย่าติดตั้ง Server ใหม่ทับร้านเดิมเอง
 - ทำ backup จากเครื่องเดิม
-- ติดต่อ BMS Support เพื่อ restore และ transfer license/evidence ให้ถูกต้อง
+- ติดต่อ BMS POS+ Support เพื่อ restore และ transfer license/evidence ให้ถูกต้อง
 
 ## 11. ข้อมูลที่ควรส่งให้ Support เมื่อมีปัญหา
 
@@ -427,4 +427,4 @@ Trial 30 วันเริ่มเมื่อทีม BMS ออก Trial Li
 - ขั้นตอนที่ทำก่อนเกิดปัญหา
 - ผลตรวจ status/doctor ถ้ามี
 
-ห้ามส่งรหัสผ่าน, private key, ไฟล์ `.env`, database dump หรือ backup ที่ยังไม่ได้ตกลงกับ BMS Support ก่อน
+ห้ามส่งรหัสผ่าน, private key, ไฟล์ `.env`, database dump หรือ backup ที่ยังไม่ได้ตกลงกับ BMS POS+ Support ก่อน

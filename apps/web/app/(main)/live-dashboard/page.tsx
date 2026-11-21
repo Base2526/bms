@@ -1067,7 +1067,7 @@ export default function LiveDashboardPage() {
                 <MockTag title="ยังทำไม่ได้จริง — ต้องต่อ Live API ของแต่ละแพลตฟอร์มก่อน (Facebook Live / TikTok Live / Shopee-Lazada Live)" />
               </h2>
               <p className="ld-pending-note">
-                กลุ่มนี้ต่างจากที่อื่นในหน้านี้ — ไม่ใช่แค่ยังไม่ได้ต่อ แต่ <b>ยังไม่มีข้อมูลใน BMS ให้ต่อเลย</b>
+                กลุ่มนี้ต่างจากที่อื่นในหน้านี้ — ไม่ใช่แค่ยังไม่ได้ต่อ แต่ <b>ยังไม่มีข้อมูลใน BMS POS+ ให้ต่อเลย</b>
                 ต้องขออนุญาตและต่อ Live API ของแต่ละแพลตฟอร์มแยกกันก่อน
               </p>
               <div className="ld-pending-grid">

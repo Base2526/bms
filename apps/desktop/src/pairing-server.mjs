@@ -41,7 +41,7 @@ export function assertPairingServerResponse(response) {
   throw new PairingServerResponseError(
     status,
     status > 0
-      ? posText("Server ไม่รองรับการเชื่อมต่อ BMS POS (HTTP {v0}) กรุณาตรวจสอบ URL หรือเปลี่ยน Server", { v0: status })
+      ? posText("Server ไม่รองรับการเชื่อมต่อ BMS POS+ (HTTP {v0}) กรุณาตรวจสอบ URL หรือเปลี่ยน Server", { v0: status })
       : posText("Server ตอบกลับไม่ถูกต้อง กรุณาตรวจสอบ URL หรือเปลี่ยน Server"),
   );
 }
@@ -67,11 +67,11 @@ export async function fetchPairingSession(pairing, fetcher, timeoutMs = 5_000) {
       assertPairingServerResponse(response);
       let session;
       try { session = await response.json(); } catch {
-        throw new PairingServerResponseError(response.status, posText("เซิร์ฟเวอร์ตอบข้อมูลที่ไม่ใช่ BMS POS กรุณาตรวจ URL และการเชื่อมต่อ"));
+        throw new PairingServerResponseError(response.status, posText("เซิร์ฟเวอร์ตอบข้อมูลที่ไม่ใช่ BMS POS+ กรุณาตรวจ URL และการเชื่อมต่อ"));
       }
       if (typeof session?.device?.id !== "string" || !session.device.id.trim()
         || typeof session?.device?.code !== "string" || !session.device.code.trim()) {
-        throw new PairingServerResponseError(response.status, posText("เซิร์ฟเวอร์ไม่ส่งข้อมูลเครื่อง BMS POS กรุณาตรวจ URL แล้วลองใหม่"));
+        throw new PairingServerResponseError(response.status, posText("เซิร์ฟเวอร์ไม่ส่งข้อมูลเครื่อง BMS POS+ กรุณาตรวจ URL แล้วลองใหม่"));
       }
       return session;
     })(), timeout]);

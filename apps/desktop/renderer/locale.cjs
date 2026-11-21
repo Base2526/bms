@@ -1,9 +1,9 @@
 (function () {
   // Local shell copy only. The hosted register uses apps/web/i18n/pos-client.json.
   const english = {
-    "เกี่ยวกับ BMS POS": "About BMS POS",
+    "เกี่ยวกับ BMS POS+": "About BMS POS+",
     "บริการ": "Services",
-    "ซ่อน BMS POS": "Hide BMS POS",
+    "ซ่อน BMS POS+": "Hide BMS POS+",
     "ซ่อนแอปอื่น": "Hide Others",
     "แสดงทั้งหมด": "Show All",
     "ออกจากแอป": "Quit",
@@ -64,8 +64,8 @@
       "Retail Local Server control file is unsafe. Reinstall the server or contact an administrator.",
     "ข้อมูลการติดตั้ง Retail Local Server ไม่ถูกต้อง กรุณาติดตั้ง Server ใหม่หรือติดต่อผู้ดูแลระบบ":
       "Invalid Retail Local Server installation data. Reinstall the server or contact an administrator.",
-    "พบ Retail Local Server แต่เริ่มบริการไม่สำเร็จ กรุณาลองใหม่ หากยังไม่สำเร็จให้เปิด BMS Retail Local เพื่อตรวจสอบระบบ":
-      "Retail Local Server found, but startup failed. Retry, or open BMS Retail Local to inspect the system.",
+    "พบ Retail Local Server แต่เริ่มบริการไม่สำเร็จ กรุณาลองใหม่ หากยังไม่สำเร็จให้เปิด BMS POS+ Retail Local เพื่อตรวจสอบระบบ":
+      "Retail Local Server found, but startup failed. Retry, or open BMS POS+ Retail Local to inspect the system.",
     "ตรวจสอบเครื่องพิมพ์ไม่สำเร็จ กรุณาตรวจระบบพิมพ์แล้วลองใหม่":
       "Could not check printer. Check the printing system and retry.",
     "กำลังเปลี่ยนข้อมูลจับคู่ กรุณารอสักครู่แล้วลองใหม่":
@@ -74,8 +74,8 @@
       "Could not remove pairing. Existing data remains. Check file permissions for your OS account and retry.",
     "ย้ายแอปไปไว้ในโฟลเดอร์ Applications ก่อน":
       "Move the app into Applications first",
-    "แอปกำลังเปิดจากไฟล์ติดตั้ง (DMG) ซึ่งจะหายไปหลังรีสตาร์ท ลาก BMS POS ไปไว้ใน Applications แล้วเปิดจากที่นั่น จากนั้นค่อยติ๊กตัวเลือกนี้":
-      "The app is running from an installer DMG that disappears after restart. Drag BMS POS into Applications, open it there, then enable this option.",
+    "แอปกำลังเปิดจากไฟล์ติดตั้ง (DMG) ซึ่งจะหายไปหลังรีสตาร์ท ลาก BMS POS+ ไปไว้ใน Applications แล้วเปิดจากที่นั่น จากนั้นค่อยติ๊กตัวเลือกนี้":
+      "The app is running from an installer DMG that disappears after restart. Drag BMS POS+ into Applications, open it there, then enable this option.",
     ตั้งให้เปิดอัตโนมัติไม่สำเร็จ: "Could not enable launch at login",
     ยกเลิกการเปิดอัตโนมัติไม่สำเร็จ: "Could not disable launch at login",
     "macOS อาจต้องให้อนุญาตเองที่ System Settings > General > Login Items":
@@ -83,10 +83,10 @@
     "ระบบปฏิบัติการไม่ยอมบันทึกการตั้งค่านี้ กรุณาลองใหม่หรือตั้งค่าจากระบบปฏิบัติการโดยตรง":
       "The operating system could not save this setting. Retry or configure it directly in system settings.",
     "จอ {v0}": "Display {v0}",
-    "BMS POS — ทดสอบจอลูกค้า": "BMS POS — Customer display preview",
-    "BMS POS — จอลูกค้า": "BMS POS — Customer display",
-    "BMS POS — ทดสอบจอเรียกคิว": "BMS POS — Queue display preview",
-    "BMS POS — จอเรียกคิว": "BMS POS — Queue display",
+    "BMS POS+ — ทดสอบจอลูกค้า": "BMS POS+ — Customer display preview",
+    "BMS POS+ — จอลูกค้า": "BMS POS+ — Customer display",
+    "BMS POS+ — ทดสอบจอเรียกคิว": "BMS POS+ — Queue display preview",
+    "BMS POS+ — จอเรียกคิว": "BMS POS+ — Queue display",
     จอลูกค้า: "Customer display",
     "พบจอเพิ่มเติม ใช้เป็นจอลูกค้าหรือไม่?":
       "An additional display was found. Use it as a customer display?",
@@ -193,16 +193,16 @@
       "Too many requests (HTTP 429). Wait and retry the connection check. Do not change server or reissue a token.",
     "การตรวจเครื่องหมดเวลารอ (HTTP 408) ตรวจเครือข่ายและสถานะ Server แล้วลองใหม่ ข้อมูลจับคู่เดิมยังอยู่":
       "Device verification timed out (HTTP 408). Check network and server, then retry. Existing pairing remains.",
-    "Server ไม่รองรับการเชื่อมต่อ BMS POS (HTTP {v0}) กรุณาตรวจสอบ URL หรือเปลี่ยน Server":
-      "Server does not support BMS POS (HTTP {v0}). Check the URL or change server.",
+    "Server ไม่รองรับการเชื่อมต่อ BMS POS+ (HTTP {v0}) กรุณาตรวจสอบ URL หรือเปลี่ยน Server":
+      "Server does not support BMS POS+ (HTTP {v0}). Check the URL or change server.",
     "Server ตอบกลับไม่ถูกต้อง กรุณาตรวจสอบ URL หรือเปลี่ยน Server":
       "Invalid server response. Check the URL or change server.",
     "เซิร์ฟเวอร์ไม่ตอบภายในเวลาที่กำหนด กรุณาตรวจเครือข่ายหรือเซิร์ฟเวอร์แล้วลองใหม่":
       "Server response timed out. Check network or server and retry.",
-    "เซิร์ฟเวอร์ตอบข้อมูลที่ไม่ใช่ BMS POS กรุณาตรวจ URL และการเชื่อมต่อ":
-      "Server returned non-BMS POS data. Check URL and connection.",
-    "เซิร์ฟเวอร์ไม่ส่งข้อมูลเครื่อง BMS POS กรุณาตรวจ URL แล้วลองใหม่":
-      "Server returned no BMS POS device data. Check URL and retry.",
+    "เซิร์ฟเวอร์ตอบข้อมูลที่ไม่ใช่ BMS POS+ กรุณาตรวจ URL และการเชื่อมต่อ":
+      "Server returned non-BMS POS+ data. Check URL and connection.",
+    "เซิร์ฟเวอร์ไม่ส่งข้อมูลเครื่อง BMS POS+ กรุณาตรวจ URL แล้วลองใหม่":
+      "Server returned no BMS POS+ device data. Check URL and retry.",
     "พบข้อมูลจับคู่เดิม แต่ยังอ่านหรือถอดรหัสไม่ได้ ไม่ได้แปลว่า token หมดอายุ กรุณาปลดล็อกที่เก็บข้อมูลของระบบและใช้บัญชีระบบปฏิบัติการเดิม แล้วกดลองใหม่ ข้อมูลจับคู่เดิมยังไม่ถูกลบ":
       "Existing pairing could not be read or decrypted. This does not mean the token expired. Unlock secure storage using the original OS account, then retry. Existing pairing has not been deleted.",
     "กรุณาวางลิงก์จับคู่หรือ token ของเครื่องขาย":
@@ -277,14 +277,14 @@
     "แอปไม่สามารถตรวจสอบการจับคู่ได้ กรุณาปิดแล้วเปิดใหม่":
       "App could not verify pairing. Close and reopen it.",
     สร้างจากระบบหลังบ้านบนเครื่องนี้: "Create from local back office",
-    "สร้างจากระบบหลังบ้าน BMS": "Create from BMS back office",
+    "สร้างจากระบบหลังบ้าน BMS POS+": "Create from BMS POS+ back office",
     เปิดระบบหลังบ้านไม่สำเร็จ: "Could not open back office",
     "แอปไม่สามารถเปิดระบบหลังบ้านได้ กรุณาปิดแล้วเปิดใหม่":
       "App could not open back office. Close and reopen it.",
     "ระบบปฏิบัติการไม่มีที่เก็บ Device Token ที่ปลอดภัย":
       "Operating system has no secure device token storage",
-    "อ่านข้อมูลแอปไม่สำเร็จ กรุณาปิดแล้วเปิด BMS POS ใหม่":
-      "Could not read app information. Close and reopen BMS POS.",
+    "อ่านข้อมูลแอปไม่สำเร็จ กรุณาปิดแล้วเปิด BMS POS+ ใหม่":
+      "Could not read app information. Close and reopen BMS POS+.",
     "กำลังเริ่ม Retail Local Server": "Starting Retail Local Server",
     "พบ Server ในเครื่องนี้ กำลังเริ่มบริการ กรุณารอสักครู่":
       "Server found on this computer. Starting services. Please wait.",
@@ -297,7 +297,7 @@
     ลองใหม่: "Retry",
     "เปลี่ยนเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองใหม่":
       "Could not change server. Try again.",
-    "ตั้งค่า BMS POS": "Set up BMS POS",
+    "ตั้งค่า BMS POS+": "Set up BMS POS+",
     ตั้งค่าครั้งแรก: "First-time setup",
     เครื่องขายที่ปลอดภัย: "Secure point of sale",
     บนทุกระบบปฏิบัติการ: "On every operating system",
@@ -325,7 +325,7 @@
     "กำลังตรวจสอบ...": "Verifying…",
     "token ถูกเข้ารหัสด้วยที่เก็บข้อมูลปลอดภัยของระบบปฏิบัติการ":
       "Token encrypted with operating system secure storage",
-    "กำลังเปิด BMS POS": "Opening BMS POS",
+    "กำลังเปิด BMS POS+": "Opening BMS POS+",
     กำลังเชื่อมต่อเครื่องขาย: "Connecting register",
     "กำลังตรวจสอบเซิร์ฟเวอร์และเตรียมหน้าขาย กรุณารอสักครู่":
       "Checking server and preparing the register. Please wait.",

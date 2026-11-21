@@ -319,7 +319,7 @@ test("restaurant other-work modules keep the restaurant identity in the desktop 
 
 test("desktop rail provides professional help and real app-version diagnostics", () => {
   assert.match(desktopRenderer, /ช่วยเหลือ/);
-  assert.match(desktopRenderer, /เกี่ยวกับ BMS POS/);
+  assert.match(desktopRenderer, /เกี่ยวกับ BMS POS\+/);
   assert.match(
     desktopRenderer,
     /className=\{styles\.railFooter\}[\s\S]*?openDesktopInfoDialog\("help"\)[\s\S]*?openDesktopInfoDialog\("about"\)/,
@@ -329,7 +329,7 @@ test("desktop rail provides professional help and real app-version diagnostics",
     desktopRenderer.indexOf('className={styles.accountPopover}'),
     desktopRenderer.indexOf('</details>', desktopRenderer.indexOf('className={styles.accountPopover}')),
   );
-  assert.doesNotMatch(accountPopover, /ช่วยเหลือ|เกี่ยวกับ BMS POS/);
+  assert.doesNotMatch(accountPopover, /ช่วยเหลือ|เกี่ยวกับ BMS POS\+/);
   assert.match(accountPopover, /เปิดระบบหลังบ้าน/);
   assert.match(accountPopover, /openAdminBackoffice/);
   assert.match(desktopRenderer, /window\.open\("\/pos\/manual"/);

@@ -81,7 +81,7 @@ docker buildx build --platform linux/amd64 --provenance=false --load \
   --build-arg NEXT_PUBLIC_BASE_URL=http://127.0.0.1:3100 \
   --build-arg NEXT_PUBLIC_GRAPHQL_HTTP=http://127.0.0.1:3100/api/graphql \
   --build-arg NEXT_PUBLIC_GRAPHQL_WS=ws://127.0.0.1:3101/graphql \
-  --build-arg COOKIE_SECURE=0 --build-arg 'WEB_NAME=BMS Retail Local' \
+  --build-arg COOKIE_SECURE=0 --build-arg 'WEB_NAME=BMS POS+ Retail Local' \
   -f "$repo_root/apps/web/Dockerfile" -t "$web_ref" "$repo_root"
 docker buildx build --platform linux/amd64 --provenance=false --load \
   --build-arg BMS_SOURCE_COMMIT="$commit" \

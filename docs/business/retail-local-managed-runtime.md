@@ -1,4 +1,4 @@
-# BMS Retail Local Managed Runtime
+# BMS POS+ Retail Local Managed Runtime
 
 Current Commercial/GA evidence status: [Retail Local GA readiness](retail-local-ga-readiness.md).
 
@@ -107,7 +107,7 @@ English labels (or the stable ID when absent). Shop names and other entered data
 OS tools and backend services may return messages in their own language. This applies to newly built
 installers and agents; previously downloaded packages keep their original text.
 
-It remains a deployment profile of the authoritative BMS stack. It does not create a local-only price,
+It remains a deployment profile of the authoritative BMS POS+ stack. It does not create a local-only price,
 stock, payment, permission, tax, or settlement implementation, and Electron remains a keystore-backed
 client rather than a server.
 
@@ -208,7 +208,7 @@ The full trial handoff is:
 ## Platform shape
 
 On Windows, a native signed host agent manages a private `BMSRuntime` WSL2 distribution containing
-Moby and the pinned BMS services. On Ubuntu, the same agent contract manages Moby through systemd
+Moby and the pinned BMS POS+ services. On Ubuntu, the same agent contract manages Moby through systemd
 without virtualization. PostgreSQL data stays on the Linux filesystem; it is never run from `/mnt/c`.
 Web and WS remain loopback-only and PostgreSQL, Redis, and the engine socket are never published.
 
@@ -228,7 +228,7 @@ bootstrap may be public or onboarding-only in the release control plane and is
 distributed through the standard Retail Local trial/paid onboarding flow. After first-run provisioning,
 the combined package passes the one-time `POS-01` credential through a mode-`0600`, short-lived
 handoff that Desktop consumes into Keychain before making a network request. Later launches need only
-open BMS POS: when its saved origin is exactly `http://127.0.0.1:3100` and that origin is unreachable,
+open BMS POS+: when its saved origin is exactly `http://127.0.0.1:3100` and that origin is unreachable,
 Desktop asks the root-owned controller to `ensure-running` and waits for Web and WS health. A remote
 pairing is never rewritten or silently failed over to local. If local services are already starting,
 the ensure operation joins that launchd job without killing or restarting the VM.

@@ -66,7 +66,7 @@ for command_name in curl tar sha256sum; do
   fi
 done
 
-printf 'BMS Retail Local Managed Runtime preflight\n'
+printf 'BMS POS+ Retail Local Managed Runtime preflight\n'
 printf 'platform=linux distribution=%s version=%s architecture=%s\n' "$distribution" "$version" "$architecture"
 for message in "${warnings[@]}"; do printf '[WARN] %s\n' "$message"; done
 for message in "${failures[@]}"; do printf '[FAIL] %s\n' "$message"; done

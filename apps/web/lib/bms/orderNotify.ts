@@ -19,7 +19,7 @@ import { orderEmailTemplateKey, type OrderEmailKey } from "./orderEmailPolicy";
 
 export type { OrderEmailKey } from "./orderEmailPolicy";
 
-const APP_NAME = process.env.NEXT_PUBLIC_WEB_NAME ?? "BMS";
+const APP_NAME = process.env.NEXT_PUBLIC_WEB_NAME ?? "BMS POS+";
 const SUPPORT_URL = process.env.NEXT_PUBLIC_SUPPORT_URL ?? "";
 
 export async function notifyOrderStatusEmail(
@@ -108,6 +108,6 @@ export async function notifyOrderStatusEmail(
     );
   } catch (error) {
     // best-effort — อีเมลล้มเหลวต้องไม่ทำให้การเปลี่ยนสถานะออร์เดอร์ล้มตามไปด้วย
-    console.error(`[BMS] order.${statusKey} notification email failed:`, error);
+    console.error(`[BMS POS+] order.${statusKey} notification email failed:`, error);
   }
 }

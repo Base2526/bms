@@ -90,7 +90,7 @@ function Import-RetailLocalReleaseImages {
   if ($actual -ne ([string]$Release.imageSha256).ToLowerInvariant()) {
     throw "Docker image archive checksum mismatch. Do not install a potentially damaged or modified package"
   }
-  Write-Host "Loading Docker images for BMS Retail Local $($Release.version)..." -ForegroundColor Cyan
+  Write-Host "Loading Docker images for BMS POS+ Retail Local $($Release.version)..." -ForegroundColor Cyan
   & docker load --input $archive
   if ($LASTEXITCODE -ne 0) { throw "Failed to load Docker images" }
 }

@@ -99,7 +99,7 @@ export function publicPageMetadata(input: {
     alternates: publicAlternates(input.path, input.locale),
     openGraph: {
       type: "website",
-      siteName: "BMS",
+      siteName: "BMS POS+",
       title: input.title,
       description: input.description,
       url,

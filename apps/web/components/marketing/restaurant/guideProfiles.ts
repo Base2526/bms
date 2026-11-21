@@ -117,7 +117,7 @@ autonumber
 actor Customer as ลูกค้า
 actor Cashier as แคชเชียร์
 participant Catalog as สินค้าและราคา
-participant POS as BMS POS
+participant POS as BMS POS+
 participant Stock as สต็อก
 participant Money as รับชำระ
 Cashier->>POS: ยืนยัน PIN สิทธิ์ และกะขาย
@@ -148,7 +148,7 @@ autonumber
 actor Customer as Customer
 actor Cashier as Cashier
 participant Catalog as Catalog and prices
-participant POS as BMS POS
+participant POS as BMS POS+
 participant Stock as Inventory
 participant Money as Payments
 Cashier->>POS: Verify PIN permission and shift

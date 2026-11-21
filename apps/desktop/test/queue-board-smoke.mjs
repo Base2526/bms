@@ -94,7 +94,7 @@ async function run() {
     // 1. Not paired: the desktop bridge returns no token, so the page must say so and never poll.
     token = null;
     await win.loadURL(origin);
-    await waitFor(win, "document.body.innerText.includes('เปิดจอเรียกคิวจากแอป BMS POS')");
+    await waitFor(win, "document.body.innerText.includes('เปิดจอเรียกคิวจากแอป BMS POS+')");
     assert.equal(seen.length, 0, "an unpaired screen must not call the queue API");
     await shot("unpaired-1440");
 

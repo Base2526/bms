@@ -29,5 +29,5 @@ RUN sed -i 's/\r$//' /usr/local/sbin/bms-wsl-keepalive /usr/local/sbin/bms-updat
   && mkdir -p /var/lib/bms-retail-local \
   && chmod 0700 /var/lib/bms-retail-local
 
-LABEL org.opencontainers.image.title="BMS Retail Local WSL Runtime" \
+LABEL org.opencontainers.image.title="BMS POS+ Retail Local WSL Runtime" \
       org.opencontainers.image.description="Private Moby runtime root filesystem; contains no shop data or credentials"

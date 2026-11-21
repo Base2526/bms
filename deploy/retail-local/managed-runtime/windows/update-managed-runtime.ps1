@@ -25,7 +25,7 @@ function Assert-Administrator {
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
   $principal = [Security.Principal.WindowsPrincipal]::new($identity)
   if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    throw "Run BMS Retail Local Update as Administrator"
+    throw "Run BMS POS+ Retail Local Update as Administrator"
   }
 }
 
@@ -53,7 +53,7 @@ function Invoke-AgentJson([string[]]$Arguments) {
     }
   }
   $exitCode = $LASTEXITCODE
-  Write-Progress -Id 17 -Activity "BMS Retail Local Update" -Completed
+  Write-Progress -Id 17 -Activity "BMS POS+ Retail Local Update" -Completed
   if ($exitCode -ne 0) { throw ($output -join [Environment]::NewLine) }
   return (($output -join [Environment]::NewLine) | ConvertFrom-Json)
 }
@@ -70,7 +70,7 @@ function Invoke-AgentProgress([string[]]$Arguments) {
     }
   }
   $exitCode = $LASTEXITCODE
-  Write-Progress -Id 17 -Activity "BMS Retail Local Update" -Completed
+  Write-Progress -Id 17 -Activity "BMS POS+ Retail Local Update" -Completed
   if ($exitCode -ne 0) { throw ($output -join [Environment]::NewLine) }
 }
 
@@ -145,7 +145,7 @@ function Show-AgentProgress($Event) {
     $telemetry = " | {0:N1} MiB/s | About {1:hh\:mm\:ss} remaining" -f `
       ($script:progressBytesPerSecond / 1MB), $eta
   }
-  Write-Progress -Id 17 -Activity "BMS Retail Local Update" `
+  Write-Progress -Id 17 -Activity "BMS POS+ Retail Local Update" `
     -Status "$status - $size$telemetry ($percent%)" -PercentComplete $percent
 
   $terminalPhase = $phase -in @("retry", "verify", "cached", "staged", "inspect", "loaded")
@@ -216,7 +216,7 @@ function Sync-HostReceipt {
 Assert-Administrator
 Assert-HttpsUri $ManifestUri
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
-if (-not (Test-Path -LiteralPath $hostReceipt -PathType Leaf)) { throw "BMS Retail Local is not installed" }
+if (-not (Test-Path -LiteralPath $hostReceipt -PathType Leaf)) { throw "BMS POS+ Retail Local is not installed" }
 foreach ($required in @($agent, $keyring, (Join-Path $bootstrapRoot "bms-localctl"),
     (Join-Path $bootstrapRoot "bms-update-transaction"), (Join-Path $bootstrapRoot "bms-wsl-keepalive"))) {
   if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Bootstrap updater is incomplete: $required" }
@@ -246,12 +246,12 @@ $release = Invoke-AgentJson @($verifyCommand, "-manifest", $manifestPath, "-keyr
   "-target", $target, "-current-version", $currentVersion)
 if ($CheckOnly) {
   if (-not [bool]$release.updateAvailable) {
-    Write-Host "BMS Retail Local is up to date: $currentVersion" -ForegroundColor Green
+    Write-Host "BMS POS+ Retail Local is up to date: $currentVersion" -ForegroundColor Green
     return
   }
 }
 if ($RepairSameVersion -and -not $CheckOnly -and -not [bool]$release.updateAvailable) {
-  Write-Host "Repairing the existing BMS Retail Local installation: $currentVersion" -ForegroundColor Cyan
+  Write-Host "Repairing the existing BMS POS+ Retail Local installation: $currentVersion" -ForegroundColor Cyan
   foreach ($controlName in @("bms-localctl", "bms-update-transaction", "bms-wsl-keepalive")) {
     & $agent runtime-install-control -engine windows-wsl -distro $distroName `
       -source (Join-Path $bootstrapRoot $controlName) -name $controlName
@@ -266,12 +266,12 @@ if ($RepairSameVersion -and -not $CheckOnly -and -not [bool]$release.updateAvail
     $desktopInstaller = Join-Path $releaseDirectory "BMS-POS-Repair.exe"
     Copy-Item -LiteralPath $desktop.path -Destination $desktopInstaller -Force
     $desktopProcess = Start-Process -FilePath $desktopInstaller -ArgumentList "/S", "/allusers" -WindowStyle Hidden -Wait -PassThru
-    if ($desktopProcess.ExitCode -ne 0) { throw "BMS POS repair failed; run Setup again." }
+    if ($desktopProcess.ExitCode -ne 0) { throw "BMS POS+ repair failed; run Setup again." }
   } else {
     $null = Invoke-AgentJson @("stage-server", "-manifest", $manifestPath, "-keyring", $keyring,
       "-target", $target, "-root", $InstallRoot, "-progress")
   }
-  Write-Host "BMS Retail Local repair completed. Existing shop data was preserved." -ForegroundColor Green
+  Write-Host "BMS POS+ Retail Local repair completed. Existing shop data was preserved." -ForegroundColor Green
   return
 }
 $downloadComponents = if ($packageType -eq 'server') {
@@ -281,7 +281,7 @@ $downloadComponents = if ($packageType -eq 'server') {
 }
 $totalBytes = [long](($downloadComponents | Measure-Object -Property sizeBytes -Sum).Sum)
 $rollbackMode = if ([bool]$release.rollbackSafe) { "image-only" } else { "full database/files/secrets restore" }
-Write-Host "A signature-verified BMS Retail Local update is available" -ForegroundColor Cyan
+Write-Host "A signature-verified BMS POS+ Retail Local update is available" -ForegroundColor Cyan
 Write-Host "  version: $currentVersion -> $($release.releaseVersion)"
 Write-Host "  channel: $($release.channel)"
 Write-Host "  schema: $($release.schemaVersion)"
@@ -396,4 +396,4 @@ if (Test-Path -LiteralPath $profilePath -PathType Leaf) {
   }
 }
 
-Write-Host "BMS Retail Local update complete: $currentVersion -> $version" -ForegroundColor Green
+Write-Host "BMS POS+ Retail Local update complete: $currentVersion -> $version" -ForegroundColor Green

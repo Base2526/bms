@@ -10,7 +10,7 @@ chmod -R go-w "$root" "$app"
 chmod 0755 "$root/bootstrap/bms-runtime-agent" "$root/control/bms-retail-local" \
   "/usr/local/bin/bms-retail-local" "$app/Contents/MacOS/BMS Retail Local" \
   "$app/Contents/Resources/BMS Retail Local Setup.command" \
-  "/Applications/BMS Retail Local Uninstall.command"
+  "/Applications/BMS POS+ Retail Local Uninstall.command"
 # The signed-in operator launches setup, while the package payload is owned by root. Keep public
 # release verification material and non-secret bootstrap settings readable without widening any
 # runtime state, credentials or shop data permissions.
@@ -22,6 +22,9 @@ if [ -f "$root/bootstrap/test-release-ca.pem" ]; then
   chmod 0644 "$root/bootstrap/test-release-ca.pem"
 fi
 if [ -f "$legacy" ]; then unlink "$legacy"; fi
+if [ -f "/Applications/BMS Retail Local Uninstall.command" ]; then
+  unlink "/Applications/BMS Retail Local Uninstall.command"
+fi
 touch "$app"
 console_user=$(stat -f %Su /dev/console 2>/dev/null || true)
 if [ -n "$console_user" ] && [ "$console_user" != root ]; then
@@ -31,4 +34,4 @@ if [ -n "$console_user" ] && [ "$console_user" != root ]; then
       /usr/bin/open -a "$app" >/dev/null 2>&1 || true
   fi
 fi
-printf '%s\n' 'BMS Retail Local Online Setup installed. Internet is required for the first setup; verified downloads resume after interruption.'
+printf '%s\n' 'BMS POS+ Retail Local Online Setup installed. Internet is required for the first setup; verified downloads resume after interruption.'

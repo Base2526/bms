@@ -121,7 +121,7 @@ if ($unregister.TimedOut -or $unregister.ExitCode -ne 0) {
   throw "Failed to remove BMSRuntime; host files have not been deleted"
 }
 if (Test-Path -LiteralPath $InstallRoot) { Remove-Item -LiteralPath $InstallRoot -Recurse -Force }
-Write-Host "BMS Retail Local and its local data have been deleted" -ForegroundColor Yellow
+Write-Host "BMS POS+ Retail Local and its local data have been deleted" -ForegroundColor Yellow
 } finally {
   if ($transcriptStarted) { try { Stop-Transcript | Out-Null } catch {} }
 }

@@ -44,22 +44,23 @@
   },
   "build": {
     "appId": "com.bms.pos.desktop",
-    "productName": "BMS POS",
-    "artifactName": "BMS-POS-Setup-${version}.${ext}",
+    "productName": "BMS POS+",
+    "artifactName": "BMS-POS-Plus-Setup-${version}.${ext}",
     "directories": { "output": "dist" },
     "files": ["src/**/*", "renderer/**/*", "package.json"],
     "asar": true,
     "afterPack": "./scripts/verify-packaged-app.cjs",
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
-      "artifactName": "BMS-POS-Setup-${version}-${arch}.${ext}",
+      "artifactName": "BMS-POS-Plus-Setup-${version}-${arch}.${ext}",
       "icon": "../web/public/icons/playstore-512.ico"
     },
     "mac": {
       "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
+      "executableName": "BMS POS",
       "icon": "../web/public/icons/ios-icon-1024.png",
       "category": "public.app-category.business",
-      "artifactName": "BMS-POS-${version}-${arch}.${ext}"
+      "artifactName": "BMS-POS-Plus-${version}-${arch}.${ext}"
     },
     "linux": {
       "target": [
@@ -69,11 +70,11 @@
       "icon": "../web/public/icons/playstore-512.png",
       "category": "Office",
       "executableName": "bms-pos",
-      "artifactName": "BMS-POS-${version}-${arch}.${ext}",
+      "artifactName": "BMS-POS-Plus-${version}-${arch}.${ext}",
       "maintainer": "BMS",
       "packageCategory": "utils",
       "syncDesktopName": true,
-      "synopsis": "BMS point-of-sale desktop client"
+      "synopsis": "BMS POS+ desktop client for sales and business operations"
     },
     "deb": {
       "depends": [
@@ -95,7 +96,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "BMS POS",
+      "shortcutName": "BMS POS+",
       "include": "installer/uninstall-login-item.nsh"
     }
   }

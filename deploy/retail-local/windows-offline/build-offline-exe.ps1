@@ -16,9 +16,9 @@ if ($Version -notmatch '^[A-Za-z0-9._-]{1,64}$') {
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $scriptRoot "..\..\.."))
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repoRoot "artifacts\retail-local" }
-if (-not $ServerZip) { $ServerZip = Join-Path $OutputDirectory "BMS-Retail-Local-$Version.zip" }
-if (-not $PosInstaller) { $PosInstaller = Join-Path $repoRoot "apps\desktop\dist\BMS-POS-Setup-$Version-x64.exe" }
-if (-not $PosLegacyInstaller) { $PosLegacyInstaller = Join-Path $repoRoot "apps\desktop\dist\BMS-POS-Setup-$Version-ia32.exe" }
+if (-not $ServerZip) { $ServerZip = Join-Path $OutputDirectory "BMS-POS-Plus-Retail-Local-$Version.zip" }
+if (-not $PosInstaller) { $PosInstaller = Join-Path $repoRoot "apps\desktop\dist\BMS-POS-Plus-Setup-$Version-x64.exe" }
+if (-not $PosLegacyInstaller) { $PosLegacyInstaller = Join-Path $repoRoot "apps\desktop\dist\BMS-POS-Plus-Setup-$Version-ia32.exe" }
 
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 $serverZipPath = [IO.Path]::GetFullPath($ServerZip)
@@ -82,9 +82,9 @@ try {
   $targets = if ($PackageType -eq "all") { @("server", "server-pos") } else { @($PackageType) }
   foreach ($target in $targets) {
     $baseName = if ($target -eq "server") {
-      "BMS-Retail-Local-Server-$Version-windows-x64"
+      "BMS-POS-Plus-Retail-Local-Server-$Version-windows-x64"
     } else {
-      "BMS-Retail-Local-Server-POS-$Version-windows-x64"
+      "BMS-POS-Plus-Retail-Local-Server-POS-$Version-windows-x64"
     }
 
     $arguments = @(
@@ -113,11 +113,11 @@ try {
     $posArtifacts = @(
       [pscustomobject]@{
         Source = $posInstallerPath
-        Name = "BMS-Retail-Local-POS-$Version-windows-x64.exe"
+        Name = "BMS-POS-Plus-Retail-Local-POS-$Version-windows-x64.exe"
       },
       [pscustomobject]@{
         Source = $posLegacyInstallerPath
-        Name = "BMS-Retail-Local-POS-$Version-windows-x86-legacy.exe"
+        Name = "BMS-POS-Plus-Retail-Local-POS-$Version-windows-x86-legacy.exe"
       }
     )
     foreach ($posArtifact in $posArtifacts) {
@@ -133,10 +133,10 @@ try {
     if (-not (Test-Path -LiteralPath $readmeTemplatePath -PathType Leaf)) {
       throw "Distribution README template was not found: $readmeTemplatePath"
     }
-    $serverPosArtifact = Join-Path $outputRoot "BMS-Retail-Local-Server-POS-$Version-windows-x64.exe"
-    $serverArtifact = Join-Path $outputRoot "BMS-Retail-Local-Server-$Version-windows-x64.exe"
-    $posX64Artifact = Join-Path $outputRoot "BMS-Retail-Local-POS-$Version-windows-x64.exe"
-    $posX86Artifact = Join-Path $outputRoot "BMS-Retail-Local-POS-$Version-windows-x86-legacy.exe"
+    $serverPosArtifact = Join-Path $outputRoot "BMS-POS-Plus-Retail-Local-Server-POS-$Version-windows-x64.exe"
+    $serverArtifact = Join-Path $outputRoot "BMS-POS-Plus-Retail-Local-Server-$Version-windows-x64.exe"
+    $posX64Artifact = Join-Path $outputRoot "BMS-POS-Plus-Retail-Local-POS-$Version-windows-x64.exe"
+    $posX86Artifact = Join-Path $outputRoot "BMS-POS-Plus-Retail-Local-POS-$Version-windows-x86-legacy.exe"
     $readme = (Get-Content -LiteralPath $readmeTemplatePath -Raw).
       Replace("{{VERSION}}", $Version).
       Replace("{{SERVER_POS_SHA256}}", (Get-FileHash -LiteralPath $serverPosArtifact -Algorithm SHA256).Hash.ToLowerInvariant()).

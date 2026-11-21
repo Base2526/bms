@@ -122,7 +122,7 @@ import { logAsync } from "@/lib/logger";
 import { isExpectedGraphqlError } from "./expectedErrorCodes";
 
 // =============================================================
-// Authz helpers — จัดการผู้ใช้/สิทธิ์ ใน BMS admin
+// Authz helpers — จัดการผู้ใช้/สิทธิ์ ใน BMS POS+ admin
 // platform admin เห็น/แก้ได้ทุกร้านเมื่ออยู่มุมแพลตฟอร์ม
 // แต่ถ้ากำลัง drill-down/acting tenant ต้องทำตัวเป็น tenant-scoped เพื่อไม่หลุดร้านที่กำลังดู
 // =============================================================
@@ -335,7 +335,7 @@ function calcRisk(reportCount: number): number {
 // ค่า default ต้องตรงกับ `lib/bms/orderNotify.ts` และ `lib/passwordReset.ts` (แบรนด์เดียวกันทั้งระบบ)
 function baseData(locale: string) {
   return {
-    app_name: process.env.NEXT_PUBLIC_WEB_NAME ?? "BMS",
+    app_name: process.env.NEXT_PUBLIC_WEB_NAME ?? "BMS POS+",
     year: new Date().getFullYear(),
     support_url: process.env.NEXT_PUBLIC_SUPPORT_URL ?? "https://bms.jachoei.com/support",
     locale,
@@ -6130,7 +6130,7 @@ const rawResolvers = {
       });
 
       // Redis I/O must happen only after commit. This legacy signal is still best effort;
-      // durable community delivery needs its own non-BMS outbox design.
+      // durable community delivery needs its own non-BMS POS+ outbox design.
       if (result && deletedChatId) {
         // ผู้รับต้องเดินทางไปกับ event เพราะ `apps/ws` ต่อฐานข้อมูลไม่ได้ — ถ้าไม่ส่งไป
         // ตัวกรองฝั่ง subscription จะไม่มีอะไรให้ตัดสิน แล้วต้องยิงให้ทุกคนที่ subscribe

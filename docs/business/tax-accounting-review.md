@@ -6,7 +6,7 @@ or evidence that the software satisfies every tax obligation.
 
 ## Decisions to record
 
-| Scenario | Current BMS behaviour | Accountant to confirm |
+| Scenario | Current BMS POS+ behaviour | Accountant to confirm |
 | --- | --- | --- |
 | POS sale | Settlement completes the order and issues the configured abbreviated document in the same transaction | Document eligibility and tax point for the shop's actual goods/services |
 | Online/delivery paid before completion | Full invoice remains blocked until `COMPLETED`; no automatic abbreviated invoice outside POS | Whether payment, delivery, title transfer or another event triggers an earlier document; partial payments and mixed goods/services |
@@ -15,7 +15,7 @@ or evidence that the software satisfies every tax obligation.
 | Request after a partial return | Full issuance remains blocked; original document plus credit note retained | A permitted customer document workflow without reopening the returned sale |
 | Buyer correction | Paper-only correction: new number, original document date, unchanged money/seller, actual processing-date audit/report note | Retained-original and signature procedure; electronic documents use the provider's procedure |
 | Price credit/debit | Human preview/confirmation, original invoice, reason/evidence, event date; no cash/stock/AR movement | Eligible reasons, evidence, amount, payment/receivable handling and exceptions |
-| Period close | Immutable sales/input VAT report versions; later changes detected on archive review | Reviewer, filing version, retention/backups and amended filings outside BMS |
+| Period close | Immutable sales/input VAT report versions; later changes detected on archive review | Reviewer, filing version, retention/backups and amended filings outside BMS POS+ |
 
 Record approver name/role, decision date, affected channels and examples with expected document
 dates, tax periods and amounts. Then update `AGENTS.md`, `agent-invariants.md`, services, API tests
@@ -36,6 +36,6 @@ and the manual together. This page does not authorize backdating a first invoice
 The user requested **no database use** for this implementation round. Migration `10.60` is provided
 but not applied. Pure service tests use simulated query results and failure injection; they do not
 prove PostgreSQL syntax, constraints, RLS/grants, concurrency or rollback. Do not label DB checks as
-passed. Future authorized verification should use a restored throwaway BMS database, compare a
+passed. Future authorized verification should use a restored throwaway BMS POS+ database, compare a
 baseline, apply the migration twice, then exercise role/tenant/branch isolation, simultaneous
 issuance, duplicate confirmation and audit failure. Never run these against production.

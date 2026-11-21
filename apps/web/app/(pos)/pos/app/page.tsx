@@ -1,7 +1,7 @@
 import DesktopPosRenderer from "@/components/pos-desktop/DesktopPosRenderer";
 
 export const metadata = {
-  title: "BMS POS",
+  title: "BMS POS+",
 };
 
 export default function DesktopPosAppPage() {

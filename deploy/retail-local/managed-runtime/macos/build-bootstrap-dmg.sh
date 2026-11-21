@@ -90,7 +90,7 @@ test_build=$(node --input-type=module -e \
   "$package_path.json")
 qualifier=
 [[ $test_build != true ]] || qualifier=-SMOKE-ONLY
-dmg_name="BMS-Retail-Local-Server-POS-$version-macos-$architecture$qualifier.dmg"
+dmg_name="BMS-POS-Plus-Retail-Local-Server-POS-$version-macos-$architecture$qualifier.dmg"
 dmg_path="$output_dir/$dmg_name"
 for candidate in "$dmg_path" "$dmg_path.sha256" "$dmg_path.json"; do
   [[ ! -e $candidate || $force == true ]] || { echo "Artifact already exists: $candidate" >&2; exit 1; }
@@ -100,21 +100,21 @@ cleanup_outputs=true
 
 image_root="$work/image"
 mkdir -p "$image_root"
-cp "$package_path" "$image_root/Install BMS Retail Local.pkg"
+cp "$package_path" "$image_root/Install BMS POS+ Retail Local.pkg"
 cat >"$image_root/README.txt" <<'EOF'
-BMS Retail Local Server + POS Online Setup
+BMS POS+ Retail Local Server + POS Online Setup
 
-1. Double-click “Install BMS Retail Local.pkg”.
+1. Double-click “Install BMS POS+ Retail Local.pkg”.
 2. Complete the macOS Installer steps.
-3. Keep the Mac connected to the internet, then open “BMS Retail Local” from Applications.
+3. Keep the Mac connected to the internet, then open “BMS POS+ Retail Local” from Applications.
 
 Setup verifies the signed BMS release and SHA-256 before downloading and installing each component.
 The DMG intentionally does not contain the large runtime, service images, or Electron application.
 EOF
-chmod 0644 "$image_root/Install BMS Retail Local.pkg" "$image_root/README.txt"
+chmod 0644 "$image_root/Install BMS POS+ Retail Local.pkg" "$image_root/README.txt"
 xattr -cr "$image_root"
 
-hdiutil create -quiet -fs HFS+ -format UDZO -volname "BMS Retail Local Setup $version" \
+hdiutil create -quiet -fs HFS+ -format UDZO -volname "BMS POS+ Retail Local Setup $version" \
   -srcfolder "$image_root" "$dmg_path"
 hdiutil verify "$dmg_path" >/dev/null
 
@@ -126,7 +126,7 @@ hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$dmg_path" -quiet
   echo "DMG is missing the installer or README" >&2
   exit 1
 }
-pkgutil --expand "$mount/Install BMS Retail Local.pkg" "$work/expanded" >/dev/null
+pkgutil --expand "$mount/Install BMS POS+ Retail Local.pkg" "$work/expanded" >/dev/null
 hdiutil detach "$mount" -quiet
 
 size=$(stat -f %z "$dmg_path")

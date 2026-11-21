@@ -11,7 +11,7 @@ type Params = { q?: string; track?: string; role?: string };
 export function generateMetadata() {
   const lang = learningLang();
   const th = lang === "th";
-  return learningMetadata(th ? "ศูนย์เรียนรู้และคู่มือ BMS" : "BMS learning center & guides", th ? "เริ่มตั้งแต่สมัครร้าน ข้อมูลร้าน ทีม ช่องทาง POS และตรวจความพร้อม พร้อมคู่มือตามประเภทร้าน อ่านฟรีโดยไม่ต้องเข้าสู่ระบบ" : "Public guides from shop signup through staff, channels, POS and go-live checks, plus guides by business type. No sign-in required.", "/learn", lang);
+  return learningMetadata(th ? "ศูนย์เรียนรู้และคู่มือ BMS POS+" : "BMS POS+ learning center & guides", th ? "เริ่มตั้งแต่สมัครร้าน ข้อมูลร้าน ทีม ช่องทาง POS และตรวจความพร้อม พร้อมคู่มือตามประเภทร้าน อ่านฟรีโดยไม่ต้องเข้าสู่ระบบ" : "Public guides from shop signup through staff, channels, POS and go-live checks, plus guides by business type. No sign-in required.", "/learn", lang);
 }
 export default function LearnPage({ searchParams }: { searchParams: Params }) {
   const lang = learningLang(); const th = lang === "th";
@@ -29,7 +29,7 @@ export default function LearnPage({ searchParams }: { searchParams: Params }) {
     ])} />
     <section className={s.homeHero}>
       <span className={s.eyebrow}>{th ? "อ่านฟรี · ไม่ต้องสมัคร · เริ่มได้ทีละขั้น" : "Free to read · No signup · Step by step"}</span>
-      <h1>{th ? "ศูนย์เรียนรู้และคู่มือ BMS" : "BMS learning center & guides"}</h1>
+      <h1>{th ? "ศูนย์เรียนรู้และคู่มือ BMS POS+" : "BMS POS+ learning center & guides"}</h1>
       <p>{th ? "เลือกคู่มือให้ตรงประเภทร้าน ตั้งค่าครั้งแรก ฝึกพนักงาน และหาคำตอบระหว่างทำงาน ทุกบทบอกขั้นตอน สิ่งที่ต้องตรวจ และข้อจำกัดตามระบบจริง" : "Choose your business guide, set up your shop, train your team and find help during service. Every lesson includes steps, checks and actual limitations."}</p>
       <form key={`${q}:${track || ""}:${role || ""}`} className={s.homeSearch} action={localizedPublicPath("/learn", lang)} method="get" role="search">
         <label htmlFor="learning-query">{th ? "ค้นหาวิธีใช้งาน" : "Search guides"}
@@ -69,7 +69,7 @@ export default function LearnPage({ searchParams }: { searchParams: Params }) {
               <div className={s.businessMeta}><span className={s.tag}>{th ? "คู่มือทดลอง · ยังไม่เปิดใช้ production" : "Pilot guide · Not deployed to production"}</span><span className={s.arrow}>{th ? "เปิดคู่มือ" : "Open guide"} →</span></div>
             </Link></div>
           </section>
-          <section className={s.callout}><h2>{th ? "เพิ่งเริ่มใช้ BMS?" : "New to BMS?"}</h2><p>{th ? "อ่านภาพรวมก่อน แล้วตั้งสาขา พนักงาน สินค้า และเครื่องขายตามลำดับ ทดลองในร้านทดสอบก่อนเริ่มรับเงินจริง" : "Start with the overview, then configure branches, staff, products and registers. Rehearse in a test shop before taking real payments."}</p><div className={s.links}><Link href={localizedPublicPath("/learn/guides/start-here", lang)}>{th ? "เริ่มบทแรก →" : "First lesson →"}</Link><Link href={localizedPublicPath("/learn/guides/launch-checklist", lang)}>{th ? "Checklist เปิดร้าน →" : "Launch checklist →"}</Link></div></section>
+          <section className={s.callout}><h2>{th ? "เพิ่งเริ่มใช้ BMS POS+?" : "New to BMS POS+?"}</h2><p>{th ? "อ่านภาพรวมก่อน แล้วตั้งสาขา พนักงาน สินค้า และเครื่องขายตามลำดับ ทดลองในร้านทดสอบก่อนเริ่มรับเงินจริง" : "Start with the overview, then configure branches, staff, products and registers. Rehearse in a test shop before taking real payments."}</p><div className={s.links}><Link href={localizedPublicPath("/learn/guides/start-here", lang)}>{th ? "เริ่มบทแรก →" : "First lesson →"}</Link><Link href={localizedPublicPath("/learn/guides/launch-checklist", lang)}>{th ? "Checklist เปิดร้าน →" : "Launch checklist →"}</Link></div></section>
           {(Object.keys(categoryLabels) as (keyof typeof categoryLabels)[]).map((category) => <section className={s.section} key={category}>
             <h2 className={s.sectionTitle}>{localize(categoryLabels[category], lang)}</h2><div className={s.grid}>{lessons.filter((lesson) => lesson.category === category).map((lesson) => <LessonCard key={lesson.slug} lesson={lesson} lang={lang} />)}</div>
           </section>)}

@@ -1,7 +1,7 @@
 import type { TrackId } from "./catalog";
 
 /** Public, Thai-only files generated from docs/public-pos-guides/*.md. */
-export const POS_GUIDE_REVIEWED_AT = "2026-11-20";
+export const POS_GUIDE_REVIEWED_AT = "2026-11-21";
 
 const guideSlugs = ["retail", "board-game", "restaurant", "pharmacy", "building-materials"] as const;
 type GuideSlug = typeof guideSlugs[number];

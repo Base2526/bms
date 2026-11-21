@@ -16,7 +16,7 @@ if ($EraseData) {
   if ($ConfirmationText -cne "ERASE-BMS-LOCAL") {
     throw "Permanent data deletion requires -ConfirmationText ERASE-BMS-LOCAL"
   }
-  Write-Warning "Permanently deleting BMS Retail Local PostgreSQL/Redis volumes; they cannot be recovered from this computer"
+  Write-Warning "Permanently deleting BMS POS+ Retail Local PostgreSQL/Redis volumes; they cannot be recovered from this computer"
   & docker @composeArgs down -v --remove-orphans
 } else {
   & docker @composeArgs down --remove-orphans

@@ -39,14 +39,14 @@ const COPY = {
     start: "เริ่มใช้ฟรี",
     lineAdd: "เพิ่มเพื่อน LINE",
     lineNote: "สอบถาม/แจ้งปัญหา",
-    lineQrAria: "QR code เพิ่มเพื่อน LINE ของ BMS",
-    follow: "ติดตาม BMS",
-    facebookAria: "ติดตาม BMS บน Facebook",
-    youtubeAria: "ดูวิดีโอ BMS บน YouTube",
+    lineQrAria: "QR code เพิ่มเพื่อน LINE ของ BMS POS+",
+    follow: "ติดตาม BMS POS+",
+    facebookAria: "ติดตาม BMS POS+ บน Facebook",
+    youtubeAria: "ดูวิดีโอ BMS POS+ บน YouTube",
     product: "ผลิตภัณฑ์",
-    about: "BMS คืออะไร",
-    aiSystem: "AI ใน BMS ทำงานอย่างไร",
-    workflow: "การทำงานของ BMS",
+    about: "BMS POS+ คืออะไร",
+    aiSystem: "AI ใน BMS POS+ ทำงานอย่างไร",
+    workflow: "การทำงานของ BMS POS+",
     demo: "ทดลองคุยกับ AI",
     security: "ความปลอดภัย",
     pricing: "แพ็กเกจราคา",
@@ -78,7 +78,7 @@ const COPY = {
     allow: "อนุญาตการวิเคราะห์",
     reject: "ใช้เฉพาะที่จำเป็น",
     close: "ปิด",
-    homeAria: "หน้าแรก BMS",
+    homeAria: "หน้าแรก BMS POS+",
     pdpaDialogAria: "การตั้งค่าคุกกี้ PDPA",
     allowedState: "อนุญาตแล้ว",
     rejectedState: "ปฏิเสธแล้ว",
@@ -88,14 +88,14 @@ const COPY = {
     start: "Start free",
     lineAdd: "Add us on LINE",
     lineNote: "Questions and support",
-    lineQrAria: "QR code to add BMS on LINE",
-    follow: "Follow BMS",
-    facebookAria: "Follow BMS on Facebook",
-    youtubeAria: "Watch BMS on YouTube",
+    lineQrAria: "QR code to add BMS POS+ on LINE",
+    follow: "Follow BMS POS+",
+    facebookAria: "Follow BMS POS+ on Facebook",
+    youtubeAria: "Watch BMS POS+ on YouTube",
     product: "Product",
-    about: "What is BMS?",
-    aiSystem: "How AI works in BMS",
-    workflow: "How BMS works",
+    about: "What is BMS POS+?",
+    aiSystem: "How AI works in BMS POS+",
+    workflow: "How BMS POS+ works",
     demo: "Try the AI",
     security: "Security",
     pricing: "Pricing",
@@ -127,7 +127,7 @@ const COPY = {
     allow: "Allow analytics",
     reject: "Necessary only",
     close: "Close",
-    homeAria: "BMS home",
+    homeAria: "BMS POS+ home",
     pdpaDialogAria: "PDPA cookie settings",
     allowedState: "Allowed",
     rejectedState: "Rejected",
@@ -213,7 +213,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
                 <span className="bms-footer-logo">
                   <img src="/icons/icon.svg" alt="" width={48} height={48} />
                 </span>
-                <span><strong>BMS</strong><small>{t.footerLine}</small></span>
+                <span><strong>BMS POS+</strong><small>{t.footerLine}</small></span>
               </Link>
               <p>{t.description}</p>
               <Link href={admin ? "/admin/dashboard" : "/shop-signup"} className="bms-footer-cta"><RocketOutlined />{admin ? t.dashboard : t.start}</Link>
@@ -249,7 +249,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           </div>
 
           <div className="bms-footer-bottom">
-            <span>© {year} BMS · {t.footerLine}</span>
+            <span>© {year} BMS POS+ · {t.footerLine}</span>
             <button type="button" onClick={() => setShowPdpa(true)} aria-label={t.pdpa}>
               <SettingOutlined />{t.pdpa}{consent ? <em>({consent === "allow" ? t.allowedState : t.rejectedState})</em> : null}
             </button>

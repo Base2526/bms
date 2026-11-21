@@ -1,4 +1,4 @@
-# BMS Retail Local
+# BMS POS+ Retail Local
 
 ## Audio and diagram guide
 
@@ -43,7 +43,7 @@ file integrity and browser synchronization; they are not an independent human pr
 
 ## AI usage and owner keys
 
-Retail Local has no BMS AI point subscription. A tenant key saved in Settings or a chat provider key
+Retail Local has no BMS POS+ AI point subscription. A tenant key saved in Settings or a chat provider key
 configured in the local server environment is paid by the installation owner. The sidebar shows
 **AI ใช้คีย์ของคุณ** / **AI uses your key** when configured, or **ยังไม่ได้เชื่อมต่อ AI** /
 **AI not configured** with a link to AI Settings otherwise. This is configuration status, not a
@@ -68,7 +68,7 @@ signing, notarization, update, and recovery gates are still open; none of these
 paths replaces the self-contained technical pilot package until its install, update, backup,
 restore, and failure-mode gates have evidence.
 
-`BMS Retail Local` is a deployment profile of the existing BMS codebase, not a second POS, database
+`BMS POS+ Retail Local` is a deployment profile of the existing BMS POS+ codebase, not a second POS, database
 model, or settlement engine. The technical pilot runs one shop on one supported host. Electron or a
 browser connects to `http://127.0.0.1:3100`; the same Web/API services remain authoritative for
 price, stock, permission, payment, tax documents, and audit.
@@ -208,7 +208,7 @@ Prerequisites: Windows 11, PowerShell 7, Docker Desktop running, enough free dis
 UPS for the host.
 
 Verify the ZIP checksum, extract the complete folder to a stable local path, start Docker Desktop,
-then double-click `Install-BMS-Retail-Local.cmd` or run `pwsh .\install.ps1`. The installer runs a
+then double-click `Install-BMS-POS-Plus-Retail-Local.cmd` or run `pwsh .\install.ps1`. The installer runs a
 preflight check, validates and loads the image archive, creates local secrets, migrates/provisions,
 waits for both Web and WS to become healthy, then performs HTTP health checks. Running directly from
 source remains supported for development; in that mode the installer builds the images locally.
@@ -217,7 +217,7 @@ The installer asks for the shop name, shop archetype, whether to create optional
 identity, password, and POS PIN. It generates every
 database/application secret locally, loads the packaged Web/WS images (or builds them in source-dev
 mode), applies all migrations, provisions the shop atomically, and starts the stack. The POS pairing
-token is displayed once and is stored in the database only as a SHA-256 hash. Paste it into BMS POS
+token is displayed once and is stored in the database only as a SHA-256 hash. Paste it into BMS POS+
 with server URL `http://127.0.0.1:3100`; Electron stores it in the OS keystore.
 
 Archetype is committed in the same transaction as the shop. The installer writes a protected
@@ -323,8 +323,8 @@ or update reports; no public report lookup exists, even with a receipt UUID.
 
 Deployment prerequisites (not enabled by a source change alone):
 
-1. Apply migration `10.31__bms_installer_reports.sql` on the central BMS database.
-2. Set `BMS_INSTALLER_REPORTS_ENABLED=true` on **central BMS only**, not shop installs.
+1. Apply migration `10.31__bms_installer_reports.sql` on the central BMS POS+ database.
+2. Set `BMS_INSTALLER_REPORTS_ENABLED=true` on **central BMS POS+ only**, not shop installs.
    Missing/false returns 503 and preserves the user's local report.
 3. Serve the central host over trusted HTTPS. Configure the ingress to replace
    `X-Forwarded-For`, cap request bodies at 64 KiB and impose a body timeout. Redis
@@ -376,7 +376,7 @@ fall back through rollback/full restore if needed. Early pilot shops may receive
 they still require an operator action such as **Check for update** or **Back up and update**; do not
 ship a silent auto-update path for schema/runtime changes.
 
-On Windows, the installed shortcuts separate **BMS Retail Local Check for Updates** from **BMS Retail
+On Windows, the installed shortcuts separate **BMS POS+ Retail Local Check for Updates** from **BMS POS+ Retail
 Local Update**. On Ubuntu, `sudo bms-retail-local-update --check` performs the same signed preview and
 `sudo bms-retail-local-update` asks for `UPDATE` before it stages components. `--yes` is reserved for
 an operator-facing launcher that already displayed the verified preview and captured the same explicit
@@ -410,7 +410,7 @@ deploy/retail-local/managed-runtime/macos/build-pos-bootstrap-dmg.sh \
 ```
 
 The first Setup requires internet and progressively downloads the pinned Ubuntu VM image, Lima,
-private Moby/Compose/age runtime, BMS service images, archetype contract, and matching BMS POS app.
+private Moby/Compose/age runtime, BMS POS+ service images, archetype contract, and matching BMS POS+ app.
 Downloads resume after interruption; the signed manifest, byte sizes, SHA-256 hashes and OCI image
 IDs are verified before execution. A Retail Local Server or Server + POS target Mac needs macOS 15
 or newer, matching Apple Silicon or Intel architecture, at least 8 GiB RAM and 12 GiB free disk
@@ -419,13 +419,15 @@ or newer, matching Apple Silicon or Intel architecture, at least 8 GiB RAM and 1
 The POS-only `.dmg` uses the same trust chain but downloads only `desktop.artifact`. It intentionally
 does not embed Electron, so it stays a few megabytes while still verifying the signed manifest,
 target architecture, byte size and SHA-256 before installing `/Applications/BMS POS.app`. POS-only
+keeps that on-disk bundle path for in-place upgrades while Finder displays **BMS POS+**.
 supports macOS 12 Monterey or newer; that broader client support does not lower the Server runtime
 requirement. Because a quarantined app opened from a downloaded DMG may be assigned a temporary
 App Translocation path, the launcher first copies its small bootstrap to private per-user
 Application Support storage before opening Terminal. Payload trust still comes from the signed
 manifest and verified component hash, not from that local copy.
 
-After installing the `.pkg`, the operator opens `Applications/BMS Retail Local.app`, enters
+After installing the `.pkg`, the operator opens **BMS POS+ Retail Local** in Applications
+(the existing on-disk path remains `Applications/BMS Retail Local.app`), enters
 the first shop/admin details, and waits for migration, provisioning, and health checks. Runtime data
 stays under that operator's `~/Library/Application Support/BMS/RetailLocal`; the system package owns
 only immutable runtime/payload bytes. The launchd agent starts the private VM for that operator after
@@ -433,7 +435,7 @@ login. Operational commands are `bms-retail-local status`, `doctor`, `start`, `s
 `backup OUTPUT.age AGE_RECIPIENT`.
 
 The signed Desktop component is installed after the server passes health checks. Setup hands the
-one-time `POS-01` credential to BMS POS automatically, so the operator does not need to paste a local
+one-time `POS-01` credential to BMS POS+ automatically, so the operator does not need to paste a local
 URL or pairing token. Later launches can still use **เปิดระบบหลังบ้านบนเครื่องนี้** to start or open
 the trusted local runtime.
 
@@ -455,7 +457,7 @@ schema SQL from a source-tree bind mount. It:
 5. records SHA-256 checksums and refuses to continue if an already-applied file changes.
 
 Do not replace this with `db/schema_full.sql`; that generated file was not an applied-migration
-ledger and historically missed the BMS migration chain.
+ledger and historically missed the BMS POS+ migration chain.
 
 ## Release gates still open
 
@@ -489,7 +491,7 @@ Each platform has three independent package types:
 
 - `server-pos` is the recommended combined installer for a one-computer store;
 - `server` installs only the authoritative Retail Local services on a dedicated host;
-- `pos` installs only BMS POS Desktop on an additional cashier device and must be paired to an
+- `pos` installs only BMS POS+ Desktop on an additional cashier device and must be paired to an
   existing Retail Local Server.
 
 The package type describes delivery, not a new runtime boundary. A combined installer still installs
@@ -497,7 +499,7 @@ the existing server and client components; POS Desktop never owns a database or 
 Download access and first-install activation are separate controls. A combined `server-pos` package
 may use `access_level = public` and appear on the anonymous download page. Server and Server + POS
 install without asking for or redeeming an Activation Code. After setup, users who have a code can
-register using Windows **Start > BMS Retail Local > Activate or Transfer**,
+register using Windows **Start > BMS POS+ Retail Local > Activate or Transfer**,
 `sudo bms-retail-local-activate` on Ubuntu, or `bms-retail-local activate` on macOS.
 The Activation URL and trusted release keyring remain packaged; signature verification is unchanged.
 Downloading or installing without registration creates no cloud license and starts no 30-day trial.
@@ -561,9 +563,9 @@ The older env-based URL knobs remain as a temporary **server-only** fallback for
 have not migrated to managed release uploads yet:
 
 ```text
-RETAIL_LOCAL_WINDOWS_DOWNLOAD_URL=https://downloads.example.com/BMS-Retail-Local-Setup.exe
+RETAIL_LOCAL_WINDOWS_DOWNLOAD_URL=https://downloads.example.com/BMS-POS-Plus-Retail-Local-Setup.exe
 RETAIL_LOCAL_UBUNTU_DOWNLOAD_URL=https://downloads.example.com/bms-retail-local-bootstrap_VERSION_amd64.deb
-RETAIL_LOCAL_MACOS_DOWNLOAD_URL=https://downloads.example.com/BMS-Retail-Local-VERSION-arm64.pkg
+RETAIL_LOCAL_MACOS_DOWNLOAD_URL=https://downloads.example.com/BMS-POS-Plus-Retail-Local-VERSION-arm64.pkg
 ```
 
 If no managed release exists for a platform, a valid HTTPS fallback URL may enable the button. An
@@ -574,7 +576,7 @@ an in-place downgrade may be incompatible with the installed schema.
 ## Commercial pricing and consented follow-up
 
 Retail Local remains a technical pilot. Proposed prices and the installation-help offer live only in
-`apps/web/lib/bms/retailLocalPricing.ts`; the public page, admin device notice, staff guide and BMS
+`apps/web/lib/bms/retailLocalPricing.ts`; the public page, admin device notice, staff guide and BMS POS+
 presales knowledge all read that module. Owner approval, EULA review and accounting approval are
 still outstanding; the public page labels the proposal accordingly. Free use has no expiry and
 commercial state never blocks transactions, backup, recovery or corrective updates.
@@ -586,9 +588,9 @@ Leads tab of `/admin/retail-local-licenses` to filter status and edit notes/foll
 and redacted change events commit with each edit. Contact/consent identity is immutable.
 
 Lead capture is Cloud-only. On a shop's own Retail Local install the contact form is hidden and the
-public endpoint answers 404, because a lead stored in the shop's local database never reaches BMS.
+public endpoint answers 404, because a lead stored in the shop's local database never reaches BMS POS+.
 
-When a person asks BMS to delete their details, a platform administrator uses **Erase** on that lead
+When a person asks BMS POS+ to delete their details, a platform administrator uses **Erase** on that lead
 (confirmation required). Migration `10.106` clears the contact fields and every history snapshot that
 held them, records who erased it and when, and freezes the row. The privacy policy linked from the
 consent box does not yet describe these leads, their retention or how to request erasure; that text

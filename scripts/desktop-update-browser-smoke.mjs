@@ -138,8 +138,8 @@ async function verifyNoUpdateStates(shop) {
   for (const status of ["unavailable", "up-to-date", "unknown-version", "error"]) {
     shop.setStatus(status);
     await checkAfterFocus(shop);
-    assert.equal(await shop.page.locator('summary[aria-label="มีอัปเดตใหม่"], summary[aria-label="อัปเดต BMS POS"]').count(), 0, status);
-    assert.equal(await shop.page.getByRole("region", { name: "อัปเดต BMS POS", exact: true }).count(), 0, status);
+    assert.equal(await shop.page.locator('summary[aria-label="มีอัปเดตใหม่"], summary[aria-label="อัปเดต BMS POS+"]').count(), 0, status);
+    assert.equal(await shop.page.getByRole("region", { name: "อัปเดต BMS POS+", exact: true }).count(), 0, status);
   }
   shop.setStatus("available");
   await checkAfterFocus(shop);
@@ -155,7 +155,7 @@ try {
   assert.equal(run.downloads(), 0);
   await page.screenshot({ path: `${output}/header-desktop.png` });
   await trigger.click();
-  const panel = page.getByRole("region", { name: "อัปเดต BMS POS", exact: true });
+  const panel = page.getByRole("region", { name: "อัปเดต BMS POS+", exact: true });
   await panel.getByText("v0.2.15", { exact: true }).waitFor();
   await page.screenshot({ path: `${output}/popover-desktop.png` });
   await page.screenshot({ path: `${output}/update-detail.png`, clip: { x: 800, y: 12, width: 632, height: 430 } });
@@ -199,7 +199,7 @@ try {
 
   const legacy = await openRegister({ arch: null });
   await legacy.page.locator('summary[aria-label="มีอัปเดตใหม่"]').click();
-  const legacyPanel = legacy.page.getByRole("region", { name: "อัปเดต BMS POS", exact: true });
+  const legacyPanel = legacy.page.getByRole("region", { name: "อัปเดต BMS POS+", exact: true });
   assert.equal(await legacyPanel.getByRole("button", { name: "ดาวน์โหลดอัปเดต" }).isDisabled(), true);
   await legacyPanel.getByLabel("รุ่นเครื่อง").selectOption("FAKE-release");
   assert.equal(await legacyPanel.getByRole("link", { name: "ดาวน์โหลดอัปเดต" }).getAttribute("href"), release.downloadUrl);
@@ -207,13 +207,13 @@ try {
   await legacy.context.close();
 
   const missing = await openRegister({ missingInfo: true });
-  assert.equal(await missing.page.locator('summary[aria-label="อัปเดต BMS POS"], summary[aria-label="มีอัปเดตใหม่"]').count(), 0);
+  assert.equal(await missing.page.locator('summary[aria-label="อัปเดต BMS POS+"], summary[aria-label="มีอัปเดตใหม่"]').count(), 0);
   assert.equal(missing.checks(), 0);
   await missing.context.close();
 
   const web = await openRegister({ desktop: false });
   await verifyToolbarIcons(web.page, "browser retail");
-  assert.equal(await web.page.locator('summary[aria-label="อัปเดต BMS POS"], summary[aria-label="มีอัปเดตใหม่"]').count(), 0);
+  assert.equal(await web.page.locator('summary[aria-label="อัปเดต BMS POS+"], summary[aria-label="มีอัปเดตใหม่"]').count(), 0);
   assert.equal(web.checks(), 0);
   await web.context.close();
 
@@ -224,7 +224,7 @@ try {
     await verifyToolbarIcons(shop.page, businessArchetype);
     assert.equal(await update.count(), 1, `${businessArchetype}: only one update menu`);
     if (businessArchetype === "restaurant") assert.ok(shop.page.url().endsWith("/pos/restaurant"));
-    const shopPanel = shop.page.getByRole("region", { name: "อัปเดต BMS POS", exact: true });
+    const shopPanel = shop.page.getByRole("region", { name: "อัปเดต BMS POS+", exact: true });
     for (const width of [1440, 390]) {
       await shop.page.setViewportSize({ width, height: 1000 });
       await update.click();
@@ -269,7 +269,7 @@ try {
 
   for (const businessArchetype of ["retail", "pharmacy", "restaurant"]) {
     const noUpdate = await openRegister({ businessArchetype, initialStatus: "unavailable" });
-    assert.equal(await noUpdate.page.locator('summary[aria-label="มีอัปเดตใหม่"], summary[aria-label="อัปเดต BMS POS"]').count(), 0);
+    assert.equal(await noUpdate.page.locator('summary[aria-label="มีอัปเดตใหม่"], summary[aria-label="อัปเดต BMS POS+"]').count(), 0);
     await noUpdate.page.screenshot({ path: `${output}/${businessArchetype}-no-update.png` });
     noUpdate.setStatus("available");
     await checkAfterFocus(noUpdate);
@@ -281,7 +281,7 @@ try {
   for (const businessArchetype of ["retail", "pharmacy"]) {
     const standalone = await openRegister({ businessArchetype, entry: "/pos" });
     await standalone.page.locator('summary[aria-label="มีอัปเดตใหม่"]').click();
-    const panel = standalone.page.getByRole("region", { name: "อัปเดต BMS POS", exact: true });
+    const panel = standalone.page.getByRole("region", { name: "อัปเดต BMS POS+", exact: true });
     await panel.getByText("v0.2.15", { exact: true }).waitFor();
     await standalone.page.keyboard.press("Escape");
     assert.equal(await panel.isVisible(), false);
@@ -297,7 +297,7 @@ try {
   await english.page.locator('summary[aria-label="Update available"]').waitFor();
   await verifyToolbarIcons(english.page, "restaurant dark");
   await english.page.locator('summary[aria-label="Update available"]').click();
-  const englishPanel = english.page.getByRole("region", { name: "BMS POS updates", exact: true });
+  const englishPanel = english.page.getByRole("region", { name: "BMS POS+ updates", exact: true });
   await englishPanel.getByRole("link", { name: "Download update", exact: true }).waitFor();
   assert.equal(await englishPanel.evaluate((el) => el.scrollWidth > el.clientWidth), false);
   assert.equal(await englishPanel.evaluate((el) => getComputedStyle(el).backgroundColor === "rgb(255, 255, 255)"), false);

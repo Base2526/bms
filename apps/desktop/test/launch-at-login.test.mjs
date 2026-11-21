@@ -96,14 +96,14 @@ test("a login item the OS refuses is reported as off, not as what was asked", as
 
 test("Linux writes and removes an XDG autostart entry pointing at the AppImage file", async () => {
   const fs = memoryFs();
-  const env = { XDG_CONFIG_HOME: "/home/cashier/.config", APPIMAGE: "/home/cashier/BMS POS.AppImage" };
+  const env = { XDG_CONFIG_HOME: "/home/cashier/.config", APPIMAGE: "/home/cashier/BMS POS+.AppImage" };
   const login = createLaunchAtLogin({ app: fakeApp(), platform: "linux", env, fs });
   const file = path.join("/home/cashier/.config", "autostart", "bms-pos.desktop");
 
   assert.equal(await login.setEnabled(true), true);
   const entry = fs.files.get(file);
   assert.match(entry, /^\[Desktop Entry\]/);
-  assert.match(entry, /^Exec="\/home\/cashier\/BMS POS\.AppImage"$/m);
+  assert.match(entry, /^Exec="\/home\/cashier\/BMS POS\+\.AppImage"$/m);
   assert.equal(await login.setEnabled(false), false);
   assert.equal(fs.files.has(file), false);
 });
@@ -112,13 +112,13 @@ test("autostart helpers quote Exec values and ignore relative XDG_CONFIG_HOME", 
   assert.equal(desktopEntryExecArg('/opt/a "b"/$x'), '"/opt/a \\"b\\"/\\$x"');
   assert.equal(desktopEntryExecArg("/opt/100%/BMS"), '"/opt/100%%/BMS"');
   assert.throws(() => desktopEntryExecArg("/opt/BMS\nExec=/bin/sh"), /not desktop-entry safe/);
-  assert.match(linuxAutostartEntry("/opt/BMS POS/bms-pos"), /Exec="\/opt\/BMS POS\/bms-pos"/);
+  assert.match(linuxAutostartEntry("/opt/BMS POS+/bms-pos"), /Exec="\/opt\/BMS POS\+\/bms-pos"/);
   assert.equal(launchExecutablePath({ platform: "linux", execPath: "/x", env: {} }), "/x");
   assert.equal(launchExecutablePath({ platform: "win32", execPath: "C:\\a.exe", env: { APPIMAGE: "/y" } }), "C:\\a.exe");
   assert.ok(linuxAutostartPath({ XDG_CONFIG_HOME: "relative" }).endsWith(path.join(".config", "autostart", "bms-pos.desktop")));
 });
 
-test("BMS POS menu shows a launch-at-login checkbox on every platform", () => {
+test("BMS POS+ menu shows a launch-at-login checkbox on every platform", () => {
   for (const platform of ["darwin", "win32", "linux"]) {
     let toggled = 0;
     const template = desktopMenuTemplate(platform, false, {
@@ -126,7 +126,7 @@ test("BMS POS menu shows a launch-at-login checkbox on every platform", () => {
       launchAtLoginSupported: true,
       toggleLaunchAtLogin: () => { toggled += 1; },
     });
-    const item = template.find((entry) => entry.label === "BMS POS").submenu
+    const item = template.find((entry) => entry.label === "BMS POS+").submenu
       .find((entry) => entry.label === "เปิดแอปอัตโนมัติเมื่อเปิดเครื่อง");
     assert.equal(item.type, "checkbox");
     assert.equal(item.checked, true);
@@ -134,7 +134,7 @@ test("BMS POS menu shows a launch-at-login checkbox on every platform", () => {
     item.click();
     assert.equal(toggled, 1);
   }
-  const off = desktopMenuTemplate("win32").find((entry) => entry.label === "BMS POS").submenu
+  const off = desktopMenuTemplate("win32").find((entry) => entry.label === "BMS POS+").submenu
     .find((entry) => entry.type === "checkbox");
   assert.equal(off.checked, false);
   assert.equal(off.enabled, false);
@@ -166,7 +166,7 @@ test("Windows: an entry disabled in Task Manager reads as off and is not forced 
   const fs = memoryFs();
   const app = fakeApp();
   const prefs = "/profile/launch-at-login.json";
-  const execPath = "C:\\Users\\pos\\AppData\\Local\\Programs\\bms\\BMS POS.exe";
+  const execPath = "C:\\Users\\pos\\AppData\\Local\\Programs\\bms\\BMS POS+.exe";
   const login = createLaunchAtLogin({ app, platform: "win32", preferencePath: prefs, execPath, fs });
   assert.equal(await login.initialize(), true);
   app.state.taskManagerEnabled = false;
@@ -177,7 +177,7 @@ test("Windows: an entry disabled in Task Manager reads as off and is not forced 
   assert.equal(await login.setEnabled(true), true, "ticking the box clears the Task Manager mark");
 
   app.state.taskManagerEnabled = false;
-  const reinstalled = createLaunchAtLogin({ app, platform: "win32", preferencePath: prefs, execPath: "D:\\BMS POS.exe", fs });
+  const reinstalled = createLaunchAtLogin({ app, platform: "win32", preferencePath: prefs, execPath: "D:\\BMS POS+.exe", fs });
   await reinstalled.initialize();
   assert.equal(app.state.taskManagerEnabled, false, "a reinstall must not undo a Task Manager disable");
 });
@@ -186,11 +186,11 @@ test("Windows: a reinstall into another folder, or an uninstall + reinstall, re-
   const fs = memoryFs();
   const app = fakeApp();
   const prefs = "/profile/launch-at-login.json";
-  await createLaunchAtLogin({ app, platform: "win32", preferencePath: prefs, execPath: "C:\\old\\BMS POS.exe", fs }).initialize();
+  await createLaunchAtLogin({ app, platform: "win32", preferencePath: prefs, execPath: "C:\\old\\BMS POS+.exe", fs }).initialize();
 
-  const moved = createLaunchAtLogin({ app, platform: "win32", preferencePath: prefs, execPath: "D:\\new\\BMS POS.exe", fs });
+  const moved = createLaunchAtLogin({ app, platform: "win32", preferencePath: prefs, execPath: "D:\\new\\BMS POS+.exe", fs });
   assert.equal(await moved.initialize(), true);
-  assert.equal(app.state.path, "D:\\new\\BMS POS.exe");
+  assert.equal(app.state.path, "D:\\new\\BMS POS+.exe");
 
   app.state.openAtLogin = false; // the uninstaller deleted the Run value
   assert.equal(await moved.initialize(), true);
@@ -206,7 +206,7 @@ test("Windows: startup refresh never rewrites or duplicates a machine-managed lo
     executableWillLaunchAtLogin: false,
     launchItems: [{
       name: WINDOWS_LOGIN_ITEM_NAME,
-      path: "C:\\Program Files\\BMS POS\\BMS POS.exe",
+      path: "C:\\Program Files\\BMS POS+\\BMS POS+.exe",
       enabled: true,
       scope: "machine",
     }],
@@ -216,7 +216,7 @@ test("Windows: startup refresh never rewrites or duplicates a machine-managed lo
     app,
     platform: "win32",
     preferencePath: prefs,
-    execPath: "C:\\Users\\cashier\\BMS POS.exe",
+    execPath: "C:\\Users\\cashier\\BMS POS+.exe",
     fs,
   });
   assert.equal(await login.initialize(), false);

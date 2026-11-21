@@ -337,7 +337,7 @@ export default function WorkAssistantDrawer() {
           {messages.length === 0 ? (
             <Space direction="vertical" size={12} style={{ width: "100%" }}>
               <Typography.Text type="secondary">
-                {en ? "Ask how to use BMS, what the system supports, live shop information, or actions allowed by your access." : "ถามวิธีใช้ ความสามารถของระบบ ข้อมูลร้านจริง หรือสั่งงานตามสิทธิ์ของคุณได้จากจุดเดียว"}
+                {en ? "Ask how to use BMS POS+, what the system supports, live shop information, or actions allowed by your access." : "ถามวิธีใช้ ความสามารถของระบบ ข้อมูลร้านจริง หรือสั่งงานตามสิทธิ์ของคุณได้จากจุดเดียว"}
               </Typography.Text>
               <Button size="small" icon={<QuestionCircleOutlined />} onClick={() => setExamplesOpen(true)}>
                 {en ? "Show example questions" : "ดูตัวอย่างการใช้งาน"}

@@ -35,7 +35,7 @@ case "${1:-}" in
     done
     wget -q -T 5 -O /dev/null http://127.0.0.1:3100/admin/login || die "Web health check failed"
     wget -q -T 5 -O /dev/null http://127.0.0.1:3101/readyz || die "WS health check failed"
-    echo "BMS Retail Local: healthy"
+    echo "BMS POS+ Retail Local: healthy"
     ;;
   backup)
     require_runtime

@@ -1,4 +1,4 @@
-BMS Retail Local macOS Technical Pilot - bundled runtime notices
+BMS POS+ Retail Local macOS Technical Pilot - bundled runtime notices
 
 Lima
   Version: 2.2.0

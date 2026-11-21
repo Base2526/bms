@@ -41,7 +41,7 @@ test("first-run setup links to the local back office when Retail Local runs here
   assert.ok(pairing > 0 && pairing < link && link < submit, "admin link must sit between the pairing field and the submit button");
   assert.match(setup, /id="admin-link-row"[^>]*hidden/, "label must wait for the detected target");
   assert.match(renderer, /get local\(\) \{\s*return posText\("สร้างจากระบบหลังบ้านบนเครื่องนี้"\)/);
-  assert.match(renderer, /get cloud\(\) \{\s*return posText\("สร้างจากระบบหลังบ้าน BMS"\)/);
+  assert.match(renderer, /get cloud\(\) \{\s*return posText\("สร้างจากระบบหลังบ้าน BMS POS\+"\)/);
   // Only a local server may prefill the URL field; the cloud login must never overwrite it.
   assert.match(renderer, /result\.kind === "local"\s*&&\s*!serverInput\.value\.trim\(\)/);
   assert.doesNotMatch(renderer, /platform\s*!==\s*["']darwin/);

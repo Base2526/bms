@@ -297,7 +297,7 @@
 				DEVELOPMENT_TEAM = 3GLV4Q6KLL;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = BmsPos/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "BMS Pos";
+				INFOPLIST_KEY_CFBundleDisplayName = "BMS POS+";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.food-and-drink";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -329,7 +329,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3GLV4Q6KLL;
 				INFOPLIST_FILE = BmsPos/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "BMS Pos";
+				INFOPLIST_KEY_CFBundleDisplayName = "BMS POS+";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.food-and-drink";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (

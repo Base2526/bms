@@ -13,7 +13,7 @@ const RECOMMENDED = "#edf4ff";
 
 function copyFor(locale: PresalesLocale) {
   return locale === "th" ? {
-    title: "แพ็กเกจ BMS ล่าสุด",
+    title: "แพ็กเกจ BMS POS+ ล่าสุด",
     subtitle: "ราคาและขีดจำกัดสาธารณะสำหรับการสมัครใหม่",
     generated: "สร้างจากข้อมูลแพ็กเกจล่าสุด",
     item: "รายการ",
@@ -35,7 +35,7 @@ function copyFor(locale: PresalesLocale) {
     note: "Enterprise Factory ต้องประเมิน workload และทำสัญญาขั้นต่ำ 12 เดือน ค่าวางระบบ งานเชื่อมต่อเฉพาะ Premium SLA ค่าผู้ให้บริการภายนอก และการใช้เกินโควตาคิดแยกตามใบเสนอราคา",
     freshness: "ราคาอาจมีการปรับปรุง โปรดแชร์ลิงก์หน้า Pricing เพื่อให้ผู้รับเห็นข้อมูลล่าสุดเสมอ",
   } : {
-    title: "Latest BMS packages",
+    title: "Latest BMS POS+ packages",
     subtitle: "Public pricing and limits for new sign-ups",
     generated: "Generated from the latest package catalogue",
     item: "Item",
@@ -74,7 +74,7 @@ export async function renderPublicPackagePdf(
     layout: "landscape",
     margin: 32,
     font,
-    info: { Title: c.title, Author: "BMS", Subject: c.subtitle },
+    info: { Title: c.title, Author: "BMS POS+", Subject: c.subtitle },
   });
   const chunks: Buffer[] = [];
   const complete = new Promise<Buffer>((resolve, reject) => {
@@ -146,7 +146,7 @@ export async function renderPublicPackagePdf(
   // Keep the footer outside the body margin without letting PDFKit flow it onto a blank page.
   const bottomMargin = doc.page.margins.bottom;
   doc.page.margins.bottom = 0;
-  doc.fillColor(MUTED).fontSize(8).text("BMS - AI Business Management System", left, doc.page.height - 37, {
+  doc.fillColor(MUTED).fontSize(8).text("BMS POS+ - AI Business Management System", left, doc.page.height - 37, {
     width, align: "right", lineBreak: false,
   });
   doc.page.margins.bottom = bottomMargin;

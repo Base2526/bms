@@ -131,7 +131,7 @@ printf '%s\n' "$activation_url" >"$package_root/etc/bms-retail-local/activation-
 chmod 0644 "$package_root/etc/bms-retail-local/activation-url"
 
 cat >"$package_root/usr/share/doc/bms-retail-local-bootstrap/README" <<'EOF'
-BMS Retail Local Managed Runtime bootstrap
+BMS POS+ Retail Local Managed Runtime bootstrap
 
 Install: sudo bms-retail-local-setup [SIGNED_RELEASE_MANIFEST_HTTPS_URL]
 Update:  sudo bms-retail-local-update [SIGNED_RELEASE_MANIFEST_HTTPS_URL]
@@ -151,7 +151,7 @@ Architecture: amd64
 Installed-Size: $installed_size
 Maintainer: BMS <release@bms.local>
 Depends: bash, ca-certificates, curl, jq, systemd, util-linux
-Description: BMS Retail Local Managed Runtime bootstrap
+Description: BMS POS+ Retail Local Managed Runtime bootstrap
  Small signed-release bootstrap for supported Ubuntu x64 shop computers.
 EOF
 
@@ -164,7 +164,7 @@ chmod 0755 /usr/sbin/bms-retail-local-activate
 install -m 0755 /usr/lib/bms-retail-local/bootstrap/run-offhost-backup.sh \
   /usr/local/sbin/bms-retail-local-offhost-backup
 systemctl daemon-reload
-echo "BMS Retail Local bootstrap installed. Run: sudo bms-retail-local-setup"
+echo "BMS POS+ Retail Local bootstrap installed. Run: sudo bms-retail-local-setup"
 EOF
 chmod 0755 "$package_root/DEBIAN/postinst"
 

@@ -101,11 +101,11 @@ const DEMOS: Record<Lang, Record<ArchetypeKey, DemoConfig>> = {
         'มีโปรถ้าซื้อ 2 ตัวไหม':
           'ถ้าร้านมีคูปองหรือโปรที่ใช้ได้จริง ระบบควรเช็กสิทธิ์จาก backend ก่อนตอบเสมอ แล้วค่อยสรุปว่าใช้กับ 2 ตัวนี้ได้หรือไม่ค่ะ',
         default:
-          'สำหรับร้านแฟชั่น BMS ควรตอบโดยดู variant ที่ลูกค้าถามก่อน เช่น สี ไซซ์ และทรง ถ้าของหมดค่อยพาไปสู่สินค้าทดแทนหรือ restock flow แทนค่ะ',
+          'สำหรับร้านแฟชั่น BMS POS+ ควรตอบโดยดู variant ที่ลูกค้าถามก่อน เช่น สี ไซซ์ และทรง ถ้าของหมดค่อยพาไปสู่สินค้าทดแทนหรือ restock flow แทนค่ะ',
       },
       signals: ['ถามเรื่องไซซ์ชัดเจน', 'มี intent ซื้ออยู่', 'ยอมรับ flow แจ้งเมื่อของเข้า'],
       actions: ['search_products', 'find_alternatives', 'subscribe_restock_notification'],
-      closing: 'BMS สื่อให้เห็นว่า AI เข้าใจเรื่อง variant และช่วยกู้ยอดกลับมาจากของหมดได้',
+      closing: 'BMS POS+ สื่อให้เห็นว่า AI เข้าใจเรื่อง variant และช่วยกู้ยอดกลับมาจากของหมดได้',
     },
     food: {
       label: 'ร้านอาหาร / delivery',
@@ -122,11 +122,11 @@ const DEMOS: Record<Lang, Record<ArchetypeKey, DemoConfig>> = {
         'ส่งถึงคอนโดใช้เวลาประมาณเท่าไร':
           'เดโมนี้จะสื่อว่าร้านอาหารควรตอบสั้นและชัด เช่น เช็กพื้นที่จัดส่งและเวลาประมาณก่อนพาไปสู่การยืนยันออเดอร์ค่ะ',
         default:
-          'สำหรับ food delivery BMS ควรช่วยให้คำตอบเร็ว เห็น availability ชัด และพาลูกค้าไปสู่การสั่งจริงโดยไม่หลุดเป็นบทสนทนายาวเกินจำเป็นค่ะ',
+          'สำหรับ food delivery BMS POS+ ควรช่วยให้คำตอบเร็ว เห็น availability ชัด และพาลูกค้าไปสู่การสั่งจริงโดยไม่หลุดเป็นบทสนทนายาวเกินจำเป็นค่ะ',
       },
       signals: ['ลูกค้าคาดหวังความเร็ว', 'มี add-on intent', 'ควรปิดบทสนทนาให้สั้นและชัด'],
       actions: ['browse_catalog', 'search_products', 'create_order'],
-      closing: 'BMS จะทำให้ร้านอาหารดูเป็นระบบสั่งซื้อผ่านแชต ไม่ใช่บอตตอบคำถามเฉย ๆ',
+      closing: 'BMS POS+ จะทำให้ร้านอาหารดูเป็นระบบสั่งซื้อผ่านแชต ไม่ใช่บอตตอบคำถามเฉย ๆ',
     },
     beauty: {
       label: 'ร้าน beauty',
@@ -138,7 +138,7 @@ const DEMOS: Record<Lang, Record<ArchetypeKey, DemoConfig>> = {
         'ผิวแพ้ง่ายควรเริ่มตัวไหน':
           'ได้ค่ะ เดี๋ยวคัดสินค้าที่ตรงกับผิวแพ้ง่ายจากรายการที่ร้านมีจริงก่อน แล้วช่วยจัดเป็น routine สั้น ๆ ให้ พร้อมเช็กว่าสินค้าครบชุดหรือมีตัวไหนควรเปิดแจ้งเมื่อของเข้าไว้',
         'มีเซ็ตล้างหน้า-บำรุงไหม':
-          'สำหรับ beauty BMS ควรตอบเป็นชุดที่เข้าใจง่าย เช่น ล้างหน้า + บำรุง 1 ตัวหลัก และถ้าร้านมี bundle อยู่จริงค่อยสรุปเป็นตัวเลือกให้ลูกค้าเห็นค่ะ',
+          'สำหรับ beauty BMS POS+ ควรตอบเป็นชุดที่เข้าใจง่าย เช่น ล้างหน้า + บำรุง 1 ตัวหลัก และถ้าร้านมี bundle อยู่จริงค่อยสรุปเป็นตัวเลือกให้ลูกค้าเห็นค่ะ',
         'ถ้าตัวหลักหมดมีตัวแทนไหม':
           'ได้ค่ะ ถ้าตัวหลักหมด ระบบควรหาทางเลือกที่ใกล้เคียงกันก่อน และถ้าลูกค้าอยากรอของเดิมจริงค่อยเสนอ restock flow ค่ะ',
         default:
@@ -146,7 +146,7 @@ const DEMOS: Record<Lang, Record<ArchetypeKey, DemoConfig>> = {
       },
       signals: ['ต้องการคำแนะนำมากกว่าค้นชื่อสินค้า', 'มีโอกาส cross-sell เป็นชุด', 'ต้องตอบด้วยน้ำเสียง consultative'],
       actions: ['recommend_products', 'search_products', 'find_alternatives'],
-      closing: 'BMS ช่วยให้ AI ดูฉลาดในเชิงขายแบบที่ปรึกษา แต่ยัง grounded กับ stock จริง',
+      closing: 'BMS POS+ ช่วยให้ AI ดูฉลาดในเชิงขายแบบที่ปรึกษา แต่ยัง grounded กับ stock จริง',
     },
     grocery: {
       label: 'ร้านของชำ / minimart',
@@ -162,11 +162,11 @@ const DEMOS: Record<Lang, Record<ArchetypeKey, DemoConfig>> = {
           'ร้านของชำควรรับหลายรายการในบทสนทนาเดียว แล้วค่อยสรุปเป็นตะกร้าหรือออเดอร์ให้เลย เพื่อให้การซื้อเร็วและลื่นที่สุดค่ะ',
         'ถ้าของโปรหมดช่วยแจ้งด้วย':
           'ได้เลยค่ะ แบบนี้เหมาะกับการเปิด restock subscription ไว้ เพราะร้านจะไม่เสียบทสนทนาไปเปล่า ๆ และยังกลับมาปิดการขายได้เมื่อของเข้าค่ะ',
-        default: 'สำหรับ minimart BMS ควรตอบเร็ว รับหลายรายการได้ และใช้ restock queue เป็นเครื่องมือรักษายอดเมื่อของหมดค่ะ',
+        default: 'สำหรับ minimart BMS POS+ ควรตอบเร็ว รับหลายรายการได้ และใช้ restock queue เป็นเครื่องมือรักษายอดเมื่อของหมดค่ะ',
       },
       signals: ['ตะกร้าหลายรายการ', 'มีโอกาสเสียยอดเพราะของหมด', 'เหมาะกับ conversion เร็ว'],
       actions: ['search_products', 'create_order', 'subscribe_restock_notification'],
-      closing: 'BMS ทำให้เห็นว่า even simple retail chat ก็แปลงเป็น order flow หรือ recovery flow ได้',
+      closing: 'BMS POS+ ทำให้เห็นว่า even simple retail chat ก็แปลงเป็น order flow หรือ recovery flow ได้',
     },
     gadgets: {
       label: 'ร้าน gadget',
@@ -185,7 +185,7 @@ const DEMOS: Record<Lang, Record<ArchetypeKey, DemoConfig>> = {
       },
       signals: ['ต้องรู้รุ่นเครื่อง', 'มีโอกาส cross-sell สูง', 'ลูกค้าคาดหวังคำตอบแม่นเรื่อง compatibility'],
       actions: ['search_products', 'recommend_products', 'find_alternatives'],
-      closing: 'BMS โชว์ความฉลาดเชิงบริบทร้านได้ดีมากในหมวดที่ต้องแมตช์รุ่นและอุปกรณ์',
+      closing: 'BMS POS+ โชว์ความฉลาดเชิงบริบทร้านได้ดีมากในหมวดที่ต้องแมตช์รุ่นและอุปกรณ์',
     },
   },
   en: {
@@ -204,11 +204,11 @@ const DEMOS: Record<Lang, Record<ArchetypeKey, DemoConfig>> = {
         'discount if i buy 2':
           "If the shop has a real, active coupon or promo, the system should always check eligibility from the backend first, then confirm whether it applies to these 2 items.",
         default:
-          "For a fashion shop, BMS should reply based on the variant the customer asked about — color, size, style — and if it's out of stock, guide them to a substitute or the restock flow instead.",
+          "For a fashion shop, BMS POS+ should reply based on the variant the customer asked about — color, size, style — and if it's out of stock, guide them to a substitute or the restock flow instead.",
       },
       signals: ['Asks about size clearly', 'Has buying intent', 'Accepts the restock-notify flow'],
       actions: ['search_products', 'find_alternatives', 'subscribe_restock_notification'],
-      closing: 'BMS shows that AI understands variants and can recover a sale that would have been lost to an out-of-stock item.',
+      closing: 'BMS POS+ shows that AI understands variants and can recover a sale that would have been lost to an out-of-stock item.',
     },
     food: {
       label: 'Restaurant / delivery',
@@ -225,11 +225,11 @@ const DEMOS: Record<Lang, Record<ArchetypeKey, DemoConfig>> = {
         'how long does delivery to a condo take':
           "This demo shows that a restaurant should reply short and clear — for example, checking the delivery area and estimated time before moving to order confirmation.",
         default:
-          "For food delivery, BMS should give fast answers, show clear availability, and guide the customer toward a real order without turning into an unnecessarily long conversation.",
+          "For food delivery, BMS POS+ should give fast answers, show clear availability, and guide the customer toward a real order without turning into an unnecessarily long conversation.",
       },
       signals: ['Customer expects speed', 'Has add-on intent', 'Conversation should stay short and clear'],
       actions: ['browse_catalog', 'search_products', 'create_order'],
-      closing: 'BMS makes a restaurant feel like a real chat-ordering system, not just a bot answering questions.',
+      closing: 'BMS POS+ makes a restaurant feel like a real chat-ordering system, not just a bot answering questions.',
     },
     beauty: {
       label: 'Beauty shop',
@@ -242,7 +242,7 @@ const DEMOS: Record<Lang, Record<ArchetypeKey, DemoConfig>> = {
         'sensitive skin':
           "Sure, let me pick products suited for sensitive skin from what the shop actually carries, then put together a short routine for you — and check whether the full set is in stock or if something needs a restock alert.",
         'cleanser + moisturizer set':
-          'For beauty, BMS should reply with an easy-to-understand set — like a cleanser plus one core moisturizer — and if the shop has a real bundle, summarize it as an option for the customer.',
+          'For beauty, BMS POS+ should reply with an easy-to-understand set — like a cleanser plus one core moisturizer — and if the shop has a real bundle, summarize it as an option for the customer.',
         'substitute if the main item is out of stock':
           'Sure — if the main item is out, the system should first look for a close alternative, and if the customer really wants to wait for the original, offer the restock flow.',
         default:
@@ -250,7 +250,7 @@ const DEMOS: Record<Lang, Record<ArchetypeKey, DemoConfig>> = {
       },
       signals: ['Wants advice, not just a product search', 'Good cross-sell opportunity as a set', 'Should reply in a consultative tone'],
       actions: ['recommend_products', 'search_products', 'find_alternatives'],
-      closing: 'BMS makes AI sound like a knowledgeable consultant while staying grounded in real stock.',
+      closing: 'BMS POS+ makes AI sound like a knowledgeable consultant while staying grounded in real stock.',
     },
     grocery: {
       label: 'Grocery / mini-mart',
@@ -267,11 +267,11 @@ const DEMOS: Record<Lang, Record<ArchetypeKey, DemoConfig>> = {
         'let me know if a promo item is back in stock':
           "Absolutely — this is a great case for opening a restock subscription, so the shop doesn't lose the conversation for nothing, and can still close the sale once stock is back.",
         default:
-          'For a mini-mart, BMS should reply fast, handle multiple items at once, and use the restock queue as a tool to protect revenue when something is out of stock.',
+          'For a mini-mart, BMS POS+ should reply fast, handle multiple items at once, and use the restock queue as a tool to protect revenue when something is out of stock.',
       },
       signals: ['Multi-item basket', 'Risk of lost sales from stockouts', 'Good fit for fast conversion'],
       actions: ['search_products', 'create_order', 'subscribe_restock_notification'],
-      closing: 'BMS shows that even a simple retail chat can turn into an order flow or a recovery flow.',
+      closing: 'BMS POS+ shows that even a simple retail chat can turn into an order flow or a recovery flow.',
     },
     gadgets: {
       label: 'Gadget shop',
@@ -290,7 +290,7 @@ const DEMOS: Record<Lang, Record<ArchetypeKey, DemoConfig>> = {
       },
       signals: ['Needs to know the device model', 'High cross-sell potential', 'Customer expects precise compatibility answers'],
       actions: ['search_products', 'recommend_products', 'find_alternatives'],
-      closing: 'BMS shows strong contextual intelligence in categories that require matching models and accessories.',
+      closing: 'BMS POS+ shows strong contextual intelligence in categories that require matching models and accessories.',
     },
   },
 };
@@ -359,7 +359,7 @@ type DemoUiContent = {
 
 const DEMO_UI: Bilingual<DemoUiContent> = {
   en: {
-    heroCollapsedTitle: "Try asking BMS's AI on a live demo shop",
+    heroCollapsedTitle: "Try asking BMS POS+'s AI on a live demo shop",
     heroCollapsedHint: 'How it works ▸',
     heroTags: ['Mockup', 'Archetype-aware AI', 'Chat commerce demo', 'Restock recovery'],
     heroBody:
@@ -404,7 +404,7 @@ const DEMO_UI: Bilingual<DemoUiContent> = {
     openShopCta: 'Open your own shop and use this flow with real products',
     whyInterestingTitle: 'Why this page is interesting',
     whyPoint1: 'Lets anyone try it before signing up',
-    whyPoint2: "Shows that BMS isn't a generic chatbot",
+    whyPoint2: "Shows that BMS POS+ isn't a generic chatbot",
     whyPoint3: "Connects AI's answers to a real business flow",
     demoMeaningLabel: 'What this demo is showing',
     nextUpTitle: 'Where this mockup could go next',
@@ -426,7 +426,7 @@ const DEMO_UI: Bilingual<DemoUiContent> = {
     shippingMethodMap: { DELIVERY: 'Delivery', PICKUP: 'Pickup at store', UNSELECTED: 'Fulfillment method not chosen yet' },
   },
   th: {
-    heroCollapsedTitle: 'ลองถาม AI ของ BMS บนร้าน demo จริง',
+    heroCollapsedTitle: 'ลองถาม AI ของ BMS POS+ บนร้าน demo จริง',
     heroCollapsedHint: 'วิธีใช้ ▸',
     heroTags: ['Mockup', 'Archetype-aware AI', 'Chat commerce demo', 'Restock recovery'],
     heroBody: 'เลือกร้าน demo ก่อนคุย แล้วระบบจะผูกบริบทเป็นร้านนั้นโดยตรง เพื่อให้ AI อ่านสินค้าและตอบตามร้านที่เลือก',
@@ -469,7 +469,7 @@ const DEMO_UI: Bilingual<DemoUiContent> = {
     openShopCta: 'เปิดร้านของคุณ แล้วใช้ flow นี้กับสินค้าจริง',
     whyInterestingTitle: 'ทำไมหน้านี้น่าสนใจ',
     whyPoint1: 'ช่วยให้คนทั่วไปลองของได้ก่อนสมัคร',
-    whyPoint2: 'สื่อว่า BMS ไม่ใช่ chatbot ทั่วไป',
+    whyPoint2: 'สื่อว่า BMS POS+ ไม่ใช่ chatbot ทั่วไป',
     whyPoint3: 'โยงจากคำตอบ AI ไปสู่ flow ธุรกิจจริง',
     demoMeaningLabel: 'สิ่งที่เดโมนี้กำลังสื่อ',
     nextUpTitle: 'ถ้าจะต่อจาก mockup นี้',

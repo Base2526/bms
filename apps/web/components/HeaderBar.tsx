@@ -638,7 +638,7 @@ export default function HeaderBar({
                   src="/icons/icon.svg"
                   width={46}
                   height={46}
-                  alt="BMS"
+                  alt="BMS POS+"
                   style={{
                     display: "block",
                     width: "100%",

@@ -187,7 +187,7 @@ New-Item -ItemType Directory -Path $publicRoot, $secretRoot, $metadataRoot | Out
 $posPath = if ($PosInstaller) {
   [IO.Path]::GetFullPath($PosInstaller)
 } else {
-  Join-Path $repoRoot "artifacts\retail-local\BMS-Retail-Local-POS-$SourceImageVersion-windows-x64.exe"
+  Join-Path $repoRoot "artifacts\retail-local\BMS-POS-Plus-Retail-Local-POS-$SourceImageVersion-windows-x64.exe"
 }
 if (-not (Test-Path -LiteralPath $posPath -PathType Leaf)) { throw "Windows x64 POS installer was not found: $posPath" }
 
@@ -210,7 +210,7 @@ Invoke-Checked "Build Web image from source commit $sourceCommit" {
     --build-arg "NEXT_PUBLIC_BASE_URL=http://127.0.0.1:3100" `
     --build-arg "NEXT_PUBLIC_GRAPHQL_HTTP=http://127.0.0.1:3100/api/graphql" `
     --build-arg "NEXT_PUBLIC_GRAPHQL_WS=ws://127.0.0.1:3101/graphql" `
-    --build-arg "COOKIE_SECURE=0" --build-arg "WEB_NAME=BMS Retail Local" `
+    --build-arg "COOKIE_SECURE=0" --build-arg "WEB_NAME=BMS POS+ Retail Local" `
     -f (Join-Path $repoRoot "apps\web\Dockerfile") -t $imageRefs.web $repoRoot
 }
 Invoke-Checked "Build WS image from source commit $sourceCommit" {

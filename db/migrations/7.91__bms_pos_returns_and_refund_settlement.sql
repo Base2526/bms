@@ -1,5 +1,5 @@
 -- =============================================================
--- 7.91  BMS POS returns + refund settlement ledger
+-- 7.91  BMS POS+ returns + refund settlement ledger
 -- -------------------------------------------------------------
 -- 7.88 ถูกใช้โดย VAT/tax documents อยู่แล้ว จึงย้าย POS return migration
 -- มาเลขนี้และคงทุก statement เป็น idempotent สำหรับฐานที่เคยรันไฟล์ POS

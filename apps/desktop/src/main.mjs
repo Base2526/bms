@@ -54,6 +54,13 @@ import {
 
 const { app, BrowserWindow, dialog, ipcMain, Menu, net, Notification, safeStorage, screen, shell } = electronMain;
 
+// Keep the original per-user directory when the OS-visible productName changes.
+// It contains the encrypted pairing token, printer settings and launch preference.
+// appId, bundle ID and URL scheme likewise remain stable for existing installs.
+if (app.isPackaged) {
+  app.setPath("userData", path.join(app.getPath("appData"), "BMS POS"));
+}
+
 installGlobalZoomPolicy(app);
 // Queue-board audio is an operator-controlled POS function. The web preference remains the mute
 // authority; this only lets an enabled managed display arm Web Audio without an extra customer tap.
@@ -553,7 +560,7 @@ async function toggleLaunchAtLogin(menuItem) {
     void dialog.showMessageBox(mainWindow ?? undefined, {
       type: "info",
       message: posText("ย้ายแอปไปไว้ในโฟลเดอร์ Applications ก่อน"),
-      detail: posText("แอปกำลังเปิดจากไฟล์ติดตั้ง (DMG) ซึ่งจะหายไปหลังรีสตาร์ท ลาก BMS POS ไปไว้ใน Applications แล้วเปิดจากที่นั่น จากนั้นค่อยติ๊กตัวเลือกนี้"),
+      detail: posText("แอปกำลังเปิดจากไฟล์ติดตั้ง (DMG) ซึ่งจะหายไปหลังรีสตาร์ท ลาก BMS POS+ ไปไว้ใน Applications แล้วเปิดจากที่นั่น จากนั้นค่อยติ๊กตัวเลือกนี้"),
     });
     return;
   }
@@ -697,7 +704,7 @@ function createCustomerDisplayWindow(targetDisplay, kind = "managed") {
     skipTaskbar: preview ? false : !isWaylandSession(),
     resizable: preview,
     maximizable: preview,
-    title: preview ? posText("BMS POS — ทดสอบจอลูกค้า") : posText("BMS POS — จอลูกค้า"),
+    title: preview ? posText("BMS POS+ — ทดสอบจอลูกค้า") : posText("BMS POS+ — จอลูกค้า"),
     backgroundColor: "#0b0b0c",
     autoHideMenuBar: true,
     webPreferences: {
@@ -867,7 +874,7 @@ function createQueueDisplayWindow(targetDisplay, kind = "managed") {
     skipTaskbar: preview ? false : !isWaylandSession(),
     resizable: preview,
     maximizable: preview,
-    title: preview ? posText("BMS POS — ทดสอบจอเรียกคิว") : posText("BMS POS — จอเรียกคิว"),
+    title: preview ? posText("BMS POS+ — ทดสอบจอเรียกคิว") : posText("BMS POS+ — จอเรียกคิว"),
     backgroundColor: "#0f172a",
     autoHideMenuBar: true,
     webPreferences: {
@@ -1014,7 +1021,7 @@ function createMainWindow() {
     minWidth: 1024,
     minHeight: 700,
     show: false,
-    title: "BMS POS",
+    title: "BMS POS+",
     backgroundColor: "#f4f6f8",
     autoHideMenuBar: true,
     webPreferences: {
@@ -1548,7 +1555,7 @@ function registerIpc() {
     mainWindow.flashFrame(true);
     if (Notification.isSupported()) {
       const notification = new Notification({
-        title: "BMS POS",
+        title: "BMS POS+",
         // This may be a new acceptance, hand-off, deadline or recovery task. Keep the
         // lock-screen copy generic but accurate for every transition.
         body: posText("มีงานออร์เดอร์รอดำเนินการ"),

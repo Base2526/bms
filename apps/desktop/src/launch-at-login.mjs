@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
-// "Open BMS POS when the computer starts" — a per-user OS setting. It is ON by default: a POS
+// "Open BMS POS+ when the computer starts" — a per-user OS setting. It is ON by default: a POS
 // terminal that does not come back after a power cut leaves the counter unable to sell until
 // someone finds the icon. The default is applied once, on the first packaged launch; after that
 // the operator's own choice (stored in `preferencePath`) always wins, so unticking stays unticked.
@@ -28,7 +28,7 @@ export function linuxAutostartEntry(executablePath) {
   return [
     "[Desktop Entry]",
     "Type=Application",
-    "Name=BMS POS",
+    "Name=BMS POS+",
     `Exec=${desktopEntryExecArg(executablePath)}`,
     "Terminal=false",
     "X-GNOME-Autostart-enabled=true",

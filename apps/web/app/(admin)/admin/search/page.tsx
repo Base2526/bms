@@ -69,12 +69,12 @@ type SearchCopy = {
 
 const COPY: Bilingual<SearchCopy> = {
   th: {
-    title: "ค้นหาความรู้ BMS",
+    title: "ค้นหาความรู้ BMS POS+",
     subtitle: "ค้นหาความสามารถที่ระบบรองรับ คู่มือ ขั้นตอนตั้งค่า และข้อจำกัดจากเอกสารที่ตรวจสอบแล้ว",
     placeholder: "เช่น รองรับระบบอะไรบ้าง, โอนสต็อกข้ามสาขา, ออกใบกำกับภาษี",
     search: "ค้นหา",
     verified: "ข้อมูลจาก capability และคู่มือที่ตรวจสอบแล้ว — ไม่ใช่คำตอบที่ AI เดา",
-    broadTitle: "ความสามารถที่ BMS รองรับ",
+    broadTitle: "ความสามารถที่ BMS POS+ รองรับ",
     broadDesc: "รายการนี้บอกความสามารถของผลิตภัณฑ์ ไม่ได้ยืนยันว่าร้านปัจจุบันเปิดหรือตั้งค่าไว้แล้ว",
     results: "ผลการค้นหา",
     capability: "ความสามารถ",
@@ -105,12 +105,12 @@ const COPY: Bilingual<SearchCopy> = {
     } satisfies Record<CapabilityStatus, string>,
   },
   en: {
-    title: "Search BMS knowledge",
+    title: "Search BMS POS+ knowledge",
     subtitle: "Find supported capabilities, setup instructions, guides, and verified limitations.",
-    placeholder: "e.g. What does BMS support, branch stock transfer, tax invoices",
+    placeholder: "e.g. What does BMS POS+ support, branch stock transfer, tax invoices",
     search: "Search",
     verified: "Results come from the verified capability and guide catalogs — not an AI guess.",
-    broadTitle: "Capabilities supported by BMS",
+    broadTitle: "Capabilities supported by BMS POS+",
     broadDesc: "This is a product capability inventory. It does not prove that the current shop has enabled or configured each item.",
     results: "Search results",
     capability: "Capability",
@@ -125,7 +125,7 @@ const COPY: Bilingual<SearchCopy> = {
     noResults: "No verified capability or guide matched. Try a menu name, a task, or a shorter phrase.",
     startTitle: "Try the words you use while working",
     suggestions: [
-      "What does BMS support",
+      "What does BMS POS+ support",
       "Does it support restaurants",
       "Branch stock transfer",
       "Can I issue a tax invoice",
@@ -184,7 +184,7 @@ export default function AdminKnowledgeSearchPage() {
       ...searchContext,
       limit: 32,
     }).filter((result) => result.matchedQuery);
-    // Present the best capability first (what BMS supports), then the best guide (how to do it),
+    // Present the best capability first (what BMS POS+ supports), then the best guide (how to do it),
     // followed by secondary matches in their relevance order. Do not group every capability ahead
     // of the guide: a broad English token such as “product” can match several capabilities and
     // would otherwise push the useful instructions below the first row.

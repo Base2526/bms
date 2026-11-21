@@ -43,7 +43,7 @@ export default function PublicAnalytics({ measurementId, learningPaths }: { meas
       if (!allowed() || !page) return;
       gtag("event", event, {
         send_to: id, page_location: `${location.origin}${page.path}`,
-        page_title: `BMS ${page.path}`, page_referrer: "", language: page.locale,
+        page_title: `BMS POS+ ${page.path}`, page_referrer: "", language: page.locale,
         discovery_source: source, ...extra,
       });
     };
@@ -69,7 +69,7 @@ export default function PublicAnalytics({ measurementId, learningPaths }: { meas
           allow_ad_personalization_signals: false, cookie_prefix: "bms_analytics",
           cookie_expires: 180 * 24 * 60 * 60, cookie_flags: "SameSite=Lax;Secure",
           page_location: `${location.origin}${location.pathname}`,
-          page_title: "BMS", page_referrer: "", ignore_referrer: true,
+          page_title: "BMS POS+", page_referrer: "", ignore_referrer: true,
         });
         if (script) script.dataset.configured = "true";
       }

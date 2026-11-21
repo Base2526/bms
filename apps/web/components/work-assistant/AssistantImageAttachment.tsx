@@ -123,7 +123,7 @@ export function AssistantImageAttachmentControls({
         </div>
       ) : null}
       {draft ? <Checkbox checked={draft.confirmedBms} disabled={disabled} onChange={(event) => onConfirmBms(event.target.checked)}>
-        {en ? "I confirm this shows a BMS screen. Images from other apps are out of scope." : "ยืนยันว่าภาพนี้เป็นหน้าจอ BMS — ไม่รองรับภาพจากระบบอื่น"}
+        {en ? "I confirm this shows a BMS POS+ screen. Images from other apps are out of scope." : "ยืนยันว่าภาพนี้เป็นหน้าจอ BMS POS+ — ไม่รองรับภาพจากระบบอื่น"}
       </Checkbox> : null}
       {error ? <Typography.Text type="danger" role="alert">{error}</Typography.Text> : null}
       {draft ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>

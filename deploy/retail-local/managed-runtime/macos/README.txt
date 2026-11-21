@@ -1,4 +1,4 @@
-BMS Retail Local Server for macOS
+BMS POS+ Retail Local Server for macOS
 
 The normal package is a small online bootstrap. It contains no Ubuntu image, service image, Docker
 engine, or POS application. The first setup requires an internet connection and downloads those
@@ -11,11 +11,11 @@ installation. It is intentionally much larger and is not the normal customer ins
 
 After installing the package:
 
-1. Open Applications > BMS Retail Local.
+1. Open Applications > BMS POS+ Retail Local.
 2. Keep the Mac online while Setup downloads and verifies the release.
 3. Enter the shop name and initial administrator credentials.
 4. Wait for the Web, WebSocket, PostgreSQL, and Redis health checks.
-5. BMS POS opens automatically after setup.
+5. BMS POS+ opens automatically after setup.
 
 Useful commands:
 

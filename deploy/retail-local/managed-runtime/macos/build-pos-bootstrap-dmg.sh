@@ -95,7 +95,7 @@ case "$architecture" in
 esac
 qualifier=
 [[ $test_build != true ]] || qualifier=-SMOKE-ONLY
-dmg_name="BMS-Retail-Local-POS-$version-macos-$architecture$qualifier.dmg"
+dmg_name="BMS-POS-Plus-Retail-Local-POS-$version-macos-$architecture$qualifier.dmg"
 dmg_path="$output_dir/$dmg_name"
 for candidate in "$dmg_path" "$dmg_path.sha256" "$dmg_path.json"; do
   [[ ! -e $candidate || $force == true ]] || { echo "Artifact already exists: $candidate" >&2; exit 1; }
@@ -121,8 +121,8 @@ printf '%s\n' "$control_url" >"$bootstrap/control-url"
 printf '%s\n' "$version" >"$bootstrap/BOOTSTRAP_VERSION"
 printf '%s\n' "macos-15-$architecture" >"$bootstrap/PLATFORM_TARGET"
 if [[ -n $test_ca ]]; then cp "$test_ca" "$bootstrap/test-release-ca.pem"; fi
-cp "$macos_root/bms-pos-online-app" "$contents/MacOS/Install BMS POS"
-cp "$macos_root/bms-pos-online-setup.command" "$resources/BMS POS Online Setup.command"
+cp "$macos_root/bms-pos-online-app" "$contents/MacOS/Install BMS POS+"
+cp "$macos_root/bms-pos-online-setup.command" "$resources/BMS POS+ Online Setup.command"
 cp "$repo_root/apps/web/public/icons/ios-icon-1024.png" "$resources/BMSPOS.png"
 
 pkg_version=$(printf '%s' "$version" | awk -F '[^0-9]+' '{out=""; for(i=1;i<=NF;i++) if($i!="") out=out (out==""?"":".") $i; print out}')
@@ -130,11 +130,11 @@ cat >"$contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleDisplayName</key><string>Install BMS POS</string>
-  <key>CFBundleExecutable</key><string>Install BMS POS</string>
+  <key>CFBundleDisplayName</key><string>Install BMS POS+</string>
+  <key>CFBundleExecutable</key><string>Install BMS POS+</string>
   <key>CFBundleIconFile</key><string>BMSPOS.png</string>
   <key>CFBundleIdentifier</key><string>com.base2526.bms.pos-online-setup.$architecture</string>
-  <key>CFBundleName</key><string>Install BMS POS</string>
+  <key>CFBundleName</key><string>Install BMS POS+</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$pkg_version</string>
@@ -143,17 +143,17 @@ cat >"$contents/Info.plist" <<EOF
 </dict></plist>
 EOF
 cat >"$image_root/README.txt" <<'EOF'
-BMS POS Online Setup
+BMS POS+ Online Setup
 
-1. Double-click “Install BMS POS”.
+1. Double-click “Install BMS POS+”.
 2. Keep the Mac connected to the internet during first installation.
-3. Setup verifies the signed BMS release and SHA-256 before installing BMS POS in Applications.
+3. Setup verifies the signed BMS release and SHA-256 before installing BMS POS+ in Applications.
 
 POS Desktop supports macOS 12 Monterey or newer. Retail Local Server has separate requirements.
 The DMG intentionally does not contain Electron or the full POS application.
 EOF
 
-chmod 0755 "$contents/MacOS/Install BMS POS" "$resources/BMS POS Online Setup.command" \
+chmod 0755 "$contents/MacOS/Install BMS POS+" "$resources/BMS POS+ Online Setup.command" \
   "$bootstrap/bms-runtime-agent"
 chmod 0644 "$bootstrap/trusted-release-keys.json" "$bootstrap/manifest-url" \
   "$bootstrap/control-url" "$bootstrap/BOOTSTRAP_VERSION" "$bootstrap/PLATFORM_TARGET" "$resources/BMSPOS.png" \
@@ -163,7 +163,7 @@ chmod -R go-w "$app"
 xattr -cr "$image_root"
 plutil -lint "$contents/Info.plist" >/dev/null
 
-hdiutil create -quiet -fs HFS+ -format UDZO -volname "BMS POS Online Setup $version" \
+hdiutil create -quiet -fs HFS+ -format UDZO -volname "BMS POS+ Online Setup $version" \
   -srcfolder "$image_root" "$dmg_path"
 "$macos_root/smoke-test-pos-bootstrap-dmg.sh" "$dmg_path"
 

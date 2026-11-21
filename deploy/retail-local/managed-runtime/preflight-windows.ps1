@@ -67,7 +67,7 @@ $result = [pscustomobject]@{
 if ($Json) {
   $result | ConvertTo-Json -Depth 4
 } else {
-  Write-Host "BMS Retail Local Managed Runtime preflight"
+  Write-Host "BMS POS+ Retail Local Managed Runtime preflight"
   Write-Host "target=$($result.target) architecture=$($result.architecture) build=$($result.build)"
   foreach ($message in $warnings) { Write-Host "[WARN] $message" -ForegroundColor Yellow }
   foreach ($message in $failures) { Write-Host "[FAIL] $message" -ForegroundColor Red }

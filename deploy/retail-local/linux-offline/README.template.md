@@ -1,4 +1,4 @@
-# BMS Retail Local {{VERSION}} — Linux x64
+# BMS POS+ Retail Local {{VERSION}} — Linux x64
 
 แพ็กเกจชุดนี้เป็น **internal pilot build แบบ unsigned** สำหรับ Ubuntu x86_64 ร้านเดียว ใช้ฐานข้อมูล
 PostgreSQL ในเครื่องเดียว ไม่มี cloud replica, ไม่มี offline tender แยก และไม่มี auto-update
@@ -7,10 +7,10 @@ PostgreSQL ในเครื่องเดียว ไม่มี cloud repl
 
 | ไฟล์ | ใช้กับเครื่อง | สิ่งที่ติดตั้ง |
 | --- | --- | --- |
-| `BMS-Retail-Local-Server-POS-{{VERSION}}-linux-x64.deb` | เครื่องหลักที่เป็นทั้ง Server และจอขาย | Server payload แบบ offline และตัวติดตั้ง BMS POS |
-| `BMS-Retail-Local-Server-{{VERSION}}-linux-x64.deb` | เครื่อง Server อย่างเดียว | Web, WS, PostgreSQL และ Redis ผ่าน Docker |
-| `BMS-Retail-Local-POS-{{VERSION}}-linux-x64.deb` | เครื่องแคชเชียร์ Ubuntu Desktop | BMS POS แบบติดตั้งในระบบ |
-| `BMS-Retail-Local-POS-{{VERSION}}-linux-x64.AppImage` | เครื่องแคชเชียร์ที่ไม่ต้องการติดตั้ง package | BMS POS แบบ portable |
+| `BMS-POS-Plus-Retail-Local-Server-POS-{{VERSION}}-linux-x64.deb` | เครื่องหลักที่เป็นทั้ง Server และจอขาย | Server payload แบบ offline และตัวติดตั้ง BMS POS+ |
+| `BMS-POS-Plus-Retail-Local-Server-{{VERSION}}-linux-x64.deb` | เครื่อง Server อย่างเดียว | Web, WS, PostgreSQL และ Redis ผ่าน Docker |
+| `BMS-POS-Plus-Retail-Local-POS-{{VERSION}}-linux-x64.deb` | เครื่องแคชเชียร์ Ubuntu Desktop | BMS POS+ แบบติดตั้งในระบบ |
+| `BMS-POS-Plus-Retail-Local-POS-{{VERSION}}-linux-x64.AppImage` | เครื่องแคชเชียร์ที่ไม่ต้องการติดตั้ง package | BMS POS+ แบบ portable |
 
 Linux x86/32-bit ไม่มีในรุ่นนี้ เพราะ Electron ที่ใช้อยู่รองรับ Linux x64 เท่านั้น เครื่อง Linux
 32-bit ต้องเปลี่ยน OS/เครื่อง หรือใช้ browser POS จากอุปกรณ์ที่รองรับแทน
@@ -49,34 +49,34 @@ dependency ของ Ubuntu/Docker ครั้งแรกอาจต้อง
 ตรวจ checksum ก่อนทุกครั้ง:
 
 ```bash
-sha256sum -c BMS-Retail-Local-Server-{{VERSION}}-linux-x64.deb.sha256
+sha256sum -c BMS-POS-Plus-Retail-Local-Server-{{VERSION}}-linux-x64.deb.sha256
 ```
 
 ติดตั้ง Server อย่างเดียว:
 
 ```bash
-sudo apt install ./BMS-Retail-Local-Server-{{VERSION}}-linux-x64.deb
+sudo apt install ./BMS-POS-Plus-Retail-Local-Server-{{VERSION}}-linux-x64.deb
 sudo bms-retail-local-setup
 ```
 
 ติดตั้ง Server + POS:
 
 ```bash
-sudo apt install ./BMS-Retail-Local-Server-POS-{{VERSION}}-linux-x64.deb
+sudo apt install ./BMS-POS-Plus-Retail-Local-Server-POS-{{VERSION}}-linux-x64.deb
 sudo bms-retail-local-setup
 ```
 
 ติดตั้ง POS แยก:
 
 ```bash
-sudo apt install ./BMS-Retail-Local-POS-{{VERSION}}-linux-x64.deb
+sudo apt install ./BMS-POS-Plus-Retail-Local-POS-{{VERSION}}-linux-x64.deb
 ```
 
 ใช้ AppImage:
 
 ```bash
-chmod +x BMS-Retail-Local-POS-{{VERSION}}-linux-x64.AppImage
-./BMS-Retail-Local-POS-{{VERSION}}-linux-x64.AppImage
+chmod +x BMS-POS-Plus-Retail-Local-POS-{{VERSION}}-linux-x64.AppImage
+./BMS-POS-Plus-Retail-Local-POS-{{VERSION}}-linux-x64.AppImage
 ```
 
 ระหว่าง `bms-retail-local-setup` ระบบจะสร้าง secrets แบบสุ่ม, โหลด image ที่ตรวจ checksumแล้ว,

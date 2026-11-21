@@ -555,7 +555,7 @@ export default function PickupQueueBoardPage() {
   if (!token) {
     return (
       <main style={{ ...page, alignItems: "center", justifyContent: "center", textAlign: "center" }}>
-        <div style={{ fontSize: 30, fontWeight: 600 }}>{posText("เปิดจอเรียกคิวจากแอป BMS POS")}</div>
+        <div style={{ fontSize: 30, fontWeight: 600 }}>{posText("เปิดจอเรียกคิวจากแอป BMS POS+")}</div>
         <div style={{ fontSize: 18, color: "#cbd5e1" }}>{posText("POS → ตั้งค่า → จอภายนอก → จอเรียกคิว")}</div>
         <div style={{ maxWidth: 680, fontSize: 16, lineHeight: 1.6, color: "#94a3b8" }}>
           {posText("แอปจะเปิดหน้าต่างบนจอที่เลือกและส่งสิทธิ์ของเครื่องขายให้อัตโนมัติ ไม่ต้องคัดลอก URL นี้ไปเปิดใน Chrome") + " "}</div>

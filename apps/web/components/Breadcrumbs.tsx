@@ -57,9 +57,9 @@ export default function Breadcrumbs() {
         : (locale ? localizedPublicPath("/" + segments.slice(0, idx + 1).join("/"), locale) : "/" + segments.slice(0, idx + 1).join("/"));
 
       const authorityLabels: Record<string, string> = {
-        about: lang === "th" ? "เกี่ยวกับ BMS" : "About BMS",
-        "ai-business-system": lang === "th" ? "AI ใน BMS" : "AI in BMS",
-        features: lang === "th" ? "BMS ช่วยร้านคุณ" : "How BMS helps",
+        about: lang === "th" ? "เกี่ยวกับ BMS POS+" : "About BMS POS+",
+        "ai-business-system": lang === "th" ? "AI ใน BMS POS+" : "AI in BMS POS+",
+        features: lang === "th" ? "BMS POS+ ช่วยร้านคุณ" : "How BMS POS+ helps",
       };
       const label = authorityLabels[seg] ?? (isPostDetailRoute
         ? decodeURIComponent(seg)

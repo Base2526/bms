@@ -637,7 +637,7 @@ export default function CheckoutClient({
         )}
 
         <footer className={styles.footer}>
-          <span>BMS CHECKOUT</span>
+          <span>BMS POS+ CHECKOUT</span>
           <p>{t("checkout.footer_note")}</p>
         </footer>
       </div>

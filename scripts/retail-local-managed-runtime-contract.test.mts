@@ -55,7 +55,7 @@ test("macOS full installer uses its private VZ runtime instead of Docker Desktop
   const packageBuilder = read("deploy/retail-local/managed-runtime/macos/build-pkg.sh");
   const packageSmokeTest = read("deploy/retail-local/managed-runtime/macos/smoke-test-pkg.sh");
   const packagePostinstall = read("deploy/retail-local/managed-runtime/macos/postinstall");
-  const guidedUninstall = read("deploy/retail-local/managed-runtime/macos/BMS Retail Local Uninstall.command");
+  const guidedUninstall = read("deploy/retail-local/managed-runtime/macos/BMS POS+ Retail Local Uninstall.command");
   assert.match(vmTemplate, /vmType: vz/);
   assert.match(vmTemplate, /arch: __LIMA_ARCH__/);
   assert.match(vmTemplate, /guestIP: 127\.0\.0\.1/);
@@ -86,9 +86,10 @@ test("macOS full installer uses its private VZ runtime instead of Docker Desktop
   assert.match(packageSmokeTest, /macos-15-x64/);
   assert.match(packageSmokeTest, /<relocate>/);
   assert.match(packagePostinstall, /missing \/Applications\/BMS POS\.app/);
+  assert.match(packagePostinstall, /Contents\/MacOS\/BMS POS/);
   assert.match(packagePostinstall, /launchctl asuser "\$console_uid"/);
   assert.match(packagePostinstall, /open -a "\$app"/);
-  assert.match(packageBuilder, /BMS Retail Local Uninstall\.command/);
+  assert.match(packageBuilder, /BMS POS\+ Retail Local Uninstall\.command/);
   assert.match(guidedUninstall, /BACKUP-VERIFIED[\s\S]*--erase-data/);
   assert.doesNotMatch(hostControl, /Docker Desktop/i);
 });
@@ -291,7 +292,7 @@ test("Managed Runtime setup UX preserves actionable preflight and resumable prov
   assert.match(linux, /\.warnings\[\]\?/);
   assert.match(inno, /ResultCode <> 0[\s\S]*ReportBootstrapFailure[\s\S]*exit;/);
   assert.match(inno, /function GetCustomSetupExitCode\(\): Integer;[\s\S]*if BootstrapFailed then Result := 1/);
-  assert.match(inno, /CurPageID = wpFinished[\s\S]*BootstrapFailed[\s\S]*FinishedHeadingLabel.Caption := 'BMS Retail Local setup did not complete'/);
+  assert.match(inno, /CurPageID = wpFinished[\s\S]*BootstrapFailed[\s\S]*FinishedHeadingLabel.Caption := 'BMS POS\+ Retail Local setup did not complete'/);
   assert.match(inno, /run-managed-runtime\.ps1/);
   assert.match(inno, /setup-error\.txt/);
   assert.match(inno, /setup-transcript\.log/);
@@ -357,7 +358,7 @@ test("Windows PowerShell 5.1 scripts keep a UTF-8 BOM", () => {
 
 test("Windows installer exposes an all-users uninstall shortcut", () => {
   const installer = read("deploy/retail-local/managed-runtime/windows/BMSRetailLocal.iss");
-  assert.match(installer, /\{commonprograms\}\\BMS Retail Local\\Uninstall BMS Retail Local/);
+  assert.match(installer, /\{commonprograms\}\\BMS POS\+ Retail Local\\Uninstall BMS POS\+ Retail Local/);
   assert.match(installer, /Filename: "\{uninstallexe\}"/);
   assert.match(installer, /RunOnceId: "BMSManagedRuntimeCleanup"/);
 });
@@ -455,7 +456,7 @@ test("Linux and macOS uninstall disable relaunch sources and bound slow cleanup"
   const linuxService = read("deploy/retail-local/managed-runtime/linux/bms-retail-local.service");
   const linuxDeb = read("deploy/retail-local/managed-runtime/linux/build-deb.sh");
   const macosControl = read("deploy/retail-local/managed-runtime/macos/bms-retail-local");
-  const macosLauncher = read("deploy/retail-local/managed-runtime/macos/BMS Retail Local Uninstall.command");
+  const macosLauncher = read("deploy/retail-local/managed-runtime/macos/BMS POS+ Retail Local Uninstall.command");
 
   assert.doesNotMatch(linuxUninstall, /disable --now/);
   assert.ok(linuxUninstall.indexOf('systemctl disable "$unit"') <
@@ -549,7 +550,7 @@ test("repository release build defaults to online x64 bootstraps and keeps offli
   assert.match(onlineBuilder, /public keyring must not contain private keys/);
   assert.match(onlineBuilder, /builds support only x64/);
   assert.match(onlineBuilder, /ValidateSet\("server", "server-pos", "all"\)/);
-  assert.match(onlineBuilder, /BMS-Retail-Local-\$label-\$Version-windows-x64/);
+  assert.match(onlineBuilder, /BMS-POS-Plus-Retail-Local-\$label-\$Version-windows-x64/);
   assert.match(onlineBuilder, /DPackageType=\$\(\$spec\.PackageType\)/);
   assert.match(onlineBuilder, /AllowTestEndpoints/);
   assert.match(onlineBuilder, /SMOKE-ONLY/);
@@ -569,6 +570,8 @@ test("Windows online server-only excludes Desktop across install, receipt, repai
   assert.match(installer, /ValidateSet\('server', 'server-pos'\)/);
   assert.match(installer, /stageCommand = if \(\$PackageType -eq 'server'\) \{ 'stage-server' \}/);
   assert.match(installer, /if \(\$PackageType -eq 'server-pos'\) \{[\s\S]*BMS-POS-Setup\.exe/);
+  assert.match(installer, /BMS POS\+\\BMS POS\+\.exe/);
+  assert.match(installer, /BMS POS\\BMS POS\+\.exe/, "an existing Windows install may retain its old directory");
   assert.match(installer, /packageType = \$PackageType/);
   assert.match(updater, /stageCommand = if \(\$packageType -eq 'server'\) \{ 'stage-server' \}/);
   assert.match(updater, /if \(\$packageType -eq 'server-pos'\)[\s\S]*BMS-POS-Update\.exe/);
@@ -843,7 +846,7 @@ test("installed-shop updates are signed, newer-only, backup-first, and recoverab
   assert.match(linuxUpdateCommand, /--check[\s\S]*--yes[\s\S]*update-managed-runtime\.sh/);
   assert.match(linuxUpdater, /preflight[\s\S]*check-update[\s\S]*updateAvailable[\s\S]*mode == check[\s\S]*Type UPDATE[\s\S]*stage-release/);
   assert.match(windowsUpdater, /preflight[\s\S]*check-update[\s\S]*updateAvailable[\s\S]*\$CheckOnly[\s\S]*Read-Host[\s\S]*stage-release/);
-  assert.match(windowsInstaller, /Check for Updates[\s\S]*-CheckOnly[\s\S]*BMS Retail Local Update/);
+  assert.match(windowsInstaller, /Check for Updates[\s\S]*-CheckOnly[\s\S]*BMS POS\+ Retail Local Update/);
   assert.ok(linuxUpdater.indexOf("mode == check") < linuxUpdater.indexOf("install -m 0755 -o root -g root \"$localctl_source\""));
   assert.ok(windowsUpdater.indexOf("if ($CheckOnly)") < windowsUpdater.indexOf("runtime-install-control"));
   assert.match(linuxService, /ExecStartPre=.*bms-update-transaction recover/);

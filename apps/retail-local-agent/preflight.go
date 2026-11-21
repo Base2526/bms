@@ -22,7 +22,7 @@ func (result *preflightResult) warn(message string) {
 }
 
 func (result preflightResult) writeHuman() {
-	fmt.Printf("BMS Retail Local system check\n")
+	fmt.Printf("BMS POS+ Retail Local system check\n")
 	fmt.Printf("Platform: %s  Architecture: %s  Target: %s\n", result.Platform, result.Architecture, result.Target)
 	for _, message := range result.Warnings {
 		fmt.Printf("[WARN] %s\n", message)

@@ -1,4 +1,4 @@
-# BMS Retail Local — installation test
+# BMS POS+ Retail Local — installation test
 
 This package is an unsigned technical pilot. Test it on a Windows 11 machine that does not contain
 the BMS source tree. Do not use real customer data during the pilot.
@@ -14,8 +14,8 @@ the BMS source tree. Do not use real customer data during the pilot.
 Verify the downloaded ZIP before extracting it:
 
 ```powershell
-Get-FileHash .\BMS-Retail-Local-<version>.zip -Algorithm SHA256
-Get-Content .\BMS-Retail-Local-<version>.zip.sha256
+Get-FileHash .\BMS-POS-Plus-Retail-Local-<version>.zip -Algorithm SHA256
+Get-Content .\BMS-POS-Plus-Retail-Local-<version>.zip.sha256
 ```
 
 Extract the whole directory to a stable local path such as `C:\BMS-Retail-Local`. Do not run it
@@ -24,7 +24,7 @@ directly from inside the ZIP, a OneDrive-synchronised folder, or removable media
 ## Install acceptance test
 
 1. Start Docker Desktop and wait until its engine is ready.
-2. Double-click `Install-BMS-Retail-Local.cmd` or run `pwsh .\install.ps1`.
+2. Double-click `Install-BMS-POS-Plus-Retail-Local.cmd` or run `pwsh .\install.ps1`.
 3. Enter a test shop, owner email, password and 4–8 digit POS PIN.
 4. Record the POS pairing token shown once; do not put it in the test report.
 5. Confirm that `http://127.0.0.1:3100/admin/login` opens and the owner can sign in.

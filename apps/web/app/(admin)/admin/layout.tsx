@@ -3,6 +3,10 @@ import AdminLayoutClient from "@/components/AdminLayoutClient";
 import { isRetailLocalDeployment } from "@/lib/bms/deploymentMode";
 
 export const metadata: Metadata = {
+  title: {
+    default: "BMS POS+ — Admin",
+    template: "%s | BMS POS+",
+  },
   robots: {
     index: false,
     follow: false,

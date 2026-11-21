@@ -63,7 +63,7 @@ const ADMIN_LINK_LABELS = {
     return posText("สร้างจากระบบหลังบ้านบนเครื่องนี้");
   },
   get cloud() {
-    return posText("สร้างจากระบบหลังบ้าน BMS");
+    return posText("สร้างจากระบบหลังบ้าน BMS POS+");
   },
 };
 
@@ -121,7 +121,7 @@ function refreshAppInfo() {
     })
     .catch(() => {
       showError(
-        posText("อ่านข้อมูลแอปไม่สำเร็จ กรุณาปิดแล้วเปิด BMS POS ใหม่")
+        posText("อ่านข้อมูลแอปไม่สำเร็จ กรุณาปิดแล้วเปิด BMS POS+ ใหม่")
       );
     });
 }

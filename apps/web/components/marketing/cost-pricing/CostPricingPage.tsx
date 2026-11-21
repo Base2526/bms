@@ -25,7 +25,7 @@ export default function CostPricingPage({ children }: { children?: React.ReactNo
   const count = (n: number | null) => n == null ? "—" : `${n.toLocaleString()} ${c.cups}`;
   const metrics = result ? [`${money(result.unit)} ฿`, `${money(result.contribution)} ฿`, count(result.monthly), count(result.daily)] : ["—", "—", "—", "—"];
   return <article className={styles.page} data-cost-pricing>
-    <header className={styles.hero}><div><p className={styles.eyebrow}>COST & PRICING · BMS</p><h1>{c.headline}</h1><p className={styles.intro}>{c.intro}</p>
+    <header className={styles.hero}><div><p className={styles.eyebrow}>COST & PRICING · BMS POS+</p><h1>{c.headline}</h1><p className={styles.intro}>{c.intro}</p>
       <div className={styles.actions}><a className={styles.primary} href="#cost-example">{c.try} ↓</a><a className={styles.button} href="#cost-flow">{c.flow}</a></div><p className={styles.note}>{c.audience}</p></div>
       <div className={styles.sample}><div className={styles.sampleHead}><h2>{c.coffee}</h2><span className={styles.tag}>{c.sample}</span></div><p className={styles.note}>{c.batch}</p>
         {[[c.goods,"2,000"],[c.freight,"200"],[c.landed,"22"],[c.extra,"8"]].map(([label,value]) => <div className={styles.billRow} key={label}><span>{label}</span><strong>{value} {c.baht}</strong></div>)}

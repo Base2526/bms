@@ -1,5 +1,5 @@
 /**
- * BMS POS — mobile client
+ * BMS POS+ — mobile client
  * GraphQL HTTP เป็นทางอ่าน/สั่งงาน และ GraphQL WS เป็น invalidation hint ระดับแอป
  *
  * @format

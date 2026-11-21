@@ -8,11 +8,11 @@ import { publicAlternates, localizedPublicPath, type PublicSeoLocale } from "@/l
 
 const content = {
   th: {
-    title: "BMS ทำงานอย่างไร",
+    title: "BMS POS+ ทำงานอย่างไร",
     description: "ดูเส้นทางตั้งแต่ลูกค้าทักแชทหรือสั่งที่หน้าร้าน ไปจนถึงบิล สต็อก การชำระเงิน ครัว จัดส่ง และรายงานในระบบเดียว",
   },
   en: {
-    title: "How BMS works",
+    title: "How BMS POS+ works",
     description: "Follow the verified workflow from customer chat or in-store ordering through sales, stock, payment, kitchen, shipping, and reporting in one system.",
   },
 };

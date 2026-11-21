@@ -1,4 +1,4 @@
-# BMS Retail Local Managed Runtime
+# BMS POS+ Retail Local Managed Runtime
 
 This directory contains the managed-runtime implementation for signed, one-click commercial
 self-install releases. It does not replace the existing Docker Desktop technical-pilot installer
@@ -275,7 +275,7 @@ sudo systemctl start bms-retail-local-offhost-backup.service
 sudo bms-retail-local-backup-status
 ```
 
-On Windows, open **BMS Retail Local > Configure Off-host Backup** and enter the same kind of public
+On Windows, open **BMS POS+ Retail Local > Configure Off-host Backup** and enter the same kind of public
 recipient, a UNC/network/removable/separate-physical-disk directory, and retention days. The task
 runs daily at 02:00 and retries after a missed schedule. **Off-host Backup Status** returns an error
 when the last run failed or the last success is older than 48 hours. The private age identity must be

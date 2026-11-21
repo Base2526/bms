@@ -100,7 +100,7 @@ export function desktopMenuTemplate(platform, devToolsEnabled = false, actions =
   ];
 
   return [
-    { label: "BMS POS", submenu: appSubmenu },
+    { label: "BMS POS+", submenu: appSubmenu },
     { role: "fileMenu" },
     { role: "editMenu" },
     { id: "view", label: posText("มุมมอง"), submenu: viewSubmenu },
@@ -111,9 +111,9 @@ export function desktopMenuTemplate(platform, devToolsEnabled = false, actions =
 /** Localize Electron-generated submenus while retaining native roles and shortcuts. */
 export function localizeNativeMenu(menu) {
   const labels = {
-    about: posText("เกี่ยวกับ BMS POS"),
+    about: posText("เกี่ยวกับ BMS POS+"),
     services: posText("บริการ"),
-    hide: posText("ซ่อน BMS POS"),
+    hide: posText("ซ่อน BMS POS+"),
     hideothers: posText("ซ่อนแอปอื่น"),
     unhide: posText("แสดงทั้งหมด"),
     quit: posText("ออกจากแอป"),

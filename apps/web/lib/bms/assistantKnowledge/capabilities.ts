@@ -167,7 +167,7 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
   {
     id: "shipping.carrier-integrations", module: "shipping",
     title: both("เชื่อมต่อผู้ให้บริการขนส่ง (Flash/Kerry)", "Carrier integrations (Flash/Kerry)"),
-    description: both("ตัวเชื่อมสำหรับจองพัสดุกับ Flash/Kerry โดยตรงจากระบบ", "Adapters for booking parcels with Flash/Kerry directly from BMS."),
+    description: both("ตัวเชื่อมสำหรับจองพัสดุกับ Flash/Kerry โดยตรงจากระบบ", "Adapters for booking parcels with Flash/Kerry directly from BMS POS+."),
     aliases: aliases(["Flash", "Kerry", "จองขนส่ง", "เรียกรถเข้ารับ"], ["Flash", "Kerry", "carrier booking", "pickup request"]),
     status: "MOCK", route: "/admin/shipment", requiredPermissions: ["shipping.view"],
     configurationDependencies: ["A signed merchant contract and verified carrier credentials are required."],

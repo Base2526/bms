@@ -40,7 +40,7 @@ import { addLog } from "@/lib/log/log.server";
 // Prefer the server-only brand name; keep NEXT_PUBLIC_WEB_NAME for existing deployments.
 function baseData(locale: string) {
   return {
-    app_name: process.env.WEB_NAME ?? process.env.NEXT_PUBLIC_WEB_NAME ?? "BMS",
+    app_name: process.env.WEB_NAME ?? process.env.NEXT_PUBLIC_WEB_NAME ?? "BMS POS+",
     support_url: process.env.NEXT_PUBLIC_SUPPORT_URL ?? "https://bms.jachoei.com/support",
     year: new Date().getFullYear(),
     locale,

@@ -11,10 +11,10 @@ import { localizedPublicPath, publicAlternates, type PublicSeoLocale } from "@/l
 
 export function generateMetadata(): Metadata {
   const lang: PublicSeoLocale = cookies().get("lang")?.value === "en" ? "en" : "th";
-  const title = "BMS Retail Local";
+  const title = "BMS POS+ Retail Local";
   const description = lang === "th"
-    ? "ดาวน์โหลดตัวติดตั้ง BMS Retail Local สำหรับคอมพิวเตอร์ร้านที่ใช้ Windows, Ubuntu หรือ macOS"
-    : "Download the BMS Retail Local installer for a Windows, Ubuntu or macOS shop computer.";
+    ? "ดาวน์โหลดตัวติดตั้ง BMS POS+ Retail Local สำหรับคอมพิวเตอร์ร้านที่ใช้ Windows, Ubuntu หรือ macOS"
+    : "Download the BMS POS+ Retail Local installer for a Windows, Ubuntu or macOS shop computer.";
   return {
     title,
     description,

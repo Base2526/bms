@@ -1,4 +1,4 @@
-# AI Business Management System (BMS)
+# BMS POS+ — AI Business Management System
 
 `Customer → AI → CRM → Order → Inventory → Payment → Shipping → Dashboard`. Not a chatbot: AI only
 calls approved backend tools; business logic lives in `apps/web/lib/bms/*.ts`, shared by REST and

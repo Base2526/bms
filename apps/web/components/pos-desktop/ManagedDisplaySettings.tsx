@@ -166,7 +166,7 @@ export default function ManagedDisplaySettings() {
     setError("");
     try {
       const managed = window.bmsDesktop?.setExternalDisplayRole;
-      if (!managed) throw new Error(posText("กรุณาอัปเดต BMS POS Desktop ก่อนตั้งค่าจอเรียกคิว"));
+      if (!managed) throw new Error(posText("กรุณาอัปเดต BMS POS+ Desktop ก่อนตั้งค่าจอเรียกคิว"));
       const result = await managed({ role, mode, targetDisplayId });
       if (!result.ok) throw new Error(result.error ?? posText("ตั้งค่าจอภายนอกไม่สำเร็จ"));
       if (result.state) {

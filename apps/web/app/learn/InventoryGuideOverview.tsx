@@ -388,7 +388,7 @@ export function InventoryGuideOverview({ lang }: { lang: Lang }) {
       <span>{lang === "th" ? "ช่องทางที่เปิด" : "Enabled channel"}</span><b aria-hidden="true">→</b>
       <span>AI</span><b aria-hidden="true">→</b>
       <span>{lang === "th" ? "เครื่องมือที่อนุญาต" : "Approved tool"}</span><b aria-hidden="true">→</b>
-      <span>{lang === "th" ? "ข้อมูล BMS ที่ตรวจสอบแล้ว" : "Verified BMS data"}</span>
+      <span>{lang === "th" ? "ข้อมูล BMS POS+ ที่ตรวจสอบแล้ว" : "Verified BMS POS+ data"}</span>
       <p>{t.architectureNote}</p>
     </div>
 

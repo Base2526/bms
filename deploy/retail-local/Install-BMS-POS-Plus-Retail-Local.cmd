@@ -9,6 +9,6 @@ if errorlevel 1 (
 pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1"
 set "BMS_EXIT=%ERRORLEVEL%"
 echo.
-if not "%BMS_EXIT%"=="0" echo Installation failed. Run Check-BMS-Retail-Local.cmd for details.
+if not "%BMS_EXIT%"=="0" echo Installation failed. Run Check-BMS-POS-Plus-Retail-Local.cmd for details.
 pause
 exit /b %BMS_EXIT%

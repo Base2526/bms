@@ -14,8 +14,8 @@ x-web-runtime: &web-runtime
   NEXT_PUBLIC_BASE_URL: http://127.0.0.1:${BMS_LOCAL_WEB_PORT:-3100}
   NEXT_PUBLIC_GRAPHQL_HTTP: http://127.0.0.1:${BMS_LOCAL_WEB_PORT:-3100}/api/graphql
   NEXT_PUBLIC_GRAPHQL_WS: ws://127.0.0.1:${BMS_LOCAL_WS_PORT:-3101}/graphql
-  WEB_NAME: BMS Retail Local
-  NEXT_PUBLIC_WEB_NAME: BMS Retail Local
+  WEB_NAME: BMS POS+ Retail Local
+  NEXT_PUBLIC_WEB_NAME: BMS POS+ Retail Local
   COOKIE_SECURE: "0"
   REDIS_URL: redis://:${REDIS_PASSWORD:?missing REDIS_PASSWORD}@redis:6379
   STORAGE_DRIVER: local

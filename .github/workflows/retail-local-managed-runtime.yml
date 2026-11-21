@@ -237,7 +237,7 @@ jobs:
             "/DActivationUri=https://control.example.com/api/bms/retail-local/activate" `
             "$bundle\BMSRetailLocal.iss"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $artifact = Get-Item "$env:RUNNER_TEMP\BMS-Retail-Local-Setup-0.0.0-ci-x64.exe"
+          $artifact = Get-Item "$env:RUNNER_TEMP\BMS-POS-Plus-Retail-Local-Setup-0.0.0-ci-x64.exe"
           if ($artifact.Length -gt 25MB) { throw "Server + POS online bootstrap exceeds 25 MiB: $($artifact.FullName)" }
       - name: Smoke-build Windows x64 and x86 POS-only online bootstraps
         shell: powershell

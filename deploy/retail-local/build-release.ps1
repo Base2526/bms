@@ -110,8 +110,8 @@ cp /source/apps/web/public/icons/playstore-512.png /work/apps/web/public/icons/
 cd /work/apps/desktop
 npm ci
 npm run pack:linux
-cp "dist/BMS-POS-${BMS_RELEASE_VERSION}-amd64.deb" \
-  "dist/BMS-POS-${BMS_RELEASE_VERSION}-x86_64.AppImage" /out/
+cp "dist/BMS-POS-Plus-${BMS_RELEASE_VERSION}-amd64.deb" \
+  "dist/BMS-POS-Plus-${BMS_RELEASE_VERSION}-x86_64.AppImage" /out/
 '@
   $buildCommand = $buildCommand.Replace("`r`n", "`n").Replace("`r", "`n")
   & docker run --rm `
@@ -125,7 +125,7 @@ if ($UpdateVersion) {
   if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { throw "npm was not found" }
   Push-Location $desktopRoot
   try {
-    Invoke-Checked "Update BMS POS version to $Version" {
+    Invoke-Checked "Update BMS POS+ version to $Version" {
       npm version $Version --no-git-tag-version
     }
   } finally {
@@ -282,24 +282,24 @@ if ($drive.AvailableFreeSpace -lt $minimumBuildSpace) {
 
 $artifactNames = if ($Target -eq "MacOS") {
   @(
-    "BMS-Retail-Local-Server-POS-$Version-arm64.pkg",
-    "BMS-Retail-Local-Server-POS-$Version-x64.pkg",
-    "BMS-Retail-Local-Server-$Version-arm64.pkg",
-    "BMS-Retail-Local-Server-$Version-x64.pkg",
-    "BMS-Retail-Local-POS-$Version-macos-arm64.dmg",
-    "BMS-Retail-Local-POS-$Version-macos-x64.dmg"
+    "BMS-POS-Plus-Retail-Local-Server-POS-$Version-arm64.pkg",
+    "BMS-POS-Plus-Retail-Local-Server-POS-$Version-x64.pkg",
+    "BMS-POS-Plus-Retail-Local-Server-$Version-arm64.pkg",
+    "BMS-POS-Plus-Retail-Local-Server-$Version-x64.pkg",
+    "BMS-POS-Plus-Retail-Local-POS-$Version-macos-arm64.dmg",
+    "BMS-POS-Plus-Retail-Local-POS-$Version-macos-x64.dmg"
   )
 } else {
   @(
-    "BMS-Retail-Local-$Version.zip",
-    "BMS-Retail-Local-Server-POS-$Version-windows-x64.exe",
-    "BMS-Retail-Local-Server-$Version-windows-x64.exe",
-    "BMS-Retail-Local-POS-$Version-windows-x64.exe",
-    "BMS-Retail-Local-POS-$Version-windows-x86-legacy.exe",
-    "BMS-Retail-Local-Server-POS-$Version-linux-x64.deb",
-    "BMS-Retail-Local-Server-$Version-linux-x64.deb",
-    "BMS-Retail-Local-POS-$Version-linux-x64.deb",
-    "BMS-Retail-Local-POS-$Version-linux-x64.AppImage"
+    "BMS-POS-Plus-Retail-Local-$Version.zip",
+    "BMS-POS-Plus-Retail-Local-Server-POS-$Version-windows-x64.exe",
+    "BMS-POS-Plus-Retail-Local-Server-$Version-windows-x64.exe",
+    "BMS-POS-Plus-Retail-Local-POS-$Version-windows-x64.exe",
+    "BMS-POS-Plus-Retail-Local-POS-$Version-windows-x86-legacy.exe",
+    "BMS-POS-Plus-Retail-Local-Server-POS-$Version-linux-x64.deb",
+    "BMS-POS-Plus-Retail-Local-Server-$Version-linux-x64.deb",
+    "BMS-POS-Plus-Retail-Local-POS-$Version-linux-x64.deb",
+    "BMS-POS-Plus-Retail-Local-POS-$Version-linux-x64.AppImage"
   )
 }
 $existing = @($artifactNames | Where-Object { Test-Path -LiteralPath (Join-Path $outputRoot $_) })
@@ -321,8 +321,8 @@ Push-Location $desktopRoot
 try {
   Invoke-Checked "Install desktop dependencies" { npm ci }
   if (-not $SkipTests) {
-    Invoke-Checked "Test BMS POS" { npm test }
-    Invoke-Checked "Lint BMS POS" { npm run lint }
+    Invoke-Checked "Test BMS POS+" { npm test }
+    Invoke-Checked "Lint BMS POS+" { npm run lint }
   }
   if ($Target -eq "MacOS") {
     Invoke-Checked "Build macOS POS (Apple Silicon + Intel)" { npm run pack:mac }
@@ -347,15 +347,15 @@ if ($Target -eq "MacOS") {
   }
 
   $macPosSources = @{
-    "arm64" = Join-Path $desktopRoot "dist/BMS-POS-$Version-arm64.dmg"
-    "x64" = Join-Path $desktopRoot "dist/BMS-POS-$Version-x64.dmg"
+    "arm64" = Join-Path $desktopRoot "dist/BMS-POS-Plus-$Version-arm64.dmg"
+    "x64" = Join-Path $desktopRoot "dist/BMS-POS-Plus-$Version-x64.dmg"
   }
   foreach ($architecture in $macPosSources.Keys) {
     $source = $macPosSources[$architecture]
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
       throw "macOS POS was not found after the build: $source"
     }
-    $destination = Join-Path $outputRoot "BMS-Retail-Local-POS-$Version-macos-$architecture.dmg"
+    $destination = Join-Path $outputRoot "BMS-POS-Plus-Retail-Local-POS-$Version-macos-$architecture.dmg"
     Copy-Item -LiteralPath $source -Destination $destination -Force
     $sha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
     Set-Content -LiteralPath "$destination.sha256" -Value "$sha256  $([IO.Path]::GetFileName($destination))" -Encoding utf8NoBOM
@@ -377,10 +377,10 @@ if ($Target -eq "MacOS") {
     -OutputDirectory $outputRoot
   if ($LASTEXITCODE -ne 0) { throw "Failed to build Windows installers" }
 
-  $linuxPosDeb = Join-Path $desktopRoot "dist\BMS-POS-$Version-amd64.deb"
-  $linuxPosAppImage = Join-Path $desktopRoot "dist\BMS-POS-$Version-x86_64.AppImage"
-  $releasePosDeb = Join-Path $outputRoot "BMS-Retail-Local-POS-$Version-linux-x64.deb"
-  $releasePosAppImage = Join-Path $outputRoot "BMS-Retail-Local-POS-$Version-linux-x64.AppImage"
+  $linuxPosDeb = Join-Path $desktopRoot "dist\BMS-POS-Plus-$Version-amd64.deb"
+  $linuxPosAppImage = Join-Path $desktopRoot "dist\BMS-POS-Plus-$Version-x86_64.AppImage"
+  $releasePosDeb = Join-Path $outputRoot "BMS-POS-Plus-Retail-Local-POS-$Version-linux-x64.deb"
+  $releasePosAppImage = Join-Path $outputRoot "BMS-POS-Plus-Retail-Local-POS-$Version-linux-x64.AppImage"
   Copy-Item -LiteralPath $linuxPosDeb -Destination $releasePosDeb -Force
   Copy-Item -LiteralPath $linuxPosAppImage -Destination $releasePosAppImage -Force
 
@@ -398,9 +398,9 @@ if ($Target -eq "MacOS") {
   foreach ($architecture in @("arm64", "x64")) {
     foreach ($packageType in @("server", "server-pos")) {
       $packageName = if ($packageType -eq "server") {
-        "BMS-Retail-Local-Server-$Version-$architecture.pkg"
+        "BMS-POS-Plus-Retail-Local-Server-$Version-$architecture.pkg"
       } else {
-        "BMS-Retail-Local-Server-POS-$Version-$architecture.pkg"
+        "BMS-POS-Plus-Retail-Local-Server-POS-$Version-$architecture.pkg"
       }
       $metadata = Get-Content -LiteralPath (Join-Path $outputRoot "$packageName.json") -Raw | ConvertFrom-Json
       if ([string]$metadata.version -ne $Version -or
@@ -412,7 +412,7 @@ if ($Target -eq "MacOS") {
     }
   }
 } else {
-  $zipPath = Join-Path $outputRoot "BMS-Retail-Local-$Version.zip"
+  $zipPath = Join-Path $outputRoot "BMS-POS-Plus-Retail-Local-$Version.zip"
   Add-Type -AssemblyName System.IO.Compression.FileSystem
   $archive = [IO.Compression.ZipFile]::OpenRead($zipPath)
   try {
@@ -455,7 +455,7 @@ if ($Target -eq "WindowsLinux") {
   }
 }
 
-Write-Host "`nBuild completed: BMS Retail Local $Version ($Target)" -ForegroundColor Green
+Write-Host "`nBuild completed: BMS POS+ Retail Local $Version ($Target)" -ForegroundColor Green
 Write-Host "Source commit: $head"
 $verified | Format-Table -AutoSize
 Write-Host "Output: $outputRoot"

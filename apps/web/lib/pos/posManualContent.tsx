@@ -589,13 +589,13 @@ export const TH_SECTIONS: ManualSection[] = [
     id: "scope",
     eyebrow: "อ้างอิง",
     title: "ขอบเขต Hybrid และการเปิดใช้งานจริง",
-    lead: "BMS Cloud และ Hybrid POS เป็นผลิตภัณฑ์เดียวกัน แต่ Emergency Offline Mode มีขอบเขตแคบกว่างานที่ใช้ได้เมื่อออนไลน์",
+    lead: "BMS POS+ Cloud และ Hybrid POS เป็นผลิตภัณฑ์เดียวกัน แต่ Emergency Offline Mode มีขอบเขตแคบกว่างานที่ใช้ได้เมื่อออนไลน์",
     defaultOpen: false,
     blocks: [
       {
         kind: "stats",
         items: [
-          { label: "ผลิตภัณฑ์", value: "BMS เดียว: Cloud + Emergency Offline" },
+          { label: "ผลิตภัณฑ์", value: "BMS POS+ เดียว: Cloud + Emergency Offline" },
           { label: "Mobile ตอนเน็ตล่ม", value: "Retail ธรรมดา + เงินสดเท่านั้น" },
           { label: "Web/Desktop", value: "ต้องเชื่อมต่อ Cloud" },
           { label: "Vertical workflow", value: "ร้านอาหาร/บอร์ดเกม/เภสัชต้องต่อ Cloud" },
@@ -1132,13 +1132,13 @@ export const EN_SECTIONS: ManualSection[] = [
     id: "scope",
     eyebrow: "Reference",
     title: "Hybrid scope and go-live boundary",
-    lead: "BMS Cloud and Hybrid POS are one product, but Emergency Offline Mode has a narrower scope than connected operation.",
+    lead: "BMS POS+ Cloud and Hybrid POS are one product, but Emergency Offline Mode has a narrower scope than connected operation.",
     defaultOpen: false,
     blocks: [
       {
         kind: "stats",
         items: [
-          { label: "Product", value: "One BMS: Cloud + Emergency Offline" },
+          { label: "Product", value: "One BMS POS+: Cloud + Emergency Offline" },
           { label: "Mobile outage", value: "Plain retail + cash only" },
           { label: "Web/Desktop", value: "Cloud connection required" },
           { label: "Vertical workflows", value: "Restaurant/board-game/pharmacy require Cloud" },

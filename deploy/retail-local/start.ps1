@@ -13,4 +13,4 @@ Wait-RetailLocalHealthy -ComposeArgs $composeArgs
 $webPort = [int](Get-RetailLocalEnvValue -EnvFile $ctx.EnvFile -Name "BMS_LOCAL_WEB_PORT")
 $wsPort = [int](Get-RetailLocalEnvValue -EnvFile $ctx.EnvFile -Name "BMS_LOCAL_WS_PORT")
 Test-RetailLocalHttp -WebPort $webPort -WsPort $wsPort
-Write-Host "BMS Retail Local is ready: http://127.0.0.1:$webPort" -ForegroundColor Green
+Write-Host "BMS POS+ Retail Local is ready: http://127.0.0.1:$webPort" -ForegroundColor Green

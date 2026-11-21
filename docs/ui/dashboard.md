@@ -74,7 +74,7 @@ through the admin shell. It lives at `apps/web/app/(main)/live-dashboard/page.ts
 instead of `AdminSidebar`/`AdminLayoutClient`. The intended use case is putting it on a TV or second
 monitor in the shop while a live stream runs.
 
-**Current status after the phase-1 pass:** this page now reads real business data for the parts BMS
+**Current status after the phase-1 pass:** this page now reads real business data for the parts BMS POS+
 already owns, and keeps the truly missing pieces clearly pending instead of faking them. The route
 still reuses the public shell, but it now queries the same tenant-scoped GraphQL reads that power
 the admin dashboard/reports instead of rendering a full mock screen.
@@ -118,10 +118,10 @@ the Bangkok calendar day changes, so a TV does not remain pinned to yesterday un
   | Block | Why it is still pending |
   | --- | --- |
   | Intraday/hourly live sales curve | `salesDaily[]` is only daily; a true during-stream chart needs a new finer-grained query |
-  | Viewers / comments / conversion | BMS has no owned source for these; requires per-platform Live API integration |
+  | Viewers / comments / conversion | BMS POS+ has no owned source for these; requires per-platform Live API integration |
 
 - **Live-stream metrics are a different category.** ผู้ชมสด / Conversion / คอมเมนต์ are not
-  "unwired" — BMS has no data for them at all, and getting it requires per-platform Live API
+  "unwired" — BMS POS+ has no data for them at all, and getting it requires per-platform Live API
   integration (Facebook Live, TikTok Live, Shopee/Lazada Live) that does not exist. They are
   deliberately placed last, on a dashed-border card, and must keep their "ตัวอย่าง" tag until a real
   integration lands. Conversion in particular cannot be computed before viewer counts are real.
@@ -270,4 +270,4 @@ at `/admin/report-schedule`.
 
 New report queries should follow the same shape (a `lib/bms/reports.ts` function, a `report.view`
 gated GraphQL query, no writes). See [../architecture/api.md](../architecture/api.md) for the
-resolver pattern shared across every BMS module.
+resolver pattern shared across every BMS POS+ module.

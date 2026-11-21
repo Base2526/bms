@@ -7,7 +7,7 @@
 > payment submission `PENDING`, human verification และ order/shipping tracking
 >
 > ขอบเขตที่ยังไม่ควรแสดงว่าใช้งานจริง: payment gateway, บัตรออนไลน์, auto-confirm payment,
-> carrier checkout API และ marketplace checkout ภายใน BMS
+> carrier checkout API และ marketplace checkout ภายใน BMS POS+
 
 หน้าที่แยกไว้ใน wireframe ด้านล่างถูกนำมารวมเป็น responsive single-page flow เพื่อให้เปิดใน
 LINE/Facebook Messenger in-app browser ได้ต่อเนื่องโดยไม่เสีย signed token ระหว่างหน้า แต่แต่ละ
@@ -21,7 +21,7 @@ section/state ยังคงใช้กติกาและ acceptance criter
 3. ช่องทางชำระเงินต้องมาจากบัญชีที่ร้านตั้งค่าไว้เท่านั้น แถวว่างห้ามแสดง
 4. ถ้าร้านไม่มีช่องทางชำระเงิน ห้ามแนะนำ "โอนธนาคาร / พร้อมเพย์ / QR / อื่น ๆ"
 5. การส่งสลิปคือ "แจ้งชำระแล้ว รอตรวจสอบ" ไม่ใช่ "ชำระสำเร็จ"
-6. Lazada/Shopee ใช้ข้อมูลผู้รับ ที่อยู่ และการชำระเงินจาก Seller Center ไม่เก็บซ้ำใน BMS
+6. Lazada/Shopee ใช้ข้อมูลผู้รับ ที่อยู่ และการชำระเงินจาก Seller Center ไม่เก็บซ้ำใน BMS POS+
 7. ทุกหน้าต้องแสดงยอดจาก order snapshot และห้ามให้ client แก้ยอดเอง
 
 ## Flow รวม
@@ -190,7 +190,7 @@ Chat confirms product
 └─────────────────────────────────────┘
 ```
 
-- ห้ามแสดงฟอร์มที่อยู่และตัวเลือกบัญชี BMS
+- ห้ามแสดงฟอร์มที่อยู่และตัวเลือกบัญชี BMS POS+
 - ห้ามสร้าง deep link ปลอมหากยังไม่มี official marketplace URL ในระบบ
 
 ## หน้า 4A: Payment Methods - ร้านตั้งค่าแล้ว

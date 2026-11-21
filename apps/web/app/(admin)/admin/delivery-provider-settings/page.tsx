@@ -87,7 +87,7 @@ export default function DeliveryProviderSettingsPage() {
       </Space>
     </AdminPageHeader>
     <Alert closable showIcon type="info"
-      message={L("หน้านี้เป็นของเจ้าของระบบ BMS", "This page belongs to the BMS platform owner")}
+      message={L("หน้านี้เป็นของเจ้าของระบบ BMS POS+", "This page belongs to the BMS POS+ platform owner")}
       description={L("เก็บ Partner contract และ credential ส่วนกลางครั้งเดียว เจ้าของร้านใช้ /admin/delivery-platforms เพื่อเชื่อมร้านและ mapping เท่านั้น Secret เข้ารหัสและอ่านค่าจริงกลับไม่ได้", "Store the platform Partner contract and credentials once. Shop owners use /admin/delivery-platforms only for shop authorization and mappings. Secrets are encrypted and never returned in plaintext.")} />
     <Card>
       <Table rowKey="id" loading={loading} dataSource={rows} pagination={false} columns={[

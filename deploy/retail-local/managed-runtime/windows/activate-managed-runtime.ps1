@@ -11,7 +11,7 @@ $agent = Join-Path $InstallRoot "bootstrap\bms-runtime-agent.exe"
 $receipt = Join-Path $InstallRoot "installation.json"
 if (-not (Test-Path -LiteralPath $agent -PathType Leaf) -or
     -not (Test-Path -LiteralPath $receipt -PathType Leaf)) {
-  throw "BMS Retail Local Managed Runtime is not installed"
+  throw "BMS POS+ Retail Local Managed Runtime is not installed"
 }
 if ([string]::IsNullOrWhiteSpace($ActivationUri)) { throw "The bootstrap has no Activation URL" }
 $parsed = $null

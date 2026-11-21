@@ -5,7 +5,7 @@ readonly RUNTIME_ROOT="/var/lib/bms-retail-local"
 readonly BOOTSTRAP_ROOT="/opt/bms-retail-local"
 readonly SERVICE_NAME="bms-retail-local.service"
 
-die() { BMS_DIAG_REASON=$*; BMS_DIAG_LINE=${BASH_LINENO[0]}; printf 'BMS Retail Local Setup: %s\n' "$*" >&2; exit 1; }
+die() { BMS_DIAG_REASON=$*; BMS_DIAG_LINE=${BASH_LINENO[0]}; printf 'BMS POS+ Retail Local Setup: %s\n' "$*" >&2; exit 1; }
 step() { BMS_DIAG_STAGE="step-$1-of-7"; printf '\n[BMS %s/7] %s\n' "$1" "$2"; }
 require_root() { [[ ${EUID} -eq 0 ]] || die "Run this command with sudo"; }
 is_https_url() { [[ ${1:-} =~ ^https://[^/@:]+([/:?#]|$) ]] && [[ ${1:-} != *'@'* ]]; }
@@ -183,7 +183,7 @@ if [[ -f $RUNTIME_ROOT/installation.json ]]; then
   systemctl enable --now bms-retail-local-license-ui.timer >/dev/null 2>&1 || true
   for attempt in {1..60}; do
     if bms-localctl doctor; then
-      printf 'BMS Retail Local is installed and ready. Existing shop data has been preserved\n'
+      printf 'BMS POS+ Retail Local is installed and ready. Existing shop data has been preserved\n'
       exit 0
     fi
     printf 'Waiting for existing shop services (%s/60)...\n' "$attempt"
@@ -434,7 +434,7 @@ if [[ $package_type == server-pos && -n $device_token && $operator != root ]]; t
     bms-pos "--pairing-handoff=$handoff_path" >"$desktop_log" 2>&1 &
   desktop_pid=$!
   sleep 3
-  kill -0 "$desktop_pid" 2>/dev/null || die "Could not open BMS POS. See $desktop_log for details"
+  kill -0 "$desktop_pid" 2>/dev/null || die "Could not open BMS POS+. See $desktop_log for details"
 fi
 unset device_token provision_result provision_output
 
@@ -482,11 +482,11 @@ step 7 "Installation complete"
 printf 'Choose a separate USB/NAS backup destination. Configure with: sudo bms-retail-local-configure-backup AGE_RECIPIENT /mnt/OFF_HOST\n'
 printf 'Store the recovery identity separately and test restore before relying on the backup\n'
 systemctl enable --now bms-retail-local-license-ui.timer >/dev/null 2>&1 || true
-printf 'BMS Retail Local is ready: http://127.0.0.1:3100\n'
+printf 'BMS POS+ Retail Local is ready: http://127.0.0.1:3100\n'
 printf 'You can try the system immediately without an Activation Code\n'
 if [[ -n ${BMS_ACTIVATION_URI:-} ]]; then
   printf 'Register later: Admin > License or sudo bms-retail-local-activate\n'
 fi
 if [[ $package_type == server ]]; then
-  printf 'Server-only installation: BMS POS Desktop was not installed or launched\n'
+  printf 'Server-only installation: BMS POS+ Desktop was not installed or launched\n'
 fi

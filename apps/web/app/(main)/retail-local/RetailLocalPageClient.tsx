@@ -146,15 +146,15 @@ type PageContent = {
 const CONTENT: { th: PageContent; en: PageContent } = {
   th: {
     pilot: "EARLY ACCESS · TECHNICAL PILOT",
-    eyebrow: "BMS RETAIL LOCAL",
+    eyebrow: "BMS POS+ RETAIL LOCAL",
     title: "ระบบขายหน้าร้านที่ทำงานบนเครื่องของร้าน",
     description:
-      "ใช้ Web, POS, ฐานข้อมูล และกติกาธุรกิจชุดเดียวกับ BMS โดยเก็บข้อมูลหลักไว้ที่เครื่องร้าน เหมาะกับร้านที่ต้องการควบคุมระบบภายในและมีทีมดูแลเครื่องตามข้อกำหนด",
+      "ใช้ Web, POS, ฐานข้อมูล และกติกาธุรกิจชุดเดียวกับ BMS POS+ โดยเก็บข้อมูลหลักไว้ที่เครื่องร้าน เหมาะกับร้านที่ต้องการควบคุมระบบภายในและมีทีมดูแลเครื่องตามข้อกำหนด",
     viewDownloads: "ดาวน์โหลดฟรี",
     seeRequirements: "ดูราคา",
     localFacts: [
       { title: "ข้อมูลหลักอยู่ที่ร้าน", description: "PostgreSQL บนเครื่องร้านเป็นแหล่งข้อมูลจริงเพียงชุดเดียว ไม่มี cloud replica" },
-      { title: "กติกาชุดเดียวกับ BMS", description: "ราคา สต็อก สิทธิ์ การชำระเงิน และ audit ยังตรวจจาก server เดิม" },
+      { title: "กติกาชุดเดียวกับ BMS POS+", description: "ราคา สต็อก สิทธิ์ การชำระเงิน และ audit ยังตรวจจาก server เดิม" },
       { title: "หนึ่งเครื่อง หนึ่งร้าน", description: "รุ่นเริ่มต้นรองรับ 1 ร้าน, สาขา MAIN และ POS-01" },
     ],
     setupEyebrow: "RECOMMENDED ENVIRONMENT",
@@ -211,7 +211,7 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     releasesEyebrow: "RELEASES",
     releasesTitle: "เลือก OS และหน้าที่ของเครื่อง",
     releasesDescription: "ร้านที่ใช้เครื่องเดียวควรเลือก Server + POS ส่วนเครื่องแม่ข่ายและเครื่องแคชเชียร์เพิ่มเติมสามารถติดตั้งแยกกันได้",
-    activationNote: "Server และ Server + POS ติดตั้งและทดลองได้ทันที ไม่ต้องมี Activation Code หากได้รับ Code จาก BMS สามารถลงทะเบียนภายหลังได้ การติดตั้งครั้งแรกต้องใช้อินเทอร์เน็ต",
+    activationNote: "Server และ Server + POS ติดตั้งและทดลองได้ทันที ไม่ต้องมี Activation Code หากได้รับ Code จาก BMS POS+ สามารถลงทะเบียนภายหลังได้ การติดตั้งครั้งแรกต้องใช้อินเทอร์เน็ต",
     installer: "ไฟล์ติดตั้ง",
     currentPilot: "Technical pilot",
     choosePackageTitle: "เครื่องนี้ใช้ระบบปฏิบัติการอะไร?",
@@ -244,11 +244,11 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     minOsLabel: "OS ขั้นต่ำ",
     releaseNotesLabel: "ข้อควรรู้ก่อน update",
     fallbackFiles: {
-      windows: { "server-pos": "BMS-Retail-Local-Full-Setup.exe", server: "BMS-Retail-Local-Server-Setup.exe", pos: "BMS-POS-Setup-x64.exe" },
-      "windows-x86-legacy": { "server-pos": "ไม่รองรับ", server: "ไม่รองรับ", pos: "BMS-Retail-Local-POS-<version>-windows-x86-legacy.exe" },
-      ubuntu: { "server-pos": "bms-retail-local-full_<version>_amd64.deb", server: "bms-retail-local-server_<version>_amd64.deb", pos: "bms-pos_<version>_amd64.deb" },
-      "macos-arm64": { "server-pos": "BMS-Retail-Local-Server-POS-<version>-arm64.pkg", server: "BMS-Retail-Local-Server-<version>-arm64.pkg", pos: "BMS-Retail-Local-POS-<version>-macos-arm64.dmg" },
-      "macos-x64": { "server-pos": "BMS-Retail-Local-Server-POS-<version>-x64.pkg", server: "BMS-Retail-Local-Server-<version>-x64.pkg", pos: "BMS-Retail-Local-POS-<version>-macos-x64.dmg" },
+      windows: { "server-pos": "BMS-POS-Plus-Retail-Local-Server-POS-<version>-windows-x64.exe", server: "BMS-POS-Plus-Retail-Local-Server-<version>-windows-x64.exe", pos: "BMS-POS-Plus-Setup-<version>-x64.exe" },
+      "windows-x86-legacy": { "server-pos": "ไม่รองรับ", server: "ไม่รองรับ", pos: "BMS-POS-Plus-Retail-Local-POS-<version>-windows-x86-legacy.exe" },
+      ubuntu: { "server-pos": "BMS-POS-Plus-Retail-Local-Server-POS-<version>-linux-x64.deb", server: "BMS-POS-Plus-Retail-Local-Server-<version>-linux-x64.deb", pos: "BMS-POS-Plus-Retail-Local-POS-<version>-linux-x64.deb" },
+      "macos-arm64": { "server-pos": "BMS-POS-Plus-Retail-Local-Server-POS-<version>-arm64.pkg", server: "BMS-POS-Plus-Retail-Local-Server-<version>-arm64.pkg", pos: "BMS-POS-Plus-Retail-Local-POS-<version>-macos-arm64.dmg" },
+      "macos-x64": { "server-pos": "BMS-POS-Plus-Retail-Local-Server-POS-<version>-x64.pkg", server: "BMS-POS-Plus-Retail-Local-Server-<version>-x64.pkg", pos: "BMS-POS-Plus-Retail-Local-POS-<version>-macos-x64.dmg" },
     },
     windowsNote: "Windows 11 x64 · WSL2 Managed Runtime",
     ubuntuNote: "Ubuntu 24.04 LTS x64 · systemd / Moby",
@@ -282,15 +282,15 @@ const CONTENT: { th: PageContent; en: PageContent } = {
   },
   en: {
     pilot: "EARLY ACCESS · TECHNICAL PILOT",
-    eyebrow: "BMS RETAIL LOCAL",
+    eyebrow: "BMS POS+ RETAIL LOCAL",
     title: "Run your retail system on the shop computer",
     description:
-      "Use the same BMS Web, POS, database and business rules while keeping the primary data on the shop host. Designed for stores that can operate and protect a supported local machine.",
+      "Use the same BMS POS+ Web, POS, database and business rules while keeping the primary data on the shop host. Designed for stores that can operate and protect a supported local machine.",
     viewDownloads: "Download free",
     seeRequirements: "View pricing",
     localFacts: [
       { title: "Shop-hosted source of truth", description: "Local PostgreSQL is the only primary datastore; there is no cloud replica." },
-      { title: "One BMS rule set", description: "Price, stock, permissions, payments and audit remain server-authoritative." },
+      { title: "One BMS POS+ rule set", description: "Price, stock, permissions, payments and audit remain server-authoritative." },
       { title: "One host, one store", description: "The initial profile supports one store, MAIN branch and POS-01." },
     ],
     setupEyebrow: "RECOMMENDED ENVIRONMENT",
@@ -347,7 +347,7 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     releasesEyebrow: "RELEASES",
     releasesTitle: "Choose the OS and machine role",
     releasesDescription: "Most single-computer stores should choose Server + POS. Dedicated servers and additional cashier devices can install each component separately.",
-    activationNote: "Install and try Server or Server + POS without an Activation Code. If BMS has given you a code, you can register after setup. The first installation requires internet access.",
+    activationNote: "Install and try Server or Server + POS without an Activation Code. If BMS POS+ has given you a code, you can register after setup. The first installation requires internet access.",
     installer: "Installer",
     currentPilot: "Technical pilot",
     choosePackageTitle: "Which operating system does this machine use?",
@@ -380,11 +380,11 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     minOsLabel: "Minimum OS",
     releaseNotesLabel: "Before you update",
     fallbackFiles: {
-      windows: { "server-pos": "BMS-Retail-Local-Full-Setup.exe", server: "BMS-Retail-Local-Server-Setup.exe", pos: "BMS-POS-Setup-x64.exe" },
-      "windows-x86-legacy": { "server-pos": "Not supported", server: "Not supported", pos: "BMS-Retail-Local-POS-<version>-windows-x86-legacy.exe" },
-      ubuntu: { "server-pos": "bms-retail-local-full_<version>_amd64.deb", server: "bms-retail-local-server_<version>_amd64.deb", pos: "bms-pos_<version>_amd64.deb" },
-      "macos-arm64": { "server-pos": "BMS-Retail-Local-Server-POS-<version>-arm64.pkg", server: "BMS-Retail-Local-Server-<version>-arm64.pkg", pos: "BMS-Retail-Local-POS-<version>-macos-arm64.dmg" },
-      "macos-x64": { "server-pos": "BMS-Retail-Local-Server-POS-<version>-x64.pkg", server: "BMS-Retail-Local-Server-<version>-x64.pkg", pos: "BMS-Retail-Local-POS-<version>-macos-x64.dmg" },
+      windows: { "server-pos": "BMS-POS-Plus-Retail-Local-Server-POS-<version>-windows-x64.exe", server: "BMS-POS-Plus-Retail-Local-Server-<version>-windows-x64.exe", pos: "BMS-POS-Plus-Setup-<version>-x64.exe" },
+      "windows-x86-legacy": { "server-pos": "Not supported", server: "Not supported", pos: "BMS-POS-Plus-Retail-Local-POS-<version>-windows-x86-legacy.exe" },
+      ubuntu: { "server-pos": "BMS-POS-Plus-Retail-Local-Server-POS-<version>-linux-x64.deb", server: "BMS-POS-Plus-Retail-Local-Server-<version>-linux-x64.deb", pos: "BMS-POS-Plus-Retail-Local-POS-<version>-linux-x64.deb" },
+      "macos-arm64": { "server-pos": "BMS-POS-Plus-Retail-Local-Server-POS-<version>-arm64.pkg", server: "BMS-POS-Plus-Retail-Local-Server-<version>-arm64.pkg", pos: "BMS-POS-Plus-Retail-Local-POS-<version>-macos-arm64.dmg" },
+      "macos-x64": { "server-pos": "BMS-POS-Plus-Retail-Local-Server-POS-<version>-x64.pkg", server: "BMS-POS-Plus-Retail-Local-Server-<version>-x64.pkg", pos: "BMS-POS-Plus-Retail-Local-POS-<version>-macos-x64.dmg" },
     },
     windowsNote: "Windows 11 x64 · WSL2 Managed Runtime",
     ubuntuNote: "Ubuntu 24.04 LTS x64 · systemd / Moby",
@@ -425,7 +425,7 @@ export default function RetailLocalPageClient({
 }: {
   downloads: Record<DownloadPlatform, Record<PackageType, DownloadAsset | null>>;
   archive: ArchiveAsset[];
-  /** False on a shop's own Retail Local install: a lead saved there never reaches BMS. */
+  /** False on a shop's own Retail Local install: a lead saved there never reaches BMS POS+. */
   leadCaptureEnabled?: boolean;
 }) {
   const { lang } = useI18n();
@@ -509,9 +509,9 @@ export default function RetailLocalPageClient({
           </div>
         </div>
 
-        <div className={styles.heroVisual} aria-label="BMS Retail Local system overview">
+        <div className={styles.heroVisual} aria-label="BMS POS+ Retail Local system overview">
           <div className={styles.visualTopbar}>
-            <span><img src="/icons/icon.svg" alt="" /> BMS Retail Local</span>
+            <span><img src="/icons/icon.svg" alt="" /> BMS POS+ Retail Local</span>
             <Tag color="processing">LOCAL HOST</Tag>
           </div>
           <div className={styles.hostPanel}>

@@ -87,7 +87,7 @@ try {
     };
   }, { version });
   await cloud.goto(new URL("renderer/setup.html", appRoot).href);
-  await cloud.getByText("สร้างจากระบบหลังบ้าน BMS", { exact: true }).waitFor();
+  await cloud.getByText("สร้างจากระบบหลังบ้าน BMS POS+", { exact: true }).waitFor();
   await cloud.locator("#admin-link").click();
   await waitFor(() => cloud.evaluate(() => window.__opened === 1));
   assert.equal(await cloud.locator("#server-url").inputValue(), "");

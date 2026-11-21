@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily BMS Retail Local best-effort license evidence pulse
+Description=Daily BMS POS+ Retail Local best-effort license evidence pulse
 
 [Timer]
 OnCalendar=*-*-* 03:00:00

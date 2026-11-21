@@ -158,7 +158,7 @@ export async function ensureManagedLocalRuntime(serverUrl, options = {}) {
   } catch (error) {
     throw new LocalRuntimeError(
       "LOCAL_RUNTIME_START_FAILED",
-      posText("พบ Retail Local Server แต่เริ่มบริการไม่สำเร็จ กรุณาลองใหม่ หากยังไม่สำเร็จให้เปิด BMS Retail Local เพื่อตรวจสอบระบบ"),
+      posText("พบ Retail Local Server แต่เริ่มบริการไม่สำเร็จ กรุณาลองใหม่ หากยังไม่สำเร็จให้เปิด BMS POS+ Retail Local เพื่อตรวจสอบระบบ"),
       error,
     );
   }

@@ -142,7 +142,7 @@ learning-only compatibility sitemap. Existing help pages stay available.
 
 Design references: [Shopify initial setup](https://help.shopify.com/en/manual/intro-to-shopify)
 and [setup-guide composition](https://shopify.dev/docs/api/app-home/latest/patterns/compositions/setup-guide):
-searchable guidance, step-by-step paths and a printable checklist, adapted to actual BMS workflows.
+searchable guidance, step-by-step paths and a printable checklist, adapted to actual BMS POS+ workflows.
 
 ## Narrated workflow overviews
 

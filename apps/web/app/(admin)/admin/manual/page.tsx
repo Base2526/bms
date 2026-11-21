@@ -484,7 +484,7 @@ const MENU_CARDS_TH: MenuCard[] = [
   {
     title: "Inbox",
     desc: "รับแชท, ดู Customer 360, assign staff, ตามงานต่อจากแชท",
-    bullets: ["เริ่มงานจากแชทใหม่", "เปิดแชทแล้วลิงก์ยังอยู่เมื่อรีเฟรช หากโหลดรายละเอียดไม่สำเร็จให้กด ลองใหม่ ระบบจะยังไม่ล้างสถานะยังไม่อ่านจนกว่าข้อความจะแสดง", "ระบบบันทึกข้อความก่อนส่งออก หากค้าง รอผลการส่ง ให้ตรวจในช่องทางก่อนตอบใหม่; ส่งได้บางส่วน หมายถึงข้อความหรือรูปสำเร็จเพียงส่วนเดียว ให้ส่งเฉพาะส่วนที่ยังขาด", "คำตอบ AI จาก LINE/Facebook/Instagram จะแสดง รอผลการส่ง แล้วเปลี่ยนเป็น ส่งแล้ว หรือ ส่งไม่สำเร็จ; เมื่อส่งไม่สำเร็จให้กด ส่งใหม่ ที่ข้อความนั้น", "Web/TikTok/Shopee/Lazada บันทึกข้อความจากหน้า Inbox ให้ทีมเห็นเท่านั้น ปุ่มจะแสดง บันทึกใน Inbox และไม่มีการส่งออกถึงลูกค้า; ข้อความเข้าจาก TikTok/Shopee/Lazada ให้พนักงานตอบในแอปของช่องทางนั้น ระบบไม่เรียก AI หรือทำรายการธุรกิจอัตโนมัติ; Shopee/Lazada ยังเป็นโครงทดลองที่ไม่ยืนยัน webhook กับผู้ให้บริการ", "ข้อความ Meta ที่มีรูปหรือไฟล์แนบพร้อมคำบรรยายจะเข้าคิว Inbox ให้พนักงานตรวจและตอบ AI จะไม่เดาเนื้อหาในไฟล์", "ถ้าไฟล์จาก LINE ดาวน์โหลดไม่สำเร็จ Inbox จะแจ้งว่าไฟล์ยังไม่พร้อม ให้ขอลูกค้าส่งใหม่", "คำขอจากผู้สนใจ BMS ที่ให้ Sales ติดต่อกลับจะติดป้าย Sales ติดต่อกลับ อยู่บนสุดของคิวที่ยังเปิด คงผู้รับผิดชอบเดิมที่มีสิทธิ์ หรือมอบหมาย Sales ก่อน และบันทึกเมนชันให้ผู้รับผิดชอบกับ Administrator แม้ไม่ว่าง; เปิดแชทเพื่อตรวจชื่อบริษัท เรื่องที่สนใจ เบอร์และเวลาสะดวก เมื่อดำเนินการเสร็จให้ปิดบทสนทนา ระบบจะล้างป้ายติดต่อกลับ", "ข้อความลูกค้าใหม่ที่ยังไม่ได้เปิดดูจะแจ้งด้วยเสียง, toast ในระบบ และ browser notification แบบทั่วไปที่ไม่แสดงข้อมูลลูกค้าบนหน้าจอล็อก; ถ้าเบราว์เซอร์บล็อกเสียง ระบบจะแสดงปุ่มให้เปิดเสียง", "Customer 360 สร้างออเดอร์และออกใบแจ้งหนี้ได้ตามสิทธิ์", "ออเดอร์ล่าสุดเปิดดูแบบ preview ใน Inbox ได้ก่อน และมีปุ่มเปิดหน้า Orders เต็มจอเป็นแท็บใหม่", "รูป/ไฟล์จะเข้า draft ก่อนส่งและแนบได้ครั้งละ 1 รายการ", "ข้อความ รูป ไฟล์ สินค้า และคูปองจะแสดงคนละรูปแบบ: bubble ข้อความ, การ์ดรูป, การ์ดไฟล์, การ์ดสินค้า และการ์ดคูปอง", "สินค้าแชร์ public link ให้ลูกค้าดูราคา สต็อก และ gallery ได้; ในแชทแนบเฉพาะรูป cover และกด ดูสินค้า จากการ์ดได้", "คูปองส่งเป็นข้อความ fallback พร้อมลิงก์กระเป๋าคูปอง เฉพาะ LINE/Facebook/Instagram ที่รองรับส่งออก ระบบเพิ่มสิทธิ์เข้า wallet เมื่อพนักงานกดส่งใน transaction เดียวกับข้อความ แม้ช่องทางภายนอกส่งไม่สำเร็จ ให้ตรวจผลก่อนส่งลิงก์ใหม่; ช่องทางที่บันทึกใน Inbox อย่างเดียวไม่เพิ่มสิทธิ์", "AI ตรวจคูปองจาก backend ก่อนตอบลูกค้า ถ้าโค้ดใช้ไม่ได้จะบอกเหตุผลและเสนอคูปองที่ยังใช้ได้แทน แต่จะไม่ใช้คูปองจากข้อความอิสระ", "ลิงก์ Products หลังบ้านเปิดแท็บใหม่สำหรับพนักงานและไม่ถูกส่งให้ลูกค้า", "มือถือใช้ flow รายชื่อ → แชทเต็มจอ พร้อมปุ่มย้อนกลับ", "แชทที่เปิดอยู่จะล้าง badge หลังข้อความล่าสุดแสดงแล้ว หากมีข้อความใหม่เข้าระหว่างนั้นจะยังคงสถานะยังไม่อ่าน", "อยู่ท้ายแชทจะเลื่อนตามอัตโนมัติ; ถ้าอ่านย้อนหลังให้กดปุ่มข้อความใหม่เพื่อลงด้านล่าง", "ดูข้อมูลลูกค้าไม่ต้องสลับหน้า", "เหมาะกับทีมขาย/แอดมินหน้าร้าน"],
+    bullets: ["เริ่มงานจากแชทใหม่", "เปิดแชทแล้วลิงก์ยังอยู่เมื่อรีเฟรช หากโหลดรายละเอียดไม่สำเร็จให้กด ลองใหม่ ระบบจะยังไม่ล้างสถานะยังไม่อ่านจนกว่าข้อความจะแสดง", "ระบบบันทึกข้อความก่อนส่งออก หากค้าง รอผลการส่ง ให้ตรวจในช่องทางก่อนตอบใหม่; ส่งได้บางส่วน หมายถึงข้อความหรือรูปสำเร็จเพียงส่วนเดียว ให้ส่งเฉพาะส่วนที่ยังขาด", "คำตอบ AI จาก LINE/Facebook/Instagram จะแสดง รอผลการส่ง แล้วเปลี่ยนเป็น ส่งแล้ว หรือ ส่งไม่สำเร็จ; เมื่อส่งไม่สำเร็จให้กด ส่งใหม่ ที่ข้อความนั้น", "Web/TikTok/Shopee/Lazada บันทึกข้อความจากหน้า Inbox ให้ทีมเห็นเท่านั้น ปุ่มจะแสดง บันทึกใน Inbox และไม่มีการส่งออกถึงลูกค้า; ข้อความเข้าจาก TikTok/Shopee/Lazada ให้พนักงานตอบในแอปของช่องทางนั้น ระบบไม่เรียก AI หรือทำรายการธุรกิจอัตโนมัติ; Shopee/Lazada ยังเป็นโครงทดลองที่ไม่ยืนยัน webhook กับผู้ให้บริการ", "ข้อความ Meta ที่มีรูปหรือไฟล์แนบพร้อมคำบรรยายจะเข้าคิว Inbox ให้พนักงานตรวจและตอบ AI จะไม่เดาเนื้อหาในไฟล์", "ถ้าไฟล์จาก LINE ดาวน์โหลดไม่สำเร็จ Inbox จะแจ้งว่าไฟล์ยังไม่พร้อม ให้ขอลูกค้าส่งใหม่", "คำขอจากผู้สนใจ BMS POS+ ที่ให้ Sales ติดต่อกลับจะติดป้าย Sales ติดต่อกลับ อยู่บนสุดของคิวที่ยังเปิด คงผู้รับผิดชอบเดิมที่มีสิทธิ์ หรือมอบหมาย Sales ก่อน และบันทึกเมนชันให้ผู้รับผิดชอบกับ Administrator แม้ไม่ว่าง; เปิดแชทเพื่อตรวจชื่อบริษัท เรื่องที่สนใจ เบอร์และเวลาสะดวก เมื่อดำเนินการเสร็จให้ปิดบทสนทนา ระบบจะล้างป้ายติดต่อกลับ", "ข้อความลูกค้าใหม่ที่ยังไม่ได้เปิดดูจะแจ้งด้วยเสียง, toast ในระบบ และ browser notification แบบทั่วไปที่ไม่แสดงข้อมูลลูกค้าบนหน้าจอล็อก; ถ้าเบราว์เซอร์บล็อกเสียง ระบบจะแสดงปุ่มให้เปิดเสียง", "Customer 360 สร้างออเดอร์และออกใบแจ้งหนี้ได้ตามสิทธิ์", "ออเดอร์ล่าสุดเปิดดูแบบ preview ใน Inbox ได้ก่อน และมีปุ่มเปิดหน้า Orders เต็มจอเป็นแท็บใหม่", "รูป/ไฟล์จะเข้า draft ก่อนส่งและแนบได้ครั้งละ 1 รายการ", "ข้อความ รูป ไฟล์ สินค้า และคูปองจะแสดงคนละรูปแบบ: bubble ข้อความ, การ์ดรูป, การ์ดไฟล์, การ์ดสินค้า และการ์ดคูปอง", "สินค้าแชร์ public link ให้ลูกค้าดูราคา สต็อก และ gallery ได้; ในแชทแนบเฉพาะรูป cover และกด ดูสินค้า จากการ์ดได้", "คูปองส่งเป็นข้อความ fallback พร้อมลิงก์กระเป๋าคูปอง เฉพาะ LINE/Facebook/Instagram ที่รองรับส่งออก ระบบเพิ่มสิทธิ์เข้า wallet เมื่อพนักงานกดส่งใน transaction เดียวกับข้อความ แม้ช่องทางภายนอกส่งไม่สำเร็จ ให้ตรวจผลก่อนส่งลิงก์ใหม่; ช่องทางที่บันทึกใน Inbox อย่างเดียวไม่เพิ่มสิทธิ์", "AI ตรวจคูปองจาก backend ก่อนตอบลูกค้า ถ้าโค้ดใช้ไม่ได้จะบอกเหตุผลและเสนอคูปองที่ยังใช้ได้แทน แต่จะไม่ใช้คูปองจากข้อความอิสระ", "ลิงก์ Products หลังบ้านเปิดแท็บใหม่สำหรับพนักงานและไม่ถูกส่งให้ลูกค้า", "มือถือใช้ flow รายชื่อ → แชทเต็มจอ พร้อมปุ่มย้อนกลับ", "แชทที่เปิดอยู่จะล้าง badge หลังข้อความล่าสุดแสดงแล้ว หากมีข้อความใหม่เข้าระหว่างนั้นจะยังคงสถานะยังไม่อ่าน", "อยู่ท้ายแชทจะเลื่อนตามอัตโนมัติ; ถ้าอ่านย้อนหลังให้กดปุ่มข้อความใหม่เพื่อลงด้านล่าง", "ดูข้อมูลลูกค้าไม่ต้องสลับหน้า", "เหมาะกับทีมขาย/แอดมินหน้าร้าน"],
   },
   {
     title: "Products",
@@ -586,7 +586,7 @@ const MENU_CARDS_TH: MenuCard[] = [
     bullets: [
       "POS Devices ใช้เพิ่มเครื่องขาย, ออก token จับคู่, ตั้งสาขา, และจัดการ PIN พนักงานหน้าร้าน",
       "สิทธิ์ pos.pin.manage อ่านรายชื่อพนักงานเพื่อตั้ง PIN ได้ ปุ่มล้าง PIN ต้องยืนยันชื่อก่อนและพนักงานจะเข้าเครื่องขายไม่ได้จนกว่าจะตั้งใหม่; การตั้ง PIN ทำได้กับตนเองหรือบทบาทที่ต่ำกว่า ส่วนการเปลี่ยนโหมดบัญชีใช้กฎบทบาทเดียวกันแต่ห้ามปิดทางเข้าหลังบ้านของตนเอง และจัดการบัญชีผู้ดูแลแพลตฟอร์มไม่ได้; การเปลี่ยนโหมดเข้าใช้หลังบ้านต้องมี pos.staff.manage และยืนยันก่อนบันทึก ส่วน support.logs.view ดูเหตุการณ์เครื่องขายได้โดยไม่ต้องมีสิทธิ์แก้เครื่อง",
-      "ภาษาใน BMS POS ย้ายไปที่ ตั้งค่า → การแสดงผล → ภาษา; หน้าใส่ PIN ของ Desktop มีลิงก์ ตั้งค่าเครื่อง สำหรับเปลี่ยนภาษาก่อนเข้าสู่ระบบ",
+      "ภาษาใน BMS POS+ ย้ายไปที่ ตั้งค่า → การแสดงผล → ภาษา; หน้าใส่ PIN ของ Desktop มีลิงก์ ตั้งค่าเครื่อง สำหรับเปลี่ยนภาษาก่อนเข้าสู่ระบบ",
       "Android/iOS: เปิดหลังบ้านผ่าน HTTPS ที่มือถือเข้าถึงได้ → POS Devices → ออก token → ในแอปเปิดตั้งค่าเครื่อง → สแกน QR เพื่อจับคู่ แอปตรวจและบันทึกให้อัตโนมัติ ถ้ามี token เดิมจะให้ยืนยันก่อนเปลี่ยน และยังต้องใช้ PIN พนักงาน QR เป็นความลับ แสดงเฉพาะตอนออก token; ปิดหน้าต่างไม่ได้ยกเลิก token และออกใหม่ทำให้ตัวเก่าใช้ไม่ได้ทันที หากกล้องใช้ไม่ได้ให้คัดลอกลิงก์มาวางแทน",
       "อัปเดต Desktop/Mobile ไม่ทำให้ device token หมดอายุ: การออก token ใหม่ให้เครื่องเดิมทำให้ตัวเก่าใช้ไม่ได้ หากอ่านข้อมูลจับคู่ไม่ได้ ให้ใช้บัญชีระบบเดิม ปลดล็อกที่เก็บข้อมูล แล้วกดลองใหม่บน Desktop หรือกลับเข้าแอป Mobile; อย่าลบแอปหรือจับคู่ใหม่เพียงเพราะแถบแดง ตรวจข้อความและ HTTP status ก่อน โดย 403 ให้ผู้ดูแลตรวจสิทธิ์ และหากมีเงินสดออฟไลน์ค้างต้องซิงก์หรือตรวจสอบให้เสร็จก่อนเลิกจับคู่ หาก Desktop เลิกจับคู่ไม่สำเร็จ ระบบจะแจ้งข้อผิดพลาดและเก็บสถานะพนักงานกับตะกร้าเดิมไว้ ให้แก้สิทธิ์เข้าถึงไฟล์ตามข้อความแล้วลองใหม่",
       "POS Readiness ใช้เช็ก blocker ก่อนเปิดขาย เช่น VAT, สต็อก, refund ค้าง, และสินค้าที่ยังไม่พร้อม",
@@ -913,7 +913,7 @@ const SIDEBAR_MAP_GROUPS_TH: SidebarMapGroup[] = [
       { label: "Tenants", href: ROUTES.tenants, note: "ดูและจัดการร้านทั้งหมดในมุม platform admin" },
       { label: "Master Data", href: ROUTES.masterData, note: "จัดการธนาคาร หน่วยมาตรฐาน โครงสร้างที่อยู่ไทย และตรวจ candidate บาร์โค้ดส่วนกลาง พร้อมแหล่งที่มาและประวัติการแก้ไข" },
       { label: "Retail Local Licenses", href: ROUTES.retailLocalLicenses, note: "ออก Trial แปลงเป็น Paid และใช้แท็บ Lead กรองสถานะ บันทึกโน้ตและวันติดตาม; ย้ายเครื่องที่รอตรวจสอบผ่าน รายละเอียด → ย้ายมายังเครื่องนี้ เลือก Installation ID ต้นทางแล้วกดยืนยัน ตรวจผู้ยืนยันในประวัติการตรวจสอบเครื่อง ขั้นตอนนี้ไม่ย้ายข้อมูล ต้องตรวจ restore แยกต่างหาก; หน้า License ของเครื่องมีวิธีตั้ง backup USB/NAS และป้ายเตือนหลังบ้าน" },
-      { label: "Retail Local Downloads", href: ROUTES.retailLocalReleases, note: "อัปโหลด ตรวจ checksum และเผยแพร่ installer แยก OS/แพ็กเกจ; Server และ Server + POS ติดตั้งได้โดยไม่ถาม Activation Code ลงทะเบียนภายหลังได้; Windows Server only เปิด Admin จากหน้า Finish หรือ shortcut BMS Retail Local Admin" },
+      { label: "Retail Local Downloads", href: ROUTES.retailLocalReleases, note: "อัปโหลด ตรวจ checksum และเผยแพร่ installer แยก OS/แพ็กเกจ; Server และ Server + POS ติดตั้งได้โดยไม่ถาม Activation Code ลงทะเบียนภายหลังได้; Windows Server only เปิด Admin จากหน้า Finish หรือ shortcut BMS POS+ Retail Local Admin" },
       { label: "Managed Runtime Releases", href: ROUTES.retailLocalRuntimeReleases, note: "เผยแพร่ signed manifest และ component ทั้งชุดหลังตรวจ signature, target, URL, ขนาด และ SHA-256; ลบ version/target พร้อมไฟล์ทั้งหมดได้หลังยืนยัน" },
       { label: "รายงานปัญหาการติดตั้ง", href: ROUTES.installerReports, note: "ดูรายงานที่ผู้ใช้ยินยอมส่ง กรอง OS/รุ่น installer ตรวจรายละเอียดและบันทึกผลการวิเคราะห์ เฉพาะผู้ดูแลแพลตฟอร์ม" },
       { label: "Report Schedule", href: ROUTES.reportSchedule, note: "ตั้งหรือตรวจงานส่งรายงานแบบตามเวลา" },
@@ -1020,8 +1020,8 @@ const LINK_STEPS_TH: LinkStep[] = [
         และนำข้อความที่ตอบจาก Business Suite พร้อมสถานะส่งถึง/อ่านแล้วเข้า timeline โดยไม่เรียก AI · ถ้าต้องทดสอบ
         Inbox realtime ให้เปิด {L.realtimeDiagnostics} แล้วกด Create Msg · LINE OA จริงจะ sync ชื่อ/รูปจาก LINE profile cache หลังข้อความทุกชนิดเข้า
         และทยอย backfill โปรไฟล์เดิมรอบละ 20 รายการทุก 15 นาที
-        · ตั้งข้อความต้อนรับ/Get Started/คำถามเริ่มต้นระดับเพจได้จากการ์ด Messenger ใน BMS; โฆษณา Send message ยังต้องเลือกเพจเดียวกับที่เชื่อมร้านและตั้งเทมเพลตเฉพาะโฆษณาใน Meta Ads Manager
-        · เพจร้านใช้ AI ขายสินค้าของร้าน ส่วนเพจขายระบบ BMS ต้องให้ผู้ดูแลแพลตฟอร์มระบุเพจและร้านฝ่ายขายก่อน
+        · ตั้งข้อความต้อนรับ/Get Started/คำถามเริ่มต้นระดับเพจได้จากการ์ด Messenger ใน BMS POS+; โฆษณา Send message ยังต้องเลือกเพจเดียวกับที่เชื่อมร้านและตั้งเทมเพลตเฉพาะโฆษณาใน Meta Ads Manager
+        · เพจร้านใช้ AI ขายสินค้าของร้าน ส่วนเพจขายระบบ BMS POS+ ต้องให้ผู้ดูแลแพลตฟอร์มระบุเพจและร้านฝ่ายขายก่อน
       </>
     ),
   },
@@ -1080,7 +1080,7 @@ const LINK_STEPS_TH: LinkStep[] = [
     description: (
       <>
         เปิด <Link href={ROUTES.assistant}>ผู้ช่วย AI</Link> เพื่อถามรายงาน/สต็อก/ออร์เดอร์ด้วยภาษาพูด
-        หรือแนบ/วางภาพหน้าจอ BMS พร้อมคำถามและยืนยันแหล่งภาพก่อนส่ง เพื่อให้ช่วยอธิบายหน้าและข้อความ error
+        หรือแนบ/วางภาพหน้าจอ BMS POS+ พร้อมคำถามและยืนยันแหล่งภาพก่อนส่ง เพื่อให้ช่วยอธิบายหน้าและข้อความ error
         หรือพิมพ์ขอ export เช่น "export sales to Excel" / "สร้าง PDF รายงานกำไร" ได้เลย
         — งานที่กระทบเงิน/สต็อกจะต้องกดยืนยันเองก่อนเสมอ
       </>
@@ -1090,7 +1090,7 @@ const LINK_STEPS_TH: LinkStep[] = [
 
 const TH: ManualContent = {
   heroTag: "คู่มือใหม่แบบใช้งานจริง",
-  heroTitle: "📘 คู่มือการใช้งาน BMS",
+  heroTitle: "📘 คู่มือการใช้งาน BMS POS+",
   heroLead:
     "ปรับจากเอกสารยาวแบบเดิม ให้เป็นคู่มือที่เริ่มงานได้เร็ว หาเมนูง่าย และสอนทีมใหม่ได้ง่ายกว่าเดิม",
   heroAlertMessage: "ลูกค้าทัก → Inbox → Orders → Payment → Shipping → Dashboard",
@@ -1269,11 +1269,11 @@ const TH: ManualContent = {
     "ใช้ส่วนนี้ตอนอธิบายทีม, demo ระบบ, หรือเช็กว่า AI ของร้านควรตอบและพาลูกค้าไปสู่ flow หลังบ้านแบบไหน",
   archetypeAlertMessage: "หลักคิดสำคัญ",
   archetypeAlertDesc:
-    "BMS ไม่ได้จบที่ตอบแชท แต่ต้องพาลูกค้าไปสู่การทำงานจริงของร้าน: รู้จักลูกค้า -> หา/แนะนำสินค้า -> เช็กสต็อก -> สร้างออเดอร์ -> รับชำระ -> ส่งของ -> ติดตามสถานะ และเมื่อของหมดควรเปลี่ยนบทสนทนาเป็น restock queue เพื่อเก็บโอกาสขายกลับมา ถ้าร้านเริ่มมีออร์เดอร์จริงแล้ว archetype จะถูกล็อกเพื่อกันคำแนะนำในอนาคตแกว่งตามหลังข้อมูลจริง (ออร์เดอร์ demo ที่มี marker FAKE-* ไม่นับ)",
+    "BMS POS+ ไม่ได้จบที่ตอบแชท แต่ต้องพาลูกค้าไปสู่การทำงานจริงของร้าน: รู้จักลูกค้า -> หา/แนะนำสินค้า -> เช็กสต็อก -> สร้างออเดอร์ -> รับชำระ -> ส่งของ -> ติดตามสถานะ และเมื่อของหมดควรเปลี่ยนบทสนทนาเป็น restock queue เพื่อเก็บโอกาสขายกลับมา ถ้าร้านเริ่มมีออร์เดอร์จริงแล้ว archetype จะถูกล็อกเพื่อกันคำแนะนำในอนาคตแกว่งตามหลังข้อมูลจริง (ออร์เดอร์ demo ที่มี marker FAKE-* ไม่นับ)",
   archetypeCustomerAskLabel: "ตัวอย่างคำถามลูกค้า",
   archetypeAiReplyLabel: "แนวตอบของ AI",
   archetypeBackendFlowLabel: "flow หลังบ้านที่ควรเกิด",
-  archetypeWhyLabel: "ทำไม archetype นี้สำคัญกับ BMS:",
+  archetypeWhyLabel: "ทำไม archetype นี้สำคัญกับ BMS POS+:",
   archetypeExamples: ARCHETYPE_EXAMPLES_TH,
   couponsTitle: "🎟 คู่มือคูปองแบบละเอียด",
   couponsSubtitle: "อธิบายว่าระบบรู้อะไรเกี่ยวกับคูปองของลูกค้า, ใช้อย่างไร, และเงื่อนไขไหนผ่านหรือไม่ผ่าน",
@@ -1351,7 +1351,7 @@ const TH: ManualContent = {
     },
     {
       title: "6. เตรียมแผนเมื่อระบบหรืออินเทอร์เน็ตล่ม",
-      description: "POS นี้ต้องเชื่อม BMS server และ PostgreSQL จึงขาย ค้น คืน หรือปิดกะได้ ให้ร้านมีแบบฟอร์มจดรายการชั่วคราว วิธีเก็บเงิน และขั้นตอนนำรายการกลับเข้าระบบหลังเชื่อมต่อได้",
+      description: "POS นี้ต้องเชื่อม BMS POS+ server และ PostgreSQL จึงขาย ค้น คืน หรือปิดกะได้ ให้ร้านมีแบบฟอร์มจดรายการชั่วคราว วิธีเก็บเงิน และขั้นตอนนำรายการกลับเข้าระบบหลังเชื่อมต่อได้",
     },
   ],
   posDailyTitle: "วิธีใช้งานแต่ละงานใน POS",
@@ -1475,7 +1475,7 @@ const TH: ManualContent = {
         "ตั้งเครื่องพิมพ์ WebUSB ในแท็บ ตั้งค่า; ถ้าเบราว์เซอร์ไม่รองรับ ระบบใช้ print dialog และเปิดลิ้นชักจาก dialog ไม่ได้",
         "Desktop ตั้งจอลูกค้าและจอเรียกคิวที่ ตั้งค่า > จอภายนอก กด ระบุหมายเลขจอ เพื่อดูจอจริง จอคิวเปิดแยกตามจอภายนอกที่ตรวจพบ เลือกจำนวนในโหมดอัตโนมัติหรือเลือกจอเอง แล้วเลือกจอที่ประกาศเสียงหนึ่งจอและรูปแบบของแต่ละจอ หน้าต่างทดสอบเปิดคู่กับจอลูกค้าได้แต่ปิดเสียงและไม่บันทึกค่าจอ จอลูกค้าแสดง 8 รายการล่าสุด ยอด ส่วนลด และเงินทอนแบบ read-only",
         "ในกล่องจอเรียกคิว เลือกรูปแบบเริ่มต้นได้ 6 แบบ: เรียกเด่น, สามโซน, แถบเตรียม, มินิมอลทีวี, ป้ายรายการ และแบ่งครึ่ง แต่ละจอคิวตั้งรูปแบบของตัวเองเพิ่มได้ หรือเลือก ตามรูปแบบเริ่มต้น เพื่อลบค่ารายจอและให้ตามการเปลี่ยนค่าเริ่มต้นครั้งต่อไป เลือกเสียงพูด AI Studio ได้ 4 เสียงจริง: ผู้หญิงสุภาพ (Kore), ผู้หญิงสดใส (Aoede), ผู้ชายเป็นกันเอง (Puck) และผู้ชายเสียงประกาศ (Charon) รวมทั้งเสียงผู้หญิงสุภาพ + กระดิ่ง, กระดิ่งเคาน์เตอร์, บี๊บสองครั้ง และเสียงนุ่ม พร้อมปุ่มทดลองคิว 001 เสียงเป็นค่าเฉพาะเครื่องที่ใช้ร่วมกันทุกจอคิว แต่มีจอคิวหนึ่งจอออกเสียงจริง; ถ้ายังไม่ได้ติดตั้ง voice-pack ระบบใช้เสียงพูดของเครื่องที่ใกล้เคียงและปรับจังหวะ/ระดับเสียงตามกลุ่มที่เลือก เมื่อคิวมาก ระบบสลับหน้าทุก 8 วินาทีโดยไม่ย่อเลขจนอ่านยาก การปิดเสียงระดับสาขายังมีผลสูงสุด",
-        "ถ้ามีจอภายนอกหนึ่งจอ การเปิดจอลูกค้าหรือจอเรียกคิวจะสลับบทบาทของจอนั้น; ถ้ามีหลายจอเปิดจอลูกค้าและจอคิวพร้อมกันได้คนละจอ จอคิวที่ถอดออกจะขึ้นรอเชื่อมต่อและเปิดกลับเมื่อเสียบใหม่ เสียงจะย้ายไปจอคิวที่ยังเปิดอยู่โดยอัตโนมัติ ห้ามคัดลอก URL queue-board ไปเปิดใน Chrome ให้เปิดจากแอป BMS POS เท่านั้น",
+        "ถ้ามีจอภายนอกหนึ่งจอ การเปิดจอลูกค้าหรือจอเรียกคิวจะสลับบทบาทของจอนั้น; ถ้ามีหลายจอเปิดจอลูกค้าและจอคิวพร้อมกันได้คนละจอ จอคิวที่ถอดออกจะขึ้นรอเชื่อมต่อและเปิดกลับเมื่อเสียบใหม่ เสียงจะย้ายไปจอคิวที่ยังเปิดอยู่โดยอัตโนมัติ ห้ามคัดลอก URL queue-board ไปเปิดใน Chrome ให้เปิดจากแอป BMS POS+ เท่านั้น",
         "สไลด์โปรโมชันในข้อมูลร้านหมุนเฉพาะตอนจอลูกค้าว่าง; เมื่อมีตะกร้า ชำระเงิน ผลขาย หรือเลขคิว หน้าธุรกรรมจะแทนทันที และรูปที่โหลดไม่สำเร็จจะกลับไปใช้พื้นหลังต้อนรับ",
         "สื่อจอเรียกคิวตั้งแยกใน Locations > สื่อจอคิว ของแต่ละสาขา: ใส่รูปโปรสูงสุด 8 รูป จัดลำดับ เปิด/ปิดรายรูป และตั้งวันเริ่ม-สิ้นสุดได้ เลือกรูปเริ่มต้น เวลาเปลี่ยน 4-30 วินาที และเอฟเฟกต์ ก่อนกดเผยแพร่ หากไม่มีรูปโปรที่ใช้ได้จอแสดงรูปเริ่มต้นหรือพื้นหลังมาตรฐาน เลขคิวและเสียงเรียกยังแสดงตามปกติ วิดีโอยังไม่เปิดใช้ในจอคิว",
         "Desktop ร้านอาหารตั้งค่า > เครื่องพิมพ์แยกตามสถานีครัว เพื่อผูกสถานีกับชื่อเครื่องพิมพ์ของ OS และเลือก 58/80 มม./พิมพ์อัตโนมัติ งานหนึ่ง ticket พิมพ์ครั้งเดียว; ถ้าผลไม่แน่ชัดต้องตรวจถาดก่อนกดยืนยันพิมพ์ซ้ำ",
@@ -1832,10 +1832,10 @@ const MENU_CARDS_EN: MenuCard[] = [
       "Opening a chat keeps its link across refreshes. If the detail fails to load, use Retry; its unread badge remains until the message is shown",
       "AI replies on LINE, Facebook, and Instagram show Delivery pending, then Sent or Send failed; use Resend on a failed message",
       "A reply is saved before the provider call. If it remains Delivery pending, check the provider channel before replying again. Partly sent means one part of a text/image reply was accepted; review the channel and send only what is missing",
-      "TikTok, Shopee, and Lazada inbound messages go to staff only. Reply in the provider app; BMS does not run AI or commit a customer business action for these channels until outbound messaging exists",
+      "TikTok, Shopee, and Lazada inbound messages go to staff only. Reply in the provider app; BMS POS+ does not run AI or commit a customer business action for these channels until outbound messaging exists",
       "Meta messages with an image or file and a caption go to staff in Inbox; AI does not guess the media content",
       "If a LINE file cannot be downloaded, Inbox says so; ask the customer to send it again",
-      "BMS prospects who explicitly request a Sales callback are labelled Sales callback, stay above ordinary open work, keep their eligible assignee or are assigned Sales-first, and create durable mentions for the assignee and Administrators even when unavailable; review company, topic, phone, and convenient time, then close the conversation after completing the follow-up to clear callback priority",
+      "BMS POS+ prospects who explicitly request a Sales callback are labelled Sales callback, stay above ordinary open work, keep their eligible assignee or are assigned Sales-first, and create durable mentions for the assignee and Administrators even when unavailable; review company, topic, phone, and convenient time, then close the conversation after completing the follow-up to clear callback priority",
       "A new unread customer message triggers sound, an in-app toast, and a generic browser notification without customer details on the lock screen; if the browser blocks audio, the app shows a button to enable it",
       "Customer 360 can create orders and print invoices, subject to your permissions",
       "Recent orders open as a preview inside Inbox first, with a button to open the full Orders page in a new tab",
@@ -2270,7 +2270,7 @@ const SIDEBAR_MAP_GROUPS_EN: SidebarMapGroup[] = [
       { label: "Tenants", href: ROUTES.tenants, note: "Review or manage shops across the platform fleet" },
       { label: "Master Data", href: ROUTES.masterData, note: "Manage shared banks, standard units, Thai addresses, and barcode candidates with provenance and revision history" },
       { label: "Retail Local Licenses", href: ROUTES.retailLocalLicenses, note: "Issue trials or convert to Paid. The Leads tab filters status and records notes/follow-up dates. For a replacement awaiting review, open Details → Transfer to this installation, select the active source Installation ID and confirm. Installation reviews show the confirming actor. This does not move data; verify the restore separately. The local License page explains USB/NAS backup setup; warnings appear only in the admin area." },
-      { label: "Retail Local Downloads", href: ROUTES.retailLocalReleases, note: "Upload, checksum, and publish installers by OS/package. Server and Server + POS setup need no Activation Code; register afterwards. Windows Server-only users can open Admin from Finish or the BMS Retail Local Admin shortcut" },
+      { label: "Retail Local Downloads", href: ROUTES.retailLocalReleases, note: "Upload, checksum, and publish installers by OS/package. Server and Server + POS setup need no Activation Code; register afterwards. Windows Server-only users can open Admin from Finish or the BMS POS+ Retail Local Admin shortcut" },
       { label: "Managed Runtime Releases", href: ROUTES.retailLocalRuntimeReleases, note: "Publish a complete pre-signed manifest/component set after signature and checksum verification; delete one version/target and all its files after confirmation" },
       { label: "Installer error reports", href: ROUTES.installerReports, note: "Review consented reports, filter OS/installer versions, inspect evidence and record findings; platform administrators only" },
       { label: "Report Schedule", href: ROUTES.reportSchedule, note: "Recurring report delivery configuration and review" },
@@ -2364,12 +2364,12 @@ const LINK_STEPS_EN: LinkStep[] = [
         Go to {L.settings} to paste tokens and set up webhooks · Facebook Messenger requires a Page Access Token,
         App Secret, Page ID, and a random Verify Token distinct from the App Secret; test it to prove the Page ID binding ·
         subscribe to messages, messaging_postbacks, message_echoes, message_deliveries, and message_reads, and request
-        Business Asset User Profile Access for customer names/photos · after activation, BMS gradually backfills existing
+        Business Asset User Profile Access for customer names/photos · after activation, BMS POS+ gradually backfills existing
         profiles and records Business Suite echoes plus delivered/read status without invoking AI ·
         to test Inbox realtime, open {L.realtimeDiagnostics} and press Create Msg · a live LINE OA syncs the display name and picture from the LINE
         profile cache after any message type and backfills up to 20 stale profiles every 15 minutes
-        · Publish the Page greeting/Get Started/ice breakers from the BMS Messenger card; Send message ads still use the connected shop Page and their ad-specific templates remain in Meta Ads Manager
-        · Shop Pages use commerce AI; BMS's own sales Page requires the platform operator to designate its Page and sales tenant
+        · Publish the Page greeting/Get Started/ice breakers from the BMS POS+ Messenger card; Send message ads still use the connected shop Page and their ad-specific templates remain in Meta Ads Manager
+        · Shop Pages use commerce AI; BMS POS+'s own sales Page requires the platform operator to designate its Page and sales tenant
       </>
     ),
   },
@@ -2439,7 +2439,7 @@ const LINK_STEPS_EN: LinkStep[] = [
 
 const EN: ManualContent = {
   heroTag: "A practical, hands-on manual",
-  heroTitle: "📘 BMS user manual",
+  heroTitle: "📘 BMS POS+ user manual",
   heroLead:
     "Reworked from the old long-form document into a manual that gets you working quickly, makes menus easy to find, and is easier to teach a new team with.",
   heroAlertMessage: "Customer messages → Inbox → Orders → Payment → Shipping → Dashboard",
@@ -2619,11 +2619,11 @@ const EN: ManualContent = {
     "Use this section when briefing your team, demoing the system, or checking how your shop's AI should reply and route customers into the back-office flow.",
   archetypeAlertMessage: "The key principle",
   archetypeAlertDesc:
-    "BMS does not stop at answering a chat — it has to carry the customer into the shop's real work: know the customer -> find/recommend products -> check stock -> create the order -> take payment -> ship -> track status. And when something is out of stock, the conversation should turn into a restock queue so the sale can be recovered. Once the shop has its first real order, the archetype is locked so future guidance does not drift away from sales history (demo orders marked FAKE-* do not count).",
+    "BMS POS+ does not stop at answering a chat — it has to carry the customer into the shop's real work: know the customer -> find/recommend products -> check stock -> create the order -> take payment -> ship -> track status. And when something is out of stock, the conversation should turn into a restock queue so the sale can be recovered. Once the shop has its first real order, the archetype is locked so future guidance does not drift away from sales history (demo orders marked FAKE-* do not count).",
   archetypeCustomerAskLabel: "Example customer question",
   archetypeAiReplyLabel: "How the AI should answer",
   archetypeBackendFlowLabel: "Back-office flow this should trigger",
-  archetypeWhyLabel: "Why this archetype matters to BMS:",
+  archetypeWhyLabel: "Why this archetype matters to BMS POS+:",
   archetypeExamples: ARCHETYPE_EXAMPLES_EN,
   couponsTitle: "🎟 Detailed coupon guide",
   couponsSubtitle:
@@ -2702,7 +2702,7 @@ const EN: ManualContent = {
     },
     {
       title: "6. Prepare an outage procedure",
-      description: "This POS needs the BMS server and PostgreSQL for search, sales, returns, settlement, and shifts. Keep a paper fallback, a payment procedure, and a written reconciliation process for entering activity after connectivity returns.",
+      description: "This POS needs the BMS POS+ server and PostgreSQL for search, sales, returns, settlement, and shifts. Keep a paper fallback, a payment procedure, and a written reconciliation process for entering activity after connectivity returns.",
     },
   ],
   posDailyTitle: "How to use every POS workflow",
@@ -2806,7 +2806,7 @@ const EN: ManualContent = {
       steps: [
         "Desktop checkout shows each item's shelf amount, promotion/wholesale saving, gift quantity, and post-promotion amount. Member/coupon/points discounts and cash rounding remain separate bill-level rows. Cash tender follows the payable until you type an actual amount or select a banknote; repricing preserves that input, even when insufficient. Exact opts back into automatic cash.",
         "For a normal sale choose Cash, QR, Card, or Wallet. For cash, enter tendered money or use Exact/quick-note buttons and verify change.",
-        "The owner can configure the payment QR under Settings > Receiving accounts: add an account, select PromptPay, search for the bank, then enter the account name and PromptPay ID—or choose a reusable, amount-free QR image issued by the bank/provider so BMS can read the recipient automatically. Provider initiation methods 11 and 12 are both accepted when no amount is present. BMS verifies the recipient and saves the QR as the base. When POS selects QR, the customer display creates a new Dynamic QR containing the QR tender amount (only the QR portion for split payment).",
+        "The owner can configure the payment QR under Settings > Receiving accounts: add an account, select PromptPay, search for the bank, then enter the account name and PromptPay ID—or choose a reusable, amount-free QR image issued by the bank/provider so BMS POS+ can read the recipient automatically. Provider initiation methods 11 and 12 are both accepted when no amount is present. BMS POS+ verifies the recipient and saves the QR as the base. When POS selects QR, the customer display creates a new Dynamic QR containing the QR tender amount (only the QR portion for split payment).",
         "QR does not require a reference because the Dynamic QR already contains the amount, but the cashier must verify the recipient, amount, and actual incoming payment before confirming. Card, wallet, and bank transfer still require a reference or approval code.",
         "Press + Split payment to add rows, allocate each amount, and enter the actual cash tender on cash rows.",
         "Cash rounding applies only to fully-cash bills and prints as its own line without changing the VAT base.",
