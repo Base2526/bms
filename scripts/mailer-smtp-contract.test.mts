@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 
 import { normalizeReplyTo, smtpTransportOptions } from "../apps/web/lib/mailer.ts";
 
@@ -27,6 +28,21 @@ const withoutComments = (src: string) =>
     .replace(/\/\*[\s\S]*?\*\//g, "");
 
 const baseEnv = { SMTP_HOST: "smtp.resend.com", SMTP_USER: "resend", SMTP_PASS: "re_test" } as NodeJS.ProcessEnv;
+
+test("patched mail transport preserves MIME and attachments without network I/O", async () => {
+  const webRequire = createRequire(new URL("../apps/web/package.json", import.meta.url));
+  const mailer = webRequire("nodemailer-safe");
+  assert.equal(webRequire("nodemailer-safe/package.json").version, "10.6.1");
+  assert.throws(() => webRequire.resolve("nodemailer"), /Cannot find module/);
+  const transporter = mailer.createTransport({ streamTransport: true, buffer: true });
+  const sent = await transporter.sendMail({
+    from: "BMS <sender@example.test>", to: "recipient@example.test",
+    replyTo: "shop@example.test", subject: "receipt", html: "<p>ok</p>",
+    attachments: [{ filename: "receipt.txt", content: Buffer.from("receipt") }],
+  });
+  assert.match(sent.message.toString(), /Reply-To: shop@example\.test/);
+  assert.match(sent.message.toString(), /receipt\.txt/);
+});
 
 test("SMTP ports 465/2465 use implicit TLS; every other port must require STARTTLS", () => {
   for (const port of ["465", "2465"]) {

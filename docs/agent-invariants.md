@@ -2621,6 +2621,22 @@ The multipart `map` must point only to existing null placeholders under `variabl
 Caddy enforces the same outer ceilings. Keep these checks when replacing the uploader or upgrading
 Apollo/Next, even if the current uploader also validates map paths.
 
+Dependency security review (2026-11-23): Apollo Server 5.5.2 pulls a vulnerable
+`@graphql-tools/utils` range for incremental result merging. Web pins only Apollo's subtree to
+12.0.4 because Apollo's declared range ends before 12.0.2; the pure contract runs the merge in a
+subprocess with a malformed path and confirms a normal merge still works. The BMS executable schema
+does not consume an untrusted upstream incremental response, so the installed-version advisory was
+not proof of an exploitable BMS route. WS and shared GraphQL core use `@graphql-tools/schema`
+10.1.5, which resolves patched `@graphql-tools/utils` 12.1.0. Keep the override scoped until Apollo
+accepts a patched utils version in its own dependency range.
+
+Web imports `nodemailer-safe` (an npm alias of Nodemailer 10.6.1) for Gmail/SMTP. `next-auth` 4
+has an optional Nodemailer 7 peer for its unused Email provider; BMS configures its Facebook
+provider only. The alias keeps the mail transport patched without installing that optional peer.
+The `xlsx` dependency comes from the official SheetJS 0.20.3 tarball because the npm registry's
+0.18.5 release has no patched version. Product, bank-statement, and fish-intake workbooks are
+untrusted inputs; keep their existing size and content validation when changing parsers.
+
 The mobile/POS GraphQL surface is code-generated in `apps/mobile`, and remains suitable for external
 clients. Rationale and phase order:
 [architecture/graphql-client-readiness-brief.md](architecture/graphql-client-readiness-brief.md);
