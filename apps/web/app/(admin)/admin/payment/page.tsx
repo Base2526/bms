@@ -16,6 +16,7 @@ import { useIsMobile, panelWidth } from "@/app/hooks/useMediaQuery";
 import AdminPageHeader, { ResponsiveStatusFilter } from "@/components/admin/AdminPageHeader";
 import { AdminMobileList, AdminRecordCard } from "@/components/admin/AdminMobileList";
 import { useI18n } from "@/lib/i18nContext";
+import { safeStoredLinkUrl } from "@/lib/safeLinkUrl";
 
 // ---- Types --------------------------------------------------
 type PayStatus = "PENDING" | "CONFIRMED" | "REJECTED" | "REFUNDED";
@@ -240,8 +241,8 @@ function PaymentManagement() {
       { title: t("admin_payment.col_amount"), dataIndex: "amount", key: "amount", width: 190, align: "right" as const,
         render: (_v: number, r: Payment) => <PaymentAmountBreakdown payment={r} /> },
       { title: t("admin_payment.col_ref_slip"), key: "ref",
-        render: (_: any, r: Payment) => r.slipUrl
-          ? <a href={r.slipUrl} target="_blank" rel="noreferrer">{t("admin_payment.view_slip")}</a>
+        render: (_: any, r: Payment) => safeStoredLinkUrl(r.slipUrl)
+          ? <a href={safeStoredLinkUrl(r.slipUrl)!} target="_blank" rel="noreferrer">{t("admin_payment.view_slip")}</a>
           : (r.slipRef || <span style={{ color: "#999" }}>—</span>) },
       { title: t("admin_payment.col_status"), dataIndex: "status", key: "status", width: 140,
         render: (s: PayStatus) => <Tag color={STATUS_COLOR[s]}>{s} · {STATUS_LABEL[s]}</Tag> },
@@ -314,8 +315,8 @@ function PaymentManagement() {
                 { label: t("admin_payment.col_amount"), value: <PaymentAmountBreakdown payment={r} /> },
                 {
                   label: t("admin_payment.col_ref_slip"),
-                  value: r.slipUrl
-                    ? <a href={r.slipUrl} target="_blank" rel="noreferrer">{t("admin_payment.view_slip")}</a>
+                  value: safeStoredLinkUrl(r.slipUrl)
+                    ? <a href={safeStoredLinkUrl(r.slipUrl)!} target="_blank" rel="noreferrer">{t("admin_payment.view_slip")}</a>
                     : (r.slipRef || <span style={{ color: "#999" }}>—</span>),
                 },
                 { label: t("admin_payment.col_verified_by"), value: r.verifiedBy || <span style={{ color: "#999" }}>—</span> },
