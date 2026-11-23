@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { useBreadcrumbsOverride } from "@/components/breadcrumbs-context";
+import { safePublicWebsiteUrl } from "@/lib/safeLinkUrl";
 import PublicProductCard from "../PublicProductCard";
 import type { PublicProductCard as PublicProductCardData, PublicShop } from "@/lib/bms/products";
 import styles from "../public-shop.module.css";
@@ -51,6 +52,9 @@ export default function ShopLandingView({
         out: "สินค้าหมด",
       };
 
+  // The website is typed by the shop owner: render it only as an http(s) link.
+  const website = safePublicWebsiteUrl(shop.website);
+
   useEffect(() => {
     setOverride(shopPath, [
       { href: "/", isClickable: true, label: lang === "en" ? "Home" : "หน้าแรก" },
@@ -80,7 +84,7 @@ export default function ShopLandingView({
 
         <div className={styles.ctaRow}>
           <Link href={productsPath} className={styles.primaryAction}>{copy.openProducts}</Link>
-          {shop.website && <a href={shop.website} target="_blank" rel="noreferrer" className={styles.secondaryAction}>{copy.visitWebsite}</a>}
+          {website && <a href={website} target="_blank" rel="noreferrer" className={styles.secondaryAction}>{copy.visitWebsite}</a>}
           {shop.phone && <a href={`tel:${shop.phone.replace(/[^+\d]/g, "")}`} className={styles.secondaryAction}>{copy.callStore}</a>}
         </div>
       </header>

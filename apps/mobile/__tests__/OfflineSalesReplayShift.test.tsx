@@ -79,6 +79,65 @@ test('an offline row still replays to its original open shift', async () => {
   expect(removeOfflineSale).toHaveBeenCalledWith('sale-1');
 });
 
+function graphqlRefusal(code: string, message: string) {
+  return Object.assign(new Error(message), {
+    graphQLErrors: [{ message, extensions: { code } }],
+  });
+}
+
+async function syncRows(rows: Array<Record<string, unknown>>, rounds = 1) {
+  let stored = rows;
+  (loadOfflineSales as jest.Mock).mockImplementation(async () => stored);
+  (patchOfflineSale as jest.Mock).mockImplementation(async (id, patch) => {
+    stored = stored.map(row => (row.id === id ? { ...row, ...patch } : row));
+    return stored;
+  });
+  let offline!: ReturnType<typeof useOfflineSales>;
+  function Probe() { offline = useOfflineSales(); return null; }
+  let tree!: ReactTestRenderer.ReactTestRenderer;
+  await act(async () => { tree = ReactTestRenderer.create(<OfflineSalesProvider><Probe /></OfflineSalesProvider>); });
+  for (let round = 0; round < rounds; round += 1) {
+    await act(async () => { await offline.syncNow(); });
+  }
+  await act(async () => tree.unmount());
+  return stored;
+}
+
+function cashRow(id: string) {
+  return {
+    id, serverUrl: 'https://shop.example.com', deviceId: 'device-1',
+    branchId: 'branch-1', shiftId: 'current-shift', cashierUserId: 'cashier-1',
+    tenderedAt: '2026-11-01T00:00:00.000Z', total: 100,
+    payload: { idempotencyKey: id, offlineTenderedAt: '2026-11-01T00:00:00.000Z' },
+    state: 'UNKNOWN', attempts: 0, lastError: null, updatedAt: '2026-11-01T00:00:00.000Z',
+  };
+}
+
+test.each([
+  ['FORBIDDEN', 'PIN ไม่ถูกต้อง'],
+  ['UNAUTHENTICATED', 'device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว'],
+])('a %s sign-in refusal is not a decision on the cash sale', async (code, message) => {
+  recover.mockRejectedValue(graphqlRefusal(code, message));
+  const stored = await syncRows([cashRow('sale-1'), cashRow('sale-2')], 2);
+  // The server refused the cashier/device, not the sale: both rows stay automatically retryable.
+  expect(stored.map(row => [row.id, row.state, row.failureCode ?? null])).toEqual([
+    ['sale-1', 'UNKNOWN', null],
+    ['sale-2', 'UNKNOWN', null],
+  ]);
+  expect(patchOfflineSale).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+    failureCode: 'DECIDED_REJECTION',
+  }));
+  // One refused credential is not replayed against every queued row, nor again until sign-in.
+  expect(recover).toHaveBeenCalledTimes(1);
+  expect(sell).not.toHaveBeenCalled();
+});
+
+test('a sale refusal on the replay itself still goes to manager review', async () => {
+  sell.mockRejectedValue(graphqlRefusal('BAD_USER_INPUT', 'ข้อมูลบิลไม่ถูกต้อง'));
+  const stored = await syncRows([cashRow('sale-1')]);
+  expect(stored[0]).toEqual(expect.objectContaining({ state: 'NEEDS_REVIEW', failureCode: 'DECIDED_REJECTION' }));
+});
+
 test('a committed legacy sale is recovered without needing its old shift ID', async () => {
   recover.mockResolvedValue({ data: { bmsPosSaleRecovery: { status: 'SOLD' } } });
   await syncLegacyRow();

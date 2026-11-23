@@ -2340,6 +2340,8 @@ const th = {
     saved: "บันทึกแล้ว",
     save_failed: "ยังยืนยันผลการบันทึกไม่ได้ กรุณาตรวจรายการล่าสุดก่อนลองอีกครั้ง",
     go_home: "ไปหน้าแรก",
+    loading_app: "BMS POS+ · กำลังโหลด…",
+    loading_app_label: "BMS POS+ กำลังโหลด",
   },
   login: {
     title: "เข้าสู่ระบบ",

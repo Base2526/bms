@@ -101,7 +101,9 @@ async function fetchLineInboundAttachment(
     const buf = Buffer.from(media.bytes);
     const mimeType = resp.headers.get("content-type")?.split(";", 1)[0]?.trim() || defaults.mimeType;
     const filename = message.fileName || `line-${message.type}-${message.id}.${defaults.extension}`;
-    const row = await persistBuffer(buf, filename, mimeType, "private", tenantId);
+    // Stored as Inbox media so /api/files applies inbox.view + Sales assignment (storedFileKinds.ts);
+    // the customer's own file name is kept as original_name.
+    const row = await persistBuffer(buf, filename, mimeType, "private", tenantId, `bms-inbox-line-${message.id}-${filename}`);
     return { url: buildFileUrlById(row.id), name: row.original_name ?? filename, mimeType: row.mimetype ?? mimeType };
   } catch (error) {
     console.error("[BMS] LINE inbound media fetch failed:", error);

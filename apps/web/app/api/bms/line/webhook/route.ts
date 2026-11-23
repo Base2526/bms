@@ -13,6 +13,8 @@ import { runPipeline } from "@/lib/bms/pipeline";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 import { claimInboundEvent } from "@/lib/bms/inboundEvents";
 import { logConversation, logInboundMessage } from "@/lib/bms/inbox";
+import { rateLimit } from "@/lib/bms/rateLimit";
+import { readBoundedWebhookText } from "@/lib/bms/webhookBody";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -42,8 +44,20 @@ async function handlePOST(req: NextRequest) {
   if (mockWebhookDisabled()) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
-  const body = (await req.json().catch(() => ({}))) as { events?: LineEvent[] };
+  const limit = await rateLimit("dev-mock-webhook:line", 20, 60_000);
+  if (!limit.ok) return NextResponse.json({ error: "rate limit exceeded" }, {
+    status: 429, headers: { "retry-after": String(limit.retryAfter) },
+  });
+  const payload = await readBoundedWebhookText(req, 64 * 1024);
+  if (!payload.ok) return NextResponse.json({ error: payload.error }, { status: payload.status });
+  let body: { events?: LineEvent[] };
+  try { body = JSON.parse(payload.text); }
+  catch { return NextResponse.json({ error: "invalid JSON" }, { status: 400 }); }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "JSON object required" }, { status: 400 });
+  }
   const events = Array.isArray(body.events) ? body.events : [];
+  if (events.length > 200) return NextResponse.json({ error: "too many events" }, { status: 400 });
 
   const replies = [];
   for (const ev of events) {

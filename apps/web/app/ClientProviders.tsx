@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { ApolloProvider } from "@apollo/client";
 import { client } from "@/lib/apollo";
 
-import { I18nProvider } from "@/lib/i18nContext";
+import { I18nProvider, useI18n } from "@/lib/i18nContext";
 import type { Lang } from "@/i18n";
 import AntdThemeProvider from "@/app/AntdThemeProvider";
 import { PosRealtimeProvider } from "@/components/realtime/RealtimeProvider";
@@ -17,15 +17,21 @@ import { isLocalizedPublicPath, stripPublicLocale } from "@/lib/publicSeo";
 // AdminSidebar) เพราะ session มาจาก cookie ที่รู้ได้แค่ฝั่ง client (SWR ไป /api/auth/me)
 // Keep the fallback in plain HTML/CSS so an admin waiting for the client bundle
 // sees a loading state even before Ant styles or SessionLayer are available.
-const SessionLayer = dynamic(() => import("@/app/SessionLayer"), {
-  ssr: false,
-  loading: () => (
+// It renders inside I18nProvider, so it follows the language the user chose.
+function SessionLoading() {
+  const { t } = useI18n();
+  return (
     <div
       role="status"
-      aria-label="BMS POS+ loading"
+      aria-label={t("common.loading_app_label")}
       style={{ minHeight: "100vh", width: "100%", display: "grid", placeItems: "center", color: "#4b5563", fontFamily: "sans-serif" }}
-    >BMS POS+ · Loading…</div>
-  ),
+    >{t("common.loading_app")}</div>
+  );
+}
+
+const SessionLayer = dynamic(() => import("@/app/SessionLayer"), {
+  ssr: false,
+  loading: () => <SessionLoading />,
 });
 
 function isAuthPath(pathname: string) {

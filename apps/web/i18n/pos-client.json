@@ -1571,6 +1571,7 @@
   "Server ปฏิเสธรายการออฟไลน์": "Server rejected offline transaction",
   "server ปฏิเสธรายการ": "Server rejected transaction",
   "ยังไม่ทราบผลการซิงก์": "Sync result unknown",
+  "Server ไม่รับการยืนยันตัวตนของเครื่องหรือแคชเชียร์ ยังไม่ได้ลงรายการนี้ — ให้แคชเชียร์เข้าสู่ระบบใหม่ (หรือจับคู่เครื่องใหม่) แล้วระบบจะซิงก์ต่อเอง": "The server did not accept this device or cashier sign-in, so this sale has not been posted yet. Ask the cashier to sign in again (or re-pair the device) and sync will continue automatically.",
   "กำลังลองซิงก์ใหม่": "Retrying sync",
   "ไม่พบรายการออฟไลน์ในสาขานี้": "No offline transaction found at this branch",
   "Server ตัดสินรายการนี้แล้ว ห้ามส่งซ้ำ กรุณาให้ผู้จัดการกระทบยอด": "The server has decided this transaction. Do not resend. Ask a manager to reconcile.",

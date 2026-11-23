@@ -8108,6 +8108,7 @@ export type SchemaBmsProductImportRowInput = {
   sku: Scalars['String']['input'];
   stock_policy: InputMaybe<Scalars['String']['input']>;
   variant_codes: InputMaybe<Array<Scalars['String']['input']>>;
+  vat_category: InputMaybe<Scalars['String']['input']>;
 };
 
 export type SchemaBmsProductImportRowResult = {
@@ -10052,6 +10053,18 @@ export type SchemaBmsSupplier = {
   taxId: Maybe<Scalars['String']['output']>;
 };
 
+export type SchemaBmsSupplierInput = {
+  address: InputMaybe<Scalars['String']['input']>;
+  branchCode: InputMaybe<Scalars['String']['input']>;
+  email: InputMaybe<Scalars['String']['input']>;
+  entityType: InputMaybe<Scalars['String']['input']>;
+  id: InputMaybe<Scalars['ID']['input']>;
+  name: InputMaybe<Scalars['String']['input']>;
+  note: InputMaybe<Scalars['String']['input']>;
+  phone: InputMaybe<Scalars['String']['input']>;
+  taxId: InputMaybe<Scalars['String']['input']>;
+};
+
 export type SchemaBmsSupplierPerformance = {
   __typename?: 'BmsSupplierPerformance';
   avgLeadDays: Scalars['Float']['output'];
@@ -11282,6 +11295,7 @@ export type SchemaMutation = {
   bmsUpsertReportSubscription: SchemaBmsReportSubscription;
   bmsUpsertStoreCapability: SchemaBmsStoreCapability;
   bmsUpsertStoreProfile: SchemaBmsStoreProfile;
+  bmsUpsertSupplier: SchemaBmsSupplier;
   bmsVerifyPaymentSlip: Maybe<SchemaBmsSlipVerification>;
   bmsVerifyShopSignup: SchemaBmsVerifyShopSignupResult;
   bmsVoidBankMatch: SchemaBmsBankMutationResult;
@@ -11888,6 +11902,7 @@ export type SchemaMutationBmsManualFillAssessmentFieldsArgs = {
 
 export type SchemaMutationBmsMarkConversationReadArgs = {
   id: Scalars['ID']['input'];
+  observedLatestMessageId: InputMaybe<Scalars['ID']['input']>;
 };
 
 
@@ -12445,6 +12460,7 @@ export type SchemaMutationBmsReceivePurchaseOrderArgs = {
   id: Scalars['ID']['input'];
   idempotencyKey: InputMaybe<Scalars['String']['input']>;
   items: Array<SchemaBmsReceiveItemInput>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
 };
 
 
@@ -13187,6 +13203,11 @@ export type SchemaMutationBmsUpsertStoreCapabilityArgs = {
 
 export type SchemaMutationBmsUpsertStoreProfileArgs = {
   input: SchemaBmsStoreProfileInput;
+};
+
+
+export type SchemaMutationBmsUpsertSupplierArgs = {
+  input: SchemaBmsSupplierInput;
 };
 
 
@@ -14090,6 +14111,7 @@ export type SchemaQuery = {
   bmsPublicPlans: Array<SchemaBmsPlan>;
   bmsPurchaseOrder: Maybe<SchemaBmsPurchaseOrder>;
   bmsPurchaseOrders: Array<SchemaBmsPurchaseOrder>;
+  bmsPurchaseReceivingLocations: Array<SchemaBmsLocation>;
   bmsQualityDetail: Scalars['JSON']['output'];
   bmsQualityForRun: Maybe<Scalars['JSON']['output']>;
   bmsQualityLots: Scalars['JSON']['output'];

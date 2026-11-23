@@ -9,6 +9,7 @@ import { gql, useMutation } from '@apollo/client';
 import type { CredentialResponse } from "@react-oauth/google";
 import type { FailResponse, SuccessResponse } from "@greatsumini/react-facebook-login";
 import { useI18n } from "@/lib/i18nContext";
+import { safeInternalRedirectPath } from "@/lib/safeRedirect";
 import SocialLogin from "@/components/auth/SocialLogin";
 import GuideLinks from "@/components/learning/GuideLinks";
 import styles from "./page.module.css";
@@ -39,7 +40,8 @@ export default function AdminLoginPage(){
   const submitting = useRef(false);
   const router = useRouter();
   const sp = useSearchParams()!;
-  const next = sp.get("next") || "/admin";
+  // ?next= comes from the URL: only a same-origin path may follow a successful login.
+  const next = safeInternalRedirectPath(sp.get("next"));
 
   const [login, { loading: loadingLogin }] = useMutation(LOGIN);
   const [loginSocial, { loading: loadingSocial }] = useMutation(LOGIN_SOCIAL);
