@@ -1972,7 +1972,10 @@ const rawResolvers = {
       );
       return rows;
     },
+    // stats/pending/latestUsers/latestPosts read users, posts, files and system_logs across every
+    // shop, so they are platform-admin views (a signed-in shop or public account is not enough).
     stats: async (_:any, __:any, ctx:any) => {
+      await requirePlatformOnly(ctx);
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] stats :", author_id);
 
@@ -1988,25 +1991,30 @@ const rawResolvers = {
       return { users, posts, files, logs };
     },
     latestUsers: async (_: any, { limit = 5 }: any, ctx: any) => {
+      await requirePlatformOnly(ctx);
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] latestUsers :", author_id);
+      const boundedLimit = Math.min(Math.max(Math.trunc(Number(limit)) || 5, 1), 50);
 
       const { rows } = await query(
         `SELECT id, name, email, role, created_at, avatar
         FROM users
         ORDER BY created_at DESC
         LIMIT $1`,
-        [limit]
+        [boundedLimit]
       );
 
       return rows.map((u: any) => ({
         ...u,
+        created_at: toIso(u.created_at),
         avatar: u.avatar || null, // ถ้าไม่มีค่าให้เป็น null
       }));
     },
     latestPosts: async (_: any, { limit = 5 }: any, ctx: any) => {
+      await requirePlatformOnly(ctx);
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] latestPosts :", author_id);
+      const boundedLimit = Math.min(Math.max(Math.trunc(Number(limit)) || 5, 1), 50);
 
       const { rows } = await query(
         `
@@ -2022,14 +2030,14 @@ const rawResolvers = {
         ORDER BY p.created_at DESC
         LIMIT $1
         `,
-        [limit]
+        [boundedLimit]
       );
 
       return rows.map((r: any) => ({
         id: r.id,
         title: r.title,
         status: r.status,
-        created_at: r.created_at,
+        created_at: toIso(r.created_at),
         images: (r.images_json || []).map((it: any) => ({
           id: it.id,
           url: buildFileUrlById(it.id),
@@ -2037,6 +2045,7 @@ const rawResolvers = {
       }));
     },
     pending: async (_:any, __:any, ctx:any) => {
+      await requirePlatformOnly(ctx);
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] pending :", author_id);
 

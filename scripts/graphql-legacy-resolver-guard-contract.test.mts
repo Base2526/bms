@@ -36,6 +36,22 @@ function assertGuardBeforeFirstQuery(name: string, guard: RegExp) {
   assert.ok(queryAt > guardAt, `${name} must authorize before its first SQL statement`);
 }
 
+test("platform-wide dashboard counts and newest users/posts are platform-admin only and bounded", () => {
+  // These root queries read users/posts/files/system_logs across every shop. requireAuth() alone
+  // accepted shop staff and public web/android accounts, and latestUsers returned name + email.
+  for (const name of ["stats", "pending", "latestUsers", "latestPosts"]) {
+    assertGuardBeforeFirstQuery(name, /await requirePlatformOnly\(ctx\)/);
+  }
+  for (const name of ["latestUsers", "latestPosts"]) {
+    const body = resolverBody(name);
+    assert.match(body, /const boundedLimit = Math\.min\(Math\.max\(Math\.trunc\(Number\(limit\)\) \|\| 5, 1\), 50\)/);
+    assert.match(body, /\[boundedLimit\]/);
+    assert.doesNotMatch(body, /\[limit\]/);
+    // pg returns Date objects; a String field must not receive an epoch number.
+    assert.match(body, /created_at: toIso\((u|r)\.created_at\)/);
+  }
+});
+
 test("global role definitions can only be changed by a platform admin, and activation is audited", () => {
   for (const name of ["createRole", "updateRole", "deleteRole", "setRoleActive"]) {
     assertGuardBeforeFirstQuery(name, /await requirePlatformOnly\(ctx\)/);
