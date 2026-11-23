@@ -83,6 +83,28 @@ test("multipart map rejects prototype paths and preserves valid upload placehold
   assert.equal(Object.hasOwn(Object.prototype, "bmsProbe"), false);
 });
 
+test("multipart map rejects duplicate parts and targets while allowing two distinct files", () => {
+  const variables = { first: null, second: null };
+  const valid = uploadForm({ "0": ["variables.first"], "1": ["variables.second"] }, variables);
+  valid.set("0", new Blob(["a"], { type: "text/plain" }), "a.txt");
+  valid.set("1", new Blob(["b"], { type: "text/plain" }), "b.txt");
+  assert.equal(validGraphqlUploadMap(valid), true);
+
+  const duplicateTarget = uploadForm({ "0": ["variables.first"], "1": ["variables.first"] }, variables);
+  assert.equal(validGraphqlUploadMap(duplicateTarget), false);
+  const duplicateInSlot = uploadForm({ "0": ["variables.first", "variables.first"] }, variables);
+  assert.equal(validGraphqlUploadMap(duplicateInSlot), false);
+
+  const duplicateMapPart = uploadForm({ "0": ["variables.first"] }, variables);
+  duplicateMapPart.append("map", JSON.stringify({ "0": ["variables.second"] }));
+  assert.equal(validGraphqlUploadMap(duplicateMapPart), false);
+  const duplicateOperations = uploadForm({ "0": ["variables.first"] }, variables);
+  duplicateOperations.append("operations", "{}");
+  assert.equal(validGraphqlUploadMap(duplicateOperations), false);
+  valid.append("0", new Blob(["c"], { type: "text/plain" }), "c.txt");
+  assert.equal(validGraphqlUploadMap(valid), false);
+});
+
 test("body limits apply without Content-Length and valid multipart parses once", async () => {
   const source = {
     headers: new Headers(),
