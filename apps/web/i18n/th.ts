@@ -2342,6 +2342,7 @@ const th = {
     go_home: "ไปหน้าแรก",
     loading_app: "BMS POS+ · กำลังโหลด…",
     loading_app_label: "BMS POS+ กำลังโหลด",
+    loading_page: "กำลังเตรียมหน้านี้…",
   },
   login: {
     title: "เข้าสู่ระบบ",

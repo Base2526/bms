@@ -2342,6 +2342,7 @@ const en = {
     go_home: "Go to home",
     loading_app: "BMS POS+ · Loading…",
     loading_app_label: "BMS POS+ loading",
+    loading_page: "Preparing this page…",
   },
   login: {
     title: "Sign in",
