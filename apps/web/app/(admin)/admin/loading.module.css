@@ -1,0 +1,100 @@
+.loading {
+  width: min(100%, 1120px);
+  margin: clamp(8px, 2vw, 24px) auto;
+  color: var(--app-text, #0f172a);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  margin-bottom: 22px;
+  color: var(--app-muted, #64748b);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: 2px solid var(--app-surface-3, #e2e8f0);
+  border-top-color: var(--app-primary, #1677ff);
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+
+.content {
+  display: grid;
+  gap: 18px;
+}
+
+.heading {
+  display: grid;
+  gap: 11px;
+  margin-bottom: 4px;
+}
+
+.bar {
+  display: block;
+  max-width: 100%;
+  border-radius: 6px;
+  background: var(--app-surface-3, #e2e8f0);
+  animation: pulse 1.7s ease-in-out infinite;
+}
+
+.title { width: min(32%, 270px); height: 25px; }
+.subtitle { width: min(55%, 440px); height: 13px; }
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.card,
+.panel {
+  border: 1px solid var(--app-border, #d9e0e7);
+  border-radius: 14px;
+  background: var(--app-surface, #fff);
+}
+
+.card {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+}
+
+.cardLabel { width: 44%; height: 12px; }
+.cardValue { width: 68%; height: 24px; }
+
+.panel { padding: 22px; }
+.panelTitle { width: min(28%, 220px); height: 18px; margin-bottom: 20px; }
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  min-height: 54px;
+  border-top: 1px solid var(--app-border, #d9e0e7);
+}
+.rowMain { width: 48%; height: 13px; }
+.rowSide { width: 17%; height: 13px; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 50% { opacity: 0.48; } }
+
+@media (max-width: 640px) {
+  .cards { grid-template-columns: 1fr; }
+  .card { gap: 12px; padding: 16px; }
+  .panel { padding: 16px; }
+  .title { width: 65%; }
+  .subtitle { width: 85%; }
+  .rowSide { width: 28%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner,
+  .bar { animation: none; }
+}
