@@ -7,20 +7,20 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function handleGET(_req: NextRequest, { params }: { params: { sku: string } }) {
+async function handleGET(_req: NextRequest, { params }: { params: Promise<{ sku: string }> }) {
   const auth = await authorizeAdminRoute("product.view");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
-  const sku = params.sku?.trim();
+  const sku = (await params).sku?.trim();
   if (!sku) return NextResponse.json({ error: "sku required" }, { status: 400 });
   return NextResponse.json({ items: await listTechnicalSpecs(auth.tenantId, sku) });
 }
 
-async function handlePOST(req: NextRequest, { params }: { params: { sku: string } }) {
+async function handlePOST(req: NextRequest, { params }: { params: Promise<{ sku: string }> }) {
   const body = await req.json().catch(() => null);
   const publish = body?.action === "PUBLISH";
   const auth = await authorizeAdminRoute(publish ? "product.spec.publish" : "product.edit");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
-  const sku = params.sku?.trim();
+  const sku = (await params).sku?.trim();
   if (!sku || !body || (body.action !== "STAGE" && body.action !== "PUBLISH")) {
     return NextResponse.json({ status: "INVALID_INPUT" }, { status: 400 });
   }

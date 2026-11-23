@@ -25,14 +25,14 @@ async function handlePOST(req: NextRequest) {
 
   const issued = requestedScope === "admin"
     ? await mintAdminRealtimeTicket(
-      verifyAdminSession() ?? verifyAdminFromRequest(req),
-      verifyActTenant(cookies().get(ACT_TENANT_COOKIE)?.value),
+      await verifyAdminSession() ?? verifyAdminFromRequest(req),
+      verifyActTenant((await cookies()).get(ACT_TENANT_COOKIE)?.value),
     )
     : requestedScope === "pos"
       ? await mintPosRealtimeTicket(bearerToken || req.headers.get("x-pos-device-token")?.trim() || "")
       : await mintUserRealtimeTicket(
       requestedScope as "web" | "android",
-      requestedScope === "android" ? verifyUserFromRequest(req) : verifyUserSession(),
+      requestedScope === "android" ? verifyUserFromRequest(req) : await verifyUserSession(),
     );
 
   if (!issued) {

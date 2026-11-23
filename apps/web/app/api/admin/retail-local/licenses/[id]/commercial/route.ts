@@ -17,7 +17,7 @@ const CONFIRMATIONS: Record<RetailLocalCommercialAction, string> = {
   CANCEL: "CANCEL-RETAIL-LOCAL-LICENSE",
 };
 
-async function handlePOST(request: NextRequest, context: { params: { id: string } }) {
+async function handlePOST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const auth = await authorizePlatformAdminRoute();
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
   try {
@@ -28,7 +28,7 @@ async function handlePOST(request: NextRequest, context: { params: { id: string 
       throw new RetailLocalLicenseError(`ต้องยืนยันด้วย ${CONFIRMATIONS[action]}`);
     }
     const result = await updateRetailLocalLicenseCommercialState({
-      licenseId: context.params.id,
+      licenseId: (await context.params).id,
       operationId: String(body?.operationId ?? ""),
       action,
       extensionDays: body?.extensionDays,

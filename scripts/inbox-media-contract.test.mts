@@ -5,6 +5,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { loadWithStubs } from "./testing/webhookHarness.mts";
 import * as storedFileKinds from "../apps/web/lib/bms/storedFileKinds.ts";
+import * as webhookBody from "../apps/web/lib/bms/webhookBody.ts";
 
 const previousSecret = process.env.BMS_CHECKOUT_SECRET;
 process.env.BMS_CHECKOUT_SECRET = "FAKE-inbox-media-contract-secret";
@@ -88,14 +89,19 @@ test("Inbox upload binds the server tenant and actor, and rejects oversized inpu
     "@/lib/bms/adminRouteAuth": { authorizeAdminRoute: async () => ({ ok: true, tenantId: "tenant-a", adminId: "actor-a" }) },
     "@/lib/log/routeError": { withRouteErrorLog: (_name: string, handler: unknown) => handler },
     "node:crypto": { randomUUID: () => "FAKE-uuid" },
+    "@/lib/bms/webhookBody": webhookBody,
   });
   const small = new File([Buffer.from("FAKE")], "FAKE.png", { type: "image/png" });
-  const accepted = await upload.POST({ formData: async () => new Map([["file", small]]) });
+  const smallForm = new FormData();
+  smallForm.set("file", small);
+  const accepted = await upload.POST(new Request("http://localhost/api/bms/inbox/upload", { method: "POST", body: smallForm }));
   assert.equal(accepted.status, 200);
   assert.match(accepted.body.url, /^\/api\/bms\/inbox\/media\/11\?token=/);
   assert.deepEqual(writes[0].slice(1), ["bms-inbox-FAKE-uuid", "private", "tenant-a", "actor-a"]);
   const large = new File([new Uint8Array(10 * 1024 * 1024 + 1)], "too-large.png", { type: "image/png" });
-  assert.equal((await upload.POST({ formData: async () => new Map([["file", large]]) })).status, 413);
+  const largeForm = new FormData();
+  largeForm.set("file", large);
+  assert.equal((await upload.POST(new Request("http://localhost/api/bms/inbox/upload", { method: "POST", body: largeForm }))).status, 413);
   assert.equal(writes.length, 1);
 });
 

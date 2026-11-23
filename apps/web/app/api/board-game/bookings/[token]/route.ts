@@ -14,11 +14,11 @@ async function guard(req: NextRequest) {
   return rateLimit(`board-game-public-booking-manage:${ip}`, 30, 60_000);
 }
 
-async function handleGET(req: NextRequest, { params }: { params: { token: string } }) {
+async function handleGET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const limited = await guard(req);
   if (!limited.ok) return NextResponse.json({ error: "rate limit exceeded" }, { status: 429 });
   try {
-    return NextResponse.json({ reservation: await getPublicBoardGameReservation(params.token) }, {
+    return NextResponse.json({ reservation: await getPublicBoardGameReservation((await params).token) }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
@@ -26,7 +26,7 @@ async function handleGET(req: NextRequest, { params }: { params: { token: string
   }
 }
 
-async function handlePATCH(req: NextRequest, { params }: { params: { token: string } }) {
+async function handlePATCH(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const limited = await guard(req);
   if (!limited.ok) return NextResponse.json({ error: "rate limit exceeded" }, { status: 429 });
   try {
@@ -34,7 +34,7 @@ async function handlePATCH(req: NextRequest, { params }: { params: { token: stri
     if (String(body?.action).toUpperCase() !== "CANCEL") {
       return NextResponse.json({ error: "รองรับเฉพาะการยกเลิก" }, { status: 400 });
     }
-    return NextResponse.json({ reservation: await cancelPublicBoardGameReservation(params.token) }, {
+    return NextResponse.json({ reservation: await cancelPublicBoardGameReservation((await params).token) }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

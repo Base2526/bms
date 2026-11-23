@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function generateMetadata(): Promise<Metadata> {
-  const lang: PublicSeoLocale = cookies().get("lang")?.value === "en" ? "en" : "th";
+  const lang: PublicSeoLocale = (await cookies()).get("lang")?.value === "en" ? "en" : "th";
   const title = lang === "th" ? "ค้นหาร้านบอร์ดเกมคาเฟ่" : "Find board game cafes";
   const description = lang === "th"
     ? "ค้นหาร้านบอร์ดเกมคาเฟ่ที่เผยแพร่ พร้อมราคาเล่น เกมเด่น และภาพรวมสถานะโต๊ะ"

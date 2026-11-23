@@ -16,7 +16,7 @@ export function TwentyBahtOverview({ lang }: { lang: "th" | "en" }) {
   const [error, setError] = useState(false);
   const [supported, setSupported] = useState(th);
   const audio = useRef<HTMLAudioElement>(null);
-  const player = useRef<RecordedNarration>();
+  const player = useRef<RecordedNarration | undefined>(undefined);
   const dialog = useRef<HTMLDialogElement>(null);
   const active = useRef(0);
   const currentCue = useRef("");

@@ -248,14 +248,14 @@ export const bmsSaasResolvers = {
         event: "tenant.impersonate.enter", outcome: "SUCCESS", source: "PLATFORM_ADMIN",
         meta: { targetTenantId: args.tenantId },
       });
-      cookies().set(ACT_TENANT_COOKIE, actingToken, {
+      (await cookies()).set(ACT_TENANT_COOKIE, actingToken, {
         httpOnly: true, sameSite: "lax", path: "/", secure: process.env.NODE_ENV === "production",
       });
       return true;
     },
     async bmsExitTenant(_p: unknown, _a: unknown, ctx: any) {
       const actId = ctx?.admin?.__actingTenantId;
-      cookies().delete(ACT_TENANT_COOKIE);
+      (await cookies()).delete(ACT_TENANT_COOKIE);
       if (actId) await recordSecurityEventBestEffort({
         tenantId: null, actorUserId: String(ctx?.admin?.id ?? ""),
         event: "tenant.impersonate.exit", outcome: "SUCCESS", source: "PLATFORM_ADMIN",

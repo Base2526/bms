@@ -1,4 +1,3 @@
-import fetch from "node-fetch";
 import { OAuth2Client } from "google-auth-library";
 
 export type SocialProvider = "google" | "facebook";

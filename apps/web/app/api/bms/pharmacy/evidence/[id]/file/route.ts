@@ -25,7 +25,7 @@ export const dynamic = "force-dynamic";
 // script ในบริบทโดเมนเราได้ ใบสั่งยาไม่มีเหตุผลต้องเป็น svg
 const INLINE_SAFE = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"]);
 
-async function handleGET(_req: NextRequest, { params }: { params: { id: string } }) {
+async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeAdminRoute("pharmacy.evidence.read");
   if (!auth.ok) {
     return NextResponse.json(
@@ -34,7 +34,7 @@ async function handleGET(_req: NextRequest, { params }: { params: { id: string }
     );
   }
 
-  const id = String(params.id ?? "").trim();
+  const id = String((await params).id ?? "").trim();
   if (!/^[0-9a-f-]{36}$/i.test(id)) {
     return NextResponse.json({ error: "invalid id" }, { status: 400 });
   }

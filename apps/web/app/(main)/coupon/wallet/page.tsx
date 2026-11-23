@@ -5,7 +5,7 @@ import { getMessage, type Lang } from "@/i18n";
 import styles from "./wallet.module.css";
 
 type WalletPageProps = {
-  searchParams?: Promise<{ t?: string }> | { t?: string };
+  searchParams?: Promise<{ t?: string }>;
 };
 
 type CouponGroupKey = "ready" | "upcoming" | "used" | "unavailable";
@@ -147,7 +147,7 @@ function CouponSection({ id, coupons, lang, t }: { id: CouponGroupKey; coupons: 
 }
 
 export default async function CouponWalletPage({ searchParams }: WalletPageProps) {
-  const lang = (cookies().get("lang")?.value === "en" ? "en" : "th") as Lang;
+  const lang = ((await cookies()).get("lang")?.value === "en" ? "en" : "th") as Lang;
   const t: T = (key, vars) => getMessage(lang, key, vars);
   const locale = lang === "en" ? "en-US" : "th-TH";
 

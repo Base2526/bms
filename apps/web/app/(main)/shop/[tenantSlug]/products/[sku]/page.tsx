@@ -8,11 +8,12 @@ import PublicProductView from "./PublicProductView";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type PageProps = { params: { tenantSlug: string; sku: string } };
+type PageProps = { params: Promise<{ tenantSlug: string; sku: string }> };
 
 const loadProduct = cache((tenantSlug: string, sku: string) => getPublicProduct(tenantSlug, sku));
 
-export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+export async function generateMetadata(props: PageProps): Promise<Metadata> {
+  const params = await props.params;
   const result = await loadProduct(params.tenantSlug, params.sku);
   const lang = (await cookies()).get("lang")?.value === "en" ? "en" : "th";
   if (!result) return { title: lang === "en" ? "Product not found" : "ไม่พบสินค้า", robots: { index: false, follow: false } };
@@ -41,7 +42,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-export default async function PublicProductPage({ params }: PageProps) {
+export default async function PublicProductPage(props: PageProps) {
+  const params = await props.params;
   const result = await loadProduct(params.tenantSlug, params.sku);
   if (!result) notFound();
 

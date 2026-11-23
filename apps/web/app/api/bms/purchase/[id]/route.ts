@@ -8,10 +8,10 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function handleGET(_req: NextRequest, { params }: { params: { id: string } }) {
+async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeAdminRoute("purchase.view");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
-  const poId = params.id?.trim();
+  const poId = (await params).id?.trim();
   if (!poId) return NextResponse.json({ error: "po id required" }, { status: 400 });
   const po = await getPurchaseOrder(auth.tenantId, poId);
   if (!po) return NextResponse.json({ error: "not found" }, { status: 404 });

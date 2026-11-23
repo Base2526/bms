@@ -6,6 +6,7 @@ import type { NextRequest } from "next/server";
 import { persistWebFile, buildFileUrlById } from "@/lib/storage";
 import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { readBoundedFormData } from "@/lib/bms/webhookBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,8 +19,9 @@ async function handlePOST(req: NextRequest) {
   const auth = await authorizeAdminRoute("product.edit");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
 
-  const form = await req.formData().catch(() => null);
-  const file = form?.get("file");
+  const parsed = await readBoundedFormData(req, MAX_BYTES + 1024 * 1024);
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  const file = parsed.form.get("file");
   if (!(file instanceof File)) return NextResponse.json({ error: "no file" }, { status: 400 });
   if (!file.type?.startsWith("image/")) return NextResponse.json({ error: "ต้องเป็นไฟล์รูปภาพ" }, { status: 400 });
   if (file.size > MAX_BYTES) return NextResponse.json({ error: "ไฟล์ใหญ่เกิน 10MB" }, { status: 413 });

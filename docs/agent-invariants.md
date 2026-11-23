@@ -353,7 +353,8 @@ Invariants to preserve when touching `lib/bms/checkout.ts`, `lib/bms/checkoutTok
   active, so a customer can upload a replacement slip. Keep `submitPayment()` (staff path)
   non-reusing; the two behaviors share `submitPaymentInternal()` via overloads.
 - **Uploads stay untrusted.** Slips are limited to JPG/PNG/WEBP, 8 MB, and a pixel bound, and are
-  re-validated by decoding with `sharp` — MIME type alone is not proof of an image.
+  re-validated by decoding with `sharp` — MIME type alone is not proof of an image. The multipart
+  request body is capped while streaming before `formData()` runs, even without `Content-Length`.
 - **Public checkout APIs are bounded before work.** Keep IP limits before body parsing, then
   hashed-token limits before service/storage calls (`checkout/routeHelpers.ts`). GET, PATCH and
   payment POST have independent ceilings. Delivery JSON is stream-bounded to 16 KiB and must be
@@ -2607,6 +2608,45 @@ Production migration state, recovery/load proof, and bounded replay remain separ
   GraphQL request can emit an invalidation whose response is to verify and refetch GraphQL again.
 
 ## Typed GraphQL surface for external clients
+
+The Web runtime uses Node.js 24 LTS, Next.js 16.4.6, React 19, Apollo Server 5 and
+`graphql-upload-nextjs` 3.1.6. The custom `server.mjs` remains the production entry point; builds
+use `--webpack` because `next.config.js` still defines webpack aliases. Cookie-based auth helpers
+await `cookies()` and their callers await the session result. Browser multipart mutations send
+`Apollo-Require-Preflight: true`, which the upload parser requires for CSRF preflight.
+
+`/api/graphql` caps JSON at 1 MiB and multipart at 64 MiB by bytes actually read, before parsing.
+The multipart `map` must point only to existing null placeholders under `variables`, never to
+`__proto__`, `constructor` or `prototype`; the validated `FormData` is passed once to the uploader.
+Caddy enforces the same outer ceilings. Keep these checks when replacing the uploader or upgrading
+Apollo/Next, even if the current uploader also validates map paths.
+The public board-game deposit upload is capped at 9 MiB per request; pharmacy evidence and fish
+intake uploads are capped at 11 MiB before multipart parsing. The POS pharmacy evidence JSON path
+is capped at 64 KiB. These app limits apply to the bytes read even when `Content-Length` is absent
+or forged; both Caddy configs have matching outer route limits.
+
+Dependency security review (2026-11-23): Apollo Server 5.5.2 pulls a vulnerable
+`@graphql-tools/utils` range for incremental result merging. Web pins only Apollo's subtree to
+12.0.4 because Apollo's declared range ends before 12.0.2; the pure contract runs the merge in a
+subprocess with a malformed path and confirms a normal merge still works. The BMS executable schema
+does not consume an untrusted upstream incremental response, so the installed-version advisory was
+not proof of an exploitable BMS route. WS and shared GraphQL core use `@graphql-tools/schema`
+10.1.5, which resolves patched `@graphql-tools/utils` 12.1.0. Keep the override scoped until Apollo
+accepts a patched utils version in its own dependency range.
+
+Web imports `nodemailer-safe` (an npm alias of Nodemailer 10.6.1) for Gmail/SMTP. `next-auth` 4
+has an optional Nodemailer 7 peer for its unused Email provider; BMS configures its Facebook
+provider only. The provider factory is normalized for Node ESM's CommonJS `{ default }` shape and
+Next's direct-function interop; a pure contract imports the actual auth options. The alias keeps
+the mail transport patched without installing that optional peer.
+General request/system mail logs retain provider, status and diagnostic codes without recipient,
+subject, content or raw provider response. The separately authorized mail-history table keeps its
+existing delivery evidence contract.
+The `xlsx` dependency comes from the official SheetJS 0.20.3 tarball because the npm registry's
+0.18.5 release has no patched version. Product, bank-statement, and fish-intake workbooks are
+untrusted inputs; keep their existing size and content validation when changing parsers.
+The Docker builder's architecture-specific Sharp install must name the audited version in the
+Web package and lockfile; an unversioned second `npm install sharp` can silently drift from them.
 
 The mobile/POS GraphQL surface is code-generated in `apps/mobile`, and remains suitable for external
 clients. Rationale and phase order:

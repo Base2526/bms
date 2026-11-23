@@ -14,13 +14,13 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type RouteContext = { params: { token: string } };
+type RouteContext = { params: Promise<{ token: string }> };
 
 async function handleGET(req: NextRequest, { params }: RouteContext) {
   const limited = await requireRestaurantQrRateLimit(req, "open", 30);
   if (limited) return limited;
   try {
-    const result = await openRestaurantQrSession(params.token, restaurantQrSessionToken(req));
+    const result = await openRestaurantQrSession((await params).token, restaurantQrSessionToken(req));
     const { sessionToken, ...body } = result as typeof result & { sessionToken?: string };
     const response = NextResponse.json(body, { status: result.status === "INVALID_QR" ? 404 : 200 });
     if (result.status === "READY" && sessionToken) {

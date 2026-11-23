@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 
-export default async function RetailCartPage({ params }: { params: { tenantSlug: string } }) {
+export default async function RetailCartPage(props: { params: Promise<{ tenantSlug: string }> }) {
+  const params = await props.params;
   const shop = await getPublicShop(params.tenantSlug);
   if (!shop?.retailCartEnabled) notFound();
   const lang = (await cookies()).get("lang")?.value === "en" ? "en" : "th";

@@ -5,6 +5,10 @@ often mixed with snacks, drinks, retail accessories, memberships, and a play-lib
 
 ## Domain Boundary
 
+Public reservation deposit slips retain their 8 MiB image and pixel checks. The HTTP multipart
+request is bounded to 9 MiB while streaming, before `formData()` parsing, even without a trustworthy
+`Content-Length` header.
+
 Keep four concepts separate:
 
 | Concept | Source of truth | Why |

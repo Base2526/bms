@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim
+FROM node:24-bookworm-slim
 
 ARG BMS_SOURCE_COMMIT=unknown
 LABEL org.opencontainers.image.revision=$BMS_SOURCE_COMMIT

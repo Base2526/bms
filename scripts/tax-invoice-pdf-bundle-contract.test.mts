@@ -24,7 +24,6 @@ test("bundled invoice renderer uses the embedded Thai font without PDFKit's unbu
         transpile(await readFile(path.join(web, `lib/bms/${helper}.ts`), "utf8")));
     }
     const webpack = require("next/dist/compiled/webpack/webpack");
-    webpack.init();
     const compiler = webpack.webpack({
       mode: "production", target: "node", entry: path.join(directory, "entry.cjs"),
       output: { path: directory, filename: "bundle.cjs", library: { type: "commonjs2" } },

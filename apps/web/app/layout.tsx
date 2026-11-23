@@ -22,8 +22,8 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const cookieStore = cookies();
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const cookieStore = await cookies();
   const measurementId = validMeasurementId(process.env.PUBLIC_GA4_MEASUREMENT_ID);
   const langCookie = cookieStore.get("lang")?.value as Lang | undefined;
   const lang: Lang = langCookie === "en" ? "en" : "th";

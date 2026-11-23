@@ -13,7 +13,7 @@ function safeFilename(name: string) {
     .trim();
 }
 
-async function handleGET(req: Request, { params }: { params: { id: string } }) {
+async function handleGET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   // Public installer download streams a large file through this server, so a per-IP ceiling
   // bounds bandwidth abuse. 30 per 10 minutes still covers a shop installing several machines.
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
@@ -28,7 +28,7 @@ async function handleGET(req: Request, { params }: { params: { id: string } }) {
   }
   try {
     const auth = await authorizePlatformAdminRoute();
-    const download = await openRetailLocalReleaseDownload(params.id, { includeTrialLocked: auth.ok });
+    const download = await openRetailLocalReleaseDownload((await params).id, { includeTrialLocked: auth.ok });
     const filename = safeFilename(download.filename);
     return new NextResponse(download.stream, {
       status: 200,

@@ -7,7 +7,7 @@ import { query } from "@/lib/db";
 // เรียกใน layout.tsx (server component) ของแต่ละโฟลเดอร์
 // middleware กันแค่ "ต้องล็อกอิน" — ตัวนี้กัน "ต้องเป็น platform admin" อีกชั้น
 export async function requirePlatformAdminPage() {
-  const admin = verifyAdminSession();
+  const admin = await verifyAdminSession();
   if (!admin) redirect("/admin/login");
   let ok = false;
   try {

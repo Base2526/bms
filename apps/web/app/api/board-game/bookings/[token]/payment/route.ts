@@ -7,6 +7,7 @@ import {
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { buildFileUrlById, persistWebFile } from "@/lib/storage";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { readBoundedFormData } from "@/lib/bms/webhookBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,17 +22,16 @@ function response(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-async function handlePOST(req: NextRequest, { params }: { params: { token: string } }) {
+async function handlePOST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   const limited = await rateLimit(`board-game-public-booking-payment:${ip}`, 10, 60 * 60_000);
   if (!limited.ok) {
     return response({ error: "ส่งข้อมูลมากเกินไป กรุณาลองใหม่ภายหลัง" }, 429);
   }
-  const contentLength = Number(req.headers.get("content-length") || 0);
-  if (contentLength > MAX_REQUEST_BYTES) return response({ error: "รูปสลิปต้องมีขนาดไม่เกิน 8 MB" }, 413);
-
-  const form = await req.formData().catch(() => null);
-  if (!form) return response({ error: "ข้อมูลที่ส่งมาไม่ถูกต้อง" }, 400);
+  const parsed = await readBoundedFormData(req, MAX_REQUEST_BYTES);
+  if (!parsed.ok) return response({ error: parsed.status === 413
+    ? "รูปสลิปต้องมีขนาดไม่เกิน 8 MB" : "ข้อมูลที่ส่งมาไม่ถูกต้อง" }, parsed.status);
+  const form = parsed.form;
   const method = String(form.get("method") || "").toUpperCase();
   const slipRef = String(form.get("slipRef") || "").trim() || null;
   const file = form.get("slip");
@@ -54,10 +54,10 @@ async function handlePOST(req: NextRequest, { params }: { params: { token: strin
     if (!metadata.format || !SLIP_FORMATS.has(metadata.format) || !metadata.width || !metadata.height) {
       return response({ error: "ไฟล์สลิปไม่ใช่รูปภาพที่รองรับ" }, 400);
     }
-    const owner = await getPublicBoardGameReservationUploadContext(params.token);
+    const owner = await getPublicBoardGameReservationUploadContext((await params).token);
     if (owner.depositStatus === "SUBMITTED") {
       return response(await submitPublicBoardGameReservationDeposit({
-        token: params.token, method, slipUrl: "", slipRef,
+        token: (await params).token, method, slipUrl: "", slipRef,
       }));
     }
     const stored = await persistWebFile(
@@ -67,7 +67,7 @@ async function handlePOST(req: NextRequest, { params }: { params: { token: strin
       owner.tenantId,
     );
     const result = await submitPublicBoardGameReservationDeposit({
-      token: params.token,
+      token: (await params).token,
       method,
       slipUrl: buildFileUrlById(stored.id),
       slipRef,

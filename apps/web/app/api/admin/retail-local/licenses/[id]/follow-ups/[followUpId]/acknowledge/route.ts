@@ -5,14 +5,14 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = "force-dynamic";
 
-async function handlePOST(request: NextRequest, context: { params: { id: string; followUpId: string } }) {
+async function handlePOST(request: NextRequest, context: { params: Promise<{ id: string; followUpId: string }> }) {
   const auth = await authorizePlatformAdminRoute();
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
   try {
     const body = await request.json();
     return NextResponse.json(await acknowledgeRetailLocalTrialFollowUp({
-      licenseId: context.params.id,
-      followUpId: context.params.followUpId,
+      licenseId: (await context.params).id,
+      followUpId: (await context.params).followUpId,
       note: String(body?.note ?? ""),
       adminId: auth.adminId,
     }), { headers: { "Cache-Control": "no-store" } });

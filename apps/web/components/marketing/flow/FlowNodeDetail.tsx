@@ -15,7 +15,7 @@ export function FlowNodeDetail({
 }: {
   node: FlowNode;
   onClose: () => void;
-  panelRef: RefObject<HTMLElement>;
+  panelRef: RefObject<HTMLElement | null>;
   t: Translate;
 }) {
   return (

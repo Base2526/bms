@@ -40,11 +40,11 @@ function safeErrorText(value: unknown, max = 2_000): string | null {
   return sanitizeLogText(value, max);
 }
 
-function errorSourceKey(args: unknown[]) {
+async function errorSourceKey(args: unknown[]) {
   const req = args[0] as NextRequest | undefined;
   const posToken = req?.headers?.get?.("x-pos-device-token")?.trim();
   if (posToken) return `pos:${crypto.createHash("sha256").update(posToken).digest("hex").slice(0, 16)}`;
-  const admin = verifyAdminSession();
+  const admin = await verifyAdminSession();
   return admin?.id ? `admin:${admin.id}` : "anonymous";
 }
 
@@ -100,7 +100,7 @@ export function withRouteErrorLog<Args extends any[]>(
 
       // error เดียวกันรัว ๆ (ฐานล่ม → ทุก request พังเหมือนกัน) ไม่ต้องเขียนทุกครั้ง
       // จำนวนครั้งยังนับครบที่ requestMetrics อยู่แล้ว
-      const sourceKey = errorSourceKey(args);
+      const sourceKey = await errorSourceKey(args);
       if (!shouldLog(`api|${sourceKey}|${routeName}|${detail.code ?? detail.message ?? ""}`, ERROR_WINDOW_MS)) {
         return errorResponse(detail.message, routeName, args);
       }

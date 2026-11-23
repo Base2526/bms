@@ -12,11 +12,13 @@ import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { addClinicalEvidence } from "@/lib/bms/pharmacy/clinicalEvidence";
 import { persistWebFile } from "@/lib/storage";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { readBoundedFormData } from "@/lib/bms/webhookBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_REQUEST_BYTES = MAX_BYTES + 1024 * 1024;
 const ALLOWED_MIME = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"]);
 
 async function handlePOST(req: NextRequest) {
@@ -28,8 +30,12 @@ async function handlePOST(req: NextRequest) {
     );
   }
 
-  const form = await req.formData().catch(() => null);
-  if (!form) return NextResponse.json({ error: "อ่านฟอร์มไม่สำเร็จ" }, { status: 400 });
+  const parsed = await readBoundedFormData(req, MAX_REQUEST_BYTES);
+  if (!parsed.ok) return NextResponse.json(
+    { error: parsed.status === 413 ? "ไฟล์ใหญ่เกิน 10MB" : "อ่านฟอร์มไม่สำเร็จ" },
+    { status: parsed.status },
+  );
+  const form = parsed.form;
 
   const assessmentId = String(form.get("assessmentId") ?? "").trim();
   if (!assessmentId) return NextResponse.json({ error: "assessmentId จำเป็น" }, { status: 400 });

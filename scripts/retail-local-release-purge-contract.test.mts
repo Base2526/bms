@@ -16,7 +16,7 @@ test("Retail Local installer purge is explicit, platform-admin-only, and same-or
   assert.match(route, /throw new RetailLocalRequestBodyError\("invalid_body", 400\)/);
   assert.match(route, /readRetailLocalJSON\(request, 1024\)/);
   assert.match(route, /PURGE-RETAIL-LOCAL-RELEASE-FILE/);
-  assert.match(route, /body\.releaseId !== params\.id/);
+  assert.match(route, /body\.releaseId !== \(await params\)\.id/);
   assert.match(route, /tenantId: String\(auth\.admin\.tenant_id \|\| auth\.tenantId\)/);
   assert.match(route, /adminId: auth\.adminId/);
 });

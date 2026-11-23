@@ -5,7 +5,7 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = "force-dynamic";
 
-async function handlePOST(request: NextRequest, context: { params: { id: string } }) {
+async function handlePOST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const auth = await authorizePlatformAdminRoute();
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
   try {
@@ -13,7 +13,7 @@ async function handlePOST(request: NextRequest, context: { params: { id: string 
     if (body?.confirmation !== "ISSUE-RETAIL-LOCAL-ACTIVATION") {
       throw new RetailLocalLicenseError("ต้องยืนยันด้วย ISSUE-RETAIL-LOCAL-ACTIVATION");
     }
-    return NextResponse.json(await issueRetailLocalActivationCode(context.params.id, auth.adminId), {
+    return NextResponse.json(await issueRetailLocalActivationCode((await context.params).id, auth.adminId), {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

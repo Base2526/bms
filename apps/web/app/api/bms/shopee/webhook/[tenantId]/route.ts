@@ -66,8 +66,8 @@ function shopeeAttachment(message: ShopeeMessage): Attachment | null {
   };
 }
 
-async function handlePOST(req: NextRequest, { params }: { params: { tenantId: string } }) {
-  const tenantId = params.tenantId?.trim();
+async function handlePOST(req: NextRequest, { params }: { params: Promise<{ tenantId: string }> }) {
+  const tenantId = (await params).tenantId?.trim();
   if (!tenantId) return NextResponse.json({ error: "tenant required" }, { status: 400 });
 
   const rl = await rateLimit(`shopee:${tenantId}`, 120, 60_000);

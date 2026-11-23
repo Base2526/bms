@@ -1,4 +1,5 @@
-'use client';
+'use client';;
+import { use } from "react";
 import { gql, useQuery } from "@apollo/client";
 import { Card, Descriptions, Avatar, List, Tag, Space, Tooltip, Button,  } from "antd";
 import Link from 'next/link';
@@ -140,6 +141,7 @@ function Profile({ id }: { id: string }) {
   );
 }
 
-export default function Page({ params }: { params: { id: string } }) {
+export default function Page(props: { params: Promise<{ id: string }> }) {
+  const params = use(props.params);
   return <Profile id={params.id} />;
 }

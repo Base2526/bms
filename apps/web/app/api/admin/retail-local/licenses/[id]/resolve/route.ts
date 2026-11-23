@@ -5,7 +5,7 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = "force-dynamic";
 
-async function handlePOST(request: NextRequest, context: { params: { id: string } }) {
+async function handlePOST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const auth = await authorizePlatformAdminRoute();
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
   try {
@@ -22,7 +22,7 @@ async function handlePOST(request: NextRequest, context: { params: { id: string 
       throw new RetailLocalLicenseError(`ต้องยืนยันด้วย ${confirmations[body.action]}`);
     }
     return NextResponse.json(await resolveRetailLocalLicenseReview({
-      licenseId: context.params.id,
+      licenseId: (await context.params).id,
       installationId: String(body.installationId ?? ""),
       fromInstallationId: body.fromInstallationId ? String(body.fromInstallationId) : undefined,
       action: body.action,

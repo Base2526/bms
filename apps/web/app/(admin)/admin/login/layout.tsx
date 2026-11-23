@@ -8,7 +8,7 @@ import { refreshAdminIdentity } from "@/lib/auth/adminIdentity";
 // ถ้า submit ฟอร์มซ้ำจะ overwrite ADMIN_COOKIE ทันทีโดยไม่มีการเตือนว่าตอนนี้ล็อกอินเป็นใครอยู่
 // (ยิ่งเสี่ยงบนเครื่องที่ใช้ร่วมกันหลายคน/autofill ผิดบัญชี)
 export default async function Layout({ children }: { children: React.ReactNode }) {
-  const admin = verifyAdminSession();
+  const admin = await verifyAdminSession();
   let activeAdmin = false;
   if (admin && await isAdminSessionActive(admin.jti)) {
     try {

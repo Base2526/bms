@@ -7707,7 +7707,7 @@ const th = {
     email_placeholder: "อีเมลผู้รับ เช่น owner@shop.com, sales@shop.com",
     slack_configured: "ตั้งค่าไว้แล้ว",
     slack_webhook_extra: "ใส่ได้หลาย webhook คั่นด้วย , (comma) — กรอกใหม่ทั้งหมดเฉพาะถ้าต้องการเปลี่ยน (เว้นว่าง = คงค่าเดิม)",
-    slack_webhook_invalid: "Slack webhook URL ไม่ถูกต้อง (ต้องเป็น https://): {list}",
+    slack_webhook_invalid: "Slack webhook URL ไม่ถูกต้อง (ต้องใช้ https://hooks.slack.com/services/...): {list}",
     slack_webhook_placeholder_set: "กรอกใหม่เฉพาะถ้าต้องการเปลี่ยน webhook URL",
     slack_webhook_placeholder_empty: "Slack Incoming Webhook URL",
     line_user_id_extra: "ใส่ได้หลาย LINE user id คั่นด้วย , (comma)",

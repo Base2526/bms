@@ -12,10 +12,10 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function handlePOST(_req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePOST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeAdminRoute("payment.confirm");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
-  const id = params.id?.trim();
+  const id = (await params).id?.trim();
   if (!id) return NextResponse.json({ error: "payment id required" }, { status: 400 });
   const result = await verifyPaymentSlip(auth.tenantId, id, String(auth.adminId));
   if (!result) return NextResponse.json({ error: "not found" }, { status: 404 });

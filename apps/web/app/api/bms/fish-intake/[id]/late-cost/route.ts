@@ -7,7 +7,7 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 
-async function handlePOST(req:NextRequest,{params}:{params:{id:string}}) {
+async function handlePOST(req:NextRequest,{params}:{params: Promise<{id:string}>}) {
   const auth=await authorizeAdminRoute(null);
   if (!auth.ok) return NextResponse.json({error:auth.status===401?"unauthorized":"forbidden"},{status:auth.status});
   try {
@@ -19,7 +19,7 @@ async function handlePOST(req:NextRequest,{params}:{params:{id:string}}) {
   if (!body || (body.action!=="preview"&&body.action!=="commit") || !body.input)
     return NextResponse.json({error:"คำขอไม่ถูกต้อง",code:"INVALID_REQUEST"},{status:400});
   try {
-    const result=await fishLateCost(auth.tenantId,String(auth.adminId),params.id,body.input,
+    const result=await fishLateCost(auth.tenantId,String(auth.adminId),(await params).id,body.input,
       body.action,body.confirmed===true,typeof body.previewHash==="string"?body.previewHash:undefined);
     return NextResponse.json(result,{status:result.status==="SAVED"?201:200});
   } catch(error) {

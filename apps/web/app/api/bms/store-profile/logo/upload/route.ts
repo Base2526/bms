@@ -4,6 +4,7 @@ import { authorizeTenantSettingsAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 import { buildFileUrlById, persistWebFile } from "@/lib/storage";
 import { prepareStoreLogo } from "@/lib/bms/storeLogo";
+import { readBoundedFormData } from "@/lib/bms/webhookBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,8 +21,9 @@ async function handlePOST(req: NextRequest) {
     );
   }
 
-  const form = await req.formData().catch(() => null);
-  const file = form?.get("file");
+  const parsed = await readBoundedFormData(req, MAX_BYTES + 1024 * 1024);
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  const file = parsed.form.get("file");
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "no file" }, { status: 400 });
   }

@@ -43,7 +43,7 @@ export type AdminRouteAuth =
  * ไปเรียก `verifyAdminSession()` เองแล้วลืมส่วน acting-tenant
  */
 export async function authorizeAdminRoute(permission: BmsPermission | null): Promise<AdminRouteAuth> {
-  const session = verifyAdminSession();
+  const session = await verifyAdminSession();
   if (!session) return { ok: false, status: 401 };
   if (!(await isAdminSessionActive(session.jti))) return { ok: false, status: 401 };
 
@@ -53,7 +53,7 @@ export async function authorizeAdminRoute(permission: BmsPermission | null): Pro
   const admin = await refreshAdminIdentity(session);
   if (!admin) return { ok: false, status: 401 };
 
-  const acting = verifyActTenant(cookies().get(ACT_TENANT_COOKIE)?.value);
+  const acting = verifyActTenant((await cookies()).get(ACT_TENANT_COOKIE)?.value);
   let tenantId = admin.tenant_id || DEFAULT_TENANT_ID;
   if (
     acting?.actTenantId &&

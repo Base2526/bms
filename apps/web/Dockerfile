@@ -1,5 +1,5 @@
 # --- Builder stage ---
-FROM node:20-bookworm-slim AS builder
+FROM node:24-bookworm-slim AS builder
 
 RUN apt-get update && apt-get install -y \
     python3 \
@@ -62,7 +62,7 @@ RUN case "$TARGETARCH" in \
       amd64) sharp_cpu=x64 ;; \
       *) echo "Unsupported Docker target architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac \
- && npm install --os=linux --cpu="$sharp_cpu" sharp --force --ignore-scripts=false
+ && npm install --os=linux --cpu="$sharp_cpu" sharp@0.35.5 --force --ignore-scripts=false --no-save
 RUN npm rebuild sharp --force || true
 
 COPY apps/web ./
@@ -77,8 +77,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build && rm -rf .next/cache/webpack
 
 # Scheduler uses this Dockerfile but does not compile Next.js or carry database code.
-# Node 22 runs the shared Redis client's erasable TypeScript directly.
-FROM node:22-bookworm-slim AS scheduler
+# Node 24 runs the shared Redis client's erasable TypeScript directly.
+FROM node:24-bookworm-slim AS scheduler
 WORKDIR /app/apps/web
 COPY apps/web/package*.json ./
 RUN npm ci --omit=dev --ignore-scripts
@@ -90,7 +90,7 @@ USER node
 CMD ["node", "scheduler.mjs"]
 
 # --- Runner stage ---
-FROM node:20-bookworm-slim AS runner
+FROM node:24-bookworm-slim AS runner
 
 WORKDIR /app/apps/web
 

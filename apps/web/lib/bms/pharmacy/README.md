@@ -19,6 +19,11 @@ for quoting indications, usage, warnings or storage instructions (including hous
 
 ## Status
 
+Clinical evidence uploads through the POS and pharmacist queue are bounded to 11 MiB per multipart
+request before parsing; the POS text-only JSON path is bounded to 64 KiB. This limits memory use
+even for chunked requests with absent or forged `Content-Length`, while the existing 10 MiB file
+limit and private-file authorization remain in force.
+
 Code + `tsc`/lint pass. **Not yet verified against a live Postgres or a live AI provider**
 on this machine (no docker/DB running while this module was built) — see "Before relying on
 this in production" below before treating any of it as verified end-to-end.

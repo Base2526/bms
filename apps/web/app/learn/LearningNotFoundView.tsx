@@ -6,8 +6,8 @@ import s from "./learning.module.css";
 
 export type LearningNotFoundKind = "generic" | "track" | "lesson";
 
-export default function LearningNotFoundView({ kind }: { kind: LearningNotFoundKind }) {
-  const lang = learningLang();
+export default async function LearningNotFoundView({ kind }: { kind: LearningNotFoundKind }) {
+  const lang = await learningLang();
   const copy = {
     generic: lang === "en"
       ? { title: "We couldn't find this guide", description: "The learning link may have changed. Browse the current guides to continue." }

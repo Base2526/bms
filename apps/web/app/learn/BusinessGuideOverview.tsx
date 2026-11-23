@@ -47,7 +47,7 @@ export function BusinessGuideOverview({ track, lang }: { track: BusinessTrackId;
   const [speed, setSpeed] = useState(1);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const audioElement = useRef<HTMLAudioElement>(null);
-  const audioPlayer = useRef<RecordedNarration>();
+  const audioPlayer = useRef<RecordedNarration | undefined>(undefined);
   const recorded = lang === "th";
   const narrationAvailable = track !== "pet-supply";
   const activePlayback = playing && !paused;

@@ -49,7 +49,7 @@ export async function issueAdminSession(
     sessionId: jti,
   });
   await createAdminSession(jti, user.id, sessionMaxAgeSec);
-  cookies().set(ADMIN_COOKIE, token, {
+  (await cookies()).set(ADMIN_COOKIE, token, {
     httpOnly: true,
     secure: useSecureCookie && !isDev,
     sameSite: "lax",

@@ -57,6 +57,8 @@ const httpLink = createUploadLink({
   // otherwise defaults to /graphql, but BMS serves this API at /api/graphql.
   uri: process.env.NEXT_PUBLIC_GRAPHQL_HTTP || "/api/graphql",
   credentials: "include", // ให้ส่ง cookie ไปด้วยถ้ามี
+  // Required by the upload parser's CSRF preflight gate for multipart mutations.
+  headers: { "Apollo-Require-Preflight": "true" },
   fetch,
 });
 

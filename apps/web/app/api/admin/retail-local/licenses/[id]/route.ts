@@ -5,11 +5,11 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = "force-dynamic";
 
-async function handleGET(_request: NextRequest, context: { params: { id: string } }) {
+async function handleGET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const auth = await authorizePlatformAdminRoute();
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
   try {
-    return NextResponse.json(await getRetailLocalLicenseDetails(context.params.id), {
+    return NextResponse.json(await getRetailLocalLicenseDetails((await context.params).id), {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

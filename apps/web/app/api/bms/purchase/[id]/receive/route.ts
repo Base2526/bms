@@ -15,10 +15,10 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function handlePOST(req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePOST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeAdminRoute("purchase.receive");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
-  const poId = params.id?.trim();
+  const poId = (await params).id?.trim();
   if (!poId) return NextResponse.json({ error: "po id required" }, { status: 400 });
 
   const body = ((await req.json().catch(() => ({}))) ?? {}) as { items?: unknown; idempotencyKey?: unknown; locationId?: unknown };

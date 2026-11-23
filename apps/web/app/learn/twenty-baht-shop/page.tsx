@@ -7,8 +7,8 @@ import s from "../learning.module.css";
 import g from "./twenty-baht.module.css";
 
 const path = "/learn/twenty-baht-shop";
-export function generateMetadata() {
-  const lang = learningLang();
+export async function generateMetadata() {
+  const lang = await learningLang();
   return { ...learningMetadata(
     lang === "th" ? "คู่มือร้าน 20 บาท (ทดลอง)" : "Twenty-baht shop guide (pilot)",
     lang === "th" ? "คู่มือสาธารณะร้าน 20 บาท: แยก SKU นำเข้าสินค้า นับสต็อก รับของ ขาย คืน และปิดกะ พร้อมตัวอย่างและเสียงบรรยาย" : "Public pilot guide for a twenty-baht shop: SKUs, imports, stock counts, receiving, sales, returns, shifts, and narrated examples.",
@@ -16,8 +16,8 @@ export function generateMetadata() {
   ), robots: { index: false, follow: true } };
 }
 
-export default function TwentyBahtShopGuide() {
-  const lang = learningLang();
+export default async function TwentyBahtShopGuide() {
+  const lang = await learningLang();
   const th = lang === "th";
   const t = (thai: string, english: string) => th ? thai : english;
   const admin = (url: string) => <Link href={url}>{url}</Link>;

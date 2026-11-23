@@ -358,7 +358,7 @@ function buildConfigDiagnostics(t: (key: string, vars?: Record<string, string | 
 }
 
 export default async function EnvPage() {
-  const lang = (cookies().get("lang")?.value === "en" ? "en" : "th") as Lang;
+  const lang = ((await cookies()).get("lang")?.value === "en" ? "en" : "th") as Lang;
   const t = (key: string, vars?: Record<string, string | number>) => getMessage(lang, key, vars);
 
   const env = pickEnv(t, process.env);

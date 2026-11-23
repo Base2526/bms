@@ -4,7 +4,7 @@ import { useUiText } from "@/lib/useUiText";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Form, Input, Select, Button, Space, Upload, message, Image, Alert } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
-import { useState, useEffect } from "react";
+import { useState, useEffect, use } from "react";
 import { useI18n } from "@/lib/i18nContext";
 import { assignableStaffRoles, canManageStaffRole } from "@/lib/bms/staffRoles";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
@@ -349,6 +349,7 @@ function FormEdit({ id }: { id: string }) {
   );
 }
 
-export default function Page({ params }: { params: { id: string } }) {
+export default function Page(props: { params: Promise<{ id: string }> }) {
+  const params = use(props.params);
   return <FormEdit id={params.id} />;
 }

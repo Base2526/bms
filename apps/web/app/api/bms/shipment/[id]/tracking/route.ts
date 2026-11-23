@@ -8,10 +8,10 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function handlePOST(req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePOST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeAdminRoute("shipping.update");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
-  const id = params.id?.trim();
+  const id = (await params).id?.trim();
   if (!id) return NextResponse.json({ error: "shipment id required" }, { status: 400 });
   const body = (await req.json().catch(() => ({}))) as { trackingNo?: unknown; carrier?: unknown };
   const ok = await updateTracking(auth.tenantId, id, {

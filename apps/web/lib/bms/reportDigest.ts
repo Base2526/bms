@@ -406,7 +406,7 @@ export async function upsertReportSubscription(tenantId: string, input: UpsertRe
   if (input.slackWebhookUrl !== undefined) {
     const slackList = parseRecipientList(input.slackWebhookUrl);
     const badSlack = invalidSlackWebhookUrls(slackList);
-    if (badSlack.length) throw new Error(`Slack webhook URL ไม่ถูกต้อง (ต้องเป็น https://): ${badSlack.join(", ")}`);
+    if (badSlack.length) throw new Error("Slack webhook URL ไม่ถูกต้อง (ต้องใช้ https://hooks.slack.com/services/...)");
     slackWebhookUrl = slackList.length ? encryptSecret(slackList.join(", ")) : null;
   } else {
     slackWebhookUrl = prev?.slack_webhook_url ?? null;
@@ -504,25 +504,27 @@ async function sendEmailChannel(tenantId: string, recipientEmailCsv: string | nu
   return { ok: allOk, error: details.join(" | ") };
 }
 
-async function sendSlackChannel(encryptedWebhookUrlCsv: string | null, payload: any): Promise<{ ok: boolean; error?: string }> {
+export async function sendSlackChannel(encryptedWebhookUrlCsv: string | null, payload: any): Promise<{ ok: boolean; error?: string }> {
   const list = parseRecipientList(decryptSecret(encryptedWebhookUrlCsv));
   if (!list.length) return { ok: false, error: "ไม่ได้ตั้ง Slack webhook" };
+  // Revalidate legacy encrypted rows at send time; a previously saved URL is not authority.
+  if (invalidSlackWebhookUrls(list).length) return { ok: false, error: "Slack webhook URL ไม่ถูกต้อง" };
   const details: string[] = [];
   let allOk = true;
-  for (const url of list) {
-    const label = url.replace(/^https:\/\/hooks\.slack\.com\/services\//, "…/");
+  for (const [index, url] of list.entries()) {
+    const label = `Slack webhook ${index + 1}`;
     try {
-      const resp = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const bodyText = await resp.text().catch(() => "");
+      const resp = await fetch(url, { method: "POST", redirect: "error", signal: AbortSignal.timeout(15_000),
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (resp.ok) {
         details.push(`${label}: ส่งสำเร็จ`);
       } else {
         allOk = false;
-        details.push(`${label}: HTTP ${resp.status}${bodyText ? ` - ${bodyText}` : ""}`);
+        details.push(`${label}: HTTP ${resp.status}`);
       }
-    } catch (e: any) {
+    } catch {
       allOk = false;
-      details.push(`${label}: ${e?.message || "ส่ง Slack ไม่สำเร็จ"}`);
+      details.push(`${label}: ส่ง Slack ไม่สำเร็จ`);
     }
   }
   return { ok: allOk, error: details.join(" | ") };
