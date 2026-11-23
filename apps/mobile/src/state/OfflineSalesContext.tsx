@@ -28,7 +28,11 @@ import {
   normalizeOfflineStateAfterRestart,
   sortOfflineQueueOldestFirst,
 } from '../lib/offlineContinuity';
-import { isDecidedRejection, runWithOperationTimeout } from '../lib/operation';
+import {
+  isDecidedRejection,
+  isSignInRefusal,
+  runWithOperationTimeout,
+} from '../lib/operation';
 import { describeMobileSaleFailure } from '../lib/saleFailureMessage';
 import { useDevice } from './DeviceContext';
 import { useSales } from './SalesContext';
@@ -74,6 +78,13 @@ export function OfflineSalesProvider({
   const [syncing, setSyncing] = useState(false);
   const syncLock = useRef(false);
   const activeStages = useRef(new Set<string>());
+  // The sign-in whose device token or cashier PIN/permission the server refused. Replaying with it
+  // again cannot succeed and each wrong-PIN try counts toward the cashier lockout, so the queue waits
+  // for a new sign-in (re-pairing also clears the session) instead.
+  const refusedSignIn = useRef<string | null>(null);
+  const signInKey = session
+    ? `${session.deviceId}|${session.cashier.id}|${session.signedInAt}`
+    : null;
   const [recover] = useLazyQuery(MobilePosSaleRecoveryDocument, {
     fetchPolicy: 'network-only',
   });
@@ -198,6 +209,7 @@ export function OfflineSalesProvider({
 
   const syncNow = useCallback(async () => {
     if (syncLock.current || !session) return;
+    if (refusedSignIn.current !== null && refusedSignIn.current === signInKey) return;
     syncLock.current = true;
     setSyncing(true);
     try {
@@ -326,6 +338,23 @@ export function OfflineSalesProvider({
             }),
           );
         } catch (error) {
+          if (isSignInRefusal(error)) {
+            // The device token or this cashier was refused before the server looked at the sale,
+            // so nothing about the cash sale was decided: keep it (and every later row) queued
+            // and retryable, and stop instead of replaying the same credentials on each row.
+            refusedSignIn.current = signInKey;
+            setRecords(
+              await patchOfflineSale(record.id, {
+                state: 'UNKNOWN',
+                attempts: record.attempts + 1,
+                failureCode: null,
+                lastError:
+                  posText("Server ไม่รับการยืนยันตัวตนของเครื่องหรือแคชเชียร์ ยังไม่ได้ลงรายการนี้ — ให้แคชเชียร์เข้าสู่ระบบใหม่ (หรือจับคู่เครื่องใหม่) แล้วระบบจะซิงก์ต่อเอง") +
+                  (error instanceof Error && error.message ? ` (${error.message})` : ''),
+              }),
+            );
+            break;
+          }
           if (isDecidedRejection(error)) {
             setRecords(
               await patchOfflineSale(record.id, {
@@ -370,6 +399,7 @@ export function OfflineSalesProvider({
     session,
     shift.isOpen,
     shift.id,
+    signInKey,
     target?.serverUrl,
   ]);
 
