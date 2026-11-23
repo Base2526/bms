@@ -7850,6 +7850,8 @@ const rawResolvers = {
     },
 
     setRoleActive: async (_: any, { id, is_active }: { id: string; is_active: boolean }, ctx: any) => {
+      // Same rule as create/update/delete: a role is a global definition shared by every shop.
+      await requirePlatformOnly(ctx);
       const { author_id } = requireAuth(ctx);
       console.log('[Mutation] setRoleActive:', author_id, id, is_active);
 
@@ -7872,6 +7874,7 @@ const rawResolvers = {
            RETURNING id, name, description, is_active, created_at, updated_at`,
           [!!is_active, id]
         );
+        await audit(ctx, "role.set_active", id, { name: rows[0]?.name ?? null, isActive: !!is_active });
 
         console.log('[Mutation] setRoleActive success:', rows[0]);
         return rows[0];
