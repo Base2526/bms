@@ -1249,3 +1249,16 @@ On 2026-11-23, `learning-center-contract` (13/13), `admin-login-session-contract
 `regression:inventory` and `release:features:check` passed. **`admin-client-i18n-contract` fails
 (4/5)** on the untranslated `BMS POS+ loading` / `Loading…` text in `admin/loading.tsx`, so the
 gate's pure step stays red until that copy is localized or reviewed as an exception.
+
+**Full-system recheck branch (2026-11-23, `recheck/full-system-2026-11-23`, no migration).**
+The detailed A–E checklist, fixes, test commands and blocked live evidence are in
+[architecture/system-recheck-2026-11-23.md](architecture/system-recheck-2026-11-23.md).
+The branch fixes Admin loading localization, offline-sale preservation after refused Mobile
+sign-in, platform scope on global roles/counts, file-download permission gates, same-origin
+Admin login redirects and stored shop/payment links. RN generated GraphQL types were refreshed
+from `schema.graphql` after `graphql:check` exposed drift. `npm run gate` exited 0 (401 pure files,
+3,902 passed, 6 skipped; production build completed); Desktop Node tests passed 166/166 and
+`pack:win` completed; Mobile Jest passed 493/493, typecheck and `graphql:check` completed.
+The local DB clone lacks 10 readiness migrations, so current-code DB transactions and a complete
+customer-to-dashboard flow were not verified. Admin/session-backed browser routes, providers and
+physical POS hardware remain unverified in this pass.

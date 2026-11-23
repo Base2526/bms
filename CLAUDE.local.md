@@ -17,7 +17,8 @@
   เปลี่ยนชื่อสินค้าเป็น **BMS POS+**; appId/bundle ID/โฟลเดอร์ติดตั้งเดิมไม่เปลี่ยน) · สรุป #417–#444 อยู่ท้าย
   [docs/status-log.md](docs/status-log.md) · branch `codex/retail-local-pilot-13` = `develop` + Retail Local
   `0.2.14-pilot.13` + คู่มือร้านอาหารสัตว์ (`/learn/pet-supply`, Word/PDF เล่มที่ 6) + แก้ลูป `/admin/login` — ไม่มี migration ·
-  ⚠️ `admin-client-i18n-contract` ยังแดงที่ข้อความอังกฤษใน `admin/loading.tsx`
+  `admin-client-i18n-contract` แก้แล้วใน `a55ea168`; gate รอบ recheck 2026-11-23 ผ่าน (รายละเอียดใน
+  [system-recheck-2026-11-23.md](docs/architecture/system-recheck-2026-11-23.md))
 - **migration ล่าสุด `10.138`** (เลขว่างถัดไป `10.139` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
   `10.122`/`10.123` โรงงานคงเดิม; audit ที่ชนเลขย้ายเป็น `10.131`/`10.132` และมีวิธีจัดการ
   ledger เก่าใน [audit traceability](docs/architecture/audit-traceability.md#verification-and-rollout) ·
