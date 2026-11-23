@@ -10,7 +10,7 @@ import s from "../learning.module.css";
 import StructuredData from "@/components/seo/StructuredData";
 import { localizedPublicPath } from "@/lib/publicSeo";
 import { breadcrumbJsonLd } from "@/lib/seoJsonLd";
-import { isDownloadablePosGuide, posGuideFile, POS_GUIDE_REVIEWED_AT } from "@/lib/learning/downloads";
+import { isDownloadablePosGuide, posGuideFile, posGuideReviewedAt } from "@/lib/learning/downloads";
 
 export function generateMetadata({ params }: { params: { track: string } }) {
   if (!isTrack(params.track)) return { robots: { index: false, follow: false } };
@@ -91,6 +91,8 @@ export default function TrackPage({ params, searchParams }: { params: { track: s
     ? (th ? ["รับสินค้า", "โอนย้ายสาขา", "นับสต็อก", "ตัดสต็อก"] : ["Receive", "Transfer", "Count", "Deduct"])
     : id === "retail"
       ? (th ? ["สินค้า / บาร์โค้ด", "POS", "คืนสินค้า", "รายงาน"] : ["Products / barcodes", "POS", "Returns", "Reports"])
+      : id === "pet-supply"
+      ? (th ? ["สินค้า / แพ็ก", "ล็อต / วันหมดอายุ", "Retail POS", "สต็อก / กะ"] : ["Products / packs", "Lots / expiry", "Retail POS", "Stock / shifts"])
       : id === "board-game"
         ? (th ? ["Walk-in และคิว", "จองโต๊ะ", "เล่นเป็นกลุ่ม", "คลังเกม"] : ["Walk-in & queue", "Bookings", "Group play", "Game library"])
         : id === "restaurant"
@@ -118,7 +120,7 @@ export default function TrackPage({ params, searchParams }: { params: { track: s
             <a className={s.button} href={posGuideFile(id, "pdf")} download>{th ? "ดาวน์โหลด PDF ภาษาไทย" : "Download Thai PDF"}{id === "building-materials" ? " · PILOT" : ""} ↓</a>
             <a className={s.secondary} href={posGuideFile(id, "docx")} download>{th ? "ดาวน์โหลด Word ภาษาไทย (.docx)" : "Download Thai Word (.docx)"}{id === "building-materials" ? " · PILOT" : ""} ↓</a>
           </div>}
-          {isDownloadablePosGuide(id) && <p className={s.guideDownloadNote}>{id === "building-materials" ? (th ? "PILOT · ยังไม่พร้อมใช้ครบ · " : "PILOT · Incomplete for rollout · ") : ""}{th ? `ไฟล์ภาษาไทย · ทบทวน ${POS_GUIDE_REVIEWED_AT} · หน้าเว็บเป็นฉบับล่าสุด` : `Thai-language files · Reviewed ${POS_GUIDE_REVIEWED_AT} · This page has the latest guidance`}</p>}
+          {isDownloadablePosGuide(id) && <p className={s.guideDownloadNote}>{id === "building-materials" ? (th ? "PILOT · ยังไม่พร้อมใช้ครบ · " : "PILOT · Incomplete for rollout · ") : ""}{th ? `ไฟล์ภาษาไทย · ทบทวน ${posGuideReviewedAt(id)} · หน้าเว็บเป็นฉบับล่าสุด` : `Thai-language files · Reviewed ${posGuideReviewedAt(id)} · This page has the latest guidance`}</p>}
           <Link className={s.guideStartLink} href={localizedPublicPath(`/learn/guides/${items[0].slug}?${lessonQuery}`, lang)}>{th ? "เริ่มจากบทแรก" : "Start the first lesson"} →</Link>
         </div>
         {id === "inventory" ? <div className={s.inventoryHeroVisual} aria-hidden="true">

@@ -1,0 +1,177 @@
+import type { Lesson } from "./catalog";
+
+const bi = (th: string, en: string) => ({ th, en });
+const track = ["pet-supply"] as const;
+const managers = ["owner", "manager"] as const;
+const all = ["owner", "manager", "cashier"] as const;
+
+// Public instructions. Training names, SKUs, prices and branches below are fictional.
+const authoredLessons: Lesson[] = [
+  {
+    slug: "pet-supply-start", title: bi("เริ่มร้านขายอาหารสัตว์บน Retail POS", "Start a pet supply store on Retail POS"),
+    summary: bi("เลือก pet_supply เตรียมสาขาและแยกงานขายสินค้าออกจากคำแนะนำสุขภาพสัตว์", "Choose pet_supply, prepare branches and separate product sales from animal health advice."),
+    category: "setup", roles: [...managers], tracks: [...track], menu: bi("สมัครร้าน → Settings → ข้อมูลร้าน / สาขา", "Shop signup → Settings → Store profile / Branches"), action: "/admin/settings",
+    prerequisite: bi("อีเมลเจ้าของร้าน ชื่อร้าน ที่อยู่ สาขาที่จะขาย ผู้รับผิดชอบสินค้าและบัญชี", "Owner email, shop name and address, trading branches, catalog and accounting owners."),
+    steps: [
+      bi("สมัครด้วยบัญชีที่เจ้าของควบคุม เลือกประเภทร้าน ร้านขายอาหารสัตว์ (pet_supply) ก่อนออร์เดอร์จริงแรก แล้วตรวจชื่อร้านและสาขาที่ Settings", "Register with an owner-controlled account, choose Pet supply (pet_supply) before the first real order, then check shop and branch names in Settings."),
+      bi("เพิ่มสาขาทดสอบและเวลาทำการ กำหนดคนดูแลสินค้า รับของ เงิน และอุปกรณ์; แยกข้อมูลฝึกจากร้านจริง", "Add a test branch and opening hours; assign catalog, receiving, money and device owners. Keep training records apart from live records."),
+      bi("ใช้ POS ขายปลีกสำหรับอาหาร ขนม ทรายแมวและอุปกรณ์ ไม่ใช้บิลโต๊ะ รอบครัวหรือ Restaurant POS", "Use retail POS for food, treats, litter and accessories. Do not use table checks, kitchen rounds or Restaurant POS."),
+      bi("ตรวจ POS Readiness และให้ผู้รับผิดชอบภาษีทวนข้อมูลร้านก่อนซ้อมบิลแรก", "Check POS Readiness and have the tax owner review shop details before the first rehearsal bill."),
+    ],
+    example: bi("ร้านสมมติ ‘บ้านอุ้งเท้าฝึก’ สาขา ‘สาขาทดสอบ’ เลือก pet_supply ก่อนขาย", "Fictional ‘Paw Training Shop’, ‘Test branch’, selects pet_supply before any sale."),
+    check: bi("ข้อมูลร้านและสาขาตรงกับงานฝึก; หน้า POS แสดงสาขาที่ถูกต้องและเป็นงานขายปลีก", "The shop and test branch match the plan; POS shows the correct branch and retail sale workflow."),
+    caution: bi("archetype เป็น preset และอาจล็อกหลังออร์เดอร์จริงแรก; ไม่เปิดล็อต FEFO หรือช่องทางขายให้ทุกสินค้าอัตโนมัติ", "The archetype is a preset and may lock after the first real order; it does not enable lot/FEFO tracking or sales surfaces on every product."),
+  },
+  {
+    slug: "pet-supply-team-pos", title: bi("พนักงาน PIN เครื่องขายและกะ", "Staff, PIN, register and shifts"),
+    summary: bi("มอบสิทธิ์ จับคู่เครื่อง เปิดกะ และปิดกะตามผู้รับผิดชอบ", "Assign permissions, pair a register, and open and close accountable shifts."),
+    category: "setup", roles: [...managers], tracks: [...track], menu: bi("Users → POS Devices → POS Readiness → POS / กะ", "Users → POS Devices → POS Readiness → POS / Shifts"), action: "/admin/pos-readiness",
+    prerequisite: bi("บัญชีผู้ดูแล พนักงานฝึกหนึ่งคน เครื่องทดสอบ เงินทอนสมมติ และผู้อนุมัติอีกคนสำหรับ Void", "Administrator, one trainee cashier, test register, fictional opening float and a second person for void approval."),
+    steps: [
+      bi("ที่ Users เพิ่มพนักงานและให้สิทธิ์ตามหน้าที่ เช่น pos.sell, pos.shift.open/close; พนักงานตั้ง PIN ของตนตามหน้าจอ ห้ามแชร์ PIN", "In Users add staff with role permissions such as pos.sell and pos.shift.open/close; each cashier sets their own PIN on screen. Never share a PIN."),
+      bi("ที่ POS Devices สร้างเครื่อง ผูกสาขาที่ถูกต้อง แล้วจับคู่บนอุปกรณ์จริงตามรหัสที่หน้าแสดง ตรวจ POS Readiness และสถานะเครื่อง; อย่าคัดลอก token ลงคู่มือ", "Create a register in POS Devices, bind the correct branch, pair on the physical device using the on-screen flow, then inspect POS Readiness and device status. Never copy the device token into a guide."),
+      bi("ที่ POS เลือกพนักงาน ใส่ PIN และเปิดกะพร้อมเงินทอนตั้งต้น; เมื่อจบวันตรวจบิลค้าง นับเงินสดจริง กรอกยอดนับ ปิดกะ และอ่านรายงานส่วนต่าง", "At POS select the cashier, enter the PIN and open a shift with its opening float; at day end review pending bills, count actual cash, enter the count, close the shift and read the variance report."),
+      bi("ทดสอบพนักงานที่ไม่มีสิทธิ์ให้ถูกปฏิเสธ แล้วให้ผู้จัดการตรวจบันทึกและแก้สิทธิ์ตามหน้าที่", "Verify that an unauthorized staff member is denied, then have a manager inspect the record and assign only the needed permission."),
+    ],
+    example: bi("เปิดกะด้วยเงินทอนฝึก 500 บาท; ขายบิล 120 บาท รับ 200 ทอน 80; หากไม่มีรายการอื่น เงินสดที่ควรนับ 620 บาท", "Open with a fictional 500 THB float; for a 120 THB sale take 200 and return 80. With no other entries, expected drawer cash is 620 THB."),
+    check: bi("สาขา เครื่อง ผู้ขาย และกะตรงกัน; รายงานกะอธิบายเงินตั้งต้น เงินขาย เงินทอน และส่วนต่างได้", "Branch, register, cashier and shift match; the shift report explains float, sales, change and variance."),
+    caution: bi("device token ไม่ใช่สิทธิ์พนักงาน; ทุกการขายต้องตรวจ PIN/สิทธิ์อีกครั้ง Void และ cash-out ต้องมี PIN ผู้อนุมัติอีกคน", "A device token is not cashier authority; each sale rechecks PIN and permission. Void and drawer cash-out require a second person's PIN."),
+  },
+  {
+    slug: "pet-supply-products", title: bi("สร้างอาหาร ขนม ทรายแมว และอุปกรณ์", "Create food, treats, litter and accessories"),
+    summary: bi("ตั้ง SKU, variant, บาร์โค้ด หน่วย ต้นทุน ภาษี ช่องทางขาย และนำเข้าข้อมูล", "Configure SKU, variant, barcode, units, cost, VAT, sales surfaces and imports."),
+    category: "setup", roles: [...managers], tracks: [...track], menu: bi("Products → เพิ่มสินค้า / นำเข้า → Stock models", "Products → Add / Import → Stock models"), action: "/admin/products",
+    prerequisite: bi("ฉลากสินค้าและบาร์โค้ดจริง รายการขนาด หน่วยนับ ราคาขาย ต้นทุนที่ทราบ และการจัด VAT ที่บัญชียืนยัน", "Actual labels and barcodes, pack sizes, count units, selling prices, known costs and accountant-reviewed VAT classification."),
+    steps: [
+      bi("ที่ Products กดเพิ่มสินค้า สร้าง SKU ไม่ซ้ำและชื่อค้นได้; เลือก DIRECT สำหรับสินค้านับชิ้น ตั้งหน่วยฐานที่นับจริง เช่น ถุงหรือชิ้น", "In Products choose Add, enter a unique searchable SKU and use DIRECT for counted goods. Set the base unit you actually count, such as bag or piece."),
+      bi("เพิ่ม variant สำหรับขนาดที่เป็นสินค้าคนละตัวตนและบาร์โค้ดที่ตรงฉลาก; ตรวจว่าขนาดใน catalog มาจาก Product variants ไม่ใช่ยอด inventory", "Add variants for distinct physical sizes and barcodes matching labels; catalog size options come from Product variants, not inventory balances."),
+      bi("กรอกราคาต่อขนาด ต้นทุนเมื่อทราบ และประเภท VAT ตามบัญชี; เปิด RETAIL_POS และเปิด PUBLIC_STOREFRONT/CUSTOMER_AI/ONLINE_ORDER เฉพาะที่ต้องการเผยแพร่", "Enter per-size prices, known cost and accountant-approved VAT category; enable RETAIL_POS, and publish PUBLIC_STOREFRONT/CUSTOMER_AI/ONLINE_ORDER only where intended."),
+      bi("ถ้านำเข้า CSV ใช้หน้าตรวจตัวอย่าง ตรวจ SKU, variant, หน่วย ราคา ภาษีและช่องทางก่อนยืนยัน แล้วค้นสินค้าหลังนำเข้า", "For CSV import, review the preview for SKU, variant, units, price, VAT and sales surfaces before confirming; search the imported products afterwards."),
+    ],
+    example: bi("CAT-FOOD-1KG อาหารแมว 1 กก. หน่วยฐานถุง, LITTER-5L ทรายแมว 5 ลิตรหน่วยฐานถุง, TOY-001 ของเล่นหน่วยฐานชิ้น; ราคาฝึกสมมติ", "CAT-FOOD-1KG cat food 1 kg, base unit bag; LITTER-5L litter 5 L, base unit bag; TOY-001 toy, base unit piece. All training prices are fictional."),
+    check: bi("ค้น SKU/สแกนบาร์โค้ดทดสอบพบตัวเลือกถูกและราคาที่ตั้ง; สินค้าที่ไม่เผยแพร่ไม่แสดงในช่องทางนั้น", "Test search and scans resolve the right variant and price; unpublished products stay hidden on that surface."),
+    caution: bi("ราคาสินค้าเป็น VAT-inclusive ใน POS ปัจจุบัน; อย่าใส่ต้นทุน 0 เมื่อยังไม่ทราบ และอย่าใช้ชื่อสินค้าแทนข้อเท็จจริงเรื่องหน่วยหรือสุขภาพ", "Current POS requires VAT-inclusive catalog prices. Do not enter zero for unknown cost or infer units or health claims from a product name."),
+  },
+  {
+    slug: "pet-supply-packs", title: bi("ขนาดบรรจุ Product Packs และราคา", "Product Packs and size-specific prices"),
+    summary: bi("แยกถุง 1 กก. กับขนาดอื่นตามสินค้าจริงและตรวจราคาทุกแพ็ก", "Separate the 1 kg bag from other real sizes and verify every pack price."),
+    category: "setup", roles: [...managers], tracks: [...track], menu: bi("Products → Product packs → Product labels → POS", "Products → Product packs → Product labels → POS"), action: "/admin/product-packs",
+    prerequisite: bi("SKU/variant ที่สร้างแล้ว จำนวนหน่วยฐานต่อแพ็ก บาร์โค้ดและราคาขายของแต่ละขนาดจากร้าน", "Created SKU/variants, verified base units per pack, barcode and shop-approved price for each size."),
+    steps: [
+      bi("เลือกสินค้าที่ Products แล้วเปิด Product packs สร้าง pack code, ชื่อหน่วยขาย, จำนวนหน่วยฐาน และบาร์โค้ดที่ไม่ชนกัน", "Select the product and open Product packs; set pack code, selling-unit label, base-unit quantity and a non-conflicting barcode."),
+      bi("กรอกราคาแพ็กแต่ละขนาดแยกกันและทดสอบที่ POS; ถ้าไม่ตั้งราคาแพ็ก ระบบอาจคำนวณจากราคาหน่วยฐาน × จำนวนฐาน จึงต้องตรวจยอดก่อนรับเงิน", "Enter a separate price for every pack and test in POS; if a pack price is absent, the system may derive base price × base quantity, so check the amount before payment."),
+      bi("เทียบฉลากกับตัวเลือกขายและจำนวนหน่วยฐานที่จะตัดสต็อก; ถุงคนละน้ำหนักที่นับแยกกันให้ใช้ variant/SKU ที่เหมาะ ไม่สมมติว่า 1 กก. กับถุงอื่นราคาเดียวกัน", "Compare the label with the sale option and base quantity that stock will deduct. Use an appropriate variant/SKU when physically different bags are counted separately; never assume sizes share a price."),
+      bi("สแกนบาร์โค้ดทั้งสองขนาดในร้านทดสอบและบันทึกราคาที่ POS แสดงเทียบกับราคาที่อนุมัติ", "Scan both sizes in the test shop and record the POS price against the approved price."),
+    ],
+    example: bi("ถุงฝึก 1 กก. ราคา 120 บาท; ถุงฝึก 2 กก. ตั้งราคา 225 บาทแยก และสแกนทดสอบทั้งสองรหัส", "Fictional 1 kg bag costs 120 THB; configure a separate 225 THB price for a fictional 2 kg bag and test both scans."),
+    check: bi("ตะกร้าแสดงขนาด จำนวน หน่วย ราคาแพ็กและยอดตัดฐานตรงฉลากของทั้งสองรหัส", "Cart shows the right size, quantity, selling unit, pack price and base-unit deduction for both codes."),
+    caution: bi("Product Pack คือการแปลงหน่วยขายจากข้อมูลจริง ไม่ใช่เครื่องมือเดาราคา ขนาดบรรจุหรือต้นทุน; AI ต้องอ่านแพ็กจาก backend", "A Product Pack is a verified selling-unit conversion, not a way to guess prices, sizes or cost; AI must read packs from the backend."),
+  },
+  {
+    slug: "pet-supply-weighted", title: bi("ขายสินค้าชั่งน้ำหนักและทดสอบฉลาก", "Weighted goods and scale-label checks"),
+    summary: bi("ใช้เฉพาะสัญญาบาร์โค้ดน้ำหนักที่รองรับ และพิสูจน์กับเครื่องชั่งจริง", "Use the supported weight-barcode contract and prove it with the actual scale."),
+    category: "setup", roles: [...managers], tracks: [...track], menu: bi("Products → Stock models → POS / สแกน", "Products → Stock models → POS / Scan"), action: "/admin/stock-models",
+    prerequisite: bi("สินค้าแบ่งขายจริง เครื่องชั่ง/เครื่องพิมพ์ฉลาก รุ่นบาร์โค้ดที่ทดสอบได้ และผู้ตรวจราคา", "Actual bulk goods, scale and label printer, testable barcode format and price reviewer."),
+    steps: [
+      bi("เปิด capability WEIGHTED_PRODUCT แล้วตั้งสินค้ารูปแบบ WEIGHTED หน่วยฐาน GRAM, scale item code, scale size และราคาต่อหน่วยฐานที่ระบบเก็บได้", "Enable WEIGHTED_PRODUCT; configure a WEIGHTED product with GRAM base unit, scale item code, scale size and the supported base-unit price."),
+      bi("พิมพ์ฉลากจากเครื่องจริงและสแกนที่ POS; เส้นทางน้ำหนักรับเฉพาะบาร์โค้ดที่ parser อ่านเป็น WEIGHT, กรัมมากกว่า 0, รหัสตรงสินค้าและ variant/surface/สต็อกสาขาที่ขายได้", "Print a real scale label and scan it in POS. The weight path requires a barcode parsed as WEIGHT with positive grams and a matching item code, variant, sales surface and sellable branch stock."),
+      bi("เทียบน้ำหนัก ราคาในตะกร้า จำนวนกรัมที่ตัด และใบเสร็จกับฉลากจริงทุกกรณี; หยุดขายหากเครื่องพิมพ์หรือการปัดราคาต่างจากที่ร้านอนุมัติ", "Compare weight, cart price, deducted grams and receipt against the real label; stop if printer output or rounding differs from approved pricing."),
+      bi("ลองฉลากที่ไม่รู้จักหรือกรัมศูนย์และยืนยันว่าไม่ถูกขายเป็นสินค้าชั่งโดยไม่ตรวจ", "Try an unknown or zero-gram label and confirm it cannot silently become a weighed sale."),
+    ],
+    example: bi("ถุงแบ่งขายฝึก 250 กรัม: สแกนฉลากที่เครื่องทดสอบพิมพ์ แล้วเทียบกรัมกับตะกร้า ไม่ใช้ตัวเลขจาก AI เป็นราคา", "For a fictional 250 g portion, scan a label printed by the test scale and compare grams with the cart; never use an AI-supplied price."),
+    check: bi("เครื่องจริงและฐานทดสอบให้ SKU ขนาด กรัม ราคา สต็อกและใบเสร็จตรงกัน", "Real device and test database agree on SKU, size, grams, price, stock and receipt."),
+    caution: bi("สแกนไม่ได้ทุกฉลากหรือทุกหน่วย; ราคาต่อกรัมสองตำแหน่งอาจแทนราคาต่อกิโลกรัมบางค่าไม่ได้ และ customer AI ไม่แสดงราคา WEIGHTED ที่ยังยืนยันต่อช่องทางไม่ได้", "Not every label or unit is supported. A two-decimal per-gram price cannot represent every per-kg rate, and customer AI suppresses unverified WEIGHTED prices."),
+  },
+  {
+    slug: "pet-supply-receiving", title: bi("จัดซื้อ รับแยกสาขา และตรวจล็อต", "Purchase, branch receiving and lot checks"),
+    summary: bi("รับของจริงพร้อมล็อต/วันหมดอายุและตรวจยอดหลังรับและหลังขาย", "Receive actual goods with lot/expiry evidence and verify balances after receipt and sale."),
+    category: "daily", roles: [...managers], tracks: [...track], menu: bi("Purchase → รับสินค้า → Inventory / Stock models", "Purchase → Receive → Inventory / Stock models"), action: "/admin/purchase",
+    prerequisite: bi("SKU ที่ตั้งไว้ สาขารับจริง ผู้จำหน่ายสมมติ จำนวน ต้นทุน ล็อตและวันหมดอายุจากฉลาก", "Configured SKU, actual receiving branch, fictional supplier, quantity, cost, and lot/expiry from the label."),
+    steps: [
+      bi("ที่ Stock models ตั้ง lot_tracking/expiry_tracking ให้สินค้าที่ต้องติดตามจริง; FEFO ใช้ข้อมูลล็อตที่บันทึก ไม่ได้เปิดจาก pet_supply preset เอง", "In Stock models configure lot_tracking/expiry_tracking on each product that needs it. FEFO uses recorded lots; pet_supply preset does not turn it on by itself."),
+      bi("ที่ Purchase สร้าง PO ด้วย SKU, variant, จำนวนและต้นทุน ตรวจผู้จำหน่าย แล้วเปิดใบเดิมเพื่อรับเข้า เลือกสาขาที่ของมาถึงและจำนวนรับจริง", "In Purchase create a PO with SKU, variant, quantity and cost; check the supplier, then receive on the same PO into the branch that physically got the goods."),
+      bi("กรอกเลขล็อตและวันหมดอายุจากห่อจริง ตรวจ stock movement และยอดสาขาหลังรับ; ก่อนขายตรวจว่าล็อตไม่หมดอายุ และหลังขายตรวจล็อตที่ตัดกับยอดคงเหลือ", "Enter the physical lot and expiry, then inspect stock movement and branch balance. Before sale check expiry; after sale inspect the consumed lot and remaining balance."),
+      bi("ลองล็อตหมดอายุในร้านทดสอบและตรวจว่าบิลถูกปฏิเสธโดยไม่มี movement หรือเงินรับบางส่วน", "Test an expired lot in the test shop and verify sale rejection leaves no partial movement or tender."),
+    ],
+    example: bi("รับ CAT-FOOD-1KG 10 ถุงที่สาขาทดสอบ ล็อต TRAIN-PET-01 หมดอายุวันที่สมมติซึ่งยังไม่ถึงวันขาย; ยอดก่อนขายต้องเป็น 10", "Receive ten CAT-FOOD-1KG bags at Test branch, fictional lot TRAIN-PET-01 with a future test expiry; pre-sale balance must be ten."),
+    check: bi("ใบรับ สาขา ล็อต วันหมดอายุ movement และยอดพร้อมขาย 10 ตรงของจริง", "Receipt, branch, lot, expiry, movement and ten sellable units agree with physical goods."),
+    caution: bi("ล็อตใกล้หมดอายุถูกเลือกก่อนเมื่อข้อมูลครบ แต่ล็อตหมดอายุต้องไม่ถูกขาย; ยอดสาขาอื่นไม่ใช่ยอดของสาขาที่รับ", "FEFO selects the earliest eligible lot when evidence is complete, while expired lots must not sell. Another branch's stock is not this branch's stock."),
+  },
+  {
+    slug: "pet-supply-sale", title: bi("ขายหน้าร้าน ใบเสร็จ คืนและ Void", "Counter sale, receipt, return and void"),
+    summary: bi("สแกน ตรวจแพ็ก/สต็อก รับชำระและตรวจรายการต้นฉบับก่อนย้อนขาย", "Scan, verify pack and stock, settle and inspect the original bill before reversal."),
+    category: "daily", roles: [...all], tracks: [...track], menu: bi("POS → ขาย → ชำระเงิน / คืน / กะ", "POS → Sell → Payment / Return / Shift"), action: "/pos",
+    prerequisite: bi("เครื่องจับคู่ กะเปิด ผู้ขายมี pos.sell และ PIN ของตน สินค้า RETAIL_POS มีสต็อกสาขานั้น", "Paired register, open shift, cashier with pos.sell and own PIN, RETAIL_POS product stocked at that branch."),
+    steps: [
+      bi("ที่ POS ตรวจสาขาและกะ ค้น SKU หรือสแกนบาร์โค้ด เลือก variant/pack และจำนวน ตรวจชื่อ ขนาด ราคาแพ็ก สต็อกพร้อมขายและยอดตะกร้า", "At POS check branch and shift, search SKU or scan barcode, select variant/pack and quantity, then review name, size, pack price, sellable stock and cart total."),
+      bi("เลือกวิธีชำระที่ร้านตั้งไว้ กรอกเงินรับเมื่อเป็นเงินสด ตรวจเงินทอน แล้วกดยืนยันครั้งเดียว; รอผลสำเร็จ เลขใบเสร็จ และตรวจสต็อกหลังบิล", "Choose a configured tender; for cash enter the amount received, check change and submit once. Wait for success and receipt number, then check post-sale stock."),
+      bi("คืนสินค้าจากบิลเดิม เลือกบรรทัด/จำนวน เหตุผล และตรวจตัวตนล็อตก่อนคืนเงิน; ใช้สิทธิ์ order.return/payment.refund ที่เกี่ยวข้อง Void ใช้ผู้อนุมัติอีกคนใส่ PIN ในกะที่ยังเปิด", "Return from the original bill: choose sold line/quantity and reason, reconcile lot identity before refund, and use the relevant order.return/payment.refund permissions. Void needs a second approver PIN in an open shift."),
+      bi("ก่อนปิดกะตรวจรายการค้าง นับเงินสดจริง ปิดด้วย pos.shift.close และเทียบรายงานกะกับบิลและเงินที่นับ", "Before closing review pending work, count actual cash, close with pos.shift.close and reconcile shift report, bills and counted cash."),
+    ],
+    example: bi("ขาย CAT-FOOD-1KG หนึ่งถุง 120 บาทจาก 10: ใบเสร็จ 120 บาท สต็อกสาขาทดสอบเหลือ 9; รับ 200 บาท ทอน 80 บาท", "Sell one CAT-FOOD-1KG bag for fictional 120 THB from ten: receipt 120 THB, Test branch stock nine; take 200 THB and return 80 THB change."),
+    check: bi("บิล COMPLETED ใบเสร็จ ยอดรับสุทธิ movement ล็อตและยอด 9 ตรงกัน; กะอธิบายยอดเงินได้", "Completed bill, receipt, net tender, movement, lot and balance of nine agree; shift cash is explainable."),
+    caution: bi("ผลชำระไม่ชัดให้ค้นบิลเดิมก่อนกดซ้ำ; คืนสินค้าไม่รู้ล็อตหรือปะปนล็อตที่ติดตามต้องส่งตรวจ STOCK_REVIEW_REQUIRED โดยไม่มีคืนเงิน/สต็อกบางส่วน", "If settlement result is unclear, find the original bill before retrying. Unknown or mixed tracked lot identity requires STOCK_REVIEW_REQUIRED, without partial stock/refund effects."),
+  },
+  {
+    slug: "pet-supply-customer", title: bi("ลูกค้าซื้อซ้ำ แชท AI และออร์เดอร์ออนไลน์", "Repeat customers, AI chat and online orders"),
+    summary: bi("ใช้ CRM และเครื่องมือที่อนุญาต ตรวจสินค้า แพ็ก ราคา สต็อกก่อนตอบหรือสั่งซ้ำ", "Use CRM and approved tools; verify product, pack, price and stock before answering or reordering."),
+    category: "growth", roles: [...managers], tracks: [...track], menu: bi("Customers / Inbox → Settings / Channels → Products", "Customers / Inbox → Settings / Channels → Products"), action: "/admin/inbox",
+    prerequisite: bi("ช่องทางเชื่อมต่อและ active จริง สินค้าเผยแพร่ CUSTOMER_AI/ONLINE_ORDER ตามต้องการ และลูกค้ายินยอมรับแจ้งของเข้า", "Connected, active channel; intended products published to CUSTOMER_AI/ONLINE_ORDER; explicit customer consent for restock notices."),
+    steps: [
+      bi("ที่ Customers/Inbox ตรวจประวัติตามสิทธิ์และตัวตนลูกค้าที่ระบบผูกแล้ว; คำว่า ‘ซื้อเหมือนเดิม’ ให้เปิดออร์เดอร์เดิมที่ตรวจได้และถามเมื่อไม่ชัด ห้ามเดาจากบทสนทนา", "In Customers/Inbox review authorized history for the server-linked customer identity. For ‘same as before’, use a verified prior order and clarify ambiguity; never guess from chat."),
+      bi("ที่ Products ตรวจ SKU, variant, Product Pack, ราคาและสต็อกสาขา เปิดช่องทางขายที่ต้องใช้; ที่ Settings/Channels ตรวจสถานะเชื่อมต่อก่อนทดสอบแชท", "In Products verify SKU, variant, Product Pack, price and branch stock and publish intended surfaces; in Settings/Channels verify connection health before chat testing."),
+      bi("AI ใช้ customer tools ที่อนุญาตเพื่อค้นสินค้า เช็กสต็อก reorder จากออร์เดอร์จริง และสมัครแจ้งของเข้าเมื่อมีความยินยอม; ออร์เดอร์ออนไลน์ยังต้องผ่านการยืนยันรายการและ backend", "AI uses approved customer tools to search products, check stock, reorder a real prior order and subscribe to restock notices with consent. Online orders still require item confirmation and backend validation."),
+      bi("ถ้าถามโรค การแพ้ การรักษา ยา หรืออาหารเฉพาะโรค ให้ส่งต่อสัตวแพทย์หรือผู้เชี่ยวชาญที่เกี่ยวข้อง ไม่ให้ AI วินิจฉัยหรือรับรองความเหมาะสม", "For disease, allergies, treatment, medicine or therapeutic diets, hand off to a veterinarian or relevant specialist. AI must not diagnose or certify suitability."),
+    ],
+    example: bi("ลูกค้าทดสอบถาม ‘อาหารแมว 1 กก. ที่เคยซื้อมีไหม’ ให้ตรวจประวัติที่ผูกตัวตนและ catalog/สต็อก; ถ้าไม่พบประวัติให้ถามชื่อ/ขนาดสินค้า ไม่อ้างว่าเคยซื้อ", "A test customer asks whether their prior 1 kg cat food is available: verify linked order history and catalog/stock. If history is absent, ask for product/size instead of claiming a prior purchase."),
+    check: bi("คำตอบแยกข้อมูลที่ตรวจได้จากไม่ทราบ; ไม่มีราคา pack หรือประวัติซื้อซ้ำที่ AI เดา และการแจ้งของเข้ามีความยินยอม", "Replies separate verified facts from unknowns; AI invents no pack price or prior order, and restock signup has consent."),
+    caution: bi("ช่องทางที่มีชื่อในเมนูไม่ได้แปลว่าเชื่อมแล้ว; WEIGHTED ยังไม่มีราคาที่รับรองสำหรับ customer AI และการชำระ/จัดส่งต้องยึดนโยบายร้านที่ตั้งจริง", "A listed channel is not proof of connection. WEIGHTED customer pricing is not verified, and payment/shipping claims must use configured shop policy."),
+  },
+  {
+    slug: "pet-supply-recovery", title: bi("แก้ปัญหาสแกน ราคา สต็อก และของคืน", "Resolve scan, price, stock and return failures"),
+    summary: bi("ตรวจสาเหตุทีละจุดและไม่แก้ยอดด้วยวิธีลัด", "Check each cause and avoid balance shortcuts."),
+    category: "recovery", roles: [...all], tracks: [...track], menu: bi("POS → Products / Product packs / Inventory → บิลเดิม", "POS → Products / Product packs / Inventory → Original bill"), action: "/admin/pos-readiness",
+    prerequisite: bi("ร้านทดสอบ บาร์โค้ดฉลากจริง สินค้าฝึกที่สต็อกศูนย์และล็อตหมดอายุจำลอง", "Test shop, actual label barcode, fictional out-of-stock and expired-lot cases."),
+    steps: [
+      bi("สแกนไม่พบ: ค้น SKU ด้วยมือ ตรวจ active, variant, barcode, RETAIL_POS และสาขา; ทดสอบฉลากจริงก่อนแก้ข้อมูล", "Scan not found: search SKU manually; inspect active status, variant, barcode, RETAIL_POS and branch. Test the physical label before editing data."),
+      bi("ราคาแพ็กไม่ตรง: เปิด Product packs และราคาเฉพาะสาขาถ้ามี ตรวจ pack code, base quantity และราคาที่เซิร์ฟเวอร์ตอบ หยุดรับเงินจนผู้มีสิทธิ์แก้และทดสอบใหม่", "Wrong pack price: inspect Product packs and any branch override, including pack code, base quantity and server price. Stop payment until an authorized person corrects and retests."),
+      bi("สต็อกศูนย์/หมดอายุ: ตรวจยอดสาขา reservation ล็อต วันหมดอายุและ HOLD; รับของหรือแก้ที่ต้นเหตุผ่านขั้นตอนที่มีสิทธิ์ ไม่ปรับยอดเพื่อบังคับขาย", "No stock/expired: inspect branch balance, reservations, lot, expiry and HOLD. Receive or resolve the source through authorized workflow; do not force a sale by manual balance change."),
+      bi("คืนสินค้า: ค้นบิลเดิมและล็อตจริง หากตัวตนล็อตหรือสภาพไม่ชัด ให้ผู้จัดการตรวจและแยกของ ไม่กดคืนเงินก่อนผลธุรกรรมยืนยัน", "For returns find the original bill and physical lot. If lot identity or condition is unclear, have a manager inspect and segregate goods; do not refund ahead of a confirmed transaction."),
+    ],
+    example: bi("สแกนถุง 2 กก. ได้ราคา 1 กก.: หยุดบิล ตรวจ pack/variant และฉลาก แก้ข้อมูลโดยผู้มีสิทธิ์ แล้วเริ่มบิลใหม่", "If a 2 kg bag scans at the 1 kg price, stop the bill, compare pack/variant and label, have an authorized person correct data, then start a new bill."),
+    check: bi("ทุกข้อผิดพลาดมีสาเหตุ ผลทดสอบใหม่ และผู้รับผิดชอบ; ไม่มีการขายล็อตหมดอายุหรือคืนเงินที่ไม่มีบิล", "Each fault has a cause, retest result and owner; no expired lot sale or refund without an original bill."),
+    caution: bi("หากระบบ/อุปกรณ์ขัดข้องอย่าคิดว่าการกดซ้ำปลอดภัย; ตรวจบิลและ movement ก่อนทำรายการใหม่", "After a system or device failure, do not assume retry is safe; check the bill and movement before a new attempt."),
+  },
+  {
+    slug: "pet-supply-rehearsal", title: bi("ฝึกครบวงจร 10 → 9 ถุง", "End-to-end rehearsal: 10 → 9 bags"),
+    summary: bi("สร้าง รับเข้า เปิดกะ ขาย ตรวจใบเสร็จ ปิดกะ และซ้อมทางปฏิเสธ", "Create, receive, open shift, sell, verify receipt, close shift and rehearse rejection paths."),
+    category: "recovery", roles: [...managers], tracks: [...track], menu: bi("ร้านทดสอบ → Products → Purchase → POS → Inventory", "Test shop → Products → Purchase → POS → Inventory"), action: "/admin/pos-readiness",
+    prerequisite: bi("ร้าน/สาขาทดสอบ ผู้ขายและผู้อนุมัติคนละคน ฉลากสมมติ เงินฝึก ไม่ใช้ข้อมูลลูกค้าจริง", "Test shop and branch, separate cashier and approver, fictional labels and cash; no real customer data."),
+    steps: [
+      bi("สร้าง CAT-FOOD-1KG ราคา 120 บาทและ variant/pack ตามฉลาก เปิด RETAIL_POS; รับเข้า 10 ถุงที่สาขาทดสอบพร้อมล็อต TRAIN-PET-01 และวันหมดอายุอนาคต ตรวจยอด 10", "Create CAT-FOOD-1KG at fictional 120 THB with matching variant/pack and RETAIL_POS; receive ten bags at Test branch with TRAIN-PET-01 lot and future expiry; verify ten."),
+      bi("จับคู่เครื่อง ใส่ PIN เปิดกะด้วยเงินทอนฝึก 500 บาท ค้นหรือสแกนหนึ่งถุง ตรวจราคา 120 บาท รับเงินฝึก 200 บาท ทอน 80 บาท กดยืนยันครั้งเดียว", "Pair register, enter PIN, open shift with fictional 500 THB float, search or scan one bag, check 120 THB, take fictional 200 THB, give 80 THB change and submit once."),
+      bi("ตรวจเลขใบเสร็จ 120 บาท บิล COMPLETED movement ล็อตที่ตัด และสต็อกสาขาทดสอบเหลือ 9; นับเงิน 620 บาทเมื่อไม่มีรายการอื่น แล้วปิดกะตรวจส่วนต่าง", "Verify receipt number and 120 THB, COMPLETED bill, movement, consumed lot and Test branch stock nine. Count 620 THB if no other entries, close shift and review variance."),
+      bi("แยกซ้อมสต็อกศูนย์ ล็อตหมดอายุ บาร์โค้ดไม่พบ ราคาแพ็กผิด และคืนหนึ่งถุงตามบิลเดิม; บันทึก expected/actual และแก้ก่อนขายจริง", "Separately rehearse zero stock, expired lot, unknown barcode, wrong pack price and return of one bag from its original bill. Record expected/actual and fix gaps before live sales."),
+    ],
+    example: bi("ผลปกติ: รับ 10 → ขาย 1 → เหลือ 9; เงินตั้งต้น 500 + ยอดขายสุทธิ 120 = 620 บาท (ไม่มีรายการอื่น)", "Normal path: receive 10 → sell 1 → nine remain; opening 500 + net sale 120 = 620 THB (no other entries)."),
+    check: bi("ใบรับ บิล ใบเสร็จ movement ล็อต ยอด 9 รายงานกะและกรณีปฏิเสธมีหลักฐานตรงกัน", "Receipt, bill, sales receipt, movement, lot, balance nine, shift report and rejection cases have matching evidence."),
+    caution: bi("ตัวเลขทั้งหมดเป็นข้อมูลฝึก; การผ่านซ้อมโค้ดไม่พิสูจน์เครื่องชั่ง เครื่องสแกน เครื่องพิมพ์ ฐานข้อมูลหรือร้านจริง", "All figures are training data. Code rehearsal does not prove scales, scanners, printers, production database or a live shop."),
+  },
+  {
+    slug: "pet-supply-launch", title: bi("Checklist ก่อนเปิดขายจริง", "Go-live checklist"),
+    summary: bi("แยกสิ่งที่โค้ดทำได้ การตั้งค่าที่ต้องทำ และหลักฐานอุปกรณ์/ร้านจริง", "Separate code capability, required configuration and real-device/shop proof."),
+    category: "recovery", roles: [...managers], tracks: [...track], menu: bi("POS Readiness → Products / Stock models → รายงานกะ", "POS Readiness → Products / Stock models → Shift report"), action: "/admin/pos-readiness",
+    prerequisite: bi("ผลฝึกครบวงจรและรายชื่อเจ้าของงานแต่ละข้อ", "End-to-end rehearsal results and an owner for each item."),
+    steps: [
+      bi("ใช้ได้ในโค้ด: Retail POS, Product variants/packs, รับเข้าสาขา, lot/expiry/FEFO เมื่อข้อมูลครบ, บิล/ใบเสร็จ/กะ, CRM และ customer tools ที่อนุญาต; ตรวจผลตามสิทธิ์", "Available in code: retail POS, variants/packs, branch receiving, lot/expiry/FEFO with complete data, bill/receipt/shift, CRM and approved customer tools; verify results under actual permissions."),
+      bi("ต้องตั้งค่าก่อน: pet_supply, สาขา ผู้ใช้/PIN/สิทธิ์ เครื่อง POS ช่องทางขาย ราคาแพ็ก ภาษี lot/expiry รายสินค้า และช่องทางแชท/แจ้งของเข้าที่เชื่อมจริง", "Configure first: pet_supply, branch, users/PIN/permissions, POS device, sales surfaces, pack prices, VAT, per-product lot/expiry and truly connected chat/restock channels."),
+      bi("ยังต้องทดสอบ: เครื่องสแกน เครื่องชั่ง/ฉลาก เครื่องพิมพ์ เครือข่าย ฐานข้อมูลร้านจริง การคืนล็อตและรายงานภาษีกับผู้รับผิดชอบ; เก็บผลผ่าน/ไม่ผ่านและผู้แก้", "Still test: scanner, scale/label, printer, network, live-shop database, lot returns and tax reports with the responsible staff; record pass/fail and remediation owner."),
+      bi("แยก pilot: ฟังก์ชันหรืออุปกรณ์ที่ยังไม่ผ่านหลักฐานร้านจริงห้ามประกาศพร้อมใช้งานทั่วไป; ซ้อมแผนหยุดขายและติดต่อผู้ดูแลเมื่อข้อมูลไม่ตรง", "Mark unproven features or devices as pilot; do not announce broad readiness. Rehearse stopping sales and contacting the owner when evidence conflicts."),
+    ],
+    example: bi("ลงชื่อผู้ตรวจสินค้า ผู้ตรวจเงิน ผู้ตรวจอุปกรณ์ พร้อมวันที่และผลทดสอบแต่ละสาขา", "Record catalog, finance and hardware reviewers, dates and results for each branch."),
+    check: bi("ทุกข้อมีผู้รับผิดชอบและผลตรวจจริง; ช่องที่ไม่ผ่านไม่ถูกเปิดขายหรือโฆษณาว่าพร้อม", "Every item has an owner and observed result; failed paths are not sold or presented as ready."),
+    caution: bi("เอกสารนี้ไม่รับรองความปลอดภัยทางสัตวแพทย์ ภาษี อุปกรณ์ หรือ production readiness", "This guide does not certify veterinary safety, tax, hardware or production readiness."),
+  },
+];
+
+export const petSupplyLessons: Lesson[] = authoredLessons.map((lesson) => ({ ...lesson, reviewedAt: "2026-11-23" }));

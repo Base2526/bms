@@ -1,10 +1,10 @@
 # Public POS downloads
 
-The five Thai Markdown files here are the single source for the downloadable Word and PDF
+The six Thai Markdown files here are the single source for the downloadable Word and PDF
 handbooks. `common-setup-th.md`, `common-desktop-th.md` and `common-close-th.md` are included in every book. The
 public learning paths in `apps/web/lib/learning/catalog.ts` remain the online source for
 the latest operational guidance and should be reviewed in the same change when workflows
-change. Set `POS_GUIDE_REVIEWED_AT` in `apps/web/lib/learning/downloads.ts` and `DATE` in
+change. Set the per-guide review date in `apps/web/lib/learning/downloads.ts` and
 `scripts/build-public-pos-guides.py` to the actual review date together.
 
 Generate from the repository root:
@@ -14,13 +14,16 @@ Generate from the repository root:
 & .\scripts\export-public-pos-guides-pdf.ps1
 ```
 
+To rebuild only the pet-supply handbook, pass `pet-supply` to the Python builder and
+`-Guides pet-supply` to the PowerShell exporter. Other guides retain their own review dates.
+
 On macOS/Linux, run `bash scripts/export-public-pos-guides-pdf.sh` after the Python build.
 The Python runtime needs `python-docx`. The builder embeds reviewed `images/*.jpg` and
 `images/*.png` references with their adjacent Markdown captions. The shell exporter gives
 LibreOffice the repository's Sarabun font; without it, Thai glyphs can disappear from the PDF.
 Export PDF from each generated DOCX using Word on Windows or this script. Generated files are committed under
-`apps/web/public/guides/pos/` and can be downloaded anonymously. Check the five DOCX
-and five PDF files as pairs after every change: page count, Thai glyphs, tables, links,
+`apps/web/public/guides/pos/` and can be downloaded anonymously. Check the six DOCX
+and six PDF files as pairs after every change: page count, Thai glyphs, tables, links,
 page breaks, footers, content, and the building-materials PILOT mark on every page.
 
 These are public training documents. Use invented products, staff, prices and branches
@@ -29,3 +32,6 @@ synthetic test device without its token, and the macOS setup image shows no pair
 Do not insert screenshots from real stores, tokens, credentials,
 technical runbooks or pharmacist-only clinical evidence. Building materials remains a
 pilot guide until production migration, UI and hardware readiness are separately proven.
+
+The pet-supply guide review and its unverified device/database boundaries are recorded in
+`verification-pet-supply-2026-11-23.md`.

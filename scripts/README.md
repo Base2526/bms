@@ -84,11 +84,12 @@ editing `inventoryNarration.ts`, run `inventory-narration-export.mts`, then
 `generate-inventory-thai-audio.py --model-dir .test-output/fastthai-model`. Commit the generated
 Inventory manifest, MP3 files and provenance together; the learning-center contract checks every cue.
 
-The five business learning flows use that same pinned voice. After editing
+Five business learning flows use that same pinned voice. The pet-supply flow currently has
+text and a diagram but no recorded narration. When editing a recorded flow in
 `lib/learning/businessGuideFlow.ts`, run `business-guide-narration-export.mts`, then
 `generate-business-guide-thai-audio.py --model-dir .test-output/fastthai-model`. Commit
 `businessThaiAudio.json`, the MP3 files and their provenance together; the learning-center contract
-checks that every Thai cue has a verified recording.
+checks that every Thai cue in those recorded flows has a verified recording.
 
 The twenty-baht shop pilot uses the same recorded player and voice. Export its five public captions
 with `node apps/web/node_modules/tsx/dist/cli.mjs scripts/twenty-baht-narration-export.mts`, then

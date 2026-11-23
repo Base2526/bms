@@ -264,6 +264,9 @@ approved text. Approval remains per tenant, not a platform-wide publication deci
 - Admin identity refresh applies the current account gates to existing sessions. A switch to
   `users.pos_only` increments `admin_session_version` in the same tenant transaction and rejects
   already-open admin sessions; unverified, Subscriber, and inactive-tenant accounts are also denied.
+  The `/admin/login` redirect checks the same Redis session and refreshed identity as
+  `/api/auth/me` and GraphQL. A signed but revoked or ineligible cookie must leave the login form
+  reachable; checking only the JWT creates a `/admin` ↔ `/admin/login` navigation loop.
   Team edits preserve omitted optional phone/avatar fields; an explicit `null` clears them.
   Avatar changes write a tenant audit row in the account transaction and clean up a new upload if
   that transaction fails. Profile logs record changed field names, never contact values.
