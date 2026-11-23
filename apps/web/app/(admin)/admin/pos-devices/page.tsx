@@ -10,13 +10,14 @@ import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 // จึงไม่มีปุ่ม "ดูอีกครั้ง" ให้กด หายแล้วออกใหม่อย่างเดียว
 import { gql, useApolloClient, useMutation, useQuery } from "@apollo/client";
 import {
-  Alert, Button, Card, Descriptions, Empty, Form, Input, InputNumber, Modal, Popconfirm, QRCode, Select, Space, Switch, Table, Tag,
+  Alert, Button, Card, Descriptions, Empty, Form, Input, InputNumber, Modal, Popconfirm, QRCode, Result, Select, Space, Switch, Table, Tag,
   Typography, message,
 } from "antd";
 import { ReadOutlined } from "@ant-design/icons";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import { posSetupLoadState } from "./loadState";
 import { canManageStaffRole } from "@/lib/bms/staffRoles";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import GuideLinks from "@/components/learning/GuideLinks";
@@ -104,7 +105,7 @@ const SCANNER_PREFIX_OPTIONS = ["F9", ...Array.from({ length: 24 }, (_, index) =
 export default function PosDevicesPage() {
   const uiText = useUiText();
   const apollo = useApolloClient();
-  const { can, loading: permsLoading } = useBmsPermissions();
+  const { can, loading: permsLoading, error: permsError, refetch: refetchPerms } = useBmsPermissions();
   const { data: meData } = useQuery(Q_ME);
   const canDevices = can("pos.device.manage");
   const canPins = can("pos.pin.manage");
@@ -113,7 +114,7 @@ export default function PosDevicesPage() {
   const canLocations = can("product.view") || canDevices;
   const [diagnosticDeviceId, setDiagnosticDeviceId] = useState<string | null>(null);
   const [diagnosticStatus, setDiagnosticStatus] = useState("all");
-  const { data, loading, refetch } = useQuery(Q, {
+  const { data, loading, error: setupError, refetch } = useQuery(Q, {
     fetchPolicy: "cache-and-network",
     variables: { includeDevices: canDevices, includeLocations: canLocations, includeStaff: canStaff || canPins, includeDiagnostics: canDiagnostics, diagnosticDeviceId },
     skip: !canDevices && !canPins && !canStaff && !canDiagnostics,
@@ -141,8 +142,29 @@ export default function PosDevicesPage() {
   const [setPin, { loading: pinSaving }] = useMutation(M_PIN);
   const [setMode] = useMutation(M_MODE);
 
-  if (!permsLoading && !canDevices && !canPins && !canStaff && !canDiagnostics) {
+  const loadState = posSetupLoadState({
+    permissionsLoading: permsLoading,
+    permissionsError: Boolean(permsError),
+    hasPermission: canDevices || canPins || canStaff || canDiagnostics,
+    dataLoading: loading,
+    dataError: Boolean(setupError),
+    hasData: Boolean(data),
+  });
+  if (loadState === "permissions-loading") {
+    return <div role="status" aria-live="polite" aria-label={uiText("admin_ui.pos_setup_permissions_loading")}>
+      <Card loading />
+    </div>;
+  }
+  if (loadState === "permissions-error") {
+    return <Result status="error" title={uiText("admin_ui.pos_setup_permissions_error")}
+      extra={<Button onClick={() => void refetchPerms().catch(() => undefined)}>{uiText("admin_ui.refresh_78a47")}</Button>} />;
+  }
+  if (loadState === "denied") {
     return <Alert closable type="error" showIcon message={uiText("admin_ui.you_do_not_have_permission_to_view_this_7354b")} />;
+  }
+  if (loadState === "data-error") {
+    return <Result status="error" title={uiText("admin_ui.pos_setup_data_error")}
+      extra={<Button onClick={() => void refetch().catch(() => undefined)}>{uiText("admin_ui.refresh_78a47")}</Button>} />;
   }
 
   const locations = data?.bmsLocations ?? [];
