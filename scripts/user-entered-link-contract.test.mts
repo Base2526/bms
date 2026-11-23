@@ -37,5 +37,6 @@ test("public shop pages and the payment review screen render user-entered links 
   assert.match(product, /safePublicWebsiteUrl\(shop\.website\)/);
   const payment = read("../apps/web/app/(admin)/admin/payment/page.tsx");
   assert.doesNotMatch(payment, /href=\{r\.slipUrl\}/);
-  assert.equal((payment.match(/safeStoredLinkUrl\(r\.slipUrl\)/g) ?? []).length, 2);
+  // Desktop and mobile each guard both the render condition and the href.
+  assert.equal((payment.match(/safeStoredLinkUrl\(r\.slipUrl\)/g) ?? []).length, 4);
 });
