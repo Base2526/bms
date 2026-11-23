@@ -58,6 +58,29 @@ jachoei.com {
    request_body @gqlUpload {
      max_size 64MB
    }
+   @gqlJson {
+     path /api/graphql
+     header Content-Type application/json*
+   }
+   request_body @gqlJson {
+     max_size 1MB
+   }
+   @smallUpload path /api/bms/store-profile/logo/upload /api/bms/store-profile/customer-display-background/upload /api/bms/queue-board/media/upload
+   request_body @smallUpload {
+     max_size 6MB
+   }
+   @mediumUpload path /api/bms/products/upload /api/bms/inbox/upload
+   request_body @mediumUpload {
+     max_size 11MB
+   }
+   @checkoutUpload path /api/bms/checkout/payment
+   request_body @checkoutUpload {
+     max_size 9MB
+   }
+   @filesUpload path /api/files
+   request_body @filesUpload {
+     max_size 26MB
+   }
 
    @ws {
      path /graphql
@@ -83,6 +106,29 @@ jachoei.com {
    }
    request_body @gqlUpload {
      max_size 64MB
+   }
+   @gqlJson {
+     path /api/graphql
+     header Content-Type application/json*
+   }
+   request_body @gqlJson {
+     max_size 1MB
+   }
+   @smallUpload path /api/bms/store-profile/logo/upload /api/bms/store-profile/customer-display-background/upload /api/bms/queue-board/media/upload
+   request_body @smallUpload {
+     max_size 6MB
+   }
+   @mediumUpload path /api/bms/products/upload /api/bms/inbox/upload
+   request_body @mediumUpload {
+     max_size 11MB
+   }
+   @checkoutUpload path /api/bms/checkout/payment
+   request_body @checkoutUpload {
+     max_size 9MB
+   }
+   @filesUpload path /api/files
+   request_body @filesUpload {
+     max_size 26MB
    }
 
    @ws {

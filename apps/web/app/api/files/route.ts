@@ -6,6 +6,7 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 import { verifyAdminSession, verifyUserSession } from "@/lib/auth/server";
 import { authorizePlatformAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { rateLimit } from "@/lib/bms/rateLimit";
+import { readBoundedFormData } from "@/lib/bms/webhookBody";
 
 /** ทั้งสองเมธอดเสิร์ฟ Files panel เดิมที่ /settings และ /admin/files
  *  Platform admin ดู inventory ทั้งระบบ ส่วนผู้ใช้เว็บเห็นเฉพาะไฟล์ที่ session
@@ -149,12 +150,10 @@ async function handlePOST(req: NextRequest) {
     );
   }
 
-  const contentLength = Number(req.headers.get("content-length") || 0);
-  if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BYTES) {
-    return NextResponse.json({ error: "file too large (max 25 MB)" }, { status: 413 });
-  }
-
-  const form = await req.formData();
+  const parsed = await readBoundedFormData(req, MAX_REQUEST_BYTES);
+  if (!parsed.ok) return NextResponse.json({ error: parsed.status === 413
+    ? "file too large (max 25 MB)" : "invalid multipart payload" }, { status: parsed.status });
+  const form = parsed.form;
   const file = form.get("file");
   const renameTo = (form.get("name") as string) || undefined;
 

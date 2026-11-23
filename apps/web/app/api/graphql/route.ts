@@ -26,6 +26,8 @@ import { metricsPlugin } from "@/graphql/metricsPlugin";
 import { ensureBmsGraphqlErrorCode } from "@/graphql/mobileErrorContract";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 import { graphqlRequestLimitsRule } from "@/graphql/requestLimits";
+import { validGraphqlUploadMap } from "@/graphql/uploadMap";
+import { readBoundedBodyBytes, readBoundedFormData } from "@/lib/bms/webhookBody";
 
 const schema = buildBmsGraphqlSchema();
 
@@ -156,13 +158,6 @@ const SAFE_GRAPHQL_UPLOAD_TYPES = [
   "video/webm", "video/mp4",
 ];
 
-function requestLength(request: NextRequest): number | null {
-  const raw = request.headers.get("content-length");
-  if (!raw) return null;
-  const value = Number(raw);
-  return Number.isSafeInteger(value) && value >= 0 ? value : null;
-}
-
 function isSameOriginBrowserRequest(request: NextRequest): boolean {
   const origin = request.headers.get("origin");
   if (!origin) return true; // native/server clients do not send Origin
@@ -179,39 +174,47 @@ function isSameOriginBrowserRequest(request: NextRequest): boolean {
 
 const requestHandler = async (request: NextRequest) => {
   const contentType = request.headers.get("content-type") || "";
-  const length = requestLength(request);
 
   if (request.method === "POST" && !isSameOriginBrowserRequest(request)) {
     return NextResponse.json({ errors: [{ message: "Cross-origin request denied" }] }, { status: 403 });
   }
 
-  if (contentType.includes("multipart/form-data")) {
-    if (length !== null && length > MAX_GRAPHQL_MULTIPART_BYTES) {
-      return NextResponse.json({ errors: [{ message: "Upload request is too large" }] }, { status: 413 });
+  if (request.method === "POST" && contentType.toLowerCase().includes("multipart/form-data")) {
+    const body = await readBoundedFormData(request, MAX_GRAPHQL_MULTIPART_BYTES);
+    if (!body.ok) return NextResponse.json({ errors: [{ message: body.error }] }, { status: body.status });
+    if (!validGraphqlUploadMap(body.form)) {
+      return NextResponse.json({ errors: [{ message: "Invalid GraphQL upload map" }] }, { status: 400 });
     }
     const context = await createContext(request);
-    return uploadProcess(request, context, server as any, {
+    // The bounded body has already been parsed once; the uploader receives that FormData.
+    return uploadProcess({ formData: async () => body.form, headers: request.headers }, context, server as any, {
       allowedTypes: SAFE_GRAPHQL_UPLOAD_TYPES,
       maxFileSize: MAX_GRAPHQL_FILE_BYTES,
     });
   }
 
-  if (length !== null && length > MAX_GRAPHQL_JSON_BYTES) {
-    return NextResponse.json({ errors: [{ message: "GraphQL request is too large" }] }, { status: 413 });
-  }
-
-  // The Next Apollo integration calls request.json() before Apollo can format
-  // an error. Empty or malformed JSON otherwise escapes as an unhandled 500.
-  if (request.method === "POST" && contentType.toLowerCase().includes("application/json")) {
-    try {
-      await request.clone().json();
-    } catch (error) {
-      if (!(error instanceof SyntaxError)) throw error;
-      return NextResponse.json(
-        { errors: [{ message: "Invalid JSON request body", extensions: { code: "BAD_REQUEST" } }] },
-        { status: 400 }
-      );
+  if (request.method === "POST") {
+    const body = await readBoundedBodyBytes(request, MAX_GRAPHQL_JSON_BYTES);
+    if (!body.ok) return NextResponse.json({ errors: [{ message: "GraphQL request is too large" }] }, { status: 413 });
+    // The Next Apollo integration parses JSON before Apollo can format an error.
+    if (contentType.toLowerCase().includes("application/json")) {
+      try {
+        JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body.bytes));
+      } catch {
+        return NextResponse.json(
+          { errors: [{ message: "Invalid JSON request body", extensions: { code: "BAD_REQUEST" } }] },
+          { status: 400 }
+        );
+      }
     }
+    const headers = new Headers(request.headers);
+    headers.delete("content-length");
+    headers.delete("transfer-encoding");
+    request = new NextRequest(request.url, {
+      method: "POST",
+      headers,
+      body: Buffer.from(body.bytes),
+    });
   }
 
   return handler(request);

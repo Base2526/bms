@@ -80,6 +80,7 @@ test("store branding upload routes reject non-Administrators before reading file
       "@/lib/log/routeError": { withRouteErrorLog: (_name: string, handler: unknown) => handler },
       "@/lib/storage": {},
       "@/lib/bms/storeLogo": {},
+      "@/lib/bms/webhookBody": {},
     });
     const response = await route.POST({ formData: async () => { formReads++; throw new Error("should not read"); } });
     assert.equal(response.status, 403);

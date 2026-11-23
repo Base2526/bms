@@ -50,3 +50,25 @@ export async function readBoundedWebhookText(
     return { ok: false, status: 400, error: "invalid utf-8 payload" };
   }
 }
+
+/** Parse multipart only after its entire request has passed a byte-accurate bound. */
+export async function readBoundedFormData(
+  request: { headers: Headers; body: ReadableStream<Uint8Array> | null },
+  maxBytes: number,
+): Promise<
+  | { ok: true; form: FormData }
+  | { ok: false; status: 400 | 413; error: "invalid multipart payload" | "payload too large" }
+> {
+  const result = await readBoundedBodyBytes(request, maxBytes);
+  if (!result.ok) return result;
+  try {
+    const parser = new Request("http://localhost/", {
+      method: "POST",
+      headers: { "content-type": request.headers.get("content-type") ?? "" },
+      body: Buffer.from(result.bytes),
+    });
+    return { ok: true, form: await parser.formData() };
+  } catch {
+    return { ok: false, status: 400, error: "invalid multipart payload" };
+  }
+}
