@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { loadWithStubs } from "./testing/webhookHarness.mts";
+import * as storedFileKinds from "../apps/web/lib/bms/storedFileKinds.ts";
 
 const previousSecret = process.env.BMS_CHECKOUT_SECRET;
 process.env.BMS_CHECKOUT_SECRET = "FAKE-inbox-media-contract-secret";
@@ -21,7 +22,7 @@ const db = { query: async (sql: string, values: unknown[]) => {
     relpath: file.relpath, mimetype: "image/png", original_name: "FAKE.png" }], rowCount: 1 };
 } };
 const media = loadWithStubs("apps/web/lib/bms/inboxMedia.ts", {
-  "@/lib/db": db, "node:crypto": { createHmac, timingSafeEqual },
+  "@/lib/db": db, "node:crypto": { createHmac, timingSafeEqual }, "@/lib/bms/storedFileKinds": storedFileKinds,
 });
 
 test("Inbox media tokens are scoped to tenant and file and reject tampering or expiry", () => {
@@ -125,6 +126,7 @@ test("staff file download denies unrelated Sales before reading storage", async 
     "@/lib/bms/adminRouteAuth": { authorizeAdminRoute: async () => ({ ok: true, tenantId: "tenant-a",
       adminId: "sales-a", admin: { role: "Sales" } }), authorizePlatformAdminRoute: async () => ({ ok: false, status: 403 }) },
     "@/lib/bms/inbox": { canAccessInboxConversation: async () => allowed },
+    "@/lib/bms/storedFileKinds": storedFileKinds,
     "@/lib/bms/reportEngine": {}, "@/lib/bms/permissions": {},
     "@/lib/log/routeError": { withRouteErrorLog: (_name: string, handler: unknown) => handler },
   });
