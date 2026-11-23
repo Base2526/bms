@@ -1,6 +1,12 @@
 // lib/auth/options.ts
 import type { NextAuthOptions } from "next-auth";
-import FacebookProvider from "next-auth/providers/facebook";
+import FacebookProviderModule from "next-auth/providers/facebook";
+
+// next-auth 4 exposes this CommonJS provider as { default: factory } to Node ESM,
+// while Next's webpack interop can hand us the factory directly.
+const FacebookProvider =
+  (FacebookProviderModule as unknown as { default?: typeof FacebookProviderModule }).default ??
+  FacebookProviderModule;
 
 export const authOptions: NextAuthOptions = {
   providers: [

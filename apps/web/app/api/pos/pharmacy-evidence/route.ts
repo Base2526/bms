@@ -24,11 +24,14 @@ import {
 } from "@/lib/bms/pharmacy/clinicalEvidence";
 import { persistWebFile } from "@/lib/storage";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { readBoundedBodyBytes, readBoundedFormData } from "@/lib/bms/webhookBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_REQUEST_BYTES = MAX_BYTES + 1024 * 1024;
+const MAX_JSON_BYTES = 64 * 1024;
 // ใบสั่งยาเป็นรูปถ่ายหรือ PDF เท่านั้น — ไม่รับ svg/html ที่รันสคริปต์ได้
 const ALLOWED_MIME = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"]);
 
@@ -45,8 +48,9 @@ async function handlePOST(req: NextRequest) {
   let file: File | null = null;
 
   if (contentType.includes("multipart/form-data")) {
-    const form = await req.formData().catch(() => null);
-    if (!form) return bad("อ่านฟอร์มไม่สำเร็จ");
+    const parsed = await readBoundedFormData(req, MAX_REQUEST_BYTES);
+    if (!parsed.ok) return bad(parsed.status === 413 ? "ไฟล์ใหญ่เกิน 10MB" : "อ่านฟอร์มไม่สำเร็จ", parsed.status);
+    const form = parsed.form;
     // ไม่ใช้ form.entries() — TS lib ของโปรเจกต์นี้ไม่มี iterator ให้ FormData
     for (const key of ["cashierUserId", "pin", "assessmentId", "kind", "textValue"]) {
       const value = form.get(key);
@@ -55,7 +59,13 @@ async function handlePOST(req: NextRequest) {
     const maybeFile = form.get("file");
     if (maybeFile instanceof File) file = maybeFile;
   } else {
-    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+    const bounded = await readBoundedBodyBytes(req, MAX_JSON_BYTES);
+    if (!bounded.ok) return bad(bounded.error, bounded.status);
+    let body: Record<string, unknown> = {};
+    try {
+      const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bounded.bytes));
+      if (value && typeof value === "object" && !Array.isArray(value)) body = value as Record<string, unknown>;
+    } catch { /* Preserve the existing bad-input response below. */ }
     fields = Object.fromEntries(
       Object.entries(body).map(([k, v]) => [k, v == null ? "" : String(v)])
     );

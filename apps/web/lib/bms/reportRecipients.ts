@@ -20,7 +20,13 @@ export function invalidEmails(list: string[]): string[] {
 export function invalidSlackWebhookUrls(list: string[]): string[] {
   return list.filter((url) => {
     try {
-      return new URL(url).protocol !== "https:";
+      const parsed = new URL(url);
+      // Only Slack's own webhook endpoint may receive tenant report data.
+      // Reject credentials, alternate ports, query strings and encoded path tricks.
+      return parsed.protocol !== "https:" || parsed.hostname !== "hooks.slack.com" ||
+        parsed.port !== "" || parsed.username !== "" || parsed.password !== "" ||
+        parsed.search !== "" || parsed.hash !== "" ||
+        !/^\/services\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/.test(parsed.pathname);
     } catch {
       return true;
     }

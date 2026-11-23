@@ -1,5 +1,5 @@
 import sgMail from "@sendgrid/mail";
-import nodemailer from "nodemailer";
+import nodemailer from "nodemailer-safe";
 import { addLog } from "@/lib/log/log.server";
 import { recordMailLog, type MailLogCategory } from "@/lib/bms/mailLog";
 
@@ -9,6 +9,7 @@ import { recordMailLog, type MailLogCategory } from "@/lib/bms/mailLog";
 // ตั้ง MAIL_PROVIDER=smtp + SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/MAIL_FROM เพื่อส่งผ่าน SMTP relay
 // ทั่วไป (Resend, Amazon SES, Postmark, Brevo, Mailgun ฯลฯ) — สลับเจ้าได้ด้วย env อย่างเดียว ไม่ต้องแก้โค้ด
 type MailProvider = "sendgrid" | "gmail" | "smtp";
+type MailTransporter = ReturnType<typeof nodemailer.createTransport>;
 
 // แนบไฟล์ — ทั้ง SendGrid (`@sendgrid/mail`) และ nodemailer (Gmail SMTP) รองรับ attachment
 // อยู่แล้วในระดับ SDK เพียงแต่ sendEmail() เดิมไม่เคย forward field นี้เข้าไปเลย (ใช้แค่ verify
@@ -116,21 +117,15 @@ async function sendViaSendGrid(opts: SendOpts) {
 
     // log: ส่งสำเร็จ
     await addLog("info", "email", "Email sent successfully", {
-      to: opts.to,
-      subject: opts.subject,
       statusCode: res?.statusCode,
-      headers: res?.headers,
     });
 
     return { statusCode: res?.statusCode, messageId };
   } catch (err: any) {
     // log: ส่งล้มเหลว
     await addLog("error", "email", "Email send failed", {
-      to: opts.to,
-      subject: opts.subject,
-      error: err?.message || err,
-      response: err?.response?.body,
-      statusCode: err?.code || err?.response?.statusCode,
+      statusCode: err?.response?.statusCode,
+      errorCode: err?.code,
     });
 
     // อย่า swallow error – ให้ resolver จัดการต่อ
@@ -146,9 +141,9 @@ async function sendViaSendGrid(opts: SendOpts) {
 // ข้อจำกัด: โควตา Gmail ปกติ ~500 อีเมล/วัน (Google Workspace ~2000/วัน) — พอสำหรับรายงานสรุปยอดขาย
 // แต่ไม่เหมาะกับอีเมลปริมาณมาก/transactional สเกลใหญ่
 
-let gmailTransporter: nodemailer.Transporter | null = null;
+let gmailTransporter: MailTransporter | null = null;
 
-function getGmailTransporter(): nodemailer.Transporter {
+function getGmailTransporter(): MailTransporter {
   if (gmailTransporter) return gmailTransporter;
 
   const user = process.env.GMAIL_SMTP_USER;
@@ -192,20 +187,13 @@ async function sendViaGmail(opts: SendOpts) {
     });
 
     await addLog("info", "email", "Email sent successfully (gmail smtp)", {
-      to: opts.to,
-      subject: opts.subject,
       messageId: info?.messageId,
-      response: info?.response,
     });
 
     return { statusCode: 250, messageId: info?.messageId };
   } catch (err: any) {
     await addLog("error", "email", "Email send failed (gmail smtp)", {
-      to: opts.to,
-      subject: opts.subject,
-      error: err?.message || err,
       responseCode: err?.responseCode,
-      response: err?.response,
     });
 
     throw err;
@@ -219,7 +207,7 @@ async function sendViaGmail(opts: SendOpts) {
 // (ห้ามยอมส่ง credential/เนื้ออีเมลแบบไม่เข้ารหัสเมื่อ server ไม่เสนอ STARTTLS)
 // MAIL_FROM ต้องเป็นอีเมลบนโดเมนที่ verify กับผู้ให้บริการแล้ว เช่น "BMS <no-reply@mail.example.com>"
 
-let smtpTransporter: nodemailer.Transporter | null = null;
+let smtpTransporter: MailTransporter | null = null;
 
 export function smtpTransportOptions(env: NodeJS.ProcessEnv = process.env) {
   const host = env.SMTP_HOST?.trim();
@@ -246,14 +234,13 @@ export function smtpTransportOptions(env: NodeJS.ProcessEnv = process.env) {
   };
 }
 
-function getSmtpTransporter(): nodemailer.Transporter {
+function getSmtpTransporter(): MailTransporter {
   if (smtpTransporter) return smtpTransporter;
   try {
     smtpTransporter = nodemailer.createTransport(smtpTransportOptions());
   } catch (err: any) {
     addLog("error", "email", "SMTP init failed", {
       env: "SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS",
-      error: err?.message,
     });
     throw err;
   }
@@ -284,22 +271,13 @@ async function sendViaSmtp(opts: SendOpts) {
     });
 
     await addLog("info", "email", "Email sent successfully (smtp)", {
-      to: opts.to,
-      subject: opts.subject,
-      host: process.env.SMTP_HOST,
       messageId: info?.messageId,
-      response: info?.response,
     });
 
     return { statusCode: 250, messageId: info?.messageId };
   } catch (err: any) {
     await addLog("error", "email", "Email send failed (smtp)", {
-      to: opts.to,
-      subject: opts.subject,
-      host: process.env.SMTP_HOST,
-      error: err?.message || err,
       responseCode: err?.responseCode,
-      response: err?.response,
     });
 
     throw err;
@@ -346,8 +324,6 @@ export async function sendEmail(
 
   // log: ก่อนส่ง (ใช้ร่วมทั้งสอง provider) — ไม่ log เนื้อไฟล์แนบ แค่ชื่อ/จำนวน กัน log บวมและกัน PII/ข้อมูลธุรกิจรั่วเข้า log
   await addLog("info", "email", "Sending email", {
-    to: opts.to,
-    subject: opts.subject,
     provider,
     attachmentCount: opts.attachments?.length ?? 0,
   });

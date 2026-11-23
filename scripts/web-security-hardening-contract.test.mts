@@ -34,3 +34,12 @@ test("internet-facing framework dependencies stay on the reviewed security patch
   assert.equal(packageJson.dependencies.next, "16.4.6");
   assert.equal(packageJson.dependencies["next-auth"], "^4.24.15");
 });
+
+test("Docker Sharp install stays on the audited lockfile version", () => {
+  const manifest = JSON.parse(read("apps/web/package.json"));
+  const lock = JSON.parse(read("apps/web/package-lock.json"));
+  const version = manifest.dependencies.sharp;
+  assert.equal(lock.packages["node_modules/sharp"].version, version);
+  assert.ok(lock.packages["node_modules/sharp"].integrity);
+  assert.ok(read("apps/web/Dockerfile").includes(`npm install --os=linux --cpu="$sharp_cpu" sharp@${version}`));
+});

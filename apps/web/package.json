@@ -54,7 +54,7 @@
     "mustache": "^4.2.0",
     "next": "16.4.6",
     "next-auth": "^4.24.15",
-    "nodemailer": "^7.0.13",
+    "nodemailer-safe": "npm:nodemailer@10.6.1",
     "path": "^0.12.7",
     "pdfkit": "^0.19.1",
     "pg": "^8.11.3",
@@ -69,9 +69,14 @@
     "twitter-api-v2": "^1.28.0",
     "undici": "^7.18.0",
     "uuid": "^13.0.0",
-    "xlsx": "^0.18.5",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "yauzl": "^3.4.0",
     "zustand": "^5.0.8"
+  },
+  "overrides": {
+    "@apollo/server": {
+      "@graphql-tools/utils": "12.0.4"
+    }
   },
   "devDependencies": {
     "@types/busboy": "^1.5.4",

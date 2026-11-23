@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
 
 import {
   buildSchema,
@@ -24,6 +26,24 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 const schema = buildSchema("type Node { child: Node value: String } type Query { node: Node }");
 const check = (source: string) =>
   validate(schema, parse(source), [...specifiedRules, graphqlRequestLimitsRule]);
+
+test("Apollo incremental merge uses patched GraphQL Tools without prototype pollution", () => {
+  const apolloRequire = createRequire(path.join(ROOT, "apps/web/node_modules/@apollo/server/package.json"));
+  assert.equal(apolloRequire("@graphql-tools/utils/package.json").version, "12.0.4");
+  const probe = spawnSync(process.execPath, ["-e", `
+    const { createRequire } = require('node:module');
+    const apolloRequire = createRequire(${JSON.stringify(path.join(ROOT, "apps/web/node_modules/@apollo/server/package.json"))});
+    const { mergeIncrementalResult } = apolloRequire('@graphql-tools/utils');
+    const result = { data: { safe: null } };
+    mergeIncrementalResult({ executionResult: result,
+      incrementalResult: { path: [['__proto__'], 'bmsProbe'], data: { polluted: true } } });
+    if (Object.hasOwn(Object.prototype, 'bmsProbe')) process.exit(1);
+    mergeIncrementalResult({ executionResult: result,
+      incrementalResult: { path: ['safe'], data: { accepted: true } } });
+    if (result.data.safe?.accepted !== true) process.exit(2);
+  `], { cwd: path.join(ROOT, "apps/web"), encoding: "utf8" });
+  assert.equal(probe.status, 0, probe.stderr);
+});
 
 test("GraphQL HTTP boundary enables CSRF, origin and byte-accurate body limits", () => {
   const route = read("apps/web/app/api/graphql/route.ts");
@@ -61,6 +81,28 @@ test("multipart map rejects prototype paths and preserves valid upload placehold
   assert.equal(validGraphqlUploadMap(uploadForm({ "0": ["variables.image"] }, { image: "overwrite" })), false);
   assert.equal(validGraphqlUploadMap(uploadForm({ "0": ["variables.images.0"] }, { images: [null] })), true);
   assert.equal(Object.hasOwn(Object.prototype, "bmsProbe"), false);
+});
+
+test("multipart map rejects duplicate parts and targets while allowing two distinct files", () => {
+  const variables = { first: null, second: null };
+  const valid = uploadForm({ "0": ["variables.first"], "1": ["variables.second"] }, variables);
+  valid.set("0", new Blob(["a"], { type: "text/plain" }), "a.txt");
+  valid.set("1", new Blob(["b"], { type: "text/plain" }), "b.txt");
+  assert.equal(validGraphqlUploadMap(valid), true);
+
+  const duplicateTarget = uploadForm({ "0": ["variables.first"], "1": ["variables.first"] }, variables);
+  assert.equal(validGraphqlUploadMap(duplicateTarget), false);
+  const duplicateInSlot = uploadForm({ "0": ["variables.first", "variables.first"] }, variables);
+  assert.equal(validGraphqlUploadMap(duplicateInSlot), false);
+
+  const duplicateMapPart = uploadForm({ "0": ["variables.first"] }, variables);
+  duplicateMapPart.append("map", JSON.stringify({ "0": ["variables.second"] }));
+  assert.equal(validGraphqlUploadMap(duplicateMapPart), false);
+  const duplicateOperations = uploadForm({ "0": ["variables.first"] }, variables);
+  duplicateOperations.append("operations", "{}");
+  assert.equal(validGraphqlUploadMap(duplicateOperations), false);
+  valid.append("0", new Blob(["c"], { type: "text/plain" }), "c.txt");
+  assert.equal(validGraphqlUploadMap(valid), false);
 });
 
 test("body limits apply without Content-Length and valid multipart parses once", async () => {

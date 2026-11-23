@@ -62,7 +62,7 @@ RUN case "$TARGETARCH" in \
       amd64) sharp_cpu=x64 ;; \
       *) echo "Unsupported Docker target architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac \
- && npm install --os=linux --cpu="$sharp_cpu" sharp --force --ignore-scripts=false
+ && npm install --os=linux --cpu="$sharp_cpu" sharp@0.35.5 --force --ignore-scripts=false --no-save
 RUN npm rebuild sharp --force || true
 
 COPY apps/web ./
