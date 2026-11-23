@@ -1003,6 +1003,12 @@ follow this same shape rather than inventing a separate preview-only query/REST 
 
 ### Sales digest report subscriptions
 
+Slack destinations must be official `https://hooks.slack.com/services/...` incoming webhook URLs.
+The server validates the full URL when staff save it and again before a scheduled or test send;
+legacy arbitrary HTTPS destinations now fail without a network call. Redirects are refused. Shops
+that previously used a non-Slack relay must replace it with an official Slack webhook before
+re-enabling report delivery. This does not change email or LINE delivery.
+
 `bmsReportSchedule.ts` splits into a tenant-facing half and a platform-admin half, both backed by
 `lib/bms/reportDigest.ts`:
 

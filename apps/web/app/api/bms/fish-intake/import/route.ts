@@ -4,15 +4,19 @@ import { requirePermission } from "@/lib/bms/permissions";
 import { FishIntakeError, saveFishIntake, validateFishIntake } from "@/lib/bms/fishIntake";
 import { FishImportError, listFishImportSheets, parseFishImportWorkbook, type FishDateOverrides } from "@/lib/bms/fishImport";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { readBoundedFormData } from "@/lib/bms/webhookBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const MAX_REQUEST_BYTES = 11 * 1024 * 1024;
 
 async function handlePOST(req: NextRequest) {
   const auth = await authorizeAdminRoute(null);
   if (!auth.ok) return NextResponse.json({error:auth.status===401?"unauthorized":"forbidden"},{status:auth.status});
   try {
-    const form=await req.formData();
+    const parsed=await readBoundedFormData(req,MAX_REQUEST_BYTES);
+    if (!parsed.ok) return NextResponse.json({error:parsed.error},{status:parsed.status});
+    const form=parsed.form;
     const action=String(form.get("action")??"preview");
     if (!["inspect","preview","commit"].includes(action))
       return NextResponse.json({error:"action ไม่ถูกต้อง"},{status:400});

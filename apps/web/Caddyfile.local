@@ -77,6 +77,14 @@ jachoei.com {
    request_body @checkoutUpload {
      max_size 9MB
    }
+   @boardGameDeposit path /api/board-game/bookings/*/payment
+   request_body @boardGameDeposit {
+     max_size 10MB
+   }
+   @clinicalAndFishUpload path /api/pos/pharmacy-evidence /api/bms/pharmacy/evidence/upload /api/bms/fish-intake/import
+   request_body @clinicalAndFishUpload {
+     max_size 12MB
+   }
    @filesUpload path /api/files
    request_body @filesUpload {
      max_size 26MB

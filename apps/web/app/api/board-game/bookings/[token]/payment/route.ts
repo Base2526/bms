@@ -7,6 +7,7 @@ import {
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { buildFileUrlById, persistWebFile } from "@/lib/storage";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { readBoundedFormData } from "@/lib/bms/webhookBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,11 +28,10 @@ async function handlePOST(req: NextRequest, { params }: { params: Promise<{ toke
   if (!limited.ok) {
     return response({ error: "ส่งข้อมูลมากเกินไป กรุณาลองใหม่ภายหลัง" }, 429);
   }
-  const contentLength = Number(req.headers.get("content-length") || 0);
-  if (contentLength > MAX_REQUEST_BYTES) return response({ error: "รูปสลิปต้องมีขนาดไม่เกิน 8 MB" }, 413);
-
-  const form = await req.formData().catch(() => null);
-  if (!form) return response({ error: "ข้อมูลที่ส่งมาไม่ถูกต้อง" }, 400);
+  const parsed = await readBoundedFormData(req, MAX_REQUEST_BYTES);
+  if (!parsed.ok) return response({ error: parsed.status === 413
+    ? "รูปสลิปต้องมีขนาดไม่เกิน 8 MB" : "ข้อมูลที่ส่งมาไม่ถูกต้อง" }, parsed.status);
+  const form = parsed.form;
   const method = String(form.get("method") || "").toUpperCase();
   const slipRef = String(form.get("slipRef") || "").trim() || null;
   const file = form.get("slip");

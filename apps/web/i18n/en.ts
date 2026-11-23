@@ -7704,7 +7704,7 @@ const en = {
     email_placeholder: "Recipient emails, e.g. owner@shop.com, sales@shop.com",
     slack_configured: "Already configured",
     slack_webhook_extra: "You can enter multiple webhooks, comma-separated — re-enter all of them only if you want to change (leave blank to keep as-is)",
-    slack_webhook_invalid: "Invalid Slack webhook URL(s) (must start with https://): {list}",
+    slack_webhook_invalid: "Invalid Slack webhook URL(s) (use https://hooks.slack.com/services/...): {list}",
     slack_webhook_placeholder_set: "Re-enter only if you want to change the webhook URL",
     slack_webhook_placeholder_empty: "Slack Incoming Webhook URL",
     line_user_id_extra: "You can enter multiple LINE user IDs, comma-separated",

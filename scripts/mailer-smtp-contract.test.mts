@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
 import { normalizeReplyTo, smtpTransportOptions } from "../apps/web/lib/mailer.ts";
+import { authOptions } from "../apps/web/lib/auth/options.ts";
+import { loadWithStubs } from "./testing/webhookHarness.mts";
 
 /**
  * MAIL_PROVIDER=smtp — SMTP relay ทั่วไป (Resend, Amazon SES, Postmark, Brevo, Mailgun)
@@ -28,6 +30,76 @@ const withoutComments = (src: string) =>
     .replace(/\/\*[\s\S]*?\*\//g, "");
 
 const baseEnv = { SMTP_HOST: "smtp.resend.com", SMTP_USER: "resend", SMTP_PASS: "re_test" } as NodeJS.ProcessEnv;
+
+test("next-auth loads the configured Facebook provider without its optional Email peer", () => {
+  assert.deepEqual(authOptions.providers.map((provider) => provider.id), ["facebook"]);
+  const webRequire = createRequire(new URL("../apps/web/package.json", import.meta.url));
+  assert.throws(() => webRequire.resolve("nodemailer"), /Cannot find module/);
+});
+
+test("general mail logs omit recipient, subject, content and provider response", async () => {
+  const entries: unknown[] = [];
+  const mailRows: unknown[] = [];
+  const previous = {
+    provider: process.env.MAIL_PROVIDER,
+    key: process.env.SENDGRID_API_KEY,
+    from: process.env.SENDGRID_FROM_EMAIL,
+  };
+  process.env.MAIL_PROVIDER = "sendgrid";
+  process.env.SENDGRID_API_KEY = "test-only-key";
+  process.env.SENDGRID_FROM_EMAIL = "sender@example.test";
+  try {
+    const mailer = loadWithStubs("apps/web/lib/mailer.ts", {
+      "@sendgrid/mail": { default: {
+        setApiKey: () => {}, setTimeout: () => {},
+        send: async () => [{ statusCode: 202, headers: { "x-message-id": "test-id", secret: "private-response" } }],
+      } },
+      "nodemailer-safe": { default: { createTransport: () => { throw new Error("unexpected SMTP"); } } },
+      "@/lib/log/log.server": { addLog: async (_level: string, _category: string, _message: string, details: unknown) => { entries.push(details); } },
+      "@/lib/bms/mailLog": { recordMailLog: async (row: unknown) => { mailRows.push(row); } },
+    });
+    await mailer.sendEmail({ to: "customer@example.test", subject: "private-subject", html: "private-body" });
+    const general = JSON.stringify(entries);
+    for (const value of ["customer@example.test", "private-subject", "private-body", "private-response"]) {
+      assert.equal(general.includes(value), false, value);
+    }
+    assert.equal(mailRows.length, 1, "the restricted mail audit keeps its existing contract");
+  } finally {
+    for (const [key, value] of [["MAIL_PROVIDER", previous.provider], ["SENDGRID_API_KEY", previous.key], ["SENDGRID_FROM_EMAIL", previous.from]] as const) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test("SMTP initialization errors stay out of general logs", async () => {
+  const entries: unknown[] = [];
+  const previous = Object.fromEntries(
+    ["MAIL_PROVIDER", "MAIL_FROM", "SMTP_HOST", "SMTP_USER", "SMTP_PASS"].map((key) => [key, process.env[key]])
+  );
+  Object.assign(process.env, {
+    MAIL_PROVIDER: "smtp", MAIL_FROM: "sender@example.test", SMTP_HOST: "private-host.test",
+    SMTP_USER: "sender", SMTP_PASS: "private-password",
+  });
+  try {
+    const mailer = loadWithStubs("apps/web/lib/mailer.ts", {
+      "@sendgrid/mail": { default: { setApiKey: () => {}, setTimeout: () => {} } },
+      "nodemailer-safe": { default: { createTransport: () => { throw new Error("private-password private-host.test"); } } },
+      "@/lib/log/log.server": { addLog: async (_level: string, _category: string, _message: string, details: unknown) => { entries.push(details); } },
+      "@/lib/bms/mailLog": { recordMailLog: async () => {} },
+    });
+    await assert.rejects(mailer.sendEmail({ to: "customer@example.test", subject: "private-subject", html: "private-body" }));
+    const general = JSON.stringify(entries);
+    for (const value of ["customer@example.test", "private-subject", "private-body", "private-password", "private-host.test"]) {
+      assert.equal(general.includes(value), false, value);
+    }
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
 
 test("patched mail transport preserves MIME and attachments without network I/O", async () => {
   const webRequire = createRequire(new URL("../apps/web/package.json", import.meta.url));
