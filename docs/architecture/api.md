@@ -550,10 +550,12 @@ logged-in user — they now require `product.edit` and `inbox.reply`, the permis
 consume the file already need.
 
 Two single-tenant webhook mocks (`/api/bms/line/webhook` and `/api/bms/tiktok/webhook`, the versions
-without a `[tenantId]`) cannot be fixed this way — a webhook has no session to check. They ran the AI
-pipeline and wrote into the default shop's inbox for anyone who posted, so they now return 404 when
-`NODE_ENV=production`; the real path is the per-tenant webhook that verifies the channel signature
-fail-closed. `/api/bms/demo-chat` stays public on purpose (it is the marketing demo) but was calling
+without a `[tenantId]`) cannot be fixed this way — a webhook has no session to check. They write
+into the default shop's inbox for anyone who posts in development; LINE also runs the AI pipeline.
+Both return 404 when `NODE_ENV=production`. In development they have a shared 20-per-minute limit
+per mock route, a 64 KiB streaming body limit, and a 200-event cap. The real path is the per-tenant
+webhook that verifies the channel signature fail-closed. `/api/bms/demo-chat` stays public on purpose
+(it is the marketing demo) but was calling
 the model with no ceiling at all, and now carries a 20-per-minute-per-IP limit like the web-widget
 webhook already did.
 - `GET /api/bms/restaurant-qr/[token]`, `GET /api/bms/restaurant-qr/menu`,

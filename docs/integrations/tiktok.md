@@ -20,7 +20,8 @@ there is no send API to return an AI answer or ask the customer to confirm a pro
 Staff must answer through TikTok's own app/console. If Inbox persistence fails, the event claim
 is released before any business effect so a provider retry can save the message.
 The unsigned `/api/bms/tiktok/webhook` dev mock is disabled in production and follows the same
-staff-only, no-AI behavior in development.
+staff-only, no-AI behavior in development. Its development-only request path has a shared
+20-per-minute limit, a 64 KiB body limit, and a 200-message cap.
 
 Because there's no send API, TikTok is **not** in `channelSupportsPush()`
 (`lib/bms/inbox.ts`) — outbound messages logged from the admin Inbox are marked `SENT` as soon as

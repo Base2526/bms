@@ -88,3 +88,68 @@ test("Retail Local evidence route bounds the body before processing the signed e
   assert.equal((await post("{}")).status, 202);
   assert.equal(ingestions, 1);
 });
+
+test("legacy development webhooks rate-limit before reading and reject oversized bodies", async () => {
+  const previousEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "development";
+  try {
+    for (const channel of ["line", "tiktok"] as const) {
+      let allowed = false;
+      let reads = 0;
+      let writes = 0;
+      const route = loadWithStubs(`apps/web/app/api/bms/${channel}/webhook/route.ts`, {
+        "next/server": { NextResponse: { json: (body: unknown, options?: { status: number }) =>
+          ({ body, status: options?.status ?? 200 }) } },
+        "@/lib/bms/tenant": { DEFAULT_TENANT_ID: "00000000-0000-4000-8000-000000000001" },
+        "@/lib/bms/rateLimit": { rateLimit: async () =>
+          ({ ok: allowed, retryAfter: 60 }) },
+        "@/lib/bms/webhookBody": { readBoundedWebhookText: async (...args: Parameters<typeof readBoundedWebhookText>) => {
+          reads++;
+          return readBoundedWebhookText(...args);
+        } },
+        "@/lib/bms/inboundEvents": {
+          claimInboundEvent: async () => { writes++; return true; },
+          releaseUnprocessedInboundEvent: async () => undefined,
+        },
+        "@/lib/bms/inbox": {
+          logInboundMessage: async () => { writes++; return { id: "test" }; },
+          logConversation: async () => { writes++; },
+        },
+        "@/lib/bms/pipeline": { runPipeline: async () => {
+          writes++; return { reply: "test", quality: "test" };
+        } },
+        "@/lib/log/routeError": { withRouteErrorLog: (_name: string, handler: unknown) => handler },
+      });
+      const post = (body: BodyInit) => route.POST(new Request("http://localhost/mock", {
+        method: "POST", body,
+      }));
+
+      assert.equal((await post("{}")).status, 429, `${channel}: denied before body read`);
+      assert.equal(reads, 0, `${channel}: no body read when rate-limited`);
+      assert.equal(writes, 0, `${channel}: no service call when rate-limited`);
+
+      allowed = true;
+      assert.equal((await post(" ".repeat(64 * 1024 + 1))).status, 413, `${channel}: oversized body`);
+      assert.equal(writes, 0, `${channel}: no service call on oversized body`);
+      assert.equal((await post(Uint8Array.of(0xc3, 0x28))).status, 400, `${channel}: invalid UTF-8`);
+      assert.equal((await post("{")).status, 400, `${channel}: invalid JSON`);
+      const key = channel === "line" ? "events" : "messages";
+      assert.equal((await post(JSON.stringify({ [key]: Array.from({ length: 201 }, () => ({})) }))).status,
+        400, `${channel}: event count bound`);
+      assert.equal(writes, 0, `${channel}: no service call on invalid input`);
+      const event = channel === "line"
+        ? { type: "message", source: { userId: "FAKE-user" }, message: { id: "FAKE-id", type: "text", text: "hello" } }
+        : { id: "FAKE-id", user_id: "FAKE-user", content: { text: "hello" } };
+      assert.equal((await post(JSON.stringify({ [key]: [event] }))).status, 200, `${channel}: valid dev request`);
+      assert.ok(writes > 0, `${channel}: valid request reaches its service`);
+      const beforeProduction = writes;
+      process.env.NODE_ENV = "production";
+      assert.equal((await post("{}")).status, 404, `${channel}: disabled in production`);
+      assert.equal(writes, beforeProduction, `${channel}: production must not reach service`);
+      process.env.NODE_ENV = "development";
+    }
+  } finally {
+    if (previousEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousEnv;
+  }
+});
