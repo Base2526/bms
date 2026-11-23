@@ -19,6 +19,7 @@ database, provider, or hardware result.
 | Area | Check | Method | Result | Commit | Evidence / limit |
 | --- | --- | --- | --- | --- | --- |
 | A · REST | Route auth, server tenant, public rate limits | Reviewed route inventory (256 `route.ts` files), sampled `/api/logs/[id]`, realtime ticket, support bundle and store-logo routes; Web pure contracts | ✅ source/contract boundary; ⛔ live denial matrix for every route | `0d8ac4e3` | Sampled routes use platform or tenant-settings authorization; the existing route inventory covers BMS guards. No authenticated local API fixture covered all routes. |
+| A · Dev webhooks | Unsigned single-tenant LINE/TikTok mocks | Red-then-green `webhook-body-contract`; `tiktok-mock-inbound-contract`; `pure webhook` group | 🔧 rate/body/event caps | `7338177c` | Production still returns 404. Development requests now have 20/min per route, 64 KiB streaming body and 200-event cap; malformed UTF-8/JSON is rejected before Inbox/AI. Focused group passed 73/73. |
 | A · GraphQL | Permission, audit, global-role and platform-count scope | Web pure contracts and branch changes | 🔧 platform scope fixes; ⛔ exhaustive resolver audit | `dd78a574`, `8b876736` | Global role switching and platform counts now require platform-admin status. Full resolver-by-resolver live authorization was not run. |
 | A · SQL/RLS/time | Parameter binding, tenant scope, `Date` serialization, `DATE::text` | Web pure contracts; sampled dynamic-query file list; local schema probe | ✅ contract boundary; ⛔ exhaustive SQL and live RLS | — | The local clone lacks current migrations, so current-code DB paths cannot be certified there. |
 | A · GraphQL SDL | Executable schema matches committed SDL | `cd apps/web && npm run schema:export`; `git diff --exit-code -- schema.graphql` | ✅ no SDL diff | — | Export completed with exit 0. |
@@ -53,6 +54,8 @@ database, provider, or hardware result.
 - `bfa0e937`: `/admin/login?next=` accepts only a same-origin path.
 - `19549a69`, `2d87c548`: stored shop/payment links use guarded URLs; the pending test's incorrect call count was fixed after a red baseline.
 - `53e95aba`: regenerated RN GraphQL types from committed SDL after `graphql:check` exposed drift.
+- `7338177c`: bounded and rate-limited the unsigned development LINE/TikTok webhook mocks before
+  any Inbox/AI work; production remains closed.
 
 These fixes add no migration or environment setting. They do not change a feature's documented
 production status. The link guard is covered by `user-entered-link-contract` (3/3); the RN type
@@ -77,5 +80,5 @@ branch fixes at their automated boundaries.
   merge were outside the authorized boundary.
 
 Final Web gate: `npm run gate` exited 0. Registry (93 known features), regression inventory
-(713 files), typecheck, 401 pure files (3,902 passed, 0 failed, 6 skipped), and the production
+(713 files), typecheck, 401 pure files (3,903 passed, 0 failed, 6 skipped), and the production
 build (157 static pages) completed. `.test-output/pure.run.txt` records `files=401` and `exit=0`.
