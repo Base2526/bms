@@ -2340,6 +2340,8 @@ const en = {
     saved: "Saved",
     save_failed: "The save result is unknown. Check the latest record before trying again.",
     go_home: "Go to home",
+    loading_app: "BMS POS+ · Loading…",
+    loading_app_label: "BMS POS+ loading",
   },
   login: {
     title: "Sign in",
