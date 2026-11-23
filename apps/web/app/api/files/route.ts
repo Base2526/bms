@@ -36,7 +36,7 @@ const MAX_REQUEST_BYTES = MAX_FILE_BYTES + 1024 * 1024;
 async function requireSession(): Promise<FileScopeResult> {
   // `/admin/files` is a platform operational surface.  Its GraphQL side uses
   // the same boundary; a shop Administrator must not enumerate global files.
-  if (verifyAdminSession()) {
+  if (await verifyAdminSession()) {
     const auth = await authorizePlatformAdminRoute();
     if (auth.ok) {
       return {
@@ -52,11 +52,11 @@ async function requireSession(): Promise<FileScopeResult> {
 
     // A browser may hold both cookies. Falling back to the strictly owner-
     // scoped web session is safe and keeps `/settings` usable.
-    const fallbackUser = verifyUserSession();
+    const fallbackUser = await verifyUserSession();
     if (!fallbackUser) return { scope: null, status: auth.status };
   }
 
-  const user = verifyUserSession();
+  const user = await verifyUserSession();
   if (!user) return { scope: null, status: 401 };
   return {
     scope: {

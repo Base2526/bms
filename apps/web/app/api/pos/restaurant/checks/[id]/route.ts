@@ -21,12 +21,12 @@ import { authenticateRestaurantMutation, authenticateRestaurantRead } from "../.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type RouteContext = { params: { id: string } };
+type RouteContext = { params: Promise<{ id: string }> };
 
 async function handleGET(req: NextRequest, { params }: RouteContext) {
   const auth = await authenticateRestaurantRead(req);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  const check = await getRestaurantCheck(auth.device.tenantId, params.id, auth.device.locationId);
+  const check = await getRestaurantCheck(auth.device.tenantId, (await params).id, auth.device.locationId);
   if (!check) return NextResponse.json({ error: "ไม่พบบิลโต๊ะ" }, { status: 404 });
   return NextResponse.json({ check });
 }
@@ -42,7 +42,7 @@ async function handlePOST(req: NextRequest, { params }: RouteContext) {
   const common = {
     tenantId: auth.device.tenantId,
     locationId: auth.device.locationId,
-    checkId: params.id,
+    checkId: (await params).id,
     actorUserId: auth.actor.userId,
   };
 
@@ -114,7 +114,7 @@ async function handlePOST(req: NextRequest, { params }: RouteContext) {
       deviceId: auth.device.id,
       shiftId: auth.shift.id,
       actorUserId: auth.actor.userId,
-      sourceCheckId: params.id,
+      sourceCheckId: (await params).id,
       targetCheckId,
     });
     return NextResponse.json(result);
@@ -122,7 +122,7 @@ async function handlePOST(req: NextRequest, { params }: RouteContext) {
   if (action === "cancel") {
     const reason = String(body.reason ?? "").trim();
     if (!reason) return NextResponse.json({ error: "ต้องระบุ Note ว่ายกเลิกบิลเพราะอะไร" }, { status: 400 });
-    const check = await getRestaurantCheck(auth.device.tenantId, params.id, auth.device.locationId);
+    const check = await getRestaurantCheck(auth.device.tenantId, (await params).id, auth.device.locationId);
     if (!check) return NextResponse.json({ error: "ไม่พบบิลโต๊ะ" }, { status: 404 });
 
     // โต๊ะที่ยังว่างหรือมีเฉพาะรายการ NEW ปิดได้โดยผู้ปฏิบัติงานคนเดิม แต่เมื่อส่งครัว

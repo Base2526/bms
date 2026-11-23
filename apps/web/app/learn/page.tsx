@@ -8,13 +8,14 @@ import { breadcrumbJsonLd } from "@/lib/seoJsonLd";
 import { posGuideFile } from "@/lib/learning/downloads";
 
 type Params = { q?: string; track?: string; role?: string };
-export function generateMetadata() {
-  const lang = learningLang();
+export async function generateMetadata() {
+  const lang = await learningLang();
   const th = lang === "th";
   return learningMetadata(th ? "ศูนย์เรียนรู้และคู่มือ BMS POS+" : "BMS POS+ learning center & guides", th ? "เริ่มตั้งแต่สมัครร้าน ข้อมูลร้าน ทีม ช่องทาง POS และตรวจความพร้อม พร้อมคู่มือตามประเภทร้าน อ่านฟรีโดยไม่ต้องเข้าสู่ระบบ" : "Public guides from shop signup through staff, channels, POS and go-live checks, plus guides by business type. No sign-in required.", "/learn", lang);
 }
-export default function LearnPage({ searchParams }: { searchParams: Params }) {
-  const lang = learningLang(); const th = lang === "th";
+export default async function LearnPage(props: { searchParams: Promise<Params> }) {
+  const searchParams = await props.searchParams;
+  const lang = await learningLang();const th = lang === "th";
   const q = typeof searchParams.q === "string" ? searchParams.q.trim().slice(0, 200) : "";
   const track = typeof searchParams.track === "string" && isTrack(searchParams.track) ? searchParams.track : undefined;
   const role = typeof searchParams.role === "string" && Object.hasOwn(roleLabels, searchParams.role) ? searchParams.role as Role : undefined;

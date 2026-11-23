@@ -15,7 +15,7 @@ async function handlePOST() {
   // immediately, not just once its own `exp` arrives. Best-effort: a decode/Redis
   // failure here must not block logout — the cookie clear below still happens.
   try {
-    const payload = verifyTokenString(cookies().get(ADMIN_COOKIE)?.value);
+    const payload = verifyTokenString((await cookies()).get(ADMIN_COOKIE)?.value);
     if (payload) {
       await recordSecurityEventBestEffort({
         tenantId: payload.tenant_id ?? null,

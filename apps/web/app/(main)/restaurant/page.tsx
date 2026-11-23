@@ -9,7 +9,7 @@ import { publicAlternates, localizedPublicPath, type PublicSeoLocale } from "@/l
 import { breadcrumbJsonLd } from "@/lib/seoJsonLd";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const lang: PublicSeoLocale = cookies().get("lang")?.value === "en" ? "en" : "th";
+  const lang: PublicSeoLocale = (await cookies()).get("lang")?.value === "en" ? "en" : "th";
   const content = resolveBilingual(restaurantCopy, lang);
   return {
     title: content.title,
@@ -20,8 +20,8 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function RestaurantPage() {
-  const lang: PublicSeoLocale = cookies().get("lang")?.value === "en" ? "en" : "th";
+export default async function RestaurantPage() {
+  const lang: PublicSeoLocale = (await cookies()).get("lang")?.value === "en" ? "en" : "th";
   return <>
     <StructuredData id="restaurant-breadcrumb-jsonld" data={breadcrumbJsonLd(lang, [
       { name: lang === "th" ? "หน้าหลัก" : "Home", path: "/" },

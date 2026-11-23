@@ -27,6 +27,8 @@ const check = (source: string) =>
 
 test("GraphQL HTTP boundary enables CSRF, origin and byte-accurate body limits", () => {
   const route = read("apps/web/app/api/graphql/route.ts");
+  const client = read("apps/web/lib/apollo.ts");
+  assert.match(route, /introspection: process\.env\.NODE_ENV !== "production"/);
   assert.match(route, /csrfPrevention: true/);
   assert.match(route, /validationRules: \[graphqlRequestLimitsRule\]/);
   assert.match(route, /isSameOriginBrowserRequest\(request\)/);
@@ -39,6 +41,7 @@ test("GraphQL HTTP boundary enables CSRF, origin and byte-accurate body limits",
   assert.match(route, /formData: async \(\) => body\.form/);
   assert.match(route, /maxFileSize: MAX_GRAPHQL_FILE_BYTES/);
   assert.match(route, /allowedTypes: SAFE_GRAPHQL_UPLOAD_TYPES/);
+  assert.match(client, /"Apollo-Require-Preflight": "true"/);
   assert.doesNotMatch(route, /csrfPrevention: false/);
 });
 
@@ -77,7 +80,9 @@ test("body limits apply without Content-Length and valid multipart parses once",
   const form = uploadForm({ "0": ["variables.image"] }, { image: null });
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/WZkAAAAASUVORK5CYII=", "base64");
   form.set("0", new Blob([png], { type: "image/png" }), "image.png");
-  const request = new Request("http://localhost/api/graphql", { method: "POST", body: form });
+  const request = new Request("http://localhost/api/graphql", {
+    method: "POST", body: form, headers: { "Apollo-Require-Preflight": "true" },
+  });
   const parsed = await readBoundedFormData(request, 4096);
   assert.equal(parsed.ok, true);
   if (!parsed.ok) return;

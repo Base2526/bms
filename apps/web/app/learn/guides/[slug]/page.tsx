@@ -8,20 +8,23 @@ import StructuredData from "@/components/seo/StructuredData";
 import { localizedPublicPath } from "@/lib/publicSeo";
 import { breadcrumbJsonLd, learningArticleJsonLd } from "@/lib/seoJsonLd";
 
-type Props = { params: { slug: string }; searchParams: { track?: string; format?: string } };
-export function generateMetadata({ params }: Props) {
-  const lesson = getLesson(params.slug); if (!lesson) return { robots: { index: false, follow: false } };
-  const lang = learningLang();
+type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ track?: string; format?: string }> };
+export async function generateMetadata(props: Props) {
+  const params = await props.params;
+  const lesson = getLesson(params.slug);if (!lesson) return { robots: { index: false, follow: false } };
+  const lang = await learningLang();
   return learningMetadata(localize(lesson.title, lang), localize(lesson.summary, lang), `/learn/guides/${lesson.slug}`, lang);
 }
-export default function ArticlePage({ params, searchParams }: Props) {
-  const lesson = getLesson(params.slug); if (!lesson) notFound();
+export default async function ArticlePage(props: Props) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
+  const lesson = getLesson(params.slug);if (!lesson) notFound();
   const track = typeof searchParams.track === "string" && isTrack(searchParams.track) && lesson.tracks.includes(searchParams.track) ? searchParams.track : lesson.tracks[0];
   const requestedFormat = typeof searchParams.format === "string" && isTrackFormat(track, searchParams.format) ? searchParams.format : undefined;
   const format = requestedFormat && lessonSupportsTrackFormat(lesson, track, requestedFormat) ? requestedFormat : undefined;
-  const items = getTrackLessons(track, format); const index = items.findIndex((item) => item.slug === lesson.slug);
-  const prev = items[index - 1]; const next = items[index + 1];
-  const lang = learningLang(); const th = lang === "th";
+  const items = getTrackLessons(track, format);const index = items.findIndex((item) => item.slug === lesson.slug);
+  const prev = items[index - 1];const next = items[index + 1];
+  const lang = await learningLang();const th = lang === "th";
   const reviewedAt = lesson.reviewedAt ?? LEARNING_REVIEWED_AT;
   const trackHref = localizedPublicPath(`/learn/${track}${format ? `?format=${format}` : ""}`, lang);
   const lessonHref = (slug: string) => localizedPublicPath(`/learn/guides/${slug}?track=${track}${format ? `&format=${format}` : ""}`, lang);

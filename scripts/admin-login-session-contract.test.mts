@@ -25,7 +25,7 @@ test("the admin session bundle and route have visible, localized loading states"
   assert.match(providers, /loading: \(\) => <SessionLoading \/>/);
   assert.match(providers, /function SessionLoading\(\)[\s\S]*useI18n\(\)[\s\S]*role="status"[\s\S]*t\("common\.loading_app_label"\)[\s\S]*t\("common\.loading_app"\)/);
   // The route fallback is a server component: it reads the same `lang` cookie as the root layout.
-  assert.match(route, /cookies\(\)\.get\("lang"\)/);
+  assert.match(route, /\(await cookies\(\)\)\.get\("lang"\)/);
   assert.match(route, /role="status"[\s\S]*getMessage\(lang, "common\.loading_app_label"\)[\s\S]*getMessage\(lang, "common\.loading_app"\)/);
   for (const source of [providers, route]) assert.doesNotMatch(source, /Loading…|loading"/);
 

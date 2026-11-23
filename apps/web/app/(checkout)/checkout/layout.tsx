@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 // Tab title/description only — low-visibility enough that a static Metadata export
 // wasn't worth converting to an async generateMetadata() until this pass.
 export async function generateMetadata(): Promise<Metadata> {
-  const lang = cookies().get("lang")?.value === "en" ? "en" : "th";
+  const lang = (await cookies()).get("lang")?.value === "en" ? "en" : "th";
   return {
     title:
       lang === "en"

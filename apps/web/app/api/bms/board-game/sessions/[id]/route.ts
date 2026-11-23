@@ -18,15 +18,15 @@ import { canAccessBoardGameLocation } from "../../access";
 
 export const dynamic = "force-dynamic";
 
-async function handleGET(_req: NextRequest, { params }: { params: { id: string } }) {
+async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeAdminRoute("board_game.session.manage");
   if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: auth.status });
   try {
-    const locationId = await locationOfBoardGameSession(auth.tenantId, params.id);
+    const locationId = await locationOfBoardGameSession(auth.tenantId, (await params).id);
     if (!(await canAccessBoardGameLocation(auth, locationId))) {
       return NextResponse.json({ error: "ไม่มีสิทธิ์ดู session นี้" }, { status: 403 });
     }
-    const session = await getBoardGameSession(auth.tenantId, params.id);
+    const session = await getBoardGameSession(auth.tenantId, (await params).id);
     return NextResponse.json({ session });
   } catch (error) {
     return NextResponse.json(
@@ -36,11 +36,11 @@ async function handleGET(_req: NextRequest, { params }: { params: { id: string }
   }
 }
 
-async function handlePOST(req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePOST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeAdminRoute("board_game.session.manage");
   if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: auth.status });
   try {
-    const locationId = await locationOfBoardGameSession(auth.tenantId, params.id);
+    const locationId = await locationOfBoardGameSession(auth.tenantId, (await params).id);
     if (!(await canAccessBoardGameLocation(auth, locationId))) {
       return NextResponse.json({ error: "ไม่มีสิทธิ์จัดการ session นี้" }, { status: 403 });
     }
@@ -56,7 +56,7 @@ async function handlePOST(req: NextRequest, { params }: { params: { id: string }
       }
       const participant = await addBoardGameParticipant(
         auth.tenantId,
-        { ...body, sessionId: params.id },
+        { ...body, sessionId: (await params).id },
         String(auth.adminId)
       );
       return NextResponse.json({ participant });
@@ -71,7 +71,7 @@ async function handlePOST(req: NextRequest, { params }: { params: { id: string }
       }
       const participant = await leaveBoardGameParticipant(
         auth.tenantId,
-        { ...body, sessionId: params.id },
+        { ...body, sessionId: (await params).id },
         String(auth.adminId)
       );
       return NextResponse.json({ participant });
@@ -82,7 +82,7 @@ async function handlePOST(req: NextRequest, { params }: { params: { id: string }
       } catch {
         return NextResponse.json({ error: "ไม่มีสิทธิ์แก้ไขเวลา" }, { status: 403 });
       }
-      const session = await adjustBoardGameSessionTiming(auth.tenantId, params.id, body, String(auth.adminId));
+      const session = await adjustBoardGameSessionTiming(auth.tenantId, (await params).id, body, String(auth.adminId));
       return NextResponse.json({ session });
     }
     if (action === "close_for_billing") {
@@ -93,7 +93,7 @@ async function handlePOST(req: NextRequest, { params }: { params: { id: string }
           return NextResponse.json({ error: "ไม่มีสิทธิ์กำหนดเวลาปิดเอง" }, { status: 403 });
         }
       }
-      const billing = await closeBoardGameSessionForBilling(auth.tenantId, params.id, body, String(auth.adminId));
+      const billing = await closeBoardGameSessionForBilling(auth.tenantId, (await params).id, body, String(auth.adminId));
       return NextResponse.json({ billing });
     }
     if (action === "close_group_for_billing") {
@@ -105,7 +105,7 @@ async function handlePOST(req: NextRequest, { params }: { params: { id: string }
         }
       }
       const billingGroupId = String(body.billingGroupId ?? "");
-      const current = await getBoardGameSession(auth.tenantId, params.id);
+      const current = await getBoardGameSession(auth.tenantId, (await params).id);
       if (!current.billingGroups.some((group) => group.id === billingGroupId)) {
         return NextResponse.json({ error: "ไม่พบกลุ่มบิลใน session นี้" }, { status: 404 });
       }
@@ -121,7 +121,7 @@ async function handlePOST(req: NextRequest, { params }: { params: { id: string }
       const relocate = action === "move_seating" ? moveBoardGameSeating : mergeBoardGameSeating;
       const seating = await relocate(
         auth.tenantId,
-        params.id,
+        (await params).id,
         String(body.targetTableId ?? ""),
         body,
         String(auth.adminId),
@@ -134,7 +134,7 @@ async function handlePOST(req: NextRequest, { params }: { params: { id: string }
       } catch {
         return NextResponse.json({ error: "ไม่มีสิทธิ์ยกเลิก session" }, { status: 403 });
       }
-      const session = await cancelBoardGameSession(auth.tenantId, params.id, body, String(auth.adminId));
+      const session = await cancelBoardGameSession(auth.tenantId, (await params).id, body, String(auth.adminId));
       return NextResponse.json({ session });
     }
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });

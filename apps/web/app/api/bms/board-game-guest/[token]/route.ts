@@ -11,12 +11,12 @@ export const dynamic = "force-dynamic";
 
 async function handleGET(
   req: NextRequest,
-  { params }: { params: { token: string } }
+  { params }: { params: Promise<{ token: string }> }
 ) {
   const limited = await requireBoardGameGuestRateLimit(req, "open", 30);
   if (limited) return limited;
   try {
-    const context = await getBoardGameGuestContext(params.token);
+    const context = await getBoardGameGuestContext((await params).token);
     return NextResponse.json({
       status: "READY",
       storeName: context.storeName,

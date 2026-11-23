@@ -7,9 +7,9 @@ import { query } from "@/lib/db";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 // import { verifyInternal } from "@/lib/internal-verify"; // HMAC verify
 
-export function requireAdminOrInternal(req: NextRequest) {
+export async function requireAdminOrInternal(req: NextRequest) {
   // server-side cookie check (Next.js server handler)
-  const admin = verifyAdminSession();
+  const admin = await verifyAdminSession();
   if (admin) return { ok: true, actor: admin };
 
   // หรือถ้ามี internal signature (cron/worker)

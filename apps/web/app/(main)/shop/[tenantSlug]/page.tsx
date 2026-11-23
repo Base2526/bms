@@ -7,9 +7,10 @@ import ShopLandingView from "./ShopLandingView";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type PageProps = { params: { tenantSlug: string } };
+type PageProps = { params: Promise<{ tenantSlug: string }> };
 
-export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+export async function generateMetadata(props: PageProps): Promise<Metadata> {
+  const params = await props.params;
   const shop = await getPublicShop(params.tenantSlug);
   if (!shop) {
     const lang = (await cookies()).get("lang")?.value === "en" ? "en" : "th";
@@ -23,7 +24,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-export default async function PublicShopLandingPage({ params }: PageProps) {
+export default async function PublicShopLandingPage(props: PageProps) {
+  const params = await props.params;
   const shop = await getPublicShop(params.tenantSlug);
   if (!shop) notFound();
 

@@ -38,7 +38,7 @@ export default function RetailLocalGuide({ initialStep = "prepare", followHash =
   const [duration, setDuration] = useState(() => audioMetadata.durations[findStep(initialStep)]);
   const section = useRef<HTMLElement>(null);
   const audio = useRef<HTMLAudioElement>(null);
-  const player = useRef<RecordedNarration>();
+  const player = useRef<RecordedNarration | undefined>(undefined);
   const selected = useRef(step);
   const speed = useRef(1);
   const resumeAt = useRef(0);

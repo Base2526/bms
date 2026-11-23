@@ -34,7 +34,7 @@ export default function PlaybackPlayer({ sequence, lang, copy, introduction, con
   const voiceFailed = voiceError !== null;
   const recorded = lang === "th";
   const audioElement = useRef<HTMLAudioElement>(null);
-  const audioPlayer = useRef<RecordedNarration>();
+  const audioPlayer = useRef<RecordedNarration | undefined>(undefined);
   const plan = useMemo(() => compilePlayback(sequence, selections), [sequence, selections]);
   const people = useMemo(() => new Map(sequence.participants.map(p => [p.id, p.label])), [sequence]);
   const cues = useMemo(() => [

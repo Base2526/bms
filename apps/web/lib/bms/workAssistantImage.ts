@@ -16,7 +16,8 @@ export type WorkAssistantImage = {
 };
 
 export type WorkAssistantUpload = {
-  mimeType: string;
+  mimeType?: string;
+  mimetype?: string;
   createReadStream: () => Readable;
 };
 
@@ -48,7 +49,7 @@ export async function readWorkAssistantImage(
   let upload: WorkAssistantUpload;
   try { upload = await pendingUpload; }
   catch { throw new WorkAssistantImageError("read"); }
-  const expectedFormat = ACCEPTED_IMAGE_TYPES[upload?.mimeType];
+  const expectedFormat = ACCEPTED_IMAGE_TYPES[upload?.mimeType ?? upload?.mimetype ?? ""];
   if (!expectedFormat || typeof upload?.createReadStream !== "function") {
     throw new WorkAssistantImageError("unsupported");
   }

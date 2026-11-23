@@ -31,6 +31,6 @@ test("Next.js does not advertise itself and auth sessions do not expose provider
 
 test("internet-facing framework dependencies stay on the reviewed security patch line", () => {
   const packageJson = JSON.parse(read("apps/web/package.json"));
-  assert.equal(packageJson.dependencies.next, "14.2.35");
+  assert.equal(packageJson.dependencies.next, "16.4.6");
   assert.equal(packageJson.dependencies["next-auth"], "^4.24.15");
 });

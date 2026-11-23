@@ -1,22 +1,17 @@
-import dynamic from "next/dynamic";
 import { cookies } from "next/headers";
 import { localizedPublicPath } from "@/lib/publicSeo";
 import BrandedNotFound from "@/components/not-found/BrandedNotFound";
 import NotFoundActions from "./NotFoundActions";
+import NotFoundHeaderBar from "./NotFoundHeaderBar";
 import styles from "./not-found.module.css";
 
-const HeaderBar = dynamic(() => import("@/components/HeaderBar"), {
-  ssr: false,
-  loading: () => <div className={styles.headerPlaceholder} />,
-});
-
-export default function NotFound() {
-  const lang = cookies().get("lang")?.value === "en" ? "en" : "th";
+export default async function NotFound() {
+  const lang = (await cookies()).get("lang")?.value === "en" ? "en" : "th";
   const homePath = localizedPublicPath("/", lang);
 
   return (
     <>
-      <HeaderBar initialLang={lang} isMobile={false} />
+      <NotFoundHeaderBar initialLang={lang} isMobile={false} />
       <main className={styles.page}>
         <BrandedNotFound
           id="page-not-found-title"

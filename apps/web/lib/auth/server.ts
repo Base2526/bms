@@ -11,15 +11,15 @@ import {
 } from "./token";
 
 // ===== Cookie-based (Web/Admin) =====
-export function verifyUserSession(): JWTPayload | null {
-  const token = cookies().get(USER_COOKIE)?.value;
+export async function verifyUserSession(): Promise<JWTPayload | null> {
+  const token = (await cookies()).get(USER_COOKIE)?.value;
   const payload = verifyTokenString(token);
   if (!payload?.role) return null;
   return payload;
 }
 
-export function verifyAdminSession(): JWTPayload | null {
-  const token = cookies().get(ADMIN_COOKIE)?.value;
+export async function verifyAdminSession(): Promise<JWTPayload | null> {
+  const token = (await cookies()).get(ADMIN_COOKIE)?.value;
   const payload = verifyTokenString(token);
   if (!payload?.role) return null;
   return payload;

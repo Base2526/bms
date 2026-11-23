@@ -71,7 +71,7 @@ async function createContext(request: NextRequest) {
     admin = null;
   } else if (scope === "admin") {
     // ✅ admin panel ใช้ cookie
-    admin = verifyAdminSession();
+    admin = await verifyAdminSession();
 
     // (optional) ถ้าอนาคต admin app ใช้ Bearer ก็เปิดบรรทัดนี้:
     // if (!admin) admin = verifyAdminFromRequest(request);
@@ -95,7 +95,7 @@ async function createContext(request: NextRequest) {
     // (เช่นหน้า fake-data ลบร้าน scenario ที่กำลัง drill-down อยู่) และสิทธิ์ platform
     // admin อาจถูกถอดภายหลัง จึงต้องยืนยันทั้งสองอย่างสดก่อนใช้เป็น authority.
     if (admin) {
-      const cookieStore = cookies();
+      const cookieStore = await cookies();
       const actingCookie = cookieStore.get(ACT_TENANT_COOKIE)?.value;
       const act = verifyActTenant(actingCookie);
       const boundToCurrentPlatformAdmin =
@@ -121,8 +121,8 @@ async function createContext(request: NextRequest) {
     user = null;
   } else {
     // ✅ web ใช้ cookie
-    user = verifyUserSession();
-    admin = verifyAdminSession();
+    user = await verifyUserSession();
+    admin = await verifyAdminSession();
 
     // Some shared/public GraphQL calls intentionally accept an admin cookie
     // under web scope. They must receive the same fresh/revocable identity as

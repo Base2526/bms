@@ -3,8 +3,8 @@ import { getMessage, type Lang } from "@/i18n";
 
 // Server-rendered route fallback: it paints before the client bundle and Ant styles, so it uses
 // plain inline CSS and reads the same `lang` cookie as the root layout.
-export default function AdminLoading() {
-  const lang: Lang = cookies().get("lang")?.value === "en" ? "en" : "th";
+export default async function AdminLoading() {
+  const lang: Lang = (await cookies()).get("lang")?.value === "en" ? "en" : "th";
   return (
     <div
       role="status"

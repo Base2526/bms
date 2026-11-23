@@ -11,7 +11,7 @@ const useSecureCookie = process.env.COOKIE_SECURE === "true";
 
 async function handlePOST() {
   try {
-    const payload = verifyTokenString(cookies().get(USER_COOKIE)?.value);
+    const payload = verifyTokenString((await cookies()).get(USER_COOKIE)?.value);
     if (payload) {
       const account = await query<{ tenant_id: string | null }>(
         "SELECT tenant_id FROM users WHERE id = $1", [payload.id]

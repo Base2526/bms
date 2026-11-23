@@ -27,11 +27,12 @@ export const dynamic = "force-dynamic";
 
 const ALLOWED_WINDOWS = [15, 60, 180];
 
-export default async function SystemHealthPage({
-  searchParams,
-}: {
-  searchParams?: { window?: string };
-}) {
+export default async function SystemHealthPage(
+  props: {
+    searchParams?: Promise<{ window?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const requested = Number(searchParams?.window);
   const windowMinutes = ALLOWED_WINDOWS.includes(requested) ? requested : 60;
 

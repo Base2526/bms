@@ -10,7 +10,8 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function BookingManagePage({ params }: { params: { token: string } }) {
+export default async function BookingManagePage(props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   const cookieStore = await cookies();
   const lang = cookieStore.get("lang")?.value === "en" ? "en" : "th";
   return <BookingManageView token={params.token} lang={lang} />;
