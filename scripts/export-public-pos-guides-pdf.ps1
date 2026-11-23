@@ -1,7 +1,8 @@
 # Export the reviewed DOCX files through Microsoft Word so each PDF has identical text.
 # Requires Word on Windows. Run build-public-pos-guides.py first.
 param(
-  [string]$OutputDirectory = ""
+  [string]$OutputDirectory = "",
+  [string[]]$Guides = @("retail", "board-game", "restaurant", "pharmacy", "pet-supply", "building-materials")
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,7 +17,7 @@ try {
   $wordApp = New-Object -ComObject Word.Application
   $wordApp.Visible = $false
   $wordApp.DisplayAlerts = 0
-  foreach ($slug in @("retail", "board-game", "restaurant", "pharmacy", "building-materials")) {
+  foreach ($slug in $Guides) {
     $sourcePath = Join-Path $sourceDirectory "bms-pos-$slug-th.docx"
     if (-not (Test-Path -LiteralPath $sourcePath)) { throw "Missing guide: $sourcePath" }
     $pdfPath = Join-Path $outputFullPath "bms-pos-$slug-th.pdf"

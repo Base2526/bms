@@ -11,14 +11,14 @@
 > บันทึก 2026-08-17 → 2026-10-23) อยู่ใต้ "ชุดที่ 2" ของ archive — ค้นด้วยเลข migration เช่น
 > `grep -n "9.66" docs/local-notes-archive.md`
 
-## สถานะ working tree ล่าสุด (2026-11-20)
+## สถานะ working tree ล่าสุด (2026-11-23)
 
-- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `5bb7d241` (commit ตรง:
-  ลดดิสก์ตอน export Docker image ของ web; ก่อนหน้าคือ #440 คู่มือ POS สาธารณะ) · สรุป #417–#440 อยู่ท้าย
-  [docs/status-log.md](docs/status-log.md) · branch `codex/retail-small-shop-readiness` = `develop` + จัดการผู้ขาย
-  (`bmsUpsertSupplier`), เขียนลูกค้าในทรานแซกชันเดียว, ตรวจค่าส่ง, น้ำหนักกรัมเต็ม, WebSocket เฉพาะ URL ที่ตั้งไว้ +
-  [ตารางความพร้อมร้านปลีกเล็ก](docs/business/small-retail-readiness-2026-11-20.md) — ไม่มี migration
-- **migration ล่าสุด `10.137`** (เลขว่างถัดไป `10.138` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
+- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `46302630` (#444,
+  เปลี่ยนชื่อสินค้าเป็น **BMS POS+**; appId/bundle ID/โฟลเดอร์ติดตั้งเดิมไม่เปลี่ยน) · สรุป #417–#444 อยู่ท้าย
+  [docs/status-log.md](docs/status-log.md) · branch `codex/retail-local-pilot-13` = `develop` + Retail Local
+  `0.2.14-pilot.13` + คู่มือร้านอาหารสัตว์ (`/learn/pet-supply`, Word/PDF เล่มที่ 6) + แก้ลูป `/admin/login` — ไม่มี migration ·
+  ⚠️ `admin-client-i18n-contract` ยังแดงที่ข้อความอังกฤษใน `admin/loading.tsx`
+- **migration ล่าสุด `10.138`** (เลขว่างถัดไป `10.139` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
   `10.122`/`10.123` โรงงานคงเดิม; audit ที่ชนเลขย้ายเป็น `10.131`/`10.132` และมีวิธีจัดการ
   ledger เก่าใน [audit traceability](docs/architecture/audit-traceability.md#verification-and-rollout) ·
   คิวรับของคือ `10.112`–`10.113` (ไม่ใช่ `10.111` = ใบอนุญาตเภสัชกร)
@@ -185,7 +185,8 @@ node scripts/run-contract-tests.mjs db <name-filter>     # ต้องมี PO
   → `10.112` → `10.113` → `10.114` → `10.115` → `10.116` → `10.117` → `10.118` → `10.119` → `10.120` → `10.121`
   → `10.122`–`10.127` (โรงงาน) → `10.128` (owner repair retry) → `10.129` → `10.130` (สินค้าชั่วคราว)
   → `10.131` → `10.132` (audit) → `10.133`–`10.137` (ร้านวัสดุก่อสร้าง; `10.134`/`10.136`/`10.137` อยู่ใน readiness
-  — โค้ด `develop` ใช้ทุกบิล/ทุกการสแกน/ทุก PO จึงต้อง apply ก่อน deploy)
+  — โค้ด `develop` ใช้ทุกบิล/ทุกการสแกน/ทุก PO จึงต้อง apply ก่อน deploy) → `10.138` (ต้นทุนตามหลังของปลา;
+  ไม่อยู่ใน readiness — หน้า fish-intake อ่านตารางนี้ ต้อง apply คู่กับ `10.119`–`10.120`)
 - **`10.107` ผูกกับโค้ด `develop` แล้ว** — `stockTransfers.ts` อ่าน `bms_stock_transfer_item_lots` และ
   readiness ระบุว่าการโอนทุกหน้าล้มถ้าไม่มีตาราง → deploy `develop` = ตัดสินใจ rollout `10.107` ไปด้วย
   ต้องได้การยืนยันก่อน

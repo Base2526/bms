@@ -53,6 +53,12 @@ export function HeaderDropdown({ lang, label, children }: { lang: Lang; label: s
   return <HeaderDetails lang={lang} label={label} mobile={false}>{children}</HeaderDetails>;
 }
 
+export function LearningMenuLink({ path, lang, children }: { path: string; lang: Lang; children: React.ReactNode }) {
+  const pathname = usePathname();
+  const active = stripPublicLocale(pathname || "") === path;
+  return <Link href={localizedPublicPath(path, lang)} aria-current={active ? "page" : undefined}>{children}</Link>;
+}
+
 const STORAGE_KEY = "bms.learning.read.v1";
 function readCompleted(): string[] {
   try {

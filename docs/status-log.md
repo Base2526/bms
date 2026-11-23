@@ -2,7 +2,7 @@
 
 Per-feature decision narrative moved out of [CLAUDE.md](../CLAUDE.md) on 2026-10-13 to keep the
 always-loaded agent context small. The moved text is unchanged; newest entries are at the end.
-Entries were brought up to date on 2026-11-20 (through migration `10.137`, PR #440 and `5bb7d241`); the
+Entries were brought up to date on 2026-11-23 (through migration `10.138` and PR #444); the
 detailed 2026-11-16 boundary and log notes are in [feature-log.md](feature-log.md). The compact area index lives in CLAUDE.md
 § Current status; full
 per-domain rules live in [agent-invariants.md](agent-invariants.md).
@@ -1167,7 +1167,7 @@ now deletes `.next/cache/webpack` after `npm run build` and drops a second `COPY
 A built image was not started from this repository record; check `/` and `/api/graphql` after the
 next image build.
 
-**Small-retail readiness (branch `codex/retail-small-shop-readiness`, no migration).**
+**Small-retail readiness (#441, no migration).**
 - **Suppliers:** the Purchase page's **Manage suppliers** action (`purchase.edit`) creates or
   edits supplier master data through the new `bmsUpsertSupplier` mutation (`BmsSupplierInput`,
   `schema.graphql` updated). Fields are name, phone, email, individual/company type, 13-digit tax
@@ -1195,3 +1195,57 @@ passed on 2026-11-20. Not run in that pass: the supplier/customer browser smokes
 typecheck and build. See [business/crm.md](business/crm.md),
 [business/inventory.md](business/inventory.md), [business/order.md](business/order.md) and
 [ai/tools.md](ai/tools.md).
+
+**Admin login redesign (#442, no migration).** The `/admin/login` page was redesigned, and the
+learning-center header groups its navigation.
+
+**Desktop guide chapter and fish late cost (`10.138`, #443, not applied to production).**
+- **Handbooks:** the public POS handbooks gained a Desktop setup chapter and were rebuilt.
+- **Fish late cost:** staff with `purchase.view` + `purchase.edit` can add a forgotten cost
+  (transport, ice, handling, other) to one line of a confirmed LIVE fish receipt on
+  `/admin/fish-intake`. The flow is preview then explicit confirm, and a stable request key makes
+  retries idempotent.
+- **`10.138`:** adds append-only `bms_fish_late_cost_adjustments` (forced RLS; `bms_app` has
+  SELECT/INSERT only) and a partial index on `bms_stock_movements`. Committing locks the
+  branch/SKU/size `bms_inventory_values` row and raises only its moving-average value, together with
+  the adjustment row and a `fish.cost.adjust` audit in one tenant transaction.
+- **What never changes:** stock grams, lots, movements, receipt amounts, payments, payables and
+  expenses. A later physical movement after the receipt makes the adjustment fail closed.
+- **Readiness:** the fish-intake service reads the table, but `10.138` is not in schema-readiness;
+  apply it with the fish-dock migrations (`10.119`–`10.120`) before deploying that code.
+
+See [architecture/database.md](architecture/database.md).
+
+**Product renamed to BMS POS+ (#444, no migration).**
+- **Renamed:** the user-visible name changed from "BMS" / "BMS POS" / "BMS Retail Local" to
+  "BMS POS+" / "BMS POS+ Retail Local" across web pages, admin, POS, `/learn`, metadata, i18n, the
+  Electron shell, the React Native display name, Retail Local installers/scripts and docs. The 29
+  restaurant Thai narration clips that say the product name were re-recorded.
+- **Kept stable so existing installs keep working:** the Desktop appId `com.bms.pos.desktop`, URL
+  scheme and Windows executable name. Packaged userData stays in the old "BMS POS" folder, so the
+  pairing token, printer settings and launch preference survive. Mobile bundle IDs and Inno Setup
+  AppIds, install directories and service names are also unchanged.
+- **Upgrades:** the Retail Local installer removes the old shortcuts and launcher `.cmd` files.
+
+**Retail Local `0.2.14-pilot.13` (`39c1d1e8`, branch `codex/retail-local-pilot-13`).** The Desktop
+package version was bumped for the next technical-pilot build; Retail Local remains a pilot, not GA.
+
+**Pet-supply guide and admin login loop (branch `codex/retail-local-pilot-13`, no migration).**
+- **Guide:** `/th/learn/pet-supply` and `/en/learn/pet-supply` add 11 bilingual lessons
+  (`petSupplyLessons.ts`) on the existing track, plus a sixth Thai Word/PDF handbook.
+  The pet-supply flow has text and a diagram but no recorded narration.
+- **Handbooks:** each handbook now has its own review date in `downloads.ts`, and the builder and
+  exporter can rebuild one guide (`pet-supply`).
+- **Shop archetype guide:** it no longer implies veterinary or diagnostic advice.
+- **Admin login loop:** the `/admin/login` redirect now checks the same Redis session and refreshed
+  identity as `/api/auth/me` and GraphQL, so a signed but revoked or ineligible cookie no longer
+  loops between `/admin` and `/admin/login` (`admin-login-session-contract`).
+- **Admin loading screen:** `admin/loading.tsx` now shows a visible loading status.
+- **Evidence:** the review and its unproven boundaries (no real-DB transactions or scanner test;
+  animal-health answers need expert review) are in
+  [public-pos-guides/verification-pet-supply-2026-11-23.md](public-pos-guides/verification-pet-supply-2026-11-23.md).
+
+On 2026-11-23, `learning-center-contract` (13/13), `admin-login-session-contract` (2/2),
+`regression:inventory` and `release:features:check` passed. **`admin-client-i18n-contract` fails
+(4/5)** on the untranslated `BMS POS+ loading` / `Loading…` text in `admin/loading.tsx`, so the
+gate's pure step stays red until that copy is localized or reviewed as an exception.

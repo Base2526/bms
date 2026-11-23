@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { cookies } from "next/headers";
-import { HeaderDropdown, LanguageControl, MobileNavigation, StoreLink } from "./Controls";
+import { HeaderDropdown, LanguageControl, LearningMenuLink, MobileNavigation, StoreLink } from "./Controls";
 import s from "./learning.module.css";
 import { localizedPublicPath } from "@/lib/publicSeo";
 
@@ -12,6 +12,7 @@ export default function LearningLayout({ children }: { children: React.ReactNode
     { path: "/learn/board-game", icon: "🎲", th: "บอร์ดเกม", en: "Board games" },
     { path: "/learn/restaurant", icon: "🍽️", th: "ร้านอาหารและคาเฟ่", en: "Restaurants & cafes" },
     { path: "/learn/pharmacy", icon: "⚕️", th: "ร้านขายยา", en: "Pharmacy" },
+    { path: "/learn/pet-supply", icon: "🐾", th: "ร้านขายอาหารสัตว์", en: "Pet supply store" },
     { path: "/learn/building-materials", icon: "🧱", th: "วัสดุก่อสร้าง (ทดลอง)", en: "Building materials (pilot)" },
   ];
   const specialistLinks = [
@@ -33,7 +34,7 @@ export default function LearningLayout({ children }: { children: React.ReactNode
         <HeaderDropdown lang={lang} label={lang === "th" ? "ประเภทร้าน" : "Business types"}>
           <div className={s.dropdownPanel} role="group" aria-label={lang === "th" ? "คู่มือตามประเภทร้าน" : "Business guides"}>
             <strong>{lang === "th" ? "คู่มือตามประเภทร้าน" : "Business guides"}</strong>
-            <div className={s.dropdownGrid}>{businessLinks.map((link) => <Link key={link.path} href={localizedPublicPath(link.path, lang)}><span aria-hidden="true">{link.icon}</span>{link[lang]}</Link>)}</div>
+            <div className={s.dropdownGrid}>{businessLinks.map((link) => <LearningMenuLink key={link.path} path={link.path} lang={lang}><span aria-hidden="true">{link.icon}</span>{link[lang]}</LearningMenuLink>)}</div>
           </div>
         </HeaderDropdown>
         <HeaderDropdown lang={lang} label={lang === "th" ? "งานเฉพาะทาง" : "Specialist guides"}>
@@ -48,7 +49,7 @@ export default function LearningLayout({ children }: { children: React.ReactNode
           <Link href={localizedPublicPath("/learn", lang)}>{lang === "th" ? "คู่มือทั้งหมด" : "All guides"}</Link>
           <Link href={localizedPublicPath("/learn/getting-started", lang)}>{lang === "th" ? "เริ่มต้นใช้งาน" : "Getting started"}</Link>
           <span className={s.mobileGroupTitle}>{lang === "th" ? "คู่มือตามประเภทร้าน" : "Business guides"}</span>
-          {businessLinks.map((link) => <Link key={link.path} href={localizedPublicPath(link.path, lang)}>{link[lang]}</Link>)}
+          {businessLinks.map((link) => <LearningMenuLink key={link.path} path={link.path} lang={lang}><span aria-hidden="true">{link.icon} </span>{link[lang]}</LearningMenuLink>)}
           <span className={s.mobileGroupTitle}>{lang === "th" ? "คู่มือเฉพาะงาน" : "Specialist guides"}</span>
           {specialistLinks.map((link) => <Link key={link.path} href={localizedPublicPath(link.path, lang)}>{link[lang]}</Link>)}
           <div className={s.mobileCta}><StoreLink lang={lang} /></div>

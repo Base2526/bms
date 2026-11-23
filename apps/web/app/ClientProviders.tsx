@@ -13,17 +13,18 @@ import { PosRealtimeProvider } from "@/components/realtime/RealtimeProvider";
 import { SessionProvider } from "@/lib/session-context";
 import { isLocalizedPublicPath, stripPublicLocale } from "@/lib/publicSeo";
 
-// ssr:false = server ส่ง placeholder เปล่าให้เสมอสำหรับทุกอย่างใต้ SessionLayer (รวม
+// ssr:false = server ส่ง loading placeholder ให้เสมอสำหรับทุกอย่างใต้ SessionLayer (รวม
 // AdminSidebar) เพราะ session มาจาก cookie ที่รู้ได้แค่ฝั่ง client (SWR ไป /api/auth/me)
-// Loading placeholder must stay visually empty. Rendering Ant Skeleton here can
-// briefly expose its raw <ul>/<li> markers before CSS is ready during refresh.
+// Keep the fallback in plain HTML/CSS so an admin waiting for the client bundle
+// sees a loading state even before Ant styles or SessionLayer are available.
 const SessionLayer = dynamic(() => import("@/app/SessionLayer"), {
   ssr: false,
   loading: () => (
     <div
-      aria-hidden="true"
-      style={{ minHeight: "100vh", width: "100%" }}
-    />
+      role="status"
+      aria-label="BMS POS+ loading"
+      style={{ minHeight: "100vh", width: "100%", display: "grid", placeItems: "center", color: "#4b5563", fontFamily: "sans-serif" }}
+    >BMS POS+ · Loading…</div>
   ),
 });
 

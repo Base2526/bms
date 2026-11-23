@@ -49,6 +49,7 @@ export function BusinessGuideOverview({ track, lang }: { track: BusinessTrackId;
   const audioElement = useRef<HTMLAudioElement>(null);
   const audioPlayer = useRef<RecordedNarration>();
   const recorded = lang === "th";
+  const narrationAvailable = track !== "pet-supply";
   const activePlayback = playing && !paused;
   const cue = cues[step];
 
@@ -75,16 +76,16 @@ export function BusinessGuideOverview({ track, lang }: { track: BusinessTrackId;
   }, [cues, speed, track]);
 
   useEffect(() => {
-    const supported = recorded
+    const supported = narrationAvailable && (recorded
       ? cues.every((item) => Boolean(recordings[item.text]))
-      : typeof window !== "undefined" && "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+      : typeof window !== "undefined" && "speechSynthesis" in window && "SpeechSynthesisUtterance" in window);
     setSpeechSupported(supported);
     setPlaying(false);
     setPaused(false);
     setStep(0);
     setVoiceError(null);
     return stopAudio;
-  }, [cues, recorded, stopAudio, track]);
+  }, [cues, narrationAvailable, recorded, stopAudio, track]);
 
   useEffect(() => {
     if (!playing) return;
@@ -186,8 +187,8 @@ export function BusinessGuideOverview({ track, lang }: { track: BusinessTrackId;
         <p>{config.description[lang]}</p>
       </div>
       <div className={s.inventoryNarration}>
-        <button type="button" onClick={toggleNarration} disabled={!speechSupported || Boolean(voiceError)} aria-pressed={activePlayback}>{activePlayback ? t.pause : t.play}</button>
-        <span role="status">{!speechSupported || voiceError ? t.unavailable : t.recorded}</span>
+        {narrationAvailable && <button type="button" onClick={toggleNarration} disabled={!speechSupported || Boolean(voiceError)} aria-pressed={activePlayback}>{activePlayback ? t.pause : t.play}</button>}
+        <span role="status">{!narrationAvailable ? (lang === "th" ? "อ่านคำบรรยายและกดถัดไปเพื่อดูแต่ละขั้น" : "Read the transcript and use Next to follow each step") : !speechSupported || voiceError ? t.unavailable : t.recorded}</span>
       </div>
     </div>
     {recorded && <audio ref={audioElement} preload="none" data-business-recorded-narration={track} />}
@@ -220,7 +221,7 @@ export function BusinessGuideOverview({ track, lang }: { track: BusinessTrackId;
             <button type="button" onClick={() => move(step - 1)} disabled={step === 0}>{t.previous}</button>
             <button type="button" onClick={() => move(step + 1)} disabled={step === cues.length - 1}>{t.next}</button>
             <button type="button" onClick={() => move(0)}>{t.restart}</button>
-            <label>{t.speed}<select value={speed} onChange={(event) => { stopAudio(); setPlaying(false); setPaused(false); setSpeed(Number(event.target.value)); }}><option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option></select></label>
+            {narrationAvailable && <label>{t.speed}<select value={speed} onChange={(event) => { stopAudio(); setPlaying(false); setPaused(false); setSpeed(Number(event.target.value)); }}><option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option></select></label>}
           </div>
         </div>
         <p aria-live={activePlayback ? "off" : "polite"}>{cue.text}</p>

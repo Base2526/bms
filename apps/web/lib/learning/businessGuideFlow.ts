@@ -51,6 +51,49 @@ const node = (
 ): BusinessFlowNode => ({ target, icon, title, description, narration, ...options });
 
 export const businessGuideFlows: Record<BusinessTrackId, BusinessGuideConfig> = {
+  "pet-supply": {
+    eyebrow: "PET SUPPLY · RETAIL POS",
+    heading: bi("จากถุงอาหารสัตว์ถึงบิลและสต็อกที่ตรวจได้", "From pet-food bag to verified bill and stock"),
+    description: bi("ตั้งสินค้าและล็อตจริง ขายด้วย Retail POS แล้วตรวจใบเสร็จ สต็อก และกะ", "Configure real products and lots, sell through retail POS, then verify receipt, stock and shift."),
+    flowTitle: bi("Flow ร้านขายอาหารสัตว์", "Pet supply workflow"),
+    flowNote: bi("pet_supply เป็น preset; ล็อต FEFO ขนาดบรรจุ และช่องทางขายต้องตั้งที่สินค้า", "pet_supply is a preset; configure lots, FEFO evidence, packs and sales surfaces per product."),
+    lanes: [
+      [
+        node("shop", "▣", bi("ร้าน / สาขา / คน", "Shop / branch / staff"), bi("สิทธิ์และ PIN", "Permissions and PIN"), bi("เลือก pet_supply ตั้งสาขา พนักงาน สิทธิ์ PIN และเครื่อง POS ก่อนขาย", "Choose pet_supply and configure branch, staff, permissions, PIN and register before selling.")),
+        node("product", "◆", bi("SKU / ขนาด / แพ็ก", "SKU / size / pack"), bi("ราคาแต่ละขนาด", "Price for each size"), bi("บาร์โค้ด variant และ Product Pack ต้องตรงฉลากจริง พร้อมราคาแต่ละขนาดที่ตรวจแล้ว", "Barcode, variant and Product Pack must match physical labels, with a verified price for each size.")),
+        node("receive", "⬢", bi("รับเข้า / ล็อต", "Receive / lot"), bi("สาขาและวันหมดอายุ", "Branch and expiry"), bi("รับของเข้าที่สาขาจริงพร้อมล็อตและวันหมดอายุ แล้วตรวจยอดพร้อมขาย", "Receive into the physical branch with lot and expiry, then check sellable stock.")),
+        node("shift", "▣", bi("เปิดกะ", "Open shift"), bi("ผู้ขายและเงินตั้งต้น", "Cashier and float"), bi("พนักงานเปิดกะบนเครื่องที่จับคู่ ตรวจเงินตั้งต้นและสาขา", "The cashier opens a shift on the paired register and checks float and branch.")),
+        node("sale", "▥", bi("สแกน / ขาย", "Scan / sell"), bi("ตรวจแพ็กและสต็อก", "Check pack and stock"), bi("POS ตรวจ SKU ขนาด ราคาแพ็ก สต็อกสาขาและล็อตที่ขายได้ก่อนยืนยัน", "POS checks SKU, size, pack price, branch stock and eligible lot before settlement.")),
+        node("receipt", "✓", bi("ใบเสร็จ / ตัดสต็อก", "Receipt / stock"), bi("ยอดจากบิลจริง", "Actual bill amount"), bi("ขายสำเร็จแล้วตรวจใบเสร็จ movement ยอดคงเหลือ และรายงานกะ", "After success, verify receipt, movement, remaining stock and shift report."), { tone: "green" }),
+      ],
+      [
+        node("customer", "●", bi("ลูกค้าถาม / ซื้อซ้ำ", "Ask / reorder"), bi("ประวัติที่ตรวจได้", "Verified history"), bi("AI ตรวจ catalog แพ็ก ราคา สต็อก และออร์เดอร์ที่ผูกลูกค้าจริงก่อนตอบหรือ reorder", "AI checks catalog, packs, prices, stock and linked prior orders before replying or reordering."), { ai: "customer" }),
+        node("order", "▰", bi("ออร์เดอร์ออนไลน์", "Online order"), bi("ช่องทางที่เปิดจริง", "Enabled channel"), bi("ออร์เดอร์ออนไลน์ต้องใช้ช่องทางที่เชื่อมจริงและยืนยันรายการก่อน backend ตรวจอีกครั้ง", "Online orders require a connected channel and confirmed items before backend validation.")),
+        node("restock", "◇", bi("แจ้งของเข้า", "Restock notice"), bi("ลูกค้ายินยอม", "Customer consent"), bi("สมัครแจ้งเมื่อสินค้าเข้าสต็อกได้หลังลูกค้ายินยอมชัดเจน", "Subscribe to restock notices only after explicit customer consent.")),
+      ],
+      [
+        node("return", "↶", bi("คืน / Void", "Return / void"), bi("บิลเดิมและผู้อนุมัติ", "Original bill and approver"), bi("คืนจากบิลเดิมและตรวจล็อต; Void ต้องมี PIN ผู้อนุมัติอีกคน", "Return from the original bill with lot reconciliation; void needs a second approver PIN."), { tone: "red" }),
+        node("owner", "▥", bi("ตรวจยอด / ตัดสินใจ", "Review / decide"), bi("รายงานตามสิทธิ์", "Permission-scoped reports"), bi("เจ้าของตรวจยอดขาย สต็อก ล็อต และกะจากหลักฐานจริง การเปลี่ยนยอดต้องให้คนมีสิทธิ์ยืนยัน", "Owners inspect sales, stock, lots and shifts from actual records; authorized people confirm changes."), { ai: "owner" }),
+      ],
+    ],
+    customer: {
+      title: bi("ลูกค้าถามผ่านช่องทางที่เชื่อมแล้ว", "Customers ask on a connected channel"),
+      question: bi("อาหารแมวถุง 1 กก. ที่เคยซื้อยังมีไหม?", "Is my previous 1 kg cat food bag available?"),
+      answer: bi("AI ตรวจประวัติที่ผูกตัวตน catalog ขนาด ราคาและสต็อกก่อนตอบ ถ้าไม่พบประวัติจะถามชื่อสินค้า", "AI checks linked order history, catalog, size, price and stock. If history is absent it asks for the product."),
+      capabilities: { th: ["ค้นสินค้าที่เผยแพร่", "ตรวจแพ็กและสต็อก", "สั่งซ้ำจากออร์เดอร์จริง", "รับความยินยอมแจ้งของเข้า"], en: ["Search published products", "Check packs and stock", "Reorder a real order", "Obtain consent for restock notices"] },
+      limit: bi("AI ไม่วินิจฉัยโรค ไม่รับรองอาหารเฉพาะโรคหรือการรักษา ส่งต่อสัตวแพทย์", "AI does not diagnose or certify therapeutic diets or treatment; hand off to a veterinarian."), focusTarget: "customer",
+    },
+    owner: {
+      title: bi("เจ้าของตรวจงานจากข้อมูลที่บันทึก", "Owners review recorded operations"),
+      question: bi("อาหารแมวเหลือกี่ถุง ล็อตไหนใกล้หมดอายุ และยอดขายกะนี้เท่าไร?", "How many bags remain, which lot expires soon and what were this shift's sales?"),
+      metrics: { th: [{ label: "สต็อก", value: "ตามสาขา" }, { label: "ล็อต", value: "จากการรับเข้า" }, { label: "ยอดขาย", value: "จากบิลจริง" }], en: [{ label: "Stock", value: "By branch" }, { label: "Lot", value: "From receipts" }, { label: "Sales", value: "Actual bills" }] },
+      analyses: { th: ["ตรวจยอด 10 → 9 จาก movement", "เทียบล็อตและวันหมดอายุ", "กระทบยอดกะและเงินสด", "ระบุข้อมูลที่ยังไม่ทราบ"], en: ["Check 10 → 9 from movement", "Review lots and expiry", "Reconcile shift cash", "Flag unknown facts"] },
+      limit: bi("ตัวเลขนี้เป็นตัวอย่าง AI เปลี่ยนราคา คืนเงิน หรือปรับสต็อกเองไม่ได้", "These figures are examples. AI cannot change price, refund or adjust stock by itself."), focusTarget: "owner", formats: ["XLSX", "CSV", "PDF"],
+    },
+    authority: { th: ["pet_supply ใช้ Retail POS", "Pack และราคาต้องตรวจต่อขนาด", "ล็อต/FEFO ต้องตั้งและรับข้อมูลจริง", "สุขภาพสัตว์ส่งต่อผู้เชี่ยวชาญ"], en: ["pet_supply uses retail POS", "Verify packs and prices per size", "Lots/FEFO need configured, received evidence", "Refer animal health questions to specialists"] },
+    architecture: { th: ["สินค้า / แพ็ก", "รับเข้า / ล็อต", "Retail POS / ชำระเงิน", "ใบเสร็จ / สต็อก", "รายงาน / ลูกค้า"], en: ["Product / pack", "Receipt / lot", "Retail POS / payment", "Receipt / stock", "Reports / customer"] },
+    guideSlug: "pet-supply-rehearsal",
+  },
   "building-materials": {
     eyebrow: "PILOT · BUILDING MATERIALS",
     heading: bi("จากสินค้าและสเปก สู่ใบเสนอราคาและการส่งมอบ", "From catalog and specs to quotations and handoff"),

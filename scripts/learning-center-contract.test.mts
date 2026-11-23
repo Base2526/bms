@@ -40,8 +40,8 @@ test("public learning paths resolve unique bilingual lessons and real action des
     const path = getTrackLessons(track);
     assert.equal(path.length, trackOrder[track].length);
     assert.equal(new Set(path.map((lesson) => lesson.slug)).size, path.length);
-    assert.equal(path[0].slug, track === "inventory" ? "inventory-overview" : "start-here");
-    assert.equal(path.at(-1)?.slug, track === "inventory" ? "inventory-rehearsal" : track === "building-materials" ? "building-materials-rehearsal" : "launch-checklist");
+    assert.equal(path[0].slug, track === "inventory" ? "inventory-overview" : track === "pet-supply" ? "pet-supply-start" : "start-here");
+    assert.equal(path.at(-1)?.slug, track === "inventory" ? "inventory-rehearsal" : track === "building-materials" ? "building-materials-rehearsal" : track === "pet-supply" ? "pet-supply-launch" : "launch-checklist");
     for (const lesson of path) assert.ok(lesson.tracks.includes(track));
     assert.deepEqual(new Set(path.map((lesson) => lesson.slug)), new Set(lessons.filter((lesson) => lesson.tracks.includes(track)).map((lesson) => lesson.slug)));
   }
@@ -87,7 +87,7 @@ test("getting-started path is ordered, public, bilingual and linked from task pa
 });
 
 test("inventory is a cross-business specialist guide with the complete controlled stock lifecycle", () => {
-  assert.deepEqual(businessTrackIds, ["retail", "board-game", "restaurant", "pharmacy", "building-materials"]);
+  assert.deepEqual(businessTrackIds, ["retail", "board-game", "restaurant", "pharmacy", "pet-supply", "building-materials"]);
   assert.deepEqual(specialistTrackIds, ["inventory"]);
   const path = getTrackLessons("inventory");
   const slugs = path.map((lesson) => lesson.slug);
@@ -131,7 +131,7 @@ test("inventory Thai narration ships one verified recording for every highlighte
   }
 });
 
-test("all five business overviews ship bilingual flows and verified Thai narration", () => {
+test("business overviews ship bilingual flows and verified recordings where authored", () => {
   const manifest = JSON.parse(readFileSync(new URL("../apps/web/app/learn/businessThaiAudio.json", import.meta.url), "utf8"));
   const provenance = JSON.parse(readFileSync(new URL("../apps/web/public/audio/learning-business/th/provenance.json", import.meta.url), "utf8"));
   assert.deepEqual(new Set(Object.keys(businessGuideFlows)), new Set(businessTrackIds));
@@ -149,6 +149,7 @@ test("all five business overviews ship bilingual flows and verified Thai narrati
       }
     }
     for (const { text } of businessNarrationCues(track, "th")) {
+      if (track === "pet-supply") continue; // The visual and transcript work without a recording.
       const id = createHash("sha256").update(`${track}\0${text}`).digest("hex").slice(0, 24);
       const recording = manifest[text];
       assert.equal(recording.file, `/audio/learning-business/th/${id}.mp3`);
@@ -168,6 +169,26 @@ test("all five business overviews ship bilingual flows and verified Thai narrati
   assert.match(businessNarrationCues("board-game", "th").at(-1)?.text ?? "", /แอดมิน.*รายได้ต่อโต๊ะ.*โนโชว์.*ส่งออกรายงาน.*ยืนยัน/);
   assert.match(businessNarrationCues("restaurant", "th").at(-1)?.text ?? "", /แอดมิน.*ยอดเฉลี่ยต่อบิล.*ฟู้ดคอสต์.*คอขวด.*ส่งออกรายงาน.*ยืนยัน/);
   assert.match(businessNarrationCues("pharmacy", "th").at(-1)?.text ?? "", /แอดมิน.*วันหมดอายุ.*คิวที่รอเภสัชกร.*ไม่วินิจฉัย.*เภสัชกรที่มีใบอนุญาต/);
+});
+
+test("pet supply guide keeps retail authority and covers the complete fictional rehearsal", () => {
+  assert.equal(isTrack("pet-supply"), true);
+  const path = getTrackLessons("pet-supply");
+  assert.equal(path.length, 11);
+  for (const lesson of path) {
+    assert.ok(lesson.example?.th && lesson.example?.en, lesson.slug);
+    assert.equal(lesson.reviewedAt, "2026-11-23");
+  }
+  const copy = path.flatMap((lesson) => [lesson.title, lesson.summary, lesson.prerequisite, ...lesson.steps, lesson.example!, lesson.check, lesson.caution]);
+  for (const lang of ["th", "en"] as const) {
+    const body = copy.map((part) => part[lang]).join(" ");
+    for (const token of ["pet_supply", "RETAIL_POS", "WEIGHTED_PRODUCT", "GRAM", "FEFO", "CAT-FOOD-1KG", "10", "9", "PIN", "AI"]) assert.ok(body.includes(token), `${lang}: ${token}`);
+  }
+  const layout = readFileSync(new URL("../apps/web/app/learn/layout.tsx", import.meta.url), "utf8");
+  assert.match(layout, /path: "\/learn\/pet-supply"/);
+  assert.match(layout, /LearningMenuLink key=\{link.path\}/);
+  assert.ok(searchLessons("อาหารแมว", "th", "pet-supply").length > 0);
+  assert.ok(searchLessons("cat food", "en", "pet-supply").length > 0);
 });
 
 test("building-materials pilot path covers real workflows and explicit gaps in both languages", () => {

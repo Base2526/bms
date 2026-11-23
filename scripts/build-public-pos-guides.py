@@ -7,6 +7,7 @@ with scripts/export-public-pos-guides-pdf.ps1 so Word and PDF share one source.
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 from docx import Document
@@ -21,11 +22,13 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "docs" / "public-pos-guides"
 OUTPUT = ROOT / "apps" / "web" / "public" / "guides" / "pos"
 DATE = "21 พฤศจิกายน 2026"
+PET_SUPPLY_DATE = "23 พฤศจิกายน 2026"
 GUIDES = {
     "retail": ("ร้านค้าปลีกและค้าส่ง", False),
     "board-game": ("ร้านบอร์ดเกม", False),
     "restaurant": ("ร้านอาหารและคาเฟ่", False),
     "pharmacy": ("ร้านขายยา", False),
+    "pet-supply": ("ร้านขายอาหารสัตว์", False),
     "building-materials": ("ร้านวัสดุก่อสร้าง", True),
 }
 
@@ -127,7 +130,7 @@ def add_field(paragraph, instruction):
         run._r.append(node)
 
 
-def configure(doc, pilot, label):
+def configure(doc, pilot, label, date):
     doc.settings.odd_and_even_pages_header_footer = True
     section = doc.sections[0]
     section.page_width = Inches(8.5)
@@ -165,7 +168,7 @@ def configure(doc, pilot, label):
             set_font(run)
     for footer in (section.footer.paragraphs[0], section.even_page_footer.paragraphs[0]):
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = footer.add_run(f"BMS POS+ | {label} | {DATE}")
+        run = footer.add_run(f"BMS POS+ | {label} | {date}")
         run.font.size = Pt(8)
         set_font(run)
         footer.add_run("  |  หน้า ")
@@ -219,6 +222,7 @@ def parse_rows(lines):
 
 
 def build_one(slug, label, pilot):
+    date = PET_SUPPLY_DATE if slug == "pet-supply" else DATE
     source = SOURCE / f"{slug}-th.md"
     lines = []
     for line in source.read_text(encoding="utf-8").splitlines():
@@ -232,7 +236,7 @@ def build_one(slug, label, pilot):
     if not lines or not lines[0].startswith("# "):
         raise ValueError(f"missing title: {source}")
     doc = Document()
-    configure(doc, pilot, label)
+    configure(doc, pilot, label, date)
     title = lines[0][2:].strip()
     title_paragraph = doc.add_paragraph(title, "Title")
     title_ppr = title_paragraph._p.get_or_add_pPr()
@@ -242,7 +246,7 @@ def build_one(slug, label, pilot):
         p = doc.add_paragraph()
         add_inline(p, "**PILOT / คู่มือทดลอง / ยังไม่พร้อมใช้ครบ / ไม่ยืนยันว่าใช้งานบน production ได้**")
     intro = doc.add_paragraph()
-    add_inline(intro, f"ฉบับทบทวน {DATE} · ภาษาไทย · ข้อมูลสินค้า ราคา และบุคคลในตัวอย่างเป็นข้อมูลสมมติ")
+    add_inline(intro, f"ฉบับทบทวน {date} · ภาษาไทย · ข้อมูลสินค้า ราคา และบุคคลในตัวอย่างเป็นข้อมูลสมมติ")
     link = doc.add_paragraph()
     add_inline(link, f"ฉบับออนไลน์ล่าสุด: [BMS POS+ ศูนย์เรียนรู้](https://bms.jachoei.com/th/learn/{slug})")
     headings = [line[3:].strip() for line in lines if line.startswith("## ")]
@@ -297,5 +301,9 @@ def build_one(slug, label, pilot):
 
 
 if __name__ == "__main__":
-    for slug, (label, pilot) in GUIDES.items():
+    requested = sys.argv[1:]
+    if requested and any(slug not in GUIDES for slug in requested):
+        raise SystemExit(f"Unknown guide: {', '.join(slug for slug in requested if slug not in GUIDES)}")
+    for slug in (requested or GUIDES):
+        label, pilot = GUIDES[slug]
         build_one(slug, label, pilot)

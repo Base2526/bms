@@ -1,9 +1,10 @@
 import { resolveBilingual, type Bilingual } from "@/lib/static-page-i18n";
 import { buildingMaterialsLessons } from "./buildingMaterialsLessons";
+import { petSupplyLessons } from "./petSupplyLessons";
 import { gettingStartedLessons } from "./gettingStartedLessons";
 
 export const LEARNING_REVIEWED_AT = "2026-10-28";
-export type TrackId = "getting-started" | "retail" | "board-game" | "restaurant" | "pharmacy" | "building-materials" | "inventory";
+export type TrackId = "getting-started" | "retail" | "board-game" | "restaurant" | "pharmacy" | "pet-supply" | "building-materials" | "inventory";
 export type RestaurantFormat = "dine-in" | "counter-kitchen" | "pickup-delivery";
 export type RetailFormat = "general" | "variants" | "food-counter" | "wholesale";
 export type TrackFormat = RestaurantFormat | RetailFormat;
@@ -46,7 +47,7 @@ export const categoryLabels = {
 
 // Authored public instructions only. Never import internal tool catalogs, tenant records or secrets.
 const everyTrack: TrackId[] = ["retail", "board-game", "restaurant", "pharmacy", "building-materials"];
-export const businessTrackIds = ["retail", "board-game", "restaurant", "pharmacy", "building-materials"] as const;
+export const businessTrackIds = ["retail", "board-game", "restaurant", "pharmacy", "pet-supply", "building-materials"] as const;
 export const specialistTrackIds = ["inventory"] as const;
 const all: Role[] = ["owner", "manager", "cashier", "pharmacist"];
 const managers: Role[] = ["owner", "manager"];
@@ -1236,6 +1237,7 @@ export const lessons: Lesson[] = [
     caution: bi("การทดสอบหน้าเว็บไม่พิสูจน์เครื่องสแกน เครื่องพิมพ์ เครือข่าย หรือฐาน Production ต้องซ้อมอุปกรณ์และแผนย้อนกลับแยก", "Web tests do not prove scanners, printers, networking or production data; rehearse hardware and rollback separately."),
   },
   ...buildingMaterialsLessons,
+  ...petSupplyLessons,
 ];
 
 export const tracks: Record<TrackId, { title: Localized; description: Localized; icon: string }> = {
@@ -1244,6 +1246,7 @@ export const tracks: Record<TrackId, { title: Localized; description: Localized;
   "board-game": { title: bi("ร้านบอร์ดเกม", "Board-game cafe"), description: bi("จากโต๊ะว่าง สู่รอบเล่นแรกและปิดกะอย่างมั่นใจ", "From an empty floor to your first session and reconciled shift."), icon: "🎲" },
   restaurant: { title: bi("ร้านอาหารและคาเฟ่", "Restaurants & cafes"), description: bi("สำหรับร้านที่ใช้ Restaurant POS บิลโต๊ะหรือ TAKEAWAY รอบส่งครัว และ Kitchen Board; คาเฟ่ขายหน้าเคาน์เตอร์ทั่วไปอยู่ในคู่มือค้าปลีก", "For shops using Restaurant POS, table or TAKEAWAY checks, kitchen rounds and Kitchen Board; ordinary counter cafes use the retail guide."), icon: "🍽" },
   pharmacy: { title: bi("ร้านขายยา", "Pharmacy"), description: bi("ตั้งสินค้าและนโยบายขาย ทำงานที่เคาน์เตอร์และ Pharmacy Queue โดยให้เภสัชกรมีใบอนุญาตเป็นผู้ตัดสินทุกเรื่องทางคลินิก", "Configure products and sale policy, then operate counter and Pharmacy Queue workflows while every clinical decision remains with a licensed pharmacist."), icon: "⚕️" },
+  "pet-supply": { title: bi("ร้านขายอาหารสัตว์", "Pet supply store"), description: bi("อาหาร ขนม ทรายแมว และอุปกรณ์สัตว์เลี้ยงบน POS ค้าปลีก: ตั้งขนาดบรรจุ รับล็อต ขาย ตรวจสต็อก และตอบลูกค้าจากข้อมูลที่ตรวจได้", "Pet food, treats, litter and accessories on retail POS: configure packs, receive lots, sell, check stock and answer from verified facts."), icon: "🐾" },
   "building-materials": { title: bi("ร้านวัสดุก่อสร้าง (ทดลอง)", "Building materials (pilot)"), description: bi("คู่มือทดลองสำหรับสินค้าเป็นถุง/พาเลท ใบเสนอราคา ขายเชื่อ และรับของที่สาขา; งานตัดจากม้วน ส่งหลายเที่ยว และเจ้าหนี้ยังไม่ครบ", "Pilot guide for bags/pallets, quotations, credit sales and branch pickup; roll cutting, multi-trip delivery and payables remain incomplete."), icon: "🧱" },
   inventory: { title: bi("สต็อกและคลังสินค้า", "Inventory & warehouse"), description: bi("คู่มือเฉพาะงานที่ใช้ร่วมทุกประเภทร้าน ตั้ง Catalog รับเข้า เติมสินค้า โอน ตรวจนับ จอง กักกัน ของเสีย และกระทบยอด", "A cross-business specialist guide for catalog, receiving, replenishment, transfers, counts, reservations, quarantine, wastage and reconciliation."), icon: "📦" },
 };
@@ -1284,6 +1287,10 @@ export const trackOrder: Record<TrackId, string[]> = {
     "pharmacy-counter-sale", "pharmacy-intake-queue", "pharmacy-evidence-privacy", "expenses-input-vat", "pharmacy-guidance-protocols",
     "returns-recovery", "reports-ai", "pharmacy-emergency-boundary", "outages-support", "pharmacy-rehearsal", "launch-checklist",
   ],
+  "pet-supply": [
+    "pet-supply-start", "pet-supply-team-pos", "pet-supply-products", "pet-supply-packs", "pet-supply-weighted",
+    "pet-supply-receiving", "pet-supply-sale", "pet-supply-customer", "pet-supply-recovery", "pet-supply-rehearsal", "pet-supply-launch",
+  ],
   "building-materials": [
     "start-here", "branches-hours", "staff-permissions", "building-materials-packs", "building-materials-variants",
     "building-materials-specs", "products-import", "inventory", "tax-receipts", "pos-devices", "desktop-hardware",
@@ -1315,7 +1322,7 @@ export function getTrackLessons(track: TrackId, format?: TrackFormat) {
     .filter((lesson) => track !== "retail" || !format || !isRetailFormat(format) || lessonSupportsRetailFormat(lesson, format))
     .sort((a, b) => categories.indexOf(a.category) - categories.indexOf(b.category));
 }
-export function isTrack(value: string): value is TrackId { return value === "getting-started" || value === "retail" || value === "board-game" || value === "restaurant" || value === "pharmacy" || value === "building-materials" || value === "inventory"; }
+export function isTrack(value: string): value is TrackId { return value === "getting-started" || value === "retail" || value === "board-game" || value === "restaurant" || value === "pharmacy" || value === "pet-supply" || value === "building-materials" || value === "inventory"; }
 export function isRestaurantFormat(value: string): value is RestaurantFormat {
   return value === "dine-in" || value === "counter-kitchen" || value === "pickup-delivery";
 }

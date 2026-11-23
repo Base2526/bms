@@ -4,7 +4,7 @@ import { absolutePublicUrl, localizedPublicPath, PUBLIC_SEO_LOCALES } from "@/li
 export default function sitemap(): MetadataRoute.Sitemap {
   const entries = [
     { path: "/learn", reviewedAt: "2026-11-19" },
-    ...(Object.keys(trackOrder) as Array<keyof typeof trackOrder>).map((track) => ({ path: `/learn/${track}`, reviewedAt: track === "building-materials" ? "2026-11-19" : LEARNING_REVIEWED_AT })),
+    ...(Object.keys(trackOrder) as Array<keyof typeof trackOrder>).map((track) => ({ path: `/learn/${track}`, reviewedAt: track === "pet-supply" ? "2026-11-23" : track === "building-materials" ? "2026-11-19" : LEARNING_REVIEWED_AT })),
     ...lessons.map((lesson) => ({ path: `/learn/guides/${lesson.slug}`, reviewedAt: lesson.reviewedAt ?? LEARNING_REVIEWED_AT })),
   ];
   return PUBLIC_SEO_LOCALES.flatMap((locale) => entries.map(({ path, reviewedAt }) => ({
