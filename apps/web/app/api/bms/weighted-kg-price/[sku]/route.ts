@@ -8,10 +8,10 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function handleGET(req: NextRequest, {params}:{params:{sku:string}}) {
+async function handleGET(req: NextRequest, {params}:{params: Promise<{sku:string}>}) {
   const auth = await authorizeAdminRoute("product.view");
   if (!auth.ok) return NextResponse.json({error:auth.status===401?"unauthorized":"forbidden"},{status:auth.status});
-  const sku = params.sku?.trim();
+  const sku = (await params).sku?.trim();
   const size = req.nextUrl.searchParams.get("size")?.trim();
   if (!sku || !size) return NextResponse.json({status:"INVALID_INPUT"},{status:400});
   const rate = await currentWeightedKgRate({query},auth.tenantId,sku,size);
@@ -20,12 +20,12 @@ async function handleGET(req: NextRequest, {params}:{params:{sku:string}}) {
   }:null});
 }
 
-async function handlePOST(req: NextRequest, {params}:{params:{sku:string}}) {
+async function handlePOST(req: NextRequest, {params}:{params: Promise<{sku:string}>}) {
   const auth = await authorizeAdminRoute("product.weighted_price.publish");
   if (!auth.ok) return NextResponse.json({error:auth.status===401?"unauthorized":"forbidden"},{status:auth.status});
   const body = await req.json().catch(() => null);
   const result = await publishWeightedKgRate(auth.tenantId,String(auth.adminId),{
-    sku:params.sku,size:body?.size,rateBahtPerKg:body?.rateBahtPerKg,
+    sku:(await params).sku,size:body?.size,rateBahtPerKg:body?.rateBahtPerKg,
     requestKey:body?.requestKey,confirmed:body?.confirmed===true,
   });
   return NextResponse.json(result,{status:result.status==="PUBLISHED"?200

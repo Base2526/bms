@@ -353,7 +353,7 @@ const MENU_CARD_TINTS = [
 // ภาพอาหารบนการ์ด — วาดด้วย SVG ในโค้ด ไม่โหลดจาก CDN ตามเหตุผลเดียวกับที่หน้านี้
 // ไม่โหลดฟอนต์ภายนอก (จอนี้ต้องทำงานตอนเน็ตร้านหลุด) · ใช้เมื่อสินค้ายังไม่มีรูปจริง
 // ถ้าร้านอัปโหลดรูปเมนูไว้ที่ /admin/products รูปจริงชนะเสมอ
-const DISH_ART: Record<string, (a: string) => JSX.Element> = {
+const DISH_ART: Record<string, (a: string) => React.JSX.Element> = {
   RICE: (a) => <svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true">
     <ellipse cx="50" cy="64" rx="34" ry="15" fill={a} opacity=".28" />
     <path d="M20 62c0-13 13-22 30-22s30 9 30 22z" fill={a} />

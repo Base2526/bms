@@ -6,14 +6,14 @@ import { readRetailLocalJSON, RetailLocalRequestBodyError } from "@/lib/bms/reta
 
 export const dynamic = "force-dynamic";
 
-async function handlePATCH(request: NextRequest, { params }: { params: { id: string } }) {
+async function handlePATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizePlatformAdminRoute();
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
   if (request.headers.get("origin") !== request.nextUrl.origin) return NextResponse.json({ error: "invalid_origin" }, { status: 403 });
   try {
     const body = await readRetailLocalJSON(request, 16_384) as Record<string, unknown> | null;
     const lead = await updateRetailLocalLead({
-      id: params.id,
+      id: (await params).id,
       adminId: auth.adminId,
       status: body?.status,
       note: body?.note,
@@ -35,12 +35,12 @@ export const PATCH = withRouteErrorLog("PATCH /api/admin/retail-local/leads/[id]
 
 // PDPA erasure on request: clears the lead's contact details and history snapshots
 // (10.106). Same platform-admin and same-origin gates as PATCH. Returns no PII.
-async function handleDELETE(request: NextRequest, { params }: { params: { id: string } }) {
+async function handleDELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizePlatformAdminRoute();
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
   if (request.headers.get("origin") !== request.nextUrl.origin) return NextResponse.json({ error: "invalid_origin" }, { status: 403 });
   try {
-    const result = await eraseRetailLocalLead({ id: params.id, adminId: auth.adminId });
+    const result = await eraseRetailLocalLead({ id: (await params).id, adminId: auth.adminId });
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof RetailLocalLeadError) {

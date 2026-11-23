@@ -6,15 +6,15 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function handleGET(_req: Request, { params }: { params: { id: string } }) {
+async function handleGET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeAdminRoute("delivery.settlement.view");
   if (!auth.ok) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: auth.status });
   try {
-    const bytes = await readDeliveryDisputeEvidence(auth.tenantId, Number(params.id));
+    const bytes = await readDeliveryDisputeEvidence(auth.tenantId, Number((await params).id));
     return new NextResponse(new Uint8Array(bytes), {
       headers: {
         "Content-Type": "image/webp",
-        "Content-Disposition": `attachment; filename="delivery-dispute-evidence-${params.id}.webp"`,
+        "Content-Disposition": `attachment; filename="delivery-dispute-evidence-${(await params).id}.webp"`,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
       },

@@ -1,4 +1,5 @@
-'use client';
+'use client';;
+import { use } from "react";
 import { useQuery, gql } from "@apollo/client";
 import { Descriptions, Card } from "antd";
 
@@ -18,6 +19,7 @@ function PostPage({ id }:{id:string}){
           </Card>;
 }
 
-export default function Page({ params }:{ params:{ id:string }}){
+export default function Page(props:{ params: Promise<{ id:string }>}) {
+  const params = use(props.params);
   return <PostPage id={params.id}/>;
 }

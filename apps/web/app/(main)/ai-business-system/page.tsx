@@ -114,18 +114,18 @@ const CONTENT: Record<PublicSeoLocale, AuthorityPageContent> = {
   },
 };
 
-function locale(): PublicSeoLocale {
-  return cookies().get("lang")?.value === "en" ? "en" : "th";
+async function locale(): Promise<PublicSeoLocale> {
+  return (await cookies()).get("lang")?.value === "en" ? "en" : "th";
 }
 
-export function generateMetadata(): Metadata {
-  const lang = locale();
+export async function generateMetadata(): Promise<Metadata> {
+  const lang = await locale();
   const content = CONTENT[lang];
   return publicPageMetadata({ path: "/ai-business-system", locale: lang, title: content.title, description: content.intro });
 }
 
-export default function AiBusinessSystemPage() {
-  const lang = locale();
+export default async function AiBusinessSystemPage() {
+  const lang = await locale();
   const content = CONTENT[lang];
   return (
     <>

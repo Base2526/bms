@@ -20,7 +20,7 @@ export function FactoryGuideOverview({ lang }: { lang: Lang }) {
   const [speechSupported, setSpeechSupported] = useState(false);
   const [voiceError, setVoiceError] = useState(false);
   const audioElement = useRef<HTMLAudioElement>(null);
-  const audioPlayer = useRef<RecordedNarration>();
+  const audioPlayer = useRef<RecordedNarration | undefined>(undefined);
   const activeKey = useRef<string | null>(null);
   const recorded = lang === "th" && nodes.every((node, index) => recordings[String(index)]?.text === node.explanation.th);
 

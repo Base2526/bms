@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import * as crypto from "node:crypto";
 import * as bodyReader from "../apps/web/lib/bms/retailLocalRequestBody.ts";
+import * as webhookBody from "../apps/web/lib/bms/webhookBody.ts";
 import { checkoutFixture } from "./testing/restaurantCheckoutHarness.mts";
 
 const require = createRequire(new URL("../apps/web/package.json", import.meta.url));
@@ -46,6 +47,7 @@ function harness(options: { blocked?: "ip" | "token"; invalidToken?: boolean; ch
     "./routeHelpers": helper,
     "../routeHelpers": helper,
     "@/lib/bms/retailLocalRequestBody": bodyReader,
+    "@/lib/bms/webhookBody": webhookBody,
     "@/lib/bms/checkout": {
       getCheckoutByToken: async (token: string) => {
         calls.push(`read:${token}`);

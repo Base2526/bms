@@ -1,8 +1,8 @@
 import { cookies } from "next/headers";
 import { publicPageMetadata, type PublicSeoLocale } from "@/lib/publicSeo";
 
-export function generateMetadata() {
-  const locale: PublicSeoLocale = cookies().get("lang")?.value === "en" ? "en" : "th";
+export async function generateMetadata() {
+  const locale: PublicSeoLocale = (await cookies()).get("lang")?.value === "en" ? "en" : "th";
   return publicPageMetadata({ path: "/support", locale,
     title: locale === "th" ? "ติดต่อทีม BMS POS+" : "Contact BMS POS+ support",
     description: locale === "th" ? "ช่องทางติดต่อทีม BMS POS+ สำหรับคำถามการใช้งาน ปัญหาหน้างาน และข้อมูลที่ต้องการให้ทีมตรวจสอบ" : "Contact BMS POS+ for product questions, operational issues and cases that need team review." });

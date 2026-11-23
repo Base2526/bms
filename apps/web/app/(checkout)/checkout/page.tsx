@@ -7,13 +7,13 @@ import styles from "./checkout.module.css";
 export const dynamic = "force-dynamic";
 
 type CheckoutPageProps = {
-  searchParams?: Promise<{ t?: string }> | { t?: string };
+  searchParams?: Promise<{ t?: string }>;
 };
 
 export default async function CheckoutPage({
   searchParams,
 }: CheckoutPageProps) {
-  const lang = (cookies().get("lang")?.value === "en" ? "en" : "th") as Lang;
+  const lang = ((await cookies()).get("lang")?.value === "en" ? "en" : "th") as Lang;
   const t = (key: string) => getMessage(lang, key);
 
   const params = await searchParams;

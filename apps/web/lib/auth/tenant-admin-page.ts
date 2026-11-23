@@ -6,7 +6,7 @@ import { query } from "@/lib/db";
 // Gate หน้าเครื่องมือระดับผู้ดูแลร้าน:
 // Administrator ของร้านเข้าได้ และ platform admin เข้าได้ตอน drill-down/ดูแลระบบ.
 export async function requireTenantAdministratorPage() {
-  const admin = verifyAdminSession();
+  const admin = await verifyAdminSession();
   if (!admin) redirect("/admin/login");
 
   let ok = false;

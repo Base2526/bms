@@ -9,6 +9,7 @@ import { buildFileUrlById, persistWebFile } from "@/lib/storage";
 import sharp, { type Metadata } from "sharp";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 import { requireCheckoutRateLimit } from "../routeHelpers";
+import { readBoundedFormData } from "@/lib/bms/webhookBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,12 +30,10 @@ function response(body: unknown, status = 200) {
 async function handlePOST(req: NextRequest) {
   const limited = await requireCheckoutRateLimit(req, "payment");
   if (limited) return limited;
-  const contentLength = Number(req.headers.get("content-length") || 0);
-  if (contentLength > MAX_REQUEST_BYTES) {
-    return response({ error: "รูปสลิปต้องมีขนาดไม่เกิน 8 MB" }, 413);
-  }
-  const form = await req.formData().catch(() => null);
-  if (!form) return response({ error: "ข้อมูลที่ส่งมาไม่ถูกต้อง" }, 400);
+  const parsed = await readBoundedFormData(req, MAX_REQUEST_BYTES);
+  if (!parsed.ok) return response({ error: parsed.status === 413
+    ? "รูปสลิปต้องมีขนาดไม่เกิน 8 MB" : "ข้อมูลที่ส่งมาไม่ถูกต้อง" }, parsed.status);
+  const form = parsed.form;
 
   const token = String(form.get("token") || "");
   const method = String(form.get("method") || "") as PaymentMethod;

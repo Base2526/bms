@@ -11,7 +11,7 @@ export default function CostFlow({ lang }: { lang: Lang }) {
   const c = resolveBilingual(costCopy, lang);
   const [step, setStep] = useState(0), [playing, setPlaying] = useState(false);
   const [sound, setSound] = useState(true), [rate, setRate] = useState(1), [failed, setFailed] = useState(false);
-  const element = useRef<HTMLAudioElement>(null), player = useRef<RecordedNarration>();
+  const element = useRef<HTMLAudioElement>(null), player = useRef<RecordedNarration | undefined>(undefined);
   const current = steps[step][lang];
   const start = useCallback((target: number) => {
     if (!element.current) return;

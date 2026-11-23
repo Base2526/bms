@@ -5,8 +5,8 @@ import { HeaderDropdown, LanguageControl, LearningMenuLink, MobileNavigation, St
 import s from "./learning.module.css";
 import { localizedPublicPath } from "@/lib/publicSeo";
 
-export default function LearningLayout({ children }: { children: React.ReactNode }) {
-  const lang = cookies().get("lang")?.value === "en" ? "en" : "th";
+export default async function LearningLayout({ children }: { children: React.ReactNode }) {
+  const lang = (await cookies()).get("lang")?.value === "en" ? "en" : "th";
   const businessLinks = [
     { path: "/learn/retail", icon: "🛒", th: "ค้าปลีกและค้าส่ง", en: "Retail & wholesale" },
     { path: "/learn/board-game", icon: "🎲", th: "บอร์ดเกม", en: "Board games" },

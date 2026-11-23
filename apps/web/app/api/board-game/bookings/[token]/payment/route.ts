@@ -21,7 +21,7 @@ function response(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-async function handlePOST(req: NextRequest, { params }: { params: { token: string } }) {
+async function handlePOST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   const limited = await rateLimit(`board-game-public-booking-payment:${ip}`, 10, 60 * 60_000);
   if (!limited.ok) {
@@ -54,10 +54,10 @@ async function handlePOST(req: NextRequest, { params }: { params: { token: strin
     if (!metadata.format || !SLIP_FORMATS.has(metadata.format) || !metadata.width || !metadata.height) {
       return response({ error: "ไฟล์สลิปไม่ใช่รูปภาพที่รองรับ" }, 400);
     }
-    const owner = await getPublicBoardGameReservationUploadContext(params.token);
+    const owner = await getPublicBoardGameReservationUploadContext((await params).token);
     if (owner.depositStatus === "SUBMITTED") {
       return response(await submitPublicBoardGameReservationDeposit({
-        token: params.token, method, slipUrl: "", slipRef,
+        token: (await params).token, method, slipUrl: "", slipRef,
       }));
     }
     const stored = await persistWebFile(
@@ -67,7 +67,7 @@ async function handlePOST(req: NextRequest, { params }: { params: { token: strin
       owner.tenantId,
     );
     const result = await submitPublicBoardGameReservationDeposit({
-      token: params.token,
+      token: (await params).token,
       method,
       slipUrl: buildFileUrlById(stored.id),
       slipRef,

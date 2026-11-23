@@ -12,9 +12,10 @@ import { localizedPublicPath } from "@/lib/publicSeo";
 import { breadcrumbJsonLd } from "@/lib/seoJsonLd";
 import { isDownloadablePosGuide, posGuideFile, posGuideReviewedAt } from "@/lib/learning/downloads";
 
-export function generateMetadata({ params }: { params: { track: string } }) {
+export async function generateMetadata(props: { params: Promise<{ track: string }> }) {
+  const params = await props.params;
   if (!isTrack(params.track)) return { robots: { index: false, follow: false } };
-  const lang = learningLang(); const track = tracks[params.track];
+  const lang = await learningLang();const track = tracks[params.track];
   return learningMetadata(localize(track.title, lang), localize(track.description, lang), `/learn/${params.track}`, lang);
 }
 type FormatOption = { value: TrackFormat; icon: string; title: { th: string; en: string }; description: { th: string; en: string } };
@@ -73,9 +74,13 @@ function formatNotice(format: TrackFormat | undefined, lang: "th" | "en") {
   return th ? "บททั่วไปใช้ร่วมกัน ส่วนบทเฉพาะจะแสดงตามรูปแบบร้านที่เลือก" : "Shared lessons apply across formats; specialized lessons appear for the selected format.";
 }
 
-export default function TrackPage({ params, searchParams }: { params: { track: string }; searchParams: { format?: string } }) {
+export default async function TrackPage(
+  props: { params: Promise<{ track: string }>; searchParams: Promise<{ format?: string }> }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   if (!isTrack(params.track)) notFound();
-  const id = params.track; const track = tracks[id]; const lang = learningLang(); const th = lang === "th";
+  const id = params.track;const track = tracks[id];const lang = await learningLang();const th = lang === "th";
   const format = typeof searchParams.format === "string" && isTrackFormat(id, searchParams.format) ? searchParams.format : undefined;
   const formatOptions: FormatOption[] | undefined = id === "restaurant"
     ? (Object.keys(restaurantFormats) as RestaurantFormat[]).map((value) => ({ value, ...restaurantFormats[value] }))

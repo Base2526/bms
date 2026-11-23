@@ -16,15 +16,15 @@ export const dynamic = "force-dynamic";
 
 const CHANNEL = "instagram";
 
-async function handleGET(req: NextRequest, { params }: { params: { tenantId: string } }) {
-  const cfg = await getChannel(params.tenantId?.trim(), CHANNEL);
+async function handleGET(req: NextRequest, { params }: { params: Promise<{ tenantId: string }> }) {
+  const cfg = await getChannel((await params).tenantId?.trim(), CHANNEL);
   const challenge = metaChallenge(new URL(req.url), cfg);
   if (challenge) return new NextResponse(challenge, { status: 200 });
   return NextResponse.json({ error: "verification failed" }, { status: 403 });
 }
 
-async function handlePOST(req: NextRequest, { params }: { params: { tenantId: string } }) {
-  const tenantId = params.tenantId?.trim();
+async function handlePOST(req: NextRequest, { params }: { params: Promise<{ tenantId: string }> }) {
+  const tenantId = (await params).tenantId?.trim();
   if (!tenantId) return NextResponse.json({ error: "tenant required" }, { status: 400 });
 
   const limited = await rateLimit(`${CHANNEL}:${tenantId}`, 120, 60_000);

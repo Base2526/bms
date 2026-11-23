@@ -19,10 +19,10 @@ const PROVIDERS: Readonly<Record<string, DeliveryProvider>> = {
 
 async function handlePOST(
   req: NextRequest,
-  { params }: { params: { provider: string; integrationId: string } },
+  { params }: { params: Promise<{ provider: string; integrationId: string }> },
 ) {
-  const provider = PROVIDERS[params.provider?.toLowerCase()];
-  const integrationId = params.integrationId?.trim();
+  const provider = PROVIDERS[(await params).provider?.toLowerCase()];
+  const integrationId = (await params).integrationId?.trim();
   if (!provider || !UUID.test(integrationId)) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }

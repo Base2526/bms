@@ -16,9 +16,6 @@ const nextConfig = {
     // appDir: true,
     optimizePackageImports: ['antd'],
     externalDir: true,
-    // เปิด instrumentation.ts — ใช้ดัก unhandledRejection/uncaughtException ของ
-    // background task ที่ไม่มี request ให้ตอบกลับ (Next 14 ยังต้องเปิด flag นี้เอง)
-    instrumentationHook: true,
     // Next spawns up to (CPUs - 1) parallel build workers, each its own V8
     // isolate that can grow independently. On a 10-CPU host that's ~9 workers
     // competing for the Docker Desktop VM's memory at once — the aggregate
@@ -73,7 +70,6 @@ const nextConfig = {
   transpilePackages: [ "antd", "events" ],
 
   productionBrowserSourceMaps: false,
-  swcMinify: true,
   env: {
     NEXT_PUBLIC_BUILD_TIME: new Date().toISOString(),
   },

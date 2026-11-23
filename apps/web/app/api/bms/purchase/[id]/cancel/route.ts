@@ -8,10 +8,10 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function handlePOST(_req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePOST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeAdminRoute("purchase.cancel");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
-  const poId = params.id?.trim();
+  const poId = (await params).id?.trim();
   if (!poId) return NextResponse.json({ error: "po id required" }, { status: 400 });
   const ok = await cancelPurchaseOrder(auth.tenantId, poId, auth.adminId);
   if (!ok) return NextResponse.json({ status: "INVALID_TRANSITION", poId }, { status: 409 });

@@ -15,7 +15,7 @@ const UUID =
 
 async function handleGET(
   _request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const auth = await authorizeAdminRoute("bank_reconciliation.view");
   if (!auth.ok)
@@ -28,12 +28,12 @@ async function handleGET(
   } catch {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
-  if (!UUID.test(params.id))
+  if (!UUID.test((await params).id))
     return NextResponse.json({ error: "not found" }, { status: 404 });
   const imported = await queryBankReconciliation<{ file_id: number | null }>(
     auth.tenantId,
     `SELECT file_id FROM bms_bank_statement_imports WHERE tenant_id=$1 AND id=$2 LIMIT 1`,
-    [auth.tenantId, params.id],
+    [auth.tenantId, (await params).id],
   );
   if (!imported.rows[0]?.file_id)
     return NextResponse.json({ error: "not found" }, { status: 404 });

@@ -1,20 +1,10 @@
 // app/(main)/layout.tsx
 import { cookies } from "next/headers";
 import type { Metadata } from "next";
-import dynamic from "next/dynamic";
 import AppFooter from "@/components/footer/AppFooter";
 import { BreadcrumbsProvider } from "@/components/breadcrumbs-context";
+import { PublicHeaderBar, PublicBreadcrumbs } from "@/components/PublicChrome";
 import { publicAlternates, type PublicSeoLocale } from "@/lib/publicSeo";
-
-const HeaderBar = dynamic(() => import("@/components/HeaderBar"), {
-  ssr: false,
-  loading: () => <div style={{ height: 64, background: "var(--app-surface)" }} />,
-});
-
-const Breadcrumbs = dynamic(() => import("@/components/Breadcrumbs"), {
-  ssr: false,
-  loading: () => null,
-});
 
 const SITE_NAME = "BMS POS+";
 const SITE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://jachoei.com";
@@ -70,7 +60,7 @@ export default async function MainLayout({
 
   return (
     <>
-      <HeaderBar isMobile={false} />
+      <PublicHeaderBar isMobile={false} />
 
       <main
         className="bms-main-layout"
@@ -82,7 +72,7 @@ export default async function MainLayout({
         <BreadcrumbsProvider>
           <div className="jachoei-main-shell">
             <div className="jachoei-breadcrumb-wrap">
-              <Breadcrumbs />
+              <PublicBreadcrumbs />
             </div>
 
             <div className="jachoei-main-content">{children}</div>

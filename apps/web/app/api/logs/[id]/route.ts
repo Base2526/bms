@@ -23,10 +23,10 @@ async function ensureStructuredColsReady() {
   return structuredColsReady;
 }
 
-async function handleGET(_req: NextRequest, { params }: { params: { id: string } }) {
+async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizePlatformAdminRoute();
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
-  const id = params.id;
+  const id = (await params).id;
   if (!/^(?:[1-9]\d{0,18}|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(id) ||
       (/^\d+$/.test(id) && BigInt(id) > 9_223_372_036_854_775_807n)) {
     return NextResponse.json({ error: "Invalid ID" }, { status: 400 });

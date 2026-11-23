@@ -21,11 +21,11 @@ import { recordSecurityEvent } from "@/lib/bms/securityEvents";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function handleGET(req: NextRequest, { params }: { params: { id: string } }) {
+async function handleGET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeAdminRoute("report.view");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
 
-  const fileId = Number(params.id);
+  const fileId = Number((await params).id);
   if (!fileId || Number.isNaN(fileId)) {
     return NextResponse.json({ error: "invalid id" }, { status: 400 });
   }

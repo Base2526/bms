@@ -28,7 +28,7 @@ function requestObject(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-async function handlePATCH(request: NextRequest, { params }: { params: { id: string } }) {
+async function handlePATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizePlatformAdminRoute();
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
   if (!isSameOrigin(request)) {
@@ -37,7 +37,7 @@ async function handlePATCH(request: NextRequest, { params }: { params: { id: str
 
   try {
     const body = requestObject(await readRetailLocalJSON(request, 16_384));
-    const release = await updateRetailLocalReleaseAsset(params.id, {
+    const release = await updateRetailLocalReleaseAsset((await params).id, {
       status: body?.status,
       accessLevel: body?.accessLevel,
       isLatest: body?.isLatest,
@@ -57,7 +57,7 @@ export const PATCH = withRouteErrorLog("PATCH /api/admin/retail-local/releases/[
 
 const PURGE_CONFIRMATION = "PURGE-RETAIL-LOCAL-RELEASE-FILE";
 
-async function handleDELETE(request: NextRequest, { params }: { params: { id: string } }) {
+async function handleDELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizePlatformAdminRoute();
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
   if (!isSameOrigin(request)) {
@@ -66,11 +66,11 @@ async function handleDELETE(request: NextRequest, { params }: { params: { id: st
 
   try {
     const body = requestObject(await readRetailLocalJSON(request, 1024));
-    if (body.confirmation !== PURGE_CONFIRMATION || body.releaseId !== params.id) {
+    if (body.confirmation !== PURGE_CONFIRMATION || body.releaseId !== (await params).id) {
       return NextResponse.json({ error: "confirmation_required" }, { status: 400 });
     }
     const result = await purgeRetailLocalReleaseFile({
-      releaseId: params.id,
+      releaseId: (await params).id,
       // This is a global platform action. Keep its audit on the platform
       // administrator's home tenant, not a temporary drill-down tenant.
       tenantId: String(auth.admin.tenant_id || auth.tenantId),

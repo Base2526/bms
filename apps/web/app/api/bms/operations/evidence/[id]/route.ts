@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 async function handleGET(
   _req: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const auth = await authorizeAdminRoute("operations.checklist.view");
   if (!auth.ok)
@@ -23,7 +23,7 @@ async function handleGET(
         actorId: String(auth.adminId),
         permissions: await loadPermissions(auth.ctx),
       },
-      Number(params.id),
+      Number((await params).id),
     );
     return new NextResponse(new Uint8Array(bytes), {
       headers: {

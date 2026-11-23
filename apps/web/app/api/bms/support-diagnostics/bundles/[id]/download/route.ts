@@ -7,10 +7,10 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function handleGET(_req: NextRequest, { params }: { params: { id: string } }) {
+async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizePlatformAdminRoute();
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
-  const bundleId = String(params.id ?? "");
+  const bundleId = String((await params).id ?? "");
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(bundleId)) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }

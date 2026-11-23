@@ -9,8 +9,8 @@ import { isRetailLocalDeployment } from "@/lib/bms/deploymentMode";
 import { cookies } from "next/headers";
 import { localizedPublicPath, publicAlternates, type PublicSeoLocale } from "@/lib/publicSeo";
 
-export function generateMetadata(): Metadata {
-  const lang: PublicSeoLocale = cookies().get("lang")?.value === "en" ? "en" : "th";
+export async function generateMetadata(): Promise<Metadata> {
+  const lang: PublicSeoLocale = (await cookies()).get("lang")?.value === "en" ? "en" : "th";
   const title = "BMS POS+ Retail Local";
   const description = lang === "th"
     ? "ดาวน์โหลดตัวติดตั้ง BMS POS+ Retail Local สำหรับคอมพิวเตอร์ร้านที่ใช้ Windows, Ubuntu หรือ macOS"

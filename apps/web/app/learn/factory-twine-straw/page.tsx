@@ -7,8 +7,8 @@ import { FactoryGuideOverview } from "./FactoryGuideOverview";
 
 const path = "/learn/factory-twine-straw";
 
-export function generateMetadata() {
-  const lang = learningLang();
+export async function generateMetadata() {
+  const lang = await learningLang();
   return {
     ...learningMetadata(
       lang === "th" ? "คู่มือโรงงานเชือกพลาสติกและหลอดพลาสติก" : "Plastic twine and straw factory guide",
@@ -29,8 +29,8 @@ function DataTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
   </table></div>;
 }
 
-export default function FactoryTwineStrawGuide() {
-  const lang = learningLang();
+export default async function FactoryTwineStrawGuide() {
+  const lang = await learningLang();
   const th = lang === "th";
   const t = (thai: string, english: string) => th ? thai : english;
   const sections = [

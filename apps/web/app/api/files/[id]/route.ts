@@ -57,7 +57,7 @@ function isBlockedGenericDownload(row: FileRow): boolean {
 
 async function actorIdsForFileRequest(): Promise<string[]> {
   const ids = new Set<string>();
-  const user = verifyUserSession();
+  const user = await verifyUserSession();
   if (user?.id) ids.add(String(user.id));
   const admin = await authorizeAdminRoute(null);
   if (admin.ok) ids.add(String(admin.adminId));
@@ -229,10 +229,10 @@ function shouldInline(mime: string): boolean {
 
 async function handleGET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = Number(params.id);
+    const id = Number((await params).id);
 
     if (!id || Number.isNaN(id)) {
       return NextResponse.json({ error: "invalid id" }, { status: 400 });
@@ -522,7 +522,7 @@ async function authorizeFileManagement(): Promise<ManageFileAuth> {
     return { ok: true, platform: true, actorId: String(platform.adminId) };
   }
 
-  const user = verifyUserSession();
+  const user = await verifyUserSession();
   if (user?.id) {
     return { ok: true, platform: false, actorId: String(user.id) };
   }
@@ -570,12 +570,12 @@ function managementDenied(status: 401 | 403) {
 
 async function handlePATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await authorizeFileManagement();
   if (!auth.ok) return managementDenied(auth.status);
 
-  const id = Number(params.id);
+  const id = Number((await params).id);
   if (!Number.isSafeInteger(id) || id <= 0) {
     return NextResponse.json({ error: "invalid id" }, { status: 400 });
   }
@@ -608,12 +608,12 @@ async function handlePATCH(
 
 async function handleDELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await authorizeFileManagement();
   if (!auth.ok) return managementDenied(auth.status);
 
-  const id = Number(params.id);
+  const id = Number((await params).id);
   if (!Number.isSafeInteger(id) || id <= 0) {
     return NextResponse.json({ error: "invalid id" }, { status: 400 });
   }

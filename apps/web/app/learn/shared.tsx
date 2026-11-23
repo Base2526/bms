@@ -5,7 +5,7 @@ import { businessTrackIds, categoryLabels, localize, specialistTrackIds, tracks,
 import s from "./learning.module.css";
 import { localizedPublicPath, publicAlternates, type PublicSeoLocale } from "@/lib/publicSeo";
 
-export function learningLang(): "th" | "en" { return cookies().get("lang")?.value === "en" ? "en" : "th"; }
+export async function learningLang(): Promise<"th" | "en"> { return (await cookies()).get("lang")?.value === "en" ? "en" : "th"; }
 export function learningMetadata(title: string, description: string, path: string, lang: PublicSeoLocale): Metadata {
   return { title: `${title} | BMS POS+`, description, alternates: publicAlternates(path, lang),
     openGraph: { title, description, url: localizedPublicPath(path, lang), type: "website", siteName: "BMS POS+", locale: lang === "th" ? "th_TH" : "en_US", images: [{ url: "/og.png", width: 1200, height: 630, alt: "BMS POS+ learning center" }] },

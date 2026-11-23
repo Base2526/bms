@@ -3113,7 +3113,7 @@ const rawResolvers = {
         tenantId: user.tenant_id ?? null, actorUserId: String(user.id),
         event: "auth.login", outcome: "SUCCESS", source: "USER_PASSWORD",
       });
-      cookies().set(USER_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
+      (await cookies()).set(USER_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
       return {
         ok: true,
         message: "Login success",
@@ -3181,7 +3181,7 @@ const rawResolvers = {
         tenantId: user.tenant_id ?? null, actorUserId: String(user.id),
         event: "auth.login", outcome: "SUCCESS", source: "USER_SOCIAL",
       });
-      cookies().set(USER_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
+      (await cookies()).set(USER_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
 
       return {
         ok: true,

@@ -353,7 +353,8 @@ Invariants to preserve when touching `lib/bms/checkout.ts`, `lib/bms/checkoutTok
   active, so a customer can upload a replacement slip. Keep `submitPayment()` (staff path)
   non-reusing; the two behaviors share `submitPaymentInternal()` via overloads.
 - **Uploads stay untrusted.** Slips are limited to JPG/PNG/WEBP, 8 MB, and a pixel bound, and are
-  re-validated by decoding with `sharp` — MIME type alone is not proof of an image.
+  re-validated by decoding with `sharp` — MIME type alone is not proof of an image. The multipart
+  request body is capped while streaming before `formData()` runs, even without `Content-Length`.
 - **Public checkout APIs are bounded before work.** Keep IP limits before body parsing, then
   hashed-token limits before service/storage calls (`checkout/routeHelpers.ts`). GET, PATCH and
   payment POST have independent ceilings. Delivery JSON is stream-bounded to 16 KiB and must be
@@ -2607,6 +2608,18 @@ Production migration state, recovery/load proof, and bounded replay remain separ
   GraphQL request can emit an invalidation whose response is to verify and refetch GraphQL again.
 
 ## Typed GraphQL surface for external clients
+
+The Web runtime uses Node.js 24 LTS, Next.js 16.4.6, React 19, Apollo Server 5 and
+`graphql-upload-nextjs` 3.1.6. The custom `server.mjs` remains the production entry point; builds
+use `--webpack` because `next.config.js` still defines webpack aliases. Cookie-based auth helpers
+await `cookies()` and their callers await the session result. Browser multipart mutations send
+`Apollo-Require-Preflight: true`, which the upload parser requires for CSRF preflight.
+
+`/api/graphql` caps JSON at 1 MiB and multipart at 64 MiB by bytes actually read, before parsing.
+The multipart `map` must point only to existing null placeholders under `variables`, never to
+`__proto__`, `constructor` or `prototype`; the validated `FormData` is passed once to the uploader.
+Caddy enforces the same outer ceilings. Keep these checks when replacing the uploader or upgrading
+Apollo/Next, even if the current uploader also validates map paths.
 
 The mobile/POS GraphQL surface is code-generated in `apps/mobile`, and remains suitable for external
 clients. Rationale and phase order:

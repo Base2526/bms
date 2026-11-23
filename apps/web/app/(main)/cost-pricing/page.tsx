@@ -8,15 +8,15 @@ import StructuredData from "@/components/seo/StructuredData";
 import { publicAlternates, localizedPublicPath, type PublicSeoLocale } from "@/lib/publicSeo";
 import { breadcrumbJsonLd } from "@/lib/seoJsonLd";
 
-export function generateMetadata(): Metadata {
-  const lang: PublicSeoLocale = cookies().get("lang")?.value === "en" ? "en" : "th";
+export async function generateMetadata(): Promise<Metadata> {
+  const lang: PublicSeoLocale = (await cookies()).get("lang")?.value === "en" ? "en" : "th";
   const copy = resolveBilingual(costCopy, lang);
   return { title: copy.title, description: copy.description, alternates: publicAlternates("/cost-pricing", lang),
     openGraph: { title: copy.title, description: copy.description, url: localizedPublicPath("/cost-pricing", lang), type: "website", locale: lang === "th" ? "th_TH" : "en_US", images: [{ url: "/og.png", width: 1200, height: 630 }] },
     twitter: { card: "summary_large_image", title: copy.title, description: copy.description, images: ["/og.png"] } };
 }
-export default function Page() {
-  const lang: PublicSeoLocale = cookies().get("lang")?.value === "en" ? "en" : "th";
+export default async function Page() {
+  const lang: PublicSeoLocale = (await cookies()).get("lang")?.value === "en" ? "en" : "th";
   return <>
     <StructuredData id="cost-pricing-breadcrumb-jsonld" data={breadcrumbJsonLd(lang, [
       { name: lang === "th" ? "หน้าหลัก" : "Home", path: "/" },

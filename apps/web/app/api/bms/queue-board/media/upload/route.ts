@@ -4,6 +4,7 @@ import { getQueueBoardMedia, QueueBoardMediaError } from "@/lib/bms/queueBoardMe
 import { prepareCustomerDisplayBackground } from "@/lib/bms/storeLogo";
 import { buildFileUrlById, persistWebFile } from "@/lib/storage";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { readBoundedFormData } from "@/lib/bms/webhookBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,18 +16,15 @@ async function handlePOST(req: NextRequest) {
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
   const locationId = req.nextUrl.searchParams.get("locationId") ?? "";
   if (!UUID.test(locationId)) return NextResponse.json({ error: "รหัสสาขาไม่ถูกต้อง" }, { status: 400 });
-  const contentLength = Number(req.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > 6 * 1024 * 1024) {
-    return NextResponse.json({ error: "รูปต้องไม่เกิน 5 MB" }, { status: 413 });
-  }
   try { await getQueueBoardMedia(auth.tenantId, locationId, String(auth.adminId)); }
   catch (error) {
     if ((error as Error).message === "FORBIDDEN") return NextResponse.json({ error: "forbidden" }, { status: 403 });
     if (error instanceof QueueBoardMediaError) return NextResponse.json({ error: error.message }, { status: error.status });
     throw error;
   }
-  const form = await req.formData().catch(() => null);
-  const file = form?.get("file");
+  const parsed = await readBoundedFormData(req, 6 * 1024 * 1024);
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  const file = parsed.form.get("file");
   if (!(file instanceof File) || !MIMES.has(file.type)) return NextResponse.json({ error: "รองรับเฉพาะภาพ PNG, JPG และ WebP" }, { status: 400 });
   if (!file.size || file.size > 5 * 1024 * 1024) return NextResponse.json({ error: "รูปต้องไม่เกิน 5 MB" }, { status: 413 });
   let normalized: File;

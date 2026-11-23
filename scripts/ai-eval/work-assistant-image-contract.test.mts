@@ -62,7 +62,8 @@ test("real multipart GraphQL Upload passes a PNG into the assistant decoder", as
   });
   const server = new ApolloServer({ schema, csrfPrevention: false });
   try {
-    const response = await uploadProcess({ formData: async () => form, headers: { get: () => null } }, {}, server, {
+    await server.start();
+    const response = await uploadProcess({ formData: async () => form, headers: { get: (name: string) => name.toLowerCase() === "apollo-require-preflight" ? "true" : null } }, {}, server, {
       allowedTypes: ["image/png", "image/jpeg", "image/webp"],
       maxFileSize: WORK_ASSISTANT_IMAGE_MAX_BYTES,
     });

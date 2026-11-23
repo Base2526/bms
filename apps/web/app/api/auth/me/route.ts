@@ -34,8 +34,8 @@ async function withUserPreferences<T extends JWTPayload | null>(session: T): Pro
 }
 
 async function handleGET() {
-  const user  = verifyUserSession();
-  const adminToken = verifyAdminSession();
+  const user  = await verifyUserSession();
+  const adminToken = await verifyAdminSession();
   const admin = adminToken && await isAdminSessionActive(adminToken.jti)
     ? await refreshAdminIdentity(adminToken)
     : null;

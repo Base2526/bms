@@ -13,14 +13,14 @@ const permissionByAction = {
 } as const satisfies Record<string, BmsPermission>;
 type Action = keyof typeof permissionByAction;
 
-async function handleGET(_req: NextRequest, { params }: { params: { id: string } }) {
+async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeAdminRoute("quotation.view");
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
-  const quote = await getQuote(auth.tenantId, String(auth.adminId), params.id);
+  const quote = await getQuote(auth.tenantId, String(auth.adminId), (await params).id);
   return quote ? NextResponse.json({ quote }) : NextResponse.json({ status: "NOT_FOUND" }, { status: 404 });
 }
 
-async function handlePOST(req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePOST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const baseAuth = await authorizeAdminRoute("quotation.view");
   if (!baseAuth.ok) return NextResponse.json({ error: baseAuth.status === 401 ? "unauthorized" : "forbidden" }, { status: baseAuth.status });
   const body = await req.json().catch(() => null) as { action?: unknown; confirm?: unknown;
@@ -32,8 +32,8 @@ async function handlePOST(req: NextRequest, { params }: { params: { id: string }
   const auth = await authorizeAdminRoute(permissionByAction[action as Action]);
   if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "forbidden" }, { status: auth.status });
   const result = action === "REVISE"
-    ? await reviseQuote(auth.tenantId, String(auth.adminId), params.id, body?.draft as QuoteDraftInput)
-    : await transitionQuote(auth.tenantId, String(auth.adminId), params.id, action as Exclude<Action, "REVISE">,
+    ? await reviseQuote(auth.tenantId, String(auth.adminId), (await params).id, body?.draft as QuoteDraftInput)
+    : await transitionQuote(auth.tenantId, String(auth.adminId), (await params).id, action as Exclude<Action, "REVISE">,
       typeof body?.evidenceRef === "string" ? body.evidenceRef : null);
   const status = ["DRAFT", "APPROVED", "SENT", "ACCEPTED", "REJECTED", "CONVERTED"].includes(result.status) ? 200
     : result.status === "NOT_FOUND" ? 404
