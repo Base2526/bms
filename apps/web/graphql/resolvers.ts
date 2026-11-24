@@ -791,6 +791,10 @@ const rawResolvers = {
   JSON: GraphQLJSON,
   Upload: GraphQLUpload,
   Role: {
+    // pg returns timestamptz as Date; GraphQLString would send epoch millis and /admin/roles
+    // would render "Invalid Date" (CLAUDE.local.md trap 1).
+    created_at: (parent: any) => (parent?.created_at instanceof Date ? parent.created_at.toISOString() : parent?.created_at),
+    updated_at: (parent: any) => (parent?.updated_at instanceof Date ? parent.updated_at.toISOString() : parent?.updated_at),
     user_count: async (parent: any, _: any, ctx: any) => {
       const roleId = parent?.id;
       if (!roleId) return 0;
