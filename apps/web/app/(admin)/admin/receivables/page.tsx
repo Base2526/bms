@@ -20,6 +20,7 @@ import {
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useI18n } from "@/lib/i18nContext";
+import { visibleArStatement } from "@/lib/arStatementSelection";
 
 const { Text } = Typography;
 
@@ -193,8 +194,7 @@ export default function ReceivablesPage() {
   const aging = summary?.aging;
   const accountRows: Account[] = accounts.data?.bmsArAccounts ?? [];
   const invoiceRows: Invoice[] = invoices.data?.bmsArInvoices ?? [];
-  const visibleStatement = statement.data?.bmsArStatement?.accountId === statementFor?.id
-    ? statement.data.bmsArStatement : null;
+  const visibleStatement = visibleArStatement(statement.data, statementFor);
 
   const agingCells = useMemo(
     () => [
