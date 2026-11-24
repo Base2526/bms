@@ -42,8 +42,11 @@ test("invalid or unsourced facts are rejected before writes", async () => {
   assert.equal((await stageTechnicalSpecs(tenantId,preparerId,
     { sku, variantCode: "STD", sourceReference: "FAKE source", requestKey: key() })).status,
     "INVALID_INPUT");
+  // Any staff account of another shop; a fixed second-tenant id only exists in some restored dumps.
   const foreignActor = (await query<{ id: string }>(
-    `SELECT id FROM users WHERE tenant_id='22222222-2222-2222-2222-222222222222' LIMIT 1`)).rows[0].id;
+    `SELECT id FROM users WHERE tenant_id IS NOT NULL AND tenant_id <> $1 ORDER BY id LIMIT 1`,
+    [tenantId])).rows[0]?.id;
+  assert.ok(foreignActor, "the restored database needs at least one user of another tenant");
   assert.equal((await stageTechnicalSpecs(tenantId,foreignActor,draft(key()))).status,
     "ACTOR_FORBIDDEN");
 });
