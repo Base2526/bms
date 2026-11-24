@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { publicErrorMessage } from "@/lib/publicErrorMessage";
 import {
   cancelPublicBoardGameReservation,
   getPublicBoardGameReservation,
@@ -22,7 +23,7 @@ async function handleGET(req: NextRequest, { params }: { params: Promise<{ token
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "ไม่พบคำขอจอง" }, { status: 404 });
+    return NextResponse.json({ error: publicErrorMessage(error, "ไม่พบคำขอจอง") }, { status: 404 });
   }
 }
 
@@ -38,7 +39,7 @@ async function handlePATCH(req: NextRequest, { params }: { params: Promise<{ tok
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "ยกเลิกไม่สำเร็จ" }, { status: 400 });
+    return NextResponse.json({ error: publicErrorMessage(error, "ยกเลิกไม่สำเร็จ") }, { status: 400 });
   }
 }
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { publicErrorMessage } from "@/lib/publicErrorMessage";
 import { requestPublicBoardGameReservation } from "@/lib/bms/boardGameWaitlist";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { withRouteErrorLog } from "@/lib/log/routeError";
@@ -22,7 +23,7 @@ async function handlePOST(req: NextRequest) {
     });
   } catch (error) {
     return NextResponse.json({
-      error: error instanceof Error ? error.message : "ส่งคำขอจองไม่สำเร็จ",
+      error: publicErrorMessage(error, "ส่งคำขอจองไม่สำเร็จ"),
     }, { status: 400 });
   }
 }

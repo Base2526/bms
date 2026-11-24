@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import * as crypto from "node:crypto";
 import * as bodyReader from "../apps/web/lib/bms/retailLocalRequestBody.ts";
 import * as webhookBody from "../apps/web/lib/bms/webhookBody.ts";
+import { publicErrorMessage } from "../apps/web/lib/publicErrorMessage.ts";
 import { checkoutFixture } from "./testing/restaurantCheckoutHarness.mts";
 
 const require = createRequire(new URL("../apps/web/package.json", import.meta.url));
@@ -69,6 +70,7 @@ function harness(options: { blocked?: "ip" | "token"; invalidToken?: boolean; ch
       assert.equal(ctx.tenant_id, "server-tenant");
     } },
     "@/lib/log/routeError": { withRouteErrorLog: (_: string, fn: unknown) => fn },
+    "@/lib/publicErrorMessage": { publicErrorMessage },
     "@/lib/bms/payments": { PAYMENT_METHODS: ["BANK_TRANSFER", "QR"] },
     "@/lib/storage": { persistWebFile: async () => { throw new Error("Unexpected upload"); } },
     sharp: () => { throw new Error("Unexpected image decoding"); },

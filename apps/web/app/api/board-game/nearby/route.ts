@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { publicErrorMessage } from "@/lib/publicErrorMessage";
 import { listPublicBoardGameCafes } from "@/lib/bms/boardGameCafe";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { withRouteErrorLog } from "@/lib/log/routeError";
@@ -36,7 +37,7 @@ async function handleGET(req: NextRequest) {
     return NextResponse.json({ cafes });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to search board-game cafes" },
+      { error: publicErrorMessage(error, "Unable to search board-game cafes") },
       { status: 400 }
     );
   }
