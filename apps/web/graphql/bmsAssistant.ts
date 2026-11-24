@@ -422,6 +422,9 @@ export const bmsAssistantResolvers = {
       ctx: any
     ) {
       requireAuth(ctx);
+      // Same permission as the Lab menu entry. requireAuth alone let a public account run the
+      // DEFAULT_TENANT_ID shop's protocols and products through the simulator.
+      await requirePermission(ctx, "pharmacy.assessment.read");
       const tenantId = getTenantId(ctx);
       const message = String(args.message ?? "").trim();
       if (!message) throw new GraphQLError("message ว่าง", { extensions: { code: "BAD_USER_INPUT" } });
