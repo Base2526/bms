@@ -16,6 +16,7 @@ import { ReadOutlined } from "@ant-design/icons";
 import Link from "next/link";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
+import { bangkokDateKey } from "@/lib/date";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 const Q_READINESS = gql`
@@ -365,7 +366,7 @@ export default function PosReadinessPage() {
   const total = readiness?.totalProducts ?? 0;
   const approved = readiness?.approved ?? 0;
   const percent = total === 0 ? 100 : Math.round((approved / total) * 100);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = bangkokDateKey();
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
