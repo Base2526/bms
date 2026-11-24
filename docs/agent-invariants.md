@@ -226,7 +226,8 @@ reads for every archetype. `MEDICAL`, `POISONING`, `SELF_HARM` share a pure no-i
 acquisition) and a 400 ms SQL statement timeout; no data/error/timeout means the canonical empty-list
 copy exactly. Only active 24h entries, max 3; unknown branch means all-branch entries only. Never
 collect customer location. Existing-case emergency persistence is best-effort and must never delay
-the response. Store-profile admin access and old/new branch checks gate directory edits; audit and
+the response. Administrator (or verified platform admin) access, as for every other store-profile
+write, and old/new branch checks gate directory edits; audit and
 revision belong in the tenant transaction. Clinical guidance's 500 ms rendering budget must include
 shop-placeholder reads too, not only the approved-body query.
 Guidance approval (`10.47`) must acquire the licence helper's user-row SHARE lock after

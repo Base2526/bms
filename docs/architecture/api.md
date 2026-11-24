@@ -67,8 +67,11 @@ permission or AI tool.
 
 `bmsEmergencyFacilities(locationId)` and `bmsEmergencyFacilityLocations` read the Settings
 directory/allowed branches. `bmsUpsertEmergencyFacility(input)` creates or updates;
-`bmsDeactivateEmergencyFacility(id, confirmed:true)` soft-deactivates. These use the existing
-store-profile admin-scope guard (no new permission), server-derived tenant and authenticated actor.
+`bmsDeactivateEmergencyFacility(id, confirmed:true)` soft-deactivates. Reads use the admin-scope
+guard; the two writes require the shop Administrator or a verified platform admin
+(`requireTenantSettingsAdministrator`, like other store-profile writes, since 2026-11-24 — before
+that any admin-scope login could change the numbers customer emergency replies quote). No new
+permission; server-derived tenant and authenticated actor.
 The service checks both old/new branch scope, audits inside the tenant transaction and never deletes.
 They are **not AI tools**. The customer pipeline reads active 24-hour entries via the bounded service,
 not GraphQL, and never accepts a customer location or model-selected tenant.
