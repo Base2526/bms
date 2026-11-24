@@ -45,6 +45,29 @@ function hasKeyword(sql: string, keyword: string): boolean {
   return new RegExp(`\\b${keyword}\\b`, "i").test(sql);
 }
 
+// `\b` treats "_" as a word character, so the keyword lists alone missed whole families such as
+// pg_advisory_lock (a session lock survives ROLLBACK), pg_read_binary_file, pg_ls_dir, lo_get and
+// set_config. Match these by prefix. Server files, large objects and dblink stay banned in write
+// mode too.
+const SERVER_ACCESS_FAMILIES: Array<[RegExp, string]> = [
+  [/\bpg_read_\w*/i, "PG_READ_*"],
+  [/\bpg_ls_\w*/i, "PG_LS_*"],
+  [/\bpg_stat_file\b/i, "PG_STAT_FILE"],
+  [/\bpg_file_\w*/i, "PG_FILE_*"],
+  [/\blo_\w+/i, "LO_*"],
+  [/\bdblink\w*/i, "DBLINK*"],
+];
+const READ_ONLY_BANNED_FAMILIES: Array<[RegExp, string]> = [
+  ...SERVER_ACCESS_FAMILIES,
+  [/\bpg_(?:try_)?advisory_\w*/i, "PG_ADVISORY_*"],
+  [/\bpg_sleep\w*/i, "PG_SLEEP*"],
+  [/\bset_config\b/i, "SET_CONFIG"],
+];
+
+function bannedFamily(sql: string, families: Array<[RegExp, string]>): string | null {
+  return families.find(([pattern]) => pattern.test(sql))?.[1] ?? null;
+}
+
 /** ตัด ; ท้ายสุดออก + reject หลาย statement/คีย์เวิร์ดอันตราย ก่อนส่งเข้า Postgres จริง */
 function cleanAndValidate(sqlRaw: string, opts: { allowWrite: boolean }): string {
   let sql = String(sqlRaw || "").trim();
@@ -64,14 +87,23 @@ function cleanAndValidate(sqlRaw: string, opts: { allowWrite: boolean }): string
         throw new Error(`ห้ามใช้คำสั่ง/คีย์เวิร์ด "${kw.toUpperCase()}" ในโหมด read-only`);
       }
     }
+    const family = bannedFamily(sql, READ_ONLY_BANNED_FAMILIES);
+    if (family) throw new Error(`ห้ามใช้ฟังก์ชันกลุ่ม "${family}" ในโหมด read-only`);
   } else {
     for (const kw of CATASTROPHIC_KEYWORDS) {
       if (hasKeyword(sql, kw)) {
         throw new Error(`ห้ามใช้คำสั่ง/คีย์เวิร์ด "${kw.toUpperCase()}" แม้ใน write-mode (dev)`);
       }
     }
+    const family = bannedFamily(sql, SERVER_ACCESS_FAMILIES);
+    if (family) throw new Error(`ห้ามใช้ฟังก์ชันกลุ่ม "${family}" แม้ใน write-mode (dev)`);
   }
   return sql;
+}
+
+/** Validation only (no database): exported for the console guard contract. */
+export function validateSqlConsoleInput(sqlRaw: string, opts: { allowWrite: boolean }): string {
+  return cleanAndValidate(sqlRaw, opts);
 }
 
 /** write-mode (bmsRunSql) ปิดเสมอใน production — ไม่มี env flag ให้เปิดข้าม */
@@ -111,7 +143,8 @@ export async function runReadOnlySql(sqlRaw: string): Promise<SqlConsoleResult> 
     try { await client.query("ROLLBACK"); } catch {}
     return { ok: false, columns: [], rows: [], rowCount: 0, durationMs: Date.now() - start, error: err.message || "query failed" };
   } finally {
-    client.release();
+    // Destroy, never pool: console SQL may leave session state (advisory locks, settings).
+    client.release(true);
   }
 }
 
@@ -146,6 +179,7 @@ export async function runSql(sqlRaw: string): Promise<SqlConsoleResult> {
     try { await client.query("ROLLBACK"); } catch {}
     return { ok: false, columns: [], rows: [], rowCount: 0, durationMs: Date.now() - start, error: err.message || "query failed" };
   } finally {
-    client.release();
+    // Destroy, never pool: console SQL may leave session state (advisory locks, settings).
+    client.release(true);
   }
 }
