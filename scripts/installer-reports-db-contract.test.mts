@@ -56,8 +56,8 @@ test("isolated installer intake/list/detail/triage/retention round trip", { skip
   // Also verify signed-session guards through the actual route adapters with the Next shim.
   const { GET } = await import("../apps/web/app/api/admin/installer-reports/route.ts");
   const { NextRequest } = require("next/server");
-  const { requestAsyncStorage } = require("next/dist/client/components/request-async-storage.external.js");
-  const runAs = () => requestAsyncStorage.run({ cookies: { get: () => undefined } },
+  const { runWithRequestCookies } = await import("./testing/nextRequestCookies.mts");
+  const runAs = () => runWithRequestCookies({ get: () => undefined },
     () => GET(new NextRequest("http://localhost/api/admin/installer-reports")));
   assert.equal((await runAs()).status, 401);
   const shopAdmin = "22222222-2222-4222-8222-222222222222";

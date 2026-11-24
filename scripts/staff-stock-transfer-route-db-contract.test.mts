@@ -38,9 +38,7 @@ const { GET, POST } = await import(
 const { query } = await import("../apps/web/lib/db.ts");
 const { jwtSecret } = await import("../apps/web/lib/auth/token.ts");
 const { NextRequest } = require("next/server");
-const {
-  requestAsyncStorage,
-} = require("next/dist/client/components/request-async-storage.external.js");
+const { runWithRequestCookies } = await import("./testing/nextRequestCookies.mts");
 const jwt = require("jsonwebtoken");
 const tenant = randomUUID(),
   actor = randomUUID(),
@@ -58,12 +56,10 @@ const call = (
   session: string | null = token(),
   qs = ""
 ) =>
-  requestAsyncStorage.run(
+  runWithRequestCookies(
     {
-      cookies: {
-        get: (name: string) =>
-          name === "ADMIN_COOKIE" && session ? { value: session } : undefined,
-      },
+      get: (name: string) =>
+        name === "ADMIN_COOKIE" && session ? { value: session } : undefined,
     },
     () =>
       (method === "GET" ? GET : POST)(
