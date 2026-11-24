@@ -9,6 +9,7 @@
 
 import type { ChannelConfig } from "./channels";
 import { createHash } from "node:crypto";
+import { constantTimeTextEqual } from "./crypto";
 
 // These buttons start a conversation; they never authorize checkout, payment or other writes.
 export const META_STARTER_MESSAGES: Readonly<Record<string, string>> = {
@@ -27,7 +28,7 @@ export function metaChallenge(url: URL, cfg: ChannelConfig | null): string | nul
   // Verify Token is a revocable handshake credential, not the App Secret used to sign POSTs.
   // Fail closed when the channel has not been configured; accepting any token lets a typo or
   // stale tenant URL appear successfully registered in Meta.
-  if (!cfg?.webhook_verify_token || token !== cfg.webhook_verify_token) return null;
+  if (!cfg?.webhook_verify_token || !constantTimeTextEqual(token ?? "", cfg.webhook_verify_token)) return null;
   return challenge;
 }
 

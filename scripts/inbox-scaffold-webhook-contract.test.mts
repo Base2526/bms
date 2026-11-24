@@ -3,6 +3,7 @@ import test from "node:test";
 import crypto from "node:crypto";
 import { loadWithStubs } from "./testing/webhookHarness.mts";
 import { readBoundedWebhookText } from "../apps/web/lib/bms/webhookBody.ts";
+import { verifyHexHmacSignature } from "../apps/web/lib/bms/crypto.ts";
 
 for (const channel of ["tiktok", "shopee", "lazada"] as const) {
   function harness(saved: boolean) {
@@ -20,7 +21,7 @@ for (const channel of ["tiktok", "shopee", "lazada"] as const) {
         },
       },
       "@/lib/bms/channelHealth": { recordInboundEvent: async () => {}, recordWebhookVerifyFailed: async () => {} },
-      "crypto": { default: crypto },
+      "@/lib/bms/crypto": { verifyHexHmacSignature },
       "@/lib/bms/inboundEvents": {
         claimInboundEvent: async () => { calls.claims++; return true; },
         releaseUnprocessedInboundEvent: async (...args: unknown[]) => { calls.releases.push(args); },

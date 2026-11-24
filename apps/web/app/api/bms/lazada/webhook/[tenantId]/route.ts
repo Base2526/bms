@@ -17,7 +17,7 @@ import { getChannel } from "@/lib/bms/channels";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { logInboundMessage, type Attachment } from "@/lib/bms/inbox";
 import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
-import crypto from "crypto";
+import { verifyHexHmacSignature } from "@/lib/bms/crypto";
 import { claimInboundEvent, releaseUnprocessedInboundEvent } from "@/lib/bms/inboundEvents";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 import { readBoundedWebhookText } from "@/lib/bms/webhookBody";
@@ -91,8 +91,7 @@ async function handlePOST(req: NextRequest, { params }: { params: Promise<{ tena
     return NextResponse.json({ error: "channel secret not configured" }, { status: 401 });
   }
   const sig = req.headers.get("x-lazada-signature") || req.headers.get("authorization");
-  const mac = crypto.createHmac("sha256", cfg.channel_secret).update(raw).digest("hex");
-  if (!sig || sig !== mac) {
+  if (!verifyHexHmacSignature(cfg.channel_secret, raw, sig)) {
     await recordWebhookVerifyFailed(tenantId, "lazada");
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }

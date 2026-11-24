@@ -76,6 +76,23 @@ export function verifyLineSignature(channelSecret: string, rawBody: string, sign
   }
 }
 
+/** Constant-time equality for secrets/tokens; a length mismatch is simply false. */
+export function constantTimeTextEqual(left: string, right: string): boolean {
+  const a = Buffer.from(left, "utf8");
+  const b = Buffer.from(right, "utf8");
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * verify hex HMAC-SHA256(secret, rawBody) sent as-is in a header (TikTok, and the unverified
+ * Lazada/Shopee scaffolds). Constant time: a plain `!==` leaks how many leading characters matched.
+ */
+export function verifyHexHmacSignature(secret: string, rawBody: string, signature: string | null): boolean {
+  if (!signature) return false;
+  const mac = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
+  return constantTimeTextEqual(mac, signature);
+}
+
 /**
  * verify Meta (Facebook/Instagram) signature: header "sha256=<hex HMAC-SHA256(appSecret, rawBody)>"
  * ใช้กับ X-Hub-Signature-256
