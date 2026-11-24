@@ -2616,8 +2616,8 @@ export default function RestaurantPosPage() {
   async function loadShiftReport() {
     if (!actorUserId || !actorPin) { message.error(t("pos_restaurant.need_operator_pin")); return; }
     await run(async () => {
-      const query = new URLSearchParams({ cashierUserId: actorUserId, pin: actorPin });
-      const body = await json(`/api/pos/shift-report?${query}`);
+      const query = new URLSearchParams({ cashierUserId: actorUserId });
+      const body = await json(`/api/pos/shift-report?${query}`, { headers: { "x-pos-cashier-pin": actorPin } });
       setShiftReport(body.report ?? null);
     });
   }

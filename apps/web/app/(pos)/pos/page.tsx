@@ -2709,8 +2709,8 @@ export default function PosPage() {
   async function loadArAccount(customerId: string) {
     if (!cashierId || !pin) return;
     try {
-      const params = new URLSearchParams({ customerId, cashierUserId: cashierId, pin });
-      const res = await fetch(`/api/pos/ar?${params.toString()}`, { headers: authHeaders });
+      const params = new URLSearchParams({ customerId, cashierUserId: cashierId });
+      const res = await fetch(`/api/pos/ar?${params.toString()}`, { headers: { ...authHeaders, "x-pos-cashier-pin": pin } });
       if (!res.ok) { setArAccount(null); return; }
       const data = await res.json();
       setArAccount(data?.account ?? null);
@@ -4342,9 +4342,9 @@ export default function PosPage() {
   async function loadShiftReport(shiftId?: string) {
     if (!cashierId || !pin) { setNotice({ type: "error", text: posText("เลือกพนักงานและใส่ PIN ก่อน") }); focusCashierOrPin(); return; }
     try {
-      const qs = new URLSearchParams({ cashierUserId: cashierId, pin });
+      const qs = new URLSearchParams({ cashierUserId: cashierId });
       if (shiftId) qs.set("shiftId", shiftId);
-      const res = await fetch(`/api/pos/shift-report?${qs}`, { headers: authHeaders });
+      const res = await fetch(`/api/pos/shift-report?${qs}`, { headers: { ...authHeaders, "x-pos-cashier-pin": pin } });
       const data = await res.json();
       if (!res.ok) { setNotice({ type: "error", text: data.error ?? posText("ดูสรุปกะไม่ได้") }); return; }
       setShiftReport(data.report);

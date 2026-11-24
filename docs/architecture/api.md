@@ -271,7 +271,10 @@ record (`authenticatePosDevice()` compares a SHA-256 hash — the raw token is s
 rejects an unknown or deactivated device with `401`). A device token identifies the register, never a
 person, so the acting human is a separate layer: `cashierUserId` + `pin` verified by
 `verifyCashierPin()` (bcrypt, 5 wrong PINs lock the user for 15 minutes) and the action permission by
-`cashierHasPermission()`. Read routes expose session, scan/search, and device-local recent/last sales.
+`cashierHasPermission()`. POST routes carry `pin` in the JSON body; a GET route that needs a person
+takes it from the `x-pos-cashier-pin` header and never reads `?pin=`, because query strings reach
+proxy access logs and browser history (`pos-pin-header-contract`, 2026-11-24).
+Read routes expose session, scan/search, and device-local recent/last sales.
 One header serves all three registers, and only the place the token rests differs: the browser keeps
 it in `localStorage`, the native app in `react-native-keychain`, and the desktop shell
 (`apps/desktop`) in the OS keystore, handing it to its renderer over IPC. The desktop shell also uses
@@ -326,7 +329,7 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   `orderId`, a non-empty `reason`, `idempotencyKey`, the seller's `cashierUserId` + `pin`, and
   **always** `approverUserId` + `approverPin` from a second user holding `pos.void`. Results:
   `VOIDED` (200), `NOT_FOUND` (404), `SHIFT_CLOSED`/`ALREADY_RETURNED` (409), `NOT_VOIDABLE` (400).
-- `GET /api/pos/ar?customerId=&cashierUserId=&pin=` (`9.30`) — the credit account of the customer
+- `GET /api/pos/ar?customerId=&cashierUserId=` + header `x-pos-cashier-pin` (`9.30`) — the credit account of the customer
   attached to the bill, plus its open invoices. Requires `ar.view`. A customer with no account
   answers `200` with `account: null`, not `404`: "this customer has no credit account" is the
   correct answer to the question, not an error. The counter needs this *before* deciding to extend
@@ -485,7 +488,7 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   money, stock or document, and the events worth having most — a rejected token, a failed
   bootstrap, a dead network — happen before anyone has typed a PIN. Staff read them back through
   `bmsPosDeviceDiagnostics`, which requires `support.logs.view`.
-- `GET /api/pos/shift-report?cashierUserId=&pin=[&shiftId=]` (`7.97`) — X (mid-shift) / Z
+- `GET /api/pos/shift-report?cashierUserId=[&shiftId=]` + header `x-pos-cashier-pin` (`7.97`) — X (mid-shift) / Z
   (post-close) summary as `{ report }`; omitting `shiftId` reports the device's open shift, and no
   shift at all is `404`. An explicit `shiftId` is still scoped to the calling device — a shift
   belonging to a different register in the same store answers `404`, not that register's numbers.

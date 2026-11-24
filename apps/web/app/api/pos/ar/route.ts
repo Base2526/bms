@@ -24,7 +24,8 @@ async function handleGET(req: NextRequest) {
   if (!device) return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
 
   const userId = req.nextUrl.searchParams.get("cashierUserId") ?? "";
-  const pin = req.nextUrl.searchParams.get("pin") ?? "";
+  // PIN in a header, never the query string: URLs land in proxy access logs and history.
+  const pin = req.headers.get("x-pos-cashier-pin") ?? "";
   const customerId = (req.nextUrl.searchParams.get("customerId") ?? "").trim();
   if (!userId || !pin) return NextResponse.json({ error: "ต้องระบุพนักงานและ PIN" }, { status: 400 });
   if (!customerId) return NextResponse.json({ error: "ต้องระบุลูกค้า" }, { status: 400 });
