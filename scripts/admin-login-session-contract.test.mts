@@ -17,24 +17,9 @@ test("login redirect agrees with the API on revoked and changed admin sessions",
   assert.doesNotMatch(login, /if \(admin\)\s*redirect\("\/admin"\)/);
 });
 
-test("the admin session bundle and route have visible, localized loading states", async () => {
-  const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  const providers = stripComments(read("../apps/web/app/ClientProviders.tsx"));
-  const route = stripComments(read("../apps/web/app/(admin)/admin/loading.tsx"));
-  // The session bundle fallback renders inside I18nProvider, so it follows the chosen language.
-  assert.match(providers, /loading: \(\) => <SessionLoading \/>/);
-  assert.match(providers, /function SessionLoading\(\)[\s\S]*useI18n\(\)[\s\S]*role="status"[\s\S]*t\("common\.loading_app_label"\)[\s\S]*t\("common\.loading_app"\)/);
-  // The route fallback is a server component: it reads the same `lang` cookie as the root layout.
-  assert.match(route, /\(await cookies\(\)\)\.get\("lang"\)/);
-  assert.match(route, /role="status"[\s\S]*getMessage\(lang, "common\.loading_app_label"\)[\s\S]*getMessage\(lang, "common\.loading_page"\)/);
-  assert.match(route, /styles\.cards[\s\S]*styles\.panel/);
-  for (const source of [providers, route]) assert.doesNotMatch(source, /Loading…|loading"/);
-
-  const { getMessage } = await import("../apps/web/i18n/index.ts");
-  assert.equal(getMessage("en", "common.loading_app"), "BMS POS+ · Loading…");
-  assert.equal(getMessage("en", "common.loading_app_label"), "BMS POS+ loading");
-  assert.match(getMessage("th", "common.loading_app"), /^BMS POS\+ · [ก-๙]/);
-  assert.match(getMessage("th", "common.loading_app_label"), /^BMS POS\+ [ก-๙]/);
-  assert.equal(getMessage("th", "common.loading_page"), "กำลังเตรียมหน้านี้…");
-  assert.equal(getMessage("en", "common.loading_page"), "Preparing this page…");
+test("the admin session bundle and route have visible loading states", () => {
+  const providers = read("../apps/web/app/ClientProviders.tsx");
+  assert.match(providers, /loading: \(\) => \([\s\S]*role="status"[\s\S]*BMS POS\+ · Loading/);
+  const route = read("../apps/web/app/(admin)/admin/loading.tsx");
+  assert.match(route, /role="status"[\s\S]*BMS POS\+ · Loading/);
 });

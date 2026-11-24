@@ -1972,10 +1972,7 @@ const rawResolvers = {
       );
       return rows;
     },
-    // stats/pending/latestUsers/latestPosts read users, posts, files and system_logs across every
-    // shop, so they are platform-admin views (a signed-in shop or public account is not enough).
     stats: async (_:any, __:any, ctx:any) => {
-      await requirePlatformOnly(ctx);
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] stats :", author_id);
 
@@ -1991,30 +1988,25 @@ const rawResolvers = {
       return { users, posts, files, logs };
     },
     latestUsers: async (_: any, { limit = 5 }: any, ctx: any) => {
-      await requirePlatformOnly(ctx);
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] latestUsers :", author_id);
-      const boundedLimit = Math.min(Math.max(Math.trunc(Number(limit)) || 5, 1), 50);
 
       const { rows } = await query(
         `SELECT id, name, email, role, created_at, avatar
         FROM users
         ORDER BY created_at DESC
         LIMIT $1`,
-        [boundedLimit]
+        [limit]
       );
 
       return rows.map((u: any) => ({
         ...u,
-        created_at: toIso(u.created_at),
         avatar: u.avatar || null, // ถ้าไม่มีค่าให้เป็น null
       }));
     },
     latestPosts: async (_: any, { limit = 5 }: any, ctx: any) => {
-      await requirePlatformOnly(ctx);
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] latestPosts :", author_id);
-      const boundedLimit = Math.min(Math.max(Math.trunc(Number(limit)) || 5, 1), 50);
 
       const { rows } = await query(
         `
@@ -2030,14 +2022,14 @@ const rawResolvers = {
         ORDER BY p.created_at DESC
         LIMIT $1
         `,
-        [boundedLimit]
+        [limit]
       );
 
       return rows.map((r: any) => ({
         id: r.id,
         title: r.title,
         status: r.status,
-        created_at: toIso(r.created_at),
+        created_at: r.created_at,
         images: (r.images_json || []).map((it: any) => ({
           id: it.id,
           url: buildFileUrlById(it.id),
@@ -2045,7 +2037,6 @@ const rawResolvers = {
       }));
     },
     pending: async (_:any, __:any, ctx:any) => {
-      await requirePlatformOnly(ctx);
       const { author_id, scope, isAuthenticated } = requireAuth(ctx);
       console.log("[Query] pending :", author_id);
 
@@ -3113,7 +3104,7 @@ const rawResolvers = {
         tenantId: user.tenant_id ?? null, actorUserId: String(user.id),
         event: "auth.login", outcome: "SUCCESS", source: "USER_PASSWORD",
       });
-      (await cookies()).set(USER_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
+      cookies().set(USER_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
       return {
         ok: true,
         message: "Login success",
@@ -3181,7 +3172,7 @@ const rawResolvers = {
         tenantId: user.tenant_id ?? null, actorUserId: String(user.id),
         event: "auth.login", outcome: "SUCCESS", source: "USER_SOCIAL",
       });
-      (await cookies()).set(USER_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
+      cookies().set(USER_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
 
       return {
         ok: true,
@@ -7859,8 +7850,6 @@ const rawResolvers = {
     },
 
     setRoleActive: async (_: any, { id, is_active }: { id: string; is_active: boolean }, ctx: any) => {
-      // Same rule as create/update/delete: a role is a global definition shared by every shop.
-      await requirePlatformOnly(ctx);
       const { author_id } = requireAuth(ctx);
       console.log('[Mutation] setRoleActive:', author_id, id, is_active);
 
@@ -7883,7 +7872,6 @@ const rawResolvers = {
            RETURNING id, name, description, is_active, created_at, updated_at`,
           [!!is_active, id]
         );
-        await audit(ctx, "role.set_active", id, { name: rows[0]?.name ?? null, isActive: !!is_active });
 
         console.log('[Mutation] setRoleActive success:', rows[0]);
         return rows[0];

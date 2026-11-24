@@ -101,9 +101,7 @@ async function fetchLineInboundAttachment(
     const buf = Buffer.from(media.bytes);
     const mimeType = resp.headers.get("content-type")?.split(";", 1)[0]?.trim() || defaults.mimeType;
     const filename = message.fileName || `line-${message.type}-${message.id}.${defaults.extension}`;
-    // Stored as Inbox media so /api/files applies inbox.view + Sales assignment (storedFileKinds.ts);
-    // the customer's own file name is kept as original_name.
-    const row = await persistBuffer(buf, filename, mimeType, "private", tenantId, `bms-inbox-line-${message.id}-${filename}`);
+    const row = await persistBuffer(buf, filename, mimeType, "private", tenantId);
     return { url: buildFileUrlById(row.id), name: row.original_name ?? filename, mimeType: row.mimetype ?? mimeType };
   } catch (error) {
     console.error("[BMS] LINE inbound media fetch failed:", error);
@@ -309,8 +307,8 @@ async function processLineEvent(
   }
 }
 
-async function handlePOST(req: NextRequest, { params }: { params: Promise<{ tenantId: string }> }) {
-  const tenantId = (await params).tenantId?.trim();
+async function handlePOST(req: NextRequest, { params }: { params: { tenantId: string } }) {
+  const tenantId = params.tenantId?.trim();
   if (!tenantId) return NextResponse.json({ error: "tenant required" }, { status: 400 });
 
   // rate limit ต่อร้าน (กัน abuse / flood)

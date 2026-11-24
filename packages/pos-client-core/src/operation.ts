@@ -106,18 +106,3 @@ export function isDecidedRejection(error: unknown): boolean {
     && errors.every(item => typeof item?.extensions?.code === 'string'
       && DECIDED_ERROR_CODES.includes(item.extensions.code));
 }
-
-const SIGN_IN_ERROR_CODES = ["UNAUTHENTICATED", "FORBIDDEN"];
-
-/**
- * The server refused the device token or the cashier (PIN, lockout, permission) before it looked at
- * the operation. That is a final answer for this request, but not a decision about the sale itself:
- * replay queues must keep the row retryable for a fresh sign-in instead of sending it to review.
- */
-export function isSignInRefusal(error: unknown): boolean {
-  const value = error as GraphqlErrorShape & { networkError?: unknown } | null;
-  const errors = value?.graphQLErrors;
-  return !value?.networkError && Array.isArray(errors) && errors.length > 0
-    && errors.every(item => typeof item?.extensions?.code === 'string'
-      && SIGN_IN_ERROR_CODES.includes(item.extensions.code));
-}

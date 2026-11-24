@@ -251,13 +251,10 @@ export async function persistBuffer(
   // ผู้ใช้จริงของฟังก์ชันนี้คือไฟล์รายงานที่ generate เอง ซึ่งมี route ดาวน์โหลด
   // ที่ตรวจ tenant อยู่แล้ว — private เป็นค่าปริยายที่ถูกต้อง
   visibility: FileVisibility = "private",
-  tenantId?: string | null,
-  // Stored/key name when it must differ from the display name (e.g. Inbox media is recognized by
-  // its stored name — lib/bms/storedFileKinds.ts). original_name stays `filename`.
-  storageName?: string
+  tenantId?: string | null
 ): Promise<StoredFileRow> {
   const checksum = crypto.createHash("sha256").update(buf).digest("hex");
-  const { key, storedName } = buildKey(storageName || filename);
+  const { key, storedName } = buildKey(filename);
 
   await getStorageDriver().write(key, buf);
 

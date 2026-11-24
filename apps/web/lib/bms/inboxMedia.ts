@@ -1,8 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { query } from "@/lib/db";
-import { INBOX_STORED_FILENAME_PATTERN, isInboxStoredFilename } from "@/lib/bms/storedFileKinds";
-
-export { INBOX_STORED_FILENAME_PATTERN, isInboxStoredFilename };
 
 const MEDIA_LIFETIME_SECONDS = 30 * 24 * 60 * 60;
 const LOCAL_FILE_URL = /^\/api\/files\/([1-9][0-9]*)$/;
@@ -74,7 +71,7 @@ export async function outboundInboxMediaUrl(tenantId: string, url: string): Prom
   if (!file.rowCount) throw new Error("Inbox attachment is unavailable or belongs to another shop");
   if (file.rows[0].visibility === "public" && localMatch) return url;
   const proof = signedMatch ? verifyInboxMedia(signedMatch[2]) : null;
-  if (file.rows[0].visibility !== "private" || !isInboxStoredFilename(file.rows[0].filename) ||
+  if (file.rows[0].visibility !== "private" || !file.rows[0].filename.startsWith("bms-inbox-") ||
       !proof || proof.tenantId !== tenantId || proof.fileId !== fileId)
     throw new Error("Invalid Inbox attachment authorization");
   return inboxMediaPath(tenantId, fileId);

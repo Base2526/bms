@@ -5,8 +5,18 @@ import { useEffect, useMemo, useState } from "react";
 import type { PublicProduct, PublicProductCard } from "@/lib/bms/products";
 import { useBreadcrumbsOverride } from "@/components/breadcrumbs-context";
 import { addCartLine } from "../../cart/cartStorage";
-import { safePublicWebsiteUrl } from "@/lib/safeLinkUrl";
 import styles from "./page.module.css";
+
+function safeWebsite(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const candidate = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+    const url = new URL(candidate);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
 
 function formatPrice(price: number, currency: string, lang: "th" | "en") {
   try {
@@ -54,7 +64,7 @@ export default function PublicProductView({
   const [actionState, setActionState] = useState<"idle" | "copied" | "shared" | "copyError" | "shareError">("idle");
   const [cartState, setCartState] = useState<"idle" | "added" | "full">("idle");
   const { clearOverride, setOverride } = useBreadcrumbsOverride();
-  const website = useMemo(() => safePublicWebsiteUrl(shop.website), [shop.website]);
+  const website = useMemo(() => safeWebsite(shop.website), [shop.website]);
   const phoneHref = shop.phone ? `tel:${shop.phone.replace(/[^+\d]/g, "")}` : null;
   const totalAvailable = product.variants.reduce((sum, variant) => sum + variant.available, 0);
   const updatedLabel = formatUpdatedAt(product.updatedAt, lang);
