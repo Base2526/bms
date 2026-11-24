@@ -58,4 +58,9 @@ test("global role definitions can only be changed by a platform admin, and activ
   }
   // Switching a global role off hides it from every shop and breaks owner signup for Administrator.
   assert.match(resolverBody("setRoleActive"), /await audit\(ctx, "role\.set_active", id,/);
+  // 2026-11-24 recheck: updateRole could set is_active too (and rename/re-describe a role every shop
+  // uses) without any audit row, and create/delete left none either.
+  assert.match(resolverBody("updateRole"), /await audit\(ctx, "role\.update", id,/);
+  assert.match(resolverBody("createRole"), /await audit\(ctx, "role\.create", /);
+  assert.match(resolverBody("deleteRole"), /await audit\(ctx, "role\.delete", id,/);
 });

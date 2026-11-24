@@ -7726,6 +7726,7 @@ const rawResolvers = {
            RETURNING id, name, description, is_active, created_at, updated_at`,
           [trimmedName, description || null, is_active !== false]
         );
+        await audit(ctx, "role.create", rows[0]?.id ?? null, { name: trimmedName, isActive: is_active !== false });
 
         return rows[0];
       } catch (err: any) {
@@ -7812,6 +7813,13 @@ const rawResolvers = {
            RETURNING id, name, description, is_active, created_at, updated_at`,
           params
         );
+        // Same evidence as setRoleActive: this path can also switch a global role on or off.
+        await audit(ctx, "role.update", id, {
+          previousName: existingRole[0]?.name ?? null,
+          name: rows[0]?.name ?? null,
+          ...(is_active !== undefined ? { isActive: !!is_active } : {}),
+          changed: updates.filter((u) => !u.startsWith("updated_at")).map((u) => u.split(" ")[0]),
+        });
 
         return rows[0];
       } catch (err: any) {
@@ -7853,6 +7861,7 @@ const rawResolvers = {
 
         // Safe to delete (no users are using this role)
         await query(`DELETE FROM roles WHERE id = $1`, [id]);
+        await audit(ctx, "role.delete", id, { name: existingRole[0]?.name ?? null });
 
         console.log('[Mutation] deleteRole success:', id);
         return true;
