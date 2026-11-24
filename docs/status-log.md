@@ -1264,3 +1264,19 @@ exposed drift. `npm run gate` exited 0 (401 pure files,
 The local DB clone lacks 10 readiness migrations, so current-code DB transactions and a complete
 customer-to-dashboard flow were not verified. Admin/session-backed browser routes, providers and
 physical POS hardware remain unverified in this pass.
+
+**Full-system recheck branch (2026-11-24, `recheck/full-system-2026-11-24`, no migration).**
+Evidence ledger: [architecture/system-recheck-2026-11-24.md](architecture/system-recheck-2026-11-24.md).
+Uncommitted files on `develop` that undid the 2026-11-23 recheck fixes were preserved
+(`5f51de9b`) and reverted (`739e354a`). Fixed: slip OCR reading another shop's file; four GraphQL
+type resolvers never wired (including the Sales coupon mask); constant-time marketplace/Meta webhook
+checks; cashier PIN moved from GET query strings to a header; sandboxed mail-log preview; Inbox
+cards only from the shop's own messages; emergency directory Administrator-only; Pharmacy Lab
+permission; public error text; SQL console function families and pooled sessions; global-role
+audits; support-form rate limit; reserved log category; stock adjustment branch scope; antd
+toasts/confirm dialogs rendering nothing on React 19; `/admin/receivables` crashing on open; default
+shop logs dropped by redaction; Role `Invalid Date`; Bangkok expiry day; two analytics i18n keys;
+four Desktop shell defects; two Mobile i18n defects; and eight DB contracts that could not pass on a
+correct schema. `npm run gate` exited 0 (419 pure files, 3,962 tests, 3,956 passed, 6 skipped; build 149 pages); Desktop 171/171 and `pack:win`; Mobile 65 suites / 501 tests; every DB contract green on its throwaway database; Admin crawled in Thai (1440 px) and English (375 px) plus a dark-mode subset on a local dev server. Remaining risks (stock-count branch scope, missing idempotency keys on
+some stock/points mutations, post-commit audits, legacy public Inbox files, hardware and providers)
+are listed in the ledger and are not verified in production.
