@@ -7941,6 +7941,14 @@ const rawResolvers = {
   BmsConversation: bmsInboxResolvers.BmsConversation,
   BmsConversationNote: bmsInboxResolvers.BmsConversationNote,
   BmsAuditEntry: bmsDashboardResolvers.BmsAuditEntry,
+  // Type resolvers below were exported but never listed here, so the live schema used default
+  // property reads: couponSummary skipped its coupon.view mask, tracking events returned snake_case
+  // rows into non-null camelCase fields, and parked carts skipped normalization.
+  // graphql-type-resolver-wiring-contract keeps every exported type resolver attached.
+  BmsDashboard: bmsDashboardResolvers.BmsDashboard,
+  BmsShipmentTrackingEvent: bmsShippingResolvers.BmsShipmentTrackingEvent,
+  BmsPosParkedSale: bmsPosDeviceResolvers.BmsPosParkedSale,
+  BmsPosParkActionResult: bmsPosDeviceResolvers.BmsPosParkActionResult,
 };
 
 export const resolvers = {
