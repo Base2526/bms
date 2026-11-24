@@ -169,6 +169,13 @@
     หน้าต่างนี้ไม่มีสิทธิ์ตั้งค่าจอเรียกคิว:
       "This window is not authorized to configure the queue display",
     รูปแบบการตั้งค่าจอเรียกคิวไม่ถูกต้อง: "Invalid queue display mode",
+    จอที่บันทึกไว้: "Saved display",
+    จำนวนจอเรียกคิวไม่ถูกต้อง: "Invalid number of queue displays",
+    รายการจอเรียกคิวไม่ถูกต้อง: "Invalid queue display list",
+    จอประกาศเสียงไม่ถูกต้อง: "Invalid announcement display",
+    จอประกาศเสียงต้องอยู่ในรายการจอคิว:
+      "The announcement display must be one of the queue displays",
+    ไม่พบจอประกาศเสียง: "Announcement display not found",
     จอแคชเชียร์ใช้เป็นจอเรียกคิวไม่ได้:
       "Cashier display cannot be used for queues",
     "จอนี้กำลังใช้เป็นจอลูกค้า กรุณาเลือกคนละจอ":

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -45,6 +46,57 @@ test("shell translations preserve interpolation fields and user-entered values",
   } finally {
     locale.applyAppLanguage("th");
   }
+});
+
+// Removes // and /* */ comments while leaving string and template literal contents intact, so a
+// comment that quotes an old message cannot satisfy (or fail) the catalogue scan below.
+function stripComments(source) {
+  let out = "";
+  let quote = null;
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    const next = source[i + 1];
+    if (quote) {
+      out += ch;
+      if (ch === "\\") { out += next ?? ""; i += 1; } else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "/" && next === "/") {
+      while (i < source.length && source[i] !== "\n") i += 1;
+      out += "\n";
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      const end = source.indexOf("*/", i + 2);
+      i = end === -1 ? source.length : end + 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") quote = ch;
+    out += ch;
+  }
+  return out;
+}
+
+test("every literal posText message in the shell has an English catalogue entry", () => {
+  const sourceDir = new URL("../src/", import.meta.url);
+  const rendererDir = new URL("../renderer/", import.meta.url);
+  const files = [
+    ...readdirSync(sourceDir).filter((name) => /\.(mjs|cjs)$/.test(name)).map((name) => new URL(name, sourceDir)),
+    ...readdirSync(rendererDir).filter((name) => /\.(js|cjs)$/.test(name) && name !== "locale.cjs")
+      .map((name) => new URL(name, rendererDir)),
+  ];
+  const missing = [];
+  let literalCalls = 0;
+  for (const file of files) {
+    const source = stripComments(readFileSync(file, "utf8"));
+    for (const match of source.matchAll(/\bposText\(\s*(["'])((?:\\.|(?!\1)[^\\])*)\1/g)) {
+      literalCalls += 1;
+      const message = match[2];
+      if (!Object.hasOwn(locale.english, message)) missing.push(`${file.pathname.split("/").slice(-2).join("/")}: ${message}`);
+    }
+  }
+  assert.ok(literalCalls > 50, `expected the scan to find the shell's posText calls, found ${literalCalls}`);
+  assert.deepEqual(missing, [], "English operators would see these Thai messages untranslated");
 });
 
 test("startup messages switch both ways without changing unknown diagnostics", () => {
