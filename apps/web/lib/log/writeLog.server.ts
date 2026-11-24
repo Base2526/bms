@@ -27,6 +27,11 @@ function pickInt(meta: LogMeta, ...keys: string[]): number | null {
   return null;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function uuidOrNull(value: string | null): string | null {
+  return value && UUID_PATTERN.test(value) ? value : null;
+}
+
 function legacyActorId(meta: LogMeta): number | null {
   const value = meta?.userId ?? meta?.user_id;
   if (typeof value === "string" && !/^\d+$/.test(value)) return null;
@@ -104,7 +109,10 @@ export async function writeLogServer(
     const storedDeviceInfo = deviceJson && Buffer.byteLength(deviceJson, "utf8") <= 16 * 1024
       ? deviceJson : deviceJson ? JSON.stringify({ truncated: true }) : null;
     const created_by = legacyActorId(metaRedacted);
-    const tenant_id = pickString(metaRedacted, "tenantId", "tenant_id");
+    // From the unredacted meta: a tenant id is an identifier, not PII, and the sanitizer masks long
+    // digit runs — DEFAULT_TENANT_ID became "11111111-1111-1111-1111-[NUMBER]", the uuid INSERT
+    // failed and the log was lost. Anything that is not a UUID is stored as NULL.
+    const tenant_id = uuidOrNull(pickString(meta ?? {}, "tenantId", "tenant_id"));
 
     const hasStructured = await ensureStructuredColsReady();
     const hasTenant = await ensureTenantColReady();
