@@ -255,6 +255,11 @@ async function handlePOST(req: NextRequest) {
   if (list.some((item: any) => !["debug", "info", "warn", "error"].includes(String(item.level || "info").toLowerCase()))) {
     return NextResponse.json({ error: "Invalid log level" }, { status: 400 });
   }
+  // "log-admin" holds the log-deletion audit trail and is excluded from every purge; a client row
+  // there would look like a deletion audit event that no platform admin could remove.
+  if (list.some((item: any) => String(item.category ?? "").trim().toLowerCase() === "log-admin")) {
+    return NextResponse.json({ error: "Reserved log category" }, { status: 400 });
+  }
 
   let insertedCount = 0;
   for (const raw of list as Record<string, any>[]) {
