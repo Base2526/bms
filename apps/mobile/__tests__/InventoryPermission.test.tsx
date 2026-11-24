@@ -51,4 +51,6 @@ test.each(['th', 'en'] as const)('a FORBIDDEN stock lookup shows the permission 
   const failed = language === 'en' ? 'Could not load inventory tasks' : 'โหลดข้อมูลงานสต็อกไม่สำเร็จ';
   expect(texts).toContain(denied);
   expect(texts).not.toContain(failed);
+  // Unmount inside the test so no late effect/lazy import runs after Jest tears down.
+  await act(async () => tree.unmount());
 });

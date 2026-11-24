@@ -15,5 +15,6 @@ export function isPermissionDeniedError(error: unknown): boolean {
     return true;
   }
   const message = (error as { message?: unknown }).message;
-  return typeof message === 'string' && message.includes('ไม่มีสิทธิ์');
+  // A pattern over the server's Thai wording, not operator copy (no translation applies).
+  return typeof message === 'string' && /ไม่มีสิทธิ์/.test(message);
 }
