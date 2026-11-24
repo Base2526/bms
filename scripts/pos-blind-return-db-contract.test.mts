@@ -62,8 +62,12 @@ test("setup: a ฿100 product, a register, and ฿1,000 in the drawer", async ()
       ORDER BY is_head_office DESC, created_at LIMIT 1`,
     [tenantId]
   )).rows[0].id;
+  // UPSERT: a tenant without a profile row reads as blind close ON (DEFAULT TRUE), so an UPDATE
+  // alone left the drawer figures hidden on a restored database where the first tenant has no row.
   await query(
-    `UPDATE bms_store_profile SET cash_rounding = 'NONE', pos_blind_close = FALSE WHERE tenant_id = $1`,
+    `INSERT INTO bms_store_profile (tenant_id, cash_rounding, pos_blind_close)
+     VALUES ($1, 'NONE', FALSE)
+     ON CONFLICT (tenant_id) DO UPDATE SET cash_rounding = 'NONE', pos_blind_close = FALSE`,
     [tenantId]
   );
   await query(
