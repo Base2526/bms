@@ -34,3 +34,13 @@ test("the admin login page only navigates to the sanitized destination", () => {
   assert.match(source, /const next = safeInternalRedirectPath\(sp\.get\("next"\)\);/);
   assert.doesNotMatch(source, /sp\.get\("next"\) \|\|/);
 });
+
+// 2026-11-24 recheck: the shared public LoginClient ended a successful login with
+// window.location.href = nextPath || "/". It has no importer today, but its contracts keep it alive;
+// an imperative navigation is not covered by React 19's javascript: href block.
+test("the public login client only navigates to a sanitized same-origin path", () => {
+  const source = readFileSync(new URL("../apps/web/components/auth/LoginClient.tsx", import.meta.url), "utf8")
+    .replace(/\r\n/g, "\n");
+  assert.match(source, /^\s+window\.location\.href = safeInternalRedirectPath\(nextPath, "\/"\);$/m);
+  assert.doesNotMatch(source, /^\s+window\.location\.href = nextPath \|\|/m);
+});
