@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { readBoundedBodyBytes, readBoundedFormData } from "../apps/web/lib/bms/webhookBody.ts";
 import { loadWithStubs } from "./testing/webhookHarness.mts";
+import { publicErrorMessage } from "../apps/web/lib/publicErrorMessage.ts";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -70,6 +71,7 @@ test("each upload route returns 413 before storage or business work for chunked 
     "sharp": unexpected,
     "@/lib/bms/webhookBody": { readBoundedBodyBytes, readBoundedFormData },
     "@/lib/log/routeError": { withRouteErrorLog: (_label: string, handler: unknown) => handler },
+    "@/lib/publicErrorMessage": { publicErrorMessage },
     "@/lib/bms/rateLimit": { rateLimit: async () => ({ ok: true }) },
     "@/lib/storage": { persistWebFile: unexpected, buildFileUrlById: unexpected },
     "@/lib/bms/boardGameWaitlist": {
