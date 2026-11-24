@@ -3233,6 +3233,7 @@
   "เซิร์ฟเวอร์ไม่ตอบภายในเวลาที่กำหนด": "Server response timed out",
   "ตรวจการเชื่อมต่อและสถานะเซิร์ฟเวอร์": "Check the connection and server status",
   "การรอคำตอบถูกยกเลิก": "Waiting for a response was cancelled",
+  "เซิร์ฟเวอร์ไม่ตอบภายใน {v0} วินาที": "Server did not respond within {v0} seconds",
   "ตรวจสถานะล่าสุดก่อนทำรายการต่อ": "Check the latest status before continuing",
   "เซิร์ฟเวอร์ไม่ยอมรับข้อมูลยืนยันเครื่อง": "The server rejected this register's credentials",
   "ให้ผู้ดูแลตรวจสถานะเครื่องและ token เก็บรายการค้างไว้ก่อนเปลี่ยนการจับคู่": "Ask an administrator to check the register and token. Keep pending transactions before changing pairing.",
