@@ -64,3 +64,13 @@ test("global role definitions can only be changed by a platform admin, and activ
   assert.match(resolverBody("createRole"), /await audit\(ctx, "role\.create", /);
   assert.match(resolverBody("deleteRole"), /await audit\(ctx, "role\.delete", id,/);
 });
+
+test("the public support-ticket mutation is rate limited before it writes or sends mail", () => {
+  // 2026-11-24 recheck: createSupportTicket needs no login (contact form) but had no limit, so
+  // every anonymous call inserted a ticket and sent an email from the platform's domain.
+  const body = resolverBody("createSupportTicket");
+  const limitAt = body.search(/await enforceAuthRateLimit\(ctx, "support-ticket",/);
+  assert.ok(limitAt >= 0, "createSupportTicket must call enforceAuthRateLimit");
+  assert.ok(body.search(/INSERT INTO support_tickets/) > limitAt, "limit before the insert");
+  assert.ok(body.search(/sendEmail\(/) > limitAt, "limit before the email");
+});

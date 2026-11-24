@@ -6866,6 +6866,9 @@ const rawResolvers = {
       return result;
     },
     createSupportTicket: async (_: any, { input }: any, ctx: any) => {
+      // Public contact form: no login, but every call writes a ticket and sends an email from the
+      // platform's domain, so bound it per sender address and per IP before doing either.
+      await enforceAuthRateLimit(ctx, "support-ticket", String(input?.email || "").trim().toLowerCase(), 5, 20, 60 * 60_000);
       const ticketId = `SUP-${Date.now()}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
       const ip =
         ctx?.req?.headers?.get?.("x-forwarded-for")?.split(",")[0]?.trim() ||
