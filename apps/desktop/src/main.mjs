@@ -89,6 +89,8 @@ let customerDisplayWindowDisplayId = null;
 let customerDisplayWindowKind = null;
 let customerDisplayConfig = { ...DEFAULT_CUSTOMER_DISPLAY_CONFIG };
 const queueDisplayWindows = new Map();
+// `/pos/manual` and legacy `/pos/queue-board` windows opened by the cashier page (`window.open`).
+const posPopupWindows = new Set();
 let queuePreviewWindow = null;
 let queueDisplayConfig = { ...DEFAULT_QUEUE_DISPLAY_CONFIG };
 let printerConfig = { ...DEFAULT_PRINTER_CONFIG };
@@ -278,6 +280,7 @@ async function removePairing() {
   installApplicationMenu();
   closeCustomerDisplayWindow();
   if (typeof closeQueueDisplayWindow === "function") closeQueueDisplayWindow();
+  if (typeof closePosPopupWindows === "function") closePosPopupWindows();
   try {
     await pairingPersistence().remove();
     return { ok: true };
@@ -1012,6 +1015,22 @@ function handleMainWindowClosed(window) {
   mainLoadRecovery = null;
   closeCustomerDisplayWindow();
   closeQueueDisplayWindow();
+  closePosPopupWindows();
+}
+
+function trackPosPopupWindow(window) {
+  posPopupWindows.add(window);
+  window.once("closed", () => posPopupWindows.delete(window));
+}
+
+// A popup belongs to the cashier page and pairing that opened it. Without this it outlived an
+// unpair/"Change server" with the old token still in page memory and kept the app running after
+// the cashier window closed.
+function closePosPopupWindows() {
+  for (const window of [...posPopupWindows]) {
+    posPopupWindows.delete(window);
+    if (!window.isDestroyed()) window.close();
+  }
 }
 
 function createMainWindow() {
@@ -1064,7 +1083,10 @@ function createMainWindow() {
   };
   window.webContents.on("will-navigate", guardNavigation);
   window.webContents.on("will-redirect", guardNavigation);
-  window.webContents.on("did-create-window", (child, details) => secureUtilityWindow(child, details.url));
+  window.webContents.on("did-create-window", (child, details) => {
+    secureUtilityWindow(child, details.url);
+    trackPosPopupWindow(child);
+  });
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     try {

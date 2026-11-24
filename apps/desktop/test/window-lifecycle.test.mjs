@@ -44,14 +44,45 @@ test('late close of an old cashier leaves the replacement display windows open',
   const context=vm.createContext({mainWindow:newWindow,pendingRefreshRequest:null,pendingUnpair:null,
     startupNavigation:null,mainLoadRecovery:null,clearTimeout,
     closeCustomerDisplayWindow:()=>calls.push('customer'),
-    closeQueueDisplayWindow:()=>calls.push('queue')});
+    closeQueueDisplayWindow:()=>calls.push('queue'),
+    closePosPopupWindows:()=>calls.push('popups')});
   vm.runInContext(body('handleMainWindowClosed'),context);
   context.handleMainWindowClosed(oldWindow);
   assert.equal(context.mainWindow,newWindow);
   assert.deepEqual(calls,[]);
   context.handleMainWindowClosed(newWindow);
   assert.equal(context.mainWindow,null);
-  assert.deepEqual(calls,['customer','queue']);
+  assert.deepEqual(calls,['customer','queue','popups']);
+});
+test('cashier-opened /pos popups close with the cashier and on unpair, and only once',async()=>{
+  const popup=(name)=>{const w={name,closed:0,destroyed:false,listeners:{},
+    isDestroyed:()=>w.destroyed,close:()=>{w.closed++;w.destroyed=true;w.listeners.closed?.();},
+    once:(event,fn)=>{w.listeners[event]=fn;}};return w;};
+  const make=()=>vm.createContext({posPopupWindows:new Set(),mainWindow:null,pendingRefreshRequest:null,
+    pendingUnpair:null,startupNavigation:null,mainLoadRecovery:null,clearTimeout,
+    closeCustomerDisplayWindow:()=>{},closeQueueDisplayWindow:()=>{}});
+  const closing=make();
+  vm.runInContext(`${body('trackPosPopupWindow')};${body('closePosPopupWindows')};${body('handleMainWindowClosed')}`,closing);
+  const cashier={},manual=popup('manual'),board=popup('board'),gone=popup('gone');
+  closing.mainWindow=cashier;
+  for(const w of [manual,board,gone]) closing.trackPosPopupWindow(w);
+  gone.close();
+  assert.equal(closing.posPopupWindows.size,2,'a popup closed by the user leaves the set');
+  closing.handleMainWindowClosed(cashier);
+  assert.deepEqual([manual.closed,board.closed,gone.closed],[1,1,1]);
+  assert.equal(closing.posPopupWindows.size,0);
+
+  const unpairPopup=popup('manual');
+  const unpairing=vm.createContext({posText,activePairing:{serverUrl:'https://shop.example',token:'FAKE'},
+    pairingRestoreError:null,pairingInProgress:false,pairingRevision:0,pairingRestoreRequest:0,
+    startupNavigation:null,pendingRefreshRequest:null,posPopupWindows:new Set(),
+    installApplicationMenu:()=>{},closeCustomerDisplayWindow:()=>{},clearTimeout,
+    pairingPersistence:()=>({remove:async()=>{}})});
+  vm.runInContext(`${body('trackPosPopupWindow')};${body('closePosPopupWindows')}`,unpairing);
+  unpairing.trackPosPopupWindow(unpairPopup);
+  const result=await vm.runInContext(`${body('removePairing')};removePairing();`,unpairing);
+  assert.equal(result.ok,true);
+  assert.equal(unpairPopup.closed,1,'a popup must not keep running on the removed pairing');
 });
 test('second launch and macOS activation restore/focus the existing minimized cashier',()=>{
   const calls=[];
