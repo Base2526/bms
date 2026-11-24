@@ -84,6 +84,17 @@ test('cashier-opened /pos popups close with the cashier and on unpair, and only 
   assert.equal(result.ok,true);
   assert.equal(unpairPopup.closed,1,'a popup must not keep running on the removed pairing');
 });
+test('only an installer-named pairing handoff path is consumed (it is deleted after reading)',async()=>{
+  const nodePath=await import('node:path');
+  const pick=(argument)=>vm.runInNewContext(`${body('pairingHandoffArgument')};pairingHandoffArgument();`,
+    {process:{argv:['bms-pos',argument]},path:nodePath.default});
+  const dir=nodePath.resolve('/installer-state');
+  for(const name of ['pairing-handoff.json','bms-pairing-handoff.json','pairing-handoff-0a1b2c3d4e5f.json'])
+    assert.equal(pick(`--pairing-handoff=${nodePath.join(dir,name)}`),nodePath.join(dir,name),name);
+  for(const name of ['notes.txt','pairing.json','desktop.ini','pairing-handoff.json.bak','x-pairing-handoff.json'])
+    assert.equal(pick(`--pairing-handoff=${nodePath.join(dir,name)}`),null,`${name} must be ignored, never removed`);
+  assert.equal(pick('--pairing-handoff=pairing-handoff.json'),null,'relative paths stay refused');
+});
 test('second launch and macOS activation restore/focus the existing minimized cashier',()=>{
   const calls=[];
   vm.runInNewContext(`${body('reopenMainWindow')};reopenMainWindow();`,{

@@ -296,7 +296,11 @@ async function removePairing() {
 function pairingHandoffArgument() {
   const prefix = "--pairing-handoff=";
   const value = process.argv.find((argument) => argument.startsWith(prefix))?.slice(prefix.length);
-  return value && path.isAbsolute(value) ? value : null;
+  // consumePairingHandoff() deletes the file it is given, so only accept the names the Retail
+  // Local installers write: pairing-handoff.json (Windows), bms-pairing-handoff.json (Linux) and
+  // pairing-handoff-<hex>.json (macOS). Any other path is ignored and left untouched.
+  if (!value || !path.isAbsolute(value)) return null;
+  return /^(?:bms-)?pairing-handoff(?:-[0-9a-f]{1,64})?\.json$/i.test(path.basename(value)) ? value : null;
 }
 
 async function consumePairingHandoff(isCurrent = () => true) {
