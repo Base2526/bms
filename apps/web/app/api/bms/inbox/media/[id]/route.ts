@@ -2,27 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 import { Readable } from "node:stream";
 import { query } from "@/lib/db";
 import { openStoredFileStream, statStoredFile } from "@/lib/storage";
-import { verifyInboxMedia } from "@/lib/bms/inboxMedia";
+import { INBOX_STORED_FILENAME_PATTERN, verifyInboxMedia } from "@/lib/bms/inboxMedia";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function handleGET(req: NextRequest, { params }: { params: { id: string } }) {
+async function handleGET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   const limit = await rateLimit(`inbox-media:${ip}`, 300, 60_000);
   if (!limit.ok) return NextResponse.json({ error: "too many requests" }, { status: 429,
     headers: { "Retry-After": String(limit.retryAfter) } });
-  const id = Number(params.id);
+  const id = Number((await params).id);
   if (!Number.isSafeInteger(id) || id < 1) return NextResponse.json({ error: "not found" }, { status: 404 });
   const signed = verifyInboxMedia(req.nextUrl.searchParams.get("token"));
   if (!signed || signed.fileId !== id) return NextResponse.json({ error: "not found" }, { status: 404 });
   const result = await query<{ relpath: string; mimetype: string | null; original_name: string | null }>(
     `SELECT relpath,mimetype,original_name FROM files
       WHERE id=$1 AND tenant_id=$2 AND visibility='private' AND deleted_at IS NULL
-        AND filename LIKE 'bms-inbox-%' LIMIT 1`,
-    [id, signed.tenantId]
+        AND filename ~ $3 LIMIT 1`,
+    // Stored names carry a timestamp prefix; see lib/bms/storedFileKinds.ts.
+    [id, signed.tenantId, INBOX_STORED_FILENAME_PATTERN]
   );
   const file = result.rows[0];
   if (!file) return NextResponse.json({ error: "not found" }, { status: 404 });

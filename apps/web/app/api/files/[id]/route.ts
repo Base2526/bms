@@ -11,6 +11,7 @@ import {
 import { findGeneratedReportByFileId } from "@/lib/bms/reportEngine";
 import { requirePermission } from "@/lib/bms/permissions";
 import { canAccessInboxConversation } from "@/lib/bms/inbox";
+import { isInboxStoredFilename, isPaymentSlipStoredFilename } from "@/lib/bms/storedFileKinds";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +57,7 @@ function isBlockedGenericDownload(row: FileRow): boolean {
 
 async function actorIdsForFileRequest(): Promise<string[]> {
   const ids = new Set<string>();
-  const user = verifyUserSession();
+  const user = await verifyUserSession();
   if (user?.id) ids.add(String(user.id));
   const admin = await authorizeAdminRoute(null);
   if (admin.ok) ids.add(String(admin.adminId));
@@ -228,10 +229,10 @@ function shouldInline(mime: string): boolean {
 
 async function handleGET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = Number(params.id);
+    const id = Number((await params).id);
 
     if (!id || Number.isNaN(id)) {
       return NextResponse.json({ error: "invalid id" }, { status: 400 });
@@ -332,7 +333,8 @@ async function handleGET(
 
       // Inbox uploads are sequentially addressable files. A tenant match alone
       // must not let an unrelated staff member read another conversation.
-      if (row.filename?.startsWith("bms-inbox-")) {
+      // The stored name carries a timestamp prefix (lib/bms/storedFileKinds.ts).
+      if (isInboxStoredFilename(row.filename)) {
         const auth = await authorizeAdminRoute("inbox.view");
         if (!auth.ok) return NextResponse.json({ error: auth.status === 401 ? "unauthorized" : "file not found" },
           { status: auth.status === 401 ? 401 : 404 });
@@ -372,6 +374,16 @@ async function handleGET(
         if (String(auth.tenantId) !== String(row.tenant_id)) {
           // 404 ไม่ใช่ 403 — ไม่บอกคนนอกร้านว่า id นี้มีไฟล์อยู่จริง
           return NextResponse.json({ error: "file not found" }, { status: 404 });
+        }
+
+        // Customer payment slips carry the payer's name and bank account. Reviewing them is the
+        // payment.view job (GraphQL payments), not something every same-shop login may do.
+        if (isPaymentSlipStoredFilename(row.filename)) {
+          try {
+            await requirePermission(auth.ctx, "payment.view");
+          } catch {
+            return NextResponse.json({ error: "file not found" }, { status: 404 });
+          }
         }
 
         // Generated reports have a narrower contract than ordinary tenant-private files. In
@@ -510,7 +522,7 @@ async function authorizeFileManagement(): Promise<ManageFileAuth> {
     return { ok: true, platform: true, actorId: String(platform.adminId) };
   }
 
-  const user = verifyUserSession();
+  const user = await verifyUserSession();
   if (user?.id) {
     return { ok: true, platform: false, actorId: String(user.id) };
   }
@@ -558,12 +570,12 @@ function managementDenied(status: 401 | 403) {
 
 async function handlePATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await authorizeFileManagement();
   if (!auth.ok) return managementDenied(auth.status);
 
-  const id = Number(params.id);
+  const id = Number((await params).id);
   if (!Number.isSafeInteger(id) || id <= 0) {
     return NextResponse.json({ error: "invalid id" }, { status: 400 });
   }
@@ -596,12 +608,12 @@ async function handlePATCH(
 
 async function handleDELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await authorizeFileManagement();
   if (!auth.ok) return managementDenied(auth.status);
 
-  const id = Number(params.id);
+  const id = Number((await params).id);
   if (!Number.isSafeInteger(id) || id <= 0) {
     return NextResponse.json({ error: "invalid id" }, { status: 400 });
   }
