@@ -40,3 +40,20 @@ test("public shop pages and the payment review screen render user-entered links 
   // Desktop and mobile each guard both the render condition and the href.
   assert.equal((payment.match(/safeStoredLinkUrl\(r\.slipUrl\)/g) ?? []).length, 4);
 });
+
+// 2026-11-24 recheck: the staff Inbox turned ANY message body, including a customer's, into a
+// system-styled coupon/product card, and used the whole wallet line as the card button's href. A
+// customer could send "coupon / CODE X / https://evil.example/coupon/wallet?t=1" and staff saw an
+// official-looking "Open coupon wallet" button to that site.
+test("Inbox share cards come only from outbound messages and the wallet link is guarded", () => {
+  // Raw source on purpose: read()'s naive block-comment stripper swallows most of this file because
+  // its regex literals contain "/*". Each pattern is anchored to a code line (no leading //).
+  const inbox = readFileSync(new URL("../apps/web/app/(admin)/admin/inbox/page.tsx", import.meta.url), "utf8")
+    .replace(/\r\n/g, "\n");
+  assert.match(inbox, /^\s+const product = isIn \? null : parseProductShare\(m\.body\);$/m);
+  assert.match(inbox, /^\s+const coupon = isIn \? null : parseCouponShare\(m\.body\);$/m);
+  const start = inbox.indexOf("\nfunction parseCouponShare(");
+  assert.ok(start >= 0, "parser anchor must exist");
+  const parser = inbox.slice(start, inbox.indexOf("\n}\n", start) + 3);
+  assert.match(parser, /^\s+const walletUrl = safeStoredLinkUrl\(/m);
+});

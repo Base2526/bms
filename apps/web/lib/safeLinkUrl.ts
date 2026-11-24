@@ -1,5 +1,7 @@
-// Links whose target was typed by a shop owner, staff member or customer. React 18 only warns
-// about `javascript:` hrefs, so every such link goes through one of these guards before render.
+// Links whose target was typed by a shop owner, staff member or customer. React 19 blocks
+// `javascript:` in JSX href/src, but not `data:`/other schemes, nor window.open/location.* calls,
+// and a release could still render through React 18 tooling — every such link goes through one of
+// these guards before render.
 
 /** A shop's own website on a public page: http(s) only; a bare host gets https://. */
 export function safePublicWebsiteUrl(value: string | null | undefined): string | null {
