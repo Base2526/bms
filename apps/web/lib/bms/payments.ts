@@ -833,16 +833,19 @@ function fitsImagePolicy(
 }
 
 /** แปลง /api/files/<id> → { base64, mediaType } (อ่านผ่าน storage driver) */
-async function loadSlipImage(
+export async function loadSlipImage(
+  tenantId: string,
   slipUrl: string,
   reader: SlipReader
 ): Promise<{ base64: string; mediaType: string } | null> {
   const m = slipUrl.match(/\/api\/files\/(\d+)/);
   if (!m) return null;
   const fileId = Number(m[1]);
+  // slip_url is free text from payment.submit: bind the file to the paying shop, otherwise a URL
+  // naming another shop's /api/files/<id> is read here and its contents go to OCR and back.
   const res = await query<{ relpath: string; mimetype: string | null }>(
-    `SELECT relpath, mimetype FROM files WHERE id = $1 AND deleted_at IS NULL`,
-    [fileId]
+    `SELECT relpath, mimetype FROM files WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+    [fileId, tenantId]
   );
   if (res.rowCount === 0) return null;
   const { relpath, mimetype } = res.rows[0];
@@ -953,7 +956,7 @@ export async function verifyPaymentSlip(
           },
           { excludeProviders: excluded, fallbackFrom, chargeSharedCredit }
         ),
-      loadImage: (reader) => loadSlipImage(pay.rows[0].slip_url as string, reader),
+      loadImage: (reader) => loadSlipImage(tenantId, pay.rows[0].slip_url as string, reader),
       finalize: finalizeAiUsageEvent,
     });
 
