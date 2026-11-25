@@ -5,7 +5,6 @@ import {
   Layout,
   Button,
   Tooltip,
-  Space,
   Avatar,
   Typography,
   Dropdown,
@@ -773,7 +772,7 @@ export default function HeaderBar({
           )}
 
           <div className="jachoei-header-right">
-            <Space size={isMobileView ? 4 : 6} align="center">
+            <div className="jachoei-header-actions">
               {isMobileView && showHeaderSearch && (
                 <Tooltip title={t("header.searchPlaceholder")}>
                   <Button
@@ -840,7 +839,7 @@ export default function HeaderBar({
 
               <ThemeToggle />
 
-              {!isMobileView ? (
+              <span className="jachoei-desktop-language">
                 <Dropdown
                   menu={{ items: languageMenu }}
                   trigger={["click"]}
@@ -864,7 +863,8 @@ export default function HeaderBar({
                     </span>
                   </Button>
                 </Dropdown>
-              ) : (
+              </span>
+              <span className="jachoei-mobile-menu">
                 <Dropdown
                   menu={{ items: mobileOverflowMenu }}
                   trigger={["click"]}
@@ -881,7 +881,7 @@ export default function HeaderBar({
                     />
                   </Tooltip>
                 </Dropdown>
-              )}
+              </span>
 
               {isDesktopView && SHOW_HEADER_HELP && (
                 <Tooltip title={t("header.help")}>
@@ -961,28 +961,26 @@ export default function HeaderBar({
                 </>
               ) : (
                 <>
-                  {isDesktopView && (
-                    <Button
-                      type="primary"
-                      icon={<RocketOutlined />}
-                      size="large"
-                      onClick={() => router.push("/shop-signup")}
-                      className="jachoei-signup-btn"
-                    >
-                      {t("header.startFree")}
-                    </Button>
-                  )}
+                  <Button
+                    type="primary"
+                    icon={<RocketOutlined />}
+                    size="large"
+                    onClick={() => router.push("/shop-signup")}
+                    className="jachoei-signup-btn"
+                  >
+                    {t("header.startFree")}
+                  </Button>
                   <Button
                     icon={<LoginOutlined />}
                     size={isMobileView ? "middle" : "large"}
                     onClick={() => router.push("/admin/login")}
                     className="jachoei-login-btn"
                   >
-                    {!isMobileView && t("common.login")}
+                    <span className="jachoei-login-label">{t("common.login")}</span>
                   </Button>
                 </>
               )}
-            </Space>
+            </div>
           </div>
         </div>
       </Header>
@@ -1085,558 +1083,6 @@ export default function HeaderBar({
         </div>
       )}
 
-      <style>{`
-        .jachoei-header-shell {
-          max-width: 1400px;
-          margin: 0 auto;
-          height: 100%;
-          display: grid;
-          /* คอลัมน์กลางต้อง min เป็น 0 เสมอ เพื่อให้ search ยุบได้เมื่อปุ่มฝั่งขวามีหลายรายการ;
-             ถ้าตั้ง hard minimum ไว้ พื้นที่นั้นจะดัน Live Dashboard/Inbox/Dashboard ล้นจอ */
-          grid-template-columns: minmax(240px, 360px) minmax(0, 1fr) auto;
-          align-items: center;
-          gap: 18px;
-          padding: 0 18px;
-        }
-
-        .jachoei-header-left {
-          min-width: 0;
-          overflow: hidden;
-        }
-
-        .jachoei-brand-link {
-          display: inline-flex;
-          align-items: center;
-          gap: 12px;
-          text-decoration: none;
-          padding: 6px 4px;
-          border-radius: 18px;
-          min-width: 0;
-          max-width: 100%;
-        }
-
-        .jachoei-brand-icon {
-          width: 46px;
-          height: 46px;
-          border-radius: 16px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          overflow: hidden;
-          // background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
-          // box-shadow: 0 10px 24px rgba(15,23,42,0.14);
-          flex-shrink: 0;
-        }
-
-        .jachoei-brand-copy {
-          min-width: 0;
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-        }
-
-        .jachoei-brand-title {
-          color: var(--app-text) !important;
-          font-size: 20px;
-          font-weight: 800;
-          letter-spacing: -0.3px;
-          line-height: 1.1;
-          margin: 0;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .jachoei-brand-subtitle {
-          color: rgba(var(--app-text-rgb),0.52) !important;
-          font-size: 12px;
-          line-height: 1.2;
-          margin-top: 3px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .jachoei-header-center {
-          min-width: 0;
-          display: flex;
-          justify-content: center;
-        }
-
-        .jachoei-product-nav {
-          min-width: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 26px;
-        }
-
-        .jachoei-product-nav a {
-          color: rgba(var(--app-text-rgb),0.66);
-          font-size: 14px;
-          font-weight: 600;
-          text-decoration: none;
-          transition: color .18s ease;
-          white-space: nowrap;
-        }
-
-        .jachoei-product-nav a:hover {
-          color: var(--app-primary);
-        }
-
-        .jachoei-search-wrap {
-          width: 100%;
-          max-width: 100%;
-          min-width: 420px;
-        }
-
-        .jachoei-kbd {
-          padding: 2px 7px;
-          border-radius: 8px;
-          background: rgba(var(--app-surface-rgb),0.86);
-          border: 1px solid var(--app-border);
-          box-shadow: inset 0 1px 0 rgba(var(--app-surface-rgb),0.9);
-        }
-
-        .jachoei-header-right {
-          grid-column: 3;
-          flex-shrink: 0;
-          display: flex;
-          align-items: center;
-          justify-content: flex-end;
-          min-width: 0;
-        }
-
-        .jachoei-lang-btn {
-          border-radius: 14px !important;
-          height: 38px !important;
-          padding-inline: 12px !important;
-          color: var(--app-text) !important;
-        }
-
-        .jachoei-lang-content {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          line-height: 1;
-        }
-
-        .jachoei-lang-globe {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          line-height: 1;
-        }
-
-        .jachoei-lang-flag {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 18px;
-          line-height: 1;
-        }
-
-        .jachoei-lang-label {
-          display: inline-flex;
-          align-items: center;
-          line-height: 1;
-        }
-
-        .jachoei-lang-btn .anticon {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          line-height: 1;
-          vertical-align: 0;
-        }
-
-        .jachoei-login-btn {
-          border-radius: 999px !important;
-          padding-inline: 16px !important;
-          height: 40px !important;
-          border: 1px solid var(--app-border) !important;
-          box-shadow: 0 8px 18px rgba(var(--app-shadow-rgb),0.05) !important;
-        }
-
-        .jachoei-admin-quick-actions {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          margin-right: 2px;
-          padding: 4px;
-          border-radius: 999px;
-          background: rgba(var(--app-text-rgb),0.04);
-          border: 1px solid var(--app-border);
-        }
-
-        .jachoei-admin-icon-btn {
-          position: relative;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          width: 38px;
-          height: 38px;
-          border-radius: 999px;
-          border: none;
-          background: transparent;
-          color: var(--text-secondary);
-          font-size: 18px;
-          cursor: pointer;
-          transition: background 120ms ease, color 120ms ease, transform 120ms ease;
-        }
-
-        .jachoei-admin-icon-btn:hover {
-          background: rgba(var(--app-text-rgb),0.08);
-          color: var(--app-text);
-          transform: translateY(-1px);
-        }
-
-        .jachoei-admin-icon-btn:focus-visible {
-          outline: 2px solid var(--app-primary);
-          outline-offset: 2px;
-        }
-
-        .jachoei-admin-icon-btn-primary {
-          background: var(--app-primary);
-          color: #fff;
-        }
-
-        .jachoei-admin-icon-btn-primary:hover {
-          background: var(--app-primary);
-          color: #fff;
-          filter: brightness(1.06);
-        }
-
-        /* Live Dashboard: ring เต้น + จุดแดงกระพริบ สื่อว่า "กำลังถ่ายทอดสด" */
-        .jachoei-admin-live-icon::before {
-          content: "";
-          position: absolute;
-          inset: -3px;
-          border-radius: 999px;
-          border: 1.5px solid #e5484d;
-          opacity: 0.55;
-          animation: jachoei-live-ring 2.2s ease-out infinite;
-        }
-
-        .jachoei-admin-live-icon::after {
-          content: "";
-          position: absolute;
-          top: 4px;
-          right: 4px;
-          width: 7px;
-          height: 7px;
-          border-radius: 999px;
-          background: #e5484d;
-          box-shadow: 0 0 0 2px var(--app-surface);
-          animation: jachoei-live-dot 1.6s ease-in-out infinite;
-        }
-
-        @keyframes jachoei-live-ring {
-          0% {
-            transform: scale(0.9);
-            opacity: 0.55;
-          }
-          70%,
-          100% {
-            transform: scale(1.35);
-            opacity: 0;
-          }
-        }
-
-        @keyframes jachoei-live-dot {
-          0%,
-          100% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.35;
-          }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-          .jachoei-admin-live-icon::before {
-            animation: none;
-            opacity: 0.55;
-          }
-          .jachoei-admin-live-icon::after {
-            animation: none;
-          }
-        }
-
-        .jachoei-signup-btn {
-          border-radius: 999px !important;
-          padding-inline: 16px !important;
-          height: 40px !important;
-          box-shadow: 0 10px 24px rgba(var(--app-primary-rgb),0.18) !important;
-        }
-
-        .jachoei-admin-inbox-badge {
-          position: absolute;
-          top: -3px;
-          right: -3px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          min-width: 16px;
-          height: 16px;
-          padding: 0 4px;
-          border-radius: 999px;
-          background: #e5484d;
-          color: #fff;
-          font-size: 9.5px;
-          font-weight: 800;
-          line-height: 1;
-          box-shadow: 0 0 0 2px var(--app-surface);
-          font-variant-numeric: tabular-nums;
-        }
-
-        .jachoei-mobile-search-backdrop {
-          position: fixed;
-          inset: 0;
-          z-index: 1200;
-          background: var(--app-overlay);
-          backdrop-filter: blur(4px);
-          display: flex;
-          align-items: flex-start;
-          justify-content: center;
-          padding: 72px 10px 10px;
-        }
-
-        .jachoei-mobile-search-card {
-          width: 100%;
-          max-width: 760px;
-          background: rgba(var(--app-surface-rgb),0.98);
-          border: 1px solid var(--app-border);
-          border-radius: 28px;
-          padding: 24px;
-          box-shadow: 0 20px 50px rgba(var(--app-shadow-rgb),0.18);
-        }
-
-        html.dark .jachoei-kbd {
-          background: rgba(var(--app-text-rgb),0.06);
-          border-color: var(--app-border);
-          box-shadow: none;
-          color: var(--app-text);
-        }
-
-        html.dark .jachoei-login-btn {
-          border-color: var(--app-border) !important;
-        }
-
-        .jachoei-mobile-search-top {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 16px;
-          margin-bottom: 18px;
-        }
-
-        .jachoei-mobile-search-title {
-          min-width: 0;
-          color: var(--app-text) !important;
-          font-size: 20px;
-          font-weight: 750;
-          line-height: 1.35;
-        }
-
-        .jachoei-mobile-search-autocomplete {
-          display: block;
-          width: 100%;
-        }
-
-        .jachoei-mobile-search-autocomplete .ant-input-affix-wrapper {
-          width: 100%;
-          min-height: 52px;
-          padding-inline: 16px;
-        }
-
-        .jachoei-search-history {
-          margin-top: 20px;
-          padding-top: 16px;
-          border-top: 1px solid var(--app-border);
-        }
-
-        .jachoei-search-history-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          margin-bottom: 10px;
-        }
-
-        .jachoei-search-history-title {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          color: var(--app-text) !important;
-          font-size: 14px;
-          font-weight: 700;
-        }
-
-        .jachoei-search-history-clear {
-          color: var(--app-muted) !important;
-          font-size: 12px;
-        }
-
-        .jachoei-search-history-list {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-        }
-
-        .jachoei-search-history-item {
-          min-width: 0;
-          max-width: 100%;
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 12px;
-          border: 1px solid var(--app-border);
-          border-radius: 999px;
-          background: rgba(var(--app-text-rgb),0.035);
-          color: var(--app-text);
-          font: inherit;
-          font-size: 13px;
-          line-height: 1.25;
-          cursor: pointer;
-          transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
-        }
-
-        .jachoei-search-history-item span {
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-
-        .jachoei-search-history-item:hover,
-        .jachoei-search-history-item:focus-visible {
-          border-color: var(--app-primary);
-          background: rgba(var(--app-primary-rgb),0.08);
-          color: var(--app-primary);
-          outline: none;
-        }
-
-        @media (max-width: 1399px) {
-          .jachoei-header-shell {
-            grid-template-columns: minmax(220px, 320px) minmax(0, 1fr) auto;
-            gap: 16px;
-            padding: 0 16px;
-          }
-
-          .jachoei-search-wrap {
-            min-width: 360px;
-          }
-        }
-
-        @media (max-width: 1179px) {
-          .jachoei-header-shell {
-            grid-template-columns: minmax(180px, 260px) minmax(0, 1fr) auto;
-            gap: 12px;
-            padding: 0 12px;
-          }
-
-          .jachoei-brand-title {
-            font-size: 17px;
-          }
-
-          .jachoei-search-wrap {
-            min-width: 240px;
-          }
-
-          .jachoei-lang-btn {
-            padding-inline: 10px !important;
-          }
-
-          .jachoei-product-nav {
-            gap: 16px;
-          }
-
-          .jachoei-admin-quick-actions {
-            gap: 8px;
-          }
-        }
-
-        @media (max-width: 939px) {
-          .jachoei-product-nav {
-            display: none;
-          }
-        }
-
-        @media (max-width: 767px) {
-          .jachoei-mobile-search-backdrop {
-            padding: 62px 10px 10px;
-          }
-
-          .jachoei-mobile-search-card {
-            border-radius: 20px;
-            padding: 16px;
-          }
-
-          .jachoei-mobile-search-title {
-            font-size: 17px;
-          }
-
-          .jachoei-search-history-list {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr);
-          }
-
-          .jachoei-search-history-item {
-            width: 100%;
-          }
-
-          .jachoei-header-shell {
-            grid-template-columns: minmax(0, 1fr) auto;
-            gap: 8px;
-            padding: 0 10px;
-          }
-
-          .jachoei-header-left {
-            min-width: 0;
-          }
-
-          .jachoei-header-right {
-            grid-column: 2;
-          }
-
-          .jachoei-brand-link {
-            gap: 8px;
-            width: 100%;
-            min-width: 0;
-          }
-
-          .jachoei-brand-icon {
-            width: 38px;
-            height: 38px;
-            border-radius: 14px;
-          }
-
-          .jachoei-brand-copy {
-            min-width: 0;
-            max-width: 100%;
-          }
-
-          .jachoei-brand-title {
-            font-size: 14px;
-          }
-
-          .jachoei-lang-btn {
-            height: 34px !important;
-            padding-inline: 8px !important;
-          }
-
-          .jachoei-login-btn {
-            height: 36px !important;
-            padding-inline: 12px !important;
-          }
-        }
-
-        @media (max-width: 359px) {
-          .jachoei-brand-copy {
-            display: none;
-          }
-        }
-      `}</style>
     </>
   );
 }
