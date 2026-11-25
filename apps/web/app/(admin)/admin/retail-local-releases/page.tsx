@@ -2,7 +2,7 @@
 
 import { useUiText } from "@/lib/useUiText";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -34,6 +34,8 @@ import {
   UploadOutlined,
 } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
+import { inferRetailLocalInstallerIdentity } from "@/lib/bms/retailLocalReleaseFilename";
+import { hashRetailLocalInstallerFile } from "@/lib/bms/retailLocalReleaseClientHash";
 
 type Platform = "windows-x64" | "windows-x86-legacy" | "ubuntu-x64" | "macos-arm64" | "macos-x64";
 type PackageType = "server-pos" | "server" | "pos";
@@ -58,6 +60,8 @@ type ReleaseAsset = {
   created_at: string;
   updated_at: string;
   purged_at: string | null;
+  identity_consistent: boolean;
+  storage_present: boolean | null;
 };
 
 type InferredFileMeta = {
@@ -114,28 +118,6 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   "macos-x64": "macOS Intel",
 };
 
-function platformFromFilename(filename: string): Platform | null {
-  const lower = filename.toLowerCase();
-  if (lower.endsWith(".exe") && /(?:^|[-_])(?:windows[-_])?(?:x86(?![_-]?64)|ia32)(?:[-_.]|$)/.test(lower)) {
-    return "windows-x86-legacy";
-  }
-  if (lower.endsWith(".exe")) return "windows-x64";
-  if (lower.endsWith(".deb")) return "ubuntu-x64";
-  if (lower.endsWith(".pkg") || lower.endsWith(".dmg")) {
-    if (/(^|[-_])(x64|x86_64|intel)([-_.]|$)/.test(lower)) return "macos-x64";
-    return "macos-arm64";
-  }
-  return null;
-}
-
-function packageTypeFromFilename(filename: string): PackageType | null {
-  const lower = filename.toLowerCase();
-  if (/(server[-_]?pos|pos[-_]?server|full)/.test(lower)) return "server-pos";
-  if (/(^|[-_])pos([-_.]|$)/.test(lower)) return "pos";
-  if (/(retail[-_]?local|server|bootstrap)/.test(lower)) return "server";
-  return null;
-}
-
 function defaultMinOs(platform: Platform | null, packageType: PackageType | null): string {
   if (packageType === "pos") {
     if (platform === "windows-x86-legacy") return "Windows 10 x86 LTSC/ESU · legacy POS only";
@@ -151,14 +133,6 @@ function defaultMinOs(platform: Platform | null, packageType: PackageType | null
   return "";
 }
 
-function inferVersionFromFilename(filename: string): string | null {
-  const clean = filename.replace(/\.(exe|deb|pkg|dmg)$/i, "");
-  const deb = clean.match(/(?:^|[_-])(\d+\.\d+\.\d+(?:[-+._][a-z0-9]+(?:[._-]\d+)?)?)(?:[_-]amd64|[_-]x64|$)/i);
-  if (deb?.[1]) return deb[1].replace(/_/g, "-");
-  const generic = clean.match(/(\d+\.\d+\.\d+(?:[-+._][a-z0-9]+(?:[._-]\d+)?)?)/i);
-  return generic?.[1]?.replace(/_/g, "-") ?? null;
-}
-
 export default function RetailLocalReleasesPage() {
   const uiText = useUiText();
   const { lang } = useI18n();
@@ -167,6 +141,7 @@ export default function RetailLocalReleasesPage() {
   const [loading, setLoading] = useState(true);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [hashing, setHashing] = useState(false);
   const [editing, setEditing] = useState<ReleaseAsset | null>(null);
   const [saving, setSaving] = useState(false);
   const [purging, setPurging] = useState<ReleaseAsset | null>(null);
@@ -175,6 +150,8 @@ export default function RetailLocalReleasesPage() {
   const [inferredFile, setInferredFile] = useState<InferredFileMeta | null>(null);
   const [uploadForm] = Form.useForm();
   const [editForm] = Form.useForm();
+  const hashGeneration = useRef(0);
+  const hashAbort = useRef<AbortController | null>(null);
   const uploadPlatform = Form.useWatch("platform", uploadForm);
   const uploadPackageType = Form.useWatch("packageType", uploadForm);
   const macUploadExtension = uploadPackageType === "pos" ? ".dmg" : ".pkg";
@@ -203,10 +180,12 @@ export default function RetailLocalReleasesPage() {
     save: "บันทึก",
     download: "ทดสอบดาวน์โหลด",
     uploadHint: "Server/แพ็กเกจรวมใช้ .exe, .deb หรือ .pkg ส่วน Windows x86 Legacy รับเฉพาะ POS Desktop .exe และ POS Desktop บน macOS ใช้ .dmg",
+    filePackageMismatch: "ชื่อไฟล์ installer ไม่ตรงกับประเภทติดตั้งที่เลือก กรุณาเลือกไฟล์หรือประเภทติดตั้งใหม่",
     publicRule: "Latest แยกตามระบบและประเภทติดตั้ง แพ็กเกจทุกประเภทเลือก Public เพื่อแสดงในหน้าดาวน์โหลด หรือ Onboarding only เพื่อส่งให้ผู้รับที่ระบุได้",
     inferred: "อ่านจากไฟล์",
-    inferredHint: "ระบบเดา platform กับ version จากชื่อไฟล์และอ่านขนาดไฟล์ ส่วน SHA-256 คำนวณบนเซิร์ฟเวอร์ระหว่างอัปโหลดแบบ streaming",
-    checksumPending: "คำนวณระหว่างอัปโหลด",
+    inferredHint: "ระบบตรวจชื่อมาตรฐานและคำนวณ SHA-256 แบบ streaming ก่อนอัปโหลด โดยไม่โหลดไฟล์ทั้งก้อนเข้า memory",
+    checksumPending: "กำลังคำนวณ...",
+    checksumFailed: "คำนวณ SHA-256 ไม่สำเร็จ กรุณาเลือกไฟล์ใหม่",
     saved: "บันทึกแล้ว",
     uploaded: "อัปโหลดแล้ว",
     deleteFile: "ลบไฟล์",
@@ -217,6 +196,7 @@ export default function RetailLocalReleasesPage() {
     deleteConfirm: "ลบไฟล์และคืนพื้นที่",
     deleted: "ลบไฟล์แล้ว คืนพื้นที่ประมาณ {size}",
     hideBeforeDelete: "เปลี่ยนสถานะเป็น hidden และบันทึกก่อน จึงจะลบไฟล์ได้",
+    identityIssue: "ข้อมูลไฟล์ไม่ตรงกัน—ห้าม publish; เก็บ hidden และอัปโหลดไฟล์ที่ถูกต้องใหม่",
   } : {
     title: "Retail Local releases",
     subtitle: "Upload installers and manage the versions used by the public download page.",
@@ -241,10 +221,12 @@ export default function RetailLocalReleasesPage() {
     save: "Save",
     download: "Test download",
     uploadHint: "Server and combined packages use .exe, .deb or .pkg. Windows x86 Legacy accepts POS Desktop .exe only; macOS POS Desktop uses .dmg.",
+    filePackageMismatch: "The installer filename does not match the selected package type. Select the correct file or package type.",
     publicRule: "Latest is tracked per platform and package type. Any package may be Public or Onboarding only; first-install activation remains separate from download access.",
     inferred: "Read from file",
-    inferredHint: "The form infers platform, version, and size. SHA-256 is calculated by the server while streaming the upload.",
-    checksumPending: "calculated during upload",
+    inferredHint: "The form validates the canonical filename and streams the file through SHA-256 before upload without loading it all into memory.",
+    checksumPending: "calculating...",
+    checksumFailed: "SHA-256 calculation failed. Select the file again.",
     saved: "Saved",
     uploaded: "Uploaded",
     deleteFile: "Delete file",
@@ -255,6 +237,7 @@ export default function RetailLocalReleasesPage() {
     deleteConfirm: "Delete file and reclaim space",
     deleted: "File deleted; approximately {size} reclaimed",
     hideBeforeDelete: "Set the release to hidden and save it before deleting the file.",
+    identityIssue: "File identity is inconsistent—do not publish it; keep it hidden and upload the correct file again.",
   };
 
   const load = useCallback(async () => {
@@ -270,14 +253,30 @@ export default function RetailLocalReleasesPage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => () => {
+    hashAbort.current?.abort();
+    hashAbort.current = null;
+    hashGeneration.current += 1;
+  }, []);
 
   const latestByPlatform = useMemo(() => {
     const result = new Map<string, ReleaseAsset>();
-    rows.filter((row) => row.is_latest).forEach((row) => result.set(`${row.platform}:${row.package_type}`, row));
+    rows.filter((row) => {
+      const identity = inferRetailLocalInstallerIdentity(row.original_name);
+      return row.is_latest && row.status === "latest" && !row.purged_at
+        && row.identity_consistent
+        && identity?.platform === row.platform
+        && identity.packageType === row.package_type
+        && identity.version === row.version;
+    }).forEach((row) => result.set(`${row.platform}:${row.package_type}`, row));
     return result;
   }, [rows]);
 
   const openUpload = () => {
+    hashAbort.current?.abort();
+    hashAbort.current = null;
+    hashGeneration.current += 1;
+    setHashing(false);
     uploadForm.resetFields();
     setFileList([]);
     setInferredFile(null);
@@ -285,6 +284,10 @@ export default function RetailLocalReleasesPage() {
   };
 
   const closeUpload = () => {
+    hashAbort.current?.abort();
+    hashAbort.current = null;
+    hashGeneration.current += 1;
+    setHashing(false);
     setUploadOpen(false);
     uploadForm.resetFields();
     setFileList([]);
@@ -298,6 +301,13 @@ export default function RetailLocalReleasesPage() {
       message.error(copy.file);
       return;
     }
+    const identity = inferRetailLocalInstallerIdentity(file.name);
+    if (!identity || identity.packageType !== values.packageType
+      || identity.platform !== values.platform || identity.version !== values.version
+      || !inferredFile?.sha256 || hashing) {
+      message.error(copy.filePackageMismatch);
+      return;
+    }
 
     const body = new FormData();
     body.set("platform", values.platform);
@@ -309,6 +319,7 @@ export default function RetailLocalReleasesPage() {
     body.set("isLatest", values.isLatest ? "true" : "false");
     body.set("minOs", values.minOs);
     body.set("releaseNotes", values.releaseNotes || "");
+    body.set("sha256", inferredFile.sha256);
     // Keep the small metadata first so the streaming parser can validate it
     // while the installer is sent directly to storage.
     body.set("file", file);
@@ -326,24 +337,31 @@ export default function RetailLocalReleasesPage() {
     }
   };
 
-  const handleUploadChange = (nextList: UploadFile[]) => {
+  const handleUploadChange = async (nextList: UploadFile[]) => {
+    hashAbort.current?.abort();
+    hashAbort.current = null;
+    const generation = ++hashGeneration.current;
     const next = nextList.slice(-1);
     setFileList(next);
     const file = next[0]?.originFileObj;
     if (!file) {
+      setHashing(false);
       setInferredFile(null);
+      uploadForm.setFieldsValue({ platform: undefined, packageType: undefined, version: undefined, minOs: undefined });
       return;
     }
 
-    const platform = platformFromFilename(file.name);
-    const inferredPackageType = packageTypeFromFilename(file.name);
-    const packageType = platform === "windows-x86-legacy" ? "pos" : inferredPackageType;
-    const version = inferVersionFromFilename(file.name);
+    const identity = inferRetailLocalInstallerIdentity(file.name);
+    const platform = identity?.platform ?? null;
+    const packageType = identity?.packageType ?? null;
+    const version = identity?.version ?? null;
+    // Clear identity from the previous file before inferring the new one.
     uploadForm.setFieldsValue({
-      ...(platform ? { platform, minOs: defaultMinOs(platform, packageType) } : {}),
-      ...(packageType ? { packageType } : {}),
-      ...(packageType ? { accessLevel: "public" } : {}),
-      ...(version ? { version } : {}),
+      platform: platform ?? undefined,
+      packageType: packageType ?? undefined,
+      version: version ?? undefined,
+      minOs: platform && packageType ? defaultMinOs(platform, packageType) : undefined,
+      accessLevel: packageType ? "public" : undefined,
     });
     setInferredFile({
       filename: file.name,
@@ -353,6 +371,28 @@ export default function RetailLocalReleasesPage() {
       size: file.size,
       sha256: null,
     });
+    if (!identity) {
+      setHashing(false);
+      return;
+    }
+    const controller = new AbortController();
+    hashAbort.current = controller;
+    setHashing(true);
+    try {
+      const checksum = await hashRetailLocalInstallerFile(file, controller.signal);
+      if (hashGeneration.current !== generation) return;
+      setInferredFile((current) => current?.filename === file.name ? { ...current, sha256: checksum } : current);
+    } catch (error) {
+      if (hashGeneration.current === generation) {
+        setInferredFile((current) => current?.filename === file.name ? { ...current, sha256: null } : current);
+        if (!(error instanceof DOMException && error.name === "AbortError")) message.error(copy.checksumFailed);
+      }
+    } finally {
+      if (hashGeneration.current === generation) {
+        hashAbort.current = null;
+        setHashing(false);
+      }
+    }
   };
 
   const openEdit = (row: ReleaseAsset) => {
@@ -465,6 +505,7 @@ export default function RetailLocalReleasesPage() {
                 <Space direction="vertical" size={0}>
                   <Typography.Text strong>{value}</Typography.Text>
                   {row.is_latest && <Tag color="green">{copy.latest}</Tag>}
+                  {!row.identity_consistent && <Tag color="red">{copy.identityIssue}</Tag>}
                 </Space>
               ),
             },
@@ -559,6 +600,7 @@ export default function RetailLocalReleasesPage() {
         onCancel={closeUpload}
         onOk={submitUpload}
         confirmLoading={uploading}
+        okButtonProps={{ disabled: hashing || !inferredFile?.sha256 }}
         okText={copy.upload}
         width={720}
       >
@@ -568,6 +610,7 @@ export default function RetailLocalReleasesPage() {
             <Col xs={24} sm={8}>
               <Form.Item name="platform" label={copy.platform} rules={[{ required: true }]}>
                 <Select
+                  disabled={Boolean(inferredFile)}
                   options={[
                   { value: "windows-x64", label: "Windows x64 (.exe)" },
                   { value: "windows-x86-legacy", label: uiText("admin_ui.en_windows_x86_legacy_pos_only_exe_b60d3") },
@@ -590,6 +633,7 @@ export default function RetailLocalReleasesPage() {
             <Col xs={24} sm={8}>
               <Form.Item name="packageType" label={copy.packageType} rules={[{ required: true }]}>
                 <Select
+                  disabled={Boolean(inferredFile)}
                   options={(uploadPlatform === "windows-x86-legacy"
                     ? (["pos"] as PackageType[])
                     : (Object.keys(PACKAGE_LABELS) as PackageType[])
@@ -602,7 +646,7 @@ export default function RetailLocalReleasesPage() {
             </Col>
             <Col xs={24} sm={8}>
               <Form.Item name="version" label={copy.version} rules={[{ required: true }]}>
-                <Input placeholder="0.3.0-internal.1" />
+                <Input disabled={Boolean(inferredFile)} placeholder="0.3.0-internal.1" />
               </Form.Item>
             </Col>
           </Row>

@@ -45,7 +45,7 @@ while (($#)); do
   esac
 done
 
-[[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]] || usage
+[[ $version =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$ ]] || usage
 [[ $architecture == arm64 || $architecture == x64 ]] || usage
 [[ $package_type == server-pos || $package_type == server ]] || usage
 [[ -f $keyring ]] || usage

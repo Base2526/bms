@@ -2,7 +2,7 @@
 
 Per-feature decision narrative moved out of [CLAUDE.md](../CLAUDE.md) on 2026-10-13 to keep the
 always-loaded agent context small. The moved text is unchanged; newest entries are at the end.
-Entries were brought up to date on 2026-11-23 (through migration `10.138` and PR #444); the
+Entries were brought up to date on 2026-11-25 (through PR #451 and branch migration `10.139`); the
 detailed 2026-11-16 boundary and log notes are in [feature-log.md](feature-log.md). The compact area index lives in CLAUDE.md
 § Current status; full
 per-domain rules live in [agent-invariants.md](agent-invariants.md).
@@ -1227,10 +1227,10 @@ See [architecture/database.md](architecture/database.md).
   AppIds, install directories and service names are also unchanged.
 - **Upgrades:** the Retail Local installer removes the old shortcuts and launcher `.cmd` files.
 
-**Retail Local `0.2.14-pilot.13` (`39c1d1e8`, branch `codex/retail-local-pilot-13`).** The Desktop
+**Retail Local `0.2.14-pilot.13` (`39c1d1e8`, #445).** The Desktop
 package version was bumped for the next technical-pilot build; Retail Local remains a pilot, not GA.
 
-**Pet-supply guide and admin login loop (branch `codex/retail-local-pilot-13`, no migration).**
+**Pet-supply guide and admin login loop (#445, no migration).**
 - **Guide:** `/th/learn/pet-supply` and `/en/learn/pet-supply` add 11 bilingual lessons
   (`petSupplyLessons.ts`) on the existing track, plus a sixth Thai Word/PDF handbook.
   The pet-supply flow has text and a diagram but no recorded narration.
@@ -1246,11 +1246,11 @@ package version was bumped for the next technical-pilot build; Retail Local rema
   [public-pos-guides/verification-pet-supply-2026-11-23.md](public-pos-guides/verification-pet-supply-2026-11-23.md).
 
 On 2026-11-23, `learning-center-contract` (13/13), `admin-login-session-contract` (2/2),
-`regression:inventory` and `release:features:check` passed. **`admin-client-i18n-contract` fails
-(4/5)** on the untranslated `BMS POS+ loading` / `Loading…` text in `admin/loading.tsx`, so the
-gate's pure step stays red until that copy is localized or reviewed as an exception.
+`regression:inventory` and `release:features:check` passed. `admin-client-i18n-contract` then failed
+(4/5) on the untranslated `admin/loading.tsx` copy; the 2026-11-23 recheck localized it and #449
+replaced the text with a responsive skeleton.
 
-**Full-system recheck branch (2026-11-23, `recheck/full-system-2026-11-23`, no migration).**
+**Full-system recheck branch (2026-11-23, `recheck/full-system-2026-11-23`, #446, no migration).**
 The detailed A–E checklist, fixes, test commands and blocked live evidence are in
 [architecture/system-recheck-2026-11-23.md](architecture/system-recheck-2026-11-23.md).
 The branch fixes Admin loading localization, offline-sale preservation after refused Mobile
@@ -1265,7 +1265,20 @@ The local DB clone lacks 10 readiness migrations, so current-code DB transaction
 customer-to-dashboard flow were not verified. Admin/session-backed browser routes, providers and
 physical POS hardware remain unverified in this pass.
 
-**Full-system recheck branch (2026-11-24, `recheck/full-system-2026-11-24`, no migration).**
+**Next 16 and GraphQL runtime upgrade (#447, no migration).** Next.js and the GraphQL server runtime
+moved to supported releases, and GraphQL multipart maps and request bodies are bounded. After pulling
+this, run `npm ci` in every package; a stale host `node_modules` (Next 14) fails the gate at
+typecheck. The dev server needs `next dev --webpack`.
+
+**Security hardening (#448, no migration).** Duplicate GraphQL multipart map entries are rejected;
+upload bounds, report webhooks and mail runtime paths are hardened; vulnerable GraphQL, mail and
+spreadsheet dependencies were updated.
+
+**Admin loading skeleton and POS setup failures (#449–#450, no migration).** Admin route loading
+shows a responsive skeleton instead of text, and the POS setup page handles loading and query
+failures instead of rendering an empty form.
+
+**Full-system recheck branch (2026-11-24, `recheck/full-system-2026-11-24`, #451, no migration).**
 Evidence ledger: [architecture/system-recheck-2026-11-24.md](architecture/system-recheck-2026-11-24.md).
 Uncommitted files on `develop` that undid the 2026-11-23 recheck fixes were preserved
 (`5f51de9b`) and reverted (`739e354a`). Fixed: slip OCR reading another shop's file; four GraphQL
@@ -1280,3 +1293,32 @@ four Desktop shell defects; two Mobile i18n defects; and eight DB contracts that
 correct schema. `npm run gate` exited 0 (419 pure files, 3,962 tests, 3,956 passed, 6 skipped; build 149 pages); Desktop 171/171 and `pack:win`; Mobile 65 suites / 501 tests; every DB contract green on its throwaway database; Admin crawled in Thai (1440 px) and English (375 px) plus a dark-mode subset on a local dev server. Remaining risks (stock-count branch scope, missing idempotency keys on
 some stock/points mutations, post-commit audits, legacy public Inbox files, hardware and providers)
 are listed in the ledger and are not verified in production.
+
+**Retail Local release identity (`10.139`, branch `codex/retail-local-release-identity`, not applied
+to production).** Historical filename inference matched the `BMS-POS-Plus` brand token before the
+explicit `Server` marker, so a Server installer could be listed or offered to Desktop update as POS.
+- **Upload:** the form and service classify the package only from explicit `POS`, `Server` or
+  `Server-POS` filename markers (`retailLocalReleaseFilename.ts`) and reject a mismatch with the
+  selected package type.
+- **Discovery:** public listings and Desktop update discovery fail closed for rows whose metadata
+  disagrees with the filename, and bounded storage checks omit missing or size-mismatched objects.
+- **Download:** before opening the response stream, the server streams the object once to verify its
+  full size and SHA-256. That costs two storage reads and delays the first byte.
+- **What `10.139` changes in existing data:** it adds `bms_retail_local_filename_*` functions and
+  sets conflicting `bms_retail_local_release_assets` rows to `status='hidden'`, `is_latest=false`.
+  Conflicts are filename versus package/platform/version, a missing or deleted file, a
+  name/size/checksum mismatch, shared cross-package files and duplicate latest rows.
+- **Constraints and rollback:** CHECK constraints stop a non-hidden row from disagreeing with its
+  filename. It never relabels Server bytes as POS. Rollback is manual: drop the constraints and
+  functions, but do not unhide rows; upload and publish the correct installer.
+- **Before deploying:** run the read-only `scripts/retail-local-release-identity-diagnostic.mts
+  --verify-storage` and follow the runbook in
+  [business/retail-local.md § Release identity recovery runbook](business/retail-local.md).
+- **Dependency:** adds `@noble/hashes` to `apps/web`.
+
+Pure release filename (4/4), online-build identity (2/2), identity diagnostic (1/1), upload UI
+(3/3), download (2/2), upload (6/6), `desktop-update` (6/6), `admin-client-i18n` (5/5) and
+`retail-local-migration-checksum` (4/4) contracts, `regression:inventory` and
+`release:features:check` passed on 2026-11-25. The two new DB contracts
+(`retail-local-release-flow-db-contract`, `retail-local-release-identity-migration-db-contract`),
+typecheck and build were not run in that pass.

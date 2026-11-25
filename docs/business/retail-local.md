@@ -486,6 +486,34 @@ The public `/retail-local` page reads installer releases from
 `bms_retail_local_release_assets`. Platform admins publish those rows from
 `/admin/retail-local-releases` by uploading the exact installer, setting its platform, package type,
 version, minimum OS, release notes, and deciding whether that asset is `latest`.
+The upload form and service classify the package from explicit `POS`, `Server`, or `Server-POS`
+filename markers and reject a mismatch with the selected package type. Public listings, Desktop
+update discovery, and direct downloads also fail closed for old rows whose package metadata does not
+match the installer filename; hide or purge that row and upload the correct installer again.
+
+### Release identity recovery runbook
+
+Migration `10.139` does not guess that Server bytes are POS bytes. It sets conflicting rows to
+`hidden` and `is_latest=false`, then prevents a non-hidden row whose canonical filename disagrees
+with `(platform, package_type, version)`. Before deployment, run the read-only audit:
+
+```bash
+npx tsx --import scripts/testing/next-runtime-shim.mjs \
+  scripts/retail-local-release-identity-diagnostic.mts --verify-storage --limit 1000
+```
+
+For each finding, keep the corrupt row hidden. Rebuild or retrieve the intended **Online** installer,
+verify its `.json`/`.sha256` sidecars, and upload that exact installer from Retail Local Downloads.
+Confirm the previewed filename, platform, package type, version, size, and SHA-256 before publishing
+it as latest. Never relabel an existing Server object as POS. After deployment, call the desktop
+update endpoint, download the returned release id, and compare `Content-Disposition`,
+`Content-Length`, and `X-Checksum-SHA256` with the newly uploaded POS artifact.
+
+The public page and Desktop discovery issue bounded storage metadata checks and omit missing/size-
+mismatched objects. Direct download then streams the object once to verify its full size/SHA-256 and
+opens it again for the response. This keeps memory bounded and fails before sending unverified bytes,
+at the cost of two storage reads and a delayed first byte. Retail Local object keys are UUID-suffixed
+and are not overwritten by the application; storage credentials must still enforce that immutability.
 
 Each platform has three independent package types:
 

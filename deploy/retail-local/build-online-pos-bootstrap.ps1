@@ -72,7 +72,7 @@ function Write-Metadata([string]$Path, [string]$Platform, [string]$ManifestUri, 
 }
 
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw "Run this script with PowerShell 7: pwsh" }
-if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw "Version must be a semantic version" }
+if ($Version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$') { throw "Version must be a semantic version" }
 . (Join-Path $PSScriptRoot "release-urls.ps1")
 $releaseUrls = Get-RetailLocalReleaseUrls -Version $Version -BaseUri $ReleaseBaseUri
 if ([string]::IsNullOrWhiteSpace($WindowsManifestUri)) { $WindowsManifestUri = $releaseUrls.WindowsManifestUri }

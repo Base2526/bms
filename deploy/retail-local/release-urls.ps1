@@ -4,7 +4,7 @@ function Get-RetailLocalReleaseUrls {
     [Parameter(Mandatory = $true)][string]$Version,
     [string]$BaseUri = 'https://releases.jachoei.com/retail-local'
   )
-  if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw 'Invalid release version' }
+  if ($Version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$') { throw 'Invalid release version' }
   $parsed = $null
   if (-not [Uri]::TryCreate($BaseUri, [UriKind]::Absolute, [ref]$parsed) -or
       $parsed.Scheme -ne 'https' -or $parsed.UserInfo -or $parsed.Query -or $parsed.Fragment) {
