@@ -3232,6 +3232,8 @@ const en = {
     analytics_issue_interval_limit: "The analytics record safety limit was reached. Narrow the date or branch range.",
     analytics_issue_sales_evidence_truncated: "Sales evidence reached its safety limit. Narrow the date or branch range.",
     analytics_issue_missing_product_cost: "Actual product cost is missing for {count} SKU(s). Cost and gross profit remain unknown, not zero.",
+    analytics_issue_current_capacity_basis: "Utilization uses today's active, unblocked tables and current seat counts with effective opening hours, not historical table availability or seating. Occupied hours count only inside that configured capacity.",
+    analytics_issue_wait_time_incomplete: "{count} seated entries have no valid arrival-to-seating evidence and are left out of the average wait. Reservation creation time is not arrival time.",
     offers_title: "Play-time offers",
     offers_hint: "The server chooses the cheapest eligible offer when the bill closes and never stacks it with a member pass. Required products remain normal inventory-backed tab lines.",
     offer_add: "Add offer",

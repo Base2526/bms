@@ -68,6 +68,38 @@ test("Sales cannot write channel credentials, AI keys or store identity through 
   assert.deepEqual(calls, ["channel", "ai", "identity"]);
 });
 
+// 2026-11-24 recheck: the emergency directory (10.46) only required an admin-scope login, so any
+// staff role could change the emergency phone/address rows that customer emergency replies quote.
+// It is store configuration (Settings → store tab), so it follows the Administrator rule.
+test("Sales cannot change the emergency directory that customer emergency replies quote", async () => {
+  const calls: string[] = [];
+  const profile = loadWithStubs("apps/web/graphql/bmsStoreProfile.ts", {
+    "graphql/error": { GraphQLError: FakeGraphQLError },
+    "./tenantSettingsAuth": settings,
+    "@/lib/auth": { requireAuth },
+    "@/lib/bms/tenant": { getTenantId: () => "tenant-1" },
+    "@/lib/bms/audit": { audit: async () => {} },
+    "@/lib/bms/storeProfile": {}, "@/lib/bms/taxDocuments": {}, "@/lib/bms/platform": {},
+    "@/lib/bms/onboarding": {}, "@/lib/bms/locations": {},
+    "@/lib/bms/emergencyFacilities": {
+      EmergencyFacilityError: class extends Error {},
+      upsertEmergencyFacility: async () => { calls.push("upsert"); return { id: "FAKE-facility" }; },
+      deactivateEmergencyFacility: async () => { calls.push("deactivate"); return true; },
+    },
+  }).bmsStoreProfileResolvers;
+  const input = { locationId: null, name: "FAKE hospital", emergencyPhone: "1669" };
+  const sales = { admin: { id: "sales-1", role: "Sales" } };
+  await assert.rejects(() => profile.Mutation.bmsUpsertEmergencyFacility(null, { input }, sales),
+    (error: any) => error.extensions?.code === "FORBIDDEN");
+  await assert.rejects(() => profile.Mutation.bmsDeactivateEmergencyFacility(null, { id: "FAKE-facility", confirmed: true }, sales),
+    (error: any) => error.extensions?.code === "FORBIDDEN");
+  assert.deepEqual(calls, []);
+  const admin = { admin: { id: "admin-1", role: "Administrator" } };
+  await profile.Mutation.bmsUpsertEmergencyFacility(null, { input }, admin);
+  await profile.Mutation.bmsDeactivateEmergencyFacility(null, { id: "FAKE-facility", confirmed: true }, admin);
+  assert.deepEqual(calls, ["upsert", "deactivate"]);
+});
+
 test("store branding upload routes reject non-Administrators before reading file bytes", async () => {
   for (const routePath of [
     "apps/web/app/api/bms/store-profile/logo/upload/route.ts",

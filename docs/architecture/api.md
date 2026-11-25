@@ -67,8 +67,11 @@ permission or AI tool.
 
 `bmsEmergencyFacilities(locationId)` and `bmsEmergencyFacilityLocations` read the Settings
 directory/allowed branches. `bmsUpsertEmergencyFacility(input)` creates or updates;
-`bmsDeactivateEmergencyFacility(id, confirmed:true)` soft-deactivates. These use the existing
-store-profile admin-scope guard (no new permission), server-derived tenant and authenticated actor.
+`bmsDeactivateEmergencyFacility(id, confirmed:true)` soft-deactivates. Reads use the admin-scope
+guard; the two writes require the shop Administrator or a verified platform admin
+(`requireTenantSettingsAdministrator`, like other store-profile writes, since 2026-11-24 — before
+that any admin-scope login could change the numbers customer emergency replies quote). No new
+permission; server-derived tenant and authenticated actor.
 The service checks both old/new branch scope, audits inside the tenant transaction and never deletes.
 They are **not AI tools**. The customer pipeline reads active 24-hour entries via the bounded service,
 not GraphQL, and never accepts a customer location or model-selected tenant.
@@ -127,16 +130,19 @@ One route per channel, all shaped `POST /api/bms/{channel}/webhook/[tenantId]`:
 | Channel | Route | Signature verification |
 | --- | --- | --- |
 | LINE | `line/webhook/[tenantId]` | `X-Line-Signature` (`verifyLineSignature`) |
-| TikTok | `tiktok/webhook/[tenantId]` | inline HMAC-SHA256 hex header |
-| Facebook | `facebook/webhook/[tenantId]` | `X-Hub-Signature-256` (`verifyMetaSignature`) + `GET` challenge |
-| Instagram | `instagram/webhook/[tenantId]` | `X-Hub-Signature-256` (`verifyMetaSignature`) + `GET` challenge |
+| TikTok | `tiktok/webhook/[tenantId]` | HMAC-SHA256 hex header (`verifyHexHmacSignature`, constant time) |
+| Facebook | `facebook/webhook/[tenantId]` | `X-Hub-Signature-256` (`verifyMetaSignature`) + `GET` challenge (verify token compared in constant time) |
+| Instagram | `instagram/webhook/[tenantId]` | `X-Hub-Signature-256` (`verifyMetaSignature`) + `GET` challenge (verify token compared in constant time) |
 | Web | `web/webhook/[tenantId]` | public bootstrap; signed tenant-bound `sessionId` for continuity, rate-limit + CORS; unsigned legacy IDs start fresh, invalid signed tokens return 401 |
-| Shopee 🧪 | `shopee/webhook/[tenantId]` | placeholder HMAC — **not verified against real API docs** |
-| Lazada 🧪 | `lazada/webhook/[tenantId]` | placeholder HMAC — **not verified against real API docs** |
+| Shopee 🧪 | `shopee/webhook/[tenantId]` | placeholder HMAC via `verifyHexHmacSignature` — **not verified against real API docs** |
+| Lazada 🧪 | `lazada/webhook/[tenantId]` | placeholder HMAC via `verifyHexHmacSignature` — **not verified against real API docs** |
 
 Events with a stable platform id are atomically claimed in `bms_inbound_events` before
 `runPipeline()`. Retries return success without repeating AI or writes. Web Chat accepts
 `messageId` or `Idempotency-Key`; message text is intentionally never used as a dedup key.
+
+Signatures and the Meta `GET` verify token are always compared in constant time through
+`lib/bms/crypto.ts`; never compare a secret with `===`/`!==` (`webhook-signature-compare-contract`).
 
 Details per channel: [../integrations/](../integrations/).
 
@@ -231,6 +237,11 @@ are rejected because Seller Center remains authoritative. Runtime signing uses
 `BMS_CHECKOUT_SECRET` (all compose files inject it, defaulting to the deployment's `JWT_SECRET`);
 production refuses to create or verify links when no secret is configured.
 
+Public routes that catch errors (checkout `PATCH`, board-game booking request/read/cancel/payment,
+nearby search) answer with `publicErrorMessage()` (`lib/publicErrorMessage.ts`): the service's own
+customer-facing message, or the route fallback for PostgreSQL, Node system and JavaScript runtime
+errors, so anonymous callers never see constraint, column or stack details.
+
 ## REST — tax reports and receipt-QR tax-invoice requests (`10.37`–`10.39`, `10.58`)
 
 | Route | Guard | Purpose |
@@ -271,7 +282,10 @@ record (`authenticatePosDevice()` compares a SHA-256 hash — the raw token is s
 rejects an unknown or deactivated device with `401`). A device token identifies the register, never a
 person, so the acting human is a separate layer: `cashierUserId` + `pin` verified by
 `verifyCashierPin()` (bcrypt, 5 wrong PINs lock the user for 15 minutes) and the action permission by
-`cashierHasPermission()`. Read routes expose session, scan/search, and device-local recent/last sales.
+`cashierHasPermission()`. POST routes carry `pin` in the JSON body; a GET route that needs a person
+takes it from the `x-pos-cashier-pin` header and never reads `?pin=`, because query strings reach
+proxy access logs and browser history (`pos-pin-header-contract`, 2026-11-24).
+Read routes expose session, scan/search, and device-local recent/last sales.
 One header serves all three registers, and only the place the token rests differs: the browser keeps
 it in `localStorage`, the native app in `react-native-keychain`, and the desktop shell
 (`apps/desktop`) in the OS keystore, handing it to its renderer over IPC. The desktop shell also uses
@@ -326,7 +340,7 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   `orderId`, a non-empty `reason`, `idempotencyKey`, the seller's `cashierUserId` + `pin`, and
   **always** `approverUserId` + `approverPin` from a second user holding `pos.void`. Results:
   `VOIDED` (200), `NOT_FOUND` (404), `SHIFT_CLOSED`/`ALREADY_RETURNED` (409), `NOT_VOIDABLE` (400).
-- `GET /api/pos/ar?customerId=&cashierUserId=&pin=` (`9.30`) — the credit account of the customer
+- `GET /api/pos/ar?customerId=&cashierUserId=` + header `x-pos-cashier-pin` (`9.30`) — the credit account of the customer
   attached to the bill, plus its open invoices. Requires `ar.view`. A customer with no account
   answers `200` with `account: null`, not `404`: "this customer has no credit account" is the
   correct answer to the question, not an error. The counter needs this *before* deciding to extend
@@ -485,7 +499,7 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   money, stock or document, and the events worth having most — a rejected token, a failed
   bootstrap, a dead network — happen before anyone has typed a PIN. Staff read them back through
   `bmsPosDeviceDiagnostics`, which requires `support.logs.view`.
-- `GET /api/pos/shift-report?cashierUserId=&pin=[&shiftId=]` (`7.97`) — X (mid-shift) / Z
+- `GET /api/pos/shift-report?cashierUserId=[&shiftId=]` + header `x-pos-cashier-pin` (`7.97`) — X (mid-shift) / Z
   (post-close) summary as `{ report }`; omitting `shiftId` reports the device's open shift, and no
   shift at all is `404`. An explicit `shiftId` is still scoped to the calling device — a shift
   belonging to a different register in the same store answers `404`, not that register's numbers.
@@ -768,7 +782,7 @@ Readiness reports Open Banking as `NOT_CONFIGURED`. The four permissions are see
 
 | File | Covers |
 | --- | --- |
-| `bmsProducts.ts` | products (`bmsProducts` list plus lazy `bmsProductBySku` configuration detail), categories, stock adjustments, bulk CSV/XLSX product/menu import (`bmsImportProducts`), catalog variants and sales surfaces, publish readiness (`bmsPublishProduct`), draft configuration cloning (`bmsDuplicateProduct`), shop-maintained customer facts on `BmsProduct` (`allergenCodes`, `allergenInformationProvided`, `dietaryTags`, `foodSafetyNote` from `10.43`; `medicineLabel` from `10.44`; written through the normal `product.edit` upsert, and an empty unreviewed declaration means unknown), and reservation drill-down (`bmsVariantReservations`, gated on `order.view` because the answer carries bill ids and customer contact) |
+| `bmsProducts.ts` | products (`bmsProducts` list plus lazy `bmsProductBySku` configuration detail), categories, stock adjustments and reorder points (`stock.adjust` plus branch access through `userCanAccessLocation`), bulk CSV/XLSX product/menu import (`bmsImportProducts`), catalog variants and sales surfaces, publish readiness (`bmsPublishProduct`), draft configuration cloning (`bmsDuplicateProduct`), shop-maintained customer facts on `BmsProduct` (`allergenCodes`, `allergenInformationProvided`, `dietaryTags`, `foodSafetyNote` from `10.43`; `medicineLabel` from `10.44`; written through the normal `product.edit` upsert, and an empty unreviewed declaration means unknown), and reservation drill-down (`bmsVariantReservations`, gated on `order.view` because the answer carries bill ids and customer contact) |
 | `bmsOrders.ts` | order lifecycle transitions, staff create/reorder, invoice projection, shipping-address eligibility |
 | `bmsCustomers.ts` | CRM: profile, addresses, tags, merge. `bmsCustomerOrderDetail(customerId, orderId)` (`customer.view`) returns one purchase's exact sale lines, totals and points. A merge is reviewed: `bmsCustomerMergePreview` (`customer.edit`) returns a ten-minute signed preview with server-counted impact, and `bmsMergeCustomers` requires its `review` input (preview token, reason, verification method, evidence reference, `confirmed`) — old callers without a review are refused. See [../business/crm.md](../business/crm.md) |
 | `bmsInbox.ts` | conversations, messages, notes, timeline, diagnostic Inbox message creation (`bmsCreateInboxDiagnosticMessage`). Outbound `status` includes `PENDING`/`PARTIAL`/`SENT`/`DELIVERED`/`READ`/`FAILED` (null = legacy row): LINE/Meta replies commit as `PENDING` before provider I/O; Meta delivery/read webhooks advance confirmed sends without promoting an uncertain or partial row. `bmsRetryMessage` (`inbox.reply`) atomically claims only a `FAILED` push message as `PENDING` before external I/O. Assignment, helper, status, tag, unread and note writes recheck Sales scope under a tenant transaction; mutation audit and note mentions commit with the write, with notifications after commit |
@@ -793,7 +807,7 @@ Readiness reports Open Banking as `NOT_CONFIGURED`. The four permissions are see
 | `graphql/resolvers.ts` (`createSupportTicket`, `bmsSupportTickets`, `bmsUpdateSupportTicket`) | public support intake + platform ticket review/status/comments |
 | `bmsAiConfig.ts` | tenant BYOK key config + key tests (`bmsAiConfig`, `bmsSetAiKey`, `bmsRemoveAiKey`, `bmsTestAiKey`), AI usage/points reporting (`bmsAiUsage`, `bmsAiUsageBreakdown`, `bmsAiUsageEvents`, `bmsAiCreditLedger`), the per-recipient AI limit inbox (`bmsAiLimitNotifications`, `bmsReadAiLimitNotification`, `10.55`), platform-only point adjustment (`bmsAdjustAiCredits`), and platform-only provider health (`bmsAiProviderHealth`, `bmsAiProviderHealthCount`, `bmsCheckAllAiProviderHealth`, `bmsTestPlatformAiKey`) |
 | `bmsSaas.ts` | platform admin: tenants, plans, signup, drill-down. `bmsChangePlan` and `bmsSetTenantPlan` both require database-verified platform admin — shop access is not payment evidence |
-| `bmsAssistant.ts` | staff AI assistant (`bmsAssistant` + additive `bmsWorkAssistant`) — shared tool-calling runtime filtered by caller RBAC; the work surface adds bounded page context, citations and links; sensitive tools return proposals instead of executing |
+| `bmsAssistant.ts` | staff AI assistant (`bmsAssistant` + additive `bmsWorkAssistant`) — shared tool-calling runtime filtered by caller RBAC; the work surface adds bounded page context, citations and links; sensitive tools return proposals instead of executing. `bmsPharmacyAssistantTest` (Pharmacy Intake Lab simulator) requires `pharmacy.assessment.read`, the same permission as its menu entry |
 | `bmsPos.ts` | POS back-office: locations (`bmsUpsertLocation` re-checks the actor's branch scope, carries the `10.52` `parking` object; `bmsManageableLocations` lists the branches a `location.manage` holder may edit), devices/pairing tokens (`bmsIssuePosDeviceToken`, `pos.device.manage`, commits the new token hash and a credential-free `pos.device.token.issue` audit in one tenant transaction; `/admin/pos-devices` renders the one-time credential plus an HTTPS origin as a locally generated pairing QR — no new operation, and closing the QR does not revoke the token), cashier PIN/account-mode management, shift open/close, lot listing/reconciliation, VAT settings, tax document issuance, e-Tax queue status, product pack/barcode setup. Counter selling is **not** here — the browser register uses `/api/pos/*` and the native register uses `bmsPosDevice.ts` |
 | `bmsTaxReports.ts` | Branch-scoped tax-document list and sales-tax summary (`tax.document.view`), including buyer tax identity and reconciliation exceptions; every read intersects `bms_user_allowed_locations` |
 | `bmsExpenseDocuments.ts` | Tenant-scoped expense evidence, input-VAT/withholding summaries, idempotent creation and reason-required voiding (`expense.view` / `expense.manage`). Since `10.37` the same mutation records `SUPPLIER_CREDIT_NOTE` / `SUPPLIER_DEBIT_NOTE` with `receivedDate`, `referenceDocumentNo` and `adjustmentReason`; the VAT claim month is the month received |
@@ -978,7 +992,10 @@ invariants.
 
 ### Decision intelligence (Q1-Q3)
 
-Phase 1 dashboard reads require `report.view`. Action refresh/transitions require `report.manage`;
+Phase 1 dashboard reads require `report.view`; `bmsDashboard.couponSummary` additionally needs
+`coupon.view` and resolves to `null` without it (the `BmsDashboard` type resolver; every exported
+type resolver must be listed in `graphql/resolvers.ts`, checked by
+`graphql-type-resolver-wiring-contract`). Action refresh/transitions require `report.manage`;
 inventory demand feedback and policy writes use `inventory.adjust`. Recommendations are advisory and
 do not create POs or move stock. Phase 2 retention is intentionally independent from follow-up
 permissions: `bmsRetentionCases`/`bmsRetentionAnalytics` require `retention.view`, while refresh and
@@ -1085,8 +1102,9 @@ notices (80%, 90%, exhausted, recovered), read and acknowledged per recipient an
 
 ### Support tickets
 
-`createSupportTicket` powers the public `/support` form. It persists the ticket row, best-effort
-emails the support inbox, and returns a ticket code the user can keep for follow-up. Platform
+`createSupportTicket` powers the public `/support` form. It needs no login, so it is rate limited
+before any write (`enforceAuthRateLimit`: 5 per sender address and 20 per IP per hour; excess calls
+get `RATE_LIMITED`). It persists the ticket row, best-effort emails the support inbox, and returns a ticket code the user can keep for follow-up. Platform
 admins review tickets through `bmsSupportTickets`, change status and leave internal notes through
 `bmsUpdateSupportTicket`, and the resolver appends those notes to `support_ticket_comments` so the
 status trail stays visible. The UI is intentionally BMS-specific rather than a generic contact page.

@@ -17,6 +17,8 @@ test("disposable DB: team account and audit commit together or roll back togethe
   const pool = new Pool({ host: "127.0.0.1", port: 5433, database: "bms_realtime_test",
     user: process.env.POSTGRES_USER, password: process.env.POSTGRES_PASSWORD, max: 2 });
   const suffix = randomUUID();
+  // Staff actor ids are UUIDs: since 10.131 the actor is also stored in bms_audit_log.actor_user_id.
+  const actor = randomUUID();
   const email = `fake-team-audit-${suffix}@example.invalid`;
   let committedId: string | undefined;
   try {
@@ -32,7 +34,7 @@ test("disposable DB: team account and audit commit together or roll back togethe
            FROM roles WHERE name='Sales' RETURNING id`, [email, tenantId]);
       assert.equal(inserted.rowCount, 1);
       await assert.rejects(
-        auditUserChangeInTx(first, randomUUID(), "FAKE-actor", "user.create", inserted.rows[0].id,
+        auditUserChangeInTx(first, randomUUID(), actor, "user.create", inserted.rows[0].id,
           { role: "Sales" }), /foreign key|violates|23503/i);
       await first.query("ROLLBACK");
     } finally { first.release(); }
@@ -47,7 +49,7 @@ test("disposable DB: team account and audit commit together or roll back togethe
            FROM roles WHERE name='Sales' RETURNING id`, [email, tenantId]);
       assert.equal(inserted.rowCount, 1);
       committedId = inserted.rows[0].id;
-      await auditUserChangeInTx(second, tenantId, "FAKE-actor", "user.create", committedId!,
+      await auditUserChangeInTx(second, tenantId, actor, "user.create", committedId!,
         { role: "Sales" });
       await second.query("COMMIT");
     } catch (error) {

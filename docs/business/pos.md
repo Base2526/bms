@@ -1295,6 +1295,9 @@ where a reason and a PIN are required and the drawer opens as part of recording 
 sales, bill count, discounts, voids, returns, a breakdown by payment method and by cashier, drawer
 movements, expected cash, counted cash, and variance. Reading it mid-shift is an X report; reading it
 after close is a Z report — same code, and the only difference is whether the shift is closed.
+The cashier PIN for this and the other person-gated `GET` routes (`/api/pos/ar`,
+`/api/pos/store-credit`) travels in the `x-pos-cashier-pin` header; `?pin=` is ignored because query
+strings reach proxy logs and browser history (2026-11-24).
 
 It is reachable from the counter itself (`pos.shift.report`, seeded to Manager/Sales/Cashier) rather
 than only from the back office, for the same reason opening a shift moved to the counter: needing a
@@ -2127,7 +2130,9 @@ Treat every line below as a blocker unless explicitly marked as a warning:
 - Confirm every active product has a SKU, sale price, inventory row at the device location, barcode
   where scanning is used, and correct pack conversion/pack price where packs are sold.
 - If inventory lots are used, reconcile lot totals to inventory before opening; expired lots are
-  skipped and a tracked SKU cannot sell more than its unexpired lots.
+  skipped and a tracked SKU cannot sell more than its unexpired lots. The readiness page marks a lot
+  expired against the Bangkok calendar day (before 2026-11-24 it used the UTC date, so between 00:00
+  and 06:59 a lot that expired yesterday still looked valid).
 - For VAT-registered tenants, set the tax settings at `/admin/pos-readiness`, fill in the shop tax id
   at `/admin/settings`, and set the tax category on every sellable product. Verify numbering and receipt content with the business's accountant/tax adviser.
   BMS POS+ generates documents locally by default; e-Tax submission to the Revenue Department is a

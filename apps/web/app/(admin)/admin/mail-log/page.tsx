@@ -277,6 +277,8 @@ export default function MailLogPage() {
                 <div style={{ border: "1px solid var(--app-border)", borderRadius: 8, overflow: "hidden", background: "#fff" }}>
                   <iframe
                     title={t("admin_mail_log.preview_title")}
+                    // Logged email HTML is stored content: no scripts and no access to this origin.
+                    sandbox=""
                     srcDoc={selected.html}
                     style={{ width: "100%", height: 360, border: 0, display: "block", background: "#fff" }}
                   />

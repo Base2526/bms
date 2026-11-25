@@ -1,5 +1,7 @@
 "use client";
 
+// Must run before any antd static message/Modal/notification call (React 19 render hook).
+import "@/lib/antdReact19Render";
 import React from "react";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";

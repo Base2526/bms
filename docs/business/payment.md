@@ -60,7 +60,9 @@ the service directly. See [retail readiness](retail-omnichannel-readiness.md) fo
 
 ## AI slip verification
 
-`verifyPaymentSlip()` loads and normalizes the image, obtains the active provider through
+`verifyPaymentSlip()` loads and normalizes the image (only a `files` row of the paying tenant: the
+slip URL is free text from `payment.submit`, so `loadSlipImage` binds `files.tenant_id` and a legacy
+slip without a tenant falls back to manual checking — `payment-slip-tenant-db-contract`), obtains the active provider through
 `lib/bms/slipReaders/index.ts`, calls the provider-neutral `SlipReader` contract, and compares the
 extracted amount against the expected backend amount. The current adapters are
 `lib/bms/slipReaders/anthropic.ts` and `lib/bms/slipReaders/qwen.ts`; provider selection now lives

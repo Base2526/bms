@@ -40,6 +40,7 @@ import {
   upsertProductCatalogVariant,
 } from "@/lib/bms/productConfiguration";
 import { getProductStockPolicy } from "@/lib/bms/productStockPolicies";
+import { userCanAccessLocation } from "@/lib/bms/locations";
 
 function toGqlError(err: any): never {
   // ทุก error จาก service ถูกห่อเป็น 400 เหมือนกันหมด ทั้งที่บางอันไม่ใช่ความผิด
@@ -53,6 +54,16 @@ function toGqlError(err: any): never {
   throw new GraphQLError(err?.message || "operation failed", {
     extensions: { code: "BAD_USER_INPUT", http: { status: 400 } },
   });
+}
+
+/** A branch-restricted actor may only change stock in a branch they are assigned to. */
+async function assertStockLocationAccess(ctx: any, locationId: string | null | undefined): Promise<void> {
+  const actorId = String(ctx?.admin?.id ?? "");
+  if (!actorId || !(await userCanAccessLocation(getTenantId(ctx), actorId, locationId))) {
+    throw new GraphQLError("ไม่มีสิทธิ์จัดการสต็อกของสาขานี้", {
+      extensions: { code: "FORBIDDEN", http: { status: 403 } },
+    });
+  }
 }
 
 const shapeVariant = (r: {
@@ -376,6 +387,7 @@ export const bmsProductsResolvers = {
     ) {
       await requirePermission(ctx, "stock.adjust");
       const auth = requireAuth(ctx);
+      await assertStockLocationAccess(ctx, args.locationId);
       try {
         const row = await adjustStock(
           getTenantId(ctx),
@@ -399,6 +411,7 @@ export const bmsProductsResolvers = {
     ) {
       await requirePermission(ctx, "stock.adjust");
       const auth = requireAuth(ctx);
+      await assertStockLocationAccess(ctx, args.locationId);
       try {
         const row = await setReorderPoint(
           getTenantId(ctx), args.sku, args.size, args.reorderPoint, auth.author_id, args.locationId

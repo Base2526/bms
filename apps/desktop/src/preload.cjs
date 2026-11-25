@@ -1,5 +1,9 @@
 const { contextBridge, ipcRenderer } = require("electron/renderer");
 
+// Mirrors MAX_QUEUE_DISPLAYS in src/display-policy.mjs (a sandboxed preload cannot import it).
+// The main process validates the list again; this only bounds what crosses the bridge.
+const MAX_QUEUE_DISPLAYS = 32;
+
 const refreshListeners = new Set();
 ipcRenderer.on("bms-pos:refresh-data", (_event, requestId) => {
   const listeners = Array.from(refreshListeners);
@@ -101,7 +105,7 @@ contextBridge.exposeInMainWorld("bmsDesktop", {
     mode: typeof input?.mode === "string" ? input.mode : "",
     displayCount: input?.displayCount,
     targetDisplayIds: Array.isArray(input?.targetDisplayIds)
-      ? input.targetDisplayIds.slice(0, 4).map((id) => typeof id === "string" ? id : "") : null,
+      ? input.targetDisplayIds.slice(0, MAX_QUEUE_DISPLAYS).map((id) => typeof id === "string" ? id : "") : null,
     audioDisplayId: typeof input?.audioDisplayId === "string" ? input.audioDisplayId : null,
   }),
   setExternalDisplayRole: (input) => ipcRenderer.invoke("bms-pos:set-external-display-role", {

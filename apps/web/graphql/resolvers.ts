@@ -791,6 +791,10 @@ const rawResolvers = {
   JSON: GraphQLJSON,
   Upload: GraphQLUpload,
   Role: {
+    // pg returns timestamptz as Date; GraphQLString would send epoch millis and /admin/roles
+    // would render "Invalid Date" (CLAUDE.local.md trap 1).
+    created_at: (parent: any) => (parent?.created_at instanceof Date ? parent.created_at.toISOString() : parent?.created_at),
+    updated_at: (parent: any) => (parent?.updated_at instanceof Date ? parent.updated_at.toISOString() : parent?.updated_at),
     user_count: async (parent: any, _: any, ctx: any) => {
       const roleId = parent?.id;
       if (!roleId) return 0;
@@ -6862,6 +6866,9 @@ const rawResolvers = {
       return result;
     },
     createSupportTicket: async (_: any, { input }: any, ctx: any) => {
+      // Public contact form: no login, but every call writes a ticket and sends an email from the
+      // platform's domain, so bound it per sender address and per IP before doing either.
+      await enforceAuthRateLimit(ctx, "support-ticket", String(input?.email || "").trim().toLowerCase(), 5, 20, 60 * 60_000);
       const ticketId = `SUP-${Date.now()}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
       const ip =
         ctx?.req?.headers?.get?.("x-forwarded-for")?.split(",")[0]?.trim() ||
@@ -7722,6 +7729,7 @@ const rawResolvers = {
            RETURNING id, name, description, is_active, created_at, updated_at`,
           [trimmedName, description || null, is_active !== false]
         );
+        await audit(ctx, "role.create", rows[0]?.id ?? null, { name: trimmedName, isActive: is_active !== false });
 
         return rows[0];
       } catch (err: any) {
@@ -7808,6 +7816,13 @@ const rawResolvers = {
            RETURNING id, name, description, is_active, created_at, updated_at`,
           params
         );
+        // Same evidence as setRoleActive: this path can also switch a global role on or off.
+        await audit(ctx, "role.update", id, {
+          previousName: existingRole[0]?.name ?? null,
+          name: rows[0]?.name ?? null,
+          ...(is_active !== undefined ? { isActive: !!is_active } : {}),
+          changed: updates.filter((u) => !u.startsWith("updated_at")).map((u) => u.split(" ")[0]),
+        });
 
         return rows[0];
       } catch (err: any) {
@@ -7849,6 +7864,7 @@ const rawResolvers = {
 
         // Safe to delete (no users are using this role)
         await query(`DELETE FROM roles WHERE id = $1`, [id]);
+        await audit(ctx, "role.delete", id, { name: existingRole[0]?.name ?? null });
 
         console.log('[Mutation] deleteRole success:', id);
         return true;
@@ -7941,6 +7957,14 @@ const rawResolvers = {
   BmsConversation: bmsInboxResolvers.BmsConversation,
   BmsConversationNote: bmsInboxResolvers.BmsConversationNote,
   BmsAuditEntry: bmsDashboardResolvers.BmsAuditEntry,
+  // Type resolvers below were exported but never listed here, so the live schema used default
+  // property reads: couponSummary skipped its coupon.view mask, tracking events returned snake_case
+  // rows into non-null camelCase fields, and parked carts skipped normalization.
+  // graphql-type-resolver-wiring-contract keeps every exported type resolver attached.
+  BmsDashboard: bmsDashboardResolvers.BmsDashboard,
+  BmsShipmentTrackingEvent: bmsShippingResolvers.BmsShipmentTrackingEvent,
+  BmsPosParkedSale: bmsPosDeviceResolvers.BmsPosParkedSale,
+  BmsPosParkActionResult: bmsPosDeviceResolvers.BmsPosParkActionResult,
 };
 
 export const resolvers = {

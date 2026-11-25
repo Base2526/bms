@@ -97,7 +97,10 @@ before changing that domain.
   (503 when the secret is unset — never `if (secret && …)`). Never read the tenant from the body;
   public routes need `rateLimit()`.
 - Secrets resolve in a function that throws in production when missing; never `process.env.X ||
-  "literal"`, never a module-level const, never exported.
+  "literal"`, never a module-level const, never exported. Compare secrets/signatures in constant time
+  (`lib/bms/crypto.ts`), never with `===`; a cashier PIN never goes in a URL (`x-pos-cashier-pin`).
+- Anonymous routes answer with `publicErrorMessage()`, never a raw caught `error.message`; a file id
+  taken from user text is read with its `tenant_id`.
 - Files: `files.tenant_id` mismatch answers 404; `visibility` missing = private; uploads bind the
   owner from session/device/signed token only. Personal uploads carry `owner_user_id` (`10.109`);
   community-chat images/audio are private and stream only to members of the referencing chat (a
@@ -179,7 +182,8 @@ before changing that domain.
 - Realtime: outbox row in the same tenant tx, dispatched after commit; `apps/ws` never touches
   Postgres; new events use `packages/realtime` only; 18 named views share one authorizer.
 - Typed GraphQL: regenerate `schema.graphql` in the same change; no caller-supplied scope; business
-  rejections stay in `data.<op>.status`, not GraphQL errors.
+  rejections stay in `data.<op>.status`, not GraphQL errors. A module type resolver runs only if
+  `graphql/resolvers.ts` lists it (`graphql-type-resolver-wiring-contract`).
 
 ## i18n
 
@@ -204,6 +208,9 @@ before changing that domain.
   silently dropped. Target third-party classes with ordinary descendant selectors.
 - Keep public auth routes in `isAuthPath()` and other public standalone routes (e.g. `/checkout`) in
   `skipsSessionLayer()` (`ClientProviders.tsx`). Two different gates; don't widen the wrong one.
+- antd v5 `message`/`notification`/static `Modal` render nothing on React 19 without
+  `lib/antdReact19Render.ts`, which stays the first import of `ClientProviders.tsx`. `srcDoc` iframes
+  get `sandbox=""`; a shop "today" is `bangkokDateKey()`.
 - Scope Thai-only typography through `html[lang="th"]` so English layout is unaffected.
 - Public CTAs are session-aware: with a valid admin session, send the user to `/admin/dashboard`
   instead of showing "start free" / "log in" again.

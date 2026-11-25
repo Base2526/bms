@@ -11,14 +11,20 @@
 > บันทึก 2026-08-17 → 2026-10-23) อยู่ใต้ "ชุดที่ 2" ของ archive — ค้นด้วยเลข migration เช่น
 > `grep -n "9.66" docs/local-notes-archive.md`
 
-## สถานะ working tree ล่าสุด (2026-11-23)
+## สถานะ working tree ล่าสุด (2026-11-24)
 
-- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `46302630` (#444,
-  เปลี่ยนชื่อสินค้าเป็น **BMS POS+**; appId/bundle ID/โฟลเดอร์ติดตั้งเดิมไม่เปลี่ยน) · สรุป #417–#444 อยู่ท้าย
+- **PR ทุกตัว merge เข้า `develop`** (`origin/main` ค้างอยู่ที่ #115) · `develop` ล่าสุด = `c9fb665a` (#450; #445 Retail Local
+  pilot 13 · #446 recheck 2026-11-23 · #447 Next 16/GraphQL · #448 security hardening · #449–#450 admin loading) ·
+  #444 เปลี่ยนชื่อสินค้าเป็น **BMS POS+** (appId/bundle ID/โฟลเดอร์ติดตั้งเดิมไม่เปลี่ยน) · สรุป #417–#444 อยู่ท้าย
   [docs/status-log.md](docs/status-log.md) · branch `codex/retail-local-pilot-13` = `develop` + Retail Local
   `0.2.14-pilot.13` + คู่มือร้านอาหารสัตว์ (`/learn/pet-supply`, Word/PDF เล่มที่ 6) + แก้ลูป `/admin/login` — ไม่มี migration ·
   `admin-client-i18n-contract` แก้แล้วใน `a55ea168`; gate รอบ recheck 2026-11-23 ผ่าน (รายละเอียดใน
   [system-recheck-2026-11-23.md](docs/architecture/system-recheck-2026-11-23.md))
+- **recheck 2026-11-24** = branch `recheck/full-system-2026-11-24` (ยังไม่ push/merge, ไม่มี migration) — รายการแก้/ค้างใน
+  [system-recheck-2026-11-24.md](docs/architecture/system-recheck-2026-11-24.md) · หลัง `git pull` ต้อง `npm ci` ทุกแพ็กเกจ (host
+  `node_modules` ค้าง Next 14 ทำ gate ล้มที่ typecheck) · ฐาน `bms_recheck_1123` (:5433, readiness ครบ) ใช้ clone เป็นฐานทดสอบได้ ·
+  DB suite หลายไฟล์บังคับชื่อฐาน (`bms_realtime_test`, `bms_requisition_test`, `bms_operations_test`, `bms_freemium_test`,
+  `bms_restaurant_readiness_test` :5547) และ flag `BMS_{AUDIT,INBOX,TEAM}_DISPOSABLE_DB=1` · dev server ต้อง `next dev --webpack`
 - **migration ล่าสุด `10.138`** (เลขว่างถัดไป `10.139` — ตรวจด้วยคำสั่งในกับดักข้อ 4 ก่อนตั้งเสมอ) ·
   `10.122`/`10.123` โรงงานคงเดิม; audit ที่ชนเลขย้ายเป็น `10.131`/`10.132` และมีวิธีจัดการ
   ledger เก่าใน [audit traceability](docs/architecture/audit-traceability.md#verification-and-rollout) ·
@@ -73,8 +79,8 @@ node scripts/run-contract-tests.mjs pure <name-filter>   # ไฟล์เดี
 node scripts/run-contract-tests.mjs db <name-filter>     # ต้องมี POSTGRES_HOST/POSTGRES_DB ของเครื่องท้องถิ่น
 ```
 
-- นับ 2026-11-16: **491 ไฟล์ที่ตัวรันหยิบ** = pure **381** (345 ชั้นบนของ `scripts/` รวม
-  `retail-local-migration-checksum.test.mjs` + 35 ใน `ai-eval/` + 1 ใน `infra/`) + DB **110**
+- นับ 2026-11-24: **537 ไฟล์ที่ตัวรันหยิบ** = pure **419** (381 ชั้นบนของ `scripts/` รวม
+  `retail-local-migration-checksum.test.mjs` + 37 ใน `ai-eval/` + 1 ใน `infra/`) + DB **118**
   (`-db-contract` ทั้งหมดอยู่ชั้นบนของ `scripts/`) · นับใหม่ด้วย
   `node scripts/run-contract-tests.mjs pure --list` (และ `db --list`) — พิมพ์รายชื่อเป็น JSON
 - ผลรันจะถูกเขียนลง `.test-output/<mode>.tap` + `.test-output/<mode>.run.txt` — **ไฟล์ `.run.txt`

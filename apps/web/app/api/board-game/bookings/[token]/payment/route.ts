@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { publicErrorMessage } from "@/lib/publicErrorMessage";
 import sharp, { type Metadata } from "sharp";
 import {
   getPublicBoardGameReservationUploadContext,
@@ -74,7 +75,7 @@ async function handlePOST(req: NextRequest, { params }: { params: Promise<{ toke
     });
     return response(result, result.status === "SUBMITTED" ? 201 : 200);
   } catch (error) {
-    return response({ error: error instanceof Error ? error.message : "แจ้งชำระไม่สำเร็จ" }, 400);
+    return response({ error: publicErrorMessage(error, "แจ้งชำระไม่สำเร็จ") }, 400);
   }
 }
 

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { loadWithStubs } from "./testing/webhookHarness.mts";
 import { readBoundedWebhookText } from "../apps/web/lib/bms/webhookBody.ts";
+import { verifyHexHmacSignature } from "../apps/web/lib/bms/crypto.ts";
 
 const require = createRequire(new URL("../apps/web/package.json", import.meta.url));
 const { Pool } = require("pg");
@@ -305,7 +306,7 @@ test("disposable DB: Inbox list, detail and nested reads preserve types and tena
       "@/lib/bms/channels": { getChannel: async () => ({ active: true, channel_secret: "fixture-secret" }) },
       "@/lib/bms/rateLimit": { rateLimit: async () => ({ ok: true }) },
       "@/lib/bms/webhookBody": { readBoundedWebhookText },
-      "crypto": { default: { createHmac } },
+      "@/lib/bms/crypto": { verifyHexHmacSignature },
       "@/lib/bms/inbox": { logInboundMessage: inbound.logInboundMessage },
       "@/lib/bms/channelHealth": { recordInboundEvent: async () => undefined,
         recordWebhookVerifyFailed: async () => undefined },

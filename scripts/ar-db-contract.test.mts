@@ -111,8 +111,12 @@ test("setup: สินค้า ฿1,000 · เครื่องขาย · �
     [tenantId]
   )).rows[0].id;
   // นับปิดตาต้องปิด ไม่งั้นอ่าน expectedCash ระหว่างกะเปิดไม่ได้ (8.0)
+  // UPSERT ไม่ใช่ UPDATE: ร้านที่ยังไม่มีแถวโปรไฟล์ getVatSettings() ถือว่านับปิดตา "เปิด"
+  // (ตรงกับ DEFAULT TRUE) — บนฐาน restore ที่ร้านแรกไม่มีแถว UPDATE จึงไม่โดนอะไรแล้ว 9 เทสแดง
   await query(
-    `UPDATE bms_store_profile SET cash_rounding = 'NONE', pos_blind_close = FALSE WHERE tenant_id = $1`,
+    `INSERT INTO bms_store_profile (tenant_id, cash_rounding, pos_blind_close)
+     VALUES ($1, 'NONE', FALSE)
+     ON CONFLICT (tenant_id) DO UPDATE SET cash_rounding = 'NONE', pos_blind_close = FALSE`,
     [tenantId]
   );
   await query(`UPDATE bms_loyalty_settings SET enabled = FALSE WHERE tenant_id = $1`, [tenantId]);

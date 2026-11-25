@@ -50,7 +50,8 @@ before(async () => {
     GRANT USAGE ON SCHEMA ${schema} TO bms_app;
     CREATE TABLE bms_orders(id uuid PRIMARY KEY,tenant_id uuid NOT NULL,customer_id uuid,location_id uuid,
       status text,channel text,fulfillment_type text,total_amount numeric,preferred_carrier text,
-      shipping_fee numeric DEFAULT 0,shipping_fee_source text DEFAULT 'none',updated_at timestamptz DEFAULT now());
+      shipping_fee numeric DEFAULT 0,shipping_fee_source text DEFAULT 'none',updated_at timestamptz DEFAULT now(),
+      quote_site_address text,retail_fulfillment_type text CHECK (retail_fulfillment_type IN ('PICKUP','DELIVERY')));
     CREATE TABLE bms_order_items(id bigserial PRIMARY KEY,tenant_id uuid,order_id uuid,location_id uuid,
       product_sku text,size text,qty integer);
     CREATE TABLE bms_payments(id bigserial PRIMARY KEY,tenant_id uuid,order_id uuid,status text);
@@ -58,7 +59,8 @@ before(async () => {
       address_type text,is_default boolean,province text,province_code text,address text);
     CREATE TABLE bms_inventory(tenant_id uuid,location_id uuid,product_sku text,size text,
       current_stock integer CHECK(current_stock>=0),reserved_stock integer CHECK(reserved_stock>=0),updated_at timestamptz);
-    CREATE TABLE bms_audit_log(tenant_id uuid,actor text,action text,target text,meta jsonb);
+    CREATE TABLE bms_audit_log(tenant_id uuid,actor text,action text,target text,meta jsonb,event_key text);
+    CREATE UNIQUE INDEX ON bms_audit_log(tenant_id,event_key) WHERE event_key IS NOT NULL;
     CREATE TABLE test_movements(tenant_id uuid,order_id uuid,type text,actor text);
     CREATE VIEW bms_order_stock_lines AS SELECT tenant_id,order_id,location_id,product_sku,size,qty FROM bms_order_items;
     GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA ${schema} TO bms_app;

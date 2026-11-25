@@ -30,7 +30,8 @@ async function handleGET(req: NextRequest) {
   // ยอดขายรายคนเป็นข้อมูลที่ใช้ประเมินพนักงานได้ จึงต้องรู้ว่าใครขอดู
   // — device token อย่างเดียวไม่พอ เพราะเครื่องเปิดค้างทั้งวันบนเคาน์เตอร์
   const userId = req.nextUrl.searchParams.get("cashierUserId") ?? "";
-  const pin = req.nextUrl.searchParams.get("pin") ?? "";
+  // PIN in a header, never the query string: URLs land in proxy access logs and history.
+  const pin = req.headers.get("x-pos-cashier-pin") ?? "";
   if (!userId || !pin) return NextResponse.json({ error: "ต้องระบุพนักงานและ PIN" }, { status: 400 });
   const auth = await verifyCashierPin(device.tenantId, userId, pin);
   if (!auth.ok) return NextResponse.json({ error: "PIN ไม่ถูกต้อง", reason: auth.reason }, { status: 403 });

@@ -69,11 +69,15 @@ export const bmsStoreProfileResolvers = {
     },
   },
   Mutation: {
+    // Store configuration that customer emergency replies quote: shop Administrator (or verified
+    // platform admin) like the rest of Settings → store, not any admin-scope login.
     async bmsUpsertEmergencyFacility(_p: unknown, args: { input: EmergencyFacilityInput }, ctx: any) {
+      await requireTenantSettingsAdministrator(ctx);
       const actorId = facilityActor(ctx);
       return facilityMutation(() => upsertEmergencyFacility(getTenantId(ctx), actorId, args.input));
     },
     async bmsDeactivateEmergencyFacility(_p: unknown, args: { id: string; confirmed: boolean }, ctx: any) {
+      await requireTenantSettingsAdministrator(ctx);
       const actorId = facilityActor(ctx);
       if (args.confirmed !== true) throw new GraphQLError("Confirmation required", { extensions: { code: "BAD_USER_INPUT" } });
       return facilityMutation(() => deactivateEmergencyFacility(getTenantId(ctx), actorId, args.id));

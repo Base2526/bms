@@ -309,6 +309,8 @@ top code carries recent usage rows so operators can expand it and see which cust
 used the code, including subtotal, discount, net total, and order status. All values are derived from
 the same `bms_orders.coupon_code`/`discount_amount` columns (no separate redemption table). The field
 is **masked to `null`** for roles without `coupon.view`
+(the `BmsDashboard` type resolver; it was not wired into the schema until 2026-11-24, so before that
+Sales received the full summary)
 (e.g. Sales, who has `report.view` and can see the rest of the dashboard) via a field resolver in
 `bmsDashboard.ts` rather than a schema-level permission — this keeps `bmsDashboard` itself usable by
 every `report.view` role while still hiding margin-sensitive numbers from roles that can't open

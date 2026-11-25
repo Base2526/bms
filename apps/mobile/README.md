@@ -140,13 +140,14 @@ native iOS compilation on macOS, signed store builds, suspended-app push, global
 pharmacy evidence capture are not supplied by this audit. No production deployment or database write
 was performed.
 
-A read-only GraphQL regeneration validated every native operation against `schema.graphql`, but
-the full generated-file comparison is **not clean**: the unused Admin helper
-`SchemaMutationBmsSetPharmacistLicenseArgs` lacks `confirmed`, and
-`SchemaQueryBmsPharmacyLicenseCandidatesArgs` is absent. No native operation uses these helpers.
-The committed generated file was left unchanged under the repository instruction prohibiting changes
-to generated artifacts; the comparison is saved in `.test-output/cross-app-codegen-diff.log`.
-It is a remaining codegen maintenance item, not a passing drift check.
+GraphQL codegen is in sync: `npm run graphql:check` regenerates `src/graphql/generated.ts` from
+`schema.graphql` and exits 0 with no diff (2026-11-23 regeneration `53e95aba`, rechecked
+2026-11-24). The pharmacist-licence helpers once reported missing are present.
+
+2026-11-24 recheck fixes: the Inventory permission panel is chosen from the GraphQL
+`extensions.code` (`FORBIDDEN`), so it also appears in English mode (`isPermissionDeniedError`);
+the shared 15-second operation timeout and cancel errors are translated by code
+(`lib/operation.ts`), keeping the seconds count. Jest: 65 suites / 501 tests.
 
 The Mobile dependency audit improves from **40 findings (1 critical, 20 high)** to **20 findings
 (0 critical, 1 high, 10 moderate, 9 low)**. The remaining high item is the `image-size` parser used by

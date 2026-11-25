@@ -825,7 +825,9 @@ test("issue closure requires verified sources, separate owner and an approved ca
       version: 1,
       templateId: f.template,
       assignedTo: f.actor,
-      dueAt: new Date().toISOString(),
+      // Two days ahead: a follow-up due "now" also gets an OVERDUE notice once a millisecond
+      // passes, which made the single-ASSIGNED-notice count below flaky (2 vs 1).
+      dueAt: new Date(Date.now() + 2 * 24 * 3600 * 1000).toISOString(),
       target: "FAKE keep temperature correct",
     });
     assert.equal(fup.status, "OK");

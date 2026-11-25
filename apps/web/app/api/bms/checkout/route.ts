@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { publicErrorMessage } from "@/lib/publicErrorMessage";
 import {
   getCheckoutByToken,
   saveCheckoutDeliveryByToken,
@@ -79,7 +80,7 @@ async function handlePATCH(req: NextRequest) {
     return response({ checkout: result.checkout });
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "บันทึกข้อมูลจัดส่งไม่สำเร็จ";
+      publicErrorMessage(error, "บันทึกข้อมูลจัดส่งไม่สำเร็จ");
     return response({ error: message }, 400);
   }
 }

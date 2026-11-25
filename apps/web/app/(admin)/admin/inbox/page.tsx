@@ -24,6 +24,7 @@ const EMOJIS = ["😊","😀","😂","🙏","👍","🙂","😅","😍","🥰","
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useGlobalInboxStore } from "@/store/globalInboxStore";
 import { useI18n } from "@/lib/i18nContext";
+import { safeStoredLinkUrl } from "@/lib/safeLinkUrl";
 import Customer360Panel from "./Customer360Panel";
 import messageStyles from "./message.module.css";
 
@@ -356,7 +357,8 @@ function parseCouponShare(body: string): CouponShare | null {
   const minOrder = lines.find((line) => /^ขั้นต่ำ\s+/i.test(line))?.replace(/^ขั้นต่ำ\s+/i, "").trim() || null;
   const expires = lines.find((line) => /^(ใช้ได้ถึง|หมดอายุ)\s+/i.test(line))?.replace(/^(ใช้ได้ถึง|หมดอายุ)\s+/i, "").trim() || null;
   const usage = lines.find((line) => /^สิทธิ์\s+/i.test(line))?.replace(/^สิทธิ์\s+/i, "").trim() || null;
-  const walletUrl = lines.find((line) => /\/coupon\/wallet\?t=/i.test(line)) || null;
+  const walletLine = lines.find((line) => /\/coupon\/wallet\?t=/i.test(line));
+  const walletUrl = safeStoredLinkUrl(walletLine?.match(/\S*\/coupon\/wallet\?t=\S+/i)?.[0]);
   return { code, discount, minOrder, expires, usage, walletUrl };
 }
 
@@ -1512,8 +1514,10 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
   const renderMsg = (m: Msg) => {
     const isIn = m.direction === "IN";
     const isStaff = m.sender?.startsWith("staff");
-    const product = parseProductShare(m.body);
-    const coupon = parseCouponShare(m.body);
+    // Cards are the shop's own share templates: a customer's message is shown as typed text, never
+    // as an official-looking card whose button opens a link the customer chose.
+    const product = isIn ? null : parseProductShare(m.body);
+    const coupon = isIn ? null : parseCouponShare(m.body);
     const rowClass = `${messageStyles.messageRow} ${isIn ? messageStyles.incomingRow : messageStyles.outgoingRow}`;
     const cardClass = `${messageStyles.card} ${isIn ? messageStyles.incomingCard : messageStyles.outgoingCard}`;
     const openImage = () => {

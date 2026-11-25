@@ -21,7 +21,7 @@ full per-domain rules: [docs/agent-invariants.md](docs/agent-invariants.md) · p
 | [product-overview-th.md](docs/business/product-overview-th.md) · [feature-inventory.md](docs/feature-inventory.md) · [feature-log.md](docs/feature-log.md) · [release-feature-control.md](docs/release-feature-control.md) | Thai sales overview + allowed claims · what is proven · why features work as they do · commit-bound release inventory |
 | [factory-twine-straw-pilot-th.md](docs/business/factory-twine-straw-pilot-th.md) · [operation-production.md](docs/business/operation-production.md) | Thai factory demo, unit/SKU choices, controlled-pilot workflow and production limits |
 | [twenty-baht-shop-pilot-th.md](docs/business/twenty-baht-shop-pilot-th.md) · [small-retail-readiness-2026-11-20.md](docs/business/small-retail-readiness-2026-11-20.md) | One-branch twenty-baht-shop pilot scope, code evidence, plan fit and external Go/No-Go gates · per-field small-retail readiness ledger (code path vs. real DB/device evidence) |
-| [feature-completion-plan.md](docs/feature-completion-plan.md) · [system-recheck-2026-11-14.md](docs/architecture/system-recheck-2026-11-14.md) · [system-recheck-2026-11-23.md](docs/architecture/system-recheck-2026-11-23.md) | Ordered completion backlog, release evidence and external rollout gates · Inbox/Desktop/Mobile/Admin evidence ledgers and what stays unverified |
+| [feature-completion-plan.md](docs/feature-completion-plan.md) · [system-recheck-2026-11-14.md](docs/architecture/system-recheck-2026-11-14.md) · [system-recheck-2026-11-23.md](docs/architecture/system-recheck-2026-11-23.md) · [system-recheck-2026-11-24.md](docs/architecture/system-recheck-2026-11-24.md) | Ordered completion backlog, release evidence and external rollout gates · Inbox/Desktop/Mobile/Admin evidence ledgers and what stays unverified |
 | [AI_GUIDELINES.md](docs/AI_GUIDELINES.md) · [ai/](docs/ai/) ([workflow](docs/ai/workflow.md) · [tools](docs/ai/tools.md) · [prompts](docs/ai/prompts.md) · [quality](docs/ai/quality.md) · [usage-cost-audit](docs/ai/usage-cost-audit.md) · [work-assistant-coverage](docs/ai/work-assistant-coverage.md) · [customer-inbox coverage audit](docs/ai/customer-inbox-coverage-audit-th.md) · [question bank](docs/ai/customer-inbox-question-bank-th.md)) | AI rules, pipeline, tools, evidence, AI points, staff assistant catalog, customer-inbox question coverage |
 | [pharmacy/README.md](apps/web/lib/bms/pharmacy/README.md) | Pharmacy intake, guidance (`10.45`/`10.47`), emergency directory (`10.46`) — read before touching `lib/bms/pharmacy/` |
 | [apps/mobile/README.md](apps/mobile/README.md) · [apps/desktop/README.md](apps/desktop/README.md) | Native RN POS (scanner, Wi-Fi printing) · Electron POS shell |
@@ -87,8 +87,9 @@ traceability now uses `10.131`/`10.132`; the factory migrations retain `10.122`�
 [audit traceability rollout](docs/architecture/audit-traceability.md#verification-and-rollout)
 for handling environments that ran the old audit filenames. The building-material pilot needs
 `10.133`–`10.137` before its code is deployed: `10.134`, `10.136` and `10.137` are read by every
-order insert, POS price check and PO create/receipt (declared in schema-readiness). `npm run gate` passed on 2026-11-23;
-this does not establish production deployment or DB migration verification.
+order insert, POS price check and PO create/receipt (declared in schema-readiness). `npm run gate` passed on 2026-11-24
+(`recheck/full-system-2026-11-24`; DB contract suites green on throwaway databases); this does not
+establish production deployment or DB migration verification.
 
 ## AI rules (non-negotiable)
 

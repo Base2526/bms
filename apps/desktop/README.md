@@ -27,7 +27,9 @@ external admin pages and raw server/user text retain their own language; receipt
 announcement voice remain separate store/device settings.
 
 The shared operator catalog is `apps/web/i18n/pos-client.json`; the dependency-free shell catalog is
-`renderer/locale.cjs`. Keep interpolation data verbatim. Tests cover persistence and native labels;
+`renderer/locale.cjs`. Keep interpolation data verbatim. Tests cover persistence, native labels and
+that every literal `posText()` message in `src/` and `renderer/` has an English entry (a missing one
+falls back to Thai silently); the preload bridge is tested by loading the real `preload.cjs`;
 browser smokes cover setup at desktop/compact widths, language changes and retained inputs.
 
 The customer display and queue board follow the register language while already open, using a
@@ -130,6 +132,9 @@ writes cannot overwrite each other's temporary file. A failed write reports fail
 without blocking a later removal or retry; tests cover delayed writes and rename failure. A reopened
 window waits for pending removal before restoring credentials. Overlapping restores share the
 one-use installer handoff, and an old read cannot replace a newer pairing or storage-recovery state.
+`--pairing-handoff=<path>` is honoured only for the basenames the Retail Local installers write
+(`pairing-handoff.json`, `bms-pairing-handoff.json`, `pairing-handoff-<hex>.json`); any other path is
+ignored and never deleted (the consumer removes the file it reads).
 If removal fails, the shell restores the live credential and customer display, reports a readable
 error, and all three POS surfaces preserve the operator and draft. Startup recovery buttons remain
 usable after a denied or failed action; they never report removal success on failure.
@@ -137,6 +142,8 @@ Successful unpairing acknowledges removal before invoking the renderer's cleanup
 accepts navigation completion only from that same cashier frame. This prevents unloading the
 renderer before it clears the operator and drafts. A five-second fallback opens setup if the
 renderer stops responding; older clients retain the original immediate setup flow.
+Unpair and closing the cashier window also close every `/pos/manual` and legacy
+`/pos/queue-board` popup the register opened, so none keeps running on the old pairing.
 
 Server rejection text identifies HTTP 401 without claiming expiry; HTTP 403 asks for permission
 review without recommending re-pairing. Neither response automatically removes the saved token.
@@ -378,7 +385,8 @@ no effect on the cashier window or the persisted automatic/selected display sett
 
 One register supports one cashier display, one read-only customer window, and one read-only queue
 window per selected external monitor. The queue count is limited by the monitors the shell detects,
-not by a fixed cap (`MAX_QUEUE_DISPLAYS = 32` only rejects malformed saved or IPC input). Auto mode
+not by a fixed cap (`MAX_QUEUE_DISPLAYS = 32` only rejects malformed saved or IPC input; the
+preload forwards up to the same 32 ids — before 2026-11-24 it silently kept only the first 4). Auto mode
 offers the count of free external monitors and keeps a saved count while screens are disconnected;
 Selected mode keeps the chosen screens and shows a missing one as waiting until it reconnects.
 With one external monitor, enabling customer or queue atomically releases the other role and reuses

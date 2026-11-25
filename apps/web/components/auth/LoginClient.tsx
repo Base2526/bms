@@ -13,6 +13,7 @@ import LoginForm from "@/components/auth/LoginForm";
 import SocialLogin from "@/components/auth/SocialLogin";
 
 import { useI18n } from "@/lib/i18nContext";
+import { safeInternalRedirectPath } from "@/lib/safeRedirect";
 type LoginStrings = {
   title: string;
   back: string;
@@ -144,7 +145,9 @@ function LoginClientInner({ nextPath }: Props) {
       const name = res.user?.name || "";
       message.success(format(strings.welcome, { name }));
       setRedirecting(true);
-      window.location.href = nextPath || "/";
+      // Same-origin paths only, like /admin/login (an imperative navigation is not covered by
+      // React's javascript: href block).
+      window.location.href = safeInternalRedirectPath(nextPath, "/");
     },
     [nextPath, strings.loginFailed, strings.welcome]
   );

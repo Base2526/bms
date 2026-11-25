@@ -47,6 +47,7 @@ import {
   isStaleOperationConflict,
 } from '../../lib/operation';
 import type { AppStackParamList } from '../../navigation/types';
+import { isPermissionDeniedError } from '../../lib/permissionError';
 import { useSession } from '../../state/SessionContext';
 import { useStoreMode } from '../../state/StoreModeContext';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -912,7 +913,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
       : mode === 'TRANSFER'
       ? transfers.error
       : counts.error;
-  const permissionDenied = activeError?.message.includes(posText("ไม่มีสิทธิ์"));
+  const permissionDenied = isPermissionDeniedError(activeError);
   const retryActiveView = () => {
     if (mode === 'LOOKUP') {
       refetchStockSearch().catch(() => undefined);
