@@ -19,7 +19,12 @@ const ALLOWED_FIELDS = new Set([
   "isLatest",
   "minOs",
   "releaseNotes",
+  "sha256",
 ]);
+const REQUIRED_BEFORE_FILE = [
+  "platform", "packageType", "version", "channel", "status",
+  "accessLevel", "isLatest", "minOs", "sha256",
+] as const;
 
 export class RetailLocalReleaseUploadError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -96,6 +101,10 @@ export async function parseRetailLocalReleaseUploadStream(
   }
 
   parser.on("field", (name, value, info) => {
+    if (fileSeen) {
+      fail(new RetailLocalReleaseUploadError("all release metadata must appear before the file"));
+      return;
+    }
     if (!ALLOWED_FIELDS.has(name)) {
       fail(new RetailLocalReleaseUploadError(`unexpected field: ${name}`));
       return;
@@ -121,6 +130,12 @@ export async function parseRetailLocalReleaseUploadStream(
     }
 
     fileSeen = true;
+    const missing = REQUIRED_BEFORE_FILE.filter((field) => !fields[field]);
+    if (missing.length > 0) {
+      fail(new RetailLocalReleaseUploadError(`metadata must precede file: ${missing.join(", ")}`));
+      file.resume();
+      return;
+    }
     file.once("limit", () => {
       fail(new RetailLocalReleaseUploadError(`release file exceeds ${limit} bytes`, 413));
     });
@@ -152,11 +167,11 @@ export async function parseRetailLocalReleaseUploadStream(
       source.pipe(parser);
     });
 
+    if (parseFailure) throw parseFailure;
     if (!fileSeen || !storedPromise) {
       throw new RetailLocalReleaseUploadError("file is required");
     }
     storedFile = await storedPromise;
-    if (parseFailure) throw parseFailure;
     return { fields, storedFile };
   } catch (error) {
     if (typeof (source as Readable).destroy === "function") {

@@ -2016,7 +2016,7 @@ forced RLS. These rows — never a `FAKE-`/`SAMPLE-` prefix — decide what remo
 widens the `bms_onboarding_seed_runs` archetype CHECK to every archetype (restaurant seeding failed
 before it).
 
-## Retail Local installation and releases (`10.15`, `10.17`–`10.20`, `10.27`–`10.29`, `10.32`–`10.34`)
+## Retail Local installation and releases (`10.15`, `10.17`–`10.20`, `10.27`–`10.29`, `10.32`–`10.34`, `10.139`)
 
 - `10.15` `bms_local_installation`: database singleton written once by first-run provisioning, with RLS.
 - `10.17` adds licence type, commercial status, trial start/expiry and conversion columns to
@@ -2032,6 +2032,12 @@ before it).
 - `10.28` requires a well-formed `customer_reference` (CHECK `NOT VALID`); `10.29` adds `macos-x64`;
   `10.33` adds `windows-x86-legacy` restricted to `package_type = 'pos'`; `10.34` re-labels x86 POS
   installers that had been stored as `windows-x64`.
+- `10.139` derives package/platform/version only from canonical installer names. Conflicting legacy
+  rows are retained for audit but changed to `hidden`/not-latest; CHECK constraints prevent them from
+  becoming downloadable again. It never changes a Server row into POS. The migration also hides a
+  release whose `files.original_name`, stored filename/`relpath`, size, checksum or deletion state no
+  longer agrees with that identity. The application repeats those checks, verifies object presence
+  for discovery/listing, and streams a SHA-256 verification pass before opening the download stream.
 
 ## Retail Local license evidence control plane (`10.16`)
 

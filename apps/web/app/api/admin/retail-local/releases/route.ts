@@ -12,7 +12,7 @@ async function handleGET() {
   const auth = await authorizePlatformAdminRoute();
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
 
-  const releases = await listRetailLocalReleaseAssets({ includeHidden: true });
+  const releases = await listRetailLocalReleaseAssets({ includeHidden: true, verifyStorage: true });
   return NextResponse.json({ releases }, { headers: { "Cache-Control": "no-store" } });
 }
 

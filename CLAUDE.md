@@ -57,7 +57,7 @@ per entry in [status-log.md](docs/status-log.md)):
 | Emergency Offline (mobile cash queue) | `10.5` | [cloud-hybrid-pos.md](docs/business/cloud-hybrid-pos.md) |
 | Thai tax evidence, expenses, supplier notes, receipt-QR invoice requests + PDF email | `10.8`–`10.13`, `10.23`–`10.25`, `10.37`–`10.39`, `10.58` | [pos.md](docs/business/pos.md#cloud-receipt-qr--full-tax-invoice-request-1038) |
 | Delivery platforms | `10.12`, `10.14`, `10.21` | [delivery-platforms.md](docs/integrations/delivery-platforms.md) |
-| Retail Local (licence fail-open, registry, installer reports) | `10.15`–`10.20`, `10.27`–`10.36` | [retail-local.md](docs/business/retail-local.md) |
+| Retail Local (licence fail-open, registry, installer reports) · release identity (installer filename must match package/platform/version; conflicting rows hidden) | `10.15`–`10.20`, `10.27`–`10.36` · `10.139` — **branch; not applied to production** | [retail-local.md](docs/business/retail-local.md) |
 | Social Login · sample-data ledger · verified shop owner = Administrator (repair of email-signup owners left on Manager) | `10.22` · `10.26`, `10.30` · `10.121`, `10.128` | [agent-invariants](docs/agent-invariants.md) · [owner-repair rollout](docs/architecture/owner-repair-rollout.md) |
 | Cross-SKU buy-A-get-B gifts | `10.41` | [pos.md](docs/business/pos.md) |
 | Customer chat facts: restaurant/pharmacy assistance, table details, parking, answer evidence | `10.43`–`10.44`, `10.51`–`10.53` | [ai/quality.md](docs/ai/quality.md) |
@@ -87,7 +87,9 @@ traceability now uses `10.131`/`10.132`; the factory migrations retain `10.122`�
 [audit traceability rollout](docs/architecture/audit-traceability.md#verification-and-rollout)
 for handling environments that ran the old audit filenames. The building-material pilot needs
 `10.133`–`10.137` before its code is deployed: `10.134`, `10.136` and `10.137` are read by every
-order insert, POS price check and PO create/receipt (declared in schema-readiness). `npm run gate` passed on 2026-11-24
+order insert, POS price check and PO create/receipt (declared in schema-readiness). `10.139` hides
+existing Retail Local release rows whose filename disagrees with their metadata; run the read-only
+release identity diagnostic before applying it. `npm run gate` passed on 2026-11-24
 (`recheck/full-system-2026-11-24`; DB contract suites green on throwaway databases); this does not
 establish production deployment or DB migration verification.
 

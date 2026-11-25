@@ -23,7 +23,7 @@ Set-StrictMode -Version Latest
 if ($PSVersionTable.PSVersion.Major -lt 7) {
   throw "Run this script with PowerShell 7: pwsh"
 }
-if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
+if ($Version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$') {
   throw "Version must be a semantic version, such as 0.2.13 or 0.2.13-rc.1"
 }
 

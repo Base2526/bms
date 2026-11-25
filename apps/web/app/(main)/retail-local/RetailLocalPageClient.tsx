@@ -244,7 +244,7 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     minOsLabel: "OS ขั้นต่ำ",
     releaseNotesLabel: "ข้อควรรู้ก่อน update",
     fallbackFiles: {
-      windows: { "server-pos": "BMS-POS-Plus-Retail-Local-Server-POS-<version>-windows-x64.exe", server: "BMS-POS-Plus-Retail-Local-Server-<version>-windows-x64.exe", pos: "BMS-POS-Plus-Setup-<version>-x64.exe" },
+      windows: { "server-pos": "BMS-POS-Plus-Retail-Local-Server-POS-<version>-windows-x64.exe", server: "BMS-POS-Plus-Retail-Local-Server-<version>-windows-x64.exe", pos: "BMS-POS-Plus-Retail-Local-POS-<version>-windows-x64.exe" },
       "windows-x86-legacy": { "server-pos": "ไม่รองรับ", server: "ไม่รองรับ", pos: "BMS-POS-Plus-Retail-Local-POS-<version>-windows-x86-legacy.exe" },
       ubuntu: { "server-pos": "BMS-POS-Plus-Retail-Local-Server-POS-<version>-linux-x64.deb", server: "BMS-POS-Plus-Retail-Local-Server-<version>-linux-x64.deb", pos: "BMS-POS-Plus-Retail-Local-POS-<version>-linux-x64.deb" },
       "macos-arm64": { "server-pos": "BMS-POS-Plus-Retail-Local-Server-POS-<version>-arm64.pkg", server: "BMS-POS-Plus-Retail-Local-Server-<version>-arm64.pkg", pos: "BMS-POS-Plus-Retail-Local-POS-<version>-macos-arm64.dmg" },
@@ -380,7 +380,7 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     minOsLabel: "Minimum OS",
     releaseNotesLabel: "Before you update",
     fallbackFiles: {
-      windows: { "server-pos": "BMS-POS-Plus-Retail-Local-Server-POS-<version>-windows-x64.exe", server: "BMS-POS-Plus-Retail-Local-Server-<version>-windows-x64.exe", pos: "BMS-POS-Plus-Setup-<version>-x64.exe" },
+      windows: { "server-pos": "BMS-POS-Plus-Retail-Local-Server-POS-<version>-windows-x64.exe", server: "BMS-POS-Plus-Retail-Local-Server-<version>-windows-x64.exe", pos: "BMS-POS-Plus-Retail-Local-POS-<version>-windows-x64.exe" },
       "windows-x86-legacy": { "server-pos": "Not supported", server: "Not supported", pos: "BMS-POS-Plus-Retail-Local-POS-<version>-windows-x86-legacy.exe" },
       ubuntu: { "server-pos": "BMS-POS-Plus-Retail-Local-Server-POS-<version>-linux-x64.deb", server: "BMS-POS-Plus-Retail-Local-Server-<version>-linux-x64.deb", pos: "BMS-POS-Plus-Retail-Local-POS-<version>-linux-x64.deb" },
       "macos-arm64": { "server-pos": "BMS-POS-Plus-Retail-Local-Server-POS-<version>-arm64.pkg", server: "BMS-POS-Plus-Retail-Local-Server-<version>-arm64.pkg", pos: "BMS-POS-Plus-Retail-Local-POS-<version>-macos-arm64.dmg" },

@@ -8877,6 +8877,7 @@ const en = {
     check: "Check for updates",
     checking: "Checking for updates...",
     failed: "Unable to check right now. Try again when connected to the internet.",
+    unsafe_metadata: "This update was hidden because its package identity could not be verified.",
     platform: "Device type",
     choose_platform: "Choose your device type",
     ready: "Ready to download",

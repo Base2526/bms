@@ -43,6 +43,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       status: fields.status || "supported",
       accessLevel: fields.accessLevel,
       isLatest: fields.isLatest,
+      expectedSha256: fields.sha256,
       minOs: fields.minOs,
       releaseNotes: fields.releaseNotes,
       adminId: auth.adminId,

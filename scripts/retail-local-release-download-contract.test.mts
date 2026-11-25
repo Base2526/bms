@@ -36,6 +36,11 @@ test("Retail Local releases distinguish combined, server, and POS packages", () 
   assert.match(service, /packageType === "pos" \? \["\.dmg"\] : \["\.pkg"\]/);
   assert.match(service, /windows-x86-legacy supports POS Desktop only/);
   assert.match(service, /x86 installer must use the windows-x86-legacy platform/);
+  assert.match(service, /inferRetailLocalInstallerIdentity/);
+  assert.match(service, /identity\.packageType !== packageType/);
+  assert.match(service, /identity\.platform !== platform/);
+  assert.match(service, /identity\.version !== version/);
+  assert.match(service, /release package identity is inconsistent/);
   assert.match(service, /WHERE platform = \$1 AND package_type = \$2/);
   assert.match(service, /access_level = 'public'/);
   assert.match(service, /input\.accessLevel == null \? "public" : assertAccessLevel/);
@@ -54,12 +59,14 @@ test("Retail Local releases distinguish combined, server, and POS packages", () 
   assert.match(adminPage, /name="accessLevel"/);
   assert.match(adminPage, /notesHint/);
   assert.match(adminPage, /rollback\/restore/);
-  assert.match(adminPage, /lower\.endsWith\("\.dmg"\)/);
   assert.match(adminPage, /uploadPackageType === "pos" \? "\.dmg" : "\.pkg"/);
   assert.match(adminPage, /macOS Apple Silicon \(\$\{macUploadExtension\}\)/);
   assert.ok(adminPage.includes('uiText("admin_ui.en_windows_x86_legacy_pos_only_exe_b60d3")'));
   assert.match(getMessage("en", "admin_ui.en_windows_x86_legacy_pos_only_exe_b60d3"), /Windows x86 Legacy · POS only/);
-  assert.match(adminPage, /platform === "windows-x86-legacy" \? "pos"/);
+  assert.match(adminPage, /inferRetailLocalInstallerIdentity/);
+  assert.match(adminPage, /filePackageMismatch/);
+  assert.match(adminPage, /hashRetailLocalInstallerFile\(file, controller\.signal\)/);
+  assert.match(adminPage, /body\.set\("sha256", inferredFile\.sha256\)/);
   assert.match(adminPage, /accessLevel: "public"/);
   assert.doesNotMatch(adminPage, /disabled=\{uploadPackageType === "server-pos"\}/);
   assert.match(publicPage, /releaseNotesLabel/);
@@ -77,6 +84,8 @@ test("Retail Local releases distinguish combined, server, and POS packages", () 
   assert.match(publicPage, /downloadPlatform === "windows-x86-legacy"/);
   assert.match(publicPage, /Windows x86 Legacy/);
   assert.match(publicPage, /availablePackageTypes\.map/);
+  assert.match(publicPage, /BMS-POS-Plus-Retail-Local-POS-<version>-windows-x64[.]exe/);
+  assert.doesNotMatch(publicServerPage, /pos:\s*releaseDownloads[^\n]*\?\?/);
 });
 
 test("Retail Local installer upload streams to storage with bounded memory", () => {

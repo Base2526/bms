@@ -8,6 +8,19 @@ import { createS3Driver } from "../apps/web/lib/storageDrivers/s3.ts";
 
 const PART_BYTES = 8 * 1024 * 1024;
 
+function addReleaseMetadata(form: FormData, packageType = "server-pos") {
+  form.set("platform", "windows-x64");
+  form.set("packageType", packageType);
+  form.set("version", "1.2.3");
+  form.set("channel", "pilot");
+  form.set("status", "supported");
+  form.set("accessLevel", "trial");
+  form.set("isLatest", "false");
+  form.set("minOs", "Windows 10 x64");
+  form.set("releaseNotes", "stream test");
+  form.set("sha256", crypto.createHash("sha256").update("installer-bytes").digest("hex"));
+}
+
 test("release multipart parser streams the file and returns small metadata", async (t) => {
   const chunks: Buffer[] = [];
   const { __setStorageDriverForTest } = await import("../apps/web/lib/storageDrivers/index.ts");
@@ -37,15 +50,7 @@ test("release multipart parser streams the file and returns small metadata", asy
     "../apps/web/lib/bms/retailLocalReleaseUpload.ts"
   );
   const form = new FormData();
-  form.set("platform", "windows-x64");
-  form.set("packageType", "server-pos");
-  form.set("version", "1.2.3");
-  form.set("channel", "pilot");
-  form.set("status", "supported");
-  form.set("accessLevel", "trial");
-  form.set("isLatest", "false");
-  form.set("minOs", "Windows 10 x64");
-  form.set("releaseNotes", "stream test");
+  addReleaseMetadata(form);
   form.set("file", new Blob(["installer-bytes"]), "BMS-Server-POS-1.2.3.exe");
 
   const request = new Request("http://local/upload", {
@@ -104,6 +109,7 @@ test("release multipart parser rejects oversized files and removes partial bytes
     "../apps/web/lib/bms/retailLocalReleaseUpload.ts"
   );
   const form = new FormData();
+  addReleaseMetadata(form);
   form.set("file", new Blob(["too-large"]), "BMS-Server-POS-1.2.3.exe");
 
   const request = new Request("http://local/upload", { method: "POST", body: form });
@@ -115,6 +121,88 @@ test("release multipart parser rejects oversized files and removes partial bytes
     (error: any) => error?.status === 413
   );
   assert.equal(deleted.length, 1);
+});
+
+test("release multipart parser rejects a file before metadata without writing storage", async (t) => {
+  let writes = 0;
+  const { __setStorageDriverForTest } = await import("../apps/web/lib/storageDrivers/index.ts");
+  __setStorageDriverForTest({
+    name: "metadata-order-test", shared: false,
+    async write() {}, async delete() {},
+    async writeStream() { writes += 1; return { size: 0, checksum: "a".repeat(64) }; },
+    async read() { return Buffer.alloc(0); }, async stat() { return null; },
+    async openStream() { return Readable.from([]); },
+  });
+  t.after(() => __setStorageDriverForTest(null));
+  const { parseRetailLocalReleaseUploadStream } = await import("../apps/web/lib/bms/retailLocalReleaseUpload.ts");
+  const form = new FormData();
+  form.set("file", new Blob(["installer-bytes"]), "BMS-POS-Plus-Retail-Local-POS-1.2.3-windows-x64.exe");
+  addReleaseMetadata(form, "pos");
+  const request = new Request("http://local/upload", { method: "POST", body: form });
+  await assert.rejects(
+    parseRetailLocalReleaseUploadStream(Readable.fromWeb(request.body as any), Object.fromEntries(request.headers)),
+    /metadata must precede file/,
+  );
+  assert.equal(writes, 0);
+});
+
+test("release multipart parser rejects metadata after the file and deletes that request object", async (t) => {
+  const deleted: string[] = [];
+  const { __setStorageDriverForTest } = await import("../apps/web/lib/storageDrivers/index.ts");
+  __setStorageDriverForTest({
+    name: "late-field-test", shared: false,
+    async write() {}, async delete(key) { deleted.push(key); },
+    async writeStream(_key, stream) {
+      const hash = crypto.createHash("sha256"); let size = 0;
+      for await (const chunk of stream as AsyncIterable<Buffer | Uint8Array>) {
+        const bytes = Buffer.from(chunk); size += bytes.length; hash.update(bytes);
+      }
+      return { size, checksum: hash.digest("hex") };
+    },
+    async read() { return Buffer.alloc(0); }, async stat() { return null; },
+    async openStream() { return Readable.from([]); },
+  });
+  t.after(() => __setStorageDriverForTest(null));
+  const { parseRetailLocalReleaseUploadStream } = await import("../apps/web/lib/bms/retailLocalReleaseUpload.ts");
+  const form = new FormData();
+  addReleaseMetadata(form, "pos");
+  form.delete("releaseNotes");
+  form.set("file", new Blob(["installer-bytes"]), "BMS-POS-Plus-Retail-Local-POS-1.2.3-windows-x64.exe");
+  form.set("releaseNotes", "this field is deliberately late");
+  const request = new Request("http://local/upload", { method: "POST", body: form });
+  await assert.rejects(
+    parseRetailLocalReleaseUploadStream(Readable.fromWeb(request.body as any), Object.fromEntries(request.headers)),
+    /metadata must appear before the file/,
+  );
+  assert.equal(deleted.length, 1);
+});
+
+test("concurrent uploads with the same display filename receive distinct security-compatible keys", async (t) => {
+  const keys: string[] = [];
+  const { __setStorageDriverForTest } = await import("../apps/web/lib/storageDrivers/index.ts");
+  __setStorageDriverForTest({
+    name: "collision-test", shared: false,
+    async write() {}, async delete() {},
+    async writeStream(key, stream) {
+      keys.push(key); const hash = crypto.createHash("sha256"); let size = 0;
+      for await (const chunk of stream as AsyncIterable<Buffer | Uint8Array>) {
+        const bytes = Buffer.from(chunk); size += bytes.length; hash.update(bytes);
+      }
+      return { size, checksum: hash.digest("hex") };
+    },
+    async read() { return Buffer.alloc(0); }, async stat() { return null; },
+    async openStream() { return Readable.from([]); },
+  });
+  t.after(() => __setStorageDriverForTest(null));
+  const { writeWebFileStream } = await import("../apps/web/lib/storage.ts");
+  const sameName = "checkout-ORD-1001-slip.png";
+  const results = await Promise.all(Array.from({ length: 8 }, () =>
+    writeWebFileStream(Readable.from([Buffer.from("same")]), sameName, "image/png", sameName)));
+  assert.equal(new Set(keys).size, results.length);
+  for (const result of results) {
+    assert.match(result.filename, /^\d+-checkout-ORD-1001-slip-[0-9a-f-]{36}[.]png$/i);
+    assert.equal(result.original_name, sameName);
+  }
 });
 
 test("S3 stream uploads use bounded multipart parts and preserve checksum", async (t) => {

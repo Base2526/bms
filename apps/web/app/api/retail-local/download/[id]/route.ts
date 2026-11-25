@@ -3,15 +3,10 @@ import { authorizePlatformAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { openRetailLocalReleaseDownload, RetailLocalReleaseError } from "@/lib/bms/retailLocalReleases";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { buildRetailLocalDownloadResponse } from "@/lib/bms/retailLocalReleaseDownloadResponse";
+import { publicErrorMessage } from "@/lib/publicErrorMessage";
 
 export const dynamic = "force-dynamic";
-
-function safeFilename(name: string) {
-  return (name || "bms-retail-local-installer")
-    .replace(/[\/\\?%*:|"<>]/g, "_")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 async function handleGET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   // Public installer download streams a large file through this server, so a per-IP ceiling
@@ -29,20 +24,13 @@ async function handleGET(req: Request, { params }: { params: Promise<{ id: strin
   try {
     const auth = await authorizePlatformAdminRoute();
     const download = await openRetailLocalReleaseDownload((await params).id, { includeTrialLocked: auth.ok });
-    const filename = safeFilename(download.filename);
-    return new NextResponse(download.stream, {
-      status: 200,
-      headers: {
-        "Content-Type": download.mime,
-        "Content-Length": String(download.size),
-        "Content-Disposition": `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
-        "X-Checksum-SHA256": download.sha256,
-        "Cache-Control": "private, no-store, max-age=0",
-      },
-    });
+    return buildRetailLocalDownloadResponse(download);
   } catch (error) {
     if (error instanceof RetailLocalReleaseError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+      return NextResponse.json(
+        { error: publicErrorMessage(error, "Retail Local installer is unavailable") },
+        { status: error.status, headers: { "Cache-Control": "no-store" } },
+      );
     }
     throw error;
   }

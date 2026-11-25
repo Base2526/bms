@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DownloadOutlined, ReloadOutlined } from "@ant-design/icons";
 import { hasDesktopPosBridge, readDesktopAppInfo, type DesktopAppInfo } from "@/lib/pos/deviceTokenClient";
-import type { DesktopUpdateResult } from "@/lib/bms/desktopReleasePolicy";
+import {
+  isSafeDesktopUpdateRelease,
+  type DesktopUpdateResult,
+} from "@/lib/bms/desktopReleasePolicy";
 import { useI18n } from "@/lib/i18nContext";
 import styles from "./DesktopUpdateMenu.module.css";
 
@@ -22,6 +25,7 @@ export default function DesktopUpdateMenu({ className = "" }: { className?: stri
   const [result, setResult] = useState<DesktopUpdateResult | null>(null);
   const [checking, setChecking] = useState(false);
   const [selectedId, setSelectedId] = useState("");
+  const [safetyError, setSafetyError] = useState(false);
   const menu = useRef<HTMLDetailsElement>(null);
   const request = useRef<AbortController | null>(null);
   const lastCheck = useRef(0);
@@ -94,6 +98,14 @@ export default function DesktopUpdateMenu({ className = "" }: { className?: stri
       if (!next || !Array.isArray(next.releases)) throw new Error("Malformed update response");
       if (request.current !== controller) return;
       if (controller.signal.aborted) throw new Error("Update check timed out");
+      const unsafe = next.releases.some((release) => !isSafeDesktopUpdateRelease(release, app));
+      if (unsafe) {
+        setSafetyError(true);
+        setResult({ status: "unavailable", releases: [] });
+        setSelectedId("");
+        return;
+      }
+      setSafetyError(false);
       setResult(next);
       setSelectedId((previous) => app.arch
         ? next.releases[0]?.id ?? ""
@@ -101,6 +113,7 @@ export default function DesktopUpdateMenu({ className = "" }: { className?: stri
       lastCheck.current = Date.now();
     } catch {
       if (request.current !== controller) return;
+      setSafetyError(false);
       setResult(null);
     } finally {
       window.clearTimeout(timeout);
@@ -132,8 +145,8 @@ export default function DesktopUpdateMenu({ className = "" }: { className?: stri
     };
   }, [check, positionMenu]);
 
-  if (!desktop || result?.status !== "available" || result.releases.length === 0) return null;
-  const release = result.releases.find((item) => item.id === selectedId);
+  if (!desktop || (!safetyError && (result?.status !== "available" || result.releases.length === 0))) return null;
+  const release = result?.releases.find((item) => item.id === selectedId);
   const title = t("pos_desktop_update.available");
   const close = () => {
     if (menu.current) {
@@ -163,12 +176,13 @@ export default function DesktopUpdateMenu({ className = "" }: { className?: stri
           </button>
         </div>
         <div className={styles.body} aria-live="polite">
-          {checking ? <p className={styles.muted}>{t("pos_desktop_update.checking")}</p>
+          {safetyError ? <p className={styles.muted}>{t("pos_desktop_update.unsafe_metadata")}</p>
+            : checking ? <p className={styles.muted}>{t("pos_desktop_update.checking")}</p>
             : <>
               {!info?.arch ? <label className={styles.platform}>{t("pos_desktop_update.platform")}
                 <select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>
                   <option value="">{t("pos_desktop_update.choose_platform")}</option>
-                  {result.releases.map((item) => <option value={item.id} key={item.id}>
+                  {(result?.releases ?? []).map((item) => <option value={item.id} key={item.id}>
                     {platformLabels[item.platform]} · v{item.version}
                   </option>)}
                 </select>
@@ -177,6 +191,7 @@ export default function DesktopUpdateMenu({ className = "" }: { className?: stri
                 <div className={styles.version}><strong>v{release.version}</strong><span>{t("pos_desktop_update.ready")}</span></div>
                 {release.releaseNotes ? <p className={styles.notes}>{release.releaseNotes}</p> : null}
                 <small className={styles.muted}>{platformLabels[release.platform]} · {release.minOs}</small>
+                <small className={styles.muted}>{release.originalFilename}</small>
               </> : null}
               <p className={styles.hint}>{t("pos_desktop_update.install_hint")}</p>
             </>}

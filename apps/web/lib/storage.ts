@@ -52,7 +52,14 @@ export function makeSafeName(name: string) {
 }
 
 function buildKey(rawName: string): { key: string; storedName: string } {
-  const storedName = `${Date.now()}-${makeSafeName(rawName || "file.bin")}`;
+  const safeName = makeSafeName(rawName || "file.bin");
+  const extensionAt = safeName.lastIndexOf(".");
+  const hasExtension = extensionAt > 0;
+  const stem = hasExtension ? safeName.slice(0, extensionAt) : safeName;
+  const extension = hasExtension ? safeName.slice(extensionAt) : "";
+  // Keep the established `<timestamp>-<kind>-...` prefix used by the private-file
+  // authorization classifiers, while making every physical object key collision-proof.
+  const storedName = `${Date.now()}-${stem}-${crypto.randomUUID()}${extension}`;
   return { key: `${dateKeyPrefix()}/${storedName}`, storedName };
 }
 
@@ -294,6 +301,19 @@ export async function openStoredFileStream(
   range?: ByteRange
 ): Promise<Readable> {
   return getStorageDriver().openStream(toStorageKey(relpath), range);
+}
+
+/** Hash stored bytes through a bounded stream; no installer is buffered in memory. */
+export async function inspectStoredFile(relpath: string): Promise<{ size: number; checksum: string }> {
+  const stream = await getStorageDriver().openStream(toStorageKey(relpath));
+  const hash = crypto.createHash("sha256");
+  let size = 0;
+  for await (const chunk of stream as AsyncIterable<Buffer | Uint8Array | string>) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    hash.update(buffer);
+  }
+  return { size, checksum: hash.digest("hex") };
 }
 
 /** สร้าง URL เสิร์ฟไฟล์ (แบบ REST ผ่าน id) */
