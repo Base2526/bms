@@ -12,6 +12,7 @@ export default async function LearningLayout({ children }: { children: React.Rea
     { path: "/learn/board-game", icon: "🎲", th: "บอร์ดเกม", en: "Board games" },
     { path: "/learn/restaurant", icon: "🍽️", th: "ร้านอาหารและคาเฟ่", en: "Restaurants & cafes" },
     { path: "/learn/pharmacy", icon: "⚕️", th: "ร้านขายยา", en: "Pharmacy" },
+    { path: "/learn/clinic", icon: "🩺", th: "คลินิกผู้ป่วยนอก (ทดลอง)", en: "Outpatient clinic (pilot)" },
     { path: "/learn/pet-supply", icon: "🐾", th: "ร้านขายอาหารสัตว์", en: "Pet supply store" },
     { path: "/learn/building-materials", icon: "🧱", th: "วัสดุก่อสร้าง (ทดลอง)", en: "Building materials (pilot)" },
   ];
