@@ -18,7 +18,8 @@
   #449–#450 admin loading) · #444 เปลี่ยนชื่อสินค้าเป็น **BMS POS+** (appId/bundle ID/โฟลเดอร์ติดตั้งเดิมไม่เปลี่ยน) ·
   สรุป #417–#451 อยู่ท้าย [docs/status-log.md](docs/status-log.md) · branch `codex/retail-local-release-identity` = `develop` +
   `10.139` (installer ของ Retail Local ต้องตรงกับ package/platform/version จากชื่อไฟล์; แถวที่ขัดกันถูกซ่อน) + ตรวจ SHA-256
-  ก่อนส่งไฟล์ดาวน์โหลด — **branch นี้ upstream ชี้ `origin/develop` อยู่ ห้าม `git push` เปล่า ๆ** ให้ push ชื่อ branch ตัวเอง
+  ก่อนส่งไฟล์ดาวน์โหลด (push แล้ว `53c470f2`) · branch ใหม่ที่สร้างจาก `origin/develop` อาจได้ upstream เป็น `develop` —
+  push ด้วย `git push -u origin <ชื่อ branch>` เสมอ ห้าม `git push` เปล่า ๆ ครั้งแรก
 - **recheck 2026-11-24** = #451 (merge แล้ว, ไม่มี migration) — รายการแก้/ค้างใน
   [system-recheck-2026-11-24.md](docs/architecture/system-recheck-2026-11-24.md) · หลัง `git pull` ต้อง `npm ci` ทุกแพ็กเกจ (host
   `node_modules` ค้าง Next 14 ทำ gate ล้มที่ typecheck) · ฐาน `bms_recheck_1123` (:5433, readiness ครบ) ใช้ clone เป็นฐานทดสอบได้ ·
