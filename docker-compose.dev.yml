@@ -55,9 +55,9 @@ services:
 
   web:
     command: >
-      sh -c "test -f node_modules/.package-lock.json || npm ci &&
-             test -f ../../packages/realtime/node_modules/.package-lock.json || npm --prefix ../../packages/realtime ci &&
-             test -f ../../packages/graphql-core/node_modules/.package-lock.json || npm --prefix ../../packages/graphql-core ci &&
+      sh -c "(npm ls --depth=0 --omit=optional >/dev/null 2>&1 || (npm ci && find .next -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +)) &&
+             (test -f ../../packages/realtime/node_modules/.package-lock.json || npm --prefix ../../packages/realtime ci) &&
+             (test -f ../../packages/graphql-core/node_modules/.package-lock.json || npm --prefix ../../packages/graphql-core ci) &&
              npm run dev"
     environment:
       # Optional public-page analytics; empty means no Google tag or collection.

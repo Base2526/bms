@@ -12,6 +12,8 @@ const isProd = process.env.NODE_ENV === "production";
 const nextConfig = {
   // Do not advertise the framework/version family in every HTTP response.
   poweredByHeader: false,
+  // Local Caddy serves the dev app at this hostname; Next must allow its dev assets/HMR.
+  allowedDevOrigins: isProd ? undefined : ['jachoei.com'],
   experimental: {
     // appDir: true,
     optimizePackageImports: ['antd'],

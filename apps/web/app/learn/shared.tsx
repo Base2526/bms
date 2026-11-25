@@ -11,12 +11,13 @@ export function learningMetadata(title: string, description: string, path: strin
     openGraph: { title, description, url: localizedPublicPath(path, lang), type: "website", siteName: "BMS POS+", locale: lang === "th" ? "th_TH" : "en_US", images: [{ url: "/og.png", width: 1200, height: 630, alt: "BMS POS+ learning center" }] },
     twitter: { card: "summary_large_image", title, description, images: ["/og.png"] } };
 }
-export function Sidebar({ lang, track, factoryGuide = false, twentyBahtGuide = false }: { lang: "th" | "en"; track?: TrackId; factoryGuide?: boolean; twentyBahtGuide?: boolean }) {
+export function Sidebar({ lang, track, factoryGuide = false, twentyBahtGuide = false, clinicGuide = false }: { lang: "th" | "en"; track?: TrackId; factoryGuide?: boolean; twentyBahtGuide?: boolean; clinicGuide?: boolean }) {
   return <nav className={s.sidebar} aria-label={lang === "th" ? "หมวดคู่มือ" : "Guide categories"}>
     <h2>{lang === "th" ? "เลือกคู่มือ" : "Explore"}</h2>
-    <Link href={localizedPublicPath("/learn", lang)} aria-current={!track && !factoryGuide && !twentyBahtGuide ? "page" : undefined}>{lang === "th" ? "ศูนย์เรียนรู้" : "Learning center"}</Link>
+    <Link href={localizedPublicPath("/learn", lang)} aria-current={!track && !factoryGuide && !twentyBahtGuide && !clinicGuide ? "page" : undefined}>{lang === "th" ? "ศูนย์เรียนรู้" : "Learning center"}</Link>
     <Link href={localizedPublicPath("/learn/getting-started", lang)} aria-current={track === "getting-started" ? "page" : undefined}>🚀 {lang === "th" ? "เริ่มต้นใช้งานและตั้งค่าร้าน" : "Getting started & shop setup"}</Link>
     {businessTrackIds.map((id) => <Link key={id} href={localizedPublicPath(`/learn/${id}`, lang)} aria-current={track === id ? "page" : undefined}>{tracks[id].icon} {localize(tracks[id].title, lang)}</Link>)}
+    <Link href={localizedPublicPath("/learn/clinic", lang)} aria-current={clinicGuide ? "page" : undefined}>🩺 {lang === "th" ? "คลินิกผู้ป่วยนอก (ทดลอง)" : "Outpatient clinic (pilot)"}</Link>
     <hr />
     <h2>{lang === "th" ? "คู่มือเฉพาะงาน" : "Specialist guides"}</h2>
     {specialistTrackIds.map((id) => <Link key={id} href={localizedPublicPath(`/learn/${id}`, lang)} aria-current={track === id ? "page" : undefined}>{tracks[id].icon} {localize(tracks[id].title, lang)}</Link>)}
