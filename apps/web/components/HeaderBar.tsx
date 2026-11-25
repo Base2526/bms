@@ -616,12 +616,12 @@ export default function HeaderBar({
   return (
     <>
       <Header
+        className="jachoei-header"
         style={{
           background: "rgba(var(--app-surface-rgb),0.88)",
           backdropFilter: "blur(14px)",
           WebkitBackdropFilter: "blur(14px)",
           padding: 0,
-          height: isMobileView ? 58 : 72,
           borderBottom: "1px solid var(--app-border)",
           position: "sticky",
           top: 0,

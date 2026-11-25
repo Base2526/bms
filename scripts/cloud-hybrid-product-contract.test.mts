@@ -5,7 +5,7 @@ import test from "node:test";
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 test("public packaging presents Cloud and Hybrid POS as one BMS product", () => {
-  const page = read("apps/web/app/(main)/page.tsx");
+  const page = read("apps/web/app/(main)/HomePageClient.tsx");
   const thai = read("apps/web/i18n/th.ts");
   const english = read("apps/web/i18n/en.ts");
 

@@ -19,7 +19,7 @@ test("10.101 publishes only enforceable sustainable package limits", () => {
 
 test("Enterprise retains paid features and is contact-sales only on the public page", () => {
   assert.deepEqual(planFeatureKeys("enterprise"), ["REPORT_SCHEDULE", "RETENTION_ENGINE"]);
-  const page = read("apps/web/app/(main)/page.tsx");
+  const page = read("apps/web/app/(main)/HomePageClient.tsx");
   assert.match(page, /plan\.code === "enterprise"/);
   assert.match(page, /BMS_LINE_OA_URL/);
   assert.match(page, /landing\.contactSales/);
