@@ -20,12 +20,18 @@ values such as phone numbers, bank accounts, passwords or customer text. The sha
 credentials, contact data, account-sized numbers and sensitive metadata keys before stdout,
 `system_logs` or Slack. `system_logs.created_by` remains a legacy integer column: UUID actors stay
 in redacted `meta.userId`, rather than being misparsed into an unrelated integer.
+`system_logs.tenant_id` is taken from the caller's **unredacted** meta and stored only when it is a
+UUID (otherwise `NULL`): the redactor masks long digit runs, and reading the redacted value turned
+`DEFAULT_TENANT_ID` into `11111111-1111-1111-1111-[NUMBER]`, failed the insert (22P02) and dropped
+every log of that shop until 2026-11-24 (`log-tenant-id-contract`).
 
 Authenticated client batches to `POST /api/logs` are limited to 256 KiB and 50 records. Actor and
 tenant are refreshed from the server, and each row is marked `meta.source=client`; client-submitted
 errors do not trigger Slack. A failed insert returns a non-success response with `insertedCount`.
 The platform-admin delete API requires an explicit confirmation header and writes a `log-admin`
-deletion record in the same transaction. Those deletion records cannot be removed through the API.
+deletion record in the same transaction. Those deletion records cannot be removed through the API,
+and clients cannot write into `log-admin`: a `POST /api/logs` batch that names it is refused with
+400 before anything is stored (`client-log-category-contract`).
 Log detail and deletion accept both integer and legacy UUID row IDs. Log filters reject malformed
 IDs, dates and pagination values instead of broadening a query. Legacy GraphQL resolver `console`
 calls that printed customer input or returned rows have been removed; fallback error output is

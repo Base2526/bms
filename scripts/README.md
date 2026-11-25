@@ -745,11 +745,13 @@ feature enabled with a test-only secret and HTTPS public origin. Both smokes blo
 These checks do not prove SQL execution: run `db tax-sales-report` and `db tax-backoffice-guards`
 against a restored disposable local database before deploying.
 
-ตอนนี้ (นับ 2026-11-16 บน `codex/android-device-verify-navigation`): **491 ไฟล์ที่ตัวรันหยิบ** = pure **381 ไฟล์** (345 ชั้นบนสุดของ
-`scripts/` รวม `retail-local-migration-checksum.test.mjs` + 35 ใน `scripts/ai-eval/` + 1 ใน `scripts/infra/`)
-+ DB **110 ไฟล์** (ทั้งหมดอยู่ชั้นบนสุดของ `scripts/`)
+ตอนนี้ (นับ 2026-11-24 บน `recheck/full-system-2026-11-24`): **537 ไฟล์ที่ตัวรันหยิบ** = pure **419 ไฟล์** (381 ชั้นบนสุดของ
+`scripts/` รวม `retail-local-migration-checksum.test.mjs` + 37 ใน `scripts/ai-eval/` + 1 ใน `scripts/infra/`)
++ DB **118 ไฟล์** (ทั้งหมดอยู่ชั้นบนสุดของ `scripts/`)
 
-ผลรัน `npm run gate` 2026-11-16 ชุด pure: **3,826 เทส** (แดง 1 = `realtime-client-contract` ที่ยังตรวจรูปโค้ดเก่าของ
+ผลรัน `npm run gate` 2026-11-24 (`6bda5848`): **3,962 เทส — 3,956 ผ่าน · 0 แดง · 6 ข้าม** · build 149 หน้า · `exit=0` ·
+ชุด DB ทุกไฟล์เขียวบนฐาน throwaway ที่ชื่อตรงกับ guard ของไฟล์นั้น (ดู [system-recheck-2026-11-24.md](../docs/architecture/system-recheck-2026-11-24.md)) ·
+ผลรัน 2026-11-16 ชุด pure: **3,826 เทส** (แดง 1 = `realtime-client-contract` ที่ยังตรวจรูปโค้ดเก่าของ
 `RootNavigator` — แก้เทสให้ตรวจ sign-out ครั้งเดียว + `resetRoot` แล้ว) · ผลรัน 2026-11-14 (macOS): **3,718 เทส — 3,708 ผ่าน · 0 แดง · 10 ข้าม (skip)** · build 151 หน้า · `exit=0` ·
 รอบก่อน (2026-11-09): 3,480 เทส — 3,474 ผ่าน · 6 ข้าม ·
 ใช้เวลา ~4 นาทีบนเครื่อง Windows ที่รัน (เครื่อง Linux/CI เร็วกว่า) · ตัวแดงของรอบ 2026-10-13
@@ -759,7 +761,7 @@ against a restored disposable local database before deploying.
 ตัวรัน `scripts/run-contract-tests.mjs` เดินหาไฟล์เอง: `*.test.mts` ชั้นบนสุดของ `scripts/` +
 โฟลเดอร์ย่อย `ai-eval/` และ `infra/` + `retail-local-migration-checksum.test.mjs` (`scripts/testing/`
 ไม่ถูกเดิน) · ชื่อมี `-db-contract` = โหมด db ที่เหลือ = โหมด pure · ตัวรันพิมพ์จำนวนไฟล์ของโหมดเป็น
-บรรทัดแรก (`[gate] โหมด pure — 381 ไฟล์`) · `run-contract-tests.mjs <mode> --list` พิมพ์รายชื่อไฟล์ของ
+บรรทัดแรก (`[gate] โหมด pure — 419 ไฟล์`) · `run-contract-tests.mjs <mode> --list` พิมพ์รายชื่อไฟล์ของ
 โหมดนั้นเป็น JSON และ `run-contract-tests.mjs <mode> zzz-nope` บอกจำนวนไฟล์ของโหมดนั้นตอนกรองไม่ตรง
 
 > **ตัวเลขนี้เก่าได้เร็ว** — นับใหม่ก่อนอ้าง (ตรงกับวิธีที่ตัวรันแยกโหมด):
@@ -817,7 +819,7 @@ cd apps/web && npm run test:pure
 ### ผ่าน (สิ่งที่จะได้เห็นบนจอ)
 
 ตัวอย่างนี้มาจากรอบ 2026-09-07 ตอนชุดยังมี 80 ไฟล์ — **รูปแบบยังเหมือนเดิม แต่ตัวเลขปัจจุบันดูหัวไฟล์นี้**
-(รอบ 2026-11-16 มี 381 ไฟล์):
+(รอบ 2026-11-24 มี 419 ไฟล์):
 
 ```
 [gate] โหมด pure — 80 ไฟล์
@@ -994,6 +996,21 @@ cd apps/web && POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5433 \
 เมื่อรันบน `bms_realtime_test` ไฟล์เหล่านี้จะ fail ตาม guard โดยตั้งใจ ให้รันแยกกับฐานที่ชื่อ
 ถูกต้องและอ่านผลของชุดที่เหลือแยกจากกัน. `restaurant-pickup` บังคับพอร์ต `5547` ด้วย
 (ดูคำสั่งในหัวข้อ Restaurant pickup checkout). `npm run gate` ไม่รวม DB mode.
+
+แผนที่ฐานที่ guard บังคับ (ตรวจ 2026-11-24 — ทุกชุดเขียวเมื่อรันบนฐานที่ถูกต้อง):
+
+| ฐาน (POSTGRES_DB) | ชุด |
+| --- | --- |
+| `bms_realtime_test` (:5433, ต้อง readiness ครบ) | `fish-dock` (หรือ `bms_fish_cost_test`), `operation-production/-material/-quality/-improvement`, `restaurant-costing`, `restaurant-costing-migrations`, `restaurant-actual-costs`, `restaurant-completion`, `stock-integrity`, `pos-offline-product`, `order-list-batch`; ต้องเปิด flag และ `POSTGRES_HOST=127.0.0.1` ด้วย: `audit-traceability` (`BMS_AUDIT_DISPOSABLE_DB=1`), `inbox-read`/`inbox-inbound-claim` (`BMS_INBOX_DISPOSABLE_DB=1`), `team-assistant-access`/`user-admin-audit` (`BMS_TEAM_DISPOSABLE_DB=1`) |
+| `bms_requisition_test` | `branch-requisitions`, `staff-stock-transfer-route` |
+| `bms_operations_test` (ฐานว่าง) | `operation-checklists` |
+| `bms_freemium_test` (ฐานว่าง) | `fake-package`, `freemium-*` |
+| `bms_installer_reports_test` (ฐานว่าง) | `installer-reports` |
+| `bms_restaurant_readiness_test` (`127.0.0.1:5547`) | `restaurant-pickup` |
+
+เทส DB ที่เรียก route handler ของ App Router จริงใช้ `scripts/testing/nextRequestCookies.mts`
+(`runWithRequestCookies`) — Next 16 เลิก `request-async-storage.external.js` และ `cookies()` ต้องมีทั้ง
+work store และ request work-unit store.
 
 ### ด่านกันรันผิดฐาน — ทั้งสองแบบออก exit `2` และ **ยังไม่รันเทสสักตัว**
 

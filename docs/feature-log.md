@@ -1,5 +1,27 @@
 # BMS feature log
 
+## Full-system recheck hardening (no migration, 2026-11-24)
+
+- Secrets and comparisons: marketplace HMACs and the Meta verify token use the constant-time helpers
+  in `lib/bms/crypto.ts`, because a plain string compare leaks how many leading bytes matched. The
+  cashier PIN for `/api/pos/{ar,shift-report,store-credit}` moved from the GET query string to the
+  `x-pos-cashier-pin` header, so it no longer lands in proxy and access logs.
+- Tenant boundaries: slip OCR loads the slip file by `id` and `tenant_id`, so a slip URL cannot read
+  another shop's file. Stock adjustment and reorder points require access to the target branch
+  (stock counts are not yet scoped this way). The emergency directory is Administrator-only like
+  other shop settings, and the Pharmacy Lab needs `pharmacy.assessment.read`.
+- Things that silently did nothing: four GraphQL type resolvers were defined but not listed in
+  `rawResolvers`, so the Sales coupon mask never ran. antd static toasts and confirm dialogs render
+  nothing on React 19 without the `unstableSetRender` hook. Redaction rewrote the default-tenant UUID,
+  so those log rows were dropped. Each now has a contract that fails when the wiring disappears.
+- Public error text goes through `publicErrorMessage`, which hides Postgres, syscall and runtime
+  detail; the SQL console refuses server-access function families and discards a pooled session after
+  use. Mail-log HTML previews are sandboxed, and Inbox share cards are built only from the shop's own
+  messages, so a customer cannot plant a link that looks like a shop card.
+- Remaining risks (stock-count branch scope, idempotency keys on some stock/points mutations,
+  post-commit audits, legacy public Inbox files, hardware and providers) are listed in the
+  [recheck ledger](architecture/system-recheck-2026-11-24.md) and are not verified in production.
+
 ## Release recheck and Thai report PDF (no migration, 2026-11-17)
 
 - The release registry still covers 88 known code capabilities rather than every BMS workflow.

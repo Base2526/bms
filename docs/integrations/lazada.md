@@ -60,7 +60,9 @@ still apply.
 ## Before using in production
 
 1. Get the real Lazada Open Platform / Shopee Open Platform webhook + signature documentation.
-2. Rewrite the signature verification block in both route files to match the real OAuth/HMAC scheme.
+2. Rewrite the signature verification block in both route files to match the real OAuth/HMAC scheme,
+   keeping the comparison constant time (today both call `verifyHexHmacSignature()` in
+   `lib/bms/crypto.ts`; never compare a signature with `!==`).
 3. Rewrite `parseLazadaMessages()` / `parseShopeeMessages()` against real payload samples.
 4. Implement a send API for at least one direction of reply, then add the channel to
    `channelSupportsPush()`.

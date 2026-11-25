@@ -1074,7 +1074,8 @@ support intake from `/support`; it keeps the user-submitted contact/topic/messag
 metadata and trackable `updated_at` / `closed_at` timestamps. `support_ticket_comments` stores the
 internal notes and status transitions for `/admin/support-tickets`, preserving a readable history
 of what changed and why. The support tables are platform-wide rather than tenant-owned because
-they belong to ops/support, not a specific shop's business data.
+they belong to ops/support, not a specific shop's business data. Anonymous intake is rate limited
+before the insert (5 per sender address, 20 per IP per hour).
 
 **`bms_role_permissions`** — composite key `(tenant_id, role_id, permission)`; `permission` is a
 free-text string validated against the `BMS_PERMISSIONS` catalog in `lib/bms/permissions.ts`, not a

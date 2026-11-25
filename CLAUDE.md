@@ -87,8 +87,9 @@ traceability now uses `10.131`/`10.132`; the factory migrations retain `10.122`â
 [audit traceability rollout](docs/architecture/audit-traceability.md#verification-and-rollout)
 for handling environments that ran the old audit filenames. The building-material pilot needs
 `10.133`â€“`10.137` before its code is deployed: `10.134`, `10.136` and `10.137` are read by every
-order insert, POS price check and PO create/receipt (declared in schema-readiness). `npm run gate` passed on 2026-11-23;
-this does not establish production deployment or DB migration verification.
+order insert, POS price check and PO create/receipt (declared in schema-readiness). `npm run gate` passed on 2026-11-24
+(`recheck/full-system-2026-11-24`; DB contract suites green on throwaway databases); this does not
+establish production deployment or DB migration verification.
 
 ## AI rules (non-negotiable)
 

@@ -105,6 +105,8 @@ the four values from `bms_master_emergency_numbers`; the same values remain fixe
 Wording is still **not clinically reviewed**, and matching is not complete triage.
 
 Settings → store tab maintains public emergency departments near the **shop**, not the customer.
+Only the shop Administrator (or a verified platform admin) can add, edit or deactivate them
+(since 2026-11-24; before that any admin-scope login could).
 Only active 24h entries supplement the reply (max 3, sort order then distance). An unknown chat
 branch uses all-branch rows only; no customer location is requested or stored. SQL work runs with
 tenant RLS, a 400 ms statement timeout and a 500 ms wall-clock response budget including pool wait.

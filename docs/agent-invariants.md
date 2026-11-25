@@ -2157,6 +2157,23 @@ fails when one carries no guard from an explicit allowlist, and requires a `rate
 two files marked public by design. The allowlist deliberately excludes `requireAdminOrInternal` —
 it proves a session and checks no permission.
 
+Added by the 2026-11-24 recheck (each pinned by the named contract):
+
+- **Compare secrets in constant time.** Webhook HMACs and the Meta `GET` verify token go through
+  `verifyHexHmacSignature` / `constantTimeTextEqual` / `verifyLineSignature` / `verifyMetaSignature`
+  in `lib/bms/crypto.ts`, never `===`/`!==` (`webhook-signature-compare-contract`). The tenant-scope
+  contract only proves a secret is referenced, not how it is compared.
+- **A PIN never travels in a URL.** POS `POST` routes take `pin` in the JSON body; a `GET` route that
+  needs a person reads `x-pos-cashier-pin` and ignores `?pin=` (`pos-pin-header-contract`).
+- **Anonymous routes return the service's message, never a raw caught error.** Use
+  `publicErrorMessage(error, fallback)`; it hides PostgreSQL, Node system and runtime errors
+  (`public-error-message-contract`).
+- **A stored file id from free text is bound to the tenant.** `loadSlipImage` reads `files` by id and
+  `tenant_id`; any service that turns a user-supplied `/api/files/<id>` into bytes must do the same.
+- **Public intake is bounded per sender and per IP** before it writes or sends mail
+  (`createSupportTicket` → `enforceAuthRateLimit`). Client log batches cannot use the reserved
+  `log-admin` category (`client-log-category-contract`).
+
 ## Reserved stock: who is holding it
 
 `bms_inventory.reserved_stock` is a running total. **No table records which bill owns which reserved
@@ -2707,6 +2724,15 @@ per-screen examples: [architecture/react-native-graphql-client.md](architecture/
   fixture-driven REST-versus-GraphQL response-shape suite yet, so moving a caller is still blocked on
   writing one. `mobile-transport-compat-contract` only proves the REST routes still exist and still
   authenticate.
+- **A type resolver only runs if `graphql/resolvers.ts` lists it.** `rawResolvers` names module type
+  resolvers by hand; an exported `BmsDashboard.couponSummary` mask, tracking-event mapping and
+  parked-cart normaliser compiled and passed unit tests for months without ever running.
+  `graphql-type-resolver-wiring-contract` builds the real schema and requires a resolve function on
+  every field of every exported type resolver.
+- **A branch-scoped write checks the actor's branch, not only the tenant.** `bmsAdjustStock` and
+  `bmsSetReorderPoint` call `userCanAccessLocation` (`stock-adjust-branch-scope-contract`); stock
+  counts (REST and GraphQL) still do not — open follow-up in
+  [system-recheck-2026-11-24.md](architecture/system-recheck-2026-11-24.md).
 
 ## Observability (`/admin/system-health`)
 
@@ -2924,6 +2950,19 @@ falls into before copying one pattern verbatim.
 
 ## Frontend and CSS Modules
 
+- **antd v5 static APIs need the React 19 render hook.** `message.*`, `notification.*` and
+  `Modal.confirm/info/warning/error/success` mount through rc-util, which finds neither
+  `createRoot` nor `render` on React 19's main `react-dom` export and silently renders nothing.
+  `lib/antdReact19Render.ts` registers antd's `unstableSetRender` with `react-dom/client`; it must
+  stay the first import of `app/ClientProviders.tsx` (`antd-react19-render-contract`). A page outside
+  `ClientProviders` that uses these APIs must import it too.
+- **Stored HTML in an iframe is sandboxed** (`sandbox=""` on every `srcDoc`,
+  `stored-html-iframe-sandbox-contract`): a `srcDoc` document shares the admin origin and there is no
+  CSP.
+- **Share cards are built from the shop's own messages only.** The Inbox renders coupon/product
+  cards for outbound messages; customer text stays text, and card links pass `safeStoredLinkUrl`.
+- **A "today" on a shop screen is the Bangkok day** (`bangkokDateKey()` in `lib/date.ts`), never
+  `toISOString().slice(0, 10)`.
 - Keep public authentication routes synchronized with `isAuthPath()` in
   `apps/web/app/ClientProviders.tsx`. Public signup/login pages must not load the global session,
   chat, or notification wires unless they explicitly need them. `skipsSessionLayer()` in the same
