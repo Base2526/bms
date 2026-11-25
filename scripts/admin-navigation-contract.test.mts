@@ -180,6 +180,12 @@ test("a catalog manager with product.view alone reaches every product tool", () 
   assert.ok(!routes.includes("/admin/wastage"), "wastage needs a real capability signal, not product.view alone");
 });
 
+test("clinic cashier can reach the signed-encounter billing worklist without chart permission", () => {
+  const routes = routesOf(buildAdminNavigation(withPermissions(["clinic.billing.manage"]), "SHOP"));
+  assert.ok(routes.includes("/admin/clinic"));
+  assert.ok(!routes.includes("/admin/pharmacy-queue"));
+});
+
 test("empty sections never render, and a shop with no permissions still has a way to start", () => {
   const bare = buildAdminNavigation(ctx(), "SHOP");
   for (const section of bare.sections) {

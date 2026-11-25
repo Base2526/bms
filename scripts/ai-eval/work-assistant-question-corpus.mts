@@ -414,6 +414,7 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "เพิ่มสาขาใหม่ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "locations.manage-branches", origin: "coverage" },
   { q: "พิมพ์สติกเกอร์บาร์โค้ดยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "catalog.print-labels", origin: "coverage" },
   { q: "ดูภาพรวมกะ POS ทุกเครื่องยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "pos.shift-overview", origin: "coverage" },
+  { q: "คลินิกผู้ป่วยนอกทดลองใช้อย่างไร", locale: "th", context: GUIDES, expect: "answer", expectTop: "clinic.outpatient-pilot", origin: "coverage" },
   { q: "เครื่อง POS ออฟไลน์ต้องทำอย่างไร", locale: "th", context: GUIDES, expect: "answer", expectTop: "pos.client-and-offline-support", origin: "coverage" },
   { q: "เชื่อม foodpanda และจับคู่เมนูยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "delivery-platforms.review", origin: "coverage" },
   { q: "ดูค่าคอมพนักงานยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "commission.review", origin: "coverage" },

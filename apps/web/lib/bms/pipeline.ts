@@ -247,7 +247,7 @@ const HANDOFF_REPLY_EN = "Sorry, an admin needs to help with this request. Pleas
 export type Channel =
   | "line" | "tiktok" | "facebook" | "instagram" | "web"
   | "shopee" | "lazada" | "grabfood" | "lineman" | "foodpanda"
-  | "pos" | "test";
+  | "pos" | "clinic" | "test";
 
 export type PipelineResult = {
   channel: Channel;

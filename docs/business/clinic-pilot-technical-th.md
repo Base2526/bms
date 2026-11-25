@@ -1,0 +1,28 @@
+# คลินิกผู้ป่วยนอก: technical pilot
+
+สถานะ: **โค้ดทดลอง ปิดค่าเริ่มต้น ห้ามใช้ข้อมูลผู้ป่วยจริง**. เริ่มจากคลินิกหนึ่งสาขาและข้อมูลสังเคราะห์เท่านั้น
+
+## เส้นทางงานที่มีใน pilot
+
+1. Administrator ของ tenant ที่เปิด allowlist กำหนดและถอนบทบาท `REGISTRAR`, `NURSE`, `CLINICIAN`, `CASHIER` ใน `/admin/clinic`. การเป็น Administrator อย่างเดียวไม่ให้สิทธิ์อ่านเวชระเบียน; clinician ต้องมีเลขใบอนุญาตที่บันทึกไว้ในทะเบียน pilot. เลขนี้เป็นหลักฐานที่ผู้ดูแลกรอก ไม่ใช่การตรวจสอบกับหน่วยงานออกใบอนุญาต.
+2. Registrar ลงทะเบียน patient UUID/HN ซึ่งแยกจาก `bms_customers`. ชื่อและเบอร์ซ้ำกันไม่รวมเวชระเบียน. ข้อมูลผู้ปกครองบันทึกเป็น verified contact โดยพนักงานเท่านั้น; pilot **ยังไม่มี patient portal หรือการเปิดอ่านให้ผู้ปกครอง**.
+3. นัดหมายระบุ practitioner, ห้อง, ช่วงเวลา, สาขา และ request key. Exclusion constraint ป้องกันการจองผู้ตรวจหรือห้องซ้อนกันแม้มีคำขอพร้อมกัน; การเลื่อนนัดและยกเลิกอยู่ใน transaction. UI แสดงปฏิทิน/คิวรายเดือนตาม Asia/Bangkok และคง request key เดิมเมื่อส่งซ้ำหลังเครือข่ายล้มเหลว. ยังไม่มีตารางเวลาทำงาน/วันหยุดของแพทย์หรือ waitlist.
+4. เช็กอินแล้ว clinician ที่ถูกนัดเปิด encounter. บันทึกร่างด้วย version check, ลงนามเป็น immutable note, และแก้ภายหลังด้วย addendum ที่มีเหตุผล/ผู้ลงนาม/เวลา. แผนยาเป็นข้อความบันทึกเท่านั้น ไม่จ่ายยา ไม่ตัดสต็อก. ไฟล์ PDF/PNG/JPEG ไม่เกิน 2 MB เก็บในตารางสุขภาพและอ่านผ่าน endpoint เฉพาะพร้อม no-store; ไม่สร้าง `files` ที่ generic route เปิดได้.
+5. Clinician ที่เคยดูแลหรือ nurse ใน care team อ่านประวัติ. Clinician ที่จำเป็นต้องเข้าถึงฉุกเฉินระบุเหตุผลอย่างน้อย 20 ตัวอักษรและยืนยัน; สิทธิ์ 15 นาทีพร้อม audit. สิทธิ์นี้ไม่ขยายถึงไฟล์แนบ. การอ่านข้อมูลบันทึก security event โดยไม่ใส่ข้อความรักษา.
+6. Cashier เลือก encounter ที่ลงนามแล้วจากรายการการเงินที่ค้นด้วย HN/ชื่อและจำกัด 100 รายการต่อคำค้น; รายการนี้ไม่มีข้อความเวชระเบียน. Cashier บันทึก charge sheet โดยรับเฉพาะ catalog product `NON_STOCK`, sales surface `ONLINE_ORDER`, VAT category `N` และราคา server. ผู้มีสิทธิ์ตรวจและล็อกราคา จากนั้นสร้าง order ช่องทางภายใน `clinic` ด้วย `createOrderInTx()` ใน transaction เดียวกับการเชื่อม charge sheet. หากยอด/ภาษี/โปรโมชั่นต่างจากที่ตรวจ ระบบ rollback. Retry เห็น order เดิม. หน้าคลินิกส่งเลข order ไป `/admin/payment?orderId=...` เพื่อบันทึกและยืนยันการชำระผ่านบริการ BMS เดิม; ผู้ใช้ Payment ต้องมี `payment.view`/`payment.submit` และผู้ยืนยันต้องมี `payment.confirm` ตามหน้าที่. การคืนเงินใช้ workflow เดิม; การสั่งยาไม่ทำให้เกิด charge หรือ movement.
+
+คู่มือพนักงานภาษาไทย/อังกฤษอยู่ที่ `/admin/manual/clinic` และเชื่อมจากหน้าคลินิกกับคู่มือหลัก. คู่มือแยกบทบาท สถานะ ขั้นตอนทดสอบและการกู้ผลที่ไม่แน่นอนตาม code ปัจจุบัน.
+
+## สิทธิ์และ API
+
+`GET/POST /api/bms/clinic` ตรวจ RBAC ราย action, tenant จาก session, clinic staff role เพิ่ม และ flag `BMS_CLINIC_PILOT_TENANTS`. Bootstrap รับเฉพาะบัญชีที่มีสิทธิ์ `clinic.*` อย่างน้อยหนึ่งรายการ เพื่อให้ cashier ที่ไม่มีสิทธิ์อ่าน patient profile ใช้รายการการเงินได้. `GET/POST /api/bms/clinic/attachments` ตรวจ clinic role, encounter relationship, tenant และขนาดไฟล์. ไม่มี GraphQL หรือ AI tool สำหรับเวชระเบียน. ไม่เผยข้อมูลรักษาไป CRM, Inbox, marketing, realtime, report หรือ order. Audit เก็บ ID/สถานะ/จำนวนรายการเท่านั้น.
+
+Desktop เป็น shell สำหรับ `/pos` เท่านั้นและไม่เปิด `/admin/clinic` ภายในหน้าขาย; Mobile ใช้ POS GraphQL และคำสั่งซื้อเข้าครัวที่ต้องมี `fulfillment_type`, ขณะที่ clinic order ตั้งค่าเป็น `NULL`. ทั้งสองแอปไม่รับ clinical note/file ผ่านคำสั่ง POS. การตรวจครั้งนี้รัน desktop lint/test และ mobile typecheck/Jest; ไม่ได้ทดสอบบนเครื่องพิมพ์หรืออุปกรณ์จริง.
+
+## ขอบเขตที่ยังต้องปิดก่อนใช้จริง
+
+- ผู้รับผิดชอบทางคลินิกตรวจแบบฟอร์ม เวชระเบียน การลงนาม กระบวนการแก้ไข สิทธิ์แต่ละวิชาชีพ และการตรวจใบอนุญาตจริง. Pilot ไม่มีคำสั่งยาเชิงโครงสร้าง การจ่ายยา การตรวจแล็บ หรือส่งต่อระบบภายนอก.
+- ผู้รับผิดชอบข้อมูลส่วนบุคคลกำหนดฐานประมวลผล/ความยินยอม ระยะเก็บรักษา การลบหรือ legal hold การเข้ารหัส/สำรอง/กู้คืน และตรวจ support/impersonation/export ทุกเส้น. Pilot ไม่มีการเปิดอ่านแก่ผู้ป่วย/ผู้ปกครอง.
+- ผู้เชี่ยวชาญบัญชี/ภาษียืนยัน SKU บริการ, VAT `N`, ราคา ใบเสร็จ ใบกำกับ คืนเงิน และการรับเงินผ่าน order เดิม. ไม่ถือว่า `NON_STOCK` หรือ extra line ใช้ได้กับค่ารักษาทุกชนิด.
+- ต้องทดสอบกับ restored throwaway DB ของ schema จริง, transaction/payment end-to-end, browser ที่เข้าระบบจริง และ performance/backup ก่อน release. การตรวจ migration กับ schema fixture ขนาดเล็กพิสูจน์ได้เฉพาะ SQL/constraint/RLS ไม่แทนการตรวจ schema จริง.
+- Migration `10.141` ต้อง apply ก่อน app. Flag ว่างไว้ใน compose ทั้งสามไฟล์. ระบุ tenant UUID ที่อนุมัติสำหรับข้อมูลสังเคราะห์เท่านั้นหลัง gate ผ่าน; ห้ามเปิด production flag โดยอัตโนมัติ.
