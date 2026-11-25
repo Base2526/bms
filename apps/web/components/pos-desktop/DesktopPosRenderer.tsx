@@ -20,6 +20,7 @@ import {
   type PosClientFlowState,
 } from "@pos-core/flow";
 import { createIdempotencyKey, posErrorConnectionStatus } from "@pos-core/operation";
+import { posConnectionMode } from "@pos-core/connectionFailure";
 import { PosSaleResultError } from "@pos-core/saleRetry";
 import {
   calculateCashChange,
@@ -109,6 +110,7 @@ import { isReceiptLanguageMode } from "@/lib/pos/receiptI18n";
 import { receiptPayloadFromPosSale, type PosSaleReceiptRow } from "@/lib/pos/posSaleReceipt";
 import { parsePosOpenItems, type PosOpenItem } from "@/lib/bms/posOpenItems";
 import styles from "./DesktopPosRenderer.module.css";
+import { posDiagnosticFetch as fetch } from "@/lib/pos/diagnosticFetch";
 
 const loadAdvancedPosModule = () => import("@/app/(pos)/pos/page");
 const loadBoardGameModule = () => import("@/components/pos/BoardGamePanel");
@@ -2132,20 +2134,14 @@ function DesktopPosContent() {
   ) : null;
 
   const checkout = flow.stage === "CHECKOUT" || flow.stage === "RECEIPT";
-  const connectionMode = connection === "offline" || realtimeStatus === "offline"
-    ? "offline"
-    : connection === "checking"
-      ? "checking"
-      : realtimeStatus === "connected"
-        ? "online"
-        : "fallback";
+  const connectionMode = posConnectionMode(connection, realtimeStatus);
   const connectionLabel = connectionMode === "offline"
     ? posText("การเชื่อมต่อมีปัญหา")
     : connectionMode === "checking"
       ? posText("กำลังเชื่อมต่อ")
       : connectionMode === "online"
         ? posText("ออนไลน์")
-        : posText("ออนไลน์ · อัปเดตอัตโนมัติ");
+        : posText("ออนไลน์ · ข้อมูลสดขัดข้อง");
   const navItems = ([
     { key: "mobile_sell", label: posText("ขาย"), enabled: true },
     { key: "restaurant", label: posText("โต๊ะ"), enabled: bootstrap.businessArchetype === "restaurant" },

@@ -341,6 +341,15 @@
     เปลี่ยนเซิร์ฟเวอร์: "Change server",
     "ปุ่มลองใหม่จะใช้ข้อมูลจับคู่เครื่องเดิม ไม่ต้องจับคู่ใหม่":
       "Retry keeps this device's existing pairing. No need to pair it again.",
+    "ส่งออกข้อมูลตรวจสอบจากเครื่อง": "Export diagnostics from this computer",
+    "ส่งออกข้อมูลตรวจสอบสำเร็จ": "Diagnostics exported",
+    "ส่งออกข้อมูลตรวจสอบไม่สำเร็จ": "Could not export diagnostics",
+    "ส่งออกข้อมูลตรวจสอบไม่สำเร็จ กรุณาเลือกที่จัดเก็บอื่น": "Could not export diagnostics. Choose another location.",
+    "รอส่ง {v0} เหตุการณ์": "{v0} events pending upload",
+    "เซิร์ฟเวอร์ปฏิเสธ {v0} เหตุการณ์": "Server rejected {v0} events",
+    "ประวัติขาดหาย {v0} เหตุการณ์": "{v0} events missing from history",
+    "บันทึกข้อมูลตรวจสอบในเครื่องไม่สำเร็จ": "Could not save diagnostics on this computer",
+    "อ่านข้อมูลตรวจสอบในเครื่องไม่ได้": "Could not read diagnostics on this computer",
   };
   let language = "th";
   const getAppLanguage = () => language;

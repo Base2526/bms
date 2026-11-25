@@ -313,6 +313,13 @@ The compact startup gate stops its spinner on failure and retains retry controls
 banner is dismissed. Before the first valid restaurant floor snapshot, tables/bills show unavailable
 rather than fabricated zero counts or an empty-floor setup action; existing snapshots survive failed reads.
 An offline indicator never proves that a submitted write was unsent.
+The shell writes coded startup, pairing, navigation, main-frame HTTP 5xx and renderer-crash events
+to a user-only local journal (500 events/30 days). The recovery and pairing screens export that
+journal without the backend, including dropped-count/time-range summaries and rejected upload
+reasons. After the saved pairing is verified, only events for that server/token target are uploaded;
+server ACKs remove accepted or duplicate items only. The export contains no credential, URL query,
+request/response body or free-text exception. A timed-out sale still has an unknown outcome and
+must be checked with its original idempotency key before any follow-up action.
 Pairing probes now describe HTTP 408/429 as temporary failures instead of an incompatible server.
 
 Desktop Node tests: **137 passed**, syntax checks passed. The shared transport contract tests cover

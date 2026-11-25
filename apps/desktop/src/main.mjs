@@ -5,7 +5,7 @@ import electronMain from "electron/main";
 import { createReceiptPrinter, DEFAULT_PRINTER_CONFIG, isReceiptPrinterCaller, normalizePrinterConfig } from "./receipt-printer.mjs";
 import { printerReadiness } from "./printer-health.mjs";
 import { createKitchenPrinter, DEFAULT_KITCHEN_PRINTER_CONFIG, normalizeKitchenPrinterConfig } from "./kitchen-printer.mjs";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +44,7 @@ import {
   resolvePosEntryPath,
 } from "./renderer-route.mjs";
 import { createLaunchAtLogin } from "./launch-at-login.mjs";
+import { createConnectionJournal } from "./connection-diagnostics.mjs";
 import { platformClientLabel, platformSecurityNote, secureStorageStatus } from "./secure-storage.mjs";
 import {
   desktopMenuTemplate,
@@ -74,6 +75,85 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SETUP_FILE = path.join(__dirname, "../renderer/setup.html");
 const STARTUP_FILE = path.join(__dirname, "../renderer/startup.html");
 const PRELOAD_FILE = path.join(__dirname, "preload.cjs");
+const connectionJournal = createConnectionJournal({
+  filePath: path.join(app.getPath("userData"), "connection-diagnostics.json"),
+  platform: process.platform,
+  appVersion: app.getVersion(),
+});
+let verifiedConnection = null;
+let connectionNeedsRecoveryTarget = null;
+let diagnosticFlushTimer = null;
+let mainPosNavigationStartedAt = 0;
+
+function pairingTargetKey(pairing) {
+  return pairing ? createHash("sha256").update(`${pairing.serverUrl}\n${pairing.token}`).digest("hex") : null;
+}
+
+function recordConnectionDiagnostic(fields, pairing = activePairing) {
+  const eventId = randomUUID();
+  const targetKey = pairingTargetKey(pairing);
+  void connectionJournal.append({ ...fields, eventId, targetKey }).catch(() => {
+    // Logging must never change pairing, a sale, or recovery navigation.
+  });
+  if (fields.status !== "success" && ["POS_NETWORK", "POS_TIMEOUT", "POS_SERVER",
+    "POS_PROTOCOL", "POS_VERSION", "POS_RENDERER", "POS_RENDERER_CRASHED", "POS_RENDERER_OOM",
+    "POS_RENDERER_KILLED", "POS_RENDERER_LAUNCH_FAILED", "POS_RENDERER_INTEGRITY_FAILURE",
+    "POS_RENDERER_ABNORMAL_EXIT"].includes(fields.code)) connectionNeedsRecoveryTarget = targetKey;
+  if (verifiedConnection?.targetKey === targetKey && targetKey) scheduleDiagnosticFlush();
+  return { eventId, code: fields.code };
+}
+
+function scheduleDiagnosticFlush() {
+  if (diagnosticFlushTimer || !verifiedConnection || !activePairing) return;
+  diagnosticFlushTimer = setTimeout(() => {
+    diagnosticFlushTimer = null;
+    void flushConnectionDiagnostics();
+  }, 30_000);
+}
+
+async function flushConnectionDiagnostics() {
+  const pairing = activePairing;
+  const verified = verifiedConnection;
+  if (!pairing || !verified || pairingTargetKey(pairing) !== verified.targetKey) return;
+  const send = async events => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5_000);
+    try {
+      const response = await net.fetch(new URL("/api/pos/diagnostics/events", pairing.serverUrl), {
+        method: "POST", cache: "no-store", signal: controller.signal,
+        headers: { "content-type": "application/json", "x-pos-device-token": pairing.token },
+        body: JSON.stringify({ events }),
+      });
+      if (!response.ok) throw Object.assign(new Error('diagnostic upload rejected'), {
+        diagnosticReason: response.status === 401 ? 'token_rejected'
+          : response.status === 403 ? 'permission_denied'
+          : response.status === 429 ? 'rate_limited'
+          : response.status >= 500 ? 'server_error' : 'payload_rejected',
+      });
+      return await response.json();
+    } finally { clearTimeout(timer); }
+  };
+  try {
+    for (let index = 0; index < 10; index += 1) {
+      if (pairing !== activePairing || verified !== verifiedConnection) break;
+      const result = await connectionJournal.flush(verified.targetKey, send);
+      if (!result.pending) break;
+      if (result.reason) { scheduleDiagnosticFlush(); break; }
+    }
+  } catch { scheduleDiagnosticFlush(); }
+}
+
+function connectionFailureCode(error) {
+  const status = Number(error?.status);
+  if (status === 401) return "POS_AUTHENTICATION";
+  if (status === 403) return "POS_PERMISSION";
+  if (status === 408 || status === 504 || error?.code === "POS_TIMEOUT") return "POS_TIMEOUT";
+  if (status === 429) return "POS_RATE_LIMIT";
+  if (status === 404 || status === 426) return "POS_VERSION";
+  if (status >= 500) return "POS_SERVER";
+  if (status > 0) return "POS_PROTOCOL";
+  return "POS_NETWORK";
+}
 
 let mainWindow = null;
 let activePairing = null;
@@ -271,8 +351,12 @@ async function removePairing() {
   pairingRevision++;
   pairingRestoreRequest++;
   const previous = activePairing;
+  const previousVerified = verifiedConnection;
   const previousError = pairingRestoreError;
   activePairing = null;
+  verifiedConnection = null;
+  if (diagnosticFlushTimer) clearTimeout(diagnosticFlushTimer);
+  diagnosticFlushTimer = null;
   startupNavigation = null;
   if (pendingRefreshRequest) clearTimeout(pendingRefreshRequest.timer);
   pendingRefreshRequest = null;
@@ -286,6 +370,7 @@ async function removePairing() {
     return { ok: true };
   } catch {
     activePairing = previous;
+    verifiedConnection = previousVerified;
     pairingRestoreError = previousError;
     installApplicationMenu();
     scheduleCustomerDisplayReconcile();
@@ -1071,10 +1156,30 @@ function createMainWindow() {
   window.webContents.on("render-process-gone", (_event, details) => {
     console.error(`Desktop POS renderer exited: ${details.reason}`);
     if (!activePairing || window !== mainWindow || window.isDestroyed()) return;
+    const rendererCodes = {
+      crashed: 'POS_RENDERER_CRASHED', oom: 'POS_RENDERER_OOM', killed: 'POS_RENDERER_KILLED',
+      'launch-failed': 'POS_RENDERER_LAUNCH_FAILED',
+      'integrity-failure': 'POS_RENDERER_INTEGRITY_FAILURE',
+      'abnormal-exit': 'POS_RENDERER_ABNORMAL_EXIT',
+    };
+    let route = '/pos/app';
+    try {
+      const current = new URL(window.webContents.getURL());
+      if (current.origin === activePairing.serverUrl && current.pathname === '/pos/restaurant') route = current.pathname;
+    } catch {}
+    recordConnectionDiagnostic({ action: "desktop.renderer.crash",
+      code: rendererCodes[details.reason] ?? "POS_RENDERER", route });
     void showStartup("error", posText("หน้าจอหยุดทำงาน กรุณาลองเปิดใหม่"), window).catch(() => {});
   });
   window.webContents.on("did-fail-load", (_event, errorCode, _description, failedUrl, isMainFrame) => {
     handleMainPosLoadFailure(window, errorCode, failedUrl, isMainFrame);
+  });
+  window.webContents.on("did-start-navigation", (details) => {
+    if (!details.isMainFrame || details.isSameDocument || !activePairing || window !== mainWindow) return;
+    try {
+      const target = new URL(details.url);
+      if (target.origin === activePairing.serverUrl && isPosPath(target.pathname)) mainPosNavigationStartedAt = Date.now();
+    } catch {}
   });
 
   const guardNavigation = (event, destination) => {
@@ -1196,6 +1301,12 @@ function handleMainPosLoadFailure(targetWindow, errorCode, failedUrl, isMainFram
   try { failedPage = new URL(failedUrl); } catch { return; }
   if (failedPage.origin !== activePairing.serverUrl || !isPosPath(failedPage.pathname)) return;
 
+  recordConnectionDiagnostic({ action: "desktop.navigation.failed", code: options.httpStatus ? "POS_SERVER" : "POS_NETWORK",
+    route: failedPage.pathname, httpStatus: options.httpStatus, nativeCode: options.httpStatus ? undefined : errorCode,
+    durationMs: mainPosNavigationStartedAt ? Date.now() - mainPosNavigationStartedAt : undefined,
+    outcome: "read_failed", serverResponded: false });
+  mainPosNavigationStartedAt = 0;
+
   const recovery = showStartup(
     "error",
     options.message ?? posText("เชื่อมต่อหน้าขายไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตหรือเซิร์ฟเวอร์แล้วลองใหม่"),
@@ -1212,6 +1323,7 @@ function handleMainPosHttpResponse(targetWindow, details) {
     || details.statusCode < 500) return;
   handleMainPosLoadFailure(targetWindow, details.statusCode, details.url, true, {
     duringStartup: true,
+    httpStatus: details.statusCode,
     message: posText("Server ยังไม่พร้อมใช้งาน (HTTP {v0}) กรุณาลองใหม่หรือตรวจสอบสถานะ Server", { v0: details.statusCode }),
   });
 }
@@ -1223,7 +1335,7 @@ async function loadPosUrl(url, targetWindow = mainWindow) {
     const timeout = new Promise((_, reject) => {
       timer = setTimeout(() => {
         if (!targetWindow.isDestroyed()) targetWindow.webContents.stop();
-        reject(new Error("POS navigation timed out"));
+        reject(Object.assign(new Error("POS navigation timed out"), { code: "POS_TIMEOUT" }));
       }, POS_NAVIGATION_TIMEOUT_MS);
     });
     await Promise.race([targetWindow.loadURL(url), timeout]);
@@ -1242,7 +1354,9 @@ async function ensurePairingServerAvailable(pairing, targetWindow = mainWindow) 
     && targetWindow && mainWindow === targetWindow && !targetWindow.isDestroyed();
   if (!current()) return;
   try {
-    await probePairingServer(pairing);
+    const session = await probePairingServer(pairing);
+    verifiedConnection = { targetKey: pairingTargetKey(pairing), deviceId: session.device.id };
+    void flushConnectionDiagnostics();
     return;
   } catch (networkError) {
     if (!current()) return;
@@ -1260,7 +1374,9 @@ async function ensurePairingServerAvailable(pairing, targetWindow = mainWindow) 
   if (!current()) return;
   await startManagedLocalRuntime();
   if (!current()) return;
-  await probePairingServer(pairing);
+  const session = await probePairingServer(pairing);
+  verifiedConnection = { targetKey: pairingTargetKey(pairing), deviceId: session.device.id };
+  void flushConnectionDiagnostics();
 }
 
 async function showPos(targetWindow = mainWindow) {
@@ -1332,6 +1448,7 @@ function startPosNavigation() {
   const current = () => pairingRevision === revision && activePairing === pairing
     && mainWindow === targetWindow && !targetWindow.isDestroyed();
   const operation = (async () => {
+    const startedAt = Date.now();
     try {
       await showStartup("loading", "", targetWindow);
       if (!current()) return;
@@ -1339,11 +1456,20 @@ function startPosNavigation() {
       if (!current()) return;
       await showPos(targetWindow);
       if (targetWindow.isDestroyed()) return;
+      if (connectionNeedsRecoveryTarget && connectionNeedsRecoveryTarget === pairingTargetKey(pairing)) {
+        recordConnectionDiagnostic({ action: "desktop.connection.recovered", code: "POS_RECOVERED", status: "success",
+          route: "/pos/app", previousState: "offline", nextState: "online", durationMs: Date.now() - startedAt });
+      }
+      connectionNeedsRecoveryTarget = null;
       reconcileCustomerDisplay();
       reconcileQueueDisplay();
     } catch (error) {
       if (!current()) return;
       console.error("Unable to open desktop POS", error);
+      recordConnectionDiagnostic({ action: "desktop.startup.failed", code: connectionFailureCode(error),
+        route: error?.attemptId ? "/api/pos/session" : "/pos/app", httpStatus: error?.status,
+        correlationId: error?.attemptId, durationMs: error?.durationMs ?? Date.now() - startedAt,
+        outcome: "read_failed", serverResponded: error?.serverResponded === true });
       try {
         await showStartup(
           "error",
@@ -1412,10 +1538,15 @@ async function restoreSavedPairing() {
 }
 
 async function verifyPairing(pairing) {
+  const startedAt = Date.now();
   try {
-    await probePairingServer(pairing);
-    return { ok: true };
+    const session = await probePairingServer(pairing);
+    verifiedConnection = { targetKey: pairingTargetKey(pairing), deviceId: session.device.id };
+    return { ok: true, deviceId: session.device.id };
   } catch (error) {
+    recordConnectionDiagnostic({ action: "desktop.pairing.failed", code: connectionFailureCode(error),
+      route: "/api/pos/session", httpStatus: error?.status, durationMs: Date.now() - startedAt,
+      correlationId: error?.attemptId, outcome: "read_failed", serverResponded: error?.serverResponded === true }, pairing);
     return { ok: false, error: error?.userMessage ?? posText("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจ URL อินเทอร์เน็ต และใบรับรอง HTTPS") };
   }
 }
@@ -1445,6 +1576,28 @@ function registerIpc() {
   ipcMain.handle('bms-pos:get-language', (event) => languageCaller(event) ? getAppLanguage() : null);
   ipcMain.handle('bms-pos:set-language', (event, value) => languageCaller(event)
     ? changeAppLanguage(value) : { ok: false });
+  ipcMain.handle("bms-pos:get-diagnostic-summary", async event => {
+    if (!languageCaller(event)) return null;
+    return connectionJournal.summary();
+  });
+  ipcMain.handle("bms-pos:export-diagnostics", async event => {
+    if (!languageCaller(event)) return { ok: false };
+    const selected = await dialog.showSaveDialog(mainWindow, {
+      title: "Export BMS POS diagnostics",
+      defaultPath: `bms-pos-diagnostics-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (selected.canceled || !selected.filePath) return { ok: false, cancelled: true };
+    try {
+      const result = await connectionJournal.exportTo(selected.filePath);
+      return { ok: true, ...result };
+    } catch { return { ok: false, error: posText("ส่งออกข้อมูลตรวจสอบไม่สำเร็จ กรุณาเลือกที่จัดเก็บอื่น") }; }
+  });
+  ipcMain.handle("bms-pos:record-diagnostic", async (event, fields) => {
+    if (!isPairedCashierFrame(event)) return { ok: false };
+    const result = recordConnectionDiagnostic(fields);
+    return { ok: true, ...result };
+  });
   const isPrinterCaller = (event) => isReceiptPrinterCaller(event, mainWindow, activePairing?.serverUrl);
   ipcMain.handle("bms-pos:get-printer-state", async (event) => {
     if (!isPrinterCaller(event)) return null;
@@ -1622,6 +1775,7 @@ function registerIpc() {
       // is valid for the next restore, but the old frame must not navigate a replacement window.
       if (!current()) return { ok: true };
       activePairing = { serverUrl: parsed.serverUrl, token: parsed.token, posEntryPath: null };
+      void flushConnectionDiagnostics();
       installApplicationMenu();
       void startPosNavigation();
       return { ok: true };

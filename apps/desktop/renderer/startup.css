@@ -54,6 +54,7 @@ body { min-height: 100vh; background: radial-gradient(circle at 50% 15%, #fff 0,
 h1 { margin: 0; font-size: 28px; line-height: 1.25; }
 
 .description { margin: 12px auto 0; max-width: 390px; color: #667085; line-height: 1.65; }
+.diagnostic-reference { margin: 10px auto 0; max-width: 400px; color: #475467; font-size: 12px; overflow-wrap: anywhere; }
 
 .error-mark {
   width: 42px;
@@ -68,7 +69,9 @@ h1 { margin: 0; font-size: 28px; line-height: 1.25; }
   font-weight: 800;
 }
 
-.actions { display: grid; gap: 10px; margin-top: 26px; }
+.actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 26px; }
+.actions .primary { grid-column: 1 / -1; }
+.actions button:not(.primary) { font-size: 13px; }
 
 button {
   min-height: 46px;

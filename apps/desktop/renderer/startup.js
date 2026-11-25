@@ -8,6 +8,9 @@ const errorState = document.querySelector("#error-state");
 const errorMessage = document.querySelector("#error-message");
 const retryButton = document.querySelector("#retry-button");
 const changeServerButton = document.querySelector("#change-server-button");
+const exportButton = document.querySelector("#export-diagnostics-button");
+const diagnosticReference = document.querySelector("#diagnostic-reference");
+const diagnosticExportStatus = document.querySelector("#diagnostic-export-status");
 let actionError = null;
 let retrying = false;
 
@@ -41,6 +44,30 @@ function renderStartupState() {
 }
 renderStartupState();
 window.addEventListener("pos-language-changed", renderStartupState);
+const summaryPromise = window.bmsDesktop.getDiagnosticSummary?.();
+summaryPromise?.then(summary => {
+  if (!summary) return;
+  const parts = [];
+  if (summary.last) parts.push(`${summary.last.code} · ${summary.last.eventId}`);
+  if (summary.pending) parts.push(posText("รอส่ง {v0} เหตุการณ์", { v0: summary.pending }));
+  if (summary.rejected) parts.push(posText("เซิร์ฟเวอร์ปฏิเสธ {v0} เหตุการณ์", { v0: summary.rejected }));
+  if (summary.lastUploadFailure) parts.push(`Upload: ${summary.lastUploadFailure}`);
+  if (summary.storageError) parts.push(posText("บันทึกข้อมูลตรวจสอบในเครื่องไม่สำเร็จ"));
+  const dropped = summary.gaps?.reduce((sum, gap) => sum + gap.count, 0) ?? 0;
+  if (dropped) parts.push(posText("ประวัติขาดหาย {v0} เหตุการณ์", { v0: dropped }));
+  diagnosticReference.textContent = parts.join(" · ");
+}).catch(() => { diagnosticReference.textContent = posText("อ่านข้อมูลตรวจสอบในเครื่องไม่ได้"); });
+
+exportButton.addEventListener("click", async () => {
+  exportButton.disabled = true;
+  try {
+    const result = await window.bmsDesktop.exportDiagnostics();
+    diagnosticExportStatus.textContent = result?.ok
+      ? posText("ส่งออกข้อมูลตรวจสอบสำเร็จ")
+      : result?.cancelled ? "" : result?.error || posText("ส่งออกข้อมูลตรวจสอบไม่สำเร็จ");
+  } catch { diagnosticExportStatus.textContent = posText("ส่งออกข้อมูลตรวจสอบไม่สำเร็จ"); }
+  exportButton.disabled = false;
+});
 
 retryButton.addEventListener("click", async () => {
   retrying = true;

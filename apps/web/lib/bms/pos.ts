@@ -138,6 +138,8 @@ export type PosDevice = {
   scannerMaxGapMs: number;
   active: boolean;
   lastSeenAt: string | null;
+  /** Last authoritative device edit; older client timestamps cannot prove branch assignment. */
+  updatedAt?: string | null;
 };
 
 function hashToken(token: string): string {
@@ -194,7 +196,7 @@ export async function authenticatePosDevice(token: string): Promise<PosDevice | 
   if (!raw) return null;
   const res = await query<any>(
     `SELECT id, tenant_id, location_id, code, name, registered_pos_no, receipt_prefix,
-            scanner_mode, scanner_prefix_key, scanner_suffix_key, scanner_max_gap_ms, active
+            scanner_mode, scanner_prefix_key, scanner_suffix_key, scanner_max_gap_ms, active, updated_at
        FROM bms_pos_devices
       WHERE token_hash = $1 AND active`,
     [hashToken(raw)]
@@ -221,6 +223,7 @@ export async function authenticatePosDevice(token: string): Promise<PosDevice | 
     scannerMaxGapMs: Number(r.scanner_max_gap_ms ?? 80),
     active: r.active,
     lastSeenAt: null,
+    ...(r.updated_at ? { updatedAt: new Date(r.updated_at).toISOString() } : {}),
   };
 }
 

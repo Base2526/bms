@@ -15,6 +15,8 @@ import { recordRequestMetric } from "@/lib/bms/requestMetrics";
 import { writeLogServer } from "@/lib/log/writeLog.server";
 import { ERROR_WINDOW_MS, EXPECTED_WINDOW_MS, shouldLog } from "@/lib/log/logThrottle";
 import { isExpectedGraphqlCode } from "./expectedErrorCodes";
+import { safePosAttemptId } from "@pos-core/connectionFailure";
+import { safePosDiagnosticErrorCode, safePosDiagnosticOperation } from "@pos-core/diagnosticOperations";
 
 // error ที่ "ตั้งใจให้เกิด" — ผู้ใช้กรอกผิด/ไม่มีสิทธิ์/หมดอายุ ไม่ใช่ระบบพัง
 // เก็บไว้อ่านย้อนหลังได้เหมือนกัน แต่เป็น warn เพื่อไม่ให้ไปปลุก Slack alert
@@ -45,15 +47,21 @@ export function metricsPlugin<TContext extends BaseContext>(): ApolloServerPlugi
           const first = requestContext.errors?.[0] as LoggedGraphqlError | undefined;
           const code = first?.extensions?.code;
           errorCode = typeof code === "string" ? code : "INTERNAL_SERVER_ERROR";
+          const context = requestContext.contextValue as any;
+          const posScope = context?.scope === "pos";
+          if (posScope) errorCode = safePosDiagnosticErrorCode(errorCode);
 
           // เขียนรายเคสลง system_logs ด้วย: metric ข้างล่างเป็นแค่ตัวนับ ไม่บอกว่า
           // "พังว่าอะไร" · เดิม error ฝั่ง GraphQL ถูกบันทึกก็ต่อเมื่อมีเบราว์เซอร์
           // แอดมินเปิดอยู่แล้ว errorLink ยิง /api/logs ให้ — งาน cron/AI/mobile
           // ที่พังจึงไม่เหลือร่องรอยเลย
-          const operationName =
+          const rawOperationName =
             requestContext.operationName || requestContext.operation?.name?.value || "anonymous";
+          const operationName = posScope ? safePosDiagnosticOperation(rawOperationName) : rawOperationName;
           const expected = isExpectedGraphqlCode(errorCode);
           const level = expected ? "warn" : "error";
+          const posAttemptId = posScope
+            ? safePosAttemptId(context?.req?.headers?.get?.("x-pos-attempt-id")) : null;
           // error เดียวกันรัว ๆ ไม่ต้องเขียนทุกครั้ง — จำนวนครั้งนับครบอยู่แล้วที่
           // recordRequestMetric ข้างล่าง (403 ทุกครั้งที่โหลดหน้าเป็นเรื่องปกติมาก)
           if (
@@ -65,19 +73,24 @@ export function metricsPlugin<TContext extends BaseContext>(): ApolloServerPlugi
             return;
           }
           // ไม่ใส่ variables: มีทั้งรหัสผ่าน token และข้อมูลลูกค้าปนอยู่
-          void writeLogServer(level, "graphql", `${operationName}: ${first?.message ?? "unknown error"}`, {
+          void writeLogServer(level, "graphql", posScope
+            ? `POS GraphQL ${operationName}: ${errorCode}`
+            : `${operationName}: ${first?.message ?? "unknown error"}`, {
             action: "graphql.error",
             status: String(errorCode),
             routeName: `gql:${operationName}`,
-            errorMessage: first?.message ?? null,
-            stack: first?.stack ?? null,
-            path: first?.path ? first.path.join(".") : null,
-            tenantId: (requestContext.contextValue as any)?.admin?.tenant_id ?? null,
+            errorMessage: posScope ? null : first?.message ?? null,
+            stack: posScope ? null : first?.stack ?? null,
+            path: posScope ? null : first?.path ? first.path.join(".") : null,
+            correlationId: posAttemptId,
+            tenantId: context?.posDevice?.tenantId ?? context?.admin?.tenant_id ?? null,
           });
         },
         async willSendResponse(requestContext) {
-          const operationName =
+          const rawOperationName =
             requestContext.operationName || requestContext.operation?.name?.value || "anonymous";
+          const operationName = (requestContext.contextValue as any)?.scope === "pos"
+            ? safePosDiagnosticOperation(rawOperationName) : rawOperationName;
           recordRequestMetric({
             name: `gql:${operationName}`,
             durationMs: Date.now() - startedAt,

@@ -32,8 +32,18 @@ import { isRestaurantCheckError } from "@/lib/bms/restaurantPosErrors";
 import { withScheduledJobTrace } from "@/lib/bms/scheduledJobTrace";
 import { recordRequestMetric } from "@/lib/bms/requestMetrics";
 import { sanitizeLogText } from "./sanitize";
+import { safePosAttemptId } from "@pos-core/connectionFailure";
 
 type RouteHandler<Args extends any[]> = (...args: Args) => Promise<Response> | Response;
+
+/** A client attempt is evidence only when this server actually received its valid UUID. */
+function posAttemptId(routeName: string, args: unknown[]): string | null {
+  if (!routeName.startsWith("/api/graphql") && !/(?:GET|POST|PUT|PATCH|DELETE) \/api\/(?:pos\/|bms\/realtime\/ticket)/.test(routeName)) return null;
+  const req = args[0] as NextRequest | undefined;
+  if (routeName === "/api/graphql" && req?.headers?.get?.("x-scope") !== "pos") return null;
+  const value = req?.headers?.get?.("x-pos-attempt-id")?.trim() ?? "";
+  return safePosAttemptId(value);
+}
 
 function safeErrorText(value: unknown, max = 2_000): string | null {
   if (value == null) return null;
@@ -96,7 +106,9 @@ export function withRouteErrorLog<Args extends any[]>(
       // console เขียนทุกครั้งเสมอ ไม่ throttle — เป็นทางถอยเดียวตอนฐานล่มจนเขียน
       // system_logs ไม่ได้ และไม่มีต้นทุนอะไรนอกจากบรรทัดใน stdout
       const safeStack = safeErrorText(error?.stack, 12_000);
-      console.error(`[route] unhandled ${routeName}`, { ...detail, stack: safeStack });
+      const correlationId = posAttemptId(routeName, args);
+      const posRoute = /(?:GET|POST|PUT|PATCH|DELETE) \/api\/pos\//.test(routeName);
+      console.error(`[route] unhandled ${routeName}`, { ...detail, correlationId, stack: safeStack });
 
       // error เดียวกันรัว ๆ (ฐานล่ม → ทุก request พังเหมือนกัน) ไม่ต้องเขียนทุกครั้ง
       // จำนวนครั้งยังนับครบที่ requestMetrics อยู่แล้ว
@@ -115,10 +127,13 @@ export function withRouteErrorLog<Args extends any[]>(
           action: "api.route.unhandled",
           status: "500",
           routeName,
-          errorMessage: detail.message,
-          stack: safeStack,
-          sqlstate: detail.code,
-          constraint: detail.constraint,
+          correlationId,
+          errorMessage: posRoute ? null : detail.message,
+          stack: posRoute ? null : safeStack,
+          sqlstate: posRoute
+            ? /^[0-9A-Z]{5}$/.test(detail.code ?? "") ? detail.code : null
+            : detail.code,
+          constraint: posRoute ? null : detail.constraint,
           tenantId,
         }
       ));
@@ -131,6 +146,11 @@ export function withRouteErrorLog<Args extends any[]>(
     let status = 500;
     try {
       const response = await handled(...args);
+      const attemptId = posAttemptId(routeName, args);
+      if (attemptId) {
+        try { response.headers.set("x-pos-attempt-id", attemptId); }
+        catch { /* A frozen response must not change the business result. */ }
+      }
       status = response.status;
       return response;
     } finally {
@@ -156,7 +176,8 @@ function errorResponse(message: string | null, routeName: string, args: unknown[
   const request = args[0] as NextRequest | undefined;
   const english = /^en\b/i.test(request?.headers?.get?.("accept-language") ?? "");
   const read = /^GET\s/i.test(routeName);
-  const publicMessage = process.env.NODE_ENV === "production"
+  const posRoute = /^(?:GET|POST|PUT|PATCH|DELETE) \/api\/pos\//.test(routeName);
+  const publicMessage = process.env.NODE_ENV === "production" || posRoute
     ? read
       ? english ? "Could not load data. Refresh this page. If the problem continues, contact support."
         : "โหลดข้อมูลไม่ได้ กรุณารีเฟรชหน้า หากยังไม่หายให้แจ้งผู้ดูแลระบบ"

@@ -9,7 +9,7 @@ import { rateLimit } from "@/lib/bms/rateLimit";
 import {
   buildSupportBundle,
   recordSupportBundleExport,
-  recordSupportEvents,
+  recordSupportEventsDetailed,
   sendSupportBundle,
   SupportDiagnosticsInputError,
 } from "@/lib/bms/supportDiagnostics";
@@ -53,7 +53,7 @@ async function handlePOST(req: NextRequest) {
   if (action === "events") {
     const events = Array.isArray(body?.events) ? body.events : [];
     if (!events.length) return NextResponse.json({ error: "events required" }, { status: 400 });
-    const inserted = await recordSupportEvents({
+    const result = await recordSupportEventsDetailed({
       tenantId: device.tenantId,
       actorId: String(actor.userId),
       events: events.map((event: Record<string, unknown>) => ({
@@ -62,7 +62,7 @@ async function handlePOST(req: NextRequest) {
         locationId: device.locationId,
       })),
     });
-    return NextResponse.json({ inserted });
+    return NextResponse.json({ ...result, inserted: result.accepted });
   }
 
   const from = typeof body?.from === "string" ? body.from : null;

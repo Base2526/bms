@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { posConnectionMode } from "@pos-core/connectionFailure";
 import { gql, useApolloClient, useSubscription, type DocumentNode } from "@apollo/client";
 import { usePathname } from "next/navigation";
 
@@ -435,13 +436,7 @@ export function PosConnectionStatus({
   const { t } = useI18n();
   const menuRef = React.useRef<HTMLDetailsElement>(null);
   const { status } = useRealtimeStatus();
-  const mode = apiStatus === "offline" || status === "offline"
-    ? "offline"
-    : apiStatus === "checking"
-      ? "checking"
-      : status === "connected"
-        ? "online"
-        : "fallback";
+  const mode = posConnectionMode(apiStatus, status);
 
   React.useEffect(() => {
     const closeOutside = (event: PointerEvent) => {

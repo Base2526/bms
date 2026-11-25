@@ -33,6 +33,9 @@ import { recordPosDiagnosticEvent } from '../lib/supportDiagnostics';
 import { operationTimeoutLink } from './operationTimeoutLink';
 import { connectionErrorLink } from './connectionErrorLink';
 import { runWithOperationTimeout } from '../lib/operation';
+import { describePosConnectionFailure, newPosAttemptId } from '../../../../packages/pos-client-core/src/connectionFailure';
+import { safePosDiagnosticOperation } from '../../../../packages/pos-client-core/src/diagnosticOperations';
+import { createRealtimeDiagnosticTracker } from './realtimeDiagnosticTracker';
 
 interface BmsGraphqlTransportValue {
   realtimeStatus: MobileRealtimeStatus;
@@ -52,29 +55,43 @@ class BmsNativeWebSocket extends WebSocket {
 async function mintRealtimeTicket(
   target: PairingTarget,
 ): Promise<RealtimeTicketResponse> {
-  return runWithOperationTimeout(async signal => {
+  const attemptId = newPosAttemptId();
+  const startedAt = Date.now();
+  let serverResponded = false;
+  try { return await runWithOperationTimeout(async signal => {
     const response = await fetch(realtimeTicketUrl(target.serverUrl), {
       method: 'POST',
       headers: {
         authorization: `Bearer ${target.token}`,
         'x-pos-device-token': target.token,
+        'x-pos-attempt-id': attemptId,
       },
       signal,
     });
+    serverResponded = response.headers?.get?.('x-pos-attempt-id') === attemptId;
     if (!response.ok) {
       const error = new Error(
         `realtime ticket returned HTTP ${response.status}`,
       );
       Object.assign(error, { status: response.status });
+      Object.assign(error, { statusCode: response.status });
       throw error;
     }
-    const body = (await response.json()) as Partial<RealtimeTicketResponse>;
+    const body = (await response.json().catch(() => null)) as Partial<RealtimeTicketResponse> | null;
     if (!body || typeof body.ticket !== 'string' || !body.ticket.trim()
       || typeof body.expiresAt !== 'number' || !Number.isFinite(body.expiresAt)) {
-      throw new Error('realtime ticket response is malformed');
+      throw Object.assign(new Error('realtime ticket response is malformed'), { code: 'INVALID_RESPONSE', statusCode: 200 });
     }
     return body as RealtimeTicketResponse;
-  }, TICKET_TIMEOUT_MS);
+  }, TICKET_TIMEOUT_MS); } catch (error) {
+    const failure = describePosConnectionFailure(error);
+    recordPosDiagnosticEvent(target, { category: 'pos', action: 'realtime.ticket_failed', status: 'error',
+      correlationId: attemptId,
+      context: { route: '/api/bms/realtime/ticket', errorCode: failure.code,
+        httpStatus: failure.httpStatus ?? undefined, durationMs: Date.now() - startedAt,
+        serverResponded, outcome: 'read_failed' } });
+    throw error;
+  }
 }
 
 function makeClient(
@@ -87,10 +104,29 @@ function makeClient(
   stop: () => void;
 } {
   let active = true;
-  const reportStatus = (status: MobileRealtimeStatus) => {
-    if (active) setRealtimeStatus(status);
+  const realtimeDiagnostic = createRealtimeDiagnosticTracker();
+  const reportStatus = (status: MobileRealtimeStatus, nativeCode?: string) => {
+    if (!active) return;
+    setRealtimeStatus(status);
+    const diagnostic = realtimeDiagnostic(status);
+    if (target && diagnostic) {
+      recordPosDiagnosticEvent(target, { category: 'pos',
+        action: diagnostic.action, status: diagnostic.status,
+        context: { route: '/graphql', errorCode: diagnostic.errorCode,
+          previousState: diagnostic.previousState, nextState: diagnostic.nextState, nativeCode,
+          outcome: diagnostic.action === 'realtime.recovered' ? undefined : 'read_failed' } });
+    }
   };
   let authenticationRejected = false;
+  const lastReadFailure = new Map<string, number>();
+  const allowFailureLog = (operation: string, code: string, mutation: boolean) => {
+    if (mutation) return true;
+    const key = `${operation}:${code}`;
+    const now = Date.now();
+    if (now - (lastReadFailure.get(key) ?? 0) < 30_000) return false;
+    lastReadFailure.set(key, now);
+    return true;
+  };
   const reportAuthenticationRequired = () => {
     if (!active || authenticationRejected) return;
     authenticationRejected = true;
@@ -98,23 +134,29 @@ function makeClient(
     markAuthenticationRejected();
   };
   const authLink = new ApolloLink((operation, forward) => {
+    const attemptId = newPosAttemptId();
     operation.setContext(({ headers = {} }) => ({
+      posAttemptId: attemptId,
+      posStartedAt: Date.now(),
       headers: {
         ...headers,
         authorization: target ? `Bearer ${target.token}` : '',
         'x-pos-device-token': target?.token ?? '',
         'x-scope': 'pos',
+        'x-pos-attempt-id': attemptId,
       },
     }));
     return forward(operation);
   });
 
   const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
-    const operationName = operation.operationName || 'anonymous';
+    const operationName = safePosDiagnosticOperation(operation.operationName);
     const cashierUserId = operationName === 'VerifyPosCashier'
       && typeof operation.variables?.input?.cashierUserId === 'string'
       ? operation.variables.input.cashierUserId
       : undefined;
+    const isMutation = operation.query.definitions.some(definition => definition.kind === 'OperationDefinition'
+      && definition.operation === 'mutation');
     const unauthenticated =
       graphQLErrors?.some(
         error => error.extensions?.code === 'UNAUTHENTICATED',
@@ -126,39 +168,47 @@ function makeClient(
       networkError && 'statusCode' in networkError
         ? Number(networkError.statusCode)
         : undefined;
+    const attemptId = operation.getContext().posAttemptId as string | undefined;
+    const durationMs = Date.now() - Number(operation.getContext().posStartedAt || Date.now());
+    const response = operation.getContext().response as Response | undefined;
+    const serverResponded = !!response && response.headers?.get('x-pos-attempt-id') === attemptId;
+    const networkFailure = networkError ? describePosConnectionFailure(
+      unauthenticated ? { code: 'UNAUTHENTICATED', statusCode: networkStatus } : networkError,
+      isMutation) : null;
     if (target && graphQLErrors?.length) {
       for (const error of graphQLErrors.slice(0, 3)) {
+        const code = typeof error.extensions?.code === 'string' ? error.extensions.code : 'GRAPHQL_ERROR';
+        if (!allowFailureLog(operationName, code, isMutation)) continue;
         recordPosDiagnosticEvent(target, {
           category: 'pos',
           action: `graphql.${operationName}`,
           status: 'error',
-          message: error.message,
+          correlationId: attemptId,
           context: {
             cashierUserId,
-            route: 'ApolloLink.error',
-            errorCode:
-              typeof error.extensions?.code === 'string'
-                ? error.extensions.code
-                : 'GRAPHQL_ERROR',
+            route: '/api/graphql',
+            errorCode: code,
             httpStatus: networkStatus,
+            durationMs, serverResponded,
+            outcome: describePosConnectionFailure({ extensions: { code } }, isMutation).outcome,
           },
         });
       }
     }
-    if (target && networkError) {
+    if (target && networkError && allowFailureLog(operationName, 'network', isMutation)) {
       recordPosDiagnosticEvent(target, {
         category: 'pos',
         action: `network.${operationName}`,
         status: 'error',
-        message: networkError.message,
+        correlationId: attemptId,
         context: {
           cashierUserId,
-          route: 'ApolloLink.error',
+          route: '/api/graphql',
           errorName: networkError.name || 'NetworkError',
-          errorCode: unauthenticated ? 'UNAUTHENTICATED'
-            : 'code' in networkError && typeof networkError.code === 'string'
-              && /^POS_[A-Z_]+$/.test(networkError.code) ? networkError.code : 'NETWORK_ERROR',
-          httpStatus: networkStatus,
+          errorCode: networkFailure?.code ?? 'POS_NETWORK',
+          httpStatus: networkFailure?.httpStatus ?? undefined,
+          durationMs, serverResponded,
+          outcome: networkFailure?.outcome ?? (isMutation ? 'unknown' : 'read_failed'),
         },
       });
     }
@@ -211,8 +261,10 @@ function makeClient(
       },
       on: {
         connected: () => reportStatus('connected'),
-        closed: () => {
-          if (!authFailed) reportStatus('reconnecting');
+        closed: event => {
+          const code = event && typeof event === 'object' && 'code' in event
+            ? String((event as { code?: unknown }).code ?? '') : undefined;
+          if (!authFailed) reportStatus('reconnecting', code);
         },
         error: () => {
           if (!authFailed) reportStatus('degraded');

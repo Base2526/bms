@@ -1,4 +1,5 @@
 import desktopLocale from '../renderer/locale.cjs';
+import { randomUUID } from 'node:crypto';
 const { posText } = desktopLocale;
 export class PairingServerResponseError extends Error {
   constructor(status, userMessage) {
@@ -49,12 +50,16 @@ export function assertPairingServerResponse(response) {
 /** Bound both headers and body reads. A proxy login page is not a verified POS session. */
 export async function fetchPairingSession(pairing, fetcher, timeoutMs = 5_000) {
   const controller = new AbortController();
+  const attemptId = randomUUID();
+  const startedAt = Date.now();
+  let serverResponded = false;
   let timer;
   try {
     const timeout = new Promise((_, reject) => {
       timer = setTimeout(() => {
         controller.abort();
         const error = new Error("Pairing server request timed out");
+        error.code = 'POS_TIMEOUT';
         error.userMessage = posText("เซิร์ฟเวอร์ไม่ตอบภายในเวลาที่กำหนด กรุณาตรวจเครือข่ายหรือเซิร์ฟเวอร์แล้วลองใหม่");
         reject(error);
       }, timeoutMs);
@@ -62,8 +67,9 @@ export async function fetchPairingSession(pairing, fetcher, timeoutMs = 5_000) {
     return await Promise.race([(async () => {
       const response = await fetcher(new URL("/api/pos/session", pairing.serverUrl), {
         method: "GET", cache: "no-store", redirect: "manual", signal: controller.signal,
-        headers: { "x-pos-device-token": pairing.token },
+        headers: { "x-pos-device-token": pairing.token, "x-pos-attempt-id": attemptId },
       });
+      serverResponded = response.headers?.get?.('x-pos-attempt-id') === attemptId;
       assertPairingServerResponse(response);
       let session;
       try { session = await response.json(); } catch {
@@ -75,6 +81,13 @@ export async function fetchPairingSession(pairing, fetcher, timeoutMs = 5_000) {
       }
       return session;
     })(), timeout]);
+  } catch (error) {
+    if (error && typeof error === 'object') {
+      error.attemptId = attemptId;
+      error.serverResponded = serverResponded;
+      error.durationMs = Date.now() - startedAt;
+    }
+    throw error;
   } finally { clearTimeout(timer); }
 }
 

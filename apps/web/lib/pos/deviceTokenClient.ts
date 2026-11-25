@@ -111,6 +111,14 @@ declare global {
       getDeviceToken(): Promise<string | null>;
       getStorageNamespace(): Promise<string | null>;
       getAppInfo?(): Promise<DesktopAppInfo | null>;
+      getDiagnosticSummary?(): Promise<{ pending: number; rejected: number; gaps: Array<{ reason: string; count: number; from: string; to: string }>; last: { eventId: string; code: string; occurredAt: string } | null } | null>;
+      exportDiagnostics?(): Promise<{ ok: boolean; cancelled?: boolean; error?: string; events?: number; gaps?: number }>;
+      recordDiagnostic?(input: {
+        action: string; code: string; route?: string; httpStatus?: number | null;
+        durationMs?: number; nativeCode?: number; outcome?: "unknown" | "rejected" | "read_failed";
+        correlationId?: string; serverResponded?: boolean; previousState?: string; nextState?: string;
+        status?: "error" | "warning" | "success";
+      }): Promise<{ ok: boolean; eventId?: string; code?: string }>;
       /** Opens the paired server's admin login in the system browser without POS credentials. */
       openAdmin?(): Promise<{ ok: boolean }>;
       getPrinterState?(): Promise<DesktopPrinterState | null>;

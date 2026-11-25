@@ -5,6 +5,9 @@ const th = {
     start: "ดูเส้นทางเริ่มต้นใช้งาน",
   },
   admin_ui: {
+    pos_diagnostic_outcome_unknown: "ยังไม่ทราบผล ตรวจรายการเดิมก่อนทำซ้ำ",
+    pos_diagnostic_outcome_rejected: "ถูกปฏิเสธ",
+    pos_diagnostic_outcome_read_failed: "อ่านข้อมูลไม่สำเร็จ",
     delivery_pending: "รอดำเนินการ",
     delivery_sending: "กำลังส่ง",
     delivery_sent: "ส่งแล้ว",
@@ -3810,6 +3813,8 @@ const th = {
     fill_required_fields: "กรุณากรอกฟิลด์ที่จำเป็นให้ครบ",
   },
   admin_support_diagnostics: {
+    local_evidence_storage_error: "browser บันทึกหลักฐานในเครื่องไม่สำเร็จ ประวัติช่วงนี้อาจไม่ครบ",
+    local_evidence_gaps: "หลักฐานใน browser ขาดหาย {dropped} เหตุการณ์ และถูกเซิร์ฟเวอร์ปฏิเสธ {rejected} เหตุการณ์ ตรวจไฟล์จากเครื่อง POS หรือช่วงเวลาอื่นก่อนสรุปว่าเหตุครบ",
     title: "ส่งข้อมูลวิเคราะห์ให้ Support",
     intro: "รวมลำดับกิจกรรม ข้อผิดพลาด และ audit ของร้านในช่วงเวลาที่เลือก เพื่อให้ทีม Support วิเคราะห์เหตุการณ์ก่อนเกิดปัญหาได้",
     privacy_title: "ข้อมูลถูกคัดกรองก่อนส่ง",
@@ -8896,12 +8901,14 @@ const th = {
     online: "ออนไลน์",
     checking: "กำลังเชื่อมต่อ",
     offline: "การเชื่อมต่อมีปัญหา",
-    fallback: "ออนไลน์ · อัปเดตอัตโนมัติ",
+    fallback: "ออนไลน์ · ข้อมูลสดขัดข้อง",
     open_details: "กดเพื่อดูรายละเอียด",
     fallback_title: "ข้อมูลยังอัปเดตอัตโนมัติ",
     fallback_description: "การอัปเดตทันทีขัดข้องชั่วคราว ระบบจะตรวจข้อมูลใหม่ตามรอบปกติ",
   },
   pos_restaurant: {
+    support_local_evidence_storage_error: "browser บันทึกหลักฐานในเครื่องไม่สำเร็จ ส่งออกข้อมูลจากแอป Desktop และแจ้งผู้ดูแล",
+    support_local_evidence_gaps: "หลักฐานใน browser ขาดหาย {dropped} เหตุการณ์ และถูกเซิร์ฟเวอร์ปฏิเสธ {rejected} เหตุการณ์ ส่งออกข้อมูลจากแอป Desktop เพื่อตรวจเพิ่มเติม",
     // จอครัว โมดัลต่าง ๆ และแผงใบเสร็จ
     manage_this: "จัดการใบนี้",
     save: "บันทึก",

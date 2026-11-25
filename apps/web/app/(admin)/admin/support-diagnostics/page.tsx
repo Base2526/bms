@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Card, Checkbox, Input, Segmented, Space, Typography, message } from "antd";
 import { DownloadOutlined, CustomerServiceOutlined } from "@ant-design/icons";
-import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
+import { flushSupportActivity, localSupportEventCount, localSupportEvidenceSummary, recordSupportActivity } from "@/lib/supportActivity";
 import { useI18n } from "@/lib/i18nContext";
 import { useSessionCtx } from "@/lib/session-context";
 import GuideLinks from "@/components/learning/GuideLinks";
@@ -68,6 +68,12 @@ export default function Page() {
     <GuideLinks slugs={["logs-diagnostics-guide"]} />
     <div><Title level={2}>{t("admin_support_diagnostics.title")}</Title><Paragraph>{t("admin_support_diagnostics.intro")}</Paragraph></div>
     <Alert closable type="info" showIcon message={t("admin_support_diagnostics.privacy_title")} description={t("admin_support_diagnostics.privacy_desc")} />
+    {(() => { const evidence = localSupportEvidenceSummary(activityScope); return evidence.dropped || evidence.rejected
+      ? <Alert type="warning" showIcon closable message={t("admin_support_diagnostics.local_evidence_gaps", {
+        dropped: evidence.dropped, rejected: evidence.rejected })} />
+      : null; })()}
+    {localSupportEvidenceSummary(activityScope).storageError && <Alert type="error" showIcon closable
+      message={t("admin_support_diagnostics.local_evidence_storage_error")} />}
     {ticket && <Alert closable type="success" showIcon message={t("admin_support_diagnostics.ticket_created", { ticket })} />}
     <Card title={t("admin_support_diagnostics.range_title")}><Space direction="vertical" size={16} style={{ width: "100%" }}>
       <Segmented value={range} onChange={(value) => setRange(value as WindowKey)} options={[

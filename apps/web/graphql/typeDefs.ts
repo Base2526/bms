@@ -742,6 +742,22 @@ export const typeDefs = /* GraphQL */ `
     context: JSON!
   }
 
+  input BmsPosDeviceDiagnosticFilter {
+    deviceId: ID
+    from: String
+    to: String
+    status: String
+    errorCode: String
+    correlationId: String
+    cursor: String
+    limit: Int = 50
+  }
+
+  type BmsPosDeviceDiagnosticPage {
+    events: [BmsPosDeviceDiagnosticEvent!]!
+    nextCursor: String
+  }
+
   input BmsPosDeviceInput {
     id: ID
     locationId: ID!
@@ -1385,6 +1401,7 @@ export const typeDefs = /* GraphQL */ `
     bmsRestaurantTableQr(tableId: ID!): BmsRestaurantTableQr
     bmsPosDevices: [BmsPosDevice!]!
     bmsPosDeviceDiagnostics(deviceId: ID, limit: Int = 50): [BmsPosDeviceDiagnosticEvent!]!
+    bmsPosDeviceDiagnosticsPage(filter: BmsPosDeviceDiagnosticFilter): BmsPosDeviceDiagnosticPage!
     # ---- ขายเชื่อ / ลูกหนี้การค้า (9.30) ----
     bmsArAccounts(search: String, status: String, withBalanceOnly: Boolean, limit: Int = 200): [BmsArAccount!]!
     bmsArAccount(id: ID, customerId: ID): BmsArAccount

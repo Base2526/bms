@@ -16,6 +16,19 @@ const adminLinkProgress = adminLink.querySelector(".button-progress");
 const version = document.querySelector("#app-version");
 const clientLabel = document.querySelector("#client-label");
 const securityNote = document.querySelector("#security-note");
+const diagnosticExportButton = document.querySelector("#export-diagnostics-button");
+const diagnosticExportStatus = document.querySelector("#diagnostic-export-status");
+
+diagnosticExportButton.addEventListener("click", async () => {
+  diagnosticExportButton.disabled = true;
+  try {
+    const result = await window.bmsDesktop.exportDiagnostics();
+    diagnosticExportStatus.textContent = result?.ok
+      ? posText("ส่งออกข้อมูลตรวจสอบสำเร็จ")
+      : result?.cancelled ? "" : result?.error || posText("ส่งออกข้อมูลตรวจสอบไม่สำเร็จ");
+  } catch { diagnosticExportStatus.textContent = posText("ส่งออกข้อมูลตรวจสอบไม่สำเร็จ"); }
+  diagnosticExportButton.disabled = false;
+});
 
 let storageBlocked = false;
 let adminKind;

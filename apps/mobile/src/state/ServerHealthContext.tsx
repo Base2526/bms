@@ -12,6 +12,8 @@ import { print } from 'graphql';
 import { PosBootstrapDocument } from '../graphql/generated';
 import { graphqlHttpUrl } from '../lib/realtime';
 import { runWithOperationTimeout } from '../lib/operation';
+import { describePosConnectionFailure, newPosAttemptId } from '../../../../packages/pos-client-core/src/connectionFailure';
+import { recordPosDiagnosticEvent, retryPosDiagnosticUpload } from '../lib/supportDiagnostics';
 import { useDevice } from './DeviceContext';
 
 export type ServerHealthStatus = 'checking' | 'online' | 'offline';
@@ -19,6 +21,9 @@ export type ServerHealthStatus = 'checking' | 'online' | 'offline';
 interface ServerHealthValue {
   status: ServerHealthStatus;
   lastOnlineAt: number | null;
+  lastCheckedAt: number | null;
+  lastCode: string | null;
+  lastHttpStatus: number | null;
   checkNow: () => Promise<boolean>;
   markOffline: () => void;
 }
@@ -39,10 +44,36 @@ export function ServerHealthProvider({
   } = useDevice();
   const [status, setStatus] = useState<ServerHealthStatus>('checking');
   const [lastOnlineAt, setLastOnlineAt] = useState<number | null>(null);
+  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
+  const [lastCode, setLastCode] = useState<string | null>(null);
+  const [lastHttpStatus, setLastHttpStatus] = useState<number | null>(null);
+  const lastReported = useRef<{ state: string; code: string; at: number }>({ state: 'checking', code: '', at: 0 });
   const activeProbe = useRef<Promise<boolean> | null>(null);
   const probeController = useRef<AbortController | null>(null);
   const probeGeneration = useRef(0);
   const authenticationRejected = verify.kind === 'REJECTED';
+
+  const reportProbe = useCallback((next: ServerHealthStatus, code: string | null,
+    httpStatus: number | null, attemptId: string, durationMs: number, serverResponded: boolean) => {
+    const now = Date.now();
+    const previous = lastReported.current;
+    setLastCheckedAt(now);
+    setLastCode(code);
+    setLastHttpStatus(httpStatus);
+    setStatus(next);
+    if (target && (previous.state !== next || (code && previous.code !== code)
+      || (next === 'offline' && now - previous.at >= 60_000))) {
+      recordPosDiagnosticEvent(target, { category: 'pos',
+        action: next === 'online' ? previous.state === 'offline' ? 'health.recovered' : 'health.online' : 'health.failed',
+        status: next === 'online' ? 'success' : 'error', correlationId: attemptId,
+        context: { route: '/api/graphql', errorCode: code ?? 'POS_RECOVERED',
+          httpStatus: httpStatus ?? undefined, durationMs,
+          previousState: previous.state, nextState: next, serverResponded,
+          outcome: next === 'offline' ? 'read_failed' : undefined } });
+      lastReported.current = { state: next, code: code ?? '', at: now };
+    }
+    if (next === 'online' && target) retryPosDiagnosticUpload(target).catch(() => undefined);
+  }, [target]);
 
   const checkNow = useCallback(async () => {
     if (activeProbe.current) return activeProbe.current;
@@ -53,6 +84,8 @@ export function ServerHealthProvider({
     const generation = probeGeneration.current;
     const isCurrent = () => generation === probeGeneration.current;
     const probe = (async () => {
+      const startedAt = Date.now();
+      const attemptId = newPosAttemptId();
       const controller = new AbortController();
       probeController.current = controller;
       try {
@@ -64,6 +97,7 @@ export function ServerHealthProvider({
               authorization: `Bearer ${target.token}`,
               'x-pos-device-token': target.token,
               'x-scope': 'pos',
+              'x-pos-attempt-id': attemptId,
             },
             body: JSON.stringify({ query: print(PosBootstrapDocument) }),
             signal,
@@ -75,34 +109,44 @@ export function ServerHealthProvider({
           return { response: probeResponse, body: probeBody };
         }, PROBE_TIMEOUT_MS, controller.signal);
         if (!isCurrent()) return false;
+        const serverResponded = response.headers?.get?.('x-pos-attempt-id') === attemptId;
         if (response.status === 401) {
           markAuthenticationRejected();
-          setStatus('offline');
+          reportProbe('offline', 'POS_AUTHENTICATION', 401, attemptId, Date.now() - startedAt, serverResponded);
           return false;
         }
         if (!response.ok) {
-          setStatus('offline');
+          const failure = describePosConnectionFailure({ statusCode: response.status });
+          reportProbe('offline', failure.code, response.status, attemptId, Date.now() - startedAt, serverResponded);
           return false;
         }
         if (!isCurrent()) return false;
-        if (
-          body?.errors?.some(
-            error => error.extensions?.code === 'UNAUTHENTICATED',
-          )
-        ) {
+        const graphQLErrorCodes = Array.isArray(body?.errors)
+          ? body.errors.map(error => error?.extensions?.code) : [];
+        if (graphQLErrorCodes.includes('UNAUTHENTICATED')) {
           markAuthenticationRejected();
-          setStatus('offline');
+          reportProbe('offline', 'POS_AUTHENTICATION', 200, attemptId, Date.now() - startedAt, serverResponded);
+          return false;
+        }
+        if (graphQLErrorCodes.length) {
+          const code = graphQLErrorCodes.includes('FORBIDDEN') ? 'POS_PERMISSION'
+            : graphQLErrorCodes.includes('TOO_MANY_REQUESTS') ? 'POS_RATE_LIMIT'
+              : graphQLErrorCodes.includes('INTERNAL_SERVER_ERROR') ? 'POS_SERVER'
+                : graphQLErrorCodes.some(value => value === 'GRAPHQL_VALIDATION_FAILED'
+                  || value === 'GRAPHQL_PARSE_FAILED') ? 'POS_VERSION' : 'POS_PROTOCOL';
+          reportProbe('offline', code, 200, attemptId, Date.now() - startedAt, serverResponded);
           return false;
         }
         if (!body?.data?.bmsPosSession) {
-          setStatus('offline');
+          reportProbe('offline', 'POS_PROTOCOL', 200, attemptId, Date.now() - startedAt, serverResponded);
           return false;
         }
-        setStatus('online');
+        reportProbe('online', null, 200, attemptId, Date.now() - startedAt, serverResponded);
         setLastOnlineAt(Date.now());
         return true;
-      } catch {
-        if (isCurrent()) setStatus('offline');
+      } catch (error) {
+        if (isCurrent()) reportProbe('offline', describePosConnectionFailure(error).code,
+          null, attemptId, Date.now() - startedAt, false);
         return false;
       } finally {
         if (isCurrent()) {
@@ -113,11 +157,15 @@ export function ServerHealthProvider({
     })();
     activeProbe.current = probe;
     return probe;
-  }, [authenticationRejected, markAuthenticationRejected, pairingStatus, target]);
+  }, [authenticationRejected, markAuthenticationRejected, pairingStatus, reportProbe, target]);
 
   useEffect(() => {
     setStatus('checking');
     setLastOnlineAt(null);
+    setLastCheckedAt(null);
+    setLastCode(null);
+    setLastHttpStatus(null);
+    lastReported.current = { state: 'checking', code: '', at: 0 };
     checkNow().catch(() => undefined);
     const appState = AppState.addEventListener('change', next => {
       if (next === 'active') checkNow().catch(() => undefined);
@@ -143,10 +191,13 @@ export function ServerHealthProvider({
     () => ({
       status,
       lastOnlineAt,
+      lastCheckedAt,
+      lastCode,
+      lastHttpStatus,
       checkNow,
       markOffline: () => setStatus('offline'),
     }),
-    [checkNow, lastOnlineAt, status],
+    [checkNow, lastOnlineAt, lastCheckedAt, lastCode, lastHttpStatus, status],
   );
   return (
     <ServerHealthContext.Provider value={value}>
