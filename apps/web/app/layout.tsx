@@ -1,5 +1,6 @@
 import 'antd/dist/reset.css';
 import "./globals.css";
+import "@/components/HeaderBar.css";
 import { cookies } from "next/headers";
 import type { Metadata } from "next";
 
