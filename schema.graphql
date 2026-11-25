@@ -5743,6 +5743,22 @@ type BmsPosDeviceDiagnosticEvent {
   status: String
 }
 
+input BmsPosDeviceDiagnosticFilter {
+  correlationId: String
+  cursor: String
+  deviceId: ID
+  errorCode: String
+  from: String
+  limit: Int = 50
+  status: String
+  to: String
+}
+
+type BmsPosDeviceDiagnosticPage {
+  events: [BmsPosDeviceDiagnosticEvent!]!
+  nextCursor: String
+}
+
 input BmsPosDeviceInput {
   active: Boolean
   code: String!
@@ -11312,6 +11328,7 @@ type Query {
   bmsPosCatalogSearch(q: String = ""): BmsPosCatalogSearchResult!
   bmsPosDeposits(q: String): BmsPosDepositsResult!
   bmsPosDeviceDiagnostics(deviceId: ID, limit: Int = 50): [BmsPosDeviceDiagnosticEvent!]!
+  bmsPosDeviceDiagnosticsPage(filter: BmsPosDeviceDiagnosticFilter): BmsPosDeviceDiagnosticPage!
   bmsPosDevices: [BmsPosDevice!]!
   bmsPosExpenses(credentials: BmsPosCredentialsInput!): BmsPosExpensesResult!
   bmsPosKitchenTickets(limit: Int = 100, status: String): BmsPosKitchenTicketsResult!

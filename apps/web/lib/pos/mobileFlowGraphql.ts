@@ -1,7 +1,8 @@
 import { createPosTranslator } from '@/i18n/posClient';
 import { getLangCookie } from '@/lib/lang';
 import { PosConnectionError, runWithOperationTimeout } from "@pos-core/operation";
-import { describePosConnectionFailure, isPosBusinessError, posTransportError } from "@pos-core/connectionFailure";
+import { describePosConnectionFailure, isPosBusinessError, newPosAttemptId, posTransportError } from "@pos-core/connectionFailure";
+import { safePosDiagnosticOperation } from "@pos-core/diagnosticOperations";
 import { getOperationAST } from "graphql/utilities/getOperationAST";
 import { parse } from "graphql/language/parser";
 
@@ -301,6 +302,17 @@ export class PosGraphqlError extends Error {
   }
 }
 
+const lastDesktopDiagnosticAt = new Map<string, number>();
+let desktopGraphqlFailure = false;
+function reportDesktopGraphql(input: Parameters<NonNullable<NonNullable<Window['bmsDesktop']>['recordDiagnostic']>>[0], mutation = false) {
+  if (typeof window === 'undefined' || !window.bmsDesktop?.recordDiagnostic) return;
+  const key = `${input.action}:${input.code}`;
+  const now = Date.now();
+  if (!mutation && input.status !== 'success' && now - (lastDesktopDiagnosticAt.get(key) ?? 0) < 30_000) return;
+  lastDesktopDiagnosticAt.set(key, now);
+  void window.bmsDesktop.recordDiagnostic(input).catch(() => undefined);
+}
+
 export async function posGraphqlRequest<T>(
   token: string,
   query: string,
@@ -308,7 +320,16 @@ export async function posGraphqlRequest<T>(
 ): Promise<T> {
   const posText = createPosTranslator(getLangCookie() ?? "th");
   let mutation = true;
-  try { mutation = getOperationAST(parse(query))?.operation !== 'query'; } catch { /* fail conservatively */ }
+  let operationName = 'Unknown';
+  try {
+    const operation = getOperationAST(parse(query));
+    mutation = operation?.operation !== 'query';
+    operationName = safePosDiagnosticOperation(operation?.name?.value);
+  } catch { /* fail conservatively */ }
+  const attemptId = newPosAttemptId();
+  const startedAt = Date.now();
+  let httpStatus: number | null = null;
+  let serverResponded = false;
   try { return await runWithOperationTimeout(async (signal) => {
     const response = await fetch("/api/graphql", {
       method: "POST",
@@ -318,12 +339,15 @@ export async function posGraphqlRequest<T>(
         authorization: `Bearer ${token}`,
         "x-pos-device-token": token,
         "x-scope": "pos",
+        "x-pos-attempt-id": attemptId,
       },
       body: JSON.stringify({ query, variables }),
       signal,
     }).catch((error: unknown) => {
       throw new PosConnectionError(error instanceof Error ? error.message : "ติดต่อเซิร์ฟเวอร์ไม่ได้");
     });
+    httpStatus = response.status;
+    serverResponded = response.headers.get('x-pos-attempt-id') === attemptId;
     const body = (await response.json().catch(() => null)) as {
       data?: T;
       errors?: Array<{ message?: string; extensions?: Record<string, unknown> & { code?: string } }>;
@@ -347,9 +371,20 @@ export async function posGraphqlRequest<T>(
         readVariantSelection(first?.extensions),
       );
     }
+    if (desktopGraphqlFailure) {
+      reportDesktopGraphql({ action: `graphql.${operationName}`, code: 'POS_RECOVERED', route: '/api/graphql',
+        durationMs: Date.now() - startedAt, httpStatus, correlationId: attemptId,
+        serverResponded, status: 'success', previousState: 'offline', nextState: 'online' });
+      desktopGraphqlFailure = false;
+    }
     return body!.data!;
   }); } catch (error) {
-    if (error instanceof PosGraphqlError) throw error;
-    throw posTransportError(error, mutation, posText);
+    const publicError = error instanceof PosGraphqlError ? error : posTransportError(error, mutation, posText);
+    const failure = describePosConnectionFailure({ code: publicError.code, httpStatus: publicError.httpStatus }, mutation, posText);
+    if (failure.kind !== 'business') desktopGraphqlFailure = true;
+    reportDesktopGraphql({ action: `graphql.${operationName}`, code: failure.code, route: '/api/graphql',
+      durationMs: Date.now() - startedAt, httpStatus, correlationId: attemptId,
+      serverResponded, outcome: failure.outcome, status: failure.kind === 'business' ? 'warning' : 'error' }, mutation);
+    throw publicError;
   }
 }

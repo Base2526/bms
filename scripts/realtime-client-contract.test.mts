@@ -50,7 +50,8 @@ test("every operator POS uses one compact connection status instead of a blockin
   assert.match(provider, /pathname === "\/pos"/);
   assert.match(provider, /pathname\.startsWith\("\/pos\/restaurant"\)/);
   assert.match(desktopRenderer, /useRealtimeStatus\(\)/);
-  assert.match(desktopRenderer, /realtimeStatus === "connected"/);
+  assert.match(desktopRenderer, /posConnectionMode\(connection, realtimeStatus\)/);
+  assert.match(provider, /posConnectionMode\(apiStatus, status\)/);
   assert.match(desktopRenderer, /<PosConnectionStatus apiStatus=\{connection\}/);
   assert.match(restaurantPos, /<PosConnectionStatus apiStatus=\{incomingApiStatus\}\s*\/>/);
   assert.match(retailPos, /!embedded && <PosConnectionStatus apiStatus=\{incomingApiStatus\}\s*\/>/);

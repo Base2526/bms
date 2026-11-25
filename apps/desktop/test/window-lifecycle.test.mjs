@@ -13,6 +13,17 @@ function body(name) {
   return (source.slice(start-6,start)==='async ' ? 'async ' : '')+source.slice(start,source.indexOf('\n}\n',start)+3);
 }
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
+test('permission and token refusals do not manufacture a desktop connectivity recovery',()=>{
+  const context=vm.createContext({activePairing:{},randomUUID:()=> '11111111-1111-4111-8111-111111111111',
+    pairingTargetKey:()=> 'target',connectionJournal:{append:async()=>{}},
+    verifiedConnection:null,connectionNeedsRecoveryTarget:null,scheduleDiagnosticFlush:()=>{}});
+  vm.runInContext(body('recordConnectionDiagnostic'),context);
+  context.recordConnectionDiagnostic({code:'POS_PERMISSION'});
+  context.recordConnectionDiagnostic({code:'POS_AUTHENTICATION'});
+  assert.equal(context.connectionNeedsRecoveryTarget,null);
+  context.recordConnectionDiagnostic({code:'POS_NETWORK'});
+  assert.equal(context.connectionNeedsRecoveryTarget,'target');
+});
 for(const paired of [true,false]) test(`reopening the cashier works with a surviving utility window (paired=${paired})`,()=>{
   const calls=[],window={isDestroyed:()=>false};
   const context=vm.createContext({posText,mainWindow:null,activePairing:paired?{}:null,
@@ -76,6 +87,7 @@ test('cashier-opened /pos popups close with the cashier and on unpair, and only 
   const unpairing=vm.createContext({posText,activePairing:{serverUrl:'https://shop.example',token:'FAKE'},
     pairingRestoreError:null,pairingInProgress:false,pairingRevision:0,pairingRestoreRequest:0,
     startupNavigation:null,pendingRefreshRequest:null,posPopupWindows:new Set(),
+    verifiedConnection:null,diagnosticFlushTimer:null,
     installApplicationMenu:()=>{},closeCustomerDisplayWindow:()=>{},clearTimeout,
     pairingPersistence:()=>({remove:async()=>{}})});
   vm.runInContext(`${body('trackPosPopupWindow')};${body('closePosPopupWindows')}`,unpairing);
@@ -107,10 +119,12 @@ test('second launch and macOS activation restore/focus the existing minimized ca
   assert.match(source,/app\.on\("activate", reopenMainWindow\)/);
 });
 test('a failed cashier reload shows local recovery without clearing pairing',async()=>{
-  const screens=[];const paired={serverUrl:'https://shop.example'};
+  const screens=[],diagnostics=[];const paired={serverUrl:'https://shop.example'};
   const window={isDestroyed:()=>false};
   const context=vm.createContext({URL,posText,mainWindow:window,activePairing:paired,
-    startupNavigation:null,mainLoadRecovery:null,isPosPath:pathname=>pathname.startsWith('/pos/'),
+    startupNavigation:null,mainLoadRecovery:null,mainPosNavigationStartedAt:Date.now()-50,
+    isPosPath:pathname=>pathname.startsWith('/pos/'),
+    recordConnectionDiagnostic:fields=>diagnostics.push(fields),
     showStartup:async(state,message,target)=>screens.push({state,message,target}),
     console:{error:()=>assert.fail('recovery should load')}});
   vm.runInContext(`${body('handleMainPosLoadFailure')};handleMainPosLoadFailure(mainWindow,-106,'https://shop.example/pos/app',true);`,context);
@@ -119,6 +133,8 @@ test('a failed cashier reload shows local recovery without clearing pairing',asy
   assert.equal(screens[0].state,'error');
   assert.equal(screens[0].target,window);
   assert.match(screens[0].message,/เชื่อมต่อหน้าขายไม่สำเร็จ/);
+  assert.ok(diagnostics[0].durationMs>=50);
+  assert.equal(diagnostics[0].nativeCode,-106);
   assert.equal(context.activePairing,paired);
   assert.match(source,/webContents\.on\("did-fail-load"[\s\S]*?handleMainPosLoadFailure\(window, errorCode, failedUrl, isMainFrame\)/);
 });
@@ -140,7 +156,8 @@ test('failed subresources, cancelled or stale navigations never replace the cash
 test('main POS HTTP 5xx recovers even when Chromium completes the navigation',async()=>{
   const screens=[];const window={webContents:{id:41},isDestroyed:()=>false};
   const context=vm.createContext({URL,posText,mainWindow:window,activePairing:{serverUrl:'https://shop.example'},
-    startupNavigation:Promise.resolve(),mainLoadRecovery:null,
+    startupNavigation:Promise.resolve(),mainLoadRecovery:null,mainPosNavigationStartedAt:Date.now()-50,
+    recordConnectionDiagnostic:()=>{},
     isPosPath:pathname=>pathname.startsWith('/pos/'),
     showStartup:async(state,message,target)=>screens.push({state,message,target}),
     console:{error:()=>assert.fail('recovery should load')}});
@@ -296,6 +313,7 @@ test('failed removal preserves the live pairing and returns an actionable failur
   let reconciled=0;
   const context=vm.createContext({posText,activePairing:pairing,pairingRestoreError:null,pairingInProgress:false,
     pairingRevision:0,pairingRestoreRequest:0,startupNavigation:null,pendingRefreshRequest:null,
+    verifiedConnection:{targetKey:'old'},diagnosticFlushTimer:null,
     installApplicationMenu:()=>{},closeCustomerDisplayWindow:()=>{},clearTimeout,
     scheduleCustomerDisplayReconcile:()=>reconciled++,
     pairingPersistence:()=>({remove:()=>failure.promise})});

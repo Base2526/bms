@@ -7,6 +7,8 @@ import { getClient, query } from "@/lib/db";
 import { deleteStoredFile, persistBuffer, readStoredFile } from "@/lib/storage";
 import { sendEmail } from "@/lib/mailer";
 import { beginTenantTx } from "./tenant";
+import { isAllowedPosDiagnosticAction, safePosDiagnosticErrorCode,
+  safePosDiagnosticReason, safePosDiagnosticRoute } from "@pos-core/diagnosticOperations";
 
 const MAX_RANGE_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_EVENTS_PER_SOURCE = 20_000;
@@ -14,10 +16,27 @@ const MAX_INGEST_BATCH = 100;
 const gzipAsync = promisify(gzip);
 const ALLOWED_CONTEXT_KEYS = new Set([
   "cashierUserId",
-  "route", "previousRoute", "online", "visibility", "digest", "errorName",
-  "errorCode", "httpStatus", "durationMs", "appVersion", "platform", "viewport",
-  "source", "retry", "sequence", "bundleVersion",
+  "route", "previousRoute", "online", "errorName",
+  "errorCode", "httpStatus", "durationMs", "appVersion", "platform",
+  "source", "previousState", "nextState",
+  "outcome", "nativeCode", "serverResponded", "droppedCount", "gapFrom", "gapTo", "gapReason",
 ]);
+const POS_CONTEXT_KEYS = new Set([
+  "cashierUserId", "route", "online", "errorCode", "httpStatus", "durationMs",
+  "appVersion", "platform", "source", "previousState", "nextState", "outcome",
+  "nativeCode", "serverResponded", "droppedCount", "gapFrom", "gapTo", "gapReason",
+]);
+const SUPPORT_CATEGORIES = new Set(["pos", "navigation", "network", "ui", "support"]);
+const BROWSER_ACTIONS = new Set(["ui.route_view", "network.online", "network.offline",
+  "ui.window_error", "ui.unhandled_rejection", "support.bundle_send_confirmed",
+  "support.activity_gap", "support.unknown_event"]);
+
+export type SupportIngestResult = {
+  accepted: number;
+  duplicate: number;
+  rejected: number;
+  results: Array<{ index: number; eventId: string | null; status: "accepted" | "duplicate" | "rejected"; reason?: string }>;
+};
 
 export type SupportEventInput = {
   eventId?: string;
@@ -57,19 +76,26 @@ function bounded(value: unknown, max: number): string | null {
 }
 
 function safeUuid(value: unknown): string | null {
-  const text = bounded(value, 36);
+  const text = typeof value === "string" ? value.trim() : "";
   return text && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text)
     ? text
     : null;
 }
 
-function safeOccurredAt(value: unknown): string | null {
+function safeActivityActor(value: unknown): string | null {
+  return typeof value === "string" && (safeUuid(value)
+    || /^[0-9]{1,18}$/.test(value)
+    || /^pos:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))
+    ? value : null;
+}
+
+function safeOccurredAt(value: unknown): { value: string | null; reason?: string } {
   const parsed = new Date(String(value ?? ""));
   const now = Date.now();
-  if (!Number.isFinite(parsed.getTime())) return null;
-  if (parsed.getTime() < now - MAX_RANGE_MS) return null;
-  if (parsed.getTime() > now + 5 * 60_000) return new Date(now).toISOString();
-  return parsed.toISOString();
+  if (!Number.isFinite(parsed.getTime())) return { value: null, reason: "invalid_time" };
+  if (parsed.getTime() < now - MAX_RANGE_MS) return { value: null, reason: "event_too_old" };
+  if (parsed.getTime() > now + 5 * 60_000) return { value: null, reason: "clock_ahead" };
+  return { value: parsed.toISOString() };
 }
 
 const SECRET_KEY = /(authorization|cookie|token|secret|password|passcode|pin|api[_-]?key|card|account|raw|payload|request|response|body|note|address|phone)/i;
@@ -99,26 +125,111 @@ function safeContext(value: unknown): Record<string, unknown> {
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
     if (!ALLOWED_CONTEXT_KEYS.has(key)) continue;
     if (typeof raw === "boolean") output[key] = raw;
-    else if (typeof raw === "number" && Number.isFinite(raw)) output[key] = raw;
-    else if (typeof raw === "string") output[key] = raw.slice(0, 300);
+    else if (typeof raw === "number" && Number.isFinite(raw) && (
+      key === "httpStatus" ? Number.isInteger(raw) && raw >= 100 && raw <= 599
+      : key === "durationMs" ? raw >= 0 && raw <= 120_000
+      : key === "droppedCount" ? Number.isInteger(raw) && raw > 0 && raw <= 1_000_000
+      : false)) output[key] = raw;
+    else if (typeof raw === "string") {
+      // Context is diagnostic metadata, never a free-text escape hatch for URLs, headers or PII.
+      const safe = raw.slice(0, 120);
+      if (["route", "previousRoute"].includes(key)) {
+        const route = safePosDiagnosticRoute(raw)
+          ?? (["/admin", "/admin/support-diagnostics", "/admin/pos-devices"].includes(raw) ? raw : null);
+        if (route) output[key] = route;
+      }
+      else if (key === "errorCode") output[key] = safePosDiagnosticErrorCode(raw);
+      else if (key === "nativeCode" && /^(?:-?[0-9]{1,4}|ERR_[A-Z_]{1,60})$/.test(safe)) output[key] = safe;
+      else if (["previousState", "nextState"].includes(key) && /^(?:unchecked|checking|online|offline|degraded|reconnecting|authentication_required)$/.test(safe)) output[key] = safe;
+      else if (key === "outcome" && /^(?:unknown|rejected|read_failed)$/.test(safe)) output[key] = safe;
+      else if (key === "source" && /^(?:native-pos|desktop-pos|restaurant-pos|browser-pos|admin)$/.test(safe)) output[key] = safe;
+      else if (key === "platform" && /^(?:windows|win32|linux|darwin|android|ios|browser|web)$/.test(safe)) output[key] = safe;
+      else if (key === "appVersion" && /^\d{1,4}\.\d{1,4}\.\d{1,4}(?:[-+][A-Za-z0-9][A-Za-z0-9.\-]{0,60})?$/.test(safe)) output[key] = safe;
+      else if (["gapFrom", "gapTo"].includes(key) && Number.isFinite(Date.parse(safe))) output[key] = new Date(safe).toISOString();
+      else if (key === "gapReason" && safePosDiagnosticReason(safe)) output[key] = safe;
+      else if (key === "errorName" && /^(?:Error|TypeError|AbortError|TimeoutError|NetworkError|FetchError|SyntaxError|ApolloError)$/.test(safe)) output[key] = safe;
+    }
   }
   return output;
 }
 
-export async function recordSupportEvents(input: {
+function safePosContext(value: unknown): Record<string, unknown> {
+  const output = Object.fromEntries(Object.entries(safeContext(value)).filter(([key]) => POS_CONTEXT_KEYS.has(key)));
+  const raw = value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>) : {};
+  if (raw.errorCode != null) output.errorCode = safePosDiagnosticErrorCode(raw.errorCode);
+  if (typeof output.nativeCode === "string" && !/^-?\d{1,4}$/.test(output.nativeCode)) delete output.nativeCode;
+  return output;
+}
+
+/** Re-validate stored rows as well as new uploads: older deployments accepted free text. */
+function safeStoredActivity(row: Record<string, unknown>): Record<string, unknown> {
+  const category = typeof row.category === "string" && SUPPORT_CATEGORIES.has(row.category)
+    ? row.category : "support";
+  const action = category === "pos"
+    ? (isAllowedPosDiagnosticAction(row.action) ? row.action : "pos.unknown_operation")
+    : (typeof row.action === "string" && BROWSER_ACTIONS.has(row.action)
+      ? row.action : "support.unknown_event");
+  return {
+    client_event_id: safeUuid(row.client_event_id),
+    occurred_at: row.occurred_at,
+    received_at: row.received_at,
+    actor_id: safeActivityActor(row.actor_id),
+    location_id: safeUuid(row.location_id),
+    device_id: safeUuid(row.device_id),
+    session_id: safeUuid(row.session_id),
+    correlation_id: safeUuid(row.correlation_id),
+    category,
+    action,
+    status: typeof row.status === "string" && ["success", "error", "warning", "info"].includes(row.status)
+      ? row.status : null,
+    message: null,
+    context: category === "pos" ? safePosContext(row.context) : safeContext(row.context),
+  };
+}
+
+function safeStoredAudit(row: Record<string, unknown>) {
+  return { created_at: row.created_at, actor: safeActivityActor(row.actor),
+    action: typeof row.action === "string" && /^(?:pos|support)\.[a-z][a-z0-9_.-]{0,79}$/.test(row.action)
+      ? row.action : "other" };
+}
+
+function safeStoredIncident(row: Record<string, unknown>) {
+  return { created_at: row.created_at,
+    tier: ["A", "B"].includes(String(row.tier)) ? row.tier : null,
+    // Historical error_message/meta fields were free text and cannot safely enter exports.
+    code: "redacted" };
+}
+
+function safeStoredSystemLog(row: Record<string, unknown>) {
+  return { created_at: row.created_at,
+    level: ["error", "warn", "warning", "info", "debug"].includes(String(row.level)) ? row.level : null,
+    status: ["error", "success", "warning", "info"].includes(String(row.status)) ? row.status : null,
+    correlation_id: safeUuid(row.correlation_id),
+    route_name: safePosDiagnosticRoute(row.route_name),
+    duration_ms: typeof row.duration_ms === "number" && Number.isFinite(row.duration_ms)
+      && row.duration_ms >= 0 && row.duration_ms <= 120_000 ? row.duration_ms : null };
+}
+
+export async function recordSupportEventsDetailed(input: {
   tenantId: string;
   actorId: string;
   events: SupportEventInput[];
-}): Promise<number> {
+}): Promise<SupportIngestResult> {
   const events = input.events.slice(0, MAX_INGEST_BATCH);
-  if (!events.length) return 0;
+  const outcome: SupportIngestResult = { accepted: 0, duplicate: 0, rejected: 0, results: [] };
+  for (let index = events.length; index < input.events.length; index += 1) {
+    outcome.rejected += 1;
+    outcome.results.push({ index, eventId: safeUuid(input.events[index]?.eventId), status: "rejected", reason: "batch_limit" });
+  }
+  if (!events.length) return outcome;
   const client = await getClient();
   try {
     await beginTenantTx(client, input.tenantId, { editorId: input.actorId });
-    const locationIds = [...new Set(events.map((event) => safeUuid(event.locationId)).filter((id): id is string => Boolean(id)))];
-    const deviceIds = [...new Set(events.map((event) => safeUuid(event.deviceId)).filter((id): id is string => Boolean(id)))];
+    const locationIds = [...new Set(events.map((event) => safeUuid(event?.locationId)).filter((id): id is string => Boolean(id)))];
+    const deviceIds = [...new Set(events.map((event) => safeUuid(event?.deviceId)).filter((id): id is string => Boolean(id)))];
     const cashierUserIds = [...new Set(events
-      .map((event) => safeUuid(event.context?.cashierUserId))
+      .map((event) => safeUuid(event?.context?.cashierUserId))
       .filter((id): id is string => Boolean(id)))];
     const validLocations = locationIds.length
       ? await client.query<{ id: string }>(`SELECT id FROM bms_locations WHERE tenant_id = $1 AND id = ANY($2::uuid[])`, [input.tenantId, locationIds])
@@ -132,36 +243,54 @@ export async function recordSupportEvents(input: {
     const allowedLocations = new Set(validLocations.rows.map((row) => String(row.id)));
     const allowedDevices = new Set(validDevices.rows.map((row) => String(row.id)));
     const allowedCashiers = new Set(validCashiers.rows.map((row) => String(row.id)));
-    let inserted = 0;
-    for (const event of events) {
-      const eventId = safeUuid(event.eventId);
-      const occurredAt = safeOccurredAt(event.occurredAt);
-      const locationId = safeUuid(event.locationId);
-      const deviceId = safeUuid(event.deviceId);
-      if (!eventId || !occurredAt) continue;
-      if (event.locationId != null && (!locationId || !allowedLocations.has(locationId))) continue;
-      if (event.deviceId != null && (!deviceId || !allowedDevices.has(deviceId))) continue;
+    for (const [index, event] of events.entries()) {
+      const eventId = safeUuid(event?.eventId);
+      const occurredAt = safeOccurredAt(event?.occurredAt);
+      const locationId = safeUuid(event?.locationId);
+      const deviceId = safeUuid(event?.deviceId);
+      const reject = (reason: string) => {
+        outcome.rejected += 1;
+        outcome.results.push({ index, eventId, status: "rejected", reason });
+      };
+      if (!event || typeof event !== "object" || Array.isArray(event)) { reject("invalid_event"); continue; }
+      if (!eventId) { reject("invalid_event_id"); continue; }
+      if (!occurredAt.value) { reject(occurredAt.reason ?? "invalid_time"); continue; }
+      if (event.locationId != null && (!locationId || !allowedLocations.has(locationId))) { reject("invalid_location"); continue; }
+      if (event.deviceId != null && (!deviceId || !allowedDevices.has(deviceId))) { reject("invalid_device"); continue; }
       const category = bounded(event.category, 60) ?? "ui";
       const action = bounded(event.action, 120);
-      if (!action) continue;
-      const context = safeContext(event.context);
+      if (!SUPPORT_CATEGORIES.has(category)) { reject("invalid_category"); continue; }
+      if (!action || !/^[a-z][A-Za-z0-9_.-]{0,119}$/.test(action)) { reject("invalid_action"); continue; }
+      if (category === "pos" && !isAllowedPosDiagnosticAction(action)) {
+        reject("invalid_action"); continue;
+      }
+      if (category !== "pos" && !BROWSER_ACTIONS.has(action)) { reject("invalid_action"); continue; }
+      if (!["success", "error", "warning", "info"].includes(event.status ?? "")) {
+        reject("invalid_status"); continue;
+      }
+      const context = category === "pos" ? safePosContext(event.context) : safeContext(event.context);
       const cashierUserId = safeUuid(context.cashierUserId);
       if (!cashierUserId || !allowedCashiers.has(cashierUserId)) delete context.cashierUserId;
+      const correlationId = safeUuid(event.correlationId);
+      if (event.correlationId != null && !correlationId) { reject("invalid_correlation_id"); continue; }
       const result = await client.query(
         `INSERT INTO bms_support_events
            (tenant_id, client_event_id, occurred_at, actor_id, location_id, device_id, session_id,
             correlation_id, category, action, status, message, context)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
          ON CONFLICT (tenant_id, client_event_id) DO NOTHING`,
-        [input.tenantId, eventId, occurredAt, input.actorId,
-          locationId, deviceId, bounded(event.sessionId, 120),
-          bounded(event.correlationId, 120), category, action, bounded(event.status, 40),
-          bounded(event.message, 500), JSON.stringify(context)]
+        [input.tenantId, eventId, occurredAt.value, input.actorId,
+          locationId, deviceId, safeUuid(event.sessionId),
+          correlationId, category, action, bounded(event.status, 40),
+          null, JSON.stringify(context)]
       );
-      inserted += result.rowCount ?? 0;
+      const status = result.rowCount ? "accepted" : "duplicate";
+      outcome[status] += 1;
+      outcome.results.push({ index, eventId, status });
     }
     await client.query("COMMIT");
-    return inserted;
+    outcome.results.sort((left, right) => left.index - right.index);
+    return outcome;
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
     throw error;
@@ -170,16 +299,59 @@ export async function recordSupportEvents(input: {
   }
 }
 
-export async function listPosDeviceDiagnosticEvents(input: {
+/** Compatibility for browser/admin activity callers that only need the inserted count. */
+export async function recordSupportEvents(input: Parameters<typeof recordSupportEventsDetailed>[0]): Promise<number> {
+  return (await recordSupportEventsDetailed(input)).accepted;
+}
+
+export type PosDeviceDiagnosticPage = { events: PosDeviceDiagnosticEvent[]; nextCursor: string | null };
+
+export async function listPosDeviceDiagnosticPage(input: {
   tenantId: string;
   deviceId?: string | null;
+  from?: string | null;
+  to?: string | null;
+  status?: string | null;
+  errorCode?: string | null;
+  correlationId?: string | null;
+  cursor?: string | null;
   limit?: number | null;
-}): Promise<PosDeviceDiagnosticEvent[]> {
-  const safeLimit = Math.max(1, Math.min(200, Math.trunc(input.limit ?? 50) || 50));
-  const deviceId = safeUuid(input.deviceId);
-  const result = await query<any>(
+}): Promise<PosDeviceDiagnosticPage> {
+  const safeLimit = Math.max(1, Math.min(100, Math.trunc(input.limit ?? 50) || 50));
+  const deviceId = input.deviceId ? safeUuid(input.deviceId) : null;
+  if (input.deviceId && !deviceId) throw new SupportDiagnosticsInputError("invalid deviceId");
+  const correlationId = input.correlationId ? safeUuid(input.correlationId) : null;
+  if (input.correlationId && !correlationId) throw new SupportDiagnosticsInputError("invalid correlationId");
+  const status = input.status || null;
+  if (status && !["error", "warning", "success", "info"].includes(status)) throw new SupportDiagnosticsInputError("invalid status");
+  const errorCode = input.errorCode?.trim().toUpperCase() || null;
+  if (errorCode && !/^[A-Z][A-Z0-9_]{0,59}$/.test(errorCode)) throw new SupportDiagnosticsInputError("invalid errorCode");
+  const parseTime = (value: string | null | undefined) => {
+    if (!value) return null;
+    const time = new Date(value);
+    if (!Number.isFinite(time.getTime())) throw new SupportDiagnosticsInputError("invalid time filter");
+    return time.toISOString();
+  };
+  const from = parseTime(input.from);
+  const to = parseTime(input.to);
+  if (from && to && from > to) throw new SupportDiagnosticsInputError("invalid time range");
+  let cursorTime: string | null = null;
+  let cursorId: string | null = null;
+  if (input.cursor) {
+    try {
+      const [time, id, extra] = Buffer.from(input.cursor, "base64url").toString("utf8").split("|");
+      if (extra || !/^\d{1,20}$/.test(id) || !Number.isFinite(Date.parse(time))) throw new Error("cursor");
+      cursorTime = new Date(time).toISOString();
+      cursorId = id;
+    } catch { throw new SupportDiagnosticsInputError("invalid cursor"); }
+  }
+  const client = await getClient();
+  let result;
+  try {
+    await beginTenantTx(client, input.tenantId);
+    result = await client.query<any>(
     `SELECT e.id, e.occurred_at, e.received_at, e.correlation_id, e.device_id, e.location_id, e.actor_id,
-            e.category, e.action, e.status, e.message, e.context,
+            e.category, e.action, e.status, NULL::text AS message, e.context,
             CASE
               WHEN e.context->>'cashierUserId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' THEN 'cashier'
               WHEN e.actor_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' THEN 'user'
@@ -202,12 +374,24 @@ export async function listPosDeviceDiagnosticEvents(input: {
       WHERE e.tenant_id = $1
         AND e.category = 'pos'
         AND ($2::uuid IS NULL OR e.device_id = $2::uuid)
+        AND ($3::timestamptz IS NULL OR e.occurred_at >= $3::timestamptz)
+        AND ($4::timestamptz IS NULL OR e.occurred_at <= $4::timestamptz)
+        AND ($5::text IS NULL OR e.status = $5::text)
+        AND ($6::text IS NULL OR e.context->>'errorCode' = $6::text)
+        AND ($7::text IS NULL OR e.correlation_id = $7::text)
+        AND ($8::timestamptz IS NULL OR (e.occurred_at, e.id) < ($8::timestamptz, $9::bigint))
       ORDER BY e.occurred_at DESC, e.id DESC
-      LIMIT $3`,
-    [input.tenantId, deviceId, safeLimit]
+      LIMIT $10`,
+    [input.tenantId, deviceId, from, to, status, errorCode, correlationId, cursorTime, cursorId, safeLimit + 1]
   );
-  return result.rows.map((row) => {
-    const context = safeDiagnosticValue(row.context) as Record<string, unknown>;
+    await client.query("COMMIT");
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally { client.release(); }
+  const rows = result.rows.slice(0, safeLimit);
+  const events = rows.map((row) => {
+    const context = safePosContext(row.context);
     delete context.cashierUserId;
     return {
       id: String(row.id),
@@ -221,12 +405,26 @@ export async function listPosDeviceDiagnosticEvents(input: {
       locationId: row.location_id ?? null,
       actorId: row.actor_id ?? null,
       category: row.category,
-      action: row.action,
+      action: isAllowedPosDiagnosticAction(row.action) ? row.action : "pos.unknown_operation",
       status: row.status ?? null,
       message: row.message ?? null,
       context,
     };
   });
+  // The extra row only proves there is another page. Cursor must point at the
+  // last row returned to the caller, or the first row of the next page is lost.
+  const last = rows.at(-1);
+  return {
+    events,
+    nextCursor: result.rows.length > safeLimit && last
+      ? Buffer.from(`${new Date(last.occurred_at).toISOString()}|${last.id}`, "utf8").toString("base64url")
+      : null,
+  };
+}
+
+/** Keep the original GraphQL field for older clients. */
+export async function listPosDeviceDiagnosticEvents(input: { tenantId: string; deviceId?: string | null; limit?: number | null }) {
+  return (await listPosDeviceDiagnosticPage(input)).events;
 }
 
 /**
@@ -266,7 +464,7 @@ export async function buildSupportBundle(input: {
     const queryLimit = MAX_EVENTS_PER_SOURCE + 1;
     const eventsResult = await client.query(
         `SELECT client_event_id, occurred_at, received_at, actor_id, location_id, device_id, session_id,
-                correlation_id, category, action, status, message, context
+                correlation_id, category, action, status, NULL::text AS message, context
            FROM bms_support_events
           WHERE tenant_id = $1 AND occurred_at BETWEEN $2 AND $3
           ORDER BY occurred_at DESC, id DESC LIMIT $4`,
@@ -329,10 +527,11 @@ export async function buildSupportBundle(input: {
       privacy: "allowlisted-context; no request bodies, credentials, PINs or tokens",
     };
     const timeline = [
-      ...events.map((data: any) => ({ kind: "activity", at: data.occurred_at, data })),
-      ...audit.map((data: any) => ({ kind: "audit", at: data.created_at, data })),
-      ...incidents.map((data: any) => ({ kind: "failure_incident", at: data.created_at, data })),
-      ...system.map((data: any) => ({ kind: "system_log", at: data.created_at, data })),
+      ...events.map((data: any) => ({ kind: "activity", at: data.occurred_at,
+        data: safeStoredActivity(data) })),
+      ...audit.map((data: any) => ({ kind: "audit", at: data.created_at, data: safeStoredAudit(data) })),
+      ...incidents.map((data: any) => ({ kind: "failure_incident", at: data.created_at, data: safeStoredIncident(data) })),
+      ...system.map((data: any) => ({ kind: "system_log", at: data.created_at, data: safeStoredSystemLog(data) })),
     ].sort((left, right) => {
       const byTime = new Date(left.at).getTime() - new Date(right.at).getTime();
       return byTime || left.kind.localeCompare(right.kind);

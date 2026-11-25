@@ -45,7 +45,8 @@ import {
   setPharmacyCounterSettings,
   listProductsNeedingPolicyReview,
 } from "@/lib/bms/pharmacy/policyReadiness";
-import { listPosDeviceDiagnosticEvents } from "@/lib/bms/supportDiagnostics";
+import { listPosDeviceDiagnosticEvents, listPosDeviceDiagnosticPage,
+  SupportDiagnosticsInputError } from "@/lib/bms/supportDiagnostics";
 
 type ID_ = string;
 
@@ -74,6 +75,20 @@ export const bmsPosResolvers = {
         deviceId: args.deviceId ?? null,
         limit: args.limit ?? 50,
       });
+    },
+
+    async bmsPosDeviceDiagnosticsPage(_p: unknown, args: { filter?: {
+      deviceId?: string | null; from?: string | null; to?: string | null; status?: string | null;
+      errorCode?: string | null; correlationId?: string | null; cursor?: string | null; limit?: number | null;
+    } | null }, ctx: any) {
+      await requirePermission(ctx, "support.logs.view");
+      try {
+        return await listPosDeviceDiagnosticPage({ tenantId: getTenantId(ctx), ...(args.filter ?? {}) });
+      } catch (error) {
+        if (error instanceof SupportDiagnosticsInputError)
+          throw new GraphQLError("Invalid POS diagnostic filter", { extensions: { code: "BAD_USER_INPUT" } });
+        throw error;
+      }
     },
 
     /** ผู้จัดการ PIN ต้องเห็นรายชื่อผู้ที่จะตั้ง PIN ได้; การแก้โหมดบัญชียังใช้ pos.staff.manage */

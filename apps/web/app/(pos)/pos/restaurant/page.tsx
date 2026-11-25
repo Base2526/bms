@@ -10,6 +10,7 @@ import { usePosText } from "@/lib/pos/usePosText";
 import { appendSplitPaymentRow, checkoutBlockReason, rebalanceSplitPayments, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
 import { describePosFailure, describeTransportFailure } from "@/lib/pos/failureMessage";
 import { readPosJson } from "@/lib/pos/response";
+import { safePosDiagnosticRoute } from "@pos-core/diagnosticOperations";
 import {
   CUSTOMER_DISPLAY_CHANNEL,
   EMPTY_CUSTOMER_DISPLAY,
@@ -50,7 +51,7 @@ import { posPaymentMethodLabel, receiptDocumentTitle,
   restaurantServiceLabel,
   type ReceiptLanguageMode } from "@/lib/pos/receiptI18n";
 import { useI18n } from "@/lib/i18nContext";
-import { flushSupportActivity, localSupportEventCount, recordSupportActivity } from "@/lib/supportActivity";
+import { flushSupportActivity, localSupportEventCount, localSupportEvidenceSummary, recordSupportActivity } from "@/lib/supportActivity";
 import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
 import RestaurantTableChairs from "@/components/RestaurantTableChairs";
 import {
@@ -1135,31 +1136,45 @@ export default function RestaurantPosPage() {
     }
     let response: Response;
     let body: Record<string, any>;
+    let attemptId: string | undefined;
+    let serverResponded = false;
     try {
-      ({ response, body } = await readPosJson(url, { ...init, headers: { "x-pos-device-token": token, ...(init?.body ? { "Content-Type": "application/json" } : {}), ...(init?.headers ?? {}) }, cache: "no-store" }));
+      ({ response, body, attemptId, serverResponded } = await readPosJson(url, { ...init, headers: { "x-pos-device-token": token, ...(init?.body ? { "Content-Type": "application/json" } : {}), ...(init?.headers ?? {}) }, cache: "no-store" }));
     } catch (cause) {
       // fetch rejection has no response/status (network, DNS, TLS or timeout abort). Do not leak
       // browser-specific "Failed to fetch"/AbortError strings onto an operator screen.
+      const failure = cause as { code?: unknown; httpStatus?: unknown; attemptId?: unknown; serverResponded?: unknown };
+      recordSupportActivity(supportScope, {
+        category: "pos", action: "restaurant.api.failed", status: "error",
+        locationId: session?.location?.id ?? null, deviceId: session?.device?.id ?? null,
+        correlationId: typeof failure.attemptId === "string" ? failure.attemptId : null,
+        context: { route: safePosDiagnosticRoute(url.split("?")[0]) ?? "/api/pos",
+          errorCode: typeof failure.code === "string" ? failure.code : "POS_NETWORK",
+          httpStatus: typeof failure.httpStatus === "number" ? failure.httpStatus : null,
+          durationMs: Date.now() - startedAt, online: navigator.onLine,
+          serverResponded: failure.serverResponded === true, source: "restaurant-pos",
+          outcome: method === "GET" ? "read_failed" : "unknown" },
+      });
       const transportMessage = cause instanceof Error ? cause.message : describeTransportFailure(0, navigator.onLine, method);
       throw new RestaurantApiError(transportMessage, 0);
     }
     if (method !== "GET" || !response.ok) {
-      let requestedAction = method;
-      try {
-        const requestBody = typeof init?.body === "string" ? JSON.parse(init.body) : null;
-        if (typeof requestBody?.action === "string") requestedAction = requestBody.action.slice(0, 80);
-      } catch {}
       recordSupportActivity(supportScope, {
-        category: "pos.restaurant",
-        action: `restaurant.api.${requestedAction.toLowerCase()}`,
+        category: "pos",
+        action: "restaurant.api.result",
         status: response.ok ? "success" : "error",
         locationId: session?.location?.id ?? null,
         deviceId: session?.device?.id ?? null,
+        correlationId: attemptId ?? null,
         context: {
-          route: url.split("?")[0],
+          route: safePosDiagnosticRoute(url.split("?")[0]) ?? "/api/pos",
           httpStatus: response.status,
           durationMs: Date.now() - startedAt,
           online: navigator.onLine,
+          serverResponded,
+          source: "restaurant-pos",
+          ...(!response.ok ? { outcome: method === "GET" ? "read_failed"
+            : response.status === 408 || response.status >= 500 ? "unknown" : "rejected" } : {}),
         },
       });
     }
@@ -3891,6 +3906,12 @@ export default function RestaurantPosPage() {
       ]}
     >
       <Alert closable type="info" showIcon message={t("pos_restaurant.support_scope")} />
+      {(() => { const evidence = localSupportEvidenceSummary(supportScope); return evidence.dropped || evidence.rejected
+        ? <Alert style={{ marginTop: 12 }} type="warning" showIcon closable message={t("pos_restaurant.support_local_evidence_gaps", {
+          dropped: evidence.dropped, rejected: evidence.rejected })} />
+        : null; })()}
+      {localSupportEvidenceSummary(supportScope).storageError && <Alert style={{ marginTop: 12 }} type="error" showIcon closable
+        message={t("pos_restaurant.support_local_evidence_storage_error")} />}
       <Input.TextArea style={{ marginTop: 16 }} rows={4} maxLength={2000} showCount value={supportDescription} onChange={(event) => setSupportDescription(event.target.value)} placeholder={t("pos_restaurant.support_description_placeholder")} />
       <Checkbox style={{ marginTop: 12 }} checked={supportConfirmed} onChange={(event) => setSupportConfirmed(event.target.checked)}>{t("pos_restaurant.support_consent")}</Checkbox>
     </Modal>

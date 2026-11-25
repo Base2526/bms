@@ -3,8 +3,14 @@ import ReactTestRenderer, { act } from 'react-test-renderer';
 import { ServerHealthProvider, useServerHealth } from '../src/state/ServerHealthContext';
 
 const mockReject = jest.fn();
+const mockRecord = jest.fn();
+const mockRetryDiagnostics = jest.fn().mockResolvedValue(undefined);
 let mockDevice: any;
 jest.mock('../src/state/DeviceContext', () => ({ useDevice: () => mockDevice }));
+jest.mock('../src/lib/supportDiagnostics', () => ({
+  recordPosDiagnosticEvent: (...args: unknown[]) => mockRecord(...args),
+  retryPosDiagnosticUpload: (...args: unknown[]) => mockRetryDiagnostics(...args),
+}));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -26,6 +32,8 @@ describe('ServerHealthProvider pairing isolation', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     mockReject.mockClear();
+    mockRecord.mockClear();
+    mockRetryDiagnostics.mockClear();
     mockDevice = {
       status: 'PAIRED', verify: { kind: 'OK' },
       target: { serverUrl: 'https://old.example.com', token: 'old-token' },
@@ -85,12 +93,57 @@ describe('ServerHealthProvider pairing isolation', () => {
     await act(async () => { tree = ReactTestRenderer.create(render()); });
     await act(async () => { await jest.advanceTimersByTimeAsync(3_001); });
     expect(health.status).toBe('offline');
+    expect(mockRecord).toHaveBeenCalledWith(mockDevice.target, expect.objectContaining({
+      action: 'health.failed', context: expect.objectContaining({ errorCode: 'POS_TIMEOUT' }),
+    }));
     await act(async () => { expect(await health.checkNow()).toBe(true); });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(health.status).toBe('online');
+    expect(mockRecord).toHaveBeenCalledWith(mockDevice.target, expect.objectContaining({ action: 'health.recovered' }));
     await act(async () => { stuckBody.resolve({ errors: [{ extensions: { code: 'UNAUTHENTICATED' } }] }); });
     expect(mockReject).not.toHaveBeenCalled();
     expect(health.status).toBe('online');
+  });
+
+  test.each([
+    [401, 'POS_AUTHENTICATION'], [403, 'POS_PERMISSION'], [408, 'POS_TIMEOUT'],
+    [429, 'POS_RATE_LIMIT'], [503, 'POS_SERVER'],
+  ])('records HTTP %i as %s with a client attempt', async (httpStatus, code) => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(response(null, httpStatus));
+    await act(async () => { tree = ReactTestRenderer.create(render()); });
+    expect(health.status).toBe('offline');
+    expect(health.lastCode).toBe(code);
+    expect(health.lastHttpStatus).toBe(httpStatus);
+    expect(mockRecord).toHaveBeenCalledWith(mockDevice.target, expect.objectContaining({
+      action: 'health.failed', correlationId: expect.any(String),
+      context: expect.objectContaining({ errorCode: code, httpStatus, outcome: 'read_failed' }),
+    }));
+  });
+
+  test('HTML 200 is a protocol failure without storing its body', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(response('<html>PRIVATE_BODY</html>'));
+    await act(async () => { tree = ReactTestRenderer.create(render()); });
+    expect(health.lastCode).toBe('POS_PROTOCOL');
+    expect(JSON.stringify(mockRecord.mock.calls)).not.toContain('PRIVATE_BODY');
+  });
+
+  test.each([
+    ['FORBIDDEN', 'POS_PERMISSION'],
+    ['TOO_MANY_REQUESTS', 'POS_RATE_LIMIT'],
+    ['INTERNAL_SERVER_ERROR', 'POS_SERVER'],
+    ['GRAPHQL_VALIDATION_FAILED', 'POS_VERSION'],
+  ])('classifies GraphQL 200 error %s as %s', async (graphQLError, code) => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(response({
+      data: null, errors: [{ message: 'private server text', extensions: { code: graphQLError } }],
+    }));
+    await act(async () => { tree = ReactTestRenderer.create(render()); });
+    expect(health.status).toBe('offline');
+    expect(health.lastCode).toBe(code);
+    expect(mockRecord).toHaveBeenCalledWith(mockDevice.target, expect.objectContaining({
+      context: expect.objectContaining({ errorCode: code, httpStatus: 200 }),
+    }));
+    expect(JSON.stringify(mockRecord.mock.calls)).not.toContain('private server text');
+    expect(mockReject).not.toHaveBeenCalled();
   });
 
   test('does not probe a rejected token and clears previous online evidence on unpair', async () => {

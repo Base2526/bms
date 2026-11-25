@@ -75,6 +75,19 @@ test("pairing checks the authenticated session body without following a redirect
     return {ok:true,status:200,json:async()=>session};
   }),session);
 });
+test("a rejected pairing response retains only a validated client attempt and echoed proof", async () => {
+  let sentAttempt;
+  await assert.rejects(fetchPairingSession(pairing, async (_url, options) => {
+    sentAttempt = options.headers['x-pos-attempt-id'];
+    return { ok: false, status: 503, headers: { get: key => key === 'x-pos-attempt-id' ? sentAttempt : null } };
+  }), error => {
+    assert.match(sentAttempt, /^[0-9a-f-]{36}$/);
+    assert.equal(error.attemptId, sentAttempt);
+    assert.equal(error.serverResponded, true);
+    assert.ok(error.durationMs >= 0);
+    return true;
+  });
+});
 for(const body of [null,{}, {device:{id:"device"}}, {device:{id:"",code:"POS-01"}}]) {
   test(`HTTP 200 with an invalid session is not successful pairing: ${JSON.stringify(body)}`,async()=>{
     await assert.rejects(fetchPairingSession(pairing,async()=>({ok:true,status:200,json:async()=>body})),

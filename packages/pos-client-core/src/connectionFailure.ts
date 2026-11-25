@@ -9,6 +9,31 @@ export type PosFailure = {
   message: string;
 };
 
+/** A failed subscription does not turn a healthy HTTP POS into an offline register. */
+export function posConnectionMode(apiStatus: 'checking' | 'online' | 'offline' | undefined,
+  realtimeStatus: string): 'checking' | 'online' | 'offline' | 'fallback' {
+  if (apiStatus === 'offline' || (apiStatus == null && realtimeStatus === 'offline')) return 'offline';
+  if (apiStatus === 'checking') return 'checking';
+  return realtimeStatus === 'connected' ? 'online' : 'fallback';
+}
+
+/** A diagnostic join key, never an authentication token or a business idempotency key. */
+export function newPosAttemptId(): string {
+  const crypto = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (crypto?.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, char => {
+    const random = Math.floor(Math.random() * 16);
+    return (char === 'x' ? random : (random & 3) | 8).toString(16);
+  });
+}
+
+/** Untrusted request headers are never used as log correlation without boundary validation. */
+export function safePosAttemptId(value: unknown): string | null {
+  return typeof value === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ? value.toLowerCase() : null;
+}
+
 type ErrorShape = {
   name?: string; code?: string; httpStatus?: number; statusCode?: number;
   networkError?: ErrorShape; extensions?: { code?: unknown }; graphQLErrors?: ErrorShape[];
@@ -26,7 +51,7 @@ export function describePosConnectionFailure(error: unknown, mutation = false,
   if (httpStatus === 401 || code === 'UNAUTHENTICATED') kind = 'authentication';
   else if (httpStatus === 403 || code === 'FORBIDDEN') kind = 'permission';
   else if (httpStatus === 429 || code === 'TOO_MANY_REQUESTS') kind = 'rate_limit';
-  else if (httpStatus === 408 || httpStatus === 504 || code === 'POS_TIMEOUT') kind = 'timeout';
+  else if (httpStatus === 408 || httpStatus === 504 || code === 'POS_TIMEOUT' || value.name === 'TimeoutError') kind = 'timeout';
   else if (code === 'POS_CANCELLED' || value.name === 'AbortError') kind = 'cancelled';
   else if ((httpStatus != null && httpStatus >= 500) || code === 'INTERNAL_SERVER_ERROR') kind = 'server';
   else if (code === 'GRAPHQL_VALIDATION_FAILED' || code === 'GRAPHQL_PARSE_FAILED' || httpStatus === 404) kind = 'version';

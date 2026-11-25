@@ -1,8 +1,9 @@
 import { LanguageSelector } from '../../components/LanguageSelector';
 import { posText, usePosLanguage } from '../../i18n/language';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,11 +24,13 @@ import { useStoreMode } from '../../state/StoreModeContext';
 import { useSession } from '../../state/SessionContext';
 import {
   displayHost,
-  maskToken,
   normalizeServerUrl,
   parsePairingInput,
 } from '../../lib/pairing';
 import { loadOfflineSales } from '../../lib/offlineSales';
+import { useServerHealth } from '../../state/ServerHealthContext';
+import { useRealtime } from '../../state/RealtimeContext';
+import { exportPosDiagnostics, getPosDiagnosticSummary, retryPosDiagnosticUpload } from '../../lib/supportDiagnostics';
 import { savePickupQueueEnabled, usePickupQueueEnabled } from '../../lib/pickupQueuePreference';
 import type { RootStackParamList } from '../../navigation/types';
 
@@ -73,6 +76,15 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
     runVerify,
   } = useDevice();
   const { mode } = useStoreMode();
+  const health = useServerHealth();
+  const realtime = useRealtime();
+  const [diagnosticSummary, setDiagnosticSummary] = useState<Awaited<ReturnType<typeof getPosDiagnosticSummary>> | null>(null);
+  const [diagnosticBusy, setDiagnosticBusy] = useState(false);
+
+  const refreshDiagnostics = useCallback(async () => {
+    setDiagnosticSummary(await getPosDiagnosticSummary(target));
+  }, [target]);
+  useEffect(() => { refreshDiagnostics().catch(() => undefined); }, [refreshDiagnostics, health.lastCheckedAt]);
 
   const [input, setInput] = useState('');
   const [serverInput, setServerInput] = useState('');
@@ -285,8 +297,6 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
               label={posText("เซิร์ฟเวอร์")}
               value={displayHost(target.serverUrl)}
             />
-            {/* ห้ามโชว์ token เต็มตัว — จอนี้อยู่กลางร้าน และ token ไม่มีวันหมดอายุ */}
-            <FieldRow label="token" value={maskToken(target.token)} />
           </View>
         ) : (
           status !== 'LOADING' && (
@@ -422,6 +432,62 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
           </View>
         </Card>
       )}
+      <Card>
+        <Text style={[typography.captionStrong, { color: colors.textMuted, marginBottom: spacing.sm }]}>
+          {posText("หลักฐานการเชื่อมต่อเครื่องนี้")}
+        </Text>
+        <Text style={[typography.body, { color: colors.text }]}>
+          {health.status === 'checking' ? posText("ยังไม่ได้ตรวจหรือกำลังตรวจ")
+            : health.status === 'online' ? posText("เชื่อมต่อหลังบ้านปกติ")
+            : posText("เชื่อมต่อหลังบ้านไม่ได้")}
+          {health.lastCode ? ` · ${health.lastCode}` : ''}
+          {health.lastHttpStatus ? ` · HTTP ${health.lastHttpStatus}` : ''}
+        </Text>
+        {health.status === 'online' && ['degraded', 'reconnecting', 'authentication_required'].includes(realtime.status)
+          && <Text style={[typography.caption, { color: colors.warning, marginTop: spacing.xs }]}>
+            {posText("HTTP ยังใช้งานได้ แต่ข้อมูลสดขัดข้อง ตรวจ WebSocket/proxy หรือสิทธิ์กับผู้ดูแล; ข้อมูลหลักยังอ่านผ่าน HTTP ได้")}
+          </Text>}
+        {health.lastCheckedAt && <Text style={[typography.caption, { color: colors.textSoft, marginTop: spacing.xs }]}>
+          {posText("ตรวจล่าสุด {v0}", { v0: formatCheckedAt(health.lastCheckedAt) })}
+        </Text>}
+        {health.status === 'offline' && <Text style={[typography.caption, { color: colors.warning, marginTop: spacing.sm }]}>
+          {health.lastCode === 'POS_AUTHENTICATION' ? posText("ให้ผู้ดูแลตรวจ token ของเครื่อง เก็บข้อมูลค้างไว้ก่อนเปลี่ยนการจับคู่")
+            : health.lastCode === 'POS_PERMISSION' ? posText("ตรวจสิทธิ์เครื่องกับผู้ดูแล ไม่ต้องเลิกจับคู่")
+            : health.lastCode === 'POS_RATE_LIMIT' ? posText("รอสักครู่ก่อนลองอีกครั้ง")
+            : health.lastCode === 'POS_TIMEOUT' ? posText("หมดเวลารอคำตอบ ตรวจการเชื่อมต่อและสถานะเซิร์ฟเวอร์")
+            : health.lastCode === 'POS_PROTOCOL' || health.lastCode === 'POS_VERSION' ? posText("ตรวจ URL และเวอร์ชันแอปกับหลังบ้าน")
+            : health.lastCode === 'POS_SERVER' ? posText("แจ้งผู้ดูแลพร้อมเวลาและรหัสเหตุ")
+            : posText("การเชื่อมต่อล้มเหลว ไม่ทราบสาเหตุย่อย ตรวจเครือข่าย URL และใบรับรอง HTTPS")}
+        </Text>}
+        <Text style={[typography.caption, { color: colors.textSoft, marginTop: spacing.sm }]}>
+          {posText("ค้างส่ง {v0} · เซิร์ฟเวอร์ปฏิเสธ {v1} · หลักฐานขาดหาย {v2}", {
+            v0: diagnosticSummary?.pending ?? 0, v1: diagnosticSummary?.rejected ?? 0,
+            v2: diagnosticSummary?.gaps.reduce((sum, item) => sum + item.count, 0) ?? 0 })}
+        </Text>
+        {diagnosticSummary?.blockedReason && <Text style={[typography.caption, { color: colors.danger }]}>
+          {posText("ส่งหลักฐานไม่ได้: {v0}", { v0: diagnosticSummary.blockedReason })}
+        </Text>}
+        {!!diagnosticSummary?.otherTargetCount && <Text style={[typography.caption, { color: colors.warning }]}>
+          {posText("มีหลักฐานของการจับคู่อื่นอีก {v0} ชุด เก็บไว้ในเครื่องและส่งออกได้ แต่จะไม่ส่งด้วยการจับคู่ปัจจุบัน", {
+            v0: diagnosticSummary.otherTargetCount })}
+        </Text>}
+        {diagnosticSummary?.storageError && <Text style={[typography.caption, { color: colors.danger }]}>
+          {posText("บันทึกหลักฐานลงเครื่องไม่สำเร็จ กรุณาส่งออกข้อมูลทันที")}
+        </Text>}
+        {diagnosticSummary?.gaps.map((item, index) => <Text key={`${item.reason}-${index}`}
+          style={[typography.caption, { color: colors.warning }]}>
+          {`${item.reason} · ${item.count} · ${item.from} → ${item.to}`}
+        </Text>)}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md }}>
+          <Button label={posText("ส่งหลักฐานอีกครั้ง")} variant="secondary" loading={diagnosticBusy}
+            disabled={!target || status !== 'PAIRED' || verify.kind !== 'OK'} onPress={async () => { setDiagnosticBusy(true);
+              try { await retryPosDiagnosticUpload(target); await refreshDiagnostics(); }
+              finally { setDiagnosticBusy(false); } }} />
+          <Button label={posText("ส่งออกหลักฐานจากเครื่อง")} variant="secondary"
+            onPress={async () => { try { await Share.share({ message: await exportPosDiagnostics(),
+              title: 'BMS POS diagnostics' }); } catch { Alert.alert(posText("ส่งออกหลักฐานไม่สำเร็จ")); } }} />
+        </View>
+      </Card>
     </View>
   );
 
@@ -471,10 +537,6 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
         )}
         {parsed?.ok && (
           <View style={{ marginTop: spacing.sm, gap: spacing.xs }}>
-            <FieldRow
-              label={posText("token ที่อ่านได้")}
-              value={maskToken(parsed.token)}
-            />
             <FieldRow
               label={posText("เซิร์ฟเวอร์จากลิงก์")}
               value={

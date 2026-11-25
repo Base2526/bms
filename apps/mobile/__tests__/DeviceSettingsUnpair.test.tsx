@@ -26,6 +26,15 @@ jest.mock('../src/state/SessionContext', () => ({
 jest.mock('../src/state/StoreModeContext', () => ({
   useStoreMode: () => ({ mode: 'retail' }),
 }));
+jest.mock('../src/state/ServerHealthContext', () => ({
+  useServerHealth: () => ({ status: 'checking', lastCheckedAt: null, lastCode: null, lastHttpStatus: null }),
+}));
+jest.mock('../src/state/RealtimeContext', () => ({ useRealtime: () => ({ status: 'offline' }) }));
+jest.mock('../src/lib/supportDiagnostics', () => ({
+  getPosDiagnosticSummary: jest.fn().mockResolvedValue({ pending: 0, rejected: 0, blockedReason: null,
+    storageError: false, gaps: [], last: null, otherTargetCount: 0 }),
+  retryPosDiagnosticUpload: jest.fn(), exportPosDiagnostics: jest.fn(),
+}));
 jest.mock('../src/theme/useResponsive', () => ({
   useResponsive: () => ({ isTablet: false }),
 }));

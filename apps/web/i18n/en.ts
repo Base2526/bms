@@ -5,6 +5,9 @@ const en = {
     start: "View the getting-started path",
   },
   admin_ui: {
+    pos_diagnostic_outcome_unknown: "Result unknown; check the original transaction before retrying",
+    pos_diagnostic_outcome_rejected: "Rejected",
+    pos_diagnostic_outcome_read_failed: "Read failed",
     delivery_pending: "Pending",
     delivery_sending: "Sending",
     delivery_sent: "Sent",
@@ -3808,6 +3811,8 @@ const en = {
     fill_required_fields: "Please fill in all required fields",
   },
   admin_support_diagnostics: {
+    local_evidence_storage_error: "The browser could not save local evidence. The history for this period may be incomplete.",
+    local_evidence_gaps: "Browser evidence is missing {dropped} events, and the server rejected {rejected} events. Check the POS device export or another time range before treating the history as complete.",
     title: "Send diagnostics to Support",
     intro: "Collect the shop activity timeline, errors and audit events for the selected period so Support can reconstruct what happened before the issue.",
     privacy_title: "Data is filtered before it leaves the shop",
@@ -8894,12 +8899,14 @@ const en = {
     online: "Online",
     checking: "Connecting",
     offline: "Connection problem",
-    fallback: "Online · Auto refresh",
+    fallback: "Online · Live updates unavailable",
     open_details: "Open connection details",
     fallback_title: "Your data is still updating automatically",
     fallback_description: "Instant updates are temporarily interrupted. The system continues checking for changes on its normal schedule.",
   },
   pos_restaurant: {
+    support_local_evidence_storage_error: "The browser could not save local evidence. Export diagnostics from the Desktop app and tell an administrator.",
+    support_local_evidence_gaps: "Browser evidence is missing {dropped} events, and the server rejected {rejected} events. Export diagnostics from the Desktop app for further review.",
     // จอครัว โมดัลต่าง ๆ และแผงใบเสร็จ
     manage_this: "Manage this one",
     save: "Save",

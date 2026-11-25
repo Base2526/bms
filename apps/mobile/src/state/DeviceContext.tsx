@@ -20,7 +20,7 @@ import { redactDeviceToken, type PairingTarget } from '../lib/pairing';
 import { graphqlHttpUrl } from '../lib/realtime';
 import { recordPosDiagnosticEvent } from '../lib/supportDiagnostics';
 import { runWithOperationTimeout } from '../lib/operation';
-import { describePosConnectionFailure, isPosBusinessError } from '../../../../packages/pos-client-core/src/connectionFailure';
+import { describePosConnectionFailure, isPosBusinessError, newPosAttemptId } from '../../../../packages/pos-client-core/src/connectionFailure';
 
 // "เครื่องนี้เป็นของร้านไหน" — state ระดับแอป
 //
@@ -196,6 +196,8 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       options: { publish: boolean } = { publish: true },
     ): Promise<VerifyState> => {
       const seq = ++verifySeq.current;
+      const attemptId = newPosAttemptId();
+      let serverResponded = false;
       if (options.publish) setVerify({ kind: 'CHECKING' });
       // ทุกทางออกที่ "ได้คำตอบแล้ว" ต้องประทับเวลา ไม่ใช่เฉพาะทางที่ผ่าน — คำตอบที่ล้มซ้ำ
       // ด้วยข้อความเดิมก็อ่านไม่ออกเหมือนกันว่าเพิ่งถามไปหรือค้างมาจากรอบก่อน
@@ -224,10 +226,12 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
             authorization: `Bearer ${candidate.token}`,
             'x-pos-device-token': candidate.token,
             'x-scope': 'pos',
+            'x-pos-attempt-id': attemptId,
           },
           body: JSON.stringify({ query: print(PosBootstrapDocument) }),
           signal,
         });
+          serverResponded = response.headers?.get?.('x-pos-attempt-id') === attemptId;
           const payload = response.ok ? await response.json().catch(() => null) : null;
           return { res: response, body: payload as {
             data?: PosBootstrapQuery;
@@ -240,10 +244,12 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           recordPosDiagnosticEvent(candidate, {
             category: 'pos',
             action: 'pos.device.verify',
+            correlationId: attemptId,
             status: 'error',
             message: rejectedTokenMessage(),
             context: {
-              route: 'DeviceProvider.verifyTarget',
+              route: '/api/graphql',
+              serverResponded,
               httpStatus: 401,
               durationMs: Date.now() - startedAt,
               errorCode: 'UNAUTHENTICATED',
@@ -258,10 +264,12 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           recordPosDiagnosticEvent(candidate, {
             category: 'pos',
             action: 'pos.device.verify',
+            correlationId: attemptId,
             status: 'error',
             message: describePosConnectionFailure({ httpStatus: res.status }, false, posText).message,
             context: {
-              route: 'DeviceProvider.verifyTarget',
+              route: '/api/graphql',
+              serverResponded,
               httpStatus: res.status,
               durationMs: Date.now() - startedAt,
             },
@@ -279,6 +287,11 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         // auth rejection. The JSON body is another asynchronous boundary.
         if (seq !== verifySeq.current) return { kind: 'IDLE' };
         if (body?.errors != null && !Array.isArray(body.errors)) {
+          recordPosDiagnosticEvent(candidate, { category: 'pos', action: 'pos.device.verify',
+            correlationId: attemptId, status: 'error',
+            context: { route: '/api/graphql', errorCode: 'INVALID_GRAPHQL_RESPONSE',
+              httpStatus: 200, durationMs: Date.now() - startedAt, serverResponded,
+              outcome: 'read_failed' } });
           return settle({ kind: 'SERVER_ERROR', message: posText("เซิร์ฟเวอร์ตอบข้อมูลผิดรูปแบบ กรุณาให้ผู้ดูแลตรวจสอบ"), cause: 'INVALID_GRAPHQL_RESPONSE' });
         }
         if (
@@ -289,10 +302,12 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           recordPosDiagnosticEvent(candidate, {
             category: 'pos',
             action: 'pos.device.verify',
+            correlationId: attemptId,
             status: 'error',
             message: rejectedTokenMessage(),
             context: {
-              route: 'DeviceProvider.verifyTarget',
+              route: '/api/graphql',
+              serverResponded,
               durationMs: Date.now() - startedAt,
               errorCode: 'UNAUTHENTICATED',
             },
@@ -311,10 +326,12 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           recordPosDiagnosticEvent(candidate, {
             category: 'pos',
             action: 'pos.device.verify',
+            correlationId: attemptId,
             status: 'error',
             message: errorMessage,
             context: {
-              route: 'DeviceProvider.verifyTarget',
+              route: '/api/graphql',
+              serverResponded,
               durationMs: Date.now() - startedAt,
               errorCode,
             },
@@ -335,11 +352,13 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           recordPosDiagnosticEvent(candidate, {
             category: 'pos',
             action: 'pos.device.verify',
+            correlationId: attemptId,
             status: 'error',
             message:
               posText("ที่อยู่นี้ตอบกลับมาไม่ใช่ข้อมูลของเครื่องขาย — ตรวจว่าใส่เซิร์ฟเวอร์ถูกตัวหรือยัง"),
             context: {
-              route: 'DeviceProvider.verifyTarget',
+              route: '/api/graphql',
+              serverResponded,
               durationMs: Date.now() - startedAt,
               errorCode: 'INVALID_POS_BOOTSTRAP',
             },
@@ -355,10 +374,12 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         recordPosDiagnosticEvent(candidate, {
           category: 'pos',
           action: 'pos.device.verify',
+            correlationId: attemptId,
           status: 'success',
           message: posText("ตรวจเครื่อง POS กับเซิร์ฟเวอร์สำเร็จ"),
           context: {
-            route: 'DeviceProvider.verifyTarget',
+            route: '/api/graphql',
+              serverResponded,
             durationMs: Date.now() - startedAt,
           },
         });
@@ -383,16 +404,16 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         recordPosDiagnosticEvent(candidate, {
           category: 'pos',
           action: 'pos.device.verify',
+            correlationId: attemptId,
           status: 'error',
           message: aborted
             ? posText("ไม่ได้คำตอบภายใน {v0} วินาที", { v0: VERIFY_TIMEOUT_MS / 1000 })
             : failure.message,
           context: {
-            route: 'DeviceProvider.verifyTarget',
+            route: '/api/graphql',
+              serverResponded,
             errorName: aborted ? 'AbortError' : String(e?.name ?? 'Error'),
-            errorCode: aborted
-              ? `TIMEOUT ${VERIFY_TIMEOUT_MS / 1000}s`
-              : undefined,
+              errorCode: failure.code,
           },
         });
         return settle({

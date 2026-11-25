@@ -76,6 +76,7 @@ import { selectedReturnLines, type ReturnDraft } from "@/lib/pos/returnDraft";
 import { appendSplitPaymentRow, rebalanceSplitPayments, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
 import { isEnrollablePhone } from "@/lib/pos/memberEnroll";
 import { describePosFailure as describeFailure, describeTransportFailure } from "@/lib/pos/failureMessage";
+import { describePosConnectionFailure } from "@pos-core/connectionFailure";
 import {
   CUSTOMER_DISPLAY_CHANNEL,
   EMPTY_CUSTOMER_DISPLAY,
@@ -100,6 +101,7 @@ import {
 } from "@/lib/pos/deviceTokenClient";
 import { PosWorkspaceContext, type PosIncomingFeedHealth, type PosTab } from "@/components/pos/PosWorkspaceContext";
 import { PosConnectionStatus } from "@/components/realtime/RealtimeProvider";
+import { posDiagnosticFetch as fetch } from "@/lib/pos/diagnosticFetch";
 
 /**
  * แถบงานด้านซ้าย — จอ POS สูง 768px เป็นมาตรฐาน แกนตั้งจึงเป็นของหายาก
@@ -1527,6 +1529,8 @@ type IncomingRestaurantOrder = {
 type IncomingRefund = { id: string; orderId: string; amount: number; method: string; channel: string; customerRef: string | null; cancelledBy: string | null; createdAt: string };
 
 function incomingHttpFailure(response: Response, body: any, method: "GET" | "POST") {
+  if ([401, 403, 404, 408, 429].includes(response.status) || response.status >= 500)
+    return describeTransportFailure(response.status, typeof navigator === "undefined" ? true : navigator.onLine, method);
   if (typeof body?.status === "string") return describeFailure(body);
   if (body?.error || body?.reason) return String(body.error ?? body.reason);
   return describeTransportFailure(
@@ -2290,21 +2294,28 @@ export default function PosPage() {
     }
     setLoadingSession(true);
     try {
-      let res = await fetch("/api/pos/session", { headers: authHeaders, cache: "no-store" });
+      let res = await fetch("/api/pos/session", { headers: authHeaders, cache: "no-store",
+        signal: AbortSignal.timeout(8_000) });
       // 401 ครั้งเดียวยังไม่ตัดสินว่า token ตาย — ลองซ้ำก่อน เพราะการไล่คนหน้าร้าน
       // ไปจับคู่ใหม่ทั้งที่ token ยังดีอยู่ แพงกว่าการยิงซ้ำหนึ่งครั้งมาก
       if (res.status === 401) {
         await new Promise((r) => setTimeout(r, 400));
-        res = await fetch("/api/pos/session", { headers: authHeaders, cache: "no-store" });
+        res = await fetch("/api/pos/session", { headers: authHeaders, cache: "no-store",
+          signal: AbortSignal.timeout(8_000) });
       }
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setSessionError(body?.error ?? `HTTP ${res.status}`);
+        setSessionError(describePosConnectionFailure({ httpStatus: res.status }, false, posText).message);
         setTokenRejected(res.status === 401);
         setSession(null);
         return;
       }
-      const data: Session = await res.json();
+      const data = await res.json().catch(() => null) as Session | null;
+      if (!data?.device?.id || !Array.isArray(data.cashiers) || !Array.isArray(data.approvers)
+        || !data.vat || typeof data.vat !== "object") {
+        setSessionError(describePosConnectionFailure({ code: "INVALID_RESPONSE", httpStatus: 200 }, false, posText).message);
+        setSession(null);
+        return;
+      }
       // ร้านอาหารเริ่มที่ shell /pos/restaurant ซึ่งฝัง workspace นี้ไว้ใน “งานอื่น” แล้ว
       // `?surface=retail` คงไว้เป็น deep-link รุ่นเก่า/ทางกู้ฉุกเฉินเท่านั้น ไม่ใช่ navigation
       // ปกติ เพราะการสลับ shell ทำให้ identity ของร้านและบริบทผู้ปฏิบัติงานขาดตอน
@@ -2325,12 +2336,12 @@ export default function PosPage() {
       setCashierId((cur) => cur || data.cashiers.find((c) => c.hasPin)?.id || "");
     } catch (e: any) {
       // เน็ตหลุด ≠ token ผิด — อย่าไล่ให้ไปจับคู่ใหม่ทั้งที่แค่เน็ตสะดุด
-      setSessionError(String(e?.message ?? e));
+      setSessionError(describePosConnectionFailure(e, false, posText).message);
       setSession(null);
     } finally {
       setLoadingSession(false);
     }
-  }, [token, authHeaders, embedded]);
+  }, [token, authHeaders, embedded, posText]);
 
   async function unpair() {
     if (embedded && onUnpair) {
@@ -6858,11 +6869,7 @@ export default function PosPage() {
             <div style={{ fontWeight: 500 }}>{posText("ระบบไม่รับ token ของเครื่องนี้")}</div>
             <div style={{ marginTop: 4 }}>
               {posText("สาเหตุที่พบบ่อยที่สุดคือมีการกด \"ออก token\" ใหม่ให้เครื่องนี้ระหว่างที่จอขายเปิดอยู่ — ตัวเก่าจะใช้ไม่ได้ทันที") + " "}</div>
-            {token && (
-              <div style={{ marginTop: 8, fontSize: 12 }}>
-                {posText("เครื่องยังจำ token เดิมไว้ (ลงท้าย …")}{token.slice(-6)})
-              </div>
-            )}
+            <div style={{ marginTop: 8, fontSize: 12 }}>POS_AUTHENTICATION</div>
             <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
               {token && (
                 <button
@@ -7330,7 +7337,7 @@ export default function PosPage() {
       {receipt && receiptPrinter.disabled && !receiptModalOpen && !justSold && <ReceiptPrinterStatus />}
       {sessionError && !tokenRejected && (
         <PosDismissibleAlert key={sessionError} style={{ background: "var(--posx-danger-bg, #fdecea)", color: "var(--posx-danger-text, #611a15)", padding: 12, borderRadius: 8 }} onClose={() => setSessionError("")}>
-          {posText("เชื่อมต่อไม่ได้:") + " "}{sessionError} {" " + posText("— ตรวจอินเทอร์เน็ตแล้วลอง")}{" "}
+          {posText("เชื่อมต่อไม่ได้:") + " "}{sessionError}{" "}
           <button onClick={() => void loadSession()} style={{ padding: "2px 10px" }}>{posText("เชื่อมต่อใหม่")}</button>
         </PosDismissibleAlert>
       )}

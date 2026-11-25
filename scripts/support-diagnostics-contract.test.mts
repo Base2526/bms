@@ -139,6 +139,10 @@ test("browser queue is scoped, idempotent and standalone POS can export/send", a
   assert.match(posRoute, /verifyCashierPin/);
   assert.match(posRoute, /cashierHasPermission/);
   assert.match(posRoute, /body\?\.confirmed !== true/);
+  const adminEvents = code(await read("apps/web/app/api/bms/support-diagnostics/events/route.ts"));
+  assert.match(adminEvents, /event as \{ category\?: unknown \}\)\.category === "pos"/,
+    "admin-originated UI activity must not impersonate an authenticated POS device");
+  assert.match(posRoute, /recordSupportEventsDetailed/);
   assert.match(restaurant, /'restaurant\.item_add'/);
   assert.match(restaurant, /'restaurant\.item_remove'/);
 });
@@ -151,17 +155,17 @@ test("native POS diagnostics are device-attributed and visible by server-side de
   const admin = code(await read("apps/web/app/(admin)/admin/pos-devices/page.tsx"));
 
   assert.match(route, /authenticatePosDevice\(token\)/);
-  assert.match(route, /locationId:\s*device\.locationId/);
+  assert.match(route, /device\.updatedAt[\s\S]*\? device\.locationId : null/);
   assert.match(route, /deviceId:\s*device\.id/);
   assert.match(route, /category:\s*"pos"/);
   assert.doesNotMatch(route, /category:\s*event\?\.category/);
-  assert.match(service, /WHERE tenant_id = \$1[\s\S]*category = 'pos'[\s\S]*device_id = \$2::uuid/);
+  assert.match(service, /WHERE e\.tenant_id = \$1[\s\S]*e\.category = 'pos'[\s\S]*e\.device_id = \$2::uuid/);
   assert.match(service, /SELECT e\.id, e\.occurred_at, e\.received_at, e\.correlation_id, e\.device_id/);
   assert.match(service, /correlationId: row\.correlation_id \?\? null/);
   assert.match(service, /allowedCashiers\.has\(cashierUserId\)/);
   assert.match(service, /u\.tenant_id = e\.tenant_id/);
   assert.match(service, /delete context\.cashierUserId/);
-  assert.match(admin, /bmsPosDeviceDiagnostics\(deviceId: \$diagnosticDeviceId, limit: 50\)/);
+  assert.match(admin, /bmsPosDeviceDiagnosticsPage\(filter: \$filter\)/);
   assert.match(admin, /expandedRowRender/);
   assert.match(admin, /DIAGNOSTIC_CONTEXT_LABELS/);
   assert.ok(admin.includes('uiText("admin_ui.en_correlation_id_805ca")'));
@@ -170,11 +174,11 @@ test("native POS diagnostics are device-attributed and visible by server-side de
   assert.equal(getMessage("th", "admin_ui.selected_staff_member_bb086"), "พนักงานที่เลือก");
   assert.doesNotMatch(mobile, /body:\s*JSON\.stringify\([^)]*(pin|token)/i);
   assert.match(mobile, /Keychain\.setGenericPassword/);
-  assert.match(mobile, /MAX_QUEUE_EVENTS/);
+  assert.match(mobile, /MAX_EVENTS/);
   assert.match(mobile, /scheduleRetry\(target\)/);
   assert.match(mobile, /runWithOperationTimeout\(signal => fetch/);
   assert.match(mobile, /signal,/);
-  assert.match(mobile, /\}\), SEND_TIMEOUT_MS\)/);
+  assert.match(mobile, /\}\), 5_000\)/);
   assert.match(login, /message:\s*posText\("เริ่มตรวจ PIN พนักงาน"\)/);
   assert.match(login, /cashierUserId: cashier\.id/);
   assert.match(login, /PIN_VERIFY_TIMEOUT/);

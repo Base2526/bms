@@ -10,7 +10,7 @@ import { useUiText, thaiUiText, type UiTranslator } from "@/lib/useUiText";
 // จึงไม่มีปุ่ม "ดูอีกครั้ง" ให้กด หายแล้วออกใหม่อย่างเดียว
 import { gql, useApolloClient, useMutation, useQuery } from "@apollo/client";
 import {
-  Alert, Button, Card, Descriptions, Empty, Form, Input, InputNumber, Modal, Popconfirm, QRCode, Result, Select, Space, Switch, Table, Tag,
+  Alert, Button, Card, DatePicker, Descriptions, Empty, Form, Input, InputNumber, Modal, Popconfirm, QRCode, Result, Select, Space, Switch, Table, Tag,
   Typography, message,
 } from "antd";
 import { ReadOutlined } from "@ant-design/icons";
@@ -30,15 +30,20 @@ import {
 } from "@pos-core/posPin";
 
 const Q = gql`
-  query PosSetup($includeDevices: Boolean!, $includeLocations: Boolean!, $includeStaff: Boolean!, $includeDiagnostics: Boolean!, $diagnosticDeviceId: ID) {
+  query PosSetup($includeDevices: Boolean!, $includeLocations: Boolean!, $includeStaff: Boolean!) {
     bmsLocations @include(if: $includeLocations) { id name branchCode isHeadOffice }
     bmsPosDevices @include(if: $includeDevices) {
       id locationId code name registeredPosNo receiptPrefix
       scannerMode scannerPrefixKey scannerSuffixKey scannerMaxGapMs active lastSeenAt
     }
     bmsPosStaff @include(if: $includeStaff) { id name email role isPharmacist hasPin posOnly }
-    bmsPosDeviceDiagnostics(deviceId: $diagnosticDeviceId, limit: 50) @include(if: $includeDiagnostics) {
-      id occurredAt receivedAt correlationId actorKind actorLabel actorRole deviceId locationId category action status message context
+  }
+`;
+const Q_DIAGNOSTICS = gql`
+  query PosDeviceDiagnosticsPage($filter: BmsPosDeviceDiagnosticFilter) {
+    bmsPosDeviceDiagnosticsPage(filter: $filter) {
+      nextCursor
+      events { id occurredAt receivedAt correlationId actorKind actorLabel actorRole deviceId locationId category action status message context }
     }
   }
 `;
@@ -89,6 +94,15 @@ const DIAGNOSTIC_CONTEXT_LABELS = (uiText: UiTranslator = thaiUiText): Record<st
   sequence: uiText("admin_ui.sort_order_cb88e"),
   bundleVersion: uiText("admin_ui.diagnostics_version_67bb1"),
   digest: "Digest",
+  previousState: uiText.language === "en" ? "Previous state" : "สถานะก่อนหน้า",
+  nextState: uiText.language === "en" ? "Next state" : "สถานะหลังเหตุ",
+  outcome: uiText.language === "en" ? "Command outcome" : "ผลคำสั่ง",
+  nativeCode: uiText.language === "en" ? "Native code" : "รหัสระบบเครื่อง",
+  serverResponded: uiText.language === "en" ? "Server received request" : "เซิร์ฟเวอร์รับคำขอ",
+  droppedCount: uiText.language === "en" ? "Missing events" : "เหตุที่ขาดหาย",
+  gapFrom: uiText.language === "en" ? "Gap start" : "เริ่มช่วงขาดหาย",
+  gapTo: uiText.language === "en" ? "Gap end" : "สิ้นสุดช่วงขาดหาย",
+  gapReason: uiText.language === "en" ? "Gap reason" : "สาเหตุที่ขาดหาย",
 });
 
 function formatDiagnosticValue(key: string, value: unknown, uiText: UiTranslator = thaiUiText): string {
@@ -96,6 +110,18 @@ function formatDiagnosticValue(key: string, value: unknown, uiText: UiTranslator
     return value >= 1_000 ? uiText("admin_ui.seconds_a1554", { v0: (value / 1_000).toFixed(2) }) : `${value} ms`;
   }
   if (key === "online" && typeof value === "boolean") return value ? uiText("admin_ui.online_5a91b") : uiText("admin_ui.offline_d2a59");
+  if (key === "serverResponded" && typeof value === "boolean") return value
+    ? uiText.language === "en" ? "Confirmed by response header" : "มี header ตอบกลับยืนยัน"
+    : uiText.language === "en" ? "No response proof; delivery unknown" : "ไม่มีหลักฐานตอบกลับ ยังไม่ทราบว่าคำขอถึงหรือไม่";
+  if (key === "outcome") {
+    const keys: Record<string, string> = {
+      unknown: "admin_ui.pos_diagnostic_outcome_unknown",
+      rejected: "admin_ui.pos_diagnostic_outcome_rejected",
+      read_failed: "admin_ui.pos_diagnostic_outcome_read_failed",
+    };
+    const label = keys[String(value)];
+    if (label) return uiText(label);
+  }
   return String(value);
 }
 
@@ -113,12 +139,33 @@ export default function PosDevicesPage() {
   const canDiagnostics = can("support.logs.view");
   const canLocations = can("product.view") || canDevices;
   const [diagnosticDeviceId, setDiagnosticDeviceId] = useState<string | null>(null);
+  const [draftDiagnosticDeviceId, setDraftDiagnosticDeviceId] = useState("");
   const [diagnosticStatus, setDiagnosticStatus] = useState("all");
+  const [diagnosticFrom, setDiagnosticFrom] = useState<string | null>(null);
+  const [diagnosticTo, setDiagnosticTo] = useState<string | null>(null);
+  const [diagnosticCode, setDiagnosticCode] = useState("");
+  const [diagnosticCorrelation, setDiagnosticCorrelation] = useState("");
+  const [draftDiagnosticCode, setDraftDiagnosticCode] = useState("");
+  const [draftDiagnosticCorrelation, setDraftDiagnosticCorrelation] = useState("");
+  const [diagnosticCursor, setDiagnosticCursor] = useState<string | null>(null);
+  const [diagnosticHistory, setDiagnosticHistory] = useState<Array<string | null>>([]);
   const { data, loading, error: setupError, refetch } = useQuery(Q, {
     fetchPolicy: "cache-and-network",
-    variables: { includeDevices: canDevices, includeLocations: canLocations, includeStaff: canStaff || canPins, includeDiagnostics: canDiagnostics, diagnosticDeviceId },
+    variables: { includeDevices: canDevices, includeLocations: canLocations, includeStaff: canStaff || canPins },
     skip: !canDevices && !canPins && !canStaff && !canDiagnostics,
   });
+  const { data: diagnosticData, loading: diagnosticLoading, error: diagnosticError, refetch: refetchDiagnostics } = useQuery(Q_DIAGNOSTICS, {
+    fetchPolicy: "network-only",
+    skip: !canDiagnostics,
+    variables: { filter: {
+      deviceId: diagnosticDeviceId, from: diagnosticFrom, to: diagnosticTo,
+      status: diagnosticStatus === "all" ? null : diagnosticStatus,
+      errorCode: diagnosticCode.trim().toUpperCase() || null,
+      correlationId: diagnosticCorrelation.trim() || null,
+      cursor: diagnosticCursor, limit: 50,
+    } },
+  });
+  const resetDiagnosticPage = () => { setDiagnosticCursor(null); setDiagnosticHistory([]); };
 
   const [deviceForm] = Form.useForm();
   const [editing, setEditing] = useState<Device | null>(null);
@@ -175,14 +222,13 @@ export default function PosDevicesPage() {
   const isPlatformAdmin = meData?.bmsMe?.is_platform_admin === true;
   const canManageStaffAccount = (staff: { id: string; role: string | null }) =>
     Boolean(myId && (staff.id === myId || isPlatformAdmin || canManageStaffRole(myRole, staff.role)));
-  const diagnostics: DiagnosticEvent[] = data?.bmsPosDeviceDiagnostics ?? [];
+  const diagnostics: DiagnosticEvent[] = diagnosticData?.bmsPosDeviceDiagnosticsPage?.events ?? [];
+  const nextDiagnosticCursor: string | null = diagnosticData?.bmsPosDeviceDiagnosticsPage?.nextCursor ?? null;
   const diagnosticDeviceOptions = canDevices
     ? devices.map((device) => ({ value: device.id, label: `${device.code}${device.name ? ` · ${device.name}` : ""}` }))
     : Array.from(new Set(diagnostics.map((event) => event.deviceId).filter((id): id is string => Boolean(id))))
       .map((id) => ({ value: id, label: id }));
-  const visibleDiagnostics = diagnosticStatus === "all"
-    ? diagnostics
-    : diagnostics.filter((event) => (event.status ?? "info") === diagnosticStatus);
+  const visibleDiagnostics = diagnostics;
   const locationName = (id: string) => locations.find((l: any) => l.id === id)?.name ?? "—";
   const deviceLabel = (id: string | null | undefined) => {
     const device = devices.find((item) => item.id === id);
@@ -380,7 +426,7 @@ export default function PosDevicesPage() {
 
       {canDiagnostics && (
         <Card
-          title={uiText("admin_ui.recent_pos_device_events_90903")}
+          title={uiText.language === "en" ? "POS device diagnostics" : "เหตุการณ์เครื่อง POS"}
           extra={
             <Space wrap>
               <Select
@@ -388,14 +434,21 @@ export default function PosDevicesPage() {
                 placeholder={uiText("admin_ui.all_devices_1e63a")}
                 style={{ width: 260 }}
                 value={diagnosticDeviceId ?? undefined}
-                onChange={(value) => setDiagnosticDeviceId(value ?? null)}
+                onChange={(value) => { setDiagnosticDeviceId(value ?? null); setDraftDiagnosticDeviceId(""); resetDiagnosticPage(); }}
                 options={diagnosticDeviceOptions}
+              />
+              <Input
+                aria-label={uiText.language === "en" ? "Device ID" : "รหัสเครื่อง (UUID)"}
+                placeholder={uiText.language === "en" ? "Device ID" : "รหัสเครื่อง (UUID)"}
+                value={draftDiagnosticDeviceId}
+                onChange={(event) => setDraftDiagnosticDeviceId(event.target.value)}
+                style={{ width: 210 }}
               />
               <Select
                 aria-label={uiText("admin_ui.filter_pos_event_status_22049")}
                 style={{ width: 150 }}
                 value={diagnosticStatus}
-                onChange={setDiagnosticStatus}
+                onChange={(value) => { setDiagnosticStatus(value); resetDiagnosticPage(); }}
                 options={[
                   { value: "all", label: uiText("admin_ui.all_statuses_8ca94") },
                   { value: "error", label: uiText("admin_ui.en_error_7f2f6") },
@@ -404,11 +457,39 @@ export default function PosDevicesPage() {
                   { value: "info", label: uiText("admin_ui.en_info_4b631") },
                 ]}
               />
-              <Button onClick={() => void refetch()}>{uiText("admin_ui.refresh_78a47")}</Button>
+              <DatePicker.RangePicker
+                showTime
+                aria-label={uiText.language === "en" ? "Event time range" : "ช่วงเวลาเกิดเหตุ"}
+                onChange={(range) => {
+                  setDiagnosticFrom(range?.[0]?.toISOString() ?? null);
+                  setDiagnosticTo(range?.[1]?.toISOString() ?? null);
+                  resetDiagnosticPage();
+                }}
+              />
+              <Input
+                aria-label={uiText.language === "en" ? "Error code" : "รหัสเหตุ"}
+                placeholder={uiText.language === "en" ? "Error code" : "รหัสเหตุ"}
+                value={draftDiagnosticCode}
+                onChange={(event) => setDraftDiagnosticCode(event.target.value)}
+                style={{ width: 150 }}
+              />
+              <Input
+                aria-label={uiText("admin_ui.en_correlation_id_805ca")}
+                placeholder={uiText("admin_ui.en_correlation_id_805ca")}
+                value={draftDiagnosticCorrelation}
+                onChange={(event) => setDraftDiagnosticCorrelation(event.target.value)}
+                style={{ width: 215 }}
+              />
+              <Button onClick={() => { if (draftDiagnosticDeviceId.trim()) setDiagnosticDeviceId(draftDiagnosticDeviceId.trim());
+                setDiagnosticCode(draftDiagnosticCode); setDiagnosticCorrelation(draftDiagnosticCorrelation); resetDiagnosticPage(); }}>
+                {uiText.language === "en" ? "Search" : "ค้นหา"}
+              </Button>
+              <Button onClick={() => void refetchDiagnostics()}>{uiText("admin_ui.refresh_78a47")}</Button>
             </Space>
           }
-          loading={loading}
+          loading={diagnosticLoading}
         >
+          {diagnosticError && <Alert closable type="error" showIcon message={uiText.language === "en" ? "Could not load diagnostics. Check the filters and retry." : "โหลดเหตุการณ์ไม่ได้ ตรวจตัวกรองแล้วลองใหม่"} style={{ marginBottom: 12 }} />}
           <Alert closable
             type="info"
             showIcon
@@ -421,11 +502,7 @@ export default function PosDevicesPage() {
             rowKey="id"
             dataSource={visibleDiagnostics}
             scroll={{ x: 900 }}
-            pagination={{
-              pageSize: 10,
-              showSizeChanger: false,
-              showTotal: (total) => uiText("admin_ui.latest_events_856fd", { v0: total }),
-            }}
+            pagination={false}
             expandable={{
               expandRowByClick: true,
               expandedRowRender: (row: DiagnosticEvent) => {
@@ -447,7 +524,8 @@ export default function PosDevicesPage() {
                     size="small"
                     column={{ xs: 1, sm: 2, lg: 3 }}
                     items={[
-                      { key: "location", label: uiText("admin_ui.branch_63a7c"), children: row.locationId ? locationName(row.locationId) : "—" },
+                      { key: "location", label: uiText.language === "en" ? "Verified branch at occurrence" : "สาขาที่ตรวจยืนยัน ณ เวลาเกิดเหตุ",
+                        children: row.locationId ? locationName(row.locationId) : "—" },
                       {
                         key: "actor",
                         label: row.actorKind === "cashier" ? uiText("admin_ui.selected_staff_member_bb086") : uiText("admin_ui.diagnostics_sender_02077"),
@@ -462,7 +540,15 @@ export default function PosDevicesPage() {
                       {
                         key: "receiveDelay",
                         label: uiText("admin_ui.difference_from_device_time_2a876"),
-                        children: receiveDelay == null ? "—" : `${receiveDelay >= 0 ? "+" : ""}${receiveDelay} ms`,
+                        children: receiveDelay == null ? "—" : <>
+                          {receiveDelay >= 0 ? "+" : "−"}{formatDiagnosticValue("durationMs", Math.abs(receiveDelay), uiText)}
+                          {receiveDelay > 60_000 && <Tag color="gold" style={{ marginLeft: 8 }}>
+                            {uiText.language === "en" ? "Queued / delayed" : "คิวส่งช้า"}
+                          </Tag>}
+                          {receiveDelay < -60_000 && <Tag color="orange" style={{ marginLeft: 8 }}>
+                            {uiText.language === "en" ? "Check device clock" : "ตรวจนาฬิกาเครื่อง"}
+                          </Tag>}
+                        </>,
                       },
                       {
                         key: "correlationId",
@@ -517,6 +603,17 @@ export default function PosDevicesPage() {
               },
             ]}
           />
+          <Space style={{ marginTop: 12 }}>
+            <Button disabled={!diagnosticHistory.length} onClick={() => {
+              const previous = diagnosticHistory.at(-1) ?? null;
+              setDiagnosticHistory(diagnosticHistory.slice(0, -1));
+              setDiagnosticCursor(previous);
+            }}>{uiText.language === "en" ? "Previous" : "ก่อนหน้า"}</Button>
+            <Button disabled={!nextDiagnosticCursor} onClick={() => {
+              setDiagnosticHistory([...diagnosticHistory, diagnosticCursor]);
+              setDiagnosticCursor(nextDiagnosticCursor);
+            }}>{uiText.language === "en" ? "Next 50" : "ถัดไป 50 รายการ"}</Button>
+          </Space>
         </Card>
       )}
 

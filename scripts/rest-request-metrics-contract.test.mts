@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import test from "node:test";
 import { sanitizeLogText } from "../apps/web/lib/log/sanitize.ts";
+import { safePosAttemptId } from "../packages/pos-client-core/src/connectionFailure.ts";
 
 const root = path.resolve(import.meta.dirname, "..");
 const require = createRequire(new URL("../apps/web/package.json", import.meta.url));
@@ -26,6 +27,7 @@ test("wrapped REST routes record status and elapsed time without changing respon
     "./writeLog.server": { writeLogServer: () => {} },
     "./logThrottle": { ERROR_WINDOW_MS: 1000, shouldLog: () => false },
     "./sanitize": { sanitizeLogText },
+    "@pos-core/connectionFailure": { safePosAttemptId },
     "@/lib/bms/restaurantPosErrors": { isRestaurantCheckError: () => false },
     "@/lib/bms/scheduledJobTrace": { withScheduledJobTrace: (_req: unknown, run: () => Promise<Response>) => run() },
     "@/lib/bms/requestMetrics": { recordRequestMetric: (value: typeof metrics[number]) => {
@@ -64,6 +66,18 @@ test("wrapped REST routes record status and elapsed time without changing respon
   const graphql = wrap("/api/graphql", () => Response.json({ data: {} }));
   assert.equal((await graphql()).status, 200);
   assert.equal(metrics.length, 3, "Apollo metrics own the GraphQL request");
+
+  const attempt = "53d0faad-81a4-473c-99c0-28c775abcf27";
+  const posSession = wrap("GET /api/pos/session", () => Response.json({ ok: true }));
+  const received = await (posSession as any)({ headers: new Headers({ "x-pos-attempt-id": attempt }) });
+  assert.equal(received.headers.get("x-pos-attempt-id"), attempt);
+  const rejected = await (posSession as any)({ headers: new Headers({ "x-pos-attempt-id": "customer-0891234567" }) });
+  assert.equal(rejected.headers.get("x-pos-attempt-id"), null);
+  const frozen = Response.json({ completed: true });
+  Object.defineProperty(frozen, "headers", { value: { set() { throw new Error("immutable headers"); } } });
+  const frozenResponse = wrap("POST /api/pos/sale", () => frozen);
+  assert.equal(await (frozenResponse as any)({ headers: new Headers({ "x-pos-attempt-id": attempt }) }), frozen,
+    "diagnostic response headers must not change a completed POS mutation");
 
   metricThrows = true;
   assert.equal((await denied()).status, 403, "metric failure must not change business responses");

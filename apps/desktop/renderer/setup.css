@@ -117,7 +117,9 @@ button:hover { background: #4096ff; }
 button:focus-visible { outline: 3px solid rgba(22, 119, 255, 0.26); outline-offset: 2px; }
 button:disabled { background: #91caff; cursor: wait; }
 
-.setup-actions { display: grid; margin-top: 20px; }
+.setup-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 20px; }
+.diagnostic-export-button { display: block; margin-top: 0; padding: 8px 12px; min-height: 46px; border: 1px solid #d0d5dd; border-radius: 8px; background: #fff; color: #344054; font: inherit; font-size: 12px; cursor: pointer; }
+#diagnostic-export-status { display: block; margin-top: 6px; color: #667085; font-size: 12px; }
 .setup-actions > button { margin-top: 0; }
 .admin-link-row {
   display: flex;
@@ -150,7 +152,7 @@ footer {
   justify-content: space-between;
   gap: 16px;
   margin-top: auto;
-  padding-top: 20px;
+  padding-top: 14px;
   border-top: 1px solid #e5eaee;
   color: #8a94a6;
   font-size: 10px;

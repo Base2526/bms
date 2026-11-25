@@ -20,6 +20,63 @@ import {
 import { receiptPayloadFromPosSale } from "../apps/web/lib/pos/posSaleReceipt.ts";
 import { buildReceipt } from "../apps/web/lib/pos/escpos.ts";
 import { runWithOperationTimeout, PosConnectionError } from "../packages/pos-client-core/src/operation.ts";
+import { describePosConnectionFailure, posConnectionMode } from "../packages/pos-client-core/src/connectionFailure.ts";
+import { POS_DIAGNOSTIC_OPERATIONS, isAllowedPosDiagnosticAction,
+  safePosDiagnosticErrorCode, safePosDiagnosticOperation, safePosDiagnosticReason,
+  safePosDiagnosticRoute } from "../packages/pos-client-core/src/diagnosticOperations.ts";
+
+test("POS diagnostic operation allowlist tracks the shipped mobile and desktop queries", () => {
+  const sources = ["../apps/mobile/src/graphql/operations.graphql", "../apps/web/lib/pos/mobileFlowGraphql.ts"];
+  const names = new Set<string>();
+  for (const source of sources) {
+    const document = readFileSync(new URL(source, import.meta.url), "utf8");
+    for (const match of document.matchAll(/\b(?:query|mutation|subscription)\s+([A-Za-z][A-Za-z0-9]*)/g)) names.add(match[1]);
+  }
+  assert.deepEqual([...POS_DIAGNOSTIC_OPERATIONS].sort(), [...names].sort());
+  assert.equal(safePosDiagnosticOperation("customer_0891123456"), "Unknown");
+  assert.equal(isAllowedPosDiagnosticAction("network.MobilePosSale"), true);
+  assert.equal(isAllowedPosDiagnosticAction("network.CustomerPhone0891123456"), false);
+  const desktopOperations = JSON.parse(readFileSync(new URL("../apps/desktop/src/diagnostic-operations.json", import.meta.url), "utf8"));
+  assert.deepEqual(desktopOperations, [...POS_DIAGNOSTIC_OPERATIONS]);
+  assert.equal(safePosDiagnosticRoute("/api/pos/restaurant/checks/12345678-1234-1234-1234-123456789abc"),
+    "/api/pos/restaurant/checks");
+  assert.equal(safePosDiagnosticRoute("/api/pos/restaurant/checks/customer-phone-0891123456"), null);
+  assert.equal(safePosDiagnosticRoute("/api/pos/session?token=secret"), null);
+  for (const route of ["/api/pos/scan", "/api/pos/recent-sales", "/api/pos/shift-report"])
+    assert.equal(safePosDiagnosticRoute(route), route);
+  for (const source of ["../apps/web/app/(pos)/pos/page.tsx",
+    "../apps/web/components/pos-desktop/DesktopPosRenderer.tsx"]) {
+    const document = readFileSync(new URL(source, import.meta.url), "utf8");
+    for (const match of document.matchAll(/\/api\/pos\/[a-z][a-z0-9/-]*/g))
+      assert.ok(safePosDiagnosticRoute(match[0]), `${source}: ${match[0]} needs a safe route family`);
+  }
+  assert.equal(safePosDiagnosticRoute("/api/pos/scan?code=CUSTOMER_0891123456"), null);
+  assert.equal(safePosDiagnosticErrorCode("CUSTOMER_0900000000"), "POS_UNKNOWN_ERROR");
+  assert.equal(safePosDiagnosticErrorCode("POS_TIMEOUT"), "POS_TIMEOUT");
+  assert.equal(safePosDiagnosticReason("event_too_old"), "event_too_old");
+  assert.equal(safePosDiagnosticReason("customer_john"), null);
+});
+
+test("HTTP remains available when only realtime disconnects", () => {
+  assert.equal(posConnectionMode('online', 'offline'), 'fallback');
+  assert.equal(posConnectionMode('online', 'reconnecting'), 'fallback');
+  assert.equal(posConnectionMode('online', 'connected'), 'online');
+  assert.equal(posConnectionMode('offline', 'connected'), 'offline');
+  assert.equal(posConnectionMode('checking', 'offline'), 'checking');
+});
+
+test("a generic native network failure does not invent DNS or TLS as its subcause", () => {
+  const failure = describePosConnectionFailure(new TypeError("Network request failed: private URL"));
+  assert.equal(failure.code, "POS_NETWORK");
+  assert.equal(failure.outcome, "read_failed");
+  assert.ok(!/DNS|TLS|private URL/.test(failure.message));
+});
+
+test("browser session deadline is a timeout, not a cancelled sale or invented DNS failure", () => {
+  const failure = describePosConnectionFailure({ name: "TimeoutError" }, false);
+  assert.equal(failure.code, "POS_TIMEOUT");
+  assert.equal(failure.outcome, "read_failed");
+});
 
 test("shared Desktop/native deadline rejects a non-aborting transport and ignores its late completion", { timeout: 1000 }, async () => {
   let complete!: (value: string) => void;

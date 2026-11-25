@@ -86,6 +86,15 @@ async function run() {
     ) {
       throw new Error(`Invalid setup layout: ${JSON.stringify(state)}`);
     }
+    const setupExport = await window.webContents.executeJavaScript(`(async () => {
+      document.querySelector('#export-diagnostics-button').click();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      return { status: document.querySelector('#diagnostic-export-status')?.textContent,
+        overflowY: document.documentElement.scrollHeight > document.documentElement.clientHeight,
+        overflowPx: document.documentElement.scrollHeight - document.documentElement.clientHeight };
+    })()`);
+    assert.equal(setupExport.status, 'ส่งออกข้อมูลตรวจสอบสำเร็จ');
+    assert.equal(setupExport.overflowY, false, `setup export added ${setupExport.overflowPx}px overflow`);
     await mkdir(outputDir, { recursive: true });
     console.log("smoke: capturing setup renderer");
     await window.webContents.executeJavaScript(
@@ -196,6 +205,14 @@ async function run() {
     ) {
       throw new Error(`Invalid startup recovery layout: ${JSON.stringify(startupState)}`);
     }
+    const recoveryExport = await window.webContents.executeJavaScript(`(async () => {
+      document.querySelector('#export-diagnostics-button').click();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      return { status: document.querySelector('#diagnostic-export-status')?.textContent,
+        reference: document.querySelector('#diagnostic-reference')?.textContent };
+    })()`);
+    assert.equal(recoveryExport.status, 'ส่งออกข้อมูลตรวจสอบสำเร็จ');
+    assert.match(recoveryExport.reference, /POS_NETWORK/);
     await window.webContents.executeJavaScript(
       "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
     );

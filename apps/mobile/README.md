@@ -177,6 +177,15 @@ decided/unknown GraphQL errors keep the idempotency key. Pairing body reads, WS-
 diagnostic sends use independent deadlines even if the transport ignores abort; late pairing data
 cannot save credentials. A stuck diagnostic batch no longer blocks later queued events.
 
+Connection health transitions, HTTP/GraphQL failures, realtime ticket/socket degradation and
+recovery now carry fixed reason codes and a client attempt ID when an HTTP request was made.
+Settings shows the latest check, code, pending/rejected diagnostic counts and any count/time-range
+gap. Its share action exports safe JSON from Keychain without contacting the server. Up to 25
+events per target remain for 30 days; accepted/duplicate ACKs clear only those events, while
+401/403, invalid ACKs and server rejections remain visible for retry or export. A different server
+or rotated token gets a separate queue; it cannot upload the old target's evidence. A timed-out
+business mutation remains unknown and is never retried by diagnostics.
+
 Verification: **461 tests / 59 suites**, TypeScript, ESLint, and Android/iOS production Metro bundles
 passed. The new tests cover auth/denial, rate limits, server errors, malformed responses, read/write
 timeout guidance, privacy, late pairing responses and stalled diagnostic sends.
