@@ -1,11 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import HeaderBar from "./HeaderBar";
 
-export const PublicHeaderBar = dynamic(() => import("./HeaderBar"), {
-  ssr: false,
-  loading: () => <div style={{ height: 64, background: "var(--app-surface)" }} />,
-});
+export const PublicHeaderBar = HeaderBar;
 
 export const PublicBreadcrumbs = dynamic(() => import("./Breadcrumbs"), {
   ssr: false,

@@ -19,7 +19,7 @@ test("an ID that isn't a LINE ID is refused instead of producing a dead link", (
 });
 
 test("homepage and footer link through the one constant and open LINE in a new tab safely", () => {
-  for (const file of ["apps/web/app/(main)/page.tsx", "apps/web/components/footer/AppFooter.tsx"]) {
+  for (const file of ["apps/web/app/(main)/HomePageClient.tsx", "apps/web/components/footer/AppFooter.tsx"]) {
     const src = withoutComments(read(file));
     assert.ok(src.includes("href={BMS_LINE_OA_URL}"), `${file} must link to BMS_LINE_OA_URL`);
     assert.ok(!/line\.me|@168tnlzi/.test(src), `${file} must not hardcode the LINE URL or ID`);
@@ -28,7 +28,7 @@ test("homepage and footer link through the one constant and open LINE in a new t
 });
 
 test("the homepage LINE button stays secondary to signing up", () => {
-  const page = withoutComments(read("apps/web/app/(main)/page.tsx"));
+  const page = withoutComments(read("apps/web/app/(main)/HomePageClient.tsx"));
   const button = page.slice(page.indexOf("className={styles.lineCta}") - 200, page.indexOf("landing.lineAsk"));
   assert.ok(button.length > 0 && !/type="primary"/.test(button.slice(button.lastIndexOf("<Button"))), "LINE button must not be a primary button");
 });

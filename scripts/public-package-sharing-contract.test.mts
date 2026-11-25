@@ -36,7 +36,7 @@ test("public package download is fresh, rate limited and never trusts client pla
 });
 
 test("pricing page downloads the selected language and shares one always-current URL", () => {
-  const page = read("apps/web/app/(main)/page.tsx");
+  const page = read("apps/web/app/(main)/HomePageClient.tsx");
   assert.match(page, /\/api\/public\/packages\/pdf\?lang=\$\{lang\}/);
   assert.match(page, /window\.location\.origin.*#pricing/);
   assert.match(page, /navigator\.share/);

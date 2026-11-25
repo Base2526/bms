@@ -479,3 +479,13 @@ html.dark .ant-drawer-mask {
     visibility: visible !important;
   }
 }
+/* Keep public chrome height stable before the viewport-dependent client state hydrates. */
+.ant-layout-header.jachoei-header {
+  height: 72px;
+}
+
+@media (max-width: 767px) {
+  .ant-layout-header.jachoei-header {
+    height: 58px;
+  }
+}
