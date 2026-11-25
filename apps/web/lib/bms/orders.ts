@@ -592,7 +592,7 @@ export async function createOrderInTx(
   const salesSurface: "RETAIL_POS" | "RESTAURANT_POS" | "ONLINE_ORDER" = input.restaurantCheckId
     ? "RESTAURANT_POS"
     : input.channel === "pos" ? input.posSalesSurface ?? "RETAIL_POS" : "ONLINE_ORDER";
-  const ordering = input.channel === "pos"
+  const ordering = input.channel === "pos" || input.channel === "clinic"
     ? null
     : await restaurantOrderingStateInTx(client, tenantId);
   const restaurantOnlineOrder = ordering?.isRestaurant === true;
@@ -1613,7 +1613,7 @@ export async function createOrderInTx(
     // flat shipping สำหรับออร์เดอร์ออนไลน์ไว้ก็ตาม
     const shippingFee = quoteShippingFee != null
       ? { fee: quoteShippingFee, source: "quote" as ShippingFeeSource }
-      : input.channel === "pos" || fulfillmentType === "PICKUP"
+      : input.channel === "pos" || input.channel === "clinic" || fulfillmentType === "PICKUP"
       || MARKETPLACE_CHANNELS.has(input.channel)
       ? { fee: 0, source: "none" as ShippingFeeSource }
       : await computeOrderShippingFeeInTx(client, {

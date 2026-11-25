@@ -11,6 +11,17 @@ import { getClient } from "@/lib/db";
 import { beginTenantTx, getTenantId } from "./tenant";
 
 export const BMS_PERMISSIONS = [
+  // Outpatient clinic pilot. Clinical reads also require explicit clinic staff access;
+  // Administrator's super-role permission alone cannot open a patient chart.
+  "clinic.staff.manage",
+  "clinic.patient.register",
+  "clinic.patient.read",
+  "clinic.appointment.manage",
+  "clinic.record.read",
+  "clinic.record.write",
+  "clinic.record.sign",
+  "clinic.billing.manage",
+  "clinic.audit.read",
   "operations.quality.view",
   "operations.quality.manage",
   "operations.quality.hold",

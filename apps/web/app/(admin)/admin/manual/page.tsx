@@ -49,6 +49,7 @@ type FlowKey = "products" | "orders" | "payment" | "shipping";
 
 const ROUTES = {
   operations: "/admin/operations",
+  clinic: "/admin/clinic",
   gettingStarted: "/admin/getting-started",
   dashboard: "/admin/dashboard",
   inbox: "/admin/inbox",
@@ -821,6 +822,7 @@ const SIDEBAR_MAP_GROUPS_TH: SidebarMapGroup[] = [
   {
     title: "การขาย",
     items: [
+      { label: "คลินิกผู้ป่วยนอก (pilot)", href: ROUTES.clinic, note: "ใช้ข้อมูลสังเคราะห์เท่านั้น: ลงทะเบียน นัดหมาย เวชระเบียนที่ลงนาม และค่าบริการแบบจำกัด ต้องมีสิทธิ์คลินิกแยก" },
       { label: "งานปฏิบัติการและคุณภาพ", href: ROUTES.operations, note: "ต้นแบบ Checklist งานตามเวลา หลักฐานการตรวจ และงานแก้ไขแยกสาขา" },
       { label: "Orders", href: ROUTES.orders, note: "ติดตามออเดอร์ตั้งแต่ PENDING จนถึงปิดงาน" },
       { label: "ใบเสนอราคา", href: ROUTES.quotations, note: "สร้างร่างแบบไม่จองสต็อก ให้ผู้มีสิทธิ์อีกคนอนุมัติ บันทึกว่าส่งและลูกค้ายอมรับ แล้วแปลงเป็นออร์เดอร์โดยตรวจสต็อกซ้ำ; ราคาทุกรายการรวม VAT ค่าส่งต้องทราบ และงานส่งต้องมีที่อยู่หน้างานก่อนอนุมัติ; งานรับที่สาขายืนยันส่งมอบแยกจากร้านอาหาร" },
@@ -2178,6 +2180,7 @@ const SIDEBAR_MAP_GROUPS_EN: SidebarMapGroup[] = [
   {
     title: "Sales",
     items: [
+      { label: "Outpatient clinic (pilot)", href: ROUTES.clinic, note: "Synthetic data only: registration, appointments, signed records and restricted charges require separate clinic access" },
       { label: "Operations & Quality", href: ROUTES.operations, note: "Branch checklist templates, scheduled work, evidence and corrective actions" },
       { label: "Orders", href: ROUTES.orders, note: "Track orders from PENDING through completion" },
       { label: "Quotations", href: ROUTES.quotations, note: "Draft without reserving stock, get approval from a second staff member, record sending and acceptance, then convert with a fresh stock check; prices include VAT, freight must be known, and delivery needs a site address before approval; branch pickup uses a separate handover" },
@@ -3354,6 +3357,16 @@ export default function Page() {
   return (
     <div className={styles.page}>
       <GuideLinks start slugs={["bms-overview", "shop-team-users", "channel-setup-overview", "pos-pin-readiness", "logs-diagnostics-guide"]} />
+      <Alert
+        type="warning"
+        showIcon
+        closable
+        message={<Link href="/admin/manual/clinic">{lang === "en" ? "Outpatient clinic operator guide (technical pilot)" : "คู่มือคลินิกผู้ป่วยนอกสำหรับพนักงาน (technical pilot)"}</Link>}
+        description={lang === "en"
+          ? "Synthetic data only. Register a patient, book and check in, sign an encounter, review NON_STOCK charges, then open Payment with the created order ID. Assign a separate clinic role first. Clinical, privacy and tax review are required before real patients."
+          : "ใช้ข้อมูลสังเคราะห์เท่านั้น เริ่มจากลงทะเบียน นัดหมาย เช็กอิน ลงนามเวชระเบียน ตรวจค่าบริการ NON_STOCK แล้วเปิดหน้าชำระเงินด้วยเลขคำสั่งซื้อที่สร้าง ต้องกำหนดบทบาทคลินิกแยกก่อน และให้ผู้รับผิดชอบด้านคลินิก ข้อมูลส่วนบุคคล และภาษีตรวจรับก่อนใช้กับผู้ป่วยจริง"}
+        style={{ marginBottom: 16 }}
+      />
       <Alert
         type="warning"
         showIcon

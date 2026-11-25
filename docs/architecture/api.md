@@ -1,5 +1,21 @@
 # API Surface
 
+## Outpatient clinic technical pilot
+
+`GET/POST /api/bms/clinic` is a session-authenticated admin adapter. Actions cover bootstrap,
+patient registration/search/read, appointment create/list/transition/reschedule, encounter
+open/draft/sign/addendum/history, emergency access, a bounded signed-encounter cashier worklist,
+charge sheet review/order creation and patient access history. Business actions have a clinic
+permission and a separate active clinic staff check; tenant is derived from the session.
+Bootstrap accepts any `clinic.*` permission so billing
+staff can enter without clinical-record read access. Request bodies are capped at 32 KiB. The flag
+`BMS_CLINIC_PILOT_TENANTS` is empty by default and all routes answer no-store.
+
+`GET/POST /api/bms/clinic/attachments` streams at most 2 MiB of PDF/PNG/JPEG through a
+clinic-only route that rechecks encounter assignment, care team and tenant on every access.
+There is no public signed URL, generic `files` route or AI tool. See
+[pilot scope](../business/clinic-pilot-technical-th.md) for financial and release limits.
+
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · Architecture overview: [system.md](system.md)
 
 ## Package capacity and pilot metrics (`10.75`)

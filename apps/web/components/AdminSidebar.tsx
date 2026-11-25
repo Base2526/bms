@@ -246,6 +246,7 @@ const NAV_ICONS: Record<string, React.ReactNode> = {
   'sales.shipment': <CarOutlined />,
   'sales.pos-shifts': <ProfileOutlined />,
   'sales.operations': <ProfileOutlined />,
+  'sales.clinic': <FileSearchOutlined />,
   'sales.kitchen': <CoffeeOutlined />,
   'sales.restaurant-floor': <ShopOutlined />,
   'sales.delivery-platforms': <CloudOutlined />,

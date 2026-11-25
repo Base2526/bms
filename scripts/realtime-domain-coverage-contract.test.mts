@@ -305,6 +305,15 @@ const BANK_RECONCILIATION_EVIDENCE = [
   "bms_bank_reconciliation_periods",
 ];
 const CLASSIFIED = new Map<string, string>();
+for (const table of [
+  "bms_clinic_appointments", "bms_clinic_attachments", "bms_clinic_break_glass",
+  "bms_clinic_care_team", "bms_clinic_charge_lines", "bms_clinic_charge_sheets",
+  "bms_clinic_encounters", "bms_clinic_hn_counters", "bms_clinic_patient_contacts",
+  "bms_clinic_patients", "bms_clinic_signed_notes", "bms_clinic_staff",
+]) {
+  CLASSIFIED.set(table,
+    "Private clinical pilot data must not enter the shared realtime payload; the clinic page refreshes after commands and on explicit request.");
+}
 for (const table of ["bms_branch_requisitions", "bms_branch_requisition_items", "bms_branch_requisition_events", "bms_branch_requisition_transfers", "bms_branch_requisition_purchases"]) {
   CLASSIFIED.set(table, "Requisition planning uses explicit/post-write refresh and optimistic versions; stock transfers retain their existing events. No realtime subscriber in this release.");
 }

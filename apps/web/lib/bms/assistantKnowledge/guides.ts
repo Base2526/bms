@@ -45,6 +45,17 @@ function menuGuide(input: {
 /** Verified bilingual guides for every routable Admin sidebar surface plus POS workflows. */
 export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
+    id: "clinic.outpatient-pilot", module: "clinic", route: "/admin/clinic",
+    title: ["คลินิกผู้ป่วยนอก technical pilot", "Outpatient clinic technical pilot"],
+    summary: ["ระบบทดลองหนึ่งสาขาสำหรับข้อมูลสังเคราะห์: ผู้ป่วย นัดหมาย เวชระเบียนที่ลงนาม และค่าบริการแบบจำกัด", "One-branch synthetic-data pilot for patients, appointments, signed records and restricted charges."],
+    aliases: [["คลินิก", "HN", "นัดแพทย์", "เวชระเบียน"], ["clinic", "patient HN", "appointment", "clinical record"]],
+    requiredPermissions: ["clinic.patient.read"],
+    steps: [["ให้ Administrator กำหนดบทบาทคลินิกและเลขใบอนุญาตผู้ตรวจ", "ลงทะเบียน HN และนัดหมาย", "เช็กอินแล้วให้ clinician บันทึกและลงนาม", "ให้ cashier ตรวจค่าบริการ NON_STOCK ก่อนสร้าง order และไปหน้าชำระเงินด้วยเลข order"],
+      ["Have an Administrator assign clinic roles and practitioner licence evidence.", "Register an HN and book an appointment.", "Check in; the assigned clinician records and signs the encounter.", "A cashier reviews NON_STOCK charges, creates an order, then opens Payment with its order ID."]],
+    warnings: [["ปิดค่าเริ่มต้น ใช้ข้อมูลสังเคราะห์เท่านั้น; ยังไม่ผ่านตรวจรับทางคลินิก ข้อมูลส่วนบุคคล หรือภาษี", "AI ไม่มีสิทธิ์อ่านเวชระเบียน วินิจฉัย หรือจ่ายยา"],
+      ["Disabled by default and for synthetic data only; clinical, privacy and tax review remain required.", "AI cannot read charts, diagnose or dispense medication."]],
+  }),
+  menuGuide({
     id: "retail-local.pricing", module: "settings", route: "/admin/retail-local-license",
     title: ["ราคา Retail Local รุ่นนำร่อง", "Retail Local pilot prices"],
     summary: [retailLocalPricingSummary("th"), retailLocalPricingSummary("en")],
