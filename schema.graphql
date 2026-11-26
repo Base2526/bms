@@ -10100,6 +10100,7 @@ type BmsTenantInfo {
 
 type BmsTenantRow {
   active: Boolean!
+  businessArchetype: String
   created_at: String!
   id: ID!
   name: String!

@@ -4021,6 +4021,7 @@ const th = {
     delete_success: "ลบร้านแล้ว",
     delete_error: "ลบร้านไม่สำเร็จ",
     col_shop: "ร้าน",
+    col_archetype: "ประเภทร้าน",
     col_plan: "แพ็กเกจ",
     col_users: "ผู้ใช้",
     col_products: "สินค้า",
