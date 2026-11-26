@@ -1,4 +1,4 @@
--- Minimal synthetic dependencies for disposable 10.141/10.142 migration tests.
+-- Minimal synthetic dependencies for disposable 10.141-10.143 migration tests.
 -- Apply to a fresh local clinic_pilot_test database only; this is not a BMS schema restore.
 CREATE ROLE bms_app;
 CREATE TABLE bms_tenants (id uuid PRIMARY KEY);
@@ -12,6 +12,7 @@ CREATE TABLE bms_locations (
 );
 CREATE TABLE bms_orders (
   id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES bms_tenants(id),
+  status text NOT NULL DEFAULT 'PENDING',
   total_amount numeric(12,2) NOT NULL DEFAULT 0,
   shipping_fee numeric(12,2) NOT NULL DEFAULT 0,
   UNIQUE (tenant_id,id)
@@ -26,4 +27,4 @@ CREATE TABLE bms_product_variants (
   PRIMARY KEY (tenant_id,product_sku,code),
   FOREIGN KEY (tenant_id,product_sku) REFERENCES bms_products(tenant_id,sku)
 );
-GRANT SELECT ON bms_locations, users, bms_tenants TO bms_app;
+GRANT SELECT ON bms_locations, users, bms_tenants, bms_orders TO bms_app;

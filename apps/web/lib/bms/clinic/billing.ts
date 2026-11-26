@@ -135,7 +135,7 @@ export async function readClinicChargeSheet(input: {
 }) {
   const encounterId = uuid(input.encounterId);
   return clinicTx(input.tenantId, input.actorId, async (client) => {
-    await requireClinicRole(client, input.tenantId, input.actorId, ["CASHIER", "CLINICIAN"]);
+    await requireClinicRole(client, input.tenantId, input.actorId, ["CASHIER"]);
     const encounter = await client.query<{ patient_id: string }>(
       `SELECT patient_id FROM bms_clinic_encounters WHERE tenant_id=$1 AND id=$2`,
       [input.tenantId, encounterId]
