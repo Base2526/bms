@@ -1,10 +1,11 @@
 # ทะเบียนฟีเจอร์ BMS
 
-> 🧪 คลินิกผู้ป่วยนอก (`10.141`–`10.142`, branch `codex/clinic-outpatient-pilot`): technical pilot แบบปิดค่าเริ่มต้น
+> 🧪 คลินิกผู้ป่วยนอก (`10.141`–`10.142`, งานตรวจระยะ 1 บน `codex/clinic-outpatient-phase1`): technical pilot แบบปิดค่าเริ่มต้น
 > มี patient/HN แยก CRM, นัดหมาย, encounter, signed note/addendum, ไฟล์เฉพาะ, charge sheet สำหรับ
 > บริการ NON_STOCK/VAT N และส่งต่อ order เดิม เฉพาะข้อมูลสังเคราะห์ ยังไม่ผ่านตรวจรับทางคลินิก,
 > ความเป็นส่วนตัว, บัญชี/ภาษี หรือ DB/browser end-to-end บน schema จริง.
-> [รายละเอียดและ release gates](business/clinic-pilot-technical-th.md)
+> รายการนัดหมายจำกัด 500 ต่อช่วงเวลาและแสดงคำเตือนเมื่อข้อมูลถูกตัด; ยังไม่ผ่าน load test ของคิวขนาดใหญ่.
+> [รายละเอียดและ release gates](business/clinic-pilot-technical-th.md) · [ผลตรวจรับระยะ 1](business/clinic-phase1-acceptance-2026-11-26-th.md)
 
 > อัปเดตการตรวจ 17 พ.ย. 2026: ตัวเลขรวมด้านล่างเป็น snapshot เก่าของ 9 พ.ย. 2026
 > แคตตาล็อกใน source ปัจจุบันมี 55 ความสามารถ และ release registry รู้จัก 88 workflow

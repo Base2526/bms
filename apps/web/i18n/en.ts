@@ -3105,6 +3105,7 @@ const en = {
     billing_worklist: "Signed encounters ready for billing",
     billing_search: "Search HN or patient name",
     billing_truncated: "Showing the latest 100; search by HN or name for other encounters",
+    appointments_truncated: "Only the first 500 appointments are shown. This calendar is incomplete; do not use its counts to confirm availability.",
     closed_order_review: "This order is closed. Reconcile its payment and cancellation or return with an authorised reviewer before any new charge; no replacement order is created automatically.",
     signed_at: "Signed at",
     operator_manual: "Clinic operator guide",

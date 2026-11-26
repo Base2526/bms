@@ -2,9 +2,11 @@
 
 สถานะ: **แผนและ technical pilot 25 พฤศจิกายน 2026 — ยังไม่พร้อมใช้กับผู้ป่วยจริง**
 
-อัปเดตการลงมือทำ: branch `codex/clinic-outpatient-pilot` มีโมดูลทดลองแบบปิดค่าเริ่มต้น
+อัปเดตการลงมือทำ: technical pilot ถูกรวมเข้า `develop` แล้ว และตรวจรับระยะ 1 ต่อบน `codex/clinic-outpatient-phase1` โดยโมดูลยังปิดค่าเริ่มต้น
 ตาม [ขอบเขต implementation](clinic-pilot-technical-th.md) แผนระยะยาวด้านล่างยังมีงานที่
 technical pilot ไม่ครอบคลุม โดยเฉพาะการอนุมัติทางคลินิก ข้อมูลส่วนบุคคล ภาษี และการเปิดใช้จริง
+ผลตรวจรับระยะ 1 ล่าสุดอยู่ที่ [clinic-phase1-acceptance-2026-11-26-th.md](clinic-phase1-acceptance-2026-11-26-th.md); คลินิกเป้าหมายยังไม่ยืนยันว่ามี EMR เดิมหรือไม่ จึงยังไม่เลือกเส้นทาง integration หรือให้ BMS เป็นเจ้าของเวชระเบียน.
+แผนที่เส้นทางข้อมูลและจุดตรวจ privacy อยู่ที่ [clinic-data-flow-map-th.md](clinic-data-flow-map-th.md).
 
 ## ขอบเขตที่ใช้วางแผน
 

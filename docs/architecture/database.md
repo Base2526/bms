@@ -19,6 +19,9 @@ Every table has tenant-keyed FKs, FORCE RLS with a missing-GUC deny policy and e
 grants; signed notes and attachments have no UPDATE/DELETE grant and have immutable triggers.
 Sensitive writes audit in the tenant transaction, reads write `bms_security_events` without clinical
 text. No migration or archetype opens the feature; see [pilot scope](../business/clinic-pilot-technical-th.md).
+The phase 1 calendar bound changes no schema: a tenant-scoped read fetches at most 501 rows to
+report whether the first 500 are incomplete. The disposable fixture check does not replace a
+restored BMS-schema rehearsal; see [phase 1 evidence](../business/clinic-phase1-acceptance-2026-11-26-th.md).
 
 ## POS device credential issuance (existing tables)
 

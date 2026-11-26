@@ -41,7 +41,10 @@ test("clinic REST denies unauthorised requests and derives tenant and actor from
     },
     "@/lib/bms/clinic/appointments": {
       createClinicAppointment: async (input: unknown) => { calls.push(["appointment", input]); return { status: "CREATED" }; },
-      listClinicAppointments: async () => [], rescheduleClinicAppointment: async (input: unknown) => {
+      listClinicAppointments: async (input: unknown) => {
+        calls.push(["appointments", input]);
+        return { appointments: [], truncated: true };
+      }, rescheduleClinicAppointment: async (input: unknown) => {
         calls.push(["reschedule", input]); return "RESCHEDULED";
       },
       transitionClinicAppointment: async () => null,
@@ -102,6 +105,14 @@ test("clinic REST denies unauthorised requests and derives tenant and actor from
   assert.equal(response.status, 200);
   assert.deepEqual(calls, [["auth", "clinic.billing.manage"],
     ["billable", { tenantId: "server-tenant", actorId: "server-actor", search: "HN-000001" }]]);
+  calls.length = 0;
+  response = await get({ nextUrl: new URL("https://bms.example.invalid/api/bms/clinic?action=appointments&locationId=location-a&from=2026-12-01T00%3A00%3A00Z&to=2026-12-31T00%3A00%3A00Z&tenantId=forged") });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { status: "OK", result: { appointments: [], truncated: true } });
+  assert.deepEqual(calls, [["auth", "clinic.appointment.manage"], ["appointments", {
+    tenantId: "server-tenant", actorId: "server-actor", locationId: "location-a",
+    from: "2026-12-01T00:00:00Z", to: "2026-12-31T00:00:00Z",
+  }]]);
   calls.length = 0;
   response = await post(makePost({ action: "createAppointment", tenantId: "forged", actorId: "forged",
     patientId: "patient", locationId: "location", practitionerId: "practitioner",

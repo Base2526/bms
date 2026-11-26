@@ -3104,7 +3104,9 @@ gain chart access. Clinical reads need an active clinic clinician/care-team role
 Administrator/platform-admin alone is insufficient. Emergency access is clinician-only,
 reasoned, 15-minute and audited. Appointment reschedules retain a transaction-scoped request key
 (`10.142`): replaying an old request must not undo a newer move. Signed notes and attachments are
-immutable. A medication plan
+immutable. The appointment list is capped at 500 and must surface `truncated`; its calendar counts
+are hidden when incomplete, while database exclusion constraints still reject overlapping bookings.
+A medication plan
 is a note, never dispensing or stock movement. Charge sheets may create an ordinary order only
 for reviewed NON_STOCK/VAT-N catalog services and must roll back if the server order amount differs.
 Closed clinic orders require reconciliation; a retry must not report a cancelled or returned order

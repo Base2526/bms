@@ -9,6 +9,9 @@ charge sheet review/order creation and patient access history. Business actions 
 permission and a separate active clinic staff check; tenant is derived from the session.
 Reschedule requires a stable `requestKey`. A reused key with different target values returns
 `REQUEST_KEY_CONFLICT`; a delayed retry cannot revert a later move (`10.142`).
+Appointment list returns `{ appointments, truncated }`; the server reads at most 501 rows and
+returns 500, with `truncated=true` when the selected range is incomplete. Calendar counts must not
+be treated as availability evidence in that state; overlap exclusion remains authoritative.
 Bootstrap accepts any `clinic.*` permission so billing
 staff can enter without clinical-record read access. Request bodies are capped at 32 KiB. The flag
 `BMS_CLINIC_PILOT_TENANTS` is empty by default and all routes answer no-store.

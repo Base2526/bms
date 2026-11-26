@@ -70,6 +70,7 @@ export default function ClinicPilotPage() {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [appointmentsTruncated, setAppointmentsTruncated] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => dayjs().tz("Asia/Bangkok").startOf("month"));
   const appointmentRequest = useRef<{ signature: string; key: string } | null>(null);
   const rescheduleRequest = useRef<{ signature: string; key: string } | null>(null);
@@ -103,7 +104,10 @@ export default function ClinicPilotPage() {
   const loadAppointments = useCallback(async (locationId: string, month = calendarMonth) => {
     const from = month.tz("Asia/Bangkok").startOf("month");
     const to = from.add(1, "month");
-    setAppointments(await clinicGet("appointments", { locationId, from: from.toISOString(), to: to.toISOString() }));
+    setAppointments([]); setAppointmentsTruncated(false);
+    const result: { appointments: Appointment[]; truncated: boolean } = await clinicGet("appointments",
+      { locationId, from: from.toISOString(), to: to.toISOString() });
+    setAppointments(result.appointments); setAppointmentsTruncated(result.truncated);
   }, [calendarMonth]);
   const loadBillable = useCallback(async (searchTerm = "") => {
     const result: { encounters: BillableEncounter[]; truncated: boolean } =
@@ -300,12 +304,15 @@ export default function ClinicPilotPage() {
       </Form>
     </Card>
     <Card title={t("clinic.copy_021")} extra={<Button onClick={() => bootstrap?.location && void run(() => loadAppointments(bootstrap.location!.id))}>{t("clinic.copy_022")}</Button>}>
+      {appointmentsTruncated && <div role="alert" style={{ marginBottom: 12 }}>
+        <Typography.Text type="warning">{t("clinic.appointments_truncated")}</Typography.Text>
+      </div>}
       <Calendar fullscreen={false} value={calendarMonth}
         onPanelChange={date => {
           setCalendarMonth(dayjs.tz(date.format("YYYY-MM-01"), "Asia/Bangkok"));
         }}
         cellRender={(date, info) => {
-          if (info.type !== "date" || date.format("YYYY-MM") !== calendarMonth.format("YYYY-MM")) return null;
+          if (appointmentsTruncated || info.type !== "date" || date.format("YYYY-MM") !== calendarMonth.format("YYYY-MM")) return null;
           const count = appointments.filter(item => dayjs(item.startsAt).tz("Asia/Bangkok").format("YYYY-MM-DD") === date.format("YYYY-MM-DD")).length;
           return count ? <Tag color="blue">{count}</Tag> : null;
         }} />

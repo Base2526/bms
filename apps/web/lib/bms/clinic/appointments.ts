@@ -77,7 +77,7 @@ export async function createClinicAppointment(input: {
 
 export async function listClinicAppointments(input: {
   tenantId: string; actorId: string; locationId: unknown; from: unknown; to: unknown;
-}): Promise<ClinicAppointment[]> {
+}): Promise<{ appointments: ClinicAppointment[]; truncated: boolean }> {
   const locationId = uuid(input.locationId);
   const from = isoInstant(input.from);
   const to = isoInstant(input.to);
@@ -88,11 +88,12 @@ export async function listClinicAppointments(input: {
       `SELECT a.*,p.hn,p.full_name FROM bms_clinic_appointments a
          JOIN bms_clinic_patients p ON p.tenant_id=a.tenant_id AND p.id=a.patient_id
         WHERE a.tenant_id=$1 AND a.location_id=$2 AND a.starts_at >= $3 AND a.starts_at < $4
-        ORDER BY a.starts_at,a.id LIMIT 500`,
+        ORDER BY a.starts_at,a.id LIMIT 501`,
       [input.tenantId, locationId, from, to]
     );
     await auditClinicRead(client, input.tenantId, input.actorId, "CLINIC_APPOINTMENT_LIST", locationId);
-    return rows.rows.map(appointmentFromRow);
+    return { appointments: rows.rows.slice(0, 500).map(appointmentFromRow),
+      truncated: rows.rows.length > 500 };
   });
 }
 
