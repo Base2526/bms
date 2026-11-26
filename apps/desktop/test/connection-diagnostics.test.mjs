@@ -55,6 +55,22 @@ test('invalid server acknowledgement cannot erase a pending event; export remain
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('restaurant kiosk API failures retain the route but never persist a URL token or PIN', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bms-pos-kiosk-diagnostic-'));
+  const filePath = path.join(dir, 'journal.json');
+  try {
+    const journal = createConnectionJournal({ filePath, platform: 'win32', appVersion: '0.2.14' });
+    await journal.append({ action: 'restaurant.api.failed', code: 'POS_NETWORK',
+      route: '/api/pos/restaurant/kiosk', targetKey: keyA,
+      token: 'secret-kiosk-token', pin: '9831' });
+    const saved = await readFile(filePath, 'utf8');
+    const event = JSON.parse(saved).events[0];
+    assert.equal(event.context.route, '/api/pos/restaurant/kiosk');
+    assert.ok(!saved.includes('secret-kiosk-token'));
+    assert.ok(!saved.includes('9831'));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('loading an existing journal strips unexpected text and reports invalid rows', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bms-pos-diagnostic-'));
   const filePath = path.join(dir, 'journal.json');

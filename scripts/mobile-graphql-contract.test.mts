@@ -428,7 +428,7 @@ test("the merged HTTP schema still builds with the mobile and POS operations ins
   }
 });
 
-test("all 98 mobile/POS input arguments are typed", () => {
+test("all 101 mobile/POS input arguments are typed", () => {
   const operations = moduleOperations();
   const inputOperations = operations
     .map((operation) => ({
@@ -439,8 +439,8 @@ test("all 98 mobile/POS input arguments are typed", () => {
 
   assert.equal(
     inputOperations.length,
-    98,
-    "the mobile/POS surface must keep all 98 input-bearing operations",
+    101,
+    "the mobile/POS surface must keep all 101 input-bearing operations",
   );
   assert.deepEqual(
     inputOperations
@@ -451,11 +451,11 @@ test("all 98 mobile/POS input arguments are typed", () => {
   );
 });
 
-test("all 146 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
+test("all 150 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
   const operations = moduleOperations();
   assert.equal(
     operations.length,
-    146,
+    150,
     "the complete mobile/POS output surface must stay in the contract",
   );
   const jsonRoots = operations
@@ -683,7 +683,7 @@ test("each typed top-level input field matches what its resolver reads, in both 
         // derived from the authenticated device and open shift instead.
         .filter((field) => field !== "shiftId"),
     );
-    if (/requirePosCashier\(\s*device\s*,\s*input\s*,/.test(body)) {
+    if (/requirePosCashier(?:AtBranch)?\(\s*device\s*,\s*input\s*,/.test(body)) {
       read.add("cashierUserId");
       read.add("pin");
     }
@@ -1643,8 +1643,8 @@ test("RN keeps restaurant queue, QR orders, and service calls visible across eve
   assert.match(watcher, /fireOrderAlert\('qr_order'\)/);
   assert.match(watcher, /fireOrderAlert\('waitlist'\)/);
   assert.match(watcher, /if \(!restaurantOperationsInitialized\)/);
-  assert.match(operations, /pendingServiceCallCount > 0[\s\S]*\? 'CALLS'/);
-  for (const view of ["QUEUE", "QR", "CALLS"] as const) {
+  assert.match(operations, /counts\.calls > 0[\s\S]*\? 'CALLS'/);
+  for (const view of ["QUEUE", "QR", "KIOSK", "CALLS"] as const) {
     assert.match(
       operations,
       new RegExp(`restaurantView === '${view}'`),

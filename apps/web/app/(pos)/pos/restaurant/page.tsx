@@ -54,6 +54,7 @@ import { useI18n } from "@/lib/i18nContext";
 import { flushSupportActivity, localSupportEventCount, localSupportEvidenceSummary, recordSupportActivity } from "@/lib/supportActivity";
 import PosGuideAssistant from "@/components/work-assistant/PosGuideAssistant";
 import RestaurantTableChairs from "@/components/RestaurantTableChairs";
+import RestaurantKioskPanel, { type KioskSubmission } from "@/components/pos/RestaurantKioskPanel";
 import {
   formatKitchenElapsed,
   groupKitchenTickets,
@@ -118,10 +119,10 @@ const LOCAL_CHECK_KEY_PREFIX = "bms.pos.restaurantCheck.";
 // กันแท็บเล็ตที่ถูกหยิบมาเช้าวันถัดไปแล้วเปิดบิลค้างของเมื่อวานขึ้นมาเงียบ ๆ
 // ค่าเท่ากับ LOCAL_CART_DRAFT_MAX_AGE_MS ของหน้าค้าปลีก (ครอบหนึ่งกะเต็ม)
 const LOCAL_CHECK_MAX_AGE_MS = 8 * 60 * 60 * 1000;
-type RestaurantScreen = "ORDER" | "FLOOR" | "INCOMING" | "QUEUE" | "QR" | "CALLS" | "KITCHEN" | "BILLS" | "SHIFT" | "SETTINGS" | "OTHER";
+type RestaurantScreen = "ORDER" | "FLOOR" | "INCOMING" | "QUEUE" | "QR" | "KIOSK" | "CALLS" | "KITCHEN" | "BILLS" | "SHIFT" | "SETTINGS" | "OTHER";
 type OtherWorkTab = Extract<PosTab, "sell" | "returns" | "stock" | "deposits">;
 const OTHER_WORK_TABS: readonly OtherWorkTab[] = ["sell", "returns", "stock", "deposits"];
-const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "INCOMING", "QUEUE", "QR", "CALLS", "KITCHEN", "BILLS", "SHIFT", "SETTINGS", "OTHER"];
+const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "INCOMING", "QUEUE", "QR", "KIOSK", "CALLS", "KITCHEN", "BILLS", "SHIFT", "SETTINGS", "OTHER"];
 // จอครัวที่ติดผนังต้องปักหมุดลิงก์ได้ — ?screen=kitchen ชนะค่าที่จำไว้เสมอ จึงตรงแม้
 // เครื่องนั้นล้าง site data หรือเปิดในโหมดส่วนตัว (ล้อรูปแบบ ?surface=retail ที่มีอยู่แล้ว)
 //
@@ -129,7 +130,7 @@ const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "INCOMING", "Q
 // ทุกครั้งที่สลับจอ การโหลดครั้งถัดไป *ทุกครั้ง* จะดูเหมือนลิงก์ที่คนตั้งใจปักหมุด แล้ว
 // การคืนค่าอื่น (บิลที่ทำอยู่) ถูกข้ามไปเงียบ ๆ · พารามิเตอร์นี้ต้องมีเมื่อ "คนตั้งใจใส่" เท่านั้น
 const SCREEN_FROM_URL: Record<string, RestaurantScreen> = {
-  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", incoming: "INCOMING", delivery: "INCOMING", queue: "QUEUE", waitlist: "QUEUE", booking: "QUEUE", qr: "QR", qrorders: "QR", calls: "CALLS", service: "CALLS", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT", settings: "SETTINGS", setup: "SETTINGS", other: "OTHER",
+  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", incoming: "INCOMING", delivery: "INCOMING", queue: "QUEUE", waitlist: "QUEUE", booking: "QUEUE", qr: "QR", qrorders: "QR", kiosk: "KIOSK", calls: "CALLS", service: "CALLS", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT", settings: "SETTINGS", setup: "SETTINGS", other: "OTHER",
 };
 const OPEN_CHECK_STATUSES = ["OPEN", "CLOSING"];
 
@@ -589,6 +590,7 @@ export default function RestaurantPosPage() {
   const knownTicketIds = useRef<Set<string> | null>(null);
   const knownReadyTicketIds = useRef<Set<string> | null>(null);
   const knownQrSubmissionIds = useRef<Set<string> | null>(null);
+  const knownKioskSubmissionIds = useRef<Set<string> | null>(null);
   const knownServiceCallIds = useRef<Set<string> | null>(null);
   const knownIncomingActionKeys = useRef<Set<string> | null>(null);
   const incomingRequestSequenceRef = useRef(0);
@@ -629,6 +631,8 @@ export default function RestaurantPosPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [qrSubmissions, setQrSubmissions] = useState<QrSubmission[]>([]);
+  const [kioskSubmissions, setKioskSubmissions] = useState<KioskSubmission[]>([]);
+  const [kioskActive, setKioskActive] = useState(false);
   const [serviceCalls, setServiceCalls] = useState<ServiceCall[]>([]);
   const [incomingOrders, setIncomingOrders] = useState<IncomingOrderNotice[]>([]);
   const [incomingFeedHealth, setIncomingFeedHealth] = useState<PosIncomingFeedHealth>({
@@ -1024,6 +1028,7 @@ export default function RestaurantPosPage() {
     ]);
   const unsentInCheck = check?.items.filter((item) => item.status === "NEW").length ?? 0;
   const pendingQrSubmissions = qrSubmissions.filter((submission) => submission.status === "PENDING");
+  const pendingKioskSubmissions = kioskSubmissions.filter((submission) => submission.status === "PENDING");
   const pendingServiceCalls = serviceCalls.filter((call) => call.status === "PENDING");
   const selectedQrSubmission = qrSubmissions.find((submission) => submission.id === qrSelectedId)
     ?? pendingQrSubmissions[0] ?? qrSubmissions[0] ?? null;
@@ -1529,6 +1534,15 @@ export default function RestaurantPosPage() {
       : rows.find((row) => row.status === "PENDING")?.id ?? rows[0]?.id ?? "");
     return rows;
   }
+  async function loadKioskSubmissions(signal?: AbortSignal) {
+    const data = await json("/api/pos/restaurant/kiosk", { signal });
+    const rows: KioskSubmission[] = Array.isArray(data.submissions) ? data.submissions : [];
+    const pendingIds = rows.filter((row) => row.status === "PENDING").map((row) => row.id);
+    if (newAlertIds(knownKioskSubmissionIds.current, pendingIds).length > 0) alerts.notify("QR_PENDING");
+    knownKioskSubmissionIds.current = new Set(pendingIds);
+    setKioskActive(data.kiosk?.active === true);
+    setKioskSubmissions(rows);
+  }
   async function loadServiceCalls(signal?: AbortSignal) {
     const data = await json("/api/pos/restaurant/service-calls", { signal });
     const rows: ServiceCall[] = Array.isArray(data.calls) ? data.calls : [];
@@ -1788,7 +1802,7 @@ export default function RestaurantPosPage() {
   // จอครัวไม่ต้องการผังโต๊ะใหม่ทุก 5 วินาที (ใช้แค่ป้ายจำนวนบนแถบซ้ายกับแถบสรุป)
   useLiveRefresh({
     enabled: Boolean(token) && !tokenRejected,
-    intervalMs: alertPollIntervalMs({ focused: screen === "FLOOR", visible: pageVisible }),
+    intervalMs: alertPollIntervalMs({ focused: screen === "FLOOR" || screen === "KIOSK", visible: pageVisible }),
     onRefresh: (signal) => loadFloor(signal),
   });
   // ป้ายจำนวน "ออร์เดอร์ QR รอรับ" อยู่บนแถบซ้ายเพื่อให้เห็นจากทุกจอ — ถ้าดึงข้อมูล
@@ -1798,6 +1812,11 @@ export default function RestaurantPosPage() {
     enabled: Boolean(token) && !tokenRejected,
     intervalMs: alertPollIntervalMs({ focused: screen === "QR", visible: pageVisible }),
     onRefresh: (signal) => loadQrSubmissions(signal),
+  });
+  useLiveRefresh({
+    enabled: Boolean(token) && !tokenRejected,
+    intervalMs: alertPollIntervalMs({ focused: screen === "KIOSK", visible: pageVisible }),
+    onRefresh: (signal) => loadKioskSubmissions(signal),
   });
   // คำเรียกพนักงานมี badge บนแถบซ้ายและต้องเด้งขณะยืนอยู่ทุกจอ เช่นเดียวกับออร์เดอร์ QR
   useLiveRefresh({
@@ -2760,6 +2779,7 @@ export default function RestaurantPosPage() {
     { key: "INCOMING" as const, short: t("pos_restaurant.rail_incoming_short"), full: t("pos_restaurant.rail_incoming"), icon: <BellOutlined />, badge: incomingActionOrders.length },
     { key: "QUEUE" as const, short: t("pos_restaurant.rail_queue_short"), full: t("pos_restaurant.rail_queue"), icon: <TeamOutlined />, badge: waitlist.requestedCount + waitlist.waitingCount + waitlist.calledCount },
     { key: "QR" as const, short: "QR", full: t("pos_restaurant.rail_qr"), icon: <QrcodeOutlined />, badge: pendingQrSubmissions.length },
+    { key: "KIOSK" as const, short: t("pos_restaurant.rail_kiosk_short"), full: t("pos_restaurant.rail_kiosk"), icon: <QrcodeOutlined />, badge: pendingKioskSubmissions.length },
     { key: "CALLS" as const, short: t("pos_restaurant.rail_calls_short"), full: t("pos_restaurant.rail_calls"), icon: <span aria-hidden="true">🔔</span>, badge: pendingServiceCalls.length },
     { key: "KITCHEN" as const, short: t("pos_restaurant.rail_kitchen_short"), full: t("pos_restaurant.rail_kitchen"), icon: <CoffeeOutlined />, badge: kitchenCooking + kitchenReady },
     { key: "BILLS" as const, short: t("pos_restaurant.rail_bills_short"), full: t("pos_restaurant.rail_bills"), icon: <FileTextOutlined />, badge: 0 },
@@ -3144,6 +3164,17 @@ export default function RestaurantPosPage() {
           </div>
         </div>
       </section></Spin>}
+
+      {screen === "KIOSK" && <RestaurantKioskPanel
+        active={kioskActive} submissions={kioskSubmissions} tables={floor.tables} areas={floor.areas}
+        operatorReady={operatorReady} shiftOpen={Boolean(session?.shift)}
+        request={json} auth={auth} reload={async () => { await Promise.all([loadKioskSubmissions(), loadFloor()]); }}
+        onAccepted={async () => { await Promise.all([loadFloor(), loadTickets()]); }}
+        onOpenCheck={async (checkId) => {
+          const table = floor.tables.find((row) => row.checks.some((entry) => entry.id === checkId)) ?? null;
+          await openCheckById(table, checkId);
+        }}
+      />}
 
       {screen === "BILLS" && <Spin spinning={working}><section className={styles.counterScreen}>
         <div className={styles.panelHeader}>

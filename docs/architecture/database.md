@@ -1891,6 +1891,37 @@ anti-repeat rule safe across phones and app instances. These rows are deliberate
 submission items: they never carry product data, prices, stock reservations or kitchen tickets.
 Staff transitions and their audit rows commit in one tenant transaction.
 
+Migration `10.144` adds `bms_restaurant_kiosks` and `bms_restaurant_kiosk_submissions` for
+branch-bound customer self-order screens. A kiosk row stores only the SHA-256 token digest and may
+be rotated or disabled by a PIN-authenticated floor manager. Its token selects the tenant and branch
+for public menu reads and bounded `PENDING` proposals; it never authorizes a POS mutation. The
+proposal freezes structured item codes and `DINE_IN`/`TAKEAWAY` intent, with a per-kiosk idempotency
+key and status `PENDING -> ACCEPTED | REJECTED | EXPIRED`. An unreviewed request reads as expired
+after 30 minutes and cannot be accepted or rejected after that point. Composite foreign keys bind
+the kiosk and accepted check to the same branch. `DINE_IN` acceptance requires staff to
+select an existing OPEN table check; `TAKEAWAY` acceptance opens a tableless check. Both paths add
+items, reserve stock and send the existing kitchen round in the staff transaction, then link the
+accepted check and write audit. Rotation/disable expires pending proposals in the same tenant
+transaction. The tables have tenant RLS, `bms_app` grants and revision triggers.
+Each submitted item also carries a server-derived catalog price evidence object in the same
+`items` JSONB; browsers do not supply that object. Staff preview recomputes prices and a SHA-256
+fingerprint that includes selected option names/prices and active modifier group selection rules.
+Acceptance resolves the quote on its order transaction's connection, checks frozen receipt unit
+prices and re-reads the quote before commit. A changed fingerprint is rejected. It also rechecks the selected
+dine-in check's version, table and opening time under the transaction lock. The recorded quote is
+not the settlement ledger; promotions, VAT and discounts remain in the ordinary POS order/payment.
+The existing `10.144` migration is not rewritten for these application-only fields. Migration
+`10.145` replaces its permissive RLS fallback: submissions require the tenant GUC, while an
+active kiosk locator may be read only when its token hash matches the transaction-local
+`bms.kiosk_token_hash` GUC. All proposal reads use a scoped tenant transaction. This policy and
+the public locator must be proven under `bms_app` on a disposable restored database before rollout.
+The admin restaurant-floor kiosk summary uses the same tenant-scoped read to count unexpired
+`PENDING` proposals and active URLs for a branch selected from the manager's allowed locations.
+It returns no token or token hash. Mobile device GraphQL lists proposals from the paired device's
+tenant/branch and requires cashier PIN, `pos.sell`, branch scope and an OPEN device shift for
+preview/accept/reject; all three call the same kiosk services as Web POS. No new table or payment
+ledger is introduced for these surfaces.
+
 `9.45` does not add a second payment or kitchen ledger. Split tender continues to write the normal
 POS payment allocations, and KDS polling reads the existing branch-scoped ticket rows. Its only
 schema addition is modifier catalog pricing plus the restaurant-specific RBAC seeds.

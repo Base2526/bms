@@ -96,6 +96,9 @@ function harness() {
     if (name === "node:crypto") return { randomUUID };
     if (name === "./restaurantPosErrors") return errors;
     if (name === "./restaurantItemSnapshots") return snapshots;
+    if (name === "./restaurantKioskReview") return { kioskQuoteChanged: () => {
+      throw new Error("Kiosk quote review is outside the kitchen snapshot harness");
+    } };
     if (name === "@/lib/db") return { getClient: async () => client, query: async () => {
       assert.equal(backup, null, "display reload happens only after commit"); return result();
     } };
@@ -132,7 +135,7 @@ function harness() {
           : { status: "CREATED", orderId: "order-new", amountDue: 120 };
       },
     };
-    if (["./products", "./menuAvailability", "./pos", "./productPacks", "./lotQuality"].includes(name)) return new Proxy({}, {
+    if (["./products", "./menuAvailability", "./pos", "./productPacks", "./lotQuality", "./restaurantKioskTenantRead", "./restaurantMenuStartingPrice"].includes(name)) return new Proxy({}, {
       get: (_target, key) => { throw new Error(`Unexpected dependency use: ${name}.${String(key)}`); },
     });
     throw new Error(`Unexpected dependency: ${name}`);

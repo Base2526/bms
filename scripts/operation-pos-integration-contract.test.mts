@@ -46,9 +46,11 @@ test("POS scan and variant choices use usable stock with server-derived branch s
 
 test("restaurant direct-stock menu excludes held lots without hiding virtual recipe/non-stock products", async () => {
   const menuPolicy = load("menuAvailability");
+  const startingPrice = load("restaurantMenuStartingPrice", { "./menuAvailability": menuPolicy });
   for (const usable of [0, 3]) {
     const restaurant = load("restaurantPos", {
       "./lotQuality": quality, "./menuAvailability": menuPolicy,
+      "./restaurantMenuStartingPrice": startingPrice,
       "./productPacks": { getVariantBasePrice: async () => 25 },
       "./products": { listPrimaryProductImages: async () => new Map() },
       "./kitchenStations": { kitchenStationColumnsSql: () => ({ id: "st.id", name: "st.name" }) },
@@ -58,7 +60,8 @@ test("restaurant direct-stock menu excludes held lots without hiding virtual rec
         assert.deepEqual(params, ["tenant", "branch"]);
         return rows(["DIRECT", "RECIPE", "NON_STOCK"].map(stock_policy => ({
           sku: stock_policy, name: stock_policy, price: "25", stock_policy,
-          available_total: String(stock_policy === "DIRECT" ? usable : 0),
+          // At zero usable active-size stock, an inactive legacy size still has stock.
+          available_total: String(stock_policy === "DIRECT" ? (usable || 5) : 0),
           sizes: [{ size: "BASE", available: stock_policy === "DIRECT" ? usable : 0 }],
         })));
       } },

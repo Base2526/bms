@@ -23,6 +23,7 @@ function harness() {
   let order = 0;
   let ticket = 0;
   let qr = 0;
+  let kiosk = 0;
   let serviceCall = 0;
   let waitlist = 0;
   let restaurantOperationsInitialized = true;
@@ -35,6 +36,7 @@ function harness() {
         status: 'NEW',
       }))}
       qrIds={Array.from({ length: qr }, (_, index) => `qr-${index}`)}
+      kioskIds={Array.from({ length: kiosk }, (_, index) => `kiosk-${index}`)}
       serviceCallIds={Array.from(
         { length: serviceCall },
         (_, index) => `call-${index}`,
@@ -56,6 +58,9 @@ function harness() {
     },
     receiveQr: () => {
       qr += 1;
+    },
+    receiveKiosk: () => {
+      kiosk += 1;
     },
     receiveServiceCall: () => {
       serviceCall += 1;
@@ -141,6 +146,7 @@ describe('OrderAlertWatcher', () => {
 
   it.each([
     ['QR โต๊ะ', 'receiveQr', 'qr_order'],
+    ['คำขอจากจอ', 'receiveKiosk', 'qr_order'],
     ['เรียกพนักงาน', 'receiveServiceCall', 'service_call'],
     ['คิวใหม่', 'receiveWaitlist', 'waitlist'],
   ] as const)(

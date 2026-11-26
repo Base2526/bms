@@ -22,6 +22,7 @@ export function OrderAlertWatcher() {
   const { tickets } = useKitchen();
   const {
     pendingQrIds,
+    pendingKioskIds,
     pendingServiceCallIds,
     activeWaitlistIds,
     initialized: restaurantOperationsInitialized,
@@ -36,6 +37,7 @@ export function OrderAlertWatcher() {
       pendingCount={pendingCount}
       tickets={tickets}
       qrIds={pendingQrIds}
+      kioskIds={pendingKioskIds}
       serviceCallIds={pendingServiceCallIds}
       boardGameServiceCallIds={boardGameServiceCallIds}
       waitlistIds={activeWaitlistIds}
@@ -50,6 +52,7 @@ export function OrderAlertEffects({
   pendingCount,
   tickets,
   qrIds = [],
+  kioskIds = [],
   serviceCallIds = [],
   boardGameServiceCallIds = [],
   waitlistIds = [],
@@ -60,6 +63,7 @@ export function OrderAlertEffects({
   pendingCount: number;
   tickets: Array<{ id: string; status: string }>;
   qrIds?: string[];
+  kioskIds?: string[];
   serviceCallIds?: string[];
   boardGameServiceCallIds?: string[];
   waitlistIds?: string[];
@@ -72,6 +76,7 @@ export function OrderAlertEffects({
   const seenOrders = useRef<Set<string> | null>(null);
   const seenTickets = useRef<Set<string> | null>(null);
   const seenQr = useRef<Set<string> | null>(null);
+  const seenKiosk = useRef<Set<string> | null>(null);
   const seenServiceCalls = useRef<Set<string> | null>(null);
   const seenWaitlist = useRef<Set<string> | null>(null);
   const seenBoardGameCalls = useRef<Set<string> | null>(null);
@@ -104,37 +109,42 @@ export function OrderAlertEffects({
   useEffect(() => {
     if (!restaurantOperationsInitialized) {
       seenQr.current = null;
+      seenKiosk.current = null;
       seenServiceCalls.current = null;
       seenWaitlist.current = null;
       return;
     }
     if (
       seenQr.current === null ||
+      seenKiosk.current === null ||
       seenServiceCalls.current === null ||
       seenWaitlist.current === null
     ) {
       seenQr.current = new Set(qrIds);
+      seenKiosk.current = new Set(kioskIds);
       seenServiceCalls.current = new Set(serviceCallIds);
       seenWaitlist.current = new Set(waitlistIds);
       return;
     }
     const freshQr = newAlertIds(seenQr.current, qrIds);
+    const freshKiosk = newAlertIds(seenKiosk.current, kioskIds);
     const freshCalls = newAlertIds(seenServiceCalls.current, serviceCallIds);
     const freshWaitlist = newAlertIds(seenWaitlist.current, waitlistIds);
     seenQr.current = new Set(qrIds);
+    seenKiosk.current = new Set(kioskIds);
     seenServiceCalls.current = new Set(serviceCallIds);
     seenWaitlist.current = new Set(waitlistIds);
     if (freshCalls.length > 0) {
       resetOrderAlertAcknowledgement();
       fireOrderAlert('service_call');
-    } else if (freshQr.length > 0) {
+    } else if (freshQr.length > 0 || freshKiosk.length > 0) {
       resetOrderAlertAcknowledgement();
       fireOrderAlert('qr_order');
     } else if (freshWaitlist.length > 0) {
       resetOrderAlertAcknowledgement();
       fireOrderAlert('waitlist');
     }
-  }, [qrIds, restaurantOperationsInitialized, serviceCallIds, waitlistIds]);
+  }, [qrIds, kioskIds, restaurantOperationsInitialized, serviceCallIds, waitlistIds]);
 
   useEffect(() => {
     if (!boardGameServiceInitialized) {
@@ -159,7 +169,7 @@ export function OrderAlertEffects({
   // ย้ำซ้ำตราบใดที่ยังไม่มีใครรับทราบ — ออร์เดอร์ที่ไม่มีใครเห็นคือออร์เดอร์ที่หาย
   useEffect(() => {
     const restaurantPendingCount =
-      qrIds.length + serviceCallIds.length + waitlistIds.length;
+      qrIds.length + kioskIds.length + serviceCallIds.length + waitlistIds.length;
     if (
       settings.repeatSeconds <= 0 ||
       pendingCount + restaurantPendingCount + boardGameServiceCallIds.length ===
@@ -184,7 +194,7 @@ export function OrderAlertEffects({
         fireOrderAlert(
           serviceCallIds.length > 0 || boardGameServiceCallIds.length > 0
             ? 'service_call'
-            : qrIds.length > 0
+            : qrIds.length > 0 || kioskIds.length > 0
             ? 'qr_order'
             : waitlistIds.length > 0
             ? 'waitlist'
@@ -199,6 +209,7 @@ export function OrderAlertEffects({
     lastAlertAtMs,
     pendingCount,
     qrIds.length,
+    kioskIds.length,
     serviceCallIds.length,
     settings.repeatSeconds,
     waitlistIds.length,

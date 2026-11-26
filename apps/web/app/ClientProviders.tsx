@@ -51,7 +51,8 @@ function skipsSessionLayer(pathname: string) {
   pathname = stripPublicLocale(pathname);
   return isAuthPath(pathname) || pathname === "/learn" || pathname.startsWith("/learn/")
     || pathname === "/installer-report" || pathname === "/checkout" || pathname === "/pos"
-    || pathname.startsWith("/pos/restaurant") || pathname.startsWith("/q/") || pathname === "/tax-invoice/request";
+    || pathname.startsWith("/pos/restaurant") || pathname.startsWith("/q/")
+    || pathname.startsWith("/kiosk/") || pathname === "/tax-invoice/request";
 }
 
 export default function ClientProviders({

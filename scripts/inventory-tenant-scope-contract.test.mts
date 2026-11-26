@@ -155,6 +155,7 @@ const PUBLIC_BY_DESIGN = new Map([
   ["app/api/bms/restaurant-qr/menu-item/route.ts", "ลูกค้าที่มี table session อ่านตัวเลือกเมนู"],
   ["app/api/bms/restaurant-qr/submissions/route.ts", "ลูกค้าที่มี table session ส่งและติดตามคำขอ"],
   ["app/api/bms/restaurant-qr/service-calls/route.ts", "ลูกค้าที่มี table session เรียกพนักงานและดูสถานะ"],
+  ["app/api/bms/restaurant-kiosk/[token]/route.ts", "จอสั่งเองสาธารณะของสาขาอ่านเมนูและส่งคำขอเท่านั้น; token hash + IP มี rate limit และพนักงานต้องกดรับก่อนเข้าครัว"],
   ["app/api/bms/board-game-guest/[token]/route.ts", "ลูกค้าสแกน QR ของ session บอร์ดเกมที่กำลังเปิด"],
   ["app/api/bms/board-game-guest/service-calls/route.ts", "ลูกค้าที่มี guest token เรียกพนักงานและดูสถานะ"],
   ["app/api/bms/delivery/[provider]/webhook/[integrationId]/route.ts", "provider webhook สาธารณะโดยจำเป็น; tenant มาจาก opaque integration id และ adapter ตรวจ signature แบบ fail-closed"],
@@ -173,7 +174,7 @@ test("every /api/bms route is guarded, or public by design with a rate limit", (
     const reason = PUBLIC_BY_DESIGN.get(rel);
     if (reason) {
       // เปิดสาธารณะได้ แต่ต้องมีเพดาน ไม่งั้นเป็นช่องเผาเงินค่าโมเดล
-      if (!/rateLimit\(|require(?:RestaurantQr|BoardGameGuest|Checkout)RateLimit\(/.test(src)) unlimited.push(rel);
+      if (!/rateLimit\(|require(?:RestaurantQr|BoardGameGuest|Checkout)RateLimit\(|checkRestaurantKioskRateLimit\(/.test(src)) unlimited.push(rel);
       continue;
     }
     if (!ROUTE_GUARDS.some((guard) => src.includes(guard))) unguarded.push(rel);

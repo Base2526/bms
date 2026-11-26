@@ -1,6 +1,8 @@
 import { getVariantBasePrice } from "./productPacks";
+import { kioskQuoteChanged } from "./restaurantKioskReview";
+import { kioskTenantRead } from "./restaurantKioskTenantRead";
 import { usableStockSql } from "./lotQuality";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { RESERVATION_LOST, RestaurantCheckError } from "./restaurantPosErrors";
 // คีย์ล็อกบิลมีสูตรเดียวทั้งระบบ (kitchen.ts ก็ขอล็อกตัวเดียวกันนี้ก่อนแตะแถวตั๋ว)
 import { lockRestaurantCheckInTx as lockCheckInTx } from "./restaurantCheckLock";
@@ -11,6 +13,7 @@ import { isCapabilityEnabledInTx } from "./storeCapabilities";
 import { listPrimaryProductImages } from "./products";
 import { kitchenStationColumnsSql } from "./kitchenStations";
 import { isMenuSellable, type MenuStockPolicy } from "./menuAvailability";
+import { restaurantMenuStartingPrice } from "./restaurantMenuStartingPrice";
 import { ensureRestaurantItemSnapshotsInTx } from "./restaurantItemSnapshots";
 import {
   afterOrderCancellationCommitted,
@@ -714,6 +717,7 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
   const res = await query<{
     sku: string;
     name: string;
+    category: string | null;
     price: string;
     kitchen_station: string | null;
     kitchen_station_id: string | null;
@@ -724,7 +728,7 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
     available_total: string;
     sizes: Array<{ size: string; available: number }> | null;
   }>(
-    `SELECT p.sku, p.name, p.price,
+    `SELECT p.sku, p.name, p.category, p.price,
             ${menuStation.name} AS kitchen_station,
             ${menuStation.id} AS kitchen_station_id,
             sp.stock_policy,
@@ -779,22 +783,33 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
   const images = await listPrimaryProductImages(tenantId, skus);
   return Promise.all(res.rows.map(async (row) => {
     const sizes = row.sizes ?? [];
+    const pricedSizes = await Promise.all(sizes.map(async (variant) => ({
+      ...variant,
+      price: await getVariantBasePrice(tenantId, row.sku, variant.size, locationId) ?? Number(row.price),
+    })));
+    const starting = restaurantMenuStartingPrice({ variants: pricedSizes,
+      stockPolicy: row.stock_policy, temporarilyUnavailable: row.unavailable_resets_at != null,
+      fallbackPrice: await getVariantBasePrice(tenantId, row.sku, "STD", locationId) ?? Number(row.price) });
     const sellability = isMenuSellable({
       stockPolicy: row.stock_policy,
       temporarilyUnavailable: row.unavailable_resets_at != null,
       available: Number(row.available_total),
     });
+    const sellable = starting.choices.length
+      ? starting.choices.some((choice) => choice.sellable) : sellability.sellable;
     return {
       sku: row.sku,
       name: row.name,
-      price: Math.min(...await Promise.all((row.sizes?.length?row.sizes:[{size:"STD"}]).map(async v=>await getVariantBasePrice(tenantId,row.sku,v.size,locationId)??Number(row.price)))),
+      category: row.category?.trim() || null,
+      price: starting.price,
       kitchenStation: row.kitchen_station,
       kitchenStationId: row.kitchen_station_id ? String(row.kitchen_station_id) : null,
       hasModifiers: row.has_modifiers,
-      availableSizes: sizes,
+      availableSizes: starting.choices,
       availableTotal: Math.max(0, Number(row.available_total)),
-      sellable: sellability.sellable,
-      availability: sellability.availability,
+      sellable,
+      availability: sellable ? sellability.availability
+        : row.unavailable_resets_at != null ? "SOLD_OUT_TODAY" : "OUT_OF_STOCK",
       // เวลาที่เมนูจะกลับมาขายเองมาจาก server เสมอ — จอบอกลูกค้าไม่ได้ถ้าต้องเดาเอง
       // (เวลารีเซ็ตวันบริการตั้งได้รายร้าน ไม่ใช่ 04:00 ตายตัว)
       unavailableResetsAt: iso(row.unavailable_resets_at),
@@ -1104,25 +1119,31 @@ type ResolvedRestaurantCheckItem = {
   packPrice: number | null;
   modifierCodes: string[];
   modifierNames: string[];
+  selectedModifiers: Array<{ code: string; name: string; priceDelta: number }>;
+  modifierCatalogFingerprint: string;
   kitchenNote: string | null;
 };
 
 export async function resolveRestaurantCheckItemRequest(
   tenantId: string,
   locationId: string,
-  input: RestaurantCheckItemRequest
+  input: RestaurantCheckItemRequest,
+  client?: PoolClient
 ): Promise<ResolvedRestaurantCheckItem> {
   const hit = await resolvePosScan(tenantId, input.sku, {
     locationId,
     size: input.size ?? null,
     packCode: input.packCode ?? null,
     surface: "RESTAURANT_POS",
+    client,
   });
   if (!hit) throw new RestaurantCheckError("ไม่พบเมนูหรือหน่วยขายนี้");
   // ด่าน "หมดวันนี้" (9.55) ของบิลโต๊ะอยู่ตรงนี้ — จุดที่บรรทัดเข้าบิล ไม่ใช่ตอนคิดยอด
   // (createOrderInTx ข้ามการกรองนี้ให้บิลโต๊ะโดยตั้งใจ · เหตุผลอยู่ในคอมเมนต์ที่นั่น)
   // ครอบทั้งพนักงานกดเพิ่มเอง การส่งคำขอจาก QR และการที่พนักงานกดรับคำขอนั้น
-  const soldOut = await query<{ reason: string | null }>(
+  const reader: { query: typeof query } = client
+    ? { query: client.query.bind(client) as typeof query } : { query };
+  const soldOut = await reader.query<{ reason: string | null }>(
     `SELECT reason FROM bms_product_menu_unavailability
       WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND resets_at > now()`,
     [tenantId, locationId, hit.sku]
@@ -1166,8 +1187,52 @@ export async function resolveRestaurantCheckItemRequest(
     packPrice: hit.packPrice,
     modifierCodes,
     modifierNames: modifierCodes.map((code) => allowed.get(code) ?? code),
+    selectedModifiers: modifierCodes.map((code) => {
+      const option = hit.modifiers.find((modifier) => modifier.code === code)!;
+      return { code, name: option.name, priceDelta: option.priceDelta };
+    }),
+    modifierCatalogFingerprint: createHash("sha256").update(JSON.stringify(hit.modifiers
+      .map((option) => ({ code: option.code, name: option.name, priceDelta: option.priceDelta,
+        groupCode: option.groupCode, groupName: option.groupName,
+        selectionType: option.selectionType, minSelect: option.minSelect,
+        maxSelect: option.maxSelect, defaultSelected: option.defaultSelected }))
+      .sort((a, b) => a.code.localeCompare(b.code)))).digest("hex"),
     kitchenNote: input.kitchenNote?.trim() || null,
   };
+}
+
+/** Resolve each line once, so quote and check snapshot share the same catalog evidence. */
+async function resolveRestaurantKioskQuote(
+  tenantId: string, locationId: string, requests: RestaurantCheckItemRequest[], client?: PoolClient
+) {
+  const resolved: ResolvedRestaurantCheckItem[] = [];
+  const lines = [] as Array<{
+    sku: string; productName: string; size: string; packCode: string | null;
+    packQty: number; basePrice: number; modifiers: ResolvedRestaurantCheckItem["selectedModifiers"];
+    modifierCatalogFingerprint: string; unitPrice: number; lineAmount: number;
+  }>;
+  for (const request of requests) {
+    const item = await resolveRestaurantCheckItemRequest(tenantId, locationId, request, client);
+    if (item.packPrice == null) throw new RestaurantCheckError("ราคาเมนูเปลี่ยน กรุณาตรวจใหม่");
+    resolved.push(item);
+    const unitPrice = Math.round((item.packPrice + item.selectedModifiers.reduce((sum, option) => sum + option.priceDelta, 0)) * 100) / 100;
+    lines.push({
+      sku: item.sku, productName: item.productName, size: item.size,
+      packCode: item.packCode, packQty: item.packQty, basePrice: item.packPrice,
+      modifiers: item.selectedModifiers, modifierCatalogFingerprint: item.modifierCatalogFingerprint,
+      unitPrice, lineAmount: Math.round(unitPrice * item.packQty * 100) / 100,
+    });
+  }
+  const total = Math.round(lines.reduce((sum, line) => sum + line.lineAmount, 0) * 100) / 100;
+  const fingerprint = createHash("sha256").update(JSON.stringify(lines)).digest("hex");
+  return { quote: { lines, total, fingerprint }, resolved };
+}
+
+/** Catalog-price evidence for a kiosk review, never the settlement amount. */
+export async function quoteRestaurantKioskItems(
+  tenantId: string, locationId: string, requests: RestaurantCheckItemRequest[], client?: PoolClient
+) {
+  return (await resolveRestaurantKioskQuote(tenantId, locationId, requests, client)).quote;
 }
 
 export async function addRestaurantCheckItem(input: {
@@ -1327,6 +1392,7 @@ function toOrderItem(row: CheckItemRow): OrderItemInput {
     packQty: Number(row.pack_qty),
     packUnitPrice: row.pack_price == null ? null : Number(row.pack_price),
     modifierCodes: row.modifier_codes ?? [],
+    restaurantCheckItemId: row.id,
   };
 }
 
@@ -1770,6 +1836,188 @@ export async function acceptRestaurantQrSubmission(
       client.release();
     }
   });
+}
+
+/** Customer kiosk proposals use the same check reservation and kitchen transaction as QR orders. */
+export async function acceptRestaurantKioskSubmission(
+  input: Omit<KitchenRoundInput, "checkId"> & {
+    submissionId: string; checkId?: string | null; quoteFingerprint?: string;
+    confirmedPriceChange?: boolean; confirmedTable?: boolean; expectedCheckVersion?: number;
+    expectedTableId?: string | null; expectedCheckOpenedAt?: string | null;
+  }
+) {
+  const pending = await kioskTenantRead(input.tenantId, (client) => client.query<{
+    service_mode: RestaurantServiceMode; status: string; check_id: string | null;
+    items: Array<RestaurantCheckItemRequest & { submittedQuote?: unknown }>;
+  }>(
+    `SELECT service_mode,
+            CASE WHEN status = 'PENDING' AND submitted_at <= now() - interval '30 minutes'
+                 THEN 'EXPIRED' ELSE status END AS status,
+            check_id, items
+       FROM bms_restaurant_kiosk_submissions
+      WHERE tenant_id = $1 AND location_id = $2 AND id = $3`,
+    [input.tenantId, input.locationId, input.submissionId]
+  ));
+  const row = pending.rows[0];
+  if (!row) throw new RestaurantCheckError("ไม่พบคำขอสั่งอาหารจากจอนี้");
+  if (row.status === "ACCEPTED" && row.check_id) {
+    return { status: "ACCEPTED" as const, replayed: true,
+      check: await getRestaurantCheck(input.tenantId, row.check_id) };
+  }
+  if (row.status !== "PENDING") throw new RestaurantCheckError("คำขอนี้ถูกรับ ปฏิเสธ หรือหมดอายุแล้ว");
+  if (row.service_mode === "DINE_IN" && !input.checkId) {
+    throw new RestaurantCheckError("กรุณาเลือกบิลโต๊ะที่เปิดอยู่ก่อนรับคำขอกินในร้าน");
+  }
+  if (!/^[0-9a-f]{64}$/.test(input.quoteFingerprint ?? "")) {
+    throw new RestaurantCheckError("กรุณาตรวจราคาและรายการล่าสุดก่อนกดรับ");
+  }
+  const work = async () => {
+    const client = await getClient();
+    try {
+      await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+      const shift = await client.query(
+        `SELECT 1 FROM bms_pos_shifts
+          WHERE tenant_id = $1 AND id = $2 AND device_id = $3 AND location_id = $4
+            AND status = 'OPEN' FOR UPDATE`,
+        [input.tenantId, input.shiftId, input.deviceId, input.locationId]
+      );
+      if (!shift.rowCount) throw new RestaurantCheckError("ต้องเปิดกะก่อนรับคำขอจากจอ");
+      if (row.service_mode === "DINE_IN") await lockCheckInTx(client, input.tenantId, input.checkId!);
+      const submission = await client.query<{
+        status: string; service_mode: RestaurantServiceMode; check_id: string | null;
+      }>(
+        `SELECT CASE WHEN status = 'PENDING' AND submitted_at <= now() - interval '30 minutes'
+                     THEN 'EXPIRED' ELSE status END AS status,
+                service_mode, check_id FROM bms_restaurant_kiosk_submissions
+          WHERE tenant_id = $1 AND location_id = $2 AND id = $3 FOR UPDATE`,
+        [input.tenantId, input.locationId, input.submissionId]
+      );
+      const current = submission.rows[0];
+      if (!current) throw new RestaurantCheckError("ไม่พบคำขอนี้ในสาขา");
+      if (current.status === "ACCEPTED" && current.check_id) {
+        await client.query("COMMIT");
+        return { status: "ACCEPTED" as const, replayed: true,
+          check: await getRestaurantCheck(input.tenantId, current.check_id) };
+      }
+      if (current.status !== "PENDING" || current.service_mode !== row.service_mode) {
+        throw new RestaurantCheckError("คำขอนี้ถูกรับ ปฏิเสธ หรือหมดอายุแล้ว");
+      }
+      let checkId = "";
+      if (current.service_mode === "DINE_IN") {
+        if (!input.confirmedTable) throw new RestaurantCheckError("กรุณายืนยันโต๊ะและบิลกับลูกค้าก่อนรับคำขอ");
+        const check = await client.query<{
+          version: number; table_id: string; opened_at: Date;
+        }>(
+          `SELECT version, table_id, opened_at FROM bms_restaurant_checks
+            WHERE tenant_id = $1 AND location_id = $2 AND id = $3
+              AND service_mode = 'DINE_IN' AND status = 'OPEN' FOR UPDATE`,
+          [input.tenantId, input.locationId, input.checkId]
+        );
+        const selected = check.rows[0];
+        if (!selected) throw new RestaurantCheckError("บิลโต๊ะนี้ไม่เปิดอยู่ในสาขา");
+        if (Number(selected.version) !== input.expectedCheckVersion
+          || selected.table_id !== input.expectedTableId
+          || selected.opened_at.toISOString() !== input.expectedCheckOpenedAt) {
+          throw new RestaurantCheckError("โต๊ะหรือบิลเปลี่ยนหลังตรวจ กรุณาตรวจโต๊ะกับลูกค้าอีกครั้ง");
+        }
+        checkId = input.checkId!;
+        const draft = await client.query(
+          `SELECT 1 FROM bms_restaurant_check_items
+            WHERE tenant_id = $1 AND check_id = $2 AND status = 'NEW' LIMIT 1 FOR UPDATE`,
+          [input.tenantId, checkId]
+        );
+        if (draft.rowCount) throw new RestaurantCheckError("บิลโต๊ะมีรายการพนักงานค้างส่งครัว กรุณาจัดการก่อน");
+      } else {
+        if (input.checkId) throw new RestaurantCheckError("คำขอรับกลับต้องไม่ผูกบิลโต๊ะ");
+      }
+      const { quote, resolved } = await resolveRestaurantKioskQuote(
+        input.tenantId, input.locationId, row.items, client);
+      if (quote.fingerprint !== input.quoteFingerprint) {
+        throw new RestaurantCheckError("ราคาหรือตัวเลือกเปลี่ยนหลังตรวจ กรุณาตรวจและยืนยันกับลูกค้าอีกครั้ง");
+      }
+      const priceChanged = kioskQuoteChanged(row.items.map((item) => item.submittedQuote ?? null), quote);
+      if (priceChanged && !input.confirmedPriceChange) {
+        throw new RestaurantCheckError("เมนู ตัวเลือก หรือราคาเปลี่ยนจากตอนลูกค้าส่ง กรุณายืนยันกับลูกค้าก่อนรับ");
+      }
+      if (current.service_mode === "TAKEAWAY") {
+        checkId = await openRestaurantCheckInTx(client, {
+          tenantId: input.tenantId, locationId: input.locationId,
+          deviceId: input.deviceId, shiftId: input.shiftId,
+          serviceMode: "TAKEAWAY", guestCount: 1, actorUserId: input.actorUserId,
+        });
+      }
+      if (!checkId) throw new RestaurantCheckError("ไม่สามารถระบุบิลสำหรับคำขอนี้");
+      const insertedIds: string[] = [];
+      for (const item of resolved) {
+        const inserted = await client.query<{ id: string }>(
+          `INSERT INTO bms_restaurant_check_items
+             (tenant_id, check_id, product_sku, product_name, size, pack_qty,
+              pack_code, unit_name, base_qty, pack_price, modifier_codes,
+              modifier_names, kitchen_note, added_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+           RETURNING id`,
+          [input.tenantId, checkId, item.sku, item.productName, item.size, item.packQty,
+            item.packCode, item.unitName, item.baseQty, item.packPrice, item.modifierCodes,
+            item.modifierNames, item.kitchenNote, input.actorUserId]
+        );
+        insertedIds.push(inserted.rows[0].id);
+      }
+      await client.query(
+        `UPDATE bms_restaurant_checks SET version = version + 1, updated_at = now()
+          WHERE tenant_id = $1 AND location_id = $2 AND id = $3 AND status = 'OPEN'`,
+        [input.tenantId, input.locationId, checkId]
+      );
+      const sent = await sendRestaurantKitchenRoundInTx(client, { ...input, checkId });
+      if (sent.status !== "SENT") {
+        await client.query("ROLLBACK");
+        return sent;
+      }
+      // The order is the money source. Verify its gross receipt prices before making the
+      // kitchen work visible; a modifier/catalog race must roll back the entire round.
+      const frozen = await client.query<{ restaurant_check_item_id: string; receipt_unit_price: string }>(
+        `SELECT oi.restaurant_check_item_id, oi.receipt_unit_price::text
+           FROM bms_restaurant_checks c
+           JOIN bms_order_items oi
+             ON oi.tenant_id = c.tenant_id AND oi.order_id = c.current_order_id
+          WHERE c.tenant_id = $1 AND c.location_id = $2 AND c.id = $3
+            AND oi.restaurant_check_item_id = ANY($4::uuid[])`,
+        [input.tenantId, input.locationId, checkId, insertedIds]
+      );
+      const byItem = new Map(frozen.rows.map((line) => [line.restaurant_check_item_id, Number(line.receipt_unit_price)]));
+      if (byItem.size !== insertedIds.length || insertedIds.some((id, index) =>
+        Math.round((byItem.get(id) ?? NaN) * 100) !== Math.round(quote.lines[index].unitPrice * 100))) {
+        throw new RestaurantCheckError("ยอดในบิลเปลี่ยนหลังตรวจราคา กรุณาตรวจใหม่ก่อนส่งครัว");
+      }
+      const finalQuote = await quoteRestaurantKioskItems(input.tenantId, input.locationId, row.items, client);
+      if (finalQuote.fingerprint !== quote.fingerprint) {
+        throw new RestaurantCheckError("เมนู ราคา หรือตัวเลือกเปลี่ยนระหว่างรับคำขอ กรุณาตรวจและยืนยันกับลูกค้าใหม่");
+      }
+      await client.query(
+        `UPDATE bms_restaurant_kiosk_submissions
+            SET status = 'ACCEPTED', check_id = $4, reviewed_by = $5,
+                reviewed_at = now(), updated_at = now()
+          WHERE tenant_id = $1 AND location_id = $2 AND id = $3 AND status = 'PENDING'`,
+        [input.tenantId, input.locationId, input.submissionId, checkId, input.actorUserId]
+      );
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+         VALUES ($1,$2,'restaurant.kiosk.accept',$3,$4::jsonb)`,
+        [input.tenantId, `user:${input.actorUserId}`, input.submissionId,
+          JSON.stringify({ checkId, serviceMode: current.service_mode, itemCount: resolved.length,
+            quoteFingerprint: quote.fingerprint, priceChanged,
+            tableConfirmed: input.confirmedTable === true, tableId: input.expectedTableId ?? null })]
+      );
+      await client.query("COMMIT");
+      return { status: "ACCEPTED" as const, replayed: false,
+        kitchenTickets: sent.kitchenTickets, check: await getRestaurantCheck(input.tenantId, checkId) };
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch {}
+      throw error;
+    } finally { client.release(); }
+  };
+  return row.service_mode === "DINE_IN"
+    ? withCheckLock(input.tenantId, input.checkId!, work)
+    : work();
 }
 
 export async function moveRestaurantCheck(input: {

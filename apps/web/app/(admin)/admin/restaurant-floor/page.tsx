@@ -39,6 +39,12 @@ const Q_FLOOR = gql`
   }
 `;
 
+const Q_KIOSK_STATE = gql`
+  query RestaurantKioskAdminState($locationId: ID!) {
+    bmsRestaurantKioskAdminState(locationId: $locationId) { active pendingCount }
+  }
+`;
+
 const M_CREATE_AREA = gql`
   mutation CreateRestaurantArea($locationId: ID!, $name: String!) {
     bmsCreateRestaurantArea(locationId: $locationId, name: $name) { id }
@@ -112,7 +118,7 @@ function errorMessage(error: unknown, fallback: string) {
 
 export default function RestaurantFloorPage() {
   const uiText = useUiText();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { can, loading: permissionsLoading } = useBmsPermissions();
   const canManage = can("restaurant.floor.manage");
   const bootstrap = useQuery(Q_BOOTSTRAP, { skip: !canManage, fetchPolicy: "cache-and-network" });
@@ -122,6 +128,12 @@ export default function RestaurantFloorPage() {
     variables: { locationId: locationId ?? "" },
     skip: !canManage || !locationId,
     fetchPolicy: "cache-and-network",
+  });
+  const kioskState = useQuery(Q_KIOSK_STATE, {
+    variables: { locationId: locationId ?? "" },
+    skip: !canManage || !locationId,
+    fetchPolicy: "network-only",
+    pollInterval: 10_000,
   });
   const areas: Area[] = floor.data?.bmsRestaurantFloorAdmin?.areas ?? [];
   // Apollo can recreate the table array after a scalar-only floor update. Keep the
@@ -423,6 +435,14 @@ export default function RestaurantFloorPage() {
   return (
     <Space direction="vertical" size="large" className={styles.page}>
       <AdminPageHeader title={t("admin_restaurant_floor.title")} />
+
+      <Card title={lang === "en" ? "Customer ordering screen" : "จอสั่งอาหารหน้าร้าน"}>
+        {kioskState.error ? <Alert closable type="warning" showIcon message={lang === "en" ? "Screen status is unavailable. Check the POS before changing the URL." : "อ่านสถานะจอไม่ได้ กรุณาตรวจที่ POS ก่อนเปลี่ยน URL"} /> :
+          <Typography.Text>{kioskState.loading && !kioskState.data ? (lang === "en" ? "Loading…" : "กำลังโหลด…") :
+            `${kioskState.data?.bmsRestaurantKioskAdminState?.active ? (lang === "en" ? "Active" : "เปิดใช้งาน") : (lang === "en" ? "Disabled" : "ปิดอยู่")} · ${kioskState.data?.bmsRestaurantKioskAdminState?.pendingCount ?? 0} ${lang === "en" ? "pending requests" : "คำขอรอตรวจ"}`}</Typography.Text>}
+        <p>{lang === "en" ? "Issue, rotate or disable the URL at the paired restaurant POS with an open shift, staff PIN and floor permission. The new URL is shown once. Resolve pending requests before closing the shift." : "ออก หมุน หรือปิด URL ที่ POS ร้านอาหารซึ่งจับคู่เครื่อง เปิดกะ และยืนยัน PIN กับสิทธิ์จัดการผังร้านแล้ว URL ใหม่แสดงครั้งเดียว จัดการคำขอค้างก่อนปิดกะ"}</p>
+        <Button href="/pos/restaurant?screen=kiosk" type="primary">{lang === "en" ? "Open kiosk work in POS" : "เปิดงานจอสั่งอาหารใน POS"}</Button>
+      </Card>
 
       <Card className={styles.toolbarCard}>
         <div className={styles.toolbar}>

@@ -149,6 +149,13 @@ import {
   rejectRestaurantQrSubmission,
 } from "@/lib/bms/restaurantQrOrdering";
 import {
+  listRestaurantKioskSubmissions,
+  previewRestaurantKioskSubmission,
+  rejectRestaurantKioskSubmission,
+  restaurantKioskState,
+} from "@/lib/bms/restaurantKiosk";
+import { acceptRestaurantKioskSubmission } from "@/lib/bms/restaurantPos";
+import {
   listRestaurantRequests,
   reviewRestaurantRequest,
 } from "@/lib/bms/restaurantRequests";
@@ -200,6 +207,7 @@ import {
   badPosInput,
   requireOpenPosShift,
   requirePosCashier,
+  requirePosCashierAtBranch,
   requirePosDevice,
   requirePosPermissionForActor,
   requirePosSecondPerson,
@@ -579,6 +587,33 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     action: String!
     submissionId: ID!
     reason: String
+  }
+
+  input BmsPosRestaurantKioskPreviewInput {
+    cashierUserId: ID!
+    pin: String!
+    submissionId: ID!
+    checkId: ID
+  }
+
+  input BmsPosRestaurantKioskAcceptInput {
+    cashierUserId: ID!
+    pin: String!
+    submissionId: ID!
+    checkId: ID
+    quoteFingerprint: String
+    confirmedPriceChange: Boolean
+    confirmedTable: Boolean
+    expectedCheckVersion: Int
+    expectedTableId: ID
+    expectedCheckOpenedAt: String
+  }
+
+  input BmsPosRestaurantKioskRejectInput {
+    cashierUserId: ID!
+    pin: String!
+    submissionId: ID!
+    reason: String!
   }
 
   input BmsPosRestaurantRequestActionInput {
@@ -1626,6 +1661,92 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
 
   type BmsPosRestaurantQrOrdersResult {
     submissions: [BmsPosRestaurantQrSubmission!]!
+  }
+
+  type BmsPosRestaurantKioskSubmissionItem {
+    sku: String!
+    productName: String!
+    size: String
+    packQty: Int!
+    modifierCodes: [String!]!
+    kitchenNote: String
+  }
+
+  type BmsPosRestaurantKioskSubmission {
+    id: ID!
+    serviceMode: String!
+    status: String!
+    checkId: ID
+    checkStatus: String
+    orderId: ID
+    tableCode: String
+    tableName: String
+    areaName: String
+    splitGroupNo: Int
+    submittedAt: String!
+    reviewedAt: String
+    rejectionReason: String
+    items: [BmsPosRestaurantKioskSubmissionItem!]!
+  }
+
+  type BmsPosRestaurantKioskOrdersResult {
+    active: Boolean!
+    submissions: [BmsPosRestaurantKioskSubmission!]!
+  }
+
+  type BmsPosRestaurantKioskQuoteModifier {
+    code: String!
+    name: String!
+    priceDelta: Float!
+  }
+
+  type BmsPosRestaurantKioskQuoteLine {
+    sku: String!
+    productName: String!
+    size: String!
+    packQty: Int!
+    unitPrice: Float!
+    lineAmount: Float!
+    modifiers: [BmsPosRestaurantKioskQuoteModifier!]!
+  }
+
+  type BmsPosRestaurantKioskQuote {
+    fingerprint: String!
+    total: Float!
+    lines: [BmsPosRestaurantKioskQuoteLine!]!
+  }
+
+  type BmsPosRestaurantKioskSubmittedLine {
+    unitPrice: Float
+    lineAmount: Float
+  }
+
+  type BmsPosRestaurantKioskSelectedCheck {
+    id: ID!
+    version: Int!
+    tableId: ID!
+    tableCode: String!
+    tableName: String!
+    areaName: String!
+    splitGroupNo: Int!
+    openedAt: String!
+  }
+
+  type BmsPosRestaurantKioskPreview {
+    submissionId: ID!
+    serviceMode: String!
+    submittedLines: [BmsPosRestaurantKioskSubmittedLine]
+    quote: BmsPosRestaurantKioskQuote!
+    priceChanged: Boolean!
+    check: BmsPosRestaurantKioskSelectedCheck
+  }
+
+  type BmsPosRestaurantKioskDecisionResult {
+    status: String!
+    reason: String
+    replayed: Boolean
+    kitchenTickets: Int
+    check: BmsPosRestaurantCheck
   }
 
   type BmsPosRestaurantServiceCall {
@@ -2966,6 +3087,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     bmsPosRestaurantCheck(id: ID!): BmsPosRestaurantCheck
     bmsPosRestaurantIncoming: BmsPosRestaurantIncomingResult!
     bmsPosRestaurantQrOrders: BmsPosRestaurantQrOrdersResult!
+    bmsPosRestaurantKioskOrders(requestCode: String): BmsPosRestaurantKioskOrdersResult!
     bmsPosRestaurantServiceCalls: BmsPosRestaurantServiceCallsResult!
     bmsPosRestaurantWaitlist: BmsPosRestaurantWaitlistResult!
     "Open pickup numbers of today's service day at this till's branch (10.111)."
@@ -3276,6 +3398,15 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
       input: BmsPosRestaurantQrOrderActionInput!
     ): BmsPosRestaurantQrActionResult!
       @deprecated(reason: "Use the named QR-submission mutations")
+    bmsPosRestaurantKioskPreview(
+      input: BmsPosRestaurantKioskPreviewInput!
+    ): BmsPosRestaurantKioskPreview!
+    bmsPosRestaurantKioskAccept(
+      input: BmsPosRestaurantKioskAcceptInput!
+    ): BmsPosRestaurantKioskDecisionResult!
+    bmsPosRestaurantKioskReject(
+      input: BmsPosRestaurantKioskRejectInput!
+    ): BmsPosRestaurantKioskDecisionResult!
     bmsPosRestaurantRequestAction(
       input: BmsPosRestaurantRequestActionInput!
     ): BmsPosRestaurantRequestActionResult!
@@ -3876,6 +4007,23 @@ export const bmsPosDeviceResolvers = {
           device.locationId,
         ),
       };
+    },
+
+    async bmsPosRestaurantKioskOrders(
+      _parent: unknown,
+      args: { requestCode?: string | null },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const [state, submissions] = await Promise.all([
+        restaurantKioskState(device.tenantId, device.locationId),
+        listRestaurantKioskSubmissions(
+          device.tenantId,
+          device.locationId,
+          args.requestCode ?? undefined,
+        ),
+      ]);
+      return { active: state.active, submissions };
     },
 
     async bmsPosRestaurantServiceCalls(
@@ -6287,6 +6435,67 @@ export const bmsPosDeviceResolvers = {
         });
       }
       return badPosInput("คำสั่งไม่ถูกต้อง");
+    },
+
+    async bmsPosRestaurantKioskPreview(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      await requirePosCashierAtBranch(device, input, "pos.sell");
+      await requireOpenPosShift(device);
+      return previewRestaurantKioskSubmission({
+        tenantId: device.tenantId,
+        locationId: device.locationId,
+        submissionId: uuidInput(input.submissionId, "คำขอไม่ถูกต้อง"),
+        checkId: input.checkId ? uuidInput(input.checkId, "บิลไม่ถูกต้อง") : null,
+      });
+    },
+
+    async bmsPosRestaurantKioskAccept(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashierAtBranch(device, input, "pos.sell");
+      const shift = await requireOpenPosShift(device);
+      return acceptRestaurantKioskSubmission({
+        tenantId: device.tenantId,
+        locationId: device.locationId,
+        deviceId: device.id,
+        shiftId: shift.id,
+        actorUserId: actor.userId,
+        submissionId: uuidInput(input.submissionId, "คำขอไม่ถูกต้อง"),
+        checkId: input.checkId ? uuidInput(input.checkId, "บิลไม่ถูกต้อง") : null,
+        quoteFingerprint: textInput(input.quoteFingerprint),
+        confirmedPriceChange: input.confirmedPriceChange === true,
+        confirmedTable: input.confirmedTable === true,
+        expectedCheckVersion: typeof input.expectedCheckVersion === "number" ? input.expectedCheckVersion : undefined,
+        expectedTableId: typeof input.expectedTableId === "string" ? input.expectedTableId : null,
+        expectedCheckOpenedAt: typeof input.expectedCheckOpenedAt === "string" ? input.expectedCheckOpenedAt : null,
+      });
+    },
+
+    async bmsPosRestaurantKioskReject(
+      _parent: unknown,
+      args: { input: unknown },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      const input = recordInput(args.input);
+      const actor = await requirePosCashierAtBranch(device, input, "pos.sell");
+      await requireOpenPosShift(device);
+      return rejectRestaurantKioskSubmission({
+        tenantId: device.tenantId,
+        locationId: device.locationId,
+        actorUserId: actor.userId,
+        submissionId: uuidInput(input.submissionId, "คำขอไม่ถูกต้อง"),
+        reason: textInput(input.reason),
+      });
     },
 
     async bmsPosRestaurantRequestAction(

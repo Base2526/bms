@@ -113,6 +113,10 @@ export const POS_DIAGNOSTIC_OPERATIONS = new Set([
   'MobileRestaurantFloorChanged',
   'MobileRestaurantFloorSetup',
   'MobileRestaurantIncoming',
+  'MobileRestaurantKioskAccept',
+  'MobileRestaurantKioskOrders',
+  'MobileRestaurantKioskPreview',
+  'MobileRestaurantKioskReject',
   'MobileRestaurantMenu',
   'MobileRestaurantMenuAvailability',
   'MobileRestaurantMergeChecks',
@@ -158,7 +162,7 @@ const POS_DIAGNOSTIC_ROUTES = new Set([
   '/api/pos/return', '/api/pos/sale', '/api/pos/search', '/api/pos/send-receipt',
   '/api/pos/shift-report', '/api/pos/shift-report/export', '/api/pos/shifts', '/api/pos/void',
   '/api/pos/restaurant/checks', '/api/pos/restaurant/floor', '/api/pos/restaurant/incoming',
-  '/api/pos/restaurant/menu', '/api/pos/restaurant/qr-orders',
+  '/api/pos/restaurant/menu', '/api/pos/restaurant/qr-orders', '/api/pos/restaurant/kiosk',
   '/api/pos/restaurant/service-calls', '/api/pos/restaurant/waitlist', '/api/pos/shift',
 ]);
 

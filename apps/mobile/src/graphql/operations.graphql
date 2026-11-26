@@ -1252,6 +1252,44 @@ query MobileRestaurantQrOrders {
   }
 }
 
+query MobileRestaurantKioskOrders($requestCode: String) {
+  bmsPosRestaurantKioskOrders(requestCode: $requestCode) {
+    active
+    submissions {
+      id serviceMode status checkId checkStatus orderId
+      tableCode tableName areaName splitGroupNo
+      submittedAt reviewedAt rejectionReason
+      items { sku productName size packQty modifierCodes kitchenNote }
+    }
+  }
+}
+
+mutation MobileRestaurantKioskPreview($input: BmsPosRestaurantKioskPreviewInput!) {
+  bmsPosRestaurantKioskPreview(input: $input) {
+    submissionId serviceMode priceChanged
+    submittedLines { unitPrice lineAmount }
+    quote {
+      fingerprint total
+      lines {
+        sku productName size packQty unitPrice lineAmount
+        modifiers { code name priceDelta }
+      }
+    }
+    check { id version tableId tableCode tableName areaName splitGroupNo openedAt }
+  }
+}
+
+mutation MobileRestaurantKioskAccept($input: BmsPosRestaurantKioskAcceptInput!) {
+  bmsPosRestaurantKioskAccept(input: $input) {
+    status reason replayed kitchenTickets
+    check { id }
+  }
+}
+
+mutation MobileRestaurantKioskReject($input: BmsPosRestaurantKioskRejectInput!) {
+  bmsPosRestaurantKioskReject(input: $input) { status reason replayed }
+}
+
 query MobileRestaurantServiceCalls {
   bmsPosRestaurantServiceCalls {
     calls {

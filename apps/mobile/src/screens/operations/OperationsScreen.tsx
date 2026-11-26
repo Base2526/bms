@@ -66,9 +66,10 @@ import { supportsTabletLayout } from '../../theme/useResponsive';
 import type { OperationsStackParamList } from '../../navigation/types';
 import { getAppNavigation } from '../../navigation/parentNavigation';
 import { PurchaseReceiving } from './PurchaseReceiving';
+import { RestaurantKioskMobilePanel } from './RestaurantKioskMobilePanel';
 
 type Section = 'OVERVIEW' | 'REGISTER' | 'RESTAURANT' | 'SUPPORT';
-type RestaurantView = 'OVERVIEW' | 'QUEUE' | 'QR' | 'CALLS' | 'REQUESTS';
+type RestaurantView = 'OVERVIEW' | 'QUEUE' | 'QR' | 'KIOSK' | 'CALLS' | 'REQUESTS';
 type RegisterView =
   | 'MENU'
   | 'NO_SALE'
@@ -148,13 +149,17 @@ export default function OperationsScreen({
   const operationInFlight = useRef(false);
   const {
     qrSubmissions,
+    kioskSubmissions,
+    kioskError,
     serviceCalls,
     waitlistEntries,
     pendingQrCount,
+    pendingKioskCount,
     pendingServiceCallCount,
     activeWaitlistCount,
     waitingGuests,
     refreshQr,
+    refreshKiosk,
     refreshServiceCalls,
     refreshWaitlist,
   } = useRestaurantOperations();
@@ -237,6 +242,17 @@ export default function OperationsScreen({
     table => table.active && !table.blocked && table.status === 'AVAILABLE',
   );
 
+  // Polling updates counts while the operator is reviewing a request. Keep that
+  // choice on screen; choose the highest-priority inbox only when focus enters.
+  const restaurantInboxCounts = useRef({
+    calls: pendingServiceCallCount, qr: pendingQrCount,
+    kiosk: pendingKioskCount, waitlist: activeWaitlistCount,
+  });
+  restaurantInboxCounts.current = {
+    calls: pendingServiceCallCount, qr: pendingQrCount,
+    kiosk: pendingKioskCount, waitlist: activeWaitlistCount,
+  };
+
   useFocusEffect(
     useCallback(() => {
       if (mode !== 'restaurant') return;
@@ -245,21 +261,21 @@ export default function OperationsScreen({
         setRestaurantView(initialRestaurantView);
         return;
       }
+      const counts = restaurantInboxCounts.current;
       setRestaurantView(
-        pendingServiceCallCount > 0
+        counts.calls > 0
           ? 'CALLS'
-          : pendingQrCount > 0
+          : counts.qr > 0
           ? 'QR'
-          : activeWaitlistCount > 0
+          : counts.kiosk > 0
+          ? 'KIOSK'
+          : counts.waitlist > 0
           ? 'QUEUE'
           : 'OVERVIEW',
       );
     }, [
-      activeWaitlistCount,
       initialRestaurantView,
       mode,
-      pendingQrCount,
-      pendingServiceCallCount,
     ]),
   );
 
@@ -1093,6 +1109,11 @@ export default function OperationsScreen({
               onPress={() => setRestaurantView('QR')}
             />
             <Button
+              label={`${posText('จอสั่งอาหาร')} ${pendingKioskCount}`}
+              variant={restaurantView === 'KIOSK' ? 'primary' : 'secondary'}
+              onPress={() => setRestaurantView('KIOSK')}
+            />
+            <Button
               label={posText("เรียก {v0}", { v0: pendingServiceCallCount })}
               variant={restaurantView === 'CALLS' ? 'primary' : 'secondary'}
               onPress={() => setRestaurantView('CALLS')}
@@ -1111,7 +1132,7 @@ export default function OperationsScreen({
             <Heading text={posText("ผังโต๊ะและสถานะเมนู")} />
             <Info
               title={posText("{v0} คิว · {v1} คน", { v0: activeWaitlistCount, v1: waitingGuests })}
-              detail={posText("{v0} QR รอตรวจ · {v1} คำเรียกค้าง", { v0: pendingQrCount, v1: pendingServiceCallCount })}
+              detail={`${pendingQrCount} QR · ${pendingKioskCount} ${posText('คำขอจากจอ')} · ${pendingServiceCallCount} ${posText('คำเรียกค้าง')}`}
             />
             {!(floor.data?.bmsPosRestaurantFloor.tables.length ?? 0) ? (
               <>
@@ -1260,6 +1281,19 @@ export default function OperationsScreen({
                 </View>
               </View>
             ))}
+          </Card>
+          <Card style={{ display: restaurantView === 'KIOSK' ? 'flex' : 'none' }}>
+            <Heading text={`${posText('จอสั่งอาหาร')} (${pendingKioskCount})`} />
+            {restaurantView === 'KIOSK' && <RestaurantKioskMobilePanel
+              submissions={kioskSubmissions}
+              error={kioskError}
+              floor={floor.data?.bmsPosRestaurantFloor}
+              credentials={inputCredentials}
+              refresh={async () => { await Promise.all([refreshKiosk(), floor.refetch().then(() => undefined)]); }}
+              openCheck={(checkId, serviceMode, tableId) => getAppNavigation(navigation).navigate('CheckDetail', {
+                checkId, serviceMode, tableId,
+              })}
+            />}
           </Card>
           <Card
             style={{

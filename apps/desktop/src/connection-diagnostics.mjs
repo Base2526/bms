@@ -42,7 +42,7 @@ const POS_ROUTES = new Set([
   '/api/pos/send-receipt', '/api/pos/shift-report', '/api/pos/shift-report/export',
   '/api/pos/shifts', '/api/pos/void',
   '/api/pos/restaurant/floor', '/api/pos/restaurant/incoming', '/api/pos/restaurant/menu',
-  '/api/pos/restaurant/qr-orders', '/api/pos/restaurant/service-calls',
+  '/api/pos/restaurant/qr-orders', '/api/pos/restaurant/kiosk', '/api/pos/restaurant/service-calls',
   '/api/pos/restaurant/waitlist', '/api/pos/shift', '/api/pos/support-diagnostics',
 ]);
 const VALID_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

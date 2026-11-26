@@ -41,7 +41,7 @@ export type AppStackParamList = {
     serviceMode?: 'DINE_IN' | 'TAKEAWAY';
   };
   RestaurantOps:
-    | { initialView?: 'OVERVIEW' | 'QUEUE' | 'QR' | 'CALLS' | 'REQUESTS' }
+    | { initialView?: 'OVERVIEW' | 'QUEUE' | 'QR' | 'KIOSK' | 'CALLS' | 'REQUESTS' }
     | undefined;
   InventoryDetail: undefined;
   ShiftDetail: undefined;

@@ -6765,6 +6765,119 @@ type BmsPosRestaurantIncomingResult {
   refunds: [BmsPosPendingRestaurantRefund!]!
 }
 
+input BmsPosRestaurantKioskAcceptInput {
+  cashierUserId: ID!
+  checkId: ID
+  confirmedPriceChange: Boolean
+  confirmedTable: Boolean
+  expectedCheckOpenedAt: String
+  expectedCheckVersion: Int
+  expectedTableId: ID
+  pin: String!
+  quoteFingerprint: String
+  submissionId: ID!
+}
+
+type BmsPosRestaurantKioskDecisionResult {
+  check: BmsPosRestaurantCheck
+  kitchenTickets: Int
+  reason: String
+  replayed: Boolean
+  status: String!
+}
+
+type BmsPosRestaurantKioskOrdersResult {
+  active: Boolean!
+  submissions: [BmsPosRestaurantKioskSubmission!]!
+}
+
+type BmsPosRestaurantKioskPreview {
+  check: BmsPosRestaurantKioskSelectedCheck
+  priceChanged: Boolean!
+  quote: BmsPosRestaurantKioskQuote!
+  serviceMode: String!
+  submissionId: ID!
+  submittedLines: [BmsPosRestaurantKioskSubmittedLine]
+}
+
+input BmsPosRestaurantKioskPreviewInput {
+  cashierUserId: ID!
+  checkId: ID
+  pin: String!
+  submissionId: ID!
+}
+
+type BmsPosRestaurantKioskQuote {
+  fingerprint: String!
+  lines: [BmsPosRestaurantKioskQuoteLine!]!
+  total: Float!
+}
+
+type BmsPosRestaurantKioskQuoteLine {
+  lineAmount: Float!
+  modifiers: [BmsPosRestaurantKioskQuoteModifier!]!
+  packQty: Int!
+  productName: String!
+  size: String!
+  sku: String!
+  unitPrice: Float!
+}
+
+type BmsPosRestaurantKioskQuoteModifier {
+  code: String!
+  name: String!
+  priceDelta: Float!
+}
+
+input BmsPosRestaurantKioskRejectInput {
+  cashierUserId: ID!
+  pin: String!
+  reason: String!
+  submissionId: ID!
+}
+
+type BmsPosRestaurantKioskSelectedCheck {
+  areaName: String!
+  id: ID!
+  openedAt: String!
+  splitGroupNo: Int!
+  tableCode: String!
+  tableId: ID!
+  tableName: String!
+  version: Int!
+}
+
+type BmsPosRestaurantKioskSubmission {
+  areaName: String
+  checkId: ID
+  checkStatus: String
+  id: ID!
+  items: [BmsPosRestaurantKioskSubmissionItem!]!
+  orderId: ID
+  rejectionReason: String
+  reviewedAt: String
+  serviceMode: String!
+  splitGroupNo: Int
+  status: String!
+  submittedAt: String!
+  tableCode: String
+  tableName: String
+}
+
+type BmsPosRestaurantKioskSubmissionItem {
+  kitchenNote: String
+  modifierCodes: [String!]!
+  packQty: Int!
+  productName: String!
+  size: String
+  sku: String!
+}
+
+type BmsPosRestaurantKioskSubmittedLine {
+  lineAmount: Float
+  unitPrice: Float
+}
+
 input BmsPosRestaurantMenuAvailabilityInput {
   cashierUserId: ID!
   pin: String!
@@ -8708,6 +8821,11 @@ type BmsRestaurantFloorAdmin {
   tables: [BmsRestaurantTableAdmin!]!
 }
 
+type BmsRestaurantKioskAdminState {
+  active: Boolean!
+  pendingCount: Int!
+}
+
 type BmsRestaurantMenuAnalysis {
   bundle: BmsRestaurantBundleAnalysis
   contributionThreshold: Float
@@ -10618,6 +10736,9 @@ type Mutation {
   bmsPosRestaurantContactRequest(input: BmsPosRestaurantRequestDecisionInput!): BmsPosRestaurantRequestActionResult!
   bmsPosRestaurantFloorSetup(input: BmsPosRestaurantFloorSetupInput!): BmsPosRestaurantFloorResult!
   bmsPosRestaurantIncomingAction(input: BmsPosRestaurantIncomingActionInput!): BmsPosRestaurantIncomingActionResult! @deprecated(reason: "Use the named incoming-order mutations")
+  bmsPosRestaurantKioskAccept(input: BmsPosRestaurantKioskAcceptInput!): BmsPosRestaurantKioskDecisionResult!
+  bmsPosRestaurantKioskPreview(input: BmsPosRestaurantKioskPreviewInput!): BmsPosRestaurantKioskPreview!
+  bmsPosRestaurantKioskReject(input: BmsPosRestaurantKioskRejectInput!): BmsPosRestaurantKioskDecisionResult!
   bmsPosRestaurantMenuAvailability(input: BmsPosRestaurantMenuAvailabilityInput!): BmsPosMenuAvailabilityResult!
   bmsPosRestaurantMergeChecks(checkId: ID!, input: BmsPosRestaurantMergeChecksInput!): BmsPosRestaurantCheckActionResult!
   bmsPosRestaurantMoveCheck(checkId: ID!, input: BmsPosRestaurantMoveCheckInput!): BmsPosRestaurantCheckActionResult!
@@ -11350,6 +11471,7 @@ type Query {
   bmsPosRestaurantCheck(id: ID!): BmsPosRestaurantCheck
   bmsPosRestaurantFloor: BmsPosRestaurantFloorResult!
   bmsPosRestaurantIncoming: BmsPosRestaurantIncomingResult!
+  bmsPosRestaurantKioskOrders(requestCode: String): BmsPosRestaurantKioskOrdersResult!
   bmsPosRestaurantMenu: BmsPosRestaurantMenuResult!
   bmsPosRestaurantQrOrders: BmsPosRestaurantQrOrdersResult!
   bmsPosRestaurantRequests(credentials: BmsPosCredentialsInput!): BmsPosRestaurantRequestsResult!
@@ -11407,6 +11529,7 @@ type Query {
   bmsRestaurantCancellationLossReport: [BmsRestaurantCancellationLoss!]!
   bmsRestaurantFloorAdmin(locationId: ID!): BmsRestaurantFloorAdmin!
   bmsRestaurantFloorLocations: [BmsLocation!]!
+  bmsRestaurantKioskAdminState(locationId: ID!): BmsRestaurantKioskAdminState!
   bmsRestaurantMenuActual(input: BmsMenuActualInput!): BmsMenuActualReport!
   bmsRestaurantMenuPlan(input: BmsRestaurantMenuPlanInput!): BmsRestaurantMenuPlan!
   bmsRestaurantPricePlan(input: BmsRestaurantPricePlanInput!): BmsRestaurantPricePlan!

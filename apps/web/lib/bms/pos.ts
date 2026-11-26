@@ -733,8 +733,12 @@ export async function resolvePosScan(
     locationId?: string | null;
     packCode?: string | null;
     surface?: "RETAIL_POS" | "RESTAURANT_POS";
+    /** Keep a kiosk accept quote on the same tenant transaction as the order. */
+    client?: PoolClient;
   } = {}
 ): Promise<PosScanHit | null> {
+  const reader: { query: typeof query } = opts.client
+    ? { query: opts.client.query.bind(opts.client) as typeof query } : { query };
   const rawBarcode = code.trim();
   if (!rawBarcode) return null;
   // ห้าม toUpperCase() — ไซซ์จริงมีตัวพิมพ์เล็ก ("150 ml", "60 ml") การแปลงเป็น
@@ -758,8 +762,8 @@ export async function resolvePosScan(
   // grams moves the wrong amount of stock while everything on screen still looks right.
   const scale = parseScaleBarcode(rawBarcode);
   if (scale && scale.kind === "WEIGHT" && scale.grams > 0
-      && await isCapabilityEnabledInTx({ query }, tenantId, "WEIGHTED_PRODUCT")) {
-    const mapped = await query<{ sku: string; scale_size: string; display_unit: string | null }>(
+      && await isCapabilityEnabledInTx(reader, tenantId, "WEIGHTED_PRODUCT")) {
+    const mapped = await reader.query<{ sku: string; scale_size: string; display_unit: string | null }>(
       `SELECT p.sku, sp.scale_size, sp.display_unit
          FROM bms_product_stock_policies sp
          JOIN bms_products p
@@ -789,7 +793,7 @@ export async function resolvePosScan(
     }
   }
 
-  const res = await query<{
+  const res = await reader.query<{
     sku: string;
     name: string;
     base_price: string;
@@ -897,7 +901,7 @@ export async function resolvePosScan(
 
   // 9.61: โปรของสาขาทับโปรทั้งร้าน · `LIMIT 1` เดิมใช้ไม่ได้แล้ว เพราะตอนนี้ SKU เดียว
   // มีได้สองแถว (ทั้งร้าน + สาขานี้) แล้วแถวที่ได้จะขึ้นกับลำดับที่ Postgres บังเอิญคืนมา
-  const promoRes = await query<any>(
+  const promoRes = await reader.query<any>(
     `SELECT promo.* FROM bms_product_promotions promo
       WHERE tenant_id = $1 AND (product_sku = $2 OR to_jsonb(promo)->>'gift_sku' = $2) AND active
         AND (location_id IS NULL OR location_id = $3)
@@ -918,7 +922,7 @@ export async function resolvePosScan(
 
   // 9.65: บันไดของสาขาแทนที่บันไดของทั้งร้าน — ตัดสินด้วย pickPriceTiersForLocation()
   // ตัวเดียวกับ createOrder ตอน commit (สองสูตรจะ drift แล้วเป็น PAYMENT_MISMATCH)
-  const tierRes = await query<{
+  const tierRes = await reader.query<{
     location_id: string | null; min_qty: number; unit_price: string | null;
     scope: PriceTier["scope"]; discount_pct: string | null; size: string | null;
   }>(
@@ -941,9 +945,9 @@ export async function resolvePosScan(
     opts.locationId ?? null
   );
 
-  const modifierEnabled = await isCapabilityEnabledInTx({ query }, tenantId, "MODIFIER");
+  const modifierEnabled = await isCapabilityEnabledInTx(reader, tenantId, "MODIFIER");
   const modifierRes = modifierEnabled
-    ? await query<{
+    ? await reader.query<{
         code: string; name: string; price_delta: string; group_code: string; group_name: string;
         selection_type: "SINGLE" | "MULTIPLE"; min_select: number; max_select: number | null;
         default_selected: boolean;
@@ -966,9 +970,9 @@ export async function resolvePosScan(
         default_selected: boolean;
       }> };
 
-  const basePrice = await getVariantBasePrice(tenantId, row.sku, row.size, opts.locationId);
+  const basePrice = await getVariantBasePriceInTx(reader, tenantId, row.sku, row.size, opts.locationId);
   if (basePrice == null) return null;
-  const packOptions = await query<{
+  const packOptions = await reader.query<{
     pack_code: string;
     unit_name: string | null;
     base_qty: number;
@@ -984,12 +988,12 @@ export async function resolvePosScan(
   const baseQty = embeddedBaseQty ?? row.base_qty ?? 1;
   // pack ไม่ตั้งราคาไว้ → ราคาต่อ pack = ราคาต่อหน่วยฐาน × base_qty (ไม่มีส่วนลดยกกล่อง)
   const resolvedPackCode = row.pack_code ?? "BASE";
-  const branchPackPrice = await readBranchPrice(tenantId,opts.locationId,row.sku,row.size,resolvedPackCode);
+  const branchPackPrice = await branchPrice(reader,tenantId,opts.locationId,row.sku,row.size,resolvedPackCode);
   for (const pack of packOptions.rows) {
-    const override=await readBranchPrice(tenantId,opts.locationId,row.sku,row.size,pack.pack_code);
+    const override=await branchPrice(reader,tenantId,opts.locationId,row.sku,row.size,pack.pack_code);
     if(override!=null) pack.price=String(override);
   }
-  const weightedRate = scaleBarcode ? await currentWeightedKgRate({query},tenantId,row.sku,row.size) : null;
+  const weightedRate = scaleBarcode ? await currentWeightedKgRate(reader,tenantId,row.sku,row.size) : null;
   const packPrice = scaleBarcode
     ? weightedRate ? weightedKgMoney(weightedKgLineCents(weightedRate.rateCents,baseQty)) : basePrice * baseQty
     : resolvedPackCode === "BASE"
@@ -1466,6 +1470,20 @@ export async function cashierHasPermission(
     [tenantId, userId, permission]
   );
   return Boolean(res.rows[0]?.has_permission);
+}
+
+/** Optional staff branch restriction, in addition to device and role authorization. */
+export async function cashierCanAccessLocation(tenantId: string, userId: string, locationId: string) {
+  const result = await query<{ allowed: boolean }>(
+    `SELECT NOT EXISTS (
+       SELECT 1 FROM bms_user_allowed_locations WHERE tenant_id = $1 AND user_id = $2
+     ) OR EXISTS (
+       SELECT 1 FROM bms_user_allowed_locations
+        WHERE tenant_id = $1 AND user_id = $2 AND location_id = $3
+     ) AS allowed`,
+    [tenantId, userId, locationId]
+  );
+  return result.rows[0]?.allowed === true;
 }
 
 async function cashierHasPermissionInTx(

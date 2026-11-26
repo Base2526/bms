@@ -44,6 +44,8 @@ import { listRecentPosSales, resolvePosScan, previewRestaurantPosPricing } from 
 import { customerOrderDetail } from "../apps/web/lib/bms/customers.ts";
 import { setMenuTemporarilyUnavailable } from "../apps/web/lib/bms/menuAvailability.ts";
 import { acceptRestaurantQrSubmission } from "../apps/web/lib/bms/restaurantPos.ts";
+import { issueRestaurantKiosk, listRestaurantKioskSubmissions, previewRestaurantKioskSubmission,
+  restaurantKioskSubmissionStatus, submitRestaurantKioskOrder } from "../apps/web/lib/bms/restaurantKiosk.ts";
 import {
   addRestaurantWaitlistEntry,
   callRestaurantWaitlistEntry,
@@ -54,6 +56,7 @@ import {
 } from "../apps/web/lib/bms/restaurantWaitlist.ts";
 import {
   addRestaurantCheckItem,
+  acceptRestaurantKioskSubmission,
   cancelRestaurantCheck,
   createDefaultRestaurantFloor,
   getRestaurantCheck,
@@ -2272,6 +2275,103 @@ test("recipe/cost snapshots survive rounds, split, merge, kitchen cancellation a
   assert.equal(Number((await evidence(check.id))[0].cost_amount_snapshot), 1);
 });
 
+test("kiosk proposals map two takeaway requests to distinct reserved bills and reject a 20-line partial round", async () => {
+  const sku = `FAKE-KIOSK-${Date.now()}`;
+  const lastSku = `${sku}-LAST`;
+  for (const [productSku, stockQty] of [[sku, 100], [lastSku, 1]] as const) {
+    await query(`INSERT INTO bms_products (tenant_id, sku, name, price, active, vat_category)
+      VALUES ($1,$2,$2,50,TRUE,'V')`, [tenantId, productSku]);
+    await query(`INSERT INTO bms_inventory
+      (tenant_id, location_id, product_sku, size, current_stock, reserved_stock)
+      VALUES ($1,$2,$3,'BASE',$4,0)`, [tenantId, locationId, productSku, stockQty]);
+    await declareSalesSurfaces(productSku, ALL_SURFACES);
+  }
+  await query(`INSERT INTO bms_store_capabilities (tenant_id, capability, enabled, source)
+    VALUES ($1,'KITCHEN_WORKFLOW',TRUE,'MANUAL')
+    ON CONFLICT (tenant_id, capability) DO UPDATE SET enabled = TRUE`, [tenantId]);
+  const kioskDevice = await query<{ id: string }>(
+    `INSERT INTO bms_pos_devices (tenant_id, location_id, code, name)
+      VALUES ($1,$2,'POS-KIOSK','FAKE kiosk register') RETURNING id`, [tenantId, locationId]);
+  const kioskShift = await query<{ id: string }>(
+    `INSERT INTO bms_pos_shifts (tenant_id, location_id, device_id, opened_by, opening_float)
+      VALUES ($1,$2,$3,$4,0) RETURNING id`, [tenantId, locationId, kioskDevice.rows[0].id, waiterId]);
+  const device = kioskDevice.rows[0].id, shift = kioskShift.rows[0].id;
+  const issued = await issueRestaurantKiosk({ tenantId, locationId, actorUserId: waiterId });
+  assert.ok(issued.token);
+  const token = issued.token!;
+  const inputs = [1, 2].map((packQty, index) => ({ token, serviceMode: "TAKEAWAY" as const,
+    idempotencyKey: `fake-kiosk-${index}-${Date.now()}`,
+    items: [{ sku, size: "BASE", packQty }] }));
+  const [first, concurrentDuplicate] = await Promise.all([
+    submitRestaurantKioskOrder(inputs[0]), submitRestaurantKioskOrder(inputs[0])]);
+  assert.equal(first.submissionId, concurrentDuplicate.submissionId);
+  assert.notEqual(first.replayed, concurrentDuplicate.replayed);
+  const submissions = [first, await submitRestaurantKioskOrder(inputs[1])];
+  const duplicate = await submitRestaurantKioskOrder(inputs[0]);
+  assert.equal(duplicate.submissionId, submissions[0].submissionId);
+  assert.equal(duplicate.replayed, true);
+  const reviews = await Promise.all(submissions.map((submission) => previewRestaurantKioskSubmission({
+    tenantId, locationId, submissionId: submission.submissionId,
+  })));
+  const acceptInput = (index: number) => ({ tenantId, locationId, deviceId: device, shiftId: shift,
+    actorUserId: waiterId, submissionId: submissions[index].submissionId,
+    quoteFingerprint: reviews[index].quote.fingerprint });
+  const firstTwo = await Promise.all([acceptRestaurantKioskSubmission(acceptInput(0)),
+    acceptRestaurantKioskSubmission(acceptInput(0))]);
+  assert.ok(firstTwo.some((result) => result.replayed === false));
+  assert.ok(firstTwo.some((result) => result.replayed === true));
+  assert.equal(firstTwo[0].check?.id, firstTwo[1].check?.id);
+  const second = await acceptRestaurantKioskSubmission(acceptInput(1));
+  assert.notEqual(firstTwo[0].check?.id, second.check?.id);
+  const firstCheck = await getRestaurantCheck(tenantId, firstTwo[0].check!.id);
+  const secondCheck = await getRestaurantCheck(tenantId, second.check!.id);
+  const reserved = await query<{ id: string; current_order_id: string }>(
+    `SELECT id, current_order_id FROM bms_restaurant_checks
+      WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+    [tenantId, [firstCheck!.id, secondCheck!.id]]);
+  const orderByCheck = new Map(reserved.rows.map((row) => [row.id, row.current_order_id]));
+  assert.notEqual(orderByCheck.get(firstCheck!.id), orderByCheck.get(secondCheck!.id));
+  assert.equal(firstCheck?.tableId, null);
+  assert.equal(secondCheck?.tableId, null);
+  const kioskStock = async (productSku: string) => (await query<{ reserved_stock: string }>(
+    `SELECT reserved_stock::text FROM bms_inventory
+      WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = 'BASE'`,
+    [tenantId, locationId, productSku])).rows[0];
+  assert.equal(Number((await kioskStock(sku)).reserved_stock), 3);
+  const mapped = await listRestaurantKioskSubmissions(tenantId, locationId, submissions[0].submissionId.slice(0, 8));
+  assert.equal(mapped.length, 1);
+  assert.equal(mapped[0].checkId, firstCheck?.id);
+  assert.equal(mapped[0].orderId, orderByCheck.get(firstCheck!.id));
+  assert.equal((await restaurantKioskSubmissionStatus(token, submissions[0].submissionId)).status, "ACCEPTED");
+  assert.equal((await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms_restaurant_kitchen_tickets
+      WHERE tenant_id = $1 AND check_id = ANY($2::uuid[])`,
+    [tenantId, [firstCheck!.id, secondCheck!.id]])).rows[0].n, "2");
+  assert.equal((await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms_audit_log
+      WHERE tenant_id = $1 AND action = 'restaurant.kiosk.accept'
+        AND target = ANY($2::text[])`,
+    [tenantId, submissions.map((row) => row.submissionId)])).rows[0].n, "2");
+
+  const twenty = await submitRestaurantKioskOrder({ token, serviceMode: "TAKEAWAY",
+    idempotencyKey: `fake-kiosk-20-${Date.now()}`,
+    items: [...Array.from({ length: 19 }, () => ({ sku, size: "BASE", packQty: 1 })),
+      { sku: lastSku, size: "BASE", packQty: 2 }] });
+  const quote = await previewRestaurantKioskSubmission({ tenantId, locationId, submissionId: twenty.submissionId });
+  const before = await query<{ n: string }>(`SELECT COUNT(*)::text AS n FROM bms_restaurant_checks
+    WHERE tenant_id = $1 AND location_id = $2 AND service_mode = 'TAKEAWAY'`, [tenantId, locationId]);
+  const failed = await acceptRestaurantKioskSubmission({ tenantId, locationId, deviceId: device,
+    shiftId: shift, actorUserId: waiterId, submissionId: twenty.submissionId,
+    quoteFingerprint: quote.quote.fingerprint });
+  assert.notEqual(failed.status, "SENT");
+  assert.equal((await query<{ n: string }>(`SELECT COUNT(*)::text AS n FROM bms_restaurant_checks
+    WHERE tenant_id = $1 AND location_id = $2 AND service_mode = 'TAKEAWAY'`, [tenantId, locationId])).rows[0].n,
+    before.rows[0].n);
+  assert.equal(Number((await kioskStock(sku)).reserved_stock), 3);
+  assert.equal(Number((await kioskStock(lastSku)).reserved_stock), 0);
+  assert.equal((await restaurantKioskSubmissionStatus(token, twenty.submissionId)).status, "PENDING");
+});
+
 test("teardown: drop the throwaway tenant and everything under it", async () => {
   const stale = await query<{ id: string }>(
     `SELECT id FROM bms_tenants WHERE slug LIKE $1`, [`fake-${TAG}-%`]
@@ -2285,6 +2385,8 @@ test("teardown: drop the throwaway tenant and everything under it", async () => 
     [ids]
   );
   for (const table of [
+    "bms_restaurant_kiosk_submissions",
+    "bms_restaurant_kiosks",
     // QR (9.60) ต้องมาก่อน check_items และ products — FK ของ accepted_check_item_id และ
     // product_sku ไม่ใช่ CASCADE, teardown ที่ลบผิดลำดับจะ throw แล้วทิ้งร้านทดสอบไว้ในฐาน
     "bms_restaurant_qr_submission_items",

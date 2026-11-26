@@ -18,6 +18,7 @@ import {
   updateRestaurantTable,
 } from "@/lib/bms/restaurantPos";
 import { getRestaurantTableQr, issueRestaurantTableQr } from "@/lib/bms/restaurantQrOrdering";
+import { restaurantKioskAdminState } from "@/lib/bms/restaurantKiosk";
 
 async function floorContext(ctx: any) {
   await requirePermission(ctx, "restaurant.floor.manage");
@@ -80,6 +81,10 @@ export const bmsRestaurantFloorAdminResolvers = {
     async bmsRestaurantFloorAdmin(_parent: unknown, args: { locationId: string }, ctx: any) {
       const actor = await floorContextForLocation(ctx, args.locationId);
       return listRestaurantFloor(actor.tenantId, args.locationId);
+    },
+    async bmsRestaurantKioskAdminState(_parent: unknown, args: { locationId: string }, ctx: any) {
+      const actor = await floorContextForLocation(ctx, args.locationId);
+      return restaurantKioskAdminState(actor.tenantId, args.locationId);
     },
     async bmsRestaurantFloorLocations(_parent: unknown, _args: unknown, ctx: any) {
       const actor = await floorContext(ctx);

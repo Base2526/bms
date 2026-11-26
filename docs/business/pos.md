@@ -2734,6 +2734,118 @@ even if a realtime event is missed. Admin staff additionally receive persistent 
 order-action notifications (toast, browser notification and sound); the kitchen board's own polling
 and sound remain independent, so a Redis/WebSocket outage cannot make a live kitchen queue disappear.
 
+### Counter self-order screen (`10.144`)
+
+The branch's rotatable `/kiosk/[token]` URL lets a customer choose `TAKEAWAY` or `DINE_IN`, select
+catalog variants/modifiers and submit an idempotent proposal. The public screen cannot open a
+check, send food to the kitchen, settle a bill or select tenant/branch authority. It displays an
+estimate and a request code, not a pickup queue number. A PIN-authenticated `pos.sell` operator
+reviews the request on `/pos/restaurant` → Kiosk. For takeaway, acceptance opens a tableless check;
+for dine-in, the operator selects a real OPEN table check. Acceptance revalidates the menu and
+stock and commits the normal reservation and kitchen round with the review and audit. The cashier
+then settles the check through the existing POS flow. The customer screen clears its cart/status
+after inactivity. Pending proposals expire after 30 minutes; rotating or disabling the URL expires
+them immediately. Kiosk payment and
+unseated dine-in orders are outside this phase.
+
+**One-branch assisted pilot procedure.** Assign one cashier to watch the Kiosk badge and one
+floor worker to help guests; they may be the same person only while the badge remains visible.
+Desktop hosts this same `/pos/restaurant` screen, including its paired-device token, shift/PIN
+checks and the exact-check link; its local diagnostic journal records the kiosk API route without
+URL tokens, PINs or guest notes. On mobile, Restaurant Ops → จอสั่งอาหาร uses device GraphQL to
+show pending requests, search the server by the customer's code, preview the server quote and the
+selected split check, confirm any changed price and the guest's table, then accept/reject using
+`pos.sell`, PIN, branch scope and an open shift. The linked check opens the existing mobile check
+detail and checkout; mobile does not issue/rotate the kiosk URL. Mobile polls the branch inbox
+every ten seconds and alerts on new pending requests; the app still needs a real device test.
+The admin restaurant-floor page shows the branch's active state and valid pending count to a
+branch-scoped `restaurant.floor.manage` user, with a link to the paired POS. URL issue/rotation/
+disable remain POS actions that require the open shift and PIN; the admin summary never exposes
+the token. If migration `10.144` is missing, the admin card reports unavailable status instead
+of claiming the kiosk is off.
+For dine-in, the floor worker opens a table check before accepting. Ask the guest for the request
+code, search it in the Kiosk panel, choose the exact check (including split-bill number), review
+the server's latest catalog quote against the amount recorded at submission, and confirm the
+guest's table/bill with the guest. If price changed, explain it and check the explicit confirmation.
+The quote is before promotions, discounts and VAT; the final amount is calculated by the normal
+POS settlement. Accept **only when the guest is ready to proceed**, because acceptance reserves
+stock and sends the kitchen round before payment. The service compares the preview fingerprint and
+the selected check's version/table/opening time again before committing. A closed, moved or changed
+check requires a new preview. An operator must not infer the table from the kiosk: the browser
+never supplies one. If another person's order has opened at that table, select only the new check
+after verifying the guest; never reuse the prior request or old check.
+
+After acceptance, the panel displays the request code → exact check → current order reference and
+an **Open this bill in POS** button. For takeaway, process each guest from that exact bill and
+collect payment through the existing POS tender flow, including discount approval, VAT and receipt.
+When pickup numbering is enabled for the branch/device, the existing queue service may issue a
+pickup number **after the sale commits**. A failed queue issue leaves the sale sold; use the
+existing issue-again action on that completed bill. Without numbering, staff call and hand over
+by the bill/receipt. KDS READY, call, collect and receipt printing remain the ordinary POS flow.
+The kiosk request code is never a pickup number or proof of payment.
+
+Before closing the shift, resolve or reject pending requests, disable the kiosk while the shift is
+open, and verify the screen shows an unavailable state. On a network/POS/KDS/printer failure, use
+the request-code search and exact check link to determine whether acceptance already committed
+before typing an order again. A lost response can replay acceptance without creating a new check;
+do not automatically retry an uncertain kitchen print job. Check the physical tray and Desktop
+print journal, then use its manual retry flow. If a guest leaves without paying, a manager handles
+the open check via the normal cancellation/void path; a paid refund/return stays on the POS path.
+The public screen clears state after two idle minutes and shows a status-poll error instead of
+continuing to claim it is waiting. After a browser restart or refresh, it does not restore another
+guest's basket or note; ask staff to search before starting a second order. An old/revoked URL
+returns HTTP 410 and replaces the pending screen with a terminal staff-help message; a temporary
+poll/network error remains retryable. The starting price on a menu card uses only active,
+sellable sizes at that branch; unavailable sizes cannot be chosen. Recipe sizes do not require
+their own direct stock. The displayed amount remains an estimate.
+
+The red-and-white customer screen shows the shop's own menu, never demo dishes or promotions.
+`listRestaurantMenu()` selects active `RESTAURANT_POS` products for the token's branch. Its exact
+`bms_products.category` text supplies category filters only when a visible menu item has that value;
+the editable `bms_product_categories` list feeds the product form but is not inferred from a kitchen
+station. An uncategorized item remains under All. The hero uses the first sellable menu image and
+the cards use `listPrimaryProductImages()` from the shop's catalog; missing/failed images fall back
+to a neutral food-and-drink graphic. Card starting prices use the same branch stock-policy/active-size
+calculation as Restaurant POS. Opening a card fetches the selected size, base price and modifier
+groups from the public detail API; the cart and modal are estimates, with no authoritative client
+pricing. The home screen previews only real sellable menu items. The header instructs customers to
+ask staff for help; it does not pretend to send a service call. A sticky cart and item dialog provide
+large touch controls, keyboard focus/close handling and Thai/English UI. The current kiosk route
+does not take payment, select a table, print a ticket or estimate wait time. Reset invalidates
+in-flight detail/submit/status responses so a late reply cannot restore the previous guest's data.
+
+**Pilot gate:** this implementation still needs a disposable restored-DB test of `10.144`, RLS,
+grants, FK, duplicate accept and rollback, followed by live touch/POS/KDS/receipt/queue tests.
+Typecheck, build and source-level contracts alone do not authorize customer traffic. The public
+route bounds JSON to 32 KiB while streaming, and the Caddy ingress caps that route at 32 KiB.
+Kiosk rate limits use Redis counters shared across instances and return 503 when Redis is
+unavailable, rather than a process-local fallback. A global and token-digest counter are used;
+client-supplied `x-forwarded-for` is ignored for kiosk throttling. The global ceiling needs a
+multi-branch load test before broad rollout. Retention/cleanup and fleet monitoring remain
+multi-branch work.
+
+Before the first live pilot, apply `10.144` and `10.145` on a disposable restored database and exercise the
+following with a paired POS, an open shift and a separate touch screen. Use test products and
+reverse test bills through the normal POS flow; do not run these checks against live customer data.
+
+| Test | Expected result |
+| --- | --- |
+| Open and rotate the kiosk URL | Only the new URL opens; pending requests on the old screen expire; the token is shown once. |
+| Browse both modes, sizes and required modifiers | Only RESTAURANT_POS menu items appear; unavailable menus are disabled and required choices are enforced. |
+| Add multiple items, remove one, try a 21st line, leave screen idle | The estimate changes; the 21st line is refused; after 2 minutes the next customer sees an empty home screen. |
+| Submit the same request twice or lose the first response | One proposal exists; the same request code is returned. |
+| Accept takeaway with an open shift and `pos.sell` PIN | One tableless check and kitchen round are created; payment is still due at the POS. |
+| Accept dine-in without an open table check | Acceptance fails without a reservation, kitchen ticket or partial bill. |
+| Open a table, select its check and accept dine-in | The items join that check; the existing reservation and kitchen round are replaced atomically. |
+| Change price, mark sold out, or exhaust stock between submit and accept | Staff see the changed server quote and must reconfirm price with the guest; sold-out/stock failure rolls the whole acceptance back. |
+| Use a wrong PIN, a user without permission, a different branch device, or a closed shift | Review and management are denied; the proposal remains unchanged. |
+| Reject with a reason, then retry accept; rotate with a pending request | Rejected/expired proposals cannot create a bill; customer and staff status reflect the decision. |
+| Settle both accepted check types, then return or void through the POS | Existing tax, stock, payment and refund rules hold; the kiosk itself never takes payment. |
+
+Record the actual touch size, resolution, OS/browser, USB touch calibration, network path, receipt
+printer/KDS connection, test operator, date and any failed case. Start with one branch and one screen;
+enable for customers only after the database and hardware cases pass.
+
 ### Table QR self-ordering (`9.60`)
 
 The floor editor issues one permanent QR URL per table and can download, print or rotate it. The QR

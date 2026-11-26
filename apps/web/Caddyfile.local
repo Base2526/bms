@@ -86,6 +86,10 @@ jachoei.com {
      max_size 12MB
    }
    @filesUpload path /api/files
+   @restaurantKiosk path /api/bms/restaurant-kiosk/*
+   request_body @restaurantKiosk {
+     max_size 32KB
+   }
    request_body @filesUpload {
      max_size 26MB
    }
@@ -135,6 +139,10 @@ jachoei.com {
      max_size 9MB
    }
    @filesUpload path /api/files
+   @restaurantKiosk path /api/bms/restaurant-kiosk/*
+   request_body @restaurantKiosk {
+     max_size 32KB
+   }
    request_body @filesUpload {
      max_size 26MB
    }

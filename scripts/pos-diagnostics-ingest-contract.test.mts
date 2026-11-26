@@ -148,7 +148,16 @@ test("new support bundles sanitize legacy activity, audit, incident and system l
 test("privacy migration scrubs legacy identifiers and preserves every current POS operation", () => {
   const migration = readFileSync(new URL("../db/migrations/10.140__bms_pos_diagnostic_lookup.sql", import.meta.url), "utf8");
   const operations = JSON.parse(readFileSync(new URL("../apps/desktop/src/diagnostic-operations.json", import.meta.url), "utf8")) as string[];
-  for (const operation of operations) assert.ok(migration.includes(`'${operation}'`), operation);
+  // 10.140 is an applied historical scrub, not a live allowlist. New kiosk operations
+  // cannot be backfilled into an applied migration; current writes use the shared allowlist.
+  const introducedAfterScrub = new Set([
+    "MobileRestaurantKioskAccept", "MobileRestaurantKioskOrders",
+    "MobileRestaurantKioskPreview", "MobileRestaurantKioskReject",
+  ]);
+  for (const operation of operations) {
+    if (!migration.includes(`'${operation}'`)) assert.ok(introducedAfterScrub.has(operation), operation);
+  }
+  for (const operation of introducedAfterScrub) assert.ok(operations.includes(operation), operation);
   for (const field of ["actor_id", "session_id", "correlation_id", "category", "action", "status", "message", "context"])
     assert.match(migration, new RegExp(`(?:SET|,|\\s)\\s*${field}\\s*=`), field);
 });

@@ -41,6 +41,8 @@ test("POS diagnostic operation allowlist tracks the shipped mobile and desktop q
   assert.equal(safePosDiagnosticRoute("/api/pos/restaurant/checks/12345678-1234-1234-1234-123456789abc"),
     "/api/pos/restaurant/checks");
   assert.equal(safePosDiagnosticRoute("/api/pos/restaurant/checks/customer-phone-0891123456"), null);
+  assert.equal(safePosDiagnosticRoute("/api/pos/restaurant/kiosk"), "/api/pos/restaurant/kiosk");
+  assert.equal(safePosDiagnosticRoute("/api/pos/restaurant/kiosk?token=secret"), null);
   assert.equal(safePosDiagnosticRoute("/api/pos/session?token=secret"), null);
   for (const route of ["/api/pos/scan", "/api/pos/recent-sales", "/api/pos/shift-report"])
     assert.equal(safePosDiagnosticRoute(route), route);

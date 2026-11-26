@@ -116,3 +116,11 @@ export async function rateLimit(
     return memoryRateLimit(key, limit, windowMs);
   }
 }
+
+/** Public kiosk admission needs one fleet-wide counter; an unavailable Redis denies admission. */
+export async function distributedRateLimit(
+  key: string, limit: number, windowMs: number
+): Promise<RateResult | null> {
+  try { return await redisRateLimit(key, limit, windowMs); }
+  catch { return null; }
+}

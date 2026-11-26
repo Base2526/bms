@@ -6058,6 +6058,23 @@ export type SchemaBmsPosDeviceDiagnosticEvent = {
   status: Maybe<Scalars['String']['output']>;
 };
 
+export type SchemaBmsPosDeviceDiagnosticFilter = {
+  correlationId: InputMaybe<Scalars['String']['input']>;
+  cursor: InputMaybe<Scalars['String']['input']>;
+  deviceId: InputMaybe<Scalars['ID']['input']>;
+  errorCode: InputMaybe<Scalars['String']['input']>;
+  from: InputMaybe<Scalars['String']['input']>;
+  limit: InputMaybe<Scalars['Int']['input']>;
+  status: InputMaybe<Scalars['String']['input']>;
+  to: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaBmsPosDeviceDiagnosticPage = {
+  __typename?: 'BmsPosDeviceDiagnosticPage';
+  events: Array<SchemaBmsPosDeviceDiagnosticEvent>;
+  nextCursor: Maybe<Scalars['String']['output']>;
+};
+
 export type SchemaBmsPosDeviceInput = {
   active: InputMaybe<Scalars['Boolean']['input']>;
   code: Scalars['String']['input'];
@@ -7117,6 +7134,129 @@ export type SchemaBmsPosRestaurantIncomingResult = {
   config: SchemaBmsPosRestaurantOrderingConfig;
   orders: Array<SchemaBmsPosIncomingOrder>;
   refunds: Array<SchemaBmsPosPendingRestaurantRefund>;
+};
+
+export type SchemaBmsPosRestaurantKioskAcceptInput = {
+  cashierUserId: Scalars['ID']['input'];
+  checkId: InputMaybe<Scalars['ID']['input']>;
+  confirmedPriceChange: InputMaybe<Scalars['Boolean']['input']>;
+  confirmedTable: InputMaybe<Scalars['Boolean']['input']>;
+  expectedCheckOpenedAt: InputMaybe<Scalars['String']['input']>;
+  expectedCheckVersion: InputMaybe<Scalars['Int']['input']>;
+  expectedTableId: InputMaybe<Scalars['ID']['input']>;
+  pin: Scalars['String']['input'];
+  quoteFingerprint: InputMaybe<Scalars['String']['input']>;
+  submissionId: Scalars['ID']['input'];
+};
+
+export type SchemaBmsPosRestaurantKioskDecisionResult = {
+  __typename?: 'BmsPosRestaurantKioskDecisionResult';
+  check: Maybe<SchemaBmsPosRestaurantCheck>;
+  kitchenTickets: Maybe<Scalars['Int']['output']>;
+  reason: Maybe<Scalars['String']['output']>;
+  replayed: Maybe<Scalars['Boolean']['output']>;
+  status: Scalars['String']['output'];
+};
+
+export type SchemaBmsPosRestaurantKioskOrdersResult = {
+  __typename?: 'BmsPosRestaurantKioskOrdersResult';
+  active: Scalars['Boolean']['output'];
+  submissions: Array<SchemaBmsPosRestaurantKioskSubmission>;
+};
+
+export type SchemaBmsPosRestaurantKioskPreview = {
+  __typename?: 'BmsPosRestaurantKioskPreview';
+  check: Maybe<SchemaBmsPosRestaurantKioskSelectedCheck>;
+  priceChanged: Scalars['Boolean']['output'];
+  quote: SchemaBmsPosRestaurantKioskQuote;
+  serviceMode: Scalars['String']['output'];
+  submissionId: Scalars['ID']['output'];
+  submittedLines: Maybe<Array<Maybe<SchemaBmsPosRestaurantKioskSubmittedLine>>>;
+};
+
+export type SchemaBmsPosRestaurantKioskPreviewInput = {
+  cashierUserId: Scalars['ID']['input'];
+  checkId: InputMaybe<Scalars['ID']['input']>;
+  pin: Scalars['String']['input'];
+  submissionId: Scalars['ID']['input'];
+};
+
+export type SchemaBmsPosRestaurantKioskQuote = {
+  __typename?: 'BmsPosRestaurantKioskQuote';
+  fingerprint: Scalars['String']['output'];
+  lines: Array<SchemaBmsPosRestaurantKioskQuoteLine>;
+  total: Scalars['Float']['output'];
+};
+
+export type SchemaBmsPosRestaurantKioskQuoteLine = {
+  __typename?: 'BmsPosRestaurantKioskQuoteLine';
+  lineAmount: Scalars['Float']['output'];
+  modifiers: Array<SchemaBmsPosRestaurantKioskQuoteModifier>;
+  packQty: Scalars['Int']['output'];
+  productName: Scalars['String']['output'];
+  size: Scalars['String']['output'];
+  sku: Scalars['String']['output'];
+  unitPrice: Scalars['Float']['output'];
+};
+
+export type SchemaBmsPosRestaurantKioskQuoteModifier = {
+  __typename?: 'BmsPosRestaurantKioskQuoteModifier';
+  code: Scalars['String']['output'];
+  name: Scalars['String']['output'];
+  priceDelta: Scalars['Float']['output'];
+};
+
+export type SchemaBmsPosRestaurantKioskRejectInput = {
+  cashierUserId: Scalars['ID']['input'];
+  pin: Scalars['String']['input'];
+  reason: Scalars['String']['input'];
+  submissionId: Scalars['ID']['input'];
+};
+
+export type SchemaBmsPosRestaurantKioskSelectedCheck = {
+  __typename?: 'BmsPosRestaurantKioskSelectedCheck';
+  areaName: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  openedAt: Scalars['String']['output'];
+  splitGroupNo: Scalars['Int']['output'];
+  tableCode: Scalars['String']['output'];
+  tableId: Scalars['ID']['output'];
+  tableName: Scalars['String']['output'];
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsPosRestaurantKioskSubmission = {
+  __typename?: 'BmsPosRestaurantKioskSubmission';
+  areaName: Maybe<Scalars['String']['output']>;
+  checkId: Maybe<Scalars['ID']['output']>;
+  checkStatus: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  items: Array<SchemaBmsPosRestaurantKioskSubmissionItem>;
+  orderId: Maybe<Scalars['ID']['output']>;
+  rejectionReason: Maybe<Scalars['String']['output']>;
+  reviewedAt: Maybe<Scalars['String']['output']>;
+  serviceMode: Scalars['String']['output'];
+  splitGroupNo: Maybe<Scalars['Int']['output']>;
+  status: Scalars['String']['output'];
+  submittedAt: Scalars['String']['output'];
+  tableCode: Maybe<Scalars['String']['output']>;
+  tableName: Maybe<Scalars['String']['output']>;
+};
+
+export type SchemaBmsPosRestaurantKioskSubmissionItem = {
+  __typename?: 'BmsPosRestaurantKioskSubmissionItem';
+  kitchenNote: Maybe<Scalars['String']['output']>;
+  modifierCodes: Array<Scalars['String']['output']>;
+  packQty: Scalars['Int']['output'];
+  productName: Scalars['String']['output'];
+  size: Maybe<Scalars['String']['output']>;
+  sku: Scalars['String']['output'];
+};
+
+export type SchemaBmsPosRestaurantKioskSubmittedLine = {
+  __typename?: 'BmsPosRestaurantKioskSubmittedLine';
+  lineAmount: Maybe<Scalars['Float']['output']>;
+  unitPrice: Maybe<Scalars['Float']['output']>;
 };
 
 export type SchemaBmsPosRestaurantMenuAvailabilityInput = {
@@ -9132,6 +9272,12 @@ export type SchemaBmsRestaurantFloorAdmin = {
   tables: Array<SchemaBmsRestaurantTableAdmin>;
 };
 
+export type SchemaBmsRestaurantKioskAdminState = {
+  __typename?: 'BmsRestaurantKioskAdminState';
+  active: Scalars['Boolean']['output'];
+  pendingCount: Scalars['Int']['output'];
+};
+
 export type SchemaBmsRestaurantMenuAnalysis = {
   __typename?: 'BmsRestaurantMenuAnalysis';
   bundle: Maybe<SchemaBmsRestaurantBundleAnalysis>;
@@ -11116,6 +11262,9 @@ export type SchemaMutation = {
   bmsPosRestaurantFloorSetup: SchemaBmsPosRestaurantFloorResult;
   /** @deprecated Use the named incoming-order mutations */
   bmsPosRestaurantIncomingAction: SchemaBmsPosRestaurantIncomingActionResult;
+  bmsPosRestaurantKioskAccept: SchemaBmsPosRestaurantKioskDecisionResult;
+  bmsPosRestaurantKioskPreview: SchemaBmsPosRestaurantKioskPreview;
+  bmsPosRestaurantKioskReject: SchemaBmsPosRestaurantKioskDecisionResult;
   bmsPosRestaurantMenuAvailability: SchemaBmsPosMenuAvailabilityResult;
   bmsPosRestaurantMergeChecks: SchemaBmsPosRestaurantCheckActionResult;
   bmsPosRestaurantMoveCheck: SchemaBmsPosRestaurantCheckActionResult;
@@ -12263,6 +12412,21 @@ export type SchemaMutationBmsPosRestaurantFloorSetupArgs = {
 
 export type SchemaMutationBmsPosRestaurantIncomingActionArgs = {
   input: SchemaBmsPosRestaurantIncomingActionInput;
+};
+
+
+export type SchemaMutationBmsPosRestaurantKioskAcceptArgs = {
+  input: SchemaBmsPosRestaurantKioskAcceptInput;
+};
+
+
+export type SchemaMutationBmsPosRestaurantKioskPreviewArgs = {
+  input: SchemaBmsPosRestaurantKioskPreviewInput;
+};
+
+
+export type SchemaMutationBmsPosRestaurantKioskRejectArgs = {
+  input: SchemaBmsPosRestaurantKioskRejectInput;
 };
 
 
@@ -14050,6 +14214,7 @@ export type SchemaQuery = {
   bmsPosCatalogSearch: SchemaBmsPosCatalogSearchResult;
   bmsPosDeposits: SchemaBmsPosDepositsResult;
   bmsPosDeviceDiagnostics: Array<SchemaBmsPosDeviceDiagnosticEvent>;
+  bmsPosDeviceDiagnosticsPage: SchemaBmsPosDeviceDiagnosticPage;
   bmsPosDevices: Array<SchemaBmsPosDevice>;
   bmsPosExpenses: SchemaBmsPosExpensesResult;
   bmsPosKitchenTickets: SchemaBmsPosKitchenTicketsResult;
@@ -14068,6 +14233,7 @@ export type SchemaQuery = {
   bmsPosRestaurantCheck: Maybe<SchemaBmsPosRestaurantCheck>;
   bmsPosRestaurantFloor: SchemaBmsPosRestaurantFloorResult;
   bmsPosRestaurantIncoming: SchemaBmsPosRestaurantIncomingResult;
+  bmsPosRestaurantKioskOrders: SchemaBmsPosRestaurantKioskOrdersResult;
   bmsPosRestaurantMenu: SchemaBmsPosRestaurantMenuResult;
   bmsPosRestaurantQrOrders: SchemaBmsPosRestaurantQrOrdersResult;
   bmsPosRestaurantRequests: SchemaBmsPosRestaurantRequestsResult;
@@ -14125,6 +14291,7 @@ export type SchemaQuery = {
   bmsRestaurantCancellationLossReport: Array<SchemaBmsRestaurantCancellationLoss>;
   bmsRestaurantFloorAdmin: SchemaBmsRestaurantFloorAdmin;
   bmsRestaurantFloorLocations: Array<SchemaBmsLocation>;
+  bmsRestaurantKioskAdminState: SchemaBmsRestaurantKioskAdminState;
   bmsRestaurantMenuActual: SchemaBmsMenuActualReport;
   bmsRestaurantMenuPlan: SchemaBmsRestaurantMenuPlan;
   bmsRestaurantPricePlan: SchemaBmsRestaurantPricePlan;
@@ -15069,6 +15236,11 @@ export type SchemaQueryBmsPosDeviceDiagnosticsArgs = {
 };
 
 
+export type SchemaQueryBmsPosDeviceDiagnosticsPageArgs = {
+  filter: InputMaybe<SchemaBmsPosDeviceDiagnosticFilter>;
+};
+
+
 export type SchemaQueryBmsPosExpensesArgs = {
   credentials: SchemaBmsPosCredentialsInput;
 };
@@ -15116,6 +15288,11 @@ export type SchemaQueryBmsPosRecentSalesArgs = {
 
 export type SchemaQueryBmsPosRestaurantCheckArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsPosRestaurantKioskOrdersArgs = {
+  requestCode: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -15356,6 +15533,11 @@ export type SchemaQueryBmsReportDeliveriesForTenantArgs = {
 
 
 export type SchemaQueryBmsRestaurantFloorAdminArgs = {
+  locationId: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsRestaurantKioskAdminStateArgs = {
   locationId: Scalars['ID']['input'];
 };
 
@@ -16725,6 +16907,33 @@ export type BmsPosRestaurantFloorSetupInput = {
   tableCount: number | null | undefined;
 };
 
+export type BmsPosRestaurantKioskAcceptInput = {
+  cashierUserId: string | number;
+  checkId: string | number | null | undefined;
+  confirmedPriceChange: boolean | null | undefined;
+  confirmedTable: boolean | null | undefined;
+  expectedCheckOpenedAt: string | null | undefined;
+  expectedCheckVersion: number | null | undefined;
+  expectedTableId: string | number | null | undefined;
+  pin: string;
+  quoteFingerprint: string | null | undefined;
+  submissionId: string | number;
+};
+
+export type BmsPosRestaurantKioskPreviewInput = {
+  cashierUserId: string | number;
+  checkId: string | number | null | undefined;
+  pin: string;
+  submissionId: string | number;
+};
+
+export type BmsPosRestaurantKioskRejectInput = {
+  cashierUserId: string | number;
+  pin: string;
+  reason: string;
+  submissionId: string | number;
+};
+
 export type BmsPosRestaurantMenuAvailabilityInput = {
   cashierUserId: string | number;
   pin: string;
@@ -17280,6 +17489,34 @@ export type MobileRestaurantQrOrdersQueryVariables = Exact<{ [key: string]: neve
 
 
 export type MobileRestaurantQrOrdersQuery = { bmsPosRestaurantQrOrders: { submissions: Array<{ id: string, checkId: string, tableId: string, tableCode: string, tableName: string, status: string, estimatedTotal: number, submittedAt: string, reviewedAt: string | null, rejectionReason: string | null, items: Array<{ id: string, sku: string, size: string, productName: string, packCode: string | null, packQty: number, estimatedUnitPrice: number, modifierCodes: Array<string>, modifierNames: Array<string>, kitchenNote: string | null, acceptedCheckItemId: string | null }> }> } };
+
+export type MobileRestaurantKioskOrdersQueryVariables = Exact<{
+  requestCode: string | null | undefined;
+}>;
+
+
+export type MobileRestaurantKioskOrdersQuery = { bmsPosRestaurantKioskOrders: { active: boolean, submissions: Array<{ id: string, serviceMode: string, status: string, checkId: string | null, checkStatus: string | null, orderId: string | null, tableCode: string | null, tableName: string | null, areaName: string | null, splitGroupNo: number | null, submittedAt: string, reviewedAt: string | null, rejectionReason: string | null, items: Array<{ sku: string, productName: string, size: string | null, packQty: number, modifierCodes: Array<string>, kitchenNote: string | null }> }> } };
+
+export type MobileRestaurantKioskPreviewMutationVariables = Exact<{
+  input: BmsPosRestaurantKioskPreviewInput;
+}>;
+
+
+export type MobileRestaurantKioskPreviewMutation = { bmsPosRestaurantKioskPreview: { submissionId: string, serviceMode: string, priceChanged: boolean, submittedLines: Array<{ unitPrice: number | null, lineAmount: number | null } | null> | null, quote: { fingerprint: string, total: number, lines: Array<{ sku: string, productName: string, size: string, packQty: number, unitPrice: number, lineAmount: number, modifiers: Array<{ code: string, name: string, priceDelta: number }> }> }, check: { id: string, version: number, tableId: string, tableCode: string, tableName: string, areaName: string, splitGroupNo: number, openedAt: string } | null } };
+
+export type MobileRestaurantKioskAcceptMutationVariables = Exact<{
+  input: BmsPosRestaurantKioskAcceptInput;
+}>;
+
+
+export type MobileRestaurantKioskAcceptMutation = { bmsPosRestaurantKioskAccept: { status: string, reason: string | null, replayed: boolean | null, kitchenTickets: number | null, check: { id: string } | null } };
+
+export type MobileRestaurantKioskRejectMutationVariables = Exact<{
+  input: BmsPosRestaurantKioskRejectInput;
+}>;
+
+
+export type MobileRestaurantKioskRejectMutation = { bmsPosRestaurantKioskReject: { status: string, reason: string | null, replayed: boolean | null } };
 
 export type MobileRestaurantServiceCallsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -17984,6 +18221,10 @@ export const MobilePosStoreCreditDocument = {"kind":"Document","definitions":[{"
 export const MobilePosPurchaseOrdersDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosPurchaseOrders"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosPurchaseOrders"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"orders"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"qtyOrdered"}},{"kind":"Field","name":{"kind":"Name","value":"qtyReceived"}},{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"supplier"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}},{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"qtyOrdered"}},{"kind":"Field","name":{"kind":"Name","value":"qtyReceived"}},{"kind":"Field","name":{"kind":"Name","value":"unitCost"}},{"kind":"Field","name":{"kind":"Name","value":"supplierSku"}},{"kind":"Field","name":{"kind":"Name","value":"supplierProductName"}},{"kind":"Field","name":{"kind":"Name","value":"supplierUnitName"}},{"kind":"Field","name":{"kind":"Name","value":"baseQtyPerSupplierUnit"}}]}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosPurchaseOrdersQuery, MobilePosPurchaseOrdersQueryVariables>;
 export const MobilePosPurchaseOrderDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosPurchaseOrder"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"poId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosPurchaseOrder"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}},{"kind":"Argument","name":{"kind":"Name","value":"poId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"poId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"qtyOrdered"}},{"kind":"Field","name":{"kind":"Name","value":"qtyReceived"}},{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"supplier"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}},{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"qtyOrdered"}},{"kind":"Field","name":{"kind":"Name","value":"qtyReceived"}},{"kind":"Field","name":{"kind":"Name","value":"unitCost"}},{"kind":"Field","name":{"kind":"Name","value":"supplierSku"}},{"kind":"Field","name":{"kind":"Name","value":"supplierProductName"}},{"kind":"Field","name":{"kind":"Name","value":"supplierUnitName"}},{"kind":"Field","name":{"kind":"Name","value":"baseQtyPerSupplierUnit"}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosPurchaseOrderQuery, MobilePosPurchaseOrderQueryVariables>;
 export const MobileRestaurantQrOrdersDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobileRestaurantQrOrders"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosRestaurantQrOrders"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"submissions"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"checkId"}},{"kind":"Field","name":{"kind":"Name","value":"tableId"}},{"kind":"Field","name":{"kind":"Name","value":"tableCode"}},{"kind":"Field","name":{"kind":"Name","value":"tableName"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"estimatedTotal"}},{"kind":"Field","name":{"kind":"Name","value":"submittedAt"}},{"kind":"Field","name":{"kind":"Name","value":"reviewedAt"}},{"kind":"Field","name":{"kind":"Name","value":"rejectionReason"}},{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"productName"}},{"kind":"Field","name":{"kind":"Name","value":"packCode"}},{"kind":"Field","name":{"kind":"Name","value":"packQty"}},{"kind":"Field","name":{"kind":"Name","value":"estimatedUnitPrice"}},{"kind":"Field","name":{"kind":"Name","value":"modifierCodes"}},{"kind":"Field","name":{"kind":"Name","value":"modifierNames"}},{"kind":"Field","name":{"kind":"Name","value":"kitchenNote"}},{"kind":"Field","name":{"kind":"Name","value":"acceptedCheckItemId"}}]}}]}}]}}]}}]} as unknown as DocumentNode<MobileRestaurantQrOrdersQuery, MobileRestaurantQrOrdersQueryVariables>;
+export const MobileRestaurantKioskOrdersDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobileRestaurantKioskOrders"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"requestCode"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosRestaurantKioskOrders"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"requestCode"},"value":{"kind":"Variable","name":{"kind":"Name","value":"requestCode"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"active"}},{"kind":"Field","name":{"kind":"Name","value":"submissions"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"serviceMode"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"checkId"}},{"kind":"Field","name":{"kind":"Name","value":"checkStatus"}},{"kind":"Field","name":{"kind":"Name","value":"orderId"}},{"kind":"Field","name":{"kind":"Name","value":"tableCode"}},{"kind":"Field","name":{"kind":"Name","value":"tableName"}},{"kind":"Field","name":{"kind":"Name","value":"areaName"}},{"kind":"Field","name":{"kind":"Name","value":"splitGroupNo"}},{"kind":"Field","name":{"kind":"Name","value":"submittedAt"}},{"kind":"Field","name":{"kind":"Name","value":"reviewedAt"}},{"kind":"Field","name":{"kind":"Name","value":"rejectionReason"}},{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"productName"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"packQty"}},{"kind":"Field","name":{"kind":"Name","value":"modifierCodes"}},{"kind":"Field","name":{"kind":"Name","value":"kitchenNote"}}]}}]}}]}}]}}]} as unknown as DocumentNode<MobileRestaurantKioskOrdersQuery, MobileRestaurantKioskOrdersQueryVariables>;
+export const MobileRestaurantKioskPreviewDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobileRestaurantKioskPreview"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosRestaurantKioskPreviewInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosRestaurantKioskPreview"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"submissionId"}},{"kind":"Field","name":{"kind":"Name","value":"serviceMode"}},{"kind":"Field","name":{"kind":"Name","value":"priceChanged"}},{"kind":"Field","name":{"kind":"Name","value":"submittedLines"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"unitPrice"}},{"kind":"Field","name":{"kind":"Name","value":"lineAmount"}}]}},{"kind":"Field","name":{"kind":"Name","value":"quote"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"fingerprint"}},{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"lines"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"productName"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"packQty"}},{"kind":"Field","name":{"kind":"Name","value":"unitPrice"}},{"kind":"Field","name":{"kind":"Name","value":"lineAmount"}},{"kind":"Field","name":{"kind":"Name","value":"modifiers"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"priceDelta"}}]}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"check"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"version"}},{"kind":"Field","name":{"kind":"Name","value":"tableId"}},{"kind":"Field","name":{"kind":"Name","value":"tableCode"}},{"kind":"Field","name":{"kind":"Name","value":"tableName"}},{"kind":"Field","name":{"kind":"Name","value":"areaName"}},{"kind":"Field","name":{"kind":"Name","value":"splitGroupNo"}},{"kind":"Field","name":{"kind":"Name","value":"openedAt"}}]}}]}}]}}]} as unknown as DocumentNode<MobileRestaurantKioskPreviewMutation, MobileRestaurantKioskPreviewMutationVariables>;
+export const MobileRestaurantKioskAcceptDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobileRestaurantKioskAccept"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosRestaurantKioskAcceptInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosRestaurantKioskAccept"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}},{"kind":"Field","name":{"kind":"Name","value":"kitchenTickets"}},{"kind":"Field","name":{"kind":"Name","value":"check"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}}]}}]}}]}}]} as unknown as DocumentNode<MobileRestaurantKioskAcceptMutation, MobileRestaurantKioskAcceptMutationVariables>;
+export const MobileRestaurantKioskRejectDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobileRestaurantKioskReject"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosRestaurantKioskRejectInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosRestaurantKioskReject"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"replayed"}}]}}]}}]} as unknown as DocumentNode<MobileRestaurantKioskRejectMutation, MobileRestaurantKioskRejectMutationVariables>;
 export const MobileRestaurantServiceCallsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobileRestaurantServiceCalls"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosRestaurantServiceCalls"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"calls"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"tableId"}},{"kind":"Field","name":{"kind":"Name","value":"tableCode"}},{"kind":"Field","name":{"kind":"Name","value":"tableName"}},{"kind":"Field","name":{"kind":"Name","value":"requestCode"}},{"kind":"Field","name":{"kind":"Name","value":"requestNote"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"acknowledgedAt"}},{"kind":"Field","name":{"kind":"Name","value":"completedAt"}}]}}]}}]}}]} as unknown as DocumentNode<MobileRestaurantServiceCallsQuery, MobileRestaurantServiceCallsQueryVariables>;
 export const MobileRestaurantWaitlistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobileRestaurantWaitlist"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosRestaurantWaitlist"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"waitingCount"}},{"kind":"Field","name":{"kind":"Name","value":"waitingGuests"}},{"kind":"Field","name":{"kind":"Name","value":"calledCount"}},{"kind":"Field","name":{"kind":"Name","value":"entries"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"kind"}},{"kind":"Field","name":{"kind":"Name","value":"partySize"}},{"kind":"Field","name":{"kind":"Name","value":"guestName"}},{"kind":"Field","name":{"kind":"Name","value":"guestPhone"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"preferredTableId"}},{"kind":"Field","name":{"kind":"Name","value":"preferredTableCode"}},{"kind":"Field","name":{"kind":"Name","value":"reservedFor"}},{"kind":"Field","name":{"kind":"Name","value":"serviceDate"}},{"kind":"Field","name":{"kind":"Name","value":"queueNo"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"calledAt"}},{"kind":"Field","name":{"kind":"Name","value":"seatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"seatedTableId"}},{"kind":"Field","name":{"kind":"Name","value":"seatedTableCode"}},{"kind":"Field","name":{"kind":"Name","value":"closedAt"}},{"kind":"Field","name":{"kind":"Name","value":"checkId"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]}}]} as unknown as DocumentNode<MobileRestaurantWaitlistQuery, MobileRestaurantWaitlistQueryVariables>;
 export const MobileRestaurantRequestsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobileRestaurantRequests"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosRestaurantRequests"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"requests"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"version"}},{"kind":"Field","name":{"kind":"Name","value":"locationId"}},{"kind":"Field","name":{"kind":"Name","value":"locationName"}},{"kind":"Field","name":{"kind":"Name","value":"customerName"}},{"kind":"Field","name":{"kind":"Name","value":"phone"}},{"kind":"Field","name":{"kind":"Name","value":"fulfillmentType"}},{"kind":"Field","name":{"kind":"Name","value":"requestedAt"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"reviewNote"}},{"kind":"Field","name":{"kind":"Name","value":"orderId"}},{"kind":"Field","name":{"kind":"Name","value":"checkoutUrl"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"qty"}},{"kind":"Field","name":{"kind":"Name","value":"packCode"}},{"kind":"Field","name":{"kind":"Name","value":"unitName"}},{"kind":"Field","name":{"kind":"Name","value":"modifierCodes"}},{"kind":"Field","name":{"kind":"Name","value":"modifierNames"}}]}},{"kind":"Field","name":{"kind":"Name","value":"agreedItems"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"qty"}},{"kind":"Field","name":{"kind":"Name","value":"packCode"}},{"kind":"Field","name":{"kind":"Name","value":"unitName"}},{"kind":"Field","name":{"kind":"Name","value":"modifierCodes"}},{"kind":"Field","name":{"kind":"Name","value":"modifierNames"}}]}}]}}]}}]}}]} as unknown as DocumentNode<MobileRestaurantRequestsQuery, MobileRestaurantRequestsQueryVariables>;

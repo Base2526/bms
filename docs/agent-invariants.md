@@ -1157,6 +1157,40 @@ own dine-in service. Operator detail:
   one opaque, rotatable token. A scan creates only a hashed, expiring browser session bound to the
   table's current `OPEN` check. The browser never supplies tenant, branch, table or check authority,
   and its structured basket becomes a `PENDING` proposal only. Public endpoints are rate-limited.
+- **A branch kiosk is also proposal-only (`10.144`).** Its hashed, rotatable URL derives the tenant
+  and branch; the customer chooses `DINE_IN` or `TAKEAWAY` and catalog codes, never a check, price,
+  device, shift or cashier. A PIN-authenticated `pos.sell` operator accepts the whole proposal into
+  an existing OPEN dine-in check selected by staff, or opens a tableless takeaway check, and sends
+  the ordinary reservation/KDS round in one transaction. Pending requests expire after 30 minutes;
+  rotation or disable expires them immediately. The public screen never settles or mints a pickup
+  queue number.
+  Staff review uses a server-computed catalog quote and compares its fingerprint when accepting;
+  acceptance resolves and rechecks the quote on the same transaction connection as the check,
+  reservation and kitchen work. The fingerprint includes option labels and group rules, and the
+  frozen order receipt unit prices must match the reviewed quote. Menu cards derive starting
+  prices from active sizes sellable under the branch's stock policy.
+  The public menu filters only on actual non-empty `bms_products.category` values attached to
+  branch-visible `RESTAURANT_POS` items; a kitchen station is not a merchandise category.
+  Product media comes from the catalog primary image. A missing or failed image uses a neutral
+  food-and-drink fallback, including the hero; neither demo photos nor unsupported promotion badges
+  are customer content. Item detail and modifier prices are fetched from the server, and the visual
+  cart total remains an estimate before POS settlement.
+  a changed submission-time catalog price needs explicit customer confirmation. Dine-in review
+  binds the selected OPEN check's version, table and opening time, all checked again under the
+  acceptance transaction lock. The request code leads to the exact check/order in the POS; it is
+  neither a receipt nor a pickup queue number. The quote excludes POS promotions, VAT and discounts.
+  `10.145` fails kiosk/submission RLS closed without a tenant GUC; the public locator uses only a
+  transaction-local token-hash GUC for an active matching kiosk. Reads of submissions must open a
+  tenant transaction; a bare pool query will return no rows after this migration. Public routes
+  use shared Redis kiosk counters (503 during Redis failure), not an IP derived from untrusted
+  forwarding headers, and an old URL returns 410 so the shared screen clears its guest state.
+  Web and Desktop share `/pos/restaurant`; Mobile Restaurant Ops reads the same branch proposals
+  through device GraphQL and uses the same server review/accept/reject services, with PIN, `pos.sell`,
+  cashier branch scope and an OPEN device shift on each mutation. Mobile may open only the exact
+  linked check in its existing check/checkout flow. The admin floor view exposes active/pending
+  counts only to a branch-scoped floor manager; URL issue/rotate/disable stay in paired POS and
+  the new token is shown once. Mobile inbox polling is ten seconds until a named invalidation
+  is designed; do not infer immediate delivery from a successful build.
 - **Staff acceptance is the kitchen boundary.** A device-authenticated, PIN-verified operator with
   `pos.sell` accepts or rejects the entire proposal. Acceptance adds all items, refreshes the same
   whole-check reservation, creates the normal KDS round, records the review and audit, and commits

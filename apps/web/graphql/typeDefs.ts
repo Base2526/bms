@@ -664,6 +664,11 @@ export const typeDefs = /* GraphQL */ `
     status: String!
   }
 
+  type BmsRestaurantKioskAdminState {
+    active: Boolean!
+    pendingCount: Int!
+  }
+
   type BmsRestaurantFloorAdmin {
     publishTableDetails: Boolean!
     areas: [BmsRestaurantArea!]!
@@ -1396,6 +1401,7 @@ export const typeDefs = /* GraphQL */ `
     bmsLocations: [BmsLocation!]!
     bmsManageableLocations: [BmsLocation!]!
     bmsRestaurantFloorAdmin(locationId: ID!): BmsRestaurantFloorAdmin!
+    bmsRestaurantKioskAdminState(locationId: ID!): BmsRestaurantKioskAdminState!
     # สาขาที่ผู้ใช้คนนี้จัดผังได้จริง (bms_user_allowed_locations, 9.37) — ไม่ใช่ bmsLocations
     bmsRestaurantFloorLocations: [BmsLocation!]!
     bmsRestaurantTableQr(tableId: ID!): BmsRestaurantTableQr

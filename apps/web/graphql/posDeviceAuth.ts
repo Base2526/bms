@@ -1,5 +1,5 @@
 import type { PosDevice, PinVerifyResult } from "@/lib/bms/pos";
-import { cashierHasPermission, getOpenPosShift, verifyCashierPin } from "@/lib/bms/pos";
+import { cashierCanAccessLocation, cashierHasPermission, getOpenPosShift, verifyCashierPin } from "@/lib/bms/pos";
 import { posPermissionDeniedMessage } from "@/lib/bms/posApprovals";
 import { isDistinctPosApprover } from "@/lib/bms/posRouteHelpers";
 import {
@@ -76,6 +76,21 @@ export async function requirePosCashier(
   }
   if (!(await cashierHasPermission(device.tenantId, actor.userId, permission))) {
     return gqlError(await posPermissionDeniedMessage(device.tenantId, permission), "FORBIDDEN", {
+      permission,
+    });
+  }
+  return actor;
+}
+
+/** Restaurant kiosk decisions require the cashier's branch scope as well as tenant RBAC. */
+export async function requirePosCashierAtBranch(
+  device: PosDevice,
+  credentials: PosCashierCredentials,
+  permission: string,
+) {
+  const actor = await requirePosCashier(device, credentials, permission);
+  if (!(await cashierCanAccessLocation(device.tenantId, actor.userId, device.locationId))) {
+    return gqlError("พนักงานไม่มีสิทธิ์ใช้งานสาขาของเครื่องนี้", "FORBIDDEN", {
       permission,
     });
   }

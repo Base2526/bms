@@ -1,0 +1,85 @@
+# จอสั่งอาหารหน้าร้าน: ใบตรวจ pilot 1 สาขา
+
+สถานะเอกสาร: ขั้นตอนตรวจที่ต้องทำบนฐานที่ restore และฮาร์ดแวร์จริง ยังไม่ใช่ผลผ่านการทดสอบ
+
+ผลตรวจในเครื่องพัฒนา 26 พ.ย. 2026: browser fixture ของ `/kiosk/[token]` ดีไซน์แดง–ขาว
+ผ่านที่ 1440×900, 1920×1080, 1080×1920 และ 390×844 px บน production build โดยตรวจ
+การกรองหมวดจาก field ใน API fixture, รูปเสีย, ขนาดหมด, modifier บังคับ, ตะกร้า, response หาย,
+สถานะคำขอ, idle reset, browser back/bfcache และหน้าเครือข่ายล้ม. ภาพ HOME, MENU, modal,
+CART, PENDING/ACCEPTED/REJECTED/EXPIRED, unavailable และ network อยู่ใน
+`.test-output/restaurant-kiosk-browser/`. Browser fixture ของ `/pos/restaurant?screen=kiosk`
+และ `/admin/restaurant-floor` ผ่านที่ 1440/390 px โดยจำลอง API ใน Playwright
+ไม่ได้ใช้ฐานหรือเครื่อง POS จริง; ภาพอยู่ใน
+`.test-output/restaurant-kiosk-pos-browser/` และ
+`.test-output/restaurant-kiosk-admin-browser/`. `cd apps/web && npm run gate` ผ่าน:
+pure 4,030 (ผ่าน 4,024, ข้าม 6, ล้ม 0), typecheck และ production build ผ่าน.
+`cd apps/mobile && npm test -- --runInBand` ผ่าน 524/524, typecheck ผ่าน; Desktop
+`npm test` ผ่าน 179/179 และ lint ผ่าน. ผลเหล่านี้ยังเป็น fixture/automated tests.
+ยัง **ไม่ได้ทดสอบ** migration/DB service tests บนฐาน restore, Caddy ingress จริง, Redis หลาย instance,
+จอ USB touch, KDS/เครื่องพิมพ์, การชำระเงินจริงหรือใบเสร็จจริง จึงยังเป็น **No-Go**
+
+## ขอบเขตและผู้รับผิดชอบ
+
+- ผู้จัดการสาขา: เลือกสาขา เครื่อง POS พนักงานรับคำขอ และอนุมัติเปิด/ปิดจอ
+- พนักงานหน้าร้าน: ช่วยลูกค้า เฝ้า badge และค้นรหัสคำขอ ยืนยันโต๊ะ/บิล แจ้งราคาที่เปลี่ยน
+- แคชเชียร์: เปิดกะ ใช้ PIN รับคำขอเมื่อพร้อมดำเนินการ เปิดบิลจากแผงจอสั่ง รับเงิน ตรวจใบเสร็จ/เลขรับอาหาร
+- ครัว: ตรวจ KDS/station และงานพิมพ์ครัว; เมื่อผลพิมพ์ไม่แน่ใจ ตรวจถาดกับ journal ก่อน retry ด้วยคน
+- วิศวกร: เตรียมฐานทิ้งได้ที่ restore จาก dev ที่เหมาะสม ตรวจ migration/rollback/audit และบันทึกผล
+
+การรับคำขอส่งครัว **ก่อน** รับเงิน จึงให้แคชเชียร์รับเมื่อแขกยืนพร้อมชำระหรือพนักงานโต๊ะยืนยันว่าแขกยังอยู่จริง หากแขกไม่จ่าย ให้ผู้จัดการจัดการบิลผ่านการยกเลิก/void เดิมตามสถานะจริง อย่าลบ submission หรือแก้ stock เอง
+
+## หลักฐานเริ่มต้น
+
+บันทึกวันเวลา สาขาทดสอบ (รหัสสังเคราะห์), commit/working-tree hash, ฐาน restore และคำยืนยันว่าไม่ใช่ production, migration ที่ apply, เครื่อง POS/กะ/ผู้ทดสอบ, รุ่น/ขนาด/ความละเอียดจอ, OS/browser, HDMI/USB touch, network path, KDS/station/printer, การตั้งค่าเลขรับอาหาร และรูป/คลิป/SQL assertion พร้อมเวลาแต่ละกรณี อย่าใส่ token, PIN, raw note หรือข้อมูลลูกค้าจริงในหลักฐาน
+
+## ฐานข้อมูลที่ทิ้งได้
+
+| ขั้นตอน | ผลที่ต้องเห็น | หลักฐาน |
+| --- | --- | --- |
+| Restore ฐาน dev ที่เหมาะสมใน instance แยก; ตรวจ hostname/database ก่อนเริ่ม | ไม่มีการต่อ production; schema ตั้งต้นครบ | คำสั่ง restore ที่ปิดรหัสผ่าน, fingerprint dump, hostname/db |
+| Apply `10.144` และ `10.145` แล้ว reapply | รอบสอง idempotent; ตาราง/index/policy/grant/revision trigger ครบ | log migration, `pg_indexes`, `pg_policies`, `information_schema` |
+| สร้าง URL 2 ครั้งสาขาเดียวกันพร้อมกัน | active เพียงหนึ่ง URL; URL เดิมใช้ไม่ได้หลังหมุน/ปิด | SQL count, HTTP status, audit/revision |
+| ใช้ `SET ROLE bms_app` กับ tenant GUC ที่ถูก/ผิด/ว่าง และ token-hash GUC | submission ไม่มี GUC ต้องไม่เห็นข้อมูล; locator เห็นเฉพาะ token hash ที่ตรงและ active; ห้ามใช้ token GUC เขียน | SQL matrix, current role/GUC |
+| ป้อน kiosk/check ข้าม tenant/branch | composite FK และ service ปฏิเสธ ไม่มีข้อมูลข้ามสาขา | SQLSTATE, count ก่อน/หลัง |
+| Submit key เดิมพร้อมกัน/ส่งซ้ำ | submission เดียวและรหัสเดิม | count/idempotency result |
+| รับคำขอเดียวกันจาก POS สองเครื่องพร้อมกันและทำให้ response แรกหาย | check/order/reservation/ticket/audit อย่างละชุด; replay ชี้ check เดิม | row ids/count/stock movement |
+| 20 บรรทัดโดยบรรทัดท้ายผิด, หมดสต็อก, sold-out, modifier/size เปลี่ยน | transaction rollback; ไม่มี check/order/stock/KDS/audit ครึ่งชุด | before/after SQL และ error |
+| DINE_IN ไม่มี check, เปิด check, ย้ายโต๊ะ, split, ปิด check, มี NEW ค้าง, สั่งเพิ่ม | ใช้ได้เฉพาะ check ที่ OPEN/DINE_IN/สาขาถูกและตรง preview; กรณีเปลี่ยนไม่มี partial write | check version/table/opened_at และผลแต่ละกรณี |
+| ราคาเปลี่ยนหลัง submit และหลัง preview | ต้องเห็นยอดเดิม/ใหม่; accept ที่ใช้ fingerprint เก่าถูกปฏิเสธ; ยืนยันราคาใหม่ก่อนรับ | ราคา/quote fingerprint, audit ที่ไม่เก็บ note |
+| ยกเลิก/return/void หลังส่งหรือหลังขาย | ใช้บริการ POS เดิม สต็อก/เงิน/ตั๋ว/ภาษีสอดคล้อง | movement, payment, receipt/return IDs |
+
+**ยังต้องพิสูจน์:** `10.145` เปลี่ยน RLS fallback ของ `10.144` เป็น fail closed พร้อม token-hash locator ที่ตั้งค่าเฉพาะ transaction ต้องทดสอบภายใต้ `bms_app` และ public API จริงบนฐาน restore ก่อนเปิด URL กว้าง
+
+หลังยืนยันว่า `POSTGRES_HOST`/`POSTGRES_DB` ชี้ instance ที่ restore และทิ้งได้ ให้รัน `BMS_KIOSK_RESTORED_DB=1 node scripts/run-contract-tests.mjs db restaurant-kiosk-db-contract` จาก root (PowerShell ตั้ง `$env:BMS_KIOSK_RESTORED_DB='1'` ก่อน) ชุดนี้ตรวจ reapply migration, RLS ภายใต้ `bms_app`, token locator, unique และ composite FK ใน transaction ที่ rollback ทั้งหมด จากนั้นรัน `node scripts/run-contract-tests.mjs db restaurant-pos-db-contract` ด้วย fixture ร้านอาหารแยก ซึ่งรวมสองคำขอ TAKEAWAY, duplicate accept และ 20-line rollback. ทั้งสองชุดยังต้องรันจริงและเพิ่มหลักฐานของ route/PIN, DINE_IN race, settlement/return และ pickup queue ก่อนผ่าน gate pilot
+
+## จอสัมผัสและเส้นทางจริง
+
+| ขั้นตอน | ผลที่ต้องเห็น | หลักฐาน |
+| --- | --- | --- |
+| ต่อ HDMI/DisplayPort และ USB touch, reboot | ภาพและ touch ผูกกับจอที่ถูก ไม่แตะแล้วไป POS; kiosk mode กลับมาได้ | คลิปก่อน/หลัง reboot, display map |
+| ตรวจ calibration ทั้ง 4 มุม, scaling 100/125/150%, ความละเอียดจริง | ปุ่มขนาด/ตัวเลือก/จำนวน/ส่งแตะได้; ไม่มีปุ่มถูกตัดหรือ horizontal overflow | ภาพ 4 มุม, resolution/scaling |
+| เปิดดีไซน์ใหม่ที่ 1080×1920, 1920×1080 และ 390 px | HOME/MENU/modal/CART/STATUS อ่านได้ ปุ่มหลักแตะง่าย sticky cart ไม่บังการ์ดใบสุดท้าย | ภาพแต่ละขนาด, touch recording |
+| ตั้งหมวดและรูปใน catalog ของร้าน แล้วลองหมวดว่าง/รูปเสีย | เห็นเฉพาะหมวดจริงจาก `bms_products.category`; เมนูไร้หมวดยังอยู่ใน ทั้งหมด; hero/การ์ดใช้รูปของร้านหรือ fallback กลาง ไม่มีรูป demo หรือป้ายโปรโมชันปลอม | API response ที่ตัด token, ภาพจอ |
+| ขนาดราคาถูกหมดและ modifier บังคับ | ราคาเริ่มต้นมาจากขนาดที่ขายได้; ขนาดหมดกดไม่ได้; เพิ่มตะกร้าไม่ได้จนเลือก modifier บังคับ; ราคา modal มาจาก detail API | request/response ที่ตัด token, ภาพ modal |
+| เปิด browser kiosk mode และ virtual keyboard ไทย/อังกฤษ | พิมพ์ค้นหา/หมายเหตุได้ focus ไม่หลุด modal; screen reader อ่าน label ที่ใช้ได้ | คลิปและรายการปัญหา |
+| เลือกทั้งโหมด เมนูหลายขนาด modifier บังคับ ภาพโหลดไม่ขึ้น | การ์ดหลายขนาดบอก “ราคาเริ่มต้น”; modifier ที่บังคับต้องเลือก; ภาพล้มไม่บังชื่อ/ราคา | screenshot สองภาษาและเมนูตัวอย่าง |
+| ส่งแล้วกดซ้ำ, ตัด Wi-Fi ระหว่างส่ง, refresh/back/restart | ไม่สื่อว่าแน่นอนว่าล้ม; พนักงานค้นรหัสก่อนคีย์ใหม่; ลูกค้าคนถัดไปไม่เห็น cart/note/status เดิม | network trace, screen recording, submission/check count |
+| ปล่อยจอไม่มีการใช้งาน 2 นาที และลอง browser back | กลับหน้าแรก ไม่มีข้อมูลก่อนหน้า | คลิปพร้อมเวลา |
+| เปิดกะ ใช้ PIN ถูก/ผิด/ไม่มีสิทธิ์/ผิดสาขา; ปิดกะ | รับ/จัดการ URL ได้เฉพาะผู้มีสิทธิ์และกะเปิด; ก่อนปิดกะปิดจอและจัดการ pending | POS/HTTP/audit screenshot |
+| TAKEAWAY สองคำขอติดกัน | ค้นแต่ละรหัส เปิดบิลตรงใบ ชำระเงินแยกและพิมพ์ใบเสร็จถูกใบ | รหัส→check→order→receipt ทั้งสอง |
+| DINE_IN เปิดโต๊ะก่อนรับ, split/move/close ระหว่าง preview | UI บอก area/โต๊ะ/เลขบิลและบังคับยืนยัน; server ปฏิเสธ stale preview | คลิป/SQL before-after |
+| KITCHEN_WORKFLOW เปิด/ปิด, station, KDS, printer timeout | ตั๋วตาม branch/station; ไม่พิมพ์ซ้ำอัตโนมัติเมื่อผลไม่แน่ใจ | KDS screenshot, print journal, ถาดจริง |
+| รับ cash/split tender, VAT/ส่วนลดที่ต้องอนุมัติ, receipt | ยอดจริง/ภาษี/ส่วนลด/เงินทอนจาก POS; kiosk ไม่รับเงิน | receipt และ settlement response |
+| เลขรับอาหารปิด/เปิด, ออกเลขล้มหลังขาย, issue-again, READY/call/collect | ไม่สร้างเลขจากรหัสคำขอ; ขายสำเร็จไม่กลายเป็นล้ม; retry คืนเลขเดิม | order/queue ids, จอคิว, ใบเสร็จ |
+| หมุน/ปิด URL ขณะมี pending | URL เก่าตอบ 410; จอเก่าล้างข้อมูลและบอกให้ติดต่อพนักงาน; pending ไม่เข้าครัว | HTTP/status, audit, ticket count |
+| Desktop เปิด `/pos/restaurant?screen=kiosk` จาก pairing จริงและเน็ตหลุด | ค้นรหัส เปิด check ที่ผูก และกลับมา refresh ได้; journal บันทึก route แต่ไม่มี token/PIN/note | คลิป Desktop, journal ที่ redacted |
+| Mobile Restaurant Ops → จอสั่งอาหาร บนเครื่องจับคู่ | badge/เสียงขึ้นภายในรอบ poll; ค้นรหัสนอก 100 แถว; quote ราคา/ตัวเลือก/โต๊ะหลัง split ตรง server; รับ/ปฏิเสธด้วย PIN และเปิด check ที่ผูกไป Checkout ได้ | คลิป iOS/Android, GraphQL trace ที่ตัด PIN, check/receipt ids |
+| หลังบ้านหน้าจัดผังร้านเลือกสาขาที่มี/ไม่มี URL | แสดงสถานะและ pending count เฉพาะสาขาที่มีสิทธิ์; URL เดิมไม่ปรากฏ; ลิงก์พาไป POS เพื่อจัดการจอ | ภาพสองสาขา, denial ข้ามสาขา |
+
+## Go / No-Go
+
+**Go เฉพาะ pilot มีพนักงานกำกับ 1 สาขา** เมื่อฐาน restore ผ่านทุกกรณี P0 ที่มีเงินจริง/สต็อก, จอ touch + POS + KDS/เครื่องพิมพ์ + receipt/queue ผ่านจริง, พนักงานซ้อม fallback, มีผู้เฝ้าคำขอทุกช่วงเปิดจอ และผู้จัดการลงชื่อรับความเสี่ยงที่ยังเหลือ หากข้อใดไม่มีผลทดสอบ ให้เป็น **No-Go** แม้ `npm run gate` ผ่าน
+
+ก่อนขยายหลายสาขา: พิสูจน์ RLS/token locator ที่เพิ่มแล้ว; เสนอให้แปลง `PENDING` ที่เกิน 30 นาทีเป็น `EXPIRED` แล้วลบ proposal ที่ปฏิเสธ/หมดอายุเมื่อเกิน 30 วัน และลบ proposal ที่รับแล้วเมื่อเกิน 365 วัน โดยคง check/order/payment/receipt/audit ตามนโยบายหลักของระบบและเก็บ mapping ใน audit — ต้องให้เจ้าของข้อมูลอนุมัติช่วงเวลาและทดสอบ cleanup/restore ก่อนเปิด worker; เพิ่ม monitoring อายุ pending, acceptance failure, rate-limit, queue issue, KDS/print โดยใช้ metrics/structured logs ที่มีอยู่แทนการเขียน per-request ลง Postgres; load test Redis outage/429/503 หลาย instance และ fleet ceiling, 100 pending และตัดสินใจโมเดล URL ต่อเครื่องหรือสาขา. Kiosk throttling ไม่ใช้ `x-forwarded-for` เป็นฐาน IP limit
+
+P2 ต้องทำ discovery แยก: เลือกโต๊ะเอง, ชำระที่จอ, พิมพ์ใบรับคำขอ/เลขคิวจากจอ, คาดการณ์เวลารอ

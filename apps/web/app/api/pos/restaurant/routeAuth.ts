@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { authenticatePosDevice, cashierHasPermission, getOpenPosShift, verifyCashierPin } from "@/lib/bms/pos";
+import { authenticatePosDevice, cashierCanAccessLocation, cashierHasPermission, getOpenPosShift, verifyCashierPin } from "@/lib/bms/pos";
 
 export async function authenticateRestaurantRead(req: NextRequest) {
   const device = await authenticatePosDevice(req.headers.get("x-pos-device-token") ?? "");
@@ -30,6 +30,9 @@ export async function authenticateRestaurantMutation(
   ));
   if (!permissionChecks.some(Boolean)) {
     return { ok: false as const, status: 403, error: `ไม่มีสิทธิ์ ${acceptedPermissions.join(" หรือ ")}` };
+  }
+  if (!await cashierCanAccessLocation(read.device.tenantId, actor.userId, read.device.locationId)) {
+    return { ok: false as const, status: 403, error: "พนักงานไม่มีสิทธิ์ใช้งานสาขาของเครื่องนี้" };
   }
   const shift = await getOpenPosShift(read.device.tenantId, read.device.id);
   if (!shift) return { ok: false as const, status: 409, error: "ต้องเปิดกะของเครื่องนี้ก่อน" };

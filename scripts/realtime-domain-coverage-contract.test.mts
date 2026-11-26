@@ -224,6 +224,7 @@ const CONFIGURATION = [
   "bms_conversation_helpers", "bms_conversation_intents", "bms_conversation_notes",
   "bms_actions", "bms_pharmacy_clinical_evidence", "bms_pos_purchase_receipts",
   "bms_restaurant_qr_sessions", "bms_restaurant_table_qr_tokens",
+  "bms_restaurant_kiosks", // Branch kiosk configuration: staff refetches after issue/rotate/disable.
   "bms_board_game_areas", "bms_board_game_public_locations", "bms_board_game_tables",
   "bms_board_game_time_rates", "bms_board_game_titles", "bms_board_game_offers",
   "bms_board_game_guest_tokens", "bms_board_game_branch_hours",
@@ -236,6 +237,7 @@ const CONFIGURATION = [
 
 /** Operational state whose owning surface performs bounded polling plus post-write refresh. */
 const POLLED_OPERATIONAL_SURFACE = [
+  "bms_restaurant_kiosk_submissions", // POS kiosk badge polls branch proposals from every screen; review refreshes immediately.
   // Fish intake page refreshes its bounded recent list after confirmed writes;
   // live/opening stock itself uses the canonical inventory movement path.
   "bms_fish_intakes", "bms_fish_intake_lines",

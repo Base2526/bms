@@ -430,7 +430,7 @@ export async function getRestaurantQrMenuItem(input: {
   };
 }
 
-function normalizeSubmissionItems(items: RestaurantQrItemInput[]) {
+export function normalizeSubmissionItems(items: RestaurantQrItemInput[]) {
   if (!Array.isArray(items) || items.length < 1 || items.length > MAX_SUBMISSION_ITEMS) {
     throw new RestaurantCheckError(`หนึ่งรอบต้องมีรายการ 1–${MAX_SUBMISSION_ITEMS} รายการ`);
   }
