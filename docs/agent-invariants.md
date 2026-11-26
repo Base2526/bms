@@ -3114,6 +3114,9 @@ for reviewed NON_STOCK/VAT-N catalog services and must roll back if the server o
 Closed clinic orders require reconciliation; a retry must not report a cancelled or returned order
 as an active replay or create a replacement automatically.
 The cashier's signed-encounter worklist contains patient identity and billing state only, no
-clinical notes; its access needs `clinic.billing.manage` and an active CASHIER role. Bootstrap
-accepts any clinic permission but never grants chart access by itself.
+clinical notes; its access and the charge-sheet read need `clinic.billing.manage` and an active
+CASHIER role. A CLINICIAN role alone does not read the charge sheet. CHECK_IN, CANCEL and NO_SHOW
+retries that find their own resulting status return without another write or audit; a different
+terminal status remains a conflict. Bootstrap accepts any clinic permission but never grants chart
+access by itself.
 The feature flag defaults off and does not establish clinical, privacy or tax release approval.

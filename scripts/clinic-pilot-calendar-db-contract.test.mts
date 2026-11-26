@@ -19,6 +19,7 @@ test("a 501-appointment month is bounded and marked incomplete under tenant RLS"
   const db = new Pool({ host: "127.0.0.1", port: 5544, database: "clinic_pilot_test",
     user: process.env.POSTGRES_USER, password: process.env.POSTGRES_PASSWORD });
   const client = await db.connect();
+  const writes: string[] = [];
   const tenantId = randomUUID(), otherTenantId = randomUUID();
   const registrarId = randomUUID(), clinicianId = randomUUID(), locationId = randomUUID(), patientId = randomUUID();
   try {
@@ -48,7 +49,9 @@ test("a 501-appointment month is bounded and marked incomplete under tenant RLS"
       "node:crypto": require("node:crypto"),
       "./access": {
         ClinicError: class ClinicError extends Error { constructor(public code: string) { super(code); } },
-        auditClinicRead: async () => undefined, auditClinicWrite: async () => undefined,
+        auditClinicRead: async () => undefined,
+        auditClinicWrite: async (_client: unknown, _tenantId: string, _actorId: string,
+          action: string) => { writes.push(action); },
         boundedText: (value: string) => value, isoInstant: (value: string) => new Date(value),
         uuid: (value: string) => value,
         clinicTx: async (_tenantId: string, _actorId: string, fn: (dbClient: unknown) => Promise<unknown>) => fn(client),
@@ -75,6 +78,18 @@ test("a 501-appointment month is bounded and marked incomplete under tenant RLS"
     assert.equal(result.appointments.length, 500);
     assert.equal(result.truncated, true);
     assert.equal(result.appointments[0].patientName, "Synthetic Patient");
+    for (const [index, action, expected] of [
+      [0, "CHECK_IN", "CHECKED_IN"], [1, "CANCEL", "CANCELLED"], [2, "NO_SHOW", "NO_SHOW"],
+    ] as const) {
+      const appointmentId = result.appointments[index].id;
+      await module.exports.transitionClinicAppointment({ tenantId, actorId: registrarId, appointmentId, action });
+      await module.exports.transitionClinicAppointment({ tenantId, actorId: registrarId, appointmentId, action });
+      assert.equal((await client.query(`SELECT status FROM bms_clinic_appointments
+        WHERE tenant_id=$1 AND id=$2`, [tenantId, appointmentId])).rows[0].status, expected);
+      assert.equal(writes.filter((value) => value === `clinic.appointment.${action.toLowerCase()}`).length, 1);
+    }
+    await assert.rejects(module.exports.transitionClinicAppointment({ tenantId, actorId: registrarId,
+      appointmentId: result.appointments[1].id, action: "CHECK_IN" }), /INVALID_APPOINTMENT_STATE/);
     await client.query(`SELECT set_config('bms.tenant_id',$1,true)`, [otherTenantId]);
     assert.equal((await client.query(`SELECT count(*)::int AS n FROM bms_clinic_appointments`)).rows[0].n, 0);
     await assert.rejects(module.exports.listClinicAppointments({ tenantId: otherTenantId, actorId: registrarId,

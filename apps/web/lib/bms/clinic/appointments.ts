@@ -111,6 +111,7 @@ export async function transitionClinicAppointment(input: {
       [input.tenantId, appointmentId]
     );
     if (!row.rows[0]) throw new ClinicError("APPOINTMENT_NOT_FOUND", 404);
+    if (row.rows[0].status === next) return;
     if (row.rows[0].status !== "CONFIRMED") throw new ClinicError("INVALID_APPOINTMENT_STATE", 409);
     await client.query(
       `UPDATE bms_clinic_appointments SET status=$3,updated_at=now() WHERE tenant_id=$1 AND id=$2`,

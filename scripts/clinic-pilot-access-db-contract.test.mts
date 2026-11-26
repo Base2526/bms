@@ -25,7 +25,7 @@ function loadModule(file: string, mocks: Record<string, unknown>): Record<string
   return module.exports;
 }
 
-test("clinic record and attachment access follows active role, care team, expiry and tenant", { skip: !enabled }, async () => {
+test("clinic record, attachment and billing access follows role, care team, expiry and tenant", { skip: !enabled }, async () => {
   assert.equal(process.env.POSTGRES_HOST, "127.0.0.1");
   assert.equal(process.env.POSTGRES_PORT, "5544");
   assert.equal(process.env.POSTGRES_DB, "clinic_pilot_test");
@@ -36,6 +36,7 @@ test("clinic record and attachment access follows active role, care team, expiry
   const cashier = randomUUID(), clinicianB = randomUUID(), adminOnly = randomUUID();
   const locationA = randomUUID(), locationB = randomUUID(), patientA = randomUUID();
   const encounterA = randomUUID();
+  const clinicalSentinel = "CLINIC_SYNTHETIC_CHART_SENTINEL";
   const seed = await db.connect();
   try {
     await seed.query("BEGIN");
@@ -54,8 +55,12 @@ test("clinic record and attachment access follows active role, care team, expiry
       [tenantA,clinicianA,clinicianOther,nurse,cashier,tenantB,clinicianB]);
     await seed.query(`INSERT INTO bms_clinic_patients(id,tenant_id,hn,full_name,created_by)
       VALUES ($1,$2,'HN-000001','Synthetic Patient',$3)`, [patientA,tenantA,clinicianA]);
-    await seed.query(`INSERT INTO bms_clinic_encounters(id,tenant_id,patient_id,location_id,practitioner_id)
-      VALUES ($1,$2,$3,$4,$5)`, [encounterA,tenantA,patientA,locationA,clinicianA]);
+    await seed.query(`INSERT INTO bms_clinic_encounters
+      (id,tenant_id,patient_id,location_id,practitioner_id,draft_record)
+      VALUES ($1,$2,$3,$4,$5,$6::jsonb)`,
+      [encounterA,tenantA,patientA,locationA,clinicianA,JSON.stringify({ chiefComplaint: clinicalSentinel })]);
+    await seed.query(`INSERT INTO bms_clinic_charge_sheets(tenant_id,encounter_id)
+      VALUES ($1,$2)`, [tenantA,encounterA]);
     await seed.query(`INSERT INTO bms_clinic_care_team(tenant_id,encounter_id,user_id,assigned_by)
       VALUES ($1,$2,$3,$4)`, [tenantA,encounterA,nurse,clinicianA]);
     await seed.query("COMMIT");
@@ -82,6 +87,11 @@ test("clinic record and attachment access follows active role, care team, expiry
   const encounters = loadModule("apps/web/lib/bms/clinic/encounters.ts", {
     "./access": access,
   });
+  const billing = loadModule("apps/web/lib/bms/clinic/billing.ts", {
+    "../orders": { createOrderInTx: async () => { throw new Error("UNEXPECTED_ORDER"); } },
+    "../productPacks": { getVariantBasePriceInTx: async () => { throw new Error("UNEXPECTED_PRICE"); } },
+    "./access": access,
+  });
   const oldFlag = process.env.BMS_CLINIC_PILOT_TENANTS;
   process.env.BMS_CLINIC_PILOT_TENANTS = `${tenantA},${tenantB}`;
   try {
@@ -103,6 +113,20 @@ test("clinic record and attachment access follows active role, care team, expiry
     assert.ok(adminBootstrap.users.some((user: { id: string }) => user.id === adminOnly));
     assert.ok(audits.some(([kind, event]) => kind === "read" &&
       (event as any).meta?.targetKind === "CLINIC_STAFF_BOOTSTRAP"));
+
+    // A billing permission in the REST adapter must not make a clinician a cashier.
+    const cashierSheet = await billing.readClinicChargeSheet({ tenantId: tenantA,
+      actorId: cashier, encounterId: encounterA });
+    assert.equal(cashierSheet.sheet.status, "DRAFT");
+    assert.equal(JSON.stringify(cashierSheet).includes(clinicalSentinel), false);
+    await assert.rejects(billing.readClinicChargeSheet({ tenantId: tenantA,
+      actorId: clinicianA, encounterId: encounterA }), /CLINIC_ACCESS_DENIED/);
+    await assert.rejects(billing.readClinicChargeSheet({ tenantId: tenantA,
+      actorId: clinicianOther, encounterId: encounterA }), /CLINIC_ACCESS_DENIED/);
+    await assert.rejects(billing.readClinicChargeSheet({ tenantId: tenantA,
+      actorId: adminOnly, encounterId: encounterA }), /CLINIC_ACCESS_DENIED/);
+    await assert.rejects(billing.readClinicChargeSheet({ tenantId: tenantB,
+      actorId: clinicianB, encounterId: encounterA }), /CLINIC_ACCESS_DENIED/);
 
     const content = Buffer.from("%PDF-1.4\nsynthetic only\n");
     const attachmentId = await attachments.uploadClinicAttachment({ tenantId: tenantA,
@@ -216,6 +240,10 @@ test("clinic record and attachment access follows active role, care team, expiry
       actorId: clinicianOther, encounterId: encounterA }), /PATIENT_CARE_ACCESS_DENIED/);
     await assert.rejects(attachments.readClinicAttachment({ tenantId: tenantA,
       actorId: nurse, attachmentId }), /ATTACHMENT_NOT_FOUND/);
+    await db.query(`UPDATE bms_clinic_staff SET active=false
+      WHERE tenant_id=$1 AND user_id=$2 AND access_role='CASHIER'`, [tenantA,cashier]);
+    await assert.rejects(billing.readClinicChargeSheet({ tenantId: tenantA,
+      actorId: cashier, encounterId: encounterA }), /CLINIC_ACCESS_DENIED/);
     assert.ok(audits.some(([kind, event]) => kind === "read" &&
       (event as any).meta?.targetKind === "CLINIC_ATTACHMENT"));
     assert.equal(JSON.stringify(audits).includes("synthetic only"), false);

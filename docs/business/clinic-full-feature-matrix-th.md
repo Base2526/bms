@@ -1,6 +1,6 @@
 # บัญชีฟีเจอร์คลินิกผู้ป่วยนอกทั้งระบบ
 
-สถานะการตรวจ: 26 พฤศจิกายน 2026, branch `codex/clinic-outpatient-phase1`. นี่คือ inventory จาก code path ใน repo และหลักฐานการทดสอบที่บันทึกไว้ใน [ผลตรวจรับระยะ 1](clinic-phase1-acceptance-2026-11-26-th.md) ไม่ใช่คำรับรองให้ใช้ข้อมูลผู้ป่วยจริง. `BMS_CLINIC_PILOT_TENANTS` ยังปิดเป็นค่าเริ่มต้น. ผลรอบก่อนเป็นหลักฐานย้อนหลัง; รอบขยาย inventory นี้ทดสอบ DB fixture สำหรับ bootstrap บุคลากร แต่ยังไม่มี restored BMS schema หรือ browser ที่ login ตามบทบาท.
+สถานะการตรวจ: 26 พฤศจิกายน 2026; inventory เริ่มจาก branch `codex/clinic-outpatient-phase1` และเพิ่มหลักฐานรอบ `codex/clinic-outpatient-release-gates` ใน [ผลตรวจรับ](clinic-phase1-acceptance-2026-11-26-th.md). นี่คือ inventory จาก code path ใน repo ไม่ใช่คำรับรองให้ใช้ข้อมูลผู้ป่วยจริง. `BMS_CLINIC_PILOT_TENANTS` ยังปิดเป็นค่าเริ่มต้น. ผลรอบก่อนเป็นหลักฐานย้อนหลัง; รอบ release gates ทดสอบ DB fixture เพิ่ม แต่ยังไม่มี restored BMS schema หรือ browser ที่ login ตามบทบาท.
 
 ## วิธีอ่าน
 
@@ -83,13 +83,13 @@
 | CF-016 | จองนัด / registrar | ทั่วไป | pilot | C/appointments.ts; R/U/M/T | ต้อง browser หลัง login และ load test | create/retry key เดิมคืนรายการเดิม; role/tenant denial |
 | CF-017 | Walk-in / registrar | ทั่วไป | บางส่วน | C/appointments.ts check-in; U | ไม่มี workflow walk-in แยก | walk-in ลงทะเบียน/เช็กอินได้พร้อม audit โดยไม่สร้างเวลานัดปลอม |
 | CF-018 | นัดติดตาม / clinician, registrar | ทั่วไป | ไม่มี | ไม่มี C/R/U/M/T | ยังไม่ผูกแผนติดตามกับนัด | นัดถัดไปอ้าง visit ต้นทางและเตือนงานค้างได้ |
-| CF-019 | เลื่อน/ยกเลิก/no-show / registrar | ทั่วไป | pilot | C/appointments.ts; R/U; M 10.142; T | ยังต้อง load/browse ร่วม flow จริง | retry เลื่อนเก่าไม่ย้อนนัดใหม่; cancel/no-show ไม่สร้าง encounter |
+| CF-019 | เลื่อน/ยกเลิก/no-show / registrar | ทั่วไป | pilot | C/appointments.ts; R/U; M 10.142; T calendar DB | cancel/no-show retry สถานะเดิมผ่าน fixture; ยังต้อง load/browse ร่วม flow จริง | retry เลื่อนเก่าไม่ย้อนนัดใหม่; cancel/no-show ซ้ำไม่เขียนหรือ audit ซ้ำและไม่สร้าง encounter |
 | CF-020 | Waitlist / registrar | เสริม | ไม่มี | ไม่มี C/R/U/M/T | ต้องกำหนดนโยบายเลื่อนคิว | รับคนจาก waitlist เพียงหนึ่งคนเมื่อ slot ว่างพร้อมกัน |
 | CF-021 | เตือนนัด/จองออนไลน์ / ผู้ป่วย | เสริม | ไม่มี | ไม่มี C/R/U/M/T; A ไม่มี clinic tool | ต้องมี verified channel/consent และขอบเขตข้อมูล | ส่งเตือนถูกคนครั้งเดียว; link หมดอายุ; ไม่มี chart ในข้อความ |
 | | **4. ต้อนรับ เช็กอิน และคิว** | | | | | |
 | CF-022 | ตรวจตัวตน/ผู้จ่าย/สิทธิหน้ารับบริการ / registrar | ทั่วไป | บางส่วน | C/patients.ts; C/appointments.ts | ไม่มี payer/coverage verification | check-in บันทึกผู้ตรวจหลักฐานและปฏิเสธ mismatch |
 | CF-023 | แบบข้อมูลก่อนพบผู้ตรวจ / nurse | ทั่วไป | ไม่มี | C/encounters.ts draft เท่านั้น | ต้องอนุมัติฟอร์มและผู้เห็นข้อมูล | field/หน่วย/ผู้บันทึกครบและ clinician รับรองก่อนใช้ |
-| CF-024 | เช็กอินและคิวรอ / registrar | ทั่วไป | บางส่วน | C/appointments.ts transition; R/U/M | มี CHECKED_IN แต่ไม่มี queue ordering | check-in ซ้ำ idempotent; ลำดับคิวไม่เผยข้อมูลข้ามบทบาท |
+| CF-024 | เช็กอินและคิวรอ / registrar | ทั่วไป | บางส่วน | C/appointments.ts transition; R/U/M; T calendar DB | check-in retry สถานะเดิมผ่าน fixture; ยังไม่มี queue ordering | check-in ซ้ำไม่เขียนหรือ audit ซ้ำ; ลำดับคิวไม่เผยข้อมูลข้ามบทบาท |
 | CF-025 | ส่งต่อพยาบาล/แพทย์ / registrar | ทั่วไป | บางส่วน | C/encounters.ts assignNurse; M care team | ยังไม่มี handoff state/ack | ผู้รับงานยืนยันรับ; revoked user เข้าไม่ได้ |
 | CF-026 | กำลังตรวจ/เสร็จ/รอจ่ายยา/รอคิดเงิน/ปิด visit / ทีมคลินิก | ทั่วไป | บางส่วน | C/encounters.ts signed; C/billing.ts | ไม่มี visit state machine ครบ; ไม่มี dispense | ทุก transition มีผู้ทำ/เวลา; ห้ามปิดเมื่อมีงานค้างตามกติกาที่อนุมัติ |
 | CF-027 | นัดถัดไปและงานติดตามค้าง / clinician | ทั่วไป | ไม่มี | ไม่มี C/R/U/M/T | ต้องแยกงานทางคลินิกจาก reminder การค้า | งานค้างมี owner/due/ack และตามย้อนหลังได้ |
@@ -138,7 +138,7 @@
 | CF-063 | ประมาณค่าใช้จ่าย/ส่วนลดและอนุมัติ / cashier | เสริม | ไม่มี | O discount ทั่วไป; ไม่มี C estimate | ต้องกำหนด consent/approval และ freeze | estimate แยกจาก bill; ส่วนลดมี approver/audit |
 | CF-064 | ประวัติราคาและกฎภาษี / บัญชี | ทั่วไป | บางส่วน | C/billing.ts reviewed price/VAT; O | VAT N pilot ไม่ครอบคลุมทุกบริการ; ต้องให้บัญชีอนุมัติ | ราคา/ภาษีที่ใช้ตรึงพร้อม effective time; rollback เมื่อเปลี่ยน |
 | | **12. คิดเงินและรับชำระ** | | | | | |
-| CF-065 | Charge sheet ผูก visit/บริการจริง / cashier | ทั่วไป | pilot | C/billing.ts; M charge_sheets/lines; R/U/T | ยังไม่เชื่อม procedure/dispense event | สร้างเฉพาะงานที่ยืนยันทำ; ไม่มี clinical prose ใน order |
+| CF-065 | Charge sheet ผูก visit/บริการจริง / cashier | ทั่วไป | pilot | C/billing.ts; M charge_sheets/lines; R/U/T access DB | อ่าน charge sheet จำกัด active CASHIER ผ่าน fixture; ยังไม่เชื่อม procedure/dispense event | สร้างเฉพาะงานที่ยืนยันทำ; ไม่มี clinical prose ใน order |
 | CF-066 | คนทบทวนก่อนสร้าง order/ยอด backend / cashier | ทั่วไป | pilot | C/billing.ts; O createOrderInTx; T | ต้องพิสูจน์ transaction บน restored DB | reviewed catalog/price/status ยังตรง; ยอดต่าง rollback ครบ |
 | CF-067 | ผู้จ่ายต่างคน/มัดจำ/จ่ายบางส่วน/ลูกหนี้ / cashier | ทั่วไป | ฐาน | P submitPartialPayment; O; AR 9.30 | ไม่มี clinic payer mapping/reconciliation | payer/receipt/AR ถูกคน; retry และ partial ledger balance ถูกต้อง |
 | CF-068 | วิธีรับเงิน/ยกเลิก/คืน/เอกสารเงินภาษี / cashier, บัญชี | ทั่วไป | ฐาน | P; O cancel/return; tax modules | clinic end-to-end ไม่พิสูจน์; ภาษีต้องอนุมัติ | submit/confirm/void/refund/receipt/invoice ทดสอบบน restored DB |
@@ -157,7 +157,7 @@
 | CF-079 | ตอบกลับ/ช่องทางที่เลือก / ผู้ป่วย | เสริม | ฐาน | Inbox/chat modules | ไม่ใช่ secure clinic channel | reply ผูกนัดอย่างปลอดภัยโดยไม่สร้าง chart จาก chat |
 | CF-080 | Patient portal/ผู้ปกครอง / ผู้ป่วย | เสริม | ไม่มี | C verified contact; ไม่มี portal | ต้องพิสูจน์ตัวตนและนโยบายผู้แทน | link/session/relationship/revocation ถูกทดสอบก่อนเปิด chart |
 | | **15. สิทธิ์ ความปลอดภัย วงจรข้อมูล** | | | | | |
-| CF-081 | RBAC + active role + care relationship / ทีมรักษา | ทั่วไป | pilot | C/access.ts/encounters.ts; Q; R/M/T | ต้องพิสูจน์ทุก read/write และ revoked ระหว่างคำขอ | role matrix รวมต่าง tenant/branch ผ่านบน restored DB/browser |
+| CF-081 | RBAC + active role + care relationship / ทีมรักษา | ทั่วไป | pilot | C/access.ts/encounters.ts/billing.ts; Q; R/M/T | active CASHIER ของ charge sheet และ revoked denial ผ่าน fixture; ยังต้องพิสูจน์ทุก read/write และ revoke ระหว่างคำขอ | role matrix รวมต่าง tenant/branch ผ่านบน restored DB/browser |
 | CF-082 | Admin/cashier/device/PIN ไม่เปิด chart / security owner | ทั่วไป | pilot | C/access.ts; R; G ไม่มี clinic GraphQL | ต้อง runtime ตรวจ support/device paths | บัญชีเหล่านี้อ่าน note/file ไม่ได้แม้มี ID |
 | CF-083 | Emergency access เหตุผล/15 นาที/audit / clinician | ทั่วไป | pilot | C/encounters.ts; M break_glass + `10.143`; T access DB/route | ถอน grant ก่อนหมดเวลาและ expiry ผ่านบน fixture; restored schema/browser/incident review ยังไม่พิสูจน์ | หมดอายุหรือถอนแล้วไม่ใช้ grant ฉุกเฉินอ่าน chart; care relationship ตามปกติยังมีสิทธิ์ของตน; ไม่ขยายไปไฟล์ |
 | CF-084 | Audit read/write/sign/export/file / security owner | ทั่วไป | บางส่วน | C/access.ts audit; R; M signed notes | export ยังไม่มี; audit store ไม่ครบใน fixture | ตรวจ chain ของ action/actor/time/target โดยไม่มี clinical prose |
