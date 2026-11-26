@@ -3096,15 +3096,19 @@ branch overrides only; scheduled windows remain unavailable. Apply the migration
 or cancelling a window. Catalog price ranges, branch product cards, stock checks, POS scans and
 settlement must all show the active window price for the same branch and instant.
 
-# Clinic outpatient pilot (`10.141`–`10.142`)
+# Clinic outpatient pilot (`10.141`–`10.143`)
 
 The clinic pilot is tenant allowlisted and one-active-branch only. Patient UUID/HN, contacts,
 encounters, signed notes and attachments stay in `bms_clinic_*`; CRM merge and AI tools never
 gain chart access. Clinical reads need an active clinic clinician/care-team role beyond RBAC;
 Administrator/platform-admin alone is insufficient. Emergency access is clinician-only,
-reasoned, 15-minute and audited. Appointment reschedules retain a transaction-scoped request key
+reasoned, 15-minute and audited. `10.143` lets the clinician revoke their own active grant;
+the tenant transaction records actor/time and shortens `expires_at`, so older app code cannot
+reopen a revoked grant during rollback. Appointment reschedules retain a transaction-scoped request key
 (`10.142`): replaying an old request must not undo a newer move. Signed notes and attachments are
-immutable. A medication plan
+immutable. The appointment list is capped at 500 and must surface `truncated`; its calendar counts
+are hidden when incomplete, while database exclusion constraints still reject overlapping bookings.
+A medication plan
 is a note, never dispensing or stock movement. Charge sheets may create an ordinary order only
 for reviewed NON_STOCK/VAT-N catalog services and must roll back if the server order amount differs.
 Closed clinic orders require reconciliation; a retry must not report a cancelled or returned order

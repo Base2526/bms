@@ -34,7 +34,7 @@ async function requirePatientCareAccess(client: PoolClient, tenantId: string, us
                    WHERE e.tenant_id=$1 AND e.patient_id=$2 AND e.practitioner_id=$3)
           OR EXISTS (SELECT 1 FROM bms_clinic_break_glass g
                       WHERE g.tenant_id=$1 AND g.patient_id=$2 AND g.clinician_id=$3
-                        AND g.expires_at > now())
+                        AND g.expires_at > now() AND g.revoked_at IS NULL)
         )) OR (s.access_role='NURSE' AND EXISTS (
           SELECT 1 FROM bms_clinic_encounters e JOIN bms_clinic_care_team ct
             ON ct.tenant_id=e.tenant_id AND ct.encounter_id=e.id
@@ -55,7 +55,7 @@ export async function requestClinicEmergencyAccess(input: {
     throw new ClinicError("CONFIRMATION_REQUIRED");
   return clinicTx(input.tenantId, input.actorId, async (client) => {
     await requireClinician(client, input.tenantId, input.actorId);
-    const patient = await client.query(`SELECT 1 FROM bms_clinic_patients WHERE tenant_id=$1 AND id=$2`,
+    const patient = await client.query(`SELECT 1 FROM bms_clinic_patients WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,
       [input.tenantId, patientId]);
     if (!patient.rowCount) throw new ClinicError("PATIENT_NOT_FOUND", 404);
     const row = await client.query<{ id: string; expires_at: Date }>(
@@ -67,6 +67,52 @@ export async function requestClinicEmergencyAccess(input: {
     await auditClinicWrite(client, input.tenantId, input.actorId,
       "clinic.emergency_access.granted", row.rows[0].id, "CLINIC_BREAK_GLASS", { patientId });
     return { id: row.rows[0].id, expiresAt: row.rows[0].expires_at.toISOString() };
+  });
+}
+
+/** Return only this clinician's active emergency expiry, never another actor's grant or chart. */
+export async function readClinicEmergencyAccess(input: {
+  tenantId: string; actorId: string; patientId: unknown;
+}): Promise<{ expiresAt: string | null }> {
+  const patientId = uuid(input.patientId);
+  return clinicTx(input.tenantId, input.actorId, async (client) => {
+    await requireClinician(client, input.tenantId, input.actorId);
+    const grant = await client.query<{ expires_at: Date }>(
+      `SELECT expires_at FROM bms_clinic_break_glass
+        WHERE tenant_id=$1 AND patient_id=$2 AND clinician_id=$3
+          AND revoked_at IS NULL AND expires_at>now()
+        ORDER BY expires_at DESC LIMIT 1`, [input.tenantId, patientId, input.actorId]
+    );
+    await auditClinicRead(client, input.tenantId, input.actorId,
+      "CLINIC_BREAK_GLASS_STATUS", patientId, patientId);
+    return { expiresAt: grant.rows[0]?.expires_at.toISOString() ?? null };
+  });
+}
+
+/** Revoke all of the caller's active grants for one patient; retries cannot reopen access. */
+export async function revokeClinicEmergencyAccess(input: {
+  tenantId: string; actorId: string; patientId: unknown; confirmation: unknown;
+}): Promise<"REVOKED" | "ALREADY_INACTIVE"> {
+  const patientId = uuid(input.patientId);
+  if (input.confirmation !== "REVOKE EMERGENCY CLINICAL ACCESS") throw new ClinicError("CONFIRMATION_REQUIRED");
+  return clinicTx(input.tenantId, input.actorId, async (client) => {
+    await requireClinician(client, input.tenantId, input.actorId);
+    const patient = await client.query(
+      `SELECT 1 FROM bms_clinic_patients WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,
+      [input.tenantId, patientId]
+    );
+    if (!patient.rowCount) throw new ClinicError("PATIENT_NOT_FOUND", 404);
+    const changed = await client.query(
+      `UPDATE bms_clinic_break_glass
+          SET revoked_at=now(),revoked_by=$3,expires_at=now()
+        WHERE tenant_id=$1 AND patient_id=$2 AND clinician_id=$3
+          AND revoked_at IS NULL AND expires_at>now()`,
+      [input.tenantId, patientId, input.actorId]
+    );
+    if (!changed.rowCount) return "ALREADY_INACTIVE";
+    await auditClinicWrite(client, input.tenantId, input.actorId,
+      "clinic.emergency_access.revoked", patientId, "CLINIC_BREAK_GLASS", { grantCount: changed.rowCount });
+    return "REVOKED";
   });
 }
 

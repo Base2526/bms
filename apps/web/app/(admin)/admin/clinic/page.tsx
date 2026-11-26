@@ -70,6 +70,7 @@ export default function ClinicPilotPage() {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [appointmentsTruncated, setAppointmentsTruncated] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => dayjs().tz("Asia/Bangkok").startOf("month"));
   const appointmentRequest = useRef<{ signature: string; key: string } | null>(null);
   const rescheduleRequest = useRef<{ signature: string; key: string } | null>(null);
@@ -91,6 +92,10 @@ export default function ClinicPilotPage() {
   const [addendumReason, setAddendumReason] = useState("");
   const [addendumText, setAddendumText] = useState("");
   const [emergencyReason, setEmergencyReason] = useState("");
+  const [emergencyExpiresAt, setEmergencyExpiresAt] = useState<string | null>(null);
+  const selectedPatientId = useRef<string | null>(null);
+  const clinicalViewVersion = useRef(0);
+  const encounterLoadVersion = useRef(0);
   const [rescheduleId, setRescheduleId] = useState<string | null>(null);
   const [rescheduleForm] = Form.useForm();
   const [nurseId, setNurseId] = useState<string | null>(null);
@@ -103,7 +108,10 @@ export default function ClinicPilotPage() {
   const loadAppointments = useCallback(async (locationId: string, month = calendarMonth) => {
     const from = month.tz("Asia/Bangkok").startOf("month");
     const to = from.add(1, "month");
-    setAppointments(await clinicGet("appointments", { locationId, from: from.toISOString(), to: to.toISOString() }));
+    setAppointments([]); setAppointmentsTruncated(false);
+    const result: { appointments: Appointment[]; truncated: boolean } = await clinicGet("appointments",
+      { locationId, from: from.toISOString(), to: to.toISOString() });
+    setAppointments(result.appointments); setAppointmentsTruncated(result.truncated);
   }, [calendarMonth]);
   const loadBillable = useCallback(async (searchTerm = "") => {
     const result: { encounters: BillableEncounter[]; truncated: boolean } =
@@ -111,13 +119,23 @@ export default function ClinicPilotPage() {
     setBillable(result.encounters); setBillableTruncated(result.truncated);
   }, []);
   const loadEncounter = useCallback(async (id: string) => {
+    const viewVersion = clinicalViewVersion.current;
+    const loadVersion = ++encounterLoadVersion.current;
     const next: Encounter = await clinicGet("encounter", { encounterId: id });
+    if (viewVersion !== clinicalViewVersion.current || loadVersion !== encounterLoadVersion.current ||
+      selectedPatientId.current !== next.patient_id) return;
     setEncounter(next); setRecord(next.draft_record ?? {});
-    try { setAttachments(await clinicGet("attachments", { encounterId: id })); }
-    catch { setAttachments([]); }
-    if (can("clinic.billing.manage") && next.status === "SIGNED") {
+    try {
+      const files = await clinicGet("attachments", { encounterId: id });
+      if (viewVersion === clinicalViewVersion.current && loadVersion === encounterLoadVersion.current) setAttachments(files);
+    } catch {
+      if (viewVersion === clinicalViewVersion.current && loadVersion === encounterLoadVersion.current) setAttachments([]);
+    }
+    if (viewVersion === clinicalViewVersion.current && loadVersion === encounterLoadVersion.current &&
+      can("clinic.billing.manage") && next.status === "SIGNED") {
       setBillingEncounterId(id);
-      setCharge(await clinicGet("chargeSheet", { encounterId: id }));
+      const result = await clinicGet("chargeSheet", { encounterId: id });
+      if (viewVersion === clinicalViewVersion.current && loadVersion === encounterLoadVersion.current) setCharge(result);
     }
   }, [can]);
   useEffect(() => {
@@ -142,13 +160,33 @@ export default function ClinicPilotPage() {
   }, [can]);
 
   const showPatient = async (next: Patient) => {
+    selectedPatientId.current = next.id;
+    const viewVersion = ++clinicalViewVersion.current;
+    encounterLoadVersion.current++;
     setPatient(next); setEncounter(null); setHistory([]); setCharge(null); setBillingEncounterId(null);
-    try { setContacts(await clinicGet("contacts", { patientId: next.id })); }
-    catch { setContacts([]); }
+    setContacts([]); setAttachments([]); setAccessEvents([]); setRecord({}); setEmergencyReason(""); setEmergencyExpiresAt(null);
+    try {
+      const result = await clinicGet("contacts", { patientId: next.id });
+      if (viewVersion === clinicalViewVersion.current) setContacts(result);
+    } catch { if (viewVersion === clinicalViewVersion.current) setContacts([]); }
+    if (viewVersion !== clinicalViewVersion.current) return;
     if (can("clinic.record.read")) {
-      try { setHistory(await clinicGet("history", { patientId: next.id })); } catch { setHistory([]); }
+      try {
+        const result = await clinicGet("history", { patientId: next.id });
+        if (viewVersion === clinicalViewVersion.current) setHistory(result);
+      } catch { if (viewVersion === clinicalViewVersion.current) setHistory([]); }
+      if (viewVersion !== clinicalViewVersion.current) return;
+      if (bootstrap?.roles.includes("CLINICIAN")) {
+        try {
+          const access: { expiresAt: string | null } = await clinicGet("emergencyAccess", { patientId: next.id });
+          if (viewVersion === clinicalViewVersion.current) setEmergencyExpiresAt(access.expiresAt);
+        } catch { if (viewVersion === clinicalViewVersion.current) setEmergencyExpiresAt(null); }
+      }
     }
-    if (can("clinic.audit.read")) setAccessEvents(await clinicGet("accessEvents", { patientId: next.id }));
+    if (viewVersion === clinicalViewVersion.current && can("clinic.audit.read")) {
+      const result = await clinicGet("accessEvents", { patientId: next.id });
+      if (viewVersion === clinicalViewVersion.current) setAccessEvents(result);
+    }
   };
   const searchPatients = () => void run(async () => setPatients(await clinicGet("searchPatients", { search })));
   const createPatient = (values: Record<string, unknown>) => void run(async () => {
@@ -300,12 +338,15 @@ export default function ClinicPilotPage() {
       </Form>
     </Card>
     <Card title={t("clinic.copy_021")} extra={<Button onClick={() => bootstrap?.location && void run(() => loadAppointments(bootstrap.location!.id))}>{t("clinic.copy_022")}</Button>}>
+      {appointmentsTruncated && <div role="alert" style={{ marginBottom: 12 }}>
+        <Typography.Text type="warning">{t("clinic.appointments_truncated")}</Typography.Text>
+      </div>}
       <Calendar fullscreen={false} value={calendarMonth}
         onPanelChange={date => {
           setCalendarMonth(dayjs.tz(date.format("YYYY-MM-01"), "Asia/Bangkok"));
         }}
         cellRender={(date, info) => {
-          if (info.type !== "date" || date.format("YYYY-MM") !== calendarMonth.format("YYYY-MM")) return null;
+          if (appointmentsTruncated || info.type !== "date" || date.format("YYYY-MM") !== calendarMonth.format("YYYY-MM")) return null;
           const count = appointments.filter(item => dayjs(item.startsAt).tz("Asia/Bangkok").format("YYYY-MM-DD") === date.format("YYYY-MM-DD")).length;
           return count ? <Tag color="blue">{count}</Tag> : null;
         }} />
@@ -337,16 +378,33 @@ export default function ClinicPilotPage() {
   </Space>;
   const encounterTab = <Space direction="vertical" style={{ width: "100%" }}>
     {patient && <Card title={`${patient.hn} · ${patient.fullName}`}>
-      {can("clinic.record.read") && <Space direction="vertical" style={{ width: "100%", marginBottom: 16 }}>
+      {can("clinic.record.read") && bootstrap?.roles.includes("CLINICIAN") && <Space direction="vertical" style={{ width: "100%", marginBottom: 16 }}>
         <Alert type="warning" closable message={t("clinic.copy_033")} />
         <Input.TextArea value={emergencyReason} onChange={e => setEmergencyReason(e.target.value)} maxLength={500}
           placeholder={t("clinic.copy_034")} />
         <Popconfirm title={t("clinic.copy_035")} onConfirm={() => void run(async () => {
-          await clinicPost("emergencyAccess", { patientId: patient.id, reason: emergencyReason,
+          const viewVersion = clinicalViewVersion.current;
+          const access: { expiresAt: string } = await clinicPost("emergencyAccess", { patientId: patient.id, reason: emergencyReason,
             confirmation: "CONFIRM EMERGENCY CLINICAL ACCESS" });
-          setHistory(await clinicGet("history", { patientId: patient.id }));
-          setEmergencyReason("");
+          if (viewVersion !== clinicalViewVersion.current) return;
+          setEmergencyExpiresAt(access.expiresAt);
+          const result = await clinicGet("history", { patientId: patient.id });
+          if (viewVersion === clinicalViewVersion.current) setHistory(result);
+          if (viewVersion === clinicalViewVersion.current) setEmergencyReason("");
         })}><Button danger disabled={emergencyReason.trim().length < 20}>{t("clinic.copy_036")}</Button></Popconfirm>
+        {emergencyExpiresAt && <Space wrap>
+          <Typography.Text type="warning">{t("clinic.emergency_active_until")} {new Date(emergencyExpiresAt).toLocaleString(en ? "en-GB" : "th-TH", { timeZone: "Asia/Bangkok" })}</Typography.Text>
+          <Popconfirm title={t("clinic.confirm_revoke_emergency")} onConfirm={() => void run(async () => {
+            const viewVersion = clinicalViewVersion.current;
+            await clinicPost("revokeEmergencyAccess", { patientId: patient.id,
+              confirmation: "REVOKE EMERGENCY CLINICAL ACCESS" });
+            if (viewVersion === clinicalViewVersion.current) {
+              clinicalViewVersion.current++;
+              encounterLoadVersion.current++;
+              setEmergencyExpiresAt(null); setHistory([]); setEncounter(null); setAttachments([]); setRecord({});
+            }
+          })}><Button danger disabled={busy}>{t("clinic.revoke_emergency")}</Button></Popconfirm>
+        </Space>}
       </Space>}
       <Table<{ id: string; status: string; created_at: string }> size="small" rowKey="id" dataSource={history} columns={[
         { title: t("clinic.copy_037"), render: (_, row: { id: string; created_at: string }) => new Date(row.created_at).toLocaleString(en ? "en-GB" : "th-TH", { timeZone: "Asia/Bangkok" }) },

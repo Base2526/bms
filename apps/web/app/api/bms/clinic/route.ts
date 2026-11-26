@@ -13,7 +13,8 @@ import {
 } from "@/lib/bms/clinic/appointments";
 import {
   addClinicAddendum, assignClinicNurse, listClinicPatientEncounters,
-  openClinicEncounter, readClinicEncounter, requestClinicEmergencyAccess, saveClinicDraft, signClinicEncounter,
+  openClinicEncounter, readClinicEmergencyAccess, readClinicEncounter, requestClinicEmergencyAccess,
+  revokeClinicEmergencyAccess, saveClinicDraft, signClinicEncounter,
 } from "@/lib/bms/clinic/encounters";
 import {
   createClinicChargeOrder, listBillableClinicEncounters, readClinicChargeSheet,
@@ -33,6 +34,7 @@ const GET_PERMISSIONS: Record<string, BmsPermission | null> = {
   accessEvents: "clinic.audit.read",
   attachments: "clinic.record.read",
   contacts: "clinic.patient.read",
+  emergencyAccess: "clinic.record.read",
 };
 const POST_PERMISSIONS: Record<string, BmsPermission> = {
   grantStaff: "clinic.staff.manage", registerPatient: "clinic.patient.register",
@@ -44,6 +46,7 @@ const POST_PERMISSIONS: Record<string, BmsPermission> = {
   saveChargeSheet: "clinic.billing.manage", reviewChargeSheet: "clinic.billing.manage",
   createChargeOrder: "clinic.billing.manage",
   emergencyAccess: "clinic.record.read",
+  revokeEmergencyAccess: "clinic.record.read",
 };
 
 function errorResponse(error: unknown) {
@@ -90,6 +93,8 @@ async function handleGET(req: NextRequest) {
         result = await listClinicAttachments({ tenantId, actorId, encounterId: p.get("encounterId") }); break;
       case "contacts":
         result = await listClinicContacts({ tenantId, actorId, patientId: p.get("patientId") }); break;
+      case "emergencyAccess":
+        result = await readClinicEmergencyAccess({ tenantId, actorId, patientId: p.get("patientId") }); break;
     }
     return NextResponse.json({ status: "OK", result }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) { return errorResponse(error); }
@@ -181,6 +186,9 @@ async function handlePOST(req: NextRequest) {
       case "emergencyAccess":
         result = await requestClinicEmergencyAccess({ tenantId, actorId, patientId: body.patientId,
           reason: body.reason, confirmation: body.confirmation }); break;
+      case "revokeEmergencyAccess":
+        result = await revokeClinicEmergencyAccess({ tenantId, actorId, patientId: body.patientId,
+          confirmation: body.confirmation }); break;
     }
     return NextResponse.json({ status: "OK", result }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) { return errorResponse(error); }
