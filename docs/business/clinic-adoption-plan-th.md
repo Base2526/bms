@@ -7,6 +7,9 @@
 technical pilot ไม่ครอบคลุม โดยเฉพาะการอนุมัติทางคลินิก ข้อมูลส่วนบุคคล ภาษี และการเปิดใช้จริง
 ผลตรวจรับระยะ 1 ล่าสุดอยู่ที่ [clinic-phase1-acceptance-2026-11-26-th.md](clinic-phase1-acceptance-2026-11-26-th.md); คลินิกเป้าหมายยังไม่ยืนยันว่ามี EMR เดิมหรือไม่ จึงยังไม่เลือกเส้นทาง integration หรือให้ BMS เป็นเจ้าของเวชระเบียน.
 แผนที่เส้นทางข้อมูลและจุดตรวจ privacy อยู่ที่ [clinic-data-flow-map-th.md](clinic-data-flow-map-th.md).
+บัญชีฟีเจอร์ครบทุกหมวดอยู่ที่ [clinic-full-feature-matrix-th.md](clinic-full-feature-matrix-th.md),
+ทางเลือก EMR ที่ยังรอคำตอบอยู่ที่ [clinic-emr-architecture-decision-th.md](clinic-emr-architecture-decision-th.md),
+และลำดับงานย่อยอยู่ที่ [clinic-full-backlog-th.md](clinic-full-backlog-th.md).
 
 ## ขอบเขตที่ใช้วางแผน
 

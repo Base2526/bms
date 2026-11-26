@@ -5,7 +5,7 @@
 > บริการ NON_STOCK/VAT N และส่งต่อ order เดิม เฉพาะข้อมูลสังเคราะห์ ยังไม่ผ่านตรวจรับทางคลินิก,
 > ความเป็นส่วนตัว, บัญชี/ภาษี หรือ DB/browser end-to-end บน schema จริง.
 > รายการนัดหมายจำกัด 500 ต่อช่วงเวลาและแสดงคำเตือนเมื่อข้อมูลถูกตัด; ยังไม่ผ่าน load test ของคิวขนาดใหญ่.
-> [รายละเอียดและ release gates](business/clinic-pilot-technical-th.md) · [ผลตรวจรับระยะ 1](business/clinic-phase1-acceptance-2026-11-26-th.md)
+> [รายละเอียดและ release gates](business/clinic-pilot-technical-th.md) · [ผลตรวจรับระยะ 1](business/clinic-phase1-acceptance-2026-11-26-th.md) · [บัญชีฟีเจอร์คลินิกทุกหมวด](business/clinic-full-feature-matrix-th.md)
 
 > อัปเดตการตรวจ 17 พ.ย. 2026: ตัวเลขรวมด้านล่างเป็น snapshot เก่าของ 9 พ.ย. 2026
 > แคตตาล็อกใน source ปัจจุบันมี 55 ความสามารถ และ release registry รู้จัก 88 workflow
