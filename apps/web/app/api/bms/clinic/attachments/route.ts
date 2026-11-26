@@ -16,7 +16,8 @@ function fail(error: unknown) {
 
 async function handleGET(req: NextRequest) {
   const auth = await authorizeAdminRoute("clinic.record.read");
-  if (!auth.ok) return NextResponse.json({ status: "FORBIDDEN" }, { status: auth.status, headers: HEADERS });
+  if (!auth.ok) return NextResponse.json({ status: auth.status === 401 ? "UNAUTHENTICATED" : "FORBIDDEN" },
+    { status: auth.status, headers: HEADERS });
   try {
     const file = await readClinicAttachment({ tenantId: auth.tenantId, actorId: String(auth.adminId),
       attachmentId: req.nextUrl.searchParams.get("id") });
@@ -29,7 +30,8 @@ async function handleGET(req: NextRequest) {
 
 async function handlePOST(req: NextRequest) {
   const auth = await authorizeAdminRoute("clinic.record.write");
-  if (!auth.ok) return NextResponse.json({ status: "FORBIDDEN" }, { status: auth.status, headers: HEADERS });
+  if (!auth.ok) return NextResponse.json({ status: auth.status === 401 ? "UNAUTHENTICATED" : "FORBIDDEN" },
+    { status: auth.status, headers: HEADERS });
   const reader = req.body?.getReader();
   if (!reader) return NextResponse.json({ status: "INVALID_ATTACHMENT" }, { status: 400, headers: HEADERS });
   const chunks: Uint8Array[] = [];

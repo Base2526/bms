@@ -1,4 +1,4 @@
-/** Run only against the disposable synthetic clinic_pilot_test fixture after applying 10.141. */
+/** Run only against the disposable synthetic clinic_pilot_test fixture after applying 10.141/10.142. */
 import assert from "node:assert/strict";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
@@ -13,7 +13,7 @@ function pool() {
   assert.equal(process.env.POSTGRES_PORT, "5544");
   assert.equal(process.env.POSTGRES_DB, "clinic_pilot_test");
   return new Pool({ host: "127.0.0.1", port: 5544, database: "clinic_pilot_test",
-    user: process.env.POSTGRES_USER, password: process.env.POSTGRES_PASSWORD, max: 1 });
+    user: process.env.POSTGRES_USER, password: process.env.POSTGRES_PASSWORD, max: 3 });
 }
 
 test("clinic migration: tenant isolation, overlap, immutable note and role grants", { skip: !enabled }, async () => {
@@ -25,7 +25,7 @@ test("clinic migration: tenant isolation, overlap, immutable note and role grant
   const patientA = randomUUID(), patientA2 = randomUUID(), patientB = randomUUID();
   try {
     await client.query("BEGIN");
-    const tables = ["bms_clinic_patients", "bms_clinic_appointments", "bms_clinic_encounters",
+    const tables = ["bms_clinic_patients", "bms_clinic_appointments", "bms_clinic_appointment_reschedules", "bms_clinic_encounters",
       "bms_clinic_signed_notes", "bms_clinic_attachments", "bms_clinic_charge_sheets"];
     for (const name of tables) {
       const policy = await client.query(`SELECT relrowsecurity,relforcerowsecurity FROM pg_class WHERE oid=$1::regclass`, [name]);
@@ -67,6 +67,36 @@ test("clinic migration: tenant isolation, overlap, immutable note and role grant
       [a,roomA,patientId,clinicianA,start,end,key,"a".repeat(64)]
     );
     const first = await insertAppointment(patientA, "clinic-first", "2026-12-01T09:00:00+07:00", "2026-12-01T10:00:00+07:00");
+    await client.query(`INSERT INTO bms_clinic_appointment_reschedules
+      (tenant_id,appointment_id,request_key,request_hash,requested_by)
+      VALUES ($1,$2,'move-once',$3,$4)`, [a,first.rows[0].id,"a".repeat(64),clinicianA]);
+    await client.query("SAVEPOINT reschedule_rls_test");
+    await client.query("SET LOCAL ROLE bms_app");
+    await client.query(`SELECT set_config('bms.tenant_id',$1,true)`, [b]);
+    assert.equal((await client.query(`SELECT count(*)::int AS n FROM bms_clinic_appointment_reschedules`)).rows[0].n, 0);
+    await client.query(`SELECT set_config('bms.tenant_id',$1,true)`, [a]);
+    assert.equal((await client.query(`SELECT count(*)::int AS n FROM bms_clinic_appointment_reschedules`)).rows[0].n, 1);
+    await client.query(`INSERT INTO bms_clinic_appointment_reschedules
+      (tenant_id,appointment_id,request_key,request_hash,requested_by)
+      VALUES ($1,$2,'role-insert',$3,$4)`, [a,first.rows[0].id,"c".repeat(64),clinicianA]);
+    assert.equal((await client.query(`SELECT count(*)::int AS n FROM bms_clinic_appointment_reschedules`)).rows[0].n, 2);
+    const commandGrant = await client.query(`SELECT
+      has_table_privilege('bms_app','bms_clinic_appointment_reschedules','UPDATE') AS update,
+      has_table_privilege('bms_app','bms_clinic_appointment_reschedules','DELETE') AS delete`);
+    assert.deepEqual(commandGrant.rows[0], { update: false, delete: false });
+    await client.query("ROLLBACK TO SAVEPOINT reschedule_rls_test");
+    await client.query("SAVEPOINT reschedule_fk_test");
+    await assert.rejects(client.query(`INSERT INTO bms_clinic_appointment_reschedules
+      (tenant_id,appointment_id,request_key,request_hash,requested_by)
+      VALUES ($1,$2,'cross-tenant',$3,$4)`, [b,first.rows[0].id,"b".repeat(64),clinicianB]),
+      (error: any) => error.code === "23503");
+    await client.query("ROLLBACK TO SAVEPOINT reschedule_fk_test");
+    await client.query("SAVEPOINT reschedule_key_test");
+    await assert.rejects(client.query(`INSERT INTO bms_clinic_appointment_reschedules
+      (tenant_id,appointment_id,request_key,request_hash,requested_by)
+      VALUES ($1,$2,'move-once',$3,$4)`, [a,first.rows[0].id,"b".repeat(64),clinicianA]),
+      (error: any) => error.code === "23505");
+    await client.query("ROLLBACK TO SAVEPOINT reschedule_key_test");
     await client.query("SAVEPOINT overlap_test");
     await assert.rejects(insertAppointment(patientA2, "clinic-second", "2026-12-01T09:30:00+07:00", "2026-12-01T10:30:00+07:00"),
       (error: any) => error.code === "23P01");
@@ -111,5 +141,56 @@ test("clinic migration: tenant isolation, overlap, immutable note and role grant
   } finally {
     await client.query("ROLLBACK").catch(() => undefined);
     client.release(); await db.end();
+  }
+});
+
+test("concurrent booking of one room commits at most once", { skip: !enabled }, async () => {
+  const db = pool();
+  const setup = await db.connect();
+  const tenantId = randomUUID(), clinicianA = randomUUID(), clinicianB = randomUUID();
+  const locationId = randomUUID(), patientId = randomUUID();
+  try {
+    await setup.query("BEGIN");
+    await setup.query(`INSERT INTO bms_tenants(id) VALUES ($1)`, [tenantId]);
+    await setup.query(`INSERT INTO users(id,tenant_id,name) VALUES ($1,$3,'A'),($2,$3,'B')`,
+      [clinicianA,clinicianB,tenantId]);
+    await setup.query(`INSERT INTO bms_locations(id,tenant_id,name) VALUES ($1,$2,'Synthetic')`,
+      [locationId,tenantId]);
+    await setup.query(`INSERT INTO bms_clinic_patients(id,tenant_id,hn,full_name,created_by)
+      VALUES ($1,$2,'HN-000001','Synthetic Patient',$3)`, [patientId,tenantId,clinicianA]);
+    await setup.query("COMMIT");
+  } finally { setup.release(); }
+  const first = await db.connect(), second = await db.connect();
+  const book = (client: any, clinicianId: string, key: string) => client.query(
+    `INSERT INTO bms_clinic_appointments
+      (tenant_id,location_id,patient_id,practitioner_id,room_code,starts_at,ends_at,
+       request_key,request_hash,created_by)
+     VALUES ($1,$2,$3,$4,'ROOM-1','2026-12-02T09:00:00+07:00',
+       '2026-12-02T10:00:00+07:00',$5,$6,$4)`,
+    [tenantId,locationId,patientId,clinicianId,key,"a".repeat(64)]
+  );
+  try {
+    await first.query("BEGIN");
+    await first.query("SET LOCAL ROLE bms_app");
+    await first.query(`SELECT set_config('bms.tenant_id',$1,true)`, [tenantId]);
+    await book(first, clinicianA, "concurrent-a");
+    await second.query("BEGIN");
+    await second.query("SET LOCAL ROLE bms_app");
+    await second.query(`SELECT set_config('bms.tenant_id',$1,true)`, [tenantId]);
+    let settled = false;
+    const competing = book(second, clinicianB, "concurrent-b");
+    competing.then(() => { settled = true; }, () => { settled = true; });
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(settled, false, "the competing insert should wait on the first transaction");
+    await first.query("COMMIT");
+    await assert.rejects(competing, (error: any) => error.code === "23P01");
+    await second.query("ROLLBACK");
+    const count = await first.query(`SELECT count(*)::int AS n FROM bms_clinic_appointments
+      WHERE tenant_id=$1 AND room_code='ROOM-1'`, [tenantId]);
+    assert.equal(count.rows[0].n, 1);
+  } finally {
+    await first.query("ROLLBACK").catch(() => undefined);
+    await second.query("ROLLBACK").catch(() => undefined);
+    first.release(); second.release(); await db.end();
   }
 });

@@ -123,14 +123,19 @@ export async function transitionClinicAppointment(input: {
 export async function rescheduleClinicAppointment(input: {
   tenantId: string; actorId: string; appointmentId: unknown;
   practitionerId: unknown; roomCode: unknown; startsAt: unknown; endsAt: unknown;
+  requestKey: unknown;
 }): Promise<"RESCHEDULED" | "REPLAYED"> {
   const appointmentId = uuid(input.appointmentId);
   const practitionerId = uuid(input.practitionerId);
   const roomCode = boundedText(input.roomCode, 40, 1).toUpperCase();
   const startsAt = isoInstant(input.startsAt);
   const endsAt = isoInstant(input.endsAt);
+  const requestKey = boundedText(input.requestKey, 160, 8);
   if (endsAt <= startsAt || endsAt.getTime() - startsAt.getTime() > 12 * 3600_000)
     throw new ClinicError("INVALID_APPOINTMENT_WINDOW");
+  const requestHash = createHash("sha256").update(JSON.stringify([
+    appointmentId, practitionerId, roomCode, startsAt.toISOString(), endsAt.toISOString(),
+  ])).digest("hex");
   return clinicTx(input.tenantId, input.actorId, async (client) => {
     await requireClinicRole(client, input.tenantId, input.actorId, ["REGISTRAR", "CLINICIAN"]);
     await requireClinician(client, input.tenantId, practitionerId);
@@ -141,9 +146,29 @@ export async function rescheduleClinicAppointment(input: {
     [input.tenantId, appointmentId]);
     const row = current.rows[0];
     if (!row) throw new ClinicError("APPOINTMENT_NOT_FOUND", 404);
+    const prior = await client.query<{ request_hash: string }>(
+      `SELECT request_hash FROM bms_clinic_appointment_reschedules
+        WHERE tenant_id=$1 AND request_key=$2`, [input.tenantId, requestKey]
+    );
+    if (prior.rows[0]) {
+      if (prior.rows[0].request_hash !== requestHash) throw new ClinicError("REQUEST_KEY_CONFLICT", 409);
+      return "REPLAYED";
+    }
     if (row.status !== "CONFIRMED") throw new ClinicError("INVALID_APPOINTMENT_STATE", 409);
+    const recordRequest = async () => {
+      const inserted = await client.query(
+        `INSERT INTO bms_clinic_appointment_reschedules
+           (tenant_id,appointment_id,request_key,request_hash,requested_by)
+         VALUES ($1,$2,$3,$4,$5) ON CONFLICT (tenant_id,request_key) DO NOTHING RETURNING request_key`,
+        [input.tenantId, appointmentId, requestKey, requestHash, input.actorId]
+      );
+      if (!inserted.rowCount) throw new ClinicError("REQUEST_KEY_CONFLICT", 409);
+    };
     if (row.practitioner_id === practitionerId && row.room_code === roomCode
-      && row.starts_at.getTime() === startsAt.getTime() && row.ends_at.getTime() === endsAt.getTime()) return "REPLAYED";
+      && row.starts_at.getTime() === startsAt.getTime() && row.ends_at.getTime() === endsAt.getTime()) {
+      await recordRequest();
+      return "REPLAYED";
+    }
     try {
       await client.query(
         `UPDATE bms_clinic_appointments
@@ -155,6 +180,7 @@ export async function rescheduleClinicAppointment(input: {
       if (error?.code === "23P01") throw new ClinicError("APPOINTMENT_CONFLICT", 409);
       throw error;
     }
+    await recordRequest();
     await auditClinicWrite(client, input.tenantId, input.actorId,
       "clinic.appointment.rescheduled", appointmentId, "CLINIC_APPOINTMENT");
     return "RESCHEDULED";

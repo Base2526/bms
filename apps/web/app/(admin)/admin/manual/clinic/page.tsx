@@ -19,9 +19,9 @@ const COPY: Record<"th" | "en", GuideCopy> = {
     tag: "คู่มือคลินิกผู้ป่วยนอก · Technical pilot",
     title: "ลงทะเบียน ตรวจรักษา และคิดค่าบริการ",
     lead: "ขั้นตอนสำหรับบุคลากรคลินิกหนึ่งสาขาที่ได้รับสิทธิ์ ใช้เฉพาะข้อมูลสังเคราะห์ระหว่างทดลอง",
-    pilot: "โมดูลนี้ปิดเป็นค่าเริ่มต้น และยังไม่ผ่านการตรวจรับทางคลินิก ความเป็นส่วนตัว หรือบัญชี/ภาษี ห้ามบันทึกข้อมูลผู้ป่วยจริง",
+    pilot: "โมดูลนี้ปิดเป็นค่าเริ่มต้น ต้องใช้ migration 10.141 และ 10.142 ตามลำดับ และยังไม่ผ่านการตรวจรับทางคลินิก ความเป็นส่วนตัว หรือบัญชี/ภาษี ห้ามบันทึกข้อมูลผู้ป่วยจริง",
     cards: [
-      { title: "1. ผู้ดูแลกำหนดสิทธิ์", body: "หลังใช้ migration 10.141 และเปิด allowlist เฉพาะ tenant ทดสอบ ให้กำหนดสิทธิ์ BMS ตามหน้าที่ แล้วให้บทบาท REGISTRAR, NURSE, CLINICIAN หรือ CASHIER ในหน้าคลินิก Registrar ต้องมี clinic.patient.read/register และ clinic.appointment.manage; clinician ต้องมี clinic.patient.read, clinic.appointment.manage และ clinic.record.read/write/sign; nurse ต้องมี clinic.patient.read และ clinic.record.read; cashier ต้องมี clinic.billing.manage. ผู้ใช้หน้า Payment ต้องมี payment.view/submit และผู้ยืนยันต้องมี payment.confirm แยกตามหน้าที่ เลขใบอนุญาต clinician เป็นข้อมูลที่ผู้ดูแลกรอก ยังไม่ได้ตรวจหน่วยงานออกใบอนุญาต ถอนสิทธิ์เมื่อพ้นหน้าที่ Administrator ไม่ได้อ่านเวชระเบียนโดยอัตโนมัติ", links: [
+      { title: "1. ผู้ดูแลกำหนดสิทธิ์", body: "หลังใช้ migration 10.141 และ 10.142 ตามลำดับ และเปิด allowlist เฉพาะ tenant ทดสอบ ให้กำหนดสิทธิ์ BMS ตามหน้าที่ แล้วให้บทบาท REGISTRAR, NURSE, CLINICIAN หรือ CASHIER ในหน้าคลินิก Registrar ต้องมี clinic.patient.read/register และ clinic.appointment.manage; clinician ต้องมี clinic.patient.read, clinic.appointment.manage และ clinic.record.read/write/sign; nurse ต้องมี clinic.patient.read และ clinic.record.read; cashier ต้องมี clinic.billing.manage. ผู้ใช้หน้า Payment ต้องมี payment.view/submit และผู้ยืนยันต้องมี payment.confirm แยกตามหน้าที่ เลขใบอนุญาต clinician เป็นข้อมูลที่ผู้ดูแลกรอก ยังไม่ได้ตรวจหน่วยงานออกใบอนุญาต ถอนสิทธิ์เมื่อพ้นหน้าที่ Administrator ไม่ได้อ่านเวชระเบียนโดยอัตโนมัติ", links: [
         { label: "สิทธิ์ BMS", href: "/admin/permissions" }, { label: "กำหนดบทบาทคลินิก", href: "/admin/clinic" },
       ] },
       { title: "2. Registrar ลงทะเบียนและนัดหมาย", body: "ค้น HN หรือชื่อก่อนลงทะเบียนเพื่อป้องกันรายการซ้ำจากการทำงาน แต่ระบบไม่รวม chart จากชื่อหรือเบอร์อัตโนมัติ บันทึกผู้ติดต่อที่ตรวจความสัมพันธ์แล้ว จากนั้นเลือกผู้ป่วย ผู้ตรวจ ห้อง และเวลาในเขตเวลา Asia/Bangkok ตรวจคิวรายเดือนก่อนยืนยัน คำขอเวลา/ห้องซ้อนจะถูกปฏิเสธ", links: [
@@ -64,9 +64,10 @@ const COPY: Record<"th" | "en", GuideCopy> = {
     recovery: [
       { problem: "CLINIC_PILOT_DISABLED / CLINIC_SINGLE_BRANCH_REQUIRED", action: "ให้ผู้ดูแลตรวจ allowlist ของ tenant ทดสอบ, migration และจำนวนสาขาที่ active; อย่าเปิด flag ของร้านจริง" },
       { problem: "CLINIC_ACCESS_DENIED / PATIENT_CARE_ACCESS_DENIED", action: "ตรวจทั้งสิทธิ์ BMS, บทบาทคลินิกที่ active และความสัมพันธ์กับ encounter; อย่าใช้บัญชี Administrator ข้ามสิทธิ์รักษา" },
-      { problem: "APPOINTMENT_CONFLICT", action: "รีเฟรชปฏิทินและเลือกช่วงเวลา/ห้องใหม่; หากไม่ทราบผลคำขอเดิม ให้ตรวจรายการก่อนส่งซ้ำ" },
+      { problem: "APPOINTMENT_CONFLICT / REQUEST_KEY_CONFLICT", action: "รีเฟรชปฏิทินและเลือกช่วงเวลา/ห้องใหม่; retry การเลื่อนนัดเดิมใช้ request key เดิม ห้ามนำ key เดิมไปใช้กับเวลาใหม่ หากไม่ทราบผลให้ตรวจรายการก่อนส่งซ้ำ" },
       { problem: "ENCOUNTER_VERSION_CONFLICT", action: "เปิดเวชระเบียนล่าสุด ตรวจการแก้ของผู้อื่น แล้วบันทึกร่างหรือขอให้ผู้ตรวจลงนามใหม่" },
       { problem: "CHARGE_SERVICE_NOT_APPROVED / CHARGE_REVIEW_CHANGED", action: "หยุดสร้าง order ตรวจชนิดสินค้า sales surface ภาษีและราคากับผู้รับผิดชอบ; ไม่แก้ยอดย้อนหลังเพื่อให้ผ่าน" },
+      { problem: "CHARGE_ORDER_CLOSED_REVIEW_REQUIRED", action: "order เดิมถูกยกเลิกหรือคืนแล้ว ให้ผู้มีสิทธิ์ตรวจ payment/refund และรายการค่าบริการก่อนทำรายการใหม่ ระบบไม่สร้าง order ทดแทนเอง" },
       { problem: "ไม่แน่ใจว่า order/เงินสำเร็จหรือไม่", action: "โหลด charge sheet และค้นเลข order ใน Payment ก่อนลองใหม่; การสร้าง order ซ้ำคืน order เดิม แต่การยืนยันเงินเป็นขั้นตอนแยก" },
     ],
     limitsTitle: "ขอบเขตที่ยังไม่เปิดใช้จริง",
@@ -80,9 +81,9 @@ const COPY: Record<"th" | "en", GuideCopy> = {
     tag: "Outpatient clinic guide · Technical pilot",
     title: "Register, document care and bill services",
     lead: "A one-branch workflow for authorised clinic staff, using synthetic data only",
-    pilot: "This module is disabled by default. Clinical, privacy and accounting/tax review are outstanding. Do not enter real patient data.",
+    pilot: "This module is disabled by default and requires migrations 10.141 and 10.142 in order. Clinical, privacy and accounting/tax review are outstanding. Do not enter real patient data.",
     cards: [
-      { title: "1. Administrator: grant access", body: "After migration 10.141 and a test-tenant allowlist, grant BMS permissions and separate REGISTRAR, NURSE, CLINICIAN or CASHIER roles. Registrar needs clinic.patient.read/register and clinic.appointment.manage; clinician needs clinic.patient.read, clinic.appointment.manage and clinic.record.read/write/sign; nurse needs clinic.patient.read and clinic.record.read; cashier needs clinic.billing.manage. Payment users need payment.view/submit, and confirmation requires payment.confirm according to duty. A clinician licence number is staff-entered evidence, not issuing-authority verification. Revoke access when duties change. Administrator alone cannot read a chart.", links: [
+      { title: "1. Administrator: grant access", body: "After migrations 10.141 and 10.142 in order and a test-tenant allowlist, grant BMS permissions and separate REGISTRAR, NURSE, CLINICIAN or CASHIER roles. Registrar needs clinic.patient.read/register and clinic.appointment.manage; clinician needs clinic.patient.read, clinic.appointment.manage and clinic.record.read/write/sign; nurse needs clinic.patient.read and clinic.record.read; cashier needs clinic.billing.manage. Payment users need payment.view/submit, and confirmation requires payment.confirm according to duty. A clinician licence number is staff-entered evidence, not issuing-authority verification. Revoke access when duties change. Administrator alone cannot read a chart.", links: [
         { label: "BMS permissions", href: "/admin/permissions" }, { label: "Clinic roles", href: "/admin/clinic" },
       ] },
       { title: "2. Registrar: register and schedule", body: "Search HN or name before registration to avoid operational duplicates. Matching name or phone never merges charts. Record a contact only after staff verify the relationship. Select patient, practitioner, room and Bangkok time; check the monthly queue. Overlapping practitioner or room bookings are rejected.", links: [
@@ -125,9 +126,10 @@ const COPY: Record<"th" | "en", GuideCopy> = {
     recovery: [
       { problem: "CLINIC_PILOT_DISABLED / CLINIC_SINGLE_BRANCH_REQUIRED", action: "Ask the administrator to inspect the synthetic tenant allowlist, migration and active branch count. Do not enable a real shop." },
       { problem: "CLINIC_ACCESS_DENIED / PATIENT_CARE_ACCESS_DENIED", action: "Check BMS permission, active clinic role and encounter relationship; Administrator is no shortcut to a chart." },
-      { problem: "APPOINTMENT_CONFLICT", action: "Refresh the calendar and choose another room/time. Check for the first booking before retrying an uncertain request." },
+      { problem: "APPOINTMENT_CONFLICT / REQUEST_KEY_CONFLICT", action: "Refresh the calendar and choose another room/time. Retry the same move with its original request key; never reuse that key for new target values. Check the appointment before retrying an uncertain request." },
       { problem: "ENCOUNTER_VERSION_CONFLICT", action: "Reload the latest record, review another person's changes, then save or sign the current version." },
       { problem: "CHARGE_SERVICE_NOT_APPROVED / CHARGE_REVIEW_CHANGED", action: "Stop and review stock policy, sales surface, tax category and price with the responsible staff. Do not alter past amounts to force success." },
+      { problem: "CHARGE_ORDER_CLOSED_REVIEW_REQUIRED", action: "The existing order was cancelled or returned. Have an authorised reviewer reconcile payment, refund and charges before a new transaction; no replacement order is created automatically." },
       { problem: "Uncertain order or payment result", action: "Reload the charge sheet and search the order ID in Payment before trying again. Order retries return the same order; payment confirmation is separate." },
     ],
     limitsTitle: "Still outside real-patient use",

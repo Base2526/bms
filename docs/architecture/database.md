@@ -1,13 +1,16 @@
 # Database
 
-## Outpatient clinic technical pilot (`10.141`)
+## Outpatient clinic technical pilot (`10.141`–`10.142`)
 
 Flag-disabled, one-active-branch pilot. `bms_clinic_patients` owns patient UUID/HN separately from CRM;
 `bms_clinic_patient_contacts` records staff-verified contacts without granting portal access.
 `bms_clinic_staff` grants explicit clinic roles; `bms_clinic_break_glass` holds 15-minute clinician
 emergency access with reason. `bms_clinic_appointments` has tenant-scoped request-key uniqueness and
-GiST exclusion constraints for practitioner and room overlap. `bms_clinic_encounters` stores only the
-mutable draft and optimistic version; `bms_clinic_signed_notes` is append-only, with addenda linked
+GiST exclusion constraints for practitioner and room overlap. `10.142` adds append-only
+`bms_clinic_appointment_reschedules` with a tenant-scoped request key and payload hash, so an old
+retry cannot revert a later move. It has tenant-keyed FKs, FORCE RLS and `bms_app` SELECT/INSERT
+grants without UPDATE/DELETE. `bms_clinic_encounters` stores only the mutable draft and optimistic
+version; `bms_clinic_signed_notes` is append-only, with addenda linked
 to their source. `bms_clinic_attachments` stores bounded PDF/PNG/JPEG bytes outside generic `files`.
 `bms_clinic_charge_sheets` and lines freeze reviewed non-stock, VAT-N service prices before atomically
 linking an ordinary BMS order. A prescription note never moves stock.
