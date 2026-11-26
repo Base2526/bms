@@ -4,7 +4,6 @@
 
 export type { LogLevel, LogMeta } from "./types";
 import type { LogLevel, LogMeta } from "./types";
-import { sanitizeLogValue } from "./sanitize";
 
 function getApiBaseUrl() {
   // On the browser we can use relative URL.
@@ -37,6 +36,13 @@ export async function addLog(
   message: string,
   meta: LogMeta = {}
 ) {
+  // POS pages authenticate as a device, while /api/logs accepts admin/user sessions only.
+  // The desktop shell sends device diagnostics through /api/pos/diagnostics/events.
+  if (typeof window !== "undefined" &&
+      (window.location.pathname === "/pos" || window.location.pathname.startsWith("/pos/"))) {
+    return false;
+  }
+
   try {
     const body = JSON.stringify({ level, category, message, meta });
 
@@ -50,13 +56,11 @@ export async function addLog(
     });
 
     if (!res.ok) {
-      console.error(`[addLog] failed: ${res.status}`);
       return false;
     }
 
     return true;
-  } catch (err) {
-    console.error('[addLog] error', sanitizeLogValue(err));
+  } catch {
     return false;
   }
 }

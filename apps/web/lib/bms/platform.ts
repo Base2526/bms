@@ -47,6 +47,7 @@ export type TenantRow = {
   id: string;
   name: string;
   slug: string;
+  businessArchetype: string | null;
   plan: string;
   active: boolean;
   created_at: string;
@@ -59,7 +60,7 @@ export type TenantRow = {
 /** รายการทุกร้าน + สถิติสรุป (cross-tenant — platform admin เท่านั้น) */
 export async function listTenants(): Promise<TenantRow[]> {
   const res = await query<any>(
-    `SELECT t.id, t.name, t.slug, t.plan, t.active, t.created_at,
+    `SELECT t.id, t.name, t.slug, profile.business_archetype, t.plan, t.active, t.created_at,
             (SELECT COUNT(*) FROM users u WHERE u.tenant_id = t.id)::int AS users,
             (SELECT COUNT(*) FROM bms_products p WHERE p.tenant_id = t.id)::int AS products,
             (SELECT COUNT(*) FROM bms_orders o WHERE o.tenant_id = t.id)::int AS orders,
@@ -67,12 +68,14 @@ export async function listTenants(): Promise<TenantRow[]> {
                        WHERE o.tenant_id = t.id
                          AND o.status IN ('PAID','PACKING','SHIPPED','COMPLETED')), 0) AS revenue
        FROM bms_tenants t
+       LEFT JOIN bms_store_profile profile ON profile.tenant_id = t.id
       ORDER BY t.created_at ASC`
   );
   return res.rows.map((r) => ({
     id: r.id,
     name: r.name,
     slug: r.slug,
+    businessArchetype: r.business_archetype ?? null,
     plan: r.plan,
     active: r.active,
     // pg คืน created_at เป็น Date object — ต้องแปลงเป็น ISO string เอง

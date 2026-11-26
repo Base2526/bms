@@ -3665,6 +3665,7 @@ export const typeDefs = /* GraphQL */ `
   # ===== BMS platform admin (เจ้าของแพลตฟอร์ม — ข้ามร้าน) =====
   type BmsTenantRow {
     id: ID!  name: String!  slug: String!  plan: String!  active: Boolean!
+    businessArchetype: String
     created_at: String!
     users: Int!  products: Int!  orders: Int!  revenue: Float!
   }

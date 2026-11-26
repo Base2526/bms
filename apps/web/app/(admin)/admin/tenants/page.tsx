@@ -6,12 +6,13 @@ import { Table, Tag, Switch, Select, Button, Space, Alert, message, Statistic, R
 import { ReloadOutlined, ShopOutlined, LoginOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 import PackageMetricsCard from "@/components/billing/PackageMetricsCard";
+import { localizedShopArchetypeLabel } from "@/lib/bms/shopArchetypes";
 
 const Q = gql`
   query {
     bmsIsPlatformAdmin
     bmsTenants {
-      id name slug plan active created_at
+      id name slug businessArchetype plan active created_at
       users products orders revenue
     }
     bmsBilling { plans { code name } }
@@ -57,13 +58,17 @@ export default function Page() {
 
   const columns = [
     {
-      title: t("admin_tenants.col_shop"), dataIndex: "name", key: "name",
+      title: t("admin_tenants.col_shop"), dataIndex: "name", key: "name", width: 300,
       render: (_: any, r: any) => (
-        <Space direction="vertical" size={0}>
-          <span style={{ fontWeight: 600 }}>{r.name}</span>
-          <span style={{ color: "var(--text-secondary)", fontSize: 12 }}>/{r.slug}</span>
+        <Space direction="vertical" size={0} style={{ width: "100%" }}>
+          <span style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{r.name}</span>
+          <span title={`/${r.slug}`} style={{ color: "var(--text-secondary)", fontSize: 12, display: "block", maxWidth: 270, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>/{r.slug}</span>
         </Space>
       ),
+    },
+    {
+      title: t("admin_tenants.col_archetype"), dataIndex: "businessArchetype", key: "businessArchetype", width: 180,
+      render: (archetype: string | null) => <Tag>{localizedShopArchetypeLabel(archetype, t)}</Tag>,
     },
     {
       title: t("admin_tenants.col_plan"), dataIndex: "plan", key: "plan", width: 160,
@@ -158,7 +163,7 @@ export default function Page() {
         rowKey="id" size="middle" loading={loading}
         dataSource={rows} columns={columns}
         pagination={{ pageSize: 20, hideOnSinglePage: true }}
-        scroll={{ x: 900 }}
+        scroll={{ x: "max-content" }}
       />
     </div>
   );

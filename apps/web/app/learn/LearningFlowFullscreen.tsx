@@ -19,11 +19,12 @@ type Props = {
   playLabel?: string;
   followLabel?: string;
   detailNote?: string;
+  showAudioControl?: boolean;
 };
 
 export function LearningFlowFullscreen({
   lang, title, cueText, step, total, playing, canPlay, onTogglePlaying, onPrevious, onNext, renderDiagram,
-  playLabel, followLabel, detailNote,
+  playLabel, followLabel, detailNote, showAudioControl = true,
 }: Props) {
   const th = lang === "th";
   const [open, setOpen] = useState(false);
@@ -64,7 +65,7 @@ export function LearningFlowFullscreen({
   }, [autoFollow, open, step]);
 
   function pointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || !viewportRef.current) return;
+    if (event.button !== 0 || !viewportRef.current || (event.target as HTMLElement).closest("button, input, select, a")) return;
     dragRef.current = { x: event.clientX, y: event.clientY, left: viewportRef.current.scrollLeft, top: viewportRef.current.scrollTop };
     viewportRef.current.setPointerCapture(event.pointerId);
   }
@@ -131,7 +132,7 @@ export function LearningFlowFullscreen({
       <footer className={s.flowFullscreenControls}>
         <div>
           <button type="button" onClick={onPrevious} disabled={step === 0}>← {th ? "ก่อนหน้า" : "Previous"}</button>
-          <button type="button" className={s.flowFullscreenPlay} onClick={onTogglePlaying} disabled={!canPlay}>{playing ? "❚❚" : "▶"} {playing ? (th ? "หยุด" : "Pause") : (playLabel ?? (th ? "เล่นเสียง" : "Play"))}</button>
+          {showAudioControl && <button type="button" className={s.flowFullscreenPlay} onClick={onTogglePlaying} disabled={!canPlay}>{playing ? "❚❚" : "▶"} {playing ? (th ? "หยุด" : "Pause") : (playLabel ?? (th ? "เล่นเสียง" : "Play"))}</button>}
           <button type="button" onClick={onNext} disabled={step === total - 1}>{th ? "ถัดไป" : "Next"} →</button>
         </div>
         <div>

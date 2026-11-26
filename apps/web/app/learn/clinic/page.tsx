@@ -2,6 +2,8 @@ import Link from "next/link";
 import { learningLang, learningMetadata, Sidebar } from "../shared";
 import { localizedPublicPath } from "@/lib/publicSeo";
 import s from "../learning.module.css";
+import { ClinicGuideFlow } from "./ClinicGuideFlow";
+import c from "./clinic.module.css";
 
 const path = "/learn/clinic";
 
@@ -39,7 +41,7 @@ export default async function ClinicGuidePage() {
     },
     {
       title: copy("4. ตรวจค่าบริการและชำระเงิน", "4. Review charges and payment"),
-      body: copy("Cashier เลือก encounter ที่ลงนามแล้วจากรายการที่ไม่แสดงบันทึกทางคลินิก เพิ่มเฉพาะบริการ NON_STOCK ที่เปิด ONLINE_ORDER และ VAT N ตรวจราคาแล้วล็อก READY ก่อนสร้าง order หนึ่งครั้ง จากนั้นใช้หน้า Payment และสิทธิ์ชำระเงินปกติ", "The cashier selects a signed encounter from a worklist without clinical notes. Add only NON_STOCK services enabled for ONLINE_ORDER with VAT N. Review prices, lock the sheet as READY, create one order, then use Payment under its existing permissions."),
+      body: copy("Cashier ที่มีบทบาทยังมีผลและสิทธิ์ clinic.billing.manage เลือก encounter ที่ลงนามแล้วจากรายการที่ไม่แสดงบันทึกทางคลินิก เพิ่มเฉพาะบริการ NON_STOCK ที่เปิด ONLINE_ORDER และ VAT N ตรวจราคา server แล้วล็อก READY ก่อนสร้าง order หนึ่งครั้ง จากนั้นหน้า Payment ต้องมี payment.view/payment.submit และผู้ยืนยันต้องมี payment.confirm", "A cashier with an active clinic role and clinic.billing.manage selects a signed encounter from a worklist without clinical notes. Add only NON_STOCK services enabled for ONLINE_ORDER with VAT N. Review server prices, lock the sheet as READY and create one order. Payment requires payment.view/payment.submit; the confirmer needs payment.confirm."),
     },
     {
       title: copy("5. ตรวจการเข้าถึง", "5. Review access"),
@@ -47,30 +49,37 @@ export default async function ClinicGuidePage() {
     },
   ];
 
-  return <div className={`${s.layout} ${s.trackLayout}`}>
+  return <div className={`${s.layout} ${s.trackLayout} ${s.clinicLayout} ${c.page}`}>
     <Sidebar lang={lang} clinicGuide />
-    <div className={s.trackContents}>
+    <div className={`${s.trackContents} ${c.content}`}>
       <nav className={s.breadcrumb} aria-label="Breadcrumb">
         <Link href={localizedPublicPath("/learn", lang)}>{copy("ศูนย์เรียนรู้", "Learning center")}</Link><span>/</span>
         <span aria-current="page">{copy("คลินิกผู้ป่วยนอก", "Outpatient clinic")}</span>
       </nav>
-      <article className={s.article}>
-        <span className={s.eyebrow}>{copy("คู่มือทดลอง · Technical pilot", "Technical pilot guide")}</span>
-        <h1>{copy("คู่มือคลินิกผู้ป่วยนอก", "Outpatient clinic guide")}</h1>
-        <p className={s.lead}>{copy("ลำดับงานสำหรับคลินิกหนึ่งสาขาที่ได้รับสิทธิ์ ตั้งแต่ลงทะเบียนจนถึงชำระค่าบริการ", "A one-branch workflow for authorized clinic staff, from registration through service payment.")}</p>
-        <div className={s.callout}>
-          <h2>{copy("สถานะการทดลอง", "Pilot status")}</h2>
-          <p>{copy("โมดูลปิดเป็นค่าเริ่มต้น เปิดได้เฉพาะ tenant ทดสอบที่อยู่ใน allowlist และใช้ข้อมูลสังเคราะห์เท่านั้น ยังไม่ผ่านการตรวจรับด้านคลินิก ความเป็นส่วนตัว และบัญชี/ภาษี ห้ามบันทึกข้อมูลผู้ป่วยจริง", "The module is off by default and limited to allowlisted test tenants with synthetic data. Clinical, privacy and accounting/tax review is outstanding. Do not enter real patient data.")}</p>
+      <article className={c.article}>
+        <div className={c.hero}>
+          <div className={c.titleLine}><h1>{copy("คู่มือคลินิกผู้ป่วยนอก", "Outpatient clinic guide")}</h1><span className={c.pilotBadge}>TECHNICAL PILOT</span></div>
+          <p className={c.subtitle}>{copy("ลำดับงานสำหรับคลินิกหนึ่งสาขาที่ได้รับสิทธิ์ ตั้งแต่ลงทะเบียนจนถึงชำระค่าบริการ", "A one-branch workflow for authorized clinic staff, from registration through service payment.")}</p>
         </div>
-        {steps.map((step) => <section key={step.title} className={s.section}>
-          <h2>{step.title}</h2><p>{step.body}</p>
-        </section>)}
-        <div className={s.callout}>
+        <div className={c.status}>
+          <span className={c.statusIcon} aria-hidden="true">!</span>
+          <div><strong>{copy("สถานะการทดลอง", "Pilot status")}</strong>
+          <p>{copy("โมดูลปิดเป็นค่าเริ่มต้น เปิดได้เฉพาะ tenant ทดสอบที่อยู่ใน allowlist และใช้ข้อมูลสังเคราะห์เท่านั้น ยังไม่ผ่านการตรวจรับด้านคลินิก ความเป็นส่วนตัว และบัญชี/ภาษี ห้ามบันทึกข้อมูลผู้ป่วยจริง", "The module is off by default and limited to allowlisted test tenants with synthetic data. Clinical, privacy and accounting/tax review is outstanding. Do not enter real patient data.")}</p>
+          </div>
+        </div>
+        <ClinicGuideFlow lang={lang} />
+        <div className={c.details}>
+          <h2>{copy("รายละเอียดการทำงาน", "Workflow details")}</h2>
+          <div className={c.detailsGrid}>{steps.map((step) => <section key={step.title} className={c.detailCard}>
+            <h3>{step.title}</h3><p>{step.body}</p>
+          </section>)}</div>
+        </div>
+        <div className={c.scope}>
           <h2>{copy("ขอบเขต", "Scope")}</h2>
           <p>{copy("ไม่มี AI วินิจฉัย ลงนาม สั่งยา หรืออ่านเวชระเบียน ไม่มีการจ่ายยา เคลมประกัน telemedicine หรือแล็บภายนอก", "AI cannot diagnose, sign, prescribe or read charts. Dispensing, insurance claims, telemedicine and external labs are not included.")}</p>
         </div>
-        <p className={s.section}>{copy("สำหรับขั้นตอนและรหัสข้อผิดพลาดโดยละเอียด ให้เปิดคู่มือพนักงานหลังเข้าสู่ระบบ", "For detailed steps and error codes, open the staff manual after signing in.")}</p>
-        <div className={s.links}><Link href="/admin/manual/clinic">{copy("คู่มือคลินิกสำหรับพนักงาน", "Clinic staff manual")} →</Link></div>
+        <p className={c.manualNote}>{copy("สำหรับขั้นตอนและรหัสข้อผิดพลาดโดยละเอียด ให้เปิดคู่มือพนักงานหลังเข้าสู่ระบบ", "For detailed steps and error codes, open the staff manual after signing in.")}</p>
+        <Link className={c.manualLink} href="/admin/manual/clinic">{copy("คู่มือคลินิกสำหรับพนักงาน", "Clinic staff manual")} →</Link>
       </article>
     </div>
   </div>;

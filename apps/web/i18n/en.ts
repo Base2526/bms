@@ -4019,6 +4019,7 @@ const en = {
     delete_success: "Shop deleted",
     delete_error: "Delete failed",
     col_shop: "Shop",
+    col_archetype: "Shop type",
     col_plan: "Plan",
     col_users: "Users",
     col_products: "Products",

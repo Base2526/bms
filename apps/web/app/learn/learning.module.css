@@ -17,6 +17,8 @@
 .button:hover,.secondary:hover{filter:brightness(.95)}
 .disabled{color:var(--app-text-secondary);padding:11px 17px}
 .main{max-width:1200px;margin:auto;padding:32px 24px 64px}
+.main:has(.clinicLayout){max-width:1720px;padding-top:20px}
+.clinicLayout{min-width:0}
 .skip{position:absolute;left:16px;top:-100px;padding:12px;background:var(--app-surface);z-index:100}
 .skip:focus{top:12px}
 .hero{padding:36px 0 32px;max-width:850px}
