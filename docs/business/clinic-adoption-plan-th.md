@@ -6,6 +6,7 @@
 ตาม [ขอบเขต implementation](clinic-pilot-technical-th.md) แผนระยะยาวด้านล่างยังมีงานที่
 technical pilot ไม่ครอบคลุม โดยเฉพาะการอนุมัติทางคลินิก ข้อมูลส่วนบุคคล ภาษี และการเปิดใช้จริง
 ผลตรวจรับระยะ 1 ล่าสุดอยู่ที่ [clinic-phase1-acceptance-2026-11-26-th.md](clinic-phase1-acceptance-2026-11-26-th.md); คลินิกเป้าหมายยังไม่ยืนยันว่ามี EMR เดิมหรือไม่ จึงยังไม่เลือกเส้นทาง integration หรือให้ BMS เป็นเจ้าของเวชระเบียน.
+งานเพิ่มการถอนสิทธิ์ฉุกเฉินและหลักฐานรอบถัดไปอยู่ที่ [clinic-emergency-revocation-acceptance-2026-11-26-th.md](clinic-emergency-revocation-acceptance-2026-11-26-th.md).
 แผนที่เส้นทางข้อมูลและจุดตรวจ privacy อยู่ที่ [clinic-data-flow-map-th.md](clinic-data-flow-map-th.md).
 บัญชีฟีเจอร์ครบทุกหมวดอยู่ที่ [clinic-full-feature-matrix-th.md](clinic-full-feature-matrix-th.md),
 ทางเลือก EMR ที่ยังรอคำตอบอยู่ที่ [clinic-emr-architecture-decision-th.md](clinic-emr-architecture-decision-th.md),

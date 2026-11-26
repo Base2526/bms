@@ -19,9 +19,9 @@ const COPY: Record<"th" | "en", GuideCopy> = {
     tag: "คู่มือคลินิกผู้ป่วยนอก · Technical pilot",
     title: "ลงทะเบียน ตรวจรักษา และคิดค่าบริการ",
     lead: "ขั้นตอนสำหรับบุคลากรคลินิกหนึ่งสาขาที่ได้รับสิทธิ์ ใช้เฉพาะข้อมูลสังเคราะห์ระหว่างทดลอง",
-    pilot: "โมดูลนี้ปิดเป็นค่าเริ่มต้น ต้องใช้ migration 10.141 และ 10.142 ตามลำดับ และยังไม่ผ่านการตรวจรับทางคลินิก ความเป็นส่วนตัว หรือบัญชี/ภาษี ห้ามบันทึกข้อมูลผู้ป่วยจริง",
+    pilot: "โมดูลนี้ปิดเป็นค่าเริ่มต้น ต้องใช้ migration 10.141, 10.142 และ 10.143 ตามลำดับ และยังไม่ผ่านการตรวจรับทางคลินิก ความเป็นส่วนตัว หรือบัญชี/ภาษี ห้ามบันทึกข้อมูลผู้ป่วยจริง",
     cards: [
-      { title: "1. ผู้ดูแลกำหนดสิทธิ์", body: "หลังใช้ migration 10.141 และ 10.142 ตามลำดับ และเปิด allowlist เฉพาะ tenant ทดสอบ ให้กำหนดสิทธิ์ BMS ตามหน้าที่ แล้วให้บทบาท REGISTRAR, NURSE, CLINICIAN หรือ CASHIER ในหน้าคลินิก Registrar ต้องมี clinic.patient.read/register และ clinic.appointment.manage; clinician ต้องมี clinic.patient.read, clinic.appointment.manage และ clinic.record.read/write/sign; nurse ต้องมี clinic.patient.read และ clinic.record.read; cashier ต้องมี clinic.billing.manage. ผู้ใช้หน้า Payment ต้องมี payment.view/submit และผู้ยืนยันต้องมี payment.confirm แยกตามหน้าที่ เลขใบอนุญาต clinician เป็นข้อมูลที่ผู้ดูแลกรอก ยังไม่ได้ตรวจหน่วยงานออกใบอนุญาต ถอนสิทธิ์เมื่อพ้นหน้าที่ Administrator ไม่ได้อ่านเวชระเบียนโดยอัตโนมัติ", links: [
+      { title: "1. ผู้ดูแลกำหนดสิทธิ์", body: "หลังใช้ migration 10.141, 10.142 และ 10.143 ตามลำดับ และเปิด allowlist เฉพาะ tenant ทดสอบ ให้กำหนดสิทธิ์ BMS ตามหน้าที่ แล้วให้บทบาท REGISTRAR, NURSE, CLINICIAN หรือ CASHIER ในหน้าคลินิก Registrar ต้องมี clinic.patient.read/register และ clinic.appointment.manage; clinician ต้องมี clinic.patient.read, clinic.appointment.manage และ clinic.record.read/write/sign; nurse ต้องมี clinic.patient.read และ clinic.record.read; cashier ต้องมี clinic.billing.manage. ผู้ใช้หน้า Payment ต้องมี payment.view/submit และผู้ยืนยันต้องมี payment.confirm แยกตามหน้าที่ เลขใบอนุญาต clinician เป็นข้อมูลที่ผู้ดูแลกรอก ยังไม่ได้ตรวจหน่วยงานออกใบอนุญาต ถอนสิทธิ์เมื่อพ้นหน้าที่ Administrator ไม่ได้อ่านเวชระเบียนโดยอัตโนมัติ", links: [
         { label: "สิทธิ์ BMS", href: "/admin/permissions" }, { label: "กำหนดบทบาทคลินิก", href: "/admin/clinic" },
       ] },
       { title: "2. Registrar ลงทะเบียนและนัดหมาย", body: "ค้น HN หรือชื่อก่อนลงทะเบียนเพื่อป้องกันรายการซ้ำจากการทำงาน แต่ระบบไม่รวม chart จากชื่อหรือเบอร์อัตโนมัติ บันทึกผู้ติดต่อที่ตรวจความสัมพันธ์แล้ว จากนั้นเลือกผู้ป่วย ผู้ตรวจ ห้อง และเวลาในเขตเวลา Asia/Bangkok ตรวจคิวรายเดือนก่อนยืนยัน หากมีคำเตือนว่ารายการเกิน 500 ปฏิทินไม่ครบและไม่ใช้จำนวนบนปฏิทินยืนยันเวลาว่าง คำขอเวลา/ห้องซ้อนจะถูกปฏิเสธที่ฐานข้อมูล", links: [
@@ -34,7 +34,7 @@ const COPY: Record<"th" | "en", GuideCopy> = {
         { label: "ค่าบริการคลินิก", href: "/admin/clinic" }, { label: "สินค้า/บริการ", href: "/admin/products" },
         { label: "ชำระเงิน", href: "/admin/payment" },
       ] },
-      { title: "5. ตรวจประวัติการเข้าถึง", body: "Clinician ที่เคยดูแลหรือ nurse ที่ได้รับมอบหมายเท่านั้นจึงอ่านประวัติได้ การเข้าถึงฉุกเฉินต้องเป็น clinician ระบุเหตุผลและยืนยัน มีผล 15 นาทีและบันทึกตรวจย้อนหลังได้ ไฟล์แนบเปิดผ่าน route เฉพาะที่ตรวจบทบาทและ encounter ทุกครั้ง", links: [
+      { title: "5. ตรวจประวัติการเข้าถึง", body: "Clinician ที่เคยดูแลหรือ nurse ที่ได้รับมอบหมายเท่านั้นจึงอ่านประวัติได้ การเข้าถึงฉุกเฉินต้องเป็น clinician ระบุเหตุผลและยืนยัน มีผลไม่เกิน 15 นาทีและบันทึกตรวจย้อนหลังได้ เมื่อหมดความจำเป็นให้ clinician กดถอนสิทธิ์ฉุกเฉินของตนเองในหน้าคลินิกทันที การถอนสิ้นสุดสิทธิ์ฉุกเฉินแต่ไม่ลบประวัติ; สิทธิ์จากการดูแลผู้ป่วยตามปกติยังใช้ได้ตามกฎเดิม ไฟล์แนบเปิดผ่าน route เฉพาะที่ตรวจบทบาทและ encounter ทุกครั้ง", links: [
         { label: "ประวัติและ audit คลินิก", href: "/admin/clinic" },
       ] },
     ],
@@ -81,9 +81,9 @@ const COPY: Record<"th" | "en", GuideCopy> = {
     tag: "Outpatient clinic guide · Technical pilot",
     title: "Register, document care and bill services",
     lead: "A one-branch workflow for authorised clinic staff, using synthetic data only",
-    pilot: "This module is disabled by default and requires migrations 10.141 and 10.142 in order. Clinical, privacy and accounting/tax review are outstanding. Do not enter real patient data.",
+    pilot: "This module is disabled by default and requires migrations 10.141, 10.142 and 10.143 in order. Clinical, privacy and accounting/tax review are outstanding. Do not enter real patient data.",
     cards: [
-      { title: "1. Administrator: grant access", body: "After migrations 10.141 and 10.142 in order and a test-tenant allowlist, grant BMS permissions and separate REGISTRAR, NURSE, CLINICIAN or CASHIER roles. Registrar needs clinic.patient.read/register and clinic.appointment.manage; clinician needs clinic.patient.read, clinic.appointment.manage and clinic.record.read/write/sign; nurse needs clinic.patient.read and clinic.record.read; cashier needs clinic.billing.manage. Payment users need payment.view/submit, and confirmation requires payment.confirm according to duty. A clinician licence number is staff-entered evidence, not issuing-authority verification. Revoke access when duties change. Administrator alone cannot read a chart.", links: [
+      { title: "1. Administrator: grant access", body: "After migrations 10.141, 10.142 and 10.143 in order and a test-tenant allowlist, grant BMS permissions and separate REGISTRAR, NURSE, CLINICIAN or CASHIER roles. Registrar needs clinic.patient.read/register and clinic.appointment.manage; clinician needs clinic.patient.read, clinic.appointment.manage and clinic.record.read/write/sign; nurse needs clinic.patient.read and clinic.record.read; cashier needs clinic.billing.manage. Payment users need payment.view/submit, and confirmation requires payment.confirm according to duty. A clinician licence number is staff-entered evidence, not issuing-authority verification. Revoke access when duties change. Administrator alone cannot read a chart.", links: [
         { label: "BMS permissions", href: "/admin/permissions" }, { label: "Clinic roles", href: "/admin/clinic" },
       ] },
       { title: "2. Registrar: register and schedule", body: "Search HN or name before registration to avoid operational duplicates. Matching name or phone never merges charts. Record a contact only after staff verify the relationship. Select patient, practitioner, room and Bangkok time; check the monthly queue. If more than 500 appointments trigger the incomplete-list warning, do not use calendar counts to confirm availability. The database rejects overlapping practitioner or room bookings.", links: [
@@ -96,7 +96,7 @@ const COPY: Record<"th" | "en", GuideCopy> = {
         { label: "Clinic charges", href: "/admin/clinic" }, { label: "Products/services", href: "/admin/products" },
         { label: "Payment", href: "/admin/payment" },
       ] },
-      { title: "5. Review access", body: "Only a treating clinician or assigned nurse may read history. Emergency access requires a clinician, a reason and confirmation, lasts 15 minutes and is audited. Attachment downloads recheck the active role and encounter assignment on every request.", links: [
+      { title: "5. Review access", body: "Only a treating clinician or assigned nurse may read history. Emergency access requires a clinician, a reason and confirmation, lasts at most 15 minutes and is audited. When no longer needed, the clinician should revoke their own emergency access immediately in the clinic screen. Revocation ends emergency access and retains access history; ordinary care relationship access still follows its own rules. Attachment downloads recheck the active role and encounter assignment on every request.", links: [
         { label: "Clinic access history", href: "/admin/clinic" },
       ] },
     ],

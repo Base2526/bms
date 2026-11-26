@@ -6,11 +6,11 @@
 
 | ID | งาน / ผลที่ส่ง | พึ่งพา | เกณฑ์รับมอบ / ผู้ตรวจรับ |
 | --- | --- | --- | --- |
-| G01 | สร้าง restored throwaway BMS schema และ apply/reapply `10.141`–`10.142` | dump ที่ปลอดข้อมูลจริง/สิทธิ์ local | migration, RLS/grants/FK/trigger/rollback ผ่านบน schema จริง; engineering |
+| G01 | สร้าง restored throwaway BMS schema และ apply/reapply `10.141`–`10.143` | dump ที่ปลอดข้อมูลจริง/สิทธิ์ local | migration, RLS/grants/FK/trigger/rollback ผ่านบน schema จริง; engineering |
 | G02 | ทดสอบ clinic → charge → order → submit/confirm payment → void/refund/reconcile | G01; catalog สังเคราะห์ | ยอด/tax/discount/line amount/stock mismatch rollback; finance/engineering |
 | G03 | ทดสอบ concurrency/retry ทั้งนัด reschedule/order/payment และ failure หลังไม่ทราบผล | G01–G02 | ID เดิมไม่สร้างซ้ำ; conflict/closed order แก้ด้วยคน; engineering |
 | G04 | บัญชีทดสอบทุกบทบาท, revoked, tenant อื่น; browser `/admin/clinic` และ manual 2 widths | G01; auth test environment | หน้าหลัง login, cashier-only, error/truncation และ denial ตรวจจริง; QA |
-| G05 | ทดสอบ file access ทุก route, support/impersonation, revoke ระหว่าง request และ synthetic sentinel ใน CRM/AI/log/report | G01/G04 | ไม่มี PHI รั่ว; audit actor/target/time ครบ; security/privacy |
+| G05 | ทดสอบ file access ทุก route, support/impersonation, revoke ระหว่าง request และ synthetic sentinel ใน CRM/AI/log/report | G01/G04 | การถอน emergency grant ก่อนหมดอายุผ่านบน fixture `10.143`; route อื่นและ runtime leakage ยังต้องพิสูจน์; security/privacy |
 | G06 | Backup/restore drill รวมไฟล์/ลายเซ็น/audit และ load/search/calendar | G01 | restore checksum/permission, SLO ที่ตกลง, runbook; ops/privacy |
 | G07 | ตรวจ desktop/mobile POS order/payment/print/incoming/realtime ด้วย clinic-channel synthetic order | G02/G04 | ไม่มี chart payload, receipt ถูกยอด, device/PIN ไม่เปิด chart; QA |
 | G08 | บันทึก release gate และความเสี่ยง, อัปเดตคู่มือ/หลักฐานเฉพาะที่รันจริง | G01–G07 | ไม่เรียก pilot ว่า production-ready; engineering/owners |

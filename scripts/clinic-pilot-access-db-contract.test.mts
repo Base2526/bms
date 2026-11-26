@@ -62,6 +62,7 @@ test("clinic record and attachment access follows active role, care team, expiry
   } finally { seed.release(); }
 
   const audits: unknown[][] = [];
+  let failRevokeAudit = false;
   const access = loadModule("apps/web/lib/bms/clinic/access.ts", {
     "@/lib/db": { getClient: () => db.connect() },
     "../tenant": { beginTenantTx: async (client: any, tenantId: string) => {
@@ -69,7 +70,10 @@ test("clinic record and attachment access follows active role, care team, expiry
       await client.query("SET LOCAL ROLE bms_app");
       await client.query(`SELECT set_config('bms.tenant_id',$1,true)`, [tenantId]);
     } },
-    "../audit": { insertAuditInTx: async (_client: unknown, event: unknown) => { audits.push(["write", event]); } },
+    "../audit": { insertAuditInTx: async (_client: unknown, event: any) => {
+      if (failRevokeAudit && event.action === "clinic.emergency_access.revoked") throw new Error("AUDIT_FAILURE");
+      audits.push(["write", event]);
+    } },
     "../securityEvents": { insertSecurityEventInTx: async (_client: unknown, event: unknown) => { audits.push(["read", event]); } },
   });
   const attachments = loadModule("apps/web/lib/bms/clinic/attachments.ts", {
@@ -113,11 +117,67 @@ test("clinic record and attachment access follows active role, care team, expiry
     await assert.rejects(attachments.readClinicAttachment({ tenantId: tenantA,
       actorId: clinicianOther, attachmentId }), /ATTACHMENT_NOT_FOUND/);
 
+    await assert.rejects(encounters.revokeClinicEmergencyAccess({ tenantId: tenantA,
+      actorId: clinicianOther, patientId: patientA, confirmation: "WRONG CONFIRMATION" }), /CONFIRMATION_REQUIRED/);
+    assert.equal(await encounters.revokeClinicEmergencyAccess({ tenantId: tenantA,
+      actorId: clinicianA, patientId: patientA,
+      confirmation: "REVOKE EMERGENCY CLINICAL ACCESS" }), "ALREADY_INACTIVE");
+    assert.equal((await encounters.readClinicEmergencyAccess({ tenantId: tenantA,
+      actorId: clinicianOther, patientId: patientA })).expiresAt !== null, true);
+    failRevokeAudit = true;
+    await assert.rejects(encounters.revokeClinicEmergencyAccess({ tenantId: tenantA,
+      actorId: clinicianOther, patientId: patientA,
+      confirmation: "REVOKE EMERGENCY CLINICAL ACCESS" }), /AUDIT_FAILURE/);
+    failRevokeAudit = false;
+    assert.equal((await encounters.readClinicEmergencyAccess({ tenantId: tenantA,
+      actorId: clinicianOther, patientId: patientA })).expiresAt !== null, true);
+    assert.equal(await encounters.revokeClinicEmergencyAccess({ tenantId: tenantA,
+      actorId: clinicianOther, patientId: patientA,
+      confirmation: "REVOKE EMERGENCY CLINICAL ACCESS" }), "REVOKED");
+    const revoked = await db.query(`SELECT revoked_at,revoked_by,expires_at,
+      expires_at>now() AS legacy_active FROM bms_clinic_break_glass
+      WHERE tenant_id=$1 AND patient_id=$2 AND clinician_id=$3 ORDER BY granted_at DESC LIMIT 1`,
+      [tenantA,patientA,clinicianOther]);
+    assert.ok(revoked.rows[0].revoked_at);
+    assert.equal(revoked.rows[0].revoked_by, clinicianOther);
+    assert.equal(revoked.rows[0].legacy_active, false);
+    const grants = await db.query(`SELECT
+      has_column_privilege('bms_app','bms_clinic_break_glass','revoked_at','UPDATE') AS revoke,
+      has_column_privilege('bms_app','bms_clinic_break_glass','reason','UPDATE') AS reason_edit`);
+    assert.deepEqual(grants.rows[0], { revoke: true, reason_edit: false });
+    const expiryGuard = await db.connect();
+    try {
+      await expiryGuard.query("BEGIN");
+      await assert.rejects(expiryGuard.query(`UPDATE bms_clinic_break_glass
+        SET expires_at=now()+interval '1 minute'
+        WHERE tenant_id=$1 AND patient_id=$2 AND clinician_id=$3 AND revoked_at IS NOT NULL`,
+      [tenantA,patientA,clinicianOther]), (error: any) => error.code === "23514");
+    } finally { await expiryGuard.query("ROLLBACK"); expiryGuard.release(); }
+    assert.equal((await encounters.readClinicEmergencyAccess({ tenantId: tenantA,
+      actorId: clinicianOther, patientId: patientA })).expiresAt, null);
+    await assert.rejects(encounters.readClinicEncounter({ tenantId: tenantA,
+      actorId: clinicianOther, encounterId: encounterA }), /PATIENT_CARE_ACCESS_DENIED/);
+    assert.equal(await encounters.revokeClinicEmergencyAccess({ tenantId: tenantA,
+      actorId: clinicianOther, patientId: patientA,
+      confirmation: "REVOKE EMERGENCY CLINICAL ACCESS" }), "ALREADY_INACTIVE");
+    assert.ok(audits.some(([kind, event]) => kind === "write" &&
+      (event as any).action === "clinic.emergency_access.revoked"));
+    await assert.rejects(encounters.revokeClinicEmergencyAccess({ tenantId: tenantB,
+      actorId: clinicianB, patientId: patientA,
+      confirmation: "REVOKE EMERGENCY CLINICAL ACCESS" }), /PATIENT_NOT_FOUND/);
+    await assert.rejects(encounters.revokeClinicEmergencyAccess({ tenantId: tenantA,
+      actorId: cashier, patientId: patientA,
+      confirmation: "REVOKE EMERGENCY CLINICAL ACCESS" }), /CLINICIAN_REQUIRED/);
+
+    await encounters.requestClinicEmergencyAccess({ tenantId: tenantA, actorId: clinicianOther,
+      patientId: patientA, reason: "Synthetic emergency access after revocation",
+      confirmation: "CONFIRM EMERGENCY CLINICAL ACCESS" });
+
     const change = await db.connect();
     try {
       await change.query(`UPDATE bms_clinic_break_glass
         SET granted_at=now()-interval '16 minutes',expires_at=now()-interval '1 minute'
-        WHERE tenant_id=$1 AND patient_id=$2 AND clinician_id=$3`,
+        WHERE tenant_id=$1 AND patient_id=$2 AND clinician_id=$3 AND revoked_at IS NULL`,
       [tenantA,patientA,clinicianOther]);
     } finally { change.release(); }
     await assert.rejects(encounters.readClinicEncounter({ tenantId: tenantA,

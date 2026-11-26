@@ -6,7 +6,7 @@
 
 - **ทั่วไป** = ต้องกำหนดก่อนนำระบบไปใช้คลินิกผู้ป่วยนอกทั่วไป; **ตามบริการ** = ทำเมื่อคลินิกให้บริการนั้น; **เสริม** = ต้องตัดสินตามรูปแบบปฏิบัติงาน. ความจำเป็นไม่ใช่คำวินิจฉัยกฎหมาย.
 - **พิสูจน์แล้ว** หมายถึง path ที่ระบุผ่านการทดสอบตามขอบเขตหลักฐานเท่านั้น; ไม่มี workflow คลินิกใดพิสูจน์ production readiness. **ฐาน** = BMS มีระบบธุรกิจ แต่ยังไม่ผูกกับคลินิก; **pilot** = มี path คลินิกที่ปิด flag; **บางส่วน** = มีชิ้นส่วนแต่ยังไม่ครบ workflow; **ไม่มี** = ไม่พบ path คลินิกในชุดไฟล์ที่ตรวจ.
-- รหัสหลักฐาน: `C` = `apps/web/lib/bms/clinic/`; `R` = `apps/web/app/api/bms/clinic/route.ts` และ `attachments/route.ts`; `U` = `apps/web/app/(admin)/admin/clinic/page.tsx`; `M` = `db/migrations/10.141__bms_clinic_outpatient_pilot.sql`, `10.142__bms_clinic_reschedule_idempotency.sql`; `T` = `scripts/clinic-pilot-*.test.mts`; `O` = `apps/web/lib/bms/orders.ts`; `P` = `apps/web/lib/bms/payments.ts`; `S` = `apps/web/lib/bms/stock.ts`, `stockTransfers.ts`, `stockCounts.ts`; `Q` = `apps/web/lib/bms/permissions.ts`; `G` = `apps/web/graphql/`, `schema.graphql`, `apps/mobile/`, `apps/desktop/`; `A` = `apps/web/lib/bms/tools/catalog.ts`, `packages/realtime/src/events.ts`. เมื่อระบุ `ไม่มี C/R/U/M/T` หมายถึงการสำรวจ path เหล่านี้ ไม่ใช่การพิสูจน์ว่าไม่มีโค้ดที่อื่นใน repo.
+- รหัสหลักฐาน: `C` = `apps/web/lib/bms/clinic/`; `R` = `apps/web/app/api/bms/clinic/route.ts` และ `attachments/route.ts`; `U` = `apps/web/app/(admin)/admin/clinic/page.tsx`; `M` = `db/migrations/10.141__bms_clinic_outpatient_pilot.sql`, `10.142__bms_clinic_reschedule_idempotency.sql`, `10.143__bms_clinic_emergency_access_revocation.sql`; `T` = `scripts/clinic-pilot-*.test.mts`; `O` = `apps/web/lib/bms/orders.ts`; `P` = `apps/web/lib/bms/payments.ts`; `S` = `apps/web/lib/bms/stock.ts`, `stockTransfers.ts`, `stockCounts.ts`; `Q` = `apps/web/lib/bms/permissions.ts`; `G` = `apps/web/graphql/`, `schema.graphql`, `apps/mobile/`, `apps/desktop/`; `A` = `apps/web/lib/bms/tools/catalog.ts`, `packages/realtime/src/events.ts`. เมื่อระบุ `ไม่มี C/R/U/M/T` หมายถึงการสำรวจ path เหล่านี้ ไม่ใช่การพิสูจน์ว่าไม่มีโค้ดที่อื่นใน repo.
 - เกณฑ์รับมอบทุกแถวต้องใช้ข้อมูลสังเคราะห์, tenant/role denial และ audit ตามความเสี่ยง. งานที่แตะการรักษาต้องมีผู้ประกอบวิชาชีพตรวจรับ; ข้อกำหนดข้อมูลส่วนบุคคลและภาษีต้องมีเจ้าของเรื่องยืนยันก่อนเปิดจริง.
 
 | ฟีเจอร์ / ผู้ใช้หลัก | ชั้น | สถานะ | หลักฐาน | ช่องว่าง / dependency / ความเสี่ยง | เกณฑ์รับมอบที่ทดสอบได้ |
@@ -108,7 +108,7 @@
 | **15. สิทธิ์ ความปลอดภัย วงจรข้อมูล** | | | | | |
 | RBAC + active role + care relationship / ทีมรักษา | ทั่วไป | pilot | C/access.ts/encounters.ts; Q; R/M/T | ต้องพิสูจน์ทุก read/write และ revoked ระหว่างคำขอ | role matrix รวมต่าง tenant/branch ผ่านบน restored DB/browser |
 | Admin/cashier/device/PIN ไม่เปิด chart / security owner | ทั่วไป | pilot | C/access.ts; R; G ไม่มี clinic GraphQL | ต้อง runtime ตรวจ support/device paths | บัญชีเหล่านี้อ่าน note/file ไม่ได้แม้มี ID |
-| Emergency access เหตุผล/15 นาที/audit / clinician | ทั่วไป | pilot | C/encounters.ts; M break_glass; T | ต้องทดสอบ expiry/revocation/incident review | หมดอายุหรือถอนไม่อ่าน chart; ไม่ขยายไปไฟล์ |
+| Emergency access เหตุผล/15 นาที/audit / clinician | ทั่วไป | pilot | C/encounters.ts; M break_glass + `10.143`; T access DB/route | ถอน grant ก่อนหมดเวลาและ expiry ผ่านบน fixture; restored schema/browser/incident review ยังไม่พิสูจน์ | หมดอายุหรือถอนแล้วไม่ใช้ grant ฉุกเฉินอ่าน chart; care relationship ตามปกติยังมีสิทธิ์ของตน; ไม่ขยายไปไฟล์ |
 | Audit read/write/sign/export/file / security owner | ทั่วไป | บางส่วน | C/access.ts audit; R; M signed notes | export ยังไม่มี; audit store ไม่ครบใน fixture | ตรวจ chain ของ action/actor/time/target โดยไม่มี clinical prose |
 | Support/impersonation/tenant/session/encryption / security owner | ทั่วไป | บางส่วน | R auth; M FORCE RLS; C/clinicTx | support, key management และ session runtime ยังไม่พิสูจน์ | impersonation ไม่ข้าม care role; session revoke/tenant denial |
 | Retention/legal hold/data request / privacy owner | ทั่วไป | ไม่มี | ไม่มี C/R/U/M/T policy | ต้องให้ผู้รับผิดชอบกำหนดฐาน/ระยะก่อน code | policy version/hold/export/delete ตามกติกาที่อนุมัติ |
@@ -193,7 +193,7 @@
 
 ## หลักฐานตรวจรอบ inventory นี้
 
-- `apps/web npm run gate` ผ่าน: release feature check, regression inventory, typecheck, pure tests 4,018 (ผ่าน 4,012, ข้าม 6, fail 0) และ production build. นี่เป็น DB-free gate.
+- รอบ inventory ที่ commit `1660f209`: `apps/web npm run gate` ผ่าน: release feature check, regression inventory, typecheck, pure tests 4,018 (ผ่าน 4,012, ข้าม 6, fail 0) และ production build. นี่เป็น DB-free gate.
 - `apps/desktop npm run lint` และ `npm run test -- --runInBand` ผ่าน 178/178; `apps/mobile npm run typecheck` และ `npm test -- --runInBand --silent` ผ่าน 66 suites, 520/520 tests.
-- ตรวจ relative links ของเอกสารที่แก้, รูปแบบตาราง และ `git diff --check` ผ่าน. ไม่มีการเปลี่ยน service/migration/UI/คู่มือในแอป เพราะ workflow ที่ทำได้ยังเหมือนเดิม.
-- **ยังไม่ได้รันในรอบนี้:** DB tests, restored BMS schema, browser หลัง login, backup/restore, load และอุปกรณ์จริง. ผล fixture/browser รอบก่อนอยู่ใน [ผลตรวจรับระยะ 1](clinic-phase1-acceptance-2026-11-26-th.md) และไม่ใช่ผลแทนรอบนี้. ไม่มี clinical/privacy/accounting sign-off.
+- รอบ inventory ตรวจ relative links, รูปแบบตาราง และ `git diff --check` ผ่าน; ตอนนั้นยังไม่มีการเปลี่ยน service/migration/UI/คู่มือในแอป.
+- รอบเพิ่มการถอน emergency grant มี code, migration, UI และคู่มือใหม่ พร้อมผล DB/route test ใน [ผลตรวจรับการถอนสิทธิ์](clinic-emergency-revocation-acceptance-2026-11-26-th.md). **ยังไม่ได้พิสูจน์:** restored BMS schema, browser หลัง login, backup/restore, load และอุปกรณ์จริง. ไม่มี clinical/privacy/accounting sign-off.

@@ -53,7 +53,10 @@ test("clinic REST denies unauthorised requests and derives tenant and actor from
       addClinicAddendum: async () => null, assignClinicNurse: async () => null,
       listClinicPatientEncounters: async () => [], openClinicEncounter: async () => null,
       readClinicEncounter: async () => { throw new ClinicError("PATIENT_CARE_ACCESS_DENIED", 403); },
-      requestClinicEmergencyAccess: async () => null, saveClinicDraft: async () => null,
+      readClinicEmergencyAccess: async (input: unknown) => { calls.push(["emergency-read", input]); return { expiresAt: null }; },
+      requestClinicEmergencyAccess: async () => null,
+      revokeClinicEmergencyAccess: async (input: unknown) => { calls.push(["emergency-revoke", input]); return "REVOKED"; },
+      saveClinicDraft: async () => null,
       signClinicEncounter: async () => null,
     },
     "@/lib/bms/clinic/billing": {
@@ -87,6 +90,14 @@ test("clinic REST denies unauthorised requests and derives tenant and actor from
   response = await post(makePost({ action: "createAppointment", tenantId: "forged" }));
   assert.equal(response.status, 403);
   assert.deepEqual(calls, [["auth", "clinic.appointment.manage"]]);
+  calls.length = 0;
+  response = await get({ nextUrl: new URL("https://bms.example.invalid/api/bms/clinic?action=emergencyAccess&patientId=patient-a") });
+  assert.equal(response.status, 403);
+  assert.deepEqual(calls, [["auth", "clinic.record.read"]]);
+  calls.length = 0;
+  response = await post(makePost({ action: "revokeEmergencyAccess", patientId: "patient-a" }));
+  assert.equal(response.status, 403);
+  assert.deepEqual(calls, [["auth", "clinic.record.read"]]);
   calls.length = 0;
 
   permissionGranted = true;
@@ -142,6 +153,20 @@ test("clinic REST denies unauthorised requests and derives tenant and actor from
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), { status: "PATIENT_CARE_ACCESS_DENIED" });
   assert.deepEqual(calls, [["auth", "clinic.record.read"]]);
+  calls.length = 0;
+  response = await get({ nextUrl: new URL("https://bms.example.invalid/api/bms/clinic?action=emergencyAccess&patientId=patient-a&tenantId=forged") });
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [["auth", "clinic.record.read"], ["emergency-read", {
+    tenantId: "server-tenant", actorId: "server-actor", patientId: "patient-a",
+  }]]);
+  calls.length = 0;
+  response = await post(makePost({ action: "revokeEmergencyAccess", patientId: "patient-a",
+    tenantId: "forged", actorId: "forged", confirmation: "REVOKE EMERGENCY CLINICAL ACCESS" }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [["auth", "clinic.record.read"], ["emergency-revoke", {
+    tenantId: "server-tenant", actorId: "server-actor", patientId: "patient-a",
+    confirmation: "REVOKE EMERGENCY CLINICAL ACCESS",
+  }]]);
   calls.length = 0;
   response = await post(makePost({ action: "unknown" }));
   assert.equal(response.status, 400);
