@@ -796,7 +796,7 @@ export default function PosDevicesPage() {
         open={Boolean(issuedToken)}
         title={uiText("admin_ui.pair_device_2c853", { v0: issued?.device.code ?? "" })}
         onCancel={() => setIssued(null)}
-        destroyOnClose
+        destroyOnHidden
         footer={<Button onClick={() => setIssued(null)}>{uiText("admin_ui.close_96d79")}</Button>}
       >
         <Alert closable

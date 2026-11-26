@@ -82,7 +82,7 @@ export default function AdminCommandPalette({
       width={560}
       style={{ top: 88 }}
       styles={{ body: { padding: 0 } }}
-      destroyOnClose
+      destroyOnHidden
     >
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: "1px solid var(--app-border)" }}>
         <SearchOutlined style={{ color: "var(--text-secondary)" }} />
