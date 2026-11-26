@@ -50,10 +50,31 @@ flowchart LR
 4. เมื่อระบบรักษาและการเงินอยู่คนละ transaction ให้มี stable reference, outbox/inbox และ reconciliation โดยคน. Payment success ไม่แก้ไข note ที่ลงนาม; clinical correction ไม่ย้อนบิลเอง.
 5. Integration/EMR expansion ต้องมี schema version, provenance, audit, idempotency, denial และ restore test ก่อนรับข้อมูลจริง. กระบวนการส่งออก/ลบ/hold ต้องได้ policy ที่เจ้าของข้อมูลอนุมัติ.
 
+## ผู้เป็นเจ้าของข้อมูลราย entity ที่ต้องลงนามก่อนออกแบบต่อ
+
+ตารางนี้เป็น **candidate boundary** ไม่ใช่การเลือก A หรือ B. `clinical order` แยกจาก `BMS sales order`; `file` ระบุชนิดและระบบต้นทางก่อนย้าย/คัดลอก. เจ้าของคลินิกต้องยืนยันระบบที่แก้ได้เพียงแห่งเดียวต่อ entity, stable ID, version, ผู้แก้, การส่งกลับและแผน reconciliation. ข้อมูล patient ที่ใช้ในการเงินต้องเป็น reference/รายละเอียดขั้นต่ำตาม policy ไม่ใช่ chart อีกชุด.
+
+| Entity | ถ้าเลือก A: เจ้าของที่เสนอ | ถ้าเลือก B: เจ้าของที่เสนอ | คำตอบที่ยังต้องได้ |
+| --- | --- | --- | --- |
+| Patient identity / HN | EMR/HIS; BMS ถือ opaque mapping และ payer ขั้นต่ำ | BMS clinic; CRM แยก record | master ID, merge/unmerge, ผู้แทน, ขอบเขตสาขา |
+| Appointment | EMR/HIS หรือ BMS **หนึ่งแห่งที่เลือก** | BMS clinic | slot/เวร/ห้อง, การเลื่อนจากสองช่องทาง, external ID |
+| Visit/encounter | EMR/HIS | BMS clinic | check-in/close, responsible care team, version |
+| Signed note และ clinical document | EMR/HIS | BMS clinic | signature/amendment/withdraw/export และไฟล์แนบ |
+| Clinical order | EMR/HIS | BMS clinic | ผู้สั่ง/รับ/ยกเลิก, idempotency, ไม่สร้าง sales order เอง |
+| Result/observation | EMR/HIS หรือ LIS/PACS ที่ EMR รับรอง | BMS clinic หรือ LIS/PACS ตาม contract ที่อนุมัติ | correction, critical-result acknowledgement, provenance |
+| Dispense | EMR/HIS หรือ pharmacy system ที่รับรอง | BMS clinic clinical event | ผู้จ่าย/ล็อต/คืน, event ที่อนุมัติให้ตัด stock |
+| Administration / performed procedure | EMR/HIS | BMS clinic clinical event | ผู้ทำ/เวลา/ตำแหน่ง/ล็อต, event ที่อนุมัติให้คิด charge |
+| Approved charge / sales order | BMS หลังรับ reviewed event | BMS หลังรับ reviewed clinical event | ราคา/ภาษี/payer/discount, void/reconcile |
+| Payment / refund / receipt / AR | BMS | BMS | split/partial/credit, external payment reconciliation |
+| Stock / lot movement | BMS **ถ้า** BMS เป็นบัญชีคลังที่เลือก; มิฉะนั้นระบบคลังเดิมและ BMS ไม่เขียนซ้ำ | BMS | ระบบคลังต้นทาง, lot/cold chain/quality hold, การรับ event |
+| Clinical file / attachment | EMR/HIS หรือที่เก็บที่อนุมัติ; BMS ใช้ link ที่ตรวจสิทธิ์ได้หากจำเป็น | BMS clinic ผ่าน route เฉพาะ | controller, retention/backup/restore, read/export audit |
+
+หน้าจองานคลินิกอาจเป็นพื้นที่เฉพาะแบบ POS แต่ต้องเรียก backend service ที่ใช้ร่วมกันและบังคับสิทธิ์ฝั่ง server; POS device token/PIN ไม่อ่าน chart. หากเลือก A ให้ยุติหรือจำกัดการแก้ patient/encounter pilot ที่ซ้ำกับ EMR ก่อนรับข้อมูลจริง. หากเลือก B ให้ปิดช่องว่าง clinical workflow และตรวจรับโดยวิชาชีพก่อนใช้งานจริง.
+
 ## เหตุผลที่ยังไม่เลือก
 
 คำตอบเรื่อง EMR เดิมยังไม่ทราบ; การเลือก A อาจสร้าง connector ที่ใช้ไม่ได้จริง และการเลือก B อาจสร้าง chart คู่ขนานกับระบบที่คลินิกใช้อยู่. งานที่เดินต่อได้ปลอดภัยคือปิด release gates ของ pilot ด้วยข้อมูลสังเคราะห์, เก็บ feature inventory, ออกแบบ contract แบบมีเงื่อนไข และตรวจ data leakage. การขยาย clinical schema, import จริง, patient portal, dispensing และ connector ต้องรอเจ้าของเรื่องข้างต้น.
 
 ## เกณฑ์ปิด decision
 
-บันทึกคำตอบ/ผู้อนุมัติ/วันที่/ระบบต้นทางเป็นลายลักษณ์อักษร; ระบุ owner ของ patient, appointment, visit, note, order, dispense, charge, payment, stock และไฟล์เป็นราย entity; ให้ clinical/privacy/accounting owners ตรวจ payload; ยืนยันข้อห้าม chart คู่ขนานและแผน migration/rollback. หลังเลือกแล้วอัปเดต [feature matrix](clinic-full-feature-matrix-th.md), [backlog](clinic-full-backlog-th.md), data-flow map และคู่มือก่อนลงมือ implementation ที่ขึ้นกับ decision.
+บันทึกคำตอบ/ผู้อนุมัติ/วันที่/ระบบต้นทางเป็นลายลักษณ์อักษร; ปิดทุกช่องคำตอบในตาราง entity รวม result และ administration; ให้ clinical/privacy/accounting owners ตรวจ payload; ยืนยันข้อห้าม chart คู่ขนานและแผน migration/rollback. หลังเลือกแล้วอัปเดต [feature matrix](clinic-full-feature-matrix-th.md), [backlog](clinic-full-backlog-th.md), data-flow map และคู่มือก่อนลงมือ implementation ที่ขึ้นกับ decision.

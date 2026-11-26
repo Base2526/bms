@@ -14,6 +14,10 @@
 | G06 | Backup/restore drill รวมไฟล์/ลายเซ็น/audit และ load/search/calendar | G01 | restore checksum/permission, SLO ที่ตกลง, runbook; ops/privacy |
 | G07 | ตรวจ desktop/mobile POS order/payment/print/incoming/realtime ด้วย clinic-channel synthetic order | G02/G04 | ไม่มี chart payload, receipt ถูกยอด, device/PIN ไม่เปิด chart; QA |
 | G08 | บันทึก release gate และความเสี่ยง, อัปเดตคู่มือ/หลักฐานเฉพาะที่รันจริง | G01–G07 | ไม่เรียก pilot ว่า production-ready; engineering/owners |
+| G09 | จำกัด staff bootstrap ตาม active clinic role และข้อมูลที่ต้องใช้ (`CF-005`, `CF-080–087`, `CF-155`) | ไม่พึ่ง decision A/B | แคชเชียร์/พยาบาลไม่รับรายชื่อผู้ตรวจหรือบุคลากรที่ไม่ใช้; revoked role ถูกปฏิเสธ; DB contract และ audit read ผ่านบน fixture — **แก้แล้วในรอบนี้**, ยังต้องตรวจ browser ตาม G04; security |
+| G10 | ทดสอบและกำหนด audit ของการอ่านที่ถูกปฏิเสธ, export, support และ emergency (`CF-198–202`) | G01, G04–G05; privacy policy D03 | event มี actor/tenant/target/reason ที่จำเป็นโดยไม่มี PHI ใน log; ไม่ให้ audit failure ทำให้เปิดสิทธิ์; security/privacy |
+| G11 | ทำ synthetic data-lineage ตรวจจาก chart/ไฟล์ไป CRM, Inbox, AI, search, report, order, receipt, print และ log (`CF-188`, `CF-194–195`, `CF-205`) | G01–G07 | sentinel ไม่ปรากฏใน commercial payload หรือ log; มีรายการ path ที่ยังไม่ได้พิสูจน์; security/privacy |
+| G12 | ตรวจ schema contract และ failure/retry ของ clinical ↔ commercial boundary หลังเลือก source of truth (`CF-189–191`, `CF-202`, `CF-207–208`) | D01, D03–D04; I01 ถ้าเลือก A | ยอมรับเฉพาะ approved code/quantity/reference; unknown/duplicate/out-of-order เข้าคิวคน ไม่สร้างเงิน/stock ซ้ำ; engineering/accounting |
 
 ## D — Decision ที่หยุดการขยาย clinical workflow
 
@@ -23,6 +27,8 @@
 | D02 | ยืนยันประเภทบริการ/สาขา/ผู้ใช้/เวร/ฟอร์ม/วิชาชีพ/ใบอนุญาต | เจ้าของคลินิกและผู้ประกอบวิชาชีพ | applicability 10 กลุ่มใน matrix ถูกยืนยัน; clinical owner |
 | D03 | อนุมัติ privacy data map, ผู้แทน, retention/hold/export/backup/incident และ vendor | D01–D02 | policy/version/ผู้รับผิดชอบครบ; privacy owner |
 | D04 | อนุมัติ SKU/ราคา/ภาษี/payer/receipt/refund/AR รายบริการ | D02 | charge matrix และกรณีทดสอบลงนาม; accounting/tax owner |
+| D05 | ยืนยัน applicability ของ `CF-001–218` รายบริการและสาขา รวมเหตุผล N/A, ผู้รับผิดชอบและวันยืนยัน | D02; เจ้าของคลินิก/วิชาชีพ | ไม่มีแถวที่ตัดทิ้งโดยสมมติ; อัปเดต matrix พร้อมหลักฐาน; owner |
+| D06 | อนุมัติ wrong-patient checkpoints, critical-result escalation, alert override และ incident response | D02–D03; ผู้ประกอบวิชาชีพ | เกณฑ์ตัวตน/ผู้รับผิดชอบ/deadline/การทบทวนชัดก่อนเขียน clinical automation; clinical owner |
 
 ## P1 — Core clinic ที่ทำหลัง decision
 
@@ -39,6 +45,12 @@
 | C09 | รายงานทะเบียน OPD/คิว/no-show/revenue ที่แยกสิทธิ์ | C04, C08 | count ตรง source; bounded read/PHI denial; manager/privacy |
 | C10 | Clinical document/export/access history ตาม policy | D03 และ B-path หรือ EMR contract | signed/print/download/export audit และ revoked denial; privacy/clinical |
 | C11 | Procedure/performed-service event ที่ clinician ยืนยัน | D02, D01 | แยก order/plan จาก performed, actor/time/reversal; clinical owner |
+| C12 | แก้ข้อมูลระบุตัวผู้ป่วยและ duplicate review แบบมี revision/provenance (`CF-156–159`) | D01, D03, C05 | คนตรวจความกำกวม; merge/unmerge/link/unlink มีเหตุผล/ประวัติ/FK reconciliation; registrar/privacy |
+| C13 | Resource availability, อุปกรณ์และวันหยุด รวมการจองข้ามสาขา (`CF-149–150`, `CF-154`, `CF-160–161`) | C01–C03, D02 | แสดง capacity จริงและรายการที่ถูกตัด; concurrent conflict/timeout/retry/Asia-Bangkok ผ่าน; clinic ops |
+| C14 | Triage, wrong-patient checkpoint, queue handoff และงานค้าง (`CF-155`, `CF-162–164`, `CF-186`, `CF-197`) | D06, C04; B-path หรือ EMR contract | มี actor/time/owner/ack; critical หรือฉุกเฉินใช้ policy วิชาชีพ; clinical owner |
+| C15 | สัญญา price effective date, payer, estimate, charge approval, split/partial/refund (`CF-151`, `CF-189–191`) | D04, C06–C08 | snapshot ราคา/ภาษี/ผู้จ่ายตรง; rollback และ retry ไม่ซ้ำ; accounting/tax |
+| C16 | Read/export/denied-access audit, retention/hold/restore และคำขอข้อมูล (`CF-188`, `CF-198–202`) | D03, G05–G06; B-path หรือ EMR contract | สิทธิ์เฉพาะ actor, no-store, audit และ restore รวมไฟล์/ลายเซ็น; privacy/ops |
+| C17 | OPD/quality/clinical worklist ที่แยก commercial report (`CF-196`, `CF-205–206`) | C04/C09, D03; B-path หรือ EMR contract | bounded query, PHI denial/export audit, overdue owner; clinical/privacy |
 
 ### ทาง A — มี EMR เดิมและเลือก integration
 
@@ -62,6 +74,10 @@
 | E06 | administration/material-use event แยก dispense | E03/E05 ตามบริการ | actor/time/lot/patient trace/rollback; clinical owner |
 | E07 | signed consent/certificate/referral/aftercare document templates | E02, D03 | template/version/signature/revocation/export audit; clinical owner |
 | E08 | secure clinical report/export และ retention/hold/data-request workflow | E01–E07, D03 | denial/restore/audit and approved policy test; privacy owner |
+| E09 | medication reconciliation, review, dispense, administration และ lot/recall แยกเหตุการณ์ (`CF-170–176`, `CF-193`) | E01/E03/E05/E06, D06 | prescription ไม่สร้าง charge/stock; actual event ตรวจคน/ยา/ขนาด/เวลา/lot และ movement atomic; pharmacist/clinical owner |
+| E10 | specimen collection/transport/rejection, result correction และ critical-result acknowledgement/escalation (`CF-177–180`) | E03–E04, D06 | wrong-patient/specimen denial, versioned result, owner/ack/deadline/retry; lab/clinical owner |
+| E11 | consent, site/side/time-out, performed procedure/vaccine, adverse event และ aftercare (`CF-181–183`) | E03/E06/E07, D02/D06 | performed แยก order; actor/time/lot/consent ก่อน charge/stock; clinical owner |
+| E12 | referral, discharge summary, follow-up task และผู้ป่วยหลุดติดตาม (`CF-184–186`) | E02–E04, C04, D03 | ส่ง/รับ/ack/overdue ตามสิทธิ์; export ไม่มี PHI เกินขอบเขต; clinical owner |
 
 ## P2 — ทำเฉพาะประเภทบริการที่เจ้าของคลินิกยืนยันว่า applicable
 
@@ -79,6 +95,13 @@
 | S10 | ตรวจทางไกล: identity/secure session/record/policy | D02–D03, E02 หรือ EMR contract | clinical and current-rule sign-off before any pilot; clinical owner |
 | S11 | ตรวจสุขภาพองค์กร: roster/package/limited employer report/billing | D02–D04, C07/C09 | no individual PHI in employer export by default; privacy |
 | S12 | หลายสาขา: HN/care access/schedule/stock/report | D02–D03, C01–C03 | branch isolation and cross-branch transfer tests; ops |
+| S13 | สุขภาพจิต: ข้อมูลอ่อนไหว/consent/crisis escalation (`CF-212`) | D02–D03/D06, E02 หรือ EMR contract | access/disclosure/incident policy ตรวจโดยวิชาชีพ; clinical/privacy |
+| S14 | เด็ก: ผู้ปกครองตามหลักฐาน, growth/age-specific dose (`CF-213`) | D02–D03, C05, E01/E03 หรือ EMR contract | ถอนผู้แทนแล้ว denied; อายุ/หน่วย/ขนาดตรวจตาม policy; pediatric owner |
+| S15 | สูตินรีเวช: episode/consent/ผลตามอายุครรภ์ (`CF-214`) | D02–D03, E02–E04 หรือ EMR contract | linkage/ผล/สิทธิ์ตามนโยบายวิชาชีพ; specialist |
+| S16 | จักษุ: ตา/ข้าง, การวัดและผล (`CF-215`) | D02, E02–E04 หรือ EMR contract | wrong-side denial; result version และหน่วย; specialist |
+| S17 | หูคอจมูก: ตำแหน่ง/ข้างและหัตถการ (`CF-216`) | D02, E02–E04 หรือ EMR contract | site/side/performer trace; specialist |
+| S18 | โรคเรื้อรัง: longitudinal goal/measure/follow-up (`CF-217`) | D02, E01/E12 หรือ EMR contract | provenance/overdue owner; clinical owner |
+| S19 | หัตถการเล็ก: consent/time-out/site/lot/aftercare (`CF-218`) | D02/D06, E11 หรือ EMR contract | wrong-patient/site denial; performed→charge/stock atomic; clinical owner |
 
 ## P3 — เสริมเมื่อ core ผ่านและนโยบายอนุมัติ
 

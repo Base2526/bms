@@ -33,7 +33,7 @@ test("clinic record and attachment access follows active role, care team, expiry
     user: process.env.POSTGRES_USER, password: process.env.POSTGRES_PASSWORD, max: 3 });
   const tenantA = randomUUID(), tenantB = randomUUID();
   const clinicianA = randomUUID(), clinicianOther = randomUUID(), nurse = randomUUID();
-  const cashier = randomUUID(), clinicianB = randomUUID();
+  const cashier = randomUUID(), clinicianB = randomUUID(), adminOnly = randomUUID();
   const locationA = randomUUID(), locationB = randomUUID(), patientA = randomUUID();
   const encounterA = randomUUID();
   const seed = await db.connect();
@@ -42,8 +42,8 @@ test("clinic record and attachment access follows active role, care team, expiry
     await seed.query(`INSERT INTO bms_tenants(id) VALUES ($1),($2)`, [tenantA,tenantB]);
     await seed.query(`INSERT INTO users(id,tenant_id,name) VALUES
       ($1,$6,'Clinician A'),($2,$6,'Other Clinician'),($3,$6,'Nurse'),
-      ($4,$6,'Cashier'),($5,$7,'Clinician B')`,
-      [clinicianA,clinicianOther,nurse,cashier,clinicianB,tenantA,tenantB]);
+      ($4,$6,'Cashier'),($5,$7,'Clinician B'),($8,$6,'Admin Only')`,
+      [clinicianA,clinicianOther,nurse,cashier,clinicianB,tenantA,tenantB,adminOnly]);
     await seed.query(`INSERT INTO bms_locations(id,tenant_id,name) VALUES
       ($1,$3,'Clinic A'),($2,$4,'Clinic B')`, [locationA,locationB,tenantA,tenantB]);
     await seed.query(`INSERT INTO bms_clinic_staff(tenant_id,user_id,access_role,licence_no,granted_by)
@@ -85,6 +85,25 @@ test("clinic record and attachment access follows active role, care team, expiry
   const oldFlag = process.env.BMS_CLINIC_PILOT_TENANTS;
   process.env.BMS_CLINIC_PILOT_TENANTS = `${tenantA},${tenantB}`;
   try {
+    const cashierBootstrap = await access.clinicBootstrap(tenantA, cashier, false);
+    assert.deepEqual(cashierBootstrap.roles, ["CASHIER"]);
+    assert.deepEqual(cashierBootstrap.practitioners, []);
+    assert.deepEqual(cashierBootstrap.nurses, []);
+    assert.deepEqual(cashierBootstrap.users, []);
+    assert.deepEqual(cashierBootstrap.staff, []);
+    const nurseBootstrap = await access.clinicBootstrap(tenantA, nurse, false);
+    assert.deepEqual(nurseBootstrap.roles, ["NURSE"]);
+    assert.deepEqual(nurseBootstrap.practitioners, []);
+    assert.deepEqual(nurseBootstrap.nurses, []);
+    const clinicianBootstrap = await access.clinicBootstrap(tenantA, clinicianA, false);
+    assert.ok(clinicianBootstrap.practitioners.some((user: { id: string }) => user.id === clinicianA));
+    assert.ok(clinicianBootstrap.nurses.some((user: { id: string }) => user.id === nurse));
+    const adminBootstrap = await access.clinicBootstrap(tenantA, adminOnly, true);
+    assert.deepEqual(adminBootstrap.roles, []);
+    assert.ok(adminBootstrap.users.some((user: { id: string }) => user.id === adminOnly));
+    assert.ok(audits.some(([kind, event]) => kind === "read" &&
+      (event as any).meta?.targetKind === "CLINIC_STAFF_BOOTSTRAP"));
+
     const content = Buffer.from("%PDF-1.4\nsynthetic only\n");
     const attachmentId = await attachments.uploadClinicAttachment({ tenantId: tenantA,
       actorId: clinicianA, encounterId: encounterA, fileName: "synthetic.pdf",
@@ -190,6 +209,7 @@ test("clinic record and attachment access follows active role, care team, expiry
       await revoke.query(`UPDATE bms_clinic_staff SET active=false
         WHERE tenant_id=$1 AND user_id IN ($2,$3)`, [tenantA,nurse,clinicianOther]);
     } finally { revoke.release(); }
+    await assert.rejects(access.clinicBootstrap(tenantA, nurse, false), /CLINIC_ACCESS_DENIED/);
     await assert.rejects(encounters.readClinicEncounter({ tenantId: tenantA,
       actorId: nurse, encounterId: encounterA }), /PATIENT_CARE_ACCESS_DENIED/);
     await assert.rejects(encounters.readClinicEncounter({ tenantId: tenantA,

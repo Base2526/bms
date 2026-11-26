@@ -30,7 +30,7 @@ const COPY: Record<"th" | "en", GuideCopy> = {
       { title: "3. Clinician บันทึกและลงนาม", body: "หลังเช็กอิน ผู้ตรวจที่ถูกนัดเปิด encounter บันทึกอาการ ผลตรวจ วินิจฉัย และแผนรักษาเป็นร่าง ตรวจความครบถ้วนก่อนลงนาม เมื่อ SIGNED แล้วแก้ทับไม่ได้ ให้ลงนาม addendum พร้อมเหตุผลหากต้องแก้ภายหลัง แผนยาเป็นข้อความเท่านั้น ไม่มีการจ่ายยา ตัดสต็อก หรือคิดเงินจากข้อความนี้", links: [
         { label: "เวชระเบียน", href: "/admin/clinic" },
       ] },
-      { title: "4. Cashier ตรวจและส่งต่อการชำระ", body: "เปิดแท็บค่าบริการและเลือก encounter ที่ลงนามแล้วจากรายการสำหรับ cashier รายการนี้ไม่มีข้อความเวชระเบียน เพิ่มได้เฉพาะบริการใน catalog ที่เป็น NON_STOCK, เปิด ONLINE_ORDER และ VAT N ตรวจรายการ/ราคาจริงก่อนล็อก READY แล้วสร้าง order เพียงครั้งเดียว เปิดหน้า Payment ด้วยเลข order เพื่อบันทึกและยืนยันเงินตามสิทธิ์เดิม", links: [
+      { title: "4. Cashier ตรวจและส่งต่อการชำระ", body: "เปิดแท็บค่าบริการและเลือก encounter ที่ลงนามแล้วจากรายการสำหรับ cashier รายการนี้ไม่มีข้อความเวชระเบียนหรือรายชื่อบุคลากรคลินิก ผู้ถูกถอนบทบาทคลินิกจะเปิดข้อมูลเริ่มต้นไม่ได้ เพิ่มได้เฉพาะบริการใน catalog ที่เป็น NON_STOCK, เปิด ONLINE_ORDER และ VAT N ตรวจรายการ/ราคาจริงก่อนล็อก READY แล้วสร้าง order เพียงครั้งเดียว เปิดหน้า Payment ด้วยเลข order เพื่อบันทึกและยืนยันเงินตามสิทธิ์เดิม", links: [
         { label: "ค่าบริการคลินิก", href: "/admin/clinic" }, { label: "สินค้า/บริการ", href: "/admin/products" },
         { label: "ชำระเงิน", href: "/admin/payment" },
       ] },
@@ -92,7 +92,7 @@ const COPY: Record<"th" | "en", GuideCopy> = {
       { title: "3. Clinician: document and sign", body: "After check-in, the assigned practitioner opens the encounter and saves a draft. Review complaint, examination, diagnosis and plan before signing. SIGNED notes cannot be overwritten; corrections are signed addenda with a reason. Medication plans are text only and never dispense, move stock or create charges.", links: [
         { label: "Clinical records", href: "/admin/clinic" },
       ] },
-      { title: "4. Cashier: review and collect", body: "Choose a signed encounter from the cashier worklist, which contains no clinical note. Use only catalogued NON_STOCK services enabled for ONLINE_ORDER with VAT N. Review and lock the charge sheet before creating one order. Open Payment with that order ID to submit and confirm the payment under existing BMS permissions.", links: [
+      { title: "4. Cashier: review and collect", body: "Choose a signed encounter from the cashier worklist, which contains no clinical note or clinic staff directory. A revoked clinic role cannot open the initial clinic data. Use only catalogued NON_STOCK services enabled for ONLINE_ORDER with VAT N. Review and lock the charge sheet before creating one order. Open Payment with that order ID to submit and confirm the payment under existing BMS permissions.", links: [
         { label: "Clinic charges", href: "/admin/clinic" }, { label: "Products/services", href: "/admin/products" },
         { label: "Payment", href: "/admin/payment" },
       ] },

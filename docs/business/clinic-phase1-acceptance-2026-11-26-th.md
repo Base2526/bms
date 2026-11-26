@@ -37,3 +37,23 @@ Fixture ขนาดเล็กไม่มี schema order/payment/stock, audi
 3. เจ้าของคลินิกยืนยัน EMR เดิมหรือไม่, ประเภทบริการ/แบบฟอร์ม/สิทธิ์วิชาชีพ/ใบอนุญาต; ฝ่ายข้อมูลส่วนบุคคลกำหนด data flow, retention/legal hold และการกู้คืน; ฝ่ายบัญชี/ภาษียืนยัน catalog, VAT, เอกสารและการคืนเงิน.
 
 Feature flag `BMS_CLINIC_PILOT_TENANTS` มีค่าเริ่มต้นว่าง/ปิด และรอบนี้ไม่ได้เปิด flag. ห้ามเปิดให้ tenant จริงจนกว่าทุก gate จะผ่านและผู้รับผิดชอบอนุมัติ.
+
+## รอบขยาย inventory และ bootstrap บุคลากร
+
+ส่วนนี้เป็นผล **รอบใหม่** หลัง baseline ข้างต้น ไม่ย้อนแก้ผลทดสอบเดิม. บัญชี [feature matrix](clinic-full-feature-matrix-th.md) มี ID `CF-001–218`: 148 แถวเดิมที่เพิ่ม ID และ 70 แถวย่อยใหม่, ครอบคลุม 7 ส่วนของ HL7 EHR-S FM เป็นกรอบ gap audit. Applicability ต่อคลินิกเป้าหมายยังไม่ยืนยันทุกแถว; pilot N/A ของบริการเฉพาะไม่ใช่คำตัดสินว่าคลินิกจริงไม่ใช้. [Backlog](clinic-full-backlog-th.md) แยก G/D/C/I/E/S/X ตาม dependency และ decision เรื่อง EMR ยัง Pending.
+
+### ข้อบกพร่องและการแก้
+
+`clinicBootstrap()` คืน clinician/nurse directory ให้ CASHIER ซึ่งใช้เพียง billing worklist และคืน directory ให้ผู้ที่ยังมี general RBAC แต่ clinic role ถูกถอนแล้ว. ก่อนแก้ DB regression ล้มเพราะ cashier ได้รายชื่อบุคลากร. หลังแก้ service ตรวจ active clinic role ก่อนคืน bootstrap, ส่งรายชื่อผู้ตรวจให้ REGISTRAR/CLINICIAN, ส่งรายชื่อพยาบาลให้ CLINICIAN, ส่ง directory ผู้ใช้/staff ให้ Administrator ที่ REST ตรวจแล้วเท่านั้น, และ audit การอ่าน bootstrap. Test ครอบ cashier, nurse, clinician, admin-only และ revoked role. คู่มือคลินิกไทย/อังกฤษและ data-flow map อธิบาย boundary นี้.
+
+### หลักฐานที่รันในรอบขยาย
+
+| การตรวจ | ผล | ขอบเขต |
+| --- | --- | --- |
+| Disposable PostgreSQL 16 บน `127.0.0.1:5544/clinic_pilot_test` | base fixture + migrations `10.141`–`10.143` apply/reapply ผ่าน; `db clinic-pilot-access` 1/1 และ `db clinic-pilot` 4/4 ผ่าน | tenant/RLS/constraint/concurrency/role/attachment/immutable note บน fixture ขนาดเล็ก ไม่ใช่ restored BMS schema |
+| `apps/web npm run gate` | release check, regression inventory, typecheck, pure 4,018 (ผ่าน 4,012, ข้าม 6), production build ผ่าน | DB-free gate; build ระบุ route `/admin/clinic` และ `/admin/manual/clinic` |
+| `apps/desktop npm run lint` และ `npm run test -- --runInBand` | ผ่าน; 178/178 tests | code-level shell/print/connection/route; ไม่ใช่เครื่องพิมพ์จริง |
+| `apps/mobile npm run typecheck` และ `npm test -- --runInBand --silent` | ผ่าน; 66 suites, 520/520 tests | code-level POS/order/payment/print/realtime; ไม่ใช่อุปกรณ์จริง |
+| Browser local production build 1440×900 และ 390×844 | `/admin/clinic` และ `/admin/manual/clinic` redirect ไป login พร้อม `next` ถูกต้อง; login layout แสดงได้ทั้งสองขนาด | ไม่มีบัญชี authenticated ทดสอบ จึงไม่ได้เห็นหน้า clinic/manual หรือ cashier-only flow หลัง login |
+
+ยังไม่มี restored BMS schema, full payment/refund/reconciliation, restore รวมไฟล์/ลายเซ็น/audit, runtime data-lineage, browser ตามบทบาท หรือการรับรองจากวิชาชีพ/privacy/บัญชี. Feature flag ยังคงปิดเป็นค่าเริ่มต้นและไม่ deploy.

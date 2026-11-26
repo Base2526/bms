@@ -142,18 +142,22 @@ export async function clinicBootstrap(tenantId: string, actorId: string, include
       `SELECT access_role FROM bms_clinic_staff WHERE tenant_id=$1 AND user_id=$2 AND active`,
       [tenantId, actorId]
     );
-    const practitioners = await client.query<{ id: string; name: string }>(
+    if (!includeUsers && roles.rows.length === 0) throw new ClinicError("CLINIC_ACCESS_DENIED", 403);
+    const canSchedule = includeUsers || roles.rows.some((row) =>
+      row.access_role === "REGISTRAR" || row.access_role === "CLINICIAN");
+    const canAssignNurse = includeUsers || roles.rows.some((row) => row.access_role === "CLINICIAN");
+    const practitioners = canSchedule ? await client.query<{ id: string; name: string }>(
       `SELECT u.id,coalesce(u.name,u.email) AS name FROM bms_clinic_staff s
          JOIN users u ON u.tenant_id=s.tenant_id AND u.id=s.user_id
         WHERE s.tenant_id=$1 AND s.access_role='CLINICIAN' AND s.active
         ORDER BY name,id LIMIT 100`, [tenantId]
-    );
-    const nurses = await client.query<{ id: string; name: string }>(
+    ) : null;
+    const nurses = canAssignNurse ? await client.query<{ id: string; name: string }>(
       `SELECT u.id,coalesce(u.name,u.email) AS name FROM bms_clinic_staff s
          JOIN users u ON u.tenant_id=s.tenant_id AND u.id=s.user_id
         WHERE s.tenant_id=$1 AND s.access_role='NURSE' AND s.active
         ORDER BY name,id LIMIT 100`, [tenantId]
-    );
+    ) : null;
     const users = includeUsers ? await client.query<{ id: string; name: string }>(
       `SELECT id,coalesce(name,email) AS name FROM users WHERE tenant_id=$1 ORDER BY name,id LIMIT 200`,
       [tenantId]
@@ -163,8 +167,9 @@ export async function clinicBootstrap(tenantId: string, actorId: string, include
     }>(`SELECT s.user_id,coalesce(u.name,u.email) AS name,s.access_role,s.active,s.licence_no
           FROM bms_clinic_staff s JOIN users u ON u.tenant_id=s.tenant_id AND u.id=s.user_id
          WHERE s.tenant_id=$1 ORDER BY name,s.access_role LIMIT 200`, [tenantId]) : null;
+    await auditClinicRead(client, tenantId, actorId, "CLINIC_STAFF_BOOTSTRAP", "staff");
     return { location: location.rows[0], roles: roles.rows.map((row) => row.access_role),
-      practitioners: practitioners.rows, nurses: nurses.rows, users: users?.rows ?? [],
+      practitioners: practitioners?.rows ?? [], nurses: nurses?.rows ?? [], users: users?.rows ?? [],
       staff: staff?.rows ?? [] };
   });
 }
