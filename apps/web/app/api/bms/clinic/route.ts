@@ -152,7 +152,7 @@ async function handlePOST(req: NextRequest) {
       case "rescheduleAppointment":
         result = await rescheduleClinicAppointment({ tenantId, actorId, appointmentId: body.appointmentId,
           practitionerId: body.practitionerId, roomCode: body.roomCode,
-          startsAt: body.startsAt, endsAt: body.endsAt }); break;
+          startsAt: body.startsAt, endsAt: body.endsAt, requestKey: body.requestKey }); break;
       case "openEncounter":
         result = await openClinicEncounter({ tenantId, actorId, appointmentId: body.appointmentId }); break;
       case "saveDraft":

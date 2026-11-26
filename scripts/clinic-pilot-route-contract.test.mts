@@ -41,7 +41,9 @@ test("clinic REST denies unauthorised requests and derives tenant and actor from
     },
     "@/lib/bms/clinic/appointments": {
       createClinicAppointment: async (input: unknown) => { calls.push(["appointment", input]); return { status: "CREATED" }; },
-      listClinicAppointments: async () => [], rescheduleClinicAppointment: async () => null,
+      listClinicAppointments: async () => [], rescheduleClinicAppointment: async (input: unknown) => {
+        calls.push(["reschedule", input]); return "RESCHEDULED";
+      },
       transitionClinicAppointment: async () => null,
     },
     "@/lib/bms/clinic/encounters": {
@@ -113,6 +115,17 @@ test("clinic REST denies unauthorised requests and derives tenant and actor from
     practitionerId: "practitioner", roomCode: "A", startsAt: "2026-12-01T02:00:00Z",
     endsAt: "2026-12-01T03:00:00Z", requestKey: "stable-key",
   });
+  calls.length = 0;
+  response = await post(makePost({ action: "rescheduleAppointment", tenantId: "forged",
+    appointmentId: "appointment", practitionerId: "practitioner", roomCode: "A",
+    startsAt: "2026-12-01T03:00:00Z", endsAt: "2026-12-01T04:00:00Z",
+    requestKey: "stable-reschedule-key" }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [["auth", "clinic.appointment.manage"], ["reschedule", {
+    tenantId: "server-tenant", actorId: "server-actor", appointmentId: "appointment",
+    practitionerId: "practitioner", roomCode: "A", startsAt: "2026-12-01T03:00:00Z",
+    endsAt: "2026-12-01T04:00:00Z", requestKey: "stable-reschedule-key",
+  }]]);
   calls.length = 0;
   response = await get({ nextUrl: new URL("https://bms.example.invalid/api/bms/clinic?action=encounter&encounterId=synthetic") });
   assert.equal(response.status, 403);

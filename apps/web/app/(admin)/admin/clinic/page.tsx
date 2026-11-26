@@ -25,7 +25,7 @@ type Appointment = { id: string; patientId: string; patientHn: string; patientNa
   practitionerId: string; startsAt: string; endsAt: string; roomCode: string; status: string };
 type Encounter = { id: string; patient_id: string; status: string; version: number;
   draft_record: Record<string, string>; notes: Array<{ id: string; note_kind: string; content: Record<string, string>; signed_at: string }> };
-type ChargeSheet = { sheet: { id: string; status: string; order_id: string | null } | null;
+type ChargeSheet = { sheet: { id: string; status: string; order_id: string | null; order_status: string | null } | null;
   lines: Array<{ product_sku: string; size: string; qty: number; reviewed_unit_price: string }> };
 type BillableEncounter = { id: string; patientHn: string; patientName: string; signedAt: string;
   chargeStatus: string | null; orderId: string | null };
@@ -72,6 +72,7 @@ export default function ClinicPilotPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [calendarMonth, setCalendarMonth] = useState(() => dayjs().tz("Asia/Bangkok").startOf("month"));
   const appointmentRequest = useRef<{ signature: string; key: string } | null>(null);
+  const rescheduleRequest = useRef<{ signature: string; key: string } | null>(null);
   const [encounter, setEncounter] = useState<Encounter | null>(null);
   const [record, setRecord] = useState<Record<string, string>>({});
   const [history, setHistory] = useState<Array<{ id: string; status: string; created_at: string }>>([]);
@@ -183,9 +184,14 @@ export default function ClinicPilotPage() {
   });
   const reschedule = (values: Record<string, unknown>) => void run(async () => {
     if (!rescheduleId) return;
-    await clinicPost("rescheduleAppointment", { appointmentId: rescheduleId,
+    const payload = { appointmentId: rescheduleId,
       practitionerId: values.practitionerId, roomCode: values.roomCode,
-      startsAt: bangkokInstant(values.startsAt), endsAt: bangkokInstant(values.endsAt) });
+      startsAt: bangkokInstant(values.startsAt), endsAt: bangkokInstant(values.endsAt) };
+    const signature = JSON.stringify(payload);
+    if (rescheduleRequest.current?.signature !== signature)
+      rescheduleRequest.current = { signature, key: crypto.randomUUID() };
+    await clinicPost("rescheduleAppointment", { ...payload, requestKey: rescheduleRequest.current.key });
+    rescheduleRequest.current = null;
     setRescheduleId(null); rescheduleForm.resetFields();
     if (bootstrap?.location) await loadAppointments(bootstrap.location.id);
   });
@@ -412,7 +418,12 @@ export default function ClinicPilotPage() {
     </Card>
     {billingEncounterId && <Card title={`${t("clinic.copy_049")} · ${billable.find(item => item.id === billingEncounterId)?.patientHn ?? billingEncounterId}`}
       extra={<Tag>{charge?.sheet?.status ?? t("clinic.new")}</Tag>}>
-      {charge?.sheet?.status === "ORDER_CREATED" ? <Space><Typography.Text>{t("clinic.copy_050")}: {charge.sheet.order_id}</Typography.Text><Link href={`/admin/payment?orderId=${encodeURIComponent(charge.sheet.order_id ?? "")}`}>{t("clinic.copy_051")}</Link></Space> : <>
+      {charge?.sheet?.status === "ORDER_CREATED" ? <Space direction="vertical">
+        <Typography.Text>{t("clinic.copy_050")}: {charge.sheet.order_id} · {charge.sheet.order_status}</Typography.Text>
+        {charge.sheet.order_status === "CANCELLED" || charge.sheet.order_status === "RETURNED"
+          ? <Alert type="warning" showIcon closable message={t("clinic.closed_order_review")} />
+          : <Link href={`/admin/payment?orderId=${encodeURIComponent(charge.sheet.order_id ?? "")}`}>{t("clinic.copy_051")}</Link>}
+      </Space> : <>
         {charge?.sheet?.status !== "READY" && chargeLines.map((line, index) => <Space key={index} wrap style={{ display: "flex", marginBottom: 8 }}>
           <Input placeholder={t("clinic.sku")} value={line.sku} maxLength={100} onChange={e => setChargeLines(prev => prev.map((x, i) => i === index ? { ...x, sku: e.target.value } : x))} />
           <Input placeholder={t("clinic.size")} value={line.size} maxLength={64} onChange={e => setChargeLines(prev => prev.map((x, i) => i === index ? { ...x, size: e.target.value } : x))} />

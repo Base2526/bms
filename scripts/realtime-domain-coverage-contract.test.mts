@@ -306,7 +306,8 @@ const BANK_RECONCILIATION_EVIDENCE = [
 ];
 const CLASSIFIED = new Map<string, string>();
 for (const table of [
-  "bms_clinic_appointments", "bms_clinic_attachments", "bms_clinic_break_glass",
+  "bms_clinic_appointments", "bms_clinic_appointment_reschedules",
+  "bms_clinic_attachments", "bms_clinic_break_glass",
   "bms_clinic_care_team", "bms_clinic_charge_lines", "bms_clinic_charge_sheets",
   "bms_clinic_encounters", "bms_clinic_hn_counters", "bms_clinic_patient_contacts",
   "bms_clinic_patients", "bms_clinic_signed_notes", "bms_clinic_staff",

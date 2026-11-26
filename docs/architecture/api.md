@@ -7,6 +7,8 @@ patient registration/search/read, appointment create/list/transition/reschedule,
 open/draft/sign/addendum/history, emergency access, a bounded signed-encounter cashier worklist,
 charge sheet review/order creation and patient access history. Business actions have a clinic
 permission and a separate active clinic staff check; tenant is derived from the session.
+Reschedule requires a stable `requestKey`. A reused key with different target values returns
+`REQUEST_KEY_CONFLICT`; a delayed retry cannot revert a later move (`10.142`).
 Bootstrap accepts any `clinic.*` permission so billing
 staff can enter without clinical-record read access. Request bodies are capped at 32 KiB. The flag
 `BMS_CLINIC_PILOT_TENANTS` is empty by default and all routes answer no-store.

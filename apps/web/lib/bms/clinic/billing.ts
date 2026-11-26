@@ -142,8 +142,10 @@ export async function readClinicChargeSheet(input: {
     );
     if (!encounter.rows[0]) throw new ClinicError("ENCOUNTER_NOT_FOUND", 404);
     const sheet = await client.query(
-      `SELECT id,status,order_id,reviewed_at FROM bms_clinic_charge_sheets
-        WHERE tenant_id=$1 AND encounter_id=$2`, [input.tenantId, encounterId]
+      `SELECT s.id,s.status,s.order_id,s.reviewed_at,o.status AS order_status
+         FROM bms_clinic_charge_sheets s
+         LEFT JOIN bms_orders o ON o.tenant_id=s.tenant_id AND o.id=s.order_id
+        WHERE s.tenant_id=$1 AND s.encounter_id=$2`, [input.tenantId, encounterId]
     );
     const row = sheet.rows[0];
     const lines = row ? await client.query(
@@ -172,10 +174,12 @@ export async function createClinicChargeOrder(input: {
     const state = sheet.rows[0];
     if (!state) throw new ClinicError("CHARGE_SHEET_NOT_FOUND", 404);
     if (state.status === "ORDER_CREATED" && state.order_id) {
-      const existing = await client.query<{ total_amount: string; shipping_fee: string }>(
-        `SELECT total_amount,shipping_fee FROM bms_orders WHERE tenant_id=$1 AND id=$2`,
+      const existing = await client.query<{ total_amount: string; shipping_fee: string; status: string }>(
+        `SELECT total_amount,shipping_fee,status FROM bms_orders WHERE tenant_id=$1 AND id=$2`,
         [input.tenantId, state.order_id]
       );
+      if (!existing.rows[0] || ["CANCELLED", "RETURNED"].includes(existing.rows[0].status))
+        throw new ClinicError("CHARGE_ORDER_CLOSED_REVIEW_REQUIRED", 409);
       return { status: "REPLAYED", orderId: state.order_id,
         amountDue: Number(existing.rows[0].total_amount) + Number(existing.rows[0].shipping_fee) };
     }
