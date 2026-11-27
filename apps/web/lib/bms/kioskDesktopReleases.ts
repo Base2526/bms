@@ -4,7 +4,7 @@ import { deleteStoredFile, inspectStoredFile, openStoredFileStream, type Pending
 import { beginTenantTx, DEFAULT_TENANT_ID } from "./tenant";
 import { kioskTenantRead } from "./restaurantKioskTenantRead";
 import { verifyStoredKioskInstaller } from "./kioskDesktopSignature";
-import { KIOSK_INSTALLER_NAME, kioskReleaseMayDownload, kioskReleaseMayPublish,
+import { KIOSK_INSTALLER_NAME, kioskReleaseMayDownload, kioskReleaseMayPublish, kioskSignerApproved,
   validateKioskReleaseMetadata } from "./kioskDesktopReleasePolicy";
 
 export const KIOSK_RELEASE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -141,8 +141,13 @@ export async function publishKioskDesktopReleaseForBranch(input: {
   if (!fileIdentityMatches(candidate)) throw new KioskDesktopReleaseError("FILE_UNAVAILABLE", 503);
   const verification = await verifyStoredKioskInstaller(candidate.relpath, candidate.sha256, Number(candidate.size_bytes));
   if (!verification.integrity) throw new KioskDesktopReleaseError("CHECKSUM_MISMATCH", 409);
+  if (verification.signature.status !== "VALID") throw new KioskDesktopReleaseError("SIGNATURE_NOT_VALID", 409);
+  const signerApproved = kioskSignerApproved(verification.signature.thumbprint,
+    process.env.BMS_KIOSK_APPROVED_SIGNER_THUMBPRINTS);
   if (!kioskReleaseMayPublish({ status: candidate.status, integrity: verification.integrity,
-    signatureStatus: verification.signature.status })) throw new KioskDesktopReleaseError("SIGNATURE_NOT_VALID", 409);
+    signatureStatus: verification.signature.status, signerApproved })) {
+    throw new KioskDesktopReleaseError("SIGNER_NOT_APPROVED", 409);
+  }
   const client = await getClient();
   try {
     await beginTenantTx(client, input.tenantId, { editorId: input.adminId });
@@ -233,7 +238,9 @@ export async function findKioskDesktopReleaseForBranch(input: {
   const row = await releaseFileRow(String(granted));
   if (!row || row.status !== "PUBLISHED" || row.signature_status !== "VALID") return null;
   if (!kioskReleaseMayDownload({ status: row.status, signatureStatus: row.signature_status,
-    branchGrantActive: true, fileIntegrity: fileIdentityMatches(row) })) {
+    branchGrantActive: true, fileIntegrity: fileIdentityMatches(row),
+    signerApproved: kioskSignerApproved(row.signer_thumbprint,
+      process.env.BMS_KIOSK_APPROVED_SIGNER_THUMBPRINTS) })) {
     throw new KioskDesktopReleaseError("FILE_UNAVAILABLE", 503);
   }
   await assertStoredIntegrity(row);

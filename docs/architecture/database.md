@@ -1949,6 +1949,18 @@ release state and stored-byte checksum, then streams the private file. No
 release is seeded by the migration. Apply/reapply, RLS/grant/FK and real file
 verification still require a disposable restored database before pilot use.
 
+Migration `10.148` adds `accepted_order_id` to the existing kiosk submission.
+The acceptance transaction stores the exact newly reserved order ID with the
+check link and audit before commit. A later kitchen round may replace the
+check's `current_order_id`; the acceptance ID remains immutable and does not
+claim to be the paid order. A tenant/location composite FK binds it to an
+order in the same branch, and a trigger requires it for new accept transitions
+while leaving older accepted rows NULL rather than guessing their history.
+The existing fail-closed RLS, `bms_app` grants and revision trigger cover the
+new column. A branch-scoped index on `split_from_check_id` supports the bounded
+manager trace's conservative split detection. Apply/reapply and the constraint/trigger behavior need a disposable
+restored-DB test before pilot use.
+
 `9.45` does not add a second payment or kitchen ledger. Split tender continues to write the normal
 POS payment allocations, and KDS polling reads the existing branch-scoped ticket rows. Its only
 schema addition is modifier catalog pricing plus the restaurant-specific RBAC seeds.

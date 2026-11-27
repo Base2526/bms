@@ -55,12 +55,15 @@ try {
             status: 'ACCEPTED', submittedAt: '2026-11-27T01:00:00.000Z',
             reviewedAt: '2026-11-27T01:01:00.000Z', reviewerName: 'Fixture cashier',
             checkId: '22222222-2222-4222-8222-222222222222', checkStatus: 'PAID',
+            acceptedOrderId: '55555555-5555-4555-8555-555555555555',
             currentOrderId: '33333333-3333-4333-8333-333333333333', orderStatus: 'COMPLETED',
-            settlement: 'PAID', paidAt: '2026-11-27T01:02:00.000Z',
+            settlement: traceMode === 'split' ? 'REVIEW' : 'PAID',
+            paidAt: traceMode === 'split' ? null : '2026-11-27T01:02:00.000Z',
             paymentIds: ['44444444-4444-4444-8444-444444444444'],
             receiptId: null, receiptNo: 'RC-123', receiptType: 'ABBREVIATED',
             tableCode: null, tableName: null, areaName: null, splitGroupNo: null,
-            pickupNumber: 'A007', pickupStatus: 'READY' },
+            hasSplitDescendant: traceMode === 'split',
+            pickupNumber: traceMode === 'split' ? null : 'A007', pickupStatus: 'READY' },
         ] } });
       }
       if (path === '/api/bms/kiosk-desktop-releases') {
@@ -108,12 +111,13 @@ try {
     assert.equal(response.status(), 200);
     await page.getByText(lang === 'en' ? 'Customer ordering screen' : 'จอสั่งอาหารหน้าร้าน').waitFor();
     await page.getByText(lang === 'en' ? 'Track kiosk requests' : 'ติดตามคำขอจากจอ').waitFor();
-    await page.getByText(lang === 'en' ? 'Paid at POS' : 'ชำระที่ POS แล้ว').waitFor();
+    await page.getByText(lang === 'en' ? 'Linked check paid at POS' : 'บิลที่ผูกชำระที่ POS แล้ว').waitFor();
     await page.getByText('RC-123').waitFor();
+    await page.getByText(lang === 'en' ? 'Order created at acceptance' : 'ออเดอร์ตอนรับคำขอ').waitFor();
     await page.getByText(/A007/).waitFor();
     await page.getByRole('textbox', { name: lang === 'en' ? 'Customer request code' : 'รหัสคำขอของลูกค้า' }).fill('11111111');
     await page.getByRole('button', { name: lang === 'en' ? 'Search' : 'ค้นหา', exact: true }).click();
-    await page.getByText(lang === 'en' ? 'Paid at POS' : 'ชำระที่ POS แล้ว').waitFor();
+    await page.getByText(lang === 'en' ? 'Linked check paid at POS' : 'บิลที่ผูกชำระที่ POS แล้ว').waitFor();
     await page.getByText(lang === 'en' ? '2 pending requests' : '2 คำขอรอตรวจ').waitFor();
     await page.getByText(lang === 'en' ? 'Kiosk screen · maintenance PIN' : 'จอ Kiosk · PIN ดูแลเครื่อง').waitFor();
     await page.getByText(lang === 'en' ? 'Locked' : 'ล็อกชั่วคราว').waitFor();
@@ -135,11 +139,16 @@ try {
     assert.equal(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth + 2), true);
     assert.deepEqual(errors, []);
     await page.screenshot({ path: `.test-output/restaurant-kiosk-admin-browser/floor-${width}-${lang}.png`, fullPage: true });
+    traceMode = 'split';
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByText(lang === 'en' ? 'This bill was split.' : 'บิลนี้ถูกแยก').waitFor();
+    assert.equal(await page.getByText(lang === 'en' ? 'Linked check paid at POS' : 'บิลที่ผูกชำระที่ POS แล้ว').count(), 0);
+    await page.screenshot({ path: `.test-output/restaurant-kiosk-admin-browser/trace-split-${width}-${lang}.png`, fullPage: true });
     traceMode = 'error';
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.getByText(lang === 'en' ? 'Cannot verify request status. Check the POS before entering a new order.'
       : 'ตรวจสถานะคำขอไม่ได้ ตรวจใน POS ก่อนคีย์รายการใหม่').waitFor();
-    assert.equal(await page.getByText(lang === 'en' ? 'Paid at POS' : 'ชำระที่ POS แล้ว').count(), 0);
+    assert.equal(await page.getByText(lang === 'en' ? 'Linked check paid at POS' : 'บิลที่ผูกชำระที่ POS แล้ว').count(), 0);
     await page.screenshot({ path: `.test-output/restaurant-kiosk-admin-browser/trace-error-${width}-${lang}.png`, fullPage: true });
     traceMode = 'ready';
     releaseMode = 'none';

@@ -7,7 +7,8 @@ export type KioskSubmission = {
   id: string; serviceMode: "DINE_IN" | "TAKEAWAY";
   status: "PENDING" | "ACCEPTED" | "REJECTED" | "EXPIRED";
   checkId: string | null; submittedAt: string; rejectionReason: string | null;
-  checkStatus?: string | null; orderId?: string | null; tableCode?: string | null;
+  checkStatus?: string | null; orderId?: string | null; acceptedOrderId?: string | null;
+  tableCode?: string | null;
   tableName?: string | null; areaName?: string | null; splitGroupNo?: number | null;
   items: Array<{ sku: string; productName: string; size?: string | null;
     packQty: number; modifierCodes?: string[]; kitchenNote?: string | null }>;
@@ -167,7 +168,9 @@ export default function RestaurantKioskPanel({
           <b>{isEnglish ? "Linked POS bill" : "บิล POS ที่ผูกกับคำขอ"}</b>
           <p>{isEnglish ? "Request" : "รหัสคำขอ"} {submission.id.slice(0, 8).toUpperCase()} → {isEnglish ? "check" : "บิล"} {submission.checkId.slice(0, 8).toUpperCase()} · {submission.checkStatus}</p>
           {submission.tableCode && <p>{submission.areaName} · {submission.tableCode} {submission.tableName} · {isEnglish ? "bill" : "บิล"} {submission.splitGroupNo}</p>}
-          {submission.orderId && <p>{isEnglish ? "Order" : "ออเดอร์"} {submission.orderId.slice(0, 8).toUpperCase()}</p>}
+          {submission.acceptedOrderId && <p>{isEnglish ? "Order created at acceptance" : "ออเดอร์ตอนรับคำขอ"} {submission.acceptedOrderId.slice(0, 8).toUpperCase()}</p>}
+          {submission.orderId && submission.orderId !== submission.acceptedOrderId &&
+            <p>{isEnglish ? "Current bill order" : "ออเดอร์ปัจจุบันของบิล"} {submission.orderId.slice(0, 8).toUpperCase()}</p>}
           <button type="button" disabled={busy} onClick={() => void onOpenCheck(submission.checkId!)}>{isEnglish ? "Open this bill in POS" : "เปิดบิลนี้ใน POS"}</button>
         </div>}
         <ul>{submission.items.map((item, index) => <li key={`${item.sku}:${index}`}>

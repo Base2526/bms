@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
 import test from "node:test";
 import {
-  kioskReleaseMayDownload, kioskReleaseMayPublish, validateKioskReleaseMetadata,
+  kioskReleaseMayDownload, kioskReleaseMayPublish, kioskSignerApproved, validateKioskReleaseMetadata,
 } from "../apps/web/lib/bms/kioskDesktopReleasePolicy.ts";
 
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -26,17 +26,31 @@ test("Kiosk release identity rejects POS packages, mismatched versions, channels
 });
 
 test("draft, hidden, unsigned and tampered releases are never eligible for download", () => {
-  const publish = { status: "DRAFT", integrity: true, signatureStatus: "VALID" };
+  const publish = { status: "DRAFT", integrity: true, signatureStatus: "VALID", signerApproved: true };
   assert.equal(kioskReleaseMayPublish(publish), true);
   assert.equal(kioskReleaseMayPublish({ ...publish, integrity: false }), false);
   assert.equal(kioskReleaseMayPublish({ ...publish, signatureStatus: "INVALID" }), false);
+  assert.equal(kioskReleaseMayPublish({ ...publish, signerApproved: false }), false);
   assert.equal(kioskReleaseMayPublish({ ...publish, status: "HIDDEN" }), false);
-  const download = { status: "PUBLISHED", signatureStatus: "VALID", branchGrantActive: true, fileIntegrity: true };
+  const download = { status: "PUBLISHED", signatureStatus: "VALID", branchGrantActive: true,
+    fileIntegrity: true, signerApproved: true };
   assert.equal(kioskReleaseMayDownload(download), true);
   for (const patch of [{ status: "DRAFT" }, { status: "HIDDEN" },
-    { signatureStatus: "UNAVAILABLE" }, { branchGrantActive: false }, { fileIntegrity: false }]) {
+    { signatureStatus: "UNAVAILABLE" }, { branchGrantActive: false }, { fileIntegrity: false },
+    { signerApproved: false }]) {
     assert.equal(kioskReleaseMayDownload({ ...download, ...patch }), false);
   }
+});
+
+test("installer signer is allowlisted by verified certificate thumbprint, never by signature status alone", () => {
+  const signer = "A".repeat(40);
+  assert.equal(kioskSignerApproved(signer.toLowerCase(), signer), true);
+  assert.equal(kioskSignerApproved(signer, `${"b".repeat(40)}, ${signer.toLowerCase()}`), true);
+  for (const configured of [undefined, "", "not-a-thumbprint", `${signer},bad`]) {
+    assert.equal(kioskSignerApproved(signer, configured), false);
+  }
+  assert.equal(kioskSignerApproved(null, signer), false);
+  assert.equal(kioskSignerApproved("b".repeat(40), signer), false);
 });
 
 test("Kiosk multipart upload streams bytes with its own fields and bound", async (t) => {
@@ -112,6 +126,7 @@ test("release migration and routes preserve branch scope, RLS and private stream
   assert.match(service, /beginTenantTx\(client, input\.tenantId/);
   assert.match(service, /kioskTenantRead\(input\.tenantId/);
   assert.match(service, /inspectStoredFile/);
+  assert.match(service, /BMS_KIOSK_APPROVED_SIGNER_THUMBPRINTS/);
   assert.match(download, /authorizeAdminRoute\("restaurant\.floor\.manage"\)/);
   assert.match(download, /userCanAccessLocation/);
   assert.match(download, /distributedRateLimit/);

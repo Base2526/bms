@@ -275,7 +275,7 @@ export async function listRestaurantKioskSubmissions(tenantId: string, locationI
   const result = await kioskTenantRead(tenantId, (client) => client.query<{
     id: string; service_mode: KioskServiceMode; status: string;
     items: Array<RestaurantQrItemInput & { submittedQuote?: unknown }>;
-    check_id: string | null; submitted_at: Date; reviewed_at: Date | null;
+    check_id: string | null; accepted_order_id: string | null; submitted_at: Date; reviewed_at: Date | null;
     rejection_reason: string | null;
     check_status: string | null; order_id: string | null;
     table_code: string | null; table_name: string | null; area_name: string | null;
@@ -284,7 +284,7 @@ export async function listRestaurantKioskSubmissions(tenantId: string, locationI
     `SELECT s.id, s.service_mode,
             CASE WHEN s.status = 'PENDING' AND s.submitted_at <= now() - interval '30 minutes'
                  THEN 'EXPIRED' ELSE s.status END AS status,
-            s.items, s.check_id, s.submitted_at, s.reviewed_at, s.rejection_reason,
+            s.items, s.check_id, s.accepted_order_id, s.submitted_at, s.reviewed_at, s.rejection_reason,
             c.status AS check_status, c.current_order_id AS order_id,
             t.code AS table_code, t.name AS table_name, a.name AS area_name,
             c.split_group_no
@@ -313,7 +313,7 @@ export async function listRestaurantKioskSubmissions(tenantId: string, locationI
     items: row.items.map((item) => ({ ...item, productName: nameBySku.get(item.sku) ?? item.sku })),
     checkId: row.check_id, submittedAt: row.submitted_at.toISOString(),
     reviewedAt: row.reviewed_at?.toISOString() ?? null, rejectionReason: row.rejection_reason,
-    checkStatus: row.check_status, orderId: row.order_id,
+    checkStatus: row.check_status, orderId: row.order_id, acceptedOrderId: row.accepted_order_id,
     tableCode: row.table_code, tableName: row.table_name, areaName: row.area_name,
     splitGroupNo: row.split_group_no,
   }));

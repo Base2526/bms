@@ -11,12 +11,16 @@ export async function listRestaurantKioskTrace(tenantId: string, locationId: str
             CASE WHEN s.status = 'PENDING' AND s.submitted_at <= now() - interval '30 minutes'
                  THEN 'EXPIRED' ELSE s.status END AS status,
             s.submitted_at, s.reviewed_at, reviewer.name AS reviewer_name,
-            s.check_id, c.status AS check_status, c.current_order_id AS order_id,
+            s.check_id, s.accepted_order_id, c.status AS check_status, c.current_order_id AS order_id,
             o.status AS order_status, o.paid_at,
             pay.payment_ids, doc.id AS receipt_id, doc.doc_no AS receipt_no,
             doc.doc_type AS receipt_type,
             t.code AS table_code, t.name AS table_name, a.name AS area_name,
-            c.split_group_no, pq.queue_prefix, pq.queue_no, pq.status AS queue_status
+            c.split_group_no, pq.queue_prefix, pq.queue_no, pq.status AS queue_status,
+            EXISTS (SELECT 1 FROM bms_restaurant_checks child
+                     WHERE child.tenant_id = s.tenant_id AND child.location_id = s.location_id
+                       AND child.split_from_check_id = s.check_id
+                       AND child.opened_at > s.reviewed_at) AS has_split_descendant
        FROM bms_restaurant_kiosk_submissions s
        LEFT JOIN bms_restaurant_checks c
          ON c.tenant_id = s.tenant_id AND c.location_id = s.location_id AND c.id = s.check_id

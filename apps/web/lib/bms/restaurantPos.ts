@@ -1532,7 +1532,7 @@ type KitchenRoundInput = {
   actorUserId: string;
 };
 
-type KitchenRoundInTxResult = { status: "SENT"; kitchenTickets: number } | CreateOrderResult;
+type KitchenRoundInTxResult = { status: "SENT"; kitchenTickets: number; orderId: string } | CreateOrderResult;
 
 /** Caller owns BEGIN/COMMIT/ROLLBACK. This is shared by staff-entered and QR-accepted rounds. */
 async function sendRestaurantKitchenRoundInTx(
@@ -1575,7 +1575,7 @@ async function sendRestaurantKitchenRoundInTx(
   const reservationAlive = reservationStatus === "PENDING";
   if (unsent.length === 0 && reservationAlive
       && Number(check.reserved_version) === Number(check.version)) {
-    return { status: "SENT", kitchenTickets: 0 };
+    return { status: "SENT", kitchenTickets: 0, orderId: check.current_order_id };
   }
 
   await ensureRestaurantItemSnapshotsInTx(client, input.tenantId, input.checkId);
@@ -1650,7 +1650,7 @@ async function sendRestaurantKitchenRoundInTx(
     [input.tenantId, `user:${input.actorUserId}`, input.checkId,
       JSON.stringify({ roundNo, itemCount: sent.rowCount, orderId: created.orderId })]
   );
-  return { status: "SENT", kitchenTickets: tickets.rowCount ?? 0 };
+  return { status: "SENT", kitchenTickets: tickets.rowCount ?? 0, orderId: created.orderId };
 }
 
 export async function sendRestaurantKitchenRound(input: KitchenRoundInput): Promise<{
@@ -1995,15 +1995,17 @@ export async function acceptRestaurantKioskSubmission(
       await client.query(
         `UPDATE bms_restaurant_kiosk_submissions
             SET status = 'ACCEPTED', check_id = $4, reviewed_by = $5,
+                accepted_order_id = $6,
                 reviewed_at = now(), updated_at = now()
           WHERE tenant_id = $1 AND location_id = $2 AND id = $3 AND status = 'PENDING'`,
-        [input.tenantId, input.locationId, input.submissionId, checkId, input.actorUserId]
+        [input.tenantId, input.locationId, input.submissionId, checkId, input.actorUserId, sent.orderId]
       );
       await client.query(
         `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
          VALUES ($1,$2,'restaurant.kiosk.accept',$3,$4::jsonb)`,
         [input.tenantId, `user:${input.actorUserId}`, input.submissionId,
-          JSON.stringify({ checkId, serviceMode: current.service_mode, itemCount: resolved.length,
+          JSON.stringify({ checkId, acceptedOrderId: sent.orderId,
+            serviceMode: current.service_mode, itemCount: resolved.length,
             quoteFingerprint: quote.fingerprint, priceChanged,
             tableConfirmed: input.confirmedTable === true, tableId: input.expectedTableId ?? null })]
       );

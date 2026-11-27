@@ -1164,8 +1164,11 @@ own dine-in service. Operator detail:
   the ordinary reservation/KDS round in one transaction. Pending requests expire after 30 minutes;
   rotation or disable expires them immediately. The public screen never settles or mints a pickup
   queue number. The manager's request-code trace on the restaurant-floor page is a scoped, bounded
-  read of proposal → check → current order → POS payment/receipt/pickup evidence. Later kitchen
-  rounds can replace a pending order on the same check. Never report a pending proposal as a sale
+  read of proposal → check → current order → POS payment/receipt/pickup evidence. `10.148`
+  freezes the exact acceptance order ID on new proposals; older rows may be NULL. Later kitchen
+  rounds can replace a pending order on the same check. A paid linked check does not prove every
+  original kiosk line survived a later cancellation or return. A later check split requires POS review
+  because the original check's payment cannot prove moved items were paid. Never report a pending proposal as a sale
   or a CLOSING/RETURNED bill as newly paid; a failed trace read directs staff to verify at POS.
   A standalone Desktop Kiosk (`10.146`) has a separate branch-bound device
   credential and maintenance PIN. Neither is a cashier PIN or POS device token.
@@ -1185,7 +1188,11 @@ own dine-in service. Operator detail:
   platform administrator uploads drafts and grants signed published releases;
   shop downloads require an active admin session, `restaurant.floor.manage`
   and branch scope. The server rechecks the private file checksum before
-  streaming it. A draft, hidden, unsigned or corrupt release is not a shop
+  streaming it. Publishing requires the verified Authenticode signer thumbprint
+  in `BMS_KIOSK_APPROVED_SIGNER_THUMBPRINTS`; an unset/malformed allowlist or a
+  signer removed later blocks the shop download. The current Linux verifier
+  cannot extract a signer thumbprint, so Linux publish fails closed. A draft,
+  hidden, unsigned or corrupt release is not a shop
   download. Installer possession grants no URL, PIN, POS or payment authority.
   Staff review uses a server-computed catalog quote and compares its fingerprint when accepting;
   acceptance resolves and rechecks the quote on the same transaction connection as the check,

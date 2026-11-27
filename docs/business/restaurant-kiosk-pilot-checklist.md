@@ -9,11 +9,11 @@
 CART, PENDING/ACCEPTED/REJECTED/EXPIRED, unavailable และ network อยู่ใน
 `.test-output/restaurant-kiosk-browser/`. Browser fixture ของ `/pos/restaurant?screen=kiosk`
 และ `/admin/restaurant-floor` ผ่านที่ 1440/390 px โดยจำลอง API ใน Playwright
-รวมการค้นรหัสคำขอ, หลักฐานบิล/ชำระ, และสถานะเมื่ออ่าน trace ไม่ได้
+รวมการค้นรหัสคำขอ, หลักฐานบิล/ชำระ, คำเตือนเมื่อแยกบิล และสถานะเมื่ออ่าน trace ไม่ได้
 ไม่ได้ใช้ฐานหรือเครื่อง POS จริง; ภาพอยู่ใน
 `.test-output/restaurant-kiosk-pos-browser/` และ
 `.test-output/restaurant-kiosk-admin-browser/`. `cd apps/web && npm run gate` ผ่าน:
-pure 4,037 (ผ่าน 4,031, ข้าม 6, ล้ม 0), typecheck และ production build ผ่าน.
+pure 4,039 (ผ่าน 4,033, ข้าม 6, ล้ม 0), typecheck และ production build ผ่าน.
 `cd apps/mobile && npm test -- --runInBand` ผ่าน 524/524, typecheck ผ่าน; Desktop
 `npm test` ผ่าน 179/179 และ lint ผ่าน. Kiosk Desktop lint/unit 7/7, Electron smoke,
 native-main fixture และ Windows x64 package ผ่าน แต่ installer ล่าสุดยัง `NotSigned`.
@@ -37,16 +37,18 @@ native-main fixture และ Windows x64 package ผ่าน แต่ install
 
 ## ฐานข้อมูลที่ทิ้งได้
 
-เพิ่ม `10.147` ในการ apply/reapply บนฐาน restore: ตรวจ release identity
+เพิ่ม `10.147` และ `10.148` ในการ apply/reapply บนฐาน restore: ตรวจ release identity
 ไม่ซ้ำ, branch grant composite FK, RLS/grants/revision/audit ภายใต้
 `bms_app` ทั้ง tenant GUC ถูก/ผิด/ว่าง และตรวจว่า migration ไม่เผยแพร่
-installer ใดเอง ห้ามรันบน production
+installer ใดเอง; ตรวจ accepted_order_id ผูก tenant/branch ถูกต้อง บังคับใน accept ใหม่
+แก้ย้อนหลังไม่ได้ และรายการเก่าที่ไม่รู้ order เดิมยังเป็น NULL ห้ามรันบน production
 
 ## ไฟล์ติดตั้งและการเผยแพร่
 
 | ขั้นตอน | ผลที่ต้องเห็น | หลักฐาน |
 | --- | --- | --- |
 | Platform admin อัปโหลด Windows x64 NSIS พร้อม SHA-256 แล้วตรวจไฟล์จริง | release เป็น draft; SHA-256 และ Authenticode มีผลตรวจจริง; unsigned/corrupt เผยแพร่ไม่ได้ | hash, signature status, release id ที่ไม่ใช่ token |
+| ตรวจใบรับรองผู้ลงนามกับ allowlist บน server | publish ได้เฉพาะ thumbprint ที่ IT อนุมัติ; ค่าว่าง/ผิดรูป/ใบรับรองอื่นหรือการถอนอนุมัติทำให้ publish/download ถูกปฏิเสธ | thumbprint สาธารณะของใบรับรอง, HTTP code โดยไม่เก็บ credential |
 | Publish ให้สาขา pilot แล้วเข้าหลังบ้าน `/admin/restaurant-floor` ด้วยผู้จัดการสาขา | เห็นเฉพาะรุ่นที่เผยแพร่ของสาขานั้น, วันเผยแพร่, ขนาด, hash, minimum OS และคู่มือ | screenshot ที่ตัดข้อมูลอ่อนไหว, HTTP status |
 | ลอง session ไม่มีสิทธิ์/ผิดสาขา/ไม่มี session/public kiosk URL, draft/hidden/ID เดา | ไม่ดาวน์โหลด; 401/403/404 ตามเหตุ; Redis rate limit ล้มได้ 503 | HTTP trace ที่ตัด cookie/token |
 | ดาวน์โหลดไฟล์ขนาดจริงและตรวจบนเครื่อง IT | stream สำเร็จ, SHA-256 ตรง, Authenticode Valid และ signer ที่อนุมัติ | hash/signature, ขนาดไฟล์, memory profile |
@@ -63,7 +65,9 @@ installer ใดเอง ห้ามรันบน production
 | ใช้ `SET ROLE bms_app` กับ tenant GUC ที่ถูก/ผิด/ว่าง และ token-hash GUC | submission ไม่มี GUC ต้องไม่เห็นข้อมูล; locator เห็นเฉพาะ token hash ที่ตรงและ active; ห้ามใช้ token GUC เขียน | SQL matrix, current role/GUC |
 | ป้อน kiosk/check ข้าม tenant/branch | composite FK และ service ปฏิเสธ ไม่มีข้อมูลข้ามสาขา | SQLSTATE, count ก่อน/หลัง |
 | Submit key เดิมพร้อมกัน/ส่งซ้ำ | submission เดียวและรหัสเดิม | count/idempotency result |
-| รับคำขอเดียวกันจาก POS สองเครื่องพร้อมกันและทำให้ response แรกหาย | check/order/reservation/ticket/audit อย่างละชุด; replay ชี้ check เดิม | row ids/count/stock movement |
+| รับคำขอเดียวกันจาก POS สองเครื่องพร้อมกันและทำให้ response แรกหาย | check/order/reservation/ticket/audit อย่างละชุด; replay ชี้ check เดิม; accepted_order_id ตรง order ที่สร้างใน transaction | row ids/count/stock movement |
+| ส่งครัวรอบถัดไปแล้วค้นรหัสคำขอเดิม | accepted_order_id คงเดิม ส่วน current_order_id ชี้รอบล่าสุด; การชำระอ้างบิลและ order ปัจจุบัน ไม่อ้าง order แรกเป็นยอดขาย | before/after SQL และภาพ trace |
+| แยกบิลหลังรับคำขอ แล้วยืนยันว่าบิลต้นทางชำระแล้ว | หลังบ้านแสดงต้องตรวจ POS และเตือนให้ตามรายการที่ย้าย ห้ามสรุปว่าคำขอทั้งหมดจ่ายแล้วจากบิลต้นทาง | ภาพ trace, บิลต้นทาง/บิลลูก, payment IDs |
 | 20 บรรทัดโดยบรรทัดท้ายผิด, หมดสต็อก, sold-out, modifier/size เปลี่ยน | transaction rollback; ไม่มี check/order/stock/KDS/audit ครึ่งชุด | before/after SQL และ error |
 | DINE_IN ไม่มี check, เปิด check, ย้ายโต๊ะ, split, ปิด check, มี NEW ค้าง, สั่งเพิ่ม | ใช้ได้เฉพาะ check ที่ OPEN/DINE_IN/สาขาถูกและตรง preview; กรณีเปลี่ยนไม่มี partial write | check version/table/opened_at และผลแต่ละกรณี |
 | ราคาเปลี่ยนหลัง submit และหลัง preview | ต้องเห็นยอดเดิม/ใหม่; accept ที่ใช้ fingerprint เก่าถูกปฏิเสธ; ยืนยันราคาใหม่ก่อนรับ | ราคา/quote fingerprint, audit ที่ไม่เก็บ note |

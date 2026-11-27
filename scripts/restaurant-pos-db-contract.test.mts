@@ -2342,6 +2342,13 @@ test("kiosk proposals map two takeaway requests to distinct reserved bills and r
   assert.equal(mapped.length, 1);
   assert.equal(mapped[0].checkId, firstCheck?.id);
   assert.equal(mapped[0].orderId, orderByCheck.get(firstCheck!.id));
+  assert.equal(mapped[0].acceptedOrderId, orderByCheck.get(firstCheck!.id));
+  const acceptedRows = await query<{ id: string; accepted_order_id: string }>(
+    `SELECT id, accepted_order_id FROM bms_restaurant_kiosk_submissions
+      WHERE tenant_id=$1 AND id=ANY($2::uuid[])`,
+    [tenantId, submissions.map((entry) => entry.submissionId)]);
+  assert.equal(acceptedRows.rowCount, 2);
+  for (const accepted of acceptedRows.rows) assert.ok(accepted.accepted_order_id);
   assert.equal((await restaurantKioskSubmissionStatus(token, submissions[0].submissionId)).status, "ACCEPTED");
   assert.equal((await query<{ n: string }>(
     `SELECT COUNT(*)::text AS n FROM bms_restaurant_kitchen_tickets
@@ -2370,6 +2377,15 @@ test("kiosk proposals map two takeaway requests to distinct reserved bills and r
   assert.equal(Number((await kioskStock(sku)).reserved_stock), 3);
   assert.equal(Number((await kioskStock(lastSku)).reserved_stock), 0);
   assert.equal((await restaurantKioskSubmissionStatus(token, twenty.submissionId)).status, "PENDING");
+  await addRestaurantCheckItem({ tenantId, locationId, checkId: firstCheck!.id,
+    actorUserId: waiterId, sku, size: "BASE", packQty: 1 });
+  const laterRound = await sendRestaurantKitchenRound({ tenantId, locationId, deviceId: device,
+    shiftId: shift, checkId: firstCheck!.id, actorUserId: waiterId });
+  assert.equal(laterRound.status, "SENT");
+  const afterRound = await listRestaurantKioskSubmissions(tenantId, locationId,
+    submissions[0].submissionId.slice(0, 8));
+  assert.equal(afterRound[0].acceptedOrderId, mapped[0].acceptedOrderId);
+  assert.notEqual(afterRound[0].orderId, mapped[0].acceptedOrderId);
 });
 
 test("teardown: drop the throwaway tenant and everything under it", async () => {

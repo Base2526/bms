@@ -8,11 +8,13 @@ type Trace = {
   requestCode: string; serviceMode: "DINE_IN" | "TAKEAWAY"; status: string;
   submittedAt: string; reviewedAt: string | null; reviewerName: string | null;
   checkId: string | null; checkStatus: string | null; currentOrderId: string | null;
+  acceptedOrderId: string | null;
   orderStatus: string | null; settlement: "NOT_APPLICABLE" | "UNPAID" | "PAID" | "RETURNED" | "REVIEW";
   paidAt: string | null; paymentIds: string[]; receiptId: string | null; receiptNo: string | null;
   receiptType: string | null;
   tableCode: string | null; tableName: string | null; areaName: string | null;
   splitGroupNo: number | null; pickupNumber: string | null; pickupStatus: string | null;
+  hasSplitDescendant: boolean;
 };
 
 export default function RestaurantKioskTrace({ locationId, lang }: {
@@ -66,7 +68,7 @@ export default function RestaurantKioskTrace({ locationId, lang }: {
     if (row.status === "PENDING") return en ? "Waiting for staff review · not a sale" : "รอพนักงานตรวจ · ยังไม่ใช่ยอดขาย";
     if (row.status === "REJECTED") return en ? "Rejected · not a sale" : "ปฏิเสธแล้ว · ยังไม่ใช่ยอดขาย";
     if (row.status === "EXPIRED") return en ? "Expired · not a sale" : "หมดอายุ · ยังไม่ใช่ยอดขาย";
-    if (row.settlement === "PAID") return en ? "Paid at POS" : "ชำระที่ POS แล้ว";
+    if (row.settlement === "PAID") return en ? "Linked check paid at POS" : "บิลที่ผูกชำระที่ POS แล้ว";
     if (row.settlement === "RETURNED") return en ? "Returned or adjusted · check sale history" : "คืนหรือปรับรายการแล้ว · ตรวจประวัติขาย";
     if (row.settlement === "UNPAID") return en ? "Accepted · payment pending" : "รับคำขอแล้ว · ยังไม่ชำระ";
     return en ? "Accepted · verify payment in POS" : "รับคำขอแล้ว · ตรวจการชำระใน POS";
@@ -115,13 +117,21 @@ export default function RestaurantKioskTrace({ locationId, lang }: {
         {row.splitGroupNo != null ? ` · ${en ? "split" : "แยกบิล"} ${row.splitGroupNo}` : ""}</p>}
       {row.checkId && <p>{en ? "Check" : "บิล"}: <Typography.Text copyable style={{ overflowWrap: "anywhere" }}>{row.checkId}</Typography.Text>
         {row.checkStatus ? ` · ${checkStatus(row.checkStatus)}` : ""}</p>}
+      {row.acceptedOrderId && <p>{en ? "Order created at acceptance" : "ออเดอร์ตอนรับคำขอ"}: <Typography.Text copyable style={{ overflowWrap: "anywhere" }}>{row.acceptedOrderId}</Typography.Text></p>}
       {row.currentOrderId && <p>{en ? "Current check order" : "ออเดอร์ปัจจุบันของบิล"}: <Typography.Text copyable style={{ overflowWrap: "anywhere" }}>{row.currentOrderId}</Typography.Text>
         {row.orderStatus ? ` · ${orderStatus(row.orderStatus)}` : ""}</p>}
+      {row.hasSplitDescendant && <Alert type="warning" showIcon closable style={{ marginBottom: 12 }}
+        message={en ? "This bill was split. Check the moved items and payment in POS before treating this request as paid."
+          : "บิลนี้ถูกแยก ตรวจรายการที่ย้ายและการชำระใน POS ก่อนสรุปว่าคำขอนี้จ่ายแล้ว"} />}
       {row.paidAt && <p>{en ? "Paid" : "ชำระเมื่อ"}: {date(row.paidAt)}</p>}
-      {row.paymentIds.length > 0 && <p>{en ? "Payment IDs" : "รหัสการชำระ"}: {row.paymentIds.map((id) =>
+      {row.paymentIds.length > 0 && <p>{row.hasSplitDescendant
+        ? (en ? "Original check payment IDs" : "รหัสการชำระของบิลต้นทาง")
+        : (en ? "Payment IDs" : "รหัสการชำระ")}: {row.paymentIds.map((id) =>
         <Typography.Text key={id} copyable style={{ display: "block", overflowWrap: "anywhere" }}>{id}</Typography.Text>)}</p>}
-      {row.receiptNo && <p>{row.receiptType === "FULL"
-        ? (en ? "Tax invoice" : "ใบกำกับภาษี") : (en ? "Receipt" : "เลขใบเสร็จ")}: {row.receiptNo}
+      {row.receiptNo && <p>{row.hasSplitDescendant
+        ? (en ? "Original check document" : "เอกสารของบิลต้นทาง")
+        : row.receiptType === "FULL" ? (en ? "Tax invoice" : "ใบกำกับภาษี")
+          : (en ? "Receipt" : "เลขใบเสร็จ")}: {row.receiptNo}
         {row.receiptId && <> · <Typography.Text copyable style={{ overflowWrap: "anywhere" }}>{row.receiptId}</Typography.Text></>}</p>}
       {row.pickupNumber && <p>{en ? "Pickup number" : "เลขรับอาหาร"}: {row.pickupNumber}
         {row.pickupStatus ? ` · ${pickupStatus(row.pickupStatus)}` : ""}</p>}

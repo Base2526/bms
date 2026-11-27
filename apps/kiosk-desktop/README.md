@@ -117,7 +117,8 @@ packages are separate release channels. The customer kiosk page has no download.
 After a customer submits a request, the branch manager can search its visible request code at
 `/admin/restaurant-floor` under **Track kiosk requests**. This read-only view distinguishes a
 pending proposal, an accepted check and a paid POS sale, with the check's current order, receipt
-and pickup number when present. It does not authorize acceptance or payment. If the read fails,
+and pickup number when present. A split after acceptance is marked for POS review because moved
+items may be paid on another check. It does not authorize acceptance or payment. If the read fails,
 staff verify the code and bill in the paired POS before entering anything again.
 
 The platform administrator records the SHA-256, uploads the NSIS `.exe` as a
@@ -127,7 +128,13 @@ available to a shop. After download, IT compares the downloaded SHA-256 to the
 back-office value (`Get-FileHash -Algorithm SHA256`) and verifies Authenticode
 (`Get-AuthenticodeSignature`) reports `Valid`, then checks the signer against
 the approved BMS signing identity. A filename or uploaded checksum alone does
-not prove a signature. The current package has previously reported `NotSigned`;
+not prove a signature. The Web release service requires the verified certificate
+thumbprint in `BMS_KIOSK_APPROVED_SIGNER_THUMBPRINTS` before publish and on each
+download. IT must configure this server-side allowlist from the approved
+certificate, never from the upload form. Empty or malformed configuration
+blocks delivery. The Linux verifier currently cannot extract that thumbprint;
+publish on Linux remains blocked until this is implemented or a Windows
+verification worker is used. The current package has previously reported `NotSigned`;
 signing, verification and installation on the actual pilot machine remain
 release gates.
 

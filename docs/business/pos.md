@@ -2789,10 +2789,15 @@ customer's request code in **Track kiosk requests**. The server rechecks branch 
 only a bounded branch history without basket notes or device credentials. `PENDING`, `REJECTED`
 and `EXPIRED` are proposals, never sales. An accepted request links to its check; the displayed
 order is the **current check order**, because later kitchen rounds can replace an earlier pending
-reservation. `PAID` requires the check to be paid and the current order to be completed with a
-payment time. The view shows confirmed payment IDs, the active receipt or full tax invoice and the
+reservation. From `10.148`, the trace also preserves the **order created at acceptance** as
+immutable provenance; older accepted requests may have no recorded acceptance order. `PAID`
+requires the check to be paid and the current order to be completed with a
+payment time. This confirms payment for the linked check, not that every original proposal line
+survived later cancellation or return. The view shows confirmed payment IDs, the active receipt or full tax invoice and the
 existing pickup number when present. A closing, inconsistent or returned bill tells the manager
-to verify POS sale history rather than claiming a fresh payment. This trace is a lookup, not a
+to verify POS sale history rather than claiming a fresh payment. If the accepted check was later
+split, the request is marked for POS review even if the original check is paid: moved items may
+belong to another bill. This trace is a lookup, not a
 new sales ledger; existing POS reports and settlement remain authoritative. If a status read fails,
 check the request code and exact bill at POS before re-entering anything.
 
@@ -2880,11 +2885,18 @@ PIN grant no download authority. The manager sees version, minimum OS, size,
 SHA-256 and release notes. IT compares the downloaded hash and verifies the
 Authenticode signature and approved signer before installing, upgrading or
 rolling back under the same OS account so encrypted configuration persists.
+The platform sets `BMS_KIOSK_APPROVED_SIGNER_THUMBPRINTS` to the verified
+40-character SHA-1 Authenticode certificate thumbprint (comma-separated for a
+planned certificate rotation). Publish re-verifies the actual stored binary
+and signer; download fails closed if the recorded signer is no longer approved.
+An unset or malformed allowlist blocks publication and downloads. Linux
+`osslsigncode` verification currently does not extract a signer thumbprint, so
+publication needs a Windows verifier until that path is implemented and tested.
 Unsigned, hidden, draft and corrupt artifacts are not distributed. The
 previous locally built installer was `NotSigned`; signing, restored-DB tests
 and installation on pilot hardware are still required before any live use.
 
-Before the first live pilot, apply `10.144`, `10.145`, `10.146` and `10.147` on a disposable restored database and exercise the
+Before the first live pilot, apply `10.144` through `10.148` on a disposable restored database and exercise the
 following with a paired POS, an open shift and a separate touch screen. Use test products and
 reverse test bills through the normal POS flow; do not run these checks against live customer data.
 

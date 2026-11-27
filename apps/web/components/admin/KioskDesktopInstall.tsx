@@ -7,6 +7,7 @@ import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 type Release = {
   id: string; version: string; channel: "pilot" | "stable"; status: "DRAFT" | "PUBLISHED" | "HIDDEN";
   filename: string; sizeBytes: number; sha256: string; signatureStatus: "VALID" | "INVALID" | "UNAVAILABLE";
+  signerThumbprint: string | null;
   minimumOs: string; releaseNotes: string; publishedAt: string | null;
 };
 
@@ -113,9 +114,11 @@ export default function KioskDesktopInstall({ locationId, lang }: {
         body: JSON.stringify({ action, releaseId: target.id, locationId, confirmed: true }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(en
-        ? `Release change rejected (${body.code || response.status}). Check signature, branch and stored file.`
-        : `เปลี่ยนสถานะ release ไม่สำเร็จ (${body.code || response.status}) กรุณาตรวจลายเซ็น สาขา และไฟล์`);
+      if (!response.ok) throw new Error(body.code === "SIGNER_NOT_APPROVED"
+        ? (en ? "The installer signer is not approved by the platform. Ask IT to verify the certificate and configure the approved thumbprint."
+          : "ผู้ลงนามไฟล์ติดตั้งยังไม่ได้รับอนุมัติจากแพลตฟอร์ม ให้ IT ตรวจใบรับรองและตั้งค่าลายนิ้วมือที่อนุมัติ")
+        : (en ? `Release change rejected (${body.code || response.status}). Check signature, branch and stored file.`
+          : `เปลี่ยนสถานะ release ไม่สำเร็จ (${body.code || response.status}) กรุณาตรวจลายเซ็น สาขา และไฟล์`));
       await refresh();
     } catch (cause) { setError(cause instanceof Error ? cause.message :
       (en ? "Could not change release." : "เปลี่ยนสถานะ release ไม่สำเร็จ")); }
@@ -151,8 +154,8 @@ export default function KioskDesktopInstall({ locationId, lang }: {
     {canPublish && <Card type="inner" title={en ? "Platform release management" : "จัดการ release โดยผู้ดูแลแพลตฟอร์ม"}
       style={{ marginTop: 20 }}>
       <Alert type="warning" showIcon closable style={{ marginBottom: 12 }} message={en
-        ? "An unsigned or unverified installer stays in draft. Publishing rechecks the stored bytes and Authenticode signature."
-        : "ไฟล์ที่ไม่มีลายเซ็นหรือยังตรวจไม่ได้จะคงเป็น draft ก่อนเผยแพร่ระบบตรวจไฟล์และลายเซ็น Authenticode ซ้ำ"} />
+        ? "An unsigned or unverified installer stays in draft. Publishing rechecks the stored bytes, Authenticode signature and approved signer certificate."
+        : "ไฟล์ที่ไม่มีลายเซ็นหรือยังตรวจไม่ได้จะคงเป็น draft ก่อนเผยแพร่ระบบตรวจไฟล์ ลายเซ็น Authenticode และใบรับรองผู้ลงนามที่อนุมัติซ้ำ"} />
       <Space direction="vertical" style={{ width: "100%" }}>
         <label htmlFor="kiosk-release-file">{en ? "Windows x64 NSIS installer" : "ไฟล์ติดตั้ง NSIS สำหรับ Windows x64"}</label>
         <input id="kiosk-release-file" type="file" accept=".exe" onChange={chooseFile} />
@@ -173,6 +176,9 @@ export default function KioskDesktopInstall({ locationId, lang }: {
         {publisherReleases.map((item) => <Space key={item.id} wrap>
           <Typography.Text>{item.version} · {item.channel}</Typography.Text>
           <Tag color={item.signatureStatus === "VALID" ? "green" : "orange"}>{item.signatureStatus}</Tag>
+          {item.signerThumbprint && <Typography.Text type="secondary" copyable={{ text: item.signerThumbprint }}>
+            {en ? "Signer" : "ผู้ลงนาม"}: {item.signerThumbprint}
+          </Typography.Text>}
           <Tag>{item.status}</Tag>
           {item.status !== "HIDDEN" && <Popconfirm title={en ? "Publish this verified release for the selected branch?" : "เผยแพร่รุ่นที่ตรวจแล้วให้สาขาที่เลือก?"}
             onConfirm={() => void manage("publish", item)}><Button size="small" disabled={item.signatureStatus !== "VALID" || busy}>

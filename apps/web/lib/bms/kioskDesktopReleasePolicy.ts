@@ -2,6 +2,15 @@ import { valid } from "semver";
 
 export const KIOSK_INSTALLER_NAME = /^BMS-Kiosk-Setup-(.+)-x64\.exe$/;
 const SHA256 = /^[0-9a-f]{64}$/;
+const SIGNER_THUMBPRINT = /^[0-9a-f]{40}$/i;
+
+/** Only a platform-configured Authenticode certificate may distribute a kiosk binary. */
+export function kioskSignerApproved(thumbprint: string | null, approvedThumbprints: string | undefined): boolean {
+  if (!thumbprint || !SIGNER_THUMBPRINT.test(thumbprint)) return false;
+  const approved = (approvedThumbprints ?? "").split(",").map((value) => value.trim());
+  return approved.every((value) => SIGNER_THUMBPRINT.test(value))
+    && approved.some((value) => value.toLowerCase() === thumbprint.toLowerCase());
+}
 
 export type KioskReleaseMetadata = {
   filename: string; version: string; channel: "pilot" | "stable";
@@ -28,14 +37,16 @@ export function validateKioskReleaseMetadata(input: {
 }
 
 export function kioskReleaseMayPublish(input: {
-  status: string; integrity: boolean; signatureStatus: string;
+  status: string; integrity: boolean; signatureStatus: string; signerApproved: boolean;
 }) {
-  return input.status !== "HIDDEN" && input.integrity && input.signatureStatus === "VALID";
+  return input.status !== "HIDDEN" && input.integrity && input.signatureStatus === "VALID"
+    && input.signerApproved;
 }
 
 export function kioskReleaseMayDownload(input: {
   status: string; signatureStatus: string; branchGrantActive: boolean; fileIntegrity: boolean;
+  signerApproved: boolean;
 }) {
   return input.status === "PUBLISHED" && input.signatureStatus === "VALID"
-    && input.branchGrantActive && input.fileIntegrity;
+    && input.branchGrantActive && input.fileIntegrity && input.signerApproved;
 }
