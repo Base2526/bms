@@ -156,6 +156,7 @@ const PUBLIC_BY_DESIGN = new Map([
   ["app/api/bms/restaurant-qr/submissions/route.ts", "ลูกค้าที่มี table session ส่งและติดตามคำขอ"],
   ["app/api/bms/restaurant-qr/service-calls/route.ts", "ลูกค้าที่มี table session เรียกพนักงานและดูสถานะ"],
   ["app/api/bms/restaurant-kiosk/[token]/route.ts", "จอสั่งเองสาธารณะของสาขาอ่านเมนูและส่งคำขอเท่านั้น; token hash + IP มี rate limit และพนักงานต้องกดรับก่อนเข้าครัว"],
+  ["app/api/bms/restaurant-kiosk-device/route.ts", "Desktop Kiosk native main ใช้ credential เครื่องเฉพาะที่ตรวจ hash และ RLS; Redis rate limit ก่อนอ่าน body; public URL ใช้แทน credential ไม่ได้"],
   ["app/api/bms/board-game-guest/[token]/route.ts", "ลูกค้าสแกน QR ของ session บอร์ดเกมที่กำลังเปิด"],
   ["app/api/bms/board-game-guest/service-calls/route.ts", "ลูกค้าที่มี guest token เรียกพนักงานและดูสถานะ"],
   ["app/api/bms/delivery/[provider]/webhook/[integrationId]/route.ts", "provider webhook สาธารณะโดยจำเป็น; tenant มาจาก opaque integration id และ adapter ตรวจ signature แบบ fail-closed"],

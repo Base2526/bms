@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import QRCode from "qrcode";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import RestaurantTableChairs from "@/components/RestaurantTableChairs";
+import RestaurantKioskDevices from "@/components/admin/RestaurantKioskDevices";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
 import styles from "./page.module.css";
@@ -443,6 +444,9 @@ export default function RestaurantFloorPage() {
         <p>{lang === "en" ? "Issue, rotate or disable the URL at the paired restaurant POS with an open shift, staff PIN and floor permission. The new URL is shown once. Resolve pending requests before closing the shift." : "ออก หมุน หรือปิด URL ที่ POS ร้านอาหารซึ่งจับคู่เครื่อง เปิดกะ และยืนยัน PIN กับสิทธิ์จัดการผังร้านแล้ว URL ใหม่แสดงครั้งเดียว จัดการคำขอค้างก่อนปิดกะ"}</p>
         <Button href="/pos/restaurant?screen=kiosk" type="primary">{lang === "en" ? "Open kiosk work in POS" : "เปิดงานจอสั่งอาหารใน POS"}</Button>
       </Card>
+
+      <RestaurantKioskDevices locationId={locationId}
+        locationName={locations.find((location) => location.id === locationId)?.name ?? null} lang={lang} />
 
       <Card className={styles.toolbarCard}>
         <div className={styles.toolbar}>

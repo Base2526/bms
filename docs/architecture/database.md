@@ -1922,6 +1922,20 @@ tenant/branch and requires cashier PIN, `pos.sell`, branch scope and an OPEN dev
 preview/accept/reject; all three call the same kiosk services as Web POS. No new table or payment
 ledger is introduced for these surfaces.
 
+Migration `10.146` adds `bms_restaurant_kiosk_devices` as a separate native
+Desktop Kiosk identity. One active row per `(tenant_id, location_id)` stores
+only a SHA-256 digest of a dedicated device credential and a bcrypt
+maintenance-PIN hash, PIN revision UUID, lock counter/time, revocation state and attribution.
+The public kiosk token is not a device credential. Tenant/location composite FK,
+`bms_app` grants and forced RLS apply. Without a tenant GUC, a transaction may
+locate only the active row matching `bms.kiosk_device_hash`; writes require the
+tenant GUC. Five wrong PIN attempts lock the row for 15 minutes under `FOR UPDATE`
+so concurrent attempts share one count. Device/PIN changes and lock/unlock write
+audit in the same transaction. The custom revision trigger removes both hashes
+from OLD snapshots, and revision RLS fails closed without a tenant GUC. The
+credential cannot perform a POS mutation or change the public kiosk URL.
+Disposable restored-DB apply/reapply and RLS/grant tests remain a pilot gate.
+
 `9.45` does not add a second payment or kitchen ledger. Split tender continues to write the normal
 POS payment allocations, and KDS polling reads the existing branch-scoped ticket rows. Its only
 schema addition is modifier catalog pricing plus the restaurant-specific RBAC seeds.

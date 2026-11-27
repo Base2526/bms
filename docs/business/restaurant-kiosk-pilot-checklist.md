@@ -78,6 +78,23 @@ pure 4,030 (ผ่าน 4,024, ข้าม 6, ล้ม 0), typecheck แล�
 
 ## Go / No-Go
 
+### Desktop Kiosk shell และ PIN ดูแลจอ (เพิ่มใน pilot gate)
+
+บนฐาน dev restore ที่ทิ้งได้และยืนยัน host/database แล้ว รัน `BMS_KIOSK_RESTORED_DB=1 node scripts/run-contract-tests.mjs db restaurant-kiosk-device-db-contract` จาก root (PowerShell ตั้ง environment variable ก่อนรัน) เพื่อพิสูจน์ `10.146`, การลอง PIN พร้อมกัน, การล็อก, การเปลี่ยน PIN, การหมุน credential และ audit; ถ้าไม่มีฐานดังกล่าวให้บันทึกว่า **ไม่ได้ทดสอบ**
+
+| ขั้นตอน | ผลที่ต้องเห็น | หลักฐาน |
+| --- | --- | --- |
+| Apply/reapply `10.146` บนฐาน restore ที่ทิ้งได้ | unique หนึ่งเครื่องต่อสาขา, FK, grants, RLS เมื่อไม่มี tenant GUC, locator เฉพาะ credential, revision ไม่มี hash | SQL assertion และ migration log |
+| ลงทะเบียนเครื่องในหลังบ้านเฉพาะสาขาที่มีสิทธิ์ ตั้ง PIN และคัดลอกรหัสเครื่องครั้งเดียว | รายการแสดงสถานะ/เวลาเปลี่ยน แต่ไม่แสดง PIN/hash; ผู้ไม่มีสิทธิ์หรือผิดสาขาถูกปฏิเสธ | ภาพหลังบ้านและ HTTP status ที่ปิดบัง credential |
+| ติดตั้ง URL จาก POS และรหัสเครื่องบน Desktop Kiosk | backend ยืนยันว่าสาขาเดียวกันก่อนเปิด `/kiosk/[token]`; guest ไม่มี preload/IPC/POS token | ภาพจอ, process inspection, network trace ที่ปิด token |
+| กรอก PIN ถูก/ผิด 5 ครั้งพร้อมกัน/ล็อก/เปลี่ยน PIN/เพิกถอนเครื่อง | ถูกเปิดตั้งค่าได้ 2 นาทีเท่านั้น; PIN เก่าและ credential เก่าใช้ไม่ได้; customer page ปิดเมื่อเพิกถอน | วิดีโอ, audit ที่ไม่เก็บ PIN, count/lock timestamp |
+| ปิดหน้าตั้งค่า, restart แอป, เน็ตล้ม, secure storage เสีย | ไม่คืนสถานะปลดล็อก; PIN ที่ตรวจไม่ได้ fail closed; IT กู้ผ่านบัญชี OS โดยไม่ลบคำขอขาย | คลิปและคู่มือ recovery |
+| ต่อ HDMI/USB touch, calibration, scaling, reboot และกลับจากเน็ตล้ม | จอลูกค้าแสดงถูกต้อง, ตั้งค่าต้องใช้ PIN, พนักงานตรวจคำขอใน POS ก่อนคีย์ซ้ำ | คลิป/ภาพจอและรหัสคำขอที่ตัดข้อมูล |
+| ตรวจ Windows edition และเลือก OS lockdown สำหรับ Electron | แยกบัญชีจอลูกค้าแบบ standard จาก IT admin; ถ้าใช้ Shell Launcher ต้องเป็น edition ที่รองรับและตั้งนโยบายล็อกเพิ่ม; ทดสอบ Alt+Tab/Alt+F4/Windows key/USB keyboard | edition/build, policy, วิดีโอทุกปุ่ม; อ้างอิง Microsoft Learn ใน README ของแอป |
+| อัปเกรด/rollback installer และ login/reboot ด้วยบัญชีจอลูกค้า | เปิดเองหลัง sign-in, URL encrypted เดิมยังอ่านได้เมื่อ upgrade, downgrade ไม่ทำ config เสียเงียบ | installer hash/version, screenshot หลัง reboot, ผล getLoginItemSettings/OS policy |
+
+ชุด Electron smoke ใช้ fixture และหน้าต่างที่สร้างในเครื่องพัฒนาเท่านั้น ไม่เท่ากับการทดสอบจอ 1080×1920, USB touch หรือเครื่องพิมพ์จริง
+
 **Go เฉพาะ pilot มีพนักงานกำกับ 1 สาขา** เมื่อฐาน restore ผ่านทุกกรณี P0 ที่มีเงินจริง/สต็อก, จอ touch + POS + KDS/เครื่องพิมพ์ + receipt/queue ผ่านจริง, พนักงานซ้อม fallback, มีผู้เฝ้าคำขอทุกช่วงเปิดจอ และผู้จัดการลงชื่อรับความเสี่ยงที่ยังเหลือ หากข้อใดไม่มีผลทดสอบ ให้เป็น **No-Go** แม้ `npm run gate` ผ่าน
 
 ก่อนขยายหลายสาขา: พิสูจน์ RLS/token locator ที่เพิ่มแล้ว; เสนอให้แปลง `PENDING` ที่เกิน 30 นาทีเป็น `EXPIRED` แล้วลบ proposal ที่ปฏิเสธ/หมดอายุเมื่อเกิน 30 วัน และลบ proposal ที่รับแล้วเมื่อเกิน 365 วัน โดยคง check/order/payment/receipt/audit ตามนโยบายหลักของระบบและเก็บ mapping ใน audit — ต้องให้เจ้าของข้อมูลอนุมัติช่วงเวลาและทดสอบ cleanup/restore ก่อนเปิด worker; เพิ่ม monitoring อายุ pending, acceptance failure, rate-limit, queue issue, KDS/print โดยใช้ metrics/structured logs ที่มีอยู่แทนการเขียน per-request ลง Postgres; load test Redis outage/429/503 หลาย instance และ fleet ceiling, 100 pending และตัดสินใจโมเดล URL ต่อเครื่องหรือสาขา. Kiosk throttling ไม่ใช้ `x-forwarded-for` เป็นฐาน IP limit

@@ -2824,7 +2824,34 @@ client-supplied `x-forwarded-for` is ignored for kiosk throttling. The global ce
 multi-branch load test before broad rollout. Retention/cleanup and fleet monitoring remain
 multi-branch work.
 
-Before the first live pilot, apply `10.144` and `10.145` on a disposable restored database and exercise the
+**Standalone Desktop Kiosk shell (`apps/kiosk-desktop`, `10.146`).** The customer
+window loads only the exact approved `/kiosk/[token]` URL in a sandboxed Electron
+renderer with no preload, POS pairing, cashier PIN, IPC bridge or payment access.
+The local red-and-white setup/PIN/recovery screens are a separate renderer. A
+branch-scoped `restaurant.floor.manage` administrator registers one active kiosk
+device per branch at `/admin/restaurant-floor`, receives a dedicated one-time
+device credential, and sets a 6–8 digit maintenance PIN. Staff then install
+that credential and the public URL on the touch machine. The backend binds both
+to the same active branch, displays server-derived shop/branch names for staff
+confirmation, and rechecks the binding before saving/opening the customer page.
+The credential is
+stored with the OS secure-storage facility; the public URL alone cannot verify
+the PIN. The maintenance PIN unlocks local settings only, for two minutes; it
+cannot review proposals, issue URLs, open checks or take payment. Cashier PINs
+remain at `/admin/pos-devices` and retain the POS authorities. Press
+`Ctrl+Alt+K` on the kiosk hardware to enter the local PIN screen; the recovery
+screen also offers staff settings behind the same PIN. A revoked device, rotated
+URL or missing PIN closes the guest window. A transient heartbeat network
+failure leaves the current Web guest and cart alone; its own API errors remain
+visible. A rotated device
+credential requires OS administrator recovery and reprovisioning. Staff search
+the request code in POS before any manual re-entry. Restored-DB, physical
+USB-touch, KDS and payment acceptance remain pilot gates.
+Catalog images may use external URLs; the customer route and native guest
+strip the kiosk URL from external `Referer` headers while keeping the Web image
+fallback for a failed image.
+
+Before the first live pilot, apply `10.144`, `10.145` and `10.146` on a disposable restored database and exercise the
 following with a paired POS, an open shift and a separate touch screen. Use test products and
 reverse test bills through the normal POS flow; do not run these checks against live customer data.
 

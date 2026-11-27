@@ -20,6 +20,13 @@ try {
       if (path === '/api/auth/me') return route.fulfill({ json: { isAuthenticated: true,
         admin: { id: 'FAKE-admin', role: 'Administrator', name: 'Fixture manager' } } });
       if (path === '/api/realtime/ticket') return route.fulfill({ json: { ticket: 'FAKE' } });
+      if (path === '/api/bms/restaurant-kiosk-devices') return route.fulfill({ json: { devices: [
+        { id: 'FAKE-device-active', locationId: 'FAKE-branch', label: 'จอหน้าร้าน', active: true,
+          hasPin: true, pinSetAt: '2026-11-26T10:00:00.000Z',
+          pinLockedUntil: '2099-01-01T00:00:00.000Z', createdAt: '2026-11-26T09:00:00.000Z' },
+        { id: 'FAKE-device-revoked', locationId: 'FAKE-branch', label: 'จอเก่า', active: false,
+          hasPin: false, pinSetAt: null, pinLockedUntil: null, createdAt: '2026-11-20T09:00:00.000Z' },
+      ] } });
       if (path !== '/api/graphql') return route.fulfill({ json: {} });
       const data = {};
       for (const definition of parse(route.request().postDataJSON().query).definitions) {
@@ -45,10 +52,17 @@ try {
     assert.equal(response.status(), 200);
     await page.getByText('จอสั่งอาหารหน้าร้าน').waitFor();
     await page.getByText('2 คำขอรอตรวจ').waitFor();
+    await page.getByText('จอ Kiosk · PIN ดูแลเครื่อง').waitFor();
+    await page.getByText('ล็อกชั่วคราว').waitFor();
+    await page.getByText('ยังไม่ตั้ง').waitFor();
     assert.equal(await page.getByRole('link', { name: 'เปิดงานจอสั่งอาหารใน POS' }).getAttribute('href'), '/pos/restaurant?screen=kiosk');
     assert.equal(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth + 2), true);
     assert.deepEqual(errors, []);
     await page.screenshot({ path: `.test-output/restaurant-kiosk-admin-browser/floor-${width}.png`, fullPage: true });
+    await page.getByRole('button', { name: 'เปลี่ยน PIN' }).click();
+    await page.getByText('ตั้ง PIN ดูแลเครื่อง Kiosk').waitFor();
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `.test-output/restaurant-kiosk-admin-browser/maintenance-pin-${width}.png`, fullPage: true });
     console.log(`admin floor kiosk fixture ${width}px OK`);
     await context.close();
   }

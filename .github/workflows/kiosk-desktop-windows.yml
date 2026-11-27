@@ -1,0 +1,59 @@
+name: Desktop Kiosk Windows package
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/kiosk-desktop/**"
+      - ".github/workflows/kiosk-desktop-windows.yml"
+  push:
+    branches:
+      - develop
+    paths:
+      - "apps/kiosk-desktop/**"
+      - ".github/workflows/kiosk-desktop-windows.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  kiosk-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/kiosk-desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/kiosk-desktop/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Check sources
+        run: npm run lint
+      - name: Unit tests
+        run: npm test
+      - name: Electron local-shell fixture
+        run: npm run test:smoke
+      - name: Electron native-main fixture
+        run: npm run test:integration
+      - name: Upload shell fixture screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bms-kiosk-shell-smoke-${{ github.sha }}
+          path: .test-output/kiosk-desktop-shell/*.png
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Build Windows x64 installer
+        run: npm run pack:win
+      - name: Upload internal pilot installer (signing must be verified separately)
+        uses: actions/upload-artifact@v4
+        with:
+          name: bms-kiosk-windows-${{ github.sha }}
+          path: apps/kiosk-desktop/dist/*.exe
+          if-no-files-found: error
+          retention-days: 14

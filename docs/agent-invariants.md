@@ -1164,6 +1164,16 @@ own dine-in service. Operator detail:
   the ordinary reservation/KDS round in one transaction. Pending requests expire after 30 minutes;
   rotation or disable expires them immediately. The public screen never settles or mints a pickup
   queue number.
+  A standalone Desktop Kiosk (`10.146`) has a separate branch-bound device
+  credential and maintenance PIN. Neither is a cashier PIN or POS device token.
+  Guest renderer has no preload/IPC; only the bundled local staff renderer may
+  ask native main to verify PIN through the device-only backend endpoint. The
+  maintenance PIN unlocks local settings, never order review or URL issuance.
+  The native app fails closed on missing secure storage, revoked credential,
+  invalid URL binding and PIN/network failure. Device and PIN hashes must not
+  appear in audit, revision snapshots, logs or admin list responses.
+  The customer route uses `no-referrer`; the native guest strips external
+  `Referer` headers so a third-party catalog image cannot receive the URL token.
   Staff review uses a server-computed catalog quote and compares its fingerprint when accepting;
   acceptance resolves and rechecks the quote on the same transaction connection as the check,
   reservation and kitchen work. The fingerprint includes option labels and group rules, and the

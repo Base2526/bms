@@ -78,6 +78,7 @@ try {
     page.on("pageerror", (error) => errors.push(error.message));
     try {
       const response = await page.goto(`${base}/kiosk/${token}`, { waitUntil: "domcontentloaded", timeout: 120000 });
+      assert.equal(await page.locator('meta[name="referrer"]').getAttribute('content'), 'no-referrer');
       assert.equal(response.status(), 200);
       await page.getByRole("heading", { name: /มื้ออร่อย/ }).waitFor();
       await page.locator('img[src="/sample/restaurant/friedrice-pork.jpg"]').first().evaluate((image) => image.decode());

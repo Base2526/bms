@@ -16,6 +16,7 @@ function walk(dir) {
 const candidates = ["scripts", "apps", "packages"].flatMap(walk).filter(file =>
   /(?:\.test\.(?:mts|mjs|ts|tsx|sh|ps1)|_test\.go|-browser-smoke\.mjs|-smoke\.(?:mts|mjs)|smoke-main\.mjs|-mutations\.mjs)$/.test(file)
   || file === "scripts/ai-eval/run.mjs"
+  || file === "apps/kiosk-desktop/test/smoke.mjs"
 ).sort();
 const manualSpecial = new Set([
   "scripts/audit-actor-flow-perf-smoke.mjs",
@@ -44,6 +45,8 @@ function classify(file) {
   if (file === "scripts/ai-eval/run.mjs") return "live-model-manual";
   if (/^apps\/mobile\/.+\.test\.tsx?$/.test(file)) return "mobile-ci";
   if (/^apps\/desktop\/test\/.+\.test\.mjs$/.test(file)) return "desktop-ci";
+  if (/^apps\/kiosk-desktop\/test\/.+\.test\.mjs$/.test(file)) return "desktop-ci";
+  if (file === "apps/kiosk-desktop/test/smoke.mjs" || /^apps\/kiosk-desktop\/test\/.+-smoke\.mjs$/.test(file)) return "desktop-ci";
   if (file === "apps/desktop/test/smoke-main.mjs") return "desktop-ci";
   if (/^apps\/desktop\/test\/.+-smoke\.mjs$/.test(file)) return "desktop-manual";
   if (/^apps\/retail-local-agent\/.+_test\.go$/.test(file)) return "go-ci";

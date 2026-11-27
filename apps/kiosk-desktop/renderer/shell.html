@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'" />
+  <title>BMS Kiosk</title>
+  <link rel="stylesheet" href="./shell.css" />
+</head>
+<body>
+  <main id="setup" class="setup-screen" hidden>
+    <header class="topbar"><span class="brand"><span class="brand-mark">B</span>BMS KIOSK</span><span data-text="staffOnly"></span></header>
+    <div class="setup-content">
+      <aside class="red-panel"><small data-text="start"></small><h1 data-text="connectTitle"></h1><p data-text="connectDescription"></p><div class="device-label">▣ &nbsp;<span data-text="customerDevice"></span></div></aside>
+      <section class="form-panel" aria-labelledby="setup-title">
+        <div class="step"><span>01</span><div><h2 id="setup-title" data-text="setupTitle"></h2><small data-text="setupSubtitle"></small></div></div>
+        <form id="setup-form" novalidate>
+          <label for="kiosk-url" data-text="urlLabel"></label>
+          <input id="kiosk-url" type="url" inputmode="url" autocomplete="off" spellcheck="false" required />
+          <label for="device-token" data-text="credentialLabel"></label>
+          <input id="device-token" type="password" autocomplete="off" spellcheck="false" />
+          <small id="credential-hint" data-text="credentialHint"></small>
+          <div id="setup-status" class="status" role="status" aria-live="polite" hidden></div>
+          <button id="setup-submit" type="submit" class="secondary" data-text="verifyBranch"></button>
+          <button id="setup-open" type="button" class="primary" data-text="openCustomer" hidden></button>
+        </form>
+        <p class="small-note" data-text="noPosAccess"></p>
+      </section>
+    </div>
+    <footer class="footer"><span data-text="customerOnly"></span><button type="button" class="language" data-toggle-language>TH · EN</button></footer>
+  </main>
+
+  <main id="pin" class="pin-screen" hidden>
+    <header class="topbar"><span class="brand"><span class="brand-mark">B</span>BMS KIOSK</span><button type="button" class="language" data-toggle-language>TH · EN</button></header>
+    <section class="pin-content" aria-labelledby="pin-title"><div class="pin-icon" aria-hidden="true">▣</div><small data-text="staffOnly"></small><h1 id="pin-title" data-text="pinTitle"></h1><p data-text="pinDescription"></p>
+      <form id="pin-form"><label for="maintenance-pin" data-text="pinLabel"></label><input id="maintenance-pin" type="password" inputmode="numeric" pattern="[0-9]{6,8}" maxlength="8" autocomplete="off" required />
+        <div id="pin-status" class="status" role="status" aria-live="polite" hidden></div><button id="pin-submit" type="submit" class="primary" data-text="unlock"></button></form>
+      <button id="pin-cancel" type="button" class="quiet" data-text="backToCustomer"></button>
+    </section>
+  </main>
+
+  <main id="recovery" class="recovery-screen" hidden>
+    <header class="topbar"><span class="brand"><span class="brand-mark">B</span>BMS ORDER</span><button type="button" class="language" data-toggle-language>TH · EN</button></header>
+    <section class="recovery-content" aria-labelledby="recovery-title"><div class="warning-icon" aria-hidden="true">!</div><small data-text="unavailable"></small><h1 id="recovery-title"></h1><p id="recovery-description"></p><button id="retry" type="button" class="primary" data-text="retry"></button><div id="recovery-status" class="status" role="status" aria-live="polite" hidden></div><button id="open-maintenance" type="button" class="quiet" data-text="staffSettings"></button><small data-text="checkPosBeforeRetry"></small></section>
+    <footer class="recovery-footer" data-text="staffCanSearch"></footer>
+  </main>
+  <script src="./shell.js"></script>
+</body>
+</html>
