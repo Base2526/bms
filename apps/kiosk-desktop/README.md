@@ -117,8 +117,9 @@ packages are separate release channels. The customer kiosk page has no download.
 After a customer submits a request, the branch manager can search its visible request code at
 `/admin/restaurant-floor` under **Track kiosk requests**. This read-only view distinguishes a
 pending proposal, an accepted check and a paid POS sale, with the check's current order, receipt
-and pickup number when present. A split after acceptance is marked for POS review because moved
-items may be paid on another check. It does not authorize acceptance or payment. If the read fails,
+and pickup number when present. New accepted requests also retain each check-item identity so
+the manager can follow items after later kitchen rounds or split/merge. Incomplete legacy or
+partially returned evidence requires POS review. It does not authorize acceptance or payment. If the read fails,
 staff verify the code and bill in the paired POS before entering anything again.
 
 The platform administrator records the SHA-256, uploads the NSIS `.exe` as a

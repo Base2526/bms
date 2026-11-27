@@ -16,6 +16,7 @@ test("kiosk migrations reapply and bms_app enforces token/tenant RLS, branch FK 
   const first = await migration("10.144__bms_restaurant_kiosk_ordering.sql");
   const hardening = await migration("10.145__bms_restaurant_kiosk_rls_scope.sql");
   const acceptedOrder = await migration("10.148__bms_restaurant_kiosk_accepted_order.sql");
+  const lineTrace = await migration("10.149__bms_restaurant_kiosk_item_trace.sql");
   const uuid = async (sql: string, args: unknown[] = []) =>
     (await client.query<{ id: string }>(sql, args)).rows[0].id;
   const reject = async (sql: string, args: unknown[], state: string) => {
@@ -33,6 +34,8 @@ test("kiosk migrations reapply and bms_app enforces token/tenant RLS, branch FK 
     await client.query(hardening);
     await client.query(acceptedOrder);
     await client.query(acceptedOrder);
+    await client.query(lineTrace);
+    await client.query(lineTrace);
     const acceptedColumn = await client.query(
       `SELECT 1 FROM information_schema.columns
         WHERE table_name='bms_restaurant_kiosk_submissions' AND column_name='accepted_order_id'`);
@@ -41,6 +44,24 @@ test("kiosk migrations reapply and bms_app enforces token/tenant RLS, branch FK 
       `SELECT 1 FROM pg_constraint WHERE conrelid='bms_restaurant_kiosk_submissions'::regclass
         AND conname='bms_restaurant_kiosk_accepted_order_location_fk' AND contype='f'`);
     assert.equal(acceptedFk.rowCount, 1);
+    const traceSchema = await client.query<{ forced: boolean; fk_count: string; can_read: boolean; can_insert: boolean; can_update: boolean }>(
+      `SELECT c.relforcerowsecurity AS forced,
+              (SELECT count(*)::text FROM pg_constraint k
+                WHERE k.conrelid = c.oid AND k.contype = 'f') AS fk_count,
+              has_table_privilege('bms_app', c.oid, 'SELECT') AS can_read,
+              has_table_privilege('bms_app', c.oid, 'INSERT') AS can_insert,
+              has_table_privilege('bms_app', c.oid, 'UPDATE') AS can_update
+         FROM pg_class c WHERE c.oid = 'bms_restaurant_kiosk_submission_items'::regclass`);
+    assert.deepEqual(traceSchema.rows[0], {
+      forced: true, fk_count: "3", can_read: true, can_insert: true, can_update: false,
+    });
+    const tracePolicy = await client.query<{ qual: string; with_check: string }>(
+      `SELECT qual, with_check FROM pg_policies
+        WHERE tablename = 'bms_restaurant_kiosk_submission_items'
+          AND policyname = 'bms_restaurant_kiosk_submission_items_tenant'`);
+    assert.equal(tracePolicy.rowCount, 1);
+    assert.match(tracePolicy.rows[0].qual, /current_setting\('bms.tenant_id'/);
+    assert.doesNotMatch(tracePolicy.rows[0].qual, /COALESCE/);
     const tag = `fake-kiosk-db-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const tenant = await uuid("INSERT INTO bms_tenants (name, slug) VALUES ($1,$1) RETURNING id", [tag]);
     const otherTenant = await uuid("INSERT INTO bms_tenants (name, slug) VALUES ($1,$1) RETURNING id", [`${tag}-other`]);
@@ -93,6 +114,7 @@ test("kiosk migrations reapply and bms_app enforces token/tenant RLS, branch FK 
       `SELECT count(*)::text AS n FROM ${table}`)).rows[0].n);
     assert.equal(await count("bms_restaurant_kiosks"), 0);
     assert.equal(await count("bms_restaurant_kiosk_submissions"), 0);
+    assert.equal(await count("bms_restaurant_kiosk_submission_items"), 0);
     await client.query("SELECT set_config('bms.kiosk_token_hash', $1, true)", [tokenHash]);
     assert.equal(await count("bms_restaurant_kiosks"), 1);
     assert.equal(await count("bms_restaurant_kiosk_submissions"), 0);

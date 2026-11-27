@@ -2790,14 +2790,17 @@ only a bounded branch history without basket notes or device credentials. `PENDI
 and `EXPIRED` are proposals, never sales. An accepted request links to its check; the displayed
 order is the **current check order**, because later kitchen rounds can replace an earlier pending
 reservation. From `10.148`, the trace also preserves the **order created at acceptance** as
-immutable provenance; older accepted requests may have no recorded acceptance order. `PAID`
-requires the check to be paid and the current order to be completed with a
-payment time. This confirms payment for the linked check, not that every original proposal line
-survived later cancellation or return. The view shows confirmed payment IDs, the active receipt or full tax invoice and the
-existing pickup number when present. A closing, inconsistent or returned bill tells the manager
-to verify POS sale history rather than claiming a fresh payment. If the accepted check was later
-split, the request is marked for POS review even if the original check is paid: moved items may
-belong to another bill. This trace is a lookup, not a
+immutable provenance; older accepted requests may have no recorded acceptance order. `10.149`
+records each accepted proposal line's check-item ID in the same transaction as stock reservation
+and kitchen send. The manager trace follows each line to its current check and current order after
+later rounds or split/merge, and shows kitchen and return evidence without customer notes. `PAID`
+requires every mapped line to have an order item on a PAID check with a COMPLETED order and a
+payment time. Partial return, cancellation, missing mapping or inconsistent evidence requires POS
+review; older accepted requests have no line mapping and remain review-only. `RETURNED` requires
+return quantity covering every line. Top-level payment IDs and receipt belong to the check at
+acceptance; after a split, use each line's current order ID in POS to inspect its payment and
+receipt. The existing pickup number appears only for a paid takeaway when issued after sale.
+This trace is a lookup, not a
 new sales ledger; existing POS reports and settlement remain authoritative. If a status read fails,
 check the request code and exact bill at POS before re-entering anything.
 

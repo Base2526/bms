@@ -63,6 +63,18 @@ try {
             receiptId: null, receiptNo: 'RC-123', receiptType: 'ABBREVIATED',
             tableCode: null, tableName: null, areaName: null, splitGroupNo: null,
             hasSplitDescendant: traceMode === 'split',
+            lineTraceComplete: true,
+            lines: [{ lineNo: 1, checkItemId: '66666666-6666-4666-8666-666666666666',
+              productName: 'Fixture meal', quantity: 1,
+              currentCheckId: traceMode === 'split' ? '77777777-7777-4777-8777-777777777777'
+                : '22222222-2222-4222-8222-222222222222',
+              checkStatus: traceMode === 'split' ? 'OPEN' : 'PAID',
+              currentOrderId: traceMode === 'split' ? '88888888-8888-4888-8888-888888888888'
+                : '33333333-3333-4333-8333-333333333333',
+              orderStatus: traceMode === 'split' ? 'PENDING' : 'COMPLETED',
+              kitchenStatus: 'READY', returnedQuantity: 0,
+              settlement: traceMode === 'split' ? 'UNPAID' : 'PAID',
+              paidAt: traceMode === 'split' ? null : '2026-11-27T01:02:00.000Z' }],
             pickupNumber: traceMode === 'split' ? null : 'A007', pickupStatus: 'READY' },
         ] } });
       }
@@ -111,13 +123,16 @@ try {
     assert.equal(response.status(), 200);
     await page.getByText(lang === 'en' ? 'Customer ordering screen' : 'จอสั่งอาหารหน้าร้าน').waitFor();
     await page.getByText(lang === 'en' ? 'Track kiosk requests' : 'ติดตามคำขอจากจอ').waitFor();
-    await page.getByText(lang === 'en' ? 'Linked check paid at POS' : 'บิลที่ผูกชำระที่ POS แล้ว').waitFor();
+    await page.getByText(lang === 'en' ? 'All request items paid at POS' : 'รายการจากคำขอนี้ชำระครบที่ POS').waitFor();
     await page.getByText('RC-123').waitFor();
     await page.getByText(lang === 'en' ? 'Order created at acceptance' : 'ออเดอร์ตอนรับคำขอ').waitFor();
+    await page.locator('summary').filter({ hasText: lang === 'en' ? 'Trace 1 ordered items' : 'ติดตามรายการอาหาร 1 รายการ' }).click();
+    await page.getByText('Fixture meal').waitFor();
+    await page.getByText(lang === 'en' ? 'Kitchen: Ready' : 'ครัว: พร้อมเสิร์ฟ').waitFor();
     await page.getByText(/A007/).waitFor();
     await page.getByRole('textbox', { name: lang === 'en' ? 'Customer request code' : 'รหัสคำขอของลูกค้า' }).fill('11111111');
     await page.getByRole('button', { name: lang === 'en' ? 'Search' : 'ค้นหา', exact: true }).click();
-    await page.getByText(lang === 'en' ? 'Linked check paid at POS' : 'บิลที่ผูกชำระที่ POS แล้ว').waitFor();
+    await page.getByText(lang === 'en' ? 'All request items paid at POS' : 'รายการจากคำขอนี้ชำระครบที่ POS').waitFor();
     await page.getByText(lang === 'en' ? '2 pending requests' : '2 คำขอรอตรวจ').waitFor();
     await page.getByText(lang === 'en' ? 'Kiosk screen · maintenance PIN' : 'จอ Kiosk · PIN ดูแลเครื่อง').waitFor();
     await page.getByText(lang === 'en' ? 'Locked' : 'ล็อกชั่วคราว').waitFor();
@@ -142,13 +157,15 @@ try {
     traceMode = 'split';
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.getByText(lang === 'en' ? 'This bill was split.' : 'บิลนี้ถูกแยก').waitFor();
-    assert.equal(await page.getByText(lang === 'en' ? 'Linked check paid at POS' : 'บิลที่ผูกชำระที่ POS แล้ว').count(), 0);
+    await page.locator('summary').filter({ hasText: lang === 'en' ? 'Trace 1 ordered items' : 'ติดตามรายการอาหาร 1 รายการ' }).click();
+    await page.getByText('77777777-7777-4777-8777-777777777777').waitFor();
+    assert.equal(await page.getByText(lang === 'en' ? 'All request items paid at POS' : 'รายการจากคำขอนี้ชำระครบที่ POS').count(), 0);
     await page.screenshot({ path: `.test-output/restaurant-kiosk-admin-browser/trace-split-${width}-${lang}.png`, fullPage: true });
     traceMode = 'error';
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.getByText(lang === 'en' ? 'Cannot verify request status. Check the POS before entering a new order.'
       : 'ตรวจสถานะคำขอไม่ได้ ตรวจใน POS ก่อนคีย์รายการใหม่').waitFor();
-    assert.equal(await page.getByText(lang === 'en' ? 'Linked check paid at POS' : 'บิลที่ผูกชำระที่ POS แล้ว').count(), 0);
+    assert.equal(await page.getByText(lang === 'en' ? 'All request items paid at POS' : 'รายการจากคำขอนี้ชำระครบที่ POS').count(), 0);
     await page.screenshot({ path: `.test-output/restaurant-kiosk-admin-browser/trace-error-${width}-${lang}.png`, fullPage: true });
     traceMode = 'ready';
     releaseMode = 'none';

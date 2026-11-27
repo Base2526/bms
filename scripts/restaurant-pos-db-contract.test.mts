@@ -44,6 +44,7 @@ import { listRecentPosSales, resolvePosScan, previewRestaurantPosPricing } from 
 import { customerOrderDetail } from "../apps/web/lib/bms/customers.ts";
 import { setMenuTemporarilyUnavailable } from "../apps/web/lib/bms/menuAvailability.ts";
 import { acceptRestaurantQrSubmission } from "../apps/web/lib/bms/restaurantPos.ts";
+import { listRestaurantKioskTrace } from "../apps/web/lib/bms/restaurantKioskTrace.ts";
 import { issueRestaurantKiosk, listRestaurantKioskSubmissions, previewRestaurantKioskSubmission,
   restaurantKioskSubmissionStatus, submitRestaurantKioskOrder } from "../apps/web/lib/bms/restaurantKiosk.ts";
 import {
@@ -2349,6 +2350,28 @@ test("kiosk proposals map two takeaway requests to distinct reserved bills and r
     [tenantId, submissions.map((entry) => entry.submissionId)]);
   assert.equal(acceptedRows.rowCount, 2);
   for (const accepted of acceptedRows.rows) assert.ok(accepted.accepted_order_id);
+  const lineLinks = await query<{ submission_id: string; check_item_id: string; line_no: number }>(
+    `SELECT submission_id, check_item_id, line_no
+       FROM bms_restaurant_kiosk_submission_items
+      WHERE tenant_id = $1 AND location_id = $2 AND submission_id = ANY($3::uuid[])
+      ORDER BY submission_id, line_no`,
+    [tenantId, locationId, submissions.map((entry) => entry.submissionId)]);
+  assert.equal(lineLinks.rowCount, 2);
+  assert.equal(new Set(lineLinks.rows.map((entry) => entry.check_item_id)).size, 2);
+  assert.ok(lineLinks.rows.every((entry) => Number(entry.line_no) === 1));
+  await assert.rejects(query(
+    `INSERT INTO bms_restaurant_kiosk_submission_items
+       (tenant_id, location_id, submission_id, line_no, check_item_id)
+     VALUES ($1,$2,$3,1,$4)`,
+    [tenantId, locationId, submissions[0].submissionId,
+      lineLinks.rows.find((entry) => entry.submission_id === submissions[1].submissionId)!.check_item_id]),
+  (error: unknown) => (error as { code?: string }).code === "P0001",
+  "a line from another accepted check must not be re-linked by direct SQL");
+  const firstTrace = await listRestaurantKioskTrace(tenantId, locationId, submissions[0].submissionId.slice(0, 8));
+  assert.equal(firstTrace.length, 1);
+  assert.equal(firstTrace[0].lineTraceComplete, true);
+  assert.equal(firstTrace[0].lines[0].currentCheckId, firstCheck!.id);
+  assert.equal(firstTrace[0].settlement, "UNPAID");
   assert.equal((await restaurantKioskSubmissionStatus(token, submissions[0].submissionId)).status, "ACCEPTED");
   assert.equal((await query<{ n: string }>(
     `SELECT COUNT(*)::text AS n FROM bms_restaurant_kitchen_tickets
@@ -2377,6 +2400,10 @@ test("kiosk proposals map two takeaway requests to distinct reserved bills and r
   assert.equal(Number((await kioskStock(sku)).reserved_stock), 3);
   assert.equal(Number((await kioskStock(lastSku)).reserved_stock), 0);
   assert.equal((await restaurantKioskSubmissionStatus(token, twenty.submissionId)).status, "PENDING");
+  assert.equal((await query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM bms_restaurant_kiosk_submission_items
+      WHERE tenant_id = $1 AND submission_id = $2`,
+    [tenantId, twenty.submissionId])).rows[0].n, "0");
   await addRestaurantCheckItem({ tenantId, locationId, checkId: firstCheck!.id,
     actorUserId: waiterId, sku, size: "BASE", packQty: 1 });
   const laterRound = await sendRestaurantKitchenRound({ tenantId, locationId, deviceId: device,
@@ -2386,6 +2413,54 @@ test("kiosk proposals map two takeaway requests to distinct reserved bills and r
     submissions[0].submissionId.slice(0, 8));
   assert.equal(afterRound[0].acceptedOrderId, mapped[0].acceptedOrderId);
   assert.notEqual(afterRound[0].orderId, mapped[0].acceptedOrderId);
+  const laterTrace = await listRestaurantKioskTrace(tenantId, locationId, submissions[0].submissionId.slice(0, 8));
+  assert.equal(laterTrace[0].lines[0].checkItemId, firstTrace[0].lines[0].checkItemId);
+  assert.equal(laterTrace[0].lines[0].currentOrderId, afterRound[0].orderId);
+  assert.equal(laterTrace[0].settlement, "UNPAID");
+
+  const table = await makeSplitTable(`T-KIOSK-${Date.now()}`);
+  const dineIn = await openRestaurantCheck({ tenantId, locationId, deviceId: device,
+    shiftId: shift, tableId: table.id, guestCount: 2, actorUserId: waiterId });
+  const dineRequest = await submitRestaurantKioskOrder({ token, serviceMode: "DINE_IN",
+    idempotencyKey: `fake-kiosk-dine-${Date.now()}`,
+    items: [{ sku, size: "BASE", packQty: 1 }, { sku, size: "BASE", packQty: 1 }] });
+  const dineQuote = await previewRestaurantKioskSubmission({ tenantId, locationId,
+    submissionId: dineRequest.submissionId });
+  const acceptedDine = await acceptRestaurantKioskSubmission({ tenantId, locationId,
+    deviceId: device, shiftId: shift, actorUserId: waiterId,
+    submissionId: dineRequest.submissionId, checkId: dineIn!.id,
+    quoteFingerprint: dineQuote.quote.fingerprint, confirmedTable: true,
+    expectedCheckVersion: dineIn!.version, expectedTableId: dineIn!.tableId,
+    expectedCheckOpenedAt: dineIn!.openedAt });
+  assert.equal(acceptedDine.status, "ACCEPTED");
+  const beforeSplitTrace = (await listRestaurantKioskTrace(tenantId, locationId,
+    dineRequest.submissionId.slice(0, 8)))[0];
+  assert.equal(beforeSplitTrace.lines.length, 2);
+  const split = await splitRestaurantCheck({ tenantId, locationId, deviceId: device,
+    shiftId: shift, checkId: dineIn!.id, actorUserId: waiterId,
+    itemIds: [beforeSplitTrace.lines[0].checkItemId] });
+  const afterSplitTrace = (await listRestaurantKioskTrace(tenantId, locationId,
+    dineRequest.submissionId.slice(0, 8)))[0];
+  assert.equal(afterSplitTrace.lines[0].currentCheckId, split.target!.id);
+  assert.equal(afterSplitTrace.lines[1].currentCheckId, dineIn!.id);
+  assert.equal(afterSplitTrace.lines[0].kitchenStatus, "NEW");
+  assert.equal(afterSplitTrace.settlement, "UNPAID");
+  const paidOriginal = await settleRestaurantCheck({ tenantId, locationId, deviceId: device,
+    shiftId: shift, checkId: dineIn!.id, actorUserId: waiterId,
+    payments: [{ method: "CASH", amount: split.source!.amountDue }] });
+  assert.equal(paidOriginal.status, "SOLD");
+  const partiallyPaidTrace = (await listRestaurantKioskTrace(tenantId, locationId,
+    dineRequest.submissionId.slice(0, 8)))[0];
+  assert.equal(partiallyPaidTrace.settlement, "REVIEW");
+  assert.deepEqual(partiallyPaidTrace.lines.map((entry) => entry.settlement), ["UNPAID", "PAID"]);
+  const paidMoved = await settleRestaurantCheck({ tenantId, locationId, deviceId: device,
+    shiftId: shift, checkId: split.target!.id, actorUserId: waiterId,
+    payments: [{ method: "CASH", amount: split.target!.amountDue }] });
+  assert.equal(paidMoved.status, "SOLD");
+  const fullyPaidTrace = (await listRestaurantKioskTrace(tenantId, locationId,
+    dineRequest.submissionId.slice(0, 8)))[0];
+  assert.equal(fullyPaidTrace.settlement, "PAID");
+  assert.notEqual(fullyPaidTrace.lines[0].currentOrderId, fullyPaidTrace.lines[1].currentOrderId);
 });
 
 test("teardown: drop the throwaway tenant and everything under it", async () => {
@@ -2401,6 +2476,7 @@ test("teardown: drop the throwaway tenant and everything under it", async () => 
     [ids]
   );
   for (const table of [
+    "bms_restaurant_kiosk_submission_items",
     "bms_restaurant_kiosk_submissions",
     "bms_restaurant_kiosks",
     // QR (9.60) ต้องมาก่อน check_items และ products — FK ของ accepted_check_item_id และ

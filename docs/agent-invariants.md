@@ -1165,10 +1165,12 @@ own dine-in service. Operator detail:
   rotation or disable expires them immediately. The public screen never settles or mints a pickup
   queue number. The manager's request-code trace on the restaurant-floor page is a scoped, bounded
   read of proposal → check → current order → POS payment/receipt/pickup evidence. `10.148`
-  freezes the exact acceptance order ID on new proposals; older rows may be NULL. Later kitchen
-  rounds can replace a pending order on the same check. A paid linked check does not prove every
-  original kiosk line survived a later cancellation or return. A later check split requires POS review
-  because the original check's payment cannot prove moved items were paid. Never report a pending proposal as a sale
+  freezes the exact acceptance order ID on new proposals; older rows may be NULL. `10.149` also
+  inserts each newly accepted line's immutable check-item ID in the acceptance transaction. Trace
+  reads follow those IDs to their current check/order after later rounds or split/merge and inspect
+  return quantities. Only complete line evidence with every line paid may be called PAID; missing
+  legacy links, cancellation, partial return or inconsistent status require POS review. Original-check
+  payment IDs and receipt must not be presented as proof of moved lines. Never report a pending proposal as a sale
   or a CLOSING/RETURNED bill as newly paid; a failed trace read directs staff to verify at POS.
   A standalone Desktop Kiosk (`10.146`) has a separate branch-bound device
   credential and maintenance PIN. Neither is a cashier PIN or POS device token.

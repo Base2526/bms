@@ -9,11 +9,11 @@
 CART, PENDING/ACCEPTED/REJECTED/EXPIRED, unavailable และ network อยู่ใน
 `.test-output/restaurant-kiosk-browser/`. Browser fixture ของ `/pos/restaurant?screen=kiosk`
 และ `/admin/restaurant-floor` ผ่านที่ 1440/390 px โดยจำลอง API ใน Playwright
-รวมการค้นรหัสคำขอ, หลักฐานบิล/ชำระ, คำเตือนเมื่อแยกบิล และสถานะเมื่ออ่าน trace ไม่ได้
+รวมการค้นรหัสคำขอ, หลักฐานแต่ละรายการหลังแยกบิล, บิล/ชำระ, คำเตือนและสถานะเมื่ออ่าน trace ไม่ได้
 ไม่ได้ใช้ฐานหรือเครื่อง POS จริง; ภาพอยู่ใน
 `.test-output/restaurant-kiosk-pos-browser/` และ
 `.test-output/restaurant-kiosk-admin-browser/`. `cd apps/web && npm run gate` ผ่าน:
-pure 4,039 (ผ่าน 4,033, ข้าม 6, ล้ม 0), typecheck และ production build ผ่าน.
+pure 4,040 (ผ่าน 4,034, ข้าม 6, ล้ม 0), typecheck และ production build ผ่าน.
 `cd apps/mobile && npm test -- --runInBand` ผ่าน 524/524, typecheck ผ่าน; Desktop
 `npm test` ผ่าน 179/179 และ lint ผ่าน. Kiosk Desktop lint/unit 7/7, Electron smoke,
 native-main fixture และ Windows x64 package ผ่าน แต่ installer ล่าสุดยัง `NotSigned`.
@@ -37,11 +37,13 @@ native-main fixture และ Windows x64 package ผ่าน แต่ install
 
 ## ฐานข้อมูลที่ทิ้งได้
 
-เพิ่ม `10.147` และ `10.148` ในการ apply/reapply บนฐาน restore: ตรวจ release identity
+เพิ่ม `10.147`, `10.148` และ `10.149` ในการ apply/reapply บนฐาน restore: ตรวจ release identity
 ไม่ซ้ำ, branch grant composite FK, RLS/grants/revision/audit ภายใต้
 `bms_app` ทั้ง tenant GUC ถูก/ผิด/ว่าง และตรวจว่า migration ไม่เผยแพร่
 installer ใดเอง; ตรวจ accepted_order_id ผูก tenant/branch ถูกต้อง บังคับใน accept ใหม่
-แก้ย้อนหลังไม่ได้ และรายการเก่าที่ไม่รู้ order เดิมยังเป็น NULL ห้ามรันบน production
+แก้ย้อนหลังไม่ได้ และรายการเก่าที่ไม่รู้ order เดิมยังเป็น NULL; ตรวจ mapping รายบรรทัด
+`10.149` ว่า FK/unique/trigger/RLS/revision/grants บังคับสาขาและตัวตนรายการจริง
+รีรันแล้วไม่ซ้ำ ห้ามรันบน production
 
 ## ไฟล์ติดตั้งและการเผยแพร่
 
@@ -67,7 +69,7 @@ installer ใดเอง; ตรวจ accepted_order_id ผูก tenant/branc
 | Submit key เดิมพร้อมกัน/ส่งซ้ำ | submission เดียวและรหัสเดิม | count/idempotency result |
 | รับคำขอเดียวกันจาก POS สองเครื่องพร้อมกันและทำให้ response แรกหาย | check/order/reservation/ticket/audit อย่างละชุด; replay ชี้ check เดิม; accepted_order_id ตรง order ที่สร้างใน transaction | row ids/count/stock movement |
 | ส่งครัวรอบถัดไปแล้วค้นรหัสคำขอเดิม | accepted_order_id คงเดิม ส่วน current_order_id ชี้รอบล่าสุด; การชำระอ้างบิลและ order ปัจจุบัน ไม่อ้าง order แรกเป็นยอดขาย | before/after SQL และภาพ trace |
-| แยกบิลหลังรับคำขอ แล้วยืนยันว่าบิลต้นทางชำระแล้ว | หลังบ้านแสดงต้องตรวจ POS และเตือนให้ตามรายการที่ย้าย ห้ามสรุปว่าคำขอทั้งหมดจ่ายแล้วจากบิลต้นทาง | ภาพ trace, บิลต้นทาง/บิลลูก, payment IDs |
+| แยกบิลหลังรับคำขอ แล้วยืนยันว่าบิลต้นทางชำระแล้ว | หลังบ้านแสดงบิลปัจจุบันของแต่ละรายการ; คำขอยังคงให้ตรวจ POS หากรายการที่ย้ายยังไม่ชำระ และเป็น PAID ได้เมื่อทุกรายการมีหลักฐานขายครบ | ภาพ trace, check-item IDs, บิลต้นทาง/บิลลูก, payment IDs |
 | 20 บรรทัดโดยบรรทัดท้ายผิด, หมดสต็อก, sold-out, modifier/size เปลี่ยน | transaction rollback; ไม่มี check/order/stock/KDS/audit ครึ่งชุด | before/after SQL และ error |
 | DINE_IN ไม่มี check, เปิด check, ย้ายโต๊ะ, split, ปิด check, มี NEW ค้าง, สั่งเพิ่ม | ใช้ได้เฉพาะ check ที่ OPEN/DINE_IN/สาขาถูกและตรง preview; กรณีเปลี่ยนไม่มี partial write | check version/table/opened_at และผลแต่ละกรณี |
 | ราคาเปลี่ยนหลัง submit และหลัง preview | ต้องเห็นยอดเดิม/ใหม่; accept ที่ใช้ fingerprint เก่าถูกปฏิเสธ; ยืนยันราคาใหม่ก่อนรับ | ราคา/quote fingerprint, audit ที่ไม่เก็บ note |
@@ -100,8 +102,8 @@ installer ใดเอง; ตรวจ accepted_order_id ผูก tenant/branc
 | Desktop เปิด `/pos/restaurant?screen=kiosk` จาก pairing จริงและเน็ตหลุด | ค้นรหัส เปิด check ที่ผูก และกลับมา refresh ได้; journal บันทึก route แต่ไม่มี token/PIN/note | คลิป Desktop, journal ที่ redacted |
 | Mobile Restaurant Ops → จอสั่งอาหาร บนเครื่องจับคู่ | badge/เสียงขึ้นภายในรอบ poll; ค้นรหัสนอก 100 แถว; quote ราคา/ตัวเลือก/โต๊ะหลัง split ตรง server; รับ/ปฏิเสธด้วย PIN และเปิด check ที่ผูกไป Checkout ได้ | คลิป iOS/Android, GraphQL trace ที่ตัด PIN, check/receipt ids |
 | หลังบ้านหน้าจัดผังร้านเลือกสาขาที่มี/ไม่มี URL | แสดงสถานะและ pending count เฉพาะสาขาที่มีสิทธิ์; URL เดิมไม่ปรากฏ; ลิงก์พาไป POS เพื่อจัดการจอ | ภาพสองสาขา, denial ข้ามสาขา |
-| หลังบ้านค้นรหัสคำขอ TAKEAWAY และ DINE_IN ก่อนและหลังชำระ | PENDING ไม่เป็นยอดขาย; ACCEPTED ผูก check และ order ปัจจุบัน; PAID ต้องมี check PAID, order COMPLETED และเวลา paid_at; แสดง payment ID, ใบเสร็จ และเลขรับอาหารเฉพาะเมื่อมีจริง | รหัสคำขอ→submission→check→order→payment→receipt→queue ที่ตัด note/PIN/token |
-| เปลี่ยนรอบครัวหรือคืนเงิน แล้วค้นรหัสเดิม | order ที่แสดงเป็น order ปัจจุบันของ check; รายการ RETURNED/สถานะไม่แน่ใจไม่ถูกเรียกว่าเพิ่งชำระ และต้องตรวจประวัติ POS | before/after IDs และสถานะจาก DB/POS |
+| หลังบ้านค้นรหัสคำขอ TAKEAWAY และ DINE_IN ก่อนและหลังชำระ | PENDING ไม่เป็นยอดขาย; ACCEPTED มี mapping ครบทุกบรรทัด; PAID ต้องมี order item บนบิล PAID, order COMPLETED และ paid_at สำหรับทุกรายการ; payment ID/ใบเสร็จด้านบนเป็นของบิลตอนรับคำขอเท่านั้น; เลขรับอาหารแสดงเมื่อมีจริง | รหัสคำขอ→submission→check-item→current check/order→payment→receipt→queue ที่ตัด note/PIN/token |
+| ส่งครัวรอบใหม่, แยก/รวมบิล, ยกเลิก/คืนบางส่วนหรือทั้งหมด แล้วค้นรหัสเดิม | check-item ID คงเดิม ขณะที่บิลและ order ปัจจุบันเปลี่ยนได้; คืนบางส่วน/หลักฐานไม่ครบไม่แสดง PAID; คำขอเก่าที่ไม่มี mapping เป็น REVIEW | before/after IDs, return quantities และสถานะจาก DB/POS |
 | ใช้ manager ผิดสาขาหรือปิดเน็ตระหว่างดู trace | API ปฏิเสธ 403 หรือจอแจ้งตรวจ POS; ไม่แสดงผลเก่าราวกับเป็นสถานะใหม่ | HTTP status, screenshot สองสาขา |
 
 ## Go / No-Go

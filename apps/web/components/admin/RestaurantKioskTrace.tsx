@@ -15,6 +15,14 @@ type Trace = {
   tableCode: string | null; tableName: string | null; areaName: string | null;
   splitGroupNo: number | null; pickupNumber: string | null; pickupStatus: string | null;
   hasSplitDescendant: boolean;
+  lineTraceComplete: boolean;
+  lines: Array<{
+    lineNo: number; checkItemId: string; productName: string; quantity: number;
+    currentCheckId: string; checkStatus: string; currentOrderId: string | null;
+    orderStatus: string | null; kitchenStatus: string | null;
+    returnedQuantity: number; paidAt: string | null;
+    settlement: "UNPAID" | "PAID" | "RETURNED" | "PARTIAL_RETURN" | "CANCELLED" | "REVIEW";
+  }>;
 };
 
 export default function RestaurantKioskTrace({ locationId, lang }: {
@@ -68,7 +76,7 @@ export default function RestaurantKioskTrace({ locationId, lang }: {
     if (row.status === "PENDING") return en ? "Waiting for staff review · not a sale" : "รอพนักงานตรวจ · ยังไม่ใช่ยอดขาย";
     if (row.status === "REJECTED") return en ? "Rejected · not a sale" : "ปฏิเสธแล้ว · ยังไม่ใช่ยอดขาย";
     if (row.status === "EXPIRED") return en ? "Expired · not a sale" : "หมดอายุ · ยังไม่ใช่ยอดขาย";
-    if (row.settlement === "PAID") return en ? "Linked check paid at POS" : "บิลที่ผูกชำระที่ POS แล้ว";
+    if (row.settlement === "PAID") return en ? "All request items paid at POS" : "รายการจากคำขอนี้ชำระครบที่ POS";
     if (row.settlement === "RETURNED") return en ? "Returned or adjusted · check sale history" : "คืนหรือปรับรายการแล้ว · ตรวจประวัติขาย";
     if (row.settlement === "UNPAID") return en ? "Accepted · payment pending" : "รับคำขอแล้ว · ยังไม่ชำระ";
     return en ? "Accepted · verify payment in POS" : "รับคำขอแล้ว · ตรวจการชำระใน POS";
@@ -88,6 +96,16 @@ export default function RestaurantKioskTrace({ locationId, lang }: {
   const pickupStatus = (value: string) => ({
     PREPARING: en ? "Preparing" : "กำลังเตรียม", READY: en ? "Ready" : "พร้อมรับ",
     COLLECTED: en ? "Collected" : "รับแล้ว", CANCELLED: en ? "Cancelled" : "ยกเลิกแล้ว",
+  } as Record<string, string>)[value] ?? (en ? "Verify in POS" : "ตรวจใน POS");
+  const lineStatus = (value: Trace["lines"][number]["settlement"]) => ({
+    UNPAID: en ? "Not paid" : "ยังไม่ชำระ", PAID: en ? "Paid" : "ชำระแล้ว",
+    RETURNED: en ? "Returned" : "คืนแล้ว", PARTIAL_RETURN: en ? "Partly returned" : "คืนบางส่วน",
+    CANCELLED: en ? "Cancelled" : "ยกเลิกแล้ว", REVIEW: en ? "Verify in POS" : "ตรวจใน POS",
+  })[value];
+  const kitchenStatus = (value: string) => ({
+    NEW: en ? "New" : "รอครัว", PREPARING: en ? "Preparing" : "กำลังทำ",
+    READY: en ? "Ready" : "พร้อมเสิร์ฟ", SERVED: en ? "Served" : "เสิร์ฟแล้ว",
+    CANCELLED: en ? "Cancelled" : "ยกเลิก",
   } as Record<string, string>)[value] ?? (en ? "Verify in POS" : "ตรวจใน POS");
   return <Card title={en ? "Track kiosk requests" : "ติดตามคำขอจากจอ"}>
     <p>{en ? "Search by the code shown to the customer. A request is a proposal until staff accepts it; payment is recorded only at POS."
@@ -115,23 +133,37 @@ export default function RestaurantKioskTrace({ locationId, lang }: {
         {row.reviewerName ? ` · ${row.reviewerName}` : ""}</p>}
       {row.tableCode && <p>{en ? "Table" : "โต๊ะ"}: {row.areaName ? `${row.areaName} · ` : ""}{row.tableCode} {row.tableName}
         {row.splitGroupNo != null ? ` · ${en ? "split" : "แยกบิล"} ${row.splitGroupNo}` : ""}</p>}
-      {row.checkId && <p>{en ? "Check" : "บิล"}: <Typography.Text copyable style={{ overflowWrap: "anywhere" }}>{row.checkId}</Typography.Text>
+      {row.checkId && <p>{en ? "Check at acceptance" : "บิลตอนรับคำขอ"}: <Typography.Text copyable style={{ overflowWrap: "anywhere" }}>{row.checkId}</Typography.Text>
         {row.checkStatus ? ` · ${checkStatus(row.checkStatus)}` : ""}</p>}
       {row.acceptedOrderId && <p>{en ? "Order created at acceptance" : "ออเดอร์ตอนรับคำขอ"}: <Typography.Text copyable style={{ overflowWrap: "anywhere" }}>{row.acceptedOrderId}</Typography.Text></p>}
       {row.currentOrderId && <p>{en ? "Current check order" : "ออเดอร์ปัจจุบันของบิล"}: <Typography.Text copyable style={{ overflowWrap: "anywhere" }}>{row.currentOrderId}</Typography.Text>
         {row.orderStatus ? ` · ${orderStatus(row.orderStatus)}` : ""}</p>}
       {row.hasSplitDescendant && <Alert type="warning" showIcon closable style={{ marginBottom: 12 }}
-        message={en ? "This bill was split. Check the moved items and payment in POS before treating this request as paid."
-          : "บิลนี้ถูกแยก ตรวจรายการที่ย้ายและการชำระใน POS ก่อนสรุปว่าคำขอนี้จ่ายแล้ว"} />}
+        message={en ? "This bill was split. Item details show their current checks; verify each receipt in POS."
+          : "บิลนี้ถูกแยก รายละเอียดแสดงบิลปัจจุบันของแต่ละรายการ ตรวจใบเสร็จแต่ละบิลใน POS"} />}
+      {row.status === "ACCEPTED" && !row.lineTraceComplete && <Alert type="warning" showIcon closable
+        style={{ marginBottom: 12 }} message={en
+          ? "Line evidence is incomplete or predates tracking. Verify the check, items and payment in POS."
+          : "หลักฐานรายบรรทัดไม่ครบหรือเป็นคำขอก่อนเริ่มติดตาม ตรวจบิล รายการ และการชำระใน POS"} />}
+      {row.lines.length > 0 && <details style={{ marginBottom: 12 }}>
+        <summary style={{ cursor: "pointer", minHeight: 44, paddingBlock: 10 }}>
+          {en ? `Trace ${row.lines.length} ordered items` : `ติดตามรายการอาหาร ${row.lines.length} รายการ`}
+        </summary>
+        <ol style={{ paddingInlineStart: 22 }}>
+          {row.lines.map((line) => <li key={line.checkItemId} style={{ marginBlock: 12, overflowWrap: "anywhere" }}>
+            <Typography.Text strong>{line.productName} × {line.quantity}</Typography.Text>
+            {" · "}<Tag>{lineStatus(line.settlement)}</Tag>
+            {line.returnedQuantity > 0 && <span>{en ? "Returned quantity" : "จำนวนที่คืน"}: {line.returnedQuantity} · </span>}
+            <span>{en ? "Current check" : "บิลปัจจุบัน"}: <Typography.Text copyable>{line.currentCheckId}</Typography.Text></span>
+            {line.currentOrderId && <span> · {en ? "Order" : "ออเดอร์"}: <Typography.Text copyable>{line.currentOrderId}</Typography.Text></span>}
+            {line.kitchenStatus && <span> · {en ? "Kitchen" : "ครัว"}: {kitchenStatus(line.kitchenStatus)}</span>}
+          </li>)}
+        </ol>
+      </details>}
       {row.paidAt && <p>{en ? "Paid" : "ชำระเมื่อ"}: {date(row.paidAt)}</p>}
-      {row.paymentIds.length > 0 && <p>{row.hasSplitDescendant
-        ? (en ? "Original check payment IDs" : "รหัสการชำระของบิลต้นทาง")
-        : (en ? "Payment IDs" : "รหัสการชำระ")}: {row.paymentIds.map((id) =>
+      {row.paymentIds.length > 0 && <p>{en ? "Payment IDs on acceptance check" : "รหัสการชำระของบิลตอนรับคำขอ"}: {row.paymentIds.map((id) =>
         <Typography.Text key={id} copyable style={{ display: "block", overflowWrap: "anywhere" }}>{id}</Typography.Text>)}</p>}
-      {row.receiptNo && <p>{row.hasSplitDescendant
-        ? (en ? "Original check document" : "เอกสารของบิลต้นทาง")
-        : row.receiptType === "FULL" ? (en ? "Tax invoice" : "ใบกำกับภาษี")
-          : (en ? "Receipt" : "เลขใบเสร็จ")}: {row.receiptNo}
+      {row.receiptNo && <p>{en ? "Document on acceptance check" : "เอกสารของบิลตอนรับคำขอ"}: {row.receiptNo}
         {row.receiptId && <> · <Typography.Text copyable style={{ overflowWrap: "anywhere" }}>{row.receiptId}</Typography.Text></>}</p>}
       {row.pickupNumber && <p>{en ? "Pickup number" : "เลขรับอาหาร"}: {row.pickupNumber}
         {row.pickupStatus ? ` · ${pickupStatus(row.pickupStatus)}` : ""}</p>}

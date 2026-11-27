@@ -2000,6 +2000,15 @@ export async function acceptRestaurantKioskSubmission(
           WHERE tenant_id = $1 AND location_id = $2 AND id = $3 AND status = 'PENDING'`,
         [input.tenantId, input.locationId, input.submissionId, checkId, input.actorUserId, sent.orderId]
       );
+      // Keep the proposal's exact line identities in this transaction. Later
+      // rounds replace the order and split/merge can move these check items.
+      await client.query(
+        `INSERT INTO bms_restaurant_kiosk_submission_items
+           (tenant_id, location_id, submission_id, line_no, check_item_id)
+         SELECT $1, $2, $3, ordinality::int, check_item_id
+           FROM unnest($4::uuid[]) WITH ORDINALITY AS lines(check_item_id, ordinality)`,
+        [input.tenantId, input.locationId, input.submissionId, insertedIds]
+      );
       await client.query(
         `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
          VALUES ($1,$2,'restaurant.kiosk.accept',$3,$4::jsonb)`,

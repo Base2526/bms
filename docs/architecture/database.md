@@ -1961,6 +1961,20 @@ new column. A branch-scoped index on `split_from_check_id` supports the bounded
 manager trace's conservative split detection. Apply/reapply and the constraint/trigger behavior need a disposable
 restored-DB test before pilot use.
 
+Migration `10.149` adds append-only `bms_restaurant_kiosk_submission_items` to
+bind each newly accepted kiosk proposal line number to the exact restaurant
+check-item ID. The acceptance transaction inserts these links after the order,
+stock reservation, kitchen tickets and frozen-price checks, before its audit and
+commit. Tenant/location and tenant/item composite FKs plus an insert guard require
+the line to belong to the accepted check in that branch; unique keys prevent a
+line or check item being linked twice. The table has forced fail-closed tenant RLS,
+`bms_app` SELECT/INSERT only, and a scoped revision table. Later kitchen rounds
+may replace `current_order_id`, and split/merge may change an item's `check_id`;
+the immutable item ID resolves the current check/order/payment/return on read.
+No backfill guesses identities for legacy accepted requests. Apply/reapply,
+RLS/grants/FKs and service behavior still require a disposable restored-DB test
+before pilot use; deploy this migration before the matching service and trace UI.
+
 `9.45` does not add a second payment or kitchen ledger. Split tender continues to write the normal
 POS payment allocations, and KDS polling reads the existing branch-scoped ticket rows. Its only
 schema addition is modifier catalog pricing plus the restaurant-specific RBAC seeds.

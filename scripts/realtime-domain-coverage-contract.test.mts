@@ -238,6 +238,7 @@ const CONFIGURATION = [
 /** Operational state whose owning surface performs bounded polling plus post-write refresh. */
 const POLLED_OPERATIONAL_SURFACE = [
   "bms_restaurant_kiosk_submissions", // POS kiosk badge polls branch proposals from every screen; review refreshes immediately.
+  "bms_restaurant_kiosk_submission_items", // Inserted with acceptance; manager trace polls bounded branch evidence every 10s.
   "bms_restaurant_kiosk_devices", // Native shell checks revocation/PIN/URL binding every 15s; admin refetches after writes. No credential event payload.
   // Fish intake page refreshes its bounded recent list after confirmed writes;
   // live/opening stock itself uses the canonical inventory movement path.
