@@ -2784,6 +2784,26 @@ existing issue-again action on that completed bill. Without numbering, staff cal
 by the bill/receipt. KDS READY, call, collect and receipt printing remain the ordinary POS flow.
 The kiosk request code is never a pickup number or proof of payment.
 
+At `/admin/restaurant-floor`, a branch manager with `restaurant.floor.manage` can search the
+customer's request code in **Track kiosk requests**. The server rechecks branch scope and returns
+only a bounded branch history without basket notes or device credentials. `PENDING`, `REJECTED`
+and `EXPIRED` are proposals, never sales. An accepted request links to its check; the displayed
+order is the **current check order**, because later kitchen rounds can replace an earlier pending
+reservation. From `10.148`, the trace also preserves the **order created at acceptance** as
+immutable provenance; older accepted requests may have no recorded acceptance order. `10.149`
+records each accepted proposal line's check-item ID in the same transaction as stock reservation
+and kitchen send. The manager trace follows each line to its current check and current order after
+later rounds or split/merge, and shows kitchen and return evidence without customer notes. `PAID`
+requires every mapped line to have an order item on a PAID check with a COMPLETED order and a
+payment time. Partial return, cancellation, missing mapping or inconsistent evidence requires POS
+review; older accepted requests have no line mapping and remain review-only. `RETURNED` requires
+return quantity covering every line. Top-level payment IDs and receipt belong to the check at
+acceptance; after a split, use each line's current order ID in POS to inspect its payment and
+receipt. The existing pickup number appears only for a paid takeaway when issued after sale.
+This trace is a lookup, not a
+new sales ledger; existing POS reports and settlement remain authoritative. If a status read fails,
+check the request code and exact bill at POS before re-entering anything.
+
 Before closing the shift, resolve or reject pending requests, disable the kiosk while the shift is
 open, and verify the screen shows an unavailable state. On a network/POS/KDS/printer failure, use
 the request-code search and exact check link to determine whether acceptance already committed
@@ -2824,7 +2844,62 @@ client-supplied `x-forwarded-for` is ignored for kiosk throttling. The global ce
 multi-branch load test before broad rollout. Retention/cleanup and fleet monitoring remain
 multi-branch work.
 
-Before the first live pilot, apply `10.144` and `10.145` on a disposable restored database and exercise the
+**Standalone Desktop Kiosk shell (`apps/kiosk-desktop`, `10.146`).** The customer
+window loads only the exact approved `/kiosk/[token]` URL in a sandboxed Electron
+renderer with no preload, POS pairing, cashier PIN, IPC bridge or payment access.
+The local red-and-white setup/PIN/recovery screens are a separate renderer. A
+branch-scoped `restaurant.floor.manage` administrator registers one active kiosk
+device per branch at `/admin/restaurant-floor`, receives a dedicated one-time
+device credential, and sets a 6–8 digit maintenance PIN. Staff then install
+that credential and the public URL on the touch machine. The backend binds both
+to the same active branch, displays server-derived shop/branch names for staff
+confirmation, and rechecks the binding before saving/opening the customer page.
+The credential is
+stored with the OS secure-storage facility; the public URL alone cannot verify
+the PIN. The maintenance PIN unlocks local settings only, for two minutes; it
+cannot review proposals, issue URLs, open checks or take payment. Cashier PINs
+remain at `/admin/pos-devices` and retain the POS authorities. Press
+`Ctrl+Alt+K` on the kiosk hardware to enter the local PIN screen; the recovery
+screen also offers staff settings behind the same PIN. A revoked device, rotated
+URL or missing PIN closes the guest window. A transient heartbeat network
+failure leaves the current Web guest and cart alone; its own API errors remain
+visible. A rotated device
+credential requires OS administrator recovery and reprovisioning. Staff search
+the request code in POS before any manual re-entry. Restored-DB, physical
+USB-touch, KDS and payment acceptance remain pilot gates.
+The local shell names the reason and next action separately for a wrong-branch
+URL, rotated/closed URL, changed or missing maintenance PIN, locked PIN,
+HTTP 429, Redis admission 503, network timeout, server 5xx, secure-storage
+failure and renderer crash. HTTP 429 does not mean the PIN is locked. A late
+customer-page load cannot take focus from a PIN or recovery screen; leaving
+settings creates a fresh guest session.
+Catalog images may use external URLs; the customer route and native guest
+strip the kiosk URL from external `Referer` headers while keeping the Web image
+fallback for a failed image.
+
+**Installer distribution (`10.147`).** A branch manager with
+`restaurant.floor.manage` and branch scope selects the branch at
+`/admin/restaurant-floor` → Kiosk devices → Install BMS Kiosk. Only a platform
+administrator uploads a Windows x64 NSIS draft and publishes a verified release
+for that branch. The release is separate from public Android/iOS links and
+Retail Local POS packages. The private download API checks the admin session,
+permission and branch again; the kiosk URL, device credential and maintenance
+PIN grant no download authority. The manager sees version, minimum OS, size,
+SHA-256 and release notes. IT compares the downloaded hash and verifies the
+Authenticode signature and approved signer before installing, upgrading or
+rolling back under the same OS account so encrypted configuration persists.
+The platform sets `BMS_KIOSK_APPROVED_SIGNER_THUMBPRINTS` to the verified
+40-character SHA-1 Authenticode certificate thumbprint (comma-separated for a
+planned certificate rotation). Publish re-verifies the actual stored binary
+and signer; download fails closed if the recorded signer is no longer approved.
+An unset or malformed allowlist blocks publication and downloads. Linux
+`osslsigncode` verification currently does not extract a signer thumbprint, so
+publication needs a Windows verifier until that path is implemented and tested.
+Unsigned, hidden, draft and corrupt artifacts are not distributed. The
+previous locally built installer was `NotSigned`; signing, restored-DB tests
+and installation on pilot hardware are still required before any live use.
+
+Before the first live pilot, apply `10.144` through `10.148` on a disposable restored database and exercise the
 following with a paired POS, an open shift and a separate touch screen. Use test products and
 reverse test bills through the normal POS flow; do not run these checks against live customer data.
 

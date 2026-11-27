@@ -2,19 +2,22 @@
 
 สถานะเอกสาร: ขั้นตอนตรวจที่ต้องทำบนฐานที่ restore และฮาร์ดแวร์จริง ยังไม่ใช่ผลผ่านการทดสอบ
 
-ผลตรวจในเครื่องพัฒนา 26 พ.ย. 2026: browser fixture ของ `/kiosk/[token]` ดีไซน์แดง–ขาว
+ผลตรวจในเครื่องพัฒนา 27 พ.ย. 2026: browser fixture ของ `/kiosk/[token]` ดีไซน์แดง–ขาว
 ผ่านที่ 1440×900, 1920×1080, 1080×1920 และ 390×844 px บน production build โดยตรวจ
 การกรองหมวดจาก field ใน API fixture, รูปเสีย, ขนาดหมด, modifier บังคับ, ตะกร้า, response หาย,
 สถานะคำขอ, idle reset, browser back/bfcache และหน้าเครือข่ายล้ม. ภาพ HOME, MENU, modal,
 CART, PENDING/ACCEPTED/REJECTED/EXPIRED, unavailable และ network อยู่ใน
 `.test-output/restaurant-kiosk-browser/`. Browser fixture ของ `/pos/restaurant?screen=kiosk`
 และ `/admin/restaurant-floor` ผ่านที่ 1440/390 px โดยจำลอง API ใน Playwright
+รวมการค้นรหัสคำขอ, หลักฐานแต่ละรายการหลังแยกบิล, บิล/ชำระ, คำเตือนและสถานะเมื่ออ่าน trace ไม่ได้
 ไม่ได้ใช้ฐานหรือเครื่อง POS จริง; ภาพอยู่ใน
 `.test-output/restaurant-kiosk-pos-browser/` และ
 `.test-output/restaurant-kiosk-admin-browser/`. `cd apps/web && npm run gate` ผ่าน:
-pure 4,030 (ผ่าน 4,024, ข้าม 6, ล้ม 0), typecheck และ production build ผ่าน.
+pure 4,040 (ผ่าน 4,034, ข้าม 6, ล้ม 0), typecheck และ production build ผ่าน.
 `cd apps/mobile && npm test -- --runInBand` ผ่าน 524/524, typecheck ผ่าน; Desktop
-`npm test` ผ่าน 179/179 และ lint ผ่าน. ผลเหล่านี้ยังเป็น fixture/automated tests.
+`npm test` ผ่าน 179/179 และ lint ผ่าน. Kiosk Desktop lint/unit 7/7, Electron smoke,
+native-main fixture และ Windows x64 package ผ่าน แต่ installer ล่าสุดยัง `NotSigned`.
+ผลเหล่านี้ยังเป็น fixture/automated tests.
 ยัง **ไม่ได้ทดสอบ** migration/DB service tests บนฐาน restore, Caddy ingress จริง, Redis หลาย instance,
 จอ USB touch, KDS/เครื่องพิมพ์, การชำระเงินจริงหรือใบเสร็จจริง จึงยังเป็น **No-Go**
 
@@ -34,6 +37,28 @@ pure 4,030 (ผ่าน 4,024, ข้าม 6, ล้ม 0), typecheck แล�
 
 ## ฐานข้อมูลที่ทิ้งได้
 
+เพิ่ม `10.147`, `10.148` และ `10.149` ในการ apply/reapply บนฐาน restore: ตรวจ release identity
+ไม่ซ้ำ, branch grant composite FK, RLS/grants/revision/audit ภายใต้
+`bms_app` ทั้ง tenant GUC ถูก/ผิด/ว่าง และตรวจว่า migration ไม่เผยแพร่
+installer ใดเอง; ตรวจ accepted_order_id ผูก tenant/branch ถูกต้อง บังคับใน accept ใหม่
+แก้ย้อนหลังไม่ได้ และรายการเก่าที่ไม่รู้ order เดิมยังเป็น NULL; ตรวจ mapping รายบรรทัด
+`10.149` ว่า FK/unique/trigger/RLS/revision/grants บังคับสาขาและตัวตนรายการจริง
+รีรันแล้วไม่ซ้ำ ห้ามรันบน production
+
+## ไฟล์ติดตั้งและการเผยแพร่
+
+| ขั้นตอน | ผลที่ต้องเห็น | หลักฐาน |
+| --- | --- | --- |
+| Platform admin อัปโหลด Windows x64 NSIS พร้อม SHA-256 แล้วตรวจไฟล์จริง | release เป็น draft; SHA-256 และ Authenticode มีผลตรวจจริง; unsigned/corrupt เผยแพร่ไม่ได้ | hash, signature status, release id ที่ไม่ใช่ token |
+| ตรวจใบรับรองผู้ลงนามกับ allowlist บน server | publish ได้เฉพาะ thumbprint ที่ IT อนุมัติ; ค่าว่าง/ผิดรูป/ใบรับรองอื่นหรือการถอนอนุมัติทำให้ publish/download ถูกปฏิเสธ | thumbprint สาธารณะของใบรับรอง, HTTP code โดยไม่เก็บ credential |
+| Publish ให้สาขา pilot แล้วเข้าหลังบ้าน `/admin/restaurant-floor` ด้วยผู้จัดการสาขา | เห็นเฉพาะรุ่นที่เผยแพร่ของสาขานั้น, วันเผยแพร่, ขนาด, hash, minimum OS และคู่มือ | screenshot ที่ตัดข้อมูลอ่อนไหว, HTTP status |
+| ลอง session ไม่มีสิทธิ์/ผิดสาขา/ไม่มี session/public kiosk URL, draft/hidden/ID เดา | ไม่ดาวน์โหลด; 401/403/404 ตามเหตุ; Redis rate limit ล้มได้ 503 | HTTP trace ที่ตัด cookie/token |
+| ดาวน์โหลดไฟล์ขนาดจริงและตรวจบนเครื่อง IT | stream สำเร็จ, SHA-256 ตรง, Authenticode Valid และ signer ที่อนุมัติ | hash/signature, ขนาดไฟล์, memory profile |
+| ติดตั้ง/อัปเกรด/rollback บัญชี OS เดิม, reboot และ OS lockdown | config ที่เข้ารหัสอยู่ครบ; หน้าลูกค้าเปิดได้เฉพาะ URL ที่ผูก; หลุดไป desktop ไม่ได้ | คลิปและ checklist เครื่อง pilot |
+
+ไฟล์ที่เคยแพ็กได้ยัง `NotSigned`: คงเป็น draft จนลงลายเซ็นและทดสอบบน
+เครื่องจริงผ่าน ห้ามใช้ gate/build หรือ browser fixture แทนผลนี้
+
 | ขั้นตอน | ผลที่ต้องเห็น | หลักฐาน |
 | --- | --- | --- |
 | Restore ฐาน dev ที่เหมาะสมใน instance แยก; ตรวจ hostname/database ก่อนเริ่ม | ไม่มีการต่อ production; schema ตั้งต้นครบ | คำสั่ง restore ที่ปิดรหัสผ่าน, fingerprint dump, hostname/db |
@@ -42,7 +67,9 @@ pure 4,030 (ผ่าน 4,024, ข้าม 6, ล้ม 0), typecheck แล�
 | ใช้ `SET ROLE bms_app` กับ tenant GUC ที่ถูก/ผิด/ว่าง และ token-hash GUC | submission ไม่มี GUC ต้องไม่เห็นข้อมูล; locator เห็นเฉพาะ token hash ที่ตรงและ active; ห้ามใช้ token GUC เขียน | SQL matrix, current role/GUC |
 | ป้อน kiosk/check ข้าม tenant/branch | composite FK และ service ปฏิเสธ ไม่มีข้อมูลข้ามสาขา | SQLSTATE, count ก่อน/หลัง |
 | Submit key เดิมพร้อมกัน/ส่งซ้ำ | submission เดียวและรหัสเดิม | count/idempotency result |
-| รับคำขอเดียวกันจาก POS สองเครื่องพร้อมกันและทำให้ response แรกหาย | check/order/reservation/ticket/audit อย่างละชุด; replay ชี้ check เดิม | row ids/count/stock movement |
+| รับคำขอเดียวกันจาก POS สองเครื่องพร้อมกันและทำให้ response แรกหาย | check/order/reservation/ticket/audit อย่างละชุด; replay ชี้ check เดิม; accepted_order_id ตรง order ที่สร้างใน transaction | row ids/count/stock movement |
+| ส่งครัวรอบถัดไปแล้วค้นรหัสคำขอเดิม | accepted_order_id คงเดิม ส่วน current_order_id ชี้รอบล่าสุด; การชำระอ้างบิลและ order ปัจจุบัน ไม่อ้าง order แรกเป็นยอดขาย | before/after SQL และภาพ trace |
+| แยกบิลหลังรับคำขอ แล้วยืนยันว่าบิลต้นทางชำระแล้ว | หลังบ้านแสดงบิลปัจจุบันของแต่ละรายการ; คำขอยังคงให้ตรวจ POS หากรายการที่ย้ายยังไม่ชำระ และเป็น PAID ได้เมื่อทุกรายการมีหลักฐานขายครบ | ภาพ trace, check-item IDs, บิลต้นทาง/บิลลูก, payment IDs |
 | 20 บรรทัดโดยบรรทัดท้ายผิด, หมดสต็อก, sold-out, modifier/size เปลี่ยน | transaction rollback; ไม่มี check/order/stock/KDS/audit ครึ่งชุด | before/after SQL และ error |
 | DINE_IN ไม่มี check, เปิด check, ย้ายโต๊ะ, split, ปิด check, มี NEW ค้าง, สั่งเพิ่ม | ใช้ได้เฉพาะ check ที่ OPEN/DINE_IN/สาขาถูกและตรง preview; กรณีเปลี่ยนไม่มี partial write | check version/table/opened_at และผลแต่ละกรณี |
 | ราคาเปลี่ยนหลัง submit และหลัง preview | ต้องเห็นยอดเดิม/ใหม่; accept ที่ใช้ fingerprint เก่าถูกปฏิเสธ; ยืนยันราคาใหม่ก่อนรับ | ราคา/quote fingerprint, audit ที่ไม่เก็บ note |
@@ -75,8 +102,29 @@ pure 4,030 (ผ่าน 4,024, ข้าม 6, ล้ม 0), typecheck แล�
 | Desktop เปิด `/pos/restaurant?screen=kiosk` จาก pairing จริงและเน็ตหลุด | ค้นรหัส เปิด check ที่ผูก และกลับมา refresh ได้; journal บันทึก route แต่ไม่มี token/PIN/note | คลิป Desktop, journal ที่ redacted |
 | Mobile Restaurant Ops → จอสั่งอาหาร บนเครื่องจับคู่ | badge/เสียงขึ้นภายในรอบ poll; ค้นรหัสนอก 100 แถว; quote ราคา/ตัวเลือก/โต๊ะหลัง split ตรง server; รับ/ปฏิเสธด้วย PIN และเปิด check ที่ผูกไป Checkout ได้ | คลิป iOS/Android, GraphQL trace ที่ตัด PIN, check/receipt ids |
 | หลังบ้านหน้าจัดผังร้านเลือกสาขาที่มี/ไม่มี URL | แสดงสถานะและ pending count เฉพาะสาขาที่มีสิทธิ์; URL เดิมไม่ปรากฏ; ลิงก์พาไป POS เพื่อจัดการจอ | ภาพสองสาขา, denial ข้ามสาขา |
+| หลังบ้านค้นรหัสคำขอ TAKEAWAY และ DINE_IN ก่อนและหลังชำระ | PENDING ไม่เป็นยอดขาย; ACCEPTED มี mapping ครบทุกบรรทัด; PAID ต้องมี order item บนบิล PAID, order COMPLETED และ paid_at สำหรับทุกรายการ; payment ID/ใบเสร็จด้านบนเป็นของบิลตอนรับคำขอเท่านั้น; เลขรับอาหารแสดงเมื่อมีจริง | รหัสคำขอ→submission→check-item→current check/order→payment→receipt→queue ที่ตัด note/PIN/token |
+| ส่งครัวรอบใหม่, แยก/รวมบิล, ยกเลิก/คืนบางส่วนหรือทั้งหมด แล้วค้นรหัสเดิม | check-item ID คงเดิม ขณะที่บิลและ order ปัจจุบันเปลี่ยนได้; คืนบางส่วน/หลักฐานไม่ครบไม่แสดง PAID; คำขอเก่าที่ไม่มี mapping เป็น REVIEW | before/after IDs, return quantities และสถานะจาก DB/POS |
+| ใช้ manager ผิดสาขาหรือปิดเน็ตระหว่างดู trace | API ปฏิเสธ 403 หรือจอแจ้งตรวจ POS; ไม่แสดงผลเก่าราวกับเป็นสถานะใหม่ | HTTP status, screenshot สองสาขา |
 
 ## Go / No-Go
+
+### Desktop Kiosk shell และ PIN ดูแลจอ (เพิ่มใน pilot gate)
+
+บนฐาน dev restore ที่ทิ้งได้และยืนยัน host/database แล้ว รัน `BMS_KIOSK_RESTORED_DB=1 node scripts/run-contract-tests.mjs db restaurant-kiosk-device-db-contract` จาก root (PowerShell ตั้ง environment variable ก่อนรัน) เพื่อพิสูจน์ `10.146`, การลอง PIN พร้อมกัน, การล็อก, การเปลี่ยน PIN, การหมุน credential และ audit; ถ้าไม่มีฐานดังกล่าวให้บันทึกว่า **ไม่ได้ทดสอบ**
+
+| ขั้นตอน | ผลที่ต้องเห็น | หลักฐาน |
+| --- | --- | --- |
+| Apply/reapply `10.146` บนฐาน restore ที่ทิ้งได้ | unique หนึ่งเครื่องต่อสาขา, FK, grants, RLS เมื่อไม่มี tenant GUC, locator เฉพาะ credential, revision ไม่มี hash | SQL assertion และ migration log |
+| ลงทะเบียนเครื่องในหลังบ้านเฉพาะสาขาที่มีสิทธิ์ ตั้ง PIN และคัดลอกรหัสเครื่องครั้งเดียว | รายการแสดงสถานะ/เวลาเปลี่ยน แต่ไม่แสดง PIN/hash; ผู้ไม่มีสิทธิ์หรือผิดสาขาถูกปฏิเสธ | ภาพหลังบ้านและ HTTP status ที่ปิดบัง credential |
+| ติดตั้ง URL จาก POS และรหัสเครื่องบน Desktop Kiosk | backend ยืนยันว่าสาขาเดียวกันก่อนเปิด `/kiosk/[token]`; guest ไม่มี preload/IPC/POS token | ภาพจอ, process inspection, network trace ที่ปิด token |
+| กรอก PIN ถูก/ผิด 5 ครั้งพร้อมกัน/ล็อก/เปลี่ยน PIN/เพิกถอนเครื่อง | ถูกเปิดตั้งค่าได้ 2 นาทีเท่านั้น; PIN เก่าและ credential เก่าใช้ไม่ได้; customer page ปิดเมื่อเพิกถอน | วิดีโอ, audit ที่ไม่เก็บ PIN, count/lock timestamp |
+| ปิดหน้าตั้งค่า, restart แอป, เน็ตล้ม, secure storage เสีย | ไม่คืนสถานะปลดล็อก; PIN ที่ตรวจไม่ได้ fail closed; IT กู้ผ่านบัญชี OS โดยไม่ลบคำขอขาย | คลิปและคู่มือ recovery |
+| โหลดหน้าลูกค้าช้าระหว่างเปิดหน้า PIN/กู้จอ; HTTP 429, Redis 503, timeout, server 5xx, URL ผิดสาขา | callback เก่าไม่แย่งหน้าจอ; ข้อความระบุเหตุและการแก้ที่ตรงกัน; 429 ไม่แสดงเป็น PIN ล็อก | คลิปและ HTTP trace ที่ไม่เผย token/PIN |
+| ต่อ HDMI/USB touch, calibration, scaling, reboot และกลับจากเน็ตล้ม | จอลูกค้าแสดงถูกต้อง, ตั้งค่าต้องใช้ PIN, พนักงานตรวจคำขอใน POS ก่อนคีย์ซ้ำ | คลิป/ภาพจอและรหัสคำขอที่ตัดข้อมูล |
+| ตรวจ Windows edition และเลือก OS lockdown สำหรับ Electron | แยกบัญชีจอลูกค้าแบบ standard จาก IT admin; ถ้าใช้ Shell Launcher ต้องเป็น edition ที่รองรับและตั้งนโยบายล็อกเพิ่ม; ทดสอบ Alt+Tab/Alt+F4/Windows key/USB keyboard | edition/build, policy, วิดีโอทุกปุ่ม; อ้างอิง Microsoft Learn ใน README ของแอป |
+| อัปเกรด/rollback installer และ login/reboot ด้วยบัญชีจอลูกค้า | เปิดเองหลัง sign-in, URL encrypted เดิมยังอ่านได้เมื่อ upgrade, downgrade ไม่ทำ config เสียเงียบ | installer hash/version, screenshot หลัง reboot, ผล getLoginItemSettings/OS policy |
+
+ชุด Electron smoke ใช้ fixture และหน้าต่างที่สร้างในเครื่องพัฒนาเท่านั้น ไม่เท่ากับการทดสอบจอ 1080×1920, USB touch หรือเครื่องพิมพ์จริง
 
 **Go เฉพาะ pilot มีพนักงานกำกับ 1 สาขา** เมื่อฐาน restore ผ่านทุกกรณี P0 ที่มีเงินจริง/สต็อก, จอ touch + POS + KDS/เครื่องพิมพ์ + receipt/queue ผ่านจริง, พนักงานซ้อม fallback, มีผู้เฝ้าคำขอทุกช่วงเปิดจอ และผู้จัดการลงชื่อรับความเสี่ยงที่ยังเหลือ หากข้อใดไม่มีผลทดสอบ ให้เป็น **No-Go** แม้ `npm run gate` ผ่าน
 

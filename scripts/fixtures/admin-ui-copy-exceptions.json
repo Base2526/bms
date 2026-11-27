@@ -743,5 +743,17 @@
       "BMS POS+",
       "Ctrl"
     ]
+  },
+  "apps/web/components/admin/KioskDesktopInstall.tsx": {
+    "reason": "Installer architecture, checksum units, exact release channels and example semantic version are protocol identifiers shown consistently in both languages.",
+    "strings": [
+      "Windows x64",
+      "MB",
+      "SHA-256:",
+      "0.1.0-pilot.2",
+      "SHA-256",
+      "Pilot",
+      "Stable"
+    ]
   }
 }

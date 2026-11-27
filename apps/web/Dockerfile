@@ -92,6 +92,11 @@ CMD ["node", "scheduler.mjs"]
 # --- Runner stage ---
 FROM node:24-bookworm-slim AS runner
 
+# Publishing BMS Kiosk installers verifies Authenticode against the system CA
+# bundle. Missing verifier or trust roots fail closed and keep releases in draft.
+RUN apt-get update && apt-get install -y --no-install-recommends osslsigncode ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app/apps/web
 
 ARG BMS_SOURCE_COMMIT=unknown

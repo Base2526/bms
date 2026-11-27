@@ -1,0 +1,42 @@
+{
+  "name": "@bms/kiosk-desktop",
+  "version": "0.1.0-pilot.1",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "description": "Standalone customer ordering kiosk shell for BMS",
+  "author": "BMS",
+  "main": "src/main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "lint": "node --check src/main.mjs && node --check src/preload.cjs && node --check src/config-store.mjs && node --check src/device-api.mjs && node --check src/url-policy.mjs && node --check src/window-policy.mjs && node --check src/launch-at-login.mjs && node --check renderer/shell.js",
+    "test": "node --test test/*.test.mjs",
+    "test:smoke": "electron test/smoke.mjs",
+    "test:integration": "electron test/main-integration-smoke.mjs",
+    "pack:win": "electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "electron": "43.8.8",
+    "electron-builder": "26.15.3"
+  },
+  "engines": { "node": ">=22.12.0" },
+  "build": {
+    "appId": "com.bms.kiosk-desktop",
+    "productName": "BMS Kiosk",
+    "artifactName": "BMS-Kiosk-Setup-${version}-${arch}.${ext}",
+    "directories": { "output": "dist" },
+    "files": ["src/**/*", "renderer/**/*", "package.json"],
+    "asar": true,
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "../web/public/icons/playstore-512.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "BMS Kiosk"
+    }
+  }
+}

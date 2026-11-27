@@ -238,6 +238,8 @@ const CONFIGURATION = [
 /** Operational state whose owning surface performs bounded polling plus post-write refresh. */
 const POLLED_OPERATIONAL_SURFACE = [
   "bms_restaurant_kiosk_submissions", // POS kiosk badge polls branch proposals from every screen; review refreshes immediately.
+  "bms_restaurant_kiosk_submission_items", // Inserted with acceptance; manager trace polls bounded branch evidence every 10s.
+  "bms_restaurant_kiosk_devices", // Native shell checks revocation/PIN/URL binding every 15s; admin refetches after writes. No credential event payload.
   // Fish intake page refreshes its bounded recent list after confirmed writes;
   // live/opening stock itself uses the canonical inventory movement path.
   "bms_fish_intakes", "bms_fish_intake_lines",
@@ -332,6 +334,10 @@ for (const [reason, tables] of [
 }
 CLASSIFIED.set("bms_delivery_dispute_evidence",
   "private dispute evidence; Finance reads on open and refetches after upload; no POS realtime audience");
+CLASSIFIED.set("bms_kiosk_desktop_releases",
+  "platform installer catalog; Admin reads on open and refetches after publish/hide, with no customer or POS realtime audience");
+CLASSIFIED.set("bms_kiosk_desktop_release_branches",
+  "branch installer grant; Admin reads on branch selection and refetches after publish, with no customer or POS realtime audience");
 
 /** การลบทั้ง tenant ไม่มี subscriber เหลืออยู่ และ outbox ของ tenant ถูก cascade ทิ้ง */
 const OPERATION_EXEMPTIONS = new Map<string, string>([

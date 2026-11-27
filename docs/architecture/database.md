@@ -1922,6 +1922,59 @@ tenant/branch and requires cashier PIN, `pos.sell`, branch scope and an OPEN dev
 preview/accept/reject; all three call the same kiosk services as Web POS. No new table or payment
 ledger is introduced for these surfaces.
 
+Migration `10.146` adds `bms_restaurant_kiosk_devices` as a separate native
+Desktop Kiosk identity. One active row per `(tenant_id, location_id)` stores
+only a SHA-256 digest of a dedicated device credential and a bcrypt
+maintenance-PIN hash, PIN revision UUID, lock counter/time, revocation state and attribution.
+The public kiosk token is not a device credential. Tenant/location composite FK,
+`bms_app` grants and forced RLS apply. Without a tenant GUC, a transaction may
+locate only the active row matching `bms.kiosk_device_hash`; writes require the
+tenant GUC. Five wrong PIN attempts lock the row for 15 minutes under `FOR UPDATE`
+so concurrent attempts share one count. Device/PIN changes and lock/unlock write
+audit in the same transaction. The custom revision trigger removes both hashes
+from OLD snapshots, and revision RLS fails closed without a tenant GUC. The
+credential cannot perform a POS mutation or change the public kiosk URL.
+Disposable restored-DB apply/reapply and RLS/grant tests remain a pilot gate.
+
+Migration `10.147` adds a platform-owned `bms_kiosk_desktop_releases` catalog
+for immutable BMS Kiosk Windows x64 version/channel/file identities. Drafts
+record the private file id, size, SHA-256 and actual Authenticode verification
+result. Publish requires a valid signature and records publisher/time; hidden
+is terminal. The separate tenant-owned
+`bms_kiosk_desktop_release_branches` grants a published release to an active
+branch through a tenant/location composite FK. It has forced, fail-closed RLS,
+`bms_app` grants and revisions. Upload, publish, grant and hide decisions write
+audit in the same DB transaction as the decision. Download checks the grant,
+release state and stored-byte checksum, then streams the private file. No
+release is seeded by the migration. Apply/reapply, RLS/grant/FK and real file
+verification still require a disposable restored database before pilot use.
+
+Migration `10.148` adds `accepted_order_id` to the existing kiosk submission.
+The acceptance transaction stores the exact newly reserved order ID with the
+check link and audit before commit. A later kitchen round may replace the
+check's `current_order_id`; the acceptance ID remains immutable and does not
+claim to be the paid order. A tenant/location composite FK binds it to an
+order in the same branch, and a trigger requires it for new accept transitions
+while leaving older accepted rows NULL rather than guessing their history.
+The existing fail-closed RLS, `bms_app` grants and revision trigger cover the
+new column. A branch-scoped index on `split_from_check_id` supports the bounded
+manager trace's conservative split detection. Apply/reapply and the constraint/trigger behavior need a disposable
+restored-DB test before pilot use.
+
+Migration `10.149` adds append-only `bms_restaurant_kiosk_submission_items` to
+bind each newly accepted kiosk proposal line number to the exact restaurant
+check-item ID. The acceptance transaction inserts these links after the order,
+stock reservation, kitchen tickets and frozen-price checks, before its audit and
+commit. Tenant/location and tenant/item composite FKs plus an insert guard require
+the line to belong to the accepted check in that branch; unique keys prevent a
+line or check item being linked twice. The table has forced fail-closed tenant RLS,
+`bms_app` SELECT/INSERT only, and a scoped revision table. Later kitchen rounds
+may replace `current_order_id`, and split/merge may change an item's `check_id`;
+the immutable item ID resolves the current check/order/payment/return on read.
+No backfill guesses identities for legacy accepted requests. Apply/reapply,
+RLS/grants/FKs and service behavior still require a disposable restored-DB test
+before pilot use; deploy this migration before the matching service and trace UI.
+
 `9.45` does not add a second payment or kitchen ledger. Split tender continues to write the normal
 POS payment allocations, and KDS polling reads the existing branch-scoped ticket rows. Its only
 schema addition is modifier catalog pricing plus the restaurant-specific RBAC seeds.

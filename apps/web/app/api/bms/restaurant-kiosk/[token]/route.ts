@@ -16,7 +16,8 @@ type RouteContext = { params: Promise<{ token: string }> };
 async function limited(token: string, action: string, ceiling: number) {
   const result = await checkRestaurantKioskRateLimit(token, action, ceiling);
   if (result.status === 200) return null;
-  return NextResponse.json({ error: result.status === 503
+  return NextResponse.json({ code: result.status === 503 ? "RATE_LIMIT_UNAVAILABLE" : "RATE_LIMITED",
+    error: result.status === 503
     ? "จอสั่งอาหารขัดข้องชั่วคราว กรุณาติดต่อพนักงาน"
     : "กรุณารอสักครู่แล้วลองใหม่" },
     { status: result.status, headers: { "retry-after": String(result.retryAfter) } });

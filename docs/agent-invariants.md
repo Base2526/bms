@@ -1163,7 +1163,39 @@ own dine-in service. Operator detail:
   an existing OPEN dine-in check selected by staff, or opens a tableless takeaway check, and sends
   the ordinary reservation/KDS round in one transaction. Pending requests expire after 30 minutes;
   rotation or disable expires them immediately. The public screen never settles or mints a pickup
-  queue number.
+  queue number. The manager's request-code trace on the restaurant-floor page is a scoped, bounded
+  read of proposal → check → current order → POS payment/receipt/pickup evidence. `10.148`
+  freezes the exact acceptance order ID on new proposals; older rows may be NULL. `10.149` also
+  inserts each newly accepted line's immutable check-item ID in the acceptance transaction. Trace
+  reads follow those IDs to their current check/order after later rounds or split/merge and inspect
+  return quantities. Only complete line evidence with every line paid may be called PAID; missing
+  legacy links, cancellation, partial return or inconsistent status require POS review. Original-check
+  payment IDs and receipt must not be presented as proof of moved lines. Never report a pending proposal as a sale
+  or a CLOSING/RETURNED bill as newly paid; a failed trace read directs staff to verify at POS.
+  A standalone Desktop Kiosk (`10.146`) has a separate branch-bound device
+  credential and maintenance PIN. Neither is a cashier PIN or POS device token.
+  Guest renderer has no preload/IPC; only the bundled local staff renderer may
+  ask native main to verify PIN through the device-only backend endpoint. The
+  maintenance PIN unlocks local settings, never order review or URL issuance.
+  The native app fails closed on missing secure storage, revoked credential,
+  invalid URL binding and PIN/network failure. Device and PIN hashes must not
+  appear in audit, revision snapshots, logs or admin list responses.
+  Device binding checks the current credential, PIN revision and public URL's
+  branch together; wrong-branch/rotated-URL/PIN-change codes remain distinct.
+  Native page-load callbacks must not revive a guest after PIN/recovery opens.
+  The customer route uses `no-referrer`; the native guest strips external
+  `Referer` headers so a third-party catalog image cannot receive the URL token.
+  Desktop Kiosk installers use the dedicated `10.147` release/grant tables,
+  never public app-download links or Retail Local POS package types. Only a
+  platform administrator uploads drafts and grants signed published releases;
+  shop downloads require an active admin session, `restaurant.floor.manage`
+  and branch scope. The server rechecks the private file checksum before
+  streaming it. Publishing requires the verified Authenticode signer thumbprint
+  in `BMS_KIOSK_APPROVED_SIGNER_THUMBPRINTS`; an unset/malformed allowlist or a
+  signer removed later blocks the shop download. The current Linux verifier
+  cannot extract a signer thumbprint, so Linux publish fails closed. A draft,
+  hidden, unsigned or corrupt release is not a shop
+  download. Installer possession grants no URL, PIN, POS or payment authority.
   Staff review uses a server-computed catalog quote and compares its fingerprint when accepting;
   acceptance resolves and rechecks the quote on the same transaction connection as the check,
   reservation and kitchen work. The fingerprint includes option labels and group rules, and the

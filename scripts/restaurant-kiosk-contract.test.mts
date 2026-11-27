@@ -54,6 +54,7 @@ test("public kiosk body parser rejects oversized, malformed and invalid UTF-8 bo
   for (const file of ["apps/web/Caddyfile.server", "apps/web/Caddyfile.local"]) {
     const ingress = await read(file);
     assert.match(ingress, /@restaurantKiosk path \/api\/bms\/restaurant-kiosk\/\*/);
+    assert.match(ingress, /\/api\/bms\/restaurant-kiosk-device(?:s)?/);
     assert.match(ingress, /request_body @restaurantKiosk \{\s*max_size 32KB\s*\}/);
   }
   const encode = (text: string) => new TextEncoder().encode(text);
