@@ -16,15 +16,23 @@ const copy = {
     networkDescription:"กรุณาติดต่อพนักงานเพื่อช่วยตรวจคำขอ ก่อนเริ่มสั่งใหม่",
     revokedTitle:"เครื่องนี้ถูกปิดใช้งาน",revokedDescription:"กรุณาติดต่อพนักงานเพื่อตรวจเครื่องและ URL",
     bindingTitle:"URL ใช้ไม่ได้",bindingDescription:"URL อาจถูกหมุนหรือปิด กรุณาให้พนักงานติดตั้ง URL ใหม่",
+    wrongBranchTitle:"URL เป็นของสาขาอื่น",wrongBranchDescription:"กรุณาให้พนักงานตรวจสาขาและติดตั้ง URL ของสาขานี้",
+    pinChangedTitle:"PIN ดูแลจอถูกเปลี่ยน",pinChangedDescription:"กรุณาให้ผู้ดูแลจอกรอก PIN ใหม่ก่อนเปิดจอลูกค้า",
+    noPinTitle:"ยังไม่ได้ตั้ง PIN ดูแลจอ",noPinDescription:"กรุณาให้ผู้จัดการตั้ง PIN ในหลังบ้านก่อนเปิดจอ",
     storageTitle:"อ่านข้อมูลเครื่องไม่ได้",storageDescription:"กรุณาให้ IT ตรวจบัญชีเครื่องและที่เก็บข้อมูลปลอดภัย",
     serverTitle:"บริการไม่พร้อมชั่วคราว",serverDescription:"กรุณาติดต่อพนักงานและลองอีกครั้งภายหลัง",
+    timeoutTitle:"ตรวจสอบนานเกินไป",timeoutDescription:"กรุณาตรวจเครือข่าย ให้พนักงานตรวจคำขอใน POS แล้วลองใหม่",
+    redisTitle:"ระบบจำกัดคำขอไม่พร้อม",redisDescription:"กรุณาติดต่อพนักงาน ระบบยังตรวจความถี่คำขอไม่ได้",
+    rateTitle:"ส่งคำขอถี่เกินไป",rateDescription:"กรุณารอสักครู่แล้วลองใหม่ หรือให้พนักงานช่วยตรวจจอ",
     crashTitle:"หน้าจอสั่งอาหารหยุดทำงาน",crashDescription:"กรุณาติดต่อพนักงานเพื่อตรวจคำขอก่อนเปิดจอใหม่",
     invalidUrl:"URL ไม่ถูกต้องหรือไม่ได้รับอนุญาต",invalidCredential:"รหัสจับคู่เครื่องไม่ถูกต้อง",
     busy:"กำลังตรวจสอบ…",saved:"ตรวจพบสาขาแล้ว ตรวจชื่อร้าน/สาขาก่อนเปิดจอ",pinInvalid:"PIN ไม่ถูกต้อง",
     pinChanged:"PIN ถูกเปลี่ยนแล้ว กรุณาปลดล็อกใหม่",storageFailed:"บันทึกข้อมูลเครื่องไม่ได้ กรุณาติดต่อ IT",
     pinLocked:"ใส่ PIN ผิดหลายครั้ง เครื่องถูกล็อกชั่วคราว",pinNoPin:"ยังไม่ได้ตั้ง PIN ดูแลจอในหลังบ้าน",
     failed:"ตรวจสอบไม่สำเร็จ กรุณาติดต่อพนักงาน",pinNetwork:"ตรวจ PIN ไม่ได้ กรุณาตรวจเครือข่าย",
-    retryLater:"กรุณารอ 5 วินาทีก่อนลองใหม่",
+    pinTimeout:"ตรวจ PIN นานเกินไป กรุณาตรวจเครือข่าย",pinServer:"บริการตรวจ PIN ไม่พร้อม กรุณาติดต่อพนักงาน",
+    pinRedis:"ระบบจำกัดการลอง PIN ไม่พร้อม กรุณาติดต่อพนักงาน",
+    pinRate:"ลอง PIN ถี่เกินไป กรุณารอสักครู่",retryLater:"กรุณารอ 5 วินาทีก่อนลองใหม่",
   },
   en: {
     staffOnly:"Staff setup",start:"Getting started",connectTitle:"Connect this screen to your branch",
@@ -43,14 +51,23 @@ const copy = {
     networkDescription:"Please ask staff to check your request before starting again.",
     revokedTitle:"This screen is disabled",revokedDescription:"Ask staff to check the device and URL.",
     bindingTitle:"URL unavailable",bindingDescription:"The URL may have been rotated or disabled. Ask staff to install a new URL.",
+    wrongBranchTitle:"URL belongs to another branch",wrongBranchDescription:"Ask staff to verify the branch and install this branch's URL.",
+    pinChangedTitle:"Maintenance PIN changed",pinChangedDescription:"Ask the screen manager to enter the new PIN before reopening ordering.",
+    noPinTitle:"Maintenance PIN not set",noPinDescription:"Ask a manager to set the PIN in the back office before opening this screen.",
     storageTitle:"Cannot read device settings",storageDescription:"Ask IT to check the OS account and secure storage.",
     serverTitle:"Service temporarily unavailable",serverDescription:"Please ask staff and try again later.",
+    timeoutTitle:"Verification timed out",timeoutDescription:"Check the network, ask staff to check the request in POS, then retry.",
+    redisTitle:"Request limiting unavailable",redisDescription:"Ask staff for help. Request frequency cannot be checked right now.",
+    rateTitle:"Too many requests",rateDescription:"Wait a moment and retry, or ask staff to check the screen.",
     crashTitle:"Ordering screen stopped",crashDescription:"Ask staff to check your request before reopening the screen.",
     invalidUrl:"Invalid or unapproved URL",invalidCredential:"Invalid device credential",busy:"Checking…",
     saved:"Branch verified. Confirm the shop and branch before opening.",pinInvalid:"Incorrect PIN",pinLocked:"Too many attempts. This screen is temporarily locked.",
     pinChanged:"Maintenance PIN changed. Unlock again.",storageFailed:"Could not save device settings. Ask IT.",
     pinNoPin:"No maintenance PIN has been set in the back office.",failed:"Could not verify. Please ask staff.",
-    pinNetwork:"Cannot verify PIN. Check the network.",retryLater:"Please wait 5 seconds before retrying.",
+    pinNetwork:"Cannot verify PIN. Check the network.",pinTimeout:"PIN verification timed out. Check the network.",
+    pinServer:"PIN verification service unavailable. Ask staff for help.",
+    pinRedis:"PIN attempt limiting unavailable. Ask staff for help.",
+    pinRate:"Too many PIN attempts. Wait a moment.",retryLater:"Please wait 5 seconds before retrying.",
   },
 };
 
@@ -71,20 +88,28 @@ function showStatus(id, text, success = false) {
 function setupError(code) {
   return say(code === "INVALID_URL" ? "invalidUrl" : code === "INVALID_CREDENTIAL" ? "invalidCredential"
     : code === "NO_PIN" ? "pinNoPin" : code === "PIN_CHANGED" ? "pinChanged"
-      : code === "BINDING" ? "bindingDescription" : code === "REVOKED" ? "revokedDescription"
-        : code === "NETWORK" ? "networkDescription" : code === "STORAGE" ? "storageFailed" : "failed");
+      : code === "WRONG_BRANCH" ? "wrongBranchDescription"
+        : code === "BINDING" || code === "URL_UNAVAILABLE" ? "bindingDescription"
+          : code === "REVOKED" ? "revokedDescription" : code === "NETWORK" ? "networkDescription"
+            : code === "TIMEOUT" ? "timeoutDescription" : code === "SERVER" ? "serverDescription"
+              : code === "REDIS_UNAVAILABLE" ? "redisDescription" : code === "RATE_LIMITED" ? "rateDescription"
+                : code === "STORAGE" ? "storageFailed" : "failed");
 }
 
 function render() {
   document.documentElement.lang = language;
   for (const element of document.querySelectorAll("[data-text]")) element.textContent = say(element.dataset.text);
   for (const name of ["setup", "pin", "recovery"]) $(name).hidden = name !== view;
-  const kind = reason === "REVOKED" ? "revoked" : reason === "BINDING" ? "binding"
-    : reason === "STORAGE" ? "storage" : reason === "SERVER" ? "server"
-      : reason === "CRASH" ? "crash" : "network";
+  const kind = reason === "REVOKED" ? "revoked"
+    : reason === "BINDING" || reason === "URL_UNAVAILABLE" ? "binding"
+      : reason === "WRONG_BRANCH" ? "wrongBranch" : reason === "PIN_CHANGED" ? "pinChanged"
+        : reason === "NO_PIN" ? "noPin" : reason === "STORAGE" ? "storage"
+          : reason === "SERVER" ? "server" : reason === "CRASH" ? "crash"
+            : reason === "TIMEOUT" ? "timeout" : reason === "REDIS_UNAVAILABLE" ? "redis"
+              : reason === "RATE_LIMITED" ? "rate" : "network";
   $("recovery-title").textContent = say(`${kind}Title`);
   $("recovery-description").textContent = say(`${kind}Description`);
-  $("retry").hidden = kind === "revoked" || kind === "binding" || kind === "storage";
+  $("retry").hidden = ["revoked", "binding", "wrongBranch", "pinChanged", "noPin", "storage"].includes(kind);
   $("open-maintenance").hidden = !canMaintain;
   if (view === "pin") $("maintenance-pin").focus();
   if (view === "setup") $("kiosk-url").focus();
@@ -153,10 +178,13 @@ $("pin-form").addEventListener("submit", async (event) => {
     showStatus("pin-status", "");
     await refreshState();
   } catch (error) {
-    showStatus("pin-status", say(error.message === "LOCKED" || error.message === "RATE_LIMITED" ? "pinLocked"
+    showStatus("pin-status", say(error.message === "LOCKED" ? "pinLocked"
+      : error.message === "RATE_LIMITED" ? "pinRate"
       : error.message === "NO_PIN" ? "pinNoPin"
         : error.message === "REVOKED" ? "revokedDescription"
-          : error.message === "NETWORK" || error.message === "SERVER" ? "pinNetwork" : "pinInvalid"));
+          : error.message === "NETWORK" ? "pinNetwork" : error.message === "TIMEOUT" ? "pinTimeout"
+            : error.message === "REDIS_UNAVAILABLE" ? "pinRedis"
+              : error.message === "SERVER" ? "pinServer" : "pinInvalid"));
   } finally { $("pin-submit").disabled = false; }
 });
 

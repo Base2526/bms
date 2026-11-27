@@ -11,7 +11,11 @@ export const dynamic = "force-dynamic";
 
 async function admission(credential: string, action: string, ceiling: number) {
   const result = await checkRestaurantKioskRateLimit(credential, `device:${action}`, ceiling);
-  return result.status === 200 ? null : NextResponse.json({ error: "กรุณารอสักครู่แล้วลองใหม่" },
+  return result.status === 200 ? null : NextResponse.json({
+    code: result.status === 503 ? "RATE_LIMIT_UNAVAILABLE" : "RATE_LIMITED",
+    error: result.status === 503 ? "ตรวจการจำกัดคำขอไม่ได้ กรุณาติดต่อพนักงาน"
+      : "ส่งคำขอถี่เกินไป กรุณารอแล้วลองใหม่",
+  },
     { status: result.status, headers: { "retry-after": String(result.retryAfter) } });
 }
 
@@ -42,8 +46,17 @@ async function handlePOST(req: NextRequest) {
       const result = await validateKioskDesktopBinding(credential,
         typeof body.publicToken === "string" ? body.publicToken : "",
         typeof body.pinVersion === "string" ? body.pinVersion : "");
-      return result ? NextResponse.json(result, { headers: { "cache-control": "no-store" } })
-        : NextResponse.json({ error: "URL ไม่ตรงกับเครื่องและสาขานี้" }, { status: 409 });
+      if (!result) return NextResponse.json({ code: "BINDING", error: "ตรวจเครื่องและ URL ไม่ผ่าน" }, { status: 409 });
+      if (result.status !== "OK") {
+        const error = result.status === "WRONG_BRANCH" ? "URL นี้เป็นของสาขาอื่น กรุณาตรวจสาขาก่อนติดตั้ง"
+          : result.status === "PIN_CHANGED" ? "PIN ดูแลจอถูกเปลี่ยน กรุณาปลดล็อกใหม่"
+            : result.status === "NO_PIN" ? "ยังไม่ได้ตั้ง PIN ดูแลจอ"
+              : "URL นี้ถูกปิดหรือหมุนแล้ว กรุณาขอ URL ใหม่";
+        return NextResponse.json({ code: result.status, error },
+          { status: result.status === "URL_UNAVAILABLE" ? 410 : 409 });
+      }
+      return NextResponse.json({ storeName: result.storeName, locationName: result.locationName },
+        { headers: { "cache-control": "no-store" } });
     }
     if (action === "verifyPin") {
       const result = await verifyKioskDesktopPin(credential,

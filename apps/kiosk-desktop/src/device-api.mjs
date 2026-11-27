@@ -11,11 +11,15 @@ export function createKioskDeviceApi(fetcher = globalThis.fetch) {
     try {
       response = await fetcher(new URL(`/api/bms/restaurant-kiosk/${encodeURIComponent(publicToken)}`, origin),
         { method: "GET", redirect: "manual", signal: AbortSignal.timeout(TIMEOUT_MS) });
-    } catch { throw new KioskDeviceApiError("NETWORK"); }
+    } catch (error) { throw new KioskDeviceApiError(error?.name === "TimeoutError" ? "TIMEOUT" : "NETWORK"); }
     if (response.status >= 300 && response.status < 400) throw new KioskDeviceApiError("REDIRECT");
     if (response.status === 410) throw new KioskDeviceApiError("BINDING");
     if (response.status === 429) throw new KioskDeviceApiError("RATE_LIMITED");
-    if (response.status >= 500) throw new KioskDeviceApiError("SERVER");
+    if (response.status >= 500) {
+      let code;
+      try { code = (await response.json())?.code; } catch {}
+      throw new KioskDeviceApiError(code === "RATE_LIMIT_UNAVAILABLE" ? "REDIS_UNAVAILABLE" : "SERVER");
+    }
     if (!response.ok) throw new KioskDeviceApiError("BINDING");
     let data;
     try { data = await response.json(); } catch { throw new KioskDeviceApiError("INVALID_RESPONSE"); }
@@ -33,15 +37,22 @@ export function createKioskDeviceApi(fetcher = globalThis.fetch) {
           ...(body ? { "content-type": "application/json" } : {}) },
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
-    } catch { throw new KioskDeviceApiError("NETWORK"); }
+    } catch (error) { throw new KioskDeviceApiError(error?.name === "TimeoutError" ? "TIMEOUT" : "NETWORK"); }
     if (response.status >= 300 && response.status < 400) throw new KioskDeviceApiError("REDIRECT");
     if (response.status === 401) throw new KioskDeviceApiError("REVOKED");
     if (response.status === 429) throw new KioskDeviceApiError("RATE_LIMITED");
-    if (response.status === 503 || response.status >= 500) throw new KioskDeviceApiError("SERVER");
     let data;
-    try { data = await response.json(); } catch { throw new KioskDeviceApiError("INVALID_RESPONSE"); }
-    if (!response.ok) throw new KioskDeviceApiError(body?.action === "bind" ? "BINDING" :
-      data?.status === "LOCKED" ? "LOCKED" : data?.status === "NO_PIN" ? "NO_PIN" : "INVALID_PIN");
+    try { data = await response.json(); }
+    catch { throw new KioskDeviceApiError(response.status >= 500 ? "SERVER" : "INVALID_RESPONSE"); }
+    if (response.status >= 500) throw new KioskDeviceApiError(
+      data?.code === "RATE_LIMIT_UNAVAILABLE" ? "REDIS_UNAVAILABLE" : "SERVER");
+    if (!response.ok) {
+      if (body?.action === "bind") throw new KioskDeviceApiError(
+        ["WRONG_BRANCH", "PIN_CHANGED", "NO_PIN", "URL_UNAVAILABLE"].includes(data?.code)
+          ? data.code : "BINDING");
+      throw new KioskDeviceApiError(data?.status === "LOCKED" ? "LOCKED"
+        : data?.status === "NO_PIN" ? "NO_PIN" : "INVALID_PIN");
+    }
     return data;
   }
   return {

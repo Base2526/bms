@@ -23,12 +23,15 @@ try {
         getState: async () => window.__state,
         validate: async ({ url }) => {
           await new Promise(resolve => setTimeout(resolve, 200));
+          if (url.includes('wrong-branch')) return { ok: false, code: 'WRONG_BRANCH' };
+          if (url.includes('redis-down')) return { ok: false, code: 'REDIS_UNAVAILABLE' };
           return url.includes('evil.test') ? { ok: false, code: 'INVALID_URL' }
             : { ok: true, storeName: 'FAKE Restaurant', locationName: 'FAKE Branch' };
         },
         activate: async () => ({ ok: true }),
         verifyPin: async pin => ({ ok: pin === '123456', code: pin === '999999' ? 'LOCKED'
-          : pin === '888888' ? 'NETWORK' : 'INVALID_PIN' }),
+          : pin === '888888' ? 'NETWORK' : pin === '777777' ? 'RATE_LIMITED'
+            : pin === '666666' ? 'REDIS_UNAVAILABLE' : 'INVALID_PIN' }),
         cancelMaintenance: async () => ({ ok: true }),
         retry: async () => ({ ok: false, code: 'NETWORK' }),
         openMaintenance: async () => ({ ok: true }),
@@ -37,6 +40,8 @@ try {
     const page = await context.newPage();
     await page.goto(file);
     await page.getByRole('heading', { name: 'ติดตั้ง URL ของสาขา' }).waitFor();
+    const keys = await page.evaluate(() => ({ th: Object.keys(copy.th).sort(), en: Object.keys(copy.en).sort() }));
+    assert.deepEqual(keys.th, keys.en, 'Desktop shell Thai/English keys must match');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: `${output}/setup-${name}.png` });
     await page.locator('#kiosk-url').fill('https://evil.test/kiosk/' + 'a'.repeat(43));
@@ -44,6 +49,14 @@ try {
     await page.screenshot({ path: `${output}/loading-${name}.png` });
     await page.getByText('URL ไม่ถูกต้องหรือไม่ได้รับอนุญาต').waitFor();
     await page.screenshot({ path: `${output}/invalid-${name}.png` });
+    await page.locator('#kiosk-url').fill('https://wrong-branch.test/kiosk/' + 'a'.repeat(43));
+    await page.getByRole('button', { name: 'ตรวจ URL และสาขา' }).click();
+    await page.getByText('กรุณาให้พนักงานตรวจสาขาและติดตั้ง URL ของสาขานี้').waitFor();
+    await page.screenshot({ path: `${output}/wrong-branch-${name}.png` });
+    await page.locator('#kiosk-url').fill('https://redis-down.test/kiosk/' + 'a'.repeat(43));
+    await page.getByRole('button', { name: 'ตรวจ URL และสาขา' }).click();
+    await page.getByText('กรุณาติดต่อพนักงาน ระบบยังตรวจความถี่คำขอไม่ได้').waitFor();
+    await page.screenshot({ path: `${output}/redis-setup-${name}.png` });
     await page.locator('#kiosk-url').fill(`https://bms.jachoei.com/kiosk/${'a'.repeat(43)}`);
     await page.locator('#device-token').fill('FAKE-CREDENTIAL');
     await page.getByRole('button', { name: 'ตรวจ URL และสาขา' }).click();
@@ -70,6 +83,14 @@ try {
     await page.getByRole('button', { name: 'ปลดล็อกการตั้งค่า' }).click();
     await page.getByText('ตรวจ PIN ไม่ได้ กรุณาตรวจเครือข่าย').waitFor();
     await page.screenshot({ path: `${output}/pin-network-${name}.png` });
+    await page.locator('#maintenance-pin').fill('777777');
+    await page.getByRole('button', { name: 'ปลดล็อกการตั้งค่า' }).click();
+    await page.getByText('ลอง PIN ถี่เกินไป กรุณารอสักครู่').waitFor();
+    await page.screenshot({ path: `${output}/pin-rate-${name}.png` });
+    await page.locator('#maintenance-pin').fill('666666');
+    await page.getByRole('button', { name: 'ปลดล็อกการตั้งค่า' }).click();
+    await page.getByText('ระบบจำกัดการลอง PIN ไม่พร้อม กรุณาติดต่อพนักงาน').waitFor();
+    await page.screenshot({ path: `${output}/pin-redis-${name}.png` });
     await page.evaluate(() => sessionStorage.setItem('fixtureState', JSON.stringify({ view: 'recovery', reason: 'NETWORK', canMaintain: true })));
     await page.reload();
     await page.getByRole('heading', { name: 'เชื่อมต่อไม่ได้ในขณะนี้' }).waitFor();
@@ -95,6 +116,22 @@ try {
     await page.getByRole('heading', { name: 'อ่านข้อมูลเครื่องไม่ได้' }).waitFor();
     assert.equal(await page.locator('#open-maintenance').isHidden(), true);
     await page.screenshot({ path: `${output}/storage-${name}.png` });
+    for (const [reason, heading, screenshot] of [
+      ['WRONG_BRANCH', 'URL เป็นของสาขาอื่น', 'wrong-branch-recovery'],
+      ['PIN_CHANGED', 'PIN ดูแลจอถูกเปลี่ยน', 'pin-changed'],
+      ['NO_PIN', 'ยังไม่ได้ตั้ง PIN ดูแลจอ', 'no-pin'],
+      ['TIMEOUT', 'ตรวจสอบนานเกินไป', 'timeout'],
+      ['REDIS_UNAVAILABLE', 'ระบบจำกัดคำขอไม่พร้อม', 'redis-recovery'],
+      ['RATE_LIMITED', 'ส่งคำขอถี่เกินไป', 'rate-recovery'],
+    ]) {
+      await page.evaluate((code) => sessionStorage.setItem('fixtureState', JSON.stringify({
+        view: 'recovery', reason: code, canMaintain: true,
+      })), reason);
+      await page.reload();
+      await page.getByRole('heading', { name: heading }).waitFor();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      await page.screenshot({ path: `${output}/${screenshot}-${name}.png` });
+    }
     console.log(`kiosk desktop browser ${name} ${width}x${height} OK`);
     await context.close();
   }

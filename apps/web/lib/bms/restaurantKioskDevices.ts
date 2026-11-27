@@ -180,20 +180,27 @@ export async function validateKioskDesktopBinding(credential: string, publicToke
   const device = await locateKioskDesktopDevice(credential);
   if (!device || !PUBLIC_TOKEN.test(publicToken) || !UUID.test(pinVersion)) return null;
   return kioskTenantRead(device.tenant_id, async (client) => {
-    const result = await client.query<{ store_name: string; location_name: string }>(
-      `SELECT t.name AS store_name, l.name AS location_name
+    const result = await client.query<{
+      store_name: string; location_name: string; kiosk_location_id: string | null;
+      pin_configured: boolean; pin_revision: string;
+    }>(`SELECT t.name AS store_name, l.name AS location_name,
+                d.pin_hash IS NOT NULL AS pin_configured, d.pin_revision,
+                k.location_id AS kiosk_location_id
          FROM bms_restaurant_kiosk_devices d
-         JOIN bms_restaurant_kiosks k
-           ON k.tenant_id=d.tenant_id AND k.location_id=d.location_id
          JOIN bms_locations l ON l.tenant_id=d.tenant_id AND l.id=d.location_id AND l.active
          JOIN bms_tenants t ON t.id=d.tenant_id
+         LEFT JOIN bms_restaurant_kiosks k
+           ON k.tenant_id=d.tenant_id AND k.token_hash=$5 AND k.active
         WHERE d.tenant_id=$1 AND d.id=$2 AND d.active AND d.credential_hash=$3
-          AND d.pin_hash IS NOT NULL AND d.pin_revision=$4::uuid
-          AND k.active AND k.token_hash=$5`,
-      [device.tenant_id, device.id, digest(credential), pinVersion, digest(publicToken)]);
-    return result.rows[0]
-      ? { storeName: result.rows[0].store_name, locationName: result.rows[0].location_name }
-      : null;
+          AND d.location_id=$4`,
+      [device.tenant_id, device.id, digest(credential), device.location_id, digest(publicToken)]);
+    const row = result.rows[0];
+    if (!row) return null;
+    if (!row.pin_configured) return { status: "NO_PIN" as const };
+    if (row.pin_revision !== pinVersion.toLowerCase()) return { status: "PIN_CHANGED" as const };
+    if (!row.kiosk_location_id) return { status: "URL_UNAVAILABLE" as const };
+    if (row.kiosk_location_id !== device.location_id) return { status: "WRONG_BRANCH" as const };
+    return { status: "OK" as const, storeName: row.store_name, locationName: row.location_name };
   });
 }
 

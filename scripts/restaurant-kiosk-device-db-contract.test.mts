@@ -91,8 +91,11 @@ test("desktop kiosk PIN/device service serializes attempts and invalidates old c
       SELECT $2,$3,$3,'Administrator',r.id,$1,'x',TRUE FROM roles r WHERE r.name='Administrator' LIMIT 1 RETURNING id`,
     [tenant, tag, `${tag}@example.invalid`])).rows[0].id;
     const publicToken = randomBytes(32).toString("base64url");
+    const otherPublicToken = randomBytes(32).toString("base64url");
     await client.query(`INSERT INTO bms_restaurant_kiosks(tenant_id,location_id,token_hash,created_by)
       VALUES($1,$2,$3,$4)`, [tenant, branch, createHash("sha256").update(publicToken).digest("hex"), user]);
+    await client.query(`INSERT INTO bms_restaurant_kiosks(tenant_id,location_id,token_hash,created_by)
+      VALUES($1,$2,$3,$4)`, [tenant, otherBranch, createHash("sha256").update(otherPublicToken).digest("hex"), user]);
     const issued = await issueKioskDesktopDevice({ tenantId: tenant, locationId: branch,
       actorUserId: user, label: "FAKE touch screen" });
     assert.equal((await kioskDesktopDeviceStatus(issued.credential))?.pinConfigured, false);
@@ -104,8 +107,13 @@ test("desktop kiosk PIN/device service serializes attempts and invalidates old c
       deviceId: issued.deviceId, actorUserId: user, action: "setPin", pin: "123456" });
     const before = await kioskDesktopDeviceStatus(issued.credential);
     assert.equal(before?.pinConfigured, true);
-    assert.ok(await validateKioskDesktopBinding(issued.credential, publicToken, before!.pinVersion));
-    assert.equal(await validateKioskDesktopBinding(issued.credential, publicToken, randomUUID()), null);
+    assert.equal((await validateKioskDesktopBinding(issued.credential, publicToken, before!.pinVersion))?.status, "OK");
+    assert.equal((await validateKioskDesktopBinding(issued.credential, otherPublicToken, before!.pinVersion))?.status,
+      "WRONG_BRANCH");
+    assert.equal((await validateKioskDesktopBinding(issued.credential,
+      randomBytes(32).toString("base64url"), before!.pinVersion))?.status, "URL_UNAVAILABLE");
+    assert.equal((await validateKioskDesktopBinding(issued.credential, publicToken, randomUUID()))?.status,
+      "PIN_CHANGED");
     const attempts = await Promise.all(Array.from({ length: 5 }, () =>
       verifyKioskDesktopPin(issued.credential, "000000")));
     assert.equal(attempts.filter((item) => item.status === "INVALID").length, 4);
@@ -115,7 +123,8 @@ test("desktop kiosk PIN/device service serializes attempts and invalidates old c
       deviceId: issued.deviceId, actorUserId: user, action: "resetPin", pin: "654321" });
     const after = await kioskDesktopDeviceStatus(issued.credential);
     assert.notEqual(after?.pinVersion, before?.pinVersion);
-    assert.equal(await validateKioskDesktopBinding(issued.credential, publicToken, before!.pinVersion), null);
+    assert.equal((await validateKioskDesktopBinding(issued.credential, publicToken, before!.pinVersion))?.status,
+      "PIN_CHANGED");
     assert.equal((await verifyKioskDesktopPin(issued.credential, "123456")).status, "INVALID");
     assert.equal((await verifyKioskDesktopPin(issued.credential, "654321")).status, "OK");
     const rotated = await manageKioskDesktopDevice({ tenantId: tenant, locationId: branch,

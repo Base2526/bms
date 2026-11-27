@@ -2847,6 +2847,12 @@ visible. A rotated device
 credential requires OS administrator recovery and reprovisioning. Staff search
 the request code in POS before any manual re-entry. Restored-DB, physical
 USB-touch, KDS and payment acceptance remain pilot gates.
+The local shell names the reason and next action separately for a wrong-branch
+URL, rotated/closed URL, changed or missing maintenance PIN, locked PIN,
+HTTP 429, Redis admission 503, network timeout, server 5xx, secure-storage
+failure and renderer crash. HTTP 429 does not mean the PIN is locked. A late
+customer-page load cannot take focus from a PIN or recovery screen; leaving
+settings creates a fresh guest session.
 Catalog images may use external URLs; the customer route and native guest
 strip the kiosk URL from external `Referer` headers while keeping the Web image
 fallback for a failed image.

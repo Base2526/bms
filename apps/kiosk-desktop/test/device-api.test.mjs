@@ -40,3 +40,28 @@ test("device API sends credential only to the fixed origin and fails closed", as
   await assert.rejects(gone.publicMenu("https://bms.jachoei.com", "a".repeat(43)),
     (error) => error.code === "BINDING");
 });
+
+test("device API preserves actionable error codes without exposing response details", async () => {
+  const bind = (api) => api.bind("https://bms.jachoei.com", "secret", "a".repeat(43),
+    "11111111-1111-4111-8111-111111111111");
+  for (const [status, code, expected] of [
+    [409, "WRONG_BRANCH", "WRONG_BRANCH"],
+    [409, "PIN_CHANGED", "PIN_CHANGED"],
+    [409, "NO_PIN", "NO_PIN"],
+    [410, "URL_UNAVAILABLE", "URL_UNAVAILABLE"],
+    [429, "RATE_LIMITED", "RATE_LIMITED"],
+    [503, "RATE_LIMIT_UNAVAILABLE", "REDIS_UNAVAILABLE"],
+    [503, "OTHER", "SERVER"],
+  ]) {
+    const api = createKioskDeviceApi(async () => new Response(JSON.stringify({ code, error: "FAKE detail" }),
+      { status }));
+    await assert.rejects(bind(api), (error) => error instanceof KioskDeviceApiError && error.code === expected);
+  }
+  const timeout = createKioskDeviceApi(async () => { throw new DOMException("timed out", "TimeoutError"); });
+  await assert.rejects(timeout.status("https://bms.jachoei.com", "secret"),
+    (error) => error.code === "TIMEOUT");
+  const redis = createKioskDeviceApi(async () => new Response(
+    JSON.stringify({ code: "RATE_LIMIT_UNAVAILABLE" }), { status: 503 }));
+  await assert.rejects(redis.publicMenu("https://bms.jachoei.com", "a".repeat(43)),
+    (error) => error.code === "REDIS_UNAVAILABLE");
+});

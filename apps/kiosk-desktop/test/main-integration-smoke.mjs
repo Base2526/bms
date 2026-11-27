@@ -13,10 +13,15 @@ const credential = `bmsk_${"b".repeat(43)}`;
 let revoked = false;
 let urlGone = false;
 let failNextStatus = false;
+let delayNextPage = false;
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, "http://127.0.0.1").pathname;
   const json = (status, data) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(data)); };
   if (path === `/kiosk/${token}`) {
+    if (delayNextPage) {
+      delayNextPage = false;
+      await new Promise((resolve) => setTimeout(resolve, 1800));
+    }
     res.writeHead(200, { "content-type": "text/html" });
     res.end("<!doctype html><title>FAKE kiosk</title><h1>FAKE customer page</h1>"); return;
   }
@@ -27,7 +32,7 @@ const server = createServer(async (req, res) => {
   if (path === "/api/bms/restaurant-kiosk-device") {
     if (req.headers["x-kiosk-device-token"] !== credential || revoked) { json(401, {}); return; }
     if (req.method === "GET") {
-      if (failNextStatus) { failNextStatus = false; json(503, {}); return; }
+      if (failNextStatus) { failNextStatus = false; json(503, { code: "RATE_LIMIT_UNAVAILABLE" }); return; }
       json(200, { pinConfigured: true, pinSetAt: "2026-11-27T00:00:00.000Z",
         pinVersion: "11111111-1111-4111-8111-111111111111" }); return;
     }
@@ -107,13 +112,26 @@ app.whenReady().then(async () => { try {
   await afterTimeout.webContents.executeJavaScript("sessionStorage.setItem('cart', 'FAKE-OLD-CUSTOMER')");
   failNextStatus = true;
   await new Promise((resolve) => setTimeout(resolve, 16_000));
-  assert.equal(guest()?.isVisible(), true, "transient heartbeat outage must keep current cart/window");
+  assert.equal(guest(), afterTimeout, "transient heartbeat outage must retain the same customer window");
+  assert.equal(await afterTimeout.webContents.executeJavaScript("sessionStorage.getItem('cart')"),
+    "FAKE-OLD-CUSTOMER", "transient heartbeat outage must retain the current cart");
   urlGone = true;
   await until(() => !guest() && shell.isVisible(), "rotated URL closes guest", 18_000);
   assert.equal(await shell.webContents.executeJavaScript("!document.querySelector('#recovery').hidden"), true);
   urlGone = false;
+  delayNextPage = true;
   await shell.webContents.executeJavaScript("window.bmsKiosk.retry()");
-  const replacement = await until(() => guest() && guest() !== afterTimeout && guest(), "fresh guest after retry");
+  const loading = await until(() => BrowserWindow.getAllWindows().find(
+    (window) => window !== shell && !window.isVisible()), "new guest is still loading");
+  await shell.webContents.executeJavaScript("window.bmsKiosk.openMaintenance()");
+  await until(() => shell.isVisible() && shell.webContents.executeJavaScript("!document.querySelector('#pin').hidden"),
+    "PIN screen during slow guest load");
+  await new Promise((resolve) => setTimeout(resolve, 2200));
+  assert.equal(shell.isVisible(), true, "late guest load cannot hide the PIN screen");
+  assert.equal(loading.isVisible(), false);
+  await shell.webContents.executeJavaScript("window.bmsKiosk.cancelMaintenance()");
+  const replacement = await until(() => guest() && guest() !== afterTimeout && guest() !== loading && guest(),
+    "fresh guest after retry");
   await until(() => replacement.isVisible(), "fresh guest visible");
   assert.equal(await replacement.webContents.executeJavaScript("sessionStorage.getItem('cart')"), null);
   replacement.webContents.forcefullyCrashRenderer();
@@ -130,11 +148,16 @@ app.whenReady().then(async () => { try {
   await mkdir(output, { recursive: true });
   await writeFile(join(output, "real-main-revoked-fixture.png"),
     await shell.webContents.capturePage().then((image) => image.toPNG()));
-  console.log("main integration fixture: provision, guest isolation, navigation, PIN, transient outage, rotation, crash and revoke passed");
+  console.log("main integration fixture: provision, guest isolation, PIN, Redis outage, slow-load race, rotation, crash and revoke passed");
 } catch (error) { console.error(error); process.exitCode = 1; }
 finally {
-  app.quit();
   await new Promise((resolve) => server.close(resolve));
-  if (temp.startsWith(join(tmpdir(), "bms-kiosk-integration-"))) await rm(temp, { recursive: true, force: true });
-  if (process.exitCode) app.exit(process.exitCode);
+  if (temp.startsWith(join(tmpdir(), "bms-kiosk-integration-"))) {
+    try { await rm(temp, { recursive: true, force: true }); }
+    catch (error) {
+      // Windows keeps Electron's profile lockfile open until this process exits.
+      if (error?.code !== "EBUSY") { console.error(error); process.exitCode = 1; }
+    }
+  }
+  app.exit(process.exitCode || 0);
 } }).catch((error) => { console.error(error); process.exitCode = 1; app.quit(); });

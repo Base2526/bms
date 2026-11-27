@@ -1172,6 +1172,9 @@ own dine-in service. Operator detail:
   The native app fails closed on missing secure storage, revoked credential,
   invalid URL binding and PIN/network failure. Device and PIN hashes must not
   appear in audit, revision snapshots, logs or admin list responses.
+  Device binding checks the current credential, PIN revision and public URL's
+  branch together; wrong-branch/rotated-URL/PIN-change codes remain distinct.
+  Native page-load callbacks must not revive a guest after PIN/recovery opens.
   The customer route uses `no-referrer`; the native guest strips external
   `Referer` headers so a third-party catalog image cannot receive the URL token.
   Staff review uses a server-computed catalog quote and compares its fingerprint when accepting;

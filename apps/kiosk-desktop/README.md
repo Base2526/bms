@@ -29,6 +29,13 @@ a transient heartbeat failure does not discard an in-progress customer cart.
 Customer state is held in an in-memory Electron partition, not disk. The server
 checks the device credential, current PIN revision and branch URL again when
 binding a screen, including after a PIN or credential change.
+Native load callbacks are bound to their own window: a page that finishes
+loading late cannot hide a PIN/recovery screen or revive an earlier guest.
+The screen distinguishes wrong branch, URL rotation, PIN change or missing PIN,
+request throttling (429), unavailable shared rate limiting (503), network
+timeout, server error, secure-storage failure and renderer crash. A 429 is not
+a PIN lock; staff should wait and retry, while a locked PIN requires the
+manager's back-office action or the lock interval to expire.
 Catalog images may come from external URLs. The Web kiosk sets `no-referrer` and
 the native guest session removes `Referer` on external requests so its public
 URL token is not sent to an image host; broken images use the Web fallback.

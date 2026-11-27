@@ -101,14 +101,18 @@ function scheduleMaintenanceLock() {
   }, MAINTENANCE_MS);
 }
 
-function showGuest() {
+function showGuest(target) {
+  if (guest !== target || target.isDestroyed() || view !== "customer") return;
   clearMaintenance();
   if (shell && !shell.isDestroyed()) shell.hide();
-  if (guest && !guest.isDestroyed()) { guest.show(); guest.focus(); }
+  target.show();
+  target.focus();
 }
 
 function closeGuest() {
-  if (guest && !guest.isDestroyed()) { guest.destroy(); guest = null; }
+  const current = guest;
+  guest = null;
+  if (current && !current.isDestroyed()) current.destroy();
 }
 
 function customerWindow(url) {
@@ -119,28 +123,36 @@ function customerWindow(url) {
   guestSession.webRequest.onBeforeSendHeaders((details, callback) => {
     callback({ requestHeaders: redactExternalReferrer(details.url, boundOrigin, details.requestHeaders) });
   });
-  guest = new BrowserWindow({
+  const currentGuest = new BrowserWindow({
     fullscreen: true, kiosk: true, autoHideMenuBar: true, backgroundColor: "#fff", show: false,
     webPreferences: guestWebPreferences(partition),
   });
-  guest.setMenu(null);
-  guest.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  guest.webContents.on("will-navigate", (event, target) => {
+  guest = currentGuest;
+  view = "customer";
+  currentGuest.setMenu(null);
+  currentGuest.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  currentGuest.webContents.on("will-navigate", (event, target) => {
     if (!guestMayNavigate(target, url)) event.preventDefault();
   });
-  guest.webContents.on("before-input-event", (event, input) => {
+  currentGuest.webContents.on("before-input-event", (event, input) => {
+    if (guest !== currentGuest) return;
     const key = input.key.toLowerCase();
     if (input.control && input.alt && key === "k") { event.preventDefault(); openShell("pin"); return; }
     if (key === "f12" || key === "f5" || input.alt && key === "f4"
       || input.control && ["r", "w", "t", "n", "l"].includes(key)) event.preventDefault();
   });
-  guest.webContents.on("render-process-gone", () => { closeGuest(); openShell("recovery", "CRASH"); });
-  guest.webContents.on("did-fail-load", (_event, code, _description, validatedUrl, isMainFrame) => {
+  currentGuest.webContents.on("render-process-gone", () => {
+    if (guest !== currentGuest) return;
+    closeGuest(); openShell("recovery", "CRASH");
+  });
+  currentGuest.webContents.on("did-fail-load", (_event, code, _description, validatedUrl, isMainFrame) => {
+    if (guest !== currentGuest) return;
     if (isMainFrame && validatedUrl === url && code !== -3) { closeGuest(); openShell("recovery", "NETWORK"); }
   });
-  guest.on("closed", () => { guest = null; });
-  guest.on("close", (event) => { if (!quitting) event.preventDefault(); });
-  void guest.loadURL(url).then(() => showGuest()).catch(() => {
+  currentGuest.on("closed", () => { if (guest === currentGuest) guest = null; });
+  currentGuest.on("close", (event) => { if (!quitting) event.preventDefault(); });
+  void currentGuest.loadURL(url).then(() => showGuest(currentGuest)).catch(() => {
+    if (guest !== currentGuest) return;
     closeGuest(); openShell("recovery", "NETWORK");
   });
 }
@@ -151,7 +163,7 @@ async function checkDevice() {
   if (!parsed) throw new Error("BINDING");
   const status = await api.status(parsed.origin, config.deviceToken);
   if (!status.pinConfigured) throw new Error("NO_PIN");
-  if (pinVersion && pinVersion !== status.pinVersion) { clearMaintenance(); closeGuest(); throw new Error("BINDING"); }
+  if (pinVersion && pinVersion !== status.pinVersion) { clearMaintenance(); closeGuest(); throw new Error("PIN_CHANGED"); }
   pinVersion = status.pinVersion;
   await api.bind(parsed.origin, config.deviceToken, parsed.publicToken, status.pinVersion);
   return true;
@@ -168,9 +180,9 @@ async function recover() {
   catch (error) {
     closeGuest();
     const code = error?.code || error?.message || "SERVER";
-    openShell("recovery", code === "REVOKED" ? "REVOKED"
-      : ["BINDING", "NO_PIN"].includes(code) ? "BINDING"
-        : code === "NETWORK" ? "NETWORK" : "SERVER");
+    openShell("recovery", ["REVOKED", "BINDING", "URL_UNAVAILABLE", "WRONG_BRANCH",
+      "PIN_CHANGED", "NO_PIN", "NETWORK", "TIMEOUT", "REDIS_UNAVAILABLE", "RATE_LIMITED"].includes(code)
+      ? code : "SERVER");
     return { ok: false, code };
   }
 }
@@ -283,8 +295,8 @@ else {
       try { await checkDevice(); }
       catch (error) {
         const code = error?.code || error?.message;
-        if (["REVOKED", "BINDING", "NO_PIN"].includes(code)) {
-          closeGuest(); openShell("recovery", code === "REVOKED" ? "REVOKED" : "BINDING");
+        if (["REVOKED", "BINDING", "URL_UNAVAILABLE", "WRONG_BRANCH", "PIN_CHANGED", "NO_PIN"].includes(code)) {
+          closeGuest(); openShell("recovery", code);
         }
         // Transient network/5xx/Redis failures belong to the Web page. Never
         // destroy a customer's in-progress cart just because a heartbeat failed.
