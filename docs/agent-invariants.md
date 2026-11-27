@@ -1163,7 +1163,10 @@ own dine-in service. Operator detail:
   an existing OPEN dine-in check selected by staff, or opens a tableless takeaway check, and sends
   the ordinary reservation/KDS round in one transaction. Pending requests expire after 30 minutes;
   rotation or disable expires them immediately. The public screen never settles or mints a pickup
-  queue number.
+  queue number. The manager's request-code trace on the restaurant-floor page is a scoped, bounded
+  read of proposal → check → current order → POS payment/receipt/pickup evidence. Later kitchen
+  rounds can replace a pending order on the same check. Never report a pending proposal as a sale
+  or a CLOSING/RETURNED bill as newly paid; a failed trace read directs staff to verify at POS.
   A standalone Desktop Kiosk (`10.146`) has a separate branch-bound device
   credential and maintenance PIN. Neither is a cashier PIN or POS device token.
   Guest renderer has no preload/IPC; only the bundled local staff renderer may

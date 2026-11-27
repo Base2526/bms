@@ -114,6 +114,12 @@ again by the download API. Only a platform administrator uploads a draft and
 publishes it for a branch. Android/iOS public app links and Retail Local POS
 packages are separate release channels. The customer kiosk page has no download.
 
+After a customer submits a request, the branch manager can search its visible request code at
+`/admin/restaurant-floor` under **Track kiosk requests**. This read-only view distinguishes a
+pending proposal, an accepted check and a paid POS sale, with the check's current order, receipt
+and pickup number when present. It does not authorize acceptance or payment. If the read fails,
+staff verify the code and bill in the paired POS before entering anything again.
+
 The platform administrator records the SHA-256, uploads the NSIS `.exe` as a
 draft, and checks the actual stored bytes and Authenticode signature before
 publishing. A locally built unsigned installer remains a draft; it is **not**

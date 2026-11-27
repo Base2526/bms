@@ -2784,6 +2784,18 @@ existing issue-again action on that completed bill. Without numbering, staff cal
 by the bill/receipt. KDS READY, call, collect and receipt printing remain the ordinary POS flow.
 The kiosk request code is never a pickup number or proof of payment.
 
+At `/admin/restaurant-floor`, a branch manager with `restaurant.floor.manage` can search the
+customer's request code in **Track kiosk requests**. The server rechecks branch scope and returns
+only a bounded branch history without basket notes or device credentials. `PENDING`, `REJECTED`
+and `EXPIRED` are proposals, never sales. An accepted request links to its check; the displayed
+order is the **current check order**, because later kitchen rounds can replace an earlier pending
+reservation. `PAID` requires the check to be paid and the current order to be completed with a
+payment time. The view shows confirmed payment IDs, the active receipt or full tax invoice and the
+existing pickup number when present. A closing, inconsistent or returned bill tells the manager
+to verify POS sale history rather than claiming a fresh payment. This trace is a lookup, not a
+new sales ledger; existing POS reports and settlement remain authoritative. If a status read fails,
+check the request code and exact bill at POS before re-entering anything.
+
 Before closing the shift, resolve or reject pending requests, disable the kiosk while the shift is
 open, and verify the screen shows an unavailable state. On a network/POS/KDS/printer failure, use
 the request-code search and exact check link to determine whether acceptance already committed

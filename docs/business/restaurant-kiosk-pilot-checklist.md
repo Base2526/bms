@@ -2,19 +2,22 @@
 
 สถานะเอกสาร: ขั้นตอนตรวจที่ต้องทำบนฐานที่ restore และฮาร์ดแวร์จริง ยังไม่ใช่ผลผ่านการทดสอบ
 
-ผลตรวจในเครื่องพัฒนา 26 พ.ย. 2026: browser fixture ของ `/kiosk/[token]` ดีไซน์แดง–ขาว
+ผลตรวจในเครื่องพัฒนา 27 พ.ย. 2026: browser fixture ของ `/kiosk/[token]` ดีไซน์แดง–ขาว
 ผ่านที่ 1440×900, 1920×1080, 1080×1920 และ 390×844 px บน production build โดยตรวจ
 การกรองหมวดจาก field ใน API fixture, รูปเสีย, ขนาดหมด, modifier บังคับ, ตะกร้า, response หาย,
 สถานะคำขอ, idle reset, browser back/bfcache และหน้าเครือข่ายล้ม. ภาพ HOME, MENU, modal,
 CART, PENDING/ACCEPTED/REJECTED/EXPIRED, unavailable และ network อยู่ใน
 `.test-output/restaurant-kiosk-browser/`. Browser fixture ของ `/pos/restaurant?screen=kiosk`
 และ `/admin/restaurant-floor` ผ่านที่ 1440/390 px โดยจำลอง API ใน Playwright
+รวมการค้นรหัสคำขอ, หลักฐานบิล/ชำระ, และสถานะเมื่ออ่าน trace ไม่ได้
 ไม่ได้ใช้ฐานหรือเครื่อง POS จริง; ภาพอยู่ใน
 `.test-output/restaurant-kiosk-pos-browser/` และ
 `.test-output/restaurant-kiosk-admin-browser/`. `cd apps/web && npm run gate` ผ่าน:
-pure 4,030 (ผ่าน 4,024, ข้าม 6, ล้ม 0), typecheck และ production build ผ่าน.
+pure 4,037 (ผ่าน 4,031, ข้าม 6, ล้ม 0), typecheck และ production build ผ่าน.
 `cd apps/mobile && npm test -- --runInBand` ผ่าน 524/524, typecheck ผ่าน; Desktop
-`npm test` ผ่าน 179/179 และ lint ผ่าน. ผลเหล่านี้ยังเป็น fixture/automated tests.
+`npm test` ผ่าน 179/179 และ lint ผ่าน. Kiosk Desktop lint/unit 7/7, Electron smoke,
+native-main fixture และ Windows x64 package ผ่าน แต่ installer ล่าสุดยัง `NotSigned`.
+ผลเหล่านี้ยังเป็น fixture/automated tests.
 ยัง **ไม่ได้ทดสอบ** migration/DB service tests บนฐาน restore, Caddy ingress จริง, Redis หลาย instance,
 จอ USB touch, KDS/เครื่องพิมพ์, การชำระเงินจริงหรือใบเสร็จจริง จึงยังเป็น **No-Go**
 
@@ -93,6 +96,9 @@ installer ใดเอง ห้ามรันบน production
 | Desktop เปิด `/pos/restaurant?screen=kiosk` จาก pairing จริงและเน็ตหลุด | ค้นรหัส เปิด check ที่ผูก และกลับมา refresh ได้; journal บันทึก route แต่ไม่มี token/PIN/note | คลิป Desktop, journal ที่ redacted |
 | Mobile Restaurant Ops → จอสั่งอาหาร บนเครื่องจับคู่ | badge/เสียงขึ้นภายในรอบ poll; ค้นรหัสนอก 100 แถว; quote ราคา/ตัวเลือก/โต๊ะหลัง split ตรง server; รับ/ปฏิเสธด้วย PIN และเปิด check ที่ผูกไป Checkout ได้ | คลิป iOS/Android, GraphQL trace ที่ตัด PIN, check/receipt ids |
 | หลังบ้านหน้าจัดผังร้านเลือกสาขาที่มี/ไม่มี URL | แสดงสถานะและ pending count เฉพาะสาขาที่มีสิทธิ์; URL เดิมไม่ปรากฏ; ลิงก์พาไป POS เพื่อจัดการจอ | ภาพสองสาขา, denial ข้ามสาขา |
+| หลังบ้านค้นรหัสคำขอ TAKEAWAY และ DINE_IN ก่อนและหลังชำระ | PENDING ไม่เป็นยอดขาย; ACCEPTED ผูก check และ order ปัจจุบัน; PAID ต้องมี check PAID, order COMPLETED และเวลา paid_at; แสดง payment ID, ใบเสร็จ และเลขรับอาหารเฉพาะเมื่อมีจริง | รหัสคำขอ→submission→check→order→payment→receipt→queue ที่ตัด note/PIN/token |
+| เปลี่ยนรอบครัวหรือคืนเงิน แล้วค้นรหัสเดิม | order ที่แสดงเป็น order ปัจจุบันของ check; รายการ RETURNED/สถานะไม่แน่ใจไม่ถูกเรียกว่าเพิ่งชำระ และต้องตรวจประวัติ POS | before/after IDs และสถานะจาก DB/POS |
+| ใช้ manager ผิดสาขาหรือปิดเน็ตระหว่างดู trace | API ปฏิเสธ 403 หรือจอแจ้งตรวจ POS; ไม่แสดงผลเก่าราวกับเป็นสถานะใหม่ | HTTP status, screenshot สองสาขา |
 
 ## Go / No-Go
 

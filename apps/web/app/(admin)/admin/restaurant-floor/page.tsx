@@ -16,6 +16,7 @@ import QRCode from "qrcode";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import RestaurantTableChairs from "@/components/RestaurantTableChairs";
 import RestaurantKioskDevices from "@/components/admin/RestaurantKioskDevices";
+import RestaurantKioskTrace from "@/components/admin/RestaurantKioskTrace";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
 import styles from "./page.module.css";
@@ -437,6 +438,19 @@ export default function RestaurantFloorPage() {
     <Space direction="vertical" size="large" className={styles.page}>
       <AdminPageHeader title={t("admin_restaurant_floor.title")} />
 
+      {locations.length > 1 && <Card>
+        <label className={styles.branchPicker}>
+          <span>{t("admin_restaurant_floor.branch")}</span>
+          <Select value={locationId} placeholder={t("admin_restaurant_floor.branch_placeholder")}
+            options={locations.map((location) => ({ value: location.id, label: location.name }))}
+            onChange={(value) => {
+              setLocationId(value);
+              setAreaId(null);
+              setSelectedTableId(null);
+            }} />
+        </label>
+      </Card>}
+
       <Card title={lang === "en" ? "Customer ordering screen" : "จอสั่งอาหารหน้าร้าน"}>
         {kioskState.error ? <Alert closable type="warning" showIcon message={lang === "en" ? "Screen status is unavailable. Check the POS before changing the URL." : "อ่านสถานะจอไม่ได้ กรุณาตรวจที่ POS ก่อนเปลี่ยน URL"} /> :
           <Typography.Text>{kioskState.loading && !kioskState.data ? (lang === "en" ? "Loading…" : "กำลังโหลด…") :
@@ -445,26 +459,13 @@ export default function RestaurantFloorPage() {
         <Button href="/pos/restaurant?screen=kiosk" type="primary">{lang === "en" ? "Open kiosk work in POS" : "เปิดงานจอสั่งอาหารใน POS"}</Button>
       </Card>
 
+      <RestaurantKioskTrace key={locationId ?? "none"} locationId={locationId} lang={lang} />
+
       <RestaurantKioskDevices locationId={locationId}
         locationName={locations.find((location) => location.id === locationId)?.name ?? null} lang={lang} />
 
       <Card className={styles.toolbarCard}>
         <div className={styles.toolbar}>
-          {locations.length > 1 && (
-            <label className={styles.branchPicker}>
-              <span>{t("admin_restaurant_floor.branch")}</span>
-              <Select
-                value={locationId}
-                placeholder={t("admin_restaurant_floor.branch_placeholder")}
-                options={locations.map((location) => ({ value: location.id, label: location.name }))}
-                onChange={(value) => {
-                  setLocationId(value);
-                  setAreaId(null);
-                  setSelectedTableId(null);
-                }}
-              />
-            </label>
-          )}
           <Space wrap>
             <Space>
               <Switch

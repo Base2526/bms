@@ -9,12 +9,15 @@ const base = process.env.BMS_SMOKE_URL || 'http://127.0.0.1:3194';
 assert.ok(['localhost', '127.0.0.1'].includes(new URL(base).hostname));
 const anonymous = await fetch(`${base}/api/bms/kiosk-desktop-releases?locationId=11111111-1111-4111-8111-111111111111`);
 assert.equal(anonymous.status, 401, 'real release API must reject an anonymous browser before fixture routing');
+const anonymousTrace = await fetch(`${base}/api/bms/restaurant-kiosk-trace?locationId=11111111-1111-4111-8111-111111111111`);
+assert.equal(anonymousTrace.status, 401, 'real manager trace API must reject an anonymous browser before fixture routing');
 await mkdir('.test-output/restaurant-kiosk-admin-browser', { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
   for (const { width, lang } of [{ width: 1440, lang: 'th' },
     { width: 390, lang: 'th' }, { width: 390, lang: 'en' }]) {
     let releaseMode = 'published';
+    let traceMode = 'ready';
     const releaseId = '11111111-1111-4111-8111-111111111111';
     const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: 'block' });
     await context.addInitScript(() => {
@@ -42,6 +45,24 @@ try {
         { id: 'FAKE-device-revoked', locationId: 'FAKE-branch', label: 'จอเก่า', active: false,
           hasPin: false, pinSetAt: null, pinLockedUntil: null, createdAt: '2026-11-20T09:00:00.000Z' },
       ] } });
+      if (path === '/api/bms/restaurant-kiosk-trace') {
+        if (traceMode === 'error') return route.fulfill({ status: 503, json: { code: 'TRACE_UNAVAILABLE' } });
+        const requestCode = new URL(route.request().url()).searchParams.get('requestCode') || '';
+        if (requestCode && requestCode.length < 8) return route.fulfill({ status: 400,
+          json: { code: 'INVALID_REQUEST_CODE' } });
+        return route.fulfill({ json: { submissions: requestCode && requestCode !== '11111111' ? [] : [
+          { requestCode: '11111111-1111-4111-8111-111111111111', serviceMode: 'TAKEAWAY',
+            status: 'ACCEPTED', submittedAt: '2026-11-27T01:00:00.000Z',
+            reviewedAt: '2026-11-27T01:01:00.000Z', reviewerName: 'Fixture cashier',
+            checkId: '22222222-2222-4222-8222-222222222222', checkStatus: 'PAID',
+            currentOrderId: '33333333-3333-4333-8333-333333333333', orderStatus: 'COMPLETED',
+            settlement: 'PAID', paidAt: '2026-11-27T01:02:00.000Z',
+            paymentIds: ['44444444-4444-4444-8444-444444444444'],
+            receiptId: null, receiptNo: 'RC-123', receiptType: 'ABBREVIATED',
+            tableCode: null, tableName: null, areaName: null, splitGroupNo: null,
+            pickupNumber: 'A007', pickupStatus: 'READY' },
+        ] } });
+      }
       if (path === '/api/bms/kiosk-desktop-releases') {
         if (releaseMode === 'error') return route.fulfill({ status: 503, json: { code: 'RELEASE_UNAVAILABLE' } });
         if (releaseMode === 'denied') return route.fulfill({ status: 403, json: { code: 'FORBIDDEN' } });
@@ -86,6 +107,13 @@ try {
     const response = await page.goto(`${base}/admin/restaurant-floor`, { waitUntil: 'domcontentloaded', timeout: 120000 });
     assert.equal(response.status(), 200);
     await page.getByText(lang === 'en' ? 'Customer ordering screen' : 'จอสั่งอาหารหน้าร้าน').waitFor();
+    await page.getByText(lang === 'en' ? 'Track kiosk requests' : 'ติดตามคำขอจากจอ').waitFor();
+    await page.getByText(lang === 'en' ? 'Paid at POS' : 'ชำระที่ POS แล้ว').waitFor();
+    await page.getByText('RC-123').waitFor();
+    await page.getByText(/A007/).waitFor();
+    await page.getByRole('textbox', { name: lang === 'en' ? 'Customer request code' : 'รหัสคำขอของลูกค้า' }).fill('11111111');
+    await page.getByRole('button', { name: lang === 'en' ? 'Search' : 'ค้นหา', exact: true }).click();
+    await page.getByText(lang === 'en' ? 'Paid at POS' : 'ชำระที่ POS แล้ว').waitFor();
     await page.getByText(lang === 'en' ? '2 pending requests' : '2 คำขอรอตรวจ').waitFor();
     await page.getByText(lang === 'en' ? 'Kiosk screen · maintenance PIN' : 'จอ Kiosk · PIN ดูแลเครื่อง').waitFor();
     await page.getByText(lang === 'en' ? 'Locked' : 'ล็อกชั่วคราว').waitFor();
@@ -107,6 +135,13 @@ try {
     assert.equal(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth + 2), true);
     assert.deepEqual(errors, []);
     await page.screenshot({ path: `.test-output/restaurant-kiosk-admin-browser/floor-${width}-${lang}.png`, fullPage: true });
+    traceMode = 'error';
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByText(lang === 'en' ? 'Cannot verify request status. Check the POS before entering a new order.'
+      : 'ตรวจสถานะคำขอไม่ได้ ตรวจใน POS ก่อนคีย์รายการใหม่').waitFor();
+    assert.equal(await page.getByText(lang === 'en' ? 'Paid at POS' : 'ชำระที่ POS แล้ว').count(), 0);
+    await page.screenshot({ path: `.test-output/restaurant-kiosk-admin-browser/trace-error-${width}-${lang}.png`, fullPage: true });
+    traceMode = 'ready';
     releaseMode = 'none';
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.getByText(lang === 'en' ? 'No installer has been published for this branch.' : 'ยังไม่มีไฟล์ติดตั้งที่เผยแพร่สำหรับสาขานี้').waitFor();
