@@ -2857,7 +2857,22 @@ Catalog images may use external URLs; the customer route and native guest
 strip the kiosk URL from external `Referer` headers while keeping the Web image
 fallback for a failed image.
 
-Before the first live pilot, apply `10.144`, `10.145` and `10.146` on a disposable restored database and exercise the
+**Installer distribution (`10.147`).** A branch manager with
+`restaurant.floor.manage` and branch scope selects the branch at
+`/admin/restaurant-floor` → Kiosk devices → Install BMS Kiosk. Only a platform
+administrator uploads a Windows x64 NSIS draft and publishes a verified release
+for that branch. The release is separate from public Android/iOS links and
+Retail Local POS packages. The private download API checks the admin session,
+permission and branch again; the kiosk URL, device credential and maintenance
+PIN grant no download authority. The manager sees version, minimum OS, size,
+SHA-256 and release notes. IT compares the downloaded hash and verifies the
+Authenticode signature and approved signer before installing, upgrading or
+rolling back under the same OS account so encrypted configuration persists.
+Unsigned, hidden, draft and corrupt artifacts are not distributed. The
+previous locally built installer was `NotSigned`; signing, restored-DB tests
+and installation on pilot hardware are still required before any live use.
+
+Before the first live pilot, apply `10.144`, `10.145`, `10.146` and `10.147` on a disposable restored database and exercise the
 following with a paired POS, an open shift and a separate touch screen. Use test products and
 reverse test bills through the normal POS flow; do not run these checks against live customer data.
 

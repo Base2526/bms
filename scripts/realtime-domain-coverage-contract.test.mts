@@ -333,6 +333,10 @@ for (const [reason, tables] of [
 }
 CLASSIFIED.set("bms_delivery_dispute_evidence",
   "private dispute evidence; Finance reads on open and refetches after upload; no POS realtime audience");
+CLASSIFIED.set("bms_kiosk_desktop_releases",
+  "platform installer catalog; Admin reads on open and refetches after publish/hide, with no customer or POS realtime audience");
+CLASSIFIED.set("bms_kiosk_desktop_release_branches",
+  "branch installer grant; Admin reads on branch selection and refetches after publish, with no customer or POS realtime audience");
 
 /** การลบทั้ง tenant ไม่มี subscriber เหลืออยู่ และ outbox ของ tenant ถูก cascade ทิ้ง */
 const OPERATION_EXEMPTIONS = new Map<string, string>([

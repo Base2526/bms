@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Button, Card, Input, Modal, Popconfirm, Space, Table, Tag, Typography } from "antd";
+import KioskDesktopInstall from "./KioskDesktopInstall";
 
 type Device = {
   id: string; locationId: string; label: string; active: boolean;
@@ -110,6 +111,7 @@ export default function RestaurantKioskDevices({ locationId, locationName, lang 
             onConfirm={() => void mutate("revoke", device)}><Button size="small" danger>{en ? "Revoke" : "เพิกถอน"}</Button></Popconfirm>
         </Space> : null },
       ]} />
+    <KioskDesktopInstall locationId={locationId} lang={lang} />
     <Modal title={en ? "Register kiosk screen" : "ลงทะเบียนเครื่อง Kiosk"} open={registerOpen}
       onCancel={() => { setRegisterOpen(false); setLabel(""); }}
       onOk={() => void mutate("issue")} okButtonProps={{ disabled: !label.trim() || busy, loading: busy }}>

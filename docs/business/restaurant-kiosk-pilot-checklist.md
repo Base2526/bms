@@ -34,6 +34,24 @@ pure 4,030 (ผ่าน 4,024, ข้าม 6, ล้ม 0), typecheck แล�
 
 ## ฐานข้อมูลที่ทิ้งได้
 
+เพิ่ม `10.147` ในการ apply/reapply บนฐาน restore: ตรวจ release identity
+ไม่ซ้ำ, branch grant composite FK, RLS/grants/revision/audit ภายใต้
+`bms_app` ทั้ง tenant GUC ถูก/ผิด/ว่าง และตรวจว่า migration ไม่เผยแพร่
+installer ใดเอง ห้ามรันบน production
+
+## ไฟล์ติดตั้งและการเผยแพร่
+
+| ขั้นตอน | ผลที่ต้องเห็น | หลักฐาน |
+| --- | --- | --- |
+| Platform admin อัปโหลด Windows x64 NSIS พร้อม SHA-256 แล้วตรวจไฟล์จริง | release เป็น draft; SHA-256 และ Authenticode มีผลตรวจจริง; unsigned/corrupt เผยแพร่ไม่ได้ | hash, signature status, release id ที่ไม่ใช่ token |
+| Publish ให้สาขา pilot แล้วเข้าหลังบ้าน `/admin/restaurant-floor` ด้วยผู้จัดการสาขา | เห็นเฉพาะรุ่นที่เผยแพร่ของสาขานั้น, วันเผยแพร่, ขนาด, hash, minimum OS และคู่มือ | screenshot ที่ตัดข้อมูลอ่อนไหว, HTTP status |
+| ลอง session ไม่มีสิทธิ์/ผิดสาขา/ไม่มี session/public kiosk URL, draft/hidden/ID เดา | ไม่ดาวน์โหลด; 401/403/404 ตามเหตุ; Redis rate limit ล้มได้ 503 | HTTP trace ที่ตัด cookie/token |
+| ดาวน์โหลดไฟล์ขนาดจริงและตรวจบนเครื่อง IT | stream สำเร็จ, SHA-256 ตรง, Authenticode Valid และ signer ที่อนุมัติ | hash/signature, ขนาดไฟล์, memory profile |
+| ติดตั้ง/อัปเกรด/rollback บัญชี OS เดิม, reboot และ OS lockdown | config ที่เข้ารหัสอยู่ครบ; หน้าลูกค้าเปิดได้เฉพาะ URL ที่ผูก; หลุดไป desktop ไม่ได้ | คลิปและ checklist เครื่อง pilot |
+
+ไฟล์ที่เคยแพ็กได้ยัง `NotSigned`: คงเป็น draft จนลงลายเซ็นและทดสอบบน
+เครื่องจริงผ่าน ห้ามใช้ gate/build หรือ browser fixture แทนผลนี้
+
 | ขั้นตอน | ผลที่ต้องเห็น | หลักฐาน |
 | --- | --- | --- |
 | Restore ฐาน dev ที่เหมาะสมใน instance แยก; ตรวจ hostname/database ก่อนเริ่ม | ไม่มีการต่อ production; schema ตั้งต้นครบ | คำสั่ง restore ที่ปิดรหัสผ่าน, fingerprint dump, hostname/db |

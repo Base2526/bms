@@ -1936,6 +1936,19 @@ from OLD snapshots, and revision RLS fails closed without a tenant GUC. The
 credential cannot perform a POS mutation or change the public kiosk URL.
 Disposable restored-DB apply/reapply and RLS/grant tests remain a pilot gate.
 
+Migration `10.147` adds a platform-owned `bms_kiosk_desktop_releases` catalog
+for immutable BMS Kiosk Windows x64 version/channel/file identities. Drafts
+record the private file id, size, SHA-256 and actual Authenticode verification
+result. Publish requires a valid signature and records publisher/time; hidden
+is terminal. The separate tenant-owned
+`bms_kiosk_desktop_release_branches` grants a published release to an active
+branch through a tenant/location composite FK. It has forced, fail-closed RLS,
+`bms_app` grants and revisions. Upload, publish, grant and hide decisions write
+audit in the same DB transaction as the decision. Download checks the grant,
+release state and stored-byte checksum, then streams the private file. No
+release is seeded by the migration. Apply/reapply, RLS/grant/FK and real file
+verification still require a disposable restored database before pilot use.
+
 `9.45` does not add a second payment or kitchen ledger. Split tender continues to write the normal
 POS payment allocations, and KDS polling reads the existing branch-scoped ticket rows. Its only
 schema addition is modifier catalog pricing plus the restaurant-specific RBAC seeds.

@@ -105,6 +105,31 @@ screenshots to
 `.test-output/kiosk-desktop-shell/`. It is not a physical USB-touch, restored-DB,
 KDS, printer, cash or receipt acceptance test. See
 `docs/business/restaurant-kiosk-pilot-checklist.md` for the live gate.
-The locally built Windows NSIS artifact is unsigned (`Get-AuthenticodeSignature`
-reports `NotSigned`). Distribute only through a controlled internal pilot
-channel after recording its SHA-256; do not label it a signed release.
+## Download and release gate
+
+The branch manager downloads a published Windows x64 installer from
+`/admin/restaurant-floor` → select branch → **Kiosk device / maintenance PIN**
+→ **Install BMS Kiosk**. `restaurant.floor.manage` and branch scope are checked
+again by the download API. Only a platform administrator uploads a draft and
+publishes it for a branch. Android/iOS public app links and Retail Local POS
+packages are separate release channels. The customer kiosk page has no download.
+
+The platform administrator records the SHA-256, uploads the NSIS `.exe` as a
+draft, and checks the actual stored bytes and Authenticode signature before
+publishing. A locally built unsigned installer remains a draft; it is **not**
+available to a shop. After download, IT compares the downloaded SHA-256 to the
+back-office value (`Get-FileHash -Algorithm SHA256`) and verifies Authenticode
+(`Get-AuthenticodeSignature`) reports `Valid`, then checks the signer against
+the approved BMS signing identity. A filename or uploaded checksum alone does
+not prove a signature. The current package has previously reported `NotSigned`;
+signing, verification and installation on the actual pilot machine remain
+release gates.
+
+For upgrade or rollback, IT uses an explicitly published and signed version,
+records its checksum, installs under the same OS account, and verifies that the
+encrypted configuration survives and the URL/device still bind. A hidden
+release is no longer downloadable; ask the platform release administrator for
+an approved version. If download or verification fails, do not install the
+file or switch to a public mirror. Keep POS ordering available while IT resolves
+the release. The private release store must be durable across web instances;
+local ephemeral container storage is insufficient for this route.

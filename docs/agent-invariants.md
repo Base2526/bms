@@ -1177,6 +1177,13 @@ own dine-in service. Operator detail:
   Native page-load callbacks must not revive a guest after PIN/recovery opens.
   The customer route uses `no-referrer`; the native guest strips external
   `Referer` headers so a third-party catalog image cannot receive the URL token.
+  Desktop Kiosk installers use the dedicated `10.147` release/grant tables,
+  never public app-download links or Retail Local POS package types. Only a
+  platform administrator uploads drafts and grants signed published releases;
+  shop downloads require an active admin session, `restaurant.floor.manage`
+  and branch scope. The server rechecks the private file checksum before
+  streaming it. A draft, hidden, unsigned or corrupt release is not a shop
+  download. Installer possession grants no URL, PIN, POS or payment authority.
   Staff review uses a server-computed catalog quote and compares its fingerprint when accepting;
   acceptance resolves and rechecks the quote on the same transaction connection as the check,
   reservation and kitchen work. The fingerprint includes option labels and group rules, and the

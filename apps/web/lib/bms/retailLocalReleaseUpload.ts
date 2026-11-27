@@ -61,10 +61,15 @@ function uploadError(error: unknown): RetailLocalReleaseUploadError {
  */
 export async function parseRetailLocalReleaseUploadStream(
   source: NodeJS.ReadableStream,
-  requestHeaders: MultipartHeaders
+  requestHeaders: MultipartHeaders,
+  options: { maxBytes?: number; allowedFields?: readonly string[]; requiredBeforeFile?: readonly string[] } = {},
 ): Promise<ParsedRetailLocalReleaseUpload> {
   const fields: Record<string, string> = {};
-  const limit = maxReleaseBytes();
+  // The raw multipart transport is shared with the separate BMS Kiosk release
+  // workflow. The default preserves the Retail Local field/size contract.
+  const allowedFields = options.allowedFields ? new Set(options.allowedFields) : ALLOWED_FIELDS;
+  const requiredBeforeFile = options.requiredBeforeFile ?? REQUIRED_BEFORE_FILE;
+  const limit = options.maxBytes ?? maxReleaseBytes();
   let fileSeen = false;
   let parseFailure: RetailLocalReleaseUploadError | null = null;
   let storedFile: PendingStoredFile | null = null;
@@ -87,10 +92,10 @@ export async function parseRetailLocalReleaseUploadStream(
       limits: {
         fileSize: limit,
         files: 1,
-        fields: ALLOWED_FIELDS.size,
+        fields: allowedFields.size,
         // Busboy emits partsLimit when the counter reaches (not exceeds) the
         // configured value, so reserve one sentinel beyond metadata fields + file.
-        parts: ALLOWED_FIELDS.size + 2,
+        parts: allowedFields.size + 2,
         fieldSize: MAX_FIELD_BYTES,
       },
     });
@@ -105,7 +110,7 @@ export async function parseRetailLocalReleaseUploadStream(
       fail(new RetailLocalReleaseUploadError("all release metadata must appear before the file"));
       return;
     }
-    if (!ALLOWED_FIELDS.has(name)) {
+    if (!allowedFields.has(name)) {
       fail(new RetailLocalReleaseUploadError(`unexpected field: ${name}`));
       return;
     }
@@ -130,7 +135,7 @@ export async function parseRetailLocalReleaseUploadStream(
     }
 
     fileSeen = true;
-    const missing = REQUIRED_BEFORE_FILE.filter((field) => !fields[field]);
+    const missing = requiredBeforeFile.filter((field) => !fields[field]);
     if (missing.length > 0) {
       fail(new RetailLocalReleaseUploadError(`metadata must precede file: ${missing.join(", ")}`));
       file.resume();
